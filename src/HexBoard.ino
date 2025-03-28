@@ -308,11 +308,11 @@
     Values are precalculated by compiler, and MIDI 2.0 or later might benefit from it
   */
   tuningDef tuningOptions[] = {
-    { "12 EDO", 12, 100.000,
+    { "12 EDO (Normal)", 12, 100.000,
       {{"C" ,-9},{"C#",-8},{"D" ,-7},{"Eb",-6},{"E" ,-5},{"F",-4}
       ,{"F#",-3},{"G" ,-2},{"G#",-1},{"A" , 0},{"Bb", 1},{"B", 2}
     }},
-    { "12 EDO Zeta peak", 12, 99.8071515654111465,
+    { "12 EDO Zeta Peak", 12, 99.8071515654111465,
       {{"C" ,-9},{"C#",-8},{"D" ,-7},{"Eb",-6},{"E" ,-5},{"F",-4}
       ,{"F#",-3},{"G" ,-2},{"G#",-1},{"A" , 0},{"Bb", 1},{"B", 2}
     }},
@@ -347,7 +347,7 @@
       ,{"A",  0},{"A+",  1},{"A#",  2},{"Bb",  3},{"Bd",  4}
       ,{"B",  5},{"B+",  6}                      ,{"Cd",  7}
     }},
-    { "31 EDO Zeta peak", 31, 1200.0/30.9783818789525220,
+    { "31 EDO Zeta Peak", 31, 1200.0/30.9783818789525220,
       {{"C",-23},{"C+",-22},{"C#",-21},{"Db",-20},{"Dd",-19}
       ,{"D",-18},{"D+",-17},{"D#",-16},{"Eb",-15},{"Ed",-14}
       ,{"E",-13},{"E+",-12}                      ,{"Fd",-11}
@@ -406,7 +406,7 @@
       ,{" A",  0},{"A+1",  1},{"A+2",  2},{"A+3",  3},{"A+4",  4},{"A+5",  5},{"A+6",  6},{"A+7",  7},{"A+8",  7},{"A+9",  7}
       ,{" B", 10},{"B+1", 11},{"B+2", 12}
     }},
-    { "58 EDO Zeta peak", 58, 1200.0/58.066718758225889,
+    { "58 EDO Zeta Peak", 58, 1200.0/58.066718758225889,
       {{" C",-44},{"C+1",-43},{"C+2",-42},{"C+3",-41},{"C+4",-40},{"C+5",-39},{"C+6",-38},{"C+7",-37},{"C+8",-36},{"C+8",-35}
       ,{" D",-34},{"D+1",-33},{"D+2",-32},{"D+3",-31},{"D+4",-30},{"D+5",-29},{"D+6",-28},{"D+7",-27},{"D+8",-26},{"D+8",-25}
       ,{" E",-24},{"E+1",-23},{"E+2",-22},{"E+3",-21}
@@ -429,7 +429,7 @@
       ,{" Bb",  6},{"^Bb",  7},{">Bb",  8},{" Bd",  9},{"<B" , 10},{"vB" , 11}
       ,{" B",  12},{"^B",  13},{">B",  14},{" Cd", 15},{"<C" , 16},{"vC" , 17}
     }},
-    { "72 EDO Zeta peak", 72, 1200.0/71.9506066608606432,
+    { "72 EDO Zeta Peak", 72, 1200.0/71.9506066608606432,
       {{" C", -54},{"^C", -53},{">C", -52},{" C+",-51},{"<C#",-50},{"vC#",-49}
       ,{" C#",-48},{"^C#",-47},{">C#",-46},{" Dd",-45},{"<D" ,-44},{"vD" ,-43}
       ,{" D", -42},{"^D", -41},{">D", -40},{" D+",-39},{"<Eb",-38},{"vEb",-37}
@@ -639,7 +639,7 @@
     { "Janko",             0, 64,   3, -10, TUNING_58EDO }, // Maybe call it "Quartertone Janko"?
     { "Bosanquet-Wilson",  0, 64,   3,   7, TUNING_58EDO }, // Maybe call it "Quartertone Bosanquet"?
     { "Hemififths",        0, 64,   4,  -7, TUNING_58EDO },
-    { "Hemififths mirror.",0, 64,  -4,  -3, TUNING_58EDO },
+    { "Hemififths Mirror.",0, 64,  -4,  -3, TUNING_58EDO },
     { "Chromatic",         0, 64,  -7,  -5, TUNING_58EDO },
     { "Harmonic Table",    0, 75, -34,  15, TUNING_58EDO },
     { "Septimal H.T.",     0, 75, -34,  13, TUNING_58EDO },
@@ -655,7 +655,7 @@
     { "Janko",             0, 64,   3, -10, TUNING_58EDO_ZETA }, // Maybe call it "Quartertone Janko"?
     { "Bosanquet-Wilson",  0, 64,   3,   7, TUNING_58EDO_ZETA }, // Maybe call it "1/4 tone Bosanquet"?
     { "Hemififths",        0, 64,   4,  -7, TUNING_58EDO_ZETA },
-    { "Hemififths mirror.",0, 64,  -4,  -3, TUNING_58EDO_ZETA },
+    { "Hemififths Mirror.",0, 64,  -4,  -3, TUNING_58EDO_ZETA },
     { "Chromatic",         0, 64,  -7,  -5, TUNING_58EDO_ZETA },
     { "Harmonic Table",    0, 75, -34,  15, TUNING_58EDO_ZETA },
     { "Septimal H.T.",     0, 75, -34,  13, TUNING_58EDO_ZETA },
@@ -670,14 +670,14 @@
 
     { "Harmonic Table",    0, 75, -42,  19, TUNING_72EDO },
     { "-30X 19Y",          0, 75, -30,  19, TUNING_72EDO }, // unnamed layout. Like harmonic table but with fourths instead of fifths
-    { "Miracle mapping",   0, 65,  -7,  -2, TUNING_72EDO },
+    { "Miracle Mapping",   0, 65,  -7,  -2, TUNING_72EDO },
     { "Sept.H.T.(36EDO)",  0, 75, -42,  16, TUNING_72EDO }, // 36 EDO subset
     { "Expanded Janko",    0, 65,  -1,  -6, TUNING_72EDO },
     { "Full Gamut",        1, 65,   1,  -9, TUNING_72EDO },
 
     { "Harmonic Table",    0, 75, -42,  19, TUNING_72EDO_ZETA },
     { "-30X 19Y",          0, 75, -30,  19, TUNING_72EDO_ZETA }, // unnamed layout. Like harmonic table but with fourths instead of fifths
-    { "Miracle mapping",   0, 65,  -7,  -2, TUNING_72EDO_ZETA },
+    { "Miracle Mapping",   0, 65,  -7,  -2, TUNING_72EDO_ZETA },
     { "Sept.H.T.(36EDO)",  0, 75, -42,  16, TUNING_72EDO_ZETA }, // 36 EDO subset
     { "Expanded Janko",    0, 65,  -1,  -6, TUNING_72EDO_ZETA },
     { "Full Gamut",        1, 65,   1,  -9, TUNING_72EDO_ZETA },
@@ -691,9 +691,9 @@
     { "Janko (good 3/2)",  0, 65,   5, -14, TUNING_87EDO },
     { "Bos.W.(good 3/2)",  0, 65,  -5,  -9, TUNING_87EDO },
     { "Wic.Hayd.nooctave", 1, 64,  14, -51, TUNING_87EDO }, // perfect thirds at the cost of losing an octave
-    { "Wic.Hayd. pyth.",   1, 64,  15, -51, TUNING_87EDO }, // pythagorean thirds, octave is preserved, note variety decreased
-    { "Janko (good 4/3)",  0, 65,   6, -14, TUNING_87EDO }, // Less efficient but allows perfect chord inversions
-    { "Bos.W.(good 4/3)",  0, 65,  -6,  -8, TUNING_87EDO },
+    { "Wic.Hayd. Pyth.",   1, 64,  15, -51, TUNING_87EDO }, // pythagorean thirds, octave is preserved, note variety decreased
+    { "Janko (Good 4/3)",  0, 65,   6, -14, TUNING_87EDO }, // Less efficient but allows perfect chord inversions
+    { "Bos.W.(Good 4/3)",  0, 65,  -6,  -8, TUNING_87EDO },
     { "Bos.W.(26EDO)",     0, 65,  -9,  -6, TUNING_87EDO },
     { "Janko (26EDO)",     0, 65,   9, -15, TUNING_87EDO },
     { "Full Gamut",        1, 75,   1,  -9, TUNING_87EDO },
@@ -740,11 +740,11 @@
     { "None",              ALL_TUNINGS,      { 0 } },
     // 12 EDO
     { "Major",             TUNING_12EDO,     { 2,2,1,2,2,2,1 } },
-    { "Minor, natural",    TUNING_12EDO,     { 2,1,2,2,1,2,2 } },
-    { "Minor, melodic",    TUNING_12EDO,     { 2,1,2,2,2,2,1 } },
-    { "Minor, harmonic",   TUNING_12EDO,     { 2,1,2,2,1,3,1 } },
-    { "Pentatonic, major", TUNING_12EDO,     { 2,2,3,2,3 } },
-    { "Pentatonic, minor", TUNING_12EDO,     { 3,2,2,3,2 } },
+    { "Minor, Natural",    TUNING_12EDO,     { 2,1,2,2,1,2,2 } },
+    { "Minor, Melodic",    TUNING_12EDO,     { 2,1,2,2,2,2,1 } },
+    { "Minor, Harmonic",   TUNING_12EDO,     { 2,1,2,2,1,3,1 } },
+    { "Pentatonic, Major", TUNING_12EDO,     { 2,2,3,2,3 } },
+    { "Pentatonic, Minor", TUNING_12EDO,     { 3,2,2,3,2 } },
     { "Blues",             TUNING_12EDO,     { 3,1,1,1,1,3,2 } },
     { "Double Harmonic",   TUNING_12EDO,     { 1,3,1,2,1,3,1 } },
     { "Phrygian",          TUNING_12EDO,     { 1,2,2,2,1,2,2 } },
@@ -754,13 +754,13 @@
     { "Lydian Dominant",   TUNING_12EDO,     { 2,2,2,1,2,1,2 } },
     { "Mixolydian",        TUNING_12EDO,     { 2,2,1,2,2,1,2 } },
     { "Locrian",           TUNING_12EDO,     { 1,2,2,1,2,2,2 } },
-    { "Whole tone",        TUNING_12EDO,     { 2,2,2,2,2,2 } },
+    { "Whole Tone",        TUNING_12EDO,     { 2,2,2,2,2,2 } },
     { "Octatonic",         TUNING_12EDO,     { 2,1,2,1,2,1,2,1 } },
     // 17 EDO; for more: https://en.xen.wiki/w/17edo#Scales
     { "Diatonic",          TUNING_17EDO,  { 3,3,1,3,3,3,1 } },
     { "Pentatonic",        TUNING_17EDO,  { 3,3,4,3,4 } },
     { "Harmonic",          TUNING_17EDO,  { 3,2,3,2,2,2,3 } },
-    { "Husayni maqam",     TUNING_17EDO,  { 2,2,3,3,2,1,1,3 } },
+    { "Husayni Maqam",     TUNING_17EDO,  { 2,2,3,3,2,1,1,3 } },
     { "Blues",             TUNING_17EDO,  { 4,3,1,1,1,4,3 } },
     { "Hydra",             TUNING_17EDO,  { 3,3,1,1,2,3,2,1,1 } },
     // 19 EDO; for more: https://en.xen.wiki/w/19edo#Scales
@@ -771,7 +771,7 @@
     { "Sensi",             TUNING_19EDO,   { 2,2,1,2,2,2,1,2,2,2,1 } },
     { "Kleismic",          TUNING_19EDO,   { 1,3,1,1,3,1,1,3,1,3,1 } },
     { "Magic",             TUNING_19EDO,   { 3,1,1,1,3,1,1,1,3,1,1,1,1 } },
-    { "Kind of blues",     TUNING_19EDO,   { 4,4,1,2,4,4 } },
+    { "Kind-of Blues",     TUNING_19EDO,   { 4,4,1,2,4,4 } },
     // 22 EDO; for more: https://en.xen.wiki/w/22edo_modes
     { "Diatonic",          TUNING_22EDO,  { 4,4,1,4,4,4,1 } },
     { "Pentatonic",        TUNING_22EDO,  { 4,4,5,4,5 } },
@@ -785,9 +785,9 @@
     { "Pentatonic (12)",   TUNING_24EDO, { 4,4,6,4,6 } },
     { "Pentatonic (Haba)", TUNING_24EDO, { 5,5,5,5,4 } },
     { "Invert Pentatonic", TUNING_24EDO, { 6,3,6,6,3 } },
-    { "Rast maqam",        TUNING_24EDO, { 4,3,3,4,4,2,1,3 } },
-    { "Bayati maqam",      TUNING_24EDO, { 3,3,4,4,2,1,3,4 } },
-    { "Hijaz maqam",       TUNING_24EDO, { 2,6,2,4,2,1,3,4 } },
+    { "Rast Maqam",        TUNING_24EDO, { 4,3,3,4,4,2,1,3 } },
+    { "Bayati Maqam",      TUNING_24EDO, { 3,3,4,4,2,1,3,4 } },
+    { "Hijaz Maqam",       TUNING_24EDO, { 2,6,2,4,2,1,3,4 } },
     { "8-EDO",             TUNING_24EDO, { 3,3,3,3,3,3,3,3 } },
     { "Wyschnegradsky",    TUNING_24EDO, { 2,2,2,2,2,1,2,2,2,2,2,2,1 } },
     // 31 EDO; for more: https://en.xen.wiki/w/31edo#Scales
@@ -811,9 +811,9 @@
     // 41 EDO; for more: https://en.xen.wiki/w/41edo#Scales_and_modes
     { "Diatonic",          TUNING_41EDO,   { 7,7,3,7,7,7,3 } },
     { "Pentatonic",        TUNING_41EDO,   { 7,7,10,7,10 } },
-    { "Pure major",        TUNING_41EDO,   { 7,6,4,7,6,7,4 } },
-    { "5-limit chromatic", TUNING_41EDO,   { 4,3,4,2,4,3,4,4,2,4,3,4 } },
-    { "7-limit chromatic", TUNING_41EDO,   { 3,4,2,4,4,3,4,2,4,3,3,4 } },
+    { "Pure Major",        TUNING_41EDO,   { 7,6,4,7,6,7,4 } },
+    { "5-limit Chromatic", TUNING_41EDO,   { 4,3,4,2,4,3,4,4,2,4,3,4 } },
+    { "7-limit Chromatic", TUNING_41EDO,   { 3,4,2,4,4,3,4,2,4,3,3,4 } },
     { "Harmonic",          TUNING_41EDO,   { 5,4,4,4,4,3,3,3,3,3,2,3 } },
     { "Middle East-ish",   TUNING_41EDO,   { 7,5,7,5,5,7,5 } },
     { "Thai",              TUNING_41EDO,   { 6,6,6,6,6,6,5 } },
@@ -822,9 +822,9 @@
     // 53 EDO
     { "Diatonic",          TUNING_53EDO, { 9,9,4,9,9,9,4 } },
     { "Pentatonic",        TUNING_53EDO, { 9,9,13,9,13 } },
-    { "Rast makam",        TUNING_53EDO, { 9,8,5,9,9,4,4,5 } },
-    { "Usshak makam",      TUNING_53EDO, { 7,6,9,9,4,4,5,9 } },
-    { "Hicaz makam",       TUNING_53EDO, { 5,12,5,9,4,9,9 } },
+    { "Rast Makam",        TUNING_53EDO, { 9,8,5,9,9,4,4,5 } },
+    { "Usshak Makam",      TUNING_53EDO, { 7,6,9,9,4,4,5,9 } },
+    { "Hicaz Makam",       TUNING_53EDO, { 5,12,5,9,4,9,9 } },
     { "Orwell",            TUNING_53EDO, { 7,5,7,5,7,5,7,5,5 } },
     { "Sephiroth",         TUNING_53EDO, { 6,5,5,6,5,5,6,5,5,5 } },
     { "Smitonic",          TUNING_53EDO, { 11,11,3,11,3,11,3 } },
@@ -3408,7 +3408,7 @@ void animateStaticBeams() {
   );
   bool screenSaverOn = 0;
   uint64_t screenTime = 0;                        // GFX timer to count if screensaver should go on
-  const uint64_t screenSaverTimeout = (1u << 23); // 2^23 microseconds ~ 8 seconds
+  const uint64_t screenSaverTimeout = (1u << 24); // 2^24 microseconds ~ 16 seconds
   /*
     Create menu page object of class GEMPage.
     Menu page holds menu items (GEMItem) and represents menu level.
@@ -3421,30 +3421,22 @@ void animateStaticBeams() {
     The second parameter is the destination page when that item is selected.
   */
   GEMPage  menuPageMain("HexBoard MIDI Controller");
-  GEMPage  menuPageTuning("Tuning");
+  GEMPage  menuPageTuning("Tuning", menuPageMain);
   GEMItem  menuGotoTuning("Tuning", menuPageTuning);
-  GEMItem  menuTuningBack("<< Back", menuPageMain);
-  GEMPage  menuPageLayout("Layout");
+  GEMPage  menuPageLayout("Layout", menuPageMain);
   GEMItem  menuGotoLayout("Layout", menuPageLayout);
-  GEMItem  menuLayoutBack("<< Back", menuPageMain);
-  GEMPage  menuPageScales("Scales");
+  GEMPage  menuPageScales("Scales", menuPageMain);
   GEMItem  menuGotoScales("Scales", menuPageScales);
-  GEMItem  menuScalesBack("<< Back", menuPageMain);
-  GEMPage  menuPageColors("Color options");
-  GEMItem  menuGotoColors("Color options", menuPageColors);
-  GEMItem  menuColorsBack("<< Back", menuPageMain);
-  GEMPage  menuPageSynth("Synth options");
-  GEMItem  menuGotoSynth("Synth options", menuPageSynth);
-  GEMItem  menuSynthBack("<< Back", menuPageMain);
-  GEMPage  menuPageMIDI("MIDI options");
-  GEMItem  menuGotoMIDI("MIDI options", menuPageMIDI);
-  GEMItem  menuMIDIBack("<< Back", menuPageMain);
-  GEMPage  menuPageControl("Control wheel");
-  GEMItem  menuGotoControl("Control wheel", menuPageControl);
-  GEMItem  menuControlBack("<< Back", menuPageMain);
-  GEMPage  menuPageAdvanced("Advanced");
+  GEMPage  menuPageColors("Color Options", menuPageMain);
+  GEMItem  menuGotoColors("Color Options", menuPageColors);
+  GEMPage  menuPageSynth("Synth Options", menuPageMain);
+  GEMItem  menuGotoSynth("Synth Options", menuPageSynth);
+  GEMPage  menuPageMIDI("MIDI Options", menuPageMain);
+  GEMItem  menuGotoMIDI("MIDI Options", menuPageMIDI);
+  GEMPage  menuPageControl("Control Wheel", menuPageMain);
+  GEMItem  menuGotoControl("Control Wheel", menuPageControl);
+  GEMPage  menuPageAdvanced("Advanced", menuPageMain);
   GEMItem  menuGotoAdvanced("Advanced", menuPageAdvanced);
-  GEMItem  menuAdvancedBack("<< Back", menuPageMain);
   GEMPage  menuPageReboot("Ready to flash firmware!");
   /*
     We haven't written the code for some procedures,
@@ -3462,7 +3454,7 @@ void animateStaticBeams() {
     To be honest I don't know how to get just a plain text line to show here other than this!
   */
   void fakeButton() {}
-  GEMItem  menuItemVersion("1.1 beta", fakeButton);
+  GEMItem  menuItemVersion("1.1 Beta 3", fakeButton);
   SelectOptionByte optionByteHardware[] =  {
     { "V1.1", HARDWARE_UNKNOWN }, { "V1.1" , HARDWARE_V1_1 },
     { "V1.2", HARDWARE_V1_2 }
@@ -3523,22 +3515,22 @@ void animateStaticBeams() {
 
   SelectOptionByte optionByteYesOrNo[] =  { { "No", 0 }, { "Yes" , 1 } };
   GEMSelect selectYesOrNo( sizeof(optionByteYesOrNo)  / sizeof(SelectOptionByte), optionByteYesOrNo);
-  GEMItem  menuItemScaleLock( "Scale lock?", scaleLock);
-  GEMItem  menuItemPercep( "Fix color:", perceptual, setLEDcolorCodes);
+  GEMItem  menuItemScaleLock( "Scale Lock", scaleLock);
+  GEMItem  menuItemPercep( "Fix Color:", perceptual, setLEDcolorCodes);
   GEMItem  menuItemShiftColor( "ColorByKey", paletteBeginsAtKeyCenter, setLEDcolorCodes);
-  GEMItem  menuItemWheelAlt( "Alt wheel?", wheelMode, selectYesOrNo);
+  GEMItem  menuItemWheelAlt( "Alt Wheel?", wheelMode, selectYesOrNo);
 
   bool rotaryInvert = false;
   GEMItem  menuItemRotary( "Invert Encoder:", rotaryInvert);
 
   SelectOptionByte optionByteWheelType[] = { { "Springy", 0 }, { "Sticky", 1} };
   GEMSelect selectWheelType( sizeof(optionByteWheelType) / sizeof(SelectOptionByte), optionByteWheelType);
-  GEMItem  menuItemPBBehave( "Pitch bend", pbSticky, selectWheelType);
-  GEMItem  menuItemModBehave( "Mod wheel", modSticky, selectWheelType);
+  GEMItem  menuItemPBBehave( "Pitch Bend", pbSticky, selectWheelType);
+  GEMItem  menuItemModBehave( "Mod Wheel", modSticky, selectWheelType);
 
   SelectOptionByte optionBytePlayback[] = { { "Off", SYNTH_OFF }, { "Mono", SYNTH_MONO }, { "Arp'gio", SYNTH_ARPEGGIO }, { "Poly", SYNTH_POLY } };
   GEMSelect selectPlayback(sizeof(optionBytePlayback) / sizeof(SelectOptionByte), optionBytePlayback);
-  GEMItem  menuItemPlayback(  "Synth mode:",       playbackMode,  selectPlayback, resetSynthFreqs);
+  GEMItem  menuItemPlayback(  "Synth Mode:",       playbackMode,  selectPlayback, resetSynthFreqs);
 
   // Hardware V1.2-only
   SelectOptionByte optionByteAudioD[] =  {
@@ -4218,23 +4210,23 @@ void animateStaticBeams() {
   GEMItem menuItemToggleForceMPEChannels ("Force MPE", forceEnableMPE, resetTuningMIDI);
 
   // Layout rotation selection
-  SelectOptionByte optionByteLayoutRotation[] = {{"0 deg",0},{"60 deg",1},{"120 deg",2},{"180 deg",3},{"240 deg",4},{"300 deg",5},{"360 deg",6}};
+  SelectOptionByte optionByteLayoutRotation[] = {{"0 Deg",0},{"60 Deg",1},{"120 Deg",2},{"180 Deg",3},{"240 Deg",4},{"300 Deg",5},{"360 Deg",6}};
   GEMSelect selectLayoutRotation(7,optionByteLayoutRotation);
   GEMItem  menuItemSelectLayoutRotation( "Rotate: ",   layoutRotation,  selectLayoutRotation, updateLayoutAndRotate);
     
   // Layout mirroring toggles
-  GEMItem mirrorLeftRightGEMItem("Mirror vert.", mirrorLeftRight, updateLayoutAndRotate);
-  GEMItem mirrorUpDownGEMItem   ("Mirror hor." , mirrorUpDown, updateLayoutAndRotate);
+  GEMItem mirrorLeftRightGEMItem("Mirror Vert.", mirrorLeftRight, updateLayoutAndRotate);
+  GEMItem mirrorUpDownGEMItem   ("Mirror Hor." , mirrorUpDown, updateLayoutAndRotate);
     
   // Dynamic just intonation toggles and parameters
-  GEMItem menuItemToggleJI_BPM         ("JI align BPM", useJustIntonationBPM,resetTuningMIDI);
-  GEMItem menuItemSetJI_BPM            ("Beating BPM",justIntonationBPM,selectFrequencyOfJI);
-  GEMItem menuItemSetJI_BPM_Multiplier ("BPM mult.",justIntonationBPM_Multiplier,selectBPM_MultiplierOfJI);
+  GEMItem menuItemToggleJI_BPM         ("JI BPM Sync", useJustIntonationBPM,resetTuningMIDI);
+  GEMItem menuItemSetJI_BPM            ("Beat BPM",justIntonationBPM,selectFrequencyOfJI);
+  GEMItem menuItemSetJI_BPM_Multiplier ("BPM Mult.",justIntonationBPM_Multiplier,selectBPM_MultiplierOfJI);
   GEMItem menuItemToggleDynamicJI      ("Dynamic JI", useDynamicJustIntonation, resetTuningMIDI);
     
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  SelectOptionByte optionByteColor[] =    { { "Rainbow", RAINBOW_MODE }, { "Tiered" , TIERED_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Alt piano", PIANO_ALT_COLOR_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE } };
+  SelectOptionByte optionByteColor[] =    { { "Rainbow", RAINBOW_MODE }, { "Tiered" , TIERED_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE } };
   GEMSelect selectColor( sizeof(optionByteColor) / sizeof(SelectOptionByte), optionByteColor);
   GEMItem  menuItemColor( "Color mode:", colorMode, selectColor, setLEDcolorCodes);
 
@@ -4243,7 +4235,7 @@ void animateStaticBeams() {
   GEMSelect selectAnimate( sizeof(optionByteAnimate)  / sizeof(SelectOptionByte), optionByteAnimate);
   GEMItem  menuItemAnimate( "Animation:", animationType, selectAnimate);
 
-  SelectOptionByte optionByteBright[] = { { "Off", BRIGHT_OFF}, {"the end", BRIGHT_FAINTER}, {"Blackout", BRIGHT_FAINT}, {"Darker", BRIGHT_DARKER}, {"Dark", BRIGHT_DARK}, {"Dimmer", BRIGHT_DIMMER}, {"Dim", BRIGHT_DIM}, {"Low", BRIGHT_LOW}, {"Normal", BRIGHT_MID}, {"High", BRIGHT_HIGH}, {"THE SUN", BRIGHT_MAX } };
+  SelectOptionByte optionByteBright[] = { { "Off", BRIGHT_OFF}, {"Dimmer", BRIGHT_DIMMER}, {"Dim", BRIGHT_DIM}, {"Low", BRIGHT_LOW}, {"Normal", BRIGHT_MID}, {"High", BRIGHT_HIGH}, {"THE SUN", BRIGHT_MAX } };
   GEMSelect selectBright( sizeof(optionByteBright) / sizeof(SelectOptionByte), optionByteBright);
   GEMItem menuItemBright( "Brightness", globalBrightness, selectBright, setLEDcolorCodes);
 
@@ -4255,13 +4247,13 @@ void animateStaticBeams() {
   SelectOptionInt optionIntModWheel[] = { { "too slo", 1 }, { "Turtle", 2 }, { "Slow", 4 },
     { "Medium",    8 }, { "Fast",     16 }, { "Cheetah",  32 }, { "Instant", 127 } };
   GEMSelect selectModSpeed(sizeof(optionIntModWheel) / sizeof(SelectOptionInt), optionIntModWheel);
-  GEMItem  menuItemModSpeed( "Mod wheel:", modWheelSpeed, selectModSpeed);
-  GEMItem  menuItemVelSpeed( "Vel wheel:", velWheelSpeed, selectModSpeed);
+  GEMItem  menuItemModSpeed( "Mod Wheel:", modWheelSpeed, selectModSpeed);
+  GEMItem  menuItemVelSpeed( "Vel Wheel:", velWheelSpeed, selectModSpeed);
 
   SelectOptionInt optionIntPBWheel[] =  { { "too slo", 128 }, { "Turtle", 256 }, { "Slow", 512 },
     { "Medium", 1024 }, { "Fast", 2048 }, { "Cheetah", 4096 },  { "Instant", 16384 } };
   GEMSelect selectPBSpeed(sizeof(optionIntPBWheel) / sizeof(SelectOptionInt), optionIntPBWheel);
-  GEMItem  menuItemPBSpeed( "PB wheel:", pbWheelSpeed, selectPBSpeed);
+  GEMItem  menuItemPBSpeed( "PB Wheel:", pbWheelSpeed, selectPBSpeed);
 
   // Call this procedure to return to the main menu
   void menuHome() {
@@ -4461,40 +4453,33 @@ void animateStaticBeams() {
       menuPageTuning.addMenuItem(menuItemSetJI_BPM);
       menuPageTuning.addMenuItem(menuItemSetJI_BPM_Multiplier);
       menuPageTuning.addMenuItem(menuItemToggleDynamicJI);
-      menuPageTuning.addMenuItem(menuTuningBack);
     menuPageMain.addMenuItem(menuGotoLayout);
       createLayoutMenuItems();
       menuPageLayout.addMenuItem(mirrorLeftRightGEMItem);
       menuPageLayout.addMenuItem(mirrorUpDownGEMItem);
       menuPageLayout.addMenuItem(menuItemSelectLayoutRotation);
-      menuPageLayout.addMenuItem(menuLayoutBack);
     menuPageMain.addMenuItem(menuGotoScales);
       createKeyMenuItems();
       menuPageScales.addMenuItem(menuItemScaleLock);
       createScaleMenuItems();
-      menuPageScales.addMenuItem(menuScalesBack);
     menuPageMain.addMenuItem(menuGotoControl);
       menuPageControl.addMenuItem(menuItemPBSpeed);
       menuPageControl.addMenuItem(menuItemModSpeed);
       menuPageControl.addMenuItem(menuItemVelSpeed);
-      menuPageControl.addMenuItem(menuControlBack);
     menuPageMain.addMenuItem(menuGotoColors);
       menuPageColors.addMenuItem(menuItemColor);
       menuPageColors.addMenuItem(menuItemBright);
       menuPageColors.addMenuItem(menuItemAnimate);
-      menuPageColors.addMenuItem(menuColorsBack);
     menuPageMain.addMenuItem(menuGotoSynth);
       menuPageSynth.addMenuItem(menuItemPlayback);
       menuPageSynth.addMenuItem(menuItemWaveform);
       // menuItemAudioD added here for hardware V1.2
-      menuPageSynth.addMenuItem(menuItemRolandMT32);
-      menuPageSynth.addMenuItem(menuItemGeneralMidi);
-      menuPageSynth.addMenuItem(menuSynthBack);
     menuPageMain.addMenuItem(menuGotoMIDI);
       menuPageMIDI.addMenuItem(menuItemSelectMIDIChannel);
       menuPageMIDI.addMenuItem(menuItemMPEpitchBend);
+      menuPageMIDI.addMenuItem(menuItemRolandMT32);
+      menuPageMIDI.addMenuItem(menuItemGeneralMidi);
       menuPageMIDI.addMenuItem(menuItemToggleForceMPEChannels);
-      menuPageMIDI.addMenuItem(menuMIDIBack);
     menuPageMain.addMenuItem(menuItemTransposeSteps);
     menuPageMain.addMenuItem(menuGotoAdvanced);
       menuPageAdvanced.addMenuItem(menuItemVersion);
@@ -4506,7 +4491,6 @@ void animateStaticBeams() {
       menuPageAdvanced.addMenuItem(menuItemPBBehave);
       menuPageAdvanced.addMenuItem(menuItemModBehave);
       menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
-      menuPageAdvanced.addMenuItem(menuAdvancedBack);
     menuHome();
   }
   void setupGFX() {
