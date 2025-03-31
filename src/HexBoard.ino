@@ -530,14 +530,6 @@
     { "Accordion B-sys.",  1, 64,   1,  -3, TUNING_12EDO },
     { "Chromatic",         0, 75,  12,  -1, TUNING_12EDO },
     { "Full Gamut",        1, 75,   1,  -9, TUNING_12EDO },
-    { "31 EDO Janko",      0, 65,   2,  -5, TUNING_12EDO }, // These layouts are meant for
-    { "31 EDO Compr.Janko",0, 65,  -3,  -5, TUNING_12EDO }, // synths that do not support MPE
-    { "31 EDO Bos.Wilson", 0, 65,  -2,  -3, TUNING_12EDO }, // but support scala/tun files
-    { "31 EDO Wicki-Hayd.",1, 64,   5, -18, TUNING_12EDO },
-    { "31 EDO Harm. Table",0, 75, -18,   8, TUNING_12EDO }, // I did not add many, as it would get VERY cluttered
-    { "41 EDO Janko",      0, 65,   4,  -7, TUNING_12EDO },
-    { "53 EDO Janko",      0, 65,   5,  -9, TUNING_12EDO }, // A different microtuning option in firmware
-    { "58 EDO Janko",      0, 65,   3, -10, TUNING_12EDO }, // should mitigate the need for these layouts
 
     { "Wicki-Hayden",      1, 64,   2,  -7, TUNING_12EDO_ZETA },
     { "Harmonic Table",    0, 75,  -7,   3, TUNING_12EDO_ZETA },
@@ -3454,13 +3446,13 @@ void animateStaticBeams() {
     To be honest I don't know how to get just a plain text line to show here other than this!
   */
   void fakeButton() {}
-  GEMItem  menuItemVersion("1.1 Beta 3", fakeButton);
+  GEMItem  menuItemVersion("Firmware 1.1", fakeButton);
   SelectOptionByte optionByteHardware[] =  {
     { "V1.1", HARDWARE_UNKNOWN }, { "V1.1" , HARDWARE_V1_1 },
     { "V1.2", HARDWARE_V1_2 }
   };
   GEMSelect selectHardware( sizeof(optionByteHardware)  / sizeof(SelectOptionByte), optionByteHardware);
-  GEMItem  menuItemHardware("HexBoard", Hardware_Version, selectHardware, GEM_READONLY);
+  GEMItem  menuItemHardware("Hardware", Hardware_Version, selectHardware, GEM_READONLY);
   /*
     This GEMItem runs a given procedure when you select it.
     We must declare or define that procedure first.
@@ -3511,17 +3503,17 @@ void animateStaticBeams() {
   */
   SelectOptionByte optionByteMPEpitchBend[] = { { "2", 2}, {"12", 12}, {"24", 24}, {"48", 48}, {"96", 96} };
   GEMSelect selectMPEpitchBend( sizeof(optionByteMPEpitchBend) / sizeof(SelectOptionByte), optionByteMPEpitchBend);
-  GEMItem menuItemMPEpitchBend( "MPE Bend:", MPEpitchBendSemis, selectMPEpitchBend, assignPitches);
+  GEMItem menuItemMPEpitchBend( "MPE Bend", MPEpitchBendSemis, selectMPEpitchBend, assignPitches);
 
   SelectOptionByte optionByteYesOrNo[] =  { { "No", 0 }, { "Yes" , 1 } };
   GEMSelect selectYesOrNo( sizeof(optionByteYesOrNo)  / sizeof(SelectOptionByte), optionByteYesOrNo);
   GEMItem  menuItemScaleLock( "Scale Lock", scaleLock);
-  GEMItem  menuItemPercep( "Fix Color:", perceptual, setLEDcolorCodes);
+  GEMItem  menuItemPercep( "Fix Color", perceptual, setLEDcolorCodes);
   GEMItem  menuItemShiftColor( "ColorByKey", paletteBeginsAtKeyCenter, setLEDcolorCodes);
   GEMItem  menuItemWheelAlt( "Alt Wheel?", wheelMode, selectYesOrNo);
 
   bool rotaryInvert = false;
-  GEMItem  menuItemRotary( "Invert Encoder:", rotaryInvert);
+  GEMItem  menuItemRotary( "Inv. Encoder", rotaryInvert);
 
   SelectOptionByte optionByteWheelType[] = { { "Springy", 0 }, { "Sticky", 1} };
   GEMSelect selectWheelType( sizeof(optionByteWheelType) / sizeof(SelectOptionByte), optionByteWheelType);
@@ -3530,14 +3522,14 @@ void animateStaticBeams() {
 
   SelectOptionByte optionBytePlayback[] = { { "Off", SYNTH_OFF }, { "Mono", SYNTH_MONO }, { "Arp'gio", SYNTH_ARPEGGIO }, { "Poly", SYNTH_POLY } };
   GEMSelect selectPlayback(sizeof(optionBytePlayback) / sizeof(SelectOptionByte), optionBytePlayback);
-  GEMItem  menuItemPlayback(  "Synth Mode:",       playbackMode,  selectPlayback, resetSynthFreqs);
+  GEMItem  menuItemPlayback(  "Synth Mode",       playbackMode,  selectPlayback, resetSynthFreqs);
 
   // Hardware V1.2-only
   SelectOptionByte optionByteAudioD[] =  {
     { "Buzzer", AUDIO_PIEZO }, { "Jack" , AUDIO_AJACK }, { "Both", AUDIO_BOTH }
   };
   GEMSelect selectAudioD( sizeof(optionByteAudioD)  / sizeof(SelectOptionByte), optionByteAudioD);
-  GEMItem  menuItemAudioD("SynthOutput:", audioD, selectAudioD);
+  GEMItem  menuItemAudioD("SynthOutput", audioD, selectAudioD);
 
 ////////////////////////////////////////////////////////////////
 
@@ -4119,7 +4111,7 @@ void animateStaticBeams() {
     {"OrchHit",123}, {"Telephone",124}, {"BirdTweet",125}, {"1NoteJam",126}, {"WaterBells",127}, {"JungleTune",128},
   };
   GEMSelect selectRolandMT32(sizeof(optionByteRolandMT32) / sizeof(SelectOptionByte), optionByteRolandMT32);
-  GEMItem  menuItemRolandMT32("RolandMT32:", programChange,  selectRolandMT32, sendProgramChange);
+  GEMItem  menuItemRolandMT32("RolandMT32", programChange,  selectRolandMT32, sendProgramChange);
 
   // General MIDI 1
   SelectOptionByte optionByteGeneralMidi[] = {
@@ -4174,7 +4166,7 @@ void animateStaticBeams() {
     {"TelephoneRing", 125}, {"Helicopter", 126}, {"Applause", 127}, {"Gunshot", 128},
   };
   GEMSelect selectGeneralMidi(sizeof(optionByteGeneralMidi) / sizeof(SelectOptionByte), optionByteGeneralMidi);
-  GEMItem  menuItemGeneralMidi("GeneralMidi:", programChange,  selectGeneralMidi, sendProgramChange);
+  GEMItem  menuItemGeneralMidi("GeneralMidi", programChange,  selectGeneralMidi, sendProgramChange);
 
 
   // doing this long-hand because the STRUCT has problems accepting string conversions of numbers for some reason
@@ -4198,11 +4190,11 @@ void animateStaticBeams() {
     {"+113", 113},{"+114", 114},{"+115", 115},{"+116", 116},{"+117", 117},{"+118", 118},{"+119", 119},{"+120", 120},{"+121", 121},{"+122", 122},{"+123", 123},{"+124", 124},{"+125", 125},{"+126", 126},{"+127", 127}
   };
   GEMSelect selectTransposeSteps( 255, optionIntTransposeSteps);
-  GEMItem  menuItemTransposeSteps( "Transpose:",   transposeSteps,  selectTransposeSteps, changeTranspose);
+  GEMItem  menuItemTransposeSteps( "Transpose",   transposeSteps,  selectTransposeSteps, changeTranspose);
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
   // MIDI Channel selection
-  SelectOptionByte optionByteMIDIChannel[] = {{":  1",1},{":  2",2},{":  3",3},{":  4",4},{":  5",5},{":  6",6},{":  7",7},{":  8",8},{":  9",9},{":  10",10},{":  11",11},{":  12",12},{":  13",13},{":  14",14},{":  15",15},{":  16",16}};
+  SelectOptionByte optionByteMIDIChannel[] = {{"   1",1},{"   2",2},{"   3",3},{"   4",4},{"   5",5},{"   6",6},{"   7",7},{"   8",8},{"   9",9},{"   10",10},{"   11",11},{"   12",12},{"   13",13},{"   14",14},{"   15",15},{"   16",16}};
   GEMSelect selectMIDIchannel(16,optionByteMIDIChannel);
   GEMItem menuItemSelectMIDIChannel( "MIDI Channel",   defaultMidiChannel,  selectMIDIchannel);
 
@@ -4210,12 +4202,12 @@ void animateStaticBeams() {
   GEMItem menuItemToggleForceMPEChannels ("Force MPE", forceEnableMPE, resetTuningMIDI);
 
   // Layout rotation selection
-  SelectOptionByte optionByteLayoutRotation[] = {{"0 Deg",0},{"60 Deg",1},{"120 Deg",2},{"180 Deg",3},{"240 Deg",4},{"300 Deg",5},{"360 Deg",6}};
+  SelectOptionByte optionByteLayoutRotation[] = {{"0 Deg",0},{"60 Deg",1},{"120 Deg",2},{"180 Deg",3},{"240 Deg",4},{"300 Deg",5}};
   GEMSelect selectLayoutRotation(7,optionByteLayoutRotation);
   GEMItem  menuItemSelectLayoutRotation( "Rotate: ",   layoutRotation,  selectLayoutRotation, updateLayoutAndRotate);
     
   // Layout mirroring toggles
-  GEMItem mirrorLeftRightGEMItem("Mirror Vert.", mirrorLeftRight, updateLayoutAndRotate);
+  GEMItem mirrorLeftRightGEMItem("Mirror Ver.", mirrorLeftRight, updateLayoutAndRotate);
   GEMItem mirrorUpDownGEMItem   ("Mirror Hor." , mirrorUpDown, updateLayoutAndRotate);
     
   // Dynamic just intonation toggles and parameters
@@ -4228,12 +4220,12 @@ void animateStaticBeams() {
 
   SelectOptionByte optionByteColor[] =    { { "Rainbow", RAINBOW_MODE }, { "Tiered" , TIERED_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE } };
   GEMSelect selectColor( sizeof(optionByteColor) / sizeof(SelectOptionByte), optionByteColor);
-  GEMItem  menuItemColor( "Color mode:", colorMode, selectColor, setLEDcolorCodes);
+  GEMItem  menuItemColor( "Color Mode", colorMode, selectColor, setLEDcolorCodes);
 
   SelectOptionByte optionByteAnimate[] =  { { "None" , ANIMATE_NONE }, { "Octave", ANIMATE_OCTAVE },
     { "By Note", ANIMATE_BY_NOTE }, { "Star", ANIMATE_STAR }, { "Splash" , ANIMATE_SPLASH }, { "Orbit", ANIMATE_ORBIT }, {"Beams", ANIMATE_BEAMS}, {"rSplash", ANIMATE_SPLASH_REVERSE}, {"rStar", ANIMATE_STAR_REVERSE} };
   GEMSelect selectAnimate( sizeof(optionByteAnimate)  / sizeof(SelectOptionByte), optionByteAnimate);
-  GEMItem  menuItemAnimate( "Animation:", animationType, selectAnimate);
+  GEMItem  menuItemAnimate( "Animation", animationType, selectAnimate);
 
   SelectOptionByte optionByteBright[] = { { "Off", BRIGHT_OFF}, {"Dimmer", BRIGHT_DIMMER}, {"Dim", BRIGHT_DIM}, {"Low", BRIGHT_LOW}, {"Normal", BRIGHT_MID}, {"High", BRIGHT_HIGH}, {"THE SUN", BRIGHT_MAX } };
   GEMSelect selectBright( sizeof(optionByteBright) / sizeof(SelectOptionByte), optionByteBright);
@@ -4242,18 +4234,18 @@ void animateStaticBeams() {
   SelectOptionByte optionByteWaveform[] = { { "Hybrid", WAVEFORM_HYBRID }, { "Square", WAVEFORM_SQUARE }, { "Saw", WAVEFORM_SAW },
   {"Triangl", WAVEFORM_TRIANGLE}, {"Sine", WAVEFORM_SINE}, {"Strings", WAVEFORM_STRINGS}, {"Clrinet", WAVEFORM_CLARINET} };
   GEMSelect selectWaveform(sizeof(optionByteWaveform) / sizeof(SelectOptionByte), optionByteWaveform);
-  GEMItem  menuItemWaveform( "Waveform:", currWave, selectWaveform, resetSynthFreqs);
+  GEMItem  menuItemWaveform( "Waveform", currWave, selectWaveform, resetSynthFreqs);
 
   SelectOptionInt optionIntModWheel[] = { { "too slo", 1 }, { "Turtle", 2 }, { "Slow", 4 },
     { "Medium",    8 }, { "Fast",     16 }, { "Cheetah",  32 }, { "Instant", 127 } };
   GEMSelect selectModSpeed(sizeof(optionIntModWheel) / sizeof(SelectOptionInt), optionIntModWheel);
-  GEMItem  menuItemModSpeed( "Mod Wheel:", modWheelSpeed, selectModSpeed);
-  GEMItem  menuItemVelSpeed( "Vel Wheel:", velWheelSpeed, selectModSpeed);
+  GEMItem  menuItemModSpeed( "Mod Wheel", modWheelSpeed, selectModSpeed);
+  GEMItem  menuItemVelSpeed( "Vel Wheel", velWheelSpeed, selectModSpeed);
 
   SelectOptionInt optionIntPBWheel[] =  { { "too slo", 128 }, { "Turtle", 256 }, { "Slow", 512 },
     { "Medium", 1024 }, { "Fast", 2048 }, { "Cheetah", 4096 },  { "Instant", 16384 } };
   GEMSelect selectPBSpeed(sizeof(optionIntPBWheel) / sizeof(SelectOptionInt), optionIntPBWheel);
-  GEMItem  menuItemPBSpeed( "PB Wheel:", pbWheelSpeed, selectPBSpeed);
+  GEMItem  menuItemPBSpeed( "PB Wheel", pbWheelSpeed, selectPBSpeed);
 
   // Call this procedure to return to the main menu
   void menuHome() {
@@ -4426,7 +4418,7 @@ void animateStaticBeams() {
   void createKeyMenuItems() {
     for (byte T = 0; T < TUNINGCOUNT; T++) {
       selectKey[T] = new GEMSelect(tuningOptions[T].cycleLength, tuningOptions[T].keyChoices);
-      menuItemKeys[T] = new GEMItem("Key:", current.keyStepsFromA, *selectKey[T], changeKey);
+      menuItemKeys[T] = new GEMItem("Key", current.keyStepsFromA, *selectKey[T], changeKey);
       menuPageScales.addMenuItem(*menuItemKeys[T]);
     }
     showOnlyValidKeyChoices();
