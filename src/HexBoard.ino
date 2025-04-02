@@ -4203,7 +4203,7 @@ void animateStaticBeams() {
 
   // Layout rotation selection
   SelectOptionByte optionByteLayoutRotation[] = {{"0 Deg",0},{"60 Deg",1},{"120 Deg",2},{"180 Deg",3},{"240 Deg",4},{"300 Deg",5}};
-  GEMSelect selectLayoutRotation(7,optionByteLayoutRotation);
+  GEMSelect selectLayoutRotation(6,optionByteLayoutRotation);
   GEMItem  menuItemSelectLayoutRotation( "Rotate: ",   layoutRotation,  selectLayoutRotation, updateLayoutAndRotate);
     
   // Layout mirroring toggles
