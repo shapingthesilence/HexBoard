@@ -1048,9 +1048,9 @@ presetDef current = {
     optional sending of log messages
     to the Serial port
   */
-#define DIAGNOSTICS_ON true
+bool debugMessages = true;
 void sendToLog(std::string msg) {
-  if (DIAGNOSTICS_ON) {
+  if (debugMessages) {
     Serial.println(msg.c_str());
   }
 }
@@ -3546,15 +3546,16 @@ struct SettingsHeader {
   uint8_t version;  // settings file version
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 1;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 2;
 
 // ==================================================
 // Settings Definitions
 // ==================================================
-
-// Define each setting by name.
+// There are X steps to make a new setting work properly.
+// I will document each SETTINGS STEP as below to make it easy to find.
+// SETTINGS STEP 1 - Define each setting by name. setting by name.
 enum class SettingKey : uint8_t {
-  Debug = 1,
+  Debug,
   RotaryInvert,
   AutoSave,
   MPEpitchBend,
@@ -3563,6 +3564,10 @@ enum class SettingKey : uint8_t {
   CurrentScale,
   CurrentKeyStepsFromA,
   CurrentTransposeSteps,
+  JustIntonationBPMSync,
+  BeatBPM,
+  BPMMultiplier,
+  DynamicJI,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -3574,11 +3579,11 @@ constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
 // Global Settings Array and Factory Defaults
 // ==================================================
 
-// Use a fixed-size array for your settings. Instead of hard-coded indices,
+// Use a fixed-size array for the settings. Instead of hard-coded indices,
 // each index is defined by the SettingKey enum.
 uint8_t settings[NUM_SETTINGS] = { 0 };
 
-// Define factory defaults (in the same order as the enum).
+// SETTINGS STEP 2 - Define factory defaults (in the same order as the enum).
 // Adjust values below to match your desired defaults.
 const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* Debug                   */ 1,
@@ -3590,6 +3595,11 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* CurrentScale            */ 0,
   /* CurrentKeyStepsFromA    */ 119,    // -9 + 128
   /* CurrentTransposeSteps   */ 128,    // 0 + 128
+  /* JustIntonationBPMSync   */ 0,
+  /* BeatBPM                 */ 60,
+  /* BPMMultiplier           */ 1,
+  /* DynamicJI               */ 0,
+
 
 };
 
@@ -3807,10 +3817,12 @@ void universalSaveCallback(GEMCallbackData callbackData) {
   
   // Mark the settings as dirty so auto-save occurs.
   markSettingsDirty();
-  // ——— SPECIAL CASE ———
-  // If this was the MPE pitch‑bend setting, reassign pitches now:
+  // SETTINGS STEP 4 ——— SPECIAL CASE ——— use in case your setting requires a callback after changing the variable.
   if (info->settingIndex == static_cast<uint8_t>(SettingKey::MPEpitchBend)) {
-    assignPitches();
+    assignPitches(); // If this was the MPE pitch‑bend setting, reassign pitches now.
+  }
+  if ((info->settingIndex == static_cast<uint8_t>(SettingKey::JustIntonationBPMSync)) || (info->settingIndex == static_cast<uint8_t>(SettingKey::DynamicJI))) {
+  resetTuningMIDI(); // If Just Intonation has been adjusted, reset the MIDI tuning.
   }
 }
 /*
@@ -3900,10 +3912,9 @@ GEMItem* menuItemKeys[TUNINGCOUNT];
     The fact that GEM expects pointers and references makes it tricky
     to work with if you are new to C++.
   */
-
+// SETTINGS STEP 5 - Now add the menu item starting with a callback as below.
 PersistentCallbackInfo callbackInfoMPE = {
-  static_cast<uint8_t>(SettingKey::MPEpitchBend),
-  reinterpret_cast<void*>(&MPEpitchBendSemis)
+  static_cast<uint8_t>(SettingKey::MPEpitchBend), reinterpret_cast<void*>(&MPEpitchBendSemis)
 };
 SelectOptionByte optionByteMPEpitchBend[] = { { "2", 2 }, { "12", 12 }, { "24", 24 }, { "48", 48 }, { "96", 96 } };
 GEMSelect selectMPEpitchBend(sizeof(optionByteMPEpitchBend) / sizeof(SelectOptionByte), optionByteMPEpitchBend);
@@ -3919,13 +3930,10 @@ GEMItem menuItemWheelAlt("Alt Wheel?", wheelMode, selectYesOrNo);
 
 // Create a PersistentCallbackInfo instance for this setting.
 PersistentCallbackInfo callbackInfoAutoSave = {
-  static_cast<uint8_t>(SettingKey::AutoSave),
-  reinterpret_cast<void*>(&autoSave)
+  static_cast<uint8_t>(SettingKey::AutoSave), reinterpret_cast<void*>(&autoSave)
 };
-// Create the GEM item for the tick-box.
 // (The GEMItem constructor here accepts a linked value, callback, and our callback info.)
-GEMItem menuItemAutoSave("Auto-Save", autoSave, universalSaveCallback,
-                         reinterpret_cast<void*>(&callbackInfoAutoSave));
+GEMItem menuItemAutoSave("Auto-Save", autoSave, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoAutoSave));
 
 // For "Invert Encoder" which is a bool tick box.  
 // We want to store its value persistently in the RotaryInvert setting.
@@ -3933,13 +3941,16 @@ GEMItem menuItemAutoSave("Auto-Save", autoSave, universalSaveCallback,
 bool rotaryInvert = (settings[static_cast<uint8_t>(SettingKey::RotaryInvert)] != 0);
 // Create a PersistentCallbackInfo instance for this setting.
 PersistentCallbackInfo callbackInfoRotary = {
-  static_cast<uint8_t>(SettingKey::RotaryInvert),
-  reinterpret_cast<void*>(&rotaryInvert)
+  static_cast<uint8_t>(SettingKey::RotaryInvert), reinterpret_cast<void*>(&rotaryInvert)
 };
-// Create the GEM item for the tick-box.
-// (The GEMItem constructor here accepts a linked value, callback, and our callback info.)
-GEMItem menuItemRotary("Invert Encoder", rotaryInvert, universalSaveCallback,
-                         reinterpret_cast<void*>(&callbackInfoRotary));
+GEMItem menuItemRotary("Invert Encoder", rotaryInvert, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
+
+PersistentCallbackInfo callbackInfoDebug = {
+  static_cast<uint8_t>(SettingKey::Debug), reinterpret_cast<void*>(&debugMessages)
+};
+GEMItem menuItemDebug("Serial Debug", debugMessages, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDebug));
+
+
 
 SelectOptionByte optionByteWheelType[] = { { "Springy", 0 }, { "Sticky", 1 } };
 GEMSelect selectWheelType(sizeof(optionByteWheelType) / sizeof(SelectOptionByte), optionByteWheelType);
@@ -4816,10 +4827,25 @@ GEMItem mirrorLeftRightGEMItem("Mirror Ver.", mirrorLeftRight, updateLayoutAndRo
 GEMItem mirrorUpDownGEMItem("Mirror Hor.", mirrorUpDown, updateLayoutAndRotate);
 
 // Dynamic just intonation toggles and parameters
-GEMItem menuItemToggleJI_BPM("JI BPM Sync", useJustIntonationBPM, resetTuningMIDI);
-GEMItem menuItemSetJI_BPM("Beat BPM", justIntonationBPM, selectFrequencyOfJI);
-GEMItem menuItemSetJI_BPM_Multiplier("BPM Mult.", justIntonationBPM_Multiplier, selectBPM_MultiplierOfJI);
-GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, resetTuningMIDI);
+PersistentCallbackInfo callbackInfoJustIntonationBPMSync = {
+  static_cast<uint8_t>(SettingKey::JustIntonationBPMSync), reinterpret_cast<void*>(&useJustIntonationBPM)
+};
+GEMItem menuItemToggleJI_BPM("JI BPM Sync", useJustIntonationBPM, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoJustIntonationBPMSync));
+
+PersistentCallbackInfo callbackInfoBeatBPM = {
+  static_cast<uint8_t>(SettingKey::JustIntonationBPMSync), reinterpret_cast<void*>(&useJustIntonationBPM)
+};
+GEMItem menuItemSetJI_BPM("Beat BPM", justIntonationBPM, selectFrequencyOfJI, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoMPE));
+
+PersistentCallbackInfo callbackInfoBPM_Mult = {
+  static_cast<uint8_t>(SettingKey::JustIntonationBPMSync), reinterpret_cast<void*>(&justIntonationBPM_Multiplier)
+};
+GEMItem menuItemSetJI_BPM_Multiplier("BPM Mult.", justIntonationBPM_Multiplier, selectBPM_MultiplierOfJI, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoBPM_Mult));
+
+PersistentCallbackInfo callbackInfoDynamicJI = {
+  static_cast<uint8_t>(SettingKey::DynamicJI), reinterpret_cast<void*>(&useDynamicJustIntonation)
+};
+GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDynamicJI));
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -4849,18 +4875,18 @@ GEMSelect selectPBSpeed(sizeof(optionIntPBWheel) / sizeof(SelectOptionInt), opti
 GEMItem menuItemPBSpeed("PB Wheel", pbWheelSpeed, selectPBSpeed);
 
 // --------------------------------------------------------
-// Callback to sync settings variables on power-up
+// SETTINGS STEP 3 - Callback to sync settings variables on power-up
 // --------------------------------------------------------
 void syncSettingsToRuntime() {
+  debugMessages = (settings[static_cast<uint8_t>(SettingKey::Debug)] !=0);            // do it this way for bools...
   rotaryInvert = (settings[static_cast<uint8_t>(SettingKey::RotaryInvert)] != 0);
   autoSave = (settings[static_cast<uint8_t>(SettingKey::AutoSave)] !=0);
-  MPEpitchBendSemis = settings[static_cast<uint8_t>(SettingKey::MPEpitchBend)];
+  MPEpitchBendSemis = settings[static_cast<uint8_t>(SettingKey::MPEpitchBend)];       // ... and this way for bytes...
   current.tuningIndex = settings[static_cast<uint8_t>(SettingKey::CurrentTuning)];
   current.layoutIndex = settings[static_cast<uint8_t>(SettingKey::CurrentLayout)];
   current.scaleIndex = settings[static_cast<uint8_t>(SettingKey::CurrentScale)];
-  // Unpack the signed values:
-  {
-    uint8_t raw = settings[static_cast<uint8_t>(SettingKey::CurrentTransposeSteps)];
+  { // Unpacking the signed values:
+    uint8_t raw = settings[static_cast<uint8_t>(SettingKey::CurrentTransposeSteps)];  // ... and this way for signed values.
     transposeSteps = int(raw) - 128;
     current.transpose = transposeSteps;
   }
@@ -4868,6 +4894,11 @@ void syncSettingsToRuntime() {
     uint8_t raw = settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)];
     current.keyStepsFromA = int(raw) - 128;
   }
+  useJustIntonationBPM = (settings[static_cast<uint8_t>(SettingKey::JustIntonationBPMSync)] !=0);
+  justIntonationBPM = settings[static_cast<uint8_t>(SettingKey::BeatBPM)];
+  justIntonationBPM_Multiplier = settings[static_cast<uint8_t>(SettingKey::BPMMultiplier)];
+  useDynamicJustIntonation = (settings[static_cast<uint8_t>(SettingKey::DynamicJI)] !=0);
+
   // Update other runtime variables similarly…
 
   // Now *apply* them to the engine/UI:
@@ -5142,6 +5173,7 @@ void setupMenu() {
   menuPageAdvanced.addMenuItem(menuItemSaveSettings);
   menuPageAdvanced.addMenuItem(menuItemLoadSettings);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
+  menuPageAdvanced.addMenuItem(menuItemDebug);
   menuHome();
 }
 void setupGFX() {
