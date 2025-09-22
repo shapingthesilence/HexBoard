@@ -172,6 +172,7 @@ byte colorMode = RAINBOW_MODE;
 #define ANIMATE_BEAMS 6
 #define ANIMATE_SPLASH_REVERSE 7
 #define ANIMATE_STAR_REVERSE 8
+#define ANIMATE_MIDI_IN 9
 byte animationType = ANIMATE_NONE;
 
 #define BRIGHT_MAX 255
@@ -1173,6 +1174,7 @@ public:
   byte MIDIch = 0;           // what MIDI channel this note is playing on
   byte synthCh = 0;          // what synth polyphony ch this is playing on
   float frequency = 0.0;     // what frequency to ring on the synther
+  uint8_t externalNoteDepth = 0;  // number of active external MIDI notes mapped here
 };
 /*
     This class is like a virtual wheel.
@@ -1914,11 +1916,17 @@ void resetTuningMIDI() {
   } else {
     setMPEzone(1, 0);
   }
-  // force pitch bend back to the expected range of 2 semitones.
+  // Reset controllers and ensure every channel uses the appropriate pitch-bend range.
   for (byte i = 1; i <= 16; i++) {
     if (midiD & MIDID_USB) UMIDI.sendControlChange(123, 0, i);
     if (midiD & MIDID_SER) SMIDI.sendControlChange(123, 0, i);
-    setPitchBendRange(i, MPEpitchBendSemis);
+    byte range = 2;
+    if (MPEpitchBendsNeeded > 1 && i > 1) {
+      range = MPEpitchBendSemis;
+    } else if (MPEpitchBendsNeeded == 1) {
+      range = 2;
+    }
+    setPitchBendRange(i, range);
   }
 }
 
@@ -2576,6 +2584,33 @@ void tryMIDInoteOff(byte x) {
       sendToLog("pushed " + std::to_string(h[x].MIDIch) + " on the MPE queue");
     }
     h[x].MIDIch = 0;
+  }
+}
+
+void processIncomingMIDI() {
+  if (midiD & MIDID_USB) {
+    while (UMIDI.read()) {
+      MIDI_NAMESPACE::MidiType type = UMIDI.getType();
+      byte data1 = UMIDI.getData1();
+      byte data2 = UMIDI.getData2();
+      if (type == MIDI_NAMESPACE::NoteOn) {
+        applyExternalMidiToHex(data1, data2 != 0);
+      } else if (type == MIDI_NAMESPACE::NoteOff) {
+        applyExternalMidiToHex(data1, false);
+      }
+    }
+  }
+  if (midiD & MIDID_SER) {
+    while (SMIDI.read()) {
+      MIDI_NAMESPACE::MidiType type = SMIDI.getType();
+      byte data1 = SMIDI.getData1();
+      byte data2 = SMIDI.getData2();
+      if (type == MIDI_NAMESPACE::NoteOn) {
+        applyExternalMidiToHex(data1, data2 != 0);
+      } else if (type == MIDI_NAMESPACE::NoteOff) {
+        applyExternalMidiToHex(data1, false);
+      }
+    }
   }
 }
 
@@ -3431,6 +3466,29 @@ void animateRadialReverse() {  //inverted splash/star
   }
 }
 
+void applyExternalMidiToHex(byte midiNote, bool noteOn) {
+  const bool isMidiInAnimation = (animationType == ANIMATE_MIDI_IN);
+  for (byte i = 0; i < LED_COUNT; i++) {
+    if (h[i].isCmd) {
+      continue;
+    }
+    if (h[i].note == midiNote) {
+      if (noteOn) {
+        if (h[i].externalNoteDepth < 255) {
+          h[i].externalNoteDepth++;
+        }
+        if (isMidiInAnimation) {
+          h[i].timePressed = runTime;
+        }
+      } else {
+        if (h[i].externalNoteDepth > 0) {
+          h[i].externalNoteDepth--;
+        }
+      }
+    }
+  }
+}
+
 void animateLEDs() {
   for (byte i = 0; i < LED_COUNT; i++) {
     h[i].animate = 0;
@@ -3454,6 +3512,13 @@ void animateLEDs() {
       case ANIMATE_SPLASH_REVERSE:
       case ANIMATE_STAR_REVERSE:
         animateRadialReverse();
+        break;
+      case ANIMATE_MIDI_IN:
+        for (byte i = 0; i < LED_COUNT; i++) {
+          if (h[i].externalNoteDepth > 0) {
+            h[i].animate = 1;
+          }
+        }
         break;
       default:
         break;
@@ -3487,6 +3552,7 @@ void assignPitches() {
         h[i].bend = (ldexp(N - h[i].note, 13) / MPEpitchBendSemis);
         h[i].frequency = MIDItoFreq(N);
       }
+      h[i].externalNoteDepth = 0;
       sendToLog(
         "hex #" + std::to_string(i) + ", " + "steps=" + std::to_string(h[i].stepsFromC) + ", " + "isCmd? " + std::to_string(h[i].isCmd) + ", " + "note=" + std::to_string(h[i].note) + ", " + "bend=" + std::to_string(h[i].bend) + ", " + "freq=" + std::to_string(h[i].frequency) + ", " + "inScale? " + std::to_string(h[i].inScale) + ".");
     }
@@ -5124,7 +5190,7 @@ PersistentCallbackInfo callbackInfoColorMode = {
 GEMItem menuItemColor("Color Mode", colorMode, selectColor, universalSaveCallback,
                       reinterpret_cast<void*>(&callbackInfoColorMode));
 
-SelectOptionByte optionByteAnimate[] = { { "None", ANIMATE_NONE }, { "Octave", ANIMATE_OCTAVE }, { "By Note", ANIMATE_BY_NOTE }, { "Star", ANIMATE_STAR }, { "Splash", ANIMATE_SPLASH }, { "Orbit", ANIMATE_ORBIT }, { "Beams", ANIMATE_BEAMS }, { "rSplash", ANIMATE_SPLASH_REVERSE }, { "rStar", ANIMATE_STAR_REVERSE } };
+SelectOptionByte optionByteAnimate[] = { { "None", ANIMATE_NONE }, { "Octave", ANIMATE_OCTAVE }, { "By Note", ANIMATE_BY_NOTE }, { "Star", ANIMATE_STAR }, { "Splash", ANIMATE_SPLASH }, { "Orbit", ANIMATE_ORBIT }, { "Beams", ANIMATE_BEAMS }, { "rSplash", ANIMATE_SPLASH_REVERSE }, { "rStar", ANIMATE_STAR_REVERSE }, { "MIDI In", ANIMATE_MIDI_IN } };
 GEMSelect selectAnimate(sizeof(optionByteAnimate) / sizeof(SelectOptionByte), optionByteAnimate);
 PersistentCallbackInfo callbackInfoAnimation = {
   static_cast<uint8_t>(SettingKey::AnimationType),
@@ -5772,6 +5838,7 @@ void loop() {        // run on first core
   readHexes();       // Read and store the digital button states of the scanning matrix
   arpeggiate();      // arpeggiate if synth mode allows it
   updateWheels();    // deal with the pitch/mod wheel
+  processIncomingMIDI();  // respond to external MIDI input
   animateLEDs();     // deal with animations
   lightUpLEDs();     // refresh LEDs
   dealWithRotary();  // deal with menu
