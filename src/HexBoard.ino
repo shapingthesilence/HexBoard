@@ -1319,6 +1319,26 @@ void setupGrid() {
   h[140].note = HARDWARE_V1_2;
 }
 
+void detectHardwareVersion() {
+  constexpr byte hardwareFlagIndex = 140;
+  const byte targetRow = hardwareFlagIndex / 10;
+  const byte targetColumn = hardwareFlagIndex % 10;
+  byte columnPin = cPin[targetColumn];
+
+  pinMode(columnPin, INPUT_PULLUP);
+  for (byte d = 0; d < 4; d++) {
+    digitalWrite(mPin[d], (targetRow >> d) & 1);
+  }
+  delayMicroseconds(14);
+  bool flagPressed = (digitalRead(columnPin) == LOW);
+  pinMode(columnPin, INPUT);
+  for (byte d = 0; d < 4; d++) {
+    digitalWrite(mPin[d], 0);
+  }
+  Hardware_Version = flagPressed ? HARDWARE_V1_2 : HARDWARE_V1_1;
+  sendToLog("Hardware detection: revision " + std::to_string(Hardware_Version));
+}
+
 // @LED
 /*
     This section of the code handles sending
@@ -1902,16 +1922,28 @@ void resetTuningMIDI() {
   }
 }
 
+byte primaryMIDIChannel() {
+  if (MPEpitchBendsNeeded == 1) {
+    if (defaultMidiChannel < 1 || defaultMidiChannel > 16) {
+      return 1;
+    }
+    return defaultMidiChannel;
+  }
+  return 1;  // In MPE mode, channel 1 is the master channel.
+}
+
 void sendMIDImodulationToCh1() {
-  if (midiD & MIDID_USB) UMIDI.sendControlChange(1, modWheel.curValue, 1);
-  if (midiD & MIDID_SER) SMIDI.sendControlChange(1, modWheel.curValue, 1);
-  sendToLog("sent mod value " + std::to_string(modWheel.curValue) + " to ch 1");
+  byte targetChannel = primaryMIDIChannel();
+  if (midiD & MIDID_USB) UMIDI.sendControlChange(1, modWheel.curValue, targetChannel);
+  if (midiD & MIDID_SER) SMIDI.sendControlChange(1, modWheel.curValue, targetChannel);
+  sendToLog("sent mod value " + std::to_string(modWheel.curValue) + " to ch " + std::to_string(targetChannel));
 }
 
 void sendMIDIpitchBendToCh1() {
-  if (midiD & MIDID_USB) UMIDI.sendPitchBend(pbWheel.curValue, 1);
-  if (midiD & MIDID_SER) SMIDI.sendPitchBend(pbWheel.curValue, 1);
-  sendToLog("sent pb wheel value " + std::to_string(pbWheel.curValue) + " to ch 1");
+  byte targetChannel = primaryMIDIChannel();
+  if (midiD & MIDID_USB) UMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
+  if (midiD & MIDID_SER) SMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
+  sendToLog("sent pb wheel value " + std::to_string(pbWheel.curValue) + " to ch " + std::to_string(targetChannel));
 }
 
 //////////////////////////////////////////////////////////////////
@@ -3126,13 +3158,18 @@ void resetSynthFreqs() {
   }
 }
 void sendProgramChange() {
-  if (midiD & MIDID_USB) UMIDI.sendProgramChange(programChange - 1, 1);
-  if (midiD & MIDID_SER) SMIDI.sendProgramChange(programChange - 1, 1);
+  if (programChange == 0) {
+    return;  // 0 indicates "no program" selected yet.
+  }
+  byte targetChannel = primaryMIDIChannel();
+  if (midiD & MIDID_USB) UMIDI.sendProgramChange(programChange - 1, targetChannel);
+  if (midiD & MIDID_SER) SMIDI.sendProgramChange(programChange - 1, targetChannel);
 }
 
 void updateSynthWithNewFreqs() {
-  if (midiD & MIDID_USB) UMIDI.sendPitchBend(pbWheel.curValue, 1);
-  if (midiD & MIDID_SER) SMIDI.sendPitchBend(pbWheel.curValue, 1);
+  byte targetChannel = primaryMIDIChannel();
+  if (midiD & MIDID_USB) UMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
+  if (midiD & MIDID_SER) SMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
   for (byte i = 0; i < BTN_COUNT; i++) {
     if (!(h[i].isCmd)) {
       if (h[i].synthCh) {
@@ -3350,7 +3387,7 @@ void animateStaticBeams() {
       }
     }
   }
-}
+}     
 
 void animateRadial() {
   for (byte i = 0; i < LED_COUNT; i++) {                  // check every hex
@@ -3546,12 +3583,12 @@ struct SettingsHeader {
   uint8_t version;  // settings file version
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 2;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 4;
 
 // ==================================================
 // Settings Definitions
 // ==================================================
-// There are X steps to make a new setting work properly.
+// There are 4 steps to make a new setting work properly.
 // I will document each SETTINGS STEP as below to make it easy to find.
 // SETTINGS STEP 1 - Define each setting by name. setting by name.
 enum class SettingKey : uint8_t {
@@ -3559,11 +3596,34 @@ enum class SettingKey : uint8_t {
   RotaryInvert,
   AutoSave,
   MPEpitchBend,
+  ForceMPE,
+  ExtraMPE,
+  DefaultMIDIChannel,
+  CC74Value,
   CurrentTuning,
   CurrentLayout,
   CurrentScale,
   CurrentKeyStepsFromA,
   CurrentTransposeSteps,
+  LayoutRotation,
+  MirrorLeftRight,
+  MirrorUpDown,
+  ScaleLock,
+  PerceptualColoring,
+  PaletteCenterOnKey,
+  WheelAltMode,
+  PBSticky,
+  ModSticky,
+  PBWheelSpeed,
+  ModWheelSpeed,
+  VelWheelSpeed,
+  PlaybackMode,
+  Waveform,
+  AudioDestination,
+  ColorMode,
+  GlobalBrightness,
+  AnimationType,
+  ProgramChange,
   JustIntonationBPMSync,
   BeatBPM,
   BPMMultiplier,
@@ -3586,21 +3646,42 @@ uint8_t settings[NUM_SETTINGS] = { 0 };
 // SETTINGS STEP 2 - Define factory defaults (in the same order as the enum).
 // Adjust values below to match your desired defaults.
 const uint8_t factoryDefaults[NUM_SETTINGS] = {
-  /* Debug                   */ 1,
-  /* Invert rotary encoder   */ 0,
-  /* Auto save settings      */ 1,
-  /* MPE pitch bend semitones*/ 48,
-  /* CurrentTuning           */ TUNING_12EDO,
-  /* CurrentLayout           */ 0,
-  /* CurrentScale            */ 0,
-  /* CurrentKeyStepsFromA    */ 119,    // -9 + 128
-  /* CurrentTransposeSteps   */ 128,    // 0 + 128
-  /* JustIntonationBPMSync   */ 0,
-  /* BeatBPM                 */ 60,
-  /* BPMMultiplier           */ 1,
-  /* DynamicJI               */ 0,
-
-
+  /* Debug                        */ 0,
+  /* Invert rotary encoder        */ 0,
+  /* Auto save settings           */ 1,
+  /* MPE pitch bend semitones     */ 48,
+  /* Force MPE                    */ 0,
+  /* Extra MPE Messages           */ 0,
+  /* Default MIDI Channel         */ 1,
+  /* CC74 value                   */ 0,
+  /* CurrentTuning                */ TUNING_12EDO,
+  /* CurrentLayout                */ 0,
+  /* CurrentScale                 */ 0,
+  /* CurrentKeyStepsFromA         */ 119,   // -9 + 128
+  /* CurrentTransposeSteps        */ 128,   // 0 + 128
+  /* LayoutRotation               */ 0,
+  /* MirrorLeftRight              */ 0,
+  /* MirrorUpDown                 */ 0,
+  /* ScaleLock                    */ 0,
+  /* PerceptualColoring           */ 1,
+  /* PaletteCenterOnKey           */ 1,
+  /* WheelAltMode                 */ 0,
+  /* PBSticky                     */ 0,
+  /* ModSticky                    */ 0,
+  /* PBWheelSpeed (2^N)           */ 10,    // 2^10 == 1024
+  /* ModWheelSpeed                */ 8,
+  /* VelWheelSpeed                */ 8,
+  /* PlaybackMode                 */ SYNTH_OFF,
+  /* Waveform                     */ WAVEFORM_HYBRID,
+  /* AudioDestination             */ AUDIO_BOTH,
+  /* ColorMode                    */ RAINBOW_MODE,
+  /* GlobalBrightness             */ BRIGHT_DIM,
+  /* AnimationType                */ ANIMATE_NONE,
+  /* ProgramChange                */ 0,
+  /* JustIntonationBPMSync        */ 0,
+  /* BeatBPM                      */ 60,
+  /* BPMMultiplier                */ 1,
+  /* DynamicJI                    */ 0,
 };
 
 // ==================================================
@@ -3626,32 +3707,49 @@ void setupFileSystem() {
 // --------------------------------------------------------
 // Persistent Settings Functions: Save, Load, Restore
 // --------------------------------------------------------
+void applyFactoryDefaultsToSettings() {
+  for (uint8_t i = 0; i < NUM_SETTINGS; ++i) {
+    settings[i] = factoryDefaults[i];
+  }
+
+  if (Hardware_Version == HARDWARE_V1_2) {
+    settings[static_cast<uint8_t>(SettingKey::RotaryInvert)] = 1;
+  }
+}
+
 bool load_settings() {
   if (!fileSystemExists) {
-    sendToLog("File system not available.");
+    sendToLog("File system not available. Using factory defaults.");
+    applyFactoryDefaultsToSettings();
     return false;
   }
   File f = LittleFS.open("/settings.dat", "r");
   if (!f) {
-    sendToLog("Error: Unable to open /settings.dat for reading.");
-    return false;
+    sendToLog("Settings file not found. Creating new file with factory defaults.");
+    applyFactoryDefaultsToSettings();
+    save_settings();
+    return true;
   }
   SettingsHeader header;
   if (f.readBytes((char*)&header, sizeof(SettingsHeader)) != sizeof(SettingsHeader)) {
     sendToLog("Error: Failed to read settings header.");
     f.close();
+    applyFactoryDefaultsToSettings();
+    save_settings();
     return false;
   }
   if (strncmp(header.magic, "STG", 3) != 0) {
     sendToLog("Invalid settings file (magic mismatch). Restoring defaults.");
     f.close();
-    restore_default_settings();
+    applyFactoryDefaultsToSettings();
+    save_settings();
     return false;
   }
   if (header.version != CURRENT_SETTINGS_VERSION) {
     sendToLog("Settings version mismatch. File version: " + std::to_string(header.version) + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION));
     f.close();
-    restore_default_settings();
+    applyFactoryDefaultsToSettings();
+    save_settings();
     return false;
   }
   if (f.readBytes((char*)settings, NUM_SETTINGS) != NUM_SETTINGS) {
@@ -3683,18 +3781,7 @@ void save_settings() {
 
 // Restore all settings to the factory defaults.
 void restore_default_settings() {
-  for (uint8_t i = 0; i < NUM_SETTINGS; ++i) {
-    settings[i] = factoryDefaults[i];
-  }
-
-  // Additional overrides for specific hardware.
-  if (Hardware_Version == HARDWARE_V1_2) {
-    //settings[static_cast<uint8_t>(SettingKey::MIDIoutPorts)] = MIDID_BOTH;
-    //settings[static_cast<uint8_t>(SettingKey::SynthAudioPorts)] = 3;  // e.g., AUDIO_BOTH equals 3.
-    //settings[static_cast<uint8_t>(SettingKey::GlobalBrightness)] = BRIGHT_DIM;
-    settings[static_cast<uint8_t>(SettingKey::RotaryInvert)] = 1;  // true.
-  }
-
+  applyFactoryDefaultsToSettings();
   sendToLog("Default settings restored.");
   save_settings();
 }
@@ -3754,6 +3841,7 @@ GEM_u8g2 menu(
   u8g2, GEM_POINTER_ROW, GEM_ITEMS_COUNT_AUTO,
   MENU_ITEM_HEIGHT, MENU_PAGE_SCREEN_TOP_OFFSET, MENU_VALUES_LEFT_OFFSET);
 bool screenSaverOn = 0;
+bool audioMenuItemInserted = false;
 uint64_t screenTime = 0;                         // GFX timer to count if screensaver should go on
 const uint64_t screenSaverTimeout = (1u << 24);  // 2^24 microseconds ~ 16 seconds
 /*
@@ -3791,10 +3879,31 @@ GEMPage menuPageReboot("Ready to flash firmware!");
 // --------------------------------------------------------
 // This helper struct is used to pass both the persistent setting's index
 // and the pointer to the variable that is updated via the menu.
+using PersistentValueReader = uint8_t (*)(void*);
+
 struct PersistentCallbackInfo {
-  uint8_t settingIndex;   // Corresponds to an index in the settings[] array
-  void* variablePtr;      // Pointer to the runtime variable (e.g. a bool, byte, etc.)
+  uint8_t settingIndex;           // Corresponds to an index in the settings[] array
+  void* variablePtr;              // Pointer to the runtime variable (e.g. a bool, byte, etc.)
+  PersistentValueReader reader;   // Optional encoder to convert the runtime value to a byte for storage
+  void (*postChange)();           // Optional hook invoked after the value is saved
 };
+
+// Helper encoders for settings that need translation before being stored.
+uint8_t encodePbWheelSpeed(void* variablePtr) {
+  int value = *reinterpret_cast<int*>(variablePtr);
+  if (value <= 0) {
+    return 10;  // Default to 2^10 (1024) if something unexpected happens.
+  }
+  uint8_t exponent = 0;
+  while (value > 1) {
+    value >>= 1;
+    ++exponent;
+  }
+  if (exponent < 7) {
+    exponent = 7;  // The minimum selectable PB speed is 2^7 (128).
+  }
+  return exponent;
+}
 
 
 // --------------------------------------------------------
@@ -3806,23 +3915,22 @@ void universalSaveCallback(GEMCallbackData callbackData) {
   // Retrieve our persistent callback information from the callback union.
   // We stored a pointer to our PersistentCallbackInfo struct in valPointer.
   PersistentCallbackInfo* info = reinterpret_cast<PersistentCallbackInfo*>(callbackData.valPointer);
-  
+
   // Read the new value from the linked variable.
-  // (We assume all persistent values are stored as a single byte.)
-  uint8_t newValue = *(reinterpret_cast<uint8_t*>(info->variablePtr));
-  
+  // Default behaviour assumes the value fits in a byte; a custom reader can override this.
+  uint8_t newValue = info->reader ? info->reader(info->variablePtr)
+                                  : *(reinterpret_cast<uint8_t*>(info->variablePtr));
+
   // Update the persistent settings array.
   settings[info->settingIndex] = newValue;
   sendToLog("Universal callback: Setting " + std::to_string(info->settingIndex) + " updated to " + std::to_string(newValue));
-  
+
   // Mark the settings as dirty so auto-save occurs.
   markSettingsDirty();
-  // SETTINGS STEP 4 ——— SPECIAL CASE ——— use in case your setting requires a callback after changing the variable.
-  if (info->settingIndex == static_cast<uint8_t>(SettingKey::MPEpitchBend)) {
-    assignPitches(); // If this was the MPE pitch‑bend setting, reassign pitches now.
-  }
-  if ((info->settingIndex == static_cast<uint8_t>(SettingKey::JustIntonationBPMSync)) || (info->settingIndex == static_cast<uint8_t>(SettingKey::DynamicJI))) {
-  resetTuningMIDI(); // If Just Intonation has been adjusted, reset the MIDI tuning.
+
+  // Run any post-change hook tied to this setting.
+  if (info->postChange) {
+    info->postChange();
   }
 }
 /*
@@ -3841,7 +3949,7 @@ void rebootToBootloader();
     To be honest I don't know how to get just a plain text line to show here other than this!
   */
 void fakeButton() {}
-GEMItem menuItemVersion("Firmware 1.2-alpha2", fakeButton);
+GEMItem menuItemVersion("Firmware 1.2-alpha4", fakeButton);
 SelectOptionByte optionByteHardware[] = {
   { "V1.1", HARDWARE_UNKNOWN }, { "V1.1", HARDWARE_V1_1 }, { "V1.2", HARDWARE_V1_2 }
 };
@@ -3859,6 +3967,9 @@ void saveSettingsMenuCallback() {
   sendToLog("Settings manually saved from menu.");
 }
 
+void syncSettingsToRuntime();
+extern bool settingsDirty;
+
 void loadSettingsMenuCallback() {
   // Save the current settings immediately; these become the default on power-on.
   load_settings();
@@ -3868,6 +3979,16 @@ void loadSettingsMenuCallback() {
 
 GEMItem menuItemSaveSettings("Save Settings", saveSettingsMenuCallback);
 GEMItem menuItemLoadSettings("Load Settings", loadSettingsMenuCallback);
+
+void resetDefaultsMenuCallback() {
+  applyFactoryDefaultsToSettings();
+  save_settings();
+  syncSettingsToRuntime();
+  settingsDirty = false;
+  sendToLog("Factory defaults loaded from menu.");
+}
+
+GEMItem menuItemResetDefaults("Reset Defaults", resetDefaultsMenuCallback);
 
 /*
     Tunings, layouts, scales, and keys are defined
@@ -3912,9 +4033,12 @@ GEMItem* menuItemKeys[TUNINGCOUNT];
     The fact that GEM expects pointers and references makes it tricky
     to work with if you are new to C++.
   */
-// SETTINGS STEP 5 - Now add the menu item starting with a callback as below.
+// SETTINGS STEP 4 - Now add the menu item starting with a callback as below.
 PersistentCallbackInfo callbackInfoMPE = {
-  static_cast<uint8_t>(SettingKey::MPEpitchBend), reinterpret_cast<void*>(&MPEpitchBendSemis)
+  static_cast<uint8_t>(SettingKey::MPEpitchBend),
+  reinterpret_cast<void*>(&MPEpitchBendSemis),
+  nullptr,
+  assignPitches
 };
 SelectOptionByte optionByteMPEpitchBend[] = { { "2", 2 }, { "12", 12 }, { "24", 24 }, { "48", 48 }, { "96", 96 } };
 GEMSelect selectMPEpitchBend(sizeof(optionByteMPEpitchBend) / sizeof(SelectOptionByte), optionByteMPEpitchBend);
@@ -3923,14 +4047,45 @@ GEMItem menuItemMPEpitchBend("MPE Bend", MPEpitchBendSemis, selectMPEpitchBend, 
 
 SelectOptionByte optionByteYesOrNo[] = { { "No", 0 }, { "Yes", 1 } };
 GEMSelect selectYesOrNo(sizeof(optionByteYesOrNo) / sizeof(SelectOptionByte), optionByteYesOrNo);
-GEMItem menuItemScaleLock("Scale Lock", scaleLock);
-GEMItem menuItemPercep("Fix Color", perceptual, setLEDcolorCodes);
-GEMItem menuItemShiftColor("ColorByKey", paletteBeginsAtKeyCenter, setLEDcolorCodes);
-GEMItem menuItemWheelAlt("Alt Wheel?", wheelMode, selectYesOrNo);
+PersistentCallbackInfo callbackInfoScaleLock = {
+  static_cast<uint8_t>(SettingKey::ScaleLock),
+  reinterpret_cast<void*>(&scaleLock),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemScaleLock("Scale Lock", scaleLock, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoScaleLock));
+
+PersistentCallbackInfo callbackInfoPercep = {
+  static_cast<uint8_t>(SettingKey::PerceptualColoring),
+  reinterpret_cast<void*>(&perceptual),
+  nullptr,
+  setLEDcolorCodes
+};
+GEMItem menuItemPercep("Fix Color", perceptual, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoPercep));
+
+PersistentCallbackInfo callbackInfoShiftColor = {
+  static_cast<uint8_t>(SettingKey::PaletteCenterOnKey),
+  reinterpret_cast<void*>(&paletteBeginsAtKeyCenter),
+  nullptr,
+  setLEDcolorCodes
+};
+GEMItem menuItemShiftColor("ColorByKey", paletteBeginsAtKeyCenter, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoShiftColor));
+
+PersistentCallbackInfo callbackInfoWheelAlt = {
+  static_cast<uint8_t>(SettingKey::WheelAltMode),
+  reinterpret_cast<void*>(&wheelMode),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemWheelAlt("Alt Wheel?", wheelMode, selectYesOrNo, universalSaveCallback,
+                         reinterpret_cast<void*>(&callbackInfoWheelAlt));
 
 // Create a PersistentCallbackInfo instance for this setting.
 PersistentCallbackInfo callbackInfoAutoSave = {
-  static_cast<uint8_t>(SettingKey::AutoSave), reinterpret_cast<void*>(&autoSave)
+  static_cast<uint8_t>(SettingKey::AutoSave),
+  reinterpret_cast<void*>(&autoSave),
+  nullptr,
+  nullptr
 };
 // (The GEMItem constructor here accepts a linked value, callback, and our callback info.)
 GEMItem menuItemAutoSave("Auto-Save", autoSave, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoAutoSave));
@@ -3941,12 +4096,18 @@ GEMItem menuItemAutoSave("Auto-Save", autoSave, universalSaveCallback, reinterpr
 bool rotaryInvert = (settings[static_cast<uint8_t>(SettingKey::RotaryInvert)] != 0);
 // Create a PersistentCallbackInfo instance for this setting.
 PersistentCallbackInfo callbackInfoRotary = {
-  static_cast<uint8_t>(SettingKey::RotaryInvert), reinterpret_cast<void*>(&rotaryInvert)
+  static_cast<uint8_t>(SettingKey::RotaryInvert),
+  reinterpret_cast<void*>(&rotaryInvert),
+  nullptr,
+  nullptr
 };
 GEMItem menuItemRotary("Invert Encoder", rotaryInvert, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
 
 PersistentCallbackInfo callbackInfoDebug = {
-  static_cast<uint8_t>(SettingKey::Debug), reinterpret_cast<void*>(&debugMessages)
+  static_cast<uint8_t>(SettingKey::Debug),
+  reinterpret_cast<void*>(&debugMessages),
+  nullptr,
+  nullptr
 };
 GEMItem menuItemDebug("Serial Debug", debugMessages, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDebug));
 
@@ -3954,19 +4115,48 @@ GEMItem menuItemDebug("Serial Debug", debugMessages, universalSaveCallback, rein
 
 SelectOptionByte optionByteWheelType[] = { { "Springy", 0 }, { "Sticky", 1 } };
 GEMSelect selectWheelType(sizeof(optionByteWheelType) / sizeof(SelectOptionByte), optionByteWheelType);
-GEMItem menuItemPBBehave("Pitch Bend", pbSticky, selectWheelType);
-GEMItem menuItemModBehave("Mod Wheel", modSticky, selectWheelType);
+PersistentCallbackInfo callbackInfoPBSticky = {
+  static_cast<uint8_t>(SettingKey::PBSticky),
+  reinterpret_cast<void*>(&pbSticky),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemPBBehave("Pitch Bend", pbSticky, selectWheelType, universalSaveCallback,
+                         reinterpret_cast<void*>(&callbackInfoPBSticky));
+
+PersistentCallbackInfo callbackInfoModSticky = {
+  static_cast<uint8_t>(SettingKey::ModSticky),
+  reinterpret_cast<void*>(&modSticky),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemModBehave("Mod Wheel", modSticky, selectWheelType, universalSaveCallback,
+                          reinterpret_cast<void*>(&callbackInfoModSticky));
 
 SelectOptionByte optionBytePlayback[] = { { "Off", SYNTH_OFF }, { "Mono", SYNTH_MONO }, { "Arp'gio", SYNTH_ARPEGGIO }, { "Poly", SYNTH_POLY } };
 GEMSelect selectPlayback(sizeof(optionBytePlayback) / sizeof(SelectOptionByte), optionBytePlayback);
-GEMItem menuItemPlayback("Synth Mode", playbackMode, selectPlayback, resetSynthFreqs);
+PersistentCallbackInfo callbackInfoPlayback = {
+  static_cast<uint8_t>(SettingKey::PlaybackMode),
+  reinterpret_cast<void*>(&playbackMode),
+  nullptr,
+  resetSynthFreqs
+};
+GEMItem menuItemPlayback("Synth Mode", playbackMode, selectPlayback, universalSaveCallback,
+                         reinterpret_cast<void*>(&callbackInfoPlayback));
 
 // Hardware V1.2-only
 SelectOptionByte optionByteAudioD[] = {
   { "Buzzer", AUDIO_PIEZO }, { "Jack", AUDIO_AJACK }, { "Both", AUDIO_BOTH }
 };
 GEMSelect selectAudioD(sizeof(optionByteAudioD) / sizeof(SelectOptionByte), optionByteAudioD);
-GEMItem menuItemAudioD("SynthOutput", audioD, selectAudioD);
+PersistentCallbackInfo callbackInfoAudioDest = {
+  static_cast<uint8_t>(SettingKey::AudioDestination),
+  reinterpret_cast<void*>(&audioD),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemAudioD("SynthOutput", audioD, selectAudioD, universalSaveCallback,
+                       reinterpret_cast<void*>(&callbackInfoAudioDest));
 
 ////////////////////////////////////////////////////////////////
 
@@ -4638,7 +4828,14 @@ SelectOptionByte optionByteRolandMT32[] = {
   { "JungleTune", 128 },
 };
 GEMSelect selectRolandMT32(sizeof(optionByteRolandMT32) / sizeof(SelectOptionByte), optionByteRolandMT32);
-GEMItem menuItemRolandMT32("RolandMT32", programChange, selectRolandMT32, sendProgramChange);
+PersistentCallbackInfo callbackInfoProgramChange = {
+  static_cast<uint8_t>(SettingKey::ProgramChange),
+  reinterpret_cast<void*>(&programChange),
+  nullptr,
+  sendProgramChange
+};
+GEMItem menuItemRolandMT32("RolandMT32", programChange, selectRolandMT32, universalSaveCallback,
+                           reinterpret_cast<void*>(&callbackInfoProgramChange));
 
 // General MIDI 1
 SelectOptionByte optionByteGeneralMidi[] = {
@@ -4788,7 +4985,8 @@ SelectOptionByte optionByteGeneralMidi[] = {
   { "Gunshot", 128 },
 };
 GEMSelect selectGeneralMidi(sizeof(optionByteGeneralMidi) / sizeof(SelectOptionByte), optionByteGeneralMidi);
-GEMItem menuItemGeneralMidi("GeneralMidi", programChange, selectGeneralMidi, sendProgramChange);
+GEMItem menuItemGeneralMidi("GeneralMidi", programChange, selectGeneralMidi, universalSaveCallback,
+                            reinterpret_cast<void*>(&callbackInfoProgramChange));
 
 
 // doing this long-hand because the STRUCT has problems accepting string conversions of numbers for some reason
@@ -4802,86 +5000,209 @@ GEMItem menuItemTransposeSteps("Transpose", transposeSteps, selectTransposeSteps
 // MIDI Channel selection
 SelectOptionByte optionByteMIDIChannel[] = { { "   1", 1 }, { "   2", 2 }, { "   3", 3 }, { "   4", 4 }, { "   5", 5 }, { "   6", 6 }, { "   7", 7 }, { "   8", 8 }, { "   9", 9 }, { "   10", 10 }, { "   11", 11 }, { "   12", 12 }, { "   13", 13 }, { "   14", 14 }, { "   15", 15 }, { "   16", 16 } };
 GEMSelect selectMIDIchannel(16, optionByteMIDIChannel);
-GEMItem menuItemSelectMIDIChannel("MIDI Channel", defaultMidiChannel, selectMIDIchannel);
+PersistentCallbackInfo callbackInfoDefaultMIDIChannel = {
+  static_cast<uint8_t>(SettingKey::DefaultMIDIChannel),
+  reinterpret_cast<void*>(&defaultMidiChannel),
+  nullptr,
+  resetTuningMIDI
+};
+GEMItem menuItemSelectMIDIChannel("MIDI Channel", defaultMidiChannel, selectMIDIchannel, universalSaveCallback,
+                                  reinterpret_cast<void*>(&callbackInfoDefaultMIDIChannel));
 
 // MIDI force MPE option toggle
-GEMItem menuItemToggleForceMPEChannels("Force MPE", forceEnableMPE, resetTuningMIDI);
+PersistentCallbackInfo callbackInfoForceMPE = {
+  static_cast<uint8_t>(SettingKey::ForceMPE),
+  reinterpret_cast<void*>(&forceEnableMPE),
+  nullptr,
+  resetTuningMIDI
+};
+GEMItem menuItemToggleForceMPEChannels("Force MPE", forceEnableMPE, universalSaveCallback,
+                                       reinterpret_cast<void*>(&callbackInfoForceMPE));
 
 // Toggle additional MPE messages (CC74 + Channel Pressure)
-GEMItem menuItemToggleExtraMPE("Extra MPE", extraMPE);
+PersistentCallbackInfo callbackInfoExtraMPE = {
+  static_cast<uint8_t>(SettingKey::ExtraMPE),
+  reinterpret_cast<void*>(&extraMPE),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemToggleExtraMPE("Extra MPE", extraMPE, universalSaveCallback,
+                               reinterpret_cast<void*>(&callbackInfoExtraMPE));
 
 // MIDI Channel selection
 SelectOptionByte optionByteCC74value[] = {
   { "   0", 0 }, { "   1", 1 }, { "   2", 2 }, { "   3", 3 }, { "   4", 4 }, { "   5", 5 }, { "   6", 6 }, { "   7", 7 }, { "   8", 8 }, { "   9", 9 }, { "  10", 10 }, { "  11", 11 }, { "  12", 12 }, { "  13", 13 }, { "  14", 14 }, { "  15", 15 }, { "  16", 16 }, { "  17", 17 }, { "  18", 18 }, { "  19", 19 }, { "  20", 20 }, { "  21", 21 }, { "  22", 22 }, { "  23", 23 }, { "  24", 24 }, { "  25", 25 }, { "  26", 26 }, { "  27", 27 }, { "  28", 28 }, { "  29", 29 }, { "  30", 30 }, { "  31", 31 }, { "  32", 32 }, { "  33", 33 }, { "  34", 34 }, { "  35", 35 }, { "  36", 36 }, { "  37", 37 }, { "  38", 38 }, { "  39", 39 }, { "  40", 40 }, { "  41", 41 }, { "  42", 42 }, { "  43", 43 }, { "  44", 44 }, { "  45", 45 }, { "  46", 46 }, { "  47", 47 }, { "  48", 48 }, { "  49", 49 }, { "  50", 50 }, { "  51", 51 }, { "  52", 52 }, { "  53", 53 }, { "  54", 54 }, { "  55", 55 }, { "  56", 56 }, { "  57", 57 }, { "  58", 58 }, { "  59", 59 }, { "  60", 60 }, { "  61", 61 }, { "  62", 62 }, { "  63", 63 }, { "  64", 64 }, { "  65", 65 }, { "  66", 66 }, { "  67", 67 }, { "  68", 68 }, { "  69", 69 }, { "  70", 70 }, { "  71", 71 }, { "  72", 72 }, { "  73", 73 }, { "  74", 74 }, { "  75", 75 }, { "  76", 76 }, { "  77", 77 }, { "  78", 78 }, { "  79", 79 }, { "  80", 80 }, { "  81", 81 }, { "  82", 82 }, { "  83", 83 }, { "  84", 84 }, { "  85", 85 }, { "  86", 86 }, { "  87", 87 }, { "  88", 88 }, { "  89", 89 }, { "  90", 90 }, { "  91", 91 }, { "  92", 92 }, { "  93", 93 }, { "  94", 94 }, { "  95", 95 }, { "  96", 96 }, { "  97", 97 }, { "  98", 98 }, { "  99", 99 }, { " 100", 100 }, { " 101", 101 }, { " 102", 102 }, { " 103", 103 }, { " 104", 104 }, { " 105", 105 }, { " 106", 106 }, { " 107", 107 }, { " 108", 108 }, { " 109", 109 }, { " 110", 110 }, { " 111", 111 }, { " 112", 112 }, { " 113", 113 }, { " 114", 114 }, { " 115", 115 }, { " 116", 116 }, { " 117", 117 }, { " 118", 118 }, { " 119", 119 }, { " 120", 120 }, { " 121", 121 }, { " 122", 122 }, { " 123", 123 }, { " 124", 124 }, { " 125", 125 }, { " 126", 126 }, { " 127", 127 }
 };
 GEMSelect selectCC74value(128, optionByteCC74value);
-GEMItem menuItemSelectCC74value("CC 74 Value", CC74value, selectCC74value);
+PersistentCallbackInfo callbackInfoCC74 = {
+  static_cast<uint8_t>(SettingKey::CC74Value),
+  reinterpret_cast<void*>(&CC74value),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemSelectCC74value("CC 74 Value", CC74value, selectCC74value, universalSaveCallback,
+                                reinterpret_cast<void*>(&callbackInfoCC74));
 
 // Layout rotation selection
 SelectOptionByte optionByteLayoutRotation[] = { { "0 Deg", 0 }, { "60 Deg", 1 }, { "120 Deg", 2 }, { "180 Deg", 3 }, { "240 Deg", 4 }, { "300 Deg", 5 } };
 GEMSelect selectLayoutRotation(6, optionByteLayoutRotation);
-GEMItem menuItemSelectLayoutRotation("Rotate: ", layoutRotation, selectLayoutRotation, updateLayoutAndRotate);
+PersistentCallbackInfo callbackInfoLayoutRotation = {
+  static_cast<uint8_t>(SettingKey::LayoutRotation),
+  reinterpret_cast<void*>(&layoutRotation),
+  nullptr,
+  updateLayoutAndRotate
+};
+GEMItem menuItemSelectLayoutRotation("Rotate: ", layoutRotation, selectLayoutRotation, universalSaveCallback,
+                                     reinterpret_cast<void*>(&callbackInfoLayoutRotation));
 
 // Layout mirroring toggles
-GEMItem mirrorLeftRightGEMItem("Mirror Ver.", mirrorLeftRight, updateLayoutAndRotate);
-GEMItem mirrorUpDownGEMItem("Mirror Hor.", mirrorUpDown, updateLayoutAndRotate);
+PersistentCallbackInfo callbackInfoMirrorLR = {
+  static_cast<uint8_t>(SettingKey::MirrorLeftRight),
+  reinterpret_cast<void*>(&mirrorLeftRight),
+  nullptr,
+  updateLayoutAndRotate
+};
+GEMItem mirrorLeftRightGEMItem("Mirror Ver.", mirrorLeftRight, universalSaveCallback,
+                                reinterpret_cast<void*>(&callbackInfoMirrorLR));
+
+PersistentCallbackInfo callbackInfoMirrorUD = {
+  static_cast<uint8_t>(SettingKey::MirrorUpDown),
+  reinterpret_cast<void*>(&mirrorUpDown),
+  nullptr,
+  updateLayoutAndRotate
+};
+GEMItem mirrorUpDownGEMItem("Mirror Hor.", mirrorUpDown, universalSaveCallback,
+                             reinterpret_cast<void*>(&callbackInfoMirrorUD));
 
 // Dynamic just intonation toggles and parameters
 PersistentCallbackInfo callbackInfoJustIntonationBPMSync = {
-  static_cast<uint8_t>(SettingKey::JustIntonationBPMSync), reinterpret_cast<void*>(&useJustIntonationBPM)
+  static_cast<uint8_t>(SettingKey::JustIntonationBPMSync),
+  reinterpret_cast<void*>(&useJustIntonationBPM),
+  nullptr,
+  resetTuningMIDI
 };
-GEMItem menuItemToggleJI_BPM("JI BPM Sync", useJustIntonationBPM, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoJustIntonationBPMSync));
+GEMItem menuItemToggleJI_BPM("JI BPM Sync", useJustIntonationBPM, universalSaveCallback,
+                              reinterpret_cast<void*>(&callbackInfoJustIntonationBPMSync));
 
 PersistentCallbackInfo callbackInfoBeatBPM = {
-  static_cast<uint8_t>(SettingKey::JustIntonationBPMSync), reinterpret_cast<void*>(&useJustIntonationBPM)
+  static_cast<uint8_t>(SettingKey::BeatBPM),
+  reinterpret_cast<void*>(&justIntonationBPM),
+  nullptr,
+  resetTuningMIDI
 };
-GEMItem menuItemSetJI_BPM("Beat BPM", justIntonationBPM, selectFrequencyOfJI, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoMPE));
+GEMItem menuItemSetJI_BPM("Beat BPM", justIntonationBPM, selectFrequencyOfJI, universalSaveCallback,
+                          reinterpret_cast<void*>(&callbackInfoBeatBPM));
 
 PersistentCallbackInfo callbackInfoBPM_Mult = {
-  static_cast<uint8_t>(SettingKey::JustIntonationBPMSync), reinterpret_cast<void*>(&justIntonationBPM_Multiplier)
+  static_cast<uint8_t>(SettingKey::BPMMultiplier),
+  reinterpret_cast<void*>(&justIntonationBPM_Multiplier),
+  nullptr,
+  resetTuningMIDI
 };
-GEMItem menuItemSetJI_BPM_Multiplier("BPM Mult.", justIntonationBPM_Multiplier, selectBPM_MultiplierOfJI, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoBPM_Mult));
+GEMItem menuItemSetJI_BPM_Multiplier("BPM Mult.", justIntonationBPM_Multiplier, selectBPM_MultiplierOfJI, universalSaveCallback,
+                                     reinterpret_cast<void*>(&callbackInfoBPM_Mult));
 
 PersistentCallbackInfo callbackInfoDynamicJI = {
-  static_cast<uint8_t>(SettingKey::DynamicJI), reinterpret_cast<void*>(&useDynamicJustIntonation)
+  static_cast<uint8_t>(SettingKey::DynamicJI),
+  reinterpret_cast<void*>(&useDynamicJustIntonation),
+  nullptr,
+  resetTuningMIDI
 };
-GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDynamicJI));
+GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universalSaveCallback,
+                                reinterpret_cast<void*>(&callbackInfoDynamicJI));
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
 SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Tiered", TIERED_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE } };
 GEMSelect selectColor(sizeof(optionByteColor) / sizeof(SelectOptionByte), optionByteColor);
-GEMItem menuItemColor("Color Mode", colorMode, selectColor, setLEDcolorCodes);
+PersistentCallbackInfo callbackInfoColorMode = {
+  static_cast<uint8_t>(SettingKey::ColorMode),
+  reinterpret_cast<void*>(&colorMode),
+  nullptr,
+  setLEDcolorCodes
+};
+GEMItem menuItemColor("Color Mode", colorMode, selectColor, universalSaveCallback,
+                      reinterpret_cast<void*>(&callbackInfoColorMode));
 
 SelectOptionByte optionByteAnimate[] = { { "None", ANIMATE_NONE }, { "Octave", ANIMATE_OCTAVE }, { "By Note", ANIMATE_BY_NOTE }, { "Star", ANIMATE_STAR }, { "Splash", ANIMATE_SPLASH }, { "Orbit", ANIMATE_ORBIT }, { "Beams", ANIMATE_BEAMS }, { "rSplash", ANIMATE_SPLASH_REVERSE }, { "rStar", ANIMATE_STAR_REVERSE } };
 GEMSelect selectAnimate(sizeof(optionByteAnimate) / sizeof(SelectOptionByte), optionByteAnimate);
-GEMItem menuItemAnimate("Animation", animationType, selectAnimate);
+PersistentCallbackInfo callbackInfoAnimation = {
+  static_cast<uint8_t>(SettingKey::AnimationType),
+  reinterpret_cast<void*>(&animationType),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemAnimate("Animation", animationType, selectAnimate, universalSaveCallback,
+                        reinterpret_cast<void*>(&callbackInfoAnimation));
 
 SelectOptionByte optionByteBright[] = { { "Off", BRIGHT_OFF }, { "Dimmer", BRIGHT_DIMMER }, { "Dim", BRIGHT_DIM }, { "Low", BRIGHT_LOW }, { "Normal", BRIGHT_MID }, { "High", BRIGHT_HIGH }, { "THE SUN", BRIGHT_MAX } };
 GEMSelect selectBright(sizeof(optionByteBright) / sizeof(SelectOptionByte), optionByteBright);
-GEMItem menuItemBright("Brightness", globalBrightness, selectBright, setLEDcolorCodes);
+PersistentCallbackInfo callbackInfoBrightness = {
+  static_cast<uint8_t>(SettingKey::GlobalBrightness),
+  reinterpret_cast<void*>(&globalBrightness),
+  nullptr,
+  setLEDcolorCodes
+};
+GEMItem menuItemBright("Brightness", globalBrightness, selectBright, universalSaveCallback,
+                       reinterpret_cast<void*>(&callbackInfoBrightness));
 
 SelectOptionByte optionByteWaveform[] = { { "Hybrid", WAVEFORM_HYBRID }, { "Square", WAVEFORM_SQUARE }, { "Saw", WAVEFORM_SAW }, { "Triangl", WAVEFORM_TRIANGLE }, { "Sine", WAVEFORM_SINE }, { "Strings", WAVEFORM_STRINGS }, { "Clrinet", WAVEFORM_CLARINET } };
 GEMSelect selectWaveform(sizeof(optionByteWaveform) / sizeof(SelectOptionByte), optionByteWaveform);
-GEMItem menuItemWaveform("Waveform", currWave, selectWaveform, resetSynthFreqs);
+PersistentCallbackInfo callbackInfoWaveform = {
+  static_cast<uint8_t>(SettingKey::Waveform),
+  reinterpret_cast<void*>(&currWave),
+  nullptr,
+  resetSynthFreqs
+};
+GEMItem menuItemWaveform("Waveform", currWave, selectWaveform, universalSaveCallback,
+                         reinterpret_cast<void*>(&callbackInfoWaveform));
 
 SelectOptionInt optionIntModWheel[] = { { "too slo", 1 }, { "Turtle", 2 }, { "Slow", 4 }, { "Medium", 8 }, { "Fast", 16 }, { "Cheetah", 32 }, { "Instant", 127 } };
 GEMSelect selectModSpeed(sizeof(optionIntModWheel) / sizeof(SelectOptionInt), optionIntModWheel);
-GEMItem menuItemModSpeed("Mod Wheel", modWheelSpeed, selectModSpeed);
-GEMItem menuItemVelSpeed("Vel Wheel", velWheelSpeed, selectModSpeed);
+PersistentCallbackInfo callbackInfoModSpeed = {
+  static_cast<uint8_t>(SettingKey::ModWheelSpeed),
+  reinterpret_cast<void*>(&modWheelSpeed),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemModSpeed("Mod Wheel", modWheelSpeed, selectModSpeed, universalSaveCallback,
+                         reinterpret_cast<void*>(&callbackInfoModSpeed));
+
+PersistentCallbackInfo callbackInfoVelSpeed = {
+  static_cast<uint8_t>(SettingKey::VelWheelSpeed),
+  reinterpret_cast<void*>(&velWheelSpeed),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemVelSpeed("Vel Wheel", velWheelSpeed, selectModSpeed, universalSaveCallback,
+                         reinterpret_cast<void*>(&callbackInfoVelSpeed));
 
 SelectOptionInt optionIntPBWheel[] = { { "too slo", 128 }, { "Turtle", 256 }, { "Slow", 512 }, { "Medium", 1024 }, { "Fast", 2048 }, { "Cheetah", 4096 }, { "Instant", 16384 } };
 GEMSelect selectPBSpeed(sizeof(optionIntPBWheel) / sizeof(SelectOptionInt), optionIntPBWheel);
-GEMItem menuItemPBSpeed("PB Wheel", pbWheelSpeed, selectPBSpeed);
+PersistentCallbackInfo callbackInfoPBSpeed = {
+  static_cast<uint8_t>(SettingKey::PBWheelSpeed),
+  reinterpret_cast<void*>(&pbWheelSpeed),
+  encodePbWheelSpeed,
+  nullptr
+};
+GEMItem menuItemPBSpeed("PB Wheel", pbWheelSpeed, selectPBSpeed, universalSaveCallback,
+                        reinterpret_cast<void*>(&callbackInfoPBSpeed));
 
 // --------------------------------------------------------
 // SETTINGS STEP 3 - Callback to sync settings variables on power-up
 // --------------------------------------------------------
 void syncSettingsToRuntime() {
-  debugMessages = (settings[static_cast<uint8_t>(SettingKey::Debug)] !=0);            // do it this way for bools...
+  debugMessages = (settings[static_cast<uint8_t>(SettingKey::Debug)] != 0);  // do it this way for bools...
   rotaryInvert = (settings[static_cast<uint8_t>(SettingKey::RotaryInvert)] != 0);
-  autoSave = (settings[static_cast<uint8_t>(SettingKey::AutoSave)] !=0);
-  MPEpitchBendSemis = settings[static_cast<uint8_t>(SettingKey::MPEpitchBend)];       // ... and this way for bytes...
+  autoSave = (settings[static_cast<uint8_t>(SettingKey::AutoSave)] != 0);
+  MPEpitchBendSemis = settings[static_cast<uint8_t>(SettingKey::MPEpitchBend)];  // ... and this way for bytes...
+  forceEnableMPE = (settings[static_cast<uint8_t>(SettingKey::ForceMPE)] != 0);
+  extraMPE = (settings[static_cast<uint8_t>(SettingKey::ExtraMPE)] != 0);
+  defaultMidiChannel = settings[static_cast<uint8_t>(SettingKey::DefaultMIDIChannel)];
+  if (defaultMidiChannel < 1 || defaultMidiChannel > 16) {
+    defaultMidiChannel = 1;
+  }
+  CC74value = settings[static_cast<uint8_t>(SettingKey::CC74Value)];
   current.tuningIndex = settings[static_cast<uint8_t>(SettingKey::CurrentTuning)];
   current.layoutIndex = settings[static_cast<uint8_t>(SettingKey::CurrentLayout)];
   current.scaleIndex = settings[static_cast<uint8_t>(SettingKey::CurrentScale)];
@@ -4894,12 +5215,41 @@ void syncSettingsToRuntime() {
     uint8_t raw = settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)];
     current.keyStepsFromA = int(raw) - 128;
   }
+  layoutRotation = settings[static_cast<uint8_t>(SettingKey::LayoutRotation)] % 6;
+  mirrorLeftRight = (settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)] != 0);
+  mirrorUpDown = (settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)] != 0);
+  scaleLock = (settings[static_cast<uint8_t>(SettingKey::ScaleLock)] != 0);
+  perceptual = (settings[static_cast<uint8_t>(SettingKey::PerceptualColoring)] != 0);
+  paletteBeginsAtKeyCenter = (settings[static_cast<uint8_t>(SettingKey::PaletteCenterOnKey)] != 0);
+  wheelMode = settings[static_cast<uint8_t>(SettingKey::WheelAltMode)] != 0;
+  pbSticky = settings[static_cast<uint8_t>(SettingKey::PBSticky)] != 0;
+  modSticky = settings[static_cast<uint8_t>(SettingKey::ModSticky)] != 0;
+
+  {
+    uint8_t exponent = settings[static_cast<uint8_t>(SettingKey::PBWheelSpeed)];
+    if (exponent < 7) exponent = 7;
+    if (exponent > 14) exponent = 14;
+    pbWheelSpeed = 1 << exponent;
+  }
+  modWheelSpeed = settings[static_cast<uint8_t>(SettingKey::ModWheelSpeed)];
+  if (modWheelSpeed <= 0) modWheelSpeed = 1;
+  velWheelSpeed = settings[static_cast<uint8_t>(SettingKey::VelWheelSpeed)];
+  if (velWheelSpeed <= 0) velWheelSpeed = 1;
+
+  playbackMode = settings[static_cast<uint8_t>(SettingKey::PlaybackMode)];
+  currWave = settings[static_cast<uint8_t>(SettingKey::Waveform)];
+  audioD = settings[static_cast<uint8_t>(SettingKey::AudioDestination)];
+  colorMode = settings[static_cast<uint8_t>(SettingKey::ColorMode)];
+  globalBrightness = settings[static_cast<uint8_t>(SettingKey::GlobalBrightness)];
+  animationType = settings[static_cast<uint8_t>(SettingKey::AnimationType)];
+  programChange = settings[static_cast<uint8_t>(SettingKey::ProgramChange)];
+
   useJustIntonationBPM = (settings[static_cast<uint8_t>(SettingKey::JustIntonationBPMSync)] !=0);
   justIntonationBPM = settings[static_cast<uint8_t>(SettingKey::BeatBPM)];
   justIntonationBPM_Multiplier = settings[static_cast<uint8_t>(SettingKey::BPMMultiplier)];
   useDynamicJustIntonation = (settings[static_cast<uint8_t>(SettingKey::DynamicJI)] !=0);
 
-  // Update other runtime variables similarly…
+  setLEDcolorCodes();
 
   // Now *apply* them to the engine/UI:
   assignPitches();                // for MPE bend
@@ -4909,6 +5259,9 @@ void syncSettingsToRuntime() {
   updateLayoutAndRotate();
   resetTuningMIDI();
   resetSynthFreqs();
+  if (programChange > 0) {
+    sendProgramChange();
+  }
   menuHome();                    // Refresh main screen to match rotation
 }
 
@@ -5172,6 +5525,7 @@ void setupMenu() {
   menuPageAdvanced.addMenuItem(menuItemAutoSave);
   menuPageAdvanced.addMenuItem(menuItemSaveSettings);
   menuPageAdvanced.addMenuItem(menuItemLoadSettings);
+  menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
   menuPageAdvanced.addMenuItem(menuItemDebug);
   menuHome();
@@ -5365,10 +5719,11 @@ void dealWithRotary() {
 void setupHardware() {
   if (Hardware_Version == HARDWARE_V1_2) {
     midiD = MIDID_USB | MIDID_SER;
-    audioD = AUDIO_PIEZO | AUDIO_AJACK;
-    menuPageSynth.addMenuItem(menuItemAudioD, 2);
-    globalBrightness = BRIGHT_DIM;
-    setLEDcolorCodes();
+    if (!audioMenuItemInserted) {
+      menuPageSynth.addMenuItem(menuItemAudioD, 2);
+      audioMenuItemInserted = true;
+      menuHome();
+    }
   }
 }
 
@@ -5401,11 +5756,13 @@ void setup() {
   Wire.setSCL(SCLPIN);
   setupPins();
   setupGrid();
+  detectHardwareVersion();
   applyLayout();
   setupLEDs();
   setupGFX();
   setupRotary();
   setupMenu();
+  setupHardware();
   load_settings();
   syncSettingsToRuntime();
 }
