@@ -2055,32 +2055,30 @@ float stepsToMIDI(int16_t stepsFromA) {  // return the MIDI pitch associated
   return freqToMIDI(CONCERT_A_HZ) + ((float)stepsFromA * (float)current.tuning().stepSize / 100.0);
 }
 
+// Do the same thing on each defined MIDI interface. This reduces code
+// duplication. Search for withMIDI to see how it's used.
+template <class F>
+inline void withMIDI(F&& f) {
+  if (midiD & MIDID_USB) f(UMIDI);
+  if (midiD & MIDID_SER) f(SMIDI);
+}
+
 void setPitchBendRange(byte Ch, byte semitones) {
-  if (midiD & MIDID_USB) {
-    UMIDI.beginRpn(0, Ch);
-    UMIDI.sendRpnValue(semitones << 7, Ch);
-    UMIDI.endRpn(Ch);
-  }
-  if (midiD & MIDID_SER) {
-    SMIDI.beginRpn(0, Ch);
-    SMIDI.sendRpnValue(semitones << 7, Ch);
-    SMIDI.endRpn(Ch);
-  }
+  withMIDI([&](auto& M) {
+    M.beginRpn(0, Ch);
+    M.sendRpnValue(semitones << 7, Ch);
+    M.endRpn(Ch);
+  });
   sendToLog(
     "set pitch bend range on ch " + std::to_string(Ch) + " to be " + std::to_string(semitones) + " semitones");
 }
 
 void setMPEzone(byte masterCh, byte sizeOfZone) {
-  if (midiD & MIDID_USB) {
-    UMIDI.beginRpn(6, masterCh);
-    UMIDI.sendRpnValue(sizeOfZone << 7, masterCh);
-    UMIDI.endRpn(masterCh);
-  }
-  if (midiD & MIDID_SER) {
-    SMIDI.beginRpn(6, masterCh);
-    SMIDI.sendRpnValue(sizeOfZone << 7, masterCh);
-    SMIDI.endRpn(masterCh);
-  }
+  withMIDI([&](auto& M) {
+    M.beginRpn(6, masterCh);
+    M.sendRpnValue(sizeOfZone << 7, masterCh);
+    M.endRpn(masterCh);
+  });
   sendToLog(
     "tried sending MIDI msg to set MPE zone, master ch " + std::to_string(masterCh) + ", zone of this size: " + std::to_string(sizeOfZone));
 }
@@ -2150,8 +2148,7 @@ void resetTuningMIDI() {
   }
   // Reset controllers and ensure every channel uses the appropriate pitch-bend range.
   for (byte i = 1; i <= 16; i++) {
-    if (midiD & MIDID_USB) UMIDI.sendControlChange(123, 0, i);
-    if (midiD & MIDID_SER) SMIDI.sendControlChange(123, 0, i);
+    withMIDI([&](auto& M) { M.sendControlChange(123, 0, i); });
     byte range = 2;
     if (mpeEnabled && i >= mpeLowestChannel && i <= mpeHighestChannel) {
       range = MPEpitchBendSemis;
@@ -2174,15 +2171,13 @@ byte primaryMIDIChannel() {
 
 void sendMIDImodulationToCh1() {
   byte targetChannel = primaryMIDIChannel();
-  if (midiD & MIDID_USB) UMIDI.sendControlChange(1, modWheel.curValue, targetChannel);
-  if (midiD & MIDID_SER) SMIDI.sendControlChange(1, modWheel.curValue, targetChannel);
+  withMIDI([&](auto& M) { M.sendControlChange(1, modWheel.curValue, targetChannel); });
   sendToLog("sent mod value " + std::to_string(modWheel.curValue) + " to ch " + std::to_string(targetChannel));
 }
 
 void sendMIDIpitchBendToCh1() {
   byte targetChannel = primaryMIDIChannel();
-  if (midiD & MIDID_USB) UMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
-  if (midiD & MIDID_SER) SMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
+  withMIDI([&](auto& M) { M.sendPitchBend(pbWheel.curValue, targetChannel); });
   sendToLog("sent pb wheel value " + std::to_string(pbWheel.curValue) + " to ch " + std::to_string(targetChannel));
 }
 
@@ -2810,18 +2805,16 @@ void tryMIDInoteOn(byte x) {
       // First, send the pitch bend (if applicable)
       if (MPEpitchBendsNeeded != 1) {
         pitchBendValue = combinedPitchBend(x);
-        if (midiD & MIDID_USB) UMIDI.sendPitchBend(pitchBendValue, h[x].MIDIch);  // ch 1-16
-        if (midiD & MIDID_SER) SMIDI.sendPitchBend(pitchBendValue, h[x].MIDIch);  // ch 1-16
-        if (extraMPE) {                                                         // if the extra MPE messages are enabled
-          if (midiD & MIDID_USB) UMIDI.sendAfterTouch(velWheel.curValue, h[x].MIDIch);  // Channel Pressure
-          if (midiD & MIDID_SER) SMIDI.sendAfterTouch(velWheel.curValue, h[x].MIDIch);  // Channel Pressure
-          if (midiD & MIDID_USB) UMIDI.sendControlChange(74, CC74value, h[x].MIDIch);   // CC74 (Timbre)
-          if (midiD & MIDID_SER) SMIDI.sendControlChange(74, CC74value, h[x].MIDIch);   // CC74 (Timbre)
+        withMIDI([&](auto& M) { M.sendPitchBend(pitchBendValue, h[x].MIDIch); });  // ch 1-16
+        if (extraMPE) { // if the extra MPE messages are enabled
+          withMIDI([&](auto& M) {
+            M.sendAfterTouch(velWheel.curValue, h[x].MIDIch);  // Channel Pressure
+            M.sendControlChange(74, CC74value, h[x].MIDIch);   // CC74 (Timbre)
+          });
         }
       }
       // Then, send the note-on message
-      if (midiD & MIDID_USB) UMIDI.sendNoteOn(h[x].note, velWheel.curValue, h[x].MIDIch);  // ch 1-16
-      if (midiD & MIDID_SER) SMIDI.sendNoteOn(h[x].note, velWheel.curValue, h[x].MIDIch);  // ch 1-16
+      withMIDI([&](auto& M) { M.sendNoteOn(h[x].note, velWheel.curValue, h[x].MIDIch); });  // ch 1-16
 
       sendToLog(
         "Sent MIDI pitch bend: " + std::to_string(pitchBendValue) + " to ch " + std::to_string(h[x].MIDIch));
@@ -2835,19 +2828,18 @@ void tryMIDInoteOff(byte x) {
   // this gets called on any non-command hex
   // that is not scale-locked.
   if (h[x].MIDIch) {  // but just in case, check
-    if (midiD & MIDID_USB) UMIDI.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch);
-    if (midiD & MIDID_SER) SMIDI.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch);
+    withMIDI([&](auto& M) { M.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch); });
     pressedKeyIDs.pop_back();  // Dynamic JI pressed key tracking
     h[x].jiRetune = 0;
     h[x].jiFrequencyMultiplier = 1.0f;
     sendToLog(
       "sent note off: " + std::to_string(h[x].note) + " vel " + std::to_string(velWheel.curValue) + " ch " + std::to_string(h[x].MIDIch));
     if (mpeChannelQueueActive && h[x].MIDIch >= mpeLowestChannel && h[x].MIDIch <= mpeHighestChannel) {
-      if (extraMPE) {                                                                //if the extra MPE messages are enabled
-        if (midiD & MIDID_USB) UMIDI.sendAfterTouch(0, h[x].MIDIch);                 // Channel Pressure
-        if (midiD & MIDID_SER) SMIDI.sendAfterTouch(0, h[x].MIDIch);                 // Channel Pressure
-        if (midiD & MIDID_USB) UMIDI.sendControlChange(74, CC74value, h[x].MIDIch);  // CC74 (Timbre)
-        if (midiD & MIDID_SER) SMIDI.sendControlChange(74, CC74value, h[x].MIDIch);  // CC74 (Timbre)
+      if (extraMPE) { //if the extra MPE messages are enabled
+        withMIDI([&](auto& M) {
+          M.sendAfterTouch(0, h[x].MIDIch);                 // Channel Pressure
+          M.sendControlChange(74, CC74value, h[x].MIDIch);  // CC74 (Timbre)
+        });
       }
       releaseMPEChannel(h[x].MIDIch);
     }
@@ -3695,15 +3687,13 @@ void sendProgramChange() {
     return;  // 0 indicates "no program" selected yet.
   }
   byte targetChannel = primaryMIDIChannel();
-  if (midiD & MIDID_USB) UMIDI.sendProgramChange(programChange - 1, targetChannel);
-  if (midiD & MIDID_SER) SMIDI.sendProgramChange(programChange - 1, targetChannel);
+  withMIDI([&](auto& M) { M.sendProgramChange(programChange - 1, targetChannel); });
 }
 
 void updateSynthWithNewFreqs() {
   recomputePitchBendFactor();
   byte targetChannel = primaryMIDIChannel();
-  if (midiD & MIDID_USB) UMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
-  if (midiD & MIDID_SER) SMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
+  withMIDI([&](auto& M) { M.sendPitchBend(pbWheel.curValue, targetChannel); });
   for (byte i = 0; i < BTN_COUNT; i++) {
     if (!(h[i].isCmd)) {
       if (h[i].synthCh) {
@@ -3860,14 +3850,10 @@ void panicStopOutput() {
   sendToLog("Panic: stopping all MIDI and synth output.");
 
   for (byte channel = 1; channel <= 16; ++channel) {
-    if (midiD & MIDID_USB) {
-      UMIDI.sendControlChange(120, 0, channel);
-      UMIDI.sendControlChange(123, 0, channel);
-    }
-    if (midiD & MIDID_SER) {
-      SMIDI.sendControlChange(120, 0, channel);
-      SMIDI.sendControlChange(123, 0, channel);
-    }
+    withMIDI([&](auto& M) {
+      M.sendControlChange(120, 0, channel);
+      M.sendControlChange(123, 0, channel);
+    });
   }
 
   for (byte i = 0; i < BTN_COUNT; ++i) {
@@ -4122,11 +4108,11 @@ void applyExternalMidiToHex(byte midiNote, bool noteOn) {
 }
 
 void processIncomingMIDI() {
-  if (midiD & MIDID_USB) {
-    while (UMIDI.read()) {
-      const auto type = UMIDI.getType();
-      const byte n    = UMIDI.getData1();  // note
-      const byte v    = UMIDI.getData2();  // velocity
+  withMIDI([&](auto& M) {
+    while (M.read()) {
+      const auto type = M.getType();
+      const byte n    = M.getData1();  // note
+      const byte v    = M.getData2();  // velocity
 
       if (type == MIDI_NAMESPACE::NoteOn) {
         // treat NoteOn vel==0 as NoteOff
@@ -4136,21 +4122,7 @@ void processIncomingMIDI() {
         applyExternalMidiToHex(n, false);
       }
     }
-  }
-  if (midiD & MIDID_SER) {
-    while (SMIDI.read()) {
-      const auto type = SMIDI.getType();
-      const byte n    = SMIDI.getData1();
-      const byte v    = SMIDI.getData2();
-
-      if (type == MIDI_NAMESPACE::NoteOn) {
-        applyExternalMidiToHex(n, v != 0);
-      } else if (type == MIDI_NAMESPACE::NoteOff
-                 || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
-        applyExternalMidiToHex(n, false);
-      }
-    }
-  }
+  });
 }
 
 void animateLEDs() {
@@ -4822,7 +4794,7 @@ void rebootToBootloader();
     These GEMItems are read-only display items.
     They do not change any variable or run any procedure.
   */
-GEMItem menuItemVersion("Firmware 1.2.0");
+GEMItem menuItemVersion("Firmware 1.2.0+q1");
 SelectOptionByte optionByteHardware[] = {
   { "V1.1", HARDWARE_UNKNOWN }, { "V1.1", HARDWARE_V1_1 }, { "V1.2", HARDWARE_V1_2 }
 };
