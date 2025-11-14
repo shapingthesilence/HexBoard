@@ -1420,6 +1420,15 @@ wheelDef velWheel = { &wheelMode, &velSticky,
 
 bool toggleWheel = 0;  // 0 for mod, 1 for pb
 
+// Delegate control to an external program; just send note events representing raw
+// button pushes and accept SysEx to control light colors.
+bool delegatedControl = false;
+uint32_t delegatedColors[LED_COUNT];
+// Define some SysEx codes for internal use.
+#define SYSEX_DELEGATED_ENTER 1
+#define SYSEX_DELEGATED_EXIT 2
+#define SYSEX_LED 3
+
 void setupPins() {
   multiplexerMask = 0;
   for (byte p = 0; p < sizeof(mPin); p++) {
@@ -1943,13 +1952,19 @@ void setupLEDs() {
   sendToLog("LEDs started...");
 }
 void lightUpLEDs() {
-  for (byte i = 0; i < LED_COUNT; i++) {
-    if (!(h[i].isCmd)) {
-      strip.setPixelColor(i, applyNotePixelColor(i));
+  if (delegatedControl) {
+    for (byte i = 0; i < LED_COUNT; i++) {
+      strip.setPixelColor(i, delegatedColors[i]);
     }
+  } else {
+    for (byte i = 0; i < LED_COUNT; i++) {
+      if (!(h[i].isCmd)) {
+        strip.setPixelColor(i, applyNotePixelColor(i));
+      }
+    }
+    resetVelocityLEDs();
+    resetWheelLEDs();
   }
-  resetVelocityLEDs();
-  resetWheelLEDs();
   strip.show();
 }
 
@@ -2055,32 +2070,30 @@ float stepsToMIDI(int16_t stepsFromA) {  // return the MIDI pitch associated
   return freqToMIDI(CONCERT_A_HZ) + ((float)stepsFromA * (float)current.tuning().stepSize / 100.0);
 }
 
+// Do the same thing on each defined MIDI interface. This reduces code
+// duplication. Search for withMIDI to see how it's used.
+template <class F>
+inline void withMIDI(F&& f) {
+  if (midiD & MIDID_USB) f(UMIDI);
+  if (midiD & MIDID_SER) f(SMIDI);
+}
+
 void setPitchBendRange(byte Ch, byte semitones) {
-  if (midiD & MIDID_USB) {
-    UMIDI.beginRpn(0, Ch);
-    UMIDI.sendRpnValue(semitones << 7, Ch);
-    UMIDI.endRpn(Ch);
-  }
-  if (midiD & MIDID_SER) {
-    SMIDI.beginRpn(0, Ch);
-    SMIDI.sendRpnValue(semitones << 7, Ch);
-    SMIDI.endRpn(Ch);
-  }
+  withMIDI([&](auto& M) {
+    M.beginRpn(0, Ch);
+    M.sendRpnValue(semitones << 7, Ch);
+    M.endRpn(Ch);
+  });
   sendToLog(
     "set pitch bend range on ch " + std::to_string(Ch) + " to be " + std::to_string(semitones) + " semitones");
 }
 
 void setMPEzone(byte masterCh, byte sizeOfZone) {
-  if (midiD & MIDID_USB) {
-    UMIDI.beginRpn(6, masterCh);
-    UMIDI.sendRpnValue(sizeOfZone << 7, masterCh);
-    UMIDI.endRpn(masterCh);
-  }
-  if (midiD & MIDID_SER) {
-    SMIDI.beginRpn(6, masterCh);
-    SMIDI.sendRpnValue(sizeOfZone << 7, masterCh);
-    SMIDI.endRpn(masterCh);
-  }
+  withMIDI([&](auto& M) {
+    M.beginRpn(6, masterCh);
+    M.sendRpnValue(sizeOfZone << 7, masterCh);
+    M.endRpn(masterCh);
+  });
   sendToLog(
     "tried sending MIDI msg to set MPE zone, master ch " + std::to_string(masterCh) + ", zone of this size: " + std::to_string(sizeOfZone));
 }
@@ -2150,8 +2163,7 @@ void resetTuningMIDI() {
   }
   // Reset controllers and ensure every channel uses the appropriate pitch-bend range.
   for (byte i = 1; i <= 16; i++) {
-    if (midiD & MIDID_USB) UMIDI.sendControlChange(123, 0, i);
-    if (midiD & MIDID_SER) SMIDI.sendControlChange(123, 0, i);
+    withMIDI([&](auto& M) { M.sendControlChange(123, 0, i); });
     byte range = 2;
     if (mpeEnabled && i >= mpeLowestChannel && i <= mpeHighestChannel) {
       range = MPEpitchBendSemis;
@@ -2174,15 +2186,13 @@ byte primaryMIDIChannel() {
 
 void sendMIDImodulationToCh1() {
   byte targetChannel = primaryMIDIChannel();
-  if (midiD & MIDID_USB) UMIDI.sendControlChange(1, modWheel.curValue, targetChannel);
-  if (midiD & MIDID_SER) SMIDI.sendControlChange(1, modWheel.curValue, targetChannel);
+  withMIDI([&](auto& M) { M.sendControlChange(1, modWheel.curValue, targetChannel); });
   sendToLog("sent mod value " + std::to_string(modWheel.curValue) + " to ch " + std::to_string(targetChannel));
 }
 
 void sendMIDIpitchBendToCh1() {
   byte targetChannel = primaryMIDIChannel();
-  if (midiD & MIDID_USB) UMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
-  if (midiD & MIDID_SER) SMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
+  withMIDI([&](auto& M) { M.sendPitchBend(pbWheel.curValue, targetChannel); });
   sendToLog("sent pb wheel value " + std::to_string(pbWheel.curValue) + " to ch " + std::to_string(targetChannel));
 }
 
@@ -2810,18 +2820,16 @@ void tryMIDInoteOn(byte x) {
       // First, send the pitch bend (if applicable)
       if (MPEpitchBendsNeeded != 1) {
         pitchBendValue = combinedPitchBend(x);
-        if (midiD & MIDID_USB) UMIDI.sendPitchBend(pitchBendValue, h[x].MIDIch);  // ch 1-16
-        if (midiD & MIDID_SER) SMIDI.sendPitchBend(pitchBendValue, h[x].MIDIch);  // ch 1-16
-        if (extraMPE) {                                                         // if the extra MPE messages are enabled
-          if (midiD & MIDID_USB) UMIDI.sendAfterTouch(velWheel.curValue, h[x].MIDIch);  // Channel Pressure
-          if (midiD & MIDID_SER) SMIDI.sendAfterTouch(velWheel.curValue, h[x].MIDIch);  // Channel Pressure
-          if (midiD & MIDID_USB) UMIDI.sendControlChange(74, CC74value, h[x].MIDIch);   // CC74 (Timbre)
-          if (midiD & MIDID_SER) SMIDI.sendControlChange(74, CC74value, h[x].MIDIch);   // CC74 (Timbre)
+        withMIDI([&](auto& M) { M.sendPitchBend(pitchBendValue, h[x].MIDIch); });  // ch 1-16
+        if (extraMPE) { // if the extra MPE messages are enabled
+          withMIDI([&](auto& M) {
+            M.sendAfterTouch(velWheel.curValue, h[x].MIDIch);  // Channel Pressure
+            M.sendControlChange(74, CC74value, h[x].MIDIch);   // CC74 (Timbre)
+          });
         }
       }
       // Then, send the note-on message
-      if (midiD & MIDID_USB) UMIDI.sendNoteOn(h[x].note, velWheel.curValue, h[x].MIDIch);  // ch 1-16
-      if (midiD & MIDID_SER) SMIDI.sendNoteOn(h[x].note, velWheel.curValue, h[x].MIDIch);  // ch 1-16
+      withMIDI([&](auto& M) { M.sendNoteOn(h[x].note, velWheel.curValue, h[x].MIDIch); });  // ch 1-16
 
       sendToLog(
         "Sent MIDI pitch bend: " + std::to_string(pitchBendValue) + " to ch " + std::to_string(h[x].MIDIch));
@@ -2835,19 +2843,18 @@ void tryMIDInoteOff(byte x) {
   // this gets called on any non-command hex
   // that is not scale-locked.
   if (h[x].MIDIch) {  // but just in case, check
-    if (midiD & MIDID_USB) UMIDI.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch);
-    if (midiD & MIDID_SER) SMIDI.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch);
+    withMIDI([&](auto& M) { M.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch); });
     pressedKeyIDs.pop_back();  // Dynamic JI pressed key tracking
     h[x].jiRetune = 0;
     h[x].jiFrequencyMultiplier = 1.0f;
     sendToLog(
       "sent note off: " + std::to_string(h[x].note) + " vel " + std::to_string(velWheel.curValue) + " ch " + std::to_string(h[x].MIDIch));
     if (mpeChannelQueueActive && h[x].MIDIch >= mpeLowestChannel && h[x].MIDIch <= mpeHighestChannel) {
-      if (extraMPE) {                                                                //if the extra MPE messages are enabled
-        if (midiD & MIDID_USB) UMIDI.sendAfterTouch(0, h[x].MIDIch);                 // Channel Pressure
-        if (midiD & MIDID_SER) SMIDI.sendAfterTouch(0, h[x].MIDIch);                 // Channel Pressure
-        if (midiD & MIDID_USB) UMIDI.sendControlChange(74, CC74value, h[x].MIDIch);  // CC74 (Timbre)
-        if (midiD & MIDID_SER) SMIDI.sendControlChange(74, CC74value, h[x].MIDIch);  // CC74 (Timbre)
+      if (extraMPE) { //if the extra MPE messages are enabled
+        withMIDI([&](auto& M) {
+          M.sendAfterTouch(0, h[x].MIDIch);                 // Channel Pressure
+          M.sendControlChange(74, CC74value, h[x].MIDIch);  // CC74 (Timbre)
+        });
       }
       releaseMPEChannel(h[x].MIDIch);
     }
@@ -3695,15 +3702,13 @@ void sendProgramChange() {
     return;  // 0 indicates "no program" selected yet.
   }
   byte targetChannel = primaryMIDIChannel();
-  if (midiD & MIDID_USB) UMIDI.sendProgramChange(programChange - 1, targetChannel);
-  if (midiD & MIDID_SER) SMIDI.sendProgramChange(programChange - 1, targetChannel);
+  withMIDI([&](auto& M) { M.sendProgramChange(programChange - 1, targetChannel); });
 }
 
 void updateSynthWithNewFreqs() {
   recomputePitchBendFactor();
   byte targetChannel = primaryMIDIChannel();
-  if (midiD & MIDID_USB) UMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
-  if (midiD & MIDID_SER) SMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
+  withMIDI([&](auto& M) { M.sendPitchBend(pbWheel.curValue, targetChannel); });
   for (byte i = 0; i < BTN_COUNT; i++) {
     if (!(h[i].isCmd)) {
       if (h[i].synthCh) {
@@ -3860,14 +3865,10 @@ void panicStopOutput() {
   sendToLog("Panic: stopping all MIDI and synth output.");
 
   for (byte channel = 1; channel <= 16; ++channel) {
-    if (midiD & MIDID_USB) {
-      UMIDI.sendControlChange(120, 0, channel);
-      UMIDI.sendControlChange(123, 0, channel);
-    }
-    if (midiD & MIDID_SER) {
-      SMIDI.sendControlChange(120, 0, channel);
-      SMIDI.sendControlChange(123, 0, channel);
-    }
+    withMIDI([&](auto& M) {
+      M.sendControlChange(120, 0, channel);
+      M.sendControlChange(123, 0, channel);
+    });
   }
 
   for (byte i = 0; i < BTN_COUNT; ++i) {
@@ -3904,6 +3905,9 @@ void setupSynth(byte pin, byte slice) {
 }
 
 void arpeggiate() {
+  if (delegatedControl) {
+    return;
+  }
   if (playbackMode == SYNTH_ARPEGGIO) {
     if (runTime - arpeggiateTime > arpeggiateLength) {
       arpeggiateTime = runTime;
@@ -4121,39 +4125,48 @@ void applyExternalMidiToHex(byte midiNote, bool noteOn) {
   }
 }
 
-void processIncomingMIDI() {
-  if (midiD & MIDID_USB) {
-    while (UMIDI.read()) {
-      const auto type = UMIDI.getType();
-      const byte n    = UMIDI.getData1();  // note
-      const byte v    = UMIDI.getData2();  // velocity
-
-      if (type == MIDI_NAMESPACE::NoteOn) {
-        // treat NoteOn vel==0 as NoteOff
-        applyExternalMidiToHex(n, v != 0);
-      } else if (type == MIDI_NAMESPACE::NoteOff
-                 || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
-        applyExternalMidiToHex(n, false);
-      }
-    }
+void processIncomingSysEx(const uint8_t* data, const unsigned int len) {
+  if ((len == 4) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {
+    // Accept a SysEx message containing the single byte SYSEX_DELEGATED_ENTER sent on the
+    // dev/test manufacturer ID to enter delegated mode. This does the same as enabling it
+    // from the menu.
+    toggleDelegated();
   }
-  if (midiD & MIDID_SER) {
-    while (SMIDI.read()) {
-      const auto type = SMIDI.getType();
-      const byte n    = SMIDI.getData1();
-      const byte v    = SMIDI.getData2();
+}
 
-      if (type == MIDI_NAMESPACE::NoteOn) {
-        applyExternalMidiToHex(n, v != 0);
-      } else if (type == MIDI_NAMESPACE::NoteOff
-                 || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
-        applyExternalMidiToHex(n, false);
+void processIncomingMIDI() {
+  if (delegatedControl) {
+    processIncomingMIDIDelegated();
+  } else {
+    withMIDI([&](auto& M) {
+      while (M.read()) {
+        const auto type = M.getType();
+        if (type == MIDI_NAMESPACE::SystemExclusive) {
+          const uint8_t* sysex = M.getSysExArray();
+          const unsigned int len = M.getSysExArrayLength();
+          processIncomingSysEx(sysex, len);
+          continue;
+        }
+
+        const byte n    = M.getData1();  // note
+        const byte v    = M.getData2();  // velocity
+
+        if (type == MIDI_NAMESPACE::NoteOn) {
+          // treat NoteOn vel==0 as NoteOff
+          applyExternalMidiToHex(n, v != 0);
+        } else if (type == MIDI_NAMESPACE::NoteOff
+                   || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
+          applyExternalMidiToHex(n, false);
+        }
       }
-    }
+    });
   }
 }
 
 void animateLEDs() {
+  if (delegatedControl) {
+    return;
+  }
   for (byte i = 0; i < LED_COUNT; i++) {
     h[i].animate = 0;
   }
@@ -4419,6 +4432,7 @@ enum class SettingKey : uint8_t {
   EnvelopeDecayIndex,
   EnvelopeSustainLevel,
   EnvelopeReleaseIndex,
+  Delegated,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -4822,7 +4836,7 @@ void rebootToBootloader();
     These GEMItems are read-only display items.
     They do not change any variable or run any procedure.
   */
-GEMItem menuItemVersion("Firmware 1.2.0");
+GEMItem menuItemVersion("Firmware 1.2.0+q1");
 SelectOptionByte optionByteHardware[] = {
   { "V1.1", HARDWARE_UNKNOWN }, { "V1.1", HARDWARE_V1_1 }, { "V1.2", HARDWARE_V1_2 }
 };
@@ -4964,6 +4978,14 @@ PersistentCallbackInfo callbackInfoRotary = {
   nullptr
 };
 GEMItem menuItemRotary("Invert Encoder", rotaryInvert, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
+
+PersistentCallbackInfo callbackInfoDelegate = {
+  static_cast<uint8_t>(SettingKey::Delegated),
+  reinterpret_cast<void*>(&delegatedControl),
+  nullptr,
+  onToggleDelegated,
+};
+GEMItem menuItemDelegated("Delegate Control", delegatedControl, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDelegate));
 
 PersistentCallbackInfo callbackInfoDebug = {
   static_cast<uint8_t>(SettingKey::Debug),
@@ -5506,6 +5528,129 @@ PersistentCallbackInfo callbackInfoDynamicJI = {
 };
 GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoDynamicJI));
+
+// Delegated Control
+
+void toggleDelegated() {
+  delegatedControl = !delegatedControl;
+  onToggleDelegated();
+}
+
+void onToggleDelegated() {
+  if (delegatedControl) {
+    memset(delegatedColors, 0, sizeof(delegatedColors));
+    // This call to setupMIDI allows us to toggle delegated on and off to reset the MIDI parser
+    // state. This provides a workaround to
+    // https://github.com/FortySevenEffects/arduino_midi_library/issues/367.
+    setupMIDI();
+  }
+  sendToLog("delgated = " + std::to_string(delegatedControl));
+}
+
+void delegatedButtonEvent(byte x, bool press) {
+  // This gets called on a button press or release in delegated mode. As of version 1.2 hardware,
+  // HexBoard buttons are numbered 0 to 139. There are 7 rows with 9 buttons, and there are 7
+  // command buttons. With the menu wheel on the upper left, each command button from top to bottom
+  // is the column 0 of the corresponding 9-note row, so those are buttons 0, 20, etc. -- see
+  // CMDBTN_0, etc. Otherwise, buttons are numbered left to right and top to bottom, so the leftmost
+  // button the top row is 1, the leftmost button on the second row is 10, etc. Represent each
+  // button by a channel and note. We have to use more than one channel because there are more than
+  // 128 notes. For simplicity, use the channel number for the hundreds digit and use the remainder
+  // as the note number.
+  byte channel = 1 + (x / 100); // channels are numbered from 1
+  byte note = x % 100;
+  if (press) {
+    withMIDI([&](auto& M) { M.sendNoteOn(note, 127, channel + 1); });
+  } else {
+    withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel + 1); });
+  }
+  sendToLog(
+    "Delegated: button " + std::to_string(x) +
+    " pressed = " + std::to_string(press) +
+    " note = " + std::to_string(note) +
+    " ch " + std::to_string(channel));
+}
+
+void processLedSysEx(const uint8_t* data, const unsigned int len) {
+  // Data contains the following repeated:
+  // - LED number (14 bits)
+  // - Hue (7 bits)
+  // - Saturation (7 bits)
+  // - Value (7 bits)
+  for (auto idx = 0; idx + 5 <= len; idx += 5) {
+    uint16_t led = (data[idx] << 7) + data[idx+1];
+    if (led >= LED_COUNT) {
+      sendToLog("LED SysEx: led " + std::to_string(led) + " is out of range; ignoring");
+      continue;
+    }
+    // HexBoard colors are HSV values where H (Hue) is an angle from 0 to 360 and S (Saturation) and
+    // V (Value) are values from 0 to 255. This SysEx accepts HSV where each is in the range from 0
+    // to 127, so normalize.
+    auto hue_data = data[idx+2] & 0x7F;
+    auto sat_data = data[idx+3] & 0x7F;
+    auto val_data = data[idx+4] & 0x7F;
+    float hue = static_cast<float>(hue_data) * 360.0 / 127.0;
+    byte sat = 2 * sat_data + (sat_data > 63 ? 1 : 0);
+    byte val = 2 * val_data + (val_data > 63 ? 1 : 0);
+    colorDef c = {
+      hue,
+      sat,
+      val,
+    };
+    delegatedColors[led] = getLEDcode(c);
+    sendToLog("setting color of LED " + std::to_string(led) +
+              " to h=" + std::to_string(hue) +
+              ", s=" + std::to_string(sat) +
+              ", v=" + std::to_string(val) +
+              " -> " + std::to_string(delegatedColors[led]));
+  }
+}
+
+void processDelegatedSysEx(const uint8_t* data, const unsigned int len) {
+  sendToLog("SysEx received; data length = " + std::to_string(len));
+  if (len < 1) {
+    return;
+  }
+  auto code = data[0];
+  switch (code) {
+  case SYSEX_DELEGATED_ENTER:
+    break;
+  case SYSEX_DELEGATED_EXIT:
+    toggleDelegated();
+    break;
+  case SYSEX_LED:
+    processLedSysEx(&data[1], len-1);
+    break;
+  default:
+    sendToLog("ignoring unknown SysEx code " + std::to_string(code));
+  }
+}
+
+void processIncomingMIDIDelegated() {
+  withMIDI([&](auto& M) {
+    while (M.read()) {
+      const auto type = M.getType();
+      if (type == MIDI_NAMESPACE::SystemExclusive) {
+        const uint8_t* sysex = M.getSysExArray();
+        const unsigned int len = M.getSysExArrayLength();
+        if (len <= 3) continue;
+        // First byte should be F0 and last byte should be F7
+        if ((sysex[0] != 0xF0) || (sysex[len-1] != 0xF7)) {
+          sendToLog("invalid SysEx received; ignoring");
+          continue;
+        }
+        // Accept only the dev/test manufacturer ID 0x7D until we get our own manufacturer ID.
+        if (sysex[1] != 0x7D) {
+          sendToLog("delegated incoming: ignoring SysEx vendor " + std::to_string(sysex[1]));
+          continue;
+        }
+        processDelegatedSysEx(&sysex[2], len - 3);
+      } else {
+        sendToLog("delegated incoming: " + std::to_string(type));
+      }
+    }
+  });
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -6112,6 +6257,7 @@ void setupMenu() {
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
+  menuPageAdvanced.addMenuItem(menuItemDelegated);
   menuPageAdvanced.addMenuItem(menuItemDebug);
 }
 void setupGFX() {
@@ -6242,7 +6388,9 @@ void readHexes() {
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
-        if (h[i].isCmd) {
+        if (delegatedControl) {
+          delegatedButtonEvent(i, true);
+        } else if (h[i].isCmd) {
           cmdOn(i);
         } else if (h[i].inScale || (!scaleLock)) {
           tryMIDInoteOn(i);
@@ -6250,7 +6398,9 @@ void readHexes() {
         }
         break;
       case BTN_STATE_RELEASED:  // just released
-        if (h[i].isCmd) {
+        if (delegatedControl) {
+          delegatedButtonEvent(i, false);
+        } else if (h[i].isCmd) {
           cmdOff(i);
         } else if (h[i].inScale || (!scaleLock)) {
           tryMIDInoteOff(i);
@@ -6265,6 +6415,9 @@ void readHexes() {
   }
 }
 void updateWheels() {
+  if (delegatedControl) {
+    return;
+  }
   velWheel.setTargetValue();
   bool upd = velWheel.updateValue(runTime);
   if (upd) {
