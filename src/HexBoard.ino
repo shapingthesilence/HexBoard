@@ -3373,7 +3373,19 @@ void RAM_FUNC(poll)() {
   hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
   timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
   uint64_t mix = 0;
+  // ============================================================
+  // Smooth poly loudness normalization
+  // Old behavior: scale by integer "voices" count.
+  // Problem: when a voice fades out and becomes inactive, voices--
+  // causes a sudden gain jump (audible).
+  //
+  // New behavior: compute an "effective voice count" from the sum of
+  // envelope levels. As a voice releases, its envelope contribution
+  // smoothly approaches 0, so the normalization changes smoothly too.
+  // ============================================================
+  uint32_t envSum = 0;   // sum of env.level across active voices (0..8*65535)
   byte voices = 0;
+
   uint16_t p;
   byte t;
   byte level = 0;
@@ -3529,11 +3541,36 @@ void RAM_FUNC(poll)() {
     uint64_t voiceSample = static_cast<uint64_t>(p) * synth[i].eq;
     voiceSample = (voiceSample * env.level) >> 16;
     mix += voiceSample;
+    envSum += env.level;
     ++voices;
   }
 
-  uint8_t attenuationIndex = (playbackMode == SYNTH_POLY) ? voices : 0;
-  mix *= attenuation[attenuationIndex];
+  // Compute effective voices in Q8 (fixed-point, 8 fractional bits).
+  // Approximate division by 65535 using >> 8, since 65535 ≈ 65536.
+  // Examples:
+  //  - 1 full voice: envSum ≈ 65535 => (envSum + 128) >> 8 ≈ 256  => 1.00 voices
+  //  - 8 full voices: envSum ≈ 524280 => >> 8 ≈ 2048 => 8.00 voices
+  uint16_t effectiveVoicesQ8 = (uint16_t)((envSum + 128u) >> 8);  // 0..2048
+
+  // Convert to table index 0..8 and fractional part for interpolation
+  uint8_t vInt = effectiveVoicesQ8 >> 8;          // 0..8
+  uint8_t vFrac = effectiveVoicesQ8 & 0xFF;       // 0..255
+
+  if (vInt > 8) vInt = 8;                         // safety
+
+  // Smoothly interpolate attenuation between adjacent entries.
+  // attenuation[] is in "64 == full scale" units.
+  uint8_t a0 = attenuation[vInt];
+  uint8_t a1 = attenuation[(vInt < 8) ? (vInt + 1) : 8];
+
+  // Linear interpolation: a = a0 + (a1 - a0) * frac
+  int16_t da = (int16_t)a1 - (int16_t)a0;
+  uint16_t attenSmooth = (uint16_t)((int16_t)a0 + ((da * (int16_t)vFrac) >> 8));  // 0..64-ish
+
+  // Only apply this smoothing in poly mode, keep mono behavior the same.
+  uint16_t attenFinal = (playbackMode == SYNTH_POLY) ? attenSmooth : attenuation[0];
+
+  mix *= attenFinal;
   mix *= velWheel.curValue;
   level = mix >> 24;
   if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, level);
