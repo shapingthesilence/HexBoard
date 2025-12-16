@@ -2906,6 +2906,34 @@ void setupMIDI() {
 #define AUDIO_AJACK 2
 #define AUDIO_BOTH 3
 byte audioD = AUDIO_PIEZO | AUDIO_AJACK;
+
+// ============================================================
+// PWM AUDIO CONFIG
+// ============================================================
+// Set PWM_BITS to 8 or 10 to control PWM resolution.
+// 8-bit: wrap=254 (matches your existing behavior)
+// 10-bit: wrap=1023 (cleaner on jack, lower quantization noise)
+//
+// NOTE: Higher wrap lowers PWM carrier frequency. At 200MHz with clkdiv=1,
+// it should remain ultrasonic, but if you ever hear PWM whine on the jack,
+// drop back to 8-bit or raise carrier via clkdiv/wrap tradeoffs.
+#ifndef PWM_BITS
+#define PWM_BITS 10
+#endif
+
+#if (PWM_BITS == 8)
+  constexpr uint16_t PWM_WRAP = 254;
+  constexpr int32_t  PWM_MID  = 127;
+  constexpr int32_t  SHAPE_CLAMP = 127;
+  constexpr int      OUTPUT_SHIFT = 8;   // derived above
+  constexpr int      ENV_TO_A_SHIFT = 9; // 65535 >> 9 ~= 127
+#elif (PWM_BITS == 10)
+  constexpr uint16_t PWM_WRAP = 1023;
+  constexpr int32_t  PWM_MID  = 512;
+  constexpr int32_t  SHAPE_CLAMP = 511;
+  constexpr int      OUTPUT_SHIFT = 6;   // derived above
+  constexpr int      ENV_TO_A_SHIFT = 7; // 65535 >> 7 ~= 512
+#endif
 /*
     These definitions provide 8-bit samples to emulate.
     You can add your own as desired; it must
@@ -3372,7 +3400,7 @@ void updateArpeggiatorTiming() {
 void RAM_FUNC(poll)() {
   hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
   timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
-  uint64_t mix = 0;
+  int64_t mix = 0;    // signed accumulator now (bipolar)
   // ============================================================
   // Smooth poly loudness normalization
   // Old behavior: scale by integer "voices" count.
@@ -3538,9 +3566,22 @@ void RAM_FUNC(poll)() {
       default: break;
     }
 
-    uint64_t voiceSample = static_cast<uint64_t>(p) * synth[i].eq;
-    voiceSample = (voiceSample * env.level) >> 16;
-    mix += voiceSample;
+    // Convert unipolar 0..65535 waveform into bipolar signed audio sample.
+    // Centering improves headroom and reduces asymmetric clipping.
+    int32_t s = (int32_t)p - 32768;  // -32768..+32767
+
+    // Apply crude "equal loudness" compensation.
+    // eq is 0..8. Treat 8 as roughly "neutral" gain.
+    s = (s * (int32_t)synth[i].eq) >> 3;
+
+    // Apply envelope (0..65535). Keep >>16 like the current scheme.
+    // Result stays comfortably in int32 range.
+    s = (int32_t)(((int64_t)s * (int64_t)env.level) >> 16);
+
+    // Accumulate signed mix
+    mix += s;
+
+    // For Step 1 smooth normalization:
     envSum += env.level;
     ++voices;
   }
@@ -3570,11 +3611,105 @@ void RAM_FUNC(poll)() {
   // Only apply this smoothing in poly mode, keep mono behavior the same.
   uint16_t attenFinal = (playbackMode == SYNTH_POLY) ? attenSmooth : attenuation[0];
 
-  mix *= attenFinal;
-  mix *= velWheel.curValue;
-  level = mix >> 24;
-  if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, level);
-  if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, level);
+  // Apply poly/mono attenuation where 64 = unity.
+  int64_t scaled = mix;
+  scaled = (scaled * (int64_t)attenFinal) >> 6;     // divide by 64
+
+  // Apply master volume where 127 ~= unity (use >>7 as approx /128)
+  scaled = (scaled * (int64_t)velWheel.curValue) >> 7;
+
+  // ============================================================
+  // OUTPUT STAGE (JACK + PIEZO)
+  //
+  // We intentionally drive the two outputs differently:
+  //
+  // 1) Audio Jack (slice 4): classic centered PWM "DAC"
+  //    - Fixed midpoint at PWM_MID (127 for 8-bit, 512 for 10-bit)
+  //    - Symmetric headroom, lowest distortion into an audio path
+  //
+  // 2) Piezo (slice 3): "moving midpoint" drive
+  //    - Midpoint follows the *actual amplitude* derived from envSum
+  //    - Prevents the piezo from sitting at half supply when quiet
+  //    - Midpoint glides down as the last voice fades (no sudden hiss stop)
+  //
+  // This keeps jack quality higher while making the piezo less noisy.
+  // ============================================================
+
+  // ------------------------------------------------------------
+  // 1) Build a normalized signed sample from the mixed signal.
+  //
+  // "scaled" already includes:
+  //   - mix of all voices (signed)
+  //   - smooth poly attenuation (attenFinal)
+  //   - master volume (velWheel)
+  //
+  // We still need to convert it to a small signed number suitable for PWM.
+  //
+  // IMPORTANT: This OUTPUT_SHIFT is the main gain staging control.
+  // If output is too quiet, decrease it. If it clips/distorts, increase it.
+  // For 10-bit PWM you can typically use a slightly smaller shift than 8-bit.
+  // ------------------------------------------------------------
+  // JACK idle behavior: stay centered.
+  // PIEZO idle behavior: off (0).
+  if (voices == 0 || velWheel.curValue == 0) {
+    if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
+    if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, (uint16_t)PWM_MID);
+    return;
+  }
+
+  // Convert scaled mix -> signed sample in [-SHAPE_CLAMP..SHAPE_CLAMP]
+  int32_t sample = (int32_t)(scaled >> OUTPUT_SHIFT);
+  if (sample >  SHAPE_CLAMP) sample =  SHAPE_CLAMP;
+  if (sample < -SHAPE_CLAMP) sample = -SHAPE_CLAMP;
+
+  // ----- JACK: fixed midpoint -----
+  int32_t jack = PWM_MID + sample;
+  if (jack < 0) jack = 0;
+  if (jack > (int32_t)PWM_WRAP) jack = PWM_WRAP;
+  uint16_t jackLevel = (uint16_t)jack;
+
+  // ----- PIEZO: midpoint follows "actual amplitude" from envSum -----
+  //
+  // IMPORTANT: envSum is sum of envelopes (0..~524k). We want ONE full voice
+  // (envSum ~ 65535) to produce full piezo amplitude. So we shift by 9 (8-bit)
+  // or 7 (10-bit). With multiple voices envSum grows, so we clamp.
+  //
+  // This makes piezo loud enough and ensures it fades smoothly as envSum falls.
+  //
+  static uint16_t piezoA = 0; // smoothed midpoint/amplitude in PWM units [0..PWM_MID]
+
+  // Map envSum -> A_target in [0..PWM_MID]
+  uint32_t A_target = (envSum + (1u << (ENV_TO_A_SHIFT - 1))) >> ENV_TO_A_SHIFT;
+  if (A_target > (uint32_t)PWM_MID) A_target = PWM_MID;
+
+  // Apply master volume (0..127, where 127 is full). Keep it consistent with jack scaling.
+  A_target = (A_target * (uint32_t)velWheel.curValue) >> 7;
+
+  // Smooth A so the piezo hiss doesn't abruptly stop (and to avoid end-click).
+  // Smaller shift = faster response; larger = smoother.
+  piezoA += (int16_t)((int32_t)A_target - (int32_t)piezoA) >> 3;
+
+  // If very small, turn fully off (by now it’s near 0 so this won’t click).
+  if (piezoA <= (PWM_BITS == 8 ? 1 : 4)) piezoA = 0;
+
+  int32_t piezoLevel = 0;
+  if (piezoA > 0) {
+    // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-piezoA..+piezoA]
+    int32_t outPiezo = (sample * (int32_t)piezoA) / SHAPE_CLAMP;
+
+    // Midpoint follows amplitude: range [0..2*piezoA]
+    piezoLevel = (int32_t)piezoA + outPiezo;
+    int32_t piezoMax = (int32_t)piezoA * 2;
+
+    if (piezoLevel < 0) piezoLevel = 0;
+    if (piezoLevel > piezoMax) piezoLevel = piezoMax;
+    if (piezoLevel > (int32_t)PWM_WRAP) piezoLevel = PWM_WRAP;
+  }
+  uint16_t piezoOut = (uint16_t)piezoLevel;
+
+  // ----- Write outputs -----
+  if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, piezoOut);
+  if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, jackLevel);
 }
 // RUN ON CORE 1
 byte isoTwoTwentySix(float f) {
@@ -3927,7 +4062,7 @@ void panicStopOutput() {
 void setupSynth(byte pin, byte slice) {
   gpio_set_function(pin, GPIO_FUNC_PWM);          // set that pin as PWM
   pwm_set_phase_correct(slice, true);             // phase correct sounds better
-  pwm_set_wrap(slice, 254);                       // 0 - 254 allows 0 - 255 level
+  pwm_set_wrap(slice, PWM_WRAP);                  // essentionally sets the "bit-rate"
   pwm_set_clkdiv(slice, 1.0f);                    // run at full clock speed
   pwm_set_chan_level(slice, PIEZO_CHNL, 0);       // initialize at zero to prevent whining sound
   pwm_set_enabled(slice, true);                   // ENGAGE!
