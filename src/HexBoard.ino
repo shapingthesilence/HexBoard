@@ -749,6 +749,7 @@ scaleDef scaleOptions[] = {
   { "Wyschnegradsky", TUNING_24EDO, { 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1 } },
   // 31 EDO; for more: https://en.xen.wiki/w/31edo#Scales
   { "Diatonic", TUNING_31EDO, { 5, 5, 3, 5, 5, 5, 3 } },
+  { "Chromatic", TUNING_31EDO, { 3, 2, 3, 2, 3, 2, 3, 3, 2, 3, 2, 3 } },
   { "Pentatonic", TUNING_31EDO, { 5, 5, 8, 5, 8 } },
   { "Harmonic", TUNING_31EDO, { 5, 5, 4, 4, 4, 3, 3, 3 } },
   { "Mavila", TUNING_31EDO, { 5, 3, 3, 3, 5, 3, 3, 3, 3 } },
@@ -758,6 +759,7 @@ scaleDef scaleOptions[] = {
   { "Miracle", TUNING_31EDO, { 4, 3, 3, 3, 3, 3, 3, 3, 3, 3 } },
   // 31 EDO ZETA PEAK;
   { "Diatonic", TUNING_31EDO_ZETA, { 5, 5, 3, 5, 5, 5, 3 } },
+  { "Chromatic", TUNING_31EDO_ZETA, { 3, 2, 3, 2, 3, 2, 3, 3, 2, 3, 2, 3 } },
   { "Pentatonic", TUNING_31EDO_ZETA, { 5, 5, 8, 5, 8 } },
   { "Harmonic", TUNING_31EDO_ZETA, { 5, 5, 4, 4, 4, 3, 3, 3 } },
   { "Mavila", TUNING_31EDO_ZETA, { 5, 3, 3, 3, 5, 3, 3, 3, 3 } },
