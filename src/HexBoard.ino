@@ -2337,7 +2337,6 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 2, 1 },
   { 3, 1 },
   { 1, 3 },
-  { 1, 4 },
   { 2, 3 },
   { 1, 4 },
   { 4, 1 },
@@ -2388,11 +2387,9 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 3, 10 },
   { 2, 11 },
   { 11, 2 },
-  { 12, 1 },
   { 1, 12 },
   { 9, 4 },
   { 5, 8 },
-  { 1, 12 },
   { 8, 5 },
   { 10, 3 },
   { 6, 7 },
@@ -6529,22 +6526,7 @@ bool rotaryPanicLatched = false;
 bool rotaryPanicSuppressClick = false;
 
 void readHexes() {
-  // Simplified button reading to reduce time it takes to read. Stil uses slower Arduino digitalRead and digitalWrite.
-  /* for (byte r = 0; r < ROWCOUNT; r++) {      // Iterate through each of the row pins on the multiplexing chip.
-    for (byte d = 0; d < 4; d++) {
-      digitalWrite(mPin[d], (r >> d) & 1);
-    }
-    busy_wait_us_32(12);
-    for (byte c = 0; c < COLCOUNT; c++) {    // Now iterate through each of the column pins that are connected to the current row pin.
-      byte p = cPin[c];                      // Hold the currently selected column pin in a variable.
-      byte i = c + (r * COLCOUNT);
-      bool didYouPressHex = (digitalRead(p) == LOW);  // hex is pressed if it returns LOW. else not pressed
-      h[i].interpBtnPress(didYouPressHex);
-      if (h[i].btnState == BTN_STATE_NEWPRESS) {
-        h[i].timePressed = runTime;          // log the time
-      }
-    }
-  } */
+
   // Optimized button reading using SIO registers - much faster!
   for (byte r = 0; r < ROWCOUNT; r++) {       // Iterate through each row via the multiplexer.
     sio_hw->gpio_clr = multiplexerMask;       // Set all multiplexer pins to LOW.
@@ -6563,25 +6545,7 @@ void readHexes() {
       }
     }
   }
-  /* Old method.
-  for (byte c = 0; c < COLCOUNT; c++) {    // Iterate through each of the column pins.
-    byte p = cPin[c];                      // Hold the currently selected column pin in a variable.
-    pinMode(p, INPUT_PULLUP);              // Set that column pin to INPUT_PULLUP mode (+3.3V / HIGH).
-    delayMicroseconds(0);                  // delay to energize column and stabilize (may need adjustment)
-    for (byte r = 0; r < ROWCOUNT; r++) {  // Then iterate through each of the row pins on the multiplexing chip for the selected column.
-      for (byte d = 0; d < 4; d++) {
-        digitalWrite(mPin[d], (r >> d) & 1);  // Selected multiplexer channel is pulled to ground.
-      }
-      byte i = c + (r * COLCOUNT);
-      delayMicroseconds(14);                          // Delay to allow signal to settle and improve reliability (found this number by experimentation)
-      bool didYouPressHex = (digitalRead(p) == LOW);  // hex is pressed if it returns LOW. else not pressed
-      h[i].interpBtnPress(didYouPressHex);
-      if (h[i].btnState == BTN_STATE_NEWPRESS) {
-        h[i].timePressed = runTime;  // log the time
-      }
-    }
-    pinMode(p, INPUT);  // Set the selected column pin back to INPUT mode (0V / LOW).
-  }*/
+
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
