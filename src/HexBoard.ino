@@ -94,8 +94,12 @@ byte Hardware_Version = 0;  // 0 = unknown, 1 = v1.1 board. 2 = v1.2 board.
 
 // @helpers
 //might be redundant
-std::vector<byte> pressedKeyIDs = {};
-std::array<std::vector<uint8_t>, 128> midiNoteToHexIndices = {};
+#define PRESSED_KEY_MAX 20
+byte pressedKeyIDs[PRESSED_KEY_MAX];
+byte pressedKeyCount = 0;
+#define MIDI_HEX_MAX 16  // max hex buttons that can map to one MIDI note
+uint8_t midiNoteToHexData[128][MIDI_HEX_MAX];
+uint8_t midiNoteToHexCount[128] = {};
 
 void updateEnvelopeParamsFromSettings();
 void updateArpeggiatorTiming();
@@ -1124,15 +1128,15 @@ public:
   int scaleIndex;
   int keyStepsFromA;  // what key the scale is in, where zero equals A.
   int transpose;
-  // define simple recall functions
+  // define simple recall functions (with bounds clamping for safety)
   tuningDef tuning() {
-    return tuningOptions[tuningIndex];
+    return tuningOptions[constrain(tuningIndex, 0, TUNINGCOUNT - 1)];
   }
   layoutDef layout() {
-    return layoutOptions[layoutIndex];
+    return layoutOptions[constrain(layoutIndex, 0, layoutCount - 1)];
   }
   scaleDef scale() {
-    return scaleOptions[scaleIndex];
+    return scaleOptions[constrain(scaleIndex, 0, scaleCount - 1)];
   }
   int layoutsBegin() {
     if (tuningIndex == TUNING_12EDO) {
@@ -1172,11 +1176,8 @@ presetDef current = {
     to the Serial port
   */
 bool debugMessages = true;
-void sendToLog(std::string msg) {
-  if (debugMessages) {
-    Serial.println(msg.c_str());
-  }
-}
+// Macro avoids constructing std::string arguments when debugMessages is false
+#define sendToLog(msg) do { if (debugMessages) { Serial.println((std::string(msg)).c_str()); } } while(0)
 
 // @timing
 /*
@@ -2096,7 +2097,7 @@ byte midiD = MIDID_USB | MIDID_SER;
 // What program change number we last sent (General MIDI/Roland MT-32)
 byte programChange = 0;
 
-std::vector<byte> mpeAvailableChannels;
+uint16_t mpeChannelBitmap = 0;  // bitmap of available MPE channels (bit N = channel N+1)
 byte MPEpitchBendsNeeded;
 bool mpeChannelQueueActive = false;
 
@@ -2108,27 +2109,21 @@ uint8_t mpePlayableChannelCount() {
 }
 
 void resetMPEChannelPool() {
-  mpeAvailableChannels.clear();
+  mpeChannelBitmap = 0;
   for (byte ch = mpeLowestChannel; ch <= mpeHighestChannel; ++ch) {
-    mpeAvailableChannels.push_back(ch);
+    mpeChannelBitmap |= (1u << (ch - 1));
     sendToLog("added ch " + std::to_string(ch) + " to the MPE pool");
-  }
-  if (mpeLowPriorityMode) {
-    std::sort(mpeAvailableChannels.begin(), mpeAvailableChannels.end());
   }
 }
 
 byte takeMPEChannel() {
-  if (mpeAvailableChannels.empty()) {
+  if (mpeChannelBitmap == 0) {
     return 0;
   }
-  if (mpeLowPriorityMode) {
-    byte ch = mpeAvailableChannels.front();
-    mpeAvailableChannels.erase(mpeAvailableChannels.begin());
-    return ch;
-  }
-  byte ch = mpeAvailableChannels.front();
-  mpeAvailableChannels.erase(mpeAvailableChannels.begin());
+  // Always take lowest available channel (equivalent to sorted front() for low-priority,
+  // and a reasonable FIFO-like behavior otherwise)
+  byte ch = static_cast<byte>(__builtin_ctz(mpeChannelBitmap) + 1);
+  mpeChannelBitmap &= ~(1u << (ch - 1));
   return ch;
 }
 
@@ -2136,12 +2131,7 @@ void releaseMPEChannel(byte ch) {
   if (ch < mpeLowestChannel || ch > mpeHighestChannel) {
     return;
   }
-  if (mpeLowPriorityMode) {
-    auto insertPos = std::lower_bound(mpeAvailableChannels.begin(), mpeAvailableChannels.end(), ch);
-    mpeAvailableChannels.insert(insertPos, ch);
-  } else {
-    mpeAvailableChannels.push_back(ch);
-  }
+  mpeChannelBitmap |= (1u << (ch - 1));
   sendToLog("returned ch " + std::to_string(ch) + " to the MPE pool");
 }
 
@@ -2239,7 +2229,7 @@ void resetTuningMIDI() {
   }
 
   mpeChannelQueueActive = false;
-  mpeAvailableChannels.clear();
+  mpeChannelBitmap = 0;
 
   if (mpeEnabled) {
     bool needsQueue = (MPEpitchBendsNeeded > playableChannels) || mpeLowPriorityMode;
@@ -2346,7 +2336,6 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 5, 2 },
   { 1, 6 },
   { 3, 4 },
-  { 5, 2 },
   { 4, 3 },
   { 6, 1 },
   { 2, 5 },
@@ -2364,15 +2353,12 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 7, 3 },
   { 1, 9 },
   { 3, 7 },
-  { 1, 9 },
   { 1, 10 },
   { 10, 1 },
   { 7, 4 },
   { 3, 8 },
   { 8, 3 },
   { 6, 5 },
-  { 1, 10 },
-  { 8, 3 },
   { 4, 7 },
   { 2, 9 },
   { 9, 2 },
@@ -2384,12 +2370,10 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 5, 8 },
   { 3, 10 },
   { 4, 9 },
-  { 3, 10 },
   { 2, 11 },
   { 11, 2 },
   { 1, 12 },
   { 9, 4 },
-  { 5, 8 },
   { 8, 5 },
   { 10, 3 },
   { 6, 7 },
@@ -2399,7 +2383,6 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 1, 13 },
   { 3, 11 },
   { 11, 3 },
-  { 9, 5 },
   { 5, 9 },
   { 13, 1 },
   { 14, 1 },
@@ -2421,7 +2404,6 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 4, 13 },
   { 2, 15 },
   { 10, 7 },
-  { 2, 15 },
   { 11, 6 },
   { 8, 9 },
   { 16, 1 },
@@ -2443,7 +2425,6 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 17, 2 },
   { 9, 10 },
   { 2, 17 },
-  { 9, 10 },
   { 12, 7 },
   { 10, 9 },
   { 11, 8 },
@@ -2455,7 +2436,6 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 18, 1 },
   { 8, 11 },
   { 1, 18 },
-  { 4, 15 },
   { 5, 14 },
   { 6, 13 },
   { 7, 12 },
@@ -2469,7 +2449,6 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 20, 1 },
   { 8, 13 },
   { 10, 11 },
-  { 20, 1 },
   { 19, 2 },
   { 1, 20 },
   { 11, 10 },
@@ -2478,7 +2457,6 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 17, 4 },
   { 4, 17 },
   { 16, 5 },
-  { 1, 20 },
   { 13, 9 },
   { 21, 1 },
   { 7, 15 },
@@ -2496,7 +2474,6 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 18, 5 },
   { 6, 17 },
   { 15, 8 },
-  { 3, 20 },
   { 20, 3 },
   { 19, 4 },
   { 5, 18 },
@@ -2584,7 +2561,6 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 19, 10 },
   { 5, 24 },
   { 4, 25 },
-  { 5, 24 },
   { 3, 26 },
   { 18, 11 },
   { 28, 1 },
@@ -2602,7 +2578,6 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 5, 26 },
   { 25, 6 },
   { 11, 20 },
-  { 30, 1 },
   { 1, 30 },
   { 16, 15 },
   { 8, 23 },
@@ -2688,11 +2663,9 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 6, 31 },
   { 28, 9 },
   { 34, 3 },
-  { 36, 1 },
   { 15, 22 },
   { 7, 30 },
   { 8, 29 },
-  { 1, 36 },
   { 17, 20 },
   { 29, 8 },
   { 4, 33 },
@@ -2765,7 +2738,6 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 23, 18 },
   { 17, 24 },
   { 36, 5 },
-  { 40, 1 },
   { 1, 40 },
   { 4, 37 },
   { 24, 17 },
@@ -2822,13 +2794,13 @@ int16_t justIntonationRetune(byte x) {
     float rounding = ((float)justIntonationBPM / 60.0 * justIntonationBPM_Multiplier);
     pitchAdjustmentCents = (buttonStepsFromA * current.tuning().stepSize) - ratioToCents(round(440.0 / rounding) / round(h[x].frequency / rounding));
 
-    if (pressedKeyIDs.size() > 1 && useDynamicJustIntonation) {
+    if (pressedKeyCount > 1 && useDynamicJustIntonation) {
       basePitchOffset = ((-current.tuning().spanCtoA() - h[pressedKeyIDs[0]].stepsFromC) * current.tuning().stepSize) - ratioToCents(round(440.0 / rounding) / round(h[pressedKeyIDs[0]].frequency / rounding));
     } else {
       pitchAdjustment += centsToRelativePitchBend(pitchAdjustmentCents);
     }
   }
-  if (useDynamicJustIntonation && pressedKeyIDs.size() > 1) {
+  if (useDynamicJustIntonation && pressedKeyCount > 1) {
     bool preferSmallRatios = true;  // if false - the closest found ratio will be chosen from the ratio table
 
     // detune within a 1/4 of a step, avoid wild detuning but cover the entire pitch range
@@ -2890,7 +2862,7 @@ void tryMIDInoteOn(byte x) {
     }
 
     if (h[x].MIDIch) {
-      pressedKeyIDs.push_back(x);  // Dynamic JI pressed key tracking
+      if (pressedKeyCount < PRESSED_KEY_MAX) pressedKeyIDs[pressedKeyCount++] = x;  // Dynamic JI pressed key tracking
       justIntonationRetune(x);
       int16_t pitchBendValue = 0;
       // First, send the pitch bend (if applicable)
@@ -2923,7 +2895,7 @@ void tryMIDInoteOff(byte x) {
   if (h[x].MIDIch) {  // but just in case, check
     if (midiD & MIDID_USB) UMIDI.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch);
     if (midiD & MIDID_SER) SMIDI.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch);
-    pressedKeyIDs.pop_back();  // Dynamic JI pressed key tracking
+    if (pressedKeyCount > 0) pressedKeyCount--;  // Dynamic JI pressed key tracking
     h[x].jiRetune = 0;
     h[x].jiFrequencyMultiplier = 1.0f;
     sendToLog(
@@ -4136,7 +4108,7 @@ void panicStopOutput() {
     h[i].animate = 0;
   }
 
-  pressedKeyIDs.clear();
+  pressedKeyCount = 0;
   arpeggiatingNow = UNUSED_NOTE;
   resetSynthFreqs();
   refreshMidiRouting();
@@ -4353,11 +4325,11 @@ void animateRadialReverse() {  //inverted splash/star
 }
 
 void applyExternalMidiToHex(byte midiNote, bool noteOn) {
-  if (midiNote >= midiNoteToHexIndices.size()) {
+  if (midiNote >= 128) {
     return;
   }
-  auto& targets = midiNoteToHexIndices[midiNote];
-  for (uint8_t index : targets) {
+  for (uint8_t j = 0; j < midiNoteToHexCount[midiNote]; ++j) {
+    uint8_t index = midiNoteToHexData[midiNote][j];
     buttonDef& hex = h[index];
     if (noteOn) {
       if (hex.externalNoteDepth < 255) {
@@ -4449,9 +4421,7 @@ void animateLEDs() {
 // run this if the layout, key, or transposition changes, but not if color or scale changes
 void assignPitches() {
   sendToLog("assignPitch was called:");
-  for (auto& bucket : midiNoteToHexIndices) {
-    bucket.clear();
-  }
+  memset(midiNoteToHexCount, 0, sizeof(midiNoteToHexCount));
   int32_t lowestMidiIndex = std::numeric_limits<int32_t>::max();
   for (byte i = 0; i < LED_COUNT; i++) {
     if (!(h[i].isCmd)) {
@@ -4503,8 +4473,8 @@ void assignPitches() {
       }
       h[i].jiRetune = 0;
       h[i].jiFrequencyMultiplier = 1.0f;
-      if (h[i].note < 128) {
-        midiNoteToHexIndices[h[i].note].push_back(i);
+      if (h[i].note < 128 && midiNoteToHexCount[h[i].note] < MIDI_HEX_MAX) {
+        midiNoteToHexData[h[i].note][midiNoteToHexCount[h[i].note]++] = i;
       }
       h[i].externalNoteDepth = 0;
       sendToLog(
@@ -5284,7 +5254,7 @@ GEMSpinner spinnerBPM_MultiplierOfJI(spinnerBoundariesBPM, GEM_LOOP);
 ///////////////////////////////////////////////////////////////////
 
 // Roland MT-32 mode (1987)
-SelectOptionByte optionByteRolandMT32[] = {
+SelectOptionByte optionByteRolandMT32[] __in_flash("midi") = {
   // Blank
   { "None", 0 },
   // Piano
@@ -5443,7 +5413,7 @@ GEMItem menuItemRolandMT32("RolandMT32", programChange, selectRolandMT32, univer
                            reinterpret_cast<void*>(&callbackInfoProgramChange));
 
 // General MIDI 1
-SelectOptionByte optionByteGeneralMidi[] = {
+SelectOptionByte optionByteGeneralMidi[] __in_flash("midi") = {
   // Blank
   { "None", 0 },
   // Piano
@@ -5596,10 +5566,27 @@ GEMItem menuItemGeneralMidi("GeneralMidi", programChange, selectGeneralMidi, uni
                             reinterpret_cast<void*>(&callbackInfoProgramChange));
 
 
-// doing this long-hand because the STRUCT has problems accepting string conversions of numbers for some reason
-SelectOptionInt optionIntTransposeSteps[] = {
-  { "-127", -127 }, { "-126", -126 }, { "-125", -125 }, { "-124", -124 }, { "-123", -123 }, { "-122", -122 }, { "-121", -121 }, { "-120", -120 }, { "-119", -119 }, { "-118", -118 }, { "-117", -117 }, { "-116", -116 }, { "-115", -115 }, { "-114", -114 }, { "-113", -113 }, { "-112", -112 }, { "-111", -111 }, { "-110", -110 }, { "-109", -109 }, { "-108", -108 }, { "-107", -107 }, { "-106", -106 }, { "-105", -105 }, { "-104", -104 }, { "-103", -103 }, { "-102", -102 }, { "-101", -101 }, { "-100", -100 }, { "- 99", -99 }, { "- 98", -98 }, { "- 97", -97 }, { "- 96", -96 }, { "- 95", -95 }, { "- 94", -94 }, { "- 93", -93 }, { "- 92", -92 }, { "- 91", -91 }, { "- 90", -90 }, { "- 89", -89 }, { "- 88", -88 }, { "- 87", -87 }, { "- 86", -86 }, { "- 85", -85 }, { "- 84", -84 }, { "- 83", -83 }, { "- 82", -82 }, { "- 81", -81 }, { "- 80", -80 }, { "- 79", -79 }, { "- 78", -78 }, { "- 77", -77 }, { "- 76", -76 }, { "- 75", -75 }, { "- 74", -74 }, { "- 73", -73 }, { "- 72", -72 }, { "- 71", -71 }, { "- 70", -70 }, { "- 69", -69 }, { "- 68", -68 }, { "- 67", -67 }, { "- 66", -66 }, { "- 65", -65 }, { "- 64", -64 }, { "- 63", -63 }, { "- 62", -62 }, { "- 61", -61 }, { "- 60", -60 }, { "- 59", -59 }, { "- 58", -58 }, { "- 57", -57 }, { "- 56", -56 }, { "- 55", -55 }, { "- 54", -54 }, { "- 53", -53 }, { "- 52", -52 }, { "- 51", -51 }, { "- 50", -50 }, { "- 49", -49 }, { "- 48", -48 }, { "- 47", -47 }, { "- 46", -46 }, { "- 45", -45 }, { "- 44", -44 }, { "- 43", -43 }, { "- 42", -42 }, { "- 41", -41 }, { "- 40", -40 }, { "- 39", -39 }, { "- 38", -38 }, { "- 37", -37 }, { "- 36", -36 }, { "- 35", -35 }, { "- 34", -34 }, { "- 33", -33 }, { "- 32", -32 }, { "- 31", -31 }, { "- 30", -30 }, { "- 29", -29 }, { "- 28", -28 }, { "- 27", -27 }, { "- 26", -26 }, { "- 25", -25 }, { "- 24", -24 }, { "- 23", -23 }, { "- 22", -22 }, { "- 21", -21 }, { "- 20", -20 }, { "- 19", -19 }, { "- 18", -18 }, { "- 17", -17 }, { "- 16", -16 }, { "- 15", -15 }, { "- 14", -14 }, { "- 13", -13 }, { "- 12", -12 }, { "- 11", -11 }, { "- 10", -10 }, { "-  9", -9 }, { "-  8", -8 }, { "-  7", -7 }, { "-  6", -6 }, { "-  5", -5 }, { "-  4", -4 }, { "-  3", -3 }, { "-  2", -2 }, { "-  1", -1 }, { "+/-0", 0 }, { "+  1", 1 }, { "+  2", 2 }, { "+  3", 3 }, { "+  4", 4 }, { "+  5", 5 }, { "+  6", 6 }, { "+  7", 7 }, { "+  8", 8 }, { "+  9", 9 }, { "+ 10", 10 }, { "+ 11", 11 }, { "+ 12", 12 }, { "+ 13", 13 }, { "+ 14", 14 }, { "+ 15", 15 }, { "+ 16", 16 }, { "+ 17", 17 }, { "+ 18", 18 }, { "+ 19", 19 }, { "+ 20", 20 }, { "+ 21", 21 }, { "+ 22", 22 }, { "+ 23", 23 }, { "+ 24", 24 }, { "+ 25", 25 }, { "+ 26", 26 }, { "+ 27", 27 }, { "+ 28", 28 }, { "+ 29", 29 }, { "+ 30", 30 }, { "+ 31", 31 }, { "+ 32", 32 }, { "+ 33", 33 }, { "+ 34", 34 }, { "+ 35", 35 }, { "+ 36", 36 }, { "+ 37", 37 }, { "+ 38", 38 }, { "+ 39", 39 }, { "+ 40", 40 }, { "+ 41", 41 }, { "+ 42", 42 }, { "+ 43", 43 }, { "+ 44", 44 }, { "+ 45", 45 }, { "+ 46", 46 }, { "+ 47", 47 }, { "+ 48", 48 }, { "+ 49", 49 }, { "+ 50", 50 }, { "+ 51", 51 }, { "+ 52", 52 }, { "+ 53", 53 }, { "+ 54", 54 }, { "+ 55", 55 }, { "+ 56", 56 }, { "+ 57", 57 }, { "+ 58", 58 }, { "+ 59", 59 }, { "+ 60", 60 }, { "+ 61", 61 }, { "+ 62", 62 }, { "+ 63", 63 }, { "+ 64", 64 }, { "+ 65", 65 }, { "+ 66", 66 }, { "+ 67", 67 }, { "+ 68", 68 }, { "+ 69", 69 }, { "+ 70", 70 }, { "+ 71", 71 }, { "+ 72", 72 }, { "+ 73", 73 }, { "+ 74", 74 }, { "+ 75", 75 }, { "+ 76", 76 }, { "+ 77", 77 }, { "+ 78", 78 }, { "+ 79", 79 }, { "+ 80", 80 }, { "+ 81", 81 }, { "+ 82", 82 }, { "+ 83", 83 }, { "+ 84", 84 }, { "+ 85", 85 }, { "+ 86", 86 }, { "+ 87", 87 }, { "+ 88", 88 }, { "+ 89", 89 }, { "+ 90", 90 }, { "+ 91", 91 }, { "+ 92", 92 }, { "+ 93", 93 }, { "+ 94", 94 }, { "+ 95", 95 }, { "+ 96", 96 }, { "+ 97", 97 }, { "+ 98", 98 }, { "+ 99", 99 }, { "+100", 100 }, { "+101", 101 }, { "+102", 102 }, { "+103", 103 }, { "+104", 104 }, { "+105", 105 }, { "+106", 106 }, { "+107", 107 }, { "+108", 108 }, { "+109", 109 }, { "+110", 110 }, { "+111", 111 }, { "+112", 112 }, { "+113", 113 }, { "+114", 114 }, { "+115", 115 }, { "+116", 116 }, { "+117", 117 }, { "+118", 118 }, { "+119", 119 }, { "+120", 120 }, { "+121", 121 }, { "+122", 122 }, { "+123", 123 }, { "+124", 124 }, { "+125", 125 }, { "+126", 126 }, { "+127", 127 }
-};
+// Transpose spinner: generated programmatically instead of 255 hardcoded entries
+#define TRANSPOSE_COUNT 255
+static char transposeLabels[TRANSPOSE_COUNT][5];
+static SelectOptionInt optionIntTransposeSteps[TRANSPOSE_COUNT];
+void initTransposeOptions() {
+  for (int i = 0; i < TRANSPOSE_COUNT; ++i) {
+    int val = i - 127;  // -127 to +127
+    if (val == 0) {
+      memcpy(transposeLabels[i], "+/-0", 5);
+    } else if (val < -99) {
+      snprintf(transposeLabels[i], 5, "%d", val);
+    } else if (val < 0) {
+      snprintf(transposeLabels[i], 5, "-%*d", 3, -val);
+    } else if (val < 100) {
+      snprintf(transposeLabels[i], 5, "+%*d", 3, val);
+    } else {
+      snprintf(transposeLabels[i], 5, "+%d", val);
+    }
+    optionIntTransposeSteps[i] = { transposeLabels[i], val };
+  }
+}
 GEMSelect selectTransposeSteps(255, optionIntTransposeSteps);
 GEMItem menuItemTransposeSteps("Transpose", transposeSteps, selectTransposeSteps, changeTranspose);
 void previewTranspose(GEMPreviewCallbackData previewData) {
@@ -6368,6 +6355,7 @@ void createProfileMenuItems() {
 }
 
 void setupMenu() {
+  initTransposeOptions();
   menu.setSplashDelay(0);
   menu.init();
   menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
