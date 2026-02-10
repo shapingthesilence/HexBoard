@@ -1,6 +1,6 @@
 # HexBoard.ino — Code Documentation & Analysis
 
-> **File:** `src/HexBoard.ino` | **Lines:** 6,479 | **License:** GPL v3 (2022–2025)
+> **File:** `src/HexBoard.ino` | **Lines:** ~6,024 | **License:** GPL v3 (2022–2025)
 > **Hardware:** Generic RP2040 @ 133 MHz, 16 MB flash, NeoPixels, SH1107 OLED, rotary encoder, piezo + audio jack
 
 ---
@@ -81,7 +81,7 @@ Rotary Encoder → readKnob() (core 1) → dealWithRotary() (core 0) → GEM men
 ---
 
 ## Helper Functions
-**Lines 95–158**
+**Lines 95–162**
 
 | Function | Signature | What It Does |
 |----------|-----------|--------------|
@@ -93,13 +93,13 @@ Rotary Encoder → readKnob() (core 1) → dealWithRotary() (core 0) → GEM men
 
 ### Global State
 
-- **`pressedKeyIDs`** — `std::vector<byte>` tracking currently-pressed hex button indices (used for dynamic just intonation reference pitch)
-- **`midiNoteToHexIndices`** — `std::array<std::vector<uint8_t>, 128>` — reverse map from MIDI note number to hex button indices (used for incoming MIDI animation)
+- **`pressedKeyIDs`** — fixed-size `byte[PRESSED_KEY_MAX]` array (max 20) with `pressedKeyCount` counter, tracking currently-pressed hex button indices (used for dynamic just intonation reference pitch). *(Refactored from `std::vector<byte>` to eliminate heap allocation in timing-critical code.)*
+- **`midiNoteToHexData` / `midiNoteToHexCount`** — flat `uint8_t[128][MIDI_HEX_MAX]` array + `uint8_t[128]` count — reverse map from MIDI note number to hex button indices (used for incoming MIDI animation). *(Refactored from `std::array<std::vector<uint8_t>, 128>` to eliminate 128 heap-allocated vectors.)*
 
 ---
 
 ## Settings & Default Values
-**Lines 160–287**
+**Lines 164–291**
 
 All user-configurable parameters have a global variable with a compile-time default. These are overwritten at startup by `syncSettingsToRuntime()` from flash storage.
 
@@ -135,7 +135,7 @@ All user-configurable parameters have a global variable with a compile-time defa
 ---
 
 ## Microtonal Tuning System
-**Lines 288–433**
+**Lines 292–437**
 
 The HexBoard supports **arbitrary equal divisions of the octave (EDO)**, not just standard 12-tone.
 
@@ -168,7 +168,7 @@ Method `spanCtoA()` returns the number of steps from C to A in the given tuning 
 ---
 
 ## Custom EDO Generator
-**Lines 434–544**
+**Lines 438–548**
 
 Generates arbitrary N-EDO tuning definitions at runtime using music-theory-derived interval relationships.
 
@@ -206,7 +206,7 @@ Three large static buffer pools hold the generated names and values:
 ---
 
 ## Isomorphic Layout Definitions
-**Lines 545–725**
+**Lines 549–729**
 
 ### `layoutDef` Class (line 556)
 
@@ -229,7 +229,7 @@ Three large static buffer pools hold the generated names and values:
 ---
 
 ## Scale Definitions
-**Lines 726–778**
+**Lines 730–782**
 
 ### `scaleDef` Class (line 736)
 
@@ -249,7 +249,7 @@ Three large static buffer pools hold the generated names and values:
 ---
 
 ## Color / Palette System
-**Lines 779–863**
+**Lines 783–867**
 
 ### `colorDef` Class (line 842)
 
@@ -268,14 +268,14 @@ Value and saturation levels are defined for consistent palette generation across
 ---
 
 ## Preset System
-**Lines 864–925**
+**Lines 868–929**
 
-### `presetDef` Class (line 877)
+### `presetDef` Class (line 881)
 
 Bundles all the indices needed to define the current musical configuration:
 
 | Field | Purpose |
-|-------|---------|
+|-------|--------|
 | `tuningIndex` | Index into `tuningOptions[]` |
 | `layoutIndex` | Index into `layoutOptions[]` |
 | `scaleIndex` | Index into `scaleOptions[]` |
@@ -284,21 +284,23 @@ Bundles all the indices needed to define the current musical configuration:
 
 Helper methods: `tuning()`, `layout()`, `scale()`, `keyStepsFromC()`, `pitchRelToA4()`, `keyDegree()`
 
+The accessor methods `tuning()`, `layout()`, and `scale()` use `constrain()` to clamp their respective indices before array access, preventing out-of-bounds reads if a corrupted or mismatched settings file provides invalid values.
+
 **`current`** — the active preset, initialized to 12-EDO, Wicki-Hayden layout, no scale, key of C.
 
 ---
 
 ## Diagnostics & Timing
-**Lines 926–957**
+**Lines 930–958**
 
 - **`readClock()`** — reads the RP2040's 64-bit hardware timer directly for microsecond precision
 - **`timeTracker()`** — updates `runTime`, `lapTime`, `loopTime` every main loop iteration
-- **`sendToLog()`** — conditional Serial debug output gated by `debugMessages` flag
+- **`sendToLog()`** — preprocessor macro (line 938) that wraps the `debugMessages` check **around** the string construction, so `std::string` arguments are never built when debug is off. *(Refactored from a function that accepted `std::string` by value — the old approach heap-allocated the string even when `debugMessages` was false.)*
 
 ---
 
 ## Grid System & Button Hardware
-**Lines 958–1240**
+**Lines 959–1241**
 
 ### Hardware Layout
 
@@ -338,7 +340,7 @@ Virtual control wheel implemented with 3 command buttons:
 ---
 
 ## LED System
-**Lines 1241–1704**
+**Lines 1242–1705**
 
 ### Hardware
 
@@ -376,7 +378,7 @@ Each button gets: `LEDcodeRest` (idle), `LEDcodePlay` (tinted), `LEDcodeDim` (sh
 ---
 
 ## MIDI System
-**Lines 1705–2617**
+**Lines 1706–2589**
 
 ### Dual Output
 
@@ -384,10 +386,10 @@ Both USB MIDI (`UMIDI`) and Serial/DIN MIDI (`SMIDI`) are supported simultaneous
 
 ### MPE Channel Management
 
-- `mpeAvailableChannels` — `std::vector<byte>` pool of free channels
-- `takeMPEChannel()` — allocates a channel (FIFO or sorted, depending on `mpeLowPriorityMode`)
-- `releaseMPEChannel()` — returns a channel to the pool
-- `resetMPEChannelPool()` — rebuilds the pool from `mpeLowestChannel` to `mpeHighestChannel`
+- `mpeChannelBitmap` — `uint16_t` bitmap where bit N represents channel N+1. *(Refactored from `std::vector<byte>` — all operations are now O(1) bitwise ops instead of vector insert/erase/sort.)*
+- `takeMPEChannel()` — allocates the lowest available channel via `__builtin_ctz()` (count trailing zeros) and clears the bit
+- `releaseMPEChannel()` — sets the channel's bit back in the bitmap
+- `resetMPEChannelPool()` — sets bits for all channels from `mpeLowestChannel` to `mpeHighestChannel`
 
 ### Key Functions
 
@@ -405,7 +407,7 @@ Both USB MIDI (`UMIDI`) and Serial/DIN MIDI (`SMIDI`) are supported simultaneous
 ---
 
 ## Dynamic Just Intonation
-**Lines 1950–2617** *(within the `@MIDI` section)*
+**Lines 1950–2589** *(within the `@MIDI` section)*
 
 ### Overview
 
@@ -417,7 +419,7 @@ Optional feature that rounds frequencies to multiples of a BPM-derived resolutio
 
 ### Ratios Table
 
-~350+ `std::pair<byte,byte>` entries (starting at line 1983) sorted from simplest (1:1, 1:2, 2:3) to most complex (38:5). The algorithm scans linearly for the simplest ratio within ¼ step of the EDO interval.
+~330+ `std::pair<byte,byte>` entries (starting at line 1972) sorted from simplest (1:1, 1:2, 2:3) to most complex (38:5). The algorithm scans linearly for the simplest ratio within ¼ step of the EDO interval. *(18 duplicate ratio entries were removed during refactoring.)*
 
 ### Key Functions
 
@@ -432,7 +434,7 @@ Optional feature that rounds frequencies to multiples of a BPM-derived resolutio
 ---
 
 ## Synthesizer Engine
-**Lines 2618–3821**
+**Lines 2590–3793**
 
 ### Hardware
 
@@ -499,7 +501,7 @@ Runs on **Core 1 via hardware alarm at ~41 kHz** (~24 µs budget per sample, lin
 ---
 
 ## Animation System
-**Lines 3822–4090**
+**Lines 3794–4062**
 
 ### Direction System
 
@@ -523,7 +525,7 @@ Runs on **Core 1 via hardware alarm at ~41 kHz** (~24 µs budget per sample, lin
 ---
 
 ## Note & Pitch Assignment
-**Lines 4091–4271**
+**Lines 4063–4243**
 
 ### `assignPitches()` (line 4099)
 
@@ -550,7 +552,7 @@ Walks the scale pattern to determine each hex's `inScale` flag, then calls `setL
 ---
 
 ## Settings Persistence
-**Lines 4272–4596**
+**Lines 4244–4566**
 
 ### File Format
 
@@ -578,11 +580,13 @@ Binary file `/settings.dat` on LittleFS:
 ---
 
 ## GEM Menu System
-**Lines 4597–6202**
+**Lines 4567–6190**
 
 ### Display
 
-U8G2 SH1107 128×128 OLED on I²C (line 4619), with a ~33-second screensaver timeout.
+U8G2 SH1107 128×128 OLED on I²C (line 4589), with a ~33-second screensaver timeout.
+
+The Roland MT-32 and General MIDI instrument name tables are stored in flash via `__in_flash("midi")` to save RAM (~5 KB). The transpose spinner (`optionIntTransposeSteps[]`, -127 to +127) is generated programmatically at startup by `initTransposeOptions()` instead of being hardcoded as 255 static entries.
 
 ### Menu Hierarchy
 
@@ -620,7 +624,7 @@ Every persistent menu item uses a `PersistentCallbackInfo` struct:
 ---
 
 ## Input Interface
-**Lines 6203–6417**
+**Lines 6191–6372**
 
 ### Rotary Encoder
 
@@ -641,9 +645,9 @@ The main button scanning loop:
 ---
 
 ## Main Program Flow
-**Lines 6418–6479**
+**Lines 6373–6434**
 
-### Core 0 — `setup()` (line 6437)
+### Core 0 — `setup()` (line 6392)
 
 1. TinyUSB initialization
 2. USB + Serial MIDI setup
@@ -656,7 +660,7 @@ The main button scanning loop:
 9. `syncSettingsToRuntime()` — applies all loaded settings
 10. Pitch bend factor computation
 
-### Core 0 — `loop()` (line 6458)
+### Core 0 — `loop()` (line 6413)
 
 ```
 timeTracker() → processEnvelopeReleases() → retryPendingReleases() → screenSaver()
@@ -664,11 +668,11 @@ timeTracker() → processEnvelopeReleases() → retryPendingReleases() → scree
 → animateLEDs() → lightUpLEDs() → dealWithRotary() → checkAndAutoSave()
 ```
 
-### Core 1 — `setup1()` (line 6472)
+### Core 1 — `setup1()` (line 6427)
 
 Sets up PWM on both piezo and audio jack pins, registers the ~41 kHz hardware alarm ISR.
 
-### Core 1 — `loop1()` (line 6476)
+### Core 1 — `loop1()` (line 6431)
 
 Continuously polls the rotary encoder (`readKnob()`).
 
@@ -678,37 +682,37 @@ Continuously polls the rotary encoder (`readKnob()`).
 
 ### 1. Redundancies & Dead Code
 
-| Issue | Location | Impact |
+| Issue | Location | Status |
 |-------|----------|--------|
-| **Duplicate JI ratio entries** | Lines ~1983–2450 | `{1,4}` and `{12,1}` appear twice in the ratios table. Deduplication reduces table size and eliminates redundant comparisons. |
-| **Manual transpose spinner** | In `@menu` section (~line 4597+) | 255 hardcoded `SelectOptionInt` entries from -127 to +127 could be generated in a loop during `setupMenu()`. |
+| ~~Duplicate JI ratio entries~~ | Lines ~1972–2420 | **DONE** — 18 duplicate ratio pairs removed. |
+| ~~Manual transpose spinner~~ | `@menu` section | **DONE** — 255 hardcoded entries replaced with `initTransposeOptions()` loop. |
 
 ### 2. Memory Optimization
 
-| Issue | Suggestion | Est. Savings |
-|-------|------------|-------------|
-| `tuningDef` has `SelectOptionInt[87]` × 13 tunings | Move to dynamically allocated only for the active tuning, or use PROGMEM | ~5 KB |
-| General MIDI + Roland MT-32 instrument name tables (~2.5 KB each) | Store in flash with `PROGMEM` / `__in_flash()` | ~5 KB RAM |
-| `customKeyNameBuf[12][87][4]` = 4,176 bytes static | Allocate only for used custom tuning slots | Up to ~3.5 KB |
-| `midiNoteToHexIndices` uses `std::vector<uint8_t>` × 128 | Use a flat array with fixed max (each note maps to at most ~5 hexes) | Fewer heap allocations |
-| `pressedKeyIDs` as `std::vector<byte>` | Use fixed-size array with count (max 140 simultaneous presses is impossible in practice — 10-20 is realistic) | Eliminates dynamic allocation near timing-critical code |
-| `mpeAvailableChannels` as `std::vector<byte>` with sorted insert/erase | Use a 16-bit bitmap — `takeMPEChannel()` becomes `__builtin_ctz()`, `releaseMPEChannel()` becomes a single OR | Faster + smaller |
+| Issue | Suggestion | Status |
+|-------|------------|--------|
+| `tuningDef` has `SelectOptionInt[87]` × 13 tunings | Move to dynamically allocated only for the active tuning, or use PROGMEM | Open (~5 KB) |
+| ~~General MIDI + Roland MT-32 instrument name tables~~ | ~~Store in flash with `__in_flash()`~~ | **DONE** — tables placed in flash via `__in_flash("midi")` |
+| `customKeyNameBuf[12][87][4]` = 4,176 bytes static | Allocate only for used custom tuning slots | Open (~3.5 KB) |
+| ~~`midiNoteToHexIndices` uses `std::vector<uint8_t>` × 128~~ | ~~Use a flat array with fixed max~~ | **DONE** — replaced with `uint8_t[128][16]` + count array |
+| ~~`pressedKeyIDs` as `std::vector<byte>`~~ | ~~Use fixed-size array with count~~ | **DONE** — replaced with `byte[20]` + `pressedKeyCount` |
+| ~~`mpeAvailableChannels` as `std::vector<byte>`~~ | ~~Use a 16-bit bitmap~~ | **DONE** — replaced with `uint16_t mpeChannelBitmap` + `__builtin_ctz()` |
 
 ### 3. Performance Optimization
 
-| Issue | Suggestion | Impact |
+| Issue | Suggestion | Status |
 |-------|------------|--------|
-| `setLEDcolorCodes()` does heavy float math per button for some modes | Precompute per **scale degree** (at most 87) rather than per button (140). Many buttons share the same scale degree. | ~60% fewer trig/log calls |
-| `sendToLog()` uses `std::string` concatenation | Guard string construction with `if (debugMessages)` **before** building the string, not just before printing. Or use `#ifdef DEBUG`. | Eliminates heap churn in release builds |
-| `justIntonationRetune()` linear scan of ~350 ratios | Precompute a lookup table indexed by interval class (at most `cycleLength` entries). For 12-EDO, that's 12 pre-resolved ratios. | O(1) vs O(350) per note |
-| `poll()` ISR uses `int64_t` multiplication | Profile to ensure the full 8-voice mix completes within the 24 µs budget. Consider fixed-point `int32_t` arithmetic with bit-shifting. | Reduces ISR overhead |
-| `animateOrbit()` / `animateRadial()` recompute neighbor offsets each frame | Cache neighbor coordinate lists at layout-change time | Minor CPU savings per frame |
+| `setLEDcolorCodes()` does heavy float math per button for some modes | Precompute per **scale degree** (at most 87) rather than per button (140). Many buttons share the same scale degree. | Open |
+| ~~`sendToLog()` uses `std::string` concatenation~~ | ~~Guard string construction before building the string~~ | **DONE** — converted to macro; string args never evaluated when `debugMessages` is false |
+| `justIntonationRetune()` linear scan of ~330 ratios | Precompute a lookup table indexed by interval class (at most `cycleLength` entries). For 12-EDO, that's 12 pre-resolved ratios. | Open |
+| `poll()` ISR uses `int64_t` multiplication | Profile to ensure the full 8-voice mix completes within the 24 µs budget. Consider fixed-point `int32_t` arithmetic with bit-shifting. | Open |
+| `animateOrbit()` / `animateRadial()` recompute neighbor offsets each frame | Cache neighbor coordinate lists at layout-change time | Open |
 
 ### 4. Architectural Improvements
 
 | Issue | Suggestion |
 |-------|------------|
-| **Single 6,479-line file** | The `@tag` comments already section the code. Splitting into headers per section (as the authors note they intend to do) would vastly improve maintainability. Arduino 2.x and PlatformIO handle multi-file projects correctly. |
+| **Single ~6,024-line file** | The `@tag` comments already section the code. Splitting into headers per section (as the authors note they intend to do) would vastly improve maintainability. Arduino 2.x and PlatformIO handle multi-file projects correctly. |
 | **`SettingKey` enum + `factoryDefaults[]` manual sync** | Use a struct or X-macro pattern so each setting's key, default, type, and variable pointer are defined in one place. This eliminates the risk of index mismatches. |
 | **Envelope commands via 8 separate atomics** | Replace with a single lock-free SPSC ring buffer for commands. Simpler, more cache-friendly, and eliminates the retry/pending release mechanism. |
 | **`universalSaveCallback()` + `PersistentCallbackInfo` pattern** | Clean and well-designed, but the `reader` function pointer adds indirection. Consider a template-based approach for compile-time dispatch. |
@@ -716,18 +720,18 @@ Continuously polls the rotary encoder (`readKnob()`).
 
 ### 5. Code Size Reduction
 
-| Target | Technique | Est. Savings |
-|--------|-----------|-------------|
-| Generate transpose spinner programmatically | Loop in `setupMenu()` | ~260 lines |
-| Consolidate duplicate ratio entries in JI table | Deduplicate | ~10 lines + minor runtime savings |
-| Extract shared LED computation into helper | Refactor `setLEDcolorCodes()` | ~50 lines via shared per-scale-degree path |
-| Move instrument name tables to PROGMEM | `const char* const PROGMEM` | No line savings but ~5 KB flash-only |
+| Target | Technique | Status |
+|--------|-----------|--------|
+| ~~Generate transpose spinner programmatically~~ | ~~Loop in `setupMenu()`~~ | **DONE** — saved ~240 lines of hardcoded entries |
+| ~~Consolidate duplicate ratio entries in JI table~~ | ~~Deduplicate~~ | **DONE** — removed 18 duplicate lines |
+| Extract shared LED computation into helper | Refactor `setLEDcolorCodes()` | Open |
+| ~~Move instrument name tables to flash~~ | ~~`__in_flash()`~~ | **DONE** |
 
 ### 6. Robustness
 
-| Issue | Suggestion |
-|-------|------------|
-| `load_settings()` trusts file size after magic check | Add CRC32 checksum to settings header |
-| No bounds checking on `layoutIndex`, `scaleIndex`, `tuningIndex` in `presetDef` | Add `assert()` or clamping in accessors |
-| `mpeAvailableChannels` can be empty if range is misconfigured | `takeMPEChannel()` should handle empty pool gracefully (it may already, but a comment would help) |
-| `poll()` ISR has no watchdog/timing check | Add a cycle counter to detect overruns in debug mode |
+| Issue | Suggestion | Status |
+|-------|------------|--------|
+| `load_settings()` trusts file size after magic check | Add CRC32 checksum to settings header | Open |
+| ~~No bounds checking on `layoutIndex`, `scaleIndex`, `tuningIndex` in `presetDef`~~ | ~~Add clamping in accessors~~ | **DONE** — `constrain()` added to `tuning()`, `layout()`, `scale()` |
+| ~~`mpeAvailableChannels` can be empty if range is misconfigured~~ | ~~Handle empty pool gracefully~~ | **DONE** — bitmap returns 0 when empty (`mpeChannelBitmap == 0` check) |
+| `poll()` ISR has no watchdog/timing check | Add a cycle counter to detect overruns in debug mode | Open |
