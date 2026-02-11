@@ -3290,6 +3290,10 @@ std::array<std::atomic<bool>, POLYPHONY_LIMIT> envelopeNeedsFree;
 std::array<std::atomic<uint32_t>, POLYPHONY_LIMIT> voiceGenerations;
 std::array<std::atomic<int16_t>, POLYPHONY_LIMIT> synthChannelOwners;
 std::atomic<uint32_t> nextVoiceGeneration = 1;
+// Flag set by Core 0 before flash writes. When true, poll() outputs silence
+// so the audio ISR resumes cleanly after flash operations (which disable all
+// interrupts on both cores of the RP2040).
+std::atomic<bool> flashWriteInProgress = false;
 constexpr int16_t NO_SYNTH_OWNER = -1;
 float pitchBendFactor = 1.0f;
 std::array<uint8_t, POLYPHONY_LIMIT> releaseRetries = {};
@@ -3401,6 +3405,13 @@ void updateArpeggiatorTiming() {
 void RAM_FUNC(poll)() {
   hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
   timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
+  // While flash is being written, interrupts are disabled on both cores.
+  // When the ISR resumes afterward, output silence to avoid glitch artifacts.
+  if (flashWriteInProgress.load(std::memory_order_relaxed)) {
+    if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
+    if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, (uint16_t)PWM_MID);
+    return;
+  }
   uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
   int64_t mix = 0;    // signed accumulator now (bipolar)
   // ============================================================
@@ -4692,7 +4703,21 @@ void setupFileSystem() {
   LittleFS.setConfig(cfg);
   fileSystemExists = LittleFS.begin();
   if (!fileSystemExists) {
-    sendToLog("Error: Unable to mount LittleFS.");
+    // Mount failed (first boot or corrupted FS). USB enumeration guard in
+    // setup() already waited up to 2 s, so only a short extra margin here.
+    sendToLog("LittleFS mount failed. Formatting after USB settles...");
+    delay(500);
+    if (LittleFS.format()) {
+      sendToLog("LittleFS format succeeded. Mounting...");
+      fileSystemExists = LittleFS.begin();
+      if (!fileSystemExists) {
+        sendToLog("Error: mount failed after format.");
+      } else {
+        sendToLog("LittleFS mounted successfully after format.");
+      }
+    } else {
+      sendToLog("Error: LittleFS format failed.");
+    }
   } else {
     sendToLog("LittleFS mounted successfully.");
   }
@@ -4796,11 +4821,25 @@ void save_settings() {
   sendToLog("Settings saved.");
 }
 
+// Wrapper that mutes audio before writing to flash and unmutes afterward.
+// On the RP2040 flash writes disable ALL interrupts on BOTH cores, which
+// starves the audio ISR.  Muting first ensures a brief silence instead of
+// an audible glitch when interrupts resume.
+void flashSafeSave() {
+  flashWriteInProgress.store(true, std::memory_order_release);
+  // Allow a few ISR cycles (~0.5 ms) to output silence before the flash
+  // write freezes the timer, so the transition is a clean fade-to-silence
+  // rather than a mid-sample cut.
+  delayMicroseconds(500);
+  save_settings();
+  flashWriteInProgress.store(false, std::memory_order_release);
+}
+
 // Restore all settings to the factory defaults.
 void restore_default_settings() {
   applyFactoryDefaultsToSettings();
   sendToLog("Default settings restored.");
-  save_settings();
+  flashSafeSave();
 }
 
 // --------------------------------------------------------
@@ -4830,7 +4869,7 @@ void checkAndAutoSave() {
   }
   // Auto-save always snapshots the current settings into profile 1 before writing to disk.
   copyCurrentSettingsToProfile(DEFAULT_PROFILE_INDEX);
-    save_settings();
+    flashSafeSave();
     settingsDirty = false;
 }
 
@@ -4849,7 +4888,7 @@ void saveProfileToSlot(uint8_t profileIndex) {
     return;
   }
   copyCurrentSettingsToProfile(profileIndex);
-  save_settings();
+  flashSafeSave();
   if (profileIndex == activeProfileIndex) {
     settingsDirty = false;
   }
@@ -5038,7 +5077,7 @@ extern bool settingsDirty;
 
 void resetDefaultsMenuCallback() {
   applyFactoryDefaultsToSettings();
-  save_settings();
+  flashSafeSave();
   syncSettingsToRuntime();
   settingsDirty = false;
   sendToLog("Factory defaults loaded from menu.");
@@ -6655,6 +6694,15 @@ void setup() {
 #endif
   irq_set_enabled(ALARM_IRQ, false);
   setupMIDI();
+  // Give the USB stack time to complete enumeration before any flash
+  // operations (which disable interrupts and starve the USB IRQ handler).
+  // Timeout after 2 s so the board still boots when no USB host is present.
+  {
+    unsigned long usbWaitStart = millis();
+    while (!TinyUSBDevice.mounted() && (millis() - usbWaitStart < 2000)) {
+      delay(1);
+    }
+  }
   setupFileSystem();
   Wire.setSDA(SDAPIN);
   Wire.setSCL(SCLPIN);
