@@ -1178,6 +1178,38 @@ presetDef current = {
 bool debugMessages = true;
 // Macro avoids constructing std::string arguments when debugMessages is false
 #define sendToLog(msg) do { if (debugMessages) { Serial.println((std::string(msg)).c_str()); } } while(0)
+/*
+    ISR cycle profiling — lightweight timing measurement for the
+    audio poll() interrupt. Tracks min/max/average microseconds
+    per ISR invocation. Enabled/disabled at runtime via
+    isrProfilingEnabled flag. Stats are read and reset atomically
+    from Core 0 via readAndResetISRProfile().
+  */
+volatile bool isrProfilingEnabled = false;
+volatile uint32_t isrCycleMin   = UINT32_MAX;
+volatile uint32_t isrCycleMax   = 0;
+volatile uint64_t isrCycleSum   = 0;
+volatile uint32_t isrCycleCount = 0;
+volatile uint32_t isrProfileMinUs  = 0;
+volatile uint32_t isrProfileMaxUs  = 0;
+volatile uint32_t isrProfileAvgUs  = 0;
+volatile uint32_t isrProfileCount  = 0;
+void readAndResetISRProfile() {
+  // Briefly disable profiling to get a consistent snapshot
+  isrProfilingEnabled = false;
+  __dmb();  // data memory barrier
+  isrProfileMinUs = (isrCycleMin == UINT32_MAX) ? 0 : isrCycleMin;
+  isrProfileMaxUs = isrCycleMax;
+  isrProfileCount = isrCycleCount;
+  isrProfileAvgUs = (isrProfileCount > 0) ? (uint32_t)(isrCycleSum / isrProfileCount) : 0;
+  // Reset counters
+  isrCycleMin = UINT32_MAX;
+  isrCycleMax = 0;
+  isrCycleSum = 0;
+  isrCycleCount = 0;
+  __dmb();
+  isrProfilingEnabled = true;
+}
 
 // @timing
 /*
@@ -1683,232 +1715,106 @@ void setLEDcolorCodes() {
   }
   // ---- End diatonic MOS precomputation ----
 
-  for (byte i = 0; i < LED_COUNT; i++) {
-    if (!(h[i].isCmd)) {
-      colorDef setColor;
-      byte paletteIndex = positiveMod(h[i].stepsFromC, current.tuning().cycleLength);
-      if (paletteBeginsAtKeyCenter) {
-        paletteIndex = current.keyDegree(paletteIndex);
-      }
-      switch (colorMode) {
-        case TIERED_COLOR_MODE:  // This mode sets the color based on the palettes defined above.
+  // ---- Per-degree LED code precomputation ----
+  // All buttons sharing the same scale degree get identical colors.
+  // Precompute once per degree to avoid redundant getLEDcode() calls.
+  int N = current.tuning().cycleLength;
+  struct DegreeLED { uint32_t rest; uint32_t play; uint32_t dim; };
+  DegreeLED degreeLEDs[MAX_SCALE_DIVISIONS];
+  uint32_t ledCodeOff = getLEDcode({ HUE_NONE, SAT_BW, VALUE_BLACK }); // same for all degrees
+
+  for (int degree = 0; degree < N; degree++) {
+    byte paletteIndex = degree;
+    if (paletteBeginsAtKeyCenter) {
+      paletteIndex = current.keyDegree(degree);
+    }
+    colorDef setColor;
+    switch (colorMode) {
+      case TIERED_COLOR_MODE:  // This mode sets the color based on the palettes defined above.
           setColor = palette[current.tuningIndex].getColor(paletteIndex);
           break;
-        case RAINBOW_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
-          setColor = { 360 * ((float)paletteIndex / (float)current.tuning().cycleLength), SAT_VIVID, VALUE_NORMAL };
-          break;
-        case RAINBOW_OF_FIFTHS_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
-          {
-            float stepSize = current.tuning().stepSize;
-            float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-            float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
-            float fifthSize = ((ratioToCents(3.0 / 2.0)) / stepSize);
-            float reverseFifth = fifthSize;
-            switch (current.tuningIndex) {
-              case TUNING_17EDO:
-                {
-                  reverseFifth = 12;
-                }
-                break;  // reverse hash of (10*x)%17=x where 10 steps is a 17EDO fifth
-              case TUNING_19EDO:
-                {
-                  reverseFifth = 7;
-                }
-                break;  // reverse hash of (11*x)%19=x where 11 steps is a 19EDO fifth
-              case TUNING_22EDO:
-                {
-                  reverseFifth = 17;
-                }
-                break;  // reverse hash of (13*x)%22=x where 13 steps is a 22EDO fifth
-              case TUNING_24EDO:
-                {
-                  reverseFifth = 11;
-                }
-                break;  // hand-picked best-fit value. This tuning is very unruly
-              case TUNING_31EDO:
-                {
-                  reverseFifth = 19;
-                }
-                break;  // reverse hash of (18*x)%31=x where 18 steps is a 31EDO fifth
-              case TUNING_31EDO_ZETA:
-                {
-                  reverseFifth = 19;
-                }
-                break;
-              case TUNING_41EDO:
-                {
-                  reverseFifth = 12;
-                }
-                break;  // reverse hash of (24*x)%41=x where 24 steps is a 41EDO fifth
-              case TUNING_43EDO:
-                {
-                  reverseFifth = 31;
-                }
-                break;  // reverse hash of (25*x)%43=x where 25 steps is a 43EDO fifth
-              case TUNING_46EDO:
-                {
-                  reverseFifth = 29;
-                }
-                break;  // reverse hash of (27*x)%46=x where 27 steps is a 46EDO fifth
-              case TUNING_53EDO:
-                {
-                  reverseFifth = 12;
-                }
-                break;  // reverse hash of (31*x)%53=x where 31 steps is a 53EDO fifth
-              case TUNING_58EDO:
-                {
-                  reverseFifth = 12;
-                }
-                break;  // reverse hash for 29EDO (2 chains of 29 EDO fifths in 58 EDO)
-              case TUNING_58EDO_ZETA:
-                {
-                  reverseFifth = 12;
-                }
-                break;
-              case TUNING_72EDO:
-                {
-                  reverseFifth = 7;
-                }
-                break;  // reverse hash for 12EDO (6 chains of 12 EDO fifths in 72 EDO)
-              case TUNING_72EDO_ZETA:
-                {
-                  reverseFifth = 7;
-                }
-                break;
-              case TUNING_80EDO:
-                {
-                  reverseFifth = 63;
-                }
-                break;  // reverse hash of (47*x)%80=x where 47 steps is an 80EDO fifth
-              case TUNING_87EDO:
-                {
-                  reverseFifth = 41;
-                }
-                break;  // A hand-picked value, seems to work. 46 also works
-              case TUNING_BP:
-                {
-                  reverseFifth = 5;
-                }
-                break;  // A hand-picked value; 23 and 64 also work
-              case TUNING_ALPHA:
-                {
-                  reverseFifth = 5;
-                }
-                break;  // A hand-picked value
-              case TUNING_BETA:
-                {
-                  reverseFifth = 7;
-                }
-                break;  // reverse hash of (11*x)%19=x where 11 steps is a 19EDO equivalent fifth
-              case TUNING_GAMMA:
-                {
-                  reverseFifth = 12;
-                }
-                break;  // reverse hash for 17EDO(2 chains of 17 EDO fifths in 34 EDO equivalent)
-              default:
-                {
-                  reverseFifth = fifthSize;
-                }  // either the tuning has no fifths or scrambling colors using fifths works
-            }
-
-            float paletteIndexOfFifths = fmodf((keyDegree * reverseFifth), octaveCycleLength);
-            setColor = { 360.0f * (paletteIndexOfFifths / (1200.0f / stepSize)), SAT_VIVID, VALUE_NORMAL };
-          }
-          break;
-        case PIANO_ALT_COLOR_MODE:
-          {
-            float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-            float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = (12.0f / octaveCycleLength) * semipaletteIndex;
-            if ((int)round(keyDegree) % 12 == 1 || (int)round(keyDegree) % 12 == 3 || (int)round(keyDegree) % 12 == 6 || (int)round(keyDegree) % 12 == 8 || (int)round(keyDegree) % 12 == 10) {
-              float deviationFromDiatonic = (float)((int)round(keyDegree) - keyDegree) * 180.0;  // range from 180 to 360
+      case RAINBOW_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
+        setColor = { 360 * ((float)paletteIndex / (float)N), SAT_VIVID, VALUE_NORMAL };
+        break;
+      case RAINBOW_OF_FIFTHS_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
+        {
+          float stepSize = current.tuning().stepSize;
+          float octaveCycleLength = 1200.0 / stepSize;
+          float semipaletteIndex = fmodf(degree + (octaveCycleLength * 256.0), octaveCycleLength);
+          float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
+          float fifthSize = ratioToCents(3.0 / 2.0) / stepSize;
+          float paletteIndexOfFifths = fmodf((keyDegree * fifthSize), octaveCycleLength);
+          setColor = { 360.0f * (paletteIndexOfFifths / octaveCycleLength), SAT_VIVID, VALUE_NORMAL };
+        }
+        break;
+      case PIANO_ALT_COLOR_MODE:
+        {
+          float octaveCycleLength = 1200.0 / current.tuning().stepSize; // This is to prevent non-octave colouring weirdness
+          float semipaletteIndex = fmodf(degree + (octaveCycleLength * 256.0), octaveCycleLength);
+          float keyDeg = (12.0f / octaveCycleLength) * semipaletteIndex;
+          if ((int)round(keyDeg) % 12 == 1 || (int)round(keyDeg) % 12 == 3 || (int)round(keyDeg) % 12 == 6 || (int)round(keyDeg) % 12 == 8 || (int)round(keyDeg) % 12 == 10) {
+            float deviationFromDiatonic = (float)((int)round(keyDeg) - keyDeg) * 180.0; // range from 180 to 360
               // +360 for proper fmodf; 180 is the opposite tint of 0; 30 is midway between yellow and red;
-              setColor = { fmodf(360.0 + 180.0 + 30.0 + deviationFromDiatonic, 360.0f), SAT_VIVID, VALUE_NORMAL };
-            } else  // White key
-            {
-              float deviationFromDiatonic = (((float)((int)round(keyDegree))) - (keyDegree)) * 180.0;  // from -60 to 120
-              setColor = { fmodf(360.0 + 0.0 + 30.0 + deviationFromDiatonic, 360.0f), SAT_VIVID, VALUE_NORMAL };
-            }
+            setColor = { fmodf(360.0 + 180.0 + 30.0 + deviationFromDiatonic, 360.0f), SAT_VIVID, VALUE_NORMAL };
+          } else {  // White keys
+            float deviationFromDiatonic = (((float)((int)round(keyDeg))) - (keyDeg)) * 180.0;
+            setColor = { fmodf(360.0 + 0.0 + 30.0 + deviationFromDiatonic, 360.0f), SAT_VIVID, VALUE_NORMAL };
           }
-          break;
-        case PIANO_COLOR_MODE:
-          {
-            float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-            float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = (12.0f / octaveCycleLength) * semipaletteIndex;
-            if ((int)round(keyDegree) % 12 == 1 || (int)round(keyDegree) % 12 == 3 || (int)round(keyDegree) % 12 == 6 || (int)round(keyDegree) % 12 == 8 || (int)round(keyDegree) % 12 == 10) {
-              float deviationFromDiatonic = ((float)((int)round(keyDegree) - keyDegree) * 3072.0f) / 12.0;
-              uint8_t tint = (uint8_t)(abs(round(deviationFromDiatonic)));
-              tint = strip.gamma8(tint);
-              setColor = { 360 * (fmodf(round(keyDegree), 12.0f) / 12.0f), SAT_TINT, VALUE_BLACK };
-            } else  // White key
-            {
-              float deviationFromDiatonic = ((((float)((int)round(keyDegree))) - (keyDegree)) * 3072.0f) / 12.0;
-              uint8_t tint = 255 - (uint8_t)(abs(round(deviationFromDiatonic)));
-              tint = strip.gamma8(tint);
-              setColor = { 360 * (fmodf(round(keyDegree), 12.0f) / 12.0f), SAT_TINT, VALUE_NORMAL };
-            }
+        }
+        break;
+      case PIANO_COLOR_MODE:
+        {
+          float octaveCycleLength = 1200.0 / current.tuning().stepSize;
+          float semipaletteIndex = fmodf(degree + (octaveCycleLength * 256.0), octaveCycleLength);
+          float keyDeg = (12.0f / octaveCycleLength) * semipaletteIndex;
+          if ((int)round(keyDeg) % 12 == 1 || (int)round(keyDeg) % 12 == 3 || (int)round(keyDeg) % 12 == 6 || (int)round(keyDeg) % 12 == 8 || (int)round(keyDeg) % 12 == 10) {
+            float deviationFromDiatonic = ((float)((int)round(keyDeg) - keyDeg) * 3072.0f) / 12.0;
+            uint8_t tint = (uint8_t)(abs(round(deviationFromDiatonic)));
+            tint = strip.gamma8(tint);
+            setColor = { 360 * (fmodf(round(keyDeg), 12.0f) / 12.0f), SAT_TINT, VALUE_BLACK };
+          } else {
+            float deviationFromDiatonic = ((((float)((int)round(keyDeg))) - (keyDeg)) * 3072.0f) / 12.0;
+            uint8_t tint = 255 - (uint8_t)(abs(round(deviationFromDiatonic)));
+            tint = strip.gamma8(tint);
+            setColor = { 360 * (fmodf(round(keyDeg), 12.0f) / 12.0f), SAT_TINT, VALUE_NORMAL };
           }
-          break;
-        case PIANO_INCANDESCENT_COLOR_MODE:
-          {
-            float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-            float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = (12.0f / octaveCycleLength) * semipaletteIndex;
-            float tint, deviationFromDiatonic;
-            if ((int)round(keyDegree) % 12 == 1 || (int)round(keyDegree) % 12 == 3 || (int)round(keyDegree) % 12 == 6 || (int)round(keyDegree) % 12 == 8 || (int)round(keyDegree) % 12 == 10) {
-              deviationFromDiatonic = (round(keyDegree) - keyDegree);
-              deviationFromDiatonic = (abs(deviationFromDiatonic));  // from 0 to 0.5
-            } else                                                   // White key
-            {
-              deviationFromDiatonic = (round(keyDegree) - keyDegree);
-              deviationFromDiatonic = 1.0 - abs(deviationFromDiatonic);  // from 1 to 0.5
-            }
-            auto baseTemperature = 800;
-            tint = ((sqrt(deviationFromDiatonic))) * (incandescence::maxTemperature - baseTemperature) + baseTemperature;
-
-            setColor = incandescence::getColor(tint);
+        }
+        break;
+      case PIANO_INCANDESCENT_COLOR_MODE:
+        {
+          float octaveCycleLength = 1200.0 / current.tuning().stepSize;
+          float semipaletteIndex = fmodf(degree + (octaveCycleLength * 256.0), octaveCycleLength);
+          float keyDeg = (12.0f / octaveCycleLength) * semipaletteIndex;
+          float deviationFromDiatonic;
+          if ((int)round(keyDeg) % 12 == 1 || (int)round(keyDeg) % 12 == 3 || (int)round(keyDeg) % 12 == 6 || (int)round(keyDeg) % 12 == 8 || (int)round(keyDeg) % 12 == 10) {
+            deviationFromDiatonic = abs(round(keyDeg) - keyDeg);
+          } else {
+            deviationFromDiatonic = 1.0 - abs(round(keyDeg) - keyDeg);
           }
-          break;
-        case ALTERNATE_COLOR_MODE:
-          {
-          // This mode assigns each note a color based on the interval it forms with the root note.
-          // This is an adaptation of an algorithm developed by Nicholas Fox and Kite Giedraitis.
+          auto baseTemperature = 800;
+          float tint = ((sqrt(deviationFromDiatonic))) * (incandescence::maxTemperature - baseTemperature) + baseTemperature;
+          setColor = incandescence::getColor(tint);
+        }
+        break;
+      case ALTERNATE_COLOR_MODE:
+        {
+        // This mode assigns each note a color based on the interval it forms with the root note.
+        // This is an adaptation of an algorithm developed by Nicholas Fox and Kite Giedraitis.
           float cents = current.tuning().stepSize * paletteIndex;
           bool perf = 0;
           float center = 0.0;
-          if (cents < 50) {
-            perf = 1;
-            center = 0.0;
-          } else if ((cents >= 50) && (cents < 250)) {
-            center = 147.1;
-          } else if ((cents >= 250) && (cents < 450)) {
-            center = 351.0;
-          } else if ((cents >= 450) && (cents < 600)) {
-            perf = 1;
-            center = 498.0;
-          } else if ((cents >= 600) && (cents <= 750)) {
-            perf = 1;
-            center = 702.0;
-          } else if ((cents > 750) && (cents <= 950)) {
-            center = 849.0;
-          } else if ((cents > 950) && (cents <= 1150)) {
-            center = 1053.0;
-          } else if ((cents > 1150) && (cents < 1250)) {
-            perf = 1;
-            center = 1200.0;
-          } else if ((cents >= 1250) && (cents < 1450)) {
-            center = 1347.1;
-          } else if ((cents >= 1450) && (cents < 1650)) {
-            center = 1551.0;
-          } else if ((cents >= 1650) && (cents < 1850)) {
-            perf = 1;
-            center = 1698.0;
-          } else if ((cents >= 1800) && (cents <= 1950)) {
-            perf = 1;
-            center = 1902.0;
-          }
+          if (cents < 50) { perf = 1; center = 0.0; }
+          else if ((cents >= 50) && (cents < 250)) { center = 147.1; }
+          else if ((cents >= 250) && (cents < 450)) { center = 351.0; }
+          else if ((cents >= 450) && (cents < 600)) { perf = 1; center = 498.0; }
+          else if ((cents >= 600) && (cents <= 750)) { perf = 1; center = 702.0; }
+          else if ((cents > 750) && (cents <= 950)) { center = 849.0; }
+          else if ((cents > 950) && (cents <= 1150)) { center = 1053.0; }
+          else if ((cents > 1150) && (cents < 1250)) { perf = 1; center = 1200.0; }
+          else if ((cents >= 1250) && (cents < 1450)) { center = 1347.1; }
+          else if ((cents >= 1450) && (cents < 1650)) { center = 1551.0; }
+          else if ((cents >= 1650) && (cents < 1850)) { perf = 1; center = 1698.0; }
+          else if ((cents >= 1800) && (cents <= 1950)) { perf = 1; center = 1902.0; }
           float offCenter = cents - center;
           int16_t altHue = positiveMod((int)(150 + (perf * ((offCenter > 0) ? -72 : 72)) - round(1.44 * offCenter)), 360);
           float deSaturate = perf * (abs(offCenter) < 20) * (1 - (0.02 * abs(offCenter)));
@@ -1917,50 +1823,52 @@ void setLEDcolorCodes() {
             (byte)(255 - round(255 * deSaturate)),
             (byte)(cents ? VALUE_SHADE : VALUE_NORMAL)
           };
-          }
-          break;
-        case DIATONIC_COLOR_MODE:
-          {
-            // Use raw stepsFromC mod cycleLength — always anchored to C, ignores key center
-            byte rawIndex = positiveMod(h[i].stepsFromC, current.tuning().cycleLength);
-            if (!mosValid) {
-              // Fallback to rainbow for EDOs without a valid diatonic MOS
-              setColor = { 360 * ((float)paletteIndex / (float)current.tuning().cycleLength), SAT_VIVID, VALUE_NORMAL };
+        }
+        break;
+      case DIATONIC_COLOR_MODE:
+        {
+          byte rawIndex = degree;  // already iterating by degree, no need for positiveMod
+          if (!mosValid) {
+            setColor = { 360 * ((float)paletteIndex / (float)N), SAT_VIVID, VALUE_NORMAL };
+          } else {
+            int8_t layer = mosLayer[rawIndex];
+            bool equi = mosEquidistant[rawIndex];
+            if (layer == 0) {
+              setColor = { HUE_NONE, SAT_BW, VALUE_NORMAL };
+            } else if (equi) {
+              setColor = { HUE_PURPLE, SAT_DULL, VALUE_NORMAL };
+            } else if (layer > 0) {
+              float hue = fmodf(360.0f + HUE_ORANGE - (float)(layer - 1) * 36.0f, 360.0f);
+              byte val = (byte)max((int)VALUE_SHADE, (int)VALUE_NORMAL - (layer - 1) * 16);
+              setColor = { hue, SAT_VIVID, val };
             } else {
-              int8_t layer = mosLayer[rawIndex];
-              bool equi = mosEquidistant[rawIndex];
-              if (layer == 0) {
-                // Diatonic natural — white
-                setColor = { HUE_NONE, SAT_BW, VALUE_NORMAL };
-              } else if (equi) {
-                // Equidistant between two diatonic notes — muted purple
-                setColor = { HUE_PURPLE, SAT_DULL, VALUE_NORMAL };
-              } else if (layer > 0) {
-                // Sharp side — orange/warm hues, deeper layers shift toward red
-                float hue = fmodf(360.0f + HUE_ORANGE - (float)(layer - 1) * 36.0f, 360.0f);
-                byte val = (byte)max((int)VALUE_SHADE, (int)VALUE_NORMAL - (layer - 1) * 16);
-                setColor = { hue, SAT_VIVID, val };
-              } else {
-                // Flat side — blue/cool hues, deeper layers shift toward cyan
-                int absLayer = -layer;
-                float hue = fmodf(HUE_BLUE + (float)(absLayer - 1) * 36.0f, 360.0f);
-                byte val = (byte)max((int)VALUE_SHADE, (int)VALUE_NORMAL - (absLayer - 1) * 16);
-                setColor = { hue, SAT_VIVID, val };
-              }
+              int absLayer = -layer;
+              float hue = fmodf(HUE_BLUE + (float)(absLayer - 1) * 36.0f, 360.0f);
+              byte val = (byte)max((int)VALUE_SHADE, (int)VALUE_NORMAL - (absLayer - 1) * 16);
+              setColor = { hue, SAT_VIVID, val };
             }
           }
-          break;
-      }
-      colorDef restColor = setColor;
-      restColor.val = applyLEDLevel(restColor.val, ledRestBrightness);
-      h[i].LEDcodeRest = getLEDcode(restColor);
-      colorDef playColor = setColor.tint();
-      h[i].LEDcodePlay = getLEDcode(playColor);
-      colorDef dimColor = setColor.shade();
-      dimColor.val = applyLEDLevel(dimColor.val, ledDimBrightness);
-      h[i].LEDcodeDim = getLEDcode(dimColor);
-      setColor = { HUE_NONE, SAT_BW, VALUE_BLACK };
-      h[i].LEDcodeOff = getLEDcode(setColor);  // turn off entirely
+        }
+        break;
+    }
+    colorDef restColor = setColor;
+    restColor.val = applyLEDLevel(restColor.val, ledRestBrightness);
+    degreeLEDs[degree].rest = getLEDcode(restColor);
+    colorDef playColor = setColor.tint();
+    degreeLEDs[degree].play = getLEDcode(playColor);
+    colorDef dimColor = setColor.shade();
+    dimColor.val = applyLEDLevel(dimColor.val, ledDimBrightness);
+    degreeLEDs[degree].dim = getLEDcode(dimColor);
+  }
+
+  // ---- Assign precomputed LED codes to buttons ----
+  for (byte i = 0; i < LED_COUNT; i++) {
+    if (!(h[i].isCmd)) {
+      byte degree = positiveMod(h[i].stepsFromC, N);
+      h[i].LEDcodeRest = degreeLEDs[degree].rest;
+      h[i].LEDcodePlay = degreeLEDs[degree].play;
+      h[i].LEDcodeDim  = degreeLEDs[degree].dim;
+      h[i].LEDcodeOff  = ledCodeOff;
       h[i].LEDcodeAnim = h[i].LEDcodePlay;
     }
   }
@@ -2321,7 +2229,8 @@ inline int16_t combinedPitchBend(byte index) {
 // This is a list of ratios sorted from the simplest ones to the most complex ones. The code searches for a first match that's good enough within 1/4 of an EDO step, literally bruteforcing through the list. As a result - the simplest ratio is chosen before more comples ones, prioritising consonant ratios first. In case not a single good ratio is found - the best one found so far is chosen instead
 
 // byte pair was chosen to preserve space. The ratio is "unpacked" later
-std::vector<std::pair<byte, byte>> ratios = {
+// Converted from std::vector to plain array to eliminate heap allocation
+static const std::pair<byte, byte> ratios[] = {
   { 1, 1 },
   { 1, 2 },
   { 2, 1 },
@@ -2770,6 +2679,43 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 39, 4 },
   { 38, 5 }
 };
+static constexpr int RATIO_COUNT = sizeof(ratios) / sizeof(ratios[0]);
+
+// Precomputed cents value for each ratio (populated by initJIRatios())
+static float ratioCentsLUT[sizeof(ratios) / sizeof(ratios[0])];
+
+// JI deviation cache: indexed by step difference between reference note and target note.
+// Avoids scanning ~447 ratios on every note-on — gives O(1) lookup instead of O(N).
+#define JI_CACHE_HALF 512
+static float jiDeviationCache[JI_CACHE_HALF * 2 + 1];
+static bool jiCacheValid = false;
+
+void initJIRatios() {
+  for (int i = 0; i < RATIO_COUNT; i++) {
+    ratioCentsLUT[i] = 1200.0f * log2f((float)ratios[i].first / (float)ratios[i].second);
+  }
+}
+
+void buildJICache() {
+  float stepSize = current.tuning().stepSize;
+  float errorThreshold = stepSize / 4.0f;
+  for (int d = -JI_CACHE_HALF; d <= JI_CACHE_HALF; d++) {
+    float EDOCents = (float)d * stepSize;
+    float bestDev = INFINITY;
+    for (int i = 0; i < RATIO_COUNT; i++) {
+      float diff = ratioCentsLUT[i] - EDOCents;
+      if (fabsf(bestDev) > fabsf(diff)) {
+        bestDev = EDOCents - ratioCentsLUT[i];
+        if (fabsf(bestDev) < errorThreshold) {
+          break;
+        }
+      }
+    }
+    jiDeviationCache[d + JI_CACHE_HALF] = bestDev;
+  }
+  jiCacheValid = true;
+  sendToLog("JI cache built for stepSize=" + std::to_string(stepSize));
+}
 
 int16_t centsToRelativePitchBend(float cents) {
   return round(cents * (8192.0 / (100.0 * MPEpitchBendSemis)));
@@ -2801,26 +2747,23 @@ int16_t justIntonationRetune(byte x) {
     }
   }
   if (useDynamicJustIntonation && pressedKeyCount > 1) {
-    bool preferSmallRatios = true;  // if false - the closest found ratio will be chosen from the ratio table
-
-    // detune within a 1/4 of a step, avoid wild detuning but cover the entire pitch range
-    float errorThreshold = current.tuning().stepSize / 4.0;
-    float deviation = INFINITY;
-    float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
-    std::pair<byte, byte> selectedRatio;
-
-    for (int i = 0; i < ratios.size(); i++) {
-      auto ratio = ratios[i];
-      float ratio0 = ratio.first;
-      float ratio1 = ratio.second;
-      float ratioCents = ratioToCents(ratio0 / ratio1);
-
-      if (std::abs(deviation) > std::abs(ratioCents - EDOCents)) {
-        deviation = (EDOCents - ratioCents);
-        selectedRatio.first = ratio0;
-        selectedRatio.second = ratio1;
-        if (preferSmallRatios && std::abs(deviation) < errorThreshold) {
-          break;
+    int stepDiff = h[pressedKeyIDs[0]].stepsFromC - h[x].stepsFromC;
+    float deviation;
+    if (jiCacheValid && stepDiff >= -JI_CACHE_HALF && stepDiff <= JI_CACHE_HALF) {
+      // O(1) cached lookup — step difference uniquely determines the best JI ratio
+      deviation = jiDeviationCache[stepDiff + JI_CACHE_HALF];
+    } else {
+      // Fallback: linear scan using precomputed ratioCentsLUT (no log calls)
+      float errorThreshold = current.tuning().stepSize / 4.0f;
+      deviation = INFINITY;
+      float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
+      for (int i = 0; i < RATIO_COUNT; i++) {
+        float diff = ratioCentsLUT[i] - EDOCents;
+        if (fabsf(deviation) > fabsf(diff)) {
+          deviation = EDOCents - ratioCentsLUT[i];
+          if (fabsf(deviation) < errorThreshold) {
+            break;
+          }
         }
       }
     }
@@ -3458,6 +3401,7 @@ void updateArpeggiatorTiming() {
 void RAM_FUNC(poll)() {
   hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
   timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
+  uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
   int64_t mix = 0;    // signed accumulator now (bipolar)
   // ============================================================
   // Smooth poly loudness normalization
@@ -3712,6 +3656,13 @@ void RAM_FUNC(poll)() {
   if (voices == 0 || velWheel.curValue == 0) {
     if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
     if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, (uint16_t)PWM_MID);
+    if (_isrStart) {
+      uint32_t dt = timer_hw->timerawl - _isrStart;
+      if (dt < isrCycleMin) isrCycleMin = dt;
+      if (dt > isrCycleMax) isrCycleMax = dt;
+      isrCycleSum += dt;
+      isrCycleCount++;
+    }
     return;
   }
 
@@ -3768,6 +3719,13 @@ void RAM_FUNC(poll)() {
   // ----- Write outputs -----
   if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, piezoOut);
   if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, jackLevel);
+  if (_isrStart) {
+    uint32_t dt = timer_hw->timerawl - _isrStart;
+    if (dt < isrCycleMin) isrCycleMin = dt;
+    if (dt > isrCycleMax) isrCycleMax = dt;
+    isrCycleSum += dt;
+    isrCycleCount++;
+  }
 }
 // RUN ON CORE 1
 byte isoTwoTwentySix(float f) {
@@ -4487,6 +4445,7 @@ void assignPitches() {
 void refreshMidiRouting() {
   resetTuningMIDI();
   assignPitches();
+  buildJICache();
 }
 
 void applyScale() {
@@ -4578,11 +4537,24 @@ struct SettingsHeader {
   char magic[3];           // e.g., "STG"
   uint8_t version;         // settings file version
   uint8_t defaultProfileIndex;
+  uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
 constexpr uint8_t CURRENT_SETTINGS_VERSION = 1;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
+
+// CRC32 computation for settings integrity verification
+uint32_t crc32(const uint8_t* data, size_t length) {
+  uint32_t crc = 0xFFFFFFFF;
+  for (size_t i = 0; i < length; i++) {
+    crc ^= data[i];
+    for (int j = 0; j < 8; j++) {
+      crc = (crc >> 1) ^ (0xEDB88320 & -(crc & 1));
+    }
+  }
+  return ~crc;
+}
 
 // ==================================================
 // Settings Definitions
@@ -4788,6 +4760,14 @@ bool load_settings() {
     save_settings();
     return false;
   }
+  // Verify CRC32 integrity of loaded profile data
+  uint32_t computed = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), expectedSize);
+  if (computed != header.crc32) {
+    sendToLog("CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
+    applyFactoryDefaultsToSettings();
+    save_settings();
+    return false;
+  }
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
   settingsDirty = false;
@@ -4809,6 +4789,7 @@ void save_settings() {
   header.magic[0] = 'S'; header.magic[1] = 'T'; header.magic[2] = 'G';
   header.version = CURRENT_SETTINGS_VERSION;
   header.defaultProfileIndex = defaultProfileIndex;
+  header.crc32 = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS);
   f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SettingsHeader));
   f.write(reinterpret_cast<uint8_t*>(settingsProfiles), static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS);
   f.close();
@@ -6686,6 +6667,7 @@ void setup() {
   setupRotary();
   setupMenu();
   setupHardware();
+  initJIRatios();
   syncSettingsToRuntime();
   recomputePitchBendFactor();
 }
