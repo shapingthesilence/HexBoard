@@ -4132,8 +4132,15 @@ void arpeggiate() {
 #define HEX_DIRECTION_SW 4
 #define HEX_DIRECTION_SE 5
 // animation variables  E NE NW  W SW SE
-int8_t vertical[] = { 0, -1, -1, 0, 1, 1 };
-int8_t horizontal[] = { 2, 1, -1, -2, -1, 1 };
+const int8_t vertical[] = { 0, -1, -1, 0, 1, 1 };
+const int8_t horizontal[] = { 2, 1, -1, -2, -1, 1 };
+
+// Precomputed orbit offsets for animateOrbit().
+// 12 positions around a hex at radius 2: 6 cardinal + 6 intermediate.
+// Generated from: rowOffsets[d*2] = R*vertical[d], colOffsets[d*2] = R*horizontal[d],
+//   rowOffsets[d*2+1] = R*(vertical[d]+vertical[(d+1)%6])/2, etc. with R=2.
+static const int8_t orbitRowOffsets[12] = {  0, -1, -2, -2, -2, -1,  0,  1,  2,  2,  2,  1 };
+static const int8_t orbitColOffsets[12] = {  4,  3,  2,  0, -2, -3, -4, -3, -2,  0,  2,  3 };
 
 uint64_t animFrame(byte x) {
   if (h[x].timePressed) {  // 2^20 microseconds is close enough to 1 second
@@ -4177,27 +4184,13 @@ void animateOrbit() {
       byte frame = animFrame(i) / SLOW_FACTOR;  // Slow down the animation
       byte currentStep = frame % 12;            // Determine position in the 12-light orbit
 
-      // Determine row and column adjustments for the 12 possible directions
-      int8_t rowOffsets[12];
-      int8_t colOffsets[12];
-
-      // Fill offsets for the 6 primary directions
-      for (byte dir = 0; dir < 6; dir++) {
-        rowOffsets[dir * 2] = ORBIT_RADIUS * vertical[dir];
-        colOffsets[dir * 2] = ORBIT_RADIUS * horizontal[dir];
-
-        // Fill the intermediate (diagonal) positions
-        rowOffsets[dir * 2 + 1] = ORBIT_RADIUS * (vertical[dir] + vertical[(dir + 1) % 6]) / 2;
-        colOffsets[dir * 2 + 1] = ORBIT_RADIUS * (horizontal[dir] + horizontal[(dir + 1) % 6]) / 2;
-      }
-
-      // Calculate light positions
-      int8_t light1Row = h[i].coordRow + rowOffsets[currentStep];
-      int8_t light1Col = h[i].coordCol + colOffsets[currentStep];
+      // Calculate light positions using precomputed orbit offsets
+      int8_t light1Row = h[i].coordRow + orbitRowOffsets[currentStep];
+      int8_t light1Col = h[i].coordCol + orbitColOffsets[currentStep];
 
       byte oppositeStep = (currentStep + 6) % 12;  // Opposite position in the 12-light ring
-      int8_t light2Row = h[i].coordRow + rowOffsets[oppositeStep];
-      int8_t light2Col = h[i].coordCol + colOffsets[oppositeStep];
+      int8_t light2Row = h[i].coordRow + orbitRowOffsets[oppositeStep];
+      int8_t light2Col = h[i].coordCol + orbitColOffsets[oppositeStep];
 
       // Flag both lights for animation
       flagToAnimate(light1Row, light1Col);
