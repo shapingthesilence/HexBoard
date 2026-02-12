@@ -3625,11 +3625,13 @@ void RAM_FUNC(poll)() {
   uint16_t attenFinal = (playbackMode == SYNTH_POLY) ? attenSmooth : attenuation[0];
 
   // Apply poly/mono attenuation where 64 = unity.
-  int64_t scaled = mix;
-  scaled = (scaled * (int64_t)attenFinal) >> 6;     // divide by 64
+  // Note: mix is bounded by ±(POLYPHONY_LIMIT * ~256) ≈ ±2048 after envelope,
+  // attenFinal ≤ 64, velWheel ≤ 127. Worst-case product ≈ 16.6M, well within int32_t.
+  int32_t scaled = mix;
+  scaled = (scaled * (int32_t)attenFinal) >> 6;     // divide by 64
 
   // Apply master volume where 127 ~= unity (use >>7 as approx /128)
-  scaled = (scaled * (int64_t)velWheel.curValue) >> 7;
+  scaled = (scaled * (int32_t)velWheel.curValue) >> 7;
 
   // ============================================================
   // OUTPUT STAGE (JACK + PIEZO)
@@ -3678,7 +3680,7 @@ void RAM_FUNC(poll)() {
   }
 
   // Convert scaled mix -> signed sample in [-SHAPE_CLAMP..SHAPE_CLAMP]
-  int32_t sample = (int32_t)(scaled >> OUTPUT_SHIFT);
+  int32_t sample = scaled >> OUTPUT_SHIFT;
   if (sample >  SHAPE_CLAMP) sample =  SHAPE_CLAMP;
   if (sample < -SHAPE_CLAMP) sample = -SHAPE_CLAMP;
 
