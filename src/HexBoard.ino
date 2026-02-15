@@ -5691,6 +5691,13 @@ PersistentCallbackInfo callbackInfoColorMode = {
 };
 GEMItem menuItemColor("Color Mode", colorMode, selectColor, universalSaveCallback,
                       reinterpret_cast<void*>(&callbackInfoColorMode));
+void previewColor(GEMPreviewCallbackData previewData) {
+  colorMode = previewData.previewValByte;
+  // Refresh the LED display with the new colorMode value
+  setLEDcolorCodes();
+}
+
+
 
 SelectOptionByte optionByteAnimate[] = {
   { "Off", ANIMATE_NONE },
@@ -5759,6 +5766,11 @@ PersistentCallbackInfo callbackInfoBrightness = {
 };
 GEMItem menuItemBright("Brightness", globalBrightness, selectBright, universalSaveCallback,
                        reinterpret_cast<void*>(&callbackInfoBrightness));
+void previewBright(GEMPreviewCallbackData previewData) {
+  globalBrightness = previewData.previewValByte;
+  // Refresh the LED display with the new brightness value
+  setLEDcolorCodes();
+}
 
 SelectOptionByte optionByteWaveform[] = { { "Hybrid", WAVEFORM_HYBRID }, { "Square", WAVEFORM_SQUARE }, { "Saw", WAVEFORM_SAW }, { "Triangl", WAVEFORM_TRIANGLE }, { "Sine", WAVEFORM_SINE }, { "Strings", WAVEFORM_STRINGS }, { "Clrinet", WAVEFORM_CLARINET } };
 GEMSelect selectWaveform(sizeof(optionByteWaveform) / sizeof(SelectOptionByte), optionByteWaveform);
@@ -6240,7 +6252,9 @@ void setupMenu() {
   createScaleMenuItems();
   menuPageMain.addMenuItem(menuGotoColors);
   menuPageColors.addMenuItem(menuItemColor);
+  menuItemColor.setPreviewCallback(previewColor);
   menuPageColors.addMenuItem(menuItemBright);
+  menuItemBright.setPreviewCallback(previewBright);
   menuPageColors.addMenuItem(menuItemAnimate);
   menuPageColors.addMenuItem(menuItemRestLedLevel);
   menuPageColors.addMenuItem(menuItemDimLedLevel);
