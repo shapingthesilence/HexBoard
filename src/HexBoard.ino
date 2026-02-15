@@ -5157,6 +5157,9 @@ PersistentCallbackInfo callbackInfoPBSticky = {
 };
 GEMItem menuItemPBBehave("Pitch Bend", pbSticky, selectWheelType, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoPBSticky));
+void previewPBBehave(GEMPreviewCallbackData previewData) {
+  pbSticky = previewData.previewValByte;
+}
 
 PersistentCallbackInfo callbackInfoModSticky = {
   static_cast<uint8_t>(SettingKey::ModSticky),
@@ -5166,6 +5169,9 @@ PersistentCallbackInfo callbackInfoModSticky = {
 };
 GEMItem menuItemModBehave("Mod Wheel", modSticky, selectWheelType, universalSaveCallback,
                           reinterpret_cast<void*>(&callbackInfoModSticky));
+void previewModBehave(GEMPreviewCallbackData previewData) {
+  modSticky = previewData.previewValByte;
+}
 
 SelectOptionByte optionBytePlayback[] = { { "Off", SYNTH_OFF }, { "Mono", SYNTH_MONO }, { "Arp'gio", SYNTH_ARPEGGIO }, { "Poly", SYNTH_POLY } };
 GEMSelect selectPlayback(sizeof(optionBytePlayback) / sizeof(SelectOptionByte), optionBytePlayback);
@@ -5520,6 +5526,12 @@ SelectOptionInt optionIntTransposeSteps[] = {
 };
 GEMSelect selectTransposeSteps(255, optionIntTransposeSteps);
 GEMItem menuItemTransposeSteps("Transpose", transposeSteps, selectTransposeSteps, changeTranspose);
+void previewTranspose(GEMPreviewCallbackData previewData) {
+  transposeSteps = previewData.previewValInt;
+  current.transpose = transposeSteps;
+  assignPitches();
+  updateSynthWithNewFreqs();
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 // MIDI Channel selection
@@ -5698,7 +5710,6 @@ void previewColor(GEMPreviewCallbackData previewData) {
 }
 
 
-
 SelectOptionByte optionByteAnimate[] = {
   { "Off", ANIMATE_NONE },
   { "Button", ANIMATE_BUTTON },
@@ -5721,6 +5732,9 @@ PersistentCallbackInfo callbackInfoAnimation = {
 };
 GEMItem menuItemAnimate("Animation", animationType, selectAnimate, universalSaveCallback,
                         reinterpret_cast<void*>(&callbackInfoAnimation));
+void previewAnimate(GEMPreviewCallbackData previewData) {
+  animationType = previewData.previewValByte;
+}
 
 SelectOptionByte optionByteRestLedLevel[] = {
   { "Off", 0 },
@@ -5738,6 +5752,10 @@ PersistentCallbackInfo callbackInfoRestLedLevel = {
 };
 GEMItem menuItemRestLedLevel("Rest Bright", ledRestBrightness, selectRestLedLevel, universalSaveCallback,
                              reinterpret_cast<void*>(&callbackInfoRestLedLevel));
+void previewRestLedLevel(GEMPreviewCallbackData previewData) {
+  ledRestBrightness = previewData.previewValByte;
+  setLEDcolorCodes();
+}
 
 SelectOptionByte optionByteDimLedLevel[] = {
   { "Off", 0 },
@@ -5755,6 +5773,10 @@ PersistentCallbackInfo callbackInfoDimLedLevel = {
 };
 GEMItem menuItemDimLedLevel("Dim Bright", ledDimBrightness, selectDimLedLevel, universalSaveCallback,
                             reinterpret_cast<void*>(&callbackInfoDimLedLevel));
+void previewDimLedLevel(GEMPreviewCallbackData previewData) {
+  ledDimBrightness = previewData.previewValByte;
+  setLEDcolorCodes();
+}
 
 SelectOptionByte optionByteBright[] = { { "Off", BRIGHT_OFF }, { "Dimmer", BRIGHT_DIMMER }, { "Dim", BRIGHT_DIM }, { "Low", BRIGHT_LOW }, { "Normal", BRIGHT_MID }, { "High", BRIGHT_HIGH }, { "THE SUN", BRIGHT_MAX } };
 GEMSelect selectBright(sizeof(optionByteBright) / sizeof(SelectOptionByte), optionByteBright);
@@ -5782,6 +5804,10 @@ PersistentCallbackInfo callbackInfoWaveform = {
 };
 GEMItem menuItemWaveform("Waveform", currWave, selectWaveform, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoWaveform));
+void previewWaveform(GEMPreviewCallbackData previewData) {
+  currWave = previewData.previewValByte;
+  resetSynthFreqs();
+}
 
 PersistentCallbackInfo callbackInfoSynthBPM = {
   static_cast<uint8_t>(SettingKey::SynthBPM),
@@ -5791,6 +5817,10 @@ PersistentCallbackInfo callbackInfoSynthBPM = {
 };
 GEMItem menuItemSynthBPM("Arp BPM", synthBPM, spinnerSynthBPM, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoSynthBPM));
+void previewSynthBPM(GEMPreviewCallbackData previewData) {
+  synthBPM = previewData.previewValByte;
+  updateArpeggiatorTiming();
+}
 
 SelectOptionByte optionByteArpSpeed[] = {
   { "1/2", 2 },
@@ -5812,6 +5842,10 @@ PersistentCallbackInfo callbackInfoArpSpeed = {
 };
 GEMItem menuItemArpSpeed("Arp Speed", arpeggiatorDivision, selectArpSpeed, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoArpSpeed));
+void previewArpSpeed(GEMPreviewCallbackData previewData) {
+  arpeggiatorDivision = previewData.previewValByte;
+  updateArpeggiatorTiming();
+}
 
 SelectOptionByte optionByteEnvelopeTimes[] = {
   { "0 ms", 0 },
@@ -5866,12 +5900,28 @@ PersistentCallbackInfo callbackInfoEnvelopeRelease = {
 
 GEMItem menuItemEnvelopeAttack("Attack", envelopeAttackIndex, selectEnvelopeAttack, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoEnvelopeAttack));
+void previewEnvelopeAttack(GEMPreviewCallbackData previewData) {
+  envelopeAttackIndex = previewData.previewValByte;
+  updateEnvelopeParamsFromSettings();
+}
 GEMItem menuItemEnvelopeDecay("Decay", envelopeDecayIndex, selectEnvelopeDecay, universalSaveCallback,
                               reinterpret_cast<void*>(&callbackInfoEnvelopeDecay));
+void previewEnvelopeDecay(GEMPreviewCallbackData previewData) {
+  envelopeDecayIndex = previewData.previewValByte;
+  updateEnvelopeParamsFromSettings();
+}
 GEMItem menuItemEnvelopeSustain("Sustain", envelopeSustainLevel, selectEnvelopeSustain, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoEnvelopeSustain));
+void previewEnvelopeSustain(GEMPreviewCallbackData previewData) {
+  envelopeSustainLevel = previewData.previewValByte;
+  updateEnvelopeParamsFromSettings();
+}
 GEMItem menuItemEnvelopeRelease("Release", envelopeReleaseIndex, selectEnvelopeRelease, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoEnvelopeRelease));
+void previewEnvelopeRelease(GEMPreviewCallbackData previewData) {
+  envelopeReleaseIndex = previewData.previewValByte;
+  updateEnvelopeParamsFromSettings();
+}
 
 SelectOptionInt optionIntModWheel[] = { { "too slo", 1 }, { "Turtle", 2 }, { "Slow", 4 }, { "Medium", 8 }, { "Fast", 16 }, { "Cheetah", 32 }, { "Instant", 127 } };
 GEMSelect selectModSpeed(sizeof(optionIntModWheel) / sizeof(SelectOptionInt), optionIntModWheel);
@@ -5883,6 +5933,9 @@ PersistentCallbackInfo callbackInfoModSpeed = {
 };
 GEMItem menuItemModSpeed("Mod Wheel", modWheelSpeed, selectModSpeed, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoModSpeed));
+void previewModSpeed(GEMPreviewCallbackData previewData) {
+  modWheelSpeed = previewData.previewValInt;
+}
 
 PersistentCallbackInfo callbackInfoVelSpeed = {
   static_cast<uint8_t>(SettingKey::VelWheelSpeed),
@@ -5892,6 +5945,9 @@ PersistentCallbackInfo callbackInfoVelSpeed = {
 };
 GEMItem menuItemVelSpeed("Vel Wheel", velWheelSpeed, selectModSpeed, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoVelSpeed));
+void previewVelSpeed(GEMPreviewCallbackData previewData) {
+  velWheelSpeed = previewData.previewValInt;
+}
 
 SelectOptionInt optionIntPBWheel[] = { { "too slo", 128 }, { "Turtle", 256 }, { "Slow", 512 }, { "Medium", 1024 }, { "Fast", 2048 }, { "Cheetah", 4096 }, { "Instant", 16384 } };
 GEMSelect selectPBSpeed(sizeof(optionIntPBWheel) / sizeof(SelectOptionInt), optionIntPBWheel);
@@ -5903,6 +5959,9 @@ PersistentCallbackInfo callbackInfoPBSpeed = {
 };
 GEMItem menuItemPBSpeed("PB Wheel", pbWheelSpeed, selectPBSpeed, universalSaveCallback,
                         reinterpret_cast<void*>(&callbackInfoPBSpeed));
+void previewPBSpeed(GEMPreviewCallbackData previewData) {
+  pbWheelSpeed = previewData.previewValInt;
+}
 
 // --------------------------------------------------------
 // SETTINGS STEP 3 - Callback to sync settings variables on power-up
@@ -6189,13 +6248,19 @@ void createLayoutMenuItems() {
   }
   showOnlyValidLayoutChoices();
 }
+void previewKey(GEMPreviewCallbackData previewData);
 void createKeyMenuItems() {
   for (byte T = 0; T < TUNINGCOUNT; T++) {
     selectKey[T] = new GEMSelect(tuningOptions[T].cycleLength, tuningOptions[T].keyChoices);
     menuItemKeys[T] = new GEMItem("Key", current.keyStepsFromA, *selectKey[T], changeKey);
+    menuItemKeys[T]->setPreviewCallback(previewKey);
     menuPageScales.addMenuItem(*menuItemKeys[T]);
   }
   showOnlyValidKeyChoices();
+}
+void previewKey(GEMPreviewCallbackData previewData) {
+  current.keyStepsFromA = previewData.previewValInt;
+  applyScale();
 }
 void createScaleMenuItems() {
   for (int S = 0; S < scaleCount; S++) {  // create pointers to all scale items, filter them as you go
@@ -6256,18 +6321,28 @@ void setupMenu() {
   menuPageColors.addMenuItem(menuItemBright);
   menuItemBright.setPreviewCallback(previewBright);
   menuPageColors.addMenuItem(menuItemAnimate);
+  menuItemAnimate.setPreviewCallback(previewAnimate);
   menuPageColors.addMenuItem(menuItemRestLedLevel);
+  menuItemRestLedLevel.setPreviewCallback(previewRestLedLevel);
   menuPageColors.addMenuItem(menuItemDimLedLevel);
+  menuItemDimLedLevel.setPreviewCallback(previewDimLedLevel);
   menuPageMain.addMenuItem(menuGotoSynth);
   menuPageSynth.addMenuItem(menuItemPlayback);
   // menuItemAudioD added here for hardware V1.2
   menuPageSynth.addMenuItem(menuItemWaveform);
+  menuItemWaveform.setPreviewCallback(previewWaveform);
   menuPageSynth.addMenuItem(menuItemEnvelopeAttack);
+  menuItemEnvelopeAttack.setPreviewCallback(previewEnvelopeAttack);
   menuPageSynth.addMenuItem(menuItemEnvelopeDecay);
+  menuItemEnvelopeDecay.setPreviewCallback(previewEnvelopeDecay);
   menuPageSynth.addMenuItem(menuItemEnvelopeSustain);
+  menuItemEnvelopeSustain.setPreviewCallback(previewEnvelopeSustain);
   menuPageSynth.addMenuItem(menuItemEnvelopeRelease);
+  menuItemEnvelopeRelease.setPreviewCallback(previewEnvelopeRelease);
   menuPageSynth.addMenuItem(menuItemArpSpeed);
+  menuItemArpSpeed.setPreviewCallback(previewArpSpeed);
   menuPageSynth.addMenuItem(menuItemSynthBPM);
+  menuItemSynthBPM.setPreviewCallback(previewSynthBPM);
   menuPageMain.addMenuItem(menuGotoMIDI);
   menuPageMIDI.addMenuItem(menuItemSelectMIDIChannel);
   menuPageMIDI.addMenuItem(menuItemSelectMPEMode);
@@ -6281,11 +6356,17 @@ void setupMenu() {
   menuPageMIDI.addMenuItem(menuItemGeneralMidi);
   menuPageMain.addMenuItem(menuGotoControl);
   menuPageControl.addMenuItem(menuItemVelSpeed);
+  menuItemVelSpeed.setPreviewCallback(previewVelSpeed);
   menuPageControl.addMenuItem(menuItemPBSpeed);
+  menuItemPBSpeed.setPreviewCallback(previewPBSpeed);
   menuPageControl.addMenuItem(menuItemModSpeed);
+  menuItemModSpeed.setPreviewCallback(previewModSpeed);
   menuPageControl.addMenuItem(menuItemPBBehave);
+  menuItemPBBehave.setPreviewCallback(previewPBBehave);
   menuPageControl.addMenuItem(menuItemModBehave);
+  menuItemModBehave.setPreviewCallback(previewModBehave);
   menuPageMain.addMenuItem(menuItemTransposeSteps);
+  menuItemTransposeSteps.setPreviewCallback(previewTranspose);
   menuPageMain.addMenuItem(menuGotoSave);
   menuPageSave.addMenuItem(menuItemAutoSave);
   menuPageMain.addMenuItem(menuGotoLoad);
