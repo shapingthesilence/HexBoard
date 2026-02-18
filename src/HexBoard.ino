@@ -1422,6 +1422,15 @@ wheelDef velWheel = { &wheelMode, &velSticky,
 
 bool toggleWheel = 0;  // 0 for mod, 1 for pb
 
+// Delegate control to an external program; just send note events representing raw
+// button pushes and accept SysEx to control light colors.
+bool delegatedControl = false;
+uint32_t delegatedColors[LED_COUNT];
+// Define some SysEx codes for internal use.
+#define SYSEX_DELEGATED_ENTER 1
+#define SYSEX_DELEGATED_EXIT 2
+#define SYSEX_LED 3
+
 void setupPins() {
   multiplexerMask = 0;
   for (byte p = 0; p < sizeof(mPin); p++) {
@@ -1945,13 +1954,19 @@ void setupLEDs() {
   sendToLog("LEDs started...");
 }
 void lightUpLEDs() {
-  for (byte i = 0; i < LED_COUNT; i++) {
-    if (!(h[i].isCmd)) {
-      strip.setPixelColor(i, applyNotePixelColor(i));
+  if (delegatedControl) {
+    for (byte i = 0; i < LED_COUNT; i++) {
+      strip.setPixelColor(i, delegatedColors[i]);
     }
+  } else {
+    for (byte i = 0; i < LED_COUNT; i++) {
+      if (!(h[i].isCmd)) {
+        strip.setPixelColor(i, applyNotePixelColor(i));
+      }
+    }
+    resetVelocityLEDs();
+    resetWheelLEDs();
   }
-  resetVelocityLEDs();
-  resetWheelLEDs();
   strip.show();
 }
 
@@ -4064,6 +4079,9 @@ void setupSynth(byte pin, byte slice) {
 }
 
 void arpeggiate() {
+  if (delegatedControl) {
+    return;
+  }
   if (playbackMode == SYNTH_ARPEGGIO) {
     if (runTime - arpeggiateTime > arpeggiateLength) {
       arpeggiateTime = runTime;
@@ -4281,25 +4299,72 @@ void applyExternalMidiToHex(byte midiNote, bool noteOn) {
   }
 }
 
-void processIncomingMIDI() {
-  withMIDI([&](auto& M) {
-    while (M.read()) {
-      const auto type = M.getType();
-      const byte n    = M.getData1();  // note
-      const byte v    = M.getData2();  // velocity
+bool reportDeviceIdentity(const uint8_t* data, const unsigned int len) {
+  if (len == 6 && data[1] == 0x7E && data[3] == 0x06 && data[4] == 0x01) {
+    // Respond to a device identity request.
+    // TODO: 7D = ed/dev -- replace with three-byte manufacturer ID when we have one
+    // Next two bytes are family
+    // Next two bytes are model
+    // Last four bytes are version
+    // All are LSB-first.
+    static byte device_identity[] = {
+      0x7E, 0x00, 0x06, 0x02, // Device ID response
+      0x7D, // education/dev
+      0x01, 0x00, // family, LSB-first
+      0x01, 0x00, // model, LSB-first
+      Hardware_Version, 0x00, 0x00, 0x00, // version, LSB first
+    };
+    withMIDI([&](auto& M) { M.sendSysEx(sizeof(device_identity), device_identity); });
+    return true;
+  }
+  return false;
+}
 
-      if (type == MIDI_NAMESPACE::NoteOn) {
-        // treat NoteOn vel==0 as NoteOff
-        applyExternalMidiToHex(n, v != 0);
-      } else if (type == MIDI_NAMESPACE::NoteOff
-                 || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
-        applyExternalMidiToHex(n, false);
+void processIncomingSysEx(const uint8_t* data, const unsigned int len) {
+  if (reportDeviceIdentity(data, len)) {
+    return;
+  }
+  if ((len == 4) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {
+    // Accept a SysEx message containing the single byte SYSEX_DELEGATED_ENTER sent on the
+    // dev/test manufacturer ID to enter delegated mode. This does the same as enabling it
+    // from the menu.
+    toggleDelegated();
+  }
+}
+
+void processIncomingMIDI() {
+  if (delegatedControl) {
+    return;
+  } else {
+    withMIDI([&](auto& M) {
+      while (M.read()) {
+        const auto type = M.getType();
+        if (type == MIDI_NAMESPACE::SystemExclusive) {
+          const uint8_t* sysex = M.getSysExArray();
+          const unsigned int len = M.getSysExArrayLength();
+          processIncomingSysEx(sysex, len);
+          continue;
+        }
+
+        const byte n    = M.getData1();  // note
+        const byte v    = M.getData2();  // velocity
+
+        if (type == MIDI_NAMESPACE::NoteOn) {
+          // treat NoteOn vel==0 as NoteOff
+          applyExternalMidiToHex(n, v != 0);
+        } else if (type == MIDI_NAMESPACE::NoteOff
+                   || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
+          applyExternalMidiToHex(n, false);
+        }
       }
-    }
-  });
+    });
+  }
 }
 
 void animateLEDs() {
+  if (delegatedControl) {
+    return;
+  }
   for (byte i = 0; i < LED_COUNT; i++) {
     h[i].animate = 0;
   }
@@ -4565,6 +4630,7 @@ enum class SettingKey : uint8_t {
   EnvelopeDecayIndex,
   EnvelopeSustainLevel,
   EnvelopeReleaseIndex,
+  Delegated,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -5110,6 +5176,14 @@ PersistentCallbackInfo callbackInfoRotary = {
   nullptr
 };
 GEMItem menuItemRotary("Invert Encoder", rotaryInvert, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
+
+PersistentCallbackInfo callbackInfoDelegate = {
+  static_cast<uint8_t>(SettingKey::Delegated),
+  reinterpret_cast<void*>(&delegatedControl),
+  nullptr,
+  onToggleDelegated,
+};
+GEMItem menuItemDelegated("Delegate Control", delegatedControl, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDelegate));
 
 PersistentCallbackInfo callbackInfoDebug = {
   static_cast<uint8_t>(SettingKey::Debug),
@@ -5664,6 +5738,219 @@ PersistentCallbackInfo callbackInfoDynamicJI = {
 };
 GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoDynamicJI));
+
+// @Delegated Control
+
+/*
+
+In Delegated Control mode, the HexBoard acts like a "dumb
+terminal": it sends outbound messages indicating button
+events, and it accepts inbound messages to control LEDs.
+Most other functionality is disabled.
+
+At initial implementation, Delegated mode is visible in the
+menus as a checkbox in the Advanced menu. While you can
+still navigate menus in delegated mode, most menu actions
+won't take effect until you exit delegated mode.
+
+# SysEx Messages
+
+In support of delegated mode, the HexBoard always responds
+to two SysEx (System Extended) messages:
+
+* 0x7E ?? 0x06 0x01 -- request device identity. Since we
+  don't have a Manufacturer ID at the time of initial
+  implementation, we use 0x7D, which is reserved for
+  development/educational use. See comments in
+  reportDeviceIdentity.
+* SysEx message 0x01: enter delegated mode. No additional
+  data is sent. Sending 0xF0 0x7D 0x01 0xF7 will put the
+  HexBoard in delegated mode.
+
+# Details
+
+HexBoard buttons are numbered from 0 to 139. When a button
+is pressed, a NoteOn event is sent with the *channel byte*
+containing key/100 and the note as key%100. A key release
+sends NoteOff. For example, if the user presses and releases
+button 130, the HexBoard will send NoteOn on channel 2 (byte
+0x01) with note number 30, and then a NoteOff with the same
+parameters. Key 60 would send note number 60 on channel 1
+(byte 0x00). See `delegatedButtonEvent` for additional
+details.
+
+In delegated mode, additional SysEx messages are accepted:
+
+* 0x02 -- exit delegated mode. No additional payload.
+* 0x03 -- LED control. This allows control of one or more
+  LED colors. See processLedSysEx for details.
+
+Other delegated mode changes:
+* Incoming SysEx messages are handled on a dedicated core.
+  This keeps the HexBoard very responsive to LED changes.
+  Otherwise, establishing color schemes is very slow.
+* Most other button/LED logic is disabled. The command
+  buttons lose their special meanings. No animation or
+  "wheel" support is present. This leaves the command
+  buttons available as regular buttons for the external
+  application.
+
+Other notes:
+* At the time of initial implementation, the menu remains
+  enabled in delegated mode even though it doesn't do
+  anything. It would be possible to hook into the
+  `dealWithRotary` function to disable the menu, but:
+  - It might be useful in the future to have menu events
+    send messages out indicating what the user is doing
+  - We might want to eventually allow SysEx messages to
+    dynamically update menu items
+  - Some things still make sense -- you can exit delegated
+    mode in case the controlling application crashes, and
+    you can directly enable/disable serial debugging or
+    select "Update Firmware" while in delegated mode.
+
+* setupMIDI is called when we enter delegated control mode.
+  See comment in onToggleDelegated for the rationale.
+
+Delegated Control was initially contributed by Jay
+Berkenbilt, who disclaims copyright. It is covered by the
+same copyright and terms as the rest of the firmware.
+
+*/
+
+
+void toggleDelegated() {
+  delegatedControl = !delegatedControl;
+  onToggleDelegated();
+}
+
+void onToggleDelegated() {
+  if (delegatedControl) {
+    memset(delegatedColors, 0, sizeof(delegatedColors));
+    // This call to setupMIDI allows us to toggle delegated on and off to reset the MIDI parser
+    // state. This provides a workaround to
+    // https://github.com/FortySevenEffects/arduino_midi_library/issues/367.
+    setupMIDI();
+  }
+  sendToLog("delgated = " + std::to_string(delegatedControl));
+}
+
+void delegatedButtonEvent(byte x, bool press) {
+  // This gets called on a button press or release in delegated mode. As of version 1.2 hardware,
+  // HexBoard buttons are numbered 0 to 139. There are 7 rows with 9 buttons, and there are 7
+  // command buttons. With the menu wheel on the upper left, each command button from top to bottom
+  // is the column 0 of the corresponding 9-note row, so those are buttons 0, 20, etc. -- see
+  // CMDBTN_0, etc. Otherwise, buttons are numbered left to right and top to bottom, so the leftmost
+  // button the top row is 1, the leftmost button on the second row is 10, etc. Represent each
+  // button by a channel and note. We have to use more than one channel because there are more than
+  // 128 notes. For simplicity, use the channel number for the hundreds digit and use the remainder
+  // as the note number.
+  byte channel = x / 100; // 0-based
+  byte note = x % 100;
+  // We pass channel + 1 because the library expects 1-based
+  // channels.
+  if (press) {
+    withMIDI([&](auto& M) { M.sendNoteOn(note, 127, channel + 1); });
+  } else {
+    withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel + 1); });
+  }
+/*
+  // This is noisy but useful for debugging.
+  sendToLog(
+    "Delegated: button " + std::to_string(x) +
+    " pressed = " + std::to_string(press) +
+    " note = " + std::to_string(note) +
+    " ch " + std::to_string(channel));
+*/
+}
+
+void processLedSysEx(const uint8_t* data, const unsigned int len) {
+  // Data contains the following repeated:
+  // - LED number (14 bits)
+  // - Hue (7 bits)
+  // - Saturation (7 bits)
+  // - Value (7 bits)
+  for (auto idx = 0; idx + 5 <= len; idx += 5) {
+    uint16_t led = (data[idx] << 7) + data[idx+1];
+    if (led >= LED_COUNT) {
+      sendToLog("LED SysEx: led " + std::to_string(led) + " is out of range; ignoring");
+      continue;
+    }
+    // HexBoard colors are HSV values where H (Hue) is an angle from 0 to 360 and S (Saturation) and
+    // V (Value) are values from 0 to 255. This SysEx accepts HSV where each is in the range from 0
+    // to 127, so normalize.
+    auto hue_data = data[idx+2] & 0x7F;
+    auto sat_data = data[idx+3] & 0x7F;
+    auto val_data = data[idx+4] & 0x7F;
+    float hue = static_cast<float>(hue_data) * 360.0 / 127.0;
+    byte sat = 2 * sat_data + (sat_data > 63 ? 1 : 0);
+    byte val = 2 * val_data + (val_data > 63 ? 1 : 0);
+    colorDef c = {
+      hue,
+      sat,
+      val,
+    };
+    delegatedColors[led] = getLEDcode(c);
+/*
+    // This is noisy but useful for debugging.
+    sendToLog(std::to_string(runTime) +
+              ": setting color of LED " + std::to_string(led) +
+              " to h=" + std::to_string(hue) +
+              ", s=" + std::to_string(sat) +
+              ", v=" + std::to_string(val) +
+              " -> " + std::to_string(delegatedColors[led]));
+*/
+  }
+}
+
+void processDelegatedSysEx(const uint8_t* data, const unsigned int len) {
+  if (len < 1) {
+    return;
+  }
+  auto code = data[0];
+  switch (code) {
+  case SYSEX_DELEGATED_ENTER:
+    break;
+  case SYSEX_DELEGATED_EXIT:
+    toggleDelegated();
+    break;
+  case SYSEX_LED:
+    processLedSysEx(&data[1], len-1);
+    break;
+  default:
+    sendToLog("ignoring unknown SysEx code " + std::to_string(code));
+  }
+}
+
+void processIncomingMIDIDelegated() {
+  withMIDI([&](auto& M) {
+    while (M.read()) {
+      const auto type = M.getType();
+      if (type == MIDI_NAMESPACE::SystemExclusive) {
+        const uint8_t* sysex = M.getSysExArray();
+        const unsigned int len = M.getSysExArrayLength();
+        if (len <= 3) continue;
+        if (reportDeviceIdentity(sysex, len))
+          continue;
+        // First byte should be F0 and last byte should be F7
+        if ((sysex[0] != 0xF0) || (sysex[len-1] != 0xF7)) {
+          sendToLog("invalid SysEx received; ignoring. (len=" +
+                    std::to_string(len) + ", first=" + std::to_string(sysex[0]) +
+                    ", last=" + std::to_string(sysex[len-1]) + ")");
+          continue;
+        }
+        // Accept only the dev/test manufacturer ID 0x7D until we get our own manufacturer ID.
+        if (sysex[1] != 0x7D) {
+          sendToLog("delegated incoming: ignoring SysEx vendor " + std::to_string(sysex[1]));
+          continue;
+        }
+        processDelegatedSysEx(&sysex[2], len - 3);
+      } else {
+        sendToLog("delegated incoming: " + std::to_string(type));
+      }
+    }
+  });
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -6353,6 +6640,7 @@ void setupMenu() {
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
+  menuPageAdvanced.addMenuItem(menuItemDelegated);
   menuPageAdvanced.addMenuItem(menuItemDebug);
 }
 void setupGFX() {
@@ -6483,7 +6771,9 @@ void readHexes() {
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
-        if (h[i].isCmd) {
+        if (delegatedControl) {
+          delegatedButtonEvent(i, true);
+        } else if (h[i].isCmd) {
           cmdOn(i);
         } else if (h[i].inScale || (!scaleLock)) {
           tryMIDInoteOn(i);
@@ -6491,7 +6781,9 @@ void readHexes() {
         }
         break;
       case BTN_STATE_RELEASED:  // just released
-        if (h[i].isCmd) {
+        if (delegatedControl) {
+          delegatedButtonEvent(i, false);
+        } else if (h[i].isCmd) {
           cmdOff(i);
         } else if (h[i].inScale || (!scaleLock)) {
           tryMIDInoteOff(i);
@@ -6506,6 +6798,9 @@ void readHexes() {
   }
 }
 void updateWheels() {
+  if (delegatedControl) {
+    return;
+  }
   velWheel.setTargetValue();
   bool upd = velWheel.updateValue(runTime);
   if (upd) {
@@ -6654,5 +6949,8 @@ void setup1() {  // set up on second core
   setupSynth(AJACK_PIN, AJACK_SLICE);
 }
 void loop1() {  // run on second core
+  if (delegatedControl) {
+    processIncomingMIDIDelegated();
+  }
   readKnob();
 }
