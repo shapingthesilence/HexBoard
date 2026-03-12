@@ -1636,7 +1636,7 @@ void setLEDcolorCodes() {
     int sRemainder = N - 5 * L;
     bool evenDivision = (sRemainder >= 0) && (sRemainder % 2 == 0);
     int s = evenDivision ? sRemainder / 2 : 0;
-    mosValid = evenDivision && (L > s) && (s > 0);
+    mosValid = evenDivision && (L != s) && (L > 0) && (s > 0);  // L>s = diatonic, L<s = antidiatonic, L==s = degenerate
     if (mosValid) {
       // Build the 7 diatonic positions using Ionian (major scale) pattern:
       // C=0, D=L, E=2L, F=2L+s, G=3L+s, A=4L+s, B=5L+s
@@ -5793,7 +5793,7 @@ GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universa
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE } };
+SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE }, { "Diatonic", DIATONIC_COLOR_MODE } };
 GEMSelect selectColor(sizeof(optionByteColor) / sizeof(SelectOptionByte), optionByteColor);
 PersistentCallbackInfo callbackInfoColorMode = {
   static_cast<uint8_t>(SettingKey::ColorMode),
