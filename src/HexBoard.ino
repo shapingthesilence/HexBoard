@@ -1764,7 +1764,7 @@ void setLEDcolorCodes() {
         break;
       case PIANO_COLOR_MODE:
         {
-          float octaveCycleLength = 1200.0 / current.tuning().stepSize;
+          float octaveCycleLength = 1200.0 / current.tuning().stepSize; // This is to prevent non-octave colouring weirdness
           float semipaletteIndex = fmodf(degree + (octaveCycleLength * 256.0), octaveCycleLength);
           float keyDeg = (12.0f / octaveCycleLength) * semipaletteIndex;
           if ((int)round(keyDeg) % 12 == 1 || (int)round(keyDeg) % 12 == 3 || (int)round(keyDeg) % 12 == 6 || (int)round(keyDeg) % 12 == 8 || (int)round(keyDeg) % 12 == 10) {
@@ -1782,7 +1782,7 @@ void setLEDcolorCodes() {
         break;
       case PIANO_INCANDESCENT_COLOR_MODE:
         {
-          float octaveCycleLength = 1200.0 / current.tuning().stepSize;
+          float octaveCycleLength = 1200.0 / current.tuning().stepSize; // This is to prevent non-octave colouring weirdness
           float semipaletteIndex = fmodf(degree + (octaveCycleLength * 256.0), octaveCycleLength);
           float keyDeg = (12.0f / octaveCycleLength) * semipaletteIndex;
           float deviationFromDiatonic;
