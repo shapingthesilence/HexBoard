@@ -3413,7 +3413,7 @@ void RAM_FUNC(poll)() {
     return;
   }
   uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
-  int64_t mix = 0;    // signed accumulator now (bipolar)
+  int32_t mix = 0;    // signed accumulator stays well within int32_t bounds
   // ============================================================
   // Smooth poly loudness normalization
   // Old behavior: scale by integer "voices" count.
@@ -3429,7 +3429,6 @@ void RAM_FUNC(poll)() {
 
   uint16_t p;
   byte t;
-  byte level = 0;
   for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
     EnvelopeState& env = envelopeStates[i];
 
@@ -3456,9 +3455,6 @@ void RAM_FUNC(poll)() {
         }
         if (env.stage == EnvelopeStage::Sustain) {
           env.level = envelopeParams.sustainLevel;
-        }
-        if (voiceGenerations[i].load(std::memory_order_relaxed) == 0) {
-          voiceGenerations[i].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
         }
         break;
       }
@@ -3587,9 +3583,9 @@ void RAM_FUNC(poll)() {
     // eq is 0..8. Treat 8 as roughly "neutral" gain.
     s = (s * (int32_t)synth[i].eq) >> 3;
 
-    // Apply envelope (0..65535). Keep >>16 like the current scheme.
-    // Result stays comfortably in int32 range.
-    s = (int32_t)(((int64_t)s * (int64_t)env.level) >> 16);
+    // Apply envelope (0..65535). Current bounds keep the product within
+    // signed 32-bit, which avoids a 64-bit helper call in the ISR.
+    s = (s * static_cast<int32_t>(env.level)) >> 16;
 
     // Accumulate signed mix
     mix += s;
