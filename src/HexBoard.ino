@@ -86,6 +86,8 @@
 #include "pico/time.h" // Allows me to set delays that don't disable interrupts
 #include "hardware/structs/sio.h" // For fast GPIO read/write
 
+enum class EnvelopeCommand : uint8_t;
+
                        // Software-detected hardware revision
 #define HARDWARE_UNKNOWN 0
 #define HARDWARE_V1_1 1
@@ -3284,9 +3286,19 @@ enum class EnvelopeCommand : uint8_t {
   Reset
 };
 
-std::array<std::atomic<EnvelopeCommand>, POLYPHONY_LIMIT> envelopeCommands;
+// Core 0 publishes the latest envelope command for each voice, and the audio
+// ISR on core 1 consumes it. The sequence byte tells the consumer whether a
+// newer command has arrived since the last poll.
+volatile uint8_t envelopeCommandValues[POLYPHONY_LIMIT] = {};
+volatile uint8_t envelopeCommandPublishedSeq[POLYPHONY_LIMIT] = {};
+std::array<uint8_t, POLYPHONY_LIMIT> envelopeCommandConsumedSeq = {};
+
+// The opposite direction is simpler: core 1 only needs to tell core 0 that a
+// voice has fully finished and can return to the free list. A sequence byte is
+// enough because "voice finished" is an idempotent event.
+volatile uint8_t voiceFreedPublishedSeq[POLYPHONY_LIMIT] = {};
+std::array<uint8_t, POLYPHONY_LIMIT> voiceFreedConsumedSeq = {};
 std::array<std::atomic<bool>, POLYPHONY_LIMIT> channelInUse = {};
-std::array<std::atomic<bool>, POLYPHONY_LIMIT> envelopeNeedsFree;
 std::array<std::atomic<uint32_t>, POLYPHONY_LIMIT> voiceGenerations;
 std::array<std::atomic<int16_t>, POLYPHONY_LIMIT> synthChannelOwners;
 std::atomic<uint32_t> nextVoiceGeneration = 1;
@@ -3301,6 +3313,54 @@ std::array<uint8_t, POLYPHONY_LIMIT> releaseRetryCountdown = {};
 
 constexpr uint8_t releaseRetryLimit = 2;
 constexpr uint8_t releaseRetryDelayLoops = 2;
+
+// Publish the newest command for one voice. The command byte is written first,
+// then a memory barrier makes sure core 1 cannot observe the new sequence
+// number before the matching command value is visible.
+inline void publishEnvelopeCommand(uint8_t channel, EnvelopeCommand command) {
+  envelopeCommandValues[channel] = static_cast<uint8_t>(command);
+  __dmb();
+  envelopeCommandPublishedSeq[channel] = static_cast<uint8_t>(envelopeCommandPublishedSeq[channel] + 1);
+}
+
+// Read the newest command once. Returning None means nothing new arrived since
+// the last ISR iteration for this voice.
+inline EnvelopeCommand consumeEnvelopeCommand(uint8_t channel) {
+  uint8_t publishedSeq = envelopeCommandPublishedSeq[channel];
+  if (publishedSeq == envelopeCommandConsumedSeq[channel]) {
+    return EnvelopeCommand::None;
+  }
+  __dmb();
+  EnvelopeCommand command = static_cast<EnvelopeCommand>(envelopeCommandValues[channel]);
+  envelopeCommandConsumedSeq[channel] = publishedSeq;
+  return command;
+}
+
+// Core 1 uses this when a release truly reaches zero. Core 0 later consumes
+// the event and pushes the voice back into the available-channel queue.
+inline void publishVoiceFreed(uint8_t channel) {
+  __dmb();
+  voiceFreedPublishedSeq[channel] = static_cast<uint8_t>(voiceFreedPublishedSeq[channel] + 1);
+}
+
+// Core 0 checks whether core 1 has published a newer "voice finished" event.
+inline bool consumeVoiceFreed(uint8_t channel) {
+  uint8_t publishedSeq = voiceFreedPublishedSeq[channel];
+  if (publishedSeq == voiceFreedConsumedSeq[channel]) {
+    return false;
+  }
+  __dmb();
+  voiceFreedConsumedSeq[channel] = publishedSeq;
+  return true;
+}
+
+// When core 0 immediately reuses a voice, any older pending "voice finished"
+// event for that same channel must be ignored so it cannot free the new note.
+inline void clearPendingVoiceFreed(uint8_t channel) {
+  __dmb();
+  voiceFreedConsumedSeq[channel] = voiceFreedPublishedSeq[channel];
+}
+
 void updateEnvelopeParamsFromSettings() {
   auto clampIndex = [](uint8_t& index) {
     if (index >= envelopeTimeMicrosOptions.size()) {
@@ -3432,11 +3492,10 @@ void RAM_FUNC(poll)() {
   for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
     EnvelopeState& env = envelopeStates[i];
 
-    EnvelopeCommand pendingCommand = envelopeCommands[i].exchange(EnvelopeCommand::None, std::memory_order_acq_rel);
+    EnvelopeCommand pendingCommand = consumeEnvelopeCommand(i);
     switch (pendingCommand) {
       case EnvelopeCommand::StartAttack: {
         env.releaseIncrement = 0;
-        envelopeNeedsFree[i].store(false, std::memory_order_relaxed);
         if (envelopeParams.attackTicks == 0) {
           env.level = envelopeMaxLevel;
           if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
@@ -3464,9 +3523,11 @@ void RAM_FUNC(poll)() {
           env.stage = EnvelopeStage::Idle;
           synth[i].increment = 0;
           synth[i].counter = 0;
-          envelopeNeedsFree[i].store(true, std::memory_order_relaxed);
+          publishVoiceFreed(i);
         } else {
           env.stage = EnvelopeStage::Release;
+          // This division only runs when a release begins, not on every ISR
+          // tick, so it is much cheaper than the per-sample math below.
           env.releaseIncrement = std::max<uint32_t>(1, (env.level + envelopeParams.releaseTicks - 1) / envelopeParams.releaseTicks);
         }
         break;
@@ -3476,7 +3537,6 @@ void RAM_FUNC(poll)() {
         synth[i].increment = 0;
         synth[i].counter = 0;
         channelInUse[i].store(false, std::memory_order_relaxed);
-        envelopeNeedsFree[i].store(false, std::memory_order_relaxed);
         voiceGenerations[i].store(0, std::memory_order_relaxed);
         break;
       }
@@ -3531,7 +3591,7 @@ void RAM_FUNC(poll)() {
           env.stage = EnvelopeStage::Idle;
           synth[i].increment = 0;
           synth[i].counter = 0;
-          envelopeNeedsFree[i].store(true, std::memory_order_relaxed);
+          publishVoiceFreed(i);
         } else {
           env.level -= env.releaseIncrement;
         }
@@ -3545,9 +3605,6 @@ void RAM_FUNC(poll)() {
     }
 
     if (env.stage == EnvelopeStage::Idle || env.level == 0 || !synth[i].increment) {
-      if (env.stage == EnvelopeStage::Idle) {
-        envelopeNeedsFree[i].store(true, std::memory_order_relaxed);
-      }
       continue;
     }
 
@@ -3712,7 +3769,10 @@ void RAM_FUNC(poll)() {
 
   int32_t piezoLevel = 0;
   if (piezoA > 0) {
-    // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-piezoA..+piezoA]
+    // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-piezoA..+piezoA].
+    // This is still one of the remaining true per-sample divisions in poll().
+    // If we need another ISR-speed pass later, replacing this with a small
+    // reciprocal multiply would be the next obvious experiment.
     int32_t outPiezo = (sample * (int32_t)piezoA) / SHAPE_CLAMP;
 
     // Midpoint follows amplitude: range [0..2*piezoA]
@@ -3816,10 +3876,12 @@ void RAM_FUNC(setSynthFreq)(float frequency, byte channel) {
 
 void RAM_FUNC(beginEnvelopeAttack)(uint8_t channel) {
   channelInUse[channel].store(true, std::memory_order_relaxed);
-  envelopeNeedsFree[channel].store(false, std::memory_order_relaxed);
   releaseRetries[channel] = 0;
   releaseRetryCountdown[channel] = 0;
-  envelopeCommands[channel].store(EnvelopeCommand::StartAttack, std::memory_order_release);
+  // Reusing a voice discards any older "voice finished" event that core 1 may
+  // have published for the previous note on this channel.
+  clearPendingVoiceFreed(channel);
+  publishEnvelopeCommand(channel, EnvelopeCommand::StartAttack);
 }
 
 void RAM_FUNC(beginEnvelopeRelease)(uint8_t channel) {
@@ -3828,7 +3890,7 @@ void RAM_FUNC(beginEnvelopeRelease)(uint8_t channel) {
   }
   releaseRetries[channel] = releaseRetryLimit;
   releaseRetryCountdown[channel] = 0;
-  envelopeCommands[channel].store(EnvelopeCommand::StartRelease, std::memory_order_release);
+  publishEnvelopeCommand(channel, EnvelopeCommand::StartRelease);
 }
 
 // USE THIS IN MONO OR ARPEG MODE ONLY
@@ -3870,11 +3932,11 @@ void resetSynthFreqs() {
   for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
     synth[i].increment = 0;
     synth[i].counter = 0;
-    envelopeCommands[i].store(EnvelopeCommand::Reset, std::memory_order_relaxed);
+    publishEnvelopeCommand(i, EnvelopeCommand::Reset);
     channelInUse[i].store(false, std::memory_order_relaxed);
-    envelopeNeedsFree[i].store(false, std::memory_order_relaxed);
     voiceGenerations[i].store(0, std::memory_order_relaxed);
     synthChannelOwners[i].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
+    clearPendingVoiceFreed(i);
     releaseRetries[i] = 0;
     releaseRetryCountdown[i] = 0;
   }
@@ -3912,10 +3974,11 @@ void updateSynthWithNewFreqs() {
 
 void RAM_FUNC(processEnvelopeReleases)() {
   for (uint8_t i = 0; i < POLYPHONY_LIMIT; ++i) {
-    if (envelopeNeedsFree[i].exchange(false, std::memory_order_relaxed)) {
+    if (consumeVoiceFreed(i)) {
       channelInUse[i].store(false, std::memory_order_relaxed);
       voiceGenerations[i].store(0, std::memory_order_relaxed);
-      int16_t owner = synthChannelOwners[i].exchange(NO_SYNTH_OWNER, std::memory_order_relaxed);
+      int16_t owner = synthChannelOwners[i].load(std::memory_order_relaxed);
+      synthChannelOwners[i].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
       if (owner >= 0 && owner < BTN_COUNT) {
         if (h[owner].synthCh == static_cast<byte>(i + 1)) {
           h[owner].synthCh = 0;
@@ -3945,7 +4008,7 @@ void RAM_FUNC(retryPendingReleases)() {
       --releaseRetryCountdown[i];
       continue;
     }
-    envelopeCommands[i].store(EnvelopeCommand::StartRelease, std::memory_order_release);
+    publishEnvelopeCommand(i, EnvelopeCommand::StartRelease);
     releaseRetryCountdown[i] = releaseRetryDelayLoops;
     releaseRetries[i] = static_cast<uint8_t>(retries - 1);
   }
