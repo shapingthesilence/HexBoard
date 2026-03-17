@@ -1929,7 +1929,9 @@ void resetWheelLEDs() {
 uint32_t applyNotePixelColor(byte x) {
   if (h[x].animate) {
     return h[x].LEDcodeAnim;
-  } else if ((animationType != ANIMATE_NONE) && h[x].MIDIch) {
+  } else if ((animationType != ANIMATE_NONE)
+          && (animationType != ANIMATE_MIDI_IN)
+          && h[x].MIDIch) {
     return h[x].LEDcodePlay;
   } else if (h[x].inScale) {
     return h[x].LEDcodeRest;
