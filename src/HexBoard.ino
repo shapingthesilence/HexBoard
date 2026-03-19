@@ -86,6 +86,8 @@
 #include "pico/time.h" // Allows me to set delays that don't disable interrupts
 #include "hardware/structs/sio.h" // For fast GPIO read/write
 
+enum class EnvelopeCommand : uint8_t;
+
                        // Software-detected hardware revision
 #define HARDWARE_UNKNOWN 0
 #define HARDWARE_V1_1 1
@@ -1173,10 +1175,39 @@ presetDef current = {
     to the Serial port
   */
 bool debugMessages = true;
-void sendToLog(std::string msg) {
-  if (debugMessages) {
-    Serial.println(msg.c_str());
-  }
+// Macro avoids constructing std::string arguments when debugMessages is false
+#define sendToLog(msg) do { if (debugMessages) { Serial.println((std::string(msg)).c_str()); } } while(0)
+/*
+    ISR cycle profiling — lightweight timing measurement for the
+    audio poll() interrupt. Tracks min/max/average microseconds
+    per ISR invocation. Enabled/disabled at runtime via
+    isrProfilingEnabled flag. Stats are read and reset atomically
+    from Core 0 via readAndResetISRProfile().
+  */
+volatile bool isrProfilingEnabled = false;
+volatile uint32_t isrCycleMin   = UINT32_MAX;
+volatile uint32_t isrCycleMax   = 0;
+volatile uint64_t isrCycleSum   = 0;
+volatile uint32_t isrCycleCount = 0;
+volatile uint32_t isrProfileMinUs  = 0;
+volatile uint32_t isrProfileMaxUs  = 0;
+volatile uint32_t isrProfileAvgUs  = 0;
+volatile uint32_t isrProfileCount  = 0;
+void readAndResetISRProfile() {
+  // Briefly disable profiling to get a consistent snapshot
+  isrProfilingEnabled = false;
+  __dmb();  // data memory barrier
+  isrProfileMinUs = (isrCycleMin == UINT32_MAX) ? 0 : isrCycleMin;
+  isrProfileMaxUs = isrCycleMax;
+  isrProfileCount = isrCycleCount;
+  isrProfileAvgUs = (isrProfileCount > 0) ? (uint32_t)(isrCycleSum / isrProfileCount) : 0;
+  // Reset counters
+  isrCycleMin = UINT32_MAX;
+  isrCycleMax = 0;
+  isrCycleSum = 0;
+  isrCycleCount = 0;
+  __dmb();
+  isrProfilingEnabled = true;
 }
 
 // @timing
@@ -1421,6 +1452,15 @@ wheelDef velWheel = { &wheelMode, &velSticky,
                       0, 127, &velWheelSpeed, 96, 96, 96, 0 };
 
 bool toggleWheel = 0;  // 0 for mod, 1 for pb
+
+// Delegate control to an external program; just send note events representing raw
+// button pushes and accept SysEx to control light colors.
+bool delegatedControl = false;
+uint32_t delegatedColors[LED_COUNT];
+// Define some SysEx codes for internal use.
+#define SYSEX_DELEGATED_ENTER 1
+#define SYSEX_DELEGATED_EXIT 2
+#define SYSEX_LED 3
 
 void setupPins() {
   multiplexerMask = 0;
@@ -1929,7 +1969,9 @@ void resetWheelLEDs() {
 uint32_t applyNotePixelColor(byte x) {
   if (h[x].animate) {
     return h[x].LEDcodeAnim;
-  } else if ((animationType != ANIMATE_NONE) && h[x].MIDIch) {
+  } else if ((animationType != ANIMATE_NONE)
+          && (animationType != ANIMATE_MIDI_IN)
+          && h[x].MIDIch) {
     return h[x].LEDcodePlay;
   } else if (h[x].inScale) {
     return h[x].LEDcodeRest;
@@ -1945,13 +1987,19 @@ void setupLEDs() {
   sendToLog("LEDs started...");
 }
 void lightUpLEDs() {
-  for (byte i = 0; i < LED_COUNT; i++) {
-    if (!(h[i].isCmd)) {
-      strip.setPixelColor(i, applyNotePixelColor(i));
+  if (delegatedControl) {
+    for (byte i = 0; i < LED_COUNT; i++) {
+      strip.setPixelColor(i, delegatedColors[i]);
     }
+  } else {
+    for (byte i = 0; i < LED_COUNT; i++) {
+      if (!(h[i].isCmd)) {
+        strip.setPixelColor(i, applyNotePixelColor(i));
+      }
+    }
+    resetVelocityLEDs();
+    resetWheelLEDs();
   }
-  resetVelocityLEDs();
-  resetWheelLEDs();
   strip.show();
 }
 
@@ -2716,8 +2764,6 @@ int16_t justIntonationRetune(byte x) {
   int16_t pitchAdjustment = 0;
   float pitchAdjustmentCents = 0;
   float basePitchOffset = 0;
-  //int16_t degree = (current.keyDegree(h[x].stepsFromC + current.transpose + current.tuning().spanCtoA()));
-  //float buttonStepsFromA = degree;
   if (useJustIntonationBPM) {
     float buttonStepsFromA = -current.tuning().spanCtoA() - h[x].stepsFromC;
     // It was planned to use integer math but floating point arithmetics works fast enough so far
@@ -3277,12 +3323,26 @@ enum class EnvelopeCommand : uint8_t {
   Reset
 };
 
-std::array<std::atomic<EnvelopeCommand>, POLYPHONY_LIMIT> envelopeCommands;
+// Core 0 publishes the latest envelope command for each voice, and the audio
+// ISR on core 1 consumes it. The sequence byte tells the consumer whether a
+// newer command has arrived since the last poll.
+volatile uint8_t envelopeCommandValues[POLYPHONY_LIMIT] = {};
+volatile uint8_t envelopeCommandPublishedSeq[POLYPHONY_LIMIT] = {};
+std::array<uint8_t, POLYPHONY_LIMIT> envelopeCommandConsumedSeq = {};
+
+// The opposite direction is simpler: core 1 only needs to tell core 0 that a
+// voice has fully finished and can return to the free list. A sequence byte is
+// enough because "voice finished" is an idempotent event.
+volatile uint8_t voiceFreedPublishedSeq[POLYPHONY_LIMIT] = {};
+std::array<uint8_t, POLYPHONY_LIMIT> voiceFreedConsumedSeq = {};
 std::array<std::atomic<bool>, POLYPHONY_LIMIT> channelInUse = {};
-std::array<std::atomic<bool>, POLYPHONY_LIMIT> envelopeNeedsFree;
 std::array<std::atomic<uint32_t>, POLYPHONY_LIMIT> voiceGenerations;
 std::array<std::atomic<int16_t>, POLYPHONY_LIMIT> synthChannelOwners;
 std::atomic<uint32_t> nextVoiceGeneration = 1;
+// Flag set by Core 0 before flash writes. When true, poll() outputs silence
+// so the audio ISR resumes cleanly after flash operations (which disable all
+// interrupts on both cores of the RP2040).
+std::atomic<bool> flashWriteInProgress = false;
 constexpr int16_t NO_SYNTH_OWNER = -1;
 float pitchBendFactor = 1.0f;
 std::array<uint8_t, POLYPHONY_LIMIT> releaseRetries = {};
@@ -3290,6 +3350,54 @@ std::array<uint8_t, POLYPHONY_LIMIT> releaseRetryCountdown = {};
 
 constexpr uint8_t releaseRetryLimit = 2;
 constexpr uint8_t releaseRetryDelayLoops = 2;
+
+// Publish the newest command for one voice. The command byte is written first,
+// then a memory barrier makes sure core 1 cannot observe the new sequence
+// number before the matching command value is visible.
+inline void publishEnvelopeCommand(uint8_t channel, EnvelopeCommand command) {
+  envelopeCommandValues[channel] = static_cast<uint8_t>(command);
+  __dmb();
+  envelopeCommandPublishedSeq[channel] = static_cast<uint8_t>(envelopeCommandPublishedSeq[channel] + 1);
+}
+
+// Read the newest command once. Returning None means nothing new arrived since
+// the last ISR iteration for this voice.
+inline EnvelopeCommand consumeEnvelopeCommand(uint8_t channel) {
+  uint8_t publishedSeq = envelopeCommandPublishedSeq[channel];
+  if (publishedSeq == envelopeCommandConsumedSeq[channel]) {
+    return EnvelopeCommand::None;
+  }
+  __dmb();
+  EnvelopeCommand command = static_cast<EnvelopeCommand>(envelopeCommandValues[channel]);
+  envelopeCommandConsumedSeq[channel] = publishedSeq;
+  return command;
+}
+
+// Core 1 uses this when a release truly reaches zero. Core 0 later consumes
+// the event and pushes the voice back into the available-channel queue.
+inline void publishVoiceFreed(uint8_t channel) {
+  __dmb();
+  voiceFreedPublishedSeq[channel] = static_cast<uint8_t>(voiceFreedPublishedSeq[channel] + 1);
+}
+
+// Core 0 checks whether core 1 has published a newer "voice finished" event.
+inline bool consumeVoiceFreed(uint8_t channel) {
+  uint8_t publishedSeq = voiceFreedPublishedSeq[channel];
+  if (publishedSeq == voiceFreedConsumedSeq[channel]) {
+    return false;
+  }
+  __dmb();
+  voiceFreedConsumedSeq[channel] = publishedSeq;
+  return true;
+}
+
+// When core 0 immediately reuses a voice, any older pending "voice finished"
+// event for that same channel must be ignored so it cannot free the new note.
+inline void clearPendingVoiceFreed(uint8_t channel) {
+  __dmb();
+  voiceFreedConsumedSeq[channel] = voiceFreedPublishedSeq[channel];
+}
+
 void updateEnvelopeParamsFromSettings() {
   auto clampIndex = [](uint8_t& index) {
     if (index >= envelopeTimeMicrosOptions.size()) {
@@ -3394,7 +3502,15 @@ void updateArpeggiatorTiming() {
 void RAM_FUNC(poll)() {
   hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
   timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
-  int64_t mix = 0;    // signed accumulator now (bipolar)
+  // While flash is being written, interrupts are disabled on both cores.
+  // When the ISR resumes afterward, output silence to avoid glitch artifacts.
+  if (flashWriteInProgress.load(std::memory_order_relaxed)) {
+    if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
+    if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, (uint16_t)PWM_MID);
+    return;
+  }
+  uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
+  int32_t mix = 0;    // signed accumulator stays well within int32_t bounds
   // ============================================================
   // Smooth poly loudness normalization
   // Old behavior: scale by integer "voices" count.
@@ -3410,15 +3526,13 @@ void RAM_FUNC(poll)() {
 
   uint16_t p;
   byte t;
-  byte level = 0;
   for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
     EnvelopeState& env = envelopeStates[i];
 
-    EnvelopeCommand pendingCommand = envelopeCommands[i].exchange(EnvelopeCommand::None, std::memory_order_acq_rel);
+    EnvelopeCommand pendingCommand = consumeEnvelopeCommand(i);
     switch (pendingCommand) {
       case EnvelopeCommand::StartAttack: {
         env.releaseIncrement = 0;
-        envelopeNeedsFree[i].store(false, std::memory_order_relaxed);
         if (envelopeParams.attackTicks == 0) {
           env.level = envelopeMaxLevel;
           if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
@@ -3438,9 +3552,6 @@ void RAM_FUNC(poll)() {
         if (env.stage == EnvelopeStage::Sustain) {
           env.level = envelopeParams.sustainLevel;
         }
-        if (voiceGenerations[i].load(std::memory_order_relaxed) == 0) {
-          voiceGenerations[i].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
-        }
         break;
       }
       case EnvelopeCommand::StartRelease: {
@@ -3449,9 +3560,11 @@ void RAM_FUNC(poll)() {
           env.stage = EnvelopeStage::Idle;
           synth[i].increment = 0;
           synth[i].counter = 0;
-          envelopeNeedsFree[i].store(true, std::memory_order_relaxed);
+          publishVoiceFreed(i);
         } else {
           env.stage = EnvelopeStage::Release;
+          // This division only runs when a release begins, not on every ISR
+          // tick, so it is much cheaper than the per-sample math below.
           env.releaseIncrement = std::max<uint32_t>(1, (env.level + envelopeParams.releaseTicks - 1) / envelopeParams.releaseTicks);
         }
         break;
@@ -3461,7 +3574,6 @@ void RAM_FUNC(poll)() {
         synth[i].increment = 0;
         synth[i].counter = 0;
         channelInUse[i].store(false, std::memory_order_relaxed);
-        envelopeNeedsFree[i].store(false, std::memory_order_relaxed);
         voiceGenerations[i].store(0, std::memory_order_relaxed);
         break;
       }
@@ -3516,7 +3628,7 @@ void RAM_FUNC(poll)() {
           env.stage = EnvelopeStage::Idle;
           synth[i].increment = 0;
           synth[i].counter = 0;
-          envelopeNeedsFree[i].store(true, std::memory_order_relaxed);
+          publishVoiceFreed(i);
         } else {
           env.level -= env.releaseIncrement;
         }
@@ -3530,9 +3642,6 @@ void RAM_FUNC(poll)() {
     }
 
     if (env.stage == EnvelopeStage::Idle || env.level == 0 || !synth[i].increment) {
-      if (env.stage == EnvelopeStage::Idle) {
-        envelopeNeedsFree[i].store(true, std::memory_order_relaxed);
-      }
       continue;
     }
 
@@ -3568,9 +3677,9 @@ void RAM_FUNC(poll)() {
     // eq is 0..8. Treat 8 as roughly "neutral" gain.
     s = (s * (int32_t)synth[i].eq) >> 3;
 
-    // Apply envelope (0..65535). Keep >>16 like the current scheme.
-    // Result stays comfortably in int32 range.
-    s = (int32_t)(((int64_t)s * (int64_t)env.level) >> 16);
+    // Apply envelope (0..65535). Current bounds keep the product within
+    // signed 32-bit, which avoids a 64-bit helper call in the ISR.
+    s = (s * static_cast<int32_t>(env.level)) >> 16;
 
     // Accumulate signed mix
     mix += s;
@@ -3606,11 +3715,13 @@ void RAM_FUNC(poll)() {
   uint16_t attenFinal = (playbackMode == SYNTH_POLY) ? attenSmooth : attenuation[0];
 
   // Apply poly/mono attenuation where 64 = unity.
-  int64_t scaled = mix;
-  scaled = (scaled * (int64_t)attenFinal) >> 6;     // divide by 64
+  // Note: mix is bounded by ±(POLYPHONY_LIMIT * ~256) ≈ ±2048 after envelope,
+  // attenFinal ≤ 64, velWheel ≤ 127. Worst-case product ≈ 16.6M, well within int32_t.
+  int32_t scaled = mix;
+  scaled = (scaled * (int32_t)attenFinal) >> 6;     // divide by 64
 
   // Apply master volume where 127 ~= unity (use >>7 as approx /128)
-  scaled = (scaled * (int64_t)velWheel.curValue) >> 7;
+  scaled = (scaled * (int32_t)velWheel.curValue) >> 7;
 
   // ============================================================
   // OUTPUT STAGE (JACK + PIEZO)
@@ -3648,11 +3759,18 @@ void RAM_FUNC(poll)() {
   if (voices == 0 || velWheel.curValue == 0) {
     if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
     if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, (uint16_t)PWM_MID);
+    if (_isrStart) {
+      uint32_t dt = timer_hw->timerawl - _isrStart;
+      if (dt < isrCycleMin) isrCycleMin = dt;
+      if (dt > isrCycleMax) isrCycleMax = dt;
+      isrCycleSum += dt;
+      isrCycleCount++;
+    }
     return;
   }
 
   // Convert scaled mix -> signed sample in [-SHAPE_CLAMP..SHAPE_CLAMP]
-  int32_t sample = (int32_t)(scaled >> OUTPUT_SHIFT);
+  int32_t sample = scaled >> OUTPUT_SHIFT;
   if (sample >  SHAPE_CLAMP) sample =  SHAPE_CLAMP;
   if (sample < -SHAPE_CLAMP) sample = -SHAPE_CLAMP;
 
@@ -3688,7 +3806,10 @@ void RAM_FUNC(poll)() {
 
   int32_t piezoLevel = 0;
   if (piezoA > 0) {
-    // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-piezoA..+piezoA]
+    // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-piezoA..+piezoA].
+    // This is still one of the remaining true per-sample divisions in poll().
+    // If we need another ISR-speed pass later, replacing this with a small
+    // reciprocal multiply would be the next obvious experiment.
     int32_t outPiezo = (sample * (int32_t)piezoA) / SHAPE_CLAMP;
 
     // Midpoint follows amplitude: range [0..2*piezoA]
@@ -3704,6 +3825,13 @@ void RAM_FUNC(poll)() {
   // ----- Write outputs -----
   if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, piezoOut);
   if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, jackLevel);
+  if (_isrStart) {
+    uint32_t dt = timer_hw->timerawl - _isrStart;
+    if (dt < isrCycleMin) isrCycleMin = dt;
+    if (dt > isrCycleMax) isrCycleMax = dt;
+    isrCycleSum += dt;
+    isrCycleCount++;
+  }
 }
 // RUN ON CORE 1
 byte isoTwoTwentySix(float f) {
@@ -3785,10 +3913,12 @@ void RAM_FUNC(setSynthFreq)(float frequency, byte channel) {
 
 void RAM_FUNC(beginEnvelopeAttack)(uint8_t channel) {
   channelInUse[channel].store(true, std::memory_order_relaxed);
-  envelopeNeedsFree[channel].store(false, std::memory_order_relaxed);
   releaseRetries[channel] = 0;
   releaseRetryCountdown[channel] = 0;
-  envelopeCommands[channel].store(EnvelopeCommand::StartAttack, std::memory_order_release);
+  // Reusing a voice discards any older "voice finished" event that core 1 may
+  // have published for the previous note on this channel.
+  clearPendingVoiceFreed(channel);
+  publishEnvelopeCommand(channel, EnvelopeCommand::StartAttack);
 }
 
 void RAM_FUNC(beginEnvelopeRelease)(uint8_t channel) {
@@ -3797,7 +3927,7 @@ void RAM_FUNC(beginEnvelopeRelease)(uint8_t channel) {
   }
   releaseRetries[channel] = releaseRetryLimit;
   releaseRetryCountdown[channel] = 0;
-  envelopeCommands[channel].store(EnvelopeCommand::StartRelease, std::memory_order_release);
+  publishEnvelopeCommand(channel, EnvelopeCommand::StartRelease);
 }
 
 // USE THIS IN MONO OR ARPEG MODE ONLY
@@ -3839,11 +3969,11 @@ void resetSynthFreqs() {
   for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
     synth[i].increment = 0;
     synth[i].counter = 0;
-    envelopeCommands[i].store(EnvelopeCommand::Reset, std::memory_order_relaxed);
+    publishEnvelopeCommand(i, EnvelopeCommand::Reset);
     channelInUse[i].store(false, std::memory_order_relaxed);
-    envelopeNeedsFree[i].store(false, std::memory_order_relaxed);
     voiceGenerations[i].store(0, std::memory_order_relaxed);
     synthChannelOwners[i].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
+    clearPendingVoiceFreed(i);
     releaseRetries[i] = 0;
     releaseRetryCountdown[i] = 0;
   }
@@ -3879,10 +4009,11 @@ void updateSynthWithNewFreqs() {
 
 void RAM_FUNC(processEnvelopeReleases)() {
   for (uint8_t i = 0; i < POLYPHONY_LIMIT; ++i) {
-    if (envelopeNeedsFree[i].exchange(false, std::memory_order_relaxed)) {
+    if (consumeVoiceFreed(i)) {
       channelInUse[i].store(false, std::memory_order_relaxed);
       voiceGenerations[i].store(0, std::memory_order_relaxed);
-      int16_t owner = synthChannelOwners[i].exchange(NO_SYNTH_OWNER, std::memory_order_relaxed);
+      int16_t owner = synthChannelOwners[i].load(std::memory_order_relaxed);
+      synthChannelOwners[i].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
       if (owner >= 0 && owner < BTN_COUNT) {
         if (h[owner].synthCh == static_cast<byte>(i + 1)) {
           h[owner].synthCh = 0;
@@ -3912,7 +4043,7 @@ void RAM_FUNC(retryPendingReleases)() {
       --releaseRetryCountdown[i];
       continue;
     }
-    envelopeCommands[i].store(EnvelopeCommand::StartRelease, std::memory_order_release);
+    publishEnvelopeCommand(i, EnvelopeCommand::StartRelease);
     releaseRetryCountdown[i] = releaseRetryDelayLoops;
     releaseRetries[i] = static_cast<uint8_t>(retries - 1);
   }
@@ -4064,6 +4195,9 @@ void setupSynth(byte pin, byte slice) {
 }
 
 void arpeggiate() {
+  if (delegatedControl) {
+    return;
+  }
   if (playbackMode == SYNTH_ARPEGGIO) {
     if (runTime - arpeggiateTime > arpeggiateLength) {
       arpeggiateTime = runTime;
@@ -4281,25 +4415,72 @@ void applyExternalMidiToHex(byte midiNote, bool noteOn) {
   }
 }
 
-void processIncomingMIDI() {
-  withMIDI([&](auto& M) {
-    while (M.read()) {
-      const auto type = M.getType();
-      const byte n    = M.getData1();  // note
-      const byte v    = M.getData2();  // velocity
+bool reportDeviceIdentity(const uint8_t* data, const unsigned int len) {
+  if (len == 6 && data[1] == 0x7E && data[3] == 0x06 && data[4] == 0x01) {
+    // Respond to a device identity request.
+    // TODO: 7D = ed/dev -- replace with three-byte manufacturer ID when we have one
+    // Next two bytes are family
+    // Next two bytes are model
+    // Last four bytes are version
+    // All are LSB-first.
+    static byte device_identity[] = {
+      0x7E, 0x00, 0x06, 0x02, // Device ID response
+      0x7D, // education/dev
+      0x01, 0x00, // family, LSB-first
+      0x01, 0x00, // model, LSB-first
+      Hardware_Version, 0x00, 0x00, 0x00, // version, LSB first
+    };
+    withMIDI([&](auto& M) { M.sendSysEx(sizeof(device_identity), device_identity); });
+    return true;
+  }
+  return false;
+}
 
-      if (type == MIDI_NAMESPACE::NoteOn) {
-        // treat NoteOn vel==0 as NoteOff
-        applyExternalMidiToHex(n, v != 0);
-      } else if (type == MIDI_NAMESPACE::NoteOff
-                 || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
-        applyExternalMidiToHex(n, false);
+void processIncomingSysEx(const uint8_t* data, const unsigned int len) {
+  if (reportDeviceIdentity(data, len)) {
+    return;
+  }
+  if ((len == 4) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {
+    // Accept a SysEx message containing the single byte SYSEX_DELEGATED_ENTER sent on the
+    // dev/test manufacturer ID to enter delegated mode. This does the same as enabling it
+    // from the menu.
+    toggleDelegated();
+  }
+}
+
+void processIncomingMIDI() {
+  if (delegatedControl) {
+    return;
+  } else {
+    withMIDI([&](auto& M) {
+      while (M.read()) {
+        const auto type = M.getType();
+        if (type == MIDI_NAMESPACE::SystemExclusive) {
+          const uint8_t* sysex = M.getSysExArray();
+          const unsigned int len = M.getSysExArrayLength();
+          processIncomingSysEx(sysex, len);
+          continue;
+        }
+
+        const byte n    = M.getData1();  // note
+        const byte v    = M.getData2();  // velocity
+
+        if (type == MIDI_NAMESPACE::NoteOn) {
+          // treat NoteOn vel==0 as NoteOff
+          applyExternalMidiToHex(n, v != 0);
+        } else if (type == MIDI_NAMESPACE::NoteOff
+                   || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
+          applyExternalMidiToHex(n, false);
+        }
       }
-    }
-  });
+    });
+  }
 }
 
 void animateLEDs() {
+  if (delegatedControl) {
+    return;
+  }
   for (byte i = 0; i < LED_COUNT; i++) {
     h[i].animate = 0;
   }
@@ -4565,6 +4746,7 @@ enum class SettingKey : uint8_t {
   EnvelopeDecayIndex,
   EnvelopeSustainLevel,
   EnvelopeReleaseIndex,
+  Delegated,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -5110,6 +5292,14 @@ PersistentCallbackInfo callbackInfoRotary = {
   nullptr
 };
 GEMItem menuItemRotary("Invert Encoder", rotaryInvert, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
+
+PersistentCallbackInfo callbackInfoDelegate = {
+  static_cast<uint8_t>(SettingKey::Delegated),
+  reinterpret_cast<void*>(&delegatedControl),
+  nullptr,
+  onToggleDelegated,
+};
+GEMItem menuItemDelegated("Delegate Control", delegatedControl, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDelegate));
 
 PersistentCallbackInfo callbackInfoDebug = {
   static_cast<uint8_t>(SettingKey::Debug),
@@ -5664,6 +5854,219 @@ PersistentCallbackInfo callbackInfoDynamicJI = {
 };
 GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoDynamicJI));
+
+// @Delegated Control
+
+/*
+
+In Delegated Control mode, the HexBoard acts like a "dumb
+terminal": it sends outbound messages indicating button
+events, and it accepts inbound messages to control LEDs.
+Most other functionality is disabled.
+
+At initial implementation, Delegated mode is visible in the
+menus as a checkbox in the Advanced menu. While you can
+still navigate menus in delegated mode, most menu actions
+won't take effect until you exit delegated mode.
+
+# SysEx Messages
+
+In support of delegated mode, the HexBoard always responds
+to two SysEx (System Extended) messages:
+
+* 0x7E ?? 0x06 0x01 -- request device identity. Since we
+  don't have a Manufacturer ID at the time of initial
+  implementation, we use 0x7D, which is reserved for
+  development/educational use. See comments in
+  reportDeviceIdentity.
+* SysEx message 0x01: enter delegated mode. No additional
+  data is sent. Sending 0xF0 0x7D 0x01 0xF7 will put the
+  HexBoard in delegated mode.
+
+# Details
+
+HexBoard buttons are numbered from 0 to 139. When a button
+is pressed, a NoteOn event is sent with the *channel byte*
+containing key/100 and the note as key%100. A key release
+sends NoteOff. For example, if the user presses and releases
+button 130, the HexBoard will send NoteOn on channel 2 (byte
+0x01) with note number 30, and then a NoteOff with the same
+parameters. Key 60 would send note number 60 on channel 1
+(byte 0x00). See `delegatedButtonEvent` for additional
+details.
+
+In delegated mode, additional SysEx messages are accepted:
+
+* 0x02 -- exit delegated mode. No additional payload.
+* 0x03 -- LED control. This allows control of one or more
+  LED colors. See processLedSysEx for details.
+
+Other delegated mode changes:
+* Incoming SysEx messages are handled on a dedicated core.
+  This keeps the HexBoard very responsive to LED changes.
+  Otherwise, establishing color schemes is very slow.
+* Most other button/LED logic is disabled. The command
+  buttons lose their special meanings. No animation or
+  "wheel" support is present. This leaves the command
+  buttons available as regular buttons for the external
+  application.
+
+Other notes:
+* At the time of initial implementation, the menu remains
+  enabled in delegated mode even though it doesn't do
+  anything. It would be possible to hook into the
+  `dealWithRotary` function to disable the menu, but:
+  - It might be useful in the future to have menu events
+    send messages out indicating what the user is doing
+  - We might want to eventually allow SysEx messages to
+    dynamically update menu items
+  - Some things still make sense -- you can exit delegated
+    mode in case the controlling application crashes, and
+    you can directly enable/disable serial debugging or
+    select "Update Firmware" while in delegated mode.
+
+* setupMIDI is called when we enter delegated control mode.
+  See comment in onToggleDelegated for the rationale.
+
+Delegated Control was initially contributed by Jay
+Berkenbilt, who disclaims copyright. It is covered by the
+same copyright and terms as the rest of the firmware.
+
+*/
+
+
+void toggleDelegated() {
+  delegatedControl = !delegatedControl;
+  onToggleDelegated();
+}
+
+void onToggleDelegated() {
+  if (delegatedControl) {
+    memset(delegatedColors, 0, sizeof(delegatedColors));
+    // This call to setupMIDI allows us to toggle delegated on and off to reset the MIDI parser
+    // state. This provides a workaround to
+    // https://github.com/FortySevenEffects/arduino_midi_library/issues/367.
+    setupMIDI();
+  }
+  sendToLog("delgated = " + std::to_string(delegatedControl));
+}
+
+void delegatedButtonEvent(byte x, bool press) {
+  // This gets called on a button press or release in delegated mode. As of version 1.2 hardware,
+  // HexBoard buttons are numbered 0 to 139. There are 7 rows with 9 buttons, and there are 7
+  // command buttons. With the menu wheel on the upper left, each command button from top to bottom
+  // is the column 0 of the corresponding 9-note row, so those are buttons 0, 20, etc. -- see
+  // CMDBTN_0, etc. Otherwise, buttons are numbered left to right and top to bottom, so the leftmost
+  // button the top row is 1, the leftmost button on the second row is 10, etc. Represent each
+  // button by a channel and note. We have to use more than one channel because there are more than
+  // 128 notes. For simplicity, use the channel number for the hundreds digit and use the remainder
+  // as the note number.
+  byte channel = x / 100; // 0-based
+  byte note = x % 100;
+  // We pass channel + 1 because the library expects 1-based
+  // channels.
+  if (press) {
+    withMIDI([&](auto& M) { M.sendNoteOn(note, 127, channel + 1); });
+  } else {
+    withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel + 1); });
+  }
+/*
+  // This is noisy but useful for debugging.
+  sendToLog(
+    "Delegated: button " + std::to_string(x) +
+    " pressed = " + std::to_string(press) +
+    " note = " + std::to_string(note) +
+    " ch " + std::to_string(channel));
+*/
+}
+
+void processLedSysEx(const uint8_t* data, const unsigned int len) {
+  // Data contains the following repeated:
+  // - LED number (14 bits)
+  // - Hue (7 bits)
+  // - Saturation (7 bits)
+  // - Value (7 bits)
+  for (auto idx = 0; idx + 5 <= len; idx += 5) {
+    uint16_t led = (data[idx] << 7) + data[idx+1];
+    if (led >= LED_COUNT) {
+      sendToLog("LED SysEx: led " + std::to_string(led) + " is out of range; ignoring");
+      continue;
+    }
+    // HexBoard colors are HSV values where H (Hue) is an angle from 0 to 360 and S (Saturation) and
+    // V (Value) are values from 0 to 255. This SysEx accepts HSV where each is in the range from 0
+    // to 127, so normalize.
+    auto hue_data = data[idx+2] & 0x7F;
+    auto sat_data = data[idx+3] & 0x7F;
+    auto val_data = data[idx+4] & 0x7F;
+    float hue = static_cast<float>(hue_data) * 360.0 / 127.0;
+    byte sat = 2 * sat_data + (sat_data > 63 ? 1 : 0);
+    byte val = 2 * val_data + (val_data > 63 ? 1 : 0);
+    colorDef c = {
+      hue,
+      sat,
+      val,
+    };
+    delegatedColors[led] = getLEDcode(c);
+/*
+    // This is noisy but useful for debugging.
+    sendToLog(std::to_string(runTime) +
+              ": setting color of LED " + std::to_string(led) +
+              " to h=" + std::to_string(hue) +
+              ", s=" + std::to_string(sat) +
+              ", v=" + std::to_string(val) +
+              " -> " + std::to_string(delegatedColors[led]));
+*/
+  }
+}
+
+void processDelegatedSysEx(const uint8_t* data, const unsigned int len) {
+  if (len < 1) {
+    return;
+  }
+  auto code = data[0];
+  switch (code) {
+  case SYSEX_DELEGATED_ENTER:
+    break;
+  case SYSEX_DELEGATED_EXIT:
+    toggleDelegated();
+    break;
+  case SYSEX_LED:
+    processLedSysEx(&data[1], len-1);
+    break;
+  default:
+    sendToLog("ignoring unknown SysEx code " + std::to_string(code));
+  }
+}
+
+void processIncomingMIDIDelegated() {
+  withMIDI([&](auto& M) {
+    while (M.read()) {
+      const auto type = M.getType();
+      if (type == MIDI_NAMESPACE::SystemExclusive) {
+        const uint8_t* sysex = M.getSysExArray();
+        const unsigned int len = M.getSysExArrayLength();
+        if (len <= 3) continue;
+        if (reportDeviceIdentity(sysex, len))
+          continue;
+        // First byte should be F0 and last byte should be F7
+        if ((sysex[0] != 0xF0) || (sysex[len-1] != 0xF7)) {
+          sendToLog("invalid SysEx received; ignoring. (len=" +
+                    std::to_string(len) + ", first=" + std::to_string(sysex[0]) +
+                    ", last=" + std::to_string(sysex[len-1]) + ")");
+          continue;
+        }
+        // Accept only the dev/test manufacturer ID 0x7D until we get our own manufacturer ID.
+        if (sysex[1] != 0x7D) {
+          sendToLog("delegated incoming: ignoring SysEx vendor " + std::to_string(sysex[1]));
+          continue;
+        }
+        processDelegatedSysEx(&sysex[2], len - 3);
+      } else {
+        sendToLog("delegated incoming: " + std::to_string(type));
+      }
+    }
+  });
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -6353,6 +6756,7 @@ void setupMenu() {
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
+  menuPageAdvanced.addMenuItem(menuItemDelegated);
   menuPageAdvanced.addMenuItem(menuItemDebug);
 }
 void setupGFX() {
@@ -6483,7 +6887,9 @@ void readHexes() {
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
-        if (h[i].isCmd) {
+        if (delegatedControl) {
+          delegatedButtonEvent(i, true);
+        } else if (h[i].isCmd) {
           cmdOn(i);
         } else if (h[i].inScale || (!scaleLock)) {
           tryMIDInoteOn(i);
@@ -6491,7 +6897,9 @@ void readHexes() {
         }
         break;
       case BTN_STATE_RELEASED:  // just released
-        if (h[i].isCmd) {
+        if (delegatedControl) {
+          delegatedButtonEvent(i, false);
+        } else if (h[i].isCmd) {
           cmdOff(i);
         } else if (h[i].inScale || (!scaleLock)) {
           tryMIDInoteOff(i);
@@ -6506,6 +6914,9 @@ void readHexes() {
   }
 }
 void updateWheels() {
+  if (delegatedControl) {
+    return;
+  }
   velWheel.setTargetValue();
   bool upd = velWheel.updateValue(runTime);
   if (upd) {
@@ -6654,5 +7065,8 @@ void setup1() {  // set up on second core
   setupSynth(AJACK_PIN, AJACK_SLICE);
 }
 void loop1() {  // run on second core
+  if (delegatedControl) {
+    processIncomingMIDIDelegated();
+  }
   readKnob();
 }
