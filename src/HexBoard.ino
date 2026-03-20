@@ -2819,12 +2819,13 @@ int16_t justIntonationRetune(byte x) {
 
 // --- Note display overlay when pressing keys ---
 constexpr byte DISPLAYED_NOTES_MAX = 6;
+constexpr int16_t DISPLAYED_NOTE_UNUSED = INT16_MIN;
 bool displayPlayedNotes = false;
 bool noteOverlayVisible = false;
 bool noteOverlayDirty = true;
-byte displayedNotes[DISPLAYED_NOTES_MAX] = {
-  UNUSED_NOTE, UNUSED_NOTE, UNUSED_NOTE,
-  UNUSED_NOTE, UNUSED_NOTE, UNUSED_NOTE
+int16_t displayedNotes[DISPLAYED_NOTES_MAX] = {
+  DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED,
+  DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED
 };
 
 const char* chromaticNames[12] = {
@@ -5078,7 +5079,7 @@ const uint64_t screenSaverTimeout = (1u << 25);  // 2^25 microseconds ~ 33 secon
 // Updates notes on display when keys are pressed
 void rebuildDisplayedNotes() {
   for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
-    displayedNotes[i] = UNUSED_NOTE;
+    displayedNotes[i] = DISPLAYED_NOTE_UNUSED;
   }
 
   byte out = 0;
@@ -5089,20 +5090,19 @@ void rebuildDisplayedNotes() {
     if (h[i].MIDIch == 0) {
       continue;
     }
-    if (h[i].note >= 128) {
-      continue;
-    }
+
+    int16_t displayedPitch = h[i].stepsFromC + current.transpose;
 
     bool alreadyListed = false;
     for (byte j = 0; j < out; j++) {
-      if (displayedNotes[j] == h[i].note) {
+      if (displayedNotes[j] == displayedPitch) {
         alreadyListed = true;
         break;
       }
     }
 
     if (!alreadyListed) {
-      displayedNotes[out++] = h[i].note;
+      displayedNotes[out++] = displayedPitch;
     }
   }
 }
@@ -5110,7 +5110,7 @@ void rebuildDisplayedNotes() {
 byte displayedNoteCount() {
   byte count = 0;
   for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
-    if (displayedNotes[i] != UNUSED_NOTE) {
+    if (displayedNotes[i] != DISPLAYED_NOTE_UNUSED) {
       count++;
     }
   }
@@ -5161,11 +5161,21 @@ void drawPlayedNotesOverlay() {
 
   // 3 columns x 2 rows = 6 notes max
   for (byte i = 0; i < count; i++) {
-    byte midiNote = displayedNotes[i];
-    const char* label = chromaticNames[midiNote % 12];
-    int octave = (midiNote / 12) - 1;
-    char noteText[8];
-    snprintf(noteText, sizeof(noteText), "%s%d", label, octave);
+    int16_t displayedPitch = displayedNotes[i];
+    char noteText[12];
+
+    if (current.tuningIndex == TUNING_12EDO) {
+      int midiNote = displayedPitch + 60;
+      const char* label = chromaticNames[positiveMod(midiNote, 12)];
+      int octave = (midiNote / 12) - 1;
+      snprintf(noteText, sizeof(noteText), "%s%d", label, octave);
+    } else {
+      int cycleLength = current.tuning().cycleLength;
+      int step = positiveMod(displayedPitch, cycleLength);
+      int octave = ((displayedPitch - step) / cycleLength) + 4;
+      snprintf(noteText, sizeof(noteText), "%d.%d", step, octave);
+    }
+
     byte col = i % 3;
     byte row = i / 3;
     int x = (col == 0) ? 2 : (col == 1) ? 42 : 82;
