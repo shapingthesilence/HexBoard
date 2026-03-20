@@ -2846,14 +2846,15 @@ extern U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2;
 #endif
 
 void tryMIDInoteOn(byte x) {
-  // This section to wake the screen when notes are pressed for displaying the notes on the screen
-  screenTime = 0;
-  if (screenSaverOn) {
-    screenSaverOn = 0;
-    u8g2.setContrast(CONTRAST_AWAKE);
-    noteOverlayDirty = true;
+  // Only wake/reset the screen timer when note display is enabled.
+  if (displayPlayedNotes) {
+    screenTime = 0;
+      if (screenSaverOn) {
+        screenSaverOn = 0;
+        u8g2.setContrast(CONTRAST_AWAKE);
+        noteOverlayDirty = true;   
+      }
   }
-
   // This gets called on any non-command hex that is not scale-locked.
   if (h[x].note >= 128) {
     return;
