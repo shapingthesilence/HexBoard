@@ -2825,6 +2825,8 @@ constexpr uint64_t DISPLAYED_NOTES_RELEASE_GRACE_MICROS = 80000ULL;
 bool displayPlayedNotes = false;
 bool noteOverlayVisible = false;
 bool noteOverlayDirty = true;
+bool noteOverlayTemporaryWake = false;
+bool noteOverlayWokeDisplayFromSleep = false;
 uint64_t noteOverlayHoldUntil = 0;
 uint64_t noteOverlayReleaseGraceUntil = 0;
 int16_t displayedNotes[DISPLAYED_NOTES_MAX] = {
@@ -2844,6 +2846,7 @@ byte displayedNoteCount(const int16_t* notes);
 bool displayedNotesEqual(const int16_t* first, const int16_t* second);
 void drawPlayedNotesOverlay();
 void onToggleDisplayPlayedNotes();
+bool setNoteOverlayTemporaryWake(bool enabled);
 /* NEW */
 extern uint64_t screenTime;
 extern bool screenSaverOn;
@@ -2854,14 +2857,9 @@ extern U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2;
 #endif
 
 void tryMIDInoteOn(byte x) {
-  // Only wake/reset the screen timer when note display is enabled.
-  if (displayPlayedNotes) {
-    screenTime = 0;
-      if (screenSaverOn) {
-        screenSaverOn = 0;
-        u8g2.setContrast(CONTRAST_AWAKE);
-        noteOverlayDirty = true;   
-      }
+  if (displayPlayedNotes && screenSaverOn) {
+    setNoteOverlayTemporaryWake(true);
+    noteOverlayDirty = true;
   }
   // This gets called on any non-command hex that is not scale-locked.
   if (h[x].note >= 128) {
@@ -5085,6 +5083,27 @@ bool audioMenuItemInserted = false;
 uint64_t screenTime = 0;                         // GFX timer to count if screensaver should go on
 const uint64_t screenSaverTimeout = (1u << 25);  // 2^25 microseconds ~ 33 seconds
 
+bool setNoteOverlayTemporaryWake(bool enabled) {
+  noteOverlayTemporaryWake = enabled;
+  if (enabled) {
+    noteOverlayWokeDisplayFromSleep = screenSaverOn;
+    if (screenSaverOn) {
+      screenSaverOn = 0;
+      u8g2.setContrast(CONTRAST_AWAKE);
+    }
+    return false;
+  }
+
+  bool returnedToSleep = noteOverlayWokeDisplayFromSleep && screenTime > screenSaverTimeout;
+  if (returnedToSleep && !screenSaverOn) {
+    screenSaverOn = 1;
+    u8g2.setContrast(CONTRAST_SCREENSAVER);
+    u8g2.clear();
+  }
+  noteOverlayWokeDisplayFromSleep = false;
+  return returnedToSleep;
+}
+
 // Updates notes on display when keys are pressed
 void clearDisplayedNotes(int16_t* notes) {
   for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
@@ -5149,10 +5168,13 @@ void onToggleDisplayPlayedNotes() {
   if (!displayPlayedNotes && noteOverlayVisible) {
     noteOverlayVisible = false;
     noteOverlayDirty = false;
+    bool returnedToSleep = setNoteOverlayTemporaryWake(false);
     noteOverlayHoldUntil = 0;
     noteOverlayReleaseGraceUntil = 0;
     clearDisplayedNotes(displayedNotes);
-    menu.drawMenu();
+    if (!returnedToSleep) {
+      menu.drawMenu();
+    }
   } else if (displayPlayedNotes) {
     noteOverlayDirty = true;
   }
@@ -5163,7 +5185,7 @@ void drawPlayedNotesOverlay() {
     return;
   }
 
-  if (screenSaverOn) {
+  if (screenSaverOn && !noteOverlayTemporaryWake) {
     return;
   }
 
@@ -5193,13 +5215,16 @@ void drawPlayedNotesOverlay() {
   byte count = displayedNoteCount(displayedNotes);
 
   if (activeCount == 0 && (count == 0 || runTime > noteOverlayHoldUntil)) {
+    bool returnedToSleep = setNoteOverlayTemporaryWake(false);
     noteOverlayHoldUntil = 0;
     noteOverlayReleaseGraceUntil = 0;
     clearDisplayedNotes(displayedNotes);
     if (noteOverlayVisible) {
       noteOverlayVisible = false;
       noteOverlayDirty = false;
-      menu.drawMenu();
+      if (!returnedToSleep) {
+        menu.drawMenu();
+      }
     }
     return;
   }
@@ -6987,6 +7012,14 @@ void setupGFX() {
   sendToLog("U8G2 graphics initialized.");
 }
 void screenSaver() {
+  if (noteOverlayTemporaryWake) {
+    if (screenSaverOn) {
+      screenSaverOn = 0;
+      u8g2.setContrast(CONTRAST_AWAKE);
+    }
+    return;
+  }
+
   if (screenTime <= screenSaverTimeout) {
     screenTime = screenTime + lapTime;
     if (screenSaverOn) {
