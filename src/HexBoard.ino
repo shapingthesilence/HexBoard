@@ -2820,9 +2820,13 @@ int16_t justIntonationRetune(byte x) {
 // --- Note display overlay when pressing keys ---
 constexpr byte DISPLAYED_NOTES_MAX = 6;
 constexpr int16_t DISPLAYED_NOTE_UNUSED = INT16_MIN;
+constexpr uint64_t DISPLAYED_NOTES_HOLD_MICROS = 2000000ULL;
+constexpr uint64_t DISPLAYED_NOTES_RELEASE_GRACE_MICROS = 80000ULL;
 bool displayPlayedNotes = false;
 bool noteOverlayVisible = false;
 bool noteOverlayDirty = true;
+uint64_t noteOverlayHoldUntil = 0;
+uint64_t noteOverlayReleaseGraceUntil = 0;
 int16_t displayedNotes[DISPLAYED_NOTES_MAX] = {
   DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED,
   DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED
@@ -2833,8 +2837,11 @@ const char* chromaticNames[12] = {
   "F#", "G", "G#", "A", "Bb", "B"
 };
 
-void rebuildDisplayedNotes();
-byte displayedNoteCount();
+void clearDisplayedNotes(int16_t* notes);
+void copyDisplayedNotes(int16_t* destination, const int16_t* source);
+byte rebuildDisplayedNotes(int16_t* notes);
+byte displayedNoteCount(const int16_t* notes);
+bool displayedNotesEqual(const int16_t* first, const int16_t* second);
 void drawPlayedNotesOverlay();
 void onToggleDisplayPlayedNotes();
 /* NEW */
@@ -2901,6 +2908,7 @@ void tryMIDInoteOn(byte x) {
       }
       // Then, send the note-on message
       withMIDI([&](auto& M) { M.sendNoteOn(h[x].note, velWheel.curValue, h[x].MIDIch); });  // ch 1-16
+      noteOverlayReleaseGraceUntil = 0;
       noteOverlayDirty = true;
 
       sendToLog(
@@ -2930,6 +2938,7 @@ void tryMIDInoteOff(byte x) {
       }
       releaseMPEChannel(h[x].MIDIch);
     }
+    noteOverlayReleaseGraceUntil = runTime + DISPLAYED_NOTES_RELEASE_GRACE_MICROS;
     noteOverlayDirty = true;
     h[x].MIDIch = 0;
   }
@@ -5077,11 +5086,20 @@ uint64_t screenTime = 0;                         // GFX timer to count if screen
 const uint64_t screenSaverTimeout = (1u << 25);  // 2^25 microseconds ~ 33 seconds
 
 // Updates notes on display when keys are pressed
-void rebuildDisplayedNotes() {
+void clearDisplayedNotes(int16_t* notes) {
   for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
-    displayedNotes[i] = DISPLAYED_NOTE_UNUSED;
+    notes[i] = DISPLAYED_NOTE_UNUSED;
   }
+}
 
+void copyDisplayedNotes(int16_t* destination, const int16_t* source) {
+  for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
+    destination[i] = source[i];
+  }
+}
+
+byte rebuildDisplayedNotes(int16_t* notes) {
+  clearDisplayedNotes(notes);
   byte out = 0;
   for (byte i = 0; i < LED_COUNT && out < DISPLAYED_NOTES_MAX; i++) {
     if (h[i].isCmd) {
@@ -5095,32 +5113,45 @@ void rebuildDisplayedNotes() {
 
     bool alreadyListed = false;
     for (byte j = 0; j < out; j++) {
-      if (displayedNotes[j] == displayedPitch) {
+      if (notes[j] == displayedPitch) {
         alreadyListed = true;
         break;
       }
     }
 
     if (!alreadyListed) {
-      displayedNotes[out++] = displayedPitch;
+      notes[out++] = displayedPitch;
     }
   }
+  return out;
 }
 
-byte displayedNoteCount() {
+byte displayedNoteCount(const int16_t* notes) {
   byte count = 0;
   for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
-    if (displayedNotes[i] != DISPLAYED_NOTE_UNUSED) {
+    if (notes[i] != DISPLAYED_NOTE_UNUSED) {
       count++;
     }
   }
   return count;
 }
 
+bool displayedNotesEqual(const int16_t* first, const int16_t* second) {
+  for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
+    if (first[i] != second[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void onToggleDisplayPlayedNotes() {
   if (!displayPlayedNotes && noteOverlayVisible) {
     noteOverlayVisible = false;
     noteOverlayDirty = false;
+    noteOverlayHoldUntil = 0;
+    noteOverlayReleaseGraceUntil = 0;
+    clearDisplayedNotes(displayedNotes);
     menu.drawMenu();
   } else if (displayPlayedNotes) {
     noteOverlayDirty = true;
@@ -5136,10 +5167,35 @@ void drawPlayedNotesOverlay() {
     return;
   }
 
-  rebuildDisplayedNotes();
-  byte count = displayedNoteCount();
+  int16_t activeDisplayedNotes[DISPLAYED_NOTES_MAX];
+  byte activeCount = rebuildDisplayedNotes(activeDisplayedNotes);
+  byte countBefore = displayedNoteCount(displayedNotes);
+  bool snapshotChanged = false;
 
-  if (count == 0) {
+  if (activeCount > 0) {
+    bool notesChanged = !displayedNotesEqual(displayedNotes, activeDisplayedNotes);
+    bool shouldDelayChordShrink = notesChanged &&
+                                  activeCount < countBefore &&
+                                  countBefore > 0 &&
+                                  runTime <= noteOverlayReleaseGraceUntil;
+
+    if (!shouldDelayChordShrink && notesChanged) {
+      copyDisplayedNotes(displayedNotes, activeDisplayedNotes);
+      snapshotChanged = true;
+    }
+
+    noteOverlayHoldUntil = runTime + DISPLAYED_NOTES_HOLD_MICROS;
+    if (!shouldDelayChordShrink) {
+      noteOverlayReleaseGraceUntil = 0;
+    }
+  }
+
+  byte count = displayedNoteCount(displayedNotes);
+
+  if (activeCount == 0 && (count == 0 || runTime > noteOverlayHoldUntil)) {
+    noteOverlayHoldUntil = 0;
+    noteOverlayReleaseGraceUntil = 0;
+    clearDisplayedNotes(displayedNotes);
     if (noteOverlayVisible) {
       noteOverlayVisible = false;
       noteOverlayDirty = false;
@@ -5148,7 +5204,7 @@ void drawPlayedNotesOverlay() {
     return;
   }
 
-  if (!noteOverlayDirty && noteOverlayVisible) {
+  if (!noteOverlayDirty && noteOverlayVisible && !snapshotChanged) {
     return;
   }
 
