@@ -34,7 +34,7 @@ The `Makefile` currently compiles with:
 
 - Board: `rp2040:rp2040:generic`
 - Flash: `16 MB`
-- CPU: `133 MHz`
+- CPU: `200 MHz`
 - USB stack: `tinyusb`
 
 If you build manually, match the options in `Makefile` and the header comment in `src/HexBoard.ino`.
