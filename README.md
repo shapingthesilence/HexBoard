@@ -8,9 +8,8 @@ HexBoard is a hexagonal MIDI controller and instrument built around the RP2040. 
 - an onboard synth with mono, polyphonic, and arpeggiated playback
 - an OLED menu system for tuning, layout, color, MIDI, synth, and profile management
 
-![A HexBoard with the default layout active](https://shapingthesilence.com/wp-content/uploads/2023/05/IMG_7850-scaled-e1683770617108.jpeg)
 
-You can [order a HexBoard](https://shapingthesilence.com/tech/hexboard-midi-controller/) or [contact Jared](mailto:jared@shapingthesilence.com) if you are interested in the hardware.
+You can [order a HexBoard](https://shapingthesilence.com/) if you are interested in the hardware.
 
 ## Documentation
 
@@ -67,7 +66,7 @@ Older and related references:
 The current source targets:
 
 - Generic RP2040
-- `133 MHz`
+- `200 MHz`
 - `16 MB` flash
 - TinyUSB USB stack
 
