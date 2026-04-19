@@ -2,7 +2,7 @@
 
 > File: `src/HexBoard.ino`
 > Current shape: one Arduino sketch, about `7,100` lines
-> Target: Generic RP2040 at `133 MHz`, `16 MB` flash, TinyUSB, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
+> Target: Generic RP2040 at `200 MHz`, `16 MB` flash, TinyUSB, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
 
 This document describes the current firmware structure. It intentionally avoids exact line-number references because the sketch changes often. Use the `// @...` section tags in `src/HexBoard.ino` and `rg` searches as the source navigation method.
 
