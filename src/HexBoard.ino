@@ -2817,7 +2817,50 @@ int16_t justIntonationRetune(byte x) {
 }
 
 
+// --- Note display overlay when pressing keys ---
+constexpr byte DISPLAYED_NOTES_MAX = 6;
+constexpr int16_t DISPLAYED_NOTE_UNUSED = INT16_MIN;
+constexpr uint64_t DISPLAYED_NOTES_HOLD_MICROS = 2000000ULL;
+constexpr uint64_t DISPLAYED_NOTES_RELEASE_GRACE_MICROS = 80000ULL;
+bool displayPlayedNotes = false;
+bool noteOverlayVisible = false;
+bool noteOverlayDirty = true;
+bool noteOverlayTemporaryWake = false;
+bool noteOverlayWokeDisplayFromSleep = false;
+uint64_t noteOverlayHoldUntil = 0;
+uint64_t noteOverlayReleaseGraceUntil = 0;
+int16_t displayedNotes[DISPLAYED_NOTES_MAX] = {
+  DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED,
+  DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED
+};
+
+const char* chromaticNames[12] = {
+  "C", "C#", "D", "Eb", "E", "F",
+  "F#", "G", "G#", "A", "Bb", "B"
+};
+
+void clearDisplayedNotes(int16_t* notes);
+void copyDisplayedNotes(int16_t* destination, const int16_t* source);
+byte rebuildDisplayedNotes(int16_t* notes);
+byte displayedNoteCount(const int16_t* notes);
+bool displayedNotesEqual(const int16_t* first, const int16_t* second);
+void drawPlayedNotesOverlay();
+void onToggleDisplayPlayedNotes();
+bool setNoteOverlayTemporaryWake(bool enabled);
+/* NEW */
+extern uint64_t screenTime;
+extern bool screenSaverOn;
+extern U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2;
+
+#ifndef CONTRAST_AWAKE
+#define CONTRAST_AWAKE 63
+#endif
+
 void tryMIDInoteOn(byte x) {
+  if (displayPlayedNotes && screenSaverOn) {
+    setNoteOverlayTemporaryWake(true);
+    noteOverlayDirty = true;
+  }
   // This gets called on any non-command hex that is not scale-locked.
   if (h[x].note >= 128) {
     return;
@@ -2863,6 +2906,8 @@ void tryMIDInoteOn(byte x) {
       }
       // Then, send the note-on message
       withMIDI([&](auto& M) { M.sendNoteOn(h[x].note, velWheel.curValue, h[x].MIDIch); });  // ch 1-16
+      noteOverlayReleaseGraceUntil = 0;
+      noteOverlayDirty = true;
 
       sendToLog(
         "Sent MIDI pitch bend: " + std::to_string(pitchBendValue) + " to ch " + std::to_string(h[x].MIDIch));
@@ -2891,6 +2936,8 @@ void tryMIDInoteOff(byte x) {
       }
       releaseMPEChannel(h[x].MIDIch);
     }
+    noteOverlayReleaseGraceUntil = runTime + DISPLAYED_NOTES_RELEASE_GRACE_MICROS;
+    noteOverlayDirty = true;
     h[x].MIDIch = 0;
   }
 }
@@ -4043,7 +4090,7 @@ void RAM_FUNC(retryPendingReleases)() {
       --releaseRetryCountdown[i];
       continue;
     }
-    publishEnvelopeCommand(i, EnvelopeCommand::StartRelease);
+	publishEnvelopeCommand(i, EnvelopeCommand::StartRelease);
     releaseRetryCountdown[i] = releaseRetryDelayLoops;
     releaseRetries[i] = static_cast<uint8_t>(retries - 1);
   }
@@ -4747,6 +4794,7 @@ enum class SettingKey : uint8_t {
   EnvelopeSustainLevel,
   EnvelopeReleaseIndex,
   Delegated,
+  DisplayPlayedNotes,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -4814,6 +4862,8 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* EnvelopeDecayIndex           */ 3,
   /* EnvelopeSustainLevel         */ 127,
   /* EnvelopeReleaseIndex         */ 3,
+  /* Delegated                    */ 0,
+  /* Display played notes         */ 0,
 };
 
 // ==================================================
@@ -5032,6 +5082,193 @@ bool screenSaverOn = 0;
 bool audioMenuItemInserted = false;
 uint64_t screenTime = 0;                         // GFX timer to count if screensaver should go on
 const uint64_t screenSaverTimeout = (1u << 25);  // 2^25 microseconds ~ 33 seconds
+
+bool setNoteOverlayTemporaryWake(bool enabled) {
+  noteOverlayTemporaryWake = enabled;
+  if (enabled) {
+    noteOverlayWokeDisplayFromSleep = screenSaverOn;
+    if (screenSaverOn) {
+      screenSaverOn = 0;
+      u8g2.setContrast(CONTRAST_AWAKE);
+    }
+    return false;
+  }
+
+  bool returnedToSleep = noteOverlayWokeDisplayFromSleep && screenTime > screenSaverTimeout;
+  if (returnedToSleep && !screenSaverOn) {
+    screenSaverOn = 1;
+    u8g2.setContrast(CONTRAST_SCREENSAVER);
+    u8g2.clear();
+  }
+  noteOverlayWokeDisplayFromSleep = false;
+  return returnedToSleep;
+}
+
+// Updates notes on display when keys are pressed
+void clearDisplayedNotes(int16_t* notes) {
+  for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
+    notes[i] = DISPLAYED_NOTE_UNUSED;
+  }
+}
+
+void copyDisplayedNotes(int16_t* destination, const int16_t* source) {
+  for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
+    destination[i] = source[i];
+  }
+}
+
+byte rebuildDisplayedNotes(int16_t* notes) {
+  clearDisplayedNotes(notes);
+  byte out = 0;
+  for (byte i = 0; i < LED_COUNT && out < DISPLAYED_NOTES_MAX; i++) {
+    if (h[i].isCmd) {
+      continue;
+    }
+    if (h[i].MIDIch == 0) {
+      continue;
+    }
+
+    int16_t displayedPitch = h[i].stepsFromC + current.transpose;
+
+    bool alreadyListed = false;
+    for (byte j = 0; j < out; j++) {
+      if (notes[j] == displayedPitch) {
+        alreadyListed = true;
+        break;
+      }
+    }
+
+    if (!alreadyListed) {
+      notes[out++] = displayedPitch;
+    }
+  }
+  return out;
+}
+
+byte displayedNoteCount(const int16_t* notes) {
+  byte count = 0;
+  for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
+    if (notes[i] != DISPLAYED_NOTE_UNUSED) {
+      count++;
+    }
+  }
+  return count;
+}
+
+bool displayedNotesEqual(const int16_t* first, const int16_t* second) {
+  for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
+    if (first[i] != second[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void onToggleDisplayPlayedNotes() {
+  if (!displayPlayedNotes && noteOverlayVisible) {
+    noteOverlayVisible = false;
+    noteOverlayDirty = false;
+    bool returnedToSleep = setNoteOverlayTemporaryWake(false);
+    noteOverlayHoldUntil = 0;
+    noteOverlayReleaseGraceUntil = 0;
+    clearDisplayedNotes(displayedNotes);
+    if (!returnedToSleep) {
+      menu.drawMenu();
+    }
+  } else if (displayPlayedNotes) {
+    noteOverlayDirty = true;
+  }
+}
+
+void drawPlayedNotesOverlay() {
+  if (!displayPlayedNotes) {
+    return;
+  }
+
+  if (screenSaverOn && !noteOverlayTemporaryWake) {
+    return;
+  }
+
+  int16_t activeDisplayedNotes[DISPLAYED_NOTES_MAX];
+  byte activeCount = rebuildDisplayedNotes(activeDisplayedNotes);
+  byte countBefore = displayedNoteCount(displayedNotes);
+  bool snapshotChanged = false;
+
+  if (activeCount > 0) {
+    bool notesChanged = !displayedNotesEqual(displayedNotes, activeDisplayedNotes);
+    bool shouldDelayChordShrink = notesChanged &&
+                                  activeCount < countBefore &&
+                                  countBefore > 0 &&
+                                  runTime <= noteOverlayReleaseGraceUntil;
+
+    if (!shouldDelayChordShrink && notesChanged) {
+      copyDisplayedNotes(displayedNotes, activeDisplayedNotes);
+      snapshotChanged = true;
+    }
+
+    noteOverlayHoldUntil = runTime + DISPLAYED_NOTES_HOLD_MICROS;
+    if (!shouldDelayChordShrink) {
+      noteOverlayReleaseGraceUntil = 0;
+    }
+  }
+
+  byte count = displayedNoteCount(displayedNotes);
+
+  if (activeCount == 0 && (count == 0 || runTime > noteOverlayHoldUntil)) {
+    bool returnedToSleep = setNoteOverlayTemporaryWake(false);
+    noteOverlayHoldUntil = 0;
+    noteOverlayReleaseGraceUntil = 0;
+    clearDisplayedNotes(displayedNotes);
+    if (noteOverlayVisible) {
+      noteOverlayVisible = false;
+      noteOverlayDirty = false;
+      if (!returnedToSleep) {
+        menu.drawMenu();
+      }
+    }
+    return;
+  }
+
+  if (!noteOverlayDirty && noteOverlayVisible && !snapshotChanged) {
+    return;
+  }
+
+  noteOverlayVisible = true;
+  noteOverlayDirty = false;
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x13_tf);
+  u8g2.drawStr(8, 16, "Now Playing");
+
+  // 3 columns x 2 rows = 6 notes max
+  for (byte i = 0; i < count; i++) {
+    int16_t displayedPitch = displayedNotes[i];
+    char noteText[12];
+
+    if (current.tuningIndex == TUNING_12EDO) {
+      int midiNote = displayedPitch + 60;
+      const char* label = chromaticNames[positiveMod(midiNote, 12)];
+      int octave = (midiNote / 12) - 1;
+      snprintf(noteText, sizeof(noteText), "%s%d", label, octave);
+    } else {
+      int cycleLength = current.tuning().cycleLength;
+      int step = positiveMod(displayedPitch, cycleLength);
+      int octave = ((displayedPitch - step) / cycleLength) + 4;
+      snprintf(noteText, sizeof(noteText), "%d.%d", step, octave);
+    }
+
+    byte col = i % 3;
+    byte row = i / 3;
+    int x = (col == 0) ? 2 : (col == 1) ? 42 : 82;
+    int y = 34 + (row * 26);
+
+    u8g2.setFont(u8g2_font_logisoso16_tf);
+    u8g2.drawStr(x, y, noteText);
+  }
+
+  u8g2.sendBuffer();
+}
+
 /*
     Create menu page object of class GEMPage.
     Menu page holds menu items (GEMItem) and represents menu level.
@@ -5309,6 +5546,13 @@ PersistentCallbackInfo callbackInfoDebug = {
 };
 GEMItem menuItemDebug("Serial Debug", debugMessages, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDebug));
 
+PersistentCallbackInfo callbackInfoDisplayPlayedNotes = {
+  static_cast<uint8_t>(SettingKey::DisplayPlayedNotes),
+  reinterpret_cast<void*>(&displayPlayedNotes),
+  nullptr,
+  onToggleDisplayPlayedNotes
+};
+GEMItem menuItemDisplayPlayedNotes("DisplayNotes", displayPlayedNotes, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDisplayPlayedNotes));
 
 
 SelectOptionByte optionByteWheelType[] = { { "Springy", 0 }, { "Sticky", 1 } };
@@ -6421,6 +6665,7 @@ void syncSettingsToRuntime() {
   envelopeDecayIndex = settings[static_cast<uint8_t>(SettingKey::EnvelopeDecayIndex)];
   envelopeSustainLevel = settings[static_cast<uint8_t>(SettingKey::EnvelopeSustainLevel)];
   envelopeReleaseIndex = settings[static_cast<uint8_t>(SettingKey::EnvelopeReleaseIndex)];
+  displayPlayedNotes = (settings[static_cast<uint8_t>(SettingKey::DisplayPlayedNotes)] !=0);
   updateEnvelopeParamsFromSettings();
   updateArpeggiatorTiming();
 
@@ -6753,6 +6998,7 @@ void setupMenu() {
   menuPageAdvanced.addMenuItem(menuItemHardware);
   menuPageAdvanced.addMenuItem(menuItemRotary);
   menuPageAdvanced.addMenuItem(menuItemShiftColor);
+  menuPageAdvanced.addMenuItem(menuItemDisplayPlayedNotes);
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
@@ -6766,6 +7012,14 @@ void setupGFX() {
   sendToLog("U8G2 graphics initialized.");
 }
 void screenSaver() {
+  if (noteOverlayTemporaryWake) {
+    if (screenSaverOn) {
+      screenSaverOn = 0;
+      u8g2.setContrast(CONTRAST_AWAKE);
+    }
+    return;
+  }
+
   if (screenTime <= screenSaverTimeout) {
     screenTime = screenTime + lapTime;
     if (screenSaverOn) {
@@ -7058,6 +7312,7 @@ void loop() {        // run on first core
   animateLEDs();     // deal with animations
   lightUpLEDs();     // refresh LEDs
   dealWithRotary();  // deal with menu
+  drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   checkAndAutoSave();// save settings
 }
 void setup1() {  // set up on second core
