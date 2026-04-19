@@ -1,76 +1,162 @@
 # HexBoard MIDI Controller
 
-The HexBoard is a 140-key board designed for techno-musicians, babies, and computer people.
+HexBoard is a hexagonal MIDI controller and instrument built around the RP2040. The current firmware in this repository drives:
+
+- a `140`-button illuminated hex grid
+- USB and serial MIDI output
+- microtonal and isomorphic layouts
+- an onboard synth with mono, polyphonic, and arpeggiated playback
+- an OLED menu system for tuning, layout, color, MIDI, synth, and profile management
 
 ![A HexBoard with the default layout active](https://shapingthesilence.com/wp-content/uploads/2023/05/IMG_7850-scaled-e1683770617108.jpeg)
 
-You can [order your HexBoard today](https://shapingthesilence.com/tech/hexboard-midi-controller/),
-or [contact Jared](mailto:jared@shapingthesilence.com) if you're interested in assembling it yourself.
+You can [order a HexBoard](https://shapingthesilence.com/tech/hexboard-midi-controller/) or [contact Jared](mailto:jared@shapingthesilence.com) if you are interested in the hardware.
 
-## The Team
-* Jared DeCook has been writing music, developing hardware, and performing as [Shaping The Silence](https://shapingthesilence.com/) for over a decade.
-* Zach DeCook has been listening to music, breaking hardware, and occasionally writing software since the former discovered his exploitable talents.
-* Nicholas Fox has been 'hexperimenting' with the firmware since before receiving a HexBoard in the mail.
+## Documentation
 
-## HexBoard "Arduino" firmware
+- [User Manual](docs/user-manual.md)
+- [Developer Guide](docs/developer-guide.md)
+- [Code Analysis](docs/code-analysis.md)
+- [Delegated Control Protocol](docs/delegated-control.md)
 
-The "Arduino" firmware is the default firmware for the HexBoard (and is what this repository contains).
+The user manual is for players and owners of the device. The developer guide is for people editing the firmware in this repository.
 
-[![Sourcehut Build status](https://builds.sr.ht/~earboxer/HexBoard/commits/.svg)](https://builds.sr.ht/~earboxer/HexBoard/commits/?) Nightly builds are automatically made when a commit is pushed to SourceHut.
+## Repository Layout
 
-Build artifacts are usually also attached to the [tagged releases on sourcehut](https://git.sr.ht/~earboxer/HexBoard/refs), and may be found at https://zachdecook.com/HexBoard/firmware/ for posterity.
+- `src/HexBoard.ino`: primary firmware source
+- `HexBoard.ino`: root sketch copy used by some Arduino tooling
+- `docs/`: documentation for users and contributors
+- `Makefile`: local build shortcut for `arduino-cli`
 
-The files are in the format `VX_Y_Z-model0.uf2`, where
-* `X_Y_Z` is the version number
-* `0` is the model number ("2" for production model, for sale since 2023. "1" for the 2022 development model with the RP2040 processor board).
+The current firmware is intentionally maintained as a single large sketch file, but it is organized internally into subsystem sections such as tuning, layout, LEDs, MIDI, synth, persistence, menu, and main loop.
 
-## Hexperiment firmware
+## Current Firmware Highlights
 
-Created by Nicholas Fox, sometimes available at https://github.com/theHDM/hexperiment or at https://git.sr.ht/~earboxer/HexBoard/tree/hexperiment
+The current code supports:
 
-[![builds.sr.ht status](https://builds.sr.ht/~earboxer/HexBoard/commits/hexperiment.svg)](https://builds.sr.ht/~earboxer/HexBoard/commits/hexperiment?)
+- multiple tunings, including non-12-EDO systems
+- multiple isomorphic layouts with rotation and mirroring
+- scale filtering with optional scale lock
+- multiple LED color modes and animations
+- standard MIDI, extended multi-channel MIDI mapping, and MPE behavior
+- dynamic just intonation and BPM-linked retuning options
+- onboard synth waveform, envelope, and arpeggiator settings
+- an external-only delegated-control mode for host-driven buttons and LEDs
+- persistent settings with `9` profile slots stored in LittleFS
 
-## Golden Master firmware
+## Team
 
-Since version 1.0.0, hexperiment has been merged into the main firmware branch. This firmware is only for the production model.
+- Jared DeCook has been writing music, developing hardware, and performing as [Shaping The Silence](https://shapingthesilence.com/) for over a decade.
+- Zach DeCook has been listening to music, breaking hardware, and occasionally writing software since the former discovered his exploitable talents.
+- Nicholas Fox has been hexperimenting with the firmware since before receiving a HexBoard in the mail.
 
-### Building the firmware
+## Related Firmware History
 
-If you want to build the firmware,
-we'll assume you're already proficient at installing software on your computer at this point.
+This repository contains the main Arduino-based HexBoard firmware.
 
-#### Using [Arduino-IDE](https://www.arduino.cc/en/software)
+Older and related references:
 
-(Instructions to come)
+- [SourceHut project page](https://git.sr.ht/~earboxer/HexBoard)
+- [Nightly build status](https://builds.sr.ht/~earboxer/HexBoard/commits/.svg)
+- [Tagged releases on SourceHut](https://git.sr.ht/~earboxer/HexBoard/refs)
+- Posterity builds sometimes mirrored at [zachdecook.com/HexBoard/firmware](https://zachdecook.com/HexBoard/firmware/)
+- Historical `hexperiment` branch and related work may appear at [GitHub](https://github.com/theHDM/hexperiment) or [SourceHut](https://git.sr.ht/~earboxer/HexBoard/tree/hexperiment)
 
-#### Using [arduino-cli](https://arduino.github.io/arduino-cli/latest/)
+## Hardware And Build Target
 
-(You also need to have `python3` installed on your system)
+The current source targets:
+
+- Generic RP2040
+- `133 MHz`
+- `16 MB` flash
+- TinyUSB USB stack
+
+The source comments in `src/HexBoard.ino` and the `Makefile` are the most reliable build references for this repository.
+
+## Building The Firmware
+
+### Dependencies
+
+You need:
+
+- [arduino-cli](https://arduino.github.io/arduino-cli/latest/)
+- the Earle Philhower RP2040 core
+- the required Arduino libraries
+
+Install the board core and libraries with:
 
 ```sh
 # Download the board index
 arduino-cli --additional-urls=https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json core update-index
-# Install the core for rp2040
+
+# Install the RP2040 core
 arduino-cli --additional-urls=https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json core download rp2040:rp2040
 arduino-cli --additional-urls=https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json core install rp2040:rp2040
+
 # Install libraries
 arduino-cli lib install "MIDI library"
 arduino-cli lib install "Adafruit NeoPixel"
-arduino-cli lib install "U8g2" # dependency for GEM
-arduino-cli lib install "Adafruit GFX Library" # dependency for GEM
+arduino-cli lib install "U8g2"
+arduino-cli lib install "Adafruit GFX Library"
 arduino-cli lib install "GEM"
-sed -i 's@#include "config/enable-glcd.h"@//\0@g' ~/Arduino/libraries/GEM/src/config.h # remove dependency from GEM
-# Run Make to build the firmware
+
+# Older GEM installs may need this compatibility tweak
+sed -i 's@#include "config/enable-glcd.h"@//\0@g' ~/Arduino/libraries/GEM/src/config.h
+```
+
+### Build With `make`
+
+The simplest local build is:
+
+```sh
 make
 ```
-Your firmware file will be the uf2 file inside the build directory.
 
-### Flashing the firmware
+The `Makefile` copies `src/HexBoard.ino` into `build/build.ino` and compiles it with the board options used by this project.
 
-Before flashing, you may want to note your current firmware version in case you desire to revert.
-Since Version 0.1.0, the version number for the "Arduino" firmware has been in the Testing menu. The checkbox indicates that the version you have is marked as a 'release' (rather than a nightly build).
+The expected output artifact is:
 
-1. Unplug the HexBoard from your computer, then plug it in while holding the button by the USB port.
-2. It should appear as a disk in your computer.
-3. Copy the .uf2 firmware file onto that disk
-4. The disk should eject, and the HexBoard should automatically reboot into that firmware.
+```text
+build/build.ino.uf2
+```
+
+### Build Notes
+
+- Edit `src/HexBoard.ino`, not `build/build.ino`
+- If you change board parameters, keep the `Makefile` and source header comments in sync
+- The firmware currently depends on TinyUSB and the RP2040 dual-core runtime behavior
+
+## Flashing The Firmware
+
+You can flash the board in either of these ways.
+
+### From The Device Menu
+
+On current firmware, open:
+
+1. `Advanced`
+2. `Update Firmware`
+
+That reboots the RP2040 into bootloader mode so you can copy a `.uf2` file onto the mounted device.
+
+### Manual Bootloader Method
+
+1. Unplug the HexBoard from your computer.
+2. Plug it back in while holding the button by the USB port.
+3. The board should appear as a removable RP2040 drive.
+4. Copy the `.uf2` firmware file onto that drive.
+5. The drive should eject and the board should reboot into the new firmware.
+
+## Development Notes
+
+If you are jumping into the codebase, start with:
+
+- [Developer Guide](docs/developer-guide.md) for architecture, refresh paths, settings wiring, and risk areas
+- [Code Analysis](docs/code-analysis.md) for a deeper subsystem walkthrough
+- [Delegated Control Protocol](docs/delegated-control.md) for external host integration
+
+The most important source file is:
+
+- [`src/HexBoard.ino`](src/HexBoard.ino)
+
+That file includes section tags such as `@MIDI`, `@synth`, `@menu`, and `@mainLoop`, which make it much easier to navigate than raw line count suggests.

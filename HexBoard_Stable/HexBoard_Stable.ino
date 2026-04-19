@@ -63,8 +63,8 @@
 // @init
 #include <Arduino.h>  // this is necessary to talk to the Hexboard!
 #include <Wire.h>     // this is necessary to connect with I2C devices (such as the oled display)
-constexpr byte SDAPIN = 16;
-constexpr byte SCLPIN = 17;
+#define SDAPIN 16
+#define SCLPIN 17
 #include <GEM_u8g2.h>  // library of code to create menu objects on the B&W display
 #include <algorithm>
 #include <array>
@@ -87,22 +87,12 @@ constexpr byte SCLPIN = 17;
 #include "hardware/structs/sio.h" // For fast GPIO read/write
 
 enum class EnvelopeCommand : uint8_t;
-enum class SettingKey : uint8_t;
 
-// Software-detected hardware revision.
-constexpr byte HARDWARE_UNKNOWN = 0;
-constexpr byte HARDWARE_V1_1 = 1;
-constexpr byte HARDWARE_V1_2 = 2;
-byte Hardware_Version = HARDWARE_UNKNOWN;
-constexpr byte MIDI_CHANNEL_MIN = 1;
-constexpr byte MIDI_CHANNEL_MAX = 16;
-constexpr byte MIDI_CHANNEL_COUNT = MIDI_CHANNEL_MAX - MIDI_CHANNEL_MIN + 1;
-constexpr byte MPE_CHANNEL_MIN = 2;
-constexpr int32_t MIDI_NOTES_PER_CHANNEL = 128;
-
-bool isValidMidiChannel(byte channel) {
-  return (channel >= MIDI_CHANNEL_MIN) && (channel <= MIDI_CHANNEL_MAX);
-}
+                       // Software-detected hardware revision
+#define HARDWARE_UNKNOWN 0
+#define HARDWARE_V1_1 1
+#define HARDWARE_V1_2 2
+byte Hardware_Version = 0;  // 0 = unknown, 1 = v1.1 board. 2 = v1.2 board.
 
 // @helpers
 //might be redundant
@@ -111,15 +101,6 @@ std::array<std::vector<uint8_t>, 128> midiNoteToHexIndices = {};
 
 void updateEnvelopeParamsFromSettings();
 void updateArpeggiatorTiming();
-void refreshMidiRouting();
-void save_settings();
-void copyCurrentSettingsToProfile(uint8_t profileIndex);
-void menuHome();
-void showOnlyValidLayoutChoices();
-void showOnlyValidScaleChoices();
-void showOnlyValidKeyChoices();
-void updateLayoutAndRotate();
-void setupHardware();
 /*
     C++ returns a negative value for
     negative N % D. This function
@@ -145,45 +126,37 @@ byte byteLerp(byte xOne, byte xTwo, float yOne, float yTwo, float y) {
   return temp;
 }
 
-/*
-    A HexBoard note can travel outside the 0-127 MIDI
-    note range. When that happens, we keep the note
-    value within one MIDI channel and move the overflow
-    into a channel offset instead.
-  */
-void splitExtendedMidiNote(int32_t midiIndex, int32_t& channelOffsetOut, byte& noteOut) {
-  channelOffsetOut = midiIndex / MIDI_NOTES_PER_CHANNEL;
-  int32_t remainder = midiIndex % MIDI_NOTES_PER_CHANNEL;
-  if (remainder < 0) {
-    remainder += MIDI_NOTES_PER_CHANNEL;
-    channelOffsetOut -= 1;
-  }
-  noteOut = static_cast<byte>(remainder);
-}
-
 byte wrapMidiChannel(byte baseChannel, int32_t offset) {
-  if (!isValidMidiChannel(baseChannel)) {
-    baseChannel = MIDI_CHANNEL_MIN;
+  if (baseChannel < 1 || baseChannel > 16) {
+    baseChannel = 1;
   }
-  int32_t index = static_cast<int32_t>(baseChannel - MIDI_CHANNEL_MIN) + offset;
-  index %= MIDI_CHANNEL_COUNT;
+  int32_t index = static_cast<int32_t>(baseChannel - 1) + offset;
+  index %= 16;
   if (index < 0) {
-    index += MIDI_CHANNEL_COUNT;
+    index += 16;
   }
-  return static_cast<byte>(index + MIDI_CHANNEL_MIN);
+  return static_cast<byte>(index + 1);
 }
 
 void mapExtendedMidiNote(int32_t midiIndex, byte baseChannel, byte& noteOut, byte& channelOut) {
-  int32_t channelOffset = 0;
-  splitExtendedMidiNote(midiIndex, channelOffset, noteOut);
-  channelOut = wrapMidiChannel(baseChannel, channelOffset);
+  int32_t offset = midiIndex / 128;
+  int32_t remainder = midiIndex % 128;
+  if (remainder < 0) {
+    remainder += 128;
+    offset -= 1;
+  }
+  channelOut = wrapMidiChannel(baseChannel, offset);
+  noteOut = static_cast<byte>(remainder);
 }
 
 int32_t midiChannelOffset(int32_t midiIndex) {
-  int32_t channelOffset = 0;
-  byte unusedNote = 0;
-  splitExtendedMidiNote(midiIndex, channelOffset, unusedNote);
-  return channelOffset;
+  int32_t offset = midiIndex / 128;
+  int32_t remainder = midiIndex % 128;
+  if (remainder < 0) {
+    remainder += 128;
+    offset -= 1;
+  }
+  return offset;
 }
 
 // @defaults
@@ -206,8 +179,18 @@ byte ledRestBrightness = 255;
 byte ledDimBrightness = 255;
 
 void clampMPEChannelRange() {
-  mpeLowestChannel = std::clamp(mpeLowestChannel, MPE_CHANNEL_MIN, MIDI_CHANNEL_MAX);
-  mpeHighestChannel = std::clamp(mpeHighestChannel, MPE_CHANNEL_MIN, MIDI_CHANNEL_MAX);
+  if (mpeLowestChannel < 2) {
+    mpeLowestChannel = 2;
+  }
+  if (mpeLowestChannel > 16) {
+    mpeLowestChannel = 16;
+  }
+  if (mpeHighestChannel < 2) {
+    mpeHighestChannel = 2;
+  }
+  if (mpeHighestChannel > 16) {
+    mpeHighestChannel = 16;
+  }
   if (mpeLowestChannel > mpeHighestChannel) {
     mpeHighestChannel = mpeLowestChannel;
   }
@@ -236,9 +219,9 @@ bool useJustIntonationBPM = false;
 bool useDynamicJustIntonation = false;
 
 int transposeSteps = 0;
-bool scaleLock = false;
-bool perceptual = true;
-bool paletteBeginsAtKeyCenter = true;
+bool scaleLock = 0;
+bool perceptual = 1;
+bool paletteBeginsAtKeyCenter = 1;
 byte animationFPS = 32;  // actually frames per 2^20 microseconds. close enough to 30fps
 
 byte wheelMode = 0;  // standard vs. fine tune mode
@@ -254,55 +237,54 @@ uint8_t envelopeDecayIndex = 3;
 uint8_t envelopeSustainLevel = 127;
 uint8_t envelopeReleaseIndex = 3;
 
-constexpr byte SYNTH_OFF = 0;
-constexpr byte SYNTH_MONO = 1;
-constexpr byte SYNTH_ARPEGGIO = 2;
-constexpr byte SYNTH_POLY = 3;
+#define SYNTH_OFF 0
+#define SYNTH_MONO 1
+#define SYNTH_ARPEGGIO 2
+#define SYNTH_POLY 3
 byte playbackMode = SYNTH_OFF;
 
-constexpr byte WAVEFORM_SINE = 0;
-constexpr byte WAVEFORM_STRINGS = 1;
-constexpr byte WAVEFORM_CLARINET = 2;
-constexpr byte WAVEFORM_HYBRID = 7;
-constexpr byte WAVEFORM_SQUARE = 8;
-constexpr byte WAVEFORM_SAW = 9;
-constexpr byte WAVEFORM_TRIANGLE = 10;
+#define WAVEFORM_SINE 0
+#define WAVEFORM_STRINGS 1
+#define WAVEFORM_CLARINET 2
+#define WAVEFORM_HYBRID 7
+#define WAVEFORM_SQUARE 8
+#define WAVEFORM_SAW 9
+#define WAVEFORM_TRIANGLE 10
 byte currWave = WAVEFORM_HYBRID;
 
-constexpr byte RAINBOW_MODE = 0;
-constexpr byte TIERED_COLOR_MODE = 1;
-constexpr byte ALTERNATE_COLOR_MODE = 2;
-constexpr byte RAINBOW_OF_FIFTHS_MODE = 3;
-constexpr byte PIANO_ALT_COLOR_MODE = 4;
-constexpr byte PIANO_COLOR_MODE = 5;
-constexpr byte PIANO_INCANDESCENT_COLOR_MODE = 6;
-constexpr byte DIATONIC_COLOR_MODE = 7;
+#define RAINBOW_MODE 0
+#define TIERED_COLOR_MODE 1
+#define ALTERNATE_COLOR_MODE 2
+#define RAINBOW_OF_FIFTHS_MODE 3
+#define PIANO_ALT_COLOR_MODE 4
+#define PIANO_COLOR_MODE 5
+#define PIANO_INCANDESCENT_COLOR_MODE 6
 byte colorMode = RAINBOW_MODE;
 
-constexpr byte ANIMATE_BUTTON = 0;
-constexpr byte ANIMATE_STAR = 1;
-constexpr byte ANIMATE_SPLASH = 2;
-constexpr byte ANIMATE_ORBIT = 3;
-constexpr byte ANIMATE_OCTAVE = 4;
-constexpr byte ANIMATE_BY_NOTE = 5;
-constexpr byte ANIMATE_BEAMS = 6;
-constexpr byte ANIMATE_SPLASH_REVERSE = 7;
-constexpr byte ANIMATE_STAR_REVERSE = 8;
-constexpr byte ANIMATE_MIDI_IN = 9;
-constexpr byte ANIMATE_NONE = 10;
+#define ANIMATE_BUTTON 0
+#define ANIMATE_STAR 1
+#define ANIMATE_SPLASH 2
+#define ANIMATE_ORBIT 3
+#define ANIMATE_OCTAVE 4
+#define ANIMATE_BY_NOTE 5
+#define ANIMATE_BEAMS 6
+#define ANIMATE_SPLASH_REVERSE 7
+#define ANIMATE_STAR_REVERSE 8
+#define ANIMATE_MIDI_IN 9
+#define ANIMATE_NONE 10
 byte animationType = ANIMATE_BUTTON;
 
-constexpr byte BRIGHT_MAX = 255;
-constexpr byte BRIGHT_HIGH = 210;
-constexpr byte BRIGHT_MID = 180;
-constexpr byte BRIGHT_LOW = 150;
-constexpr byte BRIGHT_DIM = 110;
-constexpr byte BRIGHT_DIMMER = 70;
-constexpr byte BRIGHT_DARK = 50;     // BRIGHT_DIMMEST
-constexpr byte BRIGHT_DARKER = 34;   // Lowest brightness before backlight shuts down
-constexpr byte BRIGHT_FAINT = 33;    // Highest brightness before backlight turns on
-constexpr byte BRIGHT_FAINTER = 24;  // Lowest brightness before any highlighted button is lit in all color modes
-constexpr byte BRIGHT_OFF = 0;
+#define BRIGHT_MAX 255
+#define BRIGHT_HIGH 210
+#define BRIGHT_MID 180
+#define BRIGHT_LOW 150
+#define BRIGHT_DIM 110
+#define BRIGHT_DIMMER 70
+#define BRIGHT_DARK 50     // BRIGHT_DIMMEST
+#define BRIGHT_DARKER 34   // Lowest brightness before backlight shuts down
+#define BRIGHT_FAINT 33    // Highest brightness before backlight turns on
+#define BRIGHT_FAINTER 24  // Lowest brightness before any highlighted button is lit in all color modes
+#define BRIGHT_OFF 0
 byte globalBrightness = BRIGHT_DIM;
 
 // @microtonal
@@ -1259,36 +1241,34 @@ void timeTracker() {
     of ten buttons to allow all 140 inputs to be read in one
     program read cycle.
   */
-constexpr byte MPLEX_1_PIN = 4;
-constexpr byte MPLEX_2_PIN = 5;
-constexpr byte MPLEX_4_PIN = 2;
-constexpr byte MPLEX_8_PIN = 3;
-constexpr byte COLUMN_PIN_0 = 6;
-constexpr byte COLUMN_PIN_1 = 7;
-constexpr byte COLUMN_PIN_2 = 8;
-constexpr byte COLUMN_PIN_3 = 9;
-constexpr byte COLUMN_PIN_4 = 10;
-constexpr byte COLUMN_PIN_5 = 11;
-constexpr byte COLUMN_PIN_6 = 12;
-constexpr byte COLUMN_PIN_7 = 13;
-constexpr byte COLUMN_PIN_8 = 14;
-constexpr byte COLUMN_PIN_9 = 15;
+#define MPLEX_1_PIN 4
+#define MPLEX_2_PIN 5
+#define MPLEX_4_PIN 2
+#define MPLEX_8_PIN 3
+#define COLUMN_PIN_0 6
+#define COLUMN_PIN_1 7
+#define COLUMN_PIN_2 8
+#define COLUMN_PIN_3 9
+#define COLUMN_PIN_4 10
+#define COLUMN_PIN_5 11
+#define COLUMN_PIN_6 12
+#define COLUMN_PIN_7 13
+#define COLUMN_PIN_8 14
+#define COLUMN_PIN_9 15
 /*
     There are 140 LED pixels on the Hexboard.
     LED instructions all go through the LED_PIN.
     It so happens that each LED pixel corresponds
     to one and only one hex button, so both a LED
     and its button can have the same index from 0-139.
-    The scan matrix itself is 16x10, so BTN_COUNT is
-    larger than LED_COUNT on purpose. The extra slots
-    are used as internal "flag" positions that help
-    with hardware detection and bookkeeping.
+    Since these parameters are pre-defined by the
+    hardware build, the dimensions of the grid
+    are therefore constants.
   */
-constexpr byte LED_COUNT = 140;
-constexpr byte COLCOUNT = 10;
-constexpr byte ROWCOUNT = 16;
-constexpr byte BTN_COUNT = COLCOUNT * ROWCOUNT;
-constexpr byte FIRST_FLAG_BUTTON_INDEX = LED_COUNT;
+#define LED_COUNT 140
+#define COLCOUNT 10
+#define ROWCOUNT 16
+#define BTN_COUNT COLCOUNT* ROWCOUNT
 /*
     Of the 140 buttons, 7 are offset to the bottom left
     quadrant of the Hexboard and are reserved as command
@@ -1298,14 +1278,14 @@ constexpr byte FIRST_FLAG_BUTTON_INDEX = LED_COUNT;
     variables and alter the value of CMDCOUNT to agree
     with how many buttons you reserve for non-note use.
   */
-constexpr byte CMDBTN_0 = 0;
-constexpr byte CMDBTN_1 = 20;
-constexpr byte CMDBTN_2 = 40;
-constexpr byte CMDBTN_3 = 60;
-constexpr byte CMDBTN_4 = 80;
-constexpr byte CMDBTN_5 = 100;
-constexpr byte CMDBTN_6 = 120;
-constexpr byte CMDCOUNT = 7;
+#define CMDBTN_0 0
+#define CMDBTN_1 20
+#define CMDBTN_2 40
+#define CMDBTN_3 60
+#define CMDBTN_4 80
+#define CMDBTN_5 100
+#define CMDBTN_6 120
+#define CMDCOUNT 7
 /*
     This class defines the hexagon button
     as an object. It stores all real-time
@@ -1327,7 +1307,7 @@ public:
 #define BTN_STATE_NEWPRESS 1
 #define BTN_STATE_RELEASED 2
 #define BTN_STATE_HELD 3
-  byte btnState = BTN_STATE_OFF;  // binary 00 = off, 01 = just pressed, 10 = just released, 11 = held
+  byte btnState = 0;  // binary 00 = off, 01 = just pressed, 10 = just released, 11 = held
   void interpBtnPress(bool isPress) {
     btnState = (((btnState << 1) + isPress) & 3);
   }
@@ -1339,10 +1319,10 @@ public:
   uint32_t LEDcodeRest = 0;  // calculate it once and store value, to make LED playback snappier
   uint32_t LEDcodeOff = 0;   // calculate it once and store value, to make LED playback snappier
   uint32_t LEDcodeDim = 0;   // calculate it once and store value, to make LED playback snappier
-  bool animate = false;      // true when this hex participates in the current animation frame
+  bool animate = 0;          // hex is flagged as part of the animation in this frame, helps make animations smoother
   int16_t stepsFromC = 0;    // number of steps from C4 (semitones in 12EDO; microtones if >12EDO)
-  bool isCmd = false;        // true if this slot acts as a command instead of a playable note
-  bool inScale = false;      // true when this note belongs to the selected scale
+  bool isCmd = 0;            // 0 if it's a MIDI note; 1 if it's a MIDI control cmd
+  bool inScale = 0;          // 0 if it's not in the selected scale; 1 if it is
   byte note = UNUSED_NOTE;   // MIDI note or control parameter corresponding to this hex
   int16_t bend = 0;          // in microtonal mode, the pitch bend for this note needed to be tuned correctly
   byte MIDIch = 0;           // what MIDI channel this note is playing on
@@ -1428,12 +1408,12 @@ public:
         } else {
           curValue = curValue + (*stepValue * (temp / abs(temp)));
         }
-        return true;
+        return 1;
       } else {
-        return false;
+        return 0;
       }
     } else {
-      return false;
+      return 0;
     }
   }
 };
@@ -1456,9 +1436,8 @@ uint32_t columnMasks[COLCOUNT] = { 0 };
 
 /*
     define h, which is a collection of all the
-    logical scan slots in the matrix. Indices
-    0-139 map to visible hexes, while the extra
-    slots above LED_COUNT are internal flags.
+    buttons from 0 to 139. h[i] refers to the
+    button with the LED address = i.
   */
 buttonDef h[BTN_COUNT];
 
@@ -1472,21 +1451,20 @@ wheelDef velWheel = { &wheelMode, &velSticky,
                       &h[assignCmd[0]].btnState, &h[assignCmd[1]].btnState, &h[assignCmd[2]].btnState,
                       0, 127, &velWheelSpeed, 96, 96, 96, 0 };
 
-bool toggleWheel = false;  // false = mod wheel, true = pitch bend wheel
+bool toggleWheel = 0;  // 0 for mod, 1 for pb
 
-// Delegate control is intentionally external-only. It has no menu item and is
-// not persisted; a host must enter/exit it via SysEx.
+// Delegate control to an external program; just send note events representing raw
+// button pushes and accept SysEx to control light colors.
 bool delegatedControl = false;
 uint32_t delegatedColors[LED_COUNT];
-constexpr byte SYSEX_DELEGATED_ENTER = 1;
-constexpr byte SYSEX_DELEGATED_EXIT = 2;
-constexpr byte SYSEX_LED = 3;
+// Define some SysEx codes for internal use.
+#define SYSEX_DELEGATED_ENTER 1
+#define SYSEX_DELEGATED_EXIT 2
+#define SYSEX_LED 3
 
 void setupPins() {
-  const byte multiplexerPinCount = sizeof(mPin) / sizeof(mPin[0]);
-  const byte columnPinCount = sizeof(cPin) / sizeof(cPin[0]);
   multiplexerMask = 0;
-  for (byte p = 0; p < multiplexerPinCount; ++p) {
+  for (byte p = 0; p < sizeof(mPin); p++) {
     byte pin = mPin[p];
     pinMode(pin, OUTPUT);
     multiplexerMask |= (1u << pin);
@@ -1500,7 +1478,7 @@ void setupPins() {
     }
     rowSelectMask[r] = mask;
   }
-  for (byte p = 0; p < columnPinCount; ++p) {
+  for (byte p = 0; p < sizeof(cPin); p++) {
     byte pin = cPin[p];
     pinMode(pin, INPUT_PULLUP);
     columnMasks[p] = (1u << pin);
@@ -1512,26 +1490,26 @@ void setupGrid() {
   for (byte i = 0; i < BTN_COUNT; i++) {
     h[i].coordRow = (i / 10);
     h[i].coordCol = (2 * (i % 10)) + (h[i].coordRow & 1);
-    h[i].isCmd = false;
+    h[i].isCmd = 0;
     h[i].note = UNUSED_NOTE;
-    h[i].btnState = BTN_STATE_OFF;
+    h[i].btnState = 0;
     h[i].midiNoteIndex = 0;
     h[i].mappedMidiChannel = 0;
   }
-  for (byte c = 0; c < CMDCOUNT; ++c) {
+  for (byte c = 0; c < CMDCOUNT; c++) {
     h[assignCmd[c]].isCmd = 1;
     h[assignCmd[c]].note = CMDB + c;
   }
-  // The extra matrix positions above LED_COUNT are never playable notes.
-  for (byte i = FIRST_FLAG_BUTTON_INDEX; i < BTN_COUNT; ++i) {
-    h[i].isCmd = true;
+  // "flag" buttons
+  for (byte i = 140; i < BTN_COUNT; i++) {
+    h[i].isCmd = 1;
   }
-  // On version 1.2, the first flag input is shorted (always connected).
-  h[FIRST_FLAG_BUTTON_INDEX].note = HARDWARE_V1_2;
+  // On version 1.2, "button" 140 is shorted (always connected)
+  h[140].note = HARDWARE_V1_2;
 }
 
 void detectHardwareVersion() {
-  constexpr byte hardwareFlagIndex = FIRST_FLAG_BUTTON_INDEX;
+  constexpr byte hardwareFlagIndex = 140;
   const byte targetRow = hardwareFlagIndex / 10;
   const byte targetColumn = hardwareFlagIndex % 10;
   byte columnPin = cPin[targetColumn];
@@ -1671,9 +1649,6 @@ colorDef getColor(int32_t temp) {
 uint32_t getLEDcode(colorDef c) {
   return strip.gamma32(strip.ColorHSV(transformHue(c.hue), c.sat, c.val * globalBrightness / 255));
 }
-float ratioToCents(float ratio) {
-  return 1200.0 * (std::log(ratio) / std::log(2.0));
-}
 /*
     This function cycles through each button, and based on what color
     palette is active, it calculates the LED color code in the palette,
@@ -1682,76 +1657,10 @@ float ratioToCents(float ratio) {
     codes remain in the object until this routine is called again.
   */
 void setLEDcolorCodes() {
-  // ---- Diatonic MOS layer precomputation (runs once per color refresh) ----
-  // For the Diatonic color mode, we precompute which "layer" each scale degree
-  // belongs to. Layer 0 = diatonic naturals (white), positive layers = sharp side
-  // (orange/warm), negative layers = flat side (blue/cool), equidistant = purple.
-  // The diatonic MOS is the 7-note scale generated by stacking best-fit fifths.
-  int8_t mosLayer[MAX_SCALE_DIVISIONS] = { 0 };
-  bool mosEquidistant[MAX_SCALE_DIVISIONS] = { false };
-  bool mosValid = false;
-  int cycleLength = current.tuning().cycleLength;
-  if (colorMode == DIATONIC_COLOR_MODE) {
-    float stepSize = current.tuning().stepSize;
-    // Best-fit fifth in steps
-    int g = (int)round(ratioToCents(1.5) / stepSize);
-    // Large and small steps of the diatonic MOS: 5L + 2s = N
-    // L = (2*g) mod N  (the whole tone, generated by two fifths reduced by octave)
-    int L = positiveMod(2 * g, cycleLength);
-    // s = (N - 5*L) / 2  (the remaining semitone)
-    int sRemainder = cycleLength - 5 * L;
-    bool evenDivision = (sRemainder >= 0) && (sRemainder % 2 == 0);
-    int s = evenDivision ? sRemainder / 2 : 0;
-    mosValid = evenDivision && (L != s) && (L > 0) && (s > 0);  // L>s = diatonic, L<s = antidiatonic, L==s = degenerate
-    if (mosValid) {
-      // Build the 7 diatonic positions using Ionian (major scale) pattern:
-      // C=0, D=L, E=2L, F=2L+s, G=3L+s, A=4L+s, B=5L+s
-      // Interval pattern: L L s L L L s
-      int intervals[7] = { L, L, s, L, L, L, s };
-      int diatonic[7];
-      diatonic[0] = 0;  // C
-      for (int j = 1; j < 7; j++) {
-        diatonic[j] = diatonic[j - 1] + intervals[j - 1];
-      }
-      // For each chromatic step, find which diatonic interval it falls in
-      // and compute its layer (distance from nearest diatonic note).
-      for (int step = 0; step < cycleLength; step++) {
-        // Find the diatonic note at or just below this step
-        int lowerIdx = 0;
-        for (int j = 6; j >= 0; j--) {
-          if (diatonic[j] <= step) {
-            lowerIdx = j;
-            break;
-          }
-        }
-        int upperIdx = (lowerIdx + 1) % 7;
-        int lowerPos = diatonic[lowerIdx];
-        int upperPos = (upperIdx == 0) ? cycleLength : diatonic[upperIdx];
-        int intervalSize = upperPos - lowerPos;  // L or s
-        int k = step - lowerPos;                 // offset from lower diatonic note
-        int kFromUpper = intervalSize - k;       // offset from upper diatonic note
-        if (k == 0) {
-          mosLayer[step] = 0;              // diatonic natural
-          mosEquidistant[step] = false;
-        } else if (k == kFromUpper) {
-          mosLayer[step] = k;              // equidistant (e.g. tritone in 12EDO)
-          mosEquidistant[step] = true;
-        } else if (k < kFromUpper) {
-          mosLayer[step] = k;              // sharp side (+1, +2, ...)
-          mosEquidistant[step] = false;
-        } else {
-          mosLayer[step] = -kFromUpper;    // flat side (-1, -2, ...)
-          mosEquidistant[step] = false;
-        }
-      }
-    }
-  }
-  // ---- End diatonic MOS precomputation ----
-
   for (byte i = 0; i < LED_COUNT; i++) {
     if (!(h[i].isCmd)) {
       colorDef setColor;
-      byte paletteIndex = positiveMod(h[i].stepsFromC, cycleLength);
+      byte paletteIndex = positiveMod(h[i].stepsFromC, current.tuning().cycleLength);
       if (paletteBeginsAtKeyCenter) {
         paletteIndex = current.keyDegree(paletteIndex);
       }
@@ -1764,10 +1673,10 @@ void setLEDcolorCodes() {
           break;
         case RAINBOW_OF_FIFTHS_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
           {
-          float stepSize = current.tuning().stepSize;
+            float stepSize = current.tuning().stepSize;
             float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
             float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-          float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
+            float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
             float fifthSize = ((ratioToCents(3.0 / 2.0)) / stepSize);
             float reverseFifth = fifthSize;
             switch (current.tuningIndex) {
@@ -1937,70 +1846,50 @@ void setLEDcolorCodes() {
           }
           break;
         case ALTERNATE_COLOR_MODE:
-          {
-            // This mode assigns each note a color based on the interval it forms with the root note.
-            // This is an adaptation of an algorithm developed by Nicholas Fox and Kite Giedraitis.
-            float cents = current.tuning().stepSize * paletteIndex;
-            bool perf = 0;
-            float center = 0.0;
-            if (cents < 50) { perf = 1; center = 0.0; }
-            else if ((cents >= 50) && (cents < 250)) { center = 147.1; }
-            else if ((cents >= 250) && (cents < 450)) { center = 351.0; }
-            else if ((cents >= 450) && (cents < 600)) { perf = 1; center = 498.0; }
-            else if ((cents >= 600) && (cents <= 750)) { perf = 1; center = 702.0; }
-            else if ((cents > 750) && (cents <= 950)) { center = 849.0; }
-            else if ((cents > 950) && (cents <= 1150)) { center = 1053.0; }
-            else if ((cents > 1150) && (cents < 1250)) { perf = 1; center = 1200.0; }
-            else if ((cents >= 1250) && (cents < 1450)) { center = 1347.1; }
-            else if ((cents >= 1450) && (cents < 1650)) { center = 1551.0; }
-            else if ((cents >= 1650) && (cents < 1850)) { perf = 1; center = 1698.0; }
-            else if ((cents >= 1800) && (cents <= 1950)) { perf = 1; center = 1902.0; }
-            float offCenter = cents - center;
-            int16_t altHue = positiveMod((int)(150 + (perf * ((offCenter > 0) ? -72 : 72)) - round(1.44 * offCenter)), 360);
-            float deSaturate = perf * (abs(offCenter) < 20) * (1 - (0.02 * abs(offCenter)));
-            setColor = {
-              (float)altHue,
-              (byte)(255 - round(255 * deSaturate)),
-              (byte)(cents ? VALUE_SHADE : VALUE_NORMAL)
-            };
+          // This mode assigns each note a color based on the interval it forms with the root note.
+          // This is an adaptation of an algorithm developed by Nicholas Fox and Kite Giedraitis.
+          float cents = current.tuning().stepSize * paletteIndex;
+          bool perf = 0;
+          float center = 0.0;
+          if (cents < 50) {
+            perf = 1;
+            center = 0.0;
+          } else if ((cents >= 50) && (cents < 250)) {
+            center = 147.1;
+          } else if ((cents >= 250) && (cents < 450)) {
+            center = 351.0;
+          } else if ((cents >= 450) && (cents < 600)) {
+            perf = 1;
+            center = 498.0;
+          } else if ((cents >= 600) && (cents <= 750)) {
+            perf = 1;
+            center = 702.0;
+          } else if ((cents > 750) && (cents <= 950)) {
+            center = 849.0;
+          } else if ((cents > 950) && (cents <= 1150)) {
+            center = 1053.0;
+          } else if ((cents > 1150) && (cents < 1250)) {
+            perf = 1;
+            center = 1200.0;
+          } else if ((cents >= 1250) && (cents < 1450)) {
+            center = 1347.1;
+          } else if ((cents >= 1450) && (cents < 1650)) {
+            center = 1551.0;
+          } else if ((cents >= 1650) && (cents < 1850)) {
+            perf = 1;
+            center = 1698.0;
+          } else if ((cents >= 1800) && (cents <= 1950)) {
+            perf = 1;
+            center = 1902.0;
           }
-          break;
-        case DIATONIC_COLOR_MODE:
-          {
-            byte rawIndex = paletteIndex;
-            if (!mosValid) {
-              setColor.hue = 360.0f * ((float)paletteIndex / (float)cycleLength);
-              setColor.sat = SAT_VIVID;
-              setColor.val = VALUE_NORMAL;
-            } else {
-              int8_t layer = mosLayer[rawIndex];
-              bool equi = mosEquidistant[rawIndex];
-              if (layer == 0) {
-                setColor.hue = HUE_NONE;
-                setColor.sat = SAT_BW;
-                setColor.val = VALUE_NORMAL;
-              } else if (equi) {
-                setColor.hue = HUE_PURPLE;
-                setColor.sat = SAT_DULL;
-                setColor.val = VALUE_NORMAL;
-              } else if (layer > 0) {
-                float hue = fmodf(360.0f + HUE_ORANGE - (float)(layer - 1) * 36.0f, 360.0f);
-                byte val = (byte)max((int)VALUE_SHADE, (int)VALUE_NORMAL - (layer - 1) * 16);
-                setColor.hue = hue;
-                setColor.sat = SAT_VIVID;
-                setColor.val = val;
-              } else {
-                int absLayer = -layer;
-                float hue = fmodf(HUE_BLUE + (float)(absLayer - 1) * 36.0f, 360.0f);
-                byte val = (byte)max((int)VALUE_SHADE, (int)VALUE_NORMAL - (absLayer - 1) * 16);
-                setColor.hue = hue;
-                setColor.sat = SAT_VIVID;
-                setColor.val = val;
-              }
-            }
-          }
-          break;
-        default:
+          float offCenter = cents - center;
+          int16_t altHue = positiveMod((int)(150 + (perf * ((offCenter > 0) ? -72 : 72)) - round(1.44 * offCenter)), 360);
+          float deSaturate = perf * (abs(offCenter) < 20) * (1 - (0.02 * abs(offCenter)));
+          setColor = {
+            (float)altHue,
+            (byte)(255 - round(255 * deSaturate)),
+            (byte)(cents ? VALUE_SHADE : VALUE_NORMAL)
+          };
           break;
       }
       colorDef restColor = setColor;
@@ -2127,15 +2016,14 @@ void lightUpLEDs() {
     and pitch bend messages assuming note 69
     equals concert A4, as defined below.
   */
-constexpr float CONCERT_A_HZ = 440.0f;
-constexpr float CONCERT_A_MIDI_NOTE = 69.0f;
+#define CONCERT_A_HZ 440.0
 /*
     Pitch bend messages are calibrated
     to a pitch bend range where
     -8192 to 8191 = -200 to +200 cents,
     or two semitones.
   */
-constexpr byte DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2;
+#define PITCH_BEND_SEMIS 2
 /*
     We use pitch bends to retune notes in MPE mode.
     Some setups can adjust to fit this, but some need us to adjust it.
@@ -2149,16 +2037,16 @@ Adafruit_USBD_MIDI usb_midi;
 MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, UMIDI);
 MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, SMIDI);
 // midiD takes the following bitwise flags
-constexpr byte MIDID_NONE = 0;
-constexpr byte MIDID_USB = 1;
-constexpr byte MIDID_SER = 2;
-constexpr byte MIDID_BOTH = 3;
+#define MIDID_NONE 0
+#define MIDID_USB 1
+#define MIDID_SER 2
+#define MIDID_BOTH 3
 byte midiD = MIDID_USB | MIDID_SER;
 
 // What program change number we last sent (General MIDI/Roland MT-32)
 byte programChange = 0;
 
-uint16_t mpeChannelBitmap = 0;  // bitmap of available MPE channels (bit N = channel N+1)
+std::vector<byte> mpeAvailableChannels;
 byte MPEpitchBendsNeeded;
 bool mpeChannelQueueActive = false;
 
@@ -2170,21 +2058,27 @@ uint8_t mpePlayableChannelCount() {
 }
 
 void resetMPEChannelPool() {
-  mpeChannelBitmap = 0;
+  mpeAvailableChannels.clear();
   for (byte ch = mpeLowestChannel; ch <= mpeHighestChannel; ++ch) {
-    mpeChannelBitmap |= (1u << (ch - 1));
+    mpeAvailableChannels.push_back(ch);
     sendToLog("added ch " + std::to_string(ch) + " to the MPE pool");
+  }
+  if (mpeLowPriorityMode) {
+    std::sort(mpeAvailableChannels.begin(), mpeAvailableChannels.end());
   }
 }
 
 byte takeMPEChannel() {
-  if (mpeChannelBitmap == 0) {
+  if (mpeAvailableChannels.empty()) {
     return 0;
   }
-  // Always take lowest available channel (equivalent to sorted front() for low-priority,
-  // and a reasonable FIFO-like behavior otherwise)
-  byte ch = static_cast<byte>(__builtin_ctz(mpeChannelBitmap) + 1);
-  mpeChannelBitmap &= ~(1u << (ch - 1));
+  if (mpeLowPriorityMode) {
+    byte ch = mpeAvailableChannels.front();
+    mpeAvailableChannels.erase(mpeAvailableChannels.begin());
+    return ch;
+  }
+  byte ch = mpeAvailableChannels.front();
+  mpeAvailableChannels.erase(mpeAvailableChannels.begin());
   return ch;
 }
 
@@ -2192,18 +2086,23 @@ void releaseMPEChannel(byte ch) {
   if (ch < mpeLowestChannel || ch > mpeHighestChannel) {
     return;
   }
-  mpeChannelBitmap |= (1u << (ch - 1));
+  if (mpeLowPriorityMode) {
+    auto insertPos = std::lower_bound(mpeAvailableChannels.begin(), mpeAvailableChannels.end(), ch);
+    mpeAvailableChannels.insert(insertPos, ch);
+  } else {
+    mpeAvailableChannels.push_back(ch);
+  }
   sendToLog("returned ch " + std::to_string(ch) + " to the MPE pool");
 }
 
 float freqToMIDI(float Hz) {  // formula to convert from Hz to MIDI note
-  return CONCERT_A_MIDI_NOTE + 12.0f * log2f(Hz / CONCERT_A_HZ);
+  return 69.0 + 12.0 * log2f(Hz / 440.0);
 }
 float MIDItoFreq(float midi) {  // formula to convert from MIDI note to Hz
-  return CONCERT_A_HZ * exp2((midi - CONCERT_A_MIDI_NOTE) / 12.0f);
+  return 440.0 * exp2((midi - 69.0) / 12.0);
 }
 float stepsToMIDI(int16_t stepsFromA) {  // return the MIDI pitch associated
-  return CONCERT_A_MIDI_NOTE + (static_cast<float>(stepsFromA) * static_cast<float>(current.tuning().stepSize) / 100.0f);
+  return freqToMIDI(CONCERT_A_HZ) + ((float)stepsFromA * (float)current.tuning().stepSize / 100.0);
 }
 
 // Do the same thing on each defined MIDI interface. This reduces code
@@ -2270,8 +2169,8 @@ void resetTuningMIDI() {
 
   uint8_t playableChannels = mpePlayableChannelCount();
   if (playableChannels == 0) {
-    mpeLowestChannel = MPE_CHANNEL_MIN;
-    mpeHighestChannel = MPE_CHANNEL_MIN;
+    mpeLowestChannel = 2;
+    mpeHighestChannel = 2;
     playableChannels = mpePlayableChannelCount();
   }
 
@@ -2288,7 +2187,7 @@ void resetTuningMIDI() {
   }
 
   mpeChannelQueueActive = false;
-  mpeChannelBitmap = 0;
+  mpeAvailableChannels.clear();
 
   if (mpeEnabled) {
     bool needsQueue = (MPEpitchBendsNeeded > playableChannels) || mpeLowPriorityMode;
@@ -2298,21 +2197,26 @@ void resetTuningMIDI() {
     }
   }
   // Reset controllers and ensure every channel uses the appropriate pitch-bend range.
-  for (byte i = MIDI_CHANNEL_MIN; i <= MIDI_CHANNEL_MAX; ++i) {
+  for (byte i = 1; i <= 16; i++) {
     withMIDI([&](auto& M) { M.sendControlChange(123, 0, i); });
-    byte range = DEFAULT_PITCH_BEND_RANGE_SEMITONES;
+    byte range = 2;
     if (mpeEnabled && i >= mpeLowestChannel && i <= mpeHighestChannel) {
       range = MPEpitchBendSemis;
+    } else if (MPEpitchBendsNeeded == 1) {
+      range = 2;
     }
     setPitchBendRange(i, range);
   }
 }
 
 byte primaryMIDIChannel() {
-  if (MPEpitchBendsNeeded == 1 && isValidMidiChannel(defaultMidiChannel)) {
+  if (MPEpitchBendsNeeded == 1) {
+    if (defaultMidiChannel < 1 || defaultMidiChannel > 16) {
+      return 1;
+    }
     return defaultMidiChannel;
   }
-  return MIDI_CHANNEL_MIN;  // In MPE mode, channel 1 is the master channel.
+  return 1;  // In MPE mode, channel 1 is the master channel.
 }
 
 void sendMIDImodulationToCh1() {
@@ -2847,6 +2751,10 @@ int16_t centsToRelativePitchBend(float cents) {
   return round(cents * (8192.0 / (100.0 * MPEpitchBendSemis)));
 }
 
+float ratioToCents(float ratio) {
+  return 1200.0 * (std::log(ratio) / std::log(2.0));
+}
+
 int16_t justIntonationRetune(byte x) {
   if (useDynamicJustIntonation == false && useJustIntonationBPM == false) {
     h[x].jiRetune = 0;
@@ -2875,7 +2783,7 @@ int16_t justIntonationRetune(byte x) {
     // detune within a 1/4 of a step, avoid wild detuning but cover the entire pitch range
     float errorThreshold = current.tuning().stepSize / 4.0;
     float deviation = INFINITY;
-      float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
+    float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
     std::pair<byte, byte> selectedRatio;
 
     for (int i = 0; i < ratios.size(); i++) {
@@ -2894,13 +2802,13 @@ int16_t justIntonationRetune(byte x) {
         selectedRatio.second = ratio1;
         if (preferSmallRatios && std::abs(deviation) < errorThreshold) {
           //ratioFound = true;
-            break;
-          }
+          break;
         }
       }
+    }
     //if(ratioFound)
     {
-    pitchAdjustment += centsToRelativePitchBend(deviation + basePitchOffset);
+      pitchAdjustment += centsToRelativePitchBend(deviation + basePitchOffset);
     }
   }
   h[x].jiRetune = pitchAdjustment;
@@ -3026,17 +2934,17 @@ void setupMIDI() {
     with the PIEZO_PIN on this processor (see RP2040
     manual) than to have it looked up each time.
   */
-constexpr byte PIEZO_PIN = 23;
-constexpr byte PIEZO_SLICE = 3;
-constexpr byte PIEZO_CHNL = 1;
-constexpr byte AJACK_PIN = 25;
-constexpr byte AJACK_SLICE = 4;
-constexpr byte AJACK_CHNL = 1;
+#define PIEZO_PIN 23
+#define PIEZO_SLICE 3
+#define PIEZO_CHNL 1
+#define AJACK_PIN 25
+#define AJACK_SLICE 4
+#define AJACK_CHNL 1
 // midiD takes the following bitwise flags
-constexpr byte AUDIO_NONE = 0;
-constexpr byte AUDIO_PIEZO = 1;
-constexpr byte AUDIO_AJACK = 2;
-constexpr byte AUDIO_BOTH = 3;
+#define AUDIO_NONE 0
+#define AUDIO_PIEZO 1
+#define AUDIO_AJACK 2
+#define AUDIO_BOTH 3
 byte audioD = AUDIO_PIEZO | AUDIO_AJACK;
 
 // ============================================================
@@ -3956,7 +3864,7 @@ byte isoTwoTwentySix(float f) {
   }
 }
 inline void recomputePitchBendFactor() {
-  pitchBendFactor = exp2(pbWheel.curValue * DEFAULT_PITCH_BEND_RANGE_SEMITONES / 98304.0f);
+  pitchBendFactor = exp2(pbWheel.curValue * PITCH_BEND_SEMIS / 98304.0f);
 }
 
 void RAM_FUNC(setSynthFreq)(float frequency, byte channel) {
@@ -4083,15 +3991,13 @@ void sendProgramChange() {
     return;  // 0 indicates "no program" selected yet.
   }
   byte targetChannel = primaryMIDIChannel();
-  if (midiD & MIDID_USB) UMIDI.sendProgramChange(programChange - 1, targetChannel);
-  if (midiD & MIDID_SER) SMIDI.sendProgramChange(programChange - 1, targetChannel);
+  withMIDI([&](auto& M) { M.sendProgramChange(programChange - 1, targetChannel); });
 }
 
 void updateSynthWithNewFreqs() {
   recomputePitchBendFactor();
   byte targetChannel = primaryMIDIChannel();
-  if (midiD & MIDID_USB) UMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
-  if (midiD & MIDID_SER) SMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
+  withMIDI([&](auto& M) { M.sendPitchBend(pbWheel.curValue, targetChannel); });
   for (byte i = 0; i < BTN_COUNT; i++) {
     if (!(h[i].isCmd)) {
       if (h[i].synthCh) {
@@ -4314,26 +4220,15 @@ void arpeggiate() {
     These cardinal directions are enumerated to make
     the code more legible for humans.
   */
-constexpr byte HEX_DIRECTION_EAST = 0;
-constexpr byte HEX_DIRECTION_NE = 1;
-constexpr byte HEX_DIRECTION_NW = 2;
-constexpr byte HEX_DIRECTION_WEST = 3;
-constexpr byte HEX_DIRECTION_SW = 4;
-constexpr byte HEX_DIRECTION_SE = 5;
-constexpr byte HEX_DIRECTION_COUNT = 6;
-constexpr byte ORBIT_POSITION_COUNT = 12;
-constexpr byte MAX_BEAM_LENGTH = 13;
-constexpr byte MAX_ANIMATION_RADIUS = 5;
+#define HEX_DIRECTION_EAST 0
+#define HEX_DIRECTION_NE 1
+#define HEX_DIRECTION_NW 2
+#define HEX_DIRECTION_WEST 3
+#define HEX_DIRECTION_SW 4
+#define HEX_DIRECTION_SE 5
 // animation variables  E NE NW  W SW SE
-constexpr std::array<int8_t, HEX_DIRECTION_COUNT> hexRowOffsets = { 0, -1, -1, 0, 1, 1 };
-constexpr std::array<int8_t, HEX_DIRECTION_COUNT> hexColOffsets = { 2, 1, -1, -2, -1, 1 };
-
-// Precomputed orbit offsets for animateOrbit().
-// 12 positions around a hex at radius 2: 6 cardinal + 6 intermediate.
-// Generated from: rowOffsets[d*2] = R*vertical[d], colOffsets[d*2] = R*horizontal[d],
-//   rowOffsets[d*2+1] = R*(vertical[d]+vertical[(d+1)%6])/2, etc. with R=2.
-static const int8_t orbitRowOffsets[ORBIT_POSITION_COUNT] = {  0, -1, -2, -2, -2, -1,  0,  1,  2,  2,  2,  1 };
-static const int8_t orbitColOffsets[ORBIT_POSITION_COUNT] = {  4,  3,  2,  0, -2, -3, -4, -3, -2,  0,  2,  3 };
+int8_t vertical[] = { 0, -1, -1, 0, 1, 1 };
+int8_t horizontal[] = { 2, 1, -1, -2, -1, 1 };
 
 uint64_t animFrame(byte x) {
   if (h[x].timePressed) {  // 2^20 microseconds is close enough to 1 second
@@ -4342,84 +4237,87 @@ uint64_t animFrame(byte x) {
     return 0;
   }
 }
-
-bool isValidHexCoordinate(int8_t row, int8_t col) {
-  return !(row < 0
-           || row >= ROWCOUNT
-           || col < 0
-           || col >= (2 * COLCOUNT)
-           || ((col + row) & 1));
-}
-
-bool hexAllowsScaleAnimations(byte hexIndex) {
-  return !h[hexIndex].isCmd && (h[hexIndex].inScale || !scaleLock);
-}
-
-void flagToAnimate(int8_t row, int8_t col) {
-  if (!isValidHexCoordinate(row, col)) {
-    return;
-  }
-  h[(COLCOUNT * row) + (col / 2)].animate = true;
-}
-
-void animateRing(byte centerIndex, byte radius, byte stepsPerSide) {
-  int8_t turtleRow = h[centerIndex].coordRow + (radius * hexRowOffsets[HEX_DIRECTION_SW]);
-  int8_t turtleCol = h[centerIndex].coordCol + (radius * hexColOffsets[HEX_DIRECTION_SW]);
-  for (byte direction = HEX_DIRECTION_EAST; direction < HEX_DIRECTION_COUNT; ++direction) {
-    for (byte step = 0; step < stepsPerSide; ++step) {
-      flagToAnimate(turtleRow, turtleCol);
-      turtleRow += (hexRowOffsets[direction] * (radius / stepsPerSide));
-      turtleCol += (hexColOffsets[direction] * (radius / stepsPerSide));
-    }
+void flagToAnimate(int8_t r, int8_t c) {
+  if (!((r < 0) || (r >= ROWCOUNT)
+        || (c < 0) || (c >= (2 * COLCOUNT))
+        || ((c + r) & 1))) {
+    h[(10 * r) + (c / 2)].animate = 1;
   }
 }
-
 void animateMirror() {
-  for (byte i = 0; i < LED_COUNT; ++i) {                     // check every hex
-    if (!h[i].isCmd && h[i].MIDIch) {                        // that is a held note
-      for (byte j = 0; j < LED_COUNT; ++j) {                 // compare to every hex
-        if (!h[j].isCmd && !h[j].MIDIch) {                   // that is a note not being played
+  for (byte i = 0; i < LED_COUNT; i++) {                     // check every hex
+    if ((!(h[i].isCmd)) && (h[i].MIDIch)) {                  // that is a held note
+      for (byte j = 0; j < LED_COUNT; j++) {                 // compare to every hex
+        if ((!(h[j].isCmd)) && (!(h[j].MIDIch))) {           // that is a note not being played
           int16_t temp = h[i].stepsFromC - h[j].stepsFromC;  // look at difference between notes
           if (animationType == ANIMATE_OCTAVE) {             // set octave diff to zero if need be
             temp = positiveMod(temp, current.tuning().cycleLength);
           }
           if (temp == 0) {  // highlight if diff is zero
-            h[j].animate = true;
+            h[j].animate = 1;
           }
         }
       }
     }
   }
 }
-void animateOrbit() {
+/*
+  void animateOrbit() {
+    for (byte i = 0; i < LED_COUNT; i++) {                               // check every hex
+      if ((!(h[i].isCmd)) && (h[i].MIDIch) && ((h[i].inScale) || (!scaleLock))) {    // that is a held note
+        byte tempDir = (animFrame(i) % 6);
+        flagToAnimate(h[i].coordRow + vertical[tempDir], h[i].coordCol + horizontal[tempDir]);       // different neighbor each frame
+      }
+    }
+  }
+*/
+void animateOrbit() {           //BETTER ORBIT
+  const byte ORBIT_RADIUS = 2;  // Radius of the orbit
   const byte SLOW_FACTOR = 1;   // Slowdown factor for animation
 
-  for (byte i = 0; i < LED_COUNT; ++i) {   // Check every hex
-    if (!hexAllowsScaleAnimations(i) || !h[i].MIDIch) {
-      continue;
+  for (byte i = 0; i < LED_COUNT; i++) {     // Check every hex
+    if ((!(h[i].isCmd)) && (h[i].MIDIch) &&  // That is a held note
+        ((h[i].inScale) || (!scaleLock))) {  // And is in scale or scale is unlocked
+
+      byte frame = animFrame(i) / SLOW_FACTOR;  // Slow down the animation
+      byte currentStep = frame % 12;            // Determine position in the 12-light orbit
+
+      // Determine row and column adjustments for the 12 possible directions
+      int8_t rowOffsets[12];
+      int8_t colOffsets[12];
+
+      // Fill offsets for the 6 primary directions
+      for (byte dir = 0; dir < 6; dir++) {
+        rowOffsets[dir * 2] = ORBIT_RADIUS * vertical[dir];
+        colOffsets[dir * 2] = ORBIT_RADIUS * horizontal[dir];
+
+        // Fill the intermediate (diagonal) positions
+        rowOffsets[dir * 2 + 1] = ORBIT_RADIUS * (vertical[dir] + vertical[(dir + 1) % 6]) / 2;
+        colOffsets[dir * 2 + 1] = ORBIT_RADIUS * (horizontal[dir] + horizontal[(dir + 1) % 6]) / 2;
+      }
+
+      // Calculate light positions
+      int8_t light1Row = h[i].coordRow + rowOffsets[currentStep];
+      int8_t light1Col = h[i].coordCol + colOffsets[currentStep];
+
+      byte oppositeStep = (currentStep + 6) % 12;  // Opposite position in the 12-light ring
+      int8_t light2Row = h[i].coordRow + rowOffsets[oppositeStep];
+      int8_t light2Col = h[i].coordCol + colOffsets[oppositeStep];
+
+      // Flag both lights for animation
+      flagToAnimate(light1Row, light1Col);
+      flagToAnimate(light2Row, light2Col);
     }
-
-    byte frame = animFrame(i) / SLOW_FACTOR;               // Slow down the animation
-    byte currentStep = frame % ORBIT_POSITION_COUNT;       // Determine position in the orbit
-
-    // orbitRowOffsets/orbitColOffsets already encode a radius-2 orbit.
-    int8_t light1Row = h[i].coordRow + orbitRowOffsets[currentStep];
-    int8_t light1Col = h[i].coordCol + orbitColOffsets[currentStep];
-
-    byte oppositeStep = (currentStep + (ORBIT_POSITION_COUNT / 2)) % ORBIT_POSITION_COUNT;
-    int8_t light2Row = h[i].coordRow + orbitRowOffsets[oppositeStep];
-    int8_t light2Col = h[i].coordCol + orbitColOffsets[oppositeStep];
-
-    flagToAnimate(light1Row, light1Col);
-    flagToAnimate(light2Row, light2Col);
   }
 }
 
 void animateStaticBeams() {
+  const byte MAX_BEAM_LENGTH = 13;                 // Maximum distance the beam can travel
   static byte lastDirection[LED_COUNT] = { 255 };  // Track the last direction for each button (255 = uninitialized)
 
-  for (byte i = 0; i < LED_COUNT; ++i) {  // Check every hex
-    if (!hexAllowsScaleAnimations(i)) {
+  for (byte i = 0; i < LED_COUNT; i++) {  // Check every hex
+    // Skip buttons that are not in the playable area
+    if (h[i].isCmd || (!h[i].inScale && scaleLock)) {
       continue;
     }
 
@@ -4438,17 +4336,17 @@ void animateStaticBeams() {
 
     if (h[i].btnState == BTN_STATE_HELD || h[i].btnState == BTN_STATE_NEWPRESS) {  // Active button
       byte baseDirection = lastDirection[i] * 2;                                   // Convert to hex direction (0, 2, or 4)
-      byte oppositeDirection = (baseDirection + 3) % HEX_DIRECTION_COUNT;          // Opposite direction
+      byte oppositeDirection = (baseDirection + 3) % 6;                            // Opposite direction
 
       // Light up the entire beam in both directions
-      for (byte length = 1; length <= MAX_BEAM_LENGTH; ++length) {
+      for (byte length = 1; length <= MAX_BEAM_LENGTH; length++) {
         // Beam in primary direction
-        int8_t beam1Row = h[i].coordRow + (length * hexRowOffsets[baseDirection]);
-        int8_t beam1Col = h[i].coordCol + (length * hexColOffsets[baseDirection]);
+        int8_t beam1Row = h[i].coordRow + (length * vertical[baseDirection]);
+        int8_t beam1Col = h[i].coordCol + (length * horizontal[baseDirection]);
 
         // Beam in opposite direction
-        int8_t beam2Row = h[i].coordRow + (length * hexRowOffsets[oppositeDirection]);
-        int8_t beam2Col = h[i].coordCol + (length * hexColOffsets[oppositeDirection]);
+        int8_t beam2Row = h[i].coordRow + (length * vertical[oppositeDirection]);
+        int8_t beam2Col = h[i].coordCol + (length * horizontal[oppositeDirection]);
 
         // Flag both beams for animation
         flagToAnimate(beam1Row, beam1Col);
@@ -4459,30 +4357,43 @@ void animateStaticBeams() {
 }
 
 void animateRadial() {
-  for (byte i = 0; i < LED_COUNT; ++i) {                  // check every hex
-    if (!hexAllowsScaleAnimations(i)) {
-      continue;
-    }
-
-    uint64_t radius = animFrame(i);
-    if ((radius > 0) && (radius < ROWCOUNT)) {                           // played in the last 16 frames
-      byte steps = ((animationType == ANIMATE_SPLASH) ? radius : 1);     // star = 1 step to next corner; ring = 1 step per hex
-      animateRing(i, static_cast<byte>(radius), steps);
+  for (byte i = 0; i < LED_COUNT; i++) {                  // check every hex
+    if (!(h[i].isCmd) && (h[i].inScale || !scaleLock)) {  // that is a note
+      uint64_t radius = animFrame(i);
+      if ((radius > 0) && (radius < 16)) {                              // played in the last 16 frames
+        byte steps = ((animationType == ANIMATE_SPLASH) ? radius : 1);  // star = 1 step to next corner; ring = 1 step per hex
+        int8_t turtleRow = h[i].coordRow + (radius * vertical[HEX_DIRECTION_SW]);
+        int8_t turtleCol = h[i].coordCol + (radius * horizontal[HEX_DIRECTION_SW]);
+        for (byte dir = HEX_DIRECTION_EAST; dir < 6; dir++) {  // walk along the ring in each of the 6 hex directions
+          for (byte i = 0; i < steps; i++) {                   // # of steps to the next corner
+            flagToAnimate(turtleRow, turtleCol);               // flag for animation
+            turtleRow += (vertical[dir] * (radius / steps));
+            turtleCol += (horizontal[dir] * (radius / steps));
+          }
+        }
+      }
     }
   }
 }
 
 void animateRadialReverse() {  //inverted splash/star
-  for (byte i = 0; i < LED_COUNT; ++i) {                                          // Check every hex
-    if (!hexAllowsScaleAnimations(i)) {
-      continue;
-    }
-
-    uint64_t frame = animFrame(i);                                                // Current animation frame
-    if ((frame > 0) && (frame < MAX_ANIMATION_RADIUS)) {                          // Played in the last X frames
-      byte reverseRadius = static_cast<byte>(MAX_ANIMATION_RADIUS - frame);       // Calculate reverse radius
-      byte steps = ((animationType == ANIMATE_SPLASH_REVERSE) ? reverseRadius : 1);
-      animateRing(i, reverseRadius, steps);
+#define MAX_RADIUS 5
+  for (byte i = 0; i < LED_COUNT; i++) {                                               // Check every hex
+    if (!(h[i].isCmd) && (h[i].inScale || !scaleLock)) {                               // That is a note
+      uint64_t frame = animFrame(i);                                                   // Current animation frame
+      if ((frame > 0) && (frame < MAX_RADIUS)) {                                       // Played in the last X frames
+        uint8_t reverseRadius = MAX_RADIUS - frame;                                    // Calculate reverse radius
+        byte steps = ((animationType == ANIMATE_SPLASH_REVERSE) ? reverseRadius : 1);  // Steps depend on animation type
+        int8_t turtleRow = h[i].coordRow + (reverseRadius * vertical[HEX_DIRECTION_SW]);
+        int8_t turtleCol = h[i].coordCol + (reverseRadius * horizontal[HEX_DIRECTION_SW]);
+        for (byte dir = HEX_DIRECTION_EAST; dir < 6; dir++) {  // Walk along the ring in 6 hex directions
+          for (byte j = 0; j < steps; j++) {                   // Steps to the next corner
+            flagToAnimate(turtleRow, turtleCol);               // Flag for animation
+            turtleRow += (vertical[dir] * (reverseRadius / steps));
+            turtleCol += (horizontal[dir] * (reverseRadius / steps));
+          }
+        }
+      }
     }
   }
 }
@@ -4507,81 +4418,22 @@ void applyExternalMidiToHex(byte midiNote, bool noteOn) {
 bool reportDeviceIdentity(const uint8_t* data, const unsigned int len) {
   if (len == 6 && data[1] == 0x7E && data[3] == 0x06 && data[4] == 0x01) {
     // Respond to a device identity request.
-    // TODO: 7D = educational/dev; replace when a manufacturer ID is assigned.
-    static byte deviceIdentity[] = {
-      0x7E, 0x00, 0x06, 0x02,             // Device ID response
-      0x7D,                               // Educational/dev manufacturer ID
-      0x01, 0x00,                         // Family, LSB-first
-      0x01, 0x00,                         // Model, LSB-first
-      Hardware_Version, 0x00, 0x00, 0x00  // Version, LSB-first
+    // TODO: 7D = ed/dev -- replace with three-byte manufacturer ID when we have one
+    // Next two bytes are family
+    // Next two bytes are model
+    // Last four bytes are version
+    // All are LSB-first.
+    static byte device_identity[] = {
+      0x7E, 0x00, 0x06, 0x02, // Device ID response
+      0x7D, // education/dev
+      0x01, 0x00, // family, LSB-first
+      0x01, 0x00, // model, LSB-first
+      Hardware_Version, 0x00, 0x00, 0x00, // version, LSB first
     };
-    withMIDI([&](auto& M) { M.sendSysEx(sizeof(deviceIdentity), deviceIdentity); });
+    withMIDI([&](auto& M) { M.sendSysEx(sizeof(device_identity), device_identity); });
     return true;
   }
   return false;
-}
-
-void onToggleDelegated() {
-  if (delegatedControl) {
-    memset(delegatedColors, 0, sizeof(delegatedColors));
-    // Reset parser state when entering delegated mode.
-    setupMIDI();
-  }
-  sendToLog("delegated = " + std::to_string(delegatedControl));
-}
-
-void toggleDelegated() {
-  delegatedControl = !delegatedControl;
-  onToggleDelegated();
-}
-
-void delegatedButtonEvent(byte x, bool press) {
-  byte channel = x / 100;  // 0-based hundreds digit
-  byte note = x % 100;
-  if (press) {
-    withMIDI([&](auto& M) { M.sendNoteOn(note, 127, channel + 1); });
-  } else {
-    withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel + 1); });
-  }
-}
-
-void processLedSysEx(const uint8_t* data, const unsigned int len) {
-  // Repeated records: LED number (14 bits), hue (7 bits), saturation (7 bits), value (7 bits).
-  for (unsigned int idx = 0; idx + 5 <= len; idx += 5) {
-    uint16_t led = (data[idx] << 7) + data[idx + 1];
-    if (led >= LED_COUNT) {
-      sendToLog("LED SysEx: led " + std::to_string(led) + " is out of range; ignoring");
-      continue;
-    }
-    byte hueData = data[idx + 2] & 0x7F;
-    byte satData = data[idx + 3] & 0x7F;
-    byte valData = data[idx + 4] & 0x7F;
-    colorDef c = {
-      static_cast<float>(hueData) * 360.0f / 127.0f,
-      static_cast<byte>(2 * satData + (satData > 63 ? 1 : 0)),
-      static_cast<byte>(2 * valData + (valData > 63 ? 1 : 0))
-    };
-    delegatedColors[led] = getLEDcode(c);
-  }
-}
-
-void processDelegatedSysEx(const uint8_t* data, const unsigned int len) {
-  if (len < 1) {
-    return;
-  }
-  switch (data[0]) {
-    case SYSEX_DELEGATED_ENTER:
-      break;
-    case SYSEX_DELEGATED_EXIT:
-      toggleDelegated();
-      break;
-    case SYSEX_LED:
-      processLedSysEx(&data[1], len - 1);
-      break;
-    default:
-      sendToLog("ignoring unknown delegated SysEx code " + std::to_string(data[0]));
-      break;
-  }
 }
 
 void processIncomingSysEx(const uint8_t* data, const unsigned int len) {
@@ -4589,102 +4441,80 @@ void processIncomingSysEx(const uint8_t* data, const unsigned int len) {
     return;
   }
   if ((len == 4) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {
+    // Accept a SysEx message containing the single byte SYSEX_DELEGATED_ENTER sent on the
+    // dev/test manufacturer ID to enter delegated mode. This does the same as enabling it
+    // from the menu.
     toggleDelegated();
   }
-}
-
-void processIncomingMIDIDelegated() {
-  withMIDI([&](auto& M) {
-    while (M.read()) {
-      const auto type = M.getType();
-      if (type == MIDI_NAMESPACE::SystemExclusive) {
-        const uint8_t* sysex = M.getSysExArray();
-        const unsigned int len = M.getSysExArrayLength();
-        if (len <= 3 || reportDeviceIdentity(sysex, len)) {
-          continue;
-        }
-        if ((sysex[0] != 0xF0) || (sysex[len - 1] != 0xF7)) {
-          sendToLog("invalid delegated SysEx received; ignoring");
-          continue;
-        }
-        if (sysex[1] != 0x7D) {
-          sendToLog("delegated incoming: ignoring SysEx vendor " + std::to_string(sysex[1]));
-          continue;
-        }
-        processDelegatedSysEx(&sysex[2], len - 3);
-      } else {
-        sendToLog("delegated incoming: " + std::to_string(type));
-      }
-    }
-  });
 }
 
 void processIncomingMIDI() {
   if (delegatedControl) {
     return;
+  } else {
+    withMIDI([&](auto& M) {
+      while (M.read()) {
+        const auto type = M.getType();
+        if (type == MIDI_NAMESPACE::SystemExclusive) {
+          const uint8_t* sysex = M.getSysExArray();
+          const unsigned int len = M.getSysExArrayLength();
+          processIncomingSysEx(sysex, len);
+          continue;
+        }
+
+        const byte n    = M.getData1();  // note
+        const byte v    = M.getData2();  // velocity
+
+        if (type == MIDI_NAMESPACE::NoteOn) {
+          // treat NoteOn vel==0 as NoteOff
+          applyExternalMidiToHex(n, v != 0);
+        } else if (type == MIDI_NAMESPACE::NoteOff
+                   || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
+          applyExternalMidiToHex(n, false);
+        }
+      }
+    });
   }
-  withMIDI([&](auto& M) {
-    while (M.read()) {
-      const auto type = M.getType();
-      if (type == MIDI_NAMESPACE::SystemExclusive) {
-        const uint8_t* sysex = M.getSysExArray();
-        const unsigned int len = M.getSysExArrayLength();
-        processIncomingSysEx(sysex, len);
-        continue;
-      }
-
-      const byte n    = M.getData1();  // note
-      const byte v    = M.getData2();  // velocity
-
-      if (type == MIDI_NAMESPACE::NoteOn) {
-        // treat NoteOn vel==0 as NoteOff
-        applyExternalMidiToHex(n, v != 0);
-      } else if (type == MIDI_NAMESPACE::NoteOff
-                 || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
-        applyExternalMidiToHex(n, false);
-      }
-    }
-  });
 }
 
 void animateLEDs() {
   if (delegatedControl) {
     return;
   }
-  for (byte i = 0; i < LED_COUNT; ++i) {
-    h[i].animate = false;
+  for (byte i = 0; i < LED_COUNT; i++) {
+    h[i].animate = 0;
   }
-  switch (animationType) {
+    switch (animationType) {
     case ANIMATE_BUTTON:
     case ANIMATE_NONE:
       break;
-    case ANIMATE_STAR:
-    case ANIMATE_SPLASH:
-      animateRadial();
-      break;
-    case ANIMATE_ORBIT:
-      animateOrbit();
-      break;
-    case ANIMATE_OCTAVE:
-    case ANIMATE_BY_NOTE:
-      animateMirror();
-      break;
-    case ANIMATE_BEAMS:
-      animateStaticBeams();
-      break;
-    case ANIMATE_SPLASH_REVERSE:
-    case ANIMATE_STAR_REVERSE:
-      animateRadialReverse();
-      break;
-    case ANIMATE_MIDI_IN:
-      for (byte i = 0; i < LED_COUNT; ++i) {
-        if (h[i].externalNoteDepth > 0) {
-          h[i].animate = true;
+      case ANIMATE_STAR:
+      case ANIMATE_SPLASH:
+        animateRadial();
+        break;
+      case ANIMATE_ORBIT:
+        animateOrbit();
+        break;
+      case ANIMATE_OCTAVE:
+      case ANIMATE_BY_NOTE:
+        animateMirror();
+        break;
+      case ANIMATE_BEAMS:
+        animateStaticBeams();
+        break;
+      case ANIMATE_SPLASH_REVERSE:
+      case ANIMATE_STAR_REVERSE:
+        animateRadialReverse();
+        break;
+      case ANIMATE_MIDI_IN:
+        for (byte i = 0; i < LED_COUNT; i++) {
+          if (h[i].externalNoteDepth > 0) {
+            h[i].animate = 1;
+          }
         }
-      }
-      break;
-    default:
-      break;
+        break;
+      default:
+        break;
   }
 }
 
@@ -4768,36 +4598,26 @@ void refreshMidiRouting() {
   assignPitches();
 }
 
-/*
-    Returns true when the hex's pitch class belongs
-    to the currently selected scale. Pulling this
-    logic into one helper keeps applyScale() easy to
-    read for beginners.
-  */
-bool hexIsInCurrentScale(byte hexIndex) {
-  if (current.scale().tuning == ALL_TUNINGS) {
-    return true;
-  }
-
-  byte degree = current.keyDegree(h[hexIndex].stepsFromC);
-  if (degree == 0) {
-    return true;  // The root is always in the scale.
-  }
-
-  byte accumulatedSteps = 0;
-  byte patternIndex = 0;
-  while (degree > accumulatedSteps) {
-    accumulatedSteps += current.scale().pattern[patternIndex];
-    ++patternIndex;
-  }
-  return accumulatedSteps == degree;
-}
-
 void applyScale() {
   sendToLog("applyScale was called:");
-  for (byte i = 0; i < LED_COUNT; ++i) {
-    if (!h[i].isCmd) {
-      h[i].inScale = hexIsInCurrentScale(i);
+  for (byte i = 0; i < LED_COUNT; i++) {
+    if (!(h[i].isCmd)) {
+      if (current.scale().tuning == ALL_TUNINGS) {
+        h[i].inScale = 1;
+      } else {
+        byte degree = current.keyDegree(h[i].stepsFromC);
+        if (degree == 0) {
+          h[i].inScale = 1;  // the root is always in the scale
+        } else {
+          byte tempSum = 0;
+          byte iterator = 0;
+          while (degree > tempSum) {
+            tempSum += current.scale().pattern[iterator];
+            iterator++;
+          }                                    // add the steps in the scale, and you're in scale
+          h[i].inScale = (tempSum == degree);  // if the note lands on one of those sums
+        }
+      }
       sendToLog(
         "hex #" + std::to_string(i) + ", " + "steps=" + std::to_string(h[i].stepsFromC) + ", " + "isCmd? " + std::to_string(h[i].isCmd) + ", " + "note=" + std::to_string(h[i].note) + ", " + "inScale? " + std::to_string(h[i].inScale) + ".");
     }
@@ -4867,24 +4687,11 @@ struct SettingsHeader {
   char magic[3];           // e.g., "STG"
   uint8_t version;         // settings file version
   uint8_t defaultProfileIndex;
-  uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
 constexpr uint8_t CURRENT_SETTINGS_VERSION = 1;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
-
-// CRC32 computation for settings integrity verification
-uint32_t crc32(const uint8_t* data, size_t length) {
-  uint32_t crc = 0xFFFFFFFF;
-  for (size_t i = 0; i < length; i++) {
-    crc ^= data[i];
-    for (int j = 0; j < 8; j++) {
-      crc = (crc >> 1) ^ (0xEDB88320 & -(crc & 1));
-    }
-  }
-  return ~crc;
-}
 
 // ==================================================
 // Settings Definitions
@@ -4939,6 +4746,7 @@ enum class SettingKey : uint8_t {
   EnvelopeDecayIndex,
   EnvelopeSustainLevel,
   EnvelopeReleaseIndex,
+  Delegated,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -4956,18 +4764,6 @@ uint8_t activeProfileIndex = DEFAULT_PROFILE_INDEX;
 uint8_t defaultProfileIndex = DEFAULT_PROFILE_INDEX;
 extern bool settingsDirty;
 void syncSettingsToRuntime();
-
-inline uint8_t settingValue(SettingKey key) {
-  return settings[static_cast<uint8_t>(key)];
-}
-
-inline bool settingEnabled(SettingKey key) {
-  return settingValue(key) != 0;
-}
-
-inline int decodeBiasedSetting(SettingKey key) {
-  return static_cast<int>(settingValue(key)) - 128;
-}
 
 // SETTINGS STEP 2 - Define factory defaults (in the same order as the enum).
 // Adjust values below to match your desired defaults.
@@ -5034,21 +4830,7 @@ void setupFileSystem() {
   LittleFS.setConfig(cfg);
   fileSystemExists = LittleFS.begin();
   if (!fileSystemExists) {
-    // Mount failed (first boot or corrupted FS). USB enumeration guard in
-    // setup() already waited up to 2 s, so only a short extra margin here.
-    sendToLog("LittleFS mount failed. Formatting after USB settles...");
-    delay(500);
-    if (LittleFS.format()) {
-      sendToLog("LittleFS format succeeded. Mounting...");
-      fileSystemExists = LittleFS.begin();
-      if (!fileSystemExists) {
-        sendToLog("Error: mount failed after format.");
-      } else {
-        sendToLog("LittleFS mounted successfully after format.");
-      }
-    } else {
-      sendToLog("Error: LittleFS format failed.");
-    }
+    sendToLog("Error: Unable to mount LittleFS.");
   } else {
     sendToLog("LittleFS mounted successfully.");
   }
@@ -5116,14 +4898,6 @@ bool load_settings() {
     save_settings();
     return false;
   }
-  // Verify CRC32 integrity of loaded profile data
-  uint32_t computed = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), expectedSize);
-  if (computed != header.crc32) {
-    sendToLog("CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
-    applyFactoryDefaultsToSettings();
-    save_settings();
-    return false;
-  }
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
   settingsDirty = false;
@@ -5145,32 +4919,17 @@ void save_settings() {
   header.magic[0] = 'S'; header.magic[1] = 'T'; header.magic[2] = 'G';
   header.version = CURRENT_SETTINGS_VERSION;
   header.defaultProfileIndex = defaultProfileIndex;
-  header.crc32 = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS);
   f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SettingsHeader));
   f.write(reinterpret_cast<uint8_t*>(settingsProfiles), static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS);
   f.close();
   sendToLog("Settings saved.");
 }
 
-// Wrapper that mutes audio before writing to flash and unmutes afterward.
-// On the RP2040 flash writes disable ALL interrupts on BOTH cores, which
-// starves the audio ISR.  Muting first ensures a brief silence instead of
-// an audible glitch when interrupts resume.
-void flashSafeSave() {
-  flashWriteInProgress.store(true, std::memory_order_release);
-  // Allow a few ISR cycles (~0.5 ms) to output silence before the flash
-  // write freezes the timer, so the transition is a clean fade-to-silence
-  // rather than a mid-sample cut.
-  delayMicroseconds(500);
-  save_settings();
-  flashWriteInProgress.store(false, std::memory_order_release);
-}
-
 // Restore all settings to the factory defaults.
 void restore_default_settings() {
   applyFactoryDefaultsToSettings();
   sendToLog("Default settings restored.");
-  flashSafeSave();
+  save_settings();
 }
 
 // --------------------------------------------------------
@@ -5189,19 +4948,19 @@ void markSettingsDirty() {
   lastSettingsChangeTime = millis();
 }
 
-bool autoSave = settingEnabled(SettingKey::AutoSave);
+bool autoSave = (settings[static_cast<uint8_t>(SettingKey::AutoSave)] !=0);
 // Call this in your main loop to autosave if changes have stabilized.
 void checkAndAutoSave() {
-  if (!autoSave || !settingsDirty) {
+  if (!autoSave) {
     return;
   }
-  if (millis() - lastSettingsChangeTime <= debounceDelay) {
+  if (!settingsDirty || (millis() - lastSettingsChangeTime <= debounceDelay)) {
     return;
   }
   // Auto-save always snapshots the current settings into profile 1 before writing to disk.
   copyCurrentSettingsToProfile(DEFAULT_PROFILE_INDEX);
-  flashSafeSave();
-  settingsDirty = false;
+    save_settings();
+    settingsDirty = false;
 }
 
 void copyCurrentSettingsToProfile(uint8_t profileIndex) {
@@ -5219,7 +4978,7 @@ void saveProfileToSlot(uint8_t profileIndex) {
     return;
   }
   copyCurrentSettingsToProfile(profileIndex);
-  flashSafeSave();
+  save_settings();
   if (profileIndex == activeProfileIndex) {
     settingsDirty = false;
   }
@@ -5408,7 +5167,7 @@ extern bool settingsDirty;
 
 void resetDefaultsMenuCallback() {
   applyFactoryDefaultsToSettings();
-  flashSafeSave();
+  save_settings();
   syncSettingsToRuntime();
   settingsDirty = false;
   sendToLog("Factory defaults loaded from menu.");
@@ -5524,7 +5283,7 @@ GEMItem menuItemAutoSave("Auto-Save", autoSave, universalSaveCallback, reinterpr
 // For "Invert Encoder" which is a bool tick box.
 // We want to store its value persistently in the RotaryInvert setting.
 // Create a global variable that reflects its current state.
-bool rotaryInvert = settingEnabled(SettingKey::RotaryInvert);
+bool rotaryInvert = (settings[static_cast<uint8_t>(SettingKey::RotaryInvert)] != 0);
 // Create a PersistentCallbackInfo instance for this setting.
 PersistentCallbackInfo callbackInfoRotary = {
   static_cast<uint8_t>(SettingKey::RotaryInvert),
@@ -5533,6 +5292,14 @@ PersistentCallbackInfo callbackInfoRotary = {
   nullptr
 };
 GEMItem menuItemRotary("Invert Encoder", rotaryInvert, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
+
+PersistentCallbackInfo callbackInfoDelegate = {
+  static_cast<uint8_t>(SettingKey::Delegated),
+  reinterpret_cast<void*>(&delegatedControl),
+  nullptr,
+  onToggleDelegated,
+};
+GEMItem menuItemDelegated("Delegate Control", delegatedControl, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDelegate));
 
 PersistentCallbackInfo callbackInfoDebug = {
   static_cast<uint8_t>(SettingKey::Debug),
@@ -5605,7 +5372,7 @@ GEMSpinner spinnerBPM_MultiplierOfJI(spinnerBoundariesBPM, GEM_LOOP);
 ///////////////////////////////////////////////////////////////////
 
 // Roland MT-32 mode (1987)
-SelectOptionByte optionByteRolandMT32[] __in_flash("midi") = {
+SelectOptionByte optionByteRolandMT32[] = {
   // Blank
   { "None", 0 },
   // Piano
@@ -5764,7 +5531,7 @@ GEMItem menuItemRolandMT32("RolandMT32", programChange, selectRolandMT32, univer
                            reinterpret_cast<void*>(&callbackInfoProgramChange));
 
 // General MIDI 1
-SelectOptionByte optionByteGeneralMidi[] __in_flash("midi") = {
+SelectOptionByte optionByteGeneralMidi[] = {
   // Blank
   { "None", 0 },
   // Piano
@@ -5917,27 +5684,10 @@ GEMItem menuItemGeneralMidi("GeneralMidi", programChange, selectGeneralMidi, uni
                             reinterpret_cast<void*>(&callbackInfoProgramChange));
 
 
-// Transpose spinner: generated programmatically instead of 255 hardcoded entries
-constexpr uint16_t TRANSPOSE_COUNT = 255;
-static char transposeLabels[TRANSPOSE_COUNT][5];
-static SelectOptionInt optionIntTransposeSteps[TRANSPOSE_COUNT];
-void initTransposeOptions() {
-  for (int i = 0; i < TRANSPOSE_COUNT; ++i) {
-    int val = i - 127;  // -127 to +127
-    if (val == 0) {
-      memcpy(transposeLabels[i], "+/-0", 5);
-    } else if (val < -99) {
-      snprintf(transposeLabels[i], 5, "%d", val);
-    } else if (val < 0) {
-      snprintf(transposeLabels[i], 5, "-%*d", 3, -val);
-    } else if (val < 100) {
-      snprintf(transposeLabels[i], 5, "+%*d", 3, val);
-    } else {
-      snprintf(transposeLabels[i], 5, "+%d", val);
-    }
-    optionIntTransposeSteps[i] = { transposeLabels[i], val };
-  }
-}
+// doing this long-hand because the STRUCT has problems accepting string conversions of numbers for some reason
+SelectOptionInt optionIntTransposeSteps[] = {
+  { "-127", -127 }, { "-126", -126 }, { "-125", -125 }, { "-124", -124 }, { "-123", -123 }, { "-122", -122 }, { "-121", -121 }, { "-120", -120 }, { "-119", -119 }, { "-118", -118 }, { "-117", -117 }, { "-116", -116 }, { "-115", -115 }, { "-114", -114 }, { "-113", -113 }, { "-112", -112 }, { "-111", -111 }, { "-110", -110 }, { "-109", -109 }, { "-108", -108 }, { "-107", -107 }, { "-106", -106 }, { "-105", -105 }, { "-104", -104 }, { "-103", -103 }, { "-102", -102 }, { "-101", -101 }, { "-100", -100 }, { "- 99", -99 }, { "- 98", -98 }, { "- 97", -97 }, { "- 96", -96 }, { "- 95", -95 }, { "- 94", -94 }, { "- 93", -93 }, { "- 92", -92 }, { "- 91", -91 }, { "- 90", -90 }, { "- 89", -89 }, { "- 88", -88 }, { "- 87", -87 }, { "- 86", -86 }, { "- 85", -85 }, { "- 84", -84 }, { "- 83", -83 }, { "- 82", -82 }, { "- 81", -81 }, { "- 80", -80 }, { "- 79", -79 }, { "- 78", -78 }, { "- 77", -77 }, { "- 76", -76 }, { "- 75", -75 }, { "- 74", -74 }, { "- 73", -73 }, { "- 72", -72 }, { "- 71", -71 }, { "- 70", -70 }, { "- 69", -69 }, { "- 68", -68 }, { "- 67", -67 }, { "- 66", -66 }, { "- 65", -65 }, { "- 64", -64 }, { "- 63", -63 }, { "- 62", -62 }, { "- 61", -61 }, { "- 60", -60 }, { "- 59", -59 }, { "- 58", -58 }, { "- 57", -57 }, { "- 56", -56 }, { "- 55", -55 }, { "- 54", -54 }, { "- 53", -53 }, { "- 52", -52 }, { "- 51", -51 }, { "- 50", -50 }, { "- 49", -49 }, { "- 48", -48 }, { "- 47", -47 }, { "- 46", -46 }, { "- 45", -45 }, { "- 44", -44 }, { "- 43", -43 }, { "- 42", -42 }, { "- 41", -41 }, { "- 40", -40 }, { "- 39", -39 }, { "- 38", -38 }, { "- 37", -37 }, { "- 36", -36 }, { "- 35", -35 }, { "- 34", -34 }, { "- 33", -33 }, { "- 32", -32 }, { "- 31", -31 }, { "- 30", -30 }, { "- 29", -29 }, { "- 28", -28 }, { "- 27", -27 }, { "- 26", -26 }, { "- 25", -25 }, { "- 24", -24 }, { "- 23", -23 }, { "- 22", -22 }, { "- 21", -21 }, { "- 20", -20 }, { "- 19", -19 }, { "- 18", -18 }, { "- 17", -17 }, { "- 16", -16 }, { "- 15", -15 }, { "- 14", -14 }, { "- 13", -13 }, { "- 12", -12 }, { "- 11", -11 }, { "- 10", -10 }, { "-  9", -9 }, { "-  8", -8 }, { "-  7", -7 }, { "-  6", -6 }, { "-  5", -5 }, { "-  4", -4 }, { "-  3", -3 }, { "-  2", -2 }, { "-  1", -1 }, { "+/-0", 0 }, { "+  1", 1 }, { "+  2", 2 }, { "+  3", 3 }, { "+  4", 4 }, { "+  5", 5 }, { "+  6", 6 }, { "+  7", 7 }, { "+  8", 8 }, { "+  9", 9 }, { "+ 10", 10 }, { "+ 11", 11 }, { "+ 12", 12 }, { "+ 13", 13 }, { "+ 14", 14 }, { "+ 15", 15 }, { "+ 16", 16 }, { "+ 17", 17 }, { "+ 18", 18 }, { "+ 19", 19 }, { "+ 20", 20 }, { "+ 21", 21 }, { "+ 22", 22 }, { "+ 23", 23 }, { "+ 24", 24 }, { "+ 25", 25 }, { "+ 26", 26 }, { "+ 27", 27 }, { "+ 28", 28 }, { "+ 29", 29 }, { "+ 30", 30 }, { "+ 31", 31 }, { "+ 32", 32 }, { "+ 33", 33 }, { "+ 34", 34 }, { "+ 35", 35 }, { "+ 36", 36 }, { "+ 37", 37 }, { "+ 38", 38 }, { "+ 39", 39 }, { "+ 40", 40 }, { "+ 41", 41 }, { "+ 42", 42 }, { "+ 43", 43 }, { "+ 44", 44 }, { "+ 45", 45 }, { "+ 46", 46 }, { "+ 47", 47 }, { "+ 48", 48 }, { "+ 49", 49 }, { "+ 50", 50 }, { "+ 51", 51 }, { "+ 52", 52 }, { "+ 53", 53 }, { "+ 54", 54 }, { "+ 55", 55 }, { "+ 56", 56 }, { "+ 57", 57 }, { "+ 58", 58 }, { "+ 59", 59 }, { "+ 60", 60 }, { "+ 61", 61 }, { "+ 62", 62 }, { "+ 63", 63 }, { "+ 64", 64 }, { "+ 65", 65 }, { "+ 66", 66 }, { "+ 67", 67 }, { "+ 68", 68 }, { "+ 69", 69 }, { "+ 70", 70 }, { "+ 71", 71 }, { "+ 72", 72 }, { "+ 73", 73 }, { "+ 74", 74 }, { "+ 75", 75 }, { "+ 76", 76 }, { "+ 77", 77 }, { "+ 78", 78 }, { "+ 79", 79 }, { "+ 80", 80 }, { "+ 81", 81 }, { "+ 82", 82 }, { "+ 83", 83 }, { "+ 84", 84 }, { "+ 85", 85 }, { "+ 86", 86 }, { "+ 87", 87 }, { "+ 88", 88 }, { "+ 89", 89 }, { "+ 90", 90 }, { "+ 91", 91 }, { "+ 92", 92 }, { "+ 93", 93 }, { "+ 94", 94 }, { "+ 95", 95 }, { "+ 96", 96 }, { "+ 97", 97 }, { "+ 98", 98 }, { "+ 99", 99 }, { "+100", 100 }, { "+101", 101 }, { "+102", 102 }, { "+103", 103 }, { "+104", 104 }, { "+105", 105 }, { "+106", 106 }, { "+107", 107 }, { "+108", 108 }, { "+109", 109 }, { "+110", 110 }, { "+111", 111 }, { "+112", 112 }, { "+113", 113 }, { "+114", 114 }, { "+115", 115 }, { "+116", 116 }, { "+117", 117 }, { "+118", 118 }, { "+119", 119 }, { "+120", 120 }, { "+121", 121 }, { "+122", 122 }, { "+123", 123 }, { "+124", 124 }, { "+125", 125 }, { "+126", 126 }, { "+127", 127 }
+};
 GEMSelect selectTransposeSteps(255, optionIntTransposeSteps);
 GEMItem menuItemTransposeSteps("Transpose", transposeSteps, selectTransposeSteps, changeTranspose);
 void previewTranspose(GEMPreviewCallbackData previewData) {
@@ -6105,9 +5855,222 @@ PersistentCallbackInfo callbackInfoDynamicJI = {
 GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoDynamicJI));
 
+// @Delegated Control
+
+/*
+
+In Delegated Control mode, the HexBoard acts like a "dumb
+terminal": it sends outbound messages indicating button
+events, and it accepts inbound messages to control LEDs.
+Most other functionality is disabled.
+
+At initial implementation, Delegated mode is visible in the
+menus as a checkbox in the Advanced menu. While you can
+still navigate menus in delegated mode, most menu actions
+won't take effect until you exit delegated mode.
+
+# SysEx Messages
+
+In support of delegated mode, the HexBoard always responds
+to two SysEx (System Extended) messages:
+
+* 0x7E ?? 0x06 0x01 -- request device identity. Since we
+  don't have a Manufacturer ID at the time of initial
+  implementation, we use 0x7D, which is reserved for
+  development/educational use. See comments in
+  reportDeviceIdentity.
+* SysEx message 0x01: enter delegated mode. No additional
+  data is sent. Sending 0xF0 0x7D 0x01 0xF7 will put the
+  HexBoard in delegated mode.
+
+# Details
+
+HexBoard buttons are numbered from 0 to 139. When a button
+is pressed, a NoteOn event is sent with the *channel byte*
+containing key/100 and the note as key%100. A key release
+sends NoteOff. For example, if the user presses and releases
+button 130, the HexBoard will send NoteOn on channel 2 (byte
+0x01) with note number 30, and then a NoteOff with the same
+parameters. Key 60 would send note number 60 on channel 1
+(byte 0x00). See `delegatedButtonEvent` for additional
+details.
+
+In delegated mode, additional SysEx messages are accepted:
+
+* 0x02 -- exit delegated mode. No additional payload.
+* 0x03 -- LED control. This allows control of one or more
+  LED colors. See processLedSysEx for details.
+
+Other delegated mode changes:
+* Incoming SysEx messages are handled on a dedicated core.
+  This keeps the HexBoard very responsive to LED changes.
+  Otherwise, establishing color schemes is very slow.
+* Most other button/LED logic is disabled. The command
+  buttons lose their special meanings. No animation or
+  "wheel" support is present. This leaves the command
+  buttons available as regular buttons for the external
+  application.
+
+Other notes:
+* At the time of initial implementation, the menu remains
+  enabled in delegated mode even though it doesn't do
+  anything. It would be possible to hook into the
+  `dealWithRotary` function to disable the menu, but:
+  - It might be useful in the future to have menu events
+    send messages out indicating what the user is doing
+  - We might want to eventually allow SysEx messages to
+    dynamically update menu items
+  - Some things still make sense -- you can exit delegated
+    mode in case the controlling application crashes, and
+    you can directly enable/disable serial debugging or
+    select "Update Firmware" while in delegated mode.
+
+* setupMIDI is called when we enter delegated control mode.
+  See comment in onToggleDelegated for the rationale.
+
+Delegated Control was initially contributed by Jay
+Berkenbilt, who disclaims copyright. It is covered by the
+same copyright and terms as the rest of the firmware.
+
+*/
+
+
+void toggleDelegated() {
+  delegatedControl = !delegatedControl;
+  onToggleDelegated();
+}
+
+void onToggleDelegated() {
+  if (delegatedControl) {
+    memset(delegatedColors, 0, sizeof(delegatedColors));
+    // This call to setupMIDI allows us to toggle delegated on and off to reset the MIDI parser
+    // state. This provides a workaround to
+    // https://github.com/FortySevenEffects/arduino_midi_library/issues/367.
+    setupMIDI();
+  }
+  sendToLog("delgated = " + std::to_string(delegatedControl));
+}
+
+void delegatedButtonEvent(byte x, bool press) {
+  // This gets called on a button press or release in delegated mode. As of version 1.2 hardware,
+  // HexBoard buttons are numbered 0 to 139. There are 7 rows with 9 buttons, and there are 7
+  // command buttons. With the menu wheel on the upper left, each command button from top to bottom
+  // is the column 0 of the corresponding 9-note row, so those are buttons 0, 20, etc. -- see
+  // CMDBTN_0, etc. Otherwise, buttons are numbered left to right and top to bottom, so the leftmost
+  // button the top row is 1, the leftmost button on the second row is 10, etc. Represent each
+  // button by a channel and note. We have to use more than one channel because there are more than
+  // 128 notes. For simplicity, use the channel number for the hundreds digit and use the remainder
+  // as the note number.
+  byte channel = x / 100; // 0-based
+  byte note = x % 100;
+  // We pass channel + 1 because the library expects 1-based
+  // channels.
+  if (press) {
+    withMIDI([&](auto& M) { M.sendNoteOn(note, 127, channel + 1); });
+  } else {
+    withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel + 1); });
+  }
+/*
+  // This is noisy but useful for debugging.
+  sendToLog(
+    "Delegated: button " + std::to_string(x) +
+    " pressed = " + std::to_string(press) +
+    " note = " + std::to_string(note) +
+    " ch " + std::to_string(channel));
+*/
+}
+
+void processLedSysEx(const uint8_t* data, const unsigned int len) {
+  // Data contains the following repeated:
+  // - LED number (14 bits)
+  // - Hue (7 bits)
+  // - Saturation (7 bits)
+  // - Value (7 bits)
+  for (auto idx = 0; idx + 5 <= len; idx += 5) {
+    uint16_t led = (data[idx] << 7) + data[idx+1];
+    if (led >= LED_COUNT) {
+      sendToLog("LED SysEx: led " + std::to_string(led) + " is out of range; ignoring");
+      continue;
+    }
+    // HexBoard colors are HSV values where H (Hue) is an angle from 0 to 360 and S (Saturation) and
+    // V (Value) are values from 0 to 255. This SysEx accepts HSV where each is in the range from 0
+    // to 127, so normalize.
+    auto hue_data = data[idx+2] & 0x7F;
+    auto sat_data = data[idx+3] & 0x7F;
+    auto val_data = data[idx+4] & 0x7F;
+    float hue = static_cast<float>(hue_data) * 360.0 / 127.0;
+    byte sat = 2 * sat_data + (sat_data > 63 ? 1 : 0);
+    byte val = 2 * val_data + (val_data > 63 ? 1 : 0);
+    colorDef c = {
+      hue,
+      sat,
+      val,
+    };
+    delegatedColors[led] = getLEDcode(c);
+/*
+    // This is noisy but useful for debugging.
+    sendToLog(std::to_string(runTime) +
+              ": setting color of LED " + std::to_string(led) +
+              " to h=" + std::to_string(hue) +
+              ", s=" + std::to_string(sat) +
+              ", v=" + std::to_string(val) +
+              " -> " + std::to_string(delegatedColors[led]));
+*/
+  }
+}
+
+void processDelegatedSysEx(const uint8_t* data, const unsigned int len) {
+  if (len < 1) {
+    return;
+  }
+  auto code = data[0];
+  switch (code) {
+  case SYSEX_DELEGATED_ENTER:
+    break;
+  case SYSEX_DELEGATED_EXIT:
+    toggleDelegated();
+    break;
+  case SYSEX_LED:
+    processLedSysEx(&data[1], len-1);
+    break;
+  default:
+    sendToLog("ignoring unknown SysEx code " + std::to_string(code));
+  }
+}
+
+void processIncomingMIDIDelegated() {
+  withMIDI([&](auto& M) {
+    while (M.read()) {
+      const auto type = M.getType();
+      if (type == MIDI_NAMESPACE::SystemExclusive) {
+        const uint8_t* sysex = M.getSysExArray();
+        const unsigned int len = M.getSysExArrayLength();
+        if (len <= 3) continue;
+        if (reportDeviceIdentity(sysex, len))
+          continue;
+        // First byte should be F0 and last byte should be F7
+        if ((sysex[0] != 0xF0) || (sysex[len-1] != 0xF7)) {
+          sendToLog("invalid SysEx received; ignoring. (len=" +
+                    std::to_string(len) + ", first=" + std::to_string(sysex[0]) +
+                    ", last=" + std::to_string(sysex[len-1]) + ")");
+          continue;
+        }
+        // Accept only the dev/test manufacturer ID 0x7D until we get our own manufacturer ID.
+        if (sysex[1] != 0x7D) {
+          sendToLog("delegated incoming: ignoring SysEx vendor " + std::to_string(sysex[1]));
+          continue;
+        }
+        processDelegatedSysEx(&sysex[2], len - 3);
+      } else {
+        sendToLog("delegated incoming: " + std::to_string(type));
+      }
+    }
+  });
+}
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Tiered", TIERED_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE }, { "Diatonic", DIATONIC_COLOR_MODE } };
+SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Tiered", TIERED_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE } };
 GEMSelect selectColor(sizeof(optionByteColor) / sizeof(SelectOptionByte), optionByteColor);
 PersistentCallbackInfo callbackInfoColorMode = {
   static_cast<uint8_t>(SettingKey::ColorMode),
@@ -6381,83 +6344,93 @@ void previewPBSpeed(GEMPreviewCallbackData previewData) {
 // SETTINGS STEP 3 - Callback to sync settings variables on power-up
 // --------------------------------------------------------
 void syncSettingsToRuntime() {
-  debugMessages = settingEnabled(SettingKey::Debug);
-  rotaryInvert = settingEnabled(SettingKey::RotaryInvert);
-  autoSave = settingEnabled(SettingKey::AutoSave);
-  MPEpitchBendSemis = settingValue(SettingKey::MPEpitchBend);
-  mpeUserMode = settingValue(SettingKey::MPEMode);
+  debugMessages = (settings[static_cast<uint8_t>(SettingKey::Debug)] != 0);  // do it this way for bools...
+  rotaryInvert = (settings[static_cast<uint8_t>(SettingKey::RotaryInvert)] != 0);
+  autoSave = (settings[static_cast<uint8_t>(SettingKey::AutoSave)] != 0);
+  MPEpitchBendSemis = settings[static_cast<uint8_t>(SettingKey::MPEpitchBend)];  // ... and this way for bytes...
+  mpeUserMode = settings[static_cast<uint8_t>(SettingKey::MPEMode)];
   if (mpeUserMode > MPE_MODE_FORCE) {
     mpeUserMode = MPE_MODE_AUTO;
   }
-  extraMPE = settingEnabled(SettingKey::ExtraMPE);
-  mpeLowestChannel = settingValue(SettingKey::MPELowestChannel);
-  mpeHighestChannel = settingValue(SettingKey::MPEHighestChannel);
-  mpeLowPriorityMode = settingEnabled(SettingKey::MPELowPriority);
+  extraMPE = (settings[static_cast<uint8_t>(SettingKey::ExtraMPE)] != 0);
+  mpeLowestChannel = settings[static_cast<uint8_t>(SettingKey::MPELowestChannel)];
+  mpeHighestChannel = settings[static_cast<uint8_t>(SettingKey::MPEHighestChannel)];
+  mpeLowPriorityMode = (settings[static_cast<uint8_t>(SettingKey::MPELowPriority)] != 0);
   clampMPEChannelRange();
-  defaultMidiChannel = settingValue(SettingKey::DefaultMIDIChannel);
-  if (!isValidMidiChannel(defaultMidiChannel)) {
-    defaultMidiChannel = MIDI_CHANNEL_MIN;
+  defaultMidiChannel = settings[static_cast<uint8_t>(SettingKey::DefaultMIDIChannel)];
+  if (defaultMidiChannel < 1 || defaultMidiChannel > 16) {
+    defaultMidiChannel = 1;
   }
-  CC74value = settingValue(SettingKey::CC74Value);
-  current.tuningIndex = settingValue(SettingKey::CurrentTuning);
-  current.layoutIndex = settingValue(SettingKey::CurrentLayout);
-  current.scaleIndex = settingValue(SettingKey::CurrentScale);
-  transposeSteps = decodeBiasedSetting(SettingKey::CurrentTransposeSteps);
-  current.transpose = transposeSteps;
-  current.keyStepsFromA = decodeBiasedSetting(SettingKey::CurrentKeyStepsFromA);
-  layoutRotation = settingValue(SettingKey::LayoutRotation) % 6;
-  mirrorLeftRight = settingEnabled(SettingKey::MirrorLeftRight);
-  mirrorUpDown = settingEnabled(SettingKey::MirrorUpDown);
-  scaleLock = settingEnabled(SettingKey::ScaleLock);
+  CC74value = settings[static_cast<uint8_t>(SettingKey::CC74Value)];
+  current.tuningIndex = settings[static_cast<uint8_t>(SettingKey::CurrentTuning)];
+  current.layoutIndex = settings[static_cast<uint8_t>(SettingKey::CurrentLayout)];
+  current.scaleIndex = settings[static_cast<uint8_t>(SettingKey::CurrentScale)];
+  { // Unpacking the signed values:
+    uint8_t raw = settings[static_cast<uint8_t>(SettingKey::CurrentTransposeSteps)];  // ... and this way for signed values.
+    transposeSteps = int(raw) - 128;
+    current.transpose = transposeSteps;
+  }
+  {
+    uint8_t raw = settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)];
+    current.keyStepsFromA = int(raw) - 128;
+  }
+  layoutRotation = settings[static_cast<uint8_t>(SettingKey::LayoutRotation)] % 6;
+  mirrorLeftRight = (settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)] != 0);
+  mirrorUpDown = (settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)] != 0);
+  scaleLock = (settings[static_cast<uint8_t>(SettingKey::ScaleLock)] != 0);
   perceptual = true;
-  paletteBeginsAtKeyCenter = settingEnabled(SettingKey::PaletteCenterOnKey);
-  wheelMode = settingEnabled(SettingKey::WheelAltMode);
-  pbSticky = settingEnabled(SettingKey::PBSticky);
-  modSticky = settingEnabled(SettingKey::ModSticky);
+  paletteBeginsAtKeyCenter = (settings[static_cast<uint8_t>(SettingKey::PaletteCenterOnKey)] != 0);
+  wheelMode = settings[static_cast<uint8_t>(SettingKey::WheelAltMode)] != 0;
+  pbSticky = settings[static_cast<uint8_t>(SettingKey::PBSticky)] != 0;
+  modSticky = settings[static_cast<uint8_t>(SettingKey::ModSticky)] != 0;
 
   {
-    uint8_t exponent = settingValue(SettingKey::PBWheelSpeed);
+    uint8_t exponent = settings[static_cast<uint8_t>(SettingKey::PBWheelSpeed)];
     if (exponent < 7) exponent = 7;
     if (exponent > 14) exponent = 14;
     pbWheelSpeed = 1 << exponent;
   }
-  modWheelSpeed = settingValue(SettingKey::ModWheelSpeed);
+  modWheelSpeed = settings[static_cast<uint8_t>(SettingKey::ModWheelSpeed)];
   if (modWheelSpeed <= 0) modWheelSpeed = 1;
-  velWheelSpeed = settingValue(SettingKey::VelWheelSpeed);
+  velWheelSpeed = settings[static_cast<uint8_t>(SettingKey::VelWheelSpeed)];
   if (velWheelSpeed <= 0) velWheelSpeed = 1;
 
-  playbackMode = settingValue(SettingKey::PlaybackMode);
-  currWave = settingValue(SettingKey::Waveform);
-  audioD = settingValue(SettingKey::AudioDestination);
-  arpeggiatorDivision = settingValue(SettingKey::ArpeggiatorDivision);
+  playbackMode = settings[static_cast<uint8_t>(SettingKey::PlaybackMode)];
+  currWave = settings[static_cast<uint8_t>(SettingKey::Waveform)];
+  audioD = settings[static_cast<uint8_t>(SettingKey::AudioDestination)];
+  arpeggiatorDivision = settings[static_cast<uint8_t>(SettingKey::ArpeggiatorDivision)];
   if (arpeggiatorDivision == 0) {
     arpeggiatorDivision = 1;
   }
-  synthBPM = settingValue(SettingKey::SynthBPM);
+  synthBPM = settings[static_cast<uint8_t>(SettingKey::SynthBPM)];
   if (synthBPM == 0) {
     synthBPM = 1;
   }
-  colorMode = settingValue(SettingKey::ColorMode);
-  ledRestBrightness = settingValue(SettingKey::RestLedBrightness);
-  ledDimBrightness = settingValue(SettingKey::DimLedBrightness);
-  globalBrightness = settingValue(SettingKey::GlobalBrightness);
-  animationType = settingValue(SettingKey::AnimationType);
-  programChange = settingValue(SettingKey::ProgramChange);
+  colorMode = settings[static_cast<uint8_t>(SettingKey::ColorMode)];
+  ledRestBrightness = settings[static_cast<uint8_t>(SettingKey::RestLedBrightness)];
+  ledDimBrightness = settings[static_cast<uint8_t>(SettingKey::DimLedBrightness)];
+  globalBrightness = settings[static_cast<uint8_t>(SettingKey::GlobalBrightness)];
+  animationType = settings[static_cast<uint8_t>(SettingKey::AnimationType)];
+  programChange = settings[static_cast<uint8_t>(SettingKey::ProgramChange)];
 
-  useJustIntonationBPM = settingEnabled(SettingKey::JustIntonationBPMSync);
-  justIntonationBPM = settingValue(SettingKey::BeatBPM);
-  justIntonationBPM_Multiplier = settingValue(SettingKey::BPMMultiplier);
-  useDynamicJustIntonation = settingEnabled(SettingKey::DynamicJI);
-  envelopeAttackIndex = settingValue(SettingKey::EnvelopeAttackIndex);
-  envelopeDecayIndex = settingValue(SettingKey::EnvelopeDecayIndex);
-  envelopeSustainLevel = settingValue(SettingKey::EnvelopeSustainLevel);
-  envelopeReleaseIndex = settingValue(SettingKey::EnvelopeReleaseIndex);
+  useJustIntonationBPM = (settings[static_cast<uint8_t>(SettingKey::JustIntonationBPMSync)] !=0);
+  justIntonationBPM = settings[static_cast<uint8_t>(SettingKey::BeatBPM)];
+  justIntonationBPM_Multiplier = settings[static_cast<uint8_t>(SettingKey::BPMMultiplier)];
+  useDynamicJustIntonation = (settings[static_cast<uint8_t>(SettingKey::DynamicJI)] !=0);
+  envelopeAttackIndex = settings[static_cast<uint8_t>(SettingKey::EnvelopeAttackIndex)];
+  envelopeDecayIndex = settings[static_cast<uint8_t>(SettingKey::EnvelopeDecayIndex)];
+  envelopeSustainLevel = settings[static_cast<uint8_t>(SettingKey::EnvelopeSustainLevel)];
+  envelopeReleaseIndex = settings[static_cast<uint8_t>(SettingKey::EnvelopeReleaseIndex)];
   updateEnvelopeParamsFromSettings();
   updateArpeggiatorTiming();
 
   // Now *apply* them to the engine/UI:
-  refreshMenuChoicesForCurrentTuning();
-  rebuildRuntimeStateFromCurrentSelection();
+  showOnlyValidLayoutChoices();   // for tuning/layout
+  showOnlyValidScaleChoices();
+  showOnlyValidKeyChoices();
+  updateLayoutAndRotate();
+  refreshMidiRouting();
+  resetSynthFreqs();
   if (programChange > 0) {
     sendProgramChange();
   }
@@ -6468,23 +6441,6 @@ void syncSettingsToRuntime() {
 void menuHome() {
   menu.setMenuPageCurrent(menuPageMain);
   menu.drawMenu();
-}
-
-void refreshMenuChoicesForCurrentTuning() {
-  showOnlyValidLayoutChoices();
-  showOnlyValidScaleChoices();
-  showOnlyValidKeyChoices();
-}
-
-void rebuildRuntimeStateFromCurrentSelection() {
-  updateLayoutAndRotate();
-  refreshMidiRouting();
-  resetSynthFreqs();
-}
-
-void addPreviewMenuItem(GEMPage& page, GEMItem& item, void (*previewCallback)(GEMPreviewCallbackData)) {
-  page.addMenuItem(item);
-  item.setPreviewCallback(previewCallback);
 }
 
 void rebootToBootloader() {
@@ -6630,8 +6586,12 @@ void changeTuning(GEMCallbackData callbackData) {
     settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
     markSettingsDirty();                                  // auto‑save (after debounce)
     // 3) Apply all values
-    refreshMenuChoicesForCurrentTuning();                 // change list of choices in GEM Menu
-    rebuildRuntimeStateFromCurrentSelection();
+    showOnlyValidLayoutChoices();                         // change list of choices in GEM Menu
+    showOnlyValidScaleChoices();                          // change list of choices in GEM Menu
+    showOnlyValidKeyChoices();                            // change list of choices in GEM Menu
+    updateLayoutAndRotate();                              // apply changes above
+    refreshMidiRouting();                                 // clear out MIDI queue and rebuild mapping
+    resetSynthFreqs();
   }
   menuHome();
 }
@@ -6708,53 +6668,58 @@ void createProfileMenuItems() {
   }
 }
 
-void setupTuningMenuPage() {
+void setupMenu() {
+  menu.setSplashDelay(0);
+  menu.init();
+  menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
+  /*
+      addMenuItem procedure adds that GEM object to the given page.
+      The menu items appear in the order they are added.
+      To change the order of the menu, change the order in the code below.
+    */
   menuPageMain.addMenuItem(menuGotoTuning);
   createTuningMenuItems();
   menuPageTuning.addMenuItem(menuItemToggleDynamicJI);
   menuPageTuning.addMenuItem(menuItemToggleJI_BPM);
   menuPageTuning.addMenuItem(menuItemSetJI_BPM);
   menuPageTuning.addMenuItem(menuItemSetJI_BPM_Multiplier);
-}
-
-void setupLayoutMenuPage() {
   menuPageMain.addMenuItem(menuGotoLayout);
   createLayoutMenuItems();
   menuPageLayout.addMenuItem(mirrorLeftRightGEMItem);
   menuPageLayout.addMenuItem(mirrorUpDownGEMItem);
   menuPageLayout.addMenuItem(menuItemSelectLayoutRotation);
-}
-
-void setupScalesMenuPage() {
   menuPageMain.addMenuItem(menuGotoScales);
   createKeyMenuItems();
   menuPageScales.addMenuItem(menuItemScaleLock);
   createScaleMenuItems();
-}
-
-void setupColorsMenuPage() {
   menuPageMain.addMenuItem(menuGotoColors);
-  addPreviewMenuItem(menuPageColors, menuItemColor, previewColor);
-  addPreviewMenuItem(menuPageColors, menuItemBright, previewBright);
-  addPreviewMenuItem(menuPageColors, menuItemAnimate, previewAnimate);
-  addPreviewMenuItem(menuPageColors, menuItemRestLedLevel, previewRestLedLevel);
-  addPreviewMenuItem(menuPageColors, menuItemDimLedLevel, previewDimLedLevel);
-}
-
-void setupSynthMenuPage() {
+  menuPageColors.addMenuItem(menuItemColor);
+  menuItemColor.setPreviewCallback(previewColor);
+  menuPageColors.addMenuItem(menuItemBright);
+  menuItemBright.setPreviewCallback(previewBright);
+  menuPageColors.addMenuItem(menuItemAnimate);
+  menuItemAnimate.setPreviewCallback(previewAnimate);
+  menuPageColors.addMenuItem(menuItemRestLedLevel);
+  menuItemRestLedLevel.setPreviewCallback(previewRestLedLevel);
+  menuPageColors.addMenuItem(menuItemDimLedLevel);
+  menuItemDimLedLevel.setPreviewCallback(previewDimLedLevel);
   menuPageMain.addMenuItem(menuGotoSynth);
   menuPageSynth.addMenuItem(menuItemPlayback);
   // menuItemAudioD added here for hardware V1.2
-  addPreviewMenuItem(menuPageSynth, menuItemWaveform, previewWaveform);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeAttack, previewEnvelopeAttack);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeDecay, previewEnvelopeDecay);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeSustain, previewEnvelopeSustain);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeRelease, previewEnvelopeRelease);
-  addPreviewMenuItem(menuPageSynth, menuItemArpSpeed, previewArpSpeed);
-  addPreviewMenuItem(menuPageSynth, menuItemSynthBPM, previewSynthBPM);
-}
-
-void setupMidiMenuPage() {
+  menuPageSynth.addMenuItem(menuItemWaveform);
+  menuItemWaveform.setPreviewCallback(previewWaveform);
+  menuPageSynth.addMenuItem(menuItemEnvelopeAttack);
+  menuItemEnvelopeAttack.setPreviewCallback(previewEnvelopeAttack);
+  menuPageSynth.addMenuItem(menuItemEnvelopeDecay);
+  menuItemEnvelopeDecay.setPreviewCallback(previewEnvelopeDecay);
+  menuPageSynth.addMenuItem(menuItemEnvelopeSustain);
+  menuItemEnvelopeSustain.setPreviewCallback(previewEnvelopeSustain);
+  menuPageSynth.addMenuItem(menuItemEnvelopeRelease);
+  menuItemEnvelopeRelease.setPreviewCallback(previewEnvelopeRelease);
+  menuPageSynth.addMenuItem(menuItemArpSpeed);
+  menuItemArpSpeed.setPreviewCallback(previewArpSpeed);
+  menuPageSynth.addMenuItem(menuItemSynthBPM);
+  menuItemSynthBPM.setPreviewCallback(previewSynthBPM);
   menuPageMain.addMenuItem(menuGotoMIDI);
   menuPageMIDI.addMenuItem(menuItemSelectMIDIChannel);
   menuPageMIDI.addMenuItem(menuItemSelectMPEMode);
@@ -6766,26 +6731,23 @@ void setupMidiMenuPage() {
   menuPageMIDI.addMenuItem(menuItemSelectCC74value);
   menuPageMIDI.addMenuItem(menuItemRolandMT32);
   menuPageMIDI.addMenuItem(menuItemGeneralMidi);
-}
-
-void setupControlMenuPage() {
   menuPageMain.addMenuItem(menuGotoControl);
-  addPreviewMenuItem(menuPageControl, menuItemVelSpeed, previewVelSpeed);
-  addPreviewMenuItem(menuPageControl, menuItemPBSpeed, previewPBSpeed);
-  addPreviewMenuItem(menuPageControl, menuItemModSpeed, previewModSpeed);
-  addPreviewMenuItem(menuPageControl, menuItemPBBehave, previewPBBehave);
-  addPreviewMenuItem(menuPageControl, menuItemModBehave, previewModBehave);
-  addPreviewMenuItem(menuPageMain, menuItemTransposeSteps, previewTranspose);
-}
-
-void setupProfileMenuPages() {
+  menuPageControl.addMenuItem(menuItemVelSpeed);
+  menuItemVelSpeed.setPreviewCallback(previewVelSpeed);
+  menuPageControl.addMenuItem(menuItemPBSpeed);
+  menuItemPBSpeed.setPreviewCallback(previewPBSpeed);
+  menuPageControl.addMenuItem(menuItemModSpeed);
+  menuItemModSpeed.setPreviewCallback(previewModSpeed);
+  menuPageControl.addMenuItem(menuItemPBBehave);
+  menuItemPBBehave.setPreviewCallback(previewPBBehave);
+  menuPageControl.addMenuItem(menuItemModBehave);
+  menuItemModBehave.setPreviewCallback(previewModBehave);
+  menuPageMain.addMenuItem(menuItemTransposeSteps);
+  menuItemTransposeSteps.setPreviewCallback(previewTranspose);
   menuPageMain.addMenuItem(menuGotoSave);
   menuPageSave.addMenuItem(menuItemAutoSave);
   menuPageMain.addMenuItem(menuGotoLoad);
   createProfileMenuItems();
-}
-
-void setupAdvancedMenuPage() {
   menuPageMain.addMenuItem(menuGotoAdvanced);
   menuPageAdvanced.addMenuItem(menuItemVersion);
   menuPageAdvanced.addMenuItem(menuItemHardware);
@@ -6794,28 +6756,8 @@ void setupAdvancedMenuPage() {
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
+  menuPageAdvanced.addMenuItem(menuItemDelegated);
   menuPageAdvanced.addMenuItem(menuItemDebug);
-}
-
-void setupMenu() {
-  initTransposeOptions();
-  menu.setSplashDelay(0);
-  menu.init();
-  menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
-  /*
-      addMenuItem procedure adds that GEM object to the given page.
-      The menu items appear in the order they are added.
-      To change the order of the menu, change the order in the code below.
-    */
-  setupTuningMenuPage();
-  setupLayoutMenuPage();
-  setupScalesMenuPage();
-  setupColorsMenuPage();
-  setupSynthMenuPage();
-  setupMidiMenuPage();
-  setupControlMenuPage();
-  setupProfileMenuPages();
-  setupAdvancedMenuPage();
 }
 void setupGFX() {
   u8g2.begin();                      // Menu and graphics setup
@@ -6834,7 +6776,10 @@ void screenSaver() {
     if (!screenSaverOn) {
       screenSaverOn = 1;
       u8g2.setContrast(CONTRAST_SCREENSAVER);
-      u8g2.clear();
+      //if(globalBrightness == BRIGHT_OFF)
+      {
+        u8g2.clear();
+      }
     }
   }
 }
@@ -6871,22 +6816,37 @@ void screenSaver() {
       5, 6, 7  CW  turn state 1, 2, 3
       8, 16    Completed turn CCW, CW
   */
-constexpr byte ROT_PIN_A = 20;
-constexpr byte ROT_PIN_B = 21;
-constexpr byte ROT_PIN_C = 24;
+#define ROT_PIN_A 20
+#define ROT_PIN_B 21
+#define ROT_PIN_C 24
 byte rotaryState = 0;
 const byte rotaryStateTable[8][4] = {
   { 0, 5, 1, 0 }, { 2, 0, 1, 0 }, { 2, 3, 1, 0 }, { 2, 3, 0, 8 }, { 0, 5, 1, 0 }, { 6, 5, 0, 0 }, { 6, 5, 7, 0 }, { 6, 0, 7, 16 }
 };
 byte storeRotaryTurn = 0;
-bool rotaryButtonPressed = false;
+bool rotaryClicked = HIGH;
 constexpr uint64_t ROTARY_PANIC_HOLD_MICROS = 2000000ULL;  // 2 seconds
 uint64_t rotaryPressStart = 0;
 bool rotaryPanicLatched = false;
 bool rotaryPanicSuppressClick = false;
 
 void readHexes() {
-
+  // Simplified button reading to reduce time it takes to read. Stil uses slower Arduino digitalRead and digitalWrite.
+  /* for (byte r = 0; r < ROWCOUNT; r++) {      // Iterate through each of the row pins on the multiplexing chip.
+    for (byte d = 0; d < 4; d++) {
+      digitalWrite(mPin[d], (r >> d) & 1);
+    }
+    busy_wait_us_32(12);
+    for (byte c = 0; c < COLCOUNT; c++) {    // Now iterate through each of the column pins that are connected to the current row pin.
+      byte p = cPin[c];                      // Hold the currently selected column pin in a variable.
+      byte i = c + (r * COLCOUNT);
+      bool didYouPressHex = (digitalRead(p) == LOW);  // hex is pressed if it returns LOW. else not pressed
+      h[i].interpBtnPress(didYouPressHex);
+      if (h[i].btnState == BTN_STATE_NEWPRESS) {
+        h[i].timePressed = runTime;          // log the time
+      }
+    }
+  } */
   // Optimized button reading using SIO registers - much faster!
   for (byte r = 0; r < ROWCOUNT; r++) {       // Iterate through each row via the multiplexer.
     sio_hw->gpio_clr = multiplexerMask;       // Set all multiplexer pins to LOW.
@@ -6905,7 +6865,25 @@ void readHexes() {
       }
     }
   }
-
+  /* Old method.
+  for (byte c = 0; c < COLCOUNT; c++) {    // Iterate through each of the column pins.
+    byte p = cPin[c];                      // Hold the currently selected column pin in a variable.
+    pinMode(p, INPUT_PULLUP);              // Set that column pin to INPUT_PULLUP mode (+3.3V / HIGH).
+    delayMicroseconds(0);                  // delay to energize column and stabilize (may need adjustment)
+    for (byte r = 0; r < ROWCOUNT; r++) {  // Then iterate through each of the row pins on the multiplexing chip for the selected column.
+      for (byte d = 0; d < 4; d++) {
+        digitalWrite(mPin[d], (r >> d) & 1);  // Selected multiplexer channel is pulled to ground.
+      }
+      byte i = c + (r * COLCOUNT);
+      delayMicroseconds(14);                          // Delay to allow signal to settle and improve reliability (found this number by experimentation)
+      bool didYouPressHex = (digitalRead(p) == LOW);  // hex is pressed if it returns LOW. else not pressed
+      h[i].interpBtnPress(didYouPressHex);
+      if (h[i].btnState == BTN_STATE_NEWPRESS) {
+        h[i].timePressed = runTime;  // log the time
+      }
+    }
+    pinMode(p, INPUT);  // Set the selected column pin back to INPUT mode (0V / LOW).
+  }*/
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
@@ -6965,21 +6943,20 @@ void setupRotary() {
   pinMode(ROT_PIN_C, INPUT_PULLUP);
 }
 void readKnob() {
-  byte encoderPhase = (digitalRead(ROT_PIN_B) << 1) | digitalRead(ROT_PIN_A);
-  rotaryState = rotaryStateTable[rotaryState & 7][encoderPhase];
+  rotaryState = rotaryStateTable[rotaryState & 7][(digitalRead(ROT_PIN_B) << 1) | digitalRead(ROT_PIN_A)];
   if (rotaryState & 24) {
     storeRotaryTurn = rotaryState;
   }
 }
 void dealWithRotary() {
-  bool buttonPressed = (digitalRead(ROT_PIN_C) == LOW);
-  bool justPressed = (!rotaryButtonPressed && buttonPressed);
-  bool justReleased = (rotaryButtonPressed && !buttonPressed);
+  bool temp = digitalRead(ROT_PIN_C);
+  bool justPressed = (rotaryClicked == HIGH && temp == LOW);
+  bool justReleased = (rotaryClicked == LOW && temp == HIGH);
 
   if (justPressed) {
     rotaryPressStart = runTime;
     rotaryPanicLatched = false;
-  } else if (buttonPressed && (rotaryPressStart != 0) && (!rotaryPanicLatched)) {
+  } else if ((temp == LOW) && (rotaryPressStart != 0) && (!rotaryPanicLatched)) {
     if ((runTime - rotaryPressStart) >= ROTARY_PANIC_HOLD_MICROS) {
       panicStopOutput();
       rotaryPanicLatched = true;
@@ -6987,31 +6964,36 @@ void dealWithRotary() {
     }
   }
 
+  bool suppressClick = rotaryPanicSuppressClick;
+
   if (menu.readyForKey()) {
-    if (justReleased && !rotaryPanicSuppressClick) {
+    if (justReleased) {
+      if (!suppressClick) {
       menu.registerKeyPress(GEM_KEY_OK);
       screenTime = 0;
     }
+    }
     if (storeRotaryTurn != 0) {
-      bool turnIsClockwise = (storeRotaryTurn == 8);
-      menu.registerKeyPress(rotaryInvert
-                              ? (turnIsClockwise ? GEM_KEY_DOWN : GEM_KEY_UP)
-                              : (turnIsClockwise ? GEM_KEY_UP : GEM_KEY_DOWN));
+      if (rotaryInvert == true) {
+        menu.registerKeyPress((storeRotaryTurn == 8) ? GEM_KEY_DOWN : GEM_KEY_UP);
+      } else {
+        menu.registerKeyPress((storeRotaryTurn == 8) ? GEM_KEY_UP : GEM_KEY_DOWN);
+      }
       storeRotaryTurn = 0;
       screenTime = 0;
     }
   }
 
-  if (justReleased || !buttonPressed) {
+  if (justReleased || temp == HIGH) {
     rotaryPressStart = 0;
     rotaryPanicLatched = false;
   }
 
-  if (rotaryPanicSuppressClick && !buttonPressed && !rotaryButtonPressed) {
+  if (rotaryPanicSuppressClick && temp == HIGH && rotaryClicked == HIGH) {
     rotaryPanicSuppressClick = false;
   }
 
-  rotaryButtonPressed = buttonPressed;
+  rotaryClicked = temp;
 }
 
 void setupHardware() {
@@ -7049,15 +7031,6 @@ void setup() {
 #endif
   irq_set_enabled(ALARM_IRQ, false);
   setupMIDI();
-  // Give the USB stack time to complete enumeration before any flash
-  // operations (which disable interrupts and starve the USB IRQ handler).
-  // Timeout after 2 s so the board still boots when no USB host is present.
-  {
-    unsigned long usbWaitStart = millis();
-    while (!TinyUSBDevice.mounted() && (millis() - usbWaitStart < 2000)) {
-      delay(1);
-    }
-  }
   setupFileSystem();
   Wire.setSDA(SDAPIN);
   Wire.setSCL(SCLPIN);
@@ -7085,7 +7058,7 @@ void loop() {        // run on first core
   animateLEDs();     // deal with animations
   lightUpLEDs();     // refresh LEDs
   dealWithRotary();  // deal with menu
-  checkAndAutoSave();  // save settings
+  checkAndAutoSave();// save settings
 }
 void setup1() {  // set up on second core
   setupSynth(PIEZO_PIN, PIEZO_SLICE);

@@ -63,46 +63,23 @@
 // @init
 #include <Arduino.h>  // this is necessary to talk to the Hexboard!
 #include <Wire.h>     // this is necessary to connect with I2C devices (such as the oled display)
-constexpr byte SDAPIN = 16;
-constexpr byte SCLPIN = 17;
+#define SDAPIN 16
+#define SCLPIN 17
 #include <GEM_u8g2.h>  // library of code to create menu objects on the B&W display
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdio>
 #include <cstring>
-#if defined(ARDUINO_ARCH_RP2040) //This is to enable RAM functions on the RP2040 specifically in case we port this to other architectures later
-#include <hardware/flash.h>     // to access the __not_in_flash_func
-#define RAM_FUNC(name) __not_in_flash_func(name) // macro to keep code clean - use RAM_FUNC(yourFunctionName) to have it run from RAM
-#else
-#define RAM_FUNC(name) name // do nothing on other architectures
-#endif
-#include <cmath>
 #include <numeric>     // need that GCD function, son
 #include <string>      // standard C++ library string classes (use "std::string" to invoke it); these do not cause the memory corruption that Arduino::String does.
-#include <limits>
-#include <queue>       // standard C++ library construction for various FIFO pools (use "std::queue" to invoke it)
+#include <queue>       // standard C++ library construction to store open channels in microtonal mode (use "std::queue" to invoke it)
 #include <vector>
-#include "pico/time.h" // Allows me to set delays that don't disable interrupts
-#include "hardware/structs/sio.h" // For fast GPIO read/write
-
-enum class EnvelopeCommand : uint8_t;
-enum class SettingKey : uint8_t;
-
-// Software-detected hardware revision.
-constexpr byte HARDWARE_UNKNOWN = 0;
-constexpr byte HARDWARE_V1_1 = 1;
-constexpr byte HARDWARE_V1_2 = 2;
-byte Hardware_Version = HARDWARE_UNKNOWN;
-constexpr byte MIDI_CHANNEL_MIN = 1;
-constexpr byte MIDI_CHANNEL_MAX = 16;
-constexpr byte MIDI_CHANNEL_COUNT = MIDI_CHANNEL_MAX - MIDI_CHANNEL_MIN + 1;
-constexpr byte MPE_CHANNEL_MIN = 2;
-constexpr int32_t MIDI_NOTES_PER_CHANNEL = 128;
-
-bool isValidMidiChannel(byte channel) {
-  return (channel >= MIDI_CHANNEL_MIN) && (channel <= MIDI_CHANNEL_MAX);
-}
+                       // Software-detected hardware revision
+#define HARDWARE_UNKNOWN 0
+#define HARDWARE_V1_1 1
+#define HARDWARE_V1_2 2
+byte Hardware_Version = 0;  // 0 = unknown, 1 = v1.1 board. 2 = v1.2 board.
 
 // @helpers
 //might be redundant
@@ -110,16 +87,6 @@ std::vector<byte> pressedKeyIDs = {};
 std::array<std::vector<uint8_t>, 128> midiNoteToHexIndices = {};
 
 void updateEnvelopeParamsFromSettings();
-void updateArpeggiatorTiming();
-void refreshMidiRouting();
-void save_settings();
-void copyCurrentSettingsToProfile(uint8_t profileIndex);
-void menuHome();
-void showOnlyValidLayoutChoices();
-void showOnlyValidScaleChoices();
-void showOnlyValidKeyChoices();
-void updateLayoutAndRotate();
-void setupHardware();
 /*
     C++ returns a negative value for
     negative N % D. This function
@@ -145,85 +112,16 @@ byte byteLerp(byte xOne, byte xTwo, float yOne, float yTwo, float y) {
   return temp;
 }
 
-/*
-    A HexBoard note can travel outside the 0-127 MIDI
-    note range. When that happens, we keep the note
-    value within one MIDI channel and move the overflow
-    into a channel offset instead.
-  */
-void splitExtendedMidiNote(int32_t midiIndex, int32_t& channelOffsetOut, byte& noteOut) {
-  channelOffsetOut = midiIndex / MIDI_NOTES_PER_CHANNEL;
-  int32_t remainder = midiIndex % MIDI_NOTES_PER_CHANNEL;
-  if (remainder < 0) {
-    remainder += MIDI_NOTES_PER_CHANNEL;
-    channelOffsetOut -= 1;
-  }
-  noteOut = static_cast<byte>(remainder);
-}
-
-byte wrapMidiChannel(byte baseChannel, int32_t offset) {
-  if (!isValidMidiChannel(baseChannel)) {
-    baseChannel = MIDI_CHANNEL_MIN;
-  }
-  int32_t index = static_cast<int32_t>(baseChannel - MIDI_CHANNEL_MIN) + offset;
-  index %= MIDI_CHANNEL_COUNT;
-  if (index < 0) {
-    index += MIDI_CHANNEL_COUNT;
-  }
-  return static_cast<byte>(index + MIDI_CHANNEL_MIN);
-}
-
-void mapExtendedMidiNote(int32_t midiIndex, byte baseChannel, byte& noteOut, byte& channelOut) {
-  int32_t channelOffset = 0;
-  splitExtendedMidiNote(midiIndex, channelOffset, noteOut);
-  channelOut = wrapMidiChannel(baseChannel, channelOffset);
-}
-
-int32_t midiChannelOffset(int32_t midiIndex) {
-  int32_t channelOffset = 0;
-  byte unusedNote = 0;
-  splitExtendedMidiNote(midiIndex, channelOffset, unusedNote);
-  return channelOffset;
-}
-
 // @defaults
 /*
     This section sets default values
     for user-editable options
   */
-constexpr byte MPE_MODE_AUTO = 0;
-constexpr byte MPE_MODE_DISABLE = 1;
-constexpr byte MPE_MODE_FORCE = 2;
-
-byte mpeUserMode = MPE_MODE_AUTO;
+bool forceEnableMPE = false;
 bool extraMPE = false;
-bool standardMidiMicrotonalActive = false;
-byte standardMidiBaseChannel = 1;
-byte mpeLowestChannel = 2;
-byte mpeHighestChannel = 16;
-bool mpeLowPriorityMode = false;
-byte ledRestBrightness = 255;
-byte ledDimBrightness = 255;
-
-void clampMPEChannelRange() {
-  mpeLowestChannel = std::clamp(mpeLowestChannel, MPE_CHANNEL_MIN, MIDI_CHANNEL_MAX);
-  mpeHighestChannel = std::clamp(mpeHighestChannel, MPE_CHANNEL_MIN, MIDI_CHANNEL_MAX);
-  if (mpeLowestChannel > mpeHighestChannel) {
-    mpeHighestChannel = mpeLowestChannel;
-  }
-}
-
-byte applyLEDLevel(byte value, byte level) {
-  uint16_t scaled = static_cast<uint16_t>(value) * static_cast<uint16_t>(level);
-  return static_cast<byte>((scaled + 127) / 255);
-}
-
 byte CC74value = 0;
 byte defaultMidiChannel = 1;
 byte layoutRotation = 0;
-
-byte arpeggiatorDivision = 32;  // denominator of whole-note duration (1/32 by default)
-byte synthBPM = 120;
 
 //  Keyboard layout swapping
 bool mirrorLeftRight = false;
@@ -236,9 +134,9 @@ bool useJustIntonationBPM = false;
 bool useDynamicJustIntonation = false;
 
 int transposeSteps = 0;
-bool scaleLock = false;
-bool perceptual = true;
-bool paletteBeginsAtKeyCenter = true;
+bool scaleLock = 0;
+bool perceptual = 1;
+bool paletteBeginsAtKeyCenter = 1;
 byte animationFPS = 32;  // actually frames per 2^20 microseconds. close enough to 30fps
 
 byte wheelMode = 0;  // standard vs. fine tune mode
@@ -249,60 +147,60 @@ int modWheelSpeed = 8;
 int pbWheelSpeed = 1024;
 int velWheelSpeed = 8;
 
+uint8_t masterGain = 127;  // unity default master volume for synth engine
+
 uint8_t envelopeAttackIndex = 2;
 uint8_t envelopeDecayIndex = 3;
 uint8_t envelopeSustainLevel = 127;
 uint8_t envelopeReleaseIndex = 3;
 
-constexpr byte SYNTH_OFF = 0;
-constexpr byte SYNTH_MONO = 1;
-constexpr byte SYNTH_ARPEGGIO = 2;
-constexpr byte SYNTH_POLY = 3;
+#define SYNTH_OFF 0
+#define SYNTH_MONO 1
+#define SYNTH_ARPEGGIO 2
+#define SYNTH_POLY 3
 byte playbackMode = SYNTH_OFF;
 
-constexpr byte WAVEFORM_SINE = 0;
-constexpr byte WAVEFORM_STRINGS = 1;
-constexpr byte WAVEFORM_CLARINET = 2;
-constexpr byte WAVEFORM_HYBRID = 7;
-constexpr byte WAVEFORM_SQUARE = 8;
-constexpr byte WAVEFORM_SAW = 9;
-constexpr byte WAVEFORM_TRIANGLE = 10;
+#define WAVEFORM_SINE 0
+#define WAVEFORM_STRINGS 1
+#define WAVEFORM_CLARINET 2
+#define WAVEFORM_HYBRID 7
+#define WAVEFORM_SQUARE 8
+#define WAVEFORM_SAW 9
+#define WAVEFORM_TRIANGLE 10
 byte currWave = WAVEFORM_HYBRID;
 
-constexpr byte RAINBOW_MODE = 0;
-constexpr byte TIERED_COLOR_MODE = 1;
-constexpr byte ALTERNATE_COLOR_MODE = 2;
-constexpr byte RAINBOW_OF_FIFTHS_MODE = 3;
-constexpr byte PIANO_ALT_COLOR_MODE = 4;
-constexpr byte PIANO_COLOR_MODE = 5;
-constexpr byte PIANO_INCANDESCENT_COLOR_MODE = 6;
-constexpr byte DIATONIC_COLOR_MODE = 7;
+#define RAINBOW_MODE 0
+#define TIERED_COLOR_MODE 1
+#define ALTERNATE_COLOR_MODE 2
+#define RAINBOW_OF_FIFTHS_MODE 3
+#define PIANO_ALT_COLOR_MODE 4
+#define PIANO_COLOR_MODE 5
+#define PIANO_INCANDESCENT_COLOR_MODE 6
 byte colorMode = RAINBOW_MODE;
 
-constexpr byte ANIMATE_BUTTON = 0;
-constexpr byte ANIMATE_STAR = 1;
-constexpr byte ANIMATE_SPLASH = 2;
-constexpr byte ANIMATE_ORBIT = 3;
-constexpr byte ANIMATE_OCTAVE = 4;
-constexpr byte ANIMATE_BY_NOTE = 5;
-constexpr byte ANIMATE_BEAMS = 6;
-constexpr byte ANIMATE_SPLASH_REVERSE = 7;
-constexpr byte ANIMATE_STAR_REVERSE = 8;
-constexpr byte ANIMATE_MIDI_IN = 9;
-constexpr byte ANIMATE_NONE = 10;
-byte animationType = ANIMATE_BUTTON;
+#define ANIMATE_NONE 0
+#define ANIMATE_STAR 1
+#define ANIMATE_SPLASH 2
+#define ANIMATE_ORBIT 3
+#define ANIMATE_OCTAVE 4
+#define ANIMATE_BY_NOTE 5
+#define ANIMATE_BEAMS 6
+#define ANIMATE_SPLASH_REVERSE 7
+#define ANIMATE_STAR_REVERSE 8
+#define ANIMATE_MIDI_IN 9
+byte animationType = ANIMATE_NONE;
 
-constexpr byte BRIGHT_MAX = 255;
-constexpr byte BRIGHT_HIGH = 210;
-constexpr byte BRIGHT_MID = 180;
-constexpr byte BRIGHT_LOW = 150;
-constexpr byte BRIGHT_DIM = 110;
-constexpr byte BRIGHT_DIMMER = 70;
-constexpr byte BRIGHT_DARK = 50;     // BRIGHT_DIMMEST
-constexpr byte BRIGHT_DARKER = 34;   // Lowest brightness before backlight shuts down
-constexpr byte BRIGHT_FAINT = 33;    // Highest brightness before backlight turns on
-constexpr byte BRIGHT_FAINTER = 24;  // Lowest brightness before any highlighted button is lit in all color modes
-constexpr byte BRIGHT_OFF = 0;
+#define BRIGHT_MAX 255
+#define BRIGHT_HIGH 210
+#define BRIGHT_MID 180
+#define BRIGHT_LOW 150
+#define BRIGHT_DIM 110
+#define BRIGHT_DIMMER 70
+#define BRIGHT_DARK 50     // BRIGHT_DIMMEST
+#define BRIGHT_DARKER 34   // Lowest brightness before backlight shuts down
+#define BRIGHT_FAINT 33    // Highest brightness before backlight turns on
+#define BRIGHT_FAINTER 24  // Lowest brightness before any highlighted button is lit in all color modes
+#define BRIGHT_OFF 0
 byte globalBrightness = BRIGHT_DIM;
 
 // @microtonal
@@ -337,11 +235,11 @@ byte globalBrightness = BRIGHT_DIM;
 #define TUNING_72EDO_ZETA 15
 #define TUNING_80EDO 16
 #define TUNING_87EDO 17
-#define TUNING_BP    18
+#define TUNING_BP 18
 #define TUNING_ALPHA 19
-#define TUNING_BETA  20
+#define TUNING_BETA 20
 #define TUNING_GAMMA 21
-#define TUNINGCOUNT  22
+#define TUNINGCOUNT 22
 /*
     Note names and palette arrays are allocated in memory
     at runtime. Their usable size is based on the number
@@ -372,11 +270,11 @@ byte globalBrightness = BRIGHT_DIM;
     When sending smoothly-varying pitch bend
     or modulation messages over MIDI, the
     code uses a cool-down period of about
-    1/60 of a second in between messages, enough
+    1/30 of a second in between messages, enough
     for changes to sound continuous without
     overloading the MIDI message queue.
   */
-#define CC_MSG_COOLDOWN_MICROSECONDS 16667
+#define CC_MSG_COOLDOWN_MICROSECONDS 32768
 /*
     This class provides the seed values
     needed to map buttons to note frequencies
@@ -443,21 +341,21 @@ EnvelopeParams envelopeParams;
   */
 tuningDef tuningOptions[] = {
   { "12 EDO (Normal)", 12, 100.000, { { "C", -9 }, { "C#", -8 }, { "D", -7 }, { "Eb", -6 }, { "E", -5 }, { "F", -4 }, { "F#", -3 }, { "G", -2 }, { "G#", -1 }, { "A", 0 }, { "Bb", 1 }, { "B", 2 } } },
-  { "12 TET 34 ZPI", 12, 99.8071807833375, { { "C", -9 }, { "C#", -8 }, { "D", -7 }, { "Eb", -6 }, { "E", -5 }, { "F", -4 }, { "F#", -3 }, { "G", -2 }, { "G#", -1 }, { "A", 0 }, { "Bb", 1 }, { "B", 2 } } },
+  { "12 EDO Zeta Peak", 12, 99.8071515654111465, { { "C", -9 }, { "C#", -8 }, { "D", -7 }, { "Eb", -6 }, { "E", -5 }, { "F", -4 }, { "F#", -3 }, { "G", -2 }, { "G#", -1 }, { "A", 0 }, { "Bb", 1 }, { "B", 2 } } },
   { "17 EDO", 17, 1200.0 / 17.0, { { "C", -13 }, { "Db", -12 }, { "C#", -11 }, { "D", -10 }, { "Eb", -9 }, { "D#", -8 }, { "E", -7 }, { "F", -6 }, { "Gb", -5 }, { "F#", -4 }, { "G", -3 }, { "Ab", -2 }, { "G#", -1 }, { "A", 0 }, { "Bb", 1 }, { "A#", 2 }, { "B", 3 } } },
   { "19 EDO", 19, 1200.0 / 19.0, { { "C", -14 }, { "C#", -13 }, { "Db", -12 }, { "D", -11 }, { "D#", -10 }, { "Eb", -9 }, { "E", -8 }, { "E#", -7 }, { "F", -6 }, { "F#", -5 }, { "Gb", -4 }, { "G", -3 }, { "G#", -2 }, { "Ab", -1 }, { "A", 0 }, { "A#", 1 }, { "Bb", 2 }, { "B", 3 }, { "Cb", 4 } } },
   { "22 EDO", 22, 1200.0 / 22.0, { { " C", -17 }, { "^C", -16 }, { "vC#", -15 }, { "vD", -14 }, { " D", -13 }, { "^D", -12 }, { "^Eb", -11 }, { "vE", -10 }, { " E", -9 }, { " F", -8 }, { "^F", -7 }, { "vF#", -6 }, { "vG", -5 }, { " G", -4 }, { "^G", -3 }, { "vG#", -2 }, { "vA", -1 }, { " A", 0 }, { "^A", 1 }, { "^Bb", 2 }, { "vB", 3 }, { " B", 4 } } },
   { "24 EDO", 24, 1200.0 / 24.0, { { "C", -18 }, { "C+", -17 }, { "C#", -16 }, { "Dd", -15 }, { "D", -14 }, { "D+", -13 }, { "Eb", -12 }, { "Ed", -11 }, { "E", -10 }, { "E+", -9 }, { "F", -8 }, { "F+", -7 }, { "F#", -6 }, { "Gd", -5 }, { "G", -4 }, { "G+", -3 }, { "G#", -2 }, { "Ad", -1 }, { "A", 0 }, { "A+", 1 }, { "Bb", 2 }, { "Bd", 3 }, { "B", 4 }, { "Cd", 5 } } },
   { "31 EDO", 31, 1200.0 / 31.0, { { "C", -23 }, { "C+", -22 }, { "C#", -21 }, { "Db", -20 }, { "Dd", -19 }, { "D", -18 }, { "D+", -17 }, { "D#", -16 }, { "Eb", -15 }, { "Ed", -14 }, { "E", -13 }, { "E+", -12 }, { "Fd", -11 }, { "F", -10 }, { "F+", -9 }, { "F#", -8 }, { "Gb", -7 }, { "Gd", -6 }, { "G", -5 }, { "G+", -4 }, { "G#", -3 }, { "Ab", -2 }, { "Ad", -1 }, { "A", 0 }, { "A+", 1 }, { "A#", 2 }, { "Bb", 3 }, { "Bd", 4 }, { "B", 5 }, { "B+", 6 }, { "Cd", 7 } } },
-  { "31 TET 127 ZPI", 31, 1200.0 / 30.9783816349790, { { "C", -23 }, { "C+", -22 }, { "C#", -21 }, { "Db", -20 }, { "Dd", -19 }, { "D", -18 }, { "D+", -17 }, { "D#", -16 }, { "Eb", -15 }, { "Ed", -14 }, { "E", -13 }, { "E+", -12 }, { "Fd", -11 }, { "F", -10 }, { "F+", -9 }, { "F#", -8 }, { "Gb", -7 }, { "Gd", -6 }, { "G", -5 }, { "G+", -4 }, { "G#", -3 }, { "Ab", -2 }, { "Ad", -1 }, { "A", 0 }, { "A+", 1 }, { "A#", 2 }, { "Bb", 3 }, { "Bd", 4 }, { "B", 5 }, { "B+", 6 }, { "Cd", 7 } } },
+  { "31 EDO Zeta Peak", 31, 1200.0 / 30.9783818789525220, { { "C", -23 }, { "C+", -22 }, { "C#", -21 }, { "Db", -20 }, { "Dd", -19 }, { "D", -18 }, { "D+", -17 }, { "D#", -16 }, { "Eb", -15 }, { "Ed", -14 }, { "E", -13 }, { "E+", -12 }, { "Fd", -11 }, { "F", -10 }, { "F+", -9 }, { "F#", -8 }, { "Gb", -7 }, { "Gd", -6 }, { "G", -5 }, { "G+", -4 }, { "G#", -3 }, { "Ab", -2 }, { "Ad", -1 }, { "A", 0 }, { "A+", 1 }, { "A#", 2 }, { "Bb", 3 }, { "Bd", 4 }, { "B", 5 }, { "B+", 6 }, { "Cd", 7 } } },
   { "41 EDO", 41, 1200.0 / 41.0, { { " C", -31 }, { "^C", -30 }, { " C+", -29 }, { " Db", -28 }, { " C#", -27 }, { " Dd", -26 }, { "vD", -24 }, { " D", -24 }, { "^D", -23 }, { " D+", -22 }, { " Eb", -21 }, { " D#", -20 }, { " Ed", -19 }, { "vE", -18 }, { " E", -17 }, { "^E", -16 }, { "vF", -15 }, { " F", -14 }, { "^F", -13 }, { " F+", -12 }, { " Gb", -11 }, { " F#", -10 }, { " Gd", -9 }, { "vG", -8 }, { " G", -7 }, { "^G", -6 }, { " G+", -5 }, { " Ab", -4 }, { " G#", -3 }, { " Ad", -2 }, { "vA", -1 }, { " A", 0 }, { "^A", 1 }, { " A+", 2 }, { " Bb", 3 }, { " A#", 4 }, { " Bd", 5 }, { "vB", 6 }, { " B", 7 }, { "^B", 8 }, { "vC", 9 } } },
   { "43 EDO", 43, 1200.0 / 43.0, { { " C", -32 }, { "C+1", -31 }, { "C+2", -30 }, { "C+3", -29 }, { "C+4", -28 }, { "C+5", -27 }, { "C+6", -26 }, { " D", -25 }, { "D+1", -24 }, { "D+2", -23 }, { "D+3", -22 }, { "D+4", -21 }, { "D+5", -20 }, { "D+6", -19 }, { " E", -18 }, { "E+1", -17 }, { "E+2", -16 }, { "E+3", -15 }, { " F", -14 }, { "F+1", -13 }, { "F+2", -12 }, { "F+3", -11 }, { "F+4", -10 }, { "F+5", -9 }, { "F+6", -8 }, { " G", -7 }, { "G+1", -6 }, { "G+2", -5 }, { "G+3", -4 }, { "G+4", -3 }, { "G+5", -2 }, { "G+6", -1 }, { " A", 0 }, { "A+1", 1 }, { "A+2", 2 }, { "A+3", 3 }, { "A+4", 4 }, { "A+5", 5 }, { "A+6", 6 }, { " B", 7 }, { "B+1", 8 }, { "B+2", 9 }, { "B+3", 10 }, { "B+4", 11 } } },
   { "46 EDO", 46, 1200.0 / 46.0, { { " C", -35 }, { "C+1", -34 }, { "C+2", -33 }, { "C+3", -32 }, { "C+4", -31 }, { "C+5", -30 }, { "C+6", -29 }, { "C+7", -28 }, { " D", -27 }, { "D+1", -26 }, { "D+2", -25 }, { "D+3", -24 }, { "D+4", -23 }, { "D+5", -22 }, { "D+6", -21 }, { "D+7", -20 }, { " E", -19 }, { "E+1", -18 }, { "E+2", -17 }, { " F", -16 }, { "F+1", -15 }, { "F+2", -14 }, { "F+3", -13 }, { "F+4", -12 }, { "F+5", -11 }, { "F+6", -10 }, { "F+7", -9 }, { " G", -8 }, { "G+1", -7 }, { "G+2", -6 }, { "G+3", -5 }, { "G+4", -4 }, { "G+5", -3 }, { "G+6", -2 }, { "G+7", -1 }, { " A", 0 }, { "A+1", 1 }, { "A+2", 2 }, { "A+3", 3 }, { "A+4", 4 }, { "A+5", 5 }, { "A+6", 6 }, { "A+7", 7 }, { " B", 8 }, { "B+1", 9 }, { "B+2", 10 } } },
   { "53 EDO", 53, 1200.0 / 53.0, { { " C", -40 }, { "^C", -39 }, { ">C", -38 }, { "vDb", -37 }, { "Db", -36 }, { " C#", -35 }, { "^C#", -34 }, { "<D", -33 }, { "vD", -32 }, { " D", -31 }, { "^D", -30 }, { ">D", -29 }, { "vEb", -28 }, { "Eb", -27 }, { " D#", -26 }, { "^D#", -25 }, { "<E", -24 }, { "vE", -23 }, { " E", -22 }, { "^E", -21 }, { ">E", -20 }, { "vF", -19 }, { " F", -18 }, { "^F", -17 }, { ">F", -16 }, { "vGb", -15 }, { "Gb", -14 }, { " F#", -13 }, { "^F#", -12 }, { "<G", -11 }, { "vG", -10 }, { " G", -9 }, { "^G", -8 }, { ">G", -7 }, { "vAb", -6 }, { "Ab", -5 }, { " G#", -4 }, { "^G#", -3 }, { "<A", -2 }, { "vA", -1 }, { " A", 0 }, { "^A", 1 }, { ">A", 2 }, { "vBb", 3 }, { "Bb", 4 }, { " A#", 5 }, { "^A#", 6 }, { "<B", 7 }, { "vB", 8 }, { " B", 9 }, { "^B", 10 }, { "<C", 11 }, { "vC", 12 } } },
   { "58 EDO", 58, 1200.0 / 58.0, { { " C", -44 }, { "C+1", -43 }, { "C+2", -42 }, { "C+3", -41 }, { "C+4", -40 }, { "C+5", -39 }, { "C+6", -38 }, { "C+7", -37 }, { "C+8", -36 }, { "C+8", -35 }, { " D", -34 }, { "D+1", -33 }, { "D+2", -32 }, { "D+3", -31 }, { "D+4", -30 }, { "D+5", -29 }, { "D+6", -28 }, { "D+7", -27 }, { "D+8", -26 }, { "D+8", -25 }, { " E", -24 }, { "E+1", -23 }, { "E+2", -22 }, { "E+3", -21 }, { " F", -20 }, { "F+1", -19 }, { "F+2", -18 }, { "F+3", -17 }, { "F+4", -16 }, { "F+5", -15 }, { "F+6", -14 }, { "F+7", -13 }, { "F+8", -12 }, { "F+9", -11 }, { " G", -10 }, { "G+1", -9 }, { "G+2", -8 }, { "G+3", -7 }, { "G+4", -6 }, { "G+5", -5 }, { "G+6", -4 }, { "G+7", -3 }, { "G+8", -2 }, { "G+9", -1 }, { " A", 0 }, { "A+1", 1 }, { "A+2", 2 }, { "A+3", 3 }, { "A+4", 4 }, { "A+5", 5 }, { "A+6", 6 }, { "A+7", 7 }, { "A+8", 7 }, { "A+9", 7 }, { " B", 10 }, { "B+1", 11 }, { "B+2", 12 } } },
-  { "58 EDO 289 ZPI", 58, 1200.0 / 58.0667185533159, { { " C", -44 }, { "C+1", -43 }, { "C+2", -42 }, { "C+3", -41 }, { "C+4", -40 }, { "C+5", -39 }, { "C+6", -38 }, { "C+7", -37 }, { "C+8", -36 }, { "C+8", -35 }, { " D", -34 }, { "D+1", -33 }, { "D+2", -32 }, { "D+3", -31 }, { "D+4", -30 }, { "D+5", -29 }, { "D+6", -28 }, { "D+7", -27 }, { "D+8", -26 }, { "D+8", -25 }, { " E", -24 }, { "E+1", -23 }, { "E+2", -22 }, { "E+3", -21 }, { " F", -20 }, { "F+1", -19 }, { "F+2", -18 }, { "F+3", -17 }, { "F+4", -16 }, { "F+5", -15 }, { "F+6", -14 }, { "F+7", -13 }, { "F+8", -12 }, { "F+9", -11 }, { " G", -10 }, { "G+1", -9 }, { "G+2", -8 }, { "G+3", -7 }, { "G+4", -6 }, { "G+5", -5 }, { "G+6", -4 }, { "G+7", -3 }, { "G+8", -2 }, { "G+9", -1 }, { " A", 0 }, { "A+1", 1 }, { "A+2", 2 }, { "A+3", 3 }, { "A+4", 4 }, { "A+5", 5 }, { "A+6", 6 }, { "A+7", 7 }, { "A+8", 7 }, { "A+9", 7 }, { " B", 10 }, { "B+1", 11 }, { "B+2", 12 } } },
+  { "58 EDO Zeta Peak", 58, 1200.0 / 58.066718758225889, { { " C", -44 }, { "C+1", -43 }, { "C+2", -42 }, { "C+3", -41 }, { "C+4", -40 }, { "C+5", -39 }, { "C+6", -38 }, { "C+7", -37 }, { "C+8", -36 }, { "C+8", -35 }, { " D", -34 }, { "D+1", -33 }, { "D+2", -32 }, { "D+3", -31 }, { "D+4", -30 }, { "D+5", -29 }, { "D+6", -28 }, { "D+7", -27 }, { "D+8", -26 }, { "D+8", -25 }, { " E", -24 }, { "E+1", -23 }, { "E+2", -22 }, { "E+3", -21 }, { " F", -20 }, { "F+1", -19 }, { "F+2", -18 }, { "F+3", -17 }, { "F+4", -16 }, { "F+5", -15 }, { "F+6", -14 }, { "F+7", -13 }, { "F+8", -12 }, { "F+9", -11 }, { " G", -10 }, { "G+1", -9 }, { "G+2", -8 }, { "G+3", -7 }, { "G+4", -6 }, { "G+5", -5 }, { "G+6", -4 }, { "G+7", -3 }, { "G+8", -2 }, { "G+9", -1 }, { " A", 0 }, { "A+1", 1 }, { "A+2", 2 }, { "A+3", 3 }, { "A+4", 4 }, { "A+5", 5 }, { "A+6", 6 }, { "A+7", 7 }, { "A+8", 7 }, { "A+9", 7 }, { " B", 10 }, { "B+1", 11 }, { "B+2", 12 } } },
   { "72 EDO", 72, 1200.0 / 72.0, { { " C", -54 }, { "^C", -53 }, { ">C", -52 }, { " C+", -51 }, { "<C#", -50 }, { "vC#", -49 }, { " C#", -48 }, { "^C#", -47 }, { ">C#", -46 }, { " Dd", -45 }, { "<D", -44 }, { "vD", -43 }, { " D", -42 }, { "^D", -41 }, { ">D", -40 }, { " D+", -39 }, { "<Eb", -38 }, { "vEb", -37 }, { " Eb", -36 }, { "^Eb", -35 }, { ">Eb", -34 }, { " Ed", -33 }, { "<E", -32 }, { "vE", -31 }, { " E", -30 }, { "^E", -29 }, { ">E", -28 }, { " E+", -27 }, { "<F", -26 }, { "vF", -25 }, { " F", -24 }, { "^F", -23 }, { ">F", -22 }, { " F+", -21 }, { "<F#", -20 }, { "vF#", -19 }, { " F#", -18 }, { "^F#", -17 }, { ">F#", -16 }, { " Gd", -15 }, { "<G", -14 }, { "vG", -13 }, { " G", -12 }, { "^G", -11 }, { ">G", -10 }, { " G+", -9 }, { "<G#", -8 }, { "vG#", -7 }, { " G#", -6 }, { "^G#", -5 }, { ">G#", -4 }, { " Ad", -3 }, { "<A", -2 }, { "vA", -1 }, { " A", 0 }, { "^A", 1 }, { ">A", 2 }, { " A+", 3 }, { "<Bb", 4 }, { "vBb", 5 }, { " Bb", 6 }, { "^Bb", 7 }, { ">Bb", 8 }, { " Bd", 9 }, { "<B", 10 }, { "vB", 11 }, { " B", 12 }, { "^B", 13 }, { ">B", 14 }, { " Cd", 15 }, { "<C", 16 }, { "vC", 17 } } },
-  { "72 EDO 380 ZPI", 72, 1200.0 / 71.9506065993786, { { " C", -54 }, { "^C", -53 }, { ">C", -52 }, { " C+", -51 }, { "<C#", -50 }, { "vC#", -49 }, { " C#", -48 }, { "^C#", -47 }, { ">C#", -46 }, { " Dd", -45 }, { "<D", -44 }, { "vD", -43 }, { " D", -42 }, { "^D", -41 }, { ">D", -40 }, { " D+", -39 }, { "<Eb", -38 }, { "vEb", -37 }, { " Eb", -36 }, { "^Eb", -35 }, { ">Eb", -34 }, { " Ed", -33 }, { "<E", -32 }, { "vE", -31 }, { " E", -30 }, { "^E", -29 }, { ">E", -28 }, { " E+", -27 }, { "<F", -26 }, { "vF", -25 }, { " F", -24 }, { "^F", -23 }, { ">F", -22 }, { " F+", -21 }, { "<F#", -20 }, { "vF#", -19 }, { " F#", -18 }, { "^F#", -17 }, { ">F#", -16 }, { " Gd", -15 }, { "<G", -14 }, { "vG", -13 }, { " G", -12 }, { "^G", -11 }, { ">G", -10 }, { " G+", -9 }, { "<G#", -8 }, { "vG#", -7 }, { " G#", -6 }, { "^G#", -5 }, { ">G#", -4 }, { " Ad", -3 }, { "<A", -2 }, { "vA", -1 }, { " A", 0 }, { "^A", 1 }, { ">A", 2 }, { " A+", 3 }, { "<Bb", 4 }, { "vBb", 5 }, { " Bb", 6 }, { "^Bb", 7 }, { ">Bb", 8 }, { " Bd", 9 }, { "<B", 10 }, { "vB", 11 }, { " B", 12 }, { "^B", 13 }, { ">B", 14 }, { " Cd", 15 }, { "<C", 16 }, { "vC", 17 } } },
+  { "72 EDO Zeta Peak", 72, 1200.0 / 71.9506066608606432, { { " C", -54 }, { "^C", -53 }, { ">C", -52 }, { " C+", -51 }, { "<C#", -50 }, { "vC#", -49 }, { " C#", -48 }, { "^C#", -47 }, { ">C#", -46 }, { " Dd", -45 }, { "<D", -44 }, { "vD", -43 }, { " D", -42 }, { "^D", -41 }, { ">D", -40 }, { " D+", -39 }, { "<Eb", -38 }, { "vEb", -37 }, { " Eb", -36 }, { "^Eb", -35 }, { ">Eb", -34 }, { " Ed", -33 }, { "<E", -32 }, { "vE", -31 }, { " E", -30 }, { "^E", -29 }, { ">E", -28 }, { " E+", -27 }, { "<F", -26 }, { "vF", -25 }, { " F", -24 }, { "^F", -23 }, { ">F", -22 }, { " F+", -21 }, { "<F#", -20 }, { "vF#", -19 }, { " F#", -18 }, { "^F#", -17 }, { ">F#", -16 }, { " Gd", -15 }, { "<G", -14 }, { "vG", -13 }, { " G", -12 }, { "^G", -11 }, { ">G", -10 }, { " G+", -9 }, { "<G#", -8 }, { "vG#", -7 }, { " G#", -6 }, { "^G#", -5 }, { ">G#", -4 }, { " Ad", -3 }, { "<A", -2 }, { "vA", -1 }, { " A", 0 }, { "^A", 1 }, { ">A", 2 }, { " A+", 3 }, { "<Bb", 4 }, { "vBb", 5 }, { " Bb", 6 }, { "^Bb", 7 }, { ">Bb", 8 }, { " Bd", 9 }, { "<B", 10 }, { "vB", 11 }, { " B", 12 }, { "^B", 13 }, { ">B", 14 }, { " Cd", 15 }, { "<C", 16 }, { "vC", 17 } } },
   { "80 EDO", 80, 1200.0 / 80.0, { { " C", -61 }, { "C+1", -60 }, { "C+2", -59 }, { "C+3", -58 }, { "C+4", -57 }, { "C+5", -56 }, { "C+6", -55 }, { "C+7", -54 }, { "C+8", -53 }, { "C+9", -52 }, { "C+10", -51 }, { "C+11", -50 }, { "C+12", -49 }, { "C+13", -48 }, { " D", -47 }, { "D+1", -46 }, { "D+2", -45 }, { "D+3", -44 }, { "D+4", -43 }, { "D+5", -42 }, { "D+6", -41 }, { "D+7", -40 }, { "D+8", -39 }, { "D+9", -38 }, { "D+11", -37 }, { "D+12", -36 }, { "D+13", -35 }, { "D+14", -34 }, { " E", -33 }, { "E+1", -32 }, { "E+2", -31 }, { "E+3", -30 }, { "E+4", -29 }, { " F", -28 }, { "F+1", -27 }, { "F+2", -26 }, { "F+3", -25 }, { "F+4", -24 }, { "F+5", -23 }, { "F+6", -22 }, { "F+7", -21 }, { "F+8", -20 }, { "F+9", -19 }, { "F+11", -18 }, { "F+12", -17 }, { "F+13", -16 }, { "F+14", -15 }, { " G", -14 }, { "G+1", -13 }, { "G+2", -12 }, { "G+3", -11 }, { "G+4", -10 }, { "G+5", -9 }, { "G+6", -8 }, { "G+7", -7 }, { "G+8", -6 }, { "G+9", -5 }, { "G+11", -4 }, { "G+12", -3 }, { "G+13", -2 }, { "G+14", -1 }, { " A", 0 }, { "A+1", 1 }, { "A+2", 2 }, { "A+3", 3 }, { "A+4", 4 }, { "A+5", 5 }, { "A+6", 6 }, { "A+7", 7 }, { "A+8", 8 }, { "A+9", 9 }, { "A+10", 10 }, { "A+11", 11 }, { "A+12", 12 }, { "A+13", 13 }, { " B", 14 }, { "B+1", 15 }, { "B+2", 16 }, { "B+3", 17 }, { "B+4", 18 } } },
   { "87 EDO", 87, 1200.0 / 87.0, { { " C", -66 }, { "C+1", -65 }, { "C+2", -64 }, { "C+3", -63 }, { "C+4", -62 }, { "C+5", -61 }, { "C+6", -60 }, { "C+7", -59 }, { "C+8", -58 }, { "C+9", -57 }, { "C10", -57 }, { "C+11", -56 }, { "C+12", -55 }, { "C+13", -54 }, { "C+14", -53 }, { "C+15", -52 }, { " D", -51 }, { "D+1", -50 }, { "D+2", -49 }, { "D+3", -48 }, { "D+4", -47 }, { "D+5", -46 }, { "D+6", -45 }, { "D+7", -44 }, { "D+8", -43 }, { "D+9", -42 }, { "D+10", -41 }, { "D+11", -40 }, { "D+12", -39 }, { "D+13", -38 }, { "D+14", -37 }, { " E", -36 }, { "E+1", -35 }, { "E+2", -34 }, { "E+3", -33 }, { " F", -30 }, { "F+1", -29 }, { "F+2", -28 }, { "F+3", -27 }, { "F+4", -26 }, { "F+5", -25 }, { "F+6", -24 }, { "F+7", -23 }, { "F+8", -22 }, { "F+9", -21 }, { "F+10", -20 }, { "F+11", -19 }, { "F+12", -18 }, { "F+13", -17 }, { "F+14", -16 }, { " G", -15 }, { "G+1", -14 }, { "G+2", -13 }, { "G+3", -12 }, { "G+4", -11 }, { "G+5", -10 }, { "G+6", -9 }, { "G+7", -8 }, { "G+8", -7 }, { "G+9", -6 }, { "G+10", -5 }, { "G+11", -4 }, { "G+12", -3 }, { "G+13", -2 }, { "G+14", -1 }, { " A", 0 }, { "A+1", 1 }, { "A+2", 2 }, { "A+3", 3 }, { "A+4", 4 }, { "A+5", 5 }, { "A+6", 6 }, { "A+7", 7 }, { "A+8", 8 }, { "A+9", 9 }, { "A+10", 10 }, { "A+11", 11 }, { "A+12", 12 }, { "A+13", 13 }, { "A+14", 14 }, { " B", 15 }, { "B+1", 16 }, { "B+2", 17 }, { "B+3", 18 } } },
   { "Bohlen-Pierce", 13, (1200.0 * (log(3.0 / 1.0) / log(2.0))) / 13.0, { { "C", -10 }, { "Db", -9 }, { "D", -8 }, { "E", -7 }, { "F", -6 }, { "Gb", -5 }, { "G", -4 }, { "H", -3 }, { "Jb", -2 }, { "J", -1 }, { "A", 0 }, { "Bb", 1 }, { "B", 2 } } },
@@ -470,7 +368,7 @@ tuningDef tuningOptions[] = {
 /*
     This section defines the different
     preset note layout options.
-*/
+  */
 /*
     This class provides the seed values
     needed to implement a given isomorphic
@@ -478,7 +376,7 @@ tuningDef tuningOptions[] = {
     to note frequencies can be calculated.
 
     A layout is tied to a specific tuning.
-*/
+  */
 class layoutDef {
 public:
   std::string name;    // limit is 17 characters for GEM menu
@@ -506,11 +404,11 @@ public:
 layoutDef layoutOptions[] = {
   { "Wicki-Hayden", 1, 64, 2, -7, TUNING_12EDO },
   { "Harmonic Table", 0, 75, -7, 3, TUNING_12EDO },
-  { "Gerhard", 0, 65, -1, -3, TUNING_12EDO },
   { "Janko", 0, 65, 1, -2, TUNING_12EDO },
   { "Bosanquet-Wilson", 0, 65, -1, -1, TUNING_12EDO },
   { "Compressed Janko", 0, 65, -1, -2, TUNING_12EDO },
-  { "Compr. Bosanquet", 0, 65, 1, -3, TUNING_12EDO },
+  { "Compr. Bosanquet", 0, 65, -1, 3, TUNING_12EDO },
+  { "Gerhard", 0, 65, -1, -3, TUNING_12EDO },
   { "Accordion C-sys.", 1, 75, 2, -3, TUNING_12EDO },
   { "Accordion B-sys.", 1, 64, 1, -3, TUNING_12EDO },
   { "Chromatic", 0, 75, 12, -1, TUNING_12EDO },
@@ -521,7 +419,7 @@ layoutDef layoutOptions[] = {
   { "Janko", 0, 65, 1, -2, TUNING_12EDO_ZETA },
   { "Bosanquet-Wilson", 0, 65, -1, -1, TUNING_12EDO_ZETA },
   { "Compressed Janko", 0, 65, -1, -2, TUNING_12EDO_ZETA },
-  { "Compr. Bosanquet", 0, 65, 1, -3, TUNING_12EDO_ZETA },
+  { "Compr. Bosanquet", 0, 65, -1, 3, TUNING_12EDO_ZETA },
   { "Gerhard", 0, 65, -1, -3, TUNING_12EDO_ZETA },
   { "Accordion C-sys.", 1, 75, 2, -3, TUNING_12EDO_ZETA },
   { "Accordion B-sys.", 1, 64, 1, -3, TUNING_12EDO_ZETA },
@@ -529,7 +427,7 @@ layoutDef layoutOptions[] = {
   { "Full Gamut", 1, 75, 1, -9, TUNING_12EDO_ZETA },
 
   { "Compressed Janko", 0, 65, -1, -3, TUNING_17EDO },
-  { "Compr. Bosanquet", 0, 65, 1, -4, TUNING_17EDO },
+  { "Compr. Bosanquet", 0, 65, -2, -1, TUNING_17EDO },
   { "Janko", 0, 65, 2, -3, TUNING_17EDO },
   { "Bosanquet-Wilson", 0, 65, -2, -1, TUNING_17EDO },
   { "Neutral Thirds A", 0, 65, -1, -2, TUNING_17EDO },
@@ -538,7 +436,7 @@ layoutDef layoutOptions[] = {
 
   { "Wicki-Hayden", 1, 65, 3, -11, TUNING_19EDO },
   { "Compressed Janko", 0, 65, -2, -3, TUNING_19EDO },
-  { "Compr. Bosanquet", 0, 65, 2, -5, TUNING_19EDO },
+  { "Compr. Bosanquet", 0, 65, -2, 5, TUNING_19EDO },
   { "Janko", 0, 65, 1, -3, TUNING_19EDO },
   { "Bosanquet-Wilson", 0, 65, -1, -2, TUNING_19EDO },
   { "Harmonic Table", 0, 75, -11, 5, TUNING_19EDO },
@@ -546,7 +444,7 @@ layoutDef layoutOptions[] = {
   { "Full Gamut", 1, 75, 1, -9, TUNING_19EDO },
 
   { "Compressed Janko", 0, 65, -1, -4, TUNING_22EDO },
-  { "Compr. Bosanquet", 0, 65, 1, -5, TUNING_22EDO },
+  { "Compr. Bosanquet", 0, 65, -1, 5, TUNING_22EDO },
   { "Janko", 0, 65, 3, -4, TUNING_22EDO },
   { "Bosanquet-Wilson", 0, 65, -3, -1, TUNING_22EDO },
   { "Wicki-Hayden", 1, 64, 4, -13, TUNING_22EDO },
@@ -558,7 +456,7 @@ layoutDef layoutOptions[] = {
   { "Full Gamut", 1, 75, 1, -9, TUNING_24EDO },
 
   { "Compressed Janko", 0, 65, -3, -5, TUNING_31EDO },
-  { "Compr. Bosanquet", 0, 65, 3, -8, TUNING_31EDO },
+  { "Compr. Bosanquet", 0, 65, -3, 8, TUNING_31EDO },
   { "Janko", 0, 65, 2, -5, TUNING_31EDO },
   { "Bosanquet-Wilson", 0, 65, -2, -3, TUNING_31EDO },
   { "Wicki-Hayden", 1, 64, 5, -18, TUNING_31EDO },
@@ -569,7 +467,7 @@ layoutDef layoutOptions[] = {
   { "Full Gamut", 1, 75, 1, -9, TUNING_31EDO },
 
   { "Compressed Janko", 0, 65, -3, -5, TUNING_31EDO_ZETA },
-  { "Compr. Bosanquet", 0, 65, 3, -8, TUNING_31EDO_ZETA },
+  { "Compr. Bosanquet", 0, 65, -3, 8, TUNING_31EDO_ZETA },
   { "Janko", 0, 65, 2, -5, TUNING_31EDO_ZETA },
   { "Bosanquet-Wilson", 0, 65, -2, -3, TUNING_31EDO_ZETA },
   { "Wicki-Hayden", 1, 64, 5, -18, TUNING_31EDO_ZETA },
@@ -580,7 +478,7 @@ layoutDef layoutOptions[] = {
   { "Full Gamut", 1, 75, 1, -9, TUNING_31EDO_ZETA },
 
   { "Compressed Janko", 0, 65, -3, -7, TUNING_41EDO },
-  { "Compr. Bosanquet", 0, 65, 3, -10, TUNING_41EDO },
+  { "Compr. Bosanquet", 0, 65, -3, 10, TUNING_41EDO },
   { "Janko", 0, 65, 4, -7, TUNING_41EDO },
   { "Bosanquet-Wilson", 0, 65, -4, -3, TUNING_41EDO },  // forty-one #1
   { "Harmonic Table", 0, 75, -24, 11, TUNING_41EDO },
@@ -609,8 +507,8 @@ layoutDef layoutOptions[] = {
   { "Kleismic A", 0, 65, -8, -3, TUNING_53EDO },
   { "Kleismic B", 0, 65, -5, -3, TUNING_53EDO },
   { "Buzzard", 0, 65, -9, -1, TUNING_53EDO },
-  { "Compressed Janko", 1, 65, -4, -9, TUNING_53EDO },
-  { "Compr. Bosanquet", 1, 65, 4, -13, TUNING_53EDO },
+  { "Compressed Janko", 1, 65, 9, -13, TUNING_53EDO },  // Can only fit vertically
+  { "Compr. Bosanquet", 1, 65, 9, 4, TUNING_53EDO },    // Can only fit vertically
   { "Full Gamut", 1, 75, 1, -9, TUNING_53EDO },
 
   { "Janko", 0, 64, 3, -10, TUNING_58EDO },           // Maybe call it "Quartertone Janko"?
@@ -684,7 +582,7 @@ layoutDef layoutOptions[] = {
 
   { "Wicki-Hayden", 1, 65, 3, -11, TUNING_BETA },  // Carlos Beta has the same mappings as 19 EDO
   { "Compressed Janko", 0, 65, -2, -3, TUNING_BETA },
-  { "Compr. Bosanquet", 0, 65, 2, -5, TUNING_BETA },
+  { "Compr. Bosanquet", 0, 65, -2, 5, TUNING_BETA },
   { "Janko", 0, 65, 1, -3, TUNING_BETA },
   { "Bosanquet-Wilson", 0, 65, -1, -2, TUNING_BETA },
   { "Harmonic Table", 0, 75, -11, 5, TUNING_BETA },
@@ -769,7 +667,6 @@ scaleDef scaleOptions[] = {
   { "Wyschnegradsky", TUNING_24EDO, { 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1 } },
   // 31 EDO; for more: https://en.xen.wiki/w/31edo#Scales
   { "Diatonic", TUNING_31EDO, { 5, 5, 3, 5, 5, 5, 3 } },
-  { "Chromatic", TUNING_31EDO, { 3, 2, 3, 2, 3, 2, 3, 3, 2, 3, 2, 3 } },
   { "Pentatonic", TUNING_31EDO, { 5, 5, 8, 5, 8 } },
   { "Harmonic", TUNING_31EDO, { 5, 5, 4, 4, 4, 3, 3, 3 } },
   { "Mavila", TUNING_31EDO, { 5, 3, 3, 3, 5, 3, 3, 3, 3 } },
@@ -779,7 +676,6 @@ scaleDef scaleOptions[] = {
   { "Miracle", TUNING_31EDO, { 4, 3, 3, 3, 3, 3, 3, 3, 3, 3 } },
   // 31 EDO ZETA PEAK;
   { "Diatonic", TUNING_31EDO_ZETA, { 5, 5, 3, 5, 5, 5, 3 } },
-  { "Chromatic", TUNING_31EDO_ZETA, { 3, 2, 3, 2, 3, 2, 3, 3, 2, 3, 2, 3 } },
   { "Pentatonic", TUNING_31EDO_ZETA, { 5, 5, 8, 5, 8 } },
   { "Harmonic", TUNING_31EDO_ZETA, { 5, 5, 4, 4, 4, 3, 3, 3 } },
   { "Mavila", TUNING_31EDO_ZETA, { 5, 3, 3, 3, 5, 3, 3, 3, 3 } },
@@ -1193,39 +1089,10 @@ presetDef current = {
     to the Serial port
   */
 bool debugMessages = true;
-// Macro avoids constructing std::string arguments when debugMessages is false
-#define sendToLog(msg) do { if (debugMessages) { Serial.println((std::string(msg)).c_str()); } } while(0)
-/*
-    ISR cycle profiling — lightweight timing measurement for the
-    audio poll() interrupt. Tracks min/max/average microseconds
-    per ISR invocation. Enabled/disabled at runtime via
-    isrProfilingEnabled flag. Stats are read and reset atomically
-    from Core 0 via readAndResetISRProfile().
-  */
-volatile bool isrProfilingEnabled = false;
-volatile uint32_t isrCycleMin   = UINT32_MAX;
-volatile uint32_t isrCycleMax   = 0;
-volatile uint64_t isrCycleSum   = 0;
-volatile uint32_t isrCycleCount = 0;
-volatile uint32_t isrProfileMinUs  = 0;
-volatile uint32_t isrProfileMaxUs  = 0;
-volatile uint32_t isrProfileAvgUs  = 0;
-volatile uint32_t isrProfileCount  = 0;
-void readAndResetISRProfile() {
-  // Briefly disable profiling to get a consistent snapshot
-  isrProfilingEnabled = false;
-  __dmb();  // data memory barrier
-  isrProfileMinUs = (isrCycleMin == UINT32_MAX) ? 0 : isrCycleMin;
-  isrProfileMaxUs = isrCycleMax;
-  isrProfileCount = isrCycleCount;
-  isrProfileAvgUs = (isrProfileCount > 0) ? (uint32_t)(isrCycleSum / isrProfileCount) : 0;
-  // Reset counters
-  isrCycleMin = UINT32_MAX;
-  isrCycleMax = 0;
-  isrCycleSum = 0;
-  isrCycleCount = 0;
-  __dmb();
-  isrProfilingEnabled = true;
+void sendToLog(std::string msg) {
+  if (debugMessages) {
+    Serial.println(msg.c_str());
+  }
 }
 
 // @timing
@@ -1259,36 +1126,34 @@ void timeTracker() {
     of ten buttons to allow all 140 inputs to be read in one
     program read cycle.
   */
-constexpr byte MPLEX_1_PIN = 4;
-constexpr byte MPLEX_2_PIN = 5;
-constexpr byte MPLEX_4_PIN = 2;
-constexpr byte MPLEX_8_PIN = 3;
-constexpr byte COLUMN_PIN_0 = 6;
-constexpr byte COLUMN_PIN_1 = 7;
-constexpr byte COLUMN_PIN_2 = 8;
-constexpr byte COLUMN_PIN_3 = 9;
-constexpr byte COLUMN_PIN_4 = 10;
-constexpr byte COLUMN_PIN_5 = 11;
-constexpr byte COLUMN_PIN_6 = 12;
-constexpr byte COLUMN_PIN_7 = 13;
-constexpr byte COLUMN_PIN_8 = 14;
-constexpr byte COLUMN_PIN_9 = 15;
+#define MPLEX_1_PIN 4
+#define MPLEX_2_PIN 5
+#define MPLEX_4_PIN 2
+#define MPLEX_8_PIN 3
+#define COLUMN_PIN_0 6
+#define COLUMN_PIN_1 7
+#define COLUMN_PIN_2 8
+#define COLUMN_PIN_3 9
+#define COLUMN_PIN_4 10
+#define COLUMN_PIN_5 11
+#define COLUMN_PIN_6 12
+#define COLUMN_PIN_7 13
+#define COLUMN_PIN_8 14
+#define COLUMN_PIN_9 15
 /*
     There are 140 LED pixels on the Hexboard.
     LED instructions all go through the LED_PIN.
     It so happens that each LED pixel corresponds
     to one and only one hex button, so both a LED
     and its button can have the same index from 0-139.
-    The scan matrix itself is 16x10, so BTN_COUNT is
-    larger than LED_COUNT on purpose. The extra slots
-    are used as internal "flag" positions that help
-    with hardware detection and bookkeeping.
+    Since these parameters are pre-defined by the
+    hardware build, the dimensions of the grid
+    are therefore constants.
   */
-constexpr byte LED_COUNT = 140;
-constexpr byte COLCOUNT = 10;
-constexpr byte ROWCOUNT = 16;
-constexpr byte BTN_COUNT = COLCOUNT * ROWCOUNT;
-constexpr byte FIRST_FLAG_BUTTON_INDEX = LED_COUNT;
+#define LED_COUNT 140
+#define COLCOUNT 10
+#define ROWCOUNT 16
+#define BTN_COUNT COLCOUNT* ROWCOUNT
 /*
     Of the 140 buttons, 7 are offset to the bottom left
     quadrant of the Hexboard and are reserved as command
@@ -1298,14 +1163,14 @@ constexpr byte FIRST_FLAG_BUTTON_INDEX = LED_COUNT;
     variables and alter the value of CMDCOUNT to agree
     with how many buttons you reserve for non-note use.
   */
-constexpr byte CMDBTN_0 = 0;
-constexpr byte CMDBTN_1 = 20;
-constexpr byte CMDBTN_2 = 40;
-constexpr byte CMDBTN_3 = 60;
-constexpr byte CMDBTN_4 = 80;
-constexpr byte CMDBTN_5 = 100;
-constexpr byte CMDBTN_6 = 120;
-constexpr byte CMDCOUNT = 7;
+#define CMDBTN_0 0
+#define CMDBTN_1 20
+#define CMDBTN_2 40
+#define CMDBTN_3 60
+#define CMDBTN_4 80
+#define CMDBTN_5 100
+#define CMDBTN_6 120
+#define CMDCOUNT 7
 /*
     This class defines the hexagon button
     as an object. It stores all real-time
@@ -1327,7 +1192,7 @@ public:
 #define BTN_STATE_NEWPRESS 1
 #define BTN_STATE_RELEASED 2
 #define BTN_STATE_HELD 3
-  byte btnState = BTN_STATE_OFF;  // binary 00 = off, 01 = just pressed, 10 = just released, 11 = held
+  byte btnState = 0;  // binary 00 = off, 01 = just pressed, 10 = just released, 11 = held
   void interpBtnPress(bool isPress) {
     btnState = (((btnState << 1) + isPress) & 3);
   }
@@ -1339,20 +1204,16 @@ public:
   uint32_t LEDcodeRest = 0;  // calculate it once and store value, to make LED playback snappier
   uint32_t LEDcodeOff = 0;   // calculate it once and store value, to make LED playback snappier
   uint32_t LEDcodeDim = 0;   // calculate it once and store value, to make LED playback snappier
-  bool animate = false;      // true when this hex participates in the current animation frame
+  bool animate = 0;          // hex is flagged as part of the animation in this frame, helps make animations smoother
   int16_t stepsFromC = 0;    // number of steps from C4 (semitones in 12EDO; microtones if >12EDO)
-  bool isCmd = false;        // true if this slot acts as a command instead of a playable note
-  bool inScale = false;      // true when this note belongs to the selected scale
+  bool isCmd = 0;            // 0 if it's a MIDI note; 1 if it's a MIDI control cmd
+  bool inScale = 0;          // 0 if it's not in the selected scale; 1 if it is
   byte note = UNUSED_NOTE;   // MIDI note or control parameter corresponding to this hex
   int16_t bend = 0;          // in microtonal mode, the pitch bend for this note needed to be tuned correctly
   byte MIDIch = 0;           // what MIDI channel this note is playing on
   byte synthCh = 0;          // what synth polyphony ch this is playing on
   float frequency = 0.0;     // what frequency to ring on the synther
-  int16_t jiRetune = 0;
-  float jiFrequencyMultiplier = 1.0f;
   uint8_t externalNoteDepth = 0;  // number of active external MIDI notes mapped here
-  int32_t midiNoteIndex = 0;      // extended MIDI note number before channel folding
-  byte mappedMidiChannel = 0;     // preferred channel when not using MPE
 };
 /*
     This class is like a virtual wheel.
@@ -1428,12 +1289,12 @@ public:
         } else {
           curValue = curValue + (*stepValue * (temp / abs(temp)));
         }
-        return true;
+        return 1;
       } else {
-        return false;
+        return 0;
       }
     } else {
-      return false;
+      return 0;
     }
   }
 };
@@ -1450,15 +1311,10 @@ const byte assignCmd[] = {
   CMDBTN_4, CMDBTN_5, CMDBTN_6
 };
 
-uint32_t multiplexerMask = 0;
-uint32_t rowSelectMask[ROWCOUNT] = { 0 };
-uint32_t columnMasks[COLCOUNT] = { 0 };
-
 /*
     define h, which is a collection of all the
-    logical scan slots in the matrix. Indices
-    0-139 map to visible hexes, while the extra
-    slots above LED_COUNT are internal flags.
+    buttons from 0 to 139. h[i] refers to the
+    button with the LED address = i.
   */
 buttonDef h[BTN_COUNT];
 
@@ -1472,38 +1328,14 @@ wheelDef velWheel = { &wheelMode, &velSticky,
                       &h[assignCmd[0]].btnState, &h[assignCmd[1]].btnState, &h[assignCmd[2]].btnState,
                       0, 127, &velWheelSpeed, 96, 96, 96, 0 };
 
-bool toggleWheel = false;  // false = mod wheel, true = pitch bend wheel
-
-// Delegate control is intentionally external-only. It has no menu item and is
-// not persisted; a host must enter/exit it via SysEx.
-bool delegatedControl = false;
-uint32_t delegatedColors[LED_COUNT];
-constexpr byte SYSEX_DELEGATED_ENTER = 1;
-constexpr byte SYSEX_DELEGATED_EXIT = 2;
-constexpr byte SYSEX_LED = 3;
+bool toggleWheel = 0;  // 0 for mod, 1 for pb
 
 void setupPins() {
-  const byte multiplexerPinCount = sizeof(mPin) / sizeof(mPin[0]);
-  const byte columnPinCount = sizeof(cPin) / sizeof(cPin[0]);
-  multiplexerMask = 0;
-  for (byte p = 0; p < multiplexerPinCount; ++p) {
-    byte pin = mPin[p];
-    pinMode(pin, OUTPUT);
-    multiplexerMask |= (1u << pin);
+  for (byte p = 0; p < sizeof(cPin); p++) {  // For each column pin...
+    pinMode(cPin[p], INPUT_PULLUP);          // set the pinMode to INPUT_PULLUP (+3.3V / HIGH).
   }
-  for (byte r = 0; r < ROWCOUNT; ++r) {
-    uint32_t mask = 0;
-    for (byte bit = 0; bit < sizeof(mPin); ++bit) {
-      if ((r >> bit) & 1) {
-        mask |= (1u << mPin[bit]);
-      }
-    }
-    rowSelectMask[r] = mask;
-  }
-  for (byte p = 0; p < columnPinCount; ++p) {
-    byte pin = cPin[p];
-    pinMode(pin, INPUT_PULLUP);
-    columnMasks[p] = (1u << pin);
+  for (byte p = 0; p < sizeof(mPin); p++) {  // For each column pin...
+    pinMode(mPin[p], OUTPUT);                // Setting the row multiplexer pins to output.
   }
   sendToLog("Pins mounted");
 }
@@ -1512,33 +1344,38 @@ void setupGrid() {
   for (byte i = 0; i < BTN_COUNT; i++) {
     h[i].coordRow = (i / 10);
     h[i].coordCol = (2 * (i % 10)) + (h[i].coordRow & 1);
-    h[i].isCmd = false;
+    h[i].isCmd = 0;
     h[i].note = UNUSED_NOTE;
-    h[i].btnState = BTN_STATE_OFF;
-    h[i].midiNoteIndex = 0;
-    h[i].mappedMidiChannel = 0;
+    h[i].btnState = 0;
   }
-  for (byte c = 0; c < CMDCOUNT; ++c) {
+  for (byte c = 0; c < CMDCOUNT; c++) {
     h[assignCmd[c]].isCmd = 1;
     h[assignCmd[c]].note = CMDB + c;
   }
-  // The extra matrix positions above LED_COUNT are never playable notes.
-  for (byte i = FIRST_FLAG_BUTTON_INDEX; i < BTN_COUNT; ++i) {
-    h[i].isCmd = true;
+  // "flag" buttons
+  for (byte i = 140; i < BTN_COUNT; i++) {
+    h[i].isCmd = 1;
   }
-  // On version 1.2, the first flag input is shorted (always connected).
-  h[FIRST_FLAG_BUTTON_INDEX].note = HARDWARE_V1_2;
+  // On version 1.2, "button" 140 is shorted (always connected)
+  h[140].note = HARDWARE_V1_2;
 }
 
 void detectHardwareVersion() {
-  constexpr byte hardwareFlagIndex = FIRST_FLAG_BUTTON_INDEX;
+  constexpr byte hardwareFlagIndex = 140;
   const byte targetRow = hardwareFlagIndex / 10;
   const byte targetColumn = hardwareFlagIndex % 10;
   byte columnPin = cPin[targetColumn];
-  sio_hw->gpio_clr = multiplexerMask;
-  sio_hw->gpio_set = rowSelectMask[targetRow];
+
+  pinMode(columnPin, INPUT_PULLUP);
+  for (byte d = 0; d < 4; d++) {
+    digitalWrite(mPin[d], (targetRow >> d) & 1);
+  }
   delayMicroseconds(14);
   bool flagPressed = (digitalRead(columnPin) == LOW);
+  pinMode(columnPin, INPUT);
+  for (byte d = 0; d < 4; d++) {
+    digitalWrite(mPin[d], 0);
+  }
   Hardware_Version = flagPressed ? HARDWARE_V1_2 : HARDWARE_V1_1;
   sendToLog("Hardware detection: revision " + std::to_string(Hardware_Version));
 }
@@ -1671,9 +1508,6 @@ colorDef getColor(int32_t temp) {
 uint32_t getLEDcode(colorDef c) {
   return strip.gamma32(strip.ColorHSV(transformHue(c.hue), c.sat, c.val * globalBrightness / 255));
 }
-float ratioToCents(float ratio) {
-  return 1200.0 * (std::log(ratio) / std::log(2.0));
-}
 /*
     This function cycles through each button, and based on what color
     palette is active, it calculates the LED color code in the palette,
@@ -1682,76 +1516,10 @@ float ratioToCents(float ratio) {
     codes remain in the object until this routine is called again.
   */
 void setLEDcolorCodes() {
-  // ---- Diatonic MOS layer precomputation (runs once per color refresh) ----
-  // For the Diatonic color mode, we precompute which "layer" each scale degree
-  // belongs to. Layer 0 = diatonic naturals (white), positive layers = sharp side
-  // (orange/warm), negative layers = flat side (blue/cool), equidistant = purple.
-  // The diatonic MOS is the 7-note scale generated by stacking best-fit fifths.
-  int8_t mosLayer[MAX_SCALE_DIVISIONS] = { 0 };
-  bool mosEquidistant[MAX_SCALE_DIVISIONS] = { false };
-  bool mosValid = false;
-  int cycleLength = current.tuning().cycleLength;
-  if (colorMode == DIATONIC_COLOR_MODE) {
-    float stepSize = current.tuning().stepSize;
-    // Best-fit fifth in steps
-    int g = (int)round(ratioToCents(1.5) / stepSize);
-    // Large and small steps of the diatonic MOS: 5L + 2s = N
-    // L = (2*g) mod N  (the whole tone, generated by two fifths reduced by octave)
-    int L = positiveMod(2 * g, cycleLength);
-    // s = (N - 5*L) / 2  (the remaining semitone)
-    int sRemainder = cycleLength - 5 * L;
-    bool evenDivision = (sRemainder >= 0) && (sRemainder % 2 == 0);
-    int s = evenDivision ? sRemainder / 2 : 0;
-    mosValid = evenDivision && (L != s) && (L > 0) && (s > 0);  // L>s = diatonic, L<s = antidiatonic, L==s = degenerate
-    if (mosValid) {
-      // Build the 7 diatonic positions using Ionian (major scale) pattern:
-      // C=0, D=L, E=2L, F=2L+s, G=3L+s, A=4L+s, B=5L+s
-      // Interval pattern: L L s L L L s
-      int intervals[7] = { L, L, s, L, L, L, s };
-      int diatonic[7];
-      diatonic[0] = 0;  // C
-      for (int j = 1; j < 7; j++) {
-        diatonic[j] = diatonic[j - 1] + intervals[j - 1];
-      }
-      // For each chromatic step, find which diatonic interval it falls in
-      // and compute its layer (distance from nearest diatonic note).
-      for (int step = 0; step < cycleLength; step++) {
-        // Find the diatonic note at or just below this step
-        int lowerIdx = 0;
-        for (int j = 6; j >= 0; j--) {
-          if (diatonic[j] <= step) {
-            lowerIdx = j;
-            break;
-          }
-        }
-        int upperIdx = (lowerIdx + 1) % 7;
-        int lowerPos = diatonic[lowerIdx];
-        int upperPos = (upperIdx == 0) ? cycleLength : diatonic[upperIdx];
-        int intervalSize = upperPos - lowerPos;  // L or s
-        int k = step - lowerPos;                 // offset from lower diatonic note
-        int kFromUpper = intervalSize - k;       // offset from upper diatonic note
-        if (k == 0) {
-          mosLayer[step] = 0;              // diatonic natural
-          mosEquidistant[step] = false;
-        } else if (k == kFromUpper) {
-          mosLayer[step] = k;              // equidistant (e.g. tritone in 12EDO)
-          mosEquidistant[step] = true;
-        } else if (k < kFromUpper) {
-          mosLayer[step] = k;              // sharp side (+1, +2, ...)
-          mosEquidistant[step] = false;
-        } else {
-          mosLayer[step] = -kFromUpper;    // flat side (-1, -2, ...)
-          mosEquidistant[step] = false;
-        }
-      }
-    }
-  }
-  // ---- End diatonic MOS precomputation ----
-
   for (byte i = 0; i < LED_COUNT; i++) {
     if (!(h[i].isCmd)) {
       colorDef setColor;
-      byte paletteIndex = positiveMod(h[i].stepsFromC, cycleLength);
+      byte paletteIndex = positiveMod(h[i].stepsFromC, current.tuning().cycleLength);
       if (paletteBeginsAtKeyCenter) {
         paletteIndex = current.keyDegree(paletteIndex);
       }
@@ -1764,10 +1532,10 @@ void setLEDcolorCodes() {
           break;
         case RAINBOW_OF_FIFTHS_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
           {
-          float stepSize = current.tuning().stepSize;
+            float stepSize = current.tuning().stepSize;
             float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
             float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-          float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
+            float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
             float fifthSize = ((ratioToCents(3.0 / 2.0)) / stepSize);
             float reverseFifth = fifthSize;
             switch (current.tuningIndex) {
@@ -1937,80 +1705,55 @@ void setLEDcolorCodes() {
           }
           break;
         case ALTERNATE_COLOR_MODE:
-          {
-            // This mode assigns each note a color based on the interval it forms with the root note.
-            // This is an adaptation of an algorithm developed by Nicholas Fox and Kite Giedraitis.
-            float cents = current.tuning().stepSize * paletteIndex;
-            bool perf = 0;
-            float center = 0.0;
-            if (cents < 50) { perf = 1; center = 0.0; }
-            else if ((cents >= 50) && (cents < 250)) { center = 147.1; }
-            else if ((cents >= 250) && (cents < 450)) { center = 351.0; }
-            else if ((cents >= 450) && (cents < 600)) { perf = 1; center = 498.0; }
-            else if ((cents >= 600) && (cents <= 750)) { perf = 1; center = 702.0; }
-            else if ((cents > 750) && (cents <= 950)) { center = 849.0; }
-            else if ((cents > 950) && (cents <= 1150)) { center = 1053.0; }
-            else if ((cents > 1150) && (cents < 1250)) { perf = 1; center = 1200.0; }
-            else if ((cents >= 1250) && (cents < 1450)) { center = 1347.1; }
-            else if ((cents >= 1450) && (cents < 1650)) { center = 1551.0; }
-            else if ((cents >= 1650) && (cents < 1850)) { perf = 1; center = 1698.0; }
-            else if ((cents >= 1800) && (cents <= 1950)) { perf = 1; center = 1902.0; }
-            float offCenter = cents - center;
-            int16_t altHue = positiveMod((int)(150 + (perf * ((offCenter > 0) ? -72 : 72)) - round(1.44 * offCenter)), 360);
-            float deSaturate = perf * (abs(offCenter) < 20) * (1 - (0.02 * abs(offCenter)));
-            setColor = {
-              (float)altHue,
-              (byte)(255 - round(255 * deSaturate)),
-              (byte)(cents ? VALUE_SHADE : VALUE_NORMAL)
-            };
+          // This mode assigns each note a color based on the interval it forms with the root note.
+          // This is an adaptation of an algorithm developed by Nicholas Fox and Kite Giedraitis.
+          float cents = current.tuning().stepSize * paletteIndex;
+          bool perf = 0;
+          float center = 0.0;
+          if (cents < 50) {
+            perf = 1;
+            center = 0.0;
+          } else if ((cents >= 50) && (cents < 250)) {
+            center = 147.1;
+          } else if ((cents >= 250) && (cents < 450)) {
+            center = 351.0;
+          } else if ((cents >= 450) && (cents < 600)) {
+            perf = 1;
+            center = 498.0;
+          } else if ((cents >= 600) && (cents <= 750)) {
+            perf = 1;
+            center = 702.0;
+          } else if ((cents > 750) && (cents <= 950)) {
+            center = 849.0;
+          } else if ((cents > 950) && (cents <= 1150)) {
+            center = 1053.0;
+          } else if ((cents > 1150) && (cents < 1250)) {
+            perf = 1;
+            center = 1200.0;
+          } else if ((cents >= 1250) && (cents < 1450)) {
+            center = 1347.1;
+          } else if ((cents >= 1450) && (cents < 1650)) {
+            center = 1551.0;
+          } else if ((cents >= 1650) && (cents < 1850)) {
+            perf = 1;
+            center = 1698.0;
+          } else if ((cents >= 1800) && (cents <= 1950)) {
+            perf = 1;
+            center = 1902.0;
           }
-          break;
-        case DIATONIC_COLOR_MODE:
-          {
-            byte rawIndex = paletteIndex;
-            if (!mosValid) {
-              setColor.hue = 360.0f * ((float)paletteIndex / (float)cycleLength);
-              setColor.sat = SAT_VIVID;
-              setColor.val = VALUE_NORMAL;
-            } else {
-              int8_t layer = mosLayer[rawIndex];
-              bool equi = mosEquidistant[rawIndex];
-              if (layer == 0) {
-                setColor.hue = HUE_NONE;
-                setColor.sat = SAT_BW;
-                setColor.val = VALUE_NORMAL;
-              } else if (equi) {
-                setColor.hue = HUE_PURPLE;
-                setColor.sat = SAT_DULL;
-                setColor.val = VALUE_NORMAL;
-              } else if (layer > 0) {
-                float hue = fmodf(360.0f + HUE_ORANGE - (float)(layer - 1) * 36.0f, 360.0f);
-                byte val = (byte)max((int)VALUE_SHADE, (int)VALUE_NORMAL - (layer - 1) * 16);
-                setColor.hue = hue;
-                setColor.sat = SAT_VIVID;
-                setColor.val = val;
-              } else {
-                int absLayer = -layer;
-                float hue = fmodf(HUE_BLUE + (float)(absLayer - 1) * 36.0f, 360.0f);
-                byte val = (byte)max((int)VALUE_SHADE, (int)VALUE_NORMAL - (absLayer - 1) * 16);
-                setColor.hue = hue;
-                setColor.sat = SAT_VIVID;
-                setColor.val = val;
-              }
-            }
-          }
-          break;
-        default:
+          float offCenter = cents - center;
+          int16_t altHue = positiveMod((int)(150 + (perf * ((offCenter > 0) ? -72 : 72)) - round(1.44 * offCenter)), 360);
+          float deSaturate = perf * (abs(offCenter) < 20) * (1 - (0.02 * abs(offCenter)));
+          setColor = {
+            (float)altHue,
+            (byte)(255 - round(255 * deSaturate)),
+            (byte)(cents ? VALUE_SHADE : VALUE_NORMAL)
+          };
           break;
       }
-      colorDef restColor = setColor;
-      restColor.val = applyLEDLevel(restColor.val, ledRestBrightness);
-      h[i].LEDcodeRest = getLEDcode(restColor);
-      colorDef playColor = setColor.tint();
-      h[i].LEDcodePlay = getLEDcode(playColor);
-      colorDef dimColor = setColor.shade();
-      dimColor.val = applyLEDLevel(dimColor.val, ledDimBrightness);
-      h[i].LEDcodeDim = getLEDcode(dimColor);
+      h[i].LEDcodeRest = getLEDcode(setColor);
+      h[i].LEDcodePlay = getLEDcode(setColor.tint());
+      h[i].LEDcodeDim = getLEDcode(setColor.shade());
       setColor = { HUE_NONE, SAT_BW, VALUE_BLACK };
       h[i].LEDcodeOff = getLEDcode(setColor);  // turn off entirely
       h[i].LEDcodeAnim = h[i].LEDcodePlay;
@@ -2020,69 +1763,54 @@ void setLEDcolorCodes() {
 }
 
 void resetVelocityLEDs() {
-  byte topValue = byteLerp(0, 255, 85, 127, velWheel.curValue);
-  colorDef tempColor = {
-    (runTime % (rainbowDegreeTime * 360)) / (float)rainbowDegreeTime,
-    SAT_MODERATE,
-    applyLEDLevel(topValue, ledRestBrightness)
-  };
+  colorDef tempColor = { (runTime % (rainbowDegreeTime * 360)) / (float)rainbowDegreeTime, SAT_MODERATE, byteLerp(0, 255, 85, 127, velWheel.curValue) };
   strip.setPixelColor(assignCmd[0], getLEDcode(tempColor));
 
-  tempColor.val = applyLEDLevel(byteLerp(0, 255, 42, 85, velWheel.curValue), ledRestBrightness);
+  tempColor.val = byteLerp(0, 255, 42, 85, velWheel.curValue);
   strip.setPixelColor(assignCmd[1], getLEDcode(tempColor));
 
-  tempColor.val = applyLEDLevel(byteLerp(0, 255, 0, 42, velWheel.curValue), ledRestBrightness);
+  tempColor.val = byteLerp(0, 255, 0, 42, velWheel.curValue);
   strip.setPixelColor(assignCmd[2], getLEDcode(tempColor));
 }
 void resetWheelLEDs() {
   // middle button
   byte tempSat = SAT_BW;
-  byte baseValue = static_cast<byte>(toggleWheel ? VALUE_SHADE : VALUE_LOW);
-  colorDef tempColor = { HUE_NONE, tempSat, applyLEDLevel(baseValue, ledRestBrightness) };
+  colorDef tempColor = { HUE_NONE, tempSat, (byte)(toggleWheel ? VALUE_SHADE : VALUE_LOW) };
   strip.setPixelColor(assignCmd[3], getLEDcode(tempColor));
   if (toggleWheel) {
     // pb red / green
     tempSat = byteLerp(SAT_BW, SAT_VIVID, 0, 8192, abs(pbWheel.curValue));
-    tempColor = {
-      (float)((pbWheel.curValue > 0) ? HUE_RED : HUE_CYAN),
-      tempSat,
-      applyLEDLevel(VALUE_FULL, ledRestBrightness)
-    };
+    tempColor = { (float)((pbWheel.curValue > 0) ? HUE_RED : HUE_CYAN), tempSat, VALUE_FULL };
     strip.setPixelColor(assignCmd[5], getLEDcode(tempColor));
 
-    tempColor.val = applyLEDLevel(static_cast<byte>(tempSat * (pbWheel.curValue > 0)), ledRestBrightness);
+    tempColor.val = tempSat * (pbWheel.curValue > 0);
     strip.setPixelColor(assignCmd[4], getLEDcode(tempColor));
 
-    tempColor.val = applyLEDLevel(static_cast<byte>(tempSat * (pbWheel.curValue < 0)), ledRestBrightness);
+    tempColor.val = tempSat * (pbWheel.curValue < 0);
     strip.setPixelColor(assignCmd[6], getLEDcode(tempColor));
   } else {
     // mod blue / yellow
     tempSat = byteLerp(SAT_BW, SAT_VIVID, 0, 64, abs(modWheel.curValue - 63));
-    byte brightValue = static_cast<byte>(127 + (tempSat / 2));
     tempColor = {
       (float)((modWheel.curValue > 63) ? HUE_YELLOW : HUE_INDIGO),
       tempSat,
-      applyLEDLevel(brightValue, ledRestBrightness)
+      (byte)(127 + (tempSat / 2))
     };
     strip.setPixelColor(assignCmd[6], getLEDcode(tempColor));
 
     if (modWheel.curValue <= 63) {
-      brightValue = static_cast<byte>(127 - (tempSat / 2));
-      tempColor.val = applyLEDLevel(brightValue, ledRestBrightness);
+      tempColor.val = 127 - (tempSat / 2);
     }
-    // when modWheel.curValue > 63, tempColor already holds the proper value
     strip.setPixelColor(assignCmd[5], getLEDcode(tempColor));
 
-    tempColor.val = applyLEDLevel(static_cast<byte>(tempSat * (modWheel.curValue > 63)), ledRestBrightness);
+    tempColor.val = tempSat * (modWheel.curValue > 63);
     strip.setPixelColor(assignCmd[4], getLEDcode(tempColor));
   }
 }
 uint32_t applyNotePixelColor(byte x) {
   if (h[x].animate) {
     return h[x].LEDcodeAnim;
-  } else if ((animationType != ANIMATE_NONE)
-          && (animationType != ANIMATE_MIDI_IN)
-          && h[x].MIDIch) {
+  } else if (h[x].MIDIch) {
     return h[x].LEDcodePlay;
   } else if (h[x].inScale) {
     return h[x].LEDcodeRest;
@@ -2096,21 +1824,16 @@ void setupLEDs() {
   strip.begin();  // INITIALIZE NeoPixel strip object
   strip.show();   // Turn OFF all pixels ASAP
   sendToLog("LEDs started...");
+  setLEDcolorCodes();
 }
 void lightUpLEDs() {
-  if (delegatedControl) {
-    for (byte i = 0; i < LED_COUNT; i++) {
-      strip.setPixelColor(i, delegatedColors[i]);
+  for (byte i = 0; i < LED_COUNT; i++) {
+    if (!(h[i].isCmd)) {
+      strip.setPixelColor(i, applyNotePixelColor(i));
     }
-  } else {
-    for (byte i = 0; i < LED_COUNT; i++) {
-      if (!(h[i].isCmd)) {
-        strip.setPixelColor(i, applyNotePixelColor(i));
-      }
-    }
-    resetVelocityLEDs();
-    resetWheelLEDs();
   }
+  resetVelocityLEDs();
+  resetWheelLEDs();
   strip.show();
 }
 
@@ -2127,15 +1850,14 @@ void lightUpLEDs() {
     and pitch bend messages assuming note 69
     equals concert A4, as defined below.
   */
-constexpr float CONCERT_A_HZ = 440.0f;
-constexpr float CONCERT_A_MIDI_NOTE = 69.0f;
+#define CONCERT_A_HZ 440.0
 /*
     Pitch bend messages are calibrated
     to a pitch bend range where
     -8192 to 8191 = -200 to +200 cents,
     or two semitones.
   */
-constexpr byte DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2;
+#define PITCH_BEND_SEMIS 2
 /*
     We use pitch bends to retune notes in MPE mode.
     Some setups can adjust to fit this, but some need us to adjust it.
@@ -2149,181 +1871,125 @@ Adafruit_USBD_MIDI usb_midi;
 MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, UMIDI);
 MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, SMIDI);
 // midiD takes the following bitwise flags
-constexpr byte MIDID_NONE = 0;
-constexpr byte MIDID_USB = 1;
-constexpr byte MIDID_SER = 2;
-constexpr byte MIDID_BOTH = 3;
+#define MIDID_NONE 0
+#define MIDID_USB 1
+#define MIDID_SER 2
+#define MIDID_BOTH 3
 byte midiD = MIDID_USB | MIDID_SER;
 
 // What program change number we last sent (General MIDI/Roland MT-32)
 byte programChange = 0;
 
-uint16_t mpeChannelBitmap = 0;  // bitmap of available MPE channels (bit N = channel N+1)
+std::queue<byte> MPEchQueue;
 byte MPEpitchBendsNeeded;
-bool mpeChannelQueueActive = false;
-
-uint8_t mpePlayableChannelCount() {
-  if (mpeHighestChannel < mpeLowestChannel) {
-    return 0;
-  }
-  return static_cast<uint8_t>(mpeHighestChannel - mpeLowestChannel + 1);
-}
-
-void resetMPEChannelPool() {
-  mpeChannelBitmap = 0;
-  for (byte ch = mpeLowestChannel; ch <= mpeHighestChannel; ++ch) {
-    mpeChannelBitmap |= (1u << (ch - 1));
-    sendToLog("added ch " + std::to_string(ch) + " to the MPE pool");
-  }
-}
-
-byte takeMPEChannel() {
-  if (mpeChannelBitmap == 0) {
-    return 0;
-  }
-  // Always take lowest available channel (equivalent to sorted front() for low-priority,
-  // and a reasonable FIFO-like behavior otherwise)
-  byte ch = static_cast<byte>(__builtin_ctz(mpeChannelBitmap) + 1);
-  mpeChannelBitmap &= ~(1u << (ch - 1));
-  return ch;
-}
-
-void releaseMPEChannel(byte ch) {
-  if (ch < mpeLowestChannel || ch > mpeHighestChannel) {
-    return;
-  }
-  mpeChannelBitmap |= (1u << (ch - 1));
-  sendToLog("returned ch " + std::to_string(ch) + " to the MPE pool");
-}
 
 float freqToMIDI(float Hz) {  // formula to convert from Hz to MIDI note
-  return CONCERT_A_MIDI_NOTE + 12.0f * log2f(Hz / CONCERT_A_HZ);
+  return 69.0 + 12.0 * log2f(Hz / 440.0);
 }
 float MIDItoFreq(float midi) {  // formula to convert from MIDI note to Hz
-  return CONCERT_A_HZ * exp2((midi - CONCERT_A_MIDI_NOTE) / 12.0f);
+  return 440.0 * exp2((midi - 69.0) / 12.0);
 }
 float stepsToMIDI(int16_t stepsFromA) {  // return the MIDI pitch associated
-  return CONCERT_A_MIDI_NOTE + (static_cast<float>(stepsFromA) * static_cast<float>(current.tuning().stepSize) / 100.0f);
-}
-
-// Do the same thing on each defined MIDI interface. This reduces code
-// duplication. Search for withMIDI to see how it's used.
-template <class F>
-inline void withMIDI(F&& f) {
-  if (midiD & MIDID_USB) f(UMIDI);
-  if (midiD & MIDID_SER) f(SMIDI);
+  return freqToMIDI(CONCERT_A_HZ) + ((float)stepsFromA * (float)current.tuning().stepSize / 100.0);
 }
 
 void setPitchBendRange(byte Ch, byte semitones) {
-  withMIDI([&](auto& M) {
-    M.beginRpn(0, Ch);
-    M.sendRpnValue(semitones << 7, Ch);
-    M.endRpn(Ch);
-  });
+  if (midiD & MIDID_USB) {
+    UMIDI.beginRpn(0, Ch);
+    UMIDI.sendRpnValue(semitones << 7, Ch);
+    UMIDI.endRpn(Ch);
+  }
+  if (midiD & MIDID_SER) {
+    SMIDI.beginRpn(0, Ch);
+    SMIDI.sendRpnValue(semitones << 7, Ch);
+    SMIDI.endRpn(Ch);
+  }
   sendToLog(
     "set pitch bend range on ch " + std::to_string(Ch) + " to be " + std::to_string(semitones) + " semitones");
 }
 
 void setMPEzone(byte masterCh, byte sizeOfZone) {
-  withMIDI([&](auto& M) {
-    M.beginRpn(6, masterCh);
-    M.sendRpnValue(sizeOfZone << 7, masterCh);
-    M.endRpn(masterCh);
-  });
+  if (midiD & MIDID_USB) {
+    UMIDI.beginRpn(6, masterCh);
+    UMIDI.sendRpnValue(sizeOfZone << 7, masterCh);
+    UMIDI.endRpn(masterCh);
+  }
+  if (midiD & MIDID_SER) {
+    SMIDI.beginRpn(6, masterCh);
+    SMIDI.sendRpnValue(sizeOfZone << 7, masterCh);
+    SMIDI.endRpn(masterCh);
+  }
   sendToLog(
     "tried sending MIDI msg to set MPE zone, master ch " + std::to_string(masterCh) + ", zone of this size: " + std::to_string(sizeOfZone));
 }
 
 void resetTuningMIDI() {
   /*
-      One of the ways that microtonal MIDI works
-      is via MPE (MIDI polyphonic expression).
+      currently the only way that microtonal
+      MIDI works is via MPE (MIDI polyphonic expression).
       This assigns re-tuned notes to an independent channel
       so they can be pitched separately.
 
-      We can now use microtonal tunings without MPE
-      by sending standard MIDI note numbers across
-      multiple channels to be retuned by other software
-      or hardware.
-
-      If operating in a standard 12-EDO tuning, with MPE
-      disabled, or in a tuning with steps that are exact
-      multiples of 100 cents, then MPE is not necessary.
+      if operating in a standard 12-EDO tuning, or in a
+      tuning with steps that are all exact multiples of
+      100 cents, then MPE is not necessary.
     */
-  standardMidiMicrotonalActive = false;
-  bool tuningIsStandardSemitone = (current.tuning().stepSize == 100.0);
-  bool forceMPE = (mpeUserMode == MPE_MODE_FORCE);
-  bool disableMPE = (mpeUserMode == MPE_MODE_DISABLE);
-  bool mpeOptional = !forceMPE && !useDynamicJustIntonation && !useJustIntonationBPM;
-
-  if (forceMPE) {
-    MPEpitchBendsNeeded = 255;
-  } else if (disableMPE) {
-    standardMidiMicrotonalActive = !tuningIsStandardSemitone;
-    MPEpitchBendsNeeded = 1;
-  } else if (mpeOptional && tuningIsStandardSemitone) {
+  if (current.tuning().stepSize == 100.0 && !useDynamicJustIntonation && !useJustIntonationBPM && !forceEnableMPE) {
     MPEpitchBendsNeeded = 1;  // Standard 12EDO, single-channel mode
+    /*  this was an attempt to allow unlimited polyphony for certain EDOs. doesn't work in Logic Pro.
+    } else if (round(current.tuning().cycleLength * current.tuning().stepSize) == 1200) {
+      MPEpitchBendsNeeded = current.tuning().cycleLength / std::gcd(12, current.tuning().cycleLength);
+    */
   } else {
-    MPEpitchBendsNeeded = 255;  // Enables MPE mode when microtonal needs per-note pitch bends
+    MPEpitchBendsNeeded = 255;  // Enables MPE mode when in Just Intonation or microtonal tuning
   }
-  clampMPEChannelRange();
-
-  uint8_t playableChannels = mpePlayableChannelCount();
-  if (playableChannels == 0) {
-    mpeLowestChannel = MPE_CHANNEL_MIN;
-    mpeHighestChannel = MPE_CHANNEL_MIN;
-    playableChannels = mpePlayableChannelCount();
-  }
-
-  bool mpeEnabled = (MPEpitchBendsNeeded > 1);
-
-  if (mpeEnabled) {
-    byte zoneSize = 0;
-    if (mpeHighestChannel > 1) {
-      zoneSize = static_cast<byte>(mpeHighestChannel - 1);
+  if (MPEpitchBendsNeeded > 15) {
+    setMPEzone(1, 15);             // MPE zone 1 = ch 2 thru 16
+    while (!MPEchQueue.empty()) {  // empty the channel queue
+      MPEchQueue.pop();
     }
-    setMPEzone(1, zoneSize);  // Advertise the highest channel we plan to use.
+    for (byte i = 2; i <= 16; i++) {
+      MPEchQueue.push(i);  // fill the channel queue
+      sendToLog("pushed ch " + std::to_string(i) + " to the open channel queue");
+    }
   } else {
     setMPEzone(1, 0);
   }
-
-  mpeChannelQueueActive = false;
-  mpeChannelBitmap = 0;
-
-  if (mpeEnabled) {
-    bool needsQueue = (MPEpitchBendsNeeded > playableChannels) || mpeLowPriorityMode;
-    mpeChannelQueueActive = needsQueue;
-    if (needsQueue) {
-      resetMPEChannelPool();
-    }
-  }
   // Reset controllers and ensure every channel uses the appropriate pitch-bend range.
-  for (byte i = MIDI_CHANNEL_MIN; i <= MIDI_CHANNEL_MAX; ++i) {
-    withMIDI([&](auto& M) { M.sendControlChange(123, 0, i); });
-    byte range = DEFAULT_PITCH_BEND_RANGE_SEMITONES;
-    if (mpeEnabled && i >= mpeLowestChannel && i <= mpeHighestChannel) {
+  for (byte i = 1; i <= 16; i++) {
+    if (midiD & MIDID_USB) UMIDI.sendControlChange(123, 0, i);
+    if (midiD & MIDID_SER) SMIDI.sendControlChange(123, 0, i);
+    byte range = 2;
+    if (MPEpitchBendsNeeded > 1 && i > 1) {
       range = MPEpitchBendSemis;
+    } else if (MPEpitchBendsNeeded == 1) {
+      range = 2;
     }
     setPitchBendRange(i, range);
   }
 }
 
 byte primaryMIDIChannel() {
-  if (MPEpitchBendsNeeded == 1 && isValidMidiChannel(defaultMidiChannel)) {
+  if (MPEpitchBendsNeeded == 1) {
+    if (defaultMidiChannel < 1 || defaultMidiChannel > 16) {
+      return 1;
+    }
     return defaultMidiChannel;
   }
-  return MIDI_CHANNEL_MIN;  // In MPE mode, channel 1 is the master channel.
+  return 1;  // In MPE mode, channel 1 is the master channel.
 }
 
 void sendMIDImodulationToCh1() {
   byte targetChannel = primaryMIDIChannel();
-  withMIDI([&](auto& M) { M.sendControlChange(1, modWheel.curValue, targetChannel); });
+  if (midiD & MIDID_USB) UMIDI.sendControlChange(1, modWheel.curValue, targetChannel);
+  if (midiD & MIDID_SER) SMIDI.sendControlChange(1, modWheel.curValue, targetChannel);
   sendToLog("sent mod value " + std::to_string(modWheel.curValue) + " to ch " + std::to_string(targetChannel));
 }
 
 void sendMIDIpitchBendToCh1() {
   byte targetChannel = primaryMIDIChannel();
-  withMIDI([&](auto& M) { M.sendPitchBend(pbWheel.curValue, targetChannel); });
+  if (midiD & MIDID_USB) UMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
+  if (midiD & MIDID_SER) SMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
   sendToLog("sent pb wheel value " + std::to_string(pbWheel.curValue) + " to ch " + std::to_string(targetChannel));
 }
 
@@ -2347,26 +2013,10 @@ void sendMIDIpitchBendToCh1() {
 // TODO: replace std::pair<byte,byte> ratios with precomputed floating(or fixed) point ratios;
 // TODO: generate the table of ratios with a constexpr function rather than holding a huge block of hardcoded values in the code;
 // TODO: It is a good idea to octave-reduce the ratios, and adjust the code to calculate pitchbend against the octave reduced set of ratios for significant performance improvement;
-inline float pitchBendToFrequencyMultiplier(int16_t bendValue) {
-  if (bendValue == 0) {
-    return 1.0f;
-  }
-  const float semitoneOffset = (static_cast<float>(bendValue) * static_cast<float>(MPEpitchBendSemis)) / 8192.0f;
-  return std::exp2(semitoneOffset / 12.0f);
-}
-
-int16_t justIntonationRetune(byte x);
-
-inline int16_t combinedPitchBend(byte index) {
-  const int32_t combined = static_cast<int32_t>(h[index].bend) + h[index].jiRetune;
-  if (combined > 8191) {
-    return 8191;
-  }
-  if (combined < -8192) {
-    return -8192;
-  }
-  return static_cast<int16_t>(combined);
-}
+// TODO: implement dynamic just intonation for buzzer
+// TODO: There is an issue with tuning error in this line:
+// UMIDI.sendPitchBend(h[x].bend + justIntonationRetune(x), h[x].MIDIch);
+// The retuning is done twice, and rounding errors will add up. This can be heard if you play a unison with different pitches that collapse into 1/1 by dynamic just intonation (or if you use BPM sync with a really high frequency). You will sometimes hear extremely slow beating despite both notes being forced into the same pitch
 
 
 // This is a list of ratios sorted from the simplest ones to the most complex ones. The code searches for a first match that's good enough within 1/4 of an EDO step, literally bruteforcing through the list. As a result - the simplest ratio is chosen before more comples ones, prioritising consonant ratios first. In case not a single good ratio is found - the best one found so far is chosen instead
@@ -2843,19 +2493,19 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 38, 5 }
 };
 
-int16_t centsToRelativePitchBend(float cents) {
-  return round(cents * (8192.0 / (100.0 * MPEpitchBendSemis)));
+float ratioToCents(float ratio) {
+  return 1200.0 * (std::log(ratio) / std::log(2.0));
 }
 
-int16_t justIntonationRetune(byte x) {
+float justIntonationOffsetCents(byte x) {
   if (useDynamicJustIntonation == false && useJustIntonationBPM == false) {
-    h[x].jiRetune = 0;
-    h[x].jiFrequencyMultiplier = 1.0f;
-    return 0;
+    return 0.0f;
   }
-  int16_t pitchAdjustment = 0;
-  float pitchAdjustmentCents = 0;
+  float offsetCents = 0.0f;
+  float pitchAdjustmentCents = 0.0f;
   float basePitchOffset = 0;
+  //int16_t degree = (current.keyDegree(h[x].stepsFromC + current.transpose + current.tuning().spanCtoA()));
+  //float buttonStepsFromA = degree;
   if (useJustIntonationBPM) {
     float buttonStepsFromA = -current.tuning().spanCtoA() - h[x].stepsFromC;
     // It was planned to use integer math but floating point arithmetics works fast enough so far
@@ -2865,7 +2515,7 @@ int16_t justIntonationRetune(byte x) {
     if (pressedKeyIDs.size() > 1 && useDynamicJustIntonation) {
       basePitchOffset = ((-current.tuning().spanCtoA() - h[pressedKeyIDs[0]].stepsFromC) * current.tuning().stepSize) - ratioToCents(round(440.0 / rounding) / round(h[pressedKeyIDs[0]].frequency / rounding));
     } else {
-      pitchAdjustment += centsToRelativePitchBend(pitchAdjustmentCents);
+      offsetCents += pitchAdjustmentCents;
     }
   }
   if (useDynamicJustIntonation && pressedKeyIDs.size() > 1) {
@@ -2875,7 +2525,7 @@ int16_t justIntonationRetune(byte x) {
     // detune within a 1/4 of a step, avoid wild detuning but cover the entire pitch range
     float errorThreshold = current.tuning().stepSize / 4.0;
     float deviation = INFINITY;
-      float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
+    float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
     std::pair<byte, byte> selectedRatio;
 
     for (int i = 0; i < ratios.size(); i++) {
@@ -2894,70 +2544,78 @@ int16_t justIntonationRetune(byte x) {
         selectedRatio.second = ratio1;
         if (preferSmallRatios && std::abs(deviation) < errorThreshold) {
           //ratioFound = true;
-            break;
-          }
+          break;
         }
       }
+    }
     //if(ratioFound)
     {
-    pitchAdjustment += centsToRelativePitchBend(deviation + basePitchOffset);
+      offsetCents += (deviation + basePitchOffset);
     }
   }
-  h[x].jiRetune = pitchAdjustment;
-  h[x].jiFrequencyMultiplier = pitchBendToFrequencyMultiplier(pitchAdjustment);
-  return pitchAdjustment;
+  return offsetCents;
+}
+
+float computeFrequencyWithJustIntonation(byte x) {
+  float offsetCents = justIntonationOffsetCents(x);
+  if (offsetCents == 0.0f) {
+    return h[x].frequency;
+  }
+  float ratio = exp2(offsetCents / 1200.0f);
+  return h[x].frequency * ratio;
+}
+
+int16_t computePitchBendWithJustIntonation(byte x) {
+  float offsetCents = justIntonationOffsetCents(x);
+  float baseMidi = freqToMIDI(h[x].frequency);
+  float targetMidi = baseMidi + (offsetCents / 100.0f);
+  float semitoneOffset = targetMidi - h[x].note;
+  float bend = semitoneOffset * (8192.0f / MPEpitchBendSemis);
+  int16_t finalBend = static_cast<int16_t>(roundf(bend));
+  if (finalBend < -8192) finalBend = -8192;
+  if (finalBend > 8191) finalBend = 8191;
+  return finalBend;
 }
 
 
 void tryMIDInoteOn(byte x) {
   // This gets called on any non-command hex that is not scale-locked.
-  if (h[x].note >= 128) {
-    return;
-  }
   if (!(h[x].MIDIch)) {
     if (MPEpitchBendsNeeded == 1) {
-      if (standardMidiMicrotonalActive) {
-        h[x].MIDIch = h[x].mappedMidiChannel ? h[x].mappedMidiChannel : defaultMidiChannel;
-      } else {
-        h[x].MIDIch = defaultMidiChannel;
-      }
+      h[x].MIDIch = defaultMidiChannel;
+    } else if (MPEpitchBendsNeeded <= 15) {
+      h[x].MIDIch = 2 + positiveMod(h[x].stepsFromC, MPEpitchBendsNeeded);
     } else {
-      uint8_t availableChannels = mpePlayableChannelCount();
-      if (availableChannels == 0) {
-        sendToLog("No MPE channels configured; skipped MIDI note");
-      } else if (mpeChannelQueueActive) {
-        byte channel = takeMPEChannel();
-        if (!channel) {
-          sendToLog("MPE pool was empty so did not play a MIDI note");
-        } else {
-          h[x].MIDIch = channel;
-          sendToLog("Assigned MPE ch " + std::to_string(h[x].MIDIch) + " from pool");
-        }
+      if (MPEchQueue.empty()) {  // If there aren't any open channels
+        sendToLog("MPE queue was empty so did not play a MIDI note");
       } else {
-        h[x].MIDIch = static_cast<byte>(mpeLowestChannel + positiveMod(h[x].stepsFromC, availableChannels));
+        h[x].MIDIch = MPEchQueue.front();  // Value in MIDI terms (1-16)
+        MPEchQueue.pop();
+        sendToLog("Popped " + std::to_string(h[x].MIDIch) + " off the MPE queue");
       }
     }
 
     if (h[x].MIDIch) {
       pressedKeyIDs.push_back(x);  // Dynamic JI pressed key tracking
-      justIntonationRetune(x);
-      int16_t pitchBendValue = 0;
       // First, send the pitch bend (if applicable)
       if (MPEpitchBendsNeeded != 1) {
-        pitchBendValue = combinedPitchBend(x);
-        withMIDI([&](auto& M) { M.sendPitchBend(pitchBendValue, h[x].MIDIch); });  // ch 1-16
-        if (extraMPE) { // if the extra MPE messages are enabled
-          withMIDI([&](auto& M) {
-            M.sendAfterTouch(velWheel.curValue, h[x].MIDIch);  // Channel Pressure
-            M.sendControlChange(74, CC74value, h[x].MIDIch);   // CC74 (Timbre)
-          });
+        int16_t finalBend = computePitchBendWithJustIntonation(x);
+        if (midiD & MIDID_USB) UMIDI.sendPitchBend(finalBend, h[x].MIDIch);  // ch 1-16
+        if (midiD & MIDID_SER) SMIDI.sendPitchBend(finalBend, h[x].MIDIch);  // ch 1-16
+        if (extraMPE) {                                                                                //if the extra MPE messages are enabled
+          if (midiD & MIDID_USB) UMIDI.sendAfterTouch(velWheel.curValue, h[x].MIDIch);                 // Channel Pressure
+          if (midiD & MIDID_SER) SMIDI.sendAfterTouch(velWheel.curValue, h[x].MIDIch);                 // Channel Pressure
+          if (midiD & MIDID_USB) UMIDI.sendControlChange(74, CC74value, h[x].MIDIch);                  // CC74 (Timbre)
+          if (midiD & MIDID_SER) SMIDI.sendControlChange(74, CC74value, h[x].MIDIch);                  // CC74 (Timbre)
         }
       }
       // Then, send the note-on message
-      withMIDI([&](auto& M) { M.sendNoteOn(h[x].note, velWheel.curValue, h[x].MIDIch); });  // ch 1-16
+      if (midiD & MIDID_USB) UMIDI.sendNoteOn(h[x].note, velWheel.curValue, h[x].MIDIch);  // ch 1-16
+      if (midiD & MIDID_SER) SMIDI.sendNoteOn(h[x].note, velWheel.curValue, h[x].MIDIch);  // ch 1-16
 
+      int16_t debugBend = (MPEpitchBendsNeeded != 1) ? computePitchBendWithJustIntonation(x) : 0;
       sendToLog(
-        "Sent MIDI pitch bend: " + std::to_string(pitchBendValue) + " to ch " + std::to_string(h[x].MIDIch));
+        "Sent MIDI pitch bend: " + std::to_string(debugBend) + " to ch " + std::to_string(h[x].MIDIch));
       sendToLog(
         "Sent MIDI noteOn: " + std::to_string(h[x].note) + " vel " + std::to_string(velWheel.curValue) + " ch " + std::to_string(h[x].MIDIch));
     }
@@ -2968,20 +2626,20 @@ void tryMIDInoteOff(byte x) {
   // this gets called on any non-command hex
   // that is not scale-locked.
   if (h[x].MIDIch) {  // but just in case, check
-    withMIDI([&](auto& M) { M.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch); });
+    if (midiD & MIDID_USB) UMIDI.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch);
+    if (midiD & MIDID_SER) SMIDI.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch);
     pressedKeyIDs.pop_back();  // Dynamic JI pressed key tracking
-    h[x].jiRetune = 0;
-    h[x].jiFrequencyMultiplier = 1.0f;
     sendToLog(
       "sent note off: " + std::to_string(h[x].note) + " vel " + std::to_string(velWheel.curValue) + " ch " + std::to_string(h[x].MIDIch));
-    if (mpeChannelQueueActive && h[x].MIDIch >= mpeLowestChannel && h[x].MIDIch <= mpeHighestChannel) {
-      if (extraMPE) { //if the extra MPE messages are enabled
-        withMIDI([&](auto& M) {
-          M.sendAfterTouch(0, h[x].MIDIch);                 // Channel Pressure
-          M.sendControlChange(74, CC74value, h[x].MIDIch);  // CC74 (Timbre)
-        });
+    if (MPEpitchBendsNeeded > 15 && h[x].MIDIch > 1) {
+      if (extraMPE) {                                                                //if the extra MPE messages are enabled
+        if (midiD & MIDID_USB) UMIDI.sendAfterTouch(0, h[x].MIDIch);                 // Channel Pressure
+        if (midiD & MIDID_SER) SMIDI.sendAfterTouch(0, h[x].MIDIch);                 // Channel Pressure
+        if (midiD & MIDID_USB) UMIDI.sendControlChange(74, CC74value, h[x].MIDIch);  // CC74 (Timbre)
+        if (midiD & MIDID_SER) SMIDI.sendControlChange(74, CC74value, h[x].MIDIch);  // CC74 (Timbre)
       }
-      releaseMPEChannel(h[x].MIDIch);
+      MPEchQueue.push(h[x].MIDIch);
+      sendToLog("pushed " + std::to_string(h[x].MIDIch) + " on the MPE queue");
     }
     h[x].MIDIch = 0;
   }
@@ -3007,8 +2665,7 @@ void setupMIDI() {
   usb_midi.setStringDescriptor("HexBoard MIDI");  // Initialize MIDI, and listen to all MIDI channels
   UMIDI.begin(MIDI_CHANNEL_OMNI);                 // This will also call usb_midi's begin()
   SMIDI.begin(MIDI_CHANNEL_OMNI);
-  UMIDI.turnThruOff();                            // prevent echoing incoming MIDI back out
-  SMIDI.turnThruOff();                            // disable thru on DIN as well
+  resetTuningMIDI();
   sendToLog("setupMIDI okay");
 }
 
@@ -3026,46 +2683,18 @@ void setupMIDI() {
     with the PIEZO_PIN on this processor (see RP2040
     manual) than to have it looked up each time.
   */
-constexpr byte PIEZO_PIN = 23;
-constexpr byte PIEZO_SLICE = 3;
-constexpr byte PIEZO_CHNL = 1;
-constexpr byte AJACK_PIN = 25;
-constexpr byte AJACK_SLICE = 4;
-constexpr byte AJACK_CHNL = 1;
+#define PIEZO_PIN 23
+#define PIEZO_SLICE 3
+#define PIEZO_CHNL 1
+#define AJACK_PIN 25
+#define AJACK_SLICE 4
+#define AJACK_CHNL 1
 // midiD takes the following bitwise flags
-constexpr byte AUDIO_NONE = 0;
-constexpr byte AUDIO_PIEZO = 1;
-constexpr byte AUDIO_AJACK = 2;
-constexpr byte AUDIO_BOTH = 3;
+#define AUDIO_NONE 0
+#define AUDIO_PIEZO 1
+#define AUDIO_AJACK 2
+#define AUDIO_BOTH 3
 byte audioD = AUDIO_PIEZO | AUDIO_AJACK;
-
-// ============================================================
-// PWM AUDIO CONFIG
-// ============================================================
-// Set PWM_BITS to 8 or 10 to control PWM resolution.
-// 8-bit: wrap=254 (matches your existing behavior)
-// 10-bit: wrap=1023 (cleaner on jack, lower quantization noise)
-//
-// NOTE: Higher wrap lowers PWM carrier frequency. At 200MHz with clkdiv=1,
-// it should remain ultrasonic, but if you ever hear PWM whine on the jack,
-// drop back to 8-bit or raise carrier via clkdiv/wrap tradeoffs.
-#ifndef PWM_BITS
-#define PWM_BITS 10
-#endif
-
-#if (PWM_BITS == 8)
-  constexpr uint16_t PWM_WRAP = 254;
-  constexpr int32_t  PWM_MID  = 127;
-  constexpr int32_t  SHAPE_CLAMP = 127;
-  constexpr int      OUTPUT_SHIFT = 8;   // derived above
-  constexpr int      ENV_TO_A_SHIFT = 9; // 65535 >> 9 ~= 127
-#elif (PWM_BITS == 10)
-  constexpr uint16_t PWM_WRAP = 1023;
-  constexpr int32_t  PWM_MID  = 512;
-  constexpr int32_t  SHAPE_CLAMP = 511;
-  constexpr int      OUTPUT_SHIFT = 6;   // derived above
-  constexpr int      ENV_TO_A_SHIFT = 7; // 65535 >> 7 ~= 512
-#endif
 /*
     These definitions provide 8-bit samples to emulate.
     You can add your own as desired; it must
@@ -3408,87 +3037,8 @@ struct EnvelopeState {
 };
 
 std::array<EnvelopeState, POLYPHONY_LIMIT> envelopeStates;
-enum class EnvelopeCommand : uint8_t {
-  None,
-  StartAttack,
-  StartRelease,
-  Reset
-};
-
-// Core 0 publishes the latest envelope command for each voice, and the audio
-// ISR on core 1 consumes it. The sequence byte tells the consumer whether a
-// newer command has arrived since the last poll.
-volatile uint8_t envelopeCommandValues[POLYPHONY_LIMIT] = {};
-volatile uint8_t envelopeCommandPublishedSeq[POLYPHONY_LIMIT] = {};
-std::array<uint8_t, POLYPHONY_LIMIT> envelopeCommandConsumedSeq = {};
-
-// The opposite direction is simpler: core 1 only needs to tell core 0 that a
-// voice has fully finished and can return to the free list. A sequence byte is
-// enough because "voice finished" is an idempotent event.
-volatile uint8_t voiceFreedPublishedSeq[POLYPHONY_LIMIT] = {};
-std::array<uint8_t, POLYPHONY_LIMIT> voiceFreedConsumedSeq = {};
-std::array<std::atomic<bool>, POLYPHONY_LIMIT> channelInUse = {};
-std::array<std::atomic<uint32_t>, POLYPHONY_LIMIT> voiceGenerations;
-std::array<std::atomic<int16_t>, POLYPHONY_LIMIT> synthChannelOwners;
-std::atomic<uint32_t> nextVoiceGeneration = 1;
-// Flag set by Core 0 before flash writes. When true, poll() outputs silence
-// so the audio ISR resumes cleanly after flash operations (which disable all
-// interrupts on both cores of the RP2040).
-std::atomic<bool> flashWriteInProgress = false;
-constexpr int16_t NO_SYNTH_OWNER = -1;
-float pitchBendFactor = 1.0f;
-std::array<uint8_t, POLYPHONY_LIMIT> releaseRetries = {};
-std::array<uint8_t, POLYPHONY_LIMIT> releaseRetryCountdown = {};
-
-constexpr uint8_t releaseRetryLimit = 2;
-constexpr uint8_t releaseRetryDelayLoops = 2;
-
-// Publish the newest command for one voice. The command byte is written first,
-// then a memory barrier makes sure core 1 cannot observe the new sequence
-// number before the matching command value is visible.
-inline void publishEnvelopeCommand(uint8_t channel, EnvelopeCommand command) {
-  envelopeCommandValues[channel] = static_cast<uint8_t>(command);
-  __dmb();
-  envelopeCommandPublishedSeq[channel] = static_cast<uint8_t>(envelopeCommandPublishedSeq[channel] + 1);
-}
-
-// Read the newest command once. Returning None means nothing new arrived since
-// the last ISR iteration for this voice.
-inline EnvelopeCommand consumeEnvelopeCommand(uint8_t channel) {
-  uint8_t publishedSeq = envelopeCommandPublishedSeq[channel];
-  if (publishedSeq == envelopeCommandConsumedSeq[channel]) {
-    return EnvelopeCommand::None;
-  }
-  __dmb();
-  EnvelopeCommand command = static_cast<EnvelopeCommand>(envelopeCommandValues[channel]);
-  envelopeCommandConsumedSeq[channel] = publishedSeq;
-  return command;
-}
-
-// Core 1 uses this when a release truly reaches zero. Core 0 later consumes
-// the event and pushes the voice back into the available-channel queue.
-inline void publishVoiceFreed(uint8_t channel) {
-  __dmb();
-  voiceFreedPublishedSeq[channel] = static_cast<uint8_t>(voiceFreedPublishedSeq[channel] + 1);
-}
-
-// Core 0 checks whether core 1 has published a newer "voice finished" event.
-inline bool consumeVoiceFreed(uint8_t channel) {
-  uint8_t publishedSeq = voiceFreedPublishedSeq[channel];
-  if (publishedSeq == voiceFreedConsumedSeq[channel]) {
-    return false;
-  }
-  __dmb();
-  voiceFreedConsumedSeq[channel] = publishedSeq;
-  return true;
-}
-
-// When core 0 immediately reuses a voice, any older pending "voice finished"
-// event for that same channel must be ignored so it cannot free the new note.
-inline void clearPendingVoiceFreed(uint8_t channel) {
-  __dmb();
-  voiceFreedConsumedSeq[channel] = voiceFreedPublishedSeq[channel];
-}
+std::array<bool, POLYPHONY_LIMIT> channelInUse = {};
+std::array<std::atomic<bool>, POLYPHONY_LIMIT> envelopeNeedsFree;
 
 void updateEnvelopeParamsFromSettings() {
   auto clampIndex = [](uint8_t& index) {
@@ -3567,113 +3117,41 @@ public:
 };
 oscillator synth[POLYPHONY_LIMIT];  // maximum polyphony
 std::queue<byte> synthChQueue;
-const byte attenuation[] = { 64, 24, 17, 14, 12, 11, 10, 9, 8 };  // full volume in mono mode; equalized volume in poly.
+const byte attenuation[] = { 128, 96, 80, 72, 64, 56, 48, 40, 32 };  // simple voice-count scaling, tuned for ADSR output
+
+static inline uint8_t softClip8(uint32_t value) {
+  // Gentle compression so the PWM write never wraps; keeps peaks smoother near 8-bit ceiling.
+  if (value <= 240) {
+    return static_cast<uint8_t>(value);
+  }
+  uint32_t excess = value - 240;
+  uint32_t compressed = 240 + (excess >> 1);
+  return static_cast<uint8_t>((compressed > 255) ? 255 : compressed);
+}
 
 byte arpeggiatingNow = UNUSED_NOTE;  // if this is 255, set to off (0% duty cycle)
 uint64_t arpeggiateTime = 0;         // Used to keep track of when this note started playing in ARPEG mode
-uint64_t arpeggiateLength = 62500;   // default: 1/32 note at 120 BPM
-
-void updateArpeggiatorTiming() {
-  uint32_t bpm = synthBPM;
-  if (bpm == 0) {
-    bpm = 1;
-  }
-  uint32_t division = arpeggiatorDivision;
-  if (division == 0) {
-    division = 1;
-  }
-
-  const uint64_t wholeNoteMicros = (240000000ULL + (bpm / 2)) / bpm;  // four quarter notes in microseconds
-  arpeggiateLength = (wholeNoteMicros + (division / 2)) / division;
-  if (arpeggiateLength == 0) {
-    arpeggiateLength = 1;
-  }
-}
+uint64_t arpeggiateLength = 65536;   // in microseconds. approx a 1/32 note at 114 BPM
 
 // RUN ON CORE 2
-void RAM_FUNC(poll)() {
+void poll() {
   hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
   timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
-  // While flash is being written, interrupts are disabled on both cores.
-  // When the ISR resumes afterward, output silence to avoid glitch artifacts.
-  if (flashWriteInProgress.load(std::memory_order_relaxed)) {
-    if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
-    if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, (uint16_t)PWM_MID);
-    return;
-  }
-  uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
-  int32_t mix = 0;    // signed accumulator stays well within int32_t bounds
-  // ============================================================
-  // Smooth poly loudness normalization
-  // Old behavior: scale by integer "voices" count.
-  // Problem: when a voice fades out and becomes inactive, voices--
-  // causes a sudden gain jump (audible).
-  //
-  // New behavior: compute an "effective voice count" from the sum of
-  // envelope levels. As a voice releases, its envelope contribution
-  // smoothly approaches 0, so the normalization changes smoothly too.
-  // ============================================================
-  uint32_t envSum = 0;   // sum of env.level across active voices (0..8*65535)
-  byte voices = 0;
+  const uint8_t waveMode = currWave;
+  const bool waveIsTriangle = (waveMode == WAVEFORM_TRIANGLE);
+  const bool waveIsSquare = (waveMode == WAVEFORM_SQUARE);
+  const bool waveIsHybrid = (waveMode == WAVEFORM_HYBRID);
+  const int32_t squareThreshold = 32768 - (static_cast<int32_t>(modWheel.curValue) * 112);
+  const uint32_t velocityMul = static_cast<uint32_t>(velWheel.curValue + 1);
+  const uint32_t masterMul = static_cast<uint32_t>(masterGain + 1);
 
+  uint64_t mix = 0;
+  byte voices = 0;
   uint16_t p;
   byte t;
+  byte level = 0;
   for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
     EnvelopeState& env = envelopeStates[i];
-
-    EnvelopeCommand pendingCommand = consumeEnvelopeCommand(i);
-    switch (pendingCommand) {
-      case EnvelopeCommand::StartAttack: {
-        env.releaseIncrement = 0;
-        if (envelopeParams.attackTicks == 0) {
-          env.level = envelopeMaxLevel;
-          if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
-            env.stage = EnvelopeStage::Sustain;
-            env.level = envelopeParams.sustainLevel;
-          } else {
-            env.stage = EnvelopeStage::Decay;
-          }
-        } else {
-          env.stage = EnvelopeStage::Attack;
-          env.level = 0;
-        }
-        if (env.stage == EnvelopeStage::Decay && envelopeParams.decayTicks == 0) {
-          env.stage = EnvelopeStage::Sustain;
-          env.level = envelopeParams.sustainLevel;
-        }
-        if (env.stage == EnvelopeStage::Sustain) {
-          env.level = envelopeParams.sustainLevel;
-        }
-        break;
-      }
-      case EnvelopeCommand::StartRelease: {
-        if (envelopeParams.releaseTicks == 0 || env.level == 0) {
-          env.level = 0;
-          env.stage = EnvelopeStage::Idle;
-          synth[i].increment = 0;
-          synth[i].counter = 0;
-          publishVoiceFreed(i);
-        } else {
-          env.stage = EnvelopeStage::Release;
-          // This division only runs when a release begins, not on every ISR
-          // tick, so it is much cheaper than the per-sample math below.
-          env.releaseIncrement = std::max<uint32_t>(1, (env.level + envelopeParams.releaseTicks - 1) / envelopeParams.releaseTicks);
-        }
-        break;
-      }
-      case EnvelopeCommand::Reset: {
-        env = EnvelopeState{};
-        synth[i].increment = 0;
-        synth[i].counter = 0;
-        channelInUse[i].store(false, std::memory_order_relaxed);
-        voiceGenerations[i].store(0, std::memory_order_relaxed);
-        break;
-      }
-      case EnvelopeCommand::None:
-      default:
-        break;
-    }
-
     if (!synth[i].increment && env.stage == EnvelopeStage::Idle) {
       continue;
     }
@@ -3683,18 +3161,15 @@ void RAM_FUNC(poll)() {
         uint32_t nextLevel = env.level + envelopeParams.attackIncrement;
         if (env.level >= envelopeMaxLevel || nextLevel >= envelopeMaxLevel) {
           env.level = envelopeMaxLevel;
-          if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
-            env.stage = EnvelopeStage::Sustain;
-            env.level = envelopeParams.sustainLevel;
-          } else {
-            env.stage = EnvelopeStage::Decay;
-          }
+          env.stage = (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel)
+                      ? EnvelopeStage::Sustain
+                      : EnvelopeStage::Decay;
         } else {
           env.level = nextLevel;
         }
         break;
       }
-      case EnvelopeStage::Decay:
+      case EnvelopeStage::Decay: {
         if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
           env.stage = EnvelopeStage::Sustain;
           env.level = envelopeParams.sustainLevel;
@@ -3711,220 +3186,88 @@ void RAM_FUNC(poll)() {
           env.stage = EnvelopeStage::Sustain;
         }
         break;
-      case EnvelopeStage::Sustain:
+      }
+      case EnvelopeStage::Sustain: {
         env.level = envelopeParams.sustainLevel;
         break;
-      case EnvelopeStage::Release:
+      }
+      case EnvelopeStage::Release: {
         if (envelopeParams.releaseTicks == 0 || env.releaseIncrement == 0 || env.level <= env.releaseIncrement) {
           env.level = 0;
           env.stage = EnvelopeStage::Idle;
           synth[i].increment = 0;
           synth[i].counter = 0;
-          publishVoiceFreed(i);
+          envelopeNeedsFree[i].store(true, std::memory_order_relaxed);
         } else {
           env.level -= env.releaseIncrement;
         }
         break;
+      }
       case EnvelopeStage::Idle:
-      default:
+      default: {
         env.level = 0;
         synth[i].increment = 0;
         synth[i].counter = 0;
         continue;
+      }
     }
 
     if (env.stage == EnvelopeStage::Idle || env.level == 0 || !synth[i].increment) {
+      if (env.stage == EnvelopeStage::Idle) {
+        envelopeNeedsFree[i].store(true, std::memory_order_relaxed);
+      }
       continue;
     }
 
     synth[i].counter += synth[i].increment;  // should loop from 65536 -> 0
     p = synth[i].counter;
     t = p >> 8;
-    switch (currWave) {
-      case WAVEFORM_SAW: break;
-      case WAVEFORM_TRIANGLE: p = 2 * ((p >> 15) ? p : (65535 - p)); break;
-      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - modWheel.curValue * 7 * 16)); break;
-      case WAVEFORM_HYBRID:
-        if (t <= synth[i].a) {
-          p = 0;
-        } else if (t < synth[i].b) {
-          p = (t - synth[i].a) * synth[i].ab;
-        } else if (t <= synth[i].c) {
-          p = 65535;
-        } else {
-          p = (256 - t) * synth[i].cd;
-        }
-        break;
-      case WAVEFORM_SINE: p = sine[t] << 8; break;
-      case WAVEFORM_STRINGS: p = strings[t] << 8; break;
-      case WAVEFORM_CLARINET: p = clarinet[t] << 8; break;
-      default: break;
+    if (waveIsTriangle) {
+      p = 2 * ((p >> 15) ? p : (65535 - p));
+    } else if (waveIsSquare) {
+      p = 0 - (p > squareThreshold);
+    } else if (waveIsHybrid) {
+      if (t <= synth[i].a) {
+        p = 0;
+      } else if (t < synth[i].b) {
+        p = (t - synth[i].a) * synth[i].ab;
+      } else if (t <= synth[i].c) {
+        p = 65535;
+      } else {
+        p = (256 - t) * synth[i].cd;
+      }
+    } else if (waveMode == WAVEFORM_SINE) {
+      p = sine[t] << 8;
+    } else if (waveMode == WAVEFORM_STRINGS) {
+      p = strings[t] << 8;
+    } else if (waveMode == WAVEFORM_CLARINET) {
+      p = clarinet[t] << 8;
     }
 
-    // Convert unipolar 0..65535 waveform into bipolar signed audio sample.
-    // Centering improves headroom and reduces asymmetric clipping.
-    int32_t s = (int32_t)p - 32768;  // -32768..+32767
-
-    // Apply crude "equal loudness" compensation.
-    // eq is 0..8. Treat 8 as roughly "neutral" gain.
-    s = (s * (int32_t)synth[i].eq) >> 3;
-
-    // Apply envelope (0..65535). Current bounds keep the product within
-    // signed 32-bit, which avoids a 64-bit helper call in the ISR.
-    s = (s * static_cast<int32_t>(env.level)) >> 16;
-
-    // Accumulate signed mix
-    mix += s;
-
-    // For Step 1 smooth normalization:
-    envSum += env.level;
+    uint64_t voiceSample = static_cast<uint64_t>(p) * synth[i].eq;
+    voiceSample = (voiceSample * env.level) >> 16;
+    mix += voiceSample;
     ++voices;
   }
 
-  // Compute effective voices in Q8 (fixed-point, 8 fractional bits).
-  // Approximate division by 65535 using >> 8, since 65535 ≈ 65536.
-  // Examples:
-  //  - 1 full voice: envSum ≈ 65535 => (envSum + 128) >> 8 ≈ 256  => 1.00 voices
-  //  - 8 full voices: envSum ≈ 524280 => >> 8 ≈ 2048 => 8.00 voices
-  uint16_t effectiveVoicesQ8 = (uint16_t)((envSum + 128u) >> 8);  // 0..2048
-
-  // Convert to table index 0..8 and fractional part for interpolation
-  uint8_t vInt = effectiveVoicesQ8 >> 8;          // 0..8
-  uint8_t vFrac = effectiveVoicesQ8 & 0xFF;       // 0..255
-
-  if (vInt > 8) vInt = 8;                         // safety
-
-  // Smoothly interpolate attenuation between adjacent entries.
-  // attenuation[] is in "64 == full scale" units.
-  uint8_t a0 = attenuation[vInt];
-  uint8_t a1 = attenuation[(vInt < 8) ? (vInt + 1) : 8];
-
-  // Linear interpolation: a = a0 + (a1 - a0) * frac
-  int16_t da = (int16_t)a1 - (int16_t)a0;
-  uint16_t attenSmooth = (uint16_t)((int16_t)a0 + ((da * (int16_t)vFrac) >> 8));  // 0..64-ish
-
-  // Only apply this smoothing in poly mode, keep mono behavior the same.
-  uint16_t attenFinal = (playbackMode == SYNTH_POLY) ? attenSmooth : attenuation[0];
-
-  // Apply poly/mono attenuation where 64 = unity.
-  // Note: mix is bounded by ±(POLYPHONY_LIMIT * ~256) ≈ ±2048 after envelope,
-  // attenFinal ≤ 64, velWheel ≤ 127. Worst-case product ≈ 16.6M, well within int32_t.
-  int32_t scaled = mix;
-  scaled = (scaled * (int32_t)attenFinal) >> 6;     // divide by 64
-
-  // Apply master volume where 127 ~= unity (use >>7 as approx /128)
-  scaled = (scaled * (int32_t)velWheel.curValue) >> 7;
-
-  // ============================================================
-  // OUTPUT STAGE (JACK + PIEZO)
-  //
-  // We intentionally drive the two outputs differently:
-  //
-  // 1) Audio Jack (slice 4): classic centered PWM "DAC"
-  //    - Fixed midpoint at PWM_MID (127 for 8-bit, 512 for 10-bit)
-  //    - Symmetric headroom, lowest distortion into an audio path
-  //
-  // 2) Piezo (slice 3): "moving midpoint" drive
-  //    - Midpoint follows the *actual amplitude* derived from envSum
-  //    - Prevents the piezo from sitting at half supply when quiet
-  //    - Midpoint glides down as the last voice fades (no sudden hiss stop)
-  //
-  // This keeps jack quality higher while making the piezo less noisy.
-  // ============================================================
-
-  // ------------------------------------------------------------
-  // 1) Build a normalized signed sample from the mixed signal.
-  //
-  // "scaled" already includes:
-  //   - mix of all voices (signed)
-  //   - smooth poly attenuation (attenFinal)
-  //   - master volume (velWheel)
-  //
-  // We still need to convert it to a small signed number suitable for PWM.
-  //
-  // IMPORTANT: This OUTPUT_SHIFT is the main gain staging control.
-  // If output is too quiet, decrease it. If it clips/distorts, increase it.
-  // For 10-bit PWM you can typically use a slightly smaller shift than 8-bit.
-  // ------------------------------------------------------------
-  // JACK idle behavior: stay centered.
-  // PIEZO idle behavior: off (0).
-  if (voices == 0 || velWheel.curValue == 0) {
-    if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
-    if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, (uint16_t)PWM_MID);
-    if (_isrStart) {
-      uint32_t dt = timer_hw->timerawl - _isrStart;
-      if (dt < isrCycleMin) isrCycleMin = dt;
-      if (dt > isrCycleMax) isrCycleMax = dt;
-      isrCycleSum += dt;
-      isrCycleCount++;
+  if (voices) {
+    uint8_t attenuationIndex = (playbackMode == SYNTH_POLY) ? std::min<uint8_t>(voices, static_cast<uint8_t>(8)) : 0;
+    mix *= attenuation[attenuationIndex];
+    mix *= velocityMul;
+    mix = (mix * masterMul) >> 7;
+    if (mix > (static_cast<uint64_t>(255) << 24)) {
+      mix = static_cast<uint64_t>(255) << 24;
     }
-    return;
+    uint32_t level16 = static_cast<uint32_t>(mix >> 8);
+    level = softClip8(level16);
+  } else {
+    level = 0;
   }
 
-  // Convert scaled mix -> signed sample in [-SHAPE_CLAMP..SHAPE_CLAMP]
-  int32_t sample = scaled >> OUTPUT_SHIFT;
-  if (sample >  SHAPE_CLAMP) sample =  SHAPE_CLAMP;
-  if (sample < -SHAPE_CLAMP) sample = -SHAPE_CLAMP;
-
-  // ----- JACK: fixed midpoint -----
-  int32_t jack = PWM_MID + sample;
-  if (jack < 0) jack = 0;
-  if (jack > (int32_t)PWM_WRAP) jack = PWM_WRAP;
-  uint16_t jackLevel = (uint16_t)jack;
-
-  // ----- PIEZO: midpoint follows "actual amplitude" from envSum -----
-  //
-  // IMPORTANT: envSum is sum of envelopes (0..~524k). We want ONE full voice
-  // (envSum ~ 65535) to produce full piezo amplitude. So we shift by 9 (8-bit)
-  // or 7 (10-bit). With multiple voices envSum grows, so we clamp.
-  //
-  // This makes piezo loud enough and ensures it fades smoothly as envSum falls.
-  //
-  static uint16_t piezoA = 0; // smoothed midpoint/amplitude in PWM units [0..PWM_MID]
-
-  // Map envSum -> A_target in [0..PWM_MID]
-  uint32_t A_target = (envSum + (1u << (ENV_TO_A_SHIFT - 1))) >> ENV_TO_A_SHIFT;
-  if (A_target > (uint32_t)PWM_MID) A_target = PWM_MID;
-
-  // Apply master volume (0..127, where 127 is full). Keep it consistent with jack scaling.
-  A_target = (A_target * (uint32_t)velWheel.curValue) >> 7;
-
-  // Smooth A so the piezo hiss doesn't abruptly stop (and to avoid end-click).
-  // Smaller shift = faster response; larger = smoother.
-  piezoA += (int16_t)((int32_t)A_target - (int32_t)piezoA) >> 3;
-
-  // If very small, turn fully off (by now it’s near 0 so this won’t click).
-  if (piezoA <= (PWM_BITS == 8 ? 1 : 4)) piezoA = 0;
-
-  int32_t piezoLevel = 0;
-  if (piezoA > 0) {
-    // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-piezoA..+piezoA].
-    // This is still one of the remaining true per-sample divisions in poll().
-    // If we need another ISR-speed pass later, replacing this with a small
-    // reciprocal multiply would be the next obvious experiment.
-    int32_t outPiezo = (sample * (int32_t)piezoA) / SHAPE_CLAMP;
-
-    // Midpoint follows amplitude: range [0..2*piezoA]
-    piezoLevel = (int32_t)piezoA + outPiezo;
-    int32_t piezoMax = (int32_t)piezoA * 2;
-
-    if (piezoLevel < 0) piezoLevel = 0;
-    if (piezoLevel > piezoMax) piezoLevel = piezoMax;
-    if (piezoLevel > (int32_t)PWM_WRAP) piezoLevel = PWM_WRAP;
-  }
-  uint16_t piezoOut = (uint16_t)piezoLevel;
-
-  // ----- Write outputs -----
-  if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, piezoOut);
-  if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, jackLevel);
-  if (_isrStart) {
-    uint32_t dt = timer_hw->timerawl - _isrStart;
-    if (dt < isrCycleMin) isrCycleMin = dt;
-    if (dt > isrCycleMax) isrCycleMax = dt;
-    isrCycleSum += dt;
-    isrCycleCount++;
-  }
+  if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, level);
+  if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, level);
 }
+
 // RUN ON CORE 1
 byte isoTwoTwentySix(float f) {
   /*
@@ -3955,23 +3298,9 @@ byte isoTwoTwentySix(float f) {
     }
   }
 }
-inline void recomputePitchBendFactor() {
-  pitchBendFactor = exp2(pbWheel.curValue * DEFAULT_PITCH_BEND_RANGE_SEMITONES / 98304.0f);
-}
-
-void RAM_FUNC(setSynthFreq)(float frequency, byte channel) {
-  if (channel == 0) {
-    return;
-  }
+void setSynthFreq(float frequency, byte channel) {
   byte c = channel - 1;
-  float tunedFrequency = frequency;
-  if ((useDynamicJustIntonation || useJustIntonationBPM) && c < POLYPHONY_LIMIT) {
-    int16_t owner = synthChannelOwners[c].load(std::memory_order_relaxed);
-    if (owner >= 0 && owner < BTN_COUNT) {
-      tunedFrequency *= h[owner].jiFrequencyMultiplier;
-    }
-  }
-  float f = tunedFrequency * pitchBendFactor;
+  float f = frequency * exp2(pbWheel.curValue * PITCH_BEND_SEMIS / 98304.0);
   synth[c].counter = 0;
   synth[c].increment = round(f * POLL_INTERVAL_IN_MICROSECONDS * 0.065536);  // cycle 0-65535 at resultant frequency
   synth[c].eq = isoTwoTwentySix(f);
@@ -4003,23 +3332,51 @@ void RAM_FUNC(setSynthFreq)(float frequency, byte channel) {
   }
 }
 
-void RAM_FUNC(beginEnvelopeAttack)(uint8_t channel) {
-  channelInUse[channel].store(true, std::memory_order_relaxed);
-  releaseRetries[channel] = 0;
-  releaseRetryCountdown[channel] = 0;
-  // Reusing a voice discards any older "voice finished" event that core 1 may
-  // have published for the previous note on this channel.
-  clearPendingVoiceFreed(channel);
-  publishEnvelopeCommand(channel, EnvelopeCommand::StartAttack);
+void beginEnvelopeAttack(uint8_t channel) {
+  EnvelopeState& env = envelopeStates[channel];
+  channelInUse[channel] = true;
+  envelopeNeedsFree[channel].store(false, std::memory_order_relaxed);
+  env.releaseIncrement = 0;
+
+  if (envelopeParams.attackTicks == 0) {
+    env.level = envelopeMaxLevel;
+    if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
+      env.stage = EnvelopeStage::Sustain;
+      env.level = envelopeParams.sustainLevel;
+    } else {
+      env.stage = EnvelopeStage::Decay;
+    }
+  } else {
+    env.stage = EnvelopeStage::Attack;
+    env.level = 0;
+  }
+
+  if (env.stage == EnvelopeStage::Decay && envelopeParams.decayTicks == 0) {
+    env.stage = EnvelopeStage::Sustain;
+    env.level = envelopeParams.sustainLevel;
+  }
+
+  if (env.stage == EnvelopeStage::Sustain) {
+    env.level = envelopeParams.sustainLevel;
+  }
 }
 
-void RAM_FUNC(beginEnvelopeRelease)(uint8_t channel) {
-  if (channel >= POLYPHONY_LIMIT) {
+void beginEnvelopeRelease(uint8_t channel) {
+  if (!channelInUse[channel]) {
     return;
   }
-  releaseRetries[channel] = releaseRetryLimit;
-  releaseRetryCountdown[channel] = 0;
-  publishEnvelopeCommand(channel, EnvelopeCommand::StartRelease);
+  EnvelopeState& env = envelopeStates[channel];
+  if (envelopeParams.releaseTicks == 0 || env.level == 0) {
+    env.level = 0;
+    env.stage = EnvelopeStage::Idle;
+    synth[channel].increment = 0;
+    synth[channel].counter = 0;
+    channelInUse[channel] = false;
+    envelopeNeedsFree[channel].store(true, std::memory_order_relaxed);
+    return;
+  }
+  env.stage = EnvelopeStage::Release;
+  env.releaseIncrement = std::max<uint32_t>(1, (env.level + envelopeParams.releaseTicks - 1) / envelopeParams.releaseTicks);
 }
 
 // USE THIS IN MONO OR ARPEG MODE ONLY
@@ -4043,12 +3400,9 @@ void replaceMonoSynthWith(byte x) {
   arpeggiatingNow = x;
   if (arpeggiatingNow != UNUSED_NOTE) {
     h[arpeggiatingNow].synthCh = 1;
-    synthChannelOwners[0].store(static_cast<int16_t>(arpeggiatingNow), std::memory_order_relaxed);
-    voiceGenerations[0].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
     beginEnvelopeAttack(0);
-    setSynthFreq(h[arpeggiatingNow].frequency, 1);
+    setSynthFreq(computeFrequencyWithJustIntonation(arpeggiatingNow), 1);
   } else {
-    synthChannelOwners[0].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
     beginEnvelopeRelease(0);
   }
 }
@@ -4057,17 +3411,12 @@ void resetSynthFreqs() {
   while (!synthChQueue.empty()) {
     synthChQueue.pop();
   }
-  nextVoiceGeneration.store(1, std::memory_order_relaxed);
   for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
     synth[i].increment = 0;
     synth[i].counter = 0;
-    publishEnvelopeCommand(i, EnvelopeCommand::Reset);
-    channelInUse[i].store(false, std::memory_order_relaxed);
-    voiceGenerations[i].store(0, std::memory_order_relaxed);
-    synthChannelOwners[i].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
-    clearPendingVoiceFreed(i);
-    releaseRetries[i] = 0;
-    releaseRetryCountdown[i] = 0;
+    envelopeStates[i] = EnvelopeState{};
+    channelInUse[i] = false;
+    envelopeNeedsFree[i].store(false, std::memory_order_relaxed);
   }
   for (byte i = 0; i < BTN_COUNT; i++) {
     h[i].synthCh = 0;
@@ -4088,87 +3437,31 @@ void sendProgramChange() {
 }
 
 void updateSynthWithNewFreqs() {
-  recomputePitchBendFactor();
   byte targetChannel = primaryMIDIChannel();
   if (midiD & MIDID_USB) UMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
   if (midiD & MIDID_SER) SMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
   for (byte i = 0; i < BTN_COUNT; i++) {
     if (!(h[i].isCmd)) {
       if (h[i].synthCh) {
-        setSynthFreq(h[i].frequency, h[i].synthCh);  // pass all notes thru synth again if the pitch bend changes
+        setSynthFreq(computeFrequencyWithJustIntonation(i), h[i].synthCh);  // reapply JI-corrected frequency
       }
     }
   }
 }
 
-void RAM_FUNC(processEnvelopeReleases)() {
+void processEnvelopeReleases() {
   for (uint8_t i = 0; i < POLYPHONY_LIMIT; ++i) {
-    if (consumeVoiceFreed(i)) {
-      channelInUse[i].store(false, std::memory_order_relaxed);
-      voiceGenerations[i].store(0, std::memory_order_relaxed);
-      int16_t owner = synthChannelOwners[i].load(std::memory_order_relaxed);
-      synthChannelOwners[i].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
-      if (owner >= 0 && owner < BTN_COUNT) {
-        if (h[owner].synthCh == static_cast<byte>(i + 1)) {
-          h[owner].synthCh = 0;
-        }
-      }
+    if (envelopeNeedsFree[i].load(std::memory_order_relaxed)) {
+      envelopeNeedsFree[i].store(false, std::memory_order_relaxed);
+      channelInUse[i] = false;
+      envelopeStates[i] = EnvelopeState{};
+      synth[i].increment = 0;
+      synth[i].counter = 0;
       if (playbackMode == SYNTH_POLY) {
         synthChQueue.push(i + 1);
       }
-      releaseRetries[i] = 0;
-      releaseRetryCountdown[i] = 0;
     }
   }
-}
-
-void RAM_FUNC(retryPendingReleases)() {
-  for (uint8_t i = 0; i < POLYPHONY_LIMIT; ++i) {
-    uint8_t retries = releaseRetries[i];
-    if (retries == 0) {
-      continue;
-    }
-    if (!channelInUse[i].load(std::memory_order_relaxed)) {
-      releaseRetries[i] = 0;
-      releaseRetryCountdown[i] = 0;
-      continue;
-    }
-    if (releaseRetryCountdown[i] > 0) {
-      --releaseRetryCountdown[i];
-      continue;
-    }
-    publishEnvelopeCommand(i, EnvelopeCommand::StartRelease);
-    releaseRetryCountdown[i] = releaseRetryDelayLoops;
-    releaseRetries[i] = static_cast<uint8_t>(retries - 1);
-  }
-}
-
-bool stealOldestSynthVoice(byte& channelOut, int16_t& previousOwner) {
-  previousOwner = NO_SYNTH_OWNER;
-  uint32_t oldestGeneration = std::numeric_limits<uint32_t>::max();
-  int8_t oldestIndex = -1;
-  for (uint8_t i = 0; i < POLYPHONY_LIMIT; ++i) {
-    if (!channelInUse[i].load(std::memory_order_relaxed)) {
-      continue;
-    }
-    if (synthChannelOwners[i].load(std::memory_order_relaxed) == NO_SYNTH_OWNER) {
-      continue;
-    }
-    uint32_t generation = voiceGenerations[i].load(std::memory_order_relaxed);
-    if (generation == 0) {
-      continue;
-    }
-    if (generation < oldestGeneration) {
-      oldestGeneration = generation;
-      oldestIndex = static_cast<int8_t>(i);
-    }
-  }
-  if (oldestIndex < 0) {
-    return false;
-  }
-  previousOwner = synthChannelOwners[oldestIndex].load(std::memory_order_relaxed);
-  channelOut = static_cast<byte>(oldestIndex + 1);
-  return true;
 }
 
 void trySynthNoteOn(byte x) {
@@ -4178,32 +3471,14 @@ void trySynthNoteOn(byte x) {
   if (playbackMode == SYNTH_POLY) {
     processEnvelopeReleases();
     if (synthChQueue.empty()) {
-      byte stolenChannel = 0;
-      int16_t previousOwner = NO_SYNTH_OWNER;
-      if (!stealOldestSynthVoice(stolenChannel, previousOwner)) {
-        sendToLog("synth channels all firing, so did not add one");
-        return;
-      }
-      if (previousOwner >= 0 && previousOwner < BTN_COUNT) {
-        if (h[previousOwner].synthCh == stolenChannel) {
-          h[previousOwner].synthCh = 0;
-        }
-      }
-      h[x].synthCh = stolenChannel;
-      synthChannelOwners[stolenChannel - 1].store(static_cast<int16_t>(x), std::memory_order_relaxed);
-      voiceGenerations[stolenChannel - 1].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
-      beginEnvelopeAttack(stolenChannel - 1);
-      setSynthFreq(h[x].frequency, stolenChannel);
-      sendToLog("stole synth channel " + std::to_string(stolenChannel));
+      sendToLog("synth channels all firing, so did not add one");
       return;
     }
     byte channel = synthChQueue.front();
     synthChQueue.pop();
     h[x].synthCh = channel;
-    synthChannelOwners[channel - 1].store(static_cast<int16_t>(x), std::memory_order_relaxed);
-    voiceGenerations[channel - 1].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
     beginEnvelopeAttack(channel - 1);
-    setSynthFreq(h[x].frequency, channel);
+    setSynthFreq(computeFrequencyWithJustIntonation(x), channel);
     sendToLog("popped " + std::to_string(channel) + " off the synth queue");
   } else {
     if (h[x].MIDIch) {
@@ -4219,79 +3494,30 @@ void trySynthNoteOff(byte x) {
     }
     return;
   }
-
-  if (playbackMode != SYNTH_POLY) {
-    return;
-  }
-
-  if (h[x].synthCh) {
-    uint8_t channel = h[x].synthCh;
-    h[x].synthCh = 0;
-    beginEnvelopeRelease(channel - 1);
-    return;
-  }
-
-  // Fallback: the direct channel assignment was already cleared (e.g., by a voice steal),
-  // but the synth voice is still owned by this hex. Look it up by owner.
-  for (uint8_t i = 0; i < POLYPHONY_LIMIT; ++i) {
-    if (!channelInUse[i].load(std::memory_order_relaxed)) {
-      continue;
-    }
-    if (synthChannelOwners[i].load(std::memory_order_relaxed) == static_cast<int16_t>(x)) {
-      synthChannelOwners[i].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
-      beginEnvelopeRelease(i);
-      break;
+  if (playbackMode == SYNTH_POLY) {
+    if (h[x].synthCh) {
+      beginEnvelopeRelease(h[x].synthCh - 1);
+      h[x].synthCh = 0;
     }
   }
 }
-
-void panicStopOutput() {
-  sendToLog("Panic: stopping all MIDI and synth output.");
-
-  for (byte channel = 1; channel <= 16; ++channel) {
-    withMIDI([&](auto& M) {
-      M.sendControlChange(120, 0, channel);
-      M.sendControlChange(123, 0, channel);
-    });
-  }
-
-  for (byte i = 0; i < BTN_COUNT; ++i) {
-    h[i].MIDIch = 0;
-    h[i].synthCh = 0;
-    h[i].externalNoteDepth = 0;
-    h[i].timePressed = 0;
-    h[i].animate = 0;
-  }
-
-  pressedKeyIDs.clear();
-  arpeggiatingNow = UNUSED_NOTE;
-  resetSynthFreqs();
-  refreshMidiRouting();
-  strip.clear();
-  strip.show();
-}
-
 
 void setupSynth(byte pin, byte slice) {
   gpio_set_function(pin, GPIO_FUNC_PWM);          // set that pin as PWM
   pwm_set_phase_correct(slice, true);             // phase correct sounds better
-  pwm_set_wrap(slice, PWM_WRAP);                  // essentionally sets the "bit-rate"
+  pwm_set_wrap(slice, 254);                       // 0 - 254 allows 0 - 255 level
   pwm_set_clkdiv(slice, 1.0f);                    // run at full clock speed
   pwm_set_chan_level(slice, PIEZO_CHNL, 0);       // initialize at zero to prevent whining sound
   pwm_set_enabled(slice, true);                   // ENGAGE!
   hw_set_bits(&timer_hw->inte, 1u << ALARM_NUM);  // initialize the timer
   irq_set_exclusive_handler(ALARM_IRQ, poll);     // function to run every interrupt
-  irq_set_priority(ALARM_IRQ, 0x00);              // optional: raise priority
-  resetSynthFreqs();
-  timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
   irq_set_enabled(ALARM_IRQ, true);               // ENGAGE!
+  timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
+  resetSynthFreqs();
   sendToLog("synth is ready.");
 }
 
 void arpeggiate() {
-  if (delegatedControl) {
-    return;
-  }
   if (playbackMode == SYNTH_ARPEGGIO) {
     if (runTime - arpeggiateTime > arpeggiateLength) {
       arpeggiateTime = runTime;
@@ -4314,26 +3540,15 @@ void arpeggiate() {
     These cardinal directions are enumerated to make
     the code more legible for humans.
   */
-constexpr byte HEX_DIRECTION_EAST = 0;
-constexpr byte HEX_DIRECTION_NE = 1;
-constexpr byte HEX_DIRECTION_NW = 2;
-constexpr byte HEX_DIRECTION_WEST = 3;
-constexpr byte HEX_DIRECTION_SW = 4;
-constexpr byte HEX_DIRECTION_SE = 5;
-constexpr byte HEX_DIRECTION_COUNT = 6;
-constexpr byte ORBIT_POSITION_COUNT = 12;
-constexpr byte MAX_BEAM_LENGTH = 13;
-constexpr byte MAX_ANIMATION_RADIUS = 5;
+#define HEX_DIRECTION_EAST 0
+#define HEX_DIRECTION_NE 1
+#define HEX_DIRECTION_NW 2
+#define HEX_DIRECTION_WEST 3
+#define HEX_DIRECTION_SW 4
+#define HEX_DIRECTION_SE 5
 // animation variables  E NE NW  W SW SE
-constexpr std::array<int8_t, HEX_DIRECTION_COUNT> hexRowOffsets = { 0, -1, -1, 0, 1, 1 };
-constexpr std::array<int8_t, HEX_DIRECTION_COUNT> hexColOffsets = { 2, 1, -1, -2, -1, 1 };
-
-// Precomputed orbit offsets for animateOrbit().
-// 12 positions around a hex at radius 2: 6 cardinal + 6 intermediate.
-// Generated from: rowOffsets[d*2] = R*vertical[d], colOffsets[d*2] = R*horizontal[d],
-//   rowOffsets[d*2+1] = R*(vertical[d]+vertical[(d+1)%6])/2, etc. with R=2.
-static const int8_t orbitRowOffsets[ORBIT_POSITION_COUNT] = {  0, -1, -2, -2, -2, -1,  0,  1,  2,  2,  2,  1 };
-static const int8_t orbitColOffsets[ORBIT_POSITION_COUNT] = {  4,  3,  2,  0, -2, -3, -4, -3, -2,  0,  2,  3 };
+int8_t vertical[] = { 0, -1, -1, 0, 1, 1 };
+int8_t horizontal[] = { 2, 1, -1, -2, -1, 1 };
 
 uint64_t animFrame(byte x) {
   if (h[x].timePressed) {  // 2^20 microseconds is close enough to 1 second
@@ -4342,84 +3557,87 @@ uint64_t animFrame(byte x) {
     return 0;
   }
 }
-
-bool isValidHexCoordinate(int8_t row, int8_t col) {
-  return !(row < 0
-           || row >= ROWCOUNT
-           || col < 0
-           || col >= (2 * COLCOUNT)
-           || ((col + row) & 1));
-}
-
-bool hexAllowsScaleAnimations(byte hexIndex) {
-  return !h[hexIndex].isCmd && (h[hexIndex].inScale || !scaleLock);
-}
-
-void flagToAnimate(int8_t row, int8_t col) {
-  if (!isValidHexCoordinate(row, col)) {
-    return;
-  }
-  h[(COLCOUNT * row) + (col / 2)].animate = true;
-}
-
-void animateRing(byte centerIndex, byte radius, byte stepsPerSide) {
-  int8_t turtleRow = h[centerIndex].coordRow + (radius * hexRowOffsets[HEX_DIRECTION_SW]);
-  int8_t turtleCol = h[centerIndex].coordCol + (radius * hexColOffsets[HEX_DIRECTION_SW]);
-  for (byte direction = HEX_DIRECTION_EAST; direction < HEX_DIRECTION_COUNT; ++direction) {
-    for (byte step = 0; step < stepsPerSide; ++step) {
-      flagToAnimate(turtleRow, turtleCol);
-      turtleRow += (hexRowOffsets[direction] * (radius / stepsPerSide));
-      turtleCol += (hexColOffsets[direction] * (radius / stepsPerSide));
-    }
+void flagToAnimate(int8_t r, int8_t c) {
+  if (!((r < 0) || (r >= ROWCOUNT)
+        || (c < 0) || (c >= (2 * COLCOUNT))
+        || ((c + r) & 1))) {
+    h[(10 * r) + (c / 2)].animate = 1;
   }
 }
-
 void animateMirror() {
-  for (byte i = 0; i < LED_COUNT; ++i) {                     // check every hex
-    if (!h[i].isCmd && h[i].MIDIch) {                        // that is a held note
-      for (byte j = 0; j < LED_COUNT; ++j) {                 // compare to every hex
-        if (!h[j].isCmd && !h[j].MIDIch) {                   // that is a note not being played
+  for (byte i = 0; i < LED_COUNT; i++) {                     // check every hex
+    if ((!(h[i].isCmd)) && (h[i].MIDIch)) {                  // that is a held note
+      for (byte j = 0; j < LED_COUNT; j++) {                 // compare to every hex
+        if ((!(h[j].isCmd)) && (!(h[j].MIDIch))) {           // that is a note not being played
           int16_t temp = h[i].stepsFromC - h[j].stepsFromC;  // look at difference between notes
           if (animationType == ANIMATE_OCTAVE) {             // set octave diff to zero if need be
             temp = positiveMod(temp, current.tuning().cycleLength);
           }
           if (temp == 0) {  // highlight if diff is zero
-            h[j].animate = true;
+            h[j].animate = 1;
           }
         }
       }
     }
   }
 }
-void animateOrbit() {
+/*
+  void animateOrbit() {
+    for (byte i = 0; i < LED_COUNT; i++) {                               // check every hex
+      if ((!(h[i].isCmd)) && (h[i].MIDIch) && ((h[i].inScale) || (!scaleLock))) {    // that is a held note
+        byte tempDir = (animFrame(i) % 6);
+        flagToAnimate(h[i].coordRow + vertical[tempDir], h[i].coordCol + horizontal[tempDir]);       // different neighbor each frame
+      }
+    }
+  }
+*/
+void animateOrbit() {           //BETTER ORBIT
+  const byte ORBIT_RADIUS = 2;  // Radius of the orbit
   const byte SLOW_FACTOR = 1;   // Slowdown factor for animation
 
-  for (byte i = 0; i < LED_COUNT; ++i) {   // Check every hex
-    if (!hexAllowsScaleAnimations(i) || !h[i].MIDIch) {
-      continue;
+  for (byte i = 0; i < LED_COUNT; i++) {     // Check every hex
+    if ((!(h[i].isCmd)) && (h[i].MIDIch) &&  // That is a held note
+        ((h[i].inScale) || (!scaleLock))) {  // And is in scale or scale is unlocked
+
+      byte frame = animFrame(i) / SLOW_FACTOR;  // Slow down the animation
+      byte currentStep = frame % 12;            // Determine position in the 12-light orbit
+
+      // Determine row and column adjustments for the 12 possible directions
+      int8_t rowOffsets[12];
+      int8_t colOffsets[12];
+
+      // Fill offsets for the 6 primary directions
+      for (byte dir = 0; dir < 6; dir++) {
+        rowOffsets[dir * 2] = ORBIT_RADIUS * vertical[dir];
+        colOffsets[dir * 2] = ORBIT_RADIUS * horizontal[dir];
+
+        // Fill the intermediate (diagonal) positions
+        rowOffsets[dir * 2 + 1] = ORBIT_RADIUS * (vertical[dir] + vertical[(dir + 1) % 6]) / 2;
+        colOffsets[dir * 2 + 1] = ORBIT_RADIUS * (horizontal[dir] + horizontal[(dir + 1) % 6]) / 2;
+      }
+
+      // Calculate light positions
+      int8_t light1Row = h[i].coordRow + rowOffsets[currentStep];
+      int8_t light1Col = h[i].coordCol + colOffsets[currentStep];
+
+      byte oppositeStep = (currentStep + 6) % 12;  // Opposite position in the 12-light ring
+      int8_t light2Row = h[i].coordRow + rowOffsets[oppositeStep];
+      int8_t light2Col = h[i].coordCol + colOffsets[oppositeStep];
+
+      // Flag both lights for animation
+      flagToAnimate(light1Row, light1Col);
+      flagToAnimate(light2Row, light2Col);
     }
-
-    byte frame = animFrame(i) / SLOW_FACTOR;               // Slow down the animation
-    byte currentStep = frame % ORBIT_POSITION_COUNT;       // Determine position in the orbit
-
-    // orbitRowOffsets/orbitColOffsets already encode a radius-2 orbit.
-    int8_t light1Row = h[i].coordRow + orbitRowOffsets[currentStep];
-    int8_t light1Col = h[i].coordCol + orbitColOffsets[currentStep];
-
-    byte oppositeStep = (currentStep + (ORBIT_POSITION_COUNT / 2)) % ORBIT_POSITION_COUNT;
-    int8_t light2Row = h[i].coordRow + orbitRowOffsets[oppositeStep];
-    int8_t light2Col = h[i].coordCol + orbitColOffsets[oppositeStep];
-
-    flagToAnimate(light1Row, light1Col);
-    flagToAnimate(light2Row, light2Col);
   }
 }
 
 void animateStaticBeams() {
+  const byte MAX_BEAM_LENGTH = 13;                 // Maximum distance the beam can travel
   static byte lastDirection[LED_COUNT] = { 255 };  // Track the last direction for each button (255 = uninitialized)
 
-  for (byte i = 0; i < LED_COUNT; ++i) {  // Check every hex
-    if (!hexAllowsScaleAnimations(i)) {
+  for (byte i = 0; i < LED_COUNT; i++) {  // Check every hex
+    // Skip buttons that are not in the playable area
+    if (h[i].isCmd || (!h[i].inScale && scaleLock)) {
       continue;
     }
 
@@ -4438,17 +3656,17 @@ void animateStaticBeams() {
 
     if (h[i].btnState == BTN_STATE_HELD || h[i].btnState == BTN_STATE_NEWPRESS) {  // Active button
       byte baseDirection = lastDirection[i] * 2;                                   // Convert to hex direction (0, 2, or 4)
-      byte oppositeDirection = (baseDirection + 3) % HEX_DIRECTION_COUNT;          // Opposite direction
+      byte oppositeDirection = (baseDirection + 3) % 6;                            // Opposite direction
 
       // Light up the entire beam in both directions
-      for (byte length = 1; length <= MAX_BEAM_LENGTH; ++length) {
+      for (byte length = 1; length <= MAX_BEAM_LENGTH; length++) {
         // Beam in primary direction
-        int8_t beam1Row = h[i].coordRow + (length * hexRowOffsets[baseDirection]);
-        int8_t beam1Col = h[i].coordCol + (length * hexColOffsets[baseDirection]);
+        int8_t beam1Row = h[i].coordRow + (length * vertical[baseDirection]);
+        int8_t beam1Col = h[i].coordCol + (length * horizontal[baseDirection]);
 
         // Beam in opposite direction
-        int8_t beam2Row = h[i].coordRow + (length * hexRowOffsets[oppositeDirection]);
-        int8_t beam2Col = h[i].coordCol + (length * hexColOffsets[oppositeDirection]);
+        int8_t beam2Row = h[i].coordRow + (length * vertical[oppositeDirection]);
+        int8_t beam2Col = h[i].coordCol + (length * horizontal[oppositeDirection]);
 
         // Flag both beams for animation
         flagToAnimate(beam1Row, beam1Col);
@@ -4456,33 +3674,46 @@ void animateStaticBeams() {
       }
     }
   }
-}
+}     
 
 void animateRadial() {
-  for (byte i = 0; i < LED_COUNT; ++i) {                  // check every hex
-    if (!hexAllowsScaleAnimations(i)) {
-      continue;
-    }
-
-    uint64_t radius = animFrame(i);
-    if ((radius > 0) && (radius < ROWCOUNT)) {                           // played in the last 16 frames
-      byte steps = ((animationType == ANIMATE_SPLASH) ? radius : 1);     // star = 1 step to next corner; ring = 1 step per hex
-      animateRing(i, static_cast<byte>(radius), steps);
+  for (byte i = 0; i < LED_COUNT; i++) {                  // check every hex
+    if (!(h[i].isCmd) && (h[i].inScale || !scaleLock)) {  // that is a note
+      uint64_t radius = animFrame(i);
+      if ((radius > 0) && (radius < 16)) {                              // played in the last 16 frames
+        byte steps = ((animationType == ANIMATE_SPLASH) ? radius : 1);  // star = 1 step to next corner; ring = 1 step per hex
+        int8_t turtleRow = h[i].coordRow + (radius * vertical[HEX_DIRECTION_SW]);
+        int8_t turtleCol = h[i].coordCol + (radius * horizontal[HEX_DIRECTION_SW]);
+        for (byte dir = HEX_DIRECTION_EAST; dir < 6; dir++) {  // walk along the ring in each of the 6 hex directions
+          for (byte i = 0; i < steps; i++) {                   // # of steps to the next corner
+            flagToAnimate(turtleRow, turtleCol);               // flag for animation
+            turtleRow += (vertical[dir] * (radius / steps));
+            turtleCol += (horizontal[dir] * (radius / steps));
+          }
+        }
+      }
     }
   }
 }
 
 void animateRadialReverse() {  //inverted splash/star
-  for (byte i = 0; i < LED_COUNT; ++i) {                                          // Check every hex
-    if (!hexAllowsScaleAnimations(i)) {
-      continue;
-    }
-
-    uint64_t frame = animFrame(i);                                                // Current animation frame
-    if ((frame > 0) && (frame < MAX_ANIMATION_RADIUS)) {                          // Played in the last X frames
-      byte reverseRadius = static_cast<byte>(MAX_ANIMATION_RADIUS - frame);       // Calculate reverse radius
-      byte steps = ((animationType == ANIMATE_SPLASH_REVERSE) ? reverseRadius : 1);
-      animateRing(i, reverseRadius, steps);
+#define MAX_RADIUS 5
+  for (byte i = 0; i < LED_COUNT; i++) {                                               // Check every hex
+    if (!(h[i].isCmd) && (h[i].inScale || !scaleLock)) {                               // That is a note
+      uint64_t frame = animFrame(i);                                                   // Current animation frame
+      if ((frame > 0) && (frame < MAX_RADIUS)) {                                       // Played in the last X frames
+        uint8_t reverseRadius = MAX_RADIUS - frame;                                    // Calculate reverse radius
+        byte steps = ((animationType == ANIMATE_SPLASH_REVERSE) ? reverseRadius : 1);  // Steps depend on animation type
+        int8_t turtleRow = h[i].coordRow + (reverseRadius * vertical[HEX_DIRECTION_SW]);
+        int8_t turtleCol = h[i].coordCol + (reverseRadius * horizontal[HEX_DIRECTION_SW]);
+        for (byte dir = HEX_DIRECTION_EAST; dir < 6; dir++) {  // Walk along the ring in 6 hex directions
+          for (byte j = 0; j < steps; j++) {                   // Steps to the next corner
+            flagToAnimate(turtleRow, turtleCol);               // Flag for animation
+            turtleRow += (vertical[dir] * (reverseRadius / steps));
+            turtleCol += (horizontal[dir] * (reverseRadius / steps));
+          }
+        }
+      }
     }
   }
 }
@@ -4491,6 +3722,7 @@ void applyExternalMidiToHex(byte midiNote, bool noteOn) {
   if (midiNote >= midiNoteToHexIndices.size()) {
     return;
   }
+  const bool isMidiInAnimation = (animationType == ANIMATE_MIDI_IN);
   auto& targets = midiNoteToHexIndices[midiNote];
   for (uint8_t index : targets) {
     buttonDef& hex = h[index];
@@ -4498,193 +3730,76 @@ void applyExternalMidiToHex(byte midiNote, bool noteOn) {
       if (hex.externalNoteDepth < 255) {
         hex.externalNoteDepth++;
       }
+      if (isMidiInAnimation) {
+        hex.timePressed = runTime;
+      }
     } else if (hex.externalNoteDepth > 0) {
       hex.externalNoteDepth--;
     }
   }
 }
 
-bool reportDeviceIdentity(const uint8_t* data, const unsigned int len) {
-  if (len == 6 && data[1] == 0x7E && data[3] == 0x06 && data[4] == 0x01) {
-    // Respond to a device identity request.
-    // TODO: 7D = educational/dev; replace when a manufacturer ID is assigned.
-    static byte deviceIdentity[] = {
-      0x7E, 0x00, 0x06, 0x02,             // Device ID response
-      0x7D,                               // Educational/dev manufacturer ID
-      0x01, 0x00,                         // Family, LSB-first
-      0x01, 0x00,                         // Model, LSB-first
-      Hardware_Version, 0x00, 0x00, 0x00  // Version, LSB-first
-    };
-    withMIDI([&](auto& M) { M.sendSysEx(sizeof(deviceIdentity), deviceIdentity); });
-    return true;
-  }
-  return false;
-}
-
-void onToggleDelegated() {
-  if (delegatedControl) {
-    memset(delegatedColors, 0, sizeof(delegatedColors));
-    // Reset parser state when entering delegated mode.
-    setupMIDI();
-  }
-  sendToLog("delegated = " + std::to_string(delegatedControl));
-}
-
-void toggleDelegated() {
-  delegatedControl = !delegatedControl;
-  onToggleDelegated();
-}
-
-void delegatedButtonEvent(byte x, bool press) {
-  byte channel = x / 100;  // 0-based hundreds digit
-  byte note = x % 100;
-  if (press) {
-    withMIDI([&](auto& M) { M.sendNoteOn(note, 127, channel + 1); });
-  } else {
-    withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel + 1); });
-  }
-}
-
-void processLedSysEx(const uint8_t* data, const unsigned int len) {
-  // Repeated records: LED number (14 bits), hue (7 bits), saturation (7 bits), value (7 bits).
-  for (unsigned int idx = 0; idx + 5 <= len; idx += 5) {
-    uint16_t led = (data[idx] << 7) + data[idx + 1];
-    if (led >= LED_COUNT) {
-      sendToLog("LED SysEx: led " + std::to_string(led) + " is out of range; ignoring");
-      continue;
-    }
-    byte hueData = data[idx + 2] & 0x7F;
-    byte satData = data[idx + 3] & 0x7F;
-    byte valData = data[idx + 4] & 0x7F;
-    colorDef c = {
-      static_cast<float>(hueData) * 360.0f / 127.0f,
-      static_cast<byte>(2 * satData + (satData > 63 ? 1 : 0)),
-      static_cast<byte>(2 * valData + (valData > 63 ? 1 : 0))
-    };
-    delegatedColors[led] = getLEDcode(c);
-  }
-}
-
-void processDelegatedSysEx(const uint8_t* data, const unsigned int len) {
-  if (len < 1) {
-    return;
-  }
-  switch (data[0]) {
-    case SYSEX_DELEGATED_ENTER:
-      break;
-    case SYSEX_DELEGATED_EXIT:
-      toggleDelegated();
-      break;
-    case SYSEX_LED:
-      processLedSysEx(&data[1], len - 1);
-      break;
-    default:
-      sendToLog("ignoring unknown delegated SysEx code " + std::to_string(data[0]));
-      break;
-  }
-}
-
-void processIncomingSysEx(const uint8_t* data, const unsigned int len) {
-  if (reportDeviceIdentity(data, len)) {
-    return;
-  }
-  if ((len == 4) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {
-    toggleDelegated();
-  }
-}
-
-void processIncomingMIDIDelegated() {
-  withMIDI([&](auto& M) {
-    while (M.read()) {
-      const auto type = M.getType();
-      if (type == MIDI_NAMESPACE::SystemExclusive) {
-        const uint8_t* sysex = M.getSysExArray();
-        const unsigned int len = M.getSysExArrayLength();
-        if (len <= 3 || reportDeviceIdentity(sysex, len)) {
-          continue;
-        }
-        if ((sysex[0] != 0xF0) || (sysex[len - 1] != 0xF7)) {
-          sendToLog("invalid delegated SysEx received; ignoring");
-          continue;
-        }
-        if (sysex[1] != 0x7D) {
-          sendToLog("delegated incoming: ignoring SysEx vendor " + std::to_string(sysex[1]));
-          continue;
-        }
-        processDelegatedSysEx(&sysex[2], len - 3);
-      } else {
-        sendToLog("delegated incoming: " + std::to_string(type));
-      }
-    }
-  });
-}
-
 void processIncomingMIDI() {
-  if (delegatedControl) {
-    return;
-  }
-  withMIDI([&](auto& M) {
-    while (M.read()) {
-      const auto type = M.getType();
-      if (type == MIDI_NAMESPACE::SystemExclusive) {
-        const uint8_t* sysex = M.getSysExArray();
-        const unsigned int len = M.getSysExArrayLength();
-        processIncomingSysEx(sysex, len);
-        continue;
-      }
-
-      const byte n    = M.getData1();  // note
-      const byte v    = M.getData2();  // velocity
-
+  if (midiD & MIDID_USB) {
+    while (UMIDI.read()) {
+      MIDI_NAMESPACE::MidiType type = UMIDI.getType();
+      byte data1 = UMIDI.getData1();
+      byte data2 = UMIDI.getData2();
       if (type == MIDI_NAMESPACE::NoteOn) {
-        // treat NoteOn vel==0 as NoteOff
-        applyExternalMidiToHex(n, v != 0);
-      } else if (type == MIDI_NAMESPACE::NoteOff
-                 || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
-        applyExternalMidiToHex(n, false);
+        applyExternalMidiToHex(data1, data2 != 0);
+      } else if (type == MIDI_NAMESPACE::NoteOff) {
+        applyExternalMidiToHex(data1, false);
       }
     }
-  });
+  }
+  if (midiD & MIDID_SER) {
+    while (SMIDI.read()) {
+      MIDI_NAMESPACE::MidiType type = SMIDI.getType();
+      byte data1 = SMIDI.getData1();
+      byte data2 = SMIDI.getData2();
+      if (type == MIDI_NAMESPACE::NoteOn) {
+        applyExternalMidiToHex(data1, data2 != 0);
+      } else if (type == MIDI_NAMESPACE::NoteOff) {
+        applyExternalMidiToHex(data1, false);
+      }
+    }
+  }
 }
 
 void animateLEDs() {
-  if (delegatedControl) {
-    return;
+  for (byte i = 0; i < LED_COUNT; i++) {
+    h[i].animate = 0;
   }
-  for (byte i = 0; i < LED_COUNT; ++i) {
-    h[i].animate = false;
-  }
-  switch (animationType) {
-    case ANIMATE_BUTTON:
-    case ANIMATE_NONE:
-      break;
-    case ANIMATE_STAR:
-    case ANIMATE_SPLASH:
-      animateRadial();
-      break;
-    case ANIMATE_ORBIT:
-      animateOrbit();
-      break;
-    case ANIMATE_OCTAVE:
-    case ANIMATE_BY_NOTE:
-      animateMirror();
-      break;
-    case ANIMATE_BEAMS:
-      animateStaticBeams();
-      break;
-    case ANIMATE_SPLASH_REVERSE:
-    case ANIMATE_STAR_REVERSE:
-      animateRadialReverse();
-      break;
-    case ANIMATE_MIDI_IN:
-      for (byte i = 0; i < LED_COUNT; ++i) {
-        if (h[i].externalNoteDepth > 0) {
-          h[i].animate = true;
+  if (animationType) {
+    switch (animationType) {
+      case ANIMATE_STAR:
+      case ANIMATE_SPLASH:
+        animateRadial();
+        break;
+      case ANIMATE_ORBIT:
+        animateOrbit();
+        break;
+      case ANIMATE_OCTAVE:
+      case ANIMATE_BY_NOTE:
+        animateMirror();
+        break;
+      case ANIMATE_BEAMS:
+        animateStaticBeams();
+        break;
+      case ANIMATE_SPLASH_REVERSE:
+      case ANIMATE_STAR_REVERSE:
+        animateRadialReverse();
+        break;
+      case ANIMATE_MIDI_IN:
+        for (byte i = 0; i < LED_COUNT; i++) {
+          if (h[i].externalNoteDepth > 0) {
+            h[i].animate = 1;
+          }
         }
-      }
-      break;
-    default:
-      break;
+        break;
+      default:
+        break;
+    }
   }
 }
 
@@ -4701,57 +3816,22 @@ void assignPitches() {
   for (auto& bucket : midiNoteToHexIndices) {
     bucket.clear();
   }
-  int32_t lowestMidiIndex = std::numeric_limits<int32_t>::max();
   for (byte i = 0; i < LED_COUNT; i++) {
     if (!(h[i].isCmd)) {
       // steps is the distance from C
       // the stepsToMIDI function needs distance from A4
       // it also needs to reflect any transposition, but
       // NOT the key of the scale.
-      int32_t relativeSteps = current.pitchRelToA4(h[i].stepsFromC);
-      int32_t midiIndex = relativeSteps + 69;
-      h[i].midiNoteIndex = midiIndex;
-      if (standardMidiMicrotonalActive && midiIndex < lowestMidiIndex) {
-        lowestMidiIndex = midiIndex;
-      }
-    }
-  }
-
-  if (standardMidiMicrotonalActive && lowestMidiIndex != std::numeric_limits<int32_t>::max()) {
-    int32_t offset = midiChannelOffset(lowestMidiIndex);
-    int32_t baseIndex = positiveMod(static_cast<int>(defaultMidiChannel - 1 - offset), 16);
-    standardMidiBaseChannel = static_cast<byte>(baseIndex + 1);
-  } else {
-    standardMidiBaseChannel = defaultMidiChannel;
-  }
-
-  for (byte i = 0; i < LED_COUNT; i++) {
-    if (!(h[i].isCmd)) {
-      int32_t relativeSteps = current.pitchRelToA4(h[i].stepsFromC);
-      float N = stepsToMIDI(static_cast<int16_t>(relativeSteps));
-      float targetFrequency = MIDItoFreq(N);
-      if (standardMidiMicrotonalActive) {
-        byte mappedNote = 0;
-        byte mappedChannel = 0;
-        mapExtendedMidiNote(h[i].midiNoteIndex, standardMidiBaseChannel, mappedNote, mappedChannel);
-        h[i].note = mappedNote;
+      float N = stepsToMIDI(current.pitchRelToA4(h[i].stepsFromC));
+      if (N < 0 || N >= 128) {
+        h[i].note = UNUSED_NOTE;
         h[i].bend = 0;
-        h[i].frequency = targetFrequency;
-        h[i].mappedMidiChannel = mappedChannel;
+        h[i].frequency = 0.0;
       } else {
-        h[i].mappedMidiChannel = 0;
-        if (N < 0 || N >= 128) {
-          h[i].note = UNUSED_NOTE;
-          h[i].bend = 0;
-          h[i].frequency = 0.0;
-        } else {
-          h[i].note = ((N >= 127) ? 127 : round(N));
-          h[i].bend = (ldexp(N - h[i].note, 13) / MPEpitchBendSemis);
-          h[i].frequency = targetFrequency;
-        }
+        h[i].note = ((N >= 127) ? 127 : round(N));
+        h[i].bend = (ldexp(N - h[i].note, 13) / MPEpitchBendSemis);
+        h[i].frequency = MIDItoFreq(N);
       }
-      h[i].jiRetune = 0;
-      h[i].jiFrequencyMultiplier = 1.0f;
       if (h[i].note < 128) {
         midiNoteToHexIndices[h[i].note].push_back(i);
       }
@@ -4762,42 +3842,26 @@ void assignPitches() {
   }
   sendToLog("assignPitches complete.");
 }
-
-void refreshMidiRouting() {
-  resetTuningMIDI();
-  assignPitches();
-}
-
-/*
-    Returns true when the hex's pitch class belongs
-    to the currently selected scale. Pulling this
-    logic into one helper keeps applyScale() easy to
-    read for beginners.
-  */
-bool hexIsInCurrentScale(byte hexIndex) {
-  if (current.scale().tuning == ALL_TUNINGS) {
-    return true;
-  }
-
-  byte degree = current.keyDegree(h[hexIndex].stepsFromC);
-  if (degree == 0) {
-    return true;  // The root is always in the scale.
-  }
-
-  byte accumulatedSteps = 0;
-  byte patternIndex = 0;
-  while (degree > accumulatedSteps) {
-    accumulatedSteps += current.scale().pattern[patternIndex];
-    ++patternIndex;
-  }
-  return accumulatedSteps == degree;
-}
-
 void applyScale() {
   sendToLog("applyScale was called:");
-  for (byte i = 0; i < LED_COUNT; ++i) {
-    if (!h[i].isCmd) {
-      h[i].inScale = hexIsInCurrentScale(i);
+  for (byte i = 0; i < LED_COUNT; i++) {
+    if (!(h[i].isCmd)) {
+      if (current.scale().tuning == ALL_TUNINGS) {
+        h[i].inScale = 1;
+      } else {
+        byte degree = current.keyDegree(h[i].stepsFromC);
+        if (degree == 0) {
+          h[i].inScale = 1;  // the root is always in the scale
+        } else {
+          byte tempSum = 0;
+          byte iterator = 0;
+          while (degree > tempSum) {
+            tempSum += current.scale().pattern[iterator];
+            iterator++;
+          }                                    // add the steps in the scale, and you're in scale
+          h[i].inScale = (tempSum == degree);  // if the note lands on one of those sums
+        }
+      }
       sendToLog(
         "hex #" + std::to_string(i) + ", " + "steps=" + std::to_string(h[i].stepsFromC) + ", " + "isCmd? " + std::to_string(h[i].isCmd) + ", " + "note=" + std::to_string(h[i].note) + ", " + "inScale? " + std::to_string(h[i].inScale) + ".");
     }
@@ -4867,24 +3931,11 @@ struct SettingsHeader {
   char magic[3];           // e.g., "STG"
   uint8_t version;         // settings file version
   uint8_t defaultProfileIndex;
-  uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 1;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 5;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
-
-// CRC32 computation for settings integrity verification
-uint32_t crc32(const uint8_t* data, size_t length) {
-  uint32_t crc = 0xFFFFFFFF;
-  for (size_t i = 0; i < length; i++) {
-    crc ^= data[i];
-    for (int j = 0; j < 8; j++) {
-      crc = (crc >> 1) ^ (0xEDB88320 & -(crc & 1));
-    }
-  }
-  return ~crc;
-}
 
 // ==================================================
 // Settings Definitions
@@ -4897,11 +3948,8 @@ enum class SettingKey : uint8_t {
   RotaryInvert,
   AutoSave,
   MPEpitchBend,
-  MPEMode,
+  ForceMPE,
   ExtraMPE,
-  MPELowestChannel,
-  MPEHighestChannel,
-  MPELowPriority,
   DefaultMIDIChannel,
   CC74Value,
   CurrentTuning,
@@ -4923,11 +3971,7 @@ enum class SettingKey : uint8_t {
   PlaybackMode,
   Waveform,
   AudioDestination,
-  ArpeggiatorDivision,
-  SynthBPM,
   ColorMode,
-  RestLedBrightness,
-  DimLedBrightness,
   GlobalBrightness,
   AnimationType,
   ProgramChange,
@@ -4935,6 +3979,7 @@ enum class SettingKey : uint8_t {
   BeatBPM,
   BPMMultiplier,
   DynamicJI,
+  MasterGain,
   EnvelopeAttackIndex,
   EnvelopeDecayIndex,
   EnvelopeSustainLevel,
@@ -4957,18 +4002,6 @@ uint8_t defaultProfileIndex = DEFAULT_PROFILE_INDEX;
 extern bool settingsDirty;
 void syncSettingsToRuntime();
 
-inline uint8_t settingValue(SettingKey key) {
-  return settings[static_cast<uint8_t>(key)];
-}
-
-inline bool settingEnabled(SettingKey key) {
-  return settingValue(key) != 0;
-}
-
-inline int decodeBiasedSetting(SettingKey key) {
-  return static_cast<int>(settingValue(key)) - 128;
-}
-
 // SETTINGS STEP 2 - Define factory defaults (in the same order as the enum).
 // Adjust values below to match your desired defaults.
 const uint8_t factoryDefaults[NUM_SETTINGS] = {
@@ -4976,11 +4009,8 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* Invert rotary encoder        */ 0,
   /* Auto save settings           */ 1,
   /* MPE pitch bend semitones     */ 48,
-  /* MPE Mode                     */ MPE_MODE_AUTO,
+  /* Force MPE                    */ 0,
   /* Extra MPE Messages           */ 0,
-  /* MPE Lowest Channel           */ 2,
-  /* MPE Highest Channel          */ 16,
-  /* MPE Low Priority Mode        */ 0,
   /* Default MIDI Channel         */ 1,
   /* CC74 value                   */ 0,
   /* CurrentTuning                */ TUNING_12EDO,
@@ -5002,18 +4032,15 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* PlaybackMode                 */ SYNTH_OFF,
   /* Waveform                     */ WAVEFORM_HYBRID,
   /* AudioDestination             */ AUDIO_BOTH,
-  /* ArpeggiatorDivision          */ 32,
-  /* SynthBPM                     */ 120,
   /* ColorMode                    */ RAINBOW_MODE,
-  /* Rest LED Brightness          */ 255,
-  /* Dim LED Brightness           */ 255,
   /* GlobalBrightness             */ BRIGHT_DIM,
-  /* AnimationType                */ ANIMATE_BUTTON,
+  /* AnimationType                */ ANIMATE_NONE,
   /* ProgramChange                */ 0,
   /* JustIntonationBPMSync        */ 0,
   /* BeatBPM                      */ 60,
   /* BPMMultiplier                */ 1,
   /* DynamicJI                    */ 0,
+  /* MasterGain                   */ 127,
   /* EnvelopeAttackIndex          */ 2,
   /* EnvelopeDecayIndex           */ 3,
   /* EnvelopeSustainLevel         */ 127,
@@ -5034,21 +4061,7 @@ void setupFileSystem() {
   LittleFS.setConfig(cfg);
   fileSystemExists = LittleFS.begin();
   if (!fileSystemExists) {
-    // Mount failed (first boot or corrupted FS). USB enumeration guard in
-    // setup() already waited up to 2 s, so only a short extra margin here.
-    sendToLog("LittleFS mount failed. Formatting after USB settles...");
-    delay(500);
-    if (LittleFS.format()) {
-      sendToLog("LittleFS format succeeded. Mounting...");
-      fileSystemExists = LittleFS.begin();
-      if (!fileSystemExists) {
-        sendToLog("Error: mount failed after format.");
-      } else {
-        sendToLog("LittleFS mounted successfully after format.");
-      }
-    } else {
-      sendToLog("Error: LittleFS format failed.");
-    }
+    sendToLog("Error: Unable to mount LittleFS.");
   } else {
     sendToLog("LittleFS mounted successfully.");
   }
@@ -5116,14 +4129,6 @@ bool load_settings() {
     save_settings();
     return false;
   }
-  // Verify CRC32 integrity of loaded profile data
-  uint32_t computed = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), expectedSize);
-  if (computed != header.crc32) {
-    sendToLog("CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
-    applyFactoryDefaultsToSettings();
-    save_settings();
-    return false;
-  }
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
   settingsDirty = false;
@@ -5145,32 +4150,17 @@ void save_settings() {
   header.magic[0] = 'S'; header.magic[1] = 'T'; header.magic[2] = 'G';
   header.version = CURRENT_SETTINGS_VERSION;
   header.defaultProfileIndex = defaultProfileIndex;
-  header.crc32 = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS);
   f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SettingsHeader));
   f.write(reinterpret_cast<uint8_t*>(settingsProfiles), static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS);
   f.close();
   sendToLog("Settings saved.");
 }
 
-// Wrapper that mutes audio before writing to flash and unmutes afterward.
-// On the RP2040 flash writes disable ALL interrupts on BOTH cores, which
-// starves the audio ISR.  Muting first ensures a brief silence instead of
-// an audible glitch when interrupts resume.
-void flashSafeSave() {
-  flashWriteInProgress.store(true, std::memory_order_release);
-  // Allow a few ISR cycles (~0.5 ms) to output silence before the flash
-  // write freezes the timer, so the transition is a clean fade-to-silence
-  // rather than a mid-sample cut.
-  delayMicroseconds(500);
-  save_settings();
-  flashWriteInProgress.store(false, std::memory_order_release);
-}
-
 // Restore all settings to the factory defaults.
 void restore_default_settings() {
   applyFactoryDefaultsToSettings();
   sendToLog("Default settings restored.");
-  flashSafeSave();
+  save_settings();
 }
 
 // --------------------------------------------------------
@@ -5189,18 +4179,18 @@ void markSettingsDirty() {
   lastSettingsChangeTime = millis();
 }
 
-bool autoSave = settingEnabled(SettingKey::AutoSave);
+bool autoSave = (settings[static_cast<uint8_t>(SettingKey::AutoSave)] !=0);
 // Call this in your main loop to autosave if changes have stabilized.
 void checkAndAutoSave() {
-  if (!autoSave || !settingsDirty) {
+  if (!autoSave) {
     return;
   }
-  if (millis() - lastSettingsChangeTime <= debounceDelay) {
+  if (!settingsDirty || (millis() - lastSettingsChangeTime <= debounceDelay)) {
     return;
   }
   // Auto-save always snapshots the current settings into profile 1 before writing to disk.
   copyCurrentSettingsToProfile(DEFAULT_PROFILE_INDEX);
-  flashSafeSave();
+  save_settings();
   settingsDirty = false;
 }
 
@@ -5219,7 +4209,7 @@ void saveProfileToSlot(uint8_t profileIndex) {
     return;
   }
   copyCurrentSettingsToProfile(profileIndex);
-  flashSafeSave();
+  save_settings();
   if (profileIndex == activeProfileIndex) {
     settingsDirty = false;
   }
@@ -5338,16 +4328,6 @@ uint8_t encodePbWheelSpeed(void* variablePtr) {
   return exponent;
 }
 
-uint8_t encodeMPELowestChannel(void* /*variablePtr*/) {
-  clampMPEChannelRange();
-  return mpeLowestChannel;
-}
-
-uint8_t encodeMPEHighestChannel(void* /*variablePtr*/) {
-  clampMPEChannelRange();
-  return mpeHighestChannel;
-}
-
 
 // --------------------------------------------------------
 // Universal Callback for Persistent Menu Items
@@ -5388,10 +4368,11 @@ void universalSaveCallback(GEMCallbackData callbackData) {
 void changeTranspose();
 void rebootToBootloader();
 /*
-    These GEMItems are read-only display items.
-    They do not change any variable or run any procedure.
+    This GEMItem is meant to just be a read-only text label.
+    To be honest I don't know how to get just a plain text line to show here other than this!
   */
-GEMItem menuItemVersion("Firmware 1.2.0");
+void fakeButton() {}
+GEMItem menuItemVersion("Firmware 1.2-alpha5", fakeButton);
 SelectOptionByte optionByteHardware[] = {
   { "V1.1", HARDWARE_UNKNOWN }, { "V1.1", HARDWARE_V1_1 }, { "V1.2", HARDWARE_V1_2 }
 };
@@ -5408,7 +4389,7 @@ extern bool settingsDirty;
 
 void resetDefaultsMenuCallback() {
   applyFactoryDefaultsToSettings();
-  flashSafeSave();
+  save_settings();
   syncSettingsToRuntime();
   settingsDirty = false;
   sendToLog("Factory defaults loaded from menu.");
@@ -5479,7 +4460,7 @@ PersistentCallbackInfo callbackInfoMPE = {
   nullptr,
   assignPitches
 };
-SelectOptionByte optionByteMPEpitchBend[] = { { "   1", 1 }, { "   2", 2 }, { "   12", 12 }, { "   24", 24 }, { "   48", 48 }, { "   96", 96 } };
+SelectOptionByte optionByteMPEpitchBend[] = { { "2", 2 }, { "12", 12 }, { "24", 24 }, { "48", 48 }, { "96", 96 } };
 GEMSelect selectMPEpitchBend(sizeof(optionByteMPEpitchBend) / sizeof(SelectOptionByte), optionByteMPEpitchBend);
 GEMItem menuItemMPEpitchBend("MPE Bend", MPEpitchBendSemis, selectMPEpitchBend, universalSaveCallback,
                              reinterpret_cast<void*>(&callbackInfoMPE));
@@ -5521,10 +4502,10 @@ PersistentCallbackInfo callbackInfoAutoSave = {
 // (The GEMItem constructor here accepts a linked value, callback, and our callback info.)
 GEMItem menuItemAutoSave("Auto-Save", autoSave, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoAutoSave));
 
-// For "Invert Encoder" which is a bool tick box.
+// For "Invert Encoder" which is a bool tick box.  
 // We want to store its value persistently in the RotaryInvert setting.
 // Create a global variable that reflects its current state.
-bool rotaryInvert = settingEnabled(SettingKey::RotaryInvert);
+bool rotaryInvert = (settings[static_cast<uint8_t>(SettingKey::RotaryInvert)] != 0);
 // Create a PersistentCallbackInfo instance for this setting.
 PersistentCallbackInfo callbackInfoRotary = {
   static_cast<uint8_t>(SettingKey::RotaryInvert),
@@ -5554,9 +4535,6 @@ PersistentCallbackInfo callbackInfoPBSticky = {
 };
 GEMItem menuItemPBBehave("Pitch Bend", pbSticky, selectWheelType, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoPBSticky));
-void previewPBBehave(GEMPreviewCallbackData previewData) {
-  pbSticky = previewData.previewValByte;
-}
 
 PersistentCallbackInfo callbackInfoModSticky = {
   static_cast<uint8_t>(SettingKey::ModSticky),
@@ -5566,9 +4544,6 @@ PersistentCallbackInfo callbackInfoModSticky = {
 };
 GEMItem menuItemModBehave("Mod Wheel", modSticky, selectWheelType, universalSaveCallback,
                           reinterpret_cast<void*>(&callbackInfoModSticky));
-void previewModBehave(GEMPreviewCallbackData previewData) {
-  modSticky = previewData.previewValByte;
-}
 
 SelectOptionByte optionBytePlayback[] = { { "Off", SYNTH_OFF }, { "Mono", SYNTH_MONO }, { "Arp'gio", SYNTH_ARPEGGIO }, { "Poly", SYNTH_POLY } };
 GEMSelect selectPlayback(sizeof(optionBytePlayback) / sizeof(SelectOptionByte), optionBytePlayback);
@@ -5597,17 +4572,528 @@ GEMItem menuItemAudioD("SynthOutput", audioD, selectAudioD, universalSaveCallbac
 
 ////////////////////////////////////////////////////////////////
 
-const GEMSpinnerBoundariesByte spinnerBoundariesBPM = { 1, 255, 1 };
-GEMSpinner spinnerJustIntonationBPM(spinnerBoundariesBPM, GEM_LOOP);
-GEMSpinner spinnerSynthBPM(spinnerBoundariesBPM, GEM_LOOP);
-GEMSpinner spinnerBPM_MultiplierOfJI(spinnerBoundariesBPM, GEM_LOOP);
+SelectOptionByte optionByteBPM[] = {
+  { "1 BPM", 1 },
+  { "2 BPM", 2 },
+  { "3 BPM", 3 },
+  { "4 BPM", 4 },
+  { "5 BPM", 5 },
+  { "6 BPM", 6 },
+  { "7 BPM", 7 },
+  { "8 BPM", 8 },
+  { "9 BPM", 9 },
+  { "10 BPM", 10 },
+  { "11 BPM", 11 },
+  { "12 BPM", 12 },
+  { "13 BPM", 13 },
+  { "14 BPM", 14 },
+  { "15 BPM", 15 },
+  { "16 BPM", 16 },
+  { "17 BPM", 17 },
+  { "18 BPM", 18 },
+  { "19 BPM", 19 },
+  { "20 BPM", 20 },
+  { "21 BPM", 21 },
+  { "22 BPM", 22 },
+  { "23 BPM", 23 },
+  { "24 BPM", 24 },
+  { "25 BPM", 25 },
+  { "26 BPM", 26 },
+  { "27 BPM", 27 },
+  { "28 BPM", 28 },
+  { "29 BPM", 29 },
+  { "30 BPM", 30 },
+  { "31 BPM", 31 },
+  { "32 BPM", 32 },
+  { "33 BPM", 33 },
+  { "34 BPM", 34 },
+  { "35 BPM", 35 },
+  { "36 BPM", 36 },
+  { "37 BPM", 37 },
+  { "38 BPM", 38 },
+  { "39 BPM", 39 },
+  { "40 BPM", 40 },
+  { "41 BPM", 41 },
+  { "42 BPM", 42 },
+  { "43 BPM", 43 },
+  { "44 BPM", 44 },
+  { "45 BPM", 45 },
+  { "46 BPM", 46 },
+  { "47 BPM", 47 },
+  { "48 BPM", 48 },
+  { "49 BPM", 49 },
+  { "50 BPM", 50 },
+  { "51 BPM", 51 },
+  { "52 BPM", 52 },
+  { "53 BPM", 53 },
+  { "54 BPM", 54 },
+  { "55 BPM", 55 },
+  { "56 BPM", 56 },
+  { "57 BPM", 57 },
+  { "58 BPM", 58 },
+  { "59 BPM", 59 },
+  { "60 BPM", 60 },
+  { "61 BPM", 61 },
+  { "62 BPM", 62 },
+  { "63 BPM", 63 },
+  { "64 BPM", 64 },
+  { "65 BPM", 65 },
+  { "66 BPM", 66 },
+  { "67 BPM", 67 },
+  { "68 BPM", 68 },
+  { "69 BPM", 69 },
+  { "70 BPM", 70 },
+  { "71 BPM", 71 },
+  { "72 BPM", 72 },
+  { "73 BPM", 73 },
+  { "74 BPM", 74 },
+  { "75 BPM", 75 },
+  { "76 BPM", 76 },
+  { "77 BPM", 77 },
+  { "78 BPM", 78 },
+  { "79 BPM", 79 },
+  { "80 BPM", 80 },
+  { "81 BPM", 81 },
+  { "82 BPM", 82 },
+  { "83 BPM", 83 },
+  { "84 BPM", 84 },
+  { "85 BPM", 85 },
+  { "86 BPM", 86 },
+  { "87 BPM", 87 },
+  { "88 BPM", 88 },
+  { "89 BPM", 89 },
+  { "90 BPM", 90 },
+  { "91 BPM", 91 },
+  { "92 BPM", 92 },
+  { "93 BPM", 93 },
+  { "94 BPM", 94 },
+  { "95 BPM", 95 },
+  { "96 BPM", 96 },
+  { "97 BPM", 97 },
+  { "98 BPM", 98 },
+  { "99 BPM", 99 },
+  { "100 BPM", 100 },
+  { "101 BPM", 101 },
+  { "102 BPM", 102 },
+  { "103 BPM", 103 },
+  { "104 BPM", 104 },
+  { "105 BPM", 105 },
+  { "106 BPM", 106 },
+  { "107 BPM", 107 },
+  { "108 BPM", 108 },
+  { "109 BPM", 109 },
+  { "110 BPM", 110 },
+  { "111 BPM", 111 },
+  { "112 BPM", 112 },
+  { "113 BPM", 113 },
+  { "114 BPM", 114 },
+  { "115 BPM", 115 },
+  { "116 BPM", 116 },
+  { "117 BPM", 117 },
+  { "118 BPM", 118 },
+  { "119 BPM", 119 },
+  { "120 BPM", 120 },
+  { "121 BPM", 121 },
+  { "122 BPM", 122 },
+  { "123 BPM", 123 },
+  { "124 BPM", 124 },
+  { "125 BPM", 125 },
+  { "126 BPM", 126 },
+  { "127 BPM", 127 },
+  { "128 BPM", 128 },
+  { "129 BPM", 129 },
+  { "130 BPM", 130 },
+  { "131 BPM", 131 },
+  { "132 BPM", 132 },
+  { "133 BPM", 133 },
+  { "134 BPM", 134 },
+  { "135 BPM", 135 },
+  { "136 BPM", 136 },
+  { "137 BPM", 137 },
+  { "138 BPM", 138 },
+  { "139 BPM", 139 },
+  { "140 BPM", 140 },
+  { "141 BPM", 141 },
+  { "142 BPM", 142 },
+  { "143 BPM", 143 },
+  { "144 BPM", 144 },
+  { "145 BPM", 145 },
+  { "146 BPM", 146 },
+  { "147 BPM", 147 },
+  { "148 BPM", 148 },
+  { "149 BPM", 149 },
+  { "150 BPM", 150 },
+  { "151 BPM", 151 },
+  { "152 BPM", 152 },
+  { "153 BPM", 153 },
+  { "154 BPM", 154 },
+  { "155 BPM", 155 },
+  { "156 BPM", 156 },
+  { "157 BPM", 157 },
+  { "158 BPM", 158 },
+  { "159 BPM", 159 },
+  { "160 BPM", 160 },
+  { "161 BPM", 161 },
+  { "162 BPM", 162 },
+  { "163 BPM", 163 },
+  { "164 BPM", 164 },
+  { "165 BPM", 165 },
+  { "166 BPM", 166 },
+  { "167 BPM", 167 },
+  { "168 BPM", 168 },
+  { "169 BPM", 169 },
+  { "170 BPM", 170 },
+  { "171 BPM", 171 },
+  { "172 BPM", 172 },
+  { "173 BPM", 173 },
+  { "174 BPM", 174 },
+  { "175 BPM", 175 },
+  { "176 BPM", 176 },
+  { "177 BPM", 177 },
+  { "178 BPM", 178 },
+  { "179 BPM", 179 },
+  { "180 BPM", 180 },
+  { "181 BPM", 181 },
+  { "182 BPM", 182 },
+  { "183 BPM", 183 },
+  { "184 BPM", 184 },
+  { "185 BPM", 185 },
+  { "186 BPM", 186 },
+  { "187 BPM", 187 },
+  { "188 BPM", 188 },
+  { "189 BPM", 189 },
+  { "190 BPM", 190 },
+  { "191 BPM", 191 },
+  { "192 BPM", 192 },
+  { "193 BPM", 193 },
+  { "194 BPM", 194 },
+  { "195 BPM", 195 },
+  { "196 BPM", 196 },
+  { "197 BPM", 197 },
+  { "198 BPM", 198 },
+  { "199 BPM", 199 },
+  { "200 BPM", 200 },
+  { "201 BPM", 201 },
+  { "202 BPM", 202 },
+  { "203 BPM", 203 },
+  { "204 BPM", 204 },
+  { "205 BPM", 205 },
+  { "206 BPM", 206 },
+  { "207 BPM", 207 },
+  { "208 BPM", 208 },
+  { "209 BPM", 209 },
+  { "210 BPM", 210 },
+  { "211 BPM", 211 },
+  { "212 BPM", 212 },
+  { "213 BPM", 213 },
+  { "214 BPM", 214 },
+  { "215 BPM", 215 },
+  { "216 BPM", 216 },
+  { "217 BPM", 217 },
+  { "218 BPM", 218 },
+  { "219 BPM", 219 },
+  { "220 BPM", 220 },
+  { "221 BPM", 221 },
+  { "222 BPM", 222 },
+  { "223 BPM", 223 },
+  { "224 BPM", 224 },
+  { "225 BPM", 225 },
+  { "226 BPM", 226 },
+  { "227 BPM", 227 },
+  { "228 BPM", 228 },
+  { "229 BPM", 229 },
+  { "230 BPM", 230 },
+  { "231 BPM", 231 },
+  { "232 BPM", 232 },
+  { "233 BPM", 233 },
+  { "234 BPM", 234 },
+  { "235 BPM", 235 },
+  { "236 BPM", 236 },
+  { "237 BPM", 237 },
+  { "238 BPM", 238 },
+  { "239 BPM", 239 },
+  { "240 BPM", 240 },
+  { "241 BPM", 241 },
+  { "242 BPM", 242 },
+  { "243 BPM", 243 },
+  { "244 BPM", 244 },
+  { "245 BPM", 245 },
+  { "246 BPM", 246 },
+  { "247 BPM", 247 },
+  { "248 BPM", 248 },
+  { "249 BPM", 249 },
+  { "250 BPM", 250 },
+  { "251 BPM", 251 },
+  { "252 BPM", 252 },
+  { "253 BPM", 253 },
+  { "254 BPM", 254 },
+  { "255 BPM", 255 }
+};
 
+SelectOptionByte optionByteBPM_Multiplier[] = {
+  { "x1", 1 },
+  { "x2", 2 },
+  { "x3", 3 },
+  { "x4", 4 },
+  { "x5", 5 },
+  { "x6", 6 },
+  { "x7", 7 },
+  { "x8", 8 },
+  { "x9", 9 },
+  { "x10", 10 },
+  { "x11", 11 },
+  { "x12", 12 },
+  { "x13", 13 },
+  { "x14", 14 },
+  { "x15", 15 },
+  { "x16", 16 },
+  { "x17", 17 },
+  { "x18", 18 },
+  { "x19", 19 },
+  { "x20", 20 },
+  { "x21", 21 },
+  { "x22", 22 },
+  { "x23", 23 },
+  { "x24", 24 },
+  { "x25", 25 },
+  { "x26", 26 },
+  { "x27", 27 },
+  { "x28", 28 },
+  { "x29", 29 },
+  { "x30", 30 },
+  { "x31", 31 },
+  { "x32", 32 },
+  { "x33", 33 },
+  { "x34", 34 },
+  { "x35", 35 },
+  { "x36", 36 },
+  { "x37", 37 },
+  { "x38", 38 },
+  { "x39", 39 },
+  { "x40", 40 },
+  { "x41", 41 },
+  { "x42", 42 },
+  { "x43", 43 },
+  { "x44", 44 },
+  { "x45", 45 },
+  { "x46", 46 },
+  { "x47", 47 },
+  { "x48", 48 },
+  { "x49", 49 },
+  { "x50", 50 },
+  { "x51", 51 },
+  { "x52", 52 },
+  { "x53", 53 },
+  { "x54", 54 },
+  { "x55", 55 },
+  { "x56", 56 },
+  { "x57", 57 },
+  { "x58", 58 },
+  { "x59", 59 },
+  { "x60", 60 },
+  { "x61", 61 },
+  { "x62", 62 },
+  { "x63", 63 },
+  { "x64", 64 },
+  { "x65", 65 },
+  { "x66", 66 },
+  { "x67", 67 },
+  { "x68", 68 },
+  { "x69", 69 },
+  { "x70", 70 },
+  { "x71", 71 },
+  { "x72", 72 },
+  { "x73", 73 },
+  { "x74", 74 },
+  { "x75", 75 },
+  { "x76", 76 },
+  { "x77", 77 },
+  { "x78", 78 },
+  { "x79", 79 },
+  { "x80", 80 },
+  { "x81", 81 },
+  { "x82", 82 },
+  { "x83", 83 },
+  { "x84", 84 },
+  { "x85", 85 },
+  { "x86", 86 },
+  { "x87", 87 },
+  { "x88", 88 },
+  { "x89", 89 },
+  { "x90", 90 },
+  { "x91", 91 },
+  { "x92", 92 },
+  { "x93", 93 },
+  { "x94", 94 },
+  { "x95", 95 },
+  { "x96", 96 },
+  { "x97", 97 },
+  { "x98", 98 },
+  { "x99", 99 },
+  { "x100", 100 },
+  { "x101", 101 },
+  { "x102", 102 },
+  { "x103", 103 },
+  { "x104", 104 },
+  { "x105", 105 },
+  { "x106", 106 },
+  { "x107", 107 },
+  { "x108", 108 },
+  { "x109", 109 },
+  { "x110", 110 },
+  { "x111", 111 },
+  { "x112", 112 },
+  { "x113", 113 },
+  { "x114", 114 },
+  { "x115", 115 },
+  { "x116", 116 },
+  { "x117", 117 },
+  { "x118", 118 },
+  { "x119", 119 },
+  { "x120", 120 },
+  { "x121", 121 },
+  { "x122", 122 },
+  { "x123", 123 },
+  { "x124", 124 },
+  { "x125", 125 },
+  { "x126", 126 },
+  { "x127", 127 },
+  { "x128", 128 },
+  { "x129", 129 },
+  { "x130", 130 },
+  { "x131", 131 },
+  { "x132", 132 },
+  { "x133", 133 },
+  { "x134", 134 },
+  { "x135", 135 },
+  { "x136", 136 },
+  { "x137", 137 },
+  { "x138", 138 },
+  { "x139", 139 },
+  { "x140", 140 },
+  { "x141", 141 },
+  { "x142", 142 },
+  { "x143", 143 },
+  { "x144", 144 },
+  { "x145", 145 },
+  { "x146", 146 },
+  { "x147", 147 },
+  { "x148", 148 },
+  { "x149", 149 },
+  { "x150", 150 },
+  { "x151", 151 },
+  { "x152", 152 },
+  { "x153", 153 },
+  { "x154", 154 },
+  { "x155", 155 },
+  { "x156", 156 },
+  { "x157", 157 },
+  { "x158", 158 },
+  { "x159", 159 },
+  { "x160", 160 },
+  { "x161", 161 },
+  { "x162", 162 },
+  { "x163", 163 },
+  { "x164", 164 },
+  { "x165", 165 },
+  { "x166", 166 },
+  { "x167", 167 },
+  { "x168", 168 },
+  { "x169", 169 },
+  { "x170", 170 },
+  { "x171", 171 },
+  { "x172", 172 },
+  { "x173", 173 },
+  { "x174", 174 },
+  { "x175", 175 },
+  { "x176", 176 },
+  { "x177", 177 },
+  { "x178", 178 },
+  { "x179", 179 },
+  { "x180", 180 },
+  { "x181", 181 },
+  { "x182", 182 },
+  { "x183", 183 },
+  { "x184", 184 },
+  { "x185", 185 },
+  { "x186", 186 },
+  { "x187", 187 },
+  { "x188", 188 },
+  { "x189", 189 },
+  { "x190", 190 },
+  { "x191", 191 },
+  { "x192", 192 },
+  { "x193", 193 },
+  { "x194", 194 },
+  { "x195", 195 },
+  { "x196", 196 },
+  { "x197", 197 },
+  { "x198", 198 },
+  { "x199", 199 },
+  { "x200", 200 },
+  { "x201", 201 },
+  { "x202", 202 },
+  { "x203", 203 },
+  { "x204", 204 },
+  { "x205", 205 },
+  { "x206", 206 },
+  { "x207", 207 },
+  { "x208", 208 },
+  { "x209", 209 },
+  { "x210", 210 },
+  { "x211", 211 },
+  { "x212", 212 },
+  { "x213", 213 },
+  { "x214", 214 },
+  { "x215", 215 },
+  { "x216", 216 },
+  { "x217", 217 },
+  { "x218", 218 },
+  { "x219", 219 },
+  { "x220", 220 },
+  { "x221", 221 },
+  { "x222", 222 },
+  { "x223", 223 },
+  { "x224", 224 },
+  { "x225", 225 },
+  { "x226", 226 },
+  { "x227", 227 },
+  { "x228", 228 },
+  { "x229", 229 },
+  { "x230", 230 },
+  { "x231", 231 },
+  { "x232", 232 },
+  { "x233", 233 },
+  { "x234", 234 },
+  { "x235", 235 },
+  { "x236", 236 },
+  { "x237", 237 },
+  { "x238", 238 },
+  { "x239", 239 },
+  { "x240", 240 },
+  { "x241", 241 },
+  { "x242", 242 },
+  { "x243", 243 },
+  { "x244", 244 },
+  { "x245", 245 },
+  { "x246", 246 },
+  { "x247", 247 },
+  { "x248", 248 },
+  { "x249", 249 },
+  { "x250", 250 },
+  { "x251", 251 },
+  { "x252", 252 },
+  { "x253", 253 },
+  { "x254", 254 },
+  { "x255", 255 }
+};
+
+GEMSelect selectFrequencyOfJI(sizeof(optionByteBPM) / sizeof(SelectOptionByte), optionByteBPM);
+GEMSelect selectBPM_MultiplierOfJI(sizeof(optionByteBPM) / sizeof(SelectOptionByte), optionByteBPM_Multiplier);
 ///////////////////////////////////////////////////////////////////
 
 // Roland MT-32 mode (1987)
-SelectOptionByte optionByteRolandMT32[] __in_flash("midi") = {
-  // Blank
-  { "None", 0 },
+SelectOptionByte optionByteRolandMT32[] = {
   // Piano
   { "APiano1", 1 },
   { "APiano2", 2 },
@@ -5764,9 +5250,7 @@ GEMItem menuItemRolandMT32("RolandMT32", programChange, selectRolandMT32, univer
                            reinterpret_cast<void*>(&callbackInfoProgramChange));
 
 // General MIDI 1
-SelectOptionByte optionByteGeneralMidi[] __in_flash("midi") = {
-  // Blank
-  { "None", 0 },
+SelectOptionByte optionByteGeneralMidi[] = {
   // Piano
   { "Piano 1", 1 },
   { "Piano 2", 2 },
@@ -5917,35 +5401,12 @@ GEMItem menuItemGeneralMidi("GeneralMidi", programChange, selectGeneralMidi, uni
                             reinterpret_cast<void*>(&callbackInfoProgramChange));
 
 
-// Transpose spinner: generated programmatically instead of 255 hardcoded entries
-constexpr uint16_t TRANSPOSE_COUNT = 255;
-static char transposeLabels[TRANSPOSE_COUNT][5];
-static SelectOptionInt optionIntTransposeSteps[TRANSPOSE_COUNT];
-void initTransposeOptions() {
-  for (int i = 0; i < TRANSPOSE_COUNT; ++i) {
-    int val = i - 127;  // -127 to +127
-    if (val == 0) {
-      memcpy(transposeLabels[i], "+/-0", 5);
-    } else if (val < -99) {
-      snprintf(transposeLabels[i], 5, "%d", val);
-    } else if (val < 0) {
-      snprintf(transposeLabels[i], 5, "-%*d", 3, -val);
-    } else if (val < 100) {
-      snprintf(transposeLabels[i], 5, "+%*d", 3, val);
-    } else {
-      snprintf(transposeLabels[i], 5, "+%d", val);
-    }
-    optionIntTransposeSteps[i] = { transposeLabels[i], val };
-  }
-}
+// doing this long-hand because the STRUCT has problems accepting string conversions of numbers for some reason
+SelectOptionInt optionIntTransposeSteps[] = {
+  { "-127", -127 }, { "-126", -126 }, { "-125", -125 }, { "-124", -124 }, { "-123", -123 }, { "-122", -122 }, { "-121", -121 }, { "-120", -120 }, { "-119", -119 }, { "-118", -118 }, { "-117", -117 }, { "-116", -116 }, { "-115", -115 }, { "-114", -114 }, { "-113", -113 }, { "-112", -112 }, { "-111", -111 }, { "-110", -110 }, { "-109", -109 }, { "-108", -108 }, { "-107", -107 }, { "-106", -106 }, { "-105", -105 }, { "-104", -104 }, { "-103", -103 }, { "-102", -102 }, { "-101", -101 }, { "-100", -100 }, { "- 99", -99 }, { "- 98", -98 }, { "- 97", -97 }, { "- 96", -96 }, { "- 95", -95 }, { "- 94", -94 }, { "- 93", -93 }, { "- 92", -92 }, { "- 91", -91 }, { "- 90", -90 }, { "- 89", -89 }, { "- 88", -88 }, { "- 87", -87 }, { "- 86", -86 }, { "- 85", -85 }, { "- 84", -84 }, { "- 83", -83 }, { "- 82", -82 }, { "- 81", -81 }, { "- 80", -80 }, { "- 79", -79 }, { "- 78", -78 }, { "- 77", -77 }, { "- 76", -76 }, { "- 75", -75 }, { "- 74", -74 }, { "- 73", -73 }, { "- 72", -72 }, { "- 71", -71 }, { "- 70", -70 }, { "- 69", -69 }, { "- 68", -68 }, { "- 67", -67 }, { "- 66", -66 }, { "- 65", -65 }, { "- 64", -64 }, { "- 63", -63 }, { "- 62", -62 }, { "- 61", -61 }, { "- 60", -60 }, { "- 59", -59 }, { "- 58", -58 }, { "- 57", -57 }, { "- 56", -56 }, { "- 55", -55 }, { "- 54", -54 }, { "- 53", -53 }, { "- 52", -52 }, { "- 51", -51 }, { "- 50", -50 }, { "- 49", -49 }, { "- 48", -48 }, { "- 47", -47 }, { "- 46", -46 }, { "- 45", -45 }, { "- 44", -44 }, { "- 43", -43 }, { "- 42", -42 }, { "- 41", -41 }, { "- 40", -40 }, { "- 39", -39 }, { "- 38", -38 }, { "- 37", -37 }, { "- 36", -36 }, { "- 35", -35 }, { "- 34", -34 }, { "- 33", -33 }, { "- 32", -32 }, { "- 31", -31 }, { "- 30", -30 }, { "- 29", -29 }, { "- 28", -28 }, { "- 27", -27 }, { "- 26", -26 }, { "- 25", -25 }, { "- 24", -24 }, { "- 23", -23 }, { "- 22", -22 }, { "- 21", -21 }, { "- 20", -20 }, { "- 19", -19 }, { "- 18", -18 }, { "- 17", -17 }, { "- 16", -16 }, { "- 15", -15 }, { "- 14", -14 }, { "- 13", -13 }, { "- 12", -12 }, { "- 11", -11 }, { "- 10", -10 }, { "-  9", -9 }, { "-  8", -8 }, { "-  7", -7 }, { "-  6", -6 }, { "-  5", -5 }, { "-  4", -4 }, { "-  3", -3 }, { "-  2", -2 }, { "-  1", -1 }, { "+/-0", 0 }, { "+  1", 1 }, { "+  2", 2 }, { "+  3", 3 }, { "+  4", 4 }, { "+  5", 5 }, { "+  6", 6 }, { "+  7", 7 }, { "+  8", 8 }, { "+  9", 9 }, { "+ 10", 10 }, { "+ 11", 11 }, { "+ 12", 12 }, { "+ 13", 13 }, { "+ 14", 14 }, { "+ 15", 15 }, { "+ 16", 16 }, { "+ 17", 17 }, { "+ 18", 18 }, { "+ 19", 19 }, { "+ 20", 20 }, { "+ 21", 21 }, { "+ 22", 22 }, { "+ 23", 23 }, { "+ 24", 24 }, { "+ 25", 25 }, { "+ 26", 26 }, { "+ 27", 27 }, { "+ 28", 28 }, { "+ 29", 29 }, { "+ 30", 30 }, { "+ 31", 31 }, { "+ 32", 32 }, { "+ 33", 33 }, { "+ 34", 34 }, { "+ 35", 35 }, { "+ 36", 36 }, { "+ 37", 37 }, { "+ 38", 38 }, { "+ 39", 39 }, { "+ 40", 40 }, { "+ 41", 41 }, { "+ 42", 42 }, { "+ 43", 43 }, { "+ 44", 44 }, { "+ 45", 45 }, { "+ 46", 46 }, { "+ 47", 47 }, { "+ 48", 48 }, { "+ 49", 49 }, { "+ 50", 50 }, { "+ 51", 51 }, { "+ 52", 52 }, { "+ 53", 53 }, { "+ 54", 54 }, { "+ 55", 55 }, { "+ 56", 56 }, { "+ 57", 57 }, { "+ 58", 58 }, { "+ 59", 59 }, { "+ 60", 60 }, { "+ 61", 61 }, { "+ 62", 62 }, { "+ 63", 63 }, { "+ 64", 64 }, { "+ 65", 65 }, { "+ 66", 66 }, { "+ 67", 67 }, { "+ 68", 68 }, { "+ 69", 69 }, { "+ 70", 70 }, { "+ 71", 71 }, { "+ 72", 72 }, { "+ 73", 73 }, { "+ 74", 74 }, { "+ 75", 75 }, { "+ 76", 76 }, { "+ 77", 77 }, { "+ 78", 78 }, { "+ 79", 79 }, { "+ 80", 80 }, { "+ 81", 81 }, { "+ 82", 82 }, { "+ 83", 83 }, { "+ 84", 84 }, { "+ 85", 85 }, { "+ 86", 86 }, { "+ 87", 87 }, { "+ 88", 88 }, { "+ 89", 89 }, { "+ 90", 90 }, { "+ 91", 91 }, { "+ 92", 92 }, { "+ 93", 93 }, { "+ 94", 94 }, { "+ 95", 95 }, { "+ 96", 96 }, { "+ 97", 97 }, { "+ 98", 98 }, { "+ 99", 99 }, { "+100", 100 }, { "+101", 101 }, { "+102", 102 }, { "+103", 103 }, { "+104", 104 }, { "+105", 105 }, { "+106", 106 }, { "+107", 107 }, { "+108", 108 }, { "+109", 109 }, { "+110", 110 }, { "+111", 111 }, { "+112", 112 }, { "+113", 113 }, { "+114", 114 }, { "+115", 115 }, { "+116", 116 }, { "+117", 117 }, { "+118", 118 }, { "+119", 119 }, { "+120", 120 }, { "+121", 121 }, { "+122", 122 }, { "+123", 123 }, { "+124", 124 }, { "+125", 125 }, { "+126", 126 }, { "+127", 127 }
+};
 GEMSelect selectTransposeSteps(255, optionIntTransposeSteps);
 GEMItem menuItemTransposeSteps("Transpose", transposeSteps, selectTransposeSteps, changeTranspose);
-void previewTranspose(GEMPreviewCallbackData previewData) {
-  transposeSteps = previewData.previewValInt;
-  current.transpose = transposeSteps;
-  assignPitches();
-  updateSynthWithNewFreqs();
-}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 // MIDI Channel selection
@@ -5955,65 +5416,20 @@ PersistentCallbackInfo callbackInfoDefaultMIDIChannel = {
   static_cast<uint8_t>(SettingKey::DefaultMIDIChannel),
   reinterpret_cast<void*>(&defaultMidiChannel),
   nullptr,
-  refreshMidiRouting
+  resetTuningMIDI
 };
 GEMItem menuItemSelectMIDIChannel("MIDI Channel", defaultMidiChannel, selectMIDIchannel, universalSaveCallback,
                                   reinterpret_cast<void*>(&callbackInfoDefaultMIDIChannel));
 
-SelectOptionByte optionByteMPELowChannel[] = {
-  { "   2", 2 }, { "   3", 3 }, { "   4", 4 }, { "   5", 5 }, { "   6", 6 },
-  { "   7", 7 }, { "   8", 8 }, { "   9", 9 }, { "   10", 10 }, { "   11", 11 },
-  { "   12", 12 }, { "   13", 13 }, { "   14", 14 }, { "   15", 15 }, { "   16", 16 }
-};
-GEMSelect selectMPELowChannel(sizeof(optionByteMPELowChannel) / sizeof(SelectOptionByte), optionByteMPELowChannel);
-PersistentCallbackInfo callbackInfoMPELowChannel = {
-  static_cast<uint8_t>(SettingKey::MPELowestChannel),
-  reinterpret_cast<void*>(&mpeLowestChannel),
-  encodeMPELowestChannel,
-  resetTuningMIDI
-};
-GEMItem menuItemSelectMPELowChannel("MPE Low Ch", mpeLowestChannel, selectMPELowChannel, universalSaveCallback,
-                                    reinterpret_cast<void*>(&callbackInfoMPELowChannel));
-
-SelectOptionByte optionByteMPEHighChannel[] = {
-  { "   2", 2 }, { "   3", 3 }, { "   4", 4 }, { "   5", 5 }, { "   6", 6 },
-  { "   7", 7 }, { "   8", 8 }, { "   9", 9 }, { "   10", 10 }, { "   11", 11 },
-  { "   12", 12 }, { "   13", 13 }, { "   14", 14 }, { "   15", 15 }, { "   16", 16 }
-};
-GEMSelect selectMPEHighChannel(sizeof(optionByteMPEHighChannel) / sizeof(SelectOptionByte), optionByteMPEHighChannel);
-PersistentCallbackInfo callbackInfoMPEHighChannel = {
-  static_cast<uint8_t>(SettingKey::MPEHighestChannel),
-  reinterpret_cast<void*>(&mpeHighestChannel),
-  encodeMPEHighestChannel,
-  resetTuningMIDI
-};
-GEMItem menuItemSelectMPEHighChannel("MPE High Ch", mpeHighestChannel, selectMPEHighChannel, universalSaveCallback,
-                                     reinterpret_cast<void*>(&callbackInfoMPEHighChannel));
-
-PersistentCallbackInfo callbackInfoMPELowPriority = {
-  static_cast<uint8_t>(SettingKey::MPELowPriority),
-  reinterpret_cast<void*>(&mpeLowPriorityMode),
-  nullptr,
-  resetTuningMIDI
-};
-GEMItem menuItemToggleMPELowPriority("MPE Low Priority", mpeLowPriorityMode, universalSaveCallback,
-                                     reinterpret_cast<void*>(&callbackInfoMPELowPriority));
-
 // MIDI force MPE option toggle
-SelectOptionByte optionByteMPEMode[] = {
-  { "Auto", MPE_MODE_AUTO },
-  { "Disable", MPE_MODE_DISABLE },
-  { "Force", MPE_MODE_FORCE }
-};
-GEMSelect selectMPEMode(sizeof(optionByteMPEMode) / sizeof(SelectOptionByte), optionByteMPEMode);
-PersistentCallbackInfo callbackInfoMPEMode = {
-  static_cast<uint8_t>(SettingKey::MPEMode),
-  reinterpret_cast<void*>(&mpeUserMode),
+PersistentCallbackInfo callbackInfoForceMPE = {
+  static_cast<uint8_t>(SettingKey::ForceMPE),
+  reinterpret_cast<void*>(&forceEnableMPE),
   nullptr,
-  refreshMidiRouting
+  resetTuningMIDI
 };
-GEMItem menuItemSelectMPEMode("MPE Mode", mpeUserMode, selectMPEMode, universalSaveCallback,
-                               reinterpret_cast<void*>(&callbackInfoMPEMode));
+GEMItem menuItemToggleForceMPEChannels("Force MPE", forceEnableMPE, universalSaveCallback,
+                                       reinterpret_cast<void*>(&callbackInfoForceMPE));
 
 // Toggle additional MPE messages (CC74 + Channel Pressure)
 PersistentCallbackInfo callbackInfoExtraMPE = {
@@ -6026,15 +5442,17 @@ GEMItem menuItemToggleExtraMPE("Extra MPE", extraMPE, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoExtraMPE));
 
 // MIDI Channel selection
-const GEMSpinnerBoundariesByte spinnerBoundariesCC74Value = { 1, 0, 127 };
-GEMSpinner spinnerCC74Value(spinnerBoundariesCC74Value, GEM_LOOP);
+SelectOptionByte optionByteCC74value[] = {
+  { "   0", 0 }, { "   1", 1 }, { "   2", 2 }, { "   3", 3 }, { "   4", 4 }, { "   5", 5 }, { "   6", 6 }, { "   7", 7 }, { "   8", 8 }, { "   9", 9 }, { "  10", 10 }, { "  11", 11 }, { "  12", 12 }, { "  13", 13 }, { "  14", 14 }, { "  15", 15 }, { "  16", 16 }, { "  17", 17 }, { "  18", 18 }, { "  19", 19 }, { "  20", 20 }, { "  21", 21 }, { "  22", 22 }, { "  23", 23 }, { "  24", 24 }, { "  25", 25 }, { "  26", 26 }, { "  27", 27 }, { "  28", 28 }, { "  29", 29 }, { "  30", 30 }, { "  31", 31 }, { "  32", 32 }, { "  33", 33 }, { "  34", 34 }, { "  35", 35 }, { "  36", 36 }, { "  37", 37 }, { "  38", 38 }, { "  39", 39 }, { "  40", 40 }, { "  41", 41 }, { "  42", 42 }, { "  43", 43 }, { "  44", 44 }, { "  45", 45 }, { "  46", 46 }, { "  47", 47 }, { "  48", 48 }, { "  49", 49 }, { "  50", 50 }, { "  51", 51 }, { "  52", 52 }, { "  53", 53 }, { "  54", 54 }, { "  55", 55 }, { "  56", 56 }, { "  57", 57 }, { "  58", 58 }, { "  59", 59 }, { "  60", 60 }, { "  61", 61 }, { "  62", 62 }, { "  63", 63 }, { "  64", 64 }, { "  65", 65 }, { "  66", 66 }, { "  67", 67 }, { "  68", 68 }, { "  69", 69 }, { "  70", 70 }, { "  71", 71 }, { "  72", 72 }, { "  73", 73 }, { "  74", 74 }, { "  75", 75 }, { "  76", 76 }, { "  77", 77 }, { "  78", 78 }, { "  79", 79 }, { "  80", 80 }, { "  81", 81 }, { "  82", 82 }, { "  83", 83 }, { "  84", 84 }, { "  85", 85 }, { "  86", 86 }, { "  87", 87 }, { "  88", 88 }, { "  89", 89 }, { "  90", 90 }, { "  91", 91 }, { "  92", 92 }, { "  93", 93 }, { "  94", 94 }, { "  95", 95 }, { "  96", 96 }, { "  97", 97 }, { "  98", 98 }, { "  99", 99 }, { " 100", 100 }, { " 101", 101 }, { " 102", 102 }, { " 103", 103 }, { " 104", 104 }, { " 105", 105 }, { " 106", 106 }, { " 107", 107 }, { " 108", 108 }, { " 109", 109 }, { " 110", 110 }, { " 111", 111 }, { " 112", 112 }, { " 113", 113 }, { " 114", 114 }, { " 115", 115 }, { " 116", 116 }, { " 117", 117 }, { " 118", 118 }, { " 119", 119 }, { " 120", 120 }, { " 121", 121 }, { " 122", 122 }, { " 123", 123 }, { " 124", 124 }, { " 125", 125 }, { " 126", 126 }, { " 127", 127 }
+};
+GEMSelect selectCC74value(128, optionByteCC74value);
 PersistentCallbackInfo callbackInfoCC74 = {
   static_cast<uint8_t>(SettingKey::CC74Value),
   reinterpret_cast<void*>(&CC74value),
   nullptr,
   nullptr
 };
-GEMItem menuItemSelectCC74value("CC 74 Value", CC74value, spinnerCC74Value, universalSaveCallback,
+GEMItem menuItemSelectCC74value("CC 74 Value", CC74value, selectCC74value, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoCC74));
 
 // Layout rotation selection
@@ -6073,7 +5491,7 @@ PersistentCallbackInfo callbackInfoJustIntonationBPMSync = {
   static_cast<uint8_t>(SettingKey::JustIntonationBPMSync),
   reinterpret_cast<void*>(&useJustIntonationBPM),
   nullptr,
-  refreshMidiRouting
+  resetTuningMIDI
 };
 GEMItem menuItemToggleJI_BPM("JI BPM Sync", useJustIntonationBPM, universalSaveCallback,
                               reinterpret_cast<void*>(&callbackInfoJustIntonationBPMSync));
@@ -6082,32 +5500,32 @@ PersistentCallbackInfo callbackInfoBeatBPM = {
   static_cast<uint8_t>(SettingKey::BeatBPM),
   reinterpret_cast<void*>(&justIntonationBPM),
   nullptr,
-  refreshMidiRouting
+  resetTuningMIDI
 };
-GEMItem menuItemSetJI_BPM("Beat BPM", justIntonationBPM, spinnerJustIntonationBPM, universalSaveCallback,
+GEMItem menuItemSetJI_BPM("Beat BPM", justIntonationBPM, selectFrequencyOfJI, universalSaveCallback,
                           reinterpret_cast<void*>(&callbackInfoBeatBPM));
 
 PersistentCallbackInfo callbackInfoBPM_Mult = {
   static_cast<uint8_t>(SettingKey::BPMMultiplier),
   reinterpret_cast<void*>(&justIntonationBPM_Multiplier),
   nullptr,
-  refreshMidiRouting
+  resetTuningMIDI
 };
-GEMItem menuItemSetJI_BPM_Multiplier("BPM Mult.", justIntonationBPM_Multiplier, spinnerBPM_MultiplierOfJI, universalSaveCallback,
+GEMItem menuItemSetJI_BPM_Multiplier("BPM Mult.", justIntonationBPM_Multiplier, selectBPM_MultiplierOfJI, universalSaveCallback,
                                      reinterpret_cast<void*>(&callbackInfoBPM_Mult));
 
 PersistentCallbackInfo callbackInfoDynamicJI = {
   static_cast<uint8_t>(SettingKey::DynamicJI),
   reinterpret_cast<void*>(&useDynamicJustIntonation),
   nullptr,
-  refreshMidiRouting
+  resetTuningMIDI
 };
 GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoDynamicJI));
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Tiered", TIERED_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE }, { "Diatonic", DIATONIC_COLOR_MODE } };
+SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Tiered", TIERED_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE } };
 GEMSelect selectColor(sizeof(optionByteColor) / sizeof(SelectOptionByte), optionByteColor);
 PersistentCallbackInfo callbackInfoColorMode = {
   static_cast<uint8_t>(SettingKey::ColorMode),
@@ -6117,26 +5535,8 @@ PersistentCallbackInfo callbackInfoColorMode = {
 };
 GEMItem menuItemColor("Color Mode", colorMode, selectColor, universalSaveCallback,
                       reinterpret_cast<void*>(&callbackInfoColorMode));
-void previewColor(GEMPreviewCallbackData previewData) {
-  colorMode = previewData.previewValByte;
-  // Refresh the LED display with the new colorMode value
-  setLEDcolorCodes();
-}
 
-
-SelectOptionByte optionByteAnimate[] = {
-  { "Off", ANIMATE_NONE },
-  { "Button", ANIMATE_BUTTON },
-  { "Octave", ANIMATE_OCTAVE },
-  { "By Note", ANIMATE_BY_NOTE },
-  { "Star", ANIMATE_STAR },
-  { "Splash", ANIMATE_SPLASH },
-  { "Orbit", ANIMATE_ORBIT },
-  { "Beams", ANIMATE_BEAMS },
-  { "rSplash", ANIMATE_SPLASH_REVERSE },
-  { "rStar", ANIMATE_STAR_REVERSE },
-  { "MIDI In", ANIMATE_MIDI_IN }
-};
+SelectOptionByte optionByteAnimate[] = { { "None", ANIMATE_NONE }, { "Octave", ANIMATE_OCTAVE }, { "By Note", ANIMATE_BY_NOTE }, { "Star", ANIMATE_STAR }, { "Splash", ANIMATE_SPLASH }, { "Orbit", ANIMATE_ORBIT }, { "Beams", ANIMATE_BEAMS }, { "rSplash", ANIMATE_SPLASH_REVERSE }, { "rStar", ANIMATE_STAR_REVERSE }, { "MIDI In", ANIMATE_MIDI_IN } };
 GEMSelect selectAnimate(sizeof(optionByteAnimate) / sizeof(SelectOptionByte), optionByteAnimate);
 PersistentCallbackInfo callbackInfoAnimation = {
   static_cast<uint8_t>(SettingKey::AnimationType),
@@ -6146,51 +5546,6 @@ PersistentCallbackInfo callbackInfoAnimation = {
 };
 GEMItem menuItemAnimate("Animation", animationType, selectAnimate, universalSaveCallback,
                         reinterpret_cast<void*>(&callbackInfoAnimation));
-void previewAnimate(GEMPreviewCallbackData previewData) {
-  animationType = previewData.previewValByte;
-}
-
-SelectOptionByte optionByteRestLedLevel[] = {
-  { "Off", 0 },
-  { "Faint", 60 },
-  { "Dim", 100 },
-  { "Low", 160 },
-  { "Normal", 255 }
-};
-GEMSelect selectRestLedLevel(sizeof(optionByteRestLedLevel) / sizeof(SelectOptionByte), optionByteRestLedLevel);
-PersistentCallbackInfo callbackInfoRestLedLevel = {
-  static_cast<uint8_t>(SettingKey::RestLedBrightness),
-  reinterpret_cast<void*>(&ledRestBrightness),
-  nullptr,
-  setLEDcolorCodes
-};
-GEMItem menuItemRestLedLevel("Rest Bright", ledRestBrightness, selectRestLedLevel, universalSaveCallback,
-                             reinterpret_cast<void*>(&callbackInfoRestLedLevel));
-void previewRestLedLevel(GEMPreviewCallbackData previewData) {
-  ledRestBrightness = previewData.previewValByte;
-  setLEDcolorCodes();
-}
-
-SelectOptionByte optionByteDimLedLevel[] = {
-  { "Off", 0 },
-  { "Faint", 100 },
-  { "Dim", 150 },
-  { "Low", 200 },
-  { "Normal", 255 }
-};
-GEMSelect selectDimLedLevel(sizeof(optionByteDimLedLevel) / sizeof(SelectOptionByte), optionByteDimLedLevel);
-PersistentCallbackInfo callbackInfoDimLedLevel = {
-  static_cast<uint8_t>(SettingKey::DimLedBrightness),
-  reinterpret_cast<void*>(&ledDimBrightness),
-  nullptr,
-  setLEDcolorCodes
-};
-GEMItem menuItemDimLedLevel("Dim Bright", ledDimBrightness, selectDimLedLevel, universalSaveCallback,
-                            reinterpret_cast<void*>(&callbackInfoDimLedLevel));
-void previewDimLedLevel(GEMPreviewCallbackData previewData) {
-  ledDimBrightness = previewData.previewValByte;
-  setLEDcolorCodes();
-}
 
 SelectOptionByte optionByteBright[] = { { "Off", BRIGHT_OFF }, { "Dimmer", BRIGHT_DIMMER }, { "Dim", BRIGHT_DIM }, { "Low", BRIGHT_LOW }, { "Normal", BRIGHT_MID }, { "High", BRIGHT_HIGH }, { "THE SUN", BRIGHT_MAX } };
 GEMSelect selectBright(sizeof(optionByteBright) / sizeof(SelectOptionByte), optionByteBright);
@@ -6202,11 +5557,6 @@ PersistentCallbackInfo callbackInfoBrightness = {
 };
 GEMItem menuItemBright("Brightness", globalBrightness, selectBright, universalSaveCallback,
                        reinterpret_cast<void*>(&callbackInfoBrightness));
-void previewBright(GEMPreviewCallbackData previewData) {
-  globalBrightness = previewData.previewValByte;
-  // Refresh the LED display with the new brightness value
-  setLEDcolorCodes();
-}
 
 SelectOptionByte optionByteWaveform[] = { { "Hybrid", WAVEFORM_HYBRID }, { "Square", WAVEFORM_SQUARE }, { "Saw", WAVEFORM_SAW }, { "Triangl", WAVEFORM_TRIANGLE }, { "Sine", WAVEFORM_SINE }, { "Strings", WAVEFORM_STRINGS }, { "Clrinet", WAVEFORM_CLARINET } };
 GEMSelect selectWaveform(sizeof(optionByteWaveform) / sizeof(SelectOptionByte), optionByteWaveform);
@@ -6218,48 +5568,6 @@ PersistentCallbackInfo callbackInfoWaveform = {
 };
 GEMItem menuItemWaveform("Waveform", currWave, selectWaveform, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoWaveform));
-void previewWaveform(GEMPreviewCallbackData previewData) {
-  currWave = previewData.previewValByte;
-  resetSynthFreqs();
-}
-
-PersistentCallbackInfo callbackInfoSynthBPM = {
-  static_cast<uint8_t>(SettingKey::SynthBPM),
-  reinterpret_cast<void*>(&synthBPM),
-  nullptr,
-  updateArpeggiatorTiming
-};
-GEMItem menuItemSynthBPM("Arp BPM", synthBPM, spinnerSynthBPM, universalSaveCallback,
-                         reinterpret_cast<void*>(&callbackInfoSynthBPM));
-void previewSynthBPM(GEMPreviewCallbackData previewData) {
-  synthBPM = previewData.previewValByte;
-  updateArpeggiatorTiming();
-}
-
-SelectOptionByte optionByteArpSpeed[] = {
-  { "1/2", 2 },
-  { "1/3", 3 },
-  { "1/4", 4 },
-  { "1/6", 6 },
-  { "1/8", 8 },
-  { "1/12", 12 },
-  { "1/16", 16 },
-  { "1/24", 24 },
-  { "1/32", 32 }
-};
-GEMSelect selectArpSpeed(sizeof(optionByteArpSpeed) / sizeof(SelectOptionByte), optionByteArpSpeed);
-PersistentCallbackInfo callbackInfoArpSpeed = {
-  static_cast<uint8_t>(SettingKey::ArpeggiatorDivision),
-  reinterpret_cast<void*>(&arpeggiatorDivision),
-  nullptr,
-  updateArpeggiatorTiming
-};
-GEMItem menuItemArpSpeed("Arp Speed", arpeggiatorDivision, selectArpSpeed, universalSaveCallback,
-                         reinterpret_cast<void*>(&callbackInfoArpSpeed));
-void previewArpSpeed(GEMPreviewCallbackData previewData) {
-  arpeggiatorDivision = previewData.previewValByte;
-  updateArpeggiatorTiming();
-}
 
 SelectOptionByte optionByteEnvelopeTimes[] = {
   { "0 ms", 0 },
@@ -6275,10 +5583,10 @@ SelectOptionByte optionByteEnvelopeTimes[] = {
 };
 SelectOptionByte optionByteSustain[] = {
   { "0%", 0 },
-  { "10%", 13 },
   { "25%", 32 },
   { "50%", 64 },
   { "75%", 96 },
+  { "88%", 112 },
   { "100%", 127 }
 };
 
@@ -6312,30 +5620,33 @@ PersistentCallbackInfo callbackInfoEnvelopeRelease = {
   updateEnvelopeParamsFromSettings
 };
 
+SelectOptionByte optionByteMasterGain[] = {
+  { "50%", 64 },
+  { "75%", 96 },
+  { "100%", 127 },
+  { "125%", 159 },
+  { "150%", 191 },
+  { "175%", 223 },
+  { "200%", 255 }
+};
+GEMSelect selectMasterGain(sizeof(optionByteMasterGain) / sizeof(SelectOptionByte), optionByteMasterGain);
+PersistentCallbackInfo callbackInfoMasterGain = {
+  static_cast<uint8_t>(SettingKey::MasterGain),
+  reinterpret_cast<void*>(&masterGain),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemMasterGain("Master Gain", masterGain, selectMasterGain, universalSaveCallback,
+                           reinterpret_cast<void*>(&callbackInfoMasterGain));
+
 GEMItem menuItemEnvelopeAttack("Attack", envelopeAttackIndex, selectEnvelopeAttack, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoEnvelopeAttack));
-void previewEnvelopeAttack(GEMPreviewCallbackData previewData) {
-  envelopeAttackIndex = previewData.previewValByte;
-  updateEnvelopeParamsFromSettings();
-}
 GEMItem menuItemEnvelopeDecay("Decay", envelopeDecayIndex, selectEnvelopeDecay, universalSaveCallback,
                               reinterpret_cast<void*>(&callbackInfoEnvelopeDecay));
-void previewEnvelopeDecay(GEMPreviewCallbackData previewData) {
-  envelopeDecayIndex = previewData.previewValByte;
-  updateEnvelopeParamsFromSettings();
-}
 GEMItem menuItemEnvelopeSustain("Sustain", envelopeSustainLevel, selectEnvelopeSustain, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoEnvelopeSustain));
-void previewEnvelopeSustain(GEMPreviewCallbackData previewData) {
-  envelopeSustainLevel = previewData.previewValByte;
-  updateEnvelopeParamsFromSettings();
-}
 GEMItem menuItemEnvelopeRelease("Release", envelopeReleaseIndex, selectEnvelopeRelease, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoEnvelopeRelease));
-void previewEnvelopeRelease(GEMPreviewCallbackData previewData) {
-  envelopeReleaseIndex = previewData.previewValByte;
-  updateEnvelopeParamsFromSettings();
-}
 
 SelectOptionInt optionIntModWheel[] = { { "too slo", 1 }, { "Turtle", 2 }, { "Slow", 4 }, { "Medium", 8 }, { "Fast", 16 }, { "Cheetah", 32 }, { "Instant", 127 } };
 GEMSelect selectModSpeed(sizeof(optionIntModWheel) / sizeof(SelectOptionInt), optionIntModWheel);
@@ -6347,9 +5658,6 @@ PersistentCallbackInfo callbackInfoModSpeed = {
 };
 GEMItem menuItemModSpeed("Mod Wheel", modWheelSpeed, selectModSpeed, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoModSpeed));
-void previewModSpeed(GEMPreviewCallbackData previewData) {
-  modWheelSpeed = previewData.previewValInt;
-}
 
 PersistentCallbackInfo callbackInfoVelSpeed = {
   static_cast<uint8_t>(SettingKey::VelWheelSpeed),
@@ -6359,9 +5667,6 @@ PersistentCallbackInfo callbackInfoVelSpeed = {
 };
 GEMItem menuItemVelSpeed("Vel Wheel", velWheelSpeed, selectModSpeed, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoVelSpeed));
-void previewVelSpeed(GEMPreviewCallbackData previewData) {
-  velWheelSpeed = previewData.previewValInt;
-}
 
 SelectOptionInt optionIntPBWheel[] = { { "too slo", 128 }, { "Turtle", 256 }, { "Slow", 512 }, { "Medium", 1024 }, { "Fast", 2048 }, { "Cheetah", 4096 }, { "Instant", 16384 } };
 GEMSelect selectPBSpeed(sizeof(optionIntPBWheel) / sizeof(SelectOptionInt), optionIntPBWheel);
@@ -6373,91 +5678,86 @@ PersistentCallbackInfo callbackInfoPBSpeed = {
 };
 GEMItem menuItemPBSpeed("PB Wheel", pbWheelSpeed, selectPBSpeed, universalSaveCallback,
                         reinterpret_cast<void*>(&callbackInfoPBSpeed));
-void previewPBSpeed(GEMPreviewCallbackData previewData) {
-  pbWheelSpeed = previewData.previewValInt;
-}
 
 // --------------------------------------------------------
 // SETTINGS STEP 3 - Callback to sync settings variables on power-up
 // --------------------------------------------------------
 void syncSettingsToRuntime() {
-  debugMessages = settingEnabled(SettingKey::Debug);
-  rotaryInvert = settingEnabled(SettingKey::RotaryInvert);
-  autoSave = settingEnabled(SettingKey::AutoSave);
-  MPEpitchBendSemis = settingValue(SettingKey::MPEpitchBend);
-  mpeUserMode = settingValue(SettingKey::MPEMode);
-  if (mpeUserMode > MPE_MODE_FORCE) {
-    mpeUserMode = MPE_MODE_AUTO;
+  debugMessages = (settings[static_cast<uint8_t>(SettingKey::Debug)] != 0);  // do it this way for bools...
+  rotaryInvert = (settings[static_cast<uint8_t>(SettingKey::RotaryInvert)] != 0);
+  autoSave = (settings[static_cast<uint8_t>(SettingKey::AutoSave)] != 0);
+  MPEpitchBendSemis = settings[static_cast<uint8_t>(SettingKey::MPEpitchBend)];  // ... and this way for bytes...
+  forceEnableMPE = (settings[static_cast<uint8_t>(SettingKey::ForceMPE)] != 0);
+  extraMPE = (settings[static_cast<uint8_t>(SettingKey::ExtraMPE)] != 0);
+  defaultMidiChannel = settings[static_cast<uint8_t>(SettingKey::DefaultMIDIChannel)];
+  if (defaultMidiChannel < 1 || defaultMidiChannel > 16) {
+    defaultMidiChannel = 1;
   }
-  extraMPE = settingEnabled(SettingKey::ExtraMPE);
-  mpeLowestChannel = settingValue(SettingKey::MPELowestChannel);
-  mpeHighestChannel = settingValue(SettingKey::MPEHighestChannel);
-  mpeLowPriorityMode = settingEnabled(SettingKey::MPELowPriority);
-  clampMPEChannelRange();
-  defaultMidiChannel = settingValue(SettingKey::DefaultMIDIChannel);
-  if (!isValidMidiChannel(defaultMidiChannel)) {
-    defaultMidiChannel = MIDI_CHANNEL_MIN;
+  CC74value = settings[static_cast<uint8_t>(SettingKey::CC74Value)];
+  current.tuningIndex = settings[static_cast<uint8_t>(SettingKey::CurrentTuning)];
+  current.layoutIndex = settings[static_cast<uint8_t>(SettingKey::CurrentLayout)];
+  current.scaleIndex = settings[static_cast<uint8_t>(SettingKey::CurrentScale)];
+  { // Unpacking the signed values:
+    uint8_t raw = settings[static_cast<uint8_t>(SettingKey::CurrentTransposeSteps)];  // ... and this way for signed values.
+    transposeSteps = int(raw) - 128;
+    current.transpose = transposeSteps;
   }
-  CC74value = settingValue(SettingKey::CC74Value);
-  current.tuningIndex = settingValue(SettingKey::CurrentTuning);
-  current.layoutIndex = settingValue(SettingKey::CurrentLayout);
-  current.scaleIndex = settingValue(SettingKey::CurrentScale);
-  transposeSteps = decodeBiasedSetting(SettingKey::CurrentTransposeSteps);
-  current.transpose = transposeSteps;
-  current.keyStepsFromA = decodeBiasedSetting(SettingKey::CurrentKeyStepsFromA);
-  layoutRotation = settingValue(SettingKey::LayoutRotation) % 6;
-  mirrorLeftRight = settingEnabled(SettingKey::MirrorLeftRight);
-  mirrorUpDown = settingEnabled(SettingKey::MirrorUpDown);
-  scaleLock = settingEnabled(SettingKey::ScaleLock);
+  {
+    uint8_t raw = settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)];
+    current.keyStepsFromA = int(raw) - 128;
+  }
+  layoutRotation = settings[static_cast<uint8_t>(SettingKey::LayoutRotation)] % 6;
+  mirrorLeftRight = (settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)] != 0);
+  mirrorUpDown = (settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)] != 0);
+  scaleLock = (settings[static_cast<uint8_t>(SettingKey::ScaleLock)] != 0);
   perceptual = true;
-  paletteBeginsAtKeyCenter = settingEnabled(SettingKey::PaletteCenterOnKey);
-  wheelMode = settingEnabled(SettingKey::WheelAltMode);
-  pbSticky = settingEnabled(SettingKey::PBSticky);
-  modSticky = settingEnabled(SettingKey::ModSticky);
+  paletteBeginsAtKeyCenter = (settings[static_cast<uint8_t>(SettingKey::PaletteCenterOnKey)] != 0);
+  wheelMode = settings[static_cast<uint8_t>(SettingKey::WheelAltMode)] != 0;
+  pbSticky = settings[static_cast<uint8_t>(SettingKey::PBSticky)] != 0;
+  modSticky = settings[static_cast<uint8_t>(SettingKey::ModSticky)] != 0;
 
   {
-    uint8_t exponent = settingValue(SettingKey::PBWheelSpeed);
+    uint8_t exponent = settings[static_cast<uint8_t>(SettingKey::PBWheelSpeed)];
     if (exponent < 7) exponent = 7;
     if (exponent > 14) exponent = 14;
     pbWheelSpeed = 1 << exponent;
   }
-  modWheelSpeed = settingValue(SettingKey::ModWheelSpeed);
+  modWheelSpeed = settings[static_cast<uint8_t>(SettingKey::ModWheelSpeed)];
   if (modWheelSpeed <= 0) modWheelSpeed = 1;
-  velWheelSpeed = settingValue(SettingKey::VelWheelSpeed);
+  velWheelSpeed = settings[static_cast<uint8_t>(SettingKey::VelWheelSpeed)];
   if (velWheelSpeed <= 0) velWheelSpeed = 1;
 
-  playbackMode = settingValue(SettingKey::PlaybackMode);
-  currWave = settingValue(SettingKey::Waveform);
-  audioD = settingValue(SettingKey::AudioDestination);
-  arpeggiatorDivision = settingValue(SettingKey::ArpeggiatorDivision);
-  if (arpeggiatorDivision == 0) {
-    arpeggiatorDivision = 1;
-  }
-  synthBPM = settingValue(SettingKey::SynthBPM);
-  if (synthBPM == 0) {
-    synthBPM = 1;
-  }
-  colorMode = settingValue(SettingKey::ColorMode);
-  ledRestBrightness = settingValue(SettingKey::RestLedBrightness);
-  ledDimBrightness = settingValue(SettingKey::DimLedBrightness);
-  globalBrightness = settingValue(SettingKey::GlobalBrightness);
-  animationType = settingValue(SettingKey::AnimationType);
-  programChange = settingValue(SettingKey::ProgramChange);
+  playbackMode = settings[static_cast<uint8_t>(SettingKey::PlaybackMode)];
+  currWave = settings[static_cast<uint8_t>(SettingKey::Waveform)];
+  audioD = settings[static_cast<uint8_t>(SettingKey::AudioDestination)];
+  colorMode = settings[static_cast<uint8_t>(SettingKey::ColorMode)];
+  globalBrightness = settings[static_cast<uint8_t>(SettingKey::GlobalBrightness)];
+  animationType = settings[static_cast<uint8_t>(SettingKey::AnimationType)];
+  programChange = settings[static_cast<uint8_t>(SettingKey::ProgramChange)];
 
-  useJustIntonationBPM = settingEnabled(SettingKey::JustIntonationBPMSync);
-  justIntonationBPM = settingValue(SettingKey::BeatBPM);
-  justIntonationBPM_Multiplier = settingValue(SettingKey::BPMMultiplier);
-  useDynamicJustIntonation = settingEnabled(SettingKey::DynamicJI);
-  envelopeAttackIndex = settingValue(SettingKey::EnvelopeAttackIndex);
-  envelopeDecayIndex = settingValue(SettingKey::EnvelopeDecayIndex);
-  envelopeSustainLevel = settingValue(SettingKey::EnvelopeSustainLevel);
-  envelopeReleaseIndex = settingValue(SettingKey::EnvelopeReleaseIndex);
+  useJustIntonationBPM = (settings[static_cast<uint8_t>(SettingKey::JustIntonationBPMSync)] !=0);
+  justIntonationBPM = settings[static_cast<uint8_t>(SettingKey::BeatBPM)];
+  justIntonationBPM_Multiplier = settings[static_cast<uint8_t>(SettingKey::BPMMultiplier)];
+  useDynamicJustIntonation = (settings[static_cast<uint8_t>(SettingKey::DynamicJI)] !=0);
+  masterGain = settings[static_cast<uint8_t>(SettingKey::MasterGain)];
+  if (masterGain < 32) masterGain = 32;
+  if (masterGain > 255) masterGain = 255;
+  envelopeAttackIndex = settings[static_cast<uint8_t>(SettingKey::EnvelopeAttackIndex)];
+  envelopeDecayIndex = settings[static_cast<uint8_t>(SettingKey::EnvelopeDecayIndex)];
+  envelopeSustainLevel = settings[static_cast<uint8_t>(SettingKey::EnvelopeSustainLevel)];
+  envelopeReleaseIndex = settings[static_cast<uint8_t>(SettingKey::EnvelopeReleaseIndex)];
   updateEnvelopeParamsFromSettings();
-  updateArpeggiatorTiming();
+
+  setLEDcolorCodes();
 
   // Now *apply* them to the engine/UI:
-  refreshMenuChoicesForCurrentTuning();
-  rebuildRuntimeStateFromCurrentSelection();
+  assignPitches();                // for MPE bend
+  showOnlyValidLayoutChoices();   // for tuning/layout
+  showOnlyValidScaleChoices();
+  showOnlyValidKeyChoices();
+  updateLayoutAndRotate();
+  resetTuningMIDI();
+  resetSynthFreqs();
   if (programChange > 0) {
     sendProgramChange();
   }
@@ -6468,23 +5768,6 @@ void syncSettingsToRuntime() {
 void menuHome() {
   menu.setMenuPageCurrent(menuPageMain);
   menu.drawMenu();
-}
-
-void refreshMenuChoicesForCurrentTuning() {
-  showOnlyValidLayoutChoices();
-  showOnlyValidScaleChoices();
-  showOnlyValidKeyChoices();
-}
-
-void rebuildRuntimeStateFromCurrentSelection() {
-  updateLayoutAndRotate();
-  refreshMidiRouting();
-  resetSynthFreqs();
-}
-
-void addPreviewMenuItem(GEMPage& page, GEMItem& item, void (*previewCallback)(GEMPreviewCallbackData)) {
-  page.addMenuItem(item);
-  item.setPreviewCallback(previewCallback);
 }
 
 void rebootToBootloader() {
@@ -6630,8 +5913,12 @@ void changeTuning(GEMCallbackData callbackData) {
     settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
     markSettingsDirty();                                  // auto‑save (after debounce)
     // 3) Apply all values
-    refreshMenuChoicesForCurrentTuning();                 // change list of choices in GEM Menu
-    rebuildRuntimeStateFromCurrentSelection();
+    showOnlyValidLayoutChoices();                         // change list of choices in GEM Menu
+    showOnlyValidScaleChoices();                          // change list of choices in GEM Menu
+    showOnlyValidKeyChoices();                            // change list of choices in GEM Menu
+    updateLayoutAndRotate();                              // apply changes above
+    resetTuningMIDI();                                    // clear out MIDI queue
+    resetSynthFreqs();
   }
   menuHome();
 }
@@ -6665,19 +5952,13 @@ void createLayoutMenuItems() {
   }
   showOnlyValidLayoutChoices();
 }
-void previewKey(GEMPreviewCallbackData previewData);
 void createKeyMenuItems() {
   for (byte T = 0; T < TUNINGCOUNT; T++) {
     selectKey[T] = new GEMSelect(tuningOptions[T].cycleLength, tuningOptions[T].keyChoices);
     menuItemKeys[T] = new GEMItem("Key", current.keyStepsFromA, *selectKey[T], changeKey);
-    menuItemKeys[T]->setPreviewCallback(previewKey);
     menuPageScales.addMenuItem(*menuItemKeys[T]);
   }
   showOnlyValidKeyChoices();
-}
-void previewKey(GEMPreviewCallbackData previewData) {
-  current.keyStepsFromA = previewData.previewValInt;
-  applyScale();
 }
 void createScaleMenuItems() {
   for (int S = 0; S < scaleCount; S++) {  // create pointers to all scale items, filter them as you go
@@ -6690,132 +5971,89 @@ void createScaleMenuItems() {
 void createProfileMenuItems() {
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     if (i == 0) {
-      snprintf(saveProfileLabels[i], sizeof(saveProfileLabels[i]), "Boot/Auto-Save Slot");
+      snprintf(saveProfileLabels[i], sizeof(saveProfileLabels[i]), "Save Boot/Auto-Save");
     } else {
-      snprintf(saveProfileLabels[i], sizeof(saveProfileLabels[i]), "Slot %u", static_cast<unsigned>(i));
+      snprintf(saveProfileLabels[i], sizeof(saveProfileLabels[i]), "Save Slot %u", static_cast<unsigned>(i));
     }
     menuItemSaveProfile[i] = new GEMItem(saveProfileLabels[i], saveProfileMenu, i);
     menuPageSave.addMenuItem(*menuItemSaveProfile[i]);
   }
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     if (i == 0) {
-      snprintf(loadProfileLabels[i], sizeof(loadProfileLabels[i]), "Boot/Auto-Save Slot");
+      snprintf(loadProfileLabels[i], sizeof(loadProfileLabels[i]), "Load Boot/Auto-Save");
     } else {
-      snprintf(loadProfileLabels[i], sizeof(loadProfileLabels[i]), "Slot %u", static_cast<unsigned>(i));
+      snprintf(loadProfileLabels[i], sizeof(loadProfileLabels[i]), "Load Slot %u", static_cast<unsigned>(i));
     }
     menuItemLoadProfile[i] = new GEMItem(loadProfileLabels[i], loadProfileMenu, i);
     menuPageLoad.addMenuItem(*menuItemLoadProfile[i]);
   }
 }
 
-void setupTuningMenuPage() {
+void setupMenu() {
+  menu.setSplashDelay(0);
+  menu.init();
+  /*
+      addMenuItem procedure adds that GEM object to the given page.
+      The menu items appear in the order they are added,
+      so to change the order in the menu change the order in the code.
+    */
   menuPageMain.addMenuItem(menuGotoTuning);
   createTuningMenuItems();
-  menuPageTuning.addMenuItem(menuItemToggleDynamicJI);
   menuPageTuning.addMenuItem(menuItemToggleJI_BPM);
   menuPageTuning.addMenuItem(menuItemSetJI_BPM);
   menuPageTuning.addMenuItem(menuItemSetJI_BPM_Multiplier);
-}
-
-void setupLayoutMenuPage() {
+  menuPageTuning.addMenuItem(menuItemToggleDynamicJI);
   menuPageMain.addMenuItem(menuGotoLayout);
   createLayoutMenuItems();
   menuPageLayout.addMenuItem(mirrorLeftRightGEMItem);
   menuPageLayout.addMenuItem(mirrorUpDownGEMItem);
   menuPageLayout.addMenuItem(menuItemSelectLayoutRotation);
-}
-
-void setupScalesMenuPage() {
   menuPageMain.addMenuItem(menuGotoScales);
   createKeyMenuItems();
   menuPageScales.addMenuItem(menuItemScaleLock);
   createScaleMenuItems();
-}
-
-void setupColorsMenuPage() {
+  menuPageMain.addMenuItem(menuGotoControl);
+  menuPageControl.addMenuItem(menuItemPBSpeed);
+  menuPageControl.addMenuItem(menuItemModSpeed);
+  menuPageControl.addMenuItem(menuItemVelSpeed);
   menuPageMain.addMenuItem(menuGotoColors);
-  addPreviewMenuItem(menuPageColors, menuItemColor, previewColor);
-  addPreviewMenuItem(menuPageColors, menuItemBright, previewBright);
-  addPreviewMenuItem(menuPageColors, menuItemAnimate, previewAnimate);
-  addPreviewMenuItem(menuPageColors, menuItemRestLedLevel, previewRestLedLevel);
-  addPreviewMenuItem(menuPageColors, menuItemDimLedLevel, previewDimLedLevel);
-}
-
-void setupSynthMenuPage() {
+  menuPageColors.addMenuItem(menuItemColor);
+  menuPageColors.addMenuItem(menuItemBright);
+  menuPageColors.addMenuItem(menuItemAnimate);
   menuPageMain.addMenuItem(menuGotoSynth);
   menuPageSynth.addMenuItem(menuItemPlayback);
+  menuPageSynth.addMenuItem(menuItemWaveform);
+  menuPageSynth.addMenuItem(menuItemEnvelopeAttack);
+  menuPageSynth.addMenuItem(menuItemEnvelopeDecay);
+  menuPageSynth.addMenuItem(menuItemEnvelopeSustain);
+  menuPageSynth.addMenuItem(menuItemEnvelopeRelease);
+  menuPageSynth.addMenuItem(menuItemMasterGain);
   // menuItemAudioD added here for hardware V1.2
-  addPreviewMenuItem(menuPageSynth, menuItemWaveform, previewWaveform);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeAttack, previewEnvelopeAttack);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeDecay, previewEnvelopeDecay);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeSustain, previewEnvelopeSustain);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeRelease, previewEnvelopeRelease);
-  addPreviewMenuItem(menuPageSynth, menuItemArpSpeed, previewArpSpeed);
-  addPreviewMenuItem(menuPageSynth, menuItemSynthBPM, previewSynthBPM);
-}
-
-void setupMidiMenuPage() {
   menuPageMain.addMenuItem(menuGotoMIDI);
   menuPageMIDI.addMenuItem(menuItemSelectMIDIChannel);
-  menuPageMIDI.addMenuItem(menuItemSelectMPEMode);
   menuPageMIDI.addMenuItem(menuItemMPEpitchBend);
-  menuPageMIDI.addMenuItem(menuItemSelectMPELowChannel);
-  menuPageMIDI.addMenuItem(menuItemSelectMPEHighChannel);
-  menuPageMIDI.addMenuItem(menuItemToggleMPELowPriority);
-  menuPageMIDI.addMenuItem(menuItemToggleExtraMPE);
-  menuPageMIDI.addMenuItem(menuItemSelectCC74value);
   menuPageMIDI.addMenuItem(menuItemRolandMT32);
   menuPageMIDI.addMenuItem(menuItemGeneralMidi);
-}
-
-void setupControlMenuPage() {
-  menuPageMain.addMenuItem(menuGotoControl);
-  addPreviewMenuItem(menuPageControl, menuItemVelSpeed, previewVelSpeed);
-  addPreviewMenuItem(menuPageControl, menuItemPBSpeed, previewPBSpeed);
-  addPreviewMenuItem(menuPageControl, menuItemModSpeed, previewModSpeed);
-  addPreviewMenuItem(menuPageControl, menuItemPBBehave, previewPBBehave);
-  addPreviewMenuItem(menuPageControl, menuItemModBehave, previewModBehave);
-  addPreviewMenuItem(menuPageMain, menuItemTransposeSteps, previewTranspose);
-}
-
-void setupProfileMenuPages() {
+  menuPageMIDI.addMenuItem(menuItemToggleForceMPEChannels);
+  menuPageMIDI.addMenuItem(menuItemToggleExtraMPE);
+  menuPageMIDI.addMenuItem(menuItemSelectCC74value);
+  menuPageMain.addMenuItem(menuItemTransposeSteps);
   menuPageMain.addMenuItem(menuGotoSave);
-  menuPageSave.addMenuItem(menuItemAutoSave);
   menuPageMain.addMenuItem(menuGotoLoad);
-  createProfileMenuItems();
-}
-
-void setupAdvancedMenuPage() {
   menuPageMain.addMenuItem(menuGotoAdvanced);
+  menuPageSave.addMenuItem(menuItemAutoSave);
+  createProfileMenuItems();
   menuPageAdvanced.addMenuItem(menuItemVersion);
   menuPageAdvanced.addMenuItem(menuItemHardware);
   menuPageAdvanced.addMenuItem(menuItemRotary);
   menuPageAdvanced.addMenuItem(menuItemShiftColor);
-  // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
+  menuPageAdvanced.addMenuItem(menuItemWheelAlt);
+  menuPageAdvanced.addMenuItem(menuItemPBBehave);
+  menuPageAdvanced.addMenuItem(menuItemModBehave);
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
   menuPageAdvanced.addMenuItem(menuItemDebug);
-}
-
-void setupMenu() {
-  initTransposeOptions();
-  menu.setSplashDelay(0);
-  menu.init();
-  menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
-  /*
-      addMenuItem procedure adds that GEM object to the given page.
-      The menu items appear in the order they are added.
-      To change the order of the menu, change the order in the code below.
-    */
-  setupTuningMenuPage();
-  setupLayoutMenuPage();
-  setupScalesMenuPage();
-  setupColorsMenuPage();
-  setupSynthMenuPage();
-  setupMidiMenuPage();
-  setupControlMenuPage();
-  setupProfileMenuPages();
-  setupAdvancedMenuPage();
+  menuHome();
 }
 void setupGFX() {
   u8g2.begin();                      // Menu and graphics setup
@@ -6834,7 +6072,10 @@ void screenSaver() {
     if (!screenSaverOn) {
       screenSaverOn = 1;
       u8g2.setContrast(CONTRAST_SCREENSAVER);
-      u8g2.clear();
+      //if(globalBrightness == BRIGHT_OFF)
+      {
+        u8g2.clear();
+      }
     }
   }
 }
@@ -6871,47 +6112,62 @@ void screenSaver() {
       5, 6, 7  CW  turn state 1, 2, 3
       8, 16    Completed turn CCW, CW
   */
-constexpr byte ROT_PIN_A = 20;
-constexpr byte ROT_PIN_B = 21;
-constexpr byte ROT_PIN_C = 24;
+#define ROT_PIN_A 20
+#define ROT_PIN_B 21
+#define ROT_PIN_C 24
 byte rotaryState = 0;
 const byte rotaryStateTable[8][4] = {
   { 0, 5, 1, 0 }, { 2, 0, 1, 0 }, { 2, 3, 1, 0 }, { 2, 3, 0, 8 }, { 0, 5, 1, 0 }, { 6, 5, 0, 0 }, { 6, 5, 7, 0 }, { 6, 0, 7, 16 }
 };
 byte storeRotaryTurn = 0;
-bool rotaryButtonPressed = false;
-constexpr uint64_t ROTARY_PANIC_HOLD_MICROS = 2000000ULL;  // 2 seconds
-uint64_t rotaryPressStart = 0;
-bool rotaryPanicLatched = false;
-bool rotaryPanicSuppressClick = false;
+bool rotaryClicked = HIGH;
 
 void readHexes() {
-
-  // Optimized button reading using SIO registers - much faster!
-  for (byte r = 0; r < ROWCOUNT; r++) {       // Iterate through each row via the multiplexer.
-    sio_hw->gpio_clr = multiplexerMask;       // Set all multiplexer pins to LOW.
-    sio_hw->gpio_set = rowSelectMask[r];      // Set the current row's select pins HIGH.
-    busy_wait_us_32(12);                      // Allow the row selection to settle without blocking interrupts.
-    uint32_t a = sio_hw->gpio_in;             // Reads all GPIO pins at once into a variable
-    uint32_t b = sio_hw->gpio_in;             // optional second sample
-    uint32_t stable = a & b;                  // double-sample filtering to reduce noise
-    uint16_t base = r * COLCOUNT;             // base index for this row - less multiplication in the loop
-    for (byte c = 0; c < COLCOUNT; ++c) {     // Now iterate through each of the column pins
-      byte i = base + c;                      // index of this button
-      bool didYouPressHex = ((stable & columnMasks[c]) == 0); // check if this column pin is LOW
-      h[i].interpBtnPress(didYouPressHex);    // interpret the button press as new press, held, released, or inactive
+  /* This is the original way of reading buttons. multiplexer is doing the least movement. May be faster?
+    for (byte r = 0; r < ROWCOUNT; r++) {      // Iterate through each of the row pins on the multiplexing chip.
+      for (byte d = 0; d < 4; d++) {
+        digitalWrite(mPin[d], (r >> d) & 1);
+      }
+      for (byte c = 0; c < COLCOUNT; c++) {    // Now iterate through each of the column pins that are connected to the current row pin.
+        byte p = cPin[c];                      // Hold the currently selected column pin in a variable.
+        pinMode(p, INPUT_PULLUP);              // Set that row pin to INPUT_PULLUP mode (+3.3V / HIGH).
+        byte i = c + (r * COLCOUNT);
+        delayMicroseconds(6);                  // delay while column pin mode
+        bool didYouPressHex = (digitalRead(p) == LOW);  // hex is pressed if it returns LOW. else not pressed
+        h[i].interpBtnPress(didYouPressHex);
+        if (h[i].btnState == BTN_STATE_NEWPRESS) {
+          h[i].timePressed = runTime;          // log the time
+        }
+        pinMode(p, INPUT);                     // Set the selected column pin back to INPUT mode (0V / LOW).
+       }
+    }*/
+  // trying out a new way which may reduce rf noise (and increase reliability) by reducing the ammount of times the columns get energized
+  for (byte c = 0; c < COLCOUNT; c++) {    // Iterate through each of the column pins.
+    byte p = cPin[c];                      // Hold the currently selected column pin in a variable.
+    pinMode(p, INPUT_PULLUP);              // Set that column pin to INPUT_PULLUP mode (+3.3V / HIGH).
+    delayMicroseconds(0);                  // delay to energize column and stabilize (may need adjustment)
+    for (byte r = 0; r < ROWCOUNT; r++) {  // Then iterate through each of the row pins on the multiplexing chip for the selected column.
+      for (byte d = 0; d < 4; d++) {
+        digitalWrite(mPin[d], (r >> d) & 1);  // Selected multiplexer channel is pulled to ground.
+      }
+      byte i = c + (r * COLCOUNT);                    /*
+        byte tempSat = SAT_BW;
+        colorDef tempColor = {HUE_NONE, tempSat, (byte)(toggleWheel ? VALUE_SHADE : VALUE_LOW)};
+        strip.setPixelColor(i, getLEDcode(tempColor));
+        strip.show();*/
+      delayMicroseconds(14);                          // Delay to allow signal to settle and improve reliability (found this number by experimentation)
+      bool didYouPressHex = (digitalRead(p) == LOW);  // hex is pressed if it returns LOW. else not pressed
+      h[i].interpBtnPress(didYouPressHex);
       if (h[i].btnState == BTN_STATE_NEWPRESS) {
         h[i].timePressed = runTime;  // log the time
       }
     }
+    pinMode(p, INPUT);  // Set the selected column pin back to INPUT mode (0V / LOW).
   }
-
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
-        if (delegatedControl) {
-          delegatedButtonEvent(i, true);
-        } else if (h[i].isCmd) {
+        if (h[i].isCmd) {
           cmdOn(i);
         } else if (h[i].inScale || (!scaleLock)) {
           tryMIDInoteOn(i);
@@ -6919,9 +6175,7 @@ void readHexes() {
         }
         break;
       case BTN_STATE_RELEASED:  // just released
-        if (delegatedControl) {
-          delegatedButtonEvent(i, false);
-        } else if (h[i].isCmd) {
+        if (h[i].isCmd) {
           cmdOff(i);
         } else if (h[i].inScale || (!scaleLock)) {
           tryMIDInoteOff(i);
@@ -6936,9 +6190,6 @@ void readHexes() {
   }
 }
 void updateWheels() {
-  if (delegatedControl) {
-    return;
-  }
   velWheel.setTargetValue();
   bool upd = velWheel.updateValue(runTime);
   if (upd) {
@@ -6965,53 +6216,29 @@ void setupRotary() {
   pinMode(ROT_PIN_C, INPUT_PULLUP);
 }
 void readKnob() {
-  byte encoderPhase = (digitalRead(ROT_PIN_B) << 1) | digitalRead(ROT_PIN_A);
-  rotaryState = rotaryStateTable[rotaryState & 7][encoderPhase];
+  rotaryState = rotaryStateTable[rotaryState & 7][(digitalRead(ROT_PIN_B) << 1) | digitalRead(ROT_PIN_A)];
   if (rotaryState & 24) {
     storeRotaryTurn = rotaryState;
   }
 }
 void dealWithRotary() {
-  bool buttonPressed = (digitalRead(ROT_PIN_C) == LOW);
-  bool justPressed = (!rotaryButtonPressed && buttonPressed);
-  bool justReleased = (rotaryButtonPressed && !buttonPressed);
-
-  if (justPressed) {
-    rotaryPressStart = runTime;
-    rotaryPanicLatched = false;
-  } else if (buttonPressed && (rotaryPressStart != 0) && (!rotaryPanicLatched)) {
-    if ((runTime - rotaryPressStart) >= ROTARY_PANIC_HOLD_MICROS) {
-      panicStopOutput();
-      rotaryPanicLatched = true;
-      rotaryPanicSuppressClick = true;
-    }
-  }
-
   if (menu.readyForKey()) {
-    if (justReleased && !rotaryPanicSuppressClick) {
+    bool temp = digitalRead(ROT_PIN_C);
+    if (temp > rotaryClicked) {
       menu.registerKeyPress(GEM_KEY_OK);
       screenTime = 0;
     }
+    rotaryClicked = temp;
     if (storeRotaryTurn != 0) {
-      bool turnIsClockwise = (storeRotaryTurn == 8);
-      menu.registerKeyPress(rotaryInvert
-                              ? (turnIsClockwise ? GEM_KEY_DOWN : GEM_KEY_UP)
-                              : (turnIsClockwise ? GEM_KEY_UP : GEM_KEY_DOWN));
+      if (rotaryInvert == true) {
+        menu.registerKeyPress((storeRotaryTurn == 8) ? GEM_KEY_DOWN : GEM_KEY_UP);
+      } else {
+        menu.registerKeyPress((storeRotaryTurn == 8) ? GEM_KEY_UP : GEM_KEY_DOWN);
+      }
       storeRotaryTurn = 0;
       screenTime = 0;
     }
   }
-
-  if (justReleased || !buttonPressed) {
-    rotaryPressStart = 0;
-    rotaryPanicLatched = false;
-  }
-
-  if (rotaryPanicSuppressClick && !buttonPressed && !rotaryButtonPressed) {
-    rotaryPanicSuppressClick = false;
-  }
-
-  rotaryButtonPressed = buttonPressed;
 }
 
 void setupHardware() {
@@ -7020,6 +6247,7 @@ void setupHardware() {
     if (!audioMenuItemInserted) {
       menuPageSynth.addMenuItem(menuItemAudioD, 2);
       audioMenuItemInserted = true;
+      menuHome();
     }
   }
 }
@@ -7047,36 +6275,25 @@ void setup() {
 #if (defined(ARDUINO_ARCH_MBED) && defined(ARDUINO_ARCH_RP2040))
   TinyUSB_Device_Init(0);  // Manual begin() is required on core without built-in support for TinyUSB such as mbed rp2040
 #endif
-  irq_set_enabled(ALARM_IRQ, false);
   setupMIDI();
-  // Give the USB stack time to complete enumeration before any flash
-  // operations (which disable interrupts and starve the USB IRQ handler).
-  // Timeout after 2 s so the board still boots when no USB host is present.
-  {
-    unsigned long usbWaitStart = millis();
-    while (!TinyUSBDevice.mounted() && (millis() - usbWaitStart < 2000)) {
-      delay(1);
-    }
-  }
   setupFileSystem();
   Wire.setSDA(SDAPIN);
   Wire.setSCL(SCLPIN);
   setupPins();
   setupGrid();
   detectHardwareVersion();
-  load_settings();
+  applyLayout();
   setupLEDs();
   setupGFX();
   setupRotary();
   setupMenu();
   setupHardware();
+  load_settings();
   syncSettingsToRuntime();
-  recomputePitchBendFactor();
 }
 void loop() {        // run on first core
   timeTracker();     // Time tracking functions
   processEnvelopeReleases();
-  retryPendingReleases();
   screenSaver();     // Reduces wear-and-tear on OLED panel
   readHexes();       // Read and store the digital button states of the scanning matrix
   arpeggiate();      // arpeggiate if synth mode allows it
@@ -7085,15 +6302,12 @@ void loop() {        // run on first core
   animateLEDs();     // deal with animations
   lightUpLEDs();     // refresh LEDs
   dealWithRotary();  // deal with menu
-  checkAndAutoSave();  // save settings
+  checkAndAutoSave();// save settings
 }
 void setup1() {  // set up on second core
   setupSynth(PIEZO_PIN, PIEZO_SLICE);
   setupSynth(AJACK_PIN, AJACK_SLICE);
 }
 void loop1() {  // run on second core
-  if (delegatedControl) {
-    processIncomingMIDIDelegated();
-  }
   readKnob();
 }
