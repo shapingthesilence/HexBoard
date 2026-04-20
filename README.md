@@ -37,6 +37,7 @@ The current code supports:
 - multiple isomorphic layouts with rotation and mirroring
 - scale filtering with optional scale lock
 - multiple LED color modes and animations
+- an optional OLED note overlay that shows currently played notes
 - standard MIDI, extended multi-channel MIDI mapping, and MPE behavior
 - dynamic just intonation and BPM-linked retuning options
 - onboard synth waveform, envelope, and arpeggiator settings

@@ -49,6 +49,12 @@ Most buttons are note buttons. What each button plays depends on:
 
 If `Scale Lock` is off, every note button can play. If `Scale Lock` is on, only notes in the active scale respond.
 
+### Played Note Display
+
+The `DisplayNotes` option in `Advanced` can show a temporary `Now Playing` overlay on the OLED while notes are held. In `12 EDO`, notes display as names such as `C4` or `Eb5`. In other tunings, notes display as step-and-octave values such as `7.4`.
+
+The overlay shows up to `6` unique played notes, stays visible briefly after release, and can temporarily wake the OLED from screensaver dimming. It is off by default.
+
 ## Live Performance Controls
 
 ### Command Buttons
@@ -243,6 +249,7 @@ This page contains maintenance and system settings:
 - Hardware revision
 - `Invert Encoder`
 - `ColorByKey`
+- `DisplayNotes`
 - `Reset Defaults`
 - `Update Firmware`
 - `Serial Debug`
@@ -285,6 +292,7 @@ Important defaults in the current firmware include:
 - Waveform: `Hybrid`
 - LED brightness: `Dim`
 - Animation: `Button`
+- Display notes: `Off`
 - Auto-save: `On`
 
 ## Updating Firmware

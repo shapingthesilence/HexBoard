@@ -1,7 +1,7 @@
 # HexBoard Firmware Code Analysis
 
 > File: `src/HexBoard.ino`
-> Current shape: one Arduino sketch, about `7,100` lines
+> Current shape: one Arduino sketch, about `7,300` lines
 > Target: Generic RP2040 at `200 MHz`, `16 MB` flash, TinyUSB, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
 
 This document describes the current firmware structure. It intentionally avoids exact line-number references because the sketch changes often. Use the `// @...` section tags in `src/HexBoard.ino` and `rg` searches as the source navigation method.
@@ -27,6 +27,7 @@ button matrix -> readHexes()
               -> tryMIDInoteOn/Off() -> USB/serial MIDI
               -> trySynthNoteOn/Off() -> envelope commands -> poll() ISR -> PWM audio
               -> LED state -> lightUpLEDs()
+              -> played-note snapshot -> drawPlayedNotesOverlay()
 
 rotary encoder -> readKnob() on core 1 -> dealWithRotary() on core 0 -> GEM menu
 
@@ -52,12 +53,12 @@ The current source uses these section tags and blocks:
 | `@timing` | microsecond clock reads and loop timing |
 | `@gridSystem` | scan matrix, `buttonDef`, command buttons, wheels, delegated globals |
 | `@LED` | color modes, LED cache generation, LED rendering |
-| `@MIDI` | USB/serial MIDI, MPE, external MIDI input, delegated SysEx protocol |
+| `@MIDI` | USB/serial MIDI, MPE, external MIDI input, delegated SysEx protocol, played-note overlay state |
 | `@synth` | oscillator, envelope, PWM, polyphony, arpeggiator support |
 | `@animate` | LED animations |
 | `@assignment` | layout, scale, pitch, frequency, and reverse MIDI mapping |
 | settings block | LittleFS settings header, profiles, defaults, persistence |
-| `@menu` | GEM menu pages, options, callbacks, preview behavior |
+| `@menu` | OLED setup, played-note overlay drawing, GEM menu pages, options, callbacks, preview behavior |
 | `@interface` | matrix scan, rotary encoder, panic behavior |
 | `@mainLoop` | Arduino setup/loop functions for both cores |
 
@@ -165,6 +166,7 @@ Core 0 loop is deliberately broad but should remain bounded:
 - advances LED animations
 - renders LEDs
 - processes rotary button/menu events
+- draws the optional played-note OLED overlay
 - runs debounced auto-save
 
 Core 1 loop stays narrow:
@@ -210,6 +212,7 @@ The MIDI routing model includes:
 - optional extra MPE messages such as channel pressure and CC74
 - incoming MIDI note handling for LED animation
 - General MIDI and Roland MT-32 program-change menu tables stored in flash
+- optional played-note OLED overlay updates from note on/off state
 
 ### MPE Channel Pool
 
@@ -241,6 +244,20 @@ When active:
 - incoming delegated SysEx is polled from core 1
 
 The protocol is documented in `docs/delegated-control.md`. Keep it isolated from settings and user menu code unless the product decision changes.
+
+## Played Note OLED Overlay
+
+`DisplayNotes` is a normal persisted Advanced-menu setting. When enabled, MIDI note on/off updates mark a small OLED overlay dirty. `drawPlayedNotesOverlay()` runs from the main loop after menu input handling and renders up to `6` unique active notes.
+
+Display behavior:
+
+- `12 EDO` notes render as chromatic note names with octave numbers.
+- Other tunings render as `step.octave`.
+- The overlay stays visible briefly after release.
+- A short release grace period prevents chords from visually shrinking while a player releases notes unevenly.
+- If the OLED screensaver is active, a note press can temporarily wake the display and return it to dimmed state afterward.
+
+The overlay is independent from delegated control. In delegated mode, normal note lifecycle is paused, so the overlay has no active notes to display.
 
 ## LED And Color System
 
@@ -309,7 +326,7 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `1`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `2`, and `PROFILE_COUNT` is `9`.
 
 Load behavior:
 
@@ -391,6 +408,7 @@ Run or manually verify the areas your change touches:
 - rotary panic stop
 - color modes, including `Tiered` and `Diatonic`
 - `ANIMATE_MIDI_IN` if external MIDI display behavior changed
+- `DisplayNotes` overlay in `12 EDO`, a non-12 tuning, chord release, and screensaver wake
 - delegated-control enter, LED update, button event, and exit SysEx
 
 For docs-only changes, a compile is not necessary, but keep terminology aligned with `src/HexBoard.ino`.

@@ -64,12 +64,12 @@ The main sections are marked with `// @...` tags in `src/HexBoard.ino`:
 - `@diagnostics` and `@timing`: logging and timing helpers
 - `@gridSystem`: button matrix, command buttons, wheel abstractions
 - `@LED`: LED rendering
-- `@MIDI`: MIDI routing, MPE, just intonation support, note on/off, and delegated-control SysEx helpers
+- `@MIDI`: MIDI routing, MPE, just intonation support, note on/off, delegated-control SysEx helpers, and played-note overlay state
 - `@synth`: internal synth, oscillator and envelope engine
 - `@animate`: LED animation system
 - `@assignment`: layout, scale, and pitch assignment
 - settings / persistence block: profile storage and LittleFS
-- `@menu`: OLED and GEM menu definitions
+- `@menu`: OLED, played-note overlay drawing, and GEM menu definitions
 - `@interface`: encoder and button reading
 - `@mainLoop`: startup and per-core loops
 
@@ -230,7 +230,7 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `1`
+- `CURRENT_SETTINGS_VERSION` is currently `2`
 - invalid or mismatched settings files restore factory defaults
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
@@ -331,6 +331,7 @@ Core 0 loop:
 - animation
 - LED refresh
 - encoder click handling
+- played-note OLED overlay drawing
 - auto-save
 
 Core 1 loop:
