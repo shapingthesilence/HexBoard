@@ -1,6 +1,6 @@
-# HexBoard Codex Instructions
+# HexBoard Agent Instructions
 
-These instructions apply to the entire repository.
+These instructions apply to the entire repository. This guide is for future AI agents and engineers modifying the HexBoard Firmware. If these instructions and the code disagree, trust the code first.
 
 ## Source Of Truth
 

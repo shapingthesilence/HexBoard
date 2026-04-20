@@ -58,7 +58,6 @@ This repository contains the main Arduino-based HexBoard firmware.
 Older and related references:
 
 - [SourceHut project page](https://git.sr.ht/~earboxer/HexBoard)
-- [Nightly build status](https://builds.sr.ht/~earboxer/HexBoard/commits/.svg)
 - [Tagged releases on SourceHut](https://git.sr.ht/~earboxer/HexBoard/refs)
 - Posterity builds sometimes mirrored at [zachdecook.com/HexBoard/firmware](https://zachdecook.com/HexBoard/firmware/)
 - Historical `hexperiment` branch and related work may appear at [GitHub](https://github.com/theHDM/hexperiment) or [SourceHut](https://git.sr.ht/~earboxer/HexBoard/tree/hexperiment)
