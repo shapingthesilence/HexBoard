@@ -22,7 +22,7 @@ The user manual is for players and owners of the device. The developer guide is 
 
 ## Repository Layout
 
-- `AGENTS.md`: Codex project instructions, including the documentation update requirement
+- `AGENTS.md`: AI agent project instructions, including the documentation update requirement
 - `src/HexBoard.ino`: primary firmware source
 - `HexBoard.ino`: root sketch copy used by some Arduino tooling
 - `docs/`: documentation for users and contributors

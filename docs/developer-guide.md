@@ -8,7 +8,7 @@ For a longer historical deep dive, see `docs/code-analysis.md`, but treat this g
 
 ## Repo Entry Points
 
-- `AGENTS.md`: repo-level Codex instructions. Future Codex work should treat documentation updates as part of every behavior, setting, protocol, menu, build, hardware, or architecture change.
+- `AGENTS.md`: repo-level AI agent instructions. Future AI agent work should treat documentation updates as part of every behavior, setting, protocol, menu, build, hardware, or architecture change.
 - `src/HexBoard.ino`: primary firmware source and the file you should edit
 - `HexBoard.ino`: root sketch copy used by some Arduino tooling
 - `Makefile`: local build shortcut that copies `src/HexBoard.ino` into `build/build.ino` and compiles it
