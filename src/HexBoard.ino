@@ -3078,7 +3078,30 @@ constexpr byte AUDIO_NONE = 0;
 constexpr byte AUDIO_PIEZO = 1;
 constexpr byte AUDIO_AJACK = 2;
 constexpr byte AUDIO_BOTH = 3;
-byte audioD = AUDIO_PIEZO | AUDIO_AJACK;
+byte audioD = AUDIO_AJACK;
+bool synthBuzzerEnabled = false;
+
+inline bool audioJackAvailable() {
+  return Hardware_Version == HARDWARE_V1_2;
+}
+
+inline bool decodeStoredBuzzerEnabled(uint8_t storedValue) {
+  if (!audioJackAvailable()) {
+    return true;
+  }
+  return (storedValue & AUDIO_PIEZO) != 0;
+}
+
+inline byte runtimeAudioDestination(bool buzzerEnabled) {
+  if (!audioJackAvailable()) {
+    return AUDIO_PIEZO;
+  }
+  return buzzerEnabled ? AUDIO_BOTH : AUDIO_AJACK;
+}
+
+inline void syncAudioDestinationToRuntime() {
+  audioD = runtimeAudioDestination(synthBuzzerEnabled);
+}
 
 // ============================================================
 // PWM AUDIO CONFIG
@@ -3114,6 +3137,20 @@ byte audioD = AUDIO_PIEZO | AUDIO_AJACK;
   constexpr int      OUTPUT_SHIFT = 6;   // derived above
   constexpr int      ENV_TO_A_SHIFT = 7; // 65535 >> 7 ~= 512
 #endif
+
+inline void writeAudioOutputLevels(uint16_t piezoLevel, uint16_t jackLevel) {
+  if (audioD & AUDIO_PIEZO) {
+    pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, piezoLevel);
+  } else {
+    pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
+  }
+
+  if (audioD & AUDIO_AJACK) {
+    pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, jackLevel);
+  } else {
+    pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, static_cast<uint16_t>(PWM_MID));
+  }
+}
 /*
     These definitions provide 8-bit samples to emulate.
     You can add your own as desired; it must
@@ -3665,8 +3702,7 @@ void RAM_FUNC(poll)() {
   // While flash is being written, interrupts are disabled on both cores.
   // When the ISR resumes afterward, output silence to avoid glitch artifacts.
   if (flashWriteInProgress.load(std::memory_order_relaxed)) {
-    if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
-    if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, (uint16_t)PWM_MID);
+    writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
     return;
   }
   uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
@@ -3917,8 +3953,7 @@ void RAM_FUNC(poll)() {
   // JACK idle behavior: stay centered.
   // PIEZO idle behavior: off (0).
   if (voices == 0 || velWheel.curValue == 0) {
-    if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
-    if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, (uint16_t)PWM_MID);
+    writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
     if (_isrStart) {
       uint32_t dt = timer_hw->timerawl - _isrStart;
       if (dt < isrCycleMin) isrCycleMin = dt;
@@ -3965,7 +4000,9 @@ void RAM_FUNC(poll)() {
   if (piezoA <= (PWM_BITS == 8 ? 1 : 4)) piezoA = 0;
 
   int32_t piezoLevel = 0;
-  if (piezoA > 0) {
+  if (!(audioD & AUDIO_PIEZO)) {
+    piezoA = 0;
+  } else if (piezoA > 0) {
     // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-piezoA..+piezoA].
     // This is still one of the remaining true per-sample divisions in poll().
     // If we need another ISR-speed pass later, replacing this with a small
@@ -3983,8 +4020,7 @@ void RAM_FUNC(poll)() {
   uint16_t piezoOut = (uint16_t)piezoLevel;
 
   // ----- Write outputs -----
-  if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, piezoOut);
-  if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, jackLevel);
+  writeAudioOutputLevels(piezoOut, jackLevel);
   if (_isrStart) {
     uint32_t dt = timer_hw->timerawl - _isrStart;
     if (dt < isrCycleMin) isrCycleMin = dt;
@@ -5070,7 +5106,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* VelWheelSpeed                */ 8,
   /* PlaybackMode                 */ SYNTH_OFF,
   /* Waveform                     */ WAVEFORM_HYBRID,
-  /* AudioDestination             */ AUDIO_BOTH,
+  /* AudioDestination             */ 0,
   /* ArpeggiatorDivision          */ 32,
   /* SynthBPM                     */ 120,
   /* ColorMode                    */ RAINBOW_MODE,
@@ -5841,17 +5877,13 @@ GEMItem menuItemPlayback("Synth Mode", playbackMode, selectPlayback, universalSa
                          reinterpret_cast<void*>(&callbackInfoPlayback));
 
 // Hardware V1.2-only
-SelectOptionByte optionByteAudioD[] = {
-  { "Buzzer", AUDIO_PIEZO }, { "Jack", AUDIO_AJACK }, { "Both", AUDIO_BOTH }
-};
-GEMSelect selectAudioD(sizeof(optionByteAudioD) / sizeof(SelectOptionByte), optionByteAudioD);
 PersistentCallbackInfo callbackInfoAudioDest = {
   static_cast<uint8_t>(SettingKey::AudioDestination),
-  reinterpret_cast<void*>(&audioD),
+  reinterpret_cast<void*>(&synthBuzzerEnabled),
   nullptr,
-  nullptr
+  syncAudioDestinationToRuntime
 };
-GEMItem menuItemAudioD("SynthOutput", audioD, selectAudioD, universalSaveCallback,
+GEMItem menuItemAudioD("Buzzer", synthBuzzerEnabled, universalSaveCallback,
                        reinterpret_cast<void*>(&callbackInfoAudioDest));
 
 ////////////////////////////////////////////////////////////////
@@ -6687,7 +6719,8 @@ void syncSettingsToRuntime() {
 
   playbackMode = settingValue(SettingKey::PlaybackMode);
   currWave = settingValue(SettingKey::Waveform);
-  audioD = settingValue(SettingKey::AudioDestination);
+  synthBuzzerEnabled = decodeStoredBuzzerEnabled(settingValue(SettingKey::AudioDestination));
+  syncAudioDestinationToRuntime();
   arpeggiatorDivision = settingValue(SettingKey::ArpeggiatorDivision);
   if (arpeggiatorDivision == 0) {
     arpeggiatorDivision = 1;
@@ -7291,6 +7324,7 @@ void setupHardware() {
       audioMenuItemInserted = true;
     }
   }
+  syncAudioDestinationToRuntime();
 }
 
 // @mainLoop

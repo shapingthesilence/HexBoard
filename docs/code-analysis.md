@@ -343,6 +343,9 @@ Load behavior:
 - short read restores defaults
 - CRC32 mismatch restores defaults
 - successful load activates the boot/default profile slot
+- on hardware `V1.2`, the stored `AudioDestination` byte is interpreted as a
+  jack-default `Buzzer` toggle, with legacy selector values mapped by the old
+  piezo bit
 
 Save behavior:
 
@@ -380,7 +383,7 @@ Current top-level user pages are:
 - `Load`
 - `Advanced`
 
-The `SynthOutput` item is inserted only on hardware `V1.2`.
+The `Buzzer` toggle is inserted only on hardware `V1.2`.
 
 ## Input Interface And Panic Behavior
 

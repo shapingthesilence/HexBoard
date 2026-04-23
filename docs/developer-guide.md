@@ -248,6 +248,9 @@ Important implementation details:
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
+- on hardware `V1.2`, the `AudioDestination` setting now behaves as a
+  jack-default `Buzzer` toggle; legacy stored values are interpreted by
+  checking whether the older byte had the piezo bit set
 
 If you add, remove, or reorder settings, think about migration. Right now version mismatch falls back to defaults instead of doing a structured migration.
 

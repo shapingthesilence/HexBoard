@@ -170,11 +170,9 @@ Options include:
 - `Arp Speed`
 - `Arp BPM`
 
-On hardware `V1.2`, an extra `SynthOutput` option appears:
-
-- `Buzzer`
-- `Jack`
-- `Both`
+On hardware `V1.2`, an extra `Buzzer` toggle appears. The headphone jack stays
+active by default, and turning `Buzzer` on adds the piezo on top of the jack
+output.
 
 The `Sine` waveform is smoothed internally with interpolation, so high notes
 should sound less gritty than a plain wavetable lookup.
