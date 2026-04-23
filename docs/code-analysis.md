@@ -304,6 +304,9 @@ Key implementation facts:
   project's `200 MHz` build target, which can make high-register sine tones
   harsher on the jack output.
 - The oscillator counter is `uint16_t`, so phase wraps over a 16-bit range.
+- `WAVEFORM_SINE` linearly interpolates between adjacent wavetable entries
+  using the low `8` bits of phase; `STRINGS` and `CLARINET` still use direct
+  table lookup.
 - Envelope commands are shared through value arrays plus published/consumed sequence counters.
 - Voice-free notifications use their own published/consumed sequence counters.
 - Channel ownership uses atomic state to coordinate loop code with the ISR-adjacent audio path.

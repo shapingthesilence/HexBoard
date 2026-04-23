@@ -176,6 +176,9 @@ On hardware `V1.2`, an extra `SynthOutput` option appears:
 - `Jack`
 - `Both`
 
+The `Sine` waveform is smoothed internally with interpolation, so high notes
+should sound less gritty than a plain wavetable lookup.
+
 ### MIDI Options
 
 This page controls MIDI routing and microtonal behavior.

@@ -3417,6 +3417,26 @@ byte clarinet[] = {
   2,
 };
 /*
+    The sine wavetable benefits the most from
+    interpolation because it has the fewest
+    intentional harmonics to mask staircase
+    artifacts in the upper registers.
+
+    The phase accumulator already runs at 16-bit
+    precision. This helper uses the low 8 phase
+    bits as a fractional weight between adjacent
+    8-bit table entries and returns a 16-bit
+    sample in the same 0..65535 range used by
+    the rest of the synth path.
+  */
+inline uint16_t interpolatedWaveSample(const byte* table, uint16_t phase) {
+  uint8_t index = phase >> 8;
+  uint8_t frac = phase & 0xFF;
+  int32_t sampleA = table[index];
+  int32_t sampleB = table[static_cast<uint8_t>(index + 1)];
+  return static_cast<uint16_t>((sampleA << 8) + ((sampleB - sampleA) * static_cast<int32_t>(frac)));
+}
+/*
     The hybrid synth sound blends between
     square, saw, and triangle waveforms
     at different frequencies. Said frequencies
@@ -3803,7 +3823,7 @@ void RAM_FUNC(poll)() {
           p = (256 - t) * synth[i].cd;
         }
         break;
-      case WAVEFORM_SINE: p = sine[t] << 8; break;
+      case WAVEFORM_SINE: p = interpolatedWaveSample(sine, p); break;
       case WAVEFORM_STRINGS: p = strings[t] << 8; break;
       case WAVEFORM_CLARINET: p = clarinet[t] << 8; break;
       default: break;

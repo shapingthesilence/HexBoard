@@ -299,6 +299,11 @@ mode, which can make high-register sine tones harsher on the jack path. Keep
 `8`-bit PWM in mind as the quick fallback when upper-register notes get too
 "screamy."
 
+The sine wavetable now uses linear interpolation between adjacent `256`-entry
+table samples, reusing the low `8` bits of the existing `16`-bit phase
+accumulator. That is the first place to look if you want a cheap audio-quality
+improvement without increasing table size or changing the other waveforms.
+
 Anything that touches timing, interrupts, or shared state between cores deserves extra caution.
 
 ## LED And Visualization Notes
