@@ -149,11 +149,14 @@ Options include:
 
 - `Color Mode`
 - `Brightness`
+- `LED Limit`
 - `Animation`
 - `Rest Bright`
 - `Dim Bright`
 
 Available color modes are `Rainbow`, `Tiered`, `Alt`, `Fifths`, `Piano`, `Alt Piano`, `Filament`, and `Diatonic`. The animation list includes button, octave, by-note, star, splash, orbit, beams, reversed variants, and MIDI-in highlighting.
+
+`LED Limit` applies an approximate strip current cap after the frame is rendered. In bright modes, especially `Filament` and `Diatonic`, the board may dim the whole frame slightly instead of trying to drive every LED at full requested power. `Off` preserves the legacy behavior. The limit is approximate and is based on LED output only, not total board power draw.
 
 ### Synth Options
 
@@ -204,7 +207,7 @@ Notes:
 
 Host software can switch HexBoard into delegated control with SysEx. In that mode, normal note playback, arpeggiation, control wheels, and firmware LED rendering are paused while the host receives raw button events and drives all LEDs.
 
-Delegated control is intentionally not exposed in the OLED menu and is not saved in profiles. It starts disabled on boot and must be entered again by the external host. Developer details are in `docs/delegated-control.md`.
+Delegated control is intentionally not exposed in the OLED menu and is not saved in profiles. It starts disabled on boot and must be entered again by the external host. Host-driven LEDs still pass through the normal `Brightness` and `LED Limit` output path. Developer details are in `docs/delegated-control.md`.
 
 ### Control Wheel
 
@@ -292,6 +295,7 @@ Important defaults in the current firmware include:
 - Synth: `Off`
 - Waveform: `Hybrid`
 - LED brightness: `Dim`
+- LED limit: `Off`
 - Animation: `Button`
 - Display notes: `Off`
 - Auto-save: `On`
@@ -325,6 +329,10 @@ Check:
 ### LEDs changed but pitch did not
 
 That is expected when you only changed color, brightness, or animation settings. Pitch changes come from tuning, layout, key, scale lock, and transpose settings.
+
+### The board resets when lots of LEDs turn white
+
+That usually means the LED draw is too high for the current power source. Lower `Brightness`, lower `Rest Bright`, or set `LED Limit` in `Color Options` to a safer value such as `500 mA` or `1.0 A`.
 
 ### A tuning change reshuffled everything
 

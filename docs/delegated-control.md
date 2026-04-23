@@ -141,6 +141,7 @@ Color conversion:
 - Saturation maps from `0..127` to approximately `0..255`.
 - Value maps from `0..127` to approximately `0..255`.
 - The resulting HSV is converted through the normal `getLEDcode()` path, so global brightness and gamma correction still apply.
+- The final delegated LED frame still passes through the normal LED current limiter, so the active `LED Limit` menu setting can dim host-driven colors to stay under the configured budget.
 
 Example: set LED `5` to full red:
 

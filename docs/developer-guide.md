@@ -243,8 +243,9 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `2`
+- `CURRENT_SETTINGS_VERSION` is currently `3`
 - invalid or mismatched settings files restore factory defaults
+- version `2` settings files are migrated in place to version `3` by appending the new LED current-limit byte with its factory default
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
@@ -252,7 +253,7 @@ Important implementation details:
   jack-default `Buzzer` toggle; legacy stored values are interpreted by
   checking whether the older byte had the piezo bit set
 
-If you add, remove, or reorder settings, think about migration. Right now version mismatch falls back to defaults instead of doing a structured migration.
+If you add, remove, or reorder settings, think about migration. The current code has an explicit `2 -> 3` migration because the new LED current-limit setting was appended to the schema. Unknown version mismatches still fall back to defaults.
 
 ## MIDI And Tuning Notes
 
@@ -320,6 +321,8 @@ LED rendering is not just cosmetic. It reflects:
 - current animation mode
 
 The LED state is cached per button in fields like `LEDcodeRest`, `LEDcodeDim`, and `LEDcodePlay`. When changing palette or scale behavior, make sure the code still recomputes these caches by calling `setLEDcolorCodes()`.
+
+After those cached colors and command-button colors are written into the NeoPixel buffer, `applyLedCurrentLimitToFrame()` can scale the whole frame down to stay under the configured approximate current budget. That limiter works on the final RGB bytes, so it applies equally to normal playback, animations, and delegated-control LED frames.
 
 ## Startup Sequence
 

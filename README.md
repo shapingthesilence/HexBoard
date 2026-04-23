@@ -38,6 +38,7 @@ The current code supports:
 - multiple isomorphic layouts with rotation and mirroring
 - scale filtering with optional scale lock
 - multiple LED color modes and animations
+- an approximate LED current limiter to reduce brownouts in bright modes
 - an optional OLED note overlay that shows currently played notes
 - standard MIDI, extended multi-channel MIDI mapping, and MPE behavior
 - dynamic just intonation and BPM-linked retuning options

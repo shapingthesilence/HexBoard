@@ -83,11 +83,14 @@ constexpr byte SCLPIN = 17;
 #include <limits>
 #include <queue>       // standard C++ library construction for various FIFO pools (use "std::queue" to invoke it)
 #include <vector>
+#include "LittleFS.h"  // code to use a portion of the 16MB flash chip space as a file system
 #include "pico/time.h" // Allows me to set delays that don't disable interrupts
 #include "hardware/structs/sio.h" // For fast GPIO read/write
 
 enum class EnvelopeCommand : uint8_t;
 enum class SettingKey : uint8_t;
+class colorDef;
+struct SettingsHeader;
 
 // Software-detected hardware revision.
 constexpr byte HARDWARE_UNKNOWN = 0;
@@ -120,6 +123,8 @@ void showOnlyValidScaleChoices();
 void showOnlyValidKeyChoices();
 void updateLayoutAndRotate();
 void setupHardware();
+uint32_t getLEDcode(colorDef c);
+bool migrateSettingsV2(File& f, const SettingsHeader& header);
 /*
     C++ returns a negative value for
     negative N % D. This function
@@ -304,6 +309,47 @@ constexpr byte BRIGHT_FAINT = 33;    // Highest brightness before backlight turn
 constexpr byte BRIGHT_FAINTER = 24;  // Lowest brightness before any highlighted button is lit in all color modes
 constexpr byte BRIGHT_OFF = 0;
 byte globalBrightness = BRIGHT_DIM;
+
+constexpr byte LED_CURRENT_LIMIT_OFF = 0;
+constexpr byte LED_CURRENT_LIMIT_250MA = 1;
+constexpr byte LED_CURRENT_LIMIT_500MA = 2;
+constexpr byte LED_CURRENT_LIMIT_750MA = 3;
+constexpr byte LED_CURRENT_LIMIT_1000MA = 4;
+constexpr byte LED_CURRENT_LIMIT_1500MA = 5;
+constexpr byte LED_CURRENT_LIMIT_2000MA = 6;
+constexpr byte LED_CURRENT_LIMIT_3000MA = 7;
+constexpr byte LED_CURRENT_LIMIT_MAX_MODE = LED_CURRENT_LIMIT_3000MA;
+
+byte ledCurrentLimitMode = LED_CURRENT_LIMIT_OFF;
+uint16_t ledCurrentLimitMilliamps = 0;
+
+uint16_t decodeLedCurrentLimitMilliamps(byte limitMode) {
+  switch (limitMode) {
+    case LED_CURRENT_LIMIT_250MA:
+      return 250;
+    case LED_CURRENT_LIMIT_500MA:
+      return 500;
+    case LED_CURRENT_LIMIT_750MA:
+      return 750;
+    case LED_CURRENT_LIMIT_1000MA:
+      return 1000;
+    case LED_CURRENT_LIMIT_1500MA:
+      return 1500;
+    case LED_CURRENT_LIMIT_2000MA:
+      return 2000;
+    case LED_CURRENT_LIMIT_3000MA:
+      return 3000;
+    default:
+      return 0;
+  }
+}
+
+void syncLedCurrentLimit() {
+  if (ledCurrentLimitMode > LED_CURRENT_LIMIT_MAX_MODE) {
+    ledCurrentLimitMode = LED_CURRENT_LIMIT_OFF;
+  }
+  ledCurrentLimitMilliamps = decodeLedCurrentLimitMilliamps(ledCurrentLimitMode);
+}
 
 // @microtonal
 /*
@@ -1553,6 +1599,55 @@ void detectHardwareVersion() {
 #define LED_PIN 22
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 int32_t rainbowDegreeTime = 65'536;  // microseconds to go through 1/360 of rainbow
+constexpr uint16_t WS2812_IDLE_CURRENT_MA = 1;
+constexpr uint16_t WS2812_CHANNEL_MAX_CURRENT_MA = 20;
+
+byte scaleLedChannel(byte channel, uint16_t scale65535) {
+  return static_cast<byte>((static_cast<uint32_t>(channel) * scale65535 + 32767u) / 65535u);
+}
+
+uint32_t estimateDynamicLedCurrentMilliamps(uint32_t packedColor) {
+  uint8_t red = static_cast<uint8_t>(packedColor >> 16);
+  uint8_t green = static_cast<uint8_t>(packedColor >> 8);
+  uint8_t blue = static_cast<uint8_t>(packedColor);
+  uint32_t channelSum = static_cast<uint32_t>(red) + green + blue;
+  return (channelSum * WS2812_CHANNEL_MAX_CURRENT_MA + 127u) / 255u;
+}
+
+void applyLedCurrentLimitToFrame() {
+  if (ledCurrentLimitMilliamps == 0) {
+    return;
+  }
+
+  constexpr uint32_t stripIdleCurrentMilliamps = static_cast<uint32_t>(LED_COUNT) * WS2812_IDLE_CURRENT_MA;
+  uint32_t dynamicCurrentMilliamps = 0;
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    dynamicCurrentMilliamps += estimateDynamicLedCurrentMilliamps(strip.getPixelColor(i));
+  }
+
+  if (dynamicCurrentMilliamps == 0) {
+    return;
+  }
+
+  if (ledCurrentLimitMilliamps <= stripIdleCurrentMilliamps) {
+    strip.clear();
+    return;
+  }
+
+  uint32_t allowedDynamicMilliamps = static_cast<uint32_t>(ledCurrentLimitMilliamps) - stripIdleCurrentMilliamps;
+  if (dynamicCurrentMilliamps <= allowedDynamicMilliamps) {
+    return;
+  }
+
+  uint16_t scale65535 = static_cast<uint16_t>((allowedDynamicMilliamps * 65535u) / dynamicCurrentMilliamps);
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    uint32_t packedColor = strip.getPixelColor(i);
+    uint8_t red = scaleLedChannel(static_cast<uint8_t>(packedColor >> 16), scale65535);
+    uint8_t green = scaleLedChannel(static_cast<uint8_t>(packedColor >> 8), scale65535);
+    uint8_t blue = scaleLedChannel(static_cast<uint8_t>(packedColor), scale65535);
+    strip.setPixelColor(i, strip.Color(red, green, blue));
+  }
+}
 /*
     This is actually a hacked together approximation
     of the color space OKLAB. A true conversion would
@@ -2111,6 +2206,7 @@ void lightUpLEDs() {
     resetVelocityLEDs();
     resetWheelLEDs();
   }
+  applyLedCurrentLimitToFrame();
   strip.show();
 }
 
@@ -4974,7 +5070,8 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 2;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 3;
+constexpr uint8_t LEGACY_SETTINGS_VERSION = 2;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -5044,12 +5141,16 @@ enum class SettingKey : uint8_t {
   EnvelopeSustainLevel,
   EnvelopeReleaseIndex,
   DisplayPlayedNotes,
+  LedCurrentLimitMode,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
 
 // Use a constexpr to get the total number of settings.
 constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
+constexpr uint8_t NUM_SETTINGS_V2 = static_cast<uint8_t>(SettingKey::LedCurrentLimitMode);
+constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
+constexpr size_t SETTINGS_DATA_SIZE_V2 = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS_V2;
 
 // ==================================================
 // Global Settings Array and Factory Defaults
@@ -5124,13 +5225,12 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* EnvelopeSustainLevel         */ 127,
   /* EnvelopeReleaseIndex         */ 3,
   /* Display played notes         */ 0,
+  /* LED current limit mode       */ LED_CURRENT_LIMIT_OFF,
 };
 
 // ==================================================
 // File System Handling: LittleFS Setup
 // ==================================================
-#include "LittleFS.h"  // code to use a portion of the 16MB flash chip space as a file system
-
 bool fileSystemExists = false;
 
 void setupFileSystem() {
@@ -5176,6 +5276,39 @@ void applyFactoryDefaultsToSettings() {
   settingsDirty = false;
 }
 
+bool migrateSettingsV2(File& f, const SettingsHeader& header) {
+  std::array<uint8_t, SETTINGS_DATA_SIZE_V2> legacyProfiles = { 0 };
+  size_t bytesRead = f.read(legacyProfiles.data(), SETTINGS_DATA_SIZE_V2);
+  f.close();
+  if (bytesRead != SETTINGS_DATA_SIZE_V2) {
+    sendToLog("Warning: Legacy settings data incomplete. Restoring defaults.");
+    applyFactoryDefaultsToSettings();
+    save_settings();
+    return false;
+  }
+
+  uint32_t computed = crc32(legacyProfiles.data(), SETTINGS_DATA_SIZE_V2);
+  if (computed != header.crc32) {
+    sendToLog("Legacy settings CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
+    applyFactoryDefaultsToSettings();
+    save_settings();
+    return false;
+  }
+
+  applyFactoryDefaultsToSettings();
+  for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
+    memcpy(settingsProfiles[profile],
+           legacyProfiles.data() + (static_cast<size_t>(profile) * NUM_SETTINGS_V2),
+           NUM_SETTINGS_V2);
+  }
+  activeProfileIndex = defaultProfileIndex;
+  settings = settingsProfiles[activeProfileIndex];
+  settingsDirty = false;
+  sendToLog("Settings migrated from version 2 to version 3.");
+  save_settings();
+  return true;
+}
+
 bool load_settings() {
   if (!fileSystemExists) {
     sendToLog("File system not available. Using factory defaults.");
@@ -5204,6 +5337,9 @@ bool load_settings() {
     save_settings();
     return false;
   }
+  if (header.version == LEGACY_SETTINGS_VERSION) {
+    return migrateSettingsV2(f, header);
+  }
   if (header.version != CURRENT_SETTINGS_VERSION) {
     sendToLog("Settings version mismatch. File version: " + std::to_string(header.version) + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION));
     f.close();
@@ -5213,17 +5349,16 @@ bool load_settings() {
   }
   // Always boot from profile 1 even if an older file recorded a different default.
   defaultProfileIndex = DEFAULT_PROFILE_INDEX;
-  size_t expectedSize = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
-  size_t bytesRead = f.read((uint8_t*)settingsProfiles, expectedSize);
+  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
   f.close();
-  if (bytesRead != expectedSize) {
+  if (bytesRead != SETTINGS_DATA_SIZE) {
     sendToLog("Warning: Settings data incomplete. Restoring defaults.");
     applyFactoryDefaultsToSettings();
     save_settings();
     return false;
   }
   // Verify CRC32 integrity of loaded profile data
-  uint32_t computed = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), expectedSize);
+  uint32_t computed = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
   if (computed != header.crc32) {
     sendToLog("CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
     applyFactoryDefaultsToSettings();
@@ -5251,9 +5386,9 @@ void save_settings() {
   header.magic[0] = 'S'; header.magic[1] = 'T'; header.magic[2] = 'G';
   header.version = CURRENT_SETTINGS_VERSION;
   header.defaultProfileIndex = defaultProfileIndex;
-  header.crc32 = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS);
+  header.crc32 = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
   f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SettingsHeader));
-  f.write(reinterpret_cast<uint8_t*>(settingsProfiles), static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS);
+  f.write(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
   f.close();
   sendToLog("Settings saved.");
 }
@@ -6499,6 +6634,30 @@ void previewBright(GEMPreviewCallbackData previewData) {
   setLEDcolorCodes();
 }
 
+SelectOptionByte optionByteLedCurrentLimit[] = {
+  { "Off", LED_CURRENT_LIMIT_OFF },
+  { "250 mA", LED_CURRENT_LIMIT_250MA },
+  { "500 mA", LED_CURRENT_LIMIT_500MA },
+  { "750 mA", LED_CURRENT_LIMIT_750MA },
+  { "1.0 A", LED_CURRENT_LIMIT_1000MA },
+  { "1.5 A", LED_CURRENT_LIMIT_1500MA },
+  { "2.0 A", LED_CURRENT_LIMIT_2000MA },
+  { "3.0 A", LED_CURRENT_LIMIT_3000MA }
+};
+GEMSelect selectLedCurrentLimit(sizeof(optionByteLedCurrentLimit) / sizeof(SelectOptionByte), optionByteLedCurrentLimit);
+PersistentCallbackInfo callbackInfoLedCurrentLimit = {
+  static_cast<uint8_t>(SettingKey::LedCurrentLimitMode),
+  reinterpret_cast<void*>(&ledCurrentLimitMode),
+  nullptr,
+  syncLedCurrentLimit
+};
+GEMItem menuItemLedCurrentLimit("LED Limit", ledCurrentLimitMode, selectLedCurrentLimit, universalSaveCallback,
+                                reinterpret_cast<void*>(&callbackInfoLedCurrentLimit));
+void previewLedCurrentLimit(GEMPreviewCallbackData previewData) {
+  ledCurrentLimitMode = previewData.previewValByte;
+  syncLedCurrentLimit();
+}
+
 SelectOptionByte optionByteWaveform[] = { { "Hybrid", WAVEFORM_HYBRID }, { "Square", WAVEFORM_SQUARE }, { "Saw", WAVEFORM_SAW }, { "Triangl", WAVEFORM_TRIANGLE }, { "Sine", WAVEFORM_SINE }, { "Strings", WAVEFORM_STRINGS }, { "Clrinet", WAVEFORM_CLARINET } };
 GEMSelect selectWaveform(sizeof(optionByteWaveform) / sizeof(SelectOptionByte), optionByteWaveform);
 PersistentCallbackInfo callbackInfoWaveform = {
@@ -6733,6 +6892,8 @@ void syncSettingsToRuntime() {
   ledRestBrightness = settingValue(SettingKey::RestLedBrightness);
   ledDimBrightness = settingValue(SettingKey::DimLedBrightness);
   globalBrightness = settingValue(SettingKey::GlobalBrightness);
+  ledCurrentLimitMode = settingValue(SettingKey::LedCurrentLimitMode);
+  syncLedCurrentLimit();
   animationType = settingValue(SettingKey::AnimationType);
   programChange = settingValue(SettingKey::ProgramChange);
 
@@ -7029,6 +7190,7 @@ void setupColorsMenuPage() {
   menuPageMain.addMenuItem(menuGotoColors);
   addPreviewMenuItem(menuPageColors, menuItemColor, previewColor);
   addPreviewMenuItem(menuPageColors, menuItemBright, previewBright);
+  addPreviewMenuItem(menuPageColors, menuItemLedCurrentLimit, previewLedCurrentLimit);
   addPreviewMenuItem(menuPageColors, menuItemAnimate, previewAnimate);
   addPreviewMenuItem(menuPageColors, menuItemRestLedLevel, previewRestLedLevel);
   addPreviewMenuItem(menuPageColors, menuItemDimLedLevel, previewDimLedLevel);

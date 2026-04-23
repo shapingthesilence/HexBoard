@@ -271,6 +271,8 @@ The LED pipeline uses cached per-button colors:
 
 `setLEDcolorCodes()` recomputes those caches. Call it after changes that affect palette, scale, tuning relationships, key-centered color placement, brightness, or color mode.
 
+`lightUpLEDs()` writes the final frame into the NeoPixel buffer and then calls `applyLedCurrentLimitToFrame()` before `strip.show()`. The limiter uses a rough WS2812 estimate of `20 mA` per color channel at full scale plus `1 mA` idle per LED, then scales the final RGB bytes if the configured `LED Limit` budget would be exceeded. Because the scaling happens at the final frame stage, it also affects delegated-control LED frames.
+
 Current color modes include:
 
 - `Rainbow`
@@ -333,13 +335,14 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `2`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `3`, and `PROFILE_COUNT` is `9`.
 
 Load behavior:
 
 - missing settings file creates factory defaults and saves them
 - magic mismatch restores defaults
-- version mismatch restores defaults
+- version `2` files migrate to version `3` by appending the new LED current-limit setting with its factory default
+- unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults
 - successful load activates the boot/default profile slot
