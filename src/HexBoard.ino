@@ -3084,12 +3084,19 @@ byte audioD = AUDIO_PIEZO | AUDIO_AJACK;
 // PWM AUDIO CONFIG
 // ============================================================
 // Set PWM_BITS to 8 or 10 to control PWM resolution.
-// 8-bit: wrap=254 (matches your existing behavior)
-// 10-bit: wrap=1023 (cleaner on jack, lower quantization noise)
+// 8-bit: wrap=254 (the 1.2-era default, and the safer fallback if the current
+//         synth path sounds too harsh in the upper registers)
+// 10-bit: wrap=1023 (the default compromise: lower quantization noise, but a
+//         much lower PWM carrier)
 //
-// NOTE: Higher wrap lowers PWM carrier frequency. At 200MHz with clkdiv=1,
-// it should remain ultrasonic, but if you ever hear PWM whine on the jack,
-// drop back to 8-bit or raise carrier via clkdiv/wrap tradeoffs.
+// At the project's 200MHz build target with clkdiv=1 and phase-correct PWM:
+// - 8-bit carrier is about 392kHz
+// - 10-bit carrier is about 98kHz
+//
+// High notes, especially sine waves, can sound noticeably harsher with 10-bit
+// PWM on typical output stages because the PWM residue sits much closer to the
+// audio band. We still keep 10-bit as the default compromise, but 8-bit
+// remains a one-line fallback if the jack path gets too "screamy."
 #ifndef PWM_BITS
 #define PWM_BITS 10
 #endif

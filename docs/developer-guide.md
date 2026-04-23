@@ -292,6 +292,13 @@ When changing synth-related behavior, review:
 - arpeggiator timing update path
 - flash-save muting behavior
 
+The synth PWM defaults to `10` bits as a compromise between quantization noise
+and PWM-carrier artifacts. At the project's `200 MHz` build target, that drops
+the carrier from roughly `392 kHz` in `8`-bit mode to `98 kHz` in `10`-bit
+mode, which can make high-register sine tones harsher on the jack path. Keep
+`8`-bit PWM in mind as the quick fallback when upper-register notes get too
+"screamy."
+
 Anything that touches timing, interrupts, or shared state between cores deserves extra caution.
 
 ## LED And Visualization Notes

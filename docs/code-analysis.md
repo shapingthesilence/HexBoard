@@ -299,6 +299,10 @@ Key implementation facts:
 
 - `POLYPHONY_LIMIT` is `8`.
 - `PWM_BITS` defaults to `10`.
+- `8`-bit PWM remains available as a source-level fallback. Switching from `8`
+  to `10` bits lowers the carrier from about `392 kHz` to `98 kHz` at the
+  project's `200 MHz` build target, which can make high-register sine tones
+  harsher on the jack output.
 - The oscillator counter is `uint16_t`, so phase wraps over a 16-bit range.
 - Envelope commands are shared through value arrays plus published/consumed sequence counters.
 - Voice-free notifications use their own published/consumed sequence counters.
