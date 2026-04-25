@@ -324,6 +324,10 @@ constexpr byte LED_CURRENT_LIMIT_MAX_MODE = LED_CURRENT_LIMIT_3000MA;
 byte ledCurrentLimitMode = LED_CURRENT_LIMIT_OFF;
 uint16_t ledCurrentLimitMilliamps = 0;
 
+// Calibrated from laptop-side USB meter readings with Diatonic / 12EDO /
+// THE SUN brightness, OLED active, and the buzzer disabled. The displayed
+// limit remains a USB-side target; these larger internal budgets compensate
+// for the conservative WS2812 estimate while leaving buzzer/OLED headroom.
 uint16_t decodeLedCurrentLimitMilliamps(byte limitMode) {
   switch (limitMode) {
     case LED_CURRENT_LIMIT_250MA:
@@ -331,15 +335,15 @@ uint16_t decodeLedCurrentLimitMilliamps(byte limitMode) {
     case LED_CURRENT_LIMIT_500MA:
       return 500;
     case LED_CURRENT_LIMIT_750MA:
-      return 750;
+      return 900;
     case LED_CURRENT_LIMIT_1000MA:
-      return 1000;
+      return 1350;
     case LED_CURRENT_LIMIT_1500MA:
-      return 1500;
-    case LED_CURRENT_LIMIT_2000MA:
       return 2000;
+    case LED_CURRENT_LIMIT_2000MA:
+      return 3150;
     case LED_CURRENT_LIMIT_3000MA:
-      return 3000;
+      return 5000;
     default:
       return 0;
   }
@@ -5226,7 +5230,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* EnvelopeSustainLevel         */ 127,
   /* EnvelopeReleaseIndex         */ 3,
   /* Display played notes         */ 0,
-  /* LED current limit mode       */ LED_CURRENT_LIMIT_OFF,
+  /* LED current limit mode       */ LED_CURRENT_LIMIT_1500MA,
 };
 
 // ==================================================
@@ -6636,14 +6640,14 @@ void previewBright(GEMPreviewCallbackData previewData) {
 }
 
 SelectOptionByte optionByteLedCurrentLimit[] = {
-  { "Off", LED_CURRENT_LIMIT_OFF },
   { "250 mA", LED_CURRENT_LIMIT_250MA },
   { "500 mA", LED_CURRENT_LIMIT_500MA },
   { "750 mA", LED_CURRENT_LIMIT_750MA },
   { "1.0 A", LED_CURRENT_LIMIT_1000MA },
   { "1.5 A", LED_CURRENT_LIMIT_1500MA },
   { "2.0 A", LED_CURRENT_LIMIT_2000MA },
-  { "3.0 A", LED_CURRENT_LIMIT_3000MA }
+  { "3.0 A", LED_CURRENT_LIMIT_3000MA },
+  { "Off", LED_CURRENT_LIMIT_OFF }
 };
 GEMSelect selectLedCurrentLimit(sizeof(optionByteLedCurrentLimit) / sizeof(SelectOptionByte), optionByteLedCurrentLimit);
 PersistentCallbackInfo callbackInfoLedCurrentLimit = {

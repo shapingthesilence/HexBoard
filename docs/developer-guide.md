@@ -246,6 +246,8 @@ Settings are stored in `/settings.dat` on LittleFS with:
 Important implementation details:
 
 - `CURRENT_SETTINGS_VERSION` is currently `3`
+- the LED current-limit default is `1.5 A`; its internal limiter budget is calibrated to match the previous `2.0 A` behavior
+- the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - invalid or mismatched settings files restore factory defaults
 - version `2` settings files are migrated in place to version `3` by appending the new LED current-limit byte with its factory default
 - auto-save is debounced for `10 seconds`

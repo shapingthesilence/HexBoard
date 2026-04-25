@@ -156,7 +156,7 @@ Options include:
 
 Available color modes are `Rainbow`, `Tiered`, `Alt`, `Fifths`, `Piano`, `Alt Piano`, `Filament`, and `Diatonic`. The animation list includes button, octave, by-note, star, splash, orbit, beams, reversed variants, and MIDI-in highlighting.
 
-`LED Limit` applies an approximate strip current cap after the frame is rendered. In bright modes, especially `Filament` and `Diatonic`, the board may dim the whole frame slightly instead of trying to drive every LED at full requested power. `Off` preserves the legacy behavior. The limit is approximate and is based on LED output only, not total board power draw.
+`LED Limit` applies a calibrated cap after the frame is rendered. In bright modes, especially `Filament` and `Diatonic`, the board may dim the whole frame slightly instead of trying to drive every LED at full requested power. `Off` preserves the legacy behavior. The numbered limits are calibrated from laptop-side USB meter readings with the OLED active and buzzer disabled, then leave practical headroom for OLED and buzzer load. The factory default is `1.5 A`, which matches the older `2.0 A` limiter behavior that proved stable on MacBook USB power.
 
 ### Synth Options
 
@@ -342,7 +342,7 @@ That is expected when you only changed color, brightness, or animation settings.
 
 ### The board resets when lots of LEDs turn white
 
-That usually means the LED draw is too high for the current power source. Lower `Brightness`, lower `Rest Bright`, or set `LED Limit` in `Color Options` to a safer value such as `500 mA` or `1.0 A`.
+That usually means the LED draw is too high for the current power source. Lower `Brightness`, lower `Rest Bright`, or set `LED Limit` in `Color Options` to a safer value such as `500 mA`, `1.0 A`, or the factory-default `1.5 A`.
 
 ### A tuning change reshuffled everything
 

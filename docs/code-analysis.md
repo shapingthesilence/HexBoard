@@ -271,7 +271,7 @@ The LED pipeline uses cached per-button colors:
 
 `setLEDcolorCodes()` recomputes those caches. Call it after changes that affect palette, scale, tuning relationships, key-centered color placement, brightness, or color mode.
 
-`lightUpLEDs()` writes the final frame into the NeoPixel buffer and then calls `applyLedCurrentLimitToFrame()` before `strip.show()`. The limiter uses a rough WS2812 estimate of `20 mA` per color channel at full scale plus `1 mA` idle per LED, then scales the final RGB bytes if the configured `LED Limit` budget would be exceeded. Because the scaling happens at the final frame stage, it also affects delegated-control LED frames.
+`lightUpLEDs()` writes the final frame into the NeoPixel buffer and then calls `applyLedCurrentLimitToFrame()` before `strip.show()`. The limiter uses a rough WS2812 estimate of `20 mA` per color channel at full scale plus `1 mA` idle per LED, then scales the final RGB bytes if the configured `LED Limit` budget would be exceeded. `decodeLedCurrentLimitMilliamps()` maps the visible USB-side menu labels through a laptop-side meter calibration table: `250 mA -> 250`, `500 mA -> 500`, `750 mA -> 900`, `1.0 A -> 1350`, `1.5 A -> 2000`, `2.0 A -> 3150`, and `3.0 A -> 5000` internal limiter milliamps. The `1.5 A` menu value is now the factory default because it preserves the old `2.0 A` limiter behavior. Because the scaling happens at the final frame stage, it also affects delegated-control LED frames.
 
 Current color modes include:
 
@@ -336,6 +336,8 @@ The current `SettingsHeader` contains:
 - CRC32 of all profile data bytes
 
 `CURRENT_SETTINGS_VERSION` is currently `3`, and `PROFILE_COUNT` is `9`.
+
+The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the calibrated table above.
 
 Load behavior:
 
