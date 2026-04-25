@@ -4692,20 +4692,61 @@ void animateRadialReverse() {  //inverted splash/star
   }
 }
 
+constexpr uint64_t MIDI_IN_LED_COALESCE_MICROS = 3000;
+constexpr uint64_t MIDI_IN_LED_MAX_DEFER_MICROS = 12000;
+
+bool midiInLedDirty = false;
+uint64_t midiInLedFirstDirtyTime = 0;
+uint64_t midiInLedLastDirtyTime = 0;
+
+void markMidiInLedDirty() {
+  if (animationType != ANIMATE_MIDI_IN) {
+    return;
+  }
+  uint64_t now = readClock();
+  if (!midiInLedDirty) {
+    midiInLedDirty = true;
+    midiInLedFirstDirtyTime = now;
+  }
+  midiInLedLastDirtyTime = now;
+}
+
+bool shouldDeferMidiInLedRefresh() {
+  if (!midiInLedDirty || animationType != ANIMATE_MIDI_IN) {
+    return false;
+  }
+
+  uint64_t now = readClock();
+  bool stillCoalescing = (now - midiInLedLastDirtyTime) < MIDI_IN_LED_COALESCE_MICROS;
+  bool maxDeferReached = (now - midiInLedFirstDirtyTime) >= MIDI_IN_LED_MAX_DEFER_MICROS;
+  if (stillCoalescing && !maxDeferReached) {
+    return true;
+  }
+
+  midiInLedDirty = false;
+  return false;
+}
+
 void applyExternalMidiToHex(byte midiNote, bool noteOn) {
   if (midiNote >= midiNoteToHexIndices.size()) {
     return;
   }
   auto& targets = midiNoteToHexIndices[midiNote];
+  bool changed = false;
   for (uint8_t index : targets) {
     buttonDef& hex = h[index];
     if (noteOn) {
       if (hex.externalNoteDepth < 255) {
         hex.externalNoteDepth++;
+        changed = true;
       }
     } else if (hex.externalNoteDepth > 0) {
       hex.externalNoteDepth--;
+      changed = true;
     }
+  }
+  if (changed) {
+    markMidiInLedDirty();
   }
 }
 
@@ -4798,6 +4839,30 @@ void processIncomingSysEx(const uint8_t* data, const unsigned int len) {
   }
 }
 
+template <class MidiInterface>
+void processIncomingMIDIInterface(MidiInterface& M) {
+  while (M.read()) {
+    const auto type = M.getType();
+    if (type == MIDI_NAMESPACE::SystemExclusive) {
+      const uint8_t* sysex = M.getSysExArray();
+      const unsigned int len = M.getSysExArrayLength();
+      processIncomingSysEx(sysex, len);
+      continue;
+    }
+
+    const byte n    = M.getData1();  // note
+    const byte v    = M.getData2();  // velocity
+
+    if (type == MIDI_NAMESPACE::NoteOn) {
+      // treat NoteOn vel==0 as NoteOff
+      applyExternalMidiToHex(n, v != 0);
+    } else if (type == MIDI_NAMESPACE::NoteOff
+               || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
+      applyExternalMidiToHex(n, false);
+    }
+  }
+}
+
 void processIncomingMIDIDelegated() {
   withMIDI([&](auto& M) {
     while (M.read()) {
@@ -4828,28 +4893,8 @@ void processIncomingMIDI() {
   if (delegatedControl) {
     return;
   }
-  withMIDI([&](auto& M) {
-    while (M.read()) {
-      const auto type = M.getType();
-      if (type == MIDI_NAMESPACE::SystemExclusive) {
-        const uint8_t* sysex = M.getSysExArray();
-        const unsigned int len = M.getSysExArrayLength();
-        processIncomingSysEx(sysex, len);
-        continue;
-      }
-
-      const byte n    = M.getData1();  // note
-      const byte v    = M.getData2();  // velocity
-
-      if (type == MIDI_NAMESPACE::NoteOn) {
-        // treat NoteOn vel==0 as NoteOff
-        applyExternalMidiToHex(n, v != 0);
-      } else if (type == MIDI_NAMESPACE::NoteOff
-                 || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
-        applyExternalMidiToHex(n, false);
-      }
-    }
-  });
+  if (midiD & MIDID_USB) processIncomingMIDIInterface(UMIDI);
+  if (midiD & MIDID_SER) processIncomingMIDIInterface(SMIDI);
 }
 
 void animateLEDs() {
@@ -7553,7 +7598,9 @@ void loop() {        // run on first core
   updateWheels();    // deal with the pitch/mod wheel
   processIncomingMIDI();  // respond to external MIDI input
   animateLEDs();     // deal with animations
-  lightUpLEDs();     // refresh LEDs
+  if (!shouldDeferMidiInLedRefresh()) {
+    lightUpLEDs();   // refresh LEDs
+  }
   dealWithRotary();  // deal with menu
   drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   checkAndAutoSave();  // save settings

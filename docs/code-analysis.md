@@ -176,6 +176,8 @@ Core 1 loop stays narrow:
 
 Heavy work, blocking waits, large debug bursts, and new heap allocations in either loop can cause sluggish controls, LED jitter, or audio artifacts.
 
+Normal incoming MIDI drains all currently available queued events for each enabled interface. During `ANIMATE_MIDI_IN`, LED refresh is briefly coalesced after incoming NoteOn/NoteOff state changes so dense host bursts can render as a batch instead of one visible strip update per event.
+
 ## Pitch, Layout, And Scale Assignment
 
 The mapping chain is:
@@ -287,6 +289,8 @@ Current color modes include:
 Current animation modes include button, star, splash, orbit, octave, by-note, beams, reversed star/splash variants, MIDI-in highlighting, and none.
 
 `applyNotePixelColor()` intentionally excludes normal "note is playing" LED behavior during `ANIMATE_MIDI_IN`, so external MIDI highlighting is not overwritten by the usual play color path.
+
+`ANIMATE_MIDI_IN` responds to incoming NoteOn/NoteOff state maintained by `externalNoteDepth`. The LED renderer waits up to a short coalescing window after MIDI-in changes, with a maximum defer guard, so a large chord can settle into one frame while continuous streams still repaint regularly.
 
 ## Synth Engine
 

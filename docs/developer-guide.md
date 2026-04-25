@@ -146,6 +146,8 @@ The firmware still uses a few dynamic containers in live paths:
 
 Treat these as known risk areas before adding more heap allocation to button scan, MIDI, LED, or ISR-adjacent paths.
 
+Normal-mode incoming MIDI uses `processIncomingMIDIInterface()` to drain currently available events per enabled interface. MIDI-in LED latency is handled by a short render coalescing window, not by limiting how many MIDI events are parsed per loop.
+
 ## Physical Control Model
 
 The firmware reserves these command buttons:
@@ -375,6 +377,8 @@ Core 1 loop:
 - `processIncomingMIDIDelegated()` when delegated control is active
 
 Keep Core 0 work bounded. Adding heavy allocations, blocking delays, or large logging bursts in hot paths will show up as sluggish input, bad LED timing, or synth problems.
+
+During `ANIMATE_MIDI_IN`, LED refresh can be briefly deferred by `shouldDeferMidiInLedRefresh()` after incoming note state changes. If you retune the coalescing or maximum-defer constants, test both dense USB MIDI bursts and serial MIDI input for visible MIDI-in latency, strip-order sweep artifacts, backlog, and normal control responsiveness.
 
 ## Common Edit Recipes
 
