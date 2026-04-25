@@ -1,8 +1,14 @@
-# Copied fqbn from build.options.json
-build/build.ino.uf2: build/build.ino
-	arduino-cli compile -b rp2040:rp2040:generic:flash=16777216_0,freq=200,opt=Small,rtti=Disabled,stackprotect=Disabled,exceptions=Disabled,dbgport=Disabled,dbglvl=None,usbstack=tinyusb,boot2=boot2_generic_03h_2_padded_checksum --output-dir build build
-build/build.ino: src/HexBoard.ino
+# Copied from the Arduino IDE 200 MHz Generic RP2040 build options.
+FQBN = rp2040:rp2040:generic:flash=16777216_8388608,freq=200,opt=Small,os=none,profile=Disabled,rtti=Disabled,stackprotect=Disabled,exceptions=Disabled,dbgport=Disabled,dbglvl=None,boot2=boot2_generic_03h_4_padded_checksum,usbstack=tinyusb,ipbtstack=ipv4only,uploadmethod=default
+
+build/build.ino.uf2: build/build.ino Makefile
+	arduino-cli compile -b $(FQBN) --output-dir build build
+
+build/build.ino: src/HexBoard.ino | build
 	cp src/HexBoard.ino build/build.ino
+
+build:
+	mkdir -p build
 
 /run/media/*/RPI-RP2/INFO_UF2.TXT:
 	echo "Mounting device"

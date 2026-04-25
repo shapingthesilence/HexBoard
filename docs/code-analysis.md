@@ -2,7 +2,7 @@
 
 > File: `src/HexBoard.ino`
 > Current shape: one Arduino sketch, about `7,300` lines
-> Target: Generic RP2040 at `200 MHz`, `16 MB` flash, TinyUSB, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
+> Target: Generic RP2040 at `200 MHz`, `16 MB` flash split as `8 MB` sketch / `8 MB` LittleFS, TinyUSB, Generic SPI `/4` boot2, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
 
 This document describes the current firmware structure. It intentionally avoids exact line-number references because the sketch changes often. Use the `// @...` section tags in `src/HexBoard.ino` and `rg` searches as the source navigation method.
 
@@ -411,6 +411,7 @@ The rotary encoder is polled on core 1 and consumed on core 0. Holding the encod
 Run or manually verify the areas your change touches:
 
 - compile with the same board options as `Makefile`
+- keep `Generic SPI /4` boot2 for `200 MHz` builds; `Generic SPI /2` can overclock external flash and crash at runtime
 - boot with no settings file
 - boot with existing settings file
 - profile save/load and auto-save

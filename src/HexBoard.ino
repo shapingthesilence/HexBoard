@@ -6,7 +6,8 @@
     Licensed under the GNU GPL Version 3.
 
     Hardware information:
-      Generic RP2040 running at 133MHz with 16MB of flash
+      Generic RP2040 running at 200MHz with 16MB of flash
+      Board options: 8MB sketch / 8MB FS, Adafruit TinyUSB, Generic SPI /4 boot2
         https://github.com/earlephilhower/arduino-pico
       Additional board manager URL:
         https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json

@@ -69,8 +69,9 @@ The current source targets:
 
 - Generic RP2040
 - `200 MHz`
-- `16 MB` flash
+- `16 MB` flash with `8 MB` LittleFS
 - TinyUSB USB stack
+- Generic SPI `/4` boot2
 
 The source comments in `src/HexBoard.ino` and the `Makefile` are the most reliable build references for this repository.
 
@@ -114,6 +115,7 @@ make
 ```
 
 The `Makefile` copies `src/HexBoard.ino` into `build/build.ino` and compiles it with the board options used by this project.
+The local `200 MHz` build intentionally uses `Generic SPI /4` boot2 to keep the external flash clock stable, matching the Arduino IDE profile for this board.
 
 The expected output artifact is:
 
@@ -133,20 +135,22 @@ You can flash the board in either of these ways.
 
 ### From The Device Menu
 
-On current firmware, open:
+How to update:
 
-1. `Advanced`
-2. `Update Firmware`
+1. Plug your HexBoard into your computer.
+2. Navigate to `Advanced` -> `Update Firmware` in the menu.
+3. The HexBoard will show up as a USB drive.
+4. Drag the `.uf2` file onto the drive.
+5. The HexBoard will automatically reboot with the new firmware.
 
-That reboots the RP2040 into bootloader mode so you can copy a `.uf2` file onto the mounted device.
+Need a backup method?
 
-### Manual Bootloader Method
+Hold the bootloader button while plugging it in:
 
-1. Unplug the HexBoard from your computer.
-2. Plug it back in while holding the button by the USB port.
-3. The board should appear as a removable RP2040 drive.
-4. Copy the `.uf2` firmware file onto that drive.
-5. The drive should eject and the board should reboot into the new firmware.
+- Hardware `1.1`: The button is next to the USB port.
+- Hardware `1.2`: The button is hidden on the bottom. Press it with a paperclip near the ports while plugging the board in.
+
+The board should appear as a removable USB drive. Drag the `.uf2` firmware file onto that drive, and the drive should eject when the board reboots into the new firmware.
 
 ## Development Notes
 

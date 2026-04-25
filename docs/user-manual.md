@@ -302,12 +302,22 @@ Important defaults in the current firmware include:
 
 ## Updating Firmware
 
-To update the firmware from the device itself:
+How to update:
 
-1. Open `Advanced`
-2. Select `Update Firmware`
-3. The RP2040 reboots into bootloader mode
-4. Copy the new `.uf2` firmware file to the mounted RP2040 drive
+1. Plug your HexBoard into your computer.
+2. Navigate to `Advanced` -> `Update Firmware` in the menu.
+3. The HexBoard will show up as a USB drive.
+4. Drag the `.uf2` file onto the drive.
+5. The HexBoard will automatically reboot with the new firmware.
+
+Need a backup method?
+
+Hold the bootloader button while plugging it in:
+
+- Hardware `1.1`: The button is next to the USB port.
+- Hardware `1.2`: The button is hidden on the bottom. Press it with a paperclip near the ports while plugging the board in.
+
+The board should appear as a removable USB drive. Drag the `.uf2` firmware file onto that drive, and the drive should eject when the board reboots into the new firmware.
 
 The repository `README.md` also documents the bootloader-based update path.
 

@@ -46,11 +46,13 @@ make
 The `Makefile` currently compiles with:
 
 - Board: `rp2040:rp2040:generic`
-- Flash: `16 MB`
+- Flash: `16 MB`, split as `8 MB` sketch / `8 MB` LittleFS
 - CPU: `200 MHz`
+- Boot stage 2: `Generic SPI /4`
 - USB stack: `tinyusb`
 
 If you build manually, match the options in `Makefile` and the header comment in `src/HexBoard.ino`.
+The `Generic SPI /4` boot2 selection is required for the local `200 MHz` build to avoid overdriving external flash; `Generic SPI /2` may compile but can crash the board at runtime.
 
 ## High-Level Architecture
 
