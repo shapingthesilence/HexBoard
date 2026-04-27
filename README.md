@@ -39,6 +39,7 @@ The current code supports:
 - multiple isomorphic layouts with rotation and mirroring
 - scale filtering with optional scale lock
 - multiple LED color modes and animations
+- a boot LED self-check with a first-boot white diagnostic and normal splash animation
 - a USB-meter-calibrated LED current limiter to reduce brownouts in bright modes
 - an optional OLED note overlay that shows currently played notes
 - standard MIDI, extended multi-channel MIDI mapping, and MPE behavior

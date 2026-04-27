@@ -250,6 +250,7 @@ Important implementation details:
 - `CURRENT_SETTINGS_VERSION` is currently `3`
 - the LED current-limit default is `1.5 A`; its internal limiter budget is calibrated to match the previous `2.0 A` behavior
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
+- a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
 - version `2` settings files are migrated in place to version `3` by appending the new LED current-limit byte with its factory default
 - auto-save is debounced for `10 seconds`
@@ -330,6 +331,10 @@ The LED state is cached per button in fields like `LEDcodeRest`, `LEDcodeDim`, a
 
 After those cached colors and command-button colors are written into the NeoPixel buffer, `applyLedCurrentLimitToFrame()` can scale the whole frame down to stay under the configured approximate current budget. That limiter works on the final RGB bytes, so it applies equally to normal playback, animations, and delegated-control LED frames.
 
+Startup has a separate bounded LED self-check in `runBootLedSelfCheck()`. Normal boots skip RGB color-channel flashes and run only the smoother rainbow splash, followed by `fadeToNormalLedFrame()` so the resting frame fades in. The splash center is `bootLedSplashCenterIndex()`, one physical hex to the right of the active layout center; on the default `12 EDO` Wicki-Hayden layout this is `D4` rather than `C4`. The seven command LEDs are overwritten each splash frame by `setBootCommandButtonFade()` so they fade separately instead of joining the splash.
+
+When `settingsFileMissingOnBoot` is true, `showFirstBootWhiteDiagnostic()` runs before the splash. It fades all LEDs to a moderate white level derived through the saved/default `Brightness` and `Rest Bright` path, then holds for `2 seconds`. This flag is RAM-only and does not add a persisted setting or require a settings-version bump.
+
 ## Startup Sequence
 
 Core 0 startup currently does this in order:
@@ -351,6 +356,7 @@ Core 0 startup currently does this in order:
 15. `setupHardware()`
 16. `syncSettingsToRuntime()`
 17. `recomputePitchBendFactor()`
+18. `runBootLedSelfCheck()`
 
 If you add initialization code, place it where its dependencies are already valid. Do not, for example, rely on menu objects before `setupMenu()` or on loaded settings before `load_settings()`.
 

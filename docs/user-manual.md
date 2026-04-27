@@ -34,8 +34,13 @@ On boot, the firmware:
 5. Loads saved settings and profiles
 6. Builds the OLED menu
 7. Applies the active tuning, layout, scale, LED state, MIDI routing, and synth settings
+8. Runs the boot LED self-check and fades into the normal resting LED state
 
 If no valid settings file is found, or if the settings file fails version or CRC validation, the board restores factory defaults and creates a fresh settings file.
+
+When an existing settings file is present, normal startup skips the color-channel flash and runs only a smooth rainbow splash. The splash starts one button to the right of the active layout center, so the factory `12 EDO` Wicki-Hayden layout radiates from `D4` instead of `C4`. The seven side command buttons run a separate color fade so they are visible without being swept into the splash. After the splash, the LEDs crossfade into the normal resting frame instead of popping on.
+
+On first boot, when `/settings.dat` is missing, the board first fades all LEDs into a moderate white diagnostic level and holds it for about `2 seconds` before the splash. This makes missing pixels, weak LEDs, or uneven white balance easier to spot after flashing a fresh board.
 
 ## Playing Notes
 

@@ -1606,6 +1606,18 @@ Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 int32_t rainbowDegreeTime = 65'536;  // microseconds to go through 1/360 of rainbow
 constexpr uint16_t WS2812_IDLE_CURRENT_MA = 1;
 constexpr uint16_t WS2812_CHANNEL_MAX_CURRENT_MA = 20;
+constexpr byte BOOT_LED_CHECK_FIRST_BOOT_WHITE_VALUE = 120;
+constexpr byte BOOT_LED_CHECK_WAVE_VALUE = VALUE_NORMAL;
+constexpr byte BOOT_LED_CHECK_TRAIL_VALUE = VALUE_LOW;
+constexpr byte BOOT_LED_CHECK_COMMAND_VALUE = VALUE_NORMAL;
+constexpr byte BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_FRAMES = 8;
+constexpr byte BOOT_LED_CHECK_WAVE_FRAMES = 14;
+constexpr byte BOOT_LED_CHECK_NORMAL_FADE_FRAMES = 8;
+constexpr uint16_t BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_MS = 35;
+constexpr uint16_t BOOT_LED_CHECK_FIRST_BOOT_WHITE_HOLD_MS = 2000;
+constexpr uint16_t BOOT_LED_CHECK_WAVE_MS = 30;
+constexpr uint16_t BOOT_LED_CHECK_NORMAL_FADE_MS = 25;
+bool settingsFileMissingOnBoot = false;
 
 byte scaleLedChannel(byte channel, uint16_t scale65535) {
   return static_cast<byte>((static_cast<uint32_t>(channel) * scale65535 + 32767u) / 65535u);
@@ -1770,6 +1782,212 @@ colorDef getColor(int32_t temp) {
   */
 uint32_t getLEDcode(colorDef c) {
   return strip.gamma32(strip.ColorHSV(transformHue(c.hue), c.sat, c.val * globalBrightness / 255));
+}
+
+byte applyBootLedCheckLevels(byte value) {
+  value = applyLEDLevel(value, ledRestBrightness);
+  return static_cast<byte>((static_cast<uint16_t>(value) * globalBrightness + 127) / 255);
+}
+
+byte interpolateByte(byte lowValue, byte highValue, uint16_t amount255) {
+  return static_cast<byte>(lowValue + (((static_cast<uint16_t>(highValue - lowValue) * amount255) + 127) / 255));
+}
+
+byte blendByte(byte startValue, byte endValue, uint16_t amount255) {
+  int32_t delta = static_cast<int32_t>(endValue) - startValue;
+  return static_cast<byte>(startValue + ((delta * amount255 + (delta >= 0 ? 127 : -127)) / 255));
+}
+
+byte pulseBootLedValue(byte frame, byte frameCount, byte lowValue, byte highValue) {
+  if (frameCount <= 1) {
+    return highValue;
+  }
+  uint16_t phase = (static_cast<uint16_t>(frame) * 510u) / (frameCount - 1);
+  uint16_t amount255 = (phase <= 255) ? phase : (510 - phase);
+  return interpolateByte(lowValue, highValue, amount255);
+}
+
+float safeBootLedHue(float hue) {
+  hue = fmodf(hue, 360.0f);
+  if (hue < 0.0f) {
+    hue += 360.0f;
+  } else if (hue <= 0.0f) {
+    hue = 0.1f;
+  }
+  return hue;
+}
+
+uint32_t getBootLedCheckColor(float hue, byte sat, byte val) {
+  if (val == VALUE_BLACK) {
+    return 0;
+  }
+  return strip.gamma32(strip.ColorHSV(transformHue(safeBootLedHue(hue)),
+                                      sat,
+                                      applyBootLedCheckLevels(val)));
+}
+
+uint32_t getBootLedCheckRgb(byte red, byte green, byte blue) {
+  return strip.gamma32(strip.Color(applyBootLedCheckLevels(red),
+                                   applyBootLedCheckLevels(green),
+                                   applyBootLedCheckLevels(blue)));
+}
+
+uint32_t blendPackedColor(uint32_t startColor, uint32_t endColor, uint16_t amount255) {
+  return strip.Color(blendByte(static_cast<byte>(startColor >> 16), static_cast<byte>(endColor >> 16), amount255),
+                     blendByte(static_cast<byte>(startColor >> 8), static_cast<byte>(endColor >> 8), amount255),
+                     blendByte(static_cast<byte>(startColor), static_cast<byte>(endColor), amount255));
+}
+
+void setBootCommandButtonFade(uint16_t frameIndex) {
+  for (byte cmd = 0; cmd < CMDCOUNT; ++cmd) {
+    uint16_t shiftedFrame = (frameIndex + (cmd * 2)) % BOOT_LED_CHECK_WAVE_FRAMES;
+    byte value = pulseBootLedValue(static_cast<byte>(shiftedFrame),
+                                   BOOT_LED_CHECK_WAVE_FRAMES,
+                                   VALUE_BLACK,
+                                   BOOT_LED_CHECK_COMMAND_VALUE);
+    float hue = (frameIndex * 12.0f) + (cmd * 24.0f) + HUE_ORANGE;
+    strip.setPixelColor(assignCmd[cmd], getBootLedCheckColor(hue, SAT_MODERATE, value));
+  }
+}
+
+void showBootLedCheckFrame(uint16_t holdMilliseconds, uint16_t frameIndex) {
+  setBootCommandButtonFade(frameIndex);
+  applyLedCurrentLimitToFrame();
+  strip.show();
+  delay(holdMilliseconds);
+}
+
+void showBootLedCheckRawFrame(uint16_t holdMilliseconds) {
+  applyLedCurrentLimitToFrame();
+  strip.show();
+  delay(holdMilliseconds);
+}
+
+void fillBootLedCheckFrame(uint32_t color) {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    strip.setPixelColor(i, color);
+  }
+}
+
+void fillBootLedCheckNoteFrame(uint32_t color) {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    if (!h[i].isCmd) {
+      strip.setPixelColor(i, color);
+    }
+  }
+}
+
+byte hexDistance(byte firstIndex, byte secondIndex) {
+  uint8_t dx = abs(h[firstIndex].coordCol - h[secondIndex].coordCol);
+  uint8_t dy = abs(h[firstIndex].coordRow - h[secondIndex].coordRow);
+  uint8_t horizontalOverhang = (dx > dy) ? ((dx - dy) / 2) : 0;
+  return dy + horizontalOverhang;
+}
+
+byte bootLedSplashCenterIndex() {
+  byte centerIndex = current.layout().hexMiddleC;
+  if (centerIndex >= LED_COUNT) {
+    return LED_COUNT / 2;
+  }
+
+  int8_t targetRow = h[centerIndex].coordRow;
+  int8_t targetCol = h[centerIndex].coordCol + 2;
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    if (!h[i].isCmd && h[i].coordRow == targetRow && h[i].coordCol == targetCol) {
+      return i;
+    }
+  }
+  return centerIndex;
+}
+
+void showFirstBootWhiteDiagnostic() {
+  for (byte frame = 0; frame < BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_FRAMES; ++frame) {
+    uint16_t amount255 = (static_cast<uint16_t>(frame + 1) * 255u) / BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_FRAMES;
+    byte value = interpolateByte(VALUE_BLACK, BOOT_LED_CHECK_FIRST_BOOT_WHITE_VALUE, amount255);
+    fillBootLedCheckFrame(getBootLedCheckColor(HUE_NONE, SAT_BW, value));
+    showBootLedCheckRawFrame(BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_MS);
+  }
+  delay(BOOT_LED_CHECK_FIRST_BOOT_WHITE_HOLD_MS);
+}
+
+void showBootLedCheckSplash(uint16_t& frameIndex) {
+  byte centerIndex = bootLedSplashCenterIndex();
+
+  byte maxDistance = 0;
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    maxDistance = max(maxDistance, hexDistance(centerIndex, i));
+  }
+
+  for (byte frame = 0; frame < BOOT_LED_CHECK_WAVE_FRAMES; ++frame) {
+    float waveRadius = (BOOT_LED_CHECK_WAVE_FRAMES > 1)
+                         ? ((frame * static_cast<float>(maxDistance)) / (BOOT_LED_CHECK_WAVE_FRAMES - 1))
+                         : maxDistance;
+    for (byte i = 0; i < LED_COUNT; ++i) {
+      if (h[i].isCmd) {
+        continue;
+      }
+      byte distance = hexDistance(centerIndex, i);
+      float separation = fabsf(distance - waveRadius);
+      byte value = VALUE_BLACK;
+      if (separation < 1.0f) {
+        value = interpolateByte(BOOT_LED_CHECK_TRAIL_VALUE,
+                                BOOT_LED_CHECK_WAVE_VALUE,
+                                static_cast<uint16_t>((1.0f - separation) * 255.0f));
+      } else if (separation < 2.0f) {
+        value = interpolateByte(VALUE_BLACK,
+                                BOOT_LED_CHECK_TRAIL_VALUE,
+                                static_cast<uint16_t>((2.0f - separation) * 255.0f));
+      }
+      float hue = (frame * 22.0f) + (distance * 24.0f);
+      strip.setPixelColor(i, getBootLedCheckColor(hue, SAT_VIVID, value));
+    }
+    showBootLedCheckFrame(BOOT_LED_CHECK_WAVE_MS, frameIndex++);
+  }
+}
+
+void captureBootLedFrame(uint32_t* frame) {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    frame[i] = strip.getPixelColor(i);
+  }
+}
+
+void writeNormalLedFrameToStrip() {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    if (!h[i].isCmd) {
+      strip.setPixelColor(i, applyNotePixelColor(i));
+    }
+  }
+  resetVelocityLEDs();
+  resetWheelLEDs();
+}
+
+void fadeToNormalLedFrame() {
+  uint32_t startFrame[LED_COUNT];
+  uint32_t targetFrame[LED_COUNT];
+
+  captureBootLedFrame(startFrame);
+  writeNormalLedFrameToStrip();
+  applyLedCurrentLimitToFrame();
+  captureBootLedFrame(targetFrame);
+
+  for (byte frame = 1; frame <= BOOT_LED_CHECK_NORMAL_FADE_FRAMES; ++frame) {
+    uint16_t amount255 = (static_cast<uint16_t>(frame) * 255u) / BOOT_LED_CHECK_NORMAL_FADE_FRAMES;
+    for (byte i = 0; i < LED_COUNT; ++i) {
+      strip.setPixelColor(i, blendPackedColor(startFrame[i], targetFrame[i], amount255));
+    }
+    strip.show();
+    delay(BOOT_LED_CHECK_NORMAL_FADE_MS);
+  }
+}
+
+void runBootLedSelfCheck() {
+  if (settingsFileMissingOnBoot) {
+    showFirstBootWhiteDiagnostic();
+  }
+
+  uint16_t frameIndex = 0;
+  showBootLedCheckSplash(frameIndex);
+  fadeToNormalLedFrame();
 }
 float ratioToCents(float ratio) {
   return 1200.0 * (std::log(ratio) / std::log(2.0));
@@ -5360,6 +5578,7 @@ bool migrateSettingsV2(File& f, const SettingsHeader& header) {
 }
 
 bool load_settings() {
+  settingsFileMissingOnBoot = false;
   if (!fileSystemExists) {
     sendToLog("File system not available. Using factory defaults.");
     applyFactoryDefaultsToSettings();
@@ -5367,6 +5586,7 @@ bool load_settings() {
   }
   File f = LittleFS.open("/settings.dat", "r");
   if (!f) {
+    settingsFileMissingOnBoot = true;
     sendToLog("Settings file not found. Creating new file with factory defaults.");
     applyFactoryDefaultsToSettings();
     save_settings();
@@ -7587,6 +7807,7 @@ void setup() {
   setupHardware();
   syncSettingsToRuntime();
   recomputePitchBendFactor();
+  runBootLedSelfCheck();
 }
 void loop() {        // run on first core
   timeTracker();     // Time tracking functions

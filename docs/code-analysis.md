@@ -148,6 +148,7 @@ Core 0 setup currently:
 11. applies hardware-specific menu behavior
 12. syncs saved settings to runtime globals
 13. recomputes pitch bend factors
+14. runs the fixed-time boot LED self-check
 
 The USB wait matters because RP2040 flash operations can starve USB interrupt handling.
 
@@ -275,6 +276,10 @@ The LED pipeline uses cached per-button colors:
 
 `lightUpLEDs()` writes the final frame into the NeoPixel buffer and then calls `applyLedCurrentLimitToFrame()` before `strip.show()`. The limiter uses a rough WS2812 estimate of `20 mA` per color channel at full scale plus `1 mA` idle per LED, then scales the final RGB bytes if the configured `LED Limit` budget would be exceeded. `decodeLedCurrentLimitMilliamps()` maps the visible USB-side menu labels through a laptop-side meter calibration table: `250 mA -> 250`, `500 mA -> 500`, `750 mA -> 900`, `1.0 A -> 1350`, `1.5 A -> 2000`, `2.0 A -> 3150`, and `3.0 A -> 5000` internal limiter milliamps. The `1.5 A` menu value is now the factory default because it preserves the old `2.0 A` limiter behavior. Because the scaling happens at the final frame stage, it also affects delegated-control LED frames.
 
+`runBootLedSelfCheck()` is a startup-only diagnostic path, not a menu animation mode. It runs after settings are synced and pitch-bend factors are recomputed, and its colors are scaled through the saved/default `Brightness` and `Rest Bright` path. Normal boots skip RGB color-channel flashes and run a smooth rainbow splash based on hex-grid distance from `bootLedSplashCenterIndex()`, which is one physical hex to the right of the active layout center. On the default layout that makes the splash radiate from `D4` instead of `C4`. The command LEDs are excluded from the splash and receive a separate color fade from `setBootCommandButtonFade()`.
+
+If `/settings.dat` is missing, `load_settings()` sets the RAM-only `settingsFileMissingOnBoot` flag before saving factory defaults. That boot gets an additional white diagnostic: `showFirstBootWhiteDiagnostic()` fades all LEDs to moderate white and holds for `2 seconds` before the normal splash. `fadeToNormalLedFrame()` crossfades from the final animation frame into the actual resting LED frame so the first loop render does not pop.
+
 Current color modes include:
 
 - `Rainbow`
@@ -345,7 +350,7 @@ The LED current-limit calibration changed without a settings-version bump becaus
 
 Load behavior:
 
-- missing settings file creates factory defaults and saves them
+- missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
 - version `2` files migrate to version `3` by appending the new LED current-limit setting with its factory default
 - unknown version mismatches restore defaults
