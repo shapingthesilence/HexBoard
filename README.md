@@ -14,11 +14,12 @@ You can [order a HexBoard](https://shapingthesilence.com/) if you are interested
 ## Documentation
 
 - [User Manual](docs/user-manual.md)
+- [MPE Microtonal Setup Guide](docs/mpe-microtonal-setup.md)
 - [Developer Guide](docs/developer-guide.md)
 - [Code Analysis](docs/code-analysis.md)
 - [Delegated Control Protocol](docs/delegated-control.md)
 
-The user manual is for players and owners of the device. The developer guide is for people editing the firmware in this repository.
+The user manual is for players and owners of the device. The MPE setup guide is for configuring DAWs, plugins, and synths for HexBoard's microtonal MIDI output. The developer guide is for people editing the firmware in this repository.
 
 ## Repository Layout
 

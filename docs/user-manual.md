@@ -283,6 +283,8 @@ HexBoard supports standard 12-EDO and many non-12-EDO tunings. Depending on the 
 
 In `Auto` mode, standard 12-EDO generally stays in regular MIDI mode, while microtonal use cases may switch to MPE behavior automatically.
 
+For DAW, plugin, and hardware synth setup, including pitch-bend range matching and channel-zone examples, see `docs/mpe-microtonal-setup.md`.
+
 ## Factory Defaults
 
 Important defaults in the current firmware include:
