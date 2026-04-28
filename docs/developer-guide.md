@@ -383,7 +383,7 @@ Core 1 loop:
 - `readKnob()`
 - `processIncomingMIDIDelegated()` when delegated control is active
 
-Keep Core 0 work bounded. Adding heavy allocations, blocking delays, or large logging bursts in hot paths will show up as sluggish input, bad LED timing, or synth problems.
+Keep Core 0 work bounded. Adding heavy allocations, blocking delays, or large logging bursts in hot paths will show up as sluggish input, bad LED timing, or synth problems. The optional `DisplayNotes` overlay is also a synth-quality risk because OLED I2C writes can briefly stall playback.
 
 During `ANIMATE_MIDI_IN`, LED refresh can be briefly deferred by `shouldDeferMidiInLedRefresh()` after incoming note state changes. If you retune the coalescing or maximum-defer constants, test both dense USB MIDI bursts and serial MIDI input for visible MIDI-in latency, strip-order sweep artifacts, backlog, and normal control responsiveness.
 

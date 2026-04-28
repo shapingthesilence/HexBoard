@@ -261,6 +261,8 @@ Display behavior:
 - A short release grace period prevents chords from visually shrinking while a player releases notes unevenly.
 - If the OLED screensaver is active, a note press can temporarily wake the display and return it to dimmed state afterward.
 
+The overlay sends OLED updates over I2C through `u8g2.sendBuffer()`. Those writes can briefly stall the runtime enough to affect onboard synth smoothness, so `DisplayNotes` should stay optional and off by default.
+
 The overlay is independent from delegated control. In delegated mode, normal note lifecycle is paused, so the overlay has no active notes to display.
 
 ## LED And Color System
