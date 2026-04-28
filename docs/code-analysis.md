@@ -256,6 +256,7 @@ Display behavior:
 
 - `12 EDO` notes render as chromatic note names with octave numbers.
 - Other tunings render as `step.octave`.
+- Note rows use stable fixed columns spread close to the OLED edges, so changing label widths do not shift note positions.
 - The overlay stays visible briefly after release.
 - A short release grace period prevents chords from visually shrinking while a player releases notes unevenly.
 - If the OLED screensaver is active, a note press can temporarily wake the display and return it to dimmed state afterward.

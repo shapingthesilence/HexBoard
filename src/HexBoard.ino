@@ -2572,6 +2572,7 @@ constexpr byte DISPLAYED_NOTES_MAX = 6;
 constexpr int16_t DISPLAYED_NOTE_UNUSED = INT16_MIN;
 constexpr uint64_t DISPLAYED_NOTES_HOLD_MICROS = 2000000ULL;
 constexpr uint64_t DISPLAYED_NOTES_RELEASE_GRACE_MICROS = 80000ULL;
+constexpr int PLAYED_NOTE_COLUMN_X[3] = { 0, 44, 88 };
 bool displayPlayedNotes = false;
 bool noteOverlayVisible = false;
 bool noteOverlayDirty = true;
@@ -5989,7 +5990,7 @@ void drawPlayedNotesOverlay() {
 
     byte col = i % 3;
     byte row = i / 3;
-    int x = (col == 0) ? 2 : (col == 1) ? 42 : 82;
+    int x = PLAYED_NOTE_COLUMN_X[col];
     int y = 34 + (row * 26);
 
     u8g2.setFont(u8g2_font_logisoso16_tf);
