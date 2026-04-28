@@ -298,6 +298,13 @@ constexpr byte ANIMATE_MIDI_IN = 9;
 constexpr byte ANIMATE_NONE = 10;
 byte animationType = ANIMATE_BUTTON;
 
+constexpr byte LED_TEST_OFF = 0;
+constexpr byte LED_TEST_RED = 1;
+constexpr byte LED_TEST_GREEN = 2;
+constexpr byte LED_TEST_BLUE = 3;
+constexpr byte LED_TEST_WHITE = 4;
+byte ledTestMode = LED_TEST_OFF;
+
 constexpr byte BRIGHT_MAX = 255;
 constexpr byte BRIGHT_HIGH = 210;
 constexpr byte BRIGHT_MID = 180;
@@ -2410,12 +2417,39 @@ uint32_t applyNotePixelColor(byte x) {
     return h[x].LEDcodeDim;
   }
 }
+uint32_t ledTestColorCode() {
+  byte value = globalBrightness;
+  switch (ledTestMode) {
+    case LED_TEST_RED:
+      return strip.Color(value, 0, 0);
+    case LED_TEST_GREEN:
+      return strip.Color(0, value, 0);
+    case LED_TEST_BLUE:
+      return strip.Color(0, 0, value);
+    case LED_TEST_WHITE:
+      return strip.Color(value, value, value);
+    default:
+      return 0;
+  }
+}
+void renderLedTestFrame() {
+  uint32_t color = ledTestColorCode();
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    strip.setPixelColor(i, color);
+  }
+  applyLedCurrentLimitToFrame();
+  strip.show();
+}
 void setupLEDs() {
   strip.begin();  // INITIALIZE NeoPixel strip object
   strip.show();   // Turn OFF all pixels ASAP
   sendToLog("LEDs started...");
 }
 void lightUpLEDs() {
+  if (ledTestMode != LED_TEST_OFF) {
+    renderLedTestFrame();
+    return;
+  }
   if (delegatedControl) {
     for (byte i = 0; i < LED_COUNT; i++) {
       strip.setPixelColor(i, delegatedColors[i]);
@@ -6242,7 +6276,26 @@ PersistentCallbackInfo callbackInfoDisplayPlayedNotes = {
 };
 GEMItem menuItemDisplayPlayedNotes("DisplayNotes", displayPlayedNotes, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDisplayPlayedNotes));
 
-
+SelectOptionByte optionByteLedTest[] = {
+  { "Off", LED_TEST_OFF },
+  { "Red", LED_TEST_RED },
+  { "Green", LED_TEST_GREEN },
+  { "Blue", LED_TEST_BLUE },
+  { "White", LED_TEST_WHITE }
+};
+GEMSelect selectLedTest(sizeof(optionByteLedTest) / sizeof(SelectOptionByte), optionByteLedTest);
+void restoreLedTestFrame() {
+  ledTestMode = LED_TEST_OFF;
+  lightUpLEDs();
+}
+void ledTestMenuCallback(GEMCallbackData /*callbackData*/) {
+  restoreLedTestFrame();
+}
+GEMItem menuItemLedTest("LED Test", ledTestMode, selectLedTest, ledTestMenuCallback);
+void previewLedTest(GEMPreviewCallbackData previewData) {
+  ledTestMode = (previewData.previewSelectNum < 0) ? LED_TEST_OFF : previewData.previewValByte;
+  lightUpLEDs();
+}
 
 SelectOptionByte optionByteWheelType[] = { { "Springy", 0 }, { "Sticky", 1 } };
 GEMSelect selectWheelType(sizeof(optionByteWheelType) / sizeof(SelectOptionByte), optionByteWheelType);
@@ -7521,6 +7574,7 @@ void setupAdvancedMenuPage() {
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
   menuPageAdvanced.addMenuItem(menuItemDebug);
+  addPreviewMenuItem(menuPageAdvanced, menuItemLedTest, previewLedTest);
 }
 
 void setupMenu() {

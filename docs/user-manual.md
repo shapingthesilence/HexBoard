@@ -262,8 +262,11 @@ This page contains maintenance and system settings:
 - `Reset Defaults`
 - `Update Firmware`
 - `Serial Debug`
+- `LED Test`
 
 `ColorByKey` changes whether palette placement starts from the selected key center.
+
+`LED Test` is temporary and is not saved in profiles. Enter it and scroll through `Red`, `Green`, `Blue`, or `White` to light every LED immediately. The color tests use raw LED channels rather than the musical color palette, so `Blue` drives only the blue LED channel. Leaving the selector snaps it back to `Off` and restores the normal LED display.
 
 ## Settings Persistence
 
