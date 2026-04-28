@@ -38,7 +38,7 @@ On boot, the firmware:
 
 If no valid settings file is found, or if the settings file fails version or CRC validation, the board restores factory defaults and creates a fresh settings file.
 
-When an existing settings file is present, normal startup skips the color-channel flash and runs only a smooth rainbow splash. The splash starts one button to the right of the active layout center, so the factory `12 EDO` Wicki-Hayden layout radiates from `D4` instead of `C4`. The seven side command buttons run a separate color fade so they are visible without being swept into the splash. After the splash, the LEDs crossfade into the normal resting frame instead of popping on.
+When an existing settings file is present, normal startup runs a smooth rainbow splash.
 
 On first boot, when `/settings.dat` is missing, the board first fades all LEDs into a moderate white diagnostic level and holds it for about `2 seconds` before the splash. This makes missing pixels, weak LEDs, or uneven white balance easier to spot after flashing a fresh board.
 
@@ -74,8 +74,6 @@ The wheel behavior depends on menu settings:
 
 - `Springy`: returns to its default value when released
 - `Sticky`: holds its last value
-
-There is also an alternate wheel mode in the codebase, but it is currently hidden from the menu.
 
 ### Rotary Encoder
 
@@ -161,7 +159,7 @@ Options include:
 
 Available color modes are `Rainbow`, `Tiered`, `Alt`, `Fifths`, `Piano`, `Alt Piano`, `Filament`, and `Diatonic`. The animation list includes button, octave, by-note, star, splash, orbit, beams, reversed variants, and MIDI-in highlighting.
 
-`LED Limit` applies a calibrated cap after the frame is rendered. In bright modes, especially `Filament` and `Diatonic`, the board may dim the whole frame slightly instead of trying to drive every LED at full requested power. `Off` preserves the legacy behavior. The numbered limits are calibrated from laptop-side USB meter readings with the OLED active and buzzer disabled, then leave practical headroom for OLED and buzzer load. The factory default is `1.5 A`, which matches the older `2.0 A` limiter behavior that proved stable on MacBook USB power.
+`LED Limit` applies a brightness cap after the frame is rendered. In bright modes, especially `Filament` and `Diatonic`, the board may dim the whole frame slightly instead of trying to drive every LED at full requested power. `Off` leaves the LEDs fully uncapped which *will* cause crashes/brownouts at the most extreme settings. The numbered limits are calibrated to keep power draw under the stated value. The factory default is `1.5 A`, which is stable on most power supplies.
 
 ### Synth Options
 
@@ -186,9 +184,6 @@ On hardware `V1.2`, the headphone jack is active by default and an extra
 `Buzzer` toggle appears. Turning `Buzzer` on adds the piezo on top of the jack
 output.
 
-The `Sine` waveform is smoothed internally with interpolation, so high notes
-should sound less gritty than a plain wavetable lookup.
-
 #### Synth Terms In Plain Language
 
 The onboard synth is a simple sound generator inside HexBoard. It is separate
@@ -201,7 +196,7 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 - `Off`: no onboard synth sound
 - `Mono`: one note at a time, useful for lead lines
 - `Arp'gio`: cycles through held notes rhythmically
-- `Poly`: plays chords, up to `8` notes at a time
+- `Poly`: plays chords, up to `8` notes at a time - a bit quieter due to headroom needed
 
 `Waveform` is the basic tone color before the volume shape is applied:
 
@@ -242,8 +237,8 @@ For a sharper sound, use a brighter waveform such as `Saw`, `Square`, or
 `Triangl`, or `Strings`, then increase `Attack` and `Release`.
 
 If a sound feels too clicky, raise `Attack` one step. If notes smear together,
-lower `Release`. If a pluck does not fade away enough, lower `Sustain` or raise
-`Decay`. If a held note disappears too quickly, raise `Sustain`.
+lower `Release`. If a pluck does not fade away enough, lower `Sustain` or lower
+`Decay`. If a held note disappears too quickly, raise `Decay`.
 
 ### MIDI Options
 
@@ -326,7 +321,7 @@ This page contains maintenance and system settings:
 
 `ColorByKey` changes whether palette placement starts from the selected key center.
 
-`LED Test` is temporary and is not saved in profiles. Enter it and scroll through `Red`, `Green`, `Blue`, or `White` to light every LED immediately. The color tests use raw LED channels rather than the musical color palette, so `Blue` drives only the blue LED channel. Leaving the selector snaps it back to `Off` and restores the normal LED display.
+`LED Test` is temporary and is not saved in profiles. Enter it and scroll through `Red`, `Green`, `Blue`, or `White` to light every LED immediately. Leaving the selector snaps it back to `Off` and restores the normal LED display. This is useful for diagnosing LED health or for *very* harsh mood lighting.
 
 ## Settings Persistence
 
@@ -412,7 +407,7 @@ That is expected when you only changed color, brightness, or animation settings.
 
 ### The board resets when lots of LEDs turn white
 
-That usually means the LED draw is too high for the current power source. Lower `Brightness`, lower `Rest Bright`, or set `LED Limit` in `Color Options` to a safer value such as `500 mA`, `1.0 A`, or the factory-default `1.5 A`.
+That usually means the LED draw is too high for the current power source. Lower `Brightness`, lower `Rest Bright`, or (most importantly) set `LED Limit` in `Color Options` to a safer value such as `500 mA`, `1.0 A`, or the factory-default `1.5 A`.
 
 ### A tuning change reshuffled everything
 
