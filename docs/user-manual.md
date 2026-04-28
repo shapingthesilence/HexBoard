@@ -185,6 +185,62 @@ output.
 The `Sine` waveform is smoothed internally with interpolation, so high notes
 should sound less gritty than a plain wavetable lookup.
 
+#### Synth Terms In Plain Language
+
+The onboard synth is a simple sound generator inside HexBoard. It is separate
+from MIDI output, so you can use the onboard synth, external MIDI gear, or both.
+Turning the synth `Off` does not disable external MIDI. The onboard synth follows
+HexBoard's tuning directly; MPE settings are for external MIDI receivers.
+
+`Synth Mode` chooses how notes are played:
+
+- `Off`: no onboard synth sound
+- `Mono`: one note at a time, useful for lead lines
+- `Arp'gio`: cycles through held notes rhythmically
+- `Poly`: plays chords, up to `8` notes at a time
+
+`Waveform` is the basic tone color before the volume shape is applied:
+
+- `Sine`: soft, round, clean
+- `Triangl`: mellow, but a little clearer than sine
+- `Square`: hollow, buzzy, game-like
+- `Saw`: bright, edgy, brassy
+- `Hybrid`: general-purpose default that changes character across pitch ranges
+- `Strings`: smoother, string-like color
+- `Clrinet`: reed-like, nasal color
+
+`Attack`, `Decay`, `Sustain`, and `Release` shape the loudness of each note.
+These four controls are often called the envelope.
+
+- `Attack`: how quickly the sound fades in after pressing a note
+- `Decay`: how quickly the first hit settles down to the held level
+- `Sustain`: how loud the note stays while you keep holding it
+- `Release`: how long the sound fades out after you let go
+
+Short `Attack` feels immediate. Long `Attack` fades in. Low `Sustain` makes a
+note fade away even while you hold it. High `Sustain` keeps the note steady.
+Short `Release` stops quickly. Long `Release` leaves a tail after release.
+
+#### Beginner Synth Recipes
+
+Use these as starting points, then adjust by ear.
+
+| Sound | Synth Mode | Waveform | Attack | Decay | Sustain | Release | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Plucky | `Poly` or `Mono` | `Hybrid`, `Triangl`, or `Sine` | `0 ms` or `5 ms` | `50 ms` to `200 ms` | `0%` or `10%` | `50 ms` to `200 ms` | Fast start, quick fade, little held level |
+| Smooth pad | `Poly` | `Sine`, `Triangl`, or `Strings` | `200 ms` to `1 s` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
+| Lead | `Mono` | `Hybrid`, `Saw`, or `Square` | `0 ms` or `10 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Immediate and steady for melodies |
+| Chime or bell | `Poly` | `Sine` or `Triangl` | `0 ms` or `5 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
+| Arpeggio | `Arp'gio` | `Hybrid`, `Square`, or `Saw` | `0 ms` or `5 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed` and `Arp BPM` for rhythm |
+
+For a sharper sound, use a brighter waveform such as `Saw`, `Square`, or
+`Hybrid`, and keep `Attack` short. For a smoother sound, use `Sine`,
+`Triangl`, or `Strings`, then increase `Attack` and `Release`.
+
+If a sound feels too clicky, raise `Attack` one step. If notes smear together,
+lower `Release`. If a pluck does not fade away enough, lower `Sustain` or raise
+`Decay`. If a held note disappears too quickly, raise `Sustain`.
+
 ### MIDI Options
 
 This page controls MIDI routing and microtonal behavior.
