@@ -2,45 +2,34 @@
 
 ## What HexBoard Is
 
-HexBoard is a 140-button hexagonal MIDI controller built around an RP2040. The firmware in `src/HexBoard.ino` lets the board act as:
+HexBoard is a 140-button hexagonal MIDI controller and instrument. It can act as:
 
 - A USB and serial MIDI controller
 - A microtonal and isomorphic keyboard
 - A standalone synth with mono, polyphonic, and arpeggiated playback
 - A visual performance surface with per-key LEDs, animations, scales, and color modes
 
-This manual focuses on how to use the current firmware, not how to modify it.
+This manual focuses on playing and configuring HexBoard.
 
 ## Basic Hardware Layout
 
-The firmware treats the surface as:
+The playing surface has:
 
 - `133` musical note buttons
-- `7` dedicated command buttons in the offset bottom-left column area
-- `1` rotary encoder with push switch
-- `1` monochrome OLED menu display
-- `140` LEDs, one per button
+- `7` command buttons in the offset bottom-left column area
+- A rotary encoder with a push switch
+- A monochrome OLED menu display
+- One LED under each button
 
-The seven command buttons are reserved by the firmware for live control rather than note entry.
+The seven command buttons are for live controls such as velocity, modulation, and pitch bend. They do not play notes.
 
 ## Power-Up And Normal Operation
 
-On boot, the firmware:
+When you power on HexBoard, it loads your saved setup, starts the OLED menu, runs a smooth rainbow splash, and fades into the normal resting LED state.
 
-1. Starts USB MIDI
-2. Waits briefly for USB enumeration before flash access
-3. Mounts the onboard LittleFS file system
-4. Detects the hardware revision
-5. Loads saved settings and profiles
-6. Builds the OLED menu
-7. Applies the active tuning, layout, scale, LED state, MIDI routing, and synth settings
-8. Runs the boot LED self-check and fades into the normal resting LED state
+If saved settings are missing or unreadable, HexBoard restores factory defaults and saves a fresh default setup.
 
-If no valid settings file is found, or if the settings file fails version or CRC validation, the board restores factory defaults and creates a fresh settings file.
-
-When an existing settings file is present, normal startup runs a smooth rainbow splash.
-
-On first boot, when `/settings.dat` is missing, the board first fades all LEDs into a moderate white diagnostic level and holds it for about `2 seconds` before the splash. This makes missing pixels, weak LEDs, or uneven white balance easier to spot after flashing a fresh board.
+On first boot with no saved settings yet, the board also lights all LEDs at a moderate white level for about `2 seconds` before the rainbow splash. This helps you spot missing pixels, weak LEDs, or uneven white balance.
 
 ## Playing Notes
 
@@ -87,7 +76,7 @@ The panic stop sends note-off style cleanup and clears active output. It is the 
 
 ## OLED Menu Overview
 
-The main menu is built from these sections:
+The main menu includes:
 
 - `Tuning`
 - `Layout`
@@ -130,7 +119,7 @@ Options include:
 - `Mirror Hor.`
 - `Rotate`
 
-Changing layout remaps button pitches and refreshes the display rotation.
+Changing layout remaps button pitches. The screen orientation may also change to match the selected layout.
 
 ### Scales
 
@@ -159,7 +148,7 @@ Options include:
 
 Available color modes are `Rainbow`, `Tiered`, `Alt`, `Fifths`, `Piano`, `Alt Piano`, `Filament`, and `Diatonic`. The animation list includes button, octave, by-note, star, splash, orbit, beams, reversed variants, and MIDI-in highlighting.
 
-`LED Limit` applies a brightness cap after the frame is rendered. In bright modes, especially `Filament` and `Diatonic`, the board may dim the whole frame slightly instead of trying to drive every LED at full requested power. `Off` leaves the LEDs fully uncapped which *will* cause crashes/brownouts at the most extreme settings. The numbered limits are calibrated to keep power draw under the stated value. The factory default is `1.5 A`, which is stable on most power supplies.
+`LED Limit` helps prevent power problems by lowering LED output when a bright setting would draw too much current. This matters most in bright modes such as `Filament` and `Diatonic`. `Off` leaves the LEDs uncapped and can cause resets at extreme brightness. The factory default is `1.5 A`, which is stable on most power supplies.
 
 ### Synth Options
 
@@ -242,7 +231,7 @@ lower `Release`. If a pluck does not fade away enough, lower `Sustain` or lower
 
 ### MIDI Options
 
-This page controls MIDI routing and microtonal behavior.
+This page controls how HexBoard talks to external MIDI gear and music software.
 
 Options include:
 
@@ -257,17 +246,13 @@ Options include:
 - `RolandMT32`
 - `GeneralMidi`
 
-Notes:
-
-- `MPE Mode` can be `Auto`, `Disable`, or `Force`
-- `Extra MPE` enables additional per-note messages such as channel pressure and CC74
-- The MT-32 and General MIDI entries send program changes
+Most users can leave `MPE Mode` on `Auto`. Use `MPE Bend`, `MPE Low Ch`, and `MPE High Ch` when matching HexBoard to an MPE synth or plugin. `RolandMT32` and `GeneralMidi` send preset-selection messages for compatible external devices.
 
 ### External Delegated Control
 
-Host software can switch HexBoard into delegated control with SysEx. In that mode, normal note playback, arpeggiation, control wheels, and firmware LED rendering are paused while the host receives raw button events and drives all LEDs.
+Some external software can temporarily take over HexBoard as a button-and-light surface. In that mode, normal playing, arpeggiation, control wheels, and built-in LED animations are paused while the host controls the surface.
 
-Delegated control is intentionally not exposed in the OLED menu and is not saved in profiles. It starts disabled on boot and must be entered again by the external host. Host-driven LEDs still pass through the normal `Brightness` and `LED Limit` output path. Developer details are in `docs/delegated-control.md`.
+Delegated control is only for compatible host software. It is not shown in the OLED menu, is not saved in profiles, and starts disabled every time HexBoard boots. Host-driven LEDs still respect `Brightness` and `LED Limit`.
 
 ### Control Wheel
 
@@ -299,11 +284,11 @@ HexBoard supports `9` profile slots:
 - `Slot 7`
 - `Slot 8`
 
-Important behavior:
+How it behaves:
 
 - Auto-save always snapshots the current setup back into the `Boot/Auto-Save Slot`
-- Loading a slot immediately replaces the active runtime settings
-- Saving writes the current runtime settings into the chosen slot
+- Loading a slot immediately replaces the current setup
+- Saving stores the current setup in the chosen slot
 
 ### Advanced
 
@@ -319,38 +304,37 @@ This page contains maintenance and system settings:
 - `Serial Debug`
 - `LED Test`
 
-`ColorByKey` changes whether palette placement starts from the selected key center.
+`ColorByKey` makes compatible color modes follow the selected key.
 
 `LED Test` is temporary and is not saved in profiles. Enter it and scroll through `Red`, `Green`, `Blue`, or `White` to light every LED immediately. Leaving the selector snaps it back to `Off` and restores the normal LED display. This is useful for diagnosing LED health or for *very* harsh mood lighting.
 
-## Settings Persistence
+## Saving Settings
 
-Settings are stored in onboard flash using LittleFS.
+HexBoard saves settings to onboard storage.
 
-Current behavior:
+What to expect:
 
-- Changes are marked dirty immediately
-- If `Auto-Save` is enabled, the firmware writes after about `10 seconds` of inactivity
+- Changes become ready to save immediately
+- If `Auto-Save` is enabled, HexBoard saves after about `10 seconds` of inactivity
 - Manual profile saves write immediately
-- Saved profiles are protected by a settings header, version byte, and CRC32
-- Invalid or corrupted settings files are replaced with factory defaults
-- Flash writes mute audio briefly to avoid synth glitches during the write
+- If saved settings cannot be read, HexBoard restores factory defaults
+- Saving may mute the onboard synth very briefly
 
 ## Microtonal And MPE Behavior
 
-HexBoard supports standard 12-EDO and many non-12-EDO tunings. Depending on the tuning and menu settings, the firmware may:
+HexBoard supports standard `12 EDO` and many non-12-EDO tunings. Depending on the tuning and menu settings, HexBoard may:
 
-- Use standard single-channel MIDI
-- Use multi-channel standard MIDI for extended note ranges
-- Use MPE with per-note pitch bend
+- Send normal single-channel MIDI
+- Use multiple MIDI channels for wider note ranges
+- Use MPE for microtonal pitch bends
 
-In `Auto` mode, standard 12-EDO generally stays in regular MIDI mode, while microtonal use cases may switch to MPE behavior automatically.
+In `Auto` mode, standard `12 EDO` generally stays in normal MIDI mode, while microtonal setups may switch to MPE automatically.
 
 For DAW, plugin, and hardware synth setup, including pitch-bend range matching and channel-zone examples, see `docs/mpe-microtonal-setup.md`.
 
 ## Factory Defaults
 
-Important defaults in the current firmware include:
+Important factory defaults include:
 
 - Tuning: `12 EDO`
 - Layout: first 12-EDO layout
@@ -384,8 +368,6 @@ Hold the bootloader button while plugging it in:
 
 The board should appear as a removable USB drive. Drag the `.uf2` firmware file onto that drive, and the drive should eject when the board reboots into the new firmware.
 
-The repository `README.md` also documents the bootloader-based update path.
-
 ## Troubleshooting
 
 ### Stuck notes
@@ -411,4 +393,4 @@ That usually means the LED draw is too high for the current power source. Lower 
 
 ### A tuning change reshuffled everything
 
-That is expected. The firmware intentionally resets layout, scale, and key to known-valid values when the tuning changes.
+That is expected. HexBoard resets layout, scale, and key to known-valid values when the tuning changes.
