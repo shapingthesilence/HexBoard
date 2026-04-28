@@ -11,8 +11,6 @@
         https://github.com/earlephilhower/arduino-pico
       Additional board manager URL:
         https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-      Tools > USB Stack > (Adafruit TinyUSB)
-      Sketch > Export Compiled Binary
 
     Compilation instructions:
       Using arduino-cli...

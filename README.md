@@ -25,7 +25,6 @@ The user manual is for players and owners of the device. The MPE setup guide is 
 
 - `AGENTS.md`: AI agent project instructions, including the documentation update requirement
 - `src/HexBoard.ino`: primary firmware source
-- `HexBoard.ino`: root sketch copy used by some Arduino tooling
 - `docs/`: documentation for users and contributors
 - `Makefile`: local build shortcut for `arduino-cli`
 
@@ -116,8 +115,8 @@ The simplest local build is:
 make
 ```
 
-The `Makefile` copies `src/HexBoard.ino` into `build/build.ino` and compiles it with the board options used by this project.
-The local `200 MHz` build intentionally uses `Generic SPI /4` boot2 to keep the external flash clock stable, matching the Arduino IDE profile for this board.
+The `Makefile` builds from `src/HexBoard.ino` using the board options for this project. During the build it stages a generated sketch at `build/build.ino`; do not edit or maintain that generated file.
+The local `200 MHz` build intentionally uses `Generic SPI /4` boot2 to keep the external flash clock stable.
 
 The expected output artifact is:
 
@@ -127,7 +126,7 @@ build/build.ino.uf2
 
 ### Build Notes
 
-- Edit `src/HexBoard.ino`, not `build/build.ino`
+- Edit `src/HexBoard.ino`, not a root sketch copy or `build/build.ino`
 - If you change board parameters, keep the `Makefile` and source header comments in sync
 - The firmware currently depends on TinyUSB and the RP2040 dual-core runtime behavior
 

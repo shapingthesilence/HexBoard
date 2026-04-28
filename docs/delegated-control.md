@@ -20,7 +20,7 @@ Primary implementation points in `src/HexBoard.ino`:
 - `processLedSysEx()` converts host LED color records into cached NeoPixel colors.
 - `readHexes()`, `lightUpLEDs()`, `arpeggiate()`, `updateWheels()`, `animateLEDs()`, and `loop1()` contain runtime gates for delegated mode.
 
-The root `HexBoard.ino` file is currently kept in sync with `src/HexBoard.ino`, but `src/HexBoard.ino` is the build target used by the `Makefile`.
+`src/HexBoard.ino` is the firmware source used by the `Makefile`. `build/build.ino` is generated during compilation and should not be edited as source.
 
 ## Runtime Behavior
 

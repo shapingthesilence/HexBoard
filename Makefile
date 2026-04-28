@@ -1,4 +1,4 @@
-# Copied from the Arduino IDE 200 MHz Generic RP2040 build options.
+# HexBoard RP2040 build target.
 FQBN = rp2040:rp2040:generic:flash=16777216_8388608,freq=200,opt=Small,os=none,profile=Disabled,rtti=Disabled,stackprotect=Disabled,exceptions=Disabled,dbgport=Disabled,dbglvl=None,boot2=boot2_generic_03h_4_padded_checksum,usbstack=tinyusb,ipbtstack=ipv4only,uploadmethod=default
 
 build/build.ino.uf2: build/build.ino Makefile
