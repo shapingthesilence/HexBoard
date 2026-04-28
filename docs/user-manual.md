@@ -178,8 +178,12 @@ Options include:
 - `Arp Speed`
 - `Arp BPM`
 
-On hardware `V1.2`, an extra `Buzzer` toggle appears. The headphone jack stays
-active by default, and turning `Buzzer` on adds the piezo on top of the jack
+On hardware `V1.1`, the onboard synth plays through the piezo buzzer when the
+synth is active. There is no headphone-jack output path and no `Buzzer` menu
+toggle.
+
+On hardware `V1.2`, the headphone jack is active by default and an extra
+`Buzzer` toggle appears. Turning `Buzzer` on adds the piezo on top of the jack
 output.
 
 The `Sine` waveform is smoothed internally with interpolation, so high notes
