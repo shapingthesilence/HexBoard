@@ -314,6 +314,12 @@ table samples, reusing the low `8` bits of the existing `16`-bit phase
 accumulator. That is the first place to look if you want a cheap audio-quality
 improvement without increasing table size or changing the other waveforms.
 
+Pitch bend and square-wave modulation have synth-local smoothing separate from
+MIDI output. `setSynthFreq()` writes a target oscillator increment for held
+voices and only resets phase for new synth notes. The audio ISR slews each
+voice's current increment toward that target, and the square waveform reads a
+smoothed modulation value instead of `modWheel.curValue` directly.
+
 Anything that touches timing, interrupts, or shared state between cores deserves extra caution.
 
 ## LED And Visualization Notes

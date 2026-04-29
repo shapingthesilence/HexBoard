@@ -3850,6 +3850,71 @@ inline uint16_t interpolatedWaveSample(const byte* table, uint16_t phase) {
     inaccurate.
   */
 #define POLL_INTERVAL_IN_MICROSECONDS 24
+constexpr uint8_t SYNTH_PITCH_SMOOTH_SHIFT = 9;
+constexpr uint8_t SYNTH_MOD_SMOOTH_SHIFT = 9;
+
+inline uint32_t oscillatorIncrementFromFrequency(float frequency) {
+  if (frequency <= 0.0f) {
+    return 0;
+  }
+  constexpr float incrementScale = static_cast<float>(POLL_INTERVAL_IN_MICROSECONDS) * 4294.967296f;  // 2^32 / 1,000,000
+  float increment = frequency * incrementScale;
+  const float maxIncrement = static_cast<float>(std::numeric_limits<uint32_t>::max());
+  if (increment >= maxIncrement) {
+    return std::numeric_limits<uint32_t>::max();
+  }
+  return static_cast<uint32_t>(round(increment));
+}
+
+inline void smoothUint32Toward(uint32_t& current, uint32_t target, uint8_t shift) {
+  if (current == target) {
+    return;
+  }
+  if (target > current) {
+    uint32_t step = (target - current) >> shift;
+    if (step == 0) {
+      step = 1;
+    }
+    current += step;
+    if (current > target) {
+      current = target;
+    }
+  } else {
+    uint32_t step = (current - target) >> shift;
+    if (step == 0) {
+      step = 1;
+    }
+    current -= step;
+    if (current < target) {
+      current = target;
+    }
+  }
+}
+
+inline void smoothUint16Toward(uint16_t& current, uint16_t target, uint8_t shift) {
+  if (current == target) {
+    return;
+  }
+  if (target > current) {
+    uint16_t step = (target - current) >> shift;
+    if (step == 0) {
+      step = 1;
+    }
+    current += step;
+    if (current > target) {
+      current = target;
+    }
+  } else {
+    uint16_t step = (current - target) >> shift;
+    if (step == 0) {
+      step = 1;
+    }
+    current -= step;
+    if (current < target) {
+      current = target;
+    }
+  }
+}
 
 inline uint32_t ticksFromMicros(uint32_t micros) {
   if (micros == 0) {
@@ -4002,19 +4067,20 @@ void updateEnvelopeParamsFromSettings() {
     the form of an increment value, which is
     how much a counter would have to be increased
     every time the poll() interval is reached,
-    such that a counter overflows from 0 to 65,535
-    back to zero at some frequency per second.
+    such that the high 16 bits of the phase counter
+    loop across the waveform at the right frequency.
 
     The value of the counter is useful for reading
     a waveform sample, so that an analog signal
     can be emulated by reading the sample at each
-    poll() based on how far the counter has moved
-    towards 65,536.
+    poll() based on how far the phase has moved
+    through one waveform cycle.
   */
 class oscillator {
 public:
-  uint16_t increment = 0;
-  uint16_t counter = 0;
+  uint32_t increment = 0;        // current Q16.16 phase increment smoothed by the audio ISR
+  uint32_t targetIncrement = 0;  // target Q16.16 phase increment from the control path
+  uint32_t counter = 0;          // Q16.16 phase accumulator; high 16 bits are the waveform phase
   byte a = 127;
   byte b = 128;
   byte c = 255;
@@ -4025,10 +4091,23 @@ public:
 oscillator synth[POLYPHONY_LIMIT];  // maximum polyphony
 std::queue<byte> synthChQueue;
 const byte attenuation[] = { 64, 24, 17, 14, 12, 11, 10, 9, 8 };  // full volume in mono mode; equalized volume in poly.
+uint16_t synthModValueQ8 = 0;
 
 byte arpeggiatingNow = UNUSED_NOTE;  // if this is 255, set to off (0% duty cycle)
 uint64_t arpeggiateTime = 0;         // Used to keep track of when this note started playing in ARPEG mode
 uint64_t arpeggiateLength = 62500;   // default: 1/32 note at 120 BPM
+
+inline uint8_t smoothedSynthModValue() {
+  int16_t targetValue = modWheel.curValue;
+  if (targetValue < 0) {
+    targetValue = 0;
+  } else if (targetValue > 127) {
+    targetValue = 127;
+  }
+  const uint16_t targetQ8 = static_cast<uint16_t>(targetValue) << 8;
+  smoothUint16Toward(synthModValueQ8, targetQ8, SYNTH_MOD_SMOOTH_SHIFT);
+  return static_cast<uint8_t>((synthModValueQ8 + 128u) >> 8);
+}
 
 void updateArpeggiatorTiming() {
   uint32_t bpm = synthBPM;
@@ -4059,6 +4138,7 @@ void RAM_FUNC(poll)() {
   }
   uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
   int32_t mix = 0;    // signed accumulator stays well within int32_t bounds
+  const uint8_t synthModValue = smoothedSynthModValue();
   // ============================================================
   // Smooth poly loudness normalization
   // Old behavior: scale by integer "voices" count.
@@ -4107,6 +4187,7 @@ void RAM_FUNC(poll)() {
           env.level = 0;
           env.stage = EnvelopeStage::Idle;
           synth[i].increment = 0;
+          synth[i].targetIncrement = 0;
           synth[i].counter = 0;
           publishVoiceFreed(i);
         } else {
@@ -4120,6 +4201,7 @@ void RAM_FUNC(poll)() {
       case EnvelopeCommand::Reset: {
         env = EnvelopeState{};
         synth[i].increment = 0;
+        synth[i].targetIncrement = 0;
         synth[i].counter = 0;
         channelInUse[i].store(false, std::memory_order_relaxed);
         voiceGenerations[i].store(0, std::memory_order_relaxed);
@@ -4130,7 +4212,7 @@ void RAM_FUNC(poll)() {
         break;
     }
 
-    if (!synth[i].increment && env.stage == EnvelopeStage::Idle) {
+    if (!synth[i].targetIncrement && env.stage == EnvelopeStage::Idle) {
       continue;
     }
 
@@ -4175,6 +4257,7 @@ void RAM_FUNC(poll)() {
           env.level = 0;
           env.stage = EnvelopeStage::Idle;
           synth[i].increment = 0;
+          synth[i].targetIncrement = 0;
           synth[i].counter = 0;
           publishVoiceFreed(i);
         } else {
@@ -4185,21 +4268,23 @@ void RAM_FUNC(poll)() {
       default:
         env.level = 0;
         synth[i].increment = 0;
+        synth[i].targetIncrement = 0;
         synth[i].counter = 0;
         continue;
     }
 
-    if (env.stage == EnvelopeStage::Idle || env.level == 0 || !synth[i].increment) {
+    if (env.stage == EnvelopeStage::Idle || env.level == 0 || !synth[i].targetIncrement) {
       continue;
     }
 
-    synth[i].counter += synth[i].increment;  // should loop from 65536 -> 0
-    p = synth[i].counter;
+    smoothUint32Toward(synth[i].increment, synth[i].targetIncrement, SYNTH_PITCH_SMOOTH_SHIFT);
+    synth[i].counter += synth[i].increment;  // high 16 bits loop from 65535 -> 0
+    p = static_cast<uint16_t>(synth[i].counter >> 16);
     t = p >> 8;
     switch (currWave) {
       case WAVEFORM_SAW: break;
       case WAVEFORM_TRIANGLE: p = 2 * ((p >> 15) ? p : (65535 - p)); break;
-      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - modWheel.curValue * 7 * 16)); break;
+      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - static_cast<int32_t>(synthModValue) * 7 * 16)); break;
       case WAVEFORM_HYBRID:
         if (t <= synth[i].a) {
           p = 0;
@@ -4415,7 +4500,7 @@ inline void recomputePitchBendFactor() {
   pitchBendFactor = exp2(pbWheel.curValue * DEFAULT_PITCH_BEND_RANGE_SEMITONES / 98304.0f);
 }
 
-void RAM_FUNC(setSynthFreq)(float frequency, byte channel) {
+void RAM_FUNC(setSynthFreq)(float frequency, byte channel, bool resetPhase = false) {
   if (channel == 0) {
     return;
   }
@@ -4428,8 +4513,19 @@ void RAM_FUNC(setSynthFreq)(float frequency, byte channel) {
     }
   }
   float f = tunedFrequency * pitchBendFactor;
-  synth[c].counter = 0;
-  synth[c].increment = round(f * POLL_INTERVAL_IN_MICROSECONDS * 0.065536);  // cycle 0-65535 at resultant frequency
+  uint32_t newIncrement = oscillatorIncrementFromFrequency(f);
+  if (newIncrement == 0) {
+    synth[c].increment = 0;
+    synth[c].targetIncrement = 0;
+    synth[c].counter = 0;
+    synth[c].eq = 0;
+    return;
+  }
+  if (resetPhase || synth[c].increment == 0 || synth[c].targetIncrement == 0) {
+    synth[c].counter = 0;
+    synth[c].increment = newIncrement;
+  }
+  synth[c].targetIncrement = newIncrement;
   synth[c].eq = isoTwoTwentySix(f);
   if (currWave == WAVEFORM_HYBRID) {
     if (f < TRANSITION_SQUARE) {
@@ -4502,7 +4598,7 @@ void replaceMonoSynthWith(byte x) {
     synthChannelOwners[0].store(static_cast<int16_t>(arpeggiatingNow), std::memory_order_relaxed);
     voiceGenerations[0].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
     beginEnvelopeAttack(0);
-    setSynthFreq(h[arpeggiatingNow].frequency, 1);
+    setSynthFreq(h[arpeggiatingNow].frequency, 1, true);
   } else {
     synthChannelOwners[0].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
     beginEnvelopeRelease(0);
@@ -4516,6 +4612,7 @@ void resetSynthFreqs() {
   nextVoiceGeneration.store(1, std::memory_order_relaxed);
   for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
     synth[i].increment = 0;
+    synth[i].targetIncrement = 0;
     synth[i].counter = 0;
     publishEnvelopeCommand(i, EnvelopeCommand::Reset);
     channelInUse[i].store(false, std::memory_order_relaxed);
@@ -4649,7 +4746,7 @@ void trySynthNoteOn(byte x) {
       synthChannelOwners[stolenChannel - 1].store(static_cast<int16_t>(x), std::memory_order_relaxed);
       voiceGenerations[stolenChannel - 1].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
       beginEnvelopeAttack(stolenChannel - 1);
-      setSynthFreq(h[x].frequency, stolenChannel);
+      setSynthFreq(h[x].frequency, stolenChannel, true);
       sendToLog("stole synth channel " + std::to_string(stolenChannel));
       return;
     }
@@ -4659,7 +4756,7 @@ void trySynthNoteOn(byte x) {
     synthChannelOwners[channel - 1].store(static_cast<int16_t>(x), std::memory_order_relaxed);
     voiceGenerations[channel - 1].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
     beginEnvelopeAttack(channel - 1);
-    setSynthFreq(h[x].frequency, channel);
+    setSynthFreq(h[x].frequency, channel, true);
     sendToLog("popped " + std::to_string(channel) + " off the synth queue");
   } else {
     if (h[x].MIDIch) {

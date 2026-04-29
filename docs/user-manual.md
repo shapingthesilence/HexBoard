@@ -266,6 +266,11 @@ Options include:
 - `Pitch Bend`: `Springy` or `Sticky`
 - `Mod Wheel`: `Springy` or `Sticky`
 
+The onboard synth smooths pitch-bend wheel changes and square-wave modulation
+internally so button-controlled bends and tone changes do not jump as hard
+between command-wheel updates. External MIDI still receives the normal
+pitch-bend and modulation messages.
+
 ### Transpose
 
 `Transpose` shifts sounded pitch without changing the visual layout.

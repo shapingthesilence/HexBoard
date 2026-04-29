@@ -319,10 +319,16 @@ Key implementation facts:
   to `10` bits lowers the carrier from about `392 kHz` to `98 kHz` at the
   project's `200 MHz` build target, which can make high-register sine tones
   harsher on the jack output.
-- The oscillator counter is `uint16_t`, so phase wraps over a 16-bit range.
+- The oscillator counter is a `uint32_t` Q16.16 phase accumulator; the high `16`
+  bits are the waveform phase and the low `16` bits carry fractional phase.
+- Held notes use target oscillator increments that the audio ISR slews toward,
+  so pitch-bend wheel updates do not reset phase or jump instantly in the
+  onboard synth.
 - `WAVEFORM_SINE` linearly interpolates between adjacent wavetable entries
   using the low `8` bits of phase; `STRINGS` and `CLARINET` still use direct
   table lookup.
+- `WAVEFORM_SQUARE` reads a synth-local smoothed modulation value for pulse
+  width; external MIDI CC output still uses the command wheel's current value.
 - Envelope commands are shared through value arrays plus published/consumed sequence counters.
 - Voice-free notifications use their own published/consumed sequence counters.
 - Channel ownership uses atomic state to coordinate loop code with the ISR-adjacent audio path.
