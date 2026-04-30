@@ -158,6 +158,7 @@ Options include:
 
 - `Synth Mode`: `Off`, `Mono`, `Arp'gio`, `Poly`
 - `Waveform`
+- `Drive`
 - `Attack`
 - `Decay`
 - `Sustain`
@@ -196,6 +197,13 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 - `Hybrid`: general-purpose default that changes character across pitch ranges
 - `Strings`: smoother, string-like color
 - `Clrinet`: reed-like, nasal color
+
+`Drive` adds soft saturation after the voices are mixed:
+
+- `Off`: clean output, and the factory default
+- `Warm`: a subtle push that adds a little body
+- `Edge`: more obvious bite
+- `Dirty`: stronger saturation for rougher synth tones
 
 `Attack`, `Decay`, `Sustain`, and `Release` shape the loudness of each note.
 These four controls are often called the envelope.
@@ -351,6 +359,7 @@ Important factory defaults include:
 - MPE mode: `Auto`
 - Synth: `Off`
 - Waveform: `Hybrid`
+- Drive: `Off`
 - LED brightness: `Dim`
 - LED limit: `Off`
 - Animation: `Button`

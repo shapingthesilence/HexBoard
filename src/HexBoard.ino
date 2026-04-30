@@ -277,6 +277,12 @@ constexpr byte WAVEFORM_SAW = 9;
 constexpr byte WAVEFORM_TRIANGLE = 10;
 byte currWave = WAVEFORM_HYBRID;
 
+constexpr byte SYNTH_DRIVE_OFF = 0;
+constexpr byte SYNTH_DRIVE_WARM = 1;
+constexpr byte SYNTH_DRIVE_EDGE = 2;
+constexpr byte SYNTH_DRIVE_DIRTY = 3;
+byte synthDrive = SYNTH_DRIVE_OFF;
+
 constexpr byte RAINBOW_MODE = 0;
 constexpr byte TIERED_COLOR_MODE = 1;
 constexpr byte ALTERNATE_COLOR_MODE = 2;
@@ -3585,6 +3591,34 @@ inline int32_t RAM_FUNC(scalePiezoSample)(int32_t sample, uint16_t amplitude) {
   }
   return negative ? -static_cast<int32_t>(scaled) : static_cast<int32_t>(scaled);
 }
+
+inline int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
+  uint16_t gainQ8 = 256;
+  switch (synthDrive) {
+    case SYNTH_DRIVE_WARM: gainQ8 = 192; break;
+    case SYNTH_DRIVE_EDGE: gainQ8 = 256; break;
+    case SYNTH_DRIVE_DIRTY: gainQ8 = 384; break;
+    case SYNTH_DRIVE_OFF:
+    default:
+      return sample;
+  }
+
+  int32_t x = (sample * static_cast<int32_t>(gainQ8)) >> 8;
+  if (x > SHAPE_CLAMP) x = SHAPE_CLAMP;
+  if (x < -SHAPE_CLAMP) x = -SHAPE_CLAMP;
+
+  const bool negative = x < 0;
+  const uint32_t mag = negative ? static_cast<uint32_t>(-x) : static_cast<uint32_t>(x);
+#if (PWM_BITS == 8)
+  constexpr uint8_t DRIVE_CLAMP_SHIFT = 7;
+#else
+  constexpr uint8_t DRIVE_CLAMP_SHIFT = 9;
+#endif
+  uint32_t cubeTerm = (((mag * mag) >> DRIVE_CLAMP_SHIFT) * mag) >> DRIVE_CLAMP_SHIFT;
+  int32_t shaped = ((3 * static_cast<int32_t>(mag)) - static_cast<int32_t>(cubeTerm)) >> 1;
+  if (shaped > SHAPE_CLAMP) shaped = SHAPE_CLAMP;
+  return negative ? -shaped : shaped;
+}
 /*
     These definitions provide 8-bit samples to emulate.
     You can add your own as desired; it must
@@ -4533,6 +4567,9 @@ void RAM_FUNC(poll)() {
   int32_t sample = scaled >> OUTPUT_SHIFT;
   if (sample >  SHAPE_CLAMP) sample =  SHAPE_CLAMP;
   if (sample < -SHAPE_CLAMP) sample = -SHAPE_CLAMP;
+  if (synthDrive != SYNTH_DRIVE_OFF) {
+    sample = applySynthDrive(sample);
+  }
 
   // ----- JACK: fixed midpoint -----
   int32_t jack = PWM_MID + sample;
@@ -5592,7 +5629,8 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 3;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 4;
+constexpr uint8_t PREVIOUS_SETTINGS_VERSION = 3;
 constexpr uint8_t LEGACY_SETTINGS_VERSION = 2;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
@@ -5664,6 +5702,7 @@ enum class SettingKey : uint8_t {
   EnvelopeReleaseIndex,
   DisplayPlayedNotes,
   LedCurrentLimitMode,
+  SynthDrive,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -5671,8 +5710,10 @@ enum class SettingKey : uint8_t {
 // Use a constexpr to get the total number of settings.
 constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
 constexpr uint8_t NUM_SETTINGS_V2 = static_cast<uint8_t>(SettingKey::LedCurrentLimitMode);
+constexpr uint8_t NUM_SETTINGS_V3 = static_cast<uint8_t>(SettingKey::SynthDrive);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 constexpr size_t SETTINGS_DATA_SIZE_V2 = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS_V2;
+constexpr size_t SETTINGS_DATA_SIZE_V3 = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS_V3;
 
 // ==================================================
 // Global Settings Array and Factory Defaults
@@ -5748,6 +5789,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* EnvelopeReleaseIndex         */ 3,
   /* Display played notes         */ 0,
   /* LED current limit mode       */ LED_CURRENT_LIMIT_1500MA,
+  /* SynthDrive                   */ SYNTH_DRIVE_OFF,
 };
 
 // ==================================================
@@ -5826,7 +5868,40 @@ bool migrateSettingsV2(File& f, const SettingsHeader& header) {
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
   settingsDirty = false;
-  sendToLog("Settings migrated from version 2 to version 3.");
+  sendToLog("Settings migrated from version 2 to version " + std::to_string(CURRENT_SETTINGS_VERSION) + ".");
+  save_settings();
+  return true;
+}
+
+bool migrateSettingsV3(File& f, const SettingsHeader& header) {
+  std::array<uint8_t, SETTINGS_DATA_SIZE_V3> previousProfiles = { 0 };
+  size_t bytesRead = f.read(previousProfiles.data(), SETTINGS_DATA_SIZE_V3);
+  f.close();
+  if (bytesRead != SETTINGS_DATA_SIZE_V3) {
+    sendToLog("Warning: Previous settings data incomplete. Restoring defaults.");
+    applyFactoryDefaultsToSettings();
+    save_settings();
+    return false;
+  }
+
+  uint32_t computed = crc32(previousProfiles.data(), SETTINGS_DATA_SIZE_V3);
+  if (computed != header.crc32) {
+    sendToLog("Previous settings CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
+    applyFactoryDefaultsToSettings();
+    save_settings();
+    return false;
+  }
+
+  applyFactoryDefaultsToSettings();
+  for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
+    memcpy(settingsProfiles[profile],
+           previousProfiles.data() + (static_cast<size_t>(profile) * NUM_SETTINGS_V3),
+           NUM_SETTINGS_V3);
+  }
+  activeProfileIndex = defaultProfileIndex;
+  settings = settingsProfiles[activeProfileIndex];
+  settingsDirty = false;
+  sendToLog("Settings migrated from version 3 to version " + std::to_string(CURRENT_SETTINGS_VERSION) + ".");
   save_settings();
   return true;
 }
@@ -5863,6 +5938,9 @@ bool load_settings() {
   }
   if (header.version == LEGACY_SETTINGS_VERSION) {
     return migrateSettingsV2(f, header);
+  }
+  if (header.version == PREVIOUS_SETTINGS_VERSION) {
+    return migrateSettingsV3(f, header);
   }
   if (header.version != CURRENT_SETTINGS_VERSION) {
     sendToLog("Settings version mismatch. File version: " + std::to_string(header.version) + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION));
@@ -7225,6 +7303,25 @@ void previewWaveform(GEMPreviewCallbackData previewData) {
   resetSynthFreqs();
 }
 
+SelectOptionByte optionByteSynthDrive[] = {
+  { "Off", SYNTH_DRIVE_OFF },
+  { "Warm", SYNTH_DRIVE_WARM },
+  { "Edge", SYNTH_DRIVE_EDGE },
+  { "Dirty", SYNTH_DRIVE_DIRTY }
+};
+GEMSelect selectSynthDrive(sizeof(optionByteSynthDrive) / sizeof(SelectOptionByte), optionByteSynthDrive);
+PersistentCallbackInfo callbackInfoSynthDrive = {
+  static_cast<uint8_t>(SettingKey::SynthDrive),
+  reinterpret_cast<void*>(&synthDrive),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemSynthDrive("Drive", synthDrive, selectSynthDrive, universalSaveCallback,
+                           reinterpret_cast<void*>(&callbackInfoSynthDrive));
+void previewSynthDrive(GEMPreviewCallbackData previewData) {
+  synthDrive = previewData.previewValByte;
+}
+
 PersistentCallbackInfo callbackInfoSynthBPM = {
   static_cast<uint8_t>(SettingKey::SynthBPM),
   reinterpret_cast<void*>(&synthBPM),
@@ -7430,6 +7527,10 @@ void syncSettingsToRuntime() {
 
   playbackMode = settingValue(SettingKey::PlaybackMode);
   currWave = settingValue(SettingKey::Waveform);
+  synthDrive = settingValue(SettingKey::SynthDrive);
+  if (synthDrive > SYNTH_DRIVE_DIRTY) {
+    synthDrive = SYNTH_DRIVE_OFF;
+  }
   synthBuzzerEnabled = decodeStoredBuzzerEnabled(settingValue(SettingKey::AudioDestination));
   syncAudioDestinationToRuntime();
   arpeggiatorDivision = settingValue(SettingKey::ArpeggiatorDivision);
@@ -7753,6 +7854,7 @@ void setupSynthMenuPage() {
   menuPageSynth.addMenuItem(menuItemPlayback);
   // menuItemAudioD added here for hardware V1.2
   addPreviewMenuItem(menuPageSynth, menuItemWaveform, previewWaveform);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeAttack, previewEnvelopeAttack);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeDecay, previewEnvelopeDecay);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeSustain, previewEnvelopeSustain);

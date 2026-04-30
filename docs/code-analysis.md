@@ -400,15 +400,18 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `3`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `4`, and `PROFILE_COUNT` is `9`.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the calibrated table above.
+
+The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled.
 
 Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` files migrate to version `3` by appending the new LED current-limit setting with its factory default
+- version `2` files migrate to version `4` by appending the LED current-limit and synth-drive settings with factory defaults
+- version `3` files migrate to version `4` by appending the synth-drive setting with its factory default
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults
@@ -468,7 +471,7 @@ The rotary encoder is polled on core 1 and consumed on core 0. Holding the encod
 - The single-file structure makes cross-subsystem side effects easy to miss.
 - Dynamic containers still exist in live paths.
 - Dynamic JI release tracking assumes a simple pressed-key ordering.
-- Settings schema changes currently fall back to defaults on version mismatch rather than migrating.
+- Unknown settings schema versions still fall back to defaults on version mismatch.
 - Flash writes still pause interrupt-driven audio, even though the code mutes before saving.
 - Delegated-control input is intentionally external-facing, so SysEx parsing should stay bounds-checked and isolated.
 - Hardware-version behavior is mixed into runtime/menu setup and needs testing on both revisions.

@@ -259,12 +259,14 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `3`
+- `CURRENT_SETTINGS_VERSION` is currently `4`
 - the LED current-limit default is `1.5 A`; its internal limiter budget is calibrated to match the previous `2.0 A` behavior
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
+- the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
-- version `2` settings files are migrated in place to version `3` by appending the new LED current-limit byte with its factory default
+- version `2` settings files are migrated in place to version `4` by appending the LED current-limit and synth-drive bytes with factory defaults
+- version `3` settings files are migrated in place to version `4` by appending the synth-drive byte with its factory default
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
@@ -272,7 +274,7 @@ Important implementation details:
   jack-default `Buzzer` toggle; legacy stored values are interpreted by
   checking whether the older byte had the piezo bit set
 
-If you add, remove, or reorder settings, think about migration. The current code has an explicit `2 -> 3` migration because the new LED current-limit setting was appended to the schema. Unknown version mismatches still fall back to defaults.
+If you add, remove, or reorder settings, think about migration. The current code has explicit migrations for `2 -> 4` and `3 -> 4` because new settings were appended to the schema. Unknown version mismatches still fall back to defaults.
 
 ## MIDI And Tuning Notes
 
