@@ -159,6 +159,8 @@ Options include:
 - `Synth Mode`: `Off`, `Mono`, `Arp'gio`, `Poly`
 - `Waveform`
 - `Drive`
+- `Mod Target`
+- `Vib Speed`
 - `Attack`
 - `Decay`
 - `Sustain`
@@ -204,6 +206,14 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 - `Warm`: a subtle push that adds a little body
 - `Edge`: more obvious bite
 - `Dirty`: stronger saturation for rougher synth tones
+
+`Mod Target` chooses how the mod wheel affects the onboard synth:
+
+- `Pulse`: changes pulse width on the `Square` waveform
+- `Vibrato`: adds pitch vibrato to the active synth voices
+
+External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed`
+sets the onboard vibrato LFO speed when `Mod Target` is `Vibrato`.
 
 `Attack`, `Decay`, `Sustain`, and `Release` shape the loudness of each note.
 These four controls are often called the envelope.
@@ -274,9 +284,9 @@ Options include:
 - `Pitch Bend`: `Springy` or `Sticky`
 - `Mod Wheel`: `Springy` or `Sticky`
 
-The onboard synth smooths pitch-bend wheel changes and square-wave modulation
-internally so button-controlled bends and tone changes do not jump as hard
-between command-wheel updates. External MIDI still receives the normal
+The onboard synth smooths pitch-bend wheel changes, pulse-width modulation, and
+vibrato depth internally so button-controlled bends and tone changes do not jump
+as hard between command-wheel updates. External MIDI still receives the normal
 pitch-bend and modulation messages.
 
 ### Transpose
@@ -360,6 +370,8 @@ Important factory defaults include:
 - Synth: `Off`
 - Waveform: `Hybrid`
 - Drive: `Off`
+- Mod target: `Pulse`
+- Vibrato speed: `6 Hz`
 - LED brightness: `Dim`
 - LED limit: `Off`
 - Animation: `Button`

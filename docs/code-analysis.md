@@ -400,18 +400,21 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `4`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `5`, and `PROFILE_COUNT` is `9`.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the calibrated table above.
 
 The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled.
 
+The Synth Options mod-wheel routing controls are persisted as `SynthModTarget` and `SynthVibratoSpeed`. Pulse-width modulation remains the default target. Vibrato uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the mod wheel is above zero.
+
 Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` files migrate to version `4` by appending the LED current-limit and synth-drive settings with factory defaults
-- version `3` files migrate to version `4` by appending the synth-drive setting with its factory default
+- version `2` files migrate to version `5` by appending LED current-limit and synth modulation settings with factory defaults
+- version `3` files migrate to version `5` by appending synth-drive and synth modulation settings with factory defaults
+- version `4` files are intentionally not migrated because version `4` was not published
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults

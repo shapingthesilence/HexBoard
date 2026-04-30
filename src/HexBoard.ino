@@ -283,6 +283,16 @@ constexpr byte SYNTH_DRIVE_EDGE = 2;
 constexpr byte SYNTH_DRIVE_DIRTY = 3;
 byte synthDrive = SYNTH_DRIVE_OFF;
 
+constexpr byte SYNTH_MOD_TARGET_PULSE_WIDTH = 0;
+constexpr byte SYNTH_MOD_TARGET_VIBRATO = 1;
+byte synthModTarget = SYNTH_MOD_TARGET_PULSE_WIDTH;
+
+constexpr byte SYNTH_VIBRATO_SPEED_SLOW = 0;
+constexpr byte SYNTH_VIBRATO_SPEED_MEDIUM = 1;
+constexpr byte SYNTH_VIBRATO_SPEED_FAST = 2;
+constexpr byte SYNTH_VIBRATO_SPEED_FASTEST = 3;
+byte synthVibratoSpeed = SYNTH_VIBRATO_SPEED_MEDIUM;
+
 constexpr byte RAINBOW_MODE = 0;
 constexpr byte TIERED_COLOR_MODE = 1;
 constexpr byte ALTERNATE_COLOR_MODE = 2;
@@ -3968,6 +3978,15 @@ inline uint16_t interpolatedWaveSample(const byte* table, uint16_t phase) {
 #define POLL_INTERVAL_IN_MICROSECONDS 24
 constexpr uint8_t SYNTH_PITCH_SMOOTH_SHIFT = 9;
 constexpr uint8_t SYNTH_MOD_SMOOTH_SHIFT = 9;
+constexpr uint32_t vibratoPhaseIncrementFromHz(uint8_t hz) {
+  return static_cast<uint32_t>((static_cast<uint64_t>(hz) * POLL_INTERVAL_IN_MICROSECONDS * 4294967296ULL) / 1000000ULL);
+}
+constexpr std::array<uint32_t, 4> synthVibratoPhaseIncrementOptions = {
+  vibratoPhaseIncrementFromHz(4),
+  vibratoPhaseIncrementFromHz(6),
+  vibratoPhaseIncrementFromHz(8),
+  vibratoPhaseIncrementFromHz(10)
+};
 
 inline void RAM_FUNC(recordISRProfileSample)(uint32_t startTime, uint8_t voices, uint8_t flags) {
   uint32_t dt = timer_hw->timerawl - startTime;
@@ -4255,6 +4274,8 @@ oscillator synth[POLYPHONY_LIMIT];  // maximum polyphony
 std::queue<byte> synthChQueue;
 byte attenuation[] = { 64, 24, 17, 14, 12, 11, 10, 9, 8 };  // RAM-resident; read by poll() every audio tick.
 uint16_t synthModValueQ8 = 0;
+uint32_t synthVibratoPhase = 0;
+uint32_t synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[SYNTH_VIBRATO_SPEED_MEDIUM];
 
 byte arpeggiatingNow = UNUSED_NOTE;  // if this is 255, set to off (0% duty cycle)
 uint64_t arpeggiateTime = 0;         // Used to keep track of when this note started playing in ARPEG mode
@@ -4270,6 +4291,34 @@ inline uint8_t RAM_FUNC(smoothedSynthModValue)() {
   const uint16_t targetQ8 = static_cast<uint16_t>(targetValue) << 8;
   smoothUint16Toward(synthModValueQ8, targetQ8, SYNTH_MOD_SMOOTH_SHIFT);
   return static_cast<uint8_t>((synthModValueQ8 + 128u) >> 8);
+}
+
+void updateSynthVibratoParams() {
+  if (synthModTarget > SYNTH_MOD_TARGET_VIBRATO) {
+    synthModTarget = SYNTH_MOD_TARGET_PULSE_WIDTH;
+  }
+  if (synthVibratoSpeed >= synthVibratoPhaseIncrementOptions.size()) {
+    synthVibratoSpeed = SYNTH_VIBRATO_SPEED_MEDIUM;
+  }
+  synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[synthVibratoSpeed];
+}
+
+inline uint32_t RAM_FUNC(applySynthVibrato)(uint32_t increment, int16_t vibratoAmount) {
+  if (vibratoAmount == 0) {
+    return increment;
+  }
+
+  int32_t offset = (static_cast<int32_t>(increment >> 16) * static_cast<int32_t>(vibratoAmount)) >> 2;
+  if (offset < 0) {
+    uint32_t negativeOffset = static_cast<uint32_t>(-offset);
+    return (negativeOffset >= increment) ? 0 : (increment - negativeOffset);
+  }
+
+  uint32_t positiveOffset = static_cast<uint32_t>(offset);
+  if (std::numeric_limits<uint32_t>::max() - increment < positiveOffset) {
+    return std::numeric_limits<uint32_t>::max();
+  }
+  return increment + positiveOffset;
 }
 
 void updateArpeggiatorTiming() {
@@ -4302,6 +4351,12 @@ void RAM_FUNC(poll)() {
   uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
   int32_t mix = 0;    // signed accumulator stays well within int32_t bounds
   const uint8_t synthModValue = smoothedSynthModValue();
+  const uint8_t pulseWidthModValue = (synthModTarget == SYNTH_MOD_TARGET_PULSE_WIDTH) ? synthModValue : 0;
+  int16_t synthVibratoAmount = 0;
+  if (synthModTarget == SYNTH_MOD_TARGET_VIBRATO && synthModValue > 0) {
+    synthVibratoPhase += synthVibratoPhaseIncrement;
+    synthVibratoAmount = (static_cast<int16_t>(sine[synthVibratoPhase >> 24]) - 128) * static_cast<int16_t>(synthModValue);
+  }
   // ============================================================
   // Smooth poly loudness normalization
   // Old behavior: scale by integer "voices" count.
@@ -4444,13 +4499,17 @@ void RAM_FUNC(poll)() {
     }
 
     smoothUint32Toward(synth[i].increment, synth[i].targetIncrement, SYNTH_PITCH_SMOOTH_SHIFT);
-    synth[i].counter += synth[i].increment;  // high 16 bits loop from 65535 -> 0
+    uint32_t phaseIncrement = synth[i].increment;
+    if (synthVibratoAmount != 0) {
+      phaseIncrement = applySynthVibrato(phaseIncrement, synthVibratoAmount);
+    }
+    synth[i].counter += phaseIncrement;  // high 16 bits loop from 65535 -> 0
     p = static_cast<uint16_t>(synth[i].counter >> 16);
     t = p >> 8;
     switch (currWave) {
       case WAVEFORM_SAW: break;
       case WAVEFORM_TRIANGLE: p = 2 * ((p >> 15) ? p : (65535 - p)); break;
-      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - static_cast<int32_t>(synthModValue) * 7 * 16)); break;
+      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - static_cast<int32_t>(pulseWidthModValue) * 7 * 16)); break;
       case WAVEFORM_HYBRID:
         if (t <= synth[i].a) {
           p = 0;
@@ -5629,8 +5688,8 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 4;
-constexpr uint8_t PREVIOUS_SETTINGS_VERSION = 3;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 5;
+constexpr uint8_t MIGRATABLE_SETTINGS_VERSION_V3 = 3;
 constexpr uint8_t LEGACY_SETTINGS_VERSION = 2;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
@@ -5703,6 +5762,8 @@ enum class SettingKey : uint8_t {
   DisplayPlayedNotes,
   LedCurrentLimitMode,
   SynthDrive,
+  SynthModTarget,
+  SynthVibratoSpeed,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -5790,6 +5851,8 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* Display played notes         */ 0,
   /* LED current limit mode       */ LED_CURRENT_LIMIT_1500MA,
   /* SynthDrive                   */ SYNTH_DRIVE_OFF,
+  /* SynthModTarget               */ SYNTH_MOD_TARGET_PULSE_WIDTH,
+  /* SynthVibratoSpeed            */ SYNTH_VIBRATO_SPEED_MEDIUM,
 };
 
 // ==================================================
@@ -5939,7 +6002,7 @@ bool load_settings() {
   if (header.version == LEGACY_SETTINGS_VERSION) {
     return migrateSettingsV2(f, header);
   }
-  if (header.version == PREVIOUS_SETTINGS_VERSION) {
+  if (header.version == MIGRATABLE_SETTINGS_VERSION_V3) {
     return migrateSettingsV3(f, header);
   }
   if (header.version != CURRENT_SETTINGS_VERSION) {
@@ -7322,6 +7385,44 @@ void previewSynthDrive(GEMPreviewCallbackData previewData) {
   synthDrive = previewData.previewValByte;
 }
 
+SelectOptionByte optionByteSynthModTarget[] = {
+  { "Pulse", SYNTH_MOD_TARGET_PULSE_WIDTH },
+  { "Vibrato", SYNTH_MOD_TARGET_VIBRATO }
+};
+GEMSelect selectSynthModTarget(sizeof(optionByteSynthModTarget) / sizeof(SelectOptionByte), optionByteSynthModTarget);
+PersistentCallbackInfo callbackInfoSynthModTarget = {
+  static_cast<uint8_t>(SettingKey::SynthModTarget),
+  reinterpret_cast<void*>(&synthModTarget),
+  nullptr,
+  updateSynthVibratoParams
+};
+GEMItem menuItemSynthModTarget("Mod Target", synthModTarget, selectSynthModTarget, universalSaveCallback,
+                               reinterpret_cast<void*>(&callbackInfoSynthModTarget));
+void previewSynthModTarget(GEMPreviewCallbackData previewData) {
+  synthModTarget = previewData.previewValByte;
+  updateSynthVibratoParams();
+}
+
+SelectOptionByte optionByteSynthVibratoSpeed[] = {
+  { "4 Hz", SYNTH_VIBRATO_SPEED_SLOW },
+  { "6 Hz", SYNTH_VIBRATO_SPEED_MEDIUM },
+  { "8 Hz", SYNTH_VIBRATO_SPEED_FAST },
+  { "10 Hz", SYNTH_VIBRATO_SPEED_FASTEST }
+};
+GEMSelect selectSynthVibratoSpeed(sizeof(optionByteSynthVibratoSpeed) / sizeof(SelectOptionByte), optionByteSynthVibratoSpeed);
+PersistentCallbackInfo callbackInfoSynthVibratoSpeed = {
+  static_cast<uint8_t>(SettingKey::SynthVibratoSpeed),
+  reinterpret_cast<void*>(&synthVibratoSpeed),
+  nullptr,
+  updateSynthVibratoParams
+};
+GEMItem menuItemSynthVibratoSpeed("Vib Speed", synthVibratoSpeed, selectSynthVibratoSpeed, universalSaveCallback,
+                                  reinterpret_cast<void*>(&callbackInfoSynthVibratoSpeed));
+void previewSynthVibratoSpeed(GEMPreviewCallbackData previewData) {
+  synthVibratoSpeed = previewData.previewValByte;
+  updateSynthVibratoParams();
+}
+
 PersistentCallbackInfo callbackInfoSynthBPM = {
   static_cast<uint8_t>(SettingKey::SynthBPM),
   reinterpret_cast<void*>(&synthBPM),
@@ -7531,6 +7632,9 @@ void syncSettingsToRuntime() {
   if (synthDrive > SYNTH_DRIVE_DIRTY) {
     synthDrive = SYNTH_DRIVE_OFF;
   }
+  synthModTarget = settingValue(SettingKey::SynthModTarget);
+  synthVibratoSpeed = settingValue(SettingKey::SynthVibratoSpeed);
+  updateSynthVibratoParams();
   synthBuzzerEnabled = decodeStoredBuzzerEnabled(settingValue(SettingKey::AudioDestination));
   syncAudioDestinationToRuntime();
   arpeggiatorDivision = settingValue(SettingKey::ArpeggiatorDivision);
@@ -7855,6 +7959,8 @@ void setupSynthMenuPage() {
   // menuItemAudioD added here for hardware V1.2
   addPreviewMenuItem(menuPageSynth, menuItemWaveform, previewWaveform);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthModTarget, previewSynthModTarget);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthVibratoSpeed, previewSynthVibratoSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeAttack, previewEnvelopeAttack);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeDecay, previewEnvelopeDecay);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeSustain, previewEnvelopeSustain);
