@@ -131,6 +131,32 @@ The current code still uses dynamic containers in some live paths:
 
 Do not assume heap allocation has been eliminated from timing-sensitive paths. If timing glitches or memory fragmentation show up, these are among the first areas to inspect.
 
+### RAM-Resident Hot Paths
+
+The RP2040 executes normal code from external flash through XIP, so a few
+latency-sensitive functions are explicitly placed in SRAM with `RAM_FUNC`.
+Current RAM-resident HexBoard functions include:
+
+- synth/audio ISR support: `poll()`, `setSynthFreq()`,
+  `beginEnvelopeAttack()`, `beginEnvelopeRelease()`,
+  `processEnvelopeReleases()`, and `retryPendingReleases()`
+- note and synth-control dispatch: `tryMIDInoteOn()`, `tryMIDInoteOff()`,
+  `takeMPEChannel()`, `releaseMPEChannel()`, `trySynthNoteOn()`,
+  `trySynthNoteOff()`, `replaceMonoSynthWith()`, `resetSynthFreqs()`,
+  `updateSynthWithNewFreqs()`, and `arpeggiate()`
+- loop hot paths: `readHexes()`, `updateWheels()`, `wheelDef::setTargetValue()`,
+  `wheelDef::updateValue()`, `readKnob()`, and the small command-button
+  handlers
+- compact LED frame helpers: `lightUpLEDs()`, `applyNotePixelColor()`,
+  `applyLedCurrentLimitToFrame()`, `resetVelocityLEDs()`,
+  `resetWheelLEDs()`, and `getLEDcode()`
+
+This deliberately does not move the OLED menu and note-overlay drawing stack.
+Those paths mostly call GEM/U8g2 routines and send data over I2C, so wholesale
+RAM placement would consume much more SRAM than the selected hot-path pass.
+After this pass, `make` reports about `98 KB` of globals and about `164 KB`
+remaining for local variables, heap, and stacks.
+
 ## Startup Sequence
 
 Core 0 setup currently:

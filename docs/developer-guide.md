@@ -62,6 +62,15 @@ The firmware is split across the RP2040's two cores:
 
 There is also a timer-driven synth/audio path that must stay responsive. Flash writes on RP2040 disable interrupts on both cores, so the code mutes audio before saving settings to avoid audible garbage.
 
+Performance-sensitive firmware code can use the `RAM_FUNC(name)` wrapper to
+place selected functions in SRAM instead of external-flash XIP. Keep this
+selective. The current RAM placement favors small hot paths and note-critical
+dispatch: the audio ISR helpers, button scan, command-wheel update, MIDI
+note/wheel sends, synth voice allocation, rotary quadrature polling, and compact
+LED frame helpers. Avoid moving OLED/GEM/U8g2 drawing wholesale; display updates
+are dominated by library calls and I2C transfer time, and moving that stack would
+spend a lot of SRAM for limited gain.
+
 ## Source File Map
 
 The main sections are marked with `// @...` tags in `src/HexBoard.ino`:

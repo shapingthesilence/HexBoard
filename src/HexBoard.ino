@@ -122,7 +122,11 @@ void showOnlyValidScaleChoices();
 void showOnlyValidKeyChoices();
 void updateLayoutAndRotate();
 void setupHardware();
-uint32_t getLEDcode(colorDef c);
+uint32_t RAM_FUNC(getLEDcode)(colorDef c);
+void RAM_FUNC(applyLedCurrentLimitToFrame)();
+void RAM_FUNC(resetVelocityLEDs)();
+void RAM_FUNC(resetWheelLEDs)();
+uint32_t RAM_FUNC(applyNotePixelColor)(byte x);
 bool migrateSettingsV2(File& f, const SettingsHeader& header);
 /*
     C++ returns a negative value for
@@ -1440,7 +1444,7 @@ public:
   int16_t curValue;
   int16_t targetValue;
   uint64_t timeLastChanged;
-  void setTargetValue() {
+  void RAM_FUNC(setTargetValue)() {
     if (*alternateMode) {
       if (*midBtn >> 1) {  // middle button toggles target (0) vs. step (1) mode
         int16_t temp = curValue;
@@ -1474,7 +1478,7 @@ public:
       }
     }
   }
-  bool updateValue(uint64_t givenTime) {
+  bool RAM_FUNC(updateValue)(uint64_t givenTime) {
     int16_t temp = targetValue - curValue;
     if (temp != 0) {
       if ((givenTime - timeLastChanged) >= CC_MSG_COOLDOWN_MICROSECONDS) {
@@ -1636,7 +1640,7 @@ uint32_t estimateDynamicLedCurrentMilliamps(uint32_t packedColor) {
   return (channelSum * WS2812_CHANNEL_MAX_CURRENT_MA + 127u) / 255u;
 }
 
-void applyLedCurrentLimitToFrame() {
+void RAM_FUNC(applyLedCurrentLimitToFrame)() {
   if (ledCurrentLimitMilliamps == 0) {
     return;
   }
@@ -1785,7 +1789,7 @@ colorDef getColor(int32_t temp) {
     user's brightness selection. Then the resulting RGB (HSV) color is
     "un-gamma'd" to be converted to the LED strip color.
   */
-uint32_t getLEDcode(colorDef c) {
+uint32_t RAM_FUNC(getLEDcode)(colorDef c) {
   return strip.gamma32(strip.ColorHSV(transformHue(c.hue), c.sat, c.val * globalBrightness / 255));
 }
 
@@ -2342,7 +2346,7 @@ void setLEDcolorCodes() {
   sendToLog("LED codes re-calculated.");
 }
 
-void resetVelocityLEDs() {
+void RAM_FUNC(resetVelocityLEDs)() {
   byte topValue = byteLerp(0, 255, 85, 127, velWheel.curValue);
   colorDef tempColor = {
     (runTime % (rainbowDegreeTime * 360)) / (float)rainbowDegreeTime,
@@ -2357,7 +2361,7 @@ void resetVelocityLEDs() {
   tempColor.val = applyLEDLevel(byteLerp(0, 255, 0, 42, velWheel.curValue), ledRestBrightness);
   strip.setPixelColor(assignCmd[2], getLEDcode(tempColor));
 }
-void resetWheelLEDs() {
+void RAM_FUNC(resetWheelLEDs)() {
   // middle button
   byte tempSat = SAT_BW;
   byte baseValue = static_cast<byte>(toggleWheel ? VALUE_SHADE : VALUE_LOW);
@@ -2400,7 +2404,7 @@ void resetWheelLEDs() {
     strip.setPixelColor(assignCmd[4], getLEDcode(tempColor));
   }
 }
-uint32_t applyNotePixelColor(byte x) {
+uint32_t RAM_FUNC(applyNotePixelColor)(byte x) {
   if (h[x].animate) {
     return h[x].LEDcodeAnim;
   } else if ((animationType != ANIMATE_NONE)
@@ -2443,7 +2447,7 @@ void setupLEDs() {
   strip.show();   // Turn OFF all pixels ASAP
   sendToLog("LEDs started...");
 }
-void lightUpLEDs() {
+void RAM_FUNC(lightUpLEDs)() {
   if (ledTestMode != LED_TEST_OFF) {
     renderLedTestFrame();
     return;
@@ -2528,7 +2532,7 @@ void resetMPEChannelPool() {
   }
 }
 
-byte takeMPEChannel() {
+byte RAM_FUNC(takeMPEChannel)() {
   if (mpeChannelBitmap == 0) {
     return 0;
   }
@@ -2539,7 +2543,7 @@ byte takeMPEChannel() {
   return ch;
 }
 
-void releaseMPEChannel(byte ch) {
+void RAM_FUNC(releaseMPEChannel)(byte ch) {
   if (ch < mpeLowestChannel || ch > mpeHighestChannel) {
     return;
   }
@@ -2699,13 +2703,13 @@ byte primaryMIDIChannel() {
   return MIDI_CHANNEL_MIN;  // In MPE mode, channel 1 is the master channel.
 }
 
-void sendMIDImodulationToCh1() {
+void RAM_FUNC(sendMIDImodulationToCh1)() {
   byte targetChannel = primaryMIDIChannel();
   withMIDI([&](auto& M) { M.sendControlChange(1, modWheel.curValue, targetChannel); });
   sendToLog("sent mod value " + std::to_string(modWheel.curValue) + " to ch " + std::to_string(targetChannel));
 }
 
-void sendMIDIpitchBendToCh1() {
+void RAM_FUNC(sendMIDIpitchBendToCh1)() {
   byte targetChannel = primaryMIDIChannel();
   withMIDI([&](auto& M) { M.sendPitchBend(pbWheel.curValue, targetChannel); });
   sendToLog("sent pb wheel value " + std::to_string(pbWheel.curValue) + " to ch " + std::to_string(targetChannel));
@@ -3293,7 +3297,7 @@ int16_t justIntonationRetune(byte x) {
 }
 
 
-void tryMIDInoteOn(byte x) {
+void RAM_FUNC(tryMIDInoteOn)(byte x) {
   if (displayPlayedNotes && screenSaverOn) {
     setNoteOverlayTemporaryWake(true);
     noteOverlayDirty = true;
@@ -3355,7 +3359,7 @@ void tryMIDInoteOn(byte x) {
   }
 }
 
-void tryMIDInoteOff(byte x) {
+void RAM_FUNC(tryMIDInoteOff)(byte x) {
   // this gets called on any non-command hex
   // that is not scale-locked.
   if (h[x].MIDIch) {  // but just in case, check
@@ -4576,7 +4580,7 @@ void RAM_FUNC(beginEnvelopeRelease)(uint8_t channel) {
 
 // USE THIS IN MONO OR ARPEG MODE ONLY
 
-byte findNextHeldNote() {
+byte RAM_FUNC(findNextHeldNote)() {
   byte n = UNUSED_NOTE;
   for (byte i = 1; i <= BTN_COUNT; i++) {
     byte j = positiveMod(arpeggiatingNow + i, BTN_COUNT);
@@ -4587,7 +4591,7 @@ byte findNextHeldNote() {
   }
   return n;
 }
-void replaceMonoSynthWith(byte x) {
+void RAM_FUNC(replaceMonoSynthWith)(byte x) {
   if (arpeggiatingNow == x) return;
   if (arpeggiatingNow != UNUSED_NOTE) {
     h[arpeggiatingNow].synthCh = 0;
@@ -4605,7 +4609,7 @@ void replaceMonoSynthWith(byte x) {
   }
 }
 
-void resetSynthFreqs() {
+void RAM_FUNC(resetSynthFreqs)() {
   while (!synthChQueue.empty()) {
     synthChQueue.pop();
   }
@@ -4640,7 +4644,7 @@ void sendProgramChange() {
   if (midiD & MIDID_SER) SMIDI.sendProgramChange(programChange - 1, targetChannel);
 }
 
-void updateSynthWithNewFreqs() {
+void RAM_FUNC(updateSynthWithNewFreqs)() {
   recomputePitchBendFactor();
   byte targetChannel = primaryMIDIChannel();
   if (midiD & MIDID_USB) UMIDI.sendPitchBend(pbWheel.curValue, targetChannel);
@@ -4696,7 +4700,7 @@ void RAM_FUNC(retryPendingReleases)() {
   }
 }
 
-bool stealOldestSynthVoice(byte& channelOut, int16_t& previousOwner) {
+bool RAM_FUNC(stealOldestSynthVoice)(byte& channelOut, int16_t& previousOwner) {
   previousOwner = NO_SYNTH_OWNER;
   uint32_t oldestGeneration = std::numeric_limits<uint32_t>::max();
   int8_t oldestIndex = -1;
@@ -4724,7 +4728,7 @@ bool stealOldestSynthVoice(byte& channelOut, int16_t& previousOwner) {
   return true;
 }
 
-void trySynthNoteOn(byte x) {
+void RAM_FUNC(trySynthNoteOn)(byte x) {
   if (playbackMode == SYNTH_OFF) {
     return;
   }
@@ -4765,7 +4769,7 @@ void trySynthNoteOn(byte x) {
   }
 }
 
-void trySynthNoteOff(byte x) {
+void RAM_FUNC(trySynthNoteOff)(byte x) {
   if (playbackMode && (playbackMode != SYNTH_POLY)) {
     if (arpeggiatingNow == x) {
       replaceMonoSynthWith(findNextHeldNote());
@@ -4841,7 +4845,7 @@ void setupSynth(byte pin, byte slice) {
   sendToLog("synth is ready.");
 }
 
-void arpeggiate() {
+void RAM_FUNC(arpeggiate)() {
   if (delegatedControl) {
     return;
   }
@@ -5075,7 +5079,7 @@ bool shouldDeferMidiInLedRefresh() {
   return false;
 }
 
-void applyExternalMidiToHex(byte midiNote, bool noteOn) {
+void RAM_FUNC(applyExternalMidiToHex)(byte midiNote, bool noteOn) {
   if (midiNote >= midiNoteToHexIndices.size()) {
     return;
   }
@@ -5237,7 +5241,7 @@ void processIncomingMIDIDelegated() {
   });
 }
 
-void processIncomingMIDI() {
+void RAM_FUNC(processIncomingMIDI)() {
   if (delegatedControl) {
     return;
   }
@@ -5437,7 +5441,7 @@ void applyLayout() {  // call this function when the layout changes
   assignPitches();  // same with pitches
   sendToLog("buildLayout complete.");
 }
-void cmdOn(byte x) {  // volume and mod wheel read all current buttons
+void RAM_FUNC(cmdOn)(byte x) {  // volume and mod wheel read all current buttons
   switch (h[x].note) {
     case CMDB + 3:
       toggleWheel = !toggleWheel;
@@ -5451,7 +5455,7 @@ void cmdOn(byte x) {  // volume and mod wheel read all current buttons
       break;
   }
 }
-void cmdOff(byte x) {  // pitch bend wheel only if buttons held.
+void RAM_FUNC(cmdOff)(byte x) {  // pitch bend wheel only if buttons held.
   switch (h[x].note) {
     default:
       break;  // nothing; should all be taken care of within the wheelDef structure
@@ -7769,7 +7773,7 @@ uint64_t rotaryPressStart = 0;
 bool rotaryPanicLatched = false;
 bool rotaryPanicSuppressClick = false;
 
-void readHexes() {
+void RAM_FUNC(readHexes)() {
 
   // Optimized button reading using SIO registers - much faster!
   for (byte r = 0; r < ROWCOUNT; r++) {       // Iterate through each row via the multiplexer.
@@ -7819,7 +7823,7 @@ void readHexes() {
     }
   }
 }
-void updateWheels() {
+void RAM_FUNC(updateWheels)() {
   if (delegatedControl) {
     return;
   }
@@ -7848,7 +7852,7 @@ void setupRotary() {
   pinMode(ROT_PIN_B, INPUT_PULLUP);
   pinMode(ROT_PIN_C, INPUT_PULLUP);
 }
-void readKnob() {
+void RAM_FUNC(readKnob)() {
   byte encoderPhase = (digitalRead(ROT_PIN_B) << 1) | digitalRead(ROT_PIN_A);
   rotaryState = rotaryStateTable[rotaryState & 7][encoderPhase];
   if (rotaryState & 24) {
