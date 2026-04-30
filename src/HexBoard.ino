@@ -5164,8 +5164,8 @@ void animateRadialReverse() {  //inverted splash/star
   }
 }
 
-constexpr uint64_t MIDI_IN_LED_COALESCE_MICROS = 3000;
-constexpr uint64_t MIDI_IN_LED_MAX_DEFER_MICROS = 12000;
+constexpr uint64_t MIDI_IN_LED_COALESCE_MICROS = 1000;
+constexpr uint64_t MIDI_IN_LED_MAX_DEFER_MICROS = 8000;
 
 bool midiInLedDirty = false;
 uint64_t midiInLedFirstDirtyTime = 0;
