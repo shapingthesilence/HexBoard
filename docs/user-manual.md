@@ -307,9 +307,12 @@ This page contains maintenance and system settings:
 - `Reset Defaults`
 - `Update Firmware`
 - `Serial Debug`
+- `ISR Profile`
 - `LED Test`
 
 `ColorByKey` makes compatible color modes follow the selected key.
+
+`ISR Profile` is a temporary diagnostic toggle and is not saved in profiles. To measure audio interrupt timing, leave `Serial Debug` on, turn `ISR Profile` on, play the scenario you want to test, then turn `ISR Profile` off. HexBoard logs `min/avg/max/count` timing, overrun count, and context for the slowest captured audio ISR sample.
 
 `LED Test` is temporary and is not saved in profiles. Enter it and scroll through `Red`, `Green`, `Blue`, or `White` to light every LED immediately. Leaving the selector snaps it back to `Off` and restores the normal LED display. This is useful for diagnosing LED health or for *very* harsh mood lighting.
 

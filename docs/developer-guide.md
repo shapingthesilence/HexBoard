@@ -67,9 +67,13 @@ place selected functions in SRAM instead of external-flash XIP. Keep this
 selective. The current RAM placement favors small hot paths and note-critical
 dispatch: the audio ISR helpers, button scan, command-wheel update, MIDI
 note/wheel sends, synth voice allocation, rotary quadrature polling, and compact
-LED frame helpers. Avoid moving OLED/GEM/U8g2 drawing wholesale; display updates
-are dominated by library calls and I2C transfer time, and moving that stack would
-spend a lot of SRAM for limited gain.
+LED frame helpers. `poll()` also keeps its direct helper calls and the small
+polyphony attenuation table in SRAM. Envelope release starts use a 1024-entry
+RAM lookup table so the ISR does not divide when many notes are released at
+once, and piezo scaling uses fixed-point reciprocal math rather than the signed
+division helper. Avoid moving OLED/GEM/U8g2 drawing wholesale; display updates
+are dominated by library calls and I2C transfer time, and moving that stack
+would spend a lot of SRAM for limited gain.
 
 ## Source File Map
 
@@ -448,6 +452,9 @@ Those are good places to review closely before and after edits.
 ## Practical Debugging Tips
 
 - Turn on `Serial Debug` from the `Advanced` menu if you need runtime logs
+- Use `Advanced` -> `ISR Profile` to capture audio ISR timing. Turn it on before
+  the scenario, then turn it off to log `min/avg/max/count`, overrun count, and
+  whether the slowest sample coincided with release-start or piezo-scaling math.
 - Search by section tag first, not by scrolling
 - Use `rg` on function names because the same concepts appear in many comments and menu strings
 - When a change "almost works", verify you called the correct recomputation function rather than assuming the math is wrong

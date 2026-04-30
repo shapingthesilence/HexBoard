@@ -137,9 +137,11 @@ The RP2040 executes normal code from external flash through XIP, so a few
 latency-sensitive functions are explicitly placed in SRAM with `RAM_FUNC`.
 Current RAM-resident HexBoard functions include:
 
-- synth/audio ISR support: `poll()`, `setSynthFreq()`,
-  `beginEnvelopeAttack()`, `beginEnvelopeRelease()`,
-  `processEnvelopeReleases()`, and `retryPendingReleases()`
+- synth/audio ISR support: `poll()`, `readClock()`,
+  `writeAudioOutputLevels()`, `publishVoiceFreed()`,
+  `smoothedSynthModValue()`, `setSynthFreq()`, `beginEnvelopeAttack()`,
+  `beginEnvelopeRelease()`, `processEnvelopeReleases()`, and
+  `retryPendingReleases()`
 - note and synth-control dispatch: `tryMIDInoteOn()`, `tryMIDInoteOff()`,
   `takeMPEChannel()`, `releaseMPEChannel()`, `trySynthNoteOn()`,
   `trySynthNoteOff()`, `replaceMonoSynthWith()`, `resetSynthFreqs()`,
@@ -151,11 +153,28 @@ Current RAM-resident HexBoard functions include:
   `applyLedCurrentLimitToFrame()`, `resetVelocityLEDs()`,
   `resetWheelLEDs()`, and `getLEDcode()`
 
+`poll()` also reads the polyphony attenuation table from SRAM. Release-start
+increments are read from a 1024-entry, 2 KB RAM table generated when envelope
+settings change, avoiding an unsigned division in the audio ISR. Piezo output
+scaling uses fixed-point reciprocal math instead of the signed division helper.
+
 This deliberately does not move the OLED menu and note-overlay drawing stack.
 Those paths mostly call GEM/U8g2 routines and send data over I2C, so wholesale
 RAM placement would consume much more SRAM than the selected hot-path pass.
-After this pass, `make` reports about `98 KB` of globals and about `164 KB`
-remaining for local variables, heap, and stacks.
+After the release-table and piezo-scaling pass, `make` reports about `101 KB` of
+globals and about `161 KB` remaining for local variables, heap, and stacks.
+
+### ISR Profiling Diagnostic
+
+The `Advanced` page exposes a transient `ISR Profile` toggle backed by the
+existing audio ISR profiling counters. Turning it on resets the counters and
+starts measurement. Turning it off stops profiling and logs `min/avg/max/count`,
+overrun count, release-start count, piezo-scaling sample count, and the active
+voice count/flag context for the slowest captured sample. Logs go through
+`sendToLog()`, so `Serial Debug` must be enabled to see the result.
+
+The profiler state is not a `SettingKey`, is not persisted in profiles, and does
+not require a settings-version bump.
 
 ## Startup Sequence
 

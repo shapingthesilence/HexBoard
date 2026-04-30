@@ -477,6 +477,8 @@ constexpr std::array<uint32_t, 10> envelopeTimeMicrosOptions = {
   0, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000
 };
 constexpr uint32_t envelopeMaxLevel = 65535;
+constexpr uint16_t ENVELOPE_RELEASE_INCREMENT_BUCKETS = 1024;
+constexpr uint8_t ENVELOPE_RELEASE_INCREMENT_SHIFT = 6;
 
 enum class EnvelopeStage : uint8_t {
   Idle,
@@ -496,6 +498,7 @@ struct EnvelopeParams {
 };
 
 EnvelopeParams envelopeParams;
+std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS> envelopeReleaseIncrementByLevel = {};
 
 /*
     Sko: I felt like maximizing precision for just intonation purposes.
@@ -1271,7 +1274,21 @@ volatile uint32_t isrProfileMinUs  = 0;
 volatile uint32_t isrProfileMaxUs  = 0;
 volatile uint32_t isrProfileAvgUs  = 0;
 volatile uint32_t isrProfileCount  = 0;
-void readAndResetISRProfile() {
+volatile uint32_t isrCycleOverrunCount = 0;
+volatile uint32_t isrCycleReleaseStartCount = 0;
+volatile uint32_t isrCyclePiezoScaleCount = 0;
+volatile uint8_t isrCycleMaxVoices = 0;
+volatile uint8_t isrCycleMaxFlags = 0;
+volatile uint32_t isrProfileOverrunCount = 0;
+volatile uint32_t isrProfileReleaseStartCount = 0;
+volatile uint32_t isrProfilePiezoScaleCount = 0;
+volatile uint8_t isrProfileMaxVoices = 0;
+volatile uint8_t isrProfileMaxFlags = 0;
+constexpr uint8_t ISR_PROFILE_FLAG_RELEASE_START = 0x01;
+constexpr uint8_t ISR_PROFILE_FLAG_PIEZO_SCALE = 0x02;
+bool isrProfileMenuEnabled = false;
+
+void captureAndResetISRProfile(bool resumeProfiling) {
   // Briefly disable profiling to get a consistent snapshot
   isrProfilingEnabled = false;
   __dmb();  // data memory barrier
@@ -1279,13 +1296,59 @@ void readAndResetISRProfile() {
   isrProfileMaxUs = isrCycleMax;
   isrProfileCount = isrCycleCount;
   isrProfileAvgUs = (isrProfileCount > 0) ? (uint32_t)(isrCycleSum / isrProfileCount) : 0;
+  isrProfileOverrunCount = isrCycleOverrunCount;
+  isrProfileReleaseStartCount = isrCycleReleaseStartCount;
+  isrProfilePiezoScaleCount = isrCyclePiezoScaleCount;
+  isrProfileMaxVoices = isrCycleMaxVoices;
+  isrProfileMaxFlags = isrCycleMaxFlags;
   // Reset counters
   isrCycleMin = UINT32_MAX;
   isrCycleMax = 0;
   isrCycleSum = 0;
   isrCycleCount = 0;
+  isrCycleOverrunCount = 0;
+  isrCycleReleaseStartCount = 0;
+  isrCyclePiezoScaleCount = 0;
+  isrCycleMaxVoices = 0;
+  isrCycleMaxFlags = 0;
   __dmb();
-  isrProfilingEnabled = true;
+  isrProfilingEnabled = resumeProfiling;
+}
+
+void readAndResetISRProfile() {
+  captureAndResetISRProfile(true);
+}
+
+void startISRProfileCapture() {
+  captureAndResetISRProfile(true);
+  sendToLog("ISR profile started.");
+}
+
+void stopISRProfileCaptureAndLog() {
+  captureAndResetISRProfile(false);
+  std::string maxFlags = "";
+  if (isrProfileMaxFlags & ISR_PROFILE_FLAG_RELEASE_START) {
+    maxFlags += "release";
+  }
+  if (isrProfileMaxFlags & ISR_PROFILE_FLAG_PIEZO_SCALE) {
+    if (!maxFlags.empty()) {
+      maxFlags += "+";
+    }
+    maxFlags += "piezo";
+  }
+  if (maxFlags.empty()) {
+    maxFlags = "steady";
+  }
+  sendToLog(
+    "ISR profile min/avg/max/count: " +
+    std::to_string(isrProfileMinUs) + "/" +
+    std::to_string(isrProfileAvgUs) + "/" +
+    std::to_string(isrProfileMaxUs) + " us, " +
+    std::to_string(isrProfileCount) + " samples, overruns: " +
+    std::to_string(isrProfileOverrunCount) + ", release starts: " +
+    std::to_string(isrProfileReleaseStartCount) + ", piezo samples: " +
+    std::to_string(isrProfilePiezoScaleCount) + ", max voices/flags: " +
+    std::to_string(isrProfileMaxVoices) + "/" + maxFlags);
 }
 
 // @timing
@@ -1297,7 +1360,7 @@ void readAndResetISRProfile() {
 uint64_t runTime = 0;        // Program loop consistent variable for time in microseconds since power on
 uint64_t lapTime = 0;        // Used to keep track of how long each loop takes. Useful for rate-limiting.
 uint64_t loopTime = 0;       // Used to check speed of the loop
-uint64_t readClock() {
+uint64_t RAM_FUNC(readClock)() {
   uint64_t temp = timer_hw->timerawh;
   return (temp << 32) | timer_hw->timerawl;
 }
@@ -3494,7 +3557,7 @@ inline void syncAudioDestinationToRuntime() {
   constexpr int      ENV_TO_A_SHIFT = 7; // 65535 >> 7 ~= 512
 #endif
 
-inline void writeAudioOutputLevels(uint16_t piezoLevel, uint16_t jackLevel) {
+inline void RAM_FUNC(writeAudioOutputLevels)(uint16_t piezoLevel, uint16_t jackLevel) {
   if (audioD & AUDIO_PIEZO) {
     pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, piezoLevel);
   } else {
@@ -3506,6 +3569,21 @@ inline void writeAudioOutputLevels(uint16_t piezoLevel, uint16_t jackLevel) {
   } else {
     pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, static_cast<uint16_t>(PWM_MID));
   }
+}
+
+inline int32_t RAM_FUNC(scalePiezoSample)(int32_t sample, uint16_t amplitude) {
+  const int32_t product = sample * static_cast<int32_t>(amplitude);
+  const bool negative = product < 0;
+  const uint32_t magnitude = negative ? static_cast<uint32_t>(-product) : static_cast<uint32_t>(product);
+#if (PWM_BITS == 8)
+  uint32_t scaled = ((magnitude * 516u) + (1u << 15)) >> 16;  // ~= /127
+#else
+  uint32_t scaled = (magnitude * 257u) >> 17;                 // ~= /511
+#endif
+  if (scaled > amplitude) {
+    scaled = amplitude;
+  }
+  return negative ? -static_cast<int32_t>(scaled) : static_cast<int32_t>(scaled);
 }
 /*
     These definitions provide 8-bit samples to emulate.
@@ -3857,6 +3935,26 @@ inline uint16_t interpolatedWaveSample(const byte* table, uint16_t phase) {
 constexpr uint8_t SYNTH_PITCH_SMOOTH_SHIFT = 9;
 constexpr uint8_t SYNTH_MOD_SMOOTH_SHIFT = 9;
 
+inline void RAM_FUNC(recordISRProfileSample)(uint32_t startTime, uint8_t voices, uint8_t flags) {
+  uint32_t dt = timer_hw->timerawl - startTime;
+  if (dt < isrCycleMin) {
+    isrCycleMin = dt;
+  }
+  if (dt > isrCycleMax) {
+    isrCycleMax = dt;
+    isrCycleMaxVoices = voices;
+    isrCycleMaxFlags = flags;
+  }
+  if (dt > POLL_INTERVAL_IN_MICROSECONDS) {
+    isrCycleOverrunCount++;
+  }
+  if (flags & ISR_PROFILE_FLAG_PIEZO_SCALE) {
+    isrCyclePiezoScaleCount++;
+  }
+  isrCycleSum += dt;
+  isrCycleCount++;
+}
+
 inline uint32_t oscillatorIncrementFromFrequency(float frequency) {
   if (frequency <= 0.0f) {
     return 0;
@@ -3927,6 +4025,18 @@ inline uint32_t ticksFromMicros(uint32_t micros) {
   return (micros + POLL_INTERVAL_IN_MICROSECONDS - 1) / POLL_INTERVAL_IN_MICROSECONDS;
 }
 
+inline uint16_t RAM_FUNC(releaseIncrementForLevel)(uint32_t level) {
+  if (level == 0) {
+    return 1;
+  }
+  uint32_t bucket = (level - 1) >> ENVELOPE_RELEASE_INCREMENT_SHIFT;
+  if (bucket >= envelopeReleaseIncrementByLevel.size()) {
+    bucket = envelopeReleaseIncrementByLevel.size() - 1;
+  }
+  uint16_t increment = envelopeReleaseIncrementByLevel[bucket];
+  return increment ? increment : 1;
+}
+
 struct EnvelopeState {
   uint32_t level = 0;
   uint32_t releaseIncrement = 0;
@@ -3993,7 +4103,7 @@ inline EnvelopeCommand consumeEnvelopeCommand(uint8_t channel) {
 
 // Core 1 uses this when a release truly reaches zero. Core 0 later consumes
 // the event and pushes the voice back into the available-channel queue.
-inline void publishVoiceFreed(uint8_t channel) {
+inline void RAM_FUNC(publishVoiceFreed)(uint8_t channel) {
   __dmb();
   voiceFreedPublishedSeq[channel] = static_cast<uint8_t>(voiceFreedPublishedSeq[channel] + 1);
 }
@@ -4014,6 +4124,20 @@ inline bool consumeVoiceFreed(uint8_t channel) {
 inline void clearPendingVoiceFreed(uint8_t channel) {
   __dmb();
   voiceFreedConsumedSeq[channel] = voiceFreedPublishedSeq[channel];
+}
+
+void updateEnvelopeReleaseIncrementTable() {
+  for (size_t bucket = 0; bucket < envelopeReleaseIncrementByLevel.size(); ++bucket) {
+    uint32_t bucketLevel = static_cast<uint32_t>(bucket + 1) << ENVELOPE_RELEASE_INCREMENT_SHIFT;
+    if (bucketLevel > envelopeMaxLevel) {
+      bucketLevel = envelopeMaxLevel;
+    }
+    envelopeReleaseIncrementByLevel[bucket] = (envelopeParams.releaseTicks == 0)
+                                                ? envelopeMaxLevel
+                                                : static_cast<uint16_t>(std::max<uint32_t>(
+                                                    1,
+                                                    (bucketLevel + envelopeParams.releaseTicks - 1) / envelopeParams.releaseTicks));
+  }
 }
 
 void updateEnvelopeParamsFromSettings() {
@@ -4047,6 +4171,7 @@ void updateEnvelopeParamsFromSettings() {
 
   uint32_t releaseMicros = envelopeTimeMicrosOptions[envelopeReleaseIndex];
   envelopeParams.releaseTicks = ticksFromMicros(releaseMicros);
+  updateEnvelopeReleaseIncrementTable();
 }
 /*
     This defines which hardware alarm
@@ -4094,14 +4219,14 @@ public:
 };
 oscillator synth[POLYPHONY_LIMIT];  // maximum polyphony
 std::queue<byte> synthChQueue;
-const byte attenuation[] = { 64, 24, 17, 14, 12, 11, 10, 9, 8 };  // full volume in mono mode; equalized volume in poly.
+byte attenuation[] = { 64, 24, 17, 14, 12, 11, 10, 9, 8 };  // RAM-resident; read by poll() every audio tick.
 uint16_t synthModValueQ8 = 0;
 
 byte arpeggiatingNow = UNUSED_NOTE;  // if this is 255, set to off (0% duty cycle)
 uint64_t arpeggiateTime = 0;         // Used to keep track of when this note started playing in ARPEG mode
 uint64_t arpeggiateLength = 62500;   // default: 1/32 note at 120 BPM
 
-inline uint8_t smoothedSynthModValue() {
+inline uint8_t RAM_FUNC(smoothedSynthModValue)() {
   int16_t targetValue = modWheel.curValue;
   if (targetValue < 0) {
     targetValue = 0;
@@ -4155,6 +4280,7 @@ void RAM_FUNC(poll)() {
   // ============================================================
   uint32_t envSum = 0;   // sum of env.level across active voices (0..8*65535)
   byte voices = 0;
+  uint8_t profileFlags = 0;
 
   uint16_t p;
   byte t;
@@ -4196,9 +4322,11 @@ void RAM_FUNC(poll)() {
           publishVoiceFreed(i);
         } else {
           env.stage = EnvelopeStage::Release;
-          // This division only runs when a release begins, not on every ISR
-          // tick, so it is much cheaper than the per-sample math below.
-          env.releaseIncrement = std::max<uint32_t>(1, (env.level + envelopeParams.releaseTicks - 1) / envelopeParams.releaseTicks);
+          profileFlags |= ISR_PROFILE_FLAG_RELEASE_START;
+          if (_isrStart) {
+            isrCycleReleaseStartCount++;
+          }
+          env.releaseIncrement = releaseIncrementForLevel(env.level);
         }
         break;
       }
@@ -4396,11 +4524,7 @@ void RAM_FUNC(poll)() {
   if (voices == 0 || velWheel.curValue == 0) {
     writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
     if (_isrStart) {
-      uint32_t dt = timer_hw->timerawl - _isrStart;
-      if (dt < isrCycleMin) isrCycleMin = dt;
-      if (dt > isrCycleMax) isrCycleMax = dt;
-      isrCycleSum += dt;
-      isrCycleCount++;
+      recordISRProfileSample(_isrStart, voices, profileFlags);
     }
     return;
   }
@@ -4445,10 +4569,10 @@ void RAM_FUNC(poll)() {
     piezoA = 0;
   } else if (piezoA > 0) {
     // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-piezoA..+piezoA].
-    // This is still one of the remaining true per-sample divisions in poll().
-    // If we need another ISR-speed pass later, replacing this with a small
-    // reciprocal multiply would be the next obvious experiment.
-    int32_t outPiezo = (sample * (int32_t)piezoA) / SHAPE_CLAMP;
+    // Use a fixed-point reciprocal approximation to avoid a division helper
+    // call in the audio ISR.
+    profileFlags |= ISR_PROFILE_FLAG_PIEZO_SCALE;
+    int32_t outPiezo = scalePiezoSample(sample, piezoA);
 
     // Midpoint follows amplitude: range [0..2*piezoA]
     piezoLevel = (int32_t)piezoA + outPiezo;
@@ -4463,11 +4587,7 @@ void RAM_FUNC(poll)() {
   // ----- Write outputs -----
   writeAudioOutputLevels(piezoOut, jackLevel);
   if (_isrStart) {
-    uint32_t dt = timer_hw->timerawl - _isrStart;
-    if (dt < isrCycleMin) isrCycleMin = dt;
-    if (dt > isrCycleMax) isrCycleMax = dt;
-    isrCycleSum += dt;
-    isrCycleCount++;
+    recordISRProfileSample(_isrStart, voices, profileFlags);
   }
 }
 // RUN ON CORE 1
@@ -6368,6 +6488,15 @@ PersistentCallbackInfo callbackInfoDebug = {
 };
 GEMItem menuItemDebug("Serial Debug", debugMessages, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDebug));
 
+void isrProfileMenuCallback(GEMCallbackData /*callbackData*/) {
+  if (isrProfileMenuEnabled) {
+    startISRProfileCapture();
+  } else {
+    stopISRProfileCaptureAndLog();
+  }
+}
+GEMItem menuItemISRProfile("ISR Profile", isrProfileMenuEnabled, isrProfileMenuCallback);
+
 PersistentCallbackInfo callbackInfoDisplayPlayedNotes = {
   static_cast<uint8_t>(SettingKey::DisplayPlayedNotes),
   reinterpret_cast<void*>(&displayPlayedNotes),
@@ -7674,6 +7803,7 @@ void setupAdvancedMenuPage() {
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
   menuPageAdvanced.addMenuItem(menuItemDebug);
+  menuPageAdvanced.addMenuItem(menuItemISRProfile);
   addPreviewMenuItem(menuPageAdvanced, menuItemLedTest, previewLedTest);
 }
 
