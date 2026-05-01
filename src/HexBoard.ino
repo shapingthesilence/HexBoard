@@ -113,6 +113,12 @@ std::array<std::vector<uint8_t>, 128> midiNoteToHexIndices = {};
 
 void updateEnvelopeParamsFromSettings();
 void updateArpeggiatorTiming();
+void updateMetronomeTiming();
+void metronomeModeChanged();
+void runMetronome();
+inline bool RAM_FUNC(metronomeBrightnessSelected)();
+inline bool RAM_FUNC(metronomeSideButtonsSelected)();
+inline bool RAM_FUNC(metronomeVisualFlashActive)();
 void refreshMidiRouting();
 void save_settings();
 void copyCurrentSettingsToProfile(uint8_t profileIndex);
@@ -233,6 +239,36 @@ byte layoutRotation = 0;
 byte arpeggiatorDivision = 32;  // denominator of whole-note duration (1/32 by default)
 byte synthBPM = 120;
 
+constexpr byte METRONOME_MODE_OFF = 0;
+constexpr byte METRONOME_MODE_BEEP = 1;
+constexpr byte METRONOME_MODE_BRIGHTNESS = 2;
+constexpr byte METRONOME_MODE_SIDE_BUTTONS = 3;
+
+struct MetronomeSignature {
+  uint8_t beats;
+  uint8_t noteValue;
+};
+
+const MetronomeSignature metronomeSignatures[] = {
+  { 4, 4 },
+  { 3, 4 },
+  { 2, 4 },
+  { 6, 8 },
+  { 5, 4 },
+  { 7, 8 },
+  { 12, 8 }
+};
+constexpr uint8_t METRONOME_SIGNATURE_COUNT = sizeof(metronomeSignatures) / sizeof(metronomeSignatures[0]);
+
+byte metronomeMode = METRONOME_MODE_OFF;
+byte metronomeSignatureIndex = 0;
+uint8_t metronomeBeatsPerMeasure = 4;
+uint64_t metronomeBeatIntervalMicros = 500000;
+uint64_t metronomeNextBeatTime = 0;
+uint8_t metronomeBeatCursor = 0;
+uint64_t metronomeVisualFlashUntil = 0;
+bool metronomeAccent = false;
+
 //  Keyboard layout swapping
 bool mirrorLeftRight = false;
 bool mirrorUpDown = false;
@@ -283,9 +319,9 @@ constexpr byte SYNTH_DRIVE_EDGE = 2;
 constexpr byte SYNTH_DRIVE_DIRTY = 3;
 byte synthDrive = SYNTH_DRIVE_OFF;
 
-constexpr byte SYNTH_MOD_TARGET_PULSE_WIDTH = 0;
+constexpr byte SYNTH_MOD_TARGET_TONE = 0;
 constexpr byte SYNTH_MOD_TARGET_VIBRATO = 1;
-byte synthModTarget = SYNTH_MOD_TARGET_PULSE_WIDTH;
+byte synthModTarget = SYNTH_MOD_TARGET_TONE;
 
 constexpr byte SYNTH_VIBRATO_SPEED_SLOW = 0;
 constexpr byte SYNTH_VIBRATO_SPEED_MEDIUM = 1;
@@ -2483,6 +2519,41 @@ void RAM_FUNC(resetWheelLEDs)() {
     strip.setPixelColor(assignCmd[4], getLEDcode(tempColor));
   }
 }
+
+inline uint8_t RAM_FUNC(scalePackedChannelQ8)(uint8_t component, uint16_t scaleQ8) {
+  uint32_t scaled = static_cast<uint32_t>(component) * scaleQ8;
+  scaled >>= 8;
+  return static_cast<uint8_t>(scaled > 255 ? 255 : scaled);
+}
+
+inline uint32_t RAM_FUNC(scalePackedColorQ8)(uint32_t color, uint16_t scaleQ8) {
+  return strip.Color(scalePackedChannelQ8(static_cast<uint8_t>(color >> 16), scaleQ8),
+                     scalePackedChannelQ8(static_cast<uint8_t>(color >> 8), scaleQ8),
+                     scalePackedChannelQ8(static_cast<uint8_t>(color), scaleQ8));
+}
+
+void RAM_FUNC(applyMetronomeBrightnessFlash)() {
+  if (!(metronomeBrightnessSelected() && metronomeVisualFlashActive())) {
+    return;
+  }
+  uint16_t scaleQ8 = metronomeAccent ? 384 : 320;
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    strip.setPixelColor(i, scalePackedColorQ8(strip.getPixelColor(i), scaleQ8));
+  }
+}
+
+void RAM_FUNC(renderMetronomeSideButtonFlash)() {
+  if (!(metronomeSideButtonsSelected() && metronomeVisualFlashActive())) {
+    return;
+  }
+  byte value = metronomeAccent ? VALUE_FULL : VALUE_SHADE;
+  colorDef flashColor = { HUE_NONE, SAT_BW, applyLEDLevel(value, ledRestBrightness) };
+  uint32_t flashCode = getLEDcode(flashColor);
+  for (byte cmd = 0; cmd < CMDCOUNT; ++cmd) {
+    strip.setPixelColor(assignCmd[cmd], flashCode);
+  }
+}
+
 uint32_t RAM_FUNC(applyNotePixelColor)(byte x) {
   if (h[x].animate) {
     return h[x].LEDcodeAnim;
@@ -2543,6 +2614,8 @@ void RAM_FUNC(lightUpLEDs)() {
     }
     resetVelocityLEDs();
     resetWheelLEDs();
+    renderMetronomeSideButtonFlash();
+    applyMetronomeBrightnessFlash();
   }
   applyLedCurrentLimitToFrame();
   strip.show();
@@ -3572,6 +3645,7 @@ inline void syncAudioDestinationToRuntime() {
   constexpr int      OUTPUT_SHIFT = 6;   // derived above
   constexpr int      ENV_TO_A_SHIFT = 7; // 65535 >> 7 ~= 512
 #endif
+constexpr int32_t METRONOME_BEEP_LEVEL = SHAPE_CLAMP / 3;
 
 inline void RAM_FUNC(writeAudioOutputLevels)(uint16_t piezoLevel, uint16_t jackLevel) {
   if (audioD & AUDIO_PIEZO) {
@@ -3978,15 +4052,18 @@ inline uint16_t interpolatedWaveSample(const byte* table, uint16_t phase) {
 #define POLL_INTERVAL_IN_MICROSECONDS 24
 constexpr uint8_t SYNTH_PITCH_SMOOTH_SHIFT = 9;
 constexpr uint8_t SYNTH_MOD_SMOOTH_SHIFT = 9;
-constexpr uint32_t vibratoPhaseIncrementFromHz(uint8_t hz) {
+constexpr uint32_t audioPhaseIncrementFromHz(uint16_t hz) {
   return static_cast<uint32_t>((static_cast<uint64_t>(hz) * POLL_INTERVAL_IN_MICROSECONDS * 4294967296ULL) / 1000000ULL);
 }
 constexpr std::array<uint32_t, 4> synthVibratoPhaseIncrementOptions = {
-  vibratoPhaseIncrementFromHz(4),
-  vibratoPhaseIncrementFromHz(6),
-  vibratoPhaseIncrementFromHz(8),
-  vibratoPhaseIncrementFromHz(10)
+  audioPhaseIncrementFromHz(4),
+  audioPhaseIncrementFromHz(6),
+  audioPhaseIncrementFromHz(8),
+  audioPhaseIncrementFromHz(10)
 };
+constexpr uint16_t METRONOME_BEEP_SAMPLE_COUNT = (40000 + POLL_INTERVAL_IN_MICROSECONDS - 1) / POLL_INTERVAL_IN_MICROSECONDS;
+constexpr uint32_t METRONOME_BEEP_NORMAL_INCREMENT = audioPhaseIncrementFromHz(1200);
+constexpr uint32_t METRONOME_BEEP_ACCENT_INCREMENT = audioPhaseIncrementFromHz(1800);
 
 inline void RAM_FUNC(recordISRProfileSample)(uint32_t startTime, uint8_t voices, uint8_t flags) {
   uint32_t dt = timer_hw->timerawl - startTime;
@@ -4276,6 +4353,9 @@ byte attenuation[] = { 64, 24, 17, 14, 12, 11, 10, 9, 8 };  // RAM-resident; rea
 uint16_t synthModValueQ8 = 0;
 uint32_t synthVibratoPhase = 0;
 uint32_t synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[SYNTH_VIBRATO_SPEED_MEDIUM];
+volatile uint16_t metronomeBeepSamplesRemaining = 0;
+volatile uint32_t metronomeBeepPhaseIncrement = METRONOME_BEEP_NORMAL_INCREMENT;
+uint32_t metronomeBeepPhase = 0;
 
 byte arpeggiatingNow = UNUSED_NOTE;  // if this is 255, set to off (0% duty cycle)
 uint64_t arpeggiateTime = 0;         // Used to keep track of when this note started playing in ARPEG mode
@@ -4295,7 +4375,7 @@ inline uint8_t RAM_FUNC(smoothedSynthModValue)() {
 
 void updateSynthVibratoParams() {
   if (synthModTarget > SYNTH_MOD_TARGET_VIBRATO) {
-    synthModTarget = SYNTH_MOD_TARGET_PULSE_WIDTH;
+    synthModTarget = SYNTH_MOD_TARGET_TONE;
   }
   if (synthVibratoSpeed >= synthVibratoPhaseIncrementOptions.size()) {
     synthVibratoSpeed = SYNTH_VIBRATO_SPEED_MEDIUM;
@@ -4321,6 +4401,110 @@ inline uint32_t RAM_FUNC(applySynthVibrato)(uint32_t increment, int16_t vibratoA
   return increment + positiveOffset;
 }
 
+inline uint16_t RAM_FUNC(applySynthTonePhaseWarp)(uint16_t phase, uint8_t toneAmount) {
+  uint16_t triangle = (phase & 0x8000) ? static_cast<uint16_t>(0xFFFFu - phase) : phase;
+  uint16_t offset = static_cast<uint16_t>((static_cast<uint32_t>(triangle) * static_cast<uint32_t>(toneAmount)) >> 8);
+  return static_cast<uint16_t>(phase + offset);
+}
+
+inline int32_t RAM_FUNC(readMetronomeBeepSample)() {
+  uint16_t remaining = metronomeBeepSamplesRemaining;
+  if (remaining == 0) {
+    return 0;
+  }
+
+  metronomeBeepSamplesRemaining = remaining - 1;
+  metronomeBeepPhase += metronomeBeepPhaseIncrement;
+  int32_t sample = (metronomeBeepPhase & 0x80000000u) ? METRONOME_BEEP_LEVEL : -METRONOME_BEEP_LEVEL;
+  return (sample * static_cast<int32_t>(velWheel.curValue)) >> 7;
+}
+
+inline bool RAM_FUNC(metronomeBrightnessSelected)() {
+  return metronomeMode == METRONOME_MODE_BRIGHTNESS;
+}
+
+inline bool RAM_FUNC(metronomeSideButtonsSelected)() {
+  return metronomeMode == METRONOME_MODE_SIDE_BUTTONS;
+}
+
+inline bool metronomeBeepSelected() {
+  return metronomeMode == METRONOME_MODE_BEEP;
+}
+
+inline bool metronomeEnabled() {
+  return metronomeMode != METRONOME_MODE_OFF;
+}
+
+inline bool RAM_FUNC(metronomeVisualFlashActive)() {
+  return (metronomeBrightnessSelected() || metronomeSideButtonsSelected()) && runTime < metronomeVisualFlashUntil;
+}
+
+void resetMetronomeState() {
+  metronomeBeatCursor = 0;
+  metronomeNextBeatTime = 0;
+  metronomeVisualFlashUntil = 0;
+  metronomeAccent = false;
+  metronomeBeepSamplesRemaining = 0;
+}
+
+void updateMetronomeTiming() {
+  if (metronomeMode > METRONOME_MODE_SIDE_BUTTONS) {
+    metronomeMode = METRONOME_MODE_OFF;
+  }
+  if (metronomeSignatureIndex >= METRONOME_SIGNATURE_COUNT) {
+    metronomeSignatureIndex = 0;
+  }
+
+  const MetronomeSignature& signature = metronomeSignatures[metronomeSignatureIndex];
+  metronomeBeatsPerMeasure = signature.beats ? signature.beats : 1;
+  uint8_t noteValue = signature.noteValue ? signature.noteValue : 4;
+
+  uint32_t bpm = synthBPM;
+  if (bpm == 0) {
+    bpm = 1;
+  }
+  uint64_t wholeNoteMicros = (240000000ULL + (bpm / 2)) / bpm;
+  metronomeBeatIntervalMicros = (wholeNoteMicros + (noteValue / 2)) / noteValue;
+  if (metronomeBeatIntervalMicros == 0) {
+    metronomeBeatIntervalMicros = 1;
+  }
+  resetMetronomeState();
+}
+
+void triggerMetronomeBeat(bool accent) {
+  constexpr uint64_t METRONOME_VISUAL_FLASH_MICROS = 125000;
+  metronomeAccent = accent;
+
+  if (metronomeBrightnessSelected() || metronomeSideButtonsSelected()) {
+    metronomeVisualFlashUntil = runTime + METRONOME_VISUAL_FLASH_MICROS;
+  }
+  if (metronomeBeepSelected()) {
+    metronomeBeepPhaseIncrement = accent ? METRONOME_BEEP_ACCENT_INCREMENT : METRONOME_BEEP_NORMAL_INCREMENT;
+    metronomeBeepSamplesRemaining = METRONOME_BEEP_SAMPLE_COUNT;
+  }
+}
+
+void runMetronome() {
+  if (!metronomeEnabled() || delegatedControl) {
+    return;
+  }
+
+  if (metronomeNextBeatTime == 0) {
+    metronomeNextBeatTime = runTime;
+  }
+
+  while (runTime >= metronomeNextBeatTime) {
+    bool accent = (metronomeBeatCursor == 0);
+    triggerMetronomeBeat(accent);
+    metronomeBeatCursor = static_cast<uint8_t>((metronomeBeatCursor + 1) % metronomeBeatsPerMeasure);
+    metronomeNextBeatTime += metronomeBeatIntervalMicros;
+  }
+}
+
+void metronomeModeChanged() {
+  resetMetronomeState();
+}
+
 void updateArpeggiatorTiming() {
   uint32_t bpm = synthBPM;
   if (bpm == 0) {
@@ -4336,6 +4520,7 @@ void updateArpeggiatorTiming() {
   if (arpeggiateLength == 0) {
     arpeggiateLength = 1;
   }
+  updateMetronomeTiming();
 }
 
 // RUN ON CORE 2
@@ -4350,8 +4535,10 @@ void RAM_FUNC(poll)() {
   }
   uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
   int32_t mix = 0;    // signed accumulator stays well within int32_t bounds
+  const int32_t metronomeSample = readMetronomeBeepSample();
+  const bool metronomeAudible = metronomeSample != 0;
   const uint8_t synthModValue = smoothedSynthModValue();
-  const uint8_t pulseWidthModValue = (synthModTarget == SYNTH_MOD_TARGET_PULSE_WIDTH) ? synthModValue : 0;
+  const uint8_t synthToneModValue = (synthModTarget == SYNTH_MOD_TARGET_TONE) ? synthModValue : 0;
   int16_t synthVibratoAmount = 0;
   if (synthModTarget == SYNTH_MOD_TARGET_VIBRATO && synthModValue > 0) {
     synthVibratoPhase += synthVibratoPhaseIncrement;
@@ -4505,11 +4692,14 @@ void RAM_FUNC(poll)() {
     }
     synth[i].counter += phaseIncrement;  // high 16 bits loop from 65535 -> 0
     p = static_cast<uint16_t>(synth[i].counter >> 16);
+    if (synthToneModValue != 0 && currWave != WAVEFORM_SQUARE) {
+      p = applySynthTonePhaseWarp(p, synthToneModValue);
+    }
     t = p >> 8;
     switch (currWave) {
       case WAVEFORM_SAW: break;
       case WAVEFORM_TRIANGLE: p = 2 * ((p >> 15) ? p : (65535 - p)); break;
-      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - static_cast<int32_t>(pulseWidthModValue) * 7 * 16)); break;
+      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - static_cast<int32_t>(synthToneModValue) * 7 * 16)); break;
       case WAVEFORM_HYBRID:
         if (t <= synth[i].a) {
           p = 0;
@@ -4614,7 +4804,7 @@ void RAM_FUNC(poll)() {
   // ------------------------------------------------------------
   // JACK idle behavior: stay centered.
   // PIEZO idle behavior: off (0).
-  if (voices == 0 || velWheel.curValue == 0) {
+  if ((voices == 0 || velWheel.curValue == 0) && !metronomeAudible) {
     writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
     if (_isrStart) {
       recordISRProfileSample(_isrStart, voices, profileFlags);
@@ -4623,12 +4813,18 @@ void RAM_FUNC(poll)() {
   }
 
   // Convert scaled mix -> signed sample in [-SHAPE_CLAMP..SHAPE_CLAMP]
-  int32_t sample = scaled >> OUTPUT_SHIFT;
+  int32_t sample = 0;
+  if (voices != 0 && velWheel.curValue != 0) {
+    sample = scaled >> OUTPUT_SHIFT;
+    if (sample >  SHAPE_CLAMP) sample =  SHAPE_CLAMP;
+    if (sample < -SHAPE_CLAMP) sample = -SHAPE_CLAMP;
+    if (synthDrive != SYNTH_DRIVE_OFF) {
+      sample = applySynthDrive(sample);
+    }
+  }
+  sample += metronomeSample;
   if (sample >  SHAPE_CLAMP) sample =  SHAPE_CLAMP;
   if (sample < -SHAPE_CLAMP) sample = -SHAPE_CLAMP;
-  if (synthDrive != SYNTH_DRIVE_OFF) {
-    sample = applySynthDrive(sample);
-  }
 
   // ----- JACK: fixed midpoint -----
   int32_t jack = PWM_MID + sample;
@@ -4652,6 +4848,17 @@ void RAM_FUNC(poll)() {
 
   // Apply master volume (0..127, where 127 is full). Keep it consistent with jack scaling.
   A_target = (A_target * (uint32_t)velWheel.curValue) >> 7;
+  if (metronomeAudible) {
+    uint32_t metronomeAmplitude = metronomeSample < 0
+                                    ? static_cast<uint32_t>(-metronomeSample)
+                                    : static_cast<uint32_t>(metronomeSample);
+    if (metronomeAmplitude > static_cast<uint32_t>(PWM_MID)) {
+      metronomeAmplitude = PWM_MID;
+    }
+    if (A_target < metronomeAmplitude) {
+      A_target = metronomeAmplitude;
+    }
+  }
 
   // Smooth A so the piezo hiss doesn't abruptly stop (and to avoid end-click).
   // Smaller shift = faster response; larger = smoother.
@@ -5688,7 +5895,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 5;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 6;
 constexpr uint8_t MIGRATABLE_SETTINGS_VERSION_V3 = 3;
 constexpr uint8_t LEGACY_SETTINGS_VERSION = 2;
 constexpr uint8_t PROFILE_COUNT = 9;
@@ -5764,6 +5971,8 @@ enum class SettingKey : uint8_t {
   SynthDrive,
   SynthModTarget,
   SynthVibratoSpeed,
+  MetronomeMode,
+  MetronomeSignature,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -5851,8 +6060,10 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* Display played notes         */ 0,
   /* LED current limit mode       */ LED_CURRENT_LIMIT_1500MA,
   /* SynthDrive                   */ SYNTH_DRIVE_OFF,
-  /* SynthModTarget               */ SYNTH_MOD_TARGET_PULSE_WIDTH,
+  /* SynthModTarget               */ SYNTH_MOD_TARGET_TONE,
   /* SynthVibratoSpeed            */ SYNTH_VIBRATO_SPEED_MEDIUM,
+  /* MetronomeMode                */ METRONOME_MODE_OFF,
+  /* MetronomeSignature           */ 0,
 };
 
 // ==================================================
@@ -7386,7 +7597,7 @@ void previewSynthDrive(GEMPreviewCallbackData previewData) {
 }
 
 SelectOptionByte optionByteSynthModTarget[] = {
-  { "Pulse", SYNTH_MOD_TARGET_PULSE_WIDTH },
+  { "Tone", SYNTH_MOD_TARGET_TONE },
   { "Vibrato", SYNTH_MOD_TARGET_VIBRATO }
 };
 GEMSelect selectSynthModTarget(sizeof(optionByteSynthModTarget) / sizeof(SelectOptionByte), optionByteSynthModTarget);
@@ -7396,7 +7607,7 @@ PersistentCallbackInfo callbackInfoSynthModTarget = {
   nullptr,
   updateSynthVibratoParams
 };
-GEMItem menuItemSynthModTarget("Mod Target", synthModTarget, selectSynthModTarget, universalSaveCallback,
+GEMItem menuItemSynthModTarget("Mod Effect", synthModTarget, selectSynthModTarget, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoSynthModTarget));
 void previewSynthModTarget(GEMPreviewCallbackData previewData) {
   synthModTarget = previewData.previewValByte;
@@ -7429,11 +7640,54 @@ PersistentCallbackInfo callbackInfoSynthBPM = {
   nullptr,
   updateArpeggiatorTiming
 };
-GEMItem menuItemSynthBPM("Arp BPM", synthBPM, spinnerSynthBPM, universalSaveCallback,
+GEMItem menuItemSynthBPM("Tempo", synthBPM, spinnerSynthBPM, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoSynthBPM));
 void previewSynthBPM(GEMPreviewCallbackData previewData) {
   synthBPM = previewData.previewValByte;
   updateArpeggiatorTiming();
+}
+
+SelectOptionByte optionByteMetronomeMode[] = {
+  { "Off", METRONOME_MODE_OFF },
+  { "Beep", METRONOME_MODE_BEEP },
+  { "Bright", METRONOME_MODE_BRIGHTNESS },
+  { "Side Btns", METRONOME_MODE_SIDE_BUTTONS }
+};
+GEMSelect selectMetronomeMode(sizeof(optionByteMetronomeMode) / sizeof(SelectOptionByte), optionByteMetronomeMode);
+PersistentCallbackInfo callbackInfoMetronomeMode = {
+  static_cast<uint8_t>(SettingKey::MetronomeMode),
+  reinterpret_cast<void*>(&metronomeMode),
+  nullptr,
+  metronomeModeChanged
+};
+GEMItem menuItemMetronomeMode("Metronome", metronomeMode, selectMetronomeMode, universalSaveCallback,
+                              reinterpret_cast<void*>(&callbackInfoMetronomeMode));
+void previewMetronomeMode(GEMPreviewCallbackData previewData) {
+  metronomeMode = previewData.previewValByte;
+  metronomeModeChanged();
+}
+
+SelectOptionByte optionByteMetronomeSignature[] = {
+  { "4/4", 0 },
+  { "3/4", 1 },
+  { "2/4", 2 },
+  { "6/8", 3 },
+  { "5/4", 4 },
+  { "7/8", 5 },
+  { "12/8", 6 }
+};
+GEMSelect selectMetronomeSignature(sizeof(optionByteMetronomeSignature) / sizeof(SelectOptionByte), optionByteMetronomeSignature);
+PersistentCallbackInfo callbackInfoMetronomeSignature = {
+  static_cast<uint8_t>(SettingKey::MetronomeSignature),
+  reinterpret_cast<void*>(&metronomeSignatureIndex),
+  nullptr,
+  updateMetronomeTiming
+};
+GEMItem menuItemMetronomeSignature("Time Sig", metronomeSignatureIndex, selectMetronomeSignature, universalSaveCallback,
+                                   reinterpret_cast<void*>(&callbackInfoMetronomeSignature));
+void previewMetronomeSignature(GEMPreviewCallbackData previewData) {
+  metronomeSignatureIndex = previewData.previewValByte;
+  updateMetronomeTiming();
 }
 
 SelectOptionByte optionByteArpSpeed[] = {
@@ -7645,6 +7899,8 @@ void syncSettingsToRuntime() {
   if (synthBPM == 0) {
     synthBPM = 1;
   }
+  metronomeMode = settingValue(SettingKey::MetronomeMode);
+  metronomeSignatureIndex = settingValue(SettingKey::MetronomeSignature);
   colorMode = settingValue(SettingKey::ColorMode);
   ledRestBrightness = settingValue(SettingKey::RestLedBrightness);
   ledDimBrightness = settingValue(SettingKey::DimLedBrightness);
@@ -7967,6 +8223,8 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeRelease, previewEnvelopeRelease);
   addPreviewMenuItem(menuPageSynth, menuItemArpSpeed, previewArpSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemSynthBPM, previewSynthBPM);
+  addPreviewMenuItem(menuPageSynth, menuItemMetronomeMode, previewMetronomeMode);
+  addPreviewMenuItem(menuPageSynth, menuItemMetronomeSignature, previewMetronomeSignature);
 }
 
 void setupMidiMenuPage() {
@@ -8308,6 +8566,7 @@ void loop() {        // run on first core
   screenSaver();     // Reduces wear-and-tear on OLED panel
   readHexes();       // Read and store the digital button states of the scanning matrix
   arpeggiate();      // arpeggiate if synth mode allows it
+  runMetronome();    // metronome beep/flash modes share the synth tempo
   updateWheels();    // deal with the pitch/mod wheel
   processIncomingMIDI();  // respond to external MIDI input
   animateLEDs();     // deal with animations

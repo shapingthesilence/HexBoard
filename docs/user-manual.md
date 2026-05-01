@@ -159,14 +159,16 @@ Options include:
 - `Synth Mode`: `Off`, `Mono`, `Arp'gio`, `Poly`
 - `Waveform`
 - `Drive`
-- `Mod Target`
+- `Mod Effect`
 - `Vib Speed`
 - `Attack`
 - `Decay`
 - `Sustain`
 - `Release`
 - `Arp Speed`
-- `Arp BPM`
+- `Tempo`
+- `Metronome`
+- `Time Sig`
 
 On hardware `V1.1`, the onboard synth plays through the piezo buzzer when the
 synth is active. There is no headphone-jack output path and no `Buzzer` menu
@@ -207,13 +209,23 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 - `Edge`: more obvious bite
 - `Dirty`: stronger saturation for rougher synth tones
 
-`Mod Target` chooses how the mod wheel affects the onboard synth:
+`Mod Effect` chooses how the mod wheel affects the onboard synth:
 
-- `Pulse`: changes pulse width on the `Square` waveform
+- `Tone`: changes pulse width on `Square` and adds phase-warp color to the other waveforms
 - `Vibrato`: adds pitch vibrato to the active synth voices
 
 External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed`
-sets the onboard vibrato LFO speed when `Mod Target` is `Vibrato`.
+sets the onboard vibrato LFO speed when `Mod Effect` is `Vibrato`.
+
+`Tempo` is shared by the arpeggiator and metronome. `Metronome` has four modes:
+
+- `Off`: no metronome
+- `Beep`: a short metronome beep on each beat
+- `Bright`: the whole LED frame brightens briefly on each beat
+- `Side Btns`: the seven side command buttons flash on each beat
+
+`Time Sig` sets the metronome accent cycle and beat length. The first beat of
+each measure is accented.
 
 `Attack`, `Decay`, `Sustain`, and `Release` shape the loudness of each note.
 These four controls are often called the envelope.
@@ -237,7 +249,7 @@ Use these as starting points, then adjust by ear.
 | Smooth pad | `Poly` | `Sine`, `Triangl`, or `Strings` | `200 ms` to `1 s` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
 | Lead | `Mono` | `Hybrid`, `Saw`, or `Square` | `0 ms` or `10 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Immediate and steady for melodies |
 | Chime or bell | `Poly` | `Sine` or `Triangl` | `0 ms` or `5 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
-| Arpeggio | `Arp'gio` | `Hybrid`, `Square`, or `Saw` | `0 ms` or `5 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed` and `Arp BPM` for rhythm |
+| Arpeggio | `Arp'gio` | `Hybrid`, `Square`, or `Saw` | `0 ms` or `5 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed` and `Tempo` for rhythm |
 
 For a sharper sound, use a brighter waveform such as `Saw`, `Square`, or
 `Hybrid`, and keep `Attack` short. For a smoother sound, use `Sine`,
@@ -370,8 +382,10 @@ Important factory defaults include:
 - Synth: `Off`
 - Waveform: `Hybrid`
 - Drive: `Off`
-- Mod target: `Pulse`
+- Mod effect: `Tone`
 - Vibrato speed: `6 Hz`
+- Metronome: `Off`
+- Time signature: `4/4`
 - LED brightness: `Dim`
 - LED limit: `Off`
 - Animation: `Button`

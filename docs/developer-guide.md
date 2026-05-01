@@ -259,17 +259,18 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `5`
+- `CURRENT_SETTINGS_VERSION` is currently `6`
 - the LED current-limit default is `1.5 A`; its internal limiter budget is calibrated to match the previous `2.0 A` behavior
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
-- onboard synth modulation routing is stored as `SynthModTarget`; factory default is pulse width
+- onboard synth modulation effect is stored as `SynthModTarget`; factory default is `Tone`
 - onboard synth vibrato speed is stored as `SynthVibratoSpeed`; factory default is `6 Hz`
+- metronome mode and time signature are stored as `MetronomeMode` and `MetronomeSignature`; factory defaults are `Off` and `4/4`
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
-- version `2` settings files are migrated in place to version `5` by appending LED current-limit and synth modulation bytes with factory defaults
-- version `3` settings files are migrated in place to version `5` by appending synth-drive and synth modulation bytes with factory defaults
-- version `4` settings files are not migrated because version `4` was not published; they restore factory defaults as an unknown version
+- version `2` settings files are migrated in place to version `6` by appending LED current-limit, synth modulation, and metronome bytes with factory defaults
+- version `3` settings files are migrated in place to version `6` by appending synth-drive, synth modulation, and metronome bytes with factory defaults
+- version `4` and `5` settings files are not migrated because those versions were not published; they restore factory defaults as unknown versions
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
@@ -277,7 +278,7 @@ Important implementation details:
   jack-default `Buzzer` toggle; legacy stored values are interpreted by
   checking whether the older byte had the piezo bit set
 
-If you add, remove, or reorder settings, think about migration. The current code has explicit migrations for `2 -> 5` and `3 -> 5` because published settings were appended to the schema. Unknown version mismatches still fall back to defaults.
+If you add, remove, or reorder settings, think about migration. The current code has explicit migrations for `2 -> 6` and `3 -> 6` because published settings were appended to the schema. Unknown version mismatches still fall back to defaults.
 
 ## MIDI And Tuning Notes
 
