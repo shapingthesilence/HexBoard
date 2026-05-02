@@ -47,7 +47,7 @@ If `Scale Lock` is off, every note button can play. If `Scale Lock` is on, only 
 
 The `DisplayNotes` option in `Advanced` can show a temporary `Now Playing` overlay on the OLED while notes are held. In `12 EDO`, notes display as names such as `C4` or `Eb5`. In other tunings, notes display as step-and-octave values such as `7.4`.
 
-The overlay shows up to `6` unique played notes from lowest to highest, gives wider microtonal labels a little more room, stays visible briefly after release, and can temporarily wake the OLED from screensaver dimming. It is on by default.
+The overlay shows up to `6` unique played notes from lowest to highest, gives wider microtonal labels a little more room, stays visible briefly after release, and can temporarily wake the OLED from screensaver dimming. In `12 EDO`, recognized chord names appear near the bottom of the OLED. It is on by default.
 
 ## Live Performance Controls
 

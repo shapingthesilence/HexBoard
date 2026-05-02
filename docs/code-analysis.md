@@ -302,6 +302,7 @@ Display behavior:
 - `12 EDO` notes render as chromatic note names with octave numbers.
 - Other tunings render as `step.octave`.
 - Active notes are displayed from lowest to highest pitch; if more than `6` unique notes are active, the lowest `6` are shown.
+- In `12 EDO`, common triads, sixth chords, seventh chords, ninth chords, and related suspended/extended chords are named below the note rows at a fixed position. Inversions use slash-bass notation when the detected root is not the lowest displayed pitch class.
 - Note rows use stable fixed columns spread close to the OLED edges, so changing label widths do not shift note positions.
 - The overlay stays visible briefly after release.
 - A short release grace period prevents chords from visually shrinking while a player releases notes unevenly.
@@ -498,7 +499,7 @@ Run or manually verify the areas your change touches:
 - rotary panic stop
 - color modes, including `Tiered` and `Diatonic`
 - `ANIMATE_MIDI_IN` if external MIDI display behavior changed
-- `DisplayNotes` overlay in `12 EDO`, a non-12 tuning, chord release, and screensaver wake
+- `DisplayNotes` overlay in `12 EDO`, 12-EDO chord labels, a non-12 tuning, chord release, and screensaver wake
 - delegated-control enter, LED update, button event, and exit SysEx
 
 For docs-only changes, a compile is not necessary, but keep terminology aligned with `src/HexBoard.ino`.

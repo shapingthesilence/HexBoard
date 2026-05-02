@@ -2749,6 +2749,8 @@ constexpr int16_t DISPLAYED_NOTE_UNUSED = INT16_MIN;
 constexpr uint64_t DISPLAYED_NOTES_HOLD_MICROS = 2000000ULL;
 constexpr uint64_t DISPLAYED_NOTES_RELEASE_GRACE_MICROS = 80000ULL;
 constexpr int PLAYED_NOTE_COLUMN_X[3] = { 0, 44, 88 };
+constexpr int PLAYED_CHORD_Y = 92;
+constexpr byte CHORD_NAME_MAX = 18;
 bool displayPlayedNotes = false;
 bool noteOverlayVisible = false;
 bool noteOverlayDirty = true;
@@ -2766,11 +2768,56 @@ const char* const chromaticNames[12] = {
   "F#", "G", "G#", "A", "Bb", "B"
 };
 
+struct ChordPattern {
+  uint16_t intervals;
+  const char* suffix;
+};
+
+constexpr uint16_t chordIntervalBit(byte interval) {
+  return static_cast<uint16_t>(1U << interval);
+}
+
+const ChordPattern chordPatterns[] = {
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(9) | chordIntervalBit(11), "maj13" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(9) | chordIntervalBit(10), "13" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(9) | chordIntervalBit(10), "m13" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(5) | chordIntervalBit(7) | chordIntervalBit(10), "11" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(3) | chordIntervalBit(5) | chordIntervalBit(7) | chordIntervalBit(10), "m11" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(11), "maj9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(10), "9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(10), "m9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(11), "mMaj9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(9), "6/9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(9), "m6/9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(7), "add9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(3) | chordIntervalBit(7), "madd9" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(11), "maj7" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(10), "7" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(10), "m7" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(11), "mMaj7" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(6) | chordIntervalBit(10), "m7b5" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(6) | chordIntervalBit(9), "dim7" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(8) | chordIntervalBit(10), "aug7" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(8) | chordIntervalBit(11), "augMaj7" },
+  { chordIntervalBit(0) | chordIntervalBit(5) | chordIntervalBit(7) | chordIntervalBit(10), "7sus4" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(7) | chordIntervalBit(10), "7sus2" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(9), "6" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(9), "m6" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(7), "" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(7), "m" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(6), "dim" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(8), "aug" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(7), "sus2" },
+  { chordIntervalBit(0) | chordIntervalBit(5) | chordIntervalBit(7), "sus4" }
+};
+const byte CHORD_PATTERN_COUNT = sizeof(chordPatterns) / sizeof(chordPatterns[0]);
+
 void clearDisplayedNotes(int16_t* notes);
 void copyDisplayedNotes(int16_t* destination, const int16_t* source);
 byte rebuildDisplayedNotes(int16_t* notes);
 byte displayedNoteCount(const int16_t* notes);
 bool displayedNotesEqual(const int16_t* first, const int16_t* second);
+bool buildDisplayedChordName(const int16_t* notes, byte count, char* chordText, size_t chordTextSize);
 void drawPlayedNotesOverlay();
 void onToggleDisplayPlayedNotes();
 bool setNoteOverlayTemporaryWake(bool enabled);
@@ -6666,6 +6713,89 @@ bool displayedNotesEqual(const int16_t* first, const int16_t* second) {
   return true;
 }
 
+uint16_t pitchClassMaskRelativeToRoot(uint16_t pitchClassMask, byte rootPitchClass) {
+  uint16_t relativeMask = 0;
+  for (byte pitchClass = 0; pitchClass < 12; pitchClass++) {
+    if (pitchClassMask & chordIntervalBit(pitchClass)) {
+      relativeMask |= chordIntervalBit(positiveMod(pitchClass - rootPitchClass, 12));
+    }
+  }
+  return relativeMask;
+}
+
+const char* matchedChordSuffix(uint16_t pitchClassMask, byte rootPitchClass) {
+  uint16_t relativeMask = pitchClassMaskRelativeToRoot(pitchClassMask, rootPitchClass);
+  for (byte i = 0; i < CHORD_PATTERN_COUNT; i++) {
+    if (chordPatterns[i].intervals == relativeMask) {
+      return chordPatterns[i].suffix;
+    }
+  }
+  return nullptr;
+}
+
+bool writeChordName(uint16_t pitchClassMask, byte rootPitchClass, byte bassPitchClass, char* chordText, size_t chordTextSize) {
+  const char* suffix = matchedChordSuffix(pitchClassMask, rootPitchClass);
+  if (suffix == nullptr) {
+    return false;
+  }
+
+  const char* rootName = chromaticNames[rootPitchClass];
+  if (bassPitchClass == rootPitchClass) {
+    snprintf(chordText, chordTextSize, "%s%s", rootName, suffix);
+  } else {
+    snprintf(chordText, chordTextSize, "%s%s/%s", rootName, suffix, chromaticNames[bassPitchClass]);
+  }
+  return true;
+}
+
+bool buildDisplayedChordName(const int16_t* notes, byte count, char* chordText, size_t chordTextSize) {
+  if (current.tuningIndex != TUNING_12EDO || chordTextSize == 0) {
+    return false;
+  }
+
+  chordText[0] = '\0';
+  uint16_t pitchClassMask = 0;
+  byte pitchClassOrder[12];
+  byte pitchClassCount = 0;
+  byte bassPitchClass = 0;
+  bool hasBass = false;
+
+  for (byte i = 0; i < count; i++) {
+    if (notes[i] == DISPLAYED_NOTE_UNUSED) {
+      continue;
+    }
+
+    byte pitchClass = positiveMod(notes[i], 12);
+    if (!hasBass) {
+      bassPitchClass = pitchClass;
+      hasBass = true;
+    }
+
+    uint16_t bit = chordIntervalBit(pitchClass);
+    if (!(pitchClassMask & bit)) {
+      pitchClassMask |= bit;
+      pitchClassOrder[pitchClassCount++] = pitchClass;
+    }
+  }
+
+  if (pitchClassCount < 3) {
+    return false;
+  }
+
+  if (writeChordName(pitchClassMask, bassPitchClass, bassPitchClass, chordText, chordTextSize)) {
+    return true;
+  }
+
+  for (byte i = 0; i < pitchClassCount; i++) {
+    if (pitchClassOrder[i] != bassPitchClass &&
+        writeChordName(pitchClassMask, pitchClassOrder[i], bassPitchClass, chordText, chordTextSize)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 void onToggleDisplayPlayedNotes() {
   if (!displayPlayedNotes && noteOverlayVisible) {
     noteOverlayVisible = false;
@@ -6765,6 +6895,22 @@ void drawPlayedNotesOverlay() {
 
     u8g2.setFont(u8g2_font_logisoso16_tf);
     u8g2.drawStr(x, y, noteText);
+  }
+
+  char chordText[CHORD_NAME_MAX];
+  if (buildDisplayedChordName(displayedNotes, count, chordText, sizeof(chordText))) {
+    u8g2.setFont(u8g2_font_logisoso16_tf);
+    int chordWidth = u8g2.getStrWidth(chordText);
+    if (chordWidth > u8g2.getDisplayWidth()) {
+      u8g2.setFont(u8g2_font_6x13_tf);
+      chordWidth = u8g2.getStrWidth(chordText);
+    }
+
+    int chordX = (u8g2.getDisplayWidth() - chordWidth) / 2;
+    if (chordX < 0) {
+      chordX = 0;
+    }
+    u8g2.drawStr(chordX, PLAYED_CHORD_Y, chordText);
   }
 
   u8g2.sendBuffer();
