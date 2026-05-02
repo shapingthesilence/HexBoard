@@ -2533,10 +2533,12 @@ inline uint32_t RAM_FUNC(scalePackedColorQ8)(uint32_t color, uint16_t scaleQ8) {
 }
 
 void RAM_FUNC(applyMetronomeBrightnessFlash)() {
-  if (!(metronomeBrightnessSelected() && metronomeVisualFlashActive())) {
+  if (!metronomeBrightnessSelected()) {
     return;
   }
-  uint16_t scaleQ8 = metronomeAccent ? 384 : 320;
+  uint16_t scaleQ8 = metronomeVisualFlashActive()
+                       ? (metronomeAccent ? 256 : 232)
+                       : 184;
   for (byte i = 0; i < LED_COUNT; ++i) {
     strip.setPixelColor(i, scalePackedColorQ8(strip.getPixelColor(i), scaleQ8));
   }
@@ -3679,9 +3681,9 @@ inline int32_t RAM_FUNC(scalePiezoSample)(int32_t sample, uint16_t amplitude) {
 inline int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
   uint16_t gainQ8 = 256;
   switch (synthDrive) {
-    case SYNTH_DRIVE_WARM: gainQ8 = 192; break;
-    case SYNTH_DRIVE_EDGE: gainQ8 = 256; break;
-    case SYNTH_DRIVE_DIRTY: gainQ8 = 384; break;
+    case SYNTH_DRIVE_WARM: gainQ8 = 256; break;
+    case SYNTH_DRIVE_EDGE: gainQ8 = 384; break;
+    case SYNTH_DRIVE_DIRTY: gainQ8 = 640; break;
     case SYNTH_DRIVE_OFF:
     default:
       return sample;
@@ -4403,7 +4405,7 @@ inline uint32_t RAM_FUNC(applySynthVibrato)(uint32_t increment, int16_t vibratoA
 
 inline uint16_t RAM_FUNC(applySynthTonePhaseWarp)(uint16_t phase, uint8_t toneAmount) {
   uint16_t triangle = (phase & 0x8000) ? static_cast<uint16_t>(0xFFFFu - phase) : phase;
-  uint16_t offset = static_cast<uint16_t>((static_cast<uint32_t>(triangle) * static_cast<uint32_t>(toneAmount)) >> 8);
+  uint16_t offset = static_cast<uint16_t>(((static_cast<uint32_t>(triangle) * static_cast<uint32_t>(toneAmount)) * 3u) >> 9);
   return static_cast<uint16_t>(phase + offset);
 }
 
@@ -4699,7 +4701,7 @@ void RAM_FUNC(poll)() {
     switch (currWave) {
       case WAVEFORM_SAW: break;
       case WAVEFORM_TRIANGLE: p = 2 * ((p >> 15) ? p : (65535 - p)); break;
-      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - static_cast<int32_t>(synthToneModValue) * 7 * 16)); break;
+      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - static_cast<int32_t>(synthToneModValue) * 10 * 16)); break;
       case WAVEFORM_HYBRID:
         if (t <= synth[i].a) {
           p = 0;

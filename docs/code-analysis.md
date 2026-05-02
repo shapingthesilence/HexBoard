@@ -404,11 +404,11 @@ The current `SettingsHeader` contains:
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the calibrated table above.
 
-The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled.
+The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
 
-The Synth Options mod-wheel effect controls are persisted as `SynthModTarget` and `SynthVibratoSpeed`. `Tone` remains the default effect: it uses pulse-width modulation for `Square` and a cheap RAM-resident phase warp for the other waveforms. Vibrato uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the mod wheel is above zero.
+The Synth Options mod-wheel effect controls are persisted as `SynthModTarget` and `SynthVibratoSpeed`. `Tone` remains the default effect: it uses a wider pulse-width sweep for `Square` and a cheap RAM-resident phase warp for the other waveforms. Vibrato uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the mod wheel is above zero.
 
-The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown.
+The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness.
 
 Load behavior:
 

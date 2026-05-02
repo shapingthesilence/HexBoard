@@ -205,13 +205,13 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 `Drive` adds soft saturation after the voices are mixed:
 
 - `Off`: clean output, and the factory default
-- `Warm`: a subtle push that adds a little body
-- `Edge`: more obvious bite
+- `Warm`: a clear push that adds body
+- `Edge`: obvious bite and clipping
 - `Dirty`: stronger saturation for rougher synth tones
 
 `Mod Effect` chooses how the mod wheel affects the onboard synth:
 
-- `Tone`: changes pulse width on `Square` and adds phase-warp color to the other waveforms
+- `Tone`: sweeps pulse width on `Square` and adds phase-warp color to the other waveforms
 - `Vibrato`: adds pitch vibrato to the active synth voices
 
 External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed`
@@ -221,7 +221,7 @@ sets the onboard vibrato LFO speed when `Mod Effect` is `Vibrato`.
 
 - `Off`: no metronome
 - `Beep`: a short metronome beep on each beat
-- `Bright`: the whole LED frame brightens briefly on each beat
+- `Bright`: dims the LED frame between beats and returns toward the selected brightness on each beat
 - `Side Btns`: the seven side command buttons flash on each beat
 
 `Time Sig` sets the metronome accent cycle and beat length. The first beat of
