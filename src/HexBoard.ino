@@ -6247,7 +6247,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* EnvelopeDecayIndex           */ 3,
   /* EnvelopeSustainLevel         */ 127,
   /* EnvelopeReleaseIndex         */ 3,
-  /* Display played notes         */ 0,
+  /* Display played notes         */ 1,
   /* LED current limit mode       */ LED_CURRENT_LIMIT_1500MA,
   /* SynthDrive                   */ SYNTH_DRIVE_OFF,
   /* SynthModTarget               */ SYNTH_MOD_TARGET_TONE,
@@ -6603,26 +6603,46 @@ void copyDisplayedNotes(int16_t* destination, const int16_t* source) {
   }
 }
 
+byte insertDisplayedNoteSorted(int16_t* notes, byte count, int16_t displayedPitch) {
+  for (byte i = 0; i < count; i++) {
+    if (notes[i] == displayedPitch) {
+      return count;
+    }
+  }
+
+  byte insertAt = 0;
+  while (insertAt < count && notes[insertAt] < displayedPitch) {
+    insertAt++;
+  }
+
+  if (count < DISPLAYED_NOTES_MAX) {
+    for (byte i = count; i > insertAt; i--) {
+      notes[i] = notes[i - 1];
+    }
+    notes[insertAt] = displayedPitch;
+    return count + 1;
+  }
+
+  if (insertAt < DISPLAYED_NOTES_MAX) {
+    for (byte i = DISPLAYED_NOTES_MAX - 1; i > insertAt; i--) {
+      notes[i] = notes[i - 1];
+    }
+    notes[insertAt] = displayedPitch;
+  }
+
+  return count;
+}
+
 byte rebuildDisplayedNotes(int16_t* notes) {
   clearDisplayedNotes(notes);
   byte out = 0;
-  for (byte i = 0; i < LED_COUNT && out < DISPLAYED_NOTES_MAX; i++) {
+  for (byte i = 0; i < LED_COUNT; i++) {
     if (h[i].isCmd || h[i].MIDIch == 0) {
       continue;
     }
 
     int16_t displayedPitch = h[i].stepsFromC + current.transpose;
-    bool alreadyListed = false;
-    for (byte j = 0; j < out; j++) {
-      if (notes[j] == displayedPitch) {
-        alreadyListed = true;
-        break;
-      }
-    }
-
-    if (!alreadyListed) {
-      notes[out++] = displayedPitch;
-    }
+    out = insertDisplayedNoteSorted(notes, out, displayedPitch);
   }
   return out;
 }
