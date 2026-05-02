@@ -112,6 +112,7 @@ std::vector<byte> pressedKeyIDs = {};
 std::array<std::vector<uint8_t>, 128> midiNoteToHexIndices = {};
 
 void updateEnvelopeParamsFromSettings();
+void updateEffectEnvelopeParamsFromSettings();
 void updateArpeggiatorTiming();
 void updateMetronomeTiming();
 void metronomeModeChanged();
@@ -133,7 +134,7 @@ void RAM_FUNC(applyLedCurrentLimitToFrame)();
 void RAM_FUNC(resetVelocityLEDs)();
 void RAM_FUNC(resetWheelLEDs)();
 uint32_t RAM_FUNC(applyNotePixelColor)(byte x);
-bool migrateSettingsV2(File& f, const SettingsHeader& header);
+bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t settingsPerProfile);
 /*
     C++ returns a negative value for
     negative N % D. This function
@@ -297,6 +298,10 @@ uint8_t envelopeAttackIndex = 2;
 uint8_t envelopeDecayIndex = 3;
 uint8_t envelopeSustainLevel = 127;
 uint8_t envelopeReleaseIndex = 3;
+uint8_t effectEnvelopeAttackIndex = 0;
+uint8_t effectEnvelopeDecayIndex = 0;
+uint8_t effectEnvelopeSustainLevel = 0;
+uint8_t effectEnvelopeReleaseIndex = 0;
 
 constexpr byte SYNTH_OFF = 0;
 constexpr byte SYNTH_MONO = 1;
@@ -322,6 +327,7 @@ byte synthDrive = SYNTH_DRIVE_OFF;
 constexpr byte SYNTH_MOD_TARGET_TONE = 0;
 constexpr byte SYNTH_MOD_TARGET_VIBRATO = 1;
 byte synthModTarget = SYNTH_MOD_TARGET_TONE;
+byte synthEnvelopeTarget = SYNTH_MOD_TARGET_VIBRATO;
 
 constexpr byte SYNTH_VIBRATO_SPEED_SLOW = 0;
 constexpr byte SYNTH_VIBRATO_SPEED_MEDIUM = 1;
@@ -338,6 +344,7 @@ constexpr byte PIANO_COLOR_MODE = 5;
 constexpr byte PIANO_INCANDESCENT_COLOR_MODE = 6;
 constexpr byte DIATONIC_COLOR_MODE = 7;
 byte colorMode = RAINBOW_MODE;
+bool bootAnimationEnabled = true;
 
 constexpr byte ANIMATE_BUTTON = 0;
 constexpr byte ANIMATE_STAR = 1;
@@ -550,7 +557,16 @@ struct EnvelopeParams {
 };
 
 EnvelopeParams envelopeParams;
+EnvelopeParams effectEnvelopeParams;
 std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS> envelopeReleaseIncrementByLevel = {};
+std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS> effectEnvelopeReleaseIncrementByLevel = {};
+void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
+void updateEnvelopeParamsFromValues(EnvelopeParams& params,
+                                    uint8_t& attackIndex,
+                                    uint8_t& decayIndex,
+                                    uint8_t& sustainLevel,
+                                    uint8_t& releaseIndex,
+                                    std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
 
 /*
     Sko: I felt like maximizing precision for just intonation purposes.
@@ -2105,6 +2121,10 @@ void fadeToNormalLedFrame() {
 }
 
 void runBootLedSelfCheck() {
+  if (!bootAnimationEnabled) {
+    return;
+  }
+
   if (settingsFileMissingOnBoot) {
     showFirstBootWhiteDiagnostic();
   }
@@ -4169,6 +4189,18 @@ inline uint16_t RAM_FUNC(releaseIncrementForLevel)(uint32_t level) {
   return increment ? increment : 1;
 }
 
+inline uint16_t RAM_FUNC(effectReleaseIncrementForLevel)(uint32_t level) {
+  if (level == 0) {
+    return 1;
+  }
+  uint32_t bucket = (level - 1) >> ENVELOPE_RELEASE_INCREMENT_SHIFT;
+  if (bucket >= effectEnvelopeReleaseIncrementByLevel.size()) {
+    bucket = effectEnvelopeReleaseIncrementByLevel.size() - 1;
+  }
+  uint16_t increment = effectEnvelopeReleaseIncrementByLevel[bucket];
+  return increment ? increment : 1;
+}
+
 struct EnvelopeState {
   uint32_t level = 0;
   uint32_t releaseIncrement = 0;
@@ -4176,6 +4208,7 @@ struct EnvelopeState {
 };
 
 std::array<EnvelopeState, POLYPHONY_LIMIT> envelopeStates;
+std::array<EnvelopeState, POLYPHONY_LIMIT> effectEnvelopeStates;
 enum class EnvelopeCommand : uint8_t {
   None,
   StartAttack,
@@ -4258,52 +4291,81 @@ inline void clearPendingVoiceFreed(uint8_t channel) {
   voiceFreedConsumedSeq[channel] = voiceFreedPublishedSeq[channel];
 }
 
-void updateEnvelopeReleaseIncrementTable() {
-  for (size_t bucket = 0; bucket < envelopeReleaseIncrementByLevel.size(); ++bucket) {
+void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
+  for (size_t bucket = 0; bucket < releaseTable.size(); ++bucket) {
     uint32_t bucketLevel = static_cast<uint32_t>(bucket + 1) << ENVELOPE_RELEASE_INCREMENT_SHIFT;
     if (bucketLevel > envelopeMaxLevel) {
       bucketLevel = envelopeMaxLevel;
     }
-    envelopeReleaseIncrementByLevel[bucket] = (envelopeParams.releaseTicks == 0)
-                                                ? envelopeMaxLevel
-                                                : static_cast<uint16_t>(std::max<uint32_t>(
-                                                    1,
-                                                    (bucketLevel + envelopeParams.releaseTicks - 1) / envelopeParams.releaseTicks));
+    releaseTable[bucket] = (params.releaseTicks == 0)
+                             ? envelopeMaxLevel
+                             : static_cast<uint16_t>(std::max<uint32_t>(
+                                 1,
+                                 (bucketLevel + params.releaseTicks - 1) / params.releaseTicks));
   }
 }
 
-void updateEnvelopeParamsFromSettings() {
+void updateEnvelopeParamsFromValues(EnvelopeParams& params,
+                                    uint8_t& attackIndex,
+                                    uint8_t& decayIndex,
+                                    uint8_t& sustainLevel,
+                                    uint8_t& releaseIndex,
+                                    std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
   auto clampIndex = [](uint8_t& index) {
     if (index >= envelopeTimeMicrosOptions.size()) {
       index = static_cast<uint8_t>(envelopeTimeMicrosOptions.size() - 1);
     }
   };
 
-  clampIndex(envelopeAttackIndex);
-  clampIndex(envelopeDecayIndex);
-  clampIndex(envelopeReleaseIndex);
+  clampIndex(attackIndex);
+  clampIndex(decayIndex);
+  clampIndex(releaseIndex);
 
-  uint32_t attackMicros = envelopeTimeMicrosOptions[envelopeAttackIndex];
-  envelopeParams.attackTicks = ticksFromMicros(attackMicros);
-  envelopeParams.attackIncrement = (envelopeParams.attackTicks == 0)
-                                     ? envelopeMaxLevel
-                                     : std::max<uint32_t>(1, (envelopeMaxLevel + envelopeParams.attackTicks - 1) / envelopeParams.attackTicks);
+  uint32_t attackMicros = envelopeTimeMicrosOptions[attackIndex];
+  params.attackTicks = ticksFromMicros(attackMicros);
+  params.attackIncrement = (params.attackTicks == 0)
+                             ? envelopeMaxLevel
+                             : std::max<uint32_t>(1, (envelopeMaxLevel + params.attackTicks - 1) / params.attackTicks);
 
-  uint8_t sustainByte = std::min<uint8_t>(127, envelopeSustainLevel);
-  envelopeParams.sustainLevel = static_cast<uint16_t>((static_cast<uint32_t>(sustainByte) * envelopeMaxLevel) / 127);
+  sustainLevel = std::min<uint8_t>(127, sustainLevel);
+  params.sustainLevel = static_cast<uint16_t>((static_cast<uint32_t>(sustainLevel) * envelopeMaxLevel) / 127);
 
-  uint32_t decayMicros = envelopeTimeMicrosOptions[envelopeDecayIndex];
-  envelopeParams.decayTicks = ticksFromMicros(decayMicros);
-  if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
-    envelopeParams.decayIncrement = envelopeMaxLevel;
+  uint32_t decayMicros = envelopeTimeMicrosOptions[decayIndex];
+  params.decayTicks = ticksFromMicros(decayMicros);
+  if (params.decayTicks == 0 || params.sustainLevel >= envelopeMaxLevel) {
+    params.decayIncrement = envelopeMaxLevel;
   } else {
-    uint32_t difference = envelopeMaxLevel - envelopeParams.sustainLevel;
-    envelopeParams.decayIncrement = std::max<uint32_t>(1, (difference + envelopeParams.decayTicks - 1) / envelopeParams.decayTicks);
+    uint32_t difference = envelopeMaxLevel - params.sustainLevel;
+    params.decayIncrement = std::max<uint32_t>(1, (difference + params.decayTicks - 1) / params.decayTicks);
   }
 
-  uint32_t releaseMicros = envelopeTimeMicrosOptions[envelopeReleaseIndex];
-  envelopeParams.releaseTicks = ticksFromMicros(releaseMicros);
-  updateEnvelopeReleaseIncrementTable();
+  uint32_t releaseMicros = envelopeTimeMicrosOptions[releaseIndex];
+  params.releaseTicks = ticksFromMicros(releaseMicros);
+  updateEnvelopeReleaseIncrementTable(params, releaseTable);
+}
+
+void updateEnvelopeParamsFromSettings() {
+  updateEnvelopeParamsFromValues(envelopeParams,
+                                 envelopeAttackIndex,
+                                 envelopeDecayIndex,
+                                 envelopeSustainLevel,
+                                 envelopeReleaseIndex,
+                                 envelopeReleaseIncrementByLevel);
+}
+
+bool synthEffectEnvelopeActive = false;
+
+void updateEffectEnvelopeParamsFromSettings() {
+  updateEnvelopeParamsFromValues(effectEnvelopeParams,
+                                 effectEnvelopeAttackIndex,
+                                 effectEnvelopeDecayIndex,
+                                 effectEnvelopeSustainLevel,
+                                 effectEnvelopeReleaseIndex,
+                                 effectEnvelopeReleaseIncrementByLevel);
+  synthEffectEnvelopeActive = (effectEnvelopeAttackIndex != 0)
+                           || (effectEnvelopeDecayIndex != 0)
+                           || (effectEnvelopeSustainLevel != 0)
+                           || (effectEnvelopeReleaseIndex != 0);
 }
 /*
     This defines which hardware alarm
@@ -4379,10 +4441,101 @@ void updateSynthVibratoParams() {
   if (synthModTarget > SYNTH_MOD_TARGET_VIBRATO) {
     synthModTarget = SYNTH_MOD_TARGET_TONE;
   }
+  synthEnvelopeTarget = (synthModTarget == SYNTH_MOD_TARGET_TONE)
+                          ? SYNTH_MOD_TARGET_VIBRATO
+                          : SYNTH_MOD_TARGET_TONE;
   if (synthVibratoSpeed >= synthVibratoPhaseIncrementOptions.size()) {
     synthVibratoSpeed = SYNTH_VIBRATO_SPEED_MEDIUM;
   }
   synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[synthVibratoSpeed];
+}
+
+inline uint8_t RAM_FUNC(effectEnvelopeModValue)(uint32_t level) {
+  uint32_t value = (level + 256u) >> 9;
+  return static_cast<uint8_t>(value > 127 ? 127 : value);
+}
+
+inline void RAM_FUNC(startEffectEnvelopeAttack)(EnvelopeState& env) {
+  env.releaseIncrement = 0;
+  if (effectEnvelopeParams.attackTicks == 0) {
+    env.level = envelopeMaxLevel;
+    if (effectEnvelopeParams.decayTicks == 0 || effectEnvelopeParams.sustainLevel >= envelopeMaxLevel) {
+      env.stage = EnvelopeStage::Sustain;
+      env.level = effectEnvelopeParams.sustainLevel;
+    } else {
+      env.stage = EnvelopeStage::Decay;
+    }
+  } else {
+    env.stage = EnvelopeStage::Attack;
+    env.level = 0;
+  }
+  if (env.stage == EnvelopeStage::Decay && effectEnvelopeParams.decayTicks == 0) {
+    env.stage = EnvelopeStage::Sustain;
+    env.level = effectEnvelopeParams.sustainLevel;
+  }
+  if (env.stage == EnvelopeStage::Sustain) {
+    env.level = effectEnvelopeParams.sustainLevel;
+  }
+}
+
+inline void RAM_FUNC(startEffectEnvelopeRelease)(EnvelopeState& env) {
+  if (effectEnvelopeParams.releaseTicks == 0 || env.level == 0) {
+    env = EnvelopeState{};
+    return;
+  }
+  env.stage = EnvelopeStage::Release;
+  env.releaseIncrement = effectReleaseIncrementForLevel(env.level);
+}
+
+inline void RAM_FUNC(updateEffectEnvelopeState)(EnvelopeState& env) {
+  switch (env.stage) {
+    case EnvelopeStage::Attack: {
+      uint32_t nextLevel = env.level + effectEnvelopeParams.attackIncrement;
+      if (env.level >= envelopeMaxLevel || nextLevel >= envelopeMaxLevel) {
+        env.level = envelopeMaxLevel;
+        if (effectEnvelopeParams.decayTicks == 0 || effectEnvelopeParams.sustainLevel >= envelopeMaxLevel) {
+          env.stage = EnvelopeStage::Sustain;
+          env.level = effectEnvelopeParams.sustainLevel;
+        } else {
+          env.stage = EnvelopeStage::Decay;
+        }
+      } else {
+        env.level = nextLevel;
+      }
+      break;
+    }
+    case EnvelopeStage::Decay:
+      if (effectEnvelopeParams.decayTicks == 0 || effectEnvelopeParams.sustainLevel >= envelopeMaxLevel) {
+        env.stage = EnvelopeStage::Sustain;
+        env.level = effectEnvelopeParams.sustainLevel;
+      } else if (env.level > effectEnvelopeParams.sustainLevel) {
+        uint32_t nextLevel = (env.level > effectEnvelopeParams.decayIncrement) ? (env.level - effectEnvelopeParams.decayIncrement) : 0;
+        if (nextLevel <= effectEnvelopeParams.sustainLevel) {
+          env.level = effectEnvelopeParams.sustainLevel;
+          env.stage = EnvelopeStage::Sustain;
+        } else {
+          env.level = nextLevel;
+        }
+      } else {
+        env.level = effectEnvelopeParams.sustainLevel;
+        env.stage = EnvelopeStage::Sustain;
+      }
+      break;
+    case EnvelopeStage::Sustain:
+      env.level = effectEnvelopeParams.sustainLevel;
+      break;
+    case EnvelopeStage::Release:
+      if (effectEnvelopeParams.releaseTicks == 0 || env.releaseIncrement == 0 || env.level <= env.releaseIncrement) {
+        env = EnvelopeState{};
+      } else {
+        env.level -= env.releaseIncrement;
+      }
+      break;
+    case EnvelopeStage::Idle:
+    default:
+      env.level = 0;
+      break;
+  }
 }
 
 inline uint32_t RAM_FUNC(applySynthVibrato)(uint32_t increment, int16_t vibratoAmount) {
@@ -4540,12 +4693,15 @@ void RAM_FUNC(poll)() {
   const int32_t metronomeSample = readMetronomeBeepSample();
   const bool metronomeAudible = metronomeSample != 0;
   const uint8_t synthModValue = smoothedSynthModValue();
-  const uint8_t synthToneModValue = (synthModTarget == SYNTH_MOD_TARGET_TONE) ? synthModValue : 0;
-  int16_t synthVibratoAmount = 0;
-  if (synthModTarget == SYNTH_MOD_TARGET_VIBRATO && synthModValue > 0) {
+  const uint8_t wheelToneModValue = (synthModTarget == SYNTH_MOD_TARGET_TONE) ? synthModValue : 0;
+  const bool wheelVibratoActive = (synthModTarget == SYNTH_MOD_TARGET_VIBRATO) && (synthModValue > 0);
+  const bool envelopeVibratoActive = synthEffectEnvelopeActive && (synthEnvelopeTarget == SYNTH_MOD_TARGET_VIBRATO);
+  int16_t synthVibratoSample = 0;
+  if (wheelVibratoActive || envelopeVibratoActive) {
     synthVibratoPhase += synthVibratoPhaseIncrement;
-    synthVibratoAmount = (static_cast<int16_t>(sine[synthVibratoPhase >> 24]) - 128) * static_cast<int16_t>(synthModValue);
+    synthVibratoSample = static_cast<int16_t>(sine[synthVibratoPhase >> 24]) - 128;
   }
+  const int16_t wheelVibratoAmount = wheelVibratoActive ? synthVibratoSample * static_cast<int16_t>(synthModValue) : 0;
   // ============================================================
   // Smooth poly loudness normalization
   // Old behavior: scale by integer "voices" count.
@@ -4564,6 +4720,7 @@ void RAM_FUNC(poll)() {
   byte t;
   for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
     EnvelopeState& env = envelopeStates[i];
+    EnvelopeState& effectEnv = effectEnvelopeStates[i];
 
     EnvelopeCommand pendingCommand = consumeEnvelopeCommand(i);
     switch (pendingCommand) {
@@ -4588,6 +4745,11 @@ void RAM_FUNC(poll)() {
         if (env.stage == EnvelopeStage::Sustain) {
           env.level = envelopeParams.sustainLevel;
         }
+        if (synthEffectEnvelopeActive) {
+          startEffectEnvelopeAttack(effectEnv);
+        } else {
+          effectEnv = EnvelopeState{};
+        }
         break;
       }
       case EnvelopeCommand::StartRelease: {
@@ -4606,10 +4768,16 @@ void RAM_FUNC(poll)() {
           }
           env.releaseIncrement = releaseIncrementForLevel(env.level);
         }
+        if (synthEffectEnvelopeActive) {
+          startEffectEnvelopeRelease(effectEnv);
+        } else {
+          effectEnv = EnvelopeState{};
+        }
         break;
       }
       case EnvelopeCommand::Reset: {
         env = EnvelopeState{};
+        effectEnv = EnvelopeState{};
         synth[i].increment = 0;
         synth[i].targetIncrement = 0;
         synth[i].counter = 0;
@@ -4680,6 +4848,7 @@ void RAM_FUNC(poll)() {
         synth[i].increment = 0;
         synth[i].targetIncrement = 0;
         synth[i].counter = 0;
+        effectEnv = EnvelopeState{};
         continue;
     }
 
@@ -4687,21 +4856,35 @@ void RAM_FUNC(poll)() {
       continue;
     }
 
+    if (synthEffectEnvelopeActive) {
+      updateEffectEnvelopeState(effectEnv);
+    }
+    const uint8_t envelopeEffectValue = (synthEffectEnvelopeActive && effectEnv.level != 0)
+                                          ? effectEnvelopeModValue(effectEnv.level)
+                                          : 0;
+    uint8_t voiceToneModValue = wheelToneModValue;
+    int16_t voiceVibratoAmount = wheelVibratoAmount;
+    if (synthEnvelopeTarget == SYNTH_MOD_TARGET_TONE) {
+      voiceToneModValue = envelopeEffectValue;
+    } else if (envelopeEffectValue != 0) {
+      voiceVibratoAmount = synthVibratoSample * static_cast<int16_t>(envelopeEffectValue);
+    }
+
     smoothUint32Toward(synth[i].increment, synth[i].targetIncrement, SYNTH_PITCH_SMOOTH_SHIFT);
     uint32_t phaseIncrement = synth[i].increment;
-    if (synthVibratoAmount != 0) {
-      phaseIncrement = applySynthVibrato(phaseIncrement, synthVibratoAmount);
+    if (voiceVibratoAmount != 0) {
+      phaseIncrement = applySynthVibrato(phaseIncrement, voiceVibratoAmount);
     }
     synth[i].counter += phaseIncrement;  // high 16 bits loop from 65535 -> 0
     p = static_cast<uint16_t>(synth[i].counter >> 16);
-    if (synthToneModValue != 0 && currWave != WAVEFORM_SQUARE) {
-      p = applySynthTonePhaseWarp(p, synthToneModValue);
+    if (voiceToneModValue != 0 && currWave != WAVEFORM_SQUARE) {
+      p = applySynthTonePhaseWarp(p, voiceToneModValue);
     }
     t = p >> 8;
     switch (currWave) {
       case WAVEFORM_SAW: break;
       case WAVEFORM_TRIANGLE: p = 2 * ((p >> 15) ? p : (65535 - p)); break;
-      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - static_cast<int32_t>(synthToneModValue) * 10 * 16)); break;
+      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - static_cast<int32_t>(voiceToneModValue) * 10 * 16)); break;
       case WAVEFORM_HYBRID:
         if (t <= synth[i].a) {
           p = 0;
@@ -5897,9 +6080,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 6;
-constexpr uint8_t MIGRATABLE_SETTINGS_VERSION_V3 = 3;
-constexpr uint8_t LEGACY_SETTINGS_VERSION = 2;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 7;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -5975,6 +6156,11 @@ enum class SettingKey : uint8_t {
   SynthVibratoSpeed,
   MetronomeMode,
   MetronomeSignature,
+  EffectEnvelopeAttackIndex,
+  EffectEnvelopeDecayIndex,
+  EffectEnvelopeSustainLevel,
+  EffectEnvelopeReleaseIndex,
+  BootAnimationEnabled,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -5983,9 +6169,11 @@ enum class SettingKey : uint8_t {
 constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
 constexpr uint8_t NUM_SETTINGS_V2 = static_cast<uint8_t>(SettingKey::LedCurrentLimitMode);
 constexpr uint8_t NUM_SETTINGS_V3 = static_cast<uint8_t>(SettingKey::SynthDrive);
+constexpr uint8_t NUM_SETTINGS_V4 = static_cast<uint8_t>(SettingKey::SynthModTarget);
+constexpr uint8_t NUM_SETTINGS_V5 = static_cast<uint8_t>(SettingKey::MetronomeMode);
+constexpr uint8_t NUM_SETTINGS_V6 = static_cast<uint8_t>(SettingKey::EffectEnvelopeAttackIndex);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
-constexpr size_t SETTINGS_DATA_SIZE_V2 = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS_V2;
-constexpr size_t SETTINGS_DATA_SIZE_V3 = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS_V3;
+constexpr size_t SETTINGS_DATA_SIZE_V6 = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS_V6;
 
 // ==================================================
 // Global Settings Array and Factory Defaults
@@ -6066,6 +6254,11 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* SynthVibratoSpeed            */ SYNTH_VIBRATO_SPEED_MEDIUM,
   /* MetronomeMode                */ METRONOME_MODE_OFF,
   /* MetronomeSignature           */ 0,
+  /* EffectEnvelopeAttackIndex    */ 0,
+  /* EffectEnvelopeDecayIndex     */ 0,
+  /* EffectEnvelopeSustainLevel   */ 0,
+  /* EffectEnvelopeReleaseIndex   */ 0,
+  /* BootAnimationEnabled         */ 1,
 };
 
 // ==================================================
@@ -6116,51 +6309,27 @@ void applyFactoryDefaultsToSettings() {
   settingsDirty = false;
 }
 
-bool migrateSettingsV2(File& f, const SettingsHeader& header) {
-  std::array<uint8_t, SETTINGS_DATA_SIZE_V2> legacyProfiles = { 0 };
-  size_t bytesRead = f.read(legacyProfiles.data(), SETTINGS_DATA_SIZE_V2);
-  f.close();
-  if (bytesRead != SETTINGS_DATA_SIZE_V2) {
-    sendToLog("Warning: Legacy settings data incomplete. Restoring defaults.");
+bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t settingsPerProfile) {
+  size_t previousDataSize = static_cast<size_t>(PROFILE_COUNT) * settingsPerProfile;
+  std::array<uint8_t, SETTINGS_DATA_SIZE_V6> previousProfiles = { 0 };
+  if (previousDataSize > previousProfiles.size()) {
+    sendToLog("Warning: Settings migration source is too large. Restoring defaults.");
+    f.close();
     applyFactoryDefaultsToSettings();
     save_settings();
     return false;
   }
 
-  uint32_t computed = crc32(legacyProfiles.data(), SETTINGS_DATA_SIZE_V2);
-  if (computed != header.crc32) {
-    sendToLog("Legacy settings CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
-    applyFactoryDefaultsToSettings();
-    save_settings();
-    return false;
-  }
-
-  applyFactoryDefaultsToSettings();
-  for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
-    memcpy(settingsProfiles[profile],
-           legacyProfiles.data() + (static_cast<size_t>(profile) * NUM_SETTINGS_V2),
-           NUM_SETTINGS_V2);
-  }
-  activeProfileIndex = defaultProfileIndex;
-  settings = settingsProfiles[activeProfileIndex];
-  settingsDirty = false;
-  sendToLog("Settings migrated from version 2 to version " + std::to_string(CURRENT_SETTINGS_VERSION) + ".");
-  save_settings();
-  return true;
-}
-
-bool migrateSettingsV3(File& f, const SettingsHeader& header) {
-  std::array<uint8_t, SETTINGS_DATA_SIZE_V3> previousProfiles = { 0 };
-  size_t bytesRead = f.read(previousProfiles.data(), SETTINGS_DATA_SIZE_V3);
+  size_t bytesRead = f.read(previousProfiles.data(), previousDataSize);
   f.close();
-  if (bytesRead != SETTINGS_DATA_SIZE_V3) {
+  if (bytesRead != previousDataSize) {
     sendToLog("Warning: Previous settings data incomplete. Restoring defaults.");
     applyFactoryDefaultsToSettings();
     save_settings();
     return false;
   }
 
-  uint32_t computed = crc32(previousProfiles.data(), SETTINGS_DATA_SIZE_V3);
+  uint32_t computed = crc32(previousProfiles.data(), previousDataSize);
   if (computed != header.crc32) {
     sendToLog("Previous settings CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
     applyFactoryDefaultsToSettings();
@@ -6171,13 +6340,13 @@ bool migrateSettingsV3(File& f, const SettingsHeader& header) {
   applyFactoryDefaultsToSettings();
   for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
     memcpy(settingsProfiles[profile],
-           previousProfiles.data() + (static_cast<size_t>(profile) * NUM_SETTINGS_V3),
-           NUM_SETTINGS_V3);
+           previousProfiles.data() + (static_cast<size_t>(profile) * settingsPerProfile),
+           settingsPerProfile);
   }
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
   settingsDirty = false;
-  sendToLog("Settings migrated from version 3 to version " + std::to_string(CURRENT_SETTINGS_VERSION) + ".");
+  sendToLog("Settings migrated from version " + std::to_string(header.version) + " to version " + std::to_string(CURRENT_SETTINGS_VERSION) + ".");
   save_settings();
   return true;
 }
@@ -6212,11 +6381,19 @@ bool load_settings() {
     save_settings();
     return false;
   }
-  if (header.version == LEGACY_SETTINGS_VERSION) {
-    return migrateSettingsV2(f, header);
-  }
-  if (header.version == MIGRATABLE_SETTINGS_VERSION_V3) {
-    return migrateSettingsV3(f, header);
+  switch (header.version) {
+    case 2:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V2);
+    case 3:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V3);
+    case 4:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V4);
+    case 5:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V5);
+    case 6:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V6);
+    default:
+      break;
   }
   if (header.version != CURRENT_SETTINGS_VERSION) {
     sendToLog("Settings version mismatch. File version: " + std::to_string(header.version) + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION));
@@ -6858,6 +7035,15 @@ PersistentCallbackInfo callbackInfoDisplayPlayedNotes = {
   onToggleDisplayPlayedNotes
 };
 GEMItem menuItemDisplayPlayedNotes("DisplayNotes", displayPlayedNotes, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDisplayPlayedNotes));
+
+PersistentCallbackInfo callbackInfoBootAnimation = {
+  static_cast<uint8_t>(SettingKey::BootAnimationEnabled),
+  reinterpret_cast<void*>(&bootAnimationEnabled),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemBootAnimation("Boot Anim", bootAnimationEnabled, universalSaveCallback,
+                              reinterpret_cast<void*>(&callbackInfoBootAnimation));
 
 SelectOptionByte optionByteLedTest[] = {
   { "Off", LED_TEST_OFF },
@@ -7609,12 +7795,13 @@ PersistentCallbackInfo callbackInfoSynthModTarget = {
   nullptr,
   updateSynthVibratoParams
 };
-GEMItem menuItemSynthModTarget("Mod Effect", synthModTarget, selectSynthModTarget, universalSaveCallback,
+GEMItem menuItemSynthModTarget("Wheel FX", synthModTarget, selectSynthModTarget, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoSynthModTarget));
 void previewSynthModTarget(GEMPreviewCallbackData previewData) {
   synthModTarget = previewData.previewValByte;
   updateSynthVibratoParams();
 }
+GEMItem menuItemSynthEnvelopeTarget("Env FX", synthEnvelopeTarget, selectSynthModTarget, GEM_READONLY);
 
 SelectOptionByte optionByteSynthVibratoSpeed[] = {
   { "4 Hz", SYNTH_VIBRATO_SPEED_SLOW },
@@ -7767,30 +7954,78 @@ PersistentCallbackInfo callbackInfoEnvelopeRelease = {
   nullptr,
   updateEnvelopeParamsFromSettings
 };
+PersistentCallbackInfo callbackInfoEffectEnvelopeAttack = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelopeAttackIndex),
+  reinterpret_cast<void*>(&effectEnvelopeAttackIndex),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelopeDecay = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelopeDecayIndex),
+  reinterpret_cast<void*>(&effectEnvelopeDecayIndex),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelopeSustain = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelopeSustainLevel),
+  reinterpret_cast<void*>(&effectEnvelopeSustainLevel),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelopeRelease = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelopeReleaseIndex),
+  reinterpret_cast<void*>(&effectEnvelopeReleaseIndex),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
 
-GEMItem menuItemEnvelopeAttack("Attack", envelopeAttackIndex, selectEnvelopeAttack, universalSaveCallback,
+GEMItem menuItemEnvelopeAttack("Amp Atk", envelopeAttackIndex, selectEnvelopeAttack, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoEnvelopeAttack));
 void previewEnvelopeAttack(GEMPreviewCallbackData previewData) {
   envelopeAttackIndex = previewData.previewValByte;
   updateEnvelopeParamsFromSettings();
 }
-GEMItem menuItemEnvelopeDecay("Decay", envelopeDecayIndex, selectEnvelopeDecay, universalSaveCallback,
+GEMItem menuItemEnvelopeDecay("Amp Dec", envelopeDecayIndex, selectEnvelopeDecay, universalSaveCallback,
                               reinterpret_cast<void*>(&callbackInfoEnvelopeDecay));
 void previewEnvelopeDecay(GEMPreviewCallbackData previewData) {
   envelopeDecayIndex = previewData.previewValByte;
   updateEnvelopeParamsFromSettings();
 }
-GEMItem menuItemEnvelopeSustain("Sustain", envelopeSustainLevel, selectEnvelopeSustain, universalSaveCallback,
+GEMItem menuItemEnvelopeSustain("Amp Sus", envelopeSustainLevel, selectEnvelopeSustain, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoEnvelopeSustain));
 void previewEnvelopeSustain(GEMPreviewCallbackData previewData) {
   envelopeSustainLevel = previewData.previewValByte;
   updateEnvelopeParamsFromSettings();
 }
-GEMItem menuItemEnvelopeRelease("Release", envelopeReleaseIndex, selectEnvelopeRelease, universalSaveCallback,
+GEMItem menuItemEnvelopeRelease("Amp Rel", envelopeReleaseIndex, selectEnvelopeRelease, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoEnvelopeRelease));
 void previewEnvelopeRelease(GEMPreviewCallbackData previewData) {
   envelopeReleaseIndex = previewData.previewValByte;
   updateEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelopeAttack("FX Atk", effectEnvelopeAttackIndex, selectEnvelopeAttack, universalSaveCallback,
+                                     reinterpret_cast<void*>(&callbackInfoEffectEnvelopeAttack));
+void previewEffectEnvelopeAttack(GEMPreviewCallbackData previewData) {
+  effectEnvelopeAttackIndex = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelopeDecay("FX Dec", effectEnvelopeDecayIndex, selectEnvelopeDecay, universalSaveCallback,
+                                    reinterpret_cast<void*>(&callbackInfoEffectEnvelopeDecay));
+void previewEffectEnvelopeDecay(GEMPreviewCallbackData previewData) {
+  effectEnvelopeDecayIndex = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelopeSustain("FX Sus", effectEnvelopeSustainLevel, selectEnvelopeSustain, universalSaveCallback,
+                                      reinterpret_cast<void*>(&callbackInfoEffectEnvelopeSustain));
+void previewEffectEnvelopeSustain(GEMPreviewCallbackData previewData) {
+  effectEnvelopeSustainLevel = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelopeRelease("FX Rel", effectEnvelopeReleaseIndex, selectEnvelopeRelease, universalSaveCallback,
+                                      reinterpret_cast<void*>(&callbackInfoEffectEnvelopeRelease));
+void previewEffectEnvelopeRelease(GEMPreviewCallbackData previewData) {
+  effectEnvelopeReleaseIndex = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
 }
 
 SelectOptionInt optionIntModWheel[] = { { "too slo", 1 }, { "Turtle", 2 }, { "Slow", 4 }, { "Medium", 8 }, { "Fast", 16 }, { "Cheetah", 32 }, { "Instant", 127 } };
@@ -7920,8 +8155,14 @@ void syncSettingsToRuntime() {
   envelopeDecayIndex = settingValue(SettingKey::EnvelopeDecayIndex);
   envelopeSustainLevel = settingValue(SettingKey::EnvelopeSustainLevel);
   envelopeReleaseIndex = settingValue(SettingKey::EnvelopeReleaseIndex);
+  effectEnvelopeAttackIndex = settingValue(SettingKey::EffectEnvelopeAttackIndex);
+  effectEnvelopeDecayIndex = settingValue(SettingKey::EffectEnvelopeDecayIndex);
+  effectEnvelopeSustainLevel = settingValue(SettingKey::EffectEnvelopeSustainLevel);
+  effectEnvelopeReleaseIndex = settingValue(SettingKey::EffectEnvelopeReleaseIndex);
+  bootAnimationEnabled = settingEnabled(SettingKey::BootAnimationEnabled);
   displayPlayedNotes = settingEnabled(SettingKey::DisplayPlayedNotes);
   updateEnvelopeParamsFromSettings();
+  updateEffectEnvelopeParamsFromSettings();
   updateArpeggiatorTiming();
 
   // Now *apply* them to the engine/UI:
@@ -8218,11 +8459,16 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynth, menuItemWaveform, previewWaveform);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
   addPreviewMenuItem(menuPageSynth, menuItemSynthModTarget, previewSynthModTarget);
+  menuPageSynth.addMenuItem(menuItemSynthEnvelopeTarget);
   addPreviewMenuItem(menuPageSynth, menuItemSynthVibratoSpeed, previewSynthVibratoSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeAttack, previewEnvelopeAttack);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeDecay, previewEnvelopeDecay);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeSustain, previewEnvelopeSustain);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeRelease, previewEnvelopeRelease);
+  addPreviewMenuItem(menuPageSynth, menuItemEffectEnvelopeAttack, previewEffectEnvelopeAttack);
+  addPreviewMenuItem(menuPageSynth, menuItemEffectEnvelopeDecay, previewEffectEnvelopeDecay);
+  addPreviewMenuItem(menuPageSynth, menuItemEffectEnvelopeSustain, previewEffectEnvelopeSustain);
+  addPreviewMenuItem(menuPageSynth, menuItemEffectEnvelopeRelease, previewEffectEnvelopeRelease);
   addPreviewMenuItem(menuPageSynth, menuItemArpSpeed, previewArpSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemSynthBPM, previewSynthBPM);
   addPreviewMenuItem(menuPageSynth, menuItemMetronomeMode, previewMetronomeMode);
@@ -8267,6 +8513,7 @@ void setupAdvancedMenuPage() {
   menuPageAdvanced.addMenuItem(menuItemRotary);
   menuPageAdvanced.addMenuItem(menuItemShiftColor);
   menuPageAdvanced.addMenuItem(menuItemDisplayPlayedNotes);
+  menuPageAdvanced.addMenuItem(menuItemBootAnimation);
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);

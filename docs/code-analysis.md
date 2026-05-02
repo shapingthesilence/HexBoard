@@ -326,7 +326,7 @@ The LED pipeline uses cached per-button colors:
 
 `ledTestMode` is a transient Advanced-menu selector, not persisted profile data. While it is `Red`, `Green`, `Blue`, or `White`, `lightUpLEDs()` renders that solid color across all `140` LEDs and skips the normal note/delegated frame for that loop. These diagnostic colors are direct raw RGB channel values from `strip.Color()`, not palette HSV values from `getLEDcode()`. The preview reset and save callback both set it back to `Off`, so leaving the selector restores normal rendering.
 
-`runBootLedSelfCheck()` is a startup-only diagnostic path, not a menu animation mode. It runs after settings are synced and pitch-bend factors are recomputed, and its colors are scaled through the saved/default `Brightness` and `Rest Bright` path. Normal boots skip RGB color-channel flashes and run a smooth rainbow splash based on hex-grid distance from `bootLedSplashCenterIndex()`, which is one physical hex to the right of the active layout center. On the default layout that makes the splash radiate from `D4` instead of `C4`. The command LEDs are excluded from the splash and receive a separate color fade from `setBootCommandButtonFade()`.
+`runBootLedSelfCheck()` is a startup-only diagnostic path, not a menu animation mode. It runs after settings are synced and pitch-bend factors are recomputed, unless `BootAnimationEnabled` is off. Its colors are scaled through the saved/default `Brightness` and `Rest Bright` path. Normal boots skip RGB color-channel flashes and run a smooth rainbow splash based on hex-grid distance from `bootLedSplashCenterIndex()`, which is one physical hex to the right of the active layout center. On the default layout that makes the splash radiate from `D4` instead of `C4`. The command LEDs are excluded from the splash and receive a separate color fade from `setBootCommandButtonFade()`.
 
 If `/settings.dat` is missing, `load_settings()` sets the RAM-only `settingsFileMissingOnBoot` flag before saving factory defaults. That boot gets an additional white diagnostic: `showFirstBootWhiteDiagnostic()` fades all LEDs to moderate white and holds for `2 seconds` before the normal splash. `fadeToNormalLedFrame()` crossfades from the final animation frame into the actual resting LED frame so the first loop render does not pop.
 
@@ -400,23 +400,25 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `6`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `7`, and `PROFILE_COUNT` is `9`.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the calibrated table above.
 
 The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
 
-The Synth Options mod-wheel effect controls are persisted as `SynthModTarget` and `SynthVibratoSpeed`. `Tone` remains the default effect: it uses a wider pulse-width sweep for `Square` and a cheap RAM-resident phase warp for the other waveforms. Vibrato uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the mod wheel is above zero.
+The Synth Options wheel effect controls are persisted as `SynthModTarget` and `SynthVibratoSpeed`. `Tone` remains the default wheel effect: it uses a wider pulse-width sweep for `Square` and a cheap RAM-resident phase warp for the other waveforms. Vibrato uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or effect envelope asks for vibrato.
+
+The second synth envelope is persisted as `EffectEnvelopeAttackIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`. Its runtime target is not persisted separately: `synthEnvelopeTarget` is always the opposite of `SynthModTarget`, so the wheel and envelope do not fight over the same effect. The factory defaults keep this envelope inactive with all times at `0 ms` and sustain at `0%`.
 
 The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness.
+
+The Advanced-menu boot animation toggle is persisted as `BootAnimationEnabled`. It defaults on and skips `runBootLedSelfCheck()` when off.
 
 Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` files migrate to version `6` by appending LED current-limit, synth modulation, and metronome settings with factory defaults
-- version `3` files migrate to version `6` by appending synth-drive, synth modulation, and metronome settings with factory defaults
-- version `4` and `5` files are intentionally not migrated because those versions were not published
+- version `2` through `6` files migrate to version `7` by copying the older per-profile prefix and appending newer settings with factory defaults
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults

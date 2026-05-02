@@ -159,12 +159,17 @@ Options include:
 - `Synth Mode`: `Off`, `Mono`, `Arp'gio`, `Poly`
 - `Waveform`
 - `Drive`
-- `Mod Effect`
+- `Wheel FX`
+- `Env FX`
 - `Vib Speed`
-- `Attack`
-- `Decay`
-- `Sustain`
-- `Release`
+- `Amp Atk`
+- `Amp Dec`
+- `Amp Sus`
+- `Amp Rel`
+- `FX Atk`
+- `FX Dec`
+- `FX Sus`
+- `FX Rel`
 - `Arp Speed`
 - `Tempo`
 - `Metronome`
@@ -209,13 +214,17 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 - `Edge`: obvious bite and clipping
 - `Dirty`: stronger saturation for rougher synth tones
 
-`Mod Effect` chooses how the mod wheel affects the onboard synth:
+`Wheel FX` chooses how the mod wheel affects the onboard synth:
 
 - `Tone`: sweeps pulse width on `Square` and adds phase-warp color to the other waveforms
 - `Vibrato`: adds pitch vibrato to the active synth voices
 
-External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed`
-sets the onboard vibrato LFO speed when `Mod Effect` is `Vibrato`.
+`Env FX` is read-only and shows the target of the second synth envelope. It is
+always the opposite of `Wheel FX`: if the wheel controls `Tone`, the envelope
+controls `Vibrato`; if the wheel controls `Vibrato`, the envelope controls
+`Tone`. External MIDI still receives normal mod-wheel `CC 1` messages.
+`Vib Speed` sets the onboard vibrato LFO speed for either wheel or envelope
+vibrato.
 
 `Tempo` is shared by the arpeggiator and metronome. `Metronome` has four modes:
 
@@ -227,13 +236,18 @@ sets the onboard vibrato LFO speed when `Mod Effect` is `Vibrato`.
 `Time Sig` sets the metronome accent cycle and beat length. The first beat of
 each measure is accented.
 
-`Attack`, `Decay`, `Sustain`, and `Release` shape the loudness of each note.
-These four controls are often called the envelope.
+`Amp Atk`, `Amp Dec`, `Amp Sus`, and `Amp Rel` shape the loudness of each note.
+These four controls are often called the amp envelope.
 
 - `Attack`: how quickly the sound fades in after pressing a note
 - `Decay`: how quickly the first hit settles down to the held level
 - `Sustain`: how loud the note stays while you keep holding it
 - `Release`: how long the sound fades out after you let go
+
+`FX Atk`, `FX Dec`, `FX Sus`, and `FX Rel` shape the second envelope, which
+modulates `Env FX`. Its factory default sustain is `0%`, and its default times
+are `0 ms`, so it does nothing until you raise `FX Sus` or use `FX Atk`/`FX Dec`
+to create a transient.
 
 Short `Attack` feels immediate. Long `Attack` fades in. Low `Sustain` makes a
 note fade away even while you hold it. High `Sustain` keeps the note steady.
@@ -258,6 +272,14 @@ For a sharper sound, use a brighter waveform such as `Saw`, `Square`, or
 If a sound feels too clicky, raise `Attack` one step. If notes smear together,
 lower `Release`. If a pluck does not fade away enough, lower `Sustain` or lower
 `Decay`. If a held note disappears too quickly, raise `Decay`.
+
+To add motion without touching the mod wheel, set `Wheel FX` to the effect you
+want under your hand, then use the `FX` envelope for the opposite effect. For
+example, `Wheel FX` = `Tone` plus `FX Dec` around `100 ms` and `FX Sus` = `0%`
+adds a short vibrato chirp at the start of each note. `Wheel FX` = `Vibrato`
+plus a short `FX` envelope adds a tone sweep while leaving the wheel for pitch
+movement. Raise `FX Sus` only when you want the effect to remain while notes are
+held.
 
 ### MIDI Options
 
@@ -334,6 +356,7 @@ This page contains maintenance and system settings:
 - `Invert Encoder`
 - `ColorByKey`
 - `DisplayNotes`
+- `Boot Anim`
 - `Reset Defaults`
 - `Update Firmware`
 - `Serial Debug`
@@ -341,6 +364,9 @@ This page contains maintenance and system settings:
 - `LED Test`
 
 `ColorByKey` makes compatible color modes follow the selected key.
+
+`Boot Anim` controls the startup LED animation. Turn it off for the fastest,
+quietest visual boot.
 
 `ISR Profile` is a temporary diagnostic toggle and is not saved in profiles. To measure audio interrupt timing, leave `Serial Debug` on, turn `ISR Profile` on, play the scenario you want to test, then turn `ISR Profile` off. HexBoard logs `min/avg/max/count` timing, overrun count, and context for the slowest captured audio ISR sample.
 
@@ -382,8 +408,11 @@ Important factory defaults include:
 - Synth: `Off`
 - Waveform: `Hybrid`
 - Drive: `Off`
-- Mod effect: `Tone`
+- Wheel FX: `Tone`
+- Env FX: `Vibrato`
 - Vibrato speed: `6 Hz`
+- FX envelope: `0 ms` attack, `0 ms` decay, `0%` sustain, `0 ms` release
+- Boot animation: `On`
 - Metronome: `Off`
 - Time signature: `4/4`
 - LED brightness: `Dim`

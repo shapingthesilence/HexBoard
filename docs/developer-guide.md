@@ -259,18 +259,18 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `6`
+- `CURRENT_SETTINGS_VERSION` is currently `7`
 - the LED current-limit default is `1.5 A`; its internal limiter budget is calibrated to match the previous `2.0 A` behavior
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
-- onboard synth modulation effect is stored as `SynthModTarget`; factory default is `Tone`
+- onboard synth wheel effect is stored as `SynthModTarget`; factory default is `Tone`
 - onboard synth vibrato speed is stored as `SynthVibratoSpeed`; factory default is `6 Hz`
 - metronome mode and time signature are stored as `MetronomeMode` and `MetronomeSignature`; factory defaults are `Off` and `4/4`
+- the second synth envelope is stored as `EffectEnvelopeAttackIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are all inactive, with sustain at `0%`
+- the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
-- version `2` settings files are migrated in place to version `6` by appending LED current-limit, synth modulation, and metronome bytes with factory defaults
-- version `3` settings files are migrated in place to version `6` by appending synth-drive, synth modulation, and metronome bytes with factory defaults
-- version `4` and `5` settings files are not migrated because those versions were not published; they restore factory defaults as unknown versions
+- version `2` through `6` settings files are migrated in place to version `7` by copying each older profile prefix and appending the newer bytes with factory defaults
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
@@ -278,7 +278,7 @@ Important implementation details:
   jack-default `Buzzer` toggle; legacy stored values are interpreted by
   checking whether the older byte had the piezo bit set
 
-If you add, remove, or reorder settings, think about migration. The current code has explicit migrations for `2 -> 6` and `3 -> 6` because published settings were appended to the schema. Unknown version mismatches still fall back to defaults.
+If you add, remove, or reorder settings, think about migration. The current code has explicit migrations for versions `2` through `6` because published settings were appended to the schema. Unknown version mismatches still fall back to defaults.
 
 ## MIDI And Tuning Notes
 
@@ -357,7 +357,7 @@ After those cached colors and command-button colors are written into the NeoPixe
 
 The Advanced-menu `LED Test` item is intentionally transient. `ledTestMode` is a RAM-only selector state, not a `SettingKey`; `previewLedTest()` updates it while the select is edited, `lightUpLEDs()` renders a solid all-LED test frame while it is nonzero, and both the save callback and preview-reset path restore it to `Off`. The test colors use direct raw RGB channel values through `strip.Color()` instead of `getLEDcode()`, so they bypass perceptual hue mapping while still passing through the final current limiter. Do not add it to `factoryDefaults` or bump `CURRENT_SETTINGS_VERSION`.
 
-Startup has a separate bounded LED self-check in `runBootLedSelfCheck()`. Normal boots skip RGB color-channel flashes and run only the smoother rainbow splash, followed by `fadeToNormalLedFrame()` so the resting frame fades in. The splash center is `bootLedSplashCenterIndex()`, one physical hex to the right of the active layout center; on the default `12 EDO` Wicki-Hayden layout this is `D4` rather than `C4`. The seven command LEDs are overwritten each splash frame by `setBootCommandButtonFade()` so they fade separately instead of joining the splash.
+Startup has a separate bounded LED self-check in `runBootLedSelfCheck()`. Normal boots skip RGB color-channel flashes and run only the smoother rainbow splash, followed by `fadeToNormalLedFrame()` so the resting frame fades in. The persisted `BootAnimationEnabled` setting gates this whole path. The splash center is `bootLedSplashCenterIndex()`, one physical hex to the right of the active layout center; on the default `12 EDO` Wicki-Hayden layout this is `D4` rather than `C4`. The seven command LEDs are overwritten each splash frame by `setBootCommandButtonFade()` so they fade separately instead of joining the splash.
 
 When `settingsFileMissingOnBoot` is true, `showFirstBootWhiteDiagnostic()` runs before the splash. It fades all LEDs to a moderate white level derived through the saved/default `Brightness` and `Rest Bright` path, then holds for `2 seconds`. This flag is RAM-only and does not add a persisted setting or require a settings-version bump.
 
