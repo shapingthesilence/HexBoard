@@ -55,9 +55,9 @@ The overlay shows up to `6` unique played notes from lowest to highest, gives wi
 
 The seven reserved command buttons are split into three groups:
 
-- Bottom group of `3`: velocity wheel controls
-- Middle single button: toggles whether the top group controls modulation or pitch bend
-- Top group of `3`: modulation or pitch-bend wheel controls
+- Top group of `3`: velocity wheel controls
+- Middle single button: toggles whether the bottom group controls modulation or pitch bend
+- Bottom group of `3`: modulation or pitch-bend wheel controls
 
 The wheel behavior depends on menu settings:
 
