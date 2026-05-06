@@ -53,6 +53,14 @@ The `Makefile` currently compiles with:
 If you build manually, match the options in `Makefile` and the header comment in `src/HexBoard.ino`.
 The `Generic SPI /4` boot2 selection is required for the local `200 MHz` build to avoid overdriving external flash; `Generic SPI /2` may compile but can crash the board at runtime.
 
+The `Makefile` accepts `PWM_BITS=8`, `PWM_BITS=9`, or `PWM_BITS=10` for onboard synth PWM comparisons:
+
+```sh
+make PWM_BITS=9
+```
+
+The default is `10`.
+
 ## High-Level Architecture
 
 The firmware is split across the RP2040's two cores:
@@ -322,11 +330,11 @@ When changing synth-related behavior, review:
 - flash-save muting behavior
 
 The synth PWM defaults to `10` bits as a compromise between quantization noise
-and PWM-carrier artifacts. At the project's `200 MHz` build target, that drops
-the carrier from roughly `392 kHz` in `8`-bit mode to `98 kHz` in `10`-bit
-mode, which can make high-register sine tones harsher on the jack path. Keep
-`8`-bit PWM in mind as the quick fallback when upper-register notes get too
-"screamy."
+and PWM-carrier artifacts. At the project's `200 MHz` build target, the carrier
+is roughly `392 kHz` in `8`-bit mode, `196 kHz` in `9`-bit mode, and `98 kHz`
+in `10`-bit mode. High-register sine tones can get harsher on the jack path as
+the carrier moves closer to the audio band, so `9`-bit and `8`-bit builds are
+useful fallback comparisons.
 
 The sine wavetable now uses linear interpolation between adjacent `256`-entry
 table samples, reusing the low `8` bits of the existing `16`-bit phase
@@ -338,6 +346,13 @@ MIDI output. `setSynthFreq()` writes a target oscillator increment for held
 voices and only resets phase for new synth notes. The audio ISR slews each
 voice's current increment toward that target, and the square waveform reads a
 smoothed modulation value instead of `modWheel.curValue` directly.
+
+The jack and piezo output stages intentionally differ. The jack path stays
+centered at the PWM midpoint, while the piezo path normally moves its midpoint
+with the active voice envelope to stay quiet when idle. Metronome beeps are the
+exception: while a beep sample is active, the piezo path opens full temporary
+headroom so the click is not attenuated once by the beep level and again by the
+moving midpoint.
 
 Anything that touches timing, interrupts, or shared state between cores deserves extra caution.
 
@@ -354,6 +369,11 @@ LED rendering is not just cosmetic. It reflects:
 The LED state is cached per button in fields like `LEDcodeRest`, `LEDcodeDim`, and `LEDcodePlay`. When changing palette or scale behavior, make sure the code still recomputes these caches by calling `setLEDcolorCodes()`.
 
 After those cached colors and command-button colors are written into the NeoPixel buffer, `applyLedCurrentLimitToFrame()` can scale the whole frame down to stay under the configured approximate current budget. That limiter works on the final RGB bytes, so it applies equally to normal playback, animations, and delegated-control LED frames.
+
+Metronome visual modes are layered after the normal command-button and note LED
+rendering but before the current limiter. `Bright` mode scales the completed
+frame down between beats for contrast; `Side Btns` overwrites the seven command
+LEDs with green accented beats and red non-accented beats.
 
 The Advanced-menu `LED Test` item is intentionally transient. `ledTestMode` is a RAM-only selector state, not a `SettingKey`; `previewLedTest()` updates it while the select is edited, `lightUpLEDs()` renders a solid all-LED test frame while it is nonzero, and both the save callback and preview-reset path restore it to `Off`. The test colors use direct raw RGB channel values through `strip.Color()` instead of `getLEDcode()`, so they bypass perceptual hue mapping while still passing through the final current limiter. Do not add it to `factoryDefaults` or bump `CURRENT_SETTINGS_VERSION`.
 

@@ -2556,9 +2556,12 @@ void RAM_FUNC(applyMetronomeBrightnessFlash)() {
   if (!metronomeBrightnessSelected()) {
     return;
   }
+  constexpr uint16_t METRONOME_BRIGHTNESS_ACCENT_SCALE_Q8 = 256;
+  constexpr uint16_t METRONOME_BRIGHTNESS_BEAT_SCALE_Q8 = 200;
+  constexpr uint16_t METRONOME_BRIGHTNESS_REST_SCALE_Q8 = 96;
   uint16_t scaleQ8 = metronomeVisualFlashActive()
-                       ? (metronomeAccent ? 256 : 232)
-                       : 184;
+                       ? (metronomeAccent ? METRONOME_BRIGHTNESS_ACCENT_SCALE_Q8 : METRONOME_BRIGHTNESS_BEAT_SCALE_Q8)
+                       : METRONOME_BRIGHTNESS_REST_SCALE_Q8;
   for (byte i = 0; i < LED_COUNT; ++i) {
     strip.setPixelColor(i, scalePackedColorQ8(strip.getPixelColor(i), scaleQ8));
   }
@@ -2569,7 +2572,12 @@ void RAM_FUNC(renderMetronomeSideButtonFlash)() {
     return;
   }
   byte value = metronomeAccent ? VALUE_FULL : VALUE_SHADE;
-  colorDef flashColor = { HUE_NONE, SAT_BW, applyLEDLevel(value, ledRestBrightness) };
+  float hue = metronomeAccent ? HUE_GREEN : HUE_RED;
+  colorDef flashColor = {
+    hue,
+    SAT_VIVID,
+    applyLEDLevel(value, ledRestBrightness)
+  };
   uint32_t flashCode = getLEDcode(flashColor);
   for (byte cmd = 0; cmd < CMDCOUNT; ++cmd) {
     strip.setPixelColor(assignCmd[cmd], flashCode);
@@ -3683,14 +3691,17 @@ inline void syncAudioDestinationToRuntime() {
 // ============================================================
 // PWM AUDIO CONFIG
 // ============================================================
-// Set PWM_BITS to 8 or 10 to control PWM resolution.
+// Set PWM_BITS to 8, 9, or 10 to control PWM resolution.
 // 8-bit: wrap=254 (the 1.2-era default, and the safer fallback if the current
 //         synth path sounds too harsh in the upper registers)
+// 9-bit: wrap=511 (middle-ground test mode: lower quantization noise than 8-bit
+//        while keeping the carrier about an octave higher than 10-bit)
 // 10-bit: wrap=1023 (the default compromise: lower quantization noise, but a
 //         much lower PWM carrier)
 //
 // At the project's 200MHz build target with clkdiv=1 and phase-correct PWM:
 // - 8-bit carrier is about 392kHz
+// - 9-bit carrier is about 196kHz
 // - 10-bit carrier is about 98kHz
 //
 // High notes, especially sine waves, can sound noticeably harsher with 10-bit
@@ -3713,7 +3724,16 @@ inline void syncAudioDestinationToRuntime() {
   constexpr int32_t  SHAPE_CLAMP = 511;
   constexpr int      OUTPUT_SHIFT = 6;   // derived above
   constexpr int      ENV_TO_A_SHIFT = 7; // 65535 >> 7 ~= 512
+#elif (PWM_BITS == 9)
+  constexpr uint16_t PWM_WRAP = 511;
+  constexpr int32_t  PWM_MID  = 256;
+  constexpr int32_t  SHAPE_CLAMP = 255;
+  constexpr int      OUTPUT_SHIFT = 7;   // midway between 8-bit and 10-bit gain staging
+  constexpr int      ENV_TO_A_SHIFT = 8; // 65535 >> 8 ~= 256
+#else
+  #error "PWM_BITS must be 8, 9, or 10"
 #endif
+constexpr uint16_t PIEZO_OFF_THRESHOLD = (PWM_BITS == 8) ? 1 : ((PWM_BITS == 9) ? 2 : 4);
 constexpr int32_t METRONOME_BEEP_LEVEL = SHAPE_CLAMP / 3;
 
 inline void RAM_FUNC(writeAudioOutputLevels)(uint16_t piezoLevel, uint16_t jackLevel) {
@@ -3736,6 +3756,8 @@ inline int32_t RAM_FUNC(scalePiezoSample)(int32_t sample, uint16_t amplitude) {
   const uint32_t magnitude = negative ? static_cast<uint32_t>(-product) : static_cast<uint32_t>(product);
 #if (PWM_BITS == 8)
   uint32_t scaled = ((magnitude * 516u) + (1u << 15)) >> 16;  // ~= /127
+#elif (PWM_BITS == 9)
+  uint32_t scaled = ((magnitude * 257u) + (1u << 15)) >> 16;  // ~= /255
 #else
   uint32_t scaled = (magnitude * 257u) >> 17;                 // ~= /511
 #endif
@@ -3764,6 +3786,8 @@ inline int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
   const uint32_t mag = negative ? static_cast<uint32_t>(-x) : static_cast<uint32_t>(x);
 #if (PWM_BITS == 8)
   constexpr uint8_t DRIVE_CLAMP_SHIFT = 7;
+#elif (PWM_BITS == 9)
+  constexpr uint8_t DRIVE_CLAMP_SHIFT = 8;
 #else
   constexpr uint8_t DRIVE_CLAMP_SHIFT = 9;
 #endif
@@ -5009,7 +5033,7 @@ void RAM_FUNC(poll)() {
   // We intentionally drive the two outputs differently:
   //
   // 1) Audio Jack (slice 4): classic centered PWM "DAC"
-  //    - Fixed midpoint at PWM_MID (127 for 8-bit, 512 for 10-bit)
+  //    - Fixed midpoint at PWM_MID (127 for 8-bit, 256 for 9-bit, 512 for 10-bit)
   //    - Symmetric headroom, lowest distortion into an audio path
   //
   // 2) Piezo (slice 3): "moving midpoint" drive
@@ -5032,7 +5056,7 @@ void RAM_FUNC(poll)() {
   //
   // IMPORTANT: This OUTPUT_SHIFT is the main gain staging control.
   // If output is too quiet, decrease it. If it clips/distorts, increase it.
-  // For 10-bit PWM you can typically use a slightly smaller shift than 8-bit.
+  // Higher PWM resolutions can typically use slightly smaller shifts.
   // ------------------------------------------------------------
   // JACK idle behavior: stay centered.
   // PIEZO idle behavior: off (0).
@@ -5067,8 +5091,8 @@ void RAM_FUNC(poll)() {
   // ----- PIEZO: midpoint follows "actual amplitude" from envSum -----
   //
   // IMPORTANT: envSum is sum of envelopes (0..~524k). We want ONE full voice
-  // (envSum ~ 65535) to produce full piezo amplitude. So we shift by 9 (8-bit)
-  // or 7 (10-bit). With multiple voices envSum grows, so we clamp.
+  // (envSum ~ 65535) to produce full piezo amplitude. So we shift by 9 (8-bit),
+  // 8 (9-bit), or 7 (10-bit). With multiple voices envSum grows, so we clamp.
   //
   // This makes piezo loud enough and ensures it fades smoothly as envSum falls.
   //
@@ -5080,16 +5104,10 @@ void RAM_FUNC(poll)() {
 
   // Apply master volume (0..127, where 127 is full). Keep it consistent with jack scaling.
   A_target = (A_target * (uint32_t)velWheel.curValue) >> 7;
-  if (metronomeAudible) {
-    uint32_t metronomeAmplitude = metronomeSample < 0
-                                    ? static_cast<uint32_t>(-metronomeSample)
-                                    : static_cast<uint32_t>(metronomeSample);
-    if (metronomeAmplitude > static_cast<uint32_t>(PWM_MID)) {
-      metronomeAmplitude = PWM_MID;
-    }
-    if (A_target < metronomeAmplitude) {
-      A_target = metronomeAmplitude;
-    }
+  if (metronomeAudible && A_target < static_cast<uint32_t>(PWM_MID)) {
+    // The beep sample is already volume-scaled. Give it full piezo headroom so
+    // the moving-midpoint drive does not attenuate it a second time.
+    A_target = PWM_MID;
   }
 
   // Smooth A so the piezo hiss doesn't abruptly stop (and to avoid end-click).
@@ -5097,7 +5115,7 @@ void RAM_FUNC(poll)() {
   piezoA += (int16_t)((int32_t)A_target - (int32_t)piezoA) >> 3;
 
   // If very small, turn fully off (by now it’s near 0 so this won’t click).
-  if (piezoA <= (PWM_BITS == 8 ? 1 : 4)) piezoA = 0;
+  if (piezoA <= PIEZO_OFF_THRESHOLD) piezoA = 0;
 
   int32_t piezoLevel = 0;
   if (!(audioD & AUDIO_PIEZO)) {

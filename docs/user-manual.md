@@ -229,9 +229,9 @@ vibrato.
 `Tempo` is shared by the arpeggiator and metronome. `Metronome` has four modes:
 
 - `Off`: no metronome
-- `Beep`: a short metronome beep on each beat
-- `Bright`: dims the LED frame between beats and returns toward the selected brightness on each beat
-- `Side Btns`: the seven side command buttons flash on each beat
+- `Beep`: a short metronome beep on each beat through the active synth output
+- `Bright`: strongly dims the LED frame between beats and returns toward the selected brightness on each beat
+- `Side Btns`: the seven side command buttons flash green on the first beat and red on the other beats
 
 `Time Sig` sets the metronome accent cycle and beat length. The first beat of
 each measure is accented.

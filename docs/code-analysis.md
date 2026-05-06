@@ -360,10 +360,13 @@ Key implementation facts:
 
 - `POLYPHONY_LIMIT` is `8`.
 - `PWM_BITS` defaults to `10`.
-- `8`-bit PWM remains available as a source-level fallback. Switching from `8`
-  to `10` bits lowers the carrier from about `392 kHz` to `98 kHz` at the
-  project's `200 MHz` build target, which can make high-register sine tones
-  harsher on the jack output.
+- `8`, `9`, and `10` bit PWM builds are supported. `9`-bit mode is available
+  as a midpoint between `8`-bit quantization noise and `10`-bit carrier
+  artifacts.
+- At the project's `200 MHz` build target, the carrier is about `392 kHz` in
+  `8`-bit mode, `196 kHz` in `9`-bit mode, and `98 kHz` in `10`-bit mode.
+  Lower carrier frequencies can make high-register sine tones harsher on the
+  jack output.
 - The oscillator counter is a `uint32_t` Q16.16 phase accumulator; the high `16`
   bits are the waveform phase and the low `16` bits carry fractional phase.
 - Held notes use target oscillator increments that the audio ISR slews toward,
@@ -377,6 +380,9 @@ Key implementation facts:
 - Envelope commands are shared through value arrays plus published/consumed sequence counters.
 - Voice-free notifications use their own published/consumed sequence counters.
 - Channel ownership uses atomic state to coordinate loop code with the ISR-adjacent audio path.
+- The piezo output uses a moving midpoint derived from voice envelope level, but
+  metronome beeps force full temporary piezo headroom while audible so a
+  note-less beep is not double-attenuated by that moving-midpoint stage.
 - `flashWriteInProgress` mutes output during flash writes because RP2040 flash operations disable interrupts.
 
 Synth changes need extra review when they touch:
@@ -410,7 +416,7 @@ The Synth Options wheel effect controls are persisted as `SynthModTarget` and `S
 
 The second synth envelope is persisted as `EffectEnvelopeAttackIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`. Its runtime target is not persisted separately: `synthEnvelopeTarget` is always the opposite of `SynthModTarget`, so the wheel and envelope do not fight over the same effect. The factory defaults keep this envelope inactive with all times at `0 ms` and sustain at `0%`.
 
-The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness.
+The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 
 The Advanced-menu boot animation toggle is persisted as `BootAnimationEnabled`. It defaults on and skips `runBootLedSelfCheck()` when off.
 

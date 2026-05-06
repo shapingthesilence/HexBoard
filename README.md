@@ -118,6 +118,14 @@ make
 The `Makefile` builds from `src/HexBoard.ino` using the board options for this project. During the build it stages a generated sketch at `build/build.ino`; do not edit or maintain that generated file.
 The local `200 MHz` build intentionally uses `Generic SPI /4` boot2 to keep the external flash clock stable.
 
+To compare onboard synth PWM resolutions, pass `PWM_BITS` at build time:
+
+```sh
+make PWM_BITS=9
+```
+
+Supported values are `8`, `9`, and `10`; the default is `10`.
+
 The expected output artifact is:
 
 ```text
