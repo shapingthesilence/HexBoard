@@ -218,7 +218,7 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 
 - `Tone`: sweeps pulse width on `Square` and adds phase-warp color to the other waveforms
 - `Vibrato`: adds pitch vibrato to the active synth voices
-- `Pitch`: raises pitch up to about one octave
+- `Pitch`: bends pitch up with the wheel or positive FX amounts, and down with negative FX amounts
 
 External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed` sets
 the onboard vibrato LFO speed for wheel or envelope vibrato. `Wheel Amt` scales
@@ -236,6 +236,8 @@ each measure is accented.
 
 `Amp Atk`, `Amp Hold`, `Amp Dec`, `Amp Sus`, and `Amp Rel` shape the loudness of
 each note. These five controls are often called the amp envelope.
+Envelope time choices run from `0 ms` to `4 s`, with extra points in the short
+and medium ranges for finer synth shaping.
 
 - `Attack`: how quickly the sound fades in after pressing a note
 - `Hold`: how long the envelope stays at full level before decaying
@@ -251,11 +253,11 @@ can choose the same target; their amounts add together and clamp at the maximum
 effect depth instead of replacing each other.
 
 `Amount` controls how strongly the envelope affects the target. Positive amounts
-follow the envelope shape. `Rev` amounts invert the shape, so the effect gets
-stronger as the envelope level gets lower. For example, a reverse vibrato amount
-with high sustain and a longer release can make vibrato bloom as the note fades
-out. The default FX envelope times are `0 ms`, and default sustain is `0%`, so
-the FX envelopes do nothing until you shape them.
+push the target in one direction; negative amounts use the same AHDSR shape and
+push the target in the opposite direction. Pitch and tone return smoothly to the
+played note and base tone as the FX envelope falls back to zero. The default FX
+envelope times are `0 ms`, and default sustain is `0%`, so the FX envelopes do
+nothing until you shape them.
 
 `Presets` opens synth-only save/load slots. Presets are stored separately from
 the main settings file and do not remember which preset was last loaded. Loading
@@ -291,8 +293,8 @@ To add motion without touching the mod wheel, put one FX envelope on a short
 transient and leave the wheel on the effect you want under your hand. For
 example, `Wheel FX` = `Tone`, `FX Env 1 Target` = `Vibrato`, `Amount` = `+50%`,
 `Decay` around `100 ms`, and `Sustain` = `0%` adds a short vibrato chirp at the
-start of each note. For release motion, try `FX Env 2 Target` = `Vibrato`,
-`Amount` = `Rev50`, `Sustain` = `100%`, and a longer `Release`.
+start of each note. For a falling pitch tail, try `FX Env 2 Target` = `Pitch`,
+`Amount` = `-25%`, `Sustain` = `100%`, and a longer `Release`.
 
 ### MIDI Options
 

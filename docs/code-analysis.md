@@ -154,15 +154,16 @@ Current RAM-resident HexBoard functions include:
   `resetWheelLEDs()`, and `getLEDcode()`
 
 `poll()` also reads the polyphony attenuation table from SRAM. Release-start
-increments are read from a 1024-entry, 2 KB RAM table generated when envelope
-settings change, avoiding an unsigned division in the audio ISR. Piezo output
-scaling uses fixed-point reciprocal math instead of the signed division helper.
+increments are read from 1024-entry 32-bit RAM tables for the amp and FX
+envelopes, generated when envelope settings change, avoiding unsigned division
+in the audio ISR. Piezo output scaling uses fixed-point reciprocal math instead
+of the signed division helper.
 
 This deliberately does not move the OLED menu and note-overlay drawing stack.
 Those paths mostly call GEM/U8g2 routines and send data over I2C, so wholesale
 RAM placement would consume much more SRAM than the selected hot-path pass.
-After the release-table and piezo-scaling pass, `make` reports about `101 KB` of
-globals and about `161 KB` remaining for local variables, heap, and stacks.
+After the expanded AHDSR time-table pass, `make` reports about `117 KB` of
+globals and about `145 KB` remaining for local variables, heap, and stacks.
 
 ### ISR Profiling Diagnostic
 
@@ -406,21 +407,21 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `9`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `10`, and `PROFILE_COUNT` is `9`.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the calibrated table above.
 
 The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
 
-The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `Tone` remains the default wheel effect: it uses a wider pulse-width sweep for `Square` and a stronger cheap RAM-resident phase warp for the other waveforms. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` raises each active voice increment up to about one octave at full depth.
+The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `Tone` remains the default wheel effect: it uses a wider pulse-width sweep for `Square` and a stronger cheap RAM-resident phase warp for the other waveforms. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` raises each active voice increment up to about one octave at full positive depth and lowers it up to about one octave at full negative FX depth.
 
-The amp and FX envelopes are AHDSRs. The amp envelope adds `EnvelopeHoldIndex`; FX Env 1 adds `EffectEnvelopeHoldIndex`; FX Env 2 adds `EffectEnvelope2HoldIndex`. Hold runs between attack and decay at full envelope level.
+The amp and FX envelopes are AHDSRs. The amp envelope adds `EnvelopeHoldIndex`; FX Env 1 adds `EffectEnvelopeHoldIndex`; FX Env 2 adds `EffectEnvelope2HoldIndex`. Hold runs between attack and decay at full envelope level. Envelope time settings use a `20`-entry table from `0 ms` through `4 s`; the runtime keeps 8 fractional level bits internally but converts to 16-bit audible level for mixing. Version `9` and older files remap their old `10`-entry table indices during settings migration.
 
-The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; FX Env 2 uses the matching `EffectEnvelope2*` settings. The wheel and both FX envelopes can target the same parameter; `poll()` adds their unsigned target depths and clamps at `127`, so sources stack instead of replacing each other. FX `Amount` is stored as a biased byte where `127` is off, values above `127` follow the envelope, and values below `127` invert it. The factory defaults keep both FX envelopes inactive with all times at `0 ms` and sustain at `0%`.
+The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; FX Env 2 uses the matching `EffectEnvelope2*` settings. The wheel and both FX envelopes can target the same parameter; `poll()` adds their signed target depths and clamps at `-127..127`, so sources stack instead of replacing each other. FX `Amount` is stored as a biased byte where `127` is off, values above `127` follow the envelope in the positive target direction, and values below `127` follow the same envelope level in the negative target direction. The factory defaults keep both FX envelopes inactive with all times at `0 ms` and sustain at `0%`.
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
-Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `1`, CRC32, and `8` fixed slots. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded.
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `2`, CRC32, and `8` fixed slots. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Version `1` preset files are accepted and have their saved envelope time indices remapped to the expanded time table.
 
 The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 
@@ -430,7 +431,7 @@ Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` through `8` files migrate to version `9` by copying the older per-profile prefix and appending newer settings with factory defaults; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
+- version `2` through `9` files migrate to version `10` by copying the older per-profile prefix, appending newer settings with factory defaults, and remapping legacy envelope time indices; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults

@@ -550,12 +550,21 @@ public:
     change the implementation of key options.
   */
 
-constexpr std::array<uint32_t, 10> envelopeTimeMicrosOptions = {
-  0, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000
+constexpr std::array<uint32_t, 20> envelopeTimeMicrosOptions = {
+  0, 5000, 10000, 15000, 20000, 30000, 50000, 75000, 100000, 150000,
+  200000, 300000, 500000, 750000, 1000000, 1500000, 2000000, 2500000,
+  3000000, 4000000
 };
-constexpr uint32_t envelopeMaxLevel = 65535;
+constexpr std::array<uint8_t, 10> legacyEnvelopeTimeIndexToCurrent = {
+  0, 1, 2, 4, 6, 8, 10, 12, 14, 16
+};
+constexpr uint8_t ENVELOPE_LEVEL_SCALE_SHIFT = 8;
+constexpr uint32_t envelopeAudioMaxLevel = 65535;
+constexpr uint32_t envelopeMaxLevel = envelopeAudioMaxLevel << ENVELOPE_LEVEL_SCALE_SHIFT;
+constexpr uint8_t ENVELOPE_MOD_VALUE_SHIFT = ENVELOPE_LEVEL_SCALE_SHIFT + 9;
+constexpr uint32_t ENVELOPE_MOD_VALUE_ROUND = 1u << (ENVELOPE_MOD_VALUE_SHIFT - 1);
 constexpr uint16_t ENVELOPE_RELEASE_INCREMENT_BUCKETS = 1024;
-constexpr uint8_t ENVELOPE_RELEASE_INCREMENT_SHIFT = 6;
+constexpr uint8_t ENVELOPE_RELEASE_INCREMENT_SHIFT = 16 + ENVELOPE_LEVEL_SCALE_SHIFT - 10;
 
 enum class EnvelopeStage : uint8_t {
   Idle,
@@ -573,21 +582,21 @@ struct EnvelopeParams {
   uint32_t releaseTicks = 0;
   uint32_t attackIncrement = envelopeMaxLevel;
   uint32_t decayIncrement = envelopeMaxLevel;
-  uint16_t sustainLevel = envelopeMaxLevel;
+  uint32_t sustainLevel = envelopeMaxLevel;
 };
 
 EnvelopeParams envelopeParams;
 std::array<EnvelopeParams, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeParams;
-std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS> envelopeReleaseIncrementByLevel = {};
-std::array<std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeReleaseIncrementByLevel = {};
-void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
+std::array<uint32_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS> envelopeReleaseIncrementByLevel = {};
+std::array<std::array<uint32_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeReleaseIncrementByLevel = {};
+void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint32_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
 void updateEnvelopeParamsFromValues(EnvelopeParams& params,
                                     uint8_t& attackIndex,
                                     uint8_t& holdIndex,
                                     uint8_t& decayIndex,
                                     uint8_t& sustainLevel,
                                     uint8_t& releaseIndex,
-                                    std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
+                                    std::array<uint32_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
 
 /*
     Sko: I felt like maximizing precision for just intonation purposes.
@@ -4269,7 +4278,14 @@ inline uint32_t ticksFromMicros(uint32_t micros) {
   return (micros + POLL_INTERVAL_IN_MICROSECONDS - 1) / POLL_INTERVAL_IN_MICROSECONDS;
 }
 
-inline uint16_t RAM_FUNC(releaseIncrementForLevel)(uint32_t level) {
+inline uint32_t RAM_FUNC(envelopeAudioLevel)(uint32_t level) {
+  if (level > envelopeMaxLevel) {
+    level = envelopeMaxLevel;
+  }
+  return level >> ENVELOPE_LEVEL_SCALE_SHIFT;
+}
+
+inline uint32_t RAM_FUNC(releaseIncrementForLevel)(uint32_t level) {
   if (level == 0) {
     return 1;
   }
@@ -4277,11 +4293,11 @@ inline uint16_t RAM_FUNC(releaseIncrementForLevel)(uint32_t level) {
   if (bucket >= envelopeReleaseIncrementByLevel.size()) {
     bucket = envelopeReleaseIncrementByLevel.size() - 1;
   }
-  uint16_t increment = envelopeReleaseIncrementByLevel[bucket];
+  uint32_t increment = envelopeReleaseIncrementByLevel[bucket];
   return increment ? increment : 1;
 }
 
-inline uint16_t RAM_FUNC(effectReleaseIncrementForLevel)(uint8_t envelopeIndex, uint32_t level) {
+inline uint32_t RAM_FUNC(effectReleaseIncrementForLevel)(uint8_t envelopeIndex, uint32_t level) {
   if (level == 0) {
     return 1;
   }
@@ -4289,7 +4305,7 @@ inline uint16_t RAM_FUNC(effectReleaseIncrementForLevel)(uint8_t envelopeIndex, 
   if (bucket >= effectEnvelopeReleaseIncrementByLevel[envelopeIndex].size()) {
     bucket = effectEnvelopeReleaseIncrementByLevel[envelopeIndex].size() - 1;
   }
-  uint16_t increment = effectEnvelopeReleaseIncrementByLevel[envelopeIndex][bucket];
+  uint32_t increment = effectEnvelopeReleaseIncrementByLevel[envelopeIndex][bucket];
   return increment ? increment : 1;
 }
 
@@ -4391,7 +4407,7 @@ inline void clearPendingVoiceFreed(uint8_t channel) {
   voiceFreedConsumedSeq[channel] = voiceFreedPublishedSeq[channel];
 }
 
-void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
+void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint32_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
   for (size_t bucket = 0; bucket < releaseTable.size(); ++bucket) {
     uint32_t bucketLevel = static_cast<uint32_t>(bucket + 1) << ENVELOPE_RELEASE_INCREMENT_SHIFT;
     if (bucketLevel > envelopeMaxLevel) {
@@ -4399,9 +4415,9 @@ void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint
     }
     releaseTable[bucket] = (params.releaseTicks == 0)
                              ? envelopeMaxLevel
-                             : static_cast<uint16_t>(std::max<uint32_t>(
+                             : std::max<uint32_t>(
                                  1,
-                                 (bucketLevel + params.releaseTicks - 1) / params.releaseTicks));
+                                 (bucketLevel + params.releaseTicks - 1) / params.releaseTicks);
   }
 }
 
@@ -4411,7 +4427,7 @@ void updateEnvelopeParamsFromValues(EnvelopeParams& params,
                                     uint8_t& decayIndex,
                                     uint8_t& sustainLevel,
                                     uint8_t& releaseIndex,
-                                    std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
+                                    std::array<uint32_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
   auto clampIndex = [](uint8_t& index) {
     if (index >= envelopeTimeMicrosOptions.size()) {
       index = static_cast<uint8_t>(envelopeTimeMicrosOptions.size() - 1);
@@ -4433,7 +4449,7 @@ void updateEnvelopeParamsFromValues(EnvelopeParams& params,
   params.holdTicks = ticksFromMicros(holdMicros);
 
   sustainLevel = std::min<uint8_t>(127, sustainLevel);
-  params.sustainLevel = static_cast<uint16_t>((static_cast<uint32_t>(sustainLevel) * envelopeMaxLevel) / 127);
+  params.sustainLevel = (static_cast<uint32_t>(sustainLevel) * envelopeMaxLevel) / 127;
 
   uint32_t decayMicros = envelopeTimeMicrosOptions[decayIndex];
   params.decayTicks = ticksFromMicros(decayMicros);
@@ -4617,7 +4633,7 @@ inline uint8_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue) {
   return static_cast<uint8_t>((static_cast<uint16_t>(modValue) * static_cast<uint16_t>(synthModAmount) + 64u) >> 7);
 }
 
-inline uint8_t RAM_FUNC(effectEnvelopeModValue)(uint8_t envelopeIndex, const EnvelopeState& env) {
+inline int16_t RAM_FUNC(effectEnvelopeModValue)(uint8_t envelopeIndex, const EnvelopeState& env) {
   int16_t depth = synthEffectAmountDepth(effectEnvelopeAmount[envelopeIndex]);
   if (depth == 0 || env.stage == EnvelopeStage::Idle) {
     return 0;
@@ -4627,15 +4643,18 @@ inline uint8_t RAM_FUNC(effectEnvelopeModValue)(uint8_t envelopeIndex, const Env
   if (level > envelopeMaxLevel) {
     level = envelopeMaxLevel;
   }
-  uint32_t shapedLevel = (depth > 0) ? level : (envelopeMaxLevel - level);
-  uint32_t value = (shapedLevel + 256u) >> 9;
+  uint32_t value = (level + ENVELOPE_MOD_VALUE_ROUND) >> ENVELOPE_MOD_VALUE_SHIFT;
   if (value > 127) {
     value = 127;
   }
 
   uint16_t absDepth = static_cast<uint16_t>(depth > 0 ? depth : -depth);
   uint16_t scaled = static_cast<uint16_t>((value * (absDepth + 1u)) >> 7);
-  return static_cast<uint8_t>(scaled > 127 ? 127 : scaled);
+  if (scaled > 127) {
+    scaled = 127;
+  }
+  int16_t signedValue = static_cast<int16_t>(scaled);
+  return (depth < 0) ? -signedValue : signedValue;
 }
 
 inline void RAM_FUNC(startEffectEnvelopeAttack)(uint8_t envelopeIndex, EnvelopeState& env) {
@@ -4727,21 +4746,23 @@ inline uint32_t RAM_FUNC(applySynthVibrato)(uint32_t increment, int16_t vibratoA
   return increment + positiveOffset;
 }
 
-inline uint16_t RAM_FUNC(applySynthTonePhaseWarp)(uint16_t phase, uint8_t toneAmount) {
+inline uint16_t RAM_FUNC(applySynthTonePhaseWarp)(uint16_t phase, int16_t toneAmount) {
   uint16_t triangle = (phase & 0x8000) ? static_cast<uint16_t>(0xFFFFu - phase) : phase;
-  uint16_t offset = static_cast<uint16_t>(((static_cast<uint32_t>(triangle) * static_cast<uint32_t>(toneAmount)) * 5u) >> 8);
-  return static_cast<uint16_t>(phase + offset);
+  uint16_t depth = static_cast<uint16_t>(toneAmount < 0 ? -toneAmount : toneAmount);
+  uint16_t offset = static_cast<uint16_t>(((static_cast<uint32_t>(triangle) * static_cast<uint32_t>(depth)) * 5u) >> 8);
+  return (toneAmount < 0) ? static_cast<uint16_t>(phase - offset)
+                          : static_cast<uint16_t>(phase + offset);
 }
 
 inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
-                                           uint8_t amount,
-                                           uint8_t& toneAmount,
-                                           uint8_t& vibratoAmount,
-                                           uint8_t& pitchAmount) {
+                                           int16_t amount,
+                                           int16_t& toneAmount,
+                                           int16_t& vibratoAmount,
+                                           int16_t& pitchAmount) {
   if (amount == 0) {
     return;
   }
-  uint8_t* destination = nullptr;
+  int16_t* destination = nullptr;
   switch (target) {
     case SYNTH_MOD_TARGET_TONE:
       destination = &toneAmount;
@@ -4755,8 +4776,13 @@ inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
     default:
       return;
   }
-  uint16_t combined = static_cast<uint16_t>(*destination) + amount;
-  *destination = static_cast<uint8_t>(combined > 127 ? 127 : combined);
+  int16_t combined = static_cast<int16_t>(*destination + amount);
+  if (combined > 127) {
+    combined = 127;
+  } else if (combined < -127) {
+    combined = -127;
+  }
+  *destination = combined;
 }
 
 inline uint32_t RAM_FUNC(saturatingAddU32)(uint32_t value, uint32_t addend) {
@@ -4766,15 +4792,24 @@ inline uint32_t RAM_FUNC(saturatingAddU32)(uint32_t value, uint32_t addend) {
   return value + addend;
 }
 
-inline uint32_t RAM_FUNC(applySynthPitchMod)(uint32_t increment, uint8_t pitchAmount) {
+inline uint32_t RAM_FUNC(applySynthPitchMod)(uint32_t increment, int16_t pitchAmount) {
   if (pitchAmount == 0) {
     return increment;
   }
-  if (pitchAmount >= 127) {
-    return saturatingAddU32(increment, increment);
+  if (pitchAmount > 0) {
+    if (pitchAmount >= 127) {
+      return saturatingAddU32(increment, increment);
+    }
+    uint32_t offset = (increment >> 7) * static_cast<uint32_t>(pitchAmount);
+    return saturatingAddU32(increment, offset);
   }
-  uint32_t offset = (increment >> 7) * static_cast<uint32_t>(pitchAmount);
-  return saturatingAddU32(increment, offset);
+
+  uint16_t depth = static_cast<uint16_t>(-pitchAmount);
+  if (depth >= 127) {
+    return increment >> 1;
+  }
+  uint32_t offset = (increment >> 8) * static_cast<uint32_t>(depth);
+  return (offset >= increment) ? 0 : (increment - offset);
 }
 
 inline int32_t RAM_FUNC(readMetronomeBeepSample)() {
@@ -4908,9 +4943,9 @@ void RAM_FUNC(poll)() {
   const int32_t metronomeSample = readMetronomeBeepSample();
   const bool metronomeAudible = metronomeSample != 0;
   const uint8_t synthModValue = scaleSynthModAmount(smoothedSynthModValue());
-  uint8_t wheelToneModValue = 0;
-  uint8_t wheelVibratoModValue = 0;
-  uint8_t wheelPitchModValue = 0;
+  int16_t wheelToneModValue = 0;
+  int16_t wheelVibratoModValue = 0;
+  int16_t wheelPitchModValue = 0;
   addSynthTargetAmount(synthModTarget, synthModValue, wheelToneModValue, wheelVibratoModValue, wheelPitchModValue);
   int16_t synthVibratoSample = 0;
   bool synthVibratoSampleReady = false;
@@ -4924,7 +4959,7 @@ void RAM_FUNC(poll)() {
   // envelope levels. As a voice releases, its envelope contribution
   // smoothly approaches 0, so the normalization changes smoothly too.
   // ============================================================
-  uint32_t envSum = 0;   // sum of env.level across active voices (0..8*65535)
+  uint32_t envSum = 0;   // sum of audible envelope levels across active voices (0..8*65535)
   byte voices = 0;
   uint8_t profileFlags = 0;
 
@@ -5062,9 +5097,9 @@ void RAM_FUNC(poll)() {
       continue;
     }
 
-    uint8_t voiceToneModValue = wheelToneModValue;
-    uint8_t voiceVibratoModValue = wheelVibratoModValue;
-    uint8_t voicePitchModValue = wheelPitchModValue;
+    int16_t voiceToneModValue = wheelToneModValue;
+    int16_t voiceVibratoModValue = wheelVibratoModValue;
+    int16_t voicePitchModValue = wheelPitchModValue;
     for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
       EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][i];
       if (synthEffectEnvelopeActive[envelopeIndex]) {
@@ -5129,15 +5164,16 @@ void RAM_FUNC(poll)() {
     // eq is 0..8. Treat 8 as roughly "neutral" gain.
     s = (s * (int32_t)synth[i].eq) >> 3;
 
-    // Apply envelope (0..65535). Current bounds keep the product within
-    // signed 32-bit, which avoids a 64-bit helper call in the ISR.
-    s = (s * static_cast<int32_t>(env.level)) >> 16;
+    // Apply the audible envelope level (0..65535). The envelope state keeps
+    // fractional bits for long times, but the mix multiply stays 32-bit.
+    uint32_t envAudio = envelopeAudioLevel(env.level);
+    s = (s * static_cast<int32_t>(envAudio)) >> 16;
 
     // Accumulate signed mix
     mix += s;
 
     // For Step 1 smooth normalization:
-    envSum += env.level;
+    envSum += envAudio;
     ++voices;
   }
 
@@ -6293,7 +6329,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 9;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 10;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -6403,7 +6439,7 @@ constexpr uint8_t NUM_SETTINGS_V8 = static_cast<uint8_t>(SettingKey::EnvelopeHol
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_COUNT = 8;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 1;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 2;
 constexpr std::array<SettingKey, 27> synthPresetKeys = {
   SettingKey::PlaybackMode,
   SettingKey::Waveform,
@@ -6435,6 +6471,42 @@ constexpr std::array<SettingKey, 27> synthPresetKeys = {
 };
 constexpr size_t SYNTH_PRESET_VALUE_COUNT = synthPresetKeys.size();
 
+inline uint8_t remapLegacyEnvelopeTimeIndex(uint8_t legacyIndex) {
+  if (legacyIndex >= legacyEnvelopeTimeIndexToCurrent.size()) {
+    return legacyEnvelopeTimeIndexToCurrent.back();
+  }
+  return legacyEnvelopeTimeIndexToCurrent[legacyIndex];
+}
+
+inline bool isEnvelopeTimeSettingKey(SettingKey key) {
+  switch (key) {
+    case SettingKey::EnvelopeAttackIndex:
+    case SettingKey::EnvelopeHoldIndex:
+    case SettingKey::EnvelopeDecayIndex:
+    case SettingKey::EnvelopeReleaseIndex:
+    case SettingKey::EffectEnvelopeAttackIndex:
+    case SettingKey::EffectEnvelopeHoldIndex:
+    case SettingKey::EffectEnvelopeDecayIndex:
+    case SettingKey::EffectEnvelopeReleaseIndex:
+    case SettingKey::EffectEnvelope2AttackIndex:
+    case SettingKey::EffectEnvelope2HoldIndex:
+    case SettingKey::EffectEnvelope2DecayIndex:
+    case SettingKey::EffectEnvelope2ReleaseIndex:
+      return true;
+    default:
+      return false;
+  }
+}
+
+void remapLegacyEnvelopeTimeSettings(uint8_t* profileSettings, uint8_t settingsPerProfile) {
+  for (uint8_t keyIndex = 0; keyIndex < settingsPerProfile; ++keyIndex) {
+    SettingKey key = static_cast<SettingKey>(keyIndex);
+    if (isEnvelopeTimeSettingKey(key)) {
+      profileSettings[keyIndex] = remapLegacyEnvelopeTimeIndex(profileSettings[keyIndex]);
+    }
+  }
+}
+
 // ==================================================
 // Global Settings Array and Factory Defaults
 // ==================================================
@@ -6458,6 +6530,17 @@ struct SynthPresetSlot {
 };
 
 std::array<SynthPresetSlot, SYNTH_PRESET_COUNT> synthPresets = {};
+
+void remapLegacySynthPresetEnvelopeTimes(SynthPresetSlot& preset) {
+  if (!preset.valid) {
+    return;
+  }
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    if (isEnvelopeTimeSettingKey(synthPresetKeys[i])) {
+      preset.values[i] = remapLegacyEnvelopeTimeIndex(preset.values[i]);
+    }
+  }
+}
 
 inline uint8_t settingValue(SettingKey key) {
   return settings[static_cast<uint8_t>(key)];
@@ -6517,9 +6600,9 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* BPMMultiplier                */ 1,
   /* DynamicJI                    */ 0,
   /* EnvelopeAttackIndex          */ 2,
-  /* EnvelopeDecayIndex           */ 3,
+  /* EnvelopeDecayIndex           */ 4,
   /* EnvelopeSustainLevel         */ 127,
-  /* EnvelopeReleaseIndex         */ 3,
+  /* EnvelopeReleaseIndex         */ 4,
   /* Display played notes         */ 1,
   /* LED current limit mode       */ LED_CURRENT_LIMIT_1500MA,
   /* SynthDrive                   */ SYNTH_DRIVE_OFF,
@@ -6628,6 +6711,7 @@ bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t s
     memcpy(settingsProfiles[profile],
            previousProfiles.data() + (static_cast<size_t>(profile) * settingsPerProfile),
            settingsPerProfile);
+    remapLegacyEnvelopeTimeSettings(settingsProfiles[profile], settingsPerProfile);
     if (header.version < 8) {
       uint8_t wheelTarget = settingsProfiles[profile][static_cast<uint8_t>(SettingKey::SynthModTarget)];
       if (wheelTarget > SYNTH_MOD_TARGET_VIBRATO) {
@@ -6690,6 +6774,8 @@ bool load_settings() {
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V7);
     case 8:
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V8);
+    case 9:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS);
     default:
       break;
   }
@@ -6831,7 +6917,7 @@ void load_synth_presets() {
     applyDefaultSynthPresets();
     return;
   }
-  if (strncmp(header.magic, "SYP", 3) != 0 || header.version != SYNTH_PRESET_FILE_VERSION) {
+  if (strncmp(header.magic, "SYP", 3) != 0 || header.version == 0 || header.version > SYNTH_PRESET_FILE_VERSION) {
     sendToLog("Invalid synth preset file. Starting with empty preset slots.");
     f.close();
     applyDefaultSynthPresets();
@@ -6849,6 +6935,14 @@ void load_synth_presets() {
   if (computed != header.crc32) {
     sendToLog("Synth preset CRC32 mismatch. Starting with empty preset slots.");
     applyDefaultSynthPresets();
+    return;
+  }
+  if (header.version < SYNTH_PRESET_FILE_VERSION) {
+    for (SynthPresetSlot& preset : synthPresets) {
+      remapLegacySynthPresetEnvelopeTimes(preset);
+    }
+    sendToLog("Synth presets migrated from version " + std::to_string(header.version) + " to version " + std::to_string(SYNTH_PRESET_FILE_VERSION) + ".");
+    save_synth_presets();
     return;
   }
   sendToLog("Synth presets loaded successfully.");
@@ -8523,13 +8617,23 @@ SelectOptionByte optionByteEnvelopeTimes[] = {
   { "0 ms", 0 },
   { "5 ms", 1 },
   { "10 ms", 2 },
-  { "20 ms", 3 },
-  { "50 ms", 4 },
-  { "100 ms", 5 },
-  { "200 ms", 6 },
-  { "500 ms", 7 },
-  { "1 s", 8 },
-  { "2 s", 9 }
+  { "15 ms", 3 },
+  { "20 ms", 4 },
+  { "30 ms", 5 },
+  { "50 ms", 6 },
+  { "75 ms", 7 },
+  { "100 ms", 8 },
+  { "150 ms", 9 },
+  { "200 ms", 10 },
+  { "300 ms", 11 },
+  { "500 ms", 12 },
+  { "750 ms", 13 },
+  { "1 s", 14 },
+  { "1.5 s", 15 },
+  { "2 s", 16 },
+  { "2.5 s", 17 },
+  { "3 s", 18 },
+  { "4 s", 19 }
 };
 SelectOptionByte optionByteSustain[] = {
   { "0%", 0 },
@@ -8577,19 +8681,19 @@ PersistentCallbackInfo callbackInfoEnvelopeRelease = {
   updateEnvelopeParamsFromSettings
 };
 SelectOptionByte optionByteSynthFxAmount[] = {
-  { "Rev100", 0 },
-  { "Rev92", 11 },
-  { "Rev83", 21 },
-  { "Rev75", 32 },
-  { "Rev67", 42 },
-  { "Rev58", 53 },
-  { "Rev50", 64 },
-  { "Rev42", 74 },
-  { "Rev33", 85 },
-  { "Rev25", 95 },
-  { "Rev17", 106 },
-  { "Rev10", 114 },
-  { "Rev5", 121 },
+  { "-100%", 0 },
+  { "-92%", 11 },
+  { "-83%", 21 },
+  { "-75%", 32 },
+  { "-67%", 42 },
+  { "-58%", 53 },
+  { "-50%", 64 },
+  { "-42%", 74 },
+  { "-33%", 85 },
+  { "-25%", 95 },
+  { "-17%", 106 },
+  { "-10%", 114 },
+  { "-5%", 121 },
   { "Off", SYNTH_FX_AMOUNT_OFF },
   { "+5%", 133 },
   { "+10%", 140 },
