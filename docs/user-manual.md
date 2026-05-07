@@ -160,16 +160,16 @@ Options include:
 - `Waveform`
 - `Drive`
 - `Wheel FX`
-- `Env FX`
+- `Wheel Amt`
 - `Vib Speed`
 - `Amp Atk`
+- `Amp Hold`
 - `Amp Dec`
 - `Amp Sus`
 - `Amp Rel`
-- `FX Atk`
-- `FX Dec`
-- `FX Sus`
-- `FX Rel`
+- `FX Env 1`
+- `FX Env 2`
+- `Presets`
 - `Arp Speed`
 - `Tempo`
 - `Metronome`
@@ -218,13 +218,11 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 
 - `Tone`: sweeps pulse width on `Square` and adds phase-warp color to the other waveforms
 - `Vibrato`: adds pitch vibrato to the active synth voices
+- `Pitch`: raises pitch up to about one octave
 
-`Env FX` is read-only and shows the target of the second synth envelope. It is
-always the opposite of `Wheel FX`: if the wheel controls `Tone`, the envelope
-controls `Vibrato`; if the wheel controls `Vibrato`, the envelope controls
-`Tone`. External MIDI still receives normal mod-wheel `CC 1` messages.
-`Vib Speed` sets the onboard vibrato LFO speed for either wheel or envelope
-vibrato.
+External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed` sets
+the onboard vibrato LFO speed for wheel or envelope vibrato. `Wheel Amt` scales
+how strongly the mod wheel affects its target.
 
 `Tempo` is shared by the arpeggiator and metronome. `Metronome` has four modes:
 
@@ -236,34 +234,50 @@ vibrato.
 `Time Sig` sets the metronome accent cycle and beat length. The first beat of
 each measure is accented.
 
-`Amp Atk`, `Amp Dec`, `Amp Sus`, and `Amp Rel` shape the loudness of each note.
-These four controls are often called the amp envelope.
+`Amp Atk`, `Amp Hold`, `Amp Dec`, `Amp Sus`, and `Amp Rel` shape the loudness of
+each note. These five controls are often called the amp envelope.
 
 - `Attack`: how quickly the sound fades in after pressing a note
+- `Hold`: how long the envelope stays at full level before decaying
 - `Decay`: how quickly the first hit settles down to the held level
 - `Sustain`: how loud the note stays while you keep holding it
 - `Release`: how long the sound fades out after you let go
 
-`FX Atk`, `FX Dec`, `FX Sus`, and `FX Rel` shape the second envelope, which
-modulates `Env FX`. Its factory default sustain is `0%`, and its default times
-are `0 ms`, so it does nothing until you raise `FX Sus` or use `FX Atk`/`FX Dec`
-to create a transient.
+`FX Env 1` and `FX Env 2` open separate modulation-envelope pages. Each page has
+`Target`, `Amount`, `Attack`, `Hold`, `Decay`, `Sustain`, and `Release`.
 
-Short `Attack` feels immediate. Long `Attack` fades in. Low `Sustain` makes a
-note fade away even while you hold it. High `Sustain` keeps the note steady.
-Short `Release` stops quickly. Long `Release` leaves a tail after release.
+`Target` chooses `Tone`, `Vibrato`, or `Pitch`. The wheel and both FX envelopes
+can choose the same target; their amounts add together and clamp at the maximum
+effect depth instead of replacing each other.
+
+`Amount` controls how strongly the envelope affects the target. Positive amounts
+follow the envelope shape. `Rev` amounts invert the shape, so the effect gets
+stronger as the envelope level gets lower. For example, a reverse vibrato amount
+with high sustain and a longer release can make vibrato bloom as the note fades
+out. The default FX envelope times are `0 ms`, and default sustain is `0%`, so
+the FX envelopes do nothing until you shape them.
+
+`Presets` opens synth-only save/load slots. Presets are stored separately from
+the main settings file and do not remember which preset was last loaded. Loading
+a preset changes the current synth parameters, which can still be auto-saved by
+the normal settings system.
+
+Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial
+peak longer before decay. Low `Sustain` makes a note fade away even while you
+hold it. High `Sustain` keeps the note steady. Short `Release` stops quickly.
+Long `Release` leaves a tail after release.
 
 #### Beginner Synth Recipes
 
 Use these as starting points, then adjust by ear.
 
-| Sound | Synth Mode | Waveform | Attack | Decay | Sustain | Release | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Plucky | `Poly` or `Mono` | `Hybrid`, `Triangl`, or `Sine` | `0 ms` or `5 ms` | `50 ms` to `200 ms` | `0%` or `10%` | `50 ms` to `200 ms` | Fast start, quick fade, little held level |
-| Smooth pad | `Poly` | `Sine`, `Triangl`, or `Strings` | `200 ms` to `1 s` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
-| Lead | `Mono` | `Hybrid`, `Saw`, or `Square` | `0 ms` or `10 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Immediate and steady for melodies |
-| Chime or bell | `Poly` | `Sine` or `Triangl` | `0 ms` or `5 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
-| Arpeggio | `Arp'gio` | `Hybrid`, `Square`, or `Saw` | `0 ms` or `5 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed` and `Tempo` for rhythm |
+| Sound | Synth Mode | Waveform | Attack | Hold | Decay | Sustain | Release | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Plucky | `Poly` or `Mono` | `Hybrid`, `Triangl`, or `Sine` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` or `10%` | `50 ms` to `200 ms` | Fast start, quick fade, little held level |
+| Smooth pad | `Poly` | `Sine`, `Triangl`, or `Strings` | `200 ms` to `1 s` | `0 ms` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
+| Lead | `Mono` | `Hybrid`, `Saw`, or `Square` | `0 ms` or `10 ms` | `0 ms` to `50 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Immediate and steady for melodies |
+| Chime or bell | `Poly` | `Sine` or `Triangl` | `0 ms` or `5 ms` | `0 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
+| Arpeggio | `Arp'gio` | `Hybrid`, `Square`, or `Saw` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed` and `Tempo` for rhythm |
 
 For a sharper sound, use a brighter waveform such as `Saw`, `Square`, or
 `Hybrid`, and keep `Attack` short. For a smoother sound, use `Sine`,
@@ -273,13 +287,12 @@ If a sound feels too clicky, raise `Attack` one step. If notes smear together,
 lower `Release`. If a pluck does not fade away enough, lower `Sustain` or lower
 `Decay`. If a held note disappears too quickly, raise `Decay`.
 
-To add motion without touching the mod wheel, set `Wheel FX` to the effect you
-want under your hand, then use the `FX` envelope for the opposite effect. For
-example, `Wheel FX` = `Tone` plus `FX Dec` around `100 ms` and `FX Sus` = `0%`
-adds a short vibrato chirp at the start of each note. `Wheel FX` = `Vibrato`
-plus a short `FX` envelope adds a tone sweep while leaving the wheel for pitch
-movement. Raise `FX Sus` only when you want the effect to remain while notes are
-held.
+To add motion without touching the mod wheel, put one FX envelope on a short
+transient and leave the wheel on the effect you want under your hand. For
+example, `Wheel FX` = `Tone`, `FX Env 1 Target` = `Vibrato`, `Amount` = `+50%`,
+`Decay` around `100 ms`, and `Sustain` = `0%` adds a short vibrato chirp at the
+start of each note. For release motion, try `FX Env 2 Target` = `Vibrato`,
+`Amount` = `Rev50`, `Sustain` = `100%`, and a longer `Release`.
 
 ### MIDI Options
 
@@ -409,9 +422,12 @@ Important factory defaults include:
 - Waveform: `Hybrid`
 - Drive: `Off`
 - Wheel FX: `Tone`
-- Env FX: `Vibrato`
+- Wheel Amt: `100%`
 - Vibrato speed: `6 Hz`
-- FX envelope: `0 ms` attack, `0 ms` decay, `0%` sustain, `0 ms` release
+- Amp Hold: `0 ms`
+- FX Env 1: `Vibrato`, `+100%`, `0 ms` attack, `0 ms` hold, `0 ms` decay, `0%` sustain, `0 ms` release
+- FX Env 2: `Pitch`, `+100%`, `0 ms` attack, `0 ms` hold, `0 ms` decay, `0%` sustain, `0 ms` release
+- Synth presets: empty until saved
 - Boot animation: `On`
 - Metronome: `Off`
 - Time signature: `4/4`

@@ -43,7 +43,7 @@ The current code supports:
 - an optional OLED note overlay that shows currently played notes
 - standard MIDI, extended multi-channel MIDI mapping, and MPE behavior
 - dynamic just intonation and BPM-linked retuning options
-- onboard synth waveform, envelope, and arpeggiator settings
+- onboard synth waveform, AHDSR envelope, modulation, preset, and arpeggiator settings
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
 

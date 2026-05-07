@@ -267,18 +267,22 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `7`
+- `CURRENT_SETTINGS_VERSION` is currently `9`
 - the LED current-limit default is `1.5 A`; its internal limiter budget is calibrated to match the previous `2.0 A` behavior
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
-- onboard synth wheel effect is stored as `SynthModTarget`; factory default is `Tone`
+- onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `Tone` and `100%`; valid runtime targets are `Tone`, `Vibrato`, and `Pitch`
 - onboard synth vibrato speed is stored as `SynthVibratoSpeed`; factory default is `6 Hz`
+- `SynthAttackEffect` is a deprecated hidden byte kept only so version `8` files can migrate by prefix copy
 - metronome mode and time signature are stored as `MetronomeMode` and `MetronomeSignature`; factory defaults are `Off` and `4/4`
-- the second synth envelope is stored as `EffectEnvelopeAttackIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are all inactive, with sustain at `0%`
+- the amp envelope has `EnvelopeAttackIndex`, `EnvelopeHoldIndex`, `EnvelopeDecayIndex`, `EnvelopeSustainLevel`, and `EnvelopeReleaseIndex`
+- FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
+- FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
+- synth preset slots are stored separately in `/synth_presets.dat` with magic `SYP`; presets save synth sound parameters only and do not persist a current preset id
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
-- version `2` through `6` settings files are migrated in place to version `7` by copying each older profile prefix and appending the newer bytes with factory defaults
+- version `2` through `8` settings files are migrated in place to version `9` by copying each older profile prefix and appending the newer bytes with factory defaults; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
@@ -286,7 +290,7 @@ Important implementation details:
   jack-default `Buzzer` toggle; legacy stored values are interpreted by
   checking whether the older byte had the piezo bit set
 
-If you add, remove, or reorder settings, think about migration. The current code has explicit migrations for versions `2` through `6` because published settings were appended to the schema. Unknown version mismatches still fall back to defaults.
+If you add, remove, or reorder settings, think about migration. The current code has explicit migrations for versions `2` through `8` because published settings were appended to the schema. Unknown version mismatches still fall back to defaults.
 
 ## MIDI And Tuning Notes
 

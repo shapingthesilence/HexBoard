@@ -406,15 +406,21 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `7`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `9`, and `PROFILE_COUNT` is `9`.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the calibrated table above.
 
 The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
 
-The Synth Options wheel effect controls are persisted as `SynthModTarget` and `SynthVibratoSpeed`. `Tone` remains the default wheel effect: it uses a wider pulse-width sweep for `Square` and a cheap RAM-resident phase warp for the other waveforms. Vibrato uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or effect envelope asks for vibrato.
+The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `Tone` remains the default wheel effect: it uses a wider pulse-width sweep for `Square` and a stronger cheap RAM-resident phase warp for the other waveforms. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` raises each active voice increment up to about one octave at full depth.
 
-The second synth envelope is persisted as `EffectEnvelopeAttackIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`. Its runtime target is not persisted separately: `synthEnvelopeTarget` is always the opposite of `SynthModTarget`, so the wheel and envelope do not fight over the same effect. The factory defaults keep this envelope inactive with all times at `0 ms` and sustain at `0%`.
+The amp and FX envelopes are AHDSRs. The amp envelope adds `EnvelopeHoldIndex`; FX Env 1 adds `EffectEnvelopeHoldIndex`; FX Env 2 adds `EffectEnvelope2HoldIndex`. Hold runs between attack and decay at full envelope level.
+
+The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; FX Env 2 uses the matching `EffectEnvelope2*` settings. The wheel and both FX envelopes can target the same parameter; `poll()` adds their unsigned target depths and clamps at `127`, so sources stack instead of replacing each other. FX `Amount` is stored as a biased byte where `127` is off, values above `127` follow the envelope, and values below `127` invert it. The factory defaults keep both FX envelopes inactive with all times at `0 ms` and sustain at `0%`.
+
+`SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
+
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `1`, CRC32, and `8` fixed slots. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded.
 
 The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 
@@ -424,7 +430,7 @@ Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` through `6` files migrate to version `7` by copying the older per-profile prefix and appending newer settings with factory defaults
+- version `2` through `8` files migrate to version `9` by copying the older per-profile prefix and appending newer settings with factory defaults; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults
