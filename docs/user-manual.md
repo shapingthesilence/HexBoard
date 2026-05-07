@@ -255,9 +255,10 @@ effect depth instead of replacing each other.
 `Amount` controls how strongly the envelope affects the target. Positive amounts
 push the target in one direction; negative amounts use the same AHDSR shape and
 push the target in the opposite direction. Pitch and tone return smoothly to the
-played note and base tone as the FX envelope falls back to zero. The default FX
-envelope times are `0 ms`, and default sustain is `0%`, so the FX envelopes do
-nothing until you shape them.
+played note and base tone as the FX envelope falls back to zero. Negative
+`Vibrato` is different: vibrato is the resting sound, and the envelope pulls it
+down as the envelope level rises. The default FX envelope times are `0 ms`, and
+default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 
 `Presets` opens synth-only save/load slots. Presets are stored separately from
 the main settings file and do not remember which preset was last loaded. Loading

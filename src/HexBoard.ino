@@ -4633,9 +4633,13 @@ inline uint8_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue) {
   return static_cast<uint8_t>((static_cast<uint16_t>(modValue) * static_cast<uint16_t>(synthModAmount) + 64u) >> 7);
 }
 
-inline int16_t RAM_FUNC(effectEnvelopeModValue)(uint8_t envelopeIndex, const EnvelopeState& env) {
+inline int16_t RAM_FUNC(effectEnvelopeModValue)(uint8_t envelopeIndex, uint8_t target, const EnvelopeState& env) {
   int16_t depth = synthEffectAmountDepth(effectEnvelopeAmount[envelopeIndex]);
-  if (depth == 0 || env.stage == EnvelopeStage::Idle) {
+  if (depth == 0) {
+    return 0;
+  }
+  bool negativeVibrato = target == SYNTH_MOD_TARGET_VIBRATO && depth < 0;
+  if (env.stage == EnvelopeStage::Idle && !negativeVibrato) {
     return 0;
   }
 
@@ -4652,6 +4656,9 @@ inline int16_t RAM_FUNC(effectEnvelopeModValue)(uint8_t envelopeIndex, const Env
   uint16_t scaled = static_cast<uint16_t>((value * (absDepth + 1u)) >> 7);
   if (scaled > 127) {
     scaled = 127;
+  }
+  if (negativeVibrato) {
+    return static_cast<int16_t>(absDepth - scaled);
   }
   int16_t signedValue = static_cast<int16_t>(scaled);
   return (depth < 0) ? -signedValue : signedValue;
@@ -5123,7 +5130,7 @@ void RAM_FUNC(poll)() {
       if (synthEffectEnvelopeActive[envelopeIndex]) {
         updateEffectEnvelopeState(envelopeIndex, effectEnv);
         addSynthTargetAmount(effectEnvelopeTarget[envelopeIndex],
-                             effectEnvelopeModValue(envelopeIndex, effectEnv),
+                             effectEnvelopeModValue(envelopeIndex, effectEnvelopeTarget[envelopeIndex], effectEnv),
                              voiceToneModValue,
                              voiceVibratoModValue,
                              voicePitchModValue);
