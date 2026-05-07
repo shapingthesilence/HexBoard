@@ -267,22 +267,22 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `10`
+- `CURRENT_SETTINGS_VERSION` is currently `11`
 - the LED current-limit default is `1.5 A`; its internal limiter budget is calibrated to match the previous `2.0 A` behavior
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
 - onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `Tone` and `100%`; valid runtime targets are `Tone`, `Vibrato`, and `Pitch`
-- onboard synth vibrato speed is stored as `SynthVibratoSpeed`; factory default is `6 Hz`
+- onboard synth vibrato speed is stored as `SynthVibratoSpeed`; selectable values are `1 Hz` through `12 Hz`, with factory default `6 Hz`
 - `SynthAttackEffect` is a deprecated hidden byte kept only so version `8` files can migrate by prefix copy
 - metronome mode and time signature are stored as `MetronomeMode` and `MetronomeSignature`; factory defaults are `Off` and `4/4`
 - the amp envelope has `EnvelopeAttackIndex`, `EnvelopeHoldIndex`, `EnvelopeDecayIndex`, `EnvelopeSustainLevel`, and `EnvelopeReleaseIndex`
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
-- synth preset slots are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `2`; presets save synth sound parameters only and do not persist a current preset id
+- synth preset slots are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `3`; presets save synth sound parameters only and do not persist a current preset id
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
-- version `2` through `9` settings files are migrated in place to version `10` by copying each older profile prefix, appending newer bytes with factory defaults, and remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
+- version `2` through `10` settings files are migrated in place to version `11` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, and remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
@@ -290,7 +290,7 @@ Important implementation details:
   jack-default `Buzzer` toggle; legacy stored values are interpreted by
   checking whether the older byte had the piezo bit set
 
-If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `9` because settings were appended to the schema and the envelope time index table expanded. Unknown version mismatches still fall back to defaults.
+If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `10` because settings were appended to the schema and some setting tables expanded. Unknown version mismatches still fall back to defaults.
 
 ## MIDI And Tuning Notes
 

@@ -133,6 +133,7 @@ void applySynthPresetToSettings(const SynthPresetSlot& preset);
 void copyCurrentSettingsToProfile(uint8_t profileIndex);
 void markSettingsDirty();
 void menuHome();
+void menuSynthOptionsHome();
 void showOnlyValidLayoutChoices();
 void showOnlyValidScaleChoices();
 void showOnlyValidKeyChoices();
@@ -347,11 +348,8 @@ constexpr uint8_t SYNTH_FX_AMOUNT_OFF = 127;
 constexpr uint8_t SYNTH_FX_AMOUNT_FULL = 254;
 std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeAmount = { SYNTH_FX_AMOUNT_FULL, SYNTH_FX_AMOUNT_FULL };
 
-constexpr byte SYNTH_VIBRATO_SPEED_SLOW = 0;
-constexpr byte SYNTH_VIBRATO_SPEED_MEDIUM = 1;
-constexpr byte SYNTH_VIBRATO_SPEED_FAST = 2;
-constexpr byte SYNTH_VIBRATO_SPEED_FASTEST = 3;
-byte synthVibratoSpeed = SYNTH_VIBRATO_SPEED_MEDIUM;
+constexpr byte SYNTH_VIBRATO_SPEED_DEFAULT = 5;  // 6 Hz in the 1..12 Hz table.
+byte synthVibratoSpeed = SYNTH_VIBRATO_SPEED_DEFAULT;
 
 constexpr byte RAINBOW_MODE = 0;
 constexpr byte TIERED_COLOR_MODE = 1;
@@ -4178,11 +4176,19 @@ constexpr uint8_t SYNTH_MOD_SMOOTH_SHIFT = 9;
 constexpr uint32_t audioPhaseIncrementFromHz(uint16_t hz) {
   return static_cast<uint32_t>((static_cast<uint64_t>(hz) * POLL_INTERVAL_IN_MICROSECONDS * 4294967296ULL) / 1000000ULL);
 }
-constexpr std::array<uint32_t, 4> synthVibratoPhaseIncrementOptions = {
+constexpr std::array<uint32_t, 12> synthVibratoPhaseIncrementOptions = {
+  audioPhaseIncrementFromHz(1),
+  audioPhaseIncrementFromHz(2),
+  audioPhaseIncrementFromHz(3),
   audioPhaseIncrementFromHz(4),
+  audioPhaseIncrementFromHz(5),
   audioPhaseIncrementFromHz(6),
+  audioPhaseIncrementFromHz(7),
   audioPhaseIncrementFromHz(8),
-  audioPhaseIncrementFromHz(10)
+  audioPhaseIncrementFromHz(9),
+  audioPhaseIncrementFromHz(10),
+  audioPhaseIncrementFromHz(11),
+  audioPhaseIncrementFromHz(12)
 };
 constexpr uint16_t METRONOME_BEEP_SAMPLE_COUNT = (40000 + POLL_INTERVAL_IN_MICROSECONDS - 1) / POLL_INTERVAL_IN_MICROSECONDS;
 constexpr uint32_t METRONOME_BEEP_NORMAL_INCREMENT = audioPhaseIncrementFromHz(1200);
@@ -4584,7 +4590,7 @@ std::queue<byte> synthChQueue;
 byte attenuation[] = { 64, 24, 17, 14, 12, 11, 10, 9, 8 };  // RAM-resident; read by poll() every audio tick.
 uint16_t synthModValueQ8 = 0;
 uint32_t synthVibratoPhase = 0;
-uint32_t synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[SYNTH_VIBRATO_SPEED_MEDIUM];
+uint32_t synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[SYNTH_VIBRATO_SPEED_DEFAULT];
 volatile uint16_t metronomeBeepSamplesRemaining = 0;
 volatile uint32_t metronomeBeepPhaseIncrement = METRONOME_BEEP_NORMAL_INCREMENT;
 uint32_t metronomeBeepPhase = 0;
@@ -4621,7 +4627,7 @@ void updateSynthVibratoParams() {
     }
   }
   if (synthVibratoSpeed >= synthVibratoPhaseIncrementOptions.size()) {
-    synthVibratoSpeed = SYNTH_VIBRATO_SPEED_MEDIUM;
+    synthVibratoSpeed = SYNTH_VIBRATO_SPEED_DEFAULT;
   }
   synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[synthVibratoSpeed];
 }
@@ -6358,7 +6364,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 10;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 11;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -6468,7 +6474,7 @@ constexpr uint8_t NUM_SETTINGS_V8 = static_cast<uint8_t>(SettingKey::EnvelopeHol
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_COUNT = 8;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 2;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 3;
 constexpr std::array<SettingKey, 27> synthPresetKeys = {
   SettingKey::PlaybackMode,
   SettingKey::Waveform,
@@ -6499,6 +6505,9 @@ constexpr std::array<SettingKey, 27> synthPresetKeys = {
   SettingKey::EffectEnvelope2ReleaseIndex
 };
 constexpr size_t SYNTH_PRESET_VALUE_COUNT = synthPresetKeys.size();
+constexpr std::array<uint8_t, 4> legacySynthVibratoSpeedIndexToCurrent = {
+  3, 5, 7, 9
+};
 
 inline uint8_t remapLegacyEnvelopeTimeIndex(uint8_t legacyIndex) {
   if (legacyIndex >= legacyEnvelopeTimeIndexToCurrent.size()) {
@@ -6536,6 +6545,20 @@ void remapLegacyEnvelopeTimeSettings(uint8_t* profileSettings, uint8_t settingsP
   }
 }
 
+inline uint8_t remapLegacySynthVibratoSpeedIndex(uint8_t legacyIndex) {
+  if (legacyIndex >= legacySynthVibratoSpeedIndexToCurrent.size()) {
+    return SYNTH_VIBRATO_SPEED_DEFAULT;
+  }
+  return legacySynthVibratoSpeedIndexToCurrent[legacyIndex];
+}
+
+void remapLegacySynthVibratoSpeedSetting(uint8_t* profileSettings, uint8_t settingsPerProfile) {
+  uint8_t keyIndex = static_cast<uint8_t>(SettingKey::SynthVibratoSpeed);
+  if (keyIndex < settingsPerProfile) {
+    profileSettings[keyIndex] = remapLegacySynthVibratoSpeedIndex(profileSettings[keyIndex]);
+  }
+}
+
 // ==================================================
 // Global Settings Array and Factory Defaults
 // ==================================================
@@ -6567,6 +6590,18 @@ void remapLegacySynthPresetEnvelopeTimes(SynthPresetSlot& preset) {
   for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
     if (isEnvelopeTimeSettingKey(synthPresetKeys[i])) {
       preset.values[i] = remapLegacyEnvelopeTimeIndex(preset.values[i]);
+    }
+  }
+}
+
+void remapLegacySynthPresetVibratoSpeed(SynthPresetSlot& preset) {
+  if (!preset.valid) {
+    return;
+  }
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    if (synthPresetKeys[i] == SettingKey::SynthVibratoSpeed) {
+      preset.values[i] = remapLegacySynthVibratoSpeedIndex(preset.values[i]);
+      return;
     }
   }
 }
@@ -6636,7 +6671,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* LED current limit mode       */ LED_CURRENT_LIMIT_1500MA,
   /* SynthDrive                   */ SYNTH_DRIVE_OFF,
   /* SynthModTarget               */ SYNTH_MOD_TARGET_TONE,
-  /* SynthVibratoSpeed            */ SYNTH_VIBRATO_SPEED_MEDIUM,
+  /* SynthVibratoSpeed            */ SYNTH_VIBRATO_SPEED_DEFAULT,
   /* MetronomeMode                */ METRONOME_MODE_OFF,
   /* MetronomeSignature           */ 0,
   /* EffectEnvelopeAttackIndex    */ 0,
@@ -6740,7 +6775,12 @@ bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t s
     memcpy(settingsProfiles[profile],
            previousProfiles.data() + (static_cast<size_t>(profile) * settingsPerProfile),
            settingsPerProfile);
-    remapLegacyEnvelopeTimeSettings(settingsProfiles[profile], settingsPerProfile);
+    if (header.version < 10) {
+      remapLegacyEnvelopeTimeSettings(settingsProfiles[profile], settingsPerProfile);
+    }
+    if (header.version < 11) {
+      remapLegacySynthVibratoSpeedSetting(settingsProfiles[profile], settingsPerProfile);
+    }
     if (header.version < 8) {
       uint8_t wheelTarget = settingsProfiles[profile][static_cast<uint8_t>(SettingKey::SynthModTarget)];
       if (wheelTarget > SYNTH_MOD_TARGET_VIBRATO) {
@@ -6804,6 +6844,8 @@ bool load_settings() {
     case 8:
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V8);
     case 9:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS);
+    case 10:
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS);
     default:
       break;
@@ -6968,7 +7010,12 @@ void load_synth_presets() {
   }
   if (header.version < SYNTH_PRESET_FILE_VERSION) {
     for (SynthPresetSlot& preset : synthPresets) {
-      remapLegacySynthPresetEnvelopeTimes(preset);
+      if (header.version < 2) {
+        remapLegacySynthPresetEnvelopeTimes(preset);
+      }
+      if (header.version < 3) {
+        remapLegacySynthPresetVibratoSpeed(preset);
+      }
     }
     sendToLog("Synth presets migrated from version " + std::to_string(header.version) + " to version " + std::to_string(SYNTH_PRESET_FILE_VERSION) + ".");
     save_synth_presets();
@@ -7461,12 +7508,10 @@ GEMPage menuPageSynthFx1("FX Env 1", menuPageSynth);
 GEMItem menuGotoSynthFx1("FX Env 1", menuPageSynthFx1);
 GEMPage menuPageSynthFx2("FX Env 2", menuPageSynth);
 GEMItem menuGotoSynthFx2("FX Env 2", menuPageSynthFx2);
-GEMPage menuPageSynthPresets("Synth Presets", menuPageSynth);
-GEMItem menuGotoSynthPresets("Presets", menuPageSynthPresets);
-GEMPage menuPageSynthPresetSave("Save Synth", menuPageSynthPresets);
-GEMItem menuGotoSynthPresetSave("Save", menuPageSynthPresetSave);
-GEMPage menuPageSynthPresetLoad("Load Synth", menuPageSynthPresets);
-GEMItem menuGotoSynthPresetLoad("Load", menuPageSynthPresetLoad);
+GEMPage menuPageSynthPresetSave("Save Preset", menuPageSynth);
+GEMItem menuGotoSynthPresetSave("Save Preset", menuPageSynthPresetSave);
+GEMPage menuPageSynthPresetLoad("Load Preset", menuPageSynth);
+GEMItem menuGotoSynthPresetLoad("Load Preset", menuPageSynthPresetLoad);
 GEMPage menuPageMIDI("MIDI Options", menuPageMain);
 GEMItem menuGotoMIDI("MIDI Options", menuPageMIDI);
 GEMPage menuPageControl("Control Wheel", menuPageMain);
@@ -7599,11 +7644,12 @@ void loadProfileMenu(GEMCallbackData callbackData) {
 
 void saveSynthPresetMenu(GEMCallbackData callbackData) {
   saveSynthPresetToSlot(callbackData.valByte);
+  menuSynthOptionsHome();
 }
 
 void loadSynthPresetMenu(GEMCallbackData callbackData) {
   loadSynthPresetFromSlot(callbackData.valByte);
-  menuHome();
+  menuSynthOptionsHome();
 }
 
 /*
@@ -8542,10 +8588,18 @@ void previewSynthModAmount(GEMPreviewCallbackData previewData) {
 }
 
 SelectOptionByte optionByteSynthVibratoSpeed[] = {
-  { "4 Hz", SYNTH_VIBRATO_SPEED_SLOW },
-  { "6 Hz", SYNTH_VIBRATO_SPEED_MEDIUM },
-  { "8 Hz", SYNTH_VIBRATO_SPEED_FAST },
-  { "10 Hz", SYNTH_VIBRATO_SPEED_FASTEST }
+  { "1 Hz", 0 },
+  { "2 Hz", 1 },
+  { "3 Hz", 2 },
+  { "4 Hz", 3 },
+  { "5 Hz", 4 },
+  { "6 Hz", 5 },
+  { "7 Hz", 6 },
+  { "8 Hz", 7 },
+  { "9 Hz", 8 },
+  { "10 Hz", 9 },
+  { "11 Hz", 10 },
+  { "12 Hz", 11 }
 };
 GEMSelect selectSynthVibratoSpeed(sizeof(optionByteSynthVibratoSpeed) / sizeof(SelectOptionByte), optionByteSynthVibratoSpeed);
 PersistentCallbackInfo callbackInfoSynthVibratoSpeed = {
@@ -9109,6 +9163,11 @@ void menuHome() {
   menu.drawMenu();
 }
 
+void menuSynthOptionsHome() {
+  menu.setMenuPageCurrent(menuPageSynth);
+  menu.drawMenu();
+}
+
 void refreshMenuChoicesForCurrentTuning() {
   showOnlyValidLayoutChoices();
   showOnlyValidScaleChoices();
@@ -9424,14 +9483,13 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Decay, previewEffectEnvelope2Decay);
   addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Sustain, previewEffectEnvelope2Sustain);
   addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Release, previewEffectEnvelope2Release);
-  menuPageSynth.addMenuItem(menuGotoSynthPresets);
-  menuPageSynthPresets.addMenuItem(menuGotoSynthPresetSave);
-  menuPageSynthPresets.addMenuItem(menuGotoSynthPresetLoad);
-  createSynthPresetMenuItems();
   addPreviewMenuItem(menuPageSynth, menuItemArpSpeed, previewArpSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemSynthBPM, previewSynthBPM);
   addPreviewMenuItem(menuPageSynth, menuItemMetronomeMode, previewMetronomeMode);
   addPreviewMenuItem(menuPageSynth, menuItemMetronomeSignature, previewMetronomeSignature);
+  menuPageSynth.addMenuItem(menuGotoSynthPresetSave);
+  menuPageSynth.addMenuItem(menuGotoSynthPresetLoad);
+  createSynthPresetMenuItems();
 }
 
 void setupMidiMenuPage() {

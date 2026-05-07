@@ -169,11 +169,12 @@ Options include:
 - `Amp Rel`
 - `FX Env 1`
 - `FX Env 2`
-- `Presets`
 - `Arp Speed`
 - `Tempo`
 - `Metronome`
 - `Time Sig`
+- `Save Preset`
+- `Load Preset`
 
 On hardware `V1.1`, the onboard synth plays through the piezo buzzer when the
 synth is active. There is no headphone-jack output path and no `Buzzer` menu
@@ -221,8 +222,8 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 - `Pitch`: bends pitch up with the wheel or positive FX amounts, and down with negative FX amounts
 
 External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed` sets
-the onboard vibrato LFO speed for wheel or envelope vibrato. `Wheel Amt` scales
-how strongly the mod wheel affects its target.
+the onboard vibrato LFO speed from `1 Hz` to `12 Hz` for wheel or envelope
+vibrato. `Wheel Amt` scales how strongly the mod wheel affects its target.
 
 `Tempo` is shared by the arpeggiator and metronome. `Metronome` has four modes:
 
@@ -260,9 +261,10 @@ played note and base tone as the FX envelope falls back to zero. Negative
 down as the envelope level rises. The default FX envelope times are `0 ms`, and
 default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 
-`Presets` opens synth-only save/load slots. Presets are stored separately from
-the main settings file and do not remember which preset was last loaded. Loading
-a preset changes the current synth parameters, which can still be auto-saved by
+`Save Preset` and `Load Preset` open synth-only preset slot lists. Presets are
+stored separately from the main settings file and do not remember which preset
+was last loaded. Saving or loading a preset returns to `Synth Options`. Loading a
+preset changes the current synth parameters, which can still be auto-saved by
 the normal settings system.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial

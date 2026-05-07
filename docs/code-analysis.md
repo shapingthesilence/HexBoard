@@ -407,13 +407,13 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `10`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `11`, and `PROFILE_COUNT` is `9`.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the calibrated table above.
 
 The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
 
-The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `Tone` remains the default wheel effect: it uses a wider pulse-width sweep for `Square`, a pronounced RAM-resident value curve for `Saw` that keeps the saw reset point fixed, and a stronger cheap RAM-resident phase warp for the other waveforms. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` raises each active voice increment up to about one octave at full positive depth and lowers it up to about one octave at full negative FX depth.
+The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `Tone` remains the default wheel effect: it uses a wider pulse-width sweep for `Square`, a pronounced RAM-resident value curve for `Saw` that keeps the saw reset point fixed, and a stronger cheap RAM-resident phase warp for the other waveforms. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` raises each active voice increment up to about one octave at full positive depth and lowers it up to about one octave at full negative FX depth.
 
 The amp and FX envelopes are AHDSRs. The amp envelope adds `EnvelopeHoldIndex`; FX Env 1 adds `EffectEnvelopeHoldIndex`; FX Env 2 adds `EffectEnvelope2HoldIndex`. Hold runs between attack and decay at full envelope level. Envelope time settings use a `20`-entry table from `0 ms` through `4 s`; the runtime keeps 8 fractional level bits internally but converts to 16-bit audible level for mixing. Version `9` and older files remap their old `10`-entry table indices during settings migration.
 
@@ -421,7 +421,7 @@ The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnv
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
-Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `2`, CRC32, and `8` fixed slots. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Version `1` preset files are accepted and have their saved envelope time indices remapped to the expanded time table.
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `3`, CRC32, and `8` fixed slots. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Version `1` preset files are accepted and have their saved envelope time indices remapped to the expanded time table; version `1` and `2` preset files remap legacy vibrato speed indices.
 
 The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 
@@ -431,7 +431,7 @@ Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` through `9` files migrate to version `10` by copying the older per-profile prefix, appending newer settings with factory defaults, and remapping legacy envelope time indices; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
+- version `2` through `10` files migrate to version `11` by copying the older per-profile prefix, appending newer settings with factory defaults, remapping legacy envelope time indices when needed, and remapping legacy vibrato speed indices; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults
