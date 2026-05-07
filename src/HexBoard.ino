@@ -4754,6 +4754,24 @@ inline uint16_t RAM_FUNC(applySynthTonePhaseWarp)(uint16_t phase, int16_t toneAm
                           : static_cast<uint16_t>(phase + offset);
 }
 
+inline uint16_t RAM_FUNC(applySynthSawToneShape)(uint16_t value, int16_t toneAmount) {
+  int32_t centered = static_cast<int32_t>(value) - 32768;
+  int32_t magnitude = centered < 0 ? -centered : centered;
+  if (magnitude > 32767) {
+    magnitude = 32767;
+  }
+  uint16_t depth = static_cast<uint16_t>(toneAmount < 0 ? -toneAmount : toneAmount);
+  int32_t curve = (centered * (32767 - magnitude)) >> 15;
+  int32_t delta = (curve * static_cast<int32_t>(depth)) >> 4;
+  centered = (toneAmount < 0) ? (centered - delta) : (centered + delta);
+  if (centered < -32768) {
+    centered = -32768;
+  } else if (centered > 32767) {
+    centered = 32767;
+  }
+  return static_cast<uint16_t>(centered + 32768);
+}
+
 inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
                                            int16_t amount,
                                            int16_t& toneAmount,
@@ -5131,12 +5149,16 @@ void RAM_FUNC(poll)() {
     }
     synth[i].counter += phaseIncrement;  // high 16 bits loop from 65535 -> 0
     p = static_cast<uint16_t>(synth[i].counter >> 16);
-    if (voiceToneModValue != 0 && currWave != WAVEFORM_SQUARE) {
+    if (voiceToneModValue != 0 && currWave != WAVEFORM_SQUARE && currWave != WAVEFORM_SAW) {
       p = applySynthTonePhaseWarp(p, voiceToneModValue);
     }
     t = p >> 8;
     switch (currWave) {
-      case WAVEFORM_SAW: break;
+      case WAVEFORM_SAW:
+        if (voiceToneModValue != 0) {
+          p = applySynthSawToneShape(p, voiceToneModValue);
+        }
+        break;
       case WAVEFORM_TRIANGLE: p = 2 * ((p >> 15) ? p : (65535 - p)); break;
       case WAVEFORM_SQUARE: p = 0 - (p > (32768 - static_cast<int32_t>(voiceToneModValue) * 14 * 16)); break;
       case WAVEFORM_HYBRID:
