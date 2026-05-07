@@ -268,7 +268,7 @@ Settings are stored in `/settings.dat` on LittleFS with:
 Important implementation details:
 
 - `CURRENT_SETTINGS_VERSION` is currently `11`
-- the LED current-limit default is `1.5 A`; its internal limiter budget is calibrated to match the previous `2.0 A` behavior
+- the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
 - onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `Tone` and `100%`; valid runtime targets are `Tone`, `Vibrato`, and `Pitch`

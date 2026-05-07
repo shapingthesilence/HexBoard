@@ -408,11 +408,11 @@ constexpr byte LED_CURRENT_LIMIT_MAX_MODE = LED_CURRENT_LIMIT_3000MA;
 byte ledCurrentLimitMode = LED_CURRENT_LIMIT_OFF;
 uint16_t ledCurrentLimitMilliamps = 0;
 
-// Calibrated from laptop-side USB meter readings with Diatonic / 12EDO /
+// V1.2 calibration: laptop-side USB meter readings with Diatonic / 12EDO /
 // THE SUN brightness, OLED active, and the buzzer disabled. The displayed
 // limit remains a USB-side target; these larger internal budgets compensate
 // for the conservative WS2812 estimate while leaving buzzer/OLED headroom.
-uint16_t decodeLedCurrentLimitMilliamps(byte limitMode) {
+uint16_t decodeLedCurrentLimitMilliampsV12(byte limitMode) {
   switch (limitMode) {
     case LED_CURRENT_LIMIT_250MA:
       return 250;
@@ -431,6 +431,37 @@ uint16_t decodeLedCurrentLimitMilliamps(byte limitMode) {
     default:
       return 0;
   }
+}
+
+// V1.1 calibration: pure-white USB meter readings showed 0.6 A at the V1.2
+// 1.5 A internal budget and 1.35 A at the V1.2 3.0 A internal budget. This
+// table fits those readings so V1.1 modes land near the V1.2 actual draw.
+uint16_t decodeLedCurrentLimitMilliampsV11(byte limitMode) {
+  switch (limitMode) {
+    case LED_CURRENT_LIMIT_250MA:
+      return 600;
+    case LED_CURRENT_LIMIT_500MA:
+      return 1160;
+    case LED_CURRENT_LIMIT_750MA:
+      return 2100;
+    case LED_CURRENT_LIMIT_1000MA:
+      return 3150;
+    case LED_CURRENT_LIMIT_1500MA:
+      return 4600;
+    case LED_CURRENT_LIMIT_2000MA:
+      return 7100;
+    case LED_CURRENT_LIMIT_3000MA:
+      return 8500;
+    default:
+      return 0;
+  }
+}
+
+uint16_t decodeLedCurrentLimitMilliamps(byte limitMode) {
+  if (Hardware_Version == HARDWARE_V1_1) {
+    return decodeLedCurrentLimitMilliampsV11(limitMode);
+  }
+  return decodeLedCurrentLimitMilliampsV12(limitMode);
 }
 
 void syncLedCurrentLimit() {
