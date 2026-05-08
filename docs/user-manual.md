@@ -238,7 +238,9 @@ each measure is accented.
 `Amp Atk`, `Amp Hold`, `Amp Dec`, `Amp Sus`, and `Amp Rel` shape the loudness of
 each note. These five controls are often called the amp envelope.
 Envelope time choices run from `0 ms` to `4 s`, with extra points in the short
-and medium ranges for finer synth shaping.
+and medium ranges for finer synth shaping. The longest envelope choices use
+slightly coarser internal timing to keep the synth responsive under heavy
+polyphony.
 
 - `Attack`: how quickly the sound fades in after pressing a note
 - `Hold`: how long the envelope stays at full level before decaying

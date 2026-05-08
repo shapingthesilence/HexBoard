@@ -69,7 +69,7 @@ Older and related references:
 The current source targets:
 
 - Generic RP2040
-- `200 MHz`
+- `250 MHz`
 - `16 MB` flash with `8 MB` LittleFS
 - TinyUSB USB stack
 - Generic SPI `/4` boot2
@@ -116,7 +116,7 @@ make
 ```
 
 The `Makefile` builds from `src/HexBoard.ino` using the board options for this project. During the build it stages a generated sketch at `build/build.ino`; do not edit or maintain that generated file.
-The local `200 MHz` build intentionally uses `Generic SPI /4` boot2 to keep the external flash clock stable.
+The local `250 MHz` build intentionally uses `Generic SPI /4` boot2 to keep the external flash clock stable while giving the synth ISR enough headroom for dense AHDSR and FX-envelope patches.
 
 To compare onboard synth PWM resolutions, pass `PWM_BITS` at build time:
 

@@ -46,12 +46,12 @@ The `Makefile` currently compiles with:
 
 - Board: `rp2040:rp2040:generic`
 - Flash: `16 MB`, split as `8 MB` sketch / `8 MB` LittleFS
-- CPU: `200 MHz`
+- CPU: `250 MHz`
 - Boot stage 2: `Generic SPI /4`
 - USB stack: `tinyusb`
 
 If you build manually, match the options in `Makefile` and the header comment in `src/HexBoard.ino`.
-The `Generic SPI /4` boot2 selection is required for the local `200 MHz` build to avoid overdriving external flash; `Generic SPI /2` may compile but can crash the board at runtime.
+The `Generic SPI /4` boot2 selection is required for the local `250 MHz` build to avoid overdriving external flash; `Generic SPI /2` may compile but can crash the board at runtime. The higher CPU clock gives the synth ISR enough headroom for dense AHDSR and FX-envelope patches that can otherwise report overruns.
 
 The `Makefile` accepts `PWM_BITS=8`, `PWM_BITS=9`, or `PWM_BITS=10` for onboard synth PWM comparisons:
 
@@ -76,12 +76,13 @@ selective. The current RAM placement favors small hot paths and note-critical
 dispatch: the audio ISR helpers, button scan, command-wheel update, MIDI
 note/wheel sends, synth voice allocation, rotary quadrature polling, and compact
 LED frame helpers. `poll()` also keeps its direct helper calls and the small
-polyphony attenuation table in SRAM. Envelope release starts use 1024-entry
-RAM lookup tables for the amp and FX envelopes so the ISR does not divide when
-many notes are released at once, and piezo scaling uses fixed-point reciprocal
-math rather than the signed division helper. Avoid moving OLED/GEM/U8g2 drawing
-wholesale; display updates are dominated by library calls and I2C transfer time,
-and moving that stack would spend a lot of SRAM for limited gain.
+polyphony attenuation table in SRAM. Envelope release starts use 256-entry
+16-bit RAM lookup tables for the amp and FX envelopes so the ISR does not divide
+when many notes are released at once, and piezo scaling uses fixed-point
+reciprocal math rather than the signed division helper. Avoid moving
+OLED/GEM/U8g2 drawing wholesale; display updates are dominated by library calls
+and I2C transfer time, and moving that stack would spend a lot of SRAM for
+limited gain.
 
 ## Source File Map
 
@@ -334,8 +335,8 @@ When changing synth-related behavior, review:
 - flash-save muting behavior
 
 The synth PWM defaults to `10` bits as a compromise between quantization noise
-and PWM-carrier artifacts. At the project's `200 MHz` build target, the carrier
-is roughly `392 kHz` in `8`-bit mode, `196 kHz` in `9`-bit mode, and `98 kHz`
+and PWM-carrier artifacts. At the project's `250 MHz` build target, the carrier
+is roughly `488 kHz` in `8`-bit mode, `244 kHz` in `9`-bit mode, and `122 kHz`
 in `10`-bit mode. High-register sine tones can get harsher on the jack path as
 the carrier moves closer to the audio band, so `9`-bit and `8`-bit builds are
 useful fallback comparisons.

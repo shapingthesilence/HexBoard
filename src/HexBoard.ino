@@ -6,7 +6,7 @@
     Licensed under the GNU GPL Version 3.
 
     Hardware information:
-      Generic RP2040 running at 200MHz with 16MB of flash
+      Generic RP2040 running at 250MHz with 16MB of flash
       Board options: 8MB sketch / 8MB FS, Adafruit TinyUSB, Generic SPI /4 boot2
         https://github.com/earlephilhower/arduino-pico
       Additional board manager URL:
@@ -587,13 +587,14 @@ constexpr std::array<uint32_t, 20> envelopeTimeMicrosOptions = {
 constexpr std::array<uint8_t, 10> legacyEnvelopeTimeIndexToCurrent = {
   0, 1, 2, 4, 6, 8, 10, 12, 14, 16
 };
-constexpr uint8_t ENVELOPE_LEVEL_SCALE_SHIFT = 8;
+constexpr uint8_t ENVELOPE_LEVEL_SCALE_SHIFT = 7;
 constexpr uint32_t envelopeAudioMaxLevel = 65535;
 constexpr uint32_t envelopeMaxLevel = envelopeAudioMaxLevel << ENVELOPE_LEVEL_SCALE_SHIFT;
 constexpr uint8_t ENVELOPE_MOD_VALUE_SHIFT = ENVELOPE_LEVEL_SCALE_SHIFT + 9;
 constexpr uint32_t ENVELOPE_MOD_VALUE_ROUND = 1u << (ENVELOPE_MOD_VALUE_SHIFT - 1);
-constexpr uint16_t ENVELOPE_RELEASE_INCREMENT_BUCKETS = 1024;
-constexpr uint8_t ENVELOPE_RELEASE_INCREMENT_SHIFT = 16 + ENVELOPE_LEVEL_SCALE_SHIFT - 10;
+constexpr uint8_t ENVELOPE_RELEASE_INCREMENT_BUCKET_BITS = 8;
+constexpr uint16_t ENVELOPE_RELEASE_INCREMENT_BUCKETS = 1u << ENVELOPE_RELEASE_INCREMENT_BUCKET_BITS;
+constexpr uint8_t ENVELOPE_RELEASE_INCREMENT_SHIFT = 16 + ENVELOPE_LEVEL_SCALE_SHIFT - ENVELOPE_RELEASE_INCREMENT_BUCKET_BITS;
 
 enum class EnvelopeStage : uint8_t {
   Idle,
@@ -616,16 +617,16 @@ struct EnvelopeParams {
 
 EnvelopeParams envelopeParams;
 std::array<EnvelopeParams, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeParams;
-std::array<uint32_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS> envelopeReleaseIncrementByLevel = {};
-std::array<std::array<uint32_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeReleaseIncrementByLevel = {};
-void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint32_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
+std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS> envelopeReleaseIncrementByLevel = {};
+std::array<std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeReleaseIncrementByLevel = {};
+void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
 void updateEnvelopeParamsFromValues(EnvelopeParams& params,
                                     uint8_t& attackIndex,
                                     uint8_t& holdIndex,
                                     uint8_t& decayIndex,
                                     uint8_t& sustainLevel,
                                     uint8_t& releaseIndex,
-                                    std::array<uint32_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
+                                    std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
 
 /*
     Sko: I felt like maximizing precision for just intonation purposes.
@@ -3758,10 +3759,10 @@ inline void syncAudioDestinationToRuntime() {
 // 10-bit: wrap=1023 (the default compromise: lower quantization noise, but a
 //         much lower PWM carrier)
 //
-// At the project's 200MHz build target with clkdiv=1 and phase-correct PWM:
-// - 8-bit carrier is about 392kHz
-// - 9-bit carrier is about 196kHz
-// - 10-bit carrier is about 98kHz
+// At the project's 250MHz build target with clkdiv=1 and phase-correct PWM:
+// - 8-bit carrier is about 488kHz
+// - 9-bit carrier is about 244kHz
+// - 10-bit carrier is about 122kHz
 //
 // High notes, especially sine waves, can sound noticeably harsher with 10-bit
 // PWM on typical output stages because the PWM residue sits much closer to the
@@ -4322,7 +4323,7 @@ inline uint32_t RAM_FUNC(envelopeAudioLevel)(uint32_t level) {
   return level >> ENVELOPE_LEVEL_SCALE_SHIFT;
 }
 
-inline uint32_t RAM_FUNC(releaseIncrementForLevel)(uint32_t level) {
+inline uint16_t RAM_FUNC(releaseIncrementForLevel)(uint32_t level) {
   if (level == 0) {
     return 1;
   }
@@ -4330,11 +4331,11 @@ inline uint32_t RAM_FUNC(releaseIncrementForLevel)(uint32_t level) {
   if (bucket >= envelopeReleaseIncrementByLevel.size()) {
     bucket = envelopeReleaseIncrementByLevel.size() - 1;
   }
-  uint32_t increment = envelopeReleaseIncrementByLevel[bucket];
+  uint16_t increment = envelopeReleaseIncrementByLevel[bucket];
   return increment ? increment : 1;
 }
 
-inline uint32_t RAM_FUNC(effectReleaseIncrementForLevel)(uint8_t envelopeIndex, uint32_t level) {
+inline uint16_t RAM_FUNC(effectReleaseIncrementForLevel)(uint8_t envelopeIndex, uint32_t level) {
   if (level == 0) {
     return 1;
   }
@@ -4342,13 +4343,13 @@ inline uint32_t RAM_FUNC(effectReleaseIncrementForLevel)(uint8_t envelopeIndex, 
   if (bucket >= effectEnvelopeReleaseIncrementByLevel[envelopeIndex].size()) {
     bucket = effectEnvelopeReleaseIncrementByLevel[envelopeIndex].size() - 1;
   }
-  uint32_t increment = effectEnvelopeReleaseIncrementByLevel[envelopeIndex][bucket];
+  uint16_t increment = effectEnvelopeReleaseIncrementByLevel[envelopeIndex][bucket];
   return increment ? increment : 1;
 }
 
 struct EnvelopeState {
   uint32_t level = 0;
-  uint32_t releaseIncrement = 0;
+  uint16_t releaseIncrement = 0;
   uint32_t holdTicksRemaining = 0;
   EnvelopeStage stage = EnvelopeStage::Idle;
 };
@@ -4444,17 +4445,21 @@ inline void clearPendingVoiceFreed(uint8_t channel) {
   voiceFreedConsumedSeq[channel] = voiceFreedPublishedSeq[channel];
 }
 
-void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint32_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
+void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
   for (size_t bucket = 0; bucket < releaseTable.size(); ++bucket) {
     uint32_t bucketLevel = static_cast<uint32_t>(bucket + 1) << ENVELOPE_RELEASE_INCREMENT_SHIFT;
     if (bucketLevel > envelopeMaxLevel) {
       bucketLevel = envelopeMaxLevel;
     }
-    releaseTable[bucket] = (params.releaseTicks == 0)
-                             ? envelopeMaxLevel
-                             : std::max<uint32_t>(
-                                 1,
-                                 (bucketLevel + params.releaseTicks - 1) / params.releaseTicks);
+    uint32_t increment = (params.releaseTicks == 0)
+                           ? std::numeric_limits<uint16_t>::max()
+                           : std::max<uint32_t>(
+                               1,
+                               (bucketLevel + (params.releaseTicks >> 1)) / params.releaseTicks);
+    if (increment > std::numeric_limits<uint16_t>::max()) {
+      increment = std::numeric_limits<uint16_t>::max();
+    }
+    releaseTable[bucket] = static_cast<uint16_t>(increment);
   }
 }
 
@@ -4464,7 +4469,7 @@ void updateEnvelopeParamsFromValues(EnvelopeParams& params,
                                     uint8_t& decayIndex,
                                     uint8_t& sustainLevel,
                                     uint8_t& releaseIndex,
-                                    std::array<uint32_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
+                                    std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
   auto clampIndex = [](uint8_t& index) {
     if (index >= envelopeTimeMicrosOptions.size()) {
       index = static_cast<uint8_t>(envelopeTimeMicrosOptions.size() - 1);

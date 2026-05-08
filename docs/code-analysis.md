@@ -2,7 +2,7 @@
 
 > File: `src/HexBoard.ino`
 > Current shape: one Arduino sketch, about `7,300` lines
-> Target: Generic RP2040 at `200 MHz`, `16 MB` flash split as `8 MB` sketch / `8 MB` LittleFS, TinyUSB, Generic SPI `/4` boot2, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
+> Target: Generic RP2040 at `250 MHz`, `16 MB` flash split as `8 MB` sketch / `8 MB` LittleFS, TinyUSB, Generic SPI `/4` boot2, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
 
 This document describes the current firmware structure. It intentionally avoids exact line-number references because the sketch changes often. Use the `// @...` section tags in `src/HexBoard.ino` and `rg` searches as the source navigation method.
 
@@ -154,7 +154,7 @@ Current RAM-resident HexBoard functions include:
   `resetWheelLEDs()`, and `getLEDcode()`
 
 `poll()` also reads the polyphony attenuation table from SRAM. Release-start
-increments are read from 1024-entry 32-bit RAM tables for the amp and FX
+increments are read from 256-entry 16-bit RAM tables for the amp and FX
 envelopes, generated when envelope settings change, avoiding unsigned division
 in the audio ISR. Piezo output scaling uses fixed-point reciprocal math instead
 of the signed division helper.
@@ -162,8 +162,8 @@ of the signed division helper.
 This deliberately does not move the OLED menu and note-overlay drawing stack.
 Those paths mostly call GEM/U8g2 routines and send data over I2C, so wholesale
 RAM placement would consume much more SRAM than the selected hot-path pass.
-After the expanded AHDSR time-table pass, `make` reports about `117 KB` of
-globals and about `145 KB` remaining for local variables, heap, and stacks.
+After the coarser AHDSR release-table pass, `make` reports about `106 KB` of
+globals and about `156 KB` remaining for local variables, heap, and stacks.
 
 ### ISR Profiling Diagnostic
 
@@ -364,8 +364,8 @@ Key implementation facts:
 - `8`, `9`, and `10` bit PWM builds are supported. `9`-bit mode is available
   as a midpoint between `8`-bit quantization noise and `10`-bit carrier
   artifacts.
-- At the project's `200 MHz` build target, the carrier is about `392 kHz` in
-  `8`-bit mode, `196 kHz` in `9`-bit mode, and `98 kHz` in `10`-bit mode.
+- At the project's `250 MHz` build target, the carrier is about `488 kHz` in
+  `8`-bit mode, `244 kHz` in `9`-bit mode, and `122 kHz` in `10`-bit mode.
   Lower carrier frequencies can make high-register sine tones harsher on the
   jack output.
 - The oscillator counter is a `uint32_t` Q16.16 phase accumulator; the high `16`
@@ -415,7 +415,7 @@ The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `
 
 The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `Tone` remains the default wheel effect: it uses a wider pulse-width sweep for `Square`, a pronounced RAM-resident value curve for `Saw` that keeps the saw reset point fixed, and a stronger cheap RAM-resident phase warp for the other waveforms. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` raises each active voice increment up to about one octave at full positive depth and lowers it up to about one octave at full negative FX depth.
 
-The amp and FX envelopes are AHDSRs. The amp envelope adds `EnvelopeHoldIndex`; FX Env 1 adds `EffectEnvelopeHoldIndex`; FX Env 2 adds `EffectEnvelope2HoldIndex`. Hold runs between attack and decay at full envelope level. Envelope time settings use a `20`-entry table from `0 ms` through `4 s`; the runtime keeps 8 fractional level bits internally but converts to 16-bit audible level for mixing. Version `9` and older files remap their old `10`-entry table indices during settings migration.
+The amp and FX envelopes are AHDSRs. The amp envelope adds `EnvelopeHoldIndex`; FX Env 1 adds `EffectEnvelopeHoldIndex`; FX Env 2 adds `EffectEnvelope2HoldIndex`. Hold runs between attack and decay at full envelope level. Envelope time settings use a `20`-entry table from `0 ms` through `4 s`; the runtime keeps 7 fractional level bits internally but converts to 16-bit audible level for mixing. Release tables intentionally use coarser 256-bucket timing so the `4 s` option remains available without the larger 1024-entry 32-bit tables. Version `9` and older files remap their old `10`-entry table indices during settings migration.
 
 The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; FX Env 2 uses the matching `EffectEnvelope2*` settings. The wheel and both FX envelopes can target the same parameter; `poll()` adds their signed target depths and clamps at `-127..127`, so sources stack instead of replacing each other. FX `Amount` is stored as a biased byte where `127` is off, values above `127` follow the envelope in the positive target direction, and values below `127` follow the same envelope level in the negative target direction. Negative vibrato is target-specific: it treats vibrato depth as the resting value and subtracts the envelope level, because negative LFO polarity is not musically useful. The factory defaults keep both FX envelopes inactive with all times at `0 ms` and sustain at `0%`.
 
@@ -501,7 +501,7 @@ The rotary encoder is polled on core 1 and consumed on core 0. Holding the encod
 Run or manually verify the areas your change touches:
 
 - compile with the same board options as `Makefile`
-- keep `Generic SPI /4` boot2 for `200 MHz` builds; `Generic SPI /2` can overclock external flash and crash at runtime
+- keep `Generic SPI /4` boot2 for `250 MHz` builds; `Generic SPI /2` can overclock external flash and crash at runtime
 - boot with no settings file
 - boot with existing settings file
 - profile save/load and auto-save
