@@ -6,12 +6,11 @@
     Licensed under the GNU GPL Version 3.
 
     Hardware information:
-      Generic RP2040 running at 133MHz with 16MB of flash
+      Generic RP2040 running at 250MHz with 16MB of flash
+      Board options: 8MB sketch / 8MB FS, Adafruit TinyUSB, Generic SPI /4 boot2
         https://github.com/earlephilhower/arduino-pico
       Additional board manager URL:
         https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-      Tools > USB Stack > (Adafruit TinyUSB)
-      Sketch > Export Compiled Binary
 
     Compilation instructions:
       Using arduino-cli...
@@ -63,8 +62,8 @@
 // @init
 #include <Arduino.h>  // this is necessary to talk to the Hexboard!
 #include <Wire.h>     // this is necessary to connect with I2C devices (such as the oled display)
-#define SDAPIN 16
-#define SCLPIN 17
+constexpr byte SDAPIN = 16;
+constexpr byte SCLPIN = 17;
 #include <GEM_u8g2.h>  // library of code to create menu objects on the B&W display
 #include <algorithm>
 #include <array>
@@ -83,16 +82,30 @@
 #include <limits>
 #include <queue>       // standard C++ library construction for various FIFO pools (use "std::queue" to invoke it)
 #include <vector>
+#include "LittleFS.h"  // code to use a portion of the 16MB flash chip space as a file system
 #include "pico/time.h" // Allows me to set delays that don't disable interrupts
 #include "hardware/structs/sio.h" // For fast GPIO read/write
 
 enum class EnvelopeCommand : uint8_t;
+enum class SettingKey : uint8_t;
+class colorDef;
+struct SettingsHeader;
+struct SynthPresetSlot;
 
-                       // Software-detected hardware revision
-#define HARDWARE_UNKNOWN 0
-#define HARDWARE_V1_1 1
-#define HARDWARE_V1_2 2
-byte Hardware_Version = 0;  // 0 = unknown, 1 = v1.1 board. 2 = v1.2 board.
+// Software-detected hardware revision.
+constexpr byte HARDWARE_UNKNOWN = 0;
+constexpr byte HARDWARE_V1_1 = 1;
+constexpr byte HARDWARE_V1_2 = 2;
+byte Hardware_Version = HARDWARE_UNKNOWN;
+constexpr byte MIDI_CHANNEL_MIN = 1;
+constexpr byte MIDI_CHANNEL_MAX = 16;
+constexpr byte MIDI_CHANNEL_COUNT = MIDI_CHANNEL_MAX - MIDI_CHANNEL_MIN + 1;
+constexpr byte MPE_CHANNEL_MIN = 2;
+constexpr int32_t MIDI_NOTES_PER_CHANNEL = 128;
+
+bool isValidMidiChannel(byte channel) {
+  return (channel >= MIDI_CHANNEL_MIN) && (channel <= MIDI_CHANNEL_MAX);
+}
 
 // @helpers
 //might be redundant
@@ -100,7 +113,38 @@ std::vector<byte> pressedKeyIDs = {};
 std::array<std::vector<uint8_t>, 128> midiNoteToHexIndices = {};
 
 void updateEnvelopeParamsFromSettings();
+void updateEffectEnvelopeParamsFromSettings();
+void updateEffectEnvelopeParamsFromSettings(uint8_t envelopeIndex);
 void updateArpeggiatorTiming();
+void updateMetronomeTiming();
+void metronomeModeChanged();
+void runMetronome();
+inline bool RAM_FUNC(metronomeBrightnessSelected)();
+inline bool RAM_FUNC(metronomeSideButtonsSelected)();
+inline bool RAM_FUNC(metronomeVisualFlashActive)();
+void refreshMidiRouting();
+void save_settings();
+void load_synth_presets();
+void save_synth_presets();
+void saveSynthPresetToSlot(uint8_t presetIndex);
+void loadSynthPresetFromSlot(uint8_t presetIndex);
+void captureCurrentSynthPreset(SynthPresetSlot& preset);
+void applySynthPresetToSettings(const SynthPresetSlot& preset);
+void copyCurrentSettingsToProfile(uint8_t profileIndex);
+void markSettingsDirty();
+void menuHome();
+void menuSynthOptionsHome();
+void showOnlyValidLayoutChoices();
+void showOnlyValidScaleChoices();
+void showOnlyValidKeyChoices();
+void updateLayoutAndRotate();
+void setupHardware();
+uint32_t RAM_FUNC(getLEDcode)(colorDef c);
+void RAM_FUNC(applyLedCurrentLimitToFrame)();
+void RAM_FUNC(resetVelocityLEDs)();
+void RAM_FUNC(resetWheelLEDs)();
+uint32_t RAM_FUNC(applyNotePixelColor)(byte x);
+bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t settingsPerProfile);
 /*
     C++ returns a negative value for
     negative N % D. This function
@@ -126,37 +170,45 @@ byte byteLerp(byte xOne, byte xTwo, float yOne, float yTwo, float y) {
   return temp;
 }
 
-byte wrapMidiChannel(byte baseChannel, int32_t offset) {
-  if (baseChannel < 1 || baseChannel > 16) {
-    baseChannel = 1;
-  }
-  int32_t index = static_cast<int32_t>(baseChannel - 1) + offset;
-  index %= 16;
-  if (index < 0) {
-    index += 16;
-  }
-  return static_cast<byte>(index + 1);
-}
-
-void mapExtendedMidiNote(int32_t midiIndex, byte baseChannel, byte& noteOut, byte& channelOut) {
-  int32_t offset = midiIndex / 128;
-  int32_t remainder = midiIndex % 128;
+/*
+    A HexBoard note can travel outside the 0-127 MIDI
+    note range. When that happens, we keep the note
+    value within one MIDI channel and move the overflow
+    into a channel offset instead.
+  */
+void splitExtendedMidiNote(int32_t midiIndex, int32_t& channelOffsetOut, byte& noteOut) {
+  channelOffsetOut = midiIndex / MIDI_NOTES_PER_CHANNEL;
+  int32_t remainder = midiIndex % MIDI_NOTES_PER_CHANNEL;
   if (remainder < 0) {
-    remainder += 128;
-    offset -= 1;
+    remainder += MIDI_NOTES_PER_CHANNEL;
+    channelOffsetOut -= 1;
   }
-  channelOut = wrapMidiChannel(baseChannel, offset);
   noteOut = static_cast<byte>(remainder);
 }
 
-int32_t midiChannelOffset(int32_t midiIndex) {
-  int32_t offset = midiIndex / 128;
-  int32_t remainder = midiIndex % 128;
-  if (remainder < 0) {
-    remainder += 128;
-    offset -= 1;
+byte wrapMidiChannel(byte baseChannel, int32_t offset) {
+  if (!isValidMidiChannel(baseChannel)) {
+    baseChannel = MIDI_CHANNEL_MIN;
   }
-  return offset;
+  int32_t index = static_cast<int32_t>(baseChannel - MIDI_CHANNEL_MIN) + offset;
+  index %= MIDI_CHANNEL_COUNT;
+  if (index < 0) {
+    index += MIDI_CHANNEL_COUNT;
+  }
+  return static_cast<byte>(index + MIDI_CHANNEL_MIN);
+}
+
+void mapExtendedMidiNote(int32_t midiIndex, byte baseChannel, byte& noteOut, byte& channelOut) {
+  int32_t channelOffset = 0;
+  splitExtendedMidiNote(midiIndex, channelOffset, noteOut);
+  channelOut = wrapMidiChannel(baseChannel, channelOffset);
+}
+
+int32_t midiChannelOffset(int32_t midiIndex) {
+  int32_t channelOffset = 0;
+  byte unusedNote = 0;
+  splitExtendedMidiNote(midiIndex, channelOffset, unusedNote);
+  return channelOffset;
 }
 
 // @defaults
@@ -179,18 +231,8 @@ byte ledRestBrightness = 255;
 byte ledDimBrightness = 255;
 
 void clampMPEChannelRange() {
-  if (mpeLowestChannel < 2) {
-    mpeLowestChannel = 2;
-  }
-  if (mpeLowestChannel > 16) {
-    mpeLowestChannel = 16;
-  }
-  if (mpeHighestChannel < 2) {
-    mpeHighestChannel = 2;
-  }
-  if (mpeHighestChannel > 16) {
-    mpeHighestChannel = 16;
-  }
+  mpeLowestChannel = std::clamp(mpeLowestChannel, MPE_CHANNEL_MIN, MIDI_CHANNEL_MAX);
+  mpeHighestChannel = std::clamp(mpeHighestChannel, MPE_CHANNEL_MIN, MIDI_CHANNEL_MAX);
   if (mpeLowestChannel > mpeHighestChannel) {
     mpeHighestChannel = mpeLowestChannel;
   }
@@ -208,6 +250,36 @@ byte layoutRotation = 0;
 byte arpeggiatorDivision = 32;  // denominator of whole-note duration (1/32 by default)
 byte synthBPM = 120;
 
+constexpr byte METRONOME_MODE_OFF = 0;
+constexpr byte METRONOME_MODE_BEEP = 1;
+constexpr byte METRONOME_MODE_BRIGHTNESS = 2;
+constexpr byte METRONOME_MODE_SIDE_BUTTONS = 3;
+
+struct MetronomeSignature {
+  uint8_t beats;
+  uint8_t noteValue;
+};
+
+const MetronomeSignature metronomeSignatures[] = {
+  { 4, 4 },
+  { 3, 4 },
+  { 2, 4 },
+  { 6, 8 },
+  { 5, 4 },
+  { 7, 8 },
+  { 12, 8 }
+};
+constexpr uint8_t METRONOME_SIGNATURE_COUNT = sizeof(metronomeSignatures) / sizeof(metronomeSignatures[0]);
+
+byte metronomeMode = METRONOME_MODE_OFF;
+byte metronomeSignatureIndex = 0;
+uint8_t metronomeBeatsPerMeasure = 4;
+uint64_t metronomeBeatIntervalMicros = 500000;
+uint64_t metronomeNextBeatTime = 0;
+uint8_t metronomeBeatCursor = 0;
+uint64_t metronomeVisualFlashUntil = 0;
+bool metronomeAccent = false;
+
 //  Keyboard layout swapping
 bool mirrorLeftRight = false;
 bool mirrorUpDown = false;
@@ -219,9 +291,9 @@ bool useJustIntonationBPM = false;
 bool useDynamicJustIntonation = false;
 
 int transposeSteps = 0;
-bool scaleLock = 0;
-bool perceptual = 1;
-bool paletteBeginsAtKeyCenter = 1;
+bool scaleLock = false;
+bool perceptual = true;
+bool paletteBeginsAtKeyCenter = true;
 byte animationFPS = 32;  // actually frames per 2^20 microseconds. close enough to 30fps
 
 byte wheelMode = 0;  // standard vs. fine tune mode
@@ -233,59 +305,171 @@ int pbWheelSpeed = 1024;
 int velWheelSpeed = 8;
 
 uint8_t envelopeAttackIndex = 2;
+uint8_t envelopeHoldIndex = 0;
 uint8_t envelopeDecayIndex = 3;
 uint8_t envelopeSustainLevel = 127;
 uint8_t envelopeReleaseIndex = 3;
+constexpr uint8_t SYNTH_FX_ENVELOPE_COUNT = 2;
+std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeAttackIndex = { 0, 0 };
+std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeHoldIndex = { 0, 0 };
+std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeDecayIndex = { 0, 0 };
+std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeSustainLevel = { 0, 0 };
+std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeReleaseIndex = { 0, 0 };
 
-#define SYNTH_OFF 0
-#define SYNTH_MONO 1
-#define SYNTH_ARPEGGIO 2
-#define SYNTH_POLY 3
+constexpr byte SYNTH_OFF = 0;
+constexpr byte SYNTH_MONO = 1;
+constexpr byte SYNTH_ARPEGGIO = 2;
+constexpr byte SYNTH_POLY = 3;
 byte playbackMode = SYNTH_OFF;
 
-#define WAVEFORM_SINE 0
-#define WAVEFORM_STRINGS 1
-#define WAVEFORM_CLARINET 2
-#define WAVEFORM_HYBRID 7
-#define WAVEFORM_SQUARE 8
-#define WAVEFORM_SAW 9
-#define WAVEFORM_TRIANGLE 10
+constexpr byte WAVEFORM_SINE = 0;
+constexpr byte WAVEFORM_STRINGS = 1;
+constexpr byte WAVEFORM_CLARINET = 2;
+constexpr byte WAVEFORM_HYBRID = 7;
+constexpr byte WAVEFORM_SQUARE = 8;
+constexpr byte WAVEFORM_SAW = 9;
+constexpr byte WAVEFORM_TRIANGLE = 10;
 byte currWave = WAVEFORM_HYBRID;
 
-#define RAINBOW_MODE 0
-#define TIERED_COLOR_MODE 1
-#define ALTERNATE_COLOR_MODE 2
-#define RAINBOW_OF_FIFTHS_MODE 3
-#define PIANO_ALT_COLOR_MODE 4
-#define PIANO_COLOR_MODE 5
-#define PIANO_INCANDESCENT_COLOR_MODE 6
-byte colorMode = RAINBOW_MODE;
+constexpr byte SYNTH_DRIVE_OFF = 0;
+constexpr byte SYNTH_DRIVE_WARM = 1;
+constexpr byte SYNTH_DRIVE_EDGE = 2;
+constexpr byte SYNTH_DRIVE_DIRTY = 3;
+byte synthDrive = SYNTH_DRIVE_OFF;
 
-#define ANIMATE_BUTTON 0
-#define ANIMATE_STAR 1
-#define ANIMATE_SPLASH 2
-#define ANIMATE_ORBIT 3
-#define ANIMATE_OCTAVE 4
-#define ANIMATE_BY_NOTE 5
-#define ANIMATE_BEAMS 6
-#define ANIMATE_SPLASH_REVERSE 7
-#define ANIMATE_STAR_REVERSE 8
-#define ANIMATE_MIDI_IN 9
-#define ANIMATE_NONE 10
+constexpr byte SYNTH_MOD_TARGET_TONE = 0;
+constexpr byte SYNTH_MOD_TARGET_VIBRATO = 1;
+constexpr byte SYNTH_MOD_TARGET_PITCH = 2;
+byte synthModTarget = SYNTH_MOD_TARGET_TONE;
+constexpr uint8_t SYNTH_MOD_AMOUNT_FULL = 127;
+byte synthModAmount = SYNTH_MOD_AMOUNT_FULL;
+std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeTarget = { SYNTH_MOD_TARGET_VIBRATO, SYNTH_MOD_TARGET_PITCH };
+constexpr uint8_t SYNTH_FX_AMOUNT_OFF = 127;
+constexpr uint8_t SYNTH_FX_AMOUNT_FULL = 254;
+std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeAmount = { SYNTH_FX_AMOUNT_FULL, SYNTH_FX_AMOUNT_FULL };
+
+constexpr byte SYNTH_VIBRATO_SPEED_DEFAULT = 5;  // 6 Hz in the 1..12 Hz table.
+byte synthVibratoSpeed = SYNTH_VIBRATO_SPEED_DEFAULT;
+
+constexpr byte RAINBOW_MODE = 0;
+constexpr byte TIERED_COLOR_MODE = 1;
+constexpr byte ALTERNATE_COLOR_MODE = 2;
+constexpr byte RAINBOW_OF_FIFTHS_MODE = 3;
+constexpr byte PIANO_ALT_COLOR_MODE = 4;
+constexpr byte PIANO_COLOR_MODE = 5;
+constexpr byte PIANO_INCANDESCENT_COLOR_MODE = 6;
+constexpr byte DIATONIC_COLOR_MODE = 7;
+byte colorMode = RAINBOW_MODE;
+bool bootAnimationEnabled = true;
+
+constexpr byte ANIMATE_BUTTON = 0;
+constexpr byte ANIMATE_STAR = 1;
+constexpr byte ANIMATE_SPLASH = 2;
+constexpr byte ANIMATE_ORBIT = 3;
+constexpr byte ANIMATE_OCTAVE = 4;
+constexpr byte ANIMATE_BY_NOTE = 5;
+constexpr byte ANIMATE_BEAMS = 6;
+constexpr byte ANIMATE_SPLASH_REVERSE = 7;
+constexpr byte ANIMATE_STAR_REVERSE = 8;
+constexpr byte ANIMATE_MIDI_IN = 9;
+constexpr byte ANIMATE_NONE = 10;
 byte animationType = ANIMATE_BUTTON;
 
-#define BRIGHT_MAX 255
-#define BRIGHT_HIGH 210
-#define BRIGHT_MID 180
-#define BRIGHT_LOW 150
-#define BRIGHT_DIM 110
-#define BRIGHT_DIMMER 70
-#define BRIGHT_DARK 50     // BRIGHT_DIMMEST
-#define BRIGHT_DARKER 34   // Lowest brightness before backlight shuts down
-#define BRIGHT_FAINT 33    // Highest brightness before backlight turns on
-#define BRIGHT_FAINTER 24  // Lowest brightness before any highlighted button is lit in all color modes
-#define BRIGHT_OFF 0
+constexpr byte LED_TEST_OFF = 0;
+constexpr byte LED_TEST_RED = 1;
+constexpr byte LED_TEST_GREEN = 2;
+constexpr byte LED_TEST_BLUE = 3;
+constexpr byte LED_TEST_WHITE = 4;
+byte ledTestMode = LED_TEST_OFF;
+
+constexpr byte BRIGHT_MAX = 255;
+constexpr byte BRIGHT_HIGH = 210;
+constexpr byte BRIGHT_MID = 180;
+constexpr byte BRIGHT_LOW = 150;
+constexpr byte BRIGHT_DIM = 110;
+constexpr byte BRIGHT_DIMMER = 70;
+constexpr byte BRIGHT_DARK = 50;     // BRIGHT_DIMMEST
+constexpr byte BRIGHT_DARKER = 34;   // Lowest brightness before backlight shuts down
+constexpr byte BRIGHT_FAINT = 33;    // Highest brightness before backlight turns on
+constexpr byte BRIGHT_FAINTER = 24;  // Lowest brightness before any highlighted button is lit in all color modes
+constexpr byte BRIGHT_OFF = 0;
 byte globalBrightness = BRIGHT_DIM;
+
+constexpr byte LED_CURRENT_LIMIT_OFF = 0;
+constexpr byte LED_CURRENT_LIMIT_250MA = 1;
+constexpr byte LED_CURRENT_LIMIT_500MA = 2;
+constexpr byte LED_CURRENT_LIMIT_750MA = 3;
+constexpr byte LED_CURRENT_LIMIT_1000MA = 4;
+constexpr byte LED_CURRENT_LIMIT_1500MA = 5;
+constexpr byte LED_CURRENT_LIMIT_2000MA = 6;
+constexpr byte LED_CURRENT_LIMIT_3000MA = 7;
+constexpr byte LED_CURRENT_LIMIT_MAX_MODE = LED_CURRENT_LIMIT_3000MA;
+
+byte ledCurrentLimitMode = LED_CURRENT_LIMIT_OFF;
+uint16_t ledCurrentLimitMilliamps = 0;
+
+// V1.2 calibration: laptop-side USB meter readings with Diatonic / 12EDO /
+// THE SUN brightness, OLED active, and the buzzer disabled. The displayed
+// limit remains a USB-side target; these larger internal budgets compensate
+// for the conservative WS2812 estimate while leaving buzzer/OLED headroom.
+uint16_t decodeLedCurrentLimitMilliampsV12(byte limitMode) {
+  switch (limitMode) {
+    case LED_CURRENT_LIMIT_250MA:
+      return 250;
+    case LED_CURRENT_LIMIT_500MA:
+      return 500;
+    case LED_CURRENT_LIMIT_750MA:
+      return 900;
+    case LED_CURRENT_LIMIT_1000MA:
+      return 1350;
+    case LED_CURRENT_LIMIT_1500MA:
+      return 2000;
+    case LED_CURRENT_LIMIT_2000MA:
+      return 3150;
+    case LED_CURRENT_LIMIT_3000MA:
+      return 5000;
+    default:
+      return 0;
+  }
+}
+
+// V1.1 calibration: pure-white USB meter readings showed 0.6 A at the V1.2
+// 1.5 A internal budget and 1.35 A at the V1.2 3.0 A internal budget. This
+// table fits those readings so V1.1 modes land near the V1.2 actual draw.
+uint16_t decodeLedCurrentLimitMilliampsV11(byte limitMode) {
+  switch (limitMode) {
+    case LED_CURRENT_LIMIT_250MA:
+      return 600;
+    case LED_CURRENT_LIMIT_500MA:
+      return 1160;
+    case LED_CURRENT_LIMIT_750MA:
+      return 2100;
+    case LED_CURRENT_LIMIT_1000MA:
+      return 3150;
+    case LED_CURRENT_LIMIT_1500MA:
+      return 4600;
+    case LED_CURRENT_LIMIT_2000MA:
+      return 7100;
+    case LED_CURRENT_LIMIT_3000MA:
+      return 8500;
+    default:
+      return 0;
+  }
+}
+
+uint16_t decodeLedCurrentLimitMilliamps(byte limitMode) {
+  if (Hardware_Version == HARDWARE_V1_1) {
+    return decodeLedCurrentLimitMilliampsV11(limitMode);
+  }
+  return decodeLedCurrentLimitMilliampsV12(limitMode);
+}
+
+void syncLedCurrentLimit() {
+  if (ledCurrentLimitMode > LED_CURRENT_LIMIT_MAX_MODE) {
+    ledCurrentLimitMode = LED_CURRENT_LIMIT_OFF;
+  }
+  ledCurrentLimitMilliamps = decodeLedCurrentLimitMilliamps(ledCurrentLimitMode);
+}
 
 // @microtonal
 /*
@@ -395,14 +579,27 @@ public:
     change the implementation of key options.
   */
 
-constexpr std::array<uint32_t, 10> envelopeTimeMicrosOptions = {
-  0, 5000, 10000, 20000, 50000, 100000, 200000, 500000, 1000000, 2000000
+constexpr std::array<uint32_t, 20> envelopeTimeMicrosOptions = {
+  0, 5000, 10000, 15000, 20000, 30000, 50000, 75000, 100000, 150000,
+  200000, 300000, 500000, 750000, 1000000, 1500000, 2000000, 2500000,
+  3000000, 4000000
 };
-constexpr uint32_t envelopeMaxLevel = 65535;
+constexpr std::array<uint8_t, 10> legacyEnvelopeTimeIndexToCurrent = {
+  0, 1, 2, 4, 6, 8, 10, 12, 14, 16
+};
+constexpr uint8_t ENVELOPE_LEVEL_SCALE_SHIFT = 7;
+constexpr uint32_t envelopeAudioMaxLevel = 65535;
+constexpr uint32_t envelopeMaxLevel = envelopeAudioMaxLevel << ENVELOPE_LEVEL_SCALE_SHIFT;
+constexpr uint8_t ENVELOPE_MOD_VALUE_SHIFT = ENVELOPE_LEVEL_SCALE_SHIFT + 9;
+constexpr uint32_t ENVELOPE_MOD_VALUE_ROUND = 1u << (ENVELOPE_MOD_VALUE_SHIFT - 1);
+constexpr uint8_t ENVELOPE_RELEASE_INCREMENT_BUCKET_BITS = 8;
+constexpr uint16_t ENVELOPE_RELEASE_INCREMENT_BUCKETS = 1u << ENVELOPE_RELEASE_INCREMENT_BUCKET_BITS;
+constexpr uint8_t ENVELOPE_RELEASE_INCREMENT_SHIFT = 16 + ENVELOPE_LEVEL_SCALE_SHIFT - ENVELOPE_RELEASE_INCREMENT_BUCKET_BITS;
 
 enum class EnvelopeStage : uint8_t {
   Idle,
   Attack,
+  Hold,
   Decay,
   Sustain,
   Release
@@ -410,14 +607,26 @@ enum class EnvelopeStage : uint8_t {
 
 struct EnvelopeParams {
   uint32_t attackTicks = 0;
+  uint32_t holdTicks = 0;
   uint32_t decayTicks = 0;
   uint32_t releaseTicks = 0;
   uint32_t attackIncrement = envelopeMaxLevel;
   uint32_t decayIncrement = envelopeMaxLevel;
-  uint16_t sustainLevel = envelopeMaxLevel;
+  uint32_t sustainLevel = envelopeMaxLevel;
 };
 
 EnvelopeParams envelopeParams;
+std::array<EnvelopeParams, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeParams;
+std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS> envelopeReleaseIncrementByLevel = {};
+std::array<std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeReleaseIncrementByLevel = {};
+void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
+void updateEnvelopeParamsFromValues(EnvelopeParams& params,
+                                    uint8_t& attackIndex,
+                                    uint8_t& holdIndex,
+                                    uint8_t& decayIndex,
+                                    uint8_t& sustainLevel,
+                                    uint8_t& releaseIndex,
+                                    std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
 
 /*
     Sko: I felt like maximizing precision for just intonation purposes.
@@ -1193,7 +1402,21 @@ volatile uint32_t isrProfileMinUs  = 0;
 volatile uint32_t isrProfileMaxUs  = 0;
 volatile uint32_t isrProfileAvgUs  = 0;
 volatile uint32_t isrProfileCount  = 0;
-void readAndResetISRProfile() {
+volatile uint32_t isrCycleOverrunCount = 0;
+volatile uint32_t isrCycleReleaseStartCount = 0;
+volatile uint32_t isrCyclePiezoScaleCount = 0;
+volatile uint8_t isrCycleMaxVoices = 0;
+volatile uint8_t isrCycleMaxFlags = 0;
+volatile uint32_t isrProfileOverrunCount = 0;
+volatile uint32_t isrProfileReleaseStartCount = 0;
+volatile uint32_t isrProfilePiezoScaleCount = 0;
+volatile uint8_t isrProfileMaxVoices = 0;
+volatile uint8_t isrProfileMaxFlags = 0;
+constexpr uint8_t ISR_PROFILE_FLAG_RELEASE_START = 0x01;
+constexpr uint8_t ISR_PROFILE_FLAG_PIEZO_SCALE = 0x02;
+bool isrProfileMenuEnabled = false;
+
+void captureAndResetISRProfile(bool resumeProfiling) {
   // Briefly disable profiling to get a consistent snapshot
   isrProfilingEnabled = false;
   __dmb();  // data memory barrier
@@ -1201,13 +1424,59 @@ void readAndResetISRProfile() {
   isrProfileMaxUs = isrCycleMax;
   isrProfileCount = isrCycleCount;
   isrProfileAvgUs = (isrProfileCount > 0) ? (uint32_t)(isrCycleSum / isrProfileCount) : 0;
+  isrProfileOverrunCount = isrCycleOverrunCount;
+  isrProfileReleaseStartCount = isrCycleReleaseStartCount;
+  isrProfilePiezoScaleCount = isrCyclePiezoScaleCount;
+  isrProfileMaxVoices = isrCycleMaxVoices;
+  isrProfileMaxFlags = isrCycleMaxFlags;
   // Reset counters
   isrCycleMin = UINT32_MAX;
   isrCycleMax = 0;
   isrCycleSum = 0;
   isrCycleCount = 0;
+  isrCycleOverrunCount = 0;
+  isrCycleReleaseStartCount = 0;
+  isrCyclePiezoScaleCount = 0;
+  isrCycleMaxVoices = 0;
+  isrCycleMaxFlags = 0;
   __dmb();
-  isrProfilingEnabled = true;
+  isrProfilingEnabled = resumeProfiling;
+}
+
+void readAndResetISRProfile() {
+  captureAndResetISRProfile(true);
+}
+
+void startISRProfileCapture() {
+  captureAndResetISRProfile(true);
+  sendToLog("ISR profile started.");
+}
+
+void stopISRProfileCaptureAndLog() {
+  captureAndResetISRProfile(false);
+  std::string maxFlags = "";
+  if (isrProfileMaxFlags & ISR_PROFILE_FLAG_RELEASE_START) {
+    maxFlags += "release";
+  }
+  if (isrProfileMaxFlags & ISR_PROFILE_FLAG_PIEZO_SCALE) {
+    if (!maxFlags.empty()) {
+      maxFlags += "+";
+    }
+    maxFlags += "piezo";
+  }
+  if (maxFlags.empty()) {
+    maxFlags = "steady";
+  }
+  sendToLog(
+    "ISR profile min/avg/max/count: " +
+    std::to_string(isrProfileMinUs) + "/" +
+    std::to_string(isrProfileAvgUs) + "/" +
+    std::to_string(isrProfileMaxUs) + " us, " +
+    std::to_string(isrProfileCount) + " samples, overruns: " +
+    std::to_string(isrProfileOverrunCount) + ", release starts: " +
+    std::to_string(isrProfileReleaseStartCount) + ", piezo samples: " +
+    std::to_string(isrProfilePiezoScaleCount) + ", max voices/flags: " +
+    std::to_string(isrProfileMaxVoices) + "/" + maxFlags);
 }
 
 // @timing
@@ -1219,7 +1488,7 @@ void readAndResetISRProfile() {
 uint64_t runTime = 0;        // Program loop consistent variable for time in microseconds since power on
 uint64_t lapTime = 0;        // Used to keep track of how long each loop takes. Useful for rate-limiting.
 uint64_t loopTime = 0;       // Used to check speed of the loop
-uint64_t readClock() {
+uint64_t RAM_FUNC(readClock)() {
   uint64_t temp = timer_hw->timerawh;
   return (temp << 32) | timer_hw->timerawl;
 }
@@ -1241,34 +1510,36 @@ void timeTracker() {
     of ten buttons to allow all 140 inputs to be read in one
     program read cycle.
   */
-#define MPLEX_1_PIN 4
-#define MPLEX_2_PIN 5
-#define MPLEX_4_PIN 2
-#define MPLEX_8_PIN 3
-#define COLUMN_PIN_0 6
-#define COLUMN_PIN_1 7
-#define COLUMN_PIN_2 8
-#define COLUMN_PIN_3 9
-#define COLUMN_PIN_4 10
-#define COLUMN_PIN_5 11
-#define COLUMN_PIN_6 12
-#define COLUMN_PIN_7 13
-#define COLUMN_PIN_8 14
-#define COLUMN_PIN_9 15
+constexpr byte MPLEX_1_PIN = 4;
+constexpr byte MPLEX_2_PIN = 5;
+constexpr byte MPLEX_4_PIN = 2;
+constexpr byte MPLEX_8_PIN = 3;
+constexpr byte COLUMN_PIN_0 = 6;
+constexpr byte COLUMN_PIN_1 = 7;
+constexpr byte COLUMN_PIN_2 = 8;
+constexpr byte COLUMN_PIN_3 = 9;
+constexpr byte COLUMN_PIN_4 = 10;
+constexpr byte COLUMN_PIN_5 = 11;
+constexpr byte COLUMN_PIN_6 = 12;
+constexpr byte COLUMN_PIN_7 = 13;
+constexpr byte COLUMN_PIN_8 = 14;
+constexpr byte COLUMN_PIN_9 = 15;
 /*
     There are 140 LED pixels on the Hexboard.
     LED instructions all go through the LED_PIN.
     It so happens that each LED pixel corresponds
     to one and only one hex button, so both a LED
     and its button can have the same index from 0-139.
-    Since these parameters are pre-defined by the
-    hardware build, the dimensions of the grid
-    are therefore constants.
+    The scan matrix itself is 16x10, so BTN_COUNT is
+    larger than LED_COUNT on purpose. The extra slots
+    are used as internal "flag" positions that help
+    with hardware detection and bookkeeping.
   */
-#define LED_COUNT 140
-#define COLCOUNT 10
-#define ROWCOUNT 16
-#define BTN_COUNT COLCOUNT* ROWCOUNT
+constexpr byte LED_COUNT = 140;
+constexpr byte COLCOUNT = 10;
+constexpr byte ROWCOUNT = 16;
+constexpr byte BTN_COUNT = COLCOUNT * ROWCOUNT;
+constexpr byte FIRST_FLAG_BUTTON_INDEX = LED_COUNT;
 /*
     Of the 140 buttons, 7 are offset to the bottom left
     quadrant of the Hexboard and are reserved as command
@@ -1278,14 +1549,14 @@ void timeTracker() {
     variables and alter the value of CMDCOUNT to agree
     with how many buttons you reserve for non-note use.
   */
-#define CMDBTN_0 0
-#define CMDBTN_1 20
-#define CMDBTN_2 40
-#define CMDBTN_3 60
-#define CMDBTN_4 80
-#define CMDBTN_5 100
-#define CMDBTN_6 120
-#define CMDCOUNT 7
+constexpr byte CMDBTN_0 = 0;
+constexpr byte CMDBTN_1 = 20;
+constexpr byte CMDBTN_2 = 40;
+constexpr byte CMDBTN_3 = 60;
+constexpr byte CMDBTN_4 = 80;
+constexpr byte CMDBTN_5 = 100;
+constexpr byte CMDBTN_6 = 120;
+constexpr byte CMDCOUNT = 7;
 /*
     This class defines the hexagon button
     as an object. It stores all real-time
@@ -1307,7 +1578,7 @@ public:
 #define BTN_STATE_NEWPRESS 1
 #define BTN_STATE_RELEASED 2
 #define BTN_STATE_HELD 3
-  byte btnState = 0;  // binary 00 = off, 01 = just pressed, 10 = just released, 11 = held
+  byte btnState = BTN_STATE_OFF;  // binary 00 = off, 01 = just pressed, 10 = just released, 11 = held
   void interpBtnPress(bool isPress) {
     btnState = (((btnState << 1) + isPress) & 3);
   }
@@ -1319,10 +1590,10 @@ public:
   uint32_t LEDcodeRest = 0;  // calculate it once and store value, to make LED playback snappier
   uint32_t LEDcodeOff = 0;   // calculate it once and store value, to make LED playback snappier
   uint32_t LEDcodeDim = 0;   // calculate it once and store value, to make LED playback snappier
-  bool animate = 0;          // hex is flagged as part of the animation in this frame, helps make animations smoother
+  bool animate = false;      // true when this hex participates in the current animation frame
   int16_t stepsFromC = 0;    // number of steps from C4 (semitones in 12EDO; microtones if >12EDO)
-  bool isCmd = 0;            // 0 if it's a MIDI note; 1 if it's a MIDI control cmd
-  bool inScale = 0;          // 0 if it's not in the selected scale; 1 if it is
+  bool isCmd = false;        // true if this slot acts as a command instead of a playable note
+  bool inScale = false;      // true when this note belongs to the selected scale
   byte note = UNUSED_NOTE;   // MIDI note or control parameter corresponding to this hex
   int16_t bend = 0;          // in microtonal mode, the pitch bend for this note needed to be tuned correctly
   byte MIDIch = 0;           // what MIDI channel this note is playing on
@@ -1364,7 +1635,7 @@ public:
   int16_t curValue;
   int16_t targetValue;
   uint64_t timeLastChanged;
-  void setTargetValue() {
+  void RAM_FUNC(setTargetValue)() {
     if (*alternateMode) {
       if (*midBtn >> 1) {  // middle button toggles target (0) vs. step (1) mode
         int16_t temp = curValue;
@@ -1398,7 +1669,7 @@ public:
       }
     }
   }
-  bool updateValue(uint64_t givenTime) {
+  bool RAM_FUNC(updateValue)(uint64_t givenTime) {
     int16_t temp = targetValue - curValue;
     if (temp != 0) {
       if ((givenTime - timeLastChanged) >= CC_MSG_COOLDOWN_MICROSECONDS) {
@@ -1408,12 +1679,12 @@ public:
         } else {
           curValue = curValue + (*stepValue * (temp / abs(temp)));
         }
-        return 1;
+        return true;
       } else {
-        return 0;
+        return false;
       }
     } else {
-      return 0;
+      return false;
     }
   }
 };
@@ -1436,8 +1707,9 @@ uint32_t columnMasks[COLCOUNT] = { 0 };
 
 /*
     define h, which is a collection of all the
-    buttons from 0 to 139. h[i] refers to the
-    button with the LED address = i.
+    logical scan slots in the matrix. Indices
+    0-139 map to visible hexes, while the extra
+    slots above LED_COUNT are internal flags.
   */
 buttonDef h[BTN_COUNT];
 
@@ -1451,20 +1723,21 @@ wheelDef velWheel = { &wheelMode, &velSticky,
                       &h[assignCmd[0]].btnState, &h[assignCmd[1]].btnState, &h[assignCmd[2]].btnState,
                       0, 127, &velWheelSpeed, 96, 96, 96, 0 };
 
-bool toggleWheel = 0;  // 0 for mod, 1 for pb
+bool toggleWheel = false;  // false = mod wheel, true = pitch bend wheel
 
-// Delegate control to an external program; just send note events representing raw
-// button pushes and accept SysEx to control light colors.
+// Delegate control is intentionally external-only. It has no menu item and is
+// not persisted; a host must enter/exit it via SysEx.
 bool delegatedControl = false;
 uint32_t delegatedColors[LED_COUNT];
-// Define some SysEx codes for internal use.
-#define SYSEX_DELEGATED_ENTER 1
-#define SYSEX_DELEGATED_EXIT 2
-#define SYSEX_LED 3
+constexpr byte SYSEX_DELEGATED_ENTER = 1;
+constexpr byte SYSEX_DELEGATED_EXIT = 2;
+constexpr byte SYSEX_LED = 3;
 
 void setupPins() {
+  const byte multiplexerPinCount = sizeof(mPin) / sizeof(mPin[0]);
+  const byte columnPinCount = sizeof(cPin) / sizeof(cPin[0]);
   multiplexerMask = 0;
-  for (byte p = 0; p < sizeof(mPin); p++) {
+  for (byte p = 0; p < multiplexerPinCount; ++p) {
     byte pin = mPin[p];
     pinMode(pin, OUTPUT);
     multiplexerMask |= (1u << pin);
@@ -1478,7 +1751,7 @@ void setupPins() {
     }
     rowSelectMask[r] = mask;
   }
-  for (byte p = 0; p < sizeof(cPin); p++) {
+  for (byte p = 0; p < columnPinCount; ++p) {
     byte pin = cPin[p];
     pinMode(pin, INPUT_PULLUP);
     columnMasks[p] = (1u << pin);
@@ -1490,26 +1763,26 @@ void setupGrid() {
   for (byte i = 0; i < BTN_COUNT; i++) {
     h[i].coordRow = (i / 10);
     h[i].coordCol = (2 * (i % 10)) + (h[i].coordRow & 1);
-    h[i].isCmd = 0;
+    h[i].isCmd = false;
     h[i].note = UNUSED_NOTE;
-    h[i].btnState = 0;
+    h[i].btnState = BTN_STATE_OFF;
     h[i].midiNoteIndex = 0;
     h[i].mappedMidiChannel = 0;
   }
-  for (byte c = 0; c < CMDCOUNT; c++) {
+  for (byte c = 0; c < CMDCOUNT; ++c) {
     h[assignCmd[c]].isCmd = 1;
     h[assignCmd[c]].note = CMDB + c;
   }
-  // "flag" buttons
-  for (byte i = 140; i < BTN_COUNT; i++) {
-    h[i].isCmd = 1;
+  // The extra matrix positions above LED_COUNT are never playable notes.
+  for (byte i = FIRST_FLAG_BUTTON_INDEX; i < BTN_COUNT; ++i) {
+    h[i].isCmd = true;
   }
-  // On version 1.2, "button" 140 is shorted (always connected)
-  h[140].note = HARDWARE_V1_2;
+  // On version 1.2, the first flag input is shorted (always connected).
+  h[FIRST_FLAG_BUTTON_INDEX].note = HARDWARE_V1_2;
 }
 
 void detectHardwareVersion() {
-  constexpr byte hardwareFlagIndex = 140;
+  constexpr byte hardwareFlagIndex = FIRST_FLAG_BUTTON_INDEX;
   const byte targetRow = hardwareFlagIndex / 10;
   const byte targetColumn = hardwareFlagIndex % 10;
   byte columnPin = cPin[targetColumn];
@@ -1531,6 +1804,67 @@ void detectHardwareVersion() {
 #define LED_PIN 22
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 int32_t rainbowDegreeTime = 65'536;  // microseconds to go through 1/360 of rainbow
+constexpr uint16_t WS2812_IDLE_CURRENT_MA = 1;
+constexpr uint16_t WS2812_CHANNEL_MAX_CURRENT_MA = 20;
+constexpr byte BOOT_LED_CHECK_FIRST_BOOT_WHITE_VALUE = 120;
+constexpr byte BOOT_LED_CHECK_WAVE_VALUE = VALUE_NORMAL;
+constexpr byte BOOT_LED_CHECK_TRAIL_VALUE = VALUE_LOW;
+constexpr byte BOOT_LED_CHECK_COMMAND_VALUE = VALUE_NORMAL;
+constexpr byte BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_FRAMES = 8;
+constexpr byte BOOT_LED_CHECK_WAVE_FRAMES = 14;
+constexpr byte BOOT_LED_CHECK_NORMAL_FADE_FRAMES = 8;
+constexpr uint16_t BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_MS = 35;
+constexpr uint16_t BOOT_LED_CHECK_FIRST_BOOT_WHITE_HOLD_MS = 2000;
+constexpr uint16_t BOOT_LED_CHECK_WAVE_MS = 30;
+constexpr uint16_t BOOT_LED_CHECK_NORMAL_FADE_MS = 25;
+bool settingsFileMissingOnBoot = false;
+
+byte scaleLedChannel(byte channel, uint16_t scale65535) {
+  return static_cast<byte>((static_cast<uint32_t>(channel) * scale65535 + 32767u) / 65535u);
+}
+
+uint32_t estimateDynamicLedCurrentMilliamps(uint32_t packedColor) {
+  uint8_t red = static_cast<uint8_t>(packedColor >> 16);
+  uint8_t green = static_cast<uint8_t>(packedColor >> 8);
+  uint8_t blue = static_cast<uint8_t>(packedColor);
+  uint32_t channelSum = static_cast<uint32_t>(red) + green + blue;
+  return (channelSum * WS2812_CHANNEL_MAX_CURRENT_MA + 127u) / 255u;
+}
+
+void RAM_FUNC(applyLedCurrentLimitToFrame)() {
+  if (ledCurrentLimitMilliamps == 0) {
+    return;
+  }
+
+  constexpr uint32_t stripIdleCurrentMilliamps = static_cast<uint32_t>(LED_COUNT) * WS2812_IDLE_CURRENT_MA;
+  uint32_t dynamicCurrentMilliamps = 0;
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    dynamicCurrentMilliamps += estimateDynamicLedCurrentMilliamps(strip.getPixelColor(i));
+  }
+
+  if (dynamicCurrentMilliamps == 0) {
+    return;
+  }
+
+  if (ledCurrentLimitMilliamps <= stripIdleCurrentMilliamps) {
+    strip.clear();
+    return;
+  }
+
+  uint32_t allowedDynamicMilliamps = static_cast<uint32_t>(ledCurrentLimitMilliamps) - stripIdleCurrentMilliamps;
+  if (dynamicCurrentMilliamps <= allowedDynamicMilliamps) {
+    return;
+  }
+
+  uint16_t scale65535 = static_cast<uint16_t>((allowedDynamicMilliamps * 65535u) / dynamicCurrentMilliamps);
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    uint32_t packedColor = strip.getPixelColor(i);
+    uint8_t red = scaleLedChannel(static_cast<uint8_t>(packedColor >> 16), scale65535);
+    uint8_t green = scaleLedChannel(static_cast<uint8_t>(packedColor >> 8), scale65535);
+    uint8_t blue = scaleLedChannel(static_cast<uint8_t>(packedColor), scale65535);
+    strip.setPixelColor(i, strip.Color(red, green, blue));
+  }
+}
 /*
     This is actually a hacked together approximation
     of the color space OKLAB. A true conversion would
@@ -1646,8 +1980,221 @@ colorDef getColor(int32_t temp) {
     user's brightness selection. Then the resulting RGB (HSV) color is
     "un-gamma'd" to be converted to the LED strip color.
   */
-uint32_t getLEDcode(colorDef c) {
+uint32_t RAM_FUNC(getLEDcode)(colorDef c) {
   return strip.gamma32(strip.ColorHSV(transformHue(c.hue), c.sat, c.val * globalBrightness / 255));
+}
+
+byte applyBootLedCheckLevels(byte value) {
+  value = applyLEDLevel(value, ledRestBrightness);
+  return static_cast<byte>((static_cast<uint16_t>(value) * globalBrightness + 127) / 255);
+}
+
+byte interpolateByte(byte lowValue, byte highValue, uint16_t amount255) {
+  return static_cast<byte>(lowValue + (((static_cast<uint16_t>(highValue - lowValue) * amount255) + 127) / 255));
+}
+
+byte blendByte(byte startValue, byte endValue, uint16_t amount255) {
+  int32_t delta = static_cast<int32_t>(endValue) - startValue;
+  return static_cast<byte>(startValue + ((delta * amount255 + (delta >= 0 ? 127 : -127)) / 255));
+}
+
+byte pulseBootLedValue(byte frame, byte frameCount, byte lowValue, byte highValue) {
+  if (frameCount <= 1) {
+    return highValue;
+  }
+  uint16_t phase = (static_cast<uint16_t>(frame) * 510u) / (frameCount - 1);
+  uint16_t amount255 = (phase <= 255) ? phase : (510 - phase);
+  return interpolateByte(lowValue, highValue, amount255);
+}
+
+float safeBootLedHue(float hue) {
+  hue = fmodf(hue, 360.0f);
+  if (hue < 0.0f) {
+    hue += 360.0f;
+  } else if (hue <= 0.0f) {
+    hue = 0.1f;
+  }
+  return hue;
+}
+
+uint32_t getBootLedCheckColor(float hue, byte sat, byte val) {
+  if (val == VALUE_BLACK) {
+    return 0;
+  }
+  return strip.gamma32(strip.ColorHSV(transformHue(safeBootLedHue(hue)),
+                                      sat,
+                                      applyBootLedCheckLevels(val)));
+}
+
+uint32_t getBootLedCheckRgb(byte red, byte green, byte blue) {
+  return strip.gamma32(strip.Color(applyBootLedCheckLevels(red),
+                                   applyBootLedCheckLevels(green),
+                                   applyBootLedCheckLevels(blue)));
+}
+
+uint32_t blendPackedColor(uint32_t startColor, uint32_t endColor, uint16_t amount255) {
+  return strip.Color(blendByte(static_cast<byte>(startColor >> 16), static_cast<byte>(endColor >> 16), amount255),
+                     blendByte(static_cast<byte>(startColor >> 8), static_cast<byte>(endColor >> 8), amount255),
+                     blendByte(static_cast<byte>(startColor), static_cast<byte>(endColor), amount255));
+}
+
+void setBootCommandButtonFade(uint16_t frameIndex) {
+  for (byte cmd = 0; cmd < CMDCOUNT; ++cmd) {
+    uint16_t shiftedFrame = (frameIndex + (cmd * 2)) % BOOT_LED_CHECK_WAVE_FRAMES;
+    byte value = pulseBootLedValue(static_cast<byte>(shiftedFrame),
+                                   BOOT_LED_CHECK_WAVE_FRAMES,
+                                   VALUE_BLACK,
+                                   BOOT_LED_CHECK_COMMAND_VALUE);
+    float hue = (frameIndex * 12.0f) + (cmd * 24.0f) + HUE_ORANGE;
+    strip.setPixelColor(assignCmd[cmd], getBootLedCheckColor(hue, SAT_MODERATE, value));
+  }
+}
+
+void showBootLedCheckFrame(uint16_t holdMilliseconds, uint16_t frameIndex) {
+  setBootCommandButtonFade(frameIndex);
+  applyLedCurrentLimitToFrame();
+  strip.show();
+  delay(holdMilliseconds);
+}
+
+void showBootLedCheckRawFrame(uint16_t holdMilliseconds) {
+  applyLedCurrentLimitToFrame();
+  strip.show();
+  delay(holdMilliseconds);
+}
+
+void fillBootLedCheckFrame(uint32_t color) {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    strip.setPixelColor(i, color);
+  }
+}
+
+void fillBootLedCheckNoteFrame(uint32_t color) {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    if (!h[i].isCmd) {
+      strip.setPixelColor(i, color);
+    }
+  }
+}
+
+byte hexDistance(byte firstIndex, byte secondIndex) {
+  uint8_t dx = abs(h[firstIndex].coordCol - h[secondIndex].coordCol);
+  uint8_t dy = abs(h[firstIndex].coordRow - h[secondIndex].coordRow);
+  uint8_t horizontalOverhang = (dx > dy) ? ((dx - dy) / 2) : 0;
+  return dy + horizontalOverhang;
+}
+
+byte bootLedSplashCenterIndex() {
+  byte centerIndex = current.layout().hexMiddleC;
+  if (centerIndex >= LED_COUNT) {
+    return LED_COUNT / 2;
+  }
+
+  int8_t targetRow = h[centerIndex].coordRow;
+  int8_t targetCol = h[centerIndex].coordCol + 2;
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    if (!h[i].isCmd && h[i].coordRow == targetRow && h[i].coordCol == targetCol) {
+      return i;
+    }
+  }
+  return centerIndex;
+}
+
+void showFirstBootWhiteDiagnostic() {
+  for (byte frame = 0; frame < BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_FRAMES; ++frame) {
+    uint16_t amount255 = (static_cast<uint16_t>(frame + 1) * 255u) / BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_FRAMES;
+    byte value = interpolateByte(VALUE_BLACK, BOOT_LED_CHECK_FIRST_BOOT_WHITE_VALUE, amount255);
+    fillBootLedCheckFrame(getBootLedCheckColor(HUE_NONE, SAT_BW, value));
+    showBootLedCheckRawFrame(BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_MS);
+  }
+  delay(BOOT_LED_CHECK_FIRST_BOOT_WHITE_HOLD_MS);
+}
+
+void showBootLedCheckSplash(uint16_t& frameIndex) {
+  byte centerIndex = bootLedSplashCenterIndex();
+
+  byte maxDistance = 0;
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    maxDistance = max(maxDistance, hexDistance(centerIndex, i));
+  }
+
+  for (byte frame = 0; frame < BOOT_LED_CHECK_WAVE_FRAMES; ++frame) {
+    float waveRadius = (BOOT_LED_CHECK_WAVE_FRAMES > 1)
+                         ? ((frame * static_cast<float>(maxDistance)) / (BOOT_LED_CHECK_WAVE_FRAMES - 1))
+                         : maxDistance;
+    for (byte i = 0; i < LED_COUNT; ++i) {
+      if (h[i].isCmd) {
+        continue;
+      }
+      byte distance = hexDistance(centerIndex, i);
+      float separation = fabsf(distance - waveRadius);
+      byte value = VALUE_BLACK;
+      if (separation < 1.0f) {
+        value = interpolateByte(BOOT_LED_CHECK_TRAIL_VALUE,
+                                BOOT_LED_CHECK_WAVE_VALUE,
+                                static_cast<uint16_t>((1.0f - separation) * 255.0f));
+      } else if (separation < 2.0f) {
+        value = interpolateByte(VALUE_BLACK,
+                                BOOT_LED_CHECK_TRAIL_VALUE,
+                                static_cast<uint16_t>((2.0f - separation) * 255.0f));
+      }
+      float hue = (frame * 22.0f) + (distance * 24.0f);
+      strip.setPixelColor(i, getBootLedCheckColor(hue, SAT_VIVID, value));
+    }
+    showBootLedCheckFrame(BOOT_LED_CHECK_WAVE_MS, frameIndex++);
+  }
+}
+
+void captureBootLedFrame(uint32_t* frame) {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    frame[i] = strip.getPixelColor(i);
+  }
+}
+
+void writeNormalLedFrameToStrip() {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    if (!h[i].isCmd) {
+      strip.setPixelColor(i, applyNotePixelColor(i));
+    }
+  }
+  resetVelocityLEDs();
+  resetWheelLEDs();
+}
+
+void fadeToNormalLedFrame() {
+  uint32_t startFrame[LED_COUNT];
+  uint32_t targetFrame[LED_COUNT];
+
+  captureBootLedFrame(startFrame);
+  writeNormalLedFrameToStrip();
+  applyLedCurrentLimitToFrame();
+  captureBootLedFrame(targetFrame);
+
+  for (byte frame = 1; frame <= BOOT_LED_CHECK_NORMAL_FADE_FRAMES; ++frame) {
+    uint16_t amount255 = (static_cast<uint16_t>(frame) * 255u) / BOOT_LED_CHECK_NORMAL_FADE_FRAMES;
+    for (byte i = 0; i < LED_COUNT; ++i) {
+      strip.setPixelColor(i, blendPackedColor(startFrame[i], targetFrame[i], amount255));
+    }
+    strip.show();
+    delay(BOOT_LED_CHECK_NORMAL_FADE_MS);
+  }
+}
+
+void runBootLedSelfCheck() {
+  if (!bootAnimationEnabled) {
+    return;
+  }
+
+  if (settingsFileMissingOnBoot) {
+    showFirstBootWhiteDiagnostic();
+  }
+
+  uint16_t frameIndex = 0;
+  showBootLedCheckSplash(frameIndex);
+  fadeToNormalLedFrame();
+}
+float ratioToCents(float ratio) {
+  return 1200.0 * (std::log(ratio) / std::log(2.0));
 }
 /*
     This function cycles through each button, and based on what color
@@ -1657,10 +2204,76 @@ uint32_t getLEDcode(colorDef c) {
     codes remain in the object until this routine is called again.
   */
 void setLEDcolorCodes() {
+  // ---- Diatonic MOS layer precomputation (runs once per color refresh) ----
+  // For the Diatonic color mode, we precompute which "layer" each scale degree
+  // belongs to. Layer 0 = diatonic naturals (white), positive layers = sharp side
+  // (orange/warm), negative layers = flat side (blue/cool), equidistant = purple.
+  // The diatonic MOS is the 7-note scale generated by stacking best-fit fifths.
+  int8_t mosLayer[MAX_SCALE_DIVISIONS] = { 0 };
+  bool mosEquidistant[MAX_SCALE_DIVISIONS] = { false };
+  bool mosValid = false;
+  int cycleLength = current.tuning().cycleLength;
+  if (colorMode == DIATONIC_COLOR_MODE) {
+    float stepSize = current.tuning().stepSize;
+    // Best-fit fifth in steps
+    int g = (int)round(ratioToCents(1.5) / stepSize);
+    // Large and small steps of the diatonic MOS: 5L + 2s = N
+    // L = (2*g) mod N  (the whole tone, generated by two fifths reduced by octave)
+    int L = positiveMod(2 * g, cycleLength);
+    // s = (N - 5*L) / 2  (the remaining semitone)
+    int sRemainder = cycleLength - 5 * L;
+    bool evenDivision = (sRemainder >= 0) && (sRemainder % 2 == 0);
+    int s = evenDivision ? sRemainder / 2 : 0;
+    mosValid = evenDivision && (L != s) && (L > 0) && (s > 0);  // L>s = diatonic, L<s = antidiatonic, L==s = degenerate
+    if (mosValid) {
+      // Build the 7 diatonic positions using Ionian (major scale) pattern:
+      // C=0, D=L, E=2L, F=2L+s, G=3L+s, A=4L+s, B=5L+s
+      // Interval pattern: L L s L L L s
+      int intervals[7] = { L, L, s, L, L, L, s };
+      int diatonic[7];
+      diatonic[0] = 0;  // C
+      for (int j = 1; j < 7; j++) {
+        diatonic[j] = diatonic[j - 1] + intervals[j - 1];
+      }
+      // For each chromatic step, find which diatonic interval it falls in
+      // and compute its layer (distance from nearest diatonic note).
+      for (int step = 0; step < cycleLength; step++) {
+        // Find the diatonic note at or just below this step
+        int lowerIdx = 0;
+        for (int j = 6; j >= 0; j--) {
+          if (diatonic[j] <= step) {
+            lowerIdx = j;
+            break;
+          }
+        }
+        int upperIdx = (lowerIdx + 1) % 7;
+        int lowerPos = diatonic[lowerIdx];
+        int upperPos = (upperIdx == 0) ? cycleLength : diatonic[upperIdx];
+        int intervalSize = upperPos - lowerPos;  // L or s
+        int k = step - lowerPos;                 // offset from lower diatonic note
+        int kFromUpper = intervalSize - k;       // offset from upper diatonic note
+        if (k == 0) {
+          mosLayer[step] = 0;              // diatonic natural
+          mosEquidistant[step] = false;
+        } else if (k == kFromUpper) {
+          mosLayer[step] = k;              // equidistant (e.g. tritone in 12EDO)
+          mosEquidistant[step] = true;
+        } else if (k < kFromUpper) {
+          mosLayer[step] = k;              // sharp side (+1, +2, ...)
+          mosEquidistant[step] = false;
+        } else {
+          mosLayer[step] = -kFromUpper;    // flat side (-1, -2, ...)
+          mosEquidistant[step] = false;
+        }
+      }
+    }
+  }
+  // ---- End diatonic MOS precomputation ----
+
   for (byte i = 0; i < LED_COUNT; i++) {
     if (!(h[i].isCmd)) {
       colorDef setColor;
-      byte paletteIndex = positiveMod(h[i].stepsFromC, current.tuning().cycleLength);
+      byte paletteIndex = positiveMod(h[i].stepsFromC, cycleLength);
       if (paletteBeginsAtKeyCenter) {
         paletteIndex = current.keyDegree(paletteIndex);
       }
@@ -1673,10 +2286,10 @@ void setLEDcolorCodes() {
           break;
         case RAINBOW_OF_FIFTHS_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
           {
-            float stepSize = current.tuning().stepSize;
+          float stepSize = current.tuning().stepSize;
             float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
             float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
+          float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
             float fifthSize = ((ratioToCents(3.0 / 2.0)) / stepSize);
             float reverseFifth = fifthSize;
             switch (current.tuningIndex) {
@@ -1846,50 +2459,70 @@ void setLEDcolorCodes() {
           }
           break;
         case ALTERNATE_COLOR_MODE:
-          // This mode assigns each note a color based on the interval it forms with the root note.
-          // This is an adaptation of an algorithm developed by Nicholas Fox and Kite Giedraitis.
-          float cents = current.tuning().stepSize * paletteIndex;
-          bool perf = 0;
-          float center = 0.0;
-          if (cents < 50) {
-            perf = 1;
-            center = 0.0;
-          } else if ((cents >= 50) && (cents < 250)) {
-            center = 147.1;
-          } else if ((cents >= 250) && (cents < 450)) {
-            center = 351.0;
-          } else if ((cents >= 450) && (cents < 600)) {
-            perf = 1;
-            center = 498.0;
-          } else if ((cents >= 600) && (cents <= 750)) {
-            perf = 1;
-            center = 702.0;
-          } else if ((cents > 750) && (cents <= 950)) {
-            center = 849.0;
-          } else if ((cents > 950) && (cents <= 1150)) {
-            center = 1053.0;
-          } else if ((cents > 1150) && (cents < 1250)) {
-            perf = 1;
-            center = 1200.0;
-          } else if ((cents >= 1250) && (cents < 1450)) {
-            center = 1347.1;
-          } else if ((cents >= 1450) && (cents < 1650)) {
-            center = 1551.0;
-          } else if ((cents >= 1650) && (cents < 1850)) {
-            perf = 1;
-            center = 1698.0;
-          } else if ((cents >= 1800) && (cents <= 1950)) {
-            perf = 1;
-            center = 1902.0;
+          {
+            // This mode assigns each note a color based on the interval it forms with the root note.
+            // This is an adaptation of an algorithm developed by Nicholas Fox and Kite Giedraitis.
+            float cents = current.tuning().stepSize * paletteIndex;
+            bool perf = 0;
+            float center = 0.0;
+            if (cents < 50) { perf = 1; center = 0.0; }
+            else if ((cents >= 50) && (cents < 250)) { center = 147.1; }
+            else if ((cents >= 250) && (cents < 450)) { center = 351.0; }
+            else if ((cents >= 450) && (cents < 600)) { perf = 1; center = 498.0; }
+            else if ((cents >= 600) && (cents <= 750)) { perf = 1; center = 702.0; }
+            else if ((cents > 750) && (cents <= 950)) { center = 849.0; }
+            else if ((cents > 950) && (cents <= 1150)) { center = 1053.0; }
+            else if ((cents > 1150) && (cents < 1250)) { perf = 1; center = 1200.0; }
+            else if ((cents >= 1250) && (cents < 1450)) { center = 1347.1; }
+            else if ((cents >= 1450) && (cents < 1650)) { center = 1551.0; }
+            else if ((cents >= 1650) && (cents < 1850)) { perf = 1; center = 1698.0; }
+            else if ((cents >= 1800) && (cents <= 1950)) { perf = 1; center = 1902.0; }
+            float offCenter = cents - center;
+            int16_t altHue = positiveMod((int)(150 + (perf * ((offCenter > 0) ? -72 : 72)) - round(1.44 * offCenter)), 360);
+            float deSaturate = perf * (abs(offCenter) < 20) * (1 - (0.02 * abs(offCenter)));
+            setColor = {
+              (float)altHue,
+              (byte)(255 - round(255 * deSaturate)),
+              (byte)(cents ? VALUE_SHADE : VALUE_NORMAL)
+            };
           }
-          float offCenter = cents - center;
-          int16_t altHue = positiveMod((int)(150 + (perf * ((offCenter > 0) ? -72 : 72)) - round(1.44 * offCenter)), 360);
-          float deSaturate = perf * (abs(offCenter) < 20) * (1 - (0.02 * abs(offCenter)));
-          setColor = {
-            (float)altHue,
-            (byte)(255 - round(255 * deSaturate)),
-            (byte)(cents ? VALUE_SHADE : VALUE_NORMAL)
-          };
+          break;
+        case DIATONIC_COLOR_MODE:
+          {
+            byte rawIndex = paletteIndex;
+            if (!mosValid) {
+              setColor.hue = 360.0f * ((float)paletteIndex / (float)cycleLength);
+              setColor.sat = SAT_VIVID;
+              setColor.val = VALUE_NORMAL;
+            } else {
+              int8_t layer = mosLayer[rawIndex];
+              bool equi = mosEquidistant[rawIndex];
+              if (layer == 0) {
+                setColor.hue = HUE_NONE;
+                setColor.sat = SAT_BW;
+                setColor.val = VALUE_NORMAL;
+              } else if (equi) {
+                setColor.hue = HUE_PURPLE;
+                setColor.sat = SAT_DULL;
+                setColor.val = VALUE_NORMAL;
+              } else if (layer > 0) {
+                float hue = fmodf(360.0f + HUE_ORANGE - (float)(layer - 1) * 36.0f, 360.0f);
+                byte val = (byte)max((int)VALUE_SHADE, (int)VALUE_NORMAL - (layer - 1) * 16);
+                setColor.hue = hue;
+                setColor.sat = SAT_VIVID;
+                setColor.val = val;
+              } else {
+                int absLayer = -layer;
+                float hue = fmodf(HUE_BLUE + (float)(absLayer - 1) * 36.0f, 360.0f);
+                byte val = (byte)max((int)VALUE_SHADE, (int)VALUE_NORMAL - (absLayer - 1) * 16);
+                setColor.hue = hue;
+                setColor.sat = SAT_VIVID;
+                setColor.val = val;
+              }
+            }
+          }
+          break;
+        default:
           break;
       }
       colorDef restColor = setColor;
@@ -1908,7 +2541,7 @@ void setLEDcolorCodes() {
   sendToLog("LED codes re-calculated.");
 }
 
-void resetVelocityLEDs() {
+void RAM_FUNC(resetVelocityLEDs)() {
   byte topValue = byteLerp(0, 255, 85, 127, velWheel.curValue);
   colorDef tempColor = {
     (runTime % (rainbowDegreeTime * 360)) / (float)rainbowDegreeTime,
@@ -1923,7 +2556,7 @@ void resetVelocityLEDs() {
   tempColor.val = applyLEDLevel(byteLerp(0, 255, 0, 42, velWheel.curValue), ledRestBrightness);
   strip.setPixelColor(assignCmd[2], getLEDcode(tempColor));
 }
-void resetWheelLEDs() {
+void RAM_FUNC(resetWheelLEDs)() {
   // middle button
   byte tempSat = SAT_BW;
   byte baseValue = static_cast<byte>(toggleWheel ? VALUE_SHADE : VALUE_LOW);
@@ -1966,7 +2599,52 @@ void resetWheelLEDs() {
     strip.setPixelColor(assignCmd[4], getLEDcode(tempColor));
   }
 }
-uint32_t applyNotePixelColor(byte x) {
+
+inline uint8_t RAM_FUNC(scalePackedChannelQ8)(uint8_t component, uint16_t scaleQ8) {
+  uint32_t scaled = static_cast<uint32_t>(component) * scaleQ8;
+  scaled >>= 8;
+  return static_cast<uint8_t>(scaled > 255 ? 255 : scaled);
+}
+
+inline uint32_t RAM_FUNC(scalePackedColorQ8)(uint32_t color, uint16_t scaleQ8) {
+  return strip.Color(scalePackedChannelQ8(static_cast<uint8_t>(color >> 16), scaleQ8),
+                     scalePackedChannelQ8(static_cast<uint8_t>(color >> 8), scaleQ8),
+                     scalePackedChannelQ8(static_cast<uint8_t>(color), scaleQ8));
+}
+
+void RAM_FUNC(applyMetronomeBrightnessFlash)() {
+  if (!metronomeBrightnessSelected()) {
+    return;
+  }
+  constexpr uint16_t METRONOME_BRIGHTNESS_ACCENT_SCALE_Q8 = 256;
+  constexpr uint16_t METRONOME_BRIGHTNESS_BEAT_SCALE_Q8 = 200;
+  constexpr uint16_t METRONOME_BRIGHTNESS_REST_SCALE_Q8 = 96;
+  uint16_t scaleQ8 = metronomeVisualFlashActive()
+                       ? (metronomeAccent ? METRONOME_BRIGHTNESS_ACCENT_SCALE_Q8 : METRONOME_BRIGHTNESS_BEAT_SCALE_Q8)
+                       : METRONOME_BRIGHTNESS_REST_SCALE_Q8;
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    strip.setPixelColor(i, scalePackedColorQ8(strip.getPixelColor(i), scaleQ8));
+  }
+}
+
+void RAM_FUNC(renderMetronomeSideButtonFlash)() {
+  if (!(metronomeSideButtonsSelected() && metronomeVisualFlashActive())) {
+    return;
+  }
+  byte value = metronomeAccent ? VALUE_FULL : VALUE_SHADE;
+  float hue = metronomeAccent ? HUE_GREEN : HUE_RED;
+  colorDef flashColor = {
+    hue,
+    SAT_VIVID,
+    applyLEDLevel(value, ledRestBrightness)
+  };
+  uint32_t flashCode = getLEDcode(flashColor);
+  for (byte cmd = 0; cmd < CMDCOUNT; ++cmd) {
+    strip.setPixelColor(assignCmd[cmd], flashCode);
+  }
+}
+
+uint32_t RAM_FUNC(applyNotePixelColor)(byte x) {
   if (h[x].animate) {
     return h[x].LEDcodeAnim;
   } else if ((animationType != ANIMATE_NONE)
@@ -1981,12 +2659,39 @@ uint32_t applyNotePixelColor(byte x) {
     return h[x].LEDcodeDim;
   }
 }
+uint32_t ledTestColorCode() {
+  byte value = globalBrightness;
+  switch (ledTestMode) {
+    case LED_TEST_RED:
+      return strip.Color(value, 0, 0);
+    case LED_TEST_GREEN:
+      return strip.Color(0, value, 0);
+    case LED_TEST_BLUE:
+      return strip.Color(0, 0, value);
+    case LED_TEST_WHITE:
+      return strip.Color(value, value, value);
+    default:
+      return 0;
+  }
+}
+void renderLedTestFrame() {
+  uint32_t color = ledTestColorCode();
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    strip.setPixelColor(i, color);
+  }
+  applyLedCurrentLimitToFrame();
+  strip.show();
+}
 void setupLEDs() {
   strip.begin();  // INITIALIZE NeoPixel strip object
   strip.show();   // Turn OFF all pixels ASAP
   sendToLog("LEDs started...");
 }
-void lightUpLEDs() {
+void RAM_FUNC(lightUpLEDs)() {
+  if (ledTestMode != LED_TEST_OFF) {
+    renderLedTestFrame();
+    return;
+  }
   if (delegatedControl) {
     for (byte i = 0; i < LED_COUNT; i++) {
       strip.setPixelColor(i, delegatedColors[i]);
@@ -1999,7 +2704,10 @@ void lightUpLEDs() {
     }
     resetVelocityLEDs();
     resetWheelLEDs();
+    renderMetronomeSideButtonFlash();
+    applyMetronomeBrightnessFlash();
   }
+  applyLedCurrentLimitToFrame();
   strip.show();
 }
 
@@ -2016,14 +2724,15 @@ void lightUpLEDs() {
     and pitch bend messages assuming note 69
     equals concert A4, as defined below.
   */
-#define CONCERT_A_HZ 440.0
+constexpr float CONCERT_A_HZ = 440.0f;
+constexpr float CONCERT_A_MIDI_NOTE = 69.0f;
 /*
     Pitch bend messages are calibrated
     to a pitch bend range where
     -8192 to 8191 = -200 to +200 cents,
     or two semitones.
   */
-#define PITCH_BEND_SEMIS 2
+constexpr byte DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2;
 /*
     We use pitch bends to retune notes in MPE mode.
     Some setups can adjust to fit this, but some need us to adjust it.
@@ -2037,16 +2746,16 @@ Adafruit_USBD_MIDI usb_midi;
 MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, UMIDI);
 MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, SMIDI);
 // midiD takes the following bitwise flags
-#define MIDID_NONE 0
-#define MIDID_USB 1
-#define MIDID_SER 2
-#define MIDID_BOTH 3
+constexpr byte MIDID_NONE = 0;
+constexpr byte MIDID_USB = 1;
+constexpr byte MIDID_SER = 2;
+constexpr byte MIDID_BOTH = 3;
 byte midiD = MIDID_USB | MIDID_SER;
 
 // What program change number we last sent (General MIDI/Roland MT-32)
 byte programChange = 0;
 
-std::vector<byte> mpeAvailableChannels;
+uint16_t mpeChannelBitmap = 0;  // bitmap of available MPE channels (bit N = channel N+1)
 byte MPEpitchBendsNeeded;
 bool mpeChannelQueueActive = false;
 
@@ -2058,51 +2767,40 @@ uint8_t mpePlayableChannelCount() {
 }
 
 void resetMPEChannelPool() {
-  mpeAvailableChannels.clear();
+  mpeChannelBitmap = 0;
   for (byte ch = mpeLowestChannel; ch <= mpeHighestChannel; ++ch) {
-    mpeAvailableChannels.push_back(ch);
+    mpeChannelBitmap |= (1u << (ch - 1));
     sendToLog("added ch " + std::to_string(ch) + " to the MPE pool");
-  }
-  if (mpeLowPriorityMode) {
-    std::sort(mpeAvailableChannels.begin(), mpeAvailableChannels.end());
   }
 }
 
-byte takeMPEChannel() {
-  if (mpeAvailableChannels.empty()) {
+byte RAM_FUNC(takeMPEChannel)() {
+  if (mpeChannelBitmap == 0) {
     return 0;
   }
-  if (mpeLowPriorityMode) {
-    byte ch = mpeAvailableChannels.front();
-    mpeAvailableChannels.erase(mpeAvailableChannels.begin());
-    return ch;
-  }
-  byte ch = mpeAvailableChannels.front();
-  mpeAvailableChannels.erase(mpeAvailableChannels.begin());
+  // Always take lowest available channel (equivalent to sorted front() for low-priority,
+  // and a reasonable FIFO-like behavior otherwise)
+  byte ch = static_cast<byte>(__builtin_ctz(mpeChannelBitmap) + 1);
+  mpeChannelBitmap &= ~(1u << (ch - 1));
   return ch;
 }
 
-void releaseMPEChannel(byte ch) {
+void RAM_FUNC(releaseMPEChannel)(byte ch) {
   if (ch < mpeLowestChannel || ch > mpeHighestChannel) {
     return;
   }
-  if (mpeLowPriorityMode) {
-    auto insertPos = std::lower_bound(mpeAvailableChannels.begin(), mpeAvailableChannels.end(), ch);
-    mpeAvailableChannels.insert(insertPos, ch);
-  } else {
-    mpeAvailableChannels.push_back(ch);
-  }
+  mpeChannelBitmap |= (1u << (ch - 1));
   sendToLog("returned ch " + std::to_string(ch) + " to the MPE pool");
 }
 
 float freqToMIDI(float Hz) {  // formula to convert from Hz to MIDI note
-  return 69.0 + 12.0 * log2f(Hz / 440.0);
+  return CONCERT_A_MIDI_NOTE + 12.0f * log2f(Hz / CONCERT_A_HZ);
 }
 float MIDItoFreq(float midi) {  // formula to convert from MIDI note to Hz
-  return 440.0 * exp2((midi - 69.0) / 12.0);
+  return CONCERT_A_HZ * exp2((midi - CONCERT_A_MIDI_NOTE) / 12.0f);
 }
 float stepsToMIDI(int16_t stepsFromA) {  // return the MIDI pitch associated
-  return freqToMIDI(CONCERT_A_HZ) + ((float)stepsFromA * (float)current.tuning().stepSize / 100.0);
+  return CONCERT_A_MIDI_NOTE + (static_cast<float>(stepsFromA) * static_cast<float>(current.tuning().stepSize) / 100.0f);
 }
 
 // Do the same thing on each defined MIDI interface. This reduces code
@@ -2112,6 +2810,86 @@ inline void withMIDI(F&& f) {
   if (midiD & MIDID_USB) f(UMIDI);
   if (midiD & MIDID_SER) f(SMIDI);
 }
+
+// --- Note display overlay when pressing keys ---
+constexpr byte DISPLAYED_NOTES_MAX = 6;
+constexpr int16_t DISPLAYED_NOTE_UNUSED = INT16_MIN;
+constexpr uint64_t DISPLAYED_NOTES_HOLD_MICROS = 2000000ULL;
+constexpr uint64_t DISPLAYED_NOTES_RELEASE_GRACE_MICROS = 80000ULL;
+constexpr int PLAYED_NOTE_COLUMN_X[3] = { 0, 44, 88 };
+constexpr int PLAYED_CHORD_Y = 92;
+constexpr byte CHORD_NAME_MAX = 18;
+bool displayPlayedNotes = false;
+bool noteOverlayVisible = false;
+bool noteOverlayDirty = true;
+bool noteOverlayTemporaryWake = false;
+bool noteOverlayWokeDisplayFromSleep = false;
+uint64_t noteOverlayHoldUntil = 0;
+uint64_t noteOverlayReleaseGraceUntil = 0;
+int16_t displayedNotes[DISPLAYED_NOTES_MAX] = {
+  DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED,
+  DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED
+};
+
+const char* const chromaticNames[12] = {
+  "C", "C#", "D", "Eb", "E", "F",
+  "F#", "G", "G#", "A", "Bb", "B"
+};
+
+struct ChordPattern {
+  uint16_t intervals;
+  const char* suffix;
+};
+
+constexpr uint16_t chordIntervalBit(byte interval) {
+  return static_cast<uint16_t>(1U << interval);
+}
+
+const ChordPattern chordPatterns[] = {
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(9) | chordIntervalBit(11), "maj13" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(9) | chordIntervalBit(10), "13" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(9) | chordIntervalBit(10), "m13" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(5) | chordIntervalBit(7) | chordIntervalBit(10), "11" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(3) | chordIntervalBit(5) | chordIntervalBit(7) | chordIntervalBit(10), "m11" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(11), "maj9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(10), "9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(10), "m9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(11), "mMaj9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(9), "6/9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(9), "m6/9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(4) | chordIntervalBit(7), "add9" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(3) | chordIntervalBit(7), "madd9" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(11), "maj7" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(10), "7" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(10), "m7" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(11), "mMaj7" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(6) | chordIntervalBit(10), "m7b5" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(6) | chordIntervalBit(9), "dim7" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(8) | chordIntervalBit(10), "aug7" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(8) | chordIntervalBit(11), "augMaj7" },
+  { chordIntervalBit(0) | chordIntervalBit(5) | chordIntervalBit(7) | chordIntervalBit(10), "7sus4" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(7) | chordIntervalBit(10), "7sus2" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(7) | chordIntervalBit(9), "6" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(7) | chordIntervalBit(9), "m6" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(7), "" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(7), "m" },
+  { chordIntervalBit(0) | chordIntervalBit(3) | chordIntervalBit(6), "dim" },
+  { chordIntervalBit(0) | chordIntervalBit(4) | chordIntervalBit(8), "aug" },
+  { chordIntervalBit(0) | chordIntervalBit(2) | chordIntervalBit(7), "sus2" },
+  { chordIntervalBit(0) | chordIntervalBit(5) | chordIntervalBit(7), "sus4" }
+};
+const byte CHORD_PATTERN_COUNT = sizeof(chordPatterns) / sizeof(chordPatterns[0]);
+
+void clearDisplayedNotes(int16_t* notes);
+void copyDisplayedNotes(int16_t* destination, const int16_t* source);
+byte rebuildDisplayedNotes(int16_t* notes);
+byte displayedNoteCount(const int16_t* notes);
+bool displayedNotesEqual(const int16_t* first, const int16_t* second);
+bool buildDisplayedChordName(const int16_t* notes, byte count, char* chordText, size_t chordTextSize);
+void drawPlayedNotesOverlay();
+void onToggleDisplayPlayedNotes();
+bool setNoteOverlayTemporaryWake(bool enabled);
+extern bool screenSaverOn;
 
 void setPitchBendRange(byte Ch, byte semitones) {
   withMIDI([&](auto& M) {
@@ -2169,8 +2947,8 @@ void resetTuningMIDI() {
 
   uint8_t playableChannels = mpePlayableChannelCount();
   if (playableChannels == 0) {
-    mpeLowestChannel = 2;
-    mpeHighestChannel = 2;
+    mpeLowestChannel = MPE_CHANNEL_MIN;
+    mpeHighestChannel = MPE_CHANNEL_MIN;
     playableChannels = mpePlayableChannelCount();
   }
 
@@ -2187,7 +2965,7 @@ void resetTuningMIDI() {
   }
 
   mpeChannelQueueActive = false;
-  mpeAvailableChannels.clear();
+  mpeChannelBitmap = 0;
 
   if (mpeEnabled) {
     bool needsQueue = (MPEpitchBendsNeeded > playableChannels) || mpeLowPriorityMode;
@@ -2197,35 +2975,30 @@ void resetTuningMIDI() {
     }
   }
   // Reset controllers and ensure every channel uses the appropriate pitch-bend range.
-  for (byte i = 1; i <= 16; i++) {
+  for (byte i = MIDI_CHANNEL_MIN; i <= MIDI_CHANNEL_MAX; ++i) {
     withMIDI([&](auto& M) { M.sendControlChange(123, 0, i); });
-    byte range = 2;
+    byte range = DEFAULT_PITCH_BEND_RANGE_SEMITONES;
     if (mpeEnabled && i >= mpeLowestChannel && i <= mpeHighestChannel) {
       range = MPEpitchBendSemis;
-    } else if (MPEpitchBendsNeeded == 1) {
-      range = 2;
     }
     setPitchBendRange(i, range);
   }
 }
 
 byte primaryMIDIChannel() {
-  if (MPEpitchBendsNeeded == 1) {
-    if (defaultMidiChannel < 1 || defaultMidiChannel > 16) {
-      return 1;
-    }
+  if (MPEpitchBendsNeeded == 1 && isValidMidiChannel(defaultMidiChannel)) {
     return defaultMidiChannel;
   }
-  return 1;  // In MPE mode, channel 1 is the master channel.
+  return MIDI_CHANNEL_MIN;  // In MPE mode, channel 1 is the master channel.
 }
 
-void sendMIDImodulationToCh1() {
+void RAM_FUNC(sendMIDImodulationToCh1)() {
   byte targetChannel = primaryMIDIChannel();
   withMIDI([&](auto& M) { M.sendControlChange(1, modWheel.curValue, targetChannel); });
   sendToLog("sent mod value " + std::to_string(modWheel.curValue) + " to ch " + std::to_string(targetChannel));
 }
 
-void sendMIDIpitchBendToCh1() {
+void RAM_FUNC(sendMIDIpitchBendToCh1)() {
   byte targetChannel = primaryMIDIChannel();
   withMIDI([&](auto& M) { M.sendPitchBend(pbWheel.curValue, targetChannel); });
   sendToLog("sent pb wheel value " + std::to_string(pbWheel.curValue) + " to ch " + std::to_string(targetChannel));
@@ -2751,10 +3524,6 @@ int16_t centsToRelativePitchBend(float cents) {
   return round(cents * (8192.0 / (100.0 * MPEpitchBendSemis)));
 }
 
-float ratioToCents(float ratio) {
-  return 1200.0 * (std::log(ratio) / std::log(2.0));
-}
-
 int16_t justIntonationRetune(byte x) {
   if (useDynamicJustIntonation == false && useJustIntonationBPM == false) {
     h[x].jiRetune = 0;
@@ -2783,7 +3552,7 @@ int16_t justIntonationRetune(byte x) {
     // detune within a 1/4 of a step, avoid wild detuning but cover the entire pitch range
     float errorThreshold = current.tuning().stepSize / 4.0;
     float deviation = INFINITY;
-    float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
+      float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
     std::pair<byte, byte> selectedRatio;
 
     for (int i = 0; i < ratios.size(); i++) {
@@ -2802,13 +3571,13 @@ int16_t justIntonationRetune(byte x) {
         selectedRatio.second = ratio1;
         if (preferSmallRatios && std::abs(deviation) < errorThreshold) {
           //ratioFound = true;
-          break;
+            break;
+          }
         }
       }
-    }
     //if(ratioFound)
     {
-      pitchAdjustment += centsToRelativePitchBend(deviation + basePitchOffset);
+    pitchAdjustment += centsToRelativePitchBend(deviation + basePitchOffset);
     }
   }
   h[x].jiRetune = pitchAdjustment;
@@ -2856,11 +3625,12 @@ extern U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2;
 #define CONTRAST_AWAKE 63
 #endif
 
-void tryMIDInoteOn(byte x) {
+void RAM_FUNC(tryMIDInoteOn)(byte x) {
   if (displayPlayedNotes && screenSaverOn) {
     setNoteOverlayTemporaryWake(true);
     noteOverlayDirty = true;
   }
+
   // This gets called on any non-command hex that is not scale-locked.
   if (h[x].note >= 128) {
     return;
@@ -2917,7 +3687,7 @@ void tryMIDInoteOn(byte x) {
   }
 }
 
-void tryMIDInoteOff(byte x) {
+void RAM_FUNC(tryMIDInoteOff)(byte x) {
   // this gets called on any non-command hex
   // that is not scale-locked.
   if (h[x].MIDIch) {  // but just in case, check
@@ -2981,29 +3751,62 @@ void setupMIDI() {
     with the PIEZO_PIN on this processor (see RP2040
     manual) than to have it looked up each time.
   */
-#define PIEZO_PIN 23
-#define PIEZO_SLICE 3
-#define PIEZO_CHNL 1
-#define AJACK_PIN 25
-#define AJACK_SLICE 4
-#define AJACK_CHNL 1
+constexpr byte PIEZO_PIN = 23;
+constexpr byte PIEZO_SLICE = 3;
+constexpr byte PIEZO_CHNL = 1;
+constexpr byte AJACK_PIN = 25;
+constexpr byte AJACK_SLICE = 4;
+constexpr byte AJACK_CHNL = 1;
 // midiD takes the following bitwise flags
-#define AUDIO_NONE 0
-#define AUDIO_PIEZO 1
-#define AUDIO_AJACK 2
-#define AUDIO_BOTH 3
-byte audioD = AUDIO_PIEZO | AUDIO_AJACK;
+constexpr byte AUDIO_NONE = 0;
+constexpr byte AUDIO_PIEZO = 1;
+constexpr byte AUDIO_AJACK = 2;
+constexpr byte AUDIO_BOTH = 3;
+byte audioD = AUDIO_AJACK;
+bool synthBuzzerEnabled = false;
+
+inline bool audioJackAvailable() {
+  return Hardware_Version == HARDWARE_V1_2;
+}
+
+inline bool decodeStoredBuzzerEnabled(uint8_t storedValue) {
+  if (!audioJackAvailable()) {
+    return true;
+  }
+  return (storedValue & AUDIO_PIEZO) != 0;
+}
+
+inline byte runtimeAudioDestination(bool buzzerEnabled) {
+  if (!audioJackAvailable()) {
+    return AUDIO_PIEZO;
+  }
+  return buzzerEnabled ? AUDIO_BOTH : AUDIO_AJACK;
+}
+
+inline void syncAudioDestinationToRuntime() {
+  audioD = runtimeAudioDestination(synthBuzzerEnabled);
+}
 
 // ============================================================
 // PWM AUDIO CONFIG
 // ============================================================
-// Set PWM_BITS to 8 or 10 to control PWM resolution.
-// 8-bit: wrap=254 (matches your existing behavior)
-// 10-bit: wrap=1023 (cleaner on jack, lower quantization noise)
+// Set PWM_BITS to 8, 9, or 10 to control PWM resolution.
+// 8-bit: wrap=254 (the 1.2-era default, and the safer fallback if the current
+//         synth path sounds too harsh in the upper registers)
+// 9-bit: wrap=511 (middle-ground test mode: lower quantization noise than 8-bit
+//        while keeping the carrier about an octave higher than 10-bit)
+// 10-bit: wrap=1023 (the default compromise: lower quantization noise, but a
+//         much lower PWM carrier)
 //
-// NOTE: Higher wrap lowers PWM carrier frequency. At 200MHz with clkdiv=1,
-// it should remain ultrasonic, but if you ever hear PWM whine on the jack,
-// drop back to 8-bit or raise carrier via clkdiv/wrap tradeoffs.
+// At the project's 250MHz build target with clkdiv=1 and phase-correct PWM:
+// - 8-bit carrier is about 488kHz
+// - 9-bit carrier is about 244kHz
+// - 10-bit carrier is about 122kHz
+//
+// High notes, especially sine waves, can sound noticeably harsher with 10-bit
+// PWM on typical output stages because the PWM residue sits much closer to the
+// audio band. We still keep 10-bit as the default compromise, but 8-bit
+// remains a one-line fallback if the jack path gets too "screamy."
 #ifndef PWM_BITS
 #define PWM_BITS 10
 #endif
@@ -3020,7 +3823,78 @@ byte audioD = AUDIO_PIEZO | AUDIO_AJACK;
   constexpr int32_t  SHAPE_CLAMP = 511;
   constexpr int      OUTPUT_SHIFT = 6;   // derived above
   constexpr int      ENV_TO_A_SHIFT = 7; // 65535 >> 7 ~= 512
+#elif (PWM_BITS == 9)
+  constexpr uint16_t PWM_WRAP = 511;
+  constexpr int32_t  PWM_MID  = 256;
+  constexpr int32_t  SHAPE_CLAMP = 255;
+  constexpr int      OUTPUT_SHIFT = 7;   // midway between 8-bit and 10-bit gain staging
+  constexpr int      ENV_TO_A_SHIFT = 8; // 65535 >> 8 ~= 256
+#else
+  #error "PWM_BITS must be 8, 9, or 10"
 #endif
+constexpr uint16_t PIEZO_OFF_THRESHOLD = (PWM_BITS == 8) ? 1 : ((PWM_BITS == 9) ? 2 : 4);
+constexpr int32_t METRONOME_BEEP_LEVEL = SHAPE_CLAMP / 3;
+
+inline void RAM_FUNC(writeAudioOutputLevels)(uint16_t piezoLevel, uint16_t jackLevel) {
+  if (audioD & AUDIO_PIEZO) {
+    pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, piezoLevel);
+  } else {
+    pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
+  }
+
+  if (audioD & AUDIO_AJACK) {
+    pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, jackLevel);
+  } else {
+    pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, static_cast<uint16_t>(PWM_MID));
+  }
+}
+
+inline int32_t RAM_FUNC(scalePiezoSample)(int32_t sample, uint16_t amplitude) {
+  const int32_t product = sample * static_cast<int32_t>(amplitude);
+  const bool negative = product < 0;
+  const uint32_t magnitude = negative ? static_cast<uint32_t>(-product) : static_cast<uint32_t>(product);
+#if (PWM_BITS == 8)
+  uint32_t scaled = ((magnitude * 516u) + (1u << 15)) >> 16;  // ~= /127
+#elif (PWM_BITS == 9)
+  uint32_t scaled = ((magnitude * 257u) + (1u << 15)) >> 16;  // ~= /255
+#else
+  uint32_t scaled = (magnitude * 257u) >> 17;                 // ~= /511
+#endif
+  if (scaled > amplitude) {
+    scaled = amplitude;
+  }
+  return negative ? -static_cast<int32_t>(scaled) : static_cast<int32_t>(scaled);
+}
+
+inline int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
+  uint16_t gainQ8 = 256;
+  switch (synthDrive) {
+    case SYNTH_DRIVE_WARM: gainQ8 = 256; break;
+    case SYNTH_DRIVE_EDGE: gainQ8 = 384; break;
+    case SYNTH_DRIVE_DIRTY: gainQ8 = 640; break;
+    case SYNTH_DRIVE_OFF:
+    default:
+      return sample;
+  }
+
+  int32_t x = (sample * static_cast<int32_t>(gainQ8)) >> 8;
+  if (x > SHAPE_CLAMP) x = SHAPE_CLAMP;
+  if (x < -SHAPE_CLAMP) x = -SHAPE_CLAMP;
+
+  const bool negative = x < 0;
+  const uint32_t mag = negative ? static_cast<uint32_t>(-x) : static_cast<uint32_t>(x);
+#if (PWM_BITS == 8)
+  constexpr uint8_t DRIVE_CLAMP_SHIFT = 7;
+#elif (PWM_BITS == 9)
+  constexpr uint8_t DRIVE_CLAMP_SHIFT = 8;
+#else
+  constexpr uint8_t DRIVE_CLAMP_SHIFT = 9;
+#endif
+  uint32_t cubeTerm = (((mag * mag) >> DRIVE_CLAMP_SHIFT) * mag) >> DRIVE_CLAMP_SHIFT;
+  int32_t shaped = ((3 * static_cast<int32_t>(mag)) - static_cast<int32_t>(cubeTerm)) >> 1;
+  if (shaped > SHAPE_CLAMP) shaped = SHAPE_CLAMP;
+  return negative ? -shaped : shaped;
+}
 /*
     These definitions provide 8-bit samples to emulate.
     You can add your own as desired; it must
@@ -3324,6 +4198,26 @@ byte clarinet[] = {
   2,
 };
 /*
+    The sine wavetable benefits the most from
+    interpolation because it has the fewest
+    intentional harmonics to mask staircase
+    artifacts in the upper registers.
+
+    The phase accumulator already runs at 16-bit
+    precision. This helper uses the low 8 phase
+    bits as a fractional weight between adjacent
+    8-bit table entries and returns a 16-bit
+    sample in the same 0..65535 range used by
+    the rest of the synth path.
+  */
+inline uint16_t interpolatedWaveSample(const byte* table, uint16_t phase) {
+  uint8_t index = phase >> 8;
+  uint8_t frac = phase & 0xFF;
+  int32_t sampleA = table[index];
+  int32_t sampleB = table[static_cast<uint8_t>(index + 1)];
+  return static_cast<uint16_t>((sampleA << 8) + ((sampleB - sampleA) * static_cast<int32_t>(frac)));
+}
+/*
     The hybrid synth sound blends between
     square, saw, and triangle waveforms
     at different frequencies. Said frequencies
@@ -3348,6 +4242,111 @@ byte clarinet[] = {
     inaccurate.
   */
 #define POLL_INTERVAL_IN_MICROSECONDS 24
+constexpr uint8_t SYNTH_PITCH_SMOOTH_SHIFT = 9;
+constexpr uint8_t SYNTH_MOD_SMOOTH_SHIFT = 9;
+constexpr uint32_t audioPhaseIncrementFromHz(uint16_t hz) {
+  return static_cast<uint32_t>((static_cast<uint64_t>(hz) * POLL_INTERVAL_IN_MICROSECONDS * 4294967296ULL) / 1000000ULL);
+}
+constexpr std::array<uint32_t, 12> synthVibratoPhaseIncrementOptions = {
+  audioPhaseIncrementFromHz(1),
+  audioPhaseIncrementFromHz(2),
+  audioPhaseIncrementFromHz(3),
+  audioPhaseIncrementFromHz(4),
+  audioPhaseIncrementFromHz(5),
+  audioPhaseIncrementFromHz(6),
+  audioPhaseIncrementFromHz(7),
+  audioPhaseIncrementFromHz(8),
+  audioPhaseIncrementFromHz(9),
+  audioPhaseIncrementFromHz(10),
+  audioPhaseIncrementFromHz(11),
+  audioPhaseIncrementFromHz(12)
+};
+constexpr uint16_t METRONOME_BEEP_SAMPLE_COUNT = (40000 + POLL_INTERVAL_IN_MICROSECONDS - 1) / POLL_INTERVAL_IN_MICROSECONDS;
+constexpr uint32_t METRONOME_BEEP_NORMAL_INCREMENT = audioPhaseIncrementFromHz(1200);
+constexpr uint32_t METRONOME_BEEP_ACCENT_INCREMENT = audioPhaseIncrementFromHz(1800);
+
+inline void RAM_FUNC(recordISRProfileSample)(uint32_t startTime, uint8_t voices, uint8_t flags) {
+  uint32_t dt = timer_hw->timerawl - startTime;
+  if (dt < isrCycleMin) {
+    isrCycleMin = dt;
+  }
+  if (dt > isrCycleMax) {
+    isrCycleMax = dt;
+    isrCycleMaxVoices = voices;
+    isrCycleMaxFlags = flags;
+  }
+  if (dt > POLL_INTERVAL_IN_MICROSECONDS) {
+    isrCycleOverrunCount++;
+  }
+  if (flags & ISR_PROFILE_FLAG_PIEZO_SCALE) {
+    isrCyclePiezoScaleCount++;
+  }
+  isrCycleSum += dt;
+  isrCycleCount++;
+}
+
+inline uint32_t oscillatorIncrementFromFrequency(float frequency) {
+  if (frequency <= 0.0f) {
+    return 0;
+  }
+  constexpr float incrementScale = static_cast<float>(POLL_INTERVAL_IN_MICROSECONDS) * 4294.967296f;  // 2^32 / 1,000,000
+  float increment = frequency * incrementScale;
+  const float maxIncrement = static_cast<float>(std::numeric_limits<uint32_t>::max());
+  if (increment >= maxIncrement) {
+    return std::numeric_limits<uint32_t>::max();
+  }
+  return static_cast<uint32_t>(round(increment));
+}
+
+inline void smoothUint32Toward(uint32_t& current, uint32_t target, uint8_t shift) {
+  if (current == target) {
+    return;
+  }
+  if (target > current) {
+    uint32_t step = (target - current) >> shift;
+    if (step == 0) {
+      step = 1;
+    }
+    current += step;
+    if (current > target) {
+      current = target;
+    }
+  } else {
+    uint32_t step = (current - target) >> shift;
+    if (step == 0) {
+      step = 1;
+    }
+    current -= step;
+    if (current < target) {
+      current = target;
+    }
+  }
+}
+
+inline void smoothUint16Toward(uint16_t& current, uint16_t target, uint8_t shift) {
+  if (current == target) {
+    return;
+  }
+  if (target > current) {
+    uint16_t step = (target - current) >> shift;
+    if (step == 0) {
+      step = 1;
+    }
+    current += step;
+    if (current > target) {
+      current = target;
+    }
+  } else {
+    uint16_t step = (current - target) >> shift;
+    if (step == 0) {
+      step = 1;
+    }
+    current -= step;
+    if (current < target) {
+      current = target;
+    }
+  }
+}
 
 inline uint32_t ticksFromMicros(uint32_t micros) {
   if (micros == 0) {
@@ -3356,13 +4355,53 @@ inline uint32_t ticksFromMicros(uint32_t micros) {
   return (micros + POLL_INTERVAL_IN_MICROSECONDS - 1) / POLL_INTERVAL_IN_MICROSECONDS;
 }
 
+inline uint32_t RAM_FUNC(envelopeAudioLevel)(uint32_t level) {
+  if (level > envelopeMaxLevel) {
+    level = envelopeMaxLevel;
+  }
+  return level >> ENVELOPE_LEVEL_SCALE_SHIFT;
+}
+
+inline uint16_t RAM_FUNC(releaseIncrementForLevel)(uint32_t level) {
+  if (level == 0) {
+    return 1;
+  }
+  uint32_t bucket = (level - 1) >> ENVELOPE_RELEASE_INCREMENT_SHIFT;
+  if (bucket >= envelopeReleaseIncrementByLevel.size()) {
+    bucket = envelopeReleaseIncrementByLevel.size() - 1;
+  }
+  uint16_t increment = envelopeReleaseIncrementByLevel[bucket];
+  return increment ? increment : 1;
+}
+
+inline uint16_t RAM_FUNC(effectReleaseIncrementForLevel)(uint8_t envelopeIndex, uint32_t level) {
+  if (level == 0) {
+    return 1;
+  }
+  uint32_t bucket = (level - 1) >> ENVELOPE_RELEASE_INCREMENT_SHIFT;
+  if (bucket >= effectEnvelopeReleaseIncrementByLevel[envelopeIndex].size()) {
+    bucket = effectEnvelopeReleaseIncrementByLevel[envelopeIndex].size() - 1;
+  }
+  uint16_t increment = effectEnvelopeReleaseIncrementByLevel[envelopeIndex][bucket];
+  return increment ? increment : 1;
+}
+
 struct EnvelopeState {
   uint32_t level = 0;
-  uint32_t releaseIncrement = 0;
+  uint16_t releaseIncrement = 0;
+  uint32_t holdTicksRemaining = 0;
   EnvelopeStage stage = EnvelopeStage::Idle;
 };
 
+inline void RAM_FUNC(resetEnvelopeState)(EnvelopeState& env) {
+  env.level = 0;
+  env.releaseIncrement = 0;
+  env.holdTicksRemaining = 0;
+  env.stage = EnvelopeStage::Idle;
+}
+
 std::array<EnvelopeState, POLYPHONY_LIMIT> envelopeStates;
+std::array<std::array<EnvelopeState, POLYPHONY_LIMIT>, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeStates;
 enum class EnvelopeCommand : uint8_t {
   None,
   StartAttack,
@@ -3422,7 +4461,7 @@ inline EnvelopeCommand consumeEnvelopeCommand(uint8_t channel) {
 
 // Core 1 uses this when a release truly reaches zero. Core 0 later consumes
 // the event and pushes the voice back into the available-channel queue.
-inline void publishVoiceFreed(uint8_t channel) {
+inline void RAM_FUNC(publishVoiceFreed)(uint8_t channel) {
   __dmb();
   voiceFreedPublishedSeq[channel] = static_cast<uint8_t>(voiceFreedPublishedSeq[channel] + 1);
 }
@@ -3445,37 +4484,137 @@ inline void clearPendingVoiceFreed(uint8_t channel) {
   voiceFreedConsumedSeq[channel] = voiceFreedPublishedSeq[channel];
 }
 
-void updateEnvelopeParamsFromSettings() {
+void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
+  for (size_t bucket = 0; bucket < releaseTable.size(); ++bucket) {
+    uint32_t bucketLevel = static_cast<uint32_t>(bucket + 1) << ENVELOPE_RELEASE_INCREMENT_SHIFT;
+    if (bucketLevel > envelopeMaxLevel) {
+      bucketLevel = envelopeMaxLevel;
+    }
+    uint32_t increment = (params.releaseTicks == 0)
+                           ? std::numeric_limits<uint16_t>::max()
+                           : std::max<uint32_t>(
+                               1,
+                               (bucketLevel + (params.releaseTicks >> 1)) / params.releaseTicks);
+    if (increment > std::numeric_limits<uint16_t>::max()) {
+      increment = std::numeric_limits<uint16_t>::max();
+    }
+    releaseTable[bucket] = static_cast<uint16_t>(increment);
+  }
+}
+
+void updateEnvelopeParamsFromValues(EnvelopeParams& params,
+                                    uint8_t& attackIndex,
+                                    uint8_t& holdIndex,
+                                    uint8_t& decayIndex,
+                                    uint8_t& sustainLevel,
+                                    uint8_t& releaseIndex,
+                                    std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
   auto clampIndex = [](uint8_t& index) {
     if (index >= envelopeTimeMicrosOptions.size()) {
       index = static_cast<uint8_t>(envelopeTimeMicrosOptions.size() - 1);
     }
   };
 
-  clampIndex(envelopeAttackIndex);
-  clampIndex(envelopeDecayIndex);
-  clampIndex(envelopeReleaseIndex);
+  clampIndex(attackIndex);
+  clampIndex(holdIndex);
+  clampIndex(decayIndex);
+  clampIndex(releaseIndex);
 
-  uint32_t attackMicros = envelopeTimeMicrosOptions[envelopeAttackIndex];
-  envelopeParams.attackTicks = ticksFromMicros(attackMicros);
-  envelopeParams.attackIncrement = (envelopeParams.attackTicks == 0)
-                                     ? envelopeMaxLevel
-                                     : std::max<uint32_t>(1, (envelopeMaxLevel + envelopeParams.attackTicks - 1) / envelopeParams.attackTicks);
+  uint32_t attackMicros = envelopeTimeMicrosOptions[attackIndex];
+  params.attackTicks = ticksFromMicros(attackMicros);
+  params.attackIncrement = (params.attackTicks == 0)
+                             ? envelopeMaxLevel
+                             : std::max<uint32_t>(1, (envelopeMaxLevel + params.attackTicks - 1) / params.attackTicks);
 
-  uint8_t sustainByte = std::min<uint8_t>(127, envelopeSustainLevel);
-  envelopeParams.sustainLevel = static_cast<uint16_t>((static_cast<uint32_t>(sustainByte) * envelopeMaxLevel) / 127);
+  uint32_t holdMicros = envelopeTimeMicrosOptions[holdIndex];
+  params.holdTicks = ticksFromMicros(holdMicros);
 
-  uint32_t decayMicros = envelopeTimeMicrosOptions[envelopeDecayIndex];
-  envelopeParams.decayTicks = ticksFromMicros(decayMicros);
-  if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
-    envelopeParams.decayIncrement = envelopeMaxLevel;
+  sustainLevel = std::min<uint8_t>(127, sustainLevel);
+  params.sustainLevel = (static_cast<uint32_t>(sustainLevel) * envelopeMaxLevel) / 127;
+
+  uint32_t decayMicros = envelopeTimeMicrosOptions[decayIndex];
+  params.decayTicks = ticksFromMicros(decayMicros);
+  if (params.decayTicks == 0 || params.sustainLevel >= envelopeMaxLevel) {
+    params.decayIncrement = envelopeMaxLevel;
   } else {
-    uint32_t difference = envelopeMaxLevel - envelopeParams.sustainLevel;
-    envelopeParams.decayIncrement = std::max<uint32_t>(1, (difference + envelopeParams.decayTicks - 1) / envelopeParams.decayTicks);
+    uint32_t difference = envelopeMaxLevel - params.sustainLevel;
+    params.decayIncrement = std::max<uint32_t>(1, (difference + params.decayTicks - 1) / params.decayTicks);
   }
 
-  uint32_t releaseMicros = envelopeTimeMicrosOptions[envelopeReleaseIndex];
-  envelopeParams.releaseTicks = ticksFromMicros(releaseMicros);
+  uint32_t releaseMicros = envelopeTimeMicrosOptions[releaseIndex];
+  params.releaseTicks = ticksFromMicros(releaseMicros);
+  updateEnvelopeReleaseIncrementTable(params, releaseTable);
+}
+
+void updateEnvelopeParamsFromSettings() {
+  updateEnvelopeParamsFromValues(envelopeParams,
+                                 envelopeAttackIndex,
+                                 envelopeHoldIndex,
+                                 envelopeDecayIndex,
+                                 envelopeSustainLevel,
+                                 envelopeReleaseIndex,
+                                 envelopeReleaseIncrementByLevel);
+}
+
+std::array<bool, SYNTH_FX_ENVELOPE_COUNT> synthEffectEnvelopeActive = { false, false };
+
+inline int16_t synthEffectAmountDepth(uint8_t amountSetting) {
+  return static_cast<int16_t>(amountSetting) - static_cast<int16_t>(SYNTH_FX_AMOUNT_OFF);
+}
+
+inline void RAM_FUNC(advanceEnvelopeFromAttackPeak)(const EnvelopeParams& params, EnvelopeState& env) {
+  env.level = envelopeMaxLevel;
+  if (params.holdTicks != 0) {
+    env.stage = EnvelopeStage::Hold;
+    env.holdTicksRemaining = params.holdTicks;
+  } else if (params.decayTicks == 0 || params.sustainLevel >= envelopeMaxLevel) {
+    env.stage = EnvelopeStage::Sustain;
+    env.level = params.sustainLevel;
+    env.holdTicksRemaining = 0;
+  } else {
+    env.stage = EnvelopeStage::Decay;
+    env.holdTicksRemaining = 0;
+  }
+}
+
+inline void RAM_FUNC(updateEnvelopeHoldStage)(const EnvelopeParams& params, EnvelopeState& env) {
+  env.level = envelopeMaxLevel;
+  if (env.holdTicksRemaining > 1) {
+    --env.holdTicksRemaining;
+    return;
+  }
+  env.holdTicksRemaining = 0;
+  if (params.decayTicks == 0 || params.sustainLevel >= envelopeMaxLevel) {
+    env.stage = EnvelopeStage::Sustain;
+    env.level = params.sustainLevel;
+  } else {
+    env.stage = EnvelopeStage::Decay;
+  }
+}
+
+void updateEffectEnvelopeParamsFromSettings(uint8_t envelopeIndex) {
+  if (envelopeIndex >= SYNTH_FX_ENVELOPE_COUNT) {
+    return;
+  }
+  updateEnvelopeParamsFromValues(effectEnvelopeParams[envelopeIndex],
+                                 effectEnvelopeAttackIndex[envelopeIndex],
+                                 effectEnvelopeHoldIndex[envelopeIndex],
+                                 effectEnvelopeDecayIndex[envelopeIndex],
+                                 effectEnvelopeSustainLevel[envelopeIndex],
+                                 effectEnvelopeReleaseIndex[envelopeIndex],
+                                 effectEnvelopeReleaseIncrementByLevel[envelopeIndex]);
+  bool envelopeShapeActive = (effectEnvelopeAttackIndex[envelopeIndex] != 0)
+                          || (effectEnvelopeHoldIndex[envelopeIndex] != 0)
+                          || (effectEnvelopeDecayIndex[envelopeIndex] != 0)
+                          || (effectEnvelopeSustainLevel[envelopeIndex] != 0)
+                          || (effectEnvelopeReleaseIndex[envelopeIndex] != 0);
+  synthEffectEnvelopeActive[envelopeIndex] = envelopeShapeActive && synthEffectAmountDepth(effectEnvelopeAmount[envelopeIndex]) != 0;
+}
+
+void updateEffectEnvelopeParamsFromSettings() {
+  for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
+    updateEffectEnvelopeParamsFromSettings(envelopeIndex);
+  }
 }
 /*
     This defines which hardware alarm
@@ -3500,19 +4639,20 @@ void updateEnvelopeParamsFromSettings() {
     the form of an increment value, which is
     how much a counter would have to be increased
     every time the poll() interval is reached,
-    such that a counter overflows from 0 to 65,535
-    back to zero at some frequency per second.
+    such that the high 16 bits of the phase counter
+    loop across the waveform at the right frequency.
 
     The value of the counter is useful for reading
     a waveform sample, so that an analog signal
     can be emulated by reading the sample at each
-    poll() based on how far the counter has moved
-    towards 65,536.
+    poll() based on how far the phase has moved
+    through one waveform cycle.
   */
 class oscillator {
 public:
-  uint16_t increment = 0;
-  uint16_t counter = 0;
+  uint32_t increment = 0;        // current Q16.16 phase increment smoothed by the audio ISR
+  uint32_t targetIncrement = 0;  // target Q16.16 phase increment from the control path
+  uint32_t counter = 0;          // Q16.16 phase accumulator; high 16 bits are the waveform phase
   byte a = 127;
   byte b = 128;
   byte c = 255;
@@ -3522,11 +4662,359 @@ public:
 };
 oscillator synth[POLYPHONY_LIMIT];  // maximum polyphony
 std::queue<byte> synthChQueue;
-const byte attenuation[] = { 64, 24, 17, 14, 12, 11, 10, 9, 8 };  // full volume in mono mode; equalized volume in poly.
+byte attenuation[] = { 64, 24, 17, 14, 12, 11, 10, 9, 8 };  // RAM-resident; read by poll() every audio tick.
+uint16_t synthModValueQ8 = 0;
+uint32_t synthVibratoPhase = 0;
+uint32_t synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[SYNTH_VIBRATO_SPEED_DEFAULT];
+volatile uint16_t metronomeBeepSamplesRemaining = 0;
+volatile uint32_t metronomeBeepPhaseIncrement = METRONOME_BEEP_NORMAL_INCREMENT;
+uint32_t metronomeBeepPhase = 0;
 
 byte arpeggiatingNow = UNUSED_NOTE;  // if this is 255, set to off (0% duty cycle)
 uint64_t arpeggiateTime = 0;         // Used to keep track of when this note started playing in ARPEG mode
 uint64_t arpeggiateLength = 62500;   // default: 1/32 note at 120 BPM
+
+inline uint8_t RAM_FUNC(smoothedSynthModValue)() {
+  int16_t targetValue = modWheel.curValue;
+  if (targetValue < 0) {
+    targetValue = 0;
+  } else if (targetValue > 127) {
+    targetValue = 127;
+  }
+  const uint16_t targetQ8 = static_cast<uint16_t>(targetValue) << 8;
+  smoothUint16Toward(synthModValueQ8, targetQ8, SYNTH_MOD_SMOOTH_SHIFT);
+  return static_cast<uint8_t>((synthModValueQ8 + 128u) >> 8);
+}
+
+void updateSynthVibratoParams() {
+  if (synthModTarget > SYNTH_MOD_TARGET_PITCH) {
+    synthModTarget = SYNTH_MOD_TARGET_TONE;
+  }
+  if (synthModAmount > SYNTH_MOD_AMOUNT_FULL) {
+    synthModAmount = SYNTH_MOD_AMOUNT_FULL;
+  }
+  for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
+    if (effectEnvelopeTarget[envelopeIndex] > SYNTH_MOD_TARGET_PITCH) {
+      effectEnvelopeTarget[envelopeIndex] = SYNTH_MOD_TARGET_TONE;
+    }
+    if (effectEnvelopeAmount[envelopeIndex] > SYNTH_FX_AMOUNT_FULL) {
+      effectEnvelopeAmount[envelopeIndex] = SYNTH_FX_AMOUNT_FULL;
+    }
+  }
+  if (synthVibratoSpeed >= synthVibratoPhaseIncrementOptions.size()) {
+    synthVibratoSpeed = SYNTH_VIBRATO_SPEED_DEFAULT;
+  }
+  synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[synthVibratoSpeed];
+}
+
+inline uint8_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue) {
+  if (synthModAmount >= SYNTH_MOD_AMOUNT_FULL) {
+    return modValue;
+  }
+  return static_cast<uint8_t>((static_cast<uint16_t>(modValue) * static_cast<uint16_t>(synthModAmount) + 64u) >> 7);
+}
+
+inline int16_t RAM_FUNC(effectEnvelopeModValue)(uint8_t envelopeIndex, uint8_t target, const EnvelopeState& env) {
+  int16_t depth = synthEffectAmountDepth(effectEnvelopeAmount[envelopeIndex]);
+  if (depth == 0) {
+    return 0;
+  }
+  bool negativeVibrato = target == SYNTH_MOD_TARGET_VIBRATO && depth < 0;
+  if (env.stage == EnvelopeStage::Idle && !negativeVibrato) {
+    return 0;
+  }
+
+  uint32_t level = env.level;
+  if (level > envelopeMaxLevel) {
+    level = envelopeMaxLevel;
+  }
+  uint32_t value = (level + ENVELOPE_MOD_VALUE_ROUND) >> ENVELOPE_MOD_VALUE_SHIFT;
+  if (value > 127) {
+    value = 127;
+  }
+
+  uint16_t absDepth = static_cast<uint16_t>(depth > 0 ? depth : -depth);
+  uint16_t scaled = static_cast<uint16_t>((value * (absDepth + 1u)) >> 7);
+  if (scaled > 127) {
+    scaled = 127;
+  }
+  if (negativeVibrato) {
+    return static_cast<int16_t>(absDepth - scaled);
+  }
+  int16_t signedValue = static_cast<int16_t>(scaled);
+  return (depth < 0) ? -signedValue : signedValue;
+}
+
+inline void RAM_FUNC(startEffectEnvelopeAttack)(uint8_t envelopeIndex, EnvelopeState& env) {
+  EnvelopeParams& params = effectEnvelopeParams[envelopeIndex];
+  env.releaseIncrement = 0;
+  env.holdTicksRemaining = 0;
+  if (params.attackTicks == 0) {
+    advanceEnvelopeFromAttackPeak(params, env);
+  } else {
+    env.stage = EnvelopeStage::Attack;
+    env.level = 0;
+  }
+}
+
+inline void RAM_FUNC(startEffectEnvelopeRelease)(uint8_t envelopeIndex, EnvelopeState& env) {
+  EnvelopeParams& params = effectEnvelopeParams[envelopeIndex];
+  if (params.releaseTicks == 0 || env.level == 0) {
+    resetEnvelopeState(env);
+    return;
+  }
+  env.stage = EnvelopeStage::Release;
+  env.releaseIncrement = effectReleaseIncrementForLevel(envelopeIndex, env.level);
+}
+
+inline void RAM_FUNC(updateEffectEnvelopeState)(uint8_t envelopeIndex, EnvelopeState& env) {
+  EnvelopeParams& params = effectEnvelopeParams[envelopeIndex];
+  switch (env.stage) {
+    case EnvelopeStage::Attack: {
+      uint32_t nextLevel = env.level + params.attackIncrement;
+      if (env.level >= envelopeMaxLevel || nextLevel >= envelopeMaxLevel) {
+        advanceEnvelopeFromAttackPeak(params, env);
+      } else {
+        env.level = nextLevel;
+      }
+      break;
+    }
+    case EnvelopeStage::Hold:
+      updateEnvelopeHoldStage(params, env);
+      break;
+    case EnvelopeStage::Decay:
+      if (params.decayTicks == 0 || params.sustainLevel >= envelopeMaxLevel) {
+        env.stage = EnvelopeStage::Sustain;
+        env.level = params.sustainLevel;
+      } else if (env.level > params.sustainLevel) {
+        uint32_t nextLevel = (env.level > params.decayIncrement) ? (env.level - params.decayIncrement) : 0;
+        if (nextLevel <= params.sustainLevel) {
+          env.level = params.sustainLevel;
+          env.stage = EnvelopeStage::Sustain;
+        } else {
+          env.level = nextLevel;
+        }
+      } else {
+        env.level = params.sustainLevel;
+        env.stage = EnvelopeStage::Sustain;
+      }
+      break;
+    case EnvelopeStage::Sustain:
+      env.level = params.sustainLevel;
+      break;
+    case EnvelopeStage::Release:
+      if (params.releaseTicks == 0 || env.releaseIncrement == 0 || env.level <= env.releaseIncrement) {
+        resetEnvelopeState(env);
+      } else {
+        env.level -= env.releaseIncrement;
+      }
+      break;
+    case EnvelopeStage::Idle:
+    default:
+      env.level = 0;
+      break;
+  }
+}
+
+inline uint32_t RAM_FUNC(applySynthVibrato)(uint32_t increment, int16_t vibratoAmount) {
+  if (vibratoAmount == 0) {
+    return increment;
+  }
+
+  int32_t offset = (static_cast<int32_t>(increment >> 16) * static_cast<int32_t>(vibratoAmount)) >> 2;
+  if (offset < 0) {
+    uint32_t negativeOffset = static_cast<uint32_t>(-offset);
+    return (negativeOffset >= increment) ? 0 : (increment - negativeOffset);
+  }
+
+  uint32_t positiveOffset = static_cast<uint32_t>(offset);
+  if (std::numeric_limits<uint32_t>::max() - increment < positiveOffset) {
+    return std::numeric_limits<uint32_t>::max();
+  }
+  return increment + positiveOffset;
+}
+
+inline uint16_t RAM_FUNC(applySynthTonePhaseWarp)(uint16_t phase, int16_t toneAmount) {
+  uint16_t triangle = (phase & 0x8000) ? static_cast<uint16_t>(0xFFFFu - phase) : phase;
+  uint16_t depth = static_cast<uint16_t>(toneAmount < 0 ? -toneAmount : toneAmount);
+  uint16_t offset = static_cast<uint16_t>(((static_cast<uint32_t>(triangle) * static_cast<uint32_t>(depth)) * 5u) >> 8);
+  return (toneAmount < 0) ? static_cast<uint16_t>(phase - offset)
+                          : static_cast<uint16_t>(phase + offset);
+}
+
+inline uint16_t RAM_FUNC(applySynthSawToneShape)(uint16_t value, int16_t toneAmount) {
+  int32_t centered = static_cast<int32_t>(value) - 32768;
+  int32_t magnitude = centered < 0 ? -centered : centered;
+  if (magnitude > 32767) {
+    magnitude = 32767;
+  }
+  uint16_t depth = static_cast<uint16_t>(toneAmount < 0 ? -toneAmount : toneAmount);
+  int32_t curve = (centered * (32767 - magnitude)) >> 15;
+  int32_t delta = (curve * static_cast<int32_t>(depth)) >> 4;
+  centered = (toneAmount < 0) ? (centered - delta) : (centered + delta);
+  if (centered < -32768) {
+    centered = -32768;
+  } else if (centered > 32767) {
+    centered = 32767;
+  }
+  return static_cast<uint16_t>(centered + 32768);
+}
+
+inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
+                                           int16_t amount,
+                                           int16_t& toneAmount,
+                                           int16_t& vibratoAmount,
+                                           int16_t& pitchAmount) {
+  if (amount == 0) {
+    return;
+  }
+  int16_t* destination = nullptr;
+  switch (target) {
+    case SYNTH_MOD_TARGET_TONE:
+      destination = &toneAmount;
+      break;
+    case SYNTH_MOD_TARGET_VIBRATO:
+      destination = &vibratoAmount;
+      break;
+    case SYNTH_MOD_TARGET_PITCH:
+      destination = &pitchAmount;
+      break;
+    default:
+      return;
+  }
+  int16_t combined = static_cast<int16_t>(*destination + amount);
+  if (combined > 127) {
+    combined = 127;
+  } else if (combined < -127) {
+    combined = -127;
+  }
+  *destination = combined;
+}
+
+inline uint32_t RAM_FUNC(saturatingAddU32)(uint32_t value, uint32_t addend) {
+  if (std::numeric_limits<uint32_t>::max() - value < addend) {
+    return std::numeric_limits<uint32_t>::max();
+  }
+  return value + addend;
+}
+
+inline uint32_t RAM_FUNC(applySynthPitchMod)(uint32_t increment, int16_t pitchAmount) {
+  if (pitchAmount == 0) {
+    return increment;
+  }
+  if (pitchAmount > 0) {
+    if (pitchAmount >= 127) {
+      return saturatingAddU32(increment, increment);
+    }
+    uint32_t offset = (increment >> 7) * static_cast<uint32_t>(pitchAmount);
+    return saturatingAddU32(increment, offset);
+  }
+
+  uint16_t depth = static_cast<uint16_t>(-pitchAmount);
+  if (depth >= 127) {
+    return increment >> 1;
+  }
+  uint32_t offset = (increment >> 8) * static_cast<uint32_t>(depth);
+  return (offset >= increment) ? 0 : (increment - offset);
+}
+
+inline int32_t RAM_FUNC(readMetronomeBeepSample)() {
+  uint16_t remaining = metronomeBeepSamplesRemaining;
+  if (remaining == 0) {
+    return 0;
+  }
+
+  metronomeBeepSamplesRemaining = remaining - 1;
+  metronomeBeepPhase += metronomeBeepPhaseIncrement;
+  int32_t sample = (metronomeBeepPhase & 0x80000000u) ? METRONOME_BEEP_LEVEL : -METRONOME_BEEP_LEVEL;
+  return (sample * static_cast<int32_t>(velWheel.curValue)) >> 7;
+}
+
+inline bool RAM_FUNC(metronomeBrightnessSelected)() {
+  return metronomeMode == METRONOME_MODE_BRIGHTNESS;
+}
+
+inline bool RAM_FUNC(metronomeSideButtonsSelected)() {
+  return metronomeMode == METRONOME_MODE_SIDE_BUTTONS;
+}
+
+inline bool metronomeBeepSelected() {
+  return metronomeMode == METRONOME_MODE_BEEP;
+}
+
+inline bool metronomeEnabled() {
+  return metronomeMode != METRONOME_MODE_OFF;
+}
+
+inline bool RAM_FUNC(metronomeVisualFlashActive)() {
+  return (metronomeBrightnessSelected() || metronomeSideButtonsSelected()) && runTime < metronomeVisualFlashUntil;
+}
+
+void resetMetronomeState() {
+  metronomeBeatCursor = 0;
+  metronomeNextBeatTime = 0;
+  metronomeVisualFlashUntil = 0;
+  metronomeAccent = false;
+  metronomeBeepSamplesRemaining = 0;
+}
+
+void updateMetronomeTiming() {
+  if (metronomeMode > METRONOME_MODE_SIDE_BUTTONS) {
+    metronomeMode = METRONOME_MODE_OFF;
+  }
+  if (metronomeSignatureIndex >= METRONOME_SIGNATURE_COUNT) {
+    metronomeSignatureIndex = 0;
+  }
+
+  const MetronomeSignature& signature = metronomeSignatures[metronomeSignatureIndex];
+  metronomeBeatsPerMeasure = signature.beats ? signature.beats : 1;
+  uint8_t noteValue = signature.noteValue ? signature.noteValue : 4;
+
+  uint32_t bpm = synthBPM;
+  if (bpm == 0) {
+    bpm = 1;
+  }
+  uint64_t wholeNoteMicros = (240000000ULL + (bpm / 2)) / bpm;
+  metronomeBeatIntervalMicros = (wholeNoteMicros + (noteValue / 2)) / noteValue;
+  if (metronomeBeatIntervalMicros == 0) {
+    metronomeBeatIntervalMicros = 1;
+  }
+  resetMetronomeState();
+}
+
+void triggerMetronomeBeat(bool accent) {
+  constexpr uint64_t METRONOME_VISUAL_FLASH_MICROS = 125000;
+  metronomeAccent = accent;
+
+  if (metronomeBrightnessSelected() || metronomeSideButtonsSelected()) {
+    metronomeVisualFlashUntil = runTime + METRONOME_VISUAL_FLASH_MICROS;
+  }
+  if (metronomeBeepSelected()) {
+    metronomeBeepPhaseIncrement = accent ? METRONOME_BEEP_ACCENT_INCREMENT : METRONOME_BEEP_NORMAL_INCREMENT;
+    metronomeBeepSamplesRemaining = METRONOME_BEEP_SAMPLE_COUNT;
+  }
+}
+
+void runMetronome() {
+  if (!metronomeEnabled() || delegatedControl) {
+    return;
+  }
+
+  if (metronomeNextBeatTime == 0) {
+    metronomeNextBeatTime = runTime;
+  }
+
+  while (runTime >= metronomeNextBeatTime) {
+    bool accent = (metronomeBeatCursor == 0);
+    triggerMetronomeBeat(accent);
+    metronomeBeatCursor = static_cast<uint8_t>((metronomeBeatCursor + 1) % metronomeBeatsPerMeasure);
+    metronomeNextBeatTime += metronomeBeatIntervalMicros;
+  }
+}
+
+void metronomeModeChanged() {
+  resetMetronomeState();
+}
 
 void updateArpeggiatorTiming() {
   uint32_t bpm = synthBPM;
@@ -3543,6 +5031,7 @@ void updateArpeggiatorTiming() {
   if (arpeggiateLength == 0) {
     arpeggiateLength = 1;
   }
+  updateMetronomeTiming();
 }
 
 // RUN ON CORE 2
@@ -3552,12 +5041,20 @@ void RAM_FUNC(poll)() {
   // While flash is being written, interrupts are disabled on both cores.
   // When the ISR resumes afterward, output silence to avoid glitch artifacts.
   if (flashWriteInProgress.load(std::memory_order_relaxed)) {
-    if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
-    if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, (uint16_t)PWM_MID);
+    writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
     return;
   }
   uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
   int32_t mix = 0;    // signed accumulator stays well within int32_t bounds
+  const int32_t metronomeSample = readMetronomeBeepSample();
+  const bool metronomeAudible = metronomeSample != 0;
+  const uint8_t synthModValue = scaleSynthModAmount(smoothedSynthModValue());
+  int16_t wheelToneModValue = 0;
+  int16_t wheelVibratoModValue = 0;
+  int16_t wheelPitchModValue = 0;
+  addSynthTargetAmount(synthModTarget, synthModValue, wheelToneModValue, wheelVibratoModValue, wheelPitchModValue);
+  int16_t synthVibratoSample = 0;
+  bool synthVibratoSampleReady = false;
   // ============================================================
   // Smooth poly loudness normalization
   // Old behavior: scale by integer "voices" count.
@@ -3568,8 +5065,9 @@ void RAM_FUNC(poll)() {
   // envelope levels. As a voice releases, its envelope contribution
   // smoothly approaches 0, so the normalization changes smoothly too.
   // ============================================================
-  uint32_t envSum = 0;   // sum of env.level across active voices (0..8*65535)
+  uint32_t envSum = 0;   // sum of audible envelope levels across active voices (0..8*65535)
   byte voices = 0;
+  uint8_t profileFlags = 0;
 
   uint16_t p;
   byte t;
@@ -3580,24 +5078,20 @@ void RAM_FUNC(poll)() {
     switch (pendingCommand) {
       case EnvelopeCommand::StartAttack: {
         env.releaseIncrement = 0;
+        env.holdTicksRemaining = 0;
         if (envelopeParams.attackTicks == 0) {
-          env.level = envelopeMaxLevel;
-          if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
-            env.stage = EnvelopeStage::Sustain;
-            env.level = envelopeParams.sustainLevel;
-          } else {
-            env.stage = EnvelopeStage::Decay;
-          }
+          advanceEnvelopeFromAttackPeak(envelopeParams, env);
         } else {
           env.stage = EnvelopeStage::Attack;
           env.level = 0;
         }
-        if (env.stage == EnvelopeStage::Decay && envelopeParams.decayTicks == 0) {
-          env.stage = EnvelopeStage::Sustain;
-          env.level = envelopeParams.sustainLevel;
-        }
-        if (env.stage == EnvelopeStage::Sustain) {
-          env.level = envelopeParams.sustainLevel;
+        for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
+          EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][i];
+          if (synthEffectEnvelopeActive[envelopeIndex]) {
+            startEffectEnvelopeAttack(envelopeIndex, effectEnv);
+          } else {
+            resetEnvelopeState(effectEnv);
+          }
         }
         break;
       }
@@ -3606,19 +5100,34 @@ void RAM_FUNC(poll)() {
           env.level = 0;
           env.stage = EnvelopeStage::Idle;
           synth[i].increment = 0;
+          synth[i].targetIncrement = 0;
           synth[i].counter = 0;
           publishVoiceFreed(i);
         } else {
           env.stage = EnvelopeStage::Release;
-          // This division only runs when a release begins, not on every ISR
-          // tick, so it is much cheaper than the per-sample math below.
-          env.releaseIncrement = std::max<uint32_t>(1, (env.level + envelopeParams.releaseTicks - 1) / envelopeParams.releaseTicks);
+          profileFlags |= ISR_PROFILE_FLAG_RELEASE_START;
+          if (_isrStart) {
+            isrCycleReleaseStartCount++;
+          }
+          env.releaseIncrement = releaseIncrementForLevel(env.level);
+        }
+        for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
+          EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][i];
+          if (synthEffectEnvelopeActive[envelopeIndex]) {
+            startEffectEnvelopeRelease(envelopeIndex, effectEnv);
+          } else {
+            resetEnvelopeState(effectEnv);
+          }
         }
         break;
       }
       case EnvelopeCommand::Reset: {
-        env = EnvelopeState{};
+        resetEnvelopeState(env);
+        for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
+          resetEnvelopeState(effectEnvelopeStates[envelopeIndex][i]);
+        }
         synth[i].increment = 0;
+        synth[i].targetIncrement = 0;
         synth[i].counter = 0;
         channelInUse[i].store(false, std::memory_order_relaxed);
         voiceGenerations[i].store(0, std::memory_order_relaxed);
@@ -3629,7 +5138,7 @@ void RAM_FUNC(poll)() {
         break;
     }
 
-    if (!synth[i].increment && env.stage == EnvelopeStage::Idle) {
+    if (!synth[i].targetIncrement && env.stage == EnvelopeStage::Idle) {
       continue;
     }
 
@@ -3637,18 +5146,15 @@ void RAM_FUNC(poll)() {
       case EnvelopeStage::Attack: {
         uint32_t nextLevel = env.level + envelopeParams.attackIncrement;
         if (env.level >= envelopeMaxLevel || nextLevel >= envelopeMaxLevel) {
-          env.level = envelopeMaxLevel;
-          if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
-            env.stage = EnvelopeStage::Sustain;
-            env.level = envelopeParams.sustainLevel;
-          } else {
-            env.stage = EnvelopeStage::Decay;
-          }
+          advanceEnvelopeFromAttackPeak(envelopeParams, env);
         } else {
           env.level = nextLevel;
         }
         break;
       }
+      case EnvelopeStage::Hold:
+        updateEnvelopeHoldStage(envelopeParams, env);
+        break;
       case EnvelopeStage::Decay:
         if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
           env.stage = EnvelopeStage::Sustain;
@@ -3674,6 +5180,7 @@ void RAM_FUNC(poll)() {
           env.level = 0;
           env.stage = EnvelopeStage::Idle;
           synth[i].increment = 0;
+          synth[i].targetIncrement = 0;
           synth[i].counter = 0;
           publishVoiceFreed(i);
         } else {
@@ -3684,21 +5191,64 @@ void RAM_FUNC(poll)() {
       default:
         env.level = 0;
         synth[i].increment = 0;
+        synth[i].targetIncrement = 0;
         synth[i].counter = 0;
+        for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
+          resetEnvelopeState(effectEnvelopeStates[envelopeIndex][i]);
+        }
         continue;
     }
 
-    if (env.stage == EnvelopeStage::Idle || env.level == 0 || !synth[i].increment) {
+    if (env.stage == EnvelopeStage::Idle || env.level == 0 || !synth[i].targetIncrement) {
       continue;
     }
 
-    synth[i].counter += synth[i].increment;  // should loop from 65536 -> 0
-    p = synth[i].counter;
+    int16_t voiceToneModValue = wheelToneModValue;
+    int16_t voiceVibratoModValue = wheelVibratoModValue;
+    int16_t voicePitchModValue = wheelPitchModValue;
+    for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
+      EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][i];
+      if (synthEffectEnvelopeActive[envelopeIndex]) {
+        updateEffectEnvelopeState(envelopeIndex, effectEnv);
+        addSynthTargetAmount(effectEnvelopeTarget[envelopeIndex],
+                             effectEnvelopeModValue(envelopeIndex, effectEnvelopeTarget[envelopeIndex], effectEnv),
+                             voiceToneModValue,
+                             voiceVibratoModValue,
+                             voicePitchModValue);
+      }
+    }
+
+    smoothUint32Toward(synth[i].increment, synth[i].targetIncrement, SYNTH_PITCH_SMOOTH_SHIFT);
+    uint32_t phaseIncrement = synth[i].increment;
+    if (voicePitchModValue != 0) {
+      phaseIncrement = applySynthPitchMod(phaseIncrement, voicePitchModValue);
+    }
+    int16_t voiceVibratoAmount = 0;
+    if (voiceVibratoModValue != 0) {
+      if (!synthVibratoSampleReady) {
+        synthVibratoPhase += synthVibratoPhaseIncrement;
+        synthVibratoSample = static_cast<int16_t>(sine[synthVibratoPhase >> 24]) - 128;
+        synthVibratoSampleReady = true;
+      }
+      voiceVibratoAmount = synthVibratoSample * static_cast<int16_t>(voiceVibratoModValue);
+    }
+    if (voiceVibratoAmount != 0) {
+      phaseIncrement = applySynthVibrato(phaseIncrement, voiceVibratoAmount);
+    }
+    synth[i].counter += phaseIncrement;  // high 16 bits loop from 65535 -> 0
+    p = static_cast<uint16_t>(synth[i].counter >> 16);
+    if (voiceToneModValue != 0 && currWave != WAVEFORM_SQUARE && currWave != WAVEFORM_SAW) {
+      p = applySynthTonePhaseWarp(p, voiceToneModValue);
+    }
     t = p >> 8;
     switch (currWave) {
-      case WAVEFORM_SAW: break;
+      case WAVEFORM_SAW:
+        if (voiceToneModValue != 0) {
+          p = applySynthSawToneShape(p, voiceToneModValue);
+        }
+        break;
       case WAVEFORM_TRIANGLE: p = 2 * ((p >> 15) ? p : (65535 - p)); break;
-      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - modWheel.curValue * 7 * 16)); break;
+      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - static_cast<int32_t>(voiceToneModValue) * 14 * 16)); break;
       case WAVEFORM_HYBRID:
         if (t <= synth[i].a) {
           p = 0;
@@ -3710,7 +5260,7 @@ void RAM_FUNC(poll)() {
           p = (256 - t) * synth[i].cd;
         }
         break;
-      case WAVEFORM_SINE: p = sine[t] << 8; break;
+      case WAVEFORM_SINE: p = interpolatedWaveSample(sine, p); break;
       case WAVEFORM_STRINGS: p = strings[t] << 8; break;
       case WAVEFORM_CLARINET: p = clarinet[t] << 8; break;
       default: break;
@@ -3724,15 +5274,16 @@ void RAM_FUNC(poll)() {
     // eq is 0..8. Treat 8 as roughly "neutral" gain.
     s = (s * (int32_t)synth[i].eq) >> 3;
 
-    // Apply envelope (0..65535). Current bounds keep the product within
-    // signed 32-bit, which avoids a 64-bit helper call in the ISR.
-    s = (s * static_cast<int32_t>(env.level)) >> 16;
+    // Apply the audible envelope level (0..65535). The envelope state keeps
+    // fractional bits for long times, but the mix multiply stays 32-bit.
+    uint32_t envAudio = envelopeAudioLevel(env.level);
+    s = (s * static_cast<int32_t>(envAudio)) >> 16;
 
     // Accumulate signed mix
     mix += s;
 
     // For Step 1 smooth normalization:
-    envSum += env.level;
+    envSum += envAudio;
     ++voices;
   }
 
@@ -3776,7 +5327,7 @@ void RAM_FUNC(poll)() {
   // We intentionally drive the two outputs differently:
   //
   // 1) Audio Jack (slice 4): classic centered PWM "DAC"
-  //    - Fixed midpoint at PWM_MID (127 for 8-bit, 512 for 10-bit)
+  //    - Fixed midpoint at PWM_MID (127 for 8-bit, 256 for 9-bit, 512 for 10-bit)
   //    - Symmetric headroom, lowest distortion into an audio path
   //
   // 2) Piezo (slice 3): "moving midpoint" drive
@@ -3799,25 +5350,29 @@ void RAM_FUNC(poll)() {
   //
   // IMPORTANT: This OUTPUT_SHIFT is the main gain staging control.
   // If output is too quiet, decrease it. If it clips/distorts, increase it.
-  // For 10-bit PWM you can typically use a slightly smaller shift than 8-bit.
+  // Higher PWM resolutions can typically use slightly smaller shifts.
   // ------------------------------------------------------------
   // JACK idle behavior: stay centered.
   // PIEZO idle behavior: off (0).
-  if (voices == 0 || velWheel.curValue == 0) {
-    if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
-    if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, (uint16_t)PWM_MID);
+  if ((voices == 0 || velWheel.curValue == 0) && !metronomeAudible) {
+    writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
     if (_isrStart) {
-      uint32_t dt = timer_hw->timerawl - _isrStart;
-      if (dt < isrCycleMin) isrCycleMin = dt;
-      if (dt > isrCycleMax) isrCycleMax = dt;
-      isrCycleSum += dt;
-      isrCycleCount++;
+      recordISRProfileSample(_isrStart, voices, profileFlags);
     }
     return;
   }
 
   // Convert scaled mix -> signed sample in [-SHAPE_CLAMP..SHAPE_CLAMP]
-  int32_t sample = scaled >> OUTPUT_SHIFT;
+  int32_t sample = 0;
+  if (voices != 0 && velWheel.curValue != 0) {
+    sample = scaled >> OUTPUT_SHIFT;
+    if (sample >  SHAPE_CLAMP) sample =  SHAPE_CLAMP;
+    if (sample < -SHAPE_CLAMP) sample = -SHAPE_CLAMP;
+    if (synthDrive != SYNTH_DRIVE_OFF) {
+      sample = applySynthDrive(sample);
+    }
+  }
+  sample += metronomeSample;
   if (sample >  SHAPE_CLAMP) sample =  SHAPE_CLAMP;
   if (sample < -SHAPE_CLAMP) sample = -SHAPE_CLAMP;
 
@@ -3830,8 +5385,8 @@ void RAM_FUNC(poll)() {
   // ----- PIEZO: midpoint follows "actual amplitude" from envSum -----
   //
   // IMPORTANT: envSum is sum of envelopes (0..~524k). We want ONE full voice
-  // (envSum ~ 65535) to produce full piezo amplitude. So we shift by 9 (8-bit)
-  // or 7 (10-bit). With multiple voices envSum grows, so we clamp.
+  // (envSum ~ 65535) to produce full piezo amplitude. So we shift by 9 (8-bit),
+  // 8 (9-bit), or 7 (10-bit). With multiple voices envSum grows, so we clamp.
   //
   // This makes piezo loud enough and ensures it fades smoothly as envSum falls.
   //
@@ -3843,21 +5398,28 @@ void RAM_FUNC(poll)() {
 
   // Apply master volume (0..127, where 127 is full). Keep it consistent with jack scaling.
   A_target = (A_target * (uint32_t)velWheel.curValue) >> 7;
+  if (metronomeAudible && A_target < static_cast<uint32_t>(PWM_MID)) {
+    // The beep sample is already volume-scaled. Give it full piezo headroom so
+    // the moving-midpoint drive does not attenuate it a second time.
+    A_target = PWM_MID;
+  }
 
   // Smooth A so the piezo hiss doesn't abruptly stop (and to avoid end-click).
   // Smaller shift = faster response; larger = smoother.
   piezoA += (int16_t)((int32_t)A_target - (int32_t)piezoA) >> 3;
 
   // If very small, turn fully off (by now it’s near 0 so this won’t click).
-  if (piezoA <= (PWM_BITS == 8 ? 1 : 4)) piezoA = 0;
+  if (piezoA <= PIEZO_OFF_THRESHOLD) piezoA = 0;
 
   int32_t piezoLevel = 0;
-  if (piezoA > 0) {
+  if (!(audioD & AUDIO_PIEZO)) {
+    piezoA = 0;
+  } else if (piezoA > 0) {
     // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-piezoA..+piezoA].
-    // This is still one of the remaining true per-sample divisions in poll().
-    // If we need another ISR-speed pass later, replacing this with a small
-    // reciprocal multiply would be the next obvious experiment.
-    int32_t outPiezo = (sample * (int32_t)piezoA) / SHAPE_CLAMP;
+    // Use a fixed-point reciprocal approximation to avoid a division helper
+    // call in the audio ISR.
+    profileFlags |= ISR_PROFILE_FLAG_PIEZO_SCALE;
+    int32_t outPiezo = scalePiezoSample(sample, piezoA);
 
     // Midpoint follows amplitude: range [0..2*piezoA]
     piezoLevel = (int32_t)piezoA + outPiezo;
@@ -3870,14 +5432,9 @@ void RAM_FUNC(poll)() {
   uint16_t piezoOut = (uint16_t)piezoLevel;
 
   // ----- Write outputs -----
-  if (audioD & AUDIO_PIEZO) pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, piezoOut);
-  if (audioD & AUDIO_AJACK) pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, jackLevel);
+  writeAudioOutputLevels(piezoOut, jackLevel);
   if (_isrStart) {
-    uint32_t dt = timer_hw->timerawl - _isrStart;
-    if (dt < isrCycleMin) isrCycleMin = dt;
-    if (dt > isrCycleMax) isrCycleMax = dt;
-    isrCycleSum += dt;
-    isrCycleCount++;
+    recordISRProfileSample(_isrStart, voices, profileFlags);
   }
 }
 // RUN ON CORE 1
@@ -3911,10 +5468,10 @@ byte isoTwoTwentySix(float f) {
   }
 }
 inline void recomputePitchBendFactor() {
-  pitchBendFactor = exp2(pbWheel.curValue * PITCH_BEND_SEMIS / 98304.0f);
+  pitchBendFactor = exp2(pbWheel.curValue * DEFAULT_PITCH_BEND_RANGE_SEMITONES / 98304.0f);
 }
 
-void RAM_FUNC(setSynthFreq)(float frequency, byte channel) {
+void RAM_FUNC(setSynthFreq)(float frequency, byte channel, bool resetPhase = false) {
   if (channel == 0) {
     return;
   }
@@ -3927,8 +5484,19 @@ void RAM_FUNC(setSynthFreq)(float frequency, byte channel) {
     }
   }
   float f = tunedFrequency * pitchBendFactor;
-  synth[c].counter = 0;
-  synth[c].increment = round(f * POLL_INTERVAL_IN_MICROSECONDS * 0.065536);  // cycle 0-65535 at resultant frequency
+  uint32_t newIncrement = oscillatorIncrementFromFrequency(f);
+  if (newIncrement == 0) {
+    synth[c].increment = 0;
+    synth[c].targetIncrement = 0;
+    synth[c].counter = 0;
+    synth[c].eq = 0;
+    return;
+  }
+  if (resetPhase || synth[c].increment == 0 || synth[c].targetIncrement == 0) {
+    synth[c].counter = 0;
+    synth[c].increment = newIncrement;
+  }
+  synth[c].targetIncrement = newIncrement;
   synth[c].eq = isoTwoTwentySix(f);
   if (currWave == WAVEFORM_HYBRID) {
     if (f < TRANSITION_SQUARE) {
@@ -3979,7 +5547,7 @@ void RAM_FUNC(beginEnvelopeRelease)(uint8_t channel) {
 
 // USE THIS IN MONO OR ARPEG MODE ONLY
 
-byte findNextHeldNote() {
+byte RAM_FUNC(findNextHeldNote)() {
   byte n = UNUSED_NOTE;
   for (byte i = 1; i <= BTN_COUNT; i++) {
     byte j = positiveMod(arpeggiatingNow + i, BTN_COUNT);
@@ -3990,7 +5558,7 @@ byte findNextHeldNote() {
   }
   return n;
 }
-void replaceMonoSynthWith(byte x) {
+void RAM_FUNC(replaceMonoSynthWith)(byte x) {
   if (arpeggiatingNow == x) return;
   if (arpeggiatingNow != UNUSED_NOTE) {
     h[arpeggiatingNow].synthCh = 0;
@@ -4001,20 +5569,21 @@ void replaceMonoSynthWith(byte x) {
     synthChannelOwners[0].store(static_cast<int16_t>(arpeggiatingNow), std::memory_order_relaxed);
     voiceGenerations[0].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
     beginEnvelopeAttack(0);
-    setSynthFreq(h[arpeggiatingNow].frequency, 1);
+    setSynthFreq(h[arpeggiatingNow].frequency, 1, true);
   } else {
     synthChannelOwners[0].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
     beginEnvelopeRelease(0);
   }
 }
 
-void resetSynthFreqs() {
+void RAM_FUNC(resetSynthFreqs)() {
   while (!synthChQueue.empty()) {
     synthChQueue.pop();
   }
   nextVoiceGeneration.store(1, std::memory_order_relaxed);
   for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
     synth[i].increment = 0;
+    synth[i].targetIncrement = 0;
     synth[i].counter = 0;
     publishEnvelopeCommand(i, EnvelopeCommand::Reset);
     channelInUse[i].store(false, std::memory_order_relaxed);
@@ -4041,7 +5610,7 @@ void sendProgramChange() {
   withMIDI([&](auto& M) { M.sendProgramChange(programChange - 1, targetChannel); });
 }
 
-void updateSynthWithNewFreqs() {
+void RAM_FUNC(updateSynthWithNewFreqs)() {
   recomputePitchBendFactor();
   byte targetChannel = primaryMIDIChannel();
   withMIDI([&](auto& M) { M.sendPitchBend(pbWheel.curValue, targetChannel); });
@@ -4090,13 +5659,13 @@ void RAM_FUNC(retryPendingReleases)() {
       --releaseRetryCountdown[i];
       continue;
     }
-	publishEnvelopeCommand(i, EnvelopeCommand::StartRelease);
+    publishEnvelopeCommand(i, EnvelopeCommand::StartRelease);
     releaseRetryCountdown[i] = releaseRetryDelayLoops;
     releaseRetries[i] = static_cast<uint8_t>(retries - 1);
   }
 }
 
-bool stealOldestSynthVoice(byte& channelOut, int16_t& previousOwner) {
+bool RAM_FUNC(stealOldestSynthVoice)(byte& channelOut, int16_t& previousOwner) {
   previousOwner = NO_SYNTH_OWNER;
   uint32_t oldestGeneration = std::numeric_limits<uint32_t>::max();
   int8_t oldestIndex = -1;
@@ -4124,7 +5693,7 @@ bool stealOldestSynthVoice(byte& channelOut, int16_t& previousOwner) {
   return true;
 }
 
-void trySynthNoteOn(byte x) {
+void RAM_FUNC(trySynthNoteOn)(byte x) {
   if (playbackMode == SYNTH_OFF) {
     return;
   }
@@ -4146,7 +5715,7 @@ void trySynthNoteOn(byte x) {
       synthChannelOwners[stolenChannel - 1].store(static_cast<int16_t>(x), std::memory_order_relaxed);
       voiceGenerations[stolenChannel - 1].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
       beginEnvelopeAttack(stolenChannel - 1);
-      setSynthFreq(h[x].frequency, stolenChannel);
+      setSynthFreq(h[x].frequency, stolenChannel, true);
       sendToLog("stole synth channel " + std::to_string(stolenChannel));
       return;
     }
@@ -4156,7 +5725,7 @@ void trySynthNoteOn(byte x) {
     synthChannelOwners[channel - 1].store(static_cast<int16_t>(x), std::memory_order_relaxed);
     voiceGenerations[channel - 1].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
     beginEnvelopeAttack(channel - 1);
-    setSynthFreq(h[x].frequency, channel);
+    setSynthFreq(h[x].frequency, channel, true);
     sendToLog("popped " + std::to_string(channel) + " off the synth queue");
   } else {
     if (h[x].MIDIch) {
@@ -4165,7 +5734,7 @@ void trySynthNoteOn(byte x) {
   }
 }
 
-void trySynthNoteOff(byte x) {
+void RAM_FUNC(trySynthNoteOff)(byte x) {
   if (playbackMode && (playbackMode != SYNTH_POLY)) {
     if (arpeggiatingNow == x) {
       replaceMonoSynthWith(findNextHeldNote());
@@ -4241,7 +5810,7 @@ void setupSynth(byte pin, byte slice) {
   sendToLog("synth is ready.");
 }
 
-void arpeggiate() {
+void RAM_FUNC(arpeggiate)() {
   if (delegatedControl) {
     return;
   }
@@ -4267,15 +5836,26 @@ void arpeggiate() {
     These cardinal directions are enumerated to make
     the code more legible for humans.
   */
-#define HEX_DIRECTION_EAST 0
-#define HEX_DIRECTION_NE 1
-#define HEX_DIRECTION_NW 2
-#define HEX_DIRECTION_WEST 3
-#define HEX_DIRECTION_SW 4
-#define HEX_DIRECTION_SE 5
+constexpr byte HEX_DIRECTION_EAST = 0;
+constexpr byte HEX_DIRECTION_NE = 1;
+constexpr byte HEX_DIRECTION_NW = 2;
+constexpr byte HEX_DIRECTION_WEST = 3;
+constexpr byte HEX_DIRECTION_SW = 4;
+constexpr byte HEX_DIRECTION_SE = 5;
+constexpr byte HEX_DIRECTION_COUNT = 6;
+constexpr byte ORBIT_POSITION_COUNT = 12;
+constexpr byte MAX_BEAM_LENGTH = 13;
+constexpr byte MAX_ANIMATION_RADIUS = 5;
 // animation variables  E NE NW  W SW SE
-int8_t vertical[] = { 0, -1, -1, 0, 1, 1 };
-int8_t horizontal[] = { 2, 1, -1, -2, -1, 1 };
+constexpr std::array<int8_t, HEX_DIRECTION_COUNT> hexRowOffsets = { 0, -1, -1, 0, 1, 1 };
+constexpr std::array<int8_t, HEX_DIRECTION_COUNT> hexColOffsets = { 2, 1, -1, -2, -1, 1 };
+
+// Precomputed orbit offsets for animateOrbit().
+// 12 positions around a hex at radius 2: 6 cardinal + 6 intermediate.
+// Generated from: rowOffsets[d*2] = R*vertical[d], colOffsets[d*2] = R*horizontal[d],
+//   rowOffsets[d*2+1] = R*(vertical[d]+vertical[(d+1)%6])/2, etc. with R=2.
+static const int8_t orbitRowOffsets[ORBIT_POSITION_COUNT] = {  0, -1, -2, -2, -2, -1,  0,  1,  2,  2,  2,  1 };
+static const int8_t orbitColOffsets[ORBIT_POSITION_COUNT] = {  4,  3,  2,  0, -2, -3, -4, -3, -2,  0,  2,  3 };
 
 uint64_t animFrame(byte x) {
   if (h[x].timePressed) {  // 2^20 microseconds is close enough to 1 second
@@ -4284,87 +5864,84 @@ uint64_t animFrame(byte x) {
     return 0;
   }
 }
-void flagToAnimate(int8_t r, int8_t c) {
-  if (!((r < 0) || (r >= ROWCOUNT)
-        || (c < 0) || (c >= (2 * COLCOUNT))
-        || ((c + r) & 1))) {
-    h[(10 * r) + (c / 2)].animate = 1;
+
+bool isValidHexCoordinate(int8_t row, int8_t col) {
+  return !(row < 0
+           || row >= ROWCOUNT
+           || col < 0
+           || col >= (2 * COLCOUNT)
+           || ((col + row) & 1));
+}
+
+bool hexAllowsScaleAnimations(byte hexIndex) {
+  return !h[hexIndex].isCmd && (h[hexIndex].inScale || !scaleLock);
+}
+
+void flagToAnimate(int8_t row, int8_t col) {
+  if (!isValidHexCoordinate(row, col)) {
+    return;
+  }
+  h[(COLCOUNT * row) + (col / 2)].animate = true;
+}
+
+void animateRing(byte centerIndex, byte radius, byte stepsPerSide) {
+  int8_t turtleRow = h[centerIndex].coordRow + (radius * hexRowOffsets[HEX_DIRECTION_SW]);
+  int8_t turtleCol = h[centerIndex].coordCol + (radius * hexColOffsets[HEX_DIRECTION_SW]);
+  for (byte direction = HEX_DIRECTION_EAST; direction < HEX_DIRECTION_COUNT; ++direction) {
+    for (byte step = 0; step < stepsPerSide; ++step) {
+      flagToAnimate(turtleRow, turtleCol);
+      turtleRow += (hexRowOffsets[direction] * (radius / stepsPerSide));
+      turtleCol += (hexColOffsets[direction] * (radius / stepsPerSide));
+    }
   }
 }
+
 void animateMirror() {
-  for (byte i = 0; i < LED_COUNT; i++) {                     // check every hex
-    if ((!(h[i].isCmd)) && (h[i].MIDIch)) {                  // that is a held note
-      for (byte j = 0; j < LED_COUNT; j++) {                 // compare to every hex
-        if ((!(h[j].isCmd)) && (!(h[j].MIDIch))) {           // that is a note not being played
+  for (byte i = 0; i < LED_COUNT; ++i) {                     // check every hex
+    if (!h[i].isCmd && h[i].MIDIch) {                        // that is a held note
+      for (byte j = 0; j < LED_COUNT; ++j) {                 // compare to every hex
+        if (!h[j].isCmd && !h[j].MIDIch) {                   // that is a note not being played
           int16_t temp = h[i].stepsFromC - h[j].stepsFromC;  // look at difference between notes
           if (animationType == ANIMATE_OCTAVE) {             // set octave diff to zero if need be
             temp = positiveMod(temp, current.tuning().cycleLength);
           }
           if (temp == 0) {  // highlight if diff is zero
-            h[j].animate = 1;
+            h[j].animate = true;
           }
         }
       }
     }
   }
 }
-/*
-  void animateOrbit() {
-    for (byte i = 0; i < LED_COUNT; i++) {                               // check every hex
-      if ((!(h[i].isCmd)) && (h[i].MIDIch) && ((h[i].inScale) || (!scaleLock))) {    // that is a held note
-        byte tempDir = (animFrame(i) % 6);
-        flagToAnimate(h[i].coordRow + vertical[tempDir], h[i].coordCol + horizontal[tempDir]);       // different neighbor each frame
-      }
-    }
-  }
-*/
-void animateOrbit() {           //BETTER ORBIT
-  const byte ORBIT_RADIUS = 2;  // Radius of the orbit
+void animateOrbit() {
   const byte SLOW_FACTOR = 1;   // Slowdown factor for animation
 
-  for (byte i = 0; i < LED_COUNT; i++) {     // Check every hex
-    if ((!(h[i].isCmd)) && (h[i].MIDIch) &&  // That is a held note
-        ((h[i].inScale) || (!scaleLock))) {  // And is in scale or scale is unlocked
-
-      byte frame = animFrame(i) / SLOW_FACTOR;  // Slow down the animation
-      byte currentStep = frame % 12;            // Determine position in the 12-light orbit
-
-      // Determine row and column adjustments for the 12 possible directions
-      int8_t rowOffsets[12];
-      int8_t colOffsets[12];
-
-      // Fill offsets for the 6 primary directions
-      for (byte dir = 0; dir < 6; dir++) {
-        rowOffsets[dir * 2] = ORBIT_RADIUS * vertical[dir];
-        colOffsets[dir * 2] = ORBIT_RADIUS * horizontal[dir];
-
-        // Fill the intermediate (diagonal) positions
-        rowOffsets[dir * 2 + 1] = ORBIT_RADIUS * (vertical[dir] + vertical[(dir + 1) % 6]) / 2;
-        colOffsets[dir * 2 + 1] = ORBIT_RADIUS * (horizontal[dir] + horizontal[(dir + 1) % 6]) / 2;
-      }
-
-      // Calculate light positions
-      int8_t light1Row = h[i].coordRow + rowOffsets[currentStep];
-      int8_t light1Col = h[i].coordCol + colOffsets[currentStep];
-
-      byte oppositeStep = (currentStep + 6) % 12;  // Opposite position in the 12-light ring
-      int8_t light2Row = h[i].coordRow + rowOffsets[oppositeStep];
-      int8_t light2Col = h[i].coordCol + colOffsets[oppositeStep];
-
-      // Flag both lights for animation
-      flagToAnimate(light1Row, light1Col);
-      flagToAnimate(light2Row, light2Col);
+  for (byte i = 0; i < LED_COUNT; ++i) {   // Check every hex
+    if (!hexAllowsScaleAnimations(i) || !h[i].MIDIch) {
+      continue;
     }
+
+    byte frame = animFrame(i) / SLOW_FACTOR;               // Slow down the animation
+    byte currentStep = frame % ORBIT_POSITION_COUNT;       // Determine position in the orbit
+
+    // orbitRowOffsets/orbitColOffsets already encode a radius-2 orbit.
+    int8_t light1Row = h[i].coordRow + orbitRowOffsets[currentStep];
+    int8_t light1Col = h[i].coordCol + orbitColOffsets[currentStep];
+
+    byte oppositeStep = (currentStep + (ORBIT_POSITION_COUNT / 2)) % ORBIT_POSITION_COUNT;
+    int8_t light2Row = h[i].coordRow + orbitRowOffsets[oppositeStep];
+    int8_t light2Col = h[i].coordCol + orbitColOffsets[oppositeStep];
+
+    flagToAnimate(light1Row, light1Col);
+    flagToAnimate(light2Row, light2Col);
   }
 }
 
 void animateStaticBeams() {
-  const byte MAX_BEAM_LENGTH = 13;                 // Maximum distance the beam can travel
   static byte lastDirection[LED_COUNT] = { 255 };  // Track the last direction for each button (255 = uninitialized)
 
-  for (byte i = 0; i < LED_COUNT; i++) {  // Check every hex
-    // Skip buttons that are not in the playable area
-    if (h[i].isCmd || (!h[i].inScale && scaleLock)) {
+  for (byte i = 0; i < LED_COUNT; ++i) {  // Check every hex
+    if (!hexAllowsScaleAnimations(i)) {
       continue;
     }
 
@@ -4383,17 +5960,17 @@ void animateStaticBeams() {
 
     if (h[i].btnState == BTN_STATE_HELD || h[i].btnState == BTN_STATE_NEWPRESS) {  // Active button
       byte baseDirection = lastDirection[i] * 2;                                   // Convert to hex direction (0, 2, or 4)
-      byte oppositeDirection = (baseDirection + 3) % 6;                            // Opposite direction
+      byte oppositeDirection = (baseDirection + 3) % HEX_DIRECTION_COUNT;          // Opposite direction
 
       // Light up the entire beam in both directions
-      for (byte length = 1; length <= MAX_BEAM_LENGTH; length++) {
+      for (byte length = 1; length <= MAX_BEAM_LENGTH; ++length) {
         // Beam in primary direction
-        int8_t beam1Row = h[i].coordRow + (length * vertical[baseDirection]);
-        int8_t beam1Col = h[i].coordCol + (length * horizontal[baseDirection]);
+        int8_t beam1Row = h[i].coordRow + (length * hexRowOffsets[baseDirection]);
+        int8_t beam1Col = h[i].coordCol + (length * hexColOffsets[baseDirection]);
 
         // Beam in opposite direction
-        int8_t beam2Row = h[i].coordRow + (length * vertical[oppositeDirection]);
-        int8_t beam2Col = h[i].coordCol + (length * horizontal[oppositeDirection]);
+        int8_t beam2Row = h[i].coordRow + (length * hexRowOffsets[oppositeDirection]);
+        int8_t beam2Col = h[i].coordCol + (length * hexColOffsets[oppositeDirection]);
 
         // Flag both beams for animation
         flagToAnimate(beam1Row, beam1Col);
@@ -4404,83 +5981,170 @@ void animateStaticBeams() {
 }
 
 void animateRadial() {
-  for (byte i = 0; i < LED_COUNT; i++) {                  // check every hex
-    if (!(h[i].isCmd) && (h[i].inScale || !scaleLock)) {  // that is a note
-      uint64_t radius = animFrame(i);
-      if ((radius > 0) && (radius < 16)) {                              // played in the last 16 frames
-        byte steps = ((animationType == ANIMATE_SPLASH) ? radius : 1);  // star = 1 step to next corner; ring = 1 step per hex
-        int8_t turtleRow = h[i].coordRow + (radius * vertical[HEX_DIRECTION_SW]);
-        int8_t turtleCol = h[i].coordCol + (radius * horizontal[HEX_DIRECTION_SW]);
-        for (byte dir = HEX_DIRECTION_EAST; dir < 6; dir++) {  // walk along the ring in each of the 6 hex directions
-          for (byte i = 0; i < steps; i++) {                   // # of steps to the next corner
-            flagToAnimate(turtleRow, turtleCol);               // flag for animation
-            turtleRow += (vertical[dir] * (radius / steps));
-            turtleCol += (horizontal[dir] * (radius / steps));
-          }
-        }
-      }
+  for (byte i = 0; i < LED_COUNT; ++i) {                  // check every hex
+    if (!hexAllowsScaleAnimations(i)) {
+      continue;
+    }
+
+    uint64_t radius = animFrame(i);
+    if ((radius > 0) && (radius < ROWCOUNT)) {                           // played in the last 16 frames
+      byte steps = ((animationType == ANIMATE_SPLASH) ? radius : 1);     // star = 1 step to next corner; ring = 1 step per hex
+      animateRing(i, static_cast<byte>(radius), steps);
     }
   }
 }
 
 void animateRadialReverse() {  //inverted splash/star
-#define MAX_RADIUS 5
-  for (byte i = 0; i < LED_COUNT; i++) {                                               // Check every hex
-    if (!(h[i].isCmd) && (h[i].inScale || !scaleLock)) {                               // That is a note
-      uint64_t frame = animFrame(i);                                                   // Current animation frame
-      if ((frame > 0) && (frame < MAX_RADIUS)) {                                       // Played in the last X frames
-        uint8_t reverseRadius = MAX_RADIUS - frame;                                    // Calculate reverse radius
-        byte steps = ((animationType == ANIMATE_SPLASH_REVERSE) ? reverseRadius : 1);  // Steps depend on animation type
-        int8_t turtleRow = h[i].coordRow + (reverseRadius * vertical[HEX_DIRECTION_SW]);
-        int8_t turtleCol = h[i].coordCol + (reverseRadius * horizontal[HEX_DIRECTION_SW]);
-        for (byte dir = HEX_DIRECTION_EAST; dir < 6; dir++) {  // Walk along the ring in 6 hex directions
-          for (byte j = 0; j < steps; j++) {                   // Steps to the next corner
-            flagToAnimate(turtleRow, turtleCol);               // Flag for animation
-            turtleRow += (vertical[dir] * (reverseRadius / steps));
-            turtleCol += (horizontal[dir] * (reverseRadius / steps));
-          }
-        }
-      }
+  for (byte i = 0; i < LED_COUNT; ++i) {                                          // Check every hex
+    if (!hexAllowsScaleAnimations(i)) {
+      continue;
+    }
+
+    uint64_t frame = animFrame(i);                                                // Current animation frame
+    if ((frame > 0) && (frame < MAX_ANIMATION_RADIUS)) {                          // Played in the last X frames
+      byte reverseRadius = static_cast<byte>(MAX_ANIMATION_RADIUS - frame);       // Calculate reverse radius
+      byte steps = ((animationType == ANIMATE_SPLASH_REVERSE) ? reverseRadius : 1);
+      animateRing(i, reverseRadius, steps);
     }
   }
 }
 
-void applyExternalMidiToHex(byte midiNote, bool noteOn) {
+constexpr uint64_t MIDI_IN_LED_COALESCE_MICROS = 1000;
+constexpr uint64_t MIDI_IN_LED_MAX_DEFER_MICROS = 8000;
+
+bool midiInLedDirty = false;
+uint64_t midiInLedFirstDirtyTime = 0;
+uint64_t midiInLedLastDirtyTime = 0;
+
+void markMidiInLedDirty() {
+  if (animationType != ANIMATE_MIDI_IN) {
+    return;
+  }
+  uint64_t now = readClock();
+  if (!midiInLedDirty) {
+    midiInLedDirty = true;
+    midiInLedFirstDirtyTime = now;
+  }
+  midiInLedLastDirtyTime = now;
+}
+
+bool shouldDeferMidiInLedRefresh() {
+  if (!midiInLedDirty || animationType != ANIMATE_MIDI_IN) {
+    return false;
+  }
+
+  uint64_t now = readClock();
+  bool stillCoalescing = (now - midiInLedLastDirtyTime) < MIDI_IN_LED_COALESCE_MICROS;
+  bool maxDeferReached = (now - midiInLedFirstDirtyTime) >= MIDI_IN_LED_MAX_DEFER_MICROS;
+  if (stillCoalescing && !maxDeferReached) {
+    return true;
+  }
+
+  midiInLedDirty = false;
+  return false;
+}
+
+void RAM_FUNC(applyExternalMidiToHex)(byte midiNote, bool noteOn) {
   if (midiNote >= midiNoteToHexIndices.size()) {
     return;
   }
   auto& targets = midiNoteToHexIndices[midiNote];
+  bool changed = false;
   for (uint8_t index : targets) {
     buttonDef& hex = h[index];
     if (noteOn) {
       if (hex.externalNoteDepth < 255) {
         hex.externalNoteDepth++;
+        changed = true;
       }
     } else if (hex.externalNoteDepth > 0) {
       hex.externalNoteDepth--;
+      changed = true;
     }
+  }
+  if (changed) {
+    markMidiInLedDirty();
   }
 }
 
 bool reportDeviceIdentity(const uint8_t* data, const unsigned int len) {
   if (len == 6 && data[1] == 0x7E && data[3] == 0x06 && data[4] == 0x01) {
     // Respond to a device identity request.
-    // TODO: 7D = ed/dev -- replace with three-byte manufacturer ID when we have one
-    // Next two bytes are family
-    // Next two bytes are model
-    // Last four bytes are version
-    // All are LSB-first.
-    static byte device_identity[] = {
-      0x7E, 0x00, 0x06, 0x02, // Device ID response
-      0x7D, // education/dev
-      0x01, 0x00, // family, LSB-first
-      0x01, 0x00, // model, LSB-first
-      Hardware_Version, 0x00, 0x00, 0x00, // version, LSB first
+    // TODO: 7D = educational/dev; replace when a manufacturer ID is assigned.
+    static byte deviceIdentity[] = {
+      0x7E, 0x00, 0x06, 0x02,             // Device ID response
+      0x7D,                               // Educational/dev manufacturer ID
+      0x01, 0x00,                         // Family, LSB-first
+      0x01, 0x00,                         // Model, LSB-first
+      Hardware_Version, 0x00, 0x00, 0x00  // Version, LSB-first
     };
-    withMIDI([&](auto& M) { M.sendSysEx(sizeof(device_identity), device_identity); });
+    withMIDI([&](auto& M) { M.sendSysEx(sizeof(deviceIdentity), deviceIdentity); });
     return true;
   }
   return false;
+}
+
+void onToggleDelegated() {
+  if (delegatedControl) {
+    memset(delegatedColors, 0, sizeof(delegatedColors));
+    // Reset parser state when entering delegated mode.
+    setupMIDI();
+  }
+  sendToLog("delegated = " + std::to_string(delegatedControl));
+}
+
+void toggleDelegated() {
+  delegatedControl = !delegatedControl;
+  onToggleDelegated();
+}
+
+void delegatedButtonEvent(byte x, bool press) {
+  byte channel = x / 100;  // 0-based hundreds digit
+  byte note = x % 100;
+  if (press) {
+    withMIDI([&](auto& M) { M.sendNoteOn(note, 127, channel + 1); });
+  } else {
+    withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel + 1); });
+  }
+}
+
+void processLedSysEx(const uint8_t* data, const unsigned int len) {
+  // Repeated records: LED number (14 bits), hue (7 bits), saturation (7 bits), value (7 bits).
+  for (unsigned int idx = 0; idx + 5 <= len; idx += 5) {
+    uint16_t led = (data[idx] << 7) + data[idx + 1];
+    if (led >= LED_COUNT) {
+      sendToLog("LED SysEx: led " + std::to_string(led) + " is out of range; ignoring");
+      continue;
+    }
+    byte hueData = data[idx + 2] & 0x7F;
+    byte satData = data[idx + 3] & 0x7F;
+    byte valData = data[idx + 4] & 0x7F;
+    colorDef c = {
+      static_cast<float>(hueData) * 360.0f / 127.0f,
+      static_cast<byte>(2 * satData + (satData > 63 ? 1 : 0)),
+      static_cast<byte>(2 * valData + (valData > 63 ? 1 : 0))
+    };
+    delegatedColors[led] = getLEDcode(c);
+  }
+}
+
+void processDelegatedSysEx(const uint8_t* data, const unsigned int len) {
+  if (len < 1) {
+    return;
+  }
+  switch (data[0]) {
+    case SYSEX_DELEGATED_ENTER:
+      break;
+    case SYSEX_DELEGATED_EXIT:
+      toggleDelegated();
+      break;
+    case SYSEX_LED:
+      processLedSysEx(&data[1], len - 1);
+      break;
+    default:
+      sendToLog("ignoring unknown delegated SysEx code " + std::to_string(data[0]));
+      break;
+  }
 }
 
 void processIncomingSysEx(const uint8_t* data, const unsigned int len) {
@@ -4488,80 +6152,106 @@ void processIncomingSysEx(const uint8_t* data, const unsigned int len) {
     return;
   }
   if ((len == 4) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {
-    // Accept a SysEx message containing the single byte SYSEX_DELEGATED_ENTER sent on the
-    // dev/test manufacturer ID to enter delegated mode. This does the same as enabling it
-    // from the menu.
     toggleDelegated();
   }
 }
 
-void processIncomingMIDI() {
-  if (delegatedControl) {
-    return;
-  } else {
-    withMIDI([&](auto& M) {
-      while (M.read()) {
-        const auto type = M.getType();
-        if (type == MIDI_NAMESPACE::SystemExclusive) {
-          const uint8_t* sysex = M.getSysExArray();
-          const unsigned int len = M.getSysExArrayLength();
-          processIncomingSysEx(sysex, len);
+template <class MidiInterface>
+void processIncomingMIDIInterface(MidiInterface& M) {
+  while (M.read()) {
+    const auto type = M.getType();
+    if (type == MIDI_NAMESPACE::SystemExclusive) {
+      const uint8_t* sysex = M.getSysExArray();
+      const unsigned int len = M.getSysExArrayLength();
+      processIncomingSysEx(sysex, len);
+      continue;
+    }
+
+    const byte n    = M.getData1();  // note
+    const byte v    = M.getData2();  // velocity
+
+    if (type == MIDI_NAMESPACE::NoteOn) {
+      // treat NoteOn vel==0 as NoteOff
+      applyExternalMidiToHex(n, v != 0);
+    } else if (type == MIDI_NAMESPACE::NoteOff
+               || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
+      applyExternalMidiToHex(n, false);
+    }
+  }
+}
+
+void processIncomingMIDIDelegated() {
+  withMIDI([&](auto& M) {
+    while (M.read()) {
+      const auto type = M.getType();
+      if (type == MIDI_NAMESPACE::SystemExclusive) {
+        const uint8_t* sysex = M.getSysExArray();
+        const unsigned int len = M.getSysExArrayLength();
+        if (len <= 3 || reportDeviceIdentity(sysex, len)) {
           continue;
         }
-
-        const byte n    = M.getData1();  // note
-        const byte v    = M.getData2();  // velocity
-
-        if (type == MIDI_NAMESPACE::NoteOn) {
-          // treat NoteOn vel==0 as NoteOff
-          applyExternalMidiToHex(n, v != 0);
-        } else if (type == MIDI_NAMESPACE::NoteOff
-                   || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
-          applyExternalMidiToHex(n, false);
+        if ((sysex[0] != 0xF0) || (sysex[len - 1] != 0xF7)) {
+          sendToLog("invalid delegated SysEx received; ignoring");
+          continue;
         }
+        if (sysex[1] != 0x7D) {
+          sendToLog("delegated incoming: ignoring SysEx vendor " + std::to_string(sysex[1]));
+          continue;
+        }
+        processDelegatedSysEx(&sysex[2], len - 3);
+      } else {
+        sendToLog("delegated incoming: " + std::to_string(type));
       }
-    });
+    }
+  });
+}
+
+void RAM_FUNC(processIncomingMIDI)() {
+  if (delegatedControl) {
+    return;
   }
+  if (midiD & MIDID_USB) processIncomingMIDIInterface(UMIDI);
+  if (midiD & MIDID_SER) processIncomingMIDIInterface(SMIDI);
 }
 
 void animateLEDs() {
   if (delegatedControl) {
     return;
   }
-  for (byte i = 0; i < LED_COUNT; i++) {
-    h[i].animate = 0;
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    h[i].animate = false;
   }
-    switch (animationType) {
+  switch (animationType) {
     case ANIMATE_BUTTON:
     case ANIMATE_NONE:
       break;
-      case ANIMATE_STAR:
-      case ANIMATE_SPLASH:
-        animateRadial();
-        break;
-      case ANIMATE_ORBIT:
-        animateOrbit();
-        break;
-      case ANIMATE_OCTAVE:
-      case ANIMATE_BY_NOTE:
-        animateMirror();
-        break;
-      case ANIMATE_BEAMS:
-        animateStaticBeams();
-        break;
-      case ANIMATE_SPLASH_REVERSE:
-      case ANIMATE_STAR_REVERSE:
-        animateRadialReverse();
-        break;
-      case ANIMATE_MIDI_IN:
-        for (byte i = 0; i < LED_COUNT; i++) {
-          if (h[i].externalNoteDepth > 0) {
-            h[i].animate = 1;
-          }
+    case ANIMATE_STAR:
+    case ANIMATE_SPLASH:
+      animateRadial();
+      break;
+    case ANIMATE_ORBIT:
+      animateOrbit();
+      break;
+    case ANIMATE_OCTAVE:
+    case ANIMATE_BY_NOTE:
+      animateMirror();
+      break;
+    case ANIMATE_BEAMS:
+      animateStaticBeams();
+      break;
+    case ANIMATE_SPLASH_REVERSE:
+    case ANIMATE_STAR_REVERSE:
+      animateRadialReverse();
+      break;
+    case ANIMATE_MIDI_IN:
+      for (byte i = 0; i < LED_COUNT; ++i) {
+        if (h[i].externalNoteDepth > 0) {
+          h[i].animate = true;
         }
-        break;
-      default:
-        break;
+      }
+      break;
+    default:
+      break;
   }
 }
 
@@ -4645,26 +6335,36 @@ void refreshMidiRouting() {
   assignPitches();
 }
 
+/*
+    Returns true when the hex's pitch class belongs
+    to the currently selected scale. Pulling this
+    logic into one helper keeps applyScale() easy to
+    read for beginners.
+  */
+bool hexIsInCurrentScale(byte hexIndex) {
+  if (current.scale().tuning == ALL_TUNINGS) {
+    return true;
+  }
+
+  byte degree = current.keyDegree(h[hexIndex].stepsFromC);
+  if (degree == 0) {
+    return true;  // The root is always in the scale.
+  }
+
+  byte accumulatedSteps = 0;
+  byte patternIndex = 0;
+  while (degree > accumulatedSteps) {
+    accumulatedSteps += current.scale().pattern[patternIndex];
+    ++patternIndex;
+  }
+  return accumulatedSteps == degree;
+}
+
 void applyScale() {
   sendToLog("applyScale was called:");
-  for (byte i = 0; i < LED_COUNT; i++) {
-    if (!(h[i].isCmd)) {
-      if (current.scale().tuning == ALL_TUNINGS) {
-        h[i].inScale = 1;
-      } else {
-        byte degree = current.keyDegree(h[i].stepsFromC);
-        if (degree == 0) {
-          h[i].inScale = 1;  // the root is always in the scale
-        } else {
-          byte tempSum = 0;
-          byte iterator = 0;
-          while (degree > tempSum) {
-            tempSum += current.scale().pattern[iterator];
-            iterator++;
-          }                                    // add the steps in the scale, and you're in scale
-          h[i].inScale = (tempSum == degree);  // if the note lands on one of those sums
-        }
-      }
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    if (!h[i].isCmd) {
+      h[i].inScale = hexIsInCurrentScale(i);
       sendToLog(
         "hex #" + std::to_string(i) + ", " + "steps=" + std::to_string(h[i].stepsFromC) + ", " + "isCmd? " + std::to_string(h[i].isCmd) + ", " + "note=" + std::to_string(h[i].note) + ", " + "inScale? " + std::to_string(h[i].inScale) + ".");
     }
@@ -4706,7 +6406,7 @@ void applyLayout() {  // call this function when the layout changes
   assignPitches();  // same with pitches
   sendToLog("buildLayout complete.");
 }
-void cmdOn(byte x) {  // volume and mod wheel read all current buttons
+void RAM_FUNC(cmdOn)(byte x) {  // volume and mod wheel read all current buttons
   switch (h[x].note) {
     case CMDB + 3:
       toggleWheel = !toggleWheel;
@@ -4720,7 +6420,7 @@ void cmdOn(byte x) {  // volume and mod wheel read all current buttons
       break;
   }
 }
-void cmdOff(byte x) {  // pitch bend wheel only if buttons held.
+void RAM_FUNC(cmdOff)(byte x) {  // pitch bend wheel only if buttons held.
   switch (h[x].note) {
     default:
       break;  // nothing; should all be taken care of within the wheelDef structure
@@ -4734,11 +6434,24 @@ struct SettingsHeader {
   char magic[3];           // e.g., "STG"
   uint8_t version;         // settings file version
   uint8_t defaultProfileIndex;
+  uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 1;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 11;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
+
+// CRC32 computation for settings integrity verification
+uint32_t crc32(const uint8_t* data, size_t length) {
+  uint32_t crc = 0xFFFFFFFF;
+  for (size_t i = 0; i < length; i++) {
+    crc ^= data[i];
+    for (int j = 0; j < 8; j++) {
+      crc = (crc >> 1) ^ (0xEDB88320 & -(crc & 1));
+    }
+  }
+  return ~crc;
+}
 
 // ==================================================
 // Settings Definitions
@@ -4793,14 +6506,131 @@ enum class SettingKey : uint8_t {
   EnvelopeDecayIndex,
   EnvelopeSustainLevel,
   EnvelopeReleaseIndex,
-  Delegated,
   DisplayPlayedNotes,
+  LedCurrentLimitMode,
+  SynthDrive,
+  SynthModTarget,
+  SynthVibratoSpeed,
+  MetronomeMode,
+  MetronomeSignature,
+  EffectEnvelopeAttackIndex,
+  EffectEnvelopeDecayIndex,
+  EffectEnvelopeSustainLevel,
+  EffectEnvelopeReleaseIndex,
+  BootAnimationEnabled,
+  EffectEnvelopeTarget,
+  EffectEnvelopeAmount,
+  EffectEnvelope2Target,
+  EffectEnvelope2Amount,
+  EffectEnvelope2AttackIndex,
+  EffectEnvelope2DecayIndex,
+  EffectEnvelope2SustainLevel,
+  EffectEnvelope2ReleaseIndex,
+  SynthAttackEffect,       // Deprecated: hidden and ignored by runtime.
+  EnvelopeHoldIndex,
+  EffectEnvelopeHoldIndex,
+  EffectEnvelope2HoldIndex,
+  SynthModAmount,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
 
 // Use a constexpr to get the total number of settings.
 constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
+constexpr uint8_t NUM_SETTINGS_V2 = static_cast<uint8_t>(SettingKey::LedCurrentLimitMode);
+constexpr uint8_t NUM_SETTINGS_V3 = static_cast<uint8_t>(SettingKey::SynthDrive);
+constexpr uint8_t NUM_SETTINGS_V4 = static_cast<uint8_t>(SettingKey::SynthModTarget);
+constexpr uint8_t NUM_SETTINGS_V5 = static_cast<uint8_t>(SettingKey::MetronomeMode);
+constexpr uint8_t NUM_SETTINGS_V6 = static_cast<uint8_t>(SettingKey::EffectEnvelopeAttackIndex);
+constexpr uint8_t NUM_SETTINGS_V7 = static_cast<uint8_t>(SettingKey::EffectEnvelopeTarget);
+constexpr uint8_t NUM_SETTINGS_V8 = static_cast<uint8_t>(SettingKey::EnvelopeHoldIndex);
+constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
+
+constexpr uint8_t SYNTH_PRESET_COUNT = 8;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 3;
+constexpr std::array<SettingKey, 27> synthPresetKeys = {
+  SettingKey::PlaybackMode,
+  SettingKey::Waveform,
+  SettingKey::SynthDrive,
+  SettingKey::SynthModTarget,
+  SettingKey::SynthModAmount,
+  SettingKey::SynthVibratoSpeed,
+  SettingKey::ArpeggiatorDivision,
+  SettingKey::SynthBPM,
+  SettingKey::EnvelopeAttackIndex,
+  SettingKey::EnvelopeHoldIndex,
+  SettingKey::EnvelopeDecayIndex,
+  SettingKey::EnvelopeSustainLevel,
+  SettingKey::EnvelopeReleaseIndex,
+  SettingKey::EffectEnvelopeTarget,
+  SettingKey::EffectEnvelopeAmount,
+  SettingKey::EffectEnvelopeAttackIndex,
+  SettingKey::EffectEnvelopeHoldIndex,
+  SettingKey::EffectEnvelopeDecayIndex,
+  SettingKey::EffectEnvelopeSustainLevel,
+  SettingKey::EffectEnvelopeReleaseIndex,
+  SettingKey::EffectEnvelope2Target,
+  SettingKey::EffectEnvelope2Amount,
+  SettingKey::EffectEnvelope2AttackIndex,
+  SettingKey::EffectEnvelope2HoldIndex,
+  SettingKey::EffectEnvelope2DecayIndex,
+  SettingKey::EffectEnvelope2SustainLevel,
+  SettingKey::EffectEnvelope2ReleaseIndex
+};
+constexpr size_t SYNTH_PRESET_VALUE_COUNT = synthPresetKeys.size();
+constexpr std::array<uint8_t, 4> legacySynthVibratoSpeedIndexToCurrent = {
+  3, 5, 7, 9
+};
+
+inline uint8_t remapLegacyEnvelopeTimeIndex(uint8_t legacyIndex) {
+  if (legacyIndex >= legacyEnvelopeTimeIndexToCurrent.size()) {
+    return legacyEnvelopeTimeIndexToCurrent.back();
+  }
+  return legacyEnvelopeTimeIndexToCurrent[legacyIndex];
+}
+
+inline bool isEnvelopeTimeSettingKey(SettingKey key) {
+  switch (key) {
+    case SettingKey::EnvelopeAttackIndex:
+    case SettingKey::EnvelopeHoldIndex:
+    case SettingKey::EnvelopeDecayIndex:
+    case SettingKey::EnvelopeReleaseIndex:
+    case SettingKey::EffectEnvelopeAttackIndex:
+    case SettingKey::EffectEnvelopeHoldIndex:
+    case SettingKey::EffectEnvelopeDecayIndex:
+    case SettingKey::EffectEnvelopeReleaseIndex:
+    case SettingKey::EffectEnvelope2AttackIndex:
+    case SettingKey::EffectEnvelope2HoldIndex:
+    case SettingKey::EffectEnvelope2DecayIndex:
+    case SettingKey::EffectEnvelope2ReleaseIndex:
+      return true;
+    default:
+      return false;
+  }
+}
+
+void remapLegacyEnvelopeTimeSettings(uint8_t* profileSettings, uint8_t settingsPerProfile) {
+  for (uint8_t keyIndex = 0; keyIndex < settingsPerProfile; ++keyIndex) {
+    SettingKey key = static_cast<SettingKey>(keyIndex);
+    if (isEnvelopeTimeSettingKey(key)) {
+      profileSettings[keyIndex] = remapLegacyEnvelopeTimeIndex(profileSettings[keyIndex]);
+    }
+  }
+}
+
+inline uint8_t remapLegacySynthVibratoSpeedIndex(uint8_t legacyIndex) {
+  if (legacyIndex >= legacySynthVibratoSpeedIndexToCurrent.size()) {
+    return SYNTH_VIBRATO_SPEED_DEFAULT;
+  }
+  return legacySynthVibratoSpeedIndexToCurrent[legacyIndex];
+}
+
+void remapLegacySynthVibratoSpeedSetting(uint8_t* profileSettings, uint8_t settingsPerProfile) {
+  uint8_t keyIndex = static_cast<uint8_t>(SettingKey::SynthVibratoSpeed);
+  if (keyIndex < settingsPerProfile) {
+    profileSettings[keyIndex] = remapLegacySynthVibratoSpeedIndex(profileSettings[keyIndex]);
+  }
+}
 
 // ==================================================
 // Global Settings Array and Factory Defaults
@@ -4812,6 +6642,54 @@ uint8_t activeProfileIndex = DEFAULT_PROFILE_INDEX;
 uint8_t defaultProfileIndex = DEFAULT_PROFILE_INDEX;
 extern bool settingsDirty;
 void syncSettingsToRuntime();
+
+struct SynthPresetFileHeader {
+  char magic[3];     // "SYP"
+  uint8_t version;
+  uint32_t crc32;
+};
+
+struct SynthPresetSlot {
+  uint8_t valid = 0;
+  uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
+};
+
+std::array<SynthPresetSlot, SYNTH_PRESET_COUNT> synthPresets = {};
+
+void remapLegacySynthPresetEnvelopeTimes(SynthPresetSlot& preset) {
+  if (!preset.valid) {
+    return;
+  }
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    if (isEnvelopeTimeSettingKey(synthPresetKeys[i])) {
+      preset.values[i] = remapLegacyEnvelopeTimeIndex(preset.values[i]);
+    }
+  }
+}
+
+void remapLegacySynthPresetVibratoSpeed(SynthPresetSlot& preset) {
+  if (!preset.valid) {
+    return;
+  }
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    if (synthPresetKeys[i] == SettingKey::SynthVibratoSpeed) {
+      preset.values[i] = remapLegacySynthVibratoSpeedIndex(preset.values[i]);
+      return;
+    }
+  }
+}
+
+inline uint8_t settingValue(SettingKey key) {
+  return settings[static_cast<uint8_t>(key)];
+}
+
+inline bool settingEnabled(SettingKey key) {
+  return settingValue(key) != 0;
+}
+
+inline int decodeBiasedSetting(SettingKey key) {
+  return static_cast<int>(settingValue(key)) - 128;
+}
 
 // SETTINGS STEP 2 - Define factory defaults (in the same order as the enum).
 // Adjust values below to match your desired defaults.
@@ -4845,7 +6723,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* VelWheelSpeed                */ 8,
   /* PlaybackMode                 */ SYNTH_OFF,
   /* Waveform                     */ WAVEFORM_HYBRID,
-  /* AudioDestination             */ AUDIO_BOTH,
+  /* AudioDestination             */ 0,
   /* ArpeggiatorDivision          */ 32,
   /* SynthBPM                     */ 120,
   /* ColorMode                    */ RAINBOW_MODE,
@@ -4859,18 +6737,39 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* BPMMultiplier                */ 1,
   /* DynamicJI                    */ 0,
   /* EnvelopeAttackIndex          */ 2,
-  /* EnvelopeDecayIndex           */ 3,
+  /* EnvelopeDecayIndex           */ 4,
   /* EnvelopeSustainLevel         */ 127,
-  /* EnvelopeReleaseIndex         */ 3,
-  /* Delegated                    */ 0,
-  /* Display played notes         */ 0,
+  /* EnvelopeReleaseIndex         */ 4,
+  /* Display played notes         */ 1,
+  /* LED current limit mode       */ LED_CURRENT_LIMIT_1500MA,
+  /* SynthDrive                   */ SYNTH_DRIVE_OFF,
+  /* SynthModTarget               */ SYNTH_MOD_TARGET_TONE,
+  /* SynthVibratoSpeed            */ SYNTH_VIBRATO_SPEED_DEFAULT,
+  /* MetronomeMode                */ METRONOME_MODE_OFF,
+  /* MetronomeSignature           */ 0,
+  /* EffectEnvelopeAttackIndex    */ 0,
+  /* EffectEnvelopeDecayIndex     */ 0,
+  /* EffectEnvelopeSustainLevel   */ 0,
+  /* EffectEnvelopeReleaseIndex   */ 0,
+  /* BootAnimationEnabled         */ 1,
+  /* EffectEnvelopeTarget         */ SYNTH_MOD_TARGET_VIBRATO,
+  /* EffectEnvelopeAmount         */ SYNTH_FX_AMOUNT_FULL,
+  /* EffectEnvelope2Target        */ SYNTH_MOD_TARGET_PITCH,
+  /* EffectEnvelope2Amount        */ SYNTH_FX_AMOUNT_FULL,
+  /* EffectEnvelope2AttackIndex   */ 0,
+  /* EffectEnvelope2DecayIndex    */ 0,
+  /* EffectEnvelope2SustainLevel  */ 0,
+  /* EffectEnvelope2ReleaseIndex  */ 0,
+  /* SynthAttackEffect deprecated */ 0,
+  /* EnvelopeHoldIndex            */ 0,
+  /* EffectEnvelopeHoldIndex      */ 0,
+  /* EffectEnvelope2HoldIndex     */ 0,
+  /* SynthModAmount               */ SYNTH_MOD_AMOUNT_FULL,
 };
 
 // ==================================================
 // File System Handling: LittleFS Setup
 // ==================================================
-#include "LittleFS.h"  // code to use a portion of the 16MB flash chip space as a file system
-
 bool fileSystemExists = false;
 
 void setupFileSystem() {
@@ -4880,7 +6779,21 @@ void setupFileSystem() {
   LittleFS.setConfig(cfg);
   fileSystemExists = LittleFS.begin();
   if (!fileSystemExists) {
-    sendToLog("Error: Unable to mount LittleFS.");
+    // Mount failed (first boot or corrupted FS). USB enumeration guard in
+    // setup() already waited up to 2 s, so only a short extra margin here.
+    sendToLog("LittleFS mount failed. Formatting after USB settles...");
+    delay(500);
+    if (LittleFS.format()) {
+      sendToLog("LittleFS format succeeded. Mounting...");
+      fileSystemExists = LittleFS.begin();
+      if (!fileSystemExists) {
+        sendToLog("Error: mount failed after format.");
+      } else {
+        sendToLog("LittleFS mounted successfully after format.");
+      }
+    } else {
+      sendToLog("Error: LittleFS format failed.");
+    }
   } else {
     sendToLog("LittleFS mounted successfully.");
   }
@@ -4902,7 +6815,64 @@ void applyFactoryDefaultsToSettings() {
   settingsDirty = false;
 }
 
+bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t settingsPerProfile) {
+  size_t previousDataSize = static_cast<size_t>(PROFILE_COUNT) * settingsPerProfile;
+  std::array<uint8_t, SETTINGS_DATA_SIZE> previousProfiles = { 0 };
+  if (previousDataSize > previousProfiles.size()) {
+    sendToLog("Warning: Settings migration source is too large. Restoring defaults.");
+    f.close();
+    applyFactoryDefaultsToSettings();
+    save_settings();
+    return false;
+  }
+
+  size_t bytesRead = f.read(previousProfiles.data(), previousDataSize);
+  f.close();
+  if (bytesRead != previousDataSize) {
+    sendToLog("Warning: Previous settings data incomplete. Restoring defaults.");
+    applyFactoryDefaultsToSettings();
+    save_settings();
+    return false;
+  }
+
+  uint32_t computed = crc32(previousProfiles.data(), previousDataSize);
+  if (computed != header.crc32) {
+    sendToLog("Previous settings CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
+    applyFactoryDefaultsToSettings();
+    save_settings();
+    return false;
+  }
+
+  applyFactoryDefaultsToSettings();
+  for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
+    memcpy(settingsProfiles[profile],
+           previousProfiles.data() + (static_cast<size_t>(profile) * settingsPerProfile),
+           settingsPerProfile);
+    if (header.version < 10) {
+      remapLegacyEnvelopeTimeSettings(settingsProfiles[profile], settingsPerProfile);
+    }
+    if (header.version < 11) {
+      remapLegacySynthVibratoSpeedSetting(settingsProfiles[profile], settingsPerProfile);
+    }
+    if (header.version < 8) {
+      uint8_t wheelTarget = settingsProfiles[profile][static_cast<uint8_t>(SettingKey::SynthModTarget)];
+      if (wheelTarget > SYNTH_MOD_TARGET_VIBRATO) {
+        wheelTarget = SYNTH_MOD_TARGET_TONE;
+      }
+      settingsProfiles[profile][static_cast<uint8_t>(SettingKey::EffectEnvelopeTarget)] =
+        (wheelTarget == SYNTH_MOD_TARGET_VIBRATO) ? SYNTH_MOD_TARGET_TONE : SYNTH_MOD_TARGET_VIBRATO;
+    }
+  }
+  activeProfileIndex = defaultProfileIndex;
+  settings = settingsProfiles[activeProfileIndex];
+  settingsDirty = false;
+  sendToLog("Settings migrated from version " + std::to_string(header.version) + " to version " + std::to_string(CURRENT_SETTINGS_VERSION) + ".");
+  save_settings();
+  return true;
+}
+
 bool load_settings() {
+  settingsFileMissingOnBoot = false;
   if (!fileSystemExists) {
     sendToLog("File system not available. Using factory defaults.");
     applyFactoryDefaultsToSettings();
@@ -4910,6 +6880,7 @@ bool load_settings() {
   }
   File f = LittleFS.open("/settings.dat", "r");
   if (!f) {
+    settingsFileMissingOnBoot = true;
     sendToLog("Settings file not found. Creating new file with factory defaults.");
     applyFactoryDefaultsToSettings();
     save_settings();
@@ -4930,6 +6901,28 @@ bool load_settings() {
     save_settings();
     return false;
   }
+  switch (header.version) {
+    case 2:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V2);
+    case 3:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V3);
+    case 4:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V4);
+    case 5:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V5);
+    case 6:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V6);
+    case 7:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V7);
+    case 8:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V8);
+    case 9:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS);
+    case 10:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS);
+    default:
+      break;
+  }
   if (header.version != CURRENT_SETTINGS_VERSION) {
     sendToLog("Settings version mismatch. File version: " + std::to_string(header.version) + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION));
     f.close();
@@ -4939,11 +6932,18 @@ bool load_settings() {
   }
   // Always boot from profile 1 even if an older file recorded a different default.
   defaultProfileIndex = DEFAULT_PROFILE_INDEX;
-  size_t expectedSize = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
-  size_t bytesRead = f.read((uint8_t*)settingsProfiles, expectedSize);
+  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
   f.close();
-  if (bytesRead != expectedSize) {
+  if (bytesRead != SETTINGS_DATA_SIZE) {
     sendToLog("Warning: Settings data incomplete. Restoring defaults.");
+    applyFactoryDefaultsToSettings();
+    save_settings();
+    return false;
+  }
+  // Verify CRC32 integrity of loaded profile data
+  uint32_t computed = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
+  if (computed != header.crc32) {
+    sendToLog("CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
     applyFactoryDefaultsToSettings();
     save_settings();
     return false;
@@ -4969,17 +6969,190 @@ void save_settings() {
   header.magic[0] = 'S'; header.magic[1] = 'T'; header.magic[2] = 'G';
   header.version = CURRENT_SETTINGS_VERSION;
   header.defaultProfileIndex = defaultProfileIndex;
+  header.crc32 = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
   f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SettingsHeader));
-  f.write(reinterpret_cast<uint8_t*>(settingsProfiles), static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS);
+  f.write(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
   f.close();
   sendToLog("Settings saved.");
+}
+
+void applyDefaultSynthPresets() {
+  for (SynthPresetSlot& preset : synthPresets) {
+    preset = SynthPresetSlot{};
+  }
+}
+
+uint8_t currentSynthPresetValue(SettingKey key) {
+  switch (key) {
+    case SettingKey::PlaybackMode: return playbackMode;
+    case SettingKey::Waveform: return currWave;
+    case SettingKey::SynthDrive: return synthDrive;
+    case SettingKey::SynthModTarget: return synthModTarget;
+    case SettingKey::SynthModAmount: return synthModAmount;
+    case SettingKey::SynthVibratoSpeed: return synthVibratoSpeed;
+    case SettingKey::ArpeggiatorDivision: return arpeggiatorDivision;
+    case SettingKey::SynthBPM: return synthBPM;
+    case SettingKey::EnvelopeAttackIndex: return envelopeAttackIndex;
+    case SettingKey::EnvelopeHoldIndex: return envelopeHoldIndex;
+    case SettingKey::EnvelopeDecayIndex: return envelopeDecayIndex;
+    case SettingKey::EnvelopeSustainLevel: return envelopeSustainLevel;
+    case SettingKey::EnvelopeReleaseIndex: return envelopeReleaseIndex;
+    case SettingKey::EffectEnvelopeTarget: return effectEnvelopeTarget[0];
+    case SettingKey::EffectEnvelopeAmount: return effectEnvelopeAmount[0];
+    case SettingKey::EffectEnvelopeAttackIndex: return effectEnvelopeAttackIndex[0];
+    case SettingKey::EffectEnvelopeHoldIndex: return effectEnvelopeHoldIndex[0];
+    case SettingKey::EffectEnvelopeDecayIndex: return effectEnvelopeDecayIndex[0];
+    case SettingKey::EffectEnvelopeSustainLevel: return effectEnvelopeSustainLevel[0];
+    case SettingKey::EffectEnvelopeReleaseIndex: return effectEnvelopeReleaseIndex[0];
+    case SettingKey::EffectEnvelope2Target: return effectEnvelopeTarget[1];
+    case SettingKey::EffectEnvelope2Amount: return effectEnvelopeAmount[1];
+    case SettingKey::EffectEnvelope2AttackIndex: return effectEnvelopeAttackIndex[1];
+    case SettingKey::EffectEnvelope2HoldIndex: return effectEnvelopeHoldIndex[1];
+    case SettingKey::EffectEnvelope2DecayIndex: return effectEnvelopeDecayIndex[1];
+    case SettingKey::EffectEnvelope2SustainLevel: return effectEnvelopeSustainLevel[1];
+    case SettingKey::EffectEnvelope2ReleaseIndex: return effectEnvelopeReleaseIndex[1];
+    default:
+      return settingValue(key);
+  }
+}
+
+void captureCurrentSynthPreset(SynthPresetSlot& preset) {
+  preset.valid = 1;
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    preset.values[i] = currentSynthPresetValue(synthPresetKeys[i]);
+  }
+}
+
+void save_synth_presets() {
+  if (!fileSystemExists) {
+    sendToLog("File system not available.");
+    return;
+  }
+  File f = LittleFS.open("/synth_presets.dat", "w");
+  if (!f) {
+    sendToLog("Error: Unable to open /synth_presets.dat for writing.");
+    return;
+  }
+  SynthPresetFileHeader header;
+  header.magic[0] = 'S'; header.magic[1] = 'Y'; header.magic[2] = 'P';
+  header.version = SYNTH_PRESET_FILE_VERSION;
+  header.crc32 = crc32(reinterpret_cast<const uint8_t*>(synthPresets.data()), sizeof(SynthPresetSlot) * synthPresets.size());
+  f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SynthPresetFileHeader));
+  f.write(reinterpret_cast<uint8_t*>(synthPresets.data()), sizeof(SynthPresetSlot) * synthPresets.size());
+  f.close();
+  sendToLog("Synth presets saved.");
+}
+
+void load_synth_presets() {
+  applyDefaultSynthPresets();
+  if (!fileSystemExists) {
+    sendToLog("File system not available. Using empty synth presets.");
+    return;
+  }
+  File f = LittleFS.open("/synth_presets.dat", "r");
+  if (!f) {
+    sendToLog("Synth preset file not found. Starting with empty preset slots.");
+    return;
+  }
+  SynthPresetFileHeader header;
+  if (f.readBytes(reinterpret_cast<char*>(&header), sizeof(SynthPresetFileHeader)) != sizeof(SynthPresetFileHeader)) {
+    sendToLog("Error: Failed to read synth preset header.");
+    f.close();
+    applyDefaultSynthPresets();
+    return;
+  }
+  if (strncmp(header.magic, "SYP", 3) != 0 || header.version == 0 || header.version > SYNTH_PRESET_FILE_VERSION) {
+    sendToLog("Invalid synth preset file. Starting with empty preset slots.");
+    f.close();
+    applyDefaultSynthPresets();
+    return;
+  }
+  size_t presetDataSize = sizeof(SynthPresetSlot) * synthPresets.size();
+  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(synthPresets.data()), presetDataSize);
+  f.close();
+  if (bytesRead != presetDataSize) {
+    sendToLog("Warning: Synth preset data incomplete. Starting with empty preset slots.");
+    applyDefaultSynthPresets();
+    return;
+  }
+  uint32_t computed = crc32(reinterpret_cast<const uint8_t*>(synthPresets.data()), presetDataSize);
+  if (computed != header.crc32) {
+    sendToLog("Synth preset CRC32 mismatch. Starting with empty preset slots.");
+    applyDefaultSynthPresets();
+    return;
+  }
+  if (header.version < SYNTH_PRESET_FILE_VERSION) {
+    for (SynthPresetSlot& preset : synthPresets) {
+      if (header.version < 2) {
+        remapLegacySynthPresetEnvelopeTimes(preset);
+      }
+      if (header.version < 3) {
+        remapLegacySynthPresetVibratoSpeed(preset);
+      }
+    }
+    sendToLog("Synth presets migrated from version " + std::to_string(header.version) + " to version " + std::to_string(SYNTH_PRESET_FILE_VERSION) + ".");
+    save_synth_presets();
+    return;
+  }
+  sendToLog("Synth presets loaded successfully.");
+}
+
+void applySynthPresetToSettings(const SynthPresetSlot& preset) {
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    settings[static_cast<uint8_t>(synthPresetKeys[i])] = preset.values[i];
+  }
+}
+
+// Wrapper that mutes audio before writing to flash and unmutes afterward.
+// On the RP2040 flash writes disable ALL interrupts on BOTH cores, which
+// starves the audio ISR.  Muting first ensures a brief silence instead of
+// an audible glitch when interrupts resume.
+void flashSafeWrite(void (*writeOperation)()) {
+  flashWriteInProgress.store(true, std::memory_order_release);
+  // Allow a few ISR cycles (~0.5 ms) to output silence before the flash
+  // write freezes the timer, so the transition is a clean fade-to-silence
+  // rather than a mid-sample cut.
+  delayMicroseconds(500);
+  writeOperation();
+  flashWriteInProgress.store(false, std::memory_order_release);
+}
+
+void flashSafeSave() {
+  flashSafeWrite(save_settings);
+}
+
+void flashSafeSaveSynthPresets() {
+  flashSafeWrite(save_synth_presets);
+}
+
+void saveSynthPresetToSlot(uint8_t presetIndex) {
+  if (presetIndex >= SYNTH_PRESET_COUNT) {
+    return;
+  }
+  captureCurrentSynthPreset(synthPresets[presetIndex]);
+  flashSafeSaveSynthPresets();
+  sendToLog("Saved synth preset " + std::to_string(presetIndex + 1));
+}
+
+void loadSynthPresetFromSlot(uint8_t presetIndex) {
+  if (presetIndex >= SYNTH_PRESET_COUNT) {
+    return;
+  }
+  if (!synthPresets[presetIndex].valid) {
+    sendToLog("Synth preset " + std::to_string(presetIndex + 1) + " is empty.");
+    return;
+  }
+  applySynthPresetToSettings(synthPresets[presetIndex]);
+  markSettingsDirty();
+  syncSettingsToRuntime();
+  sendToLog("Loaded synth preset " + std::to_string(presetIndex + 1));
 }
 
 // Restore all settings to the factory defaults.
 void restore_default_settings() {
   applyFactoryDefaultsToSettings();
   sendToLog("Default settings restored.");
-  save_settings();
+  flashSafeSave();
 }
 
 // --------------------------------------------------------
@@ -4998,19 +7171,19 @@ void markSettingsDirty() {
   lastSettingsChangeTime = millis();
 }
 
-bool autoSave = (settings[static_cast<uint8_t>(SettingKey::AutoSave)] !=0);
+bool autoSave = settingEnabled(SettingKey::AutoSave);
 // Call this in your main loop to autosave if changes have stabilized.
 void checkAndAutoSave() {
-  if (!autoSave) {
+  if (!autoSave || !settingsDirty) {
     return;
   }
-  if (!settingsDirty || (millis() - lastSettingsChangeTime <= debounceDelay)) {
+  if (millis() - lastSettingsChangeTime <= debounceDelay) {
     return;
   }
   // Auto-save always snapshots the current settings into profile 1 before writing to disk.
   copyCurrentSettingsToProfile(DEFAULT_PROFILE_INDEX);
-    save_settings();
-    settingsDirty = false;
+  flashSafeSave();
+  settingsDirty = false;
 }
 
 void copyCurrentSettingsToProfile(uint8_t profileIndex) {
@@ -5028,7 +7201,7 @@ void saveProfileToSlot(uint8_t profileIndex) {
     return;
   }
   copyCurrentSettingsToProfile(profileIndex);
-  save_settings();
+  flashSafeSave();
   if (profileIndex == activeProfileIndex) {
     settingsDirty = false;
   }
@@ -5104,7 +7277,6 @@ bool setNoteOverlayTemporaryWake(bool enabled) {
   return returnedToSleep;
 }
 
-// Updates notes on display when keys are pressed
 void clearDisplayedNotes(int16_t* notes) {
   for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
     notes[i] = DISPLAYED_NOTE_UNUSED;
@@ -5117,30 +7289,46 @@ void copyDisplayedNotes(int16_t* destination, const int16_t* source) {
   }
 }
 
+byte insertDisplayedNoteSorted(int16_t* notes, byte count, int16_t displayedPitch) {
+  for (byte i = 0; i < count; i++) {
+    if (notes[i] == displayedPitch) {
+      return count;
+    }
+  }
+
+  byte insertAt = 0;
+  while (insertAt < count && notes[insertAt] < displayedPitch) {
+    insertAt++;
+  }
+
+  if (count < DISPLAYED_NOTES_MAX) {
+    for (byte i = count; i > insertAt; i--) {
+      notes[i] = notes[i - 1];
+    }
+    notes[insertAt] = displayedPitch;
+    return count + 1;
+  }
+
+  if (insertAt < DISPLAYED_NOTES_MAX) {
+    for (byte i = DISPLAYED_NOTES_MAX - 1; i > insertAt; i--) {
+      notes[i] = notes[i - 1];
+    }
+    notes[insertAt] = displayedPitch;
+  }
+
+  return count;
+}
+
 byte rebuildDisplayedNotes(int16_t* notes) {
   clearDisplayedNotes(notes);
   byte out = 0;
-  for (byte i = 0; i < LED_COUNT && out < DISPLAYED_NOTES_MAX; i++) {
-    if (h[i].isCmd) {
-      continue;
-    }
-    if (h[i].MIDIch == 0) {
+  for (byte i = 0; i < LED_COUNT; i++) {
+    if (h[i].isCmd || h[i].MIDIch == 0) {
       continue;
     }
 
     int16_t displayedPitch = h[i].stepsFromC + current.transpose;
-
-    bool alreadyListed = false;
-    for (byte j = 0; j < out; j++) {
-      if (notes[j] == displayedPitch) {
-        alreadyListed = true;
-        break;
-      }
-    }
-
-    if (!alreadyListed) {
-      notes[out++] = displayedPitch;
-    }
+    out = insertDisplayedNoteSorted(notes, out, displayedPitch);
   }
   return out;
 }
@@ -5162,6 +7350,89 @@ bool displayedNotesEqual(const int16_t* first, const int16_t* second) {
     }
   }
   return true;
+}
+
+uint16_t pitchClassMaskRelativeToRoot(uint16_t pitchClassMask, byte rootPitchClass) {
+  uint16_t relativeMask = 0;
+  for (byte pitchClass = 0; pitchClass < 12; pitchClass++) {
+    if (pitchClassMask & chordIntervalBit(pitchClass)) {
+      relativeMask |= chordIntervalBit(positiveMod(pitchClass - rootPitchClass, 12));
+    }
+  }
+  return relativeMask;
+}
+
+const char* matchedChordSuffix(uint16_t pitchClassMask, byte rootPitchClass) {
+  uint16_t relativeMask = pitchClassMaskRelativeToRoot(pitchClassMask, rootPitchClass);
+  for (byte i = 0; i < CHORD_PATTERN_COUNT; i++) {
+    if (chordPatterns[i].intervals == relativeMask) {
+      return chordPatterns[i].suffix;
+    }
+  }
+  return nullptr;
+}
+
+bool writeChordName(uint16_t pitchClassMask, byte rootPitchClass, byte bassPitchClass, char* chordText, size_t chordTextSize) {
+  const char* suffix = matchedChordSuffix(pitchClassMask, rootPitchClass);
+  if (suffix == nullptr) {
+    return false;
+  }
+
+  const char* rootName = chromaticNames[rootPitchClass];
+  if (bassPitchClass == rootPitchClass) {
+    snprintf(chordText, chordTextSize, "%s%s", rootName, suffix);
+  } else {
+    snprintf(chordText, chordTextSize, "%s%s/%s", rootName, suffix, chromaticNames[bassPitchClass]);
+  }
+  return true;
+}
+
+bool buildDisplayedChordName(const int16_t* notes, byte count, char* chordText, size_t chordTextSize) {
+  if (current.tuningIndex != TUNING_12EDO || chordTextSize == 0) {
+    return false;
+  }
+
+  chordText[0] = '\0';
+  uint16_t pitchClassMask = 0;
+  byte pitchClassOrder[12];
+  byte pitchClassCount = 0;
+  byte bassPitchClass = 0;
+  bool hasBass = false;
+
+  for (byte i = 0; i < count; i++) {
+    if (notes[i] == DISPLAYED_NOTE_UNUSED) {
+      continue;
+    }
+
+    byte pitchClass = positiveMod(notes[i], 12);
+    if (!hasBass) {
+      bassPitchClass = pitchClass;
+      hasBass = true;
+    }
+
+    uint16_t bit = chordIntervalBit(pitchClass);
+    if (!(pitchClassMask & bit)) {
+      pitchClassMask |= bit;
+      pitchClassOrder[pitchClassCount++] = pitchClass;
+    }
+  }
+
+  if (pitchClassCount < 3) {
+    return false;
+  }
+
+  if (writeChordName(pitchClassMask, bassPitchClass, bassPitchClass, chordText, chordTextSize)) {
+    return true;
+  }
+
+  for (byte i = 0; i < pitchClassCount; i++) {
+    if (pitchClassOrder[i] != bassPitchClass &&
+        writeChordName(pitchClassMask, pitchClassOrder[i], bassPitchClass, chordText, chordTextSize)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 void onToggleDisplayPlayedNotes() {
@@ -5240,7 +7511,6 @@ void drawPlayedNotesOverlay() {
   u8g2.setFont(u8g2_font_6x13_tf);
   u8g2.drawStr(8, 16, "Now Playing");
 
-  // 3 columns x 2 rows = 6 notes max
   for (byte i = 0; i < count; i++) {
     int16_t displayedPitch = displayedNotes[i];
     char noteText[12];
@@ -5259,11 +7529,27 @@ void drawPlayedNotesOverlay() {
 
     byte col = i % 3;
     byte row = i / 3;
-    int x = (col == 0) ? 2 : (col == 1) ? 42 : 82;
+    int x = PLAYED_NOTE_COLUMN_X[col];
     int y = 34 + (row * 26);
 
     u8g2.setFont(u8g2_font_logisoso16_tf);
     u8g2.drawStr(x, y, noteText);
+  }
+
+  char chordText[CHORD_NAME_MAX];
+  if (buildDisplayedChordName(displayedNotes, count, chordText, sizeof(chordText))) {
+    u8g2.setFont(u8g2_font_logisoso16_tf);
+    int chordWidth = u8g2.getStrWidth(chordText);
+    if (chordWidth > u8g2.getDisplayWidth()) {
+      u8g2.setFont(u8g2_font_6x13_tf);
+      chordWidth = u8g2.getStrWidth(chordText);
+    }
+
+    int chordX = (u8g2.getDisplayWidth() - chordWidth) / 2;
+    if (chordX < 0) {
+      chordX = 0;
+    }
+    u8g2.drawStr(chordX, PLAYED_CHORD_Y, chordText);
   }
 
   u8g2.sendBuffer();
@@ -5291,6 +7577,14 @@ GEMPage menuPageColors("Color Options", menuPageMain);
 GEMItem menuGotoColors("Color Options", menuPageColors);
 GEMPage menuPageSynth("Synth Options", menuPageMain);
 GEMItem menuGotoSynth("Synth Options", menuPageSynth);
+GEMPage menuPageSynthFx1("FX Env 1", menuPageSynth);
+GEMItem menuGotoSynthFx1("FX Env 1", menuPageSynthFx1);
+GEMPage menuPageSynthFx2("FX Env 2", menuPageSynth);
+GEMItem menuGotoSynthFx2("FX Env 2", menuPageSynthFx2);
+GEMPage menuPageSynthPresetSave("Save Preset", menuPageSynth);
+GEMItem menuGotoSynthPresetSave("Save Preset", menuPageSynthPresetSave);
+GEMPage menuPageSynthPresetLoad("Load Preset", menuPageSynth);
+GEMItem menuGotoSynthPresetLoad("Load Preset", menuPageSynthPresetLoad);
 GEMPage menuPageMIDI("MIDI Options", menuPageMain);
 GEMItem menuGotoMIDI("MIDI Options", menuPageMIDI);
 GEMPage menuPageControl("Control Wheel", menuPageMain);
@@ -5387,7 +7681,7 @@ void rebootToBootloader();
     These GEMItems are read-only display items.
     They do not change any variable or run any procedure.
   */
-GEMItem menuItemVersion("Firmware 1.2.0");
+GEMItem menuItemVersion("Firmware 1.3.0");
 SelectOptionByte optionByteHardware[] = {
   { "V1.1", HARDWARE_UNKNOWN }, { "V1.1", HARDWARE_V1_1 }, { "V1.2", HARDWARE_V1_2 }
 };
@@ -5404,7 +7698,7 @@ extern bool settingsDirty;
 
 void resetDefaultsMenuCallback() {
   applyFactoryDefaultsToSettings();
-  save_settings();
+  flashSafeSave();
   syncSettingsToRuntime();
   settingsDirty = false;
   sendToLog("Factory defaults loaded from menu.");
@@ -5419,6 +7713,16 @@ void saveProfileMenu(GEMCallbackData callbackData) {
 void loadProfileMenu(GEMCallbackData callbackData) {
   setActiveProfile(callbackData.valByte);
   menuHome();
+}
+
+void saveSynthPresetMenu(GEMCallbackData callbackData) {
+  saveSynthPresetToSlot(callbackData.valByte);
+  menuSynthOptionsHome();
+}
+
+void loadSynthPresetMenu(GEMCallbackData callbackData) {
+  loadSynthPresetFromSlot(callbackData.valByte);
+  menuSynthOptionsHome();
 }
 
 /*
@@ -5443,8 +7747,12 @@ GEMSelect* selectKey[TUNINGCOUNT];
 GEMItem* menuItemKeys[TUNINGCOUNT];
 GEMItem* menuItemSaveProfile[PROFILE_COUNT];
 GEMItem* menuItemLoadProfile[PROFILE_COUNT];
+GEMItem* menuItemSaveSynthPreset[SYNTH_PRESET_COUNT];
+GEMItem* menuItemLoadSynthPreset[SYNTH_PRESET_COUNT];
 char saveProfileLabels[PROFILE_COUNT][24];
 char loadProfileLabels[PROFILE_COUNT][24];
+char saveSynthPresetLabels[SYNTH_PRESET_COUNT][16];
+char loadSynthPresetLabels[SYNTH_PRESET_COUNT][16];
 /*
     We are now creating some GEMItems that let you
     1) select a value from a list of options,
@@ -5520,7 +7828,7 @@ GEMItem menuItemAutoSave("Auto-Save", autoSave, universalSaveCallback, reinterpr
 // For "Invert Encoder" which is a bool tick box.
 // We want to store its value persistently in the RotaryInvert setting.
 // Create a global variable that reflects its current state.
-bool rotaryInvert = (settings[static_cast<uint8_t>(SettingKey::RotaryInvert)] != 0);
+bool rotaryInvert = settingEnabled(SettingKey::RotaryInvert);
 // Create a PersistentCallbackInfo instance for this setting.
 PersistentCallbackInfo callbackInfoRotary = {
   static_cast<uint8_t>(SettingKey::RotaryInvert),
@@ -5546,6 +7854,15 @@ PersistentCallbackInfo callbackInfoDebug = {
 };
 GEMItem menuItemDebug("Serial Debug", debugMessages, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDebug));
 
+void isrProfileMenuCallback(GEMCallbackData /*callbackData*/) {
+  if (isrProfileMenuEnabled) {
+    startISRProfileCapture();
+  } else {
+    stopISRProfileCaptureAndLog();
+  }
+}
+GEMItem menuItemISRProfile("ISR Profile", isrProfileMenuEnabled, isrProfileMenuCallback);
+
 PersistentCallbackInfo callbackInfoDisplayPlayedNotes = {
   static_cast<uint8_t>(SettingKey::DisplayPlayedNotes),
   reinterpret_cast<void*>(&displayPlayedNotes),
@@ -5554,6 +7871,35 @@ PersistentCallbackInfo callbackInfoDisplayPlayedNotes = {
 };
 GEMItem menuItemDisplayPlayedNotes("DisplayNotes", displayPlayedNotes, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDisplayPlayedNotes));
 
+PersistentCallbackInfo callbackInfoBootAnimation = {
+  static_cast<uint8_t>(SettingKey::BootAnimationEnabled),
+  reinterpret_cast<void*>(&bootAnimationEnabled),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemBootAnimation("Boot Anim", bootAnimationEnabled, universalSaveCallback,
+                              reinterpret_cast<void*>(&callbackInfoBootAnimation));
+
+SelectOptionByte optionByteLedTest[] = {
+  { "Off", LED_TEST_OFF },
+  { "Red", LED_TEST_RED },
+  { "Green", LED_TEST_GREEN },
+  { "Blue", LED_TEST_BLUE },
+  { "White", LED_TEST_WHITE }
+};
+GEMSelect selectLedTest(sizeof(optionByteLedTest) / sizeof(SelectOptionByte), optionByteLedTest);
+void restoreLedTestFrame() {
+  ledTestMode = LED_TEST_OFF;
+  lightUpLEDs();
+}
+void ledTestMenuCallback(GEMCallbackData /*callbackData*/) {
+  restoreLedTestFrame();
+}
+GEMItem menuItemLedTest("LED Test", ledTestMode, selectLedTest, ledTestMenuCallback);
+void previewLedTest(GEMPreviewCallbackData previewData) {
+  ledTestMode = (previewData.previewSelectNum < 0) ? LED_TEST_OFF : previewData.previewValByte;
+  lightUpLEDs();
+}
 
 SelectOptionByte optionByteWheelType[] = { { "Springy", 0 }, { "Sticky", 1 } };
 GEMSelect selectWheelType(sizeof(optionByteWheelType) / sizeof(SelectOptionByte), optionByteWheelType);
@@ -5593,17 +7939,13 @@ GEMItem menuItemPlayback("Synth Mode", playbackMode, selectPlayback, universalSa
                          reinterpret_cast<void*>(&callbackInfoPlayback));
 
 // Hardware V1.2-only
-SelectOptionByte optionByteAudioD[] = {
-  { "Buzzer", AUDIO_PIEZO }, { "Jack", AUDIO_AJACK }, { "Both", AUDIO_BOTH }
-};
-GEMSelect selectAudioD(sizeof(optionByteAudioD) / sizeof(SelectOptionByte), optionByteAudioD);
 PersistentCallbackInfo callbackInfoAudioDest = {
   static_cast<uint8_t>(SettingKey::AudioDestination),
-  reinterpret_cast<void*>(&audioD),
+  reinterpret_cast<void*>(&synthBuzzerEnabled),
   nullptr,
-  nullptr
+  syncAudioDestinationToRuntime
 };
-GEMItem menuItemAudioD("SynthOutput", audioD, selectAudioD, universalSaveCallback,
+GEMItem menuItemAudioD("Buzzer", synthBuzzerEnabled, universalSaveCallback,
                        reinterpret_cast<void*>(&callbackInfoAudioDest));
 
 ////////////////////////////////////////////////////////////////
@@ -5616,7 +7958,7 @@ GEMSpinner spinnerBPM_MultiplierOfJI(spinnerBoundariesBPM, GEM_LOOP);
 ///////////////////////////////////////////////////////////////////
 
 // Roland MT-32 mode (1987)
-SelectOptionByte optionByteRolandMT32[] = {
+SelectOptionByte optionByteRolandMT32[] __in_flash("midi") = {
   // Blank
   { "None", 0 },
   // Piano
@@ -5775,7 +8117,7 @@ GEMItem menuItemRolandMT32("RolandMT32", programChange, selectRolandMT32, univer
                            reinterpret_cast<void*>(&callbackInfoProgramChange));
 
 // General MIDI 1
-SelectOptionByte optionByteGeneralMidi[] = {
+SelectOptionByte optionByteGeneralMidi[] __in_flash("midi") = {
   // Blank
   { "None", 0 },
   // Piano
@@ -5928,10 +8270,27 @@ GEMItem menuItemGeneralMidi("GeneralMidi", programChange, selectGeneralMidi, uni
                             reinterpret_cast<void*>(&callbackInfoProgramChange));
 
 
-// doing this long-hand because the STRUCT has problems accepting string conversions of numbers for some reason
-SelectOptionInt optionIntTransposeSteps[] = {
-  { "-127", -127 }, { "-126", -126 }, { "-125", -125 }, { "-124", -124 }, { "-123", -123 }, { "-122", -122 }, { "-121", -121 }, { "-120", -120 }, { "-119", -119 }, { "-118", -118 }, { "-117", -117 }, { "-116", -116 }, { "-115", -115 }, { "-114", -114 }, { "-113", -113 }, { "-112", -112 }, { "-111", -111 }, { "-110", -110 }, { "-109", -109 }, { "-108", -108 }, { "-107", -107 }, { "-106", -106 }, { "-105", -105 }, { "-104", -104 }, { "-103", -103 }, { "-102", -102 }, { "-101", -101 }, { "-100", -100 }, { "- 99", -99 }, { "- 98", -98 }, { "- 97", -97 }, { "- 96", -96 }, { "- 95", -95 }, { "- 94", -94 }, { "- 93", -93 }, { "- 92", -92 }, { "- 91", -91 }, { "- 90", -90 }, { "- 89", -89 }, { "- 88", -88 }, { "- 87", -87 }, { "- 86", -86 }, { "- 85", -85 }, { "- 84", -84 }, { "- 83", -83 }, { "- 82", -82 }, { "- 81", -81 }, { "- 80", -80 }, { "- 79", -79 }, { "- 78", -78 }, { "- 77", -77 }, { "- 76", -76 }, { "- 75", -75 }, { "- 74", -74 }, { "- 73", -73 }, { "- 72", -72 }, { "- 71", -71 }, { "- 70", -70 }, { "- 69", -69 }, { "- 68", -68 }, { "- 67", -67 }, { "- 66", -66 }, { "- 65", -65 }, { "- 64", -64 }, { "- 63", -63 }, { "- 62", -62 }, { "- 61", -61 }, { "- 60", -60 }, { "- 59", -59 }, { "- 58", -58 }, { "- 57", -57 }, { "- 56", -56 }, { "- 55", -55 }, { "- 54", -54 }, { "- 53", -53 }, { "- 52", -52 }, { "- 51", -51 }, { "- 50", -50 }, { "- 49", -49 }, { "- 48", -48 }, { "- 47", -47 }, { "- 46", -46 }, { "- 45", -45 }, { "- 44", -44 }, { "- 43", -43 }, { "- 42", -42 }, { "- 41", -41 }, { "- 40", -40 }, { "- 39", -39 }, { "- 38", -38 }, { "- 37", -37 }, { "- 36", -36 }, { "- 35", -35 }, { "- 34", -34 }, { "- 33", -33 }, { "- 32", -32 }, { "- 31", -31 }, { "- 30", -30 }, { "- 29", -29 }, { "- 28", -28 }, { "- 27", -27 }, { "- 26", -26 }, { "- 25", -25 }, { "- 24", -24 }, { "- 23", -23 }, { "- 22", -22 }, { "- 21", -21 }, { "- 20", -20 }, { "- 19", -19 }, { "- 18", -18 }, { "- 17", -17 }, { "- 16", -16 }, { "- 15", -15 }, { "- 14", -14 }, { "- 13", -13 }, { "- 12", -12 }, { "- 11", -11 }, { "- 10", -10 }, { "-  9", -9 }, { "-  8", -8 }, { "-  7", -7 }, { "-  6", -6 }, { "-  5", -5 }, { "-  4", -4 }, { "-  3", -3 }, { "-  2", -2 }, { "-  1", -1 }, { "+/-0", 0 }, { "+  1", 1 }, { "+  2", 2 }, { "+  3", 3 }, { "+  4", 4 }, { "+  5", 5 }, { "+  6", 6 }, { "+  7", 7 }, { "+  8", 8 }, { "+  9", 9 }, { "+ 10", 10 }, { "+ 11", 11 }, { "+ 12", 12 }, { "+ 13", 13 }, { "+ 14", 14 }, { "+ 15", 15 }, { "+ 16", 16 }, { "+ 17", 17 }, { "+ 18", 18 }, { "+ 19", 19 }, { "+ 20", 20 }, { "+ 21", 21 }, { "+ 22", 22 }, { "+ 23", 23 }, { "+ 24", 24 }, { "+ 25", 25 }, { "+ 26", 26 }, { "+ 27", 27 }, { "+ 28", 28 }, { "+ 29", 29 }, { "+ 30", 30 }, { "+ 31", 31 }, { "+ 32", 32 }, { "+ 33", 33 }, { "+ 34", 34 }, { "+ 35", 35 }, { "+ 36", 36 }, { "+ 37", 37 }, { "+ 38", 38 }, { "+ 39", 39 }, { "+ 40", 40 }, { "+ 41", 41 }, { "+ 42", 42 }, { "+ 43", 43 }, { "+ 44", 44 }, { "+ 45", 45 }, { "+ 46", 46 }, { "+ 47", 47 }, { "+ 48", 48 }, { "+ 49", 49 }, { "+ 50", 50 }, { "+ 51", 51 }, { "+ 52", 52 }, { "+ 53", 53 }, { "+ 54", 54 }, { "+ 55", 55 }, { "+ 56", 56 }, { "+ 57", 57 }, { "+ 58", 58 }, { "+ 59", 59 }, { "+ 60", 60 }, { "+ 61", 61 }, { "+ 62", 62 }, { "+ 63", 63 }, { "+ 64", 64 }, { "+ 65", 65 }, { "+ 66", 66 }, { "+ 67", 67 }, { "+ 68", 68 }, { "+ 69", 69 }, { "+ 70", 70 }, { "+ 71", 71 }, { "+ 72", 72 }, { "+ 73", 73 }, { "+ 74", 74 }, { "+ 75", 75 }, { "+ 76", 76 }, { "+ 77", 77 }, { "+ 78", 78 }, { "+ 79", 79 }, { "+ 80", 80 }, { "+ 81", 81 }, { "+ 82", 82 }, { "+ 83", 83 }, { "+ 84", 84 }, { "+ 85", 85 }, { "+ 86", 86 }, { "+ 87", 87 }, { "+ 88", 88 }, { "+ 89", 89 }, { "+ 90", 90 }, { "+ 91", 91 }, { "+ 92", 92 }, { "+ 93", 93 }, { "+ 94", 94 }, { "+ 95", 95 }, { "+ 96", 96 }, { "+ 97", 97 }, { "+ 98", 98 }, { "+ 99", 99 }, { "+100", 100 }, { "+101", 101 }, { "+102", 102 }, { "+103", 103 }, { "+104", 104 }, { "+105", 105 }, { "+106", 106 }, { "+107", 107 }, { "+108", 108 }, { "+109", 109 }, { "+110", 110 }, { "+111", 111 }, { "+112", 112 }, { "+113", 113 }, { "+114", 114 }, { "+115", 115 }, { "+116", 116 }, { "+117", 117 }, { "+118", 118 }, { "+119", 119 }, { "+120", 120 }, { "+121", 121 }, { "+122", 122 }, { "+123", 123 }, { "+124", 124 }, { "+125", 125 }, { "+126", 126 }, { "+127", 127 }
-};
+// Transpose spinner: generated programmatically instead of 255 hardcoded entries
+constexpr uint16_t TRANSPOSE_COUNT = 255;
+static char transposeLabels[TRANSPOSE_COUNT][5];
+static SelectOptionInt optionIntTransposeSteps[TRANSPOSE_COUNT];
+void initTransposeOptions() {
+  for (int i = 0; i < TRANSPOSE_COUNT; ++i) {
+    int val = i - 127;  // -127 to +127
+    if (val == 0) {
+      memcpy(transposeLabels[i], "+/-0", 5);
+    } else if (val < -99) {
+      snprintf(transposeLabels[i], 5, "%d", val);
+    } else if (val < 0) {
+      snprintf(transposeLabels[i], 5, "-%*d", 3, -val);
+    } else if (val < 100) {
+      snprintf(transposeLabels[i], 5, "+%*d", 3, val);
+    } else {
+      snprintf(transposeLabels[i], 5, "+%d", val);
+    }
+    optionIntTransposeSteps[i] = { transposeLabels[i], val };
+  }
+}
 GEMSelect selectTransposeSteps(255, optionIntTransposeSteps);
 GEMItem menuItemTransposeSteps("Transpose", transposeSteps, selectTransposeSteps, changeTranspose);
 void previewTranspose(GEMPreviewCallbackData previewData) {
@@ -6314,7 +8673,7 @@ void processIncomingMIDIDelegated() {
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
-SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Tiered", TIERED_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE } };
+SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Tiered", TIERED_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE }, { "Diatonic", DIATONIC_COLOR_MODE } };
 GEMSelect selectColor(sizeof(optionByteColor) / sizeof(SelectOptionByte), optionByteColor);
 PersistentCallbackInfo callbackInfoColorMode = {
   static_cast<uint8_t>(SettingKey::ColorMode),
@@ -6415,6 +8774,30 @@ void previewBright(GEMPreviewCallbackData previewData) {
   setLEDcolorCodes();
 }
 
+SelectOptionByte optionByteLedCurrentLimit[] = {
+  { "250 mA", LED_CURRENT_LIMIT_250MA },
+  { "500 mA", LED_CURRENT_LIMIT_500MA },
+  { "750 mA", LED_CURRENT_LIMIT_750MA },
+  { "1.0 A", LED_CURRENT_LIMIT_1000MA },
+  { "1.5 A", LED_CURRENT_LIMIT_1500MA },
+  { "2.0 A", LED_CURRENT_LIMIT_2000MA },
+  { "3.0 A", LED_CURRENT_LIMIT_3000MA },
+  { "Off", LED_CURRENT_LIMIT_OFF }
+};
+GEMSelect selectLedCurrentLimit(sizeof(optionByteLedCurrentLimit) / sizeof(SelectOptionByte), optionByteLedCurrentLimit);
+PersistentCallbackInfo callbackInfoLedCurrentLimit = {
+  static_cast<uint8_t>(SettingKey::LedCurrentLimitMode),
+  reinterpret_cast<void*>(&ledCurrentLimitMode),
+  nullptr,
+  syncLedCurrentLimit
+};
+GEMItem menuItemLedCurrentLimit("LED Limit", ledCurrentLimitMode, selectLedCurrentLimit, universalSaveCallback,
+                                reinterpret_cast<void*>(&callbackInfoLedCurrentLimit));
+void previewLedCurrentLimit(GEMPreviewCallbackData previewData) {
+  ledCurrentLimitMode = previewData.previewValByte;
+  syncLedCurrentLimit();
+}
+
 SelectOptionByte optionByteWaveform[] = { { "Hybrid", WAVEFORM_HYBRID }, { "Square", WAVEFORM_SQUARE }, { "Saw", WAVEFORM_SAW }, { "Triangl", WAVEFORM_TRIANGLE }, { "Sine", WAVEFORM_SINE }, { "Strings", WAVEFORM_STRINGS }, { "Clrinet", WAVEFORM_CLARINET } };
 GEMSelect selectWaveform(sizeof(optionByteWaveform) / sizeof(SelectOptionByte), optionByteWaveform);
 PersistentCallbackInfo callbackInfoWaveform = {
@@ -6430,17 +8813,156 @@ void previewWaveform(GEMPreviewCallbackData previewData) {
   resetSynthFreqs();
 }
 
+SelectOptionByte optionByteSynthDrive[] = {
+  { "Off", SYNTH_DRIVE_OFF },
+  { "Warm", SYNTH_DRIVE_WARM },
+  { "Edge", SYNTH_DRIVE_EDGE },
+  { "Dirty", SYNTH_DRIVE_DIRTY }
+};
+GEMSelect selectSynthDrive(sizeof(optionByteSynthDrive) / sizeof(SelectOptionByte), optionByteSynthDrive);
+PersistentCallbackInfo callbackInfoSynthDrive = {
+  static_cast<uint8_t>(SettingKey::SynthDrive),
+  reinterpret_cast<void*>(&synthDrive),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemSynthDrive("Drive", synthDrive, selectSynthDrive, universalSaveCallback,
+                           reinterpret_cast<void*>(&callbackInfoSynthDrive));
+void previewSynthDrive(GEMPreviewCallbackData previewData) {
+  synthDrive = previewData.previewValByte;
+}
+
+SelectOptionByte optionByteSynthModTarget[] = {
+  { "Tone", SYNTH_MOD_TARGET_TONE },
+  { "Vibrato", SYNTH_MOD_TARGET_VIBRATO },
+  { "Pitch", SYNTH_MOD_TARGET_PITCH }
+};
+GEMSelect selectSynthModTarget(sizeof(optionByteSynthModTarget) / sizeof(SelectOptionByte), optionByteSynthModTarget);
+PersistentCallbackInfo callbackInfoSynthModTarget = {
+  static_cast<uint8_t>(SettingKey::SynthModTarget),
+  reinterpret_cast<void*>(&synthModTarget),
+  nullptr,
+  updateSynthVibratoParams
+};
+GEMItem menuItemSynthModTarget("Wheel FX", synthModTarget, selectSynthModTarget, universalSaveCallback,
+                               reinterpret_cast<void*>(&callbackInfoSynthModTarget));
+void previewSynthModTarget(GEMPreviewCallbackData previewData) {
+  synthModTarget = previewData.previewValByte;
+  updateSynthVibratoParams();
+}
+
+SelectOptionByte optionByteSynthModAmount[] = {
+  { "Off", 0 },
+  { "5%", 6 },
+  { "10%", 13 },
+  { "17%", 21 },
+  { "25%", 32 },
+  { "33%", 42 },
+  { "42%", 53 },
+  { "50%", 64 },
+  { "58%", 74 },
+  { "67%", 85 },
+  { "75%", 95 },
+  { "83%", 106 },
+  { "92%", 116 },
+  { "100%", SYNTH_MOD_AMOUNT_FULL }
+};
+GEMSelect selectSynthModAmount(sizeof(optionByteSynthModAmount) / sizeof(SelectOptionByte), optionByteSynthModAmount);
+PersistentCallbackInfo callbackInfoSynthModAmount = {
+  static_cast<uint8_t>(SettingKey::SynthModAmount),
+  reinterpret_cast<void*>(&synthModAmount),
+  nullptr,
+  updateSynthVibratoParams
+};
+GEMItem menuItemSynthModAmount("Wheel Amt", synthModAmount, selectSynthModAmount, universalSaveCallback,
+                               reinterpret_cast<void*>(&callbackInfoSynthModAmount));
+void previewSynthModAmount(GEMPreviewCallbackData previewData) {
+  synthModAmount = previewData.previewValByte;
+  updateSynthVibratoParams();
+}
+
+SelectOptionByte optionByteSynthVibratoSpeed[] = {
+  { "1 Hz", 0 },
+  { "2 Hz", 1 },
+  { "3 Hz", 2 },
+  { "4 Hz", 3 },
+  { "5 Hz", 4 },
+  { "6 Hz", 5 },
+  { "7 Hz", 6 },
+  { "8 Hz", 7 },
+  { "9 Hz", 8 },
+  { "10 Hz", 9 },
+  { "11 Hz", 10 },
+  { "12 Hz", 11 }
+};
+GEMSelect selectSynthVibratoSpeed(sizeof(optionByteSynthVibratoSpeed) / sizeof(SelectOptionByte), optionByteSynthVibratoSpeed);
+PersistentCallbackInfo callbackInfoSynthVibratoSpeed = {
+  static_cast<uint8_t>(SettingKey::SynthVibratoSpeed),
+  reinterpret_cast<void*>(&synthVibratoSpeed),
+  nullptr,
+  updateSynthVibratoParams
+};
+GEMItem menuItemSynthVibratoSpeed("Vib Speed", synthVibratoSpeed, selectSynthVibratoSpeed, universalSaveCallback,
+                                  reinterpret_cast<void*>(&callbackInfoSynthVibratoSpeed));
+void previewSynthVibratoSpeed(GEMPreviewCallbackData previewData) {
+  synthVibratoSpeed = previewData.previewValByte;
+  updateSynthVibratoParams();
+}
+
 PersistentCallbackInfo callbackInfoSynthBPM = {
   static_cast<uint8_t>(SettingKey::SynthBPM),
   reinterpret_cast<void*>(&synthBPM),
   nullptr,
   updateArpeggiatorTiming
 };
-GEMItem menuItemSynthBPM("Arp BPM", synthBPM, spinnerSynthBPM, universalSaveCallback,
+GEMItem menuItemSynthBPM("Tempo", synthBPM, spinnerSynthBPM, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoSynthBPM));
 void previewSynthBPM(GEMPreviewCallbackData previewData) {
   synthBPM = previewData.previewValByte;
   updateArpeggiatorTiming();
+}
+
+SelectOptionByte optionByteMetronomeMode[] = {
+  { "Off", METRONOME_MODE_OFF },
+  { "Beep", METRONOME_MODE_BEEP },
+  { "Bright", METRONOME_MODE_BRIGHTNESS },
+  { "Side Btns", METRONOME_MODE_SIDE_BUTTONS }
+};
+GEMSelect selectMetronomeMode(sizeof(optionByteMetronomeMode) / sizeof(SelectOptionByte), optionByteMetronomeMode);
+PersistentCallbackInfo callbackInfoMetronomeMode = {
+  static_cast<uint8_t>(SettingKey::MetronomeMode),
+  reinterpret_cast<void*>(&metronomeMode),
+  nullptr,
+  metronomeModeChanged
+};
+GEMItem menuItemMetronomeMode("Metronome", metronomeMode, selectMetronomeMode, universalSaveCallback,
+                              reinterpret_cast<void*>(&callbackInfoMetronomeMode));
+void previewMetronomeMode(GEMPreviewCallbackData previewData) {
+  metronomeMode = previewData.previewValByte;
+  metronomeModeChanged();
+}
+
+SelectOptionByte optionByteMetronomeSignature[] = {
+  { "4/4", 0 },
+  { "3/4", 1 },
+  { "2/4", 2 },
+  { "6/8", 3 },
+  { "5/4", 4 },
+  { "7/8", 5 },
+  { "12/8", 6 }
+};
+GEMSelect selectMetronomeSignature(sizeof(optionByteMetronomeSignature) / sizeof(SelectOptionByte), optionByteMetronomeSignature);
+PersistentCallbackInfo callbackInfoMetronomeSignature = {
+  static_cast<uint8_t>(SettingKey::MetronomeSignature),
+  reinterpret_cast<void*>(&metronomeSignatureIndex),
+  nullptr,
+  updateMetronomeTiming
+};
+GEMItem menuItemMetronomeSignature("Time Sig", metronomeSignatureIndex, selectMetronomeSignature, universalSaveCallback,
+                                   reinterpret_cast<void*>(&callbackInfoMetronomeSignature));
+void previewMetronomeSignature(GEMPreviewCallbackData previewData) {
+  metronomeSignatureIndex = previewData.previewValByte;
+  updateMetronomeTiming();
 }
 
 SelectOptionByte optionByteArpSpeed[] = {
@@ -6472,13 +8994,23 @@ SelectOptionByte optionByteEnvelopeTimes[] = {
   { "0 ms", 0 },
   { "5 ms", 1 },
   { "10 ms", 2 },
-  { "20 ms", 3 },
-  { "50 ms", 4 },
-  { "100 ms", 5 },
-  { "200 ms", 6 },
-  { "500 ms", 7 },
-  { "1 s", 8 },
-  { "2 s", 9 }
+  { "15 ms", 3 },
+  { "20 ms", 4 },
+  { "30 ms", 5 },
+  { "50 ms", 6 },
+  { "75 ms", 7 },
+  { "100 ms", 8 },
+  { "150 ms", 9 },
+  { "200 ms", 10 },
+  { "300 ms", 11 },
+  { "500 ms", 12 },
+  { "750 ms", 13 },
+  { "1 s", 14 },
+  { "1.5 s", 15 },
+  { "2 s", 16 },
+  { "2.5 s", 17 },
+  { "3 s", 18 },
+  { "4 s", 19 }
 };
 SelectOptionByte optionByteSustain[] = {
   { "0%", 0 },
@@ -6490,6 +9022,7 @@ SelectOptionByte optionByteSustain[] = {
 };
 
 GEMSelect selectEnvelopeAttack(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
+GEMSelect selectEnvelopeHold(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
 GEMSelect selectEnvelopeDecay(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
 GEMSelect selectEnvelopeRelease(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
 GEMSelect selectEnvelopeSustain(sizeof(optionByteSustain) / sizeof(SelectOptionByte), optionByteSustain);
@@ -6497,6 +9030,12 @@ GEMSelect selectEnvelopeSustain(sizeof(optionByteSustain) / sizeof(SelectOptionB
 PersistentCallbackInfo callbackInfoEnvelopeAttack = {
   static_cast<uint8_t>(SettingKey::EnvelopeAttackIndex),
   reinterpret_cast<void*>(&envelopeAttackIndex),
+  nullptr,
+  updateEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEnvelopeHold = {
+  static_cast<uint8_t>(SettingKey::EnvelopeHoldIndex),
+  reinterpret_cast<void*>(&envelopeHoldIndex),
   nullptr,
   updateEnvelopeParamsFromSettings
 };
@@ -6518,30 +9057,240 @@ PersistentCallbackInfo callbackInfoEnvelopeRelease = {
   nullptr,
   updateEnvelopeParamsFromSettings
 };
+SelectOptionByte optionByteSynthFxAmount[] = {
+  { "-100%", 0 },
+  { "-92%", 11 },
+  { "-83%", 21 },
+  { "-75%", 32 },
+  { "-67%", 42 },
+  { "-58%", 53 },
+  { "-50%", 64 },
+  { "-42%", 74 },
+  { "-33%", 85 },
+  { "-25%", 95 },
+  { "-17%", 106 },
+  { "-10%", 114 },
+  { "-5%", 121 },
+  { "Off", SYNTH_FX_AMOUNT_OFF },
+  { "+5%", 133 },
+  { "+10%", 140 },
+  { "+17%", 148 },
+  { "+25%", 159 },
+  { "+33%", 169 },
+  { "+42%", 180 },
+  { "+50%", 191 },
+  { "+58%", 201 },
+  { "+67%", 212 },
+  { "+75%", 222 },
+  { "+83%", 233 },
+  { "+92%", 243 },
+  { "+100%", SYNTH_FX_AMOUNT_FULL }
+};
+GEMSelect selectSynthFxAmount(sizeof(optionByteSynthFxAmount) / sizeof(SelectOptionByte), optionByteSynthFxAmount);
 
-GEMItem menuItemEnvelopeAttack("Attack", envelopeAttackIndex, selectEnvelopeAttack, universalSaveCallback,
+void updateSynthFxEnvelopeSettings() {
+  updateSynthVibratoParams();
+  updateEffectEnvelopeParamsFromSettings();
+}
+
+PersistentCallbackInfo callbackInfoEffectEnvelopeTarget = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelopeTarget),
+  reinterpret_cast<void*>(&effectEnvelopeTarget[0]),
+  nullptr,
+  updateSynthFxEnvelopeSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelopeAmount = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelopeAmount),
+  reinterpret_cast<void*>(&effectEnvelopeAmount[0]),
+  nullptr,
+  updateSynthFxEnvelopeSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelopeAttack = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelopeAttackIndex),
+  reinterpret_cast<void*>(&effectEnvelopeAttackIndex[0]),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelopeHold = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelopeHoldIndex),
+  reinterpret_cast<void*>(&effectEnvelopeHoldIndex[0]),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelopeDecay = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelopeDecayIndex),
+  reinterpret_cast<void*>(&effectEnvelopeDecayIndex[0]),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelopeSustain = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelopeSustainLevel),
+  reinterpret_cast<void*>(&effectEnvelopeSustainLevel[0]),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelopeRelease = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelopeReleaseIndex),
+  reinterpret_cast<void*>(&effectEnvelopeReleaseIndex[0]),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelope2Target = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelope2Target),
+  reinterpret_cast<void*>(&effectEnvelopeTarget[1]),
+  nullptr,
+  updateSynthFxEnvelopeSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelope2Amount = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelope2Amount),
+  reinterpret_cast<void*>(&effectEnvelopeAmount[1]),
+  nullptr,
+  updateSynthFxEnvelopeSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelope2Attack = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelope2AttackIndex),
+  reinterpret_cast<void*>(&effectEnvelopeAttackIndex[1]),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelope2Hold = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelope2HoldIndex),
+  reinterpret_cast<void*>(&effectEnvelopeHoldIndex[1]),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelope2Decay = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelope2DecayIndex),
+  reinterpret_cast<void*>(&effectEnvelopeDecayIndex[1]),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelope2Sustain = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelope2SustainLevel),
+  reinterpret_cast<void*>(&effectEnvelopeSustainLevel[1]),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+PersistentCallbackInfo callbackInfoEffectEnvelope2Release = {
+  static_cast<uint8_t>(SettingKey::EffectEnvelope2ReleaseIndex),
+  reinterpret_cast<void*>(&effectEnvelopeReleaseIndex[1]),
+  nullptr,
+  updateEffectEnvelopeParamsFromSettings
+};
+
+GEMItem menuItemEnvelopeAttack("Amp Atk", envelopeAttackIndex, selectEnvelopeAttack, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoEnvelopeAttack));
 void previewEnvelopeAttack(GEMPreviewCallbackData previewData) {
   envelopeAttackIndex = previewData.previewValByte;
   updateEnvelopeParamsFromSettings();
 }
-GEMItem menuItemEnvelopeDecay("Decay", envelopeDecayIndex, selectEnvelopeDecay, universalSaveCallback,
+GEMItem menuItemEnvelopeHold("Amp Hold", envelopeHoldIndex, selectEnvelopeHold, universalSaveCallback,
+                             reinterpret_cast<void*>(&callbackInfoEnvelopeHold));
+void previewEnvelopeHold(GEMPreviewCallbackData previewData) {
+  envelopeHoldIndex = previewData.previewValByte;
+  updateEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEnvelopeDecay("Amp Dec", envelopeDecayIndex, selectEnvelopeDecay, universalSaveCallback,
                               reinterpret_cast<void*>(&callbackInfoEnvelopeDecay));
 void previewEnvelopeDecay(GEMPreviewCallbackData previewData) {
   envelopeDecayIndex = previewData.previewValByte;
   updateEnvelopeParamsFromSettings();
 }
-GEMItem menuItemEnvelopeSustain("Sustain", envelopeSustainLevel, selectEnvelopeSustain, universalSaveCallback,
+GEMItem menuItemEnvelopeSustain("Amp Sus", envelopeSustainLevel, selectEnvelopeSustain, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoEnvelopeSustain));
 void previewEnvelopeSustain(GEMPreviewCallbackData previewData) {
   envelopeSustainLevel = previewData.previewValByte;
   updateEnvelopeParamsFromSettings();
 }
-GEMItem menuItemEnvelopeRelease("Release", envelopeReleaseIndex, selectEnvelopeRelease, universalSaveCallback,
+GEMItem menuItemEnvelopeRelease("Amp Rel", envelopeReleaseIndex, selectEnvelopeRelease, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoEnvelopeRelease));
 void previewEnvelopeRelease(GEMPreviewCallbackData previewData) {
   envelopeReleaseIndex = previewData.previewValByte;
   updateEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelopeTarget("Target", effectEnvelopeTarget[0], selectSynthModTarget, universalSaveCallback,
+                                     reinterpret_cast<void*>(&callbackInfoEffectEnvelopeTarget));
+void previewEffectEnvelopeTarget(GEMPreviewCallbackData previewData) {
+  effectEnvelopeTarget[0] = previewData.previewValByte;
+  updateSynthFxEnvelopeSettings();
+}
+GEMItem menuItemEffectEnvelopeAmount("Amount", effectEnvelopeAmount[0], selectSynthFxAmount, universalSaveCallback,
+                                     reinterpret_cast<void*>(&callbackInfoEffectEnvelopeAmount));
+void previewEffectEnvelopeAmount(GEMPreviewCallbackData previewData) {
+  effectEnvelopeAmount[0] = previewData.previewValByte;
+  updateSynthFxEnvelopeSettings();
+}
+GEMItem menuItemEffectEnvelopeAttack("Attack", effectEnvelopeAttackIndex[0], selectEnvelopeAttack, universalSaveCallback,
+                                     reinterpret_cast<void*>(&callbackInfoEffectEnvelopeAttack));
+void previewEffectEnvelopeAttack(GEMPreviewCallbackData previewData) {
+  effectEnvelopeAttackIndex[0] = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelopeHold("Hold", effectEnvelopeHoldIndex[0], selectEnvelopeHold, universalSaveCallback,
+                                   reinterpret_cast<void*>(&callbackInfoEffectEnvelopeHold));
+void previewEffectEnvelopeHold(GEMPreviewCallbackData previewData) {
+  effectEnvelopeHoldIndex[0] = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelopeDecay("Decay", effectEnvelopeDecayIndex[0], selectEnvelopeDecay, universalSaveCallback,
+                                    reinterpret_cast<void*>(&callbackInfoEffectEnvelopeDecay));
+void previewEffectEnvelopeDecay(GEMPreviewCallbackData previewData) {
+  effectEnvelopeDecayIndex[0] = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelopeSustain("Sustain", effectEnvelopeSustainLevel[0], selectEnvelopeSustain, universalSaveCallback,
+                                      reinterpret_cast<void*>(&callbackInfoEffectEnvelopeSustain));
+void previewEffectEnvelopeSustain(GEMPreviewCallbackData previewData) {
+  effectEnvelopeSustainLevel[0] = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelopeRelease("Release", effectEnvelopeReleaseIndex[0], selectEnvelopeRelease, universalSaveCallback,
+                                      reinterpret_cast<void*>(&callbackInfoEffectEnvelopeRelease));
+void previewEffectEnvelopeRelease(GEMPreviewCallbackData previewData) {
+  effectEnvelopeReleaseIndex[0] = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelope2Target("Target", effectEnvelopeTarget[1], selectSynthModTarget, universalSaveCallback,
+                                      reinterpret_cast<void*>(&callbackInfoEffectEnvelope2Target));
+void previewEffectEnvelope2Target(GEMPreviewCallbackData previewData) {
+  effectEnvelopeTarget[1] = previewData.previewValByte;
+  updateSynthFxEnvelopeSettings();
+}
+GEMItem menuItemEffectEnvelope2Amount("Amount", effectEnvelopeAmount[1], selectSynthFxAmount, universalSaveCallback,
+                                      reinterpret_cast<void*>(&callbackInfoEffectEnvelope2Amount));
+void previewEffectEnvelope2Amount(GEMPreviewCallbackData previewData) {
+  effectEnvelopeAmount[1] = previewData.previewValByte;
+  updateSynthFxEnvelopeSettings();
+}
+GEMItem menuItemEffectEnvelope2Attack("Attack", effectEnvelopeAttackIndex[1], selectEnvelopeAttack, universalSaveCallback,
+                                      reinterpret_cast<void*>(&callbackInfoEffectEnvelope2Attack));
+void previewEffectEnvelope2Attack(GEMPreviewCallbackData previewData) {
+  effectEnvelopeAttackIndex[1] = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelope2Hold("Hold", effectEnvelopeHoldIndex[1], selectEnvelopeHold, universalSaveCallback,
+                                    reinterpret_cast<void*>(&callbackInfoEffectEnvelope2Hold));
+void previewEffectEnvelope2Hold(GEMPreviewCallbackData previewData) {
+  effectEnvelopeHoldIndex[1] = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelope2Decay("Decay", effectEnvelopeDecayIndex[1], selectEnvelopeDecay, universalSaveCallback,
+                                     reinterpret_cast<void*>(&callbackInfoEffectEnvelope2Decay));
+void previewEffectEnvelope2Decay(GEMPreviewCallbackData previewData) {
+  effectEnvelopeDecayIndex[1] = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelope2Sustain("Sustain", effectEnvelopeSustainLevel[1], selectEnvelopeSustain, universalSaveCallback,
+                                       reinterpret_cast<void*>(&callbackInfoEffectEnvelope2Sustain));
+void previewEffectEnvelope2Sustain(GEMPreviewCallbackData previewData) {
+  effectEnvelopeSustainLevel[1] = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
+}
+GEMItem menuItemEffectEnvelope2Release("Release", effectEnvelopeReleaseIndex[1], selectEnvelopeRelease, universalSaveCallback,
+                                       reinterpret_cast<void*>(&callbackInfoEffectEnvelope2Release));
+void previewEffectEnvelope2Release(GEMPreviewCallbackData previewData) {
+  effectEnvelopeReleaseIndex[1] = previewData.previewValByte;
+  updateEffectEnvelopeParamsFromSettings();
 }
 
 SelectOptionInt optionIntModWheel[] = { { "too slo", 1 }, { "Turtle", 2 }, { "Slow", 4 }, { "Medium", 8 }, { "Fast", 16 }, { "Cheetah", 32 }, { "Instant", 127 } };
@@ -6588,94 +9337,114 @@ void previewPBSpeed(GEMPreviewCallbackData previewData) {
 // SETTINGS STEP 3 - Callback to sync settings variables on power-up
 // --------------------------------------------------------
 void syncSettingsToRuntime() {
-  debugMessages = (settings[static_cast<uint8_t>(SettingKey::Debug)] != 0);  // do it this way for bools...
-  rotaryInvert = (settings[static_cast<uint8_t>(SettingKey::RotaryInvert)] != 0);
-  autoSave = (settings[static_cast<uint8_t>(SettingKey::AutoSave)] != 0);
-  MPEpitchBendSemis = settings[static_cast<uint8_t>(SettingKey::MPEpitchBend)];  // ... and this way for bytes...
-  mpeUserMode = settings[static_cast<uint8_t>(SettingKey::MPEMode)];
+  debugMessages = settingEnabled(SettingKey::Debug);
+  rotaryInvert = settingEnabled(SettingKey::RotaryInvert);
+  autoSave = settingEnabled(SettingKey::AutoSave);
+  MPEpitchBendSemis = settingValue(SettingKey::MPEpitchBend);
+  mpeUserMode = settingValue(SettingKey::MPEMode);
   if (mpeUserMode > MPE_MODE_FORCE) {
     mpeUserMode = MPE_MODE_AUTO;
   }
-  extraMPE = (settings[static_cast<uint8_t>(SettingKey::ExtraMPE)] != 0);
-  mpeLowestChannel = settings[static_cast<uint8_t>(SettingKey::MPELowestChannel)];
-  mpeHighestChannel = settings[static_cast<uint8_t>(SettingKey::MPEHighestChannel)];
-  mpeLowPriorityMode = (settings[static_cast<uint8_t>(SettingKey::MPELowPriority)] != 0);
+  extraMPE = settingEnabled(SettingKey::ExtraMPE);
+  mpeLowestChannel = settingValue(SettingKey::MPELowestChannel);
+  mpeHighestChannel = settingValue(SettingKey::MPEHighestChannel);
+  mpeLowPriorityMode = settingEnabled(SettingKey::MPELowPriority);
   clampMPEChannelRange();
-  defaultMidiChannel = settings[static_cast<uint8_t>(SettingKey::DefaultMIDIChannel)];
-  if (defaultMidiChannel < 1 || defaultMidiChannel > 16) {
-    defaultMidiChannel = 1;
+  defaultMidiChannel = settingValue(SettingKey::DefaultMIDIChannel);
+  if (!isValidMidiChannel(defaultMidiChannel)) {
+    defaultMidiChannel = MIDI_CHANNEL_MIN;
   }
-  CC74value = settings[static_cast<uint8_t>(SettingKey::CC74Value)];
-  current.tuningIndex = settings[static_cast<uint8_t>(SettingKey::CurrentTuning)];
-  current.layoutIndex = settings[static_cast<uint8_t>(SettingKey::CurrentLayout)];
-  current.scaleIndex = settings[static_cast<uint8_t>(SettingKey::CurrentScale)];
-  { // Unpacking the signed values:
-    uint8_t raw = settings[static_cast<uint8_t>(SettingKey::CurrentTransposeSteps)];  // ... and this way for signed values.
-    transposeSteps = int(raw) - 128;
-    current.transpose = transposeSteps;
-  }
-  {
-    uint8_t raw = settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)];
-    current.keyStepsFromA = int(raw) - 128;
-  }
-  layoutRotation = settings[static_cast<uint8_t>(SettingKey::LayoutRotation)] % 6;
-  mirrorLeftRight = (settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)] != 0);
-  mirrorUpDown = (settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)] != 0);
-  scaleLock = (settings[static_cast<uint8_t>(SettingKey::ScaleLock)] != 0);
+  CC74value = settingValue(SettingKey::CC74Value);
+  current.tuningIndex = settingValue(SettingKey::CurrentTuning);
+  current.layoutIndex = settingValue(SettingKey::CurrentLayout);
+  current.scaleIndex = settingValue(SettingKey::CurrentScale);
+  transposeSteps = decodeBiasedSetting(SettingKey::CurrentTransposeSteps);
+  current.transpose = transposeSteps;
+  current.keyStepsFromA = decodeBiasedSetting(SettingKey::CurrentKeyStepsFromA);
+  layoutRotation = settingValue(SettingKey::LayoutRotation) % 6;
+  mirrorLeftRight = settingEnabled(SettingKey::MirrorLeftRight);
+  mirrorUpDown = settingEnabled(SettingKey::MirrorUpDown);
+  scaleLock = settingEnabled(SettingKey::ScaleLock);
   perceptual = true;
-  paletteBeginsAtKeyCenter = (settings[static_cast<uint8_t>(SettingKey::PaletteCenterOnKey)] != 0);
-  wheelMode = settings[static_cast<uint8_t>(SettingKey::WheelAltMode)] != 0;
-  pbSticky = settings[static_cast<uint8_t>(SettingKey::PBSticky)] != 0;
-  modSticky = settings[static_cast<uint8_t>(SettingKey::ModSticky)] != 0;
+  paletteBeginsAtKeyCenter = settingEnabled(SettingKey::PaletteCenterOnKey);
+  wheelMode = settingEnabled(SettingKey::WheelAltMode);
+  pbSticky = settingEnabled(SettingKey::PBSticky);
+  modSticky = settingEnabled(SettingKey::ModSticky);
 
   {
-    uint8_t exponent = settings[static_cast<uint8_t>(SettingKey::PBWheelSpeed)];
+    uint8_t exponent = settingValue(SettingKey::PBWheelSpeed);
     if (exponent < 7) exponent = 7;
     if (exponent > 14) exponent = 14;
     pbWheelSpeed = 1 << exponent;
   }
-  modWheelSpeed = settings[static_cast<uint8_t>(SettingKey::ModWheelSpeed)];
+  modWheelSpeed = settingValue(SettingKey::ModWheelSpeed);
   if (modWheelSpeed <= 0) modWheelSpeed = 1;
-  velWheelSpeed = settings[static_cast<uint8_t>(SettingKey::VelWheelSpeed)];
+  velWheelSpeed = settingValue(SettingKey::VelWheelSpeed);
   if (velWheelSpeed <= 0) velWheelSpeed = 1;
 
-  playbackMode = settings[static_cast<uint8_t>(SettingKey::PlaybackMode)];
-  currWave = settings[static_cast<uint8_t>(SettingKey::Waveform)];
-  audioD = settings[static_cast<uint8_t>(SettingKey::AudioDestination)];
-  arpeggiatorDivision = settings[static_cast<uint8_t>(SettingKey::ArpeggiatorDivision)];
+  playbackMode = settingValue(SettingKey::PlaybackMode);
+  currWave = settingValue(SettingKey::Waveform);
+  synthDrive = settingValue(SettingKey::SynthDrive);
+  if (synthDrive > SYNTH_DRIVE_DIRTY) {
+    synthDrive = SYNTH_DRIVE_OFF;
+  }
+  synthModTarget = settingValue(SettingKey::SynthModTarget);
+  synthModAmount = settingValue(SettingKey::SynthModAmount);
+  synthVibratoSpeed = settingValue(SettingKey::SynthVibratoSpeed);
+  synthBuzzerEnabled = decodeStoredBuzzerEnabled(settingValue(SettingKey::AudioDestination));
+  syncAudioDestinationToRuntime();
+  arpeggiatorDivision = settingValue(SettingKey::ArpeggiatorDivision);
   if (arpeggiatorDivision == 0) {
     arpeggiatorDivision = 1;
   }
-  synthBPM = settings[static_cast<uint8_t>(SettingKey::SynthBPM)];
+  synthBPM = settingValue(SettingKey::SynthBPM);
   if (synthBPM == 0) {
     synthBPM = 1;
   }
-  colorMode = settings[static_cast<uint8_t>(SettingKey::ColorMode)];
-  ledRestBrightness = settings[static_cast<uint8_t>(SettingKey::RestLedBrightness)];
-  ledDimBrightness = settings[static_cast<uint8_t>(SettingKey::DimLedBrightness)];
-  globalBrightness = settings[static_cast<uint8_t>(SettingKey::GlobalBrightness)];
-  animationType = settings[static_cast<uint8_t>(SettingKey::AnimationType)];
-  programChange = settings[static_cast<uint8_t>(SettingKey::ProgramChange)];
+  metronomeMode = settingValue(SettingKey::MetronomeMode);
+  metronomeSignatureIndex = settingValue(SettingKey::MetronomeSignature);
+  colorMode = settingValue(SettingKey::ColorMode);
+  ledRestBrightness = settingValue(SettingKey::RestLedBrightness);
+  ledDimBrightness = settingValue(SettingKey::DimLedBrightness);
+  globalBrightness = settingValue(SettingKey::GlobalBrightness);
+  ledCurrentLimitMode = settingValue(SettingKey::LedCurrentLimitMode);
+  syncLedCurrentLimit();
+  animationType = settingValue(SettingKey::AnimationType);
+  programChange = settingValue(SettingKey::ProgramChange);
 
-  useJustIntonationBPM = (settings[static_cast<uint8_t>(SettingKey::JustIntonationBPMSync)] !=0);
-  justIntonationBPM = settings[static_cast<uint8_t>(SettingKey::BeatBPM)];
-  justIntonationBPM_Multiplier = settings[static_cast<uint8_t>(SettingKey::BPMMultiplier)];
-  useDynamicJustIntonation = (settings[static_cast<uint8_t>(SettingKey::DynamicJI)] !=0);
-  envelopeAttackIndex = settings[static_cast<uint8_t>(SettingKey::EnvelopeAttackIndex)];
-  envelopeDecayIndex = settings[static_cast<uint8_t>(SettingKey::EnvelopeDecayIndex)];
-  envelopeSustainLevel = settings[static_cast<uint8_t>(SettingKey::EnvelopeSustainLevel)];
-  envelopeReleaseIndex = settings[static_cast<uint8_t>(SettingKey::EnvelopeReleaseIndex)];
-  displayPlayedNotes = (settings[static_cast<uint8_t>(SettingKey::DisplayPlayedNotes)] !=0);
+  useJustIntonationBPM = settingEnabled(SettingKey::JustIntonationBPMSync);
+  justIntonationBPM = settingValue(SettingKey::BeatBPM);
+  justIntonationBPM_Multiplier = settingValue(SettingKey::BPMMultiplier);
+  useDynamicJustIntonation = settingEnabled(SettingKey::DynamicJI);
+  envelopeAttackIndex = settingValue(SettingKey::EnvelopeAttackIndex);
+  envelopeHoldIndex = settingValue(SettingKey::EnvelopeHoldIndex);
+  envelopeDecayIndex = settingValue(SettingKey::EnvelopeDecayIndex);
+  envelopeSustainLevel = settingValue(SettingKey::EnvelopeSustainLevel);
+  envelopeReleaseIndex = settingValue(SettingKey::EnvelopeReleaseIndex);
+  effectEnvelopeAttackIndex[0] = settingValue(SettingKey::EffectEnvelopeAttackIndex);
+  effectEnvelopeHoldIndex[0] = settingValue(SettingKey::EffectEnvelopeHoldIndex);
+  effectEnvelopeDecayIndex[0] = settingValue(SettingKey::EffectEnvelopeDecayIndex);
+  effectEnvelopeSustainLevel[0] = settingValue(SettingKey::EffectEnvelopeSustainLevel);
+  effectEnvelopeReleaseIndex[0] = settingValue(SettingKey::EffectEnvelopeReleaseIndex);
+  effectEnvelopeTarget[0] = settingValue(SettingKey::EffectEnvelopeTarget);
+  effectEnvelopeAmount[0] = settingValue(SettingKey::EffectEnvelopeAmount);
+  effectEnvelopeTarget[1] = settingValue(SettingKey::EffectEnvelope2Target);
+  effectEnvelopeAmount[1] = settingValue(SettingKey::EffectEnvelope2Amount);
+  effectEnvelopeAttackIndex[1] = settingValue(SettingKey::EffectEnvelope2AttackIndex);
+  effectEnvelopeHoldIndex[1] = settingValue(SettingKey::EffectEnvelope2HoldIndex);
+  effectEnvelopeDecayIndex[1] = settingValue(SettingKey::EffectEnvelope2DecayIndex);
+  effectEnvelopeSustainLevel[1] = settingValue(SettingKey::EffectEnvelope2SustainLevel);
+  effectEnvelopeReleaseIndex[1] = settingValue(SettingKey::EffectEnvelope2ReleaseIndex);
+  bootAnimationEnabled = settingEnabled(SettingKey::BootAnimationEnabled);
+  displayPlayedNotes = settingEnabled(SettingKey::DisplayPlayedNotes);
+  updateSynthVibratoParams();
   updateEnvelopeParamsFromSettings();
+  updateEffectEnvelopeParamsFromSettings();
   updateArpeggiatorTiming();
 
   // Now *apply* them to the engine/UI:
-  showOnlyValidLayoutChoices();   // for tuning/layout
-  showOnlyValidScaleChoices();
-  showOnlyValidKeyChoices();
-  updateLayoutAndRotate();
-  refreshMidiRouting();
-  resetSynthFreqs();
+  refreshMenuChoicesForCurrentTuning();
+  rebuildRuntimeStateFromCurrentSelection();
   if (programChange > 0) {
     sendProgramChange();
   }
@@ -6686,6 +9455,28 @@ void syncSettingsToRuntime() {
 void menuHome() {
   menu.setMenuPageCurrent(menuPageMain);
   menu.drawMenu();
+}
+
+void menuSynthOptionsHome() {
+  menu.setMenuPageCurrent(menuPageSynth);
+  menu.drawMenu();
+}
+
+void refreshMenuChoicesForCurrentTuning() {
+  showOnlyValidLayoutChoices();
+  showOnlyValidScaleChoices();
+  showOnlyValidKeyChoices();
+}
+
+void rebuildRuntimeStateFromCurrentSelection() {
+  updateLayoutAndRotate();
+  refreshMidiRouting();
+  resetSynthFreqs();
+}
+
+void addPreviewMenuItem(GEMPage& page, GEMItem& item, void (*previewCallback)(GEMPreviewCallbackData)) {
+  page.addMenuItem(item);
+  item.setPreviewCallback(previewCallback);
 }
 
 void rebootToBootloader() {
@@ -6831,12 +9622,8 @@ void changeTuning(GEMCallbackData callbackData) {
     settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
     markSettingsDirty();                                  // auto‑save (after debounce)
     // 3) Apply all values
-    showOnlyValidLayoutChoices();                         // change list of choices in GEM Menu
-    showOnlyValidScaleChoices();                          // change list of choices in GEM Menu
-    showOnlyValidKeyChoices();                            // change list of choices in GEM Menu
-    updateLayoutAndRotate();                              // apply changes above
-    refreshMidiRouting();                                 // clear out MIDI queue and rebuild mapping
-    resetSynthFreqs();
+    refreshMenuChoicesForCurrentTuning();                 // change list of choices in GEM Menu
+    rebuildRuntimeStateFromCurrentSelection();
   }
   menuHome();
 }
@@ -6913,58 +9700,93 @@ void createProfileMenuItems() {
   }
 }
 
-void setupMenu() {
-  menu.setSplashDelay(0);
-  menu.init();
-  menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
-  /*
-      addMenuItem procedure adds that GEM object to the given page.
-      The menu items appear in the order they are added.
-      To change the order of the menu, change the order in the code below.
-    */
+void createSynthPresetMenuItems() {
+  for (uint8_t i = 0; i < SYNTH_PRESET_COUNT; ++i) {
+    snprintf(saveSynthPresetLabels[i], sizeof(saveSynthPresetLabels[i]), "Slot %u", static_cast<unsigned>(i + 1));
+    menuItemSaveSynthPreset[i] = new GEMItem(saveSynthPresetLabels[i], saveSynthPresetMenu, i);
+    menuPageSynthPresetSave.addMenuItem(*menuItemSaveSynthPreset[i]);
+  }
+  for (uint8_t i = 0; i < SYNTH_PRESET_COUNT; ++i) {
+    snprintf(loadSynthPresetLabels[i], sizeof(loadSynthPresetLabels[i]), "Slot %u", static_cast<unsigned>(i + 1));
+    menuItemLoadSynthPreset[i] = new GEMItem(loadSynthPresetLabels[i], loadSynthPresetMenu, i);
+    menuPageSynthPresetLoad.addMenuItem(*menuItemLoadSynthPreset[i]);
+  }
+}
+
+void setupTuningMenuPage() {
   menuPageMain.addMenuItem(menuGotoTuning);
   createTuningMenuItems();
   menuPageTuning.addMenuItem(menuItemToggleDynamicJI);
   menuPageTuning.addMenuItem(menuItemToggleJI_BPM);
   menuPageTuning.addMenuItem(menuItemSetJI_BPM);
   menuPageTuning.addMenuItem(menuItemSetJI_BPM_Multiplier);
+}
+
+void setupLayoutMenuPage() {
   menuPageMain.addMenuItem(menuGotoLayout);
   createLayoutMenuItems();
   menuPageLayout.addMenuItem(mirrorLeftRightGEMItem);
   menuPageLayout.addMenuItem(mirrorUpDownGEMItem);
   menuPageLayout.addMenuItem(menuItemSelectLayoutRotation);
+}
+
+void setupScalesMenuPage() {
   menuPageMain.addMenuItem(menuGotoScales);
   createKeyMenuItems();
   menuPageScales.addMenuItem(menuItemScaleLock);
   createScaleMenuItems();
+}
+
+void setupColorsMenuPage() {
   menuPageMain.addMenuItem(menuGotoColors);
-  menuPageColors.addMenuItem(menuItemColor);
-  menuItemColor.setPreviewCallback(previewColor);
-  menuPageColors.addMenuItem(menuItemBright);
-  menuItemBright.setPreviewCallback(previewBright);
-  menuPageColors.addMenuItem(menuItemAnimate);
-  menuItemAnimate.setPreviewCallback(previewAnimate);
-  menuPageColors.addMenuItem(menuItemRestLedLevel);
-  menuItemRestLedLevel.setPreviewCallback(previewRestLedLevel);
-  menuPageColors.addMenuItem(menuItemDimLedLevel);
-  menuItemDimLedLevel.setPreviewCallback(previewDimLedLevel);
+  addPreviewMenuItem(menuPageColors, menuItemColor, previewColor);
+  addPreviewMenuItem(menuPageColors, menuItemBright, previewBright);
+  addPreviewMenuItem(menuPageColors, menuItemLedCurrentLimit, previewLedCurrentLimit);
+  addPreviewMenuItem(menuPageColors, menuItemAnimate, previewAnimate);
+  addPreviewMenuItem(menuPageColors, menuItemRestLedLevel, previewRestLedLevel);
+  addPreviewMenuItem(menuPageColors, menuItemDimLedLevel, previewDimLedLevel);
+}
+
+void setupSynthMenuPage() {
   menuPageMain.addMenuItem(menuGotoSynth);
   menuPageSynth.addMenuItem(menuItemPlayback);
   // menuItemAudioD added here for hardware V1.2
-  menuPageSynth.addMenuItem(menuItemWaveform);
-  menuItemWaveform.setPreviewCallback(previewWaveform);
-  menuPageSynth.addMenuItem(menuItemEnvelopeAttack);
-  menuItemEnvelopeAttack.setPreviewCallback(previewEnvelopeAttack);
-  menuPageSynth.addMenuItem(menuItemEnvelopeDecay);
-  menuItemEnvelopeDecay.setPreviewCallback(previewEnvelopeDecay);
-  menuPageSynth.addMenuItem(menuItemEnvelopeSustain);
-  menuItemEnvelopeSustain.setPreviewCallback(previewEnvelopeSustain);
-  menuPageSynth.addMenuItem(menuItemEnvelopeRelease);
-  menuItemEnvelopeRelease.setPreviewCallback(previewEnvelopeRelease);
-  menuPageSynth.addMenuItem(menuItemArpSpeed);
-  menuItemArpSpeed.setPreviewCallback(previewArpSpeed);
-  menuPageSynth.addMenuItem(menuItemSynthBPM);
-  menuItemSynthBPM.setPreviewCallback(previewSynthBPM);
+  addPreviewMenuItem(menuPageSynth, menuItemWaveform, previewWaveform);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthModTarget, previewSynthModTarget);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthModAmount, previewSynthModAmount);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthVibratoSpeed, previewSynthVibratoSpeed);
+  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeAttack, previewEnvelopeAttack);
+  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeHold, previewEnvelopeHold);
+  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeDecay, previewEnvelopeDecay);
+  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeSustain, previewEnvelopeSustain);
+  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeRelease, previewEnvelopeRelease);
+  menuPageSynth.addMenuItem(menuGotoSynthFx1);
+  addPreviewMenuItem(menuPageSynthFx1, menuItemEffectEnvelopeTarget, previewEffectEnvelopeTarget);
+  addPreviewMenuItem(menuPageSynthFx1, menuItemEffectEnvelopeAmount, previewEffectEnvelopeAmount);
+  addPreviewMenuItem(menuPageSynthFx1, menuItemEffectEnvelopeAttack, previewEffectEnvelopeAttack);
+  addPreviewMenuItem(menuPageSynthFx1, menuItemEffectEnvelopeHold, previewEffectEnvelopeHold);
+  addPreviewMenuItem(menuPageSynthFx1, menuItemEffectEnvelopeDecay, previewEffectEnvelopeDecay);
+  addPreviewMenuItem(menuPageSynthFx1, menuItemEffectEnvelopeSustain, previewEffectEnvelopeSustain);
+  addPreviewMenuItem(menuPageSynthFx1, menuItemEffectEnvelopeRelease, previewEffectEnvelopeRelease);
+  menuPageSynth.addMenuItem(menuGotoSynthFx2);
+  addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Target, previewEffectEnvelope2Target);
+  addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Amount, previewEffectEnvelope2Amount);
+  addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Attack, previewEffectEnvelope2Attack);
+  addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Hold, previewEffectEnvelope2Hold);
+  addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Decay, previewEffectEnvelope2Decay);
+  addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Sustain, previewEffectEnvelope2Sustain);
+  addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Release, previewEffectEnvelope2Release);
+  addPreviewMenuItem(menuPageSynth, menuItemArpSpeed, previewArpSpeed);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthBPM, previewSynthBPM);
+  addPreviewMenuItem(menuPageSynth, menuItemMetronomeMode, previewMetronomeMode);
+  addPreviewMenuItem(menuPageSynth, menuItemMetronomeSignature, previewMetronomeSignature);
+  menuPageSynth.addMenuItem(menuGotoSynthPresetSave);
+  menuPageSynth.addMenuItem(menuGotoSynthPresetLoad);
+  createSynthPresetMenuItems();
+}
+
+void setupMidiMenuPage() {
   menuPageMain.addMenuItem(menuGotoMIDI);
   menuPageMIDI.addMenuItem(menuItemSelectMIDIChannel);
   menuPageMIDI.addMenuItem(menuItemSelectMPEMode);
@@ -6976,34 +9798,61 @@ void setupMenu() {
   menuPageMIDI.addMenuItem(menuItemSelectCC74value);
   menuPageMIDI.addMenuItem(menuItemRolandMT32);
   menuPageMIDI.addMenuItem(menuItemGeneralMidi);
+}
+
+void setupControlMenuPage() {
   menuPageMain.addMenuItem(menuGotoControl);
-  menuPageControl.addMenuItem(menuItemVelSpeed);
-  menuItemVelSpeed.setPreviewCallback(previewVelSpeed);
-  menuPageControl.addMenuItem(menuItemPBSpeed);
-  menuItemPBSpeed.setPreviewCallback(previewPBSpeed);
-  menuPageControl.addMenuItem(menuItemModSpeed);
-  menuItemModSpeed.setPreviewCallback(previewModSpeed);
-  menuPageControl.addMenuItem(menuItemPBBehave);
-  menuItemPBBehave.setPreviewCallback(previewPBBehave);
-  menuPageControl.addMenuItem(menuItemModBehave);
-  menuItemModBehave.setPreviewCallback(previewModBehave);
-  menuPageMain.addMenuItem(menuItemTransposeSteps);
-  menuItemTransposeSteps.setPreviewCallback(previewTranspose);
+  addPreviewMenuItem(menuPageControl, menuItemVelSpeed, previewVelSpeed);
+  addPreviewMenuItem(menuPageControl, menuItemPBSpeed, previewPBSpeed);
+  addPreviewMenuItem(menuPageControl, menuItemModSpeed, previewModSpeed);
+  addPreviewMenuItem(menuPageControl, menuItemPBBehave, previewPBBehave);
+  addPreviewMenuItem(menuPageControl, menuItemModBehave, previewModBehave);
+  addPreviewMenuItem(menuPageMain, menuItemTransposeSteps, previewTranspose);
+}
+
+void setupProfileMenuPages() {
   menuPageMain.addMenuItem(menuGotoSave);
   menuPageSave.addMenuItem(menuItemAutoSave);
   menuPageMain.addMenuItem(menuGotoLoad);
   createProfileMenuItems();
+}
+
+void setupAdvancedMenuPage() {
   menuPageMain.addMenuItem(menuGotoAdvanced);
   menuPageAdvanced.addMenuItem(menuItemVersion);
   menuPageAdvanced.addMenuItem(menuItemHardware);
   menuPageAdvanced.addMenuItem(menuItemRotary);
   menuPageAdvanced.addMenuItem(menuItemShiftColor);
   menuPageAdvanced.addMenuItem(menuItemDisplayPlayedNotes);
+  menuPageAdvanced.addMenuItem(menuItemBootAnimation);
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
   menuPageAdvanced.addMenuItem(menuItemDelegated);
   menuPageAdvanced.addMenuItem(menuItemDebug);
+  menuPageAdvanced.addMenuItem(menuItemISRProfile);
+  addPreviewMenuItem(menuPageAdvanced, menuItemLedTest, previewLedTest);
+}
+
+void setupMenu() {
+  initTransposeOptions();
+  menu.setSplashDelay(0);
+  menu.init();
+  menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
+  /*
+      addMenuItem procedure adds that GEM object to the given page.
+      The menu items appear in the order they are added.
+      To change the order of the menu, change the order in the code below.
+    */
+  setupTuningMenuPage();
+  setupLayoutMenuPage();
+  setupScalesMenuPage();
+  setupColorsMenuPage();
+  setupSynthMenuPage();
+  setupMidiMenuPage();
+  setupControlMenuPage();
+  setupProfileMenuPages();
+  setupAdvancedMenuPage();
 }
 void setupGFX() {
   u8g2.begin();                      // Menu and graphics setup
@@ -7030,10 +9879,7 @@ void screenSaver() {
     if (!screenSaverOn) {
       screenSaverOn = 1;
       u8g2.setContrast(CONTRAST_SCREENSAVER);
-      //if(globalBrightness == BRIGHT_OFF)
-      {
-        u8g2.clear();
-      }
+      u8g2.clear();
     }
   }
 }
@@ -7070,37 +9916,22 @@ void screenSaver() {
       5, 6, 7  CW  turn state 1, 2, 3
       8, 16    Completed turn CCW, CW
   */
-#define ROT_PIN_A 20
-#define ROT_PIN_B 21
-#define ROT_PIN_C 24
+constexpr byte ROT_PIN_A = 20;
+constexpr byte ROT_PIN_B = 21;
+constexpr byte ROT_PIN_C = 24;
 byte rotaryState = 0;
 const byte rotaryStateTable[8][4] = {
   { 0, 5, 1, 0 }, { 2, 0, 1, 0 }, { 2, 3, 1, 0 }, { 2, 3, 0, 8 }, { 0, 5, 1, 0 }, { 6, 5, 0, 0 }, { 6, 5, 7, 0 }, { 6, 0, 7, 16 }
 };
 byte storeRotaryTurn = 0;
-bool rotaryClicked = HIGH;
+bool rotaryButtonPressed = false;
 constexpr uint64_t ROTARY_PANIC_HOLD_MICROS = 2000000ULL;  // 2 seconds
 uint64_t rotaryPressStart = 0;
 bool rotaryPanicLatched = false;
 bool rotaryPanicSuppressClick = false;
 
-void readHexes() {
-  // Simplified button reading to reduce time it takes to read. Stil uses slower Arduino digitalRead and digitalWrite.
-  /* for (byte r = 0; r < ROWCOUNT; r++) {      // Iterate through each of the row pins on the multiplexing chip.
-    for (byte d = 0; d < 4; d++) {
-      digitalWrite(mPin[d], (r >> d) & 1);
-    }
-    busy_wait_us_32(12);
-    for (byte c = 0; c < COLCOUNT; c++) {    // Now iterate through each of the column pins that are connected to the current row pin.
-      byte p = cPin[c];                      // Hold the currently selected column pin in a variable.
-      byte i = c + (r * COLCOUNT);
-      bool didYouPressHex = (digitalRead(p) == LOW);  // hex is pressed if it returns LOW. else not pressed
-      h[i].interpBtnPress(didYouPressHex);
-      if (h[i].btnState == BTN_STATE_NEWPRESS) {
-        h[i].timePressed = runTime;          // log the time
-      }
-    }
-  } */
+void RAM_FUNC(readHexes)() {
+
   // Optimized button reading using SIO registers - much faster!
   for (byte r = 0; r < ROWCOUNT; r++) {       // Iterate through each row via the multiplexer.
     sio_hw->gpio_clr = multiplexerMask;       // Set all multiplexer pins to LOW.
@@ -7119,25 +9950,7 @@ void readHexes() {
       }
     }
   }
-  /* Old method.
-  for (byte c = 0; c < COLCOUNT; c++) {    // Iterate through each of the column pins.
-    byte p = cPin[c];                      // Hold the currently selected column pin in a variable.
-    pinMode(p, INPUT_PULLUP);              // Set that column pin to INPUT_PULLUP mode (+3.3V / HIGH).
-    delayMicroseconds(0);                  // delay to energize column and stabilize (may need adjustment)
-    for (byte r = 0; r < ROWCOUNT; r++) {  // Then iterate through each of the row pins on the multiplexing chip for the selected column.
-      for (byte d = 0; d < 4; d++) {
-        digitalWrite(mPin[d], (r >> d) & 1);  // Selected multiplexer channel is pulled to ground.
-      }
-      byte i = c + (r * COLCOUNT);
-      delayMicroseconds(14);                          // Delay to allow signal to settle and improve reliability (found this number by experimentation)
-      bool didYouPressHex = (digitalRead(p) == LOW);  // hex is pressed if it returns LOW. else not pressed
-      h[i].interpBtnPress(didYouPressHex);
-      if (h[i].btnState == BTN_STATE_NEWPRESS) {
-        h[i].timePressed = runTime;  // log the time
-      }
-    }
-    pinMode(p, INPUT);  // Set the selected column pin back to INPUT mode (0V / LOW).
-  }*/
+
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
@@ -7167,7 +9980,7 @@ void readHexes() {
     }
   }
 }
-void updateWheels() {
+void RAM_FUNC(updateWheels)() {
   if (delegatedControl) {
     return;
   }
@@ -7196,21 +10009,22 @@ void setupRotary() {
   pinMode(ROT_PIN_B, INPUT_PULLUP);
   pinMode(ROT_PIN_C, INPUT_PULLUP);
 }
-void readKnob() {
-  rotaryState = rotaryStateTable[rotaryState & 7][(digitalRead(ROT_PIN_B) << 1) | digitalRead(ROT_PIN_A)];
+void RAM_FUNC(readKnob)() {
+  byte encoderPhase = (digitalRead(ROT_PIN_B) << 1) | digitalRead(ROT_PIN_A);
+  rotaryState = rotaryStateTable[rotaryState & 7][encoderPhase];
   if (rotaryState & 24) {
     storeRotaryTurn = rotaryState;
   }
 }
 void dealWithRotary() {
-  bool temp = digitalRead(ROT_PIN_C);
-  bool justPressed = (rotaryClicked == HIGH && temp == LOW);
-  bool justReleased = (rotaryClicked == LOW && temp == HIGH);
+  bool buttonPressed = (digitalRead(ROT_PIN_C) == LOW);
+  bool justPressed = (!rotaryButtonPressed && buttonPressed);
+  bool justReleased = (rotaryButtonPressed && !buttonPressed);
 
   if (justPressed) {
     rotaryPressStart = runTime;
     rotaryPanicLatched = false;
-  } else if ((temp == LOW) && (rotaryPressStart != 0) && (!rotaryPanicLatched)) {
+  } else if (buttonPressed && (rotaryPressStart != 0) && (!rotaryPanicLatched)) {
     if ((runTime - rotaryPressStart) >= ROTARY_PANIC_HOLD_MICROS) {
       panicStopOutput();
       rotaryPanicLatched = true;
@@ -7218,36 +10032,31 @@ void dealWithRotary() {
     }
   }
 
-  bool suppressClick = rotaryPanicSuppressClick;
-
   if (menu.readyForKey()) {
-    if (justReleased) {
-      if (!suppressClick) {
+    if (justReleased && !rotaryPanicSuppressClick) {
       menu.registerKeyPress(GEM_KEY_OK);
       screenTime = 0;
     }
-    }
     if (storeRotaryTurn != 0) {
-      if (rotaryInvert == true) {
-        menu.registerKeyPress((storeRotaryTurn == 8) ? GEM_KEY_DOWN : GEM_KEY_UP);
-      } else {
-        menu.registerKeyPress((storeRotaryTurn == 8) ? GEM_KEY_UP : GEM_KEY_DOWN);
-      }
+      bool turnIsClockwise = (storeRotaryTurn == 8);
+      menu.registerKeyPress(rotaryInvert
+                              ? (turnIsClockwise ? GEM_KEY_DOWN : GEM_KEY_UP)
+                              : (turnIsClockwise ? GEM_KEY_UP : GEM_KEY_DOWN));
       storeRotaryTurn = 0;
       screenTime = 0;
     }
   }
 
-  if (justReleased || temp == HIGH) {
+  if (justReleased || !buttonPressed) {
     rotaryPressStart = 0;
     rotaryPanicLatched = false;
   }
 
-  if (rotaryPanicSuppressClick && temp == HIGH && rotaryClicked == HIGH) {
+  if (rotaryPanicSuppressClick && !buttonPressed && !rotaryButtonPressed) {
     rotaryPanicSuppressClick = false;
   }
 
-  rotaryClicked = temp;
+  rotaryButtonPressed = buttonPressed;
 }
 
 void setupHardware() {
@@ -7258,6 +10067,7 @@ void setupHardware() {
       audioMenuItemInserted = true;
     }
   }
+  syncAudioDestinationToRuntime();
 }
 
 // @mainLoop
@@ -7285,6 +10095,15 @@ void setup() {
 #endif
   irq_set_enabled(ALARM_IRQ, false);
   setupMIDI();
+  // Give the USB stack time to complete enumeration before any flash
+  // operations (which disable interrupts and starve the USB IRQ handler).
+  // Timeout after 2 s so the board still boots when no USB host is present.
+  {
+    unsigned long usbWaitStart = millis();
+    while (!TinyUSBDevice.mounted() && (millis() - usbWaitStart < 2000)) {
+      delay(1);
+    }
+  }
   setupFileSystem();
   Wire.setSDA(SDAPIN);
   Wire.setSCL(SCLPIN);
@@ -7292,6 +10111,7 @@ void setup() {
   setupGrid();
   detectHardwareVersion();
   load_settings();
+  load_synth_presets();
   setupLEDs();
   setupGFX();
   setupRotary();
@@ -7299,6 +10119,7 @@ void setup() {
   setupHardware();
   syncSettingsToRuntime();
   recomputePitchBendFactor();
+  runBootLedSelfCheck();
 }
 void loop() {        // run on first core
   timeTracker();     // Time tracking functions
@@ -7307,13 +10128,16 @@ void loop() {        // run on first core
   screenSaver();     // Reduces wear-and-tear on OLED panel
   readHexes();       // Read and store the digital button states of the scanning matrix
   arpeggiate();      // arpeggiate if synth mode allows it
+  runMetronome();    // metronome beep/flash modes share the synth tempo
   updateWheels();    // deal with the pitch/mod wheel
   processIncomingMIDI();  // respond to external MIDI input
   animateLEDs();     // deal with animations
-  lightUpLEDs();     // refresh LEDs
+  if (!shouldDeferMidiInLedRefresh()) {
+    lightUpLEDs();   // refresh LEDs
+  }
   dealWithRotary();  // deal with menu
   drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
-  checkAndAutoSave();// save settings
+  checkAndAutoSave();  // save settings
 }
 void setup1() {  // set up on second core
   setupSynth(PIEZO_PIN, PIEZO_SLICE);
