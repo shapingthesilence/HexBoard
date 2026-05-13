@@ -294,6 +294,12 @@ When active:
 
 The protocol is documented in `docs/delegated-control.md`. Keep it isolated from settings and user menu code unless the product decision changes.
 
+The planned preset-sync SysEx protocol is a separate draft documented in
+`docs/preset-sync-sysex.md`. It reserves its own command family and is intended
+for versioned profile transfer, future `/layouts.dat` user tuning/layout storage,
+scale color maps, explicit button maps, and named/foldered synth preset catalog
+sync.
+
 ## Played Note OLED Overlay
 
 `DisplayNotes` is a normal persisted Advanced-menu setting that is enabled by default. When enabled, MIDI note on/off updates mark a small OLED overlay dirty. `drawPlayedNotesOverlay()` runs from the main loop after menu input handling and renders up to `6` unique active notes.

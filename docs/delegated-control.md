@@ -48,6 +48,11 @@ All delegated-control SysEx messages use this outer form:
 F0 7D <command> <payload...> F7
 ```
 
+The planned preset-sync protocol is intentionally separate and reserves the
+family form `F0 7D 10 <protocol...> F7`; see `docs/preset-sync-sysex.md`.
+Delegated-control command bytes `0x01`, `0x02`, and `0x03` remain live-surface
+commands, not preset-sync messages.
+
 The command byte is one of:
 
 | Command | Name | Direction | Meaning |

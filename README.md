@@ -18,6 +18,7 @@ You can [order a HexBoard](https://shapingthesilence.com/) if you are interested
 - [Developer Guide](docs/developer-guide.md)
 - [Code Analysis](docs/code-analysis.md)
 - [Delegated Control Protocol](docs/delegated-control.md)
+- [Preset Sync SysEx Draft](docs/preset-sync-sysex.md)
 
 The user manual is for players and owners of the device. The MPE setup guide is for configuring DAWs, plugins, and synths for HexBoard's microtonal MIDI output. The developer guide is for people editing the firmware in this repository.
 
@@ -168,6 +169,7 @@ If you are jumping into the codebase, start with:
 - [Developer Guide](docs/developer-guide.md) for architecture, refresh paths, settings wiring, and risk areas
 - [Code Analysis](docs/code-analysis.md) for a deeper subsystem walkthrough
 - [Delegated Control Protocol](docs/delegated-control.md) for external host integration
+- [Preset Sync SysEx Draft](docs/preset-sync-sysex.md) for the planned versioned preset, tuning/layout, and synth-preset transfer protocol
 
 The most important source file is:
 
