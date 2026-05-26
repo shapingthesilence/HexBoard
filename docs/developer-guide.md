@@ -349,6 +349,11 @@ The sine wavetable now uses linear interpolation between adjacent `256`-entry
 table samples, reusing the low `8` bits of the existing `16`-bit phase
 accumulator. That is the first place to look if you want a cheap audio-quality
 improvement without increasing table size or changing the other waveforms.
+Imported MP single-cycle WAVs live as generated `256`-entry byte tables in
+`src/HexBoard.ino`. They are normalized to `0..255` and rotated so phase zero
+starts at the waveform low point, matching the built-in table-backed waves.
+Their waveform IDs are appended after the original IDs so existing saved
+profiles keep their current `Waveform` values.
 
 Pitch bend and square-wave modulation have synth-local smoothing separate from
 MIDI output. `setSynthFreq()` writes a target oscillator increment for held

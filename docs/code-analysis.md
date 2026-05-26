@@ -380,8 +380,8 @@ Key implementation facts:
   so pitch-bend wheel updates do not reset phase or jump instantly in the
   onboard synth.
 - `WAVEFORM_SINE` linearly interpolates between adjacent wavetable entries
-  using the low `8` bits of phase; `STRINGS` and `CLARINET` still use direct
-  table lookup.
+  using the low `8` bits of phase. `STRINGS`, `CLARINET`, and the imported MP
+  single-cycle waveforms still use direct table lookup.
 - `WAVEFORM_SQUARE` reads a synth-local smoothed modulation value for pulse
   width; external MIDI CC output still uses the command wheel's current value.
 - Envelope commands are shared through value arrays plus published/consumed sequence counters.
@@ -418,6 +418,10 @@ The current `SettingsHeader` contains:
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the hardware-specific calibrated table above.
 
 The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
+
+The `Waveform` setting remains one persisted byte. The imported MP single-cycle
+waveforms extend the valid value range without changing the settings layout, so
+`CURRENT_SETTINGS_VERSION` stays `11`.
 
 The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `Tone` remains the default wheel effect: it uses a wider pulse-width sweep for `Square`, a pronounced RAM-resident value curve for `Saw` that keeps the saw reset point fixed, and a stronger cheap RAM-resident phase warp for the other waveforms. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` raises each active voice increment up to about one octave at full positive depth and lowers it up to about one octave at full negative FX depth.
 

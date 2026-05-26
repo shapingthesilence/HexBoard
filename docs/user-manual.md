@@ -207,6 +207,10 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 - `Hybrid`: general-purpose default that changes character across pitch ranges
 - `Strings`: smoother, string-like color
 - `Clrinet`: reed-like, nasal color
+- `MP`, `BoxSaw`, `FriendSq`, `Glassy`, `Koolaid`, `Merv`, `mBellish`,
+  `Oval`, `PrettySh`, `Quick808`, `RichRpt`, `RoundTri`, `Stardew`,
+  `SyncTitn`, `WeirdWiz`, and `Woo`: imported MP single-cycle waveforms with
+  more specialized synth colors
 
 `Drive` adds soft saturation after the voices are mixed:
 
