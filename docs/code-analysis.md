@@ -382,6 +382,8 @@ Key implementation facts:
 - `WAVEFORM_SINE` linearly interpolates between adjacent wavetable entries
   using the low `8` bits of phase. `STRINGS`, `CLARINET`, and the imported MP
   single-cycle waveforms still use direct table lookup.
+- Imported MP single-cycle waveform tables are centered around byte value `128`
+  and rotated to start at an upward zero crossing.
 - `WAVEFORM_SQUARE` reads a synth-local smoothed modulation value for pulse
   width; external MIDI CC output still uses the command wheel's current value.
 - Envelope commands are shared through value arrays plus published/consumed sequence counters.
@@ -431,7 +433,7 @@ The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnv
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
-Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `3`, CRC32, and `8` fixed slots. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Version `1` preset files are accepted and have their saved envelope time indices remapped to the expanded time table; version `1` and `2` preset files remap legacy vibrato speed indices.
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `4`, CRC32, and `20` fixed slots. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. The load menu has a `Blank` item, and loading an unsaved slot applies the same blank synth patch. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, and version `1` and `2` files remap legacy vibrato speed indices before the file is rewritten as version `4`.
 
 The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 

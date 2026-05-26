@@ -207,9 +207,9 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 - `Hybrid`: general-purpose default that changes character across pitch ranges
 - `Strings`: smoother, string-like color
 - `Clrinet`: reed-like, nasal color
-- `MP`, `BoxSaw`, `FriendSq`, `Glassy`, `Koolaid`, `Merv`, `mBellish`,
-  `Oval`, `PrettySh`, `Quick808`, `RichRpt`, `RoundTri`, `Stardew`,
-  `SyncTitn`, `WeirdWiz`, and `Woo`: imported MP single-cycle waveforms with
+- `MP`, `BoxSaw`, `FrndSqr`, `Glassy`, `Koolaid`, `Merv`, `mBellsh`,
+  `Oval`, `PrttySh`, `Qck808`, `RichRpt`, `RndTri`, `Stardew`,
+  `SyncTtn`, `WrdWiz`, and `Woo`: imported MP single-cycle waveforms with
   more specialized synth colors
 
 `Drive` adds soft saturation after the voices are mixed:
@@ -267,11 +267,13 @@ played note and base tone as the FX envelope falls back to zero. Negative
 down as the envelope level rises. The default FX envelope times are `0 ms`, and
 default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 
-`Save Preset` and `Load Preset` open synth-only preset slot lists. Presets are
-stored separately from the main settings file and do not remember which preset
-was last loaded. Saving or loading a preset returns to `Synth Options`. Loading a
-preset changes the current synth parameters, which can still be auto-saved by
-the normal settings system.
+`Save Preset` and `Load Preset` open synth-only preset slot lists with `20`
+slots. Presets are stored separately from the main settings file and do not
+remember which preset was last loaded. `Load Preset` also includes `Blank`, and
+loading any empty slot applies the same blank synth patch instead of leaving the
+previous sound in place. Saving or loading a preset returns to `Synth Options`.
+Loading a preset changes the current synth parameters, which can still be
+auto-saved by the normal settings system.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial
 peak longer before decay. Low `Sustain` makes a note fade away even while you

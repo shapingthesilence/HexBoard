@@ -281,7 +281,7 @@ Important implementation details:
 - the amp envelope has `EnvelopeAttackIndex`, `EnvelopeHoldIndex`, `EnvelopeDecayIndex`, `EnvelopeSustainLevel`, and `EnvelopeReleaseIndex`
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
-- synth preset slots are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `3`; presets save synth sound parameters only and do not persist a current preset id
+- synth preset slots are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `4`; there are `20` fixed slots; presets save synth sound parameters only and do not persist a current preset id; version `1` through `3` files are migrated from the old `8`-slot layout
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
@@ -350,10 +350,9 @@ table samples, reusing the low `8` bits of the existing `16`-bit phase
 accumulator. That is the first place to look if you want a cheap audio-quality
 improvement without increasing table size or changing the other waveforms.
 Imported MP single-cycle WAVs live as generated `256`-entry byte tables in
-`src/HexBoard.ino`. They are normalized to `0..255` and rotated so phase zero
-starts at the waveform low point, matching the built-in table-backed waves.
-Their waveform IDs are appended after the original IDs so existing saved
-profiles keep their current `Waveform` values.
+`src/HexBoard.ino`. They are centered around `128` and rotated so phase zero
+starts at an upward zero crossing. Their waveform IDs are appended after the
+original IDs so existing saved profiles keep their current `Waveform` values.
 
 Pitch bend and square-wave modulation have synth-local smoothing separate from
 MIDI output. `setSynthFreq()` writes a target oscillator increment for held
