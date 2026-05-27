@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import {
-  createSynthPresetCatalog,
   createSynthPresetObject,
   deterministicObjectId,
-  sampleSynthCatalog,
-  type SynthPresetValues
+  objectIdFromHex,
+  objectIdToHex,
+  type SynthPresetValues,
+  type SynthSettingName
 } from "../catalogs/index.ts";
 import { MockMidiTransport } from "../midi/mockTransport.ts";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
@@ -16,45 +17,59 @@ interface SynthPresetLibraryProps {
   transport: MidiTransport;
 }
 
+type LibrarySpace = "computer" | "hexboard";
+
+const synthValueKeys = [
+  "PlaybackMode",
+  "Waveform",
+  "SynthDrive",
+  "SynthModTarget",
+  "SynthModAmount",
+  "SynthVibratoSpeed",
+  "EnvelopeAttackIndex",
+  "EnvelopeHoldIndex",
+  "EnvelopeDecayIndex",
+  "EnvelopeSustainLevel",
+  "EnvelopeReleaseIndex",
+  "EffectEnvelopeTarget",
+  "EffectEnvelopeAmount",
+  "EffectEnvelopeAttackIndex",
+  "EffectEnvelopeHoldIndex",
+  "EffectEnvelopeDecayIndex",
+  "EffectEnvelopeSustainLevel",
+  "EffectEnvelopeReleaseIndex",
+  "EffectEnvelope2Target",
+  "EffectEnvelope2Amount",
+  "EffectEnvelope2AttackIndex",
+  "EffectEnvelope2HoldIndex",
+  "EffectEnvelope2DecayIndex",
+  "EffectEnvelope2SustainLevel",
+  "EffectEnvelope2ReleaseIndex"
+] as const satisfies readonly SynthSettingName[];
+
+type EditableSynthValueKey = (typeof synthValueKeys)[number];
+type EditableSynthValues = Record<EditableSynthValueKey, number>;
+
 interface EditableSynthPreset {
+  objectIdHex: string;
   name: string;
   folderPath: string;
-  category: string;
   favorite: boolean;
-  values: Required<Pick<
-    SynthPresetValues,
-    | "PlaybackMode"
-    | "Waveform"
-    | "SynthDrive"
-    | "SynthModTarget"
-    | "SynthModAmount"
-    | "SynthVibratoSpeed"
-    | "EnvelopeAttackIndex"
-    | "EnvelopeHoldIndex"
-    | "EnvelopeDecayIndex"
-    | "EnvelopeSustainLevel"
-    | "EnvelopeReleaseIndex"
-    | "EffectEnvelopeTarget"
-    | "EffectEnvelopeAmount"
-    | "EffectEnvelopeAttackIndex"
-    | "EffectEnvelopeHoldIndex"
-    | "EffectEnvelopeDecayIndex"
-    | "EffectEnvelopeSustainLevel"
-    | "EffectEnvelopeReleaseIndex"
-    | "EffectEnvelope2Target"
-    | "EffectEnvelope2Amount"
-    | "EffectEnvelope2AttackIndex"
-    | "EffectEnvelope2HoldIndex"
-    | "EffectEnvelope2DecayIndex"
-    | "EffectEnvelope2SustainLevel"
-    | "EffectEnvelope2ReleaseIndex"
-  >>;
+  values: EditableSynthValues;
 }
 
+interface DraggedPreset {
+  space: LibrarySpace;
+  objectIdHex: string;
+}
+
+const computerLibraryStorageKey = "hexboard.synthPresetComputerLibrary.v1";
+const presetFileFormat = "hexboard.synthPreset.v1";
+
 const defaultPreset: EditableSynthPreset = {
+  objectIdHex: objectIdToHex(deterministicObjectId("Soft String Pad")),
   name: "Soft String Pad",
   folderPath: "Pads/Warm",
-  category: "Pad",
   favorite: true,
   values: {
     PlaybackMode: 3,
@@ -84,6 +99,36 @@ const defaultPreset: EditableSynthPreset = {
     EffectEnvelope2ReleaseIndex: 0
   }
 };
+
+const initialComputerPresets: EditableSynthPreset[] = [
+  defaultPreset,
+  {
+    objectIdHex: objectIdToHex(deterministicObjectId("Bright Mono Lead")),
+    name: "Bright Mono Lead",
+    folderPath: "Leads",
+    favorite: false,
+    values: {
+      ...defaultPreset.values,
+      PlaybackMode: 1,
+      Waveform: 9,
+      SynthDrive: 2,
+      SynthModTarget: 2,
+      SynthModAmount: 100,
+      SynthVibratoSpeed: 4,
+      EnvelopeAttackIndex: 0,
+      EnvelopeHoldIndex: 0,
+      EnvelopeDecayIndex: 4,
+      EnvelopeSustainLevel: 110,
+      EnvelopeReleaseIndex: 5,
+      EffectEnvelopeTarget: 0,
+      EffectEnvelopeAmount: 127,
+      EffectEnvelope2Target: 0,
+      EffectEnvelope2Amount: 127
+    }
+  }
+];
+
+const defaultFolders = ["Unfiled", "Pads/Warm", "Leads", "FX/Animated"];
 
 const playbackOptions = [
   { label: "Off", value: 0 },
@@ -154,11 +199,44 @@ const envelopeTimeOptions = [
   "4 s"
 ].map((label, value) => ({ label, value }));
 
-function clampByte(value: number): number {
+const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]> = {
+  PlaybackMode: [0, 3],
+  Waveform: [0, 26],
+  SynthDrive: [0, 3],
+  SynthModTarget: [0, 2],
+  SynthModAmount: [0, 127],
+  SynthVibratoSpeed: [0, 11],
+  EnvelopeAttackIndex: [0, 19],
+  EnvelopeHoldIndex: [0, 19],
+  EnvelopeDecayIndex: [0, 19],
+  EnvelopeSustainLevel: [0, 127],
+  EnvelopeReleaseIndex: [0, 19],
+  EffectEnvelopeTarget: [0, 2],
+  EffectEnvelopeAmount: [0, 254],
+  EffectEnvelopeAttackIndex: [0, 19],
+  EffectEnvelopeHoldIndex: [0, 19],
+  EffectEnvelopeDecayIndex: [0, 19],
+  EffectEnvelopeSustainLevel: [0, 127],
+  EffectEnvelopeReleaseIndex: [0, 19],
+  EffectEnvelope2Target: [0, 2],
+  EffectEnvelope2Amount: [0, 254],
+  EffectEnvelope2AttackIndex: [0, 19],
+  EffectEnvelope2HoldIndex: [0, 19],
+  EffectEnvelope2DecayIndex: [0, 19],
+  EffectEnvelope2SustainLevel: [0, 127],
+  EffectEnvelope2ReleaseIndex: [0, 19]
+};
+
+function clampNumber(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) {
-    return 0;
+    return min;
   }
-  return Math.max(0, Math.min(255, Math.round(value)));
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function clampSynthValue(key: EditableSynthValueKey, value: number): number {
+  const [min, max] = synthValueBounds[key];
+  return clampNumber(value, min, max);
 }
 
 function clampEnvelopeTimeIndex(value: number): number {
@@ -185,44 +263,167 @@ function fxAmountByteToPercent(value: number): number {
 
 function fxAmountPercentToByte(value: number): number {
   const clamped = Math.max(-100, Math.min(100, Math.round(value)));
-  if (clamped === 0) {
-    return 127;
-  }
-  if (clamped > 0) {
-    return Math.round(127 + (clamped / 100) * 127);
-  }
   return Math.round(127 + (clamped / 100) * 127);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeObjectIdHex(value: unknown, seed: string): string {
+  if (typeof value === "string") {
+    const normalized = value.replace(/[^0-9a-f]/gi, "").toLowerCase();
+    if (normalized.length === 32) {
+      return normalized;
+    }
+  }
+  return objectIdToHex(deterministicObjectId(seed));
+}
+
+function clonePreset(preset: EditableSynthPreset): EditableSynthPreset {
+  return {
+    ...preset,
+    values: { ...preset.values }
+  };
+}
+
+function comparePresets(left: EditableSynthPreset, right: EditableSynthPreset): number {
+  return `${left.folderPath}/${left.name}`.localeCompare(`${right.folderPath}/${right.name}`);
+}
+
+function upsertPreset(presets: EditableSynthPreset[], preset: EditableSynthPreset): EditableSynthPreset[] {
+  const nextPreset = clonePreset(preset);
+  const index = presets.findIndex((candidate) => candidate.objectIdHex === nextPreset.objectIdHex);
+  if (index === -1) {
+    return [...presets, nextPreset].sort(comparePresets);
+  }
+  const next = [...presets];
+  next[index] = nextPreset;
+  return next.sort(comparePresets);
+}
+
+function removePreset(presets: EditableSynthPreset[], objectIdHex: string): EditableSynthPreset[] {
+  return presets.filter((preset) => preset.objectIdHex !== objectIdHex);
+}
+
+function encodeEditablePreset(preset: EditableSynthPreset) {
+  return createSynthPresetObject({
+    objectId: objectIdFromHex(preset.objectIdHex),
+    name: preset.name.trim() || "Untitled",
+    folderPath: preset.folderPath.trim() || "Unfiled",
+    favorite: preset.favorite,
+    values: preset.values
+  });
+}
+
+function exportPreset(preset: EditableSynthPreset) {
+  return {
+    objectId: preset.objectIdHex,
+    name: preset.name,
+    folderPath: preset.folderPath,
+    favorite: preset.favorite,
+    values: preset.values satisfies SynthPresetValues
+  };
+}
+
+function presetFromUnknown(value: unknown): EditableSynthPreset {
+  const source = isRecord(value) && value.format === presetFileFormat ? value.preset : value;
+  if (!isRecord(source)) {
+    throw new Error("Preset file does not contain a synth preset object");
+  }
+
+  const name = typeof source.name === "string" && source.name.trim() ? source.name.trim() : "Imported Preset";
+  const folderPath = typeof source.folderPath === "string" && source.folderPath.trim() ? source.folderPath.trim() : "Imported";
+  const importedValues = isRecord(source.values) ? source.values : {};
+  const values = { ...defaultPreset.values };
+
+  for (const key of synthValueKeys) {
+    const rawValue = importedValues[key];
+    if (typeof rawValue === "number") {
+      values[key] = clampSynthValue(key, rawValue);
+    }
+  }
+
+  return {
+    objectIdHex: normalizeObjectIdHex(source.objectId, `synth:${folderPath}:${name}:${Date.now()}`),
+    name,
+    folderPath,
+    favorite: source.favorite === true,
+    values
+  };
+}
+
+function loadComputerPresets(): EditableSynthPreset[] {
+  if (typeof window === "undefined") {
+    return initialComputerPresets.map(clonePreset);
+  }
+
+  try {
+    const stored = window.localStorage.getItem(computerLibraryStorageKey);
+    const parsed = stored ? JSON.parse(stored) : null;
+    if (Array.isArray(parsed)) {
+      const presets = parsed.map(presetFromUnknown);
+      if (presets.length > 0) {
+        return presets.sort(comparePresets);
+      }
+    }
+  } catch {
+    window.localStorage.removeItem(computerLibraryStorageKey);
+  }
+
+  return initialComputerPresets.map(clonePreset);
+}
+
+function saveComputerPresets(presets: EditableSynthPreset[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(computerLibraryStorageKey, JSON.stringify(presets.map(exportPreset)));
+}
+
+function safeFileName(value: string): string {
+  const sanitized = value.replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "");
+  return sanitized || "hexboard-synth-preset";
+}
+
+function librarySpaceLabel(space: LibrarySpace): string {
+  return space === "computer" ? "Computer Library" : "HexBoard Library";
+}
+
 export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
-  const [preset, setPreset] = useState<EditableSynthPreset>(defaultPreset);
-  const [folders, setFolders] = useState(() => Array.from(new Set(["Pads/Warm", "Leads", ...sampleSynthCatalog.folders])).sort());
+  const [computerPresets, setComputerPresets] = useState(loadComputerPresets);
+  const [hexboardPresets, setHexboardPresets] = useState<EditableSynthPreset[]>([]);
+  const [preset, setPreset] = useState<EditableSynthPreset>(() => clonePreset(defaultPreset));
+  const [editingSource, setEditingSource] = useState<LibrarySpace>("computer");
+  const [customFolders, setCustomFolders] = useState(defaultFolders);
   const [newFolder, setNewFolder] = useState("");
   const [autoSend, setAutoSend] = useState(true);
   const [syncStatus, setSyncStatus] = useState("Ready");
   const [lastFrameCount, setLastFrameCount] = useState(0);
+  const [draggedPreset, setDraggedPreset] = useState<DraggedPreset | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const firstRender = useRef(true);
+  const skipNextAutoSend = useRef(false);
 
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
-  const draftPreset = useMemo(
+  const allFolders = useMemo(
     () =>
-      createSynthPresetObject({
-        objectId: deterministicObjectId(`synth:${preset.folderPath}:${preset.name}`),
-        name: preset.name.trim() || "Untitled",
-        folderPath: preset.folderPath.trim() || "Unfiled",
-        category: preset.category.trim() || undefined,
-        favorite: preset.favorite,
-        values: preset.values
-      }),
-    [preset]
+      Array.from(
+        new Set([
+          ...defaultFolders,
+          ...customFolders,
+          ...computerPresets.map((candidate) => candidate.folderPath),
+          ...hexboardPresets.map((candidate) => candidate.folderPath),
+          preset.folderPath
+        ].filter(Boolean))
+      ).sort((left, right) => left.localeCompare(right)),
+    [computerPresets, customFolders, hexboardPresets, preset.folderPath]
   );
+  const draftPreset = useMemo(() => encodeEditablePreset(preset), [preset]);
 
-  const catalog = useMemo(
-    () => createSynthPresetCatalog([...sampleSynthCatalog.presets, draftPreset]),
-    [draftPreset]
-  );
-
-  const visiblePresets = catalog.presets.filter((candidate) => candidate.folderPath === preset.folderPath);
+  useEffect(() => {
+    saveComputerPresets(computerPresets);
+  }, [computerPresets]);
 
   useEffect(() => {
     if (!autoSend) {
@@ -230,6 +431,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
     if (firstRender.current) {
       firstRender.current = false;
+      return;
+    }
+    if (skipNextAutoSend.current) {
+      skipNextAutoSend.current = false;
       return;
     }
 
@@ -240,12 +445,12 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     return () => window.clearTimeout(timeout);
   }, [autoSend, draftPreset]);
 
-  function updateValue(key: keyof EditableSynthPreset["values"], value: number) {
+  function updateValue(key: EditableSynthValueKey, value: number) {
     setPreset((current) => ({
       ...current,
       values: {
         ...current.values,
-        [key]: clampByte(value)
+        [key]: clampSynthValue(key, value)
       }
     }));
   }
@@ -255,9 +460,35 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     if (!folder) {
       return;
     }
-    setFolders((current) => Array.from(new Set([...current, folder])).sort());
+    setCustomFolders((current) => Array.from(new Set([...current, folder])).sort());
     setPreset((current) => ({ ...current, folderPath: folder }));
     setNewFolder("");
+  }
+
+  function editPreset(source: LibrarySpace, nextPreset: EditableSynthPreset) {
+    skipNextAutoSend.current = true;
+    setPreset(clonePreset(nextPreset));
+    setEditingSource(source);
+    setSyncStatus(`Editing ${nextPreset.name} from ${librarySpaceLabel(source)}`);
+  }
+
+  function findPreset(dragged: DraggedPreset): EditableSynthPreset | undefined {
+    const presets = dragged.space === "computer" ? computerPresets : hexboardPresets;
+    return presets.find((candidate) => candidate.objectIdHex === dragged.objectIdHex);
+  }
+
+  function saveToComputer(nextPreset = preset) {
+    const normalized = {
+      ...clonePreset(nextPreset),
+      name: nextPreset.name.trim() || "Untitled",
+      folderPath: nextPreset.folderPath.trim() || "Unfiled"
+    };
+    setComputerPresets((current) => upsertPreset(current, normalized));
+    setCustomFolders((current) => Array.from(new Set([...current, normalized.folderPath])).sort());
+    skipNextAutoSend.current = true;
+    setPreset(clonePreset(normalized));
+    setEditingSource("computer");
+    setSyncStatus(`Saved ${normalized.name} to Computer Library`);
   }
 
   async function sendPreview(prefix = "Sent") {
@@ -270,33 +501,144 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
   }
 
-  async function savePreset() {
+  async function uploadToHexBoard(nextPreset = preset, prefix = "Uploaded") {
+    const normalized = {
+      ...clonePreset(nextPreset),
+      name: nextPreset.name.trim() || "Untitled",
+      folderPath: nextPreset.folderPath.trim() || "Unfiled"
+    };
     try {
-      const frames = await client.sendSynthPresetSave(draftPreset);
+      const frames = await client.sendSynthPresetSave(encodeEditablePreset(normalized));
       setLastFrameCount(frames.length);
-      setSyncStatus(`Save sync sent ${frames.length} frame${frames.length === 1 ? "" : "s"} to ${transport.label}`);
+      setHexboardPresets((current) => upsertPreset(current, normalized));
+      setCustomFolders((current) => Array.from(new Set([...current, normalized.folderPath])).sort());
+      skipNextAutoSend.current = true;
+      setPreset(clonePreset(normalized));
+      setEditingSource("hexboard");
+      setSyncStatus(`${prefix} ${normalized.name} to HexBoard Library with ${frames.length} frame${frames.length === 1 ? "" : "s"}`);
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to save synth preset");
     }
   }
 
+  function downloadFromHexBoard(nextPreset: EditableSynthPreset) {
+    setComputerPresets((current) => upsertPreset(current, nextPreset));
+    setCustomFolders((current) => Array.from(new Set([...current, nextPreset.folderPath])).sort());
+    skipNextAutoSend.current = true;
+    setPreset(clonePreset(nextPreset));
+    setEditingSource("computer");
+    setSyncStatus(`Downloaded ${nextPreset.name} to Computer Library`);
+  }
+
+  function erasePreset(space: LibrarySpace, erasedPreset: EditableSynthPreset) {
+    if (space === "computer") {
+      setComputerPresets((current) => removePreset(current, erasedPreset.objectIdHex));
+      setSyncStatus(`Erased ${erasedPreset.name} from Computer Library`);
+      return;
+    }
+
+    setHexboardPresets((current) => removePreset(current, erasedPreset.objectIdHex));
+    setSyncStatus(`Erased ${erasedPreset.name} from HexBoard Library`);
+  }
+
+  function downloadPresetFile(nextPreset: EditableSynthPreset) {
+    const blob = new Blob(
+      [
+        JSON.stringify(
+          {
+            format: presetFileFormat,
+            preset: exportPreset(nextPreset)
+          },
+          null,
+          2
+        )
+      ],
+      { type: "application/json" }
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${safeFileName(`${nextPreset.folderPath}-${nextPreset.name}`)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setSyncStatus(`Exported ${nextPreset.name} as a preset file`);
+  }
+
+  async function importPresetFile(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const imported = presetFromUnknown(JSON.parse(await file.text()));
+      setComputerPresets((current) => upsertPreset(current, imported));
+      setCustomFolders((current) => Array.from(new Set([...current, imported.folderPath])).sort());
+      skipNextAutoSend.current = true;
+      setPreset(clonePreset(imported));
+      setEditingSource("computer");
+      setSyncStatus(`Imported ${imported.name} into Computer Library`);
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Failed to import preset file");
+    } finally {
+      input.value = "";
+    }
+  }
+
+  function startDrag(space: LibrarySpace, objectIdHex: string, event: DragEvent<HTMLLIElement>) {
+    setDraggedPreset({ space, objectIdHex });
+    event.dataTransfer.effectAllowed = "copyMove";
+    event.dataTransfer.setData("text/plain", `${space}:${objectIdHex}`);
+  }
+
+  function allowDrop(event: DragEvent<HTMLElement>) {
+    if (!draggedPreset) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = draggedPreset.space === "hexboard" ? "copy" : "move";
+  }
+
+  function dropPreset(targetSpace: LibrarySpace, folderPath?: string) {
+    if (!draggedPreset) {
+      return;
+    }
+
+    const sourcePreset = findPreset(draggedPreset);
+    setDraggedPreset(null);
+    if (!sourcePreset) {
+      return;
+    }
+
+    const nextPreset = {
+      ...clonePreset(sourcePreset),
+      folderPath: folderPath ?? sourcePreset.folderPath
+    };
+
+    if (targetSpace === "computer") {
+      setComputerPresets((current) => upsertPreset(current, nextPreset));
+      skipNextAutoSend.current = true;
+      setPreset(clonePreset(nextPreset));
+      setEditingSource("computer");
+      setSyncStatus(`${draggedPreset.space === "hexboard" ? "Downloaded" : "Moved"} ${nextPreset.name} to ${nextPreset.folderPath}`);
+      return;
+    }
+
+    void uploadToHexBoard(nextPreset, draggedPreset.space === "computer" ? "Uploaded" : "Moved");
+  }
+
   return (
     <section className="workspace synthEditor">
       <aside className="panel stack">
-        <h2>Synth Library</h2>
-        <label className="field">
-          <span>Folder</span>
-          <select
-            value={preset.folderPath}
-            onChange={(event) => setPreset((current) => ({ ...current, folderPath: event.target.value }))}
-          >
-            {folders.map((folder) => (
-              <option key={folder} value={folder}>
-                {folder}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="row between">
+          <h2>Synth Library</h2>
+          <button type="button" onClick={() => fileInputRef.current?.click()}>
+            Import File
+          </button>
+        </div>
+        <input ref={fileInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" onChange={(event) => void importPresetFile(event)} />
+
         <div className="row">
           <input
             aria-label="New folder"
@@ -308,25 +650,53 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             Add
           </button>
         </div>
-        <ul className="list">
-          {folders.map((folder) => (
-            <li className="listItem" key={folder}>
-              <button
-                className={folder === preset.folderPath ? "primary" : ""}
-                type="button"
-                onClick={() => setPreset((current) => ({ ...current, folderPath: folder }))}
-              >
-                {folder}
-              </button>
-              <span>{catalog.presets.filter((candidate) => candidate.folderPath === folder).length}</span>
-            </li>
-          ))}
-        </ul>
+
+        <div className="librarySpaces">
+          <LibrarySpacePanel
+            title="Computer Library"
+            subtitle="Browser-saved presets and imported files"
+            space="computer"
+            presets={computerPresets}
+            folders={allFolders}
+            selectedFolder={preset.folderPath}
+            draggedPreset={draggedPreset}
+            onAllowDrop={allowDrop}
+            onDrop={dropPreset}
+            onDragStart={startDrag}
+            onDragEnd={() => setDraggedPreset(null)}
+            onEdit={editPreset}
+            onUpload={(item) => void uploadToHexBoard(item)}
+            onDownload={downloadFromHexBoard}
+            onExport={downloadPresetFile}
+            onErase={erasePreset}
+          />
+          <LibrarySpacePanel
+            title="HexBoard Library"
+            subtitle="Device presets staged through SysEx"
+            space="hexboard"
+            presets={hexboardPresets}
+            folders={allFolders}
+            selectedFolder={preset.folderPath}
+            draggedPreset={draggedPreset}
+            onAllowDrop={allowDrop}
+            onDrop={dropPreset}
+            onDragStart={startDrag}
+            onDragEnd={() => setDraggedPreset(null)}
+            onEdit={editPreset}
+            onUpload={(item) => void uploadToHexBoard(item)}
+            onDownload={downloadFromHexBoard}
+            onExport={downloadPresetFile}
+            onErase={erasePreset}
+          />
+        </div>
       </aside>
 
       <div className="panel stack">
         <div className="row between">
-          <h2>Synth Preset Editor</h2>
+          <div>
+            <h2>Synth Preset Editor</h2>
+            <span className="muted">Editing from {librarySpaceLabel(editingSource)}</span>
+          </div>
           <div className="row">
             <label className="checkField">
               <input checked={autoSend} type="checkbox" onChange={(event) => setAutoSend(event.target.checked)} />
@@ -335,8 +705,14 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             <button className="primary" type="button" onClick={() => void sendPreview("Sent")}>
               Send Now
             </button>
-            <button type="button" onClick={() => void savePreset()}>
+            <button type="button" onClick={() => saveToComputer()}>
+              Save to Computer
+            </button>
+            <button type="button" onClick={() => void uploadToHexBoard(preset)}>
               Save to HexBoard
+            </button>
+            <button type="button" onClick={() => downloadPresetFile(preset)}>
+              Export
             </button>
           </div>
         </div>
@@ -352,11 +728,17 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             <input value={preset.name} onChange={(event) => setPreset((current) => ({ ...current, name: event.target.value }))} />
           </label>
           <label className="field">
-            <span>Category</span>
-            <input
-              value={preset.category}
-              onChange={(event) => setPreset((current) => ({ ...current, category: event.target.value }))}
-            />
+            <span>Folder</span>
+            <select
+              value={preset.folderPath}
+              onChange={(event) => setPreset((current) => ({ ...current, folderPath: event.target.value }))}
+            >
+              {allFolders.map((folder) => (
+                <option key={folder} value={folder}>
+                  {folder}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
             <span>Favorite</span>
@@ -429,21 +811,6 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           onReleaseChange={(value) => updateValue("EffectEnvelope2ReleaseIndex", value)}
         />
 
-        <h3>Current Folder</h3>
-        <ul className="list">
-          {visiblePresets.map((candidate) => (
-            <li className="listItem" key={`${candidate.folderPath}/${candidate.name}`}>
-              <div>
-                <strong>{candidate.name}</strong>
-                <span>
-                  {formatByteLength(candidate.body)} CRC {crc32(candidate.body).toString(16).toUpperCase()}
-                </span>
-              </div>
-              <span>{candidate.folderPath}</span>
-            </li>
-          ))}
-        </ul>
-
         <pre className="dataPreview">
 {`Frames on last send: ${lastFrameCount}
 Preset body: ${formatByteLength(draftPreset.body)}
@@ -452,6 +819,125 @@ CRC: ${crc32(draftPreset.body).toString(16).toUpperCase()}
 ${formatHex(draftPreset.body)}`}
         </pre>
       </div>
+    </section>
+  );
+}
+
+interface LibrarySpacePanelProps {
+  title: string;
+  subtitle: string;
+  space: LibrarySpace;
+  presets: EditableSynthPreset[];
+  folders: string[];
+  selectedFolder: string;
+  draggedPreset: DraggedPreset | null;
+  onAllowDrop: (event: DragEvent<HTMLElement>) => void;
+  onDrop: (space: LibrarySpace, folderPath?: string) => void;
+  onDragStart: (space: LibrarySpace, objectIdHex: string, event: DragEvent<HTMLLIElement>) => void;
+  onDragEnd: () => void;
+  onEdit: (space: LibrarySpace, preset: EditableSynthPreset) => void;
+  onUpload: (preset: EditableSynthPreset) => void;
+  onDownload: (preset: EditableSynthPreset) => void;
+  onExport: (preset: EditableSynthPreset) => void;
+  onErase: (space: LibrarySpace, preset: EditableSynthPreset) => void;
+}
+
+function LibrarySpacePanel({
+  title,
+  subtitle,
+  space,
+  presets,
+  folders,
+  selectedFolder,
+  draggedPreset,
+  onAllowDrop,
+  onDrop,
+  onDragStart,
+  onDragEnd,
+  onEdit,
+  onUpload,
+  onDownload,
+  onExport,
+  onErase
+}: LibrarySpacePanelProps) {
+  const isDropTarget = draggedPreset !== null;
+
+  return (
+    <section
+      className={isDropTarget ? "librarySpace dropReady" : "librarySpace"}
+      onDragOver={onAllowDrop}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDrop(space);
+      }}
+    >
+      <div className="librarySpaceHeader">
+        <div>
+          <h3>{title}</h3>
+          <span className="muted">{subtitle}</span>
+        </div>
+        <span className="countBadge">{presets.length}</span>
+      </div>
+
+      <div className="folderTargets">
+        {folders.map((folder) => (
+          <button
+            className={folder === selectedFolder ? "folderTarget active" : "folderTarget"}
+            key={`${space}-${folder}`}
+            type="button"
+            onDragOver={onAllowDrop}
+            onDrop={(event) => {
+              event.preventDefault();
+              onDrop(space, folder);
+            }}
+          >
+            <span>{folder}</span>
+            <span>{presets.filter((preset) => preset.folderPath === folder).length}</span>
+          </button>
+        ))}
+      </div>
+
+      <ul className="list">
+        {presets.length === 0 ? (
+          <li className="emptyListItem">No presets</li>
+        ) : (
+          presets.map((item) => (
+            <li
+              className="listItem presetListItem"
+              draggable
+              key={`${space}-${item.objectIdHex}`}
+              onDragStart={(event) => onDragStart(space, item.objectIdHex, event)}
+              onDragEnd={onDragEnd}
+            >
+              <div className="presetMeta">
+                <strong>{item.name}</strong>
+                <span>{item.folderPath}</span>
+                <span>{item.objectIdHex.slice(0, 8).toUpperCase()}</span>
+              </div>
+              <div className="presetActions">
+                <button type="button" onClick={() => onEdit(space, item)}>
+                  Edit
+                </button>
+                {space === "computer" ? (
+                  <button type="button" onClick={() => onUpload(item)}>
+                    Upload
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => onDownload(item)}>
+                    Download
+                  </button>
+                )}
+                <button type="button" onClick={() => onExport(item)}>
+                  Export
+                </button>
+                <button className="warning" type="button" onClick={() => onErase(space, item)}>
+                  Erase
+                </button>
+              </div>
+            </li>
+          ))
+        )}
+      </ul>
     </section>
   );
 }

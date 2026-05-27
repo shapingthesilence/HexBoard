@@ -791,7 +791,7 @@ Recommended TLVs:
 | --- | --- | --- |
 | `0x20` | `SynthPresetSchemaVersion` | `u8`, current firmware is `3` |
 | `0x21` | `SynthValues` | Repeated `<synth-key-u8> <value-u8>` records |
-| `0x22` | `Category` | Optional UTF-8 category such as `Lead`, `Pad`, or `Bass` |
+| `0x22` | Reserved | Category was considered, but v1 organization is folder-only |
 | `0x23` | `Favorite` | `u8 bool` |
 | `0x24` | `LastModifiedUnixTime` | Optional `u32-le` timestamp from the web app |
 

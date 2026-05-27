@@ -339,12 +339,19 @@ first target is preset, tuning/layout, color-map, button-map, and synth-preset
 editing over Web MIDI SysEx. Current firmware does not implement preset sync
 yet, so the app's mock mode is the development path for now.
 
-The synth preset editor includes preset name and folder fields, a folder picker,
-a new-folder control, Drive and AHDSR sliders, FX envelope AHDSR controls, and
-other main synth parameter controls. When `Live send` is on, changes are sent as
-apply-only preset-sync messages over the active MIDI transport; they are
-intended for real-time auditioning, not immediate flash saves. Use `Save to
-HexBoard` when you want to send the named/foldered preset as a save request.
+The synth preset editor organizes presets by folder only. It includes preset
+name and folder selection, a new-folder control, Drive and AHDSR sliders, FX
+envelope AHDSR controls, and other main synth parameter controls. The synth
+library has a `Computer Library` for browser-saved/imported preset files and a
+`HexBoard Library` for presets staged to the device through SysEx. Presets can
+be edited, erased, exported as JSON files, imported from JSON files, uploaded to
+HexBoard, downloaded back to the computer library, and dragged between library
+areas or into folder targets.
+
+When `Live send` is on, editor changes are sent as apply-only preset-sync
+messages over the active MIDI transport; they are intended for real-time
+auditioning, not immediate flash saves. Use `Save to HexBoard` when you want to
+send the named/foldered preset as a save request.
 
 When firmware support exists, the app will require a Web MIDI SysEx-capable
 browser such as Chrome or Edge running from `localhost` or HTTPS.

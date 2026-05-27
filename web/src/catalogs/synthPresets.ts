@@ -3,7 +3,6 @@ import {
   createCommonRecords,
   encodeObjectBody,
   tlv,
-  tlvText,
   tlvU8,
   type TlvRecord
 } from "../protocol/tlv.ts";
@@ -12,7 +11,6 @@ import type { EncodedCatalogObject, SynthPresetCatalog } from "./types.ts";
 export const SynthPresetTlv = {
   SynthPresetSchemaVersion: 0x20,
   SynthValues: 0x21,
-  Category: 0x22,
   Favorite: 0x23,
   LastModifiedUnixTime: 0x24
 } as const;
@@ -55,7 +53,6 @@ export interface SynthPresetInput {
   name: string;
   folderPath: string;
   values: SynthPresetValues;
-  category?: string;
   favorite?: boolean;
   tags?: string[];
 }
@@ -84,9 +81,6 @@ export function createSynthPresetObject(input: SynthPresetInput): EncodedCatalog
     tlv(SynthPresetTlv.SynthValues, encodeSynthValues(input.values))
   ];
 
-  if (input.category) {
-    records.push(tlvText(SynthPresetTlv.Category, input.category));
-  }
   if (input.favorite !== undefined) {
     records.push(tlvU8(SynthPresetTlv.Favorite, input.favorite ? 1 : 0));
   }
@@ -115,4 +109,3 @@ export function createSynthPresetCatalog(presets: EncodedCatalogObject[]): Synth
   const folders = Array.from(new Set(presets.map((preset) => preset.folderPath ?? "").filter(Boolean))).sort();
   return { presets, folders };
 }
-

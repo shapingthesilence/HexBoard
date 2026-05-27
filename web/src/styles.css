@@ -173,6 +173,13 @@ select {
   font-size: 0.88rem;
 }
 
+.emptyListItem {
+  border: 1px dashed #c8d1cc;
+  border-radius: 6px;
+  color: #66716d;
+  padding: 10px 12px;
+}
+
 .status {
   border-radius: 6px;
   background: #edf5f2;
@@ -207,7 +214,7 @@ select {
 }
 
 .synthEditor {
-  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
 }
 
 .editorGrid {
@@ -230,6 +237,112 @@ select {
 
 .checkField input {
   min-height: auto;
+}
+
+.hiddenFileInput {
+  display: none;
+}
+
+.librarySpaces {
+  display: grid;
+  gap: 16px;
+}
+
+.librarySpace {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #dbe1dd;
+  padding-top: 14px;
+}
+
+.librarySpace:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.librarySpace.dropReady {
+  outline: 2px solid #78a99b;
+  outline-offset: 2px;
+}
+
+.librarySpaceHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.librarySpaceHeader h3 {
+  margin: 0 0 2px;
+}
+
+.countBadge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2rem;
+  min-height: 1.6rem;
+  border-radius: 999px;
+  background: #edf5f2;
+  color: #184f44;
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.folderTargets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 6px;
+}
+
+.folderTarget {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 2rem;
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+
+.folderTarget span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.folderTarget.active {
+  border-color: #176b5b;
+  color: #176b5b;
+  font-weight: 700;
+}
+
+.presetListItem {
+  align-items: flex-start;
+}
+
+.presetListItem[draggable="true"] {
+  cursor: grab;
+}
+
+.presetMeta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.presetMeta strong {
+  overflow-wrap: anywhere;
+}
+
+.presetActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.presetActions button {
+  min-height: 1.9rem;
+  padding: 0.3rem 0.5rem;
 }
 
 @media (max-width: 760px) {

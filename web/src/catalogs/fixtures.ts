@@ -89,7 +89,6 @@ export const sampleSynthCatalog = createSynthPresetCatalog([
     objectId: deterministicObjectId("Soft String Pad"),
     name: "Soft String Pad",
     folderPath: "Pads/Warm",
-    category: "Pad",
     favorite: true,
     tags: ["smooth", "poly"],
     values: {
@@ -110,7 +109,6 @@ export const sampleSynthCatalog = createSynthPresetCatalog([
     objectId: deterministicObjectId("Bright Mono Lead"),
     name: "Bright Mono Lead",
     folderPath: "Leads",
-    category: "Lead",
     favorite: false,
     values: {
       PlaybackMode: 1,
@@ -126,4 +124,3 @@ export const sampleSynthCatalog = createSynthPresetCatalog([
     }
   })
 ]);
-
