@@ -36,7 +36,7 @@ export function App() {
       case "layouts":
         return <TuningLayoutEditor />;
       case "synth":
-        return <SynthPresetLibrary />;
+        return <SynthPresetLibrary transport={transport} />;
     }
   }, [activeView, connectionLabel, transport]);
 

@@ -4,3 +4,4 @@ src/MP Single Cycle Waveforms/.DS_Store
 web/node_modules
 web/dist
 web/coverage
+web/*.tsbuildinfo

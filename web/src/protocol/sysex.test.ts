@@ -4,11 +4,13 @@ import {
   decodeDataChunkPayload,
   decodePresetSyncFrame,
   decodeWriteBeginPayload,
+  decodeWriteCommitPayload,
   encodeAckFrame,
   encodeDataChunkPayload,
   encodeDefaultPresetSyncFrame,
   encodeReadRequestPayload,
-  encodeWriteBeginPayload
+  encodeWriteBeginPayload,
+  encodeWriteCommitPayload
 } from "./sysex.ts";
 
 describe("preset-sync SysEx", () => {
@@ -75,5 +77,20 @@ describe("preset-sync SysEx", () => {
     ]);
     expect(Array.from(decodeDataChunkPayload(payload).rawData)).toEqual(Array.from(rawData));
   });
-});
 
+  it("encodes and decodes WRITE_COMMIT", () => {
+    const payload = encodeWriteCommitPayload({
+      transferId: 5,
+      rawByteLength: 33,
+      objectCrc32: 0x6702fe2b,
+      commitFlags: 0x01
+    });
+    expect(payload).toEqual([0x00, 0x05, 0x00, 0x00, 0x00, 0x21, 0x06, 0x38, 0x0b, 0x7c, 0x2b, 0x01]);
+    expect(decodeWriteCommitPayload(payload)).toEqual({
+      transferId: 5,
+      rawByteLength: 33,
+      objectCrc32: 0x6702fe2b,
+      commitFlags: 0x01
+    });
+  });
+});

@@ -64,6 +64,13 @@ export interface DataChunkPayload {
   rawData: Uint8Array;
 }
 
+export interface WriteCommitPayload {
+  transferId: number;
+  rawByteLength: number;
+  objectCrc32: number;
+  commitFlags: number;
+}
+
 export function encodePresetSyncFrame(frame: PresetSyncFrame): number[] {
   assertSevenBitByte(frame.major, "major");
   assertSevenBitByte(frame.minor, "minor");
@@ -236,6 +243,28 @@ export function encodeTransferEndPayload(transferId: number, finalChunkCount: nu
   return [...encodeU14(transferId), ...encodeU21(finalChunkCount)];
 }
 
+export function encodeWriteCommitPayload(payload: WriteCommitPayload): number[] {
+  assertSevenBitByte(payload.commitFlags, "commitFlags");
+  return [
+    ...encodeU14(payload.transferId),
+    ...encodeU28(payload.rawByteLength),
+    ...encodeU35FromU32(payload.objectCrc32),
+    payload.commitFlags
+  ];
+}
+
+export function decodeWriteCommitPayload(payload: ArrayLike<number>): WriteCommitPayload {
+  if (payload.length !== 12) {
+    throw new Error("WRITE_COMMIT payload must be 12 bytes");
+  }
+  return {
+    transferId: decodeU14(payload, 0),
+    rawByteLength: decodeU28(payload, 2),
+    objectCrc32: decodeU35ToU32(payload, 6),
+    commitFlags: payload[11]
+  };
+}
+
 export function encodeAckFrame(transactionId: number, ackedMessage: number, nextChunkIndex = 0): number[] {
   return encodeDefaultPresetSyncFrame(
     MessageType.Ack,
@@ -243,4 +272,3 @@ export function encodeAckFrame(transactionId: number, ackedMessage: number, next
     encodeAckPayload({ message: ackedMessage, status: 0, nextChunkIndex, detail: 0 })
   );
 }
-

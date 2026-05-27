@@ -7,16 +7,17 @@ import type {
   WebMidiOutput
 } from "./types.ts";
 
-interface NavigatorWithMidi extends Navigator {
+interface NavigatorWithMidi {
   requestMIDIAccess?: (options?: { sysex?: boolean }) => Promise<WebMidiAccess>;
 }
 
 export function isWebMidiSupported(): boolean {
-  return typeof navigator !== "undefined" && typeof (navigator as NavigatorWithMidi).requestMIDIAccess === "function";
+  return typeof navigator !== "undefined"
+    && typeof (navigator as unknown as NavigatorWithMidi).requestMIDIAccess === "function";
 }
 
 export async function requestPresetSyncMidiAccess(): Promise<WebMidiAccess> {
-  const requestMIDIAccess = (navigator as NavigatorWithMidi).requestMIDIAccess;
+  const requestMIDIAccess = (navigator as unknown as NavigatorWithMidi).requestMIDIAccess;
   if (!requestMIDIAccess) {
     throw new Error("Web MIDI is not available in this browser");
   }

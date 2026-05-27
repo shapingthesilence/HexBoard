@@ -36,8 +36,11 @@ export interface WebMidiOutput {
   send(data: number[] | Uint8Array): void;
 }
 
-export interface WebMidiAccess {
-  inputs: Map<string, WebMidiInput>;
-  outputs: Map<string, WebMidiOutput>;
+export interface WebMidiPortMap<T> {
+  values(): IterableIterator<T>;
 }
 
+export interface WebMidiAccess {
+  inputs: WebMidiPortMap<WebMidiInput>;
+  outputs: WebMidiPortMap<WebMidiOutput>;
+}

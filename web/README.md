@@ -37,6 +37,9 @@ Edge, and a secure context such as `localhost` or HTTPS.
 - CRC32 and 8-to-7 packing utilities matching the firmware draft.
 - TLV object encoding for user tunings, layouts, scale color maps, explicit
   button maps, and named/foldered synth presets.
+- A synth preset editor with name and folder fields, folder creation, main synth
+  parameter controls, Drive/AHDSR sliders, apply-only live sends, and an
+  explicit save sync action over the active MIDI transport.
 - A mock MIDI transport for UI and protocol work before firmware support exists.
 - Basic React views for device connection, profile sync, tuning/layout editing,
   and synth preset organization.

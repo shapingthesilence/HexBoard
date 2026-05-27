@@ -56,3 +56,11 @@ export const ObjectType = {
 
 export type ObjectTypeValue = (typeof ObjectType)[keyof typeof ObjectType];
 
+export const WriteFlag = {
+  ApplyToRuntime: 0x01,
+  SaveToFlash: 0x02,
+  OverwriteExisting: 0x04,
+  DryRun: 0x08
+} as const;
+
+export type WriteFlagValue = (typeof WriteFlag)[keyof typeof WriteFlag];

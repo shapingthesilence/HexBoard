@@ -124,6 +124,10 @@ select {
   flex-wrap: wrap;
 }
 
+.row.between {
+  justify-content: space-between;
+}
+
 .fieldGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -200,6 +204,32 @@ select {
   border-radius: 50%;
   border: 1px solid #86928c;
   flex: 0 0 auto;
+}
+
+.synthEditor {
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+}
+
+.editorGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.rangeField input {
+  width: 100%;
+}
+
+.checkField {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #3e4844;
+}
+
+.checkField input {
+  min-height: auto;
 }
 
 @media (max-width: 760px) {
