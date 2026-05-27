@@ -41,12 +41,12 @@ Edge, and a secure context such as `localhost` or HTTPS.
   synth parameter controls, Drive/AHDSR sliders, apply-only live sends, and an
   explicit save sync action over the active MIDI transport.
 - Synth preset library areas named `Computer Library` for browser-saved/imported
-  presets and `HexBoard Library` for device-side presets staged through SysEx,
-  including drag-and-drop folder moves, upload/download actions, JSON import,
-  JSON export, edit, and erase controls.
+  presets and `HexBoard Library` for device-side presets loaded through SysEx,
+  including drag-and-drop folder moves, upload/download actions, device refresh,
+  JSON import, JSON export, edit, and erase controls.
 - A mock MIDI transport for UI and protocol work before firmware support exists.
 - Basic React views for device connection, profile sync, tuning/layout editing,
   and synth preset organization.
 
-The firmware does not implement preset sync yet, so mock mode is the primary
-development path for now.
+Firmware currently implements the synth preset subset of preset sync. Mock mode
+still covers UI work for protocol areas that firmware does not implement yet.

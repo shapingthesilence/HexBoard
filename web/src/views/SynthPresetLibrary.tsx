@@ -4,6 +4,8 @@ import {
   deterministicObjectId,
   objectIdFromHex,
   objectIdToHex,
+  SynthPresetTlv,
+  SynthSettingKey,
   type SynthPresetValues,
   type SynthSettingName
 } from "../catalogs/index.ts";
@@ -11,6 +13,7 @@ import { MockMidiTransport } from "../midi/mockTransport.ts";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
 import { crc32 } from "../protocol/crc32.ts";
+import { CommonTlv, decodeObjectBody, textFromBytes } from "../protocol/tlv.ts";
 import { formatByteLength, formatHex } from "./format.ts";
 
 interface SynthPresetLibraryProps {
@@ -52,6 +55,7 @@ type EditableSynthValues = Record<EditableSynthValueKey, number>;
 
 interface EditableSynthPreset {
   objectIdHex: string;
+  deviceHandle?: number;
   name: string;
   folderPath: string;
   favorite: boolean;
@@ -128,7 +132,8 @@ const initialComputerPresets: EditableSynthPreset[] = [
   }
 ];
 
-const defaultFolders = ["Unfiled", "Pads/Warm", "Leads", "FX/Animated"];
+const rootFolderPath = "/";
+const defaultFolders = [rootFolderPath, "Pads/Warm", "Leads", "FX/Animated"];
 
 const playbackOptions = [
   { label: "Off", value: 0 },
@@ -287,6 +292,10 @@ function clonePreset(preset: EditableSynthPreset): EditableSynthPreset {
   };
 }
 
+function folderLabel(folderPath: string): string {
+  return folderPath === rootFolderPath ? "Root" : folderPath;
+}
+
 function comparePresets(left: EditableSynthPreset, right: EditableSynthPreset): number {
   return `${left.folderPath}/${left.name}`.localeCompare(`${right.folderPath}/${right.name}`);
 }
@@ -310,7 +319,7 @@ function encodeEditablePreset(preset: EditableSynthPreset) {
   return createSynthPresetObject({
     objectId: objectIdFromHex(preset.objectIdHex),
     name: preset.name.trim() || "Untitled",
-    folderPath: preset.folderPath.trim() || "Unfiled",
+    folderPath: preset.folderPath.trim() || rootFolderPath,
     favorite: preset.favorite,
     values: preset.values
   });
@@ -333,7 +342,7 @@ function presetFromUnknown(value: unknown): EditableSynthPreset {
   }
 
   const name = typeof source.name === "string" && source.name.trim() ? source.name.trim() : "Imported Preset";
-  const folderPath = typeof source.folderPath === "string" && source.folderPath.trim() ? source.folderPath.trim() : "Imported";
+  const folderPath = typeof source.folderPath === "string" && source.folderPath.trim() ? source.folderPath.trim() : rootFolderPath;
   const importedValues = isRecord(source.values) ? source.values : {};
   const values = { ...defaultPreset.values };
 
@@ -349,6 +358,43 @@ function presetFromUnknown(value: unknown): EditableSynthPreset {
     name,
     folderPath,
     favorite: source.favorite === true,
+    values
+  };
+}
+
+function presetFromObjectBody(body: Uint8Array, deviceHandle?: number): EditableSynthPreset {
+  const decoded = decodeObjectBody(body);
+  const values = { ...defaultPreset.values };
+  let objectIdHex = objectIdToHex(deterministicObjectId(`device:${deviceHandle ?? Date.now()}`));
+  let name = "Device Preset";
+  let folderPath = rootFolderPath;
+  let favorite = false;
+
+  for (const record of decoded.records) {
+    if (record.tag === CommonTlv.Name) {
+      name = textFromBytes(record.value) || name;
+    } else if (record.tag === CommonTlv.ObjectId && record.value.length === 16) {
+      objectIdHex = objectIdToHex(record.value);
+    } else if (record.tag === CommonTlv.FolderPath) {
+      folderPath = textFromBytes(record.value) || rootFolderPath;
+    } else if (record.tag === SynthPresetTlv.Favorite && record.value.length > 0) {
+      favorite = record.value[0] !== 0;
+    } else if (record.tag === SynthPresetTlv.SynthValues) {
+      for (let index = 0; index + 1 < record.value.length; index += 2) {
+        const setting = Object.entries(SynthSettingKey).find(([, value]) => value === record.value[index])?.[0] as EditableSynthValueKey | undefined;
+        if (setting && synthValueKeys.includes(setting)) {
+          values[setting] = clampSynthValue(setting, record.value[index + 1]);
+        }
+      }
+    }
+  }
+
+  return {
+    objectIdHex,
+    deviceHandle,
+    name,
+    folderPath,
+    favorite,
     values
   };
 }
@@ -481,7 +527,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     const normalized = {
       ...clonePreset(nextPreset),
       name: nextPreset.name.trim() || "Untitled",
-      folderPath: nextPreset.folderPath.trim() || "Unfiled"
+      folderPath: nextPreset.folderPath.trim() || rootFolderPath,
+      deviceHandle: undefined
     };
     setComputerPresets((current) => upsertPreset(current, normalized));
     setCustomFolders((current) => Array.from(new Set([...current, normalized.folderPath])).sort());
@@ -505,17 +552,21 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     const normalized = {
       ...clonePreset(nextPreset),
       name: nextPreset.name.trim() || "Untitled",
-      folderPath: nextPreset.folderPath.trim() || "Unfiled"
+      folderPath: nextPreset.folderPath.trim() || rootFolderPath
     };
     try {
       const frames = await client.sendSynthPresetSave(encodeEditablePreset(normalized));
       setLastFrameCount(frames.length);
-      setHexboardPresets((current) => upsertPreset(current, normalized));
       setCustomFolders((current) => Array.from(new Set([...current, normalized.folderPath])).sort());
       skipNextAutoSend.current = true;
       setPreset(clonePreset(normalized));
       setEditingSource("hexboard");
-      setSyncStatus(`${prefix} ${normalized.name} to HexBoard Library with ${frames.length} frame${frames.length === 1 ? "" : "s"}`);
+      if (transport instanceof MockMidiTransport) {
+        setHexboardPresets((current) => upsertPreset(current, normalized));
+        setSyncStatus(`${prefix} ${normalized.name} to HexBoard Library with ${frames.length} frame${frames.length === 1 ? "" : "s"}`);
+      } else {
+        await refreshHexBoardLibrary(`${prefix} ${normalized.name} to HexBoard Library with ${frames.length} frame${frames.length === 1 ? "" : "s"}`);
+      }
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to save synth preset");
     }
@@ -537,8 +588,18 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       return;
     }
 
-    setHexboardPresets((current) => removePreset(current, erasedPreset.objectIdHex));
-    setSyncStatus(`Erased ${erasedPreset.name} from HexBoard Library`);
+    if (transport instanceof MockMidiTransport || erasedPreset.deviceHandle === undefined) {
+      setHexboardPresets((current) => removePreset(current, erasedPreset.objectIdHex));
+      setSyncStatus(`Erased ${erasedPreset.name} from HexBoard Library`);
+      return;
+    }
+
+    void client.deleteSynthPreset(erasedPreset.deviceHandle)
+      .then(() => {
+        setHexboardPresets((current) => removePreset(current, erasedPreset.objectIdHex));
+        setSyncStatus(`Erased ${erasedPreset.name} from HexBoard Library`);
+      })
+      .catch((error) => setSyncStatus(error instanceof Error ? error.message : "Failed to erase HexBoard preset"));
   }
 
   function downloadPresetFile(nextPreset: EditableSynthPreset) {
@@ -583,6 +644,23 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to import preset file");
     } finally {
       input.value = "";
+    }
+  }
+
+  async function refreshHexBoardLibrary(successStatus = "Refreshed HexBoard Library") {
+    if (transport instanceof MockMidiTransport) {
+      setSyncStatus("Mock transport does not have device storage to refresh");
+      return;
+    }
+
+    try {
+      const records = await client.listSynthPresets();
+      const presets = await Promise.all(records.map(async (record) => presetFromObjectBody(await client.readSynthPreset(record.handle), record.handle)));
+      setHexboardPresets(presets.sort(comparePresets));
+      setCustomFolders((current) => Array.from(new Set([...current, ...presets.map((item) => item.folderPath)])).sort());
+      setSyncStatus(`${successStatus}: ${presets.length} preset${presets.length === 1 ? "" : "s"}`);
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Failed to refresh HexBoard Library");
     }
   }
 
@@ -633,9 +711,14 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       <aside className="panel stack">
         <div className="row between">
           <h2>Synth Library</h2>
-          <button type="button" onClick={() => fileInputRef.current?.click()}>
-            Import File
-          </button>
+          <div className="row">
+            <button type="button" onClick={() => void refreshHexBoardLibrary()}>
+              Refresh HexBoard
+            </button>
+            <button type="button" onClick={() => fileInputRef.current?.click()}>
+              Import File
+            </button>
+          </div>
         </div>
         <input ref={fileInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" onChange={(event) => void importPresetFile(event)} />
 
@@ -672,7 +755,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           />
           <LibrarySpacePanel
             title="HexBoard Library"
-            subtitle="Device presets staged through SysEx"
+            subtitle="Device presets loaded through SysEx"
             space="hexboard"
             presets={hexboardPresets}
             folders={allFolders}
@@ -735,7 +818,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             >
               {allFolders.map((folder) => (
                 <option key={folder} value={folder}>
-                  {folder}
+                  {folderLabel(folder)}
                 </option>
               ))}
             </select>
@@ -891,7 +974,7 @@ function LibrarySpacePanel({
               onDrop(space, folder);
             }}
           >
-            <span>{folder}</span>
+            <span>{folderLabel(folder)}</span>
             <span>{presets.filter((preset) => preset.folderPath === folder).length}</span>
           </button>
         ))}

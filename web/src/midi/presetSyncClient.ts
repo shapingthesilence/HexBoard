@@ -4,19 +4,29 @@ import {
   ObjectType,
   WriteFlag,
   crc32,
+  decodeDataChunkPayload,
+  decodeObjectListResponsePayload,
   decodePresetSyncFrame,
+  decodeReadBeginPayload,
+  decodeTransferEndPayload,
+  decodeAckPayload,
   encodeDataChunkPayload,
+  encodeDeleteRequestPayload,
   encodeDefaultPresetSyncFrame,
   encodeHelloRequestPayload,
+  encodeObjectListRequestPayload,
   encodeReadRequestPayload,
   encodeTransferEndPayload,
   encodeWriteBeginPayload,
-  encodeWriteCommitPayload
+  encodeWriteCommitPayload,
+  type ObjectListRecord,
+  type PresetSyncFrame
 } from "../protocol/index.ts";
 import type { EncodedCatalogObject } from "../catalogs/types.ts";
 import type { MidiTransport } from "./types.ts";
 
 const DEFAULT_RAW_CHUNK_SIZE = 64;
+const DEFAULT_RESPONSE_TIMEOUT_MS = 2000;
 
 export class PresetSyncClient {
   private transactionId = 1;
@@ -33,6 +43,43 @@ export class PresetSyncClient {
 
   async sendReadRequest(objectType: number, handle: number, readFlags = 0): Promise<number[]> {
     return this.send(MessageType.ReadRequest, encodeReadRequestPayload(objectType, handle, readFlags));
+  }
+
+  async listSynthPresets(pageSize = 4): Promise<ObjectListRecord[]> {
+    const records: ObjectListRecord[] = [];
+    let pageIndex = 0;
+    let pageCount = 1;
+
+    do {
+      const frame = await this.requestFrame(
+        MessageType.ObjectListRequest,
+        encodeObjectListRequestPayload(ObjectType.SynthPreset, pageIndex, pageSize),
+        (candidate) => candidate.message === MessageType.ObjectListResponse
+      );
+      const page = decodeObjectListResponsePayload(frame.payload);
+      records.push(...page.records);
+      pageCount = page.pageCount;
+      pageIndex += 1;
+    } while (pageIndex < pageCount);
+
+    return records;
+  }
+
+  async readSynthPreset(handle: number): Promise<Uint8Array> {
+    return this.readObject(ObjectType.SynthPreset, handle);
+  }
+
+  async deleteSynthPreset(handle: number): Promise<void> {
+    await this.requestFrame(
+      MessageType.DeleteRequest,
+      encodeDeleteRequestPayload(ObjectType.SynthPreset, handle),
+      (candidate) => {
+        if (candidate.message !== MessageType.Ack) {
+          return false;
+        }
+        return decodeAckPayload(candidate.payload).message === MessageType.DeleteRequest;
+      }
+    );
   }
 
   async sendObjectWrite(input: {
@@ -130,6 +177,126 @@ export class PresetSyncClient {
     const frame = encodeDefaultPresetSyncFrame(message, transaction, payload);
     await this.transport.send(frame);
     return frame;
+  }
+
+  private async requestFrame(
+    message: number,
+    payload: number[],
+    predicate: (frame: PresetSyncFrame) => boolean,
+    timeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS
+  ): Promise<PresetSyncFrame> {
+    const transaction = this.nextTransaction();
+
+    return new Promise((resolve, reject) => {
+      const timeout = globalThis.setTimeout(() => {
+        unsubscribe();
+        reject(new Error("Timed out waiting for HexBoard preset-sync response"));
+      }, timeoutMs);
+
+      const unsubscribe = this.transport.subscribe((bytes) => {
+        try {
+          const frame = decodePresetSyncFrame(bytes);
+          if (frame.transactionId !== transaction) {
+            return;
+          }
+          if (predicate(frame)) {
+            globalThis.clearTimeout(timeout);
+            unsubscribe();
+            resolve(frame);
+          }
+        } catch (error) {
+          globalThis.clearTimeout(timeout);
+          unsubscribe();
+          reject(error);
+        }
+      });
+
+      const frame = encodeDefaultPresetSyncFrame(message, transaction, payload);
+      void this.transport.send(frame).catch((error) => {
+        globalThis.clearTimeout(timeout);
+        unsubscribe();
+        reject(error);
+      });
+    });
+  }
+
+  private async readObject(objectType: number, handle: number, timeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS): Promise<Uint8Array> {
+    const transaction = this.nextTransaction();
+
+    return new Promise((resolve, reject) => {
+      let expectedTransferId: number | null = null;
+      let expectedLength = 0;
+      let receivedBytes = 0;
+      let output = new Uint8Array();
+
+      const timeout = globalThis.setTimeout(() => {
+        unsubscribe();
+        reject(new Error("Timed out waiting for HexBoard object read"));
+      }, timeoutMs);
+
+      const finish = (result: Uint8Array) => {
+        globalThis.clearTimeout(timeout);
+        unsubscribe();
+        resolve(result);
+      };
+
+      const fail = (error: unknown) => {
+        globalThis.clearTimeout(timeout);
+        unsubscribe();
+        reject(error);
+      };
+
+      const unsubscribe = this.transport.subscribe((bytes) => {
+        try {
+          const frame = decodePresetSyncFrame(bytes);
+          if (frame.transactionId !== transaction) {
+            return;
+          }
+          if (frame.message === MessageType.ReadBegin) {
+            const begin = decodeReadBeginPayload(frame.payload);
+            if (begin.objectType !== objectType || begin.handle !== handle) {
+              throw new Error("Unexpected object in HexBoard read response");
+            }
+            expectedTransferId = begin.transferId;
+            expectedLength = begin.rawByteLength;
+            receivedBytes = 0;
+            output = new Uint8Array(expectedLength);
+            return;
+          }
+          if (frame.message === MessageType.DataChunk) {
+            if (expectedTransferId === null) {
+              throw new Error("Received data chunk before read begin");
+            }
+            const chunk = decodeDataChunkPayload(frame.payload);
+            if (chunk.transferId !== expectedTransferId) {
+              throw new Error("Unexpected transfer id in read chunk");
+            }
+            output.set(chunk.rawData, chunk.rawOffset);
+            receivedBytes += chunk.rawLength;
+            return;
+          }
+          if (frame.message === MessageType.TransferEnd) {
+            const end = decodeTransferEndPayload(frame.payload);
+            if (expectedTransferId === null || end.transferId !== expectedTransferId) {
+              throw new Error("Unexpected transfer end");
+            }
+            if (receivedBytes !== expectedLength) {
+              throw new Error("Incomplete object read from HexBoard");
+            }
+            finish(output);
+          }
+        } catch (error) {
+          fail(error);
+        }
+      });
+
+      const frame = encodeDefaultPresetSyncFrame(
+        MessageType.ReadRequest,
+        transaction,
+        encodeReadRequestPayload(objectType, handle)
+      );
+      void this.transport.send(frame).catch(fail);
+    });
   }
 
   private nextTransaction(): number {

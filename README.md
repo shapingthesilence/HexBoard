@@ -139,7 +139,7 @@ build/build.ino.uf2
 The preset-sync web app lives under `web/` as an isolated Vite, React, and
 TypeScript project. It is browser-first, uses Web MIDI SysEx for device access,
 and includes a mock MIDI transport so protocol and catalog work can continue
-before firmware preset sync is implemented.
+ahead of each firmware sync feature.
 
 The web app currently includes:
 
@@ -147,6 +147,7 @@ The web app currently includes:
 - CRC32 and 8-to-7 packing utilities
 - TLV encoders for user tunings, layouts, scale color maps, explicit button
   maps, and named/foldered synth presets
+- firmware-backed synth preset upload, download, list, erase, and live preview
 - initial React views for device connection, profile sync, tuning/layout
   editing, and synth preset organization
 

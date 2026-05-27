@@ -267,13 +267,16 @@ played note and base tone as the FX envelope falls back to zero. Negative
 down as the envelope level rises. The default FX envelope times are `0 ms`, and
 default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 
-`Save Preset` and `Load Preset` open synth-only preset slot lists with `20`
-slots. Presets are stored separately from the main settings file and do not
-remember which preset was last loaded. `Load Preset` also includes `Blank`, and
-loading any empty slot applies the same blank synth patch instead of leaving the
-previous sound in place. Saving or loading a preset returns to `Synth Options`.
-Loading a preset changes the current synth parameters, which can still be
-auto-saved by the normal settings system.
+`Save Preset` and `Load Preset` open synth-only preset lists with room for `20`
+device presets. Presets are stored separately from the main settings file as
+named, foldered synth sounds and do not remember which preset was last loaded.
+Older fixed-slot preset files are migrated so saved slots appear in the root
+folder `/` with their existing `Slot 1` through `Slot 20` names intact. `Load
+Preset` also includes `Blank`, and loading any empty preset applies the same
+blank synth patch instead of leaving the previous sound in place. Saving or
+loading a preset returns to `Synth Options`. Loading a preset changes the
+current synth parameters, which can still be auto-saved by the normal settings
+system.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial
 peak longer before decay. Low `Sustain` makes a note fade away even while you
@@ -336,17 +339,17 @@ Delegated control is only for compatible host software. It is not shown in the O
 
 A browser-based HexBoard Sync app is being developed in this repository. Its
 first target is preset, tuning/layout, color-map, button-map, and synth-preset
-editing over Web MIDI SysEx. Current firmware does not implement preset sync
-yet, so the app's mock mode is the development path for now.
+editing over Web MIDI SysEx. Firmware currently implements the synth preset
+subset; other sync object types still use mock/web-side workflows.
 
 The synth preset editor organizes presets by folder only. It includes preset
 name and folder selection, a new-folder control, Drive and AHDSR sliders, FX
 envelope AHDSR controls, and other main synth parameter controls. The synth
 library has a `Computer Library` for browser-saved/imported preset files and a
-`HexBoard Library` for presets staged to the device through SysEx. Presets can
+`HexBoard Library` loaded from the connected device through SysEx. Presets can
 be edited, erased, exported as JSON files, imported from JSON files, uploaded to
-HexBoard, downloaded back to the computer library, and dragged between library
-areas or into folder targets.
+HexBoard, downloaded back to the computer library, refreshed from the device,
+and dragged between library areas or into folder targets.
 
 When `Live send` is on, editor changes are sent as apply-only preset-sync
 messages over the active MIDI transport; they are intended for real-time

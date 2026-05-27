@@ -11,9 +11,9 @@ This document describes the current firmware structure. It intentionally avoids 
 HexBoard is a hexagonal MIDI controller and standalone synth. The firmware is intentionally maintained as one large `.ino` file for Arduino compatibility, but the source is divided into subsystem sections.
 
 The repository now also contains an isolated `web/` companion app scaffold. It
-does not change firmware runtime behavior. The app is intended to develop the
-future preset-sync workflow against the draft SysEx protocol while firmware
-support is still pending.
+is used to develop preset-sync workflows against the SysEx protocol. Firmware
+currently supports the synth preset subset; the remaining object classes are
+still web/mock-side scaffolding.
 
 The runtime model is:
 
@@ -299,11 +299,11 @@ When active:
 
 The protocol is documented in `docs/delegated-control.md`. Keep it isolated from settings and user menu code unless the product decision changes.
 
-The planned preset-sync SysEx protocol is a separate draft documented in
-`docs/preset-sync-sysex.md`. It reserves its own command family and is intended
-for versioned profile transfer, future `/layouts.dat` user tuning/layout storage,
-scale color maps, explicit button maps, and named/foldered synth preset catalog
-sync.
+The preset-sync SysEx protocol is documented in `docs/preset-sync-sysex.md`.
+It reserves its own command family. Firmware currently implements the synth
+preset subset for named/foldered preset list/read/write/delete and live preview;
+profile transfer, future `/layouts.dat` user tuning/layout storage, scale color
+maps, explicit button maps, and bundle sync remain draft.
 
 The companion web app has protocol and catalog helpers for that draft under
 `web/src/protocol/` and `web/src/catalogs/`, plus a mock MIDI transport under
@@ -443,7 +443,7 @@ The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnv
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
-Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `4`, CRC32, and `20` fixed slots. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. The load menu has a `Blank` item, and loading an unsaved slot applies the same blank synth patch. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, and version `1` and `2` files remap legacy vibrato speed indices before the file is rewritten as version `4`.
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `5`, CRC32, and `20` named/foldered entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app live preview applies a transferred synth preset to runtime without marking settings dirty, while save requests update `/synth_presets.dat`. The load menu has a `Blank` item, and loading an unsaved entry applies the same blank synth patch. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, and version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names before the file is rewritten as version `5`.
 
 The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 

@@ -1,7 +1,8 @@
 # HexBoard Preset Sync SysEx Protocol Draft
 
-This is a design spec for a future HexBoard preset-sync protocol. It is not
-implemented in firmware yet.
+This is the design spec for HexBoard preset sync. The synth preset subset is
+implemented in firmware; tuning/layout, profile, bundle, and backup workflows
+remain draft design until their firmware storage models are implemented.
 
 The intent is to keep the device-side protocol small while allowing the web app
 to handle tedious editing work such as Scala import, individual button mapping,
@@ -34,8 +35,7 @@ This protocol should map to a future storage model with separate catalogs:
 - `/layouts.dat` is the proposed user musical-geometry catalog. Despite the
   short name, it should own user-generated tunings, layouts, scale color maps,
   and explicit button maps because those objects need to reference each other.
-- `/synth_presets.dat` should evolve from fixed unnamed slots into a named synth
-  preset catalog with optional folder paths.
+- `/synth_presets.dat` stores named synth presets with folder paths.
 
 Keeping user tunings and layouts together in `/layouts.dat` avoids fragile
 cross-file references such as a user layout pointing to a missing user tuning.
@@ -49,9 +49,9 @@ Recommended future file headers:
 | `/layouts.dat` | `LYT` | User mapping catalog schema | User tuning/layout/color/map objects |
 | `/synth_presets.dat` | `SYP` | Synth preset catalog schema | Named synth preset objects and folders |
 
-The current firmware already has `/settings.dat` and fixed-slot
-`/synth_presets.dat`; `/layouts.dat` and foldered synth presets are future
-storage changes, not current implementation facts.
+The current firmware already has `/settings.dat` and a named/foldered
+`/synth_presets.dat`; `/layouts.dat` is a future storage change, not a current
+implementation fact.
 
 ## Relationship To Current SysEx
 
@@ -324,13 +324,13 @@ flags:
 F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 ```
 
-Example response, transaction `1`, max packed chunk `128`, capabilities `0x7F`,
-max raw object bytes `4096`, settings schema `11`, synth preset schema `4`,
-`9` profiles, `20` synth preset slots, `16` user slots for each user object
-class, hardware version `2`:
+Example response, transaction `1`, max packed chunk `128`, capabilities `0x102`
+(synth preset read/write plus delete), max raw object bytes `2048`, settings
+schema `11`, synth preset schema `3`, `9` profiles, `20` synth preset entries,
+no user tuning/layout slots yet, hardware version `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 00 7F 00 00 20 00 0B 04 09 14 10 10 10 10 02 F7
+F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 02 02 00 00 10 00 0B 03 09 14 00 00 00 00 02 F7
 ```
 
 ## Object Addressing
@@ -339,8 +339,8 @@ Many messages use a field named `<slot-u14>` for compactness. Treat it as an
 object handle:
 
 - For fixed arrays, it is the actual slot index. Current examples include main
-  profiles `0..8` and fixed synth presets `0..19`.
-- For catalog files such as future `/layouts.dat` and foldered
+  profiles `0..8`.
+- For catalog files such as future `/layouts.dat` and the named/foldered
   `/synth_presets.dat`, it is a compact handle returned by `OBJECT_LIST_RESP`.
   The handle may change after create/delete/reorder operations.
 - Persistent identity comes from the object's `ObjectId` TLV, not from the
@@ -362,7 +362,7 @@ handle.
 | `0x04` | `UserLayout` | `/layouts.dat` layout handle |
 | `0x05` | `ScaleColorMap` | `/layouts.dat` color-map handle |
 | `0x06` | `ExplicitButtonMap` | `/layouts.dat` button-map handle |
-| `0x07` | `SynthPreset` | Synth-only preset catalog entry; current firmware has fixed slots `0..19` |
+| `0x07` | `SynthPreset` | Synth-only preset catalog entry; current firmware returns handles `0..19` |
 | `0x08` | `Bundle` | Web-app backup containing multiple objects |
 | `0x09` | `Folder` | Optional virtual folder record for catalog navigation |
 
@@ -413,7 +413,7 @@ presets, hosts should treat folder plus name as display organization only and
 use object ids for stable references.
 
 `object-id-packed` is the common `ObjectId` TLV value encoded with the same
-8-to-7 packing used for chunk data. Empty fixed slots may report length `0`.
+8-to-7 packing used for chunk data.
 
 ## Read Transfer
 
@@ -607,7 +607,7 @@ Common TLV tags:
 | `0x03` | `Source` | UTF-8 such as `device`, `web-app`, or `scala-import` |
 | `0x04` | `Comment` | Optional UTF-8 note |
 | `0x05` | `Dependency` | Repeated object reference records |
-| `0x06` | `FolderPath` | UTF-8 path using `/` as separator, no leading slash |
+| `0x06` | `FolderPath` | UTF-8 path using `/` as separator; root is `/`, nested folders omit a leading slash |
 | `0x07` | `SortName` | Optional UTF-8 normalized sort/display key |
 | `0x08` | `Tags` | UTF-8 comma-separated tags, optional |
 
@@ -771,14 +771,15 @@ used for user note mapping.
 The current synth setup is already cohesive, so v1 should transfer synth presets
 as synth-only objects, separate from tuning/layout/profile objects.
 
-Synth presets should be named and organized by folder path. The fixed `20` slots
-in the current firmware can migrate into a catalog as:
+Synth presets are named and organized by folder path. The old fixed `20` slots
+in version `4` firmware migrate into the root folder `/` with their current
+slot names intact:
 
 ```text
-Legacy/Slot 1
-Legacy/Slot 2
+Slot 1
+Slot 2
 ...
-Legacy/Slot 20
+Slot 20
 ```
 
 After that migration, the user-facing model should be a foldered preset library
@@ -841,7 +842,6 @@ Example metadata for a named preset in folder `Pads/Warm`:
 ```text
 01 0B 00 53 6F 66 74 20 53 74 72 69 6E 67
 06 09 00 50 61 64 73 2F 57 61 72 6D
-22 03 00 50 61 64
 ```
 
 ## Bundle Object
@@ -908,12 +908,12 @@ write the individual objects after the web app unpacks a bundle.
 ### Transfer A Synth Preset
 
 1. Host sends `READ_REQ` or `WRITE_BEGIN` with object type `SynthPreset`.
-2. Legacy firmware-compatible transfers may address fixed slots `0..19`; the
-   future catalog model should address presets by object id and use handle only
-   as a compact list cursor or compatibility alias.
+2. Hosts should list the synth preset catalog first and use the returned handle
+   for read, overwrite, or delete operations. `NEW_OBJECT` creates or updates by
+   object id.
 3. Device validates `SynthPresetSchemaVersion`, `Name`, and `FolderPath`.
-4. Commit with `apply` changes the current synth settings and marks normal
-   settings dirty.
+4. Commit with `apply` changes the current synth runtime for auditioning. Commit
+   with `save` updates `/synth_presets.dat`.
 5. Commit with `save` writes the named preset catalog to `/synth_presets.dat`
    through the existing flash-safe save path.
 

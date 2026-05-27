@@ -91,6 +91,7 @@ enum class SettingKey : uint8_t;
 class colorDef;
 struct SettingsHeader;
 struct SynthPresetSlot;
+struct LegacySynthPresetSlot;
 
 // Software-detected hardware revision.
 constexpr byte HARDWARE_UNKNOWN = 0;
@@ -130,10 +131,12 @@ void saveSynthPresetToSlot(uint8_t presetIndex);
 void loadSynthPresetFromSlot(uint8_t presetIndex);
 void captureCurrentSynthPreset(SynthPresetSlot& preset);
 void applySynthPresetToSettings(const SynthPresetSlot& preset);
+bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len);
 void copyCurrentSettingsToProfile(uint8_t profileIndex);
 void markSettingsDirty();
 void menuHome();
 void menuSynthOptionsHome();
+void refreshSynthPresetMenuLabels();
 void showOnlyValidLayoutChoices();
 void showOnlyValidScaleChoices();
 void showOnlyValidKeyChoices();
@@ -6445,6 +6448,9 @@ void processIncomingSysEx(const uint8_t* data, const unsigned int len) {
   if (reportDeviceIdentity(data, len)) {
     return;
   }
+  if (processPresetSyncSysEx(data, len)) {
+    return;
+  }
   if ((len == 4) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {
     toggleDelegated();
   }
@@ -6490,6 +6496,9 @@ void processIncomingMIDIDelegated() {
         }
         if (sysex[1] != 0x7D) {
           sendToLog("delegated incoming: ignoring SysEx vendor " + std::to_string(sysex[1]));
+          continue;
+        }
+        if (processPresetSyncSysEx(sysex, len)) {
           continue;
         }
         processDelegatedSysEx(&sysex[2], len - 3);
@@ -6842,7 +6851,11 @@ constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_S
 
 constexpr uint8_t SYNTH_PRESET_COUNT = 20;
 constexpr uint8_t LEGACY_SYNTH_PRESET_COUNT = 8;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 4;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 5;
+constexpr size_t SYNTH_PRESET_NAME_LENGTH = 32;
+constexpr size_t SYNTH_PRESET_FOLDER_LENGTH = 48;
+constexpr size_t SYNTH_PRESET_OBJECT_ID_LENGTH = 16;
+constexpr const char* SYNTH_PRESET_ROOT_FOLDER = "/";
 constexpr std::array<SettingKey, 27> synthPresetKeys = {
   SettingKey::PlaybackMode,
   SettingKey::Waveform,
@@ -6946,6 +6959,15 @@ struct SynthPresetFileHeader {
 
 struct SynthPresetSlot {
   uint8_t valid = 0;
+  uint8_t favorite = 0;
+  uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
+  char name[SYNTH_PRESET_NAME_LENGTH] = {};
+  char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
+  uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
+};
+
+struct LegacySynthPresetSlot {
+  uint8_t valid = 0;
   uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
 };
 
@@ -6962,7 +6984,30 @@ void remapLegacySynthPresetEnvelopeTimes(SynthPresetSlot& preset) {
   }
 }
 
+void remapLegacySynthPresetEnvelopeTimes(LegacySynthPresetSlot& preset) {
+  if (!preset.valid) {
+    return;
+  }
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    if (isEnvelopeTimeSettingKey(synthPresetKeys[i])) {
+      preset.values[i] = remapLegacyEnvelopeTimeIndex(preset.values[i]);
+    }
+  }
+}
+
 void remapLegacySynthPresetVibratoSpeed(SynthPresetSlot& preset) {
+  if (!preset.valid) {
+    return;
+  }
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    if (synthPresetKeys[i] == SettingKey::SynthVibratoSpeed) {
+      preset.values[i] = remapLegacySynthVibratoSpeedIndex(preset.values[i]);
+      return;
+    }
+  }
+}
+
+void remapLegacySynthPresetVibratoSpeed(LegacySynthPresetSlot& preset) {
   if (!preset.valid) {
     return;
   }
@@ -7272,9 +7317,77 @@ void save_settings() {
 }
 
 void applyDefaultSynthPresets() {
-  for (SynthPresetSlot& preset : synthPresets) {
+  for (uint8_t i = 0; i < synthPresets.size(); ++i) {
+    SynthPresetSlot& preset = synthPresets[i];
     preset = SynthPresetSlot{};
+    snprintf(preset.name, sizeof(preset.name), "Slot %u", static_cast<unsigned>(i + 1));
+    snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", SYNTH_PRESET_ROOT_FOLDER);
   }
+}
+
+void generateSynthPresetObjectId(SynthPresetSlot& preset, uint8_t fallbackIndex) {
+  uint32_t hash = 2166136261u;
+  auto mixByte = [&](uint8_t value) {
+    hash ^= value;
+    hash *= 16777619u;
+  };
+
+  const char* folder = preset.folderPath[0] ? preset.folderPath : SYNTH_PRESET_ROOT_FOLDER;
+  const char* name = preset.name[0] ? preset.name : "Slot";
+  for (const char* p = "synth:"; *p; ++p) {
+    mixByte(static_cast<uint8_t>(*p));
+  }
+  for (const char* p = folder; *p; ++p) {
+    mixByte(static_cast<uint8_t>(*p));
+  }
+  mixByte(':');
+  for (const char* p = name; *p; ++p) {
+    mixByte(static_cast<uint8_t>(*p));
+  }
+  mixByte(':');
+  mixByte(fallbackIndex);
+
+  for (size_t i = 0; i < sizeof(preset.objectId); ++i) {
+    hash ^= static_cast<uint8_t>(i * 31u + fallbackIndex);
+    hash *= 16777619u;
+    preset.objectId[i] = static_cast<uint8_t>((hash >> ((i % 4) * 8)) & 0xFF);
+  }
+}
+
+bool synthPresetObjectIdIsEmpty(const SynthPresetSlot& preset) {
+  for (uint8_t byteValue : preset.objectId) {
+    if (byteValue != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void normalizeSynthPresetMetadata(SynthPresetSlot& preset, uint8_t fallbackIndex) {
+  if (!preset.name[0]) {
+    snprintf(preset.name, sizeof(preset.name), "Slot %u", static_cast<unsigned>(fallbackIndex + 1));
+  }
+  if (!preset.folderPath[0]) {
+    snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", SYNTH_PRESET_ROOT_FOLDER);
+  }
+  preset.name[sizeof(preset.name) - 1] = '\0';
+  preset.folderPath[sizeof(preset.folderPath) - 1] = '\0';
+  if (synthPresetObjectIdIsEmpty(preset)) {
+    generateSynthPresetObjectId(preset, fallbackIndex);
+  }
+}
+
+void migrateLegacySynthPresetSlot(const LegacySynthPresetSlot& legacyPreset, uint8_t index) {
+  if (index >= synthPresets.size()) {
+    return;
+  }
+  SynthPresetSlot& preset = synthPresets[index];
+  preset = SynthPresetSlot{};
+  preset.valid = legacyPreset.valid;
+  snprintf(preset.name, sizeof(preset.name), "Slot %u", static_cast<unsigned>(index + 1));
+  snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", SYNTH_PRESET_ROOT_FOLDER);
+  memcpy(preset.values, legacyPreset.values, sizeof(preset.values));
+  normalizeSynthPresetMetadata(preset, index);
 }
 
 uint8_t currentSynthPresetValue(SettingKey key) {
@@ -7376,8 +7489,39 @@ void load_synth_presets() {
     applyDefaultSynthPresets();
     return;
   }
-  size_t presetCountInFile = (header.version < SYNTH_PRESET_FILE_VERSION) ? LEGACY_SYNTH_PRESET_COUNT : SYNTH_PRESET_COUNT;
-  size_t presetDataSize = sizeof(SynthPresetSlot) * presetCountInFile;
+
+  if (header.version < SYNTH_PRESET_FILE_VERSION) {
+    size_t presetCountInFile = (header.version < 4) ? LEGACY_SYNTH_PRESET_COUNT : SYNTH_PRESET_COUNT;
+    std::array<LegacySynthPresetSlot, SYNTH_PRESET_COUNT> legacyPresets = {};
+    size_t presetDataSize = sizeof(LegacySynthPresetSlot) * presetCountInFile;
+    size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(legacyPresets.data()), presetDataSize);
+    f.close();
+    if (bytesRead != presetDataSize) {
+      sendToLog("Warning: Synth preset data incomplete. Starting with empty preset slots.");
+      applyDefaultSynthPresets();
+      return;
+    }
+    uint32_t computed = crc32(reinterpret_cast<const uint8_t*>(legacyPresets.data()), presetDataSize);
+    if (computed != header.crc32) {
+      sendToLog("Synth preset CRC32 mismatch. Starting with empty preset slots.");
+      applyDefaultSynthPresets();
+      return;
+    }
+    for (size_t i = 0; i < presetCountInFile; ++i) {
+      if (header.version < 2) {
+        remapLegacySynthPresetEnvelopeTimes(legacyPresets[i]);
+      }
+      if (header.version < 3) {
+        remapLegacySynthPresetVibratoSpeed(legacyPresets[i]);
+      }
+      migrateLegacySynthPresetSlot(legacyPresets[i], i);
+    }
+    sendToLog("Synth presets migrated from version " + std::to_string(header.version) + " to version " + std::to_string(SYNTH_PRESET_FILE_VERSION) + ".");
+    save_synth_presets();
+    return;
+  }
+
+  size_t presetDataSize = sizeof(SynthPresetSlot) * synthPresets.size();
   size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(synthPresets.data()), presetDataSize);
   f.close();
   if (bytesRead != presetDataSize) {
@@ -7391,19 +7535,8 @@ void load_synth_presets() {
     applyDefaultSynthPresets();
     return;
   }
-  if (header.version < SYNTH_PRESET_FILE_VERSION) {
-    for (size_t i = 0; i < presetCountInFile; ++i) {
-      SynthPresetSlot& preset = synthPresets[i];
-      if (header.version < 2) {
-        remapLegacySynthPresetEnvelopeTimes(preset);
-      }
-      if (header.version < 3) {
-        remapLegacySynthPresetVibratoSpeed(preset);
-      }
-    }
-    sendToLog("Synth presets migrated from version " + std::to_string(header.version) + " to version " + std::to_string(SYNTH_PRESET_FILE_VERSION) + ".");
-    save_synth_presets();
-    return;
+  for (uint8_t i = 0; i < synthPresets.size(); ++i) {
+    normalizeSynthPresetMetadata(synthPresets[i], i);
   }
   sendToLog("Synth presets loaded successfully.");
 }
@@ -7441,8 +7574,10 @@ void saveSynthPresetToSlot(uint8_t presetIndex) {
     return;
   }
   captureCurrentSynthPreset(synthPresets[presetIndex]);
+  normalizeSynthPresetMetadata(synthPresets[presetIndex], presetIndex);
   flashSafeSaveSynthPresets();
-  sendToLog("Saved synth preset " + std::to_string(presetIndex + 1));
+  refreshSynthPresetMenuLabels();
+  sendToLog("Saved synth preset " + std::string(synthPresets[presetIndex].name));
 }
 
 void loadSynthPresetFromSlot(uint8_t presetIndex) {
@@ -7453,13 +7588,817 @@ void loadSynthPresetFromSlot(uint8_t presetIndex) {
     applyBlankSynthPresetToSettings();
     markSettingsDirty();
     syncSettingsToRuntime();
-    sendToLog("Synth preset " + std::to_string(presetIndex + 1) + " is empty. Loaded blank synth preset.");
+    sendToLog("Synth preset " + std::string(synthPresets[presetIndex].name) + " is empty. Loaded blank synth preset.");
     return;
   }
   applySynthPresetToSettings(synthPresets[presetIndex]);
   markSettingsDirty();
   syncSettingsToRuntime();
-  sendToLog("Loaded synth preset " + std::to_string(presetIndex + 1));
+  sendToLog("Loaded synth preset " + std::string(synthPresets[presetIndex].name));
+}
+
+constexpr uint8_t PRESET_SYNC_FAMILY = 0x10;
+constexpr uint8_t PRESET_SYNC_MAJOR = 1;
+constexpr uint8_t PRESET_SYNC_MINOR = 0;
+constexpr uint16_t PRESET_SYNC_NEW_OBJECT_HANDLE = 0x3FFF;
+constexpr uint16_t PRESET_SYNC_RAW_CHUNK_SIZE = 64;
+constexpr size_t PRESET_SYNC_MAX_RAW_OBJECT_BYTES = 2048;
+
+constexpr uint8_t PRESET_SYNC_MSG_HELLO_REQ = 0x01;
+constexpr uint8_t PRESET_SYNC_MSG_HELLO_RESP = 0x02;
+constexpr uint8_t PRESET_SYNC_MSG_ACK = 0x06;
+constexpr uint8_t PRESET_SYNC_MSG_NACK = 0x07;
+constexpr uint8_t PRESET_SYNC_MSG_OBJECT_LIST_REQ = 0x20;
+constexpr uint8_t PRESET_SYNC_MSG_OBJECT_LIST_RESP = 0x21;
+constexpr uint8_t PRESET_SYNC_MSG_READ_REQ = 0x22;
+constexpr uint8_t PRESET_SYNC_MSG_READ_BEGIN = 0x23;
+constexpr uint8_t PRESET_SYNC_MSG_WRITE_BEGIN = 0x24;
+constexpr uint8_t PRESET_SYNC_MSG_DATA_CHUNK = 0x25;
+constexpr uint8_t PRESET_SYNC_MSG_TRANSFER_END = 0x26;
+constexpr uint8_t PRESET_SYNC_MSG_WRITE_COMMIT = 0x27;
+constexpr uint8_t PRESET_SYNC_MSG_TRANSFER_ABORT = 0x28;
+constexpr uint8_t PRESET_SYNC_MSG_DELETE_REQ = 0x29;
+
+constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET = 0x07;
+constexpr uint8_t PRESET_SYNC_TLV_NAME = 0x01;
+constexpr uint8_t PRESET_SYNC_TLV_OBJECT_ID = 0x02;
+constexpr uint8_t PRESET_SYNC_TLV_SOURCE = 0x03;
+constexpr uint8_t PRESET_SYNC_TLV_FOLDER_PATH = 0x06;
+constexpr uint8_t PRESET_SYNC_TLV_SYNTH_SCHEMA_VERSION = 0x20;
+constexpr uint8_t PRESET_SYNC_TLV_SYNTH_VALUES = 0x21;
+constexpr uint8_t PRESET_SYNC_TLV_FAVORITE = 0x23;
+
+constexpr uint8_t PRESET_SYNC_WRITE_APPLY_TO_RUNTIME = 0x01;
+constexpr uint8_t PRESET_SYNC_WRITE_SAVE_TO_FLASH = 0x02;
+constexpr uint8_t PRESET_SYNC_WRITE_DRY_RUN = 0x08;
+
+constexpr uint8_t PRESET_SYNC_ERROR_UNSUPPORTED_PROTOCOL = 0x01;
+constexpr uint8_t PRESET_SYNC_ERROR_UNKNOWN_MESSAGE = 0x02;
+constexpr uint8_t PRESET_SYNC_ERROR_BAD_LENGTH = 0x03;
+constexpr uint8_t PRESET_SYNC_ERROR_BAD_OBJECT_TYPE = 0x04;
+constexpr uint8_t PRESET_SYNC_ERROR_BAD_CHECKSUM = 0x05;
+constexpr uint8_t PRESET_SYNC_ERROR_BAD_CRC = 0x06;
+constexpr uint8_t PRESET_SYNC_ERROR_UNEXPECTED_CHUNK = 0x07;
+constexpr uint8_t PRESET_SYNC_ERROR_BUSY = 0x08;
+constexpr uint8_t PRESET_SYNC_ERROR_STORAGE_FULL = 0x09;
+constexpr uint8_t PRESET_SYNC_ERROR_OBJECT_MISSING = 0x0B;
+constexpr uint8_t PRESET_SYNC_ERROR_SCHEMA_MISMATCH = 0x0C;
+constexpr uint8_t PRESET_SYNC_ERROR_VALIDATION_FAILED = 0x0D;
+
+struct PresetSyncWriteTransfer {
+  bool active = false;
+  bool ended = false;
+  uint8_t objectType = 0;
+  uint16_t handle = PRESET_SYNC_NEW_OBJECT_HANDLE;
+  uint16_t transferId = 0;
+  uint8_t schemaMajor = 0;
+  uint8_t schemaMinor = 0;
+  uint32_t rawByteLength = 0;
+  uint32_t objectCrc32 = 0;
+  uint16_t rawChunkSize = 0;
+  uint8_t writeFlags = 0;
+  uint32_t receivedBytes = 0;
+  uint32_t expectedChunkIndex = 0;
+  std::vector<uint8_t> rawData;
+};
+
+PresetSyncWriteTransfer presetSyncWriteTransfer;
+uint16_t presetSyncNextTransferId = 1;
+
+size_t boundedCStringLength(const char* text, size_t maxLength) {
+  size_t length = 0;
+  while (length < maxLength && text[length] != '\0') {
+    ++length;
+  }
+  return length;
+}
+
+uint16_t presetSyncDecodeU14(const uint8_t* bytes) {
+  return (static_cast<uint16_t>(bytes[0] & 0x7F) << 7) | (bytes[1] & 0x7F);
+}
+
+uint32_t presetSyncDecodeU21(const uint8_t* bytes) {
+  return (static_cast<uint32_t>(bytes[0] & 0x7F) << 14)
+         | (static_cast<uint32_t>(bytes[1] & 0x7F) << 7)
+         | (bytes[2] & 0x7F);
+}
+
+uint32_t presetSyncDecodeU28(const uint8_t* bytes) {
+  return (static_cast<uint32_t>(bytes[0] & 0x7F) << 21)
+         | (static_cast<uint32_t>(bytes[1] & 0x7F) << 14)
+         | (static_cast<uint32_t>(bytes[2] & 0x7F) << 7)
+         | (bytes[3] & 0x7F);
+}
+
+uint32_t presetSyncDecodeU35ToU32(const uint8_t* bytes) {
+  return ((static_cast<uint32_t>(bytes[0] & 0x0F) << 28)
+          | (static_cast<uint32_t>(bytes[1] & 0x7F) << 21)
+          | (static_cast<uint32_t>(bytes[2] & 0x7F) << 14)
+          | (static_cast<uint32_t>(bytes[3] & 0x7F) << 7)
+          | (bytes[4] & 0x7F));
+}
+
+void presetSyncAppendU14(std::vector<uint8_t>& output, uint16_t value) {
+  output.push_back((value >> 7) & 0x7F);
+  output.push_back(value & 0x7F);
+}
+
+void presetSyncAppendU21(std::vector<uint8_t>& output, uint32_t value) {
+  output.push_back((value >> 14) & 0x7F);
+  output.push_back((value >> 7) & 0x7F);
+  output.push_back(value & 0x7F);
+}
+
+void presetSyncAppendU28(std::vector<uint8_t>& output, uint32_t value) {
+  output.push_back((value >> 21) & 0x7F);
+  output.push_back((value >> 14) & 0x7F);
+  output.push_back((value >> 7) & 0x7F);
+  output.push_back(value & 0x7F);
+}
+
+void presetSyncAppendU35FromU32(std::vector<uint8_t>& output, uint32_t value) {
+  output.push_back((value >> 28) & 0x7F);
+  output.push_back((value >> 21) & 0x7F);
+  output.push_back((value >> 14) & 0x7F);
+  output.push_back((value >> 7) & 0x7F);
+  output.push_back(value & 0x7F);
+}
+
+bool presetSyncPayloadIsSevenBit(const uint8_t* payload, size_t length) {
+  for (size_t i = 0; i < length; ++i) {
+    if (payload[i] > 0x7F) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void presetSyncSendFrame(uint8_t message, uint16_t transactionId, const std::vector<uint8_t>& payload) {
+  std::vector<uint8_t> frame;
+  frame.reserve(7 + payload.size());
+  frame.push_back(0x7D);
+  frame.push_back(PRESET_SYNC_FAMILY);
+  frame.push_back(PRESET_SYNC_MAJOR);
+  frame.push_back(PRESET_SYNC_MINOR);
+  frame.push_back(message & 0x7F);
+  presetSyncAppendU14(frame, transactionId);
+  frame.insert(frame.end(), payload.begin(), payload.end());
+  withMIDI([&](auto& M) { M.sendSysEx(frame.size(), frame.data()); });
+}
+
+void presetSyncSendAck(uint16_t transactionId, uint8_t ackedMessage, uint32_t nextChunkIndex = 0, uint8_t detail = 0) {
+  std::vector<uint8_t> payload;
+  payload.push_back(ackedMessage);
+  payload.push_back(0);
+  presetSyncAppendU21(payload, nextChunkIndex);
+  payload.push_back(detail & 0x7F);
+  presetSyncSendFrame(PRESET_SYNC_MSG_ACK, transactionId, payload);
+}
+
+void presetSyncSendNack(uint16_t transactionId, uint8_t failedMessage, uint8_t errorCode, uint32_t expectedChunkIndex = 0, uint8_t detail = 0) {
+  std::vector<uint8_t> payload;
+  payload.push_back(failedMessage);
+  payload.push_back(errorCode);
+  presetSyncAppendU21(payload, expectedChunkIndex);
+  payload.push_back(detail & 0x7F);
+  presetSyncSendFrame(PRESET_SYNC_MSG_NACK, transactionId, payload);
+}
+
+uint8_t presetSyncChunkChecksum(const uint8_t* data, size_t length) {
+  uint8_t sum = 0;
+  for (size_t i = 0; i < length; ++i) {
+    sum = (sum + data[i]) & 0x7F;
+  }
+  return sum;
+}
+
+void presetSyncPack8To7(const uint8_t* raw, size_t rawLength, std::vector<uint8_t>& packed) {
+  for (size_t offset = 0; offset < rawLength; offset += 7) {
+    size_t count = std::min<size_t>(7, rawLength - offset);
+    uint8_t prefix = 0;
+    size_t prefixIndex = packed.size();
+    packed.push_back(0);
+    for (size_t i = 0; i < count; ++i) {
+      uint8_t value = raw[offset + i];
+      if (value & 0x80) {
+        prefix |= (1u << i);
+      }
+      packed.push_back(value & 0x7F);
+    }
+    packed[prefixIndex] = prefix;
+  }
+}
+
+bool presetSyncUnpack8To7(const uint8_t* packed, size_t packedLength, size_t rawLength, std::vector<uint8_t>& raw) {
+  raw.clear();
+  raw.reserve(rawLength);
+  size_t offset = 0;
+  while (offset < packedLength && raw.size() < rawLength) {
+    uint8_t prefix = packed[offset++];
+    if (prefix > 0x7F) {
+      return false;
+    }
+    size_t remainingRaw = rawLength - raw.size();
+    size_t count = std::min<size_t>(7, remainingRaw);
+    if (offset + count > packedLength) {
+      return false;
+    }
+    for (size_t i = 0; i < count; ++i) {
+      uint8_t low = packed[offset++];
+      if (low > 0x7F) {
+        return false;
+      }
+      raw.push_back(low | (((prefix >> i) & 0x01) << 7));
+    }
+  }
+  return raw.size() == rawLength;
+}
+
+void presetSyncAppendTlv(std::vector<uint8_t>& body, uint8_t tag, const uint8_t* value, uint16_t length) {
+  body.push_back(tag);
+  body.push_back(length & 0xFF);
+  body.push_back((length >> 8) & 0xFF);
+  body.insert(body.end(), value, value + length);
+}
+
+void presetSyncAppendTextTlv(std::vector<uint8_t>& body, uint8_t tag, const char* text, size_t maxLength) {
+  size_t length = boundedCStringLength(text, maxLength);
+  presetSyncAppendTlv(body, tag, reinterpret_cast<const uint8_t*>(text), static_cast<uint16_t>(length));
+}
+
+std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset) {
+  std::vector<uint8_t> body;
+  body.reserve(192);
+  body.push_back('H');
+  body.push_back('B');
+  body.push_back('S');
+  body.push_back('1');
+  body.push_back(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET);
+  body.push_back(1);
+  body.push_back(0);
+  body.push_back(0);
+  presetSyncAppendTextTlv(body, PRESET_SYNC_TLV_NAME, preset.name, sizeof(preset.name));
+  presetSyncAppendTlv(body, PRESET_SYNC_TLV_OBJECT_ID, preset.objectId, sizeof(preset.objectId));
+  static constexpr char source[] = "device";
+  presetSyncAppendTlv(body, PRESET_SYNC_TLV_SOURCE, reinterpret_cast<const uint8_t*>(source), sizeof(source) - 1);
+  presetSyncAppendTextTlv(body, PRESET_SYNC_TLV_FOLDER_PATH, preset.folderPath, sizeof(preset.folderPath));
+  uint8_t schemaVersion = 3;
+  presetSyncAppendTlv(body, PRESET_SYNC_TLV_SYNTH_SCHEMA_VERSION, &schemaVersion, 1);
+  std::vector<uint8_t> values;
+  values.reserve(SYNTH_PRESET_VALUE_COUNT * 2);
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    values.push_back(static_cast<uint8_t>(synthPresetKeys[i]));
+    values.push_back(preset.values[i]);
+  }
+  presetSyncAppendTlv(body, PRESET_SYNC_TLV_SYNTH_VALUES, values.data(), static_cast<uint16_t>(values.size()));
+  uint8_t favorite = preset.favorite ? 1 : 0;
+  presetSyncAppendTlv(body, PRESET_SYNC_TLV_FAVORITE, &favorite, 1);
+  return body;
+}
+
+int synthPresetKeyIndex(uint8_t settingKey) {
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    if (static_cast<uint8_t>(synthPresetKeys[i]) == settingKey) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+void copyPresetSyncText(char* destination, size_t destinationLength, const uint8_t* source, size_t sourceLength) {
+  if (destinationLength == 0) {
+    return;
+  }
+  size_t copyLength = std::min(destinationLength - 1, sourceLength);
+  memcpy(destination, source, copyLength);
+  destination[copyLength] = '\0';
+}
+
+bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlot& preset, std::string& error) {
+  if (body.size() < 8 || body[0] != 'H' || body[1] != 'B' || body[2] != 'S' || body[3] != '1') {
+    error = "bad object magic";
+    return false;
+  }
+  if (body[4] != PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
+    error = "not synth preset";
+    return false;
+  }
+  if (body[5] != 1) {
+    error = "unsupported synth preset object schema";
+    return false;
+  }
+
+  preset = SynthPresetSlot{};
+  preset.valid = 1;
+  snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", SYNTH_PRESET_ROOT_FOLDER);
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
+  }
+
+  bool sawName = false;
+  bool sawObjectId = false;
+  bool sawValues = false;
+  size_t cursor = 8;
+  while (cursor < body.size()) {
+    if (cursor + 3 > body.size()) {
+      error = "truncated TLV header";
+      return false;
+    }
+    uint8_t tag = body[cursor++];
+    uint16_t length = static_cast<uint16_t>(body[cursor]) | (static_cast<uint16_t>(body[cursor + 1]) << 8);
+    cursor += 2;
+    if (cursor + length > body.size()) {
+      error = "truncated TLV value";
+      return false;
+    }
+    const uint8_t* value = body.data() + cursor;
+
+    switch (tag) {
+      case PRESET_SYNC_TLV_NAME:
+        copyPresetSyncText(preset.name, sizeof(preset.name), value, length);
+        sawName = preset.name[0] != '\0';
+        break;
+      case PRESET_SYNC_TLV_OBJECT_ID:
+        if (length != sizeof(preset.objectId)) {
+          error = "bad object id length";
+          return false;
+        }
+        memcpy(preset.objectId, value, sizeof(preset.objectId));
+        sawObjectId = true;
+        break;
+      case PRESET_SYNC_TLV_FOLDER_PATH:
+        copyPresetSyncText(preset.folderPath, sizeof(preset.folderPath), value, length);
+        if (!preset.folderPath[0]) {
+          snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", SYNTH_PRESET_ROOT_FOLDER);
+        }
+        break;
+      case PRESET_SYNC_TLV_SYNTH_VALUES:
+        if ((length % 2) != 0) {
+          error = "bad synth values length";
+          return false;
+        }
+        for (uint16_t i = 0; i < length; i += 2) {
+          int keyIndex = synthPresetKeyIndex(value[i]);
+          if (keyIndex >= 0) {
+            preset.values[keyIndex] = value[i + 1];
+          }
+        }
+        sawValues = true;
+        break;
+      case PRESET_SYNC_TLV_FAVORITE:
+        if (length >= 1) {
+          preset.favorite = value[0] ? 1 : 0;
+        }
+        break;
+      default:
+        break;
+    }
+
+    cursor += length;
+  }
+
+  if (!sawName || !sawObjectId || !sawValues) {
+    error = "missing required synth preset TLV";
+    return false;
+  }
+  normalizeSynthPresetMetadata(preset, 0);
+  return true;
+}
+
+int findSynthPresetByObjectId(const uint8_t* objectId) {
+  for (uint8_t i = 0; i < synthPresets.size(); ++i) {
+    if (synthPresets[i].valid && memcmp(synthPresets[i].objectId, objectId, SYNTH_PRESET_OBJECT_ID_LENGTH) == 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+int findFreeSynthPresetSlot() {
+  for (uint8_t i = 0; i < synthPresets.size(); ++i) {
+    if (!synthPresets[i].valid) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset) {
+  if (handle != PRESET_SYNC_NEW_OBJECT_HANDLE && handle < synthPresets.size()) {
+    return handle;
+  }
+  int existing = findSynthPresetByObjectId(preset.objectId);
+  if (existing >= 0) {
+    return existing;
+  }
+  return findFreeSynthPresetSlot();
+}
+
+void applySynthPresetRuntimeOnly(const SynthPresetSlot& preset) {
+  applySynthPresetToSettings(preset);
+  syncSettingsToRuntime();
+}
+
+void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  if (payloadLength != 6) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_HELLO_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+  std::vector<uint8_t> response;
+  response.push_back(PRESET_SYNC_MAJOR);
+  response.push_back(PRESET_SYNC_MINOR);
+  presetSyncAppendU14(response, 128);
+  presetSyncAppendU28(response, (1u << 1) | (1u << 8));
+  presetSyncAppendU28(response, PRESET_SYNC_MAX_RAW_OBJECT_BYTES);
+  response.push_back(CURRENT_SETTINGS_VERSION);
+  response.push_back(3);
+  response.push_back(PROFILE_COUNT);
+  response.push_back(SYNTH_PRESET_COUNT);
+  response.push_back(0);
+  response.push_back(0);
+  response.push_back(0);
+  response.push_back(0);
+  response.push_back(Hardware_Version & 0x7F);
+  presetSyncSendFrame(PRESET_SYNC_MSG_HELLO_RESP, transactionId, response);
+}
+
+void presetSyncAppendAscii(std::vector<uint8_t>& output, const char* text, size_t maxLength) {
+  size_t length = boundedCStringLength(text, maxLength);
+  output.push_back(std::min<size_t>(length, 127));
+  for (size_t i = 0; i < length && i < 127; ++i) {
+    uint8_t value = static_cast<uint8_t>(text[i]);
+    output.push_back(value <= 0x7F ? value : '?');
+  }
+}
+
+void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  if (payloadLength < 5) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_OBJECT_LIST_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+  uint8_t objectType = payload[0];
+  if (objectType != PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_OBJECT_LIST_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
+    return;
+  }
+  uint16_t pageIndex = presetSyncDecodeU14(payload + 1);
+  uint8_t requestedPageSize = payload[3];
+  uint8_t folderLength = payload[4];
+  if (payloadLength != static_cast<size_t>(5 + folderLength)) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_OBJECT_LIST_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+
+  char folderFilter[SYNTH_PRESET_FOLDER_LENGTH] = {};
+  if (folderLength > 0) {
+    copyPresetSyncText(folderFilter, sizeof(folderFilter), payload + 5, folderLength);
+  }
+
+  std::vector<uint8_t> handles;
+  for (uint8_t i = 0; i < synthPresets.size(); ++i) {
+    if (!synthPresets[i].valid) {
+      continue;
+    }
+    if (folderFilter[0] && strncmp(synthPresets[i].folderPath, folderFilter, sizeof(synthPresets[i].folderPath)) != 0) {
+      continue;
+    }
+    handles.push_back(i);
+  }
+
+  uint8_t pageSize = requestedPageSize == 0 ? 4 : std::min<uint8_t>(requestedPageSize, 4);
+  uint16_t pageCount = std::max<uint16_t>(1, (handles.size() + pageSize - 1) / pageSize);
+  size_t start = static_cast<size_t>(pageIndex) * pageSize;
+  size_t end = std::min(handles.size(), start + pageSize);
+
+  std::vector<uint8_t> response;
+  response.push_back(objectType);
+  presetSyncAppendU14(response, pageIndex);
+  presetSyncAppendU14(response, pageCount);
+  response.push_back((start < handles.size()) ? static_cast<uint8_t>(end - start) : 0);
+  if (start < handles.size()) {
+    for (size_t listIndex = start; listIndex < end; ++listIndex) {
+      uint8_t handle = handles[listIndex];
+      SynthPresetSlot& preset = synthPresets[handle];
+      normalizeSynthPresetMetadata(preset, handle);
+      response.push_back(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET);
+      presetSyncAppendU14(response, handle);
+      response.push_back(0x01);
+      response.push_back(1);
+      response.push_back(0);
+      std::vector<uint8_t> packedObjectId;
+      presetSyncPack8To7(preset.objectId, sizeof(preset.objectId), packedObjectId);
+      response.push_back(packedObjectId.size());
+      response.insert(response.end(), packedObjectId.begin(), packedObjectId.end());
+      presetSyncAppendAscii(response, preset.folderPath, sizeof(preset.folderPath));
+      presetSyncAppendAscii(response, preset.name, sizeof(preset.name));
+    }
+  }
+  presetSyncSendFrame(PRESET_SYNC_MSG_OBJECT_LIST_RESP, transactionId, response);
+}
+
+uint16_t presetSyncAllocateTransferId() {
+  uint16_t current = presetSyncNextTransferId;
+  ++presetSyncNextTransferId;
+  if (presetSyncNextTransferId == 0 || presetSyncNextTransferId > PRESET_SYNC_NEW_OBJECT_HANDLE) {
+    presetSyncNextTransferId = 1;
+  }
+  return current;
+}
+
+void presetSyncSendRawObject(uint16_t transactionId, uint8_t objectType, uint16_t handle, uint8_t schemaMajor, uint8_t schemaMinor, const std::vector<uint8_t>& raw) {
+  uint16_t transferId = presetSyncAllocateTransferId();
+  uint32_t objectCrc = crc32(raw.data(), raw.size());
+  std::vector<uint8_t> begin;
+  begin.push_back(objectType);
+  presetSyncAppendU14(begin, handle);
+  presetSyncAppendU14(begin, transferId);
+  begin.push_back(schemaMajor);
+  begin.push_back(schemaMinor);
+  presetSyncAppendU28(begin, raw.size());
+  presetSyncAppendU35FromU32(begin, objectCrc);
+  presetSyncAppendU14(begin, PRESET_SYNC_RAW_CHUNK_SIZE);
+  begin.push_back(0);
+  presetSyncSendFrame(PRESET_SYNC_MSG_READ_BEGIN, transactionId, begin);
+
+  uint32_t chunkIndex = 0;
+  for (size_t offset = 0; offset < raw.size(); offset += PRESET_SYNC_RAW_CHUNK_SIZE) {
+    size_t chunkLength = std::min<size_t>(PRESET_SYNC_RAW_CHUNK_SIZE, raw.size() - offset);
+    std::vector<uint8_t> chunk;
+    presetSyncAppendU14(chunk, transferId);
+    presetSyncAppendU21(chunk, chunkIndex);
+    presetSyncAppendU28(chunk, offset);
+    presetSyncAppendU14(chunk, chunkLength);
+    chunk.push_back(presetSyncChunkChecksum(raw.data() + offset, chunkLength));
+    presetSyncPack8To7(raw.data() + offset, chunkLength, chunk);
+    presetSyncSendFrame(PRESET_SYNC_MSG_DATA_CHUNK, transactionId, chunk);
+    ++chunkIndex;
+  }
+
+  std::vector<uint8_t> endPayload;
+  presetSyncAppendU14(endPayload, transferId);
+  presetSyncAppendU21(endPayload, chunkIndex);
+  presetSyncSendFrame(PRESET_SYNC_MSG_TRANSFER_END, transactionId, endPayload);
+}
+
+void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  if (payloadLength != 4) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+  if (payload[0] != PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
+    return;
+  }
+  uint16_t handle = presetSyncDecodeU14(payload + 1);
+  if (handle >= synthPresets.size() || !synthPresets[handle].valid) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
+    return;
+  }
+  normalizeSynthPresetMetadata(synthPresets[handle], handle);
+  presetSyncSendRawObject(transactionId, PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, handle, 1, 0, buildSynthPresetObjectBody(synthPresets[handle]));
+}
+
+void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  if (payloadLength != 19) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+  if (presetSyncWriteTransfer.active) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_BUSY);
+    return;
+  }
+  if (payload[0] != PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
+    return;
+  }
+
+  uint32_t rawByteLength = presetSyncDecodeU28(payload + 7);
+  if (rawByteLength == 0 || rawByteLength > PRESET_SYNC_MAX_RAW_OBJECT_BYTES) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+  if (payload[5] != 1) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_SCHEMA_MISMATCH);
+    return;
+  }
+
+  presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+  presetSyncWriteTransfer.active = true;
+  presetSyncWriteTransfer.objectType = payload[0];
+  presetSyncWriteTransfer.handle = presetSyncDecodeU14(payload + 1);
+  presetSyncWriteTransfer.transferId = presetSyncDecodeU14(payload + 3);
+  presetSyncWriteTransfer.schemaMajor = payload[5];
+  presetSyncWriteTransfer.schemaMinor = payload[6];
+  presetSyncWriteTransfer.rawByteLength = rawByteLength;
+  presetSyncWriteTransfer.objectCrc32 = presetSyncDecodeU35ToU32(payload + 11);
+  presetSyncWriteTransfer.rawChunkSize = presetSyncDecodeU14(payload + 16);
+  presetSyncWriteTransfer.writeFlags = payload[18];
+  presetSyncWriteTransfer.rawData.assign(rawByteLength, 0);
+  presetSyncSendAck(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN);
+}
+
+void presetSyncHandleDataChunk(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  if (payloadLength < 12) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DATA_CHUNK, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+  if (!presetSyncWriteTransfer.active) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DATA_CHUNK, PRESET_SYNC_ERROR_UNEXPECTED_CHUNK);
+    return;
+  }
+  uint16_t transferId = presetSyncDecodeU14(payload);
+  uint32_t chunkIndex = presetSyncDecodeU21(payload + 2);
+  uint32_t rawOffset = presetSyncDecodeU28(payload + 5);
+  uint16_t rawLength = presetSyncDecodeU14(payload + 9);
+  uint8_t checksum = payload[11];
+  if (transferId != presetSyncWriteTransfer.transferId
+      || chunkIndex != presetSyncWriteTransfer.expectedChunkIndex
+      || rawOffset != presetSyncWriteTransfer.receivedBytes
+      || rawOffset + rawLength > presetSyncWriteTransfer.rawByteLength) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DATA_CHUNK, PRESET_SYNC_ERROR_UNEXPECTED_CHUNK, presetSyncWriteTransfer.expectedChunkIndex);
+    return;
+  }
+
+  std::vector<uint8_t> raw;
+  if (!presetSyncUnpack8To7(payload + 12, payloadLength - 12, rawLength, raw)) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DATA_CHUNK, PRESET_SYNC_ERROR_BAD_LENGTH, presetSyncWriteTransfer.expectedChunkIndex);
+    return;
+  }
+  if (presetSyncChunkChecksum(raw.data(), raw.size()) != checksum) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DATA_CHUNK, PRESET_SYNC_ERROR_BAD_CHECKSUM, presetSyncWriteTransfer.expectedChunkIndex);
+    return;
+  }
+
+  memcpy(presetSyncWriteTransfer.rawData.data() + rawOffset, raw.data(), raw.size());
+  presetSyncWriteTransfer.receivedBytes += raw.size();
+  ++presetSyncWriteTransfer.expectedChunkIndex;
+  presetSyncSendAck(transactionId, PRESET_SYNC_MSG_DATA_CHUNK, presetSyncWriteTransfer.expectedChunkIndex);
+}
+
+void presetSyncHandleTransferEnd(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  if (payloadLength != 5) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_TRANSFER_END, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+  if (!presetSyncWriteTransfer.active) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_TRANSFER_END, PRESET_SYNC_ERROR_UNEXPECTED_CHUNK);
+    return;
+  }
+  uint16_t transferId = presetSyncDecodeU14(payload);
+  uint32_t finalChunkCount = presetSyncDecodeU21(payload + 2);
+  if (transferId != presetSyncWriteTransfer.transferId
+      || finalChunkCount != presetSyncWriteTransfer.expectedChunkIndex
+      || presetSyncWriteTransfer.receivedBytes != presetSyncWriteTransfer.rawByteLength) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_TRANSFER_END, PRESET_SYNC_ERROR_UNEXPECTED_CHUNK, presetSyncWriteTransfer.expectedChunkIndex);
+    return;
+  }
+  presetSyncWriteTransfer.ended = true;
+  presetSyncSendAck(transactionId, PRESET_SYNC_MSG_TRANSFER_END);
+}
+
+void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  if (payloadLength != 12) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+  if (!presetSyncWriteTransfer.active || !presetSyncWriteTransfer.ended) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_UNEXPECTED_CHUNK);
+    return;
+  }
+  uint16_t transferId = presetSyncDecodeU14(payload);
+  uint32_t rawByteLength = presetSyncDecodeU28(payload + 2);
+  uint32_t objectCrc32 = presetSyncDecodeU35ToU32(payload + 6);
+  uint8_t commitFlags = payload[11];
+  if (transferId != presetSyncWriteTransfer.transferId
+      || rawByteLength != presetSyncWriteTransfer.rawByteLength
+      || objectCrc32 != presetSyncWriteTransfer.objectCrc32) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_UNEXPECTED_CHUNK);
+    return;
+  }
+  if (crc32(presetSyncWriteTransfer.rawData.data(), presetSyncWriteTransfer.rawData.size()) != objectCrc32) {
+    presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_BAD_CRC);
+    return;
+  }
+
+  SynthPresetSlot parsedPreset;
+  std::string parseError;
+  if (!parseSynthPresetObjectBody(presetSyncWriteTransfer.rawData, parsedPreset, parseError)) {
+    sendToLog("Preset sync rejected synth preset: " + parseError);
+    presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
+    return;
+  }
+
+  if (!(commitFlags & PRESET_SYNC_WRITE_DRY_RUN)) {
+    if (commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME) {
+      applySynthPresetRuntimeOnly(parsedPreset);
+    }
+    if (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH) {
+      int slotIndex = chooseSynthPresetWriteSlot(presetSyncWriteTransfer.handle, parsedPreset);
+      if (slotIndex < 0) {
+        presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+        presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
+        return;
+      }
+      synthPresets[slotIndex] = parsedPreset;
+      normalizeSynthPresetMetadata(synthPresets[slotIndex], static_cast<uint8_t>(slotIndex));
+      flashSafeSaveSynthPresets();
+      refreshSynthPresetMenuLabels();
+    }
+  }
+
+  presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+  presetSyncSendAck(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT);
+}
+
+void presetSyncHandleTransferAbort(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  (void)payload;
+  if (payloadLength < 2) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_TRANSFER_ABORT, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+  presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+  presetSyncSendAck(transactionId, PRESET_SYNC_MSG_TRANSFER_ABORT);
+}
+
+void presetSyncHandleDelete(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  if (payloadLength != 4) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+  if (payload[0] != PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
+    return;
+  }
+  uint16_t handle = presetSyncDecodeU14(payload + 1);
+  uint8_t deleteFlags = payload[3];
+  if (handle >= synthPresets.size() || !synthPresets[handle].valid) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
+    return;
+  }
+  if (!(deleteFlags & 0x01)) {
+    synthPresets[handle].valid = 0;
+    flashSafeSaveSynthPresets();
+    refreshSynthPresetMenuLabels();
+  }
+  presetSyncSendAck(transactionId, PRESET_SYNC_MSG_DELETE_REQ);
+}
+
+bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len) {
+  if (len < 9 || data[0] != 0xF0 || data[len - 1] != 0xF7 || data[1] != 0x7D || data[2] != PRESET_SYNC_FAMILY) {
+    return false;
+  }
+  uint8_t major = data[3];
+  uint8_t message = data[5];
+  uint16_t transactionId = presetSyncDecodeU14(data + 6);
+  const uint8_t* payload = data + 8;
+  size_t payloadLength = len - 9;
+
+  if (!presetSyncPayloadIsSevenBit(payload, payloadLength)) {
+    presetSyncSendNack(transactionId, message, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return true;
+  }
+  if (major != PRESET_SYNC_MAJOR) {
+    presetSyncSendNack(transactionId, message, PRESET_SYNC_ERROR_UNSUPPORTED_PROTOCOL);
+    return true;
+  }
+
+  switch (message) {
+    case PRESET_SYNC_MSG_HELLO_REQ:
+      presetSyncHandleHello(transactionId, payload, payloadLength);
+      break;
+    case PRESET_SYNC_MSG_OBJECT_LIST_REQ:
+      presetSyncHandleObjectList(transactionId, payload, payloadLength);
+      break;
+    case PRESET_SYNC_MSG_READ_REQ:
+      presetSyncHandleReadRequest(transactionId, payload, payloadLength);
+      break;
+    case PRESET_SYNC_MSG_WRITE_BEGIN:
+      presetSyncHandleWriteBegin(transactionId, payload, payloadLength);
+      break;
+    case PRESET_SYNC_MSG_DATA_CHUNK:
+      presetSyncHandleDataChunk(transactionId, payload, payloadLength);
+      break;
+    case PRESET_SYNC_MSG_TRANSFER_END:
+      presetSyncHandleTransferEnd(transactionId, payload, payloadLength);
+      break;
+    case PRESET_SYNC_MSG_WRITE_COMMIT:
+      presetSyncHandleWriteCommit(transactionId, payload, payloadLength);
+      break;
+    case PRESET_SYNC_MSG_TRANSFER_ABORT:
+      presetSyncHandleTransferAbort(transactionId, payload, payloadLength);
+      break;
+    case PRESET_SYNC_MSG_DELETE_REQ:
+      presetSyncHandleDelete(transactionId, payload, payloadLength);
+      break;
+    case PRESET_SYNC_MSG_ACK:
+      break;
+    default:
+      presetSyncSendNack(transactionId, message, PRESET_SYNC_ERROR_UNKNOWN_MESSAGE);
+      break;
+  }
+  return true;
 }
 
 // Restore all settings to the factory defaults.
@@ -8175,8 +9114,16 @@ GEMItem* menuItemLoadSynthPresetBlank;
 GEMItem* menuItemLoadSynthPreset[SYNTH_PRESET_COUNT];
 char saveProfileLabels[PROFILE_COUNT][24];
 char loadProfileLabels[PROFILE_COUNT][24];
-char saveSynthPresetLabels[SYNTH_PRESET_COUNT][16];
-char loadSynthPresetLabels[SYNTH_PRESET_COUNT][16];
+char saveSynthPresetLabels[SYNTH_PRESET_COUNT][SYNTH_PRESET_NAME_LENGTH];
+char loadSynthPresetLabels[SYNTH_PRESET_COUNT][SYNTH_PRESET_NAME_LENGTH];
+
+void refreshSynthPresetMenuLabels() {
+  for (uint8_t i = 0; i < SYNTH_PRESET_COUNT; ++i) {
+    normalizeSynthPresetMetadata(synthPresets[i], i);
+    snprintf(saveSynthPresetLabels[i], sizeof(saveSynthPresetLabels[i]), "%s", synthPresets[i].name);
+    snprintf(loadSynthPresetLabels[i], sizeof(loadSynthPresetLabels[i]), "%s", synthPresets[i].name);
+  }
+}
 /*
     We are now creating some GEMItems that let you
     1) select a value from a list of options,
@@ -9927,14 +10874,15 @@ void createProfileMenuItems() {
 
 void createSynthPresetMenuItems() {
   for (uint8_t i = 0; i < SYNTH_PRESET_COUNT; ++i) {
-    snprintf(saveSynthPresetLabels[i], sizeof(saveSynthPresetLabels[i]), "Slot %u", static_cast<unsigned>(i + 1));
+    normalizeSynthPresetMetadata(synthPresets[i], i);
+    snprintf(saveSynthPresetLabels[i], sizeof(saveSynthPresetLabels[i]), "%s", synthPresets[i].name);
     menuItemSaveSynthPreset[i] = new GEMItem(saveSynthPresetLabels[i], saveSynthPresetMenu, i);
     menuPageSynthPresetSave.addMenuItem(*menuItemSaveSynthPreset[i]);
   }
   menuItemLoadSynthPresetBlank = new GEMItem("Blank", loadBlankSynthPresetMenu);
   menuPageSynthPresetLoad.addMenuItem(*menuItemLoadSynthPresetBlank);
   for (uint8_t i = 0; i < SYNTH_PRESET_COUNT; ++i) {
-    snprintf(loadSynthPresetLabels[i], sizeof(loadSynthPresetLabels[i]), "Slot %u", static_cast<unsigned>(i + 1));
+    snprintf(loadSynthPresetLabels[i], sizeof(loadSynthPresetLabels[i]), "%s", synthPresets[i].name);
     menuItemLoadSynthPreset[i] = new GEMItem(loadSynthPresetLabels[i], loadSynthPresetMenu, i);
     menuPageSynthPresetLoad.addMenuItem(*menuItemLoadSynthPreset[i]);
   }

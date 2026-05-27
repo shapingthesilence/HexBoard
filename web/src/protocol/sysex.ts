@@ -55,6 +55,28 @@ export interface WriteBeginPayload {
   writeFlags: number;
 }
 
+export type ReadBeginPayload = Omit<WriteBeginPayload, "writeFlags"> & {
+  transferFlags: number;
+};
+
+export interface ObjectListRecord {
+  objectType: number;
+  handle: number;
+  flags: number;
+  schemaMajor: number;
+  schemaMinor: number;
+  objectId: Uint8Array;
+  folderPath: string;
+  name: string;
+}
+
+export interface ObjectListResponsePayload {
+  objectType: number;
+  pageIndex: number;
+  pageCount: number;
+  records: ObjectListRecord[];
+}
+
 export interface DataChunkPayload {
   transferId: number;
   chunkIndex: number;
@@ -69,6 +91,11 @@ export interface WriteCommitPayload {
   rawByteLength: number;
   objectCrc32: number;
   commitFlags: number;
+}
+
+export interface TransferEndPayload {
+  transferId: number;
+  finalChunkCount: number;
 }
 
 export function encodePresetSyncFrame(frame: PresetSyncFrame): number[] {
@@ -171,6 +198,22 @@ export function encodeReadRequestPayload(objectType: number, handle: number, rea
   return [objectType, ...encodeU14(handle), readFlags];
 }
 
+export function encodeObjectListRequestPayload(
+  objectType: number,
+  pageIndex: number,
+  pageSize: number,
+  folderFilter = ""
+): number[] {
+  assertSevenBitByte(objectType, "objectType");
+  assertSevenBitByte(pageSize, "pageSize");
+  const folderBytes = Array.from(new TextEncoder().encode(folderFilter));
+  if (folderBytes.length > 127) {
+    throw new RangeError("folder filter is too long");
+  }
+  assertSevenBitBytes(folderBytes, "folderFilter");
+  return [objectType, ...encodeU14(pageIndex), pageSize, folderBytes.length, ...folderBytes];
+}
+
 export function encodeWriteBeginPayload(payload: WriteBeginPayload): number[] {
   assertSevenBitByte(payload.objectType, "objectType");
   assertSevenBitByte(payload.schemaMajor, "schemaMajor");
@@ -204,6 +247,83 @@ export function decodeWriteBeginPayload(payload: ArrayLike<number>): WriteBeginP
     rawChunkSize: decodeU14(payload, 16),
     writeFlags: payload[18]
   };
+}
+
+export function decodeReadBeginPayload(payload: ArrayLike<number>): ReadBeginPayload {
+  const decoded = decodeWriteBeginPayload(payload);
+  return {
+    ...decoded,
+    transferFlags: decoded.writeFlags
+  };
+}
+
+function decodeAscii(bytes: ArrayLike<number>, offset: number, length: number): string {
+  const value = Array.from({ length }, (_, index) => bytes[offset + index]);
+  assertSevenBitBytes(value, "ascii");
+  return new TextDecoder().decode(new Uint8Array(value));
+}
+
+export function decodeObjectListResponsePayload(payload: ArrayLike<number>): ObjectListResponsePayload {
+  if (payload.length < 6) {
+    throw new Error("OBJECT_LIST_RESP payload is too short");
+  }
+  const objectType = payload[0];
+  const pageIndex = decodeU14(payload, 1);
+  const pageCount = decodeU14(payload, 3);
+  const recordCount = payload[5];
+  const records: ObjectListRecord[] = [];
+  let cursor = 6;
+
+  for (let recordIndex = 0; recordIndex < recordCount; recordIndex += 1) {
+    if (cursor + 7 > payload.length) {
+      throw new Error("truncated OBJECT_LIST_RESP record");
+    }
+    const recordObjectType = payload[cursor++];
+    const handle = decodeU14(payload, cursor);
+    cursor += 2;
+    const flags = payload[cursor++];
+    const schemaMajor = payload[cursor++];
+    const schemaMinor = payload[cursor++];
+    const objectIdPackedLength = payload[cursor++];
+    if (cursor + objectIdPackedLength > payload.length) {
+      throw new Error("truncated OBJECT_LIST_RESP object id");
+    }
+    const objectId = unpack8To7(Array.from(payload).slice(cursor, cursor + objectIdPackedLength), 16);
+    cursor += objectIdPackedLength;
+
+    if (cursor >= payload.length) {
+      throw new Error("truncated OBJECT_LIST_RESP folder length");
+    }
+    const folderLength = payload[cursor++];
+    if (cursor + folderLength > payload.length) {
+      throw new Error("truncated OBJECT_LIST_RESP folder");
+    }
+    const folderPath = decodeAscii(payload, cursor, folderLength);
+    cursor += folderLength;
+
+    if (cursor >= payload.length) {
+      throw new Error("truncated OBJECT_LIST_RESP name length");
+    }
+    const nameLength = payload[cursor++];
+    if (cursor + nameLength > payload.length) {
+      throw new Error("truncated OBJECT_LIST_RESP name");
+    }
+    const name = decodeAscii(payload, cursor, nameLength);
+    cursor += nameLength;
+
+    records.push({
+      objectType: recordObjectType,
+      handle,
+      flags,
+      schemaMajor,
+      schemaMinor,
+      objectId,
+      folderPath,
+      name
+    });
+  }
+
+  return { objectType, pageIndex, pageCount, records };
 }
 
 export function encodeDataChunkPayload(payload: Omit<DataChunkPayload, "rawLength" | "checksum">): number[] {
@@ -243,6 +363,16 @@ export function encodeTransferEndPayload(transferId: number, finalChunkCount: nu
   return [...encodeU14(transferId), ...encodeU21(finalChunkCount)];
 }
 
+export function decodeTransferEndPayload(payload: ArrayLike<number>): TransferEndPayload {
+  if (payload.length !== 5) {
+    throw new Error("TRANSFER_END payload must be 5 bytes");
+  }
+  return {
+    transferId: decodeU14(payload, 0),
+    finalChunkCount: decodeU21(payload, 2)
+  };
+}
+
 export function encodeWriteCommitPayload(payload: WriteCommitPayload): number[] {
   assertSevenBitByte(payload.commitFlags, "commitFlags");
   return [
@@ -263,6 +393,12 @@ export function decodeWriteCommitPayload(payload: ArrayLike<number>): WriteCommi
     objectCrc32: decodeU35ToU32(payload, 6),
     commitFlags: payload[11]
   };
+}
+
+export function encodeDeleteRequestPayload(objectType: number, handle: number, deleteFlags = 0): number[] {
+  assertSevenBitByte(objectType, "objectType");
+  assertSevenBitByte(deleteFlags, "deleteFlags");
+  return [objectType, ...encodeU14(handle), deleteFlags];
 }
 
 export function encodeAckFrame(transactionId: number, ackedMessage: number, nextChunkIndex = 0): number[] {
