@@ -1,10 +1,15 @@
 import {
+  ErrorCode,
+  HEXBOARD_MANUFACTURER_ID,
   MessageType,
   NEW_OBJECT_HANDLE,
   ObjectType,
+  PRESET_SYNC_FAMILY,
+  SYSEX_START,
   WriteFlag,
   crc32,
   decodeDataChunkPayload,
+  decodeNackPayload,
   decodeObjectListResponsePayload,
   decodePresetSyncFrame,
   decodeReadBeginPayload,
@@ -27,6 +32,33 @@ import type { MidiTransport } from "./types.ts";
 
 const DEFAULT_RAW_CHUNK_SIZE = 64;
 const DEFAULT_RESPONSE_TIMEOUT_MS = 2000;
+const FLASH_WRITE_RESPONSE_TIMEOUT_MS = 5000;
+
+const presetSyncErrorNames = new Map<number, string>(
+  Object.entries(ErrorCode).map(([name, value]) => [value, name])
+);
+
+function decodeIncomingPresetSyncFrame(bytes: ArrayLike<number>): PresetSyncFrame | null {
+  if (
+    bytes.length < 3
+    || bytes[0] !== SYSEX_START
+    || bytes[1] !== HEXBOARD_MANUFACTURER_ID
+    || bytes[2] !== PRESET_SYNC_FAMILY
+  ) {
+    return null;
+  }
+  return decodePresetSyncFrame(bytes);
+}
+
+function describeNack(frame: PresetSyncFrame): Error {
+  const nack = decodeNackPayload(frame.payload);
+  const errorName = presetSyncErrorNames.get(nack.errorCode) ?? `Error ${nack.errorCode}`;
+  return new Error(`HexBoard rejected ${messageName(nack.message)}: ${errorName}`);
+}
+
+function messageName(message: number): string {
+  return Object.entries(MessageType).find(([, value]) => value === message)?.[0] ?? `message ${message}`;
+}
 
 export class PresetSyncClient {
   private transactionId = 1;
@@ -45,7 +77,7 @@ export class PresetSyncClient {
     return this.send(MessageType.ReadRequest, encodeReadRequestPayload(objectType, handle, readFlags));
   }
 
-  async listSynthPresets(pageSize = 4): Promise<ObjectListRecord[]> {
+  async listSynthPresets(pageSize = 1): Promise<ObjectListRecord[]> {
     const records: ObjectListRecord[] = [];
     let pageIndex = 0;
     let pageCount = 1;
@@ -144,6 +176,74 @@ export class PresetSyncClient {
     return frames;
   }
 
+  async sendObjectWriteConfirmed(input: {
+    objectType: number;
+    body: Uint8Array;
+    handle?: number;
+    schemaMajor?: number;
+    schemaMinor?: number;
+    writeFlags?: number;
+    rawChunkSize?: number;
+  }): Promise<number[][]> {
+    const handle = input.handle ?? NEW_OBJECT_HANDLE;
+    const schemaMajor = input.schemaMajor ?? 1;
+    const schemaMinor = input.schemaMinor ?? 0;
+    const writeFlags = input.writeFlags ?? WriteFlag.ApplyToRuntime;
+    const rawChunkSize = input.rawChunkSize ?? DEFAULT_RAW_CHUNK_SIZE;
+    const objectCrc32 = crc32(input.body);
+    const transferId = this.nextTransfer();
+    const frames: number[][] = [];
+
+    frames.push(await this.sendAndWaitForAck(
+      MessageType.WriteBegin,
+      encodeWriteBeginPayload({
+        objectType: input.objectType,
+        handle,
+        transferId,
+        schemaMajor,
+        schemaMinor,
+        rawByteLength: input.body.length,
+        objectCrc32,
+        rawChunkSize,
+        writeFlags
+      })
+    ));
+
+    let chunkIndex = 0;
+    for (let offset = 0; offset < input.body.length; offset += rawChunkSize) {
+      const rawData = input.body.slice(offset, offset + rawChunkSize);
+      frames.push(await this.sendAndWaitForAck(
+        MessageType.DataChunk,
+        encodeDataChunkPayload({
+          transferId,
+          chunkIndex,
+          rawOffset: offset,
+          rawData
+        }),
+        (ack) => ack.nextChunkIndex === chunkIndex + 1
+      ));
+      chunkIndex += 1;
+    }
+
+    frames.push(await this.sendAndWaitForAck(
+      MessageType.TransferEnd,
+      encodeTransferEndPayload(transferId, chunkIndex)
+    ));
+    frames.push(await this.sendAndWaitForAck(
+      MessageType.WriteCommit,
+      encodeWriteCommitPayload({
+        transferId,
+        rawByteLength: input.body.length,
+        objectCrc32,
+        commitFlags: writeFlags
+      }),
+      undefined,
+      FLASH_WRITE_RESPONSE_TIMEOUT_MS
+    ));
+
+    return frames;
+  }
+
   async sendSynthPresetPreview(preset: EncodedCatalogObject): Promise<number[][]> {
     return this.sendObjectWrite({
       objectType: ObjectType.SynthPreset,
@@ -166,9 +266,23 @@ export class PresetSyncClient {
     });
   }
 
+  async sendSynthPresetSaveConfirmed(preset: EncodedCatalogObject): Promise<number[][]> {
+    return this.sendObjectWriteConfirmed({
+      objectType: ObjectType.SynthPreset,
+      body: preset.body,
+      handle: NEW_OBJECT_HANDLE,
+      schemaMajor: preset.schemaMajor,
+      schemaMinor: preset.schemaMinor,
+      writeFlags: WriteFlag.ApplyToRuntime | WriteFlag.SaveToFlash
+    });
+  }
+
   subscribeToFrames(listener: (frame: ReturnType<typeof decodePresetSyncFrame>) => void): () => void {
     return this.transport.subscribe((bytes) => {
-      listener(decodePresetSyncFrame(bytes));
+      const frame = decodeIncomingPresetSyncFrame(bytes);
+      if (frame) {
+        listener(frame);
+      }
     });
   }
 
@@ -195,8 +309,17 @@ export class PresetSyncClient {
 
       const unsubscribe = this.transport.subscribe((bytes) => {
         try {
-          const frame = decodePresetSyncFrame(bytes);
+          const frame = decodeIncomingPresetSyncFrame(bytes);
+          if (!frame) {
+            return;
+          }
           if (frame.transactionId !== transaction) {
+            return;
+          }
+          if (frame.message === MessageType.Nack) {
+            globalThis.clearTimeout(timeout);
+            unsubscribe();
+            reject(describeNack(frame));
             return;
           }
           if (predicate(frame)) {
@@ -212,6 +335,61 @@ export class PresetSyncClient {
       });
 
       const frame = encodeDefaultPresetSyncFrame(message, transaction, payload);
+      void this.transport.send(frame).catch((error) => {
+        globalThis.clearTimeout(timeout);
+        unsubscribe();
+        reject(error);
+      });
+    });
+  }
+
+  private async sendAndWaitForAck(
+    message: number,
+    payload: number[],
+    ackPredicate: (ack: ReturnType<typeof decodeAckPayload>) => boolean = () => true,
+    timeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS
+  ): Promise<number[]> {
+    const transaction = this.nextTransaction();
+    const frame = encodeDefaultPresetSyncFrame(message, transaction, payload);
+
+    return new Promise((resolve, reject) => {
+      const timeout = globalThis.setTimeout(() => {
+        unsubscribe();
+        reject(new Error(`Timed out waiting for HexBoard ACK for ${messageName(message)}`));
+      }, timeoutMs);
+
+      const unsubscribe = this.transport.subscribe((bytes) => {
+        try {
+          const response = decodeIncomingPresetSyncFrame(bytes);
+          if (!response) {
+            return;
+          }
+          if (response.transactionId !== transaction) {
+            return;
+          }
+          if (response.message === MessageType.Nack) {
+            globalThis.clearTimeout(timeout);
+            unsubscribe();
+            reject(describeNack(response));
+            return;
+          }
+          if (response.message !== MessageType.Ack) {
+            return;
+          }
+          const ack = decodeAckPayload(response.payload);
+          if (ack.message !== message || !ackPredicate(ack)) {
+            return;
+          }
+          globalThis.clearTimeout(timeout);
+          unsubscribe();
+          resolve(frame);
+        } catch (error) {
+          globalThis.clearTimeout(timeout);
+          unsubscribe();
+          reject(error);
+        }
+      });
+
       void this.transport.send(frame).catch((error) => {
         globalThis.clearTimeout(timeout);
         unsubscribe();
@@ -248,8 +426,15 @@ export class PresetSyncClient {
 
       const unsubscribe = this.transport.subscribe((bytes) => {
         try {
-          const frame = decodePresetSyncFrame(bytes);
+          const frame = decodeIncomingPresetSyncFrame(bytes);
+          if (!frame) {
+            return;
+          }
           if (frame.transactionId !== transaction) {
+            return;
+          }
+          if (frame.message === MessageType.Nack) {
+            fail(describeNack(frame));
             return;
           }
           if (frame.message === MessageType.ReadBegin) {

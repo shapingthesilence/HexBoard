@@ -555,7 +555,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       folderPath: nextPreset.folderPath.trim() || rootFolderPath
     };
     try {
-      const frames = await client.sendSynthPresetSave(encodeEditablePreset(normalized));
+      const encodedPreset = encodeEditablePreset(normalized);
+      const frames = transport instanceof MockMidiTransport
+        ? await client.sendSynthPresetSave(encodedPreset)
+        : await client.sendSynthPresetSaveConfirmed(encodedPreset);
       setLastFrameCount(frames.length);
       setCustomFolders((current) => Array.from(new Set([...current, normalized.folderPath])).sort());
       skipNextAutoSend.current = true;

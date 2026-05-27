@@ -308,6 +308,9 @@ maps, explicit button maps, and bundle sync remain draft.
 The companion web app has protocol and catalog helpers for that draft under
 `web/src/protocol/` and `web/src/catalogs/`, plus a mock MIDI transport under
 `web/src/midi/` so host-side work can be tested before firmware support exists.
+Real-device synth preset saves wait for ACK/NACK responses through
+`WRITE_COMMIT`; library refresh requests list synth preset records one at a
+time before reading each object body.
 
 ## Played Note OLED Overlay
 
@@ -443,7 +446,7 @@ The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnv
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
-Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `5`, CRC32, and `20` named/foldered entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app live preview applies a transferred synth preset to runtime without marking settings dirty, while save requests update `/synth_presets.dat`. The load menu has a `Blank` item, and loading an unsaved entry applies the same blank synth patch. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, and version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names before the file is rewritten as version `5`.
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `5`, CRC32, and `20` named/foldered entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app live preview applies a transferred synth preset to runtime without marking settings dirty, while save requests update `/synth_presets.dat`. The on-device save/load menus remain flat, but non-root presets display as `Folder/Name`; root presets display as plain names. The load menu has a `Blank` item, and loading an unsaved entry applies the same blank synth patch. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, and version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names before the file is rewritten as version `5`.
 
 The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 

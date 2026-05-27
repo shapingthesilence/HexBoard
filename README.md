@@ -147,7 +147,8 @@ The web app currently includes:
 - CRC32 and 8-to-7 packing utilities
 - TLV encoders for user tunings, layouts, scale color maps, explicit button
   maps, and named/foldered synth presets
-- firmware-backed synth preset upload, download, list, erase, and live preview
+- firmware-backed synth preset upload, download, list, erase, and live preview,
+  with ACK-confirmed flash saves for real devices
 - initial React views for device connection, profile sync, tuning/layout
   editing, and synth preset organization
 

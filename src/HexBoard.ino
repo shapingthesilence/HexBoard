@@ -6854,6 +6854,7 @@ constexpr uint8_t LEGACY_SYNTH_PRESET_COUNT = 8;
 constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 5;
 constexpr size_t SYNTH_PRESET_NAME_LENGTH = 32;
 constexpr size_t SYNTH_PRESET_FOLDER_LENGTH = 48;
+constexpr size_t SYNTH_PRESET_MENU_LABEL_LENGTH = 64;
 constexpr size_t SYNTH_PRESET_OBJECT_ID_LENGTH = 16;
 constexpr const char* SYNTH_PRESET_ROOT_FOLDER = "/";
 constexpr std::array<SettingKey, 27> synthPresetKeys = {
@@ -9114,14 +9115,28 @@ GEMItem* menuItemLoadSynthPresetBlank;
 GEMItem* menuItemLoadSynthPreset[SYNTH_PRESET_COUNT];
 char saveProfileLabels[PROFILE_COUNT][24];
 char loadProfileLabels[PROFILE_COUNT][24];
-char saveSynthPresetLabels[SYNTH_PRESET_COUNT][SYNTH_PRESET_NAME_LENGTH];
-char loadSynthPresetLabels[SYNTH_PRESET_COUNT][SYNTH_PRESET_NAME_LENGTH];
+char saveSynthPresetLabels[SYNTH_PRESET_COUNT][SYNTH_PRESET_MENU_LABEL_LENGTH];
+char loadSynthPresetLabels[SYNTH_PRESET_COUNT][SYNTH_PRESET_MENU_LABEL_LENGTH];
+
+void formatSynthPresetMenuLabel(char* output, size_t outputLength, const SynthPresetSlot& preset) {
+  if (outputLength == 0) {
+    return;
+  }
+  const char* name = preset.name[0] ? preset.name : "Slot";
+  const char* folderPath = preset.folderPath[0] ? preset.folderPath : SYNTH_PRESET_ROOT_FOLDER;
+  if (preset.valid && strcmp(folderPath, SYNTH_PRESET_ROOT_FOLDER) != 0) {
+    snprintf(output, outputLength, "%s/%s", folderPath, name);
+  } else {
+    snprintf(output, outputLength, "%s", name);
+  }
+  output[outputLength - 1] = '\0';
+}
 
 void refreshSynthPresetMenuLabels() {
   for (uint8_t i = 0; i < SYNTH_PRESET_COUNT; ++i) {
     normalizeSynthPresetMetadata(synthPresets[i], i);
-    snprintf(saveSynthPresetLabels[i], sizeof(saveSynthPresetLabels[i]), "%s", synthPresets[i].name);
-    snprintf(loadSynthPresetLabels[i], sizeof(loadSynthPresetLabels[i]), "%s", synthPresets[i].name);
+    formatSynthPresetMenuLabel(saveSynthPresetLabels[i], sizeof(saveSynthPresetLabels[i]), synthPresets[i]);
+    formatSynthPresetMenuLabel(loadSynthPresetLabels[i], sizeof(loadSynthPresetLabels[i]), synthPresets[i]);
   }
 }
 /*
@@ -10875,14 +10890,14 @@ void createProfileMenuItems() {
 void createSynthPresetMenuItems() {
   for (uint8_t i = 0; i < SYNTH_PRESET_COUNT; ++i) {
     normalizeSynthPresetMetadata(synthPresets[i], i);
-    snprintf(saveSynthPresetLabels[i], sizeof(saveSynthPresetLabels[i]), "%s", synthPresets[i].name);
+    formatSynthPresetMenuLabel(saveSynthPresetLabels[i], sizeof(saveSynthPresetLabels[i]), synthPresets[i]);
     menuItemSaveSynthPreset[i] = new GEMItem(saveSynthPresetLabels[i], saveSynthPresetMenu, i);
     menuPageSynthPresetSave.addMenuItem(*menuItemSaveSynthPreset[i]);
   }
   menuItemLoadSynthPresetBlank = new GEMItem("Blank", loadBlankSynthPresetMenu);
   menuPageSynthPresetLoad.addMenuItem(*menuItemLoadSynthPresetBlank);
   for (uint8_t i = 0; i < SYNTH_PRESET_COUNT; ++i) {
-    snprintf(loadSynthPresetLabels[i], sizeof(loadSynthPresetLabels[i]), "%s", synthPresets[i].name);
+    formatSynthPresetMenuLabel(loadSynthPresetLabels[i], sizeof(loadSynthPresetLabels[i]), synthPresets[i]);
     menuItemLoadSynthPreset[i] = new GEMItem(loadSynthPresetLabels[i], loadSynthPresetMenu, i);
     menuPageSynthPresetLoad.addMenuItem(*menuItemLoadSynthPreset[i]);
   }

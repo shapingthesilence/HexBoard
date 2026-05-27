@@ -272,11 +272,12 @@ device presets. Presets are stored separately from the main settings file as
 named, foldered synth sounds and do not remember which preset was last loaded.
 Older fixed-slot preset files are migrated so saved slots appear in the root
 folder `/` with their existing `Slot 1` through `Slot 20` names intact. `Load
-Preset` also includes `Blank`, and loading any empty preset applies the same
-blank synth patch instead of leaving the previous sound in place. Saving or
-loading a preset returns to `Synth Options`. Loading a preset changes the
-current synth parameters, which can still be auto-saved by the normal settings
-system.
+Preset` also includes `Blank`. Foldered web-app presets appear in the on-device
+save/load lists as `Folder/Name`, while root-folder presets show only their
+name. Loading any empty preset applies the same blank synth patch instead of
+leaving the previous sound in place. Saving or loading a preset returns to
+`Synth Options`. Loading a preset changes the current synth parameters, which
+can still be auto-saved by the normal settings system.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial
 peak longer before decay. Low `Sustain` makes a note fade away even while you
@@ -354,7 +355,9 @@ and dragged between library areas or into folder targets.
 When `Live send` is on, editor changes are sent as apply-only preset-sync
 messages over the active MIDI transport; they are intended for real-time
 auditioning, not immediate flash saves. Use `Save to HexBoard` when you want to
-send the named/foldered preset as a save request.
+send the named/foldered preset as a save request. Device saves wait for the
+HexBoard to acknowledge the write through the flash commit before the app
+refreshes the `HexBoard Library`.
 
 When firmware support exists, the app will require a Web MIDI SysEx-capable
 browser such as Chrome or Edge running from `localhost` or HTTPS.

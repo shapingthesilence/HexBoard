@@ -486,6 +486,10 @@ Write flags:
 The device ACKs `WRITE_BEGIN` if it can accept the transfer. The host then sends
 `DATA_CHUNK` messages in order. The device ACKs every accepted chunk with the
 next expected chunk index. After all chunks, the host sends `TRANSFER_END`.
+The web app uses this ACKed write path for real-device synth preset saves and
+waits for the `WRITE_COMMIT` ACK before refreshing the device library. Live
+preview sends remain apply-only and are not used as the persistence
+confirmation path.
 
 Example `WRITE_BEGIN` for a new `UserTuning` object, transaction `20`,
 transfer `5`, schema `1.0`, raw length `33`, CRC32 `0x6702FE2B`, raw chunk size
@@ -916,6 +920,9 @@ write the individual objects after the web app unpacks a bundle.
    with `save` updates `/synth_presets.dat`.
 5. Commit with `save` writes the named preset catalog to `/synth_presets.dat`
    through the existing flash-safe save path.
+6. The current web app requests one synth preset record per object-list page
+   before reading each object body, keeping response frames under conservative
+   SysEx buffer limits.
 
 ## Implementation Notes For Future Firmware
 
