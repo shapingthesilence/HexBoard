@@ -10,6 +10,7 @@ For a longer historical deep dive, see `docs/code-analysis.md`, but treat this g
 
 - `AGENTS.md`: repo-level AI agent instructions. Future AI agent work should treat documentation updates as part of every behavior, setting, protocol, menu, build, hardware, or architecture change.
 - `src/HexBoard.ino`: primary firmware source and the file you should edit
+- `web/`: isolated Vite/React companion app for future preset-sync workflows
 - `Makefile`: local build shortcut that stages `src/HexBoard.ino` into generated build output and compiles it
 - `docs/code-analysis.md`: older, broader analysis document
 - `docs/delegated-control.md`: external delegated-control protocol and implementation notes
@@ -62,6 +63,35 @@ make PWM_BITS=9
 ```
 
 The default is `10`.
+
+### Web App Tooling
+
+The companion app is intentionally self-contained under `web/`. Keep Node
+package files there rather than adding root-level web tooling unless the repo is
+deliberately converted into a broader monorepo.
+
+Typical local web flow:
+
+```sh
+cd web
+npm install
+npm run dev
+npm test
+```
+
+The app uses Vite, React, TypeScript, and Vitest. It targets browser Web MIDI
+SysEx and includes a mock MIDI transport for work before firmware preset sync is
+available.
+
+Current web source layout:
+
+- `web/src/protocol/`: preset-sync SysEx framing, 7-bit packing, CRC32, ACK/NACK,
+  transfer payloads, and TLV object bodies
+- `web/src/catalogs/`: `/layouts.dat` user tuning/layout/color/map models and
+  named/foldered synth preset catalog models
+- `web/src/midi/`: Web MIDI access, preset-sync client helpers, and mock transport
+- `web/src/views/`: initial React screens for connection, profile sync,
+  tuning/layout editing, and synth preset organization
 
 ## High-Level Architecture
 

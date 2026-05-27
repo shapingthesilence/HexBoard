@@ -332,6 +332,16 @@ Some external software can temporarily take over HexBoard as a button-and-light 
 
 Delegated control is only for compatible host software. It is not shown in the OLED menu, is not saved in profiles, and starts disabled every time HexBoard boots. Host-driven LEDs still respect `Brightness` and `LED Limit`.
 
+### Companion Web App
+
+A browser-based HexBoard Sync app is being developed in this repository. Its
+first target is preset, tuning/layout, color-map, button-map, and synth-preset
+editing over Web MIDI SysEx. Current firmware does not implement preset sync
+yet, so the app's mock mode is the development path for now.
+
+When firmware support exists, the app will require a Web MIDI SysEx-capable
+browser such as Chrome or Edge running from `localhost` or HTTPS.
+
 ### Control Wheel
 
 This page adjusts how quickly the command-button wheels move and whether they snap back.

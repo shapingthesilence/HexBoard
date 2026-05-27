@@ -10,6 +10,11 @@ This document describes the current firmware structure. It intentionally avoids 
 
 HexBoard is a hexagonal MIDI controller and standalone synth. The firmware is intentionally maintained as one large `.ino` file for Arduino compatibility, but the source is divided into subsystem sections.
 
+The repository now also contains an isolated `web/` companion app scaffold. It
+does not change firmware runtime behavior. The app is intended to develop the
+future preset-sync workflow against the draft SysEx protocol while firmware
+support is still pending.
+
 The runtime model is:
 
 | Runtime area | Responsibilities |
@@ -299,6 +304,10 @@ The planned preset-sync SysEx protocol is a separate draft documented in
 for versioned profile transfer, future `/layouts.dat` user tuning/layout storage,
 scale color maps, explicit button maps, and named/foldered synth preset catalog
 sync.
+
+The companion web app has protocol and catalog helpers for that draft under
+`web/src/protocol/` and `web/src/catalogs/`, plus a mock MIDI transport under
+`web/src/midi/` so host-side work can be tested before firmware support exists.
 
 ## Played Note OLED Overlay
 

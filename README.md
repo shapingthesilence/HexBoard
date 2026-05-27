@@ -26,6 +26,7 @@ The user manual is for players and owners of the device. The MPE setup guide is 
 
 - `AGENTS.md`: AI agent project instructions, including the documentation update requirement
 - `src/HexBoard.ino`: primary firmware source
+- `web/`: isolated Vite/React companion app scaffold for preset sync
 - `docs/`: documentation for users and contributors
 - `Makefile`: local build shortcut for `arduino-cli`
 
@@ -132,6 +133,39 @@ The expected output artifact is:
 ```text
 build/build.ino.uf2
 ```
+
+## Companion Web App
+
+The preset-sync web app lives under `web/` as an isolated Vite, React, and
+TypeScript project. It is browser-first, uses Web MIDI SysEx for device access,
+and includes a mock MIDI transport so protocol and catalog work can continue
+before firmware preset sync is implemented.
+
+The web app currently includes:
+
+- preset-sync SysEx frame helpers
+- CRC32 and 8-to-7 packing utilities
+- TLV encoders for user tunings, layouts, scale color maps, explicit button
+  maps, and named/foldered synth presets
+- initial React views for device connection, profile sync, tuning/layout
+  editing, and synth preset organization
+
+Install and run it from `web/`:
+
+```sh
+cd web
+npm install
+npm run dev
+```
+
+Run the web tests from the same directory:
+
+```sh
+npm test
+```
+
+Web MIDI SysEx requires a browser with Web MIDI support, usually Chrome or Edge,
+and a secure context such as `localhost` or HTTPS.
 
 ### Build Notes
 
