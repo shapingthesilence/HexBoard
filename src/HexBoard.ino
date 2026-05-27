@@ -2834,9 +2834,14 @@ constexpr uint64_t DISPLAYED_NOTES_HOLD_MICROS = 2000000ULL;
 constexpr uint64_t DISPLAYED_NOTES_RELEASE_GRACE_MICROS = 80000ULL;
 constexpr int PLAYED_NOTE_COLUMN_X[3] = { 0, 44, 88 };
 constexpr int PLAYED_CHORD_Y = 92;
+constexpr int PLAYED_NOTE_BADGE_WIDTH = 42;
+constexpr int PLAYED_NOTE_BADGE_HEIGHT = 20;
+constexpr int PLAYED_NOTE_BADGE_MARGIN = 2;
+constexpr int PLAYED_NOTE_BADGE_BASELINE = 0;
 constexpr byte CHORD_NAME_MAX = 18;
 bool displayPlayedNotes = false;
 bool noteOverlayVisible = false;
+bool noteBadgeVisible = false;
 bool noteOverlayDirty = true;
 bool noteOverlayTemporaryWake = false;
 bool noteOverlayWokeDisplayFromSleep = false;
@@ -2846,6 +2851,7 @@ int16_t displayedNotes[DISPLAYED_NOTES_MAX] = {
   DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED,
   DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED
 };
+char noteBadgeText[12] = "";
 
 const char* const chromaticNames[12] = {
   "C", "C#", "D", "Eb", "E", "F",
@@ -2902,6 +2908,9 @@ byte rebuildDisplayedNotes(int16_t* notes);
 byte displayedNoteCount(const int16_t* notes);
 bool displayedNotesEqual(const int16_t* first, const int16_t* second);
 bool buildDisplayedChordName(const int16_t* notes, byte count, char* chordText, size_t chordTextSize);
+bool newestHeldDisplayedPitch(int16_t& displayedPitchOut);
+void formatDisplayedPitch(int16_t displayedPitch, char* noteText, size_t noteTextSize);
+void drawCompactPlayedNoteBadge();
 void drawPlayedNotesOverlay();
 void onToggleDisplayPlayedNotes();
 bool setNoteOverlayTemporaryWake(bool enabled);
@@ -7582,6 +7591,25 @@ bool setNoteOverlayTemporaryWake(bool enabled) {
   return returnedToSleep;
 }
 
+void dismissPlayedNotesOverlayForMenuInput() {
+  if (!noteOverlayTemporaryWake && !noteOverlayVisible) {
+    return;
+  }
+
+  screenTime = 0;
+  if (screenSaverOn) {
+    screenSaverOn = 0;
+    u8g2.setContrast(CONTRAST_AWAKE);
+  }
+  noteOverlayTemporaryWake = false;
+  noteOverlayWokeDisplayFromSleep = false;
+  noteOverlayVisible = false;
+  noteOverlayHoldUntil = 0;
+  noteOverlayReleaseGraceUntil = 0;
+  clearDisplayedNotes(displayedNotes);
+  noteOverlayDirty = true;
+}
+
 void clearDisplayedNotes(int16_t* notes) {
   for (byte i = 0; i < DISPLAYED_NOTES_MAX; i++) {
     notes[i] = DISPLAYED_NOTE_UNUSED;
@@ -7740,13 +7768,90 @@ bool buildDisplayedChordName(const int16_t* notes, byte count, char* chordText, 
   return false;
 }
 
+bool newestHeldDisplayedPitch(int16_t& displayedPitchOut) {
+  bool found = false;
+  uint64_t newestPressTime = 0;
+  for (byte i = 0; i < LED_COUNT; i++) {
+    if (h[i].isCmd || h[i].MIDIch == 0) {
+      continue;
+    }
+
+    if (!found || h[i].timePressed >= newestPressTime) {
+      newestPressTime = h[i].timePressed;
+      displayedPitchOut = h[i].stepsFromC + current.transpose;
+      found = true;
+    }
+  }
+  return found;
+}
+
+void formatDisplayedPitch(int16_t displayedPitch, char* noteText, size_t noteTextSize) {
+  if (current.tuningIndex == TUNING_12EDO) {
+    int midiNote = displayedPitch + 60;
+    const char* label = chromaticNames[positiveMod(midiNote, 12)];
+    int octave = (midiNote / 12) - 1;
+    snprintf(noteText, noteTextSize, "%s%d", label, octave);
+  } else {
+    int cycleLength = current.tuning().cycleLength;
+    int step = positiveMod(displayedPitch, cycleLength);
+    int octave = ((displayedPitch - step) / cycleLength) + 4;
+    snprintf(noteText, noteTextSize, "%d.%d", step, octave);
+  }
+}
+
+void drawCompactPlayedNoteBadge() {
+  int16_t displayedPitch = 0;
+  if (!newestHeldDisplayedPitch(displayedPitch)) {
+    if (noteBadgeVisible) {
+      noteBadgeVisible = false;
+      noteBadgeText[0] = '\0';
+      noteOverlayDirty = false;
+      menu.drawMenu();
+    } else {
+      noteOverlayDirty = false;
+    }
+    return;
+  }
+
+  char latestNoteText[sizeof(noteBadgeText)];
+  formatDisplayedPitch(displayedPitch, latestNoteText, sizeof(latestNoteText));
+  if (!noteOverlayDirty && noteBadgeVisible && strcmp(noteBadgeText, latestNoteText) == 0) {
+    return;
+  }
+
+  strncpy(noteBadgeText, latestNoteText, sizeof(noteBadgeText));
+  noteBadgeText[sizeof(noteBadgeText) - 1] = '\0';
+  noteBadgeVisible = true;
+  noteOverlayVisible = false;
+  noteOverlayDirty = false;
+
+  int badgeX = u8g2.getDisplayWidth() - PLAYED_NOTE_BADGE_WIDTH;
+  if (badgeX < 0) {
+    badgeX = 0;
+  }
+
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(badgeX, 0, PLAYED_NOTE_BADGE_WIDTH, PLAYED_NOTE_BADGE_HEIGHT);
+  u8g2.setDrawColor(1);
+  u8g2.setFont(u8g2_font_logisoso16_tf);
+  int noteWidth = u8g2.getStrWidth(noteBadgeText);
+  int noteX = u8g2.getDisplayWidth() - noteWidth - PLAYED_NOTE_BADGE_MARGIN;
+  if (noteX < 0) {
+    noteX = 0;
+  }
+  u8g2.drawStr(noteX, PLAYED_NOTE_BADGE_BASELINE, noteBadgeText);
+  u8g2.sendBuffer();
+}
+
 void onToggleDisplayPlayedNotes() {
-  if (!displayPlayedNotes && noteOverlayVisible) {
+  if (!displayPlayedNotes && (noteOverlayVisible || noteBadgeVisible)) {
     noteOverlayVisible = false;
+    noteBadgeVisible = false;
     noteOverlayDirty = false;
     bool returnedToSleep = setNoteOverlayTemporaryWake(false);
     noteOverlayHoldUntil = 0;
     noteOverlayReleaseGraceUntil = 0;
+    noteBadgeText[0] = '\0';
     clearDisplayedNotes(displayedNotes);
     if (!returnedToSleep) {
       menu.drawMenu();
@@ -7758,10 +7863,26 @@ void onToggleDisplayPlayedNotes() {
 
 void drawPlayedNotesOverlay() {
   if (!displayPlayedNotes) {
+    if (noteBadgeVisible || noteOverlayVisible) {
+      noteBadgeVisible = false;
+      noteOverlayVisible = false;
+      noteOverlayDirty = false;
+      noteBadgeText[0] = '\0';
+      bool returnedToSleep = setNoteOverlayTemporaryWake(false);
+      clearDisplayedNotes(displayedNotes);
+      if (!returnedToSleep) {
+        menu.drawMenu();
+      }
+    }
     return;
   }
 
   if (screenSaverOn && !noteOverlayTemporaryWake) {
+    return;
+  }
+
+  if (!noteOverlayTemporaryWake) {
+    drawCompactPlayedNoteBadge();
     return;
   }
 
@@ -7810,6 +7931,8 @@ void drawPlayedNotesOverlay() {
   }
 
   noteOverlayVisible = true;
+  noteBadgeVisible = false;
+  noteBadgeText[0] = '\0';
   noteOverlayDirty = false;
 
   u8g2.clearBuffer();
@@ -7819,18 +7942,7 @@ void drawPlayedNotesOverlay() {
   for (byte i = 0; i < count; i++) {
     int16_t displayedPitch = displayedNotes[i];
     char noteText[12];
-
-    if (current.tuningIndex == TUNING_12EDO) {
-      int midiNote = displayedPitch + 60;
-      const char* label = chromaticNames[positiveMod(midiNote, 12)];
-      int octave = (midiNote / 12) - 1;
-      snprintf(noteText, sizeof(noteText), "%s%d", label, octave);
-    } else {
-      int cycleLength = current.tuning().cycleLength;
-      int step = positiveMod(displayedPitch, cycleLength);
-      int octave = ((displayedPitch - step) / cycleLength) + 4;
-      snprintf(noteText, sizeof(noteText), "%d.%d", step, octave);
-    }
+    formatDisplayedPitch(displayedPitch, noteText, sizeof(noteText));
 
     byte col = i % 3;
     byte row = i / 3;
@@ -10148,14 +10260,18 @@ void dealWithRotary() {
 
   if (menu.readyForKey()) {
     if (justReleased && !rotaryPanicSuppressClick) {
+      dismissPlayedNotesOverlayForMenuInput();
       menu.registerKeyPress(GEM_KEY_OK);
+      noteOverlayDirty = true;
       screenTime = 0;
     }
     if (storeRotaryTurn != 0) {
       bool turnIsClockwise = (storeRotaryTurn == 8);
+      dismissPlayedNotesOverlayForMenuInput();
       menu.registerKeyPress(rotaryInvert
                               ? (turnIsClockwise ? GEM_KEY_DOWN : GEM_KEY_UP)
                               : (turnIsClockwise ? GEM_KEY_UP : GEM_KEY_DOWN));
+      noteOverlayDirty = true;
       storeRotaryTurn = 0;
       screenTime = 0;
     }

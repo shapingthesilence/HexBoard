@@ -311,14 +311,15 @@ The companion web app has protocol and catalog helpers for that draft under
 
 ## Played Note OLED Overlay
 
-`DisplayNotes` is a normal persisted Advanced-menu setting that is enabled by default. When enabled, MIDI note on/off updates mark a small OLED overlay dirty. `drawPlayedNotesOverlay()` runs from the main loop after menu input handling and renders up to `6` unique active notes.
+`DisplayNotes` is a normal persisted Advanced-menu setting that is enabled by default. When enabled, MIDI note on/off updates mark a small OLED display region dirty. `drawPlayedNotesOverlay()` runs from the main loop after menu input handling. During normal menu display it draws only the newest currently held note as a top-right badge using the same large note font as the full overlay. During a temporary screensaver wake it renders the larger `Now Playing` overlay with up to `6` unique active notes.
 
 Display behavior:
 
 - `12 EDO` notes render as chromatic note names with octave numbers.
 - Other tunings render as `step.octave`.
 - Active notes are displayed from lowest to highest pitch; if more than `6` unique notes are active, the lowest `6` are shown.
-- In `12 EDO`, common triads, sixth chords, seventh chords, ninth chords, and related suspended/extended chords are named below the note rows at a fixed position. Inversions use slash-bass notation when the detected root is not the lowest displayed pitch class.
+- In `12 EDO`, the larger screensaver-wake overlay names common triads, sixth chords, seventh chords, ninth chords, and related suspended/extended chords below the note rows at a fixed position. Inversions use slash-bass notation when the detected root is not the lowest displayed pitch class.
+- Encoder click/turn input dismisses the larger overlay immediately and returns to menu/badge mode.
 - Note rows use stable fixed columns spread close to the OLED edges, so changing label widths do not shift note positions.
 - The overlay stays visible briefly after release.
 - A short release grace period prevents chords from visually shrinking while a player releases notes unevenly.
@@ -533,7 +534,7 @@ Run or manually verify the areas your change touches:
 - rotary panic stop
 - color modes, including `Tiered` and `Diatonic`
 - `ANIMATE_MIDI_IN` if external MIDI display behavior changed
-- `DisplayNotes` overlay in `12 EDO`, 12-EDO chord labels, a non-12 tuning, chord release, and screensaver wake
+- `DisplayNotes` compact menu badge, full screensaver-wake overlay in `12 EDO`, 12-EDO chord labels, a non-12 tuning, chord release, and screensaver wake
 - delegated-control enter, LED update, button event, and exit SysEx
 
 For docs-only changes, a compile is not necessary, but keep terminology aligned with `src/HexBoard.ino`.
