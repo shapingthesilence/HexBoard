@@ -50,7 +50,11 @@ export class WebMidiTransport implements MidiTransport {
   constructor(output: WebMidiOutput, input?: WebMidiInput) {
     this.output = output;
     this.input = input;
-    this.label = output.name ?? output.id;
+    const outputLabel = output.name ?? output.id;
+    const inputLabel = input?.name ?? input?.id;
+    this.label = inputLabel && inputLabel !== outputLabel
+      ? `${outputLabel} <-> ${inputLabel}`
+      : outputLabel;
     if (this.input) {
       this.input.onmidimessage = (event) => {
         for (const listener of this.listeners) {

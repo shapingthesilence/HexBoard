@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { MockMidiTransport } from "../midi/mockTransport.ts";
-import type { MidiPortSummary, MidiTransport, WebMidiAccess } from "../midi/types.ts";
+import type {
+  MidiPortSummary,
+  MidiTransport,
+  WebMidiAccess,
+  WebMidiInput,
+  WebMidiOutput
+} from "../midi/types.ts";
 import {
   WebMidiTransport,
   isWebMidiSupported,
@@ -17,6 +23,33 @@ interface DeviceConnectProps {
   onConnectionLabelChange: (label: string) => void;
 }
 
+function portName(port: WebMidiInput | WebMidiOutput | MidiPortSummary): string {
+  return port.name ?? port.id;
+}
+
+function normalizedPortIdentity(port: WebMidiInput | WebMidiOutput): string {
+  return `${port.manufacturer ?? ""} ${port.name ?? port.id}`
+    .toLowerCase()
+    .replace(/\b(input|output|midi|port)\b/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function findPort<T extends WebMidiInput | WebMidiOutput>(ports: T[], id: string): T | undefined {
+  return ports.find((port) => port.id === id);
+}
+
+function findMatchingInput(output: WebMidiOutput | undefined, inputs: WebMidiInput[]): WebMidiInput | undefined {
+  if (!output) {
+    return inputs[0];
+  }
+  return inputs.find((input) => input.id === output.id)
+    ?? inputs.find((input) => portName(input) === portName(output))
+    ?? inputs.find((input) => normalizedPortIdentity(input) === normalizedPortIdentity(output))
+    ?? inputs.find((input) => normalizedPortIdentity(input).includes(normalizedPortIdentity(output)))
+    ?? inputs.find((input) => normalizedPortIdentity(output).includes(normalizedPortIdentity(input)))
+    ?? inputs[0];
+}
+
 export function DeviceConnect({
   transport,
   onTransportChange,
@@ -25,6 +58,8 @@ export function DeviceConnect({
 }: DeviceConnectProps) {
   const [access, setAccess] = useState<WebMidiAccess | null>(null);
   const [ports, setPorts] = useState<MidiPortSummary[]>([]);
+  const [selectedInputId, setSelectedInputId] = useState("");
+  const [selectedOutputId, setSelectedOutputId] = useState("");
   const [lastIncoming, setLastIncoming] = useState<string>("No incoming messages");
   const [status, setStatus] = useState("Mock transport active");
 
@@ -48,20 +83,25 @@ export function DeviceConnect({
 
   async function connectWebMidi() {
     try {
-      const midiAccess = await requestPresetSyncMidiAccess();
-      const output = Array.from(midiAccess.outputs.values())[0];
-      const input = Array.from(midiAccess.inputs.values()).find((candidate) => candidate.id === output?.id)
-        ?? Array.from(midiAccess.inputs.values())[0];
+      const midiAccess = access ?? await requestPresetSyncMidiAccess();
+      const outputs = Array.from(midiAccess.outputs.values());
+      const inputs = Array.from(midiAccess.inputs.values());
+      const defaultOutput = findPort(outputs, selectedOutputId) ?? outputs[0];
+      const defaultInput = findPort(inputs, selectedInputId) ?? findMatchingInput(defaultOutput, inputs);
+      const output = defaultOutput;
+      const input = selectedInputId === "none" ? undefined : defaultInput;
       if (!output) {
         setStatus("No MIDI output ports found");
         return;
       }
       setAccess(midiAccess);
       setPorts(listMidiPorts(midiAccess));
+      setSelectedOutputId(output.id);
+      setSelectedInputId(input?.id ?? "none");
       const webTransport = new WebMidiTransport(output, input);
       onTransportChange(webTransport);
       onConnectionLabelChange(`Web MIDI: ${webTransport.label}`);
-      setStatus("Web MIDI transport active");
+      setStatus(input ? "Web MIDI transport active" : "Output connected. Select the HexBoard input port to read device presets.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Web MIDI connection failed");
     }
@@ -87,8 +127,28 @@ export function DeviceConnect({
         <h2>Connection</h2>
         <div className="status">{connectionLabel}</div>
         <div className="status warn">{supportLabel}</div>
+        <div className="stack compact">
+          <label>
+            Output
+            <select value={selectedOutputId} onChange={(event) => setSelectedOutputId(event.target.value)}>
+              {ports.filter((port) => port.type === "output").map((port) => (
+                <option key={port.id} value={port.id}>{portName(port)}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Input
+            <select value={selectedInputId} onChange={(event) => setSelectedInputId(event.target.value)}>
+              <option value="">Auto match</option>
+              <option value="none">No input</option>
+              {ports.filter((port) => port.type === "input").map((port) => (
+                <option key={port.id} value={port.id}>{portName(port)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
         <button className="primary" type="button" onClick={connectWebMidi}>
-          Connect Web MIDI
+          {access ? "Connect Selected Ports" : "Connect Web MIDI"}
         </button>
         <button type="button" onClick={useMockTransport}>
           Use Mock Device
@@ -124,4 +184,3 @@ export function DeviceConnect({
     </section>
   );
 }
-

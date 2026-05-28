@@ -267,17 +267,16 @@ played note and base tone as the FX envelope falls back to zero. Negative
 down as the envelope level rises. The default FX envelope times are `0 ms`, and
 default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 
-`Save Preset` and `Load Preset` open synth-only preset lists with room for `20`
-device presets. Presets are stored separately from the main settings file as
-named, foldered synth sounds and do not remember which preset was last loaded.
-Older fixed-slot preset files are migrated so saved slots appear in the root
-folder `/` with their existing `Slot 1` through `Slot 20` names intact. `Load
-Preset` also includes `Blank`. Foldered web-app presets appear in the on-device
-save/load lists as `Folder/Name`, while root-folder presets show only their
-name. Loading any empty preset applies the same blank synth patch instead of
-leaving the previous sound in place. Saving or loading a preset returns to
-`Synth Options`. Loading a preset changes the current synth parameters, which
-can still be auto-saved by the normal settings system.
+`Save Preset` and `Load Preset` open synth-only preset libraries with room for
+up to `128` device presets. Presets are stored separately from the main settings
+file as named, foldered synth sounds and do not remember which preset was last
+loaded. Older fixed-slot preset files are migrated so saved slots appear in the
+root folder `/` with their existing `Slot 1` through `Slot 20` names intact.
+Foldered web-app presets appear as submenus on the device; preset items inside a
+folder show only the preset name. `Load Preset` also includes `Blank`. Saving or
+loading a preset returns to `Synth Options`. Loading a preset changes the
+current synth parameters, which can still be auto-saved by the normal settings
+system.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial
 peak longer before decay. Low `Sustain` makes a note fade away even while you
@@ -359,8 +358,10 @@ send the named/foldered preset as a save request. Device saves wait for the
 HexBoard to acknowledge the write through the flash commit before the app
 refreshes the `HexBoard Library`.
 
-When firmware support exists, the app will require a Web MIDI SysEx-capable
-browser such as Chrome or Edge running from `localhost` or HTTPS.
+The app requires a Web MIDI SysEx-capable browser such as Chrome or Edge running
+from `localhost` or HTTPS. Use the Device page to connect both the HexBoard MIDI
+output and input ports; live parameter editing can work with output only, but
+reading the `HexBoard Library` requires the matching input port.
 
 ### Control Wheel
 

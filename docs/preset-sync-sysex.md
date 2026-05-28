@@ -294,7 +294,7 @@ Send `0` for discovery.
 <settings-schema-version>
 <synth-preset-schema-version>
 <profile-count>
-<synth-preset-count>
+<synth-preset-count-u14>
 <user-tuning-slots>
 <user-layout-slots>
 <scale-color-map-slots>
@@ -326,11 +326,11 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 
 Example response, transaction `1`, max packed chunk `128`, capabilities `0x102`
 (synth preset read/write plus delete), max raw object bytes `2048`, settings
-schema `11`, synth preset schema `3`, `9` profiles, `20` synth preset entries,
+schema `11`, synth preset schema `3`, `9` profiles, `128` synth preset entries,
 no user tuning/layout slots yet, hardware version `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 02 02 00 00 10 00 0B 03 09 14 00 00 00 00 02 F7
+F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 02 02 00 00 10 00 0B 03 09 01 00 00 00 00 00 02 F7
 ```
 
 ## Object Addressing
@@ -775,9 +775,11 @@ used for user note mapping.
 The current synth setup is already cohesive, so v1 should transfer synth presets
 as synth-only objects, separate from tuning/layout/profile objects.
 
-Synth presets are named and organized by folder path. The old fixed `20` slots
-in version `4` firmware migrate into the root folder `/` with their current
-slot names intact:
+Synth presets are named and organized by folder path. Current firmware stores a
+counted catalog capped at `128` entries instead of a fixed slot array. The old
+fixed `20` slots in version `4` firmware and the fixed named/foldered version
+`5` file migrate into the version `6` counted catalog. Version `4` entries
+migrate into the root folder `/` with their current slot names intact:
 
 ```text
 Slot 1

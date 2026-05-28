@@ -31,7 +31,7 @@ import type { EncodedCatalogObject } from "../catalogs/types.ts";
 import type { MidiTransport } from "./types.ts";
 
 const DEFAULT_RAW_CHUNK_SIZE = 64;
-const DEFAULT_RESPONSE_TIMEOUT_MS = 2000;
+const DEFAULT_RESPONSE_TIMEOUT_MS = 5000;
 const FLASH_WRITE_RESPONSE_TIMEOUT_MS = 5000;
 
 const presetSyncErrorNames = new Map<number, string>(

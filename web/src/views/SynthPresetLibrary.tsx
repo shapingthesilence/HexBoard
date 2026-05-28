@@ -13,6 +13,7 @@ import { MockMidiTransport } from "../midi/mockTransport.ts";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
 import { crc32 } from "../protocol/crc32.ts";
+import type { ObjectListRecord } from "../protocol/index.ts";
 import { CommonTlv, decodeObjectBody, textFromBytes } from "../protocol/tlv.ts";
 import { formatByteLength, formatHex } from "./format.ts";
 
@@ -399,6 +400,17 @@ function presetFromObjectBody(body: Uint8Array, deviceHandle?: number): Editable
   };
 }
 
+function presetFromObjectListRecord(record: ObjectListRecord): EditableSynthPreset {
+  return {
+    objectIdHex: objectIdToHex(record.objectId),
+    deviceHandle: record.handle,
+    name: record.name || `Preset ${record.handle + 1}`,
+    folderPath: record.folderPath || rootFolderPath,
+    favorite: (record.flags & 0x02) !== 0,
+    values: { ...defaultPreset.values }
+  };
+}
+
 function loadComputerPresets(): EditableSynthPreset[] {
   if (typeof window === "undefined") {
     return initialComputerPresets.map(clonePreset);
@@ -470,6 +482,13 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   useEffect(() => {
     saveComputerPresets(computerPresets);
   }, [computerPresets]);
+
+  useEffect(() => {
+    if (transport instanceof MockMidiTransport) {
+      return;
+    }
+    void refreshHexBoardLibrary("Loaded HexBoard Library");
+  }, [client, transport]);
 
   useEffect(() => {
     if (!autoSend) {
@@ -598,10 +617,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
 
     void client.deleteSynthPreset(erasedPreset.deviceHandle)
-      .then(() => {
-        setHexboardPresets((current) => removePreset(current, erasedPreset.objectIdHex));
-        setSyncStatus(`Erased ${erasedPreset.name} from HexBoard Library`);
-      })
+      .then(() => refreshHexBoardLibrary(`Erased ${erasedPreset.name} from HexBoard Library`))
       .catch((error) => setSyncStatus(error instanceof Error ? error.message : "Failed to erase HexBoard preset"));
   }
 
@@ -657,11 +673,26 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
 
     try {
+      setSyncStatus("Requesting HexBoard Library...");
       const records = await client.listSynthPresets();
-      const presets = await Promise.all(records.map(async (record) => presetFromObjectBody(await client.readSynthPreset(record.handle), record.handle)));
+      setSyncStatus(`Found ${records.length} HexBoard preset record${records.length === 1 ? "" : "s"}; reading preset data...`);
+      const presets: EditableSynthPreset[] = [];
+      const readErrors: string[] = [];
+      for (const record of records) {
+        try {
+          presets.push(presetFromObjectBody(await client.readSynthPreset(record.handle), record.handle));
+        } catch (error) {
+          presets.push(presetFromObjectListRecord(record));
+          readErrors.push(`${record.name || `handle ${record.handle}`}: ${error instanceof Error ? error.message : "read failed"}`);
+        }
+      }
       setHexboardPresets(presets.sort(comparePresets));
       setCustomFolders((current) => Array.from(new Set([...current, ...presets.map((item) => item.folderPath)])).sort());
-      setSyncStatus(`${successStatus}: ${presets.length} preset${presets.length === 1 ? "" : "s"}`);
+      if (readErrors.length > 0) {
+        setSyncStatus(`${successStatus}: listed ${presets.length} preset${presets.length === 1 ? "" : "s"}, but ${readErrors.length} full read${readErrors.length === 1 ? "" : "s"} failed. ${readErrors[0]}`);
+      } else {
+        setSyncStatus(`${successStatus}: ${presets.length} preset${presets.length === 1 ? "" : "s"}`);
+      }
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to refresh HexBoard Library");
     }

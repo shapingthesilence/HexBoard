@@ -30,6 +30,9 @@ npm test
 
 Web MIDI SysEx requires a browser that supports Web MIDI, usually Chrome or
 Edge, and a secure context such as `localhost` or HTTPS.
+Choose both the HexBoard output and input ports on the Device page. Live
+parameter sends only need the output port, but device library reads need the
+input port that receives HexBoard SysEx responses.
 
 ## Current Scope
 
@@ -46,7 +49,9 @@ Edge, and a secure context such as `localhost` or HTTPS.
   presets and `HexBoard Library` for device-side presets loaded through SysEx,
   including drag-and-drop folder moves, upload/download actions, device refresh,
   JSON import, JSON export, edit, and erase controls. Device preset listing uses
-  small one-record pages to stay within conservative MIDI SysEx buffer limits.
+  small one-record pages to stay within conservative MIDI SysEx buffer limits
+  and refreshes automatically when the synth preset view opens with a real MIDI
+  transport.
 - A mock MIDI transport for UI and protocol work before firmware support exists.
 - Basic React views for device connection, profile sync, tuning/layout editing,
   and synth preset organization.

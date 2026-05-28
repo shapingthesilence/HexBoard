@@ -148,7 +148,8 @@ The web app currently includes:
 - TLV encoders for user tunings, layouts, scale color maps, explicit button
   maps, and named/foldered synth presets
 - firmware-backed synth preset upload, download, list, erase, and live preview,
-  with ACK-confirmed flash saves for real devices
+  with ACK-confirmed flash saves for real devices and explicit MIDI input/output
+  selection for device reads
 - initial React views for device connection, profile sync, tuning/layout
   editing, and synth preset organization
 

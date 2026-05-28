@@ -92,6 +92,8 @@ class colorDef;
 struct SettingsHeader;
 struct SynthPresetSlot;
 struct LegacySynthPresetSlot;
+struct SynthPresetMenuAction;
+struct SynthPresetMenuFolderNode;
 
 // Software-detected hardware revision.
 constexpr byte HARDWARE_UNKNOWN = 0;
@@ -127,8 +129,9 @@ void refreshMidiRouting();
 void save_settings();
 void load_synth_presets();
 void save_synth_presets();
-void saveSynthPresetToSlot(uint8_t presetIndex);
-void loadSynthPresetFromSlot(uint8_t presetIndex);
+void saveSynthPresetToSlot(uint16_t presetIndex);
+void saveSynthPresetAsNew(const char* folderPath);
+void loadSynthPresetFromSlot(uint16_t presetIndex);
 void captureCurrentSynthPreset(SynthPresetSlot& preset);
 void applySynthPresetToSettings(const SynthPresetSlot& preset);
 bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len);
@@ -136,7 +139,9 @@ void copyCurrentSettingsToProfile(uint8_t profileIndex);
 void markSettingsDirty();
 void menuHome();
 void menuSynthOptionsHome();
-void refreshSynthPresetMenuLabels();
+void rebuildSynthPresetMenuItems();
+void requestSynthPresetMenuRebuild();
+void serviceSynthPresetMenuRebuild();
 void showOnlyValidLayoutChoices();
 void showOnlyValidScaleChoices();
 void showOnlyValidKeyChoices();
@@ -6849,9 +6854,10 @@ constexpr uint8_t NUM_SETTINGS_V7 = static_cast<uint8_t>(SettingKey::EffectEnvel
 constexpr uint8_t NUM_SETTINGS_V8 = static_cast<uint8_t>(SettingKey::EnvelopeHoldIndex);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
-constexpr uint8_t SYNTH_PRESET_COUNT = 20;
+constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
+constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
 constexpr uint8_t LEGACY_SYNTH_PRESET_COUNT = 8;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 5;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 6;
 constexpr size_t SYNTH_PRESET_NAME_LENGTH = 32;
 constexpr size_t SYNTH_PRESET_FOLDER_LENGTH = 48;
 constexpr size_t SYNTH_PRESET_MENU_LABEL_LENGTH = 64;
@@ -6952,10 +6958,16 @@ uint8_t defaultProfileIndex = DEFAULT_PROFILE_INDEX;
 extern bool settingsDirty;
 void syncSettingsToRuntime();
 
-struct SynthPresetFileHeader {
+struct SynthPresetFileHeaderBase {
   char magic[3];     // "SYP"
   uint8_t version;
   uint32_t crc32;
+};
+
+struct SynthPresetFileHeader {
+  SynthPresetFileHeaderBase base;
+  uint16_t count;
+  uint16_t reserved;
 };
 
 struct SynthPresetSlot {
@@ -6972,7 +6984,7 @@ struct LegacySynthPresetSlot {
   uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
 };
 
-std::array<SynthPresetSlot, SYNTH_PRESET_COUNT> synthPresets = {};
+std::vector<SynthPresetSlot> synthPresets;
 
 void remapLegacySynthPresetEnvelopeTimes(SynthPresetSlot& preset) {
   if (!preset.valid) {
@@ -7318,12 +7330,8 @@ void save_settings() {
 }
 
 void applyDefaultSynthPresets() {
-  for (uint8_t i = 0; i < synthPresets.size(); ++i) {
-    SynthPresetSlot& preset = synthPresets[i];
-    preset = SynthPresetSlot{};
-    snprintf(preset.name, sizeof(preset.name), "Slot %u", static_cast<unsigned>(i + 1));
-    snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", SYNTH_PRESET_ROOT_FOLDER);
-  }
+  synthPresets.clear();
+  synthPresets.reserve(SYNTH_PRESET_LEGACY_NAMED_COUNT);
 }
 
 void generateSynthPresetObjectId(SynthPresetSlot& preset, uint8_t fallbackIndex) {
@@ -7364,6 +7372,45 @@ bool synthPresetObjectIdIsEmpty(const SynthPresetSlot& preset) {
   return true;
 }
 
+void normalizeSynthPresetFolderPath(char* folderPath, size_t folderPathLength) {
+  if (folderPathLength == 0) {
+    return;
+  }
+  folderPath[folderPathLength - 1] = '\0';
+  if (!folderPath[0]) {
+    snprintf(folderPath, folderPathLength, "%s", SYNTH_PRESET_ROOT_FOLDER);
+    return;
+  }
+
+  char normalized[SYNTH_PRESET_FOLDER_LENGTH] = {};
+  size_t outputIndex = 0;
+  bool previousWasSlash = false;
+  for (size_t i = 0; folderPath[i] != '\0' && outputIndex + 1 < sizeof(normalized); ++i) {
+    char value = folderPath[i];
+    if (value == '\\') {
+      value = '/';
+    }
+    if (value == '/') {
+      if (outputIndex == 0 || previousWasSlash) {
+        previousWasSlash = true;
+        continue;
+      }
+      previousWasSlash = true;
+    } else {
+      previousWasSlash = false;
+    }
+    normalized[outputIndex++] = value;
+  }
+  while (outputIndex > 0 && normalized[outputIndex - 1] == '/') {
+    normalized[--outputIndex] = '\0';
+  }
+  if (outputIndex == 0) {
+    snprintf(folderPath, folderPathLength, "%s", SYNTH_PRESET_ROOT_FOLDER);
+    return;
+  }
+  snprintf(folderPath, folderPathLength, "%s", normalized);
+}
+
 void normalizeSynthPresetMetadata(SynthPresetSlot& preset, uint8_t fallbackIndex) {
   if (!preset.name[0]) {
     snprintf(preset.name, sizeof(preset.name), "Slot %u", static_cast<unsigned>(fallbackIndex + 1));
@@ -7373,22 +7420,23 @@ void normalizeSynthPresetMetadata(SynthPresetSlot& preset, uint8_t fallbackIndex
   }
   preset.name[sizeof(preset.name) - 1] = '\0';
   preset.folderPath[sizeof(preset.folderPath) - 1] = '\0';
+  normalizeSynthPresetFolderPath(preset.folderPath, sizeof(preset.folderPath));
   if (synthPresetObjectIdIsEmpty(preset)) {
     generateSynthPresetObjectId(preset, fallbackIndex);
   }
 }
 
 void migrateLegacySynthPresetSlot(const LegacySynthPresetSlot& legacyPreset, uint8_t index) {
-  if (index >= synthPresets.size()) {
+  if (!legacyPreset.valid || synthPresets.size() >= SYNTH_PRESET_MAX_COUNT) {
     return;
   }
-  SynthPresetSlot& preset = synthPresets[index];
-  preset = SynthPresetSlot{};
+  SynthPresetSlot preset = {};
   preset.valid = legacyPreset.valid;
   snprintf(preset.name, sizeof(preset.name), "Slot %u", static_cast<unsigned>(index + 1));
   snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", SYNTH_PRESET_ROOT_FOLDER);
   memcpy(preset.values, legacyPreset.values, sizeof(preset.values));
   normalizeSynthPresetMetadata(preset, index);
+  synthPresets.push_back(preset);
 }
 
 uint8_t currentSynthPresetValue(SettingKey key) {
@@ -7446,24 +7494,48 @@ void loadBlankSynthPreset() {
   sendToLog("Loaded blank synth preset.");
 }
 
+void compactSynthPresets() {
+  synthPresets.erase(
+    std::remove_if(synthPresets.begin(), synthPresets.end(), [](const SynthPresetSlot& preset) {
+      return !preset.valid;
+    }),
+    synthPresets.end()
+  );
+  if (synthPresets.size() > SYNTH_PRESET_MAX_COUNT) {
+    synthPresets.resize(SYNTH_PRESET_MAX_COUNT);
+  }
+  for (size_t i = 0; i < synthPresets.size(); ++i) {
+    normalizeSynthPresetMetadata(synthPresets[i], static_cast<uint8_t>(i));
+  }
+}
+
+uint32_t synthPresetDataCrc(const SynthPresetSlot* presets, size_t presetCount) {
+  return crc32(reinterpret_cast<const uint8_t*>(presets), sizeof(SynthPresetSlot) * presetCount);
+}
+
 void save_synth_presets() {
   if (!fileSystemExists) {
     sendToLog("File system not available.");
     return;
   }
+  compactSynthPresets();
   File f = LittleFS.open("/synth_presets.dat", "w");
   if (!f) {
     sendToLog("Error: Unable to open /synth_presets.dat for writing.");
     return;
   }
   SynthPresetFileHeader header;
-  header.magic[0] = 'S'; header.magic[1] = 'Y'; header.magic[2] = 'P';
-  header.version = SYNTH_PRESET_FILE_VERSION;
-  header.crc32 = crc32(reinterpret_cast<const uint8_t*>(synthPresets.data()), sizeof(SynthPresetSlot) * synthPresets.size());
+  header.base.magic[0] = 'S'; header.base.magic[1] = 'Y'; header.base.magic[2] = 'P';
+  header.base.version = SYNTH_PRESET_FILE_VERSION;
+  header.base.crc32 = synthPresetDataCrc(synthPresets.data(), synthPresets.size());
+  header.count = static_cast<uint16_t>(synthPresets.size());
+  header.reserved = 0;
   f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SynthPresetFileHeader));
-  f.write(reinterpret_cast<uint8_t*>(synthPresets.data()), sizeof(SynthPresetSlot) * synthPresets.size());
+  if (!synthPresets.empty()) {
+    f.write(reinterpret_cast<uint8_t*>(synthPresets.data()), sizeof(SynthPresetSlot) * synthPresets.size());
+  }
   f.close();
-  sendToLog("Synth presets saved.");
+  sendToLog("Synth presets saved (" + std::to_string(synthPresets.size()) + ").");
 }
 
 void load_synth_presets() {
@@ -7477,8 +7549,8 @@ void load_synth_presets() {
     sendToLog("Synth preset file not found. Starting with empty preset slots.");
     return;
   }
-  SynthPresetFileHeader header;
-  if (f.readBytes(reinterpret_cast<char*>(&header), sizeof(SynthPresetFileHeader)) != sizeof(SynthPresetFileHeader)) {
+  SynthPresetFileHeaderBase header;
+  if (f.readBytes(reinterpret_cast<char*>(&header), sizeof(SynthPresetFileHeaderBase)) != sizeof(SynthPresetFileHeaderBase)) {
     sendToLog("Error: Failed to read synth preset header.");
     f.close();
     applyDefaultSynthPresets();
@@ -7491,9 +7563,9 @@ void load_synth_presets() {
     return;
   }
 
-  if (header.version < SYNTH_PRESET_FILE_VERSION) {
-    size_t presetCountInFile = (header.version < 4) ? LEGACY_SYNTH_PRESET_COUNT : SYNTH_PRESET_COUNT;
-    std::array<LegacySynthPresetSlot, SYNTH_PRESET_COUNT> legacyPresets = {};
+  if (header.version < 5) {
+    size_t presetCountInFile = (header.version < 4) ? LEGACY_SYNTH_PRESET_COUNT : SYNTH_PRESET_LEGACY_NAMED_COUNT;
+    std::array<LegacySynthPresetSlot, SYNTH_PRESET_LEGACY_NAMED_COUNT> legacyPresets = {};
     size_t presetDataSize = sizeof(LegacySynthPresetSlot) * presetCountInFile;
     size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(legacyPresets.data()), presetDataSize);
     f.close();
@@ -7522,24 +7594,59 @@ void load_synth_presets() {
     return;
   }
 
-  size_t presetDataSize = sizeof(SynthPresetSlot) * synthPresets.size();
-  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(synthPresets.data()), presetDataSize);
+  uint16_t presetCountInFile = SYNTH_PRESET_LEGACY_NAMED_COUNT;
+  if (header.version >= 6) {
+    if (f.read(reinterpret_cast<uint8_t*>(&presetCountInFile), sizeof(presetCountInFile)) != sizeof(presetCountInFile)) {
+      sendToLog("Warning: Synth preset count missing. Starting with empty preset slots.");
+      f.close();
+      applyDefaultSynthPresets();
+      return;
+    }
+    uint16_t reserved = 0;
+    if (f.read(reinterpret_cast<uint8_t*>(&reserved), sizeof(reserved)) != sizeof(reserved)) {
+      sendToLog("Warning: Synth preset header incomplete. Starting with empty preset slots.");
+      f.close();
+      applyDefaultSynthPresets();
+      return;
+    }
+  }
+  if (presetCountInFile > SYNTH_PRESET_MAX_COUNT) {
+    sendToLog("Synth preset file exceeds maximum preset count. Starting with empty preset slots.");
+    f.close();
+    applyDefaultSynthPresets();
+    return;
+  }
+
+  std::vector<SynthPresetSlot> loadedPresets(presetCountInFile);
+  size_t presetDataSize = sizeof(SynthPresetSlot) * loadedPresets.size();
+  size_t bytesRead = presetDataSize == 0 ? 0 : f.read(reinterpret_cast<uint8_t*>(loadedPresets.data()), presetDataSize);
   f.close();
   if (bytesRead != presetDataSize) {
     sendToLog("Warning: Synth preset data incomplete. Starting with empty preset slots.");
     applyDefaultSynthPresets();
     return;
   }
-  uint32_t computed = crc32(reinterpret_cast<const uint8_t*>(synthPresets.data()), presetDataSize);
+  uint32_t computed = synthPresetDataCrc(loadedPresets.data(), loadedPresets.size());
   if (computed != header.crc32) {
     sendToLog("Synth preset CRC32 mismatch. Starting with empty preset slots.");
     applyDefaultSynthPresets();
     return;
   }
-  for (uint8_t i = 0; i < synthPresets.size(); ++i) {
-    normalizeSynthPresetMetadata(synthPresets[i], i);
+  synthPresets.clear();
+  synthPresets.reserve(std::min<size_t>(loadedPresets.size(), SYNTH_PRESET_MAX_COUNT));
+  for (size_t i = 0; i < loadedPresets.size() && synthPresets.size() < SYNTH_PRESET_MAX_COUNT; ++i) {
+    if (!loadedPresets[i].valid) {
+      continue;
+    }
+    normalizeSynthPresetMetadata(loadedPresets[i], static_cast<uint8_t>(synthPresets.size()));
+    synthPresets.push_back(loadedPresets[i]);
   }
-  sendToLog("Synth presets loaded successfully.");
+  if (header.version < SYNTH_PRESET_FILE_VERSION) {
+    sendToLog("Synth presets migrated from version " + std::to_string(header.version) + " to version " + std::to_string(SYNTH_PRESET_FILE_VERSION) + ".");
+    save_synth_presets();
+    return;
+  }
+  sendToLog("Synth presets loaded successfully (" + std::to_string(synthPresets.size()) + ").");
 }
 
 void applySynthPresetToSettings(const SynthPresetSlot& preset) {
@@ -7570,26 +7677,34 @@ void flashSafeSaveSynthPresets() {
   flashSafeWrite(save_synth_presets);
 }
 
-void saveSynthPresetToSlot(uint8_t presetIndex) {
-  if (presetIndex >= SYNTH_PRESET_COUNT) {
+void saveSynthPresetToSlot(uint16_t presetIndex) {
+  if (presetIndex >= synthPresets.size()) {
     return;
   }
   captureCurrentSynthPreset(synthPresets[presetIndex]);
-  normalizeSynthPresetMetadata(synthPresets[presetIndex], presetIndex);
+  normalizeSynthPresetMetadata(synthPresets[presetIndex], static_cast<uint8_t>(presetIndex));
   flashSafeSaveSynthPresets();
-  refreshSynthPresetMenuLabels();
   sendToLog("Saved synth preset " + std::string(synthPresets[presetIndex].name));
 }
 
-void loadSynthPresetFromSlot(uint8_t presetIndex) {
-  if (presetIndex >= SYNTH_PRESET_COUNT) {
+void saveSynthPresetAsNew(const char* folderPath) {
+  if (synthPresets.size() >= SYNTH_PRESET_MAX_COUNT) {
+    sendToLog("Synth preset library is full.");
     return;
   }
-  if (!synthPresets[presetIndex].valid) {
-    applyBlankSynthPresetToSettings();
-    markSettingsDirty();
-    syncSettingsToRuntime();
-    sendToLog("Synth preset " + std::string(synthPresets[presetIndex].name) + " is empty. Loaded blank synth preset.");
+  SynthPresetSlot preset = {};
+  captureCurrentSynthPreset(preset);
+  snprintf(preset.name, sizeof(preset.name), "Preset %u", static_cast<unsigned>(synthPresets.size() + 1));
+  snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", folderPath && folderPath[0] ? folderPath : SYNTH_PRESET_ROOT_FOLDER);
+  normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(synthPresets.size()));
+  synthPresets.push_back(preset);
+  flashSafeSaveSynthPresets();
+  sendToLog("Saved new synth preset " + std::string(preset.name));
+}
+
+void loadSynthPresetFromSlot(uint16_t presetIndex) {
+  if (presetIndex >= synthPresets.size() || !synthPresets[presetIndex].valid) {
+    sendToLog("Synth preset handle is empty.");
     return;
   }
   applySynthPresetToSettings(synthPresets[presetIndex]);
@@ -7967,18 +8082,9 @@ bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlo
 }
 
 int findSynthPresetByObjectId(const uint8_t* objectId) {
-  for (uint8_t i = 0; i < synthPresets.size(); ++i) {
+  for (size_t i = 0; i < synthPresets.size(); ++i) {
     if (synthPresets[i].valid && memcmp(synthPresets[i].objectId, objectId, SYNTH_PRESET_OBJECT_ID_LENGTH) == 0) {
-      return i;
-    }
-  }
-  return -1;
-}
-
-int findFreeSynthPresetSlot() {
-  for (uint8_t i = 0; i < synthPresets.size(); ++i) {
-    if (!synthPresets[i].valid) {
-      return i;
+      return static_cast<int>(i);
     }
   }
   return -1;
@@ -7992,7 +8098,10 @@ int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset) {
   if (existing >= 0) {
     return existing;
   }
-  return findFreeSynthPresetSlot();
+  if (synthPresets.size() < SYNTH_PRESET_MAX_COUNT) {
+    return static_cast<int>(synthPresets.size());
+  }
+  return -1;
 }
 
 void applySynthPresetRuntimeOnly(const SynthPresetSlot& preset) {
@@ -8014,7 +8123,7 @@ void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_
   response.push_back(CURRENT_SETTINGS_VERSION);
   response.push_back(3);
   response.push_back(PROFILE_COUNT);
-  response.push_back(SYNTH_PRESET_COUNT);
+  presetSyncAppendU14(response, SYNTH_PRESET_MAX_COUNT);
   response.push_back(0);
   response.push_back(0);
   response.push_back(0);
@@ -8056,14 +8165,14 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
   }
 
   std::vector<uint8_t> handles;
-  for (uint8_t i = 0; i < synthPresets.size(); ++i) {
+  for (size_t i = 0; i < synthPresets.size(); ++i) {
     if (!synthPresets[i].valid) {
       continue;
     }
     if (folderFilter[0] && strncmp(synthPresets[i].folderPath, folderFilter, sizeof(synthPresets[i].folderPath)) != 0) {
       continue;
     }
-    handles.push_back(i);
+    handles.push_back(static_cast<uint8_t>(i));
   }
 
   uint8_t pageSize = requestedPageSize == 0 ? 4 : std::min<uint8_t>(requestedPageSize, 4);
@@ -8080,7 +8189,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
     for (size_t listIndex = start; listIndex < end; ++listIndex) {
       uint8_t handle = handles[listIndex];
       SynthPresetSlot& preset = synthPresets[handle];
-      normalizeSynthPresetMetadata(preset, handle);
+      normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(handle));
       response.push_back(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET);
       presetSyncAppendU14(response, handle);
       response.push_back(0x01);
@@ -8302,10 +8411,14 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
         presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
         return;
       }
-      synthPresets[slotIndex] = parsedPreset;
+      if (static_cast<size_t>(slotIndex) == synthPresets.size()) {
+        synthPresets.push_back(parsedPreset);
+      } else {
+        synthPresets[slotIndex] = parsedPreset;
+      }
       normalizeSynthPresetMetadata(synthPresets[slotIndex], static_cast<uint8_t>(slotIndex));
       flashSafeSaveSynthPresets();
-      refreshSynthPresetMenuLabels();
+      requestSynthPresetMenuRebuild();
     }
   }
 
@@ -8339,9 +8452,9 @@ void presetSyncHandleDelete(uint16_t transactionId, const uint8_t* payload, size
     return;
   }
   if (!(deleteFlags & 0x01)) {
-    synthPresets[handle].valid = 0;
+    synthPresets.erase(synthPresets.begin() + handle);
     flashSafeSaveSynthPresets();
-    refreshSynthPresetMenuLabels();
+    requestSynthPresetMenuRebuild();
   }
   presetSyncSendAck(transactionId, PRESET_SYNC_MSG_DELETE_REQ);
 }
@@ -9072,13 +9185,30 @@ void loadProfileMenu(GEMCallbackData callbackData) {
   menuHome();
 }
 
+struct SynthPresetMenuAction {
+  uint16_t presetIndex = 0;
+  bool createNew = false;
+  char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
+};
+
 void saveSynthPresetMenu(GEMCallbackData callbackData) {
-  saveSynthPresetToSlot(callbackData.valByte);
+  SynthPresetMenuAction* action = reinterpret_cast<SynthPresetMenuAction*>(callbackData.valPointer);
+  if (action) {
+    if (action->createNew) {
+      saveSynthPresetAsNew(action->folderPath);
+    } else {
+      saveSynthPresetToSlot(action->presetIndex);
+    }
+  }
   menuSynthOptionsHome();
+  requestSynthPresetMenuRebuild();
 }
 
 void loadSynthPresetMenu(GEMCallbackData callbackData) {
-  loadSynthPresetFromSlot(callbackData.valByte);
+  SynthPresetMenuAction* action = reinterpret_cast<SynthPresetMenuAction*>(callbackData.valPointer);
+  if (action) {
+    loadSynthPresetFromSlot(action->presetIndex);
+  }
   menuSynthOptionsHome();
 }
 
@@ -9110,33 +9240,222 @@ GEMSelect* selectKey[TUNINGCOUNT];
 GEMItem* menuItemKeys[TUNINGCOUNT];
 GEMItem* menuItemSaveProfile[PROFILE_COUNT];
 GEMItem* menuItemLoadProfile[PROFILE_COUNT];
-GEMItem* menuItemSaveSynthPreset[SYNTH_PRESET_COUNT];
 GEMItem* menuItemLoadSynthPresetBlank;
-GEMItem* menuItemLoadSynthPreset[SYNTH_PRESET_COUNT];
 char saveProfileLabels[PROFILE_COUNT][24];
 char loadProfileLabels[PROFILE_COUNT][24];
-char saveSynthPresetLabels[SYNTH_PRESET_COUNT][SYNTH_PRESET_MENU_LABEL_LENGTH];
-char loadSynthPresetLabels[SYNTH_PRESET_COUNT][SYNTH_PRESET_MENU_LABEL_LENGTH];
 
-void formatSynthPresetMenuLabel(char* output, size_t outputLength, const SynthPresetSlot& preset) {
+struct SynthPresetMenuFolderNode {
+  char path[SYNTH_PRESET_FOLDER_LENGTH] = {};
+  char label[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
+  GEMPage* savePage = nullptr;
+  GEMPage* loadPage = nullptr;
+};
+
+std::vector<GEMItem*> synthPresetMenuItems;
+std::vector<GEMPage*> synthPresetMenuPages;
+std::vector<SynthPresetMenuAction*> synthPresetMenuActions;
+std::vector<SynthPresetMenuFolderNode*> synthPresetMenuFolders;
+std::vector<char*> synthPresetMenuLabels;
+bool synthPresetMenuRebuildPending = false;
+
+char* cloneSynthPresetMenuText(const char* text) {
+  size_t length = strlen(text);
+  char* copy = new char[length + 1];
+  memcpy(copy, text, length + 1);
+  synthPresetMenuLabels.push_back(copy);
+  return copy;
+}
+
+SynthPresetMenuAction* createSynthPresetMenuAction(uint16_t presetIndex, bool createNew, const char* folderPath) {
+  SynthPresetMenuAction* action = new SynthPresetMenuAction{};
+  action->presetIndex = presetIndex;
+  action->createNew = createNew;
+  snprintf(action->folderPath, sizeof(action->folderPath), "%s", folderPath && folderPath[0] ? folderPath : SYNTH_PRESET_ROOT_FOLDER);
+  normalizeSynthPresetFolderPath(action->folderPath, sizeof(action->folderPath));
+  synthPresetMenuActions.push_back(action);
+  return action;
+}
+
+void addSynthPresetMenuButton(GEMPage& page, const char* label, void (*callback)(GEMCallbackData), SynthPresetMenuAction* action) {
+  GEMItem* item = new GEMItem(cloneSynthPresetMenuText(label), callback, reinterpret_cast<void*>(action));
+  synthPresetMenuItems.push_back(item);
+  page.addMenuItem(*item);
+}
+
+void addSynthPresetNewMenuButton(GEMPage& page, const char* folderPath) {
+  addSynthPresetMenuButton(
+    page,
+    "New Preset",
+    saveSynthPresetMenu,
+    createSynthPresetMenuAction(0, true, folderPath)
+  );
+}
+
+SynthPresetMenuFolderNode* findSynthPresetMenuFolder(const char* folderPath) {
+  for (SynthPresetMenuFolderNode* folder : synthPresetMenuFolders) {
+    if (strncmp(folder->path, folderPath, sizeof(folder->path)) == 0) {
+      return folder;
+    }
+  }
+  return nullptr;
+}
+
+void parentSynthPresetFolderPath(const char* folderPath, char* output, size_t outputLength) {
   if (outputLength == 0) {
     return;
   }
-  const char* name = preset.name[0] ? preset.name : "Slot";
-  const char* folderPath = preset.folderPath[0] ? preset.folderPath : SYNTH_PRESET_ROOT_FOLDER;
-  if (preset.valid && strcmp(folderPath, SYNTH_PRESET_ROOT_FOLDER) != 0) {
-    snprintf(output, outputLength, "%s/%s", folderPath, name);
+  const char* slash = strrchr(folderPath, '/');
+  if (!slash) {
+    snprintf(output, outputLength, "%s", SYNTH_PRESET_ROOT_FOLDER);
   } else {
-    snprintf(output, outputLength, "%s", name);
+    size_t length = std::min(static_cast<size_t>(slash - folderPath), outputLength - 1);
+    memcpy(output, folderPath, length);
+    output[length] = '\0';
+    normalizeSynthPresetFolderPath(output, outputLength);
   }
-  output[outputLength - 1] = '\0';
 }
 
-void refreshSynthPresetMenuLabels() {
-  for (uint8_t i = 0; i < SYNTH_PRESET_COUNT; ++i) {
-    normalizeSynthPresetMetadata(synthPresets[i], i);
-    formatSynthPresetMenuLabel(saveSynthPresetLabels[i], sizeof(saveSynthPresetLabels[i]), synthPresets[i]);
-    formatSynthPresetMenuLabel(loadSynthPresetLabels[i], sizeof(loadSynthPresetLabels[i]), synthPresets[i]);
+void synthPresetFolderLabel(const char* folderPath, char* output, size_t outputLength) {
+  if (outputLength == 0) {
+    return;
+  }
+  const char* slash = strrchr(folderPath, '/');
+  const char* labelStart = slash ? slash + 1 : folderPath;
+  snprintf(output, outputLength, "%s", labelStart[0] ? labelStart : "Root");
+}
+
+SynthPresetMenuFolderNode* ensureSynthPresetMenuFolder(const char* folderPath) {
+  char normalized[SYNTH_PRESET_FOLDER_LENGTH] = {};
+  snprintf(normalized, sizeof(normalized), "%s", folderPath && folderPath[0] ? folderPath : SYNTH_PRESET_ROOT_FOLDER);
+  normalizeSynthPresetFolderPath(normalized, sizeof(normalized));
+  if (strcmp(normalized, SYNTH_PRESET_ROOT_FOLDER) == 0) {
+    return nullptr;
+  }
+
+  SynthPresetMenuFolderNode* existing = findSynthPresetMenuFolder(normalized);
+  if (existing) {
+    return existing;
+  }
+
+  char parentPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
+  parentSynthPresetFolderPath(normalized, parentPath, sizeof(parentPath));
+  SynthPresetMenuFolderNode* parent = ensureSynthPresetMenuFolder(parentPath);
+  GEMPage& saveParent = parent ? *parent->savePage : menuPageSynthPresetSave;
+  GEMPage& loadParent = parent ? *parent->loadPage : menuPageSynthPresetLoad;
+
+  SynthPresetMenuFolderNode* folder = new SynthPresetMenuFolderNode{};
+  snprintf(folder->path, sizeof(folder->path), "%s", normalized);
+  synthPresetFolderLabel(normalized, folder->label, sizeof(folder->label));
+  folder->savePage = new GEMPage(folder->label, saveParent);
+  folder->loadPage = new GEMPage(folder->label, loadParent);
+  synthPresetMenuPages.push_back(folder->savePage);
+  synthPresetMenuPages.push_back(folder->loadPage);
+  synthPresetMenuFolders.push_back(folder);
+
+  GEMItem* saveGoto = new GEMItem(folder->label, *folder->savePage);
+  GEMItem* loadGoto = new GEMItem(folder->label, *folder->loadPage);
+  synthPresetMenuItems.push_back(saveGoto);
+  synthPresetMenuItems.push_back(loadGoto);
+  saveParent.addMenuItem(*saveGoto);
+  loadParent.addMenuItem(*loadGoto);
+  addSynthPresetNewMenuButton(*folder->savePage, folder->path);
+  return folder;
+}
+
+void clearSynthPresetMenuItems() {
+  for (GEMItem* item : synthPresetMenuItems) {
+    item->remove();
+    delete item;
+  }
+  synthPresetMenuItems.clear();
+  menuItemLoadSynthPresetBlank = nullptr;
+
+  for (GEMPage* page : synthPresetMenuPages) {
+    delete page;
+  }
+  synthPresetMenuPages.clear();
+
+  for (SynthPresetMenuAction* action : synthPresetMenuActions) {
+    delete action;
+  }
+  synthPresetMenuActions.clear();
+
+  for (SynthPresetMenuFolderNode* folder : synthPresetMenuFolders) {
+    delete folder;
+  }
+  synthPresetMenuFolders.clear();
+
+  for (char* label : synthPresetMenuLabels) {
+    delete[] label;
+  }
+  synthPresetMenuLabels.clear();
+}
+
+bool synthPresetMenuOwnsPage(GEMPage* page) {
+  if (page == &menuPageSynthPresetSave || page == &menuPageSynthPresetLoad) {
+    return true;
+  }
+  for (GEMPage* ownedPage : synthPresetMenuPages) {
+    if (page == ownedPage) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void requestSynthPresetMenuRebuild() {
+  synthPresetMenuRebuildPending = true;
+}
+
+GEMPage& synthPresetSavePageForFolder(const char* folderPath) {
+  SynthPresetMenuFolderNode* folder = ensureSynthPresetMenuFolder(folderPath);
+  return folder ? *folder->savePage : menuPageSynthPresetSave;
+}
+
+GEMPage& synthPresetLoadPageForFolder(const char* folderPath) {
+  SynthPresetMenuFolderNode* folder = ensureSynthPresetMenuFolder(folderPath);
+  return folder ? *folder->loadPage : menuPageSynthPresetLoad;
+}
+
+void rebuildSynthPresetMenuItems() {
+  clearSynthPresetMenuItems();
+
+  addSynthPresetNewMenuButton(menuPageSynthPresetSave, SYNTH_PRESET_ROOT_FOLDER);
+  menuItemLoadSynthPresetBlank = new GEMItem("Blank", loadBlankSynthPresetMenu);
+  synthPresetMenuItems.push_back(menuItemLoadSynthPresetBlank);
+  menuPageSynthPresetLoad.addMenuItem(*menuItemLoadSynthPresetBlank);
+
+  compactSynthPresets();
+  for (size_t i = 0; i < synthPresets.size(); ++i) {
+    SynthPresetSlot& preset = synthPresets[i];
+    GEMPage& savePage = synthPresetSavePageForFolder(preset.folderPath);
+    GEMPage& loadPage = synthPresetLoadPageForFolder(preset.folderPath);
+    addSynthPresetMenuButton(
+      savePage,
+      preset.name,
+      saveSynthPresetMenu,
+      createSynthPresetMenuAction(static_cast<uint16_t>(i), false, preset.folderPath)
+    );
+    addSynthPresetMenuButton(
+      loadPage,
+      preset.name,
+      loadSynthPresetMenu,
+      createSynthPresetMenuAction(static_cast<uint16_t>(i), false, preset.folderPath)
+    );
+  }
+}
+
+void serviceSynthPresetMenuRebuild() {
+  if (!synthPresetMenuRebuildPending) {
+    return;
+  }
+  synthPresetMenuRebuildPending = false;
+  if (synthPresetMenuOwnsPage(menu.getCurrentMenuPage())) {
+    menu.setMenuPageCurrent(menuPageSynth);
+  }
+  rebuildSynthPresetMenuItems();
+  if (menu.getCurrentMenuPage() == &menuPageSynth) {
+    menu.drawMenu();
   }
 }
 /*
@@ -10888,19 +11207,7 @@ void createProfileMenuItems() {
 }
 
 void createSynthPresetMenuItems() {
-  for (uint8_t i = 0; i < SYNTH_PRESET_COUNT; ++i) {
-    normalizeSynthPresetMetadata(synthPresets[i], i);
-    formatSynthPresetMenuLabel(saveSynthPresetLabels[i], sizeof(saveSynthPresetLabels[i]), synthPresets[i]);
-    menuItemSaveSynthPreset[i] = new GEMItem(saveSynthPresetLabels[i], saveSynthPresetMenu, i);
-    menuPageSynthPresetSave.addMenuItem(*menuItemSaveSynthPreset[i]);
-  }
-  menuItemLoadSynthPresetBlank = new GEMItem("Blank", loadBlankSynthPresetMenu);
-  menuPageSynthPresetLoad.addMenuItem(*menuItemLoadSynthPresetBlank);
-  for (uint8_t i = 0; i < SYNTH_PRESET_COUNT; ++i) {
-    formatSynthPresetMenuLabel(loadSynthPresetLabels[i], sizeof(loadSynthPresetLabels[i]), synthPresets[i]);
-    menuItemLoadSynthPreset[i] = new GEMItem(loadSynthPresetLabels[i], loadSynthPresetMenu, i);
-    menuPageSynthPresetLoad.addMenuItem(*menuItemLoadSynthPreset[i]);
-  }
+  rebuildSynthPresetMenuItems();
 }
 
 void setupTuningMenuPage() {
@@ -11329,6 +11636,7 @@ void loop() {        // run on first core
     lightUpLEDs();   // refresh LEDs
   }
   dealWithRotary();  // deal with menu
+  serviceSynthPresetMenuRebuild();
   drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   checkAndAutoSave();  // save settings
 }

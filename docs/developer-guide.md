@@ -81,8 +81,12 @@ npm test
 
 The app uses Vite, React, TypeScript, and Vitest. It targets browser Web MIDI
 SysEx and includes a mock MIDI transport for object types that firmware does not
-support yet. Real-device synth preset saves use an ACKed write path through
-`WRITE_COMMIT`; live preview remains a fast apply-only write path.
+support yet. The Device view lets the user choose MIDI output and input ports
+separately because preset reads require the HexBoard input even when live
+parameter sends work with output only. Real-device synth preset saves use an
+ACKed write path through `WRITE_COMMIT`; live preview remains a fast apply-only
+write path. HexBoard Library refresh uses object-list metadata as a fallback so
+device presets still appear if a full object body read fails.
 
 Current web source layout:
 
@@ -312,7 +316,7 @@ Important implementation details:
 - the amp envelope has `EnvelopeAttackIndex`, `EnvelopeHoldIndex`, `EnvelopeDecayIndex`, `EnvelopeSustainLevel`, and `EnvelopeReleaseIndex`
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
-- synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `5`; there are `20` named/foldered entries; presets save synth sound parameters only and do not persist a current preset id; the on-device save/load menus are still flat but display non-root presets as `Folder/Name`; version `1` through `3` files are migrated from the old `8`-slot layout, and version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names
+- synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `6`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters only and do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, and version `5` fixed named/foldered arrays migrate into the counted version `6` catalog
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
