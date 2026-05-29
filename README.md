@@ -168,7 +168,9 @@ npm test
 ```
 
 Web MIDI SysEx requires a browser with Web MIDI support, usually Chrome or Edge,
-and a secure context such as `localhost` or HTTPS.
+and a secure context such as `localhost` or HTTPS. Select both the HexBoard MIDI
+output and input ports in the web app; reading the device library requires the
+input port that receives HexBoard SysEx replies.
 
 ### Build Notes
 

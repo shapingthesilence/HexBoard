@@ -311,9 +311,11 @@ The companion web app has protocol and catalog helpers for that draft under
 Real-device synth preset saves wait for ACK/NACK responses through
 `WRITE_COMMIT`; library refresh requests list synth preset records one at a
 time before reading each object body. The Device view exposes separate MIDI
-output/input selection so reads are not blocked by a guessed or missing input
-port. If an object body read fails, the web app still displays the object-list
-metadata and reports the first full-read failure in the sync status.
+output/input selection, explicitly opens selected Web MIDI ports, and blocks
+device-library refresh when no input port is attached so reads are not blocked
+by a guessed or missing input port. If an object body read fails, the web app
+still displays the object-list metadata and reports the first full-read failure
+in the sync status.
 
 ## Played Note OLED Overlay
 

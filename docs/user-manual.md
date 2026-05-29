@@ -361,7 +361,9 @@ refreshes the `HexBoard Library`.
 The app requires a Web MIDI SysEx-capable browser such as Chrome or Edge running
 from `localhost` or HTTPS. Use the Device page to connect both the HexBoard MIDI
 output and input ports; live parameter editing can work with output only, but
-reading the `HexBoard Library` requires the matching input port.
+reading the `HexBoard Library` requires the matching input port. If refresh
+times out, check the Device page `Input` dropdown because the browser must
+receive HexBoard SysEx replies to list or read device presets.
 
 ### Control Wheel
 

@@ -25,6 +25,7 @@ export interface WebMidiInput {
   type: "input";
   state?: string;
   onmidimessage: ((event: WebMidiMessageEvent) => void) | null;
+  open?: () => Promise<WebMidiInput>;
 }
 
 export interface WebMidiOutput {
@@ -34,6 +35,7 @@ export interface WebMidiOutput {
   type: "output";
   state?: string;
   send(data: number[] | Uint8Array): void;
+  open?: () => Promise<WebMidiOutput>;
 }
 
 export interface WebMidiPortMap<T> {

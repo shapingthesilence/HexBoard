@@ -43,6 +43,7 @@ function summarizePort(port: WebMidiInput | WebMidiOutput): MidiPortSummary {
 
 export class WebMidiTransport implements MidiTransport {
   readonly label: string;
+  readonly hasInput: boolean;
   private readonly listeners = new Set<MidiMessageListener>();
   private readonly output: WebMidiOutput;
   private readonly input?: WebMidiInput;
@@ -55,6 +56,7 @@ export class WebMidiTransport implements MidiTransport {
     this.label = inputLabel && inputLabel !== outputLabel
       ? `${outputLabel} <-> ${inputLabel}`
       : outputLabel;
+    this.hasInput = Boolean(this.input);
     if (this.input) {
       this.input.onmidimessage = (event) => {
         for (const listener of this.listeners) {

@@ -12,6 +12,7 @@ import {
 import { MockMidiTransport } from "../midi/mockTransport.ts";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
+import { WebMidiTransport } from "../midi/webMidi.ts";
 import { crc32 } from "../protocol/crc32.ts";
 import type { ObjectListRecord } from "../protocol/index.ts";
 import { CommonTlv, decodeObjectBody, textFromBytes } from "../protocol/tlv.ts";
@@ -671,6 +672,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       setSyncStatus("Mock transport does not have device storage to refresh");
       return;
     }
+    if (transport instanceof WebMidiTransport && !transport.hasInput) {
+      setSyncStatus("Select the HexBoard MIDI input port before refreshing device presets.");
+      return;
+    }
 
     try {
       setSyncStatus("Requesting HexBoard Library...");
@@ -694,7 +699,12 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         setSyncStatus(`${successStatus}: ${presets.length} preset${presets.length === 1 ? "" : "s"}`);
       }
     } catch (error) {
-      setSyncStatus(error instanceof Error ? error.message : "Failed to refresh HexBoard Library");
+      const message = error instanceof Error ? error.message : "Failed to refresh HexBoard Library";
+      setSyncStatus(
+        message.includes("Timed out")
+          ? `${message}. Check Device > Input; the browser must receive HexBoard SysEx replies to read device presets.`
+          : message
+      );
     }
   }
 

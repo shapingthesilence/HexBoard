@@ -94,6 +94,8 @@ export function DeviceConnect({
         setStatus("No MIDI output ports found");
         return;
       }
+      await output.open?.();
+      await input?.open?.();
       setAccess(midiAccess);
       setPorts(listMidiPorts(midiAccess));
       setSelectedOutputId(output.id);
@@ -101,7 +103,7 @@ export function DeviceConnect({
       const webTransport = new WebMidiTransport(output, input);
       onTransportChange(webTransport);
       onConnectionLabelChange(`Web MIDI: ${webTransport.label}`);
-      setStatus(input ? "Web MIDI transport active" : "Output connected. Select the HexBoard input port to read device presets.");
+      setStatus(input ? "Web MIDI transport active" : "Output connected. Select the HexBoard input port before refreshing device presets.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Web MIDI connection failed");
     }

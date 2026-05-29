@@ -82,11 +82,12 @@ npm test
 The app uses Vite, React, TypeScript, and Vitest. It targets browser Web MIDI
 SysEx and includes a mock MIDI transport for object types that firmware does not
 support yet. The Device view lets the user choose MIDI output and input ports
-separately because preset reads require the HexBoard input even when live
-parameter sends work with output only. Real-device synth preset saves use an
-ACKed write path through `WRITE_COMMIT`; live preview remains a fast apply-only
-write path. HexBoard Library refresh uses object-list metadata as a fallback so
-device presets still appear if a full object body read fails.
+separately, explicitly opens the selected ports, and blocks device-library
+refresh without an input because preset reads require the HexBoard input even
+when live parameter sends work with output only. Real-device synth preset saves
+use an ACKed write path through `WRITE_COMMIT`; live preview remains a fast
+apply-only write path. HexBoard Library refresh uses object-list metadata as a
+fallback so device presets still appear if a full object body read fails.
 
 Current web source layout:
 
