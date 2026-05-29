@@ -927,7 +927,8 @@ write the individual objects after the web app unpacks a bundle.
    SysEx buffer limits.
 7. Current firmware treats recognized preset-sync frames as a modal transfer
    window: the display shows `MIDI SysEx Transfer`, normal core-0 UI/LED work is
-   paused, and MIDI input is pumped until the exchange goes idle or times out.
+   paused, and MIDI input is pumped until the exchange goes idle with no active
+   object transfer, or until timeout clears the active transfer.
 8. Current firmware paces device-to-host object reads by waiting for host ACKs
    after `READ_BEGIN`, after each `DATA_CHUNK`, and after `TRANSFER_END`.
 

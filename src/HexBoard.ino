@@ -7954,6 +7954,10 @@ void presetSyncCancelReadTransfer() {
   presetSyncReadTransfer = PresetSyncReadTransfer{};
 }
 
+void presetSyncCancelWriteTransfer() {
+  presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+}
+
 uint8_t presetSyncChunkChecksum(const uint8_t* data, size_t length) {
   uint8_t sum = 0;
   for (size_t i = 0; i < length; ++i) {
@@ -9221,12 +9225,18 @@ bool servicePresetSyncTransfer() {
     if (now >= presetSyncTransferDeadline) {
       sendToLog("Preset-sync SysEx transfer window timed out.");
       presetSyncCancelReadTransfer();
+      presetSyncCancelWriteTransfer();
       presetSyncTransferActive = false;
       break;
     }
     if ((now - presetSyncTransferLastActivity) >= PRESET_SYNC_TRANSFER_IDLE_MICROS) {
-      presetSyncTransferActive = false;
-      break;
+      if (presetSyncReadTransfer.active || presetSyncWriteTransfer.active) {
+        delayMicroseconds(100);
+        continue;
+      } else {
+        presetSyncTransferActive = false;
+        break;
+      }
     }
     if (!processed) {
       delayMicroseconds(100);
