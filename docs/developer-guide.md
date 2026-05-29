@@ -108,6 +108,13 @@ The firmware is split across the RP2040's two cores:
 
 There is also a timer-driven synth/audio path that must stay responsive. Flash writes on RP2040 disable interrupts on both cores, so the code mutes audio before saving settings to avoid audible garbage.
 
+Firmware MIDI input uses the Arduino MIDI library's default one-byte parser, so
+the input pump must drain the transport with `getTransport()->available()` rather
+than stopping when `read()` returns `false` for an incomplete SysEx frame. During
+preset-sync activity, core 0 enters a short transfer window: it draws a `MIDI
+SysEx Transfer` screen, repeatedly pumps MIDI input, and skips normal
+menu/button/LED work until the transfer is idle or the transfer window times out.
+
 Performance-sensitive firmware code can use the `RAM_FUNC(name)` wrapper to
 place selected functions in SRAM instead of external-flash XIP. Keep this
 selective. The current RAM placement favors small hot paths and note-critical
@@ -205,7 +212,7 @@ The firmware still uses a few dynamic containers in live paths:
 
 Treat these as known risk areas before adding more heap allocation to button scan, MIDI, LED, or ISR-adjacent paths.
 
-Normal-mode incoming MIDI uses `processIncomingMIDIInterface()` to drain currently available events per enabled interface. MIDI-in LED latency is handled by a short render coalescing window, not by limiting how many MIDI events are parsed per loop.
+Normal-mode incoming MIDI uses `processIncomingMIDIInterface()` to drain currently available transport bytes per enabled interface. MIDI-in LED latency is handled by a short render coalescing window, not by limiting how many MIDI bytes are parsed per loop.
 
 ## Physical Control Model
 

@@ -365,6 +365,10 @@ reading the `HexBoard Library` requires the matching input port. If refresh
 times out, check the Device page `Input` dropdown because the browser must
 receive HexBoard SysEx replies to list or read device presets.
 
+While a preset-sync SysEx exchange is active, the HexBoard display shows
+`MIDI SysEx Transfer` and pauses normal menu/button/LED work while it services
+incoming MIDI. The message clears when the transfer is idle or times out.
+
 ### Control Wheel
 
 This page adjusts how quickly the command-button wheels move and whether they snap back.

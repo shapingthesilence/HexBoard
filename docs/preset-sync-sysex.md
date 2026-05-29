@@ -925,6 +925,9 @@ write the individual objects after the web app unpacks a bundle.
 6. The current web app requests one synth preset record per object-list page
    before reading each object body, keeping response frames under conservative
    SysEx buffer limits.
+7. Current firmware treats recognized preset-sync frames as a modal transfer
+   window: the display shows `MIDI SysEx Transfer`, normal core-0 UI/LED work is
+   paused, and MIDI input is pumped until the exchange goes idle or times out.
 
 ## Implementation Notes For Future Firmware
 

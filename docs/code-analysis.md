@@ -317,6 +317,13 @@ by a guessed or missing input port. If an object body read fails, the web app
 still displays the object-list metadata and reports the first full-read failure
 in the sync status.
 
+Firmware MIDI receive now drains all currently available transport bytes instead
+of relying on `while (read())`; this matters because the MIDI library returns
+`false` for each incomplete SysEx byte when one-byte parsing is enabled. When a
+preset-sync frame is recognized, core 0 opens a modal transfer window, displays
+`MIDI SysEx Transfer`, keeps pumping MIDI input, and resumes normal main-loop
+work after an idle gap or timeout.
+
 ## Played Note OLED Overlay
 
 `DisplayNotes` is a normal persisted Advanced-menu setting that is enabled by default. When enabled, MIDI note on/off updates mark a small OLED display region dirty. `drawPlayedNotesOverlay()` runs from the main loop after menu input handling. During normal menu display it draws only the newest currently held note as a top-right badge using the same large note font as the full overlay. During a temporary screensaver wake it renders the larger `Now Playing` overlay with up to `6` unique active notes.

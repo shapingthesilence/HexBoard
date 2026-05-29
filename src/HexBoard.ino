@@ -135,6 +135,8 @@ void loadSynthPresetFromSlot(uint16_t presetIndex);
 void captureCurrentSynthPreset(SynthPresetSlot& preset);
 void applySynthPresetToSettings(const SynthPresetSlot& preset);
 bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len);
+bool processIncomingMIDI();
+bool servicePresetSyncTransfer();
 void copyCurrentSettingsToProfile(uint8_t profileIndex);
 void markSettingsDirty();
 void menuHome();
@@ -2775,6 +2777,15 @@ constexpr byte MIDID_USB = 1;
 constexpr byte MIDID_SER = 2;
 constexpr byte MIDID_BOTH = 3;
 byte midiD = MIDID_USB | MIDID_SER;
+constexpr uint16_t MIDI_INPUT_DRAIN_BYTE_LIMIT = 512;
+constexpr uint64_t PRESET_SYNC_TRANSFER_IDLE_MICROS = 250000ULL;
+constexpr uint64_t PRESET_SYNC_TRANSFER_TIMEOUT_MICROS = 3000000ULL;
+bool presetSyncTransferActive = false;
+bool presetSyncTransferScreenVisible = false;
+uint64_t presetSyncTransferLastActivity = 0;
+uint64_t presetSyncTransferDeadline = 0;
+uint32_t presetSyncTransferFrameCount = 0;
+uint8_t presetSyncTransferLastMessage = 0;
 
 // What program change number we last sent (General MIDI/Roland MT-32)
 byte programChange = 0;
@@ -6386,6 +6397,18 @@ bool reportDeviceIdentity(const uint8_t* data, const unsigned int len) {
   return false;
 }
 
+void notePresetSyncTransferActivity(uint8_t message) {
+  uint64_t now = readClock();
+  if (!presetSyncTransferActive) {
+    presetSyncTransferFrameCount = 0;
+  }
+  presetSyncTransferActive = true;
+  presetSyncTransferLastActivity = now;
+  presetSyncTransferDeadline = now + PRESET_SYNC_TRANSFER_TIMEOUT_MICROS;
+  presetSyncTransferLastMessage = message;
+  ++presetSyncTransferFrameCount;
+}
+
 void onToggleDelegated() {
   if (delegatedControl) {
     memset(delegatedColors, 0, sizeof(delegatedColors));
@@ -6449,21 +6472,30 @@ void processDelegatedSysEx(const uint8_t* data, const unsigned int len) {
   }
 }
 
-void processIncomingSysEx(const uint8_t* data, const unsigned int len) {
+bool processIncomingSysEx(const uint8_t* data, const unsigned int len) {
   if (reportDeviceIdentity(data, len)) {
-    return;
+    return true;
   }
   if (processPresetSyncSysEx(data, len)) {
-    return;
+    return true;
   }
   if ((len == 4) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {
     toggleDelegated();
+    return true;
   }
+  return false;
 }
 
 template <class MidiInterface>
-void processIncomingMIDIInterface(MidiInterface& M) {
-  while (M.read()) {
+bool processIncomingMIDIInterface(MidiInterface& M) {
+  bool processed = false;
+  uint16_t drainedBytes = 0;
+  while (M.getTransport()->available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
+    ++drainedBytes;
+    if (!M.read()) {
+      continue;
+    }
+    processed = true;
     const auto type = M.getType();
     if (type == MIDI_NAMESPACE::SystemExclusive) {
       const uint8_t* sysex = M.getSysExArray();
@@ -6483,43 +6515,65 @@ void processIncomingMIDIInterface(MidiInterface& M) {
       applyExternalMidiToHex(n, false);
     }
   }
+  return processed || drainedBytes > 0;
 }
 
-void processIncomingMIDIDelegated() {
-  withMIDI([&](auto& M) {
-    while (M.read()) {
-      const auto type = M.getType();
-      if (type == MIDI_NAMESPACE::SystemExclusive) {
-        const uint8_t* sysex = M.getSysExArray();
-        const unsigned int len = M.getSysExArrayLength();
-        if (len <= 3 || reportDeviceIdentity(sysex, len)) {
-          continue;
-        }
-        if ((sysex[0] != 0xF0) || (sysex[len - 1] != 0xF7)) {
-          sendToLog("invalid delegated SysEx received; ignoring");
-          continue;
-        }
-        if (sysex[1] != 0x7D) {
-          sendToLog("delegated incoming: ignoring SysEx vendor " + std::to_string(sysex[1]));
-          continue;
-        }
-        if (processPresetSyncSysEx(sysex, len)) {
-          continue;
-        }
-        processDelegatedSysEx(&sysex[2], len - 3);
-      } else {
-        sendToLog("delegated incoming: " + std::to_string(type));
-      }
+template <class MidiInterface>
+bool processIncomingMIDIDelegatedInterface(MidiInterface& M) {
+  bool processed = false;
+  uint16_t drainedBytes = 0;
+  while (M.getTransport()->available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
+    ++drainedBytes;
+    if (!M.read()) {
+      continue;
     }
-  });
+    processed = true;
+    const auto type = M.getType();
+    if (type == MIDI_NAMESPACE::SystemExclusive) {
+      const uint8_t* sysex = M.getSysExArray();
+      const unsigned int len = M.getSysExArrayLength();
+      if (len <= 3 || reportDeviceIdentity(sysex, len)) {
+        continue;
+      }
+      if ((sysex[0] != 0xF0) || (sysex[len - 1] != 0xF7)) {
+        sendToLog("invalid delegated SysEx received; ignoring");
+        continue;
+      }
+      if (sysex[1] != 0x7D) {
+        sendToLog("delegated incoming: ignoring SysEx vendor " + std::to_string(sysex[1]));
+        continue;
+      }
+      if (processPresetSyncSysEx(sysex, len)) {
+        continue;
+      }
+      processDelegatedSysEx(&sysex[2], len - 3);
+    } else {
+      sendToLog("delegated incoming: " + std::to_string(type));
+    }
+  }
+  return processed || drainedBytes > 0;
 }
 
-void RAM_FUNC(processIncomingMIDI)() {
+bool processIncomingMIDIDelegated() {
+  bool processed = false;
+  withMIDI([&](auto& M) {
+    processed = processIncomingMIDIDelegatedInterface(M) || processed;
+  });
+  return processed;
+}
+
+bool RAM_FUNC(processIncomingMIDI)() {
   if (delegatedControl) {
-    return;
+    return false;
   }
-  if (midiD & MIDID_USB) processIncomingMIDIInterface(UMIDI);
-  if (midiD & MIDID_SER) processIncomingMIDIInterface(SMIDI);
+  bool processed = false;
+  if (midiD & MIDID_USB) {
+    processed = processIncomingMIDIInterface(UMIDI) || processed;
+  }
+  if (midiD & MIDID_SER) {
+    processed = processIncomingMIDIInterface(SMIDI) || processed;
+  }
+  return processed;
 }
 
 void animateLEDs() {
@@ -8468,6 +8522,7 @@ bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len) {
   uint16_t transactionId = presetSyncDecodeU14(data + 6);
   const uint8_t* payload = data + 8;
   size_t payloadLength = len - 9;
+  notePresetSyncTransferActivity(message);
 
   if (!presetSyncPayloadIsSevenBit(payload, payloadLength)) {
     presetSyncSendNack(transactionId, message, PRESET_SYNC_ERROR_BAD_LENGTH);
@@ -9023,6 +9078,73 @@ void drawPlayedNotesOverlay() {
   }
 
   u8g2.sendBuffer();
+}
+
+void drawPresetSyncTransferScreen() {
+  if (screenSaverOn) {
+    screenSaverOn = 0;
+    u8g2.setContrast(CONTRAST_AWAKE);
+  }
+  screenTime = 0;
+  noteOverlayVisible = false;
+  noteBadgeVisible = false;
+  noteOverlayTemporaryWake = false;
+  noteOverlayWokeDisplayFromSleep = false;
+
+  char frameText[28];
+  char messageText[18];
+  snprintf(frameText, sizeof(frameText), "Frames: %lu", static_cast<unsigned long>(presetSyncTransferFrameCount));
+  snprintf(messageText, sizeof(messageText), "Msg: 0x%02X", presetSyncTransferLastMessage);
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x13_tf);
+  u8g2.drawStr(8, 18, "MIDI SysEx");
+  u8g2.drawStr(8, 34, "Transfer");
+  u8g2.drawStr(8, 58, "Preset sync active");
+  u8g2.drawStr(8, 76, frameText);
+  u8g2.drawStr(8, 94, messageText);
+  u8g2.drawStr(8, 116, "Please wait...");
+  u8g2.sendBuffer();
+  presetSyncTransferScreenVisible = true;
+}
+
+void closePresetSyncTransferScreen() {
+  if (!presetSyncTransferScreenVisible) {
+    return;
+  }
+  presetSyncTransferScreenVisible = false;
+  menu.drawMenu();
+}
+
+bool servicePresetSyncTransfer() {
+  if (!presetSyncTransferActive) {
+    return false;
+  }
+
+  drawPresetSyncTransferScreen();
+  bool pausedMainLoop = false;
+  while (presetSyncTransferActive) {
+    pausedMainLoop = true;
+    bool processed = processIncomingMIDI();
+    uint64_t now = readClock();
+    if (now >= presetSyncTransferDeadline) {
+      sendToLog("Preset-sync SysEx transfer window timed out.");
+      presetSyncTransferActive = false;
+      break;
+    }
+    if ((now - presetSyncTransferLastActivity) >= PRESET_SYNC_TRANSFER_IDLE_MICROS) {
+      presetSyncTransferActive = false;
+      break;
+    }
+    if (!processed) {
+      delayMicroseconds(100);
+    }
+  }
+
+  if (!presetSyncTransferActive) {
+    closePresetSyncTransferScreen();
+  }
+  return pausedMainLoop;
 }
 
 /*
@@ -11623,6 +11745,9 @@ void setup() {
 }
 void loop() {        // run on first core
   timeTracker();     // Time tracking functions
+  if (servicePresetSyncTransfer()) {
+    return;
+  }
   processEnvelopeReleases();
   retryPendingReleases();
   screenSaver();     // Reduces wear-and-tear on OLED panel
@@ -11631,6 +11756,9 @@ void loop() {        // run on first core
   runMetronome();    // metronome beep/flash modes share the synth tempo
   updateWheels();    // deal with the pitch/mod wheel
   processIncomingMIDI();  // respond to external MIDI input
+  if (servicePresetSyncTransfer()) {
+    return;
+  }
   animateLEDs();     // deal with animations
   if (!shouldDeferMidiInLedRefresh()) {
     lightUpLEDs();   // refresh LEDs
