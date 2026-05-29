@@ -114,6 +114,8 @@ than stopping when `read()` returns `false` for an incomplete SysEx frame. Durin
 preset-sync activity, core 0 enters a short transfer window: it draws a `MIDI
 SysEx Transfer` screen, repeatedly pumps MIDI input, and skips normal
 menu/button/LED work until the transfer is idle or the transfer window times out.
+Device-to-host preset reads are ACK-paced: firmware sends `READ_BEGIN`, waits
+for the host ACK, then sends one `DATA_CHUNK` per ACK before `TRANSFER_END`.
 
 Performance-sensitive firmware code can use the `RAM_FUNC(name)` wrapper to
 place selected functions in SRAM instead of external-flash XIP. Keep this

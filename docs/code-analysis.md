@@ -322,7 +322,9 @@ of relying on `while (read())`; this matters because the MIDI library returns
 `false` for each incomplete SysEx byte when one-byte parsing is enabled. When a
 preset-sync frame is recognized, core 0 opens a modal transfer window, displays
 `MIDI SysEx Transfer`, keeps pumping MIDI input, and resumes normal main-loop
-work after an idle gap or timeout.
+work after an idle gap or timeout. Device-to-host reads are paced by host ACKs
+for `READ_BEGIN`, each `DATA_CHUNK`, and `TRANSFER_END` so USB MIDI buffers do
+not have to absorb the whole object transfer at once.
 
 ## Played Note OLED Overlay
 

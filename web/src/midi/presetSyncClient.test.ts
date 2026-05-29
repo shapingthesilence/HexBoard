@@ -5,11 +5,14 @@ import {
   MessageType,
   ObjectType,
   decodePresetSyncFrame,
+  decodeAckPayload,
   decodeDataChunkPayload,
   decodeWriteBeginPayload,
   decodeWriteCommitPayload,
   encodeAckFrame,
-  encodeDefaultPresetSyncFrame
+  encodeDataChunkPayload,
+  encodeDefaultPresetSyncFrame,
+  encodeTransferEndPayload
 } from "../protocol/index.ts";
 import { MockMidiTransport } from "./mockTransport.ts";
 import { PresetSyncClient } from "./presetSyncClient.ts";
@@ -119,5 +122,71 @@ describe("PresetSyncClient", () => {
     ]));
 
     await expect(request).resolves.toEqual([]);
+  });
+
+  it("ACKs device-to-host read chunks before completing a synth preset read", async () => {
+    const transport = new MockMidiTransport();
+    const client = new PresetSyncClient(transport);
+    const request = client.readSynthPreset(0);
+    const transaction = decodePresetSyncFrame(transport.sentMessages[0]).transactionId;
+    const transferId = 7;
+    const rawData = new Uint8Array([0x48, 0x42, 0x53]);
+
+    transport.emit(encodeDefaultPresetSyncFrame(MessageType.ReadBegin, transaction, [
+      ObjectType.SynthPreset,
+      0x00,
+      0x00,
+      0x00,
+      transferId,
+      0x01,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      rawData.length,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x40,
+      0x00
+    ]));
+    let ack = decodePresetSyncFrame(transport.sentMessages.at(-1) ?? []);
+    expect(ack.message).toBe(MessageType.Ack);
+    expect(decodeAckPayload(ack.payload)).toMatchObject({
+      message: MessageType.ReadBegin,
+      nextChunkIndex: 0
+    });
+
+    transport.emit(encodeDefaultPresetSyncFrame(
+      MessageType.DataChunk,
+      transaction,
+      encodeDataChunkPayload({
+        transferId,
+        chunkIndex: 0,
+        rawOffset: 0,
+        rawData
+      })
+    ));
+    ack = decodePresetSyncFrame(transport.sentMessages.at(-1) ?? []);
+    expect(decodeAckPayload(ack.payload)).toMatchObject({
+      message: MessageType.DataChunk,
+      nextChunkIndex: 1
+    });
+
+    transport.emit(encodeDefaultPresetSyncFrame(
+      MessageType.TransferEnd,
+      transaction,
+      encodeTransferEndPayload(transferId, 1)
+    ));
+
+    await expect(request).resolves.toEqual(rawData);
+    ack = decodePresetSyncFrame(transport.sentMessages.at(-1) ?? []);
+    expect(decodeAckPayload(ack.payload)).toMatchObject({
+      message: MessageType.TransferEnd,
+      nextChunkIndex: 1
+    });
   });
 });

@@ -34,7 +34,8 @@ Choose both the HexBoard output and input ports on the Device page. Live
 parameter sends only need the output port, but device library reads need the
 input port that receives HexBoard SysEx responses. The app explicitly opens the
 selected ports when connecting and warns before a device-library refresh if no
-input port is attached.
+input port is attached. Device preset reads ACK `READ_BEGIN`, each `DATA_CHUNK`,
+and `TRANSFER_END` so firmware can pace object transfers.
 
 ## Current Scope
 

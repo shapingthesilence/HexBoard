@@ -17,6 +17,7 @@ import {
   decodeAckPayload,
   encodeDataChunkPayload,
   encodeDeleteRequestPayload,
+  encodeAckFrame,
   encodeDefaultPresetSyncFrame,
   encodeHelloRequestPayload,
   encodeObjectListRequestPayload,
@@ -405,6 +406,7 @@ export class PresetSyncClient {
       let expectedTransferId: number | null = null;
       let expectedLength = 0;
       let receivedBytes = 0;
+      let expectedChunkIndex = 0;
       let output = new Uint8Array();
 
       const timeout = globalThis.setTimeout(() => {
@@ -445,7 +447,9 @@ export class PresetSyncClient {
             expectedTransferId = begin.transferId;
             expectedLength = begin.rawByteLength;
             receivedBytes = 0;
+            expectedChunkIndex = 0;
             output = new Uint8Array(expectedLength);
+            void this.transport.send(encodeAckFrame(transaction, MessageType.ReadBegin)).catch(fail);
             return;
           }
           if (frame.message === MessageType.DataChunk) {
@@ -456,8 +460,13 @@ export class PresetSyncClient {
             if (chunk.transferId !== expectedTransferId) {
               throw new Error("Unexpected transfer id in read chunk");
             }
+            if (chunk.chunkIndex !== expectedChunkIndex || chunk.rawOffset !== receivedBytes) {
+              throw new Error("Unexpected chunk order in HexBoard read response");
+            }
             output.set(chunk.rawData, chunk.rawOffset);
             receivedBytes += chunk.rawLength;
+            expectedChunkIndex += 1;
+            void this.transport.send(encodeAckFrame(transaction, MessageType.DataChunk, expectedChunkIndex)).catch(fail);
             return;
           }
           if (frame.message === MessageType.TransferEnd) {
@@ -465,10 +474,15 @@ export class PresetSyncClient {
             if (expectedTransferId === null || end.transferId !== expectedTransferId) {
               throw new Error("Unexpected transfer end");
             }
+            if (end.finalChunkCount !== expectedChunkIndex) {
+              throw new Error("Unexpected final chunk count in HexBoard read response");
+            }
             if (receivedBytes !== expectedLength) {
               throw new Error("Incomplete object read from HexBoard");
             }
-            finish(output);
+            void this.transport.send(encodeAckFrame(transaction, MessageType.TransferEnd, expectedChunkIndex))
+              .then(() => finish(output))
+              .catch(fail);
           }
         } catch (error) {
           fail(error);

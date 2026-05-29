@@ -7832,7 +7832,23 @@ struct PresetSyncWriteTransfer {
   std::vector<uint8_t> rawData;
 };
 
+struct PresetSyncReadTransfer {
+  bool active = false;
+  bool endSent = false;
+  uint8_t objectType = 0;
+  uint16_t handle = PRESET_SYNC_NEW_OBJECT_HANDLE;
+  uint16_t transactionId = 0;
+  uint16_t transferId = 0;
+  uint8_t schemaMajor = 0;
+  uint8_t schemaMinor = 0;
+  uint32_t objectCrc32 = 0;
+  uint32_t sentBytes = 0;
+  uint32_t nextChunkIndex = 0;
+  std::vector<uint8_t> rawData;
+};
+
 PresetSyncWriteTransfer presetSyncWriteTransfer;
+PresetSyncReadTransfer presetSyncReadTransfer;
 uint16_t presetSyncNextTransferId = 1;
 
 size_t boundedCStringLength(const char* text, size_t maxLength) {
@@ -7932,6 +7948,10 @@ void presetSyncSendNack(uint16_t transactionId, uint8_t failedMessage, uint8_t e
   presetSyncAppendU21(payload, expectedChunkIndex);
   payload.push_back(detail & 0x7F);
   presetSyncSendFrame(PRESET_SYNC_MSG_NACK, transactionId, payload);
+}
+
+void presetSyncCancelReadTransfer() {
+  presetSyncReadTransfer = PresetSyncReadTransfer{};
 }
 
 uint8_t presetSyncChunkChecksum(const uint8_t* data, size_t length) {
@@ -8269,44 +8289,72 @@ uint16_t presetSyncAllocateTransferId() {
   return current;
 }
 
-void presetSyncSendRawObject(uint16_t transactionId, uint8_t objectType, uint16_t handle, uint8_t schemaMajor, uint8_t schemaMinor, const std::vector<uint8_t>& raw) {
-  uint16_t transferId = presetSyncAllocateTransferId();
-  uint32_t objectCrc = crc32(raw.data(), raw.size());
+void presetSyncSendReadBegin() {
   std::vector<uint8_t> begin;
-  begin.push_back(objectType);
-  presetSyncAppendU14(begin, handle);
-  presetSyncAppendU14(begin, transferId);
-  begin.push_back(schemaMajor);
-  begin.push_back(schemaMinor);
-  presetSyncAppendU28(begin, raw.size());
-  presetSyncAppendU35FromU32(begin, objectCrc);
+  begin.push_back(presetSyncReadTransfer.objectType);
+  presetSyncAppendU14(begin, presetSyncReadTransfer.handle);
+  presetSyncAppendU14(begin, presetSyncReadTransfer.transferId);
+  begin.push_back(presetSyncReadTransfer.schemaMajor);
+  begin.push_back(presetSyncReadTransfer.schemaMinor);
+  presetSyncAppendU28(begin, presetSyncReadTransfer.rawData.size());
+  presetSyncAppendU35FromU32(begin, presetSyncReadTransfer.objectCrc32);
   presetSyncAppendU14(begin, PRESET_SYNC_RAW_CHUNK_SIZE);
   begin.push_back(0);
-  presetSyncSendFrame(PRESET_SYNC_MSG_READ_BEGIN, transactionId, begin);
+  presetSyncSendFrame(PRESET_SYNC_MSG_READ_BEGIN, presetSyncReadTransfer.transactionId, begin);
+}
 
-  uint32_t chunkIndex = 0;
-  for (size_t offset = 0; offset < raw.size(); offset += PRESET_SYNC_RAW_CHUNK_SIZE) {
-    size_t chunkLength = std::min<size_t>(PRESET_SYNC_RAW_CHUNK_SIZE, raw.size() - offset);
-    std::vector<uint8_t> chunk;
-    presetSyncAppendU14(chunk, transferId);
-    presetSyncAppendU21(chunk, chunkIndex);
-    presetSyncAppendU28(chunk, offset);
-    presetSyncAppendU14(chunk, chunkLength);
-    chunk.push_back(presetSyncChunkChecksum(raw.data() + offset, chunkLength));
-    presetSyncPack8To7(raw.data() + offset, chunkLength, chunk);
-    presetSyncSendFrame(PRESET_SYNC_MSG_DATA_CHUNK, transactionId, chunk);
-    ++chunkIndex;
+void presetSyncSendReadEnd() {
+  std::vector<uint8_t> endPayload;
+  presetSyncAppendU14(endPayload, presetSyncReadTransfer.transferId);
+  presetSyncAppendU21(endPayload, presetSyncReadTransfer.nextChunkIndex);
+  presetSyncReadTransfer.endSent = true;
+  presetSyncSendFrame(PRESET_SYNC_MSG_TRANSFER_END, presetSyncReadTransfer.transactionId, endPayload);
+}
+
+void presetSyncSendNextReadChunk() {
+  if (!presetSyncReadTransfer.active) {
+    return;
+  }
+  if (presetSyncReadTransfer.sentBytes >= presetSyncReadTransfer.rawData.size()) {
+    presetSyncSendReadEnd();
+    return;
   }
 
-  std::vector<uint8_t> endPayload;
-  presetSyncAppendU14(endPayload, transferId);
-  presetSyncAppendU21(endPayload, chunkIndex);
-  presetSyncSendFrame(PRESET_SYNC_MSG_TRANSFER_END, transactionId, endPayload);
+  size_t offset = presetSyncReadTransfer.sentBytes;
+  size_t chunkLength = std::min<size_t>(PRESET_SYNC_RAW_CHUNK_SIZE, presetSyncReadTransfer.rawData.size() - offset);
+  std::vector<uint8_t> chunk;
+  presetSyncAppendU14(chunk, presetSyncReadTransfer.transferId);
+  presetSyncAppendU21(chunk, presetSyncReadTransfer.nextChunkIndex);
+  presetSyncAppendU28(chunk, offset);
+  presetSyncAppendU14(chunk, chunkLength);
+  chunk.push_back(presetSyncChunkChecksum(presetSyncReadTransfer.rawData.data() + offset, chunkLength));
+  presetSyncPack8To7(presetSyncReadTransfer.rawData.data() + offset, chunkLength, chunk);
+  presetSyncSendFrame(PRESET_SYNC_MSG_DATA_CHUNK, presetSyncReadTransfer.transactionId, chunk);
+  presetSyncReadTransfer.sentBytes += chunkLength;
+  ++presetSyncReadTransfer.nextChunkIndex;
+}
+
+void presetSyncSendRawObject(uint16_t transactionId, uint8_t objectType, uint16_t handle, uint8_t schemaMajor, uint8_t schemaMinor, const std::vector<uint8_t>& raw) {
+  presetSyncReadTransfer = PresetSyncReadTransfer{};
+  presetSyncReadTransfer.active = true;
+  presetSyncReadTransfer.objectType = objectType;
+  presetSyncReadTransfer.handle = handle;
+  presetSyncReadTransfer.transactionId = transactionId;
+  presetSyncReadTransfer.transferId = presetSyncAllocateTransferId();
+  presetSyncReadTransfer.schemaMajor = schemaMajor;
+  presetSyncReadTransfer.schemaMinor = schemaMinor;
+  presetSyncReadTransfer.objectCrc32 = crc32(raw.data(), raw.size());
+  presetSyncReadTransfer.rawData = raw;
+  presetSyncSendReadBegin();
 }
 
 void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
   if (payloadLength != 4) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+  if (presetSyncReadTransfer.active || presetSyncWriteTransfer.active) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BUSY);
     return;
   }
   if (payload[0] != PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
@@ -8322,12 +8370,51 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
   presetSyncSendRawObject(transactionId, PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, handle, 1, 0, buildSynthPresetObjectBody(synthPresets[handle]));
 }
 
+void presetSyncHandleAck(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  if (payloadLength != 6 || !presetSyncReadTransfer.active || transactionId != presetSyncReadTransfer.transactionId) {
+    return;
+  }
+
+  uint8_t ackedMessage = payload[0];
+  uint32_t nextChunkIndex = presetSyncDecodeU21(payload + 2);
+  switch (ackedMessage) {
+    case PRESET_SYNC_MSG_READ_BEGIN:
+      if (presetSyncReadTransfer.nextChunkIndex == 0 && presetSyncReadTransfer.sentBytes == 0) {
+        presetSyncSendNextReadChunk();
+      }
+      break;
+    case PRESET_SYNC_MSG_DATA_CHUNK:
+      if (!presetSyncReadTransfer.endSent && nextChunkIndex == presetSyncReadTransfer.nextChunkIndex) {
+        presetSyncSendNextReadChunk();
+      }
+      break;
+    case PRESET_SYNC_MSG_TRANSFER_END:
+      presetSyncCancelReadTransfer();
+      break;
+    default:
+      break;
+  }
+}
+
+void presetSyncHandleNack(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  if (payloadLength != 6 || !presetSyncReadTransfer.active || transactionId != presetSyncReadTransfer.transactionId) {
+    return;
+  }
+  uint8_t failedMessage = payload[0];
+  if (failedMessage == PRESET_SYNC_MSG_READ_BEGIN
+      || failedMessage == PRESET_SYNC_MSG_DATA_CHUNK
+      || failedMessage == PRESET_SYNC_MSG_TRANSFER_END) {
+    sendToLog("Preset-sync read transfer aborted by host NACK.");
+    presetSyncCancelReadTransfer();
+  }
+}
+
 void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
   if (payloadLength != 19) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_BAD_LENGTH);
     return;
   }
-  if (presetSyncWriteTransfer.active) {
+  if (presetSyncWriteTransfer.active || presetSyncReadTransfer.active) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_BUSY);
     return;
   }
@@ -8562,6 +8649,10 @@ bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len) {
       presetSyncHandleDelete(transactionId, payload, payloadLength);
       break;
     case PRESET_SYNC_MSG_ACK:
+      presetSyncHandleAck(transactionId, payload, payloadLength);
+      break;
+    case PRESET_SYNC_MSG_NACK:
+      presetSyncHandleNack(transactionId, payload, payloadLength);
       break;
     default:
       presetSyncSendNack(transactionId, message, PRESET_SYNC_ERROR_UNKNOWN_MESSAGE);
@@ -9129,6 +9220,7 @@ bool servicePresetSyncTransfer() {
     uint64_t now = readClock();
     if (now >= presetSyncTransferDeadline) {
       sendToLog("Preset-sync SysEx transfer window timed out.");
+      presetSyncCancelReadTransfer();
       presetSyncTransferActive = false;
       break;
     }
