@@ -273,10 +273,11 @@ file as named, foldered synth sounds and do not remember which preset was last
 loaded. Older fixed-slot preset files are migrated so saved slots appear in the
 root folder `/` with their existing `Slot 1` through `Slot 20` names intact.
 Foldered web-app presets appear as submenus on the device; preset items inside a
-folder show only the preset name. `Load Preset` also includes `Blank`. Saving or
-loading a preset returns to `Synth Options`. Loading a preset changes the
-current synth parameters, which can still be auto-saved by the normal settings
-system.
+folder show only the preset name. A slash typed as part of a web-app folder name
+is preserved as part of that folder label instead of creating extra submenus.
+`Load Preset` also includes `Blank`. Saving or loading a preset returns to
+`Synth Options`. Loading a preset changes the current synth parameters, which
+can still be auto-saved by the normal settings system.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial
 peak longer before decay. Low `Sustain` makes a note fade away even while you
@@ -351,19 +352,23 @@ be edited, erased, exported as JSON files, imported from JSON files, uploaded to
 HexBoard, downloaded back to the computer library, refreshed from the device,
 and dragged between library areas or into folder targets.
 
-When `Live send` is on, editor changes are sent as apply-only preset-sync
-messages over the active MIDI transport; they are intended for real-time
-auditioning, not immediate flash saves. Use `Save to HexBoard` when you want to
-send the named/foldered preset as a save request. Device saves wait for the
-HexBoard to acknowledge the write through the flash commit before the app
-refreshes the `HexBoard Library`.
+When the Synth Presets tab opens with a HexBoard input connected, the editor
+requests the current HexBoard synth patch instead of sending one of the browser
+sample presets. Choosing `Edit` on a preset loads it onto the HexBoard
+immediately for auditioning. When `Live send` is on, later editor changes are
+sent as apply-only preset-sync messages over the active MIDI transport; they are
+intended for real-time auditioning, not immediate flash saves. Use `Save to
+HexBoard` when you want to send the named/foldered preset as a save request.
+Device saves wait for the HexBoard to acknowledge the write through the flash
+commit before the app refreshes the `HexBoard Library`.
 
 The app requires a Web MIDI SysEx-capable browser such as Chrome or Edge running
 from `localhost` or HTTPS. Use the Device page to connect both the HexBoard MIDI
 output and input ports; live parameter editing can work with output only, but
-reading the `HexBoard Library` requires the matching input port. If refresh
-times out, check the Device page `Input` dropdown because the browser must
-receive HexBoard SysEx replies to list or read device presets.
+loading the current patch and reading the `HexBoard Library` require the
+matching input port. If refresh times out, check the Device page `Input`
+dropdown because the browser must receive HexBoard SysEx replies to list or read
+device presets.
 
 While a preset-sync SysEx exchange is active, the HexBoard display shows
 `MIDI SysEx Transfer` and pauses normal menu/button/LED work while it services

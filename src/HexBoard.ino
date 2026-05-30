@@ -2741,6 +2741,7 @@ void RAM_FUNC(lightUpLEDs)() {
     This section of the code handles all
     things related to MIDI messages.
   */
+#include <USB.h>         // Arduino-Pico USB descriptor controls
 #include <MIDIUSB.h>     // Arduino-Pico Pico SDK USB MIDI wrapper
 /*
     These values support correct MIDI output.
@@ -3905,8 +3906,13 @@ void resetMidiInputParser(MidiInputParser& parser) {
   parser.sysex.clear();
 }
 
+void setupUSBDescriptors() {
+  USB.setManufacturer("HexBoard");
+  USB.setProduct("HexBoard");
+}
+
 void setupMIDI() {
-  MidiUSB.setName("HexBoard MIDI");
+  MidiUSB.setName("HexBoard");
   MidiUSB.begin();
   Serial1.begin(SERIAL_MIDI_BAUD);
   usbMidiInput.sysex.reserve(512);
@@ -7795,6 +7801,37 @@ void captureCurrentSynthPreset(SynthPresetSlot& preset) {
   }
 }
 
+void generateCurrentSynthPresetObjectId(SynthPresetSlot& preset) {
+  uint32_t hash = 2166136261u;
+  auto mixByte = [&](uint8_t value) {
+    hash ^= value;
+    hash *= 16777619u;
+  };
+
+  for (const char* p = "synth:current:"; *p; ++p) {
+    mixByte(static_cast<uint8_t>(*p));
+  }
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    mixByte(static_cast<uint8_t>(synthPresetKeys[i]));
+    mixByte(preset.values[i]);
+  }
+
+  for (size_t i = 0; i < sizeof(preset.objectId); ++i) {
+    hash ^= static_cast<uint8_t>(i * 29u);
+    hash *= 16777619u;
+    preset.objectId[i] = static_cast<uint8_t>((hash >> ((i % 4) * 8)) & 0xFF);
+  }
+}
+
+SynthPresetSlot buildCurrentSynthPresetObject() {
+  SynthPresetSlot preset = {};
+  captureCurrentSynthPreset(preset);
+  snprintf(preset.name, sizeof(preset.name), "Current Patch");
+  snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", SYNTH_PRESET_ROOT_FOLDER);
+  generateCurrentSynthPresetObjectId(preset);
+  return preset;
+}
+
 void applyBlankSynthPresetToSettings() {
   for (SettingKey key : synthPresetKeys) {
     uint8_t keyIndex = static_cast<uint8_t>(key);
@@ -8032,6 +8069,7 @@ constexpr uint8_t PRESET_SYNC_FAMILY = 0x10;
 constexpr uint8_t PRESET_SYNC_MAJOR = 1;
 constexpr uint8_t PRESET_SYNC_MINOR = 0;
 constexpr uint16_t PRESET_SYNC_NEW_OBJECT_HANDLE = 0x3FFF;
+constexpr uint16_t PRESET_SYNC_CURRENT_SYNTH_PRESET_HANDLE = PRESET_SYNC_NEW_OBJECT_HANDLE;
 constexpr uint16_t PRESET_SYNC_RAW_CHUNK_SIZE = 64;
 constexpr size_t PRESET_SYNC_MAX_RAW_OBJECT_BYTES = 2048;
 
@@ -8627,6 +8665,11 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
     return;
   }
   uint16_t handle = presetSyncDecodeU14(payload + 1);
+  if (handle == PRESET_SYNC_CURRENT_SYNTH_PRESET_HANDLE) {
+    SynthPresetSlot currentPreset = buildCurrentSynthPresetObject();
+    presetSyncSendRawObject(transactionId, PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, handle, 1, 0, buildSynthPresetObjectBody(currentPreset));
+    return;
+  }
   if (handle >= synthPresets.size() || !synthPresets[handle].valid) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
     return;
@@ -9800,13 +9843,54 @@ void parentSynthPresetFolderPath(const char* folderPath, char* output, size_t ou
   }
 }
 
+int decodeSynthPresetFolderHex(char value) {
+  if (value >= '0' && value <= '9') {
+    return value - '0';
+  }
+  if (value >= 'a' && value <= 'f') {
+    return value - 'a' + 10;
+  }
+  if (value >= 'A' && value <= 'F') {
+    return value - 'A' + 10;
+  }
+  return -1;
+}
+
+void decodeSynthPresetFolderComponent(const char* input, char* output, size_t outputLength) {
+  if (outputLength == 0) {
+    return;
+  }
+
+  size_t outputIndex = 0;
+  for (size_t i = 0; input && input[i] != '\0' && outputIndex + 1 < outputLength; ++i) {
+    if (input[i] == '%' && input[i + 1] != '\0' && input[i + 2] != '\0') {
+      int high = decodeSynthPresetFolderHex(input[i + 1]);
+      int low = decodeSynthPresetFolderHex(input[i + 2]);
+      if (high >= 0 && low >= 0) {
+        char decoded = static_cast<char>((high << 4) | low);
+        if (decoded == '/' || decoded == '\\' || decoded == '%') {
+          output[outputIndex++] = decoded;
+          i += 2;
+          continue;
+        }
+      }
+    }
+    output[outputIndex++] = input[i];
+  }
+  output[outputIndex] = '\0';
+}
+
 void synthPresetFolderLabel(const char* folderPath, char* output, size_t outputLength) {
   if (outputLength == 0) {
     return;
   }
   const char* slash = strrchr(folderPath, '/');
   const char* labelStart = slash ? slash + 1 : folderPath;
-  snprintf(output, outputLength, "%s", labelStart[0] ? labelStart : "Root");
+  if (!labelStart[0]) {
+    snprintf(output, outputLength, "Root");
+    return;
+  }
+  decodeSynthPresetFolderComponent(labelStart, output, outputLength);
 }
 
 SynthPresetMenuFolderNode* ensureSynthPresetMenuFolder(const char* folderPath) {
@@ -12075,6 +12159,7 @@ void setupHardware() {
     Everything else runs on the first core.
   */
 void setup() {
+  setupUSBDescriptors();
   Serial.begin(115200);
   irq_set_enabled(ALARM_IRQ, false);
   setupMIDI();

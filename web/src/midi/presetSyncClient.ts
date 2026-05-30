@@ -102,6 +102,10 @@ export class PresetSyncClient {
     return this.readObject(ObjectType.SynthPreset, handle);
   }
 
+  async readCurrentSynthPreset(): Promise<Uint8Array> {
+    return this.readSynthPreset(NEW_OBJECT_HANDLE);
+  }
+
   async deleteSynthPreset(handle: number): Promise<void> {
     await this.requestFrame(
       MessageType.DeleteRequest,

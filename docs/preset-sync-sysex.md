@@ -611,7 +611,7 @@ Common TLV tags:
 | `0x03` | `Source` | UTF-8 such as `device`, `web-app`, or `scala-import` |
 | `0x04` | `Comment` | Optional UTF-8 note |
 | `0x05` | `Dependency` | Repeated object reference records |
-| `0x06` | `FolderPath` | UTF-8 path using `/` as separator; root is `/`, nested folders omit a leading slash |
+| `0x06` | `FolderPath` | UTF-8 path; root is `/`; unescaped `/` separates nested folders; literal folder-name `/`, `\`, and `%` are encoded as `%2F`, `%5C`, and `%25` |
 | `0x07` | `SortName` | Optional UTF-8 normalized sort/display key |
 | `0x08` | `Tags` | UTF-8 comma-separated tags, optional |
 
@@ -631,7 +631,10 @@ The handle in a saved reference is only a hint. Firmware should resolve by
 the same id.
 
 `FolderPath` is metadata, not identity. Moving a preset from `Bass/` to
-`Leads/` should not break profiles that reference its object id.
+`Leads/` should not break profiles that reference its object id. Hosts that
+want a slash inside one folder label, such as `Pads/Warm`, must encode the
+device-facing folder path as `Pads%2FWarm`; firmware displays the decoded label
+but does not treat the escaped slash as a submenu separator.
 
 ## Device Profile Object
 
@@ -843,11 +846,12 @@ presets. Duplicate names are allowed in different folders. Within the same
 folder, firmware may reject duplicates or allow them as long as object ids stay
 unique.
 
-Example metadata for a named preset in folder `Pads/Warm`:
+Example metadata for a named preset in the literal folder label `Pads/Warm`
+using escaped device storage:
 
 ```text
 01 0B 00 53 6F 66 74 20 53 74 72 69 6E 67
-06 09 00 50 61 64 73 2F 57 61 72 6D
+06 0B 00 50 61 64 73 25 32 46 57 61 72 6D
 ```
 
 ## Bundle Object
@@ -916,7 +920,9 @@ write the individual objects after the web app unpacks a bundle.
 1. Host sends `READ_REQ` or `WRITE_BEGIN` with object type `SynthPreset`.
 2. Hosts should list the synth preset catalog first and use the returned handle
    for read, overwrite, or delete operations. `NEW_OBJECT` creates or updates by
-   object id.
+   object id. For reads only, current firmware also accepts handle `0x3FFF` as a
+   synthetic current-runtime synth preset so hosts can initialize an editor
+   without changing the loaded sound.
 3. Device validates `SynthPresetSchemaVersion`, `Name`, and `FolderPath`.
 4. Commit with `apply` changes the current synth runtime for auditioning. Commit
    with `save` updates `/synth_presets.dat`.

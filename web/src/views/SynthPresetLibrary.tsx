@@ -298,6 +298,40 @@ function folderLabel(folderPath: string): string {
   return folderPath === rootFolderPath ? "Root" : folderPath;
 }
 
+function normalizeDisplayFolderPath(folderPath: string): string {
+  return folderPath.trim() || rootFolderPath;
+}
+
+function encodeDeviceFolderPath(folderPath: string): string {
+  const normalized = normalizeDisplayFolderPath(folderPath);
+  if (normalized === rootFolderPath) {
+    return rootFolderPath;
+  }
+  return normalized
+    .replace(/%/g, "%25")
+    .replace(/\//g, "%2F")
+    .replace(/\\/g, "%5C");
+}
+
+function decodeDeviceFolderPath(folderPath: string): string {
+  const normalized = normalizeDisplayFolderPath(folderPath);
+  if (normalized === rootFolderPath) {
+    return rootFolderPath;
+  }
+  return normalized.replace(/%(25|2f|2F|5c|5C)/g, (match) => {
+    switch (match.toUpperCase()) {
+      case "%25":
+        return "%";
+      case "%2F":
+        return "/";
+      case "%5C":
+        return "\\";
+      default:
+        return match;
+    }
+  });
+}
+
 function comparePresets(left: EditableSynthPreset, right: EditableSynthPreset): number {
   return `${left.folderPath}/${left.name}`.localeCompare(`${right.folderPath}/${right.name}`);
 }
@@ -321,7 +355,7 @@ function encodeEditablePreset(preset: EditableSynthPreset) {
   return createSynthPresetObject({
     objectId: objectIdFromHex(preset.objectIdHex),
     name: preset.name.trim() || "Untitled",
-    folderPath: preset.folderPath.trim() || rootFolderPath,
+    folderPath: encodeDeviceFolderPath(preset.folderPath),
     favorite: preset.favorite,
     values: preset.values
   });
@@ -344,7 +378,7 @@ function presetFromUnknown(value: unknown): EditableSynthPreset {
   }
 
   const name = typeof source.name === "string" && source.name.trim() ? source.name.trim() : "Imported Preset";
-  const folderPath = typeof source.folderPath === "string" && source.folderPath.trim() ? source.folderPath.trim() : rootFolderPath;
+  const folderPath = typeof source.folderPath === "string" && source.folderPath.trim() ? normalizeDisplayFolderPath(source.folderPath) : rootFolderPath;
   const importedValues = isRecord(source.values) ? source.values : {};
   const values = { ...defaultPreset.values };
 
@@ -378,7 +412,7 @@ function presetFromObjectBody(body: Uint8Array, deviceHandle?: number): Editable
     } else if (record.tag === CommonTlv.ObjectId && record.value.length === 16) {
       objectIdHex = objectIdToHex(record.value);
     } else if (record.tag === CommonTlv.FolderPath) {
-      folderPath = textFromBytes(record.value) || rootFolderPath;
+      folderPath = decodeDeviceFolderPath(textFromBytes(record.value) || rootFolderPath);
     } else if (record.tag === SynthPresetTlv.Favorite && record.value.length > 0) {
       favorite = record.value[0] !== 0;
     } else if (record.tag === SynthPresetTlv.SynthValues) {
@@ -406,7 +440,7 @@ function presetFromObjectListRecord(record: ObjectListRecord): EditableSynthPres
     objectIdHex: objectIdToHex(record.objectId),
     deviceHandle: record.handle,
     name: record.name || `Preset ${record.handle + 1}`,
-    folderPath: record.folderPath || rootFolderPath,
+    folderPath: decodeDeviceFolderPath(record.folderPath || rootFolderPath),
     favorite: (record.flags & 0x02) !== 0,
     values: { ...defaultPreset.values }
   };
@@ -457,12 +491,12 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [customFolders, setCustomFolders] = useState(defaultFolders);
   const [newFolder, setNewFolder] = useState("");
   const [autoSend, setAutoSend] = useState(true);
+  const [editorHydrated, setEditorHydrated] = useState(() => transport instanceof MockMidiTransport);
   const [syncStatus, setSyncStatus] = useState("Ready");
   const [lastFrameCount, setLastFrameCount] = useState(0);
   const [draggedPreset, setDraggedPreset] = useState<DraggedPreset | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const firstRender = useRef(true);
-  const skipNextAutoSend = useRef(false);
+  const skipNextAutoSend = useRef(true);
 
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
   const allFolders = useMemo(
@@ -486,17 +520,29 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   useEffect(() => {
     if (transport instanceof MockMidiTransport) {
+      setEditorHydrated(true);
       return;
     }
-    void refreshHexBoardLibrary("Loaded HexBoard Library");
+
+    let cancelled = false;
+    setEditorHydrated(false);
+    skipNextAutoSend.current = true;
+
+    const hydrateTimer = window.setTimeout(() => void (async () => {
+      await loadCurrentHexBoardPatch(() => cancelled);
+      if (!cancelled) {
+        await refreshHexBoardLibrary("Loaded HexBoard Library");
+      }
+    })(), 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(hydrateTimer);
+    };
   }, [client, transport]);
 
   useEffect(() => {
-    if (!autoSend) {
-      return;
-    }
-    if (firstRender.current) {
-      firstRender.current = false;
+    if (!autoSend || !editorHydrated) {
       return;
     }
     if (skipNextAutoSend.current) {
@@ -509,9 +555,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }, 120);
 
     return () => window.clearTimeout(timeout);
-  }, [autoSend, draftPreset]);
+  }, [autoSend, draftPreset, editorHydrated]);
 
   function updateValue(key: EditableSynthValueKey, value: number) {
+    skipNextAutoSend.current = false;
+    setEditorHydrated(true);
     setPreset((current) => ({
       ...current,
       values: {
@@ -526,16 +574,20 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     if (!folder) {
       return;
     }
+    skipNextAutoSend.current = false;
+    setEditorHydrated(true);
     setCustomFolders((current) => Array.from(new Set([...current, folder])).sort());
     setPreset((current) => ({ ...current, folderPath: folder }));
     setNewFolder("");
   }
 
   function editPreset(source: LibrarySpace, nextPreset: EditableSynthPreset) {
+    const selectedPreset = clonePreset(nextPreset);
     skipNextAutoSend.current = true;
-    setPreset(clonePreset(nextPreset));
+    setEditorHydrated(true);
+    setPreset(selectedPreset);
     setEditingSource(source);
-    setSyncStatus(`Editing ${nextPreset.name} from ${librarySpaceLabel(source)}`);
+    void sendPresetPreview(selectedPreset, "Loaded for audition");
   }
 
   function findPreset(dragged: DraggedPreset): EditableSynthPreset | undefined {
@@ -547,7 +599,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     const normalized = {
       ...clonePreset(nextPreset),
       name: nextPreset.name.trim() || "Untitled",
-      folderPath: nextPreset.folderPath.trim() || rootFolderPath,
+      folderPath: normalizeDisplayFolderPath(nextPreset.folderPath),
       deviceHandle: undefined
     };
     setComputerPresets((current) => upsertPreset(current, normalized));
@@ -558,9 +610,9 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     setSyncStatus(`Saved ${normalized.name} to Computer Library`);
   }
 
-  async function sendPreview(prefix = "Sent") {
+  async function sendPresetPreview(nextPreset: EditableSynthPreset, prefix = "Sent") {
     try {
-      const frames = await client.sendSynthPresetPreview(draftPreset);
+      const frames = await client.sendSynthPresetPreview(encodeEditablePreset(nextPreset));
       setLastFrameCount(frames.length);
       setSyncStatus(`${prefix} ${frames.length} frame${frames.length === 1 ? "" : "s"} to ${transport.label}`);
     } catch (error) {
@@ -568,11 +620,15 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
   }
 
+  async function sendPreview(prefix = "Sent") {
+    await sendPresetPreview(preset, prefix);
+  }
+
   async function uploadToHexBoard(nextPreset = preset, prefix = "Uploaded") {
     const normalized = {
       ...clonePreset(nextPreset),
       name: nextPreset.name.trim() || "Untitled",
-      folderPath: nextPreset.folderPath.trim() || rootFolderPath
+      folderPath: normalizeDisplayFolderPath(nextPreset.folderPath)
     };
     try {
       const encodedPreset = encodeEditablePreset(normalized);
@@ -664,6 +720,39 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to import preset file");
     } finally {
       input.value = "";
+    }
+  }
+
+  async function loadCurrentHexBoardPatch(isCancelled: () => boolean = () => false) {
+    if (transport instanceof MockMidiTransport) {
+      return false;
+    }
+    if (transport instanceof WebMidiTransport && !transport.hasInput) {
+      setSyncStatus("Select the HexBoard MIDI input port before loading the current patch.");
+      return false;
+    }
+
+    try {
+      setSyncStatus("Loading current HexBoard patch...");
+      const currentPreset = {
+        ...presetFromObjectBody(await client.readCurrentSynthPreset()),
+        deviceHandle: undefined
+      };
+      if (isCancelled()) {
+        return false;
+      }
+      skipNextAutoSend.current = true;
+      setPreset(clonePreset(currentPreset));
+      setEditingSource("hexboard");
+      setEditorHydrated(true);
+      setCustomFolders((current) => Array.from(new Set([...current, currentPreset.folderPath])).sort());
+      setSyncStatus(`Loaded current HexBoard patch into editor as ${currentPreset.name}`);
+      return true;
+    } catch (error) {
+      if (!isCancelled()) {
+        setSyncStatus(error instanceof Error ? error.message : "Failed to load current HexBoard patch");
+      }
+      return false;
     }
   }
 

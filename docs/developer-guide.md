@@ -52,6 +52,7 @@ The `Makefile` currently compiles with:
 - CPU: `250 MHz`
 - Boot stage 2: `Generic SPI /4`
 - USB stack: `picosdk`
+- USB manufacturer/product build descriptors: `HexBoard`
 
 If you build manually, match the options in `Makefile` and the header comment in `src/HexBoard.ino`.
 The `Generic SPI /4` boot2 selection is required for the local `250 MHz` build to avoid overdriving external flash; `Generic SPI /2` may compile but can crash the board at runtime. The higher CPU clock gives the synth ISR enough headroom for dense AHDSR and FX-envelope patches that can otherwise report overruns.
@@ -86,8 +87,13 @@ separately, explicitly opens the selected ports, and blocks device-library
 refresh without an input because preset reads require the HexBoard input even
 when live parameter sends work with output only. Real-device synth preset saves
 use an ACKed write path through `WRITE_COMMIT`; live preview remains a fast
-apply-only write path. HexBoard Library refresh uses object-list metadata as a
-fallback so device presets still appear if a full object body read fails.
+apply-only write path. The synth editor reads the current runtime synth patch
+from handle `0x3FFF` before enabling live sends, and preset selection sends an
+apply-only preview immediately for auditioning. HexBoard Library refresh uses
+object-list metadata as a fallback so device presets still appear if a full
+object body read fails. Folder names are display strings in the app; literal
+`/`, `\`, and `%` characters are percent-escaped only in the device-facing
+folder path.
 
 Current web source layout:
 
@@ -327,7 +333,7 @@ Important implementation details:
 - the amp envelope has `EnvelopeAttackIndex`, `EnvelopeHoldIndex`, `EnvelopeDecayIndex`, `EnvelopeSustainLevel`, and `EnvelopeReleaseIndex`
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
-- synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `6`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters only and do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, and version `5` fixed named/foldered arrays migrate into the counted version `6` catalog
+- synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `6`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters only and do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, and version `5` fixed named/foldered arrays migrate into the counted version `6` catalog
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
@@ -444,24 +450,25 @@ When `settingsFileMissingOnBoot` is true, `showFirstBootWhiteDiagnostic()` runs 
 
 Core 0 startup currently does this in order:
 
-1. start USB serial logging
-2. disable the synth alarm IRQ
-3. `setupMIDI()` to register Pico SDK USB MIDI and start `Serial1` MIDI
-4. wait briefly for USB MIDI enumeration
-5. `setupFileSystem()`
-6. configure I2C
-7. `setupPins()`
-8. `setupGrid()`
-9. `detectHardwareVersion()`
-10. `load_settings()`
-11. `setupLEDs()`
-12. `setupGFX()`
-13. `setupRotary()`
-14. `setupMenu()`
-15. `setupHardware()`
-16. `syncSettingsToRuntime()`
-17. `recomputePitchBendFactor()`
-18. `runBootLedSelfCheck()`
+1. set USB manufacturer/product descriptors to `HexBoard`
+2. start USB serial logging
+3. disable the synth alarm IRQ
+4. `setupMIDI()` to register Pico SDK USB MIDI as `HexBoard` and start `Serial1` MIDI
+5. wait briefly for USB MIDI enumeration
+6. `setupFileSystem()`
+7. configure I2C
+8. `setupPins()`
+9. `setupGrid()`
+10. `detectHardwareVersion()`
+11. `load_settings()`
+12. `setupLEDs()`
+13. `setupGFX()`
+14. `setupRotary()`
+15. `setupMenu()`
+16. `setupHardware()`
+17. `syncSettingsToRuntime()`
+18. `recomputePitchBendFactor()`
+19. `runBootLedSelfCheck()`
 
 If you add initialization code, place it where its dependencies are already valid. Do not, for example, rely on menu objects before `setupMenu()` or on loaded settings before `load_settings()`.
 

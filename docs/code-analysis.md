@@ -2,7 +2,7 @@
 
 > File: `src/HexBoard.ino`
 > Current shape: one Arduino sketch, about `7,300` lines
-> Target: Generic RP2040 at `250 MHz`, `16 MB` flash split as `8 MB` sketch / `8 MB` LittleFS, Pico SDK USB, Generic SPI `/4` boot2, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
+> Target: Generic RP2040 at `250 MHz`, `16 MB` flash split as `8 MB` sketch / `8 MB` LittleFS, Pico SDK USB with `HexBoard` USB descriptors, Generic SPI `/4` boot2, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
 
 This document describes the current firmware structure. It intentionally avoids exact line-number references because the sketch changes often. Use the `// @...` section tags in `src/HexBoard.ino` and `rg` searches as the source navigation method.
 
@@ -186,20 +186,21 @@ not require a settings-version bump.
 
 Core 0 setup currently:
 
-1. starts USB serial logging
-2. disables the synth alarm IRQ before setup is complete
-3. starts Pico SDK USB MIDI and serial MIDI interfaces
-4. waits up to about `2` seconds for USB MIDI enumeration before flash access
-5. mounts LittleFS
-6. configures I2C
-7. configures scan pins and grid state
-8. detects hardware revision
-9. loads settings
-10. starts LEDs, display, rotary input, and menu objects
-11. applies hardware-specific menu behavior
-12. syncs saved settings to runtime globals
-13. recomputes pitch bend factors
-14. runs the fixed-time boot LED self-check
+1. sets USB manufacturer/product descriptors to `HexBoard`
+2. starts USB serial logging
+3. disables the synth alarm IRQ before setup is complete
+4. starts Pico SDK USB MIDI and serial MIDI interfaces
+5. waits up to about `2` seconds for USB MIDI enumeration before flash access
+6. mounts LittleFS
+7. configures I2C
+8. configures scan pins and grid state
+9. detects hardware revision
+10. loads settings
+11. starts LEDs, display, rotary input, and menu objects
+12. applies hardware-specific menu behavior
+13. syncs saved settings to runtime globals
+14. recomputes pitch bend factors
+15. runs the fixed-time boot LED self-check
 
 The USB wait matters because RP2040 flash operations can starve USB interrupt handling.
 
@@ -256,7 +257,12 @@ The firmware sends and receives MIDI through both:
 - USB MIDI through the Arduino-Pico `MIDIUSB` wrapper on the Pico SDK USB stack
 - serial MIDI through `Serial1`
 
-`withMIDI()` wraps output operations that should apply to the enabled destinations. Hardware `V1.2` enables both USB and serial by default through hardware setup. Incoming USB and serial MIDI share a HexBoard-owned byte parser for SysEx, running status, and NoteOn/NoteOff LED animation.
+The USB device manufacturer/product descriptors and MIDI interface name are set
+to `HexBoard` before MIDI registration. `withMIDI()` wraps output operations
+that should apply to the enabled destinations. Hardware `V1.2` enables both USB
+and serial by default through hardware setup. Incoming USB and serial MIDI share
+a HexBoard-owned byte parser for SysEx, running status, and NoteOn/NoteOff LED
+animation.
 
 The MIDI routing model includes:
 
@@ -315,7 +321,12 @@ output/input selection, explicitly opens selected Web MIDI ports, and blocks
 device-library refresh when no input port is attached so reads are not blocked
 by a guessed or missing input port. If an object body read fails, the web app
 still displays the object-list metadata and reports the first full-read failure
-in the sync status.
+in the sync status. The synth editor reads handle `0x3FFF` as a synthetic
+current-runtime synth preset before enabling live sends, and selecting a preset
+for editing sends an apply-only preview immediately. Literal `/`, `\`, and `%`
+characters in web-app folder names are percent-escaped in device-facing folder
+paths, so the on-device menu can display labels such as `Pads/Warm` without
+splitting them into nested folders.
 
 Firmware MIDI receive drains all currently available USB/serial bytes into the
 HexBoard parser instead of relying on the Arduino MIDI library. When a
@@ -460,7 +471,7 @@ The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnv
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
-Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `6`, CRC32, and a counted catalog capped at `128` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app live preview applies a transferred synth preset to runtime without marking settings dirty, while save requests update `/synth_presets.dat`. The on-device save/load menus are rebuilt from the catalog as folder submenus; preset items inside those folders display only the preset name. Rebuilds are requested from save/delete paths and serviced from the main loop after GEM input handling, with owned menu items removed from their parent pages before deletion. The load menu has a `Blank` item. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, and version `5` fixed named/foldered arrays migrate into the counted version `6` catalog before being rewritten.
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `6`, CRC32, and a counted catalog capped at `128` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app live preview applies a transferred synth preset to runtime without marking settings dirty, while save requests update `/synth_presets.dat`. The on-device save/load menus are rebuilt from the catalog as folder submenus; preset items inside those folders display only the preset name. Folder path separators are still `/`, but the firmware decodes `%2F`, `%5C`, and `%25` in menu labels so web-app folder names can contain literal slash, backslash, or percent characters. Rebuilds are requested from save/delete paths and serviced from the main loop after GEM input handling, with owned menu items removed from their parent pages before deletion. The load menu has a `Blank` item. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, and version `5` fixed named/foldered arrays migrate into the counted version `6` catalog before being rewritten.
 
 The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 
