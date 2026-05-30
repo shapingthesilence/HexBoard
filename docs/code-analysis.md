@@ -2,7 +2,7 @@
 
 > File: `src/HexBoard.ino`
 > Current shape: one Arduino sketch, about `7,300` lines
-> Target: Generic RP2040 at `250 MHz`, `16 MB` flash split as `8 MB` sketch / `8 MB` LittleFS, TinyUSB, Generic SPI `/4` boot2, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
+> Target: Generic RP2040 at `250 MHz`, `16 MB` flash split as `8 MB` sketch / `8 MB` LittleFS, Pico SDK USB, Generic SPI `/4` boot2, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
 
 This document describes the current firmware structure. It intentionally avoids exact line-number references because the sketch changes often. Use the `// @...` section tags in `src/HexBoard.ino` and `rg` searches as the source navigation method.
 
@@ -186,10 +186,10 @@ not require a settings-version bump.
 
 Core 0 setup currently:
 
-1. initializes TinyUSB when required by the board core
+1. starts USB serial logging
 2. disables the synth alarm IRQ before setup is complete
-3. starts MIDI interfaces
-4. waits up to about `2` seconds for USB enumeration before flash access
+3. starts Pico SDK USB MIDI and serial MIDI interfaces
+4. waits up to about `2` seconds for USB MIDI enumeration before flash access
 5. mounts LittleFS
 6. configures I2C
 7. configures scan pins and grid state
@@ -253,10 +253,10 @@ Using the wrong refresh path creates stale LEDs, stale MIDI note assignments, or
 
 The firmware sends and receives MIDI through both:
 
-- USB MIDI via TinyUSB
+- USB MIDI through the Arduino-Pico `MIDIUSB` wrapper on the Pico SDK USB stack
 - serial MIDI through `Serial1`
 
-`withMIDI()` wraps operations that should apply to the enabled destinations. Hardware `V1.2` enables both USB and serial by default through hardware setup.
+`withMIDI()` wraps output operations that should apply to the enabled destinations. Hardware `V1.2` enables both USB and serial by default through hardware setup. Incoming USB and serial MIDI share a HexBoard-owned byte parser for SysEx, running status, and NoteOn/NoteOff LED animation.
 
 The MIDI routing model includes:
 
@@ -317,9 +317,8 @@ by a guessed or missing input port. If an object body read fails, the web app
 still displays the object-list metadata and reports the first full-read failure
 in the sync status.
 
-Firmware MIDI receive now drains all currently available transport bytes instead
-of relying on `while (read())`; this matters because the MIDI library returns
-`false` for each incomplete SysEx byte when one-byte parsing is enabled. When a
+Firmware MIDI receive drains all currently available USB/serial bytes into the
+HexBoard parser instead of relying on the Arduino MIDI library. When a
 preset-sync frame is recognized, core 0 opens a modal transfer window, displays
 `MIDI SysEx Transfer`, keeps pumping MIDI input, and resumes normal main-loop
 work after an idle gap with no active object transfer, or after timeout clears

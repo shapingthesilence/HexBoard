@@ -929,7 +929,9 @@ write the individual objects after the web app unpacks a bundle.
    window: the display shows `MIDI SysEx Transfer`, normal core-0 UI/LED work is
    paused, and MIDI input is pumped until the exchange goes idle with no active
    object transfer, or until timeout clears the active transfer.
-8. Current firmware paces device-to-host object reads by waiting for host ACKs
+8. Current firmware uses the Pico SDK USB stack through Arduino-Pico `MIDIUSB`
+   and a HexBoard-owned MIDI byte parser for SysEx receive.
+9. Current firmware paces device-to-host object reads by waiting for host ACKs
    after `READ_BEGIN`, after each `DATA_CHUNK`, and after `TRANSFER_END`.
 
 ## Implementation Notes For Future Firmware

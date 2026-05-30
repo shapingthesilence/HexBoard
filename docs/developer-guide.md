@@ -36,8 +36,8 @@ If a code change does not require docs, say why in the final implementation note
 The current documented stack is:
 
 - RP2040 core from Earle Philhower
-- TinyUSB stack
-- Libraries: `MIDI library`, `Adafruit NeoPixel`, `U8g2`, `Adafruit GFX Library`, `GEM`
+- Pico SDK USB stack with the core `MIDIUSB` wrapper
+- Libraries: `Adafruit NeoPixel`, `U8g2`, `Adafruit GFX Library`, `GEM`
 
 Typical local build flow:
 
@@ -51,7 +51,7 @@ The `Makefile` currently compiles with:
 - Flash: `16 MB`, split as `8 MB` sketch / `8 MB` LittleFS
 - CPU: `250 MHz`
 - Boot stage 2: `Generic SPI /4`
-- USB stack: `tinyusb`
+- USB stack: `picosdk`
 
 If you build manually, match the options in `Makefile` and the header comment in `src/HexBoard.ino`.
 The `Generic SPI /4` boot2 selection is required for the local `250 MHz` build to avoid overdriving external flash; `Generic SPI /2` may compile but can crash the board at runtime. The higher CPU clock gives the synth ISR enough headroom for dense AHDSR and FX-envelope patches that can otherwise report overruns.
@@ -108,13 +108,13 @@ The firmware is split across the RP2040's two cores:
 
 There is also a timer-driven synth/audio path that must stay responsive. Flash writes on RP2040 disable interrupts on both cores, so the code mutes audio before saving settings to avoid audible garbage.
 
-Firmware MIDI input uses the Arduino MIDI library's default one-byte parser, so
-the input pump must drain the transport with `getTransport()->available()` rather
-than stopping when `read()` returns `false` for an incomplete SysEx frame. During
-preset-sync activity, core 0 enters a short transfer window: it draws a `MIDI
-SysEx Transfer` screen, repeatedly pumps MIDI input, and skips normal
-menu/button/LED work until the transfer is idle and no object transfer is active,
-or until the transfer window times out and clears the active read/write transfer.
+Firmware MIDI input uses a small HexBoard-owned byte parser over the Pico SDK
+`MIDIUSB` byte stream and `Serial1`, so SysEx frame assembly no longer depends on
+the Arduino MIDI library parser. During preset-sync activity, core 0 enters a
+short transfer window: it draws a `MIDI SysEx Transfer` screen, repeatedly pumps
+MIDI input, and skips normal menu/button/LED work until the transfer is idle and
+no object transfer is active, or until the transfer window times out and clears
+the active read/write transfer.
 Device-to-host preset reads are ACK-paced: firmware sends `READ_BEGIN`, waits
 for the host ACK, then sends one `DATA_CHUNK` per ACK before `TRANSFER_END`.
 
@@ -444,10 +444,10 @@ When `settingsFileMissingOnBoot` is true, `showFirstBootWhiteDiagnostic()` runs 
 
 Core 0 startup currently does this in order:
 
-1. start TinyUSB if needed
+1. start USB serial logging
 2. disable the synth alarm IRQ
-3. `setupMIDI()`
-4. wait briefly for USB enumeration
+3. `setupMIDI()` to register Pico SDK USB MIDI and start `Serial1` MIDI
+4. wait briefly for USB MIDI enumeration
 5. `setupFileSystem()`
 6. configure I2C
 7. `setupPins()`

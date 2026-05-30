@@ -73,7 +73,7 @@ The current source targets:
 - Generic RP2040
 - `250 MHz`
 - `16 MB` flash with `8 MB` LittleFS
-- TinyUSB USB stack
+- Pico SDK USB stack
 - Generic SPI `/4` boot2
 
 The source comments in `src/HexBoard.ino` and the `Makefile` are the most reliable build references for this repository.
@@ -99,7 +99,6 @@ arduino-cli --additional-urls=https://github.com/earlephilhower/arduino-pico/rel
 arduino-cli --additional-urls=https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json core install rp2040:rp2040
 
 # Install libraries
-arduino-cli lib install "MIDI library"
 arduino-cli lib install "Adafruit NeoPixel"
 arduino-cli lib install "U8g2"
 arduino-cli lib install "Adafruit GFX Library"
@@ -176,7 +175,7 @@ input port that receives HexBoard SysEx replies.
 
 - Edit `src/HexBoard.ino`, not a root sketch copy or `build/build.ino`
 - If you change board parameters, keep the `Makefile` and source header comments in sync
-- The firmware currently depends on TinyUSB and the RP2040 dual-core runtime behavior
+- The firmware currently depends on the Pico SDK USB stack and the RP2040 dual-core runtime behavior
 
 ## Flashing The Firmware
 

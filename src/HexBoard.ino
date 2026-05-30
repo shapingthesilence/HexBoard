@@ -7,7 +7,7 @@
 
     Hardware information:
       Generic RP2040 running at 250MHz with 16MB of flash
-      Board options: 8MB sketch / 8MB FS, Adafruit TinyUSB, Generic SPI /4 boot2
+      Board options: 8MB sketch / 8MB FS, Pico SDK USB, Generic SPI /4 boot2
         https://github.com/earlephilhower/arduino-pico
       Additional board manager URL:
         https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
@@ -20,7 +20,6 @@
         arduino-cli --additional-urls=https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json core download rp2040:rp2040
         arduino-cli --additional-urls=https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json core install rp2040:rp2040
         # Install libraries
-        arduino-cli lib install "MIDI library"
         arduino-cli lib install "Adafruit NeoPixel"
         arduino-cli lib install "U8g2" # dependency for GEM
         arduino-cli lib install "Adafruit GFX Library" # dependency for GEM
@@ -2742,8 +2741,7 @@ void RAM_FUNC(lightUpLEDs)() {
     This section of the code handles all
     things related to MIDI messages.
   */
-#include <Adafruit_TinyUSB.h>  // library of code to get the USB port working
-#include <MIDI.h>              // library of code to send and receive MIDI messages
+#include <MIDIUSB.h>     // Arduino-Pico Pico SDK USB MIDI wrapper
 /*
     These values support correct MIDI output.
     Note frequencies are converted to MIDI note
@@ -2765,12 +2763,9 @@ constexpr byte DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2;
   */
 byte MPEpitchBendSemis = 48;
 /*
-    Create a new instance of the Arduino MIDI Library,
-    and attach usb_midi as the transport.
+    MIDIUSB registers a Pico SDK/TinyUSB USB MIDI interface. Serial MIDI is
+    handled directly so large SysEx frames do not depend on a third-party parser.
   */
-Adafruit_USBD_MIDI usb_midi;
-MIDI_CREATE_INSTANCE(Adafruit_USBD_MIDI, usb_midi, UMIDI);
-MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, SMIDI);
 // midiD takes the following bitwise flags
 constexpr byte MIDID_NONE = 0;
 constexpr byte MIDID_USB = 1;
@@ -2778,6 +2773,9 @@ constexpr byte MIDID_SER = 2;
 constexpr byte MIDID_BOTH = 3;
 byte midiD = MIDID_USB | MIDID_SER;
 constexpr uint16_t MIDI_INPUT_DRAIN_BYTE_LIMIT = 512;
+constexpr uint32_t SERIAL_MIDI_BAUD = 31250;
+constexpr uint64_t USB_MIDI_WRITE_TIMEOUT_MICROS = 50000ULL;
+constexpr size_t MIDI_SYSEX_BUFFER_MAX = 4096;
 constexpr uint64_t PRESET_SYNC_TRANSFER_IDLE_MICROS = 250000ULL;
 constexpr uint64_t PRESET_SYNC_TRANSFER_TIMEOUT_MICROS = 3000000ULL;
 bool presetSyncTransferActive = false;
@@ -2786,6 +2784,172 @@ uint64_t presetSyncTransferLastActivity = 0;
 uint64_t presetSyncTransferDeadline = 0;
 uint32_t presetSyncTransferFrameCount = 0;
 uint8_t presetSyncTransferLastMessage = 0;
+
+struct MidiInputParser {
+  bool inSysEx = false;
+  uint8_t runningStatus = 0;
+  uint8_t status = 0;
+  uint8_t data[2] = { 0, 0 };
+  uint8_t dataCount = 0;
+  uint8_t dataNeeded = 0;
+  std::vector<uint8_t> sysex;
+};
+
+MidiInputParser usbMidiInput;
+MidiInputParser serialMidiInput;
+
+void resetMidiInputParser(MidiInputParser& parser);
+void dispatchIncomingSysEx(MidiInputParser& parser, bool delegatedMode);
+bool processIncomingMidiByte(MidiInputParser& parser, uint8_t value, bool delegatedMode);
+
+size_t writeUsbMidiStream(const uint8_t* data, size_t length) {
+  if (length == 0 || !MidiUSB.connected()) {
+    return 0;
+  }
+
+  size_t written = 0;
+  uint64_t deadline = readClock() + USB_MIDI_WRITE_TIMEOUT_MICROS;
+  while (written < length) {
+    if (!MidiUSB.connected()) {
+      break;
+    }
+
+    if (MidiUSB.write(data[written]) == 1) {
+      ++written;
+      deadline = readClock() + USB_MIDI_WRITE_TIMEOUT_MICROS;
+      continue;
+    }
+
+    if (readClock() >= deadline) {
+      break;
+    }
+    delayMicroseconds(100);
+  }
+
+  return written;
+}
+
+bool writeUsbMidiPacket(const uint8_t packet[4]) {
+  if (!MidiUSB.connected()) {
+    return false;
+  }
+
+  uint64_t deadline = readClock() + USB_MIDI_WRITE_TIMEOUT_MICROS;
+  while (MidiUSB.connected()) {
+    if (MidiUSB.writePacket(packet)) {
+      return true;
+    }
+    if (readClock() >= deadline) {
+      break;
+    }
+    delayMicroseconds(100);
+  }
+  return false;
+}
+
+enum class MidiOutputTransport : uint8_t {
+  Usb,
+  Serial
+};
+
+class HexBoardMidiOut {
+public:
+  explicit HexBoardMidiOut(MidiOutputTransport transport) : transport_(transport) {}
+
+  void sendNoteOn(byte note, byte velocity, byte channel) {
+    sendChannel3(0x90, 0x09, note, velocity, channel);
+  }
+
+  void sendNoteOff(byte note, byte velocity, byte channel) {
+    sendChannel3(0x80, 0x08, note, velocity, channel);
+  }
+
+  void sendControlChange(byte control, byte value, byte channel) {
+    sendChannel3(0xB0, 0x0B, control, value, channel);
+  }
+
+  void sendProgramChange(byte program, byte channel) {
+    sendChannel2(0xC0, 0x0C, program, channel);
+  }
+
+  void sendAfterTouch(byte pressure, byte channel) {
+    sendChannel2(0xD0, 0x0D, pressure, channel);
+  }
+
+  void sendPitchBend(int value, byte channel) {
+    if (!isValidMidiChannel(channel)) {
+      return;
+    }
+    int bend = std::clamp(value, -8192, 8191) + 8192;
+    sendChannel3(0xE0, 0x0E, bend & 0x7F, (bend >> 7) & 0x7F, channel);
+  }
+
+  void beginRpn(uint16_t parameter, byte channel) {
+    sendControlChange(100, parameter & 0x7F, channel);
+    sendControlChange(101, (parameter >> 7) & 0x7F, channel);
+  }
+
+  void sendRpnValue(uint16_t value, byte channel) {
+    sendControlChange(6, (value >> 7) & 0x7F, channel);
+    sendControlChange(38, value & 0x7F, channel);
+  }
+
+  void endRpn(byte channel) {
+    sendControlChange(100, 0x7F, channel);
+    sendControlChange(101, 0x7F, channel);
+  }
+
+  void sendSysEx(unsigned length, const byte* data) {
+    uint8_t start = 0xF0;
+    uint8_t end = 0xF7;
+    if (transport_ == MidiOutputTransport::Usb) {
+      writeUsbMidiStream(&start, 1);
+      writeUsbMidiStream(data, length);
+      writeUsbMidiStream(&end, 1);
+    } else {
+      Serial1.write(start);
+      Serial1.write(data, length);
+      Serial1.write(end);
+    }
+  }
+
+private:
+  MidiOutputTransport transport_;
+
+  void sendChannel2(uint8_t statusBase, uint8_t cin, uint8_t data1, byte channel) {
+    if (!isValidMidiChannel(channel)) {
+      return;
+    }
+    uint8_t status = statusBase | ((channel - 1) & 0x0F);
+    if (transport_ == MidiOutputTransport::Usb) {
+      uint8_t packet[4] = { cin, status, static_cast<uint8_t>(data1 & 0x7F), 0 };
+      writeUsbMidiPacket(packet);
+    } else {
+      Serial1.write(status);
+      Serial1.write(data1 & 0x7F);
+    }
+  }
+
+  void sendChannel3(uint8_t statusBase, uint8_t cin, uint8_t data1, uint8_t data2, byte channel) {
+    if (!isValidMidiChannel(channel)) {
+      return;
+    }
+    uint8_t status = statusBase | ((channel - 1) & 0x0F);
+    data1 &= 0x7F;
+    data2 &= 0x7F;
+    if (transport_ == MidiOutputTransport::Usb) {
+      uint8_t packet[4] = { cin, status, data1, data2 };
+      writeUsbMidiPacket(packet);
+    } else {
+      Serial1.write(status);
+      Serial1.write(data1);
+      Serial1.write(data2);
+    }
+  }
+};
+
+HexBoardMidiOut UMIDI(MidiOutputTransport::Usb);
+HexBoardMidiOut SMIDI(MidiOutputTransport::Serial);
 
 // What program change number we last sent (General MIDI/Roland MT-32)
 byte programChange = 0;
@@ -3732,12 +3896,23 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
   */
 #define POLYPHONY_LIMIT 8
 
+void resetMidiInputParser(MidiInputParser& parser) {
+  parser.inSysEx = false;
+  parser.runningStatus = 0;
+  parser.status = 0;
+  parser.dataCount = 0;
+  parser.dataNeeded = 0;
+  parser.sysex.clear();
+}
+
 void setupMIDI() {
-  usb_midi.setStringDescriptor("HexBoard MIDI");  // Initialize MIDI, and listen to all MIDI channels
-  UMIDI.begin(MIDI_CHANNEL_OMNI);                 // This will also call usb_midi's begin()
-  SMIDI.begin(MIDI_CHANNEL_OMNI);
-  UMIDI.turnThruOff();                            // prevent echoing incoming MIDI back out
-  SMIDI.turnThruOff();                            // disable thru on DIN as well
+  MidiUSB.setName("HexBoard MIDI");
+  MidiUSB.begin();
+  Serial1.begin(SERIAL_MIDI_BAUD);
+  usbMidiInput.sysex.reserve(512);
+  serialMidiInput.sysex.reserve(512);
+  resetMidiInputParser(usbMidiInput);
+  resetMidiInputParser(serialMidiInput);
   sendToLog("setupMIDI okay");
 }
 
@@ -6486,79 +6661,166 @@ bool processIncomingSysEx(const uint8_t* data, const unsigned int len) {
   return false;
 }
 
-template <class MidiInterface>
-bool processIncomingMIDIInterface(MidiInterface& M) {
+bool processIncomingDelegatedSysEx(const uint8_t* sysex, const unsigned int len) {
+  if (len <= 3 || reportDeviceIdentity(sysex, len)) {
+    return true;
+  }
+  if ((sysex[0] != 0xF0) || (sysex[len - 1] != 0xF7)) {
+    sendToLog("invalid delegated SysEx received; ignoring");
+    return true;
+  }
+  if (sysex[1] != 0x7D) {
+    sendToLog("delegated incoming: ignoring SysEx vendor " + std::to_string(sysex[1]));
+    return true;
+  }
+  if (processPresetSyncSysEx(sysex, len)) {
+    return true;
+  }
+  processDelegatedSysEx(&sysex[2], len - 3);
+  return true;
+}
+
+uint8_t midiDataLengthForStatus(uint8_t status) {
+  switch (status & 0xF0) {
+    case 0x80:
+    case 0x90:
+    case 0xA0:
+    case 0xB0:
+    case 0xE0:
+      return 2;
+    case 0xC0:
+    case 0xD0:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+void processIncomingChannelMessage(uint8_t status, uint8_t data1, uint8_t data2, bool delegatedMode) {
+  if (delegatedMode) {
+    return;
+  }
+
+  switch (status & 0xF0) {
+    case 0x80:
+      applyExternalMidiToHex(data1, false);
+      break;
+    case 0x90:
+      applyExternalMidiToHex(data1, data2 != 0);
+      break;
+    default:
+      break;
+  }
+}
+
+void dispatchIncomingSysEx(MidiInputParser& parser, bool delegatedMode) {
+  if (delegatedMode) {
+    processIncomingDelegatedSysEx(parser.sysex.data(), static_cast<unsigned int>(parser.sysex.size()));
+  } else {
+    processIncomingSysEx(parser.sysex.data(), static_cast<unsigned int>(parser.sysex.size()));
+  }
+  resetMidiInputParser(parser);
+}
+
+bool processIncomingMidiByte(MidiInputParser& parser, uint8_t value, bool delegatedMode) {
+  if (value >= 0xF8) {
+    return true;
+  }
+
+  if (parser.inSysEx) {
+    if (value == 0xF0) {
+      parser.sysex.clear();
+    }
+    if (parser.sysex.size() >= MIDI_SYSEX_BUFFER_MAX) {
+      sendToLog("incoming SysEx exceeded buffer; discarded");
+      resetMidiInputParser(parser);
+      return true;
+    }
+    parser.sysex.push_back(value);
+    if (value == 0xF7) {
+      dispatchIncomingSysEx(parser, delegatedMode);
+    }
+    return true;
+  }
+
+  if (value == 0xF0) {
+    resetMidiInputParser(parser);
+    parser.inSysEx = true;
+    parser.sysex.push_back(value);
+    return true;
+  }
+
+  if (value & 0x80) {
+    parser.status = value;
+    parser.dataCount = 0;
+    parser.dataNeeded = midiDataLengthForStatus(value);
+    if (parser.dataNeeded > 0) {
+      parser.runningStatus = value;
+    } else {
+      parser.runningStatus = 0;
+    }
+    return true;
+  }
+
+  if (parser.dataNeeded == 0) {
+    if (parser.runningStatus == 0) {
+      return true;
+    }
+    parser.status = parser.runningStatus;
+    parser.dataNeeded = midiDataLengthForStatus(parser.status);
+    parser.dataCount = 0;
+  }
+
+  if (parser.dataCount < sizeof(parser.data)) {
+    parser.data[parser.dataCount++] = value & 0x7F;
+  }
+
+  if (parser.dataCount >= parser.dataNeeded) {
+    processIncomingChannelMessage(parser.status, parser.data[0], parser.dataNeeded > 1 ? parser.data[1] : 0, delegatedMode);
+    parser.dataCount = 0;
+    parser.dataNeeded = midiDataLengthForStatus(parser.runningStatus);
+    parser.status = parser.runningStatus;
+  }
+
+  return true;
+}
+
+bool processIncomingUsbMidi(bool delegatedMode) {
   bool processed = false;
   uint16_t drainedBytes = 0;
-  while (M.getTransport()->available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
+  while (MidiUSB.available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
+    int value = MidiUSB.read();
+    if (value < 0) {
+      break;
+    }
     ++drainedBytes;
-    if (!M.read()) {
-      continue;
-    }
-    processed = true;
-    const auto type = M.getType();
-    if (type == MIDI_NAMESPACE::SystemExclusive) {
-      const uint8_t* sysex = M.getSysExArray();
-      const unsigned int len = M.getSysExArrayLength();
-      processIncomingSysEx(sysex, len);
-      continue;
-    }
-
-    const byte n    = M.getData1();  // note
-    const byte v    = M.getData2();  // velocity
-
-    if (type == MIDI_NAMESPACE::NoteOn) {
-      // treat NoteOn vel==0 as NoteOff
-      applyExternalMidiToHex(n, v != 0);
-    } else if (type == MIDI_NAMESPACE::NoteOff
-               || (type == MIDI_NAMESPACE::NoteOn && v == 0)) {
-      applyExternalMidiToHex(n, false);
-    }
+    processed = processIncomingMidiByte(usbMidiInput, static_cast<uint8_t>(value), delegatedMode) || processed;
   }
   return processed || drainedBytes > 0;
 }
 
-template <class MidiInterface>
-bool processIncomingMIDIDelegatedInterface(MidiInterface& M) {
+bool processIncomingSerialMidi(bool delegatedMode) {
   bool processed = false;
   uint16_t drainedBytes = 0;
-  while (M.getTransport()->available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
+  while (Serial1.available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
+    int value = Serial1.read();
+    if (value < 0) {
+      break;
+    }
     ++drainedBytes;
-    if (!M.read()) {
-      continue;
-    }
-    processed = true;
-    const auto type = M.getType();
-    if (type == MIDI_NAMESPACE::SystemExclusive) {
-      const uint8_t* sysex = M.getSysExArray();
-      const unsigned int len = M.getSysExArrayLength();
-      if (len <= 3 || reportDeviceIdentity(sysex, len)) {
-        continue;
-      }
-      if ((sysex[0] != 0xF0) || (sysex[len - 1] != 0xF7)) {
-        sendToLog("invalid delegated SysEx received; ignoring");
-        continue;
-      }
-      if (sysex[1] != 0x7D) {
-        sendToLog("delegated incoming: ignoring SysEx vendor " + std::to_string(sysex[1]));
-        continue;
-      }
-      if (processPresetSyncSysEx(sysex, len)) {
-        continue;
-      }
-      processDelegatedSysEx(&sysex[2], len - 3);
-    } else {
-      sendToLog("delegated incoming: " + std::to_string(type));
-    }
+    processed = processIncomingMidiByte(serialMidiInput, static_cast<uint8_t>(value), delegatedMode) || processed;
   }
   return processed || drainedBytes > 0;
 }
 
 bool processIncomingMIDIDelegated() {
   bool processed = false;
-  withMIDI([&](auto& M) {
-    processed = processIncomingMIDIDelegatedInterface(M) || processed;
-  });
+  if (midiD & MIDID_USB) {
+    processed = processIncomingUsbMidi(true) || processed;
+  }
+  if (midiD & MIDID_SER) {
+    processed = processIncomingSerialMidi(true) || processed;
+  }
   return processed;
 }
 
@@ -6568,10 +6830,10 @@ bool RAM_FUNC(processIncomingMIDI)() {
   }
   bool processed = false;
   if (midiD & MIDID_USB) {
-    processed = processIncomingMIDIInterface(UMIDI) || processed;
+    processed = processIncomingUsbMidi(false) || processed;
   }
   if (midiD & MIDID_SER) {
-    processed = processIncomingMIDIInterface(SMIDI) || processed;
+    processed = processIncomingSerialMidi(false) || processed;
   }
   return processed;
 }
@@ -7180,7 +7442,6 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
 bool fileSystemExists = false;
 
 void setupFileSystem() {
-  Serial.begin(115200);
   LittleFSConfig cfg;
   cfg.setAutoFormat(true);  // Format automatically if LittleFS cannot be mounted.
   LittleFS.setConfig(cfg);
@@ -11814,9 +12075,7 @@ void setupHardware() {
     Everything else runs on the first core.
   */
 void setup() {
-#if (defined(ARDUINO_ARCH_MBED) && defined(ARDUINO_ARCH_RP2040))
-  TinyUSB_Device_Init(0);  // Manual begin() is required on core without built-in support for TinyUSB such as mbed rp2040
-#endif
+  Serial.begin(115200);
   irq_set_enabled(ALARM_IRQ, false);
   setupMIDI();
   // Give the USB stack time to complete enumeration before any flash
@@ -11824,7 +12083,7 @@ void setup() {
   // Timeout after 2 s so the board still boots when no USB host is present.
   {
     unsigned long usbWaitStart = millis();
-    while (!TinyUSBDevice.mounted() && (millis() - usbWaitStart < 2000)) {
+    while (!MidiUSB.connected() && (millis() - usbWaitStart < 2000)) {
       delay(1);
     }
   }

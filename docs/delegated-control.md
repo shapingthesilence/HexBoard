@@ -93,7 +93,7 @@ Response payload:
 7E 00 06 02 7D 01 00 01 00 <hardware-version> 00 00 00
 ```
 
-The MIDI library adds the SysEx boundaries when sending. The manufacturer ID is currently `0x7D`; replace it if the project gets an assigned manufacturer ID.
+HexBoard's MIDI output wrapper adds the SysEx boundaries when sending. The manufacturer ID is currently `0x7D`; replace it if the project gets an assigned manufacturer ID.
 
 ## Button Event Output
 
