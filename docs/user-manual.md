@@ -376,7 +376,9 @@ HexBoard SysEx replies.
 
 While a preset-sync SysEx exchange is active, the HexBoard display shows
 `MIDI SysEx Transfer` and pauses normal menu/button/LED work while it services
-incoming MIDI. The message clears when the transfer is idle or times out.
+incoming MIDI. The message clears when the transfer is idle or times out. If the
+OLED screensaver was already active, HexBoard returns to that dimmed/cleared
+state after the transfer instead of waking the menu.
 
 ### Control Wheel
 

@@ -2789,6 +2789,8 @@ constexpr uint64_t PRESET_SYNC_TRANSFER_IDLE_MICROS = 250000ULL;
 constexpr uint64_t PRESET_SYNC_TRANSFER_TIMEOUT_MICROS = 3000000ULL;
 bool presetSyncTransferActive = false;
 bool presetSyncTransferScreenVisible = false;
+bool presetSyncTransferScreenWokeDisplayFromSleep = false;
+uint64_t presetSyncTransferSavedScreenTime = 0;
 uint64_t presetSyncTransferLastActivity = 0;
 uint64_t presetSyncTransferDeadline = 0;
 uint32_t presetSyncTransferFrameCount = 0;
@@ -9524,11 +9526,14 @@ void drawPlayedNotesOverlay() {
 }
 
 void drawPresetSyncTransferScreen() {
+  if (!presetSyncTransferScreenVisible) {
+    presetSyncTransferScreenWokeDisplayFromSleep = screenSaverOn;
+    presetSyncTransferSavedScreenTime = screenTime;
+  }
   if (screenSaverOn) {
     screenSaverOn = 0;
     u8g2.setContrast(CONTRAST_AWAKE);
   }
-  screenTime = 0;
   noteOverlayVisible = false;
   noteBadgeVisible = false;
   noteOverlayTemporaryWake = false;
@@ -9556,7 +9561,16 @@ void closePresetSyncTransferScreen() {
     return;
   }
   presetSyncTransferScreenVisible = false;
-  menu.drawMenu();
+  screenTime = presetSyncTransferSavedScreenTime;
+  if (presetSyncTransferScreenWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
+    screenSaverOn = 1;
+    u8g2.setContrast(CONTRAST_SCREENSAVER);
+    u8g2.clear();
+  } else {
+    menu.drawMenu();
+  }
+  presetSyncTransferScreenWokeDisplayFromSleep = false;
+  presetSyncTransferSavedScreenTime = 0;
 }
 
 bool servicePresetSyncTransfer() {

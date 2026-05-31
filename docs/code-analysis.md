@@ -334,9 +334,11 @@ HexBoard parser instead of relying on the Arduino MIDI library. When a
 preset-sync frame is recognized, core 0 opens a modal transfer window, displays
 `MIDI SysEx Transfer`, keeps pumping MIDI input, and resumes normal main-loop
 work after an idle gap with no active object transfer, or after timeout clears
-the active read/write transfer. Device-to-host reads are paced by host ACKs for
-`READ_BEGIN`, each `DATA_CHUNK`, and `TRANSFER_END` so USB MIDI buffers do not
-have to absorb the whole object transfer at once.
+the active read/write transfer. The transfer overlay preserves the previous OLED
+screensaver state and `screenTime`, so a transfer that wakes a sleeping display
+returns it to the screensaver when the transfer closes. Device-to-host reads are
+paced by host ACKs for `READ_BEGIN`, each `DATA_CHUNK`, and `TRANSFER_END` so
+USB MIDI buffers do not have to absorb the whole object transfer at once.
 
 ## Played Note OLED Overlay
 

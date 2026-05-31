@@ -121,7 +121,9 @@ the Arduino MIDI library parser. During preset-sync activity, core 0 enters a
 short transfer window: it draws a `MIDI SysEx Transfer` screen, repeatedly pumps
 MIDI input, and skips normal menu/button/LED work until the transfer is idle and
 no object transfer is active, or until the transfer window times out and clears
-the active read/write transfer.
+the active read/write transfer. The transfer overlay saves the prior OLED
+screensaver state and `screenTime`, then restores them when it closes so SysEx
+traffic does not count as menu/display wake input.
 Device-to-host preset reads are ACK-paced: firmware sends `READ_BEGIN`, waits
 for the host ACK, then sends one `DATA_CHUNK` per ACK before `TRANSFER_END`.
 
