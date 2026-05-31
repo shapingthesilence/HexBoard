@@ -3907,12 +3907,12 @@ void resetMidiInputParser(MidiInputParser& parser) {
 }
 
 void setupUSBDescriptors() {
-  USB.setManufacturer("HexBoard");
+  USB.setManufacturer("Shaping The Silence");
   USB.setProduct("HexBoard");
 }
 
 void setupMIDI() {
-  MidiUSB.setName("HexBoard");
+  MidiUSB.setName("HexBoard MIDI");
   MidiUSB.begin();
   Serial1.begin(SERIAL_MIDI_BAUD);
   usbMidiInput.sysex.reserve(512);
