@@ -100,7 +100,7 @@ Seven visible buttons are reserved as command buttons:
 - `CMDBTN_3`: toggles modulation wheel vs pitch-bend wheel
 - `CMDBTN_4`, `CMDBTN_5`, `CMDBTN_6`: modulation or pitch bend
 
-The wheels are implemented with `wheelDef`. Their snap/sticky behavior and speeds are menu-backed settings.
+The wheels are implemented with `wheelDef`. Their snap/sticky behavior and speeds are menu-backed settings. The `TooSlow` speed uses stored value `0` for velocity/mod wheels and updates one step every two command-message cooldown windows; positive speed values update once per cooldown. Pitch-bend `TooSlow` is stored as exponent `6`, producing a step of `64`.
 
 ### Current Preset
 
@@ -460,8 +460,7 @@ The LED current-limit calibration changed without a settings-version bump becaus
 The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
 
 The `Waveform` setting remains one persisted byte. The imported MP single-cycle
-waveforms extend the valid value range without changing the settings layout, so
-`CURRENT_SETTINGS_VERSION` stays `11`.
+waveforms extended the valid value range without changing the settings layout.
 
 The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `Tone` remains the default wheel effect: it uses a wider pulse-width sweep for `Square`, a pronounced RAM-resident value curve for `Saw` that keeps the saw reset point fixed, and a stronger cheap RAM-resident phase warp for the other waveforms. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` raises each active voice increment up to about one octave at full positive depth and lowers it up to about one octave at full negative FX depth.
 
@@ -476,6 +475,12 @@ Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with ma
 The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 
 The Advanced-menu boot animation toggle is persisted as `BootAnimationEnabled`. It defaults on and skips `runBootLedSelfCheck()` when off.
+
+The Advanced-menu headphone volume cap is persisted as `HeadphoneVolumeCap`.
+It defaults to `100%`, is inserted into the menu only for hardware `V1.2`, and
+scales only the centered headphone-jack sample before the `AJACK` PWM write.
+The piezo path still uses the velocity wheel and envelope-derived amplitude
+without this cap.
 
 Load behavior:
 

@@ -1660,12 +1660,19 @@ public:
   int16_t curValue;
   int16_t targetValue;
   uint64_t timeLastChanged;
+  int RAM_FUNC(effectiveStepValue)() const {
+    return (*stepValue <= 0) ? 1 : *stepValue;
+  }
+  uint64_t RAM_FUNC(updateIntervalMicros)() const {
+    return (*stepValue <= 0) ? (CC_MSG_COOLDOWN_MICROSECONDS * 2u) : CC_MSG_COOLDOWN_MICROSECONDS;
+  }
   void RAM_FUNC(setTargetValue)() {
+    int step = effectiveStepValue();
     if (*alternateMode) {
       if (*midBtn >> 1) {  // middle button toggles target (0) vs. step (1) mode
         int16_t temp = curValue;
-        if (*topBtn == 1) { temp += *stepValue; }  // tap button
-        if (*botBtn == 1) { temp -= *stepValue; }  // tap button
+        if (*topBtn == 1) { temp += step; }  // tap button
+        if (*botBtn == 1) { temp -= step; }  // tap button
         if (temp > maxValue) {
           temp = maxValue;
         } else if (temp <= minValue) {
@@ -1697,12 +1704,13 @@ public:
   bool RAM_FUNC(updateValue)(uint64_t givenTime) {
     int16_t temp = targetValue - curValue;
     if (temp != 0) {
-      if ((givenTime - timeLastChanged) >= CC_MSG_COOLDOWN_MICROSECONDS) {
+      int step = effectiveStepValue();
+      if ((givenTime - timeLastChanged) >= updateIntervalMicros()) {
         timeLastChanged = givenTime;
-        if (abs(temp) < *stepValue) {
+        if (abs(temp) < step) {
           curValue = targetValue;
         } else {
-          curValue = curValue + (*stepValue * (temp / abs(temp)));
+          curValue = curValue + (step * (temp / abs(temp)));
         }
         return true;
       } else {
@@ -3949,6 +3957,8 @@ constexpr byte AUDIO_AJACK = 2;
 constexpr byte AUDIO_BOTH = 3;
 byte audioD = AUDIO_AJACK;
 bool synthBuzzerEnabled = false;
+constexpr uint8_t HEADPHONE_VOLUME_CAP_FULL = 127;
+byte headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
 
 inline bool audioJackAvailable() {
   return Hardware_Version == HARDWARE_V1_2;
@@ -5870,8 +5880,12 @@ void RAM_FUNC(poll)() {
   if (sample >  SHAPE_CLAMP) sample =  SHAPE_CLAMP;
   if (sample < -SHAPE_CLAMP) sample = -SHAPE_CLAMP;
 
-  // ----- JACK: fixed midpoint -----
-  int32_t jack = PWM_MID + sample;
+  // ----- JACK: fixed midpoint with V1.2 headphone-only output cap -----
+  int32_t jackSample = sample;
+  if (headphoneVolumeCap < HEADPHONE_VOLUME_CAP_FULL) {
+    jackSample = (jackSample * static_cast<int32_t>(headphoneVolumeCap)) >> 7;
+  }
+  int32_t jack = PWM_MID + jackSample;
   if (jack < 0) jack = 0;
   if (jack > (int32_t)PWM_WRAP) jack = PWM_WRAP;
   uint16_t jackLevel = (uint16_t)jack;
@@ -7161,6 +7175,7 @@ enum class SettingKey : uint8_t {
   EffectEnvelopeHoldIndex,
   EffectEnvelope2HoldIndex,
   SynthModAmount,
+  HeadphoneVolumeCap,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -7174,6 +7189,7 @@ constexpr uint8_t NUM_SETTINGS_V5 = static_cast<uint8_t>(SettingKey::MetronomeMo
 constexpr uint8_t NUM_SETTINGS_V6 = static_cast<uint8_t>(SettingKey::EffectEnvelopeAttackIndex);
 constexpr uint8_t NUM_SETTINGS_V7 = static_cast<uint8_t>(SettingKey::EffectEnvelopeTarget);
 constexpr uint8_t NUM_SETTINGS_V8 = static_cast<uint8_t>(SettingKey::EnvelopeHoldIndex);
+constexpr uint8_t NUM_SETTINGS_BEFORE_HEADPHONE_CAP = static_cast<uint8_t>(SettingKey::HeadphoneVolumeCap);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
@@ -7440,6 +7456,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* EffectEnvelopeHoldIndex      */ 0,
   /* EffectEnvelope2HoldIndex     */ 0,
   /* SynthModAmount               */ SYNTH_MOD_AMOUNT_FULL,
+  /* HeadphoneVolumeCap           */ HEADPHONE_VOLUME_CAP_FULL,
 };
 
 // ==================================================
@@ -7591,9 +7608,9 @@ bool load_settings() {
     case 8:
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V8);
     case 9:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS);
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_BEFORE_HEADPHONE_CAP);
     case 10:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS);
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_BEFORE_HEADPHONE_CAP);
     default:
       break;
   }
@@ -9074,6 +9091,7 @@ GEM_u8g2 menu(
   MENU_ITEM_HEIGHT, MENU_PAGE_SCREEN_TOP_OFFSET, MENU_VALUES_LEFT_OFFSET);
 bool screenSaverOn = 0;
 bool audioMenuItemInserted = false;
+bool headphoneVolumeMenuItemInserted = false;
 uint64_t screenTime = 0;                         // GFX timer to count if screensaver should go on
 const uint64_t screenSaverTimeout = (1u << 25);  // 2^25 microseconds ~ 33 seconds
 
@@ -9620,8 +9638,8 @@ uint8_t encodePbWheelSpeed(void* variablePtr) {
     value >>= 1;
     ++exponent;
   }
-  if (exponent < 7) {
-    exponent = 7;  // The minimum selectable PB speed is 2^7 (128).
+  if (exponent < 6) {
+    exponent = 6;  // The minimum selectable PB speed is 2^6 (64).
   }
   return exponent;
 }
@@ -10145,6 +10163,37 @@ PersistentCallbackInfo callbackInfoBootAnimation = {
 };
 GEMItem menuItemBootAnimation("Boot Anim", bootAnimationEnabled, universalSaveCallback,
                               reinterpret_cast<void*>(&callbackInfoBootAnimation));
+
+SelectOptionByte optionByteHeadphoneVolumeCap[] = {
+  { "25%", 32 },
+  { "30%", 38 },
+  { "35%", 44 },
+  { "40%", 51 },
+  { "45%", 57 },
+  { "50%", 64 },
+  { "55%", 70 },
+  { "60%", 76 },
+  { "65%", 83 },
+  { "70%", 89 },
+  { "75%", 95 },
+  { "80%", 102 },
+  { "85%", 108 },
+  { "90%", 114 },
+  { "95%", 121 },
+  { "100%", HEADPHONE_VOLUME_CAP_FULL }
+};
+GEMSelect selectHeadphoneVolumeCap(sizeof(optionByteHeadphoneVolumeCap) / sizeof(SelectOptionByte), optionByteHeadphoneVolumeCap);
+PersistentCallbackInfo callbackInfoHeadphoneVolumeCap = {
+  static_cast<uint8_t>(SettingKey::HeadphoneVolumeCap),
+  reinterpret_cast<void*>(&headphoneVolumeCap),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemHeadphoneVolumeCap("HP Vol Cap", headphoneVolumeCap, selectHeadphoneVolumeCap, universalSaveCallback,
+                                   reinterpret_cast<void*>(&callbackInfoHeadphoneVolumeCap));
+void previewHeadphoneVolumeCap(GEMPreviewCallbackData previewData) {
+  headphoneVolumeCap = previewData.previewValByte;
+}
 
 SelectOptionByte optionByteLedTest[] = {
   { "Off", LED_TEST_OFF },
@@ -11368,7 +11417,7 @@ void previewEffectEnvelope2Release(GEMPreviewCallbackData previewData) {
   updateEffectEnvelopeParamsFromSettings();
 }
 
-SelectOptionInt optionIntModWheel[] = { { "too slo", 1 }, { "Turtle", 2 }, { "Slow", 4 }, { "Medium", 8 }, { "Fast", 16 }, { "Cheetah", 32 }, { "Instant", 127 } };
+SelectOptionInt optionIntModWheel[] = { { "TooSlow", 0 }, { "Turtle", 1 }, { "Slow", 2 }, { "Medium", 4 }, { "Fast", 8 }, { "Cheetah", 16 }, { "VeryFast", 32 }, { "Instant", 127 } };
 GEMSelect selectModSpeed(sizeof(optionIntModWheel) / sizeof(SelectOptionInt), optionIntModWheel);
 PersistentCallbackInfo callbackInfoModSpeed = {
   static_cast<uint8_t>(SettingKey::ModWheelSpeed),
@@ -11394,7 +11443,7 @@ void previewVelSpeed(GEMPreviewCallbackData previewData) {
   velWheelSpeed = previewData.previewValInt;
 }
 
-SelectOptionInt optionIntPBWheel[] = { { "too slo", 128 }, { "Turtle", 256 }, { "Slow", 512 }, { "Medium", 1024 }, { "Fast", 2048 }, { "Cheetah", 4096 }, { "Instant", 16384 } };
+SelectOptionInt optionIntPBWheel[] = { { "TooSlow", 64 }, { "Turtle", 128 }, { "Slow", 256 }, { "Medium", 512 }, { "Fast", 1024 }, { "Cheetah", 2048 }, { "VeryFast", 4096 }, { "Instant", 16384 } };
 GEMSelect selectPBSpeed(sizeof(optionIntPBWheel) / sizeof(SelectOptionInt), optionIntPBWheel);
 PersistentCallbackInfo callbackInfoPBSpeed = {
   static_cast<uint8_t>(SettingKey::PBWheelSpeed),
@@ -11448,14 +11497,14 @@ void syncSettingsToRuntime() {
 
   {
     uint8_t exponent = settingValue(SettingKey::PBWheelSpeed);
-    if (exponent < 7) exponent = 7;
+    if (exponent < 6) exponent = 6;
     if (exponent > 14) exponent = 14;
     pbWheelSpeed = 1 << exponent;
   }
   modWheelSpeed = settingValue(SettingKey::ModWheelSpeed);
-  if (modWheelSpeed <= 0) modWheelSpeed = 1;
+  if (modWheelSpeed > 127) modWheelSpeed = 127;
   velWheelSpeed = settingValue(SettingKey::VelWheelSpeed);
-  if (velWheelSpeed <= 0) velWheelSpeed = 1;
+  if (velWheelSpeed > 127) velWheelSpeed = 127;
 
   playbackMode = settingValue(SettingKey::PlaybackMode);
   currWave = settingValue(SettingKey::Waveform);
@@ -11468,6 +11517,10 @@ void syncSettingsToRuntime() {
   synthVibratoSpeed = settingValue(SettingKey::SynthVibratoSpeed);
   synthBuzzerEnabled = decodeStoredBuzzerEnabled(settingValue(SettingKey::AudioDestination));
   syncAudioDestinationToRuntime();
+  headphoneVolumeCap = settingValue(SettingKey::HeadphoneVolumeCap);
+  if (headphoneVolumeCap > HEADPHONE_VOLUME_CAP_FULL) {
+    headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
+  }
   arpeggiatorDivision = settingValue(SettingKey::ArpeggiatorDivision);
   if (arpeggiatorDivision == 0) {
     arpeggiatorDivision = 1;
@@ -12134,6 +12187,11 @@ void setupHardware() {
     if (!audioMenuItemInserted) {
       menuPageSynth.addMenuItem(menuItemAudioD, 2);
       audioMenuItemInserted = true;
+    }
+    if (!headphoneVolumeMenuItemInserted) {
+      menuItemHeadphoneVolumeCap.setPreviewCallback(previewHeadphoneVolumeCap);
+      menuPageAdvanced.addMenuItem(menuItemHeadphoneVolumeCap, 6);
+      headphoneVolumeMenuItemInserted = true;
     }
   }
   syncAudioDestinationToRuntime();

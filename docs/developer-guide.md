@@ -232,6 +232,10 @@ The firmware reserves these command buttons:
 - `CMDBTN_4`, `CMDBTN_5`, `CMDBTN_6`: mod or pitch bend wheel
 
 That behavior is wired in `@gridSystem` via the `wheelDef` instances and `cmdOn()`.
+`wheelDef` treats a stored speed value of `0` as the `TooSlow` mode: one value
+step every two command-message cooldown windows. Positive values keep the old
+one-step-per-cooldown behavior, so existing profile bytes remain meaningful
+after the user-facing speed names shifted.
 
 If you repurpose command buttons:
 
@@ -335,6 +339,7 @@ Important implementation details:
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `6`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters only and do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, and version `5` fixed named/foldered arrays migrate into the counted version `6` catalog
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
+- the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio ISR applies it only to the jack sample before writing the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
 - version `2` through `10` settings files are migrated in place to version `11` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, and remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior

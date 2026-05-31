@@ -182,7 +182,8 @@ toggle.
 
 On hardware `V1.2`, the headphone jack is active by default and an extra
 `Buzzer` toggle appears. Turning `Buzzer` on adds the piezo on top of the jack
-output.
+output. The `Advanced` menu also has `HP Vol Cap`, which limits only the
+headphone-jack output from `25%` to `100%` in `5%` steps.
 
 #### Synth Terms In Plain Language
 
@@ -386,6 +387,10 @@ Options include:
 - `Pitch Bend`: `Springy` or `Sticky`
 - `Mod Wheel`: `Springy` or `Sticky`
 
+Wheel speed choices run from `TooSlow`, `Turtle`, `Slow`, `Medium`, `Fast`,
+`Cheetah`, and `VeryFast` to `Instant`. `Fast` is the previous `Medium` speed;
+`TooSlow` is a new slower option.
+
 The onboard synth smooths pitch-bend wheel changes, pulse-width modulation, and
 vibrato depth internally so button-controlled bends and tone changes do not jump
 as hard between command-wheel updates. External MIDI still receives the normal
@@ -425,6 +430,7 @@ This page contains maintenance and system settings:
 - `ColorByKey`
 - `DisplayNotes`
 - `Boot Anim`
+- `HP Vol Cap` on hardware `V1.2`
 - `Reset Defaults`
 - `Update Firmware`
 - `Serial Debug`
