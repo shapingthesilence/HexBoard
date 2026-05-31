@@ -25,9 +25,11 @@ import { crc32 } from "../protocol/crc32.ts";
 import { formatByteLength } from "./format.ts";
 
 const layoutBundleStorageKey = "hexboard.layoutBundles.v1";
-const previewHexHalfStepX = 23;
-const previewHexRowStepY = 39;
+const previewHexHalfStepX = 24;
+const previewHexRowStepY = 42;
 const previewHexInset = 24;
+
+type LayoutGuideFocus = "center" | "across" | "upRight";
 
 interface PreviewKey {
   key: HexBoardKey;
@@ -37,6 +39,11 @@ interface PreviewKey {
   color: ScaleDegreeColor;
   colorSource: "button" | "degree";
   override?: LayoutBundleButtonOverride;
+}
+
+interface GuideHalo {
+  key: HexBoardKey;
+  tone: "green" | "red";
 }
 
 function createUntitledBundle(): LayoutBundle {
@@ -145,10 +152,15 @@ function isRoleDefault(buttonIndex: number, role: LayoutBundleButtonOverride["ro
   return role === (isHexBoardCommandIndex(buttonIndex) ? "command" : "note");
 }
 
+function hexBoardKeyAtCoord(coordRow: number, coordCol: number): HexBoardKey | undefined {
+  return hexBoardGeometry.find((key) => key.coordRow === coordRow && key.coordCol === coordCol);
+}
+
 export function TuningLayoutEditor() {
   const [bundles, setBundles] = useState<LayoutBundle[]>(() => loadStoredBundles());
   const [activeBundleId, setActiveBundleId] = useState("");
   const [selectedButton, setSelectedButton] = useState(65);
+  const [layoutGuideFocus, setLayoutGuideFocus] = useState<LayoutGuideFocus | null>(null);
   const [status, setStatus] = useState("Ready");
   const bundleInputRef = useRef<HTMLInputElement>(null);
   const scalaInputRef = useRef<HTMLInputElement>(null);
@@ -388,6 +400,55 @@ export function TuningLayoutEditor() {
   const selectedPreview = previewKeys.find((item) => item.key.index === selectedButton) ?? previewKeys[0];
   const selectedDegreeColor = normalizeScaleDegreeColors(activeBundle.degreeColors, tuningCycleLength(activeBundle.tuning))
     .find((color) => color.degree === selectedPreview.degree) ?? createDefaultDegreeColors(1)[0];
+  const centerGuideKey = hexBoardGeometry.find((key) => key.index === activeBundle.layout.centerButton);
+  const guideTargetIndex = (() => {
+    if (!layoutGuideFocus || !centerGuideKey) {
+      return undefined;
+    }
+    if (layoutGuideFocus === "center") {
+      return centerGuideKey.index;
+    }
+    if (layoutGuideFocus === "across") {
+      return hexBoardKeyAtCoord(centerGuideKey.coordRow, centerGuideKey.coordCol + 2)?.index;
+    }
+    return hexBoardKeyAtCoord(centerGuideKey.coordRow - 1, centerGuideKey.coordCol - 1)?.index;
+  })();
+  const guideOriginIndex = layoutGuideFocus === "across" || layoutGuideFocus === "upRight"
+    ? centerGuideKey?.index
+    : undefined;
+  const guideHalos = useMemo<GuideHalo[]>(() => {
+    const halos: GuideHalo[] = [];
+    if (guideTargetIndex !== undefined) {
+      const target = hexBoardGeometry.find((key) => key.index === guideTargetIndex);
+      if (target) {
+        halos.push({ key: target, tone: "green" });
+      }
+    }
+    if (guideOriginIndex !== undefined) {
+      const origin = hexBoardGeometry.find((key) => key.index === guideOriginIndex);
+      if (origin) {
+        halos.push({ key: origin, tone: "red" });
+      }
+    }
+    return halos;
+  }, [guideOriginIndex, guideTargetIndex]);
+  function layoutGuideProps(field: LayoutGuideFocus) {
+    return {
+      onFocus: () => setLayoutGuideFocus(field),
+      onBlur: () => setLayoutGuideFocus((current) => current === field ? null : current)
+    };
+  }
+  function setSelectedColorSource(colorSource: PreviewKey["colorSource"]) {
+    if (colorSource === "degree") {
+      clearButtonColor(selectedPreview.key.index);
+      return;
+    }
+    updateButtonOverride(selectedPreview.key.index, {
+      hueTenthDegrees: selectedPreview.color.hueTenthDegrees,
+      saturation: selectedPreview.color.saturation,
+      value: selectedPreview.color.value
+    });
+  }
   const encodedBundle = useMemo(() => {
     const stepsByButton = new Map(previewKeys.map((item) => [item.key.index, item.stepsFromC]));
     return encodeLayoutBundle({
@@ -465,15 +526,26 @@ export function TuningLayoutEditor() {
                 type="number"
                 value={activeBundle.layout.centerButton}
                 onChange={(event) => updateLayout({ centerButton: clampInteger(Number(event.target.value), 0, 139) })}
+                {...layoutGuideProps("center")}
               />
             </label>
             <label className="field">
               <span>Across</span>
-              <input type="number" value={activeBundle.layout.acrossSteps} onChange={(event) => updateLayout({ acrossSteps: Number(event.target.value) })} />
+              <input
+                type="number"
+                value={activeBundle.layout.acrossSteps}
+                onChange={(event) => updateLayout({ acrossSteps: Number(event.target.value) })}
+                {...layoutGuideProps("across")}
+              />
             </label>
             <label className="field">
               <span>Up-right</span>
-              <input type="number" value={activeBundle.layout.upRightSteps} onChange={(event) => updateLayout({ upRightSteps: Number(event.target.value) })} />
+              <input
+                type="number"
+                value={activeBundle.layout.upRightSteps}
+                onChange={(event) => updateLayout({ upRightSteps: Number(event.target.value) })}
+                {...layoutGuideProps("upRight")}
+              />
             </label>
             <label className="field">
               <span>Rotation</span>
@@ -502,6 +574,17 @@ export function TuningLayoutEditor() {
             aria-label="HexBoard key layout preview"
             style={{ transform: `rotate(${activeBundle.layout.rotationSteps * 90}deg)` }}
           >
+            {guideHalos.map((halo) => (
+              <div
+                aria-hidden="true"
+                className={`hexGuideHalo ${halo.tone === "red" ? "redGuideHalo" : "greenGuideHalo"}`}
+                key={`${halo.tone}-${halo.key.index}`}
+                style={{
+                  left: `${previewHexInset + (halo.key.coordCol * previewHexHalfStepX)}px`,
+                  top: `${previewHexInset + (halo.key.row * previewHexRowStepY)}px`
+                }}
+              />
+            ))}
             {previewKeys.map((item) => (
               <button
                 aria-label={`Button ${item.key.index}, ${item.role}, step ${item.stepsFromC}`}
@@ -511,7 +594,9 @@ export function TuningLayoutEditor() {
                   item.role === "unused" ? "unusedKey" : "",
                   item.colorSource === "button" ? "manualColorKey" : "",
                   item.key.index === selectedButton ? "selectedKey" : "",
-                  item.key.index === activeBundle.layout.centerButton ? "centerKey" : ""
+                  item.key.index === activeBundle.layout.centerButton ? "centerKey" : "",
+                  item.key.index === guideOriginIndex ? "guideOriginKey" : "",
+                  item.key.index === guideTargetIndex ? "guideTargetKey" : ""
                 ].filter(Boolean).join(" ")}
                 key={item.key.index}
                 onClick={() => setSelectedButton(item.key.index)}
@@ -557,36 +642,35 @@ export function TuningLayoutEditor() {
           </label>
           <label className="field">
             <span>Color source</span>
-            <input readOnly value={selectedPreview.colorSource === "button" ? "Manual button" : "Scale degree"} />
+            <select value={selectedPreview.colorSource} onChange={(event) => setSelectedColorSource(event.target.value as PreviewKey["colorSource"])}>
+              <option value="degree">Scale degree</option>
+              <option value="button">Button override</option>
+            </select>
           </label>
         </div>
 
-        <section className="editorSection">
-          <h3>Scale Degree Color</h3>
-          <ColorFields
-            color={selectedDegreeColor}
-            onChange={(patch) => updateDegreeColor(selectedPreview.degree, patch)}
-          />
-        </section>
-
-        <section className="editorSection">
-          <h3>Button Override</h3>
-          <ColorFields
-            color={selectedPreview.color}
-            onChange={(patch) => updateButtonOverride(selectedPreview.key.index, patch)}
-          />
-          <div className="row">
-            <button type="button" onClick={() => updateButtonOverride(selectedPreview.key.index, selectedPreview.color)}>
-              Use Manual Color
-            </button>
-            <button type="button" onClick={() => clearButtonColor(selectedPreview.key.index)}>
-              Clear Color
-            </button>
-            <button type="button" onClick={() => resetButtonOverride(selectedPreview.key.index)}>
-              Reset Key
-            </button>
-          </div>
-        </section>
+        {selectedPreview.colorSource === "degree" ? (
+          <section className="editorSection">
+            <h3>Scale Degree Color</h3>
+            <ColorFields
+              color={selectedDegreeColor}
+              onChange={(patch) => updateDegreeColor(selectedPreview.degree, patch)}
+            />
+          </section>
+        ) : (
+          <section className="editorSection">
+            <h3>Button Override</h3>
+            <ColorFields
+              color={selectedPreview.color}
+              onChange={(patch) => updateButtonOverride(selectedPreview.key.index, patch)}
+            />
+            <div className="row">
+              <button type="button" onClick={() => resetButtonOverride(selectedPreview.key.index)}>
+                Reset Key
+              </button>
+            </div>
+          </section>
+        )}
       </aside>
     </section>
   );

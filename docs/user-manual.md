@@ -355,15 +355,18 @@ color palette, and optional per-button overrides. The center key can be chosen
 from the visual board or typed by button index. The rotation control is a
 four-step device orientation preview: `0`, `90`, `180`, or `270` degrees. It is
 intended to line up with the firmware `Device Rot` setting, not to rotate the
-musical axes around individual hexagons.
+musical axes around individual hexagons. Focusing the center, across, or
+up-right layout fields highlights the relevant preview key relationship.
 
 The tuning editor can create EDO tunings, equal cents-per-step tunings, and
 Scala `.scl` imports. Scala text is parsed in the web app and stored in the
 bundle as cents data; HexBoard firmware does not parse `.scl` files yet. The
 preview uses the current 140-key hardware shape with `133` note keys and the
-seven command keys. Color edits can be made by scale degree or as a manual
-button override. Button roles can be marked as note, command, or unused in the
-exported web model, but firmware does not apply user layout bundles yet.
+seven command keys. The selected-key inspector has a `Color source` dropdown:
+`Scale degree` edits the palette color for the generated degree, while
+`Button override` edits only the selected button's color. Button roles can be
+marked as note, command, or unused in the exported web model, but firmware does
+not apply user layout bundles yet.
 
 The synth preset editor organizes presets by folder only. It includes preset
 name and folder selection, a new-folder control, Drive and AHDSR sliders, FX

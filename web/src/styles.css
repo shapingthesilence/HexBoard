@@ -335,8 +335,8 @@ select {
 
 .hexBoardSurface {
   position: relative;
-  width: 560px;
-  height: 620px;
+  width: 580px;
+  height: 650px;
   transform-origin: center;
   transition: transform 160ms ease;
 }
@@ -356,6 +356,28 @@ select {
   color: #111816;
   font-size: 0.65rem;
   line-height: 1;
+  z-index: 2;
+}
+
+.hexGuideHalo {
+  position: absolute;
+  width: 62px;
+  height: 68px;
+  margin-left: -8px;
+  margin-top: -8px;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.greenGuideHalo {
+  animation: greenGuideHaloPulse 1.05s ease-in-out infinite;
+  background: rgba(34, 197, 94, 0.34);
+}
+
+.redGuideHalo {
+  animation: redGuideHaloPulse 1.05s ease-in-out infinite;
+  background: rgba(220, 38, 38, 0.34);
 }
 
 .hexKeyLabel,
@@ -403,6 +425,48 @@ select {
 .hexKey.centerKey {
   color: #ffffff;
   background-image: linear-gradient(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.18));
+}
+
+.hexKey.guideTargetKey {
+  z-index: 5;
+}
+
+.hexKey.guideOriginKey {
+  z-index: 5;
+}
+
+@keyframes greenGuideHaloPulse {
+  0%, 100% {
+    opacity: 0.42;
+    transform: scale(0.98);
+    box-shadow:
+      0 0 0 3px rgba(34, 197, 94, 0.5),
+      0 0 14px rgba(34, 197, 94, 0.48);
+  }
+  50% {
+    opacity: 0.92;
+    transform: scale(1.14);
+    box-shadow:
+      0 0 0 6px rgba(34, 197, 94, 0.74),
+      0 0 28px rgba(34, 197, 94, 0.78);
+  }
+}
+
+@keyframes redGuideHaloPulse {
+  0%, 100% {
+    opacity: 0.42;
+    transform: scale(0.98);
+    box-shadow:
+      0 0 0 3px rgba(220, 38, 38, 0.5),
+      0 0 14px rgba(220, 38, 38, 0.48);
+  }
+  50% {
+    opacity: 0.92;
+    transform: scale(1.14);
+    box-shadow:
+      0 0 0 6px rgba(220, 38, 38, 0.74),
+      0 0 28px rgba(220, 38, 38, 0.78);
+  }
 }
 
 .colorEditor {
