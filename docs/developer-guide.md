@@ -331,7 +331,7 @@ Important implementation details:
 - the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
-- onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `Tone` and `100%`; valid runtime targets are `Tone`, `Vibrato`, and `Pitch`
+- onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `Tone` and `100%`; valid runtime targets are `Tone`, `Vibrato`, and `Pitch`; pitch target depth maps the signed `-127..127` runtime amount across about `+/-48` semitones without changing the persisted byte layout
 - onboard synth vibrato speed is stored as `SynthVibratoSpeed`; selectable values are `1 Hz` through `12 Hz`, with factory default `6 Hz`
 - `SynthAttackEffect` is a deprecated hidden byte kept only so version `8` files can migrate by prefix copy
 - metronome mode and time signature are stored as `MetronomeMode` and `MetronomeSignature`; factory defaults are `Off` and `4/4`

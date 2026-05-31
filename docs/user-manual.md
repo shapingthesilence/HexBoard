@@ -224,7 +224,7 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 
 - `Tone`: sweeps pulse width on `Square`, curves `Saw`, and adds phase-warp color to the other waveforms
 - `Vibrato`: adds pitch vibrato to the active synth voices
-- `Pitch`: bends pitch up with the wheel or positive FX amounts, and down with negative FX amounts
+- `Pitch`: bends pitch up with the wheel or positive FX amounts, and down with negative FX amounts. Full-depth pitch modulation spans about `+/-48` semitones.
 
 External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed` sets
 the onboard vibrato LFO speed from `1 Hz` to `12 Hz` for wheel or envelope

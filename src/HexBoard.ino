@@ -5379,31 +5379,57 @@ inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
   *destination = combined;
 }
 
-inline uint32_t RAM_FUNC(saturatingAddU32)(uint32_t value, uint32_t addend) {
-  if (std::numeric_limits<uint32_t>::max() - value < addend) {
-    return std::numeric_limits<uint32_t>::max();
-  }
-  return value + addend;
-}
+constexpr std::array<uint32_t, 128> SYNTH_PITCH_MOD_POSITIVE_Q16 = {
+  65536, 66982, 68461, 69972, 71516, 73095, 74708, 76357,
+  78042, 79765, 81525, 83325, 85164, 87043, 88965, 90928,
+  92935, 94986, 97083, 99226, 101416, 103654, 105942, 108280,
+  110670, 113113, 115609, 118161, 120769, 123434, 126159, 128943,
+  131789, 134698, 137671, 140710, 143815, 146990, 150234, 153550,
+  156939, 160403, 163943, 167561, 171260, 175040, 178903, 182852,
+  186888, 191012, 195228, 199537, 203941, 208443, 213043, 217746,
+  222551, 227464, 232484, 237615, 242860, 248220, 253699, 259298,
+  265021, 270871, 276849, 282960, 289205, 295588, 302112, 308780,
+  315595, 322561, 329680, 336957, 344394, 351995, 359764, 367705,
+  375821, 384116, 392594, 401259, 410115, 419167, 428419, 437874,
+  447539, 457417, 467513, 477831, 488378, 499157, 510174, 521434,
+  532943, 544706, 556728, 569016, 581575, 594411, 607531, 620940,
+  634645, 648653, 662969, 677602, 692558, 707843, 723467, 739435,
+  755755, 772436, 789484, 806909, 824719, 842922, 861526, 880542,
+  899976, 919840, 940142, 960893, 982101, 1003777, 1025932, 1048576
+};
+
+constexpr std::array<uint32_t, 128> SYNTH_PITCH_MOD_NEGATIVE_Q16 = {
+  65536, 64121, 62736, 61381, 60056, 58759, 57490, 56249,
+  55034, 53845, 52683, 51545, 50432, 49343, 48277, 47235,
+  46215, 45217, 44240, 43285, 42350, 41436, 40541, 39665,
+  38809, 37971, 37151, 36348, 35564, 34796, 34044, 33309,
+  32590, 31886, 31197, 30524, 29864, 29220, 28589, 27971,
+  27367, 26776, 26198, 25632, 25079, 24537, 24007, 23489,
+  22982, 22485, 22000, 21525, 21060, 20605, 20160, 19725,
+  19299, 18882, 18474, 18075, 17685, 17303, 16929, 16564,
+  16206, 15856, 15514, 15179, 14851, 14530, 14216, 13909,
+  13609, 13315, 13028, 12746, 12471, 12202, 11938, 11680,
+  11428, 11181, 10940, 10704, 10473, 10246, 10025, 9809,
+  9597, 9390, 9187, 8988, 8794, 8604, 8419, 8237,
+  8059, 7885, 7715, 7548, 7385, 7226, 7070, 6917,
+  6768, 6621, 6478, 6338, 6202, 6068, 5937, 5808,
+  5683, 5560, 5440, 5323, 5208, 5095, 4985, 4878,
+  4772, 4669, 4568, 4470, 4373, 4279, 4186, 4096
+};
 
 inline uint32_t RAM_FUNC(applySynthPitchMod)(uint32_t increment, int16_t pitchAmount) {
   if (pitchAmount == 0) {
     return increment;
   }
-  if (pitchAmount > 0) {
-    if (pitchAmount >= 127) {
-      return saturatingAddU32(increment, increment);
-    }
-    uint32_t offset = (increment >> 7) * static_cast<uint32_t>(pitchAmount);
-    return saturatingAddU32(increment, offset);
+  uint8_t depth = pitchAmount > 0 ? static_cast<uint8_t>(pitchAmount)
+                                  : static_cast<uint8_t>(-pitchAmount);
+  uint32_t ratioQ16 = pitchAmount > 0 ? SYNTH_PITCH_MOD_POSITIVE_Q16[depth]
+                                      : SYNTH_PITCH_MOD_NEGATIVE_Q16[depth];
+  uint64_t scaled = (static_cast<uint64_t>(increment) * ratioQ16) >> 16;
+  if (scaled > std::numeric_limits<uint32_t>::max()) {
+    return std::numeric_limits<uint32_t>::max();
   }
-
-  uint16_t depth = static_cast<uint16_t>(-pitchAmount);
-  if (depth >= 127) {
-    return increment >> 1;
-  }
-  uint32_t offset = (increment >> 8) * static_cast<uint32_t>(depth);
-  return (offset >= increment) ? 0 : (increment - offset);
+  return static_cast<uint32_t>(scaled);
 }
 
 inline int32_t RAM_FUNC(readMetronomeBeepSample)() {
