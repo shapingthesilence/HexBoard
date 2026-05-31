@@ -101,7 +101,15 @@ Current web source layout:
 - `web/src/protocol/`: preset-sync SysEx framing, 7-bit packing, CRC32, ACK/NACK,
   transfer payloads, and TLV object bodies
 - `web/src/catalogs/`: `/layouts.dat` user tuning/layout/color/map models and
-  named/foldered synth preset catalog models
+  named/foldered synth preset catalog models; the web-only layout bundle model
+  keeps user-facing vector layouts as `acrossSteps + upRightSteps`, translates
+  to the legacy `DownLeftSteps` TLV only at the protocol boundary, and stores a
+  four-step `0/90/180/270` device orientation value matching the firmware
+  `DeviceRotation` setting
+- `web/src/catalogs/hexBoardGeometry.ts`: browser-side model of the current
+  140-key surface, including `133` main note keys and command indices
+  `0,20,40,60,80,100,120`; layout previews and tests should use this helper
+  instead of duplicating row/column math
 - `web/src/midi/`: Web MIDI access, preset-sync client helpers, and mock transport
 - `web/src/views/`: compact device connection, profile sync, tuning/layout
   editing, and synth preset organization
@@ -305,8 +313,12 @@ This is one of the easiest places to make mistakes.
 - layout changes
 - mirror flags change
 - layout rotation changes
+- device/display rotation changes
 
-It calls `applyLayout()`, which then calls `applyScale()` and `assignPitches()`.
+It calls `applyLayout()`, which then calls `applyScale()` and `assignPitches()`,
+and applies the persisted four-step display rotation. Use
+`applyDeviceDisplayRotation()` alone when only the OLED/device orientation
+changed.
 
 ### Use `refreshMidiRouting()` when:
 
@@ -329,13 +341,14 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `11`
+- `CURRENT_SETTINGS_VERSION` is currently `12`
 - the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
 - onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `Tone` and `100%`; valid runtime targets are `Tone`, `Vibrato`, and `Pitch`; pitch target depth maps the signed `-127..127` runtime amount across about `+/-48` semitones without changing the persisted byte layout
 - onboard synth vibrato speed is stored as `SynthVibratoSpeed`; selectable values are `1 Hz` through `12 Hz`, with factory default `6 Hz`
 - `SynthAttackEffect` is a deprecated hidden byte kept only so version `8` files can migrate by prefix copy
+- `DeviceRotation` stores the four-step OLED/device orientation used by the Layout menu's `Device Rot` item; it replaces the old behavior where `layoutDef.isPortrait` selected display rotation when a layout changed
 - metronome mode and time signature are stored as `MetronomeMode` and `MetronomeSignature`; factory defaults are `Off` and `4/4`
 - the amp envelope has `EnvelopeAttackIndex`, `EnvelopeHoldIndex`, `EnvelopeDecayIndex`, `EnvelopeSustainLevel`, and `EnvelopeReleaseIndex`
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
@@ -345,7 +358,7 @@ Important implementation details:
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio ISR applies it only to the jack sample before writing the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
-- version `2` through `10` settings files are migrated in place to version `11` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, and remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
+- version `2` through `11` settings files are migrated in place to version `12` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, and remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
@@ -353,7 +366,7 @@ Important implementation details:
   jack-default `Buzzer` toggle; legacy stored values are interpreted by
   checking whether the older byte had the piezo bit set
 
-If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `10` because settings were appended to the schema and some setting tables expanded. Unknown version mismatches still fall back to defaults.
+If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `11` because settings were appended to the schema and some setting tables expanded. Unknown version mismatches still fall back to defaults.
 
 ## MIDI And Tuning Notes
 

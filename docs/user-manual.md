@@ -117,9 +117,13 @@ Options include:
 - Layout choice
 - `Mirror Ver.`
 - `Mirror Hor.`
-- `Rotate`
+- `Layout Rot`
+- `Device Rot`
 
-Changing layout remaps button pitches. The screen orientation may also change to match the selected layout.
+Changing layout remaps button pitches. `Layout Rot` rotates the musical pitch
+pattern around the hex grid in six 60-degree steps. `Device Rot` rotates the
+OLED/device orientation in four 90-degree steps: `0`, `90`, `180`, or `270`
+degrees. Changing layout no longer changes the screen orientation by itself.
 
 ### Scales
 
@@ -344,6 +348,23 @@ first target is preset, tuning/layout, color-map, button-map, and synth-preset
 editing over Web MIDI SysEx. Firmware currently implements the synth preset
 subset; other sync object types still use mock/web-side workflows.
 
+The `Tunings & Layouts` tab is a browser-side musical geometry editor. It saves
+geometry bundles in browser storage and can import/export those bundles as JSON.
+Each bundle contains a tuning, an across/up-right vector layout, a scale-degree
+color palette, and optional per-button overrides. The center key can be chosen
+from the visual board or typed by button index. The rotation control is a
+four-step device orientation preview: `0`, `90`, `180`, or `270` degrees. It is
+intended to line up with the firmware `Device Rot` setting, not to rotate the
+musical axes around individual hexagons.
+
+The tuning editor can create EDO tunings, equal cents-per-step tunings, and
+Scala `.scl` imports. Scala text is parsed in the web app and stored in the
+bundle as cents data; HexBoard firmware does not parse `.scl` files yet. The
+preview uses the current 140-key hardware shape with `133` note keys and the
+seven command keys. Color edits can be made by scale degree or as a manual
+button override. Button roles can be marked as note, command, or unused in the
+exported web model, but firmware does not apply user layout bundles yet.
+
 The synth preset editor organizes presets by folder only. It includes preset
 name and folder selection, a new-folder control, Drive and AHDSR sliders, FX
 envelope AHDSR controls, and other main synth parameter controls. The synth
@@ -481,6 +502,7 @@ Important factory defaults include:
 
 - Tuning: `12 EDO`
 - Layout: first 12-EDO layout
+- Device Rot: `180`
 - Scale: chromatic / none
 - MIDI channel: `1`
 - MPE mode: `Auto`

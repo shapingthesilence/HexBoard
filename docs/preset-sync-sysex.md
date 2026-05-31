@@ -673,10 +673,10 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `TuningKind` | `u8`: `1` EDO, `2` cents list, `3` ratio list |
-| `0x21` | `EdoDivisions` | `u16-le`, only for EDO |
+| `0x20` | `TuningKind` | `u8`: `1` EDO, `2` cents list, `3` ratio list, `4` equal step |
+| `0x21` | `EdoDivisions` | `u16-le`; EDO divisions for EDO, cycle length for equal-step/cents-table display metadata |
 | `0x22` | `PeriodMilliCents` | `u32-le`, default `1200000` for octave |
-| `0x23` | `StepMilliCents` | `u32-le`, optional cached EDO step |
+| `0x23` | `StepMilliCents` | `u32-le`, cached EDO step or explicit equal-step size |
 | `0x24` | `ReferenceMidiNote` | `u8`, default `69` for A4 |
 | `0x25` | `ReferenceMilliHz` | `u32-le`, default `440000` |
 | `0x26` | `CentsTable` | Repeated `i32-le` mill cent offsets within period |
@@ -684,8 +684,11 @@ Recommended TLVs:
 | `0x28` | `KeyLabels` | Repeated fixed or length-prefixed labels |
 
 The device can create and edit an EDO object with only `Name`, `TuningKind`,
-`EdoDivisions`, and `PeriodMilliCents`. The web app can import Scala and write a
-cents or ratio table instead.
+`EdoDivisions`, and `PeriodMilliCents`. The web app can also create equal
+cents-per-step tunings with `TuningKind = 4`, `StepMilliCents`, and a cycle
+length in `EdoDivisions` for labels/colors. Scala `.scl` import is a host-side
+feature: the web app parses the text and writes a cents table, so firmware does
+not need to parse Scala files.
 
 Example raw TLV snippet for a generated `19 EDO` tuning:
 
@@ -711,12 +714,29 @@ Recommended TLVs:
 | `0x22` | `CenterButton` | `u16-le`, current defaults often use `64`, `65`, or `75` |
 | `0x23` | `AcrossSteps` | `i16-le` |
 | `0x24` | `DownLeftSteps` | `i16-le` |
-| `0x25` | `Portrait` | `u8 bool` |
+| `0x25` | `Portrait` | `u8 bool`; legacy compatibility metadata |
 | `0x26` | `ExplicitButtonMapRef` | Object reference |
 
-This matches the current firmware layout model closely enough for simple
-on-device editing: choose tuning, center button, across steps, down-left steps,
-and portrait orientation.
+This matches the current firmware pitch-layout model closely enough for simple
+on-device editing: choose tuning, center button, across steps, and down-left
+steps. Display orientation is no longer selected from layout portrait/landscape
+metadata; firmware stores it separately as the four-step `DeviceRotation`
+setting.
+
+The web app and intended future firmware model use `AcrossSteps` plus
+`UpRightSteps` as the user-facing vector axes. Until the firmware/schema are
+updated, the web app writes the existing `DownLeftSteps` TLV as a compatibility
+translation:
+
+```text
+DownLeftSteps = -UpRightSteps - AcrossSteps
+UpRightSteps = -(AcrossSteps + DownLeftSteps)
+```
+
+The layout bundle also stores a four-step device orientation value
+(`0/90/180/270`) for preview and firmware display/device rotation behavior. That
+orientation is bundle-level metadata right now and is not encoded in the
+current `UserLayout` TLV.
 
 ## Scale Color Map Object
 
@@ -907,7 +927,7 @@ write the individual objects after the web app unpacks a bundle.
 ### Write A Scala Import
 
 1. Web app imports `.scl`.
-2. Web app converts Scala data into `UserTuning` `CentsTable` or `RatioTable`.
+2. Web app converts Scala data into a `UserTuning` `CentsTable`.
 3. Web app writes the object through the same chunked transfer path.
 4. Device stores the converted tuning object. It does not need to parse Scala
    text.

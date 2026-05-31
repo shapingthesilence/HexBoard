@@ -1,152 +1,697 @@
-import { useMemo, useState } from "react";
-import { ObjectType } from "../protocol/constants.ts";
-import { crc32 } from "../protocol/crc32.ts";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
-  createGeneratedEdoTuning,
-  createScaleColorMap,
-  createVectorLayout,
+  clampScaleDegreeColor,
+  computeVectorLayoutSteps,
+  createDefaultDegreeColors,
+  createDefaultLayoutBundle,
   deterministicObjectId,
+  encodeLayoutBundle,
+  hexBoardGeometry,
+  isHexBoardCommandIndex,
+  normalizeScaleDegreeColors,
   objectIdToHex,
-  sampleLayoutsCatalog
+  parseLayoutBundleFile,
+  parseLayoutBundleLibrary,
+  parseScalaScale,
+  resolveLayoutBundleButtonColor,
+  serializeLayoutBundle,
+  type HexBoardKey,
+  type LayoutBundle,
+  type LayoutBundleButtonOverride,
+  type LayoutBundleTuning,
+  type ScaleDegreeColor
 } from "../catalogs/index.ts";
-import { formatByteLength, formatHex } from "./format.ts";
+import { crc32 } from "../protocol/crc32.ts";
+import { formatByteLength } from "./format.ts";
+
+const layoutBundleStorageKey = "hexboard.layoutBundles.v1";
+const previewHexHalfStepX = 23;
+const previewHexRowStepY = 39;
+const previewHexInset = 24;
+
+interface PreviewKey {
+  key: HexBoardKey;
+  role: "note" | "command" | "unused";
+  stepsFromC: number;
+  degree: number;
+  color: ScaleDegreeColor;
+  colorSource: "button" | "degree";
+  override?: LayoutBundleButtonOverride;
+}
+
+function createUntitledBundle(): LayoutBundle {
+  const base = createDefaultLayoutBundle();
+  const objectIdHex = objectIdToHex(deterministicObjectId(`layout-bundle:${Date.now()}`));
+  return {
+    ...base,
+    objectIdHex,
+    name: "Untitled Geometry",
+    tuning: {
+      ...base.tuning,
+      name: "19 EDO"
+    }
+  };
+}
+
+function loadStoredBundles(): LayoutBundle[] {
+  if (typeof window === "undefined") {
+    return [createDefaultLayoutBundle()];
+  }
+  try {
+    const raw = window.localStorage.getItem(layoutBundleStorageKey);
+    if (!raw) {
+      return [createDefaultLayoutBundle()];
+    }
+    const parsed = JSON.parse(raw) as unknown;
+    return parseLayoutBundleLibrary(parsed);
+  } catch {
+    return [createDefaultLayoutBundle()];
+  }
+}
+
+function persistBundles(bundles: LayoutBundle[]) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(layoutBundleStorageKey, JSON.stringify(bundles));
+  }
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function tuningCycleLength(tuning: LayoutBundleTuning): number {
+  return Math.max(1, Math.round(tuning.cycleLength));
+}
+
+function withCycleColors(bundle: LayoutBundle, cycleLength: number): LayoutBundle {
+  return {
+    ...bundle,
+    layout: {
+      ...bundle.layout,
+      rotationSteps: clampInteger(bundle.layout.rotationSteps ?? 0, 0, 3)
+    },
+    degreeColors: normalizeScaleDegreeColors(bundle.degreeColors, cycleLength)
+  };
+}
+
+function colorToCss(color: ScaleDegreeColor): string {
+  const hue = color.hueTenthDegrees / 10;
+  const saturation = Math.round((color.saturation / 255) * 100);
+  const lightness = Math.round(18 + ((color.value / 255) * 46));
+  return `hsl(${hue}deg ${saturation}% ${lightness}%)`;
+}
+
+function fileBaseName(fileName: string): string {
+  return fileName.replace(/\.[^.]+$/, "") || "Imported Tuning";
+}
+
+function downloadTextFile(fileName: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function upsertOverride(
+  overrides: LayoutBundleButtonOverride[],
+  buttonIndex: number,
+  patch: Partial<LayoutBundleButtonOverride>
+): LayoutBundleButtonOverride[] {
+  const existing = overrides.find((override) => override.buttonIndex === buttonIndex);
+  const next = {
+    buttonIndex,
+    role: existing?.role ?? (isHexBoardCommandIndex(buttonIndex) ? "command" : "note"),
+    ...existing,
+    ...patch
+  } satisfies LayoutBundleButtonOverride;
+  return [...overrides.filter((override) => override.buttonIndex !== buttonIndex), next]
+    .sort((left, right) => left.buttonIndex - right.buttonIndex);
+}
+
+function removeOverrideColor(override: LayoutBundleButtonOverride): LayoutBundleButtonOverride {
+  const { hueTenthDegrees, saturation, value, ...rest } = override;
+  void hueTenthDegrees;
+  void saturation;
+  void value;
+  return rest;
+}
+
+function isRoleDefault(buttonIndex: number, role: LayoutBundleButtonOverride["role"]): boolean {
+  return role === (isHexBoardCommandIndex(buttonIndex) ? "command" : "note");
+}
 
 export function TuningLayoutEditor() {
-  const [name, setName] = useState("19 EDO");
-  const [edoDivisions, setEdoDivisions] = useState(19);
-  const [centerButton, setCenterButton] = useState(65);
-  const [acrossSteps, setAcrossSteps] = useState(3);
-  const [downLeftSteps, setDownLeftSteps] = useState(-11);
-  const [portrait, setPortrait] = useState(true);
+  const [bundles, setBundles] = useState<LayoutBundle[]>(() => loadStoredBundles());
+  const [activeBundleId, setActiveBundleId] = useState("");
+  const [selectedButton, setSelectedButton] = useState(65);
+  const [status, setStatus] = useState("Ready");
+  const bundleInputRef = useRef<HTMLInputElement>(null);
+  const scalaInputRef = useRef<HTMLInputElement>(null);
 
-  const tuning = useMemo(
-    () =>
-      createGeneratedEdoTuning({
-        objectId: deterministicObjectId(`tuning:${name}:${edoDivisions}`),
-        name,
-        edoDivisions
-      }),
-    [edoDivisions, name]
-  );
+  const activeBundle = bundles.find((bundle) => bundle.objectIdHex === activeBundleId) ?? bundles[0] ?? createDefaultLayoutBundle();
 
-  const layout = useMemo(
-    () =>
-      createVectorLayout({
-        objectId: deterministicObjectId(`layout:${name}:${centerButton}:${acrossSteps}:${downLeftSteps}`),
-        name: `${name} Vector`,
-        tuningRef: {
-          objectType: ObjectType.UserTuning,
-          handle: 0,
-          objectId: tuning.objectId
-        },
-        centerButton,
-        acrossSteps,
-        downLeftSteps,
-        portrait
-      }),
-    [acrossSteps, centerButton, downLeftSteps, name, portrait, tuning.objectId]
-  );
+  function setBundlesAndPersist(nextBundles: LayoutBundle[]) {
+    setBundles(nextBundles);
+    persistBundles(nextBundles);
+  }
 
-  const colorMap = useMemo(
-    () =>
-      createScaleColorMap({
-        objectId: deterministicObjectId(`colors:${name}`),
-        name: `${name} Degree Colors`,
-        tuningRef: {
-          objectType: ObjectType.UserTuning,
-          handle: 0,
-          objectId: tuning.objectId
-        },
-        cycleLength: edoDivisions,
-        defaultColorMode: 0,
-        degreeColors: [
-          { degree: 0, hueTenthDegrees: 0, saturation: 220, value: 210 },
-          { degree: Math.floor(edoDivisions / 3), hueTenthDegrees: 1200, saturation: 200, value: 205 },
-          { degree: Math.floor((edoDivisions * 2) / 3), hueTenthDegrees: 2400, saturation: 205, value: 215 }
-        ]
-      }),
-    [edoDivisions, name, tuning.objectId]
-  );
+  function updateActiveBundle(updater: (bundle: LayoutBundle) => LayoutBundle) {
+    const targetId = activeBundle.objectIdHex;
+    const nextBundles = bundles.map((bundle) => bundle.objectIdHex === targetId ? updater(bundle) : bundle);
+    setBundlesAndPersist(nextBundles);
+    setActiveBundleId(targetId);
+  }
 
-  const preview = `Tuning ${formatByteLength(tuning.body)} CRC ${crc32(tuning.body).toString(16).toUpperCase()}
-Layout ${formatByteLength(layout.body)} CRC ${crc32(layout.body).toString(16).toUpperCase()}
-Color map ${formatByteLength(colorMap.body)} CRC ${crc32(colorMap.body).toString(16).toUpperCase()}
+  function addNewBundle() {
+    const next = createUntitledBundle();
+    const nextBundles = [...bundles, next];
+    setBundlesAndPersist(nextBundles);
+    setActiveBundleId(next.objectIdHex);
+    setSelectedButton(next.layout.centerButton);
+    setStatus("Created new geometry bundle");
+  }
 
-${formatHex(tuning.body)}`;
+  function deleteActiveBundle() {
+    if (bundles.length <= 1) {
+      setStatus("Keep at least one geometry bundle in the library");
+      return;
+    }
+    const nextBundles = bundles.filter((bundle) => bundle.objectIdHex !== activeBundle.objectIdHex);
+    setBundlesAndPersist(nextBundles);
+    setActiveBundleId(nextBundles[0]?.objectIdHex ?? "");
+    setSelectedButton(nextBundles[0]?.layout.centerButton ?? 65);
+    setStatus(`Deleted ${activeBundle.name}`);
+  }
+
+  function updateBundleName(name: string) {
+    updateActiveBundle((bundle) => ({ ...bundle, name }));
+  }
+
+  function updateLayout(patch: Partial<LayoutBundle["layout"]>) {
+    updateActiveBundle((bundle) => ({
+      ...bundle,
+      layout: {
+        ...bundle.layout,
+        ...patch
+      }
+    }));
+  }
+
+  function updateEdoTuning(patch: Partial<Extract<LayoutBundleTuning, { kind: "edo" }>>) {
+    updateActiveBundle((bundle) => {
+      const current = bundle.tuning.kind === "edo" ? bundle.tuning : {
+        kind: "edo" as const,
+        name: bundle.tuning.name,
+        edoDivisions: tuningCycleLength(bundle.tuning),
+        periodCents: bundle.tuning.periodCents,
+        cycleLength: tuningCycleLength(bundle.tuning),
+        referenceMidiNote: bundle.tuning.referenceMidiNote,
+        referenceHz: bundle.tuning.referenceHz
+      };
+      const tuning = {
+        ...current,
+        ...patch
+      };
+      tuning.edoDivisions = clampInteger(tuning.edoDivisions, 1, 255);
+      tuning.cycleLength = tuning.edoDivisions;
+      return withCycleColors({ ...bundle, tuning }, tuning.cycleLength);
+    });
+  }
+
+  function updateEqualStepTuning(patch: Partial<Extract<LayoutBundleTuning, { kind: "equal-step" }>>) {
+    updateActiveBundle((bundle) => {
+      const current = bundle.tuning.kind === "equal-step" ? bundle.tuning : {
+        kind: "equal-step" as const,
+        name: bundle.tuning.name,
+        stepCents: bundle.tuning.kind === "edo" ? bundle.tuning.periodCents / bundle.tuning.edoDivisions : 100,
+        periodCents: bundle.tuning.periodCents,
+        cycleLength: tuningCycleLength(bundle.tuning),
+        referenceMidiNote: bundle.tuning.referenceMidiNote,
+        referenceHz: bundle.tuning.referenceHz
+      };
+      const tuning = {
+        ...current,
+        ...patch
+      };
+      tuning.cycleLength = clampInteger(tuning.cycleLength, 1, 255);
+      return withCycleColors({ ...bundle, tuning }, tuning.cycleLength);
+    });
+  }
+
+  function updateScalaTuning(patch: Partial<Extract<LayoutBundleTuning, { kind: "scala" }>>) {
+    updateActiveBundle((bundle) => {
+      const current = bundle.tuning.kind === "scala" ? bundle.tuning : {
+        kind: "scala" as const,
+        name: bundle.tuning.name,
+        description: bundle.tuning.name,
+        cents: [1200],
+        periodCents: bundle.tuning.periodCents,
+        cycleLength: tuningCycleLength(bundle.tuning),
+        referenceMidiNote: bundle.tuning.referenceMidiNote,
+        referenceHz: bundle.tuning.referenceHz
+      };
+      const tuning = {
+        ...current,
+        ...patch
+      };
+      tuning.cycleLength = clampInteger(tuning.cycleLength, 1, 255);
+      return withCycleColors({ ...bundle, tuning }, tuning.cycleLength);
+    });
+  }
+
+  function setTuningKind(kind: LayoutBundleTuning["kind"]) {
+    if (kind === "edo") {
+      updateEdoTuning({});
+    } else if (kind === "equal-step") {
+      updateEqualStepTuning({});
+    } else {
+      updateScalaTuning({});
+    }
+  }
+
+  function updateDegreeColor(degree: number, patch: Partial<ScaleDegreeColor>) {
+    updateActiveBundle((bundle) => ({
+      ...bundle,
+      degreeColors: normalizeScaleDegreeColors(bundle.degreeColors, tuningCycleLength(bundle.tuning)).map((color) =>
+        color.degree === degree ? clampScaleDegreeColor({ ...color, ...patch }) : color
+      )
+    }));
+  }
+
+  function updateButtonOverride(buttonIndex: number, patch: Partial<LayoutBundleButtonOverride>) {
+    updateActiveBundle((bundle) => ({
+      ...bundle,
+      buttonOverrides: upsertOverride(bundle.buttonOverrides, buttonIndex, patch)
+    }));
+  }
+
+  function resetButtonOverride(buttonIndex: number) {
+    updateActiveBundle((bundle) => ({
+      ...bundle,
+      buttonOverrides: bundle.buttonOverrides.filter((override) => override.buttonIndex !== buttonIndex)
+    }));
+  }
+
+  function clearButtonColor(buttonIndex: number) {
+    updateActiveBundle((bundle) => {
+      const override = bundle.buttonOverrides.find((candidate) => candidate.buttonIndex === buttonIndex);
+      if (!override) {
+        return bundle;
+      }
+      const withoutColor = removeOverrideColor(override);
+      const shouldRemove = isRoleDefault(buttonIndex, withoutColor.role);
+      return {
+        ...bundle,
+        buttonOverrides: shouldRemove
+          ? bundle.buttonOverrides.filter((candidate) => candidate.buttonIndex !== buttonIndex)
+          : bundle.buttonOverrides.map((candidate) => candidate.buttonIndex === buttonIndex ? withoutColor : candidate)
+      };
+    });
+  }
+
+  async function importBundleFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const imported = parseLayoutBundleFile(JSON.parse(await file.text()));
+      const nextBundles = [...bundles.filter((bundle) => bundle.objectIdHex !== imported.objectIdHex), imported];
+      setBundlesAndPersist(nextBundles);
+      setActiveBundleId(imported.objectIdHex);
+      setSelectedButton(imported.layout.centerButton);
+      setStatus(`Imported ${imported.name}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to import layout bundle");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function importScalaFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const parsed = parseScalaScale(await file.text());
+      updateActiveBundle((bundle) => withCycleColors({
+        ...bundle,
+        tuning: {
+          kind: "scala",
+          name: fileBaseName(file.name),
+          description: parsed.description,
+          cents: parsed.cents,
+          periodCents: parsed.periodCents,
+          cycleLength: parsed.count,
+          referenceMidiNote: bundle.tuning.referenceMidiNote,
+          referenceHz: bundle.tuning.referenceHz
+        }
+      }, parsed.count));
+      setStatus(`Imported Scala tuning ${file.name}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to import Scala tuning");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  const previewKeys = useMemo<PreviewKey[]>(() => {
+    const cycleLength = tuningCycleLength(activeBundle.tuning);
+    return hexBoardGeometry.map((key) => {
+      const override = activeBundle.buttonOverrides.find((candidate) => candidate.buttonIndex === key.index);
+      const role = override?.role ?? key.role;
+      const stepsFromC = Math.round(computeVectorLayoutSteps(key, activeBundle.layout));
+      const resolvedColor = resolveLayoutBundleButtonColor({
+        degreeColors: activeBundle.degreeColors,
+        cycleLength,
+        stepsFromC,
+        override
+      });
+      return {
+        key,
+        role,
+        stepsFromC,
+        degree: resolvedColor.degree,
+        color: resolvedColor.color,
+        colorSource: resolvedColor.colorSource,
+        override
+      };
+    });
+  }, [activeBundle]);
+
+  const selectedPreview = previewKeys.find((item) => item.key.index === selectedButton) ?? previewKeys[0];
+  const selectedDegreeColor = normalizeScaleDegreeColors(activeBundle.degreeColors, tuningCycleLength(activeBundle.tuning))
+    .find((color) => color.degree === selectedPreview.degree) ?? createDefaultDegreeColors(1)[0];
+  const encodedBundle = useMemo(() => {
+    const stepsByButton = new Map(previewKeys.map((item) => [item.key.index, item.stepsFromC]));
+    return encodeLayoutBundle({
+      ...activeBundle,
+      buttonOverrides: activeBundle.buttonOverrides.map((override) => ({
+        ...override,
+        stepsFromC: stepsByButton.get(override.buttonIndex) ?? override.stepsFromC
+      }))
+    });
+  }, [activeBundle, previewKeys]);
+  const encodedPreview = encodedBundle.objects
+    .map((object) => `${object.name}: ${formatByteLength(object.body)} CRC ${crc32(object.body).toString(16).toUpperCase()}`)
+    .join("\n");
 
   return (
-    <section className="workspace">
+    <section className="layoutEditorWorkspace">
       <aside className="panel stack">
-        <h2>Generated Tuning</h2>
+        <div className="row between">
+          <h2>Geometry Bundles</h2>
+          <span className="countBadge">{bundles.length}</span>
+        </div>
+        <div className="row">
+          <button type="button" onClick={addNewBundle}>New</button>
+          <button type="button" onClick={() => downloadTextFile(`${activeBundle.name}.hexboard-layout.json`, serializeLayoutBundle(activeBundle))}>
+            Export
+          </button>
+          <button type="button" onClick={() => bundleInputRef.current?.click()}>Import</button>
+        </div>
+        <input ref={bundleInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" onChange={(event) => void importBundleFile(event)} />
+        <input ref={scalaInputRef} className="hiddenFileInput" type="file" accept=".scl,text/plain" onChange={(event) => void importScalaFile(event)} />
+        <ul className="list">
+          {bundles.map((bundle) => (
+            <li className={bundle.objectIdHex === activeBundle.objectIdHex ? "listItem activeListItem" : "listItem"} key={bundle.objectIdHex}>
+              <button type="button" className="textButton" onClick={() => setActiveBundleId(bundle.objectIdHex)}>
+                <strong>{bundle.name}</strong>
+                <span>{bundle.tuning.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+
         <label className="field">
-          <span>Name</span>
-          <input value={name} onChange={(event) => setName(event.target.value)} />
+          <span>Bundle name</span>
+          <input value={activeBundle.name} onChange={(event) => updateBundleName(event.target.value)} />
         </label>
-        <label className="field">
-          <span>EDO divisions</span>
-          <input
-            min={5}
-            max={127}
-            type="number"
-            value={edoDivisions}
-            onChange={(event) => setEdoDivisions(Number(event.target.value))}
+        <button className="warning" type="button" onClick={deleteActiveBundle}>Delete Bundle</button>
+
+        <section className="editorSection">
+          <h3>Tuning</h3>
+          <label className="field">
+            <span>Type</span>
+            <select value={activeBundle.tuning.kind} onChange={(event) => setTuningKind(event.target.value as LayoutBundleTuning["kind"])}>
+              <option value="edo">EDO</option>
+              <option value="equal-step">Cents per step</option>
+              <option value="scala">Scala .scl</option>
+            </select>
+          </label>
+          <TuningControls
+            tuning={activeBundle.tuning}
+            onEdoChange={updateEdoTuning}
+            onEqualStepChange={updateEqualStepTuning}
+            onScalaChange={updateScalaTuning}
+            onImportScala={() => scalaInputRef.current?.click()}
           />
-        </label>
-        <div className="status">Object {objectIdToHex(tuning.objectId).slice(0, 12)}</div>
+        </section>
+
+        <section className="editorSection">
+          <h3>Layout</h3>
+          <div className="fieldGrid">
+            <label className="field">
+              <span>Center key</span>
+              <input
+                min={0}
+                max={139}
+                type="number"
+                value={activeBundle.layout.centerButton}
+                onChange={(event) => updateLayout({ centerButton: clampInteger(Number(event.target.value), 0, 139) })}
+              />
+            </label>
+            <label className="field">
+              <span>Across</span>
+              <input type="number" value={activeBundle.layout.acrossSteps} onChange={(event) => updateLayout({ acrossSteps: Number(event.target.value) })} />
+            </label>
+            <label className="field">
+              <span>Up-right</span>
+              <input type="number" value={activeBundle.layout.upRightSteps} onChange={(event) => updateLayout({ upRightSteps: Number(event.target.value) })} />
+            </label>
+            <label className="field">
+              <span>Rotation</span>
+              <select value={activeBundle.layout.rotationSteps} onChange={(event) => updateLayout({ rotationSteps: Number(event.target.value) })}>
+                <option value={0}>0°</option>
+                <option value={1}>90°</option>
+                <option value={2}>180°</option>
+                <option value={3}>270°</option>
+              </select>
+            </label>
+          </div>
+        </section>
       </aside>
 
-      <div className="panel stack">
-        <h2>Vector Layout</h2>
+      <main className="panel stack boardPanel">
+        <div className="row between">
+          <div>
+            <h2>HexBoard Preview</h2>
+            <span className="muted">{status}</span>
+          </div>
+          <button type="button" onClick={() => updateLayout({ centerButton: selectedButton })}>Use Selected As Center</button>
+        </div>
+        <div className="hexBoardScroll">
+          <div
+            className="hexBoardSurface"
+            aria-label="HexBoard key layout preview"
+            style={{ transform: `rotate(${activeBundle.layout.rotationSteps * 90}deg)` }}
+          >
+            {previewKeys.map((item) => (
+              <button
+                aria-label={`Button ${item.key.index}, ${item.role}, step ${item.stepsFromC}`}
+                className={[
+                  "hexKey",
+                  item.role === "command" ? "commandKey" : "",
+                  item.role === "unused" ? "unusedKey" : "",
+                  item.colorSource === "button" ? "manualColorKey" : "",
+                  item.key.index === selectedButton ? "selectedKey" : "",
+                  item.key.index === activeBundle.layout.centerButton ? "centerKey" : ""
+                ].filter(Boolean).join(" ")}
+                key={item.key.index}
+                onClick={() => setSelectedButton(item.key.index)}
+                style={{
+                  left: `${previewHexInset + (item.key.coordCol * previewHexHalfStepX)}px`,
+                  top: `${previewHexInset + (item.key.row * previewHexRowStepY)}px`,
+                  backgroundColor: colorToCss(item.color)
+                }}
+                type="button"
+              >
+                <span className="hexKeyLabel" style={{ transform: `rotate(${-activeBundle.layout.rotationSteps * 90}deg)` }}>
+                  <span>{item.key.index}</span>
+                  <small>{item.role === "note" ? item.degree : item.role.slice(0, 3)}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <pre className="dataPreview">{encodedPreview}</pre>
+      </main>
+
+      <aside className="panel stack">
+        <h2>Selected Key</h2>
+        <div className="status">
+          Button {selectedPreview.key.index} · row {selectedPreview.key.row} · col {selectedPreview.key.column}
+        </div>
         <div className="fieldGrid">
           <label className="field">
-            <span>Center button</span>
-            <input
-              min={0}
-              max={139}
-              type="number"
-              value={centerButton}
-              onChange={(event) => setCenterButton(Number(event.target.value))}
-            />
-          </label>
-          <label className="field">
-            <span>Across steps</span>
-            <input type="number" value={acrossSteps} onChange={(event) => setAcrossSteps(Number(event.target.value))} />
-          </label>
-          <label className="field">
-            <span>Down-left steps</span>
-            <input
-              type="number"
-              value={downLeftSteps}
-              onChange={(event) => setDownLeftSteps(Number(event.target.value))}
-            />
-          </label>
-          <label className="field">
-            <span>Orientation</span>
-            <select value={portrait ? "portrait" : "landscape"} onChange={(event) => setPortrait(event.target.value === "portrait")}>
-              <option value="portrait">Portrait</option>
-              <option value="landscape">Landscape</option>
+            <span>Role</span>
+            <select value={selectedPreview.role} onChange={(event) => updateButtonOverride(selectedPreview.key.index, { role: event.target.value as LayoutBundleButtonOverride["role"] })}>
+              <option value="note">Note</option>
+              <option value="command">Command</option>
+              <option value="unused">Unused</option>
             </select>
+          </label>
+          <label className="field">
+            <span>Generated step</span>
+            <input readOnly value={selectedPreview.stepsFromC} />
+          </label>
+          <label className="field">
+            <span>Scale degree</span>
+            <input readOnly value={selectedPreview.degree} />
+          </label>
+          <label className="field">
+            <span>Color source</span>
+            <input readOnly value={selectedPreview.colorSource === "button" ? "Manual button" : "Scale degree"} />
           </label>
         </div>
 
-        <h3>Catalog</h3>
-        <ul className="list">
-          <li className="listItem">
-            <strong>Tunings</strong>
-            <span>{sampleLayoutsCatalog.tunings.length + 1}</span>
-          </li>
-          <li className="listItem">
-            <strong>Layouts</strong>
-            <span>{sampleLayoutsCatalog.layouts.length + 1}</span>
-          </li>
-          <li className="listItem">
-            <strong>Scale colors</strong>
-            <span>{sampleLayoutsCatalog.scaleColorMaps.length + 1}</span>
-          </li>
-        </ul>
-        <pre className="dataPreview">{preview}</pre>
-      </div>
+        <section className="editorSection">
+          <h3>Scale Degree Color</h3>
+          <ColorFields
+            color={selectedDegreeColor}
+            onChange={(patch) => updateDegreeColor(selectedPreview.degree, patch)}
+          />
+        </section>
+
+        <section className="editorSection">
+          <h3>Button Override</h3>
+          <ColorFields
+            color={selectedPreview.color}
+            onChange={(patch) => updateButtonOverride(selectedPreview.key.index, patch)}
+          />
+          <div className="row">
+            <button type="button" onClick={() => updateButtonOverride(selectedPreview.key.index, selectedPreview.color)}>
+              Use Manual Color
+            </button>
+            <button type="button" onClick={() => clearButtonColor(selectedPreview.key.index)}>
+              Clear Color
+            </button>
+            <button type="button" onClick={() => resetButtonOverride(selectedPreview.key.index)}>
+              Reset Key
+            </button>
+          </div>
+        </section>
+      </aside>
     </section>
   );
 }
 
+interface TuningControlsProps {
+  tuning: LayoutBundleTuning;
+  onEdoChange: (patch: Partial<Extract<LayoutBundleTuning, { kind: "edo" }>>) => void;
+  onEqualStepChange: (patch: Partial<Extract<LayoutBundleTuning, { kind: "equal-step" }>>) => void;
+  onScalaChange: (patch: Partial<Extract<LayoutBundleTuning, { kind: "scala" }>>) => void;
+  onImportScala: () => void;
+}
+
+function TuningControls({ tuning, onEdoChange, onEqualStepChange, onScalaChange, onImportScala }: TuningControlsProps) {
+  if (tuning.kind === "edo") {
+    return (
+      <div className="fieldGrid">
+        <label className="field">
+          <span>Name</span>
+          <input value={tuning.name} onChange={(event) => onEdoChange({ name: event.target.value })} />
+        </label>
+        <label className="field">
+          <span>Divisions</span>
+          <input min={1} max={255} type="number" value={tuning.edoDivisions} onChange={(event) => onEdoChange({ edoDivisions: Number(event.target.value) })} />
+        </label>
+        <label className="field">
+          <span>Period cents</span>
+          <input type="number" value={tuning.periodCents} onChange={(event) => onEdoChange({ periodCents: Number(event.target.value) })} />
+        </label>
+      </div>
+    );
+  }
+
+  if (tuning.kind === "equal-step") {
+    return (
+      <div className="fieldGrid">
+        <label className="field">
+          <span>Name</span>
+          <input value={tuning.name} onChange={(event) => onEqualStepChange({ name: event.target.value })} />
+        </label>
+        <label className="field">
+          <span>Step cents</span>
+          <input type="number" value={tuning.stepCents} onChange={(event) => onEqualStepChange({ stepCents: Number(event.target.value) })} />
+        </label>
+        <label className="field">
+          <span>Period cents</span>
+          <input type="number" value={tuning.periodCents} onChange={(event) => onEqualStepChange({ periodCents: Number(event.target.value) })} />
+        </label>
+        <label className="field">
+          <span>Cycle length</span>
+          <input min={1} max={255} type="number" value={tuning.cycleLength} onChange={(event) => onEqualStepChange({ cycleLength: Number(event.target.value) })} />
+        </label>
+      </div>
+    );
+  }
+
+  return (
+    <div className="stack compact">
+      <div className="row">
+        <button type="button" onClick={onImportScala}>Import .scl</button>
+        <span className="muted">{tuning.cents.length} intervals</span>
+      </div>
+      <label className="field">
+        <span>Name</span>
+        <input value={tuning.name} onChange={(event) => onScalaChange({ name: event.target.value })} />
+      </label>
+      <label className="field">
+        <span>Description</span>
+        <input value={tuning.description} onChange={(event) => onScalaChange({ description: event.target.value })} />
+      </label>
+      <div className="fieldGrid">
+        <label className="field">
+          <span>Period cents</span>
+          <input type="number" value={tuning.periodCents} onChange={(event) => onScalaChange({ periodCents: Number(event.target.value) })} />
+        </label>
+        <label className="field">
+          <span>Cycle length</span>
+          <input min={1} max={255} type="number" value={tuning.cycleLength} onChange={(event) => onScalaChange({ cycleLength: Number(event.target.value) })} />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+interface ColorFieldsProps {
+  color: ScaleDegreeColor;
+  onChange: (patch: Partial<ScaleDegreeColor>) => void;
+}
+
+function ColorFields({ color, onChange }: ColorFieldsProps) {
+  return (
+    <div className="colorEditor">
+      <div className="largeSwatch" style={{ backgroundColor: colorToCss(color) }} />
+      <label className="field rangeField">
+        <span>Hue {Math.round(color.hueTenthDegrees / 10)}°</span>
+        <input min={0} max={3599} type="range" value={color.hueTenthDegrees} onChange={(event) => onChange({ hueTenthDegrees: Number(event.target.value) })} />
+      </label>
+      <label className="field rangeField">
+        <span>Saturation {color.saturation}</span>
+        <input min={0} max={255} type="range" value={color.saturation} onChange={(event) => onChange({ saturation: Number(event.target.value) })} />
+      </label>
+      <label className="field rangeField">
+        <span>Value {color.value}</span>
+        <input min={0} max={255} type="range" value={color.value} onChange={(event) => onChange({ value: Number(event.target.value) })} />
+      </label>
+    </div>
+  );
+}

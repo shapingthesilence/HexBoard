@@ -147,12 +147,16 @@ The web app currently includes:
 - CRC32 and 8-to-7 packing utilities
 - TLV encoders for user tunings, layouts, scale color maps, explicit button
   maps, and named/foldered synth presets
+- a browser-stored tuning/layout bundle editor with an interactive HexBoard
+  preview, EDO/equal-step/Scala `.scl` tuning inputs, across/up-right vector
+  layouts, four-step device orientation preview matching firmware `Device Rot`,
+  scale-degree colors, and per-button role/color overrides
 - firmware-backed synth preset upload, download, list, erase, current-patch
   loading, and live preview, with ACK-confirmed flash saves for real devices
 - a compact header device menu that uses preset-sync `HELLO_RESP` to discover a
   compatible HexBoard and only shows a device selector when multiple HexBoards
   respond
-- initial React views for profile sync, tuning/layout editing, and synth preset
+- React views for profile sync, tuning/layout editing, and synth preset
   organization
 
 Install and run it from `web/`:

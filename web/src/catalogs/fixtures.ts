@@ -28,7 +28,7 @@ export const sampleLayout = createVectorLayout({
   },
   centerButton: 65,
   acrossSteps: 3,
-  downLeftSteps: -11,
+  upRightSteps: 8,
   portrait: true
 });
 

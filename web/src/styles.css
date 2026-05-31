@@ -261,6 +261,34 @@ select {
   grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
 }
 
+.layoutEditorWorkspace {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(420px, 1fr) minmax(280px, 340px);
+  gap: 18px;
+  margin-top: 18px;
+  align-items: start;
+}
+
+.activeListItem {
+  border-color: #176b5b;
+  background: #edf5f2;
+}
+
+.textButton {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.textButton:hover {
+  border-color: transparent;
+}
+
 .editorGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
@@ -285,6 +313,115 @@ select {
 
 .hiddenFileInput {
   display: none;
+}
+
+.boardPanel {
+  min-width: 0;
+}
+
+.hexBoardScroll {
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  min-height: 590px;
+  border: 1px solid #dbe1dd;
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(31, 37, 35, 0.06) 1px, transparent 1px),
+    linear-gradient(rgba(31, 37, 35, 0.06) 1px, transparent 1px),
+    #f3f5f1;
+  background-size: 32px 32px;
+}
+
+.hexBoardSurface {
+  position: relative;
+  width: 560px;
+  height: 620px;
+  transform-origin: center;
+  transition: transform 160ms ease;
+}
+
+.hexKey {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 52px;
+  min-height: 0;
+  padding: 0;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  border: 0;
+  border-radius: 0;
+  box-shadow: inset 0 -5px 0 rgba(0, 0, 0, 0.18), inset 0 5px 0 rgba(255, 255, 255, 0.24);
+  color: #111816;
+  font-size: 0.65rem;
+  line-height: 1;
+}
+
+.hexKeyLabel,
+.hexKeyLabel span,
+.hexKeyLabel small {
+  display: block;
+  pointer-events: none;
+}
+
+.hexKeyLabel {
+  transition: transform 160ms ease;
+}
+
+.hexKeyLabel small {
+  font-size: 0.58rem;
+  opacity: 0.78;
+}
+
+.hexKey.commandKey {
+  outline: 2px solid #26302c;
+  outline-offset: 2px;
+}
+
+.hexKey.unusedKey {
+  filter: grayscale(1);
+  opacity: 0.42;
+}
+
+.hexKey.manualColorKey {
+  box-shadow:
+    0 0 0 2px #176b5b,
+    inset 0 -5px 0 rgba(0, 0, 0, 0.18),
+    inset 0 5px 0 rgba(255, 255, 255, 0.24);
+}
+
+.hexKey.selectedKey {
+  box-shadow:
+    0 0 0 4px #ffffff,
+    0 0 0 7px #176b5b,
+    inset 0 -5px 0 rgba(0, 0, 0, 0.18),
+    inset 0 5px 0 rgba(255, 255, 255, 0.24);
+  z-index: 3;
+}
+
+.hexKey.centerKey {
+  color: #ffffff;
+  background-image: linear-gradient(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.18));
+}
+
+.colorEditor {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.colorEditor .field {
+  grid-column: 2;
+}
+
+.largeSwatch {
+  grid-row: span 3;
+  width: 46px;
+  height: 46px;
+  border: 1px solid #86928c;
+  border-radius: 6px;
 }
 
 .librarySpaces {
@@ -417,5 +554,13 @@ select {
 
   .workspace {
     grid-template-columns: 1fr;
+  }
+
+  .layoutEditorWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .hexBoardScroll {
+    min-height: 460px;
   }
 }

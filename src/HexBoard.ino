@@ -146,6 +146,7 @@ void serviceSynthPresetMenuRebuild();
 void showOnlyValidLayoutChoices();
 void showOnlyValidScaleChoices();
 void showOnlyValidKeyChoices();
+void applyDeviceDisplayRotation();
 void updateLayoutAndRotate();
 void setupHardware();
 uint32_t RAM_FUNC(getLEDcode)(colorDef c);
@@ -255,6 +256,7 @@ byte applyLEDLevel(byte value, byte level) {
 byte CC74value = 0;
 byte defaultMidiChannel = 1;
 byte layoutRotation = 0;
+byte deviceRotation = 2;
 
 byte arpeggiatorDivision = 32;  // denominator of whole-note duration (1/32 by default)
 byte synthBPM = 120;
@@ -698,7 +700,7 @@ tuningDef tuningOptions[] = {
 class layoutDef {
 public:
   std::string name;    // limit is 17 characters for GEM menu
-  bool isPortrait;     // affects orientation of the GEM menu only.
+  bool isPortrait;     // legacy layout metadata; display rotation is DeviceRotation.
   byte hexMiddleC;     // instead of "what note is button 1", "what button is the middle"
   int8_t acrossSteps;  // defined this way to be compatible with original v1.1 firmare
   int8_t dnLeftSteps;  // defined this way to be compatible with original v1.1 firmare
@@ -7109,7 +7111,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 11;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 12;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -7204,6 +7206,7 @@ enum class SettingKey : uint8_t {
   EffectEnvelope2HoldIndex,
   SynthModAmount,
   HeadphoneVolumeCap,
+  DeviceRotation,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -7218,6 +7221,7 @@ constexpr uint8_t NUM_SETTINGS_V6 = static_cast<uint8_t>(SettingKey::EffectEnvel
 constexpr uint8_t NUM_SETTINGS_V7 = static_cast<uint8_t>(SettingKey::EffectEnvelopeTarget);
 constexpr uint8_t NUM_SETTINGS_V8 = static_cast<uint8_t>(SettingKey::EnvelopeHoldIndex);
 constexpr uint8_t NUM_SETTINGS_BEFORE_HEADPHONE_CAP = static_cast<uint8_t>(SettingKey::HeadphoneVolumeCap);
+constexpr uint8_t NUM_SETTINGS_V11 = static_cast<uint8_t>(SettingKey::DeviceRotation);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
@@ -7485,6 +7489,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* EffectEnvelope2HoldIndex     */ 0,
   /* SynthModAmount               */ SYNTH_MOD_AMOUNT_FULL,
   /* HeadphoneVolumeCap           */ HEADPHONE_VOLUME_CAP_FULL,
+  /* DeviceRotation               */ 2,
 };
 
 // ==================================================
@@ -7639,6 +7644,8 @@ bool load_settings() {
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_BEFORE_HEADPHONE_CAP);
     case 10:
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_BEFORE_HEADPHONE_CAP);
+    case 11:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V11);
     default:
       break;
   }
@@ -10754,8 +10761,20 @@ PersistentCallbackInfo callbackInfoLayoutRotation = {
   nullptr,
   updateLayoutAndRotate
 };
-GEMItem menuItemSelectLayoutRotation("Rotate: ", layoutRotation, selectLayoutRotation, universalSaveCallback,
+GEMItem menuItemSelectLayoutRotation("Layout Rot", layoutRotation, selectLayoutRotation, universalSaveCallback,
                                      reinterpret_cast<void*>(&callbackInfoLayoutRotation));
+
+// Device/display rotation selection
+SelectOptionByte optionByteDeviceRotation[] = { { "0 Deg", 0 }, { "90 Deg", 1 }, { "180 Deg", 2 }, { "270 Deg", 3 } };
+GEMSelect selectDeviceRotation(sizeof(optionByteDeviceRotation) / sizeof(SelectOptionByte), optionByteDeviceRotation);
+PersistentCallbackInfo callbackInfoDeviceRotation = {
+  static_cast<uint8_t>(SettingKey::DeviceRotation),
+  reinterpret_cast<void*>(&deviceRotation),
+  nullptr,
+  applyDeviceDisplayRotation
+};
+GEMItem menuItemSelectDeviceRotation("Device Rot", deviceRotation, selectDeviceRotation, universalSaveCallback,
+                                     reinterpret_cast<void*>(&callbackInfoDeviceRotation));
 
 // Layout mirroring toggles
 PersistentCallbackInfo callbackInfoMirrorLR = {
@@ -11526,6 +11545,7 @@ void syncSettingsToRuntime() {
   current.transpose = transposeSteps;
   current.keyStepsFromA = decodeBiasedSetting(SettingKey::CurrentKeyStepsFromA);
   layoutRotation = settingValue(SettingKey::LayoutRotation) % 6;
+  deviceRotation = settingValue(SettingKey::DeviceRotation) % 4;
   mirrorLeftRight = settingEnabled(SettingKey::MirrorLeftRight);
   mirrorUpDown = settingEnabled(SettingKey::MirrorUpDown);
   scaleLock = settingEnabled(SettingKey::ScaleLock);
@@ -11699,7 +11719,24 @@ void showOnlyValidKeyChoices() {
 
 void updateLayoutAndRotate() {
   applyLayout();
-  u8g2.setDisplayRotation(current.layout().isPortrait ? U8G2_R2 : U8G2_R1);  // and landscape / portrait rotation
+  applyDeviceDisplayRotation();
+}
+
+void applyDeviceDisplayRotation() {
+  switch (deviceRotation % 4) {
+    case 0:
+      u8g2.setDisplayRotation(U8G2_R0);
+      break;
+    case 1:
+      u8g2.setDisplayRotation(U8G2_R1);
+      break;
+    case 2:
+      u8g2.setDisplayRotation(U8G2_R2);
+      break;
+    default:
+      u8g2.setDisplayRotation(U8G2_R3);
+      break;
+  }
 }
 /*
     This procedure is run when a layout is selected via the menu.
@@ -11887,6 +11924,7 @@ void setupLayoutMenuPage() {
   menuPageLayout.addMenuItem(mirrorLeftRightGEMItem);
   menuPageLayout.addMenuItem(mirrorUpDownGEMItem);
   menuPageLayout.addMenuItem(menuItemSelectLayoutRotation);
+  menuPageLayout.addMenuItem(menuItemSelectDeviceRotation);
 }
 
 void setupScalesMenuPage() {

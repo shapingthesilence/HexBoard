@@ -314,6 +314,16 @@ maps, explicit button maps, and bundle sync remain draft.
 The companion web app has protocol and catalog helpers for that draft under
 `web/src/protocol/` and `web/src/catalogs/`, plus a mock MIDI transport under
 `web/src/midi/` so host-side work can be tested before firmware support exists.
+The browser tuning/layout editor adds a web-only `LayoutBundle` library that
+combines one tuning, one vector layout, one scale-degree color map, and optional
+explicit button overrides. It uses `hexBoardGeometry.ts` for the current
+140-key firmware index geometry, presents vector layouts as across plus
+up-right steps, and converts that to the old `DownLeftSteps` TLV only while the
+firmware schema still expects it. Bundle rotation is a four-step device
+orientation value (`0/90/180/270`) that matches firmware `DeviceRotation`, not
+a six-step hex-axis transform. Scala `.scl` files are
+parsed in the web app into cents-table tuning objects; firmware does not parse
+Scala text or persist `/layouts.dat` objects yet.
 Real-device synth preset saves wait for ACK/NACK responses through
 `WRITE_COMMIT`; library refresh requests list synth preset records one at a
 time before reading each object body. The compact header device menu probes Web
@@ -456,7 +466,7 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `11`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `12`, and `PROFILE_COUNT` is `9`.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the hardware-specific calibrated table above.
 
@@ -485,11 +495,16 @@ scales only the centered headphone-jack sample before the `AJACK` PWM write.
 The piezo path still uses the velocity wheel and envelope-derived amplitude
 without this cap.
 
+`DeviceRotation` stores the four-step OLED/device orientation used by the Layout
+menu's `Device Rot` item. The display rotation is now independent from the
+selected factory layout; `layoutDef.isPortrait` no longer chooses OLED
+orientation when a layout is selected.
+
 Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` through `10` files migrate to version `11` by copying the older per-profile prefix, appending newer settings with factory defaults, remapping legacy envelope time indices when needed, and remapping legacy vibrato speed indices; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
+- version `2` through `11` files migrate to version `12` by copying the older per-profile prefix, appending newer settings with factory defaults, remapping legacy envelope time indices when needed, and remapping legacy vibrato speed indices; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults
