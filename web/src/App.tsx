@@ -6,31 +6,21 @@ import { TuningLayoutEditor } from "./views/TuningLayoutEditor.tsx";
 import { MockMidiTransport } from "./midi/mockTransport.ts";
 import type { MidiTransport } from "./midi/types.ts";
 
-type ViewKey = "connect" | "profiles" | "layouts" | "synth";
+type ViewKey = "synth" | "profiles" | "layouts";
 
 const views: Array<{ key: ViewKey; label: string }> = [
-  { key: "connect", label: "Device" },
+  { key: "synth", label: "Synth Presets" },
   { key: "profiles", label: "Profiles" },
-  { key: "layouts", label: "Tunings & Layouts" },
-  { key: "synth", label: "Synth Presets" }
+  { key: "layouts", label: "Tunings & Layouts" }
 ];
 
 export function App() {
-  const [activeView, setActiveView] = useState<ViewKey>("connect");
+  const [activeView, setActiveView] = useState<ViewKey>("synth");
   const [transport, setTransport] = useState<MidiTransport>(() => new MockMidiTransport());
   const [connectionLabel, setConnectionLabel] = useState("Mock device");
 
   const content = useMemo(() => {
     switch (activeView) {
-      case "connect":
-        return (
-          <DeviceConnect
-            transport={transport}
-            onTransportChange={setTransport}
-            connectionLabel={connectionLabel}
-            onConnectionLabelChange={setConnectionLabel}
-          />
-        );
       case "profiles":
         return <ProfileSync transport={transport} />;
       case "layouts":
@@ -38,14 +28,13 @@ export function App() {
       case "synth":
         return <SynthPresetLibrary transport={transport} />;
     }
-  }, [activeView, connectionLabel, transport]);
+  }, [activeView, transport]);
 
   return (
     <main className="appShell">
       <header className="topBar">
-        <div>
+        <div className="brandBlock">
           <h1>HexBoard Sync</h1>
-          <p>{connectionLabel}</p>
         </div>
         <nav className="tabs" aria-label="Main views">
           {views.map((view) => (
@@ -59,6 +48,11 @@ export function App() {
             </button>
           ))}
         </nav>
+        <DeviceConnect
+          onTransportChange={setTransport}
+          connectionLabel={connectionLabel}
+          onConnectionLabelChange={setConnectionLabel}
+        />
       </header>
       {content}
     </main>

@@ -36,6 +36,23 @@ export interface AckPayload {
   detail: number;
 }
 
+export interface HelloResponsePayload {
+  negotiatedMajor: number;
+  negotiatedMinor: number;
+  deviceMaxPackedChunk: number;
+  capabilityFlags: number;
+  maxRawObjectBytes: number;
+  settingsSchemaVersion: number;
+  synthPresetSchemaVersion: number;
+  profileCount: number;
+  synthPresetCount: number;
+  userTuningSlots: number;
+  userLayoutSlots: number;
+  scaleColorMapSlots: number;
+  explicitButtonMapSlots: number;
+  hardwareVersion: number;
+}
+
 export interface NackPayload {
   message: number;
   errorCode: number;
@@ -190,6 +207,28 @@ export function decodeNackPayload(payload: ArrayLike<number>): NackPayload {
 
 export function encodeHelloRequestPayload(hostMaxPackedChunk: number, requiredCapabilityFlags = 0): number[] {
   return [...encodeU14(hostMaxPackedChunk), ...encodeU28(requiredCapabilityFlags)];
+}
+
+export function decodeHelloResponsePayload(payload: ArrayLike<number>): HelloResponsePayload {
+  if (payload.length !== 22) {
+    throw new Error("HELLO_RESP payload must be 22 bytes");
+  }
+  return {
+    negotiatedMajor: payload[0],
+    negotiatedMinor: payload[1],
+    deviceMaxPackedChunk: decodeU14(payload, 2),
+    capabilityFlags: decodeU28(payload, 4),
+    maxRawObjectBytes: decodeU28(payload, 8),
+    settingsSchemaVersion: payload[12],
+    synthPresetSchemaVersion: payload[13],
+    profileCount: payload[14],
+    synthPresetCount: decodeU14(payload, 15),
+    userTuningSlots: payload[17],
+    userLayoutSlots: payload[18],
+    scaleColorMapSlots: payload[19],
+    explicitButtonMapSlots: payload[20],
+    hardwareVersion: payload[21]
+  };
 }
 
 export function encodeReadRequestPayload(objectType: number, handle: number, readFlags = 0): number[] {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { NEW_OBJECT_HANDLE, MessageType, ObjectType } from "./constants.ts";
 import {
   decodeDataChunkPayload,
+  decodeHelloResponsePayload,
   decodePresetSyncFrame,
   decodeWriteBeginPayload,
   decodeWriteCommitPayload,
@@ -33,6 +34,37 @@ describe("preset-sync SysEx", () => {
       0xf0, 0x7d, 0x10, 0x01, 0x00, 0x06, 0x00, 0x02,
       0x22, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf7
     ]);
+  });
+
+  it("decodes the current firmware HELLO response", () => {
+    const decoded = decodeHelloResponsePayload([
+      0x01, 0x00,
+      0x01, 0x00,
+      0x00, 0x00, 0x02, 0x02,
+      0x00, 0x00, 0x10, 0x00,
+      0x0b,
+      0x03,
+      0x09,
+      0x01, 0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x02
+    ]);
+
+    expect(decoded).toMatchObject({
+      negotiatedMajor: 1,
+      negotiatedMinor: 0,
+      deviceMaxPackedChunk: 128,
+      capabilityFlags: 0x102,
+      maxRawObjectBytes: 2048,
+      settingsSchemaVersion: 11,
+      synthPresetSchemaVersion: 3,
+      profileCount: 9,
+      synthPresetCount: 128,
+      hardwareVersion: 2
+    });
   });
 
   it("encodes and decodes WRITE_BEGIN for a new user tuning", () => {

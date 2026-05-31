@@ -82,18 +82,19 @@ npm test
 
 The app uses Vite, React, TypeScript, and Vitest. It targets browser Web MIDI
 SysEx and includes a mock MIDI transport for object types that firmware does not
-support yet. The Device view lets the user choose MIDI output and input ports
-separately, explicitly opens the selected ports, and blocks device-library
-refresh without an input because preset reads require the HexBoard input even
-when live parameter sends work with output only. Real-device synth preset saves
-use an ACKed write path through `WRITE_COMMIT`; live preview remains a fast
-apply-only write path. The synth editor reads the current runtime synth patch
-from handle `0x3FFF` before enabling live sends, and preset selection sends an
-apply-only preview immediately for auditioning. HexBoard Library refresh uses
-object-list metadata as a fallback so device presets still appear if a full
-object body read fails. Folder names are display strings in the app; literal
-`/`, `\`, and `%` characters are percent-escaped only in the device-facing
-folder path.
+support yet. The compact header device menu opens Web MIDI ports, probes
+candidate input/output pairs with preset-sync `HELLO_REQ`, verifies protocol
+major version and synth preset schema support from `HELLO_RESP`, and only shows
+a device selector when multiple compatible HexBoards respond. Real-device synth
+preset saves use an ACKed write path through `WRITE_COMMIT`; live preview
+remains a fast apply-only write path. The synth editor reads the current runtime
+synth patch from handle `0x3FFF` before enabling live sends, and preset
+selection sends an apply-only preview immediately for auditioning. HexBoard
+Library refresh uses object-list metadata as a fallback so device presets still
+appear if a full object body read fails. Folder names are display strings in the
+app; literal `/`, `\`, and `%` characters are percent-escaped only in the
+device-facing folder path, and folder chips filter each synth library pane until
+clicked again.
 
 Current web source layout:
 
@@ -102,8 +103,8 @@ Current web source layout:
 - `web/src/catalogs/`: `/layouts.dat` user tuning/layout/color/map models and
   named/foldered synth preset catalog models
 - `web/src/midi/`: Web MIDI access, preset-sync client helpers, and mock transport
-- `web/src/views/`: initial React screens for connection, profile sync,
-  tuning/layout editing, and synth preset organization
+- `web/src/views/`: compact device connection, profile sync, tuning/layout
+  editing, and synth preset organization
 
 ## High-Level Architecture
 

@@ -351,7 +351,9 @@ library has a `Computer Library` for browser-saved/imported preset files and a
 `HexBoard Library` loaded from the connected device through SysEx. Presets can
 be edited, erased, exported as JSON files, imported from JSON files, uploaded to
 HexBoard, downloaded back to the computer library, refreshed from the device,
-and dragged between library areas or into folder targets.
+and dragged between library areas or into folder targets. Folder buttons filter
+each library area; clicking the active folder again clears the filter and shows
+all presets in that area.
 
 When the Synth Presets tab opens with a HexBoard input connected, the editor
 requests the current HexBoard synth patch instead of sending one of the browser
@@ -364,12 +366,13 @@ Device saves wait for the HexBoard to acknowledge the write through the flash
 commit before the app refreshes the `HexBoard Library`.
 
 The app requires a Web MIDI SysEx-capable browser such as Chrome or Edge running
-from `localhost` or HTTPS. Use the Device page to connect both the HexBoard MIDI
-output and input ports; live parameter editing can work with output only, but
-loading the current patch and reading the `HexBoard Library` require the
-matching input port. If refresh times out, check the Device page `Input`
-dropdown because the browser must receive HexBoard SysEx replies to list or read
-device presets.
+from `localhost` or HTTPS. Use `Connect HexBoard` in the top bar; the app sends
+the preset-sync hello inquiry, checks the returned protocol and synth preset
+schema, and connects automatically when one compatible HexBoard replies. A
+device selector appears only when multiple compatible HexBoards are connected.
+Live parameter editing can work with output only, but loading the current patch
+and reading the `HexBoard Library` require the matching input port that receives
+HexBoard SysEx replies.
 
 While a preset-sync SysEx exchange is active, the HexBoard display shows
 `MIDI SysEx Transfer` and pauses normal menu/button/LED work while it services

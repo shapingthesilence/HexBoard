@@ -67,11 +67,16 @@ select {
 
 .topBar {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
+  flex-wrap: wrap;
   border-bottom: 1px solid #d1d8d3;
   padding-bottom: 16px;
+}
+
+.brandBlock {
+  min-width: 170px;
 }
 
 .topBar h1 {
@@ -89,7 +94,45 @@ select {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  justify-content: center;
+  flex: 1 1 auto;
+}
+
+.deviceMenu {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1 1 320px;
+  min-width: min(100%, 300px);
+}
+
+.deviceMenu select {
+  max-width: 180px;
+}
+
+.deviceMenu button {
+  white-space: nowrap;
+}
+
+.deviceStatus {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  text-align: right;
+}
+
+.deviceStatus strong,
+.deviceStatus span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deviceStatus span {
+  color: #66716d;
+  font-size: 0.82rem;
 }
 
 .workspace {
@@ -358,6 +401,15 @@ select {
 
   .tabs {
     justify-content: flex-start;
+  }
+
+  .deviceMenu {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .deviceStatus {
+    text-align: left;
   }
 
   .workspace {

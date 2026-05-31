@@ -148,10 +148,12 @@ The web app currently includes:
 - TLV encoders for user tunings, layouts, scale color maps, explicit button
   maps, and named/foldered synth presets
 - firmware-backed synth preset upload, download, list, erase, current-patch
-  loading, and live preview, with ACK-confirmed flash saves for real devices and
-  explicit MIDI input/output selection for device reads
-- initial React views for device connection, profile sync, tuning/layout
-  editing, and synth preset organization
+  loading, and live preview, with ACK-confirmed flash saves for real devices
+- a compact header device menu that uses preset-sync `HELLO_RESP` to discover a
+  compatible HexBoard and only shows a device selector when multiple HexBoards
+  respond
+- initial React views for profile sync, tuning/layout editing, and synth preset
+  organization
 
 Install and run it from `web/`:
 
@@ -168,9 +170,9 @@ npm test
 ```
 
 Web MIDI SysEx requires a browser with Web MIDI support, usually Chrome or Edge,
-and a secure context such as `localhost` or HTTPS. Select both the HexBoard MIDI
-output and input ports in the web app; reading the device library requires the
-input port that receives HexBoard SysEx replies.
+and a secure context such as `localhost` or HTTPS. Use `Connect HexBoard` in the
+top bar; the app probes available MIDI input/output pairs and connects
+automatically when exactly one compatible HexBoard responds.
 
 ### Build Notes
 

@@ -316,17 +316,18 @@ The companion web app has protocol and catalog helpers for that draft under
 `web/src/midi/` so host-side work can be tested before firmware support exists.
 Real-device synth preset saves wait for ACK/NACK responses through
 `WRITE_COMMIT`; library refresh requests list synth preset records one at a
-time before reading each object body. The Device view exposes separate MIDI
-output/input selection, explicitly opens selected Web MIDI ports, and blocks
-device-library refresh when no input port is attached so reads are not blocked
-by a guessed or missing input port. If an object body read fails, the web app
-still displays the object-list metadata and reports the first full-read failure
-in the sync status. The synth editor reads handle `0x3FFF` as a synthetic
-current-runtime synth preset before enabling live sends, and selecting a preset
-for editing sends an apply-only preview immediately. Literal `/`, `\`, and `%`
-characters in web-app folder names are percent-escaped in device-facing folder
-paths, so the on-device menu can display labels such as `Pads/Warm` without
-splitting them into nested folders.
+time before reading each object body. The compact header device menu probes Web
+MIDI input/output pairs with `HELLO_REQ`, accepts only compatible `HELLO_RESP`
+metadata, auto-connects when one HexBoard responds, and shows a device selector
+only for multiple compatible HexBoards. If an object body read fails, the web
+app still displays the object-list metadata and reports the first full-read
+failure in the sync status. The synth editor reads handle `0x3FFF` as a
+synthetic current-runtime synth preset before enabling live sends, and selecting
+a preset for editing sends an apply-only preview immediately. Literal `/`, `\`,
+and `%` characters in web-app folder names are percent-escaped in device-facing
+folder paths, so the on-device menu can display labels such as `Pads/Warm`
+without splitting them into nested folders. Folder chips filter each synth
+library pane independently and toggle off when clicked again.
 
 Firmware MIDI receive drains all currently available USB/serial bytes into the
 HexBoard parser instead of relying on the Arduino MIDI library. When a

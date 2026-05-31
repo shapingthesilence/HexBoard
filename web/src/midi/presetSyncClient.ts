@@ -10,6 +10,7 @@ import {
   crc32,
   decodeDataChunkPayload,
   decodeNackPayload,
+  decodeHelloResponsePayload,
   decodeObjectListResponsePayload,
   decodePresetSyncFrame,
   decodeReadBeginPayload,
@@ -26,6 +27,7 @@ import {
   encodeWriteBeginPayload,
   encodeWriteCommitPayload,
   type ObjectListRecord,
+  type HelloResponsePayload,
   type PresetSyncFrame
 } from "../protocol/index.ts";
 import type { EncodedCatalogObject } from "../catalogs/types.ts";
@@ -72,6 +74,16 @@ export class PresetSyncClient {
 
   async sendHello(hostMaxPackedChunk = 128): Promise<number[]> {
     return this.send(MessageType.HelloRequest, encodeHelloRequestPayload(hostMaxPackedChunk));
+  }
+
+  async requestHello(hostMaxPackedChunk = 128, timeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS): Promise<HelloResponsePayload> {
+    const frame = await this.requestFrame(
+      MessageType.HelloRequest,
+      encodeHelloRequestPayload(hostMaxPackedChunk),
+      (candidate) => candidate.message === MessageType.HelloResponse,
+      timeoutMs
+    );
+    return decodeHelloResponsePayload(frame.payload);
   }
 
   async sendReadRequest(objectType: number, handle: number, readFlags = 0): Promise<number[]> {

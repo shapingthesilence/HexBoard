@@ -495,6 +495,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [syncStatus, setSyncStatus] = useState("Ready");
   const [lastFrameCount, setLastFrameCount] = useState(0);
   const [draggedPreset, setDraggedPreset] = useState<DraggedPreset | null>(null);
+  const [folderFilters, setFolderFilters] = useState<Record<LibrarySpace, string | null>>({
+    computer: null,
+    hexboard: null
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const skipNextAutoSend = useRef(true);
 
@@ -593,6 +597,13 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   function findPreset(dragged: DraggedPreset): EditableSynthPreset | undefined {
     const presets = dragged.space === "computer" ? computerPresets : hexboardPresets;
     return presets.find((candidate) => candidate.objectIdHex === dragged.objectIdHex);
+  }
+
+  function toggleFolderFilter(space: LibrarySpace, folderPath: string) {
+    setFolderFilters((current) => ({
+      ...current,
+      [space]: current[space] === folderPath ? null : folderPath
+    }));
   }
 
   function saveToComputer(nextPreset = preset) {
@@ -728,7 +739,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       return false;
     }
     if (transport instanceof WebMidiTransport && !transport.hasInput) {
-      setSyncStatus("Select the HexBoard MIDI input port before loading the current patch.");
+      setSyncStatus("Connect HexBoard from the top bar before loading the current patch.");
       return false;
     }
 
@@ -762,7 +773,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       return;
     }
     if (transport instanceof WebMidiTransport && !transport.hasInput) {
-      setSyncStatus("Select the HexBoard MIDI input port before refreshing device presets.");
+      setSyncStatus("Connect HexBoard from the top bar before refreshing device presets.");
       return;
     }
 
@@ -791,7 +802,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       const message = error instanceof Error ? error.message : "Failed to refresh HexBoard Library";
       setSyncStatus(
         message.includes("Timed out")
-          ? `${message}. Check Device > Input; the browser must receive HexBoard SysEx replies to read device presets.`
+          ? `${message}. Use Connect HexBoard in the top bar so the browser can receive HexBoard SysEx replies.`
           : message
       );
     }
@@ -874,10 +885,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             space="computer"
             presets={computerPresets}
             folders={allFolders}
-            selectedFolder={preset.folderPath}
+            selectedFolder={folderFilters.computer}
             draggedPreset={draggedPreset}
             onAllowDrop={allowDrop}
             onDrop={dropPreset}
+            onFolderSelect={toggleFolderFilter}
             onDragStart={startDrag}
             onDragEnd={() => setDraggedPreset(null)}
             onEdit={editPreset}
@@ -892,10 +904,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             space="hexboard"
             presets={hexboardPresets}
             folders={allFolders}
-            selectedFolder={preset.folderPath}
+            selectedFolder={folderFilters.hexboard}
             draggedPreset={draggedPreset}
             onAllowDrop={allowDrop}
             onDrop={dropPreset}
+            onFolderSelect={toggleFolderFilter}
             onDragStart={startDrag}
             onDragEnd={() => setDraggedPreset(null)}
             onEdit={editPreset}
@@ -1045,10 +1058,11 @@ interface LibrarySpacePanelProps {
   space: LibrarySpace;
   presets: EditableSynthPreset[];
   folders: string[];
-  selectedFolder: string;
+  selectedFolder: string | null;
   draggedPreset: DraggedPreset | null;
   onAllowDrop: (event: DragEvent<HTMLElement>) => void;
   onDrop: (space: LibrarySpace, folderPath?: string) => void;
+  onFolderSelect: (space: LibrarySpace, folderPath: string) => void;
   onDragStart: (space: LibrarySpace, objectIdHex: string, event: DragEvent<HTMLLIElement>) => void;
   onDragEnd: () => void;
   onEdit: (space: LibrarySpace, preset: EditableSynthPreset) => void;
@@ -1068,6 +1082,7 @@ function LibrarySpacePanel({
   draggedPreset,
   onAllowDrop,
   onDrop,
+  onFolderSelect,
   onDragStart,
   onDragEnd,
   onEdit,
@@ -1077,6 +1092,9 @@ function LibrarySpacePanel({
   onErase
 }: LibrarySpacePanelProps) {
   const isDropTarget = draggedPreset !== null;
+  const visiblePresets = selectedFolder
+    ? presets.filter((preset) => preset.folderPath === selectedFolder)
+    : presets;
 
   return (
     <section
@@ -1092,7 +1110,7 @@ function LibrarySpacePanel({
           <h3>{title}</h3>
           <span className="muted">{subtitle}</span>
         </div>
-        <span className="countBadge">{presets.length}</span>
+        <span className="countBadge">{visiblePresets.length}</span>
       </div>
 
       <div className="folderTargets">
@@ -1101,6 +1119,8 @@ function LibrarySpacePanel({
             className={folder === selectedFolder ? "folderTarget active" : "folderTarget"}
             key={`${space}-${folder}`}
             type="button"
+            aria-pressed={folder === selectedFolder}
+            onClick={() => onFolderSelect(space, folder)}
             onDragOver={onAllowDrop}
             onDrop={(event) => {
               event.preventDefault();
@@ -1114,10 +1134,10 @@ function LibrarySpacePanel({
       </div>
 
       <ul className="list">
-        {presets.length === 0 ? (
-          <li className="emptyListItem">No presets</li>
+        {visiblePresets.length === 0 ? (
+          <li className="emptyListItem">{selectedFolder ? `No presets in ${folderLabel(selectedFolder)}` : "No presets"}</li>
         ) : (
-          presets.map((item) => (
+          visiblePresets.map((item) => (
             <li
               className="listItem presetListItem"
               draggable

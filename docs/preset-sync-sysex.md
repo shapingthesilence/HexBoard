@@ -284,6 +284,11 @@ A serial MIDI host should ask for smaller chunks.
 `required-cap-flags` lets a host fail early if a required operation is missing.
 Send `0` for discovery.
 
+The web app uses this exchange for connection discovery: it probes candidate Web
+MIDI input/output pairs, requires protocol major `1`, requires the synth preset
+capability bit, and checks the synth preset schema before treating a responder as
+a compatible HexBoard.
+
 `HELLO_RESP` payload:
 
 ```text
