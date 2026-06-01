@@ -356,7 +356,9 @@ from the visual board or typed by button index. The rotation control is a
 four-step device orientation preview: `0`, `90`, `180`, or `270` degrees. It is
 intended to line up with the firmware `Device Rot` setting, not to rotate the
 musical axes around individual hexagons. Focusing the center, across, or
-up-right layout fields highlights the relevant preview key relationship.
+up-right layout fields highlights the relevant preview key relationship. The
+axis field labels follow the four-way preview rotation; for example, at `90`
+degrees, across is shown as `Down` and up-right is shown as `Down-right`.
 
 The tuning editor can create EDO tunings, equal cents-per-step tunings, and
 Scala `.scl` imports. Scala text is parsed in the web app and stored in the

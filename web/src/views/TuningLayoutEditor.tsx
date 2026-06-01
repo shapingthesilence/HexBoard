@@ -31,6 +31,13 @@ const previewHexInset = 24;
 
 type LayoutGuideFocus = "center" | "across" | "upRight";
 
+const layoutAxisDirectionLabels = [
+  { across: "Right", upRight: "Up-right" },
+  { across: "Down", upRight: "Down-right" },
+  { across: "Left", upRight: "Down-left" },
+  { across: "Up", upRight: "Up-left" }
+] as const;
+
 interface PreviewKey {
   key: HexBoardKey;
   role: "note" | "command" | "unused";
@@ -91,6 +98,11 @@ function clampInteger(value: number, min: number, max: number): number {
 
 function tuningCycleLength(tuning: LayoutBundleTuning): number {
   return Math.max(1, Math.round(tuning.cycleLength));
+}
+
+function layoutAxisLabels(rotationSteps: number): typeof layoutAxisDirectionLabels[number] {
+  const index = ((Math.round(rotationSteps) % 4) + 4) % 4;
+  return layoutAxisDirectionLabels[index];
 }
 
 function withCycleColors(bundle: LayoutBundle, cycleLength: number): LayoutBundle {
@@ -400,6 +412,7 @@ export function TuningLayoutEditor() {
   const selectedPreview = previewKeys.find((item) => item.key.index === selectedButton) ?? previewKeys[0];
   const selectedDegreeColor = normalizeScaleDegreeColors(activeBundle.degreeColors, tuningCycleLength(activeBundle.tuning))
     .find((color) => color.degree === selectedPreview.degree) ?? createDefaultDegreeColors(1)[0];
+  const axisLabels = layoutAxisLabels(activeBundle.layout.rotationSteps);
   const centerGuideKey = hexBoardGeometry.find((key) => key.index === activeBundle.layout.centerButton);
   const guideTargetIndex = (() => {
     if (!layoutGuideFocus || !centerGuideKey) {
@@ -411,7 +424,7 @@ export function TuningLayoutEditor() {
     if (layoutGuideFocus === "across") {
       return hexBoardKeyAtCoord(centerGuideKey.coordRow, centerGuideKey.coordCol + 2)?.index;
     }
-    return hexBoardKeyAtCoord(centerGuideKey.coordRow - 1, centerGuideKey.coordCol - 1)?.index;
+    return hexBoardKeyAtCoord(centerGuideKey.coordRow - 1, centerGuideKey.coordCol + 1)?.index;
   })();
   const guideOriginIndex = layoutGuideFocus === "across" || layoutGuideFocus === "upRight"
     ? centerGuideKey?.index
@@ -530,7 +543,7 @@ export function TuningLayoutEditor() {
               />
             </label>
             <label className="field">
-              <span>Across</span>
+              <span>{axisLabels.across}</span>
               <input
                 type="number"
                 value={activeBundle.layout.acrossSteps}
@@ -539,7 +552,7 @@ export function TuningLayoutEditor() {
               />
             </label>
             <label className="field">
-              <span>Up-right</span>
+              <span>{axisLabels.upRight}</span>
               <input
                 type="number"
                 value={activeBundle.layout.upRightSteps}

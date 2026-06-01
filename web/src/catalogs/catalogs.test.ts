@@ -65,8 +65,8 @@ describe("catalog object encoding", () => {
       portrait: true
     });
     expect(decodeObjectBody(layout.body).objectType).toBe(ObjectType.UserLayout);
-    expect(i16LE(recordValue(layout.body, LayoutTlv.DownLeftSteps))).toBe(-10);
-    expect(currentFirmwareDownLeftToUpRight(3, -11)).toBe(8);
+    expect(i16LE(recordValue(layout.body, LayoutTlv.DownLeftSteps))).toBe(-7);
+    expect(currentFirmwareDownLeftToUpRight(3, -11)).toBe(11);
   });
 
   it("round trips an equal-step tuning", () => {

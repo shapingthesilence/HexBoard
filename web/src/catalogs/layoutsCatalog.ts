@@ -300,12 +300,12 @@ export function createCentsTableTuning(input: CentsTableTuningInput): EncodedCat
   });
 }
 
-export function currentFirmwareDownLeftToUpRight(acrossSteps: number, downLeftSteps: number): number {
-  return -(acrossSteps + downLeftSteps);
+export function currentFirmwareDownLeftToUpRight(_acrossSteps: number, downLeftSteps: number): number {
+  return -downLeftSteps;
 }
 
-export function upRightToCurrentFirmwareDownLeft(acrossSteps: number, upRightSteps: number): number {
-  return -upRightSteps - acrossSteps;
+export function upRightToCurrentFirmwareDownLeft(_acrossSteps: number, upRightSteps: number): number {
+  return -upRightSteps;
 }
 
 export function createVectorLayout(input: VectorLayoutInput): EncodedCatalogObject {

@@ -729,8 +729,8 @@ updated, the web app writes the existing `DownLeftSteps` TLV as a compatibility
 translation:
 
 ```text
-DownLeftSteps = -UpRightSteps - AcrossSteps
-UpRightSteps = -(AcrossSteps + DownLeftSteps)
+DownLeftSteps = -UpRightSteps
+UpRightSteps = -DownLeftSteps
 ```
 
 The layout bundle also stores a four-step device orientation value

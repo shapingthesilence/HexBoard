@@ -24,10 +24,11 @@ describe("HexBoard geometry", () => {
     const layout = {
       centerButton: 65,
       acrossSteps: 3,
-      upRightSteps: 8
+      upRightSteps: 11
     };
     expect(computeVectorLayoutSteps(hexBoardKeyByIndex(65), layout)).toBe(0);
     expect(computeVectorLayoutSteps(hexBoardKeyByIndex(66), layout)).toBe(3);
+    expect(computeVectorLayoutSteps(hexBoardKeyByIndex(55), layout)).toBe(11);
     expect(computeVectorLayoutSteps(hexBoardKeyByIndex(54), layout)).toBe(8);
   });
 });

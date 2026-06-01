@@ -55,7 +55,7 @@ export function vectorLayoutDistances(key: HexBoardKey, center: HexBoardKey): { 
   const distCol = key.coordCol - center.coordCol;
   const distRow = key.coordRow - center.coordRow;
   return {
-    acrossDistance: (distCol - distRow) / 2,
+    acrossDistance: (distCol + distRow) / 2,
     upRightDistance: -distRow
   };
 }
