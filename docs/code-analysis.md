@@ -337,9 +337,11 @@ metadata, auto-connects when one HexBoard responds, and shows a device selector
 only for multiple compatible HexBoards. If an object body read fails, the web
 app still displays the object-list metadata and reports the first full-read
 failure in the sync status. The synth editor reads handle `0x3FFF` as a
-synthetic current-runtime synth preset before enabling live sends, and selecting
-a preset for editing sends an apply-only preview immediately. Literal `/`, `\`,
-and `%` characters in web-app folder names are percent-escaped in device-facing
+synthetic current-runtime synth preset before enabling live sends, and opening a
+preset sends an apply-only preview immediately. Opened presets are temporary
+drafts: a unique folder/name save gets a fresh object id, while overwrites reuse
+the matched preset object id only after user confirmation. Literal `/`, `\`, and
+`%` characters in web-app folder names are percent-escaped in device-facing
 folder paths, so the on-device menu can display labels such as `Pads/Warm`
 without splitting them into nested folders. Folder chips filter each synth
 library pane independently and toggle off when clicked again.

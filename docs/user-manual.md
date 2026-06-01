@@ -382,7 +382,7 @@ name and folder selection, a new-folder control, Drive and AHDSR sliders, FX
 envelope AHDSR controls, and other main synth parameter controls. The synth
 library has a `Computer Library` for browser-saved/imported preset files and a
 `HexBoard Library` loaded from the connected device through SysEx. Presets can
-be edited, erased, exported as JSON files, imported from JSON files, uploaded to
+be opened, erased, exported as JSON files, imported from JSON files, uploaded to
 HexBoard, downloaded back to the computer library, refreshed from the device,
 and dragged between library areas or into folder targets. Folder buttons filter
 each library area; clicking the active folder again clears the filter and shows
@@ -390,13 +390,15 @@ all presets in that area.
 
 When the Synth Presets tab opens with a HexBoard input connected, the editor
 requests the current HexBoard synth patch instead of sending one of the browser
-sample presets. Choosing `Edit` on a preset loads it onto the HexBoard
+sample presets. Choosing `Open` on a preset loads it onto the HexBoard
 immediately for auditioning. When `Live send` is on, later editor changes are
 sent as apply-only preset-sync messages over the active MIDI transport; they are
-intended for real-time auditioning, not immediate flash saves. Use `Save to
-HexBoard` when you want to send the named/foldered preset as a save request.
-Device saves wait for the HexBoard to acknowledge the write through the flash
-commit before the app refreshes the `HexBoard Library`.
+temporary, including name and folder changes, and are not immediate flash
+saves. `Save to Computer` and `Save to HexBoard` create a new preset when the
+folder/name is unique. If the target library already has the same folder/name,
+the app asks before overwriting that preset. Device saves wait for the HexBoard
+to acknowledge the write through the flash commit before the app refreshes the
+`HexBoard Library`.
 
 The app requires a Web MIDI SysEx-capable browser such as Chrome or Edge running
 from `localhost` or HTTPS. Use `Connect HexBoard` in the top bar; the app sends

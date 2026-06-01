@@ -152,7 +152,8 @@ The web app currently includes:
   layouts, four-step device orientation preview matching firmware `Device Rot`,
   scale-degree colors, and per-button role/color overrides
 - firmware-backed synth preset upload, download, list, erase, current-patch
-  loading, and live preview, with ACK-confirmed flash saves for real devices
+  loading, and live preview, with opened presets treated as temporary drafts and
+  ACK-confirmed flash saves for real devices
 - a compact header device menu that uses preset-sync `HELLO_RESP` to discover a
   compatible HexBoard and only shows a device selector when multiple HexBoards
   respond

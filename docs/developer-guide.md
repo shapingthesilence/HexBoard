@@ -90,12 +90,14 @@ a device selector when multiple compatible HexBoards respond. Real-device synth
 preset saves use an ACKed write path through `WRITE_COMMIT`; live preview
 remains a fast apply-only write path. The synth editor reads the current runtime
 synth patch from handle `0x3FFF` before enabling live sends, and preset
-selection sends an apply-only preview immediately for auditioning. HexBoard
-Library refresh uses object-list metadata as a fallback so device presets still
-appear if a full object body read fails. Folder names are display strings in the
-app; literal `/`, `\`, and `%` characters are percent-escaped only in the
-device-facing folder path, and folder chips filter each synth library pane until
-clicked again.
+open sends an apply-only preview immediately for auditioning. The editor keeps
+opened presets as temporary drafts; save actions assign a fresh object id for a
+unique folder/name and only reuse an existing object id after the user confirms
+an overwrite for that same folder/name. HexBoard Library refresh uses object-list
+metadata as a fallback so device presets still appear if a full object body read
+fails. Folder names are display strings in the app; literal `/`, `\`, and `%`
+characters are percent-escaped only in the device-facing folder path, and folder
+chips filter each synth library pane until clicked again.
 
 Current web source layout:
 
