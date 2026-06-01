@@ -15,6 +15,7 @@ export interface EncodedCatalogObject {
 export interface LayoutsDatCatalog {
   tunings: EncodedCatalogObject[];
   layouts: EncodedCatalogObject[];
+  scales: EncodedCatalogObject[];
   scaleColorMaps: EncodedCatalogObject[];
   explicitButtonMaps: EncodedCatalogObject[];
 }
@@ -29,4 +30,3 @@ export interface ObjectReferenceInput {
   handle: number;
   objectId: Uint8Array;
 }
-

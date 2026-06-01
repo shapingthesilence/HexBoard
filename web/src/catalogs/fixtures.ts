@@ -4,6 +4,7 @@ import {
   createExplicitButtonMap,
   createGeneratedEdoTuning,
   createScaleColorMap,
+  createUserScale,
   createVectorLayout
 } from "./layoutsCatalog.ts";
 import { createSynthPresetCatalog, createSynthPresetObject } from "./synthPresets.ts";
@@ -50,6 +51,19 @@ export const sampleScaleColorMap = createScaleColorMap({
   ]
 });
 
+export const sampleScale = createUserScale({
+  objectId: deterministicObjectId("19 EDO diatonic scale"),
+  name: "Diatonic",
+  tuningRef: {
+    objectType: ObjectType.UserTuning,
+    handle: 0,
+    objectId: nineteenEdoId
+  },
+  cycleLength: 19,
+  patternSteps: [3, 3, 2, 3, 3, 3, 2],
+  includedDegrees: [0, 3, 6, 8, 11, 14, 17]
+});
+
 export const sampleButtonMap = createExplicitButtonMap({
   objectId: deterministicObjectId("button edits"),
   name: "Top row edits",
@@ -80,6 +94,7 @@ export const sampleButtonMap = createExplicitButtonMap({
 export const sampleLayoutsCatalog: LayoutsDatCatalog = {
   tunings: [sampleTuning],
   layouts: [sampleLayout],
+  scales: [sampleScale],
   scaleColorMaps: [sampleScaleColorMap],
   explicitButtonMaps: [sampleButtonMap]
 };

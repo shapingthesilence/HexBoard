@@ -51,7 +51,8 @@ export const ObjectType = {
   ExplicitButtonMap: 0x06,
   SynthPreset: 0x07,
   Bundle: 0x08,
-  Folder: 0x09
+  Folder: 0x09,
+  UserScale: 0x0a
 } as const;
 
 export type ObjectTypeValue = (typeof ObjectType)[keyof typeof ObjectType];

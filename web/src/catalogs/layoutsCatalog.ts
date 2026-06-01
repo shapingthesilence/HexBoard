@@ -16,7 +16,8 @@ import {
 import type { EncodedCatalogObject, LayoutsDatCatalog, ObjectReferenceInput } from "./types.ts";
 import { deterministicObjectId, objectIdFromHex, objectIdToHex } from "./objectId.ts";
 
-export const LayoutBundleFileFormat = "hexboard.layoutBundle.v1";
+export const LegacyLayoutBundleFileFormat = "hexboard.layoutBundle.v1";
+export const LayoutBundleFileFormat = "hexboard.layoutBundle.v2";
 
 export const UserTuningKind = {
   Edo: 1,
@@ -61,6 +62,14 @@ export const ScaleColorMapTlv = {
   CycleLength: 0x21,
   DefaultColorMode: 0x22,
   DegreeColors: 0x23
+} as const;
+
+export const UserScaleTlv = {
+  TuningRef: 0x20,
+  CycleLength: 0x21,
+  RootDegree: 0x22,
+  PatternSteps: 0x23,
+  IncludedDegrees: 0x24
 } as const;
 
 export const ExplicitButtonMapTlv = {
@@ -124,6 +133,16 @@ export interface ScaleColorMapInput {
   degreeColors: ScaleDegreeColor[];
 }
 
+export interface UserScaleInput {
+  objectId: Uint8Array;
+  name: string;
+  tuningRef?: ObjectReferenceInput;
+  cycleLength: number;
+  rootDegree?: number;
+  patternSteps: number[];
+  includedDegrees: number[];
+}
+
 export interface ExplicitButtonRecord {
   buttonIndex: number;
   role: number;
@@ -142,6 +161,29 @@ export interface LayoutBundleButtonOverride {
   saturation?: number;
   value?: number;
   stepsFromC?: number;
+}
+
+export interface LayoutBundleLayout {
+  objectIdHex: string;
+  name: string;
+  centerButton: number;
+  acrossSteps: number;
+  upRightSteps: number;
+  rotationSteps: number;
+  portrait: boolean;
+  buttonOverrides: LayoutBundleButtonOverride[];
+}
+
+export interface LayoutBundleScale {
+  objectIdHex: string;
+  name: string;
+  patternSteps: number[];
+  includedDegrees: number[];
+}
+
+export interface LayoutBundlePalette {
+  name: string;
+  degreeColors: ScaleDegreeColor[];
 }
 
 export type LayoutBundleTuning =
@@ -178,22 +220,19 @@ export interface LayoutBundle {
   objectIdHex: string;
   name: string;
   tuning: LayoutBundleTuning;
-  layout: {
-    centerButton: number;
-    acrossSteps: number;
-    upRightSteps: number;
-    rotationSteps: number;
-    portrait: boolean;
-  };
-  degreeColors: ScaleDegreeColor[];
-  buttonOverrides: LayoutBundleButtonOverride[];
+  palette: LayoutBundlePalette;
+  layouts: LayoutBundleLayout[];
+  activeLayoutIdHex: string;
+  scales: LayoutBundleScale[];
+  activeScaleIdHex: string;
 }
 
 export interface EncodedLayoutBundle {
   tuning: EncodedCatalogObject;
-  layout: EncodedCatalogObject;
+  layouts: EncodedCatalogObject[];
+  scales: EncodedCatalogObject[];
   scaleColorMap: EncodedCatalogObject;
-  explicitButtonMap?: EncodedCatalogObject;
+  explicitButtonMaps: EncodedCatalogObject[];
   objects: EncodedCatalogObject[];
 }
 
@@ -353,6 +392,32 @@ export function createScaleColorMap(input: ScaleColorMapInput): EncodedCatalogOb
   });
 }
 
+export function createUserScale(input: UserScaleInput): EncodedCatalogObject {
+  const patternBytes = input.patternSteps.map((step) => bytesFromNumbers([clampInteger(step, 0, 255)]));
+  const includedDegreeBytes = input.includedDegrees.map((degree) =>
+    bytesFromNumbers([
+      degree & 0xff,
+      (degree >> 8) & 0xff
+    ])
+  );
+  const records: TlvRecord[] = [
+    tlvU16LE(UserScaleTlv.CycleLength, input.cycleLength),
+    tlvU16LE(UserScaleTlv.RootDegree, input.rootDegree ?? 0),
+    tlv(UserScaleTlv.PatternSteps, concatBytes(patternBytes)),
+    tlv(UserScaleTlv.IncludedDegrees, concatBytes(includedDegreeBytes))
+  ];
+  if (input.tuningRef) {
+    records.unshift(tlv(UserScaleTlv.TuningRef, encodeObjectReference(input.tuningRef)));
+  }
+
+  return buildCatalogObject({
+    objectType: ObjectType.UserScale,
+    objectId: input.objectId,
+    name: input.name,
+    records
+  });
+}
+
 export function createExplicitButtonMap(input: ExplicitButtonMapInput): EncodedCatalogObject {
   const mapRecords = input.records.map((record) =>
     bytesFromNumbers([
@@ -389,6 +454,7 @@ export function createEmptyLayoutsDatCatalog(): LayoutsDatCatalog {
   return {
     tunings: [],
     layouts: [],
+    scales: [],
     scaleColorMaps: [],
     explicitButtonMaps: []
   };
@@ -468,6 +534,50 @@ export function normalizeScaleDegreeColors(colors: ScaleDegreeColor[], cycleLeng
   return defaults.map((fallback) => clampScaleDegreeColor(colors.find((color) => color.degree === fallback.degree) ?? fallback));
 }
 
+export function normalizeScaleDegrees(degrees: number[], cycleLength: number): number[] {
+  const normalized = new Set<number>();
+  degrees.forEach((degree) => normalized.add(positiveModulo(degree, cycleLength)));
+  return [...normalized].sort((left, right) => left - right);
+}
+
+export function scalePatternToDegrees(patternSteps: number[], cycleLength: number): number[] {
+  if (patternSteps.length === 0) {
+    return Array.from({ length: Math.max(1, Math.round(cycleLength)) }, (_, degree) => degree);
+  }
+  const degrees = [0];
+  let accumulated = 0;
+  for (const step of patternSteps) {
+    accumulated += Math.max(0, Math.round(step));
+    if (accumulated > 0 && accumulated < cycleLength) {
+      degrees.push(accumulated);
+    }
+  }
+  return normalizeScaleDegrees(degrees, cycleLength);
+}
+
+export function createAllNotesScale(cycleLength: number): LayoutBundleScale {
+  const safeCycleLength = Math.max(1, Math.round(cycleLength));
+  return {
+    objectIdHex: objectIdToHex(deterministicObjectId(`scale:all-notes:${safeCycleLength}`)),
+    name: "All Notes",
+    patternSteps: Array.from({ length: safeCycleLength }, () => 1),
+    includedDegrees: Array.from({ length: safeCycleLength }, (_, degree) => degree)
+  };
+}
+
+export function createDefaultLayout(cycleLength: number): LayoutBundleLayout {
+  return {
+    objectIdHex: objectIdToHex(deterministicObjectId(`layout:default:${cycleLength}`)),
+    name: `${cycleLength} EDO Wicki`,
+    centerButton: 65,
+    acrossSteps: 3,
+    upRightSteps: currentFirmwareDownLeftToUpRight(3, -11),
+    rotationSteps: 0,
+    portrait: true,
+    buttonOverrides: []
+  };
+}
+
 export function resolveLayoutBundleButtonColor(input: {
   degreeColors: ScaleDegreeColor[];
   cycleLength: number;
@@ -502,6 +612,8 @@ export function resolveLayoutBundleButtonColor(input: {
 
 export function createDefaultLayoutBundle(): LayoutBundle {
   const objectId = deterministicObjectId("layout-bundle:19 EDO Wicki");
+  const layout = createDefaultLayout(19);
+  const scale = createAllNotesScale(19);
   return {
     objectIdHex: objectIdToHex(objectId),
     name: "19 EDO Wicki",
@@ -514,23 +626,20 @@ export function createDefaultLayoutBundle(): LayoutBundle {
       referenceMidiNote: 69,
       referenceHz: 440
     },
-    layout: {
-      centerButton: 65,
-      acrossSteps: 3,
-      upRightSteps: currentFirmwareDownLeftToUpRight(3, -11),
-      rotationSteps: 0,
-      portrait: true
+    palette: {
+      name: "Custom Palette",
+      degreeColors: createDefaultDegreeColors(19)
     },
-    degreeColors: createDefaultDegreeColors(19),
-    buttonOverrides: []
+    layouts: [layout],
+    activeLayoutIdHex: layout.objectIdHex,
+    scales: [scale],
+    activeScaleIdHex: scale.objectIdHex
   };
 }
 
 export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   const tuningId = bundleObjectId(bundle, "tuning");
-  const layoutId = bundleObjectId(bundle, "layout");
   const colorId = bundleObjectId(bundle, "colors");
-  const mapId = bundleObjectId(bundle, "button-map");
   const tuningName = bundle.tuning.name || bundle.name;
   const tuning = (() => {
     switch (bundle.tuning.kind) {
@@ -565,51 +674,67 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     }
   })();
 
-  const layout = createVectorLayout({
-    objectId: layoutId,
-    name: `${bundle.name} Layout`,
+  const layouts = bundle.layouts.map((layout) => createVectorLayout({
+    objectId: objectIdFromHex(layout.objectIdHex),
+    name: layout.name || `${bundle.name} Layout`,
     tuningRef: tuningReference(tuning),
-    centerButton: bundle.layout.centerButton,
-    acrossSteps: bundle.layout.acrossSteps,
-    upRightSteps: bundle.layout.upRightSteps,
-    portrait: (bundle.layout.rotationSteps % 2) === 0
-  });
+    centerButton: layout.centerButton,
+    acrossSteps: layout.acrossSteps,
+    upRightSteps: layout.upRightSteps,
+    portrait: (layout.rotationSteps % 2) === 0
+  }));
   const scaleColorMap = createScaleColorMap({
     objectId: colorId,
-    name: `${bundle.name} Colors`,
+    name: bundle.palette.name || `${bundle.name} Palette`,
     tuningRef: tuningReference(tuning),
     cycleLength: bundle.tuning.cycleLength,
     defaultColorMode: 0,
-    degreeColors: bundle.degreeColors
+    degreeColors: bundle.palette.degreeColors
   });
-  const explicitRecords = bundle.buttonOverrides.map((override) => ({
-    buttonIndex: override.buttonIndex,
-    role: roleNameToByte(override.role),
-    stepsFromC: override.stepsFromC ?? 0,
-    midiNote: 60,
-    colorMode: override.hueTenthDegrees === undefined ? 0 : 1,
-    hueTenthDegrees: override.hueTenthDegrees ?? 0,
-    saturation: override.saturation ?? 0,
-    value: override.value ?? 0
+  const scales = bundle.scales.map((scale) => createUserScale({
+    objectId: objectIdFromHex(scale.objectIdHex),
+    name: scale.name || `${bundle.name} Scale`,
+    tuningRef: tuningReference(tuning),
+    cycleLength: bundle.tuning.cycleLength,
+    patternSteps: scale.patternSteps,
+    includedDegrees: normalizeScaleDegrees(scale.includedDegrees, bundle.tuning.cycleLength)
   }));
-  const explicitButtonMap = explicitRecords.length > 0
-    ? createExplicitButtonMap({
-        objectId: mapId,
-        name: `${bundle.name} Button Map`,
-        tuningRef: tuningReference(tuning),
-        layoutRef: layoutReference(layout),
-        records: explicitRecords
-      })
-    : undefined;
-  const objects = explicitButtonMap
-    ? [tuning, layout, scaleColorMap, explicitButtonMap]
-    : [tuning, layout, scaleColorMap];
+  const explicitButtonMaps = bundle.layouts.flatMap((layout, layoutIndex) => {
+    const explicitRecords = layout.buttonOverrides.map((override) => ({
+      buttonIndex: override.buttonIndex,
+      role: roleNameToByte(override.role),
+      stepsFromC: override.stepsFromC ?? 0,
+      midiNote: 60,
+      colorMode: override.hueTenthDegrees === undefined ? 0 : 1,
+      hueTenthDegrees: override.hueTenthDegrees ?? 0,
+      saturation: override.saturation ?? 0,
+      value: override.value ?? 0
+    }));
+    if (explicitRecords.length === 0) {
+      return [];
+    }
+    return [createExplicitButtonMap({
+      objectId: deterministicObjectId(`${bundle.objectIdHex}:button-map:${layout.objectIdHex}`),
+      name: `${layout.name || bundle.name} Button Map`,
+      tuningRef: tuningReference(tuning),
+      layoutRef: layoutReference(layouts[layoutIndex]),
+      records: explicitRecords
+    })];
+  });
+  const objects = [
+    tuning,
+    ...layouts,
+    ...scales,
+    scaleColorMap,
+    ...explicitButtonMaps
+  ];
 
   return {
     tuning,
-    layout,
+    layouts,
+    scales,
     scaleColorMap,
-    explicitButtonMap,
+    explicitButtonMaps,
     objects
   };
 }
@@ -623,7 +748,11 @@ export function parseLayoutBundleFile(value: unknown): LayoutBundle {
     throw new Error("Layout bundle file must contain an object");
   }
   const record = value as Record<string, unknown>;
-  if (record.format !== LayoutBundleFileFormat || typeof record.bundle !== "object" || record.bundle === null) {
+  if (
+    (record.format !== LayoutBundleFileFormat && record.format !== LegacyLayoutBundleFileFormat) ||
+    typeof record.bundle !== "object" ||
+    record.bundle === null
+  ) {
     throw new Error("Unsupported layout bundle file");
   }
   return normalizeLayoutBundle(record.bundle);
@@ -638,28 +767,91 @@ export function parseLayoutBundleLibrary(value: unknown): LayoutBundle[] {
 }
 
 function normalizeLayoutBundle(value: unknown): LayoutBundle {
-  const source = value as Partial<LayoutBundle>;
+  const source = value as Partial<LayoutBundle> & {
+    layout?: Partial<LayoutBundleLayout>;
+    degreeColors?: ScaleDegreeColor[];
+    buttonOverrides?: LayoutBundleButtonOverride[];
+  };
   if (typeof source.name !== "string" || typeof source.objectIdHex !== "string") {
     throw new Error("Layout bundle is missing a name or object id");
   }
   objectIdFromHex(source.objectIdHex);
   if (!source.tuning || !source.layout) {
-    throw new Error("Layout bundle is missing tuning or layout data");
+    if (!source.tuning || !Array.isArray(source.layouts)) {
+      throw new Error("Layout bundle is missing tuning or layout data");
+    }
   }
-  const rotationSteps = Math.max(0, Math.min(3, Math.round(source.layout.rotationSteps ?? 0)));
+  const cycleLength = Math.max(1, Math.round(source.tuning.cycleLength));
+  const legacyLayout = source.layout;
+  const layouts = Array.isArray(source.layouts) && source.layouts.length > 0
+    ? source.layouts
+    : legacyLayout
+      ? [{
+          objectIdHex: objectIdToHex(deterministicObjectId(`${source.objectIdHex}:legacy-layout`)),
+          name: `${source.name} Layout`,
+          centerButton: legacyLayout.centerButton ?? 65,
+          acrossSteps: legacyLayout.acrossSteps ?? 3,
+          upRightSteps: legacyLayout.upRightSteps ?? 11,
+          rotationSteps: legacyLayout.rotationSteps ?? 0,
+          portrait: typeof legacyLayout.portrait === "boolean" ? legacyLayout.portrait : ((legacyLayout.rotationSteps ?? 0) % 2) === 0,
+          buttonOverrides: Array.isArray(source.buttonOverrides) ? source.buttonOverrides : []
+        }]
+      : [createDefaultLayout(cycleLength)];
+  const normalizedLayouts = layouts.map((layout, index) => {
+    const objectIdHex = typeof layout.objectIdHex === "string"
+      ? layout.objectIdHex
+      : objectIdToHex(deterministicObjectId(`${source.objectIdHex}:layout:${index}`));
+    objectIdFromHex(objectIdHex);
+    const rotationSteps = Math.max(0, Math.min(3, Math.round(layout.rotationSteps ?? 0)));
+    return {
+      objectIdHex,
+      name: typeof layout.name === "string" && layout.name ? layout.name : `${source.name} Layout ${index + 1}`,
+      centerButton: clampInteger(layout.centerButton ?? 65, 0, 139),
+      acrossSteps: Math.round(layout.acrossSteps ?? 3),
+      upRightSteps: Math.round(layout.upRightSteps ?? 11),
+      rotationSteps,
+      portrait: typeof layout.portrait === "boolean" ? layout.portrait : (rotationSteps % 2) === 0,
+      buttonOverrides: Array.isArray(layout.buttonOverrides) ? layout.buttonOverrides : []
+    };
+  });
+  const scales = Array.isArray(source.scales) && source.scales.length > 0
+    ? source.scales
+    : [createAllNotesScale(cycleLength)];
+  const normalizedScales = scales.map((scale, index) => {
+    const objectIdHex = typeof scale.objectIdHex === "string"
+      ? scale.objectIdHex
+      : objectIdToHex(deterministicObjectId(`${source.objectIdHex}:scale:${index}`));
+    objectIdFromHex(objectIdHex);
+    const patternSteps = Array.isArray(scale.patternSteps) ? scale.patternSteps.map((step) => clampInteger(step, 0, 255)) : [];
+    const includedDegrees = Array.isArray(scale.includedDegrees)
+      ? normalizeScaleDegrees(scale.includedDegrees, cycleLength)
+      : scalePatternToDegrees(patternSteps, cycleLength);
+    return {
+      objectIdHex,
+      name: typeof scale.name === "string" && scale.name ? scale.name : `Scale ${index + 1}`,
+      patternSteps,
+      includedDegrees
+    };
+  });
+  const palette = source.palette ?? {
+    name: "Custom Palette",
+    degreeColors: source.degreeColors
+  };
   return {
     objectIdHex: source.objectIdHex,
     name: source.name,
     tuning: source.tuning,
-    layout: {
-      centerButton: source.layout.centerButton,
-      acrossSteps: source.layout.acrossSteps,
-      upRightSteps: source.layout.upRightSteps,
-      rotationSteps,
-      portrait: typeof source.layout.portrait === "boolean" ? source.layout.portrait : (rotationSteps % 2) === 0
+    palette: {
+      name: typeof palette.name === "string" && palette.name ? palette.name : "Custom Palette",
+      degreeColors: normalizeScaleDegreeColors(
+        Array.isArray(palette.degreeColors) ? palette.degreeColors : createDefaultDegreeColors(cycleLength),
+        cycleLength
+      )
     },
-    degreeColors: Array.isArray(source.degreeColors) ? source.degreeColors : createDefaultDegreeColors(source.tuning.cycleLength),
-    buttonOverrides: Array.isArray(source.buttonOverrides) ? source.buttonOverrides : []
+    layouts: normalizedLayouts,
+    activeLayoutIdHex: normalizedLayouts.find((layout) => layout.objectIdHex === source.activeLayoutIdHex)?.objectIdHex ?? normalizedLayouts[0].objectIdHex,
+    scales: normalizedScales,
+    activeScaleIdHex: normalizedScales.find((scale) => scale.objectIdHex === source.activeScaleIdHex)?.objectIdHex ?? normalizedScales[0].objectIdHex
   };
 }
 

@@ -350,12 +350,14 @@ subset; other sync object types still use mock/web-side workflows.
 
 The `Tunings & Layouts` tab is a browser-side musical geometry editor. It saves
 geometry bundles in browser storage and can import/export those bundles as JSON.
-Each bundle contains a tuning, an across/up-right vector layout, a scale-degree
-color palette, and optional per-button overrides. The center key can be chosen
-from the visual board or typed by button index. The editor places bundle tools
-in a compact left sidebar and keeps the larger HexBoard preview plus selected-key
-inspector on the right, with the selected-key inspector below the board. The
-encoded-object debug readout sits at the bottom of the editor page. The rotation control is a
+Each bundle contains one tuning, one custom scale-degree color palette, one or
+more layouts, and one or more scales. The custom palette is the intended future
+replacement for the firmware's hard-coded `Tiered` color mode. The active
+layout still starts from an across/up-right vector, and the center key can be
+chosen from the visual board or typed by button index. The editor places bundle
+tools in a compact left sidebar and keeps the larger HexBoard preview plus
+selected-key inspector on the right, with the selected-key inspector below the
+board. The encoded-object debug readout sits at the bottom of the editor page. The rotation control is a
 four-step device orientation preview: `0`, `90`, `180`, or `270` degrees. It is
 intended to line up with the firmware `Device Rot` setting, not to rotate the
 musical axes around individual hexagons. Focusing the center, across, or
@@ -369,9 +371,11 @@ bundle as cents data; HexBoard firmware does not parse `.scl` files yet. The
 preview uses the current 140-key hardware shape with `133` note keys and the
 seven command keys. The selected-key inspector has a `Color source` dropdown:
 `Scale degree` edits the palette color for the generated degree, while
-`Button override` edits only the selected button's color. Button roles can be
-marked as note, command, or unused in the exported web model, but firmware does
-not apply user layout bundles yet.
+`Button override` edits only the selected button's color. `Note source` can
+lock an individual button to a fixed `steps from C` value; those manual note
+positions are meant to stay fixed when root note or transposition changes.
+Button roles can be marked as note, command, or unused in the exported web
+model, but firmware does not apply user layout bundles yet.
 
 The synth preset editor organizes presets by folder only. It includes preset
 name and folder selection, a new-folder control, Drive and AHDSR sliders, FX

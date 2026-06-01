@@ -308,22 +308,27 @@ The protocol is documented in `docs/delegated-control.md`. Keep it isolated from
 The preset-sync SysEx protocol is documented in `docs/preset-sync-sysex.md`.
 It reserves its own command family. Firmware currently implements the synth
 preset subset for named/foldered preset list/read/write/delete and live preview;
-profile transfer, future `/layouts.dat` user tuning/layout storage, scale color
-maps, explicit button maps, and bundle sync remain draft.
+profile transfer, future `/layouts.dat` user tuning/layout/scale storage, scale
+color maps, explicit button maps, and bundle sync remain draft.
 
 The companion web app has protocol and catalog helpers for that draft under
 `web/src/protocol/` and `web/src/catalogs/`, plus a mock MIDI transport under
 `web/src/midi/` so host-side work can be tested before firmware support exists.
 The browser tuning/layout editor adds a web-only `LayoutBundle` library that
-combines one tuning, one vector layout, one scale-degree color map, and optional
-explicit button overrides. It uses `hexBoardGeometry.ts` for the current
-140-key firmware index geometry, presents vector layouts as across plus
-up-right steps, and converts that to the old `DownLeftSteps` TLV only while the
-firmware schema still expects it. Bundle rotation is a four-step device
-orientation value (`0/90/180/270`) that matches firmware `DeviceRotation`, not
-a six-step hex-axis transform. Scala `.scl` files are
-parsed in the web app into cents-table tuning objects; firmware does not parse
-Scala text or persist `/layouts.dat` objects yet.
+combines one tuning, one custom scale-degree color palette, one or more
+layouts, one or more scales, and optional explicit button overrides per layout.
+It uses `hexBoardGeometry.ts` for the current 140-key firmware index geometry,
+presents vector layouts as across plus up-right steps, and converts that to the
+old `DownLeftSteps` TLV only while the firmware schema still expects it. Bundle
+rotation is a four-step device orientation value (`0/90/180/270`) that matches
+firmware `DeviceRotation`, not a six-step hex-axis transform. Scala `.scl` files
+are parsed in the web app into cents-table tuning objects; firmware does not
+parse Scala text or persist `/layouts.dat` objects yet. Future firmware work
+needs a `/layouts.dat` catalog with `UserTuning`, `UserLayout`, `UserScale`,
+`ScaleColorMap`, and `ExplicitButtonMap` records; manual explicit button
+records should keep their stored `stepsFromC` and color regardless of root/key
+or transposition changes, and generated layout menu controls should be hidden
+when a manual layout is active.
 Real-device synth preset saves wait for ACK/NACK responses through
 `WRITE_COMMIT`; library refresh requests list synth preset records one at a
 time before reading each object body. The compact header device menu probes Web
@@ -398,6 +403,13 @@ Current color modes include:
 - `Alt Piano`
 - `Filament`
 - `Diatonic`
+
+The web layout bundle model now treats the bundle's single custom
+scale-degree palette as the replacement path for `Tiered` on user-generated
+geometry. Firmware still renders the hard-coded `Tiered` mode from
+`palette[]`, but the `/layouts.dat` implementation should let a loaded
+`ScaleColorMap` feed `setLEDcolorCodes()` before falling back to the factory
+color modes.
 
 Current animation modes include button, star, splash, orbit, octave, by-note, beams, reversed star/splash variants, MIDI-in highlighting, and none.
 

@@ -2,22 +2,28 @@ import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   clampScaleDegreeColor,
   computeVectorLayoutSteps,
+  createAllNotesScale,
   createDefaultDegreeColors,
+  createDefaultLayout,
   createDefaultLayoutBundle,
   deterministicObjectId,
   encodeLayoutBundle,
   hexBoardGeometry,
   isHexBoardCommandIndex,
+  normalizeScaleDegrees,
   normalizeScaleDegreeColors,
   objectIdToHex,
   parseLayoutBundleFile,
   parseLayoutBundleLibrary,
   parseScalaScale,
   resolveLayoutBundleButtonColor,
+  scalePatternToDegrees,
   serializeLayoutBundle,
   type HexBoardKey,
   type LayoutBundle,
   type LayoutBundleButtonOverride,
+  type LayoutBundleLayout,
+  type LayoutBundleScale,
   type LayoutBundleTuning,
   type ScaleDegreeColor
 } from "../catalogs/index.ts";
@@ -41,10 +47,13 @@ const layoutAxisDirectionLabels = [
 interface PreviewKey {
   key: HexBoardKey;
   role: "note" | "command" | "unused";
+  generatedStepsFromC: number;
   stepsFromC: number;
   degree: number;
+  inScale: boolean;
   color: ScaleDegreeColor;
   colorSource: "button" | "degree";
+  noteSource: "button" | "generated";
   override?: LayoutBundleButtonOverride;
 }
 
@@ -56,6 +65,8 @@ interface GuideHalo {
 function createUntitledBundle(): LayoutBundle {
   const base = createDefaultLayoutBundle();
   const objectIdHex = objectIdToHex(deterministicObjectId(`layout-bundle:${Date.now()}`));
+  const layoutIdHex = objectIdToHex(deterministicObjectId(`${objectIdHex}:layout:default`));
+  const scaleIdHex = objectIdToHex(deterministicObjectId(`${objectIdHex}:scale:all-notes`));
   return {
     ...base,
     objectIdHex,
@@ -63,7 +74,15 @@ function createUntitledBundle(): LayoutBundle {
     tuning: {
       ...base.tuning,
       name: "19 EDO"
-    }
+    },
+    palette: {
+      ...base.palette,
+      name: "Custom Palette"
+    },
+    layouts: base.layouts.map((layout) => ({ ...layout, objectIdHex: layoutIdHex, name: "Untitled Layout" })),
+    activeLayoutIdHex: layoutIdHex,
+    scales: base.scales.map((scale) => ({ ...scale, objectIdHex: scaleIdHex })),
+    activeScaleIdHex: scaleIdHex
   };
 }
 
@@ -106,13 +125,24 @@ function layoutAxisLabels(rotationSteps: number): typeof layoutAxisDirectionLabe
 }
 
 function withCycleColors(bundle: LayoutBundle, cycleLength: number): LayoutBundle {
+  const safeCycleLength = Math.max(1, Math.round(cycleLength));
+  const scales = bundle.scales.length > 0 ? bundle.scales : [createAllNotesScale(safeCycleLength)];
   return {
     ...bundle,
-    layout: {
-      ...bundle.layout,
-      rotationSteps: clampInteger(bundle.layout.rotationSteps ?? 0, 0, 3)
+    palette: {
+      ...bundle.palette,
+      degreeColors: normalizeScaleDegreeColors(bundle.palette.degreeColors, safeCycleLength)
     },
-    degreeColors: normalizeScaleDegreeColors(bundle.degreeColors, cycleLength)
+    layouts: bundle.layouts.map((layout) => ({
+      ...layout,
+      rotationSteps: clampInteger(layout.rotationSteps ?? 0, 0, 3)
+    })),
+    scales: scales.map((scale) => ({
+      ...scale,
+      patternSteps: scale.patternSteps.map((step) => clampInteger(step, 0, 255)),
+      includedDegrees: normalizeScaleDegrees(scale.includedDegrees, safeCycleLength)
+    })),
+    activeScaleIdHex: scales.find((scale) => scale.objectIdHex === bundle.activeScaleIdHex)?.objectIdHex ?? scales[0].objectIdHex
   };
 }
 
@@ -168,6 +198,19 @@ function hexBoardKeyAtCoord(coordRow: number, coordCol: number): HexBoardKey | u
   return hexBoardGeometry.find((key) => key.coordRow === coordRow && key.coordCol === coordCol);
 }
 
+function parseIntegerList(text: string): number[] {
+  return text
+    .split(/[\s,]+/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => Number.parseInt(part, 10))
+    .filter((value) => Number.isFinite(value));
+}
+
+function formatIntegerList(values: number[]): string {
+  return values.join(", ");
+}
+
 export function TuningLayoutEditor() {
   const [bundles, setBundles] = useState<LayoutBundle[]>(() => loadStoredBundles());
   const [activeBundleId, setActiveBundleId] = useState("");
@@ -178,6 +221,12 @@ export function TuningLayoutEditor() {
   const scalaInputRef = useRef<HTMLInputElement>(null);
 
   const activeBundle = bundles.find((bundle) => bundle.objectIdHex === activeBundleId) ?? bundles[0] ?? createDefaultLayoutBundle();
+  const activeLayout = activeBundle.layouts.find((layout) => layout.objectIdHex === activeBundle.activeLayoutIdHex) ??
+    activeBundle.layouts[0] ??
+    createDefaultLayout(tuningCycleLength(activeBundle.tuning));
+  const activeScale = activeBundle.scales.find((scale) => scale.objectIdHex === activeBundle.activeScaleIdHex) ??
+    activeBundle.scales[0] ??
+    createAllNotesScale(tuningCycleLength(activeBundle.tuning));
 
   function setBundlesAndPersist(nextBundles: LayoutBundle[]) {
     setBundles(nextBundles);
@@ -196,7 +245,7 @@ export function TuningLayoutEditor() {
     const nextBundles = [...bundles, next];
     setBundlesAndPersist(nextBundles);
     setActiveBundleId(next.objectIdHex);
-    setSelectedButton(next.layout.centerButton);
+    setSelectedButton(next.layouts[0]?.centerButton ?? 65);
     setStatus("Created new geometry bundle");
   }
 
@@ -208,7 +257,7 @@ export function TuningLayoutEditor() {
     const nextBundles = bundles.filter((bundle) => bundle.objectIdHex !== activeBundle.objectIdHex);
     setBundlesAndPersist(nextBundles);
     setActiveBundleId(nextBundles[0]?.objectIdHex ?? "");
-    setSelectedButton(nextBundles[0]?.layout.centerButton ?? 65);
+    setSelectedButton(nextBundles[0]?.layouts[0]?.centerButton ?? 65);
     setStatus(`Deleted ${activeBundle.name}`);
   }
 
@@ -216,13 +265,111 @@ export function TuningLayoutEditor() {
     updateActiveBundle((bundle) => ({ ...bundle, name }));
   }
 
-  function updateLayout(patch: Partial<LayoutBundle["layout"]>) {
+  function updateActiveLayout(updater: (layout: LayoutBundleLayout) => LayoutBundleLayout) {
     updateActiveBundle((bundle) => ({
       ...bundle,
-      layout: {
-        ...bundle.layout,
-        ...patch
-      }
+      layouts: bundle.layouts.map((layout) => layout.objectIdHex === bundle.activeLayoutIdHex ? updater(layout) : layout)
+    }));
+  }
+
+  function updateLayout(patch: Partial<LayoutBundleLayout>) {
+    updateActiveLayout((layout) => ({
+      ...layout,
+      ...patch
+    }));
+  }
+
+  function addNewLayout() {
+    const layout = {
+      ...activeLayout,
+      objectIdHex: objectIdToHex(deterministicObjectId(`${activeBundle.objectIdHex}:layout:${Date.now()}`)),
+      name: "New Layout",
+      buttonOverrides: []
+    };
+    updateActiveBundle((bundle) => ({
+      ...bundle,
+      layouts: [...bundle.layouts, layout],
+      activeLayoutIdHex: layout.objectIdHex
+    }));
+    setSelectedButton(layout.centerButton);
+  }
+
+  function deleteActiveLayout() {
+    if (activeBundle.layouts.length <= 1) {
+      setStatus("Keep at least one layout in the bundle");
+      return;
+    }
+    updateActiveBundle((bundle) => {
+      const layouts = bundle.layouts.filter((layout) => layout.objectIdHex !== activeLayout.objectIdHex);
+      return {
+        ...bundle,
+        layouts,
+        activeLayoutIdHex: layouts[0].objectIdHex
+      };
+    });
+  }
+
+  function setActiveLayoutId(layoutId: string) {
+    const layout = activeBundle.layouts.find((candidate) => candidate.objectIdHex === layoutId);
+    updateActiveBundle((bundle) => ({
+      ...bundle,
+      activeLayoutIdHex: layoutId
+    }));
+    if (layout) {
+      setSelectedButton(layout.centerButton);
+    }
+  }
+
+  function updateActiveScale(updater: (scale: LayoutBundleScale) => LayoutBundleScale) {
+    updateActiveBundle((bundle) => ({
+      ...bundle,
+      scales: bundle.scales.map((scale) => scale.objectIdHex === bundle.activeScaleIdHex ? updater(scale) : scale)
+    }));
+  }
+
+  function addNewScale() {
+    const scale = {
+      ...createAllNotesScale(tuningCycleLength(activeBundle.tuning)),
+      objectIdHex: objectIdToHex(deterministicObjectId(`${activeBundle.objectIdHex}:scale:${Date.now()}`)),
+      name: "New Scale"
+    };
+    updateActiveBundle((bundle) => ({
+      ...bundle,
+      scales: [...bundle.scales, scale],
+      activeScaleIdHex: scale.objectIdHex
+    }));
+  }
+
+  function deleteActiveScale() {
+    if (activeBundle.scales.length <= 1) {
+      setStatus("Keep at least one scale in the bundle");
+      return;
+    }
+    updateActiveBundle((bundle) => {
+      const scales = bundle.scales.filter((scale) => scale.objectIdHex !== activeScale.objectIdHex);
+      return {
+        ...bundle,
+        scales,
+        activeScaleIdHex: scales[0].objectIdHex
+      };
+    });
+  }
+
+  function updateScalePattern(text: string) {
+    const cycleLength = tuningCycleLength(activeBundle.tuning);
+    const patternSteps = parseIntegerList(text).map((step) => clampInteger(step, 0, 255));
+    updateActiveScale((scale) => ({
+      ...scale,
+      patternSteps,
+      includedDegrees: scalePatternToDegrees(patternSteps, cycleLength)
+    }));
+  }
+
+  function updateScaleDegrees(text: string) {
+    const cycleLength = tuningCycleLength(activeBundle.tuning);
+    updateActiveScale((scale) => ({
+      ...scale,
+      includedDegrees: normalizeScaleDegrees(parseIntegerList(text), cycleLength)
     }));
   }
 
@@ -301,39 +448,60 @@ export function TuningLayoutEditor() {
   function updateDegreeColor(degree: number, patch: Partial<ScaleDegreeColor>) {
     updateActiveBundle((bundle) => ({
       ...bundle,
-      degreeColors: normalizeScaleDegreeColors(bundle.degreeColors, tuningCycleLength(bundle.tuning)).map((color) =>
-        color.degree === degree ? clampScaleDegreeColor({ ...color, ...patch }) : color
-      )
+      palette: {
+        ...bundle.palette,
+        degreeColors: normalizeScaleDegreeColors(bundle.palette.degreeColors, tuningCycleLength(bundle.tuning)).map((color) =>
+          color.degree === degree ? clampScaleDegreeColor({ ...color, ...patch }) : color
+        )
+      }
     }));
   }
 
   function updateButtonOverride(buttonIndex: number, patch: Partial<LayoutBundleButtonOverride>) {
-    updateActiveBundle((bundle) => ({
-      ...bundle,
-      buttonOverrides: upsertOverride(bundle.buttonOverrides, buttonIndex, patch)
+    updateActiveLayout((layout) => ({
+      ...layout,
+      buttonOverrides: upsertOverride(layout.buttonOverrides, buttonIndex, patch)
     }));
   }
 
   function resetButtonOverride(buttonIndex: number) {
-    updateActiveBundle((bundle) => ({
-      ...bundle,
-      buttonOverrides: bundle.buttonOverrides.filter((override) => override.buttonIndex !== buttonIndex)
+    updateActiveLayout((layout) => ({
+      ...layout,
+      buttonOverrides: layout.buttonOverrides.filter((override) => override.buttonIndex !== buttonIndex)
     }));
   }
 
   function clearButtonColor(buttonIndex: number) {
-    updateActiveBundle((bundle) => {
-      const override = bundle.buttonOverrides.find((candidate) => candidate.buttonIndex === buttonIndex);
+    updateActiveLayout((layout) => {
+      const override = layout.buttonOverrides.find((candidate) => candidate.buttonIndex === buttonIndex);
       if (!override) {
-        return bundle;
+        return layout;
       }
       const withoutColor = removeOverrideColor(override);
-      const shouldRemove = isRoleDefault(buttonIndex, withoutColor.role);
+      const shouldRemove = isRoleDefault(buttonIndex, withoutColor.role) && withoutColor.stepsFromC === undefined;
       return {
-        ...bundle,
+        ...layout,
         buttonOverrides: shouldRemove
-          ? bundle.buttonOverrides.filter((candidate) => candidate.buttonIndex !== buttonIndex)
-          : bundle.buttonOverrides.map((candidate) => candidate.buttonIndex === buttonIndex ? withoutColor : candidate)
+          ? layout.buttonOverrides.filter((candidate) => candidate.buttonIndex !== buttonIndex)
+          : layout.buttonOverrides.map((candidate) => candidate.buttonIndex === buttonIndex ? withoutColor : candidate)
+      };
+    });
+  }
+
+  function clearButtonNote(buttonIndex: number) {
+    updateActiveLayout((layout) => {
+      const override = layout.buttonOverrides.find((candidate) => candidate.buttonIndex === buttonIndex);
+      if (!override) {
+        return layout;
+      }
+      const { stepsFromC, ...withoutNote } = override;
+      void stepsFromC;
+      const shouldRemove = isRoleDefault(buttonIndex, withoutNote.role) && withoutNote.hueTenthDegrees === undefined;
+      return {
+        ...layout,
+        buttonOverrides: shouldRemove
+          ? layout.buttonOverrides.filter((candidate) => candidate.buttonIndex !== buttonIndex)
+          : layout.buttonOverrides.map((candidate) => candidate.buttonIndex === buttonIndex ? withoutNote : candidate)
       };
     });
   }
@@ -348,7 +516,7 @@ export function TuningLayoutEditor() {
       const nextBundles = [...bundles.filter((bundle) => bundle.objectIdHex !== imported.objectIdHex), imported];
       setBundlesAndPersist(nextBundles);
       setActiveBundleId(imported.objectIdHex);
-      setSelectedButton(imported.layout.centerButton);
+      setSelectedButton(imported.layouts.find((layout) => layout.objectIdHex === imported.activeLayoutIdHex)?.centerButton ?? imported.layouts[0]?.centerButton ?? 65);
       setStatus(`Imported ${imported.name}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to import layout bundle");
@@ -387,12 +555,14 @@ export function TuningLayoutEditor() {
 
   const previewKeys = useMemo<PreviewKey[]>(() => {
     const cycleLength = tuningCycleLength(activeBundle.tuning);
+    const scaleDegrees = new Set(normalizeScaleDegrees(activeScale.includedDegrees, cycleLength));
     return hexBoardGeometry.map((key) => {
-      const override = activeBundle.buttonOverrides.find((candidate) => candidate.buttonIndex === key.index);
+      const override = activeLayout.buttonOverrides.find((candidate) => candidate.buttonIndex === key.index);
       const role = override?.role ?? key.role;
-      const stepsFromC = Math.round(computeVectorLayoutSteps(key, activeBundle.layout));
+      const generatedStepsFromC = Math.round(computeVectorLayoutSteps(key, activeLayout));
+      const stepsFromC = override?.stepsFromC ?? generatedStepsFromC;
       const resolvedColor = resolveLayoutBundleButtonColor({
-        degreeColors: activeBundle.degreeColors,
+        degreeColors: activeBundle.palette.degreeColors,
         cycleLength,
         stepsFromC,
         override
@@ -400,20 +570,23 @@ export function TuningLayoutEditor() {
       return {
         key,
         role,
+        generatedStepsFromC,
         stepsFromC,
         degree: resolvedColor.degree,
+        inScale: role !== "note" || scaleDegrees.has(resolvedColor.degree),
         color: resolvedColor.color,
         colorSource: resolvedColor.colorSource,
+        noteSource: override?.stepsFromC === undefined ? "generated" : "button",
         override
       };
     });
-  }, [activeBundle]);
+  }, [activeBundle, activeLayout, activeScale]);
 
   const selectedPreview = previewKeys.find((item) => item.key.index === selectedButton) ?? previewKeys[0];
-  const selectedDegreeColor = normalizeScaleDegreeColors(activeBundle.degreeColors, tuningCycleLength(activeBundle.tuning))
+  const selectedDegreeColor = normalizeScaleDegreeColors(activeBundle.palette.degreeColors, tuningCycleLength(activeBundle.tuning))
     .find((color) => color.degree === selectedPreview.degree) ?? createDefaultDegreeColors(1)[0];
-  const axisLabels = layoutAxisLabels(activeBundle.layout.rotationSteps);
-  const centerGuideKey = hexBoardGeometry.find((key) => key.index === activeBundle.layout.centerButton);
+  const axisLabels = layoutAxisLabels(activeLayout.rotationSteps);
+  const centerGuideKey = hexBoardGeometry.find((key) => key.index === activeLayout.centerButton);
   const guideTargetIndex = (() => {
     if (!layoutGuideFocus || !centerGuideKey) {
       return undefined;
@@ -462,16 +635,30 @@ export function TuningLayoutEditor() {
       value: selectedPreview.color.value
     });
   }
+  function setSelectedNoteSource(noteSource: PreviewKey["noteSource"]) {
+    if (noteSource === "generated") {
+      clearButtonNote(selectedPreview.key.index);
+      return;
+    }
+    updateButtonOverride(selectedPreview.key.index, {
+      stepsFromC: selectedPreview.stepsFromC
+    });
+  }
   const encodedBundle = useMemo(() => {
     const stepsByButton = new Map(previewKeys.map((item) => [item.key.index, item.stepsFromC]));
     return encodeLayoutBundle({
       ...activeBundle,
-      buttonOverrides: activeBundle.buttonOverrides.map((override) => ({
-        ...override,
-        stepsFromC: stepsByButton.get(override.buttonIndex) ?? override.stepsFromC
-      }))
+      layouts: activeBundle.layouts.map((layout) => layout.objectIdHex === activeLayout.objectIdHex
+        ? {
+            ...layout,
+            buttonOverrides: layout.buttonOverrides.map((override) => ({
+              ...override,
+              stepsFromC: override.stepsFromC ?? stepsByButton.get(override.buttonIndex)
+            }))
+          }
+        : layout)
     });
-  }, [activeBundle, previewKeys]);
+  }, [activeBundle, activeLayout.objectIdHex, previewKeys]);
   const encodedPreview = encodedBundle.objects
     .map((object) => `${object.name}: ${formatByteLength(object.body)} CRC ${crc32(object.body).toString(16).toUpperCase()}`)
     .join("\n");
@@ -529,15 +716,49 @@ export function TuningLayoutEditor() {
         </section>
 
         <section className="editorSection">
-          <h3>Layout</h3>
+          <h3>Palette</h3>
+          <label className="field">
+            <span>Name</span>
+            <input
+              value={activeBundle.palette.name}
+              onChange={(event) => updateActiveBundle((bundle) => ({
+                ...bundle,
+                palette: {
+                  ...bundle.palette,
+                  name: event.target.value
+                }
+              }))}
+            />
+          </label>
+          <div className="status">{activeBundle.palette.degreeColors.length} scale-degree colors</div>
+        </section>
+
+        <section className="editorSection">
+          <h3>Layouts</h3>
           <div className="fieldGrid">
+            <label className="field">
+              <span>Active layout</span>
+              <select value={activeLayout.objectIdHex} onChange={(event) => setActiveLayoutId(event.target.value)}>
+                {activeBundle.layouts.map((layout) => (
+                  <option value={layout.objectIdHex} key={layout.objectIdHex}>{layout.name}</option>
+                ))}
+              </select>
+            </label>
+            <div className="row">
+              <button type="button" onClick={addNewLayout}>New Layout</button>
+              <button className="warning" type="button" onClick={deleteActiveLayout}>Delete Layout</button>
+            </div>
+            <label className="field">
+              <span>Layout name</span>
+              <input value={activeLayout.name} onChange={(event) => updateLayout({ name: event.target.value })} />
+            </label>
             <label className="field">
               <span>Center key</span>
               <input
                 min={0}
                 max={139}
                 type="number"
-                value={activeBundle.layout.centerButton}
+                value={activeLayout.centerButton}
                 onChange={(event) => updateLayout({ centerButton: clampInteger(Number(event.target.value), 0, 139) })}
                 {...layoutGuideProps("center")}
               />
@@ -546,7 +767,7 @@ export function TuningLayoutEditor() {
               <span>{axisLabels.across}</span>
               <input
                 type="number"
-                value={activeBundle.layout.acrossSteps}
+                value={activeLayout.acrossSteps}
                 onChange={(event) => updateLayout({ acrossSteps: Number(event.target.value) })}
                 {...layoutGuideProps("across")}
               />
@@ -555,19 +776,52 @@ export function TuningLayoutEditor() {
               <span>{axisLabels.upRight}</span>
               <input
                 type="number"
-                value={activeBundle.layout.upRightSteps}
+                value={activeLayout.upRightSteps}
                 onChange={(event) => updateLayout({ upRightSteps: Number(event.target.value) })}
                 {...layoutGuideProps("upRight")}
               />
             </label>
             <label className="field">
               <span>Rotation</span>
-              <select value={activeBundle.layout.rotationSteps} onChange={(event) => updateLayout({ rotationSteps: Number(event.target.value) })}>
+              <select value={activeLayout.rotationSteps} onChange={(event) => updateLayout({ rotationSteps: Number(event.target.value) })}>
                 <option value={0}>0°</option>
                 <option value={1}>90°</option>
                 <option value={2}>180°</option>
                 <option value={3}>270°</option>
               </select>
+            </label>
+          </div>
+        </section>
+
+        <section className="editorSection">
+          <h3>Scales</h3>
+          <div className="fieldGrid">
+            <label className="field">
+              <span>Active scale</span>
+              <select
+                value={activeScale.objectIdHex}
+                onChange={(event) => updateActiveBundle((bundle) => ({ ...bundle, activeScaleIdHex: event.target.value }))}
+              >
+                {activeBundle.scales.map((scale) => (
+                  <option value={scale.objectIdHex} key={scale.objectIdHex}>{scale.name}</option>
+                ))}
+              </select>
+            </label>
+            <div className="row">
+              <button type="button" onClick={addNewScale}>New Scale</button>
+              <button className="warning" type="button" onClick={deleteActiveScale}>Delete Scale</button>
+            </div>
+            <label className="field">
+              <span>Scale name</span>
+              <input value={activeScale.name} onChange={(event) => updateActiveScale((scale) => ({ ...scale, name: event.target.value }))} />
+            </label>
+            <label className="field">
+              <span>Pattern steps</span>
+              <input value={formatIntegerList(activeScale.patternSteps)} onChange={(event) => updateScalePattern(event.target.value)} />
+            </label>
+            <label className="field">
+              <span>Included degrees</span>
+              <input value={formatIntegerList(activeScale.includedDegrees)} onChange={(event) => updateScaleDegrees(event.target.value)} />
             </label>
           </div>
         </section>
@@ -586,7 +840,7 @@ export function TuningLayoutEditor() {
             <div
               className="hexBoardSurface"
               aria-label="HexBoard key layout preview"
-              style={{ transform: `rotate(${activeBundle.layout.rotationSteps * 90}deg)` }}
+              style={{ transform: `rotate(${activeLayout.rotationSteps * 90}deg)` }}
             >
               {guideHalos.map((halo) => (
                 <div
@@ -606,9 +860,11 @@ export function TuningLayoutEditor() {
                     "hexKey",
                     item.role === "command" ? "commandKey" : "",
                     item.role === "unused" ? "unusedKey" : "",
+                    !item.inScale ? "outOfScaleKey" : "",
                     item.colorSource === "button" ? "manualColorKey" : "",
+                    item.noteSource === "button" ? "manualNoteKey" : "",
                     item.key.index === selectedButton ? "selectedKey" : "",
-                    item.key.index === activeBundle.layout.centerButton ? "centerKey" : "",
+                    item.key.index === activeLayout.centerButton ? "centerKey" : "",
                     item.key.index === guideOriginIndex ? "guideOriginKey" : "",
                     item.key.index === guideTargetIndex ? "guideTargetKey" : ""
                   ].filter(Boolean).join(" ")}
@@ -621,7 +877,7 @@ export function TuningLayoutEditor() {
                   }}
                   type="button"
                 >
-                  <span className="hexKeyLabel" style={{ transform: `rotate(${-activeBundle.layout.rotationSteps * 90}deg)` }}>
+                  <span className="hexKeyLabel" style={{ transform: `rotate(${-activeLayout.rotationSteps * 90}deg)` }}>
                     <span>{item.key.index}</span>
                     <small>{item.role === "note" ? item.degree : item.role.slice(0, 3)}</small>
                   </span>
@@ -647,11 +903,31 @@ export function TuningLayoutEditor() {
             </label>
             <label className="field">
               <span>Generated step</span>
-              <input readOnly value={selectedPreview.stepsFromC} />
+              <input readOnly value={selectedPreview.generatedStepsFromC} />
+            </label>
+            <label className="field">
+              <span>Note source</span>
+              <select value={selectedPreview.noteSource} onChange={(event) => setSelectedNoteSource(event.target.value as PreviewKey["noteSource"])}>
+                <option value="generated">Generated layout</option>
+                <option value="button">Button override</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Current step</span>
+              <input
+                readOnly={selectedPreview.noteSource === "generated"}
+                type="number"
+                value={selectedPreview.stepsFromC}
+                onChange={(event) => updateButtonOverride(selectedPreview.key.index, { stepsFromC: Number(event.target.value) })}
+              />
             </label>
             <label className="field">
               <span>Scale degree</span>
               <input readOnly value={selectedPreview.degree} />
+            </label>
+            <label className="field">
+              <span>Scale membership</span>
+              <input readOnly value={selectedPreview.inScale ? "In scale" : "Out of scale"} />
             </label>
             <label className="field">
               <span>Color source</span>

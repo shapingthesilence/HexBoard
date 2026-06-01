@@ -8,6 +8,7 @@ import {
   createGeneratedEdoTuning,
   createScaleColorMap,
   createSynthPresetObject,
+  createUserScale,
   createVectorLayout,
   currentFirmwareDownLeftToUpRight,
   deterministicObjectId,
@@ -19,6 +20,7 @@ import {
   resolveLayoutBundleButtonColor,
   serializeLayoutBundle,
   TuningTlv,
+  UserScaleTlv,
   UserTuningKind
 } from "./index.ts";
 
@@ -97,7 +99,15 @@ Example scale
     expect(parsed.periodCents).toBeCloseTo(1200);
   });
 
-  it("round trips scale colors and explicit button maps", () => {
+  it("round trips scales, scale colors, and explicit button maps", () => {
+    const scale = createUserScale({
+      objectId: deterministicObjectId("scale"),
+      name: "Diatonic",
+      tuningRef: { objectType: ObjectType.UserTuning, handle: 0, objectId: tuningId },
+      cycleLength: 19,
+      patternSteps: [3, 3, 2, 3, 3, 3, 2],
+      includedDegrees: [0, 3, 6, 8, 11, 14, 17]
+    });
     const colors = createScaleColorMap({
       objectId: deterministicObjectId("colors"),
       name: "Degrees",
@@ -122,6 +132,8 @@ Example scale
         }
       ]
     });
+    expect(decodeObjectBody(scale.body).objectType).toBe(ObjectType.UserScale);
+    expect(u16LE(recordValue(scale.body, UserScaleTlv.CycleLength))).toBe(19);
     expect(decodeObjectBody(colors.body).objectType).toBe(ObjectType.ScaleColorMap);
     expect(decodeObjectBody(map.body).objectType).toBe(ObjectType.ExplicitButtonMap);
   });
@@ -151,6 +163,7 @@ Example scale
     expect(encoded.objects.map((object) => object.objectType)).toEqual([
       ObjectType.UserTuning,
       ObjectType.UserLayout,
+      ObjectType.UserScale,
       ObjectType.ScaleColorMap
     ]);
   });
@@ -159,13 +172,10 @@ Example scale
     const base = createDefaultLayoutBundle();
     const bundle = {
       ...base,
-      layout: {
-        ...base.layout,
-        rotationSteps: 1
-      }
+      layouts: base.layouts.map((layout, index) => index === 0 ? { ...layout, rotationSteps: 1 } : layout)
     };
     const encoded = encodeLayoutBundle(bundle);
-    expect(u8(recordValue(encoded.layout.body, LayoutTlv.Portrait))).toBe(0);
+    expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.Portrait))).toBe(0);
   });
 
   it("falls back to the default bundle for an empty layout library", () => {

@@ -33,8 +33,9 @@ This protocol should map to a future storage model with separate catalogs:
 
 - `/settings.dat` remains the main profile/settings file.
 - `/layouts.dat` is the proposed user musical-geometry catalog. Despite the
-  short name, it should own user-generated tunings, layouts, scale color maps,
-  and explicit button maps because those objects need to reference each other.
+  short name, it should own user-generated tunings, layouts, scales, scale
+  color maps, and explicit button maps because those objects need to reference
+  each other.
 - `/synth_presets.dat` stores named synth presets with folder paths.
 
 Keeping user tunings and layouts together in `/layouts.dat` avoids fragile
@@ -46,7 +47,7 @@ Recommended future file headers:
 | File | Magic | Version owner | Payload |
 | --- | --- | --- | --- |
 | `/settings.dat` | `STG` | Main settings schema | Main profile bytes and object references |
-| `/layouts.dat` | `LYT` | User mapping catalog schema | User tuning/layout/color/map objects |
+| `/layouts.dat` | `LYT` | User mapping catalog schema | User tuning/layout/scale/color/map objects |
 | `/synth_presets.dat` | `SYP` | Synth preset catalog schema | Named synth preset objects and folders |
 
 The current firmware already has `/settings.dat` and a named/foldered
@@ -302,6 +303,7 @@ a compatible HexBoard.
 <synth-preset-count-u14>
 <user-tuning-slots>
 <user-layout-slots>
+<user-scale-slots>
 <scale-color-map-slots>
 <explicit-button-map-slots>
 <hardware-version>
@@ -315,12 +317,13 @@ Capability flags:
 | `1` | Synth preset read/write |
 | `2` | User tuning read/write |
 | `3` | User layout read/write |
-| `4` | Scale color map read/write |
-| `5` | Explicit button map read/write |
-| `6` | Active snapshot read |
-| `7` | Dry-run validation |
-| `8` | Delete user object |
-| `9` | Factory object listing |
+| `4` | User scale read/write |
+| `5` | Scale color map read/write |
+| `6` | Explicit button map read/write |
+| `7` | Active snapshot read |
+| `8` | Dry-run validation |
+| `9` | Delete user object |
+| `10` | Factory object listing |
 
 Example hello request, transaction `1`, host max packed chunk `128`, no required
 flags:
@@ -329,13 +332,13 @@ flags:
 F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 ```
 
-Example response, transaction `1`, max packed chunk `128`, capabilities `0x102`
+Example response, transaction `1`, max packed chunk `128`, capabilities `0x202`
 (synth preset read/write plus delete), max raw object bytes `2048`, settings
 schema `11`, synth preset schema `3`, `9` profiles, `128` synth preset entries,
-no user tuning/layout slots yet, hardware version `2`:
+no user tuning/layout/scale/color/map slots yet, hardware version `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 02 02 00 00 10 00 0B 03 09 01 00 00 00 00 00 02 F7
+F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 04 02 00 00 10 00 0B 03 09 01 00 00 00 00 00 00 02 F7
 ```
 
 ## Object Addressing
@@ -370,6 +373,7 @@ handle.
 | `0x07` | `SynthPreset` | Synth-only preset catalog entry; current firmware returns handles `0..19` |
 | `0x08` | `Bundle` | Web-app backup containing multiple objects |
 | `0x09` | `Folder` | Optional virtual folder record for catalog navigation |
+| `0x0A` | `UserScale` | `/layouts.dat` scale handle |
 
 Factory tunings, factory layouts, and factory scales may be listed when the
 device advertises factory object listing, but they are read-only.
@@ -658,6 +662,7 @@ Recommended TLVs:
 | `0x24` | `ScaleColorMapRef` | Optional object reference |
 | `0x25` | `ExplicitButtonMapRef` | Optional object reference |
 | `0x26` | `SynthPresetRef` | Optional object reference |
+| `0x27` | `ScaleRef` | Optional object reference |
 
 `SettingValues` may use current `SettingKey` ordinals only when
 `SettingsSchemaVersion` matches a schema the firmware knows how to migrate. For
@@ -689,6 +694,15 @@ cents-per-step tunings with `TuningKind = 4`, `StepMilliCents`, and a cycle
 length in `EdoDivisions` for labels/colors. Scala `.scl` import is a host-side
 feature: the web app parses the text and writes a cents table, so firmware does
 not need to parse Scala files.
+
+The tuning object must be complete enough for both the onboard synth and every
+MIDI output mode. For equal-step tunings, firmware can derive frequency,
+single-channel MIDI note numbers, and MPE bend offsets from `StepMilliCents`,
+`PeriodMilliCents`, `ReferenceMidiNote`, and `ReferenceMilliHz`. For imported
+or irregular tunings, firmware should use `CentsTable`/`RatioTable` to compute
+the exact frequency for each `stepsFromC` value, then decide whether standard
+MIDI, multi-channel non-MPE retuning, or MPE pitch bend is required from the
+same resolved cent offset.
 
 Example raw TLV snippet for a generated `19 EDO` tuning:
 
@@ -723,6 +737,13 @@ steps. Display orientation is no longer selected from layout portrait/landscape
 metadata; firmware stores it separately as the four-step `DeviceRotation`
 setting.
 
+A web bundle may contain multiple `UserLayout` objects for the same tuning. A
+generated vector layout can still be edited on-device with the compact
+generator fields. When a layout is backed by an `ExplicitButtonMap`, firmware
+should treat it as manually authored: hide or disable the on-device layout
+generator controls for that loaded layout and expose only select/delete or
+replace actions unless a later firmware design adds safe manual editing.
+
 The web app and intended future firmware model use `AcrossSteps` plus
 `UpRightSteps` as the user-facing vector axes. Until the firmware/schema are
 updated, the web app writes the existing `DownLeftSteps` TLV as a compatibility
@@ -738,10 +759,33 @@ The layout bundle also stores a four-step device orientation value
 orientation is bundle-level metadata right now and is not encoded in the
 current `UserLayout` TLV.
 
+## User Scale Object
+
+`UserScale` stores named scale membership for a tuning. It replaces the need for
+a large fixed `scaleOptions[]` list for user-generated tunings while preserving
+the current runtime idea of scale membership plus a separate root/key setting.
+
+Recommended TLVs:
+
+| Tag | Name | Value |
+| --- | --- | --- |
+| `0x20` | `TuningRef` | Optional object reference |
+| `0x21` | `CycleLength` | `u16-le` |
+| `0x22` | `RootDegree` | `u16-le`, normally `0`; profile key/root shifts this at runtime |
+| `0x23` | `PatternSteps` | Repeated `u8` interval sizes, summing to the cycle length when pattern-derived |
+| `0x24` | `IncludedDegrees` | Repeated `u16-le` scale degrees relative to root |
+
+`IncludedDegrees` is the authoritative membership table. `PatternSteps` is
+kept as editable metadata so the device can present simple scale patterns
+on-device. Root/key changes shift generated scale membership at runtime, but
+they must not rewrite manual button records.
+
 ## Scale Color Map Object
 
 `ScaleColorMap` lets users customize scale-degree colors without requiring a
-full per-button map.
+full per-button map. Each web bundle has one custom palette. This palette is
+the intended replacement for the hard-coded firmware `Tiered` color mode for
+user-generated tunings/layouts.
 
 Recommended TLVs:
 
@@ -797,6 +841,12 @@ Roles:
 For the visible HexBoard surface, button indices `0..139` are meaningful. Slots
 `140..159` are internal scan positions in the current firmware and should not be
 used for user note mapping.
+
+Manual button records are absolute within the selected tuning: `steps-from-c`
+is the stored note position for that physical button. Transposition changes
+sounded pitch after mapping, and root/key changes affect scale highlighting,
+but neither setting should regenerate or move a manual button record. A button
+record with a color override similarly takes precedence over the bundle palette.
 
 ## Synth Preset Object
 
@@ -886,8 +936,13 @@ objects plus a manifest that preserves references between them.
 
 Recommended use:
 
-- Backup all user tunings, layouts, color maps, explicit maps, profiles, and
-  synth presets.
+- Backup all user tunings, layouts, scales, color maps, explicit maps,
+  profiles, and synth presets.
+- For a user musical-geometry bundle, keep one tuning, one custom color
+  palette, one or more layouts, and one or more scales together in the exported
+  JSON. The web app may unpack these into individual `UserTuning`,
+  `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` writes
+  when firmware support lands.
 - Restore by dry-run validating all objects first.
 - Write dependencies before profiles that reference them.
 - Commit profiles last.
@@ -940,6 +995,19 @@ write the individual objects after the web app unpacks a bundle.
 4. Device stores the map as a named user object.
 5. A profile or layout can reference that map.
 
+### Write A Musical Geometry Bundle
+
+1. Web app dry-run validates the tuning first because synth frequency and MIDI
+   retuning behavior depend on it.
+2. Web app writes the `UserTuning`.
+3. Web app writes each `UserLayout`, each `UserScale`, and the bundle's single
+   `ScaleColorMap`, all referencing the tuning object id.
+4. Web app writes any `ExplicitButtonMap` objects after their referenced layouts.
+5. Firmware stores these records in `/layouts.dat`, refreshes the menu catalog,
+   and hides generated-layout controls whenever the active layout is manual.
+6. Firmware applies the selected layout/scale/palette only after active notes
+   are clear or after an explicitly documented panic cleanup.
+
 ### Transfer A Synth Preset
 
 1. Host sends `READ_REQ` or `WRITE_BEGIN` with object type `SynthPreset`.
@@ -976,17 +1044,17 @@ write the individual objects after the web app unpacks a bundle.
   a validated bundle workflow.
 - Avoid long blocking writes during active performance. Flash writes currently
   mute the synth because RP2040 flash operations pause interrupts.
-- If a change adds persisted user tuning/layout/map storage, bump the relevant
-  storage schema and document migration separately from the SysEx protocol
-  version.
+- If a change adds persisted user tuning/layout/scale/color/map storage, bump
+  the relevant storage schema and document migration separately from the SysEx
+  protocol version.
 - Keep object schema migration separate from wire protocol negotiation. A device
   may speak protocol `1.0` while supporting newer object schemas.
 
 ## Open Design Questions
 
 - User slot counts: `16` is a reasonable first target for tunings, layouts,
-  scale color maps, and explicit maps, but actual limits should follow LittleFS
-  space and menu usability.
+  scales, scale color maps, and explicit maps, but actual limits should follow
+  LittleFS space and menu usability.
 - Object id format: 16 random bytes are robust, but a shorter CRC-based id may
   be easier on-device. The important rule is that profiles should not silently
   bind to the wrong object after slot moves.
