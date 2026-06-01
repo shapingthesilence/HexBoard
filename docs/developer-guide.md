@@ -123,7 +123,9 @@ artifact so branch deploys do not overwrite each other. `main` is published at
 `/HexBoard/`, while `development` is published at `/HexBoard/development/`.
 The Vite modes `github-pages-main` and `github-pages-development` set those
 asset base paths; local development and ordinary local builds keep the root `/`
-base path.
+base path. The workflow checks for `web/package.json` in each worktree before
+running Node commands, so a branch without the web app gets a placeholder page
+instead of failing the whole deployment.
 
 ## High-Level Architecture
 

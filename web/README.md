@@ -50,7 +50,9 @@ The root workflow `.github/workflows/pages.yml` deploys this app to GitHub
 Pages. It runs on pushes to `main` and `development`, and it can also be started
 manually from the GitHub `Actions` tab. Each deployment fetches both branches,
 publishes `main` at the project root, and publishes `development` under
-`/development/`.
+`/development/`. If one branch does not have `web/package.json` yet, the
+workflow publishes a placeholder for that branch and continues deploying the
+other branch.
 
 Before the first deployment, set the repository's Pages source to GitHub
 Actions in `Settings` -> `Pages`. The deployed project-page URL should be:

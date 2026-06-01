@@ -198,6 +198,8 @@ This repository includes a GitHub Actions workflow at
 manually, it builds both branches into one Pages artifact so branch deploys do
 not overwrite each other. The `main` branch is published at the project-page
 root, and the `development` branch is published under `/development/`.
+If a branch does not have the `web/` app yet, the workflow publishes a small
+placeholder page for that branch and still deploys the other branch.
 
 To enable hosting in GitHub:
 

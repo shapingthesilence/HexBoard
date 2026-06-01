@@ -29,8 +29,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -45,23 +43,62 @@ jobs:
           git fetch origin main development
 
           git worktree add --detach ../hexboard-pages-main origin/main
-          (
-            cd ../hexboard-pages-main/web
-            npm ci
-            npm test
-            npm run build -- --mode github-pages-main --base=/HexBoard/
-          )
-          cp -R ../hexboard-pages-main/web/dist/. pages-dist/
+          if [ -f ../hexboard-pages-main/web/package.json ]; then
+            (
+              cd ../hexboard-pages-main/web
+              npm ci
+              npm test
+              npm run build -- --mode github-pages-main --base=/HexBoard/
+            )
+            cp -R ../hexboard-pages-main/web/dist/. pages-dist/
+          else
+            cat > pages-dist/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="UTF-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+              <title>HexBoard Sync</title>
+            </head>
+            <body>
+              <main style="font-family: system-ui, sans-serif; max-width: 42rem; margin: 4rem auto; padding: 0 1rem; line-height: 1.5;">
+                <h1>HexBoard Sync</h1>
+                <p>The web app is not available on the main branch yet.</p>
+                <p><a href="/HexBoard/development/">Open the development build</a></p>
+              </main>
+            </body>
+          </html>
+          HTML
+          fi
 
           git worktree add --detach ../hexboard-pages-development origin/development
-          (
-            cd ../hexboard-pages-development/web
-            npm ci
-            npm test
-            npm run build -- --mode github-pages-development --base=/HexBoard/development/
-          )
           mkdir -p pages-dist/development
-          cp -R ../hexboard-pages-development/web/dist/. pages-dist/development/
+          if [ -f ../hexboard-pages-development/web/package.json ]; then
+            (
+              cd ../hexboard-pages-development/web
+              npm ci
+              npm test
+              npm run build -- --mode github-pages-development --base=/HexBoard/development/
+            )
+            cp -R ../hexboard-pages-development/web/dist/. pages-dist/development/
+          else
+            cat > pages-dist/development/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="UTF-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+              <title>HexBoard Sync Development</title>
+            </head>
+            <body>
+              <main style="font-family: system-ui, sans-serif; max-width: 42rem; margin: 4rem auto; padding: 0 1rem; line-height: 1.5;">
+                <h1>HexBoard Sync Development</h1>
+                <p>The web app is not available on the development branch.</p>
+              </main>
+            </body>
+          </html>
+          HTML
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
