@@ -263,10 +263,21 @@ select {
 
 .layoutEditorWorkspace {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(420px, 1fr) minmax(280px, 340px);
+  grid-template-columns: minmax(240px, 1fr) minmax(0, 3fr);
   gap: 18px;
   margin-top: 18px;
   align-items: start;
+}
+
+.layoutEditorSidebar .fieldGrid {
+  grid-template-columns: 1fr;
+}
+
+.layoutEditorMainColumn {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  align-content: start;
 }
 
 .activeListItem {
@@ -316,6 +327,10 @@ select {
 }
 
 .boardPanel {
+  min-width: 0;
+}
+
+.selectedKeyPanel {
   min-width: 0;
 }
 

@@ -478,7 +478,7 @@ export function TuningLayoutEditor() {
 
   return (
     <section className="layoutEditorWorkspace">
-      <aside className="panel stack">
+      <aside className="panel stack layoutEditorSidebar">
         <div className="row between">
           <h2>Geometry Bundles</h2>
           <span className="countBadge">{bundles.length}</span>
@@ -573,118 +573,120 @@ export function TuningLayoutEditor() {
         </section>
       </aside>
 
-      <main className="panel stack boardPanel">
-        <div className="row between">
-          <div>
-            <h2>HexBoard Preview</h2>
-            <span className="muted">{status}</span>
-          </div>
-          <button type="button" onClick={() => updateLayout({ centerButton: selectedButton })}>Use Selected As Center</button>
-        </div>
-        <div className="hexBoardScroll">
-          <div
-            className="hexBoardSurface"
-            aria-label="HexBoard key layout preview"
-            style={{ transform: `rotate(${activeBundle.layout.rotationSteps * 90}deg)` }}
-          >
-            {guideHalos.map((halo) => (
-              <div
-                aria-hidden="true"
-                className={`hexGuideHalo ${halo.tone === "red" ? "redGuideHalo" : "greenGuideHalo"}`}
-                key={`${halo.tone}-${halo.key.index}`}
-                style={{
-                  left: `${previewHexInset + (halo.key.coordCol * previewHexHalfStepX)}px`,
-                  top: `${previewHexInset + (halo.key.row * previewHexRowStepY)}px`
-                }}
-              />
-            ))}
-            {previewKeys.map((item) => (
-              <button
-                aria-label={`Button ${item.key.index}, ${item.role}, step ${item.stepsFromC}`}
-                className={[
-                  "hexKey",
-                  item.role === "command" ? "commandKey" : "",
-                  item.role === "unused" ? "unusedKey" : "",
-                  item.colorSource === "button" ? "manualColorKey" : "",
-                  item.key.index === selectedButton ? "selectedKey" : "",
-                  item.key.index === activeBundle.layout.centerButton ? "centerKey" : "",
-                  item.key.index === guideOriginIndex ? "guideOriginKey" : "",
-                  item.key.index === guideTargetIndex ? "guideTargetKey" : ""
-                ].filter(Boolean).join(" ")}
-                key={item.key.index}
-                onClick={() => setSelectedButton(item.key.index)}
-                style={{
-                  left: `${previewHexInset + (item.key.coordCol * previewHexHalfStepX)}px`,
-                  top: `${previewHexInset + (item.key.row * previewHexRowStepY)}px`,
-                  backgroundColor: colorToCss(item.color)
-                }}
-                type="button"
-              >
-                <span className="hexKeyLabel" style={{ transform: `rotate(${-activeBundle.layout.rotationSteps * 90}deg)` }}>
-                  <span>{item.key.index}</span>
-                  <small>{item.role === "note" ? item.degree : item.role.slice(0, 3)}</small>
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-        <pre className="dataPreview">{encodedPreview}</pre>
-      </main>
-
-      <aside className="panel stack">
-        <h2>Selected Key</h2>
-        <div className="status">
-          Button {selectedPreview.key.index} · row {selectedPreview.key.row} · col {selectedPreview.key.column}
-        </div>
-        <div className="fieldGrid">
-          <label className="field">
-            <span>Role</span>
-            <select value={selectedPreview.role} onChange={(event) => updateButtonOverride(selectedPreview.key.index, { role: event.target.value as LayoutBundleButtonOverride["role"] })}>
-              <option value="note">Note</option>
-              <option value="command">Command</option>
-              <option value="unused">Unused</option>
-            </select>
-          </label>
-          <label className="field">
-            <span>Generated step</span>
-            <input readOnly value={selectedPreview.stepsFromC} />
-          </label>
-          <label className="field">
-            <span>Scale degree</span>
-            <input readOnly value={selectedPreview.degree} />
-          </label>
-          <label className="field">
-            <span>Color source</span>
-            <select value={selectedPreview.colorSource} onChange={(event) => setSelectedColorSource(event.target.value as PreviewKey["colorSource"])}>
-              <option value="degree">Scale degree</option>
-              <option value="button">Button override</option>
-            </select>
-          </label>
-        </div>
-
-        {selectedPreview.colorSource === "degree" ? (
-          <section className="editorSection">
-            <h3>Scale Degree Color</h3>
-            <ColorFields
-              color={selectedDegreeColor}
-              onChange={(patch) => updateDegreeColor(selectedPreview.degree, patch)}
-            />
-          </section>
-        ) : (
-          <section className="editorSection">
-            <h3>Button Override</h3>
-            <ColorFields
-              color={selectedPreview.color}
-              onChange={(patch) => updateButtonOverride(selectedPreview.key.index, patch)}
-            />
-            <div className="row">
-              <button type="button" onClick={() => resetButtonOverride(selectedPreview.key.index)}>
-                Reset Key
-              </button>
+      <div className="layoutEditorMainColumn">
+        <main className="panel stack boardPanel">
+          <div className="row between">
+            <div>
+              <h2>HexBoard Preview</h2>
+              <span className="muted">{status}</span>
             </div>
-          </section>
-        )}
-      </aside>
+            <button type="button" onClick={() => updateLayout({ centerButton: selectedButton })}>Use Selected As Center</button>
+          </div>
+          <div className="hexBoardScroll">
+            <div
+              className="hexBoardSurface"
+              aria-label="HexBoard key layout preview"
+              style={{ transform: `rotate(${activeBundle.layout.rotationSteps * 90}deg)` }}
+            >
+              {guideHalos.map((halo) => (
+                <div
+                  aria-hidden="true"
+                  className={`hexGuideHalo ${halo.tone === "red" ? "redGuideHalo" : "greenGuideHalo"}`}
+                  key={`${halo.tone}-${halo.key.index}`}
+                  style={{
+                    left: `${previewHexInset + (halo.key.coordCol * previewHexHalfStepX)}px`,
+                    top: `${previewHexInset + (halo.key.row * previewHexRowStepY)}px`
+                  }}
+                />
+              ))}
+              {previewKeys.map((item) => (
+                <button
+                  aria-label={`Button ${item.key.index}, ${item.role}, step ${item.stepsFromC}`}
+                  className={[
+                    "hexKey",
+                    item.role === "command" ? "commandKey" : "",
+                    item.role === "unused" ? "unusedKey" : "",
+                    item.colorSource === "button" ? "manualColorKey" : "",
+                    item.key.index === selectedButton ? "selectedKey" : "",
+                    item.key.index === activeBundle.layout.centerButton ? "centerKey" : "",
+                    item.key.index === guideOriginIndex ? "guideOriginKey" : "",
+                    item.key.index === guideTargetIndex ? "guideTargetKey" : ""
+                  ].filter(Boolean).join(" ")}
+                  key={item.key.index}
+                  onClick={() => setSelectedButton(item.key.index)}
+                  style={{
+                    left: `${previewHexInset + (item.key.coordCol * previewHexHalfStepX)}px`,
+                    top: `${previewHexInset + (item.key.row * previewHexRowStepY)}px`,
+                    backgroundColor: colorToCss(item.color)
+                  }}
+                  type="button"
+                >
+                  <span className="hexKeyLabel" style={{ transform: `rotate(${-activeBundle.layout.rotationSteps * 90}deg)` }}>
+                    <span>{item.key.index}</span>
+                    <small>{item.role === "note" ? item.degree : item.role.slice(0, 3)}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <pre className="dataPreview">{encodedPreview}</pre>
+        </main>
+
+        <aside className="panel stack selectedKeyPanel">
+          <h2>Selected Key</h2>
+          <div className="status">
+            Button {selectedPreview.key.index} · row {selectedPreview.key.row} · col {selectedPreview.key.column}
+          </div>
+          <div className="fieldGrid">
+            <label className="field">
+              <span>Role</span>
+              <select value={selectedPreview.role} onChange={(event) => updateButtonOverride(selectedPreview.key.index, { role: event.target.value as LayoutBundleButtonOverride["role"] })}>
+                <option value="note">Note</option>
+                <option value="command">Command</option>
+                <option value="unused">Unused</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Generated step</span>
+              <input readOnly value={selectedPreview.stepsFromC} />
+            </label>
+            <label className="field">
+              <span>Scale degree</span>
+              <input readOnly value={selectedPreview.degree} />
+            </label>
+            <label className="field">
+              <span>Color source</span>
+              <select value={selectedPreview.colorSource} onChange={(event) => setSelectedColorSource(event.target.value as PreviewKey["colorSource"])}>
+                <option value="degree">Scale degree</option>
+                <option value="button">Button override</option>
+              </select>
+            </label>
+          </div>
+
+          {selectedPreview.colorSource === "degree" ? (
+            <section className="editorSection">
+              <h3>Scale Degree Color</h3>
+              <ColorFields
+                color={selectedDegreeColor}
+                onChange={(patch) => updateDegreeColor(selectedPreview.degree, patch)}
+              />
+            </section>
+          ) : (
+            <section className="editorSection">
+              <h3>Button Override</h3>
+              <ColorFields
+                color={selectedPreview.color}
+                onChange={(patch) => updateButtonOverride(selectedPreview.key.index, patch)}
+              />
+              <div className="row">
+                <button type="button" onClick={() => resetButtonOverride(selectedPreview.key.index)}>
+                  Reset Key
+                </button>
+              </div>
+            </section>
+          )}
+        </aside>
+      </div>
     </section>
   );
 }
