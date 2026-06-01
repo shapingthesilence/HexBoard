@@ -31,6 +31,8 @@ const synthValueKeys = [
   "SynthModTarget",
   "SynthModAmount",
   "SynthVibratoSpeed",
+  "ArpeggiatorDivision",
+  "SynthBPM",
   "EnvelopeAttackIndex",
   "EnvelopeHoldIndex",
   "EnvelopeDecayIndex",
@@ -49,7 +51,9 @@ const synthValueKeys = [
   "EffectEnvelope2HoldIndex",
   "EffectEnvelope2DecayIndex",
   "EffectEnvelope2SustainLevel",
-  "EffectEnvelope2ReleaseIndex"
+  "EffectEnvelope2ReleaseIndex",
+  "SynthPortamentoTimeIndex",
+  "ArpeggiatorDirection"
 ] as const satisfies readonly SynthSettingName[];
 
 type EditableSynthValueKey = (typeof synthValueKeys)[number];
@@ -84,6 +88,8 @@ const defaultPreset: EditableSynthPreset = {
     SynthModTarget: 0,
     SynthModAmount: 127,
     SynthVibratoSpeed: 5,
+    ArpeggiatorDivision: 32,
+    SynthBPM: 120,
     EnvelopeAttackIndex: 12,
     EnvelopeHoldIndex: 0,
     EnvelopeDecayIndex: 14,
@@ -102,7 +108,9 @@ const defaultPreset: EditableSynthPreset = {
     EffectEnvelope2HoldIndex: 0,
     EffectEnvelope2DecayIndex: 0,
     EffectEnvelope2SustainLevel: 0,
-    EffectEnvelope2ReleaseIndex: 0
+    EffectEnvelope2ReleaseIndex: 0,
+    SynthPortamentoTimeIndex: 0,
+    ArpeggiatorDirection: 0
   }
 };
 
@@ -121,6 +129,7 @@ const initialComputerPresets: EditableSynthPreset[] = [
       SynthModTarget: 2,
       SynthModAmount: 100,
       SynthVibratoSpeed: 4,
+      SynthPortamentoTimeIndex: 6,
       EnvelopeAttackIndex: 0,
       EnvelopeHoldIndex: 0,
       EnvelopeDecayIndex: 4,
@@ -139,9 +148,32 @@ const defaultFolders = [rootFolderPath, "Pads/Warm", "Leads", "FX/Animated"];
 
 const playbackOptions = [
   { label: "Off", value: 0 },
-  { label: "Mono", value: 1 },
+  { label: "MonoRtg", value: 1 },
+  { label: "MonoLeg", value: 4 },
   { label: "Arp'gio", value: 2 },
   { label: "Poly", value: 3 }
+];
+
+const arpDivisionOptions = [
+  { label: "1/2", value: 2 },
+  { label: "1/3", value: 3 },
+  { label: "1/4", value: 4 },
+  { label: "1/6", value: 6 },
+  { label: "1/8", value: 8 },
+  { label: "1/12", value: 12 },
+  { label: "1/16", value: 16 },
+  { label: "1/24", value: 24 },
+  { label: "1/32", value: 32 }
+];
+
+const arpDirectionOptions = [
+  { label: "Up", value: 0 },
+  { label: "Down", value: 1 },
+  { label: "Order played", value: 2 },
+  { label: "Reverse played", value: 3 },
+  { label: "Up/down", value: 4 },
+  { label: "Down/up", value: 5 },
+  { label: "Random", value: 6 }
 ];
 
 const waveformOptions = [
@@ -207,12 +239,14 @@ const envelopeTimeOptions = [
 ].map((label, value) => ({ label, value }));
 
 const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]> = {
-  PlaybackMode: [0, 3],
+  PlaybackMode: [0, 4],
   Waveform: [0, 26],
   SynthDrive: [0, 3],
   SynthModTarget: [0, 2],
   SynthModAmount: [0, 127],
   SynthVibratoSpeed: [0, 11],
+  ArpeggiatorDivision: [1, 32],
+  SynthBPM: [1, 255],
   EnvelopeAttackIndex: [0, 19],
   EnvelopeHoldIndex: [0, 19],
   EnvelopeDecayIndex: [0, 19],
@@ -231,7 +265,9 @@ const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]>
   EffectEnvelope2HoldIndex: [0, 19],
   EffectEnvelope2DecayIndex: [0, 19],
   EffectEnvelope2SustainLevel: [0, 127],
-  EffectEnvelope2ReleaseIndex: [0, 19]
+  EffectEnvelope2ReleaseIndex: [0, 19],
+  SynthPortamentoTimeIndex: [0, 19],
+  ArpeggiatorDirection: [0, 6]
 };
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -545,6 +581,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     [computerPresets, customFolders, hexboardPresets, preset.folderPath]
   );
   const draftPreset = useMemo(() => encodeEditablePreset(preset), [preset]);
+  const monoModeSelected = preset.values.PlaybackMode === 1 || preset.values.PlaybackMode === 4;
+  const arpModeSelected = preset.values.PlaybackMode === 2;
 
   useEffect(() => {
     saveComputerPresets(computerPresets);
@@ -1054,6 +1092,16 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           <h3>Voice</h3>
           <div className="editorGrid">
             <SelectField label="Synth Mode" value={preset.values.PlaybackMode} options={playbackOptions} onChange={(value) => updateValue("PlaybackMode", value)} />
+            {arpModeSelected ? (
+              <>
+                <SelectField label="Arp Speed" value={preset.values.ArpeggiatorDivision} options={arpDivisionOptions} onChange={(value) => updateValue("ArpeggiatorDivision", value)} />
+                <SelectField label="Arp Direction" value={preset.values.ArpeggiatorDirection} options={arpDirectionOptions} onChange={(value) => updateValue("ArpeggiatorDirection", value)} />
+                <RangeField label="Tempo" value={preset.values.SynthBPM} min={1} max={255} onChange={(value) => updateValue("SynthBPM", value)} suffix=" BPM" />
+              </>
+            ) : null}
+            {monoModeSelected ? (
+              <RangeField label="Portamento" value={preset.values.SynthPortamentoTimeIndex} min={0} max={19} onChange={(value) => updateValue("SynthPortamentoTimeIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.SynthPortamentoTimeIndex)})`} />
+            ) : null}
             <SelectField label="Waveform" value={preset.values.Waveform} options={waveformOptions} onChange={(value) => updateValue("Waveform", value)} />
             <RangeField label="Drive" value={preset.values.SynthDrive} min={0} max={3} onChange={(value) => updateValue("SynthDrive", value)} suffix={` (${driveLabel(preset.values.SynthDrive)})`} />
             <SelectField label="Wheel FX" value={preset.values.SynthModTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthModTarget", value)} />

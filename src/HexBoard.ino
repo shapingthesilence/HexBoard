@@ -90,6 +90,7 @@ enum class SettingKey : uint8_t;
 class colorDef;
 struct SettingsHeader;
 struct SynthPresetSlot;
+struct SynthPresetSlotV6;
 struct LegacySynthPresetSlot;
 struct SynthPresetMenuAction;
 struct SynthPresetMenuFolderNode;
@@ -118,9 +119,15 @@ void updateEnvelopeParamsFromSettings();
 void updateEffectEnvelopeParamsFromSettings();
 void updateEffectEnvelopeParamsFromSettings(uint8_t envelopeIndex);
 void updateArpeggiatorTiming();
+void updateArpeggiatorDirection();
+void updateSynthPortamentoSettings();
+void updateSynthMenuVisibility();
+void playbackModeChanged();
 void updateMetronomeTiming();
 void metronomeModeChanged();
-void runMetronome();
+void RAM_FUNC(runMetronome)();
+inline void RAM_FUNC(clearSynthPortamento)(uint8_t channelIndex);
+inline void RAM_FUNC(beginSynthPortamento)(uint8_t channelIndex, uint32_t targetIncrement);
 inline bool RAM_FUNC(metronomeBrightnessSelected)();
 inline bool RAM_FUNC(metronomeSideButtonsSelected)();
 inline bool RAM_FUNC(metronomeVisualFlashActive)();
@@ -161,7 +168,7 @@ bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t s
     guarantees the mod value is always
     positive.
   */
-int positiveMod(int n, int d) {
+int RAM_FUNC(positiveMod)(int n, int d) {
   return (((n % d) + d) % d);
 }
 /*
@@ -261,6 +268,16 @@ byte deviceRotation = 2;
 byte arpeggiatorDivision = 32;  // denominator of whole-note duration (1/32 by default)
 byte synthBPM = 120;
 
+constexpr byte ARP_DIRECTION_UP = 0;
+constexpr byte ARP_DIRECTION_DOWN = 1;
+constexpr byte ARP_DIRECTION_ORDER_PLAYED = 2;
+constexpr byte ARP_DIRECTION_REVERSE_PLAYED = 3;
+constexpr byte ARP_DIRECTION_UP_DOWN = 4;
+constexpr byte ARP_DIRECTION_DOWN_UP = 5;
+constexpr byte ARP_DIRECTION_RANDOM = 6;
+constexpr byte ARP_DIRECTION_COUNT = 7;
+byte arpeggiatorDirection = ARP_DIRECTION_UP;
+
 constexpr byte METRONOME_MODE_OFF = 0;
 constexpr byte METRONOME_MODE_BEEP = 1;
 constexpr byte METRONOME_MODE_BRIGHTNESS = 2;
@@ -328,10 +345,23 @@ std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeSustainLevel = { 0, 0
 std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeReleaseIndex = { 0, 0 };
 
 constexpr byte SYNTH_OFF = 0;
-constexpr byte SYNTH_MONO = 1;
+constexpr byte SYNTH_MONO_RETRIGGER = 1;
 constexpr byte SYNTH_ARPEGGIO = 2;
 constexpr byte SYNTH_POLY = 3;
-byte playbackMode = SYNTH_OFF;
+constexpr byte SYNTH_MONO_LEGATO = 4;
+constexpr byte SYNTH_MONO = SYNTH_MONO_RETRIGGER;  // Legacy stored mono value.
+byte playbackMode = SYNTH_POLY;
+
+uint8_t synthPortamentoTimeIndex = 0;
+uint32_t synthPortamentoTicks = 0;
+
+inline bool RAM_FUNC(isMonoPlaybackMode)(byte mode) {
+  return mode == SYNTH_MONO_RETRIGGER || mode == SYNTH_MONO_LEGATO;
+}
+
+inline bool RAM_FUNC(isValidPlaybackMode)(byte mode) {
+  return mode == SYNTH_OFF || isMonoPlaybackMode(mode) || mode == SYNTH_ARPEGGIO || mode == SYNTH_POLY;
+}
 
 constexpr byte WAVEFORM_SINE = 0;
 constexpr byte WAVEFORM_STRINGS = 1;
@@ -1606,7 +1636,7 @@ public:
 #define BTN_STATE_RELEASED 2
 #define BTN_STATE_HELD 3
   byte btnState = BTN_STATE_OFF;  // binary 00 = off, 01 = just pressed, 10 = just released, 11 = held
-  void interpBtnPress(bool isPress) {
+  void RAM_FUNC(interpBtnPress)(bool isPress) {
     btnState = (((btnState << 1) + isPress) & 3);
   }
   int8_t coordRow = 0;       // hex coordinates
@@ -4702,7 +4732,7 @@ byte mpWaveWoo[] = {
     sample in the same 0..65535 range used by
     the rest of the synth path.
   */
-inline uint16_t interpolatedWaveSample(const byte* table, uint16_t phase) {
+inline uint16_t RAM_FUNC(interpolatedWaveSample)(const byte* table, uint16_t phase) {
   uint8_t index = phase >> 8;
   uint8_t frac = phase & 0xFF;
   int32_t sampleA = table[index];
@@ -4777,7 +4807,7 @@ inline void RAM_FUNC(recordISRProfileSample)(uint32_t startTime, uint8_t voices,
   isrCycleCount++;
 }
 
-inline uint32_t oscillatorIncrementFromFrequency(float frequency) {
+inline uint32_t RAM_FUNC(oscillatorIncrementFromFrequency)(float frequency) {
   if (frequency <= 0.0f) {
     return 0;
   }
@@ -4790,7 +4820,7 @@ inline uint32_t oscillatorIncrementFromFrequency(float frequency) {
   return static_cast<uint32_t>(round(increment));
 }
 
-inline void smoothUint32Toward(uint32_t& current, uint32_t target, uint8_t shift) {
+inline void RAM_FUNC(smoothUint32Toward)(uint32_t& current, uint32_t target, uint8_t shift) {
   if (current == target) {
     return;
   }
@@ -4815,7 +4845,7 @@ inline void smoothUint32Toward(uint32_t& current, uint32_t target, uint8_t shift
   }
 }
 
-inline void smoothUint16Toward(uint16_t& current, uint16_t target, uint8_t shift) {
+inline void RAM_FUNC(smoothUint16Toward)(uint16_t& current, uint16_t target, uint8_t shift) {
   if (current == target) {
     return;
   }
@@ -4840,7 +4870,7 @@ inline void smoothUint16Toward(uint16_t& current, uint16_t target, uint8_t shift
   }
 }
 
-inline uint32_t ticksFromMicros(uint32_t micros) {
+inline uint32_t RAM_FUNC(ticksFromMicros)(uint32_t micros) {
   if (micros == 0) {
     return 0;
   }
@@ -4932,7 +4962,7 @@ constexpr uint8_t releaseRetryDelayLoops = 2;
 // Publish the newest command for one voice. The command byte is written first,
 // then a memory barrier makes sure core 1 cannot observe the new sequence
 // number before the matching command value is visible.
-inline void publishEnvelopeCommand(uint8_t channel, EnvelopeCommand command) {
+inline void RAM_FUNC(publishEnvelopeCommand)(uint8_t channel, EnvelopeCommand command) {
   envelopeCommandValues[channel] = static_cast<uint8_t>(command);
   __dmb();
   envelopeCommandPublishedSeq[channel] = static_cast<uint8_t>(envelopeCommandPublishedSeq[channel] + 1);
@@ -4940,7 +4970,7 @@ inline void publishEnvelopeCommand(uint8_t channel, EnvelopeCommand command) {
 
 // Read the newest command once. Returning None means nothing new arrived since
 // the last ISR iteration for this voice.
-inline EnvelopeCommand consumeEnvelopeCommand(uint8_t channel) {
+inline EnvelopeCommand RAM_FUNC(consumeEnvelopeCommand)(uint8_t channel) {
   uint8_t publishedSeq = envelopeCommandPublishedSeq[channel];
   if (publishedSeq == envelopeCommandConsumedSeq[channel]) {
     return EnvelopeCommand::None;
@@ -4959,7 +4989,7 @@ inline void RAM_FUNC(publishVoiceFreed)(uint8_t channel) {
 }
 
 // Core 0 checks whether core 1 has published a newer "voice finished" event.
-inline bool consumeVoiceFreed(uint8_t channel) {
+inline bool RAM_FUNC(consumeVoiceFreed)(uint8_t channel) {
   uint8_t publishedSeq = voiceFreedPublishedSeq[channel];
   if (publishedSeq == voiceFreedConsumedSeq[channel]) {
     return false;
@@ -4971,7 +5001,7 @@ inline bool consumeVoiceFreed(uint8_t channel) {
 
 // When core 0 immediately reuses a voice, any older pending "voice finished"
 // event for that same channel must be ignored so it cannot free the new note.
-inline void clearPendingVoiceFreed(uint8_t channel) {
+inline void RAM_FUNC(clearPendingVoiceFreed)(uint8_t channel) {
   __dmb();
   voiceFreedConsumedSeq[channel] = voiceFreedPublishedSeq[channel];
 }
@@ -5145,6 +5175,8 @@ public:
   uint32_t increment = 0;        // current Q16.16 phase increment smoothed by the audio ISR
   uint32_t targetIncrement = 0;  // target Q16.16 phase increment from the control path
   uint32_t counter = 0;          // Q16.16 phase accumulator; high 16 bits are the waveform phase
+  uint32_t glideStep = 0;        // linear portamento step in Q16.16 increment units
+  uint32_t glideSamplesRemaining = 0;
   byte a = 127;
   byte b = 128;
   byte c = 255;
@@ -5165,6 +5197,13 @@ uint32_t metronomeBeepPhase = 0;
 byte arpeggiatingNow = UNUSED_NOTE;  // if this is 255, set to off (0% duty cycle)
 uint64_t arpeggiateTime = 0;         // Used to keep track of when this note started playing in ARPEG mode
 uint64_t arpeggiateLength = 62500;   // default: 1/32 note at 120 BPM
+constexpr uint16_t ARPEGGIATOR_SEQUENCE_MAX = BTN_COUNT * 2;
+std::array<byte, BTN_COUNT> arpeggiatorHeldNotes = {};
+uint8_t arpeggiatorHeldNoteCount = 0;
+std::array<byte, ARPEGGIATOR_SEQUENCE_MAX> arpeggiatorSequence = {};
+uint16_t arpeggiatorSequenceLength = 0;
+uint16_t arpeggiatorSequenceCursor = 0;
+uint32_t arpeggiatorRandomState = 0xA341316Cu;
 
 inline uint8_t RAM_FUNC(smoothedSynthModValue)() {
   int16_t targetValue = modWheel.curValue;
@@ -5197,6 +5236,13 @@ void updateSynthVibratoParams() {
     synthVibratoSpeed = SYNTH_VIBRATO_SPEED_DEFAULT;
   }
   synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[synthVibratoSpeed];
+}
+
+void updateSynthPortamentoSettings() {
+  if (synthPortamentoTimeIndex >= envelopeTimeMicrosOptions.size()) {
+    synthPortamentoTimeIndex = 0;
+  }
+  synthPortamentoTicks = ticksFromMicros(envelopeTimeMicrosOptions[synthPortamentoTimeIndex]);
 }
 
 inline uint8_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue) {
@@ -5456,11 +5502,11 @@ inline bool RAM_FUNC(metronomeSideButtonsSelected)() {
   return metronomeMode == METRONOME_MODE_SIDE_BUTTONS;
 }
 
-inline bool metronomeBeepSelected() {
+inline bool RAM_FUNC(metronomeBeepSelected)() {
   return metronomeMode == METRONOME_MODE_BEEP;
 }
 
-inline bool metronomeEnabled() {
+inline bool RAM_FUNC(metronomeEnabled)() {
   return metronomeMode != METRONOME_MODE_OFF;
 }
 
@@ -5468,7 +5514,7 @@ inline bool RAM_FUNC(metronomeVisualFlashActive)() {
   return (metronomeBrightnessSelected() || metronomeSideButtonsSelected()) && runTime < metronomeVisualFlashUntil;
 }
 
-void resetMetronomeState() {
+void RAM_FUNC(resetMetronomeState)() {
   metronomeBeatCursor = 0;
   metronomeNextBeatTime = 0;
   metronomeVisualFlashUntil = 0;
@@ -5500,7 +5546,7 @@ void updateMetronomeTiming() {
   resetMetronomeState();
 }
 
-void triggerMetronomeBeat(bool accent) {
+void RAM_FUNC(triggerMetronomeBeat)(bool accent) {
   constexpr uint64_t METRONOME_VISUAL_FLASH_MICROS = 125000;
   metronomeAccent = accent;
 
@@ -5513,7 +5559,7 @@ void triggerMetronomeBeat(bool accent) {
   }
 }
 
-void runMetronome() {
+void RAM_FUNC(runMetronome)() {
   if (!metronomeEnabled() || delegatedControl) {
     return;
   }
@@ -5550,6 +5596,13 @@ void updateArpeggiatorTiming() {
     arpeggiateLength = 1;
   }
   updateMetronomeTiming();
+}
+
+void updateArpeggiatorDirection() {
+  if (arpeggiatorDirection >= ARP_DIRECTION_COUNT) {
+    arpeggiatorDirection = ARP_DIRECTION_UP;
+  }
+  arpeggiatorSequenceCursor = 0;
 }
 
 // RUN ON CORE 2
@@ -5620,6 +5673,7 @@ void RAM_FUNC(poll)() {
           synth[i].increment = 0;
           synth[i].targetIncrement = 0;
           synth[i].counter = 0;
+          clearSynthPortamento(i);
           publishVoiceFreed(i);
         } else {
           env.stage = EnvelopeStage::Release;
@@ -5647,6 +5701,7 @@ void RAM_FUNC(poll)() {
         synth[i].increment = 0;
         synth[i].targetIncrement = 0;
         synth[i].counter = 0;
+        clearSynthPortamento(i);
         channelInUse[i].store(false, std::memory_order_relaxed);
         voiceGenerations[i].store(0, std::memory_order_relaxed);
         break;
@@ -5700,6 +5755,7 @@ void RAM_FUNC(poll)() {
           synth[i].increment = 0;
           synth[i].targetIncrement = 0;
           synth[i].counter = 0;
+          clearSynthPortamento(i);
           publishVoiceFreed(i);
         } else {
           env.level -= env.releaseIncrement;
@@ -5711,6 +5767,7 @@ void RAM_FUNC(poll)() {
         synth[i].increment = 0;
         synth[i].targetIncrement = 0;
         synth[i].counter = 0;
+        clearSynthPortamento(i);
         for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
           resetEnvelopeState(effectEnvelopeStates[envelopeIndex][i]);
         }
@@ -5736,7 +5793,23 @@ void RAM_FUNC(poll)() {
       }
     }
 
-    smoothUint32Toward(synth[i].increment, synth[i].targetIncrement, SYNTH_PITCH_SMOOTH_SHIFT);
+    if (synth[i].glideSamplesRemaining > 0) {
+      uint32_t step = synth[i].glideStep ? synth[i].glideStep : 1;
+      if (synth[i].targetIncrement > synth[i].increment) {
+        uint32_t remaining = synth[i].targetIncrement - synth[i].increment;
+        synth[i].increment += (step >= remaining) ? remaining : step;
+      } else if (synth[i].targetIncrement < synth[i].increment) {
+        uint32_t remaining = synth[i].increment - synth[i].targetIncrement;
+        synth[i].increment -= (step >= remaining) ? remaining : step;
+      }
+      --synth[i].glideSamplesRemaining;
+      if (synth[i].glideSamplesRemaining == 0 || synth[i].increment == synth[i].targetIncrement) {
+        synth[i].increment = synth[i].targetIncrement;
+        clearSynthPortamento(i);
+      }
+    } else {
+      smoothUint32Toward(synth[i].increment, synth[i].targetIncrement, SYNTH_PITCH_SMOOTH_SHIFT);
+    }
     uint32_t phaseIncrement = synth[i].increment;
     if (voicePitchModValue != 0) {
       phaseIncrement = applySynthPitchMod(phaseIncrement, voicePitchModValue);
@@ -6009,7 +6082,34 @@ inline void recomputePitchBendFactor() {
   pitchBendFactor = exp2(pbWheel.curValue * DEFAULT_PITCH_BEND_RANGE_SEMITONES / 98304.0f);
 }
 
-void RAM_FUNC(setSynthFreq)(float frequency, byte channel, bool resetPhase = false) {
+inline void RAM_FUNC(clearSynthPortamento)(uint8_t channelIndex) {
+  synth[channelIndex].glideStep = 0;
+  synth[channelIndex].glideSamplesRemaining = 0;
+}
+
+inline void RAM_FUNC(beginSynthPortamento)(uint8_t channelIndex, uint32_t targetIncrement) {
+  uint32_t remaining = synthPortamentoTicks;
+  if (remaining == 0 || synth[channelIndex].increment == 0 || synth[channelIndex].targetIncrement == 0) {
+    clearSynthPortamento(channelIndex);
+    synth[channelIndex].increment = targetIncrement;
+    return;
+  }
+
+  uint32_t currentIncrement = synth[channelIndex].increment;
+  if (currentIncrement == targetIncrement) {
+    clearSynthPortamento(channelIndex);
+    return;
+  }
+
+  uint32_t distance = (targetIncrement > currentIncrement)
+                        ? (targetIncrement - currentIncrement)
+                        : (currentIncrement - targetIncrement);
+  uint32_t step = distance / remaining;
+  synth[channelIndex].glideStep = step ? step : 1;
+  synth[channelIndex].glideSamplesRemaining = remaining;
+}
+
+void RAM_FUNC(setSynthFreq)(float frequency, byte channel, bool resetPhase = false, bool allowPortamento = false) {
   if (channel == 0) {
     return;
   }
@@ -6027,14 +6127,28 @@ void RAM_FUNC(setSynthFreq)(float frequency, byte channel, bool resetPhase = fal
     synth[c].increment = 0;
     synth[c].targetIncrement = 0;
     synth[c].counter = 0;
+    clearSynthPortamento(c);
     synth[c].eq = 0;
     return;
   }
-  if (resetPhase || synth[c].increment == 0 || synth[c].targetIncrement == 0) {
-    synth[c].counter = 0;
-    synth[c].increment = newIncrement;
+
+  bool canPortamento = allowPortamento
+                    && synthPortamentoTicks > 0
+                    && synth[c].increment != 0
+                    && synth[c].targetIncrement != 0;
+  if (canPortamento) {
+    synth[c].targetIncrement = newIncrement;
+    beginSynthPortamento(c, newIncrement);
+  } else {
+    clearSynthPortamento(c);
+    if (resetPhase) {
+      synth[c].counter = 0;
+    }
+    if (resetPhase || allowPortamento || synth[c].increment == 0 || synth[c].targetIncrement == 0) {
+      synth[c].increment = newIncrement;
+    }
+    synth[c].targetIncrement = newIncrement;
   }
-  synth[c].targetIncrement = newIncrement;
   synth[c].eq = isoTwoTwentySix(f);
   if (currWave == WAVEFORM_HYBRID) {
     if (f < TRANSITION_SQUARE) {
@@ -6085,29 +6199,193 @@ void RAM_FUNC(beginEnvelopeRelease)(uint8_t channel) {
 
 // USE THIS IN MONO OR ARPEG MODE ONLY
 
-byte RAM_FUNC(findNextHeldNote)() {
-  byte n = UNUSED_NOTE;
-  for (byte i = 1; i <= BTN_COUNT; i++) {
-    byte j = positiveMod(arpeggiatingNow + i, BTN_COUNT);
-    if ((h[j].MIDIch) && (!h[j].isCmd)) {
-      n = j;
-      break;
+int RAM_FUNC(arpeggiatorHeldIndex)(byte x) {
+  for (uint8_t i = 0; i < arpeggiatorHeldNoteCount; ++i) {
+    if (arpeggiatorHeldNotes[i] == x) {
+      return i;
     }
   }
-  return n;
+  return -1;
 }
-void RAM_FUNC(replaceMonoSynthWith)(byte x) {
-  if (arpeggiatingNow == x) return;
-  if (arpeggiatingNow != UNUSED_NOTE) {
+
+void RAM_FUNC(clearArpeggiatorHeldNotes)() {
+  arpeggiatorHeldNoteCount = 0;
+  arpeggiatorSequenceLength = 0;
+  arpeggiatorSequenceCursor = 0;
+}
+
+void RAM_FUNC(registerArpeggiatorNoteOff)(byte x) {
+  int index = arpeggiatorHeldIndex(x);
+  if (index < 0) {
+    return;
+  }
+  for (uint8_t i = static_cast<uint8_t>(index); i + 1 < arpeggiatorHeldNoteCount; ++i) {
+    arpeggiatorHeldNotes[i] = arpeggiatorHeldNotes[i + 1];
+  }
+  --arpeggiatorHeldNoteCount;
+  if (arpeggiatorHeldNoteCount == 0) {
+    arpeggiatorSequenceCursor = 0;
+  }
+}
+
+void RAM_FUNC(registerArpeggiatorNoteOn)(byte x) {
+  if (x >= BTN_COUNT || h[x].isCmd || h[x].note >= 128) {
+    return;
+  }
+  registerArpeggiatorNoteOff(x);
+  if (arpeggiatorHeldNoteCount < BTN_COUNT) {
+    arpeggiatorHeldNotes[arpeggiatorHeldNoteCount++] = x;
+  }
+}
+
+bool RAM_FUNC(arpeggiatorPitchComesBefore)(byte left, byte right) {
+  if (h[left].frequency < h[right].frequency) {
+    return true;
+  }
+  if (h[left].frequency > h[right].frequency) {
+    return false;
+  }
+  if (h[left].midiNoteIndex < h[right].midiNoteIndex) {
+    return true;
+  }
+  if (h[left].midiNoteIndex > h[right].midiNoteIndex) {
+    return false;
+  }
+  if (h[left].timePressed != h[right].timePressed) {
+    return h[left].timePressed < h[right].timePressed;
+  }
+  return left < right;
+}
+
+void RAM_FUNC(appendArpeggiatorSequenceNote)(byte note) {
+  if (arpeggiatorSequenceLength < ARPEGGIATOR_SEQUENCE_MAX) {
+    arpeggiatorSequence[arpeggiatorSequenceLength++] = note;
+  }
+}
+
+void RAM_FUNC(sortArpeggiatorSequenceByPitch)(bool descending) {
+  for (uint16_t i = 1; i < arpeggiatorSequenceLength; ++i) {
+    byte value = arpeggiatorSequence[i];
+    uint16_t j = i;
+    while (j > 0) {
+      bool comesBefore = arpeggiatorPitchComesBefore(value, arpeggiatorSequence[j - 1]);
+      if (descending) {
+        comesBefore = arpeggiatorPitchComesBefore(arpeggiatorSequence[j - 1], value);
+      }
+      if (!comesBefore) {
+        break;
+      }
+      arpeggiatorSequence[j] = arpeggiatorSequence[j - 1];
+      --j;
+    }
+    arpeggiatorSequence[j] = value;
+  }
+}
+
+void RAM_FUNC(buildArpeggiatorSequence)() {
+  arpeggiatorSequenceLength = 0;
+  if (arpeggiatorHeldNoteCount == 0) {
+    arpeggiatorSequenceCursor = 0;
+    return;
+  }
+
+  switch (arpeggiatorDirection) {
+    case ARP_DIRECTION_ORDER_PLAYED:
+      for (uint8_t i = 0; i < arpeggiatorHeldNoteCount; ++i) {
+        appendArpeggiatorSequenceNote(arpeggiatorHeldNotes[i]);
+      }
+      break;
+    case ARP_DIRECTION_REVERSE_PLAYED:
+      for (uint8_t i = arpeggiatorHeldNoteCount; i > 0; --i) {
+        appendArpeggiatorSequenceNote(arpeggiatorHeldNotes[i - 1]);
+      }
+      break;
+    case ARP_DIRECTION_DOWN:
+    case ARP_DIRECTION_DOWN_UP:
+      for (uint8_t i = 0; i < arpeggiatorHeldNoteCount; ++i) {
+        appendArpeggiatorSequenceNote(arpeggiatorHeldNotes[i]);
+      }
+      sortArpeggiatorSequenceByPitch(true);
+      if (arpeggiatorDirection == ARP_DIRECTION_DOWN_UP && arpeggiatorSequenceLength > 2) {
+        for (uint16_t i = arpeggiatorSequenceLength - 2; i > 0; --i) {
+          appendArpeggiatorSequenceNote(arpeggiatorSequence[i]);
+        }
+      }
+      break;
+    case ARP_DIRECTION_UP_DOWN:
+    case ARP_DIRECTION_UP:
+    default:
+      for (uint8_t i = 0; i < arpeggiatorHeldNoteCount; ++i) {
+        appendArpeggiatorSequenceNote(arpeggiatorHeldNotes[i]);
+      }
+      sortArpeggiatorSequenceByPitch(false);
+      if (arpeggiatorDirection == ARP_DIRECTION_UP_DOWN && arpeggiatorSequenceLength > 2) {
+        for (uint16_t i = arpeggiatorSequenceLength - 2; i > 0; --i) {
+          appendArpeggiatorSequenceNote(arpeggiatorSequence[i]);
+        }
+      }
+      break;
+  }
+
+  if (arpeggiatorSequenceCursor >= arpeggiatorSequenceLength) {
+    arpeggiatorSequenceCursor = 0;
+  }
+}
+
+void RAM_FUNC(setArpeggiatorCursorAfter)(byte note) {
+  if (arpeggiatorDirection == ARP_DIRECTION_RANDOM) {
+    return;
+  }
+  buildArpeggiatorSequence();
+  for (uint16_t i = 0; i < arpeggiatorSequenceLength; ++i) {
+    if (arpeggiatorSequence[i] == note) {
+      arpeggiatorSequenceCursor = static_cast<uint16_t>((i + 1) % arpeggiatorSequenceLength);
+      return;
+    }
+  }
+}
+
+byte RAM_FUNC(findNewestHeldNote)() {
+  return arpeggiatorHeldNoteCount == 0 ? UNUSED_NOTE : arpeggiatorHeldNotes[arpeggiatorHeldNoteCount - 1];
+}
+
+byte RAM_FUNC(findNextArpeggiatedNote)() {
+  if (arpeggiatorHeldNoteCount == 0) {
+    return UNUSED_NOTE;
+  }
+  if (arpeggiatorDirection == ARP_DIRECTION_RANDOM) {
+    arpeggiatorRandomState = (arpeggiatorRandomState * 1664525u) + 1013904223u + static_cast<uint32_t>(runTime);
+    return arpeggiatorHeldNotes[(arpeggiatorRandomState >> 16) % arpeggiatorHeldNoteCount];
+  }
+
+  buildArpeggiatorSequence();
+  if (arpeggiatorSequenceLength == 0) {
+    return UNUSED_NOTE;
+  }
+  byte nextNote = arpeggiatorSequence[arpeggiatorSequenceCursor];
+  arpeggiatorSequenceCursor = static_cast<uint16_t>((arpeggiatorSequenceCursor + 1) % arpeggiatorSequenceLength);
+  return nextNote;
+}
+
+void RAM_FUNC(replaceMonoSynthWith)(byte x, bool retriggerEnvelope = true, bool allowPortamento = false, bool forceRetrigger = false) {
+  if (arpeggiatingNow == x && !forceRetrigger) {
+    return;
+  }
+  bool hadActiveNote = arpeggiatingNow != UNUSED_NOTE && channelInUse[0].load(std::memory_order_relaxed);
+  if (arpeggiatingNow != UNUSED_NOTE && arpeggiatingNow < BTN_COUNT) {
     h[arpeggiatingNow].synthCh = 0;
   }
   arpeggiatingNow = x;
   if (arpeggiatingNow != UNUSED_NOTE) {
     h[arpeggiatingNow].synthCh = 1;
     synthChannelOwners[0].store(static_cast<int16_t>(arpeggiatingNow), std::memory_order_relaxed);
-    voiceGenerations[0].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
-    beginEnvelopeAttack(0);
-    setSynthFreq(h[arpeggiatingNow].frequency, 1, true);
+    if (retriggerEnvelope || !hadActiveNote) {
+      voiceGenerations[0].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
+      beginEnvelopeAttack(0);
+    }
+    bool usePortamento = allowPortamento && hadActiveNote;
+    bool shouldResetPhase = (retriggerEnvelope || !hadActiveNote) && !(usePortamento && synthPortamentoTicks > 0);
+    setSynthFreq(h[arpeggiatingNow].frequency, 1, shouldResetPhase, usePortamento);
   } else {
     synthChannelOwners[0].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
     beginEnvelopeRelease(0);
@@ -6123,6 +6401,7 @@ void RAM_FUNC(resetSynthFreqs)() {
     synth[i].increment = 0;
     synth[i].targetIncrement = 0;
     synth[i].counter = 0;
+    clearSynthPortamento(i);
     publishEnvelopeCommand(i, EnvelopeCommand::Reset);
     channelInUse[i].store(false, std::memory_order_relaxed);
     voiceGenerations[i].store(0, std::memory_order_relaxed);
@@ -6134,6 +6413,8 @@ void RAM_FUNC(resetSynthFreqs)() {
   for (byte i = 0; i < BTN_COUNT; i++) {
     h[i].synthCh = 0;
   }
+  arpeggiatingNow = UNUSED_NOTE;
+  clearArpeggiatorHeldNotes();
   if (playbackMode == SYNTH_POLY) {
     for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
       synthChQueue.push(i + 1);
@@ -6265,17 +6546,31 @@ void RAM_FUNC(trySynthNoteOn)(byte x) {
     beginEnvelopeAttack(channel - 1);
     setSynthFreq(h[x].frequency, channel, true);
     sendToLog("popped " + std::to_string(channel) + " off the synth queue");
-  } else {
-    if (h[x].MIDIch) {
-      replaceMonoSynthWith(x);
+  } else if (h[x].MIDIch) {
+    registerArpeggiatorNoteOn(x);
+    if (playbackMode == SYNTH_ARPEGGIO) {
+      replaceMonoSynthWith(x, true, false, true);
+      setArpeggiatorCursorAfter(x);
+    } else if (playbackMode == SYNTH_MONO_LEGATO) {
+      replaceMonoSynthWith(x, false, true);
+    } else {
+      replaceMonoSynthWith(x, true, true);
     }
   }
 }
 
 void RAM_FUNC(trySynthNoteOff)(byte x) {
   if (playbackMode && (playbackMode != SYNTH_POLY)) {
+    registerArpeggiatorNoteOff(x);
     if (arpeggiatingNow == x) {
-      replaceMonoSynthWith(findNextHeldNote());
+      byte nextNote = (playbackMode == SYNTH_ARPEGGIO) ? findNextArpeggiatedNote() : findNewestHeldNote();
+      if (playbackMode == SYNTH_ARPEGGIO) {
+        replaceMonoSynthWith(nextNote, true, false, true);
+      } else if (playbackMode == SYNTH_MONO_LEGATO) {
+        replaceMonoSynthWith(nextNote, false, true);
+      } else {
+        replaceMonoSynthWith(nextNote, true, true);
+      }
     }
     return;
   }
@@ -6355,7 +6650,7 @@ void RAM_FUNC(arpeggiate)() {
   if (playbackMode == SYNTH_ARPEGGIO) {
     if (runTime - arpeggiateTime > arpeggiateLength) {
       arpeggiateTime = runTime;
-      replaceMonoSynthWith(findNextHeldNote());
+      replaceMonoSynthWith(findNextArpeggiatedNote(), true, false, true);
     }
   }
 }
@@ -7111,7 +7406,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 12;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 13;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -7207,6 +7502,8 @@ enum class SettingKey : uint8_t {
   SynthModAmount,
   HeadphoneVolumeCap,
   DeviceRotation,
+  SynthPortamentoTimeIndex,
+  ArpeggiatorDirection,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -7222,18 +7519,21 @@ constexpr uint8_t NUM_SETTINGS_V7 = static_cast<uint8_t>(SettingKey::EffectEnvel
 constexpr uint8_t NUM_SETTINGS_V8 = static_cast<uint8_t>(SettingKey::EnvelopeHoldIndex);
 constexpr uint8_t NUM_SETTINGS_BEFORE_HEADPHONE_CAP = static_cast<uint8_t>(SettingKey::HeadphoneVolumeCap);
 constexpr uint8_t NUM_SETTINGS_V11 = static_cast<uint8_t>(SettingKey::DeviceRotation);
+constexpr uint8_t NUM_SETTINGS_V12 = static_cast<uint8_t>(SettingKey::SynthPortamentoTimeIndex);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
 constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
 constexpr uint8_t LEGACY_SYNTH_PRESET_COUNT = 8;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 6;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 7;
+constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 4;
+constexpr size_t SYNTH_PRESET_VALUE_COUNT_V6 = 27;
 constexpr size_t SYNTH_PRESET_NAME_LENGTH = 32;
 constexpr size_t SYNTH_PRESET_FOLDER_LENGTH = 48;
 constexpr size_t SYNTH_PRESET_MENU_LABEL_LENGTH = 64;
 constexpr size_t SYNTH_PRESET_OBJECT_ID_LENGTH = 16;
 constexpr const char* SYNTH_PRESET_ROOT_FOLDER = "/";
-constexpr std::array<SettingKey, 27> synthPresetKeys = {
+constexpr std::array<SettingKey, 29> synthPresetKeys = {
   SettingKey::PlaybackMode,
   SettingKey::Waveform,
   SettingKey::SynthDrive,
@@ -7260,7 +7560,9 @@ constexpr std::array<SettingKey, 27> synthPresetKeys = {
   SettingKey::EffectEnvelope2HoldIndex,
   SettingKey::EffectEnvelope2DecayIndex,
   SettingKey::EffectEnvelope2SustainLevel,
-  SettingKey::EffectEnvelope2ReleaseIndex
+  SettingKey::EffectEnvelope2ReleaseIndex,
+  SettingKey::SynthPortamentoTimeIndex,
+  SettingKey::ArpeggiatorDirection
 };
 constexpr size_t SYNTH_PRESET_VALUE_COUNT = synthPresetKeys.size();
 constexpr std::array<uint8_t, 4> legacySynthVibratoSpeedIndexToCurrent = {
@@ -7349,9 +7651,18 @@ struct SynthPresetSlot {
   uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
 };
 
+struct SynthPresetSlotV6 {
+  uint8_t valid = 0;
+  uint8_t favorite = 0;
+  uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
+  char name[SYNTH_PRESET_NAME_LENGTH] = {};
+  char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
+  uint8_t values[SYNTH_PRESET_VALUE_COUNT_V6] = {};
+};
+
 struct LegacySynthPresetSlot {
   uint8_t valid = 0;
-  uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
+  uint8_t values[SYNTH_PRESET_VALUE_COUNT_V6] = {};
 };
 
 std::vector<SynthPresetSlot> synthPresets;
@@ -7371,7 +7682,7 @@ void remapLegacySynthPresetEnvelopeTimes(LegacySynthPresetSlot& preset) {
   if (!preset.valid) {
     return;
   }
-  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+  for (size_t i = 0; i < SYNTH_PRESET_VALUE_COUNT_V6; ++i) {
     if (isEnvelopeTimeSettingKey(synthPresetKeys[i])) {
       preset.values[i] = remapLegacyEnvelopeTimeIndex(preset.values[i]);
     }
@@ -7394,7 +7705,7 @@ void remapLegacySynthPresetVibratoSpeed(LegacySynthPresetSlot& preset) {
   if (!preset.valid) {
     return;
   }
-  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+  for (size_t i = 0; i < SYNTH_PRESET_VALUE_COUNT_V6; ++i) {
     if (synthPresetKeys[i] == SettingKey::SynthVibratoSpeed) {
       preset.values[i] = remapLegacySynthVibratoSpeedIndex(preset.values[i]);
       return;
@@ -7444,7 +7755,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* PBWheelSpeed (2^N)           */ 10,    // 2^10 == 1024
   /* ModWheelSpeed                */ 8,
   /* VelWheelSpeed                */ 8,
-  /* PlaybackMode                 */ SYNTH_OFF,
+  /* PlaybackMode                 */ SYNTH_POLY,
   /* Waveform                     */ WAVEFORM_HYBRID,
   /* AudioDestination             */ 0,
   /* ArpeggiatorDivision          */ 32,
@@ -7490,6 +7801,8 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* SynthModAmount               */ SYNTH_MOD_AMOUNT_FULL,
   /* HeadphoneVolumeCap           */ HEADPHONE_VOLUME_CAP_FULL,
   /* DeviceRotation               */ 2,
+  /* SynthPortamentoTimeIndex     */ 0,
+  /* ArpeggiatorDirection         */ ARP_DIRECTION_UP,
 };
 
 // ==================================================
@@ -7646,6 +7959,8 @@ bool load_settings() {
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_BEFORE_HEADPHONE_CAP);
     case 11:
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V11);
+    case 12:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V12);
     default:
       break;
   }
@@ -7807,7 +8122,28 @@ void migrateLegacySynthPresetSlot(const LegacySynthPresetSlot& legacyPreset, uin
   preset.valid = legacyPreset.valid;
   snprintf(preset.name, sizeof(preset.name), "Slot %u", static_cast<unsigned>(index + 1));
   snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", SYNTH_PRESET_ROOT_FOLDER);
-  memcpy(preset.values, legacyPreset.values, sizeof(preset.values));
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
+  }
+  memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
+  normalizeSynthPresetMetadata(preset, index);
+  synthPresets.push_back(preset);
+}
+
+void migrateSynthPresetSlotV6(const SynthPresetSlotV6& legacyPreset, uint8_t index) {
+  if (!legacyPreset.valid || synthPresets.size() >= SYNTH_PRESET_MAX_COUNT) {
+    return;
+  }
+  SynthPresetSlot preset = {};
+  preset.valid = legacyPreset.valid;
+  preset.favorite = legacyPreset.favorite;
+  memcpy(preset.objectId, legacyPreset.objectId, sizeof(preset.objectId));
+  memcpy(preset.name, legacyPreset.name, sizeof(preset.name));
+  memcpy(preset.folderPath, legacyPreset.folderPath, sizeof(preset.folderPath));
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
+  }
+  memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
   normalizeSynthPresetMetadata(preset, index);
   synthPresets.push_back(preset);
 }
@@ -7821,7 +8157,9 @@ uint8_t currentSynthPresetValue(SettingKey key) {
     case SettingKey::SynthModAmount: return synthModAmount;
     case SettingKey::SynthVibratoSpeed: return synthVibratoSpeed;
     case SettingKey::ArpeggiatorDivision: return arpeggiatorDivision;
+    case SettingKey::ArpeggiatorDirection: return arpeggiatorDirection;
     case SettingKey::SynthBPM: return synthBPM;
+    case SettingKey::SynthPortamentoTimeIndex: return synthPortamentoTimeIndex;
     case SettingKey::EnvelopeAttackIndex: return envelopeAttackIndex;
     case SettingKey::EnvelopeHoldIndex: return envelopeHoldIndex;
     case SettingKey::EnvelopeDecayIndex: return envelopeDecayIndex;
@@ -7992,6 +8330,53 @@ void load_synth_presets() {
         remapLegacySynthPresetVibratoSpeed(legacyPresets[i]);
       }
       migrateLegacySynthPresetSlot(legacyPresets[i], i);
+    }
+    sendToLog("Synth presets migrated from version " + std::to_string(header.version) + " to version " + std::to_string(SYNTH_PRESET_FILE_VERSION) + ".");
+    save_synth_presets();
+    return;
+  }
+
+  if (header.version < SYNTH_PRESET_FILE_VERSION) {
+    uint16_t presetCountInFile = SYNTH_PRESET_LEGACY_NAMED_COUNT;
+    if (header.version >= 6) {
+      if (f.read(reinterpret_cast<uint8_t*>(&presetCountInFile), sizeof(presetCountInFile)) != sizeof(presetCountInFile)) {
+        sendToLog("Warning: Synth preset count missing. Starting with empty preset slots.");
+        f.close();
+        applyDefaultSynthPresets();
+        return;
+      }
+      uint16_t reserved = 0;
+      if (f.read(reinterpret_cast<uint8_t*>(&reserved), sizeof(reserved)) != sizeof(reserved)) {
+        sendToLog("Warning: Synth preset header incomplete. Starting with empty preset slots.");
+        f.close();
+        applyDefaultSynthPresets();
+        return;
+      }
+    }
+    if (presetCountInFile > SYNTH_PRESET_MAX_COUNT) {
+      sendToLog("Synth preset file exceeds maximum preset count. Starting with empty preset slots.");
+      f.close();
+      applyDefaultSynthPresets();
+      return;
+    }
+
+    std::vector<SynthPresetSlotV6> legacyPresets(presetCountInFile);
+    size_t presetDataSize = sizeof(SynthPresetSlotV6) * legacyPresets.size();
+    size_t bytesRead = presetDataSize == 0 ? 0 : f.read(reinterpret_cast<uint8_t*>(legacyPresets.data()), presetDataSize);
+    f.close();
+    if (bytesRead != presetDataSize) {
+      sendToLog("Warning: Synth preset data incomplete. Starting with empty preset slots.");
+      applyDefaultSynthPresets();
+      return;
+    }
+    uint32_t computed = crc32(reinterpret_cast<const uint8_t*>(legacyPresets.data()), presetDataSize);
+    if (computed != header.crc32) {
+      sendToLog("Synth preset CRC32 mismatch. Starting with empty preset slots.");
+      applyDefaultSynthPresets();
+      return;
+    }
+    for (size_t i = 0; i < legacyPresets.size() && synthPresets.size() < SYNTH_PRESET_MAX_COUNT; ++i) {
+      migrateSynthPresetSlotV6(legacyPresets[i], static_cast<uint8_t>(i));
     }
     sendToLog("Synth presets migrated from version " + std::to_string(header.version) + " to version " + std::to_string(SYNTH_PRESET_FILE_VERSION) + ".");
     save_synth_presets();
@@ -8387,7 +8772,7 @@ std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset) {
   static constexpr char source[] = "device";
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_SOURCE, reinterpret_cast<const uint8_t*>(source), sizeof(source) - 1);
   presetSyncAppendTextTlv(body, PRESET_SYNC_TLV_FOLDER_PATH, preset.folderPath, sizeof(preset.folderPath));
-  uint8_t schemaVersion = 3;
+  uint8_t schemaVersion = SYNTH_PRESET_SCHEMA_VERSION;
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_SYNTH_SCHEMA_VERSION, &schemaVersion, 1);
   std::vector<uint8_t> values;
   values.reserve(SYNTH_PRESET_VALUE_COUNT * 2);
@@ -8490,6 +8875,12 @@ bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlo
         }
         sawValues = true;
         break;
+      case PRESET_SYNC_TLV_SYNTH_SCHEMA_VERSION:
+        if (length >= 1 && value[0] > SYNTH_PRESET_SCHEMA_VERSION) {
+          error = "unsupported synth preset value schema";
+          return false;
+        }
+        break;
       case PRESET_SYNC_TLV_FAVORITE:
         if (length >= 1) {
           preset.favorite = value[0] ? 1 : 0;
@@ -8550,7 +8941,7 @@ void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_
   presetSyncAppendU28(response, (1u << 1) | (1u << 8));
   presetSyncAppendU28(response, PRESET_SYNC_MAX_RAW_OBJECT_BYTES);
   response.push_back(CURRENT_SETTINGS_VERSION);
-  response.push_back(3);
+  response.push_back(SYNTH_PRESET_SCHEMA_VERSION);
   response.push_back(PROFILE_COUNT);
   presetSyncAppendU14(response, SYNTH_PRESET_MAX_COUNT);
   response.push_back(0);
@@ -10289,13 +10680,19 @@ void previewModBehave(GEMPreviewCallbackData previewData) {
   modSticky = previewData.previewValByte;
 }
 
-SelectOptionByte optionBytePlayback[] = { { "Off", SYNTH_OFF }, { "Mono", SYNTH_MONO }, { "Arp'gio", SYNTH_ARPEGGIO }, { "Poly", SYNTH_POLY } };
+SelectOptionByte optionBytePlayback[] = {
+  { "Off", SYNTH_OFF },
+  { "MonoRtg", SYNTH_MONO_RETRIGGER },
+  { "MonoLeg", SYNTH_MONO_LEGATO },
+  { "Arp'gio", SYNTH_ARPEGGIO },
+  { "Poly", SYNTH_POLY }
+};
 GEMSelect selectPlayback(sizeof(optionBytePlayback) / sizeof(SelectOptionByte), optionBytePlayback);
 PersistentCallbackInfo callbackInfoPlayback = {
   static_cast<uint8_t>(SettingKey::PlaybackMode),
   reinterpret_cast<void*>(&playbackMode),
   nullptr,
-  resetSynthFreqs
+  playbackModeChanged
 };
 GEMItem menuItemPlayback("Synth Mode", playbackMode, selectPlayback, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoPlayback));
@@ -11173,6 +11570,29 @@ void previewArpSpeed(GEMPreviewCallbackData previewData) {
   updateArpeggiatorTiming();
 }
 
+SelectOptionByte optionByteArpDirection[] = {
+  { "Up", ARP_DIRECTION_UP },
+  { "Down", ARP_DIRECTION_DOWN },
+  { "Played", ARP_DIRECTION_ORDER_PLAYED },
+  { "RevPlay", ARP_DIRECTION_REVERSE_PLAYED },
+  { "UpDown", ARP_DIRECTION_UP_DOWN },
+  { "DownUp", ARP_DIRECTION_DOWN_UP },
+  { "Random", ARP_DIRECTION_RANDOM }
+};
+GEMSelect selectArpDirection(sizeof(optionByteArpDirection) / sizeof(SelectOptionByte), optionByteArpDirection);
+PersistentCallbackInfo callbackInfoArpDirection = {
+  static_cast<uint8_t>(SettingKey::ArpeggiatorDirection),
+  reinterpret_cast<void*>(&arpeggiatorDirection),
+  nullptr,
+  updateArpeggiatorDirection
+};
+GEMItem menuItemArpDirection("Arp Dir", arpeggiatorDirection, selectArpDirection, universalSaveCallback,
+                             reinterpret_cast<void*>(&callbackInfoArpDirection));
+void previewArpDirection(GEMPreviewCallbackData previewData) {
+  arpeggiatorDirection = previewData.previewValByte;
+  updateArpeggiatorDirection();
+}
+
 SelectOptionByte optionByteEnvelopeTimes[] = {
   { "0 ms", 0 },
   { "5 ms", 1 },
@@ -11208,7 +11628,15 @@ GEMSelect selectEnvelopeAttack(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOp
 GEMSelect selectEnvelopeHold(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
 GEMSelect selectEnvelopeDecay(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
 GEMSelect selectEnvelopeRelease(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
+GEMSelect selectPortamentoTime(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
 GEMSelect selectEnvelopeSustain(sizeof(optionByteSustain) / sizeof(SelectOptionByte), optionByteSustain);
+
+PersistentCallbackInfo callbackInfoPortamentoTime = {
+  static_cast<uint8_t>(SettingKey::SynthPortamentoTimeIndex),
+  reinterpret_cast<void*>(&synthPortamentoTimeIndex),
+  nullptr,
+  updateSynthPortamentoSettings
+};
 
 PersistentCallbackInfo callbackInfoEnvelopeAttack = {
   static_cast<uint8_t>(SettingKey::EnvelopeAttackIndex),
@@ -11360,6 +11788,13 @@ PersistentCallbackInfo callbackInfoEffectEnvelope2Release = {
   nullptr,
   updateEffectEnvelopeParamsFromSettings
 };
+
+GEMItem menuItemPortamentoTime("Porta", synthPortamentoTimeIndex, selectPortamentoTime, universalSaveCallback,
+                               reinterpret_cast<void*>(&callbackInfoPortamentoTime));
+void previewPortamentoTime(GEMPreviewCallbackData previewData) {
+  synthPortamentoTimeIndex = previewData.previewValByte;
+  updateSynthPortamentoSettings();
+}
 
 GEMItem menuItemEnvelopeAttack("Amp Atk", envelopeAttackIndex, selectEnvelopeAttack, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoEnvelopeAttack));
@@ -11516,6 +11951,21 @@ void previewPBSpeed(GEMPreviewCallbackData previewData) {
   pbWheelSpeed = previewData.previewValInt;
 }
 
+void updateSynthMenuVisibility() {
+  menuItemPortamentoTime.hide(!isMonoPlaybackMode(playbackMode));
+  bool arpSelected = playbackMode == SYNTH_ARPEGGIO;
+  menuItemArpSpeed.hide(!arpSelected);
+  menuItemArpDirection.hide(!arpSelected);
+}
+
+void playbackModeChanged() {
+  if (!isValidPlaybackMode(playbackMode)) {
+    playbackMode = SYNTH_POLY;
+  }
+  resetSynthFreqs();
+  updateSynthMenuVisibility();
+}
+
 // --------------------------------------------------------
 // SETTINGS STEP 3 - Callback to sync settings variables on power-up
 // --------------------------------------------------------
@@ -11567,6 +12017,9 @@ void syncSettingsToRuntime() {
   if (velWheelSpeed > 127) velWheelSpeed = 127;
 
   playbackMode = settingValue(SettingKey::PlaybackMode);
+  if (!isValidPlaybackMode(playbackMode)) {
+    playbackMode = SYNTH_POLY;
+  }
   currWave = settingValue(SettingKey::Waveform);
   synthDrive = settingValue(SettingKey::SynthDrive);
   if (synthDrive > SYNTH_DRIVE_DIRTY) {
@@ -11585,10 +12038,14 @@ void syncSettingsToRuntime() {
   if (arpeggiatorDivision == 0) {
     arpeggiatorDivision = 1;
   }
+  arpeggiatorDirection = settingValue(SettingKey::ArpeggiatorDirection);
+  updateArpeggiatorDirection();
   synthBPM = settingValue(SettingKey::SynthBPM);
   if (synthBPM == 0) {
     synthBPM = 1;
   }
+  synthPortamentoTimeIndex = settingValue(SettingKey::SynthPortamentoTimeIndex);
+  updateSynthPortamentoSettings();
   metronomeMode = settingValue(SettingKey::MetronomeMode);
   metronomeSignatureIndex = settingValue(SettingKey::MetronomeSignature);
   colorMode = settingValue(SettingKey::ColorMode);
@@ -11629,6 +12086,7 @@ void syncSettingsToRuntime() {
   updateEnvelopeParamsFromSettings();
   updateEffectEnvelopeParamsFromSettings();
   updateArpeggiatorTiming();
+  updateSynthMenuVisibility();
 
   // Now *apply* them to the engine/UI:
   refreshMenuChoicesForCurrentTuning();
@@ -11948,6 +12406,9 @@ void setupSynthMenuPage() {
   menuPageMain.addMenuItem(menuGotoSynth);
   menuPageSynth.addMenuItem(menuItemPlayback);
   // menuItemAudioD added here for hardware V1.2
+  addPreviewMenuItem(menuPageSynth, menuItemArpSpeed, previewArpSpeed);
+  addPreviewMenuItem(menuPageSynth, menuItemArpDirection, previewArpDirection);
+  addPreviewMenuItem(menuPageSynth, menuItemPortamentoTime, previewPortamentoTime);
   addPreviewMenuItem(menuPageSynth, menuItemWaveform, previewWaveform);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
   addPreviewMenuItem(menuPageSynth, menuItemSynthModTarget, previewSynthModTarget);
@@ -11974,13 +12435,13 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Decay, previewEffectEnvelope2Decay);
   addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Sustain, previewEffectEnvelope2Sustain);
   addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Release, previewEffectEnvelope2Release);
-  addPreviewMenuItem(menuPageSynth, menuItemArpSpeed, previewArpSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemSynthBPM, previewSynthBPM);
   addPreviewMenuItem(menuPageSynth, menuItemMetronomeMode, previewMetronomeMode);
   addPreviewMenuItem(menuPageSynth, menuItemMetronomeSignature, previewMetronomeSignature);
   menuPageSynth.addMenuItem(menuGotoSynthPresetSave);
   menuPageSynth.addMenuItem(menuGotoSynthPresetLoad);
   createSynthPresetMenuItems();
+  updateSynthMenuVisibility();
 }
 
 void setupMidiMenuPage() {
@@ -12116,7 +12577,7 @@ constexpr byte ROT_PIN_A = 20;
 constexpr byte ROT_PIN_B = 21;
 constexpr byte ROT_PIN_C = 24;
 byte rotaryState = 0;
-const byte rotaryStateTable[8][4] = {
+byte rotaryStateTable[8][4] = {
   { 0, 5, 1, 0 }, { 2, 0, 1, 0 }, { 2, 3, 1, 0 }, { 2, 3, 0, 8 }, { 0, 5, 1, 0 }, { 6, 5, 0, 0 }, { 6, 5, 7, 0 }, { 6, 0, 7, 16 }
 };
 byte storeRotaryTurn = 0;

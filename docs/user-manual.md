@@ -6,7 +6,7 @@ HexBoard is a 140-button hexagonal MIDI controller and instrument. It can act as
 
 - A USB and serial MIDI controller
 - A microtonal and isomorphic keyboard
-- A standalone synth with mono, polyphonic, and arpeggiated playback
+- A standalone synth with mono retrigger, mono legato, polyphonic, and arpeggiated playback
 - A visual performance surface with per-key LEDs, animations, scales, and color modes
 
 This manual focuses on playing and configuring HexBoard.
@@ -160,7 +160,10 @@ This page controls the onboard synth.
 
 Options include:
 
-- `Synth Mode`: `Off`, `Mono`, `Arp'gio`, `Poly`
+- `Synth Mode`: `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, `Poly`
+- `Arp Speed` when `Arp'gio` is selected
+- `Arp Dir` when `Arp'gio` is selected
+- `Porta` when a mono mode is selected
 - `Waveform`
 - `Drive`
 - `Wheel FX`
@@ -173,7 +176,6 @@ Options include:
 - `Amp Rel`
 - `FX Env 1`
 - `FX Env 2`
-- `Arp Speed`
 - `Tempo`
 - `Metronome`
 - `Time Sig`
@@ -199,9 +201,20 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 `Synth Mode` chooses how notes are played:
 
 - `Off`: no onboard synth sound
-- `Mono`: one note at a time, useful for lead lines
+- `MonoRtg`: one note at a time, restarting the amp envelope when the active note changes
+- `MonoLeg`: one note at a time, sliding to newly held notes without restarting the amp envelope while another note is still held
 - `Arp'gio`: cycles through held notes rhythmically
 - `Poly`: plays chords, up to `8` notes at a time - a bit quieter due to headroom needed
+
+`Porta` appears for the two mono modes. It sets the pitch-glide time from
+`0 ms` through `4 s`. With `MonoRtg`, the envelope restarts but the pitch can
+still glide. With `MonoLeg`, held note changes keep the envelope running and
+use the selected glide time.
+
+`Arp Speed` and `Arp Dir` appear for `Arp'gio`. The arpeggiator sorts by the
+actual assigned note/frequency for `Up`, `Down`, `UpDown`, and `DownUp`; it can
+also follow `Played`, `RevPlay`, or `Random` order. `Played` means the order in
+which held notes were pressed, not the physical button numbers.
 
 `Waveform` is the basic tone color before the volume shape is applied:
 
@@ -295,11 +308,11 @@ Use these as starting points, then adjust by ear.
 
 | Sound | Synth Mode | Waveform | Attack | Hold | Decay | Sustain | Release | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Plucky | `Poly` or `Mono` | `Hybrid`, `Triangl`, or `Sine` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` or `10%` | `50 ms` to `200 ms` | Fast start, quick fade, little held level |
+| Plucky | `Poly` or `MonoRtg` | `Hybrid`, `Triangl`, or `Sine` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` or `10%` | `50 ms` to `200 ms` | Fast start, quick fade, little held level |
 | Smooth pad | `Poly` | `Sine`, `Triangl`, or `Strings` | `200 ms` to `1 s` | `0 ms` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
-| Lead | `Mono` | `Hybrid`, `Saw`, or `Square` | `0 ms` or `10 ms` | `0 ms` to `50 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Immediate and steady for melodies |
+| Lead | `MonoRtg` or `MonoLeg` | `Hybrid`, `Saw`, or `Square` | `0 ms` or `10 ms` | `0 ms` to `50 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Use `Porta` for glide or keep it at `0 ms` for immediate melodies |
 | Chime or bell | `Poly` | `Sine` or `Triangl` | `0 ms` or `5 ms` | `0 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
-| Arpeggio | `Arp'gio` | `Hybrid`, `Square`, or `Saw` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed` and `Tempo` for rhythm |
+| Arpeggio | `Arp'gio` | `Hybrid`, `Square`, or `Saw` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed`, `Arp Dir`, and `Tempo` for rhythm |
 
 For a sharper sound, use a brighter waveform such as `Saw`, `Square`, or
 `Hybrid`, and keep `Attack` short. For a smoother sound, use `Sine`,
@@ -379,7 +392,8 @@ model, but firmware does not apply user layout bundles yet.
 
 The synth preset editor organizes presets by folder only. It includes preset
 name and folder selection, a new-folder control, Drive and AHDSR sliders, FX
-envelope AHDSR controls, and other main synth parameter controls. The synth
+envelope AHDSR controls, mono portamento, arpeggiator direction/speed/tempo,
+and other main synth parameter controls. The synth
 library has a `Computer Library` for browser-saved/imported preset files and a
 `HexBoard Library` loaded from the connected device through SysEx. Presets can
 be opened, erased, exported as JSON files, imported from JSON files, uploaded to
@@ -520,7 +534,7 @@ Important factory defaults include:
 - Scale: chromatic / none
 - MIDI channel: `1`
 - MPE mode: `Auto`
-- Synth: `Off`
+- Synth: `Poly`
 - Waveform: `Hybrid`
 - Drive: `Off`
 - Wheel FX: `Tone`

@@ -78,12 +78,13 @@ and `TRANSFER_END` so firmware can pace object transfers.
 - TLV object encoding for user tunings, layouts, scale color maps, explicit
   button maps, and named/foldered synth presets.
 - A synth preset editor with name and folder selection, folder creation, main
-  synth parameter controls, Drive/AHDSR sliders, apply-only live sends, and an
-  explicit save sync action over the active MIDI transport. Opened presets are
-  temporary editor drafts; saving creates a new folder/name when unique and asks
-  before overwriting an existing folder/name. Saves to real devices wait for
-  ACK/NACK responses through the flash commit before the app refreshes device
-  storage.
+  synth parameter controls, mono retrigger/legato, mono portamento,
+  arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,
+  and an explicit save sync action over the active MIDI transport. Opened
+  presets are temporary editor drafts; saving creates a new folder/name when
+  unique and asks before overwriting an existing folder/name. Saves to real
+  devices wait for ACK/NACK responses through the flash commit before the app
+  refreshes device storage.
 - Synth preset library areas named `Computer Library` for browser-saved/imported
   presets and `HexBoard Library` for device-side presets loaded through SysEx,
   including drag-and-drop folder moves, upload/download actions, device refresh,

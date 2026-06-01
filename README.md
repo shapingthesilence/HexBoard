@@ -5,7 +5,7 @@ HexBoard is a hexagonal MIDI controller and instrument built around the RP2040. 
 - a `140`-button illuminated hex grid
 - USB and serial MIDI output
 - microtonal and isomorphic layouts
-- an onboard synth with mono, polyphonic, and arpeggiated playback
+- an onboard synth with mono retrigger, mono legato, polyphonic, and arpeggiated playback
 - an OLED menu system for tuning, layout, color, MIDI, synth, and profile management
 
 
@@ -45,7 +45,7 @@ The current code supports:
 - an optional OLED note overlay that shows currently played notes
 - standard MIDI, extended multi-channel MIDI mapping, and MPE behavior
 - dynamic just intonation and BPM-linked retuning options
-- onboard synth waveform banks, AHDSR envelope, modulation, preset, and arpeggiator settings
+- onboard synth waveform banks, mono portamento, AHDSR envelope, modulation, preset, and arpeggiator settings
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
 
@@ -152,8 +152,9 @@ The web app currently includes:
   layouts, four-step device orientation preview matching firmware `Device Rot`,
   scale-degree colors, and per-button role/color overrides
 - firmware-backed synth preset upload, download, list, erase, current-patch
-  loading, and live preview, with opened presets treated as temporary drafts and
-  ACK-confirmed flash saves for real devices
+  loading, and live preview, with controls for mono retrigger/legato,
+  portamento, and arpeggiator direction; opened presets are treated as temporary
+  drafts and real-device flash saves are ACK-confirmed
 - a compact header device menu that uses preset-sync `HELLO_RESP` to discover a
   compatible HexBoard and only shows a device selector when multiple HexBoards
   respond

@@ -90,8 +90,10 @@ a device selector when multiple compatible HexBoards respond. Real-device synth
 preset saves use an ACKed write path through `WRITE_COMMIT`; live preview
 remains a fast apply-only write path. The synth editor reads the current runtime
 synth patch from handle `0x3FFF` before enabling live sends, and preset
-open sends an apply-only preview immediately for auditioning. The editor keeps
-opened presets as temporary drafts; save actions assign a fresh object id for a
+open sends an apply-only preview immediately for auditioning. The editor mirrors
+firmware synth-mode, portamento, arpeggiator speed/direction, and tempo controls
+for synth preset schema `4`. The editor keeps opened presets as temporary drafts;
+save actions assign a fresh object id for a
 unique folder/name and only reuse an existing object id after the user confirms
 an overwrite for that same folder/name. HexBoard Library refresh uses object-list
 metadata as a fallback so device presets still appear if a full object body read
@@ -356,24 +358,27 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `12`
+- `CURRENT_SETTINGS_VERSION` is currently `13`
 - the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
+- `PlaybackMode` defaults to `Poly`; valid values are `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, and `Poly`; legacy stored mono value `1` now means `MonoRtg`
 - onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `Tone` and `100%`; valid runtime targets are `Tone`, `Vibrato`, and `Pitch`; pitch target depth maps the signed `-127..127` runtime amount across about `+/-48` semitones without changing the persisted byte layout
 - onboard synth vibrato speed is stored as `SynthVibratoSpeed`; selectable values are `1 Hz` through `12 Hz`, with factory default `6 Hz`
+- mono portamento is stored as `SynthPortamentoTimeIndex`; it reuses the `0 ms` through `4 s` envelope time table and the menu hides `Porta` outside the two mono modes
+- arpeggiator direction is stored as `ArpeggiatorDirection`; the menu hides `Arp Dir` outside `Arp'gio`; note-sorted directions compare assigned note/frequency rather than physical button number
 - `SynthAttackEffect` is a deprecated hidden byte kept only so version `8` files can migrate by prefix copy
 - `DeviceRotation` stores the four-step OLED/device orientation used by the Layout menu's `Device Rot` item; it replaces the old behavior where `layoutDef.isPortrait` selected display rotation when a layout changed
 - metronome mode and time signature are stored as `MetronomeMode` and `MetronomeSignature`; factory defaults are `Off` and `4/4`
 - the amp envelope has `EnvelopeAttackIndex`, `EnvelopeHoldIndex`, `EnvelopeDecayIndex`, `EnvelopeSustainLevel`, and `EnvelopeReleaseIndex`
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
-- synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `6`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters only and do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, and version `5` fixed named/foldered arrays migrate into the counted version `6` catalog
+- synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `7`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters only and do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, and version `6` records migrate by appending portamento and arpeggiator direction defaults
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio ISR applies it only to the jack sample before writing the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
-- version `2` through `11` settings files are migrated in place to version `12` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, and remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
+- version `2` through `12` settings files are migrated in place to version `13` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, and remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
@@ -381,7 +386,7 @@ Important implementation details:
   jack-default `Buzzer` toggle; legacy stored values are interpreted by
   checking whether the older byte had the piezo bit set
 
-If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `11` because settings were appended to the schema and some setting tables expanded. Unknown version mismatches still fall back to defaults.
+If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `12` because settings were appended to the schema and some setting tables expanded. Unknown version mismatches still fall back to defaults.
 
 ## MIDI And Tuning Notes
 
@@ -433,6 +438,8 @@ When changing synth-related behavior, review:
 - waveform selection
 - envelope parameter update path
 - arpeggiator timing update path
+- arpeggiator held-note ordering and direction handling
+- mono retrigger/legato and portamento behavior
 - flash-save muting behavior
 
 The synth PWM defaults to `10` bits as a compromise between quantization noise

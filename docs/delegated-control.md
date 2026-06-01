@@ -30,7 +30,7 @@ When `delegatedControl` is `true`:
 
 - `readHexes()` sends raw button press/release events instead of command buttons, MIDI notes, or synth notes.
 - `lightUpLEDs()` displays `delegatedColors[]` directly instead of computed palette, wheel, scale, or animation colors, except while the local Advanced-menu `LED Test` selector is actively previewing a solid diagnostic color.
-- `arpeggiate()` returns early.
+- `arpeggiate()` returns early, so the mono/arpeggiator held-note sequencer is not advanced while a host owns the surface.
 - `updateWheels()` returns early.
 - `animateLEDs()` returns early.
 - `processIncomingMIDI()` returns early on core 0.

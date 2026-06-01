@@ -424,7 +424,8 @@ Current animation modes include button, star, splash, orbit, octave, by-note, be
 The onboard synth is independent from MIDI output. Playback modes are:
 
 - `Off`
-- `Mono`
+- `MonoRtg`
+- `MonoLeg`
 - `Arp'gio`
 - `Poly`
 
@@ -444,6 +445,12 @@ Key implementation facts:
 - Held notes use target oscillator increments that the audio ISR slews toward,
   so pitch-bend wheel updates do not reset phase or jump instantly in the
   onboard synth.
+- `MonoRtg` restarts the amp envelope when the active mono note changes;
+  `MonoLeg` keeps the envelope running while another note is still held.
+  `SynthPortamentoTimeIndex` reuses the envelope time table for mono pitch glide.
+- `Arp'gio` keeps its own held-note order and builds note sequences from assigned
+  note/frequency data for pitch-sorted directions, so `Up` and `Down` follow the
+  sounded notes rather than physical button indices.
 - `WAVEFORM_SINE` linearly interpolates between adjacent wavetable entries
   using the low `8` bits of phase. `STRINGS`, `CLARINET`, and the imported MP
   single-cycle waveforms still use direct table lookup.
@@ -480,7 +487,7 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `12`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `13`, and `PROFILE_COUNT` is `9`.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the hardware-specific calibrated table above.
 
@@ -497,9 +504,9 @@ The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnv
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
-Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `6`, CRC32, and a counted catalog capped at `128` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app live preview applies a transferred synth preset to runtime without marking settings dirty, while save requests update `/synth_presets.dat`. The on-device save/load menus are rebuilt from the catalog as folder submenus; preset items inside those folders display only the preset name. Folder path separators are still `/`, but the firmware decodes `%2F`, `%5C`, and `%25` in menu labels so web-app folder names can contain literal slash, backslash, or percent characters. Rebuilds are requested from save/delete paths and serviced from the main loop after GEM input handling, with owned menu items removed from their parent pages before deletion. The load menu has a `Blank` item. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, and version `5` fixed named/foldered arrays migrate into the counted version `6` catalog before being rewritten.
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `7`, CRC32, and a counted catalog capped at `128` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app live preview applies a transferred synth preset to runtime without marking settings dirty, while save requests update `/synth_presets.dat`. The on-device save/load menus are rebuilt from the catalog as folder submenus; preset items inside those folders display only the preset name. Folder path separators are still `/`, but the firmware decodes `%2F`, `%5C`, and `%25` in menu labels so web-app folder names can contain literal slash, backslash, or percent characters. Rebuilds are requested from save/delete paths and serviced from the main loop after GEM input handling, with owned menu items removed from their parent pages before deletion. The load menu has a `Blank` item. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, and version `6` records migrate by appending `SynthPortamentoTimeIndex` and `ArpeggiatorDirection` defaults before being rewritten.
 
-The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator, runs its beat scheduler on core 0, and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
+The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator; `ArpeggiatorDivision` sets rhythmic subdivision and `ArpeggiatorDirection` selects `Up`, `Down`, `Played`, `RevPlay`, `UpDown`, `DownUp`, or `Random`. The metronome runs its beat scheduler on core 0 and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 
 The Advanced-menu boot animation toggle is persisted as `BootAnimationEnabled`. It defaults on and skips `runBootLedSelfCheck()` when off.
 
@@ -518,7 +525,7 @@ Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` through `11` files migrate to version `12` by copying the older per-profile prefix, appending newer settings with factory defaults, remapping legacy envelope time indices when needed, and remapping legacy vibrato speed indices; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
+- version `2` through `12` files migrate to version `13` by copying the older per-profile prefix, appending newer settings with factory defaults, remapping legacy envelope time indices when needed, and remapping legacy vibrato speed indices; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults
@@ -595,7 +602,7 @@ Run or manually verify the areas your change touches:
 - profile save/load and auto-save
 - normal MIDI note on/off
 - MPE mode and configured MPE channel range
-- synth off, mono, arpeggio, and poly modes
+- synth off, mono retrigger, mono legato, arpeggio, portamento, and poly modes
 - command-button wheels
 - rotary panic stop
 - color modes, including `Tiered` and `Diatonic`

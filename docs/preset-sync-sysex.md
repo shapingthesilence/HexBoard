@@ -334,11 +334,11 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 
 Example response, transaction `1`, max packed chunk `128`, capabilities `0x202`
 (synth preset read/write plus delete), max raw object bytes `2048`, settings
-schema `11`, synth preset schema `3`, `9` profiles, `128` synth preset entries,
+schema `13`, synth preset schema `4`, `9` profiles, `128` synth preset entries,
 no user tuning/layout/scale/color/map slots yet, hardware version `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 04 02 00 00 10 00 0B 03 09 01 00 00 00 00 00 00 02 F7
+F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 04 02 00 00 10 00 0D 04 09 01 00 00 00 00 00 00 02 F7
 ```
 
 ## Object Addressing
@@ -856,8 +856,10 @@ as synth-only objects, separate from tuning/layout/profile objects.
 Synth presets are named and organized by folder path. Current firmware stores a
 counted catalog capped at `128` entries instead of a fixed slot array. The old
 fixed `20` slots in version `4` firmware and the fixed named/foldered version
-`5` file migrate into the version `6` counted catalog. Version `4` entries
-migrate into the root folder `/` with their current slot names intact:
+`5` file migrate into the version `6` counted catalog; version `6` records are
+rewritten as version `7` with appended portamento and arpeggiator-direction
+defaults. Version `4` entries migrate into the root folder `/` with their
+current slot names intact:
 
 ```text
 Slot 1
@@ -874,7 +876,7 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SynthPresetSchemaVersion` | `u8`, current firmware is `3` |
+| `0x20` | `SynthPresetSchemaVersion` | `u8`, current firmware is `4` |
 | `0x21` | `SynthValues` | Repeated `<synth-key-u8> <value-u8>` records |
 | `0x22` | Reserved | Category was considered, but v1 organization is folder-only |
 | `0x23` | `Favorite` | `u8 bool` |
@@ -910,11 +912,18 @@ EffectEnvelope2HoldIndex
 EffectEnvelope2DecayIndex
 EffectEnvelope2SustainLevel
 EffectEnvelope2ReleaseIndex
+SynthPortamentoTimeIndex
+ArpeggiatorDirection
 ```
 
 These are sound-focused settings only. A synth preset should not imply the
 current profile slot, tuning, layout, MIDI channel, LED animation, or delegated
 control state.
+
+Schema `4` appends mono portamento and arpeggiator direction to the schema `3`
+value set. Firmware migrates stored `/synth_presets.dat` version `6` records by
+keeping their existing value bytes and appending the factory defaults for these
+two keys.
 
 The common `Name` and `FolderPath` TLVs are required for named/foldered synth
 presets. Duplicate names are allowed in different folders. Within the same
