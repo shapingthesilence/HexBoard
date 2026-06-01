@@ -629,7 +629,6 @@ export function TuningLayoutEditor() {
               ))}
             </div>
           </div>
-          <pre className="dataPreview">{encodedPreview}</pre>
         </main>
 
         <aside className="panel stack selectedKeyPanel">
@@ -687,6 +686,11 @@ export function TuningLayoutEditor() {
           )}
         </aside>
       </div>
+
+      <section className="panel stack protocolDebugPanel">
+        <h2>Object Debug</h2>
+        <pre className="dataPreview">{encodedPreview}</pre>
+      </section>
     </section>
   );
 }

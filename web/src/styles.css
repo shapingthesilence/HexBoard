@@ -334,6 +334,10 @@ select {
   min-width: 0;
 }
 
+.protocolDebugPanel {
+  grid-column: 1 / -1;
+}
+
 .hexBoardScroll {
   display: grid;
   place-items: center;

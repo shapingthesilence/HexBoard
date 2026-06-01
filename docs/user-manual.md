@@ -354,7 +354,8 @@ Each bundle contains a tuning, an across/up-right vector layout, a scale-degree
 color palette, and optional per-button overrides. The center key can be chosen
 from the visual board or typed by button index. The editor places bundle tools
 in a compact left sidebar and keeps the larger HexBoard preview plus selected-key
-inspector on the right, with the selected-key inspector below the board. The rotation control is a
+inspector on the right, with the selected-key inspector below the board. The
+encoded-object debug readout sits at the bottom of the editor page. The rotation control is a
 four-step device orientation preview: `0`, `90`, `180`, or `270` degrees. It is
 intended to line up with the firmware `Device Rot` setting, not to rotate the
 musical axes around individual hexagons. Focusing the center, across, or
