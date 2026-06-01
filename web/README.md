@@ -28,6 +28,38 @@ Run tests:
 npm test
 ```
 
+Build for the repository's main GitHub Pages project URL:
+
+```sh
+npm run build -- --mode github-pages-main
+```
+
+Build for the development GitHub Pages URL:
+
+```sh
+npm run build -- --mode github-pages-development
+```
+
+The main GitHub Pages build uses `/HexBoard/` as the Vite base path, and the
+development build uses `/HexBoard/development/`. Local development and ordinary
+local builds still use `/`.
+
+## GitHub Pages
+
+The root workflow `.github/workflows/pages.yml` deploys this app to GitHub
+Pages. It runs on pushes to `main` and `development`, and it can also be started
+manually from the GitHub `Actions` tab. Each deployment fetches both branches,
+publishes `main` at the project root, and publishes `development` under
+`/development/`.
+
+Before the first deployment, set the repository's Pages source to GitHub
+Actions in `Settings` -> `Pages`. The deployed project-page URL should be:
+
+```text
+https://<your-github-username>.github.io/HexBoard/
+https://<your-github-username>.github.io/HexBoard/development/
+```
+
 Web MIDI SysEx requires a browser that supports Web MIDI, usually Chrome or
 Edge, and a secure context such as `localhost` or HTTPS.
 Choose both the HexBoard output and input ports on the Device page. Live

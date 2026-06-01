@@ -11,6 +11,7 @@ For a longer historical deep dive, see `docs/code-analysis.md`, but treat this g
 - `AGENTS.md`: repo-level AI agent instructions. Future AI agent work should treat documentation updates as part of every behavior, setting, protocol, menu, build, hardware, or architecture change.
 - `src/HexBoard.ino`: primary firmware source and the file you should edit
 - `web/`: isolated Vite/React companion app for preset-sync workflows
+- `.github/workflows/pages.yml`: GitHub Actions deployment for the static web app on GitHub Pages
 - `Makefile`: local build shortcut that stages `src/HexBoard.ino` into generated build output and compiles it
 - `docs/code-analysis.md`: older, broader analysis document
 - `docs/delegated-control.md`: external delegated-control protocol and implementation notes
@@ -114,6 +115,15 @@ Current web source layout:
 - `web/src/midi/`: Web MIDI access, preset-sync client helpers, and mock transport
 - `web/src/views/`: compact device connection, profile sync, tuning/layout
   editing, and synth preset organization
+
+The web app is deployed as a static GitHub Pages project page through
+`.github/workflows/pages.yml`. The workflow runs from `web/`, uses `npm ci`,
+executes `npm test`, and builds both `main` and `development` into one Pages
+artifact so branch deploys do not overwrite each other. `main` is published at
+`/HexBoard/`, while `development` is published at `/HexBoard/development/`.
+The Vite modes `github-pages-main` and `github-pages-development` set those
+asset base paths; local development and ordinary local builds keep the root `/`
+base path.
 
 ## High-Level Architecture
 

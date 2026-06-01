@@ -173,10 +173,57 @@ Run the web tests from the same directory:
 npm test
 ```
 
+Build the static app locally with the same base path used by the main GitHub
+Pages page:
+
+```sh
+npm run build -- --mode github-pages-main
+```
+
+Build the development page variant locally with:
+
+```sh
+npm run build -- --mode github-pages-development
+```
+
 Web MIDI SysEx requires a browser with Web MIDI support, usually Chrome or Edge,
 and a secure context such as `localhost` or HTTPS. Use `Connect HexBoard` in the
 top bar; the app probes available MIDI input/output pairs and connects
 automatically when exactly one compatible HexBoard responds.
+
+### GitHub Pages Deployment
+
+This repository includes a GitHub Actions workflow at
+`.github/workflows/pages.yml`. On pushes to `main` or `development`, or when run
+manually, it builds both branches into one Pages artifact so branch deploys do
+not overwrite each other. The `main` branch is published at the project-page
+root, and the `development` branch is published under `/development/`.
+
+To enable hosting in GitHub:
+
+1. Push this workflow to GitHub.
+2. Open the repository on GitHub.
+3. Go to `Settings` -> `Pages`.
+4. Set `Build and deployment` -> `Source` to `GitHub Actions`.
+5. Push to `main` or `development`, or run `Deploy Web App to GitHub Pages`
+   from the repository's `Actions` tab. The workflow fetches both branches and
+   rebuilds both pages on every deploy.
+
+The default main page URL should be:
+
+```text
+https://<your-github-username>.github.io/HexBoard/
+```
+
+The development page URL should be:
+
+```text
+https://<your-github-username>.github.io/HexBoard/development/
+```
+
+If the GitHub repository is renamed, update the `base` value for
+the GitHub Pages modes in `web/vite.config.ts` and the workflow `--base` values
+to match the new project-page path.
 
 ### Build Notes
 
