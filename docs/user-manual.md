@@ -462,7 +462,7 @@ How it behaves:
 
 This page contains maintenance and system settings:
 
-- Firmware version
+- `Firmware 1.4 alpha` version label
 - Hardware revision
 - `Invert Encoder`
 - `ColorByKey`

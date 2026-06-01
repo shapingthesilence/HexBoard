@@ -561,6 +561,7 @@ Current top-level user pages are:
 - `Load`
 - `Advanced`
 
+The Advanced page includes a read-only `Firmware 1.4 alpha` version label.
 The `Buzzer` toggle is inserted only on hardware `V1.2`.
 
 ## Input Interface And Panic Behavior
