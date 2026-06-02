@@ -430,10 +430,12 @@ The onboard synth is independent from MIDI output. Playback modes are:
 - `MonoLeg`
 - `Arp'gio`
 - `Poly`
+- `PolyTbl`
 
 Key implementation facts:
 
-- `POLYPHONY_LIMIT` is `8`.
+- `POLYPHONY_LIMIT` is `8`; `PolyTbl` uses the same compiled voice arrays and
+  currently queues the full `8` voices through `POLYTBL_POLYPHONY_LIMIT`.
 - `PWM_BITS` defaults to `10`.
 - `8`, `9`, and `10` bit PWM builds are supported. `9`-bit mode is available
   as a midpoint between `8`-bit quantization noise and `10`-bit carrier
@@ -453,9 +455,17 @@ Key implementation facts:
 - `Arp'gio` keeps its own held-note order and builds note sequences from assigned
   note/frequency data for pitch-sorted directions, so `Up` and `Down` follow the
   sounded notes rather than physical button indices.
-- `WAVEFORM_SINE` linearly interpolates between adjacent wavetable entries
-  using the low `8` bits of phase. `STRINGS`, `CLARINET`, and the imported MP
-  single-cycle waveforms still use direct table lookup.
+- `WAVEFORM_SINE` linearly interpolates between adjacent entries using the low
+  `8` bits of phase. `STRINGS`, `CLARINET`, and the imported MP single-cycle
+  waveforms use direct lookup from frame `0` of the active RAM wave table.
+- Only the selected table-backed static waveform or selected wavetable is loaded
+  into `activeSynthWaveTable`. The source cycles live outside the hot ISR data
+  path; the small vibrato sine table remains RAM-resident because the ISR reads
+  it directly.
+- `WAVEFORM_BASIC_WAVETABLE` builds a `32`-frame RAM wavetable from generated
+  sine, triangle, saw, and square anchors. `PolyTbl` uses `Tone` as frame
+  position and linearly interpolates adjacent frames; the first implementation
+  does not interpolate phase within each frame.
 - All onboard waveforms now use the same phase convention: phase zero starts at
   an upward zero crossing. Byte tables are centered around value `128` and
   rotated to that crossing; generated saw, triangle, square, and hybrid shapes
@@ -498,9 +508,10 @@ The LED current-limit calibration changed without a settings-version bump becaus
 The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
 
 The `Waveform` setting remains one persisted byte. The imported MP single-cycle
-waveforms extended the valid value range without changing the settings layout.
+waveforms and `BasicTb` wavetable extended the valid value range without
+changing the settings layout.
 
-The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `Tone` remains the default wheel effect: it uses a wider pulse-width sweep for `Square`, a pronounced RAM-resident value curve for `Saw` that keeps the saw reset point fixed, and a stronger cheap RAM-resident phase warp for the other waveforms. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount through RAM-tagged fixed Q16 ratio tables so full positive depth raises each active voice by about `+48` semitones and full negative depth lowers it by about `-48` semitones.
+The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `Tone` remains the default wheel effect: it uses a wider pulse-width sweep for `Square`, a pronounced RAM-resident value curve for `Saw` that keeps the saw reset point fixed, a stronger cheap RAM-resident phase warp for other static waveforms, and wavetable frame scanning in `PolyTbl`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount through RAM-tagged fixed Q16 ratio tables so full positive depth raises each active voice by about `+48` semitones and full negative depth lowers it by about `-48` semitones.
 
 The amp and FX envelopes are AHDSRs. The amp envelope adds `EnvelopeHoldIndex`; FX Env 1 adds `EffectEnvelopeHoldIndex`; FX Env 2 adds `EffectEnvelope2HoldIndex`. Hold runs between attack and decay at full envelope level. Envelope time settings use a `20`-entry table from `0 ms` through `4 s`; the runtime keeps 7 fractional level bits internally but converts to 16-bit audible level for mixing. Release tables intentionally use coarser 256-bucket timing so the `4 s` option remains available without the larger 1024-entry 32-bit tables. Version `9` and older files remap their old `10`-entry table indices during settings migration.
 

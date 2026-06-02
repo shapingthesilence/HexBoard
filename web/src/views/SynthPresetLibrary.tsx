@@ -151,7 +151,8 @@ const playbackOptions = [
   { label: "MonoRtg", value: 1 },
   { label: "MonoLeg", value: 4 },
   { label: "Arp'gio", value: 2 },
-  { label: "Poly", value: 3 }
+  { label: "Poly", value: 3 },
+  { label: "PolyTbl", value: 5 }
 ];
 
 const arpDivisionOptions = [
@@ -199,7 +200,8 @@ const waveformOptions = [
   { label: "Stardew", value: 23 },
   { label: "Sync The Titanic", value: 24 },
   { label: "Weird Wizard", value: 25 },
-  { label: "Woo", value: 26 }
+  { label: "Woo", value: 26 },
+  { label: "Basic Wavetable", value: 27 }
 ];
 
 const driveOptions = [
@@ -239,8 +241,8 @@ const envelopeTimeOptions = [
 ].map((label, value) => ({ label, value }));
 
 const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]> = {
-  PlaybackMode: [0, 4],
-  Waveform: [0, 26],
+  PlaybackMode: [0, 5],
+  Waveform: [0, 27],
   SynthDrive: [0, 3],
   SynthModTarget: [0, 2],
   SynthModAmount: [0, 127],

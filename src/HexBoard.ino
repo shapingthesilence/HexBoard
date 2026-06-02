@@ -122,6 +122,9 @@ void updateArpeggiatorTiming();
 void updateArpeggiatorDirection();
 void updateSynthPortamentoSettings();
 void updateSynthMenuVisibility();
+void initializeSynthWaveTables();
+void loadSelectedSynthWaveform();
+void synthWaveformChanged();
 void playbackModeChanged();
 void updateMetronomeTiming();
 void metronomeModeChanged();
@@ -350,6 +353,7 @@ constexpr byte SYNTH_MONO_RETRIGGER = 1;
 constexpr byte SYNTH_ARPEGGIO = 2;
 constexpr byte SYNTH_POLY = 3;
 constexpr byte SYNTH_MONO_LEGATO = 4;
+constexpr byte SYNTH_POLYTBL = 5;
 constexpr byte SYNTH_MONO = SYNTH_MONO_RETRIGGER;  // Legacy stored mono value.
 byte playbackMode = SYNTH_POLY;
 
@@ -360,8 +364,12 @@ inline bool RAM_FUNC(isMonoPlaybackMode)(byte mode) {
   return mode == SYNTH_MONO_RETRIGGER || mode == SYNTH_MONO_LEGATO;
 }
 
+inline bool RAM_FUNC(isPolyPlaybackMode)(byte mode) {
+  return mode == SYNTH_POLY || mode == SYNTH_POLYTBL;
+}
+
 inline bool RAM_FUNC(isValidPlaybackMode)(byte mode) {
-  return mode == SYNTH_OFF || isMonoPlaybackMode(mode) || mode == SYNTH_ARPEGGIO || mode == SYNTH_POLY;
+  return mode == SYNTH_OFF || isMonoPlaybackMode(mode) || mode == SYNTH_ARPEGGIO || isPolyPlaybackMode(mode);
 }
 
 constexpr byte WAVEFORM_SINE = 0;
@@ -387,6 +395,7 @@ constexpr byte WAVEFORM_MP_STARDEW = 23;
 constexpr byte WAVEFORM_MP_SYNC_THE_TITANIC = 24;
 constexpr byte WAVEFORM_MP_WEIRD_WIZARD = 25;
 constexpr byte WAVEFORM_MP_WOO = 26;
+constexpr byte WAVEFORM_BASIC_WAVETABLE = 27;
 byte currWave = WAVEFORM_HYBRID;
 
 constexpr byte SYNTH_DRIVE_OFF = 0;
@@ -3951,6 +3960,24 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
     polyphonic expression mode).
   */
 #define POLYPHONY_LIMIT 8
+constexpr uint8_t POLYTBL_POLYPHONY_LIMIT = 8;
+
+inline uint8_t RAM_FUNC(synthPlaybackVoiceLimit)(byte mode) {
+  if (mode == SYNTH_POLYTBL) {
+    return POLYTBL_POLYPHONY_LIMIT;
+  }
+  if (mode == SYNTH_POLY) {
+    return POLYPHONY_LIMIT;
+  }
+  if (mode == SYNTH_OFF) {
+    return 0;
+  }
+  return 1;
+}
+
+inline uint8_t RAM_FUNC(currentSynthVoiceLimit)() {
+  return synthPlaybackVoiceLimit(playbackMode);
+}
 
 void resetMidiInputParser(MidiInputParser& parser) {
   parser.inSysEx = false;
@@ -4146,7 +4173,7 @@ inline int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
     no wave movement. Phase zero should start at
     an upward zero crossing.
   */
-byte sine[] = {
+const byte waveSineSource[] __in_flash("synth_waveforms") = {
   128, 134, 137, 140, 143, 146, 149, 152, 156, 159, 162, 165, 168, 171, 174, 176,
   179, 182, 185, 188, 191, 193, 196, 199, 201, 204, 206, 209, 211, 213, 216, 218,
   220, 222, 224, 226, 228, 230, 232, 234, 236, 237, 239, 240, 242, 243, 245, 246,
@@ -4164,7 +4191,7 @@ byte sine[] = {
   39, 42, 44, 46, 49, 51, 54, 56, 59, 62, 64, 67, 70, 73, 76, 79,
   81, 84, 87, 90, 93, 96, 99, 103, 106, 109, 112, 115, 118, 121, 124, 127
 };
-byte strings[] = {
+const byte waveStringsSource[] __in_flash("synth_waveforms") = {
   128, 131, 132, 134, 135, 136, 138, 139, 140, 141, 142, 144, 145, 146, 147, 148,
   149, 150, 151, 152, 152, 153, 154, 154, 155, 155, 155, 155, 154, 154, 152, 151,
   149, 146, 144, 140, 137, 133, 129, 125, 120, 115, 111, 106, 102, 98, 95, 92,
@@ -4182,7 +4209,7 @@ byte strings[] = {
   103, 101, 101, 100, 100, 100, 100, 101, 101, 102, 103, 103, 104, 105, 106, 107,
   108, 109, 110, 111, 113, 114, 115, 116, 117, 119, 120, 121, 123, 124, 126, 127
 };
-byte clarinet[] = {
+const byte waveClarinetSource[] __in_flash("synth_waveforms") = {
   128, 129, 128, 127, 126, 123, 121, 118, 116, 114, 112, 110, 109, 109, 109, 110,
   111, 112, 113, 114, 114, 114, 113, 111, 109, 105, 101, 97, 93, 88, 84, 80,
   76, 74, 72, 71, 70, 71, 72, 73, 73, 74, 73, 72, 70, 66, 61, 54,
@@ -4205,7 +4232,7 @@ byte clarinet[] = {
     mono 32-bit float cycles; these tables are centered around 128 and
     rotated so phase zero starts at an upward zero crossing.
   */
-byte mpWaveMp[] = {
+const byte mpWaveMpSource[] __in_flash("synth_waveforms") = {
   128, 255, 255, 255, 255, 0, 0, 0, 0, 255, 255, 255, 255, 0, 0, 0,
   0, 252, 248, 244, 240, 236, 232, 228, 224, 220, 216, 212, 208, 204, 200, 196,
   192, 188, 184, 180, 176, 172, 168, 164, 160, 156, 152, 148, 144, 140, 136, 132,
@@ -4223,7 +4250,7 @@ byte mpWaveMp[] = {
   128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
   128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128
 };
-byte mpWaveBoxSaw[] = {
+const byte mpWaveBoxSawSource[] __in_flash("synth_waveforms") = {
   128, 189, 190, 190, 191, 191, 192, 192, 193, 193, 194, 195, 195, 196, 196, 197,
   197, 198, 199, 199, 200, 200, 201, 201, 202, 203, 203, 204, 204, 205, 205, 206,
   207, 207, 208, 208, 209, 209, 210, 210, 211, 212, 212, 213, 213, 214, 214, 215,
@@ -4241,7 +4268,7 @@ byte mpWaveBoxSaw[] = {
   48, 49, 49, 50, 50, 51, 52, 52, 53, 53, 54, 54, 55, 56, 56, 57,
   57, 58, 58, 59, 60, 60, 61, 61, 62, 62, 63, 64, 64, 65, 65, 66
 };
-byte mpWaveFriendlySquare[] = {
+const byte mpWaveFriendlySquareSource[] __in_flash("synth_waveforms") = {
   128, 219, 244, 253, 253, 254, 254, 254, 254, 255, 255, 255, 255, 255, 255, 255,
   255, 254, 254, 254, 253, 253, 252, 252, 251, 251, 250, 249, 248, 247, 246, 245,
   244, 243, 242, 241, 240, 239, 238, 237, 236, 235, 234, 233, 232, 231, 230, 229,
@@ -4259,7 +4286,7 @@ byte mpWaveFriendlySquare[] = {
   74, 75, 77, 78, 80, 81, 83, 84, 86, 88, 89, 91, 93, 95, 97, 99,
   101, 103, 105, 107, 110, 112, 114, 116, 119, 121, 123, 126, 128, 130, 133, 135
 };
-byte mpWaveGlassy[] = {
+const byte mpWaveGlassySource[] __in_flash("synth_waveforms") = {
   128, 135, 142, 148, 153, 157, 162, 166, 170, 174, 178, 182, 186, 189, 193, 197,
   201, 206, 210, 214, 218, 221, 225, 228, 231, 233, 235, 237, 239, 241, 242, 244,
   245, 246, 247, 248, 250, 251, 252, 254, 255, 255, 255, 253, 249, 244, 236, 226,
@@ -4277,7 +4304,7 @@ byte mpWaveGlassy[] = {
   77, 82, 86, 90, 94, 98, 102, 108, 114, 120, 128, 136, 144, 153, 161, 167,
   170, 170, 165, 156, 142, 127, 112, 99, 90, 85, 85, 88, 95, 102, 111, 119
 };
-byte mpWaveKoolaid[] = {
+const byte mpWaveKoolaidSource[] __in_flash("synth_waveforms") = {
   128, 203, 138, 112, 82, 75, 86, 109, 131, 159, 183, 204, 222, 239, 242, 246,
   252, 253, 249, 248, 244, 240, 238, 234, 233, 225, 227, 222, 220, 221, 213, 219,
   218, 217, 211, 214, 212, 207, 203, 202, 199, 196, 196, 194, 193, 192, 192, 186,
@@ -4295,7 +4322,7 @@ byte mpWaveKoolaid[] = {
   116, 116, 115, 114, 115, 113, 112, 112, 112, 111, 110, 113, 114, 113, 111, 114,
   120, 123, 125, 123, 121, 124, 126, 120, 123, 122, 116, 113, 111, 116, 114, 122
 };
-byte mpWaveMerv[] = {
+const byte mpWaveMervSource[] __in_flash("synth_waveforms") = {
   128, 114, 113, 176, 141, 133, 57, 97, 106, 112, 84, 185, 72, 195, 122, 77,
   217, 111, 93, 135, 151, 131, 79, 79, 170, 104, 137, 131, 128, 144, 108, 130,
   69, 62, 91, 203, 180, 201, 155, 152, 147, 194, 94, 81, 82, 137, 149, 174,
@@ -4313,7 +4340,7 @@ byte mpWaveMerv[] = {
   97, 133, 101, 87, 185, 85, 94, 126, 104, 132, 146, 87, 119, 139, 134, 134,
   192, 86, 172, 123, 73, 160, 119, 110, 126, 177, 144, 115, 134, 73, 82, 114
 };
-byte mpWaveMBellish[] = {
+const byte mpWaveMBellishSource[] __in_flash("synth_waveforms") = {
   128, 133, 131, 130, 132, 132, 129, 129, 133, 135, 134, 138, 148, 159, 166, 174,
   182, 184, 179, 174, 172, 168, 162, 158, 159, 157, 154, 155, 163, 172, 177, 184,
   191, 192, 187, 181, 180, 177, 171, 168, 169, 168, 165, 167, 176, 186, 192, 199,
@@ -4331,7 +4358,7 @@ byte mpWaveMBellish[] = {
   55, 56, 49, 43, 40, 37, 30, 27, 28, 27, 24, 26, 35, 45, 52, 60,
   69, 71, 67, 64, 64, 63, 60, 59, 63, 65, 65, 71, 83, 96, 105, 116
 };
-byte mpWaveOval[] = {
+const byte mpWaveOvalSource[] __in_flash("synth_waveforms") = {
   128, 133, 138, 144, 149, 154, 159, 164, 168, 173, 177, 181, 185, 189, 193, 197,
   200, 204, 207, 210, 213, 216, 219, 222, 224, 227, 229, 231, 233, 235, 237, 239,
   241, 243, 244, 246, 247, 249, 250, 251, 252, 253, 254, 254, 255, 255, 255, 255,
@@ -4349,7 +4376,7 @@ byte mpWaveOval[] = {
   89, 94, 98, 103, 109, 114, 119, 125, 130, 135, 140, 145, 149, 152, 154, 154,
   152, 148, 142, 134, 126, 117, 110, 105, 101, 100, 101, 104, 108, 112, 117, 122
 };
-byte mpWavePrettyShape[] = {
+const byte mpWavePrettyShapeSource[] __in_flash("synth_waveforms") = {
   128, 132, 137, 141, 146, 150, 155, 159, 164, 168, 173, 177, 181, 185, 189, 193,
   197, 201, 205, 209, 212, 216, 219, 223, 226, 229, 232, 234, 237, 239, 242, 244,
   246, 247, 249, 251, 252, 253, 254, 254, 255, 255, 255, 255, 254, 254, 253, 252,
@@ -4367,7 +4394,7 @@ byte mpWavePrettyShape[] = {
   9, 11, 13, 16, 18, 21, 23, 26, 29, 32, 36, 39, 43, 46, 50, 54,
   58, 62, 66, 70, 74, 78, 82, 87, 91, 96, 100, 105, 109, 114, 118, 123
 };
-byte mpWaveQuick808[] = {
+const byte mpWaveQuick808Source[] __in_flash("synth_waveforms") = {
   128, 135, 142, 149, 156, 163, 169, 176, 182, 188, 193, 199, 204, 209, 213, 218,
   222, 226, 229, 233, 236, 239, 241, 244, 246, 248, 249, 250, 251, 251, 251, 251,
   250, 249, 247, 245, 243, 240, 237, 234, 230, 227, 223, 218, 214, 209, 205, 200,
@@ -4385,7 +4412,7 @@ byte mpWaveQuick808[] = {
   8, 6, 4, 2, 1, 0, 0, 0, 1, 2, 3, 5, 8, 11, 14, 18,
   23, 28, 33, 38, 44, 50, 57, 63, 70, 77, 84, 91, 98, 106, 113, 120
 };
-byte mpWaveRichRepeater[] = {
+const byte mpWaveRichRepeaterSource[] __in_flash("synth_waveforms") = {
   128, 235, 248, 252, 253, 252, 250, 244, 227, 118, 27, 13, 7, 5, 5, 8,
   13, 27, 112, 227, 245, 251, 254, 254, 253, 253, 252, 251, 251, 251, 251, 252,
   252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252, 252,
@@ -4403,7 +4430,7 @@ byte mpWaveRichRepeater[] = {
   38, 20, 30, 177, 234, 238, 200, 16, 3, 1, 0, 1, 2, 3, 4, 4,
   7, 25, 213, 245, 249, 247, 233, 69, 11, 3, 0, 0, 1, 3, 7, 20
 };
-byte mpWaveRoundedTriangle[] = {
+const byte mpWaveRoundedTriangleSource[] __in_flash("synth_waveforms") = {
   128, 130, 132, 134, 136, 138, 140, 142, 144, 146, 148, 150, 152, 155, 157, 159,
   161, 163, 165, 167, 169, 172, 174, 176, 178, 180, 183, 185, 187, 189, 192, 194,
   196, 199, 201, 204, 206, 208, 211, 213, 215, 218, 220, 223, 225, 227, 229, 232,
@@ -4421,7 +4448,7 @@ byte mpWaveRoundedTriangle[] = {
   59, 61, 63, 66, 68, 70, 72, 75, 77, 79, 81, 83, 86, 88, 90, 92,
   94, 96, 98, 100, 103, 105, 107, 109, 111, 113, 115, 117, 119, 121, 123, 125
 };
-byte mpWaveStardew[] = {
+const byte mpWaveStardewSource[] __in_flash("synth_waveforms") = {
   128, 128, 129, 128, 127, 129, 123, 124, 125, 123, 122, 122, 121, 120, 119, 120,
   119, 120, 116, 118, 118, 116, 120, 116, 110, 114, 113, 115, 113, 112, 114, 112,
   111, 107, 112, 106, 109, 111, 107, 107, 107, 106, 100, 102, 102, 98, 98, 96,
@@ -4439,7 +4466,7 @@ byte mpWaveStardew[] = {
   152, 155, 151, 150, 152, 148, 152, 151, 150, 147, 145, 145, 148, 145, 141, 144,
   140, 141, 142, 143, 139, 139, 137, 134, 135, 136, 135, 133, 133, 131, 130, 135
 };
-byte mpWaveSyncTheTitanic[] = {
+const byte mpWaveSyncTheTitanicSource[] __in_flash("synth_waveforms") = {
   128, 130, 133, 135, 137, 138, 140, 141, 141, 142, 142, 142, 142, 141, 140, 139,
   137, 136, 134, 131, 129, 126, 123, 119, 180, 179, 168, 159, 151, 143, 136, 129,
   122, 116, 110, 104, 98, 93, 87, 83, 78, 74, 70, 66, 63, 59, 56, 54,
@@ -4457,7 +4484,7 @@ byte mpWaveSyncTheTitanic[] = {
   138, 133, 190, 199, 204, 209, 214, 219, 223, 228, 232, 235, 239, 242, 245, 248,
   250, 252, 254, 255, 80, 75, 83, 90, 96, 101, 105, 110, 114, 118, 121, 125
 };
-byte mpWaveWeirdWizard[] = {
+const byte mpWaveWeirdWizardSource[] __in_flash("synth_waveforms") = {
   128, 130, 132, 136, 139, 144, 149, 154, 160, 167, 173, 180, 187, 194, 200, 207,
   212, 218, 223, 228, 232, 236, 240, 243, 246, 248, 250, 251, 253, 254, 254, 255,
   255, 255, 255, 254, 254, 253, 252, 251, 250, 249, 248, 246, 245, 243, 242, 240,
@@ -4475,7 +4502,7 @@ byte mpWaveWeirdWizard[] = {
   77, 78, 79, 80, 81, 83, 84, 85, 86, 88, 89, 90, 92, 93, 95, 96,
   98, 100, 101, 103, 105, 106, 108, 110, 112, 114, 116, 117, 119, 121, 123, 125
 };
-byte mpWaveWoo[] = {
+const byte mpWaveWooSource[] __in_flash("synth_waveforms") = {
   128, 132, 136, 138, 140, 139, 138, 136, 133, 130, 126, 121, 117, 112, 108, 104,
   100, 96, 93, 91, 89, 87, 86, 86, 86, 86, 87, 89, 94, 85, 206, 163,
   114, 89, 78, 73, 72, 74, 76, 80, 84, 90, 97, 104, 113, 122, 132, 143,
@@ -4493,6 +4520,15 @@ byte mpWaveWoo[] = {
   67, 65, 65, 64, 64, 65, 66, 68, 70, 72, 76, 79, 91, 80, 69, 62,
   56, 52, 50, 47, 44, 43, 34, 36, 48, 62, 74, 86, 97, 106, 114, 121
 };
+
+constexpr uint16_t SYNTH_WAVE_SAMPLE_COUNT = 256;
+constexpr uint8_t SYNTH_WAVETABLE_FRAME_COUNT = 32;
+constexpr uint8_t SYNTH_WAVETABLE_LAST_FRAME = SYNTH_WAVETABLE_FRAME_COUNT - 1;
+byte activeSynthWaveTable[SYNTH_WAVETABLE_FRAME_COUNT][SYNTH_WAVE_SAMPLE_COUNT] = {};
+byte synthVibratoSine[SYNTH_WAVE_SAMPLE_COUNT] = {};
+volatile bool synthWaveTableLoadInProgress = false;
+byte loadedSynthWaveform = 255;
+volatile uint8_t activeSynthWaveFrameCount = 1;
 /*
     The sine wavetable benefits the most from
     interpolation because it has the fewest
@@ -5216,6 +5252,164 @@ inline uint16_t RAM_FUNC(readHybridWaveSample)(const oscillator& voice, uint8_t 
   return static_cast<uint16_t>((256 - t) * voice.cd);
 }
 
+inline uint8_t sample16ToWaveByte(uint16_t sample) {
+  return static_cast<uint8_t>(sample >> 8);
+}
+
+bool isValidSynthWaveform(byte waveform) {
+  return waveform <= WAVEFORM_CLARINET
+      || (waveform >= WAVEFORM_HYBRID && waveform <= WAVEFORM_BASIC_WAVETABLE);
+}
+
+const byte* synthWaveformSource(byte waveform) {
+  switch (waveform) {
+    case WAVEFORM_SINE: return waveSineSource;
+    case WAVEFORM_STRINGS: return waveStringsSource;
+    case WAVEFORM_CLARINET: return waveClarinetSource;
+    case WAVEFORM_MP: return mpWaveMpSource;
+    case WAVEFORM_MP_BOX_SAW: return mpWaveBoxSawSource;
+    case WAVEFORM_MP_FRIENDLY_SQUARE: return mpWaveFriendlySquareSource;
+    case WAVEFORM_MP_GLASSY: return mpWaveGlassySource;
+    case WAVEFORM_MP_KOOLAID: return mpWaveKoolaidSource;
+    case WAVEFORM_MP_MERV: return mpWaveMervSource;
+    case WAVEFORM_MP_M_BELLISH: return mpWaveMBellishSource;
+    case WAVEFORM_MP_OVAL: return mpWaveOvalSource;
+    case WAVEFORM_MP_PRETTY_SHAPE: return mpWavePrettyShapeSource;
+    case WAVEFORM_MP_QUICK_808: return mpWaveQuick808Source;
+    case WAVEFORM_MP_RICH_REPEATER: return mpWaveRichRepeaterSource;
+    case WAVEFORM_MP_ROUNDED_TRIANGLE: return mpWaveRoundedTriangleSource;
+    case WAVEFORM_MP_STARDEW: return mpWaveStardewSource;
+    case WAVEFORM_MP_SYNC_THE_TITANIC: return mpWaveSyncTheTitanicSource;
+    case WAVEFORM_MP_WEIRD_WIZARD: return mpWaveWeirdWizardSource;
+    case WAVEFORM_MP_WOO: return mpWaveWooSource;
+    default: return nullptr;
+  }
+}
+
+uint8_t readBasicWavetableAnchorSample(uint8_t anchor, uint8_t sampleIndex) {
+  uint16_t phase = static_cast<uint16_t>(sampleIndex) << 8;
+  switch (anchor) {
+    case 0:
+      return waveSineSource[sampleIndex];
+    case 1:
+      return sample16ToWaveByte(readTriangleWaveSample(phase));
+    case 2:
+      return sample16ToWaveByte(static_cast<uint16_t>(phase + 32768u));
+    case 3:
+    default:
+      return sample16ToWaveByte(readSquareWaveSample(phase, 0));
+  }
+}
+
+void fillGeneratedWaveFrame(byte waveform, uint8_t frameIndex) {
+  byte* frame = activeSynthWaveTable[frameIndex];
+  for (uint16_t sampleIndex = 0; sampleIndex < SYNTH_WAVE_SAMPLE_COUNT; ++sampleIndex) {
+    uint16_t phase = static_cast<uint16_t>(sampleIndex) << 8;
+    switch (waveform) {
+      case WAVEFORM_SQUARE:
+        frame[sampleIndex] = sample16ToWaveByte(readSquareWaveSample(phase, 0));
+        break;
+      case WAVEFORM_SAW:
+        frame[sampleIndex] = sample16ToWaveByte(static_cast<uint16_t>(phase + 32768u));
+        break;
+      case WAVEFORM_TRIANGLE:
+        frame[sampleIndex] = sample16ToWaveByte(readTriangleWaveSample(phase));
+        break;
+      case WAVEFORM_HYBRID:
+      default:
+        frame[sampleIndex] = waveSineSource[sampleIndex];
+        break;
+    }
+  }
+}
+
+void generateBasicSynthWavetable() {
+  constexpr uint8_t anchorCount = 4;
+  constexpr uint16_t lastAnchorPosition = (anchorCount - 1) << 8;
+  for (uint8_t frameIndex = 0; frameIndex < SYNTH_WAVETABLE_FRAME_COUNT; ++frameIndex) {
+    if (frameIndex == SYNTH_WAVETABLE_LAST_FRAME) {
+      for (uint16_t sampleIndex = 0; sampleIndex < SYNTH_WAVE_SAMPLE_COUNT; ++sampleIndex) {
+        activeSynthWaveTable[frameIndex][sampleIndex] = readBasicWavetableAnchorSample(anchorCount - 1, sampleIndex);
+      }
+      continue;
+    }
+    uint16_t anchorPosition = static_cast<uint16_t>(
+      (static_cast<uint32_t>(frameIndex) * lastAnchorPosition) / SYNTH_WAVETABLE_LAST_FRAME
+    );
+    uint8_t anchorA = static_cast<uint8_t>(anchorPosition >> 8);
+    uint8_t frameFrac = static_cast<uint8_t>(anchorPosition & 0xFF);
+    uint8_t anchorB = static_cast<uint8_t>(anchorA + 1);
+    for (uint16_t sampleIndex = 0; sampleIndex < SYNTH_WAVE_SAMPLE_COUNT; ++sampleIndex) {
+      uint8_t sampleA = readBasicWavetableAnchorSample(anchorA, sampleIndex);
+      uint8_t sampleB = readBasicWavetableAnchorSample(anchorB, sampleIndex);
+      int16_t delta = static_cast<int16_t>(sampleB) - static_cast<int16_t>(sampleA);
+      activeSynthWaveTable[frameIndex][sampleIndex] =
+        static_cast<uint8_t>(static_cast<int16_t>(sampleA) + ((delta * static_cast<int16_t>(frameFrac)) >> 8));
+    }
+  }
+  activeSynthWaveFrameCount = SYNTH_WAVETABLE_FRAME_COUNT;
+}
+
+void initializeSynthWaveTables() {
+  memcpy(synthVibratoSine, waveSineSource, SYNTH_WAVE_SAMPLE_COUNT);
+  loadedSynthWaveform = 255;
+}
+
+void loadSelectedSynthWaveform() {
+  if (!isValidSynthWaveform(currWave)) {
+    currWave = WAVEFORM_HYBRID;
+  }
+  if (loadedSynthWaveform == currWave) {
+    return;
+  }
+
+  synthWaveTableLoadInProgress = true;
+  if (currWave == WAVEFORM_BASIC_WAVETABLE) {
+    generateBasicSynthWavetable();
+  } else {
+    const byte* source = synthWaveformSource(currWave);
+    if (source) {
+      memcpy(activeSynthWaveTable[0], source, SYNTH_WAVE_SAMPLE_COUNT);
+    } else {
+      fillGeneratedWaveFrame(currWave, 0);
+    }
+    activeSynthWaveFrameCount = 1;
+  }
+  loadedSynthWaveform = currWave;
+  synthWaveTableLoadInProgress = false;
+}
+
+inline uint16_t RAM_FUNC(wavetableFramePositionFromTone)(int16_t toneAmount, uint8_t frameCount) {
+  if (toneAmount <= 0 || frameCount <= 1) {
+    return 0;
+  }
+  uint8_t amount = toneAmount > 127 ? 127 : static_cast<uint8_t>(toneAmount);
+  uint16_t lastFrame = static_cast<uint16_t>(frameCount - 1);
+  return static_cast<uint16_t>((static_cast<uint32_t>(amount) * lastFrame * 256u) / 127u);
+}
+
+inline uint16_t RAM_FUNC(readLoadedWaveFrameSample)(uint16_t phase) {
+  return static_cast<uint16_t>(activeSynthWaveTable[0][phase >> 8] << 8);
+}
+
+inline uint16_t RAM_FUNC(readActiveWavetableSample)(uint16_t phase, int16_t toneAmount) {
+  uint8_t frameCount = activeSynthWaveFrameCount;
+  if (frameCount <= 1) {
+    return readLoadedWaveFrameSample(phase);
+  }
+  uint16_t framePosition = wavetableFramePositionFromTone(toneAmount, frameCount);
+  uint8_t frameIndex = static_cast<uint8_t>(framePosition >> 8);
+  uint8_t frameFrac = static_cast<uint8_t>(framePosition & 0xFF);
+  uint8_t maxFrameIndex = static_cast<uint8_t>(frameCount - 1);
+  if (frameIndex >= maxFrameIndex) {
+    return static_cast<uint16_t>(activeSynthWaveTable[maxFrameIndex][phase >> 8] << 8);
+  }
+  uint8_t sampleIndex = phase >> 8;
+  int16_t sampleA = activeSynthWaveTable[frameIndex][sampleIndex];
+  int16_t sampleB = activeSynthWaveTable[frameIndex + 1][sampleIndex];
+  return static_cast<uint16_t>((sampleA << 8) + ((sampleB - sampleA) * static_cast<int16_t>(frameFrac)));
+}
+
 inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
                                            int16_t amount,
                                            int16_t& toneAmount,
@@ -5429,7 +5623,7 @@ void RAM_FUNC(poll)() {
   timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
   // While flash is being written, interrupts are disabled on both cores.
   // When the ISR resumes afterward, output silence to avoid glitch artifacts.
-  if (flashWriteInProgress.load(std::memory_order_relaxed)) {
+  if (flashWriteInProgress.load(std::memory_order_relaxed) || synthWaveTableLoadInProgress) {
     writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
     return;
   }
@@ -5460,7 +5654,8 @@ void RAM_FUNC(poll)() {
 
   uint16_t p;
   byte t;
-  for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
+  const uint8_t voiceLimit = currentSynthVoiceLimit();
+  for (byte i = 0; i < voiceLimit; i++) {
     EnvelopeState& env = envelopeStates[i];
 
     EnvelopeCommand pendingCommand = consumeEnvelopeCommand(i);
@@ -5636,7 +5831,7 @@ void RAM_FUNC(poll)() {
     if (voiceVibratoModValue != 0) {
       if (!synthVibratoSampleReady) {
         synthVibratoPhase += synthVibratoPhaseIncrement;
-        synthVibratoSample = static_cast<int16_t>(sine[synthVibratoPhase >> 24]) - 128;
+        synthVibratoSample = static_cast<int16_t>(synthVibratoSine[synthVibratoPhase >> 24]) - 128;
         synthVibratoSampleReady = true;
       }
       voiceVibratoAmount = synthVibratoSample * static_cast<int16_t>(voiceVibratoModValue);
@@ -5646,40 +5841,52 @@ void RAM_FUNC(poll)() {
     }
     synth[i].counter += phaseIncrement;  // high 16 bits loop from 65535 -> 0
     p = static_cast<uint16_t>(synth[i].counter >> 16);
-    if (voiceToneModValue != 0 && currWave != WAVEFORM_SQUARE && currWave != WAVEFORM_SAW) {
+    if (playbackMode != SYNTH_POLYTBL
+        && voiceToneModValue != 0
+        && currWave != WAVEFORM_SQUARE
+        && currWave != WAVEFORM_SAW) {
       p = applySynthTonePhaseWarp(p, voiceToneModValue);
     }
     t = p >> 8;
-    switch (currWave) {
-      case WAVEFORM_SAW:
-        p = static_cast<uint16_t>(p + 32768);
-        if (voiceToneModValue != 0) {
-          p = applySynthSawToneShape(p, voiceToneModValue);
-        }
-        break;
-      case WAVEFORM_TRIANGLE: p = readTriangleWaveSample(p); break;
-      case WAVEFORM_SQUARE: p = readSquareWaveSample(p, voiceToneModValue); break;
-      case WAVEFORM_HYBRID: p = readHybridWaveSample(synth[i], t); break;
-      case WAVEFORM_SINE: p = interpolatedWaveSample(sine, p); break;
-      case WAVEFORM_STRINGS: p = strings[t] << 8; break;
-      case WAVEFORM_CLARINET: p = clarinet[t] << 8; break;
-      case WAVEFORM_MP: p = mpWaveMp[t] << 8; break;
-      case WAVEFORM_MP_BOX_SAW: p = mpWaveBoxSaw[t] << 8; break;
-      case WAVEFORM_MP_FRIENDLY_SQUARE: p = mpWaveFriendlySquare[t] << 8; break;
-      case WAVEFORM_MP_GLASSY: p = mpWaveGlassy[t] << 8; break;
-      case WAVEFORM_MP_KOOLAID: p = mpWaveKoolaid[t] << 8; break;
-      case WAVEFORM_MP_MERV: p = mpWaveMerv[t] << 8; break;
-      case WAVEFORM_MP_M_BELLISH: p = mpWaveMBellish[t] << 8; break;
-      case WAVEFORM_MP_OVAL: p = mpWaveOval[t] << 8; break;
-      case WAVEFORM_MP_PRETTY_SHAPE: p = mpWavePrettyShape[t] << 8; break;
-      case WAVEFORM_MP_QUICK_808: p = mpWaveQuick808[t] << 8; break;
-      case WAVEFORM_MP_RICH_REPEATER: p = mpWaveRichRepeater[t] << 8; break;
-      case WAVEFORM_MP_ROUNDED_TRIANGLE: p = mpWaveRoundedTriangle[t] << 8; break;
-      case WAVEFORM_MP_STARDEW: p = mpWaveStardew[t] << 8; break;
-      case WAVEFORM_MP_SYNC_THE_TITANIC: p = mpWaveSyncTheTitanic[t] << 8; break;
-      case WAVEFORM_MP_WEIRD_WIZARD: p = mpWaveWeirdWizard[t] << 8; break;
-      case WAVEFORM_MP_WOO: p = mpWaveWoo[t] << 8; break;
-      default: break;
+    if (playbackMode == SYNTH_POLYTBL) {
+      p = readActiveWavetableSample(p, voiceToneModValue);
+    } else {
+      switch (currWave) {
+        case WAVEFORM_SAW:
+          p = static_cast<uint16_t>(p + 32768);
+          if (voiceToneModValue != 0) {
+            p = applySynthSawToneShape(p, voiceToneModValue);
+          }
+          break;
+        case WAVEFORM_TRIANGLE: p = readTriangleWaveSample(p); break;
+        case WAVEFORM_SQUARE: p = readSquareWaveSample(p, voiceToneModValue); break;
+        case WAVEFORM_HYBRID: p = readHybridWaveSample(synth[i], t); break;
+        case WAVEFORM_SINE:
+        case WAVEFORM_BASIC_WAVETABLE:
+          p = interpolatedWaveSample(activeSynthWaveTable[0], p);
+          break;
+        case WAVEFORM_STRINGS:
+        case WAVEFORM_CLARINET:
+        case WAVEFORM_MP:
+        case WAVEFORM_MP_BOX_SAW:
+        case WAVEFORM_MP_FRIENDLY_SQUARE:
+        case WAVEFORM_MP_GLASSY:
+        case WAVEFORM_MP_KOOLAID:
+        case WAVEFORM_MP_MERV:
+        case WAVEFORM_MP_M_BELLISH:
+        case WAVEFORM_MP_OVAL:
+        case WAVEFORM_MP_PRETTY_SHAPE:
+        case WAVEFORM_MP_QUICK_808:
+        case WAVEFORM_MP_RICH_REPEATER:
+        case WAVEFORM_MP_ROUNDED_TRIANGLE:
+        case WAVEFORM_MP_STARDEW:
+        case WAVEFORM_MP_SYNC_THE_TITANIC:
+        case WAVEFORM_MP_WEIRD_WIZARD:
+        case WAVEFORM_MP_WOO:
+          p = readLoadedWaveFrameSample(p);
+          break;
+        default: break;
+      }
     }
 
     // Convert unipolar 0..65535 waveform into bipolar signed audio sample.
@@ -5726,7 +5933,7 @@ void RAM_FUNC(poll)() {
   uint16_t attenSmooth = (uint16_t)((int16_t)a0 + ((da * (int16_t)vFrac) >> 8));  // 0..64-ish
 
   // Only apply this smoothing in poly mode, keep mono behavior the same.
-  uint16_t attenFinal = (playbackMode == SYNTH_POLY) ? attenSmooth : attenuation[0];
+  uint16_t attenFinal = isPolyPlaybackMode(playbackMode) ? attenSmooth : attenuation[0];
 
   // Apply poly/mono attenuation where 64 = unity.
   // Note: mix is bounded by ±(POLYPHONY_LIMIT * ~256) ≈ ±2048 after envelope,
@@ -6224,12 +6431,19 @@ void RAM_FUNC(resetSynthFreqs)() {
   }
   arpeggiatingNow = UNUSED_NOTE;
   clearArpeggiatorHeldNotes();
-  if (playbackMode == SYNTH_POLY) {
-    for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
+  if (isPolyPlaybackMode(playbackMode)) {
+    uint8_t voiceLimit = currentSynthVoiceLimit();
+    for (byte i = 0; i < voiceLimit; i++) {
       synthChQueue.push(i + 1);
     }
   }
 }
+
+void synthWaveformChanged() {
+  resetSynthFreqs();
+  loadSelectedSynthWaveform();
+}
+
 void sendProgramChange() {
   if (programChange == 0) {
     return;  // 0 indicates "no program" selected yet.
@@ -6263,7 +6477,7 @@ void RAM_FUNC(processEnvelopeReleases)() {
           h[owner].synthCh = 0;
         }
       }
-      if (playbackMode == SYNTH_POLY) {
+      if (isPolyPlaybackMode(playbackMode) && i < currentSynthVoiceLimit()) {
         synthChQueue.push(i + 1);
       }
       releaseRetries[i] = 0;
@@ -6273,7 +6487,8 @@ void RAM_FUNC(processEnvelopeReleases)() {
 }
 
 void RAM_FUNC(retryPendingReleases)() {
-  for (uint8_t i = 0; i < POLYPHONY_LIMIT; ++i) {
+  uint8_t voiceLimit = currentSynthVoiceLimit();
+  for (uint8_t i = 0; i < voiceLimit; ++i) {
     uint8_t retries = releaseRetries[i];
     if (retries == 0) {
       continue;
@@ -6297,7 +6512,8 @@ bool RAM_FUNC(stealOldestSynthVoice)(byte& channelOut, int16_t& previousOwner) {
   previousOwner = NO_SYNTH_OWNER;
   uint32_t oldestGeneration = std::numeric_limits<uint32_t>::max();
   int8_t oldestIndex = -1;
-  for (uint8_t i = 0; i < POLYPHONY_LIMIT; ++i) {
+  uint8_t voiceLimit = currentSynthVoiceLimit();
+  for (uint8_t i = 0; i < voiceLimit; ++i) {
     if (!channelInUse[i].load(std::memory_order_relaxed)) {
       continue;
     }
@@ -6325,7 +6541,7 @@ void RAM_FUNC(trySynthNoteOn)(byte x) {
   if (playbackMode == SYNTH_OFF) {
     return;
   }
-  if (playbackMode == SYNTH_POLY) {
+  if (isPolyPlaybackMode(playbackMode)) {
     processEnvelopeReleases();
     if (synthChQueue.empty()) {
       byte stolenChannel = 0;
@@ -6369,7 +6585,7 @@ void RAM_FUNC(trySynthNoteOn)(byte x) {
 }
 
 void RAM_FUNC(trySynthNoteOff)(byte x) {
-  if (playbackMode && (playbackMode != SYNTH_POLY)) {
+  if (playbackMode && !isPolyPlaybackMode(playbackMode)) {
     registerArpeggiatorNoteOff(x);
     if (arpeggiatingNow == x) {
       byte nextNote = (playbackMode == SYNTH_ARPEGGIO) ? findNextArpeggiatedNote() : findNewestHeldNote();
@@ -6384,7 +6600,7 @@ void RAM_FUNC(trySynthNoteOff)(byte x) {
     return;
   }
 
-  if (playbackMode != SYNTH_POLY) {
+  if (!isPolyPlaybackMode(playbackMode)) {
     return;
   }
 
@@ -10510,7 +10726,8 @@ SelectOptionByte optionBytePlayback[] = {
   { "MonoRtg", SYNTH_MONO_RETRIGGER },
   { "MonoLeg", SYNTH_MONO_LEGATO },
   { "Arp'gio", SYNTH_ARPEGGIO },
-  { "Poly", SYNTH_POLY }
+  { "Poly", SYNTH_POLY },
+  { "PolyTbl", SYNTH_POLYTBL }
 };
 GEMSelect selectPlayback(sizeof(optionBytePlayback) / sizeof(SelectOptionByte), optionBytePlayback);
 PersistentCallbackInfo callbackInfoPlayback = {
@@ -11202,20 +11419,21 @@ SelectOptionByte optionByteWaveform[] = {
   { "Stardew", WAVEFORM_MP_STARDEW },
   { "SyncTtn", WAVEFORM_MP_SYNC_THE_TITANIC },
   { "WrdWiz", WAVEFORM_MP_WEIRD_WIZARD },
-  { "Woo", WAVEFORM_MP_WOO }
+  { "Woo", WAVEFORM_MP_WOO },
+  { "BasicTb", WAVEFORM_BASIC_WAVETABLE }
 };
 GEMSelect selectWaveform(sizeof(optionByteWaveform) / sizeof(SelectOptionByte), optionByteWaveform);
 PersistentCallbackInfo callbackInfoWaveform = {
   static_cast<uint8_t>(SettingKey::Waveform),
   reinterpret_cast<void*>(&currWave),
   nullptr,
-  resetSynthFreqs
+  synthWaveformChanged
 };
 GEMItem menuItemWaveform("Waveform", currWave, selectWaveform, universalSaveCallback,
                          reinterpret_cast<void*>(&callbackInfoWaveform));
 void previewWaveform(GEMPreviewCallbackData previewData) {
   currWave = previewData.previewValByte;
-  resetSynthFreqs();
+  synthWaveformChanged();
 }
 
 SelectOptionByte optionByteSynthDrive[] = {
@@ -11846,6 +12064,7 @@ void syncSettingsToRuntime() {
     playbackMode = SYNTH_POLY;
   }
   currWave = settingValue(SettingKey::Waveform);
+  loadSelectedSynthWaveform();
   synthDrive = settingValue(SettingKey::SynthDrive);
   if (synthDrive > SYNTH_DRIVE_DIRTY) {
     synthDrive = SYNTH_DRIVE_OFF;
@@ -12614,6 +12833,7 @@ void setup() {
   setupRotary();
   setupMenu();
   setupHardware();
+  initializeSynthWaveTables();
   syncSettingsToRuntime();
   recomputePitchBendFactor();
   runBootLedSelfCheck();

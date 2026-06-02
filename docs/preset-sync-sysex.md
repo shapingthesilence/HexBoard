@@ -926,6 +926,9 @@ value set. Firmware migrates stored `/synth_presets.dat` version `6` records by
 keeping their existing value bytes and appending the factory defaults for these
 two keys.
 
+`PlaybackMode` value `5` is `PolyTbl`, a wavetable poly mode. `Waveform` value
+`27` is `BasicTb`, the first firmware-generated `32`-frame wavetable.
+
 The common `Name` and `FolderPath` TLVs are required for named/foldered synth
 presets. Duplicate names are allowed in different folders. Within the same
 folder, firmware may reject duplicates or allow them as long as object ids stay

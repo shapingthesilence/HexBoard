@@ -364,8 +364,8 @@ Important implementation details:
 - the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
-- `PlaybackMode` defaults to `Poly`; valid values are `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, and `Poly`; legacy stored mono value `1` now means `MonoRtg`
-- onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `Tone` and `100%`; valid runtime targets are `Tone`, `Vibrato`, and `Pitch`; pitch target depth maps the signed `-127..127` runtime amount across about `+/-48` semitones without changing the persisted byte layout
+- `PlaybackMode` defaults to `Poly`; valid values are `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, `Poly`, and `PolyTbl`; legacy stored mono value `1` now means `MonoRtg`; `PolyTbl` currently queues the full `8` compiled synth voices
+- onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `Tone` and `100%`; valid runtime targets are `Tone`, `Vibrato`, and `Pitch`; pitch target depth maps the signed `-127..127` runtime amount across about `+/-48` semitones without changing the persisted byte layout; in `PolyTbl`, `Tone` is reused as wavetable frame position
 - onboard synth vibrato speed is stored as `SynthVibratoSpeed`; selectable values are `1 Hz` through `12 Hz`, with factory default `6 Hz`
 - mono portamento is stored as `SynthPortamentoTimeIndex`; it reuses the `0 ms` through `4 s` envelope time table and the menu hides `Porta` outside the two mono modes
 - arpeggiator direction is stored as `ArpeggiatorDirection`; the menu hides `Arp Dir` outside `Arp'gio`; note-sorted directions compare assigned note/frequency rather than physical button number
@@ -451,17 +451,25 @@ in `10`-bit mode. High-register sine tones can get harsher on the jack path as
 the carrier moves closer to the audio band, so `9`-bit and `8`-bit builds are
 useful fallback comparisons.
 
-The sine wavetable now uses linear interpolation between adjacent `256`-entry
-table samples, reusing the low `8` bits of the existing `16`-bit phase
-accumulator. That is the first place to look if you want a cheap audio-quality
-improvement without increasing table size. The onboard waveform convention is
-that phase zero starts at an upward zero crossing: `sine`, `strings`, and
-`clarinet` are rotated byte tables, the MP single-cycle tables are generated the
-same way, and the generated saw/triangle/square/hybrid paths apply the matching
-phase offset in RAM-resident helpers. Imported MP single-cycle WAVs live as
-generated `256`-entry byte tables in `src/HexBoard.ino`. Their waveform IDs are
-appended after the original IDs so existing saved profiles keep their current
-`Waveform` values.
+The sine waveform uses linear interpolation between adjacent `256`-entry table
+samples, reusing the low `8` bits of the existing `16`-bit phase accumulator.
+The onboard waveform convention is that phase zero starts at an upward zero
+crossing: `sine`, `strings`, and `clarinet` are rotated byte tables, the MP
+single-cycle tables are generated the same way, and the generated
+saw/triangle/square/hybrid paths apply the matching phase offset in
+RAM-resident helpers. Table-backed waveform source cycles live in
+`src/HexBoard.ino`, but only the selected waveform or wavetable is copied into
+the preallocated `activeSynthWaveTable` RAM buffer used by the ISR. The vibrato
+sine lookup remains a separate RAM table because the ISR reads it directly.
+Imported MP waveform IDs and `BasicTb` are appended after the original IDs so
+existing saved profiles keep their current `Waveform` values.
+
+`PolyTbl` is a separate polyphonic synth mode for wavetable experiments. The
+first wavetable is `BasicTb`: firmware generates `32` frames by interpolating
+sine, triangle, saw, and square anchors into `activeSynthWaveTable`. Its first
+sampler interpolates adjacent frames from the `Tone` modulation amount and uses
+direct phase lookup to keep ISR cost bounded; add phase interpolation only after
+profiling the current frame-interpolation path.
 
 Pitch bend and square-wave modulation have synth-local smoothing separate from
 MIDI output. `setSynthFreq()` writes a target oscillator increment for held
