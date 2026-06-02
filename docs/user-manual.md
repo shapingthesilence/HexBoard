@@ -378,6 +378,9 @@ musical axes around individual hexagons. Focusing the center, across, or
 up-right layout fields highlights the relevant preview key relationship. The
 axis field labels follow the four-way preview rotation; for example, at `90`
 degrees, across is shown as `Down` and up-right is shown as `Down-right`.
+The preview also has a `Paintbrush` mode: choose a brush color, enable the
+tool, then click or drag across keys to write manual per-button color overrides
+without selecting each key in the inspector.
 
 The tuning editor can create EDO tunings, equal cents-per-step tunings, and
 Scala `.scl` imports. Scala text is parsed in the web app and stored in the

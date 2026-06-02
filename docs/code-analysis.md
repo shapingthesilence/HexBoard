@@ -321,9 +321,11 @@ It uses `hexBoardGeometry.ts` for the current 140-key firmware index geometry,
 presents vector layouts as across plus up-right steps, and converts that to the
 old `DownLeftSteps` TLV only while the firmware schema still expects it. Bundle
 rotation is a four-step device orientation value (`0/90/180/270`) that matches
-firmware `DeviceRotation`, not a six-step hex-axis transform. Scala `.scl` files
-are parsed in the web app into cents-table tuning objects; firmware does not
-parse Scala text or persist `/layouts.dat` objects yet. Future firmware work
+firmware `DeviceRotation`, not a six-step hex-axis transform. The preview
+paintbrush writes per-button color overrides into the active layout, using the
+same explicit override records as the selected-key inspector. Scala `.scl`
+files are parsed in the web app into cents-table tuning objects; firmware does
+not parse Scala text or persist `/layouts.dat` objects yet. Future firmware work
 needs a `/layouts.dat` catalog with `UserTuning`, `UserLayout`, `UserScale`,
 `ScaleColorMap`, and `ExplicitButtonMap` records; manual explicit button
 records should keep their stored `stepsFromC` and color regardless of root/key

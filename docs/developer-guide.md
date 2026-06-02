@@ -111,7 +111,9 @@ Current web source layout:
   and per-layout button overrides together. User-facing vector layouts remain
   `acrossSteps + upRightSteps`, translate to the legacy `DownLeftSteps` TLV only
   at the protocol boundary, and store a four-step `0/90/180/270` device
-  orientation value matching the firmware `DeviceRotation` setting.
+  orientation value matching the firmware `DeviceRotation` setting. The
+  tuning/layout preview paintbrush writes the same per-layout button color
+  override fields as the selected-key inspector.
 - `web/src/catalogs/hexBoardGeometry.ts`: browser-side model of the current
   140-key surface, including `133` main note keys and command indices
   `0,20,40,60,80,100,120`; layout previews and tests should use this helper

@@ -330,6 +330,40 @@ select {
   min-width: 0;
 }
 
+.brushToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid #dbe1dd;
+  border-radius: 6px;
+  background: #fbfcfa;
+}
+
+.brushColorField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #59645f;
+  font-size: 0.82rem;
+}
+
+.brushColorField input[type="color"] {
+  width: 38px;
+  min-width: 38px;
+  height: 34px;
+  min-height: 34px;
+  padding: 3px;
+}
+
+.brushSwatch {
+  width: 34px;
+  height: 34px;
+  border: 1px solid #86928c;
+  border-radius: 6px;
+}
+
 .selectedKeyPanel {
   min-width: 0;
 }
@@ -358,6 +392,11 @@ select {
   height: 650px;
   transform-origin: center;
   transition: transform 160ms ease;
+}
+
+.hexBoardSurface.paintbrushSurface,
+.hexBoardSurface.paintbrushSurface .hexKey {
+  cursor: crosshair;
 }
 
 .hexKey {

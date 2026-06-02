@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useMemo, useRef, useState, type ChangeEvent, type PointerEvent } from "react";
 import {
   clampScaleDegreeColor,
   computeVectorLayoutSteps,
@@ -153,6 +153,73 @@ function colorToCss(color: ScaleDegreeColor): string {
   return `hsl(${hue}deg ${saturation}% ${lightness}%)`;
 }
 
+function scaleDegreeColorToHex(color: ScaleDegreeColor): string {
+  const hue = (((color.hueTenthDegrees / 10) % 360) + 360) % 360;
+  const saturation = color.saturation / 255;
+  const value = color.value / 255;
+  const chroma = value * saturation;
+  const huePrime = hue / 60;
+  const intermediate = chroma * (1 - Math.abs((huePrime % 2) - 1));
+  const match = value - chroma;
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+
+  if (huePrime < 1) {
+    red = chroma;
+    green = intermediate;
+  } else if (huePrime < 2) {
+    red = intermediate;
+    green = chroma;
+  } else if (huePrime < 3) {
+    green = chroma;
+    blue = intermediate;
+  } else if (huePrime < 4) {
+    green = intermediate;
+    blue = chroma;
+  } else if (huePrime < 5) {
+    red = intermediate;
+    blue = chroma;
+  } else {
+    red = chroma;
+    blue = intermediate;
+  }
+
+  return [red, green, blue]
+    .map((channel) => Math.round((channel + match) * 255).toString(16).padStart(2, "0"))
+    .join("")
+    .replace(/^/, "#");
+}
+
+function hexToScaleDegreeColor(hex: string, fallback: ScaleDegreeColor): ScaleDegreeColor {
+  const normalized = /^#[0-9a-f]{6}$/i.test(hex) ? hex.slice(1) : null;
+  if (!normalized) {
+    return fallback;
+  }
+  const red = Number.parseInt(normalized.slice(0, 2), 16) / 255;
+  const green = Number.parseInt(normalized.slice(2, 4), 16) / 255;
+  const blue = Number.parseInt(normalized.slice(4, 6), 16) / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  let hue = 0;
+
+  if (delta !== 0 && max === red) {
+    hue = 60 * (((green - blue) / delta) % 6);
+  } else if (delta !== 0 && max === green) {
+    hue = 60 * (((blue - red) / delta) + 2);
+  } else if (delta !== 0) {
+    hue = 60 * (((red - green) / delta) + 4);
+  }
+
+  return clampScaleDegreeColor({
+    degree: fallback.degree,
+    hueTenthDegrees: Math.round((((hue + 360) % 360) * 10)),
+    saturation: max === 0 ? 0 : Math.round((delta / max) * 255),
+    value: Math.round(max * 255)
+  });
+}
+
 function fileBaseName(fileName: string): string {
   return fileName.replace(/\.[^.]+$/, "") || "Imported Tuning";
 }
@@ -216,9 +283,13 @@ export function TuningLayoutEditor() {
   const [activeBundleId, setActiveBundleId] = useState("");
   const [selectedButton, setSelectedButton] = useState(65);
   const [layoutGuideFocus, setLayoutGuideFocus] = useState<LayoutGuideFocus | null>(null);
+  const [paintbrushMode, setPaintbrushMode] = useState(false);
+  const [paintbrushColor, setPaintbrushColor] = useState<ScaleDegreeColor>(() => createDefaultDegreeColors(1)[0]);
   const [status, setStatus] = useState("Ready");
   const bundleInputRef = useRef<HTMLInputElement>(null);
   const scalaInputRef = useRef<HTMLInputElement>(null);
+  const paintStrokeActiveRef = useRef(false);
+  const lastPaintedButtonRef = useRef<number | null>(null);
 
   const activeBundle = bundles.find((bundle) => bundle.objectIdHex === activeBundleId) ?? bundles[0] ?? createDefaultLayoutBundle();
   const activeLayout = activeBundle.layouts.find((layout) => layout.objectIdHex === activeBundle.activeLayoutIdHex) ??
@@ -462,6 +533,58 @@ export function TuningLayoutEditor() {
       ...layout,
       buttonOverrides: upsertOverride(layout.buttonOverrides, buttonIndex, patch)
     }));
+  }
+
+  function paintButtonColorOverride(buttonIndex: number) {
+    if (lastPaintedButtonRef.current === buttonIndex) {
+      return;
+    }
+    lastPaintedButtonRef.current = buttonIndex;
+    updateButtonOverride(buttonIndex, {
+      hueTenthDegrees: paintbrushColor.hueTenthDegrees,
+      saturation: paintbrushColor.saturation,
+      value: paintbrushColor.value
+    });
+    setStatus(`Painted button ${buttonIndex}`);
+  }
+
+  function previewButtonIndexFromPointer(event: PointerEvent<HTMLElement>): number | undefined {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+    const target = document.elementFromPoint(event.clientX, event.clientY);
+    const button = target?.closest("[data-preview-button-index]") as HTMLElement | null;
+    const buttonIndex = Number(button?.dataset.previewButtonIndex);
+    return Number.isInteger(buttonIndex) ? buttonIndex : undefined;
+  }
+
+  function beginPaintStroke(event: PointerEvent<HTMLDivElement>) {
+    if (!paintbrushMode) {
+      return;
+    }
+    const buttonIndex = previewButtonIndexFromPointer(event);
+    if (buttonIndex === undefined) {
+      return;
+    }
+    event.preventDefault();
+    paintStrokeActiveRef.current = true;
+    lastPaintedButtonRef.current = null;
+    paintButtonColorOverride(buttonIndex);
+  }
+
+  function continuePaintStroke(event: PointerEvent<HTMLDivElement>) {
+    if (!paintbrushMode || !paintStrokeActiveRef.current) {
+      return;
+    }
+    const buttonIndex = previewButtonIndexFromPointer(event);
+    if (buttonIndex !== undefined) {
+      paintButtonColorOverride(buttonIndex);
+    }
+  }
+
+  function endPaintStroke() {
+    paintStrokeActiveRef.current = false;
+    lastPaintedButtonRef.current = null;
   }
 
   function resetButtonOverride(buttonIndex: number) {
@@ -836,10 +959,41 @@ export function TuningLayoutEditor() {
             </div>
             <button type="button" onClick={() => updateLayout({ centerButton: selectedButton })}>Use Selected As Center</button>
           </div>
+          <div className="brushToolbar">
+            <button
+              aria-pressed={paintbrushMode}
+              className={paintbrushMode ? "primary" : ""}
+              type="button"
+              onClick={() => {
+                endPaintStroke();
+                setPaintbrushMode((current) => !current);
+              }}
+            >
+              Paintbrush
+            </button>
+            <label className="brushColorField">
+              <span>Brush color</span>
+              <input
+                aria-label="Brush color"
+                type="color"
+                value={scaleDegreeColorToHex(paintbrushColor)}
+                onChange={(event) => setPaintbrushColor((current) => hexToScaleDegreeColor(event.target.value, current))}
+              />
+            </label>
+            <div className="brushSwatch" style={{ backgroundColor: colorToCss(paintbrushColor) }} />
+            <button type="button" onClick={() => setPaintbrushColor(selectedPreview.color)}>
+              Use Selected Color
+            </button>
+          </div>
           <div className="hexBoardScroll">
             <div
-              className="hexBoardSurface"
+              className={paintbrushMode ? "hexBoardSurface paintbrushSurface" : "hexBoardSurface"}
               aria-label="HexBoard key layout preview"
+              onPointerCancel={endPaintStroke}
+              onPointerDown={beginPaintStroke}
+              onPointerLeave={endPaintStroke}
+              onPointerMove={continuePaintStroke}
+              onPointerUp={endPaintStroke}
               style={{ transform: `rotate(${activeLayout.rotationSteps * 90}deg)` }}
             >
               {guideHalos.map((halo) => (
@@ -868,8 +1022,13 @@ export function TuningLayoutEditor() {
                     item.key.index === guideOriginIndex ? "guideOriginKey" : "",
                     item.key.index === guideTargetIndex ? "guideTargetKey" : ""
                   ].filter(Boolean).join(" ")}
+                  data-preview-button-index={item.key.index}
                   key={item.key.index}
-                  onClick={() => setSelectedButton(item.key.index)}
+                  onClick={() => {
+                    if (!paintbrushMode) {
+                      setSelectedButton(item.key.index);
+                    }
+                  }}
                   style={{
                     left: `${previewHexInset + (item.key.coordCol * previewHexHalfStepX)}px`,
                     top: `${previewHexInset + (item.key.row * previewHexRowStepY)}px`,
