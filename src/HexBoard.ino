@@ -12776,11 +12776,6 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynth, menuItemSynthModTarget, previewSynthModTarget);
   addPreviewMenuItem(menuPageSynth, menuItemSynthModAmount, previewSynthModAmount);
   addPreviewMenuItem(menuPageSynth, menuItemSynthVibratoSpeed, previewSynthVibratoSpeed);
-  menuPageSynth.addMenuItem(menuGotoSynthLfo);
-  addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoTarget, previewSynthLfoTarget);
-  addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoAmount, previewSynthLfoAmount);
-  addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoWave, previewSynthLfoWave);
-  addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoSpeed, previewSynthLfoSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeAttack, previewEnvelopeAttack);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeHold, previewEnvelopeHold);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeDecay, previewEnvelopeDecay);
@@ -12802,6 +12797,11 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Decay, previewEffectEnvelope2Decay);
   addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Sustain, previewEffectEnvelope2Sustain);
   addPreviewMenuItem(menuPageSynthFx2, menuItemEffectEnvelope2Release, previewEffectEnvelope2Release);
+  menuPageSynth.addMenuItem(menuGotoSynthLfo);
+  addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoTarget, previewSynthLfoTarget);
+  addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoAmount, previewSynthLfoAmount);
+  addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoWave, previewSynthLfoWave);
+  addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoSpeed, previewSynthLfoSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemSynthBPM, previewSynthBPM);
   addPreviewMenuItem(menuPageSynth, menuItemMetronomeMode, previewMetronomeMode);
   addPreviewMenuItem(menuPageSynth, menuItemMetronomeSignature, previewMetronomeSignature);

@@ -171,7 +171,6 @@ Options include:
 - `Wheel FX`
 - `Wheel Amt`
 - `Vib Speed`
-- `LFO`
 - `Amp Atk`
 - `Amp Hold`
 - `Amp Dec`
@@ -179,6 +178,7 @@ Options include:
 - `Amp Rel`
 - `FX Env 1`
 - `FX Env 2`
+- `LFO`
 - `Tempo`
 - `Metronome`
 - `Time Sig`

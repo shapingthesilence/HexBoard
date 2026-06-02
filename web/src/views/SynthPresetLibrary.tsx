@@ -344,6 +344,10 @@ function driveLabel(value: number): string {
   return driveOptions.find((option) => option.value === value)?.label ?? "Off";
 }
 
+function lfoSpeedLabel(value: number): string {
+  return lfoSpeedOptions.find((option) => option.value === clampNumber(value, 0, lfoSpeedOptions.length - 1))?.label ?? "1 Hz";
+}
+
 function fxAmountByteToPercent(value: number): number {
   if (value === 127) {
     return 0;
@@ -1162,16 +1166,6 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         </section>
 
         <section className="editorSection">
-          <h3>LFO</h3>
-          <div className="editorGrid">
-            <SelectField label="Target" value={preset.values.SynthLfoTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthLfoTarget", value)} />
-            <RangeField label="Amount" value={fxAmountByteToPercent(preset.values.SynthLfoAmount)} min={-100} max={100} onChange={(value) => updateValue("SynthLfoAmount", fxAmountPercentToByte(value))} suffix="%" />
-            <SelectField label="Wave" value={preset.values.SynthLfoWave} options={lfoWaveOptions} onChange={(value) => updateValue("SynthLfoWave", value)} />
-            <SelectField label="Speed" value={preset.values.SynthLfoSpeed} options={lfoSpeedOptions} onChange={(value) => updateValue("SynthLfoSpeed", value)} />
-          </div>
-        </section>
-
-        <section className="editorSection">
           <h3>Amp AHDSR</h3>
           <div className="editorGrid">
             <RangeField label="Attack" value={preset.values.EnvelopeAttackIndex} min={0} max={19} onChange={(value) => updateValue("EnvelopeAttackIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.EnvelopeAttackIndex)})`} />
@@ -1217,6 +1211,16 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           onSustainChange={(value) => updateValue("EffectEnvelope2SustainLevel", value)}
           onReleaseChange={(value) => updateValue("EffectEnvelope2ReleaseIndex", value)}
         />
+
+        <section className="editorSection">
+          <h3>LFO</h3>
+          <div className="editorGrid">
+            <SelectField label="Target" value={preset.values.SynthLfoTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthLfoTarget", value)} />
+            <RangeField label="Amount" value={fxAmountByteToPercent(preset.values.SynthLfoAmount)} min={-100} max={100} onChange={(value) => updateValue("SynthLfoAmount", fxAmountPercentToByte(value))} suffix="%" />
+            <SelectField label="Wave" value={preset.values.SynthLfoWave} options={lfoWaveOptions} onChange={(value) => updateValue("SynthLfoWave", value)} />
+            <RangeField label="Speed" value={preset.values.SynthLfoSpeed} min={0} max={19} onChange={(value) => updateValue("SynthLfoSpeed", value)} suffix={` (${lfoSpeedLabel(preset.values.SynthLfoSpeed)})`} />
+          </div>
+        </section>
 
         <pre className="dataPreview">
 {`Frames on last send: ${lastFrameCount}
