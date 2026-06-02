@@ -358,7 +358,7 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `13`
+- `CURRENT_SETTINGS_VERSION` is currently `14`
 - the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
@@ -368,7 +368,7 @@ Important implementation details:
 - mono portamento is stored as `SynthPortamentoTimeIndex`; it reuses the `0 ms` through `4 s` envelope time table and the menu hides `Porta` outside the two mono modes
 - arpeggiator direction is stored as `ArpeggiatorDirection`; the menu hides `Arp Dir` outside `Arp'gio`; note-sorted directions compare assigned note/frequency rather than physical button number
 - `SynthAttackEffect` is a deprecated hidden byte kept only so version `8` files can migrate by prefix copy
-- `DeviceRotation` stores the four-step OLED/device orientation used by the Layout menu's `Device Rot` item; it replaces the old behavior where `layoutDef.isPortrait` selected display rotation when a layout changed
+- `DeviceRotation` stores the four-step physical device orientation used by the Layout menu's `Device Rot` item; firmware maps that value to the OLED driver's opposite rotation because the mounted display is physically inverted. Selecting a layout seeds `DeviceRotation` from legacy `layoutDef.isPortrait` metadata: portrait layouts use `0`, and landscape layouts use `90`.
 - metronome mode and time signature are stored as `MetronomeMode` and `MetronomeSignature`; factory defaults are `Off` and `4/4`
 - the amp envelope has `EnvelopeAttackIndex`, `EnvelopeHoldIndex`, `EnvelopeDecayIndex`, `EnvelopeSustainLevel`, and `EnvelopeReleaseIndex`
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
@@ -378,7 +378,7 @@ Important implementation details:
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio ISR applies it only to the jack sample before writing the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
-- version `2` through `12` settings files are migrated in place to version `13` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, and remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
+- version `2` through `13` settings files are migrated in place to version `14` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table, and converting version `13` and older `DeviceRotation` OLED-driver constants into physical device rotation values; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
@@ -386,7 +386,7 @@ Important implementation details:
   jack-default `Buzzer` toggle; legacy stored values are interpreted by
   checking whether the older byte had the piezo bit set
 
-If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `12` because settings were appended to the schema and some setting tables expanded. Unknown version mismatches still fall back to defaults.
+If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `13` because settings were appended to the schema, some setting tables expanded, and `DeviceRotation` was reinterpreted from OLED-driver rotation to physical device rotation. Unknown version mismatches still fall back to defaults.
 
 ## MIDI And Tuning Notes
 
@@ -452,11 +452,14 @@ useful fallback comparisons.
 The sine wavetable now uses linear interpolation between adjacent `256`-entry
 table samples, reusing the low `8` bits of the existing `16`-bit phase
 accumulator. That is the first place to look if you want a cheap audio-quality
-improvement without increasing table size or changing the other waveforms.
-Imported MP single-cycle WAVs live as generated `256`-entry byte tables in
-`src/HexBoard.ino`. They are centered around `128` and rotated so phase zero
-starts at an upward zero crossing. Their waveform IDs are appended after the
-original IDs so existing saved profiles keep their current `Waveform` values.
+improvement without increasing table size. The onboard waveform convention is
+that phase zero starts at an upward zero crossing: `sine`, `strings`, and
+`clarinet` are rotated byte tables, the MP single-cycle tables are generated the
+same way, and the generated saw/triangle/square/hybrid paths apply the matching
+phase offset in RAM-resident helpers. Imported MP single-cycle WAVs live as
+generated `256`-entry byte tables in `src/HexBoard.ino`. Their waveform IDs are
+appended after the original IDs so existing saved profiles keep their current
+`Waveform` values.
 
 Pitch bend and square-wave modulation have synth-local smoothing separate from
 MIDI output. `setSynthFreq()` writes a target oscillator increment for held

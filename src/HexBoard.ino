@@ -154,6 +154,7 @@ void showOnlyValidLayoutChoices();
 void showOnlyValidScaleChoices();
 void showOnlyValidKeyChoices();
 void applyDeviceDisplayRotation();
+void loadDeviceRotationFromCurrentLayout();
 void updateLayoutAndRotate();
 void setupHardware();
 uint32_t RAM_FUNC(getLEDcode)(colorDef c);
@@ -263,7 +264,7 @@ byte applyLEDLevel(byte value, byte level) {
 byte CC74value = 0;
 byte defaultMidiChannel = 1;
 byte layoutRotation = 0;
-byte deviceRotation = 2;
+byte deviceRotation = 0;
 
 byte arpeggiatorDivision = 32;  // denominator of whole-note duration (1/32 by default)
 byte synthBPM = 120;
@@ -730,7 +731,7 @@ tuningDef tuningOptions[] = {
 class layoutDef {
 public:
   std::string name;    // limit is 17 characters for GEM menu
-  bool isPortrait;     // legacy layout metadata; display rotation is DeviceRotation.
+  bool isPortrait;     // legacy metadata used to seed DeviceRotation when the layout is selected.
   byte hexMiddleC;     // instead of "what note is button 1", "what button is the middle"
   int8_t acrossSteps;  // defined this way to be compatible with original v1.1 firmare
   int8_t dnLeftSteps;  // defined this way to be compatible with original v1.1 firmare
@@ -1433,6 +1434,18 @@ presetDef current = {
   -9,            // default to the key of C, which in 12EDO is -9 steps from A.
   0              // default to no transposition
 };
+
+constexpr byte DEVICE_ROTATION_PORTRAIT = 0;
+constexpr byte DEVICE_ROTATION_LANDSCAPE = 1;
+constexpr byte DEVICE_DISPLAY_UPRIGHT_OFFSET = 2;
+
+byte displayRotationFromDeviceRotation(byte rotation) {
+  return (DEVICE_DISPLAY_UPRIGHT_OFFSET + 4 - (rotation % 4)) % 4;
+}
+
+byte defaultDeviceRotationForLayout(bool isPortrait) {
+  return isPortrait ? DEVICE_ROTATION_PORTRAIT : DEVICE_ROTATION_LANDSCAPE;
+}
 
 // @diagnostics
 /*
@@ -4129,302 +4142,63 @@ inline int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
     You can add your own as desired; it must
     be an array of 256 values, each from 0 to 255.
     Ideally the waveform is normalized so that the
-    peaks are at 0 to 255, with 127 representing
-    no wave movement.
+    peaks are at 0 to 255, with 128 representing
+    no wave movement. Phase zero should start at
+    an upward zero crossing.
   */
 byte sine[] = {
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 3, 3,
-  4, 5, 6, 7, 8, 9, 10, 12, 13, 15, 16, 18, 19, 21, 23, 25,
-  27, 29, 31, 33, 35, 37, 39, 42, 44, 46, 49, 51, 54, 56, 59, 62,
-  64, 67, 70, 73, 76, 79, 81, 84, 87, 90, 93, 96, 99, 103, 106, 109,
-  112, 115, 118, 121, 124, 127, 131, 134, 137, 140, 143, 146, 149, 152, 156, 159,
-  162, 165, 168, 171, 174, 176, 179, 182, 185, 188, 191, 193, 196, 199, 201, 204,
-  206, 209, 211, 213, 216, 218, 220, 222, 224, 226, 228, 230, 232, 234, 236, 237,
-  239, 240, 242, 243, 245, 246, 247, 248, 249, 250, 251, 252, 252, 253, 254, 254,
-  255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 254, 254, 253, 252, 252,
-  251, 250, 249, 248, 247, 246, 245, 243, 242, 240, 239, 237, 236, 234, 232, 230,
-  228, 226, 224, 222, 220, 218, 216, 213, 211, 209, 206, 204, 201, 199, 196, 193,
-  191, 188, 185, 182, 179, 176, 174, 171, 168, 165, 162, 159, 156, 152, 149, 146,
-  143, 140, 137, 134, 131, 127, 124, 121, 118, 115, 112, 109, 106, 103, 99, 96,
-  93, 90, 87, 84, 81, 79, 76, 73, 70, 67, 64, 62, 59, 56, 54, 51,
-  49, 46, 44, 42, 39, 37, 35, 33, 31, 29, 27, 25, 23, 21, 19, 18,
-  16, 15, 13, 12, 10, 9, 8, 7, 6, 5, 4, 3, 3, 2, 1, 1
+  128, 134, 137, 140, 143, 146, 149, 152, 156, 159, 162, 165, 168, 171, 174, 176,
+  179, 182, 185, 188, 191, 193, 196, 199, 201, 204, 206, 209, 211, 213, 216, 218,
+  220, 222, 224, 226, 228, 230, 232, 234, 236, 237, 239, 240, 242, 243, 245, 246,
+  247, 248, 249, 250, 251, 252, 252, 253, 254, 254, 255, 255, 255, 255, 255, 255,
+  255, 255, 255, 255, 255, 254, 254, 253, 252, 252, 251, 250, 249, 248, 247, 246,
+  245, 243, 242, 240, 239, 237, 236, 234, 232, 230, 228, 226, 224, 222, 220, 218,
+  216, 213, 211, 209, 206, 204, 201, 199, 196, 193, 191, 188, 185, 182, 179, 176,
+  174, 171, 168, 165, 162, 159, 156, 152, 149, 146, 143, 140, 137, 134, 131, 127,
+  124, 121, 118, 115, 112, 109, 106, 103, 99, 96, 93, 90, 87, 84, 81, 79,
+  76, 73, 70, 67, 64, 62, 59, 56, 54, 51, 49, 46, 44, 42, 39, 37,
+  35, 33, 31, 29, 27, 25, 23, 21, 19, 18, 16, 15, 13, 12, 10, 9,
+  8, 7, 6, 5, 4, 3, 3, 2, 1, 1, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 1, 1, 2, 3, 3, 4, 5, 6, 7, 8, 9,
+  10, 12, 13, 15, 16, 18, 19, 21, 23, 25, 27, 29, 31, 33, 35, 37,
+  39, 42, 44, 46, 49, 51, 54, 56, 59, 62, 64, 67, 70, 73, 76, 79,
+  81, 84, 87, 90, 93, 96, 99, 103, 106, 109, 112, 115, 118, 121, 124, 127
 };
 byte strings[] = {
-  0, 0, 0, 1, 3, 6, 10, 14, 20, 26, 33, 41, 50, 59, 68, 77,
-  87, 97, 106, 115, 124, 132, 140, 146, 152, 157, 161, 164, 166, 167, 167, 167,
-  165, 163, 160, 157, 153, 149, 144, 140, 135, 130, 126, 122, 118, 114, 111, 109,
-  106, 104, 103, 101, 101, 100, 100, 100, 100, 101, 101, 102, 103, 103, 104, 105,
-  106, 107, 108, 109, 110, 111, 113, 114, 115, 116, 117, 119, 120, 121, 123, 124,
-  126, 127, 129, 131, 132, 134, 135, 136, 138, 139, 140, 141, 142, 144, 145, 146,
-  147, 148, 149, 150, 151, 152, 152, 153, 154, 154, 155, 155, 155, 155, 154, 154,
-  152, 151, 149, 146, 144, 140, 137, 133, 129, 125, 120, 115, 111, 106, 102, 98,
-  95, 92, 90, 88, 88, 88, 89, 91, 94, 98, 103, 109, 115, 123, 131, 140,
-  149, 158, 168, 178, 187, 196, 205, 214, 222, 229, 235, 241, 245, 249, 252, 254,
-  255, 255, 255, 254, 253, 250, 248, 245, 242, 239, 236, 233, 230, 227, 224, 222,
-  220, 218, 216, 215, 214, 213, 212, 211, 210, 210, 209, 208, 207, 206, 205, 203,
-  201, 199, 197, 194, 191, 188, 184, 180, 175, 171, 166, 161, 156, 150, 145, 139,
-  133, 127, 122, 116, 110, 105, 99, 94, 89, 84, 80, 75, 71, 67, 64, 61,
-  58, 56, 54, 52, 50, 49, 48, 47, 46, 45, 45, 44, 43, 42, 41, 40,
-  39, 37, 35, 33, 31, 28, 25, 22, 19, 16, 13, 10, 7, 5, 2, 1
+  128, 131, 132, 134, 135, 136, 138, 139, 140, 141, 142, 144, 145, 146, 147, 148,
+  149, 150, 151, 152, 152, 153, 154, 154, 155, 155, 155, 155, 154, 154, 152, 151,
+  149, 146, 144, 140, 137, 133, 129, 125, 120, 115, 111, 106, 102, 98, 95, 92,
+  90, 88, 88, 88, 89, 91, 94, 98, 103, 109, 115, 123, 131, 140, 149, 158,
+  168, 178, 187, 196, 205, 214, 222, 229, 235, 241, 245, 249, 252, 254, 255, 255,
+  255, 254, 253, 250, 248, 245, 242, 239, 236, 233, 230, 227, 224, 222, 220, 218,
+  216, 215, 214, 213, 212, 211, 210, 210, 209, 208, 207, 206, 205, 203, 201, 199,
+  197, 194, 191, 188, 184, 180, 175, 171, 166, 161, 156, 150, 145, 139, 133, 127,
+  122, 116, 110, 105, 99, 94, 89, 84, 80, 75, 71, 67, 64, 61, 58, 56,
+  54, 52, 50, 49, 48, 47, 46, 45, 45, 44, 43, 42, 41, 40, 39, 37,
+  35, 33, 31, 28, 25, 22, 19, 16, 13, 10, 7, 5, 2, 1, 0, 0,
+  0, 1, 3, 6, 10, 14, 20, 26, 33, 41, 50, 59, 68, 77, 87, 97,
+  106, 115, 124, 132, 140, 146, 152, 157, 161, 164, 166, 167, 167, 167, 165, 163,
+  160, 157, 153, 149, 144, 140, 135, 130, 126, 122, 118, 114, 111, 109, 106, 104,
+  103, 101, 101, 100, 100, 100, 100, 101, 101, 102, 103, 103, 104, 105, 106, 107,
+  108, 109, 110, 111, 113, 114, 115, 116, 117, 119, 120, 121, 123, 124, 126, 127
 };
 byte clarinet[] = {
-  0,
-  0,
-  2,
-  7,
-  14,
-  21,
-  30,
-  38,
-  47,
-  54,
-  61,
-  66,
-  70,
-  72,
-  73,
-  74,
-  73,
-  73,
-  72,
-  71,
-  70,
-  71,
-  72,
-  74,
-  76,
-  80,
-  84,
-  88,
-  93,
-  97,
-  101,
-  105,
-  109,
-  111,
-  113,
-  114,
-  114,
-  114,
-  113,
-  112,
-  111,
-  110,
-  109,
-  109,
-  109,
-  110,
-  112,
-  114,
-  116,
-  118,
-  121,
-  123,
-  126,
-  127,
-  128,
-  129,
-  128,
-  127,
-  126,
-  123,
-  121,
-  118,
-  116,
-  114,
-  112,
-  110,
-  109,
-  109,
-  109,
-  110,
-  111,
-  112,
-  113,
-  114,
-  114,
-  114,
-  113,
-  111,
-  109,
-  105,
-  101,
-  97,
-  93,
-  88,
-  84,
-  80,
-  76,
-  74,
-  72,
-  71,
-  70,
-  71,
-  72,
-  73,
-  73,
-  74,
-  73,
-  72,
-  70,
-  66,
-  61,
-  54,
-  47,
-  38,
-  30,
-  21,
-  14,
-  7,
-  2,
-  0,
-  0,
-  2,
-  9,
-  18,
-  31,
-  46,
-  64,
-  84,
-  105,
-  127,
-  150,
-  171,
-  191,
-  209,
-  224,
-  237,
-  246,
-  252,
-  255,
-  255,
-  253,
-  248,
-  241,
-  234,
-  225,
-  217,
-  208,
-  201,
-  194,
-  189,
-  185,
-  183,
-  182,
-  181,
-  182,
-  182,
-  183,
-  184,
-  185,
-  184,
-  183,
-  181,
-  179,
-  175,
-  171,
-  167,
-  162,
-  158,
-  154,
-  150,
-  146,
-  144,
-  142,
-  141,
-  141,
-  141,
-  142,
-  143,
-  144,
-  145,
-  146,
-  146,
-  146,
-  145,
-  143,
-  141,
-  139,
-  136,
-  134,
-  132,
-  129,
-  128,
-  127,
-  126,
-  127,
-  128,
-  129,
-  132,
-  134,
-  136,
-  139,
-  141,
-  143,
-  145,
-  146,
-  146,
-  146,
-  145,
-  144,
-  143,
-  142,
-  141,
-  141,
-  141,
-  142,
-  144,
-  146,
-  150,
-  154,
-  158,
-  162,
-  167,
-  171,
-  175,
-  179,
-  181,
-  183,
-  184,
-  185,
-  184,
-  183,
-  182,
-  182,
-  181,
-  182,
-  183,
-  185,
-  189,
-  194,
-  201,
-  208,
-  217,
-  225,
-  234,
-  241,
-  248,
-  253,
-  255,
-  255,
-  252,
-  246,
-  237,
-  224,
-  209,
-  191,
-  171,
-  150,
-  127,
-  105,
-  84,
-  64,
-  46,
-  31,
-  18,
-  9,
-  2,
+  128, 129, 128, 127, 126, 123, 121, 118, 116, 114, 112, 110, 109, 109, 109, 110,
+  111, 112, 113, 114, 114, 114, 113, 111, 109, 105, 101, 97, 93, 88, 84, 80,
+  76, 74, 72, 71, 70, 71, 72, 73, 73, 74, 73, 72, 70, 66, 61, 54,
+  47, 38, 30, 21, 14, 7, 2, 0, 0, 2, 9, 18, 31, 46, 64, 84,
+  105, 127, 150, 171, 191, 209, 224, 237, 246, 252, 255, 255, 253, 248, 241, 234,
+  225, 217, 208, 201, 194, 189, 185, 183, 182, 181, 182, 182, 183, 184, 185, 184,
+  183, 181, 179, 175, 171, 167, 162, 158, 154, 150, 146, 144, 142, 141, 141, 141,
+  142, 143, 144, 145, 146, 146, 146, 145, 143, 141, 139, 136, 134, 132, 129, 128,
+  127, 126, 127, 128, 129, 132, 134, 136, 139, 141, 143, 145, 146, 146, 146, 145,
+  144, 143, 142, 141, 141, 141, 142, 144, 146, 150, 154, 158, 162, 167, 171, 175,
+  179, 181, 183, 184, 185, 184, 183, 182, 182, 181, 182, 183, 185, 189, 194, 201,
+  208, 217, 225, 234, 241, 248, 253, 255, 255, 252, 246, 237, 224, 209, 191, 171,
+  150, 127, 105, 84, 64, 46, 31, 18, 9, 2, 0, 0, 2, 7, 14, 21,
+  30, 38, 47, 54, 61, 66, 70, 72, 73, 74, 73, 73, 72, 71, 70, 71,
+  72, 74, 76, 80, 84, 88, 93, 97, 101, 105, 109, 111, 113, 114, 114, 114,
+  113, 112, 111, 110, 109, 109, 109, 110, 112, 114, 116, 118, 121, 123, 126, 127
 };
 /*
     Imported MP single-cycle waveforms. The source WAVs are 2048-sample
@@ -5398,6 +5172,50 @@ inline uint16_t RAM_FUNC(applySynthSawToneShape)(uint16_t value, int16_t toneAmo
   return static_cast<uint16_t>(centered + 32768);
 }
 
+inline uint16_t RAM_FUNC(readTriangleWaveSample)(uint16_t phase) {
+  if (phase < 0x4000u) {
+    return static_cast<uint16_t>(0x8000u + (phase << 1));
+  }
+  if (phase < 0xC000u) {
+    return static_cast<uint16_t>(0xFFFFu - ((phase - 0x4000u) << 1));
+  }
+  return static_cast<uint16_t>((phase - 0xC000u) << 1);
+}
+
+inline uint16_t RAM_FUNC(readSquareWaveSample)(uint16_t phase, int16_t toneAmount) {
+  int32_t split = 32768 - static_cast<int32_t>(toneAmount) * 14 * 16;
+  if (split < 0) {
+    split = 0;
+  } else if (split > 65535) {
+    split = 65535;
+  }
+  if (phase == 0) {
+    return 32768;
+  }
+  uint16_t shiftedPhase = static_cast<uint16_t>(phase + static_cast<uint16_t>(split));
+  return (static_cast<int32_t>(shiftedPhase) > split) ? 65535 : 0;
+}
+
+inline uint16_t RAM_FUNC(readHybridWaveSample)(const oscillator& voice, uint8_t phaseIndex) {
+  uint8_t rampWidth = (voice.b > voice.a) ? static_cast<uint8_t>(voice.b - voice.a) : 0;
+  uint8_t crossingOffset = (rampWidth > 1) ? (rampWidth / 2) : 1;
+  uint8_t crossingIndex = static_cast<uint8_t>(voice.a + crossingOffset);
+  uint8_t t = static_cast<uint8_t>(phaseIndex + crossingIndex);
+  if (phaseIndex == 0) {
+    return 32768;
+  }
+  if (t <= voice.a) {
+    return 0;
+  }
+  if (t < voice.b) {
+    return static_cast<uint16_t>((t - voice.a) * voice.ab);
+  }
+  if (t <= voice.c) {
+    return 65535;
+  }
+  return static_cast<uint16_t>((256 - t) * voice.cd);
+}
+
 inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
                                            int16_t amount,
                                            int16_t& toneAmount,
@@ -5834,23 +5652,14 @@ void RAM_FUNC(poll)() {
     t = p >> 8;
     switch (currWave) {
       case WAVEFORM_SAW:
+        p = static_cast<uint16_t>(p + 32768);
         if (voiceToneModValue != 0) {
           p = applySynthSawToneShape(p, voiceToneModValue);
         }
         break;
-      case WAVEFORM_TRIANGLE: p = 2 * ((p >> 15) ? p : (65535 - p)); break;
-      case WAVEFORM_SQUARE: p = 0 - (p > (32768 - static_cast<int32_t>(voiceToneModValue) * 14 * 16)); break;
-      case WAVEFORM_HYBRID:
-        if (t <= synth[i].a) {
-          p = 0;
-        } else if (t < synth[i].b) {
-          p = (t - synth[i].a) * synth[i].ab;
-        } else if (t <= synth[i].c) {
-          p = 65535;
-        } else {
-          p = (256 - t) * synth[i].cd;
-        }
-        break;
+      case WAVEFORM_TRIANGLE: p = readTriangleWaveSample(p); break;
+      case WAVEFORM_SQUARE: p = readSquareWaveSample(p, voiceToneModValue); break;
+      case WAVEFORM_HYBRID: p = readHybridWaveSample(synth[i], t); break;
       case WAVEFORM_SINE: p = interpolatedWaveSample(sine, p); break;
       case WAVEFORM_STRINGS: p = strings[t] << 8; break;
       case WAVEFORM_CLARINET: p = clarinet[t] << 8; break;
@@ -7406,7 +7215,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 13;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 14;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -7619,6 +7428,17 @@ void remapLegacySynthVibratoSpeedSetting(uint8_t* profileSettings, uint8_t setti
   }
 }
 
+uint8_t remapLegacyDeviceRotationSetting(uint8_t oldDriverRotation) {
+  return displayRotationFromDeviceRotation(oldDriverRotation);
+}
+
+void remapLegacyDeviceRotationSetting(uint8_t* profileSettings, uint8_t settingsPerProfile) {
+  uint8_t keyIndex = static_cast<uint8_t>(SettingKey::DeviceRotation);
+  if (keyIndex < settingsPerProfile) {
+    profileSettings[keyIndex] = remapLegacyDeviceRotationSetting(profileSettings[keyIndex]);
+  }
+}
+
 // ==================================================
 // Global Settings Array and Factory Defaults
 // ==================================================
@@ -7800,7 +7620,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* EffectEnvelope2HoldIndex     */ 0,
   /* SynthModAmount               */ SYNTH_MOD_AMOUNT_FULL,
   /* HeadphoneVolumeCap           */ HEADPHONE_VOLUME_CAP_FULL,
-  /* DeviceRotation               */ 2,
+  /* DeviceRotation               */ DEVICE_ROTATION_PORTRAIT,
   /* SynthPortamentoTimeIndex     */ 0,
   /* ArpeggiatorDirection         */ ARP_DIRECTION_UP,
 };
@@ -7891,6 +7711,9 @@ bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t s
     if (header.version < 11) {
       remapLegacySynthVibratoSpeedSetting(settingsProfiles[profile], settingsPerProfile);
     }
+    if (header.version < 14) {
+      remapLegacyDeviceRotationSetting(settingsProfiles[profile], settingsPerProfile);
+    }
     if (header.version < 8) {
       uint8_t wheelTarget = settingsProfiles[profile][static_cast<uint8_t>(SettingKey::SynthModTarget)];
       if (wheelTarget > SYNTH_MOD_TARGET_VIBRATO) {
@@ -7961,6 +7784,8 @@ bool load_settings() {
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V11);
     case 12:
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V12);
+    case 13:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS);
     default:
       break;
   }
@@ -12180,8 +12005,13 @@ void updateLayoutAndRotate() {
   applyDeviceDisplayRotation();
 }
 
+void loadDeviceRotationFromCurrentLayout() {
+  deviceRotation = defaultDeviceRotationForLayout(current.layout().isPortrait);
+  settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = deviceRotation;
+}
+
 void applyDeviceDisplayRotation() {
-  switch (deviceRotation % 4) {
+  switch (displayRotationFromDeviceRotation(deviceRotation)) {
     case 0:
       u8g2.setDisplayRotation(U8G2_R0);
       break;
@@ -12208,6 +12038,7 @@ void changeLayout(GEMCallbackData callbackData) {
   if (selection != current.layoutIndex) {
     current.layoutIndex = selection;
     settings[static_cast<uint8_t>(SettingKey::CurrentLayout)] = selection;
+    loadDeviceRotationFromCurrentLayout();
     markSettingsDirty();
     updateLayoutAndRotate();
   }
@@ -12283,6 +12114,7 @@ void changeTuning(GEMCallbackData callbackData) {
     settings[static_cast<uint8_t>(SettingKey::CurrentScale)]         = current.scaleIndex;
     // bias the signed keyStepsFromA by +128
     settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
+    loadDeviceRotationFromCurrentLayout();
     markSettingsDirty();                                  // auto‑save (after debounce)
     // 3) Apply all values
     refreshMenuChoicesForCurrentTuning();                 // change list of choices in GEM Menu

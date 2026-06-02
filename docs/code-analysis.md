@@ -454,8 +454,10 @@ Key implementation facts:
 - `WAVEFORM_SINE` linearly interpolates between adjacent wavetable entries
   using the low `8` bits of phase. `STRINGS`, `CLARINET`, and the imported MP
   single-cycle waveforms still use direct table lookup.
-- Imported MP single-cycle waveform tables are centered around byte value `128`
-  and rotated to start at an upward zero crossing.
+- All onboard waveforms now use the same phase convention: phase zero starts at
+  an upward zero crossing. Byte tables are centered around value `128` and
+  rotated to that crossing; generated saw, triangle, square, and hybrid shapes
+  apply equivalent RAM-resident phase/sample helpers.
 - `WAVEFORM_SQUARE` reads a synth-local smoothed modulation value for pulse
   width; external MIDI CC output still uses the command wheel's current value.
 - Envelope commands are shared through value arrays plus published/consumed sequence counters.
@@ -487,7 +489,7 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `13`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `14`, and `PROFILE_COUNT` is `9`.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the hardware-specific calibrated table above.
 
@@ -516,16 +518,18 @@ scales only the centered headphone-jack sample before the `AJACK` PWM write.
 The piezo path still uses the velocity wheel and envelope-derived amplitude
 without this cap.
 
-`DeviceRotation` stores the four-step OLED/device orientation used by the Layout
-menu's `Device Rot` item. The display rotation is now independent from the
-selected factory layout; `layoutDef.isPortrait` no longer chooses OLED
-orientation when a layout is selected.
+`DeviceRotation` stores the four-step physical device orientation used by the
+Layout menu's `Device Rot` item. The OLED driver rotation is derived from that
+physical value with a 180-degree mounting offset, so `Device Rot` value `0`
+drives the display as the old OLED-driver value `2`. Selecting a layout seeds
+`DeviceRotation` from legacy `layoutDef.isPortrait` metadata: portrait layouts
+use `0`, and landscape layouts use `90`.
 
 Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` through `12` files migrate to version `13` by copying the older per-profile prefix, appending newer settings with factory defaults, remapping legacy envelope time indices when needed, and remapping legacy vibrato speed indices; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
+- version `2` through `13` files migrate to version `14` by copying the older per-profile prefix, appending newer settings with factory defaults, remapping legacy envelope time indices when needed, remapping legacy vibrato speed indices, and converting old `DeviceRotation` OLED-driver constants to physical device orientation values; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults

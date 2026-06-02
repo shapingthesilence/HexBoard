@@ -733,9 +733,10 @@ Recommended TLVs:
 
 This matches the current firmware pitch-layout model closely enough for simple
 on-device editing: choose tuning, center button, across steps, and down-left
-steps. Display orientation is no longer selected from layout portrait/landscape
-metadata; firmware stores it separately as the four-step `DeviceRotation`
-setting.
+steps. Display orientation is stored separately as the four-step physical
+`DeviceRotation` setting. Current factory layout selection still seeds that
+setting from legacy portrait/landscape metadata: portrait layouts use `0`, and
+landscape layouts use `90`.
 
 A web bundle may contain multiple `UserLayout` objects for the same tuning. A
 generated vector layout can still be edited on-device with the compact

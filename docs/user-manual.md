@@ -123,7 +123,8 @@ Options include:
 Changing layout remaps button pitches. `Layout Rot` rotates the musical pitch
 pattern around the hex grid in six 60-degree steps. `Device Rot` rotates the
 OLED/device orientation in four 90-degree steps: `0`, `90`, `180`, or `270`
-degrees. Changing layout no longer changes the screen orientation by itself.
+degrees. Choosing a layout also reloads that layout's default device
+orientation: portrait layouts use `0`, and landscape layouts use `90`.
 
 ### Scales
 
@@ -530,7 +531,7 @@ Important factory defaults include:
 
 - Tuning: `12 EDO`
 - Layout: first 12-EDO layout
-- Device Rot: `180`
+- Device Rot: `0`
 - Scale: chromatic / none
 - MIDI channel: `1`
 - MPE mode: `Auto`
