@@ -53,7 +53,12 @@ const synthValueKeys = [
   "EffectEnvelope2SustainLevel",
   "EffectEnvelope2ReleaseIndex",
   "SynthPortamentoTimeIndex",
-  "ArpeggiatorDirection"
+  "ArpeggiatorDirection",
+  "SynthWavetablePosition",
+  "SynthLfoTarget",
+  "SynthLfoAmount",
+  "SynthLfoWave",
+  "SynthLfoSpeed"
 ] as const satisfies readonly SynthSettingName[];
 
 type EditableSynthValueKey = (typeof synthValueKeys)[number];
@@ -110,7 +115,12 @@ const defaultPreset: EditableSynthPreset = {
     EffectEnvelope2SustainLevel: 0,
     EffectEnvelope2ReleaseIndex: 0,
     SynthPortamentoTimeIndex: 0,
-    ArpeggiatorDirection: 0
+    ArpeggiatorDirection: 0,
+    SynthWavetablePosition: 0,
+    SynthLfoTarget: 0,
+    SynthLfoAmount: 127,
+    SynthLfoWave: 0,
+    SynthLfoSpeed: 6
   }
 };
 
@@ -151,8 +161,7 @@ const playbackOptions = [
   { label: "MonoRtg", value: 1 },
   { label: "MonoLeg", value: 4 },
   { label: "Arp'gio", value: 2 },
-  { label: "Poly", value: 3 },
-  { label: "PolyTbl", value: 5 }
+  { label: "Poly", value: 3 }
 ];
 
 const arpDivisionOptions = [
@@ -212,9 +221,40 @@ const driveOptions = [
 ];
 
 const modTargetOptions = [
-  { label: "Tone", value: 0 },
+  { label: "Morph", value: 0 },
   { label: "Vibrato", value: 1 },
-  { label: "Pitch", value: 2 }
+  { label: "Pitch", value: 2 },
+  { label: "WT Pos", value: 3 }
+];
+
+const lfoWaveOptions = [
+  { label: "Sine", value: 0 },
+  { label: "Triangle", value: 1 },
+  { label: "Saw", value: 2 },
+  { label: "Square", value: 3 }
+];
+
+const lfoSpeedOptions = [
+  { label: "0.05 Hz", value: 0 },
+  { label: "0.1 Hz", value: 1 },
+  { label: "0.2 Hz", value: 2 },
+  { label: "0.33 Hz", value: 3 },
+  { label: "0.5 Hz", value: 4 },
+  { label: "0.75 Hz", value: 5 },
+  { label: "1 Hz", value: 6 },
+  { label: "1.25 Hz", value: 7 },
+  { label: "1.5 Hz", value: 8 },
+  { label: "2 Hz", value: 9 },
+  { label: "2.5 Hz", value: 10 },
+  { label: "3 Hz", value: 11 },
+  { label: "4 Hz", value: 12 },
+  { label: "5 Hz", value: 13 },
+  { label: "6 Hz", value: 14 },
+  { label: "8 Hz", value: 15 },
+  { label: "10 Hz", value: 16 },
+  { label: "12 Hz", value: 17 },
+  { label: "16 Hz", value: 18 },
+  { label: "20 Hz", value: 19 }
 ];
 
 const envelopeTimeOptions = [
@@ -241,10 +281,10 @@ const envelopeTimeOptions = [
 ].map((label, value) => ({ label, value }));
 
 const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]> = {
-  PlaybackMode: [0, 5],
+  PlaybackMode: [0, 4],
   Waveform: [0, 27],
   SynthDrive: [0, 3],
-  SynthModTarget: [0, 2],
+  SynthModTarget: [0, 3],
   SynthModAmount: [0, 127],
   SynthVibratoSpeed: [0, 11],
   ArpeggiatorDivision: [1, 32],
@@ -254,14 +294,14 @@ const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]>
   EnvelopeDecayIndex: [0, 19],
   EnvelopeSustainLevel: [0, 127],
   EnvelopeReleaseIndex: [0, 19],
-  EffectEnvelopeTarget: [0, 2],
+  EffectEnvelopeTarget: [0, 3],
   EffectEnvelopeAmount: [0, 254],
   EffectEnvelopeAttackIndex: [0, 19],
   EffectEnvelopeHoldIndex: [0, 19],
   EffectEnvelopeDecayIndex: [0, 19],
   EffectEnvelopeSustainLevel: [0, 127],
   EffectEnvelopeReleaseIndex: [0, 19],
-  EffectEnvelope2Target: [0, 2],
+  EffectEnvelope2Target: [0, 3],
   EffectEnvelope2Amount: [0, 254],
   EffectEnvelope2AttackIndex: [0, 19],
   EffectEnvelope2HoldIndex: [0, 19],
@@ -269,7 +309,12 @@ const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]>
   EffectEnvelope2SustainLevel: [0, 127],
   EffectEnvelope2ReleaseIndex: [0, 19],
   SynthPortamentoTimeIndex: [0, 19],
-  ArpeggiatorDirection: [0, 6]
+  ArpeggiatorDirection: [0, 6],
+  SynthWavetablePosition: [0, 127],
+  SynthLfoTarget: [0, 3],
+  SynthLfoAmount: [0, 254],
+  SynthLfoWave: [0, 3],
+  SynthLfoSpeed: [0, 19]
 };
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -280,6 +325,9 @@ function clampNumber(value: number, min: number, max: number): number {
 }
 
 function clampSynthValue(key: EditableSynthValueKey, value: number): number {
+  if (key === "PlaybackMode" && value === 5) {
+    return 3;
+  }
   const [min, max] = synthValueBounds[key];
   return clampNumber(value, min, max);
 }
@@ -1105,10 +1153,21 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
               <RangeField label="Portamento" value={preset.values.SynthPortamentoTimeIndex} min={0} max={19} onChange={(value) => updateValue("SynthPortamentoTimeIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.SynthPortamentoTimeIndex)})`} />
             ) : null}
             <SelectField label="Waveform" value={preset.values.Waveform} options={waveformOptions} onChange={(value) => updateValue("Waveform", value)} />
+            <RangeField label="WT Pos" value={preset.values.SynthWavetablePosition} min={0} max={127} onChange={(value) => updateValue("SynthWavetablePosition", value)} suffix="/127" />
             <RangeField label="Drive" value={preset.values.SynthDrive} min={0} max={3} onChange={(value) => updateValue("SynthDrive", value)} suffix={` (${driveLabel(preset.values.SynthDrive)})`} />
             <SelectField label="Wheel FX" value={preset.values.SynthModTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthModTarget", value)} />
             <RangeField label="Wheel Amt" value={preset.values.SynthModAmount} min={0} max={127} onChange={(value) => updateValue("SynthModAmount", value)} suffix="/127" />
             <RangeField label="Vib Speed" value={preset.values.SynthVibratoSpeed} min={0} max={11} onChange={(value) => updateValue("SynthVibratoSpeed", value)} suffix={` (${preset.values.SynthVibratoSpeed + 1} Hz)`} />
+          </div>
+        </section>
+
+        <section className="editorSection">
+          <h3>LFO</h3>
+          <div className="editorGrid">
+            <SelectField label="Target" value={preset.values.SynthLfoTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthLfoTarget", value)} />
+            <RangeField label="Amount" value={fxAmountByteToPercent(preset.values.SynthLfoAmount)} min={-100} max={100} onChange={(value) => updateValue("SynthLfoAmount", fxAmountPercentToByte(value))} suffix="%" />
+            <SelectField label="Wave" value={preset.values.SynthLfoWave} options={lfoWaveOptions} onChange={(value) => updateValue("SynthLfoWave", value)} />
+            <SelectField label="Speed" value={preset.values.SynthLfoSpeed} options={lfoSpeedOptions} onChange={(value) => updateValue("SynthLfoSpeed", value)} />
           </div>
         </section>
 

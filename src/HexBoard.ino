@@ -90,6 +90,7 @@ enum class SettingKey : uint8_t;
 class colorDef;
 struct SettingsHeader;
 struct SynthPresetSlot;
+struct SynthPresetSlotV7;
 struct SynthPresetSlotV6;
 struct LegacySynthPresetSlot;
 struct SynthPresetMenuAction;
@@ -353,7 +354,7 @@ constexpr byte SYNTH_MONO_RETRIGGER = 1;
 constexpr byte SYNTH_ARPEGGIO = 2;
 constexpr byte SYNTH_POLY = 3;
 constexpr byte SYNTH_MONO_LEGATO = 4;
-constexpr byte SYNTH_POLYTBL = 5;
+constexpr byte SYNTH_POLYTBL_LEGACY = 5;
 constexpr byte SYNTH_MONO = SYNTH_MONO_RETRIGGER;  // Legacy stored mono value.
 byte playbackMode = SYNTH_POLY;
 
@@ -365,11 +366,18 @@ inline bool RAM_FUNC(isMonoPlaybackMode)(byte mode) {
 }
 
 inline bool RAM_FUNC(isPolyPlaybackMode)(byte mode) {
-  return mode == SYNTH_POLY || mode == SYNTH_POLYTBL;
+  return mode == SYNTH_POLY;
 }
 
 inline bool RAM_FUNC(isValidPlaybackMode)(byte mode) {
   return mode == SYNTH_OFF || isMonoPlaybackMode(mode) || mode == SYNTH_ARPEGGIO || isPolyPlaybackMode(mode);
+}
+
+inline byte RAM_FUNC(normalizeSynthPlaybackMode)(byte mode) {
+  if (mode == SYNTH_POLYTBL_LEGACY) {
+    return SYNTH_POLY;
+  }
+  return isValidPlaybackMode(mode) ? mode : SYNTH_POLY;
 }
 
 constexpr byte WAVEFORM_SINE = 0;
@@ -404,19 +412,34 @@ constexpr byte SYNTH_DRIVE_EDGE = 2;
 constexpr byte SYNTH_DRIVE_DIRTY = 3;
 byte synthDrive = SYNTH_DRIVE_OFF;
 
-constexpr byte SYNTH_MOD_TARGET_TONE = 0;
+constexpr byte SYNTH_MOD_TARGET_MORPH = 0;
 constexpr byte SYNTH_MOD_TARGET_VIBRATO = 1;
 constexpr byte SYNTH_MOD_TARGET_PITCH = 2;
-byte synthModTarget = SYNTH_MOD_TARGET_TONE;
+constexpr byte SYNTH_MOD_TARGET_WAVETABLE_POSITION = 3;
+constexpr byte SYNTH_MOD_TARGET_MAX = SYNTH_MOD_TARGET_WAVETABLE_POSITION;
+byte synthModTarget = SYNTH_MOD_TARGET_MORPH;
 constexpr uint8_t SYNTH_MOD_AMOUNT_FULL = 127;
 byte synthModAmount = SYNTH_MOD_AMOUNT_FULL;
 std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeTarget = { SYNTH_MOD_TARGET_VIBRATO, SYNTH_MOD_TARGET_PITCH };
 constexpr uint8_t SYNTH_FX_AMOUNT_OFF = 127;
 constexpr uint8_t SYNTH_FX_AMOUNT_FULL = 254;
 std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeAmount = { SYNTH_FX_AMOUNT_FULL, SYNTH_FX_AMOUNT_FULL };
+constexpr uint8_t SYNTH_WAVETABLE_POSITION_DEFAULT = 0;
+byte synthWavetablePosition = SYNTH_WAVETABLE_POSITION_DEFAULT;
+
+constexpr byte SYNTH_LFO_WAVE_SINE = 0;
+constexpr byte SYNTH_LFO_WAVE_TRIANGLE = 1;
+constexpr byte SYNTH_LFO_WAVE_SAW = 2;
+constexpr byte SYNTH_LFO_WAVE_SQUARE = 3;
+constexpr byte SYNTH_LFO_WAVE_MAX = SYNTH_LFO_WAVE_SQUARE;
+byte synthLfoTarget = SYNTH_MOD_TARGET_MORPH;
+byte synthLfoAmount = SYNTH_FX_AMOUNT_OFF;
+byte synthLfoWave = SYNTH_LFO_WAVE_SINE;
 
 constexpr byte SYNTH_VIBRATO_SPEED_DEFAULT = 5;  // 6 Hz in the 1..12 Hz table.
 byte synthVibratoSpeed = SYNTH_VIBRATO_SPEED_DEFAULT;
+constexpr byte SYNTH_LFO_SPEED_DEFAULT = 6;  // 1 Hz in the granular LFO speed table.
+byte synthLfoSpeed = SYNTH_LFO_SPEED_DEFAULT;
 
 constexpr byte RAINBOW_MODE = 0;
 constexpr byte TIERED_COLOR_MODE = 1;
@@ -3960,12 +3983,8 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
     polyphonic expression mode).
   */
 #define POLYPHONY_LIMIT 8
-constexpr uint8_t POLYTBL_POLYPHONY_LIMIT = 8;
 
 inline uint8_t RAM_FUNC(synthPlaybackVoiceLimit)(byte mode) {
-  if (mode == SYNTH_POLYTBL) {
-    return POLYTBL_POLYPHONY_LIMIT;
-  }
   if (mode == SYNTH_POLY) {
     return POLYPHONY_LIMIT;
   }
@@ -4579,6 +4598,9 @@ constexpr uint8_t SYNTH_MOD_SMOOTH_SHIFT = 9;
 constexpr uint32_t audioPhaseIncrementFromHz(uint16_t hz) {
   return static_cast<uint32_t>((static_cast<uint64_t>(hz) * POLL_INTERVAL_IN_MICROSECONDS * 4294967296ULL) / 1000000ULL);
 }
+constexpr uint32_t audioPhaseIncrementFromMilliHz(uint32_t milliHz) {
+  return static_cast<uint32_t>((static_cast<uint64_t>(milliHz) * POLL_INTERVAL_IN_MICROSECONDS * 4294967296ULL) / 1000000000ULL);
+}
 constexpr std::array<uint32_t, 12> synthVibratoPhaseIncrementOptions = {
   audioPhaseIncrementFromHz(1),
   audioPhaseIncrementFromHz(2),
@@ -4592,6 +4614,28 @@ constexpr std::array<uint32_t, 12> synthVibratoPhaseIncrementOptions = {
   audioPhaseIncrementFromHz(10),
   audioPhaseIncrementFromHz(11),
   audioPhaseIncrementFromHz(12)
+};
+constexpr std::array<uint32_t, 20> synthLfoPhaseIncrementOptions = {
+  audioPhaseIncrementFromMilliHz(50),
+  audioPhaseIncrementFromMilliHz(100),
+  audioPhaseIncrementFromMilliHz(200),
+  audioPhaseIncrementFromMilliHz(333),
+  audioPhaseIncrementFromMilliHz(500),
+  audioPhaseIncrementFromMilliHz(750),
+  audioPhaseIncrementFromMilliHz(1000),
+  audioPhaseIncrementFromMilliHz(1250),
+  audioPhaseIncrementFromMilliHz(1500),
+  audioPhaseIncrementFromMilliHz(2000),
+  audioPhaseIncrementFromMilliHz(2500),
+  audioPhaseIncrementFromMilliHz(3000),
+  audioPhaseIncrementFromMilliHz(4000),
+  audioPhaseIncrementFromMilliHz(5000),
+  audioPhaseIncrementFromMilliHz(6000),
+  audioPhaseIncrementFromMilliHz(8000),
+  audioPhaseIncrementFromMilliHz(10000),
+  audioPhaseIncrementFromMilliHz(12000),
+  audioPhaseIncrementFromMilliHz(16000),
+  audioPhaseIncrementFromMilliHz(20000)
 };
 constexpr uint16_t METRONOME_BEEP_SAMPLE_COUNT = (40000 + POLL_INTERVAL_IN_MICROSECONDS - 1) / POLL_INTERVAL_IN_MICROSECONDS;
 constexpr uint32_t METRONOME_BEEP_NORMAL_INCREMENT = audioPhaseIncrementFromHz(1200);
@@ -5000,6 +5044,8 @@ byte attenuation[] = { 64, 24, 17, 14, 12, 11, 10, 9, 8 };  // RAM-resident; rea
 uint16_t synthModValueQ8 = 0;
 uint32_t synthVibratoPhase = 0;
 uint32_t synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[SYNTH_VIBRATO_SPEED_DEFAULT];
+uint32_t synthLfoPhase = 0;
+uint32_t synthLfoPhaseIncrement = synthLfoPhaseIncrementOptions[SYNTH_LFO_SPEED_DEFAULT];
 volatile uint16_t metronomeBeepSamplesRemaining = 0;
 volatile uint32_t metronomeBeepPhaseIncrement = METRONOME_BEEP_NORMAL_INCREMENT;
 uint32_t metronomeBeepPhase = 0;
@@ -5027,16 +5073,16 @@ inline uint8_t RAM_FUNC(smoothedSynthModValue)() {
   return static_cast<uint8_t>((synthModValueQ8 + 128u) >> 8);
 }
 
-void updateSynthVibratoParams() {
-  if (synthModTarget > SYNTH_MOD_TARGET_PITCH) {
-    synthModTarget = SYNTH_MOD_TARGET_TONE;
+void updateSynthModulationParams() {
+  if (synthModTarget > SYNTH_MOD_TARGET_MAX) {
+    synthModTarget = SYNTH_MOD_TARGET_MORPH;
   }
   if (synthModAmount > SYNTH_MOD_AMOUNT_FULL) {
     synthModAmount = SYNTH_MOD_AMOUNT_FULL;
   }
   for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
-    if (effectEnvelopeTarget[envelopeIndex] > SYNTH_MOD_TARGET_PITCH) {
-      effectEnvelopeTarget[envelopeIndex] = SYNTH_MOD_TARGET_TONE;
+    if (effectEnvelopeTarget[envelopeIndex] > SYNTH_MOD_TARGET_MAX) {
+      effectEnvelopeTarget[envelopeIndex] = SYNTH_MOD_TARGET_MORPH;
     }
     if (effectEnvelopeAmount[envelopeIndex] > SYNTH_FX_AMOUNT_FULL) {
       effectEnvelopeAmount[envelopeIndex] = SYNTH_FX_AMOUNT_FULL;
@@ -5046,6 +5092,22 @@ void updateSynthVibratoParams() {
     synthVibratoSpeed = SYNTH_VIBRATO_SPEED_DEFAULT;
   }
   synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[synthVibratoSpeed];
+  if (synthWavetablePosition > SYNTH_MOD_AMOUNT_FULL) {
+    synthWavetablePosition = SYNTH_WAVETABLE_POSITION_DEFAULT;
+  }
+  if (synthLfoTarget > SYNTH_MOD_TARGET_MAX) {
+    synthLfoTarget = SYNTH_MOD_TARGET_MORPH;
+  }
+  if (synthLfoAmount > SYNTH_FX_AMOUNT_FULL) {
+    synthLfoAmount = SYNTH_FX_AMOUNT_OFF;
+  }
+  if (synthLfoWave > SYNTH_LFO_WAVE_MAX) {
+    synthLfoWave = SYNTH_LFO_WAVE_SINE;
+  }
+  if (synthLfoSpeed >= synthLfoPhaseIncrementOptions.size()) {
+    synthLfoSpeed = SYNTH_LFO_SPEED_DEFAULT;
+  }
+  synthLfoPhaseIncrement = synthLfoPhaseIncrementOptions[synthLfoSpeed];
 }
 
 void updateSynthPortamentoSettings() {
@@ -5182,30 +5244,12 @@ inline uint32_t RAM_FUNC(applySynthVibrato)(uint32_t increment, int16_t vibratoA
   return increment + positiveOffset;
 }
 
-inline uint16_t RAM_FUNC(applySynthTonePhaseWarp)(uint16_t phase, int16_t toneAmount) {
+inline uint16_t RAM_FUNC(applySynthMorphPhaseWarp)(uint16_t phase, int16_t morphAmount) {
   uint16_t triangle = (phase & 0x8000) ? static_cast<uint16_t>(0xFFFFu - phase) : phase;
-  uint16_t depth = static_cast<uint16_t>(toneAmount < 0 ? -toneAmount : toneAmount);
+  uint16_t depth = static_cast<uint16_t>(morphAmount < 0 ? -morphAmount : morphAmount);
   uint16_t offset = static_cast<uint16_t>(((static_cast<uint32_t>(triangle) * static_cast<uint32_t>(depth)) * 5u) >> 8);
-  return (toneAmount < 0) ? static_cast<uint16_t>(phase - offset)
-                          : static_cast<uint16_t>(phase + offset);
-}
-
-inline uint16_t RAM_FUNC(applySynthSawToneShape)(uint16_t value, int16_t toneAmount) {
-  int32_t centered = static_cast<int32_t>(value) - 32768;
-  int32_t magnitude = centered < 0 ? -centered : centered;
-  if (magnitude > 32767) {
-    magnitude = 32767;
-  }
-  uint16_t depth = static_cast<uint16_t>(toneAmount < 0 ? -toneAmount : toneAmount);
-  int32_t curve = (centered * (32767 - magnitude)) >> 15;
-  int32_t delta = (curve * static_cast<int32_t>(depth)) >> 4;
-  centered = (toneAmount < 0) ? (centered - delta) : (centered + delta);
-  if (centered < -32768) {
-    centered = -32768;
-  } else if (centered > 32767) {
-    centered = 32767;
-  }
-  return static_cast<uint16_t>(centered + 32768);
+  return (morphAmount < 0) ? static_cast<uint16_t>(phase - offset)
+                           : static_cast<uint16_t>(phase + offset);
 }
 
 inline uint16_t RAM_FUNC(readTriangleWaveSample)(uint16_t phase) {
@@ -5218,13 +5262,8 @@ inline uint16_t RAM_FUNC(readTriangleWaveSample)(uint16_t phase) {
   return static_cast<uint16_t>((phase - 0xC000u) << 1);
 }
 
-inline uint16_t RAM_FUNC(readSquareWaveSample)(uint16_t phase, int16_t toneAmount) {
-  int32_t split = 32768 - static_cast<int32_t>(toneAmount) * 14 * 16;
-  if (split < 0) {
-    split = 0;
-  } else if (split > 65535) {
-    split = 65535;
-  }
+inline uint16_t RAM_FUNC(readSquareWaveSample)(uint16_t phase) {
+  constexpr int32_t split = 32768;
   if (phase == 0) {
     return 32768;
   }
@@ -5297,7 +5336,7 @@ uint8_t readBasicWavetableAnchorSample(uint8_t anchor, uint8_t sampleIndex) {
       return sample16ToWaveByte(static_cast<uint16_t>(phase + 32768u));
     case 3:
     default:
-      return sample16ToWaveByte(readSquareWaveSample(phase, 0));
+      return sample16ToWaveByte(readSquareWaveSample(phase));
   }
 }
 
@@ -5307,7 +5346,7 @@ void fillGeneratedWaveFrame(byte waveform, uint8_t frameIndex) {
     uint16_t phase = static_cast<uint16_t>(sampleIndex) << 8;
     switch (waveform) {
       case WAVEFORM_SQUARE:
-        frame[sampleIndex] = sample16ToWaveByte(readSquareWaveSample(phase, 0));
+        frame[sampleIndex] = sample16ToWaveByte(readSquareWaveSample(phase));
         break;
       case WAVEFORM_SAW:
         frame[sampleIndex] = sample16ToWaveByte(static_cast<uint16_t>(phase + 32768u));
@@ -5379,11 +5418,11 @@ void loadSelectedSynthWaveform() {
   synthWaveTableLoadInProgress = false;
 }
 
-inline uint16_t RAM_FUNC(wavetableFramePositionFromTone)(int16_t toneAmount, uint8_t frameCount) {
-  if (toneAmount <= 0 || frameCount <= 1) {
+inline uint16_t RAM_FUNC(wavetableFramePositionFromAmount)(int16_t positionAmount, uint8_t frameCount) {
+  if (positionAmount <= 0 || frameCount <= 1) {
     return 0;
   }
-  uint8_t amount = toneAmount > 127 ? 127 : static_cast<uint8_t>(toneAmount);
+  uint8_t amount = positionAmount > 127 ? 127 : static_cast<uint8_t>(positionAmount);
   uint16_t lastFrame = static_cast<uint16_t>(frameCount - 1);
   return static_cast<uint16_t>((static_cast<uint32_t>(amount) * lastFrame * 256u) / 127u);
 }
@@ -5392,12 +5431,12 @@ inline uint16_t RAM_FUNC(readLoadedWaveFrameSample)(uint16_t phase) {
   return static_cast<uint16_t>(activeSynthWaveTable[0][phase >> 8] << 8);
 }
 
-inline uint16_t RAM_FUNC(readActiveWavetableSample)(uint16_t phase, int16_t toneAmount) {
+inline uint16_t RAM_FUNC(readActiveWavetableSample)(uint16_t phase, int16_t positionAmount) {
   uint8_t frameCount = activeSynthWaveFrameCount;
   if (frameCount <= 1) {
     return readLoadedWaveFrameSample(phase);
   }
-  uint16_t framePosition = wavetableFramePositionFromTone(toneAmount, frameCount);
+  uint16_t framePosition = wavetableFramePositionFromAmount(positionAmount, frameCount);
   uint8_t frameIndex = static_cast<uint8_t>(framePosition >> 8);
   uint8_t frameFrac = static_cast<uint8_t>(framePosition & 0xFF);
   uint8_t maxFrameIndex = static_cast<uint8_t>(frameCount - 1);
@@ -5410,18 +5449,75 @@ inline uint16_t RAM_FUNC(readActiveWavetableSample)(uint16_t phase, int16_t tone
   return static_cast<uint16_t>((sampleA << 8) + ((sampleB - sampleA) * static_cast<int16_t>(frameFrac)));
 }
 
+inline int16_t RAM_FUNC(clampSynthModAccumulator)(int16_t value) {
+  if (value > 127) {
+    return 127;
+  }
+  if (value < -127) {
+    return -127;
+  }
+  return value;
+}
+
+inline int16_t RAM_FUNC(combinedWavetablePositionAmount)(int16_t positionModAmount) {
+  int16_t amount = static_cast<int16_t>(synthWavetablePosition) + positionModAmount;
+  if (amount > 127) {
+    return 127;
+  }
+  if (amount < 0) {
+    return 0;
+  }
+  return amount;
+}
+
+inline int16_t RAM_FUNC(readSynthLfoSample)() {
+  uint8_t phase = synthLfoPhase >> 24;
+  switch (synthLfoWave) {
+    case SYNTH_LFO_WAVE_TRIANGLE:
+      if (phase < 64) {
+        return static_cast<int16_t>(phase * 2);
+      }
+      if (phase < 128) {
+        return static_cast<int16_t>(127 - ((phase - 64) * 2));
+      }
+      if (phase < 192) {
+        return static_cast<int16_t>(-((phase - 128) * 2));
+      }
+      return static_cast<int16_t>(-127 + ((phase - 192) * 2));
+    case SYNTH_LFO_WAVE_SAW:
+      return static_cast<int16_t>(phase) - 128;
+    case SYNTH_LFO_WAVE_SQUARE:
+      return (phase < 128) ? 127 : -127;
+    case SYNTH_LFO_WAVE_SINE:
+    default:
+      return static_cast<int16_t>(synthVibratoSine[phase]) - 128;
+  }
+}
+
+inline int16_t RAM_FUNC(synthLfoModValue)() {
+  int16_t depth = synthEffectAmountDepth(synthLfoAmount);
+  if (depth == 0) {
+    return 0;
+  }
+  synthLfoPhase += synthLfoPhaseIncrement;
+  int16_t sample = readSynthLfoSample();
+  int32_t scaled = static_cast<int32_t>(sample) * static_cast<int32_t>(depth);
+  return static_cast<int16_t>(scaled >> 7);
+}
+
 inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
                                            int16_t amount,
-                                           int16_t& toneAmount,
+                                           int16_t& morphAmount,
                                            int16_t& vibratoAmount,
-                                           int16_t& pitchAmount) {
+                                           int16_t& pitchAmount,
+                                           int16_t& wavetablePositionAmount) {
   if (amount == 0) {
     return;
   }
   int16_t* destination = nullptr;
   switch (target) {
-    case SYNTH_MOD_TARGET_TONE:
-      destination = &toneAmount;
+    case SYNTH_MOD_TARGET_MORPH:
+      destination = &morphAmount;
       break;
     case SYNTH_MOD_TARGET_VIBRATO:
       destination = &vibratoAmount;
@@ -5429,16 +5525,13 @@ inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
     case SYNTH_MOD_TARGET_PITCH:
       destination = &pitchAmount;
       break;
+    case SYNTH_MOD_TARGET_WAVETABLE_POSITION:
+      destination = &wavetablePositionAmount;
+      break;
     default:
       return;
   }
-  int16_t combined = static_cast<int16_t>(*destination + amount);
-  if (combined > 127) {
-    combined = 127;
-  } else if (combined < -127) {
-    combined = -127;
-  }
-  *destination = combined;
+  *destination = clampSynthModAccumulator(static_cast<int16_t>(*destination + amount));
 }
 
 constexpr uint32_t RAM_FUNC(SYNTH_PITCH_MOD_POSITIVE_Q16)[128] = {
@@ -5632,10 +5725,22 @@ void RAM_FUNC(poll)() {
   const int32_t metronomeSample = readMetronomeBeepSample();
   const bool metronomeAudible = metronomeSample != 0;
   const uint8_t synthModValue = scaleSynthModAmount(smoothedSynthModValue());
-  int16_t wheelToneModValue = 0;
+  int16_t wheelMorphModValue = 0;
   int16_t wheelVibratoModValue = 0;
   int16_t wheelPitchModValue = 0;
-  addSynthTargetAmount(synthModTarget, synthModValue, wheelToneModValue, wheelVibratoModValue, wheelPitchModValue);
+  int16_t wheelWavetablePositionModValue = 0;
+  addSynthTargetAmount(synthModTarget,
+                       synthModValue,
+                       wheelMorphModValue,
+                       wheelVibratoModValue,
+                       wheelPitchModValue,
+                       wheelWavetablePositionModValue);
+  addSynthTargetAmount(synthLfoTarget,
+                       synthLfoModValue(),
+                       wheelMorphModValue,
+                       wheelVibratoModValue,
+                       wheelPitchModValue,
+                       wheelWavetablePositionModValue);
   int16_t synthVibratoSample = 0;
   bool synthVibratoSampleReady = false;
   // ============================================================
@@ -5791,18 +5896,20 @@ void RAM_FUNC(poll)() {
       continue;
     }
 
-    int16_t voiceToneModValue = wheelToneModValue;
+    int16_t voiceMorphModValue = wheelMorphModValue;
     int16_t voiceVibratoModValue = wheelVibratoModValue;
     int16_t voicePitchModValue = wheelPitchModValue;
+    int16_t voiceWavetablePositionModValue = wheelWavetablePositionModValue;
     for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
       EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][i];
       if (synthEffectEnvelopeActive[envelopeIndex]) {
         updateEffectEnvelopeState(envelopeIndex, effectEnv);
         addSynthTargetAmount(effectEnvelopeTarget[envelopeIndex],
                              effectEnvelopeModValue(envelopeIndex, effectEnvelopeTarget[envelopeIndex], effectEnv),
-                             voiceToneModValue,
+                             voiceMorphModValue,
                              voiceVibratoModValue,
-                             voicePitchModValue);
+                             voicePitchModValue,
+                             voiceWavetablePositionModValue);
       }
     }
 
@@ -5841,25 +5948,19 @@ void RAM_FUNC(poll)() {
     }
     synth[i].counter += phaseIncrement;  // high 16 bits loop from 65535 -> 0
     p = static_cast<uint16_t>(synth[i].counter >> 16);
-    if (playbackMode != SYNTH_POLYTBL
-        && voiceToneModValue != 0
-        && currWave != WAVEFORM_SQUARE
-        && currWave != WAVEFORM_SAW) {
-      p = applySynthTonePhaseWarp(p, voiceToneModValue);
+    if (voiceMorphModValue != 0) {
+      p = applySynthMorphPhaseWarp(p, voiceMorphModValue);
     }
     t = p >> 8;
-    if (playbackMode == SYNTH_POLYTBL) {
-      p = readActiveWavetableSample(p, voiceToneModValue);
+    if (activeSynthWaveFrameCount > 1) {
+      p = readActiveWavetableSample(p, combinedWavetablePositionAmount(voiceWavetablePositionModValue));
     } else {
       switch (currWave) {
         case WAVEFORM_SAW:
           p = static_cast<uint16_t>(p + 32768);
-          if (voiceToneModValue != 0) {
-            p = applySynthSawToneShape(p, voiceToneModValue);
-          }
           break;
         case WAVEFORM_TRIANGLE: p = readTriangleWaveSample(p); break;
-        case WAVEFORM_SQUARE: p = readSquareWaveSample(p, voiceToneModValue); break;
+        case WAVEFORM_SQUARE: p = readSquareWaveSample(p); break;
         case WAVEFORM_HYBRID: p = readHybridWaveSample(synth[i], t); break;
         case WAVEFORM_SINE:
         case WAVEFORM_BASIC_WAVETABLE:
@@ -7431,7 +7532,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 14;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 15;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -7529,6 +7630,11 @@ enum class SettingKey : uint8_t {
   DeviceRotation,
   SynthPortamentoTimeIndex,
   ArpeggiatorDirection,
+  SynthWavetablePosition,
+  SynthLfoTarget,
+  SynthLfoAmount,
+  SynthLfoWave,
+  SynthLfoSpeed,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -7545,20 +7651,22 @@ constexpr uint8_t NUM_SETTINGS_V8 = static_cast<uint8_t>(SettingKey::EnvelopeHol
 constexpr uint8_t NUM_SETTINGS_BEFORE_HEADPHONE_CAP = static_cast<uint8_t>(SettingKey::HeadphoneVolumeCap);
 constexpr uint8_t NUM_SETTINGS_V11 = static_cast<uint8_t>(SettingKey::DeviceRotation);
 constexpr uint8_t NUM_SETTINGS_V12 = static_cast<uint8_t>(SettingKey::SynthPortamentoTimeIndex);
+constexpr uint8_t NUM_SETTINGS_V14 = static_cast<uint8_t>(SettingKey::SynthWavetablePosition);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
 constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
 constexpr uint8_t LEGACY_SYNTH_PRESET_COUNT = 8;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 7;
-constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 4;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 8;
+constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 5;
 constexpr size_t SYNTH_PRESET_VALUE_COUNT_V6 = 27;
+constexpr size_t SYNTH_PRESET_VALUE_COUNT_V7 = 29;
 constexpr size_t SYNTH_PRESET_NAME_LENGTH = 32;
 constexpr size_t SYNTH_PRESET_FOLDER_LENGTH = 48;
 constexpr size_t SYNTH_PRESET_MENU_LABEL_LENGTH = 64;
 constexpr size_t SYNTH_PRESET_OBJECT_ID_LENGTH = 16;
 constexpr const char* SYNTH_PRESET_ROOT_FOLDER = "/";
-constexpr std::array<SettingKey, 29> synthPresetKeys = {
+constexpr std::array<SettingKey, 34> synthPresetKeys = {
   SettingKey::PlaybackMode,
   SettingKey::Waveform,
   SettingKey::SynthDrive,
@@ -7587,7 +7695,12 @@ constexpr std::array<SettingKey, 29> synthPresetKeys = {
   SettingKey::EffectEnvelope2SustainLevel,
   SettingKey::EffectEnvelope2ReleaseIndex,
   SettingKey::SynthPortamentoTimeIndex,
-  SettingKey::ArpeggiatorDirection
+  SettingKey::ArpeggiatorDirection,
+  SettingKey::SynthWavetablePosition,
+  SettingKey::SynthLfoTarget,
+  SettingKey::SynthLfoAmount,
+  SettingKey::SynthLfoWave,
+  SettingKey::SynthLfoSpeed
 };
 constexpr size_t SYNTH_PRESET_VALUE_COUNT = synthPresetKeys.size();
 constexpr std::array<uint8_t, 4> legacySynthVibratoSpeedIndexToCurrent = {
@@ -7685,6 +7798,15 @@ struct SynthPresetSlot {
   char name[SYNTH_PRESET_NAME_LENGTH] = {};
   char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
   uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
+};
+
+struct SynthPresetSlotV7 {
+  uint8_t valid = 0;
+  uint8_t favorite = 0;
+  uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
+  char name[SYNTH_PRESET_NAME_LENGTH] = {};
+  char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
+  uint8_t values[SYNTH_PRESET_VALUE_COUNT_V7] = {};
 };
 
 struct SynthPresetSlotV6 {
@@ -7813,7 +7935,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* Display played notes         */ 1,
   /* LED current limit mode       */ LED_CURRENT_LIMIT_1500MA,
   /* SynthDrive                   */ SYNTH_DRIVE_OFF,
-  /* SynthModTarget               */ SYNTH_MOD_TARGET_TONE,
+  /* SynthModTarget               */ SYNTH_MOD_TARGET_MORPH,
   /* SynthVibratoSpeed            */ SYNTH_VIBRATO_SPEED_DEFAULT,
   /* MetronomeMode                */ METRONOME_MODE_OFF,
   /* MetronomeSignature           */ 0,
@@ -7839,6 +7961,11 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* DeviceRotation               */ DEVICE_ROTATION_PORTRAIT,
   /* SynthPortamentoTimeIndex     */ 0,
   /* ArpeggiatorDirection         */ ARP_DIRECTION_UP,
+  /* SynthWavetablePosition       */ SYNTH_WAVETABLE_POSITION_DEFAULT,
+  /* SynthLfoTarget               */ SYNTH_MOD_TARGET_MORPH,
+  /* SynthLfoAmount               */ SYNTH_FX_AMOUNT_OFF,
+  /* SynthLfoWave                 */ SYNTH_LFO_WAVE_SINE,
+  /* SynthLfoSpeed                */ SYNTH_LFO_SPEED_DEFAULT,
 };
 
 // ==================================================
@@ -7933,10 +8060,14 @@ bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t s
     if (header.version < 8) {
       uint8_t wheelTarget = settingsProfiles[profile][static_cast<uint8_t>(SettingKey::SynthModTarget)];
       if (wheelTarget > SYNTH_MOD_TARGET_VIBRATO) {
-        wheelTarget = SYNTH_MOD_TARGET_TONE;
+        wheelTarget = SYNTH_MOD_TARGET_MORPH;
       }
       settingsProfiles[profile][static_cast<uint8_t>(SettingKey::EffectEnvelopeTarget)] =
-        (wheelTarget == SYNTH_MOD_TARGET_VIBRATO) ? SYNTH_MOD_TARGET_TONE : SYNTH_MOD_TARGET_VIBRATO;
+        (wheelTarget == SYNTH_MOD_TARGET_VIBRATO) ? SYNTH_MOD_TARGET_MORPH : SYNTH_MOD_TARGET_VIBRATO;
+    }
+    if (settingsPerProfile > static_cast<uint8_t>(SettingKey::PlaybackMode)) {
+      settingsProfiles[profile][static_cast<uint8_t>(SettingKey::PlaybackMode)] =
+        normalizeSynthPlaybackMode(settingsProfiles[profile][static_cast<uint8_t>(SettingKey::PlaybackMode)]);
     }
   }
   activeProfileIndex = defaultProfileIndex;
@@ -8001,7 +8132,9 @@ bool load_settings() {
     case 12:
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V12);
     case 13:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS);
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V14);
+    case 14:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V14);
     default:
       break;
   }
@@ -8155,6 +8288,15 @@ void normalizeSynthPresetMetadata(SynthPresetSlot& preset, uint8_t fallbackIndex
   }
 }
 
+void normalizeSynthPresetValues(SynthPresetSlot& preset) {
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    if (synthPresetKeys[i] == SettingKey::PlaybackMode) {
+      preset.values[i] = normalizeSynthPlaybackMode(preset.values[i]);
+      return;
+    }
+  }
+}
+
 void migrateLegacySynthPresetSlot(const LegacySynthPresetSlot& legacyPreset, uint8_t index) {
   if (!legacyPreset.valid || synthPresets.size() >= SYNTH_PRESET_MAX_COUNT) {
     return;
@@ -8167,6 +8309,26 @@ void migrateLegacySynthPresetSlot(const LegacySynthPresetSlot& legacyPreset, uin
     preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
   }
   memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
+  normalizeSynthPresetValues(preset);
+  normalizeSynthPresetMetadata(preset, index);
+  synthPresets.push_back(preset);
+}
+
+void migrateSynthPresetSlotV7(const SynthPresetSlotV7& legacyPreset, uint8_t index) {
+  if (!legacyPreset.valid || synthPresets.size() >= SYNTH_PRESET_MAX_COUNT) {
+    return;
+  }
+  SynthPresetSlot preset = {};
+  preset.valid = legacyPreset.valid;
+  preset.favorite = legacyPreset.favorite;
+  memcpy(preset.objectId, legacyPreset.objectId, sizeof(preset.objectId));
+  memcpy(preset.name, legacyPreset.name, sizeof(preset.name));
+  memcpy(preset.folderPath, legacyPreset.folderPath, sizeof(preset.folderPath));
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
+  }
+  memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
+  normalizeSynthPresetValues(preset);
   normalizeSynthPresetMetadata(preset, index);
   synthPresets.push_back(preset);
 }
@@ -8185,6 +8347,7 @@ void migrateSynthPresetSlotV6(const SynthPresetSlotV6& legacyPreset, uint8_t ind
     preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
   }
   memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
+  normalizeSynthPresetValues(preset);
   normalizeSynthPresetMetadata(preset, index);
   synthPresets.push_back(preset);
 }
@@ -8201,6 +8364,11 @@ uint8_t currentSynthPresetValue(SettingKey key) {
     case SettingKey::ArpeggiatorDirection: return arpeggiatorDirection;
     case SettingKey::SynthBPM: return synthBPM;
     case SettingKey::SynthPortamentoTimeIndex: return synthPortamentoTimeIndex;
+    case SettingKey::SynthWavetablePosition: return synthWavetablePosition;
+    case SettingKey::SynthLfoTarget: return synthLfoTarget;
+    case SettingKey::SynthLfoAmount: return synthLfoAmount;
+    case SettingKey::SynthLfoWave: return synthLfoWave;
+    case SettingKey::SynthLfoSpeed: return synthLfoSpeed;
     case SettingKey::EnvelopeAttackIndex: return envelopeAttackIndex;
     case SettingKey::EnvelopeHoldIndex: return envelopeHoldIndex;
     case SettingKey::EnvelopeDecayIndex: return envelopeDecayIndex;
@@ -8401,23 +8569,44 @@ void load_synth_presets() {
       return;
     }
 
-    std::vector<SynthPresetSlotV6> legacyPresets(presetCountInFile);
-    size_t presetDataSize = sizeof(SynthPresetSlotV6) * legacyPresets.size();
-    size_t bytesRead = presetDataSize == 0 ? 0 : f.read(reinterpret_cast<uint8_t*>(legacyPresets.data()), presetDataSize);
-    f.close();
-    if (bytesRead != presetDataSize) {
-      sendToLog("Warning: Synth preset data incomplete. Starting with empty preset slots.");
-      applyDefaultSynthPresets();
-      return;
-    }
-    uint32_t computed = crc32(reinterpret_cast<const uint8_t*>(legacyPresets.data()), presetDataSize);
-    if (computed != header.crc32) {
-      sendToLog("Synth preset CRC32 mismatch. Starting with empty preset slots.");
-      applyDefaultSynthPresets();
-      return;
-    }
-    for (size_t i = 0; i < legacyPresets.size() && synthPresets.size() < SYNTH_PRESET_MAX_COUNT; ++i) {
-      migrateSynthPresetSlotV6(legacyPresets[i], static_cast<uint8_t>(i));
+    if (header.version < 7) {
+      std::vector<SynthPresetSlotV6> legacyPresets(presetCountInFile);
+      size_t presetDataSize = sizeof(SynthPresetSlotV6) * legacyPresets.size();
+      size_t bytesRead = presetDataSize == 0 ? 0 : f.read(reinterpret_cast<uint8_t*>(legacyPresets.data()), presetDataSize);
+      f.close();
+      if (bytesRead != presetDataSize) {
+        sendToLog("Warning: Synth preset data incomplete. Starting with empty preset slots.");
+        applyDefaultSynthPresets();
+        return;
+      }
+      uint32_t computed = crc32(reinterpret_cast<const uint8_t*>(legacyPresets.data()), presetDataSize);
+      if (computed != header.crc32) {
+        sendToLog("Synth preset CRC32 mismatch. Starting with empty preset slots.");
+        applyDefaultSynthPresets();
+        return;
+      }
+      for (size_t i = 0; i < legacyPresets.size() && synthPresets.size() < SYNTH_PRESET_MAX_COUNT; ++i) {
+        migrateSynthPresetSlotV6(legacyPresets[i], static_cast<uint8_t>(i));
+      }
+    } else {
+      std::vector<SynthPresetSlotV7> legacyPresets(presetCountInFile);
+      size_t presetDataSize = sizeof(SynthPresetSlotV7) * legacyPresets.size();
+      size_t bytesRead = presetDataSize == 0 ? 0 : f.read(reinterpret_cast<uint8_t*>(legacyPresets.data()), presetDataSize);
+      f.close();
+      if (bytesRead != presetDataSize) {
+        sendToLog("Warning: Synth preset data incomplete. Starting with empty preset slots.");
+        applyDefaultSynthPresets();
+        return;
+      }
+      uint32_t computed = crc32(reinterpret_cast<const uint8_t*>(legacyPresets.data()), presetDataSize);
+      if (computed != header.crc32) {
+        sendToLog("Synth preset CRC32 mismatch. Starting with empty preset slots.");
+        applyDefaultSynthPresets();
+        return;
+      }
+      for (size_t i = 0; i < legacyPresets.size() && synthPresets.size() < SYNTH_PRESET_MAX_COUNT; ++i) {
+        migrateSynthPresetSlotV7(legacyPresets[i], static_cast<uint8_t>(i));
+      }
     }
     sendToLog("Synth presets migrated from version " + std::to_string(header.version) + " to version " + std::to_string(SYNTH_PRESET_FILE_VERSION) + ".");
     save_synth_presets();
@@ -8468,6 +8657,7 @@ void load_synth_presets() {
     if (!loadedPresets[i].valid) {
       continue;
     }
+    normalizeSynthPresetValues(loadedPresets[i]);
     normalizeSynthPresetMetadata(loadedPresets[i], static_cast<uint8_t>(synthPresets.size()));
     synthPresets.push_back(loadedPresets[i]);
   }
@@ -8481,7 +8671,11 @@ void load_synth_presets() {
 
 void applySynthPresetToSettings(const SynthPresetSlot& preset) {
   for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
-    settings[static_cast<uint8_t>(synthPresetKeys[i])] = preset.values[i];
+    uint8_t value = preset.values[i];
+    if (synthPresetKeys[i] == SettingKey::PlaybackMode) {
+      value = normalizeSynthPlaybackMode(value);
+    }
+    settings[static_cast<uint8_t>(synthPresetKeys[i])] = value;
   }
 }
 
@@ -8938,6 +9132,7 @@ bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlo
     error = "missing required synth preset TLV";
     return false;
   }
+  normalizeSynthPresetValues(preset);
   normalizeSynthPresetMetadata(preset, 0);
   return true;
 }
@@ -10072,6 +10267,8 @@ GEMPage menuPageColors("Color Options", menuPageMain);
 GEMItem menuGotoColors("Color Options", menuPageColors);
 GEMPage menuPageSynth("Synth Options", menuPageMain);
 GEMItem menuGotoSynth("Synth Options", menuPageSynth);
+GEMPage menuPageSynthLfo("LFO", menuPageSynth);
+GEMItem menuGotoSynthLfo("LFO", menuPageSynthLfo);
 GEMPage menuPageSynthFx1("FX Env 1", menuPageSynth);
 GEMItem menuGotoSynthFx1("FX Env 1", menuPageSynthFx1);
 GEMPage menuPageSynthFx2("FX Env 2", menuPageSynth);
@@ -10726,8 +10923,7 @@ SelectOptionByte optionBytePlayback[] = {
   { "MonoRtg", SYNTH_MONO_RETRIGGER },
   { "MonoLeg", SYNTH_MONO_LEGATO },
   { "Arp'gio", SYNTH_ARPEGGIO },
-  { "Poly", SYNTH_POLY },
-  { "PolyTbl", SYNTH_POLYTBL }
+  { "Poly", SYNTH_POLY }
 };
 GEMSelect selectPlayback(sizeof(optionBytePlayback) / sizeof(SelectOptionByte), optionBytePlayback);
 PersistentCallbackInfo callbackInfoPlayback = {
@@ -11436,6 +11632,36 @@ void previewWaveform(GEMPreviewCallbackData previewData) {
   synthWaveformChanged();
 }
 
+SelectOptionByte optionByteWavetablePosition[] = {
+  { "0%", 0 },
+  { "5%", 6 },
+  { "10%", 13 },
+  { "17%", 21 },
+  { "25%", 32 },
+  { "33%", 42 },
+  { "42%", 53 },
+  { "50%", 64 },
+  { "58%", 74 },
+  { "67%", 85 },
+  { "75%", 95 },
+  { "83%", 106 },
+  { "92%", 116 },
+  { "100%", 127 }
+};
+GEMSelect selectWavetablePosition(sizeof(optionByteWavetablePosition) / sizeof(SelectOptionByte), optionByteWavetablePosition);
+PersistentCallbackInfo callbackInfoSynthWavetablePosition = {
+  static_cast<uint8_t>(SettingKey::SynthWavetablePosition),
+  reinterpret_cast<void*>(&synthWavetablePosition),
+  nullptr,
+  updateSynthModulationParams
+};
+GEMItem menuItemSynthWavetablePosition("WT Pos", synthWavetablePosition, selectWavetablePosition, universalSaveCallback,
+                                       reinterpret_cast<void*>(&callbackInfoSynthWavetablePosition));
+void previewSynthWavetablePosition(GEMPreviewCallbackData previewData) {
+  synthWavetablePosition = previewData.previewValByte;
+  updateSynthModulationParams();
+}
+
 SelectOptionByte optionByteSynthDrive[] = {
   { "Off", SYNTH_DRIVE_OFF },
   { "Warm", SYNTH_DRIVE_WARM },
@@ -11456,22 +11682,23 @@ void previewSynthDrive(GEMPreviewCallbackData previewData) {
 }
 
 SelectOptionByte optionByteSynthModTarget[] = {
-  { "Tone", SYNTH_MOD_TARGET_TONE },
+  { "Morph", SYNTH_MOD_TARGET_MORPH },
   { "Vibrato", SYNTH_MOD_TARGET_VIBRATO },
-  { "Pitch", SYNTH_MOD_TARGET_PITCH }
+  { "Pitch", SYNTH_MOD_TARGET_PITCH },
+  { "WT Pos", SYNTH_MOD_TARGET_WAVETABLE_POSITION }
 };
 GEMSelect selectSynthModTarget(sizeof(optionByteSynthModTarget) / sizeof(SelectOptionByte), optionByteSynthModTarget);
 PersistentCallbackInfo callbackInfoSynthModTarget = {
   static_cast<uint8_t>(SettingKey::SynthModTarget),
   reinterpret_cast<void*>(&synthModTarget),
   nullptr,
-  updateSynthVibratoParams
+  updateSynthModulationParams
 };
 GEMItem menuItemSynthModTarget("Wheel FX", synthModTarget, selectSynthModTarget, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoSynthModTarget));
 void previewSynthModTarget(GEMPreviewCallbackData previewData) {
   synthModTarget = previewData.previewValByte;
-  updateSynthVibratoParams();
+  updateSynthModulationParams();
 }
 
 SelectOptionByte optionByteSynthModAmount[] = {
@@ -11495,13 +11722,13 @@ PersistentCallbackInfo callbackInfoSynthModAmount = {
   static_cast<uint8_t>(SettingKey::SynthModAmount),
   reinterpret_cast<void*>(&synthModAmount),
   nullptr,
-  updateSynthVibratoParams
+  updateSynthModulationParams
 };
 GEMItem menuItemSynthModAmount("Wheel Amt", synthModAmount, selectSynthModAmount, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoSynthModAmount));
 void previewSynthModAmount(GEMPreviewCallbackData previewData) {
   synthModAmount = previewData.previewValByte;
-  updateSynthVibratoParams();
+  updateSynthModulationParams();
 }
 
 SelectOptionByte optionByteSynthVibratoSpeed[] = {
@@ -11523,13 +11750,88 @@ PersistentCallbackInfo callbackInfoSynthVibratoSpeed = {
   static_cast<uint8_t>(SettingKey::SynthVibratoSpeed),
   reinterpret_cast<void*>(&synthVibratoSpeed),
   nullptr,
-  updateSynthVibratoParams
+  updateSynthModulationParams
 };
 GEMItem menuItemSynthVibratoSpeed("Vib Speed", synthVibratoSpeed, selectSynthVibratoSpeed, universalSaveCallback,
                                   reinterpret_cast<void*>(&callbackInfoSynthVibratoSpeed));
 void previewSynthVibratoSpeed(GEMPreviewCallbackData previewData) {
   synthVibratoSpeed = previewData.previewValByte;
-  updateSynthVibratoParams();
+  updateSynthModulationParams();
+}
+
+SelectOptionByte optionByteSynthLfoWave[] = {
+  { "Sine", SYNTH_LFO_WAVE_SINE },
+  { "Triangl", SYNTH_LFO_WAVE_TRIANGLE },
+  { "Saw", SYNTH_LFO_WAVE_SAW },
+  { "Square", SYNTH_LFO_WAVE_SQUARE }
+};
+GEMSelect selectSynthLfoWave(sizeof(optionByteSynthLfoWave) / sizeof(SelectOptionByte), optionByteSynthLfoWave);
+
+SelectOptionByte optionByteSynthLfoSpeed[] = {
+  { "0.05Hz", 0 },
+  { "0.1Hz", 1 },
+  { "0.2Hz", 2 },
+  { "0.33Hz", 3 },
+  { "0.5Hz", 4 },
+  { "0.75Hz", 5 },
+  { "1 Hz", 6 },
+  { "1.25Hz", 7 },
+  { "1.5Hz", 8 },
+  { "2 Hz", 9 },
+  { "2.5Hz", 10 },
+  { "3 Hz", 11 },
+  { "4 Hz", 12 },
+  { "5 Hz", 13 },
+  { "6 Hz", 14 },
+  { "8 Hz", 15 },
+  { "10 Hz", 16 },
+  { "12 Hz", 17 },
+  { "16 Hz", 18 },
+  { "20 Hz", 19 }
+};
+GEMSelect selectSynthLfoSpeed(sizeof(optionByteSynthLfoSpeed) / sizeof(SelectOptionByte), optionByteSynthLfoSpeed);
+
+PersistentCallbackInfo callbackInfoSynthLfoTarget = {
+  static_cast<uint8_t>(SettingKey::SynthLfoTarget),
+  reinterpret_cast<void*>(&synthLfoTarget),
+  nullptr,
+  updateSynthModulationParams
+};
+PersistentCallbackInfo callbackInfoSynthLfoAmount = {
+  static_cast<uint8_t>(SettingKey::SynthLfoAmount),
+  reinterpret_cast<void*>(&synthLfoAmount),
+  nullptr,
+  updateSynthModulationParams
+};
+PersistentCallbackInfo callbackInfoSynthLfoWave = {
+  static_cast<uint8_t>(SettingKey::SynthLfoWave),
+  reinterpret_cast<void*>(&synthLfoWave),
+  nullptr,
+  updateSynthModulationParams
+};
+PersistentCallbackInfo callbackInfoSynthLfoSpeed = {
+  static_cast<uint8_t>(SettingKey::SynthLfoSpeed),
+  reinterpret_cast<void*>(&synthLfoSpeed),
+  nullptr,
+  updateSynthModulationParams
+};
+GEMItem menuItemSynthLfoTarget("Target", synthLfoTarget, selectSynthModTarget, universalSaveCallback,
+                               reinterpret_cast<void*>(&callbackInfoSynthLfoTarget));
+void previewSynthLfoTarget(GEMPreviewCallbackData previewData) {
+  synthLfoTarget = previewData.previewValByte;
+  updateSynthModulationParams();
+}
+GEMItem menuItemSynthLfoWave("Wave", synthLfoWave, selectSynthLfoWave, universalSaveCallback,
+                             reinterpret_cast<void*>(&callbackInfoSynthLfoWave));
+void previewSynthLfoWave(GEMPreviewCallbackData previewData) {
+  synthLfoWave = previewData.previewValByte;
+  updateSynthModulationParams();
+}
+GEMItem menuItemSynthLfoSpeed("Speed", synthLfoSpeed, selectSynthLfoSpeed, universalSaveCallback,
+                              reinterpret_cast<void*>(&callbackInfoSynthLfoSpeed));
+void previewSynthLfoSpeed(GEMPreviewCallbackData previewData) {
+  synthLfoSpeed = previewData.previewValByte;
+  updateSynthModulationParams();
 }
 
 PersistentCallbackInfo callbackInfoSynthBPM = {
@@ -11742,8 +12044,15 @@ SelectOptionByte optionByteSynthFxAmount[] = {
 };
 GEMSelect selectSynthFxAmount(sizeof(optionByteSynthFxAmount) / sizeof(SelectOptionByte), optionByteSynthFxAmount);
 
+GEMItem menuItemSynthLfoAmount("Amount", synthLfoAmount, selectSynthFxAmount, universalSaveCallback,
+                               reinterpret_cast<void*>(&callbackInfoSynthLfoAmount));
+void previewSynthLfoAmount(GEMPreviewCallbackData previewData) {
+  synthLfoAmount = previewData.previewValByte;
+  updateSynthModulationParams();
+}
+
 void updateSynthFxEnvelopeSettings() {
-  updateSynthVibratoParams();
+  updateSynthModulationParams();
   updateEffectEnvelopeParamsFromSettings();
 }
 
@@ -12002,9 +12311,7 @@ void updateSynthMenuVisibility() {
 }
 
 void playbackModeChanged() {
-  if (!isValidPlaybackMode(playbackMode)) {
-    playbackMode = SYNTH_POLY;
-  }
+  playbackMode = normalizeSynthPlaybackMode(playbackMode);
   resetSynthFreqs();
   updateSynthMenuVisibility();
 }
@@ -12059,10 +12366,8 @@ void syncSettingsToRuntime() {
   velWheelSpeed = settingValue(SettingKey::VelWheelSpeed);
   if (velWheelSpeed > 127) velWheelSpeed = 127;
 
-  playbackMode = settingValue(SettingKey::PlaybackMode);
-  if (!isValidPlaybackMode(playbackMode)) {
-    playbackMode = SYNTH_POLY;
-  }
+  playbackMode = normalizeSynthPlaybackMode(settingValue(SettingKey::PlaybackMode));
+  settings[static_cast<uint8_t>(SettingKey::PlaybackMode)] = playbackMode;
   currWave = settingValue(SettingKey::Waveform);
   loadSelectedSynthWaveform();
   synthDrive = settingValue(SettingKey::SynthDrive);
@@ -12072,6 +12377,11 @@ void syncSettingsToRuntime() {
   synthModTarget = settingValue(SettingKey::SynthModTarget);
   synthModAmount = settingValue(SettingKey::SynthModAmount);
   synthVibratoSpeed = settingValue(SettingKey::SynthVibratoSpeed);
+  synthWavetablePosition = settingValue(SettingKey::SynthWavetablePosition);
+  synthLfoTarget = settingValue(SettingKey::SynthLfoTarget);
+  synthLfoAmount = settingValue(SettingKey::SynthLfoAmount);
+  synthLfoWave = settingValue(SettingKey::SynthLfoWave);
+  synthLfoSpeed = settingValue(SettingKey::SynthLfoSpeed);
   synthBuzzerEnabled = decodeStoredBuzzerEnabled(settingValue(SettingKey::AudioDestination));
   syncAudioDestinationToRuntime();
   headphoneVolumeCap = settingValue(SettingKey::HeadphoneVolumeCap);
@@ -12126,7 +12436,7 @@ void syncSettingsToRuntime() {
   effectEnvelopeReleaseIndex[1] = settingValue(SettingKey::EffectEnvelope2ReleaseIndex);
   bootAnimationEnabled = settingEnabled(SettingKey::BootAnimationEnabled);
   displayPlayedNotes = settingEnabled(SettingKey::DisplayPlayedNotes);
-  updateSynthVibratoParams();
+  updateSynthModulationParams();
   updateEnvelopeParamsFromSettings();
   updateEffectEnvelopeParamsFromSettings();
   updateArpeggiatorTiming();
@@ -12461,10 +12771,16 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynth, menuItemArpDirection, previewArpDirection);
   addPreviewMenuItem(menuPageSynth, menuItemPortamentoTime, previewPortamentoTime);
   addPreviewMenuItem(menuPageSynth, menuItemWaveform, previewWaveform);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthWavetablePosition, previewSynthWavetablePosition);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
   addPreviewMenuItem(menuPageSynth, menuItemSynthModTarget, previewSynthModTarget);
   addPreviewMenuItem(menuPageSynth, menuItemSynthModAmount, previewSynthModAmount);
   addPreviewMenuItem(menuPageSynth, menuItemSynthVibratoSpeed, previewSynthVibratoSpeed);
+  menuPageSynth.addMenuItem(menuGotoSynthLfo);
+  addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoTarget, previewSynthLfoTarget);
+  addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoAmount, previewSynthLfoAmount);
+  addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoWave, previewSynthLfoWave);
+  addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoSpeed, previewSynthLfoSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeAttack, previewEnvelopeAttack);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeHold, previewEnvelopeHold);
   addPreviewMenuItem(menuPageSynth, menuItemEnvelopeDecay, previewEnvelopeDecay);

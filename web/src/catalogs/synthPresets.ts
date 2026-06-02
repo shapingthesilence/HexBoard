@@ -44,7 +44,12 @@ export const SynthSettingKey = {
   EffectEnvelope2SustainLevel: 64,
   EffectEnvelope2ReleaseIndex: 65,
   SynthPortamentoTimeIndex: 73,
-  ArpeggiatorDirection: 74
+  ArpeggiatorDirection: 74,
+  SynthWavetablePosition: 75,
+  SynthLfoTarget: 76,
+  SynthLfoAmount: 77,
+  SynthLfoWave: 78,
+  SynthLfoSpeed: 79
 } as const;
 
 export type SynthSettingName = keyof typeof SynthSettingKey;
@@ -79,7 +84,7 @@ export function createSynthPresetObject(input: SynthPresetInput): EncodedCatalog
       folderPath: input.folderPath,
       tags: input.tags
     }),
-    tlvU8(SynthPresetTlv.SynthPresetSchemaVersion, 4),
+    tlvU8(SynthPresetTlv.SynthPresetSchemaVersion, 5),
     tlv(SynthPresetTlv.SynthValues, encodeSynthValues(input.values))
   ];
 

@@ -161,15 +161,17 @@ This page controls the onboard synth.
 
 Options include:
 
-- `Synth Mode`: `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, `Poly`, `PolyTbl`
+- `Synth Mode`: `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, `Poly`
 - `Arp Speed` when `Arp'gio` is selected
 - `Arp Dir` when `Arp'gio` is selected
 - `Porta` when a mono mode is selected
 - `Waveform`
+- `WT Pos`
 - `Drive`
 - `Wheel FX`
 - `Wheel Amt`
 - `Vib Speed`
+- `LFO`
 - `Amp Atk`
 - `Amp Hold`
 - `Amp Dec`
@@ -206,7 +208,6 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 - `MonoLeg`: one note at a time, sliding to newly held notes without restarting the amp envelope while another note is still held
 - `Arp'gio`: cycles through held notes rhythmically
 - `Poly`: plays chords, up to `8` notes at a time - a bit quieter due to headroom needed
-- `PolyTbl`: wavetable chord mode, up to `8` notes at a time
 
 `Porta` appears for the two mono modes. It sets the pitch-glide time from
 `0 ms` through `4 s`. With `MonoRtg`, the envelope restarts but the pitch can
@@ -231,7 +232,12 @@ which held notes were pressed, not the physical button numbers.
   `Oval`, `PrttySh`, `Qck808`, `RichRpt`, `RndTri`, `Stardew`,
   `SyncTtn`, `WrdWiz`, and `Woo`: imported MP single-cycle waveforms with
   more specialized synth colors
-- `BasicTb`: a `32`-frame wavetable that moves from sine to triangle to saw to square; use it with `PolyTbl`
+- `BasicTb`: a `32`-frame wavetable that moves from sine to triangle to saw to square
+
+`WT Pos` chooses the starting frame for wavetable waveforms. `0%` starts at the
+first frame and `100%` starts at the last frame. Modulation can add to or
+subtract from this base position, so setting `WT Pos` somewhere above `0%` lets
+a negative envelope or LFO amount move backward through the wavetable.
 
 `Drive` adds soft saturation after the voices are mixed:
 
@@ -242,13 +248,20 @@ which held notes were pressed, not the physical button numbers.
 
 `Wheel FX` chooses how the mod wheel affects the onboard synth:
 
-- `Tone`: sweeps pulse width on `Square`, curves `Saw`, adds phase-warp color to the other static waveforms, and scans wavetable position in `PolyTbl`
+- `Morph`: applies the same phase-warp color movement across the onboard waveforms
 - `Vibrato`: adds pitch vibrato to the active synth voices
 - `Pitch`: bends pitch up with the wheel or positive FX amounts, and down with negative FX amounts. Full-depth pitch modulation spans about `+/-48` semitones.
+- `WT Pos`: scans the selected wavetable forward or backward from the base `WT Pos`
 
 External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed` sets
 the onboard vibrato LFO speed from `1 Hz` to `12 Hz` for wheel or envelope
 vibrato. `Wheel Amt` scales how strongly the mod wheel affects its target.
+
+`LFO` opens the synth LFO page. `Target` uses the same targets as `Wheel FX`;
+`Amount` is bipolar from `-100%` through `Off` to `+100%`; `Wave` selects
+`Sine`, `Triangl`, `Saw`, or `Square`; and `Speed` ranges from `0.05 Hz` to
+`20 Hz`, with extra slow choices below `1 Hz` for gradual wavetable or morph
+movement.
 
 `Tempo` is shared by the arpeggiator and metronome. `Metronome` has four modes:
 
@@ -276,14 +289,14 @@ polyphony.
 `FX Env 1` and `FX Env 2` open separate modulation-envelope pages. Each page has
 `Target`, `Amount`, `Attack`, `Hold`, `Decay`, `Sustain`, and `Release`.
 
-`Target` chooses `Tone`, `Vibrato`, or `Pitch`. The wheel and both FX envelopes
-can choose the same target; their amounts add together and clamp at the maximum
-effect depth instead of replacing each other.
+`Target` chooses `Morph`, `Vibrato`, `Pitch`, or `WT Pos`. The wheel, both FX
+envelopes, and the LFO can choose the same target; their amounts add together
+and clamp at the maximum effect depth instead of replacing each other.
 
 `Amount` controls how strongly the envelope affects the target. Positive amounts
 push the target in one direction; negative amounts use the same AHDSR shape and
-push the target in the opposite direction. Pitch and tone return smoothly to the
-played note and base tone as the FX envelope falls back to zero. Negative
+push the target in the opposite direction. Pitch, morph, and wavetable position
+return smoothly to their base values as the FX envelope falls back to zero. Negative
 `Vibrato` is different: vibrato is the resting sound, and the envelope pulls it
 down as the envelope level rises. The default FX envelope times are `0 ms`, and
 default sustain is `0%`, so the FX envelopes do nothing until you shape them.
@@ -327,7 +340,7 @@ lower `Release`. If a pluck does not fade away enough, lower `Sustain` or lower
 
 To add motion without touching the mod wheel, put one FX envelope on a short
 transient and leave the wheel on the effect you want under your hand. For
-example, `Wheel FX` = `Tone`, `FX Env 1 Target` = `Vibrato`, `Amount` = `+50%`,
+example, `Wheel FX` = `Morph`, `FX Env 1 Target` = `Vibrato`, `Amount` = `+50%`,
 `Decay` around `100 ms`, and `Sustain` = `0%` adds a short vibrato chirp at the
 start of each note. For a falling pitch tail, try `FX Env 2 Target` = `Pitch`,
 `Amount` = `-25%`, `Sustain` = `100%`, and a longer `Release`.
@@ -452,7 +465,7 @@ Wheel speed choices run from `TooSlow`, `Turtle`, `Slow`, `Medium`, `Fast`,
 `TooSlow` is a new slower option.
 
 The onboard synth smooths pitch-bend wheel changes, pulse-width modulation, and
-vibrato depth internally so button-controlled bends and tone changes do not jump
+vibrato depth internally so button-controlled bends and morph changes do not jump
 as hard between command-wheel updates. External MIDI still receives the normal
 pitch-bend and modulation messages.
 
@@ -543,7 +556,7 @@ Important factory defaults include:
 - Synth: `Poly`
 - Waveform: `Hybrid`
 - Drive: `Off`
-- Wheel FX: `Tone`
+- Wheel FX: `Morph`
 - Wheel Amt: `100%`
 - Vibrato speed: `6 Hz`
 - Amp Hold: `0 ms`
