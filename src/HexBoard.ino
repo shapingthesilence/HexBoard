@@ -348,6 +348,7 @@ uint8_t envelopeDecayIndex = 3;
 uint8_t envelopeSustainLevel = 127;
 uint8_t envelopeReleaseIndex = 3;
 constexpr uint8_t SYNTH_FX_ENVELOPE_COUNT = 2;
+constexpr uint8_t SYNTH_FX_ENVELOPE_CONTROL_TICKS = SYNTH_FX_ENVELOPE_COUNT;
 std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeAttackIndex = { 0, 0 };
 std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeHoldIndex = { 0, 0 };
 std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeDecayIndex = { 0, 0 };
@@ -4144,20 +4145,14 @@ inline void RAM_FUNC(writeAudioOutputLevels)(uint16_t piezoLevel, uint16_t jackL
 }
 
 inline int32_t RAM_FUNC(scalePiezoSample)(int32_t sample, uint16_t amplitude) {
-  const int32_t product = sample * static_cast<int32_t>(amplitude);
-  const bool negative = product < 0;
-  const uint32_t magnitude = negative ? static_cast<uint32_t>(-product) : static_cast<uint32_t>(product);
 #if (PWM_BITS == 8)
-  uint32_t scaled = ((magnitude * 516u) + (1u << 15)) >> 16;  // ~= /127
+  constexpr uint8_t PIEZO_SCALE_SHIFT = 7;
 #elif (PWM_BITS == 9)
-  uint32_t scaled = ((magnitude * 257u) + (1u << 15)) >> 16;  // ~= /255
+  constexpr uint8_t PIEZO_SCALE_SHIFT = 8;
 #else
-  uint32_t scaled = (magnitude * 257u) >> 17;                 // ~= /511
+  constexpr uint8_t PIEZO_SCALE_SHIFT = 9;
 #endif
-  if (scaled > amplitude) {
-    scaled = amplitude;
-  }
-  return negative ? -static_cast<int32_t>(scaled) : static_cast<int32_t>(scaled);
+  return (sample * static_cast<int32_t>(amplitude)) >> PIEZO_SCALE_SHIFT;
 }
 
 inline int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
@@ -4862,6 +4857,9 @@ byte synthVibratoSine[SYNTH_WAVE_SAMPLE_COUNT] = {};
 volatile bool synthWaveTableLoadInProgress = false;
 byte loadedSynthWaveform = 255;
 volatile uint8_t activeSynthWaveFrameCount = 1;
+uint16_t synthWavetableFramePositionByAmount[128] = {};
+uint16_t synthMorphPhaseWarpScaleByDepth[128] = {};
+uint8_t synthFxModScaleByDepth[128][128] = {};
 bool userSynthWavetableAvailable = false;
 /*
     The sine wavetable benefits the most from
@@ -5114,6 +5112,8 @@ inline void RAM_FUNC(resetEnvelopeState)(EnvelopeState& env) {
 
 std::array<EnvelopeState, POLYPHONY_LIMIT> envelopeStates;
 std::array<std::array<EnvelopeState, POLYPHONY_LIMIT>, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeStates;
+int16_t cachedEffectEnvelopeModValues[SYNTH_FX_ENVELOPE_COUNT][POLYPHONY_LIMIT] = {};
+uint8_t synthFxEnvelopeUpdateCursor = 0;
 enum class EnvelopeCommand : uint8_t {
   None,
   StartAttack,
@@ -5479,16 +5479,17 @@ inline int16_t RAM_FUNC(effectEnvelopeModValue)(uint8_t envelopeIndex, uint8_t t
     value = 127;
   }
 
-  uint16_t absDepth = static_cast<uint16_t>(depth > 0 ? depth : -depth);
-  uint16_t scaled = static_cast<uint16_t>((value * (absDepth + 1u)) >> 7);
-  if (scaled > 127) {
-    scaled = 127;
-  }
+  uint8_t absDepth = static_cast<uint8_t>(depth > 0 ? depth : -depth);
+  uint8_t scaled = synthFxModScaleByDepth[absDepth][value];
   if (negativeVibrato) {
     return static_cast<int16_t>(absDepth - scaled);
   }
   int16_t signedValue = static_cast<int16_t>(scaled);
   return (depth < 0) ? -signedValue : signedValue;
+}
+
+inline void RAM_FUNC(resetCachedEffectEnvelopeModValue)(uint8_t envelopeIndex, uint8_t voiceIndex) {
+  cachedEffectEnvelopeModValues[envelopeIndex][voiceIndex] = 0;
 }
 
 inline void RAM_FUNC(startEffectEnvelopeAttack)(uint8_t envelopeIndex, EnvelopeState& env) {
@@ -5513,11 +5514,13 @@ inline void RAM_FUNC(startEffectEnvelopeRelease)(uint8_t envelopeIndex, Envelope
   env.releaseIncrement = effectReleaseIncrementForLevel(envelopeIndex, env.level);
 }
 
-inline void RAM_FUNC(updateEffectEnvelopeState)(uint8_t envelopeIndex, EnvelopeState& env) {
+inline void RAM_FUNC(updateEffectEnvelopeState)(uint8_t envelopeIndex, EnvelopeState& env, uint8_t elapsedTicks = 1) {
   EnvelopeParams& params = effectEnvelopeParams[envelopeIndex];
+  uint32_t tickScale = elapsedTicks ? elapsedTicks : 1;
   switch (env.stage) {
     case EnvelopeStage::Attack: {
-      uint32_t nextLevel = env.level + params.attackIncrement;
+      uint32_t increment = params.attackIncrement * tickScale;
+      uint32_t nextLevel = env.level + increment;
       if (env.level >= envelopeMaxLevel || nextLevel >= envelopeMaxLevel) {
         advanceEnvelopeFromAttackPeak(params, env);
       } else {
@@ -5526,14 +5529,26 @@ inline void RAM_FUNC(updateEffectEnvelopeState)(uint8_t envelopeIndex, EnvelopeS
       break;
     }
     case EnvelopeStage::Hold:
-      updateEnvelopeHoldStage(params, env);
+      env.level = envelopeMaxLevel;
+      if (env.holdTicksRemaining > tickScale) {
+        env.holdTicksRemaining -= tickScale;
+      } else {
+        env.holdTicksRemaining = 0;
+        if (params.decayTicks == 0 || params.sustainLevel >= envelopeMaxLevel) {
+          env.stage = EnvelopeStage::Sustain;
+          env.level = params.sustainLevel;
+        } else {
+          env.stage = EnvelopeStage::Decay;
+        }
+      }
       break;
     case EnvelopeStage::Decay:
       if (params.decayTicks == 0 || params.sustainLevel >= envelopeMaxLevel) {
         env.stage = EnvelopeStage::Sustain;
         env.level = params.sustainLevel;
       } else if (env.level > params.sustainLevel) {
-        uint32_t nextLevel = (env.level > params.decayIncrement) ? (env.level - params.decayIncrement) : 0;
+        uint32_t decrement = params.decayIncrement * tickScale;
+        uint32_t nextLevel = (env.level > decrement) ? (env.level - decrement) : 0;
         if (nextLevel <= params.sustainLevel) {
           env.level = params.sustainLevel;
           env.stage = EnvelopeStage::Sustain;
@@ -5548,18 +5563,33 @@ inline void RAM_FUNC(updateEffectEnvelopeState)(uint8_t envelopeIndex, EnvelopeS
     case EnvelopeStage::Sustain:
       env.level = params.sustainLevel;
       break;
-    case EnvelopeStage::Release:
-      if (params.releaseTicks == 0 || env.releaseIncrement == 0 || env.level <= env.releaseIncrement) {
+    case EnvelopeStage::Release: {
+      uint32_t releaseDecrement = static_cast<uint32_t>(env.releaseIncrement) * tickScale;
+      if (params.releaseTicks == 0 || env.releaseIncrement == 0 || env.level <= releaseDecrement) {
         resetEnvelopeState(env);
       } else {
-        env.level -= env.releaseIncrement;
+        env.level -= releaseDecrement;
       }
       break;
+    }
     case EnvelopeStage::Idle:
     default:
       env.level = 0;
       break;
   }
+}
+
+inline void RAM_FUNC(refreshCachedEffectEnvelopeModValue)(uint8_t envelopeIndex,
+                                                          uint8_t voiceIndex,
+                                                          uint8_t elapsedTicks) {
+  if (!synthEffectEnvelopeActive[envelopeIndex]) {
+    resetCachedEffectEnvelopeModValue(envelopeIndex, voiceIndex);
+    return;
+  }
+  EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][voiceIndex];
+  updateEffectEnvelopeState(envelopeIndex, effectEnv, elapsedTicks);
+  cachedEffectEnvelopeModValues[envelopeIndex][voiceIndex] =
+    effectEnvelopeModValue(envelopeIndex, effectEnvelopeTarget[envelopeIndex], effectEnv);
 }
 
 inline uint32_t RAM_FUNC(applySynthVibrato)(uint32_t increment, int16_t vibratoAmount) {
@@ -5583,7 +5613,7 @@ inline uint32_t RAM_FUNC(applySynthVibrato)(uint32_t increment, int16_t vibratoA
 inline uint16_t RAM_FUNC(applySynthMorphPhaseWarp)(uint16_t phase, int16_t morphAmount) {
   uint16_t triangle = (phase & 0x8000) ? static_cast<uint16_t>(0xFFFFu - phase) : phase;
   uint16_t depth = static_cast<uint16_t>(morphAmount < 0 ? -morphAmount : morphAmount);
-  uint16_t offset = static_cast<uint16_t>(((static_cast<uint32_t>(triangle) * static_cast<uint32_t>(depth)) * 5u) >> 8);
+  uint16_t offset = static_cast<uint16_t>((static_cast<uint32_t>(triangle) * synthMorphPhaseWarpScaleByDepth[depth]) >> 8);
   return (morphAmount < 0) ? static_cast<uint16_t>(phase - offset)
                            : static_cast<uint16_t>(phase + offset);
 }
@@ -5722,17 +5752,59 @@ void generateBasicSynthWavetable() {
         static_cast<uint8_t>(static_cast<int16_t>(sampleA) + ((delta * static_cast<int16_t>(frameFrac)) >> 8));
     }
   }
-  activeSynthWaveFrameCount = SYNTH_WAVETABLE_FRAME_COUNT;
 }
 
 void loadFallbackUserSynthWavetable() {
   memcpy(activeSynthWaveTable[0], waveSineSource, SYNTH_WAVE_SAMPLE_COUNT);
-  activeSynthWaveFrameCount = 1;
   userSynthWavetableAvailable = false;
+}
+
+void rebuildSynthWavetableFramePositionLookup(uint8_t frameCount) {
+  uint8_t boundedFrameCount = frameCount;
+  if (boundedFrameCount < 1) {
+    boundedFrameCount = 1;
+  } else if (boundedFrameCount > SYNTH_WAVETABLE_FRAME_COUNT) {
+    boundedFrameCount = SYNTH_WAVETABLE_FRAME_COUNT;
+  }
+
+  uint16_t lastFrame = static_cast<uint16_t>(boundedFrameCount - 1);
+  for (uint8_t amount = 0; amount < 128; ++amount) {
+    synthWavetableFramePositionByAmount[amount] =
+      lastFrame == 0 ? 0 : static_cast<uint16_t>((static_cast<uint32_t>(amount) * lastFrame * 256u) / 127u);
+  }
+}
+
+void setActiveSynthWaveFrameCount(uint8_t frameCount) {
+  uint8_t boundedFrameCount = frameCount;
+  if (boundedFrameCount < 1) {
+    boundedFrameCount = 1;
+  } else if (boundedFrameCount > SYNTH_WAVETABLE_FRAME_COUNT) {
+    boundedFrameCount = SYNTH_WAVETABLE_FRAME_COUNT;
+  }
+  rebuildSynthWavetableFramePositionLookup(boundedFrameCount);
+  __dmb();
+  activeSynthWaveFrameCount = boundedFrameCount;
+}
+
+void initializeSynthMorphLookup() {
+  for (uint8_t depth = 0; depth < 128; ++depth) {
+    synthMorphPhaseWarpScaleByDepth[depth] = static_cast<uint16_t>(depth) * 5u;
+  }
+}
+
+void initializeSynthFxModLookup() {
+  for (uint8_t depth = 0; depth < 128; ++depth) {
+    for (uint8_t value = 0; value < 128; ++value) {
+      synthFxModScaleByDepth[depth][value] = static_cast<uint8_t>((static_cast<uint16_t>(value) * (static_cast<uint16_t>(depth) + 1u)) >> 7);
+    }
+  }
 }
 
 void initializeSynthWaveTables() {
   memcpy(synthVibratoSine, waveSineSource, SYNTH_WAVE_SAMPLE_COUNT);
+  initializeSynthMorphLookup();
+  initializeSynthFxModLookup();
+  setActiveSynthWaveFrameCount(1);
   loadedSynthWaveform = 255;
 }
 
@@ -5747,9 +5819,11 @@ void loadSelectedSynthWaveform() {
   synthWaveTableLoadInProgress = true;
   if (currWave == WAVEFORM_BASIC_WAVETABLE) {
     generateBasicSynthWavetable();
+    setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
   } else if (currWave == WAVEFORM_USER_WAVETABLE) {
     if (!loadUserSynthWavetableFromFile()) {
       loadFallbackUserSynthWavetable();
+      setActiveSynthWaveFrameCount(1);
     }
   } else {
     const byte* source = synthWaveformSource(currWave);
@@ -5758,41 +5832,69 @@ void loadSelectedSynthWaveform() {
     } else {
       fillGeneratedWaveFrame(currWave, 0);
     }
-    activeSynthWaveFrameCount = 1;
+    setActiveSynthWaveFrameCount(1);
   }
   loadedSynthWaveform = currWave;
   synthWaveTableLoadInProgress = false;
 }
 
-inline uint16_t RAM_FUNC(wavetableFramePositionFromAmount)(int16_t positionAmount, uint8_t frameCount) {
-  if (positionAmount <= 0 || frameCount <= 1) {
+inline uint16_t RAM_FUNC(wavetableFramePositionFromAmount)(int16_t positionAmount) {
+  if (positionAmount <= 0) {
     return 0;
   }
   uint8_t amount = positionAmount > 127 ? 127 : static_cast<uint8_t>(positionAmount);
-  uint16_t lastFrame = static_cast<uint16_t>(frameCount - 1);
-  return static_cast<uint16_t>((static_cast<uint32_t>(amount) * lastFrame * 256u) / 127u);
+  return synthWavetableFramePositionByAmount[amount];
 }
 
 inline uint16_t RAM_FUNC(readLoadedWaveFrameSample)(uint16_t phase) {
   return static_cast<uint16_t>(activeSynthWaveTable[0][synthWaveSampleIndexFromPhase16(phase)] << 8);
 }
 
-inline uint16_t RAM_FUNC(readActiveWavetableSample)(uint16_t phase, int16_t positionAmount) {
-  uint8_t frameCount = activeSynthWaveFrameCount;
+struct SynthWavetableReadContext {
+  const byte* frameA;
+  const byte* frameB;
+  uint8_t frameFrac;
+};
+
+inline SynthWavetableReadContext RAM_FUNC(wavetableReadContextFromFramePosition)(uint16_t framePosition,
+                                                                                 uint8_t frameCount) {
   if (frameCount <= 1) {
-    return readLoadedWaveFrameSample(phase);
+    return { activeSynthWaveTable[0], nullptr, 0 };
   }
-  uint16_t framePosition = wavetableFramePositionFromAmount(positionAmount, frameCount);
+
   uint8_t frameIndex = static_cast<uint8_t>(framePosition >> 8);
   uint8_t frameFrac = static_cast<uint8_t>(framePosition & 0xFF);
   uint8_t maxFrameIndex = static_cast<uint8_t>(frameCount - 1);
-  uint16_t sampleIndex = synthWaveSampleIndexFromPhase16(phase);
   if (frameIndex >= maxFrameIndex) {
-    return static_cast<uint16_t>(activeSynthWaveTable[maxFrameIndex][sampleIndex] << 8);
+    return { activeSynthWaveTable[maxFrameIndex], nullptr, 0 };
   }
-  int16_t sampleA = activeSynthWaveTable[frameIndex][sampleIndex];
-  int16_t sampleB = activeSynthWaveTable[frameIndex + 1][sampleIndex];
-  return static_cast<uint16_t>((sampleA << 8) + ((sampleB - sampleA) * static_cast<int16_t>(frameFrac)));
+  if (frameFrac == 0) {
+    return { activeSynthWaveTable[frameIndex], nullptr, 0 };
+  }
+  return { activeSynthWaveTable[frameIndex], activeSynthWaveTable[frameIndex + 1], frameFrac };
+}
+
+inline uint16_t RAM_FUNC(readActiveWavetableSampleWithContext)(uint16_t phase,
+                                                               const SynthWavetableReadContext& context) {
+  uint16_t sampleIndex = synthWaveSampleIndexFromPhase16(phase);
+  int16_t sampleA = context.frameA[sampleIndex];
+  if (!context.frameB) {
+    return static_cast<uint16_t>(sampleA << 8);
+  }
+  int16_t sampleB = context.frameB[sampleIndex];
+  return static_cast<uint16_t>((sampleA << 8) + ((sampleB - sampleA) * static_cast<int16_t>(context.frameFrac)));
+}
+
+inline uint16_t RAM_FUNC(readActiveWavetableSampleAtFramePosition)(uint16_t phase,
+                                                                   uint16_t framePosition,
+                                                                   uint8_t frameCount) {
+  return readActiveWavetableSampleWithContext(phase, wavetableReadContextFromFramePosition(framePosition, frameCount));
+}
+
+inline uint16_t RAM_FUNC(readActiveWavetableSample)(uint16_t phase,
+                                                    int16_t positionAmount,
+                                                    uint8_t frameCount) {
+  return readActiveWavetableSampleAtFramePosition(phase, wavetableFramePositionFromAmount(positionAmount), frameCount);
 }
 
 inline int16_t RAM_FUNC(clampSynthModAccumulator)(int16_t value) {
@@ -6107,6 +6209,24 @@ void RAM_FUNC(poll)() {
   uint16_t p;
   byte t;
   const uint8_t voiceLimit = currentSynthVoiceLimit();
+  const uint8_t effectEnvelopeUpdateIndex = synthFxEnvelopeUpdateCursor;
+  synthFxEnvelopeUpdateCursor = static_cast<uint8_t>(synthFxEnvelopeUpdateCursor + 1);
+  if (synthFxEnvelopeUpdateCursor >= SYNTH_FX_ENVELOPE_COUNT) {
+    synthFxEnvelopeUpdateCursor = 0;
+  }
+  const uint8_t activeWaveFrameCount = activeSynthWaveFrameCount;
+  const bool activeWavetableHasFrames = activeWaveFrameCount > 1;
+  const bool perVoiceWavetablePosition =
+    activeWavetableHasFrames
+    && ((synthEffectEnvelopeActive[0] && effectEnvelopeTarget[0] == SYNTH_MOD_TARGET_WAVETABLE_POSITION)
+        || (synthEffectEnvelopeActive[1] && effectEnvelopeTarget[1] == SYNTH_MOD_TARGET_WAVETABLE_POSITION));
+  SynthWavetableReadContext sharedWavetableReadContext = { activeSynthWaveTable[0], nullptr, 0 };
+  if (activeWavetableHasFrames && !perVoiceWavetablePosition) {
+    sharedWavetableReadContext = wavetableReadContextFromFramePosition(
+      wavetableFramePositionFromAmount(combinedWavetablePositionAmount(wheelWavetablePositionModValue)),
+      activeWaveFrameCount
+    );
+  }
   for (byte i = 0; i < voiceLimit; i++) {
     EnvelopeState& env = envelopeStates[i];
 
@@ -6123,6 +6243,7 @@ void RAM_FUNC(poll)() {
         }
         for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
           EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][i];
+          resetCachedEffectEnvelopeModValue(envelopeIndex, i);
           if (synthEffectEnvelopeActive[envelopeIndex]) {
             startEffectEnvelopeAttack(envelopeIndex, effectEnv);
           } else {
@@ -6132,6 +6253,8 @@ void RAM_FUNC(poll)() {
         break;
       }
       case EnvelopeCommand::StartRelease: {
+        releaseRetries[i] = 0;
+        releaseRetryCountdown[i] = 0;
         if (envelopeParams.releaseTicks == 0 || env.level == 0) {
           env.level = 0;
           env.stage = EnvelopeStage::Idle;
@@ -6152,8 +6275,12 @@ void RAM_FUNC(poll)() {
           EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][i];
           if (synthEffectEnvelopeActive[envelopeIndex]) {
             startEffectEnvelopeRelease(envelopeIndex, effectEnv);
+            if (effectEnv.stage == EnvelopeStage::Idle) {
+              resetCachedEffectEnvelopeModValue(envelopeIndex, i);
+            }
           } else {
             resetEnvelopeState(effectEnv);
+            resetCachedEffectEnvelopeModValue(envelopeIndex, i);
           }
         }
         break;
@@ -6162,6 +6289,7 @@ void RAM_FUNC(poll)() {
         resetEnvelopeState(env);
         for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
           resetEnvelopeState(effectEnvelopeStates[envelopeIndex][i]);
+          resetCachedEffectEnvelopeModValue(envelopeIndex, i);
         }
         synth[i].increment = 0;
         synth[i].targetIncrement = 0;
@@ -6235,6 +6363,7 @@ void RAM_FUNC(poll)() {
         clearSynthPortamento(i);
         for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
           resetEnvelopeState(effectEnvelopeStates[envelopeIndex][i]);
+          resetCachedEffectEnvelopeModValue(envelopeIndex, i);
         }
         continue;
     }
@@ -6248,11 +6377,12 @@ void RAM_FUNC(poll)() {
     int16_t voicePitchModValue = wheelPitchModValue;
     int16_t voiceWavetablePositionModValue = wheelWavetablePositionModValue;
     for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
-      EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][i];
+      if (envelopeIndex == effectEnvelopeUpdateIndex) {
+        refreshCachedEffectEnvelopeModValue(envelopeIndex, i, SYNTH_FX_ENVELOPE_CONTROL_TICKS);
+      }
       if (synthEffectEnvelopeActive[envelopeIndex]) {
-        updateEffectEnvelopeState(envelopeIndex, effectEnv);
         addSynthTargetAmount(effectEnvelopeTarget[envelopeIndex],
-                             effectEnvelopeModValue(envelopeIndex, effectEnvelopeTarget[envelopeIndex], effectEnv),
+                             cachedEffectEnvelopeModValues[envelopeIndex][i],
                              voiceMorphModValue,
                              voiceVibratoModValue,
                              voicePitchModValue,
@@ -6298,10 +6428,14 @@ void RAM_FUNC(poll)() {
     if (voiceMorphModValue != 0) {
       p = applySynthMorphPhaseWarp(p, voiceMorphModValue);
     }
-    t = p >> 8;
-    if (activeSynthWaveFrameCount > 1) {
-      p = readActiveWavetableSample(p, combinedWavetablePositionAmount(voiceWavetablePositionModValue));
+    if (activeWavetableHasFrames) {
+      if (perVoiceWavetablePosition) {
+        p = readActiveWavetableSample(p, combinedWavetablePositionAmount(voiceWavetablePositionModValue), activeWaveFrameCount);
+      } else {
+        p = readActiveWavetableSampleWithContext(p, sharedWavetableReadContext);
+      }
     } else {
+      t = p >> 8;
       switch (currWave) {
         case WAVEFORM_SAW:
           p = static_cast<uint16_t>(p + 32768);
@@ -6492,8 +6626,8 @@ void RAM_FUNC(poll)() {
     piezoA = 0;
   } else if (piezoA > 0) {
     // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-piezoA..+piezoA].
-    // Use a fixed-point reciprocal approximation to avoid a division helper
-    // call in the audio ISR.
+    // Use a power-of-two fixed-point scale to keep the piezo path cheap in the
+    // audio ISR.
     profileFlags |= ISR_PROFILE_FLAG_PIEZO_SCALE;
     int32_t outPiezo = scalePiezoSample(sample, piezoA);
 
@@ -8553,7 +8687,7 @@ constexpr char USER_SYNTH_WAVETABLE_FILE_PATH[] = "/user_wavetable.dat";
 void applyUploadedSynthWavetableSamples(const uint8_t* samples) {
   synthWaveTableLoadInProgress = true;
   memcpy(&activeSynthWaveTable[0][0], samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
-  activeSynthWaveFrameCount = SYNTH_WAVETABLE_FRAME_COUNT;
+  setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
   userSynthWavetableAvailable = true;
   currWave = WAVEFORM_USER_WAVETABLE;
   settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_USER_WAVETABLE;
@@ -8599,7 +8733,7 @@ bool loadUserSynthWavetableFromFile() {
     userSynthWavetableAvailable = false;
     return false;
   }
-  activeSynthWaveFrameCount = SYNTH_WAVETABLE_FRAME_COUNT;
+  setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
   userSynthWavetableAvailable = true;
   return true;
 }

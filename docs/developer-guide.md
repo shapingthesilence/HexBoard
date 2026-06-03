@@ -164,8 +164,8 @@ note/wheel sends, synth voice allocation, rotary quadrature polling, and compact
 LED frame helpers. `poll()` also keeps its direct helper calls and the small
 polyphony attenuation table in SRAM. Envelope release starts use 256-entry
 16-bit RAM lookup tables for the amp and FX envelopes so the ISR does not divide
-when many notes are released at once, and piezo scaling uses fixed-point
-reciprocal math rather than the signed division helper. Avoid moving
+when many notes are released at once, and piezo scaling uses power-of-two
+fixed-point math rather than division or reciprocal approximation. Avoid moving
 OLED/GEM/U8g2 drawing wholesale; display updates are dominated by library calls
 and I2C transfer time, and moving that stack would spend a lot of SRAM for
 limited gain.
@@ -378,6 +378,7 @@ Important implementation details:
 - the amp envelope has `EnvelopeAttackIndex`, `EnvelopeHoldIndex`, `EnvelopeDecayIndex`, `EnvelopeSustainLevel`, and `EnvelopeReleaseIndex`
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
+- Core 0 retries synth release commands until the audio ISR consumes one; the ISR clears the retry state when it accepts `StartRelease` so long releases do not repeatedly restart
 - synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `8`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters only and do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, and version `7` records migrate by appending wavetable position and LFO defaults
 - the imported synth user wavetable is stored separately in `/user_wavetable.dat` with magic `UWT`, version `1`, frame/sample dimensions, CRC32, and `32 * 512` unsigned waveform bytes; synth presets only reference it through `Waveform = UserTbl`
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
@@ -473,8 +474,18 @@ original IDs so existing saved profiles keep their current `Waveform` values.
 interpolating sine, triangle, saw, and square anchors into
 `activeSynthWaveTable`. The sampler runs in the normal synth modes, interpolates
 adjacent frames from `SynthWavetablePosition` plus signed `WT Pos` modulation,
-and uses direct phase lookup to keep ISR cost bounded; add phase interpolation
-only after profiling the current frame-interpolation path.
+and uses direct phase lookup to keep ISR cost bounded. The selected wavetable
+also rebuilds a RAM `WT Pos` lookup table so the ISR maps `0..127` position
+amounts to frame positions without a per-voice divide. When only global sources
+such as the wheel or LFO modulate `WT Pos`, the ISR computes the frame position
+and frame-pair read context once per audio tick and reuses it for all voices.
+Morph also uses a small RAM depth-scale lookup so FX-envelope-heavy patches avoid
+an extra multiply in the per-voice phase warp. FX-envelope modulation depth uses
+a larger RAM scale table to keep two-envelope worst-case patches inside the audio
+budget. FX envelope state is refreshed at an alternating half audio rate with
+two-tick compensation and cached per voice, while the cached modulation values
+are still applied every audio sample; add phase interpolation only after
+profiling the current frame-interpolation path.
 
 `UserTbl` is a single persisted user wavetable loaded from `/user_wavetable.dat`.
 The file has a `UWT` header with version, frame count, sample count, and CRC32,
@@ -491,7 +502,8 @@ smoothed value instead of `modWheel.curValue` directly.
 
 The jack and piezo output stages intentionally differ. The jack path stays
 centered at the PWM midpoint, while the piezo path normally moves its midpoint
-with the active voice envelope to stay quiet when idle. Metronome beeps are the
+with the active voice envelope to stay quiet when idle. Piezo sample scaling uses
+a power-of-two fixed-point multiply/shift in the ISR. Metronome beeps are the
 exception: while a beep sample is active, the piezo path opens full temporary
 headroom so the click is not attenuated once by the beep level and again by the
 moving midpoint.
