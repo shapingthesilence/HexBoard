@@ -1,7 +1,7 @@
 # HexBoard Firmware Code Analysis
 
 > File: `src/HexBoard.ino`
-> Current shape: one Arduino sketch, about `7,300` lines
+> Current shape: one Arduino sketch, about `13,800` lines
 > Target: Generic RP2040 at `250 MHz`, `16 MB` flash split as `8 MB` sketch / `8 MB` LittleFS, Pico SDK USB with `HexBoard` USB descriptors, Generic SPI `/4` boot2, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
 
 This document describes the current firmware structure. It intentionally avoids exact line-number references because the sketch changes often. Use the `// @...` section tags in `src/HexBoard.ino` and `rg` searches as the source navigation method.
@@ -12,8 +12,8 @@ HexBoard is a hexagonal MIDI controller and standalone synth. The firmware is in
 
 The repository now also contains an isolated `web/` companion app scaffold. It
 is used to develop preset-sync workflows against the SysEx protocol. Firmware
-currently supports the synth preset subset; the remaining object classes are
-still web/mock-side scaffolding.
+currently supports the synth preset subset plus the single user-wavetable write
+object; the remaining object classes are still web/mock-side scaffolding.
 
 The runtime model is:
 
@@ -331,12 +331,12 @@ needs a `/layouts.dat` catalog with `UserTuning`, `UserLayout`, `UserScale`,
 records should keep their stored `stepsFromC` and color regardless of root/key
 or transposition changes, and generated layout menu controls should be hidden
 when a manual layout is active.
-Real-device synth preset saves wait for ACK/NACK responses through
-`WRITE_COMMIT`; library refresh requests list synth preset records one at a
-time before reading each object body. The compact header device menu probes Web
-MIDI input/output pairs with `HELLO_REQ`, accepts only compatible `HELLO_RESP`
-metadata, auto-connects when one HexBoard responds, and shows a device selector
-only for multiple compatible HexBoards. If an object body read fails, the web
+Real-device synth preset saves and Serum wavetable imports wait for ACK/NACK
+responses through `WRITE_COMMIT`; library refresh requests list synth preset
+records one at a time before reading each object body. The compact header device
+menu probes Web MIDI input/output pairs with `HELLO_REQ`, accepts only
+compatible `HELLO_RESP` metadata, auto-connects when one HexBoard responds, and
+shows a device selector only for multiple compatible HexBoards. If an object body read fails, the web
 app still displays the object-list metadata and reports the first full-read
 failure in the sync status. The synth editor reads handle `0x3FFF` as a
 synthetic current-runtime synth preset before enabling live sends, and opening a
@@ -455,9 +455,10 @@ Key implementation facts:
 - `Arp'gio` keeps its own held-note order and builds note sequences from assigned
   note/frequency data for pitch-sorted directions, so `Up` and `Down` follow the
   sounded notes rather than physical button indices.
-- `WAVEFORM_SINE` linearly interpolates between adjacent entries using the low
-  `8` bits of phase. `STRINGS`, `CLARINET`, and the imported MP single-cycle
-  waveforms use direct lookup from frame `0` of the active RAM wave table.
+- `WAVEFORM_SINE` linearly interpolates between adjacent `512`-entry table
+  samples using a `9`-bit sample index and `7` fractional phase bits.
+  `STRINGS`, `CLARINET`, and the imported MP single-cycle waveforms use direct
+  lookup from frame `0` of the active RAM wave table.
 - Only the selected table-backed static waveform or selected wavetable is loaded
   into `activeSynthWaveTable`. The source cycles live outside the hot ISR data
   path; the small vibrato sine table remains RAM-resident because the ISR reads
@@ -467,6 +468,10 @@ Key implementation facts:
   synth modes, uses `SynthWavetablePosition` plus signed `WT Pos` modulation as
   frame position, and linearly interpolates adjacent frames; the implementation
   does not interpolate phase within each frame.
+- `WAVEFORM_USER_WAVETABLE` is the one imported wavetable slot. The web app sends
+  object type `0x0B` with exactly `32 * 512` sample bytes; firmware validates the
+  TLVs, copies the data to `activeSynthWaveTable`, and can persist it in
+  `/user_wavetable.dat` with a CRC-protected `UWT` header.
 - All onboard waveforms now use the same phase convention: phase zero starts at
   an upward zero crossing. Byte tables are centered around value `128` and
   rotated to that crossing; generated saw, triangle, square, and hybrid shapes
@@ -527,6 +532,10 @@ The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnv
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
 Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `8`, CRC32, and a counted catalog capped at `128` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app live preview applies a transferred synth preset to runtime without marking settings dirty, while save requests update `/synth_presets.dat`. The on-device save/load menus are rebuilt from the catalog as folder submenus; preset items inside those folders display only the preset name. Folder path separators are still `/`, but the firmware decodes `%2F`, `%5C`, and `%25` in menu labels so web-app folder names can contain literal slash, backslash, or percent characters. Rebuilds are requested from save/delete paths and serviced from the main loop after GEM input handling, with owned menu items removed from their parent pages before deletion. The load menu has a `Blank` item. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending `SynthPortamentoTimeIndex` and `ArpeggiatorDirection` defaults, and version `7` records migrate by appending wavetable position and LFO defaults before being rewritten.
+
+The imported user wavetable is not part of the synth preset schema. Presets only
+store `Waveform = UserTbl`; the `32 x 512` table data is transferred as
+preset-sync object type `0x0B` and saved in `/user_wavetable.dat`.
 
 The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator; `ArpeggiatorDivision` sets rhythmic subdivision and `ArpeggiatorDirection` selects `Up`, `Down`, `Played`, `RevPlay`, `UpDown`, `DownUp`, or `Random`. The metronome runs its beat scheduler on core 0 and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 

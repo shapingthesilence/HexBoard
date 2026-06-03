@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { deterministicObjectId } from "../catalogs/objectId.ts";
 import { createSynthPresetObject } from "../catalogs/synthPresets.ts";
+import { createSynthWavetableObject, SYNTH_WAVETABLE_SAMPLE_BYTES } from "../catalogs/synthWavetables.ts";
 import {
   MessageType,
   ObjectType,
@@ -69,6 +70,30 @@ describe("PresetSyncClient", () => {
 
     expect(decodeWriteBeginPayload(decoded[0].payload).writeFlags).toBe(0x03);
     expect(decodeWriteCommitPayload(decoded.at(-1)?.payload ?? [])).toMatchObject({
+      commitFlags: 0x03
+    });
+  });
+
+  it("sends an imported synth wavetable transfer with apply and flash flags", async () => {
+    const transport = new MockMidiTransport();
+    const client = new PresetSyncClient(transport);
+    const wavetable = createSynthWavetableObject({
+      objectId: deterministicObjectId("wavetable"),
+      name: "Wavetable",
+      samples: new Uint8Array(SYNTH_WAVETABLE_SAMPLE_BYTES).fill(128)
+    });
+
+    const frames = await client.sendSynthWavetableImport(wavetable);
+    const decoded = frames.map((frame) => decodePresetSyncFrame(frame));
+
+    expect(decodeWriteBeginPayload(decoded[0].payload)).toMatchObject({
+      objectType: ObjectType.SynthWavetable,
+      rawByteLength: wavetable.body.length,
+      writeFlags: 0x03
+    });
+    expect(decoded.slice(1, -2).every((frame) => frame.message === MessageType.DataChunk)).toBe(true);
+    expect(decodeWriteCommitPayload(decoded.at(-1)?.payload ?? [])).toMatchObject({
+      rawByteLength: wavetable.body.length,
       commitFlags: 0x03
     });
   });

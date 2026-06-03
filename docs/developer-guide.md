@@ -87,12 +87,13 @@ support yet. The compact header device menu opens Web MIDI ports, probes
 candidate input/output pairs with preset-sync `HELLO_REQ`, verifies protocol
 major version and synth preset schema support from `HELLO_RESP`, and only shows
 a device selector when multiple compatible HexBoards respond. Real-device synth
-preset saves use an ACKed write path through `WRITE_COMMIT`; live preview
-remains a fast apply-only write path. The synth editor reads the current runtime
-synth patch from handle `0x3FFF` before enabling live sends, and preset
-open sends an apply-only preview immediately for auditioning. The editor mirrors
-firmware synth-mode, portamento, arpeggiator speed/direction, tempo,
-wavetable-position, morph, and LFO controls for synth preset schema `5`. The
+preset saves and Serum wavetable imports use an ACKed write path through
+`WRITE_COMMIT`; live preview remains a fast apply-only write path. The synth
+editor reads the current runtime synth patch from handle `0x3FFF` before
+enabling live sends, and preset open sends an apply-only preview immediately for
+auditioning. The editor mirrors firmware synth-mode, portamento, arpeggiator
+speed/direction, tempo, wavetable-position, morph, and LFO controls for synth
+preset schema `5`. The
 editor keeps opened presets as temporary drafts;
 save actions assign a fresh object id for a
 unique folder/name and only reuse an existing object id after the user confirms
@@ -378,6 +379,7 @@ Important implementation details:
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `8`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters only and do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, and version `7` records migrate by appending wavetable position and LFO defaults
+- the imported synth user wavetable is stored separately in `/user_wavetable.dat` with magic `UWT`, version `1`, frame/sample dimensions, CRC32, and `32 * 512` unsigned waveform bytes; synth presets only reference it through `Waveform = UserTbl`
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio ISR applies it only to the jack sample before writing the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
@@ -453,18 +455,19 @@ in `10`-bit mode. High-register sine tones can get harsher on the jack path as
 the carrier moves closer to the audio band, so `9`-bit and `8`-bit builds are
 useful fallback comparisons.
 
-The sine waveform uses linear interpolation between adjacent `256`-entry table
-samples, reusing the low `8` bits of the existing `16`-bit phase accumulator.
+The sine waveform uses linear interpolation between adjacent `512`-entry table
+samples. The table sampler splits the existing `16`-bit phase accumulator into
+`9` sample-index bits and `7` fractional bits.
 The onboard waveform convention is that phase zero starts at an upward zero
 crossing: `sine`, `strings`, and `clarinet` are rotated byte tables, the MP
-single-cycle tables are generated the same way, and the generated
+single-cycle tables are generated the same way from their source WAV files, and the generated
 saw/triangle/square/hybrid paths apply the matching phase offset in
 RAM-resident helpers. Table-backed waveform source cycles live in
 `src/HexBoard.ino`, but only the selected waveform or wavetable is copied into
 the preallocated `activeSynthWaveTable` RAM buffer used by the ISR. The vibrato
 sine lookup remains a separate RAM table because the ISR reads it directly.
-Imported MP waveform IDs and `BasicTb` are appended after the original IDs so
-existing saved profiles keep their current `Waveform` values.
+Imported MP waveform IDs, `BasicTb`, and `UserTbl` are appended after the
+original IDs so existing saved profiles keep their current `Waveform` values.
 
 `BasicTb` is the first generated wavetable: firmware builds `32` frames by
 interpolating sine, triangle, saw, and square anchors into
@@ -472,6 +475,13 @@ interpolating sine, triangle, saw, and square anchors into
 adjacent frames from `SynthWavetablePosition` plus signed `WT Pos` modulation,
 and uses direct phase lookup to keep ISR cost bounded; add phase interpolation
 only after profiling the current frame-interpolation path.
+
+`UserTbl` is a single persisted user wavetable loaded from `/user_wavetable.dat`.
+The file has a `UWT` header with version, frame count, sample count, and CRC32,
+then `32 * 512` unsigned waveform bytes. Preset-sync object type `0x0B`
+validates the same dimensions before copying the table into
+`activeSynthWaveTable` and optionally writing the file through the flash-safe
+mute wrapper.
 
 Pitch bend and wheel morph modulation have synth-local smoothing separate from
 MIDI output. `setSynthFreq()` writes a target oscillator increment for held

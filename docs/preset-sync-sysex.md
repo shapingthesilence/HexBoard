@@ -1,8 +1,9 @@
 # HexBoard Preset Sync SysEx Protocol Draft
 
-This is the design spec for HexBoard preset sync. The synth preset subset is
-implemented in firmware; tuning/layout, profile, bundle, and backup workflows
-remain draft design until their firmware storage models are implemented.
+This is the design spec for HexBoard preset sync. The synth preset subset and
+single user-wavetable write path are implemented in firmware; tuning/layout,
+profile, bundle, and backup workflows remain draft design until their firmware
+storage models are implemented.
 
 The intent is to keep the device-side protocol small while allowing the web app
 to handle tedious editing work such as Scala import, individual button mapping,
@@ -324,6 +325,7 @@ Capability flags:
 | `8` | Dry-run validation |
 | `9` | Delete user object |
 | `10` | Factory object listing |
+| `11` | Synth wavetable write |
 
 Example hello request, transaction `1`, host max packed chunk `128`, no required
 flags:
@@ -332,13 +334,14 @@ flags:
 F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 ```
 
-Example response, transaction `1`, max packed chunk `128`, capabilities `0x202`
-(synth preset read/write plus delete), max raw object bytes `2048`, settings
-schema `15`, synth preset schema `5`, `9` profiles, `128` synth preset entries,
-no user tuning/layout/scale/color/map slots yet, hardware version `2`:
+Example response, transaction `1`, max packed chunk `128`, capabilities `0x902`
+(synth preset read/write, dry-run validation, plus synth wavetable write), max
+raw object bytes `16640`, settings schema `15`, synth preset schema `5`, `9`
+profiles, `128` synth preset entries, no user tuning/layout/scale/color/map
+slots yet, hardware version `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 04 02 00 00 10 00 0F 05 09 01 00 00 00 00 00 00 02 F7
+F0 7D 10 01 00 02 00 01 01 00 00 00 12 02 00 01 02 00 0F 05 09 01 00 00 00 00 00 00 02 F7
 ```
 
 ## Object Addressing
@@ -370,10 +373,11 @@ handle.
 | `0x04` | `UserLayout` | `/layouts.dat` layout handle |
 | `0x05` | `ScaleColorMap` | `/layouts.dat` color-map handle |
 | `0x06` | `ExplicitButtonMap` | `/layouts.dat` button-map handle |
-| `0x07` | `SynthPreset` | Synth-only preset catalog entry; current firmware returns handles `0..19` |
+| `0x07` | `SynthPreset` | Synth-only preset catalog entry; current firmware returns compact catalog handles up to `127` |
 | `0x08` | `Bundle` | Web-app backup containing multiple objects |
 | `0x09` | `Folder` | Optional virtual folder record for catalog navigation |
 | `0x0A` | `UserScale` | `/layouts.dat` scale handle |
+| `0x0B` | `SynthWavetable` | Single persisted user wavetable slot |
 
 Factory tunings, factory layouts, and factory scales may be listed when the
 device advertises factory object listing, but they are read-only.
@@ -496,9 +500,9 @@ The device ACKs `WRITE_BEGIN` if it can accept the transfer. The host then sends
 `DATA_CHUNK` messages in order. The device ACKs every accepted chunk with the
 next expected chunk index. After all chunks, the host sends `TRANSFER_END`.
 The web app uses this ACKed write path for real-device synth preset saves and
-waits for the `WRITE_COMMIT` ACK before refreshing the device library. Live
-preview sends remain apply-only and are not used as the persistence
-confirmation path.
+Serum wavetable imports, then waits for the `WRITE_COMMIT` ACK before treating
+the flash write as complete. Live preview sends remain apply-only and are not
+used as the persistence confirmation path.
 
 Example `WRITE_BEGIN` for a new `UserTuning` object, transaction `20`,
 transfer `5`, schema `1.0`, raw length `33`, CRC32 `0x6702FE2B`, raw chunk size
@@ -935,7 +939,9 @@ new keys.
 
 `PlaybackMode` value `5` was the temporary `PolyTbl` mode and is now normalized
 to `Poly` on import. `Waveform` value `27` is `BasicTb`, the first
-firmware-generated `32`-frame wavetable.
+firmware-generated `32`-frame wavetable. `Waveform` value `28` is `UserTbl`,
+the single imported user wavetable slot; preset objects store only that slot
+selection, not the table sample data.
 
 The common `Name` and `FolderPath` TLVs are required for named/foldered synth
 presets. Duplicate names are allowed in different folders. Within the same
@@ -949,6 +955,30 @@ using escaped device storage:
 01 0B 00 53 6F 66 74 20 53 74 72 69 6E 67
 06 0B 00 50 61 64 73 25 32 46 57 61 72 6D
 ```
+
+## Synth Wavetable Object
+
+`SynthWavetable` object type `0x0B` writes the single user wavetable slot used
+by the synth waveform value `UserTbl`. Current firmware supports writes only;
+object listing and readback are not implemented for this slot.
+
+The object schema is `1.0`. The body uses the common `HBS1` object header and
+may include common metadata TLVs such as `Name`, `ObjectId`, `Source`, and
+`FolderPath`. Firmware validation requires these synth-wavetable TLVs:
+
+| Tag | Name | Value |
+| --- | --- | --- |
+| `0x30` | `WavetableFrameCount` | `u8`, must be `32` |
+| `0x31` | `WavetableSampleCount` | `u16-le`, must be `512` |
+| `0x32` | `WavetableSamples` | `32 * 512` unsigned bytes, frame-major |
+
+The web app's Serum import path reads Serum-style `.wav` tables, interpolates
+the source frame axis down to `32` frames, resamples each frame to `512`
+samples, normalizes to unsigned byte samples centered on `128`, and sends the
+result with `ApplyToRuntime | SaveToFlash`. Firmware validates the transfer
+CRC32, copies the sample TLV into `activeSynthWaveTable`, selects `UserTbl` for
+the current runtime patch, and writes `/user_wavetable.dat` with a `UWT` header
+and CRC32 when the save flag is present.
 
 ## Bundle Object
 

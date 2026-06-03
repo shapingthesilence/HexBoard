@@ -52,7 +52,8 @@ export const ObjectType = {
   SynthPreset: 0x07,
   Bundle: 0x08,
   Folder: 0x09,
-  UserScale: 0x0a
+  UserScale: 0x0a,
+  SynthWavetable: 0x0b
 } as const;
 
 export type ObjectTypeValue = (typeof ObjectType)[keyof typeof ObjectType];

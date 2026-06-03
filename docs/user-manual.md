@@ -233,6 +233,10 @@ which held notes were pressed, not the physical button numbers.
   `SyncTtn`, `WrdWiz`, and `Woo`: imported MP single-cycle waveforms with
   more specialized synth colors
 - `BasicTb`: a `32`-frame wavetable that moves from sine to triangle to saw to square
+- `UserTbl`: the single user-imported wavetable slot. The companion web app
+  imports Serum-style `.wav` wavetables, crunches them to `32` frames of `512`
+  samples, saves them to HexBoard as `/user_wavetable.dat`, and selects this
+  waveform for the current patch.
 
 `WT Pos` chooses the starting frame for wavetable waveforms. `0%` starts at the
 first frame and `100%` starts at the last frame. Modulation can add to or
@@ -374,8 +378,9 @@ Delegated control is only for compatible host software. It is not shown in the O
 
 A browser-based HexBoard Sync app is being developed in this repository. Its
 first target is preset, tuning/layout, color-map, button-map, and synth-preset
-editing over Web MIDI SysEx. Firmware currently implements the synth preset
-subset; other sync object types still use mock/web-side workflows.
+editing over Web MIDI SysEx. Firmware currently implements synth preset sync
+plus the single user-wavetable import path; other sync object types still use
+mock/web-side workflows.
 
 The `Tunings & Layouts` tab is a browser-side musical geometry editor. It saves
 geometry bundles in browser storage and can import/export those bundles as JSON.
@@ -432,6 +437,14 @@ folder/name is unique. If the target library already has the same folder/name,
 the app asks before overwriting that preset. Device saves wait for the HexBoard
 to acknowledge the write through the flash commit before the app refreshes the
 `HexBoard Library`.
+
+`Import Serum WT` accepts a Serum-style `.wav` wavetable in the synth preset
+editor. The web app reads the source frames, renders the table down to the
+firmware's `32 x 512` byte format, sends it to the connected HexBoard with
+apply-and-save flags, and changes the editor waveform to `User Wavetable`.
+The imported table is one shared device slot, not a named preset-library item;
+saving a preset that uses it stores `Waveform = UserTbl`, while the table data
+itself lives in the device user-wavetable file.
 
 The app requires a Web MIDI SysEx-capable browser such as Chrome or Edge running
 from `localhost` or HTTPS. Use `Connect HexBoard` in the top bar; the app sends

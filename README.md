@@ -45,7 +45,7 @@ The current code supports:
 - an optional OLED note overlay that shows currently played notes
 - standard MIDI, extended multi-channel MIDI mapping, and MPE behavior
 - dynamic just intonation and BPM-linked retuning options
-- onboard synth waveform/wavetable banks, mono portamento, AHDSR envelope, morph/wavetable/LFO modulation, preset, and arpeggiator settings
+- onboard synth waveform/wavetable banks, Serum wavetable import, mono portamento, AHDSR envelope, morph/wavetable/LFO modulation, preset, and arpeggiator settings
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
 
@@ -155,6 +155,9 @@ The web app currently includes:
   loading, and live preview, with controls for mono retrigger/legato,
   portamento, and arpeggiator direction; opened presets are treated as temporary
   drafts and real-device flash saves are ACK-confirmed
+- Serum `.wav` wavetable import for the synth editor; the web app crunches
+  imported tables to the firmware's `32 x 512` byte format and sends them to the
+  persisted `UserTbl` wavetable slot over ACKed preset-sync SysEx
 - a compact header device menu that uses preset-sync `HELLO_RESP` to discover a
   compatible HexBoard and only shows a device selector when multiple HexBoards
   respond

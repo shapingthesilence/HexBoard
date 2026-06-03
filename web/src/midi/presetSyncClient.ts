@@ -35,7 +35,7 @@ import type { MidiTransport } from "./types.ts";
 
 const DEFAULT_RAW_CHUNK_SIZE = 64;
 const DEFAULT_RESPONSE_TIMEOUT_MS = 5000;
-const FLASH_WRITE_RESPONSE_TIMEOUT_MS = 5000;
+const FLASH_WRITE_RESPONSE_TIMEOUT_MS = 15000;
 
 const presetSyncErrorNames = new Map<number, string>(
   Object.entries(ErrorCode).map(([name, value]) => [value, name])
@@ -290,6 +290,28 @@ export class PresetSyncClient {
       handle: NEW_OBJECT_HANDLE,
       schemaMajor: preset.schemaMajor,
       schemaMinor: preset.schemaMinor,
+      writeFlags: WriteFlag.ApplyToRuntime | WriteFlag.SaveToFlash
+    });
+  }
+
+  async sendSynthWavetableImport(wavetable: EncodedCatalogObject): Promise<number[][]> {
+    return this.sendObjectWrite({
+      objectType: ObjectType.SynthWavetable,
+      body: wavetable.body,
+      handle: NEW_OBJECT_HANDLE,
+      schemaMajor: wavetable.schemaMajor,
+      schemaMinor: wavetable.schemaMinor,
+      writeFlags: WriteFlag.ApplyToRuntime | WriteFlag.SaveToFlash
+    });
+  }
+
+  async sendSynthWavetableImportConfirmed(wavetable: EncodedCatalogObject): Promise<number[][]> {
+    return this.sendObjectWriteConfirmed({
+      objectType: ObjectType.SynthWavetable,
+      body: wavetable.body,
+      handle: NEW_OBJECT_HANDLE,
+      schemaMajor: wavetable.schemaMajor,
+      schemaMinor: wavetable.schemaMinor,
       writeFlags: WriteFlag.ApplyToRuntime | WriteFlag.SaveToFlash
     });
   }

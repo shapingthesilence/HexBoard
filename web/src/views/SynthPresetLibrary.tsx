@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import {
   createSynthPresetObject,
+  createSynthWavetableObject,
+  crunchSerumWavetable,
   deterministicObjectId,
   objectIdFromHex,
   objectIdToHex,
@@ -210,7 +212,8 @@ const waveformOptions = [
   { label: "Sync The Titanic", value: 24 },
   { label: "Weird Wizard", value: 25 },
   { label: "Woo", value: 26 },
-  { label: "Basic Wavetable", value: 27 }
+  { label: "Basic Wavetable", value: 27 },
+  { label: "User Wavetable", value: 28 }
 ];
 
 const driveOptions = [
@@ -282,7 +285,7 @@ const envelopeTimeOptions = [
 
 const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]> = {
   PlaybackMode: [0, 4],
-  Waveform: [0, 27],
+  Waveform: [0, 28],
   SynthDrive: [0, 3],
   SynthModTarget: [0, 3],
   SynthModAmount: [0, 127],
@@ -618,6 +621,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     hexboard: null
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const wavetableFileInputRef = useRef<HTMLInputElement>(null);
   const skipNextAutoSend = useRef(true);
 
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
@@ -895,6 +899,47 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
   }
 
+  async function importSerumWavetableFile(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      setSyncStatus(`Crunching ${file.name}...`);
+      const samples = crunchSerumWavetable(await file.arrayBuffer());
+      const wavetableName = (file.name.replace(/\.[^.]+$/, "") || "Imported Wavetable").slice(0, 64);
+      const wavetable = createSynthWavetableObject({
+        objectId: deterministicObjectId(`synth-wavetable:${wavetableName}:${crc32(samples).toString(16)}`),
+        name: wavetableName,
+        folderPath: "Wavetables",
+        samples,
+        tags: ["serum"]
+      });
+      setSyncStatus(`Sending ${wavetableName} to User Wavetable...`);
+      const frames = transport instanceof MockMidiTransport
+        ? await client.sendSynthWavetableImport(wavetable)
+        : await client.sendSynthWavetableImportConfirmed(wavetable);
+      setLastFrameCount(frames.length);
+      skipNextAutoSend.current = true;
+      setEditorHydrated(true);
+      setPreset((current) => ({
+        ...current,
+        values: {
+          ...current.values,
+          Waveform: 28,
+          SynthWavetablePosition: 0
+        }
+      }));
+      setSyncStatus(`Imported ${wavetableName} to User Wavetable with ${frames.length} SysEx frame${frames.length === 1 ? "" : "s"}`);
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Failed to import Serum wavetable");
+    } finally {
+      input.value = "";
+    }
+  }
+
   async function loadCurrentHexBoardPatch(isCancelled: () => boolean = () => false) {
     if (transport instanceof MockMidiTransport) {
       return false;
@@ -1026,6 +1071,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           </div>
         </div>
         <input ref={fileInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" onChange={(event) => void importPresetFile(event)} />
+        <input ref={wavetableFileInputRef} className="hiddenFileInput" type="file" accept="audio/wav,audio/wave,.wav" onChange={(event) => void importSerumWavetableFile(event)} />
 
         <div className="row">
           <input
@@ -1100,6 +1146,9 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             </button>
             <button type="button" onClick={() => void uploadToHexBoard(preset, "Saved")}>
               Save to HexBoard
+            </button>
+            <button type="button" onClick={() => wavetableFileInputRef.current?.click()}>
+              Import Serum WT
             </button>
             <button type="button" onClick={() => downloadPresetFile(preset)}>
               Export
