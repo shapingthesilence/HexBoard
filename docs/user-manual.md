@@ -239,10 +239,11 @@ they are saved through the web app. If a preset references a wavetable that is
 not installed on the HexBoard, the synth loads `Basic` instead until a matching
 folder/name wavetable is added.
 
-`WT Pos` chooses the starting frame for wavetable waveforms. `0%` starts at the
-first frame and `100%` starts at the last frame. Modulation can add to or
-subtract from this base position, so setting `WT Pos` somewhere above `0%` lets
-a negative envelope or LFO amount move backward through the wavetable.
+`WT Pos` chooses the starting frame for wavetable waveforms. On device, the menu
+shows frames `1` through `32`; frame `1` is the first frame and frame `32` is
+the last frame. Modulation can add to or subtract from this base position, so
+setting `WT Pos` above frame `1` lets a negative envelope or LFO amount move
+backward through the wavetable.
 
 `Drive` adds soft saturation after the voices are mixed:
 
@@ -329,15 +330,15 @@ Use these as starting points, then adjust by ear.
 
 | Sound | Synth Mode | Wavetable / WT Pos | Attack | Hold | Decay | Sustain | Release | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Plucky | `Poly` or `MonoRtg` | `Basic` around `0%` to `33%` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` or `10%` | `50 ms` to `200 ms` | Fast start, quick fade, little held level |
-| Smooth pad | `Poly` | `Basic` at `0%` or `Classic` at `0%` | `200 ms` to `1 s` | `0 ms` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
-| Lead | `MonoRtg` or `MonoLeg` | `Basic` around `67%` to `100%` | `0 ms` or `10 ms` | `0 ms` to `50 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Use `Porta` for glide or keep it at `0 ms` for immediate melodies |
-| Chime or bell | `Poly` | `Basic` at `0%` or `Digital` near `67%` | `0 ms` or `5 ms` | `0 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
-| Arpeggio | `Arp'gio` | `Basic` around `67%` or `Edge` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed`, `Arp Dir`, and `Tempo` for rhythm |
+| Plucky | `Poly` or `MonoRtg` | `Basic` around frame `1` to `11` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` or `10%` | `50 ms` to `200 ms` | Fast start, quick fade, little held level |
+| Smooth pad | `Poly` | `Basic` at frame `1` or `Classic` at frame `1` | `200 ms` to `1 s` | `0 ms` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
+| Lead | `MonoRtg` or `MonoLeg` | `Basic` around frame `22` to `32` | `0 ms` or `10 ms` | `0 ms` to `50 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Use `Porta` for glide or keep it at `0 ms` for immediate melodies |
+| Chime or bell | `Poly` | `Basic` at frame `1` or `Digital` near frame `22` | `0 ms` or `5 ms` | `0 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
+| Arpeggio | `Arp'gio` | `Basic` around frame `22` or `Edge` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed`, `Arp Dir`, and `Tempo` for rhythm |
 
-For a sharper sound, use `Basic` at a higher `WT Pos` or one of the `Edge`
-anchors, and keep `Attack` short. For a smoother sound, use `Basic` near `0%`
-or `Classic`, then increase `Attack` and `Release`.
+For a sharper sound, use `Basic` at a higher `WT Pos` frame or one of the
+`Edge` anchors, and keep `Attack` short. For a smoother sound, use `Basic` near
+frame `1` or `Classic`, then increase `Attack` and `Release`.
 
 If a sound feels too clicky, raise `Attack` one step. If notes smear together,
 lower `Release`. If a pluck does not fade away enough, lower `Sustain` or lower
@@ -575,7 +576,7 @@ Important factory defaults include:
 - MPE mode: `Auto`
 - Synth: `Poly`
 - Wavetable: `Basic`
-- WT Pos: `0%`
+- WT Pos: frame `1`
 - Drive: `Off`
 - Wheel FX: `Morph`
 - Wheel Amt: `100%`
