@@ -1,14 +1,14 @@
 # HexBoard Firmware Code Analysis
 
-> File: `src/HexBoard.ino`
-> Current shape: one Arduino sketch, about `13,800` lines
+> Entry point: `HexBoard.ino`
+> Current shape: root Arduino sketch plus firmware modules under `src/firmware/`
 > Target: Generic RP2040 at `250 MHz`, `16 MB` flash split as `8 MB` sketch / `8 MB` LittleFS, Pico SDK USB with `HexBoard` USB descriptors, Generic SPI `/4` boot2, NeoPixels, SH1107 OLED, rotary encoder, piezo output, and hardware `V1.2` audio jack support
 
-This document describes the current firmware structure. It intentionally avoids exact line-number references because the sketch changes often. Use the `// @...` section tags in `src/HexBoard.ino` and `rg` searches as the source navigation method.
+This document describes the current firmware structure. It intentionally avoids exact line-number references because the source changes often. Use file names under `src/firmware/`, retained `// @...` section tags, and `rg` searches as the source navigation method.
 
 ## Architecture Overview
 
-HexBoard is a hexagonal MIDI controller and standalone synth. The firmware is intentionally maintained as one large `.ino` file for Arduino compatibility, but the source is divided into subsystem sections.
+HexBoard is a hexagonal MIDI controller and standalone synth. The firmware uses a root Arduino sketch for lifecycle wrappers and modular implementation files under `src/firmware/`.
 
 The repository now also contains an isolated `web/` companion app scaffold. It
 is used to develop preset-sync workflows against the SysEx protocol. Firmware
@@ -19,10 +19,10 @@ The runtime model is:
 
 | Runtime area | Responsibilities |
 | --- | --- |
-| Core 0 `setup()` | USB/MIDI startup, LittleFS, hardware detection, settings load, LEDs, OLED, menu, runtime sync |
-| Core 0 `loop()` | timing, button scan, note lifecycle, arpeggiator, wheels, MIDI input, animation, LED refresh, menu click handling, auto-save |
-| Core 1 `setup1()` | synth PWM and DMA audio setup |
-| Core 1 `loop1()` | audio buffer refill, rotary quadrature polling, and delegated MIDI polling while delegated mode is active |
+| Core 0 `hexboardSetup()` via `setup()` | USB/MIDI startup, LittleFS, hardware detection, settings load, LEDs, OLED, menu, runtime sync |
+| Core 0 `hexboardLoop()` via `loop()` | timing, button scan, note lifecycle, arpeggiator, wheels, MIDI input, animation, LED refresh, menu click handling, auto-save |
+| Core 1 `hexboardSetup1()` via `setup1()` | synth PWM and DMA audio setup |
+| Core 1 `hexboardLoop1()` via `loop1()` | audio buffer refill, rotary quadrature polling, and delegated MIDI polling while delegated mode is active |
 | PWM-paced DMA | writes rendered audio blocks to the active PWM compare register |
 
 High-level musical flow:
@@ -41,31 +41,23 @@ external host SysEx -> delegated control -> raw button events and host-driven LE
 
 ## Source Section Map
 
-The current source uses these section tags and blocks:
+The current source is grouped by file:
 
-| Section | Purpose |
+| File | Purpose |
 | --- | --- |
-| `@readme` | build target and repository notes |
-| `@init` | includes, platform macros, forward declarations |
-| `@helpers` | utility helpers such as positive modulo and MIDI mapping helpers |
-| `@defaults` | runtime defaults and option constants |
-| `@microtonal` | tuning definitions, waveform metadata, custom EDO support |
-| `@layout` | isomorphic layout definitions |
-| `@scales` | scale definitions |
-| `@palettes` | palette constants and color conversion helpers |
-| `@presets` | `presetDef`, tuning/layout/scale accessors, current preset |
-| `@diagnostics` | debug logging and ISR profiling |
-| `@timing` | microsecond clock reads and loop timing |
-| `@gridSystem` | scan matrix, `buttonDef`, command buttons, wheels, delegated globals |
-| `@LED` | color modes, LED cache generation, LED rendering |
-| `@MIDI` | USB/serial MIDI, MPE, external MIDI input, delegated SysEx protocol, played-note overlay state |
-| `@synth` | oscillator, envelope, PWM, polyphony, arpeggiator support |
-| `@animate` | LED animations |
-| `@assignment` | layout, scale, pitch, frequency, and reverse MIDI mapping |
-| settings block | LittleFS settings header, profiles, defaults, persistence |
-| `@menu` | OLED setup, played-note overlay drawing, GEM menu pages, options, callbacks, preview behavior |
-| `@interface` | matrix scan, rotary encoder, panic behavior |
-| `@mainLoop` | Arduino setup/loop functions for both cores |
+| `HexBoard.ino` | Arduino lifecycle wrappers only |
+| `src/firmware/FirmwareUnity.cpp` | ordered firmware translation unit for subsystem modules |
+| `src/firmware/platform_common.cpp` | platform constants, helpers, forward declarations |
+| `src/firmware/config_defaults.cpp` | runtime defaults and option constants |
+| `src/firmware/tuning_models.cpp`, `layout_models.cpp`, `scale_palette_preset_models.cpp` | tuning, layout, scale, palette, and preset models |
+| `src/firmware/diagnostics_timing.cpp` | debug logging, ISR profiling, timing |
+| `src/firmware/hardware_grid.cpp`, `hardware_led.cpp`, `hardware_input.cpp` | grid, command buttons, wheels, LEDs, rotary, hardware setup |
+| `src/firmware/midi_delegated_notes.cpp` | USB/serial MIDI, MPE, external MIDI input, delegated SysEx, played-note state |
+| `src/firmware/synth_audio.cpp` | oscillator, envelope, PWM, DMA audio, polyphony, arpeggiator, metronome |
+| `src/firmware/led_animation.cpp` | LED animations and external MIDI LED refresh coalescing |
+| `src/firmware/settings_persistence_preset_sync.cpp` | pitch assignment, profiles, LittleFS persistence, synth presets, preset sync |
+| `src/firmware/oled_menu.cpp` | OLED setup, played-note overlay drawing, GEM pages, callbacks, runtime settings sync |
+| `src/firmware/runtime.cpp` | firmware lifecycle functions called by the root sketch |
 
 ## Core Data Structures
 
@@ -675,4 +667,4 @@ Run or manually verify the areas your change touches:
 - `DisplayNotes` compact menu badge, full screensaver-wake overlay in `12 EDO`, 12-EDO chord labels, a non-12 tuning, chord release, and screensaver wake
 - delegated-control enter, LED update, button event, and exit SysEx
 
-For docs-only changes, a compile is not necessary, but keep terminology aligned with `src/HexBoard.ino`.
+For docs-only changes, a compile is not necessary, but keep terminology aligned with `HexBoard.ino` and `src/firmware/`.

@@ -25,12 +25,13 @@ The user manual is for players and owners of the device. The MPE setup guide is 
 ## Repository Layout
 
 - `AGENTS.md`: AI agent project instructions, including the documentation update requirement
-- `src/HexBoard.ino`: primary firmware source
+- `HexBoard.ino`: root Arduino sketch with only lifecycle wrappers
+- `src/firmware/`: primary firmware implementation modules
 - `web/`: isolated Vite/React companion app scaffold for preset sync
 - `docs/`: documentation for users and contributors
 - `Makefile`: local build shortcut for `arduino-cli`
 
-The current firmware is intentionally maintained as a single large sketch file, but it is organized internally into subsystem sections such as tuning, layout, LEDs, MIDI, synth, persistence, menu, and main loop.
+The current firmware uses the standard Arduino root-sketch layout. `HexBoard.ino` delegates to lifecycle functions in `src/firmware/`, where subsystem modules cover tuning, layout, LEDs, MIDI, synth, persistence, menu, input, and runtime orchestration.
 
 ## Current Firmware Highlights
 
@@ -77,7 +78,7 @@ The current source targets:
 - USB manufacturer/product descriptor `HexBoard`
 - Generic SPI `/4` boot2
 
-The source comments in `src/HexBoard.ino` and the `Makefile` are the most reliable build references for this repository.
+The `Makefile` and firmware headers under `src/firmware/` are the most reliable build references for this repository.
 
 ## Building The Firmware
 
@@ -117,7 +118,7 @@ The simplest local build is:
 make
 ```
 
-The `Makefile` builds from `src/HexBoard.ino` using the board options for this project. During the build it stages a generated sketch at `build/build.ino`; do not edit or maintain that generated file.
+The `Makefile` builds the root `HexBoard.ino` sketch using the board options for this project. Firmware implementation lives under `src/firmware/`; do not edit generated files under `build/` as source.
 The local `250 MHz` build intentionally uses `Generic SPI /4` boot2 to keep the external flash clock stable while giving the synth block renderer enough headroom for dense AHDSR and FX-envelope patches.
 
 To compare onboard synth PWM resolutions, pass `PWM_BITS` at build time:
@@ -131,7 +132,7 @@ Supported values are `8`, `9`, and `10`; the default is `10`.
 The expected output artifact is:
 
 ```text
-build/build.ino.uf2
+build/HexBoard.ino.uf2
 ```
 
 ## Companion Web App
@@ -234,7 +235,7 @@ to match the new project-page path.
 
 ### Build Notes
 
-- Edit `src/HexBoard.ino`, not a root sketch copy or `build/build.ino`
+- Keep `HexBoard.ino` as thin lifecycle wrappers and edit implementation under `src/firmware/`
 - If you change board parameters, keep the `Makefile` and source header comments in sync
 - The firmware currently depends on the Pico SDK USB stack and the RP2040 dual-core runtime behavior
 
@@ -272,6 +273,7 @@ If you are jumping into the codebase, start with:
 
 The most important source file is:
 
-- [`src/HexBoard.ino`](src/HexBoard.ino)
+- [`HexBoard.ino`](HexBoard.ino)
+- [`src/firmware/`](src/firmware/)
 
-That file includes section tags such as `@MIDI`, `@synth`, `@menu`, and `@mainLoop`, which make it much easier to navigate than raw line count suggests.
+The firmware modules retain section tags such as `@MIDI`, `@synth`, `@menu`, and `@mainLoop`, which make subsystem searches straightforward.

@@ -1,0 +1,131 @@
+#include "FirmwareModule.h"
+
+#if HEXBOARD_FIRMWARE_UNITY
+
+// @diagnostics
+/*
+    This section of the code handles
+    optional sending of log messages
+    to the Serial port
+  */
+bool debugMessages = true;
+// Macro avoids constructing std::string arguments when debugMessages is false
+#define sendToLog(msg) do { if (debugMessages) { Serial.println((std::string(msg)).c_str()); } } while(0)
+/*
+    ISR cycle profiling — lightweight timing measurement for the
+    audio poll() interrupt. Tracks min/max/average microseconds
+    per ISR invocation. Enabled/disabled at runtime via
+    isrProfilingEnabled flag. Stats are read and reset atomically
+    from Core 0 via readAndResetISRProfile().
+  */
+volatile bool isrProfilingEnabled = false;
+volatile uint32_t isrCycleMin   = UINT32_MAX;
+volatile uint32_t isrCycleMax   = 0;
+volatile uint64_t isrCycleSum   = 0;
+volatile uint32_t isrCycleCount = 0;
+volatile uint32_t isrProfileMinUs  = 0;
+volatile uint32_t isrProfileMaxUs  = 0;
+volatile uint32_t isrProfileAvgUs  = 0;
+volatile uint32_t isrProfileCount  = 0;
+volatile uint32_t isrCycleOverrunCount = 0;
+volatile uint32_t isrCycleReleaseStartCount = 0;
+volatile uint32_t isrCyclePiezoScaleCount = 0;
+volatile uint8_t isrCycleMaxVoices = 0;
+volatile uint8_t isrCycleMaxFlags = 0;
+volatile uint32_t isrProfileOverrunCount = 0;
+volatile uint32_t isrProfileReleaseStartCount = 0;
+volatile uint32_t isrProfilePiezoScaleCount = 0;
+volatile uint32_t isrProfileDmaUnderrunCount = 0;
+volatile uint8_t isrProfileMaxVoices = 0;
+volatile uint8_t isrProfileMaxFlags = 0;
+constexpr uint8_t ISR_PROFILE_FLAG_RELEASE_START = 0x01;
+constexpr uint8_t ISR_PROFILE_FLAG_PIEZO_SCALE = 0x02;
+bool isrProfileMenuEnabled = false;
+
+void captureAndResetISRProfile(bool resumeProfiling) {
+  // Briefly disable profiling to get a consistent snapshot
+  isrProfilingEnabled = false;
+  __dmb();  // data memory barrier
+  isrProfileMinUs = (isrCycleMin == UINT32_MAX) ? 0 : isrCycleMin;
+  isrProfileMaxUs = isrCycleMax;
+  isrProfileCount = isrCycleCount;
+  isrProfileAvgUs = (isrProfileCount > 0) ? (uint32_t)(isrCycleSum / isrProfileCount) : 0;
+  isrProfileOverrunCount = isrCycleOverrunCount;
+  isrProfileReleaseStartCount = isrCycleReleaseStartCount;
+  isrProfilePiezoScaleCount = isrCyclePiezoScaleCount;
+  isrProfileDmaUnderrunCount = audioDmaUnderrunCount;
+  isrProfileMaxVoices = isrCycleMaxVoices;
+  isrProfileMaxFlags = isrCycleMaxFlags;
+  // Reset counters
+  isrCycleMin = UINT32_MAX;
+  isrCycleMax = 0;
+  isrCycleSum = 0;
+  isrCycleCount = 0;
+  isrCycleOverrunCount = 0;
+  isrCycleReleaseStartCount = 0;
+  isrCyclePiezoScaleCount = 0;
+  audioDmaUnderrunCount = 0;
+  isrCycleMaxVoices = 0;
+  isrCycleMaxFlags = 0;
+  __dmb();
+  isrProfilingEnabled = resumeProfiling;
+}
+
+void readAndResetISRProfile() {
+  captureAndResetISRProfile(true);
+}
+
+void startISRProfileCapture() {
+  captureAndResetISRProfile(true);
+  sendToLog("ISR profile started.");
+}
+
+void stopISRProfileCaptureAndLog() {
+  captureAndResetISRProfile(false);
+  std::string maxFlags = "";
+  if (isrProfileMaxFlags & ISR_PROFILE_FLAG_RELEASE_START) {
+    maxFlags += "release";
+  }
+  if (isrProfileMaxFlags & ISR_PROFILE_FLAG_PIEZO_SCALE) {
+    if (!maxFlags.empty()) {
+      maxFlags += "+";
+    }
+    maxFlags += "piezo";
+  }
+  if (maxFlags.empty()) {
+    maxFlags = "steady";
+  }
+  sendToLog(
+    "Audio profile min/avg/max/count: " +
+    std::to_string(isrProfileMinUs) + "/" +
+    std::to_string(isrProfileAvgUs) + "/" +
+    std::to_string(isrProfileMaxUs) + " us, " +
+    std::to_string(isrProfileCount) + " blocks, overruns: " +
+    std::to_string(isrProfileOverrunCount) + ", release starts: " +
+    std::to_string(isrProfileReleaseStartCount) + ", piezo blocks: " +
+    std::to_string(isrProfilePiezoScaleCount) + ", max voices/flags: " +
+    std::to_string(isrProfileMaxVoices) + "/" + maxFlags +
+    ", dma underruns: " + std::to_string(isrProfileDmaUnderrunCount));
+}
+
+// @timing
+/*
+    This section of the code handles basic
+    timekeeping stuff
+  */
+#include "hardware/timer.h"  // library of code to access the processor's clock functions
+uint64_t runTime = 0;        // Program loop consistent variable for time in microseconds since power on
+uint64_t lapTime = 0;        // Used to keep track of how long each loop takes. Useful for rate-limiting.
+uint64_t loopTime = 0;       // Used to check speed of the loop
+uint64_t RAM_FUNC(readClock)() {
+  uint64_t temp = timer_hw->timerawh;
+  return (temp << 32) | timer_hw->timerawl;
+}
+void timeTracker() {
+  lapTime = runTime - loopTime;
+  loopTime = runTime;     // Update previousTime variable to give us a reference point for next loop
+  runTime = readClock();  // Store the current time in a uniform variable for this program loop
+}
+
+
+#endif  // HEXBOARD_FIRMWARE_UNITY

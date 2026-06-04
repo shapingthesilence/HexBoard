@@ -11,16 +11,18 @@ The mode is intentionally external-only:
 
 ## Source Locations
 
-Primary implementation points in `src/HexBoard.ino`:
+Primary implementation points:
 
-- `delegatedControl`, `delegatedColors`, and `SYSEX_*` constants live near the grid/wheel globals.
-- `processIncomingSysEx()` handles external entry while the firmware is in normal mode.
-- `processIncomingMIDIDelegated()` handles delegated-mode SysEx on core 1.
-- `delegatedButtonEvent()` converts raw button events to MIDI notes.
-- `processLedSysEx()` converts host LED color records into cached NeoPixel colors.
-- `readHexes()`, `lightUpLEDs()`, `arpeggiate()`, `updateWheels()`, `animateLEDs()`, and `loop1()` contain runtime gates for delegated mode.
+- `delegatedControl`, `delegatedColors`, and `SYSEX_*` constants live in `src/firmware/hardware_grid.cpp`.
+- `processIncomingSysEx()`, `processIncomingMIDIDelegated()`, `delegatedButtonEvent()`, and `processLedSysEx()` live in `src/firmware/midi_delegated_notes.cpp`.
+- `readHexes()` lives in `src/firmware/hardware_input.cpp`.
+- `lightUpLEDs()` lives in `src/firmware/hardware_led.cpp`.
+- `arpeggiate()` lives in `src/firmware/synth_audio.cpp`.
+- `updateWheels()` lives in `src/firmware/hardware_input.cpp`.
+- `animateLEDs()` lives in `src/firmware/led_animation.cpp`.
+- `hexboardLoop1()` lives in `src/firmware/runtime.cpp` and contains the delegated-mode core-1 MIDI polling gate.
 
-`src/HexBoard.ino` is the firmware source used by the `Makefile`. `build/build.ino` is generated during compilation and should not be edited as source.
+`HexBoard.ino` is the root Arduino sketch used by the `Makefile`; firmware implementation lives under `src/firmware/`. Generated files under `build/` should not be edited as source.
 
 ## Runtime Behavior
 

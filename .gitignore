@@ -2,6 +2,7 @@ build
 TAGS
 src/MP Single Cycle Waveforms/.DS_Store
 web/node_modules
+web/.vite
 web/dist
 web/coverage
 web/*.tsbuildinfo

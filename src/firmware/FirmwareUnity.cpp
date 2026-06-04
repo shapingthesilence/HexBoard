@@ -1,0 +1,20 @@
+#define HEXBOARD_FIRMWARE_UNITY 1
+
+#include "FirmwareModule.h"
+#include "HexBoardFirmware.h"
+
+#include "platform_common.cpp"
+#include "config_defaults.cpp"
+#include "tuning_models.cpp"
+#include "layout_models.cpp"
+#include "scale_palette_preset_models.cpp"
+#include "diagnostics_timing.cpp"
+#include "hardware_grid.cpp"
+#include "hardware_led.cpp"
+#include "midi_delegated_notes.cpp"
+#include "synth_audio.cpp"
+#include "led_animation.cpp"
+#include "settings_persistence_preset_sync.cpp"
+#include "oled_menu.cpp"
+#include "hardware_input.cpp"
+#include "runtime.cpp"
