@@ -56,7 +56,7 @@ The `Makefile` currently compiles with:
 - USB manufacturer/product build descriptors: `HexBoard`
 
 If you build manually, match the options in `Makefile` and the header comment in `src/HexBoard.ino`.
-The `Generic SPI /4` boot2 selection is required for the local `250 MHz` build to avoid overdriving external flash; `Generic SPI /2` may compile but can crash the board at runtime. The higher CPU clock gives the synth ISR enough headroom for dense AHDSR and FX-envelope patches that can otherwise report overruns.
+The `Generic SPI /4` boot2 selection is required for the local `250 MHz` build to avoid overdriving external flash; `Generic SPI /2` may compile but can crash the board at runtime. The higher CPU clock gives the synth block renderer enough headroom for dense AHDSR and FX-envelope patches that can otherwise report overruns.
 
 The `Makefile` accepts `PWM_BITS=8`, `PWM_BITS=9`, or `PWM_BITS=10` for onboard synth PWM comparisons:
 
@@ -159,9 +159,10 @@ for the host ACK, then sends one `DATA_CHUNK` per ACK before `TRANSFER_END`.
 Performance-sensitive firmware code can use the `RAM_FUNC(name)` wrapper to
 place selected functions in SRAM instead of external-flash XIP. Keep this
 selective. The current RAM placement favors small hot paths and note-critical
-dispatch: the audio ISR helpers, button scan, command-wheel update, MIDI
-note/wheel sends, synth voice allocation, rotary quadrature polling, and compact
-LED frame helpers. `poll()` also keeps its direct helper calls and the small
+dispatch: the audio block renderer and DMA refill helpers, button scan,
+command-wheel update, MIDI note/wheel sends, synth voice allocation, rotary
+quadrature polling, and compact LED frame helpers. The renderer also keeps its
+direct helper calls and the small
 polyphony attenuation table in SRAM. Envelope release starts use 256-entry
 16-bit RAM lookup tables for the amp and FX envelopes so the ISR does not divide
 when many notes are released at once, and piezo scaling uses power-of-two
@@ -378,11 +379,11 @@ Important implementation details:
 - the amp envelope has `EnvelopeAttackIndex`, `EnvelopeHoldIndex`, `EnvelopeDecayIndex`, `EnvelopeSustainLevel`, and `EnvelopeReleaseIndex`
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
-- Core 0 retries synth release commands until the audio ISR consumes one; the ISR clears the retry state when it accepts `StartRelease` so long releases do not repeatedly restart
+- Core 0 retries synth release commands until the audio renderer consumes one; the renderer clears the retry state when it accepts `StartRelease` so long releases do not repeatedly restart
 - synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `8`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters only and do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, and version `7` records migrate by appending wavetable position and LFO defaults
 - the imported synth user wavetable is stored separately in `/user_wavetable.dat` with magic `UWT`, version `1`, frame/sample dimensions, CRC32, and `32 * 512` unsigned waveform bytes; synth presets only reference it through `Waveform = UserTbl`
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
-- the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio ISR applies it only to the jack sample before writing the `AJACK` PWM level
+- the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
 - version `2` through `14` settings files are migrated in place to version `15` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table, and converting version `13` and older `DeviceRotation` OLED-driver constants into physical device rotation values; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
@@ -390,8 +391,9 @@ Important implementation details:
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
 - on hardware `V1.2`, the `AudioDestination` setting now behaves as a
-  jack-default `Buzzer` toggle; legacy stored values are interpreted by
-  checking whether the older byte had the piezo bit set
+  jack-default `Buzzer` toggle that switches synth output to piezo; legacy
+  stored values are interpreted by checking whether the older byte had the piezo
+  bit set
 
 If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `14` because settings were appended to the schema, some setting tables expanded, and `DeviceRotation` was reinterpreted from OLED-driver rotation to physical device rotation. Unknown version mismatches still fall back to defaults.
 
@@ -456,6 +458,14 @@ in `10`-bit mode. High-register sine tones can get harsher on the jack path as
 the carrier moves closer to the audio band, so `9`-bit and `8`-bit builds are
 useful fallback comparisons.
 
+Synth audio is rendered on Core 1 into two `64`-sample DMA buffers. A dedicated
+PWM timer slice uses wrap `1023` and divider `/6` to pace DMA writes at about
+`40.7 kHz` into the active output PWM slice's CC register. The block renderer
+generates jack and piezo levels, but DMA outputs only one selected destination at
+a time: hardware `V1.2` uses the jack unless `Buzzer` is enabled, and hardware
+`V1.1` uses piezo. If the DMA channel consumes a buffer before Core 1 has filled
+the next one, firmware records an underrun and outputs a silence block.
+
 The sine waveform uses linear interpolation between adjacent `512`-entry table
 samples. The table sampler splits the existing `16`-bit phase accumulator into
 `9` sample-index bits and `7` fractional bits.
@@ -496,15 +506,15 @@ mute wrapper.
 
 Pitch bend and wheel morph modulation have synth-local smoothing separate from
 MIDI output. `setSynthFreq()` writes a target oscillator increment for held
-voices and only resets phase for new synth notes. The audio ISR slews each
-voice's current increment toward that target, and wheel modulation reads a
+voices and only resets phase for new synth notes. The audio block renderer slews
+each voice's current increment toward that target, and wheel modulation reads a
 smoothed value instead of `modWheel.curValue` directly.
 
 The jack and piezo output stages intentionally differ. The jack path stays
 centered at the PWM midpoint, while the piezo path normally moves its midpoint
 with the active voice envelope to stay quiet when idle. Piezo sample scaling uses
-a power-of-two fixed-point multiply/shift in the ISR. Metronome beeps are the
-exception: while a beep sample is active, the piezo path opens full temporary
+a power-of-two fixed-point multiply/shift in the block renderer. Metronome beeps
+are the exception: while a beep sample is active, the piezo path opens full temporary
 headroom so the click is not attenuated once by the beep level and again by the
 moving midpoint.
 
@@ -640,9 +650,10 @@ Those are good places to review closely before and after edits.
 ## Practical Debugging Tips
 
 - Turn on `Serial Debug` from the `Advanced` menu if you need runtime logs
-- Use `Advanced` -> `ISR Profile` to capture audio ISR timing. Turn it on before
-  the scenario, then turn it off to log `min/avg/max/count`, overrun count, and
-  whether the slowest sample coincided with release-start or piezo-scaling math.
+- Use `Advanced` -> `ISR Profile` to capture audio block timing. Turn it on
+  before the scenario, then turn it off to log `min/avg/max/count`, render
+  overrun count, DMA underrun count, and whether the slowest block coincided with
+  release-start or piezo-scaling math.
 - Search by section tag first, not by scrolling
 - Use `rg` on function names because the same concepts appear in many comments and menu strings
 - When a change "almost works", verify you called the correct recomputation function rather than assuming the math is wrong

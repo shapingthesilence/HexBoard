@@ -21,9 +21,9 @@ The runtime model is:
 | --- | --- |
 | Core 0 `setup()` | USB/MIDI startup, LittleFS, hardware detection, settings load, LEDs, OLED, menu, runtime sync |
 | Core 0 `loop()` | timing, button scan, note lifecycle, arpeggiator, wheels, MIDI input, animation, LED refresh, menu click handling, auto-save |
-| Core 1 `setup1()` | synth PWM and hardware alarm setup |
-| Core 1 `loop1()` | rotary quadrature polling and delegated MIDI polling while delegated mode is active |
-| Timer ISR `poll()` | audio sample generation and PWM output |
+| Core 1 `setup1()` | synth PWM and DMA audio setup |
+| Core 1 `loop1()` | audio buffer refill, rotary quadrature polling, and delegated MIDI polling while delegated mode is active |
+| PWM-paced DMA | writes rendered audio blocks to the active PWM compare register |
 
 High-level musical flow:
 
@@ -142,7 +142,7 @@ The RP2040 executes normal code from external flash through XIP, so a few
 latency-sensitive functions are explicitly placed in SRAM with `RAM_FUNC`.
 Current RAM-resident HexBoard functions include:
 
-- synth/audio ISR support: `poll()`, `readClock()`,
+- synth/audio renderer support: `renderAudioOutputLevels()`, `serviceAudioDmaBuffers()`,
   `writeAudioOutputLevels()`, `publishVoiceFreed()`,
   `smoothedSynthModValue()`, `setSynthFreq()`, `beginEnvelopeAttack()`,
   `beginEnvelopeRelease()`, `processEnvelopeReleases()`, and
@@ -158,11 +158,11 @@ Current RAM-resident HexBoard functions include:
   `applyLedCurrentLimitToFrame()`, `resetVelocityLEDs()`,
   `resetWheelLEDs()`, and `getLEDcode()`
 
-`poll()` also reads the polyphony attenuation table from SRAM. Release-start
+The audio block renderer also reads the polyphony attenuation table from SRAM. Release-start
 increments are read from 256-entry 16-bit RAM tables for the amp and FX
 envelopes, generated when envelope settings change, avoiding unsigned division
-in the audio ISR. Piezo output scaling uses fixed-point reciprocal math instead
-of the signed division helper.
+in the block renderer. Piezo output scaling uses power-of-two fixed-point math
+instead of division or reciprocal approximation.
 
 This deliberately does not move the OLED menu and note-overlay drawing stack.
 Those paths mostly call GEM/U8g2 routines and send data over I2C, so wholesale
@@ -170,13 +170,14 @@ RAM placement would consume much more SRAM than the selected hot-path pass.
 After the coarser AHDSR release-table pass, `make` reports about `106 KB` of
 globals and about `156 KB` remaining for local variables, heap, and stacks.
 
-### ISR Profiling Diagnostic
+### Audio Profiling Diagnostic
 
 The `Advanced` page exposes a transient `ISR Profile` toggle backed by the
-existing audio ISR profiling counters. Turning it on resets the counters and
-starts measurement. Turning it off stops profiling and logs `min/avg/max/count`,
-overrun count, release-start count, piezo-scaling sample count, and the active
-voice count/flag context for the slowest captured sample. Logs go through
+audio profiling counters. Turning it on resets the counters and starts
+measurement. Turning it off stops profiling and logs `min/avg/max/count`
+block-render timing, render-overrun count, release-start count, piezo-scaling
+block count, DMA underrun count, and the active voice count/flag context for the
+slowest captured block. Logs go through
 `sendToLog()`, so `Serial Debug` must be enabled to see the result.
 
 The profiler state is not a `SettingKey`, is not persisted in profiles, and does
@@ -444,9 +445,14 @@ Key implementation facts:
   `8`-bit mode, `244 kHz` in `9`-bit mode, and `122 kHz` in `10`-bit mode.
   Lower carrier frequencies can make high-register sine tones harsher on the
   jack output.
+- Audio is rendered in `64`-sample ping-pong blocks on Core 1. A dedicated PWM
+  timer slice with wrap `1023` and divider `/6` paces DMA writes at about
+  `40.7 kHz` into the active output PWM slice's CC register.
+- Hardware `V1.2` outputs one synth destination at a time: jack by default, or
+  piezo when the `Buzzer` toggle is enabled. Hardware `V1.1` uses piezo.
 - The oscillator counter is a `uint32_t` Q16.16 phase accumulator; the high `16`
   bits are the waveform phase and the low `16` bits carry fractional phase.
-- Held notes use target oscillator increments that the audio ISR slews toward,
+- Held notes use target oscillator increments that the audio block renderer slews toward,
   so pitch-bend wheel updates do not reset phase or jump instantly in the
   onboard synth.
 - `MonoRtg` restarts the amp envelope when the active mono note changes;
@@ -467,9 +473,9 @@ Key implementation facts:
   sine, triangle, saw, and square anchors. Wavetable sampling runs in the normal
   synth modes, uses `SynthWavetablePosition` plus signed `WT Pos` modulation as
   frame position, and linearly interpolates adjacent frames. Firmware rebuilds a
-  RAM lookup table when the active frame count changes so the audio ISR can map
+  RAM lookup table when the active frame count changes so the audio renderer can map
   `WT Pos` values to frame positions without dividing per voice. If only global
-  sources modulate `WT Pos`, `poll()` computes that frame position and frame-pair
+  sources modulate `WT Pos`, the renderer computes that frame position and frame-pair
   read context once per sample tick and shares it across active voices. Morph
   phase warp uses a RAM depth-scale lookup to reduce per-voice multiplication.
   FX-envelope modulation depth uses a `128 x 128` RAM scale table so patches with
@@ -494,8 +500,8 @@ Key implementation facts:
 - The piezo output uses a moving midpoint derived from voice envelope level, but
   metronome beeps force full temporary piezo headroom while audible so a
   note-less beep is not double-attenuated by that moving-midpoint stage. Piezo
-  sample scaling uses a power-of-two fixed-point multiply/shift to keep the ISR
-  path bounded.
+  sample scaling uses a power-of-two fixed-point multiply/shift to keep the
+  block renderer bounded.
 - `flashWriteInProgress` mutes output during flash writes because RP2040 flash operations disable interrupts.
 
 Synth changes need extra review when they touch:
@@ -540,9 +546,9 @@ The amp and FX envelopes are AHDSRs. The amp envelope adds `EnvelopeHoldIndex`; 
 
 The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; FX Env 2 uses the matching `EffectEnvelope2*` settings. The wheel, LFO, and both FX envelopes can target the same parameter; `poll()` adds their signed target depths and clamps at `-127..127`, so sources stack instead of replacing each other. FX `Amount` is stored as a biased byte where `127` is off, values above `127` follow the envelope in the positive target direction, and values below `127` follow the same envelope level in the negative target direction. Negative vibrato is target-specific: it treats vibrato depth as the resting value and subtracts the envelope level, because negative LFO polarity is not musically useful. The factory defaults keep both FX envelopes inactive with all times at `0 ms` and sustain at `0%`.
 
-Envelope commands cross from Core 0 to the audio ISR through sequence-numbered
-command bytes. Release commands are retried by Core 0 until the ISR consumes
-one, then the ISR clears the retry state so long-release voices do not repeatedly
+Envelope commands cross from Core 0 to the audio renderer through sequence-numbered
+command bytes. Release commands are retried by Core 0 until the renderer consumes
+one, then the renderer clears the retry state so long-release voices do not repeatedly
 restart their release stage.
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
@@ -553,7 +559,7 @@ The imported user wavetable is not part of the synth preset schema. Presets only
 store `Waveform = UserTbl`; the `32 x 512` table data is transferred as
 preset-sync object type `0x0B` and saved in `/user_wavetable.dat`.
 
-The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator; `ArpeggiatorDivision` sets rhythmic subdivision and `ArpeggiatorDirection` selects `Up`, `Down`, `Played`, `RevPlay`, `UpDown`, `DownUp`, or `Random`. The metronome runs its beat scheduler on core 0 and feeds the beep mode into the RAM-resident audio ISR through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
+The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator; `ArpeggiatorDivision` sets rhythmic subdivision and `ArpeggiatorDirection` selects `Up`, `Down`, `Played`, `RevPlay`, `UpDown`, `DownUp`, or `Random`. The metronome runs its beat scheduler on core 0 and feeds the beep mode into the RAM-resident audio renderer through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 
 The Advanced-menu boot animation toggle is persisted as `BootAnimationEnabled`. It defaults on and skips `runBootLedSelfCheck()` when off.
 
@@ -580,8 +586,8 @@ Load behavior:
 - CRC32 mismatch restores defaults
 - successful load activates the boot/default profile slot
 - on hardware `V1.2`, the stored `AudioDestination` byte is interpreted as a
-  jack-default `Buzzer` toggle, with legacy selector values mapped by the old
-  piezo bit
+  jack-default `Buzzer` toggle that switches output to piezo, with legacy
+  selector values mapped by the old piezo bit
 
 Save behavior:
 

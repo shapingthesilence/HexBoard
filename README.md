@@ -118,7 +118,7 @@ make
 ```
 
 The `Makefile` builds from `src/HexBoard.ino` using the board options for this project. During the build it stages a generated sketch at `build/build.ino`; do not edit or maintain that generated file.
-The local `250 MHz` build intentionally uses `Generic SPI /4` boot2 to keep the external flash clock stable while giving the synth ISR enough headroom for dense AHDSR and FX-envelope patches.
+The local `250 MHz` build intentionally uses `Generic SPI /4` boot2 to keep the external flash clock stable while giving the synth block renderer enough headroom for dense AHDSR and FX-envelope patches.
 
 To compare onboard synth PWM resolutions, pass `PWM_BITS` at build time:
 

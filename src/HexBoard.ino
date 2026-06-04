@@ -84,6 +84,7 @@ constexpr byte SCLPIN = 17;
 #include "LittleFS.h"  // code to use a portion of the 16MB flash chip space as a file system
 #include "pico/time.h" // Allows me to set delays that don't disable interrupts
 #include "hardware/structs/sio.h" // For fast GPIO read/write
+#include "hardware/dma.h"
 
 enum class EnvelopeCommand : uint8_t;
 enum class SettingKey : uint8_t;
@@ -96,6 +97,7 @@ struct LegacySynthPresetSlot;
 struct SynthPresetMenuAction;
 struct SynthPresetMenuFolderNode;
 struct ParsedSynthWavetableObject;
+extern volatile uint32_t audioDmaUnderrunCount;
 
 // Software-detected hardware revision.
 constexpr byte HARDWARE_UNKNOWN = 0;
@@ -1519,6 +1521,7 @@ volatile uint8_t isrCycleMaxFlags = 0;
 volatile uint32_t isrProfileOverrunCount = 0;
 volatile uint32_t isrProfileReleaseStartCount = 0;
 volatile uint32_t isrProfilePiezoScaleCount = 0;
+volatile uint32_t isrProfileDmaUnderrunCount = 0;
 volatile uint8_t isrProfileMaxVoices = 0;
 volatile uint8_t isrProfileMaxFlags = 0;
 constexpr uint8_t ISR_PROFILE_FLAG_RELEASE_START = 0x01;
@@ -1536,6 +1539,7 @@ void captureAndResetISRProfile(bool resumeProfiling) {
   isrProfileOverrunCount = isrCycleOverrunCount;
   isrProfileReleaseStartCount = isrCycleReleaseStartCount;
   isrProfilePiezoScaleCount = isrCyclePiezoScaleCount;
+  isrProfileDmaUnderrunCount = audioDmaUnderrunCount;
   isrProfileMaxVoices = isrCycleMaxVoices;
   isrProfileMaxFlags = isrCycleMaxFlags;
   // Reset counters
@@ -1546,6 +1550,7 @@ void captureAndResetISRProfile(bool resumeProfiling) {
   isrCycleOverrunCount = 0;
   isrCycleReleaseStartCount = 0;
   isrCyclePiezoScaleCount = 0;
+  audioDmaUnderrunCount = 0;
   isrCycleMaxVoices = 0;
   isrCycleMaxFlags = 0;
   __dmb();
@@ -1577,15 +1582,16 @@ void stopISRProfileCaptureAndLog() {
     maxFlags = "steady";
   }
   sendToLog(
-    "ISR profile min/avg/max/count: " +
+    "Audio profile min/avg/max/count: " +
     std::to_string(isrProfileMinUs) + "/" +
     std::to_string(isrProfileAvgUs) + "/" +
     std::to_string(isrProfileMaxUs) + " us, " +
-    std::to_string(isrProfileCount) + " samples, overruns: " +
+    std::to_string(isrProfileCount) + " blocks, overruns: " +
     std::to_string(isrProfileOverrunCount) + ", release starts: " +
-    std::to_string(isrProfileReleaseStartCount) + ", piezo samples: " +
+    std::to_string(isrProfileReleaseStartCount) + ", piezo blocks: " +
     std::to_string(isrProfilePiezoScaleCount) + ", max voices/flags: " +
-    std::to_string(isrProfileMaxVoices) + "/" + maxFlags);
+    std::to_string(isrProfileMaxVoices) + "/" + maxFlags +
+    ", dma underruns: " + std::to_string(isrProfileDmaUnderrunCount));
 }
 
 // @timing
@@ -4075,7 +4081,7 @@ inline byte runtimeAudioDestination(bool buzzerEnabled) {
   if (!audioJackAvailable()) {
     return AUDIO_PIEZO;
   }
-  return buzzerEnabled ? AUDIO_BOTH : AUDIO_AJACK;
+  return buzzerEnabled ? AUDIO_PIEZO : AUDIO_AJACK;
 }
 
 inline void syncAudioDestinationToRuntime() {
@@ -4129,6 +4135,23 @@ inline void syncAudioDestinationToRuntime() {
 #endif
 constexpr uint16_t PIEZO_OFF_THRESHOLD = (PWM_BITS == 8) ? 1 : ((PWM_BITS == 9) ? 2 : 4);
 constexpr int32_t METRONOME_BEEP_LEVEL = SHAPE_CLAMP / 3;
+constexpr uint8_t AUDIO_DMA_TIMER_SLICE = 7;
+constexpr uint8_t AUDIO_DMA_PWM_STEPS = 6;
+constexpr uint16_t AUDIO_DMA_TIMER_WRAP = 1023;
+constexpr uint16_t AUDIO_DMA_BUFFER_SAMPLE_COUNT = 64;
+constexpr uint32_t AUDIO_DMA_SYS_CLOCK_HZ = 250000000u;
+constexpr uint32_t AUDIO_SAMPLE_RATE_HZ =
+  AUDIO_DMA_SYS_CLOCK_HZ / (static_cast<uint32_t>(AUDIO_DMA_TIMER_WRAP) + 1u) / AUDIO_DMA_PWM_STEPS;
+constexpr uint32_t AUDIO_DMA_BUFFER_MICROS =
+  (static_cast<uint64_t>(AUDIO_DMA_BUFFER_SAMPLE_COUNT) * 1000000ull) / AUDIO_SAMPLE_RATE_HZ;
+constexpr uint8_t AUDIO_PWM_CC_LEVEL_SHIFT = 16;
+
+struct AudioOutputLevels {
+  uint16_t piezo = 0;
+  uint16_t jack = static_cast<uint16_t>(PWM_MID);
+  uint8_t voices = 0;
+  uint8_t profileFlags = 0;
+};
 
 inline void RAM_FUNC(writeAudioOutputLevels)(uint16_t piezoLevel, uint16_t jackLevel) {
   if (audioD & AUDIO_PIEZO) {
@@ -4913,27 +4936,21 @@ inline uint16_t RAM_FUNC(interpolatedWaveSample)(const byte* table, uint16_t pha
 #define TRANSITION_SAW_HIGH 880.0
 #define TRANSITION_TRIANGLE 1760.0
 /*
-    The poll interval represents how often a
-    new sample value is emulated on the PWM
-    hardware. It is the inverse of the digital
-    audio sample rate. 24 microseconds has been
-    determined to be the sweet spot, and corresponds
-    to approximately 41 kHz, which is close to
-    CD-quality (44.1 kHz). A shorter poll interval
-    may produce more pleasant tones, but if the
-    poll is too short then the code will not have
-    enough time to calculate the new sample and
-    the resulting audio becomes unstable and
-    inaccurate.
+    The audio sample interval is set by a dedicated PWM
+    timer slice that paces DMA writes into the output PWM
+    compare register. With the default 1023 timer wrap and
+    /6 divider at the 250 MHz build target, the sample rate
+    is about 40.7 kHz.
   */
-#define POLL_INTERVAL_IN_MICROSECONDS 24
+constexpr uint32_t POLL_INTERVAL_IN_MICROSECONDS =
+  (1000000u + (AUDIO_SAMPLE_RATE_HZ / 2u)) / AUDIO_SAMPLE_RATE_HZ;
 constexpr uint8_t SYNTH_PITCH_SMOOTH_SHIFT = 9;
 constexpr uint8_t SYNTH_MOD_SMOOTH_SHIFT = 9;
 constexpr uint32_t audioPhaseIncrementFromHz(uint16_t hz) {
-  return static_cast<uint32_t>((static_cast<uint64_t>(hz) * POLL_INTERVAL_IN_MICROSECONDS * 4294967296ULL) / 1000000ULL);
+  return static_cast<uint32_t>((static_cast<uint64_t>(hz) * 4294967296ULL) / AUDIO_SAMPLE_RATE_HZ);
 }
 constexpr uint32_t audioPhaseIncrementFromMilliHz(uint32_t milliHz) {
-  return static_cast<uint32_t>((static_cast<uint64_t>(milliHz) * POLL_INTERVAL_IN_MICROSECONDS * 4294967296ULL) / 1000000000ULL);
+  return static_cast<uint32_t>((static_cast<uint64_t>(milliHz) * 4294967296ULL) / (static_cast<uint64_t>(AUDIO_SAMPLE_RATE_HZ) * 1000ULL));
 }
 constexpr std::array<uint32_t, 12> synthVibratoPhaseIncrementOptions = {
   audioPhaseIncrementFromHz(1),
@@ -4971,7 +4988,8 @@ constexpr std::array<uint32_t, 20> synthLfoPhaseIncrementOptions = {
   audioPhaseIncrementFromMilliHz(16000),
   audioPhaseIncrementFromMilliHz(20000)
 };
-constexpr uint16_t METRONOME_BEEP_SAMPLE_COUNT = (40000 + POLL_INTERVAL_IN_MICROSECONDS - 1) / POLL_INTERVAL_IN_MICROSECONDS;
+constexpr uint16_t METRONOME_BEEP_SAMPLE_COUNT =
+  static_cast<uint16_t>((40000ULL * AUDIO_SAMPLE_RATE_HZ + 999999ULL) / 1000000ULL);
 constexpr uint32_t METRONOME_BEEP_NORMAL_INCREMENT = audioPhaseIncrementFromHz(1200);
 constexpr uint32_t METRONOME_BEEP_ACCENT_INCREMENT = audioPhaseIncrementFromHz(1800);
 
@@ -4995,11 +5013,31 @@ inline void RAM_FUNC(recordISRProfileSample)(uint32_t startTime, uint8_t voices,
   isrCycleCount++;
 }
 
+inline void RAM_FUNC(recordAudioBufferProfileSample)(uint32_t startTime, uint8_t voices, uint8_t flags) {
+  uint32_t dt = timer_hw->timerawl - startTime;
+  if (dt < isrCycleMin) {
+    isrCycleMin = dt;
+  }
+  if (dt > isrCycleMax) {
+    isrCycleMax = dt;
+    isrCycleMaxVoices = voices;
+    isrCycleMaxFlags = flags;
+  }
+  if (dt > AUDIO_DMA_BUFFER_MICROS) {
+    isrCycleOverrunCount++;
+  }
+  if (flags & ISR_PROFILE_FLAG_PIEZO_SCALE) {
+    isrCyclePiezoScaleCount++;
+  }
+  isrCycleSum += dt;
+  isrCycleCount++;
+}
+
 inline uint32_t RAM_FUNC(oscillatorIncrementFromFrequency)(float frequency) {
   if (frequency <= 0.0f) {
     return 0;
   }
-  constexpr float incrementScale = static_cast<float>(POLL_INTERVAL_IN_MICROSECONDS) * 4294.967296f;  // 2^32 / 1,000,000
+  constexpr float incrementScale = 4294967296.0f / static_cast<float>(AUDIO_SAMPLE_RATE_HZ);
   float increment = frequency * incrementScale;
   const float maxIncrement = static_cast<float>(std::numeric_limits<uint32_t>::max());
   if (increment >= maxIncrement) {
@@ -5062,7 +5100,7 @@ inline uint32_t RAM_FUNC(ticksFromMicros)(uint32_t micros) {
   if (micros == 0) {
     return 0;
   }
-  return (micros + POLL_INTERVAL_IN_MICROSECONDS - 1) / POLL_INTERVAL_IN_MICROSECONDS;
+  return static_cast<uint32_t>((static_cast<uint64_t>(micros) * AUDIO_SAMPLE_RATE_HZ + 999999ULL) / 1000000ULL);
 }
 
 inline uint32_t RAM_FUNC(envelopeAudioLevel)(uint32_t level) {
@@ -5137,8 +5175,8 @@ std::array<std::atomic<bool>, POLYPHONY_LIMIT> channelInUse = {};
 std::array<std::atomic<uint32_t>, POLYPHONY_LIMIT> voiceGenerations;
 std::array<std::atomic<int16_t>, POLYPHONY_LIMIT> synthChannelOwners;
 std::atomic<uint32_t> nextVoiceGeneration = 1;
-// Flag set by Core 0 before flash writes. When true, poll() outputs silence
-// so the audio ISR resumes cleanly after flash operations (which disable all
+// Flag set by Core 0 before flash writes. When true, the audio renderer outputs
+// silence so DMA resumes cleanly after flash operations (which disable all
 // interrupts on both cores of the RP2040).
 std::atomic<bool> flashWriteInProgress = false;
 constexpr int16_t NO_SYNTH_OWNER = -1;
@@ -5362,7 +5400,7 @@ void updateEffectEnvelopeParamsFromSettings() {
   */
 class oscillator {
 public:
-  uint32_t increment = 0;        // current Q16.16 phase increment smoothed by the audio ISR
+  uint32_t increment = 0;        // current Q16.16 phase increment smoothed by the audio renderer
   uint32_t targetIncrement = 0;  // target Q16.16 phase increment from the control path
   uint32_t counter = 0;          // Q16.16 phase accumulator; high 16 bits are the waveform phase
   uint32_t glideStep = 0;        // linear portamento step in Q16.16 increment units
@@ -6159,17 +6197,11 @@ void updateArpeggiatorDirection() {
   arpeggiatorSequenceCursor = 0;
 }
 
-// RUN ON CORE 2
-void RAM_FUNC(poll)() {
-  hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
-  timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
-  // While flash is being written, interrupts are disabled on both cores.
-  // When the ISR resumes afterward, output silence to avoid glitch artifacts.
+AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
+  AudioOutputLevels output;
   if (flashWriteInProgress.load(std::memory_order_relaxed) || synthWaveTableLoadInProgress) {
-    writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
-    return;
+    return output;
   }
-  uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
   int32_t mix = 0;    // signed accumulator stays well within int32_t bounds
   const int32_t metronomeSample = readMetronomeBeepSample();
   const bool metronomeAudible = metronomeSample != 0;
@@ -6266,7 +6298,7 @@ void RAM_FUNC(poll)() {
         } else {
           env.stage = EnvelopeStage::Release;
           profileFlags |= ISR_PROFILE_FLAG_RELEASE_START;
-          if (_isrStart) {
+          if (isrProfilingEnabled) {
             isrCycleReleaseStartCount++;
           }
           env.releaseIncrement = releaseIncrementForLevel(env.level);
@@ -6561,11 +6593,9 @@ void RAM_FUNC(poll)() {
   // JACK idle behavior: stay centered.
   // PIEZO idle behavior: off (0).
   if ((voices == 0 || velWheel.curValue == 0) && !metronomeAudible) {
-    writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
-    if (_isrStart) {
-      recordISRProfileSample(_isrStart, voices, profileFlags);
-    }
-    return;
+    output.voices = voices;
+    output.profileFlags = profileFlags;
+    return output;
   }
 
   // Convert scaled mix -> signed sample in [-SHAPE_CLAMP..SHAPE_CLAMP]
@@ -6627,7 +6657,7 @@ void RAM_FUNC(poll)() {
   } else if (piezoA > 0) {
     // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-piezoA..+piezoA].
     // Use a power-of-two fixed-point scale to keep the piezo path cheap in the
-    // audio ISR.
+    // audio renderer.
     profileFlags |= ISR_PROFILE_FLAG_PIEZO_SCALE;
     int32_t outPiezo = scalePiezoSample(sample, piezoA);
 
@@ -6641,11 +6671,214 @@ void RAM_FUNC(poll)() {
   }
   uint16_t piezoOut = (uint16_t)piezoLevel;
 
-  // ----- Write outputs -----
-  writeAudioOutputLevels(piezoOut, jackLevel);
+  output.piezo = piezoOut;
+  output.jack = jackLevel;
+  output.voices = voices;
+  output.profileFlags = profileFlags;
+  return output;
+}
+
+// Legacy direct renderer retained for diagnostics/fallback; the normal synth
+// output path is DMA-buffered.
+void RAM_FUNC(poll)() {
+  hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
+  timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
+  uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
+  AudioOutputLevels output = renderAudioOutputLevels();
+  writeAudioOutputLevels(output.piezo, output.jack);
   if (_isrStart) {
-    recordISRProfileSample(_isrStart, voices, profileFlags);
+    recordISRProfileSample(_isrStart, output.voices, output.profileFlags);
   }
+}
+
+uint32_t audioDmaBuffers[2][AUDIO_DMA_BUFFER_SAMPLE_COUNT] = {};
+uint32_t audioDmaSilenceBuffer[AUDIO_DMA_BUFFER_SAMPLE_COUNT] = {};
+volatile bool audioDmaBufferReady[2] = { false, false };
+volatile bool audioDmaBufferFree[2] = { true, true };
+volatile uint8_t audioDmaActiveBuffer = 0;
+volatile uint32_t audioDmaUnderrunCount = 0;
+int audioDmaChannel = -1;
+byte audioDmaActiveDestination = AUDIO_NONE;
+uint8_t audioDmaActiveSlice = AJACK_SLICE;
+uintptr_t audioDmaWriteAddress = 0;
+dma_channel_config audioDmaConfig;
+std::atomic<bool> synthRuntimeReady = false;
+
+inline byte RAM_FUNC(selectedAudioDmaDestination)() {
+  byte destination = audioD;
+  if (destination & AUDIO_AJACK) {
+    return AUDIO_AJACK;
+  }
+  if (destination & AUDIO_PIEZO) {
+    return AUDIO_PIEZO;
+  }
+  return AUDIO_NONE;
+}
+
+inline uint8_t RAM_FUNC(audioDmaSliceForDestination)(byte destination) {
+  return (destination == AUDIO_PIEZO) ? PIEZO_SLICE : AJACK_SLICE;
+}
+
+inline uint16_t RAM_FUNC(audioDmaLevelForDestination)(const AudioOutputLevels& levels, byte destination) {
+  if (destination == AUDIO_PIEZO) {
+    return levels.piezo;
+  }
+  if (destination == AUDIO_AJACK) {
+    return levels.jack;
+  }
+  return static_cast<uint16_t>(PWM_MID);
+}
+
+inline uint32_t RAM_FUNC(audioDmaEncodeLevel)(uint16_t level) {
+  return static_cast<uint32_t>(level) << AUDIO_PWM_CC_LEVEL_SHIFT;
+}
+
+void RAM_FUNC(setInactiveAudioOutputsForDestination)(byte destination) {
+  if (destination == AUDIO_PIEZO) {
+    pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, static_cast<uint16_t>(PWM_MID));
+  } else if (destination == AUDIO_AJACK) {
+    pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
+  } else {
+    writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
+  }
+}
+
+void RAM_FUNC(startAudioDmaTransfer)(uint8_t bufferIndex) {
+  audioDmaActiveBuffer = bufferIndex;
+  audioDmaBufferReady[bufferIndex] = false;
+  audioDmaBufferFree[bufferIndex] = false;
+  __dmb();
+  dma_channel_set_read_addr(audioDmaChannel, audioDmaBuffers[bufferIndex], false);
+  dma_channel_set_write_addr(audioDmaChannel, reinterpret_cast<void*>(audioDmaWriteAddress), false);
+  dma_channel_set_trans_count(audioDmaChannel, AUDIO_DMA_BUFFER_SAMPLE_COUNT, true);
+}
+
+void RAM_FUNC(startAudioDmaSilenceTransfer)() {
+  __dmb();
+  dma_channel_set_read_addr(audioDmaChannel, audioDmaSilenceBuffer, false);
+  dma_channel_set_write_addr(audioDmaChannel, reinterpret_cast<void*>(audioDmaWriteAddress), false);
+  dma_channel_set_trans_count(audioDmaChannel, AUDIO_DMA_BUFFER_SAMPLE_COUNT, true);
+}
+
+void RAM_FUNC(audioDmaIrqHandler)() {
+  if (audioDmaChannel < 0) {
+    return;
+  }
+  dma_hw->ints0 = 1u << audioDmaChannel;
+
+  uint8_t finishedBuffer = audioDmaActiveBuffer;
+  audioDmaBufferFree[finishedBuffer] = true;
+  uint8_t nextBuffer = static_cast<uint8_t>(finishedBuffer ^ 1u);
+  if (audioDmaBufferReady[nextBuffer]) {
+    startAudioDmaTransfer(nextBuffer);
+  } else {
+    ++audioDmaUnderrunCount;
+    startAudioDmaSilenceTransfer();
+  }
+}
+
+void fillAudioDmaSilenceBuffer(byte destination) {
+  uint16_t level = (destination == AUDIO_PIEZO) ? 0 : static_cast<uint16_t>(PWM_MID);
+  uint32_t encoded = audioDmaEncodeLevel(level);
+  for (uint16_t i = 0; i < AUDIO_DMA_BUFFER_SAMPLE_COUNT; ++i) {
+    audioDmaSilenceBuffer[i] = encoded;
+  }
+}
+
+void RAM_FUNC(fillAudioDmaBuffer)(uint8_t bufferIndex, byte destination) {
+  uint32_t profileStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
+  uint8_t maxVoices = 0;
+  uint8_t combinedFlags = 0;
+  uint32_t* buffer = audioDmaBuffers[bufferIndex];
+  for (uint16_t sampleIndex = 0; sampleIndex < AUDIO_DMA_BUFFER_SAMPLE_COUNT; ++sampleIndex) {
+    AudioOutputLevels levels = renderAudioOutputLevels();
+    if (levels.voices > maxVoices) {
+      maxVoices = levels.voices;
+    }
+    combinedFlags |= levels.profileFlags;
+    buffer[sampleIndex] = audioDmaEncodeLevel(audioDmaLevelForDestination(levels, destination));
+  }
+  if (profileStart) {
+    recordAudioBufferProfileSample(profileStart, maxVoices, combinedFlags);
+  }
+  __dmb();
+  audioDmaBufferFree[bufferIndex] = false;
+  audioDmaBufferReady[bufferIndex] = true;
+}
+
+void stopAudioDma() {
+  if (audioDmaChannel >= 0) {
+    dma_channel_abort(audioDmaChannel);
+  }
+  audioDmaBufferReady[0] = false;
+  audioDmaBufferReady[1] = false;
+  audioDmaBufferFree[0] = true;
+  audioDmaBufferFree[1] = true;
+  writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
+}
+
+void startAudioDmaForDestination(byte destination) {
+  stopAudioDma();
+  audioDmaActiveDestination = destination;
+  audioDmaActiveSlice = audioDmaSliceForDestination(destination);
+  audioDmaWriteAddress = reinterpret_cast<uintptr_t>(&pwm_hw->slice[audioDmaActiveSlice].cc);
+  setInactiveAudioOutputsForDestination(destination);
+  fillAudioDmaSilenceBuffer(destination);
+
+  if (destination == AUDIO_NONE || audioDmaChannel < 0) {
+    return;
+  }
+
+  dma_channel_configure(audioDmaChannel,
+                        &audioDmaConfig,
+                        reinterpret_cast<void*>(audioDmaWriteAddress),
+                        audioDmaBuffers[0],
+                        AUDIO_DMA_BUFFER_SAMPLE_COUNT,
+                        false);
+  fillAudioDmaBuffer(0, destination);
+  fillAudioDmaBuffer(1, destination);
+  startAudioDmaTransfer(0);
+}
+
+void serviceAudioDmaBuffers() {
+  if (audioDmaChannel < 0) {
+    return;
+  }
+
+  byte destination = selectedAudioDmaDestination();
+  if (destination != audioDmaActiveDestination) {
+    startAudioDmaForDestination(destination);
+    return;
+  }
+
+  for (uint8_t bufferIndex = 0; bufferIndex < 2; ++bufferIndex) {
+    if (audioDmaBufferFree[bufferIndex] && !audioDmaBufferReady[bufferIndex]) {
+      fillAudioDmaBuffer(bufferIndex, destination);
+    }
+  }
+}
+
+void setupAudioDmaTimer() {
+  pwm_set_phase_correct(AUDIO_DMA_TIMER_SLICE, false);
+  pwm_set_wrap(AUDIO_DMA_TIMER_SLICE, AUDIO_DMA_TIMER_WRAP);
+  pwm_set_clkdiv(AUDIO_DMA_TIMER_SLICE, static_cast<float>(AUDIO_DMA_PWM_STEPS));
+  pwm_set_chan_level(AUDIO_DMA_TIMER_SLICE, PWM_CHAN_A, 0);
+  pwm_set_enabled(AUDIO_DMA_TIMER_SLICE, true);
+}
+
+void setupAudioDma() {
+  setupAudioDmaTimer();
+  audioDmaChannel = dma_claim_unused_channel(true);
+  audioDmaConfig = dma_channel_get_default_config(audioDmaChannel);
+  channel_config_set_transfer_data_size(&audioDmaConfig, DMA_SIZE_32);
+  channel_config_set_read_increment(&audioDmaConfig, true);
+  channel_config_set_write_increment(&audioDmaConfig, false);
+  channel_config_set_dreq(&audioDmaConfig, pwm_get_dreq(AUDIO_DMA_TIMER_SLICE));
+  dma_channel_set_irq0_enabled(audioDmaChannel, true);
+  irq_set_exclusive_handler(DMA_IRQ_0, audioDmaIrqHandler);
+  irq_set_priority(DMA_IRQ_0, 0x00);
+  irq_set_enabled(DMA_IRQ_0, true);
+  startAudioDmaForDestination(selectedAudioDmaDestination());
 }
 // RUN ON CORE 1
 byte isoTwoTwentySix(float f) {
@@ -7242,12 +7475,7 @@ void setupSynth(byte pin, byte slice) {
   pwm_set_clkdiv(slice, 1.0f);                    // run at full clock speed
   pwm_set_chan_level(slice, PIEZO_CHNL, 0);       // initialize at zero to prevent whining sound
   pwm_set_enabled(slice, true);                   // ENGAGE!
-  hw_set_bits(&timer_hw->inte, 1u << ALARM_NUM);  // initialize the timer
-  irq_set_exclusive_handler(ALARM_IRQ, poll);     // function to run every interrupt
-  irq_set_priority(ALARM_IRQ, 0x00);              // optional: raise priority
   resetSynthFreqs();
-  timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
-  irq_set_enabled(ALARM_IRQ, true);               // ENGAGE!
   sendToLog("synth is ready.");
 }
 
@@ -9250,14 +9478,13 @@ void applySynthPresetToSettings(const SynthPresetSlot& preset) {
 
 // Wrapper that mutes audio before writing to flash and unmutes afterward.
 // On the RP2040 flash writes disable ALL interrupts on BOTH cores, which
-// starves the audio ISR.  Muting first ensures a brief silence instead of
-// an audible glitch when interrupts resume.
+// starves buffer refills. Muting first gives the DMA path silence to play
+// instead of an audible glitch when interrupts resume.
 void flashSafeWrite(void (*writeOperation)()) {
   flashWriteInProgress.store(true, std::memory_order_release);
-  // Allow a few ISR cycles (~0.5 ms) to output silence before the flash
-  // write freezes the timer, so the transition is a clean fade-to-silence
-  // rather than a mid-sample cut.
-  delayMicroseconds(500);
+  // Allow Core 1 enough time to render queued silence before the flash write
+  // freezes interrupt handling.
+  delayMicroseconds(AUDIO_DMA_BUFFER_MICROS * 2);
   writeOperation();
   flashWriteInProgress.store(false, std::memory_order_release);
 }
@@ -13853,6 +14080,7 @@ void setup() {
   initializeSynthWaveTables();
   syncSettingsToRuntime();
   recomputePitchBendFactor();
+  synthRuntimeReady.store(true, std::memory_order_release);
   runBootLedSelfCheck();
 }
 void loop() {        // run on first core
@@ -13883,8 +14111,13 @@ void loop() {        // run on first core
 void setup1() {  // set up on second core
   setupSynth(PIEZO_PIN, PIEZO_SLICE);
   setupSynth(AJACK_PIN, AJACK_SLICE);
+  while (!synthRuntimeReady.load(std::memory_order_acquire)) {
+    tight_loop_contents();
+  }
+  setupAudioDma();
 }
 void loop1() {  // run on second core
+  serviceAudioDmaBuffers();
   if (delegatedControl) {
     processIncomingMIDIDelegated();
   }

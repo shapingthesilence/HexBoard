@@ -190,8 +190,8 @@ synth is active. There is no headphone-jack output path and no `Buzzer` menu
 toggle.
 
 On hardware `V1.2`, the headphone jack is active by default and an extra
-`Buzzer` toggle appears. Turning `Buzzer` on adds the piezo on top of the jack
-output. The `Advanced` menu also has `HP Vol Cap`, which limits only the
+`Buzzer` toggle appears. Turning `Buzzer` on switches synth output to the piezo
+instead of the jack. The `Advanced` menu also has `HP Vol Cap`, which limits only the
 headphone-jack output from `25%` to `100%` in `5%` steps.
 
 #### Synth Terms In Plain Language
@@ -528,7 +528,7 @@ This page contains maintenance and system settings:
 `Boot Anim` controls the startup LED animation. Turn it off for the fastest,
 quietest visual boot.
 
-`ISR Profile` is a temporary diagnostic toggle and is not saved in profiles. To measure audio interrupt timing, leave `Serial Debug` on, turn `ISR Profile` on, play the scenario you want to test, then turn `ISR Profile` off. HexBoard logs `min/avg/max/count` timing, overrun count, and context for the slowest captured audio ISR sample.
+`ISR Profile` is a temporary diagnostic toggle and is not saved in profiles. To measure audio block timing, leave `Serial Debug` on, turn `ISR Profile` on, play the scenario you want to test, then turn `ISR Profile` off. HexBoard logs `min/avg/max/count` block-render timing, overrun count, DMA underrun count, and context for the slowest captured block.
 
 `LED Test` is temporary and is not saved in profiles. Enter it and scroll through `Red`, `Green`, `Blue`, or `White` to light every LED immediately. Leaving the selector snaps it back to `Off` and restores the normal LED display. This is useful for diagnosing LED health or for *very* harsh mood lighting.
 
