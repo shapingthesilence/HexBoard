@@ -475,8 +475,9 @@ single-cycle tables are generated the same way from their source WAV files, and 
 saw/triangle/square/hybrid paths apply the matching phase offset in
 RAM-resident helpers. Table-backed waveform source cycles live in
 `src/HexBoard.ino`, but only the selected waveform or wavetable is copied into
-the preallocated `activeSynthWaveTable` RAM buffer used by the ISR. The vibrato
-sine lookup remains a separate RAM table because the ISR reads it directly.
+the preallocated `activeSynthWaveTable` RAM buffer used by the audio renderer.
+The vibrato sine lookup remains a separate RAM table because the renderer reads
+it directly.
 Imported MP waveform IDs, `BasicTb`, and `UserTbl` are appended after the
 original IDs so existing saved profiles keep their current `Waveform` values.
 
@@ -484,18 +485,20 @@ original IDs so existing saved profiles keep their current `Waveform` values.
 interpolating sine, triangle, saw, and square anchors into
 `activeSynthWaveTable`. The sampler runs in the normal synth modes, interpolates
 adjacent frames from `SynthWavetablePosition` plus signed `WT Pos` modulation,
-and uses direct phase lookup to keep ISR cost bounded. The selected wavetable
-also rebuilds a RAM `WT Pos` lookup table so the ISR maps `0..127` position
-amounts to frame positions without a per-voice divide. When only global sources
-such as the wheel or LFO modulate `WT Pos`, the ISR computes the frame position
-and frame-pair read context once per audio tick and reuses it for all voices.
-Morph also uses a small RAM depth-scale lookup so FX-envelope-heavy patches avoid
-an extra multiply in the per-voice phase warp. FX-envelope modulation depth uses
-a larger RAM scale table to keep two-envelope worst-case patches inside the audio
-budget. FX envelope state is refreshed at an alternating half audio rate with
-two-tick compensation and cached per voice, while the cached modulation values
-are still applied every audio sample; add phase interpolation only after
-profiling the current frame-interpolation path.
+and uses direct phase lookup to keep renderer cost bounded. The selected wavetable
+also rebuilds a RAM `WT Pos` lookup table so the audio renderer maps `0..127`
+position amounts to frame positions without a per-voice divide. Modulation work
+runs on an `8`-sample control quantum: wheel smoothing, LFO sampling, FX
+envelope state, pitch modulation, vibrato depth, morph depth/scale, and
+wavetable frame contexts are cached there, with note start/release/reset forcing
+an immediate per-voice cache refresh. Oscillator phase advance, morph phase
+warping, waveform reads, amp-envelope level, mixing, drive, and output scaling
+remain audio-rate. When only global sources such as the wheel or LFO modulate
+`WT Pos`, the cached frame-pair read context is shared by all voices; when an FX
+envelope targets `WT Pos`, each voice caches its own frame context. FX-envelope
+modulation depth uses a `128 x 128` RAM scale table, and FX envelopes advance by
+the full `8` audio ticks on each control refresh so long envelope timing stays
+aligned while worst-case blocks avoid rebuilding modulation every sample.
 
 `UserTbl` is a single persisted user wavetable loaded from `/user_wavetable.dat`.
 The file has a `UWT` header with version, frame count, sample count, and CRC32,

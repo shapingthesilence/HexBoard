@@ -128,6 +128,7 @@ void updateSynthPortamentoSettings();
 void updateSynthMenuVisibility();
 void initializeSynthWaveTables();
 void loadSelectedSynthWaveform();
+void RAM_FUNC(resetSynthRenderCaches)();
 void synthWaveformChanged();
 void playbackModeChanged();
 void updateMetronomeTiming();
@@ -350,7 +351,8 @@ uint8_t envelopeDecayIndex = 3;
 uint8_t envelopeSustainLevel = 127;
 uint8_t envelopeReleaseIndex = 3;
 constexpr uint8_t SYNTH_FX_ENVELOPE_COUNT = 2;
-constexpr uint8_t SYNTH_FX_ENVELOPE_CONTROL_TICKS = SYNTH_FX_ENVELOPE_COUNT;
+constexpr uint8_t SYNTH_CONTROL_RATE_SAMPLES = 8;
+constexpr uint8_t SYNTH_FX_ENVELOPE_CONTROL_TICKS = SYNTH_CONTROL_RATE_SAMPLES;
 std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeAttackIndex = { 0, 0 };
 std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeHoldIndex = { 0, 0 };
 std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeDecayIndex = { 0, 0 };
@@ -5071,6 +5073,29 @@ inline void RAM_FUNC(smoothUint32Toward)(uint32_t& current, uint32_t target, uin
   }
 }
 
+inline void RAM_FUNC(smoothUint32Toward)(uint32_t& current, uint32_t target, uint8_t shift, uint8_t elapsedTicks) {
+  if (elapsedTicks == 0 || current == target) {
+    return;
+  }
+  if (target > current) {
+    uint32_t difference = target - current;
+    uint64_t step = difference >> shift;
+    if (step == 0) {
+      step = 1;
+    }
+    step *= elapsedTicks;
+    current += static_cast<uint32_t>(step >= difference ? difference : step);
+  } else {
+    uint32_t difference = current - target;
+    uint64_t step = difference >> shift;
+    if (step == 0) {
+      step = 1;
+    }
+    step *= elapsedTicks;
+    current -= static_cast<uint32_t>(step >= difference ? difference : step);
+  }
+}
+
 inline void RAM_FUNC(smoothUint16Toward)(uint16_t& current, uint16_t target, uint8_t shift) {
   if (current == target) {
     return;
@@ -5093,6 +5118,29 @@ inline void RAM_FUNC(smoothUint16Toward)(uint16_t& current, uint16_t target, uin
     if (current < target) {
       current = target;
     }
+  }
+}
+
+inline void RAM_FUNC(smoothUint16Toward)(uint16_t& current, uint16_t target, uint8_t shift, uint8_t elapsedTicks) {
+  if (elapsedTicks == 0 || current == target) {
+    return;
+  }
+  if (target > current) {
+    uint16_t difference = target - current;
+    uint32_t step = difference >> shift;
+    if (step == 0) {
+      step = 1;
+    }
+    step *= elapsedTicks;
+    current += static_cast<uint16_t>(step >= difference ? difference : step);
+  } else {
+    uint16_t difference = current - target;
+    uint32_t step = difference >> shift;
+    if (step == 0) {
+      step = 1;
+    }
+    step *= elapsedTicks;
+    current -= static_cast<uint16_t>(step >= difference ? difference : step);
   }
 }
 
@@ -5151,7 +5199,6 @@ inline void RAM_FUNC(resetEnvelopeState)(EnvelopeState& env) {
 std::array<EnvelopeState, POLYPHONY_LIMIT> envelopeStates;
 std::array<std::array<EnvelopeState, POLYPHONY_LIMIT>, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeStates;
 int16_t cachedEffectEnvelopeModValues[SYNTH_FX_ENVELOPE_COUNT][POLYPHONY_LIMIT] = {};
-uint8_t synthFxEnvelopeUpdateCursor = 0;
 enum class EnvelopeCommand : uint8_t {
   None,
   StartAttack,
@@ -5435,7 +5482,7 @@ uint16_t arpeggiatorSequenceLength = 0;
 uint16_t arpeggiatorSequenceCursor = 0;
 uint32_t arpeggiatorRandomState = 0xA341316Cu;
 
-inline uint8_t RAM_FUNC(smoothedSynthModValue)() {
+inline uint8_t RAM_FUNC(smoothedSynthModValue)(uint8_t elapsedTicks = 1) {
   int16_t targetValue = modWheel.curValue;
   if (targetValue < 0) {
     targetValue = 0;
@@ -5443,7 +5490,7 @@ inline uint8_t RAM_FUNC(smoothedSynthModValue)() {
     targetValue = 127;
   }
   const uint16_t targetQ8 = static_cast<uint16_t>(targetValue) << 8;
-  smoothUint16Toward(synthModValueQ8, targetQ8, SYNTH_MOD_SMOOTH_SHIFT);
+  smoothUint16Toward(synthModValueQ8, targetQ8, SYNTH_MOD_SMOOTH_SHIFT, elapsedTicks);
   return static_cast<uint8_t>((synthModValueQ8 + 128u) >> 8);
 }
 
@@ -5625,7 +5672,9 @@ inline void RAM_FUNC(refreshCachedEffectEnvelopeModValue)(uint8_t envelopeIndex,
     return;
   }
   EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][voiceIndex];
-  updateEffectEnvelopeState(envelopeIndex, effectEnv, elapsedTicks);
+  if (elapsedTicks != 0) {
+    updateEffectEnvelopeState(envelopeIndex, effectEnv, elapsedTicks);
+  }
   cachedEffectEnvelopeModValues[envelopeIndex][voiceIndex] =
     effectEnvelopeModValue(envelopeIndex, effectEnvelopeTarget[envelopeIndex], effectEnv);
 }
@@ -5652,6 +5701,16 @@ inline uint16_t RAM_FUNC(applySynthMorphPhaseWarp)(uint16_t phase, int16_t morph
   uint16_t triangle = (phase & 0x8000) ? static_cast<uint16_t>(0xFFFFu - phase) : phase;
   uint16_t depth = static_cast<uint16_t>(morphAmount < 0 ? -morphAmount : morphAmount);
   uint16_t offset = static_cast<uint16_t>((static_cast<uint32_t>(triangle) * synthMorphPhaseWarpScaleByDepth[depth]) >> 8);
+  return (morphAmount < 0) ? static_cast<uint16_t>(phase - offset)
+                           : static_cast<uint16_t>(phase + offset);
+}
+
+inline uint16_t RAM_FUNC(applySynthMorphPhaseWarp)(uint16_t phase, int16_t morphAmount, uint16_t morphScale) {
+  if (morphAmount == 0 || morphScale == 0) {
+    return phase;
+  }
+  uint16_t triangle = (phase & 0x8000) ? static_cast<uint16_t>(0xFFFFu - phase) : phase;
+  uint16_t offset = static_cast<uint16_t>((static_cast<uint32_t>(triangle) * morphScale) >> 8);
   return (morphAmount < 0) ? static_cast<uint16_t>(phase - offset)
                            : static_cast<uint16_t>(phase + offset);
 }
@@ -5843,6 +5902,7 @@ void initializeSynthWaveTables() {
   initializeSynthMorphLookup();
   initializeSynthFxModLookup();
   setActiveSynthWaveFrameCount(1);
+  resetSynthRenderCaches();
   loadedSynthWaveform = 255;
 }
 
@@ -5873,6 +5933,7 @@ void loadSelectedSynthWaveform() {
     setActiveSynthWaveFrameCount(1);
   }
   loadedSynthWaveform = currWave;
+  resetSynthRenderCaches();
   synthWaveTableLoadInProgress = false;
 }
 
@@ -5893,6 +5954,43 @@ struct SynthWavetableReadContext {
   const byte* frameB;
   uint8_t frameFrac;
 };
+
+struct SynthModulationAmounts {
+  int16_t morph = 0;
+  int16_t vibrato = 0;
+  int16_t pitch = 0;
+  int16_t wavetablePosition = 0;
+};
+
+struct SynthVoiceRenderCache {
+  uint32_t phaseIncrement = 0;
+  int16_t morphAmount = 0;
+  uint16_t morphScale = 0;
+  SynthWavetableReadContext wavetableContext = { activeSynthWaveTable[0], nullptr, 0 };
+};
+
+SynthModulationAmounts synthBaseModulationCache = {};
+std::array<SynthVoiceRenderCache, POLYPHONY_LIMIT> synthVoiceRenderCaches = {};
+std::array<bool, POLYPHONY_LIMIT> synthVoiceRenderCacheValid = {};
+SynthWavetableReadContext synthSharedWavetableReadContext = { activeSynthWaveTable[0], nullptr, 0 };
+uint8_t synthControlSampleCountdown = 0;
+
+inline void RAM_FUNC(resetSynthVoiceRenderCache)(uint8_t voiceIndex) {
+  if (voiceIndex >= POLYPHONY_LIMIT) {
+    return;
+  }
+  synthVoiceRenderCaches[voiceIndex] = {};
+  synthVoiceRenderCacheValid[voiceIndex] = false;
+}
+
+void RAM_FUNC(resetSynthRenderCaches)() {
+  synthBaseModulationCache = {};
+  synthSharedWavetableReadContext = { activeSynthWaveTable[0], nullptr, 0 };
+  synthControlSampleCountdown = 0;
+  for (uint8_t voiceIndex = 0; voiceIndex < POLYPHONY_LIMIT; ++voiceIndex) {
+    resetSynthVoiceRenderCache(voiceIndex);
+  }
+}
 
 inline SynthWavetableReadContext RAM_FUNC(wavetableReadContextFromFramePosition)(uint16_t framePosition,
                                                                                  uint8_t frameCount) {
@@ -5981,12 +6079,12 @@ inline int16_t RAM_FUNC(readSynthLfoSample)() {
   }
 }
 
-inline int16_t RAM_FUNC(synthLfoModValue)() {
+inline int16_t RAM_FUNC(synthLfoModValue)(uint8_t elapsedTicks = 1) {
   int16_t depth = synthEffectAmountDepth(synthLfoAmount);
   if (depth == 0) {
     return 0;
   }
-  synthLfoPhase += synthLfoPhaseIncrement;
+  synthLfoPhase += synthLfoPhaseIncrement * static_cast<uint32_t>(elapsedTicks ? elapsedTicks : 1);
   int16_t sample = readSynthLfoSample();
   int32_t scaled = static_cast<int32_t>(sample) * static_cast<int32_t>(depth);
   return static_cast<int16_t>(scaled >> 7);
@@ -6072,6 +6170,124 @@ inline uint32_t RAM_FUNC(applySynthPitchMod)(uint32_t increment, int16_t pitchAm
     return std::numeric_limits<uint32_t>::max();
   }
   return static_cast<uint32_t>(scaled);
+}
+
+inline bool RAM_FUNC(synthControlTickDue)() {
+  if (synthControlSampleCountdown == 0) {
+    synthControlSampleCountdown = SYNTH_CONTROL_RATE_SAMPLES - 1;
+    return true;
+  }
+  --synthControlSampleCountdown;
+  return false;
+}
+
+inline void RAM_FUNC(refreshSynthBaseModulationCache)(uint8_t elapsedTicks) {
+  synthBaseModulationCache = {};
+  const uint8_t synthModValue = scaleSynthModAmount(smoothedSynthModValue(elapsedTicks));
+  addSynthTargetAmount(synthModTarget,
+                       synthModValue,
+                       synthBaseModulationCache.morph,
+                       synthBaseModulationCache.vibrato,
+                       synthBaseModulationCache.pitch,
+                       synthBaseModulationCache.wavetablePosition);
+  addSynthTargetAmount(synthLfoTarget,
+                       synthLfoModValue(elapsedTicks),
+                       synthBaseModulationCache.morph,
+                       synthBaseModulationCache.vibrato,
+                       synthBaseModulationCache.pitch,
+                       synthBaseModulationCache.wavetablePosition);
+}
+
+inline void RAM_FUNC(advanceSynthFrequencyControl)(uint8_t voiceIndex, uint8_t elapsedTicks) {
+  if (elapsedTicks == 0) {
+    return;
+  }
+
+  oscillator& voice = synth[voiceIndex];
+  uint8_t remainingTicks = elapsedTicks;
+  if (voice.glideSamplesRemaining > 0) {
+    uint32_t glideTicks = voice.glideSamplesRemaining < remainingTicks
+                            ? voice.glideSamplesRemaining
+                            : remainingTicks;
+    uint64_t step = static_cast<uint64_t>(voice.glideStep ? voice.glideStep : 1) * glideTicks;
+    if (voice.targetIncrement > voice.increment) {
+      uint32_t remaining = voice.targetIncrement - voice.increment;
+      voice.increment += static_cast<uint32_t>(step >= remaining ? remaining : step);
+    } else if (voice.targetIncrement < voice.increment) {
+      uint32_t remaining = voice.increment - voice.targetIncrement;
+      voice.increment -= static_cast<uint32_t>(step >= remaining ? remaining : step);
+    }
+
+    voice.glideSamplesRemaining -= glideTicks;
+    remainingTicks = static_cast<uint8_t>(remainingTicks - glideTicks);
+    if (voice.glideSamplesRemaining == 0 || voice.increment == voice.targetIncrement) {
+      voice.increment = voice.targetIncrement;
+      clearSynthPortamento(voiceIndex);
+    }
+  }
+
+  if (remainingTicks != 0) {
+    smoothUint32Toward(voice.increment, voice.targetIncrement, SYNTH_PITCH_SMOOTH_SHIFT, remainingTicks);
+  }
+}
+
+inline void RAM_FUNC(refreshSynthVoiceRenderCache)(uint8_t voiceIndex,
+                                                   uint8_t elapsedTicks,
+                                                   bool activeWavetableHasFrames,
+                                                   bool perVoiceWavetablePosition,
+                                                   uint8_t activeWaveFrameCount,
+                                                   bool& synthVibratoSampleReady,
+                                                   int16_t& synthVibratoSample) {
+  SynthModulationAmounts voiceModulation = synthBaseModulationCache;
+  for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
+    refreshCachedEffectEnvelopeModValue(envelopeIndex, voiceIndex, elapsedTicks);
+    if (synthEffectEnvelopeActive[envelopeIndex]) {
+      addSynthTargetAmount(effectEnvelopeTarget[envelopeIndex],
+                           cachedEffectEnvelopeModValues[envelopeIndex][voiceIndex],
+                           voiceModulation.morph,
+                           voiceModulation.vibrato,
+                           voiceModulation.pitch,
+                           voiceModulation.wavetablePosition);
+    }
+  }
+
+  advanceSynthFrequencyControl(voiceIndex, elapsedTicks);
+
+  uint32_t phaseIncrement = synth[voiceIndex].increment;
+  if (voiceModulation.pitch != 0) {
+    phaseIncrement = applySynthPitchMod(phaseIncrement, voiceModulation.pitch);
+  }
+  if (voiceModulation.vibrato != 0) {
+    if (!synthVibratoSampleReady) {
+      if (elapsedTicks != 0) {
+        synthVibratoPhase += synthVibratoPhaseIncrement * static_cast<uint32_t>(elapsedTicks);
+      }
+      synthVibratoSample =
+        static_cast<int16_t>(synthVibratoSine[synthWaveSampleIndexFromPhase32(synthVibratoPhase)]) - 128;
+      synthVibratoSampleReady = true;
+    }
+    int16_t voiceVibratoAmount = synthVibratoSample * voiceModulation.vibrato;
+    if (voiceVibratoAmount != 0) {
+      phaseIncrement = applySynthVibrato(phaseIncrement, voiceVibratoAmount);
+    }
+  }
+
+  SynthVoiceRenderCache& cache = synthVoiceRenderCaches[voiceIndex];
+  cache.phaseIncrement = phaseIncrement;
+  cache.morphAmount = voiceModulation.morph;
+  uint16_t morphDepth = static_cast<uint16_t>(voiceModulation.morph < 0 ? -voiceModulation.morph : voiceModulation.morph);
+  cache.morphScale = (morphDepth == 0) ? 0 : synthMorphPhaseWarpScaleByDepth[morphDepth];
+  if (activeWavetableHasFrames) {
+    cache.wavetableContext = perVoiceWavetablePosition
+                               ? wavetableReadContextFromFramePosition(
+                                   wavetableFramePositionFromAmount(
+                                     combinedWavetablePositionAmount(voiceModulation.wavetablePosition)),
+                                   activeWaveFrameCount)
+                               : synthSharedWavetableReadContext;
+  } else {
+    cache.wavetableContext = { activeSynthWaveTable[0], nullptr, 0 };
+  }
+  synthVoiceRenderCacheValid[voiceIndex] = true;
 }
 
 inline int32_t RAM_FUNC(readMetronomeBeepSample)() {
@@ -6205,23 +6421,10 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
   int32_t mix = 0;    // signed accumulator stays well within int32_t bounds
   const int32_t metronomeSample = readMetronomeBeepSample();
   const bool metronomeAudible = metronomeSample != 0;
-  const uint8_t synthModValue = scaleSynthModAmount(smoothedSynthModValue());
-  int16_t wheelMorphModValue = 0;
-  int16_t wheelVibratoModValue = 0;
-  int16_t wheelPitchModValue = 0;
-  int16_t wheelWavetablePositionModValue = 0;
-  addSynthTargetAmount(synthModTarget,
-                       synthModValue,
-                       wheelMorphModValue,
-                       wheelVibratoModValue,
-                       wheelPitchModValue,
-                       wheelWavetablePositionModValue);
-  addSynthTargetAmount(synthLfoTarget,
-                       synthLfoModValue(),
-                       wheelMorphModValue,
-                       wheelVibratoModValue,
-                       wheelPitchModValue,
-                       wheelWavetablePositionModValue);
+  const bool synthControlTick = synthControlTickDue();
+  if (synthControlTick) {
+    refreshSynthBaseModulationCache(SYNTH_CONTROL_RATE_SAMPLES);
+  }
   int16_t synthVibratoSample = 0;
   bool synthVibratoSampleReady = false;
   // ============================================================
@@ -6241,30 +6444,30 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
   uint16_t p;
   byte t;
   const uint8_t voiceLimit = currentSynthVoiceLimit();
-  const uint8_t effectEnvelopeUpdateIndex = synthFxEnvelopeUpdateCursor;
-  synthFxEnvelopeUpdateCursor = static_cast<uint8_t>(synthFxEnvelopeUpdateCursor + 1);
-  if (synthFxEnvelopeUpdateCursor >= SYNTH_FX_ENVELOPE_COUNT) {
-    synthFxEnvelopeUpdateCursor = 0;
-  }
   const uint8_t activeWaveFrameCount = activeSynthWaveFrameCount;
   const bool activeWavetableHasFrames = activeWaveFrameCount > 1;
   const bool perVoiceWavetablePosition =
     activeWavetableHasFrames
     && ((synthEffectEnvelopeActive[0] && effectEnvelopeTarget[0] == SYNTH_MOD_TARGET_WAVETABLE_POSITION)
         || (synthEffectEnvelopeActive[1] && effectEnvelopeTarget[1] == SYNTH_MOD_TARGET_WAVETABLE_POSITION));
-  SynthWavetableReadContext sharedWavetableReadContext = { activeSynthWaveTable[0], nullptr, 0 };
-  if (activeWavetableHasFrames && !perVoiceWavetablePosition) {
-    sharedWavetableReadContext = wavetableReadContextFromFramePosition(
-      wavetableFramePositionFromAmount(combinedWavetablePositionAmount(wheelWavetablePositionModValue)),
-      activeWaveFrameCount
-    );
+  if (synthControlTick) {
+    synthSharedWavetableReadContext =
+      (activeWavetableHasFrames && !perVoiceWavetablePosition)
+        ? wavetableReadContextFromFramePosition(
+            wavetableFramePositionFromAmount(
+              combinedWavetablePositionAmount(synthBaseModulationCache.wavetablePosition)),
+            activeWaveFrameCount)
+        : SynthWavetableReadContext{ activeSynthWaveTable[0], nullptr, 0 };
   }
   for (byte i = 0; i < voiceLimit; i++) {
     EnvelopeState& env = envelopeStates[i];
+    bool forceVoiceRenderCacheRefresh = false;
 
     EnvelopeCommand pendingCommand = consumeEnvelopeCommand(i);
     switch (pendingCommand) {
       case EnvelopeCommand::StartAttack: {
+        resetSynthVoiceRenderCache(i);
+        forceVoiceRenderCacheRefresh = true;
         env.releaseIncrement = 0;
         env.holdTicksRemaining = 0;
         if (envelopeParams.attackTicks == 0) {
@@ -6285,6 +6488,8 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
         break;
       }
       case EnvelopeCommand::StartRelease: {
+        resetSynthVoiceRenderCache(i);
+        forceVoiceRenderCacheRefresh = true;
         releaseRetries[i] = 0;
         releaseRetryCountdown[i] = 0;
         if (envelopeParams.releaseTicks == 0 || env.level == 0) {
@@ -6294,6 +6499,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
           synth[i].targetIncrement = 0;
           synth[i].counter = 0;
           clearSynthPortamento(i);
+          resetSynthVoiceRenderCache(i);
           publishVoiceFreed(i);
         } else {
           env.stage = EnvelopeStage::Release;
@@ -6318,6 +6524,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
         break;
       }
       case EnvelopeCommand::Reset: {
+        resetSynthVoiceRenderCache(i);
         resetEnvelopeState(env);
         for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
           resetEnvelopeState(effectEnvelopeStates[envelopeIndex][i]);
@@ -6381,6 +6588,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
           synth[i].targetIncrement = 0;
           synth[i].counter = 0;
           clearSynthPortamento(i);
+          resetSynthVoiceRenderCache(i);
           publishVoiceFreed(i);
         } else {
           env.level -= env.releaseIncrement;
@@ -6393,6 +6601,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
         synth[i].targetIncrement = 0;
         synth[i].counter = 0;
         clearSynthPortamento(i);
+        resetSynthVoiceRenderCache(i);
         for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
           resetEnvelopeState(effectEnvelopeStates[envelopeIndex][i]);
           resetCachedEffectEnvelopeModValue(envelopeIndex, i);
@@ -6404,68 +6613,25 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
       continue;
     }
 
-    int16_t voiceMorphModValue = wheelMorphModValue;
-    int16_t voiceVibratoModValue = wheelVibratoModValue;
-    int16_t voicePitchModValue = wheelPitchModValue;
-    int16_t voiceWavetablePositionModValue = wheelWavetablePositionModValue;
-    for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
-      if (envelopeIndex == effectEnvelopeUpdateIndex) {
-        refreshCachedEffectEnvelopeModValue(envelopeIndex, i, SYNTH_FX_ENVELOPE_CONTROL_TICKS);
-      }
-      if (synthEffectEnvelopeActive[envelopeIndex]) {
-        addSynthTargetAmount(effectEnvelopeTarget[envelopeIndex],
-                             cachedEffectEnvelopeModValues[envelopeIndex][i],
-                             voiceMorphModValue,
-                             voiceVibratoModValue,
-                             voicePitchModValue,
-                             voiceWavetablePositionModValue);
-      }
+    if (synthControlTick || forceVoiceRenderCacheRefresh || !synthVoiceRenderCacheValid[i]) {
+      refreshSynthVoiceRenderCache(i,
+                                   (synthControlTick && !forceVoiceRenderCacheRefresh)
+                                     ? SYNTH_FX_ENVELOPE_CONTROL_TICKS
+                                     : 0,
+                                   activeWavetableHasFrames,
+                                   perVoiceWavetablePosition,
+                                   activeWaveFrameCount,
+                                   synthVibratoSampleReady,
+                                   synthVibratoSample);
     }
-
-    if (synth[i].glideSamplesRemaining > 0) {
-      uint32_t step = synth[i].glideStep ? synth[i].glideStep : 1;
-      if (synth[i].targetIncrement > synth[i].increment) {
-        uint32_t remaining = synth[i].targetIncrement - synth[i].increment;
-        synth[i].increment += (step >= remaining) ? remaining : step;
-      } else if (synth[i].targetIncrement < synth[i].increment) {
-        uint32_t remaining = synth[i].increment - synth[i].targetIncrement;
-        synth[i].increment -= (step >= remaining) ? remaining : step;
-      }
-      --synth[i].glideSamplesRemaining;
-      if (synth[i].glideSamplesRemaining == 0 || synth[i].increment == synth[i].targetIncrement) {
-        synth[i].increment = synth[i].targetIncrement;
-        clearSynthPortamento(i);
-      }
-    } else {
-      smoothUint32Toward(synth[i].increment, synth[i].targetIncrement, SYNTH_PITCH_SMOOTH_SHIFT);
-    }
-    uint32_t phaseIncrement = synth[i].increment;
-    if (voicePitchModValue != 0) {
-      phaseIncrement = applySynthPitchMod(phaseIncrement, voicePitchModValue);
-    }
-    int16_t voiceVibratoAmount = 0;
-    if (voiceVibratoModValue != 0) {
-      if (!synthVibratoSampleReady) {
-        synthVibratoPhase += synthVibratoPhaseIncrement;
-        synthVibratoSample = static_cast<int16_t>(synthVibratoSine[synthWaveSampleIndexFromPhase32(synthVibratoPhase)]) - 128;
-        synthVibratoSampleReady = true;
-      }
-      voiceVibratoAmount = synthVibratoSample * static_cast<int16_t>(voiceVibratoModValue);
-    }
-    if (voiceVibratoAmount != 0) {
-      phaseIncrement = applySynthVibrato(phaseIncrement, voiceVibratoAmount);
-    }
-    synth[i].counter += phaseIncrement;  // high 16 bits loop from 65535 -> 0
+    const SynthVoiceRenderCache& voiceCache = synthVoiceRenderCaches[i];
+    synth[i].counter += voiceCache.phaseIncrement;  // high 16 bits loop from 65535 -> 0
     p = static_cast<uint16_t>(synth[i].counter >> 16);
-    if (voiceMorphModValue != 0) {
-      p = applySynthMorphPhaseWarp(p, voiceMorphModValue);
+    if (voiceCache.morphAmount != 0) {
+      p = applySynthMorphPhaseWarp(p, voiceCache.morphAmount, voiceCache.morphScale);
     }
     if (activeWavetableHasFrames) {
-      if (perVoiceWavetablePosition) {
-        p = readActiveWavetableSample(p, combinedWavetablePositionAmount(voiceWavetablePositionModValue), activeWaveFrameCount);
-      } else {
-        p = readActiveWavetableSampleWithContext(p, sharedWavetableReadContext);
-      }
+      p = readActiveWavetableSampleWithContext(p, voiceCache.wavetableContext);
     } else {
       t = p >> 8;
       switch (currWave) {

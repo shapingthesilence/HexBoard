@@ -30,7 +30,7 @@ High-level musical flow:
 ```text
 button matrix -> readHexes()
               -> tryMIDInoteOn/Off() -> USB/serial MIDI
-              -> trySynthNoteOn/Off() -> envelope commands -> poll() ISR -> PWM audio
+              -> trySynthNoteOn/Off() -> envelope commands -> audio block renderer -> DMA -> PWM audio
               -> LED state -> lightUpLEDs()
               -> played-note snapshot -> drawPlayedNotesOverlay()
 
@@ -143,7 +143,8 @@ latency-sensitive functions are explicitly placed in SRAM with `RAM_FUNC`.
 Current RAM-resident HexBoard functions include:
 
 - synth/audio renderer support: `renderAudioOutputLevels()`, `serviceAudioDmaBuffers()`,
-  `writeAudioOutputLevels()`, `publishVoiceFreed()`,
+  `writeAudioOutputLevels()`, `refreshSynthVoiceRenderCache()`,
+  `resetSynthRenderCaches()`, `publishVoiceFreed()`,
   `smoothedSynthModValue()`, `setSynthFreq()`, `beginEnvelopeAttack()`,
   `beginEnvelopeRelease()`, `processEnvelopeReleases()`, and
   `retryPendingReleases()`
@@ -167,8 +168,8 @@ instead of division or reciprocal approximation.
 This deliberately does not move the OLED menu and note-overlay drawing stack.
 Those paths mostly call GEM/U8g2 routines and send data over I2C, so wholesale
 RAM placement would consume much more SRAM than the selected hot-path pass.
-After the coarser AHDSR release-table pass, `make` reports about `106 KB` of
-globals and about `156 KB` remaining for local variables, heap, and stacks.
+After the DMA renderer and modulation-cache pass, `make` reports about `142 KB`
+of globals and about `120 KB` remaining for local variables, heap, and stacks.
 
 ### Audio Profiling Diagnostic
 
@@ -466,23 +467,25 @@ Key implementation facts:
   `STRINGS`, `CLARINET`, and the imported MP single-cycle waveforms use direct
   lookup from frame `0` of the active RAM wave table.
 - Only the selected table-backed static waveform or selected wavetable is loaded
-  into `activeSynthWaveTable`. The source cycles live outside the hot ISR data
-  path; the small vibrato sine table remains RAM-resident because the ISR reads
-  it directly.
+  into `activeSynthWaveTable`. The source cycles live outside the hot audio data
+  path; the small vibrato sine table remains RAM-resident because the renderer
+  reads it directly.
 - `WAVEFORM_BASIC_WAVETABLE` builds a `32`-frame RAM wavetable from generated
   sine, triangle, saw, and square anchors. Wavetable sampling runs in the normal
   synth modes, uses `SynthWavetablePosition` plus signed `WT Pos` modulation as
   frame position, and linearly interpolates adjacent frames. Firmware rebuilds a
   RAM lookup table when the active frame count changes so the audio renderer can map
-  `WT Pos` values to frame positions without dividing per voice. If only global
-  sources modulate `WT Pos`, the renderer computes that frame position and frame-pair
-  read context once per sample tick and shares it across active voices. Morph
-  phase warp uses a RAM depth-scale lookup to reduce per-voice multiplication.
-  FX-envelope modulation depth uses a `128 x 128` RAM scale table so patches with
-  both FX envelopes active avoid modulation-depth multiplies in the ISR. `poll()`
-  refreshes one FX envelope's state/cache per audio tick, advancing it by two
-  ticks to preserve timing, and applies cached per-voice modulation values every
-  sample; the implementation does not interpolate phase within each frame.
+  `WT Pos` values to frame positions without dividing per voice. Modulation work
+  runs on an `8`-sample control quantum: wheel smoothing, LFO sampling, FX
+  envelopes, pitch modulation, vibrato depth, morph depth/scale, and wavetable
+  frame contexts are cached per voice, with note start/release/reset forcing an
+  immediate cache refresh. Oscillator phase advance, amp-envelope level, morph
+  phase warp, waveform reads, mixing, drive, and output scaling remain
+  audio-rate. If only global sources modulate `WT Pos`, the cached frame-pair
+  read context is shared across active voices; if an FX envelope targets
+  `WT Pos`, each voice caches its own frame context. FX-envelope modulation depth
+  uses a `128 x 128` RAM scale table, and FX envelopes advance by the full `8`
+  audio ticks on each control refresh to preserve long envelope timing.
 - `WAVEFORM_USER_WAVETABLE` is the one imported wavetable slot. The web app sends
   object type `0x0B` with exactly `32 * 512` sample bytes; firmware validates the
   TLVs, copies the data to `activeSynthWaveTable`, and can persist it in
@@ -544,7 +547,7 @@ saw/square shapes, and a `20`-entry speed table from `0.05 Hz` to `20 Hz`.
 
 The amp and FX envelopes are AHDSRs. The amp envelope adds `EnvelopeHoldIndex`; FX Env 1 adds `EffectEnvelopeHoldIndex`; FX Env 2 adds `EffectEnvelope2HoldIndex`. Hold runs between attack and decay at full envelope level. Envelope time settings use a `20`-entry table from `0 ms` through `4 s`; the runtime keeps 7 fractional level bits internally but converts to 16-bit audible level for mixing. Release tables intentionally use coarser 256-bucket timing so the `4 s` option remains available without the larger 1024-entry 32-bit tables. Version `9` and older files remap their old `10`-entry table indices during settings migration.
 
-The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; FX Env 2 uses the matching `EffectEnvelope2*` settings. The wheel, LFO, and both FX envelopes can target the same parameter; `poll()` adds their signed target depths and clamps at `-127..127`, so sources stack instead of replacing each other. FX `Amount` is stored as a biased byte where `127` is off, values above `127` follow the envelope in the positive target direction, and values below `127` follow the same envelope level in the negative target direction. Negative vibrato is target-specific: it treats vibrato depth as the resting value and subtracts the envelope level, because negative LFO polarity is not musically useful. The factory defaults keep both FX envelopes inactive with all times at `0 ms` and sustain at `0%`.
+The two FX synth envelopes are persisted independently. FX Env 1 uses `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; FX Env 2 uses the matching `EffectEnvelope2*` settings. The wheel, LFO, and both FX envelopes can target the same parameter; the audio renderer's control-rate cache adds their signed target depths and clamps at `-127..127`, so sources stack instead of replacing each other. FX `Amount` is stored as a biased byte where `127` is off, values above `127` follow the envelope in the positive target direction, and values below `127` follow the same envelope level in the negative target direction. Negative vibrato is target-specific: it treats vibrato depth as the resting value and subtracts the envelope level, because negative LFO polarity is not musically useful. The factory defaults keep both FX envelopes inactive with all times at `0 ms` and sustain at `0%`.
 
 Envelope commands cross from Core 0 to the audio renderer through sequence-numbered
 command bytes. Release commands are retried by Core 0 until the renderer consumes
