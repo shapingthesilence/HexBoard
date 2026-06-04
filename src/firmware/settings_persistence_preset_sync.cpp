@@ -309,8 +309,11 @@ constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_S
 constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
 constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
 constexpr uint8_t LEGACY_SYNTH_PRESET_COUNT = 8;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 8;
-constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 5;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 9;
+constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 6;
+constexpr uint8_t SYNTH_WAVETABLE_FILE_VERSION = 1;
+constexpr uint8_t SYNTH_WAVETABLE_SCHEMA_VERSION = 1;
+constexpr uint8_t SYNTH_WAVETABLE_MAX_COUNT = 64;
 constexpr size_t SYNTH_PRESET_VALUE_COUNT_V6 = 27;
 constexpr size_t SYNTH_PRESET_VALUE_COUNT_V7 = 29;
 constexpr size_t SYNTH_PRESET_NAME_LENGTH = 32;
@@ -449,6 +452,17 @@ struct SynthPresetSlot {
   uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
   char name[SYNTH_PRESET_NAME_LENGTH] = {};
   char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
+  char wavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = {};
+  char wavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
+  uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
+};
+
+struct SynthPresetSlotV8 {
+  uint8_t valid = 0;
+  uint8_t favorite = 0;
+  uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
+  char name[SYNTH_PRESET_NAME_LENGTH] = {};
+  char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
   uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
 };
 
@@ -475,7 +489,24 @@ struct LegacySynthPresetSlot {
   uint8_t values[SYNTH_PRESET_VALUE_COUNT_V6] = {};
 };
 
+struct SynthWavetableFileHeader {
+  char magic[3];     // "SYW"
+  uint8_t version;
+  uint16_t count;
+  uint16_t reserved;
+  uint32_t crc32;
+};
+
+struct SynthWavetableSlot {
+  uint8_t valid = 0;
+  uint8_t objectId[SYNTH_WAVETABLE_OBJECT_ID_LENGTH] = {};
+  char name[SYNTH_WAVETABLE_NAME_LENGTH] = {};
+  char folderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
+  char samplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
+};
+
 std::vector<SynthPresetSlot> synthPresets;
+std::vector<SynthWavetableSlot> synthWavetables;
 
 void remapLegacySynthPresetEnvelopeTimes(SynthPresetSlot& preset) {
   if (!preset.valid) {
@@ -566,7 +597,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* ModWheelSpeed                */ 8,
   /* VelWheelSpeed                */ 8,
   /* PlaybackMode                 */ SYNTH_POLY,
-  /* Waveform                     */ WAVEFORM_HYBRID,
+  /* Waveform                     */ WAVEFORM_BASIC_WAVETABLE,
   /* AudioDestination             */ 0,
   /* ArpeggiatorDivision          */ 32,
   /* SynthBPM                     */ 120,
@@ -664,6 +695,7 @@ void applyFactoryDefaultsToSettings() {
   }
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
+  selectFallbackSynthWavetable();
   settingsDirty = false;
 }
 
@@ -859,9 +891,13 @@ void applyUploadedSynthWavetableSamples(const uint8_t* samples) {
   memcpy(&activeSynthWaveTable[0][0], samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
   userSynthWavetableAvailable = true;
-  currWave = WAVEFORM_USER_WAVETABLE;
-  settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_USER_WAVETABLE;
-  loadedSynthWaveform = WAVEFORM_USER_WAVETABLE;
+  setCurrentSynthWavetableReference("/User", "UserTbl");
+  currWave = WAVEFORM_BASIC_WAVETABLE;
+  settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_BASIC_WAVETABLE;
+  loadedSynthWaveform = currWave;
+  snprintf(loadedSynthWavetableName, sizeof(loadedSynthWavetableName), "%s", currentSynthWavetableName);
+  snprintf(loadedSynthWavetableFolderPath, sizeof(loadedSynthWavetableFolderPath), "%s", currentSynthWavetableFolderPath);
+  resetSynthRenderCaches();
   synthWaveTableLoadInProgress = false;
 }
 
@@ -928,6 +964,255 @@ void save_user_wavetable() {
   f.write(&activeSynthWaveTable[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
   f.close();
   sendToLog("User wavetable saved.");
+}
+
+constexpr char SYNTH_WAVETABLE_CATALOG_FILE_PATH[] = "/synth_wavetables.dat";
+
+void applyDefaultSynthWavetables() {
+  synthWavetables.clear();
+  synthWavetables.reserve(8);
+}
+
+void synthWavetableObjectIdToSamplePath(const uint8_t* objectId, char* output, size_t outputLength) {
+  static constexpr char hex[] = "0123456789ABCDEF";
+  if (outputLength == 0) {
+    return;
+  }
+  size_t index = 0;
+  const char prefix[] = "/wt_";
+  for (size_t i = 0; prefix[i] != '\0' && index + 1 < outputLength; ++i) {
+    output[index++] = prefix[i];
+  }
+  for (size_t i = 0; i < SYNTH_WAVETABLE_OBJECT_ID_LENGTH && index + 2 < outputLength; ++i) {
+    output[index++] = hex[(objectId[i] >> 4) & 0x0F];
+    output[index++] = hex[objectId[i] & 0x0F];
+  }
+  if (index + 5 < outputLength) {
+    output[index++] = '.';
+    output[index++] = 'w';
+    output[index++] = 't';
+    output[index++] = 'b';
+  }
+  output[index] = '\0';
+}
+
+bool synthWavetableObjectIdIsEmpty(const SynthWavetableSlot& wavetable) {
+  for (uint8_t byteValue : wavetable.objectId) {
+    if (byteValue != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void generateSynthWavetableObjectId(SynthWavetableSlot& wavetable, const uint8_t* samples) {
+  uint32_t hash = 2166136261u;
+  auto mixByte = [&](uint8_t value) {
+    hash ^= value;
+    hash *= 16777619u;
+  };
+  for (const char* p = "wavetable:"; *p; ++p) {
+    mixByte(static_cast<uint8_t>(*p));
+  }
+  for (const char* p = wavetable.folderPath; *p; ++p) {
+    mixByte(static_cast<uint8_t>(*p));
+  }
+  mixByte(':');
+  for (const char* p = wavetable.name; *p; ++p) {
+    mixByte(static_cast<uint8_t>(*p));
+  }
+  if (samples) {
+    uint32_t sampleCrc = crc32(samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
+    for (uint8_t shift = 0; shift < 32; shift += 8) {
+      mixByte(static_cast<uint8_t>((sampleCrc >> shift) & 0xFF));
+    }
+  }
+  for (size_t i = 0; i < sizeof(wavetable.objectId); ++i) {
+    hash ^= static_cast<uint8_t>(i * 17u);
+    hash *= 16777619u;
+    wavetable.objectId[i] = static_cast<uint8_t>((hash >> ((i % 4) * 8)) & 0xFF);
+  }
+}
+
+void normalizeSynthWavetableMetadata(SynthWavetableSlot& wavetable, const uint8_t* samples = nullptr) {
+  if (!wavetable.name[0]) {
+    snprintf(wavetable.name, sizeof(wavetable.name), "Wavetable");
+  }
+  if (!wavetable.folderPath[0]) {
+    snprintf(wavetable.folderPath, sizeof(wavetable.folderPath), "%s", SYNTH_WAVETABLE_ROOT_FOLDER);
+  }
+  wavetable.name[sizeof(wavetable.name) - 1] = '\0';
+  wavetable.folderPath[sizeof(wavetable.folderPath) - 1] = '\0';
+  normalizeSynthWavetableFolderPath(wavetable.folderPath, sizeof(wavetable.folderPath));
+  if (synthWavetableObjectIdIsEmpty(wavetable)) {
+    generateSynthWavetableObjectId(wavetable, samples);
+  }
+  synthWavetableObjectIdToSamplePath(wavetable.objectId, wavetable.samplePath, sizeof(wavetable.samplePath));
+}
+
+void compactSynthWavetables() {
+  synthWavetables.erase(
+    std::remove_if(synthWavetables.begin(), synthWavetables.end(), [](const SynthWavetableSlot& wavetable) {
+      return !wavetable.valid;
+    }),
+    synthWavetables.end()
+  );
+  if (synthWavetables.size() > SYNTH_WAVETABLE_MAX_COUNT) {
+    synthWavetables.resize(SYNTH_WAVETABLE_MAX_COUNT);
+  }
+  for (SynthWavetableSlot& wavetable : synthWavetables) {
+    normalizeSynthWavetableMetadata(wavetable);
+  }
+}
+
+uint32_t synthWavetableCatalogCrc(const SynthWavetableSlot* wavetables, size_t wavetableCount) {
+  return crc32(reinterpret_cast<const uint8_t*>(wavetables), sizeof(SynthWavetableSlot) * wavetableCount);
+}
+
+void save_synth_wavetables() {
+  if (!fileSystemExists) {
+    sendToLog("File system not available.");
+    return;
+  }
+  compactSynthWavetables();
+  File f = LittleFS.open(SYNTH_WAVETABLE_CATALOG_FILE_PATH, "w");
+  if (!f) {
+    sendToLog("Error: Unable to open /synth_wavetables.dat for writing.");
+    return;
+  }
+  SynthWavetableFileHeader header;
+  header.magic[0] = 'S'; header.magic[1] = 'Y'; header.magic[2] = 'W';
+  header.version = SYNTH_WAVETABLE_FILE_VERSION;
+  header.count = static_cast<uint16_t>(synthWavetables.size());
+  header.reserved = 0;
+  header.crc32 = synthWavetableCatalogCrc(synthWavetables.data(), synthWavetables.size());
+  f.write(reinterpret_cast<uint8_t*>(&header), sizeof(header));
+  if (!synthWavetables.empty()) {
+    f.write(reinterpret_cast<uint8_t*>(synthWavetables.data()), sizeof(SynthWavetableSlot) * synthWavetables.size());
+  }
+  f.close();
+  sendToLog("Synth wavetables saved (" + std::to_string(synthWavetables.size()) + ").");
+}
+
+void load_synth_wavetables() {
+  applyDefaultSynthWavetables();
+  if (!fileSystemExists) {
+    sendToLog("File system not available. Using built-in wavetables.");
+    return;
+  }
+  File f = LittleFS.open(SYNTH_WAVETABLE_CATALOG_FILE_PATH, "r");
+  if (!f) {
+    sendToLog("Synth wavetable catalog not found. Using built-in wavetables.");
+    return;
+  }
+  SynthWavetableFileHeader header;
+  if (f.readBytes(reinterpret_cast<char*>(&header), sizeof(header)) != sizeof(header)) {
+    sendToLog("Error: Failed to read synth wavetable catalog header.");
+    f.close();
+    applyDefaultSynthWavetables();
+    return;
+  }
+  if (strncmp(header.magic, "SYW", 3) != 0 || header.version != SYNTH_WAVETABLE_FILE_VERSION
+      || header.count > SYNTH_WAVETABLE_MAX_COUNT) {
+    sendToLog("Invalid synth wavetable catalog. Using built-in wavetables.");
+    f.close();
+    applyDefaultSynthWavetables();
+    return;
+  }
+  std::vector<SynthWavetableSlot> loaded(header.count);
+  size_t dataSize = sizeof(SynthWavetableSlot) * loaded.size();
+  size_t bytesRead = dataSize == 0 ? 0 : f.read(reinterpret_cast<uint8_t*>(loaded.data()), dataSize);
+  f.close();
+  if (bytesRead != dataSize) {
+    sendToLog("Warning: Synth wavetable catalog incomplete. Using built-in wavetables.");
+    applyDefaultSynthWavetables();
+    return;
+  }
+  if (synthWavetableCatalogCrc(loaded.data(), loaded.size()) != header.crc32) {
+    sendToLog("Synth wavetable catalog CRC32 mismatch. Using built-in wavetables.");
+    applyDefaultSynthWavetables();
+    return;
+  }
+  synthWavetables.clear();
+  synthWavetables.reserve(loaded.size());
+  for (SynthWavetableSlot& wavetable : loaded) {
+    if (!wavetable.valid) {
+      continue;
+    }
+    normalizeSynthWavetableMetadata(wavetable);
+    synthWavetables.push_back(wavetable);
+  }
+}
+
+int findSynthWavetableByObjectId(const uint8_t* objectId) {
+  for (size_t i = 0; i < synthWavetables.size(); ++i) {
+    if (synthWavetables[i].valid
+        && memcmp(synthWavetables[i].objectId, objectId, SYNTH_WAVETABLE_OBJECT_ID_LENGTH) == 0) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+int findSynthWavetableByFolderAndName(const char* folderPath, const char* name) {
+  char normalizedFolder[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
+  snprintf(normalizedFolder, sizeof(normalizedFolder), "%s", folderPath && folderPath[0] ? folderPath : SYNTH_WAVETABLE_ROOT_FOLDER);
+  normalizeSynthWavetableFolderPath(normalizedFolder, sizeof(normalizedFolder));
+  for (size_t i = 0; i < synthWavetables.size(); ++i) {
+    if (synthWavetables[i].valid
+        && strcmp(synthWavetables[i].folderPath, normalizedFolder) == 0
+        && strcmp(synthWavetables[i].name, name) == 0) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+int chooseSynthWavetableWriteSlot(const SynthWavetableSlot& wavetable) {
+  int existing = findSynthWavetableByObjectId(wavetable.objectId);
+  if (existing >= 0) {
+    return existing;
+  }
+  existing = findSynthWavetableByFolderAndName(wavetable.folderPath, wavetable.name);
+  if (existing >= 0) {
+    return existing;
+  }
+  if (synthWavetables.size() < SYNTH_WAVETABLE_MAX_COUNT) {
+    return static_cast<int>(synthWavetables.size());
+  }
+  return -1;
+}
+
+bool writeSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, const uint8_t* samples) {
+  File f = LittleFS.open(wavetable.samplePath, "w");
+  if (!f) {
+    sendToLog("Error: Unable to open wavetable sample file.");
+    return false;
+  }
+  size_t written = f.write(samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
+  f.close();
+  return written == SYNTH_WAVETABLE_SAMPLE_BYTES;
+}
+
+bool loadSynthWavetableFromCatalog(const char* folderPath, const char* name) {
+  int index = findSynthWavetableByFolderAndName(folderPath, name);
+  if (index < 0) {
+    return false;
+  }
+  SynthWavetableSlot& wavetable = synthWavetables[index];
+  File f = LittleFS.open(wavetable.samplePath, "r");
+  if (!f) {
+    sendToLog("Missing wavetable sample file for " + std::string(wavetable.name));
+    return false;
+  }
+  size_t bytesRead = f.read(&activeSynthWaveTable[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
+  f.close();
+  if (bytesRead != SYNTH_WAVETABLE_SAMPLE_BYTES) {
+    sendToLog("Incomplete wavetable sample file for " + std::string(wavetable.name));
+    return false;
+  }
+  setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
+  return true;
 }
 
 void applyDefaultSynthPresets() {
@@ -1012,6 +1297,52 @@ void normalizeSynthPresetFolderPath(char* folderPath, size_t folderPathLength) {
   snprintf(folderPath, folderPathLength, "%s", normalized);
 }
 
+int synthPresetValueIndexForKey(SettingKey key) {
+  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
+    if (synthPresetKeys[i] == key) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+uint8_t synthPresetValueForKey(const SynthPresetSlot& preset, SettingKey key, uint8_t fallback) {
+  int index = synthPresetValueIndexForKey(key);
+  return index >= 0 ? preset.values[index] : fallback;
+}
+
+void setSynthPresetValueForKey(SynthPresetSlot& preset, SettingKey key, uint8_t value) {
+  int index = synthPresetValueIndexForKey(key);
+  if (index >= 0) {
+    preset.values[index] = value;
+  }
+}
+
+void normalizeSynthWavetableFolderPath(char* folderPath, size_t folderPathLength) {
+  normalizeSynthPresetFolderPath(folderPath, folderPathLength);
+}
+
+void normalizeSynthPresetWavetableReference(SynthPresetSlot& preset) {
+  preset.wavetableName[sizeof(preset.wavetableName) - 1] = '\0';
+  preset.wavetableFolderPath[sizeof(preset.wavetableFolderPath) - 1] = '\0';
+  if (!preset.wavetableName[0]) {
+    byte waveform = synthPresetValueForKey(preset, SettingKey::Waveform, WAVEFORM_BASIC_WAVETABLE);
+    const char* folderPath = SYNTH_WAVETABLE_BUILTIN_FOLDER;
+    const char* name = SYNTH_WAVETABLE_BASIC_NAME;
+    uint8_t position = synthPresetValueForKey(preset,
+                                              SettingKey::SynthWavetablePosition,
+                                              SYNTH_WAVETABLE_POSITION_DEFAULT);
+    legacyWaveformCompatibilityReference(waveform, folderPath, name, position);
+    snprintf(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), "%s", folderPath);
+    snprintf(preset.wavetableName, sizeof(preset.wavetableName), "%s", name);
+    setSynthPresetValueForKey(preset, SettingKey::SynthWavetablePosition, position);
+  }
+  if (!preset.wavetableFolderPath[0]) {
+    snprintf(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), "%s", SYNTH_WAVETABLE_BUILTIN_FOLDER);
+  }
+  normalizeSynthWavetableFolderPath(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath));
+}
+
 void normalizeSynthPresetMetadata(SynthPresetSlot& preset, uint8_t fallbackIndex) {
   if (!preset.name[0]) {
     snprintf(preset.name, sizeof(preset.name), "Slot %u", static_cast<unsigned>(fallbackIndex + 1));
@@ -1022,6 +1353,7 @@ void normalizeSynthPresetMetadata(SynthPresetSlot& preset, uint8_t fallbackIndex
   preset.name[sizeof(preset.name) - 1] = '\0';
   preset.folderPath[sizeof(preset.folderPath) - 1] = '\0';
   normalizeSynthPresetFolderPath(preset.folderPath, sizeof(preset.folderPath));
+  normalizeSynthPresetWavetableReference(preset);
   if (synthPresetObjectIdIsEmpty(preset)) {
     generateSynthPresetObjectId(preset, fallbackIndex);
   }
@@ -1066,6 +1398,22 @@ void migrateSynthPresetSlotV7(const SynthPresetSlotV7& legacyPreset, uint8_t ind
   for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
     preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
   }
+  memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
+  normalizeSynthPresetValues(preset);
+  normalizeSynthPresetMetadata(preset, index);
+  synthPresets.push_back(preset);
+}
+
+void migrateSynthPresetSlotV8(const SynthPresetSlotV8& legacyPreset, uint8_t index) {
+  if (!legacyPreset.valid || synthPresets.size() >= SYNTH_PRESET_MAX_COUNT) {
+    return;
+  }
+  SynthPresetSlot preset = {};
+  preset.valid = legacyPreset.valid;
+  preset.favorite = legacyPreset.favorite;
+  memcpy(preset.objectId, legacyPreset.objectId, sizeof(preset.objectId));
+  memcpy(preset.name, legacyPreset.name, sizeof(preset.name));
+  memcpy(preset.folderPath, legacyPreset.folderPath, sizeof(preset.folderPath));
   memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
   normalizeSynthPresetValues(preset);
   normalizeSynthPresetMetadata(preset, index);
@@ -1137,6 +1485,9 @@ void captureCurrentSynthPreset(SynthPresetSlot& preset) {
   for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
     preset.values[i] = currentSynthPresetValue(synthPresetKeys[i]);
   }
+  snprintf(preset.wavetableName, sizeof(preset.wavetableName), "%s", currentSynthWavetableName);
+  snprintf(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), "%s", currentSynthWavetableFolderPath);
+  normalizeSynthPresetWavetableReference(preset);
 }
 
 void generateCurrentSynthPresetObjectId(SynthPresetSlot& preset) {
@@ -1152,6 +1503,13 @@ void generateCurrentSynthPresetObjectId(SynthPresetSlot& preset) {
   for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
     mixByte(static_cast<uint8_t>(synthPresetKeys[i]));
     mixByte(preset.values[i]);
+  }
+  for (const char* p = preset.wavetableFolderPath; *p; ++p) {
+    mixByte(static_cast<uint8_t>(*p));
+  }
+  mixByte(':');
+  for (const char* p = preset.wavetableName; *p; ++p) {
+    mixByte(static_cast<uint8_t>(*p));
   }
 
   for (size_t i = 0; i < sizeof(preset.objectId); ++i) {
@@ -1175,6 +1533,7 @@ void applyBlankSynthPresetToSettings() {
     uint8_t keyIndex = static_cast<uint8_t>(key);
     settings[keyIndex] = factoryDefaults[keyIndex];
   }
+  selectFallbackSynthWavetable();
 }
 
 void loadBlankSynthPreset() {
@@ -1327,7 +1686,7 @@ void load_synth_presets() {
       for (size_t i = 0; i < legacyPresets.size() && synthPresets.size() < SYNTH_PRESET_MAX_COUNT; ++i) {
         migrateSynthPresetSlotV6(legacyPresets[i], static_cast<uint8_t>(i));
       }
-    } else {
+    } else if (header.version < 8) {
       std::vector<SynthPresetSlotV7> legacyPresets(presetCountInFile);
       size_t presetDataSize = sizeof(SynthPresetSlotV7) * legacyPresets.size();
       size_t bytesRead = presetDataSize == 0 ? 0 : f.read(reinterpret_cast<uint8_t*>(legacyPresets.data()), presetDataSize);
@@ -1345,6 +1704,25 @@ void load_synth_presets() {
       }
       for (size_t i = 0; i < legacyPresets.size() && synthPresets.size() < SYNTH_PRESET_MAX_COUNT; ++i) {
         migrateSynthPresetSlotV7(legacyPresets[i], static_cast<uint8_t>(i));
+      }
+    } else {
+      std::vector<SynthPresetSlotV8> legacyPresets(presetCountInFile);
+      size_t presetDataSize = sizeof(SynthPresetSlotV8) * legacyPresets.size();
+      size_t bytesRead = presetDataSize == 0 ? 0 : f.read(reinterpret_cast<uint8_t*>(legacyPresets.data()), presetDataSize);
+      f.close();
+      if (bytesRead != presetDataSize) {
+        sendToLog("Warning: Synth preset data incomplete. Starting with empty preset slots.");
+        applyDefaultSynthPresets();
+        return;
+      }
+      uint32_t computed = crc32(reinterpret_cast<const uint8_t*>(legacyPresets.data()), presetDataSize);
+      if (computed != header.crc32) {
+        sendToLog("Synth preset CRC32 mismatch. Starting with empty preset slots.");
+        applyDefaultSynthPresets();
+        return;
+      }
+      for (size_t i = 0; i < legacyPresets.size() && synthPresets.size() < SYNTH_PRESET_MAX_COUNT; ++i) {
+        migrateSynthPresetSlotV8(legacyPresets[i], static_cast<uint8_t>(i));
       }
     }
     sendToLog("Synth presets migrated from version " + std::to_string(header.version) + " to version " + std::to_string(SYNTH_PRESET_FILE_VERSION) + ".");
@@ -1416,6 +1794,7 @@ void applySynthPresetToSettings(const SynthPresetSlot& preset) {
     }
     settings[static_cast<uint8_t>(synthPresetKeys[i])] = value;
   }
+  setCurrentSynthWavetableReference(preset.wavetableFolderPath, preset.wavetableName);
 }
 
 // Wrapper that mutes audio before writing to flash and unmutes afterward.
@@ -1437,6 +1816,10 @@ void flashSafeSave() {
 
 void flashSafeSaveSynthPresets() {
   flashSafeWrite(save_synth_presets);
+}
+
+void flashSafeSaveSynthWavetables() {
+  flashSafeWrite(save_synth_wavetables);
 }
 
 void flashSafeSaveUserSynthWavetable() {
@@ -1513,6 +1896,8 @@ constexpr uint8_t PRESET_SYNC_TLV_FOLDER_PATH = 0x06;
 constexpr uint8_t PRESET_SYNC_TLV_SYNTH_SCHEMA_VERSION = 0x20;
 constexpr uint8_t PRESET_SYNC_TLV_SYNTH_VALUES = 0x21;
 constexpr uint8_t PRESET_SYNC_TLV_FAVORITE = 0x23;
+constexpr uint8_t PRESET_SYNC_TLV_SYNTH_WAVETABLE_NAME = 0x26;
+constexpr uint8_t PRESET_SYNC_TLV_SYNTH_WAVETABLE_FOLDER_PATH = 0x27;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_FRAME_COUNT = 0x30;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_SAMPLE_COUNT = 0x31;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_SAMPLES = 0x32;
@@ -1761,6 +2146,14 @@ std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset) {
   presetSyncAppendTextTlv(body, PRESET_SYNC_TLV_FOLDER_PATH, preset.folderPath, sizeof(preset.folderPath));
   uint8_t schemaVersion = SYNTH_PRESET_SCHEMA_VERSION;
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_SYNTH_SCHEMA_VERSION, &schemaVersion, 1);
+  presetSyncAppendTextTlv(body,
+                          PRESET_SYNC_TLV_SYNTH_WAVETABLE_FOLDER_PATH,
+                          preset.wavetableFolderPath,
+                          sizeof(preset.wavetableFolderPath));
+  presetSyncAppendTextTlv(body,
+                          PRESET_SYNC_TLV_SYNTH_WAVETABLE_NAME,
+                          preset.wavetableName,
+                          sizeof(preset.wavetableName));
   std::vector<uint8_t> values;
   values.reserve(SYNTH_PRESET_VALUE_COUNT * 2);
   for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
@@ -1873,6 +2266,12 @@ bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlo
           preset.favorite = value[0] ? 1 : 0;
         }
         break;
+      case PRESET_SYNC_TLV_SYNTH_WAVETABLE_NAME:
+        copyPresetSyncText(preset.wavetableName, sizeof(preset.wavetableName), value, length);
+        break;
+      case PRESET_SYNC_TLV_SYNTH_WAVETABLE_FOLDER_PATH:
+        copyPresetSyncText(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), value, length);
+        break;
       default:
         break;
     }
@@ -1890,8 +2289,12 @@ bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlo
 }
 
 struct ParsedSynthWavetableObject {
+  uint8_t objectId[SYNTH_WAVETABLE_OBJECT_ID_LENGTH] = {};
+  char name[SYNTH_WAVETABLE_NAME_LENGTH] = {};
+  char folderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
   const uint8_t* samples = nullptr;
   uint16_t sampleLength = 0;
+  bool sawObjectId = false;
 };
 
 bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynthWavetableObject& wavetable, std::string& error) {
@@ -1908,6 +2311,8 @@ bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynth
     return false;
   }
 
+  wavetable = ParsedSynthWavetableObject{};
+  snprintf(wavetable.folderPath, sizeof(wavetable.folderPath), "%s", SYNTH_WAVETABLE_ROOT_FOLDER);
   bool sawFrameCount = false;
   bool sawSampleCount = false;
   bool sawSamples = false;
@@ -1927,6 +2332,23 @@ bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynth
     const uint8_t* value = body.data() + cursor;
 
     switch (tag) {
+      case PRESET_SYNC_TLV_NAME:
+        copyPresetSyncText(wavetable.name, sizeof(wavetable.name), value, length);
+        break;
+      case PRESET_SYNC_TLV_OBJECT_ID:
+        if (length != sizeof(wavetable.objectId)) {
+          error = "bad object id length";
+          return false;
+        }
+        memcpy(wavetable.objectId, value, sizeof(wavetable.objectId));
+        wavetable.sawObjectId = true;
+        break;
+      case PRESET_SYNC_TLV_FOLDER_PATH:
+        copyPresetSyncText(wavetable.folderPath, sizeof(wavetable.folderPath), value, length);
+        if (!wavetable.folderPath[0]) {
+          snprintf(wavetable.folderPath, sizeof(wavetable.folderPath), "%s", SYNTH_WAVETABLE_ROOT_FOLDER);
+        }
+        break;
       case PRESET_SYNC_TLV_WAVETABLE_FRAME_COUNT:
         if (length != 1 || value[0] != SYNTH_WAVETABLE_FRAME_COUNT) {
           error = "bad wavetable frame count";
@@ -1967,6 +2389,108 @@ bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynth
     error = "missing required wavetable TLV";
     return false;
   }
+  if (!wavetable.name[0]) {
+    error = "missing wavetable name";
+    return false;
+  }
+  return true;
+}
+
+bool readSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, std::vector<uint8_t>& samples) {
+  samples.assign(SYNTH_WAVETABLE_SAMPLE_BYTES, 0);
+  File f = LittleFS.open(wavetable.samplePath, "r");
+  if (!f) {
+    sendToLog("Missing wavetable sample file for " + std::string(wavetable.name));
+    return false;
+  }
+  size_t bytesRead = f.read(samples.data(), samples.size());
+  f.close();
+  if (bytesRead != samples.size()) {
+    sendToLog("Incomplete wavetable sample file for " + std::string(wavetable.name));
+    return false;
+  }
+  return true;
+}
+
+std::vector<uint8_t> buildSynthWavetableObjectBody(const SynthWavetableSlot& wavetable, const uint8_t* samples) {
+  std::vector<uint8_t> body;
+  body.reserve(PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES);
+  body.push_back('H');
+  body.push_back('B');
+  body.push_back('S');
+  body.push_back('1');
+  body.push_back(PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE);
+  body.push_back(1);
+  body.push_back(0);
+  body.push_back(0);
+  presetSyncAppendTextTlv(body, PRESET_SYNC_TLV_NAME, wavetable.name, sizeof(wavetable.name));
+  presetSyncAppendTlv(body, PRESET_SYNC_TLV_OBJECT_ID, wavetable.objectId, sizeof(wavetable.objectId));
+  const char source[] = "hexboard";
+  presetSyncAppendTlv(body, PRESET_SYNC_TLV_SOURCE, reinterpret_cast<const uint8_t*>(source), sizeof(source) - 1);
+  presetSyncAppendTextTlv(body, PRESET_SYNC_TLV_FOLDER_PATH, wavetable.folderPath, sizeof(wavetable.folderPath));
+  uint8_t frameCount = SYNTH_WAVETABLE_FRAME_COUNT;
+  uint8_t sampleCountBytes[2] = {
+    static_cast<uint8_t>(SYNTH_WAVE_SAMPLE_COUNT & 0xFF),
+    static_cast<uint8_t>((SYNTH_WAVE_SAMPLE_COUNT >> 8) & 0xFF)
+  };
+  presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_FRAME_COUNT, &frameCount, 1);
+  presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_SAMPLE_COUNT, sampleCountBytes, sizeof(sampleCountBytes));
+  presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_SAMPLES, samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
+  return body;
+}
+
+void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, const uint8_t* samples) {
+  synthWaveTableLoadInProgress = true;
+  memcpy(&activeSynthWaveTable[0][0], samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
+  setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
+  userSynthWavetableAvailable = true;
+  setCurrentSynthWavetableReference(wavetable.folderPath, wavetable.name);
+  currWave = WAVEFORM_BASIC_WAVETABLE;
+  settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_BASIC_WAVETABLE;
+  loadedSynthWaveform = currWave;
+  snprintf(loadedSynthWavetableName, sizeof(loadedSynthWavetableName), "%s", currentSynthWavetableName);
+  snprintf(loadedSynthWavetableFolderPath, sizeof(loadedSynthWavetableFolderPath), "%s", currentSynthWavetableFolderPath);
+  resetSynthRenderCaches();
+  synthWaveTableLoadInProgress = false;
+}
+
+bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& parsed) {
+  if (!fileSystemExists) {
+    sendToLog("File system not available.");
+    return false;
+  }
+  SynthWavetableSlot wavetable = {};
+  wavetable.valid = 1;
+  if (parsed.sawObjectId) {
+    memcpy(wavetable.objectId, parsed.objectId, sizeof(wavetable.objectId));
+  }
+  snprintf(wavetable.name, sizeof(wavetable.name), "%s", parsed.name);
+  snprintf(wavetable.folderPath, sizeof(wavetable.folderPath), "%s", parsed.folderPath);
+  normalizeSynthWavetableMetadata(wavetable, parsed.samples);
+
+  int slotIndex = chooseSynthWavetableWriteSlot(wavetable);
+  if (slotIndex < 0) {
+    sendToLog("Synth wavetable library is full.");
+    return false;
+  }
+
+  char previousSamplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
+  if (static_cast<size_t>(slotIndex) < synthWavetables.size()) {
+    snprintf(previousSamplePath, sizeof(previousSamplePath), "%s", synthWavetables[slotIndex].samplePath);
+  }
+  if (!writeSynthWavetableSampleFile(wavetable, parsed.samples)) {
+    return false;
+  }
+  if (previousSamplePath[0] && strcmp(previousSamplePath, wavetable.samplePath) != 0) {
+    LittleFS.remove(previousSamplePath);
+  }
+  if (static_cast<size_t>(slotIndex) == synthWavetables.size()) {
+    synthWavetables.push_back(wavetable);
+  } else {
+    synthWavetables[slotIndex] = wavetable;
+  }
+  save_synth_wavetables();
+  requestSynthWavetableMenuRebuild();
   return true;
 }
 
@@ -2047,7 +2571,8 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
     return;
   }
   uint8_t objectType = payload[0];
-  if (objectType != PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
+  if (objectType != PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET
+      && objectType != PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_OBJECT_LIST_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
     return;
   }
@@ -2063,16 +2588,35 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
   if (folderLength > 0) {
     copyPresetSyncText(folderFilter, sizeof(folderFilter), payload + 5, folderLength);
   }
+  if (folderFilter[0]) {
+    if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
+      normalizeSynthPresetFolderPath(folderFilter, sizeof(folderFilter));
+    } else {
+      normalizeSynthWavetableFolderPath(folderFilter, sizeof(folderFilter));
+    }
+  }
 
   std::vector<uint8_t> handles;
-  for (size_t i = 0; i < synthPresets.size(); ++i) {
-    if (!synthPresets[i].valid) {
-      continue;
+  if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
+    for (size_t i = 0; i < synthPresets.size(); ++i) {
+      if (!synthPresets[i].valid) {
+        continue;
+      }
+      if (folderFilter[0] && strncmp(synthPresets[i].folderPath, folderFilter, sizeof(synthPresets[i].folderPath)) != 0) {
+        continue;
+      }
+      handles.push_back(static_cast<uint8_t>(i));
     }
-    if (folderFilter[0] && strncmp(synthPresets[i].folderPath, folderFilter, sizeof(synthPresets[i].folderPath)) != 0) {
-      continue;
+  } else {
+    for (size_t i = 0; i < synthWavetables.size(); ++i) {
+      if (!synthWavetables[i].valid) {
+        continue;
+      }
+      if (folderFilter[0] && strncmp(synthWavetables[i].folderPath, folderFilter, sizeof(synthWavetables[i].folderPath)) != 0) {
+        continue;
+      }
+      handles.push_back(static_cast<uint8_t>(i));
     }
-    handles.push_back(static_cast<uint8_t>(i));
   }
 
   uint8_t pageSize = requestedPageSize == 0 ? 4 : std::min<uint8_t>(requestedPageSize, 4);
@@ -2085,22 +2629,58 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
   presetSyncAppendU14(response, pageIndex);
   presetSyncAppendU14(response, pageCount);
   response.push_back((start < handles.size()) ? static_cast<uint8_t>(end - start) : 0);
+  auto appendRecord = [&](uint8_t recordObjectType,
+                          uint8_t handle,
+                          uint8_t flags,
+                          uint8_t schemaVersion,
+                          const uint8_t* objectId,
+                          size_t objectIdLength,
+                          const char* folderPath,
+                          size_t folderPathLength,
+                          const char* name,
+                          size_t nameLength) {
+    response.push_back(recordObjectType);
+    presetSyncAppendU14(response, handle);
+    response.push_back(flags);
+    response.push_back(schemaVersion);
+    response.push_back(0);
+    std::vector<uint8_t> packedObjectId;
+    presetSyncPack8To7(objectId, objectIdLength, packedObjectId);
+    response.push_back(packedObjectId.size());
+    response.insert(response.end(), packedObjectId.begin(), packedObjectId.end());
+    presetSyncAppendAscii(response, folderPath, folderPathLength);
+    presetSyncAppendAscii(response, name, nameLength);
+  };
   if (start < handles.size()) {
     for (size_t listIndex = start; listIndex < end; ++listIndex) {
       uint8_t handle = handles[listIndex];
-      SynthPresetSlot& preset = synthPresets[handle];
-      normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(handle));
-      response.push_back(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET);
-      presetSyncAppendU14(response, handle);
-      response.push_back(0x01);
-      response.push_back(1);
-      response.push_back(0);
-      std::vector<uint8_t> packedObjectId;
-      presetSyncPack8To7(preset.objectId, sizeof(preset.objectId), packedObjectId);
-      response.push_back(packedObjectId.size());
-      response.insert(response.end(), packedObjectId.begin(), packedObjectId.end());
-      presetSyncAppendAscii(response, preset.folderPath, sizeof(preset.folderPath));
-      presetSyncAppendAscii(response, preset.name, sizeof(preset.name));
+      if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
+        SynthPresetSlot& preset = synthPresets[handle];
+        normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(handle));
+        appendRecord(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET,
+                     handle,
+                     0x01,
+                     1,
+                     preset.objectId,
+                     sizeof(preset.objectId),
+                     preset.folderPath,
+                     sizeof(preset.folderPath),
+                     preset.name,
+                     sizeof(preset.name));
+      } else {
+        SynthWavetableSlot& wavetable = synthWavetables[handle];
+        normalizeSynthWavetableMetadata(wavetable);
+        appendRecord(PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE,
+                     handle,
+                     0x01,
+                     1,
+                     wavetable.objectId,
+                     sizeof(wavetable.objectId),
+                     wavetable.folderPath,
+                     sizeof(wavetable.folderPath),
+                     wavetable.name,
+                     sizeof(wavetable.name));
+      }
     }
   }
   presetSyncSendFrame(PRESET_SYNC_MSG_OBJECT_LIST_RESP, transactionId, response);
@@ -2183,11 +2763,33 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BUSY);
     return;
   }
-  if (payload[0] != PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
+  uint8_t objectType = payload[0];
+  if (objectType != PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET
+      && objectType != PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
     return;
   }
   uint16_t handle = presetSyncDecodeU14(payload + 1);
+  if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
+    if (handle >= synthWavetables.size() || !synthWavetables[handle].valid) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
+      return;
+    }
+    normalizeSynthWavetableMetadata(synthWavetables[handle]);
+    std::vector<uint8_t> samples;
+    if (!readSynthWavetableSampleFile(synthWavetables[handle], samples)) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
+      return;
+    }
+    presetSyncSendRawObject(transactionId,
+                            PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE,
+                            handle,
+                            1,
+                            0,
+                            buildSynthWavetableObjectBody(synthWavetables[handle], samples.data()));
+    return;
+  }
+
   if (handle == PRESET_SYNC_CURRENT_SYNTH_PRESET_HANDLE) {
     SynthPresetSlot currentPreset = buildCurrentSynthPresetObject();
     presetSyncSendRawObject(transactionId, PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, handle, 1, 0, buildSynthPresetObjectBody(currentPreset));
@@ -2406,11 +3008,27 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     }
 
     if (!(commitFlags & PRESET_SYNC_WRITE_DRY_RUN)) {
-      if ((commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME) || (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH)) {
-        applyUploadedSynthWavetableSamples(parsedWavetable.samples);
-      }
       if (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH) {
-        flashSafeSaveUserSynthWavetable();
+        flashWriteInProgress.store(true, std::memory_order_release);
+        delayMicroseconds(AUDIO_DMA_BUFFER_MICROS * 2);
+        bool saved = saveParsedSynthWavetable(parsedWavetable);
+        flashWriteInProgress.store(false, std::memory_order_release);
+        if (!saved) {
+          presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+          presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
+          return;
+        }
+      }
+      if (commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME) {
+        SynthWavetableSlot runtimeWavetable = {};
+        runtimeWavetable.valid = 1;
+        if (parsedWavetable.sawObjectId) {
+          memcpy(runtimeWavetable.objectId, parsedWavetable.objectId, sizeof(runtimeWavetable.objectId));
+        }
+        snprintf(runtimeWavetable.name, sizeof(runtimeWavetable.name), "%s", parsedWavetable.name);
+        snprintf(runtimeWavetable.folderPath, sizeof(runtimeWavetable.folderPath), "%s", parsedWavetable.folderPath);
+        normalizeSynthWavetableMetadata(runtimeWavetable, parsedWavetable.samples);
+        applyParsedSynthWavetableToRuntime(runtimeWavetable, parsedWavetable.samples);
       }
     }
   } else {
@@ -2438,20 +3056,47 @@ void presetSyncHandleDelete(uint16_t transactionId, const uint8_t* payload, size
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
     return;
   }
-  if (payload[0] != PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
+  uint8_t objectType = payload[0];
+  if (objectType != PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET
+      && objectType != PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
     return;
   }
   uint16_t handle = presetSyncDecodeU14(payload + 1);
   uint8_t deleteFlags = payload[3];
-  if (handle >= synthPresets.size() || !synthPresets[handle].valid) {
-    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
-    return;
-  }
-  if (!(deleteFlags & 0x01)) {
-    synthPresets.erase(synthPresets.begin() + handle);
-    flashSafeSaveSynthPresets();
-    requestSynthPresetMenuRebuild();
+  if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
+    if (handle >= synthPresets.size() || !synthPresets[handle].valid) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
+      return;
+    }
+    if (!(deleteFlags & 0x01)) {
+      synthPresets.erase(synthPresets.begin() + handle);
+      flashSafeSaveSynthPresets();
+      requestSynthPresetMenuRebuild();
+    }
+  } else {
+    if (handle >= synthWavetables.size() || !synthWavetables[handle].valid) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
+      return;
+    }
+    if (!(deleteFlags & 0x01)) {
+      bool deletedCurrent =
+        strncmp(currentSynthWavetableName, synthWavetables[handle].name, sizeof(currentSynthWavetableName)) == 0
+        && strncmp(currentSynthWavetableFolderPath,
+                   synthWavetables[handle].folderPath,
+                   sizeof(currentSynthWavetableFolderPath)) == 0;
+      if (synthWavetables[handle].samplePath[0]) {
+        LittleFS.remove(synthWavetables[handle].samplePath);
+      }
+      synthWavetables.erase(synthWavetables.begin() + handle);
+      flashSafeSaveSynthWavetables();
+      requestSynthWavetableMenuRebuild();
+      if (deletedCurrent) {
+        selectFallbackSynthWavetable();
+        loadSelectedSynthWavetable();
+        markSettingsDirty();
+      }
+    }
   }
   presetSyncSendAck(transactionId, PRESET_SYNC_MSG_DELETE_REQ);
 }
@@ -2589,6 +3234,7 @@ void setActiveProfile(uint8_t profileIndex) {
   activeProfileIndex = profileIndex;
   settings = settingsProfiles[activeProfileIndex];
   settingsDirty = false;
+  currentSynthWavetableReferenceValid = false;
   syncSettingsToRuntime();
   sendToLog("Loaded profile " + std::to_string(profileIndex + 1));
 }

@@ -37,7 +37,10 @@ This protocol should map to a future storage model with separate catalogs:
   short name, it should own user-generated tunings, layouts, scales, scale
   color maps, and explicit button maps because those objects need to reference
   each other.
-- `/synth_presets.dat` stores named synth presets with folder paths.
+- `/synth_presets.dat` stores named synth presets with folder paths and
+  wavetable folder/name dependencies.
+- `/synth_wavetables.dat` stores the named user wavetable catalog. Each catalog
+  entry points to a sample file generated from the wavetable object id.
 
 Keeping user tunings and layouts together in `/layouts.dat` avoids fragile
 cross-file references such as a user layout pointing to a missing user tuning.
@@ -49,11 +52,12 @@ Recommended future file headers:
 | --- | --- | --- | --- |
 | `/settings.dat` | `STG` | Main settings schema | Main profile bytes and object references |
 | `/layouts.dat` | `LYT` | User mapping catalog schema | User tuning/layout/scale/color/map objects |
-| `/synth_presets.dat` | `SYP` | Synth preset catalog schema | Named synth preset objects and folders |
+| `/synth_presets.dat` | `SYP` | Synth preset catalog schema | Named synth preset objects, folders, and wavetable references |
+| `/synth_wavetables.dat` | `SYW` | Synth wavetable catalog schema | Named user wavetable objects and sample-file paths |
 
-The current firmware already has `/settings.dat` and a named/foldered
-`/synth_presets.dat`; `/layouts.dat` is a future storage change, not a current
-implementation fact.
+The current firmware already has `/settings.dat`, a named/foldered
+`/synth_presets.dat`, and a named/foldered `/synth_wavetables.dat`;
+`/layouts.dat` is a future storage change, not a current implementation fact.
 
 ## Relationship To Current SysEx
 
@@ -335,13 +339,13 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 ```
 
 Example response, transaction `1`, max packed chunk `128`, capabilities `0x902`
-(synth preset read/write, dry-run validation, plus synth wavetable write), max
-raw object bytes `16640`, settings schema `15`, synth preset schema `5`, `9`
+(synth preset read/write, dry-run validation, plus synth wavetable objects), max
+raw object bytes `16640`, settings schema `15`, synth preset schema `6`, `9`
 profiles, `128` synth preset entries, no user tuning/layout/scale/color/map
 slots yet, hardware version `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 00 00 12 02 00 01 02 00 0F 05 09 01 00 00 00 00 00 00 02 F7
+F0 7D 10 01 00 02 00 01 01 00 00 00 12 02 00 01 02 00 0F 06 09 01 00 00 00 00 00 00 02 F7
 ```
 
 ## Object Addressing
@@ -377,7 +381,7 @@ handle.
 | `0x08` | `Bundle` | Web-app backup containing multiple objects |
 | `0x09` | `Folder` | Optional virtual folder record for catalog navigation |
 | `0x0A` | `UserScale` | `/layouts.dat` scale handle |
-| `0x0B` | `SynthWavetable` | Single persisted user wavetable slot |
+| `0x0B` | `SynthWavetable` | Synth-only wavetable catalog entry; current firmware returns compact catalog handles up to `63` |
 
 Factory tunings, factory layouts, and factory scales may be listed when the
 device advertises factory object listing, but they are read-only.
@@ -500,9 +504,9 @@ The device ACKs `WRITE_BEGIN` if it can accept the transfer. The host then sends
 `DATA_CHUNK` messages in order. The device ACKs every accepted chunk with the
 next expected chunk index. After all chunks, the host sends `TRANSFER_END`.
 The web app uses this ACKed write path for real-device synth preset saves and
-Serum wavetable imports, then waits for the `WRITE_COMMIT` ACK before treating
-the flash write as complete. Live preview sends remain apply-only and are not
-used as the persistence confirmation path.
+named Serum wavetable imports, then waits for the `WRITE_COMMIT` ACK before
+treating the flash write as complete. Live preview sends remain apply-only and
+are not used as the persistence confirmation path.
 
 Example `WRITE_BEGIN` for a new `UserTuning` object, transaction `20`,
 transfer `5`, schema `1.0`, raw length `33`, CRC32 `0x6702FE2B`, raw chunk size
@@ -659,7 +663,7 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `11` |
+| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `15` |
 | `0x21` | `SettingValues` | Repeated `<setting-key-u8> <value-u8>` records |
 | `0x22` | `TuningRef` | Object reference |
 | `0x23` | `LayoutRef` | Object reference |
@@ -882,11 +886,13 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SynthPresetSchemaVersion` | `u8`, current firmware is `5` |
+| `0x20` | `SynthPresetSchemaVersion` | `u8`, current firmware is `6` |
 | `0x21` | `SynthValues` | Repeated `<synth-key-u8> <value-u8>` records |
 | `0x22` | Reserved | Category was considered, but v1 organization is folder-only |
 | `0x23` | `Favorite` | `u8 bool` |
 | `0x24` | `LastModifiedUnixTime` | Optional `u32-le` timestamp from the web app |
+| `0x26` | `SynthWavetableName` | UTF-8 wavetable name dependency |
+| `0x27` | `SynthWavetableFolderPath` | UTF-8 wavetable folder dependency |
 
 The current synth preset key set is:
 
@@ -933,15 +939,20 @@ control state.
 
 Schema `4` appends mono portamento and arpeggiator direction to the schema `3`
 value set. Schema `5` appends wavetable position and LFO target/amount/wave/
-speed. Firmware migrates stored `/synth_presets.dat` version `7` records by
-keeping their existing value bytes and appending factory defaults for the five
-new keys.
+speed. Schema `6` adds the separate wavetable folder/name dependency TLVs while
+leaving the synth value list intact. Firmware migrates stored
+`/synth_presets.dat` version `7` records by keeping their existing value bytes
+and appending factory defaults for the five new keys; version `8` records are
+migrated by deriving the new wavetable dependency from the legacy `Waveform`
+value.
 
 `PlaybackMode` value `5` was the temporary `PolyTbl` mode and is now normalized
-to `Poly` on import. `Waveform` value `27` is `BasicTb`, the first
-firmware-generated `32`-frame wavetable. `Waveform` value `28` is `UserTbl`,
-the single imported user wavetable slot; preset objects store only that slot
-selection, not the table sample data.
+to `Poly` on import. `Waveform` remains in the value list for compatibility, but
+new preset objects use `SynthWavetableName` and `SynthWavetableFolderPath` as
+the actual source dependency. Old `Waveform` values map into the built-in
+compatibility tables and update `SynthWavetablePosition` to the matching anchor;
+`Hybrid` maps to `Basic` at position `0`, and missing named dependencies load
+`Basic` until the matching table is installed.
 
 The common `Name` and `FolderPath` TLVs are required for named/foldered synth
 presets. Duplicate names are allowed in different folders. Within the same
@@ -958,9 +969,10 @@ using escaped device storage:
 
 ## Synth Wavetable Object
 
-`SynthWavetable` object type `0x0B` writes the single user wavetable slot used
-by the synth waveform value `UserTbl`. Current firmware supports writes only;
-object listing and readback are not implemented for this slot.
+`SynthWavetable` object type `0x0B` stores one named user wavetable catalog
+entry. Current firmware supports listing, reading, writing, and deleting
+entries. Presets reference wavetables by `SynthWavetableFolderPath` plus
+`SynthWavetableName`; they do not embed table sample data.
 
 The object schema is `1.0`. The body uses the common `HBS1` object header and
 may include common metadata TLVs such as `Name`, `ObjectId`, `Source`, and
@@ -976,9 +988,13 @@ The web app's Serum import path reads Serum-style `.wav` tables, interpolates
 the source frame axis down to `32` frames, resamples each frame to `512`
 samples, normalizes to unsigned byte samples centered on `128`, and sends the
 result with `ApplyToRuntime | SaveToFlash`. Firmware validates the transfer
-CRC32, copies the sample TLV into `activeSynthWaveTable`, selects `UserTbl` for
-the current runtime patch, and writes `/user_wavetable.dat` with a `UWT` header
-and CRC32 when the save flag is present.
+CRC32, copies the sample TLV into `activeSynthWaveTable`, selects the uploaded
+folder/name for the current runtime patch, writes or replaces the matching
+catalog entry in `/synth_wavetables.dat`, and stores the raw `16384` sample
+bytes in a per-table sample file named from the wavetable object id when the
+save flag is present. The legacy `/user_wavetable.dat` `UWT` file is still
+loadable through the compatibility reference `/User/UserTbl`, but new imports do
+not write that file.
 
 ## Bundle Object
 
@@ -1067,14 +1083,15 @@ write the individual objects after the web app unpacks a bundle.
    object id. For reads only, current firmware also accepts handle `0x3FFF` as a
    synthetic current-runtime synth preset so hosts can initialize an editor
    without changing the loaded sound.
-3. Device validates `SynthPresetSchemaVersion`, `Name`, and `FolderPath`.
+3. Device validates `SynthPresetSchemaVersion`, `Name`, `FolderPath`, and,
+   when present, the wavetable folder/name dependency TLVs.
 4. Commit with `apply` changes the current synth runtime for auditioning. Commit
    with `save` updates `/synth_presets.dat`.
 5. Commit with `save` writes the named preset catalog to `/synth_presets.dat`
    through the existing flash-safe save path.
-6. The current web app requests one synth preset record per object-list page
-   before reading each object body, keeping response frames under conservative
-   SysEx buffer limits.
+6. The current web app requests one synth preset or wavetable record per
+   object-list page before reading each object body, keeping response frames
+   under conservative SysEx buffer limits.
 7. Current firmware treats recognized preset-sync frames as a modal transfer
    window: the display shows `MIDI SysEx Transfer`, normal core-0 UI/LED work is
    paused, and MIDI input is pumped until the exchange goes idle with no active

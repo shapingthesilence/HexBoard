@@ -91,6 +91,14 @@ export class PresetSyncClient {
   }
 
   async listSynthPresets(pageSize = 1): Promise<ObjectListRecord[]> {
+    return this.listObjects(ObjectType.SynthPreset, pageSize);
+  }
+
+  async listSynthWavetables(pageSize = 1): Promise<ObjectListRecord[]> {
+    return this.listObjects(ObjectType.SynthWavetable, pageSize);
+  }
+
+  private async listObjects(objectType: number, pageSize = 1): Promise<ObjectListRecord[]> {
     const records: ObjectListRecord[] = [];
     let pageIndex = 0;
     let pageCount = 1;
@@ -98,7 +106,7 @@ export class PresetSyncClient {
     do {
       const frame = await this.requestFrame(
         MessageType.ObjectListRequest,
-        encodeObjectListRequestPayload(ObjectType.SynthPreset, pageIndex, pageSize),
+        encodeObjectListRequestPayload(objectType, pageIndex, pageSize),
         (candidate) => candidate.message === MessageType.ObjectListResponse
       );
       const page = decodeObjectListResponsePayload(frame.payload);
@@ -114,14 +122,26 @@ export class PresetSyncClient {
     return this.readObject(ObjectType.SynthPreset, handle);
   }
 
+  async readSynthWavetable(handle: number): Promise<Uint8Array> {
+    return this.readObject(ObjectType.SynthWavetable, handle);
+  }
+
   async readCurrentSynthPreset(): Promise<Uint8Array> {
     return this.readSynthPreset(NEW_OBJECT_HANDLE);
   }
 
   async deleteSynthPreset(handle: number): Promise<void> {
+    await this.deleteObject(ObjectType.SynthPreset, handle);
+  }
+
+  async deleteSynthWavetable(handle: number): Promise<void> {
+    await this.deleteObject(ObjectType.SynthWavetable, handle);
+  }
+
+  private async deleteObject(objectType: number, handle: number): Promise<void> {
     await this.requestFrame(
       MessageType.DeleteRequest,
-      encodeDeleteRequestPayload(ObjectType.SynthPreset, handle),
+      encodeDeleteRequestPayload(objectType, handle),
       (candidate) => {
         if (candidate.message !== MessageType.Ack) {
           return false;

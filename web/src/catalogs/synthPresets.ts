@@ -3,6 +3,7 @@ import {
   createCommonRecords,
   encodeObjectBody,
   tlv,
+  tlvText,
   tlvU8,
   type TlvRecord
 } from "../protocol/tlv.ts";
@@ -12,7 +13,9 @@ export const SynthPresetTlv = {
   SynthPresetSchemaVersion: 0x20,
   SynthValues: 0x21,
   Favorite: 0x23,
-  LastModifiedUnixTime: 0x24
+  LastModifiedUnixTime: 0x24,
+  WavetableName: 0x26,
+  WavetableFolderPath: 0x27
 } as const;
 
 export const SynthSettingKey = {
@@ -59,6 +62,10 @@ export interface SynthPresetInput {
   objectId: Uint8Array;
   name: string;
   folderPath: string;
+  wavetable?: {
+    name: string;
+    folderPath: string;
+  };
   values: SynthPresetValues;
   favorite?: boolean;
   tags?: string[];
@@ -84,9 +91,14 @@ export function createSynthPresetObject(input: SynthPresetInput): EncodedCatalog
       folderPath: input.folderPath,
       tags: input.tags
     }),
-    tlvU8(SynthPresetTlv.SynthPresetSchemaVersion, 5),
+    tlvU8(SynthPresetTlv.SynthPresetSchemaVersion, 6),
     tlv(SynthPresetTlv.SynthValues, encodeSynthValues(input.values))
   ];
+
+  if (input.wavetable) {
+    records.push(tlvText(SynthPresetTlv.WavetableFolderPath, input.wavetable.folderPath));
+    records.push(tlvText(SynthPresetTlv.WavetableName, input.wavetable.name));
+  }
 
   if (input.favorite !== undefined) {
     records.push(tlvU8(SynthPresetTlv.Favorite, input.favorite ? 1 : 0));

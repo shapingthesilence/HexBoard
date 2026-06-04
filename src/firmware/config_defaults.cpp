@@ -177,6 +177,17 @@ constexpr byte WAVEFORM_MP_WOO = 26;
 constexpr byte WAVEFORM_BASIC_WAVETABLE = 27;
 constexpr byte WAVEFORM_USER_WAVETABLE = 28;
 byte currWave = WAVEFORM_HYBRID;
+constexpr size_t SYNTH_WAVETABLE_NAME_LENGTH = 32;
+constexpr size_t SYNTH_WAVETABLE_FOLDER_LENGTH = 48;
+constexpr size_t SYNTH_WAVETABLE_MENU_LABEL_LENGTH = 64;
+constexpr size_t SYNTH_WAVETABLE_OBJECT_ID_LENGTH = 16;
+constexpr size_t SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH = 48;
+constexpr const char* SYNTH_WAVETABLE_ROOT_FOLDER = "/";
+constexpr const char* SYNTH_WAVETABLE_BUILTIN_FOLDER = "/Built In";
+constexpr const char* SYNTH_WAVETABLE_BASIC_NAME = "Basic";
+char currentSynthWavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = "Basic";
+char currentSynthWavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = "/Built In";
+bool currentSynthWavetableReferenceValid = false;
 
 constexpr byte SYNTH_DRIVE_OFF = 0;
 constexpr byte SYNTH_DRIVE_WARM = 1;

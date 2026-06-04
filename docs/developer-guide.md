@@ -93,9 +93,9 @@ preset saves and Serum wavetable imports use an ACKed write path through
 editor reads the current runtime synth patch from handle `0x3FFF` before
 enabling live sends, and preset open sends an apply-only preview immediately for
 auditioning. The editor mirrors firmware synth-mode, portamento, arpeggiator
-speed/direction, tempo, wavetable-position, morph, and LFO controls for synth
-preset schema `5`. The
-editor keeps opened presets as temporary drafts;
+speed/direction, tempo, named wavetable dependency, wavetable position, morph,
+and LFO controls for synth preset schema `6`, and splits the synth library into
+`Presets` and `Wavetables` views. The editor keeps opened presets as temporary drafts;
 save actions assign a fresh object id for a
 unique folder/name and only reuse an existing object id after the user confirms
 an overwrite for that same folder/name. HexBoard Library refresh uses object-list
@@ -192,7 +192,7 @@ The main firmware files are:
 - `src/firmware/midi_delegated_notes.cpp`: USB/serial MIDI, MPE, played-note tracking, external MIDI input, and delegated-control SysEx
 - `src/firmware/synth_audio.cpp`: synth, oscillator, envelope, arpeggiator, metronome, PWM, and DMA audio
 - `src/firmware/led_animation.cpp`: LED animation system
-- `src/firmware/settings_persistence_preset_sync.cpp`: pitch assignment, settings/profile persistence, synth presets, user wavetable persistence, and preset sync
+- `src/firmware/settings_persistence_preset_sync.cpp`: pitch assignment, settings/profile persistence, synth presets, named wavetable persistence, legacy user wavetable loading, and preset sync
 - `src/firmware/oled_menu.cpp`: OLED, played-note overlay drawing, GEM menu definitions, callbacks, and runtime settings sync
 - `src/firmware/runtime.cpp`: `hexboardSetup()`, `hexboardLoop()`, `hexboardSetup1()`, and `hexboardLoop1()`
 
@@ -380,8 +380,8 @@ Important implementation details:
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - Core 0 retries synth release commands until the audio renderer consumes one; the renderer clears the retry state when it accepts `StartRelease` so long releases do not repeatedly restart
-- synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `8`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters only and do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, and version `7` records migrate by appending wavetable position and LFO defaults
-- the imported synth user wavetable is stored separately in `/user_wavetable.dat` with magic `UWT`, version `1`, frame/sample dimensions, CRC32, and `32 * 512` unsigned waveform bytes; synth presets only reference it through `Waveform = UserTbl`
+- synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `9`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters plus a wavetable folder/name dependency, but do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving the new wavetable dependency from the legacy `Waveform` byte
+- user synth wavetables are stored as a named catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `64` entries, and per-table sample files named from each `16`-byte wavetable object id; each table sample file contains `32 * 512` unsigned waveform bytes. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
@@ -478,34 +478,40 @@ RAM-resident helpers. Table-backed waveform source cycles live in
 the preallocated `activeSynthWaveTable` RAM buffer used by the audio renderer.
 The vibrato sine lookup remains a separate RAM table because the renderer reads
 it directly.
-Imported MP waveform IDs, `BasicTb`, and `UserTbl` are appended after the
-original IDs so existing saved profiles keep their current `Waveform` values.
+The legacy `Waveform` byte remains in settings and preset value lists for
+compatibility, but the visible synth source selector is now a named wavetable
+reference. Built-in compatibility tables group old single-cycle waves into
+`Basic`, `Classic`, `Edge`, `Glass`, `Digital`, and `Motion`; old preset loading
+derives the table and `SynthWavetablePosition` anchor from the legacy waveform
+value. `Hybrid` intentionally maps to `Basic` at position `0`.
 
-`BasicTb` is the first generated wavetable: firmware builds `32` frames by
-interpolating sine, triangle, saw, and square anchors into
-`activeSynthWaveTable`. The sampler runs in the normal synth modes, interpolates
-adjacent frames from `SynthWavetablePosition` plus signed `WT Pos` modulation,
-and uses direct phase lookup to keep renderer cost bounded. The selected wavetable
-also rebuilds a RAM `WT Pos` lookup table so the audio renderer maps `0..127`
-position amounts to frame positions without a per-voice divide. Modulation work
-runs on an `8`-sample control quantum: wheel smoothing, LFO sampling, FX
-envelope state, pitch modulation, vibrato depth, morph depth/scale, and
-wavetable frame contexts are cached there, with note start/release/reset forcing
-an immediate per-voice cache refresh. Oscillator phase advance, morph phase
-warping, waveform reads, amp-envelope level, mixing, drive, and output scaling
-remain audio-rate. When only global sources such as the wheel or LFO modulate
-`WT Pos`, the cached frame-pair read context is shared by all voices; when an FX
-envelope targets `WT Pos`, each voice caches its own frame context. FX-envelope
-modulation depth uses a `128 x 128` RAM scale table, and FX envelopes advance by
-the full `8` audio ticks on each control refresh so long envelope timing stays
-aligned while worst-case blocks avoid rebuilding modulation every sample.
+All active tables use the same RAM path: firmware builds or loads `32` frames of
+`512` samples into `activeSynthWaveTable`. The sampler runs in the normal synth
+modes, interpolates adjacent frames from `SynthWavetablePosition` plus signed
+`WT Pos` modulation, and uses direct phase lookup to keep renderer cost bounded.
+The selected wavetable also rebuilds a RAM `WT Pos` lookup table so the audio
+renderer maps `0..127` position amounts to frame positions without a per-voice
+divide. Modulation work runs on an `8`-sample control quantum: wheel smoothing,
+LFO sampling, FX envelope state, pitch modulation, vibrato depth, morph
+depth/scale, and wavetable frame contexts are cached there, with note
+start/release/reset forcing an immediate per-voice cache refresh. Oscillator
+phase advance, morph phase warping, waveform reads, amp-envelope level, mixing,
+drive, and output scaling remain audio-rate. When only global sources such as
+the wheel or LFO modulate `WT Pos`, the cached frame-pair read context is shared
+by all voices; when an FX envelope targets `WT Pos`, each voice caches its own
+frame context. FX-envelope modulation depth uses a `128 x 128` RAM scale table,
+and FX envelopes advance by the full `8` audio ticks on each control refresh so
+long envelope timing stays aligned while worst-case blocks avoid rebuilding
+modulation every sample.
 
-`UserTbl` is a single persisted user wavetable loaded from `/user_wavetable.dat`.
-The file has a `UWT` header with version, frame count, sample count, and CRC32,
-then `32 * 512` unsigned waveform bytes. Preset-sync object type `0x0B`
-validates the same dimensions before copying the table into
-`activeSynthWaveTable` and optionally writing the file through the flash-safe
-mute wrapper.
+New user wavetables are saved through the named wavetable catalog. Presets store
+only the wavetable folder/name dependency, so a missing dependency falls back to
+`Basic` until a matching table is installed. The old `/user_wavetable.dat` file
+has a `UWT` header with version, frame count, sample count, and CRC32, then
+`32 * 512` unsigned waveform bytes; it is still loadable as `/User/UserTbl` for
+compatibility. Preset-sync object type `0x0B` validates the same dimensions
+before copying the table into `activeSynthWaveTable` and optionally writing the
+named catalog entry through the flash-safe mute wrapper.
 
 Pitch bend and wheel morph modulation have synth-local smoothing separate from
 MIDI output. `setSynthFreq()` writes a target oscillator increment for held

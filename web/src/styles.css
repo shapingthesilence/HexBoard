@@ -38,10 +38,16 @@ button:hover {
 }
 
 button.primary,
+button.active,
 .tabs button.active {
   background: #176b5b;
   border-color: #176b5b;
   color: #ffffff;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 button.warning {

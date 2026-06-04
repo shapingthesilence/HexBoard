@@ -12,7 +12,7 @@ HexBoard is a hexagonal MIDI controller and standalone synth. The firmware uses 
 
 The repository now also contains an isolated `web/` companion app scaffold. It
 is used to develop preset-sync workflows against the SysEx protocol. Firmware
-currently supports the synth preset subset plus the single user-wavetable write
+currently supports the synth preset subset plus named synth-wavetable write/read
 object; the remaining object classes are still web/mock-side scaffolding.
 
 The runtime model is:
@@ -334,7 +334,7 @@ or transposition changes, and generated layout menu controls should be hidden
 when a manual layout is active.
 Real-device synth preset saves and Serum wavetable imports wait for ACK/NACK
 responses through `WRITE_COMMIT`; library refresh requests list synth preset
-records one at a time before reading each object body. The compact header device
+and wavetable records one at a time before reading each object body. The compact header device
 menu probes Web MIDI input/output pairs with `HELLO_REQ`, accepts only
 compatible `HELLO_RESP` metadata, auto-connects when one HexBoard responds, and
 shows a device selector only for multiple compatible HexBoards. If an object body read fails, the web
@@ -469,8 +469,8 @@ Key implementation facts:
   into `activeSynthWaveTable`. The source cycles live outside the hot audio data
   path; the small vibrato sine table remains RAM-resident because the renderer
   reads it directly.
-- `WAVEFORM_BASIC_WAVETABLE` builds a `32`-frame RAM wavetable from generated
-  sine, triangle, saw, and square anchors. Wavetable sampling runs in the normal
+- Built-in compatibility wavetables and named user wavetables both load into a
+  single `32`-frame active RAM buffer. Wavetable sampling runs in the normal
   synth modes, uses `SynthWavetablePosition` plus signed `WT Pos` modulation as
   frame position, and linearly interpolates adjacent frames. Firmware rebuilds a
   RAM lookup table when the active frame count changes so the audio renderer can map
@@ -533,9 +533,11 @@ The LED current-limit calibration changed without a settings-version bump becaus
 
 The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
 
-The `Waveform` setting remains one persisted byte. The imported MP single-cycle
-waveforms and `BasicTb` wavetable extended the valid value range without
-changing the settings layout.
+The `Waveform` setting remains one persisted byte for settings/preset
+compatibility, but the visible synth source selector uses a wavetable
+folder/name reference. Old waveform values are mapped to built-in compatibility
+tables and a matching `SynthWavetablePosition` anchor; `Hybrid` maps to `Basic`
+at position `0`. Missing named wavetable dependencies fall back to `Basic`.
 
 The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `Morph` is the default wheel effect and applies one shared phase-warp helper across the onboard waveforms. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount through RAM-tagged fixed Q16 ratio tables so full positive depth raises each active voice by about `+48` semitones and full negative depth lowers it by about `-48` semitones.
 
@@ -555,11 +557,14 @@ restart their release stage.
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
-Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `8`, CRC32, and a counted catalog capped at `128` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app live preview applies a transferred synth preset to runtime without marking settings dirty, while save requests update `/synth_presets.dat`. The on-device save/load menus are rebuilt from the catalog as folder submenus; preset items inside those folders display only the preset name. Folder path separators are still `/`, but the firmware decodes `%2F`, `%5C`, and `%25` in menu labels so web-app folder names can contain literal slash, backslash, or percent characters. Rebuilds are requested from save/delete paths and serviced from the main loop after GEM input handling, with owned menu items removed from their parent pages before deletion. The load menu has a `Blank` item. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending `SynthPortamentoTimeIndex` and `ArpeggiatorDirection` defaults, and version `7` records migrate by appending wavetable position and LFO defaults before being rewritten.
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `9`, CRC32, and a counted catalog capped at `128` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, wavetable name/folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings and the wavetable reference into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app live preview applies a transferred synth preset to runtime without marking settings dirty, while save requests update `/synth_presets.dat`. The on-device save/load menus are rebuilt from the catalog as folder submenus; preset items inside those folders display only the preset name. Folder path separators are still `/`, but the firmware decodes `%2F`, `%5C`, and `%25` in menu labels so web-app folder names can contain literal slash, backslash, or percent characters. Rebuilds are requested from save/delete paths and serviced from the main loop after GEM input handling, with owned menu items removed from their parent pages before deletion. The load menu has a `Blank` item. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending `SynthPortamentoTimeIndex` and `ArpeggiatorDirection` defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving wavetable name/folder fields from the old `Waveform` value before being rewritten.
 
-The imported user wavetable is not part of the synth preset schema. Presets only
-store `Waveform = UserTbl`; the `32 x 512` table data is transferred as
-preset-sync object type `0x0B` and saved in `/user_wavetable.dat`.
+Named user wavetables are stored in `/synth_wavetables.dat` with magic `SYW`,
+version `1`, CRC32, and a counted catalog capped at `64` entries. Each entry has
+a valid flag, stable `16`-byte object id, name, folder path, and a sample-file
+path generated from the object id. The sample file contains `32 x 512`
+unsigned-byte samples. The legacy `/user_wavetable.dat` `UWT` file is still
+loadable only through the compatibility reference `/User/UserTbl`.
 
 The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator; `ArpeggiatorDivision` sets rhythmic subdivision and `ArpeggiatorDirection` selects `Up`, `Down`, `Played`, `RevPlay`, `UpDown`, `DownUp`, or `Random`. The metronome runs its beat scheduler on core 0 and feeds the beep mode into the RAM-resident audio renderer through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 

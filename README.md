@@ -147,23 +147,25 @@ The web app currently includes:
 - preset-sync SysEx frame helpers
 - CRC32 and 8-to-7 packing utilities
 - TLV encoders for user tunings, layouts, scale color maps, explicit button
-  maps, and named/foldered synth presets
+  maps, named/foldered synth presets, and named/foldered synth wavetables
 - a browser-stored tuning/layout bundle editor with an interactive HexBoard
   preview, EDO/equal-step/Scala `.scl` tuning inputs, across/up-right vector
   layouts, four-step device orientation preview matching firmware `Device Rot`,
   scale-degree colors, and per-button role/color overrides
 - firmware-backed synth preset upload, download, list, erase, current-patch
   loading, and live preview, with controls for mono retrigger/legato,
-  portamento, and arpeggiator direction; opened presets are treated as temporary
-  drafts and real-device flash saves are ACK-confirmed
-- Serum `.wav` wavetable import for the synth editor; the web app crunches
-  imported tables to the firmware's `32 x 512` byte format and sends them to the
-  persisted `UserTbl` wavetable slot over ACKed preset-sync SysEx
+  portamento, arpeggiator direction, and named wavetable dependencies; opened
+  presets are treated as temporary drafts and real-device flash saves are
+  ACK-confirmed
+- firmware-backed synth wavetable upload, download, list, erase, and Serum
+  `.wav` import; the web app crunches imported tables to the firmware's
+  `32 x 512` byte format, stores them by folder/name, and sends them over
+  ACKed preset-sync SysEx
 - a compact header device menu that uses preset-sync `HELLO_RESP` to discover a
   compatible HexBoard and only shows a device selector when multiple HexBoards
   respond
-- React views for profile sync, tuning/layout editing, and synth preset
-  organization
+- React views for profile sync, tuning/layout editing, and synth preset/
+  wavetable organization
 
 Install and run it from `web/`:
 

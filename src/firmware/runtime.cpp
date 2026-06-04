@@ -43,6 +43,7 @@ void hexboardSetup() {
   detectHardwareVersion();
   load_settings();
   load_synth_presets();
+  load_synth_wavetables();
   setupLEDs();
   setupGFX();
   setupRotary();
@@ -76,6 +77,7 @@ void hexboardLoop() {        // run on first core
   }
   dealWithRotary();  // deal with menu
   serviceSynthPresetMenuRebuild();
+  serviceSynthWavetableMenuRebuild();
   drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   checkAndAutoSave();  // save settings
 }

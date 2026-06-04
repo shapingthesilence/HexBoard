@@ -845,11 +845,14 @@ byte activeSynthWaveTable[SYNTH_WAVETABLE_FRAME_COUNT][SYNTH_WAVE_SAMPLE_COUNT] 
 byte synthVibratoSine[SYNTH_WAVE_SAMPLE_COUNT] = {};
 volatile bool synthWaveTableLoadInProgress = false;
 byte loadedSynthWaveform = 255;
+char loadedSynthWavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = {};
+char loadedSynthWavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
 volatile uint8_t activeSynthWaveFrameCount = 1;
 uint16_t synthWavetableFramePositionByAmount[128] = {};
 uint16_t synthMorphPhaseWarpScaleByDepth[128] = {};
 uint8_t synthFxModScaleByDepth[128][128] = {};
 bool userSynthWavetableAvailable = false;
+void setActiveSynthWaveFrameCount(uint8_t frameCount);
 /*
     The sine wavetable benefits the most from
     interpolation because it has the fewest
@@ -1752,6 +1755,172 @@ const byte* synthWaveformSource(byte waveform) {
   }
 }
 
+struct BuiltinSynthWavetableDefinition {
+  const char* name;
+  const char* folderPath;
+  byte waveforms[4];
+  uint8_t waveformCount;
+};
+
+constexpr BuiltinSynthWavetableDefinition builtinSynthWavetables[] = {
+  { "Basic", SYNTH_WAVETABLE_BUILTIN_FOLDER,
+    { WAVEFORM_SINE, WAVEFORM_TRIANGLE, WAVEFORM_SAW, WAVEFORM_SQUARE }, 4 },
+  { "Classic", SYNTH_WAVETABLE_BUILTIN_FOLDER,
+    { WAVEFORM_STRINGS, WAVEFORM_CLARINET }, 2 },
+  { "Edge", SYNTH_WAVETABLE_BUILTIN_FOLDER,
+    { WAVEFORM_MP_BOX_SAW, WAVEFORM_MP_FRIENDLY_SQUARE, WAVEFORM_MP_SYNC_THE_TITANIC, WAVEFORM_MP_WEIRD_WIZARD }, 4 },
+  { "Glass", SYNTH_WAVETABLE_BUILTIN_FOLDER,
+    { WAVEFORM_MP_GLASSY, WAVEFORM_MP_OVAL, WAVEFORM_MP_PRETTY_SHAPE, WAVEFORM_MP_ROUNDED_TRIANGLE }, 4 },
+  { "Digital", SYNTH_WAVETABLE_BUILTIN_FOLDER,
+    { WAVEFORM_MP_KOOLAID, WAVEFORM_MP_MERV, WAVEFORM_MP_M_BELLISH, WAVEFORM_MP_QUICK_808 }, 4 },
+  { "Motion", SYNTH_WAVETABLE_BUILTIN_FOLDER,
+    { WAVEFORM_MP, WAVEFORM_MP_RICH_REPEATER, WAVEFORM_MP_STARDEW, WAVEFORM_MP_WOO }, 4 }
+};
+
+constexpr size_t SYNTH_BUILTIN_WAVETABLE_COUNT =
+  sizeof(builtinSynthWavetables) / sizeof(builtinSynthWavetables[0]);
+
+size_t synthBuiltinWavetableCount() {
+  return SYNTH_BUILTIN_WAVETABLE_COUNT;
+}
+
+const BuiltinSynthWavetableDefinition* synthBuiltinWavetableAt(size_t index) {
+  if (index >= SYNTH_BUILTIN_WAVETABLE_COUNT) {
+    return nullptr;
+  }
+  return &builtinSynthWavetables[index];
+}
+
+int findBuiltinSynthWavetable(const char* folderPath, const char* name) {
+  for (size_t i = 0; i < SYNTH_BUILTIN_WAVETABLE_COUNT; ++i) {
+    const BuiltinSynthWavetableDefinition& table = builtinSynthWavetables[i];
+    if (strcmp(table.folderPath, folderPath) == 0 && strcmp(table.name, name) == 0) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+uint8_t compatibilityWavetablePositionForAnchor(uint8_t anchorIndex, uint8_t anchorCount) {
+  if (anchorCount <= 1) {
+    return 0;
+  }
+  return static_cast<uint8_t>(
+    (static_cast<uint16_t>(anchorIndex) * 127u + ((anchorCount - 1u) / 2u)) / (anchorCount - 1u)
+  );
+}
+
+uint8_t readCompatibilityWaveformSample(byte waveform, uint16_t sampleIndex) {
+  const byte* source = synthWaveformSource(waveform);
+  if (source) {
+    return source[sampleIndex];
+  }
+
+  uint16_t phase = synthWavePhaseFromSampleIndex(sampleIndex);
+  switch (waveform) {
+    case WAVEFORM_TRIANGLE:
+      return sample16ToWaveByte(readTriangleWaveSample(phase));
+    case WAVEFORM_SAW:
+      return sample16ToWaveByte(static_cast<uint16_t>(phase + 32768u));
+    case WAVEFORM_SQUARE:
+      return sample16ToWaveByte(readSquareWaveSample(phase));
+    case WAVEFORM_HYBRID:
+    case WAVEFORM_SINE:
+    default:
+      return waveSineSource[sampleIndex];
+  }
+}
+
+void generateCompatibilitySynthWavetable(const BuiltinSynthWavetableDefinition& table) {
+  const uint8_t anchorCount = std::max<uint8_t>(1, table.waveformCount);
+  const uint16_t lastAnchorPosition = static_cast<uint16_t>(anchorCount - 1) << 8;
+  for (uint8_t frameIndex = 0; frameIndex < SYNTH_WAVETABLE_FRAME_COUNT; ++frameIndex) {
+    if (anchorCount == 1 || frameIndex == SYNTH_WAVETABLE_LAST_FRAME) {
+      byte waveform = table.waveforms[anchorCount - 1];
+      for (uint16_t sampleIndex = 0; sampleIndex < SYNTH_WAVE_SAMPLE_COUNT; ++sampleIndex) {
+        activeSynthWaveTable[frameIndex][sampleIndex] = readCompatibilityWaveformSample(waveform, sampleIndex);
+      }
+      continue;
+    }
+
+    uint16_t anchorPosition = static_cast<uint16_t>(
+      (static_cast<uint32_t>(frameIndex) * lastAnchorPosition) / SYNTH_WAVETABLE_LAST_FRAME
+    );
+    uint8_t anchorA = static_cast<uint8_t>(anchorPosition >> 8);
+    uint8_t frameFrac = static_cast<uint8_t>(anchorPosition & 0xFF);
+    uint8_t anchorB = static_cast<uint8_t>(std::min<uint8_t>(anchorA + 1, anchorCount - 1));
+    for (uint16_t sampleIndex = 0; sampleIndex < SYNTH_WAVE_SAMPLE_COUNT; ++sampleIndex) {
+      uint8_t sampleA = readCompatibilityWaveformSample(table.waveforms[anchorA], sampleIndex);
+      uint8_t sampleB = readCompatibilityWaveformSample(table.waveforms[anchorB], sampleIndex);
+      int16_t delta = static_cast<int16_t>(sampleB) - static_cast<int16_t>(sampleA);
+      activeSynthWaveTable[frameIndex][sampleIndex] =
+        static_cast<uint8_t>(static_cast<int16_t>(sampleA) + ((delta * static_cast<int16_t>(frameFrac)) >> 8));
+    }
+  }
+  setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
+}
+
+void setCurrentSynthWavetableReference(const char* folderPath, const char* name) {
+  snprintf(currentSynthWavetableFolderPath,
+           sizeof(currentSynthWavetableFolderPath),
+           "%s",
+           folderPath && folderPath[0] ? folderPath : SYNTH_WAVETABLE_ROOT_FOLDER);
+  snprintf(currentSynthWavetableName,
+           sizeof(currentSynthWavetableName),
+           "%s",
+           name && name[0] ? name : SYNTH_WAVETABLE_BASIC_NAME);
+  currentSynthWavetableReferenceValid = true;
+}
+
+bool legacyWaveformCompatibilityReference(byte waveform,
+                                          const char*& folderPath,
+                                          const char*& name,
+                                          uint8_t& position) {
+  for (const BuiltinSynthWavetableDefinition& table : builtinSynthWavetables) {
+    for (uint8_t anchorIndex = 0; anchorIndex < table.waveformCount; ++anchorIndex) {
+      if (table.waveforms[anchorIndex] == waveform) {
+        folderPath = table.folderPath;
+        name = table.name;
+        position = compatibilityWavetablePositionForAnchor(anchorIndex, table.waveformCount);
+        return true;
+      }
+    }
+  }
+
+  if (waveform == WAVEFORM_BASIC_WAVETABLE) {
+    folderPath = SYNTH_WAVETABLE_BUILTIN_FOLDER;
+    name = SYNTH_WAVETABLE_BASIC_NAME;
+    position = synthWavetablePosition;
+    return true;
+  }
+  if (waveform == WAVEFORM_USER_WAVETABLE) {
+    folderPath = "/User";
+    name = "UserTbl";
+    position = synthWavetablePosition;
+    return true;
+  }
+
+  folderPath = SYNTH_WAVETABLE_BUILTIN_FOLDER;
+  name = SYNTH_WAVETABLE_BASIC_NAME;
+  position = 0;
+  return false;
+}
+
+void selectCompatibilitySynthWavetableForLegacyWaveform(byte waveform, bool updatePosition) {
+  const char* folderPath = SYNTH_WAVETABLE_BUILTIN_FOLDER;
+  const char* name = SYNTH_WAVETABLE_BASIC_NAME;
+  uint8_t position = synthWavetablePosition;
+  legacyWaveformCompatibilityReference(waveform, folderPath, name, position);
+  setCurrentSynthWavetableReference(folderPath, name);
+  if (updatePosition) {
+    synthWavetablePosition = position;
+  }
+}
+
+void selectFallbackSynthWavetable() {
+  setCurrentSynthWavetableReference(SYNTH_WAVETABLE_BUILTIN_FOLDER, SYNTH_WAVETABLE_BASIC_NAME);
+}
+
 uint8_t readBasicWavetableAnchorSample(uint8_t anchor, uint16_t sampleIndex) {
   uint16_t phase = synthWavePhaseFromSampleIndex(sampleIndex);
   switch (anchor) {
@@ -1868,37 +2037,51 @@ void initializeSynthWaveTables() {
   setActiveSynthWaveFrameCount(1);
   resetSynthRenderCaches();
   loadedSynthWaveform = 255;
+  loadedSynthWavetableName[0] = '\0';
+  loadedSynthWavetableFolderPath[0] = '\0';
 }
 
-void loadSelectedSynthWaveform() {
-  if (!isValidSynthWaveform(currWave)) {
-    currWave = WAVEFORM_HYBRID;
+void loadSelectedSynthWavetable() {
+  if (!currentSynthWavetableReferenceValid) {
+    selectCompatibilitySynthWavetableForLegacyWaveform(currWave, false);
   }
-  if (loadedSynthWaveform == currWave) {
+  if (strncmp(loadedSynthWavetableName, currentSynthWavetableName, sizeof(loadedSynthWavetableName)) == 0
+      && strncmp(loadedSynthWavetableFolderPath, currentSynthWavetableFolderPath, sizeof(loadedSynthWavetableFolderPath)) == 0) {
     return;
   }
 
   synthWaveTableLoadInProgress = true;
-  if (currWave == WAVEFORM_BASIC_WAVETABLE) {
-    generateBasicSynthWavetable();
-    setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
-  } else if (currWave == WAVEFORM_USER_WAVETABLE) {
-    if (!loadUserSynthWavetableFromFile()) {
-      loadFallbackUserSynthWavetable();
-      setActiveSynthWaveFrameCount(1);
-    }
+  bool loaded = false;
+  int builtinIndex = findBuiltinSynthWavetable(currentSynthWavetableFolderPath, currentSynthWavetableName);
+  if (builtinIndex >= 0) {
+    generateCompatibilitySynthWavetable(builtinSynthWavetables[builtinIndex]);
+    loaded = true;
+  } else if (loadSynthWavetableFromCatalog(currentSynthWavetableFolderPath, currentSynthWavetableName)) {
+    loaded = true;
+  } else if (strcmp(currentSynthWavetableFolderPath, "/User") == 0
+             && strcmp(currentSynthWavetableName, "UserTbl") == 0
+             && loadUserSynthWavetableFromFile()) {
+    loaded = true;
   } else {
-    const byte* source = synthWaveformSource(currWave);
-    if (source) {
-      memcpy(activeSynthWaveTable[0], source, SYNTH_WAVE_SAMPLE_COUNT);
-    } else {
-      fillGeneratedWaveFrame(currWave, 0);
-    }
-    setActiveSynthWaveFrameCount(1);
+    selectFallbackSynthWavetable();
+    generateCompatibilitySynthWavetable(builtinSynthWavetables[0]);
+    loaded = true;
+  }
+
+  if (loaded) {
+    currWave = WAVEFORM_BASIC_WAVETABLE;
+    snprintf(loadedSynthWavetableName, sizeof(loadedSynthWavetableName), "%s", currentSynthWavetableName);
+    snprintf(loadedSynthWavetableFolderPath, sizeof(loadedSynthWavetableFolderPath), "%s", currentSynthWavetableFolderPath);
   }
   loadedSynthWaveform = currWave;
   resetSynthRenderCaches();
   synthWaveTableLoadInProgress = false;
+}
+
+void loadSelectedSynthWaveform() {
+  currentSynthWavetableReferenceValid = false;
+  selectCompatibilitySynthWavetableForLegacyWaveform(currWave, true);
+  loadSelectedSynthWavetable();
 }
 
 inline uint16_t RAM_FUNC(wavetableFramePositionFromAmount)(int16_t positionAmount) {

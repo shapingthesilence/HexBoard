@@ -165,7 +165,8 @@ Options include:
 - `Arp Speed` when `Arp'gio` is selected
 - `Arp Dir` when `Arp'gio` is selected
 - `Porta` when a mono mode is selected
-- `Waveform`
+- `WT: ...` current-wavetable label
+- `Wavetable`
 - `WT Pos`
 - `Drive`
 - `Wheel FX`
@@ -219,24 +220,24 @@ actual assigned note/frequency for `Up`, `Down`, `UpDown`, and `DownUp`; it can
 also follow `Played`, `RevPlay`, or `Random` order. `Played` means the order in
 which held notes were pressed, not the physical button numbers.
 
-`Waveform` is the basic tone color before the volume shape is applied:
+`WT: ...` shows the currently loaded wavetable. `Wavetable` opens a foldered
+load menu. Built-in compatibility tables include:
 
-- `Sine`: soft, round, clean
-- `Triangl`: mellow, but a little clearer than sine
-- `Square`: hollow, buzzy, game-like
-- `Saw`: bright, edgy, brassy
-- `Hybrid`: general-purpose default that changes character across pitch ranges
-- `Strings`: smoother, string-like color
-- `Clrinet`: reed-like, nasal color
-- `MP`, `BoxSaw`, `FrndSqr`, `Glassy`, `Koolaid`, `Merv`, `mBellsh`,
-  `Oval`, `PrttySh`, `Qck808`, `RichRpt`, `RndTri`, `Stardew`,
-  `SyncTtn`, `WrdWiz`, and `Woo`: imported MP single-cycle waveforms with
-  more specialized synth colors
-- `BasicTb`: a `32`-frame wavetable that moves from sine to triangle to saw to square
-- `UserTbl`: the single user-imported wavetable slot. The companion web app
-  imports Serum-style `.wav` wavetables, crunches them to `32` frames of `512`
-  samples, saves them to HexBoard as `/user_wavetable.dat`, and selects this
-  waveform for the current patch.
+- `Basic`: sine, triangle, saw, and square anchors
+- `Classic`: strings and clarinet anchors
+- `Edge`: bright or sync-like MP waves
+- `Glass`: smoother rounded or glassy MP waves
+- `Digital`: bellish or 808-like MP waves
+- `Motion`: MP waves with stronger movement
+
+Old presets that used the previous `Waveform` selector are migrated by choosing
+one of these tables and setting `WT Pos` to the matching anchor. The old
+`Hybrid` waveform now maps to `Basic` at `0%`.
+
+User-imported wavetables appear in the same foldered `Wavetable` menu after
+they are saved through the web app. If a preset references a wavetable that is
+not installed on the HexBoard, the synth loads `Basic` instead until a matching
+folder/name wavetable is added.
 
 `WT Pos` chooses the starting frame for wavetable waveforms. `0%` starts at the
 first frame and `100%` starts at the last frame. Modulation can add to or
@@ -326,17 +327,17 @@ Long `Release` leaves a tail after release.
 
 Use these as starting points, then adjust by ear.
 
-| Sound | Synth Mode | Waveform | Attack | Hold | Decay | Sustain | Release | Notes |
+| Sound | Synth Mode | Wavetable / WT Pos | Attack | Hold | Decay | Sustain | Release | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Plucky | `Poly` or `MonoRtg` | `Hybrid`, `Triangl`, or `Sine` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` or `10%` | `50 ms` to `200 ms` | Fast start, quick fade, little held level |
-| Smooth pad | `Poly` | `Sine`, `Triangl`, or `Strings` | `200 ms` to `1 s` | `0 ms` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
-| Lead | `MonoRtg` or `MonoLeg` | `Hybrid`, `Saw`, or `Square` | `0 ms` or `10 ms` | `0 ms` to `50 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Use `Porta` for glide or keep it at `0 ms` for immediate melodies |
-| Chime or bell | `Poly` | `Sine` or `Triangl` | `0 ms` or `5 ms` | `0 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
-| Arpeggio | `Arp'gio` | `Hybrid`, `Square`, or `Saw` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed`, `Arp Dir`, and `Tempo` for rhythm |
+| Plucky | `Poly` or `MonoRtg` | `Basic` around `0%` to `33%` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` or `10%` | `50 ms` to `200 ms` | Fast start, quick fade, little held level |
+| Smooth pad | `Poly` | `Basic` at `0%` or `Classic` at `0%` | `200 ms` to `1 s` | `0 ms` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
+| Lead | `MonoRtg` or `MonoLeg` | `Basic` around `67%` to `100%` | `0 ms` or `10 ms` | `0 ms` to `50 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Use `Porta` for glide or keep it at `0 ms` for immediate melodies |
+| Chime or bell | `Poly` | `Basic` at `0%` or `Digital` near `67%` | `0 ms` or `5 ms` | `0 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
+| Arpeggio | `Arp'gio` | `Basic` around `67%` or `Edge` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed`, `Arp Dir`, and `Tempo` for rhythm |
 
-For a sharper sound, use a brighter waveform such as `Saw`, `Square`, or
-`Hybrid`, and keep `Attack` short. For a smoother sound, use `Sine`,
-`Triangl`, or `Strings`, then increase `Attack` and `Release`.
+For a sharper sound, use `Basic` at a higher `WT Pos` or one of the `Edge`
+anchors, and keep `Attack` short. For a smoother sound, use `Basic` near `0%`
+or `Classic`, then increase `Attack` and `Release`.
 
 If a sound feels too clicky, raise `Attack` one step. If notes smear together,
 lower `Release`. If a pluck does not fade away enough, lower `Sustain` or lower
@@ -414,17 +415,25 @@ positions are meant to stay fixed when root note or transposition changes.
 Button roles can be marked as note, command, or unused in the exported web
 model, but firmware does not apply user layout bundles yet.
 
-The synth preset editor organizes presets by folder only. It includes preset
-name and folder selection, a new-folder control, Drive and AHDSR sliders, FX
-envelope AHDSR controls, mono portamento, arpeggiator direction/speed/tempo,
-and other main synth parameter controls. The synth
-library has a `Computer Library` for browser-saved/imported preset files and a
-`HexBoard Library` loaded from the connected device through SysEx. Presets can
-be opened, erased, exported as JSON files, imported from JSON files, uploaded to
-HexBoard, downloaded back to the computer library, refreshed from the device,
-and dragged between library areas or into folder targets. Folder buttons filter
-each library area; clicking the active folder again clears the filter and shows
-all presets in that area.
+The synth preset editor includes preset name/folder selection, a wavetable
+folder/name selector, Drive and AHDSR sliders, FX envelope AHDSR controls, mono
+portamento, arpeggiator direction/speed/tempo, and other main synth parameter
+controls. The synth library has a top selector for `Presets` and `Wavetables`.
+Both views have a `Computer Library` for browser-saved/imported items and a
+`HexBoard Library` loaded from the connected device through SysEx.
+
+In `Presets`, items can be opened, erased, exported as JSON files, imported
+from JSON files, uploaded to HexBoard, downloaded back to the computer library,
+refreshed from the device, and dragged between library areas or into folder
+targets. Folder buttons filter each library area; clicking the active folder
+again clears the filter and shows all presets in that area.
+
+In `Wavetables`, imported or downloaded tables can be uploaded to HexBoard,
+downloaded to the computer library, exported as JSON files with their crunched
+sample data, erased, or selected with `Use` for the open preset. Presets store
+the wavetable folder/name rather than a private copy of the wavetable data, so
+a shared preset that needs a third-party table will work once a wavetable with
+the same folder and name is installed on the HexBoard.
 
 When the Synth Presets tab opens with a HexBoard input connected, the editor
 requests the current HexBoard synth patch instead of sending one of the browser
@@ -438,13 +447,11 @@ the app asks before overwriting that preset. Device saves wait for the HexBoard
 to acknowledge the write through the flash commit before the app refreshes the
 `HexBoard Library`.
 
-`Import Serum WT` accepts a Serum-style `.wav` wavetable in the synth preset
-editor. The web app reads the source frames, renders the table down to the
-firmware's `32 x 512` byte format, sends it to the connected HexBoard with
-apply-and-save flags, and changes the editor waveform to `User Wavetable`.
-The imported table is one shared device slot, not a named preset-library item;
-saving a preset that uses it stores `Waveform = UserTbl`, while the table data
-itself lives in the device user-wavetable file.
+`Import Serum WT` is in the `Wavetables` library view. It accepts a Serum-style
+`.wav` wavetable, reads the source frames, renders the table down to the
+firmware's `32 x 512` byte format, saves it by the selected name/folder in the
+browser wavetable library, uploads it to HexBoard, and points the open preset at
+that wavetable with `WT Pos = 0`.
 
 The app requires a Web MIDI SysEx-capable browser such as Chrome or Edge running
 from `localhost` or HTTPS. Use `Connect HexBoard` in the top bar; the app sends
@@ -567,7 +574,8 @@ Important factory defaults include:
 - MIDI channel: `1`
 - MPE mode: `Auto`
 - Synth: `Poly`
-- Waveform: `Hybrid`
+- Wavetable: `Basic`
+- WT Pos: `0%`
 - Drive: `Off`
 - Wheel FX: `Morph`
 - Wheel Amt: `100%`
