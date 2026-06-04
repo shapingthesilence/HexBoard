@@ -155,6 +155,11 @@ screensaver state and `screenTime`, then restores them when it closes so SysEx
 traffic does not count as menu/display wake input.
 Device-to-host preset reads are ACK-paced: firmware sends `READ_BEGIN`, waits
 for the host ACK, then sends one `DATA_CHUNK` per ACK before `TRANSFER_END`.
+Live USB MIDI packet output has a much shorter retry window than SysEx stream
+output. If the USB host is connected but not polling, such as a sleeping or
+closed laptop that still supplies power, `writeUsbMidiPacket()` backs off after
+a failed short retry so button scanning, wheel handling, and onboard synth
+playback do not stall behind USB endpoint backpressure.
 
 Performance-sensitive firmware code can use the `RAM_FUNC(name)` wrapper to
 place selected functions in SRAM instead of external-flash XIP. Keep this
@@ -254,7 +259,7 @@ The firmware still uses a few dynamic containers in live paths:
 
 Treat these as known risk areas before adding more heap allocation to button scan, MIDI, LED, or ISR-adjacent paths.
 
-Normal-mode incoming MIDI uses `processIncomingMIDIInterface()` to drain currently available transport bytes per enabled interface. MIDI-in LED latency is handled by a short render coalescing window, not by limiting how many MIDI bytes are parsed per loop.
+Normal-mode incoming MIDI uses `processIncomingUsbMidi()` and `processIncomingSerialMidi()` to drain currently available transport bytes per enabled interface. MIDI-in LED latency is handled by a short render coalescing window, not by limiting how many MIDI bytes are parsed per loop.
 
 ## Physical Control Model
 

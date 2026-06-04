@@ -266,6 +266,13 @@ and serial by default through hardware setup. Incoming USB and serial MIDI share
 a HexBoard-owned byte parser for SysEx, running status, and NoteOn/NoteOff LED
 animation.
 
+Live USB MIDI channel messages use `writeUsbMidiPacket()`, which retries only
+briefly and then backs off if the host stops polling the USB MIDI endpoint. This
+keeps button scanning, command-wheel output, and onboard synth response from
+waiting behind a sleeping or closed computer that still reports as connected.
+SysEx stream output keeps the longer write timeout used by preset-sync and
+identity responses.
+
 The MIDI routing model includes:
 
 - normal single-channel MIDI

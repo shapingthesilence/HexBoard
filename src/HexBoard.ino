@@ -2876,6 +2876,8 @@ byte midiD = MIDID_USB | MIDID_SER;
 constexpr uint16_t MIDI_INPUT_DRAIN_BYTE_LIMIT = 512;
 constexpr uint32_t SERIAL_MIDI_BAUD = 31250;
 constexpr uint64_t USB_MIDI_WRITE_TIMEOUT_MICROS = 50000ULL;
+constexpr uint64_t USB_MIDI_PACKET_WRITE_TIMEOUT_MICROS = 2000ULL;
+constexpr uint64_t USB_MIDI_PACKET_STALL_BACKOFF_MICROS = 100000ULL;
 constexpr size_t MIDI_SYSEX_BUFFER_MAX = 4096;
 constexpr uint64_t PRESET_SYNC_TRANSFER_IDLE_MICROS = 250000ULL;
 constexpr uint64_t PRESET_SYNC_TRANSFER_TIMEOUT_MICROS = 3000000ULL;
@@ -2887,6 +2889,7 @@ uint64_t presetSyncTransferLastActivity = 0;
 uint64_t presetSyncTransferDeadline = 0;
 uint32_t presetSyncTransferFrameCount = 0;
 uint8_t presetSyncTransferLastMessage = 0;
+uint64_t usbMidiPacketBackoffUntil = 0;
 
 struct MidiInputParser {
   bool inSysEx = false;
@@ -2934,19 +2937,28 @@ size_t writeUsbMidiStream(const uint8_t* data, size_t length) {
 
 bool writeUsbMidiPacket(const uint8_t packet[4]) {
   if (!MidiUSB.connected()) {
+    usbMidiPacketBackoffUntil = 0;
     return false;
   }
 
-  uint64_t deadline = readClock() + USB_MIDI_WRITE_TIMEOUT_MICROS;
+  uint64_t now = readClock();
+  if (now < usbMidiPacketBackoffUntil) {
+    return false;
+  }
+
+  uint64_t deadline = now + USB_MIDI_PACKET_WRITE_TIMEOUT_MICROS;
   while (MidiUSB.connected()) {
     if (MidiUSB.writePacket(packet)) {
+      usbMidiPacketBackoffUntil = 0;
       return true;
     }
-    if (readClock() >= deadline) {
+    now = readClock();
+    if (now >= deadline) {
       break;
     }
     delayMicroseconds(100);
   }
+  usbMidiPacketBackoffUntil = readClock() + USB_MIDI_PACKET_STALL_BACKOFF_MICROS;
   return false;
 }
 

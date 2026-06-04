@@ -627,6 +627,10 @@ That is expected when you only changed color, brightness, or animation settings.
 
 That usually means the LED draw is too high for the current power source. Lower `Brightness`, lower `Rest Bright`, or (most importantly) set `LED Limit` in `Color Options` to a safer value such as `500 mA`, `1.0 A`, or the factory-default `1.5 A`.
 
+### The board feels laggy when plugged into a sleeping or closed computer
+
+If HexBoard is powered by a computer that is asleep, closed, or otherwise not actively reading its USB MIDI port, the firmware keeps local scanning and synth playback responsive by dropping live USB MIDI packets after a short retry and backing off before trying that endpoint again. Open the computer, connect to an active MIDI host, use a powered hub, or use a battery bank if you need stable USB power without a live MIDI receiver.
+
 ### A tuning change reshuffled everything
 
 That is expected. HexBoard resets layout, scale, and key to known-valid values when the tuning changes.
