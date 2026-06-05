@@ -168,7 +168,8 @@ of globals and about `120 KB` remaining for local variables, heap, and stacks.
 The `Advanced` page exposes a transient `ISR Profile` toggle backed by the
 audio profiling counters. Turning it on resets the counters and starts
 measurement. Turning it off stops profiling and logs `min/avg/max/count`
-block-render timing, render-overrun count, release-start count, piezo-scaling
+block-render timing, `cpu min/avg/max` percentages computed as render time over
+available block time, render-overrun count, release-start count, piezo-scaling
 block count, DMA underrun count, and the active voice count/flag context for the
 slowest captured block. Logs go through
 `sendToLog()`, so `Serial Debug` must be enabled to see the result.
@@ -478,14 +479,16 @@ Key implementation facts:
   RAM lookup table when the active frame count changes so the audio renderer can map
   `WT Pos` values to frame positions without dividing per voice. Modulation work
   runs on an `8`-sample control quantum: wheel smoothing, LFO sampling, FX
-  envelopes, pitch modulation, vibrato depth, morph depth/scale, and wavetable
-  frame contexts are cached per voice, with note start/release/reset forcing an
-  immediate cache refresh. Oscillator phase advance, amp-envelope level, morph
-  phase warp, waveform reads, mixing, drive, and output scaling remain
-  audio-rate. If only global sources modulate `WT Pos`, the cached frame-pair
-  read context is shared across active voices; if an FX envelope targets
-  `WT Pos`, each voice caches its own frame context. FX-envelope modulation depth
-  uses a `128 x 128` RAM scale table, and FX envelopes advance by the full `8`
+  envelopes, pitch modulation targets, vibrato depth targets, morph targets, and
+  wavetable frame contexts are cached per voice, with note start/release/reset
+  forcing an immediate cache refresh. Per-voice phase increment and morph depth
+  linearly slew between those cached targets at audio rate, while oscillator
+  phase advance, amp-envelope level, morph phase warp, waveform reads, mixing,
+  drive, and output scaling remain audio-rate. If only global sources modulate
+  `WT Pos`, the cached frame-pair read context is shared across active voices; if
+  an FX envelope targets `WT Pos`, each voice caches its own frame context.
+  FX-envelope modulation depth uses a `128 x 128` RAM scale table, and FX
+  envelopes advance by the full `8`
   audio ticks on each control refresh to preserve long envelope timing.
 - `WAVEFORM_USER_WAVETABLE` is the one imported wavetable slot. The web app sends
   object type `0x0B` with exactly `32 * 512` sample bytes; firmware validates the

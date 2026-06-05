@@ -27,6 +27,8 @@ volatile uint32_t isrProfileMinUs  = 0;
 volatile uint32_t isrProfileMaxUs  = 0;
 volatile uint32_t isrProfileAvgUs  = 0;
 volatile uint32_t isrProfileCount  = 0;
+volatile uint32_t isrCycleAvailableUs = 0;
+volatile uint32_t isrProfileAvailableUs = 0;
 volatile uint32_t isrCycleOverrunCount = 0;
 volatile uint32_t isrCycleReleaseStartCount = 0;
 volatile uint32_t isrCyclePiezoScaleCount = 0;
@@ -50,6 +52,7 @@ void captureAndResetISRProfile(bool resumeProfiling) {
   isrProfileMaxUs = isrCycleMax;
   isrProfileCount = isrCycleCount;
   isrProfileAvgUs = (isrProfileCount > 0) ? (uint32_t)(isrCycleSum / isrProfileCount) : 0;
+  isrProfileAvailableUs = isrCycleAvailableUs;
   isrProfileOverrunCount = isrCycleOverrunCount;
   isrProfileReleaseStartCount = isrCycleReleaseStartCount;
   isrProfilePiezoScaleCount = isrCyclePiezoScaleCount;
@@ -61,6 +64,7 @@ void captureAndResetISRProfile(bool resumeProfiling) {
   isrCycleMax = 0;
   isrCycleSum = 0;
   isrCycleCount = 0;
+  isrCycleAvailableUs = 0;
   isrCycleOverrunCount = 0;
   isrCycleReleaseStartCount = 0;
   isrCyclePiezoScaleCount = 0;
@@ -78,6 +82,15 @@ void readAndResetISRProfile() {
 void startISRProfileCapture() {
   captureAndResetISRProfile(true);
   sendToLog("ISR profile started.");
+}
+
+std::string formatProfileCpuPercent(uint32_t usedUs, uint32_t availableUs) {
+  if (availableUs == 0) {
+    return "n/a";
+  }
+  uint32_t tenths = static_cast<uint32_t>(
+    (static_cast<uint64_t>(usedUs) * 1000ull + (availableUs / 2u)) / availableUs);
+  return std::to_string(tenths / 10u) + "." + std::to_string(tenths % 10u) + "%";
 }
 
 void stopISRProfileCaptureAndLog() {
@@ -100,7 +113,10 @@ void stopISRProfileCaptureAndLog() {
     std::to_string(isrProfileMinUs) + "/" +
     std::to_string(isrProfileAvgUs) + "/" +
     std::to_string(isrProfileMaxUs) + " us, " +
-    std::to_string(isrProfileCount) + " blocks, overruns: " +
+    std::to_string(isrProfileCount) + " blocks, cpu min/avg/max: " +
+    formatProfileCpuPercent(isrProfileMinUs, isrProfileAvailableUs) + "/" +
+    formatProfileCpuPercent(isrProfileAvgUs, isrProfileAvailableUs) + "/" +
+    formatProfileCpuPercent(isrProfileMaxUs, isrProfileAvailableUs) + ", overruns: " +
     std::to_string(isrProfileOverrunCount) + ", release starts: " +
     std::to_string(isrProfileReleaseStartCount) + ", piezo blocks: " +
     std::to_string(isrProfilePiezoScaleCount) + ", max voices/flags: " +

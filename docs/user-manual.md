@@ -547,7 +547,7 @@ This page contains maintenance and system settings:
 `Boot Anim` controls the startup LED animation. Turn it off for the fastest,
 quietest visual boot.
 
-`ISR Profile` is a temporary diagnostic toggle and is not saved in profiles. To measure audio block timing, leave `Serial Debug` on, turn `ISR Profile` on, play the scenario you want to test, then turn `ISR Profile` off. HexBoard logs `min/avg/max/count` block-render timing, overrun count, DMA underrun count, and context for the slowest captured block.
+`ISR Profile` is a temporary diagnostic toggle and is not saved in profiles. To measure audio block timing, leave `Serial Debug` on, turn `ISR Profile` on, play the scenario you want to test, then turn `ISR Profile` off. HexBoard logs `min/avg/max/count` block-render timing, `cpu min/avg/max` as render time divided by available block time, overrun count, DMA underrun count, and context for the slowest captured block.
 
 `LED Test` is temporary and is not saved in profiles. Enter it and scroll through `Red`, `Green`, `Blue`, or `White` to light every LED immediately. Leaving the selector snaps it back to `Off` and restores the normal LED display. This is useful for diagnosing LED health or for *very* harsh mood lighting.
 

@@ -369,6 +369,7 @@ Important implementation details:
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
 - `PlaybackMode` defaults to `Poly`; valid values are `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, and `Poly`; legacy stored mono value `1` now means `MonoRtg`; legacy transient `PolyTbl` value `5` is normalized to `Poly`
 - onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `Morph` and `100%`; valid runtime targets are `Morph`, `Vibrato`, `Pitch`, and `WT Pos`; pitch target depth maps the signed `-127..127` runtime amount across about `+/-48` semitones; `Morph` applies one shared phase-warp path across waveforms, while `WT Pos` offsets wavetable frame position from the persisted `SynthWavetablePosition` base. `SynthWavetablePosition` remains a `0..127` byte internally, but the on-device menu labels it as frames `1..32` using rounded frame-anchor byte values.
+- synth modulation target calculation runs on an `8`-sample control quantum for CPU headroom; per-voice phase increment and morph depth then linearly slew between cached targets at audio rate to reduce pitch and morph stepping artifacts
 - the synth LFO is stored as `SynthLfoTarget`, `SynthLfoAmount`, `SynthLfoWave`, and `SynthLfoSpeed`; the LFO targets the same modulation destinations as the wheel and FX envelopes, uses a bipolar amount byte where `127` is off, supports sine/triangle/saw/square shapes, and uses a `20`-entry `0.05 Hz` through `20 Hz` speed table
 - onboard synth vibrato speed is stored as `SynthVibratoSpeed`; selectable values are `1 Hz` through `12 Hz`, with factory default `6 Hz`
 - mono portamento is stored as `SynthPortamentoTimeIndex`; it reuses the `0 ms` through `4 s` envelope time table and the menu hides `Porta` outside the two mono modes
@@ -514,14 +515,15 @@ modes, interpolates adjacent frames from `SynthWavetablePosition` plus signed
 The selected wavetable also rebuilds a RAM `WT Pos` lookup table so the audio
 renderer maps `0..127` position amounts to frame positions without a per-voice
 divide. Modulation work runs on an `8`-sample control quantum: wheel smoothing,
-LFO sampling, FX envelope state, pitch modulation, vibrato depth, morph
-depth/scale, and wavetable frame contexts are cached there, with note
-start/release/reset forcing an immediate per-voice cache refresh. Oscillator
-phase advance, morph phase warping, waveform reads, amp-envelope level, mixing,
-drive, and output scaling remain audio-rate. When only global sources such as
-the wheel or LFO modulate `WT Pos`, the cached frame-pair read context is shared
-by all voices; when an FX envelope targets `WT Pos`, each voice caches its own
-frame context. FX-envelope modulation depth uses a `128 x 128` RAM scale table,
+LFO sampling, FX envelope state, pitch/vibrato targets, morph targets, and
+wavetable frame contexts are cached there, with note start/release/reset forcing
+an immediate per-voice cache refresh. Per-voice phase increment and morph depth
+slew between cached targets at audio rate. Oscillator phase advance, morph phase
+warping, waveform reads, amp-envelope level, mixing, drive, and output scaling
+remain audio-rate. When only global sources such as the wheel or LFO modulate
+`WT Pos`, the cached frame-pair read context is shared by all voices; when an FX
+envelope targets `WT Pos`, each voice caches its own frame context.
+FX-envelope modulation depth uses a `128 x 128` RAM scale table,
 and FX envelopes advance by the full `8` audio ticks on each control refresh so
 long envelope timing stays aligned while worst-case blocks avoid rebuilding
 modulation every sample.
@@ -682,9 +684,10 @@ Those are good places to review closely before and after edits.
 
 - Turn on `Serial Debug` from the `Advanced` menu if you need runtime logs
 - Use `Advanced` -> `ISR Profile` to capture audio block timing. Turn it on
-  before the scenario, then turn it off to log `min/avg/max/count`, render
-  overrun count, DMA underrun count, and whether the slowest block coincided with
-  release-start or piezo-scaling math.
+  before the scenario, then turn it off to log `min/avg/max/count`,
+  `cpu min/avg/max` as render time divided by available block time, render
+  overrun count, DMA underrun count, and whether the slowest block coincided
+  with release-start or piezo-scaling math.
 - Search by section tag first, not by scrolling
 - Use `rg` on function names because the same concepts appear in many comments and menu strings
 - When a change "almost works", verify you called the correct recomputation function rather than assuming the math is wrong
