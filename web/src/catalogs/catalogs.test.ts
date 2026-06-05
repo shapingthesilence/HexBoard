@@ -9,6 +9,7 @@ import {
   createScaleColorMap,
   createSynthPresetObject,
   createSynthWavetableObject,
+  createSynthWavetableMetadataObject,
   createUserScale,
   createVectorLayout,
   crunchSerumWavetable,
@@ -210,6 +211,19 @@ Example scale
     expect(u8(recordValue(wavetable.body, SynthWavetableTlv.FrameCount))).toBe(32);
     expect(u16LE(recordValue(wavetable.body, SynthWavetableTlv.SampleCount))).toBe(512);
     expect(recordValue(wavetable.body, SynthWavetableTlv.Samples)).toHaveLength(SYNTH_WAVETABLE_SAMPLE_BYTES);
+  });
+
+  it("encodes wavetable metadata without sample data", () => {
+    const wavetable = createSynthWavetableMetadataObject({
+      objectId: deterministicObjectId("wavetable metadata"),
+      name: "Vowels",
+      folderPath: "Voice"
+    });
+    const decoded = decodeObjectBody(wavetable.body);
+
+    expect(decoded.objectType).toBe(ObjectType.SynthWavetable);
+    expect(textFromBytes(decoded.records.find((record) => record.tag === CommonTlv.Name)?.value ?? new Uint8Array())).toBe("Vowels");
+    expect(recordValue(wavetable.body, SynthWavetableTlv.Samples)).toHaveLength(0);
   });
 
   it("round trips HexBoard wavetable exports as hexwav WAV files", () => {

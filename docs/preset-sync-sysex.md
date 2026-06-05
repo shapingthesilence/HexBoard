@@ -980,7 +980,8 @@ entries. Presets reference wavetables by `SynthWavetableFolderPath` plus
 
 The object schema is `1.0`. The body uses the common `HBS1` object header and
 may include common metadata TLVs such as `Name`, `ObjectId`, `Source`, and
-`FolderPath`. Firmware validation requires these synth-wavetable TLVs:
+`FolderPath`. Sample-bearing wavetable imports require these synth-wavetable
+TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
@@ -1007,6 +1008,12 @@ sample files are skipped/pruned so failed earlier imports do not consume
 wavetable slots. The legacy `/user_wavetable.dat` `UWT` file is still loadable
 through the compatibility reference `/User/UserTbl`, but new imports do not
 write that file.
+
+For metadata-only rename/move updates, hosts write a `SynthWavetable` object
+body containing common `Name`, `ObjectId`, and `FolderPath` TLVs without the
+sample TLVs, using the existing device handle plus `SaveToFlash |
+OverwriteExisting`. Firmware updates only catalog metadata, rejects object-id
+changes, and leaves the sample file untouched.
 
 ## Bundle Object
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent 
 import {
   createSynthPresetObject,
   createSynthWavetableObject,
+  createSynthWavetableMetadataObject,
   crunchSerumWavetable,
   deterministicObjectId,
   encodeHexBoardWavetableWav,
@@ -755,6 +756,15 @@ function encodeEditableWavetable(wavetable: EditableSynthWavetable) {
   });
 }
 
+function encodeEditableWavetableMetadata(wavetable: EditableSynthWavetable) {
+  return createSynthWavetableMetadataObject({
+    objectId: objectIdFromHex(wavetable.objectIdHex),
+    name: normalizedWavetableName(wavetable.name),
+    folderPath: encodeDeviceFolderPath(wavetable.folderPath),
+    tags: ["wavetable"]
+  });
+}
+
 function exportWavetable(wavetable: EditableSynthWavetable) {
   return {
     objectId: wavetable.objectIdHex,
@@ -1282,8 +1292,30 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
   }
 
-  function downloadWavetableFromHexBoard(nextWavetable: EditableSynthWavetable) {
-    saveWavetableToComputer(nextWavetable, "Downloaded");
+  async function loadHexBoardWavetableSamples(nextWavetable: EditableSynthWavetable): Promise<EditableSynthWavetable> {
+    if (nextWavetable.samples) {
+      return nextWavetable;
+    }
+    if (transport instanceof MockMidiTransport || nextWavetable.deviceHandle === undefined) {
+      return nextWavetable;
+    }
+    setSyncStatus(`Reading ${nextWavetable.name} sample data from HexBoard...`);
+    const loaded = wavetableFromObjectBody(await client.readSynthWavetable(nextWavetable.deviceHandle), nextWavetable.deviceHandle);
+    setHexboardWavetables((current) => upsertWavetable(current, loaded));
+    return loaded;
+  }
+
+  async function downloadWavetableFromHexBoard(nextWavetable: EditableSynthWavetable) {
+    try {
+      const loaded = await loadHexBoardWavetableSamples(nextWavetable);
+      if (!loaded.samples) {
+        setSyncStatus(`${loaded.name} does not have sample data loaded for download`);
+        return;
+      }
+      saveWavetableToComputer(loaded, "Downloaded");
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Failed to download HexBoard wavetable");
+    }
   }
 
   function useWavetableAsPresetSource(nextWavetable: EditableSynthWavetable) {
@@ -1317,6 +1349,64 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     void client.deleteSynthWavetable(erasedWavetable.deviceHandle)
       .then(() => refreshHexBoardWavetables(`Erased ${erasedWavetable.name} from HexBoard Wavetables`))
       .catch((error) => setSyncStatus(error instanceof Error ? error.message : "Failed to erase HexBoard wavetable"));
+  }
+
+  async function editWavetable(space: LibrarySpace, editedWavetable: EditableSynthWavetable) {
+    const name = window.prompt("Wavetable name", editedWavetable.name);
+    if (name === null) {
+      setSyncStatus("Edit canceled");
+      return;
+    }
+    const folderPath = window.prompt("Wavetable folder", editedWavetable.folderPath);
+    if (folderPath === null) {
+      setSyncStatus("Edit canceled");
+      return;
+    }
+    const renamed = {
+      ...cloneWavetable(editedWavetable),
+      name: normalizedWavetableName(name),
+      folderPath: normalizeDisplayFolderPath(folderPath)
+    };
+
+    if (space === "computer") {
+      const duplicate = computerWavetables.find((candidate) =>
+        candidate.objectIdHex !== renamed.objectIdHex && wavetableSaveKey(candidate) === wavetableSaveKey(renamed)
+      );
+      if (duplicate && !confirmWavetableOverwrite("Computer Wavetables", duplicate)) {
+        setSyncStatus("Edit canceled");
+        return;
+      }
+      setComputerWavetables((current) => {
+        const withoutDuplicate = duplicate ? removeWavetable(current, duplicate.objectIdHex) : current;
+        return upsertWavetable(withoutDuplicate, renamed);
+      });
+      setCustomWavetableFolders((current) => Array.from(new Set([...current, renamed.folderPath])).sort());
+      setSyncStatus(`Updated ${renamed.name} in Computer Wavetables`);
+      return;
+    }
+
+    if (renamed.deviceHandle === undefined) {
+      setHexboardWavetables((current) => upsertWavetable(current, renamed));
+      setSyncStatus(`Updated ${renamed.name} in HexBoard Wavetables`);
+      return;
+    }
+
+    const duplicate = hexboardWavetables.find((candidate) =>
+      candidate.objectIdHex !== renamed.objectIdHex && wavetableSaveKey(candidate) === wavetableSaveKey(renamed)
+    );
+    if (duplicate) {
+      setSyncStatus(`Cannot rename: ${renamed.name} already exists in ${folderLabel(renamed.folderPath)} on HexBoard`);
+      return;
+    }
+
+    try {
+      const frames = await client.sendSynthWavetableMetadataUpdate(encodeEditableWavetableMetadata(renamed), renamed.deviceHandle);
+      setLastFrameCount(frames.length);
+      setCustomWavetableFolders((current) => Array.from(new Set([...current, renamed.folderPath])).sort());
+      await refreshHexBoardWavetables(`Updated ${renamed.name} in HexBoard Wavetables with ${frames.length} frame${frames.length === 1 ? "" : "s"}`);
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Failed to update HexBoard wavetable");
+    }
   }
 
   function downloadFromHexBoard(nextPreset: EditableSynthPreset) {
@@ -1364,21 +1454,28 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     setSyncStatus(`Exported ${nextPreset.name} as a preset file`);
   }
 
-  function downloadWavetableFile(nextWavetable: EditableSynthWavetable) {
-    if (!nextWavetable.samples) {
-      setSyncStatus(`${nextWavetable.name} does not have sample data loaded for export`);
+  async function downloadWavetableFile(nextWavetable: EditableSynthWavetable) {
+    let exportWavetable = nextWavetable;
+    try {
+      exportWavetable = await loadHexBoardWavetableSamples(nextWavetable);
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Failed to read HexBoard wavetable for export");
       return;
     }
-    const wavBytes = encodeHexBoardWavetableWav(nextWavetable.samples);
+    if (!exportWavetable.samples) {
+      setSyncStatus(`${exportWavetable.name} does not have sample data loaded for export`);
+      return;
+    }
+    const wavBytes = encodeHexBoardWavetableWav(exportWavetable.samples);
     const wavBuffer = wavBytes.buffer.slice(wavBytes.byteOffset, wavBytes.byteOffset + wavBytes.byteLength) as ArrayBuffer;
     const blob = new Blob([wavBuffer], { type: "audio/wav" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${safeFileName(`${nextWavetable.folderPath}-${nextWavetable.name}`)}.hexwav`;
+    link.download = `${safeFileName(`${exportWavetable.folderPath}-${exportWavetable.name}`)}.hexwav`;
     link.click();
     URL.revokeObjectURL(url);
-    setSyncStatus(`Exported ${nextWavetable.name} as a HexBoard wavetable file`);
+    setSyncStatus(`Exported ${exportWavetable.name} as a HexBoard wavetable file`);
   }
 
   async function importPresetFile(event: ChangeEvent<HTMLInputElement>) {
@@ -1543,24 +1640,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     try {
       setSyncStatus("Requesting HexBoard Wavetables...");
       const records = await client.listSynthWavetables();
-      setSyncStatus(`Found ${records.length} HexBoard wavetable record${records.length === 1 ? "" : "s"}; reading wavetable data...`);
-      const wavetables: EditableSynthWavetable[] = [];
-      const readErrors: string[] = [];
-      for (const record of records) {
-        try {
-          wavetables.push(wavetableFromObjectBody(await client.readSynthWavetable(record.handle), record.handle));
-        } catch (error) {
-          wavetables.push(wavetableFromObjectListRecord(record));
-          readErrors.push(`${record.name || `handle ${record.handle}`}: ${error instanceof Error ? error.message : "read failed"}`);
-        }
-      }
+      const wavetables = records.map(wavetableFromObjectListRecord);
       setHexboardWavetables(wavetables.sort(compareWavetables));
       setCustomWavetableFolders((current) => Array.from(new Set([...current, ...wavetables.map((item) => item.folderPath)])).sort());
-      if (readErrors.length > 0) {
-        setSyncStatus(`${successStatus}: listed ${wavetables.length} wavetable${wavetables.length === 1 ? "" : "s"}, but ${readErrors.length} full read${readErrors.length === 1 ? "" : "s"} failed. ${readErrors[0]}`);
-      } else {
-        setSyncStatus(`${successStatus}: ${wavetables.length} wavetable${wavetables.length === 1 ? "" : "s"}`);
-      }
+      setSyncStatus(`${successStatus}: ${wavetables.length} wavetable${wavetables.length === 1 ? "" : "s"} listed; sample data will transfer only on Download or Export`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to refresh HexBoard Wavetables";
       setSyncStatus(
@@ -1774,8 +1857,9 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 onFolderSelect={toggleWavetableFolderFilter}
                 onUse={useWavetableAsPresetSource}
                 onUpload={(item) => void uploadWavetableToHexBoard(item)}
-                onDownload={downloadWavetableFromHexBoard}
-                onExport={downloadWavetableFile}
+                onDownload={(item) => void downloadWavetableFromHexBoard(item)}
+                onExport={(item) => void downloadWavetableFile(item)}
+                onEdit={(item) => void editWavetable("computer", item)}
                 onErase={eraseWavetable}
               />
               <WavetableLibraryPanel
@@ -1788,8 +1872,9 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 onFolderSelect={toggleWavetableFolderFilter}
                 onUse={useWavetableAsPresetSource}
                 onUpload={(item) => void uploadWavetableToHexBoard(item)}
-                onDownload={downloadWavetableFromHexBoard}
-                onExport={downloadWavetableFile}
+                onDownload={(item) => void downloadWavetableFromHexBoard(item)}
+                onExport={(item) => void downloadWavetableFile(item)}
+                onEdit={(item) => void editWavetable("hexboard", item)}
                 onErase={eraseWavetable}
               />
             </div>
@@ -2100,6 +2185,7 @@ interface WavetableLibraryPanelProps {
   onUpload: (wavetable: EditableSynthWavetable) => void;
   onDownload: (wavetable: EditableSynthWavetable) => void;
   onExport: (wavetable: EditableSynthWavetable) => void;
+  onEdit: (wavetable: EditableSynthWavetable) => void;
   onErase: (space: LibrarySpace, wavetable: EditableSynthWavetable) => void;
 }
 
@@ -2115,6 +2201,7 @@ function WavetableLibraryPanel({
   onUpload,
   onDownload,
   onExport,
+  onEdit,
   onErase
 }: WavetableLibraryPanelProps) {
   const visibleWavetables = selectedFolder
@@ -2162,6 +2249,9 @@ function WavetableLibraryPanel({
                 <button type="button" onClick={() => onUse(item)}>
                   Use
                 </button>
+                <button type="button" onClick={() => onEdit(item)}>
+                  Edit
+                </button>
                 {space === "computer" ? (
                   <button type="button" onClick={() => onUpload(item)}>
                     Upload
@@ -2171,7 +2261,7 @@ function WavetableLibraryPanel({
                     Download
                   </button>
                 )}
-                <button type="button" disabled={!item.samples} onClick={() => onExport(item)}>
+                <button type="button" onClick={() => onExport(item)}>
                   Export
                 </button>
                 <button className="warning" type="button" onClick={() => onErase(space, item)}>

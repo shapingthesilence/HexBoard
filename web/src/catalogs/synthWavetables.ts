@@ -84,6 +84,36 @@ export function createSynthWavetableObject(input: SynthWavetableInput): EncodedC
   };
 }
 
+export function createSynthWavetableMetadataObject(input: Omit<SynthWavetableInput, "samples">): EncodedCatalogObject {
+  const records: TlvRecord[] = [
+    ...createCommonRecords({
+      objectId: input.objectId,
+      name: input.name,
+      source: "web-app",
+      folderPath: input.folderPath,
+      tags: input.tags
+    })
+  ];
+  const body = encodeObjectBody({
+    objectType: ObjectType.SynthWavetable,
+    schemaMajor: 1,
+    schemaMinor: 0,
+    objectFlags: 0,
+    records
+  });
+
+  return {
+    objectType: ObjectType.SynthWavetable,
+    schemaMajor: 1,
+    schemaMinor: 0,
+    objectId: input.objectId,
+    name: input.name,
+    folderPath: input.folderPath,
+    records,
+    body
+  };
+}
+
 export function crunchSerumWavetable(bytes: ArrayBuffer | Uint8Array): Uint8Array {
   const wav = parseWavSamples(bytes);
   const firstFrame = wav.samples.subarray(0, wav.frameSampleCount);

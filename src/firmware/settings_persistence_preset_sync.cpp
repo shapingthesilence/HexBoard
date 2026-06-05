@@ -2468,6 +2468,7 @@ struct ParsedSynthWavetableObject {
   const uint8_t* samples = nullptr;
   uint16_t sampleLength = 0;
   bool sawObjectId = false;
+  bool sawSamples = false;
 };
 
 bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynthWavetableObject& wavetable, std::string& error) {
@@ -2549,6 +2550,7 @@ bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynth
         }
         wavetable.samples = value;
         wavetable.sampleLength = length;
+        wavetable.sawSamples = true;
         sawSamples = true;
         break;
       default:
@@ -2558,8 +2560,8 @@ bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynth
     cursor += length;
   }
 
-  if (!sawFrameCount || !sawSampleCount || !sawSamples || wavetable.samples == nullptr) {
-    error = "missing required wavetable TLV";
+  if (sawSamples && (!sawFrameCount || !sawSampleCount || wavetable.samples == nullptr)) {
+    error = "missing required wavetable sample metadata";
     return false;
   }
   if (!wavetable.name[0]) {
@@ -2669,6 +2671,49 @@ bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& parsed) {
   }
   save_synth_wavetables();
   requestSynthWavetableMenuRebuild();
+  return true;
+}
+
+bool updateSynthWavetableMetadata(uint16_t handle, const ParsedSynthWavetableObject& parsed) {
+  if (!fileSystemExists) {
+    sendToLog("File system not available.");
+    return false;
+  }
+  if (handle >= synthWavetables.size() || !synthWavetables[handle].valid) {
+    sendToLog("Synth wavetable metadata update target missing.");
+    return false;
+  }
+
+  SynthWavetableSlot updated = synthWavetables[handle];
+  if (parsed.sawObjectId
+      && memcmp(updated.objectId, parsed.objectId, sizeof(updated.objectId)) != 0) {
+    sendToLog("Synth wavetable metadata update object id mismatch.");
+    return false;
+  }
+  snprintf(updated.name, sizeof(updated.name), "%s", parsed.name);
+  snprintf(updated.folderPath, sizeof(updated.folderPath), "%s", parsed.folderPath);
+  normalizeSynthWavetableMetadata(updated);
+
+  int duplicate = findSynthWavetableByFolderAndName(updated.folderPath, updated.name);
+  if (duplicate >= 0 && duplicate != static_cast<int>(handle)) {
+    sendToLog("Synth wavetable metadata update duplicate name.");
+    return false;
+  }
+
+  bool updatesCurrent =
+    strncmp(currentSynthWavetableName, synthWavetables[handle].name, sizeof(currentSynthWavetableName)) == 0
+    && strncmp(currentSynthWavetableFolderPath,
+               synthWavetables[handle].folderPath,
+               sizeof(currentSynthWavetableFolderPath)) == 0;
+
+  synthWavetables[handle] = updated;
+  save_synth_wavetables();
+  requestSynthWavetableMenuRebuild();
+
+  if (updatesCurrent) {
+    setCurrentSynthWavetableReference(updated.folderPath, updated.name);
+    saveCurrentSynthWavetableReference();
+  }
   return true;
 }
 
@@ -3192,15 +3237,19 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
       if (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH) {
         flashWriteInProgress.store(true, std::memory_order_release);
         delayMicroseconds(AUDIO_DMA_BUFFER_MICROS * 2);
-        bool saved = saveParsedSynthWavetable(parsedWavetable);
+        bool saved = parsedWavetable.sawSamples
+          ? saveParsedSynthWavetable(parsedWavetable)
+          : updateSynthWavetableMetadata(presetSyncWriteTransfer.handle, parsedWavetable);
         flashWriteInProgress.store(false, std::memory_order_release);
         if (!saved) {
           presetSyncWriteTransfer = PresetSyncWriteTransfer{};
-          presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
+          presetSyncSendNack(transactionId,
+                             PRESET_SYNC_MSG_WRITE_COMMIT,
+                             parsedWavetable.sawSamples ? PRESET_SYNC_ERROR_STORAGE_FULL : PRESET_SYNC_ERROR_VALIDATION_FAILED);
           return;
         }
       }
-      if (commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME) {
+      if ((commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME) && parsedWavetable.sawSamples) {
         SynthWavetableSlot runtimeWavetable = {};
         runtimeWavetable.valid = 1;
         if (parsedWavetable.sawObjectId) {

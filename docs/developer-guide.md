@@ -501,6 +501,11 @@ delete paths also try the older full-object-id filename to tolerate earlier
 catalog files, but new writes always use the shorter path. Catalog load and
 write paths skip/prune user wavetable records whose sample file is missing so
 failed earlier imports do not keep consuming catalog slots.
+Preset-sync wavetable `ObjectListResponse` records carry the metadata needed by
+the web library; the web app should not full-read wavetable bodies during normal
+refresh. Metadata-only `SynthWavetable` writes with `SaveToFlash |
+OverwriteExisting` rename or move an existing device wavetable without sending
+sample bytes, and firmware rejects object-id changes on those writes.
 
 All active tables use the same RAM path: firmware builds or loads `32` frames of
 `512` samples into `activeSynthWaveTable`. The sampler runs in the normal synth

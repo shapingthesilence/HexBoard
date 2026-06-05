@@ -433,10 +433,12 @@ again clears the filter and shows all presets in that area.
 
 In `Wavetables`, imported or downloaded tables can be uploaded to HexBoard,
 downloaded to the computer library, exported as `.hexwav` wavetable files,
-erased, or selected with `Use` for the open preset. Presets store the wavetable
-folder/name rather than a private copy of the wavetable data, so a shared
-preset that needs a third-party table will work once a wavetable with the same
-folder and name is installed on the HexBoard.
+renamed, moved to a different folder, erased, or selected with `Use` for the
+open preset. Refreshing the HexBoard wavetable list reads only device metadata;
+full sample data transfers start only when `Download` or `Export` is chosen.
+Presets store the wavetable folder/name rather than a private copy of the
+wavetable data, so a shared preset that needs a third-party table will work once
+a wavetable with the same folder and name is installed on the HexBoard.
 
 When the Synth Presets tab opens with a HexBoard input connected, the editor
 requests the current HexBoard synth patch instead of sending one of the browser

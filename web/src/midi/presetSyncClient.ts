@@ -336,6 +336,17 @@ export class PresetSyncClient {
     });
   }
 
+  async sendSynthWavetableMetadataUpdate(wavetable: EncodedCatalogObject, handle: number): Promise<number[][]> {
+    return this.sendObjectWriteConfirmed({
+      objectType: ObjectType.SynthWavetable,
+      body: wavetable.body,
+      handle,
+      schemaMajor: wavetable.schemaMajor,
+      schemaMinor: wavetable.schemaMinor,
+      writeFlags: WriteFlag.SaveToFlash | WriteFlag.OverwriteExisting
+    });
+  }
+
   subscribeToFrames(listener: (frame: ReturnType<typeof decodePresetSyncFrame>) => void): () => void {
     return this.transport.subscribe((bytes) => {
       const frame = decodeIncomingPresetSyncFrame(bytes);

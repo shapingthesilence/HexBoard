@@ -578,6 +578,10 @@ a valid flag, stable `16`-byte object id, name, folder path, and a sample-file
 path generated from the object id. The sample file contains `32 x 512`
 unsigned-byte samples. The legacy `/user_wavetable.dat` `UWT` file is still
 loadable only through the compatibility reference `/User/UserTbl`.
+The web app treats wavetable refresh as metadata-only by using object-list
+records; full wavetable reads are deferred to explicit `Download`/`Export`
+actions. Metadata-only `SynthWavetable` writes can update a user wavetable's
+name/folder when the handle and object id still match the catalog entry.
 
 The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator; `ArpeggiatorDivision` sets rhythmic subdivision and `ArpeggiatorDirection` selects `Up`, `Down`, `Played`, `RevPlay`, `UpDown`, `DownUp`, or `Random`. The metronome runs its beat scheduler on core 0 and feeds the beep mode into the RAM-resident audio renderer through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 
