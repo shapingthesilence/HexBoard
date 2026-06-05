@@ -44,6 +44,7 @@ void hexboardSetup() {
   load_settings();
   load_synth_presets();
   load_synth_wavetables();
+  loadCurrentSynthWavetableReference();
   setupLEDs();
   setupGFX();
   setupRotary();

@@ -41,6 +41,13 @@ interface WavData {
   frameCount: number;
 }
 
+interface WavDataChunk {
+  view: DataView;
+  format: WavFormat;
+  dataOffset: number;
+  dataLength: number;
+}
+
 export function createSynthWavetableObject(input: SynthWavetableInput): EncodedCatalogObject {
   if (input.samples.length !== SYNTH_WAVETABLE_SAMPLE_BYTES) {
     throw new Error(`wavetable sample data must be ${SYNTH_WAVETABLE_SAMPLE_BYTES} bytes`);
@@ -107,7 +114,52 @@ export function crunchSerumWavetable(bytes: ArrayBuffer | Uint8Array): Uint8Arra
   return output;
 }
 
+export function encodeHexBoardWavetableWav(samples: Uint8Array): Uint8Array {
+  if (samples.length !== SYNTH_WAVETABLE_SAMPLE_BYTES) {
+    throw new Error(`HexBoard wavetable exports must contain ${SYNTH_WAVETABLE_SAMPLE_BYTES} samples`);
+  }
+  const headerBytes = 44;
+  const bytes = new Uint8Array(headerBytes + samples.length);
+  const view = new DataView(bytes.buffer);
+  writeFourCc(bytes, 0, "RIFF");
+  view.setUint32(4, bytes.length - 8, true);
+  writeFourCc(bytes, 8, "WAVE");
+  writeFourCc(bytes, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 16384, true);
+  view.setUint32(28, 16384, true);
+  view.setUint16(32, 1, true);
+  view.setUint16(34, 8, true);
+  writeFourCc(bytes, 36, "data");
+  view.setUint32(40, samples.length, true);
+  bytes.set(samples, headerBytes);
+  return bytes;
+}
+
+export function parseHexBoardWavetable(bytes: ArrayBuffer | Uint8Array): Uint8Array {
+  const wav = readWavDataChunk(bytes);
+  if (wav.format.audioFormat !== 1 || wav.format.channels !== 1 || wav.format.bitsPerSample !== 8) {
+    throw new Error("HexBoard wavetable files must be 8-bit mono PCM WAV data");
+  }
+  if (wav.dataLength !== SYNTH_WAVETABLE_SAMPLE_BYTES) {
+    throw new Error(`HexBoard wavetable files must contain ${SYNTH_WAVETABLE_SAMPLE_BYTES} samples`);
+  }
+  return new Uint8Array(wav.view.buffer, wav.view.byteOffset + wav.dataOffset, wav.dataLength).slice();
+}
+
 function parseWavSamples(bytes: ArrayBuffer | Uint8Array): WavData {
+  const wav = readWavDataChunk(bytes);
+  const samples = decodeWavData(wav.view, wav.dataOffset, wav.dataLength, wav.format);
+  const frameSampleCount = samples.length >= SERUM_FRAME_SAMPLE_COUNT && samples.length % SERUM_FRAME_SAMPLE_COUNT === 0
+    ? SERUM_FRAME_SAMPLE_COUNT
+    : samples.length;
+  const frameCount = Math.max(1, Math.floor(samples.length / frameSampleCount));
+  return { samples, frameSampleCount, frameCount };
+}
+
+function readWavDataChunk(bytes: ArrayBuffer | Uint8Array): WavDataChunk {
   const view = bytes instanceof Uint8Array
     ? new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
     : new DataView(bytes);
@@ -137,12 +189,7 @@ function parseWavSamples(bytes: ArrayBuffer | Uint8Array): WavData {
   if (!format || dataOffset < 0) {
     throw new Error("WAV file is missing fmt or data chunk");
   }
-  const samples = decodeWavData(view, dataOffset, dataLength, format);
-  const frameSampleCount = samples.length >= SERUM_FRAME_SAMPLE_COUNT && samples.length % SERUM_FRAME_SAMPLE_COUNT === 0
-    ? SERUM_FRAME_SAMPLE_COUNT
-    : samples.length;
-  const frameCount = Math.max(1, Math.floor(samples.length / frameSampleCount));
-  return { samples, frameSampleCount, frameCount };
+  return { view, format, dataOffset, dataLength };
 }
 
 function parseWavFormat(view: DataView, offset: number, length: number): WavFormat {
@@ -240,6 +287,12 @@ function readFourCc(view: DataView, offset: number): string {
     view.getUint8(offset + 2),
     view.getUint8(offset + 3)
   );
+}
+
+function writeFourCc(bytes: Uint8Array, offset: number, value: string): void {
+  for (let index = 0; index < value.length; index += 1) {
+    bytes[offset + index] = value.charCodeAt(index);
+  }
 }
 
 function positiveModulo(value: number, modulus: number): number {

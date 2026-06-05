@@ -332,7 +332,7 @@ needs a `/layouts.dat` catalog with `UserTuning`, `UserLayout`, `UserScale`,
 records should keep their stored `stepsFromC` and color regardless of root/key
 or transposition changes, and generated layout menu controls should be hidden
 when a manual layout is active.
-Real-device synth preset saves and Serum wavetable imports wait for ACK/NACK
+Real-device synth preset saves and Serum/Vital or HexBoard wavetable imports wait for ACK/NACK
 responses through `WRITE_COMMIT`; library refresh requests list synth preset
 and wavetable records one at a time before reading each object body. The compact header device
 menu probes Web MIDI input/output pairs with `HELLO_REQ`, accepts only
@@ -540,6 +540,10 @@ compatibility, but the visible synth source selector uses a wavetable
 folder/name reference. Old waveform values are mapped to built-in compatibility
 tables and a matching `SynthWavetablePosition` anchor; `Hybrid` maps to `Basic`
 at position `0`. Missing named wavetable dependencies fall back to `Basic`.
+Because folder/name references are strings, the current selection is persisted
+outside `/settings.dat` in `/current_wavetable.dat`; settings saves, preset
+loads, wavetable menu loads, and preset-sync save-and-apply commits update that
+sidecar file.
 
 The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `Morph` is the default wheel effect and applies one shared phase-warp helper across the onboard waveforms. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the on-device menu presents rounded frame anchors labeled `1..32`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount through RAM-tagged fixed Q16 ratio tables so full positive depth raises each active voice by about `+48` semitones and full negative depth lowers it by about `-48` semitones.
 

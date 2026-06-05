@@ -432,11 +432,11 @@ targets. Folder buttons filter each library area; clicking the active folder
 again clears the filter and shows all presets in that area.
 
 In `Wavetables`, imported or downloaded tables can be uploaded to HexBoard,
-downloaded to the computer library, exported as JSON files with their crunched
-sample data, erased, or selected with `Use` for the open preset. Presets store
-the wavetable folder/name rather than a private copy of the wavetable data, so
-a shared preset that needs a third-party table will work once a wavetable with
-the same folder and name is installed on the HexBoard.
+downloaded to the computer library, exported as `.hexwav` wavetable files,
+erased, or selected with `Use` for the open preset. Presets store the wavetable
+folder/name rather than a private copy of the wavetable data, so a shared
+preset that needs a third-party table will work once a wavetable with the same
+folder and name is installed on the HexBoard.
 
 When the Synth Presets tab opens with a HexBoard input connected, the editor
 requests the current HexBoard synth patch instead of sending one of the browser
@@ -450,11 +450,18 @@ the app asks before overwriting that preset. Device saves wait for the HexBoard
 to acknowledge the write through the flash commit before the app refreshes the
 `HexBoard Library`.
 
-`Import Serum WT` is in the `Wavetables` library view. It accepts a Serum-style
-`.wav` wavetable, reads the source frames, renders the table down to the
-firmware's `32 x 512` byte format, saves it by the selected name/folder in the
-browser wavetable library, uploads it to HexBoard, and points the open preset at
-that wavetable with `WT Pos = 0`.
+`Import Wavetable` is in the `Wavetables` library view. It opens an import
+dialog with a file-type selector for Serum/Vital `.wav` tables or HexBoard
+`.hexwav` tables. Serum/Vital imports read the source frames and render the
+table down to the firmware's `32 x 512` byte format. HexBoard `.hexwav` files
+are 8-bit mono WAV containers that already contain the exact firmware sample
+data. Imported tables are saved by the selected name/folder in the browser
+wavetable library, uploaded to HexBoard, and used by the open preset with
+`WT Pos = 0`.
+
+The HexBoard stores the currently selected wavetable reference separately from
+the byte-oriented settings profile, so rebooting or loading a preset preserves
+the named wavetable instead of falling back to `Basic`.
 
 The app requires a Web MIDI SysEx-capable browser such as Chrome or Edge running
 from `localhost` or HTTPS. Use `Connect HexBoard` in the top bar; the app sends

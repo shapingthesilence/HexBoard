@@ -505,8 +505,22 @@ struct SynthWavetableSlot {
   char samplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
 };
 
+struct CurrentSynthWavetableReferenceFile {
+  char magic[3];     // "CWT"
+  uint8_t version;
+  char name[SYNTH_WAVETABLE_NAME_LENGTH] = {};
+  char folderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
+  uint32_t crc32;
+};
+
+constexpr uint8_t CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION = 1;
+constexpr char CURRENT_SYNTH_WAVETABLE_REFERENCE_FILE_PATH[] = "/current_wavetable.dat";
+
 std::vector<SynthPresetSlot> synthPresets;
 std::vector<SynthWavetableSlot> synthWavetables;
+
+void saveCurrentSynthWavetableReference();
+bool loadCurrentSynthWavetableReference();
 
 void remapLegacySynthPresetEnvelopeTimes(SynthPresetSlot& preset) {
   if (!preset.valid) {
@@ -872,7 +886,66 @@ void save_settings() {
   f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SettingsHeader));
   f.write(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
   f.close();
+  saveCurrentSynthWavetableReference();
   sendToLog("Settings saved.");
+}
+
+uint32_t currentSynthWavetableReferenceCrc(const CurrentSynthWavetableReferenceFile& reference) {
+  uint8_t bytes[sizeof(reference.name) + sizeof(reference.folderPath)] = {};
+  memcpy(bytes, reference.name, sizeof(reference.name));
+  memcpy(bytes + sizeof(reference.name), reference.folderPath, sizeof(reference.folderPath));
+  return crc32(bytes, sizeof(bytes));
+}
+
+void saveCurrentSynthWavetableReference() {
+  if (!fileSystemExists || !currentSynthWavetableReferenceValid) {
+    return;
+  }
+  CurrentSynthWavetableReferenceFile reference = {};
+  reference.magic[0] = 'C'; reference.magic[1] = 'W'; reference.magic[2] = 'T';
+  reference.version = CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION;
+  snprintf(reference.name, sizeof(reference.name), "%s", currentSynthWavetableName);
+  snprintf(reference.folderPath, sizeof(reference.folderPath), "%s", currentSynthWavetableFolderPath);
+  normalizeSynthWavetableFolderPath(reference.folderPath, sizeof(reference.folderPath));
+  reference.crc32 = currentSynthWavetableReferenceCrc(reference);
+
+  File f = LittleFS.open(CURRENT_SYNTH_WAVETABLE_REFERENCE_FILE_PATH, "w");
+  if (!f) {
+    sendToLog("Error: Unable to open /current_wavetable.dat for writing.");
+    return;
+  }
+  size_t written = f.write(reinterpret_cast<uint8_t*>(&reference), sizeof(reference));
+  f.close();
+  if (written != sizeof(reference)) {
+    sendToLog("Error: Incomplete current wavetable reference write.");
+  }
+}
+
+bool loadCurrentSynthWavetableReference() {
+  if (!fileSystemExists) {
+    return false;
+  }
+  File f = LittleFS.open(CURRENT_SYNTH_WAVETABLE_REFERENCE_FILE_PATH, "r");
+  if (!f) {
+    return false;
+  }
+  CurrentSynthWavetableReferenceFile reference = {};
+  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&reference), sizeof(reference));
+  f.close();
+  if (bytesRead != sizeof(reference)
+      || strncmp(reference.magic, "CWT", 3) != 0
+      || reference.version != CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION
+      || currentSynthWavetableReferenceCrc(reference) != reference.crc32
+      || !reference.name[0]) {
+    sendToLog("Invalid current wavetable reference. Using settings fallback.");
+    return false;
+  }
+  reference.name[sizeof(reference.name) - 1] = '\0';
+  reference.folderPath[sizeof(reference.folderPath) - 1] = '\0';
+  normalizeSynthWavetableFolderPath(reference.folderPath, sizeof(reference.folderPath));
+  setCurrentSynthWavetableReference(reference.folderPath, reference.name);
+  sendToLog("Current wavetable reference loaded.");
+  return true;
 }
 
 struct UserSynthWavetableFileHeader {
@@ -1191,7 +1264,11 @@ bool writeSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, const ui
   }
   size_t written = f.write(samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
   f.close();
-  return written == SYNTH_WAVETABLE_SAMPLE_BYTES;
+  if (written != SYNTH_WAVETABLE_SAMPLE_BYTES) {
+    sendToLog("Error: Incomplete wavetable sample file write.");
+    return false;
+  }
+  return true;
 }
 
 bool loadSynthWavetableFromCatalog(const char* folderPath, const char* name) {
@@ -1822,6 +1899,10 @@ void flashSafeSaveSynthWavetables() {
   flashSafeWrite(save_synth_wavetables);
 }
 
+void flashSafeSaveCurrentSynthWavetableReference() {
+  flashSafeWrite(saveCurrentSynthWavetableReference);
+}
+
 void flashSafeSaveUserSynthWavetable() {
   flashSafeWrite(save_user_wavetable);
 }
@@ -1859,6 +1940,7 @@ void loadSynthPresetFromSlot(uint16_t presetIndex) {
   applySynthPresetToSettings(synthPresets[presetIndex]);
   markSettingsDirty();
   syncSettingsToRuntime();
+  flashSafeSaveCurrentSynthWavetableReference();
   sendToLog("Loaded synth preset " + std::string(synthPresets[presetIndex].name));
 }
 
@@ -2478,11 +2560,11 @@ bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& parsed) {
   if (static_cast<size_t>(slotIndex) < synthWavetables.size()) {
     snprintf(previousSamplePath, sizeof(previousSamplePath), "%s", synthWavetables[slotIndex].samplePath);
   }
+  if (previousSamplePath[0]) {
+    LittleFS.remove(previousSamplePath);
+  }
   if (!writeSynthWavetableSampleFile(wavetable, parsed.samples)) {
     return false;
-  }
-  if (previousSamplePath[0] && strcmp(previousSamplePath, wavetable.samplePath) != 0) {
-    LittleFS.remove(previousSamplePath);
   }
   if (static_cast<size_t>(slotIndex) == synthWavetables.size()) {
     synthWavetables.push_back(wavetable);
@@ -2996,6 +3078,9 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
         normalizeSynthPresetMetadata(synthPresets[slotIndex], static_cast<uint8_t>(slotIndex));
         flashSafeSaveSynthPresets();
         requestSynthPresetMenuRebuild();
+        if (commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME) {
+          flashSafeSaveCurrentSynthWavetableReference();
+        }
       }
     }
   } else if (presetSyncWriteTransfer.objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
@@ -3029,6 +3114,9 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
         snprintf(runtimeWavetable.folderPath, sizeof(runtimeWavetable.folderPath), "%s", parsedWavetable.folderPath);
         normalizeSynthWavetableMetadata(runtimeWavetable, parsedWavetable.samples);
         applyParsedSynthWavetableToRuntime(runtimeWavetable, parsedWavetable.samples);
+        if (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH) {
+          flashSafeSaveCurrentSynthWavetableReference();
+        }
       }
     }
   } else {

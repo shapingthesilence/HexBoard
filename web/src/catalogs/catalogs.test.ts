@@ -14,8 +14,10 @@ import {
   crunchSerumWavetable,
   currentFirmwareDownLeftToUpRight,
   deterministicObjectId,
+  encodeHexBoardWavetableWav,
   encodeLayoutBundle,
   LayoutTlv,
+  parseHexBoardWavetable,
   parseLayoutBundleLibrary,
   parseLayoutBundleFile,
   parseScalaScale,
@@ -208,6 +210,19 @@ Example scale
     expect(u8(recordValue(wavetable.body, SynthWavetableTlv.FrameCount))).toBe(32);
     expect(u16LE(recordValue(wavetable.body, SynthWavetableTlv.SampleCount))).toBe(512);
     expect(recordValue(wavetable.body, SynthWavetableTlv.Samples)).toHaveLength(SYNTH_WAVETABLE_SAMPLE_BYTES);
+  });
+
+  it("round trips HexBoard wavetable exports as hexwav WAV files", () => {
+    const samples = new Uint8Array(SYNTH_WAVETABLE_SAMPLE_BYTES);
+    for (let index = 0; index < samples.length; index += 1) {
+      samples[index] = index & 0xff;
+    }
+    const wav = encodeHexBoardWavetableWav(samples);
+    const parsed = parseHexBoardWavetable(wav);
+
+    expect(String.fromCharCode(...wav.slice(0, 4))).toBe("RIFF");
+    expect(String.fromCharCode(...wav.slice(8, 12))).toBe("WAVE");
+    expect(parsed).toEqual(samples);
   });
 
   it("serializes and encodes a layout bundle", () => {

@@ -1079,6 +1079,7 @@ void loadSynthWavetableMenu(GEMCallbackData callbackData) {
     settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_BASIC_WAVETABLE;
     loadSelectedSynthWavetable();
     updateCurrentSynthWavetableMenuLabel();
+    flashSafeSaveCurrentSynthWavetableReference();
     markSettingsDirty();
   }
   menuSynthOptionsHome();

@@ -4,8 +4,10 @@ import {
   createSynthWavetableObject,
   crunchSerumWavetable,
   deterministicObjectId,
+  encodeHexBoardWavetableWav,
   objectIdFromHex,
   objectIdToHex,
+  parseHexBoardWavetable,
   SYNTH_WAVETABLE_SAMPLE_BYTES,
   SynthPresetTlv,
   SynthSettingKey,
@@ -28,6 +30,7 @@ interface SynthPresetLibraryProps {
 
 type LibrarySpace = "computer" | "hexboard";
 type SynthLibraryKind = "presets" | "wavetables";
+type WavetableImportFormat = "serum-vital" | "hexboard";
 
 const synthValueKeys = [
   "PlaybackMode",
@@ -896,6 +899,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [newWavetableFolder, setNewWavetableFolder] = useState("");
   const [wavetableImportName, setWavetableImportName] = useState("");
   const [wavetableImportFolder, setWavetableImportFolder] = useState("Wavetables");
+  const [wavetableImportDialogOpen, setWavetableImportDialogOpen] = useState(false);
+  const [wavetableImportFormat, setWavetableImportFormat] = useState<WavetableImportFormat>("serum-vital");
   const [autoSend, setAutoSend] = useState(true);
   const [editorHydrated, setEditorHydrated] = useState(() => transport instanceof MockMidiTransport);
   const [syncStatus, setSyncStatus] = useState("Ready");
@@ -1359,26 +1364,16 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       setSyncStatus(`${nextWavetable.name} does not have sample data loaded for export`);
       return;
     }
-    const blob = new Blob(
-      [
-        JSON.stringify(
-          {
-            format: wavetableFileFormat,
-            wavetable: exportWavetable(nextWavetable)
-          },
-          null,
-          2
-        )
-      ],
-      { type: "application/json" }
-    );
+    const wavBytes = encodeHexBoardWavetableWav(nextWavetable.samples);
+    const wavBuffer = wavBytes.buffer.slice(wavBytes.byteOffset, wavBytes.byteOffset + wavBytes.byteLength) as ArrayBuffer;
+    const blob = new Blob([wavBuffer], { type: "audio/wav" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${safeFileName(`${nextWavetable.folderPath}-${nextWavetable.name}`)}.json`;
+    link.download = `${safeFileName(`${nextWavetable.folderPath}-${nextWavetable.name}`)}.hexwav`;
     link.click();
     URL.revokeObjectURL(url);
-    setSyncStatus(`Exported ${nextWavetable.name} as a wavetable file`);
+    setSyncStatus(`Exported ${nextWavetable.name} as a HexBoard wavetable file`);
   }
 
   async function importPresetFile(event: ChangeEvent<HTMLInputElement>) {
@@ -1403,7 +1398,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
   }
 
-  async function importSerumWavetableFile(event: ChangeEvent<HTMLInputElement>) {
+  async function importWavetableFile(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
     const file = input.files?.[0];
     if (!file) {
@@ -1411,8 +1406,12 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
 
     try {
-      setSyncStatus(`Crunching ${file.name}...`);
-      const samples = crunchSerumWavetable(await file.arrayBuffer());
+      const importFormat = file.name.toLowerCase().endsWith(".hexwav") ? "hexboard" : wavetableImportFormat;
+      setSyncStatus(importFormat === "hexboard" ? `Loading ${file.name}...` : `Crunching ${file.name}...`);
+      const bytes = await file.arrayBuffer();
+      const samples = importFormat === "hexboard"
+        ? parseHexBoardWavetable(bytes)
+        : crunchSerumWavetable(bytes);
       const sampleCrc = crc32(samples);
       const wavetableName = normalizedWavetableName(wavetableImportName || file.name.replace(/\.[^.]+$/, ""));
       const folderPath = normalizeDisplayFolderPath(wavetableImportFolder || "Wavetables");
@@ -1443,9 +1442,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         }
       }));
       setWavetableImportName("");
+      setWavetableImportDialogOpen(false);
       await uploadWavetableToHexBoard(computerDecision.wavetable, "Imported");
     } catch (error) {
-      setSyncStatus(error instanceof Error ? error.message : "Failed to import Serum wavetable");
+      setSyncStatus(error instanceof Error ? error.message : "Failed to import wavetable");
     } finally {
       input.value = "";
     }
@@ -1623,7 +1623,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           </div>
         </div>
         <input ref={fileInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" onChange={(event) => void importPresetFile(event)} />
-        <input ref={wavetableFileInputRef} className="hiddenFileInput" type="file" accept="audio/wav,audio/wave,.wav" onChange={(event) => void importSerumWavetableFile(event)} />
+        <input ref={wavetableFileInputRef} className="hiddenFileInput" type="file" accept="audio/wav,audio/wave,.wav,.hexwav" onChange={(event) => void importWavetableFile(event)} />
 
         {libraryKind === "presets" ? (
           <>
@@ -1695,32 +1695,9 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
               <button type="button" onClick={() => void refreshHexBoardWavetables()}>
                 Refresh HexBoard
               </button>
-              <button type="button" onClick={() => wavetableFileInputRef.current?.click()}>
-                Import Serum WT
+              <button type="button" onClick={() => setWavetableImportDialogOpen(true)}>
+                Import Wavetable
               </button>
-            </div>
-
-            <div className="fieldGrid compact">
-              <label className="field">
-                <span>WT Name</span>
-                <input
-                  placeholder="Use file name"
-                  value={wavetableImportName}
-                  onChange={(event) => setWavetableImportName(event.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>WT Folder</span>
-                <select value={wavetableImportFolder} onChange={(event) => setWavetableImportFolder(event.target.value)}>
-                  {allWavetableFolders
-                    .filter((folder) => folder !== builtInWavetableFolder)
-                    .map((folder) => (
-                      <option key={folder} value={folder}>
-                        {folderLabel(folder)}
-                      </option>
-                    ))}
-                </select>
-              </label>
             </div>
 
             <div className="row">
@@ -1734,6 +1711,52 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 Add
               </button>
             </div>
+
+            {wavetableImportDialogOpen ? (
+              <div className="modalOverlay" role="presentation" onMouseDown={() => setWavetableImportDialogOpen(false)}>
+                <div className="modalPanel stack" role="dialog" aria-modal="true" aria-labelledby="wavetableImportTitle" onMouseDown={(event) => event.stopPropagation()}>
+                  <div className="row between">
+                    <h3 id="wavetableImportTitle">Import Wavetable</h3>
+                    <button type="button" onClick={() => setWavetableImportDialogOpen(false)}>
+                      Close
+                    </button>
+                  </div>
+                  <div className="fieldGrid compact oneColumn">
+                    <label className="field">
+                      <span>File Type</span>
+                      <select value={wavetableImportFormat} onChange={(event) => setWavetableImportFormat(event.target.value as WavetableImportFormat)}>
+                        <option value="serum-vital">Serum/Vital wavetable</option>
+                        <option value="hexboard">HexBoard wavetable</option>
+                      </select>
+                    </label>
+                    <label className="field">
+                      <span>WT Name</span>
+                      <input
+                        placeholder="Use file name"
+                        value={wavetableImportName}
+                        onChange={(event) => setWavetableImportName(event.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>WT Folder</span>
+                      <select value={wavetableImportFolder} onChange={(event) => setWavetableImportFolder(event.target.value)}>
+                        {allWavetableFolders
+                          .filter((folder) => folder !== builtInWavetableFolder)
+                          .map((folder) => (
+                            <option key={folder} value={folder}>
+                              {folderLabel(folder)}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  </div>
+                  <button className="primary" type="button" onClick={() => wavetableFileInputRef.current?.click()}>
+                    Upload File
+                  </button>
+                  <span className="muted">Files ending in .hexwav are parsed as HexBoard wavetables automatically.</span>
+                </div>
+              </div>
+            ) : null}
 
             <div className="librarySpaces">
               <WavetableLibraryPanel

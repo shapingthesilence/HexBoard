@@ -96,6 +96,8 @@ void load_synth_presets();
 void save_synth_presets();
 void load_synth_wavetables();
 void save_synth_wavetables();
+bool loadCurrentSynthWavetableReference();
+void flashSafeSaveCurrentSynthWavetableReference();
 void flashSafeSaveSynthWavetables();
 void flashSafeSaveUserSynthWavetable();
 void applyUploadedSynthWavetableSamples(const uint8_t* samples);

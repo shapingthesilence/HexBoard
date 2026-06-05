@@ -504,7 +504,7 @@ The device ACKs `WRITE_BEGIN` if it can accept the transfer. The host then sends
 `DATA_CHUNK` messages in order. The device ACKs every accepted chunk with the
 next expected chunk index. After all chunks, the host sends `TRANSFER_END`.
 The web app uses this ACKed write path for real-device synth preset saves and
-named Serum wavetable imports, then waits for the `WRITE_COMMIT` ACK before
+named Serum/Vital or HexBoard wavetable imports, then waits for the `WRITE_COMMIT` ACK before
 treating the flash write as complete. Live preview sends remain apply-only and
 are not used as the persistence confirmation path.
 
@@ -984,17 +984,20 @@ may include common metadata TLVs such as `Name`, `ObjectId`, `Source`, and
 | `0x31` | `WavetableSampleCount` | `u16-le`, must be `512` |
 | `0x32` | `WavetableSamples` | `32 * 512` unsigned bytes, frame-major |
 
-The web app's Serum import path reads Serum-style `.wav` tables, interpolates
-the source frame axis down to `32` frames, resamples each frame to `512`
-samples, normalizes to unsigned byte samples centered on `128`, and sends the
-result with `ApplyToRuntime | SaveToFlash`. Firmware validates the transfer
-CRC32, copies the sample TLV into `activeSynthWaveTable`, selects the uploaded
-folder/name for the current runtime patch, writes or replaces the matching
-catalog entry in `/synth_wavetables.dat`, and stores the raw `16384` sample
-bytes in a per-table sample file named from the wavetable object id when the
-save flag is present. The legacy `/user_wavetable.dat` `UWT` file is still
-loadable through the compatibility reference `/User/UserTbl`, but new imports do
-not write that file.
+The web app's Serum/Vital import path reads wavetable `.wav` files,
+interpolates the source frame axis down to `32` frames, resamples each frame to
+`512` samples, normalizes to unsigned byte samples centered on `128`, and sends
+the result with `ApplyToRuntime | SaveToFlash`. The web app's HexBoard export
+path writes `.hexwav` files: 8-bit mono WAV containers whose data chunk is
+exactly the `32 * 512` firmware sample bytes. HexBoard `.hexwav` imports skip
+the Serum/Vital crunching step and send the contained sample bytes directly.
+Firmware validates the transfer CRC32, copies the sample TLV into
+`activeSynthWaveTable`, selects the uploaded folder/name for the current runtime
+patch, writes or replaces the matching catalog entry in
+`/synth_wavetables.dat`, and stores the raw `16384` sample bytes in a per-table
+sample file named from the wavetable object id when the save flag is present.
+The legacy `/user_wavetable.dat` `UWT` file is still loadable through the
+compatibility reference `/User/UserTbl`, but new imports do not write that file.
 
 ## Bundle Object
 

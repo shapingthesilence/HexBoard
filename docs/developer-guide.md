@@ -88,7 +88,7 @@ support yet. The compact header device menu opens Web MIDI ports, probes
 candidate input/output pairs with preset-sync `HELLO_REQ`, verifies protocol
 major version and synth preset schema support from `HELLO_RESP`, and only shows
 a device selector when multiple compatible HexBoards respond. Real-device synth
-preset saves and Serum wavetable imports use an ACKed write path through
+preset saves and Serum/Vital or HexBoard wavetable imports use an ACKed write path through
 `WRITE_COMMIT`; live preview remains a fast apply-only write path. The synth
 editor reads the current runtime synth patch from handle `0x3FFF` before
 enabling live sends, and preset open sends an apply-only preview immediately for
@@ -486,6 +486,12 @@ reference. Built-in compatibility tables group old single-cycle waves into
 `Basic`, `Classic`, `Edge`, `Glass`, `Digital`, and `Motion`; old preset loading
 derives the table and `SynthWavetablePosition` anchor from the legacy waveform
 value. `Hybrid` intentionally maps to `Basic` at position `0`.
+The active wavetable folder/name is string metadata and is not part of the
+byte-oriented settings profile. Firmware persists that current reference in
+`/current_wavetable.dat` whenever settings are saved and immediately after
+on-device preset/wavetable loads or preset-sync save-and-apply commits. Startup
+loads the wavetable catalog, restores this reference, then lets
+`syncSettingsToRuntime()` load the selected table.
 
 All active tables use the same RAM path: firmware builds or loads `32` frames of
 `512` samples into `activeSynthWaveTable`. The sampler runs in the normal synth
