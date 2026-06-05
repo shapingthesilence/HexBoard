@@ -192,8 +192,10 @@ toggle.
 
 On hardware `V1.2`, the headphone jack is active by default and an extra
 `Buzzer` toggle appears. Turning `Buzzer` on switches synth output to the piezo
-instead of the jack. The `Advanced` menu also has `HP Vol Cap`, which limits only the
-headphone-jack output from `25%` to `100%` in `5%` steps.
+instead of the jack. When the buzzer is off, the piezo pin is held low; when the
+jack is inactive, it stays centered at its PWM midpoint. The `Advanced` menu also
+has `HP Vol Cap`, which limits only the headphone-jack output from `25%` to
+`100%` in `5%` steps.
 
 #### Synth Terms In Plain Language
 

@@ -450,6 +450,8 @@ Key implementation facts:
   `40.7 kHz` into the active output PWM slice's CC register.
 - Hardware `V1.2` outputs one synth destination at a time: jack by default, or
   piezo when the `Buzzer` toggle is enabled. Hardware `V1.1` uses piezo.
+  Inactive piezo output is switched to GPIO and held low; inactive jack output
+  remains PWM-centered.
 - The oscillator counter is a `uint32_t` Q16.16 phase accumulator; the high `16`
   bits are the waveform phase and the low `16` bits carry fractional phase.
 - Held notes use target oscillator increments that the audio block renderer slews toward,

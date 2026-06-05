@@ -463,8 +463,10 @@ PWM timer slice uses wrap `1023` and divider `/6` to pace DMA writes at about
 `40.7 kHz` into the active output PWM slice's CC register. The block renderer
 generates jack and piezo levels, but DMA outputs only one selected destination at
 a time: hardware `V1.2` uses the jack unless `Buzzer` is enabled, and hardware
-`V1.1` uses piezo. If the DMA channel consumes a buffer before Core 1 has filled
-the next one, firmware records an underrun and outputs a silence block.
+`V1.1` uses piezo. Inactive piezo output is switched to GPIO and held low;
+inactive jack output remains PWM-centered so the headphone path stays centered.
+If the DMA channel consumes a buffer before Core 1 has filled the next one,
+firmware records an underrun and outputs a silence block.
 
 The sine waveform uses linear interpolation between adjacent `512`-entry table
 samples. The table sampler splits the existing `16`-bit phase accumulator into

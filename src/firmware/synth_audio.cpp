@@ -10,6 +10,7 @@
   */
 #include "hardware/pwm.h"  // library of code to access the processor's built in pulse wave modulation features
 #include "hardware/irq.h"  // library of code to let you interrupt code execution to run something of higher priority
+#include "hardware/gpio.h"
 /*
     It is more convenient to pre-define the correct
     pulse wave modulation slice and channel associated
@@ -32,6 +33,9 @@ bool synthBuzzerEnabled = false;
 constexpr uint8_t HEADPHONE_VOLUME_CAP_FULL = 127;
 byte headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
 
+void RAM_FUNC(idlePhysicalAudioOutputs)();
+void RAM_FUNC(preparePhysicalAudioOutput)(byte destination);
+
 inline bool audioJackAvailable() {
   return Hardware_Version == HARDWARE_V1_2;
 }
@@ -52,6 +56,7 @@ inline byte runtimeAudioDestination(bool buzzerEnabled) {
 
 inline void syncAudioDestinationToRuntime() {
   audioD = runtimeAudioDestination(synthBuzzerEnabled);
+  preparePhysicalAudioOutput(audioD);
 }
 
 // ============================================================
@@ -100,6 +105,8 @@ inline void syncAudioDestinationToRuntime() {
   #error "PWM_BITS must be 8, 9, or 10"
 #endif
 constexpr uint16_t PIEZO_OFF_THRESHOLD = (PWM_BITS == 8) ? 1 : ((PWM_BITS == 9) ? 2 : 4);
+constexpr uint16_t PIEZO_IDLE_LEVEL = 0;
+constexpr uint16_t JACK_IDLE_LEVEL = static_cast<uint16_t>(PWM_MID);
 constexpr int32_t METRONOME_BEEP_LEVEL = SHAPE_CLAMP / 3;
 constexpr uint8_t AUDIO_DMA_TIMER_SLICE = 7;
 constexpr uint8_t AUDIO_DMA_PWM_STEPS = 6;
@@ -114,7 +121,7 @@ constexpr uint8_t AUDIO_PWM_CC_LEVEL_SHIFT = 16;
 
 struct AudioOutputLevels {
   uint16_t piezo = 0;
-  uint16_t jack = static_cast<uint16_t>(PWM_MID);
+  uint16_t jack = JACK_IDLE_LEVEL;
   uint8_t voices = 0;
   uint8_t profileFlags = 0;
 };
@@ -123,13 +130,13 @@ inline void RAM_FUNC(writeAudioOutputLevels)(uint16_t piezoLevel, uint16_t jackL
   if (audioD & AUDIO_PIEZO) {
     pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, piezoLevel);
   } else {
-    pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
+    pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, PIEZO_IDLE_LEVEL);
   }
 
   if (audioD & AUDIO_AJACK) {
     pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, jackLevel);
   } else {
-    pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, static_cast<uint16_t>(PWM_MID));
+    pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, JACK_IDLE_LEVEL);
   }
 }
 
@@ -3039,21 +3046,45 @@ inline uint16_t RAM_FUNC(audioDmaLevelForDestination)(const AudioOutputLevels& l
   if (destination == AUDIO_AJACK) {
     return levels.jack;
   }
-  return static_cast<uint16_t>(PWM_MID);
+  return JACK_IDLE_LEVEL;
 }
 
 inline uint32_t RAM_FUNC(audioDmaEncodeLevel)(uint16_t level) {
   return static_cast<uint32_t>(level) << AUDIO_PWM_CC_LEVEL_SHIFT;
 }
 
-void RAM_FUNC(setInactiveAudioOutputsForDestination)(byte destination) {
+void RAM_FUNC(idlePiezoOutput)() {
+  pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, PIEZO_IDLE_LEVEL);
+  gpio_put(PIEZO_PIN, 0);
+  gpio_set_dir(PIEZO_PIN, GPIO_OUT);
+  gpio_set_function(PIEZO_PIN, GPIO_FUNC_SIO);
+}
+
+void RAM_FUNC(centerJackOutput)() {
+  gpio_set_function(AJACK_PIN, GPIO_FUNC_PWM);
+  pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, JACK_IDLE_LEVEL);
+}
+
+void RAM_FUNC(idlePhysicalAudioOutputs)() {
+  idlePiezoOutput();
+  centerJackOutput();
+}
+
+void RAM_FUNC(preparePhysicalAudioOutput)(byte destination) {
   if (destination == AUDIO_PIEZO) {
-    pwm_set_chan_level(AJACK_SLICE, AJACK_CHNL, static_cast<uint16_t>(PWM_MID));
+    pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, PIEZO_IDLE_LEVEL);
+    gpio_set_function(PIEZO_PIN, GPIO_FUNC_PWM);
+    centerJackOutput();
   } else if (destination == AUDIO_AJACK) {
-    pwm_set_chan_level(PIEZO_SLICE, PIEZO_CHNL, 0);
+    idlePiezoOutput();
+    centerJackOutput();
   } else {
-    writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
+    idlePhysicalAudioOutputs();
   }
+}
+
+void RAM_FUNC(setInactiveAudioOutputsForDestination)(byte destination) {
+  preparePhysicalAudioOutput(destination);
 }
 
 void RAM_FUNC(startAudioDmaTransfer)(uint8_t bufferIndex) {
@@ -3091,7 +3122,7 @@ void RAM_FUNC(audioDmaIrqHandler)() {
 }
 
 void fillAudioDmaSilenceBuffer(byte destination) {
-  uint16_t level = (destination == AUDIO_PIEZO) ? 0 : static_cast<uint16_t>(PWM_MID);
+  uint16_t level = (destination == AUDIO_PIEZO) ? PIEZO_IDLE_LEVEL : JACK_IDLE_LEVEL;
   uint32_t encoded = audioDmaEncodeLevel(level);
   for (uint16_t i = 0; i < AUDIO_DMA_BUFFER_SAMPLE_COUNT; ++i) {
     audioDmaSilenceBuffer[i] = encoded;
@@ -3127,7 +3158,7 @@ void stopAudioDma() {
   audioDmaBufferReady[1] = false;
   audioDmaBufferFree[0] = true;
   audioDmaBufferFree[1] = true;
-  writeAudioOutputLevels(0, static_cast<uint16_t>(PWM_MID));
+  idlePhysicalAudioOutputs();
 }
 
 void startAudioDmaForDestination(byte destination) {
