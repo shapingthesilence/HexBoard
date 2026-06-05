@@ -995,9 +995,14 @@ Firmware validates the transfer CRC32, copies the sample TLV into
 `activeSynthWaveTable`, selects the uploaded folder/name for the current runtime
 patch, writes or replaces the matching catalog entry in
 `/synth_wavetables.dat`, and stores the raw `16384` sample bytes in a per-table
-sample file named from the wavetable object id when the save flag is present.
-The legacy `/user_wavetable.dat` `UWT` file is still loadable through the
-compatibility reference `/User/UserTbl`, but new imports do not write that file.
+sample file whose short filename is derived from the first 8 bytes of the
+wavetable object id when the save flag is present. Firmware also attempts to
+read and remove the older full-object-id sample path for compatibility, but new
+imports avoid that overlong LittleFS filename. Catalog records with missing
+sample files are skipped/pruned so failed earlier imports do not consume
+wavetable slots. The legacy `/user_wavetable.dat` `UWT` file is still loadable
+through the compatibility reference `/User/UserTbl`, but new imports do not
+write that file.
 
 ## Bundle Object
 

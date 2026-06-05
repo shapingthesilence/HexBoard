@@ -1056,6 +1056,29 @@ void synthWavetableObjectIdToSamplePath(const uint8_t* objectId, char* output, s
   for (size_t i = 0; prefix[i] != '\0' && index + 1 < outputLength; ++i) {
     output[index++] = prefix[i];
   }
+  for (size_t i = 0; i < 8 && index + 2 < outputLength; ++i) {
+    output[index++] = hex[(objectId[i] >> 4) & 0x0F];
+    output[index++] = hex[objectId[i] & 0x0F];
+  }
+  if (index + 5 < outputLength) {
+    output[index++] = '.';
+    output[index++] = 'w';
+    output[index++] = 't';
+    output[index++] = 'b';
+  }
+  output[index] = '\0';
+}
+
+void synthWavetableObjectIdToLegacySamplePath(const uint8_t* objectId, char* output, size_t outputLength) {
+  static constexpr char hex[] = "0123456789ABCDEF";
+  if (outputLength == 0) {
+    return;
+  }
+  size_t index = 0;
+  const char prefix[] = "/wt_";
+  for (size_t i = 0; prefix[i] != '\0' && index + 1 < outputLength; ++i) {
+    output[index++] = prefix[i];
+  }
   for (size_t i = 0; i < SYNTH_WAVETABLE_OBJECT_ID_LENGTH && index + 2 < outputLength; ++i) {
     output[index++] = hex[(objectId[i] >> 4) & 0x0F];
     output[index++] = hex[objectId[i] & 0x0F];
@@ -1067,6 +1090,48 @@ void synthWavetableObjectIdToSamplePath(const uint8_t* objectId, char* output, s
     output[index++] = 'b';
   }
   output[index] = '\0';
+}
+
+void removeSynthWavetableSampleFiles(const SynthWavetableSlot& wavetable) {
+  if (wavetable.samplePath[0]) {
+    LittleFS.remove(wavetable.samplePath);
+  }
+  char legacySamplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
+  synthWavetableObjectIdToLegacySamplePath(wavetable.objectId, legacySamplePath, sizeof(legacySamplePath));
+  if (legacySamplePath[0] && strcmp(legacySamplePath, wavetable.samplePath) != 0) {
+    LittleFS.remove(legacySamplePath);
+  }
+}
+
+bool synthWavetableSampleFileExists(const SynthWavetableSlot& wavetable) {
+  File f = LittleFS.open(wavetable.samplePath, "r");
+  if (f) {
+    f.close();
+    return true;
+  }
+  char legacySamplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
+  synthWavetableObjectIdToLegacySamplePath(wavetable.objectId, legacySamplePath, sizeof(legacySamplePath));
+  if (legacySamplePath[0] && strcmp(legacySamplePath, wavetable.samplePath) != 0) {
+    f = LittleFS.open(legacySamplePath, "r");
+    if (f) {
+      f.close();
+      return true;
+    }
+  }
+  return false;
+}
+
+void pruneMissingSynthWavetables() {
+  size_t before = synthWavetables.size();
+  synthWavetables.erase(
+    std::remove_if(synthWavetables.begin(), synthWavetables.end(), [](const SynthWavetableSlot& wavetable) {
+      return !wavetable.valid || !synthWavetableSampleFileExists(wavetable);
+    }),
+    synthWavetables.end()
+  );
+  if (synthWavetables.size() != before) {
+    sendToLog("Removed missing synth wavetable catalog entries.");
+  }
 }
 
 bool synthWavetableObjectIdIsEmpty(const SynthWavetableSlot& wavetable) {
@@ -1213,6 +1278,10 @@ void load_synth_wavetables() {
       continue;
     }
     normalizeSynthWavetableMetadata(wavetable);
+    if (!synthWavetableSampleFileExists(wavetable)) {
+      sendToLog("Skipping wavetable with missing sample file: " + std::string(wavetable.name));
+      continue;
+    }
     synthWavetables.push_back(wavetable);
   }
 }
@@ -1259,7 +1328,7 @@ int chooseSynthWavetableWriteSlot(const SynthWavetableSlot& wavetable) {
 bool writeSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, const uint8_t* samples) {
   File f = LittleFS.open(wavetable.samplePath, "w");
   if (!f) {
-    sendToLog("Error: Unable to open wavetable sample file.");
+    sendToLog("Error: Unable to open wavetable sample file " + std::string(wavetable.samplePath) + ".");
     return false;
   }
   size_t written = f.write(samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
@@ -1279,8 +1348,16 @@ bool loadSynthWavetableFromCatalog(const char* folderPath, const char* name) {
   SynthWavetableSlot& wavetable = synthWavetables[index];
   File f = LittleFS.open(wavetable.samplePath, "r");
   if (!f) {
-    sendToLog("Missing wavetable sample file for " + std::string(wavetable.name));
-    return false;
+    char legacySamplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
+    synthWavetableObjectIdToLegacySamplePath(wavetable.objectId, legacySamplePath, sizeof(legacySamplePath));
+    if (legacySamplePath[0] && strcmp(legacySamplePath, wavetable.samplePath) != 0) {
+      f = LittleFS.open(legacySamplePath, "r");
+    }
+    if (!f) {
+      sendToLog("Missing wavetable sample file for " + std::string(wavetable.name));
+      return false;
+    }
+    sendToLog("Loaded legacy wavetable sample path for " + std::string(wavetable.name));
   }
   size_t bytesRead = f.read(&activeSynthWaveTable[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
   f.close();
@@ -2482,8 +2559,16 @@ bool readSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, std::vect
   samples.assign(SYNTH_WAVETABLE_SAMPLE_BYTES, 0);
   File f = LittleFS.open(wavetable.samplePath, "r");
   if (!f) {
-    sendToLog("Missing wavetable sample file for " + std::string(wavetable.name));
-    return false;
+    char legacySamplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
+    synthWavetableObjectIdToLegacySamplePath(wavetable.objectId, legacySamplePath, sizeof(legacySamplePath));
+    if (legacySamplePath[0] && strcmp(legacySamplePath, wavetable.samplePath) != 0) {
+      f = LittleFS.open(legacySamplePath, "r");
+    }
+    if (!f) {
+      sendToLog("Missing wavetable sample file for " + std::string(wavetable.name));
+      return false;
+    }
+    sendToLog("Read legacy wavetable sample path for " + std::string(wavetable.name));
   }
   size_t bytesRead = f.read(samples.data(), samples.size());
   f.close();
@@ -2549,6 +2634,7 @@ bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& parsed) {
   snprintf(wavetable.name, sizeof(wavetable.name), "%s", parsed.name);
   snprintf(wavetable.folderPath, sizeof(wavetable.folderPath), "%s", parsed.folderPath);
   normalizeSynthWavetableMetadata(wavetable, parsed.samples);
+  pruneMissingSynthWavetables();
 
   int slotIndex = chooseSynthWavetableWriteSlot(wavetable);
   if (slotIndex < 0) {
@@ -2556,12 +2642,8 @@ bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& parsed) {
     return false;
   }
 
-  char previousSamplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
   if (static_cast<size_t>(slotIndex) < synthWavetables.size()) {
-    snprintf(previousSamplePath, sizeof(previousSamplePath), "%s", synthWavetables[slotIndex].samplePath);
-  }
-  if (previousSamplePath[0]) {
-    LittleFS.remove(previousSamplePath);
+    removeSynthWavetableSampleFiles(synthWavetables[slotIndex]);
   }
   if (!writeSynthWavetableSampleFile(wavetable, parsed.samples)) {
     return false;
@@ -3173,9 +3255,7 @@ void presetSyncHandleDelete(uint16_t transactionId, const uint8_t* payload, size
         && strncmp(currentSynthWavetableFolderPath,
                    synthWavetables[handle].folderPath,
                    sizeof(currentSynthWavetableFolderPath)) == 0;
-      if (synthWavetables[handle].samplePath[0]) {
-        LittleFS.remove(synthWavetables[handle].samplePath);
-      }
+      removeSynthWavetableSampleFiles(synthWavetables[handle]);
       synthWavetables.erase(synthWavetables.begin() + handle);
       flashSafeSaveSynthWavetables();
       requestSynthWavetableMenuRebuild();

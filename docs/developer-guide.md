@@ -492,6 +492,12 @@ byte-oriented settings profile. Firmware persists that current reference in
 on-device preset/wavetable loads or preset-sync save-and-apply commits. Startup
 loads the wavetable catalog, restores this reference, then lets
 `syncSettingsToRuntime()` load the selected table.
+User wavetable sample files use a shortened `/wt_<16 hex>.wtb` path derived from
+the first 8 object-id bytes so filenames stay under LittleFS limits. Read and
+delete paths also try the older full-object-id filename to tolerate earlier
+catalog files, but new writes always use the shorter path. Catalog load and
+write paths skip/prune user wavetable records whose sample file is missing so
+failed earlier imports do not keep consuming catalog slots.
 
 All active tables use the same RAM path: firmware builds or loads `32` frames of
 `512` samples into `activeSynthWaveTable`. The sampler runs in the normal synth

@@ -543,7 +543,12 @@ at position `0`. Missing named wavetable dependencies fall back to `Basic`.
 Because folder/name references are strings, the current selection is persisted
 outside `/settings.dat` in `/current_wavetable.dat`; settings saves, preset
 loads, wavetable menu loads, and preset-sync save-and-apply commits update that
-sidecar file.
+sidecar file. User wavetable sample files use a shortened
+`/wt_<16 hex>.wtb` filename based on the first 8 object-id bytes; firmware keeps
+a legacy full-object-id path fallback for reads/deletes, but new writes avoid
+the overlong filename that can fail on LittleFS. Catalog load/write paths skip
+or prune records whose sample file is missing, which prevents failed earlier
+imports from exhausting catalog slots.
 
 The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `Morph` is the default wheel effect and applies one shared phase-warp helper across the onboard waveforms. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the on-device menu presents rounded frame anchors labeled `1..32`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount through RAM-tagged fixed Q16 ratio tables so full positive depth raises each active voice by about `+48` semitones and full negative depth lowers it by about `-48` semitones.
 
