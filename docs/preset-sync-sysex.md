@@ -953,6 +953,10 @@ the actual source dependency. Old `Waveform` values map into the built-in
 compatibility tables and update `SynthWavetablePosition` to the matching anchor;
 `Hybrid` maps to `Basic` at position `0`, and missing named dependencies load
 `Basic` until the matching table is installed.
+Built-in wavetable dependencies use the reserved folder path `/Built In`
+unescaped. Firmware accepts the older escaped `%2FBuilt In` alias and the
+normalizer-stripped `Built In` alias for compatibility with earlier saves, but
+new web-app preset writes send `/Built In` directly.
 
 The common `Name` and `FolderPath` TLVs are required for named/foldered synth
 presets. Duplicate names are allowed in different folders. Within the same

@@ -521,6 +521,7 @@ std::vector<SynthWavetableSlot> synthWavetables;
 
 void saveCurrentSynthWavetableReference();
 bool loadCurrentSynthWavetableReference();
+void normalizeSynthWavetableBuiltInFolderAlias(char* folderPath, size_t folderPathLength);
 
 void remapLegacySynthPresetEnvelopeTimes(SynthPresetSlot& preset) {
   if (!preset.valid) {
@@ -943,6 +944,7 @@ bool loadCurrentSynthWavetableReference() {
   reference.name[sizeof(reference.name) - 1] = '\0';
   reference.folderPath[sizeof(reference.folderPath) - 1] = '\0';
   normalizeSynthWavetableFolderPath(reference.folderPath, sizeof(reference.folderPath));
+  normalizeSynthWavetableBuiltInFolderAlias(reference.folderPath, sizeof(reference.folderPath));
   setCurrentSynthWavetableReference(reference.folderPath, reference.name);
   sendToLog("Current wavetable reference loaded.");
   return true;
@@ -1476,6 +1478,17 @@ void normalizeSynthWavetableFolderPath(char* folderPath, size_t folderPathLength
   normalizeSynthPresetFolderPath(folderPath, folderPathLength);
 }
 
+void normalizeSynthWavetableBuiltInFolderAlias(char* folderPath, size_t folderPathLength) {
+  if (folderPathLength == 0) {
+    return;
+  }
+  if (strcmp(folderPath, "Built In") == 0
+      || strcmp(folderPath, "%2FBuilt In") == 0
+      || strcmp(folderPath, "%2fBuilt In") == 0) {
+    snprintf(folderPath, folderPathLength, "%s", SYNTH_WAVETABLE_BUILTIN_FOLDER);
+  }
+}
+
 void normalizeSynthPresetWavetableReference(SynthPresetSlot& preset) {
   preset.wavetableName[sizeof(preset.wavetableName) - 1] = '\0';
   preset.wavetableFolderPath[sizeof(preset.wavetableFolderPath) - 1] = '\0';
@@ -1495,6 +1508,7 @@ void normalizeSynthPresetWavetableReference(SynthPresetSlot& preset) {
     snprintf(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), "%s", SYNTH_WAVETABLE_BUILTIN_FOLDER);
   }
   normalizeSynthWavetableFolderPath(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath));
+  normalizeSynthWavetableBuiltInFolderAlias(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath));
 }
 
 void normalizeSynthPresetMetadata(SynthPresetSlot& preset, uint8_t fallbackIndex) {

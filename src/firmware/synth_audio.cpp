@@ -1798,10 +1798,22 @@ const BuiltinSynthWavetableDefinition* synthBuiltinWavetableAt(size_t index) {
   return &builtinSynthWavetables[index];
 }
 
+bool synthWavetableFolderMatches(const char* candidateFolderPath, const char* tableFolderPath) {
+  if (strcmp(candidateFolderPath, tableFolderPath) == 0) {
+    return true;
+  }
+  if (strcmp(tableFolderPath, SYNTH_WAVETABLE_BUILTIN_FOLDER) != 0) {
+    return false;
+  }
+  return strcmp(candidateFolderPath, "Built In") == 0
+         || strcmp(candidateFolderPath, "%2FBuilt In") == 0
+         || strcmp(candidateFolderPath, "%2fBuilt In") == 0;
+}
+
 int findBuiltinSynthWavetable(const char* folderPath, const char* name) {
   for (size_t i = 0; i < SYNTH_BUILTIN_WAVETABLE_COUNT; ++i) {
     const BuiltinSynthWavetableDefinition& table = builtinSynthWavetables[i];
-    if (strcmp(table.folderPath, folderPath) == 0 && strcmp(table.name, name) == 0) {
+    if (synthWavetableFolderMatches(folderPath, table.folderPath) && strcmp(table.name, name) == 0) {
       return static_cast<int>(i);
     }
   }
@@ -1868,10 +1880,16 @@ void generateCompatibilitySynthWavetable(const BuiltinSynthWavetableDefinition& 
 }
 
 void setCurrentSynthWavetableReference(const char* folderPath, const char* name) {
+  const char* normalizedFolderPath = folderPath && folderPath[0] ? folderPath : SYNTH_WAVETABLE_ROOT_FOLDER;
+  if (strcmp(normalizedFolderPath, "Built In") == 0
+      || strcmp(normalizedFolderPath, "%2FBuilt In") == 0
+      || strcmp(normalizedFolderPath, "%2fBuilt In") == 0) {
+    normalizedFolderPath = SYNTH_WAVETABLE_BUILTIN_FOLDER;
+  }
   snprintf(currentSynthWavetableFolderPath,
            sizeof(currentSynthWavetableFolderPath),
            "%s",
-           folderPath && folderPath[0] ? folderPath : SYNTH_WAVETABLE_ROOT_FOLDER);
+           normalizedFolderPath);
   snprintf(currentSynthWavetableName,
            sizeof(currentSynthWavetableName),
            "%s",

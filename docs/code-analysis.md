@@ -543,7 +543,9 @@ at position `0`. Missing named wavetable dependencies fall back to `Basic`.
 Because folder/name references are strings, the current selection is persisted
 outside `/settings.dat` in `/current_wavetable.dat`; settings saves, preset
 loads, wavetable menu loads, and preset-sync save-and-apply commits update that
-sidecar file. User wavetable sample files use a shortened
+sidecar file. Built-in wavetable dependencies use the reserved `/Built In`
+folder unescaped; firmware normalizes the older `%2FBuilt In` and `Built In`
+aliases for compatibility with earlier saves. User wavetable sample files use a shortened
 `/wt_<16 hex>.wtb` filename based on the first 8 object-id bytes; firmware keeps
 a legacy full-object-id path fallback for reads/deletes, but new writes avoid
 the overlong filename that can fail on LittleFS. Catalog load/write paths skip

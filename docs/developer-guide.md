@@ -492,6 +492,9 @@ byte-oriented settings profile. Firmware persists that current reference in
 on-device preset/wavetable loads or preset-sync save-and-apply commits. Startup
 loads the wavetable catalog, restores this reference, then lets
 `syncSettingsToRuntime()` load the selected table.
+The reserved built-in wavetable folder is `/Built In` and is sent unescaped in
+preset wavetable dependencies; firmware also normalizes the older `%2FBuilt In`
+and `Built In` aliases so existing presets keep loading built-ins.
 User wavetable sample files use a shortened `/wt_<16 hex>.wtb` path derived from
 the first 8 object-id bytes so filenames stay under LittleFS limits. Read and
 delete paths also try the older full-object-id filename to tolerate earlier

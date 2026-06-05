@@ -509,6 +509,11 @@ function encodeDeviceFolderPath(folderPath: string): string {
     .replace(/\\/g, "%5C");
 }
 
+function encodeDeviceWavetableFolderPath(folderPath: string): string {
+  const normalized = normalizeDisplayFolderPath(folderPath);
+  return normalized === builtInWavetableFolder ? normalized : encodeDeviceFolderPath(normalized);
+}
+
 function decodeDeviceFolderPath(folderPath: string): string {
   const normalized = normalizeDisplayFolderPath(folderPath);
   if (normalized === rootFolderPath) {
@@ -574,7 +579,7 @@ function encodeEditablePreset(preset: EditableSynthPreset) {
     folderPath: encodeDeviceFolderPath(preset.folderPath),
     favorite: preset.favorite,
     wavetable: {
-      folderPath: encodeDeviceFolderPath(wavetable.folderPath),
+      folderPath: encodeDeviceWavetableFolderPath(wavetable.folderPath),
       name: wavetable.name
     },
     values: {
