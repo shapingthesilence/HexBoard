@@ -368,7 +368,7 @@ Important implementation details:
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
 - `PlaybackMode` defaults to `Poly`; valid values are `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, and `Poly`; legacy stored mono value `1` now means `MonoRtg`; legacy transient `PolyTbl` value `5` is normalized to `Poly`
-- onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `Morph` and `100%`; valid runtime targets are `Morph`, `Vibrato`, `Pitch`, and `WT Pos`; pitch target depth maps the signed `-127..127` runtime amount across about `+/-48` semitones; `Morph` applies one shared phase-warp path across waveforms, while `WT Pos` offsets wavetable frame position from the persisted `SynthWavetablePosition` base. `SynthWavetablePosition` remains a `0..127` byte internally, but the on-device menu labels it as frames `1..32` using rounded frame-anchor byte values.
+- onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `Morph` and `100%`; valid runtime targets are `Morph`, `Vibrato`, `Pitch`, and `WT Pos`; pitch target depth maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator spanning about `+/-24` semitones, then reads startup-generated RAM Q16 ratio tables; `Morph` applies one shared phase-warp path across waveforms, while `WT Pos` offsets wavetable frame position from the persisted `SynthWavetablePosition` base. `SynthWavetablePosition` remains a `0..127` byte internally, but the on-device menu labels it as frames `1..32` using rounded frame-anchor byte values.
 - synth modulation target calculation runs on an `8`-sample control quantum for CPU headroom; per-voice phase increment and morph depth then linearly slew between cached targets at audio rate to reduce pitch and morph stepping artifacts
 - the synth LFO is stored as `SynthLfoTarget`, `SynthLfoAmount`, `SynthLfoWave`, and `SynthLfoSpeed`; the LFO targets the same modulation destinations as the wheel and FX envelopes, uses a bipolar amount byte where `127` is off, supports sine/triangle/saw/square shapes, and uses a `20`-entry `0.05 Hz` through `20 Hz` speed table
 - onboard synth vibrato speed is stored as `SynthVibratoSpeed`; selectable values are `1 Hz` through `12 Hz`, with factory default `6 Hz`
@@ -518,9 +518,10 @@ divide. Modulation work runs on an `8`-sample control quantum: wheel smoothing,
 LFO sampling, FX envelope state, pitch/vibrato targets, morph targets, and
 wavetable frame contexts are cached there, with note start/release/reset forcing
 an immediate per-voice cache refresh. Per-voice phase increment and morph depth
-slew between cached targets at audio rate. Oscillator phase advance, morph phase
-warping, waveform reads, amp-envelope level, mixing, drive, and output scaling
-remain audio-rate. When only global sources such as the wheel or LFO modulate
+slew between cached targets at audio rate; the normal `8`-sample retarget uses
+shift math instead of division. Oscillator phase advance, morph phase warping,
+waveform reads, amp-envelope level, mixing, drive, and output scaling remain
+audio-rate. When only global sources such as the wheel or LFO modulate
 `WT Pos`, the cached frame-pair read context is shared by all voices; when an FX
 envelope targets `WT Pos`, each voice caches its own frame context.
 FX-envelope modulation depth uses a `128 x 128` RAM scale table,

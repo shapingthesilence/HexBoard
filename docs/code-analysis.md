@@ -160,8 +160,9 @@ instead of division or reciprocal approximation.
 This deliberately does not move the OLED menu and note-overlay drawing stack.
 Those paths mostly call GEM/U8g2 routines and send data over I2C, so wholesale
 RAM placement would consume much more SRAM than the selected hot-path pass.
-After the DMA renderer and modulation-cache pass, `make` reports about `142 KB`
-of globals and about `120 KB` remaining for local variables, heap, and stacks.
+After the DMA renderer, modulation-cache pass, and Q4 pitch-ratio lookup table,
+`make` reports about `152 KB` of globals and about `110 KB` remaining for local
+variables, heap, and stacks.
 
 ### Audio Profiling Diagnostic
 
@@ -555,7 +556,7 @@ the overlong filename that can fail on LittleFS. Catalog load/write paths skip
 or prune records whose sample file is missing, which prevents failed earlier
 imports from exhausting catalog slots.
 
-The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `Morph` is the default wheel effect and applies one shared phase-warp helper across the onboard waveforms. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the on-device menu presents rounded frame anchors labeled `1..32`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount through RAM-tagged fixed Q16 ratio tables so full positive depth raises each active voice by about `+48` semitones and full negative depth lowers it by about `-48` semitones.
+The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `Morph` is the default wheel effect and applies one shared phase-warp helper across the onboard waveforms. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the on-device menu presents rounded frame anchors labeled `1..32`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator, then reads startup-generated RAM Q16 ratio tables so full positive depth raises each active voice by about `+24` semitones and full negative depth lowers it by about `-24` semitones.
 
 The synth LFO is persisted as `SynthLfoTarget`, `SynthLfoAmount`,
 `SynthLfoWave`, and `SynthLfoSpeed`. It uses the same target accumulator as the

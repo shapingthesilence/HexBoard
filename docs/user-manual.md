@@ -258,7 +258,7 @@ backward through the wavetable.
 
 - `Morph`: applies the same phase-warp color movement across the onboard waveforms
 - `Vibrato`: adds pitch vibrato to the active synth voices
-- `Pitch`: bends pitch up with the wheel or positive FX amounts, and down with negative FX amounts. Full-depth pitch modulation spans about `+/-48` semitones.
+- `Pitch`: bends pitch up with the wheel or positive FX amounts, and down with negative FX amounts. Full-depth pitch modulation spans about `+/-24` semitones.
 - `WT Pos`: scans the selected wavetable forward or backward from the base `WT Pos`
 
 External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed` sets

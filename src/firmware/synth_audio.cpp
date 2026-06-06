@@ -860,6 +860,12 @@ uint16_t synthMorphPhaseWarpScaleByDepth[128] = {};
 uint8_t synthFxModScaleByDepth[128][128] = {};
 bool userSynthWavetableAvailable = false;
 void setActiveSynthWaveFrameCount(uint8_t frameCount);
+constexpr int16_t SYNTH_PITCH_MOD_Q4_SCALE = 16;
+constexpr int16_t SYNTH_PITCH_MOD_MAX_Q4 = 127 * SYNTH_PITCH_MOD_Q4_SCALE;
+constexpr uint16_t SYNTH_PITCH_MOD_RATIO_Q4_COUNT = (SYNTH_PITCH_MOD_MAX_Q4 / 2) + 1;
+uint32_t synthPitchModPositiveQ16ByQ4[SYNTH_PITCH_MOD_RATIO_Q4_COUNT] = {};
+uint32_t synthPitchModNegativeQ16ByQ4[SYNTH_PITCH_MOD_RATIO_Q4_COUNT] = {};
+void initializeSynthPitchModLookup();
 /*
     The sine wavetable benefits the most from
     interpolation because it has the fewest
@@ -1549,6 +1555,23 @@ inline int16_t RAM_FUNC(effectEnvelopeModValue)(uint8_t envelopeIndex, uint8_t t
   return (depth < 0) ? -signedValue : signedValue;
 }
 
+inline int16_t RAM_FUNC(effectEnvelopePitchModValueQ4)(uint8_t envelopeIndex, const EnvelopeState& env) {
+  int16_t depth = synthEffectAmountDepth(effectEnvelopeAmount[envelopeIndex]);
+  if (depth == 0 || env.stage == EnvelopeStage::Idle) {
+    return 0;
+  }
+
+  uint32_t level = env.level;
+  if (level > envelopeMaxLevel) {
+    level = envelopeMaxLevel;
+  }
+  uint32_t audioLevel = envelopeAudioLevel(level);
+  uint16_t absDepthQ4 = static_cast<uint16_t>(depth > 0 ? depth : -depth) * SYNTH_PITCH_MOD_Q4_SCALE;
+  uint16_t scaledQ4 = static_cast<uint16_t>(((audioLevel + 1u) * static_cast<uint32_t>(absDepthQ4)) >> 16);
+  int16_t signedValueQ4 = static_cast<int16_t>(scaledQ4);
+  return (depth < 0) ? -signedValueQ4 : signedValueQ4;
+}
+
 inline void RAM_FUNC(resetCachedEffectEnvelopeModValue)(uint8_t envelopeIndex, uint8_t voiceIndex) {
   cachedEffectEnvelopeModValues[envelopeIndex][voiceIndex] = 0;
 }
@@ -1650,6 +1673,10 @@ inline void RAM_FUNC(refreshCachedEffectEnvelopeModValue)(uint8_t envelopeIndex,
   EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][voiceIndex];
   if (elapsedTicks != 0) {
     updateEffectEnvelopeState(envelopeIndex, effectEnv, elapsedTicks);
+  }
+  if (effectEnvelopeTarget[envelopeIndex] == SYNTH_MOD_TARGET_PITCH) {
+    cachedEffectEnvelopeModValues[envelopeIndex][voiceIndex] = 0;
+    return;
   }
   cachedEffectEnvelopeModValues[envelopeIndex][voiceIndex] =
     effectEnvelopeModValue(envelopeIndex, effectEnvelopeTarget[envelopeIndex], effectEnv);
@@ -2055,6 +2082,7 @@ void initializeSynthWaveTables() {
   memcpy(synthVibratoSine, waveSineSource, SYNTH_WAVE_SAMPLE_COUNT);
   initializeSynthMorphLookup();
   initializeSynthFxModLookup();
+  initializeSynthPitchModLookup();
   setActiveSynthWaveFrameCount(1);
   resetSynthRenderCaches();
   loadedSynthWaveform = 255;
@@ -2184,17 +2212,31 @@ inline void RAM_FUNC(retargetSynthVoiceSlews)(SynthVoiceRenderCache& cache,
   }
 
   cache.phaseIncrementTarget = phaseIncrementTarget;
-  int64_t phaseDelta = static_cast<int64_t>(phaseIncrementTarget) - static_cast<int64_t>(cache.phaseIncrement);
-  int64_t phaseStep = phaseDelta / static_cast<int64_t>(elapsedTicks);
-  if (phaseStep == 0 && phaseDelta != 0) {
-    phaseStep = (phaseDelta > 0) ? 1 : -1;
+  if (phaseIncrementTarget >= cache.phaseIncrement) {
+    uint32_t difference = phaseIncrementTarget - cache.phaseIncrement;
+    uint32_t step = (elapsedTicks == 8)
+                      ? (difference >> 3)
+                      : (difference / elapsedTicks);
+    if (step == 0 && difference != 0) {
+      step = 1;
+    }
+    cache.phaseIncrementStep = static_cast<int32_t>(
+      step > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())
+        ? static_cast<uint32_t>(std::numeric_limits<int32_t>::max())
+        : step);
+  } else {
+    uint32_t difference = cache.phaseIncrement - phaseIncrementTarget;
+    uint32_t step = (elapsedTicks == 8)
+                      ? (difference >> 3)
+                      : (difference / elapsedTicks);
+    if (step == 0 && difference != 0) {
+      step = 1;
+    }
+    cache.phaseIncrementStep = -static_cast<int32_t>(
+      step > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())
+        ? static_cast<uint32_t>(std::numeric_limits<int32_t>::max())
+        : step);
   }
-  if (phaseStep > static_cast<int64_t>(std::numeric_limits<int32_t>::max())) {
-    phaseStep = static_cast<int64_t>(std::numeric_limits<int32_t>::max());
-  } else if (phaseStep < -static_cast<int64_t>(std::numeric_limits<int32_t>::max())) {
-    phaseStep = -static_cast<int64_t>(std::numeric_limits<int32_t>::max());
-  }
-  cache.phaseIncrementStep = static_cast<int32_t>(phaseStep);
   cache.phaseIncrementSlewSamples = elapsedTicks;
 
   cache.morphAmountTargetQ4 = morphAmountTargetQ4;
@@ -2290,6 +2332,24 @@ inline int16_t RAM_FUNC(clampSynthModAccumulator)(int16_t value) {
   return value;
 }
 
+inline int16_t RAM_FUNC(clampSynthPitchModAccumulatorQ4)(int16_t valueQ4) {
+  if (valueQ4 > SYNTH_PITCH_MOD_MAX_Q4) {
+    return SYNTH_PITCH_MOD_MAX_Q4;
+  }
+  if (valueQ4 < -SYNTH_PITCH_MOD_MAX_Q4) {
+    return -SYNTH_PITCH_MOD_MAX_Q4;
+  }
+  return valueQ4;
+}
+
+inline void RAM_FUNC(addSynthPitchTargetAmountQ4)(int16_t amountQ4,
+                                                  int16_t& pitchAmountQ4) {
+  if (amountQ4 == 0) {
+    return;
+  }
+  pitchAmountQ4 = clampSynthPitchModAccumulatorQ4(static_cast<int16_t>(pitchAmountQ4 + amountQ4));
+}
+
 inline int16_t RAM_FUNC(combinedWavetablePositionAmount)(int16_t positionModAmount) {
   int16_t amount = static_cast<int16_t>(synthWavetablePosition) + positionModAmount;
   if (amount > 127) {
@@ -2337,6 +2397,17 @@ inline int16_t RAM_FUNC(synthLfoModValue)(uint8_t elapsedTicks = 1) {
   return static_cast<int16_t>(scaled >> 7);
 }
 
+inline int16_t RAM_FUNC(synthLfoPitchModValueQ4)(uint8_t elapsedTicks = 1) {
+  int16_t depth = synthEffectAmountDepth(synthLfoAmount);
+  if (depth == 0) {
+    return 0;
+  }
+  synthLfoPhase += synthLfoPhaseIncrement * static_cast<uint32_t>(elapsedTicks ? elapsedTicks : 1);
+  int16_t sample = readSynthLfoSample();
+  int32_t scaledQ4 = static_cast<int32_t>(sample) * static_cast<int32_t>(depth);
+  return clampSynthPitchModAccumulatorQ4(static_cast<int16_t>(scaledQ4 >> 3));
+}
+
 inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
                                            int16_t amount,
                                            int16_t& morphAmount,
@@ -2355,8 +2426,8 @@ inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
       destination = &vibratoAmount;
       break;
     case SYNTH_MOD_TARGET_PITCH:
-      destination = &pitchAmount;
-      break;
+      addSynthPitchTargetAmountQ4(static_cast<int16_t>(amount * SYNTH_PITCH_MOD_Q4_SCALE), pitchAmount);
+      return;
     case SYNTH_MOD_TARGET_WAVETABLE_POSITION:
       destination = &wavetablePositionAmount;
       break;
@@ -2404,14 +2475,42 @@ constexpr uint32_t RAM_FUNC(SYNTH_PITCH_MOD_NEGATIVE_Q16)[128] = {
   4772, 4669, 4568, 4470, 4373, 4279, 4186, 4096
 };
 
-inline uint32_t RAM_FUNC(applySynthPitchMod)(uint32_t increment, int16_t pitchAmount) {
-  if (pitchAmount == 0) {
+uint32_t interpolatedSynthPitchRatioFromBaseTable(const uint32_t* table, uint16_t halfRangeDepthQ4) {
+  uint8_t index = static_cast<uint8_t>(halfRangeDepthQ4 >> 4);
+  uint8_t frac = static_cast<uint8_t>(halfRangeDepthQ4 & 0x0F);
+  uint32_t ratioA = table[index];
+  if (frac == 0) {
+    return ratioA;
+  }
+  uint32_t ratioB = table[index + 1];
+  int32_t delta = static_cast<int32_t>(ratioB) - static_cast<int32_t>(ratioA);
+  return static_cast<uint32_t>(static_cast<int32_t>(ratioA) + ((delta * static_cast<int32_t>(frac)) >> 4));
+}
+
+void initializeSynthPitchModLookup() {
+  for (uint16_t depthQ4 = 0; depthQ4 < SYNTH_PITCH_MOD_RATIO_Q4_COUNT; ++depthQ4) {
+    synthPitchModPositiveQ16ByQ4[depthQ4] =
+      interpolatedSynthPitchRatioFromBaseTable(SYNTH_PITCH_MOD_POSITIVE_Q16, depthQ4);
+    synthPitchModNegativeQ16ByQ4[depthQ4] =
+      interpolatedSynthPitchRatioFromBaseTable(SYNTH_PITCH_MOD_NEGATIVE_Q16, depthQ4);
+  }
+}
+
+inline uint32_t RAM_FUNC(synthPitchRatioQ16FromAmountQ4)(int16_t pitchAmountQ4) {
+  uint16_t depthQ4 = static_cast<uint16_t>(pitchAmountQ4 > 0 ? pitchAmountQ4 : -pitchAmountQ4);
+  if (depthQ4 > SYNTH_PITCH_MOD_MAX_Q4) {
+    depthQ4 = SYNTH_PITCH_MOD_MAX_Q4;
+  }
+  uint16_t halfRangeDepthQ4 = depthQ4 >> 1;
+  return (pitchAmountQ4 > 0) ? synthPitchModPositiveQ16ByQ4[halfRangeDepthQ4]
+                             : synthPitchModNegativeQ16ByQ4[halfRangeDepthQ4];
+}
+
+inline uint32_t RAM_FUNC(applySynthPitchMod)(uint32_t increment, int16_t pitchAmountQ4) {
+  if (pitchAmountQ4 == 0) {
     return increment;
   }
-  uint8_t depth = pitchAmount > 0 ? static_cast<uint8_t>(pitchAmount)
-                                  : static_cast<uint8_t>(-pitchAmount);
-  uint32_t ratioQ16 = pitchAmount > 0 ? SYNTH_PITCH_MOD_POSITIVE_Q16[depth]
-                                      : SYNTH_PITCH_MOD_NEGATIVE_Q16[depth];
+  uint32_t ratioQ16 = synthPitchRatioQ16FromAmountQ4(pitchAmountQ4);
   uint64_t scaled = (static_cast<uint64_t>(increment) * ratioQ16) >> 16;
   if (scaled > std::numeric_limits<uint32_t>::max()) {
     return std::numeric_limits<uint32_t>::max();
@@ -2431,18 +2530,28 @@ inline bool RAM_FUNC(synthControlTickDue)() {
 inline void RAM_FUNC(refreshSynthBaseModulationCache)(uint8_t elapsedTicks) {
   synthBaseModulationCache = {};
   const uint8_t synthModValue = scaleSynthModAmount(smoothedSynthModValue(elapsedTicks));
-  addSynthTargetAmount(synthModTarget,
-                       synthModValue,
-                       synthBaseModulationCache.morph,
-                       synthBaseModulationCache.vibrato,
-                       synthBaseModulationCache.pitch,
-                       synthBaseModulationCache.wavetablePosition);
-  addSynthTargetAmount(synthLfoTarget,
-                       synthLfoModValue(elapsedTicks),
-                       synthBaseModulationCache.morph,
-                       synthBaseModulationCache.vibrato,
-                       synthBaseModulationCache.pitch,
-                       synthBaseModulationCache.wavetablePosition);
+  if (synthModTarget == SYNTH_MOD_TARGET_PITCH) {
+    addSynthPitchTargetAmountQ4(static_cast<int16_t>(synthModValue * SYNTH_PITCH_MOD_Q4_SCALE),
+                                synthBaseModulationCache.pitch);
+  } else {
+    addSynthTargetAmount(synthModTarget,
+                         synthModValue,
+                         synthBaseModulationCache.morph,
+                         synthBaseModulationCache.vibrato,
+                         synthBaseModulationCache.pitch,
+                         synthBaseModulationCache.wavetablePosition);
+  }
+  if (synthLfoTarget == SYNTH_MOD_TARGET_PITCH) {
+    addSynthPitchTargetAmountQ4(synthLfoPitchModValueQ4(elapsedTicks),
+                                synthBaseModulationCache.pitch);
+  } else {
+    addSynthTargetAmount(synthLfoTarget,
+                         synthLfoModValue(elapsedTicks),
+                         synthBaseModulationCache.morph,
+                         synthBaseModulationCache.vibrato,
+                         synthBaseModulationCache.pitch,
+                         synthBaseModulationCache.wavetablePosition);
+  }
 }
 
 inline void RAM_FUNC(advanceSynthFrequencyControl)(uint8_t voiceIndex, uint8_t elapsedTicks) {
@@ -2489,12 +2598,18 @@ inline void RAM_FUNC(refreshSynthVoiceRenderCache)(uint8_t voiceIndex,
   for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
     refreshCachedEffectEnvelopeModValue(envelopeIndex, voiceIndex, elapsedTicks);
     if (synthEffectEnvelopeActive[envelopeIndex]) {
-      addSynthTargetAmount(effectEnvelopeTarget[envelopeIndex],
-                           cachedEffectEnvelopeModValues[envelopeIndex][voiceIndex],
-                           voiceModulation.morph,
-                           voiceModulation.vibrato,
-                           voiceModulation.pitch,
-                           voiceModulation.wavetablePosition);
+      if (effectEnvelopeTarget[envelopeIndex] == SYNTH_MOD_TARGET_PITCH) {
+        addSynthPitchTargetAmountQ4(effectEnvelopePitchModValueQ4(envelopeIndex,
+                                                                  effectEnvelopeStates[envelopeIndex][voiceIndex]),
+                                    voiceModulation.pitch);
+      } else {
+        addSynthTargetAmount(effectEnvelopeTarget[envelopeIndex],
+                             cachedEffectEnvelopeModValues[envelopeIndex][voiceIndex],
+                             voiceModulation.morph,
+                             voiceModulation.vibrato,
+                             voiceModulation.pitch,
+                             voiceModulation.wavetablePosition);
+      }
     }
   }
 
