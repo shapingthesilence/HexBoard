@@ -260,10 +260,12 @@ const driveOptions = [
 ];
 
 const modTargetOptions = [
-  { label: "Morph", value: 0 },
   { label: "Vibrato", value: 1 },
   { label: "Pitch", value: 2 },
-  { label: "WT Pos", value: 3 }
+  { label: "WT Pos", value: 3 },
+  { label: "FoldWrp", value: 0 },
+  { label: "DutyWrp", value: 4 },
+  { label: "PolyWrp", value: 5 }
 ];
 
 const lfoWaveOptions = [
@@ -323,7 +325,7 @@ const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]>
   PlaybackMode: [0, 4],
   Waveform: [0, 28],
   SynthDrive: [0, 3],
-  SynthModTarget: [0, 3],
+  SynthModTarget: [0, 5],
   SynthModAmount: [0, 127],
   SynthVibratoSpeed: [0, 11],
   ArpeggiatorDivision: [1, 32],
@@ -333,14 +335,14 @@ const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]>
   EnvelopeDecayIndex: [0, 19],
   EnvelopeSustainLevel: [0, 127],
   EnvelopeReleaseIndex: [0, 19],
-  EffectEnvelopeTarget: [0, 3],
+  EffectEnvelopeTarget: [0, 5],
   EffectEnvelopeAmount: [0, 254],
   EffectEnvelopeAttackIndex: [0, 19],
   EffectEnvelopeHoldIndex: [0, 19],
   EffectEnvelopeDecayIndex: [0, 19],
   EffectEnvelopeSustainLevel: [0, 127],
   EffectEnvelopeReleaseIndex: [0, 19],
-  EffectEnvelope2Target: [0, 3],
+  EffectEnvelope2Target: [0, 5],
   EffectEnvelope2Amount: [0, 254],
   EffectEnvelope2AttackIndex: [0, 19],
   EffectEnvelope2HoldIndex: [0, 19],
@@ -350,7 +352,7 @@ const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]>
   SynthPortamentoTimeIndex: [0, 19],
   ArpeggiatorDirection: [0, 6],
   SynthWavetablePosition: [0, 127],
-  SynthLfoTarget: [0, 3],
+  SynthLfoTarget: [0, 5],
   SynthLfoAmount: [0, 254],
   SynthLfoWave: [0, 3],
   SynthLfoSpeed: [0, 19]

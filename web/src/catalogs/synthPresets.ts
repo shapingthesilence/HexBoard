@@ -91,7 +91,7 @@ export function createSynthPresetObject(input: SynthPresetInput): EncodedCatalog
       folderPath: input.folderPath,
       tags: input.tags
     }),
-    tlvU8(SynthPresetTlv.SynthPresetSchemaVersion, 6),
+    tlvU8(SynthPresetTlv.SynthPresetSchemaVersion, 7),
     tlv(SynthPresetTlv.SynthValues, encodeSynthValues(input.values))
   ];
 

@@ -2225,10 +2225,12 @@ void previewSynthDrive(GEMPreviewCallbackData previewData) {
 }
 
 SelectOptionByte optionByteSynthModTarget[] = {
-  { "Morph", SYNTH_MOD_TARGET_MORPH },
   { "Vibrato", SYNTH_MOD_TARGET_VIBRATO },
   { "Pitch", SYNTH_MOD_TARGET_PITCH },
-  { "WT Pos", SYNTH_MOD_TARGET_WAVETABLE_POSITION }
+  { "WT Pos", SYNTH_MOD_TARGET_WAVETABLE_POSITION },
+  { "FoldWrp", SYNTH_MOD_TARGET_FOLD_WARP },
+  { "DutyWrp", SYNTH_MOD_TARGET_DUTY_WARP },
+  { "PolyWrp", SYNTH_MOD_TARGET_POLY_WARP }
 };
 GEMSelect selectSynthModTarget(sizeof(optionByteSynthModTarget) / sizeof(SelectOptionByte), optionByteSynthModTarget);
 PersistentCallbackInfo callbackInfoSynthModTarget = {

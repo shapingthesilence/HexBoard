@@ -856,7 +856,6 @@ char loadedSynthWavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = {};
 char loadedSynthWavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
 volatile uint8_t activeSynthWaveFrameCount = 1;
 uint16_t synthWavetableFramePositionByAmount[128] = {};
-uint16_t synthMorphPhaseWarpScaleByDepth[128] = {};
 uint8_t synthFxModScaleByDepth[128][128] = {};
 bool userSynthWavetableAvailable = false;
 void setActiveSynthWaveFrameCount(uint8_t frameCount);
@@ -1478,14 +1477,14 @@ inline uint8_t RAM_FUNC(smoothedSynthModValue)(uint8_t elapsedTicks = 1) {
 
 void updateSynthModulationParams() {
   if (synthModTarget > SYNTH_MOD_TARGET_MAX) {
-    synthModTarget = SYNTH_MOD_TARGET_MORPH;
+    synthModTarget = SYNTH_MOD_TARGET_FOLD_WARP;
   }
   if (synthModAmount > SYNTH_MOD_AMOUNT_FULL) {
     synthModAmount = SYNTH_MOD_AMOUNT_FULL;
   }
   for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
     if (effectEnvelopeTarget[envelopeIndex] > SYNTH_MOD_TARGET_MAX) {
-      effectEnvelopeTarget[envelopeIndex] = SYNTH_MOD_TARGET_MORPH;
+      effectEnvelopeTarget[envelopeIndex] = SYNTH_MOD_TARGET_FOLD_WARP;
     }
     if (effectEnvelopeAmount[envelopeIndex] > SYNTH_FX_AMOUNT_FULL) {
       effectEnvelopeAmount[envelopeIndex] = SYNTH_FX_AMOUNT_FULL;
@@ -1499,7 +1498,7 @@ void updateSynthModulationParams() {
     synthWavetablePosition = SYNTH_WAVETABLE_POSITION_DEFAULT;
   }
   if (synthLfoTarget > SYNTH_MOD_TARGET_MAX) {
-    synthLfoTarget = SYNTH_MOD_TARGET_MORPH;
+    synthLfoTarget = SYNTH_MOD_TARGET_FOLD_WARP;
   }
   if (synthLfoAmount > SYNTH_FX_AMOUNT_FULL) {
     synthLfoAmount = SYNTH_FX_AMOUNT_OFF;
@@ -1700,16 +1699,41 @@ inline uint32_t RAM_FUNC(applySynthVibrato)(uint32_t increment, int16_t vibratoA
   return increment + positiveOffset;
 }
 
-inline uint16_t RAM_FUNC(applySynthMorphPhaseWarpQ4)(uint16_t phase, int16_t morphAmountQ4) {
-  if (morphAmountQ4 == 0) {
+inline uint16_t RAM_FUNC(applySynthFoldPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4) {
+  if (warpAmountQ4 == 0) {
     return phase;
   }
   uint16_t triangle = (phase & 0x8000) ? static_cast<uint16_t>(0xFFFFu - phase) : phase;
-  uint16_t depthQ4 = static_cast<uint16_t>(morphAmountQ4 < 0 ? -morphAmountQ4 : morphAmountQ4);
+  uint16_t depthQ4 = static_cast<uint16_t>(warpAmountQ4 < 0 ? -warpAmountQ4 : warpAmountQ4);
   uint32_t scaleQ4 = static_cast<uint32_t>(depthQ4) * 5u;
   uint16_t offset = static_cast<uint16_t>((static_cast<uint32_t>(triangle) * scaleQ4) >> 12);
-  return (morphAmountQ4 < 0) ? static_cast<uint16_t>(phase - offset)
-                             : static_cast<uint16_t>(phase + offset);
+  return (warpAmountQ4 < 0) ? static_cast<uint16_t>(phase - offset)
+                            : static_cast<uint16_t>(phase + offset);
+}
+
+inline uint16_t RAM_FUNC(applySynthDutyPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4) {
+  if (warpAmountQ4 == 0) {
+    return phase;
+  }
+  uint16_t depthQ4 = static_cast<uint16_t>(warpAmountQ4 < 0 ? -warpAmountQ4 : warpAmountQ4);
+  uint16_t offset = static_cast<uint16_t>(depthQ4 << 3);
+  bool upperHalf = (phase & 0x8000u) != 0;
+  bool addOffset = (warpAmountQ4 > 0) ? !upperHalf : upperHalf;
+  return addOffset ? static_cast<uint16_t>(phase + offset)
+                   : static_cast<uint16_t>(phase - offset);
+}
+
+inline uint16_t RAM_FUNC(applySynthPolyPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4) {
+  if (warpAmountQ4 == 0) {
+    return phase;
+  }
+  uint16_t triangle = (phase & 0x8000) ? static_cast<uint16_t>(0xFFFFu - phase) : phase;
+  uint16_t depthQ4 = static_cast<uint16_t>(warpAmountQ4 < 0 ? -warpAmountQ4 : warpAmountQ4);
+  uint16_t curve = static_cast<uint16_t>(
+    (static_cast<uint32_t>(triangle) * static_cast<uint32_t>(0x8000u - triangle)) >> 14);
+  uint16_t offset = static_cast<uint16_t>((static_cast<uint32_t>(curve) * depthQ4) >> 11);
+  return (warpAmountQ4 < 0) ? static_cast<uint16_t>(phase - offset)
+                            : static_cast<uint16_t>(phase + offset);
 }
 
 inline uint16_t RAM_FUNC(readTriangleWaveSample)(uint16_t phase) {
@@ -2064,12 +2088,6 @@ void setActiveSynthWaveFrameCount(uint8_t frameCount) {
   activeSynthWaveFrameCount = boundedFrameCount;
 }
 
-void initializeSynthMorphLookup() {
-  for (uint8_t depth = 0; depth < 128; ++depth) {
-    synthMorphPhaseWarpScaleByDepth[depth] = static_cast<uint16_t>(depth) * 5u;
-  }
-}
-
 void initializeSynthFxModLookup() {
   for (uint8_t depth = 0; depth < 128; ++depth) {
     for (uint8_t value = 0; value < 128; ++value) {
@@ -2080,7 +2098,6 @@ void initializeSynthFxModLookup() {
 
 void initializeSynthWaveTables() {
   memcpy(synthVibratoSine, waveSineSource, SYNTH_WAVE_SAMPLE_COUNT);
-  initializeSynthMorphLookup();
   initializeSynthFxModLookup();
   initializeSynthPitchModLookup();
   setActiveSynthWaveFrameCount(1);
@@ -2152,7 +2169,9 @@ struct SynthWavetableReadContext {
 };
 
 struct SynthModulationAmounts {
-  int16_t morph = 0;
+  int16_t foldWarp = 0;
+  int16_t dutyWarp = 0;
+  int16_t polyWarp = 0;
   int16_t vibrato = 0;
   int16_t pitch = 0;
   int16_t wavetablePosition = 0;
@@ -2163,10 +2182,16 @@ struct SynthVoiceRenderCache {
   uint32_t phaseIncrementTarget = 0;
   int32_t phaseIncrementStep = 0;
   uint8_t phaseIncrementSlewSamples = 0;
-  int16_t morphAmountQ4 = 0;
-  int16_t morphAmountTargetQ4 = 0;
-  int16_t morphAmountStepQ4 = 0;
-  uint8_t morphSlewSamples = 0;
+  int16_t foldWarpAmountQ4 = 0;
+  int16_t foldWarpAmountTargetQ4 = 0;
+  int16_t foldWarpAmountStepQ4 = 0;
+  int16_t dutyWarpAmountQ4 = 0;
+  int16_t dutyWarpAmountTargetQ4 = 0;
+  int16_t dutyWarpAmountStepQ4 = 0;
+  int16_t polyWarpAmountQ4 = 0;
+  int16_t polyWarpAmountTargetQ4 = 0;
+  int16_t polyWarpAmountStepQ4 = 0;
+  uint8_t warpSlewSamples = 0;
   SynthWavetableReadContext wavetableContext = { activeSynthWaveTable[0], nullptr, 0 };
 };
 
@@ -2193,21 +2218,67 @@ void RAM_FUNC(resetSynthRenderCaches)() {
   }
 }
 
+inline void RAM_FUNC(retargetSynthWarpSlew)(int16_t amountTarget,
+                                            int16_t& amountQ4,
+                                            int16_t& amountTargetQ4,
+                                            int16_t& amountStepQ4,
+                                            uint8_t elapsedTicks) {
+  amountTargetQ4 = static_cast<int16_t>(amountTarget * 16);
+  int16_t delta = static_cast<int16_t>(amountTargetQ4 - amountQ4);
+  amountStepQ4 = static_cast<int16_t>(delta / static_cast<int16_t>(elapsedTicks));
+  if (amountStepQ4 == 0 && delta != 0) {
+    amountStepQ4 = (delta > 0) ? 1 : -1;
+  }
+}
+
+inline void RAM_FUNC(snapSynthWarpSlew)(int16_t amountTarget,
+                                        int16_t& amountQ4,
+                                        int16_t& amountTargetQ4,
+                                        int16_t& amountStepQ4) {
+  amountTargetQ4 = static_cast<int16_t>(amountTarget * 16);
+  amountQ4 = amountTargetQ4;
+  amountStepQ4 = 0;
+}
+
+inline void RAM_FUNC(advanceSynthWarpSlew)(int16_t& amountQ4,
+                                           int16_t amountTargetQ4,
+                                           int16_t amountStepQ4,
+                                           bool finalSample) {
+  if (finalSample) {
+    amountQ4 = amountTargetQ4;
+    return;
+  }
+  int16_t next = static_cast<int16_t>(amountQ4 + amountStepQ4);
+  if ((amountStepQ4 > 0 && next > amountTargetQ4)
+      || (amountStepQ4 < 0 && next < amountTargetQ4)) {
+    next = amountTargetQ4;
+  }
+  amountQ4 = next;
+}
+
 inline void RAM_FUNC(retargetSynthVoiceSlews)(SynthVoiceRenderCache& cache,
                                               uint32_t phaseIncrementTarget,
-                                              int16_t morphAmountTarget,
+                                              const SynthModulationAmounts& voiceModulation,
                                               uint8_t elapsedTicks,
                                               bool snap) {
-  int16_t morphAmountTargetQ4 = static_cast<int16_t>(morphAmountTarget * 16);
   if (snap || elapsedTicks == 0) {
     cache.phaseIncrement = phaseIncrementTarget;
     cache.phaseIncrementTarget = phaseIncrementTarget;
     cache.phaseIncrementStep = 0;
     cache.phaseIncrementSlewSamples = 0;
-    cache.morphAmountQ4 = morphAmountTargetQ4;
-    cache.morphAmountTargetQ4 = morphAmountTargetQ4;
-    cache.morphAmountStepQ4 = 0;
-    cache.morphSlewSamples = 0;
+    snapSynthWarpSlew(voiceModulation.foldWarp,
+                      cache.foldWarpAmountQ4,
+                      cache.foldWarpAmountTargetQ4,
+                      cache.foldWarpAmountStepQ4);
+    snapSynthWarpSlew(voiceModulation.dutyWarp,
+                      cache.dutyWarpAmountQ4,
+                      cache.dutyWarpAmountTargetQ4,
+                      cache.dutyWarpAmountStepQ4);
+    snapSynthWarpSlew(voiceModulation.polyWarp,
+                      cache.polyWarpAmountQ4,
+                      cache.polyWarpAmountTargetQ4,
+                      cache.polyWarpAmountStepQ4);
+    cache.warpSlewSamples = 0;
     return;
   }
 
@@ -2239,13 +2310,22 @@ inline void RAM_FUNC(retargetSynthVoiceSlews)(SynthVoiceRenderCache& cache,
   }
   cache.phaseIncrementSlewSamples = elapsedTicks;
 
-  cache.morphAmountTargetQ4 = morphAmountTargetQ4;
-  int16_t morphDelta = static_cast<int16_t>(morphAmountTargetQ4 - cache.morphAmountQ4);
-  cache.morphAmountStepQ4 = static_cast<int16_t>(morphDelta / static_cast<int16_t>(elapsedTicks));
-  if (cache.morphAmountStepQ4 == 0 && morphDelta != 0) {
-    cache.morphAmountStepQ4 = (morphDelta > 0) ? 1 : -1;
-  }
-  cache.morphSlewSamples = elapsedTicks;
+  retargetSynthWarpSlew(voiceModulation.foldWarp,
+                        cache.foldWarpAmountQ4,
+                        cache.foldWarpAmountTargetQ4,
+                        cache.foldWarpAmountStepQ4,
+                        elapsedTicks);
+  retargetSynthWarpSlew(voiceModulation.dutyWarp,
+                        cache.dutyWarpAmountQ4,
+                        cache.dutyWarpAmountTargetQ4,
+                        cache.dutyWarpAmountStepQ4,
+                        elapsedTicks);
+  retargetSynthWarpSlew(voiceModulation.polyWarp,
+                        cache.polyWarpAmountQ4,
+                        cache.polyWarpAmountTargetQ4,
+                        cache.polyWarpAmountStepQ4,
+                        elapsedTicks);
+  cache.warpSlewSamples = elapsedTicks;
 }
 
 inline void RAM_FUNC(advanceSynthVoiceSlews)(SynthVoiceRenderCache& cache) {
@@ -2266,18 +2346,21 @@ inline void RAM_FUNC(advanceSynthVoiceSlews)(SynthVoiceRenderCache& cache) {
     }
   }
 
-  if (cache.morphSlewSamples != 0) {
-    --cache.morphSlewSamples;
-    if (cache.morphSlewSamples == 0) {
-      cache.morphAmountQ4 = cache.morphAmountTargetQ4;
-    } else {
-      int16_t next = static_cast<int16_t>(cache.morphAmountQ4 + cache.morphAmountStepQ4);
-      if ((cache.morphAmountStepQ4 > 0 && next > cache.morphAmountTargetQ4)
-          || (cache.morphAmountStepQ4 < 0 && next < cache.morphAmountTargetQ4)) {
-        next = cache.morphAmountTargetQ4;
-      }
-      cache.morphAmountQ4 = next;
-    }
+  if (cache.warpSlewSamples != 0) {
+    --cache.warpSlewSamples;
+    bool finalSample = cache.warpSlewSamples == 0;
+    advanceSynthWarpSlew(cache.foldWarpAmountQ4,
+                         cache.foldWarpAmountTargetQ4,
+                         cache.foldWarpAmountStepQ4,
+                         finalSample);
+    advanceSynthWarpSlew(cache.dutyWarpAmountQ4,
+                         cache.dutyWarpAmountTargetQ4,
+                         cache.dutyWarpAmountStepQ4,
+                         finalSample);
+    advanceSynthWarpSlew(cache.polyWarpAmountQ4,
+                         cache.polyWarpAmountTargetQ4,
+                         cache.polyWarpAmountStepQ4,
+                         finalSample);
   }
 }
 
@@ -2410,7 +2493,9 @@ inline int16_t RAM_FUNC(synthLfoPitchModValueQ4)(uint8_t elapsedTicks = 1) {
 
 inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
                                            int16_t amount,
-                                           int16_t& morphAmount,
+                                           int16_t& foldWarpAmount,
+                                           int16_t& dutyWarpAmount,
+                                           int16_t& polyWarpAmount,
                                            int16_t& vibratoAmount,
                                            int16_t& pitchAmount,
                                            int16_t& wavetablePositionAmount) {
@@ -2419,8 +2504,14 @@ inline void RAM_FUNC(addSynthTargetAmount)(uint8_t target,
   }
   int16_t* destination = nullptr;
   switch (target) {
-    case SYNTH_MOD_TARGET_MORPH:
-      destination = &morphAmount;
+    case SYNTH_MOD_TARGET_FOLD_WARP:
+      destination = &foldWarpAmount;
+      break;
+    case SYNTH_MOD_TARGET_DUTY_WARP:
+      destination = &dutyWarpAmount;
+      break;
+    case SYNTH_MOD_TARGET_POLY_WARP:
+      destination = &polyWarpAmount;
       break;
     case SYNTH_MOD_TARGET_VIBRATO:
       destination = &vibratoAmount;
@@ -2536,7 +2627,9 @@ inline void RAM_FUNC(refreshSynthBaseModulationCache)(uint8_t elapsedTicks) {
   } else {
     addSynthTargetAmount(synthModTarget,
                          synthModValue,
-                         synthBaseModulationCache.morph,
+                         synthBaseModulationCache.foldWarp,
+                         synthBaseModulationCache.dutyWarp,
+                         synthBaseModulationCache.polyWarp,
                          synthBaseModulationCache.vibrato,
                          synthBaseModulationCache.pitch,
                          synthBaseModulationCache.wavetablePosition);
@@ -2547,7 +2640,9 @@ inline void RAM_FUNC(refreshSynthBaseModulationCache)(uint8_t elapsedTicks) {
   } else {
     addSynthTargetAmount(synthLfoTarget,
                          synthLfoModValue(elapsedTicks),
-                         synthBaseModulationCache.morph,
+                         synthBaseModulationCache.foldWarp,
+                         synthBaseModulationCache.dutyWarp,
+                         synthBaseModulationCache.polyWarp,
                          synthBaseModulationCache.vibrato,
                          synthBaseModulationCache.pitch,
                          synthBaseModulationCache.wavetablePosition);
@@ -2605,7 +2700,9 @@ inline void RAM_FUNC(refreshSynthVoiceRenderCache)(uint8_t voiceIndex,
       } else {
         addSynthTargetAmount(effectEnvelopeTarget[envelopeIndex],
                              cachedEffectEnvelopeModValues[envelopeIndex][voiceIndex],
-                             voiceModulation.morph,
+                             voiceModulation.foldWarp,
+                             voiceModulation.dutyWarp,
+                             voiceModulation.polyWarp,
                              voiceModulation.vibrato,
                              voiceModulation.pitch,
                              voiceModulation.wavetablePosition);
@@ -2637,7 +2734,7 @@ inline void RAM_FUNC(refreshSynthVoiceRenderCache)(uint8_t voiceIndex,
   SynthVoiceRenderCache& cache = synthVoiceRenderCaches[voiceIndex];
   retargetSynthVoiceSlews(cache,
                           phaseIncrement,
-                          voiceModulation.morph,
+                          voiceModulation,
                           elapsedTicks,
                           elapsedTicks == 0 || !synthVoiceRenderCacheValid[voiceIndex]);
   if (activeWavetableHasFrames) {
@@ -2990,8 +3087,14 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
     SynthVoiceRenderCache& voiceCache = synthVoiceRenderCaches[i];
     synth[i].counter += voiceCache.phaseIncrement;  // high 16 bits loop from 65535 -> 0
     p = static_cast<uint16_t>(synth[i].counter >> 16);
-    if (voiceCache.morphAmountQ4 != 0) {
-      p = applySynthMorphPhaseWarpQ4(p, voiceCache.morphAmountQ4);
+    if (voiceCache.foldWarpAmountQ4 != 0) {
+      p = applySynthFoldPhaseWarpQ4(p, voiceCache.foldWarpAmountQ4);
+    }
+    if (voiceCache.dutyWarpAmountQ4 != 0) {
+      p = applySynthDutyPhaseWarpQ4(p, voiceCache.dutyWarpAmountQ4);
+    }
+    if (voiceCache.polyWarpAmountQ4 != 0) {
+      p = applySynthPolyPhaseWarpQ4(p, voiceCache.polyWarpAmountQ4);
     }
     advanceSynthVoiceSlews(voiceCache);
     if (activeWavetableHasFrames) {

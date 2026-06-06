@@ -340,7 +340,7 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 
 Example response, transaction `1`, max packed chunk `128`, capabilities `0x902`
 (synth preset read/write, dry-run validation, plus synth wavetable objects), max
-raw object bytes `16640`, settings schema `15`, synth preset schema `6`, `9`
+raw object bytes `16640`, settings schema `15`, synth preset schema `7`, `9`
 profiles, `128` synth preset entries, no user tuning/layout/scale/color/map
 slots yet, hardware version `2`:
 
@@ -886,7 +886,7 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SynthPresetSchemaVersion` | `u8`, current firmware is `6` |
+| `0x20` | `SynthPresetSchemaVersion` | `u8`, current firmware is `7` |
 | `0x21` | `SynthValues` | Repeated `<synth-key-u8> <value-u8>` records |
 | `0x22` | Reserved | Category was considered, but v1 organization is folder-only |
 | `0x23` | `Favorite` | `u8 bool` |
@@ -940,7 +940,10 @@ control state.
 Schema `4` appends mono portamento and arpeggiator direction to the schema `3`
 value set. Schema `5` appends wavetable position and LFO target/amount/wave/
 speed. Schema `6` adds the separate wavetable folder/name dependency TLVs while
-leaving the synth value list intact. Firmware migrates stored
+leaving the synth value list intact. Schema `7` expands `SynthModTarget`,
+`EffectEnvelopeTarget`, `EffectEnvelope2Target`, and `SynthLfoTarget` to include
+`DutyWrp` value `4` and `PolyWrp` value `5`; value `0` is renamed from `Morph`
+to `FoldWrp` without changing stored bytes. Firmware migrates stored
 `/synth_presets.dat` version `7` records by keeping their existing value bytes
 and appending factory defaults for the five new keys; version `8` records are
 migrated by deriving the new wavetable dependency from the legacy `Waveform`

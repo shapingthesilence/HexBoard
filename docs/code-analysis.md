@@ -480,11 +480,11 @@ Key implementation facts:
   RAM lookup table when the active frame count changes so the audio renderer can map
   `WT Pos` values to frame positions without dividing per voice. Modulation work
   runs on an `8`-sample control quantum: wheel smoothing, LFO sampling, FX
-  envelopes, pitch modulation targets, vibrato depth targets, morph targets, and
+  envelopes, pitch modulation targets, vibrato depth targets, phase-warp targets, and
   wavetable frame contexts are cached per voice, with note start/release/reset
-  forcing an immediate cache refresh. Per-voice phase increment and morph depth
+  forcing an immediate cache refresh. Per-voice phase increment and phase-warp depths
   linearly slew between those cached targets at audio rate, while oscillator
-  phase advance, amp-envelope level, morph phase warp, waveform reads, mixing,
+  phase advance, amp-envelope level, phase warping, waveform reads, mixing,
   drive, and output scaling remain audio-rate. If only global sources modulate
   `WT Pos`, the cached frame-pair read context is shared across active voices; if
   an FX envelope targets `WT Pos`, each voice caches its own frame context.
@@ -499,8 +499,10 @@ Key implementation facts:
   an upward zero crossing. Byte tables are centered around value `128` and
   rotated to that crossing; generated saw, triangle, square, and hybrid shapes
   apply equivalent RAM-resident phase/sample helpers.
-- `Morph` applies the same RAM-resident phase-warp helper before sampling every
-  waveform instead of using square-specific pulse width or saw-specific shaping.
+- `FoldWrp`, `DutyWrp`, and `PolyWrp` apply RAM-resident phase-warp helpers
+  before sampling every waveform. `FoldWrp` is the original folded linear skew,
+  `DutyWrp` shifts the two half-cycles in opposite directions, and `PolyWrp`
+  uses a smooth parabolic curve inside each half-cycle.
   External MIDI CC output still uses the command wheel's current value.
 - Envelope commands are shared through value arrays plus published/consumed sequence counters.
 - Voice-free notifications use their own published/consumed sequence counters.
@@ -556,7 +558,7 @@ the overlong filename that can fail on LittleFS. Catalog load/write paths skip
 or prune records whose sample file is missing, which prevents failed earlier
 imports from exhausting catalog slots.
 
-The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `Morph` is the default wheel effect and applies one shared phase-warp helper across the onboard waveforms. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the on-device menu presents rounded frame anchors labeled `1..32`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator, then reads startup-generated RAM Q16 ratio tables so full positive depth raises each active voice by about `+24` semitones and full negative depth lowers it by about `-24` semitones.
+The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `FoldWrp` is the default wheel effect and keeps the existing target byte value `0`; `DutyWrp` and `PolyWrp` add target byte values `4` and `5`. All three warp targets apply low-CPU phase warps across the onboard waveforms and active wavetable before sampling. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the on-device menu presents rounded frame anchors labeled `1..32`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator, then reads startup-generated RAM Q16 ratio tables so full positive depth raises each active voice by about `+24` semitones and full negative depth lowers it by about `-24` semitones.
 
 The synth LFO is persisted as `SynthLfoTarget`, `SynthLfoAmount`,
 `SynthLfoWave`, and `SynthLfoSpeed`. It uses the same target accumulator as the

@@ -195,12 +195,14 @@ constexpr byte SYNTH_DRIVE_EDGE = 2;
 constexpr byte SYNTH_DRIVE_DIRTY = 3;
 byte synthDrive = SYNTH_DRIVE_OFF;
 
-constexpr byte SYNTH_MOD_TARGET_MORPH = 0;
+constexpr byte SYNTH_MOD_TARGET_FOLD_WARP = 0;
 constexpr byte SYNTH_MOD_TARGET_VIBRATO = 1;
 constexpr byte SYNTH_MOD_TARGET_PITCH = 2;
 constexpr byte SYNTH_MOD_TARGET_WAVETABLE_POSITION = 3;
-constexpr byte SYNTH_MOD_TARGET_MAX = SYNTH_MOD_TARGET_WAVETABLE_POSITION;
-byte synthModTarget = SYNTH_MOD_TARGET_MORPH;
+constexpr byte SYNTH_MOD_TARGET_DUTY_WARP = 4;
+constexpr byte SYNTH_MOD_TARGET_POLY_WARP = 5;
+constexpr byte SYNTH_MOD_TARGET_MAX = SYNTH_MOD_TARGET_POLY_WARP;
+byte synthModTarget = SYNTH_MOD_TARGET_FOLD_WARP;
 constexpr uint8_t SYNTH_MOD_AMOUNT_FULL = 127;
 byte synthModAmount = SYNTH_MOD_AMOUNT_FULL;
 std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeTarget = { SYNTH_MOD_TARGET_VIBRATO, SYNTH_MOD_TARGET_PITCH };
@@ -215,7 +217,7 @@ constexpr byte SYNTH_LFO_WAVE_TRIANGLE = 1;
 constexpr byte SYNTH_LFO_WAVE_SAW = 2;
 constexpr byte SYNTH_LFO_WAVE_SQUARE = 3;
 constexpr byte SYNTH_LFO_WAVE_MAX = SYNTH_LFO_WAVE_SQUARE;
-byte synthLfoTarget = SYNTH_MOD_TARGET_MORPH;
+byte synthLfoTarget = SYNTH_MOD_TARGET_FOLD_WARP;
 byte synthLfoAmount = SYNTH_FX_AMOUNT_OFF;
 byte synthLfoWave = SYNTH_LFO_WAVE_SINE;
 

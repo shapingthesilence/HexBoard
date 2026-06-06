@@ -256,10 +256,12 @@ backward through the wavetable.
 
 `Wheel FX` chooses how the mod wheel affects the onboard synth:
 
-- `Morph`: applies the same phase-warp color movement across the onboard waveforms
 - `Vibrato`: adds pitch vibrato to the active synth voices
 - `Pitch`: bends pitch up with the wheel or positive FX amounts, and down with negative FX amounts. Full-depth pitch modulation spans about `+/-24` semitones.
 - `WT Pos`: scans the selected wavetable forward or backward from the base `WT Pos`
+- `FoldWrp`: applies the original folded phase-warp color movement across the onboard waveforms
+- `DutyWrp`: shifts the two halves of the oscillator cycle in opposite directions for a sharper duty-style phase warp
+- `PolyWrp`: applies a smoother polynomial phase warp that bends most strongly inside each half-cycle
 
 External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed` sets
 the onboard vibrato LFO speed from `1 Hz` to `12 Hz` for wheel or envelope
@@ -268,7 +270,7 @@ vibrato. `Wheel Amt` scales how strongly the mod wheel affects its target.
 `LFO` opens the synth LFO page. `Target` uses the same targets as `Wheel FX`;
 `Amount` is bipolar from `-100%` through `Off` to `+100%`; `Wave` selects
 `Sine`, `Triangl`, `Saw`, or `Square`; and `Speed` ranges from `0.05 Hz` to
-`20 Hz`, with extra slow choices below `1 Hz` for gradual wavetable or morph
+`20 Hz`, with extra slow choices below `1 Hz` for gradual wavetable or phase-warp
 movement.
 
 `Tempo` is shared by the arpeggiator and metronome. `Metronome` has four modes:
@@ -297,13 +299,14 @@ polyphony.
 `FX Env 1` and `FX Env 2` open separate modulation-envelope pages. Each page has
 `Target`, `Amount`, `Attack`, `Hold`, `Decay`, `Sustain`, and `Release`.
 
-`Target` chooses `Morph`, `Vibrato`, `Pitch`, or `WT Pos`. The wheel, both FX
-envelopes, and the LFO can choose the same target; their amounts add together
-and clamp at the maximum effect depth instead of replacing each other.
+`Target` chooses `Vibrato`, `Pitch`, `WT Pos`, `FoldWrp`, `DutyWrp`, or
+`PolyWrp`. The wheel, both FX envelopes, and the LFO can choose the same target;
+their amounts add together and clamp at the maximum effect depth instead of
+replacing each other.
 
 `Amount` controls how strongly the envelope affects the target. Positive amounts
 push the target in one direction; negative amounts use the same AHDSR shape and
-push the target in the opposite direction. Pitch, morph, and wavetable position
+push the target in the opposite direction. Pitch, phase warp, and wavetable position
 return smoothly to their base values as the FX envelope falls back to zero. Negative
 `Vibrato` is different: vibrato is the resting sound, and the envelope pulls it
 down as the envelope level rises. The default FX envelope times are `0 ms`, and
@@ -348,7 +351,7 @@ lower `Release`. If a pluck does not fade away enough, lower `Sustain` or lower
 
 To add motion without touching the mod wheel, put one FX envelope on a short
 transient and leave the wheel on the effect you want under your hand. For
-example, `Wheel FX` = `Morph`, `FX Env 1 Target` = `Vibrato`, `Amount` = `+50%`,
+example, `Wheel FX` = `FoldWrp`, `FX Env 1 Target` = `Vibrato`, `Amount` = `+50%`,
 `Decay` around `100 ms`, and `Sustain` = `0%` adds a short vibrato chirp at the
 start of each note. For a falling pitch tail, try `FX Env 2 Target` = `Pitch`,
 `Amount` = `-25%`, `Sustain` = `100%`, and a longer `Release`.
@@ -496,8 +499,8 @@ Wheel speed choices run from `TooSlow`, `Turtle`, `Slow`, `Medium`, `Fast`,
 `Cheetah`, and `VeryFast` to `Instant`. `Fast` is the previous `Medium` speed;
 `TooSlow` is a new slower option.
 
-The onboard synth smooths pitch-bend wheel changes, pulse-width modulation, and
-vibrato depth internally so button-controlled bends and morph changes do not jump
+The onboard synth smooths pitch-bend wheel changes, phase-warp depth, and
+vibrato depth internally so button-controlled bends and warp changes do not jump
 as hard between command-wheel updates. External MIDI still receives the normal
 pitch-bend and modulation messages.
 
@@ -589,7 +592,7 @@ Important factory defaults include:
 - Wavetable: `Basic`
 - WT Pos: frame `1`
 - Drive: `Off`
-- Wheel FX: `Morph`
+- Wheel FX: `FoldWrp`
 - Wheel Amt: `100%`
 - Vibrato speed: `6 Hz`
 - Amp Hold: `0 ms`

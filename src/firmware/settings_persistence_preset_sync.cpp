@@ -310,7 +310,7 @@ constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
 constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
 constexpr uint8_t LEGACY_SYNTH_PRESET_COUNT = 8;
 constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 9;
-constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 6;
+constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 7;
 constexpr uint8_t SYNTH_WAVETABLE_FILE_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_SCHEMA_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_MAX_COUNT = 64;
@@ -633,7 +633,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* Display played notes         */ 1,
   /* LED current limit mode       */ LED_CURRENT_LIMIT_1500MA,
   /* SynthDrive                   */ SYNTH_DRIVE_OFF,
-  /* SynthModTarget               */ SYNTH_MOD_TARGET_MORPH,
+  /* SynthModTarget               */ SYNTH_MOD_TARGET_FOLD_WARP,
   /* SynthVibratoSpeed            */ SYNTH_VIBRATO_SPEED_DEFAULT,
   /* MetronomeMode                */ METRONOME_MODE_OFF,
   /* MetronomeSignature           */ 0,
@@ -660,7 +660,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* SynthPortamentoTimeIndex     */ 0,
   /* ArpeggiatorDirection         */ ARP_DIRECTION_UP,
   /* SynthWavetablePosition       */ SYNTH_WAVETABLE_POSITION_DEFAULT,
-  /* SynthLfoTarget               */ SYNTH_MOD_TARGET_MORPH,
+  /* SynthLfoTarget               */ SYNTH_MOD_TARGET_FOLD_WARP,
   /* SynthLfoAmount               */ SYNTH_FX_AMOUNT_OFF,
   /* SynthLfoWave                 */ SYNTH_LFO_WAVE_SINE,
   /* SynthLfoSpeed                */ SYNTH_LFO_SPEED_DEFAULT,
@@ -759,10 +759,10 @@ bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t s
     if (header.version < 8) {
       uint8_t wheelTarget = settingsProfiles[profile][static_cast<uint8_t>(SettingKey::SynthModTarget)];
       if (wheelTarget > SYNTH_MOD_TARGET_VIBRATO) {
-        wheelTarget = SYNTH_MOD_TARGET_MORPH;
+        wheelTarget = SYNTH_MOD_TARGET_FOLD_WARP;
       }
       settingsProfiles[profile][static_cast<uint8_t>(SettingKey::EffectEnvelopeTarget)] =
-        (wheelTarget == SYNTH_MOD_TARGET_VIBRATO) ? SYNTH_MOD_TARGET_MORPH : SYNTH_MOD_TARGET_VIBRATO;
+        (wheelTarget == SYNTH_MOD_TARGET_VIBRATO) ? SYNTH_MOD_TARGET_FOLD_WARP : SYNTH_MOD_TARGET_VIBRATO;
     }
     if (settingsPerProfile > static_cast<uint8_t>(SettingKey::PlaybackMode)) {
       settingsProfiles[profile][static_cast<uint8_t>(SettingKey::PlaybackMode)] =
