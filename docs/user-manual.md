@@ -111,6 +111,11 @@ candidate set.
 `Beat BPM` and `BPM Mult.` control the BPM-synced retuning grid and are hidden
 when `JI BPM Sync` is off.
 
+When MPE is active, Dynamic JI and JI BPM Sync send the closest MIDI note for
+the final retuned pitch, then use pitch bend only for the remaining fractional
+part. The onboard synth uses the computed JI cents directly, so its JI pitch
+resolution is not limited by the `MPE Bend` setting.
+
 Changing tuning also resets:
 
 - Layout to the first valid layout for that tuning

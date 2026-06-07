@@ -4110,6 +4110,8 @@ void panicStopOutput() {
 
   for (byte i = 0; i < BTN_COUNT; ++i) {
     h[i].MIDIch = 0;
+    h[i].activeMidiNote = UNUSED_NOTE;
+    h[i].activePitchBend = 0;
     h[i].synthCh = 0;
     h[i].externalNoteDepth = 0;
     h[i].timePressed = 0;

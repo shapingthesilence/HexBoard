@@ -101,9 +101,13 @@ public:
   byte note = UNUSED_NOTE;   // MIDI note or control parameter corresponding to this hex
   int16_t bend = 0;          // in microtonal mode, the pitch bend for this note needed to be tuned correctly
   byte MIDIch = 0;           // what MIDI channel this note is playing on
+  byte activeMidiNote = UNUSED_NOTE;  // exact MIDI note sent for the active note-on
   byte synthCh = 0;          // what synth polyphony ch this is playing on
   float frequency = 0.0;     // what frequency to ring on the synther
+  float midiPitch = 0.0f;     // unrounded MIDI pitch used for nearest-note bend output
   int16_t jiRetune = 0;
+  float jiRetuneCents = 0.0f;
+  int16_t activePitchBend = 0;
   float jiFrequencyMultiplier = 1.0f;
   uint8_t externalNoteDepth = 0;  // number of active external MIDI notes mapped here
   int32_t midiNoteIndex = 0;      // extended MIDI note number before channel folding

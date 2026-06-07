@@ -298,10 +298,20 @@ item is visible only while `Dynamic JI` is enabled and stores
 `DynamicJIRatioTable`, a prime-limit selector from `3-Lim` through `41-Lim`.
 The default `41-Lim` preserves the previous full candidate-ratio behavior, while
 lower limits filter the existing ratio list to simpler numerator/denominator
-prime factors. `Beat BPM` and `BPM Mult.` use the same Tuning-menu visibility
-helper and are visible only while `JI BPM Sync` is enabled. The visibility
-helper preserves the Tuning page's current item index because GEM resets pages
-with a Back item near the top when a hidden item is shown.
+prime factors. The active ratio table stores precomputed cents for each
+candidate so note-on matching does not repeatedly convert ratios while scanning.
+`Beat BPM` and `BPM Mult.` use the same Tuning-menu visibility helper and are
+visible only while `JI BPM Sync` is enabled. The visibility helper preserves the
+Tuning page's current item index because GEM resets pages with a Back item near
+the top when a hidden item is shown.
+
+JI retuning now keeps the synth and MIDI output paths separate. The synth reads
+`jiFrequencyMultiplier`, which is derived directly from the floating-point
+retune cents and is not quantized by `MPEpitchBendSemis`. External MPE output
+chooses the closest MIDI note after applying the JI cents, stores that note in
+`activeMidiNote`, and sends only the residual pitch bend in `activePitchBend`.
+The matching note-off uses `activeMidiNote` so shifted MIDI note-ons do not
+leave held notes.
 
 ## Delegated Control
 

@@ -44,6 +44,7 @@ void assignPitches() {
       int32_t relativeSteps = current.pitchRelToA4(h[i].stepsFromC);
       float N = stepsToMIDI(static_cast<int16_t>(relativeSteps));
       float targetFrequency = MIDItoFreq(N);
+      h[i].midiPitch = N;
       if (standardMidiMicrotonalActive) {
         byte mappedNote = 0;
         byte mappedChannel = 0;
@@ -65,6 +66,9 @@ void assignPitches() {
         }
       }
       h[i].jiRetune = 0;
+      h[i].jiRetuneCents = 0.0f;
+      h[i].activePitchBend = 0;
+      h[i].activeMidiNote = UNUSED_NOTE;
       h[i].jiFrequencyMultiplier = 1.0f;
       if (h[i].note < 128) {
         midiNoteToHexIndices[h[i].note].push_back(i);

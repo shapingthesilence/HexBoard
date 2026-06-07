@@ -510,15 +510,13 @@ void RAM_FUNC(sendMIDIpitchBendToCh1)() {
 // TODO: make BPM sync work with dynamic just intonation to make pure just intonation achieveable.
 // Without it - this implementation provides you with n-EDO-sized independent JI rings, unconnected to eachother;
 // TODO: replace floating point math with integer math;
-// TODO: replace std::pair<byte,byte> ratios with precomputed floating(or fixed) point ratios;
 // TODO: generate the table of ratios with a constexpr function rather than holding a huge block of hardcoded values in the code;
 // TODO: It is a good idea to octave-reduce the ratios, and adjust the code to calculate pitchbend against the octave reduced set of ratios for significant performance improvement;
-inline float pitchBendToFrequencyMultiplier(int16_t bendValue) {
-  if (bendValue == 0) {
+inline float centsToFrequencyMultiplier(float cents) {
+  if (cents == 0.0f) {
     return 1.0f;
   }
-  const float semitoneOffset = (static_cast<float>(bendValue) * static_cast<float>(MPEpitchBendSemis)) / 8192.0f;
-  return std::exp2(semitoneOffset / 12.0f);
+  return std::exp2(cents / 1200.0f);
 }
 
 int16_t justIntonationRetune(byte x);
@@ -539,18 +537,6 @@ inline bool ratioIsInSelectedJITable(const std::pair<byte, byte>& ratio) {
   return largestPrimeFactor(ratio.first) <= dynamicJIRatioTable
       && largestPrimeFactor(ratio.second) <= dynamicJIRatioTable;
 }
-
-inline int16_t combinedPitchBend(byte index) {
-  const int32_t combined = static_cast<int32_t>(h[index].bend) + h[index].jiRetune;
-  if (combined > 8191) {
-    return 8191;
-  }
-  if (combined < -8192) {
-    return -8192;
-  }
-  return static_cast<int16_t>(combined);
-}
-
 
 // This is a list of ratios sorted from the simplest ones to the most complex ones. The code searches for a first match that's good enough within 1/4 of an EDO step, literally bruteforcing through the list. As a result - the simplest ratio is chosen before more comples ones, prioritising consonant ratios first. In case not a single good ratio is found - the best one found so far is chosen instead
 
@@ -1026,33 +1012,80 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 38, 5 }
 };
 
-std::vector<std::pair<byte, byte>> activeDynamicJIRatios = {};
+struct DynamicJIRatioCandidate {
+  byte numerator;
+  byte denominator;
+  float cents;
+};
+
+std::vector<DynamicJIRatioCandidate> activeDynamicJIRatios = {};
 
 void syncDynamicJIRatioCandidates() {
   activeDynamicJIRatios.clear();
   activeDynamicJIRatios.reserve(ratios.size());
   for (const auto& ratio : ratios) {
     if (ratioIsInSelectedJITable(ratio)) {
-      activeDynamicJIRatios.push_back(ratio);
+      activeDynamicJIRatios.push_back({
+        ratio.first,
+        ratio.second,
+        ratioToCents(static_cast<float>(ratio.first) / static_cast<float>(ratio.second))
+      });
     }
   }
   if (activeDynamicJIRatios.empty()) {
-    activeDynamicJIRatios.push_back({ 1, 1 });
+    activeDynamicJIRatios.push_back({ 1, 1, 0.0f });
   }
 }
 
 int16_t centsToRelativePitchBend(float cents) {
-  return round(cents * (8192.0 / (100.0 * MPEpitchBendSemis)));
+  int32_t bend = static_cast<int32_t>(round(cents * (8192.0 / (100.0 * MPEpitchBendSemis))));
+  if (bend > 8191) {
+    return 8191;
+  }
+  if (bend < -8192) {
+    return -8192;
+  }
+  return static_cast<int16_t>(bend);
+}
+
+byte nearestMidiNoteForPitch(float midiPitch) {
+  if (midiPitch <= 0.0f) {
+    return 0;
+  }
+  if (midiPitch >= 127.0f) {
+    return 127;
+  }
+  return static_cast<byte>(round(midiPitch));
+}
+
+int16_t pitchBendForMidiPitch(float midiPitch, byte midiNote) {
+  float residualCents = (midiPitch - static_cast<float>(midiNote)) * 100.0f;
+  return centsToRelativePitchBend(residualCents);
+}
+
+void prepareActiveMidiPitch(byte x) {
+  h[x].activeMidiNote = h[x].note;
+  h[x].activePitchBend = h[x].bend;
+  if (MPEpitchBendsNeeded == 1) {
+    return;
+  }
+
+  float finalMidiPitch = h[x].midiPitch;
+  if (useDynamicJustIntonation || useJustIntonationBPM) {
+    finalMidiPitch += h[x].jiRetuneCents / 100.0f;
+  }
+  h[x].activeMidiNote = nearestMidiNoteForPitch(finalMidiPitch);
+  h[x].activePitchBend = pitchBendForMidiPitch(finalMidiPitch, h[x].activeMidiNote);
 }
 
 int16_t justIntonationRetune(byte x) {
   if (useDynamicJustIntonation == false && useJustIntonationBPM == false) {
     h[x].jiRetune = 0;
+    h[x].jiRetuneCents = 0.0f;
     h[x].jiFrequencyMultiplier = 1.0f;
     return 0;
   }
-  int16_t pitchAdjustment = 0;
-  float pitchAdjustmentCents = 0;
+  float pitchAdjustmentCents = 0.0f;
   float basePitchOffset = 0;
   if (useJustIntonationBPM) {
     float buttonStepsFromA = -current.tuning().spanCtoA() - h[x].stepsFromC;
@@ -1062,8 +1095,6 @@ int16_t justIntonationRetune(byte x) {
 
     if (pressedKeyIDs.size() > 1 && useDynamicJustIntonation) {
       basePitchOffset = ((-current.tuning().spanCtoA() - h[pressedKeyIDs[0]].stepsFromC) * current.tuning().stepSize) - ratioToCents(round(440.0 / rounding) / round(h[pressedKeyIDs[0]].frequency / rounding));
-    } else {
-      pitchAdjustment += centsToRelativePitchBend(pitchAdjustmentCents);
     }
   }
   if (useDynamicJustIntonation && pressedKeyIDs.size() > 1) {
@@ -1081,18 +1112,16 @@ int16_t justIntonationRetune(byte x) {
     }
     for (int i = 0; i < activeDynamicJIRatios.size(); i++) {
       auto ratio = activeDynamicJIRatios[i];
-      float ratio0 = ratio.first;
-      float ratio1 = ratio.second;
       //if(h[pressedKeyIDs[0]].note < h[x].note)
       //{
       //  std::swap(ratio1,ratio0);
       //}
-      float ratioCents = ratioToCents(ratio0 / ratio1);
+      float ratioCents = ratio.cents;
 
       if (std::abs(deviation) > std::abs(ratioCents - EDOCents)) {
         deviation = (EDOCents - ratioCents);
-        selectedRatio.first = ratio0;
-        selectedRatio.second = ratio1;
+        selectedRatio.first = ratio.numerator;
+        selectedRatio.second = ratio.denominator;
         if (preferSmallRatios && std::abs(deviation) < errorThreshold) {
           //ratioFound = true;
             break;
@@ -1101,11 +1130,13 @@ int16_t justIntonationRetune(byte x) {
       }
     //if(ratioFound)
     {
-    pitchAdjustment += centsToRelativePitchBend(deviation + basePitchOffset);
+      pitchAdjustmentCents = deviation + basePitchOffset;
     }
   }
+  int16_t pitchAdjustment = centsToRelativePitchBend(pitchAdjustmentCents);
   h[x].jiRetune = pitchAdjustment;
-  h[x].jiFrequencyMultiplier = pitchBendToFrequencyMultiplier(pitchAdjustment);
+  h[x].jiRetuneCents = pitchAdjustmentCents;
+  h[x].jiFrequencyMultiplier = centsToFrequencyMultiplier(pitchAdjustmentCents);
   return pitchAdjustment;
 }
 
@@ -1146,10 +1177,11 @@ void RAM_FUNC(tryMIDInoteOn)(byte x) {
     if (h[x].MIDIch) {
       pressedKeyIDs.push_back(x);  // Dynamic JI pressed key tracking
       justIntonationRetune(x);
+      prepareActiveMidiPitch(x);
       int16_t pitchBendValue = 0;
       // First, send the pitch bend (if applicable)
       if (MPEpitchBendsNeeded != 1) {
-        pitchBendValue = combinedPitchBend(x);
+        pitchBendValue = h[x].activePitchBend;
         withMIDI([&](auto& M) { M.sendPitchBend(pitchBendValue, h[x].MIDIch); });  // ch 1-16
         if (extraMPE) { // if the extra MPE messages are enabled
           withMIDI([&](auto& M) {
@@ -1159,14 +1191,14 @@ void RAM_FUNC(tryMIDInoteOn)(byte x) {
         }
       }
       // Then, send the note-on message
-      withMIDI([&](auto& M) { M.sendNoteOn(h[x].note, velWheel.curValue, h[x].MIDIch); });  // ch 1-16
+      withMIDI([&](auto& M) { M.sendNoteOn(h[x].activeMidiNote, velWheel.curValue, h[x].MIDIch); });  // ch 1-16
       noteOverlayReleaseGraceUntil = 0;
       noteOverlayDirty = true;
 
       sendToLog(
         "Sent MIDI pitch bend: " + std::to_string(pitchBendValue) + " to ch " + std::to_string(h[x].MIDIch));
       sendToLog(
-        "Sent MIDI noteOn: " + std::to_string(h[x].note) + " vel " + std::to_string(velWheel.curValue) + " ch " + std::to_string(h[x].MIDIch));
+        "Sent MIDI noteOn: " + std::to_string(h[x].activeMidiNote) + " vel " + std::to_string(velWheel.curValue) + " ch " + std::to_string(h[x].MIDIch));
     }
   }
 }
@@ -1175,15 +1207,19 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
   // this gets called on any non-command hex
   // that is not scale-locked.
   if (h[x].MIDIch) {  // but just in case, check
-    withMIDI([&](auto& M) { M.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch); });
+    byte noteOff = (h[x].activeMidiNote < 128) ? h[x].activeMidiNote : h[x].note;
+    withMIDI([&](auto& M) { M.sendNoteOff(noteOff, velWheel.curValue, h[x].MIDIch); });
     auto pressedKey = std::find(pressedKeyIDs.begin(), pressedKeyIDs.end(), x);
     if (pressedKey != pressedKeyIDs.end()) {
       pressedKeyIDs.erase(pressedKey);  // Dynamic JI pressed key tracking
     }
     h[x].jiRetune = 0;
+    h[x].jiRetuneCents = 0.0f;
     h[x].jiFrequencyMultiplier = 1.0f;
+    h[x].activeMidiNote = UNUSED_NOTE;
+    h[x].activePitchBend = 0;
     sendToLog(
-      "sent note off: " + std::to_string(h[x].note) + " vel " + std::to_string(velWheel.curValue) + " ch " + std::to_string(h[x].MIDIch));
+      "sent note off: " + std::to_string(noteOff) + " vel " + std::to_string(velWheel.curValue) + " ch " + std::to_string(h[x].MIDIch));
     if (mpeChannelQueueActive && h[x].MIDIch >= mpeLowestChannel && h[x].MIDIch <= mpeHighestChannel) {
       if (extraMPE) { //if the extra MPE messages are enabled
         withMIDI([&](auto& M) {
