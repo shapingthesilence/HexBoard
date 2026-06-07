@@ -340,12 +340,12 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 
 Example response, transaction `1`, max packed chunk `128`, capabilities `0x902`
 (synth preset read/write, dry-run validation, plus synth wavetable objects), max
-raw object bytes `16640`, settings schema `15`, synth preset schema `7`, `9`
+raw object bytes `16640`, settings schema `16`, synth preset schema `7`, `9`
 profiles, `128` synth preset entries, no user tuning/layout/scale/color/map
 slots yet, hardware version `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 00 00 12 02 00 01 02 00 0F 06 09 01 00 00 00 00 00 00 02 F7
+F0 7D 10 01 00 02 00 01 01 00 00 00 12 02 00 01 02 00 10 06 09 01 00 00 00 00 00 00 02 F7
 ```
 
 ## Object Addressing
@@ -663,7 +663,7 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `15` |
+| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `16` |
 | `0x21` | `SettingValues` | Repeated `<setting-key-u8> <value-u8>` records |
 | `0x22` | `TuningRef` | Object reference |
 | `0x23` | `LayoutRef` | Object reference |
@@ -694,17 +694,19 @@ Recommended TLVs:
 | `0x25` | `ReferenceMilliHz` | `u32-le`, default `440000` |
 | `0x26` | `CentsTable` | Repeated `i32-le` mill cent offsets within period |
 | `0x27` | `RatioTable` | Repeated `<numerator-u32-le> <denominator-u32-le>` |
-| `0x28` | `KeyLabels` | Repeated fixed or length-prefixed labels |
+| `0x28` | `KeyLabels` | Repeated length-prefixed labels, one per cycle degree |
 
 The device can create and edit an EDO object with only `Name`, `TuningKind`,
 `EdoDivisions`, and `PeriodMilliCents`. The web app can also create equal
 cents-per-step tunings with `TuningKind = 4`, `StepMilliCents`, and a cycle
 length in `EdoDivisions` for labels/colors; host tooling derives
-`PeriodMilliCents` from those two values so they cannot diverge. Scala `.scl`
-import is a host-side feature: the web app parses the text, derives period and
-cycle metadata from the file, and writes a cents table. Firmware does not need
-to parse Scala text, but full Scala-compatible playback requires broader
-firmware tuning-system support.
+`PeriodMilliCents` from those two values so they cannot diverge. Generated EDO
+and equal-step tunings can include `KeyLabels` and `ReferenceMilliHz`; the web
+editor defaults labels to degree numbers. Scala `.scl` import is a host-side
+feature: the web app parses the text, derives period/cycle metadata and any
+file-defined labels/reference pitch as support is added, and writes a cents
+table. Firmware does not need to parse Scala text, but full Scala-compatible
+playback requires broader firmware tuning-system support.
 
 The tuning object must be complete enough for both the onboard synth and every
 MIDI output mode. For equal-step tunings, firmware can derive frequency,

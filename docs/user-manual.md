@@ -98,9 +98,15 @@ You can change:
 
 - The active tuning
 - `Dynamic JI`
+- `JI Table`, shown only when `Dynamic JI` is on
 - `JI BPM Sync`
 - `Beat BPM`
 - `BPM Mult.`
+
+`JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
+`3-Lim`, `5-Lim`, `7-Lim`, and higher options through `41-Lim`. Lower-limit
+tables use simpler ratios; higher-limit tables preserve the broader legacy
+candidate set.
 
 Changing tuning also resets:
 
@@ -412,12 +418,15 @@ tool, then click or drag across keys to write manual per-button color overrides
 without selecting each key in the inspector.
 
 The tuning editor can create EDO tunings, equal cents-per-step tunings, and
-Scala `.scl` imports. The cents-per-step editor takes only step size and cycle
-length; its period is derived from those two fields. Scala import derives the
-period and cycle length from the imported `.scl` file. Scala text is parsed in
-the web app and stored in the bundle as cents data, but full Scala playback and
-sync compatibility still require firmware tuning-system work. The preview uses
-the current 140-key hardware shape with `133` note keys and the
+Scala `.scl` imports. EDO and cents-per-step tunings include editable note
+labels and an `A = x Hz` reference pitch; note labels default to degree numbers
+and validate like included degrees when the field is exited. The cents-per-step
+editor takes only step size and cycle length; its period is derived from those
+two fields. Scala import derives period, cycle length, labels, and reference
+pitch from the imported file path as support is added, so the Scala editor does
+not expose those fields. Scala text is parsed in the web app and stored in the
+bundle as cents data, but full Scala playback and sync compatibility still
+require firmware tuning-system work. The preview uses the current 140-key hardware shape with `133` note keys and the
 seven command keys. The selected-key inspector has a `Color source` dropdown:
 `Scale degree` edits the palette color for the generated degree, while
 `Button override` edits only the selected button's color. `Note source` can

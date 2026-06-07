@@ -87,6 +87,7 @@ export interface GeneratedEdoTuningInput {
   periodMilliCents?: number;
   referenceMidiNote?: number;
   referenceMilliHz?: number;
+  keyLabels?: string[];
 }
 
 export interface EqualStepTuningInput {
@@ -97,6 +98,7 @@ export interface EqualStepTuningInput {
   cycleLength: number;
   referenceMidiNote?: number;
   referenceMilliHz?: number;
+  keyLabels?: string[];
 }
 
 export interface CentsTableTuningInput {
@@ -194,6 +196,7 @@ export type LayoutBundleTuning =
       cycleLength: number;
       referenceMidiNote: number;
       referenceHz: number;
+      keyLabels: string[];
     }
   | {
       kind: "equal-step";
@@ -202,6 +205,7 @@ export type LayoutBundleTuning =
       cycleLength: number;
       referenceMidiNote: number;
       referenceHz: number;
+      keyLabels: string[];
     }
   | {
       kind: "scala";
@@ -297,7 +301,8 @@ export function createGeneratedEdoTuning(input: GeneratedEdoTuningInput): Encode
       tlvU32LE(TuningTlv.PeriodMilliCents, periodMilliCents),
       tlvU32LE(TuningTlv.StepMilliCents, stepMilliCents),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
-      tlvU32LE(TuningTlv.ReferenceMilliHz, input.referenceMilliHz ?? 440_000)
+      tlvU32LE(TuningTlv.ReferenceMilliHz, input.referenceMilliHz ?? 440_000),
+      tlv(TuningTlv.KeyLabels, encodeKeyLabels(input.keyLabels ?? defaultKeyLabels(input.edoDivisions)))
     ]
   });
 }
@@ -313,7 +318,8 @@ export function createEqualStepTuning(input: EqualStepTuningInput): EncodedCatal
       tlvU32LE(TuningTlv.PeriodMilliCents, input.periodMilliCents ?? 1_200_000),
       tlvU32LE(TuningTlv.StepMilliCents, input.stepMilliCents),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
-      tlvU32LE(TuningTlv.ReferenceMilliHz, input.referenceMilliHz ?? 440_000)
+      tlvU32LE(TuningTlv.ReferenceMilliHz, input.referenceMilliHz ?? 440_000),
+      tlv(TuningTlv.KeyLabels, encodeKeyLabels(input.keyLabels ?? defaultKeyLabels(input.cycleLength)))
     ]
   });
 }
@@ -473,6 +479,28 @@ function centsToMilliCents(cents: number): number {
   return Math.round(cents * 1000);
 }
 
+export function defaultKeyLabels(cycleLength: number): string[] {
+  const safeCycleLength = Math.max(1, Math.round(cycleLength));
+  return Array.from({ length: safeCycleLength }, (_, degree) => String(degree));
+}
+
+export function normalizeKeyLabels(labels: string[] | undefined, cycleLength: number): string[] {
+  const defaults = defaultKeyLabels(cycleLength);
+  return defaults.map((fallback, index) => {
+    const label = labels?.[index]?.trim();
+    return label || fallback;
+  });
+}
+
+function encodeKeyLabels(labels: string[]): Uint8Array {
+  const encoder = new TextEncoder();
+  const labelBytes = labels.map((label) => {
+    const bytes = encoder.encode(label);
+    return bytesFromNumbers([Math.min(bytes.length, 255), ...bytes.slice(0, 255)]);
+  });
+  return concatBytes(labelBytes);
+}
+
 function equalStepPeriodCents(tuning: Extract<LayoutBundleTuning, { kind: "equal-step" }>): number {
   return tuning.stepCents * tuning.cycleLength;
 }
@@ -610,7 +638,8 @@ export function createDefaultLayoutBundle(): LayoutBundle {
       periodCents: 1200,
       cycleLength: 19,
       referenceMidiNote: 69,
-      referenceHz: 440
+      referenceHz: 440,
+      keyLabels: defaultKeyLabels(19)
     },
     palette: {
       degreeColors: createDefaultDegreeColors(19)
@@ -635,7 +664,8 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
           edoDivisions: bundle.tuning.edoDivisions,
           periodMilliCents: centsToMilliCents(bundle.tuning.periodCents),
           referenceMidiNote: bundle.tuning.referenceMidiNote,
-          referenceMilliHz: hertzToMilliHertz(bundle.tuning.referenceHz)
+          referenceMilliHz: hertzToMilliHertz(bundle.tuning.referenceHz),
+          keyLabels: bundle.tuning.keyLabels
         });
       case "equal-step":
         return createEqualStepTuning({
@@ -645,7 +675,8 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
           periodMilliCents: centsToMilliCents(equalStepPeriodCents(bundle.tuning)),
           cycleLength: bundle.tuning.cycleLength,
           referenceMidiNote: bundle.tuning.referenceMidiNote,
-          referenceMilliHz: hertzToMilliHertz(bundle.tuning.referenceHz)
+          referenceMilliHz: hertzToMilliHertz(bundle.tuning.referenceHz),
+          keyLabels: bundle.tuning.keyLabels
         });
       case "scala":
         return createCentsTableTuning({
@@ -767,6 +798,7 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
     description?: unknown;
     referenceMidiNote?: unknown;
     referenceHz?: unknown;
+    keyLabels?: unknown;
   };
   const name = stringOr(tuning.name, "User Tuning");
   const referenceMidiNote = clampInteger(numberOr(tuning.referenceMidiNote, 69), 0, 127);
@@ -781,7 +813,8 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
       periodCents: numberOr(tuning.periodCents, 1200),
       cycleLength: edoDivisions,
       referenceMidiNote,
-      referenceHz
+      referenceHz,
+      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, edoDivisions)
     };
   }
 
@@ -793,7 +826,8 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
       stepCents: numberOr(tuning.stepCents, numberOr(tuning.periodCents, 1200) / cycleLength),
       cycleLength,
       referenceMidiNote,
-      referenceHz
+      referenceHz,
+      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, cycleLength)
     };
   }
 

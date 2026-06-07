@@ -53,6 +53,18 @@ function i16LE(value: Uint8Array): number {
   return unsigned >= 0x8000 ? unsigned - 0x10000 : unsigned;
 }
 
+function keyLabels(value: Uint8Array): string[] {
+  const labels: string[] = [];
+  const decoder = new TextDecoder();
+  for (let index = 0; index < value.length;) {
+    const length = value[index];
+    index += 1;
+    labels.push(decoder.decode(value.slice(index, index + length)));
+    index += length;
+  }
+  return labels;
+}
+
 function createFloatWav(samples: Float32Array): Uint8Array {
   const headerBytes = 44;
   const dataBytes = samples.length * 4;
@@ -96,6 +108,7 @@ describe("catalog object encoding", () => {
     const decoded = decodeObjectBody(tuning.body);
     expect(decoded.objectType).toBe(ObjectType.UserTuning);
     expect(textFromBytes(decoded.records.find((record) => record.tag === CommonTlv.Name)?.value ?? new Uint8Array())).toBe("17 EDO");
+    expect(keyLabels(recordValue(tuning.body, TuningTlv.KeyLabels))).toEqual(Array.from({ length: 17 }, (_, degree) => String(degree)));
   });
 
   it("round trips a vector layout", () => {
@@ -267,7 +280,8 @@ Example scale
         stepCents: 80,
         cycleLength: 15,
         referenceMidiNote: 69,
-        referenceHz: 440
+        referenceHz: 440,
+        keyLabels: Array.from({ length: 15 }, (_, degree) => String(degree))
       }
     }));
     const parsed = parseLayoutBundleFile(serialized);

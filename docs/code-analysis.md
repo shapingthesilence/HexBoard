@@ -291,7 +291,14 @@ This replaces slower sorted-container behavior, but it still depends on correct 
 
 ### Dynamic Just Intonation
 
-Dynamic just intonation is applied in the MIDI note-on path. The current reference key tracking uses `pressedKeyIDs`, and note-off currently removes from that list with `pop_back()`. That means release-order behavior is still worth reviewing if dynamic JI behaves unexpectedly.
+Dynamic just intonation is applied in the MIDI note-on path. The reference key
+tracking uses `pressedKeyIDs`; note-off removes the released button id from that
+list so release order does not corrupt the reference stack. The `JI Table` menu
+item is visible only while `Dynamic JI` is enabled and stores
+`DynamicJIRatioTable`, a prime-limit selector from `3-Lim` through `41-Lim`.
+The default `41-Lim` preserves the previous full candidate-ratio behavior, while
+lower limits filter the existing ratio list to simpler numerator/denominator
+prime factors.
 
 ## Delegated Control
 
@@ -329,14 +336,17 @@ Tuning, Layouts, and Scales in sidebar subtabs, and the color-map object uses a
 generic future color-mode name rather than an editable palette field. Scale
 editing uses only included degrees; the input stores draft text and validates on
 blur so invalid intermediate typing does not immediately overwrite the model.
-The preview paintbrush writes per-button color overrides into the active layout,
+EDO and equal-step tunings expose note labels and `A = x Hz`; labels default to
+degree-number strings, validate on exit, and encode through `KeyLabels`. The
+preview paintbrush writes per-button color overrides into the active layout,
 using the same explicit override records as the selected-key inspector.
 Equal-step tunings expose step cents and cycle length in the editor; their
 protocol period metadata is derived from those values during encoding. Scala `.scl` files are
 parsed in the web app into cents-table tuning objects, and Scala period/cycle
-metadata is derived from the imported cents table. Firmware does not parse
-Scala text or persist `/layouts.dat` objects yet, and full Scala compatibility
-requires a tuning-system overhaul rather than only host-side import support.
+metadata, labels, and reference pitch are reserved for imported file data rather
+than separate Scala editor fields. Firmware does not parse Scala text or persist
+`/layouts.dat` objects yet, and full Scala compatibility requires a
+tuning-system overhaul rather than only host-side import support.
 Future firmware work needs a `/layouts.dat` catalog with `UserTuning`,
 `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` records;
 manual explicit button records should keep their stored `stepsFromC` and color
@@ -544,9 +554,13 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `15`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `16`, and `PROFILE_COUNT` is `9`.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the hardware-specific calibrated table above.
+
+Version `16` appends `DynamicJIRatioTable` to settings profiles. Version `15`
+files migrate by copying the existing profile prefix and using the factory
+default `41-Lim` table selector.
 
 The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
 
@@ -619,7 +633,7 @@ Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` through `14` files migrate to version `15` by copying the older per-profile prefix, appending newer settings with factory defaults, remapping legacy envelope time indices when needed, remapping legacy vibrato speed indices, and converting old `DeviceRotation` OLED-driver constants to physical device orientation values; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
+- version `2` through `15` files migrate to version `16` by copying the older per-profile prefix, appending newer settings with factory defaults, remapping legacy envelope time indices when needed, remapping legacy vibrato speed indices, and converting old `DeviceRotation` OLED-driver constants to physical device orientation values; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults
@@ -679,7 +693,6 @@ The rotary encoder is polled on core 1 and consumed on core 0. Holding the encod
 
 - The single-file structure makes cross-subsystem side effects easy to miss.
 - Dynamic containers still exist in live paths.
-- Dynamic JI release tracking assumes a simple pressed-key ordering.
 - Unknown settings schema versions still fall back to defaults on version mismatch.
 - Flash writes still pause interrupt-driven audio, even though the code mutes before saving.
 - Delegated-control input is intentionally external-facing, so SysEx parsing should stay bounds-checked and isolated.

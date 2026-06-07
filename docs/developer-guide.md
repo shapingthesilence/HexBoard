@@ -121,10 +121,13 @@ Current web source layout:
   the selected-key inspector. The tuning/layout editor sidebar keeps `Tuning`,
   `Layouts`, and `Scales` in subtabs. Scales are edited with `includedDegrees`
   only; the text input validates on blur so incomplete text can exist while a
-  user is typing. Equal-step layout-bundle tunings store step cents plus cycle
-  length in the editor model; protocol `PeriodMilliCents` is derived during
-  encoding. Scala layout-bundle tunings derive period and cycle length from the
-  imported cents table instead of exposing those as separate editor fields.
+  user is typing. EDO and equal-step tunings store editable `keyLabels` and
+  `referenceHz`; key labels default to degree-number strings and use the same
+  draft-then-blur validation style. Equal-step layout-bundle tunings store step
+  cents plus cycle length in the editor model; protocol `PeriodMilliCents` is
+  derived during encoding. Scala layout-bundle tunings derive period, cycle
+  length, labels, and reference pitch from imported file data instead of
+  exposing those as separate editor fields.
 - `web/src/catalogs/hexBoardGeometry.ts`: browser-side model of the current
   140-key surface, including `133` main note keys and command indices
   `0,20,40,60,80,100,120`; layout previews and tests should use this helper
@@ -371,7 +374,7 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `15`
+- `CURRENT_SETTINGS_VERSION` is currently `16`
 - the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
@@ -380,6 +383,7 @@ Important implementation details:
 - synth modulation target calculation runs on an `8`-sample control quantum for CPU headroom; per-voice phase increment and phase-warp depths then linearly slew between cached targets at audio rate to reduce pitch and warp stepping artifacts
 - the synth LFO is stored as `SynthLfoTarget`, `SynthLfoAmount`, `SynthLfoWave`, and `SynthLfoSpeed`; the LFO targets the same modulation destinations as the wheel and FX envelopes, uses a bipolar amount byte where `127` is off, supports sine/triangle/saw/square shapes, and uses a `20`-entry `0.05 Hz` through `20 Hz` speed table
 - onboard synth vibrato speed is stored as `SynthVibratoSpeed`; selectable values are `1 Hz` through `12 Hz`, with factory default `6 Hz`
+- Dynamic JI stores its active candidate-ratio table as `DynamicJIRatioTable`; the menu shows `JI Table` only when `Dynamic JI` is enabled, with prime-limit options from `3-Lim` through `41-Lim`; factory default `41-Lim` preserves the previous full ratio-list behavior
 - mono portamento is stored as `SynthPortamentoTimeIndex`; it reuses the `0 ms` through `4 s` envelope time table and the menu hides `Porta` outside the two mono modes
 - arpeggiator direction is stored as `ArpeggiatorDirection`; the menu hides `Arp Dir` outside `Arp'gio`; note-sorted directions compare assigned note/frequency rather than physical button number
 - `SynthAttackEffect` is a deprecated hidden byte kept only so version `8` files can migrate by prefix copy
@@ -395,7 +399,7 @@ Important implementation details:
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
-- version `2` through `14` settings files are migrated in place to version `15` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table, and converting version `13` and older `DeviceRotation` OLED-driver constants into physical device rotation values; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
+- version `2` through `15` settings files are migrated in place to version `16` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table, and converting version `13` and older `DeviceRotation` OLED-driver constants into physical device rotation values; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
@@ -404,7 +408,7 @@ Important implementation details:
   stored values are interpreted by checking whether the older byte had the piezo
   bit set
 
-If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `14` because settings were appended to the schema, some setting tables expanded, and `DeviceRotation` was reinterpreted from OLED-driver rotation to physical device rotation. Unknown version mismatches still fall back to defaults.
+If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `15` because settings were appended to the schema, some setting tables expanded, and `DeviceRotation` was reinterpreted from OLED-driver rotation to physical device rotation. Unknown version mismatches still fall back to defaults.
 
 ## MIDI And Tuning Notes
 

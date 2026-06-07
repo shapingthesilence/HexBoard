@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import {
   clampScaleDegreeColor,
   computeVectorLayoutSteps,
@@ -6,12 +6,14 @@ import {
   createDefaultDegreeColors,
   createDefaultLayout,
   createDefaultLayoutBundle,
+  defaultKeyLabels,
   deterministicObjectId,
   encodeLayoutBundle,
   hexBoardGeometry,
   isHexBoardCommandIndex,
   normalizeScaleDegrees,
   normalizeScaleDegreeColors,
+  normalizeKeyLabels,
   objectIdToHex,
   parseLayoutBundleFile,
   parseLayoutBundleLibrary,
@@ -272,6 +274,30 @@ function formatIntegerList(values: number[]): string {
   return values.join(", ");
 }
 
+function formatLabelList(labels: string[]): string {
+  return labels.join(", ");
+}
+
+function parseLabelList(text: string): string[] {
+  return text
+    .split(/[\s,]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function validateKeyLabelsInput(text: string, cycleLength: number): { labels: string[] } | { error: string } {
+  const safeCycleLength = Math.max(1, Math.round(cycleLength));
+  const labels = parseLabelList(text);
+  if (labels.length !== safeCycleLength) {
+    return { error: `Note labels must include exactly ${safeCycleLength} labels.` };
+  }
+  const invalidLabel = labels.find((label) => label.length > 8 || !/^[A-Za-z0-9+#b-]+$/.test(label));
+  if (invalidLabel) {
+    return { error: `Invalid note label "${invalidLabel}". Use letters, numbers, +, #, b, or -.` };
+  }
+  return { labels };
+}
+
 function validateIncludedDegreesInput(text: string, cycleLength: number): { degrees: number[] } | { error: string } {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
   const trimmed = text.trim();
@@ -303,11 +329,14 @@ export function TuningLayoutEditor() {
   const [activeEditorTab, setActiveEditorTab] = useState<GeometryEditorTab>("tuning");
   const [paintbrushMode, setPaintbrushMode] = useState(false);
   const [paintbrushColor, setPaintbrushColor] = useState<ScaleDegreeColor>(() => createDefaultDegreeColors(1)[0]);
+  const [keyLabelsDraft, setKeyLabelsDraft] = useState("");
+  const [keyLabelsError, setKeyLabelsError] = useState("");
   const [includedDegreesDraft, setIncludedDegreesDraft] = useState("");
   const [includedDegreesError, setIncludedDegreesError] = useState("");
   const [status, setStatus] = useState("Ready");
   const bundleInputRef = useRef<HTMLInputElement>(null);
   const scalaInputRef = useRef<HTMLInputElement>(null);
+  const keyLabelsInputRef = useRef<HTMLInputElement>(null);
   const includedDegreesInputRef = useRef<HTMLInputElement>(null);
   const paintStrokeActiveRef = useRef(false);
   const lastPaintedButtonRef = useRef<number | null>(null);
@@ -324,6 +353,16 @@ export function TuningLayoutEditor() {
     setIncludedDegreesDraft(formatIntegerList(activeScale.includedDegrees));
     setIncludedDegreesError("");
   }, [activeScale.objectIdHex, activeBundle.tuning.cycleLength]);
+
+  useEffect(() => {
+    if (activeBundle.tuning.kind === "scala") {
+      setKeyLabelsDraft("");
+      setKeyLabelsError("");
+      return;
+    }
+    setKeyLabelsDraft(formatLabelList(activeBundle.tuning.keyLabels));
+    setKeyLabelsError("");
+  }, [activeBundle.tuning]);
 
   function setBundlesAndPersist(nextBundles: LayoutBundle[]) {
     setBundles(nextBundles);
@@ -468,12 +507,43 @@ export function TuningLayoutEditor() {
     }));
   }
 
+  function commitKeyLabels(text: string) {
+    if (activeBundle.tuning.kind === "scala") {
+      return;
+    }
+    const cycleLength = tuningCycleLength(activeBundle.tuning);
+    const result = validateKeyLabelsInput(text, cycleLength);
+    if ("error" in result) {
+      setKeyLabelsError(result.error);
+      setStatus(result.error);
+      return;
+    }
+    setKeyLabelsError("");
+    setKeyLabelsDraft(formatLabelList(result.labels));
+    if (activeBundle.tuning.kind === "edo") {
+      updateEdoTuning({ keyLabels: result.labels });
+    } else {
+      updateEqualStepTuning({ keyLabels: result.labels });
+    }
+  }
+
   function commitIncludedDegreesIfLeaving(target: EventTarget | null) {
+    const labelsInput = keyLabelsInputRef.current;
+    if (labelsInput && typeof document !== "undefined" && document.activeElement === labelsInput && target !== labelsInput) {
+      commitKeyLabels(labelsInput.value);
+    }
+
     const input = includedDegreesInputRef.current;
     if (!input || typeof document === "undefined" || document.activeElement !== input || target === input) {
       return;
     }
     commitIncludedDegrees(input.value);
+  }
+
+  function commitKeyLabelsOnKey(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter" || event.key === "Tab") {
+      commitKeyLabels(event.currentTarget.value);
+    }
   }
 
   function commitIncludedDegreesOnKey(event: KeyboardEvent<HTMLInputElement>) {
@@ -491,7 +561,8 @@ export function TuningLayoutEditor() {
         periodCents: tuningPeriodCents(bundle.tuning),
         cycleLength: tuningCycleLength(bundle.tuning),
         referenceMidiNote: bundle.tuning.referenceMidiNote,
-        referenceHz: bundle.tuning.referenceHz
+        referenceHz: bundle.tuning.referenceHz,
+        keyLabels: bundle.tuning.kind === "scala" ? defaultKeyLabels(tuningCycleLength(bundle.tuning)) : bundle.tuning.keyLabels
       };
       const tuning = {
         ...current,
@@ -499,6 +570,8 @@ export function TuningLayoutEditor() {
       };
       tuning.edoDivisions = clampInteger(tuning.edoDivisions, 1, 255);
       tuning.cycleLength = tuning.edoDivisions;
+      tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
+      tuning.referenceHz = Number.isFinite(tuning.referenceHz) && tuning.referenceHz > 0 ? tuning.referenceHz : 440;
       return withCycleColors({ ...bundle, tuning }, tuning.cycleLength);
     });
   }
@@ -513,13 +586,16 @@ export function TuningLayoutEditor() {
           : tuningPeriodCents(bundle.tuning) / tuningCycleLength(bundle.tuning),
         cycleLength: tuningCycleLength(bundle.tuning),
         referenceMidiNote: bundle.tuning.referenceMidiNote,
-        referenceHz: bundle.tuning.referenceHz
+        referenceHz: bundle.tuning.referenceHz,
+        keyLabels: bundle.tuning.kind === "scala" ? defaultKeyLabels(tuningCycleLength(bundle.tuning)) : bundle.tuning.keyLabels
       };
       const tuning = {
         ...current,
         ...patch
       };
       tuning.cycleLength = clampInteger(tuning.cycleLength, 1, 255);
+      tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
+      tuning.referenceHz = Number.isFinite(tuning.referenceHz) && tuning.referenceHz > 0 ? tuning.referenceHz : 440;
       return withCycleColors({ ...bundle, tuning }, tuning.cycleLength);
     });
   }
@@ -906,6 +982,15 @@ export function TuningLayoutEditor() {
               onEqualStepChange={updateEqualStepTuning}
               onScalaChange={updateScalaTuning}
               onImportScala={() => scalaInputRef.current?.click()}
+              keyLabelsDraft={keyLabelsDraft}
+              keyLabelsError={keyLabelsError}
+              keyLabelsInputRef={keyLabelsInputRef}
+              onKeyLabelsBlur={commitKeyLabels}
+              onKeyLabelsChange={(text) => {
+                setKeyLabelsDraft(text);
+                setKeyLabelsError("");
+              }}
+              onKeyLabelsKeyDown={commitKeyLabelsOnKey}
             />
           </section>
         ) : null}
@@ -1201,9 +1286,27 @@ interface TuningControlsProps {
   onEqualStepChange: (patch: Partial<Extract<LayoutBundleTuning, { kind: "equal-step" }>>) => void;
   onScalaChange: (patch: Partial<Pick<Extract<LayoutBundleTuning, { kind: "scala" }>, "name" | "description">>) => void;
   onImportScala: () => void;
+  keyLabelsDraft: string;
+  keyLabelsError: string;
+  keyLabelsInputRef: RefObject<HTMLInputElement | null>;
+  onKeyLabelsBlur: (text: string) => void;
+  onKeyLabelsChange: (text: string) => void;
+  onKeyLabelsKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
 }
 
-function TuningControls({ tuning, onEdoChange, onEqualStepChange, onScalaChange, onImportScala }: TuningControlsProps) {
+function TuningControls({
+  tuning,
+  onEdoChange,
+  onEqualStepChange,
+  onScalaChange,
+  onImportScala,
+  keyLabelsDraft,
+  keyLabelsError,
+  keyLabelsInputRef,
+  onKeyLabelsBlur,
+  onKeyLabelsChange,
+  onKeyLabelsKeyDown
+}: TuningControlsProps) {
   if (tuning.kind === "edo") {
     return (
       <div className="fieldGrid">
@@ -1218,6 +1321,22 @@ function TuningControls({ tuning, onEdoChange, onEqualStepChange, onScalaChange,
         <label className="field">
           <span>Period cents</span>
           <input type="number" value={tuning.periodCents} onChange={(event) => onEdoChange({ periodCents: Number(event.target.value) })} />
+        </label>
+        <label className="field">
+          <span>A = x Hz</span>
+          <input min={0.01} step={0.01} type="number" value={tuning.referenceHz} onChange={(event) => onEdoChange({ referenceHz: Number(event.target.value) })} />
+        </label>
+        <label className={keyLabelsError ? "field invalidField" : "field"}>
+          <span>Note labels</span>
+          <input
+            aria-invalid={keyLabelsError ? "true" : "false"}
+            onBlurCapture={(event) => onKeyLabelsBlur(event.target.value)}
+            onChange={(event) => onKeyLabelsChange(event.target.value)}
+            onKeyDown={onKeyLabelsKeyDown}
+            ref={keyLabelsInputRef}
+            value={keyLabelsDraft}
+          />
+          {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
         </label>
       </div>
     );
@@ -1237,6 +1356,22 @@ function TuningControls({ tuning, onEdoChange, onEqualStepChange, onScalaChange,
         <label className="field">
           <span>Cycle length</span>
           <input min={1} max={255} type="number" value={tuning.cycleLength} onChange={(event) => onEqualStepChange({ cycleLength: Number(event.target.value) })} />
+        </label>
+        <label className="field">
+          <span>A = x Hz</span>
+          <input min={0.01} step={0.01} type="number" value={tuning.referenceHz} onChange={(event) => onEqualStepChange({ referenceHz: Number(event.target.value) })} />
+        </label>
+        <label className={keyLabelsError ? "field invalidField" : "field"}>
+          <span>Note labels</span>
+          <input
+            aria-invalid={keyLabelsError ? "true" : "false"}
+            onBlurCapture={(event) => onKeyLabelsBlur(event.target.value)}
+            onChange={(event) => onKeyLabelsChange(event.target.value)}
+            onKeyDown={onKeyLabelsKeyDown}
+            ref={keyLabelsInputRef}
+            value={keyLabelsDraft}
+          />
+          {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
         </label>
       </div>
     );
