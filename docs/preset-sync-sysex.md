@@ -699,9 +699,12 @@ Recommended TLVs:
 The device can create and edit an EDO object with only `Name`, `TuningKind`,
 `EdoDivisions`, and `PeriodMilliCents`. The web app can also create equal
 cents-per-step tunings with `TuningKind = 4`, `StepMilliCents`, and a cycle
-length in `EdoDivisions` for labels/colors. Scala `.scl` import is a host-side
-feature: the web app parses the text and writes a cents table, so firmware does
-not need to parse Scala files.
+length in `EdoDivisions` for labels/colors; host tooling derives
+`PeriodMilliCents` from those two values so they cannot diverge. Scala `.scl`
+import is a host-side feature: the web app parses the text, derives period and
+cycle metadata from the file, and writes a cents table. Firmware does not need
+to parse Scala text, but full Scala-compatible playback requires broader
+firmware tuning-system support.
 
 The tuning object must be complete enough for both the onboard synth and every
 MIDI output mode. For equal-step tunings, firmware can derive frequency,
@@ -781,20 +784,22 @@ Recommended TLVs:
 | `0x20` | `TuningRef` | Optional object reference |
 | `0x21` | `CycleLength` | `u16-le` |
 | `0x22` | `RootDegree` | `u16-le`, normally `0`; profile key/root shifts this at runtime |
-| `0x23` | `PatternSteps` | Repeated `u8` interval sizes, summing to the cycle length when pattern-derived |
+| `0x23` | `PatternSteps` | Repeated `u8` interval sizes; optional metadata, empty in the current web editor |
 | `0x24` | `IncludedDegrees` | Repeated `u16-le` scale degrees relative to root |
 
-`IncludedDegrees` is the authoritative membership table. `PatternSteps` is
-kept as editable metadata so the device can present simple scale patterns
-on-device. Root/key changes shift generated scale membership at runtime, but
-they must not rewrite manual button records.
+`IncludedDegrees` is the authoritative membership table. The current web editor
+does not expose `PatternSteps` because maintaining both pattern intervals and
+explicit included degrees is redundant. Root/key changes shift generated scale
+membership at runtime, but they must not rewrite manual button records.
 
 ## Scale Color Map Object
 
 `ScaleColorMap` lets users customize scale-degree colors without requiring a
-full per-button map. Each web bundle has one custom palette. This palette is
-the intended replacement for the hard-coded firmware `Tiered` color mode for
-user-generated tunings/layouts.
+full per-button map. Each web bundle has one custom scale-degree color set. Its
+object name is generic because the firmware color-mode menu should expose the
+mode generically rather than naming each palette. This color set is the intended
+replacement for the hard-coded firmware `Tiered` color mode for user-generated
+tunings/layouts.
 
 Recommended TLVs:
 
@@ -1027,9 +1032,9 @@ Recommended use:
 
 - Backup all user tunings, layouts, scales, color maps, explicit maps,
   profiles, and synth presets.
-- For a user musical-geometry bundle, keep one tuning, one custom color
-  palette, one or more layouts, and one or more scales together in the exported
-  JSON. The web app may unpack these into individual `UserTuning`,
+- For a user musical-geometry bundle, keep one tuning, one custom scale-degree
+  color set, one or more layouts, and one or more scales together in the
+  exported JSON. The web app may unpack these into individual `UserTuning`,
   `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` writes
   when firmware support lands.
 - Restore by dry-run validating all objects first.
@@ -1071,10 +1076,12 @@ write the individual objects after the web app unpacks a bundle.
 ### Write A Scala Import
 
 1. Web app imports `.scl`.
-2. Web app converts Scala data into a `UserTuning` `CentsTable`.
+2. Web app derives period/cycle metadata from the file and converts Scala data
+   into a `UserTuning` `CentsTable`.
 3. Web app writes the object through the same chunked transfer path.
 4. Device stores the converted tuning object. It does not need to parse Scala
-   text.
+   text, but it still needs full cents-table tuning support before Scala
+   imports are completely compatible with synth and MIDI output.
 
 ### Write Individual Button Edits
 

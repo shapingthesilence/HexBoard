@@ -110,13 +110,21 @@ Current web source layout:
   transfer payloads, and TLV object bodies
 - `web/src/catalogs/`: `/layouts.dat` user tuning/layout/scale/color/map models
   and named/foldered synth preset catalog models; the web-only layout bundle
-  model keeps one tuning, one custom palette, multiple layouts, multiple scales,
-  and per-layout button overrides together. User-facing vector layouts remain
-  `acrossSteps + upRightSteps`, translate to the legacy `DownLeftSteps` TLV only
-  at the protocol boundary, and store a four-step `0/90/180/270` device
-  orientation value matching the firmware `DeviceRotation` setting. The
-  tuning/layout preview paintbrush writes the same per-layout button color
-  override fields as the selected-key inspector.
+  model keeps one tuning, one custom scale-degree color set, multiple layouts,
+  multiple scales, and per-layout button overrides together. The color-map
+  object uses a generic name because the firmware color-mode menu should name
+  that mode generically. User-facing vector layouts remain `acrossSteps +
+  upRightSteps`, translate to the legacy `DownLeftSteps` TLV only at the
+  protocol boundary, and store a four-step `0/90/180/270` device orientation
+  value matching the firmware `DeviceRotation` setting. The tuning/layout
+  preview paintbrush writes the same per-layout button color override fields as
+  the selected-key inspector. The tuning/layout editor sidebar keeps `Tuning`,
+  `Layouts`, and `Scales` in subtabs. Scales are edited with `includedDegrees`
+  only; the text input validates on blur so incomplete text can exist while a
+  user is typing. Equal-step layout-bundle tunings store step cents plus cycle
+  length in the editor model; protocol `PeriodMilliCents` is derived during
+  encoding. Scala layout-bundle tunings derive period and cycle length from the
+  imported cents table instead of exposing those as separate editor fields.
 - `web/src/catalogs/hexBoardGeometry.ts`: browser-side model of the current
   140-key surface, including `133` main note keys and command indices
   `0,20,40,60,80,100,120`; layout previews and tests should use this helper
@@ -411,11 +419,12 @@ For the draft host sync protocol covering profiles, user tunings/layouts,
 mapping objects, and named synth presets, see `docs/preset-sync-sysex.md`.
 When `/layouts.dat` firmware support is added, parse user tuning objects into
 the same runtime data needed by `assignPitches()` and `resetTuningMIDI()`:
-equal-step tunings need period, step size, and reference pitch; imported
-Scala/cents tunings need a cents or ratio table that can resolve every
-`stepsFromC` value for synth frequency, standard MIDI note mapping, and MPE bend
-calculation. Manual `ExplicitButtonMap` note positions are absolute
-`stepsFromC` values. Root/key and transposition settings should affect scale
+equal-step tunings need step size, cycle length, derived period, and reference
+pitch; imported Scala/cents tunings need a cents or ratio table that can resolve
+every `stepsFromC` value for synth frequency, standard MIDI note mapping, and
+MPE bend calculation. Full Scala compatibility needs a firmware tuning-system
+overhaul, not just `.scl` parsing in the host app. Manual `ExplicitButtonMap`
+note positions are absolute `stepsFromC` values. Root/key and transposition settings should affect scale
 highlighting and final sounded pitch, but should not regenerate those manual
 button records.
 

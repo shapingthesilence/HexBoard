@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type PointerEvent } from "react";
 import {
   clampScaleDegreeColor,
   computeVectorLayoutSteps,
@@ -17,7 +17,6 @@ import {
   parseLayoutBundleLibrary,
   parseScalaScale,
   resolveLayoutBundleButtonColor,
-  scalePatternToDegrees,
   serializeLayoutBundle,
   type HexBoardKey,
   type LayoutBundle,
@@ -36,6 +35,7 @@ const previewHexRowStepY = 42;
 const previewHexInset = 24;
 
 type LayoutGuideFocus = "center" | "across" | "upRight";
+type GeometryEditorTab = "tuning" | "layouts" | "scales";
 
 const layoutAxisDirectionLabels = [
   { across: "Right", upRight: "Up-right" },
@@ -75,10 +75,7 @@ function createUntitledBundle(): LayoutBundle {
       ...base.tuning,
       name: "19 EDO"
     },
-    palette: {
-      ...base.palette,
-      name: "Custom Palette"
-    },
+    palette: base.palette,
     layouts: base.layouts.map((layout) => ({ ...layout, objectIdHex: layoutIdHex, name: "Untitled Layout" })),
     activeLayoutIdHex: layoutIdHex,
     scales: base.scales.map((scale) => ({ ...scale, objectIdHex: scaleIdHex })),
@@ -119,6 +116,13 @@ function tuningCycleLength(tuning: LayoutBundleTuning): number {
   return Math.max(1, Math.round(tuning.cycleLength));
 }
 
+function tuningPeriodCents(tuning: LayoutBundleTuning): number {
+  if (tuning.kind === "equal-step") {
+    return tuning.stepCents * tuningCycleLength(tuning);
+  }
+  return tuning.periodCents;
+}
+
 function layoutAxisLabels(rotationSteps: number): typeof layoutAxisDirectionLabels[number] {
   const index = ((Math.round(rotationSteps) % 4) + 4) % 4;
   return layoutAxisDirectionLabels[index];
@@ -139,7 +143,6 @@ function withCycleColors(bundle: LayoutBundle, cycleLength: number): LayoutBundl
     })),
     scales: scales.map((scale) => ({
       ...scale,
-      patternSteps: scale.patternSteps.map((step) => clampInteger(step, 0, 255)),
       includedDegrees: normalizeScaleDegrees(scale.includedDegrees, safeCycleLength)
     })),
     activeScaleIdHex: scales.find((scale) => scale.objectIdHex === bundle.activeScaleIdHex)?.objectIdHex ?? scales[0].objectIdHex
@@ -265,17 +268,31 @@ function hexBoardKeyAtCoord(coordRow: number, coordCol: number): HexBoardKey | u
   return hexBoardGeometry.find((key) => key.coordRow === coordRow && key.coordCol === coordCol);
 }
 
-function parseIntegerList(text: string): number[] {
-  return text
-    .split(/[\s,]+/)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => Number.parseInt(part, 10))
-    .filter((value) => Number.isFinite(value));
-}
-
 function formatIntegerList(values: number[]): string {
   return values.join(", ");
+}
+
+function validateIncludedDegreesInput(text: string, cycleLength: number): { degrees: number[] } | { error: string } {
+  const safeCycleLength = Math.max(1, Math.round(cycleLength));
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { error: "Included degrees needs at least one degree." };
+  }
+
+  const parts = trimmed.split(/[\s,]+/).filter(Boolean);
+  const degrees: number[] = [];
+  for (const part of parts) {
+    if (!/^-?\d+$/.test(part)) {
+      return { error: `Invalid included degree "${part}". Use whole numbers separated by commas or spaces.` };
+    }
+    const degree = Number.parseInt(part, 10);
+    if (degree < 0 || degree >= safeCycleLength) {
+      return { error: `Included degrees must be between 0 and ${safeCycleLength - 1}.` };
+    }
+    degrees.push(degree);
+  }
+
+  return { degrees: normalizeScaleDegrees(degrees, safeCycleLength) };
 }
 
 export function TuningLayoutEditor() {
@@ -283,11 +300,15 @@ export function TuningLayoutEditor() {
   const [activeBundleId, setActiveBundleId] = useState("");
   const [selectedButton, setSelectedButton] = useState(65);
   const [layoutGuideFocus, setLayoutGuideFocus] = useState<LayoutGuideFocus | null>(null);
+  const [activeEditorTab, setActiveEditorTab] = useState<GeometryEditorTab>("tuning");
   const [paintbrushMode, setPaintbrushMode] = useState(false);
   const [paintbrushColor, setPaintbrushColor] = useState<ScaleDegreeColor>(() => createDefaultDegreeColors(1)[0]);
+  const [includedDegreesDraft, setIncludedDegreesDraft] = useState("");
+  const [includedDegreesError, setIncludedDegreesError] = useState("");
   const [status, setStatus] = useState("Ready");
   const bundleInputRef = useRef<HTMLInputElement>(null);
   const scalaInputRef = useRef<HTMLInputElement>(null);
+  const includedDegreesInputRef = useRef<HTMLInputElement>(null);
   const paintStrokeActiveRef = useRef(false);
   const lastPaintedButtonRef = useRef<number | null>(null);
 
@@ -298,6 +319,11 @@ export function TuningLayoutEditor() {
   const activeScale = activeBundle.scales.find((scale) => scale.objectIdHex === activeBundle.activeScaleIdHex) ??
     activeBundle.scales[0] ??
     createAllNotesScale(tuningCycleLength(activeBundle.tuning));
+
+  useEffect(() => {
+    setIncludedDegreesDraft(formatIntegerList(activeScale.includedDegrees));
+    setIncludedDegreesError("");
+  }, [activeScale.objectIdHex, activeBundle.tuning.cycleLength]);
 
   function setBundlesAndPersist(nextBundles: LayoutBundle[]) {
     setBundles(nextBundles);
@@ -426,22 +452,34 @@ export function TuningLayoutEditor() {
     });
   }
 
-  function updateScalePattern(text: string) {
+  function commitIncludedDegrees(text: string) {
     const cycleLength = tuningCycleLength(activeBundle.tuning);
-    const patternSteps = parseIntegerList(text).map((step) => clampInteger(step, 0, 255));
+    const result = validateIncludedDegreesInput(text, cycleLength);
+    if ("error" in result) {
+      setIncludedDegreesError(result.error);
+      setStatus(result.error);
+      return;
+    }
+    setIncludedDegreesError("");
+    setIncludedDegreesDraft(formatIntegerList(result.degrees));
     updateActiveScale((scale) => ({
       ...scale,
-      patternSteps,
-      includedDegrees: scalePatternToDegrees(patternSteps, cycleLength)
+      includedDegrees: result.degrees
     }));
   }
 
-  function updateScaleDegrees(text: string) {
-    const cycleLength = tuningCycleLength(activeBundle.tuning);
-    updateActiveScale((scale) => ({
-      ...scale,
-      includedDegrees: normalizeScaleDegrees(parseIntegerList(text), cycleLength)
-    }));
+  function commitIncludedDegreesIfLeaving(target: EventTarget | null) {
+    const input = includedDegreesInputRef.current;
+    if (!input || typeof document === "undefined" || document.activeElement !== input || target === input) {
+      return;
+    }
+    commitIncludedDegrees(input.value);
+  }
+
+  function commitIncludedDegreesOnKey(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter" || event.key === "Tab") {
+      commitIncludedDegrees(event.currentTarget.value);
+    }
   }
 
   function updateEdoTuning(patch: Partial<Extract<LayoutBundleTuning, { kind: "edo" }>>) {
@@ -450,7 +488,7 @@ export function TuningLayoutEditor() {
         kind: "edo" as const,
         name: bundle.tuning.name,
         edoDivisions: tuningCycleLength(bundle.tuning),
-        periodCents: bundle.tuning.periodCents,
+        periodCents: tuningPeriodCents(bundle.tuning),
         cycleLength: tuningCycleLength(bundle.tuning),
         referenceMidiNote: bundle.tuning.referenceMidiNote,
         referenceHz: bundle.tuning.referenceHz
@@ -470,8 +508,9 @@ export function TuningLayoutEditor() {
       const current = bundle.tuning.kind === "equal-step" ? bundle.tuning : {
         kind: "equal-step" as const,
         name: bundle.tuning.name,
-        stepCents: bundle.tuning.kind === "edo" ? bundle.tuning.periodCents / bundle.tuning.edoDivisions : 100,
-        periodCents: bundle.tuning.periodCents,
+        stepCents: bundle.tuning.kind === "edo"
+          ? bundle.tuning.periodCents / bundle.tuning.edoDivisions
+          : tuningPeriodCents(bundle.tuning) / tuningCycleLength(bundle.tuning),
         cycleLength: tuningCycleLength(bundle.tuning),
         referenceMidiNote: bundle.tuning.referenceMidiNote,
         referenceHz: bundle.tuning.referenceHz
@@ -492,8 +531,8 @@ export function TuningLayoutEditor() {
         name: bundle.tuning.name,
         description: bundle.tuning.name,
         cents: [1200],
-        periodCents: bundle.tuning.periodCents,
-        cycleLength: tuningCycleLength(bundle.tuning),
+        periodCents: 1200,
+        cycleLength: 1,
         referenceMidiNote: bundle.tuning.referenceMidiNote,
         referenceHz: bundle.tuning.referenceHz
       };
@@ -501,7 +540,8 @@ export function TuningLayoutEditor() {
         ...current,
         ...patch
       };
-      tuning.cycleLength = clampInteger(tuning.cycleLength, 1, 255);
+      tuning.periodCents = tuning.cents[tuning.cents.length - 1] ?? 1200;
+      tuning.cycleLength = clampInteger(tuning.cents.length, 1, 255);
       return withCycleColors({ ...bundle, tuning }, tuning.cycleLength);
     });
   }
@@ -787,7 +827,7 @@ export function TuningLayoutEditor() {
     .join("\n");
 
   return (
-    <section className="layoutEditorWorkspace">
+    <section className="layoutEditorWorkspace" onPointerDownCapture={(event) => commitIncludedDegreesIfLeaving(event.target)}>
       <aside className="panel stack layoutEditorSidebar">
         <div className="row between">
           <h2>Geometry Bundles</h2>
@@ -819,135 +859,160 @@ export function TuningLayoutEditor() {
         </label>
         <button className="warning" type="button" onClick={deleteActiveBundle}>Delete Bundle</button>
 
-        <section className="editorSection">
-          <h3>Tuning</h3>
-          <label className="field">
-            <span>Type</span>
-            <select value={activeBundle.tuning.kind} onChange={(event) => setTuningKind(event.target.value as LayoutBundleTuning["kind"])}>
-              <option value="edo">EDO</option>
-              <option value="equal-step">Cents per step</option>
-              <option value="scala">Scala .scl</option>
-            </select>
-          </label>
-          <TuningControls
-            tuning={activeBundle.tuning}
-            onEdoChange={updateEdoTuning}
-            onEqualStepChange={updateEqualStepTuning}
-            onScalaChange={updateScalaTuning}
-            onImportScala={() => scalaInputRef.current?.click()}
-          />
-        </section>
+        <div className="sidebarTabs" role="tablist" aria-label="Geometry bundle sections">
+          <button
+            aria-selected={activeEditorTab === "tuning"}
+            className={activeEditorTab === "tuning" ? "active" : ""}
+            onClick={() => setActiveEditorTab("tuning")}
+            role="tab"
+            type="button"
+          >
+            Tuning
+          </button>
+          <button
+            aria-selected={activeEditorTab === "layouts"}
+            className={activeEditorTab === "layouts" ? "active" : ""}
+            onClick={() => setActiveEditorTab("layouts")}
+            role="tab"
+            type="button"
+          >
+            Layouts
+          </button>
+          <button
+            aria-selected={activeEditorTab === "scales"}
+            className={activeEditorTab === "scales" ? "active" : ""}
+            onClick={() => setActiveEditorTab("scales")}
+            role="tab"
+            type="button"
+          >
+            Scales
+          </button>
+        </div>
 
-        <section className="editorSection">
-          <h3>Palette</h3>
-          <label className="field">
-            <span>Name</span>
-            <input
-              value={activeBundle.palette.name}
-              onChange={(event) => updateActiveBundle((bundle) => ({
-                ...bundle,
-                palette: {
-                  ...bundle.palette,
-                  name: event.target.value
-                }
-              }))}
+        {activeEditorTab === "tuning" ? (
+          <section className="editorSection">
+            <h3>Tuning</h3>
+            <label className="field">
+              <span>Type</span>
+              <select value={activeBundle.tuning.kind} onChange={(event) => setTuningKind(event.target.value as LayoutBundleTuning["kind"])}>
+                <option value="edo">EDO</option>
+                <option value="equal-step">Cents per step</option>
+                <option value="scala">Scala .scl</option>
+              </select>
+            </label>
+            <TuningControls
+              tuning={activeBundle.tuning}
+              onEdoChange={updateEdoTuning}
+              onEqualStepChange={updateEqualStepTuning}
+              onScalaChange={updateScalaTuning}
+              onImportScala={() => scalaInputRef.current?.click()}
             />
-          </label>
-          <div className="status">{activeBundle.palette.degreeColors.length} scale-degree colors</div>
-        </section>
+          </section>
+        ) : null}
 
-        <section className="editorSection">
-          <h3>Layouts</h3>
-          <div className="fieldGrid">
-            <label className="field">
-              <span>Active layout</span>
-              <select value={activeLayout.objectIdHex} onChange={(event) => setActiveLayoutId(event.target.value)}>
-                {activeBundle.layouts.map((layout) => (
-                  <option value={layout.objectIdHex} key={layout.objectIdHex}>{layout.name}</option>
-                ))}
-              </select>
-            </label>
-            <div className="row">
-              <button type="button" onClick={addNewLayout}>New Layout</button>
-              <button className="warning" type="button" onClick={deleteActiveLayout}>Delete Layout</button>
+        {activeEditorTab === "layouts" ? (
+          <section className="editorSection">
+            <h3>Layouts</h3>
+            <div className="fieldGrid">
+              <label className="field">
+                <span>Active layout</span>
+                <select value={activeLayout.objectIdHex} onChange={(event) => setActiveLayoutId(event.target.value)}>
+                  {activeBundle.layouts.map((layout) => (
+                    <option value={layout.objectIdHex} key={layout.objectIdHex}>{layout.name}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="row">
+                <button type="button" onClick={addNewLayout}>New Layout</button>
+                <button className="warning" type="button" onClick={deleteActiveLayout}>Delete Layout</button>
+              </div>
+              <label className="field">
+                <span>Layout name</span>
+                <input value={activeLayout.name} onChange={(event) => updateLayout({ name: event.target.value })} />
+              </label>
+              <label className="field">
+                <span>Center key</span>
+                <input
+                  min={0}
+                  max={139}
+                  type="number"
+                  value={activeLayout.centerButton}
+                  onChange={(event) => updateLayout({ centerButton: clampInteger(Number(event.target.value), 0, 139) })}
+                  {...layoutGuideProps("center")}
+                />
+              </label>
+              <label className="field">
+                <span>{axisLabels.across}</span>
+                <input
+                  type="number"
+                  value={activeLayout.acrossSteps}
+                  onChange={(event) => updateLayout({ acrossSteps: Number(event.target.value) })}
+                  {...layoutGuideProps("across")}
+                />
+              </label>
+              <label className="field">
+                <span>{axisLabels.upRight}</span>
+                <input
+                  type="number"
+                  value={activeLayout.upRightSteps}
+                  onChange={(event) => updateLayout({ upRightSteps: Number(event.target.value) })}
+                  {...layoutGuideProps("upRight")}
+                />
+              </label>
+              <label className="field">
+                <span>Rotation</span>
+                <select value={activeLayout.rotationSteps} onChange={(event) => updateLayout({ rotationSteps: Number(event.target.value) })}>
+                  <option value={0}>0°</option>
+                  <option value={1}>90°</option>
+                  <option value={2}>180°</option>
+                  <option value={3}>270°</option>
+                </select>
+              </label>
             </div>
-            <label className="field">
-              <span>Layout name</span>
-              <input value={activeLayout.name} onChange={(event) => updateLayout({ name: event.target.value })} />
-            </label>
-            <label className="field">
-              <span>Center key</span>
-              <input
-                min={0}
-                max={139}
-                type="number"
-                value={activeLayout.centerButton}
-                onChange={(event) => updateLayout({ centerButton: clampInteger(Number(event.target.value), 0, 139) })}
-                {...layoutGuideProps("center")}
-              />
-            </label>
-            <label className="field">
-              <span>{axisLabels.across}</span>
-              <input
-                type="number"
-                value={activeLayout.acrossSteps}
-                onChange={(event) => updateLayout({ acrossSteps: Number(event.target.value) })}
-                {...layoutGuideProps("across")}
-              />
-            </label>
-            <label className="field">
-              <span>{axisLabels.upRight}</span>
-              <input
-                type="number"
-                value={activeLayout.upRightSteps}
-                onChange={(event) => updateLayout({ upRightSteps: Number(event.target.value) })}
-                {...layoutGuideProps("upRight")}
-              />
-            </label>
-            <label className="field">
-              <span>Rotation</span>
-              <select value={activeLayout.rotationSteps} onChange={(event) => updateLayout({ rotationSteps: Number(event.target.value) })}>
-                <option value={0}>0°</option>
-                <option value={1}>90°</option>
-                <option value={2}>180°</option>
-                <option value={3}>270°</option>
-              </select>
-            </label>
-          </div>
-        </section>
+          </section>
+        ) : null}
 
-        <section className="editorSection">
-          <h3>Scales</h3>
-          <div className="fieldGrid">
-            <label className="field">
-              <span>Active scale</span>
-              <select
-                value={activeScale.objectIdHex}
-                onChange={(event) => updateActiveBundle((bundle) => ({ ...bundle, activeScaleIdHex: event.target.value }))}
-              >
-                {activeBundle.scales.map((scale) => (
-                  <option value={scale.objectIdHex} key={scale.objectIdHex}>{scale.name}</option>
-                ))}
-              </select>
-            </label>
-            <div className="row">
-              <button type="button" onClick={addNewScale}>New Scale</button>
-              <button className="warning" type="button" onClick={deleteActiveScale}>Delete Scale</button>
+        {activeEditorTab === "scales" ? (
+          <section className="editorSection">
+            <h3>Scales</h3>
+            <div className="fieldGrid">
+              <label className="field">
+                <span>Active scale</span>
+                <select
+                  value={activeScale.objectIdHex}
+                  onChange={(event) => updateActiveBundle((bundle) => ({ ...bundle, activeScaleIdHex: event.target.value }))}
+                >
+                  {activeBundle.scales.map((scale) => (
+                    <option value={scale.objectIdHex} key={scale.objectIdHex}>{scale.name}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="row">
+                <button type="button" onClick={addNewScale}>New Scale</button>
+                <button className="warning" type="button" onClick={deleteActiveScale}>Delete Scale</button>
+              </div>
+              <label className="field">
+                <span>Scale name</span>
+                <input value={activeScale.name} onChange={(event) => updateActiveScale((scale) => ({ ...scale, name: event.target.value }))} />
+              </label>
+              <label className={includedDegreesError ? "field invalidField" : "field"}>
+                <span>Included degrees</span>
+                <input
+                  aria-invalid={includedDegreesError ? "true" : "false"}
+                  onBlurCapture={(event) => commitIncludedDegrees(event.target.value)}
+                  onChange={(event) => {
+                    setIncludedDegreesDraft(event.target.value);
+                    setIncludedDegreesError("");
+                  }}
+                  onKeyDown={commitIncludedDegreesOnKey}
+                  ref={includedDegreesInputRef}
+                  value={includedDegreesDraft}
+                />
+                {includedDegreesError ? <small className="fieldError">{includedDegreesError}</small> : null}
+              </label>
             </div>
-            <label className="field">
-              <span>Scale name</span>
-              <input value={activeScale.name} onChange={(event) => updateActiveScale((scale) => ({ ...scale, name: event.target.value }))} />
-            </label>
-            <label className="field">
-              <span>Pattern steps</span>
-              <input value={formatIntegerList(activeScale.patternSteps)} onChange={(event) => updateScalePattern(event.target.value)} />
-            </label>
-            <label className="field">
-              <span>Included degrees</span>
-              <input value={formatIntegerList(activeScale.includedDegrees)} onChange={(event) => updateScaleDegrees(event.target.value)} />
-            </label>
-          </div>
-        </section>
+          </section>
+        ) : null}
       </aside>
 
       <div className="layoutEditorMainColumn">
@@ -1134,7 +1199,7 @@ interface TuningControlsProps {
   tuning: LayoutBundleTuning;
   onEdoChange: (patch: Partial<Extract<LayoutBundleTuning, { kind: "edo" }>>) => void;
   onEqualStepChange: (patch: Partial<Extract<LayoutBundleTuning, { kind: "equal-step" }>>) => void;
-  onScalaChange: (patch: Partial<Extract<LayoutBundleTuning, { kind: "scala" }>>) => void;
+  onScalaChange: (patch: Partial<Pick<Extract<LayoutBundleTuning, { kind: "scala" }>, "name" | "description">>) => void;
   onImportScala: () => void;
 }
 
@@ -1170,10 +1235,6 @@ function TuningControls({ tuning, onEdoChange, onEqualStepChange, onScalaChange,
           <input type="number" value={tuning.stepCents} onChange={(event) => onEqualStepChange({ stepCents: Number(event.target.value) })} />
         </label>
         <label className="field">
-          <span>Period cents</span>
-          <input type="number" value={tuning.periodCents} onChange={(event) => onEqualStepChange({ periodCents: Number(event.target.value) })} />
-        </label>
-        <label className="field">
           <span>Cycle length</span>
           <input min={1} max={255} type="number" value={tuning.cycleLength} onChange={(event) => onEqualStepChange({ cycleLength: Number(event.target.value) })} />
         </label>
@@ -1195,16 +1256,6 @@ function TuningControls({ tuning, onEdoChange, onEqualStepChange, onScalaChange,
         <span>Description</span>
         <input value={tuning.description} onChange={(event) => onScalaChange({ description: event.target.value })} />
       </label>
-      <div className="fieldGrid">
-        <label className="field">
-          <span>Period cents</span>
-          <input type="number" value={tuning.periodCents} onChange={(event) => onScalaChange({ periodCents: Number(event.target.value) })} />
-        </label>
-        <label className="field">
-          <span>Cycle length</span>
-          <input min={1} max={255} type="number" value={tuning.cycleLength} onChange={(event) => onScalaChange({ cycleLength: Number(event.target.value) })} />
-        </label>
-      </div>
     </div>
   );
 }

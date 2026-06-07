@@ -318,20 +318,29 @@ The companion web app has protocol and catalog helpers for that draft under
 `web/src/protocol/` and `web/src/catalogs/`, plus a mock MIDI transport under
 `web/src/midi/` so host-side work can be tested before firmware support exists.
 The browser tuning/layout editor adds a web-only `LayoutBundle` library that
-combines one tuning, one custom scale-degree color palette, one or more
-layouts, one or more scales, and optional explicit button overrides per layout.
-It uses `hexBoardGeometry.ts` for the current 140-key firmware index geometry,
-presents vector layouts as across plus up-right steps, and converts that to the
-old `DownLeftSteps` TLV only while the firmware schema still expects it. Bundle
+combines one tuning, one custom scale-degree color set, one or more layouts,
+one or more scales, and optional explicit button overrides per layout. It uses
+`hexBoardGeometry.ts` for the current 140-key firmware index geometry, presents
+vector layouts as across plus up-right steps, and converts that to the old
+`DownLeftSteps` TLV only while the firmware schema still expects it. Bundle
 rotation is a four-step device orientation value (`0/90/180/270`) that matches
-firmware `DeviceRotation`, not a six-step hex-axis transform. The preview
-paintbrush writes per-button color overrides into the active layout, using the
-same explicit override records as the selected-key inspector. Scala `.scl`
-files are parsed in the web app into cents-table tuning objects; firmware does
-not parse Scala text or persist `/layouts.dat` objects yet. Future firmware work
-needs a `/layouts.dat` catalog with `UserTuning`, `UserLayout`, `UserScale`,
-`ScaleColorMap`, and `ExplicitButtonMap` records; manual explicit button
-records should keep their stored `stepsFromC` and color regardless of root/key
+firmware `DeviceRotation`, not a six-step hex-axis transform. The editor keeps
+Tuning, Layouts, and Scales in sidebar subtabs, and the color-map object uses a
+generic future color-mode name rather than an editable palette field. Scale
+editing uses only included degrees; the input stores draft text and validates on
+blur so invalid intermediate typing does not immediately overwrite the model.
+The preview paintbrush writes per-button color overrides into the active layout,
+using the same explicit override records as the selected-key inspector.
+Equal-step tunings expose step cents and cycle length in the editor; their
+protocol period metadata is derived from those values during encoding. Scala `.scl` files are
+parsed in the web app into cents-table tuning objects, and Scala period/cycle
+metadata is derived from the imported cents table. Firmware does not parse
+Scala text or persist `/layouts.dat` objects yet, and full Scala compatibility
+requires a tuning-system overhaul rather than only host-side import support.
+Future firmware work needs a `/layouts.dat` catalog with `UserTuning`,
+`UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` records;
+manual explicit button records should keep their stored `stepsFromC` and color
+regardless of root/key
 or transposition changes, and generated layout menu controls should be hidden
 when a manual layout is active.
 Real-device synth preset saves and Serum/Vital or HexBoard wavetable imports wait for ACK/NACK

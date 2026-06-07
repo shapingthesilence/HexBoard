@@ -18,6 +18,7 @@ import { deterministicObjectId, objectIdFromHex, objectIdToHex } from "./objectI
 
 export const LegacyLayoutBundleFileFormat = "hexboard.layoutBundle.v1";
 export const LayoutBundleFileFormat = "hexboard.layoutBundle.v2";
+export const GenericScaleColorMapName = "Custom Palette";
 
 export const UserTuningKind = {
   Edo: 1,
@@ -139,7 +140,7 @@ export interface UserScaleInput {
   tuningRef?: ObjectReferenceInput;
   cycleLength: number;
   rootDegree?: number;
-  patternSteps: number[];
+  patternSteps?: number[];
   includedDegrees: number[];
 }
 
@@ -177,12 +178,10 @@ export interface LayoutBundleLayout {
 export interface LayoutBundleScale {
   objectIdHex: string;
   name: string;
-  patternSteps: number[];
   includedDegrees: number[];
 }
 
 export interface LayoutBundlePalette {
-  name: string;
   degreeColors: ScaleDegreeColor[];
 }
 
@@ -200,7 +199,6 @@ export type LayoutBundleTuning =
       kind: "equal-step";
       name: string;
       stepCents: number;
-      periodCents: number;
       cycleLength: number;
       referenceMidiNote: number;
       referenceHz: number;
@@ -393,7 +391,7 @@ export function createScaleColorMap(input: ScaleColorMapInput): EncodedCatalogOb
 }
 
 export function createUserScale(input: UserScaleInput): EncodedCatalogObject {
-  const patternBytes = input.patternSteps.map((step) => bytesFromNumbers([clampInteger(step, 0, 255)]));
+  const patternBytes = (input.patternSteps ?? []).map((step) => bytesFromNumbers([clampInteger(step, 0, 255)]));
   const includedDegreeBytes = input.includedDegrees.map((degree) =>
     bytesFromNumbers([
       degree & 0xff,
@@ -475,6 +473,10 @@ function centsToMilliCents(cents: number): number {
   return Math.round(cents * 1000);
 }
 
+function equalStepPeriodCents(tuning: Extract<LayoutBundleTuning, { kind: "equal-step" }>): number {
+  return tuning.stepCents * tuning.cycleLength;
+}
+
 function hertzToMilliHertz(hertz: number): number {
   return Math.round(hertz * 1000);
 }
@@ -540,27 +542,11 @@ export function normalizeScaleDegrees(degrees: number[], cycleLength: number): n
   return [...normalized].sort((left, right) => left - right);
 }
 
-export function scalePatternToDegrees(patternSteps: number[], cycleLength: number): number[] {
-  if (patternSteps.length === 0) {
-    return Array.from({ length: Math.max(1, Math.round(cycleLength)) }, (_, degree) => degree);
-  }
-  const degrees = [0];
-  let accumulated = 0;
-  for (const step of patternSteps) {
-    accumulated += Math.max(0, Math.round(step));
-    if (accumulated > 0 && accumulated < cycleLength) {
-      degrees.push(accumulated);
-    }
-  }
-  return normalizeScaleDegrees(degrees, cycleLength);
-}
-
 export function createAllNotesScale(cycleLength: number): LayoutBundleScale {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
   return {
     objectIdHex: objectIdToHex(deterministicObjectId(`scale:all-notes:${safeCycleLength}`)),
     name: "All Notes",
-    patternSteps: Array.from({ length: safeCycleLength }, () => 1),
     includedDegrees: Array.from({ length: safeCycleLength }, (_, degree) => degree)
   };
 }
@@ -627,7 +613,6 @@ export function createDefaultLayoutBundle(): LayoutBundle {
       referenceHz: 440
     },
     palette: {
-      name: "Custom Palette",
       degreeColors: createDefaultDegreeColors(19)
     },
     layouts: [layout],
@@ -657,7 +642,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
           objectId: tuningId,
           name: tuningName,
           stepMilliCents: centsToMilliCents(bundle.tuning.stepCents),
-          periodMilliCents: centsToMilliCents(bundle.tuning.periodCents),
+          periodMilliCents: centsToMilliCents(equalStepPeriodCents(bundle.tuning)),
           cycleLength: bundle.tuning.cycleLength,
           referenceMidiNote: bundle.tuning.referenceMidiNote,
           referenceMilliHz: hertzToMilliHertz(bundle.tuning.referenceHz)
@@ -685,7 +670,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   }));
   const scaleColorMap = createScaleColorMap({
     objectId: colorId,
-    name: bundle.palette.name || `${bundle.name} Palette`,
+    name: GenericScaleColorMapName,
     tuningRef: tuningReference(tuning),
     cycleLength: bundle.tuning.cycleLength,
     defaultColorMode: 0,
@@ -696,7 +681,6 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     name: scale.name || `${bundle.name} Scale`,
     tuningRef: tuningReference(tuning),
     cycleLength: bundle.tuning.cycleLength,
-    patternSteps: scale.patternSteps,
     includedDegrees: normalizeScaleDegrees(scale.includedDegrees, bundle.tuning.cycleLength)
   }));
   const explicitButtonMaps = bundle.layouts.flatMap((layout, layoutIndex) => {
@@ -766,6 +750,73 @@ export function parseLayoutBundleLibrary(value: unknown): LayoutBundle[] {
   return bundles.length > 0 ? bundles : [createDefaultLayoutBundle()];
 }
 
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function stringOr(value: unknown, fallback: string): string {
+  return typeof value === "string" && value ? value : fallback;
+}
+
+function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
+  const tuning = value as Partial<LayoutBundleTuning> & {
+    edoDivisions?: unknown;
+    stepCents?: unknown;
+    periodCents?: unknown;
+    cents?: unknown;
+    description?: unknown;
+    referenceMidiNote?: unknown;
+    referenceHz?: unknown;
+  };
+  const name = stringOr(tuning.name, "User Tuning");
+  const referenceMidiNote = clampInteger(numberOr(tuning.referenceMidiNote, 69), 0, 127);
+  const referenceHz = numberOr(tuning.referenceHz, 440);
+
+  if (tuning.kind === "edo") {
+    const edoDivisions = clampInteger(numberOr(tuning.edoDivisions, numberOr(tuning.cycleLength, 12)), 1, 255);
+    return {
+      kind: "edo",
+      name,
+      edoDivisions,
+      periodCents: numberOr(tuning.periodCents, 1200),
+      cycleLength: edoDivisions,
+      referenceMidiNote,
+      referenceHz
+    };
+  }
+
+  if (tuning.kind === "equal-step") {
+    const cycleLength = clampInteger(numberOr(tuning.cycleLength, numberOr(tuning.edoDivisions, 12)), 1, 255);
+    return {
+      kind: "equal-step",
+      name,
+      stepCents: numberOr(tuning.stepCents, numberOr(tuning.periodCents, 1200) / cycleLength),
+      cycleLength,
+      referenceMidiNote,
+      referenceHz
+    };
+  }
+
+  if (tuning.kind === "scala") {
+    const cents = Array.isArray(tuning.cents)
+      ? tuning.cents.map((cents) => Number(cents)).filter((cents) => Number.isFinite(cents))
+      : [1200];
+    const safeCents = cents.length > 0 ? cents : [1200];
+    return {
+      kind: "scala",
+      name,
+      description: stringOr(tuning.description, name),
+      cents: safeCents,
+      periodCents: safeCents[safeCents.length - 1] ?? 1200,
+      cycleLength: clampInteger(safeCents.length, 1, 255),
+      referenceMidiNote,
+      referenceHz
+    };
+  }
+
+  throw new Error("Layout bundle has an unsupported tuning type");
+}
+
 function normalizeLayoutBundle(value: unknown): LayoutBundle {
   const source = value as Partial<LayoutBundle> & {
     layout?: Partial<LayoutBundleLayout>;
@@ -781,7 +832,8 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
       throw new Error("Layout bundle is missing tuning or layout data");
     }
   }
-  const cycleLength = Math.max(1, Math.round(source.tuning.cycleLength));
+  const tuning = normalizeLayoutBundleTuning(source.tuning);
+  const cycleLength = Math.max(1, Math.round(tuning.cycleLength));
   const legacyLayout = source.layout;
   const layouts = Array.isArray(source.layouts) && source.layouts.length > 0
     ? source.layouts
@@ -822,27 +874,23 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
       ? scale.objectIdHex
       : objectIdToHex(deterministicObjectId(`${source.objectIdHex}:scale:${index}`));
     objectIdFromHex(objectIdHex);
-    const patternSteps = Array.isArray(scale.patternSteps) ? scale.patternSteps.map((step) => clampInteger(step, 0, 255)) : [];
     const includedDegrees = Array.isArray(scale.includedDegrees)
       ? normalizeScaleDegrees(scale.includedDegrees, cycleLength)
-      : scalePatternToDegrees(patternSteps, cycleLength);
+      : createAllNotesScale(cycleLength).includedDegrees;
     return {
       objectIdHex,
       name: typeof scale.name === "string" && scale.name ? scale.name : `Scale ${index + 1}`,
-      patternSteps,
       includedDegrees
     };
   });
   const palette = source.palette ?? {
-    name: "Custom Palette",
     degreeColors: source.degreeColors
   };
   return {
     objectIdHex: source.objectIdHex,
     name: source.name,
-    tuning: source.tuning,
+    tuning,
     palette: {
-      name: typeof palette.name === "string" && palette.name ? palette.name : "Custom Palette",
       degreeColors: normalizeScaleDegreeColors(
         Array.isArray(palette.degreeColors) ? palette.degreeColors : createDefaultDegreeColors(cycleLength),
         cycleLength

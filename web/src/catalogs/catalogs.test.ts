@@ -17,6 +17,7 @@ import {
   deterministicObjectId,
   encodeHexBoardWavetableWav,
   encodeLayoutBundle,
+  GenericScaleColorMapName,
   LayoutTlv,
   parseHexBoardWavetable,
   parseLayoutBundleLibrary,
@@ -41,6 +42,10 @@ function u8(value: Uint8Array): number {
 
 function u16LE(value: Uint8Array): number {
   return value[0] | (value[1] << 8);
+}
+
+function u32LE(value: Uint8Array): number {
+  return value[0] | (value[1] << 8) | (value[2] << 16) | (value[3] << 24);
 }
 
 function i16LE(value: Uint8Array): number {
@@ -142,7 +147,6 @@ Example scale
       name: "Diatonic",
       tuningRef: { objectType: ObjectType.UserTuning, handle: 0, objectId: tuningId },
       cycleLength: 19,
-      patternSteps: [3, 3, 2, 3, 3, 3, 2],
       includedDegrees: [0, 3, 6, 8, 11, 14, 17]
     });
     const colors = createScaleColorMap({
@@ -250,6 +254,55 @@ Example scale
       ObjectType.UserScale,
       ObjectType.ScaleColorMap
     ]);
+    expect(textFromBytes(recordValue(encoded.scaleColorMap.body, CommonTlv.Name))).toBe(GenericScaleColorMapName);
+  });
+
+  it("derives equal-step period metadata from step cents and cycle length", () => {
+    const base = createDefaultLayoutBundle();
+    const serialized = JSON.parse(serializeLayoutBundle({
+      ...base,
+      tuning: {
+        kind: "equal-step",
+        name: "80 cent steps",
+        stepCents: 80,
+        cycleLength: 15,
+        referenceMidiNote: 69,
+        referenceHz: 440
+      }
+    }));
+    const parsed = parseLayoutBundleFile(serialized);
+    const encoded = encodeLayoutBundle(parsed);
+
+    expect("periodCents" in parsed.tuning).toBe(false);
+    expect(u32LE(recordValue(encoded.tuning.body, TuningTlv.PeriodMilliCents))).toBe(1_200_000);
+  });
+
+  it("derives Scala period and cycle metadata from the cents table", () => {
+    const base = createDefaultLayoutBundle();
+    const serialized = JSON.parse(serializeLayoutBundle({
+      ...base,
+      tuning: {
+        kind: "scala",
+        name: "Imported Scala",
+        description: "Imported Scala",
+        cents: [100, 300, 702],
+        periodCents: 702,
+        cycleLength: 3,
+        referenceMidiNote: 69,
+        referenceHz: 440
+      }
+    }));
+
+    const parsed = parseLayoutBundleFile(serialized);
+    const encoded = encodeLayoutBundle(parsed);
+
+    expect(parsed.tuning).toMatchObject({
+      kind: "scala",
+      periodCents: 702,
+      cycleLength: 3
+    });
+    expect(u16LE(recordValue(encoded.tuning.body, TuningTlv.EdoDivisions))).toBe(3);
+    expect(u32LE(recordValue(encoded.tuning.body, TuningTlv.PeriodMilliCents))).toBe(702_000);
   });
 
   it("derives legacy portrait metadata from four-step bundle rotation", () => {

@@ -393,12 +393,14 @@ The `Tunings & Layouts` tab is a browser-side musical geometry editor. It saves
 geometry bundles in browser storage and can import/export those bundles as JSON.
 Each bundle contains one tuning, one custom scale-degree color palette, one or
 more layouts, and one or more scales. The custom palette is the intended future
-replacement for the firmware's hard-coded `Tiered` color mode. The active
-layout still starts from an across/up-right vector, and the center key can be
-chosen from the visual board or typed by button index. The editor places bundle
-tools in a compact left sidebar and keeps the larger HexBoard preview plus
-selected-key inspector on the right, with the selected-key inspector below the
-board. The encoded-object debug readout sits at the bottom of the editor page. The rotation control is a
+replacement for the firmware's hard-coded `Tiered` color mode, and it uses a
+generic color-mode name rather than a separate editable palette field. The
+active layout still starts from an across/up-right vector, and the center key
+can be chosen from the visual board or typed by button index. The editor places
+bundle tools in a compact left sidebar with `Tuning`, `Layouts`, and `Scales`
+subtabs, and keeps the larger HexBoard preview plus selected-key inspector on
+the right, with the selected-key inspector below the board. The encoded-object
+debug readout sits at the bottom of the editor page. The rotation control is a
 four-step device orientation preview: `0`, `90`, `180`, or `270` degrees. It is
 intended to line up with the firmware `Device Rot` setting, not to rotate the
 musical axes around individual hexagons. Focusing the center, across, or
@@ -410,14 +412,20 @@ tool, then click or drag across keys to write manual per-button color overrides
 without selecting each key in the inspector.
 
 The tuning editor can create EDO tunings, equal cents-per-step tunings, and
-Scala `.scl` imports. Scala text is parsed in the web app and stored in the
-bundle as cents data; HexBoard firmware does not parse `.scl` files yet. The
-preview uses the current 140-key hardware shape with `133` note keys and the
+Scala `.scl` imports. The cents-per-step editor takes only step size and cycle
+length; its period is derived from those two fields. Scala import derives the
+period and cycle length from the imported `.scl` file. Scala text is parsed in
+the web app and stored in the bundle as cents data, but full Scala playback and
+sync compatibility still require firmware tuning-system work. The preview uses
+the current 140-key hardware shape with `133` note keys and the
 seven command keys. The selected-key inspector has a `Color source` dropdown:
 `Scale degree` edits the palette color for the generated degree, while
 `Button override` edits only the selected button's color. `Note source` can
 lock an individual button to a fixed `steps from C` value; those manual note
 positions are meant to stay fixed when root note or transposition changes.
+Scales are edited as included scale degrees only. The included-degrees field can
+hold incomplete text while typing; if it still contains invalid text when focus
+leaves the field, the editor marks it red and reports the validation error.
 Button roles can be marked as note, command, or unused in the exported web
 model, but firmware does not apply user layout bundles yet.
 

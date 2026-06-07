@@ -60,7 +60,6 @@ export const sampleScale = createUserScale({
     objectId: nineteenEdoId
   },
   cycleLength: 19,
-  patternSteps: [3, 3, 2, 3, 3, 3, 2],
   includedDegrees: [0, 3, 6, 8, 11, 14, 17]
 });
 
