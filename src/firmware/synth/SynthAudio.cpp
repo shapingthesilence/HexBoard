@@ -1,6 +1,6 @@
-#include "FirmwareModule.h"
-
 #if HEXBOARD_FIRMWARE_UNITY
+
+#include "../FirmwareModule.h"
 
 // @synth
 /*
@@ -4149,6 +4149,4 @@ void RAM_FUNC(arpeggiate)() {
     }
   }
 }
-
-
 #endif  // HEXBOARD_FIRMWARE_UNITY

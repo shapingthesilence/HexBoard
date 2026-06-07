@@ -188,6 +188,17 @@ OLED/GEM/U8g2 drawing wholesale; display updates are dominated by library calls
 and I2C transfer time, and moving that stack would spend a lot of SRAM for
 limited gain.
 
+### Performance Notes
+
+Current optimization candidates to keep in mind:
+
+- Dynamic JI note-on work in `src/firmware/midi/DynamicJustIntonation.cpp` still scans ratio candidates with floating-point cents math. The selected ratio table is cached, but a later pass could precompute fixed-point or octave-reduced candidates and avoid most live floating-point work.
+- `pressedKeyIDs` is a `std::vector` used by Dynamic JI note tracking. Replacing it with a fixed-size held-note array or bitset would avoid erase-time shifting and heap behavior in note release paths.
+- `midiNoteToHexIndices` is an array of vectors. It is rebuilt when pitch assignment changes, not per audio sample, but a fixed-capacity reverse index would remove heap allocation from mapping refreshes and external MIDI LED lookup.
+- `animateMirror()` in `src/firmware/hardware/LedAnimations.cpp` compares every held note against every visible hex. It is bounded by `LED_COUNT`, but octave/by-note animation could use precomputed step buckets if animation load becomes visible.
+- Incoming SysEx assembly in `src/firmware/midi/MidiInput.cpp` uses growable vectors. Preset-sync is intentionally not a button-scan hot path, but a fixed receive buffer would make memory use more predictable during large transfers.
+- Each unity-included module keeps its `#if HEXBOARD_FIRMWARE_UNITY` guard before library includes. Keep that order so Arduino's individual compilation pass sees truly empty non-unity modules.
+
 ## Source File Map
 
 The main firmware files are:
@@ -195,17 +206,13 @@ The main firmware files are:
 - `src/firmware/FirmwareModule.h`: shared Arduino/RP2040/library includes and `RAM_FUNC`
 - `src/firmware/HexBoardFirmware.h`: lifecycle API used by the root sketch
 - `src/firmware/FirmwareUnity.cpp`: ordered firmware translation unit that includes the subsystem `.cpp` files
-- `src/firmware/platform_common.cpp`: platform constants, common helpers, and forward declarations
-- `src/firmware/config_defaults.cpp`: editable runtime defaults and option constants
-- `src/firmware/tuning_models.cpp`, `layout_models.cpp`, and `scale_palette_preset_models.cpp`: tuning, layout, scale, palette, and preset models
-- `src/firmware/diagnostics_timing.cpp`: logging, ISR profiling, and microsecond timing helpers
-- `src/firmware/hardware_grid.cpp`, `hardware_led.cpp`, and `hardware_input.cpp`: scan matrix, command buttons, wheels, LEDs, rotary input, and hardware setup
-- `src/firmware/midi_delegated_notes.cpp`: USB/serial MIDI, MPE, played-note tracking, external MIDI input, and delegated-control SysEx
-- `src/firmware/synth_audio.cpp`: synth, oscillator, envelope, arpeggiator, metronome, PWM, and DMA audio
-- `src/firmware/led_animation.cpp`: LED animation system
-- `src/firmware/settings_persistence_preset_sync.cpp`: pitch assignment, settings/profile persistence, synth presets, named wavetable persistence, legacy user wavetable loading, and preset sync
-- `src/firmware/oled_menu.cpp`: OLED, played-note overlay drawing, GEM menu definitions, callbacks, and runtime settings sync
-- `src/firmware/runtime.cpp`: `hexboardSetup()`, `hexboardLoop()`, `hexboardSetup1()`, and `hexboardLoop1()`
+- `src/firmware/app/`: platform/common helpers, runtime defaults, diagnostics/timing, and lifecycle orchestration
+- `src/firmware/model/`: tuning, layout, scale/palette/preset models, and pitch assignment
+- `src/firmware/hardware/`: grid state, command buttons, scan/rotary handling, LED rendering, and LED animations
+- `src/firmware/midi/`: USB/serial transport, MPE/routing, Dynamic JI, MIDI note dispatch, external MIDI LED state, delegated control, and MIDI input parsing
+- `src/firmware/synth/`: synth engine, oscillator/wavetable render path, envelopes, arpeggiator, metronome, PWM, and DMA audio
+- `src/firmware/storage/`: persistent data models, settings/profile storage, synth preset storage, synth wavetable storage, legacy user wavetable loading, and preset-sync SysEx
+- `src/firmware/menu/`: played-notes overlay state, OLED/GEM pages, callbacks, preview behavior, and runtime settings sync
 
 If you are changing a behavior, start by locating which of these layers owns it before editing anything.
 
@@ -498,7 +505,7 @@ crossing: `sine`, `strings`, and `clarinet` are rotated byte tables, the MP
 single-cycle tables are generated the same way from their source WAV files, and the generated
 saw/triangle/square/hybrid paths apply the matching phase offset in
 RAM-resident helpers. Table-backed waveform source cycles live in
-`src/firmware/synth_audio.cpp`, but only the selected waveform or wavetable is copied into
+`src/firmware/synth/SynthAudio.cpp`, but only the selected waveform or wavetable is copied into
 the preallocated `activeSynthWaveTable` RAM buffer used by the audio renderer.
 The vibrato sine lookup remains a separate RAM table because the renderer reads
 it directly.

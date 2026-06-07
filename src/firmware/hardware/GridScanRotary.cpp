@@ -1,6 +1,6 @@
-#include "FirmwareModule.h"
-
 #if HEXBOARD_FIRMWARE_UNITY
+
+#include "../FirmwareModule.h"
 
 // @interface
 /*
@@ -196,6 +196,4 @@ void setupHardware() {
   }
   syncAudioDestinationToRuntime();
 }
-
-
 #endif  // HEXBOARD_FIRMWARE_UNITY

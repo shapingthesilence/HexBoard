@@ -1,6 +1,6 @@
-#include "FirmwareModule.h"
-
 #if HEXBOARD_FIRMWARE_UNITY
+
+#include "../FirmwareModule.h"
 
 // @layout
 /*
@@ -232,5 +232,4 @@ layoutDef layoutOptions[] = {
   { "Full Gamut", 1, 65, 1, -9, TUNING_GAMMA }
 };
 const byte layoutCount = sizeof(layoutOptions) / sizeof(layoutDef);
-
 #endif  // HEXBOARD_FIRMWARE_UNITY

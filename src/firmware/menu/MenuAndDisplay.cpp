@@ -1,6 +1,6 @@
-#include "FirmwareModule.h"
-
 #if HEXBOARD_FIRMWARE_UNITY
+
+#include "../FirmwareModule.h"
 
 // @menu
 /*
@@ -3531,6 +3531,4 @@ void screenSaver() {
     }
   }
 }
-
-
 #endif  // HEXBOARD_FIRMWARE_UNITY

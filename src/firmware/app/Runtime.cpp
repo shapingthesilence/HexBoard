@@ -1,6 +1,6 @@
-#include "FirmwareModule.h"
-
 #if HEXBOARD_FIRMWARE_UNITY
+
+#include "../FirmwareModule.h"
 
 // @mainLoop
 /*
@@ -97,5 +97,4 @@ void hexboardLoop1() {  // run on second core
   }
   readKnob();
 }
-
 #endif  // HEXBOARD_FIRMWARE_UNITY

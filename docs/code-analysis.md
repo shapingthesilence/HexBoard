@@ -47,17 +47,13 @@ The current source is grouped by file:
 | --- | --- |
 | `HexBoard.ino` | Arduino lifecycle wrappers only |
 | `src/firmware/FirmwareUnity.cpp` | ordered firmware translation unit for subsystem modules |
-| `src/firmware/platform_common.cpp` | platform constants, helpers, forward declarations |
-| `src/firmware/config_defaults.cpp` | runtime defaults and option constants |
-| `src/firmware/tuning_models.cpp`, `layout_models.cpp`, `scale_palette_preset_models.cpp` | tuning, layout, scale, palette, and preset models |
-| `src/firmware/diagnostics_timing.cpp` | debug logging, ISR profiling, timing |
-| `src/firmware/hardware_grid.cpp`, `hardware_led.cpp`, `hardware_input.cpp` | grid, command buttons, wheels, LEDs, rotary, hardware setup |
-| `src/firmware/midi_delegated_notes.cpp` | USB/serial MIDI, MPE, external MIDI input, delegated SysEx, played-note state |
-| `src/firmware/synth_audio.cpp` | oscillator, envelope, PWM, DMA audio, polyphony, arpeggiator, metronome |
-| `src/firmware/led_animation.cpp` | LED animations and external MIDI LED refresh coalescing |
-| `src/firmware/settings_persistence_preset_sync.cpp` | pitch assignment, profiles, LittleFS persistence, synth presets, preset sync |
-| `src/firmware/oled_menu.cpp` | OLED setup, played-note overlay drawing, GEM pages, callbacks, runtime settings sync |
-| `src/firmware/runtime.cpp` | firmware lifecycle functions called by the root sketch |
+| `src/firmware/app/` | platform/common helpers, defaults, diagnostics/timing, lifecycle functions |
+| `src/firmware/model/` | tuning, layout, scale, palette, preset models, pitch assignment |
+| `src/firmware/hardware/` | grid state, command buttons, scan/rotary input, LED rendering, LED animations |
+| `src/firmware/midi/` | USB/serial transport, MPE/routing, Dynamic JI, note dispatch, external MIDI LED state, delegated control, MIDI input parsing |
+| `src/firmware/synth/` | oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome |
+| `src/firmware/storage/` | persistent data models, settings, synth presets, synth wavetables, preset-sync SysEx |
+| `src/firmware/menu/` | played-notes overlay state, OLED/GEM pages, callbacks, runtime settings sync |
 
 ## Core Data Structures
 

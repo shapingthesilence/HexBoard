@@ -1,6 +1,6 @@
-#include "FirmwareModule.h"
-
 #if HEXBOARD_FIRMWARE_UNITY
+
+#include "../FirmwareModule.h"
 
 // @microtonal
 /*
@@ -187,6 +187,4 @@ tuningDef tuningOptions[] = {
   { "Carlos Beta", 11, 63.832933, { { "I", 0 }, { "I#", 1 }, { "IIb", 2 }, { "II", 3 }, { "II#", 4 }, { "III", 5 }, { "III#", 6 }, { "IVb", 7 }, { "IV", 8 }, { "IV#", 9 }, { "Ib", 10 } } },
   { "Carlos Gamma", 20, 35.0985422804, { { " I", 0 }, { "^I", 1 }, { " IIb", 2 }, { "^IIb", 3 }, { " I#", 4 }, { "^I#", 5 }, { " II", 6 }, { "^II", 7 }, { " III", 8 }, { "^III", 9 }, { " IVb", 10 }, { "^IVb", 11 }, { " III#", 12 }, { "^III#", 13 }, { " IV", 14 }, { "^IV", 15 }, { " Ib", 16 }, { "^Ib", 17 }, { " IV#", 18 }, { "^IV#", 19 } } },
 };
-
-
 #endif  // HEXBOARD_FIRMWARE_UNITY

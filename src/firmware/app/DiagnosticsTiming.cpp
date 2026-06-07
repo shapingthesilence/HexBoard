@@ -1,6 +1,6 @@
-#include "FirmwareModule.h"
-
 #if HEXBOARD_FIRMWARE_UNITY
+
+#include "../FirmwareModule.h"
 
 // @diagnostics
 /*
@@ -142,6 +142,4 @@ void timeTracker() {
   loopTime = runTime;     // Update previousTime variable to give us a reference point for next loop
   runTime = readClock();  // Store the current time in a uniform variable for this program loop
 }
-
-
 #endif  // HEXBOARD_FIRMWARE_UNITY

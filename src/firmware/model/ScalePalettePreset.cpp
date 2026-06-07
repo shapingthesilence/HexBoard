@@ -1,6 +1,6 @@
-#include "FirmwareModule.h"
-
 #if HEXBOARD_FIRMWARE_UNITY
+
+#include "../FirmwareModule.h"
 
 // @scales
 /*
@@ -503,6 +503,4 @@ byte displayRotationFromDeviceRotation(byte rotation) {
 byte defaultDeviceRotationForLayout(bool isPortrait) {
   return isPortrait ? DEVICE_ROTATION_PORTRAIT : DEVICE_ROTATION_LANDSCAPE;
 }
-
-
 #endif  // HEXBOARD_FIRMWARE_UNITY

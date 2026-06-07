@@ -1,6 +1,6 @@
-#include "FirmwareModule.h"
-
 #if HEXBOARD_FIRMWARE_UNITY
+
+#include "../FirmwareModule.h"
 
 // @LED
 /*
@@ -918,6 +918,4 @@ void RAM_FUNC(lightUpLEDs)() {
   applyLedCurrentLimitToFrame();
   strip.show();
 }
-
-
 #endif  // HEXBOARD_FIRMWARE_UNITY

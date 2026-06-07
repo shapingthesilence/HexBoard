@@ -1,6 +1,6 @@
-#include "FirmwareModule.h"
-
 #if HEXBOARD_FIRMWARE_UNITY
+
+#include "../FirmwareModule.h"
 
 // @init
 #include <Arduino.h>  // this is necessary to talk to the Hexboard!
@@ -200,6 +200,4 @@ int32_t midiChannelOffset(int32_t midiIndex) {
   splitExtendedMidiNote(midiIndex, channelOffset, unusedNote);
   return channelOffset;
 }
-
-
 #endif  // HEXBOARD_FIRMWARE_UNITY

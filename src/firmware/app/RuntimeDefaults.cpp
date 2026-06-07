@@ -1,6 +1,6 @@
-#include "FirmwareModule.h"
-
 #if HEXBOARD_FIRMWARE_UNITY
+
+#include "../FirmwareModule.h"
 
 // @defaults
 /*
@@ -358,6 +358,4 @@ void syncLedCurrentLimit() {
   }
   ledCurrentLimitMilliamps = decodeLedCurrentLimitMilliamps(ledCurrentLimitMode);
 }
-
-
 #endif  // HEXBOARD_FIRMWARE_UNITY

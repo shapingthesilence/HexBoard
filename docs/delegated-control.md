@@ -13,14 +13,14 @@ The mode is intentionally external-only:
 
 Primary implementation points:
 
-- `delegatedControl`, `delegatedColors`, and `SYSEX_*` constants live in `src/firmware/hardware_grid.cpp`.
-- `processIncomingSysEx()`, `processIncomingMIDIDelegated()`, `delegatedButtonEvent()`, and `processLedSysEx()` live in `src/firmware/midi_delegated_notes.cpp`.
-- `readHexes()` lives in `src/firmware/hardware_input.cpp`.
-- `lightUpLEDs()` lives in `src/firmware/hardware_led.cpp`.
-- `arpeggiate()` lives in `src/firmware/synth_audio.cpp`.
-- `updateWheels()` lives in `src/firmware/hardware_input.cpp`.
-- `animateLEDs()` lives in `src/firmware/led_animation.cpp`.
-- `hexboardLoop1()` lives in `src/firmware/runtime.cpp` and contains the delegated-mode core-1 MIDI polling gate.
+- `delegatedControl`, `delegatedColors`, and `SYSEX_*` constants live in `src/firmware/hardware/GridState.cpp`.
+- `processIncomingSysEx()`, `delegatedButtonEvent()`, and `processLedSysEx()` live in `src/firmware/midi/DelegatedControl.cpp`.
+- `processIncomingMIDIDelegated()` lives in `src/firmware/midi/MidiInput.cpp`.
+- `readHexes()` and `updateWheels()` live in `src/firmware/hardware/GridScanRotary.cpp`.
+- `lightUpLEDs()` lives in `src/firmware/hardware/LedRender.cpp`.
+- `animateLEDs()` lives in `src/firmware/hardware/LedAnimations.cpp`.
+- `arpeggiate()` lives in `src/firmware/synth/SynthAudio.cpp`.
+- `hexboardLoop1()` lives in `src/firmware/app/Runtime.cpp` and contains the delegated-mode core-1 MIDI polling gate.
 
 `HexBoard.ino` is the root Arduino sketch used by the `Makefile`; firmware implementation lives under `src/firmware/`. Generated files under `build/` should not be edited as source.
 
