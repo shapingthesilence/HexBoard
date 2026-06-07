@@ -78,6 +78,7 @@ void assignPitches() {
 }
 
 void refreshMidiRouting() {
+  syncDynamicJIRatioCandidates();
   resetTuningMIDI();
   assignPitches();
 }
@@ -184,7 +185,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 15;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 16;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -287,6 +288,7 @@ enum class SettingKey : uint8_t {
   SynthLfoAmount,
   SynthLfoWave,
   SynthLfoSpeed,
+  DynamicJIRatioTable,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -304,6 +306,7 @@ constexpr uint8_t NUM_SETTINGS_BEFORE_HEADPHONE_CAP = static_cast<uint8_t>(Setti
 constexpr uint8_t NUM_SETTINGS_V11 = static_cast<uint8_t>(SettingKey::DeviceRotation);
 constexpr uint8_t NUM_SETTINGS_V12 = static_cast<uint8_t>(SettingKey::SynthPortamentoTimeIndex);
 constexpr uint8_t NUM_SETTINGS_V14 = static_cast<uint8_t>(SettingKey::SynthWavetablePosition);
+constexpr uint8_t NUM_SETTINGS_V15 = static_cast<uint8_t>(SettingKey::DynamicJIRatioTable);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
@@ -664,6 +667,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* SynthLfoAmount               */ SYNTH_FX_AMOUNT_OFF,
   /* SynthLfoWave                 */ SYNTH_LFO_WAVE_SINE,
   /* SynthLfoSpeed                */ SYNTH_LFO_SPEED_DEFAULT,
+  /* DynamicJIRatioTable          */ DYNAMIC_JI_RATIO_TABLE_41_LIMIT,
 };
 
 // ==================================================
@@ -834,6 +838,8 @@ bool load_settings() {
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V14);
     case 14:
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V14);
+    case 15:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V15);
     default:
       break;
   }

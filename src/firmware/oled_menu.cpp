@@ -670,6 +670,8 @@ GEMItem menuItemUSBBootloader("Update Firmware", rebootToBootloader);
 void syncSettingsToRuntime();
 void refreshMenuChoicesForCurrentTuning();
 void rebuildRuntimeStateFromCurrentSelection();
+void updateTuningMenuVisibility();
+void dynamicJIModeChanged();
 extern bool settingsDirty;
 
 void resetDefaultsMenuCallback() {
@@ -1986,10 +1988,34 @@ PersistentCallbackInfo callbackInfoDynamicJI = {
   static_cast<uint8_t>(SettingKey::DynamicJI),
   reinterpret_cast<void*>(&useDynamicJustIntonation),
   nullptr,
-  refreshMidiRouting
+  dynamicJIModeChanged
 };
 GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoDynamicJI));
+
+SelectOptionByte optionByteDynamicJIRatioTable[] = {
+  { "3-Lim", DYNAMIC_JI_RATIO_TABLE_3_LIMIT },
+  { "5-Lim", DYNAMIC_JI_RATIO_TABLE_5_LIMIT },
+  { "7-Lim", DYNAMIC_JI_RATIO_TABLE_7_LIMIT },
+  { "11-Lim", DYNAMIC_JI_RATIO_TABLE_11_LIMIT },
+  { "13-Lim", DYNAMIC_JI_RATIO_TABLE_13_LIMIT },
+  { "17-Lim", DYNAMIC_JI_RATIO_TABLE_17_LIMIT },
+  { "19-Lim", DYNAMIC_JI_RATIO_TABLE_19_LIMIT },
+  { "23-Lim", DYNAMIC_JI_RATIO_TABLE_23_LIMIT },
+  { "29-Lim", DYNAMIC_JI_RATIO_TABLE_29_LIMIT },
+  { "31-Lim", DYNAMIC_JI_RATIO_TABLE_31_LIMIT },
+  { "37-Lim", DYNAMIC_JI_RATIO_TABLE_37_LIMIT },
+  { "41-Lim", DYNAMIC_JI_RATIO_TABLE_41_LIMIT }
+};
+GEMSelect selectDynamicJIRatioTable(sizeof(optionByteDynamicJIRatioTable) / sizeof(SelectOptionByte), optionByteDynamicJIRatioTable);
+PersistentCallbackInfo callbackInfoDynamicJIRatioTable = {
+  static_cast<uint8_t>(SettingKey::DynamicJIRatioTable),
+  reinterpret_cast<void*>(&dynamicJIRatioTable),
+  nullptr,
+  refreshMidiRouting
+};
+GEMItem menuItemSelectDynamicJIRatioTable("JI Table", dynamicJIRatioTable, selectDynamicJIRatioTable, universalSaveCallback,
+                                          reinterpret_cast<void*>(&callbackInfoDynamicJIRatioTable));
 
 SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Diatonic", DIATONIC_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE }, { "Tiered", TIERED_COLOR_MODE } };
 GEMSelect selectColor(sizeof(optionByteColor) / sizeof(SelectOptionByte), optionByteColor);
@@ -2861,6 +2887,35 @@ void playbackModeChanged() {
   updateSynthMenuVisibility();
 }
 
+void updateTuningMenuVisibility() {
+  menuItemSelectDynamicJIRatioTable.hide(!useDynamicJustIntonation);
+}
+
+void dynamicJIModeChanged() {
+  updateTuningMenuVisibility();
+  refreshMidiRouting();
+}
+
+byte normalizeDynamicJIRatioTable(byte value) {
+  switch (value) {
+    case DYNAMIC_JI_RATIO_TABLE_3_LIMIT:
+    case DYNAMIC_JI_RATIO_TABLE_5_LIMIT:
+    case DYNAMIC_JI_RATIO_TABLE_7_LIMIT:
+    case DYNAMIC_JI_RATIO_TABLE_11_LIMIT:
+    case DYNAMIC_JI_RATIO_TABLE_13_LIMIT:
+    case DYNAMIC_JI_RATIO_TABLE_17_LIMIT:
+    case DYNAMIC_JI_RATIO_TABLE_19_LIMIT:
+    case DYNAMIC_JI_RATIO_TABLE_23_LIMIT:
+    case DYNAMIC_JI_RATIO_TABLE_29_LIMIT:
+    case DYNAMIC_JI_RATIO_TABLE_31_LIMIT:
+    case DYNAMIC_JI_RATIO_TABLE_37_LIMIT:
+    case DYNAMIC_JI_RATIO_TABLE_41_LIMIT:
+      return value;
+    default:
+      return DYNAMIC_JI_RATIO_TABLE_41_LIMIT;
+  }
+}
+
 // --------------------------------------------------------
 // SETTINGS STEP 3 - Callback to sync settings variables on power-up
 // --------------------------------------------------------
@@ -2965,6 +3020,8 @@ void syncSettingsToRuntime() {
   justIntonationBPM = settingValue(SettingKey::BeatBPM);
   justIntonationBPM_Multiplier = settingValue(SettingKey::BPMMultiplier);
   useDynamicJustIntonation = settingEnabled(SettingKey::DynamicJI);
+  dynamicJIRatioTable = normalizeDynamicJIRatioTable(settingValue(SettingKey::DynamicJIRatioTable));
+  updateTuningMenuVisibility();
   envelopeAttackIndex = settingValue(SettingKey::EnvelopeAttackIndex);
   envelopeHoldIndex = settingValue(SettingKey::EnvelopeHoldIndex);
   envelopeDecayIndex = settingValue(SettingKey::EnvelopeDecayIndex);
@@ -3282,9 +3339,11 @@ void setupTuningMenuPage() {
   menuPageMain.addMenuItem(menuGotoTuning);
   createTuningMenuItems();
   menuPageTuning.addMenuItem(menuItemToggleDynamicJI);
+  menuPageTuning.addMenuItem(menuItemSelectDynamicJIRatioTable);
   menuPageTuning.addMenuItem(menuItemToggleJI_BPM);
   menuPageTuning.addMenuItem(menuItemSetJI_BPM);
   menuPageTuning.addMenuItem(menuItemSetJI_BPM_Multiplier);
+  updateTuningMenuVisibility();
 }
 
 void setupLayoutMenuPage() {

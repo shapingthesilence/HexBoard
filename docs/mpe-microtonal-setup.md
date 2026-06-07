@@ -297,6 +297,10 @@ The receiver is ignoring pitch bend, or `MPE Mode` is set to `Disable`. Enable M
 
 The `MPE Bend` range may be too small for the required retuning. Smaller bend ranges can improve fine JI corrections, but JI BPM sync can need more pitch-bend headroom. Raise `MPE Bend` on both HexBoard and the receiver if notes stop reaching the expected pitch.
 
+For Dynamic JI, the `JI Table` setting also changes how far ratio matching can
+reach. Lower prime-limit tables such as `3-Lim` and `5-Lim` are intentionally
+more constrained; higher tables up to `41-Lim` allow more candidate ratios.
+
 ### 12-EDO does not show MPE data
 
 That is expected in `Auto`. HexBoard uses regular MIDI for ordinary `12 EDO` unless MPE is needed. Set `MPE Mode` to `Force` if you need MPE output for a 12-EDO test or recording workflow.

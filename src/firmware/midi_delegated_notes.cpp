@@ -523,6 +523,23 @@ inline float pitchBendToFrequencyMultiplier(int16_t bendValue) {
 
 int16_t justIntonationRetune(byte x);
 
+inline uint8_t largestPrimeFactor(byte value) {
+  uint8_t largest = 1;
+  uint8_t remainder = value;
+  for (uint8_t factor = 2; factor <= remainder; ++factor) {
+    while ((remainder % factor) == 0) {
+      largest = factor;
+      remainder /= factor;
+    }
+  }
+  return largest;
+}
+
+inline bool ratioIsInSelectedJITable(const std::pair<byte, byte>& ratio) {
+  return largestPrimeFactor(ratio.first) <= dynamicJIRatioTable
+      && largestPrimeFactor(ratio.second) <= dynamicJIRatioTable;
+}
+
 inline int16_t combinedPitchBend(byte index) {
   const int32_t combined = static_cast<int32_t>(h[index].bend) + h[index].jiRetune;
   if (combined > 8191) {
@@ -1009,6 +1026,21 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 38, 5 }
 };
 
+std::vector<std::pair<byte, byte>> activeDynamicJIRatios = {};
+
+void syncDynamicJIRatioCandidates() {
+  activeDynamicJIRatios.clear();
+  activeDynamicJIRatios.reserve(ratios.size());
+  for (const auto& ratio : ratios) {
+    if (ratioIsInSelectedJITable(ratio)) {
+      activeDynamicJIRatios.push_back(ratio);
+    }
+  }
+  if (activeDynamicJIRatios.empty()) {
+    activeDynamicJIRatios.push_back({ 1, 1 });
+  }
+}
+
 int16_t centsToRelativePitchBend(float cents) {
   return round(cents * (8192.0 / (100.0 * MPEpitchBendSemis)));
 }
@@ -1044,8 +1076,11 @@ int16_t justIntonationRetune(byte x) {
       float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
     std::pair<byte, byte> selectedRatio;
 
-    for (int i = 0; i < ratios.size(); i++) {
-      auto ratio = ratios[i];
+    if (activeDynamicJIRatios.empty()) {
+      syncDynamicJIRatioCandidates();
+    }
+    for (int i = 0; i < activeDynamicJIRatios.size(); i++) {
+      auto ratio = activeDynamicJIRatios[i];
       float ratio0 = ratio.first;
       float ratio1 = ratio.second;
       //if(h[pressedKeyIDs[0]].note < h[x].note)
@@ -1141,7 +1176,10 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
   // that is not scale-locked.
   if (h[x].MIDIch) {  // but just in case, check
     withMIDI([&](auto& M) { M.sendNoteOff(h[x].note, velWheel.curValue, h[x].MIDIch); });
-    pressedKeyIDs.pop_back();  // Dynamic JI pressed key tracking
+    auto pressedKey = std::find(pressedKeyIDs.begin(), pressedKeyIDs.end(), x);
+    if (pressedKey != pressedKeyIDs.end()) {
+      pressedKeyIDs.erase(pressedKey);  // Dynamic JI pressed key tracking
+    }
     h[x].jiRetune = 0;
     h[x].jiFrequencyMultiplier = 1.0f;
     sendToLog(

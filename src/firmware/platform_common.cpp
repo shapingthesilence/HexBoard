@@ -71,6 +71,8 @@ void updateArpeggiatorTiming();
 void updateArpeggiatorDirection();
 void updateSynthPortamentoSettings();
 void updateSynthMenuVisibility();
+void updateTuningMenuVisibility();
+void syncDynamicJIRatioCandidates();
 void initializeSynthWaveTables();
 void loadSelectedSynthWaveform();
 void loadSelectedSynthWavetable();
