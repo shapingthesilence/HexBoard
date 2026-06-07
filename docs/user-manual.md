@@ -100,13 +100,16 @@ You can change:
 - `Dynamic JI`
 - `JI Table`, shown only when `Dynamic JI` is on
 - `JI BPM Sync`
-- `Beat BPM`
-- `BPM Mult.`
+- `Beat BPM`, shown only when `JI BPM Sync` is on
+- `BPM Mult.`, shown only when `JI BPM Sync` is on
 
 `JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
 `3-Lim`, `5-Lim`, `7-Lim`, and higher options through `41-Lim`. Lower-limit
 tables use simpler ratios; higher-limit tables preserve the broader legacy
 candidate set.
+
+`Beat BPM` and `BPM Mult.` control the BPM-synced retuning grid and are hidden
+when `JI BPM Sync` is off.
 
 Changing tuning also resets:
 

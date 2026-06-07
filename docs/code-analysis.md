@@ -298,7 +298,10 @@ item is visible only while `Dynamic JI` is enabled and stores
 `DynamicJIRatioTable`, a prime-limit selector from `3-Lim` through `41-Lim`.
 The default `41-Lim` preserves the previous full candidate-ratio behavior, while
 lower limits filter the existing ratio list to simpler numerator/denominator
-prime factors.
+prime factors. `Beat BPM` and `BPM Mult.` use the same Tuning-menu visibility
+helper and are visible only while `JI BPM Sync` is enabled. The visibility
+helper preserves the Tuning page's current item index because GEM resets pages
+with a Back item near the top when a hidden item is shown.
 
 ## Delegated Control
 

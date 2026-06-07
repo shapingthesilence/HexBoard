@@ -671,7 +671,7 @@ void syncSettingsToRuntime();
 void refreshMenuChoicesForCurrentTuning();
 void rebuildRuntimeStateFromCurrentSelection();
 void updateTuningMenuVisibility();
-void dynamicJIModeChanged();
+void tuningIntonationModeChanged();
 extern bool settingsDirty;
 
 void resetDefaultsMenuCallback() {
@@ -1961,7 +1961,7 @@ PersistentCallbackInfo callbackInfoJustIntonationBPMSync = {
   static_cast<uint8_t>(SettingKey::JustIntonationBPMSync),
   reinterpret_cast<void*>(&useJustIntonationBPM),
   nullptr,
-  refreshMidiRouting
+  tuningIntonationModeChanged
 };
 GEMItem menuItemToggleJI_BPM("JI BPM Sync", useJustIntonationBPM, universalSaveCallback,
                               reinterpret_cast<void*>(&callbackInfoJustIntonationBPMSync));
@@ -1988,7 +1988,7 @@ PersistentCallbackInfo callbackInfoDynamicJI = {
   static_cast<uint8_t>(SettingKey::DynamicJI),
   reinterpret_cast<void*>(&useDynamicJustIntonation),
   nullptr,
-  dynamicJIModeChanged
+  tuningIntonationModeChanged
 };
 GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoDynamicJI));
@@ -2888,10 +2888,22 @@ void playbackModeChanged() {
 }
 
 void updateTuningMenuVisibility() {
+  byte currentIndex = menuPageTuning.getCurrentMenuItemIndex();
+
   menuItemSelectDynamicJIRatioTable.hide(!useDynamicJustIntonation);
+  menuItemSetJI_BPM.hide(!useJustIntonationBPM);
+  menuItemSetJI_BPM_Multiplier.hide(!useJustIntonationBPM);
+
+  byte itemCount = menuPageTuning.getItemsCount();
+  if (itemCount > 0) {
+    if (currentIndex >= itemCount) {
+      currentIndex = itemCount - 1;
+    }
+    menuPageTuning.setCurrentMenuItemIndex(currentIndex);
+  }
 }
 
-void dynamicJIModeChanged() {
+void tuningIntonationModeChanged() {
   updateTuningMenuVisibility();
   refreshMidiRouting();
 }
