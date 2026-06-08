@@ -546,7 +546,8 @@ GEMItem menuGotoColors("Color Options", menuPageColors);
 GEMPage menuPageSynth("Synth Options", menuPageMain);
 GEMItem menuGotoSynth("Synth Options", menuPageSynth);
 GEMPage menuPageSynthWavetableLoad("Wavetables", menuPageSynth);
-GEMItem menuGotoSynthWavetableLoad("Wavetable", menuPageSynthWavetableLoad);
+char currentSynthWavetableMenuLabel[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = "WT: Basic";
+GEMItem menuGotoSynthWavetableLoad(currentSynthWavetableMenuLabel, menuPageSynthWavetableLoad);
 GEMPage menuPageSynthLfo("LFO", menuPageSynth);
 GEMItem menuGotoSynthLfo("LFO", menuPageSynthLfo);
 GEMPage menuPageSynthFx1("FX Env 1", menuPageSynth);
@@ -659,8 +660,6 @@ SelectOptionByte optionByteHardware[] = {
 };
 GEMSelect selectHardware(sizeof(optionByteHardware) / sizeof(SelectOptionByte), optionByteHardware);
 GEMItem menuItemHardware("Hardware", Hardware_Version, selectHardware, GEM_READONLY);
-char currentSynthWavetableMenuLabel[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = "WT: Basic";
-GEMItem menuItemCurrentSynthWavetable(currentSynthWavetableMenuLabel);
 /*
     These GEMItems runs a given procedure when you select them.
     We must declare or define that procedure first.
@@ -3392,7 +3391,6 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynth, menuItemArpDirection, previewArpDirection);
   addPreviewMenuItem(menuPageSynth, menuItemPortamentoTime, previewPortamentoTime);
   updateCurrentSynthWavetableMenuLabel();
-  menuPageSynth.addMenuItem(menuItemCurrentSynthWavetable);
   menuPageSynth.addMenuItem(menuGotoSynthWavetableLoad);
   addPreviewMenuItem(menuPageSynth, menuItemSynthWavetablePosition, previewSynthWavetablePosition);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
