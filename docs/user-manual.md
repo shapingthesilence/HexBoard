@@ -104,7 +104,7 @@ You can change:
 - `BPM Mult.`, shown only when `JI BPM Sync` is on
 
 `JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
-`3-Lim`, `5-Lim`, `7-Lim`, and higher options through `41-Lim`. Lower-limit
+`3Limit`, `5Limit`, `7Limit`, and higher options through `41Limit`. Lower-limit
 tables use simpler ratios; higher-limit tables preserve the broader legacy
 candidate set.
 

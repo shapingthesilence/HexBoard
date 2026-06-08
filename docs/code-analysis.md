@@ -291,8 +291,8 @@ Dynamic just intonation is applied in the MIDI note-on path. The reference key
 tracking uses `pressedKeyIDs`; note-off removes the released button id from that
 list so release order does not corrupt the reference stack. The `JI Table` menu
 item is visible only while `Dynamic JI` is enabled and stores
-`DynamicJIRatioTable`, a prime-limit selector from `3-Lim` through `41-Lim`.
-The default `41-Lim` preserves the previous full candidate-ratio behavior, while
+`DynamicJIRatioTable`, a prime-limit selector from `3Limit` through `41Limit`.
+The default `41Limit` preserves the previous full candidate-ratio behavior, while
 lower limits filter the existing ratio list to simpler numerator/denominator
 prime factors. The active ratio table stores precomputed cents for each
 candidate so note-on matching does not repeatedly convert ratios while scanning.
@@ -569,7 +569,7 @@ The LED current-limit calibration changed without a settings-version bump becaus
 
 Version `16` appends `DynamicJIRatioTable` to settings profiles. Version `15`
 files migrate by copying the existing profile prefix and using the factory
-default `41-Lim` table selector.
+default `41Limit` table selector.
 
 The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
 

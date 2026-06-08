@@ -305,8 +305,8 @@ sounds constrained, first confirm the receiver is honoring per-note pitch bend
 and that its pitch-bend range matches HexBoard's `MPE Bend`.
 
 For Dynamic JI, the `JI Table` setting also changes how far ratio matching can
-reach. Lower prime-limit tables such as `3-Lim` and `5-Lim` are intentionally
-more constrained; higher tables up to `41-Lim` allow more candidate ratios.
+reach. Lower prime-limit tables such as `3Limit` and `5Limit` are intentionally
+more constrained; higher tables up to `41Limit` allow more candidate ratios.
 
 ### 12-EDO does not show MPE data
 

@@ -1994,18 +1994,18 @@ GEMItem menuItemToggleDynamicJI("Dynamic JI", useDynamicJustIntonation, universa
                                 reinterpret_cast<void*>(&callbackInfoDynamicJI));
 
 SelectOptionByte optionByteDynamicJIRatioTable[] = {
-  { "3-Lim", DYNAMIC_JI_RATIO_TABLE_3_LIMIT },
-  { "5-Lim", DYNAMIC_JI_RATIO_TABLE_5_LIMIT },
-  { "7-Lim", DYNAMIC_JI_RATIO_TABLE_7_LIMIT },
-  { "11-Lim", DYNAMIC_JI_RATIO_TABLE_11_LIMIT },
-  { "13-Lim", DYNAMIC_JI_RATIO_TABLE_13_LIMIT },
-  { "17-Lim", DYNAMIC_JI_RATIO_TABLE_17_LIMIT },
-  { "19-Lim", DYNAMIC_JI_RATIO_TABLE_19_LIMIT },
-  { "23-Lim", DYNAMIC_JI_RATIO_TABLE_23_LIMIT },
-  { "29-Lim", DYNAMIC_JI_RATIO_TABLE_29_LIMIT },
-  { "31-Lim", DYNAMIC_JI_RATIO_TABLE_31_LIMIT },
-  { "37-Lim", DYNAMIC_JI_RATIO_TABLE_37_LIMIT },
-  { "41-Lim", DYNAMIC_JI_RATIO_TABLE_41_LIMIT }
+  { "3Limit", DYNAMIC_JI_RATIO_TABLE_3_LIMIT },
+  { "5Limit", DYNAMIC_JI_RATIO_TABLE_5_LIMIT },
+  { "7Limit", DYNAMIC_JI_RATIO_TABLE_7_LIMIT },
+  { "11Limit", DYNAMIC_JI_RATIO_TABLE_11_LIMIT },
+  { "13Limit", DYNAMIC_JI_RATIO_TABLE_13_LIMIT },
+  { "17Limit", DYNAMIC_JI_RATIO_TABLE_17_LIMIT },
+  { "19Limit", DYNAMIC_JI_RATIO_TABLE_19_LIMIT },
+  { "23Limit", DYNAMIC_JI_RATIO_TABLE_23_LIMIT },
+  { "29Limit", DYNAMIC_JI_RATIO_TABLE_29_LIMIT },
+  { "31Limit", DYNAMIC_JI_RATIO_TABLE_31_LIMIT },
+  { "37Limit", DYNAMIC_JI_RATIO_TABLE_37_LIMIT },
+  { "41Limit", DYNAMIC_JI_RATIO_TABLE_41_LIMIT }
 };
 GEMSelect selectDynamicJIRatioTable(sizeof(optionByteDynamicJIRatioTable) / sizeof(SelectOptionByte), optionByteDynamicJIRatioTable);
 PersistentCallbackInfo callbackInfoDynamicJIRatioTable = {
