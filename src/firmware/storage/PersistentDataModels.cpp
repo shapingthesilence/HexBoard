@@ -12,7 +12,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 16;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 17;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -116,6 +116,7 @@ enum class SettingKey : uint8_t {
   SynthLfoWave,
   SynthLfoSpeed,
   DynamicJIRatioTable,
+  SynthOutputSmoothing,
   // This must remain last – it gives the total number of settings.
   NumSettings
 };
@@ -134,6 +135,7 @@ constexpr uint8_t NUM_SETTINGS_V11 = static_cast<uint8_t>(SettingKey::DeviceRota
 constexpr uint8_t NUM_SETTINGS_V12 = static_cast<uint8_t>(SettingKey::SynthPortamentoTimeIndex);
 constexpr uint8_t NUM_SETTINGS_V14 = static_cast<uint8_t>(SettingKey::SynthWavetablePosition);
 constexpr uint8_t NUM_SETTINGS_V15 = static_cast<uint8_t>(SettingKey::DynamicJIRatioTable);
+constexpr uint8_t NUM_SETTINGS_V16 = static_cast<uint8_t>(SettingKey::SynthOutputSmoothing);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;

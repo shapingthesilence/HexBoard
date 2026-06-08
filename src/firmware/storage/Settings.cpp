@@ -86,6 +86,7 @@ const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* SynthLfoWave                 */ SYNTH_LFO_WAVE_SINE,
   /* SynthLfoSpeed                */ SYNTH_LFO_SPEED_DEFAULT,
   /* DynamicJIRatioTable          */ DYNAMIC_JI_RATIO_TABLE_41_LIMIT,
+  /* SynthOutputSmoothing         */ SYNTH_OUTPUT_SMOOTHING_OFF,
 };
 
 // ==================================================
@@ -258,6 +259,8 @@ bool load_settings() {
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V14);
     case 15:
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V15);
+    case 16:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V16);
     default:
       break;
   }

@@ -381,10 +381,11 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `16`
+- `CURRENT_SETTINGS_VERSION` is currently `17`
 - the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
+- the Synth Options `Out Smooth` setting is stored as `SynthOutputSmoothing`; factory default is `Off`; valid values are `Off` and `1` through `8`; the audio renderer applies it as a one-pole digital low-pass to both final jack and piezo PWM levels
 - `PlaybackMode` defaults to `Poly`; valid values are `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, and `Poly`; legacy stored mono value `1` now means `MonoRtg`; legacy transient `PolyTbl` value `5` is normalized to `Poly`
 - onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `FoldWrp` and `100%`; valid runtime targets are `Vibrato`, `Pitch`, `WT Pos`, `FoldWrp`, `DutyWrp`, and `PolyWrp`; pitch target depth maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator spanning about `+/-24` semitones, then reads startup-generated RAM Q16 ratio tables; the three warp targets apply low-CPU phase warps before waveform or wavetable sampling, while `WT Pos` offsets wavetable frame position from the persisted `SynthWavetablePosition` base. `SynthWavetablePosition` remains a `0..127` byte internally, but the on-device menu labels it as frames `1..32` using rounded frame-anchor byte values.
 - synth modulation target calculation runs on an `8`-sample control quantum for CPU headroom; per-voice phase increment and phase-warp depths then linearly slew between cached targets at audio rate to reduce pitch and warp stepping artifacts
@@ -406,7 +407,7 @@ Important implementation details:
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
-- version `2` through `15` settings files are migrated in place to version `16` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table, and converting version `13` and older `DeviceRotation` OLED-driver constants into physical device rotation values; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
+- version `2` through `16` settings files are migrated in place to version `17` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table, and converting version `13` and older `DeviceRotation` OLED-driver constants into physical device rotation values; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior; version `16` profiles append `SynthOutputSmoothing = Off`
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
@@ -415,7 +416,7 @@ Important implementation details:
   stored values are interpreted by checking whether the older byte had the piezo
   bit set
 
-If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `15` because settings were appended to the schema, some setting tables expanded, and `DeviceRotation` was reinterpreted from OLED-driver rotation to physical device rotation. Unknown version mismatches still fall back to defaults.
+If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `16` because settings were appended to the schema, some setting tables expanded, and `DeviceRotation` was reinterpreted from OLED-driver rotation to physical device rotation. Unknown version mismatches still fall back to defaults.
 
 ## MIDI And Tuning Notes
 
@@ -494,6 +495,9 @@ generates jack and piezo levels, but DMA outputs only one selected destination a
 a time: hardware `V1.2` uses the jack unless `Buzzer` is enabled, and hardware
 `V1.1` uses piezo. Inactive piezo output is switched to GPIO and held low;
 inactive jack output remains PWM-centered so the headphone path stays centered.
+`SynthOutputSmoothing` optionally applies a Q8 one-pole low-pass to both final
+PWM levels before the DMA buffer is encoded; `Off` bypasses and snaps the filter
+state to the current levels.
 If the DMA channel consumes a buffer before Core 1 has filled the next one,
 firmware records an underrun and outputs a silence block.
 

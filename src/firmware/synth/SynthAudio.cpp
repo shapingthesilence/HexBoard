@@ -32,6 +32,9 @@ byte audioD = AUDIO_AJACK;
 bool synthBuzzerEnabled = false;
 constexpr uint8_t HEADPHONE_VOLUME_CAP_FULL = 127;
 byte headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
+constexpr uint8_t SYNTH_OUTPUT_SMOOTHING_OFF = 0;
+constexpr uint8_t SYNTH_OUTPUT_SMOOTHING_MAX = 8;
+byte synthOutputSmoothing = SYNTH_OUTPUT_SMOOTHING_OFF;
 
 void RAM_FUNC(idlePhysicalAudioOutputs)();
 void RAM_FUNC(preparePhysicalAudioOutput)(byte destination);
@@ -125,6 +128,39 @@ struct AudioOutputLevels {
   uint8_t voices = 0;
   uint8_t profileFlags = 0;
 };
+
+struct SmoothedAudioOutputLevels {
+  int32_t piezoQ8 = static_cast<int32_t>(PIEZO_IDLE_LEVEL) << 8;
+  int32_t jackQ8 = static_cast<int32_t>(JACK_IDLE_LEVEL) << 8;
+};
+
+SmoothedAudioOutputLevels smoothedAudioOutputLevels = {};
+
+inline uint16_t RAM_FUNC(smoothAudioOutputLevel)(uint16_t target, int32_t& stateQ8, uint8_t smoothing) {
+  int32_t targetQ8 = static_cast<int32_t>(target) << 8;
+  if (smoothing == SYNTH_OUTPUT_SMOOTHING_OFF) {
+    stateQ8 = targetQ8;
+    return target;
+  }
+  stateQ8 += (targetQ8 - stateQ8) >> smoothing;
+  int32_t rounded = (stateQ8 + 128) >> 8;
+  if (rounded < 0) {
+    return 0;
+  }
+  if (rounded > static_cast<int32_t>(PWM_WRAP)) {
+    return PWM_WRAP;
+  }
+  return static_cast<uint16_t>(rounded);
+}
+
+inline void RAM_FUNC(applySynthOutputSmoothing)(AudioOutputLevels& output) {
+  uint8_t smoothing = synthOutputSmoothing;
+  if (smoothing > SYNTH_OUTPUT_SMOOTHING_MAX) {
+    smoothing = SYNTH_OUTPUT_SMOOTHING_MAX;
+  }
+  output.piezo = smoothAudioOutputLevel(output.piezo, smoothedAudioOutputLevels.piezoQ8, smoothing);
+  output.jack = smoothAudioOutputLevel(output.jack, smoothedAudioOutputLevels.jackQ8, smoothing);
+}
 
 inline void RAM_FUNC(writeAudioOutputLevels)(uint16_t piezoLevel, uint16_t jackLevel) {
   if (audioD & AUDIO_PIEZO) {
@@ -3228,6 +3264,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
   if ((voices == 0 || velWheel.curValue == 0) && !metronomeAudible) {
     output.voices = voices;
     output.profileFlags = profileFlags;
+    applySynthOutputSmoothing(output);
     return output;
   }
 
@@ -3308,6 +3345,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
   output.jack = jackLevel;
   output.voices = voices;
   output.profileFlags = profileFlags;
+  applySynthOutputSmoothing(output);
   return output;
 }
 

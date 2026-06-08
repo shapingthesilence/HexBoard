@@ -182,6 +182,7 @@ Options include:
 - `WT: ...` current-wavetable load menu
 - `WT Pos`
 - `Drive`
+- `Out Smooth`
 - `Wheel FX`
 - `Wheel Amt`
 - `Vib Speed`
@@ -266,6 +267,10 @@ backward through the wavetable.
 - `Warm`: a clear push that adds body
 - `Edge`: obvious bite and clipping
 - `Dirty`: stronger saturation for rougher synth tones
+
+`Out Smooth` applies a simple digital low-pass to the final synth output before
+PWM. `Off` leaves the output unchanged; `1` is the lightest smoothing and `8`
+is the strongest. The setting affects both the headphone jack and piezo output.
 
 `Wheel FX` chooses how the mod wheel affects the onboard synth:
 
@@ -616,6 +621,7 @@ Important factory defaults include:
 - Wavetable: `Basic`
 - WT Pos: frame `1`
 - Drive: `Off`
+- Out Smooth: `Off`
 - Wheel FX: `FoldWrp`
 - Wheel Amt: `100%`
 - Vibrato speed: `6 Hz`

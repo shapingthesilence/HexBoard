@@ -1396,6 +1396,30 @@ void previewHeadphoneVolumeCap(GEMPreviewCallbackData previewData) {
   headphoneVolumeCap = previewData.previewValByte;
 }
 
+SelectOptionByte optionByteSynthOutputSmoothing[] = {
+  { "Off", SYNTH_OUTPUT_SMOOTHING_OFF },
+  { "1", 1 },
+  { "2", 2 },
+  { "3", 3 },
+  { "4", 4 },
+  { "5", 5 },
+  { "6", 6 },
+  { "7", 7 },
+  { "8", SYNTH_OUTPUT_SMOOTHING_MAX }
+};
+GEMSelect selectSynthOutputSmoothing(sizeof(optionByteSynthOutputSmoothing) / sizeof(SelectOptionByte), optionByteSynthOutputSmoothing);
+PersistentCallbackInfo callbackInfoSynthOutputSmoothing = {
+  static_cast<uint8_t>(SettingKey::SynthOutputSmoothing),
+  reinterpret_cast<void*>(&synthOutputSmoothing),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemSynthOutputSmoothing("Out Smooth", synthOutputSmoothing, selectSynthOutputSmoothing, universalSaveCallback,
+                                     reinterpret_cast<void*>(&callbackInfoSynthOutputSmoothing));
+void previewSynthOutputSmoothing(GEMPreviewCallbackData previewData) {
+  synthOutputSmoothing = previewData.previewValByte;
+}
+
 SelectOptionByte optionByteLedTest[] = {
   { "Off", LED_TEST_OFF },
   { "Red", LED_TEST_RED },
@@ -3004,6 +3028,10 @@ void syncSettingsToRuntime() {
   if (headphoneVolumeCap > HEADPHONE_VOLUME_CAP_FULL) {
     headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
   }
+  synthOutputSmoothing = settingValue(SettingKey::SynthOutputSmoothing);
+  if (synthOutputSmoothing > SYNTH_OUTPUT_SMOOTHING_MAX) {
+    synthOutputSmoothing = SYNTH_OUTPUT_SMOOTHING_OFF;
+  }
   arpeggiatorDivision = settingValue(SettingKey::ArpeggiatorDivision);
   if (arpeggiatorDivision == 0) {
     arpeggiatorDivision = 1;
@@ -3394,6 +3422,7 @@ void setupSynthMenuPage() {
   menuPageSynth.addMenuItem(menuGotoSynthWavetableLoad);
   addPreviewMenuItem(menuPageSynth, menuItemSynthWavetablePosition, previewSynthWavetablePosition);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthOutputSmoothing, previewSynthOutputSmoothing);
   addPreviewMenuItem(menuPageSynth, menuItemSynthModTarget, previewSynthModTarget);
   addPreviewMenuItem(menuPageSynth, menuItemSynthModAmount, previewSynthModAmount);
   addPreviewMenuItem(menuPageSynth, menuItemSynthVibratoSpeed, previewSynthVibratoSpeed);
