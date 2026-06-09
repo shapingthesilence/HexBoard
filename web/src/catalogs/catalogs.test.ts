@@ -230,6 +230,30 @@ Example scale
     expect(recordValue(wavetable.body, SynthWavetableTlv.Samples)).toHaveLength(SYNTH_WAVETABLE_SAMPLE_BYTES);
   });
 
+  it("applies wavetable import crunch options deterministically", () => {
+    const source = new Float32Array(2048 * 4);
+    for (let index = 0; index < source.length; index += 1) {
+      const frame = Math.floor(index / 2048);
+      source[index] = Math.sin((2 * Math.PI * index) / 2048) * (0.25 + frame * 0.18);
+    }
+    const wav = createFloatWav(source);
+    const samples = crunchSerumWavetable(wav, {
+      frameReduction: "nearest",
+      normalization: "per-frame",
+      smooth: true,
+      dither: true
+    });
+    const repeated = crunchSerumWavetable(wav, {
+      frameReduction: "nearest",
+      normalization: "per-frame",
+      smooth: true,
+      dither: true
+    });
+
+    expect(samples).toHaveLength(SYNTH_WAVETABLE_SAMPLE_BYTES);
+    expect(repeated).toEqual(samples);
+  });
+
   it("encodes wavetable metadata without sample data", () => {
     const wavetable = createSynthWavetableMetadataObject({
       objectId: deterministicObjectId("wavetable metadata"),

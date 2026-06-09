@@ -6,3 +6,4 @@ web/.vite
 web/dist
 web/coverage
 web/*.tsbuildinfo
+.DS_Store

@@ -374,7 +374,7 @@ select {
 }
 
 .modalPanel {
-  width: min(420px, 100%);
+  width: min(520px, 100%);
   max-height: calc(100vh - 36px);
   overflow: auto;
   border: 1px solid #c8d1cc;
@@ -386,6 +386,36 @@ select {
 
 .modalPanel h3 {
   margin: 0;
+}
+
+.wavetablePreviewPanel {
+  border: 1px solid #dbe1dd;
+  border-radius: 6px;
+  padding: 10px;
+  background: #fbfcfa;
+}
+
+.wavetablePreviewGraph {
+  display: block;
+  width: 100%;
+  height: 150px;
+  border: 1px solid #c8d1cc;
+  border-radius: 6px;
+  background: #17201c;
+}
+
+.wavetablePreviewGraph line {
+  stroke: rgba(232, 238, 233, 0.22);
+  stroke-width: 0.8;
+}
+
+.wavetablePreviewGraph path {
+  fill: none;
+  stroke: #58d6b5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
 }
 
 .boardPanel {

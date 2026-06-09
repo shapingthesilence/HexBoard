@@ -489,9 +489,15 @@ dialog with a file-type selector for Serum/Vital `.wav` tables or HexBoard
 `.hexwav` tables. Serum/Vital imports read the source frames and render the
 table down to the firmware's `32 x 512` byte format. HexBoard `.hexwav` files
 are 8-bit mono WAV containers that already contain the exact firmware sample
-data. Imported tables are saved by the selected name/folder in the browser
-wavetable library, uploaded to HexBoard, and used by the open preset with
-`WT Pos = 0`.
+data. The import dialog always stages the selected file into a waveform preview
+before committing it; the frame slider chooses which rendered frame is shown.
+The `Import` button at the bottom saves the previewed table. Serum/Vital
+conversion options include nearest or interpolated frame reduction, per-frame
+or whole-table normalization, a Smooth checkbox that softens each rendered
+frame, and optional dither. `.hexwav` imports preview the exact stored HexBoard
+sample data, so those conversion controls are disabled for that file type.
+Imported tables are saved by the selected name/folder in the browser wavetable
+library, uploaded to HexBoard, and used by the open preset with `WT Pos = 0`.
 
 The HexBoard stores the currently selected wavetable reference separately from
 the byte-oriented settings profile, so rebooting or loading a preset preserves

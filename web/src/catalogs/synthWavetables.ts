@@ -14,6 +14,16 @@ export const SYNTH_WAVETABLE_SAMPLE_COUNT = 512;
 export const SYNTH_WAVETABLE_SAMPLE_BYTES = SYNTH_WAVETABLE_FRAME_COUNT * SYNTH_WAVETABLE_SAMPLE_COUNT;
 const SERUM_FRAME_SAMPLE_COUNT = 2048;
 
+export type WavetableFrameReduction = "nearest" | "interpolated";
+export type WavetableNormalization = "per-frame" | "whole-table";
+
+export interface SerumWavetableCrunchOptions {
+  frameReduction?: WavetableFrameReduction;
+  normalization?: WavetableNormalization;
+  smooth?: boolean;
+  dither?: boolean;
+}
+
 export const SynthWavetableTlv = {
   FrameCount: 0x30,
   SampleCount: 0x31,
@@ -35,7 +45,7 @@ interface WavFormat {
   bitsPerSample: number;
 }
 
-interface WavData {
+export interface ParsedSerumWavetable {
   samples: Float32Array;
   frameSampleCount: number;
   frameCount: number;
@@ -114,32 +124,53 @@ export function createSynthWavetableMetadataObject(input: Omit<SynthWavetableInp
   };
 }
 
-export function crunchSerumWavetable(bytes: ArrayBuffer | Uint8Array): Uint8Array {
-  const wav = parseWavSamples(bytes);
+export function crunchSerumWavetable(bytes: ArrayBuffer | Uint8Array, options: SerumWavetableCrunchOptions = {}): Uint8Array {
+  return renderSerumWavetable(parseSerumWavetable(bytes), options);
+}
+
+export function parseSerumWavetable(bytes: ArrayBuffer | Uint8Array): ParsedSerumWavetable {
+  return parseWavSamples(bytes);
+}
+
+export function renderSerumWavetable(wav: ParsedSerumWavetable, options: SerumWavetableCrunchOptions = {}): Uint8Array {
+  const frameReduction = options.frameReduction ?? "interpolated";
+  const normalization = options.normalization ?? "whole-table";
   const firstFrame = wav.samples.subarray(0, wav.frameSampleCount);
   const phaseOffset = findUpwardZeroCrossing(firstFrame);
   const rendered = new Float32Array(SYNTH_WAVETABLE_SAMPLE_BYTES);
 
-  let peak = 0;
   for (let frame = 0; frame < SYNTH_WAVETABLE_FRAME_COUNT; frame += 1) {
     const framePosition = wav.frameCount <= 1
       ? 0
       : (frame * (wav.frameCount - 1)) / (SYNTH_WAVETABLE_FRAME_COUNT - 1);
     for (let sample = 0; sample < SYNTH_WAVETABLE_SAMPLE_COUNT; sample += 1) {
       const phasePosition = phaseOffset + (sample * wav.frameSampleCount) / SYNTH_WAVETABLE_SAMPLE_COUNT;
-      const value = sampleWavetable(wav, framePosition, phasePosition);
+      const value = sampleWavetable(wav, framePosition, phasePosition, frameReduction);
       rendered[frame * SYNTH_WAVETABLE_SAMPLE_COUNT + sample] = value;
-      peak = Math.max(peak, Math.abs(value));
     }
   }
 
+  if (options.smooth === true) {
+    smoothRenderedFrames(rendered);
+  }
+
   const output = new Uint8Array(SYNTH_WAVETABLE_SAMPLE_BYTES);
+  if (normalization === "per-frame") {
+    for (let frame = 0; frame < SYNTH_WAVETABLE_FRAME_COUNT; frame += 1) {
+      const start = frame * SYNTH_WAVETABLE_SAMPLE_COUNT;
+      const peak = findPeak(rendered, start, SYNTH_WAVETABLE_SAMPLE_COUNT);
+      quantizeRenderedFrame(rendered, output, start, peak, options.dither === true);
+    }
+    return output;
+  }
+
+  const peak = findPeak(rendered, 0, rendered.length);
   if (peak <= 0.000001) {
     output.fill(128);
     return output;
   }
   for (let index = 0; index < rendered.length; index += 1) {
-    output[index] = clampByte(Math.round(128 + (127 * rendered[index]) / peak));
+    output[index] = quantizeRenderedSample(rendered[index], peak, options.dither === true, index);
   }
   return output;
 }
@@ -179,7 +210,7 @@ export function parseHexBoardWavetable(bytes: ArrayBuffer | Uint8Array): Uint8Ar
   return new Uint8Array(wav.view.buffer, wav.view.byteOffset + wav.dataOffset, wav.dataLength).slice();
 }
 
-function parseWavSamples(bytes: ArrayBuffer | Uint8Array): WavData {
+function parseWavSamples(bytes: ArrayBuffer | Uint8Array): ParsedSerumWavetable {
   const wav = readWavDataChunk(bytes);
   const samples = decodeWavData(wav.view, wav.dataOffset, wav.dataLength, wav.format);
   const frameSampleCount = samples.length >= SERUM_FRAME_SAMPLE_COUNT && samples.length % SERUM_FRAME_SAMPLE_COUNT === 0
@@ -280,7 +311,10 @@ function decodeWavSample(view: DataView, offset: number, format: WavFormat): num
   }
 }
 
-function sampleWavetable(wav: WavData, framePosition: number, phasePosition: number): number {
+function sampleWavetable(wav: ParsedSerumWavetable, framePosition: number, phasePosition: number, frameReduction: WavetableFrameReduction): number {
+  if (frameReduction === "nearest") {
+    return sampleFrame(wav, Math.round(framePosition), phasePosition);
+  }
   const frameA = Math.floor(framePosition);
   const frameB = Math.min(frameA + 1, wav.frameCount - 1);
   const frameFrac = framePosition - frameA;
@@ -289,7 +323,7 @@ function sampleWavetable(wav: WavData, framePosition: number, phasePosition: num
   return sampleA + (sampleB - sampleA) * frameFrac;
 }
 
-function sampleFrame(wav: WavData, frame: number, phasePosition: number): number {
+function sampleFrame(wav: ParsedSerumWavetable, frame: number, phasePosition: number): number {
   const wrapped = positiveModulo(phasePosition, wav.frameSampleCount);
   const left = Math.floor(wrapped);
   const frac = wrapped - left;
@@ -297,6 +331,61 @@ function sampleFrame(wav: WavData, frame: number, phasePosition: number): number
   const sampleA = wav.samples[base + left] ?? 0;
   const sampleB = wav.samples[base + ((left + 1) % wav.frameSampleCount)] ?? 0;
   return sampleA + (sampleB - sampleA) * frac;
+}
+
+function smoothRenderedFrames(rendered: Float32Array): void {
+  const scratch = new Float32Array(SYNTH_WAVETABLE_SAMPLE_COUNT);
+  for (let frame = 0; frame < SYNTH_WAVETABLE_FRAME_COUNT; frame += 1) {
+    const start = frame * SYNTH_WAVETABLE_SAMPLE_COUNT;
+    for (let pass = 0; pass < 2; pass += 1) {
+      scratch.set(rendered.subarray(start, start + SYNTH_WAVETABLE_SAMPLE_COUNT));
+      for (let sample = 0; sample < SYNTH_WAVETABLE_SAMPLE_COUNT; sample += 1) {
+        const left2 = scratch[(sample + SYNTH_WAVETABLE_SAMPLE_COUNT - 2) % SYNTH_WAVETABLE_SAMPLE_COUNT];
+        const left1 = scratch[(sample + SYNTH_WAVETABLE_SAMPLE_COUNT - 1) % SYNTH_WAVETABLE_SAMPLE_COUNT];
+        const center = scratch[sample];
+        const right1 = scratch[(sample + 1) % SYNTH_WAVETABLE_SAMPLE_COUNT];
+        const right2 = scratch[(sample + 2) % SYNTH_WAVETABLE_SAMPLE_COUNT];
+        rendered[start + sample] = left2 * 0.12 + left1 * 0.22 + center * 0.32 + right1 * 0.22 + right2 * 0.12;
+      }
+    }
+  }
+}
+
+function findPeak(samples: Float32Array, start: number, length: number): number {
+  let peak = 0;
+  for (let index = start; index < start + length; index += 1) {
+    peak = Math.max(peak, Math.abs(samples[index]));
+  }
+  return peak;
+}
+
+function quantizeRenderedFrame(rendered: Float32Array, output: Uint8Array, start: number, peak: number, dither: boolean): void {
+  if (peak <= 0.000001) {
+    output.fill(128, start, start + SYNTH_WAVETABLE_SAMPLE_COUNT);
+    return;
+  }
+  for (let index = start; index < start + SYNTH_WAVETABLE_SAMPLE_COUNT; index += 1) {
+    output[index] = quantizeRenderedSample(rendered[index], peak, dither, index);
+  }
+}
+
+function quantizeRenderedSample(value: number, peak: number, dither: boolean, index: number): number {
+  const noise = dither ? deterministicTriangularDither(index) : 0;
+  return clampByte(Math.round(128 + (127 * value) / peak + noise));
+}
+
+function deterministicTriangularDither(index: number): number {
+  return (hashUnit(index) + hashUnit(index ^ 0x9e3779b9) - 1) * 0.5;
+}
+
+function hashUnit(index: number): number {
+  let value = index | 0;
+  value ^= value >>> 16;
+  value = Math.imul(value, 0x7feb352d);
+  value ^= value >>> 15;
+  value = Math.imul(value, 0x846ca68b);
+  value ^= value >>> 16;
+  return (value >>> 0) / 0xffffffff;
 }
 
 function findUpwardZeroCrossing(samples: Float32Array): number {
