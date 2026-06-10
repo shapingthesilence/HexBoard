@@ -98,6 +98,13 @@ export class PresetSyncClient {
     return this.listObjects(ObjectType.SynthWavetable, pageSize);
   }
 
+  async listGeometryObjects(objectType: number, pageSize = 1): Promise<ObjectListRecord[]> {
+    if (!this.isGeometryObjectType(objectType)) {
+      throw new Error("Unsupported geometry object type");
+    }
+    return this.listObjects(objectType, pageSize);
+  }
+
   private async listObjects(objectType: number, pageSize = 1): Promise<ObjectListRecord[]> {
     const records: ObjectListRecord[] = [];
     let pageIndex = 0;
@@ -126,6 +133,13 @@ export class PresetSyncClient {
     return this.readObject(ObjectType.SynthWavetable, handle);
   }
 
+  async readGeometryObject(objectType: number, handle: number): Promise<Uint8Array> {
+    if (!this.isGeometryObjectType(objectType)) {
+      throw new Error("Unsupported geometry object type");
+    }
+    return this.readObject(objectType, handle);
+  }
+
   async readCurrentSynthPreset(): Promise<Uint8Array> {
     return this.readSynthPreset(NEW_OBJECT_HANDLE);
   }
@@ -136,6 +150,13 @@ export class PresetSyncClient {
 
   async deleteSynthWavetable(handle: number): Promise<void> {
     await this.deleteObject(ObjectType.SynthWavetable, handle);
+  }
+
+  async deleteGeometryObject(objectType: number, handle: number): Promise<void> {
+    if (!this.isGeometryObjectType(objectType)) {
+      throw new Error("Unsupported geometry object type");
+    }
+    await this.deleteObject(objectType, handle);
   }
 
   private async deleteObject(objectType: number, handle: number): Promise<void> {
@@ -344,6 +365,20 @@ export class PresetSyncClient {
       schemaMajor: wavetable.schemaMajor,
       schemaMinor: wavetable.schemaMinor,
       writeFlags: WriteFlag.SaveToFlash | WriteFlag.OverwriteExisting
+    });
+  }
+
+  async sendGeometryObjectSaveConfirmed(object: EncodedCatalogObject, handle = NEW_OBJECT_HANDLE): Promise<number[][]> {
+    if (!this.isGeometryObjectType(object.objectType)) {
+      throw new Error("Unsupported geometry object type");
+    }
+    return this.sendObjectWriteConfirmed({
+      objectType: object.objectType,
+      body: object.body,
+      handle,
+      schemaMajor: object.schemaMajor,
+      schemaMinor: object.schemaMinor,
+      writeFlags: WriteFlag.SaveToFlash
     });
   }
 
@@ -577,5 +612,13 @@ export class PresetSyncClient {
     const current = this.transferId;
     this.transferId = this.transferId >= 0x3fff ? 1 : this.transferId + 1;
     return current;
+  }
+
+  private isGeometryObjectType(objectType: number): boolean {
+    return objectType === ObjectType.UserTuning
+      || objectType === ObjectType.UserLayout
+      || objectType === ObjectType.UserScale
+      || objectType === ObjectType.ScaleColorMap
+      || objectType === ObjectType.ExplicitButtonMap;
   }
 }

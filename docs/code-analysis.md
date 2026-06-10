@@ -326,9 +326,10 @@ The protocol is documented in `docs/delegated-control.md`. Keep it isolated from
 
 The preset-sync SysEx protocol is documented in `docs/preset-sync-sysex.md`.
 It reserves its own command family. Firmware currently implements the synth
-preset subset for named/foldered preset list/read/write/delete and live preview;
-profile transfer, future `/layouts.dat` user tuning/layout/scale storage, scale
-color maps, explicit button maps, and bundle sync remain draft.
+preset subset for named/foldered preset list/read/write/delete and live preview,
+the user wavetable write path, and raw `/layouts.dat` storage for user tuning,
+layout, scale, scale color map, and explicit button map objects. Profile
+transfer, bundle sync, and live geometry application remain draft.
 
 The companion web app has protocol and catalog helpers for that draft under
 `web/src/protocol/` and `web/src/catalogs/`, plus a mock MIDI transport under
@@ -350,16 +351,17 @@ degree-number strings, validate on exit, and encode through `KeyLabels`. The
 preview paintbrush writes per-button color overrides into the active layout,
 using the same explicit override records as the selected-key inspector.
 Equal-step tunings expose step cents and cycle length in the editor; their
-protocol period metadata is derived from those values during encoding. Scala `.scl` files are
-parsed in the web app into cents-table tuning objects, and Scala period/cycle
-metadata, labels, and reference pitch are reserved for imported file data rather
-than separate Scala editor fields. Firmware does not parse Scala text or persist
-`/layouts.dat` objects yet, and full Scala compatibility requires a
-tuning-system overhaul rather than only host-side import support.
-Future firmware work needs a `/layouts.dat` catalog with `UserTuning`,
-`UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` records;
-manual explicit button records should keep their stored `stepsFromC` and color
-regardless of root/key
+protocol period metadata is derived from those values during encoding. Scala
+`.scl` files are parsed in the web app into cents-table tuning objects, and
+Scala period/cycle metadata, labels, and reference pitch are reserved for
+imported file data rather than separate Scala editor fields. Firmware does not
+parse Scala text, and full Scala compatibility requires a tuning-system
+overhaul rather than only host-side import support. Current `/layouts.dat`
+support stores raw validated `UserTuning`, `UserLayout`, `UserScale`,
+`ScaleColorMap`, and `ExplicitButtonMap` bodies for preset-sync round-trip, but
+does not yet apply them to `current`, `h[]`, MIDI pitch assignment, LEDs,
+profiles, or menus. Future firmware work should make manual explicit button
+records keep their stored `stepsFromC` and color regardless of root/key
 or transposition changes, and generated layout menu controls should be hidden
 when a manual layout is active.
 Real-device synth preset saves and Serum/Vital or HexBoard wavetable imports wait for ACK/NACK
@@ -617,6 +619,14 @@ restart their release stage.
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
 Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `9`, CRC32, and a counted catalog capped at `128` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, wavetable name/folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings and the wavetable reference into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app live preview applies a transferred synth preset to runtime without marking settings dirty, while save requests update `/synth_presets.dat`. The on-device save/load menus are rebuilt from the catalog as folder submenus; preset items inside those folders display only the preset name. Folder path separators are still `/`, but the firmware decodes `%2F`, `%5C`, and `%25` in menu labels so web-app folder names can contain literal slash, backslash, or percent characters. Rebuilds are requested from save/delete paths and serviced from the main loop after GEM input handling, with owned menu items removed from their parent pages before deletion. The load menu has a `Blank` item. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending `SynthPortamentoTimeIndex` and `ArpeggiatorDirection` defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving wavetable name/folder fields from the old `Waveform` value before being rewritten.
+
+User geometry objects are stored in `/layouts.dat` with magic `LYT`, version
+`1`, CRC32, and a counted raw-body catalog capped at `127` entries. The catalog
+can hold `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and
+`ExplicitButtonMap` objects. Preset-sync validates the common `HBS1` object
+envelope, schema major `1`, non-empty `Name`, and 16-byte `ObjectId`, then
+stores the raw body so hosts can list, read, overwrite, and delete geometry
+objects before the firmware has live tuning/layout application.
 
 Named user wavetables are stored in `/synth_wavetables.dat` with magic `SYW`,
 version `1`, CRC32, and a counted catalog capped at `64` entries. Each entry has

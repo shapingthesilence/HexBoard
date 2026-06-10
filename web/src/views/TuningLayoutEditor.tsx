@@ -26,8 +26,12 @@ import {
   type LayoutBundleLayout,
   type LayoutBundleScale,
   type LayoutBundleTuning,
-  type ScaleDegreeColor
+  type ScaleDegreeColor,
+  type EncodedCatalogObject
 } from "../catalogs/index.ts";
+import { MockMidiTransport } from "../midi/mockTransport.ts";
+import { PresetSyncClient } from "../midi/presetSyncClient.ts";
+import type { MidiTransport } from "../midi/types.ts";
 import { crc32 } from "../protocol/crc32.ts";
 import { formatByteLength } from "./format.ts";
 
@@ -62,6 +66,10 @@ interface PreviewKey {
 interface GuideHalo {
   key: HexBoardKey;
   tone: "green" | "red";
+}
+
+interface TuningLayoutEditorProps {
+  transport: MidiTransport;
 }
 
 function createUntitledBundle(): LayoutBundle {
@@ -321,7 +329,19 @@ function validateIncludedDegreesInput(text: string, cycleLength: number): { degr
   return { degrees: normalizeScaleDegrees(degrees, safeCycleLength) };
 }
 
-export function TuningLayoutEditor() {
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   const [bundles, setBundles] = useState<LayoutBundle[]>(() => loadStoredBundles());
   const [activeBundleId, setActiveBundleId] = useState("");
   const [selectedButton, setSelectedButton] = useState(65);
@@ -334,6 +354,7 @@ export function TuningLayoutEditor() {
   const [includedDegreesDraft, setIncludedDegreesDraft] = useState("");
   const [includedDegreesError, setIncludedDegreesError] = useState("");
   const [status, setStatus] = useState("Ready");
+  const [syncBusy, setSyncBusy] = useState(false);
   const bundleInputRef = useRef<HTMLInputElement>(null);
   const scalaInputRef = useRef<HTMLInputElement>(null);
   const keyLabelsInputRef = useRef<HTMLInputElement>(null);
@@ -348,6 +369,7 @@ export function TuningLayoutEditor() {
   const activeScale = activeBundle.scales.find((scale) => scale.objectIdHex === activeBundle.activeScaleIdHex) ??
     activeBundle.scales[0] ??
     createAllNotesScale(tuningCycleLength(activeBundle.tuning));
+  const client = useMemo(() => new PresetSyncClient(transport), [transport]);
 
   useEffect(() => {
     setIncludedDegreesDraft(formatIntegerList(activeScale.includedDegrees));
@@ -902,6 +924,59 @@ export function TuningLayoutEditor() {
     .map((object) => `${object.name}: ${formatByteLength(object.body)} CRC ${crc32(object.body).toString(16).toUpperCase()}`)
     .join("\n");
 
+  async function findDeviceGeometryObject(object: EncodedCatalogObject) {
+    const records = await client.listGeometryObjects(object.objectType, 4);
+    const objectIdHex = objectIdToHex(object.objectId);
+    return records.find((record) => objectIdToHex(record.objectId) === objectIdHex);
+  }
+
+  async function saveActiveBundleToHexBoard() {
+    if (transport instanceof MockMidiTransport) {
+      setStatus("Connect HexBoard before saving geometry objects.");
+      return;
+    }
+    setSyncBusy(true);
+    try {
+      for (let index = 0; index < encodedBundle.objects.length; index += 1) {
+        const object = encodedBundle.objects[index];
+        setStatus(`Saving ${object.name} (${index + 1}/${encodedBundle.objects.length})`);
+        await client.sendGeometryObjectSaveConfirmed(object);
+      }
+      setStatus(`Saved ${encodedBundle.objects.length} geometry objects to HexBoard`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to save geometry objects");
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function verifyActiveBundleOnHexBoard() {
+    if (transport instanceof MockMidiTransport) {
+      setStatus("Connect HexBoard before verifying geometry objects.");
+      return;
+    }
+    setSyncBusy(true);
+    try {
+      for (let index = 0; index < encodedBundle.objects.length; index += 1) {
+        const object = encodedBundle.objects[index];
+        setStatus(`Verifying ${object.name} (${index + 1}/${encodedBundle.objects.length})`);
+        const record = await findDeviceGeometryObject(object);
+        if (!record) {
+          throw new Error(`Missing ${object.name} on HexBoard`);
+        }
+        const body = await client.readGeometryObject(object.objectType, record.handle);
+        if (!bytesEqual(body, object.body)) {
+          throw new Error(`HexBoard copy of ${object.name} does not match`);
+        }
+      }
+      setStatus(`Verified ${encodedBundle.objects.length} geometry objects on HexBoard`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to verify geometry objects");
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
   return (
     <section className="layoutEditorWorkspace" onPointerDownCapture={(event) => commitIncludedDegreesIfLeaving(event.target)}>
       <aside className="panel stack layoutEditorSidebar">
@@ -915,6 +990,14 @@ export function TuningLayoutEditor() {
             Export
           </button>
           <button type="button" onClick={() => bundleInputRef.current?.click()}>Import</button>
+        </div>
+        <div className="row">
+          <button className="primary" disabled={syncBusy} type="button" onClick={() => void saveActiveBundleToHexBoard()}>
+            {syncBusy ? "Syncing..." : "Save to HexBoard"}
+          </button>
+          <button disabled={syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>
+            Verify
+          </button>
         </div>
         <input ref={bundleInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" onChange={(event) => void importBundleFile(event)} />
         <input ref={scalaInputRef} className="hiddenFileInput" type="file" accept=".scl,text/plain" onChange={(event) => void importScalaFile(event)} />

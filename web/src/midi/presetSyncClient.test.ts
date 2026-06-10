@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { deterministicObjectId } from "../catalogs/objectId.ts";
+import { createGeneratedEdoTuning } from "../catalogs/layoutsCatalog.ts";
 import { createSynthPresetObject } from "../catalogs/synthPresets.ts";
 import { createSynthWavetableObject, SYNTH_WAVETABLE_SAMPLE_BYTES } from "../catalogs/synthWavetables.ts";
 import {
@@ -127,6 +128,37 @@ describe("PresetSyncClient", () => {
     expect(decoded.at(-1)?.message).toBe(MessageType.WriteCommit);
     expect(decodeWriteCommitPayload(decoded.at(-1)?.payload ?? [])).toMatchObject({
       commitFlags: 0x03
+    });
+  });
+
+  it("sends geometry objects with save-to-flash only", async () => {
+    const transport = new MockMidiTransport();
+    const originalSend = transport.send.bind(transport);
+    transport.send = async (bytes) => {
+      await originalSend(bytes);
+      const frame = decodePresetSyncFrame(bytes);
+      const nextChunkIndex = frame.message === MessageType.DataChunk
+        ? decodeDataChunkPayload(frame.payload).chunkIndex + 1
+        : 0;
+      transport.emit(encodeAckFrame(frame.transactionId, frame.message, nextChunkIndex));
+    };
+    const client = new PresetSyncClient(transport);
+    const tuning = createGeneratedEdoTuning({
+      objectId: deterministicObjectId("geometry tuning"),
+      name: "Geometry Tuning",
+      edoDivisions: 19
+    });
+
+    const frames = await client.sendGeometryObjectSaveConfirmed(tuning);
+    const decoded = frames.map((frame) => decodePresetSyncFrame(frame));
+
+    expect(decodeWriteBeginPayload(decoded[0].payload)).toMatchObject({
+      objectType: ObjectType.UserTuning,
+      rawByteLength: tuning.body.length,
+      writeFlags: 0x02
+    });
+    expect(decodeWriteCommitPayload(decoded.at(-1)?.payload ?? [])).toMatchObject({
+      commitFlags: 0x02
     });
   });
 

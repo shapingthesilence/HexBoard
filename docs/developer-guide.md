@@ -16,7 +16,7 @@ For a longer historical deep dive, see `docs/code-analysis.md`, but treat this g
 - `Makefile`: local build shortcut that compiles the root sketch and firmware modules
 - `docs/code-analysis.md`: older, broader analysis document
 - `docs/delegated-control.md`: external delegated-control protocol and implementation notes
-- `docs/preset-sync-sysex.md`: protocol design for implemented synth-preset sync and future profile, user tuning/layout/scale, color-map, and button-map sync
+- `docs/preset-sync-sysex.md`: protocol design for implemented synth-preset sync, wavetable import, raw user geometry catalog storage, and future profile/live-geometry sync
 
 Keep the root `HexBoard.ino` thin. Do not edit generated files under `build/` as a source of truth.
 
@@ -403,6 +403,7 @@ Important implementation details:
 - Core 0 retries synth release commands until the audio renderer consumes one; the renderer clears the retry state when it accepts `StartRelease` so long releases do not repeatedly restart
 - synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `9`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters plus a wavetable folder/name dependency, but do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving the new wavetable dependency from the legacy `Waveform` byte
 - user synth wavetables are stored as a named catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `64` entries, and per-table sample files named from each `16`-byte wavetable object id; each table sample file contains `32 * 512` unsigned waveform bytes. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
+- user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `1`, up to `127` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. These objects are not yet applied to the live pitch, LED, profile, or menu systems.
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
@@ -427,10 +428,13 @@ The MIDI subsystem supports three broad modes:
 - MPE with per-note pitch bend
 
 For the external-only raw button/LED surface mode, see `docs/delegated-control.md`.
-For the draft host sync protocol covering profiles, user tunings/layouts,
-mapping objects, and named synth presets, see `docs/preset-sync-sysex.md`.
-When `/layouts.dat` firmware support is added, parse user tuning objects into
-the same runtime data needed by `assignPitches()` and `resetTuningMIDI()`:
+For the host sync protocol covering profiles, user tunings/layouts, mapping
+objects, and named synth presets, see `docs/preset-sync-sysex.md`. Current
+firmware can persist and round-trip raw `/layouts.dat` geometry objects through
+preset-sync, but it deliberately rejects geometry `ApplyToRuntime` commits
+until runtime application exists. The next firmware step is to parse user tuning
+objects into the same runtime data needed by `assignPitches()` and
+`resetTuningMIDI()`:
 equal-step tunings need step size, cycle length, derived period, and reference
 pitch; imported Scala/cents tunings need a cents or ratio table that can resolve
 every `stepsFromC` value for synth frequency, standard MIDI note mapping, and

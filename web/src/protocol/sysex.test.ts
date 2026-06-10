@@ -40,16 +40,16 @@ describe("preset-sync SysEx", () => {
     const decoded = decodeHelloResponsePayload([
       0x01, 0x00,
       0x01, 0x00,
-      0x00, 0x00, 0x02, 0x02,
-      0x00, 0x00, 0x10, 0x00,
-      0x0b,
-      0x03,
+      0x00, 0x00, 0x16, 0x7e,
+      0x00, 0x01, 0x02, 0x00,
+      0x11,
+      0x07,
       0x09,
       0x01, 0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
+      0x7f,
+      0x7f,
+      0x7f,
+      0x7f,
       0x02
     ]);
 
@@ -57,12 +57,16 @@ describe("preset-sync SysEx", () => {
       negotiatedMajor: 1,
       negotiatedMinor: 0,
       deviceMaxPackedChunk: 128,
-      capabilityFlags: 0x102,
-      maxRawObjectBytes: 2048,
-      settingsSchemaVersion: 11,
-      synthPresetSchemaVersion: 3,
+      capabilityFlags: 0xb7e,
+      maxRawObjectBytes: 16640,
+      settingsSchemaVersion: 17,
+      synthPresetSchemaVersion: 7,
       profileCount: 9,
       synthPresetCount: 128,
+      userTuningSlots: 127,
+      userLayoutSlots: 127,
+      scaleColorMapSlots: 127,
+      explicitButtonMapSlots: 127,
       hardwareVersion: 2
     });
   });

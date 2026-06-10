@@ -24,7 +24,7 @@ export function App() {
       case "profiles":
         return <ProfileSync transport={transport} />;
       case "layouts":
-        return <TuningLayoutEditor />;
+        return <TuningLayoutEditor transport={transport} />;
       case "synth":
         return <SynthPresetLibrary transport={transport} />;
     }

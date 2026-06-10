@@ -403,9 +403,11 @@ Delegated control is only for compatible host software. It is not shown in the O
 
 A browser-based HexBoard Sync app is being developed in this repository. Its
 first target is preset, tuning/layout, color-map, button-map, and synth-preset
-editing over Web MIDI SysEx. Firmware currently implements synth preset sync
-plus the single user-wavetable import path; other sync object types still use
-mock/web-side workflows.
+editing over Web MIDI SysEx. Firmware currently implements synth preset sync,
+the single user-wavetable import path, and storage/list/read/write/delete for
+user geometry objects in `/layouts.dat`. Those stored tuning/layout objects do
+not yet change the live keyboard; active playing still uses the existing
+firmware tuning/layout system.
 
 The `Tunings & Layouts` tab is a browser-side musical geometry editor. It saves
 geometry bundles in browser storage and can import/export those bundles as JSON.

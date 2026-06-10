@@ -1,9 +1,10 @@
 # HexBoard Preset Sync SysEx Protocol Draft
 
-This is the design spec for HexBoard preset sync. The synth preset subset and
-single user-wavetable write path are implemented in firmware; tuning/layout,
-profile, bundle, and backup workflows remain draft design until their firmware
-storage models are implemented.
+This is the design spec for HexBoard preset sync. The synth preset subset,
+single user-wavetable write path, and raw `/layouts.dat` user geometry catalog
+storage are implemented in firmware; profile, bundle, backup, and live
+tuning/layout application workflows remain draft design until their runtime
+models are implemented.
 
 The intent is to keep the device-side protocol small while allowing the web app
 to handle tedious editing work such as Scala import, individual button mapping,
@@ -30,13 +31,12 @@ profile selection, and simple scale/color choices.
 
 ## Storage Direction
 
-This protocol should map to a future storage model with separate catalogs:
+This protocol maps to separate persistent catalogs:
 
 - `/settings.dat` remains the main profile/settings file.
-- `/layouts.dat` is the proposed user musical-geometry catalog. Despite the
-  short name, it should own user-generated tunings, layouts, scales, scale
-  color maps, and explicit button maps because those objects need to reference
-  each other.
+- `/layouts.dat` is the user musical-geometry catalog. Despite the short name,
+  it owns user-generated tunings, layouts, scales, scale color maps, and
+  explicit button maps because those objects need to reference each other.
 - `/synth_presets.dat` stores named synth presets with folder paths and
   wavetable folder/name dependencies.
 - `/synth_wavetables.dat` stores the named user wavetable catalog. Each catalog
@@ -46,7 +46,7 @@ Keeping user tunings and layouts together in `/layouts.dat` avoids fragile
 cross-file references such as a user layout pointing to a missing user tuning.
 The file can still expose separate object types through SysEx.
 
-Recommended future file headers:
+File headers:
 
 | File | Magic | Version owner | Payload |
 | --- | --- | --- | --- |
@@ -55,9 +55,11 @@ Recommended future file headers:
 | `/synth_presets.dat` | `SYP` | Synth preset catalog schema | Named synth preset objects, folders, and wavetable references |
 | `/synth_wavetables.dat` | `SYW` | Synth wavetable catalog schema | Named user wavetable objects and sample-file paths |
 
-The current firmware already has `/settings.dat`, a named/foldered
-`/synth_presets.dat`, and a named/foldered `/synth_wavetables.dat`;
-`/layouts.dat` is a future storage change, not a current implementation fact.
+The current firmware has `/settings.dat`, named/foldered `/synth_presets.dat`,
+named/foldered `/synth_wavetables.dat`, and `/layouts.dat`. The current
+`/layouts.dat` implementation stores and round-trips raw validated object
+bodies, but it does not yet apply those tuning/layout/scale/color/map objects
+to the live pitch, LED, profile, or menu systems.
 
 ## Relationship To Current SysEx
 
@@ -308,11 +310,15 @@ a compatible HexBoard.
 <synth-preset-count-u14>
 <user-tuning-slots>
 <user-layout-slots>
-<user-scale-slots>
 <scale-color-map-slots>
 <explicit-button-map-slots>
 <hardware-version>
 ```
+
+Protocol `1.0` does not carry a separate `UserScale` slot byte. Hosts should
+use the user-scale capability bit and `OBJECT_LIST_REQ` for `UserScale`; current
+firmware stores user scales in the same `/layouts.dat` catalog limit as the
+other user geometry object types.
 
 Capability flags:
 
@@ -338,14 +344,15 @@ flags:
 F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 ```
 
-Example response, transaction `1`, max packed chunk `128`, capabilities `0x902`
-(synth preset read/write, dry-run validation, plus synth wavetable objects), max
-raw object bytes `16640`, settings schema `17`, synth preset schema `7`, `9`
-profiles, `128` synth preset entries, no user tuning/layout/scale/color/map
-slots yet, hardware version `2`:
+Example response, transaction `1`, max packed chunk `128`, capabilities
+`0xB7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
+delete user object, plus synth wavetable objects), max raw object bytes `16640`,
+settings schema `17`, synth preset schema `7`, `9` profiles, `128` synth preset
+entries, `127` slots for each advertised user geometry count, hardware version
+`2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 00 00 12 02 00 01 02 00 10 06 09 01 00 00 00 00 00 00 02 F7
+F0 7D 10 01 00 02 00 01 01 00 00 00 16 7E 00 01 02 00 10 06 09 01 00 7F 7F 7F 7F 02 F7
 ```
 
 ## Object Addressing
@@ -355,7 +362,7 @@ object handle:
 
 - For fixed arrays, it is the actual slot index. Current examples include main
   profiles `0..8`.
-- For catalog files such as future `/layouts.dat` and the named/foldered
+- For catalog files such as `/layouts.dat` and the named/foldered
   `/synth_presets.dat`, it is a compact handle returned by `OBJECT_LIST_RESP`.
   The handle may change after create/delete/reorder operations.
 - Persistent identity comes from the object's `ObjectId` TLV, not from the
@@ -1101,10 +1108,12 @@ write the individual objects after the web app unpacks a bundle.
 3. Web app writes each `UserLayout`, each `UserScale`, and the bundle's single
    `ScaleColorMap`, all referencing the tuning object id.
 4. Web app writes any `ExplicitButtonMap` objects after their referenced layouts.
-5. Firmware stores these records in `/layouts.dat`, refreshes the menu catalog,
-   and hides generated-layout controls whenever the active layout is manual.
-6. Firmware applies the selected layout/scale/palette only after active notes
-   are clear or after an explicitly documented panic cleanup.
+5. Current firmware stores these records in `/layouts.dat` and can list, read,
+   overwrite, or delete them by compact preset-sync handle.
+6. Future firmware work still needs to refresh the menu catalog, hide
+   generated-layout controls whenever the active layout is manual, and apply the
+   selected layout/scale/color map only after active notes are clear or after an
+   explicitly documented panic cleanup.
 
 ### Transfer A Synth Preset
 
@@ -1151,9 +1160,9 @@ write the individual objects after the web app unpacks a bundle.
 
 ## Open Design Questions
 
-- User slot counts: `16` is a reasonable first target for tunings, layouts,
-  scales, scale color maps, and explicit maps, but actual limits should follow
-  LittleFS space and menu usability.
+- User slot counts: current raw `/layouts.dat` storage allows `127` geometry
+  objects total; future menu-facing limits may need lower per-type caps based
+  on LittleFS space and menu usability.
 - Object id format: 16 random bytes are robust, but a shorter CRC-based id may
   be easier on-device. The important rule is that profiles should not silently
   bind to the wrong object after slot moves.

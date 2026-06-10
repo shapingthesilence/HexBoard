@@ -146,6 +146,12 @@ constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 7;
 constexpr uint8_t SYNTH_WAVETABLE_FILE_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_SCHEMA_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_MAX_COUNT = 64;
+constexpr uint8_t GEOMETRY_OBJECT_FILE_VERSION = 1;
+constexpr uint8_t GEOMETRY_OBJECT_MAX_COUNT = 127;
+constexpr size_t GEOMETRY_OBJECT_NAME_LENGTH = 48;
+constexpr size_t GEOMETRY_OBJECT_FOLDER_LENGTH = 48;
+constexpr size_t GEOMETRY_OBJECT_ID_LENGTH = 16;
+constexpr size_t GEOMETRY_OBJECT_MAX_RAW_BYTES = 8192;
 constexpr size_t SYNTH_PRESET_VALUE_COUNT_V6 = 27;
 constexpr size_t SYNTH_PRESET_VALUE_COUNT_V7 = 29;
 constexpr size_t SYNTH_PRESET_NAME_LENGTH = 32;
@@ -345,11 +351,31 @@ struct CurrentSynthWavetableReferenceFile {
   uint32_t crc32;
 };
 
+struct GeometryObjectFileHeader {
+  char magic[3];     // "LYT"
+  uint8_t version;
+  uint16_t count;
+  uint16_t reserved;
+  uint32_t crc32;
+};
+
+struct GeometryObjectSlot {
+  uint8_t valid = 0;
+  uint8_t objectType = 0;
+  uint8_t schemaMajor = 1;
+  uint8_t schemaMinor = 0;
+  uint8_t objectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
+  char name[GEOMETRY_OBJECT_NAME_LENGTH] = {};
+  char folderPath[GEOMETRY_OBJECT_FOLDER_LENGTH] = {};
+  std::vector<uint8_t> body;
+};
+
 constexpr uint8_t CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION = 1;
 constexpr char CURRENT_SYNTH_WAVETABLE_REFERENCE_FILE_PATH[] = "/current_wavetable.dat";
 
 std::vector<SynthPresetSlot> synthPresets;
 std::vector<SynthWavetableSlot> synthWavetables;
+std::vector<GeometryObjectSlot> geometryObjects;
 
 void saveCurrentSynthWavetableReference();
 bool loadCurrentSynthWavetableReference();
