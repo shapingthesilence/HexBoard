@@ -9,6 +9,7 @@ import {
   defaultKeyLabels,
   deterministicObjectId,
   encodeLayoutBundle,
+  ExplicitButtonMapTlv,
   hexBoardGeometry,
   isHexBoardCommandIndex,
   normalizeScaleDegrees,
@@ -339,6 +340,13 @@ function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
     }
   }
   return true;
+}
+
+function objectReferenceIdHex(value: Uint8Array): string | null {
+  if (value.length < 19) {
+    return null;
+  }
+  return objectIdToHex(value.slice(3, 19));
 }
 
 export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
@@ -920,6 +928,23 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
         : layout)
     });
   }, [activeBundle, activeLayout.objectIdHex, previewKeys]);
+  const activeApplyObjects = useMemo(() => {
+    const activeLayoutObject = encodedBundle.layouts.find((object) => objectIdToHex(object.objectId) === activeLayout.objectIdHex);
+    const activeScaleObject = encodedBundle.scales.find((object) => objectIdToHex(object.objectId) === activeScale.objectIdHex);
+    const explicitMaps = encodedBundle.explicitButtonMaps.filter((object) =>
+      object.records.some((record) =>
+        record.tag === ExplicitButtonMapTlv.LayoutRef
+        && objectReferenceIdHex(record.value) === activeLayout.objectIdHex
+      )
+    );
+    return [
+      encodedBundle.tuning,
+      activeLayoutObject,
+      activeScaleObject,
+      encodedBundle.scaleColorMap,
+      ...explicitMaps
+    ].filter((object): object is EncodedCatalogObject => Boolean(object));
+  }, [activeLayout.objectIdHex, activeScale.objectIdHex, encodedBundle]);
   const encodedPreview = encodedBundle.objects
     .map((object) => `${object.name}: ${formatByteLength(object.body)} CRC ${crc32(object.body).toString(16).toUpperCase()}`)
     .join("\n");
@@ -945,6 +970,30 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
       setStatus(`Saved ${encodedBundle.objects.length} geometry objects to HexBoard`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to save geometry objects");
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function applyActiveBundleToHexBoard() {
+    if (transport instanceof MockMidiTransport) {
+      setStatus("Connect HexBoard before applying geometry objects.");
+      return;
+    }
+    if (activeBundle.tuning.kind === "scala") {
+      setStatus("Scala bundles can be saved and verified, but live Apply needs firmware cents-table tuning support.");
+      return;
+    }
+    setSyncBusy(true);
+    try {
+      for (let index = 0; index < activeApplyObjects.length; index += 1) {
+        const object = activeApplyObjects[index];
+        setStatus(`Applying ${object.name} (${index + 1}/${activeApplyObjects.length})`);
+        await client.sendGeometryObjectApplyConfirmed(object);
+      }
+      setStatus(`Applied ${activeBundle.name} to HexBoard runtime`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to apply geometry objects");
     } finally {
       setSyncBusy(false);
     }
@@ -994,6 +1043,9 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
         <div className="row">
           <button className="primary" disabled={syncBusy} type="button" onClick={() => void saveActiveBundleToHexBoard()}>
             {syncBusy ? "Syncing..." : "Save to HexBoard"}
+          </button>
+          <button disabled={syncBusy} type="button" onClick={() => void applyActiveBundleToHexBoard()}>
+            Apply
           </button>
           <button disabled={syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>
             Verify

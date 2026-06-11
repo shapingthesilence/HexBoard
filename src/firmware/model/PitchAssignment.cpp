@@ -124,8 +124,52 @@ void applyScale() {
   setLEDcolorCodes();
   sendToLog("applyScale complete.");
 }
+
+void restoreDefaultVisibleButtonRoles() {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    h[i].isCmd = false;
+    h[i].note = UNUSED_NOTE;
+  }
+  for (byte c = 0; c < CMDCOUNT; ++c) {
+    h[assignCmd[c]].isCmd = true;
+    h[assignCmd[c]].note = CMDB + c;
+  }
+}
+
+void applyUserGeometryButtonOverrides() {
+  if (!userGeometryRuntimeActive) {
+    return;
+  }
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    if (userGeometryRuntimeButtonRoleOverride[i]) {
+      if (userGeometryRuntimeButtonRole[i] == 2) {
+        h[i].isCmd = true;
+        h[i].note = UNUSED_NOTE;
+        for (byte c = 0; c < CMDCOUNT; ++c) {
+          if (assignCmd[c] == i) {
+            h[i].note = CMDB + c;
+            break;
+          }
+        }
+      } else if (userGeometryRuntimeButtonRole[i] == 1 && !userGeometryRuntimeButtonDisabled[i]) {
+        h[i].isCmd = false;
+        h[i].note = UNUSED_NOTE;
+      } else {
+        h[i].isCmd = true;
+        h[i].note = UNUSED_NOTE;
+      }
+    }
+    if (!h[i].isCmd && userGeometryRuntimeButtonNoteOverride[i]) {
+      h[i].stepsFromC = userGeometryRuntimeButtonStepsFromC[i];
+    }
+  }
+}
+
 void applyLayout() {  // call this function when the layout changes
   sendToLog("buildLayout was called:");
+  if (userGeometryRuntimeActive) {
+    restoreDefaultVisibleButtonRoles();
+  }
   ///////////////////////////////////////////////////////////////////////////////////////
   int8_t acrossSteps = current.layout().acrossSteps;  // x
   int8_t dnLeftSteps = current.layout().dnLeftSteps;  // y
@@ -154,6 +198,7 @@ void applyLayout() {  // call this function when the layout changes
         "hex #" + std::to_string(i) + ", " + "steps from C4=" + std::to_string(h[i].stepsFromC) + ".");
     }
   }
+  applyUserGeometryButtonOverrides();
   applyScale();     // when layout changes, have to re-apply scale and re-apply LEDs
   assignPitches();  // same with pitches
   sendToLog("buildLayout complete.");

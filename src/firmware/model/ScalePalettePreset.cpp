@@ -430,6 +430,12 @@ paletteDef palette[] = {
     { 1, 4, 2, 5, 3, 6, 1, 4, 1, 4, 2, 5, 3, 6, 1, 4, 2, 5, 3, 6 } },
 };
 
+extern bool userGeometryRuntimeActive;
+extern bool userGeometryRuntimeScaleActive;
+extern tuningDef userGeometryRuntimeTuning;
+extern layoutDef userGeometryRuntimeLayout;
+extern scaleDef userGeometryRuntimeScale;
+
 // @presets
 /*
     This section of the code defines
@@ -453,12 +459,21 @@ public:
   int transpose;
   // define simple recall functions
   tuningDef tuning() {
+    if (userGeometryRuntimeActive) {
+      return userGeometryRuntimeTuning;
+    }
     return tuningOptions[tuningIndex];
   }
   layoutDef layout() {
+    if (userGeometryRuntimeActive) {
+      return userGeometryRuntimeLayout;
+    }
     return layoutOptions[layoutIndex];
   }
   scaleDef scale() {
+    if (userGeometryRuntimeActive && userGeometryRuntimeScaleActive) {
+      return userGeometryRuntimeScale;
+    }
     return scaleOptions[scaleIndex];
   }
   int layoutsBegin() {

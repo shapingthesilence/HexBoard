@@ -480,24 +480,29 @@ void setLEDcolorCodes() {
 
   for (byte i = 0; i < LED_COUNT; i++) {
     if (!(h[i].isCmd)) {
-      colorDef setColor;
+      colorDef setColor = { HUE_NONE, SAT_BW, VALUE_BLACK };
       byte paletteIndex = positiveMod(h[i].stepsFromC, cycleLength);
       if (paletteBeginsAtKeyCenter) {
         paletteIndex = current.keyDegree(paletteIndex);
       }
-      switch (colorMode) {
-        case TIERED_COLOR_MODE:  // This mode sets the color based on the palettes defined above.
-          setColor = palette[current.tuningIndex].getColor(paletteIndex);
-          break;
-        case RAINBOW_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
-          setColor = { 360 * ((float)paletteIndex / (float)current.tuning().cycleLength), SAT_VIVID, VALUE_NORMAL };
-          break;
-        case RAINBOW_OF_FIFTHS_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
-          {
-          float stepSize = current.tuning().stepSize;
-            float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-            float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-          float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
+      if (userGeometryRuntimeActive && userGeometryRuntimePaletteActive) {
+        setColor = userGeometryRuntimePalette.getColor(paletteIndex);
+      } else if (userGeometryRuntimeActive && colorMode == TIERED_COLOR_MODE) {
+        setColor = { 360 * ((float)paletteIndex / (float)current.tuning().cycleLength), SAT_VIVID, VALUE_NORMAL };
+      } else {
+        switch (colorMode) {
+          case TIERED_COLOR_MODE:  // This mode sets the color based on the palettes defined above.
+            setColor = palette[current.tuningIndex].getColor(paletteIndex);
+            break;
+          case RAINBOW_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
+            setColor = { 360 * ((float)paletteIndex / (float)current.tuning().cycleLength), SAT_VIVID, VALUE_NORMAL };
+            break;
+          case RAINBOW_OF_FIFTHS_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
+            {
+            float stepSize = current.tuning().stepSize;
+              float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
+              float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
+            float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
             float fifthSize = ((ratioToCents(3.0 / 2.0)) / stepSize);
             float reverseFifth = fifthSize;
             switch (current.tuningIndex) {
@@ -663,11 +668,11 @@ void setLEDcolorCodes() {
             auto baseTemperature = 800;
             tint = ((sqrt(deviationFromDiatonic))) * (incandescence::maxTemperature - baseTemperature) + baseTemperature;
 
-            setColor = incandescence::getColor(tint);
-          }
-          break;
-        case ALTERNATE_COLOR_MODE:
-          {
+              setColor = incandescence::getColor(tint);
+            }
+            break;
+          case ALTERNATE_COLOR_MODE:
+            {
             // This mode assigns each note a color based on the interval it forms with the root note.
             // This is an adaptation of an algorithm developed by Nicholas Fox and Kite Giedraitis.
             float cents = current.tuning().stepSize * paletteIndex;
@@ -693,10 +698,10 @@ void setLEDcolorCodes() {
               (byte)(255 - round(255 * deSaturate)),
               (byte)(cents ? VALUE_SHADE : VALUE_NORMAL)
             };
-          }
-          break;
-        case DIATONIC_COLOR_MODE:
-          {
+            }
+            break;
+          case DIATONIC_COLOR_MODE:
+            {
             byte rawIndex = paletteIndex;
             if (!mosValid) {
               setColor.hue = 360.0f * ((float)paletteIndex / (float)cycleLength);
@@ -727,11 +732,15 @@ void setLEDcolorCodes() {
                 setColor.sat = SAT_VIVID;
                 setColor.val = val;
               }
+              }
             }
-          }
-          break;
-        default:
-          break;
+            break;
+          default:
+            break;
+        }
+      }
+      if (userGeometryRuntimeActive && userGeometryRuntimeButtonColorActive[i]) {
+        setColor = userGeometryRuntimeButtonColor[i];
       }
       colorDef restColor = setColor;
       restColor.val = applyLEDLevel(restColor.val, ledRestBrightness);

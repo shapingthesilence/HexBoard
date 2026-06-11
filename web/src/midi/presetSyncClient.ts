@@ -369,6 +369,18 @@ export class PresetSyncClient {
   }
 
   async sendGeometryObjectSaveConfirmed(object: EncodedCatalogObject, handle = NEW_OBJECT_HANDLE): Promise<number[][]> {
+    return this.sendGeometryObjectWriteConfirmed(object, WriteFlag.SaveToFlash, handle);
+  }
+
+  async sendGeometryObjectApplyConfirmed(object: EncodedCatalogObject, handle = NEW_OBJECT_HANDLE): Promise<number[][]> {
+    return this.sendGeometryObjectWriteConfirmed(object, WriteFlag.ApplyToRuntime | WriteFlag.SaveToFlash, handle);
+  }
+
+  private async sendGeometryObjectWriteConfirmed(
+    object: EncodedCatalogObject,
+    writeFlags: number,
+    handle = NEW_OBJECT_HANDLE
+  ): Promise<number[][]> {
     if (!this.isGeometryObjectType(object.objectType)) {
       throw new Error("Unsupported geometry object type");
     }
@@ -378,7 +390,7 @@ export class PresetSyncClient {
       handle,
       schemaMajor: object.schemaMajor,
       schemaMinor: object.schemaMinor,
-      writeFlags: WriteFlag.SaveToFlash
+      writeFlags
     });
   }
 

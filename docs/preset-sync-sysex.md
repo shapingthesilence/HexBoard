@@ -1,10 +1,11 @@
 # HexBoard Preset Sync SysEx Protocol Draft
 
 This is the design spec for HexBoard preset sync. The synth preset subset,
-single user-wavetable write path, and raw `/layouts.dat` user geometry catalog
-storage are implemented in firmware; profile, bundle, backup, and live
-tuning/layout application workflows remain draft design until their runtime
-models are implemented.
+single user-wavetable write path, raw `/layouts.dat` user geometry catalog
+storage, and live Apply for generated EDO/equal-step geometry bundles are
+implemented in firmware; profile, bundle, backup, and full Scala/cents-table
+tuning workflows remain draft design until their runtime models are
+implemented.
 
 The intent is to keep the device-side protocol small while allowing the web app
 to handle tedious editing work such as Scala import, individual button mapping,
@@ -58,8 +59,11 @@ File headers:
 The current firmware has `/settings.dat`, named/foldered `/synth_presets.dat`,
 named/foldered `/synth_wavetables.dat`, and `/layouts.dat`. The current
 `/layouts.dat` implementation stores and round-trips raw validated object
-bodies, but it does not yet apply those tuning/layout/scale/color/map objects
-to the live pitch, LED, profile, or menu systems.
+bodies. It can also apply generated EDO/equal-step `UserTuning` objects,
+isomorphic vector `UserLayout` objects, `UserScale` membership,
+`ScaleColorMap` degree colors, and format-1 `ExplicitButtonMap` note/color
+overrides to the live pitch and LED runtime. It does not yet apply Scala/cents
+tables, profile references, bundle manifests, or menu catalog integration.
 
 ## Relationship To Current SysEx
 
@@ -507,6 +511,12 @@ Write flags:
 | `2` | Overwrite existing object at handle |
 | `3` | Dry-run validation only; do not apply or save |
 
+For geometry object writes, firmware validates and applies the runtime object
+before saving when both `ApplyToRuntime` and `SaveToFlash` are set. Unsupported
+runtime objects, such as current cents-table/Scala tunings, are rejected for
+Apply and are not saved through that combined path; hosts can still save those
+objects with `SaveToFlash` only.
+
 The device ACKs `WRITE_BEGIN` if it can accept the transfer. The host then sends
 `DATA_CHUNK` messages in order. The device ACKs every accepted chunk with the
 next expected chunk index. After all chunks, the host sends `TRANSFER_END`.
@@ -710,10 +720,13 @@ length in `EdoDivisions` for labels/colors; host tooling derives
 `PeriodMilliCents` from those two values so they cannot diverge. Generated EDO
 and equal-step tunings can include `KeyLabels` and `ReferenceMilliHz`; the web
 editor defaults labels to degree numbers. Scala `.scl` import is a host-side
-feature: the web app parses the text, derives period/cycle metadata and any
-file-defined labels/reference pitch as support is added, and writes a cents
-table. Firmware does not need to parse Scala text, but full Scala-compatible
-playback requires broader firmware tuning-system support.
+feature. Current firmware live Apply supports only `TuningKind = 1` and
+`TuningKind = 4`; it loads cycle length, step size, key labels, and
+`ReferenceMilliHz` into runtime tuning state and resets the key to the uploaded
+tuning's C offset. The web app parses Scala text, derives period/cycle metadata
+and any file-defined labels/reference pitch as support is added, and writes a
+cents table. Firmware does not need to parse Scala text, but full
+Scala-compatible playback requires broader firmware tuning-system support.
 
 The tuning object must be complete enough for both the onboard synth and every
 MIDI output mode. For equal-step tunings, firmware can derive frequency,
@@ -758,6 +771,11 @@ steps. Display orientation is stored separately as the four-step physical
 setting from legacy portrait/landscape metadata: portrait layouts use `0`, and
 landscape layouts use `90`.
 
+Current firmware live Apply supports `LayoutKind = 1` vector layouts. Applying
+a layout replaces the runtime layout name, center button, across vector, and
+down-left vector, clears previous explicit button overrides, then rebuilds
+scale membership, MIDI pitch assignment, and LED color caches.
+
 A web bundle may contain multiple `UserLayout` objects for the same tuning. A
 generated vector layout can still be edited on-device with the compact
 generator fields. When a layout is backed by an `ExplicitButtonMap`, firmware
@@ -800,6 +818,8 @@ Recommended TLVs:
 does not expose `PatternSteps` because maintaining both pattern intervals and
 explicit included degrees is redundant. Root/key changes shift generated scale
 membership at runtime, but they must not rewrite manual button records.
+Current firmware live Apply converts `IncludedDegrees` into the runtime interval
+pattern used by `applyScale()` and forces degree `0` to remain included.
 
 ## Scale Color Map Object
 
@@ -823,6 +843,9 @@ Hue is `0..3599` tenths of a degree. Saturation and value are `0..255`.
 
 On-device editing can expose a small color chooser per scale degree or a few
 palette templates. The web app can offer batch editing and previews.
+Current firmware live Apply loads this object into a user runtime palette. While
+that palette is active, `setLEDcolorCodes()` uses it before falling back to the
+factory color modes; per-button color overrides still take precedence.
 
 ## Explicit Button Map Object
 
@@ -870,6 +893,11 @@ is the stored note position for that physical button. Transposition changes
 sounded pitch after mapping, and root/key changes affect scale highlighting,
 but neither setting should regenerate or move a manual button record. A button
 record with a color override similarly takes precedence over the bundle palette.
+Current firmware live Apply supports format `1` records on visible button
+indices `0..139`. `Note` records can override `stepsFromC`; `Unused` records
+disable the button; `Command` records restore built-in command behavior only
+when the index is one of the firmware command buttons, and otherwise act as
+non-playing buttons.
 
 ## Synth Preset Object
 
@@ -1091,13 +1119,16 @@ write the individual objects after the web app unpacks a bundle.
 4. Device stores the converted tuning object. It does not need to parse Scala
    text, but it still needs full cents-table tuning support before Scala
    imports are completely compatible with synth and MIDI output.
+5. Hosts should use `SaveToFlash` only for Scala/cents-table tunings until the
+   firmware advertises runtime cents-table support.
 
 ### Write Individual Button Edits
 
 1. Web app creates an `ExplicitButtonMap`.
 2. Web app optionally references an existing `UserTuning` and `UserLayout`.
 3. Device validates button indices, roles, and pitch ranges.
-4. Device stores the map as a named user object.
+4. Device stores the map as a named user object, and can apply it to the current
+   runtime layout when the write uses `ApplyToRuntime`.
 5. A profile or layout can reference that map.
 
 ### Write A Musical Geometry Bundle
@@ -1109,11 +1140,13 @@ write the individual objects after the web app unpacks a bundle.
    `ScaleColorMap`, all referencing the tuning object id.
 4. Web app writes any `ExplicitButtonMap` objects after their referenced layouts.
 5. Current firmware stores these records in `/layouts.dat` and can list, read,
-   overwrite, or delete them by compact preset-sync handle.
+   overwrite, delete, or apply the active EDO/equal-step tuning, active vector
+   layout, active scale, color map, and matching explicit button map by compact
+   preset-sync handle.
 6. Future firmware work still needs to refresh the menu catalog, hide
-   generated-layout controls whenever the active layout is manual, and apply the
-   selected layout/scale/color map only after active notes are clear or after an
-   explicitly documented panic cleanup.
+   generated-layout controls whenever the active layout is manual, formalize
+   profile references, and apply bundle switches only after active notes are
+   clear or after an explicitly documented panic cleanup.
 
 ### Transfer A Synth Preset
 

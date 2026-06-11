@@ -328,8 +328,11 @@ The preset-sync SysEx protocol is documented in `docs/preset-sync-sysex.md`.
 It reserves its own command family. Firmware currently implements the synth
 preset subset for named/foldered preset list/read/write/delete and live preview,
 the user wavetable write path, and raw `/layouts.dat` storage for user tuning,
-layout, scale, scale color map, and explicit button map objects. Profile
-transfer, bundle sync, and live geometry application remain draft.
+layout, scale, scale color map, and explicit button map objects. It also
+implements live Apply for the minimum generated-geometry path: EDO/equal-step
+tunings, vector layouts, included-degree scales, scale-degree color maps, and
+format-1 explicit button maps. Profile transfer, bundle sync, menu catalog
+integration, and Scala/cents-table runtime tuning remain draft.
 
 The companion web app has protocol and catalog helpers for that draft under
 `web/src/protocol/` and `web/src/catalogs/`, plus a mock MIDI transport under
@@ -358,12 +361,13 @@ imported file data rather than separate Scala editor fields. Firmware does not
 parse Scala text, and full Scala compatibility requires a tuning-system
 overhaul rather than only host-side import support. Current `/layouts.dat`
 support stores raw validated `UserTuning`, `UserLayout`, `UserScale`,
-`ScaleColorMap`, and `ExplicitButtonMap` bodies for preset-sync round-trip, but
-does not yet apply them to `current`, `h[]`, MIDI pitch assignment, LEDs,
-profiles, or menus. Future firmware work should make manual explicit button
-records keep their stored `stepsFromC` and color regardless of root/key
-or transposition changes, and generated layout menu controls should be hidden
-when a manual layout is active.
+`ScaleColorMap`, and `ExplicitButtonMap` bodies for preset-sync round-trip, and
+the Apply path loads compatible active objects into `current`, `h[]`, MIDI pitch
+assignment, and LED color caches. The live runtime state is intentionally not
+yet a persisted settings/profile selection. Future firmware work should make
+manual explicit button records keep their stored `stepsFromC` and color
+regardless of root/key or transposition changes, and generated layout menu
+controls should be hidden when a manual layout is active.
 Real-device synth preset saves and Serum/Vital or HexBoard wavetable imports wait for ACK/NACK
 responses through `WRITE_COMMIT`; library refresh requests list synth preset
 and wavetable records one at a time before reading each object body. The compact header device
@@ -443,10 +447,9 @@ Current color modes include:
 
 The web layout bundle model now treats the bundle's single custom
 scale-degree palette as the replacement path for `Tiered` on user-generated
-geometry. Firmware still renders the hard-coded `Tiered` mode from
-`palette[]`, but the `/layouts.dat` implementation should let a loaded
-`ScaleColorMap` feed `setLEDcolorCodes()` before falling back to the factory
-color modes.
+geometry. When a compatible geometry bundle is applied, firmware renders the
+loaded `ScaleColorMap` before falling back to the factory color modes, and then
+applies explicit per-button color overrides.
 
 Current animation modes include button, star, splash, orbit, octave, by-note, beams, reversed star/splash variants, MIDI-in highlighting, and none.
 
@@ -626,7 +629,13 @@ can hold `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and
 `ExplicitButtonMap` objects. Preset-sync validates the common `HBS1` object
 envelope, schema major `1`, non-empty `Name`, and 16-byte `ObjectId`, then
 stores the raw body so hosts can list, read, overwrite, and delete geometry
-objects before the firmware has live tuning/layout application.
+objects. Runtime Apply currently parses compatible geometry TLVs into RAM-only
+user tuning/layout/scale/palette/button-map state, rebuilds layout/scale/pitch
+assignment, and uses `ReferenceMilliHz` as an A4 pitch offset for synth and MIDI
+retuning. The OLED tuning/layout/scale menu callbacks clear that RAM-only
+geometry override and reset key to C before returning to factory-backed
+selections. Scala/cents-list tunings still save as raw objects but are rejected
+by runtime Apply until table-backed pitch lookup exists.
 
 Named user wavetables are stored in `/synth_wavetables.dat` with magic `SYW`,
 version `1`, CRC32, and a counted catalog capped at `64` entries. Each entry has

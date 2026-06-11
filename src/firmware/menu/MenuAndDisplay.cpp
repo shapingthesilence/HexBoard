@@ -3210,7 +3210,13 @@ void applyDeviceDisplayRotation() {
   */
 void changeLayout(GEMCallbackData callbackData) {
   byte selection = callbackData.valByte;
-  if (selection != current.layoutIndex) {
+  bool hadUserGeometryRuntime = userGeometryRuntimeActive;
+  if (hadUserGeometryRuntime) {
+    clearUserGeometryRuntimeSelection();
+    current.keyStepsFromA = current.tuning().spanCtoA();
+    settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
+  }
+  if (selection != current.layoutIndex || hadUserGeometryRuntime) {
     current.layoutIndex = selection;
     settings[static_cast<uint8_t>(SettingKey::CurrentLayout)] = selection;
     loadDeviceRotationFromCurrentLayout();
@@ -3228,7 +3234,13 @@ void changeLayout(GEMCallbackData callbackData) {
   */
 void changeScale(GEMCallbackData callbackData) {  // when you change the scale via the menu
   int selection = callbackData.valInt;
-  if (selection != current.scaleIndex) {
+  bool hadUserGeometryRuntime = userGeometryRuntimeActive;
+  if (hadUserGeometryRuntime) {
+    clearUserGeometryRuntimeSelection();
+    current.keyStepsFromA = current.tuning().spanCtoA();
+    settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
+  }
+  if (selection != current.scaleIndex || hadUserGeometryRuntime) {
     current.scaleIndex = selection;
     settings[static_cast<uint8_t>(SettingKey::CurrentScale)] = selection;
     applyScale();
@@ -3277,7 +3289,11 @@ void changeTranspose() {  // when you change the transpose via the menu
   */
 void changeTuning(GEMCallbackData callbackData) {
   byte selection = callbackData.valByte;
-  if (selection != current.tuningIndex) {
+  bool hadUserGeometryRuntime = userGeometryRuntimeActive;
+  if (hadUserGeometryRuntime) {
+    clearUserGeometryRuntimeSelection();
+  }
+  if (selection != current.tuningIndex || hadUserGeometryRuntime) {
     // 1) Update runtime state
     current.tuningIndex = selection;
     current.layoutIndex = current.layoutsBegin();         // reset layout to first in list

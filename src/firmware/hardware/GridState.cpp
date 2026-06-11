@@ -229,6 +229,23 @@ uint32_t columnMasks[COLCOUNT] = { 0 };
   */
 buttonDef h[BTN_COUNT];
 
+char userGeometryRuntimeKeyLabelStorage[MAX_SCALE_DIVISIONS][9] = {};
+bool userGeometryRuntimeActive = false;
+bool userGeometryRuntimeScaleActive = false;
+bool userGeometryRuntimePaletteActive = false;
+float userGeometryRuntimeReferenceHz = 440.0f;
+tuningDef userGeometryRuntimeTuning = { "User Tuning", 12, 100.0f, { { "0", -9 } } };
+layoutDef userGeometryRuntimeLayout = { "User Layout", false, 65, 1, -2, TUNING_12EDO };
+scaleDef userGeometryRuntimeScale = { "User Scale", TUNING_12EDO, { 0 } };
+paletteDef userGeometryRuntimePalette = {};
+bool userGeometryRuntimeButtonDisabled[LED_COUNT] = {};
+uint8_t userGeometryRuntimeButtonRole[LED_COUNT] = {};
+bool userGeometryRuntimeButtonRoleOverride[LED_COUNT] = {};
+bool userGeometryRuntimeButtonNoteOverride[LED_COUNT] = {};
+bool userGeometryRuntimeButtonColorActive[LED_COUNT] = {};
+int16_t userGeometryRuntimeButtonStepsFromC[LED_COUNT] = {};
+colorDef userGeometryRuntimeButtonColor[LED_COUNT] = {};
+
 wheelDef modWheel = { &wheelMode, &modSticky,
                       &h[assignCmd[4]].btnState, &h[assignCmd[5]].btnState, &h[assignCmd[6]].btnState,
                       0, 127, &modWheelSpeed, 0, 0, 0, 0 };

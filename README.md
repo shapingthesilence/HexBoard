@@ -151,7 +151,8 @@ The web app currently includes:
 - a browser-stored tuning/layout bundle editor with an interactive HexBoard
   preview, EDO/equal-step/Scala `.scl` tuning inputs, across/up-right vector
   layouts, four-step device orientation preview matching firmware `Device Rot`,
-  scale-degree colors, and per-button role/color overrides
+  scale-degree colors, per-button role/color overrides, and real-device
+  save/apply/verify controls for compatible geometry bundles
 - firmware-backed synth preset upload, download, list, erase, current-patch
   loading, and live preview, with controls for mono retrigger/legato,
   portamento, arpeggiator direction, and named wavetable dependencies; opened

@@ -404,19 +404,19 @@ Delegated control is only for compatible host software. It is not shown in the O
 A browser-based HexBoard Sync app is being developed in this repository. Its
 first target is preset, tuning/layout, color-map, button-map, and synth-preset
 editing over Web MIDI SysEx. Firmware currently implements synth preset sync,
-the single user-wavetable import path, and storage/list/read/write/delete for
-user geometry objects in `/layouts.dat`. Those stored tuning/layout objects do
-not yet change the live keyboard; active playing still uses the existing
-firmware tuning/layout system.
+the single user-wavetable import path, storage/list/read/write/delete for user
+geometry objects in `/layouts.dat`, and live Apply for generated EDO/equal-step
+geometry bundles. Scala/cents-table tuning objects can be saved and verified,
+but live Scala playback still needs a broader firmware tuning-system overhaul.
 
 The `Tunings & Layouts` tab is a browser-side musical geometry editor. It saves
 geometry bundles in browser storage and can import/export those bundles as JSON.
 Each bundle contains one tuning, one custom scale-degree color palette, one or
-more layouts, and one or more scales. The custom palette is the intended future
-replacement for the firmware's hard-coded `Tiered` color mode, and it uses a
-generic color-mode name rather than a separate editable palette field. The
-active layout still starts from an across/up-right vector, and the center key
-can be chosen from the visual board or typed by button index. The editor places
+more layouts, and one or more scales. The custom palette is applied to the live
+runtime when a compatible bundle is sent to HexBoard, and it uses a generic
+color-mode name rather than a separate editable palette field. The active
+layout still starts from an across/up-right vector, and the center key can be
+chosen from the visual board or typed by button index. The editor places
 bundle tools in a compact left sidebar with `Tuning`, `Layouts`, and `Scales`
 subtabs, and keeps the larger HexBoard preview plus selected-key inspector on
 the right, with the selected-key inspector below the board. The encoded-object
@@ -450,7 +450,14 @@ Scales are edited as included scale degrees only. The included-degrees field can
 hold incomplete text while typing; if it still contains invalid text when focus
 leaves the field, the editor marks it red and reports the validation error.
 Button roles can be marked as note, command, or unused in the exported web
-model, but firmware does not apply user layout bundles yet.
+model. Applying a compatible bundle sends the active tuning, active layout,
+active scale, scale-degree color map, and active layout's explicit button map to
+the live runtime, then saves those objects to HexBoard storage. Command-role
+overrides restore built-in command behavior only on the existing command button
+positions; other command-role overrides behave as non-playing buttons.
+Changing tuning, layout, or scale from the OLED menu clears the web-applied
+runtime geometry, resets key to `C` for the current firmware tuning, and returns
+those controls to the normal firmware lists.
 
 The synth preset editor includes preset name/folder selection, a wavetable
 folder/name selector, Drive and AHDSR sliders, FX envelope AHDSR controls, mono

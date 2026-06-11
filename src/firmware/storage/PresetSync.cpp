@@ -47,6 +47,32 @@ constexpr uint8_t PRESET_SYNC_TLV_SYNTH_WAVETABLE_FOLDER_PATH = 0x27;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_FRAME_COUNT = 0x30;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_SAMPLE_COUNT = 0x31;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_SAMPLES = 0x32;
+constexpr uint8_t PRESET_SYNC_TLV_TUNING_KIND = 0x20;
+constexpr uint8_t PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS = 0x21;
+constexpr uint8_t PRESET_SYNC_TLV_TUNING_PERIOD_MILLI_CENTS = 0x22;
+constexpr uint8_t PRESET_SYNC_TLV_TUNING_STEP_MILLI_CENTS = 0x23;
+constexpr uint8_t PRESET_SYNC_TLV_TUNING_REFERENCE_MIDI_NOTE = 0x24;
+constexpr uint8_t PRESET_SYNC_TLV_TUNING_REFERENCE_MILLI_HZ = 0x25;
+constexpr uint8_t PRESET_SYNC_TLV_TUNING_KEY_LABELS = 0x28;
+constexpr uint8_t PRESET_SYNC_TLV_LAYOUT_KIND = 0x20;
+constexpr uint8_t PRESET_SYNC_TLV_LAYOUT_CENTER_BUTTON = 0x22;
+constexpr uint8_t PRESET_SYNC_TLV_LAYOUT_ACROSS_STEPS = 0x23;
+constexpr uint8_t PRESET_SYNC_TLV_LAYOUT_DOWN_LEFT_STEPS = 0x24;
+constexpr uint8_t PRESET_SYNC_TLV_LAYOUT_PORTRAIT = 0x25;
+constexpr uint8_t PRESET_SYNC_TLV_SCALE_COLOR_CYCLE_LENGTH = 0x21;
+constexpr uint8_t PRESET_SYNC_TLV_SCALE_COLOR_DEGREE_COLORS = 0x23;
+constexpr uint8_t PRESET_SYNC_TLV_USER_SCALE_CYCLE_LENGTH = 0x21;
+constexpr uint8_t PRESET_SYNC_TLV_USER_SCALE_INCLUDED_DEGREES = 0x24;
+constexpr uint8_t PRESET_SYNC_TLV_BUTTON_MAP_RECORD_FORMAT = 0x22;
+constexpr uint8_t PRESET_SYNC_TLV_BUTTON_MAP_RECORDS = 0x23;
+
+constexpr uint8_t PRESET_SYNC_USER_TUNING_KIND_EDO = 1;
+constexpr uint8_t PRESET_SYNC_USER_TUNING_KIND_EQUAL_STEP = 4;
+constexpr uint8_t PRESET_SYNC_BUTTON_MAP_ROLE_UNUSED = 0;
+constexpr uint8_t PRESET_SYNC_BUTTON_MAP_ROLE_NOTE = 1;
+constexpr uint8_t PRESET_SYNC_BUTTON_MAP_ROLE_COMMAND = 2;
+constexpr uint8_t PRESET_SYNC_BUTTON_MAP_COLOR_NONE = 0;
+constexpr uint8_t PRESET_SYNC_BUTTON_MAP_RECORD_SIZE = 13;
 
 constexpr uint8_t PRESET_SYNC_WRITE_APPLY_TO_RUNTIME = 0x01;
 constexpr uint8_t PRESET_SYNC_WRITE_SAVE_TO_FLASH = 0x02;
@@ -142,6 +168,26 @@ uint32_t presetSyncDecodeU35ToU32(const uint8_t* bytes) {
           | (static_cast<uint32_t>(bytes[2] & 0x7F) << 14)
           | (static_cast<uint32_t>(bytes[3] & 0x7F) << 7)
           | (bytes[4] & 0x7F));
+}
+
+uint16_t presetSyncReadU16LE(const uint8_t* bytes) {
+  return static_cast<uint16_t>(bytes[0])
+         | (static_cast<uint16_t>(bytes[1]) << 8);
+}
+
+int16_t presetSyncReadI16LE(const uint8_t* bytes) {
+  return static_cast<int16_t>(presetSyncReadU16LE(bytes));
+}
+
+uint32_t presetSyncReadU32LE(const uint8_t* bytes) {
+  return static_cast<uint32_t>(bytes[0])
+         | (static_cast<uint32_t>(bytes[1]) << 8)
+         | (static_cast<uint32_t>(bytes[2]) << 16)
+         | (static_cast<uint32_t>(bytes[3]) << 24);
+}
+
+int32_t presetSyncReadI32LE(const uint8_t* bytes) {
+  return static_cast<int32_t>(presetSyncReadU32LE(bytes));
 }
 
 void presetSyncAppendU14(std::vector<uint8_t>& output, uint16_t value) {
@@ -621,6 +667,366 @@ int chooseGeometryObjectWriteSlot(uint16_t handle, const GeometryObjectSlot& obj
     return static_cast<int>(geometryObjects.size());
   }
   return -1;
+}
+
+int userGeometryDefaultSpanCtoA(uint16_t cycleLength) {
+  return -static_cast<int>((static_cast<uint32_t>(cycleLength) * 9u + 6u) / 12u);
+}
+
+bool presetSyncFindTlv(const std::vector<uint8_t>& body,
+                       uint8_t wantedTag,
+                       const uint8_t*& value,
+                       uint16_t& length) {
+  if (body.size() < 8) {
+    return false;
+  }
+  size_t cursor = 8;
+  while (cursor < body.size()) {
+    if (cursor + 3 > body.size()) {
+      return false;
+    }
+    uint8_t tag = body[cursor++];
+    uint16_t tlvLength = presetSyncReadU16LE(body.data() + cursor);
+    cursor += 2;
+    if (cursor + tlvLength > body.size()) {
+      return false;
+    }
+    if (tag == wantedTag) {
+      value = body.data() + cursor;
+      length = tlvLength;
+      return true;
+    }
+    cursor += tlvLength;
+  }
+  return false;
+}
+
+bool presetSyncFindTlvU8(const std::vector<uint8_t>& body, uint8_t tag, uint8_t& result) {
+  const uint8_t* value = nullptr;
+  uint16_t length = 0;
+  if (!presetSyncFindTlv(body, tag, value, length) || length != 1) {
+    return false;
+  }
+  result = value[0];
+  return true;
+}
+
+bool presetSyncFindTlvU16LE(const std::vector<uint8_t>& body, uint8_t tag, uint16_t& result) {
+  const uint8_t* value = nullptr;
+  uint16_t length = 0;
+  if (!presetSyncFindTlv(body, tag, value, length) || length != 2) {
+    return false;
+  }
+  result = presetSyncReadU16LE(value);
+  return true;
+}
+
+bool presetSyncFindTlvI16LE(const std::vector<uint8_t>& body, uint8_t tag, int16_t& result) {
+  const uint8_t* value = nullptr;
+  uint16_t length = 0;
+  if (!presetSyncFindTlv(body, tag, value, length) || length != 2) {
+    return false;
+  }
+  result = presetSyncReadI16LE(value);
+  return true;
+}
+
+bool presetSyncFindTlvU32LE(const std::vector<uint8_t>& body, uint8_t tag, uint32_t& result) {
+  const uint8_t* value = nullptr;
+  uint16_t length = 0;
+  if (!presetSyncFindTlv(body, tag, value, length) || length != 4) {
+    return false;
+  }
+  result = presetSyncReadU32LE(value);
+  return true;
+}
+
+void clearUserGeometryButtonRuntimeOverrides() {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    userGeometryRuntimeButtonDisabled[i] = false;
+    userGeometryRuntimeButtonRole[i] = PRESET_SYNC_BUTTON_MAP_ROLE_NOTE;
+    userGeometryRuntimeButtonRoleOverride[i] = false;
+    userGeometryRuntimeButtonNoteOverride[i] = false;
+    userGeometryRuntimeButtonColorActive[i] = false;
+    userGeometryRuntimeButtonStepsFromC[i] = 0;
+    userGeometryRuntimeButtonColor[i] = { HUE_NONE, SAT_BW, VALUE_BLACK };
+  }
+}
+
+void clearUserGeometryRuntimeSelection() {
+  userGeometryRuntimeActive = false;
+  userGeometryRuntimeScaleActive = false;
+  userGeometryRuntimePaletteActive = false;
+  userGeometryRuntimeReferenceHz = 440.0f;
+  clearUserGeometryButtonRuntimeOverrides();
+}
+
+void setDefaultRuntimeKeyLabels(uint16_t cycleLength) {
+  int spanCtoA = userGeometryDefaultSpanCtoA(cycleLength);
+  for (uint16_t i = 0; i < MAX_SCALE_DIVISIONS; ++i) {
+    snprintf(userGeometryRuntimeKeyLabelStorage[i], sizeof(userGeometryRuntimeKeyLabelStorage[i]), "%u", i);
+    userGeometryRuntimeTuning.keyChoices[i].name = userGeometryRuntimeKeyLabelStorage[i];
+    userGeometryRuntimeTuning.keyChoices[i].val_int = spanCtoA + static_cast<int>(i);
+  }
+}
+
+bool applyRuntimeKeyLabels(const uint8_t* value, uint16_t length, uint16_t cycleLength) {
+  size_t cursor = 0;
+  uint16_t degree = 0;
+  while (cursor < length && degree < cycleLength) {
+    uint8_t labelLength = value[cursor++];
+    if (cursor + labelLength > length) {
+      return false;
+    }
+    copyPresetSyncText(userGeometryRuntimeKeyLabelStorage[degree],
+                       sizeof(userGeometryRuntimeKeyLabelStorage[degree]),
+                       value + cursor,
+                       labelLength);
+    cursor += labelLength;
+    ++degree;
+  }
+  return cursor == length;
+}
+
+bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
+  uint8_t tuningKind = 0;
+  uint16_t cycleLength = 0;
+  uint32_t periodMilliCents = 1200000;
+  uint32_t stepMilliCents = 0;
+  uint32_t referenceMilliHz = 440000;
+  if (!presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_TUNING_KIND, tuningKind)
+      || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS, cycleLength)) {
+    sendToLog("Geometry runtime tuning apply rejected: missing tuning kind or cycle length.");
+    return false;
+  }
+  if (tuningKind != PRESET_SYNC_USER_TUNING_KIND_EDO
+      && tuningKind != PRESET_SYNC_USER_TUNING_KIND_EQUAL_STEP) {
+    sendToLog("Geometry runtime tuning apply rejected: tuning kind needs full firmware tuning support.");
+    return false;
+  }
+  if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
+    sendToLog("Geometry runtime tuning apply rejected: cycle length is out of range.");
+    return false;
+  }
+  presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_PERIOD_MILLI_CENTS, periodMilliCents);
+  presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_STEP_MILLI_CENTS, stepMilliCents);
+  presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_MILLI_HZ, referenceMilliHz);
+  if (stepMilliCents == 0) {
+    stepMilliCents = periodMilliCents / cycleLength;
+  }
+  if (stepMilliCents == 0 || referenceMilliHz == 0) {
+    sendToLog("Geometry runtime tuning apply rejected: step size or reference Hz is invalid.");
+    return false;
+  }
+
+  userGeometryRuntimeTuning.name = object.name;
+  userGeometryRuntimeTuning.cycleLength = static_cast<byte>(cycleLength);
+  userGeometryRuntimeTuning.stepSize = static_cast<float>(stepMilliCents) / 1000.0f;
+  userGeometryRuntimeReferenceHz = static_cast<float>(referenceMilliHz) / 1000.0f;
+  setDefaultRuntimeKeyLabels(cycleLength);
+
+  const uint8_t* keyLabels = nullptr;
+  uint16_t keyLabelsLength = 0;
+  if (presetSyncFindTlv(object.body, PRESET_SYNC_TLV_TUNING_KEY_LABELS, keyLabels, keyLabelsLength)
+      && !applyRuntimeKeyLabels(keyLabels, keyLabelsLength, cycleLength)) {
+    sendToLog("Geometry runtime tuning apply rejected: key labels are truncated.");
+    return false;
+  }
+
+  userGeometryRuntimeActive = true;
+  userGeometryRuntimeScaleActive = false;
+  userGeometryRuntimePaletteActive = false;
+  clearUserGeometryButtonRuntimeOverrides();
+  current.keyStepsFromA = userGeometryRuntimeTuning.spanCtoA();
+  applyLayout();
+  return true;
+}
+
+bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
+  uint8_t layoutKind = 0;
+  uint16_t centerButton = 0;
+  int16_t acrossSteps = 0;
+  int16_t downLeftSteps = 0;
+  uint8_t portrait = 0;
+  if (!presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_KIND, layoutKind)
+      || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_LAYOUT_CENTER_BUTTON, centerButton)
+      || !presetSyncFindTlvI16LE(object.body, PRESET_SYNC_TLV_LAYOUT_ACROSS_STEPS, acrossSteps)
+      || !presetSyncFindTlvI16LE(object.body, PRESET_SYNC_TLV_LAYOUT_DOWN_LEFT_STEPS, downLeftSteps)
+      || !presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_PORTRAIT, portrait)) {
+    sendToLog("Geometry runtime layout apply rejected: missing vector layout fields.");
+    return false;
+  }
+  if (layoutKind != 1 || centerButton >= LED_COUNT
+      || acrossSteps < -128 || acrossSteps > 127
+      || downLeftSteps < -128 || downLeftSteps > 127) {
+    sendToLog("Geometry runtime layout apply rejected: vector layout field is out of range.");
+    return false;
+  }
+
+  userGeometryRuntimeLayout.name = object.name;
+  userGeometryRuntimeLayout.isPortrait = portrait != 0;
+  userGeometryRuntimeLayout.hexMiddleC = static_cast<byte>(centerButton);
+  userGeometryRuntimeLayout.acrossSteps = static_cast<int8_t>(acrossSteps);
+  userGeometryRuntimeLayout.dnLeftSteps = static_cast<int8_t>(downLeftSteps);
+  userGeometryRuntimeLayout.tuning = current.tuningIndex;
+  userGeometryRuntimeActive = true;
+  clearUserGeometryButtonRuntimeOverrides();
+  applyLayout();
+  return true;
+}
+
+bool applyUserGeometryRuntimeScale(const GeometryObjectSlot& object) {
+  uint16_t cycleLength = 0;
+  const uint8_t* includedDegrees = nullptr;
+  uint16_t includedLength = 0;
+  if (!presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_USER_SCALE_CYCLE_LENGTH, cycleLength)
+      || !presetSyncFindTlv(object.body, PRESET_SYNC_TLV_USER_SCALE_INCLUDED_DEGREES, includedDegrees, includedLength)
+      || (includedLength % 2) != 0) {
+    sendToLog("Geometry runtime scale apply rejected: included degrees are invalid.");
+    return false;
+  }
+  if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
+    sendToLog("Geometry runtime scale apply rejected: cycle length is out of range.");
+    return false;
+  }
+
+  bool included[MAX_SCALE_DIVISIONS] = {};
+  included[0] = true;
+  for (uint16_t offset = 0; offset < includedLength; offset += 2) {
+    uint16_t degree = presetSyncReadU16LE(includedDegrees + offset);
+    included[degree % cycleLength] = true;
+  }
+
+  uint8_t degrees[MAX_SCALE_DIVISIONS] = {};
+  uint8_t degreeCount = 0;
+  for (uint16_t degree = 0; degree < cycleLength; ++degree) {
+    if (included[degree]) {
+      degrees[degreeCount++] = static_cast<uint8_t>(degree);
+    }
+  }
+  if (degreeCount == 0) {
+    sendToLog("Geometry runtime scale apply rejected: no degrees were included.");
+    return false;
+  }
+
+  userGeometryRuntimeScale.name = object.name;
+  userGeometryRuntimeScale.tuning = current.tuningIndex;
+  memset(userGeometryRuntimeScale.pattern, 0, sizeof(userGeometryRuntimeScale.pattern));
+  for (uint8_t i = 0; i < degreeCount; ++i) {
+    uint8_t currentDegree = degrees[i];
+    uint8_t nextDegree = (i + 1 < degreeCount) ? degrees[i + 1] : static_cast<uint8_t>(degrees[0] + cycleLength);
+    userGeometryRuntimeScale.pattern[i] = nextDegree - currentDegree;
+  }
+  userGeometryRuntimeScaleActive = true;
+  userGeometryRuntimeActive = true;
+  applyScale();
+  return true;
+}
+
+bool applyUserGeometryRuntimeColorMap(const GeometryObjectSlot& object) {
+  uint16_t cycleLength = 0;
+  const uint8_t* degreeColors = nullptr;
+  uint16_t degreeColorLength = 0;
+  if (!presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_SCALE_COLOR_CYCLE_LENGTH, cycleLength)
+      || !presetSyncFindTlv(object.body, PRESET_SYNC_TLV_SCALE_COLOR_DEGREE_COLORS, degreeColors, degreeColorLength)
+      || (degreeColorLength % 6) != 0) {
+    sendToLog("Geometry runtime color map apply rejected: degree colors are invalid.");
+    return false;
+  }
+  if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
+    sendToLog("Geometry runtime color map apply rejected: cycle length is out of range.");
+    return false;
+  }
+
+  for (uint16_t degree = 0; degree < MAX_SCALE_DIVISIONS; ++degree) {
+    userGeometryRuntimePalette.swatch[degree] = {
+      360.0f * (static_cast<float>(degree % cycleLength) / static_cast<float>(cycleLength)),
+      static_cast<byte>(degree == 0 ? SAT_BW : SAT_VIVID),
+      static_cast<byte>(degree == 0 ? VALUE_NORMAL : VALUE_SHADE)
+    };
+    userGeometryRuntimePalette.colorNum[degree] = degree < cycleLength ? static_cast<byte>(degree + 1) : 1;
+  }
+  for (uint16_t offset = 0; offset < degreeColorLength; offset += 6) {
+    uint16_t degree = presetSyncReadU16LE(degreeColors + offset);
+    if (degree >= cycleLength) {
+      continue;
+    }
+    uint16_t hueTenthDegrees = presetSyncReadU16LE(degreeColors + offset + 2);
+    userGeometryRuntimePalette.swatch[degree] = {
+      static_cast<float>(hueTenthDegrees) / 10.0f,
+      degreeColors[offset + 4],
+      degreeColors[offset + 5]
+    };
+    userGeometryRuntimePalette.colorNum[degree] = static_cast<byte>(degree + 1);
+  }
+
+  userGeometryRuntimePaletteActive = true;
+  userGeometryRuntimeActive = true;
+  setLEDcolorCodes();
+  return true;
+}
+
+bool applyUserGeometryRuntimeExplicitButtonMap(const GeometryObjectSlot& object) {
+  uint8_t recordFormat = 0;
+  const uint8_t* records = nullptr;
+  uint16_t recordsLength = 0;
+  if (!presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_BUTTON_MAP_RECORD_FORMAT, recordFormat)
+      || !presetSyncFindTlv(object.body, PRESET_SYNC_TLV_BUTTON_MAP_RECORDS, records, recordsLength)
+      || recordFormat != 1
+      || (recordsLength % PRESET_SYNC_BUTTON_MAP_RECORD_SIZE) != 0) {
+    sendToLog("Geometry runtime button map apply rejected: button records are invalid.");
+    return false;
+  }
+
+  clearUserGeometryButtonRuntimeOverrides();
+  for (uint16_t offset = 0; offset < recordsLength; offset += PRESET_SYNC_BUTTON_MAP_RECORD_SIZE) {
+    uint16_t buttonIndex = presetSyncReadU16LE(records + offset);
+    if (buttonIndex >= LED_COUNT) {
+      continue;
+    }
+    uint8_t role = records[offset + 2];
+    if (role > PRESET_SYNC_BUTTON_MAP_ROLE_COMMAND) {
+      role = PRESET_SYNC_BUTTON_MAP_ROLE_UNUSED;
+    }
+    userGeometryRuntimeButtonRoleOverride[buttonIndex] = true;
+    userGeometryRuntimeButtonRole[buttonIndex] = role;
+    userGeometryRuntimeButtonDisabled[buttonIndex] = role != PRESET_SYNC_BUTTON_MAP_ROLE_NOTE;
+    if (role == PRESET_SYNC_BUTTON_MAP_ROLE_NOTE) {
+      userGeometryRuntimeButtonNoteOverride[buttonIndex] = true;
+      userGeometryRuntimeButtonStepsFromC[buttonIndex] = static_cast<int16_t>(presetSyncReadI32LE(records + offset + 3));
+    }
+    uint8_t colorMode = records[offset + 8];
+    if (colorMode != PRESET_SYNC_BUTTON_MAP_COLOR_NONE) {
+      uint16_t hueTenthDegrees = presetSyncReadU16LE(records + offset + 9);
+      userGeometryRuntimeButtonColorActive[buttonIndex] = true;
+      userGeometryRuntimeButtonColor[buttonIndex] = {
+        static_cast<float>(hueTenthDegrees) / 10.0f,
+        records[offset + 11],
+        records[offset + 12]
+      };
+    }
+  }
+
+  userGeometryRuntimeActive = true;
+  applyLayout();
+  return true;
+}
+
+bool applyGeometryObjectToRuntime(const GeometryObjectSlot& object) {
+  switch (object.objectType) {
+    case PRESET_SYNC_OBJECT_TYPE_USER_TUNING:
+      return applyUserGeometryRuntimeTuning(object);
+    case PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT:
+      return applyUserGeometryRuntimeLayout(object);
+    case PRESET_SYNC_OBJECT_TYPE_USER_SCALE:
+      return applyUserGeometryRuntimeScale(object);
+    case PRESET_SYNC_OBJECT_TYPE_SCALE_COLOR_MAP:
+      return applyUserGeometryRuntimeColorMap(object);
+    case PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP:
+      return applyUserGeometryRuntimeExplicitButtonMap(object);
+    default:
+      return false;
+  }
 }
 
 bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlot& preset, std::string& error) {
@@ -1630,9 +2036,9 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
       return;
     }
 
-    if ((commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME)
-        && !(commitFlags & PRESET_SYNC_WRITE_DRY_RUN)) {
-      sendToLog("Preset sync geometry runtime apply is not implemented yet.");
+    if (!(commitFlags & PRESET_SYNC_WRITE_DRY_RUN)
+        && (commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME)
+        && !applyGeometryObjectToRuntime(parsedObject)) {
       presetSyncWriteTransfer = PresetSyncWriteTransfer{};
       presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
       return;

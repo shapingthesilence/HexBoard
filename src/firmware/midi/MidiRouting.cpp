@@ -47,7 +47,11 @@ float MIDItoFreq(float midi) {  // formula to convert from MIDI note to Hz
   return CONCERT_A_HZ * exp2((midi - CONCERT_A_MIDI_NOTE) / 12.0f);
 }
 float stepsToMIDI(int16_t stepsFromA) {  // return the MIDI pitch associated
-  return CONCERT_A_MIDI_NOTE + (static_cast<float>(stepsFromA) * static_cast<float>(current.tuning().stepSize) / 100.0f);
+  float referenceOffset = 0.0f;
+  if (userGeometryRuntimeActive && userGeometryRuntimeReferenceHz > 0.0f) {
+    referenceOffset = 12.0f * log2f(userGeometryRuntimeReferenceHz / CONCERT_A_HZ);
+  }
+  return CONCERT_A_MIDI_NOTE + referenceOffset + (static_cast<float>(stepsFromA) * static_cast<float>(current.tuning().stepSize) / 100.0f);
 }
 
 // Do the same thing on each defined MIDI interface. This reduces code

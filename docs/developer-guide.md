@@ -16,7 +16,7 @@ For a longer historical deep dive, see `docs/code-analysis.md`, but treat this g
 - `Makefile`: local build shortcut that compiles the root sketch and firmware modules
 - `docs/code-analysis.md`: older, broader analysis document
 - `docs/delegated-control.md`: external delegated-control protocol and implementation notes
-- `docs/preset-sync-sysex.md`: protocol design for implemented synth-preset sync, wavetable import, raw user geometry catalog storage, and future profile/live-geometry sync
+- `docs/preset-sync-sysex.md`: protocol design for implemented synth-preset sync, wavetable import, raw user geometry catalog storage, EDO/equal-step live geometry Apply, and future profile/Scala sync
 
 Keep the root `HexBoard.ino` thin. Do not edit generated files under `build/` as a source of truth.
 
@@ -127,7 +127,11 @@ Current web source layout:
   cents plus cycle length in the editor model; protocol `PeriodMilliCents` is
   derived during encoding. Scala layout-bundle tunings derive period, cycle
   length, labels, and reference pitch from imported file data instead of
-  exposing those as separate editor fields.
+  exposing those as separate editor fields. The tuning/layout editor uses
+  real-device `Save`, `Apply`, and `Verify` controls: `Save` writes all bundle
+  objects with `SaveToFlash`, `Apply` writes the active EDO/equal-step runtime
+  objects with `ApplyToRuntime | SaveToFlash`, and `Verify` reads saved objects
+  back by object id and byte-compares them.
 - `web/src/catalogs/hexBoardGeometry.ts`: browser-side model of the current
   140-key surface, including `133` main note keys and command indices
   `0,20,40,60,80,100,120`; layout previews and tests should use this helper
@@ -403,7 +407,7 @@ Important implementation details:
 - Core 0 retries synth release commands until the audio renderer consumes one; the renderer clears the retry state when it accepts `StartRelease` so long releases do not repeatedly restart
 - synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `9`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters plus a wavetable folder/name dependency, but do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving the new wavetable dependency from the legacy `Waveform` byte
 - user synth wavetables are stored as a named catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `64` entries, and per-table sample files named from each `16`-byte wavetable object id; each table sample file contains `32 * 512` unsigned waveform bytes. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
-- user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `1`, up to `127` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. These objects are not yet applied to the live pitch, LED, profile, or menu systems.
+- user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `1`, up to `127` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. Runtime Apply currently supports generated EDO/equal-step user tunings, vector layouts, included-degree scales, scale color maps, and format-1 explicit button maps. It does not yet support Scala/cents-table pitch lookup, profile references, menu catalog integration, or settings persistence for the selected geometry bundle.
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
@@ -430,19 +434,21 @@ The MIDI subsystem supports three broad modes:
 For the external-only raw button/LED surface mode, see `docs/delegated-control.md`.
 For the host sync protocol covering profiles, user tunings/layouts, mapping
 objects, and named synth presets, see `docs/preset-sync-sysex.md`. Current
-firmware can persist and round-trip raw `/layouts.dat` geometry objects through
-preset-sync, but it deliberately rejects geometry `ApplyToRuntime` commits
-until runtime application exists. The next firmware step is to parse user tuning
-objects into the same runtime data needed by `assignPitches()` and
-`resetTuningMIDI()`:
-equal-step tunings need step size, cycle length, derived period, and reference
-pitch; imported Scala/cents tunings need a cents or ratio table that can resolve
-every `stepsFromC` value for synth frequency, standard MIDI note mapping, and
-MPE bend calculation. Full Scala compatibility needs a firmware tuning-system
-overhaul, not just `.scl` parsing in the host app. Manual `ExplicitButtonMap`
-note positions are absolute `stepsFromC` values. Root/key and transposition settings should affect scale
-highlighting and final sounded pitch, but should not regenerate those manual
-button records.
+firmware can persist, round-trip, and live-apply the minimum geometry path:
+generated EDO/equal-step `UserTuning` objects feed `current.tuning()` and the
+MIDI pitch offset from `ReferenceMilliHz`; vector `UserLayout` objects feed
+`applyLayout()`; `UserScale` included degrees feed `applyScale()`;
+`ScaleColorMap` feeds `setLEDcolorCodes()`; and format-1 `ExplicitButtonMap`
+objects override per-button role, pitch, and color before pitch assignment is
+rebuilt. The normal OLED tuning/layout/scale callbacks clear the RAM-only
+geometry override and reset key to C before applying factory menu selections.
+Imported Scala/cents tunings still need a cents or ratio table that can
+resolve every `stepsFromC` value for synth frequency, standard MIDI note
+mapping, and MPE bend calculation. Full Scala compatibility needs a firmware
+tuning-system overhaul, not just `.scl` parsing in the host app. Manual
+`ExplicitButtonMap` note positions are absolute `stepsFromC` values. Root/key
+and transposition settings should affect scale highlighting and final sounded
+pitch, but should not regenerate those manual button records.
 
 Core functions:
 
@@ -611,12 +617,10 @@ LEDs with green accented beats and red non-accented beats.
 
 The Advanced-menu `LED Test` item is intentionally transient. `ledTestMode` is a RAM-only selector state, not a `SettingKey`; `previewLedTest()` updates it while the select is edited, `lightUpLEDs()` renders a solid all-LED test frame while it is nonzero, and both the save callback and preview-reset path restore it to `Off`. The test colors use direct raw RGB channel values through `strip.Color()` instead of `getLEDcode()`, so they bypass perceptual hue mapping while still passing through the final current limiter. Do not add it to `factoryDefaults` or bump `CURRENT_SETTINGS_VERSION`.
 
-Future `/layouts.dat` work should route user-generated colors through a
-`ScaleColorMap` loaded with the active geometry bundle. That palette is meant
-to replace the hard-coded `Tiered` color path for user bundles while leaving
-factory color modes available as fallbacks. Manual per-button colors from an
-`ExplicitButtonMap` must override the palette and should not be recalculated
-when root/key or transposition changes.
+Runtime geometry Apply routes user-generated colors through the active
+`ScaleColorMap` before falling back to factory color modes. Manual per-button
+colors from an `ExplicitButtonMap` override the palette and should not be
+recalculated when root/key or transposition changes.
 
 Startup has a separate bounded LED self-check in `runBootLedSelfCheck()`. Normal boots skip RGB color-channel flashes and run only the smoother rainbow splash, followed by `fadeToNormalLedFrame()` so the resting frame fades in. The persisted `BootAnimationEnabled` setting gates this whole path. The splash center is `bootLedSplashCenterIndex()`, one physical hex to the right of the active layout center; on the default `12 EDO` Wicki-Hayden layout this is `D4` rather than `C4`. The seven command LEDs are overwritten each splash frame by `setBootCommandButtonFade()` so they fade separately instead of joining the splash.
 
