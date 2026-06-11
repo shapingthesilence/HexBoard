@@ -546,7 +546,7 @@ GEMItem menuGotoColors("Color Options", menuPageColors);
 GEMPage menuPageSynth("Synth Options", menuPageMain);
 GEMItem menuGotoSynth("Synth Options", menuPageSynth);
 GEMPage menuPageSynthWavetableLoad("Wavetables", menuPageSynth);
-char currentSynthWavetableMenuLabel[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = "WT: Basic";
+char currentSynthWavetableMenuLabel[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = "WT:Basic";
 GEMItem menuGotoSynthWavetableLoad(currentSynthWavetableMenuLabel, menuPageSynthWavetableLoad);
 GEMPage menuPageSynthLfo("LFO", menuPageSynth);
 GEMItem menuGotoSynthLfo("LFO", menuPageSynthLfo);
@@ -1034,11 +1034,11 @@ void updateCurrentSynthWavetableMenuLabel() {
   if (!folder || !folder[0]
       || strcmp(folder, SYNTH_WAVETABLE_BUILTIN_FOLDER) == 0
       || strcmp(folder, SYNTH_WAVETABLE_ROOT_FOLDER) == 0) {
-    snprintf(currentSynthWavetableMenuLabel, sizeof(currentSynthWavetableMenuLabel), "WT: %s", name);
+    snprintf(currentSynthWavetableMenuLabel, sizeof(currentSynthWavetableMenuLabel), "WT:%s", name);
   } else {
     snprintf(currentSynthWavetableMenuLabel,
              sizeof(currentSynthWavetableMenuLabel),
-             "WT: %s/%s",
+             "WT:%s/%s",
              folder,
              name);
   }

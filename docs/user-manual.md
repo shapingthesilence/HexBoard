@@ -179,7 +179,7 @@ Options include:
 - `Arp Speed` when `Arp'gio` is selected
 - `Arp Dir` when `Arp'gio` is selected
 - `Porta` when a mono mode is selected
-- `WT: ...` current-wavetable load menu
+- `WT:...` current-wavetable load menu
 - `WT Pos`
 - `Drive`
 - `Out Smooth`
@@ -236,7 +236,7 @@ actual assigned note/frequency for `Up`, `Down`, `UpDown`, and `DownUp`; it can
 also follow `Played`, `RevPlay`, or `Random` order. `Played` means the order in
 which held notes were pressed, not the physical button numbers.
 
-`WT: ...` shows the currently loaded wavetable and opens a foldered load menu.
+`WT:...` shows the currently loaded wavetable and opens a foldered load menu.
 Built-in compatibility tables include:
 
 - `Basic`: sine, triangle, saw, and square anchors
@@ -250,7 +250,7 @@ Old presets that used the previous `Waveform` selector are migrated by choosing
 one of these tables and setting `WT Pos` to the matching anchor. The old
 `Hybrid` waveform now maps to `Basic` at `0%`.
 
-User-imported wavetables appear in the same foldered `WT: ...` menu after
+User-imported wavetables appear in the same foldered `WT:...` menu after
 they are saved through the web app. If a preset references a wavetable that is
 not installed on the HexBoard, the synth loads `Basic` instead until a matching
 folder/name wavetable is added.
