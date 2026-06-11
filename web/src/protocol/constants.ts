@@ -20,7 +20,8 @@ export const MessageType = {
   TransferEnd: 0x26,
   WriteCommit: 0x27,
   TransferAbort: 0x28,
-  DeleteRequest: 0x29
+  DeleteRequest: 0x29,
+  SynthParamSet: 0x2a
 } as const;
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];

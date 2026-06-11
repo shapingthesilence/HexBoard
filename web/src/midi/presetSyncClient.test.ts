@@ -53,6 +53,18 @@ describe("PresetSyncClient", () => {
     expect(transport.sentMessages).toHaveLength(frames.length);
   });
 
+  it("sends a compact live synth parameter frame", async () => {
+    const transport = new MockMidiTransport();
+    const client = new PresetSyncClient(transport);
+
+    const frame = await client.sendSynthParameterPreview(59, 191);
+    const decoded = decodePresetSyncFrame(frame);
+
+    expect(decoded.message).toBe(MessageType.SynthParamSet);
+    expect(decoded.payload).toEqual([1, 59, 63, 1]);
+    expect(Array.from(transport.sentMessages[0])).toEqual(frame);
+  });
+
   it("sends a save synth preset transfer with apply and flash flags", async () => {
     const transport = new MockMidiTransport();
     const client = new PresetSyncClient(transport);

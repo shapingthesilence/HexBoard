@@ -26,6 +26,7 @@ constexpr uint8_t PRESET_SYNC_MSG_TRANSFER_END = 0x26;
 constexpr uint8_t PRESET_SYNC_MSG_WRITE_COMMIT = 0x27;
 constexpr uint8_t PRESET_SYNC_MSG_TRANSFER_ABORT = 0x28;
 constexpr uint8_t PRESET_SYNC_MSG_DELETE_REQ = 0x29;
+constexpr uint8_t PRESET_SYNC_MSG_SYNTH_PARAM_SET = 0x2A;
 
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_ALL = 0x00;
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_USER_TUNING = 0x03;
@@ -87,6 +88,7 @@ constexpr uint32_t PRESET_SYNC_CAP_EXPLICIT_BUTTON_MAP = 1u << 6;
 constexpr uint32_t PRESET_SYNC_CAP_DRY_RUN = 1u << 8;
 constexpr uint32_t PRESET_SYNC_CAP_DELETE_USER_OBJECT = 1u << 9;
 constexpr uint32_t PRESET_SYNC_CAP_SYNTH_WAVETABLE = 1u << 11;
+constexpr uint32_t PRESET_SYNC_CAP_LIVE_SYNTH_PARAM = 1u << 12;
 
 constexpr uint8_t PRESET_SYNC_ERROR_UNSUPPORTED_PROTOCOL = 0x01;
 constexpr uint8_t PRESET_SYNC_ERROR_UNKNOWN_MESSAGE = 0x02;
@@ -1432,6 +1434,193 @@ int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset) {
 void applySynthPresetRuntimeOnly(const SynthPresetSlot& preset) {
   applySynthPresetToSettings(preset);
   syncSettingsToRuntime();
+  markSettingsDirty();
+}
+
+bool isPresetSyncSynthSettingKey(SettingKey key) {
+  for (SettingKey synthKey : synthPresetKeys) {
+    if (synthKey == key) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void applySynthSettingRuntimeOnly(SettingKey key, uint8_t value) {
+  settings[static_cast<uint8_t>(key)] = value;
+  switch (key) {
+    case SettingKey::PlaybackMode:
+      playbackMode = normalizeSynthPlaybackMode(value);
+      settings[static_cast<uint8_t>(SettingKey::PlaybackMode)] = playbackMode;
+      playbackModeChanged();
+      break;
+    case SettingKey::Waveform:
+      currWave = value;
+      synthWaveformChanged();
+      break;
+    case SettingKey::SynthDrive:
+      synthDrive = value > SYNTH_DRIVE_DIRTY ? SYNTH_DRIVE_OFF : value;
+      break;
+    case SettingKey::SynthModTarget:
+      synthModTarget = value;
+      updateSynthModulationParams();
+      break;
+    case SettingKey::SynthModAmount:
+      synthModAmount = value;
+      updateSynthModulationParams();
+      break;
+    case SettingKey::SynthVibratoSpeed:
+      synthVibratoSpeed = value;
+      updateSynthModulationParams();
+      break;
+    case SettingKey::ArpeggiatorDivision:
+      arpeggiatorDivision = value == 0 ? 1 : value;
+      updateArpeggiatorTiming();
+      break;
+    case SettingKey::SynthBPM:
+      synthBPM = value == 0 ? 1 : value;
+      updateArpeggiatorTiming();
+      updateMetronomeTiming();
+      break;
+    case SettingKey::EnvelopeAttackIndex:
+      envelopeAttackIndex = value;
+      updateEnvelopeParamsFromSettings();
+      break;
+    case SettingKey::EnvelopeHoldIndex:
+      envelopeHoldIndex = value;
+      updateEnvelopeParamsFromSettings();
+      break;
+    case SettingKey::EnvelopeDecayIndex:
+      envelopeDecayIndex = value;
+      updateEnvelopeParamsFromSettings();
+      break;
+    case SettingKey::EnvelopeSustainLevel:
+      envelopeSustainLevel = value;
+      updateEnvelopeParamsFromSettings();
+      break;
+    case SettingKey::EnvelopeReleaseIndex:
+      envelopeReleaseIndex = value;
+      updateEnvelopeParamsFromSettings();
+      break;
+    case SettingKey::EffectEnvelopeTarget:
+      effectEnvelopeTarget[0] = value;
+      updateSynthModulationParams();
+      updateEffectEnvelopeParamsFromSettings(0);
+      break;
+    case SettingKey::EffectEnvelopeAmount:
+      effectEnvelopeAmount[0] = value;
+      updateSynthModulationParams();
+      updateEffectEnvelopeParamsFromSettings(0);
+      break;
+    case SettingKey::EffectEnvelopeAttackIndex:
+      effectEnvelopeAttackIndex[0] = value;
+      updateEffectEnvelopeParamsFromSettings(0);
+      break;
+    case SettingKey::EffectEnvelopeHoldIndex:
+      effectEnvelopeHoldIndex[0] = value;
+      updateEffectEnvelopeParamsFromSettings(0);
+      break;
+    case SettingKey::EffectEnvelopeDecayIndex:
+      effectEnvelopeDecayIndex[0] = value;
+      updateEffectEnvelopeParamsFromSettings(0);
+      break;
+    case SettingKey::EffectEnvelopeSustainLevel:
+      effectEnvelopeSustainLevel[0] = value;
+      updateEffectEnvelopeParamsFromSettings(0);
+      break;
+    case SettingKey::EffectEnvelopeReleaseIndex:
+      effectEnvelopeReleaseIndex[0] = value;
+      updateEffectEnvelopeParamsFromSettings(0);
+      break;
+    case SettingKey::EffectEnvelope2Target:
+      effectEnvelopeTarget[1] = value;
+      updateSynthModulationParams();
+      updateEffectEnvelopeParamsFromSettings(1);
+      break;
+    case SettingKey::EffectEnvelope2Amount:
+      effectEnvelopeAmount[1] = value;
+      updateSynthModulationParams();
+      updateEffectEnvelopeParamsFromSettings(1);
+      break;
+    case SettingKey::EffectEnvelope2AttackIndex:
+      effectEnvelopeAttackIndex[1] = value;
+      updateEffectEnvelopeParamsFromSettings(1);
+      break;
+    case SettingKey::EffectEnvelope2HoldIndex:
+      effectEnvelopeHoldIndex[1] = value;
+      updateEffectEnvelopeParamsFromSettings(1);
+      break;
+    case SettingKey::EffectEnvelope2DecayIndex:
+      effectEnvelopeDecayIndex[1] = value;
+      updateEffectEnvelopeParamsFromSettings(1);
+      break;
+    case SettingKey::EffectEnvelope2SustainLevel:
+      effectEnvelopeSustainLevel[1] = value;
+      updateEffectEnvelopeParamsFromSettings(1);
+      break;
+    case SettingKey::EffectEnvelope2ReleaseIndex:
+      effectEnvelopeReleaseIndex[1] = value;
+      updateEffectEnvelopeParamsFromSettings(1);
+      break;
+    case SettingKey::SynthPortamentoTimeIndex:
+      synthPortamentoTimeIndex = value;
+      updateSynthPortamentoSettings();
+      break;
+    case SettingKey::ArpeggiatorDirection:
+      arpeggiatorDirection = value;
+      updateArpeggiatorDirection();
+      break;
+    case SettingKey::SynthWavetablePosition:
+      synthWavetablePosition = value;
+      updateSynthModulationParams();
+      break;
+    case SettingKey::SynthLfoTarget:
+      synthLfoTarget = value;
+      updateSynthModulationParams();
+      break;
+    case SettingKey::SynthLfoAmount:
+      synthLfoAmount = value;
+      updateSynthModulationParams();
+      break;
+    case SettingKey::SynthLfoWave:
+      synthLfoWave = value;
+      updateSynthModulationParams();
+      break;
+    case SettingKey::SynthLfoSpeed:
+      synthLfoSpeed = value;
+      updateSynthModulationParams();
+      break;
+    default:
+      break;
+  }
+}
+
+void presetSyncHandleSynthParamSet(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  if (payloadLength < 1 || ((payloadLength - 1) % 3) != 0) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_SYNTH_PARAM_SET, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+  uint8_t recordCount = payload[0];
+  if (recordCount == 0 || payloadLength != static_cast<size_t>(1 + recordCount * 3)) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_SYNTH_PARAM_SET, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+
+  for (uint8_t i = 0; i < recordCount; ++i) {
+    SettingKey key = static_cast<SettingKey>(payload[1 + i * 3]);
+    if (!isPresetSyncSynthSettingKey(key) || payload[3 + i * 3] > 1) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_SYNTH_PARAM_SET, PRESET_SYNC_ERROR_VALIDATION_FAILED);
+      return;
+    }
+  }
+
+  for (uint8_t i = 0; i < recordCount; ++i) {
+    SettingKey key = static_cast<SettingKey>(payload[1 + i * 3]);
+    uint8_t value = payload[2 + i * 3] | (payload[3 + i * 3] << 7);
+    applySynthSettingRuntimeOnly(key, value);
+  }
+  markSettingsDirty();
+  presetSyncSendAck(transactionId, PRESET_SYNC_MSG_SYNTH_PARAM_SET);
 }
 
 void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
@@ -1452,7 +1641,8 @@ void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_
                       | PRESET_SYNC_CAP_EXPLICIT_BUTTON_MAP
                       | PRESET_SYNC_CAP_DRY_RUN
                       | PRESET_SYNC_CAP_DELETE_USER_OBJECT
-                      | PRESET_SYNC_CAP_SYNTH_WAVETABLE);
+                      | PRESET_SYNC_CAP_SYNTH_WAVETABLE
+                      | PRESET_SYNC_CAP_LIVE_SYNTH_PARAM);
   presetSyncAppendU28(response, PRESET_SYNC_MAX_RAW_OBJECT_BYTES);
   response.push_back(CURRENT_SETTINGS_VERSION);
   response.push_back(SYNTH_PRESET_SCHEMA_VERSION);
@@ -2146,7 +2336,6 @@ bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len) {
   uint16_t transactionId = presetSyncDecodeU14(data + 6);
   const uint8_t* payload = data + 8;
   size_t payloadLength = len - 9;
-  notePresetSyncTransferActivity(message);
 
   if (!presetSyncPayloadIsSevenBit(payload, payloadLength)) {
     presetSyncSendNack(transactionId, message, PRESET_SYNC_ERROR_BAD_LENGTH);
@@ -2165,30 +2354,45 @@ bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len) {
       presetSyncHandleObjectList(transactionId, payload, payloadLength);
       break;
     case PRESET_SYNC_MSG_READ_REQ:
+      notePresetSyncTransferActivity(message);
       presetSyncHandleReadRequest(transactionId, payload, payloadLength);
       break;
     case PRESET_SYNC_MSG_WRITE_BEGIN:
+      notePresetSyncTransferActivity(message);
       presetSyncHandleWriteBegin(transactionId, payload, payloadLength);
       break;
     case PRESET_SYNC_MSG_DATA_CHUNK:
+      notePresetSyncTransferActivity(message);
       presetSyncHandleDataChunk(transactionId, payload, payloadLength);
       break;
     case PRESET_SYNC_MSG_TRANSFER_END:
+      notePresetSyncTransferActivity(message);
       presetSyncHandleTransferEnd(transactionId, payload, payloadLength);
       break;
     case PRESET_SYNC_MSG_WRITE_COMMIT:
+      notePresetSyncTransferActivity(message);
       presetSyncHandleWriteCommit(transactionId, payload, payloadLength);
       break;
     case PRESET_SYNC_MSG_TRANSFER_ABORT:
+      notePresetSyncTransferActivity(message);
       presetSyncHandleTransferAbort(transactionId, payload, payloadLength);
       break;
     case PRESET_SYNC_MSG_DELETE_REQ:
       presetSyncHandleDelete(transactionId, payload, payloadLength);
       break;
+    case PRESET_SYNC_MSG_SYNTH_PARAM_SET:
+      presetSyncHandleSynthParamSet(transactionId, payload, payloadLength);
+      break;
     case PRESET_SYNC_MSG_ACK:
+      if (presetSyncReadTransfer.active || presetSyncWriteTransfer.active) {
+        notePresetSyncTransferActivity(message);
+      }
       presetSyncHandleAck(transactionId, payload, payloadLength);
       break;
     case PRESET_SYNC_MSG_NACK:
+      if (presetSyncReadTransfer.active || presetSyncWriteTransfer.active) {
+        notePresetSyncTransferActivity(message);
+      }
       presetSyncHandleNack(transactionId, payload, payloadLength);
       break;
     default:

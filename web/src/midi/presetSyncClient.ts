@@ -313,6 +313,16 @@ export class PresetSyncClient {
     });
   }
 
+  async sendSynthParameterPreview(settingKey: number, value: number): Promise<number[]> {
+    if (!Number.isInteger(settingKey) || settingKey < 0 || settingKey > 0x7f) {
+      throw new RangeError("settingKey must be a 7-bit integer");
+    }
+    if (!Number.isInteger(value) || value < 0 || value > 0xff) {
+      throw new RangeError("value must be a byte");
+    }
+    return this.send(MessageType.SynthParamSet, [1, settingKey, value & 0x7f, (value >> 7) & 0x01]);
+  }
+
   async sendSynthPresetSave(preset: EncodedCatalogObject): Promise<number[][]> {
     return this.sendObjectWrite({
       objectType: ObjectType.SynthPreset,

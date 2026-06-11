@@ -89,10 +89,11 @@ candidate input/output pairs with preset-sync `HELLO_REQ`, verifies protocol
 major version and synth preset schema support from `HELLO_RESP`, and only shows
 a device selector when multiple compatible HexBoards respond. Real-device synth
 preset saves and Serum/Vital or HexBoard wavetable imports use an ACKed write path through
-`WRITE_COMMIT`; live preview remains a fast apply-only write path. The synth
-editor reads the current runtime synth patch from handle `0x3FFF` before
-enabling live sends, and preset open sends an apply-only preview immediately for
-auditioning. The editor mirrors firmware synth-mode, portamento, arpeggiator
+`WRITE_COMMIT`; live preview remains a fast runtime-apply write path and marks
+settings dirty for debounced profile autosave. The synth editor reads the
+current runtime synth patch from handle `0x3FFF` before enabling live sends, and
+preset open sends a runtime-apply preview immediately for auditioning. The
+editor mirrors firmware synth-mode, portamento, arpeggiator
 speed/direction, tempo, named wavetable dependency, wavetable position,
 phase-warp, and LFO controls for synth preset schema `7`, and splits the synth library into
 `Presets` and `Wavetables` views. The editor keeps opened presets as temporary drafts;
@@ -162,13 +163,17 @@ There is also a timer-driven synth/audio path that must stay responsive. Flash w
 
 Firmware MIDI input uses a small HexBoard-owned byte parser over the Pico SDK
 `MIDIUSB` byte stream and `Serial1`, so SysEx frame assembly no longer depends on
-the Arduino MIDI library parser. During preset-sync activity, core 0 enters a
-short transfer window: it draws a `MIDI SysEx Transfer` screen, repeatedly pumps
-MIDI input, and skips normal menu/button/LED work until the transfer is idle and
-no object transfer is active, or until the transfer window times out and clears
-the active read/write transfer. The transfer overlay saves the prior OLED
-screensaver state and `screenTime`, then restores them when it closes so SysEx
-traffic does not count as menu/display wake input.
+the Arduino MIDI library parser. During chunked preset-sync object activity,
+core 0 enters a short transfer window: it draws a `MIDI SysEx Transfer` screen,
+repeatedly pumps MIDI input, and skips normal menu/button/LED work until the
+transfer is idle and no object transfer is active, or until the transfer window
+times out and clears the active read/write transfer. The transfer overlay saves
+the prior OLED screensaver state and `screenTime`, then restores them when it
+closes so SysEx object traffic does not count as menu/display wake input.
+One-frame messages such as hello/list/delete and live `SYNTH_PARAM_SET` process
+without entering that modal window. `SYNTH_PARAM_SET` marks settings dirty after
+valid records are applied, so web-editor synth controls use the same debounced
+auto-save path as on-device synth menu controls.
 Device-to-host preset reads are ACK-paced: firmware sends `READ_BEGIN`, waits
 for the host ACK, then sends one `DATA_CHUNK` per ACK before `TRANSFER_END`.
 Live USB MIDI packet output has a much shorter retry window than SysEx stream

@@ -237,6 +237,7 @@ must not be applied.
 | `0x27` | `WRITE_COMMIT` | Host to device | Validate and persist a received object |
 | `0x28` | `TRANSFER_ABORT` | Either | Cancel the active transfer |
 | `0x29` | `DELETE_REQ` | Host to device | Delete a user object |
+| `0x2A` | `SYNTH_PARAM_SET` | Host to device | Apply live synth setting bytes without an object transfer |
 
 Only one write transfer should be active at a time. A device may also allow only
 one total transfer at a time. If busy, it should send `NACK Busy`.
@@ -525,6 +526,11 @@ named Serum/Vital or HexBoard wavetable imports, then waits for the `WRITE_COMMI
 treating the flash write as complete. Live preview sends remain apply-only and
 are not used as the persistence confirmation path.
 
+Live editor changes to individual synth parameters should use `SYNTH_PARAM_SET`
+instead of staging a full `SynthPreset` object. This keeps frequent slider and
+selector updates out of the modal transfer path; full preset opens/saves and
+wavetable imports still use the chunked object path.
+
 Example `WRITE_BEGIN` for a new `UserTuning` object, transaction `20`,
 transfer `5`, schema `1.0`, raw length `33`, CRC32 `0x6702FE2B`, raw chunk size
 `64`, save-to-flash flag set:
@@ -618,6 +624,27 @@ The device must reject deletion of factory/read-only objects. It should also
 reject deletion when another saved object references the target, unless the host
 uses a validated bundle workflow that updates or removes those references in the
 same operation.
+
+## Live Synth Parameter Set
+
+`SYNTH_PARAM_SET` payload:
+
+```text
+<record-count> <setting-key> <value-low7> <value-high1> ...
+```
+
+Each record applies one synth preset `SettingKey` byte to the current runtime.
+`value-low7` carries bits `0..6`; `value-high1` carries bit `7` and must be `0`
+or `1`. Firmware rejects non-synth setting keys and ACKs the frame after all
+records are applied. The message marks settings dirty for the normal debounced
+profile autosave path, but it does not synchronously save flash, does not stage
+a read/write transfer, and does not show the `MIDI SysEx Transfer` screen.
+
+Firmware applies each key through the same targeted runtime update used by the
+matching on-device synth menu control. For example, `PlaybackMode` still resets
+current synth frequencies because the on-device control does, while envelope,
+LFO, wheel amount, drive, and wavetable-position edits update cached synth
+parameters without rebuilding layout or redrawing the menu.
 
 ## Object Body Format
 
@@ -1158,17 +1185,20 @@ write the individual objects after the web app unpacks a bundle.
    without changing the loaded sound.
 3. Device validates `SynthPresetSchemaVersion`, `Name`, `FolderPath`, and,
    when present, the wavetable folder/name dependency TLVs.
-4. Commit with `apply` changes the current synth runtime for auditioning. Commit
+4. Commit with `apply` changes the current synth runtime for auditioning and
+   marks settings dirty for the normal debounced profile autosave path. Commit
    with `save` updates `/synth_presets.dat`.
 5. Commit with `save` writes the named preset catalog to `/synth_presets.dat`
    through the existing flash-safe save path.
 6. The current web app requests one synth preset or wavetable record per
    object-list page before reading each object body, keeping response frames
    under conservative SysEx buffer limits.
-7. Current firmware treats recognized preset-sync frames as a modal transfer
-   window: the display shows `MIDI SysEx Transfer`, normal core-0 UI/LED work is
-   paused, and MIDI input is pumped until the exchange goes idle with no active
-   object transfer, or until timeout clears the active transfer.
+7. Current firmware treats chunked preset-sync object reads/writes as a modal
+   transfer window: the display shows `MIDI SysEx Transfer`, normal core-0
+   UI/LED work is paused, and MIDI input is pumped until the exchange goes idle
+   with no active object transfer, or until timeout clears the active transfer.
+   `SYNTH_PARAM_SET`, hello, list, delete, and other one-frame control messages
+   process without opening that modal window.
 8. Current firmware uses the Pico SDK USB stack through Arduino-Pico `MIDIUSB`
    and a HexBoard-owned MIDI byte parser for SysEx receive.
 9. Current firmware paces device-to-host object reads by waiting for host ACKs

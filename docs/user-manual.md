@@ -521,7 +521,15 @@ Live parameter editing can work with output only, but loading the current patch
 and reading the `HexBoard Library` require the matching input port that receives
 HexBoard SysEx replies.
 
-While a preset-sync SysEx exchange is active, the HexBoard display shows
+Single synth-parameter edits from the web editor are sent as compact live
+updates. They do not show the `MIDI SysEx Transfer` screen, do not pause
+button/LED/menu work, and are marked for the normal debounced auto-save path
+the same way on-device synth menu edits are. They only restart active synth
+notes for parameters whose matching on-device menu control also restarts notes,
+such as `Synth Mode`.
+
+While a chunked preset-sync SysEx object transfer is active, such as opening or
+saving a full preset or importing a wavetable, the HexBoard display shows
 `MIDI SysEx Transfer` and pauses normal menu/button/LED work while it services
 incoming MIDI. The message clears when the transfer is idle or times out. If the
 OLED screensaver was already active, HexBoard returns to that dimmed/cleared

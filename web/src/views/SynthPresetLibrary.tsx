@@ -977,6 +977,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wavetableFileInputRef = useRef<HTMLInputElement>(null);
   const skipNextAutoSend = useRef(true);
+  const pendingLiveSynthParam = useRef<{ key: EditableSynthValueKey; value: number } | null>(null);
 
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
   const allFolders = useMemo(
@@ -1104,26 +1105,35 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
 
     const timeout = window.setTimeout(() => {
-      void sendPreview("Auto-sent");
+      const liveParam = pendingLiveSynthParam.current;
+      pendingLiveSynthParam.current = null;
+      if (liveParam) {
+        void sendLiveParameterPreview(liveParam, "Auto-sent");
+      } else {
+        void sendPreview("Auto-sent");
+      }
     }, 120);
 
     return () => window.clearTimeout(timeout);
   }, [autoSend, draftPreset, editorHydrated]);
 
   function updateValue(key: EditableSynthValueKey, value: number) {
+    const clampedValue = clampSynthValue(key, value);
     skipNextAutoSend.current = false;
+    pendingLiveSynthParam.current = { key, value: clampedValue };
     setEditorHydrated(true);
     setPreset((current) => ({
       ...current,
       values: {
         ...current.values,
-        [key]: clampSynthValue(key, value)
+        [key]: clampedValue
       }
     }));
   }
 
   function updatePresetMetadata(update: (current: EditableSynthPreset) => EditableSynthPreset) {
     skipNextAutoSend.current = false;
+    pendingLiveSynthParam.current = null;
     setEditorHydrated(true);
     setPreset(update);
   }
@@ -1134,6 +1144,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       return;
     }
     skipNextAutoSend.current = false;
+    pendingLiveSynthParam.current = null;
     setEditorHydrated(true);
     setCustomFolders((current) => Array.from(new Set([...current, folder])).sort());
     setPreset((current) => ({ ...current, folderPath: folder }));
@@ -1153,6 +1164,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   function selectPresetWavetable(value: string) {
     const wavetable = wavetableReferenceFromOptionValue(value);
     skipNextAutoSend.current = false;
+    pendingLiveSynthParam.current = null;
     setEditorHydrated(true);
     setPreset((current) => ({
       ...current,
@@ -1248,6 +1260,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   async function sendPresetPreview(nextPreset: EditableSynthPreset, prefix = "Sent") {
+    pendingLiveSynthParam.current = null;
     try {
       const frames = await client.sendSynthPresetPreview(encodeEditablePreset(nextPreset));
       setLastFrameCount(frames.length);
@@ -1259,6 +1272,16 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   async function sendPreview(prefix = "Sent") {
     await sendPresetPreview(preset, prefix);
+  }
+
+  async function sendLiveParameterPreview(param: { key: EditableSynthValueKey; value: number }, prefix = "Sent") {
+    try {
+      await client.sendSynthParameterPreview(SynthSettingKey[param.key], param.value);
+      setLastFrameCount(1);
+      setSyncStatus(`${prefix} ${param.key} to ${transport.label}`);
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Failed to send synth parameter");
+    }
   }
 
   async function uploadToHexBoard(nextPreset = preset, prefix = "Saved") {
@@ -1396,6 +1419,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   function useWavetableAsPresetSource(nextWavetable: EditableSynthWavetable) {
     skipNextAutoSend.current = false;
+    pendingLiveSynthParam.current = null;
     setEditorHydrated(true);
     setPreset((current) => ({
       ...current,

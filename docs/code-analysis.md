@@ -386,15 +386,19 @@ without splitting them into nested folders. Folder chips filter each synth
 library pane independently and toggle off when clicked again.
 
 Firmware MIDI receive drains all currently available USB/serial bytes into the
-HexBoard parser instead of relying on the Arduino MIDI library. When a
-preset-sync frame is recognized, core 0 opens a modal transfer window, displays
-`MIDI SysEx Transfer`, keeps pumping MIDI input, and resumes normal main-loop
-work after an idle gap with no active object transfer, or after timeout clears
-the active read/write transfer. The transfer overlay preserves the previous OLED
-screensaver state and `screenTime`, so a transfer that wakes a sleeping display
-returns it to the screensaver when the transfer closes. Device-to-host reads are
-paced by host ACKs for `READ_BEGIN`, each `DATA_CHUNK`, and `TRANSFER_END` so
-USB MIDI buffers do not have to absorb the whole object transfer at once.
+HexBoard parser instead of relying on the Arduino MIDI library. When a chunked
+preset-sync object read/write starts, core 0 opens a modal transfer window,
+displays `MIDI SysEx Transfer`, keeps pumping MIDI input, and resumes normal
+main-loop work after an idle gap with no active object transfer, or after
+timeout clears the active read/write transfer. The transfer overlay preserves
+the previous OLED screensaver state and `screenTime`, so a transfer that wakes a
+sleeping display returns it to the screensaver when the transfer closes.
+Device-to-host reads are paced by host ACKs for `READ_BEGIN`, each `DATA_CHUNK`,
+and `TRANSFER_END` so USB MIDI buffers do not have to absorb the whole object
+transfer at once. One-frame control messages, including live synth parameter
+sets, process inline and do not open the modal transfer window. Live synth
+parameter sets mark settings dirty after applying valid records, so persistence
+uses the same debounced profile auto-save path as on-device synth menu edits.
 
 ## Played Note OLED Overlay
 
@@ -621,7 +625,7 @@ restart their release stage.
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
-Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `9`, CRC32, and a counted catalog capped at `128` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, wavetable name/folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings and the wavetable reference into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app live preview applies a transferred synth preset to runtime without marking settings dirty, while save requests update `/synth_presets.dat`. The on-device save/load menus are rebuilt from the catalog as folder submenus; preset items inside those folders display only the preset name. Folder path separators are still `/`, but the firmware decodes `%2F`, `%5C`, and `%25` in menu labels so web-app folder names can contain literal slash, backslash, or percent characters. Rebuilds are requested from save/delete paths and serviced from the main loop after GEM input handling, with owned menu items removed from their parent pages before deletion. The load menu has a `Blank` item. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending `SynthPortamentoTimeIndex` and `ArpeggiatorDirection` defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving wavetable name/folder fields from the old `Waveform` value before being rewritten.
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `9`, CRC32, and a counted catalog capped at `128` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, wavetable name/folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings and the wavetable reference into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app full-preset preview applies a transferred synth preset to runtime and marks settings dirty for debounced autosave, compact live synth parameter edits also mark settings dirty, and save requests update `/synth_presets.dat`. The on-device save/load menus are rebuilt from the catalog as folder submenus; preset items inside those folders display only the preset name. Folder path separators are still `/`, but the firmware decodes `%2F`, `%5C`, and `%25` in menu labels so web-app folder names can contain literal slash, backslash, or percent characters. Rebuilds are requested from save/delete paths and serviced from the main loop after GEM input handling, with owned menu items removed from their parent pages before deletion. The load menu has a `Blank` item. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending `SynthPortamentoTimeIndex` and `ArpeggiatorDirection` defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving wavetable name/folder fields from the old `Waveform` value before being rewritten.
 
 User geometry objects are stored in `/layouts.dat` with magic `LYT`, version
 `1`, CRC32, and a counted raw-body catalog capped at `127` entries. The catalog
