@@ -4,6 +4,7 @@
 #include "../menu/PlayedNotesOverlay.h"
 #include "../menu/SynthPresetMenu.h"
 #include "../menu/SynthWavetableMenu.h"
+#include "../storage/PresetSync.h"
 
 // @mainLoop
 /*

@@ -1,6 +1,7 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "../storage/PresetSync.h"
 
 // @init
 #include <Arduino.h>  // this is necessary to talk to the Hexboard!
@@ -38,7 +39,6 @@ struct SynthPresetSlot;
 struct SynthPresetSlotV7;
 struct SynthPresetSlotV6;
 struct LegacySynthPresetSlot;
-struct ParsedSynthWavetableObject;
 struct SynthWavetableSlot;
 extern volatile uint32_t audioDmaUnderrunCount;
 
@@ -95,15 +95,11 @@ void load_synth_presets();
 void save_synth_presets();
 void load_synth_wavetables();
 void save_synth_wavetables();
-void load_geometry_objects();
-void save_geometry_objects();
 bool loadCurrentSynthWavetableReference();
 void flashSafeSaveCurrentSynthWavetableReference();
 void flashSafeSaveSynthWavetables();
-void flashSafeSaveGeometryObjects();
 void flashSafeSaveUserSynthWavetable();
 void applyUploadedSynthWavetableSamples(const uint8_t* samples);
-bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& wavetable);
 void normalizeSynthWavetableFolderPath(char* folderPath, size_t folderPathLength);
 void requestSynthWavetableMenuRebuild();
 void serviceSynthWavetableMenuRebuild();
@@ -112,7 +108,6 @@ void saveSynthPresetAsNew(const char* folderPath);
 void loadSynthPresetFromSlot(uint16_t presetIndex);
 void captureCurrentSynthPreset(SynthPresetSlot& preset);
 void applySynthPresetToSettings(const SynthPresetSlot& preset);
-bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len);
 bool processIncomingMIDI();
 bool servicePresetSyncTransfer();
 void copyCurrentSettingsToProfile(uint8_t profileIndex);

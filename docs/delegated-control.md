@@ -15,6 +15,7 @@ Primary implementation points:
 
 - `delegatedControl`, `delegatedColors`, delegated note-map state, and `SYSEX_*` constants live in `src/firmware/hardware/GridState.cpp`.
 - `processIncomingSysEx()`, `delegatedButtonEvent()`, `processDelegatedNoteMapSysEx()`, and `processLedSysEx()` live in `src/firmware/midi/DelegatedControl.cpp`.
+- preset-sync message dispatch lives in `src/firmware/storage/PresetSync.cpp`, with protocol/object helpers in the neighboring `PresetSync*.cpp` files.
 - `processIncomingMIDIDelegated()` lives in `src/firmware/midi/MidiInput.cpp`.
 - `readHexes()` and `updateWheels()` live in `src/firmware/hardware/GridScanRotary.cpp`.
 - delegated encoder event handling and the 5-second force-exit path live in `src/firmware/hardware/GridScanRotary.cpp`.

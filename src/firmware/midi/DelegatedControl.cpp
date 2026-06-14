@@ -1,6 +1,7 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "../storage/PresetSync.h"
 
 bool reportDeviceIdentity(const uint8_t* data, const unsigned int len) {
   if (len == 6 && data[1] == 0x7E && data[3] == 0x06 && data[4] == 0x01) {

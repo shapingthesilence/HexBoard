@@ -53,7 +53,7 @@ The current source is grouped by file:
 | `src/firmware/hardware/` | grid state, command buttons, scan/rotary input, LED rendering, LED animations |
 | `src/firmware/midi/` | USB/serial transport, MPE/routing, note dispatch, external MIDI LED state, delegated control, MIDI input parsing |
 | `src/firmware/synth/` | oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome; hot render/audio helpers remain grouped in `SynthAudio.cpp` |
-| `src/firmware/storage/` | persistent data models, settings, synth presets, synth wavetables, preset-sync SysEx |
+| `src/firmware/storage/` | persistent data models, settings, synth presets, synth wavetables, preset-sync protocol helpers, geometry objects, synth object handlers, and message dispatch |
 | `src/firmware/menu/` | OLED/GEM pages and callbacks, played-note overlay, synth preset menu rebuilds, synth wavetable menu rebuilds |
 
 ## Core Data Structures
@@ -339,6 +339,12 @@ timeout, only encoder activity wakes it. Encoder turns respect the saved
 The protocol is documented in `docs/delegated-control.md`. Keep it isolated from settings and user menu code unless the product decision changes.
 
 The preset-sync SysEx protocol is documented in `docs/preset-sync-sysex.md`.
+Firmware implementation is split by ownership: `PresetSyncProtocol.cpp` handles
+frame encoding, transfer state, packing, and TLV helpers;
+`PresetSyncGeometry.cpp` owns user tuning/layout/scale/color/button-map object
+storage and runtime apply; `PresetSyncSynthObjects.cpp` owns synth preset,
+wavetable, and live synth-parameter object handling; `PresetSync.cpp` owns
+message dispatch and chunked read/write/delete flow.
 It reserves its own command family. Firmware currently implements the synth
 preset subset for named/foldered preset list/read/write/delete and live preview,
 the user wavetable write path, and raw `/layouts.dat` storage for user tuning,
