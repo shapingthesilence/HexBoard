@@ -47,7 +47,7 @@ The current source is grouped by file:
 | --- | --- |
 | `HexBoard.ino` | Arduino lifecycle wrappers only |
 | `src/firmware/FirmwareUnity.cpp` | ordered firmware translation unit for subsystem modules |
-| `src/firmware/**/*.h` | explicit cross-module APIs owned by each subsystem; implementation-private globals stay in `.cpp` files |
+| `src/firmware/**/*.h` | explicit cross-module APIs owned by each subsystem; shared tuning/layout/preset, grid-state, and persistent-schema declarations now live in their owning headers |
 | `src/firmware/app/` | platform/common helpers, defaults, diagnostics/timing, lifecycle functions |
 | `src/firmware/tuning/` | tuning math and Dynamic JI retuning |
 | `src/firmware/model/` | layout, scale, palette, preset models, pitch assignment |
@@ -61,7 +61,7 @@ The current source is grouped by file:
 
 ### `buttonDef h[BTN_COUNT]`
 
-`h[]` is the central runtime state for the scan matrix. Current constants are:
+`h[]` is the central runtime state for the scan matrix. The shared grid constants, `buttonDef`, `wheelDef`, command-button map, runtime user-geometry state, and delegated-control globals are declared in `src/firmware/hardware/GridState.h`; setup pin details stay private in `GridState.cpp`. Current constants are:
 
 - `LED_COUNT = 140`
 - `COLCOUNT = 10`
@@ -114,6 +114,7 @@ uint8_t* settings;
 ```
 
 There are `9` profiles. Slot `0` is the boot and auto-save slot. `NUM_SETTINGS` is derived from `SettingKey::NumSettings`, so adding settings requires updating the enum, defaults, runtime sync, and menu wiring together.
+The `SettingKey` enum, settings file header, synth preset/wavetable slot structs, geometry object structs, preset key list, and small setting accessors are declared in `src/firmware/storage/PersistentDataModels.h` so storage, menu, and preset-sync modules can include the schema directly.
 
 ### Dynamic Containers Still In Runtime Paths
 

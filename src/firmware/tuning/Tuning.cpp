@@ -1,6 +1,6 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
-#include "../FirmwareModule.h"
+#include "Tuning.h"
 
 // @microtonal
 /*
@@ -16,148 +16,10 @@
     definition and smart pointer references to tuning
     presets without requiring an enumeration.
   */
-#define TUNING_12EDO 0
-#define TUNING_12EDO_ZETA 1
-#define TUNING_17EDO 2
-#define TUNING_19EDO 3
-#define TUNING_22EDO 4
-#define TUNING_24EDO 5
-#define TUNING_31EDO 6
-#define TUNING_31EDO_ZETA 7
-#define TUNING_41EDO 8
-#define TUNING_43EDO 9
-#define TUNING_46EDO 10
-#define TUNING_53EDO 11
-#define TUNING_58EDO 12
-#define TUNING_58EDO_ZETA 13
-#define TUNING_72EDO 14
-#define TUNING_72EDO_ZETA 15
-#define TUNING_80EDO 16
-#define TUNING_87EDO 17
-#define TUNING_BP    18
-#define TUNING_ALPHA 19
-#define TUNING_BETA  20
-#define TUNING_GAMMA 21
-#define TUNINGCOUNT  22
-/*
-    Note names and palette arrays are allocated in memory
-    at runtime. Their usable size is based on the number
-    of steps (in standard tuning, semitones) in a tuning
-    system before a new period is reached (in standard
-    tuning, the octave). This value provides a maximum
-    array size that handles almost all useful tunings
-    without wasting much space.
-  */
-#define MAX_SCALE_DIVISIONS 87
-/*
-    A dictionary of musical scales is defined in the code.
-    A scale is tied to one tuning system, with the exception
-    of "no scale" (i.e. every note is part of the scale).
-    "No scale" is tied to this value "ALL_TUNINGS" so it can
-    always be chosen in the menu.
-  */
-#define ALL_TUNINGS 255
-/*
-    MIDI notes are enumerated 0-127 (7 bits).
-    Values of 128-255 can be used to indicate
-    command instructions for non-note buttons.
-    These definitions support this function.
-  */
-#define CMDB 192
-#define UNUSED_NOTE 255
-/*
-    When sending smoothly-varying pitch bend
-    or modulation messages over MIDI, the
-    code uses a cool-down period of about
-    1/60 of a second in between messages, enough
-    for changes to sound continuous without
-    overloading the MIDI message queue.
-  */
-#define CC_MSG_COOLDOWN_MICROSECONDS 16667
-/*
-    This class provides the seed values
-    needed to map buttons to note frequencies
-    and palette colors, and to populate
-    the menu with correct key names and
-    scale choices, for a given equal step
-    tuning system.
-  */
-class tuningDef {
-public:
-  std::string name;  // limit is 17 characters for GEM menu
-  byte cycleLength;  // steps before period/cycle/octave repeats
-  float stepSize;    // in cents, 100 = "normal" semitone.
-  SelectOptionInt keyChoices[MAX_SCALE_DIVISIONS];
-  int spanCtoA() {
-    return keyChoices[0].val_int;
-  }
-};
-/*
-    Note that for all practical musical purposes,
-    expressing step sizes to six significant figures is
-    sufficient to eliminate any detectable tuning artifacts
-    due to rounding.
-
-    The note names are formatted in an array specifically to
-    match the format needed for the GEM Menu to accept directly
-    as a spinner selection item. The number next to the note name
-    is the number of steps from the anchor note A that key is.
-
-    There are other ways the tuning could be calculated.
-    Some microtonal players choose an anchor note
-    other than A 440. Future versions will allow for
-    more flexibility in anchor selection, which will also
-    change the implementation of key options.
-  */
-
-constexpr std::array<uint32_t, 20> envelopeTimeMicrosOptions = {
-  0, 5000, 10000, 15000, 20000, 30000, 50000, 75000, 100000, 150000,
-  200000, 300000, 500000, 750000, 1000000, 1500000, 2000000, 2500000,
-  3000000, 4000000
-};
-constexpr std::array<uint8_t, 10> legacyEnvelopeTimeIndexToCurrent = {
-  0, 1, 2, 4, 6, 8, 10, 12, 14, 16
-};
-constexpr uint8_t ENVELOPE_LEVEL_SCALE_SHIFT = 7;
-constexpr uint32_t envelopeAudioMaxLevel = 65535;
-constexpr uint32_t envelopeMaxLevel = envelopeAudioMaxLevel << ENVELOPE_LEVEL_SCALE_SHIFT;
-constexpr uint8_t ENVELOPE_MOD_VALUE_SHIFT = ENVELOPE_LEVEL_SCALE_SHIFT + 9;
-constexpr uint32_t ENVELOPE_MOD_VALUE_ROUND = 1u << (ENVELOPE_MOD_VALUE_SHIFT - 1);
-constexpr uint8_t ENVELOPE_RELEASE_INCREMENT_BUCKET_BITS = 8;
-constexpr uint16_t ENVELOPE_RELEASE_INCREMENT_BUCKETS = 1u << ENVELOPE_RELEASE_INCREMENT_BUCKET_BITS;
-constexpr uint8_t ENVELOPE_RELEASE_INCREMENT_SHIFT = 16 + ENVELOPE_LEVEL_SCALE_SHIFT - ENVELOPE_RELEASE_INCREMENT_BUCKET_BITS;
-
-enum class EnvelopeStage : uint8_t {
-  Idle,
-  Attack,
-  Hold,
-  Decay,
-  Sustain,
-  Release
-};
-
-struct EnvelopeParams {
-  uint32_t attackTicks = 0;
-  uint32_t holdTicks = 0;
-  uint32_t decayTicks = 0;
-  uint32_t releaseTicks = 0;
-  uint32_t attackIncrement = envelopeMaxLevel;
-  uint32_t decayIncrement = envelopeMaxLevel;
-  uint32_t sustainLevel = envelopeMaxLevel;
-};
-
 EnvelopeParams envelopeParams;
 std::array<EnvelopeParams, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeParams;
 std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS> envelopeReleaseIncrementByLevel = {};
 std::array<std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeReleaseIncrementByLevel = {};
-void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
-void updateEnvelopeParamsFromValues(EnvelopeParams& params,
-                                    uint8_t& attackIndex,
-                                    uint8_t& holdIndex,
-                                    uint8_t& decayIndex,
-                                    uint8_t& sustainLevel,
-                                    uint8_t& releaseIndex,
-                                    std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable);
 
 /*
     Sko: I felt like maximizing precision for just intonation purposes.

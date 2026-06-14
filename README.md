@@ -31,7 +31,7 @@ The user manual is for players and owners of the device. The MPE setup guide is 
 - `docs/`: documentation for users and contributors
 - `Makefile`: local build shortcut for `arduino-cli`
 
-The current firmware uses the standard Arduino root-sketch layout. `HexBoard.ino` delegates to lifecycle functions in `src/firmware/`, where subsystem modules cover tuning, layout, LEDs, MIDI, synth, persistence, menu, input, and runtime orchestration.
+The current firmware uses the standard Arduino root-sketch layout. `HexBoard.ino` delegates to lifecycle functions in `src/firmware/`, where subsystem modules cover tuning, layout, LEDs, MIDI, synth, persistence, menu, input, and runtime orchestration. Shared firmware models and schema declarations live in explicit subsystem headers under `src/firmware/`.
 
 ## Current Firmware Highlights
 
@@ -279,4 +279,4 @@ The most important source file is:
 - [`HexBoard.ino`](HexBoard.ino)
 - [`src/firmware/`](src/firmware/)
 
-The firmware modules are grouped by owner under `src/firmware/`; subsystem headers expose cross-module APIs, while implementation details stay in the owning `.cpp`. Tuning and Dynamic JI live in `src/firmware/tuning/`, MIDI transport/dispatch lives in `src/firmware/midi/`, built-in synth waveforms live in `src/firmware/synth/BuiltinWavetables.cpp`, and OLED/GEM menu code is split across `MenuAndDisplay`, `PlayedNotesOverlay`, `SynthPresetMenu`, and `SynthWavetableMenu` under `src/firmware/menu/`.
+The firmware modules are grouped by owner under `src/firmware/`; subsystem headers expose cross-module APIs, while implementation details stay in the owning `.cpp`. Tuning and Dynamic JI live in `src/firmware/tuning/`, layout/scale/palette/preset models live in `src/firmware/model/`, grid state and input hardware live in `src/firmware/hardware/`, storage schemas live in `src/firmware/storage/PersistentDataModels.h`, built-in synth waveforms live in `src/firmware/synth/BuiltinWavetables.cpp`, and OLED/GEM menu code is split across `MenuAndDisplay`, `PlayedNotesOverlay`, `SynthPresetMenu`, and `SynthWavetableMenu` under `src/firmware/menu/`.

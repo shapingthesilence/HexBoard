@@ -1,6 +1,8 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "../storage/PersistentDataModels.h"
+#include "../tuning/Tuning.h"
 
 // @defaults
 /*
@@ -124,7 +126,6 @@ uint8_t envelopeHoldIndex = 0;
 uint8_t envelopeDecayIndex = 3;
 uint8_t envelopeSustainLevel = 127;
 uint8_t envelopeReleaseIndex = 3;
-constexpr uint8_t SYNTH_FX_ENVELOPE_COUNT = 2;
 constexpr uint8_t SYNTH_CONTROL_RATE_SAMPLES = 8;
 constexpr uint8_t SYNTH_FX_ENVELOPE_CONTROL_TICKS = SYNTH_CONTROL_RATE_SAMPLES;
 std::array<uint8_t, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeAttackIndex = { 0, 0 };
@@ -190,13 +191,6 @@ constexpr byte WAVEFORM_MP_WOO = 26;
 constexpr byte WAVEFORM_BASIC_WAVETABLE = 27;
 constexpr byte WAVEFORM_USER_WAVETABLE = 28;
 byte currWave = WAVEFORM_HYBRID;
-constexpr size_t SYNTH_WAVETABLE_NAME_LENGTH = 32;
-constexpr size_t SYNTH_WAVETABLE_FOLDER_LENGTH = 48;
-constexpr size_t SYNTH_WAVETABLE_OBJECT_ID_LENGTH = 16;
-constexpr size_t SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH = 48;
-constexpr const char* SYNTH_WAVETABLE_ROOT_FOLDER = "/";
-constexpr const char* SYNTH_WAVETABLE_BUILTIN_FOLDER = "/Built In";
-constexpr const char* SYNTH_WAVETABLE_BASIC_NAME = "Basic";
 char currentSynthWavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = "Basic";
 char currentSynthWavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = "/Built In";
 bool currentSynthWavetableReferenceValid = false;

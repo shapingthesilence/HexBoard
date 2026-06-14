@@ -1,29 +1,12 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
-#include "../FirmwareModule.h"
+#include "Layout.h"
 
 // @layout
 /*
     This section defines the different
     preset note layout options.
 */
-/*
-    This class provides the seed values
-    needed to implement a given isomorphic
-    note layout. From it, the map of buttons
-    to note frequencies can be calculated.
-
-    A layout is tied to a specific tuning.
-*/
-class layoutDef {
-public:
-  std::string name;    // limit is 17 characters for GEM menu
-  bool isPortrait;     // legacy metadata used to seed DeviceRotation when the layout is selected.
-  byte hexMiddleC;     // instead of "what note is button 1", "what button is the middle"
-  int8_t acrossSteps;  // defined this way to be compatible with original v1.1 firmare
-  int8_t dnLeftSteps;  // defined this way to be compatible with original v1.1 firmare
-  byte tuning;         // index of the tuning that this layout is designed for
-};
 /*
     Isomorphic layouts are defined by
     establishing where the center of the

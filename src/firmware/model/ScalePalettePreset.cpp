@@ -1,24 +1,8 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
-#include "../FirmwareModule.h"
+#include "ScalePalettePreset.h"
 
 // @scales
-/*
-    This class defines a scale pattern
-    for a given tuning. It is basically
-    an array with the number of steps in
-    between each degree of the scale. For
-    example, the major scale in 12EDO
-    is 2, 2, 1, 2, 2, 2, 1.
-
-    A scale is tied to a specific tuning.
-  */
-class scaleDef {
-public:
-  std::string name;
-  byte tuning;
-  byte pattern[MAX_SCALE_DIVISIONS];
-};
 scaleDef scaleOptions[] = {
   { "None", ALL_TUNINGS, { 0 } },
   // 12 EDO
@@ -157,90 +141,6 @@ const byte scaleCount = sizeof(scaleOptions) / sizeof(scaleDef);
     are multiplied together (and normalized)
     to get the output brightness.
   */
-#define VALUE_BLACK 0
-#define VALUE_LOW 80
-#define VALUE_SHADE 164
-#define VALUE_NORMAL 180
-#define VALUE_FULL 255
-/*
-    Saturation is zero for black and white, and 255
-    for fully chromatic color. Value is the
-    brightness level of the LED, from 0 = off
-    to 255 = max.
-  */
-#define SAT_BW 0
-#define SAT_TINT 32
-#define SAT_DULL 85
-#define SAT_MODERATE 120
-#define SAT_VIVID 255
-/*
-    Hues are angles from 0 to 360, starting
-    at red and towards yellow->green->blue
-    when the hue angle increases.
-  */
-#define HUE_NONE 0.0
-#define HUE_RED 0.0
-#define HUE_ORANGE 36.0
-#define HUE_YELLOW 72.0
-#define HUE_LIME 108.0
-#define HUE_GREEN 144.0
-#define HUE_CYAN 180.0
-#define HUE_BLUE 216.0
-#define HUE_INDIGO 252.0
-#define HUE_PURPLE 288.0
-#define HUE_MAGENTA 324.0
-/*
-    This class is a basic hue, saturation,
-    and value triplet, with some limited
-    transformation functions. Rather than
-    load a full color space library, this
-    program uses non-class procedures to
-    perform conversions to and from LED-
-    friendly color codes.
-  */
-class colorDef {
-public:
-  float hue;
-  byte sat;
-  byte val;
-  colorDef tint() {
-    colorDef temp;
-    temp.hue = this->hue;
-    temp.sat = ((this->sat > SAT_MODERATE) ? SAT_MODERATE : this->sat);
-    temp.val = VALUE_FULL;
-    return temp;
-  }
-  colorDef shade() {
-    colorDef temp;
-    temp.hue = this->hue;
-    temp.sat = ((this->sat > SAT_MODERATE) ? SAT_MODERATE : this->sat);
-    temp.val = VALUE_LOW;
-    return temp;
-  }
-};
-/*
-    This class defines a palette, which is
-    a map of musical scale degrees to
-    colors. A palette is tied to a specific
-    tuning but not to a specific layout.
-  */
-class paletteDef {
-public:
-  colorDef swatch[MAX_SCALE_DIVISIONS];  // the different colors used in this palette
-  byte colorNum[MAX_SCALE_DIVISIONS];    // map key (c,d...) to swatches
-  colorDef getColor(byte givenStepFromC) {
-    return swatch[colorNum[givenStepFromC] - 1];
-  }
-  float getHue(byte givenStepFromC) {
-    return getColor(givenStepFromC).hue;
-  }
-  byte getSat(byte givenStepFromC) {
-    return getColor(givenStepFromC).sat;
-  }
-  byte getVal(byte givenStepFromC) {
-    return getColor(givenStepFromC).val;
-  }
-};
 /*
     Palettes are defined by creating
     a set of colors, and then making
@@ -430,12 +330,6 @@ paletteDef palette[] = {
     { 1, 4, 2, 5, 3, 6, 1, 4, 1, 4, 2, 5, 3, 6, 1, 4, 2, 5, 3, 6 } },
 };
 
-extern bool userGeometryRuntimeActive;
-extern bool userGeometryRuntimeScaleActive;
-extern tuningDef userGeometryRuntimeTuning;
-extern layoutDef userGeometryRuntimeLayout;
-extern scaleDef userGeometryRuntimeScale;
-
 // @presets
 /*
     This section of the code defines
@@ -449,55 +343,6 @@ extern scaleDef userGeometryRuntimeScale;
     file system.
   */
 
-class presetDef {
-public:
-  std::string presetName;
-  int tuningIndex;  // instead of using pointers, i chose to store index value of each option, to be saved to a .pref or .ini or something
-  int layoutIndex;
-  int scaleIndex;
-  int keyStepsFromA;  // what key the scale is in, where zero equals A.
-  int transpose;
-  // define simple recall functions
-  tuningDef tuning() {
-    if (userGeometryRuntimeActive) {
-      return userGeometryRuntimeTuning;
-    }
-    return tuningOptions[tuningIndex];
-  }
-  layoutDef layout() {
-    if (userGeometryRuntimeActive) {
-      return userGeometryRuntimeLayout;
-    }
-    return layoutOptions[layoutIndex];
-  }
-  scaleDef scale() {
-    if (userGeometryRuntimeActive && userGeometryRuntimeScaleActive) {
-      return userGeometryRuntimeScale;
-    }
-    return scaleOptions[scaleIndex];
-  }
-  int layoutsBegin() {
-    if (tuningIndex == TUNING_12EDO) {
-      return 0;
-    } else {
-      int temp = 0;
-      while (layoutOptions[temp].tuning < tuningIndex) {
-        temp++;
-      }
-      return temp;
-    }
-  }
-  int keyStepsFromC() {
-    return tuning().spanCtoA() - keyStepsFromA;
-  }
-  int pitchRelToA4(int givenStepsFromC) {
-    return givenStepsFromC + tuning().spanCtoA() + transpose;
-  }
-  int keyDegree(int givenStepsFromC) {
-    return positiveMod(givenStepsFromC + keyStepsFromC(), tuning().cycleLength);
-  }
-};
-
 presetDef current = {
   "Default",     // name
   TUNING_12EDO,  // tuning
@@ -506,10 +351,6 @@ presetDef current = {
   -9,            // default to the key of C, which in 12EDO is -9 steps from A.
   0              // default to no transposition
 };
-
-constexpr byte DEVICE_ROTATION_PORTRAIT = 0;
-constexpr byte DEVICE_ROTATION_LANDSCAPE = 1;
-constexpr byte DEVICE_DISPLAY_UPRIGHT_OFFSET = 2;
 
 byte displayRotationFromDeviceRotation(byte rotation) {
   return (DEVICE_DISPLAY_UPRIGHT_OFFSET + 4 - (rotation % 4)) % 4;
