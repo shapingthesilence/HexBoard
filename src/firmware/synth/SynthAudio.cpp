@@ -7,6 +7,7 @@
 #include "../midi/MidiRouting.h"
 #include "../midi/MidiTransport.h"
 #include "../tuning/DynamicJustIntonation.h"
+#include "SynthDefaults.h"
 
 // @synth
 /*
@@ -29,17 +30,9 @@ constexpr byte PIEZO_CHNL = 1;
 constexpr byte AJACK_PIN = 25;
 constexpr byte AJACK_SLICE = 4;
 constexpr byte AJACK_CHNL = 1;
-// midiD takes the following bitwise flags
-constexpr byte AUDIO_NONE = 0;
-constexpr byte AUDIO_PIEZO = 1;
-constexpr byte AUDIO_AJACK = 2;
-constexpr byte AUDIO_BOTH = 3;
 byte audioD = AUDIO_AJACK;
 bool synthBuzzerEnabled = false;
-constexpr uint8_t HEADPHONE_VOLUME_CAP_FULL = 127;
 byte headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
-constexpr uint8_t SYNTH_OUTPUT_SMOOTHING_OFF = 0;
-constexpr uint8_t SYNTH_OUTPUT_SMOOTHING_MAX = 8;
 byte synthOutputSmoothing = SYNTH_OUTPUT_SMOOTHING_OFF;
 
 void RAM_FUNC(idlePhysicalAudioOutputs)();

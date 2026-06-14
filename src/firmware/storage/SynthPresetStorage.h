@@ -5,6 +5,7 @@
 
 void load_synth_presets();
 void save_synth_presets();
+void flashSafeSave();
 void flashSafeSaveSynthPresets();
 void saveSynthPresetToSlot(uint16_t presetIndex);
 void saveSynthPresetAsNew(const char* folderPath);

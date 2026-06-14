@@ -1,6 +1,6 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
+#include "../model/ScalePalettePreset.h"
+#include "../synth/SynthDefaults.h"
 #include "PersistentDataModels.h"
 
 // CRC32 computation for settings integrity verification
@@ -91,17 +91,10 @@ uint8_t settingsProfiles[PROFILE_COUNT][NUM_SETTINGS] = { { 0 } };
 uint8_t* settings = settingsProfiles[DEFAULT_PROFILE_INDEX];
 uint8_t activeProfileIndex = DEFAULT_PROFILE_INDEX;
 uint8_t defaultProfileIndex = DEFAULT_PROFILE_INDEX;
-extern bool settingsDirty;
-void syncSettingsToRuntime();
 
 std::vector<SynthPresetSlot> synthPresets;
 std::vector<SynthWavetableSlot> synthWavetables;
 std::vector<GeometryObjectSlot> geometryObjects;
-
-void saveCurrentSynthWavetableReference();
-bool loadCurrentSynthWavetableReference();
-void normalizeSynthWavetableBuiltInFolderAlias(char* folderPath, size_t folderPathLength);
-void flashSafeSave();
 
 void remapLegacySynthPresetEnvelopeTimes(SynthPresetSlot& preset) {
   if (!preset.valid) {
@@ -148,5 +141,3 @@ void remapLegacySynthPresetVibratoSpeed(LegacySynthPresetSlot& preset) {
     }
   }
 }
-
-#endif  // HEXBOARD_FIRMWARE_UNITY

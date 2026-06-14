@@ -341,7 +341,6 @@ void refreshMenuChoicesForCurrentTuning();
 void rebuildRuntimeStateFromCurrentSelection();
 void updateTuningMenuVisibility();
 void tuningIntonationModeChanged();
-extern bool settingsDirty;
 
 void resetDefaultsMenuCallback() {
   applyFactoryDefaultsToSettings();

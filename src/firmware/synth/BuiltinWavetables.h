@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../FirmwareModule.h"
+#include "SynthDefaults.h"
 
 struct BuiltinSynthWavetableDefinition {
   const char* name;

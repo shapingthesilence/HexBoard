@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../FirmwareModule.h"
+#include "SynthDefaults.h"
 
 enum class EnvelopeCommand : uint8_t;
 

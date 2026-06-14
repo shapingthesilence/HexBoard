@@ -5,6 +5,7 @@
 #include "NoteDispatch.h"
 #include "../app/PlatformCommon.h"
 #include "../menu/PlayedNotesOverlay.h"
+#include "../synth/SynthDefaults.h"
 #include "../tuning/DynamicJustIntonation.h"
 
 void RAM_FUNC(tryMIDInoteOn)(byte x) {

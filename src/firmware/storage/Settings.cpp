@@ -1,7 +1,9 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "../synth/SynthDefaults.h"
 #include "Settings.h"
+#include "SynthPresetStorage.h"
 
 // SETTINGS STEP 2 - Define factory defaults (in the same order as the enum).
 // Adjust values below to match your desired defaults.
