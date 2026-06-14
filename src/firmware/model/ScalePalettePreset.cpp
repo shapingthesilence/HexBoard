@@ -1,5 +1,3 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "ScalePalettePreset.h"
 
 // @scales
@@ -117,7 +115,7 @@ scaleDef scaleOptions[] = {
   // Gamma
   { "Super Meta Lydian", TUNING_GAMMA, { 6, 5, 5, 4 } }
 };
-const byte scaleCount = sizeof(scaleOptions) / sizeof(scaleDef);
+extern const byte scaleCount = sizeof(scaleOptions) / sizeof(scaleDef);
 
 // @palettes
 /*
@@ -359,4 +357,3 @@ byte displayRotationFromDeviceRotation(byte rotation) {
 byte defaultDeviceRotationForLayout(bool isPortrait) {
   return isPortrait ? DEVICE_ROTATION_PORTRAIT : DEVICE_ROTATION_LANDSCAPE;
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

@@ -5,9 +5,6 @@
 
 #include "app/PlatformCommon.cpp"
 #include "app/RuntimeDefaults.cpp"
-#include "tuning/Tuning.cpp"
-#include "model/Layout.cpp"
-#include "model/ScalePalettePreset.cpp"
 #include "app/DiagnosticsTiming.cpp"
 #include "hardware/GridState.cpp"
 #include "hardware/LedRender.cpp"

@@ -1,5 +1,3 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "Layout.h"
 
 // @layout
@@ -214,5 +212,4 @@ layoutDef layoutOptions[] = {
   { "Compressed", 0, 65, -2, -1, TUNING_GAMMA },      // Difficult to map, has two rings of fifths
   { "Full Gamut", 1, 65, 1, -9, TUNING_GAMMA }
 };
-const byte layoutCount = sizeof(layoutOptions) / sizeof(layoutDef);
-#endif  // HEXBOARD_FIRMWARE_UNITY
+extern const byte layoutCount = sizeof(layoutOptions) / sizeof(layoutDef);

@@ -206,7 +206,7 @@ Current optimization candidates to keep in mind:
 - `midiNoteToHexIndices` is an array of vectors. It is rebuilt when pitch assignment changes, not per audio sample, but a fixed-capacity reverse index would remove heap allocation from mapping refreshes and external MIDI LED lookup.
 - `animateMirror()` in `src/firmware/hardware/LedAnimations.cpp` compares every held note against every visible hex. It is bounded by `LED_COUNT`, but octave/by-note animation could use precomputed step buckets if animation load becomes visible.
 - Incoming SysEx assembly in `src/firmware/midi/MidiInput.cpp` uses growable vectors. Preset-sync is intentionally not a button-scan hot path, but a fixed receive buffer would make memory use more predictable during large transfers.
-- Each unity-included module keeps its `#if HEXBOARD_FIRMWARE_UNITY` guard before library includes. Keep that order so Arduino's individual compilation pass sees truly empty non-unity modules.
+- Modules still included through `FirmwareUnity.cpp` keep their `#if HEXBOARD_FIRMWARE_UNITY` guard before library includes. Standalone modules such as `Tuning.cpp`, `Layout.cpp`, and `ScalePalettePreset.cpp` are omitted from `FirmwareUnity.cpp` and compile normally with direct headers.
 
 ## Source File Map
 
@@ -214,18 +214,18 @@ The main firmware files are:
 
 - `src/firmware/FirmwareModule.h`: shared Arduino/RP2040/library includes and `RAM_FUNC`
 - `src/firmware/HexBoardFirmware.h`: lifecycle API used by the root sketch
-- `src/firmware/FirmwareUnity.cpp`: ordered firmware translation unit that includes the subsystem `.cpp` files
+- `src/firmware/FirmwareUnity.cpp`: ordered firmware translation unit for modules that have not yet been moved to standalone compilation
 - Subsystem `.h` files under `src/firmware/`: explicit cross-module APIs. `tuning/Tuning.h`, `model/Layout.h`, `model/ScalePalettePreset.h`, `hardware/GridState.h`, and `storage/PersistentDataModels.h` own the shared model/schema declarations that used to be available only through unity include order.
 - `src/firmware/app/`: platform/common helpers, runtime defaults, diagnostics/timing, and lifecycle orchestration
-- `src/firmware/tuning/`: tuning math and Dynamic JI retuning
-- `src/firmware/model/`: layout, scale/palette/preset models, and pitch assignment
+- `src/firmware/tuning/`: standalone tuning tables in `Tuning.cpp`, plus unity-included Dynamic JI retuning
+- `src/firmware/model/`: standalone layout and scale/palette/preset tables, plus unity-included pitch assignment
 - `src/firmware/hardware/`: grid state, command buttons, scan/rotary handling, LED rendering, and LED animations
 - `src/firmware/midi/`: USB/serial transport, MPE/routing, MIDI note dispatch, external MIDI LED state, delegated control, and MIDI input parsing
 - `src/firmware/synth/`: built-in single-cycle waveform sources and compatibility wavetable catalog in `BuiltinWavetables.cpp`, plus synth engine, active wavetable RAM, oscillator/render path, envelopes, arpeggiator, metronome, PWM, and DMA audio in `SynthAudio.cpp`; hot render/audio helpers remain grouped in `SynthAudio.cpp`
 - `src/firmware/storage/`: persistent data models, settings/profile storage, synth preset/wavetable storage, legacy user wavetable loading, and preset-sync split into protocol helpers (`PresetSyncProtocol.cpp`), geometry objects (`PresetSyncGeometry.cpp`), synth objects (`PresetSyncSynthObjects.cpp`), and message dispatch (`PresetSync.cpp`)
 - `src/firmware/menu/`: OLED/GEM pages and settings callbacks in `MenuAndDisplay.cpp`, played-note drawing in `PlayedNotesOverlay.cpp`, synth preset foldered menu rebuilding in `SynthPresetMenu.cpp`, and synth wavetable foldered menu rebuilding in `SynthWavetableMenu.cpp`
 
-If you are changing a behavior, start by locating which of these layers owns it before editing anything. Shared constants, types, and lifecycle calls should be declared in the nearest owning header, while subsystem-owned globals and hot helpers should stay private in their `.cpp` file whenever no other module needs them. The firmware still builds through `FirmwareUnity.cpp`; removing that dependency requires continuing this explicit-header work until every `.cpp` can compile with only its direct includes.
+If you are changing a behavior, start by locating which of these layers owns it before editing anything. Shared constants, types, and lifecycle calls should be declared in the nearest owning header, while subsystem-owned globals and hot helpers should stay private in their `.cpp` file whenever no other module needs them. The firmware is currently a mixed build: model/tuning table modules compile standalone, while the remaining guarded modules still build through `FirmwareUnity.cpp`.
 
 ## Runtime Data Flow
 

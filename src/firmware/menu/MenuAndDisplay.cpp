@@ -378,8 +378,8 @@ void loadProfileMenu(GEMCallbackData callbackData) {
     we defined above.
   */
 GEMItem* menuItemTuning[TUNINGCOUNT];
-GEMItem* menuItemLayout[layoutCount];
-GEMItem* menuItemScales[scaleCount];
+std::vector<GEMItem*> menuItemLayout;
+std::vector<GEMItem*> menuItemScales;
 GEMSelect* selectKey[TUNINGCOUNT];
 GEMItem* menuItemKeys[TUNINGCOUNT];
 GEMItem* menuItemSaveProfile[PROFILE_COUNT];
@@ -2478,9 +2478,11 @@ void createTuningMenuItems() {
   }
 }
 void createLayoutMenuItems() {
+  menuItemLayout.reserve(layoutCount);
   for (byte L = 0; L < layoutCount; L++) {  // create pointers to all layouts
-    menuItemLayout[L] = new GEMItem(layoutOptions[L].name.c_str(), changeLayout, L);
-    menuPageLayout.addMenuItem(*menuItemLayout[L]);
+    GEMItem* menuItem = new GEMItem(layoutOptions[L].name.c_str(), changeLayout, L);
+    menuItemLayout.push_back(menuItem);
+    menuPageLayout.addMenuItem(*menuItem);
   }
   showOnlyValidLayoutChoices();
 }
@@ -2499,9 +2501,11 @@ void previewKey(GEMPreviewCallbackData previewData) {
   applyScale();
 }
 void createScaleMenuItems() {
+  menuItemScales.reserve(scaleCount);
   for (int S = 0; S < scaleCount; S++) {  // create pointers to all scale items, filter them as you go
-    menuItemScales[S] = new GEMItem(scaleOptions[S].name.c_str(), changeScale, S);
-    menuPageScales.addMenuItem(*menuItemScales[S]);
+    GEMItem* menuItem = new GEMItem(scaleOptions[S].name.c_str(), changeScale, S);
+    menuItemScales.push_back(menuItem);
+    menuPageScales.addMenuItem(*menuItem);
   }
   showOnlyValidScaleChoices();
 }
