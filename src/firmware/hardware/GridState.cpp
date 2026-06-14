@@ -262,6 +262,11 @@ bool toggleWheel = false;  // false = mod wheel, true = pitch bend wheel
 // not persisted; a host must enter/exit it via SysEx.
 bool delegatedControl = false;
 uint32_t delegatedColors[LED_COUNT];
+constexpr byte DELEGATED_APP_NAME_MAX = 20;
+char delegatedAppName[DELEGATED_APP_NAME_MAX + 1] = "Host Application";
+bool delegatedDisplayDirty = false;
+bool delegatedDisplayWakeRequested = false;
+bool delegatedReturnToMenuRequested = false;
 byte delegatedNoteMapChannel[LED_COUNT];
 byte delegatedNoteMapNote[LED_COUNT];
 byte delegatedActiveChannel[LED_COUNT];
@@ -271,6 +276,12 @@ constexpr byte SYSEX_DELEGATED_EXIT = 2;
 constexpr byte SYSEX_LED = 3;
 constexpr byte SYSEX_DELEGATED_NOTE_MAP = 4;
 constexpr byte SYSEX_DELEGATED_NOTE_MAP_RESET = 5;
+constexpr byte SYSEX_DELEGATED_ENCODER_EVENT = 6;
+constexpr byte DELEGATED_ENCODER_UP = 1;
+constexpr byte DELEGATED_ENCODER_DOWN = 2;
+constexpr byte DELEGATED_ENCODER_BUTTON_PRESS = 3;
+constexpr byte DELEGATED_ENCODER_BUTTON_RELEASE = 4;
+constexpr uint64_t DELEGATED_EXIT_HOLD_MICROS = 5000000ULL;
 
 void resetDelegatedNoteMap() {
   for (byte i = 0; i < LED_COUNT; ++i) {

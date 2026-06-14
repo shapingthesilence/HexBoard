@@ -11,10 +11,20 @@ export const DelegatedCommand = {
   Exit: 0x02,
   Led: 0x03,
   NoteMap: 0x04,
-  NoteMapReset: 0x05
+  NoteMapReset: 0x05,
+  EncoderEvent: 0x06
 } as const;
 
 export type DelegatedCommandValue = (typeof DelegatedCommand)[keyof typeof DelegatedCommand];
+
+export const DelegatedEncoderEvent = {
+  Up: 0x01,
+  Down: 0x02,
+  ButtonPress: 0x03,
+  ButtonRelease: 0x04
+} as const;
+
+export type DelegatedEncoderEventValue = (typeof DelegatedEncoderEvent)[keyof typeof DelegatedEncoderEvent];
 
 export const MessageType = {
   HelloRequest: 0x01,

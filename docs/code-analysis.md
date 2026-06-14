@@ -321,11 +321,19 @@ When active:
 - firmware animations are paused
 - `lightUpLEDs()` renders only the host-provided delegated LED buffer
 - incoming delegated SysEx is polled from core 1
+- OLED menu navigation is disabled and replaced by the delegated status screen
+  plus encoder events sent to the host
 
 Delegated MIDI note mapping is session-only RAM state. Hosts can assign a
 channel/note pair to each visible key through delegated SysEx; the default map
 preserves the original button-index encoding. Active delegated presses remember
 the channel/note sent on note-on so live remapping cannot strand note-offs.
+
+The delegated enter command may include a printable ASCII application name for
+the OLED. The delegated screen still uses the normal screensaver timer; after
+timeout, only encoder activity wakes it. Encoder turns respect the saved
+`RotaryInvert` setting before being reported as delegated up/down events, and a
+5-second encoder-button hold forces local exit from delegated mode.
 
 The protocol is documented in `docs/delegated-control.md`. Keep it isolated from settings and user menu code unless the product decision changes.
 

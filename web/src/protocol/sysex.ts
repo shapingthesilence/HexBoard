@@ -1,6 +1,8 @@
 import {
   DelegatedCommand,
   type DelegatedCommandValue,
+  DelegatedEncoderEvent,
+  type DelegatedEncoderEventValue,
   HEXBOARD_MANUFACTURER_ID,
   MessageType,
   PRESET_SYNC_FAMILY,
@@ -124,6 +126,8 @@ export interface DelegatedNoteMapRecord {
   note: number;
 }
 
+const delegatedEncoderEventValues = new Set<number>(Object.values(DelegatedEncoderEvent));
+
 export function encodeDelegatedFrame(command: DelegatedCommandValue, payload: number[] = []): number[] {
   assertSevenBitByte(command, "delegated command");
   assertSevenBitBytes(payload, "delegated payload");
@@ -136,8 +140,21 @@ export function encodeDelegatedFrame(command: DelegatedCommandValue, payload: nu
   ];
 }
 
-export function encodeDelegatedEnterFrame(): number[] {
-  return encodeDelegatedFrame(DelegatedCommand.Enter);
+export function encodeDelegatedAppNamePayload(appName: string): number[] {
+  const bytes = Array.from(new TextEncoder().encode(appName));
+  if (bytes.length > 20) {
+    throw new RangeError("delegated app name must be 20 bytes or shorter");
+  }
+  for (const [index, byte] of bytes.entries()) {
+    if (byte < 32 || byte > 126) {
+      throw new RangeError(`delegated app name byte ${index} must be printable ASCII`);
+    }
+  }
+  return bytes;
+}
+
+export function encodeDelegatedEnterFrame(appName = ""): number[] {
+  return encodeDelegatedFrame(DelegatedCommand.Enter, encodeDelegatedAppNamePayload(appName));
 }
 
 export function encodeDelegatedExitFrame(): number[] {
@@ -163,6 +180,23 @@ export function encodeDelegatedNoteMapPayload(records: DelegatedNoteMapRecord[])
 
 export function encodeDelegatedNoteMapFrame(records: DelegatedNoteMapRecord[]): number[] {
   return encodeDelegatedFrame(DelegatedCommand.NoteMap, encodeDelegatedNoteMapPayload(records));
+}
+
+export function decodeDelegatedEncoderEventFrame(bytes: ArrayLike<number>): DelegatedEncoderEventValue {
+  if (bytes.length !== 5) {
+    throw new Error("delegated encoder event frame must be 5 bytes");
+  }
+  if (bytes[0] !== SYSEX_START || bytes[bytes.length - 1] !== SYSEX_END) {
+    throw new Error("delegated encoder event frame must start with F0 and end with F7");
+  }
+  if (bytes[1] !== HEXBOARD_MANUFACTURER_ID || bytes[2] !== DelegatedCommand.EncoderEvent) {
+    throw new Error("not a HexBoard delegated encoder event frame");
+  }
+  const event = bytes[3];
+  if (!delegatedEncoderEventValues.has(event)) {
+    throw new Error(`unknown delegated encoder event 0x${event.toString(16).padStart(2, "0")}`);
+  }
+  return event as DelegatedEncoderEventValue;
 }
 
 export function encodePresetSyncFrame(frame: PresetSyncFrame): number[] {

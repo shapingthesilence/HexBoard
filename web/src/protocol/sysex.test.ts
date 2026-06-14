@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { NEW_OBJECT_HANDLE, MessageType, ObjectType } from "./constants.ts";
+import { DelegatedEncoderEvent, NEW_OBJECT_HANDLE, MessageType, ObjectType } from "./constants.ts";
 import {
+  decodeDelegatedEncoderEventFrame,
   decodeDataChunkPayload,
   decodeHelloResponsePayload,
   decodePresetSyncFrame,
@@ -139,6 +140,9 @@ describe("preset-sync SysEx", () => {
 describe("delegated-control SysEx", () => {
   it("encodes enter, exit, and note-map reset frames", () => {
     expect(encodeDelegatedEnterFrame()).toEqual([0xf0, 0x7d, 0x01, 0xf7]);
+    expect(encodeDelegatedEnterFrame("Looper")).toEqual([
+      0xf0, 0x7d, 0x01, 0x4c, 0x6f, 0x6f, 0x70, 0x65, 0x72, 0xf7
+    ]);
     expect(encodeDelegatedExitFrame()).toEqual([0xf0, 0x7d, 0x02, 0xf7]);
     expect(encodeDelegatedNoteMapResetFrame()).toEqual([0xf0, 0x7d, 0x05, 0xf7]);
   });
@@ -165,5 +169,16 @@ describe("delegated-control SysEx", () => {
     expect(() => encodeDelegatedNoteMapPayload([{ buttonIndex: 140, channel: 1, note: 60 }])).toThrow(RangeError);
     expect(() => encodeDelegatedNoteMapPayload([{ buttonIndex: 1, channel: 0, note: 60 }])).toThrow(RangeError);
     expect(() => encodeDelegatedNoteMapPayload([{ buttonIndex: 1, channel: 1, note: 128 }])).toThrow(RangeError);
+  });
+
+  it("rejects invalid delegated app names", () => {
+    expect(() => encodeDelegatedEnterFrame("This name is too long")).toThrow(RangeError);
+    expect(() => encodeDelegatedEnterFrame("Bad\nName")).toThrow(RangeError);
+  });
+
+  it("decodes delegated encoder event frames", () => {
+    expect(decodeDelegatedEncoderEventFrame([0xf0, 0x7d, 0x06, 0x01, 0xf7])).toBe(DelegatedEncoderEvent.Up);
+    expect(decodeDelegatedEncoderEventFrame([0xf0, 0x7d, 0x06, 0x04, 0xf7])).toBe(DelegatedEncoderEvent.ButtonRelease);
+    expect(() => decodeDelegatedEncoderEventFrame([0xf0, 0x7d, 0x06, 0x7f, 0xf7])).toThrow(Error);
   });
 });

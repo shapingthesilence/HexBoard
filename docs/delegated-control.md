@@ -17,6 +17,8 @@ Primary implementation points:
 - `processIncomingSysEx()`, `delegatedButtonEvent()`, `processDelegatedNoteMapSysEx()`, and `processLedSysEx()` live in `src/firmware/midi/DelegatedControl.cpp`.
 - `processIncomingMIDIDelegated()` lives in `src/firmware/midi/MidiInput.cpp`.
 - `readHexes()` and `updateWheels()` live in `src/firmware/hardware/GridScanRotary.cpp`.
+- delegated encoder event handling and the 5-second force-exit path live in `src/firmware/hardware/GridScanRotary.cpp`.
+- delegated OLED drawing lives in `src/firmware/menu/MenuAndDisplay.cpp`.
 - `lightUpLEDs()` lives in `src/firmware/hardware/LedRender.cpp`.
 - `animateLEDs()` lives in `src/firmware/hardware/LedAnimations.cpp`.
 - `arpeggiate()` lives in `src/firmware/synth/SynthAudio.cpp`.
@@ -37,8 +39,15 @@ When `delegatedControl` is `true`:
 - `animateLEDs()` returns early.
 - `processIncomingMIDI()` returns early on core 0.
 - `loop1()` calls `processIncomingMIDIDelegated()` so incoming delegated SysEx can be handled on core 1.
+- the OLED shows `Delegated Control Mode`, the optional host application name,
+  and a bottom prompt explaining the encoder hold-to-exit gesture while awake.
+- the normal menu is disabled; encoder turns and button presses are forwarded
+  to the host instead.
 
-The rotary menu is not explicitly disabled in delegated mode. There is no delegated-control menu item, so a user cannot toggle the mode from the device UI.
+The OLED screensaver timer still runs in delegated mode. After the display
+times out, host LED/key activity and delegated SysEx do not wake it; only
+encoder activity wakes and redraws the delegated screen. Holding the encoder
+button for about `5` seconds forces delegated mode to exit.
 
 ## SysEx Framing
 
@@ -52,7 +61,7 @@ F0 7D <command> <payload...> F7
 
 The preset-sync protocol is intentionally separate and uses the family form
 `F0 7D 10 <protocol...> F7`; see `docs/preset-sync-sysex.md`.
-Delegated-control command bytes `0x01` through `0x05` remain live-surface
+Delegated-control command bytes `0x01` through `0x06` remain live-surface
 commands, not preset-sync messages.
 
 The command byte is one of:
@@ -64,6 +73,7 @@ The command byte is one of:
 | `0x03` | `SYSEX_LED` | Host to device | Update one or more LEDs |
 | `0x04` | `SYSEX_DELEGATED_NOTE_MAP` | Host to device | Assign delegated MIDI channel/note output for one or more visible keys |
 | `0x05` | `SYSEX_DELEGATED_NOTE_MAP_RESET` | Host to device | Restore delegated key output to the default button-index encoding |
+| `0x06` | `SYSEX_DELEGATED_ENCODER_EVENT` | Device to host | Report encoder navigation events |
 
 ## Entering And Exiting
 
@@ -73,6 +83,12 @@ Enter delegated mode:
 F0 7D 01 F7
 ```
 
+Enter delegated mode with an application name:
+
+```text
+F0 7D 01 <printable-ascii-app-name> F7
+```
+
 Exit delegated mode:
 
 ```text
@@ -80,14 +96,42 @@ F0 7D 02 F7
 ```
 
 Entering delegated mode clears `delegatedColors[]` to black, restores the
-delegated note map to defaults, clears delegated active-note tracking, and calls
-`setupMIDI()` to reset MIDI parser state. If the enter command is received while
-delegated mode is already active, active delegated notes are released first and
-the delegated session state is reset.
+delegated note map to defaults, clears delegated active-note tracking, wakes the
+OLED, and calls `setupMIDI()` to reset MIDI parser state. If the enter command
+is received while delegated mode is already active, active delegated notes are
+released first and the delegated session state is reset.
+
+The optional application name payload is printable `7`-bit ASCII. Firmware keeps
+up to `20` visible characters and displays the name under `Delegated Control
+Mode`. If the host omits a valid name, the display uses `Host Application`.
 
 Exiting delegated mode sends note-off messages for active delegated notes,
 restores the delegated note map to defaults, and then returns to normal
 HexBoard behavior.
+
+## Encoder Event Output
+
+In delegated mode, the encoder does not drive the normal GEM menu. It sends
+device-to-host SysEx messages so a delegated app can use it for navigation:
+
+```text
+F0 7D 06 <event> F7
+```
+
+Events:
+
+| Event | Meaning |
+| --- | --- |
+| `0x01` | Encoder up |
+| `0x02` | Encoder down |
+| `0x03` | Encoder button press |
+| `0x04` | Encoder button release |
+
+Encoder up/down follows the saved `Invert Encoder` setting, matching normal menu
+navigation direction. Encoder press, release, and rotation wake the delegated
+OLED screen and reset its screensaver timer. Holding the encoder button for
+about `5` seconds sends a button-release event, exits delegated mode locally,
+and suppresses the release from opening the normal menu.
 
 ## Device Identity
 

@@ -35,6 +35,63 @@ bool headphoneVolumeMenuItemInserted = false;
 uint64_t screenTime = 0;                         // GFX timer to count if screensaver should go on
 const uint64_t screenSaverTimeout = (1u << 25);  // 2^25 microseconds ~ 33 seconds
 
+void wakeDelegatedControlScreenForInput() {
+  screenTime = 0;
+  if (screenSaverOn) {
+    screenSaverOn = 0;
+    u8g2.setContrast(CONTRAST_AWAKE);
+  }
+  delegatedDisplayDirty = true;
+}
+
+void drawCenteredDelegatedText(const char* text, int y) {
+  int textWidth = u8g2.getStrWidth(text);
+  int x = (u8g2.getDisplayWidth() - textWidth) / 2;
+  if (x < 0) {
+    x = 0;
+  }
+  u8g2.drawStr(x, y, text);
+}
+
+void drawDelegatedControlScreen() {
+  if (!delegatedControl) {
+    return;
+  }
+  if (delegatedDisplayWakeRequested) {
+    wakeDelegatedControlScreenForInput();
+    delegatedDisplayWakeRequested = false;
+  }
+  if (screenSaverOn || !delegatedDisplayDirty) {
+    return;
+  }
+
+  noteOverlayVisible = false;
+  noteBadgeVisible = false;
+  noteOverlayTemporaryWake = false;
+  noteOverlayWokeDisplayFromSleep = false;
+  noteBadgeText[0] = '\0';
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x13_tf);
+  drawCenteredDelegatedText("Delegated", 24);
+  drawCenteredDelegatedText("Control Mode", 40);
+  drawCenteredDelegatedText(delegatedAppName, 66);
+  drawCenteredDelegatedText("Hold encoder", 106);
+  drawCenteredDelegatedText("5 sec to exit", 122);
+  u8g2.sendBuffer();
+  delegatedDisplayDirty = false;
+}
+
+void restoreMenuAfterDelegatedControl() {
+  if (!delegatedReturnToMenuRequested) {
+    return;
+  }
+  delegatedReturnToMenuRequested = false;
+  if (!screenSaverOn) {
+    menu.drawMenu();
+  }
+}
+
 bool setNoteOverlayTemporaryWake(bool enabled) {
   noteOverlayTemporaryWake = enabled;
   if (enabled) {
@@ -327,6 +384,10 @@ void onToggleDisplayPlayedNotes() {
 }
 
 void drawPlayedNotesOverlay() {
+  if (delegatedControl) {
+    return;
+  }
+
   if (!displayPlayedNotes) {
     if (noteBadgeVisible || noteOverlayVisible) {
       noteBadgeVisible = false;
@@ -478,6 +539,9 @@ void closePresetSyncTransferScreen() {
     screenSaverOn = 1;
     u8g2.setContrast(CONTRAST_SCREENSAVER);
     u8g2.clear();
+  } else if (delegatedControl) {
+    delegatedDisplayDirty = true;
+    drawDelegatedControlScreen();
   } else {
     menu.drawMenu();
   }

@@ -404,6 +404,14 @@ visible key for the current delegated session. If the host does not send a
 mapping, keys use the standard delegated button-index encoding. These delegated
 assignments reset on boot, delegated entry, delegated exit, or host reset.
 
+When delegated mode starts, the OLED shows `Delegated Control Mode` and, when
+provided by the host, the controlling app name. The normal menu is disabled.
+Encoder turns and encoder button press/release events are sent to the host; the
+saved `Invert Encoder` setting still controls turn direction. The OLED
+screensaver still blanks the display after inactivity and only encoder activity
+wakes it again. Hold the encoder button for about `5` seconds to force HexBoard
+out of delegated mode.
+
 ### Companion Web App
 
 A browser-based HexBoard Sync app is being developed in this repository. Its

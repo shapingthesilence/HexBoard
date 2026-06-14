@@ -139,6 +139,49 @@ void dealWithRotary() {
   bool justPressed = (!rotaryButtonPressed && buttonPressed);
   bool justReleased = (rotaryButtonPressed && !buttonPressed);
 
+  if (delegatedControl) {
+    if (justPressed) {
+      rotaryPressStart = runTime;
+      rotaryPanicLatched = false;
+      rotaryPanicSuppressClick = false;
+      wakeDelegatedControlScreenForInput();
+      sendDelegatedEncoderEvent(DELEGATED_ENCODER_BUTTON_PRESS);
+    } else if (buttonPressed && (rotaryPressStart != 0) && (!rotaryPanicLatched)) {
+      if ((runTime - rotaryPressStart) >= DELEGATED_EXIT_HOLD_MICROS) {
+        sendDelegatedEncoderEvent(DELEGATED_ENCODER_BUTTON_RELEASE);
+        exitDelegatedControl();
+        rotaryPanicLatched = true;
+        rotaryPanicSuppressClick = true;
+        storeRotaryTurn = 0;
+      }
+    }
+
+    if (delegatedControl && storeRotaryTurn != 0) {
+      bool turnIsClockwise = (storeRotaryTurn == 8);
+      byte event = rotaryInvert
+                     ? (turnIsClockwise ? DELEGATED_ENCODER_DOWN : DELEGATED_ENCODER_UP)
+                     : (turnIsClockwise ? DELEGATED_ENCODER_UP : DELEGATED_ENCODER_DOWN);
+      wakeDelegatedControlScreenForInput();
+      sendDelegatedEncoderEvent(event);
+      storeRotaryTurn = 0;
+    }
+
+    if (delegatedControl && justReleased && !rotaryPanicSuppressClick) {
+      wakeDelegatedControlScreenForInput();
+      sendDelegatedEncoderEvent(DELEGATED_ENCODER_BUTTON_RELEASE);
+    }
+
+    if (justReleased || !buttonPressed) {
+      rotaryPressStart = 0;
+      rotaryPanicLatched = false;
+    }
+    if (rotaryPanicSuppressClick && !buttonPressed && !rotaryButtonPressed) {
+      rotaryPanicSuppressClick = false;
+    }
+    rotaryButtonPressed = buttonPressed;
+    return;
+  }
+
   if (justPressed) {
     rotaryPressStart = runTime;
     rotaryPanicLatched = false;

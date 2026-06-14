@@ -78,8 +78,14 @@ void hexboardLoop() {        // run on first core
     lightUpLEDs();   // refresh LEDs
   }
   dealWithRotary();  // deal with menu
+  if (delegatedControl) {
+    drawDelegatedControlScreen();
+    checkAndAutoSave();  // save settings
+    return;
+  }
   serviceSynthPresetMenuRebuild();
   serviceSynthWavetableMenuRebuild();
+  restoreMenuAfterDelegatedControl();
   drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   checkAndAutoSave();  // save settings
 }

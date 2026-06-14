@@ -31,6 +31,26 @@ void notePresetSyncTransferActivity(uint8_t message) {
   ++presetSyncTransferFrameCount;
 }
 
+void setDelegatedAppName(const uint8_t* data, const unsigned int len) {
+  unsigned int out = 0;
+  for (unsigned int i = 0; i < len && out < DELEGATED_APP_NAME_MAX; ++i) {
+    uint8_t value = data[i] & 0x7F;
+    if (value >= 32 && value <= 126) {
+      delegatedAppName[out++] = static_cast<char>(value);
+    }
+  }
+  if (out == 0) {
+    strncpy(delegatedAppName, "Host Application", DELEGATED_APP_NAME_MAX + 1);
+  } else {
+    delegatedAppName[out] = '\0';
+  }
+}
+
+void sendDelegatedEncoderEvent(byte event) {
+  byte message[] = { 0x7D, SYSEX_DELEGATED_ENCODER_EVENT, event };
+  withMIDI([&](auto& M) { M.sendSysEx(sizeof(message), message); });
+}
+
 void releaseActiveDelegatedNotes() {
   for (byte i = 0; i < LED_COUNT; ++i) {
     if (delegatedActiveChannel[i] == 0 || delegatedActiveNote[i] >= 128) {
@@ -43,14 +63,18 @@ void releaseActiveDelegatedNotes() {
   clearDelegatedNoteActivity();
 }
 
-void enterDelegatedControl() {
+void enterDelegatedControl(const uint8_t* appNameData = nullptr, const unsigned int appNameLen = 0) {
   if (delegatedControl) {
     releaseActiveDelegatedNotes();
   }
+  setDelegatedAppName(appNameData, appNameLen);
   delegatedControl = true;
   memset(delegatedColors, 0, sizeof(delegatedColors));
   resetDelegatedNoteMap();
   clearDelegatedNoteActivity();
+  delegatedDisplayDirty = true;
+  delegatedDisplayWakeRequested = true;
+  delegatedReturnToMenuRequested = false;
   // Reset parser state when entering delegated mode.
   setupMIDI();
   sendToLog("delegated = 1");
@@ -63,6 +87,9 @@ void exitDelegatedControl() {
   releaseActiveDelegatedNotes();
   resetDelegatedNoteMap();
   delegatedControl = false;
+  delegatedDisplayDirty = false;
+  delegatedDisplayWakeRequested = false;
+  delegatedReturnToMenuRequested = true;
   sendToLog("delegated = 0");
 }
 
@@ -148,7 +175,7 @@ void processDelegatedSysEx(const uint8_t* data, const unsigned int len) {
   }
   switch (data[0]) {
     case SYSEX_DELEGATED_ENTER:
-      enterDelegatedControl();
+      enterDelegatedControl(&data[1], len - 1);
       break;
     case SYSEX_DELEGATED_EXIT:
       exitDelegatedControl();
@@ -175,8 +202,8 @@ bool processIncomingSysEx(const uint8_t* data, const unsigned int len) {
   if (processPresetSyncSysEx(data, len)) {
     return true;
   }
-  if ((len == 4) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {
-    enterDelegatedControl();
+  if ((len >= 4) && (data[0] == 0xF0) && (data[len - 1] == 0xF7) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {
+    enterDelegatedControl(&data[3], len - 4);
     return true;
   }
   return false;
