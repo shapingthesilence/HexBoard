@@ -48,12 +48,13 @@ The current source is grouped by file:
 | `HexBoard.ino` | Arduino lifecycle wrappers only |
 | `src/firmware/FirmwareUnity.cpp` | ordered firmware translation unit for subsystem modules |
 | `src/firmware/app/` | platform/common helpers, defaults, diagnostics/timing, lifecycle functions |
-| `src/firmware/model/` | tuning, layout, scale, palette, preset models, pitch assignment |
+| `src/firmware/tuning/` | tuning math and Dynamic JI retuning |
+| `src/firmware/model/` | layout, scale, palette, preset models, pitch assignment |
 | `src/firmware/hardware/` | grid state, command buttons, scan/rotary input, LED rendering, LED animations |
-| `src/firmware/midi/` | USB/serial transport, MPE/routing, Dynamic JI, note dispatch, external MIDI LED state, delegated control, MIDI input parsing |
+| `src/firmware/midi/` | USB/serial transport, MPE/routing, note dispatch, external MIDI LED state, delegated control, MIDI input parsing |
 | `src/firmware/synth/` | oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome |
 | `src/firmware/storage/` | persistent data models, settings, synth presets, synth wavetables, preset-sync SysEx |
-| `src/firmware/menu/` | played-notes overlay state, OLED/GEM pages, callbacks, runtime settings sync |
+| `src/firmware/menu/` | played-notes overlay, OLED/GEM pages, callbacks, runtime settings sync |
 
 ## Core Data Structures
 
@@ -415,7 +416,7 @@ uses the same debounced profile auto-save path as on-device synth menu edits.
 
 ## Played Note OLED Overlay
 
-`DisplayNotes` is a normal persisted Advanced-menu setting that is enabled by default. When enabled, MIDI note on/off updates mark a small OLED display region dirty. `drawPlayedNotesOverlay()` runs from the main loop after menu input handling. During normal menu display it draws only the newest currently held note as a top-right badge using the same large note font as the full overlay. During a temporary screensaver wake it renders the larger `Now Playing` overlay with up to `6` unique active notes.
+`DisplayNotes` is a normal persisted Advanced-menu setting that is enabled by default. The overlay implementation lives in `src/firmware/menu/PlayedNotesOverlay.cpp`; menu item wiring remains in `MenuAndDisplay.cpp`. When enabled, MIDI note on/off updates mark a small OLED display region dirty. `drawPlayedNotesOverlay()` runs from the main loop after menu input handling. During normal menu display it draws only the newest currently held note as a top-right badge using the same large note font as the full overlay. During a temporary screensaver wake it renders the larger `Now Playing` overlay with up to `6` unique active notes.
 
 Display behavior:
 

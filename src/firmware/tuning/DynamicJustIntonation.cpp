@@ -1,6 +1,7 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "DynamicJustIntonation.h"
 
 //  Dynamic just intonation code start
 
@@ -26,8 +27,6 @@ inline float centsToFrequencyMultiplier(float cents) {
   }
   return std::exp2(cents / 1200.0f);
 }
-
-int16_t justIntonationRetune(byte x);
 
 inline uint8_t largestPrimeFactor(byte value) {
   uint8_t largest = 1;
@@ -526,6 +525,7 @@ struct DynamicJIRatioCandidate {
   float cents;
 };
 
+std::vector<byte> pressedKeyIDs = {};
 std::vector<DynamicJIRatioCandidate> activeDynamicJIRatios = {};
 
 void syncDynamicJIRatioCandidates() {

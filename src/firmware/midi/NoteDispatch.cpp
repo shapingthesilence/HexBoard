@@ -1,6 +1,8 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "../menu/PlayedNotesOverlay.h"
+#include "../tuning/DynamicJustIntonation.h"
 
 void RAM_FUNC(tryMIDInoteOn)(byte x) {
   if (displayPlayedNotes && screenSaverOn) {

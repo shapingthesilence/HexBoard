@@ -61,7 +61,6 @@ bool isValidMidiChannel(byte channel) {
 
 // @helpers
 //might be redundant
-std::vector<byte> pressedKeyIDs = {};
 std::array<std::vector<uint8_t>, 128> midiNoteToHexIndices = {};
 
 void updateEnvelopeParamsFromSettings();
@@ -73,7 +72,6 @@ void updateSynthPortamentoSettings();
 void updateSynthModulationParams();
 void updateSynthMenuVisibility();
 void updateTuningMenuVisibility();
-void syncDynamicJIRatioCandidates();
 void initializeSynthWaveTables();
 void loadSelectedSynthWaveform();
 void loadSelectedSynthWavetable();

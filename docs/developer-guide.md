@@ -201,7 +201,7 @@ limited gain.
 
 Current optimization candidates to keep in mind:
 
-- Dynamic JI note-on work in `src/firmware/midi/DynamicJustIntonation.cpp` still scans ratio candidates with floating-point cents math. The selected ratio table is cached, but a later pass could precompute fixed-point or octave-reduced candidates and avoid most live floating-point work.
+- Dynamic JI note-on work in `src/firmware/tuning/DynamicJustIntonation.cpp` still scans ratio candidates with floating-point cents math. The selected ratio table is cached, but a later pass could precompute fixed-point or octave-reduced candidates and avoid most live floating-point work.
 - `pressedKeyIDs` is a `std::vector` used by Dynamic JI note tracking. Replacing it with a fixed-size held-note array or bitset would avoid erase-time shifting and heap behavior in note release paths.
 - `midiNoteToHexIndices` is an array of vectors. It is rebuilt when pitch assignment changes, not per audio sample, but a fixed-capacity reverse index would remove heap allocation from mapping refreshes and external MIDI LED lookup.
 - `animateMirror()` in `src/firmware/hardware/LedAnimations.cpp` compares every held note against every visible hex. It is bounded by `LED_COUNT`, but octave/by-note animation could use precomputed step buckets if animation load becomes visible.
@@ -216,12 +216,13 @@ The main firmware files are:
 - `src/firmware/HexBoardFirmware.h`: lifecycle API used by the root sketch
 - `src/firmware/FirmwareUnity.cpp`: ordered firmware translation unit that includes the subsystem `.cpp` files
 - `src/firmware/app/`: platform/common helpers, runtime defaults, diagnostics/timing, and lifecycle orchestration
-- `src/firmware/model/`: tuning, layout, scale/palette/preset models, and pitch assignment
+- `src/firmware/tuning/`: tuning math and Dynamic JI retuning
+- `src/firmware/model/`: layout, scale/palette/preset models, and pitch assignment
 - `src/firmware/hardware/`: grid state, command buttons, scan/rotary handling, LED rendering, and LED animations
-- `src/firmware/midi/`: USB/serial transport, MPE/routing, Dynamic JI, MIDI note dispatch, external MIDI LED state, delegated control, and MIDI input parsing
+- `src/firmware/midi/`: USB/serial transport, MPE/routing, MIDI note dispatch, external MIDI LED state, delegated control, and MIDI input parsing
 - `src/firmware/synth/`: synth engine, oscillator/wavetable render path, envelopes, arpeggiator, metronome, PWM, and DMA audio
 - `src/firmware/storage/`: persistent data models, settings/profile storage, synth preset storage, synth wavetable storage, legacy user wavetable loading, and preset-sync SysEx
-- `src/firmware/menu/`: played-notes overlay state, OLED/GEM pages, callbacks, preview behavior, and runtime settings sync
+- `src/firmware/menu/`: played-notes overlay, OLED/GEM pages, callbacks, preview behavior, and runtime settings sync
 
 If you are changing a behavior, start by locating which of these layers owns it before editing anything.
 
@@ -728,7 +729,7 @@ During `ANIMATE_MIDI_IN`, LED refresh can be briefly deferred by `shouldDeferMid
 ## Known Risk Areas
 
 - The code still uses dynamic containers like `std::vector` in live paths such as `pressedKeyIDs`, `ratios`, and `midiNoteToHexIndices`
-- `tryMIDInoteOff()` removes from `pressedKeyIDs` with `pop_back()`, which assumes release order matches press order
+- `tryMIDInoteOff()` removes the released id from `pressedKeyIDs`; replacing that vector with fixed storage would reduce heap and erase-shift risk in the note release path
 - The file is large enough that side effects are easy to miss if you patch only one subsystem
 - Hardware-version-specific behavior is mixed into runtime logic, especially around MIDI output and synth output menu insertion
 
