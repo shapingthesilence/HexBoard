@@ -1,10 +1,26 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "DiagnosticsTiming.h"
+#include "PlatformCommon.h"
+#include "../hardware/GridScanRotary.h"
+#include "../hardware/GridState.h"
+#include "../hardware/LedAnimations.h"
+#include "../hardware/LedRender.h"
+#include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
 #include "../menu/SynthPresetMenu.h"
 #include "../menu/SynthWavetableMenu.h"
+#include "../midi/DelegatedControl.h"
+#include "../midi/ExternalMidiLedState.h"
+#include "../midi/MidiInput.h"
+#include "../midi/MidiTransport.h"
+#include "../midi/MidiRouting.h"
 #include "../storage/PresetSync.h"
+#include "../storage/Settings.h"
+#include "../storage/SynthPresetStorage.h"
+#include "../storage/SynthWavetableStorage.h"
+#include "../synth/SynthAudio.h"
 
 // @mainLoop
 /*

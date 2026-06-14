@@ -1,6 +1,9 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "PitchAssignment.h"
+#include "../app/PlatformCommon.h"
+#include "../midi/MidiRouting.h"
 #include "../tuning/DynamicJustIntonation.h"
 
 // @assignment

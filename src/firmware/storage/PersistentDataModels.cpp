@@ -1,6 +1,7 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "PersistentDataModels.h"
 
 // --------------------------------------------------------
 // Settings File Header Definition

@@ -1,6 +1,9 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "MidiTransport.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/PlatformCommon.h"
 
 // @MIDI
 /*
@@ -15,15 +18,12 @@
     and pitch bend messages assuming note 69
     equals concert A4, as defined below.
   */
-constexpr float CONCERT_A_HZ = 440.0f;
-constexpr float CONCERT_A_MIDI_NOTE = 69.0f;
 /*
     Pitch bend messages are calibrated
     to a pitch bend range where
     -8192 to 8191 = -200 to +200 cents,
     or two semitones.
   */
-constexpr byte DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2;
 /*
     We use pitch bends to retune notes in MPE mode.
     Some setups can adjust to fit this, but some need us to adjust it.
@@ -33,13 +33,7 @@ byte MPEpitchBendSemis = 48;
     MIDIUSB registers a Pico SDK/TinyUSB USB MIDI interface. Serial MIDI is
     handled directly so large SysEx frames do not depend on a third-party parser.
   */
-// midiD takes the following bitwise flags
-constexpr byte MIDID_NONE = 0;
-constexpr byte MIDID_USB = 1;
-constexpr byte MIDID_SER = 2;
-constexpr byte MIDID_BOTH = 3;
 byte midiD = MIDID_USB | MIDID_SER;
-constexpr uint16_t MIDI_INPUT_DRAIN_BYTE_LIMIT = 512;
 constexpr uint32_t SERIAL_MIDI_BAUD = 31250;
 constexpr uint64_t USB_MIDI_WRITE_TIMEOUT_MICROS = 50000ULL;
 constexpr uint64_t USB_MIDI_PACKET_WRITE_TIMEOUT_MICROS = 2000ULL;

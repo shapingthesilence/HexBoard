@@ -1,6 +1,16 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/PlatformCommon.h"
+#include "../hardware/LedRender.h"
+#include "../midi/MidiRouting.h"
+#include "../midi/MidiTransport.h"
+#include "../model/PitchAssignment.h"
+#include "../storage/Settings.h"
+#include "../storage/SynthPresetStorage.h"
+#include "../storage/SynthWavetableStorage.h"
+#include "../synth/SynthAudio.h"
 #include "PlayedNotesOverlay.h"
 #include "SynthPresetMenu.h"
 #include "SynthWavetableMenu.h"

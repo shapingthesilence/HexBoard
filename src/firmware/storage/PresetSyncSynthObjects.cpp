@@ -1,9 +1,14 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "../menu/MenuAndDisplay.h"
 #include "../menu/SynthPresetMenu.h"
 #include "../menu/SynthWavetableMenu.h"
 #include "PresetSync.h"
+#include "Settings.h"
+#include "SynthPresetStorage.h"
+#include "SynthWavetableStorage.h"
+#include "../synth/SynthAudio.h"
 
 std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset) {
   std::vector<uint8_t> body;

@@ -1,6 +1,7 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "SynthWavetableStorage.h"
 
 uint32_t currentSynthWavetableReferenceCrc(const CurrentSynthWavetableReferenceFile& reference) {
   uint8_t bytes[sizeof(reference.name) + sizeof(reference.folderPath)] = {};
@@ -285,7 +286,7 @@ void generateSynthWavetableObjectId(SynthWavetableSlot& wavetable, const uint8_t
   }
 }
 
-void normalizeSynthWavetableMetadata(SynthWavetableSlot& wavetable, const uint8_t* samples = nullptr) {
+void normalizeSynthWavetableMetadata(SynthWavetableSlot& wavetable, const uint8_t* samples) {
   if (!wavetable.name[0]) {
     snprintf(wavetable.name, sizeof(wavetable.name), "Wavetable");
   }

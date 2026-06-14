@@ -1,0 +1,29 @@
+#pragma once
+
+#include "../FirmwareModule.h"
+
+constexpr uint8_t ISR_PROFILE_FLAG_RELEASE_START = 0x01;
+constexpr uint8_t ISR_PROFILE_FLAG_PIEZO_SCALE = 0x02;
+
+extern bool debugMessages;
+extern bool isrProfileMenuEnabled;
+extern uint64_t runTime;
+extern uint64_t lapTime;
+extern uint64_t loopTime;
+extern volatile bool isrProfilingEnabled;
+extern volatile uint32_t isrCycleMin;
+extern volatile uint32_t isrCycleMax;
+extern volatile uint64_t isrCycleSum;
+extern volatile uint32_t isrCycleCount;
+extern volatile uint32_t isrCycleAvailableUs;
+extern volatile uint32_t isrCycleOverrunCount;
+extern volatile uint32_t isrCycleReleaseStartCount;
+extern volatile uint32_t isrCyclePiezoScaleCount;
+extern volatile uint8_t isrCycleMaxVoices;
+extern volatile uint8_t isrCycleMaxFlags;
+
+uint64_t RAM_FUNC(readClock)();
+void timeTracker();
+void readAndResetISRProfile();
+void startISRProfileCapture();
+void stopISRProfileCaptureAndLog();

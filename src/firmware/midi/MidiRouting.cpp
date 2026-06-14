@@ -1,6 +1,9 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "MidiRouting.h"
+#include "MidiTransport.h"
+#include "../app/PlatformCommon.h"
 
 uint16_t mpeChannelBitmap = 0;  // bitmap of available MPE channels (bit N = channel N+1)
 byte MPEpitchBendsNeeded;

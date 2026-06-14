@@ -1,6 +1,9 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "MidiRouting.h"
+#include "NoteDispatch.h"
+#include "../app/PlatformCommon.h"
 #include "../menu/PlayedNotesOverlay.h"
 #include "../tuning/DynamicJustIntonation.h"
 

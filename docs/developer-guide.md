@@ -215,6 +215,7 @@ The main firmware files are:
 - `src/firmware/FirmwareModule.h`: shared Arduino/RP2040/library includes and `RAM_FUNC`
 - `src/firmware/HexBoardFirmware.h`: lifecycle API used by the root sketch
 - `src/firmware/FirmwareUnity.cpp`: ordered firmware translation unit that includes the subsystem `.cpp` files
+- Subsystem `.h` files under `src/firmware/`: explicit cross-module APIs. Prefer adding declarations to the owning subsystem header instead of reintroducing broad forward declarations in `PlatformCommon.cpp`.
 - `src/firmware/app/`: platform/common helpers, runtime defaults, diagnostics/timing, and lifecycle orchestration
 - `src/firmware/tuning/`: tuning math and Dynamic JI retuning
 - `src/firmware/model/`: layout, scale/palette/preset models, and pitch assignment
@@ -224,7 +225,7 @@ The main firmware files are:
 - `src/firmware/storage/`: persistent data models, settings/profile storage, synth preset/wavetable storage, legacy user wavetable loading, and preset-sync split into protocol helpers (`PresetSyncProtocol.cpp`), geometry objects (`PresetSyncGeometry.cpp`), synth objects (`PresetSyncSynthObjects.cpp`), and message dispatch (`PresetSync.cpp`)
 - `src/firmware/menu/`: OLED/GEM pages and settings callbacks in `MenuAndDisplay.cpp`, played-note drawing in `PlayedNotesOverlay.cpp`, synth preset foldered menu rebuilding in `SynthPresetMenu.cpp`, and synth wavetable foldered menu rebuilding in `SynthWavetableMenu.cpp`
 
-If you are changing a behavior, start by locating which of these layers owns it before editing anything.
+If you are changing a behavior, start by locating which of these layers owns it before editing anything. Shared constants, types, and lifecycle calls should be declared in the nearest owning header, while subsystem-owned globals and hot helpers should stay private in their `.cpp` file whenever no other module needs them.
 
 ## Runtime Data Flow
 

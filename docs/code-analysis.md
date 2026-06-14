@@ -47,6 +47,7 @@ The current source is grouped by file:
 | --- | --- |
 | `HexBoard.ino` | Arduino lifecycle wrappers only |
 | `src/firmware/FirmwareUnity.cpp` | ordered firmware translation unit for subsystem modules |
+| `src/firmware/**/*.h` | explicit cross-module APIs owned by each subsystem; implementation-private globals stay in `.cpp` files |
 | `src/firmware/app/` | platform/common helpers, defaults, diagnostics/timing, lifecycle functions |
 | `src/firmware/tuning/` | tuning math and Dynamic JI retuning |
 | `src/firmware/model/` | layout, scale, palette, preset models, pitch assignment |

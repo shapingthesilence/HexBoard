@@ -1,6 +1,10 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "DelegatedControl.h"
+#include "MidiTransport.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../hardware/LedRender.h"
 #include "../storage/PresetSync.h"
 
 bool reportDeviceIdentity(const uint8_t* data, const unsigned int len) {

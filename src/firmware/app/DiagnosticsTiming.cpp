@@ -1,6 +1,7 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "DiagnosticsTiming.h"
 
 // @diagnostics
 /*
@@ -40,8 +41,6 @@ volatile uint32_t isrProfilePiezoScaleCount = 0;
 volatile uint32_t isrProfileDmaUnderrunCount = 0;
 volatile uint8_t isrProfileMaxVoices = 0;
 volatile uint8_t isrProfileMaxFlags = 0;
-constexpr uint8_t ISR_PROFILE_FLAG_RELEASE_START = 0x01;
-constexpr uint8_t ISR_PROFILE_FLAG_PIEZO_SCALE = 0x02;
 bool isrProfileMenuEnabled = false;
 
 void captureAndResetISRProfile(bool resumeProfiling) {

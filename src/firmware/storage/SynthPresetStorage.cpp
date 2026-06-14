@@ -1,6 +1,7 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "SynthPresetStorage.h"
 
 void applyDefaultSynthPresets() {
   synthPresets.clear();

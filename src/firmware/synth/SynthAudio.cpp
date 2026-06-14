@@ -1,6 +1,10 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "SynthAudio.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../midi/MidiRouting.h"
+#include "../midi/MidiTransport.h"
 #include "../tuning/DynamicJustIntonation.h"
 
 // @synth
@@ -3637,7 +3641,7 @@ inline void RAM_FUNC(beginSynthPortamento)(uint8_t channelIndex, uint32_t target
   synth[channelIndex].glideSamplesRemaining = remaining;
 }
 
-void RAM_FUNC(setSynthFreq)(float frequency, byte channel, bool resetPhase = false, bool allowPortamento = false) {
+void RAM_FUNC(setSynthFreq)(float frequency, byte channel, bool resetPhase, bool allowPortamento) {
   if (channel == 0) {
     return;
   }
