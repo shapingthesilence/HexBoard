@@ -1,6 +1,7 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "../synth/BuiltinWavetables.h"
 #include "SynthWavetableMenu.h"
 
 char currentSynthWavetableMenuLabel[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = "WT:Basic";

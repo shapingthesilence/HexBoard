@@ -15,6 +15,7 @@
 #include "midi/MidiRouting.cpp"
 #include "tuning/DynamicJustIntonation.cpp"
 #include "midi/NoteDispatch.cpp"
+#include "synth/BuiltinWavetables.cpp"
 #include "synth/SynthAudio.cpp"
 #include "hardware/LedAnimations.cpp"
 #include "midi/ExternalMidiLedState.cpp"

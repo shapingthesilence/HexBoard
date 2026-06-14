@@ -14,6 +14,7 @@
 #include "../storage/PresetSync.h"
 #include "../storage/SynthPresetStorage.h"
 #include "../storage/SynthWavetableStorage.h"
+#include "../synth/BuiltinWavetables.h"
 #include "../synth/SynthAudio.h"
 
 // @init

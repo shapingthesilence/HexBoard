@@ -221,7 +221,7 @@ The main firmware files are:
 - `src/firmware/model/`: layout, scale/palette/preset models, and pitch assignment
 - `src/firmware/hardware/`: grid state, command buttons, scan/rotary handling, LED rendering, and LED animations
 - `src/firmware/midi/`: USB/serial transport, MPE/routing, MIDI note dispatch, external MIDI LED state, delegated control, and MIDI input parsing
-- `src/firmware/synth/`: synth engine, oscillator/wavetable render path, envelopes, arpeggiator, metronome, PWM, and DMA audio; hot render/audio helpers remain grouped in `SynthAudio.cpp`
+- `src/firmware/synth/`: built-in single-cycle waveform sources and compatibility wavetable catalog in `BuiltinWavetables.cpp`, plus synth engine, active wavetable RAM, oscillator/render path, envelopes, arpeggiator, metronome, PWM, and DMA audio in `SynthAudio.cpp`; hot render/audio helpers remain grouped in `SynthAudio.cpp`
 - `src/firmware/storage/`: persistent data models, settings/profile storage, synth preset/wavetable storage, legacy user wavetable loading, and preset-sync split into protocol helpers (`PresetSyncProtocol.cpp`), geometry objects (`PresetSyncGeometry.cpp`), synth objects (`PresetSyncSynthObjects.cpp`), and message dispatch (`PresetSync.cpp`)
 - `src/firmware/menu/`: OLED/GEM pages and settings callbacks in `MenuAndDisplay.cpp`, played-note drawing in `PlayedNotesOverlay.cpp`, synth preset foldered menu rebuilding in `SynthPresetMenu.cpp`, and synth wavetable foldered menu rebuilding in `SynthWavetableMenu.cpp`
 

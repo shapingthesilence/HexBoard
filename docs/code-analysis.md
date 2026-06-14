@@ -53,7 +53,7 @@ The current source is grouped by file:
 | `src/firmware/model/` | layout, scale, palette, preset models, pitch assignment |
 | `src/firmware/hardware/` | grid state, command buttons, scan/rotary input, LED rendering, LED animations |
 | `src/firmware/midi/` | USB/serial transport, MPE/routing, note dispatch, external MIDI LED state, delegated control, MIDI input parsing |
-| `src/firmware/synth/` | oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome; hot render/audio helpers remain grouped in `SynthAudio.cpp` |
+| `src/firmware/synth/` | built-in single-cycle waveform sources and compatibility wavetable catalog, oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome; hot render/audio helpers remain grouped in `SynthAudio.cpp` |
 | `src/firmware/storage/` | persistent data models, settings, synth presets, synth wavetables, preset-sync protocol helpers, geometry objects, synth object handlers, and message dispatch |
 | `src/firmware/menu/` | OLED/GEM pages and callbacks, played-note overlay, synth preset menu rebuilds, synth wavetable menu rebuilds |
 
