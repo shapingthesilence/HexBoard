@@ -27,6 +27,25 @@ constexpr byte SYNTH_MONO_LEGATO = 4;
 constexpr byte SYNTH_POLYTBL_LEGACY = 5;
 constexpr byte SYNTH_MONO = SYNTH_MONO_RETRIGGER;  // Legacy stored mono value.
 
+inline bool RAM_FUNC(isMonoPlaybackMode)(byte mode) {
+  return mode == SYNTH_MONO_RETRIGGER || mode == SYNTH_MONO_LEGATO;
+}
+
+inline bool RAM_FUNC(isPolyPlaybackMode)(byte mode) {
+  return mode == SYNTH_POLY;
+}
+
+inline bool RAM_FUNC(isValidPlaybackMode)(byte mode) {
+  return mode == SYNTH_OFF || isMonoPlaybackMode(mode) || mode == SYNTH_ARPEGGIO || isPolyPlaybackMode(mode);
+}
+
+inline byte RAM_FUNC(normalizeSynthPlaybackMode)(byte mode) {
+  if (mode == SYNTH_POLYTBL_LEGACY) {
+    return SYNTH_POLY;
+  }
+  return isValidPlaybackMode(mode) ? mode : SYNTH_POLY;
+}
+
 constexpr byte WAVEFORM_SINE = 0;
 constexpr byte WAVEFORM_STRINGS = 1;
 constexpr byte WAVEFORM_CLARINET = 2;

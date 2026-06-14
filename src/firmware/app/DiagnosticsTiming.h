@@ -22,6 +22,8 @@ extern volatile uint32_t isrCyclePiezoScaleCount;
 extern volatile uint8_t isrCycleMaxVoices;
 extern volatile uint8_t isrCycleMaxFlags;
 
+#define sendToLog(msg) do { if (debugMessages) { Serial.println((std::string(msg)).c_str()); } } while(0)
+
 uint64_t RAM_FUNC(readClock)();
 void timeTracker();
 void readAndResetISRProfile();

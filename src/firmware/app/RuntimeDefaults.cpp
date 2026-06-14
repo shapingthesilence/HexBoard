@@ -1,6 +1,7 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "RuntimeDefaults.h"
 #include "../storage/PersistentDataModels.h"
 #include "../synth/SynthDefaults.h"
 #include "../tuning/Tuning.h"
@@ -10,10 +11,6 @@
     This section sets default values
     for user-editable options
   */
-constexpr byte MPE_MODE_AUTO = 0;
-constexpr byte MPE_MODE_DISABLE = 1;
-constexpr byte MPE_MODE_FORCE = 2;
-
 byte mpeUserMode = MPE_MODE_AUTO;
 bool extraMPE = false;
 bool standardMidiMicrotonalActive = false;
@@ -81,18 +78,6 @@ byte justIntonationBPM = 60;
 byte justIntonationBPM_Multiplier = 1;
 bool useJustIntonationBPM = false;
 bool useDynamicJustIntonation = false;
-constexpr byte DYNAMIC_JI_RATIO_TABLE_3_LIMIT = 3;
-constexpr byte DYNAMIC_JI_RATIO_TABLE_5_LIMIT = 5;
-constexpr byte DYNAMIC_JI_RATIO_TABLE_7_LIMIT = 7;
-constexpr byte DYNAMIC_JI_RATIO_TABLE_11_LIMIT = 11;
-constexpr byte DYNAMIC_JI_RATIO_TABLE_13_LIMIT = 13;
-constexpr byte DYNAMIC_JI_RATIO_TABLE_17_LIMIT = 17;
-constexpr byte DYNAMIC_JI_RATIO_TABLE_19_LIMIT = 19;
-constexpr byte DYNAMIC_JI_RATIO_TABLE_23_LIMIT = 23;
-constexpr byte DYNAMIC_JI_RATIO_TABLE_29_LIMIT = 29;
-constexpr byte DYNAMIC_JI_RATIO_TABLE_31_LIMIT = 31;
-constexpr byte DYNAMIC_JI_RATIO_TABLE_37_LIMIT = 37;
-constexpr byte DYNAMIC_JI_RATIO_TABLE_41_LIMIT = 41;
 byte dynamicJIRatioTable = DYNAMIC_JI_RATIO_TABLE_41_LIMIT;
 
 int transposeSteps = 0;
@@ -125,25 +110,6 @@ byte playbackMode = SYNTH_POLY;
 uint8_t synthPortamentoTimeIndex = 0;
 uint32_t synthPortamentoTicks = 0;
 
-inline bool RAM_FUNC(isMonoPlaybackMode)(byte mode) {
-  return mode == SYNTH_MONO_RETRIGGER || mode == SYNTH_MONO_LEGATO;
-}
-
-inline bool RAM_FUNC(isPolyPlaybackMode)(byte mode) {
-  return mode == SYNTH_POLY;
-}
-
-inline bool RAM_FUNC(isValidPlaybackMode)(byte mode) {
-  return mode == SYNTH_OFF || isMonoPlaybackMode(mode) || mode == SYNTH_ARPEGGIO || isPolyPlaybackMode(mode);
-}
-
-inline byte RAM_FUNC(normalizeSynthPlaybackMode)(byte mode) {
-  if (mode == SYNTH_POLYTBL_LEGACY) {
-    return SYNTH_POLY;
-  }
-  return isValidPlaybackMode(mode) ? mode : SYNTH_POLY;
-}
-
 byte currWave = WAVEFORM_HYBRID;
 char currentSynthWavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = "Basic";
 char currentSynthWavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = "/Built In";
@@ -164,28 +130,9 @@ byte synthLfoWave = SYNTH_LFO_WAVE_SINE;
 byte synthVibratoSpeed = SYNTH_VIBRATO_SPEED_DEFAULT;
 byte synthLfoSpeed = SYNTH_LFO_SPEED_DEFAULT;
 
-constexpr byte RAINBOW_MODE = 0;
-constexpr byte TIERED_COLOR_MODE = 1;
-constexpr byte ALTERNATE_COLOR_MODE = 2;
-constexpr byte RAINBOW_OF_FIFTHS_MODE = 3;
-constexpr byte PIANO_ALT_COLOR_MODE = 4;
-constexpr byte PIANO_COLOR_MODE = 5;
-constexpr byte PIANO_INCANDESCENT_COLOR_MODE = 6;
-constexpr byte DIATONIC_COLOR_MODE = 7;
 byte colorMode = RAINBOW_MODE;
 bool bootAnimationEnabled = true;
 
-constexpr byte ANIMATE_BUTTON = 0;
-constexpr byte ANIMATE_STAR = 1;
-constexpr byte ANIMATE_SPLASH = 2;
-constexpr byte ANIMATE_ORBIT = 3;
-constexpr byte ANIMATE_OCTAVE = 4;
-constexpr byte ANIMATE_BY_NOTE = 5;
-constexpr byte ANIMATE_BEAMS = 6;
-constexpr byte ANIMATE_SPLASH_REVERSE = 7;
-constexpr byte ANIMATE_STAR_REVERSE = 8;
-constexpr byte ANIMATE_MIDI_IN = 9;
-constexpr byte ANIMATE_NONE = 10;
 byte animationType = ANIMATE_BUTTON;
 
 constexpr byte LED_TEST_OFF = 0;
@@ -195,28 +142,7 @@ constexpr byte LED_TEST_BLUE = 3;
 constexpr byte LED_TEST_WHITE = 4;
 byte ledTestMode = LED_TEST_OFF;
 
-constexpr byte BRIGHT_MAX = 255;
-constexpr byte BRIGHT_HIGH = 210;
-constexpr byte BRIGHT_MID = 180;
-constexpr byte BRIGHT_LOW = 150;
-constexpr byte BRIGHT_DIM = 110;
-constexpr byte BRIGHT_DIMMER = 70;
-constexpr byte BRIGHT_DARK = 50;     // BRIGHT_DIMMEST
-constexpr byte BRIGHT_DARKER = 34;   // Lowest brightness before backlight shuts down
-constexpr byte BRIGHT_FAINT = 33;    // Highest brightness before backlight turns on
-constexpr byte BRIGHT_FAINTER = 24;  // Lowest brightness before any highlighted button is lit in all color modes
-constexpr byte BRIGHT_OFF = 0;
 byte globalBrightness = BRIGHT_DIM;
-
-constexpr byte LED_CURRENT_LIMIT_OFF = 0;
-constexpr byte LED_CURRENT_LIMIT_250MA = 1;
-constexpr byte LED_CURRENT_LIMIT_500MA = 2;
-constexpr byte LED_CURRENT_LIMIT_750MA = 3;
-constexpr byte LED_CURRENT_LIMIT_1000MA = 4;
-constexpr byte LED_CURRENT_LIMIT_1500MA = 5;
-constexpr byte LED_CURRENT_LIMIT_2000MA = 6;
-constexpr byte LED_CURRENT_LIMIT_3000MA = 7;
-constexpr byte LED_CURRENT_LIMIT_MAX_MODE = LED_CURRENT_LIMIT_3000MA;
 
 byte ledCurrentLimitMode = LED_CURRENT_LIMIT_OFF;
 uint16_t ledCurrentLimitMilliamps = 0;

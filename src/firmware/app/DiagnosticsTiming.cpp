@@ -10,8 +10,6 @@
     to the Serial port
   */
 bool debugMessages = true;
-// Macro avoids constructing std::string arguments when debugMessages is false
-#define sendToLog(msg) do { if (debugMessages) { Serial.println((std::string(msg)).c_str()); } } while(0)
 /*
     ISR cycle profiling — lightweight timing measurement for the
     audio poll() interrupt. Tracks min/max/average microseconds

@@ -48,13 +48,13 @@ The current source is grouped by file:
 | `HexBoard.ino` | Arduino lifecycle wrappers only |
 | `src/firmware/FirmwareUnity.cpp` | ordered firmware translation unit for modules not yet moved to standalone compilation |
 | `src/firmware/**/*.h` | explicit cross-module APIs owned by each subsystem; shared tuning/layout/preset, grid-state, and persistent-schema declarations now live in their owning headers |
-| `src/firmware/app/` | platform/common helpers, defaults, diagnostics/timing, lifecycle functions |
+| `src/firmware/app/` | platform/common helpers, non-synth runtime defaults in `RuntimeDefaults.h`, diagnostics/timing, lifecycle functions |
 | `src/firmware/tuning/` | standalone tuning tables plus unity-included Dynamic JI retuning |
 | `src/firmware/model/` | standalone layout and scale/palette/preset tables plus unity-included pitch assignment |
 | `src/firmware/hardware/` | grid state, command buttons, scan/rotary input, LED rendering, LED animations |
 | `src/firmware/midi/` | USB/serial transport, MPE/routing, note dispatch, external MIDI LED state, delegated control, MIDI input parsing |
 | `src/firmware/synth/` | shared synth defaults, built-in single-cycle waveform sources and compatibility wavetable catalog, oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome; hot render/audio helpers remain grouped in `SynthAudio.cpp` |
-| `src/firmware/storage/` | standalone persistent data models plus unity-included settings, synth presets, synth wavetables, preset-sync protocol helpers, geometry objects, synth object handlers, and message dispatch |
+| `src/firmware/storage/` | standalone persistent data models and settings/profile persistence plus unity-included synth presets, synth wavetables, preset-sync protocol helpers, geometry objects, synth object handlers, and message dispatch |
 | `src/firmware/menu/` | OLED/GEM pages and callbacks, played-note overlay, synth preset menu rebuilds, synth wavetable menu rebuilds |
 
 ## Core Data Structures
@@ -114,7 +114,7 @@ uint8_t* settings;
 ```
 
 There are `9` profiles. Slot `0` is the boot and auto-save slot. `NUM_SETTINGS` is derived from `SettingKey::NumSettings`, so adding settings requires updating the enum, defaults, runtime sync, and menu wiring together.
-The `SettingKey` enum, settings file header, synth preset/wavetable slot structs, geometry object structs, preset key list, and small setting accessors are declared in `src/firmware/storage/PersistentDataModels.h` so storage, menu, and preset-sync modules can include the schema directly.
+The `SettingKey` enum, settings file header, synth preset/wavetable slot structs, geometry object structs, preset key list, and small setting accessors are declared in `src/firmware/storage/PersistentDataModels.h` so storage, menu, and preset-sync modules can include the schema directly. `src/firmware/storage/Settings.cpp` compiles standalone and exposes the factory defaults table, auto-save state, dirty flag, and filesystem availability through `Settings.h`.
 
 ### Dynamic Containers Still In Runtime Paths
 

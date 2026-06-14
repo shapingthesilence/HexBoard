@@ -1,13 +1,19 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/PlatformCommon.h"
+#include "../app/RuntimeDefaults.h"
+#include "../hardware/LedRender.h"
+#include "../menu/MenuAndDisplay.h"
+#include "../model/ScalePalettePreset.h"
 #include "../synth/SynthDefaults.h"
+#include "../synth/SynthAudio.h"
 #include "Settings.h"
 #include "SynthPresetStorage.h"
+#include "SynthWavetableStorage.h"
 
 // SETTINGS STEP 2 - Define factory defaults (in the same order as the enum).
 // Adjust values below to match your desired defaults.
-const uint8_t factoryDefaults[NUM_SETTINGS] = {
+extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* Debug                        */ 0,
   /* Invert rotary encoder        */ 0,
   /* Auto save settings           */ 1,
@@ -397,4 +403,3 @@ void setActiveProfile(uint8_t profileIndex) {
   syncSettingsToRuntime();
   sendToLog("Loaded profile " + std::to_string(profileIndex + 1));
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

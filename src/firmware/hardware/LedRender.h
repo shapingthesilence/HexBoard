@@ -3,6 +3,8 @@
 #include "../FirmwareModule.h"
 #include "../model/ScalePalettePreset.h"
 
+extern bool settingsFileMissingOnBoot;
+
 uint32_t RAM_FUNC(getLEDcode)(colorDef c);
 void RAM_FUNC(applyLedCurrentLimitToFrame)();
 void RAM_FUNC(resetVelocityLEDs)();

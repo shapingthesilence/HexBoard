@@ -16,3 +16,6 @@ void setActiveProfile(uint8_t profileIndex);
 bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t settingsPerProfile);
 
 extern bool settingsDirty;
+extern bool fileSystemExists;
+extern bool autoSave;
+extern const uint8_t factoryDefaults[NUM_SETTINGS];

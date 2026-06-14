@@ -20,7 +20,6 @@
 #include "midi/MidiInput.cpp"
 #include "model/PitchAssignment.cpp"
 #include "hardware/CommandButtons.cpp"
-#include "storage/Settings.cpp"
 #include "storage/SynthWavetableStorage.cpp"
 #include "storage/SynthPresetStorage.cpp"
 #include "storage/PresetSyncProtocol.cpp"
