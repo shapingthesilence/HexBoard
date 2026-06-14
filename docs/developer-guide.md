@@ -437,6 +437,10 @@ The MIDI subsystem supports three broad modes:
 - MPE with per-note pitch bend
 
 For the external-only raw button/LED surface mode, see `docs/delegated-control.md`.
+Delegated control also has a session-only MIDI note map that hosts can update
+with live SysEx commands. It deliberately does not use `SettingKey`, profiles,
+or the preset-sync object store; keep it transient unless that product decision
+changes.
 For the host sync protocol covering profiles, user tunings/layouts, mapping
 objects, and named synth presets, see `docs/preset-sync-sysex.md`. Current
 firmware can persist, round-trip, and live-apply the minimum geometry path:

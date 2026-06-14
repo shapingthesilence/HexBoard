@@ -8,6 +8,11 @@ import {
   decodeWriteCommitPayload,
   encodeAckFrame,
   encodeDataChunkPayload,
+  encodeDelegatedEnterFrame,
+  encodeDelegatedExitFrame,
+  encodeDelegatedNoteMapFrame,
+  encodeDelegatedNoteMapPayload,
+  encodeDelegatedNoteMapResetFrame,
   encodeDefaultPresetSyncFrame,
   encodeReadRequestPayload,
   encodeWriteBeginPayload,
@@ -128,5 +133,37 @@ describe("preset-sync SysEx", () => {
       objectCrc32: 0x6702fe2b,
       commitFlags: 0x01
     });
+  });
+});
+
+describe("delegated-control SysEx", () => {
+  it("encodes enter, exit, and note-map reset frames", () => {
+    expect(encodeDelegatedEnterFrame()).toEqual([0xf0, 0x7d, 0x01, 0xf7]);
+    expect(encodeDelegatedExitFrame()).toEqual([0xf0, 0x7d, 0x02, 0xf7]);
+    expect(encodeDelegatedNoteMapResetFrame()).toEqual([0xf0, 0x7d, 0x05, 0xf7]);
+  });
+
+  it("encodes delegated note-map records", () => {
+    expect(encodeDelegatedNoteMapPayload([
+      { buttonIndex: 0, channel: 1, note: 60 },
+      { buttonIndex: 120, channel: 16, note: 36 },
+      { buttonIndex: 139, channel: 2, note: 127 }
+    ])).toEqual([
+      0x00, 0x00, 0x01, 0x3c,
+      0x00, 0x78, 0x10, 0x24,
+      0x01, 0x0b, 0x02, 0x7f
+    ]);
+  });
+
+  it("encodes complete delegated note-map frames", () => {
+    expect(encodeDelegatedNoteMapFrame([
+      { buttonIndex: 64, channel: 3, note: 72 }
+    ])).toEqual([0xf0, 0x7d, 0x04, 0x00, 0x40, 0x03, 0x48, 0xf7]);
+  });
+
+  it("rejects invalid delegated note-map values", () => {
+    expect(() => encodeDelegatedNoteMapPayload([{ buttonIndex: 140, channel: 1, note: 60 }])).toThrow(RangeError);
+    expect(() => encodeDelegatedNoteMapPayload([{ buttonIndex: 1, channel: 0, note: 60 }])).toThrow(RangeError);
+    expect(() => encodeDelegatedNoteMapPayload([{ buttonIndex: 1, channel: 1, note: 128 }])).toThrow(RangeError);
   });
 });

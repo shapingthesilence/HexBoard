@@ -399,6 +399,11 @@ Some external software can temporarily take over HexBoard as a button-and-light 
 
 Delegated control is only for compatible host software. It is not shown in the OLED menu, is not saved in profiles, and starts disabled every time HexBoard boots. Host-driven LEDs still respect `Brightness` and `LED Limit`.
 
+Compatible hosts can temporarily assign delegated MIDI channel/note output per
+visible key for the current delegated session. If the host does not send a
+mapping, keys use the standard delegated button-index encoding. These delegated
+assignments reset on boot, delegated entry, delegated exit, or host reset.
+
 ### Companion Web App
 
 A browser-based HexBoard Sync app is being developed in this repository. Its

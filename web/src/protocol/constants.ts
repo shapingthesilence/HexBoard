@@ -6,6 +6,16 @@ export const PROTOCOL_MAJOR = 1;
 export const PROTOCOL_MINOR = 0;
 export const NEW_OBJECT_HANDLE = 0x3fff;
 
+export const DelegatedCommand = {
+  Enter: 0x01,
+  Exit: 0x02,
+  Led: 0x03,
+  NoteMap: 0x04,
+  NoteMapReset: 0x05
+} as const;
+
+export type DelegatedCommandValue = (typeof DelegatedCommand)[keyof typeof DelegatedCommand];
+
 export const MessageType = {
   HelloRequest: 0x01,
   HelloResponse: 0x02,

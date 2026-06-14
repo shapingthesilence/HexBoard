@@ -262,9 +262,29 @@ bool toggleWheel = false;  // false = mod wheel, true = pitch bend wheel
 // not persisted; a host must enter/exit it via SysEx.
 bool delegatedControl = false;
 uint32_t delegatedColors[LED_COUNT];
+byte delegatedNoteMapChannel[LED_COUNT];
+byte delegatedNoteMapNote[LED_COUNT];
+byte delegatedActiveChannel[LED_COUNT];
+byte delegatedActiveNote[LED_COUNT];
 constexpr byte SYSEX_DELEGATED_ENTER = 1;
 constexpr byte SYSEX_DELEGATED_EXIT = 2;
 constexpr byte SYSEX_LED = 3;
+constexpr byte SYSEX_DELEGATED_NOTE_MAP = 4;
+constexpr byte SYSEX_DELEGATED_NOTE_MAP_RESET = 5;
+
+void resetDelegatedNoteMap() {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    delegatedNoteMapChannel[i] = static_cast<byte>((i / 100) + 1);
+    delegatedNoteMapNote[i] = i % 100;
+  }
+}
+
+void clearDelegatedNoteActivity() {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    delegatedActiveChannel[i] = 0;
+    delegatedActiveNote[i] = UNUSED_NOTE;
+  }
+}
 
 void setupPins() {
   const byte multiplexerPinCount = sizeof(mPin) / sizeof(mPin[0]);
@@ -312,6 +332,8 @@ void setupGrid() {
   }
   // On version 1.2, the first flag input is shorted (always connected).
   h[FIRST_FLAG_BUTTON_INDEX].note = HARDWARE_V1_2;
+  resetDelegatedNoteMap();
+  clearDelegatedNoteActivity();
 }
 
 void detectHardwareVersion() {

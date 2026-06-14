@@ -322,6 +322,11 @@ When active:
 - `lightUpLEDs()` renders only the host-provided delegated LED buffer
 - incoming delegated SysEx is polled from core 1
 
+Delegated MIDI note mapping is session-only RAM state. Hosts can assign a
+channel/note pair to each visible key through delegated SysEx; the default map
+preserves the original button-index encoding. Active delegated presses remember
+the channel/note sent on note-on so live remapping cannot strand note-offs.
+
 The protocol is documented in `docs/delegated-control.md`. Keep it isolated from settings and user menu code unless the product decision changes.
 
 The preset-sync SysEx protocol is documented in `docs/preset-sync-sysex.md`.

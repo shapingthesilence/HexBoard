@@ -31,27 +31,94 @@ void notePresetSyncTransferActivity(uint8_t message) {
   ++presetSyncTransferFrameCount;
 }
 
-void onToggleDelegated() {
-  if (delegatedControl) {
-    memset(delegatedColors, 0, sizeof(delegatedColors));
-    // Reset parser state when entering delegated mode.
-    setupMIDI();
+void releaseActiveDelegatedNotes() {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    if (delegatedActiveChannel[i] == 0 || delegatedActiveNote[i] >= 128) {
+      continue;
+    }
+    byte note = delegatedActiveNote[i];
+    byte channel = delegatedActiveChannel[i];
+    withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel); });
   }
-  sendToLog("delegated = " + std::to_string(delegatedControl));
+  clearDelegatedNoteActivity();
 }
 
-void toggleDelegated() {
-  delegatedControl = !delegatedControl;
-  onToggleDelegated();
+void enterDelegatedControl() {
+  if (delegatedControl) {
+    releaseActiveDelegatedNotes();
+  }
+  delegatedControl = true;
+  memset(delegatedColors, 0, sizeof(delegatedColors));
+  resetDelegatedNoteMap();
+  clearDelegatedNoteActivity();
+  // Reset parser state when entering delegated mode.
+  setupMIDI();
+  sendToLog("delegated = 1");
 }
 
-void delegatedButtonEvent(byte x, bool press) {
-  byte channel = x / 100;  // 0-based hundreds digit
-  byte note = x % 100;
+void exitDelegatedControl() {
+  if (!delegatedControl) {
+    return;
+  }
+  releaseActiveDelegatedNotes();
+  resetDelegatedNoteMap();
+  delegatedControl = false;
+  sendToLog("delegated = 0");
+}
+
+void RAM_FUNC(delegatedButtonEvent)(byte x, bool press) {
+  if (x >= LED_COUNT) {
+    byte channel = x / 100;  // 0-based hundreds digit
+    byte note = x % 100;
+    if (press) {
+      withMIDI([&](auto& M) { M.sendNoteOn(note, 127, channel + 1); });
+    } else {
+      withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel + 1); });
+    }
+    return;
+  }
+
   if (press) {
-    withMIDI([&](auto& M) { M.sendNoteOn(note, 127, channel + 1); });
+    if (delegatedActiveChannel[x] != 0 && delegatedActiveNote[x] < 128) {
+      byte activeNote = delegatedActiveNote[x];
+      byte activeChannel = delegatedActiveChannel[x];
+      withMIDI([&](auto& M) { M.sendNoteOff(activeNote, 0, activeChannel); });
+    }
+    byte channel = delegatedNoteMapChannel[x];
+    byte note = delegatedNoteMapNote[x];
+    delegatedActiveChannel[x] = channel;
+    delegatedActiveNote[x] = note;
+    withMIDI([&](auto& M) { M.sendNoteOn(note, 127, channel); });
   } else {
-    withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel + 1); });
+    if (delegatedActiveChannel[x] == 0 || delegatedActiveNote[x] >= 128) {
+      return;
+    }
+    byte channel = delegatedActiveChannel[x];
+    byte note = delegatedActiveNote[x];
+    delegatedActiveChannel[x] = 0;
+    delegatedActiveNote[x] = UNUSED_NOTE;
+    withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel); });
+  }
+}
+
+void processDelegatedNoteMapSysEx(const uint8_t* data, const unsigned int len) {
+  if ((len % 4) != 0) {
+    sendToLog("delegated note map SysEx has malformed trailing bytes; ignoring incomplete record");
+  }
+  for (unsigned int idx = 0; idx + 4 <= len; idx += 4) {
+    uint16_t button = (data[idx] << 7) + data[idx + 1];
+    byte channel = data[idx + 2] & 0x7F;
+    byte note = data[idx + 3] & 0x7F;
+    if (button >= LED_COUNT) {
+      sendToLog("delegated note map: button " + std::to_string(button) + " is out of range; ignoring");
+      continue;
+    }
+    if (channel < 1 || channel > 16) {
+      sendToLog("delegated note map: channel " + std::to_string(channel) + " is out of range; ignoring");
+      continue;
+    }
+    delegatedNoteMapChannel[button] = channel;
+    delegatedNoteMapNote[button] = note;
   }
 }
 
@@ -81,12 +148,19 @@ void processDelegatedSysEx(const uint8_t* data, const unsigned int len) {
   }
   switch (data[0]) {
     case SYSEX_DELEGATED_ENTER:
+      enterDelegatedControl();
       break;
     case SYSEX_DELEGATED_EXIT:
-      toggleDelegated();
+      exitDelegatedControl();
       break;
     case SYSEX_LED:
       processLedSysEx(&data[1], len - 1);
+      break;
+    case SYSEX_DELEGATED_NOTE_MAP:
+      processDelegatedNoteMapSysEx(&data[1], len - 1);
+      break;
+    case SYSEX_DELEGATED_NOTE_MAP_RESET:
+      resetDelegatedNoteMap();
       break;
     default:
       sendToLog("ignoring unknown delegated SysEx code " + std::to_string(data[0]));
@@ -102,7 +176,7 @@ bool processIncomingSysEx(const uint8_t* data, const unsigned int len) {
     return true;
   }
   if ((len == 4) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {
-    toggleDelegated();
+    enterDelegatedControl();
     return true;
   }
   return false;

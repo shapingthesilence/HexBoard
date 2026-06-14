@@ -13,8 +13,8 @@ The mode is intentionally external-only:
 
 Primary implementation points:
 
-- `delegatedControl`, `delegatedColors`, and `SYSEX_*` constants live in `src/firmware/hardware/GridState.cpp`.
-- `processIncomingSysEx()`, `delegatedButtonEvent()`, and `processLedSysEx()` live in `src/firmware/midi/DelegatedControl.cpp`.
+- `delegatedControl`, `delegatedColors`, delegated note-map state, and `SYSEX_*` constants live in `src/firmware/hardware/GridState.cpp`.
+- `processIncomingSysEx()`, `delegatedButtonEvent()`, `processDelegatedNoteMapSysEx()`, and `processLedSysEx()` live in `src/firmware/midi/DelegatedControl.cpp`.
 - `processIncomingMIDIDelegated()` lives in `src/firmware/midi/MidiInput.cpp`.
 - `readHexes()` and `updateWheels()` live in `src/firmware/hardware/GridScanRotary.cpp`.
 - `lightUpLEDs()` lives in `src/firmware/hardware/LedRender.cpp`.
@@ -52,7 +52,7 @@ F0 7D <command> <payload...> F7
 
 The preset-sync protocol is intentionally separate and uses the family form
 `F0 7D 10 <protocol...> F7`; see `docs/preset-sync-sysex.md`.
-Delegated-control command bytes `0x01`, `0x02`, and `0x03` remain live-surface
+Delegated-control command bytes `0x01` through `0x05` remain live-surface
 commands, not preset-sync messages.
 
 The command byte is one of:
@@ -62,6 +62,8 @@ The command byte is one of:
 | `0x01` | `SYSEX_DELEGATED_ENTER` | Host to device | Enter delegated mode |
 | `0x02` | `SYSEX_DELEGATED_EXIT` | Host to device | Exit delegated mode |
 | `0x03` | `SYSEX_LED` | Host to device | Update one or more LEDs |
+| `0x04` | `SYSEX_DELEGATED_NOTE_MAP` | Host to device | Assign delegated MIDI channel/note output for one or more visible keys |
+| `0x05` | `SYSEX_DELEGATED_NOTE_MAP_RESET` | Host to device | Restore delegated key output to the default button-index encoding |
 
 ## Entering And Exiting
 
@@ -77,7 +79,15 @@ Exit delegated mode:
 F0 7D 02 F7
 ```
 
-Entering delegated mode clears `delegatedColors[]` to black and calls `setupMIDI()` to reset MIDI parser state. The enter command is a no-op if received after delegated mode is already active.
+Entering delegated mode clears `delegatedColors[]` to black, restores the
+delegated note map to defaults, clears delegated active-note tracking, and calls
+`setupMIDI()` to reset MIDI parser state. If the enter command is received while
+delegated mode is already active, active delegated notes are released first and
+the delegated session state is reset.
+
+Exiting delegated mode sends note-off messages for active delegated notes,
+restores the delegated note map to defaults, and then returns to normal
+HexBoard behavior.
 
 ## Device Identity
 
@@ -99,9 +109,10 @@ HexBoard's MIDI output wrapper adds the SysEx boundaries when sending. The manuf
 
 ## Button Event Output
 
-In delegated mode, every new press and release from the scan matrix is encoded as a MIDI note message.
+In delegated mode, every new press and release from the visible key surface is
+encoded as a MIDI note message.
 
-Encoding:
+Default encoding:
 
 - `channel = buttonIndex / 100 + 1`
 - `note = buttonIndex % 100`
@@ -116,7 +127,65 @@ Examples:
 | `60` | Note On, channel `1`, note `60`, velocity `127` |
 | `130` | Note On, channel `2`, note `30`, velocity `127` |
 
-Host applications should treat indices `0` through `139` as the visible HexBoard controls. The firmware scan matrix has `BTN_COUNT` logical slots, and slots above `LED_COUNT` are internal hardware-detection/bookkeeping positions.
+Host applications should treat indices `0` through `139` as the visible
+HexBoard controls. The firmware scan matrix has `BTN_COUNT` logical slots, and
+slots above `LED_COUNT` are internal hardware-detection/bookkeeping positions.
+Those internal slots are not assignable through the delegated note map.
+
+## MIDI Note Map Payload
+
+`SYSEX_DELEGATED_NOTE_MAP` accepts zero or more 4-byte records:
+
+```text
+F0 7D 04 <record> [<record> ...] F7
+```
+
+Each record:
+
+| Byte | Meaning | Range |
+| --- | --- | --- |
+| `0` | Button index high 7 bits | `0..127` |
+| `1` | Button index low 7 bits | `0..127` |
+| `2` | MIDI channel | `1..16` |
+| `3` | MIDI note | `0..127` |
+
+Button index is decoded as:
+
+```cpp
+button = (record[0] << 7) + record[1];
+```
+
+Duplicate button records are allowed; the last valid record wins. Records with
+button indices outside `0..139` or channels outside `1..16` are logged and
+ignored. Malformed trailing bytes are ignored because the parser only processes
+complete 4-byte records.
+
+Example: map button `60` to middle C on channel `1`:
+
+```text
+F0 7D 04 00 3C 01 3C F7
+```
+
+Example: map command button `120` to note `36` on channel `16`:
+
+```text
+F0 7D 04 00 78 10 24 F7
+```
+
+Reset the whole delegated note map to the default button-index encoding:
+
+```text
+F0 7D 05 F7
+```
+
+Mappings are session-only RAM state. They are not saved to settings, profiles,
+or `/layouts.dat`, and they reset on boot, delegated enter, delegated exit, and
+`SYSEX_DELEGATED_NOTE_MAP_RESET`.
+
+When a key is pressed, firmware stores the actual delegated channel and note
+sent for that press. The matching release uses the stored channel and note, even
+if the host remaps or resets that key while it is held. This prevents stuck
+notes during live remapping.
 
 ## LED Update Payload
 

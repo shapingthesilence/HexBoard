@@ -1,4 +1,6 @@
 import {
+  DelegatedCommand,
+  type DelegatedCommandValue,
   HEXBOARD_MANUFACTURER_ID,
   MessageType,
   PRESET_SYNC_FAMILY,
@@ -8,6 +10,7 @@ import {
   SYSEX_START
 } from "./constants.ts";
 import {
+  assertIntegerRange,
   assertSevenBitByte,
   assertSevenBitBytes,
   decodeU14,
@@ -113,6 +116,53 @@ export interface WriteCommitPayload {
 export interface TransferEndPayload {
   transferId: number;
   finalChunkCount: number;
+}
+
+export interface DelegatedNoteMapRecord {
+  buttonIndex: number;
+  channel: number;
+  note: number;
+}
+
+export function encodeDelegatedFrame(command: DelegatedCommandValue, payload: number[] = []): number[] {
+  assertSevenBitByte(command, "delegated command");
+  assertSevenBitBytes(payload, "delegated payload");
+  return [
+    SYSEX_START,
+    HEXBOARD_MANUFACTURER_ID,
+    command,
+    ...payload,
+    SYSEX_END
+  ];
+}
+
+export function encodeDelegatedEnterFrame(): number[] {
+  return encodeDelegatedFrame(DelegatedCommand.Enter);
+}
+
+export function encodeDelegatedExitFrame(): number[] {
+  return encodeDelegatedFrame(DelegatedCommand.Exit);
+}
+
+export function encodeDelegatedNoteMapResetFrame(): number[] {
+  return encodeDelegatedFrame(DelegatedCommand.NoteMapReset);
+}
+
+export function encodeDelegatedNoteMapPayload(records: DelegatedNoteMapRecord[]): number[] {
+  return records.flatMap((record, index) => {
+    assertIntegerRange(record.buttonIndex, 0, 139, `records[${index}].buttonIndex`);
+    assertIntegerRange(record.channel, 1, 16, `records[${index}].channel`);
+    assertSevenBitByte(record.note, `records[${index}].note`);
+    return [
+      ...encodeU14(record.buttonIndex),
+      record.channel,
+      record.note
+    ];
+  });
+}
+
+export function encodeDelegatedNoteMapFrame(records: DelegatedNoteMapRecord[]): number[] {
+  return encodeDelegatedFrame(DelegatedCommand.NoteMap, encodeDelegatedNoteMapPayload(records));
 }
 
 export function encodePresetSyncFrame(frame: PresetSyncFrame): number[] {
