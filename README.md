@@ -279,4 +279,4 @@ The most important source file is:
 - [`HexBoard.ino`](HexBoard.ino)
 - [`src/firmware/`](src/firmware/)
 
-The firmware modules are grouped by owner under `src/firmware/`; tuning and Dynamic JI live in `src/firmware/tuning/`, MIDI transport/dispatch lives in `src/firmware/midi/`, and OLED/GEM plus played-note overlay code lives in `src/firmware/menu/`.
+The firmware modules are grouped by owner under `src/firmware/`; tuning and Dynamic JI live in `src/firmware/tuning/`, MIDI transport/dispatch lives in `src/firmware/midi/`, and OLED/GEM menu code is split across `MenuAndDisplay`, `PlayedNotesOverlay`, `SynthPresetMenu`, and `SynthWavetableMenu` under `src/firmware/menu/`.

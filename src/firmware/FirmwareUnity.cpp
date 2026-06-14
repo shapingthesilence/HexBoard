@@ -28,6 +28,8 @@
 #include "storage/SynthPresetStorage.cpp"
 #include "storage/PresetSync.cpp"
 #include "menu/MenuAndDisplay.cpp"
+#include "menu/SynthPresetMenu.cpp"
+#include "menu/SynthWavetableMenu.cpp"
 #include "menu/PlayedNotesOverlay.cpp"
 #include "hardware/GridScanRotary.cpp"
 #include "app/Runtime.cpp"

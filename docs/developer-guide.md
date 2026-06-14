@@ -220,9 +220,9 @@ The main firmware files are:
 - `src/firmware/model/`: layout, scale/palette/preset models, and pitch assignment
 - `src/firmware/hardware/`: grid state, command buttons, scan/rotary handling, LED rendering, and LED animations
 - `src/firmware/midi/`: USB/serial transport, MPE/routing, MIDI note dispatch, external MIDI LED state, delegated control, and MIDI input parsing
-- `src/firmware/synth/`: synth engine, oscillator/wavetable render path, envelopes, arpeggiator, metronome, PWM, and DMA audio
+- `src/firmware/synth/`: synth engine, oscillator/wavetable render path, envelopes, arpeggiator, metronome, PWM, and DMA audio; hot render/audio helpers remain grouped in `SynthAudio.cpp`
 - `src/firmware/storage/`: persistent data models, settings/profile storage, synth preset storage, synth wavetable storage, legacy user wavetable loading, and preset-sync SysEx
-- `src/firmware/menu/`: played-notes overlay, OLED/GEM pages, callbacks, preview behavior, and runtime settings sync
+- `src/firmware/menu/`: OLED/GEM pages and settings callbacks in `MenuAndDisplay.cpp`, played-note drawing in `PlayedNotesOverlay.cpp`, synth preset foldered menu rebuilding in `SynthPresetMenu.cpp`, and synth wavetable foldered menu rebuilding in `SynthWavetableMenu.cpp`
 
 If you are changing a behavior, start by locating which of these layers owns it before editing anything.
 

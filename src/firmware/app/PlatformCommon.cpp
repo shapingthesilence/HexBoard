@@ -38,8 +38,6 @@ struct SynthPresetSlot;
 struct SynthPresetSlotV7;
 struct SynthPresetSlotV6;
 struct LegacySynthPresetSlot;
-struct SynthPresetMenuAction;
-struct SynthPresetMenuFolderNode;
 struct ParsedSynthWavetableObject;
 struct SynthWavetableSlot;
 extern volatile uint32_t audioDmaUnderrunCount;

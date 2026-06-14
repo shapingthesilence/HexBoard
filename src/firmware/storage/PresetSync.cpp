@@ -1,6 +1,8 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "../menu/SynthPresetMenu.h"
+#include "../menu/SynthWavetableMenu.h"
 
 constexpr uint8_t PRESET_SYNC_FAMILY = 0x10;
 constexpr uint8_t PRESET_SYNC_MAJOR = 1;

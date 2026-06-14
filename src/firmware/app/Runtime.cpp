@@ -2,6 +2,8 @@
 
 #include "../FirmwareModule.h"
 #include "../menu/PlayedNotesOverlay.h"
+#include "../menu/SynthPresetMenu.h"
+#include "../menu/SynthWavetableMenu.h"
 
 // @mainLoop
 /*

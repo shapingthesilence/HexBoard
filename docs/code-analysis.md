@@ -52,9 +52,9 @@ The current source is grouped by file:
 | `src/firmware/model/` | layout, scale, palette, preset models, pitch assignment |
 | `src/firmware/hardware/` | grid state, command buttons, scan/rotary input, LED rendering, LED animations |
 | `src/firmware/midi/` | USB/serial transport, MPE/routing, note dispatch, external MIDI LED state, delegated control, MIDI input parsing |
-| `src/firmware/synth/` | oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome |
+| `src/firmware/synth/` | oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome; hot render/audio helpers remain grouped in `SynthAudio.cpp` |
 | `src/firmware/storage/` | persistent data models, settings, synth presets, synth wavetables, preset-sync SysEx |
-| `src/firmware/menu/` | played-notes overlay, OLED/GEM pages, callbacks, runtime settings sync |
+| `src/firmware/menu/` | OLED/GEM pages and callbacks, played-note overlay, synth preset menu rebuilds, synth wavetable menu rebuilds |
 
 ## Core Data Structures
 
@@ -416,7 +416,7 @@ uses the same debounced profile auto-save path as on-device synth menu edits.
 
 ## Played Note OLED Overlay
 
-`DisplayNotes` is a normal persisted Advanced-menu setting that is enabled by default. The overlay implementation lives in `src/firmware/menu/PlayedNotesOverlay.cpp`; menu item wiring remains in `MenuAndDisplay.cpp`. When enabled, MIDI note on/off updates mark a small OLED display region dirty. `drawPlayedNotesOverlay()` runs from the main loop after menu input handling. During normal menu display it draws only the newest currently held note as a top-right badge using the same large note font as the full overlay. During a temporary screensaver wake it renders the larger `Now Playing` overlay with up to `6` unique active notes.
+`DisplayNotes` is a normal persisted Advanced-menu setting that is enabled by default. The overlay implementation lives in `src/firmware/menu/PlayedNotesOverlay.cpp`; menu item wiring remains in `MenuAndDisplay.cpp`. Foldered synth preset and wavetable load/save menus are rebuilt by `SynthPresetMenu.cpp` and `SynthWavetableMenu.cpp`. When enabled, MIDI note on/off updates mark a small OLED display region dirty. `drawPlayedNotesOverlay()` runs from the main loop after menu input handling. During normal menu display it draws only the newest currently held note as a top-right badge using the same large note font as the full overlay. During a temporary screensaver wake it renders the larger `Now Playing` overlay with up to `6` unique active notes.
 
 Display behavior:
 
