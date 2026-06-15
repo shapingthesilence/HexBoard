@@ -5,6 +5,7 @@
 
 extern bool settingsFileMissingOnBoot;
 
+void setLEDcolorCodes();
 uint32_t RAM_FUNC(getLEDcode)(colorDef c);
 void RAM_FUNC(applyLedCurrentLimitToFrame)();
 void RAM_FUNC(resetVelocityLEDs)();

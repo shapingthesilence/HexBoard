@@ -7,6 +7,7 @@
 #include "../midi/MidiRouting.h"
 #include "../midi/MidiTransport.h"
 #include "../model/PitchAssignment.h"
+#include "../storage/PresetSync.h"
 #include "../storage/Settings.h"
 #include "../storage/SynthPresetStorage.h"
 #include "../storage/SynthWavetableStorage.h"

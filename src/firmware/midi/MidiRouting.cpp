@@ -65,6 +65,9 @@ inline void withMIDI(F&& f) {
   if (midiD & MIDID_SER) f(SMIDI);
 }
 
+void sendSysExToConfiguredMidiOutputs(unsigned length, const byte* data) {
+  withMIDI([&](auto& M) { M.sendSysEx(length, data); });
+}
 
 void setPitchBendRange(byte Ch, byte semitones) {
   withMIDI([&](auto& M) {

@@ -136,6 +136,7 @@ extern bool userGeometryRuntimeActive;
 extern bool userGeometryRuntimeScaleActive;
 extern bool userGeometryRuntimePaletteActive;
 extern float userGeometryRuntimeReferenceHz;
+extern char userGeometryRuntimeKeyLabelStorage[MAX_SCALE_DIVISIONS][9];
 extern tuningDef userGeometryRuntimeTuning;
 extern layoutDef userGeometryRuntimeLayout;
 extern scaleDef userGeometryRuntimeScale;

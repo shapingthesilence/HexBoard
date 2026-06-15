@@ -1,14 +1,15 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/RuntimeDefaults.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/SynthPresetMenu.h"
 #include "../menu/SynthWavetableMenu.h"
+#include "../synth/SynthAudio.h"
+#include "../synth/SynthDefaults.h"
 #include "PresetSync.h"
 #include "Settings.h"
 #include "SynthPresetStorage.h"
 #include "SynthWavetableStorage.h"
-#include "../synth/SynthAudio.h"
 
 std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset) {
   std::vector<uint8_t> body;
@@ -160,16 +161,6 @@ bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlo
   normalizeSynthPresetMetadata(preset, 0);
   return true;
 }
-
-struct ParsedSynthWavetableObject {
-  uint8_t objectId[SYNTH_WAVETABLE_OBJECT_ID_LENGTH] = {};
-  char name[SYNTH_WAVETABLE_NAME_LENGTH] = {};
-  char folderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
-  const uint8_t* samples = nullptr;
-  uint16_t sampleLength = 0;
-  bool sawObjectId = false;
-  bool sawSamples = false;
-};
 
 bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynthWavetableObject& wavetable, std::string& error) {
   if (body.size() < 8 || body[0] != 'H' || body[1] != 'B' || body[2] != 'S' || body[3] != '1') {
@@ -648,6 +639,3 @@ void presetSyncHandleSynthParamSet(uint16_t transactionId, const uint8_t* payloa
   markSettingsDirty();
   presetSyncSendAck(transactionId, PRESET_SYNC_MSG_SYNTH_PARAM_SET);
 }
-
-
-#endif  // HEXBOARD_FIRMWARE_UNITY

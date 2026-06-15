@@ -11,3 +11,4 @@ float freqToMIDI(float Hz);
 float MIDItoFreq(float midi);
 float stepsToMIDI(int16_t stepsFromA);
 void refreshMidiRouting();
+void sendSysExToConfiguredMidiOutputs(unsigned length, const byte* data);

@@ -1,14 +1,16 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/PlatformCommon.h"
+#include "../app/RuntimeDefaults.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/SynthPresetMenu.h"
 #include "../menu/SynthWavetableMenu.h"
+#include "../midi/DelegatedControl.h"
+#include "../synth/SynthAudio.h"
 #include "PresetSync.h"
 #include "Settings.h"
 #include "SynthPresetStorage.h"
 #include "SynthWavetableStorage.h"
-#include "../synth/SynthAudio.h"
 
 void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
   if (payloadLength != 6) {
@@ -788,4 +790,3 @@ bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len) {
   }
   return true;
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

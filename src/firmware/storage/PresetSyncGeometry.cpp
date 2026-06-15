@@ -1,7 +1,12 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../hardware/GridState.h"
+#include "../hardware/LedRender.h"
+#include "../model/PitchAssignment.h"
+#include "../model/ScalePalettePreset.h"
 #include "PresetSync.h"
+#include "Settings.h"
+#include "SynthPresetStorage.h"
 
 bool isPresetSyncGeometryObjectType(uint8_t objectType) {
   switch (objectType) {
@@ -649,6 +654,3 @@ bool applyGeometryObjectToRuntime(const GeometryObjectSlot& object) {
       return false;
   }
 }
-
-
-#endif  // HEXBOARD_FIRMWARE_UNITY
