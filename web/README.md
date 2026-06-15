@@ -83,13 +83,10 @@ and `TRANSFER_END` so firmware can pace object transfers.
 - A synth preset editor with name and folder selection, folder creation, main
   synth parameter controls, mono retrigger/legato, mono portamento,
   arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,
-  browser AudioWorklet audition, and an explicit save sync action over the
-  active MIDI transport. The browser audition is a useful approximation for
-  offline preset design; it is collapsed by default, opens from a small `+`
-  button, supports piano-style computer-key control with octave selection, uses
-  imported/downloaded user wavetable samples when available, and uses generated
-  approximations for built-in wavetable names. Opened
-  presets are temporary editor drafts; saving creates a new folder/name when
+  and an explicit save sync action over the active MIDI transport. A dormant
+  browser AudioWorklet audition implementation remains in the source behind a
+  disabled visibility gate for later offline preset design work. Opened presets
+  are temporary editor drafts; saving creates a new folder/name when
   unique and asks before overwriting an existing folder/name. Saves to real
   devices wait for ACK/NACK responses through the flash commit before the app
   refreshes device storage.

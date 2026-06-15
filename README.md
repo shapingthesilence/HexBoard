@@ -156,10 +156,8 @@ The web app currently includes:
 - firmware-backed synth preset upload, download, list, erase, current-patch
   loading, and live preview, with controls for mono retrigger/legato,
   portamento, arpeggiator direction, and named wavetable dependencies; opened
-  presets are treated as temporary drafts, real-device flash saves are
-  ACK-confirmed, and a collapsed browser AudioWorklet audition panel gives an
-  approximate offline preview with piano-style keyboard control when the device
-  is not connected
+  presets are treated as temporary drafts and real-device flash saves are
+  ACK-confirmed
 - firmware-backed synth wavetable upload, download, list, erase, and Serum
   `.wav` import; the web app crunches imported tables to the firmware's
   `32 x 512` byte format, stores them by folder/name, and sends them over

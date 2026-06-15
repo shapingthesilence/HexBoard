@@ -965,6 +965,7 @@ const auditionKeyRows = [
   auditionKeyMap.slice(0, 12),
   auditionKeyMap.slice(12)
 ] as const;
+const auditionFeatureVisible = false;
 
 function midiNoteLabel(note: number): string {
   const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -2316,6 +2317,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           {transport instanceof MockMidiTransport ? " (mock transport)" : ""}
         </div>
 
+        {auditionFeatureVisible ? (
         <section className={auditionOpen ? "auditionPanel" : "auditionPanel collapsed"}>
           <div className="row between">
             <div>
@@ -2389,6 +2391,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             </>
           ) : null}
         </section>
+        ) : null}
 
         <div className="fieldGrid">
           <label className="field">

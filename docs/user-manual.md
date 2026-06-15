@@ -475,15 +475,7 @@ those controls to the normal firmware lists.
 The synth preset editor includes preset name/folder selection, a wavetable
 folder/name selector, Drive and AHDSR sliders, FX envelope AHDSR controls, mono
 portamento, arpeggiator direction/speed/tempo, and other main synth parameter
-controls. The collapsed `Audition` panel opens with the `+` button and plays a
-browser AudioWorklet approximation of the open preset. It has holdable note
-buttons, a chord button, octave selection, preview volume, and a modulation
-slider. When open, the computer keyboard follows a piano-style layout:
-`a w s e d f t g y h u j k ...`, starting at the selected octave. This preview
-updates from the editor controls and uses local wavetable sample data when the
-selected wavetable has been imported or downloaded; built-in wavetable names are
-approximated in the browser and are not bit-exact captures of the onboard synth
-output. The synth library has a top selector for `Presets` and `Wavetables`.
+controls. The synth library has a top selector for `Presets` and `Wavetables`.
 Both views have a `Computer Library` for browser-saved/imported items and a
 `HexBoard Library` loaded from the connected device through SysEx.
 
