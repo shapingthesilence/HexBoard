@@ -361,8 +361,10 @@ The companion web app has protocol and catalog helpers for that draft under
 The browser tuning/layout editor adds a web-only `LayoutBundle` library that
 combines one tuning, one custom scale-degree color set, one or more layouts,
 one or more scales, and optional explicit button overrides per layout. It uses
-`hexBoardGeometry.ts` for the current 140-key firmware index geometry, presents
-vector layouts as across plus up-right steps, and converts that to the old
+`hexBoardGeometry.ts` for the current firmware index geometry, presents only
+the `133` playable note keys in the editor preview, filters command-button
+overrides out of web-authored geometry bundles, presents vector layouts as
+across plus up-right steps, and converts that to the old
 `DownLeftSteps` TLV only while the firmware schema still expects it. Bundle
 rotation is a four-step device orientation value (`0/90/180/270`) that matches
 firmware `DeviceRotation`, not a six-step hex-axis transform. The editor keeps

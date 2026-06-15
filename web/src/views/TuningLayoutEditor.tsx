@@ -53,7 +53,7 @@ const layoutAxisDirectionLabels = [
 
 interface PreviewKey {
   key: HexBoardKey;
-  role: "note" | "command" | "unused";
+  role: "note" | "unused";
   generatedStepsFromC: number;
   stepsFromC: number;
   degree: number;
@@ -104,7 +104,7 @@ function loadStoredBundles(): LayoutBundle[] {
       return [createDefaultLayoutBundle()];
     }
     const parsed = JSON.parse(raw) as unknown;
-    return parseLayoutBundleLibrary(parsed);
+    return parseLayoutBundleLibrary(parsed).map(sanitizeEditorBundle);
   } catch {
     return [createDefaultLayoutBundle()];
   }
@@ -112,7 +112,7 @@ function loadStoredBundles(): LayoutBundle[] {
 
 function persistBundles(bundles: LayoutBundle[]) {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(layoutBundleStorageKey, JSON.stringify(bundles));
+    window.localStorage.setItem(layoutBundleStorageKey, JSON.stringify(bundles.map(sanitizeEditorBundle)));
   }
 }
 
@@ -249,12 +249,15 @@ function upsertOverride(
   buttonIndex: number,
   patch: Partial<LayoutBundleButtonOverride>
 ): LayoutBundleButtonOverride[] {
+  if (isHexBoardCommandIndex(buttonIndex)) {
+    return overrides.filter((override) => override.buttonIndex !== buttonIndex);
+  }
   const existing = overrides.find((override) => override.buttonIndex === buttonIndex);
   const next = {
     buttonIndex,
-    role: existing?.role ?? (isHexBoardCommandIndex(buttonIndex) ? "command" : "note"),
     ...existing,
-    ...patch
+    ...patch,
+    role: (patch.role ?? existing?.role) === "unused" ? "unused" : "note"
   } satisfies LayoutBundleButtonOverride;
   return [...overrides.filter((override) => override.buttonIndex !== buttonIndex), next]
     .sort((left, right) => left.buttonIndex - right.buttonIndex);
@@ -269,11 +272,38 @@ function removeOverrideColor(override: LayoutBundleButtonOverride): LayoutBundle
 }
 
 function isRoleDefault(buttonIndex: number, role: LayoutBundleButtonOverride["role"]): boolean {
-  return role === (isHexBoardCommandIndex(buttonIndex) ? "command" : "note");
+  return isHexBoardCommandIndex(buttonIndex) || role === "note";
 }
 
 function hexBoardKeyAtCoord(coordRow: number, coordCol: number): HexBoardKey | undefined {
   return hexBoardGeometry.find((key) => key.coordRow === coordRow && key.coordCol === coordCol);
+}
+
+function isEditableButtonIndex(buttonIndex: number): boolean {
+  return Number.isInteger(buttonIndex) && buttonIndex >= 0 && buttonIndex < 140 && !isHexBoardCommandIndex(buttonIndex);
+}
+
+function noteButtonIndexOrFallback(buttonIndex: number, fallback: number): number {
+  if (isEditableButtonIndex(buttonIndex)) {
+    return buttonIndex;
+  }
+  return isEditableButtonIndex(fallback) ? fallback : 65;
+}
+
+function sanitizeEditorBundle(bundle: LayoutBundle): LayoutBundle {
+  return {
+    ...bundle,
+    layouts: bundle.layouts.map((layout) => ({
+      ...layout,
+      centerButton: noteButtonIndexOrFallback(layout.centerButton, 65),
+      buttonOverrides: layout.buttonOverrides
+        .filter((override) => isEditableButtonIndex(override.buttonIndex))
+        .map((override) => ({
+          ...override,
+          role: override.role === "unused" ? "unused" : "note"
+        }))
+    }))
+  };
 }
 
 function formatIntegerList(values: number[]): string {
@@ -392,8 +422,9 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   }, [activeBundle.tuning]);
 
   function setBundlesAndPersist(nextBundles: LayoutBundle[]) {
-    setBundles(nextBundles);
-    persistBundles(nextBundles);
+    const sanitized = nextBundles.map(sanitizeEditorBundle);
+    setBundles(sanitized);
+    persistBundles(sanitized);
   }
 
   function updateActiveBundle(updater: (bundle: LayoutBundle) => LayoutBundle) {
@@ -778,11 +809,11 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
       return;
     }
     try {
-      const imported = parseLayoutBundleFile(JSON.parse(await file.text()));
+      const imported = sanitizeEditorBundle(parseLayoutBundleFile(JSON.parse(await file.text())));
       const nextBundles = [...bundles.filter((bundle) => bundle.objectIdHex !== imported.objectIdHex), imported];
       setBundlesAndPersist(nextBundles);
       setActiveBundleId(imported.objectIdHex);
-      setSelectedButton(imported.layouts.find((layout) => layout.objectIdHex === imported.activeLayoutIdHex)?.centerButton ?? imported.layouts[0]?.centerButton ?? 65);
+      setSelectedButton(noteButtonIndexOrFallback(imported.layouts.find((layout) => layout.objectIdHex === imported.activeLayoutIdHex)?.centerButton ?? imported.layouts[0]?.centerButton ?? 65, 65));
       setStatus(`Imported ${imported.name}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to import layout bundle");
@@ -822,9 +853,9 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   const previewKeys = useMemo<PreviewKey[]>(() => {
     const cycleLength = tuningCycleLength(activeBundle.tuning);
     const scaleDegrees = new Set(normalizeScaleDegrees(activeScale.includedDegrees, cycleLength));
-    return hexBoardGeometry.map((key) => {
+    return hexBoardGeometry.filter((key) => key.role === "note").map((key) => {
       const override = activeLayout.buttonOverrides.find((candidate) => candidate.buttonIndex === key.index);
-      const role = override?.role ?? key.role;
+      const role = override?.role === "unused" ? "unused" : "note";
       const generatedStepsFromC = Math.round(computeVectorLayoutSteps(key, activeLayout));
       const stepsFromC = override?.stepsFromC ?? generatedStepsFromC;
       const resolvedColor = resolveLayoutBundleButtonColor({
@@ -871,13 +902,13 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   const guideHalos = useMemo<GuideHalo[]>(() => {
     const halos: GuideHalo[] = [];
     if (guideTargetIndex !== undefined) {
-      const target = hexBoardGeometry.find((key) => key.index === guideTargetIndex);
+      const target = hexBoardGeometry.find((key) => key.index === guideTargetIndex && key.role === "note");
       if (target) {
         halos.push({ key: target, tone: "green" });
       }
     }
     if (guideOriginIndex !== undefined) {
-      const origin = hexBoardGeometry.find((key) => key.index === guideOriginIndex);
+      const origin = hexBoardGeometry.find((key) => key.index === guideOriginIndex && key.role === "note");
       if (origin) {
         halos.push({ key: origin, tone: "red" });
       }
@@ -912,9 +943,10 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   }
   const encodedBundle = useMemo(() => {
     const stepsByButton = new Map(previewKeys.map((item) => [item.key.index, item.stepsFromC]));
+    const sanitizedBundle = sanitizeEditorBundle(activeBundle);
     return encodeLayoutBundle({
-      ...activeBundle,
-      layouts: activeBundle.layouts.map((layout) => layout.objectIdHex === activeLayout.objectIdHex
+      ...sanitizedBundle,
+      layouts: sanitizedBundle.layouts.map((layout) => layout.objectIdHex === activeLayout.objectIdHex
         ? {
             ...layout,
             buttonOverrides: layout.buttonOverrides.map((override) => ({
@@ -1032,7 +1064,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
         </div>
         <div className="row">
           <button type="button" onClick={addNewBundle}>New</button>
-          <button type="button" onClick={() => downloadTextFile(`${activeBundle.name}.hexboard-layout.json`, serializeLayoutBundle(activeBundle))}>
+          <button type="button" onClick={() => downloadTextFile(`${activeBundle.name}.hexboard-layout.json`, serializeLayoutBundle(sanitizeEditorBundle(activeBundle)))}>
             Export
           </button>
           <button type="button" onClick={() => bundleInputRef.current?.click()}>Import</button>
@@ -1155,7 +1187,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
                     max={139}
                     type="number"
                     value={activeLayout.centerButton}
-                    onChange={(event) => updateLayout({ centerButton: clampInteger(Number(event.target.value), 0, 139) })}
+                    onChange={(event) => updateLayout({ centerButton: noteButtonIndexOrFallback(clampInteger(Number(event.target.value), 0, 139), activeLayout.centerButton) })}
                     {...layoutGuideProps("center")}
                   />
                   <button type="button" onClick={() => updateLayout({ centerButton: selectedButton })}>Use Selected</button>
@@ -1295,7 +1327,6 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
                   aria-label={`Button ${item.key.index}, ${item.role}, step ${item.stepsFromC}`}
                   className={[
                     "hexKey",
-                    item.role === "command" ? "commandKey" : "",
                     item.role === "unused" ? "unusedKey" : "",
                     !item.inScale ? "outOfScaleKey" : "",
                     item.colorSource === "button" ? "manualColorKey" : "",
@@ -1321,7 +1352,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
                 >
                   <span className="hexKeyLabel" style={{ transform: `rotate(${-activeLayout.rotationSteps * 90}deg)` }}>
                     <span>{item.key.index}</span>
-                    <small>{item.role === "note" ? item.degree : item.role.slice(0, 3)}</small>
+                    <small>{item.role === "note" ? item.degree : "off"}</small>
                   </span>
                 </button>
               ))}
@@ -1339,7 +1370,6 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
               <span>Role</span>
               <select value={selectedPreview.role} onChange={(event) => updateButtonOverride(selectedPreview.key.index, { role: event.target.value as LayoutBundleButtonOverride["role"] })}>
                 <option value="note">Note</option>
-                <option value="command">Command</option>
                 <option value="unused">Unused</option>
               </select>
             </label>

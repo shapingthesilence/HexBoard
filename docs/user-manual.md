@@ -456,8 +456,9 @@ two fields. Scala import derives period, cycle length, labels, and reference
 pitch from the imported file path as support is added, so the Scala editor does
 not expose those fields. Scala text is parsed in the web app and stored in the
 bundle as cents data, but full Scala playback and sync compatibility still
-require firmware tuning-system work. The preview uses the current 140-key hardware shape with `133` note keys and the
-seven command keys. The selected-key inspector has a `Color source` dropdown:
+require firmware tuning-system work. The preview uses the current `133` note-key
+hardware shape and omits the seven command buttons so geometry editing stays
+focused on playable notes. The selected-key inspector has a `Color source` dropdown:
 `Scale degree` edits the palette color for the generated degree, while
 `Button override` edits only the selected button's color. `Note source` can
 lock an individual button to a fixed `steps from C` value; those manual note
@@ -465,12 +466,10 @@ positions are meant to stay fixed when root note or transposition changes.
 Scales are edited as included scale degrees only. The included-degrees field can
 hold incomplete text while typing; if it still contains invalid text when focus
 leaves the field, the editor marks it red and reports the validation error.
-Button roles can be marked as note, command, or unused in the exported web
-model. Applying a compatible bundle sends the active tuning, active layout,
-active scale, scale-degree color map, and active layout's explicit button map to
-the live runtime, then saves those objects to HexBoard storage. Command-role
-overrides restore built-in command behavior only on the existing command button
-positions; other command-role overrides behave as non-playing buttons.
+Button roles can be marked as note or unused in the exported web model. Applying
+a compatible bundle sends the active tuning, active layout, active scale,
+scale-degree color map, and active layout's explicit button map to the live
+runtime, then saves those objects to HexBoard storage.
 Changing tuning, layout, or scale from the OLED menu clears the web-applied
 runtime geometry, resets key to `C` for the current firmware tuning, and returns
 those controls to the normal firmware lists.

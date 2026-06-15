@@ -142,8 +142,10 @@ Current web source layout:
   back by object id and byte-compares them.
 - `web/src/catalogs/hexBoardGeometry.ts`: browser-side model of the current
   140-key surface, including `133` main note keys and command indices
-  `0,20,40,60,80,100,120`; layout previews and tests should use this helper
-  instead of duplicating row/column math
+  `0,20,40,60,80,100,120`; tests should use this helper instead of duplicating
+  row/column math. The tuning/layout editor intentionally filters the preview
+  and editable button overrides to the `133` note keys, leaving command buttons
+  out of geometry authoring.
 - `web/src/midi/`: Web MIDI access, preset-sync client helpers, and mock transport
 - `web/src/audio/` plus `web/public/synth-preview-worklet.js`: browser-only
   synth preset audition controller and AudioWorklet approximation used by the

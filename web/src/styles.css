@@ -663,11 +663,6 @@ select {
   opacity: 0.78;
 }
 
-.hexKey.commandKey {
-  outline: 2px solid #26302c;
-  outline-offset: 2px;
-}
-
 .hexKey.unusedKey {
   outline: 2px solid rgba(0, 0, 0, 0.62);
   outline-offset: -5px;
@@ -941,10 +936,6 @@ select {
     linear-gradient(rgba(232, 238, 233, 0.07) 1px, transparent 1px),
     #101613;
   background-size: 32px 32px;
-}
-
-:root[data-theme="dark"] .hexKey.commandKey {
-  outline-color: #d5e1dc;
 }
 
 :root[data-theme="dark"] .hexKey.outOfScaleKey {
