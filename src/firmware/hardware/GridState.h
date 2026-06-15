@@ -1,15 +1,8 @@
 #pragma once
 
 #include "../FirmwareModule.h"
+#include "HardwareConfig.h"
 #include "../model/ScalePalettePreset.h"
-
-constexpr byte LED_COUNT = 140;
-constexpr byte COLCOUNT = 10;
-constexpr byte ROWCOUNT = 16;
-constexpr byte BTN_COUNT = COLCOUNT * ROWCOUNT;
-constexpr byte FIRST_FLAG_BUTTON_INDEX = LED_COUNT;
-
-constexpr byte CMDCOUNT = 7;
 
 constexpr byte BTN_STATE_OFF = 0;
 constexpr byte BTN_STATE_NEWPRESS = 1;

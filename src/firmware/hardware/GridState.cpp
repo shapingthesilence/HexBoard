@@ -16,20 +16,6 @@
     of ten buttons to allow all 140 inputs to be read in one
     program read cycle.
   */
-constexpr byte MPLEX_1_PIN = 4;
-constexpr byte MPLEX_2_PIN = 5;
-constexpr byte MPLEX_4_PIN = 2;
-constexpr byte MPLEX_8_PIN = 3;
-constexpr byte COLUMN_PIN_0 = 6;
-constexpr byte COLUMN_PIN_1 = 7;
-constexpr byte COLUMN_PIN_2 = 8;
-constexpr byte COLUMN_PIN_3 = 9;
-constexpr byte COLUMN_PIN_4 = 10;
-constexpr byte COLUMN_PIN_5 = 11;
-constexpr byte COLUMN_PIN_6 = 12;
-constexpr byte COLUMN_PIN_7 = 13;
-constexpr byte COLUMN_PIN_8 = 14;
-constexpr byte COLUMN_PIN_9 = 15;
 /*
     Of the 140 buttons, 7 are offset to the bottom left
     quadrant of the Hexboard and are reserved as command
@@ -39,13 +25,6 @@ constexpr byte COLUMN_PIN_9 = 15;
     variables and alter the value of CMDCOUNT to agree
     with how many buttons you reserve for non-note use.
   */
-constexpr byte CMDBTN_0 = 0;
-constexpr byte CMDBTN_1 = 20;
-constexpr byte CMDBTN_2 = 40;
-constexpr byte CMDBTN_3 = 60;
-constexpr byte CMDBTN_4 = 80;
-constexpr byte CMDBTN_5 = 100;
-constexpr byte CMDBTN_6 = 120;
 const byte mPin[] = {
   MPLEX_1_PIN, MPLEX_2_PIN, MPLEX_4_PIN, MPLEX_8_PIN
 };

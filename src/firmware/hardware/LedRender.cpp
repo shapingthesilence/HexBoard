@@ -1,6 +1,7 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "HardwareConfig.h"
 #include "LedRender.h"
 #include "../app/RuntimeDefaults.h"
 #include "../synth/SynthAudio.h"
@@ -12,7 +13,6 @@
     the hex buttons.
   */
 #include <Adafruit_NeoPixel.h>  // library of code to interact with the LED array
-#define LED_PIN 22
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 int32_t rainbowDegreeTime = 65'536;  // microseconds to go through 1/360 of rainbow
 constexpr uint16_t WS2812_IDLE_CURRENT_MA = 1;

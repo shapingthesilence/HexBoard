@@ -2,6 +2,7 @@
 
 #include "../FirmwareModule.h"
 #include "CommandButtons.h"
+#include "HardwareConfig.h"
 #include "../midi/DelegatedControl.h"
 #include "GridScanRotary.h"
 #include "../menu/PlayedNotesOverlay.h"
@@ -38,9 +39,6 @@
       5, 6, 7  CW  turn state 1, 2, 3
       8, 16    Completed turn CCW, CW
   */
-constexpr byte ROT_PIN_A = 20;
-constexpr byte ROT_PIN_B = 21;
-constexpr byte ROT_PIN_C = 24;
 byte rotaryState = 0;
 byte rotaryStateTable[8][4] = {
   { 0, 5, 1, 0 }, { 2, 0, 1, 0 }, { 2, 3, 1, 0 }, { 2, 3, 0, 8 }, { 0, 5, 1, 0 }, { 6, 5, 0, 0 }, { 6, 5, 7, 0 }, { 6, 0, 7, 16 }

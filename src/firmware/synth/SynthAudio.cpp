@@ -4,6 +4,7 @@
 #include "BuiltinWavetables.h"
 #include "SynthAudio.h"
 #include "../app/DiagnosticsTiming.h"
+#include "../hardware/HardwareConfig.h"
 #include "../midi/MidiRouting.h"
 #include "../midi/MidiTransport.h"
 #include "../storage/SynthWavetableStorage.h"
@@ -25,12 +26,6 @@
     with the PIEZO_PIN on this processor (see RP2040
     manual) than to have it looked up each time.
   */
-constexpr byte PIEZO_PIN = 23;
-constexpr byte PIEZO_SLICE = 3;
-constexpr byte PIEZO_CHNL = 1;
-constexpr byte AJACK_PIN = 25;
-constexpr byte AJACK_SLICE = 4;
-constexpr byte AJACK_CHNL = 1;
 byte audioD = AUDIO_AJACK;
 bool synthBuzzerEnabled = false;
 byte headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
