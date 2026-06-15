@@ -126,15 +126,18 @@ struct PresetSyncWriteTransfer {
 struct PresetSyncReadTransfer {
   bool active = false;
   bool endSent = false;
+  bool streamSynthWavetableSamples = false;
   uint8_t objectType = 0;
   uint16_t handle = PRESET_SYNC_NEW_OBJECT_HANDLE;
   uint16_t transactionId = 0;
   uint16_t transferId = 0;
   uint8_t schemaMajor = 0;
   uint8_t schemaMinor = 0;
+  uint32_t rawByteLength = 0;
   uint32_t objectCrc32 = 0;
   uint32_t sentBytes = 0;
   uint32_t nextChunkIndex = 0;
+  char streamSamplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
   std::vector<uint8_t> rawData;
 };
 
@@ -191,6 +194,7 @@ std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset);
 bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlot& preset, std::string& error);
 bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynthWavetableObject& wavetable, std::string& error);
 bool readSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, std::vector<uint8_t>& samples);
+std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable);
 std::vector<uint8_t> buildSynthWavetableObjectBody(const SynthWavetableSlot& wavetable, const uint8_t* samples);
 void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, const uint8_t* samples);
 bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& wavetable);

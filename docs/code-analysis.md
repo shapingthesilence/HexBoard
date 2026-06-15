@@ -429,8 +429,11 @@ Device-to-host reads are paced by host ACKs for `READ_BEGIN`, each `DATA_CHUNK`,
 and `TRANSFER_END` so USB MIDI buffers do not have to absorb the whole object
 transfer at once. The web client treats object-read timeouts as inactivity
 timeouts and sends `TRANSFER_ABORT` when a read stalls; firmware clears matching
-read or write transfers on abort. One-frame control messages, including live synth parameter
-sets, process inline and do not open the modal transfer window. Live synth
+read or write transfers on abort. Synth wavetable reads keep only the metadata
+prefix in transfer RAM and stream the `32 * 512` sample file into outgoing chunks
+as ACKs arrive, avoiding the previous full-object allocation before the transfer
+window can draw. One-frame control messages, including live synth parameter sets,
+process inline and do not open the modal transfer window. Live synth
 parameter sets mark settings dirty after applying valid records, so persistence
 uses the same debounced profile auto-save path as on-device synth menu edits.
 

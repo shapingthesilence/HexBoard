@@ -245,6 +245,79 @@ uint16_t presetSyncAllocateTransferId() {
   return current;
 }
 
+uint32_t presetSyncCrc32Update(uint32_t crc, const uint8_t* data, size_t length) {
+  for (size_t i = 0; i < length; ++i) {
+    crc ^= data[i];
+    for (int bit = 0; bit < 8; ++bit) {
+      crc = (crc >> 1) ^ (0xEDB88320 & -(crc & 1));
+    }
+  }
+  return crc;
+}
+
+uint32_t presetSyncCrc32Finish(uint32_t crc) {
+  return ~crc;
+}
+
+bool presetSyncComputeStreamedWavetableCrc(const std::vector<uint8_t>& objectPrefix,
+                                           const char* samplePath,
+                                           uint32_t& objectCrc32) {
+  uint32_t crc = presetSyncCrc32Update(0xFFFFFFFF, objectPrefix.data(), objectPrefix.size());
+  File f = LittleFS.open(samplePath, "r");
+  if (!f) {
+    return false;
+  }
+
+  uint8_t buffer[128];
+  uint32_t remaining = SYNTH_WAVETABLE_SAMPLE_BYTES;
+  while (remaining > 0) {
+    size_t readLength = std::min<size_t>(sizeof(buffer), remaining);
+    size_t bytesRead = f.read(buffer, readLength);
+    if (bytesRead != readLength) {
+      f.close();
+      return false;
+    }
+    crc = presetSyncCrc32Update(crc, buffer, readLength);
+    remaining -= readLength;
+  }
+  f.close();
+  objectCrc32 = presetSyncCrc32Finish(crc);
+  return true;
+}
+
+bool presetSyncReadTransferBytes(uint32_t offset, uint8_t* output, size_t length) {
+  if (length == 0) {
+    return true;
+  }
+  if (output == nullptr || offset + length > presetSyncReadTransfer.rawByteLength) {
+    return false;
+  }
+  if (!presetSyncReadTransfer.streamSynthWavetableSamples) {
+    if (offset + length > presetSyncReadTransfer.rawData.size()) {
+      return false;
+    }
+    memcpy(output, presetSyncReadTransfer.rawData.data() + offset, length);
+    return true;
+  }
+
+  const size_t prefixLength = presetSyncReadTransfer.rawData.size();
+  size_t copied = 0;
+  if (offset < prefixLength) {
+    size_t prefixCopyLength = std::min<size_t>(length, prefixLength - offset);
+    memcpy(output, presetSyncReadTransfer.rawData.data() + offset, prefixCopyLength);
+    copied += prefixCopyLength;
+  }
+  if (copied >= length) {
+    return true;
+  }
+
+  uint32_t sampleOffset = static_cast<uint32_t>(offset + copied - prefixLength);
+  return readSynthWavetableSampleFileRange(presetSyncReadTransfer.streamSamplePath,
+                                           sampleOffset,
+                                           output + copied,
+                                           length - copied);
+}
+
 void presetSyncSendReadBegin() {
   std::vector<uint8_t> begin;
   begin.push_back(presetSyncReadTransfer.objectType);
@@ -252,7 +325,7 @@ void presetSyncSendReadBegin() {
   presetSyncAppendU14(begin, presetSyncReadTransfer.transferId);
   begin.push_back(presetSyncReadTransfer.schemaMajor);
   begin.push_back(presetSyncReadTransfer.schemaMinor);
-  presetSyncAppendU28(begin, presetSyncReadTransfer.rawData.size());
+  presetSyncAppendU28(begin, presetSyncReadTransfer.rawByteLength);
   presetSyncAppendU35FromU32(begin, presetSyncReadTransfer.objectCrc32);
   presetSyncAppendU14(begin, PRESET_SYNC_RAW_CHUNK_SIZE);
   begin.push_back(0);
@@ -271,20 +344,30 @@ void presetSyncSendNextReadChunk() {
   if (!presetSyncReadTransfer.active) {
     return;
   }
-  if (presetSyncReadTransfer.sentBytes >= presetSyncReadTransfer.rawData.size()) {
+  if (presetSyncReadTransfer.sentBytes >= presetSyncReadTransfer.rawByteLength) {
     presetSyncSendReadEnd();
     return;
   }
 
   size_t offset = presetSyncReadTransfer.sentBytes;
-  size_t chunkLength = std::min<size_t>(PRESET_SYNC_RAW_CHUNK_SIZE, presetSyncReadTransfer.rawData.size() - offset);
+  size_t chunkLength = std::min<size_t>(PRESET_SYNC_RAW_CHUNK_SIZE, presetSyncReadTransfer.rawByteLength - offset);
+  uint8_t rawChunk[PRESET_SYNC_RAW_CHUNK_SIZE] = {};
+  if (!presetSyncReadTransferBytes(offset, rawChunk, chunkLength)) {
+    uint16_t transactionId = presetSyncReadTransfer.transactionId;
+    sendToLog("Preset-sync read failed while streaming wavetable samples.");
+    presetSyncCancelReadTransfer();
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DATA_CHUNK, PRESET_SYNC_ERROR_OBJECT_MISSING);
+    return;
+  }
+
   std::vector<uint8_t> chunk;
+  chunk.reserve(12 + ((chunkLength + 6) / 7) * 8);
   presetSyncAppendU14(chunk, presetSyncReadTransfer.transferId);
   presetSyncAppendU21(chunk, presetSyncReadTransfer.nextChunkIndex);
   presetSyncAppendU28(chunk, offset);
   presetSyncAppendU14(chunk, chunkLength);
-  chunk.push_back(presetSyncChunkChecksum(presetSyncReadTransfer.rawData.data() + offset, chunkLength));
-  presetSyncPack8To7(presetSyncReadTransfer.rawData.data() + offset, chunkLength, chunk);
+  chunk.push_back(presetSyncChunkChecksum(rawChunk, chunkLength));
+  presetSyncPack8To7(rawChunk, chunkLength, chunk);
   presetSyncSendFrame(PRESET_SYNC_MSG_DATA_CHUNK, presetSyncReadTransfer.transactionId, chunk);
   presetSyncReadTransfer.sentBytes += chunkLength;
   ++presetSyncReadTransfer.nextChunkIndex;
@@ -299,8 +382,51 @@ void presetSyncSendRawObject(uint16_t transactionId, uint8_t objectType, uint16_
   presetSyncReadTransfer.transferId = presetSyncAllocateTransferId();
   presetSyncReadTransfer.schemaMajor = schemaMajor;
   presetSyncReadTransfer.schemaMinor = schemaMinor;
+  presetSyncReadTransfer.rawByteLength = raw.size();
   presetSyncReadTransfer.objectCrc32 = crc32(raw.data(), raw.size());
   presetSyncReadTransfer.rawData = raw;
+  presetSyncSendReadBegin();
+}
+
+void presetSyncSendStreamedSynthWavetableObject(uint16_t transactionId,
+                                                uint16_t handle,
+                                                const SynthWavetableSlot& wavetable) {
+  char samplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
+  if (!resolveSynthWavetableSampleFilePath(wavetable, samplePath, sizeof(samplePath))) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
+    return;
+  }
+
+  std::vector<uint8_t> objectPrefix = buildSynthWavetableObjectPrefix(wavetable);
+  uint32_t rawByteLength = objectPrefix.size() + SYNTH_WAVETABLE_SAMPLE_BYTES;
+  if (rawByteLength > PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+
+  uint32_t objectCrc32 = 0;
+  if (!presetSyncComputeStreamedWavetableCrc(objectPrefix, samplePath, objectCrc32)) {
+    sendToLog("Incomplete wavetable sample file for " + std::string(wavetable.name));
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
+    return;
+  }
+
+  presetSyncReadTransfer = PresetSyncReadTransfer{};
+  presetSyncReadTransfer.active = true;
+  presetSyncReadTransfer.streamSynthWavetableSamples = true;
+  presetSyncReadTransfer.objectType = PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE;
+  presetSyncReadTransfer.handle = handle;
+  presetSyncReadTransfer.transactionId = transactionId;
+  presetSyncReadTransfer.transferId = presetSyncAllocateTransferId();
+  presetSyncReadTransfer.schemaMajor = 1;
+  presetSyncReadTransfer.schemaMinor = 0;
+  presetSyncReadTransfer.rawByteLength = rawByteLength;
+  presetSyncReadTransfer.objectCrc32 = objectCrc32;
+  snprintf(presetSyncReadTransfer.streamSamplePath,
+           sizeof(presetSyncReadTransfer.streamSamplePath),
+           "%s",
+           samplePath);
+  presetSyncReadTransfer.rawData = objectPrefix;
   presetSyncSendReadBegin();
 }
 
@@ -340,17 +466,7 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
       return;
     }
     normalizeSynthWavetableMetadata(synthWavetables[handle]);
-    std::vector<uint8_t> samples;
-    if (!readSynthWavetableSampleFile(synthWavetables[handle], samples)) {
-      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
-      return;
-    }
-    presetSyncSendRawObject(transactionId,
-                            PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE,
-                            handle,
-                            1,
-                            0,
-                            buildSynthWavetableObjectBody(synthWavetables[handle], samples.data()));
+    presetSyncSendStreamedSynthWavetableObject(transactionId, handle, synthWavetables[handle]);
     return;
   }
 

@@ -476,6 +476,9 @@ Device response starts with `READ_BEGIN`.
 
 Then the device sends one or more `DATA_CHUNK` messages. The host ACKs each
 chunk. The device finishes with `TRANSFER_END`, and the host ACKs it.
+For `SynthWavetable` reads, current firmware sends the same object bytes but
+stages only the metadata prefix in RAM; the `WavetableSamples` TLV data is read
+from the per-table LittleFS sample file as each outgoing chunk is requested.
 
 Example read profile slot `0`, transaction `2`:
 
@@ -1080,9 +1083,11 @@ wavetable object id when the save flag is present. Firmware also attempts to
 read and remove the older full-object-id sample path for compatibility, but new
 imports avoid that overlong LittleFS filename. Catalog records with missing
 sample files are skipped/pruned so failed earlier imports do not consume
-wavetable slots. The legacy `/user_wavetable.dat` `UWT` file is still loadable
-through the compatibility reference `/User/UserTbl`, but new imports do not
-write that file.
+wavetable slots. Device-to-host full wavetable reads stream sample bytes from
+that per-table file while sending `DATA_CHUNK` frames instead of building the
+complete object in heap memory. The legacy `/user_wavetable.dat` `UWT` file is
+still loadable through the compatibility reference `/User/UserTbl`, but new
+imports do not write that file.
 
 For metadata-only rename/move updates, hosts write a `SynthWavetable` object
 body containing common `Name`, `ObjectId`, and `FolderPath` TLVs without the

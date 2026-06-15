@@ -24,6 +24,8 @@ void pruneMissingSynthWavetables();
 int findSynthWavetableByObjectId(const uint8_t* objectId);
 int findSynthWavetableByFolderAndName(const char* folderPath, const char* name);
 int chooseSynthWavetableWriteSlot(const SynthWavetableSlot& wavetable);
+bool resolveSynthWavetableSampleFilePath(const SynthWavetableSlot& wavetable, char* output, size_t outputLength);
+bool readSynthWavetableSampleFileRange(const char* samplePath, uint32_t offset, uint8_t* output, size_t length);
 bool writeSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, const uint8_t* samples);
 bool loadSynthWavetableFromCatalog(const char* folderPath, const char* name);
 void removeSynthWavetableSampleFiles(const SynthWavetableSlot& wavetable);

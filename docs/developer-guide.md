@@ -189,7 +189,11 @@ Device-to-host preset reads are ACK-paced: firmware sends `READ_BEGIN`, waits
 for the host ACK, then sends one `DATA_CHUNK` per ACK before `TRANSFER_END`.
 The web client uses an inactivity timeout for object reads rather than one
 total-transfer deadline, and sends `TRANSFER_ABORT` if a read stalls so firmware
-can clear the active read transfer immediately.
+can clear the active read transfer immediately. Device-to-host synth wavetable
+reads keep only the object metadata prefix in the read-transfer state and stream
+the `32 * 512` sample bytes from the wavetable sample file as each outgoing
+chunk is ACKed, avoiding a full wavetable-object heap allocation before the
+transfer screen can open.
 Live USB MIDI packet output has a much shorter retry window than SysEx stream
 output. If the USB host is connected but not polling, such as a sleeping or
 closed laptop that still supplies power, `writeUsbMidiPacket()` backs off after
