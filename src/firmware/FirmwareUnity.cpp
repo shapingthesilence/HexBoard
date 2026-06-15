@@ -7,12 +7,11 @@
 #include "app/DiagnosticsTiming.h"
 #include "midi/MidiTransport.h"
 #include "midi/MidiRouting.h"
+#include "hardware/GridState.h"
 
-#include "hardware/GridState.cpp"
 #include "hardware/LedRender.cpp"
 #include "tuning/DynamicJustIntonation.cpp"
 #include "midi/NoteDispatch.cpp"
-#include "synth/BuiltinWavetables.cpp"
 #include "synth/SynthAudio.cpp"
 #include "menu/MenuAndDisplay.cpp"
 #include "hardware/GridScanRotary.cpp"

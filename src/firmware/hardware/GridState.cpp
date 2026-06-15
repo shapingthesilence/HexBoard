@@ -1,7 +1,8 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "GridState.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/PlatformCommon.h"
+#include "../app/RuntimeDefaults.h"
 
 // @gridSystem
 /*
@@ -187,4 +188,3 @@ void detectHardwareVersion() {
   Hardware_Version = flagPressed ? HARDWARE_V1_2 : HARDWARE_V1_1;
   sendToLog("Hardware detection: revision " + std::to_string(Hardware_Version));
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

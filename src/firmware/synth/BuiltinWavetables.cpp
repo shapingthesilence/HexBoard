@@ -1,7 +1,6 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "BuiltinWavetables.h"
+#include "../storage/PersistentDataModels.h"
 
 /*
     These definitions provide 8-bit samples to emulate.
@@ -754,5 +753,3 @@ uint8_t compatibilityWavetablePositionForAnchor(uint8_t anchorIndex, uint8_t anc
     (static_cast<uint16_t>(anchorIndex) * 127u + ((anchorCount - 1u) / 2u)) / (anchorCount - 1u)
   );
 }
-
-#endif  // HEXBOARD_FIRMWARE_UNITY
