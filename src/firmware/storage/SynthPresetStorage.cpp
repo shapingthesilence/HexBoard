@@ -1,8 +1,12 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/RuntimeDefaults.h"
+#include "../menu/MenuAndDisplay.h"
+#include "../synth/SynthAudio.h"
 #include "../synth/SynthDefaults.h"
+#include "Settings.h"
 #include "SynthPresetStorage.h"
+#include "SynthWavetableStorage.h"
 
 void applyDefaultSynthPresets() {
   synthPresets.clear();
@@ -667,4 +671,3 @@ void loadSynthPresetFromSlot(uint16_t presetIndex) {
   flashSafeSaveCurrentSynthWavetableReference();
   sendToLog("Loaded synth preset " + std::string(synthPresets[presetIndex].name));
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

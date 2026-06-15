@@ -117,7 +117,7 @@ constexpr uint16_t AUDIO_DMA_BUFFER_SAMPLE_COUNT = 64;
 constexpr uint32_t AUDIO_DMA_SYS_CLOCK_HZ = 250000000u;
 constexpr uint32_t AUDIO_SAMPLE_RATE_HZ =
   AUDIO_DMA_SYS_CLOCK_HZ / (static_cast<uint32_t>(AUDIO_DMA_TIMER_WRAP) + 1u) / AUDIO_DMA_PWM_STEPS;
-constexpr uint32_t AUDIO_DMA_BUFFER_MICROS =
+extern const uint32_t AUDIO_DMA_BUFFER_MICROS =
   (static_cast<uint64_t>(AUDIO_DMA_BUFFER_SAMPLE_COUNT) * 1000000ull) / AUDIO_SAMPLE_RATE_HZ;
 constexpr uint8_t AUDIO_PWM_CC_LEVEL_SHIFT = 16;
 
