@@ -51,11 +51,11 @@ The current source is grouped by file:
 | `src/firmware/app/` | standalone platform/common helpers, non-synth runtime defaults, diagnostics/timing, plus unity-included lifecycle functions |
 | `src/firmware/tuning/` | standalone tuning tables plus unity-included Dynamic JI retuning |
 | `src/firmware/model/` | standalone layout, scale/palette/preset tables, and pitch assignment |
-| `src/firmware/hardware/` | grid state, command buttons, scan/rotary input, LED rendering, standalone LED animations |
+| `src/firmware/hardware/` | grid state, standalone command buttons, scan/rotary input, LED rendering, standalone LED animations |
 | `src/firmware/midi/` | standalone USB/serial transport, MPE/routing, external MIDI LED state, delegated control, and MIDI input parsing, plus unity-included note dispatch |
 | `src/firmware/synth/` | shared synth defaults, built-in single-cycle waveform sources and compatibility wavetable catalog, oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome; hot render/audio helpers remain grouped in `SynthAudio.cpp` |
 | `src/firmware/storage/` | standalone persistent data models, settings/profile persistence, synth preset/wavetable storage, preset-sync protocol helpers, geometry objects, synth object handlers, and message dispatch |
-| `src/firmware/menu/` | OLED/GEM pages and callbacks, played-note overlay, synth preset menu rebuilds, synth wavetable menu rebuilds |
+| `src/firmware/menu/` | unity-included OLED/GEM pages and callbacks, standalone played-note overlay, standalone synth preset menu rebuilds, standalone synth wavetable menu rebuilds |
 
 ## Core Data Structures
 

@@ -1,7 +1,8 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
+#include "CommandButtons.h"
+#include "GridState.h"
 #include "GridScanRotary.h"
+#include "../app/PlatformCommon.h"
 
 void RAM_FUNC(cmdOn)(byte x) {  // volume and mod wheel read all current buttons
   switch (h[x].note) {
@@ -23,4 +24,3 @@ void RAM_FUNC(cmdOff)(byte x) {  // pitch bend wheel only if buttons held.
       break;  // nothing; should all be taken care of within the wheelDef structure
   }
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

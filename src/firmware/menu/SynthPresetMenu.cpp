@@ -1,7 +1,7 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "SynthPresetMenu.h"
+#include "MenuAndDisplay.h"
+#include "../storage/SynthPresetStorage.h"
 
 struct SynthPresetMenuAction {
   uint16_t presetIndex = 0;
@@ -298,6 +298,3 @@ void serviceSynthPresetMenuRebuild() {
 void createSynthPresetMenuItems() {
   rebuildSynthPresetMenuItems();
 }
-
-
-#endif  // HEXBOARD_FIRMWARE_UNITY

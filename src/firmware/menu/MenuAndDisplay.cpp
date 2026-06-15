@@ -38,8 +38,6 @@
 #define MENU_ITEM_HEIGHT 10
 #define MENU_PAGE_SCREEN_TOP_OFFSET 10
 #define MENU_VALUES_LEFT_OFFSET 78
-#define CONTRAST_AWAKE 63
-#define CONTRAST_SCREENSAVER 1
 // Create an instance of the U8g2 graphics library.
 U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2(U8G2_R2, /* reset=*/U8X8_PIN_NONE);
 // Create menu object of class GEM_u8g2. Supply its constructor with reference to u8g2 object we created earlier

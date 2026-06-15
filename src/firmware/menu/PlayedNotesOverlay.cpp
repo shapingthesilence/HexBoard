@@ -1,7 +1,9 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "PlayedNotesOverlay.h"
+#include "MenuAndDisplay.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/PlatformCommon.h"
+#include "../hardware/GridState.h"
 
 // --- Note display overlay when pressing keys ---
 bool displayPlayedNotes = false;
@@ -483,5 +485,3 @@ void drawPlayedNotesOverlay() {
 
   u8g2.sendBuffer();
 }
-
-#endif  // HEXBOARD_FIRMWARE_UNITY

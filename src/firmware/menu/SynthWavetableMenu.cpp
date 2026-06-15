@@ -1,7 +1,11 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "../synth/BuiltinWavetables.h"
+#include "../app/RuntimeDefaults.h"
+#include "../storage/Settings.h"
+#include "../storage/SynthWavetableStorage.h"
+#include "../synth/SynthAudio.h"
+#include "MenuAndDisplay.h"
+#include "SynthPresetMenu.h"
 #include "SynthWavetableMenu.h"
 
 char currentSynthWavetableMenuLabel[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = "WT:Basic";
@@ -245,5 +249,3 @@ void serviceSynthWavetableMenuRebuild() {
     menu.drawMenu();
   }
 }
-
-#endif  // HEXBOARD_FIRMWARE_UNITY
