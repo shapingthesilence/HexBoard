@@ -120,6 +120,11 @@ export interface TransferEndPayload {
   finalChunkCount: number;
 }
 
+export interface TransferAbortPayload {
+  transferId: number;
+  reasonCode: number;
+}
+
 export interface DelegatedNoteMapRecord {
   buttonIndex: number;
   channel: number;
@@ -494,6 +499,11 @@ export function decodeTransferEndPayload(payload: ArrayLike<number>): TransferEn
     transferId: decodeU14(payload, 0),
     finalChunkCount: decodeU21(payload, 2)
   };
+}
+
+export function encodeTransferAbortPayload(payload: TransferAbortPayload): number[] {
+  assertSevenBitByte(payload.reasonCode, "reasonCode");
+  return [...encodeU14(payload.transferId), payload.reasonCode];
 }
 
 export function encodeWriteCommitPayload(payload: WriteCommitPayload): number[] {

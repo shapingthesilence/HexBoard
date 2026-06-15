@@ -23,6 +23,7 @@ import {
   encodeHelloRequestPayload,
   encodeObjectListRequestPayload,
   encodeReadRequestPayload,
+  encodeTransferAbortPayload,
   encodeTransferEndPayload,
   encodeWriteBeginPayload,
   encodeWriteCommitPayload,
@@ -35,7 +36,10 @@ import type { MidiTransport } from "./types.ts";
 
 const DEFAULT_RAW_CHUNK_SIZE = 64;
 const DEFAULT_RESPONSE_TIMEOUT_MS = 5000;
+const READ_OBJECT_INACTIVITY_TIMEOUT_MS = 15000;
 const FLASH_WRITE_RESPONSE_TIMEOUT_MS = 15000;
+const TRANSFER_ABORT_REASON_TIMEOUT = 0x01;
+const TRANSFER_ABORT_REASON_CLIENT_ERROR = 0x02;
 
 const presetSyncErrorNames = new Map<number, string>(
   Object.entries(ErrorCode).map(([name, value]) => [value, name])
@@ -525,7 +529,7 @@ export class PresetSyncClient {
     });
   }
 
-  private async readObject(objectType: number, handle: number, timeoutMs = DEFAULT_RESPONSE_TIMEOUT_MS): Promise<Uint8Array> {
+  private async readObject(objectType: number, handle: number, timeoutMs = READ_OBJECT_INACTIVITY_TIMEOUT_MS): Promise<Uint8Array> {
     const transaction = this.nextTransaction();
 
     return new Promise((resolve, reject) => {
@@ -534,20 +538,61 @@ export class PresetSyncClient {
       let receivedBytes = 0;
       let expectedChunkIndex = 0;
       let output = new Uint8Array();
+      let settled = false;
+      let timeout: ReturnType<typeof globalThis.setTimeout>;
 
-      const timeout = globalThis.setTimeout(() => {
+      const abortActiveRead = (reasonCode: number) => {
+        if (expectedTransferId === null) {
+          return;
+        }
+        const abortFrame = encodeDefaultPresetSyncFrame(
+          MessageType.TransferAbort,
+          transaction,
+          encodeTransferAbortPayload({ transferId: expectedTransferId, reasonCode })
+        );
+        void this.transport.send(abortFrame).catch(() => undefined);
+      };
+
+      const armTimeout = () => {
+        globalThis.clearTimeout(timeout);
+        timeout = globalThis.setTimeout(() => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          abortActiveRead(TRANSFER_ABORT_REASON_TIMEOUT);
+          unsubscribe();
+          reject(new Error("Timed out waiting for HexBoard object read"));
+        }, timeoutMs);
+      };
+
+      timeout = globalThis.setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        abortActiveRead(TRANSFER_ABORT_REASON_TIMEOUT);
         unsubscribe();
         reject(new Error("Timed out waiting for HexBoard object read"));
       }, timeoutMs);
 
       const finish = (result: Uint8Array) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         globalThis.clearTimeout(timeout);
         unsubscribe();
         resolve(result);
       };
 
       const fail = (error: unknown) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
         globalThis.clearTimeout(timeout);
+        abortActiveRead(TRANSFER_ABORT_REASON_CLIENT_ERROR);
         unsubscribe();
         reject(error);
       };
@@ -561,6 +606,7 @@ export class PresetSyncClient {
           if (frame.transactionId !== transaction) {
             return;
           }
+          armTimeout();
           if (frame.message === MessageType.Nack) {
             fail(describeNack(frame));
             return;

@@ -187,6 +187,9 @@ valid records are applied, so web-editor synth controls use the same debounced
 auto-save path as on-device synth menu controls.
 Device-to-host preset reads are ACK-paced: firmware sends `READ_BEGIN`, waits
 for the host ACK, then sends one `DATA_CHUNK` per ACK before `TRANSFER_END`.
+The web client uses an inactivity timeout for object reads rather than one
+total-transfer deadline, and sends `TRANSFER_ABORT` if a read stalls so firmware
+can clear the active read transfer immediately.
 Live USB MIDI packet output has a much shorter retry window than SysEx stream
 output. If the USB host is connected but not polling, such as a sleeping or
 closed laptop that still supplies power, `writeUsbMidiPacket()` backs off after

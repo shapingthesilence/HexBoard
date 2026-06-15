@@ -427,7 +427,9 @@ the previous OLED screensaver state and `screenTime`, so a transfer that wakes a
 sleeping display returns it to the screensaver when the transfer closes.
 Device-to-host reads are paced by host ACKs for `READ_BEGIN`, each `DATA_CHUNK`,
 and `TRANSFER_END` so USB MIDI buffers do not have to absorb the whole object
-transfer at once. One-frame control messages, including live synth parameter
+transfer at once. The web client treats object-read timeouts as inactivity
+timeouts and sends `TRANSFER_ABORT` when a read stalls; firmware clears matching
+read or write transfers on abort. One-frame control messages, including live synth parameter
 sets, process inline and do not open the modal transfer window. Live synth
 parameter sets mark settings dirty after applying valid records, so persistence
 uses the same debounced profile auto-save path as on-device synth menu edits.

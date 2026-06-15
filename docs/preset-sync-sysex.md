@@ -603,7 +603,10 @@ the declared length.
 <transfer-id-u14> <reason-code>
 ```
 
-Both sides should free staged transfer memory after abort.
+Both sides should free staged transfer memory after abort. Current firmware
+cancels either an active host-to-device write or device-to-host read with the
+matching transfer id. The web app sends `TRANSFER_ABORT` if a device-to-host
+object read stalls long enough to hit its inactivity timeout.
 
 ## Delete User Object
 

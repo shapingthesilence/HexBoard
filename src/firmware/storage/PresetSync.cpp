@@ -649,12 +649,24 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
 }
 
 void presetSyncHandleTransferAbort(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
-  (void)payload;
-  if (payloadLength < 2) {
+  if (payloadLength != 3) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_TRANSFER_ABORT, PRESET_SYNC_ERROR_BAD_LENGTH);
     return;
   }
-  presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+  uint16_t transferId = presetSyncDecodeU14(payload);
+  bool matched = false;
+  if (presetSyncWriteTransfer.active && presetSyncWriteTransfer.transferId == transferId) {
+    presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+    matched = true;
+  }
+  if (presetSyncReadTransfer.active && presetSyncReadTransfer.transferId == transferId) {
+    presetSyncReadTransfer = PresetSyncReadTransfer{};
+    matched = true;
+  }
+  if (!matched) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_TRANSFER_ABORT, PRESET_SYNC_ERROR_UNEXPECTED_CHUNK);
+    return;
+  }
   presetSyncSendAck(transactionId, PRESET_SYNC_MSG_TRANSFER_ABORT);
 }
 

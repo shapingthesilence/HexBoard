@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { deterministicObjectId } from "../catalogs/objectId.ts";
 import { createGeneratedEdoTuning } from "../catalogs/layoutsCatalog.ts";
 import { createSynthPresetObject } from "../catalogs/synthPresets.ts";
@@ -288,5 +288,48 @@ describe("PresetSyncClient", () => {
       message: MessageType.TransferEnd,
       nextChunkIndex: 1
     });
+  });
+
+  it("aborts an active device-to-host read when the object read times out", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = new MockMidiTransport();
+      const client = new PresetSyncClient(transport);
+      const request = client.readSynthPreset(0);
+      const transaction = decodePresetSyncFrame(transport.sentMessages[0]).transactionId;
+      const transferId = 7;
+
+      transport.emit(encodeDefaultPresetSyncFrame(MessageType.ReadBegin, transaction, [
+        ObjectType.SynthPreset,
+        0x00,
+        0x00,
+        0x00,
+        transferId,
+        0x01,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x03,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x40,
+        0x00
+      ]));
+
+      const rejection = expect(request).rejects.toThrow("Timed out waiting for HexBoard object read");
+      await vi.advanceTimersByTimeAsync(15001);
+      await rejection;
+
+      const abort = decodePresetSyncFrame(transport.sentMessages.at(-1) ?? []);
+      expect(abort.message).toBe(MessageType.TransferAbort);
+      expect(abort.payload).toEqual([0x00, transferId, 0x01]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
