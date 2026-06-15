@@ -160,11 +160,8 @@ function withCycleColors(bundle: LayoutBundle, cycleLength: number): LayoutBundl
   };
 }
 
-function colorToCss(color: ScaleDegreeColor): string {
-  const hue = color.hueTenthDegrees / 10;
-  const saturation = Math.round((color.saturation / 255) * 100);
-  const lightness = Math.round(18 + ((color.value / 255) * 46));
-  return `hsl(${hue}deg ${saturation}% ${lightness}%)`;
+export function colorToCss(color: ScaleDegreeColor): string {
+  return scaleDegreeColorToHex(color);
 }
 
 function scaleDegreeColorToHex(color: ScaleDegreeColor): string {
