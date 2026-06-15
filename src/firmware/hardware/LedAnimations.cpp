@@ -1,7 +1,9 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "LedAnimations.h"
+#include "GridState.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/PlatformCommon.h"
+#include "../app/RuntimeDefaults.h"
 
 // @animate
 /*
@@ -231,4 +233,3 @@ void animateLEDs() {
       break;
   }
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

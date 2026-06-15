@@ -1,10 +1,10 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "DelegatedControl.h"
 #include "ExternalMidiLedState.h"
 #include "MidiInput.h"
 #include "MidiTransport.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../hardware/GridState.h"
 
 uint8_t midiDataLengthForStatus(uint8_t status) {
   switch (status & 0xF0) {
@@ -163,4 +163,3 @@ bool RAM_FUNC(processIncomingMIDI)() {
   }
   return processed;
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

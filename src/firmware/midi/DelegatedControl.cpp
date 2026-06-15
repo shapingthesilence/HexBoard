@@ -1,9 +1,9 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "DelegatedControl.h"
 #include "MidiTransport.h"
 #include "../app/DiagnosticsTiming.h"
+#include "../app/PlatformCommon.h"
+#include "../hardware/GridState.h"
 #include "../hardware/LedRender.h"
 #include "../storage/PresetSync.h"
 
@@ -232,4 +232,3 @@ bool processIncomingDelegatedSysEx(const uint8_t* sysex, const unsigned int len)
   processDelegatedSysEx(&sysex[2], len - 3);
   return true;
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

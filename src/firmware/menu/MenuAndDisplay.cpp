@@ -5,6 +5,7 @@
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
 #include "../hardware/LedRender.h"
+#include "../midi/MidiInput.h"
 #include "../midi/MidiRouting.h"
 #include "../midi/MidiTransport.h"
 #include "../model/PitchAssignment.h"

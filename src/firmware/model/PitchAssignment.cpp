@@ -1,8 +1,10 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "PitchAssignment.h"
+#include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
+#include "../app/RuntimeDefaults.h"
+#include "../hardware/GridState.h"
+#include "../hardware/LedRender.h"
 #include "../midi/MidiRouting.h"
 #include "../tuning/DynamicJustIntonation.h"
 
@@ -207,4 +209,3 @@ void applyLayout() {  // call this function when the layout changes
   assignPitches();  // same with pitches
   sendToLog("buildLayout complete.");
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

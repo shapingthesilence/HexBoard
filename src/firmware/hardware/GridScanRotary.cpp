@@ -1,6 +1,7 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "../midi/DelegatedControl.h"
 #include "GridScanRotary.h"
 #include "../menu/PlayedNotesOverlay.h"
 

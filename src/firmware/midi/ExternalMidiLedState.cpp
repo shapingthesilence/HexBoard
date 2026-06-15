@@ -1,9 +1,9 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "ExternalMidiLedState.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
+#include "../app/RuntimeDefaults.h"
+#include "../hardware/GridState.h"
 
 constexpr uint64_t MIDI_IN_LED_COALESCE_MICROS = 1000;
 constexpr uint64_t MIDI_IN_LED_MAX_DEFER_MICROS = 8000;
@@ -62,4 +62,3 @@ void RAM_FUNC(applyExternalMidiToHex)(byte midiNote, bool noteOn) {
     markMidiInLedDirty();
   }
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

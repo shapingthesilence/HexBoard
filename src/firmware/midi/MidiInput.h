@@ -2,4 +2,5 @@
 
 #include "../FirmwareModule.h"
 
-bool processIncomingMIDI();
+bool processIncomingMIDIDelegated();
+bool RAM_FUNC(processIncomingMIDI)();
