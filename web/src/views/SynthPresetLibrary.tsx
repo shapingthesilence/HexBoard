@@ -21,6 +21,7 @@ import {
   type WavetableFrameReduction,
   type WavetableNormalization
 } from "../catalogs/index.ts";
+import { SynthPreviewController, type SynthPreviewPatch } from "../audio/synthPreview.ts";
 import { MockMidiTransport } from "../midi/mockTransport.ts";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
@@ -939,6 +940,57 @@ function wavetableFramePreviewPath(samples: Uint8Array, frame: number): string {
   return `M ${points.join(" L ")}`;
 }
 
+const auditionKeyMap = [
+  { key: "a", offset: 0 },
+  { key: "w", offset: 1 },
+  { key: "s", offset: 2 },
+  { key: "e", offset: 3 },
+  { key: "d", offset: 4 },
+  { key: "f", offset: 5 },
+  { key: "t", offset: 6 },
+  { key: "g", offset: 7 },
+  { key: "y", offset: 8 },
+  { key: "h", offset: 9 },
+  { key: "u", offset: 10 },
+  { key: "j", offset: 11 },
+  { key: "k", offset: 12 },
+  { key: "o", offset: 13 },
+  { key: "l", offset: 14 },
+  { key: "p", offset: 15 },
+  { key: ";", offset: 16 },
+  { key: "'", offset: 17 }
+] as const;
+
+const auditionKeyRows = [
+  auditionKeyMap.slice(0, 12),
+  auditionKeyMap.slice(12)
+] as const;
+
+function midiNoteLabel(note: number): string {
+  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  const octave = Math.floor(note / 12) - 1;
+  return `${names[note % 12]}${octave}`;
+}
+
+function auditionNoteFromKey(key: string, octave: number): number | null {
+  const mapping = auditionKeyMap.find((entry) => entry.key === key.toLowerCase());
+  if (!mapping) {
+    return null;
+  }
+  return (octave + 1) * 12 + mapping.offset;
+}
+
+function eventTargetAcceptsText(event: KeyboardEvent): boolean {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return target.isContentEditable
+    || target.tagName === "INPUT"
+    || target.tagName === "TEXTAREA"
+    || target.tagName === "SELECT";
+}
+
 export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [libraryKind, setLibraryKind] = useState<SynthLibraryKind>("presets");
   const [computerPresets, setComputerPresets] = useState(loadComputerPresets);
@@ -964,6 +1016,12 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [autoSend, setAutoSend] = useState(true);
   const [editorHydrated, setEditorHydrated] = useState(() => transport instanceof MockMidiTransport);
   const [syncStatus, setSyncStatus] = useState("Ready");
+  const [auditionOpen, setAuditionOpen] = useState(false);
+  const [previewOctave, setPreviewOctave] = useState(4);
+  const [previewStatus, setPreviewStatus] = useState("Ready");
+  const [previewVolume, setPreviewVolume] = useState(0.35);
+  const [previewMod, setPreviewMod] = useState(0);
+  const [heldPreviewNotes, setHeldPreviewNotes] = useState<number[]>([]);
   const [lastFrameCount, setLastFrameCount] = useState(0);
   const [draggedPreset, setDraggedPreset] = useState<DraggedPreset | null>(null);
   const [folderFilters, setFolderFilters] = useState<Record<LibrarySpace, string | null>>({
@@ -976,6 +1034,12 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wavetableFileInputRef = useRef<HTMLInputElement>(null);
+  const previewControllerRef = useRef<SynthPreviewController | null>(null);
+  const previewChordTimerRef = useRef<number | null>(null);
+  const pressedPreviewKeys = useRef(new Map<string, number>());
+  const latestPreviewPatch = useRef<SynthPreviewPatch | null>(null);
+  const latestPreviewVolume = useRef(previewVolume);
+  const latestPreviewMod = useRef(previewMod);
   const skipNextAutoSend = useRef(true);
   const pendingLiveSynthParam = useRef<{ key: EditableSynthValueKey; value: number } | null>(null);
 
@@ -1028,6 +1092,18 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         label: `${folderLabel(ref.folderPath)} / ${ref.name}`
       }));
   }, [computerWavetables, hexboardWavetables, preset.wavetableFolderPath, preset.wavetableName]);
+  const selectedPreviewWavetable = useMemo(() => {
+    const selectedKey = wavetableSaveKey(normalizeWavetableReference(preset.wavetableFolderPath, preset.wavetableName));
+    return [...computerWavetables, ...hexboardWavetables].find((wavetable) =>
+      wavetable.samples && wavetableSaveKey(wavetable) === selectedKey
+    );
+  }, [computerWavetables, hexboardWavetables, preset.wavetableFolderPath, preset.wavetableName]);
+  const previewPatch = useMemo<SynthPreviewPatch>(() => ({
+    wavetableName: preset.wavetableName,
+    wavetableFolderPath: preset.wavetableFolderPath,
+    wavetableSamples: selectedPreviewWavetable?.samples,
+    values: preset.values
+  }), [preset.values, preset.wavetableFolderPath, preset.wavetableName, selectedPreviewWavetable?.samples]);
   const draftPreset = useMemo(() => encodeEditablePreset(preset), [preset]);
   const monoModeSelected = preset.values.PlaybackMode === 1 || preset.values.PlaybackMode === 4;
   const arpModeSelected = preset.values.PlaybackMode === 2;
@@ -1070,6 +1146,66 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   useEffect(() => {
     saveComputerWavetables(computerWavetables);
   }, [computerWavetables]);
+
+  useEffect(() => {
+    latestPreviewPatch.current = previewPatch;
+    previewControllerRef.current?.setPatch(previewPatch);
+  }, [previewPatch]);
+
+  useEffect(() => {
+    latestPreviewVolume.current = previewVolume;
+    previewControllerRef.current?.setVolume(previewVolume);
+  }, [previewVolume]);
+
+  useEffect(() => {
+    latestPreviewMod.current = previewMod;
+    previewControllerRef.current?.setMod(previewMod);
+  }, [previewMod]);
+
+  useEffect(() => {
+    if (!auditionOpen) {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.repeat || event.metaKey || event.ctrlKey || event.altKey || eventTargetAcceptsText(event)) {
+        return;
+      }
+      const note = auditionNoteFromKey(event.key, previewOctave);
+      if (note === null || pressedPreviewKeys.current.has(event.key.toLowerCase())) {
+        return;
+      }
+      event.preventDefault();
+      pressedPreviewKeys.current.set(event.key.toLowerCase(), note);
+      void startPreviewNote(note);
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      const key = event.key.toLowerCase();
+      const note = pressedPreviewKeys.current.get(key);
+      if (note === undefined) {
+        return;
+      }
+      event.preventDefault();
+      pressedPreviewKeys.current.delete(key);
+      stopPreviewNote(note);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      pressedPreviewKeys.current.clear();
+    };
+  }, [auditionOpen, previewOctave]);
+
+  useEffect(() => () => {
+    if (previewChordTimerRef.current !== null) {
+      window.clearTimeout(previewChordTimerRef.current);
+    }
+    void previewControllerRef.current?.close();
+  }, []);
 
   useEffect(() => {
     if (transport instanceof MockMidiTransport) {
@@ -1138,6 +1274,64 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     setPreset(update);
   }
 
+  function previewController(): SynthPreviewController {
+    if (!previewControllerRef.current) {
+      previewControllerRef.current = new SynthPreviewController();
+    }
+    previewControllerRef.current.setPatch(latestPreviewPatch.current ?? previewPatch);
+    previewControllerRef.current.setVolume(latestPreviewVolume.current);
+    previewControllerRef.current.setMod(latestPreviewMod.current);
+    return previewControllerRef.current;
+  }
+
+  async function startPreviewNote(note: number) {
+    try {
+      await previewController().noteOn(note);
+      setHeldPreviewNotes((current) => current.includes(note) ? current : [...current, note]);
+      setPreviewStatus(`Playing ${midiNoteLabel(note)}`);
+    } catch (error) {
+      setPreviewStatus(error instanceof Error ? error.message : "Failed to start browser audio");
+    }
+  }
+
+  function stopPreviewNote(note: number) {
+    previewControllerRef.current?.noteOff(note);
+    setHeldPreviewNotes((current) => current.filter((heldNote) => heldNote !== note));
+  }
+
+  function stopAllPreviewNotes(status = "Stopped") {
+    if (previewChordTimerRef.current !== null) {
+      window.clearTimeout(previewChordTimerRef.current);
+      previewChordTimerRef.current = null;
+    }
+    pressedPreviewKeys.current.clear();
+    previewControllerRef.current?.allNotesOff();
+    setHeldPreviewNotes([]);
+    setPreviewStatus(status);
+  }
+
+  function setAuditionExpanded(open: boolean) {
+    if (!open) {
+      stopAllPreviewNotes("Hidden");
+    }
+    setAuditionOpen(open);
+  }
+
+  function changePreviewOctave(octave: number) {
+    stopAllPreviewNotes("Octave changed");
+    setPreviewOctave(clampNumber(octave, 1, 7));
+  }
+
+  async function playPreviewChord() {
+    stopAllPreviewNotes("Starting chord");
+    const root = (previewOctave + 1) * 12;
+    const notes = [root, root + 7, root + 12, root + 16, root + 19];
+    await Promise.all(notes.map((note) => startPreviewNote(note)));
+    previewChordTimerRef.current = window.setTimeout(() => {
+      stopAllPreviewNotes("Chord played");
+    }, 1400);
+  }
+
   function addFolder() {
     const folder = newFolder.trim();
     if (!folder) {
@@ -1179,6 +1373,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   function openPreset(source: LibrarySpace, nextPreset: EditableSynthPreset) {
     const selectedPreset = clonePreset(nextPreset);
+    stopAllPreviewNotes("Loaded preset");
     skipNextAutoSend.current = true;
     setEditorHydrated(true);
     setPreset(selectedPreset);
@@ -2120,6 +2315,80 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           {syncStatus}
           {transport instanceof MockMidiTransport ? " (mock transport)" : ""}
         </div>
+
+        <section className={auditionOpen ? "auditionPanel" : "auditionPanel collapsed"}>
+          <div className="row between">
+            <div>
+              <h3>Audition</h3>
+              <span className="muted">{auditionOpen ? previewStatus : "Hidden"}</span>
+            </div>
+            <button
+              aria-expanded={auditionOpen}
+              aria-label={auditionOpen ? "Hide audition" : "Show audition"}
+              className="iconButton auditionToggle"
+              type="button"
+              onClick={() => setAuditionExpanded(!auditionOpen)}
+            >
+              {auditionOpen ? "-" : "+"}
+            </button>
+          </div>
+
+          {auditionOpen ? (
+            <>
+              <div className="auditionKeyRows" onPointerLeave={() => stopAllPreviewNotes("Stopped")}>
+                {auditionKeyRows.map((row, rowIndex) => (
+                  <div className="auditionKeys" key={`audition-row-${rowIndex}`}>
+                    {row.map((mapping) => {
+                      const note = auditionNoteFromKey(mapping.key, previewOctave) ?? 60;
+                      return (
+                        <button
+                          className={heldPreviewNotes.includes(note) ? "auditionKey active" : "auditionKey"}
+                          key={mapping.key}
+                          type="button"
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            event.currentTarget.setPointerCapture(event.pointerId);
+                            void startPreviewNote(note);
+                          }}
+                          onPointerUp={(event) => {
+                            event.preventDefault();
+                            stopPreviewNote(note);
+                          }}
+                          onPointerCancel={() => stopPreviewNote(note)}
+                        >
+                          <strong>{mapping.key}</strong>
+                          <span>{midiNoteLabel(note)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+              <div className="editorGrid compact">
+                <label className="field">
+                  <span>Octave</span>
+                  <select value={previewOctave} onChange={(event) => changePreviewOctave(Number(event.target.value))}>
+                    {[1, 2, 3, 4, 5, 6, 7].map((octave) => (
+                      <option key={octave} value={octave}>
+                        {octave}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <RangeField label="Preview Vol" value={Math.round(previewVolume * 100)} min={0} max={100} onChange={(value) => setPreviewVolume(value / 100)} suffix="%" />
+                <RangeField label="Mod" value={previewMod} min={0} max={127} onChange={setPreviewMod} suffix="/127" />
+                <div className="row auditionActions">
+                  <button type="button" onClick={() => void playPreviewChord()}>
+                    Chord
+                  </button>
+                  <button type="button" onClick={() => stopAllPreviewNotes()}>
+                    Stop
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </section>
 
         <div className="fieldGrid">
           <label className="field">

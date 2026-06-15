@@ -344,6 +344,96 @@ select {
   align-items: end;
 }
 
+.editorGrid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.iconButton {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  min-width: 2rem;
+  height: 2rem;
+  min-height: 2rem;
+  padding: 0;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.auditionPanel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #dbe1dd;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fbfcfa;
+}
+
+.auditionPanel.collapsed {
+  padding: 8px 12px;
+}
+
+.auditionPanel h3 {
+  margin: 0;
+}
+
+.auditionToggle {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.auditionKeyRows {
+  display: grid;
+  gap: 6px;
+}
+
+.auditionKeys {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
+  gap: 6px;
+}
+
+.auditionKey {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  min-height: 3.25rem;
+  padding: 0.35rem 0.2rem;
+  user-select: none;
+  touch-action: none;
+}
+
+.auditionKey strong,
+.auditionKey span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auditionKey strong {
+  text-transform: uppercase;
+}
+
+.auditionKey span {
+  color: #66716d;
+  font-size: 0.72rem;
+}
+
+.auditionKey.active {
+  background: #176b5b;
+  border-color: #176b5b;
+  color: #ffffff;
+}
+
+.auditionKey.active span {
+  color: #d8fff3;
+}
+
+.auditionActions {
+  align-self: end;
+}
+
 .rangeField input {
   width: 100%;
 }

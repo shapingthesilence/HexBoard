@@ -405,7 +405,18 @@ the matched preset object id only after user confirmation. Literal `/`, `\`, and
 `%` characters in web-app folder names are percent-escaped in device-facing
 folder paths, so the on-device menu can display labels such as `Pads/Warm`
 without splitting them into nested folders. Folder chips filter each synth
-library pane independently and toggle off when clicked again.
+library pane independently and toggle off when clicked again. The same synth
+editor has a browser-only AudioWorklet preview path for offline audition. It is
+implemented as a TypeScript controller in `web/src/audio/` plus a public
+worklet script so Vite can serve it from the app base path. The worklet mirrors
+the preset schema at a practical level: poly/mono/arpeggiated voice handling,
+AHDSR amp and FX envelopes, LFO, vibrato, phase-warp, wavetable-position, pitch,
+drive, and user wavetable sample playback. The React editor keeps the audition
+surface collapsed by default, expands it from a small `+` button, and owns the
+computer-key piano mapping plus octave selection before forwarding note events
+to the preview controller. Built-in wavetable names are generated
+approximations, and the output path intentionally skips RP2040 PWM, piezo
+midpoint, headphone cap, and fixed-point parity details.
 
 Firmware MIDI receive drains all currently available USB/serial bytes into the
 HexBoard parser instead of relying on the Arduino MIDI library. When a chunked

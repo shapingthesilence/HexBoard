@@ -93,10 +93,17 @@ preset saves and Serum/Vital or HexBoard wavetable imports use an ACKed write pa
 settings dirty for debounced profile autosave. The synth editor reads the
 current runtime synth patch from handle `0x3FFF` before enabling live sends, and
 preset open sends a runtime-apply preview immediately for auditioning. The
-editor mirrors firmware synth-mode, portamento, arpeggiator
-speed/direction, tempo, named wavetable dependency, wavetable position,
-phase-warp, and LFO controls for synth preset schema `7`, and splits the synth library into
-`Presets` and `Wavetables` views. The editor keeps opened presets as temporary drafts;
+editor also owns a browser-only AudioWorklet synth preview for offline preset
+audition. That preview consumes the same preset byte model, is collapsed behind
+a `+` control by default, maps computer keys in a piano-style `a w s e d...`
+layout with octave selection while expanded, uses selected local wavetable
+sample data when available, generates approximate built-in wavetable tables by
+name, and intentionally does not try to match RP2040 PWM, piezo/jack staging, or
+fixed-point render parity. The editor mirrors firmware synth-mode, portamento,
+arpeggiator speed/direction, tempo, named wavetable dependency, wavetable
+position, phase-warp, and LFO controls for synth preset schema `7`, and splits
+the synth library into `Presets` and `Wavetables` views. The editor keeps opened
+presets as temporary drafts;
 save actions assign a fresh object id for a
 unique folder/name and only reuse an existing object id after the user confirms
 an overwrite for that same folder/name. HexBoard Library refresh uses object-list
@@ -138,6 +145,10 @@ Current web source layout:
   `0,20,40,60,80,100,120`; layout previews and tests should use this helper
   instead of duplicating row/column math
 - `web/src/midi/`: Web MIDI access, preset-sync client helpers, and mock transport
+- `web/src/audio/` plus `web/public/synth-preview-worklet.js`: browser-only
+  synth preset audition controller and AudioWorklet approximation used by the
+  synth editor when the device is disconnected or when quick local audition is
+  useful
 - `web/src/views/`: compact device connection, profile sync, tuning/layout
   editing, and synth preset organization
 
