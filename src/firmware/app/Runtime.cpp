@@ -1,5 +1,3 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "DiagnosticsTiming.h"
 #include "PlatformCommon.h"
@@ -44,7 +42,7 @@
 void hexboardSetup() {
   setupUSBDescriptors();
   Serial.begin(115200);
-  irq_set_enabled(ALARM_IRQ, false);
+  disableAudioAlarmInterrupt();
   setupMIDI();
   // Give the USB stack time to complete enumeration before any flash
   // operations (which disable interrupts and starve the USB IRQ handler).
@@ -111,8 +109,7 @@ void hexboardLoop() {        // run on first core
   checkAndAutoSave();  // save settings
 }
 void hexboardSetup1() {  // set up on second core
-  setupSynth(PIEZO_PIN, PIEZO_SLICE);
-  setupSynth(AJACK_PIN, AJACK_SLICE);
+  setupSynthOutputs();
   while (!synthRuntimeReady.load(std::memory_order_acquire)) {
     tight_loop_contents();
   }
@@ -125,4 +122,3 @@ void hexboardLoop1() {  // run on second core
   }
   readKnob();
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

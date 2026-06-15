@@ -15,4 +15,3 @@
 #include "synth/SynthAudio.cpp"
 #include "menu/MenuAndDisplay.cpp"
 #include "hardware/GridScanRotary.cpp"
-#include "app/Runtime.cpp"

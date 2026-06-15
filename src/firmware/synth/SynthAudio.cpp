@@ -769,6 +769,9 @@ void updateEffectEnvelopeParamsFromSettings() {
   */
 #define ALARM_NUM 2
 #define ALARM_IRQ TIMER_IRQ_2
+void disableAudioAlarmInterrupt() {
+  irq_set_enabled(ALARM_IRQ, false);
+}
 /*
     A basic EQ level can be stored to perform
     simple loudness adjustments at certain
@@ -2851,7 +2854,7 @@ byte isoTwoTwentySix(float f) {
     }
   }
 }
-inline void recomputePitchBendFactor() {
+void recomputePitchBendFactor() {
   pitchBendFactor = exp2(pbWheel.curValue * DEFAULT_PITCH_BEND_RANGE_SEMITONES / 98304.0f);
 }
 
@@ -3420,6 +3423,11 @@ void setupSynth(byte pin, byte slice) {
   pwm_set_enabled(slice, true);                   // ENGAGE!
   resetSynthFreqs();
   sendToLog("synth is ready.");
+}
+
+void setupSynthOutputs() {
+  setupSynth(PIEZO_PIN, PIEZO_SLICE);
+  setupSynth(AJACK_PIN, AJACK_SLICE);
 }
 
 void RAM_FUNC(arpeggiate)() {
