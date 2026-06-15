@@ -529,9 +529,9 @@ sample data, so those conversion controls are disabled for that file type.
 Imported tables are saved by the selected name/folder in the browser wavetable
 library, uploaded to HexBoard, and used by the open preset with `WT Pos = 0`.
 
-The HexBoard stores the currently selected wavetable reference separately from
-the byte-oriented settings profile, so rebooting or loading a preset preserves
-the named wavetable instead of falling back to `Basic`.
+The HexBoard stores named wavetable references separately from the byte-oriented
+settings data. Rebooting, loading a preset, or loading a saved profile restores
+the expected folder/name wavetable instead of falling back to `Basic`.
 
 The app requires a Web MIDI SysEx-capable browser such as Chrome or Edge running
 from `localhost` or HTTPS. Use `Connect HexBoard` in the top bar; the app sends
@@ -598,8 +598,8 @@ HexBoard supports `9` profile slots:
 How it behaves:
 
 - Auto-save always snapshots the current setup back into the `Boot/Auto-Save Slot`
-- Loading a slot immediately replaces the current setup
-- Saving stores the current setup in the chosen slot
+- Loading a slot immediately replaces the current setup, including the selected wavetable
+- Saving stores the current setup, including the selected wavetable, in the chosen slot
 
 ### Advanced
 

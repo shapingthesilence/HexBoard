@@ -217,7 +217,7 @@ Current optimization candidates to keep in mind:
 - `midiNoteToHexIndices` is an array of vectors. It is rebuilt when pitch assignment changes, not per audio sample, but a fixed-capacity reverse index would remove heap allocation from mapping refreshes and external MIDI LED lookup.
 - `animateMirror()` in `src/firmware/hardware/LedAnimations.cpp` compares every held note against every visible hex. It is bounded by `LED_COUNT`, but octave/by-note animation could use precomputed step buckets if animation load becomes visible.
 - Incoming SysEx assembly in `src/firmware/midi/MidiInput.cpp` uses growable vectors. Preset-sync is intentionally not a button-scan hot path, but a fixed receive buffer would make memory use more predictable during large transfers.
-- Modules still included through `FirmwareUnity.cpp` keep their `#if HEXBOARD_FIRMWARE_UNITY` guard before library includes. Standalone modules such as `Tuning.cpp`, `Layout.cpp`, `ScalePalettePreset.cpp`, `PersistentDataModels.cpp`, and `Settings.cpp` are omitted from `FirmwareUnity.cpp` and compile normally with direct headers.
+- Modules still included through `FirmwareUnity.cpp` keep their `#if HEXBOARD_FIRMWARE_UNITY` guard before library includes. Standalone modules such as `Tuning.cpp`, `Layout.cpp`, `ScalePalettePreset.cpp`, `PersistentDataModels.cpp`, `Settings.cpp`, and `SynthWavetableStorage.cpp` are omitted from `FirmwareUnity.cpp` and compile normally with direct headers.
 
 ## Source File Map
 
@@ -233,10 +233,10 @@ The main firmware files are:
 - `src/firmware/hardware/`: grid state, command buttons, scan/rotary handling, LED rendering, and LED animations
 - `src/firmware/midi/`: USB/serial transport, MPE/routing, MIDI note dispatch, external MIDI LED state, delegated control, and MIDI input parsing
 - `src/firmware/synth/`: shared synth defaults in `SynthDefaults.h`, built-in single-cycle waveform sources and compatibility wavetable catalog in `BuiltinWavetables.cpp`, plus synth engine, active wavetable RAM, oscillator/render path, envelopes, arpeggiator, metronome, PWM, and DMA audio in `SynthAudio.cpp`; hot render/audio helpers remain grouped in `SynthAudio.cpp`
-- `src/firmware/storage/`: standalone persistent data models in `PersistentDataModels.cpp`, standalone settings/profile storage in `Settings.cpp`, plus unity-included synth preset/wavetable storage, legacy user wavetable loading, and preset-sync split into protocol helpers (`PresetSyncProtocol.cpp`), geometry objects (`PresetSyncGeometry.cpp`), synth objects (`PresetSyncSynthObjects.cpp`), and message dispatch (`PresetSync.cpp`)
+- `src/firmware/storage/`: standalone persistent data models in `PersistentDataModels.cpp`, standalone settings/profile storage in `Settings.cpp`, standalone synth wavetable catalog/profile-reference storage in `SynthWavetableStorage.cpp`, plus unity-included synth preset storage and preset-sync split into protocol helpers (`PresetSyncProtocol.cpp`), geometry objects (`PresetSyncGeometry.cpp`), synth objects (`PresetSyncSynthObjects.cpp`), and message dispatch (`PresetSync.cpp`)
 - `src/firmware/menu/`: OLED/GEM pages and settings callbacks in `MenuAndDisplay.cpp`, played-note drawing in `PlayedNotesOverlay.cpp`, synth preset foldered menu rebuilding in `SynthPresetMenu.cpp`, and synth wavetable foldered menu rebuilding in `SynthWavetableMenu.cpp`
 
-If you are changing a behavior, start by locating which of these layers owns it before editing anything. Shared constants, types, and lifecycle calls should be declared in the nearest owning header, while subsystem-owned globals and hot helpers should stay private in their `.cpp` file whenever no other module needs them. The firmware is currently a mixed build: model/tuning table modules, persistent data models, and settings/profile persistence compile standalone, while the remaining guarded modules still build through `FirmwareUnity.cpp`.
+If you are changing a behavior, start by locating which of these layers owns it before editing anything. Shared constants, types, and lifecycle calls should be declared in the nearest owning header, while subsystem-owned globals and hot helpers should stay private in their `.cpp` file whenever no other module needs them. The firmware is currently a mixed build: model/tuning table modules, persistent data models, settings/profile persistence, and synth wavetable storage compile standalone, while the remaining guarded modules still build through `FirmwareUnity.cpp`.
 
 ## Runtime Data Flow
 
@@ -424,7 +424,7 @@ Important implementation details:
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - Core 0 retries synth release commands until the audio renderer consumes one; the renderer clears the retry state when it accepts `StartRelease` so long releases do not repeatedly restart
 - synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `9`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters plus a wavetable folder/name dependency, but do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving the new wavetable dependency from the legacy `Waveform` byte
-- user synth wavetables are stored as a named catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `64` entries, and per-table sample files named from each `16`-byte wavetable object id; each table sample file contains `32 * 512` unsigned waveform bytes. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
+- user synth wavetables are stored as a named catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `64` entries, and per-table sample files named from each `16`-byte wavetable object id; each table sample file contains `32 * 512` unsigned waveform bytes. The selected wavetable is also snapshotted per profile in `/profile_wavetables.dat` with magic `PWT`, version `1`, so loading a profile restores its folder/name wavetable reference before runtime sync. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
 - user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `1`, up to `127` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. Runtime Apply currently supports generated EDO/equal-step user tunings, vector layouts, included-degree scales, scale color maps, and format-1 explicit button maps. It does not yet support Scala/cents-table pitch lookup, profile references, menu catalog integration, or settings persistence for the selected geometry bundle.
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
@@ -555,11 +555,14 @@ reference. Built-in compatibility tables group old single-cycle waves into
 `Basic`, `Classic`, `Edge`, `Glass`, `Digital`, and `Motion`; old preset loading
 derives the table and `SynthWavetablePosition` anchor from the legacy waveform
 value. `Hybrid` intentionally maps to `Basic` at position `0`.
-The active wavetable folder/name is string metadata and is not part of the
-byte-oriented settings profile. Firmware persists that current reference in
-`/current_wavetable.dat` whenever settings are saved and immediately after
-on-device preset/wavetable loads or preset-sync save-and-apply commits. Startup
-loads the wavetable catalog, restores this reference, then lets
+The active wavetable folder/name is string metadata outside the byte-oriented
+settings array. Firmware persists the current reference in
+`/current_wavetable.dat` and keeps per-profile snapshots on flash in
+`/profile_wavetables.dat`; those profile references are read or rewritten only
+during profile/file operations, not cached in global SRAM. Settings saves,
+manual profile saves, autosave, on-device preset/wavetable loads, and
+preset-sync save-and-apply commits update the relevant references. Startup
+loads the wavetable catalog, restores the active profile's reference, then lets
 `syncSettingsToRuntime()` load the selected table.
 The reserved built-in wavetable folder is `/Built In` and is sent unescaped in
 preset wavetable dependencies; firmware also normalizes the older `%2FBuilt In`

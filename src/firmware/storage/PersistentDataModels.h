@@ -147,6 +147,8 @@ constexpr const char* SYNTH_WAVETABLE_BUILTIN_FOLDER = "/Built In";
 constexpr const char* SYNTH_WAVETABLE_BASIC_NAME = "Basic";
 constexpr uint8_t CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION = 1;
 constexpr char CURRENT_SYNTH_WAVETABLE_REFERENCE_FILE_PATH[] = "/current_wavetable.dat";
+constexpr uint8_t SYNTH_WAVETABLE_PROFILE_REFERENCES_VERSION = 1;
+constexpr char SYNTH_WAVETABLE_PROFILE_REFERENCES_FILE_PATH[] = "/profile_wavetables.dat";
 
 constexpr std::array<SettingKey, 34> synthPresetKeys = {
   SettingKey::PlaybackMode,
@@ -262,6 +264,18 @@ struct CurrentSynthWavetableReferenceFile {
   uint8_t version;
   char name[SYNTH_WAVETABLE_NAME_LENGTH] = {};
   char folderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
+  uint32_t crc32;
+};
+
+struct SynthWavetableProfileReference {
+  char name[SYNTH_WAVETABLE_NAME_LENGTH] = {};
+  char folderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
+};
+
+struct SynthWavetableProfileReferenceFile {
+  char magic[3];     // "PWT"
+  uint8_t version;
+  SynthWavetableProfileReference profiles[PROFILE_COUNT] = {};
   uint32_t crc32;
 };
 

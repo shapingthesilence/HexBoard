@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../FirmwareModule.h"
+#include "../storage/PersistentDataModels.h"
 
 constexpr byte MPE_MODE_AUTO = 0;
 constexpr byte MPE_MODE_DISABLE = 1;
@@ -62,4 +63,8 @@ constexpr byte LED_CURRENT_LIMIT_2000MA = 6;
 constexpr byte LED_CURRENT_LIMIT_3000MA = 7;
 constexpr byte LED_CURRENT_LIMIT_MAX_MODE = LED_CURRENT_LIMIT_3000MA;
 
+extern byte currWave;
+extern char currentSynthWavetableName[SYNTH_WAVETABLE_NAME_LENGTH];
+extern char currentSynthWavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH];
 extern bool currentSynthWavetableReferenceValid;
+extern byte synthWavetablePosition;

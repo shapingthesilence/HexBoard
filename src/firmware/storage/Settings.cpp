@@ -143,6 +143,7 @@ void applyFactoryDefaultsToSettings() {
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
   selectFallbackSynthWavetable();
+  applyDefaultSynthWavetableProfileReferences();
   settingsDirty = false;
 }
 
@@ -310,6 +311,7 @@ void save_settings() {
     sendToLog("File system not available.");
     return;
   }
+  rememberCurrentSynthWavetableReferenceForProfile(activeProfileIndex);
   File f = LittleFS.open("/settings.dat", "w");
   if (!f) {
     sendToLog("Error: Unable to open /settings.dat for writing.");
@@ -373,6 +375,7 @@ void copyCurrentSettingsToProfile(uint8_t profileIndex) {
   if (profileIndex != activeProfileIndex) {
     memcpy(settingsProfiles[profileIndex], settings, NUM_SETTINGS);
   }
+  rememberCurrentSynthWavetableReferenceForProfile(profileIndex);
 }
 
 void saveProfileToSlot(uint8_t profileIndex) {
@@ -399,7 +402,7 @@ void setActiveProfile(uint8_t profileIndex) {
   activeProfileIndex = profileIndex;
   settings = settingsProfiles[activeProfileIndex];
   settingsDirty = false;
-  currentSynthWavetableReferenceValid = false;
+  restoreSynthWavetableReferenceForProfile(activeProfileIndex);
   syncSettingsToRuntime();
   sendToLog("Loaded profile " + std::to_string(profileIndex + 1));
 }

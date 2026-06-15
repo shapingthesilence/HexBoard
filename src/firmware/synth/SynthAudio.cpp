@@ -215,13 +215,6 @@ inline int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
   if (shaped > SHAPE_CLAMP) shaped = SHAPE_CLAMP;
   return negative ? -shaped : shaped;
 }
-constexpr uint16_t SYNTH_WAVE_SAMPLE_COUNT = 512;
-constexpr uint8_t SYNTH_WAVE_SAMPLE_BITS = 9;
-constexpr uint8_t SYNTH_WAVE_PHASE_FRACTION_BITS = 16 - SYNTH_WAVE_SAMPLE_BITS;
-constexpr uint16_t SYNTH_WAVE_PHASE_FRACTION_MASK = (1u << SYNTH_WAVE_PHASE_FRACTION_BITS) - 1;
-constexpr uint8_t SYNTH_WAVETABLE_FRAME_COUNT = 32;
-constexpr uint8_t SYNTH_WAVETABLE_LAST_FRAME = SYNTH_WAVETABLE_FRAME_COUNT - 1;
-constexpr size_t SYNTH_WAVETABLE_SAMPLE_BYTES = static_cast<size_t>(SYNTH_WAVETABLE_FRAME_COUNT) * SYNTH_WAVE_SAMPLE_COUNT;
 byte activeSynthWaveTable[SYNTH_WAVETABLE_FRAME_COUNT][SYNTH_WAVE_SAMPLE_COUNT] = {};
 byte synthVibratoSine[SYNTH_WAVE_SAMPLE_COUNT] = {};
 volatile bool synthWaveTableLoadInProgress = false;

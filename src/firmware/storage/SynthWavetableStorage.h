@@ -5,6 +5,9 @@
 
 void saveCurrentSynthWavetableReference();
 bool loadCurrentSynthWavetableReference();
+void applyDefaultSynthWavetableProfileReferences();
+void rememberCurrentSynthWavetableReferenceForProfile(uint8_t profileIndex);
+bool restoreSynthWavetableReferenceForProfile(uint8_t profileIndex);
 void flashSafeSaveCurrentSynthWavetableReference();
 bool loadUserSynthWavetableFromFile();
 void save_user_wavetable();

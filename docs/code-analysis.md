@@ -54,7 +54,7 @@ The current source is grouped by file:
 | `src/firmware/hardware/` | grid state, command buttons, scan/rotary input, LED rendering, LED animations |
 | `src/firmware/midi/` | USB/serial transport, MPE/routing, note dispatch, external MIDI LED state, delegated control, MIDI input parsing |
 | `src/firmware/synth/` | shared synth defaults, built-in single-cycle waveform sources and compatibility wavetable catalog, oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome; hot render/audio helpers remain grouped in `SynthAudio.cpp` |
-| `src/firmware/storage/` | standalone persistent data models and settings/profile persistence plus unity-included synth presets, synth wavetables, preset-sync protocol helpers, geometry objects, synth object handlers, and message dispatch |
+| `src/firmware/storage/` | standalone persistent data models, settings/profile persistence, and synth wavetable storage plus unity-included synth presets, preset-sync protocol helpers, geometry objects, synth object handlers, and message dispatch |
 | `src/firmware/menu/` | OLED/GEM pages and callbacks, played-note overlay, synth preset menu rebuilds, synth wavetable menu rebuilds |
 
 ## Core Data Structures
@@ -629,9 +629,12 @@ folder/name reference. Old waveform values are mapped to built-in compatibility
 tables and a matching `SynthWavetablePosition` anchor; `Hybrid` maps to `Basic`
 at position `0`. Missing named wavetable dependencies fall back to `Basic`.
 Because folder/name references are strings, the current selection is persisted
-outside `/settings.dat` in `/current_wavetable.dat`; settings saves, preset
-loads, wavetable menu loads, and preset-sync save-and-apply commits update that
-sidecar file. Built-in wavetable dependencies use the reserved `/Built In`
+outside `/settings.dat` in `/current_wavetable.dat`, with per-profile snapshots
+in `/profile_wavetables.dat`. The profile-reference sidecar is read or rewritten
+only during profile/file operations instead of being cached in global SRAM.
+Settings saves, profile saves, autosave, preset loads, wavetable menu loads, and
+preset-sync save-and-apply commits update the sidecar references. Loading a
+profile restores its saved folder/name reference before runtime sync loads the selected table. Built-in wavetable dependencies use the reserved `/Built In`
 folder unescaped; firmware normalizes the older `%2FBuilt In` and `Built In`
 aliases for compatibility with earlier saves. User wavetable sample files use a shortened
 `/wt_<16 hex>.wtb` filename based on the first 8 object-id bytes; firmware keeps
@@ -675,8 +678,12 @@ selections. Scala/cents-list tunings still save as raw objects but are rejected
 by runtime Apply until table-backed pitch lookup exists.
 
 Named user wavetables are stored in `/synth_wavetables.dat` with magic `SYW`,
-version `1`, CRC32, and a counted catalog capped at `64` entries. Each entry has
-a valid flag, stable `16`-byte object id, name, folder path, and a sample-file
+version `1`, CRC32, and a counted catalog capped at `64` entries. The selected
+wavetable reference for each profile is stored separately in
+`/profile_wavetables.dat` with magic `PWT`, version `1`, and one folder/name
+record per profile; the firmware loads that file into a stack-local struct only
+while saving or loading profile references. Each catalog entry has a valid flag,
+stable `16`-byte object id, name, folder path, and a sample-file
 path generated from the object id. The sample file contains `32 x 512`
 unsigned-byte samples. The legacy `/user_wavetable.dat` `UWT` file is still
 loadable only through the compatibility reference `/User/UserTbl`.

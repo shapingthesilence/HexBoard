@@ -1,7 +1,85 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/RuntimeDefaults.h"
+#include "../synth/SynthAudio.h"
+#include "../synth/SynthDefaults.h"
+#include "Settings.h"
 #include "SynthWavetableStorage.h"
+
+void writeSynthWavetableReference(SynthWavetableProfileReference& reference, const char* folderPath, const char* name) {
+  snprintf(reference.folderPath,
+           sizeof(reference.folderPath),
+           "%s",
+           folderPath && folderPath[0] ? folderPath : SYNTH_WAVETABLE_BUILTIN_FOLDER);
+  snprintf(reference.name,
+           sizeof(reference.name),
+           "%s",
+           name && name[0] ? name : SYNTH_WAVETABLE_BASIC_NAME);
+  normalizeSynthWavetableFolderPath(reference.folderPath, sizeof(reference.folderPath));
+  normalizeSynthWavetableBuiltInFolderAlias(reference.folderPath, sizeof(reference.folderPath));
+}
+
+void writeCurrentSynthWavetableReference(SynthWavetableProfileReference& reference) {
+  if (currentSynthWavetableReferenceValid) {
+    writeSynthWavetableReference(reference, currentSynthWavetableFolderPath, currentSynthWavetableName);
+  } else {
+    writeSynthWavetableReference(reference, SYNTH_WAVETABLE_BUILTIN_FOLDER, SYNTH_WAVETABLE_BASIC_NAME);
+  }
+}
+
+uint32_t synthWavetableProfileReferencesCrc(const SynthWavetableProfileReference* references, size_t referenceCount) {
+  return crc32(reinterpret_cast<const uint8_t*>(references), sizeof(SynthWavetableProfileReference) * referenceCount);
+}
+
+void initializeSynthWavetableProfileReferenceFile(SynthWavetableProfileReferenceFile& referenceFile) {
+  memset(&referenceFile, 0, sizeof(referenceFile));
+  referenceFile.magic[0] = 'P'; referenceFile.magic[1] = 'W'; referenceFile.magic[2] = 'T';
+  referenceFile.version = SYNTH_WAVETABLE_PROFILE_REFERENCES_VERSION;
+  for (SynthWavetableProfileReference& reference : referenceFile.profiles) {
+    writeCurrentSynthWavetableReference(reference);
+  }
+  referenceFile.crc32 = synthWavetableProfileReferencesCrc(referenceFile.profiles, PROFILE_COUNT);
+}
+
+bool readSynthWavetableProfileReferenceFile(SynthWavetableProfileReferenceFile& referenceFile) {
+  if (!fileSystemExists) {
+    return false;
+  }
+  File f = LittleFS.open(SYNTH_WAVETABLE_PROFILE_REFERENCES_FILE_PATH, "r");
+  if (!f) {
+    return false;
+  }
+  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&referenceFile), sizeof(referenceFile));
+  f.close();
+  if (bytesRead != sizeof(referenceFile)
+      || strncmp(referenceFile.magic, "PWT", 3) != 0
+      || referenceFile.version != SYNTH_WAVETABLE_PROFILE_REFERENCES_VERSION
+      || synthWavetableProfileReferencesCrc(referenceFile.profiles, PROFILE_COUNT) != referenceFile.crc32) {
+    sendToLog("Invalid profile wavetable references. Using current wavetable for all profiles.");
+    return false;
+  }
+  for (SynthWavetableProfileReference& reference : referenceFile.profiles) {
+    writeSynthWavetableReference(reference, reference.folderPath, reference.name);
+  }
+  return true;
+}
+
+void writeSynthWavetableProfileReferenceFile(SynthWavetableProfileReferenceFile& referenceFile) {
+  if (!fileSystemExists) {
+    return;
+  }
+  referenceFile.crc32 = synthWavetableProfileReferencesCrc(referenceFile.profiles, PROFILE_COUNT);
+  File f = LittleFS.open(SYNTH_WAVETABLE_PROFILE_REFERENCES_FILE_PATH, "w");
+  if (!f) {
+    sendToLog("Error: Unable to open /profile_wavetables.dat for writing.");
+    return;
+  }
+  size_t written = f.write(reinterpret_cast<uint8_t*>(&referenceFile), sizeof(referenceFile));
+  f.close();
+  if (written != sizeof(referenceFile)) {
+    sendToLog("Error: Incomplete profile wavetable reference write.");
+  }
+}
 
 uint32_t currentSynthWavetableReferenceCrc(const CurrentSynthWavetableReferenceFile& reference) {
   uint8_t bytes[sizeof(reference.name) + sizeof(reference.folderPath)] = {};
@@ -59,6 +137,40 @@ bool loadCurrentSynthWavetableReference() {
   normalizeSynthWavetableBuiltInFolderAlias(reference.folderPath, sizeof(reference.folderPath));
   setCurrentSynthWavetableReference(reference.folderPath, reference.name);
   sendToLog("Current wavetable reference loaded.");
+  return true;
+}
+
+void applyDefaultSynthWavetableProfileReferences() {
+  SynthWavetableProfileReferenceFile referenceFile = {};
+  initializeSynthWavetableProfileReferenceFile(referenceFile);
+  writeSynthWavetableProfileReferenceFile(referenceFile);
+}
+
+void rememberCurrentSynthWavetableReferenceForProfile(uint8_t profileIndex) {
+  if (profileIndex >= PROFILE_COUNT) {
+    return;
+  }
+  SynthWavetableProfileReferenceFile referenceFile = {};
+  if (!readSynthWavetableProfileReferenceFile(referenceFile)) {
+    initializeSynthWavetableProfileReferenceFile(referenceFile);
+  }
+  writeCurrentSynthWavetableReference(referenceFile.profiles[profileIndex]);
+  writeSynthWavetableProfileReferenceFile(referenceFile);
+}
+
+bool restoreSynthWavetableReferenceForProfile(uint8_t profileIndex) {
+  if (profileIndex >= PROFILE_COUNT) {
+    return false;
+  }
+  SynthWavetableProfileReferenceFile referenceFile = {};
+  if (!readSynthWavetableProfileReferenceFile(referenceFile)) {
+    return false;
+  }
+  SynthWavetableProfileReference& reference = referenceFile.profiles[profileIndex];
+  if (!reference.name[0]) {
+    return false;
+  }
+  setCurrentSynthWavetableReference(reference.folderPath, reference.name);
   return true;
 }
 
@@ -482,4 +594,3 @@ bool loadSynthWavetableFromCatalog(const char* folderPath, const char* name) {
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
   return true;
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

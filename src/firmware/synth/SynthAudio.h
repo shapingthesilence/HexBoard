@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../FirmwareModule.h"
+#include "../storage/PersistentDataModels.h"
 #include "SynthDefaults.h"
 
 enum class EnvelopeCommand : uint8_t;
@@ -17,6 +18,8 @@ void loadSelectedSynthWaveform();
 void loadSelectedSynthWavetable();
 void selectFallbackSynthWavetable();
 void selectCompatibilitySynthWavetableForLegacyWaveform(byte waveform, bool updatePosition);
+void setCurrentSynthWavetableReference(const char* folderPath, const char* name);
+void setActiveSynthWaveFrameCount(uint8_t frameCount);
 void setupAudioDma();
 void serviceAudioDmaBuffers();
 inline void recomputePitchBendFactor();
@@ -41,3 +44,10 @@ inline void RAM_FUNC(beginSynthPortamento)(uint8_t channelIndex, uint32_t target
 inline bool RAM_FUNC(metronomeBrightnessSelected)();
 inline bool RAM_FUNC(metronomeSideButtonsSelected)();
 inline bool RAM_FUNC(metronomeVisualFlashActive)();
+
+extern byte activeSynthWaveTable[SYNTH_WAVETABLE_FRAME_COUNT][SYNTH_WAVE_SAMPLE_COUNT];
+extern volatile bool synthWaveTableLoadInProgress;
+extern byte loadedSynthWaveform;
+extern char loadedSynthWavetableName[SYNTH_WAVETABLE_NAME_LENGTH];
+extern char loadedSynthWavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH];
+extern bool userSynthWavetableAvailable;
