@@ -1,9 +1,8 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
+#include "../hardware/GridState.h"
 #include "../hardware/LedRender.h"
 #include "../midi/MidiInput.h"
 #include "../midi/MidiRouting.h"
@@ -635,6 +634,20 @@ PersistentCallbackInfo callbackInfoAudioDest = {
 };
 GEMItem menuItemAudioD("Buzzer", synthBuzzerEnabled, universalSaveCallback,
                        reinterpret_cast<void*>(&callbackInfoAudioDest));
+
+void installHardwareSpecificMenuItems() {
+  if (Hardware_Version == HARDWARE_V1_2) {
+    if (!audioMenuItemInserted) {
+      menuPageSynth.addMenuItem(menuItemAudioD, 2);
+      audioMenuItemInserted = true;
+    }
+    if (!headphoneVolumeMenuItemInserted) {
+      menuItemHeadphoneVolumeCap.setPreviewCallback(previewHeadphoneVolumeCap);
+      menuPageAdvanced.addMenuItem(menuItemHeadphoneVolumeCap, 6);
+      headphoneVolumeMenuItemInserted = true;
+    }
+  }
+}
 
 ////////////////////////////////////////////////////////////////
 
@@ -2270,8 +2283,7 @@ void addPreviewMenuItem(GEMPage& page, GEMItem& item, void (*previewCallback)(GE
 void rebootToBootloader() {
   menu.setMenuPageCurrent(menuPageReboot);
   menu.drawMenu();
-  strip.clear();
-  strip.show();
+  clearLEDsForBootloader();
   rp2040.rebootToBootloader();
 }
 /*
@@ -2716,4 +2728,3 @@ void screenSaver() {
     }
   }
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

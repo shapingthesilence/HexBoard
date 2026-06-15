@@ -1,7 +1,10 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "DynamicJustIntonation.h"
+#include "../app/RuntimeDefaults.h"
+#include "../hardware/GridState.h"
+#include "../midi/MidiRouting.h"
+#include "../model/ScalePalettePreset.h"
+#include "Tuning.h"
 
 //  Dynamic just intonation code start
 
@@ -647,4 +650,3 @@ int16_t justIntonationRetune(byte x) {
   h[x].jiFrequencyMultiplier = centsToFrequencyMultiplier(pitchAdjustmentCents);
   return pitchAdjustment;
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

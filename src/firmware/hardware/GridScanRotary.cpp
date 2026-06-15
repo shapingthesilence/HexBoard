@@ -5,6 +5,7 @@
 #include "HardwareConfig.h"
 #include "../midi/DelegatedControl.h"
 #include "GridScanRotary.h"
+#include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
 
 // @interface
@@ -229,15 +230,7 @@ void dealWithRotary() {
 void setupHardware() {
   if (Hardware_Version == HARDWARE_V1_2) {
     midiD = MIDID_USB | MIDID_SER;
-    if (!audioMenuItemInserted) {
-      menuPageSynth.addMenuItem(menuItemAudioD, 2);
-      audioMenuItemInserted = true;
-    }
-    if (!headphoneVolumeMenuItemInserted) {
-      menuItemHeadphoneVolumeCap.setPreviewCallback(previewHeadphoneVolumeCap);
-      menuPageAdvanced.addMenuItem(menuItemHeadphoneVolumeCap, 6);
-      headphoneVolumeMenuItemInserted = true;
-    }
+    installHardwareSpecificMenuItems();
   }
   syncAudioDestinationToRuntime();
 }

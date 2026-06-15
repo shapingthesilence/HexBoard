@@ -38,7 +38,7 @@ inline bool audioJackAvailable() {
   return Hardware_Version == HARDWARE_V1_2;
 }
 
-inline bool decodeStoredBuzzerEnabled(uint8_t storedValue) {
+bool decodeStoredBuzzerEnabled(uint8_t storedValue) {
   if (!audioJackAvailable()) {
     return true;
   }
@@ -52,7 +52,7 @@ inline byte runtimeAudioDestination(bool buzzerEnabled) {
   return buzzerEnabled ? AUDIO_PIEZO : AUDIO_AJACK;
 }
 
-inline void syncAudioDestinationToRuntime() {
+void syncAudioDestinationToRuntime() {
   audioD = runtimeAudioDestination(synthBuzzerEnabled);
   preparePhysicalAudioOutput(audioD);
 }

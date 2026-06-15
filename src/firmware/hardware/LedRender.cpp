@@ -404,9 +404,6 @@ void runBootLedSelfCheck() {
   showBootLedCheckSplash(frameIndex);
   fadeToNormalLedFrame();
 }
-float ratioToCents(float ratio) {
-  return 1200.0 * (std::log(ratio) / std::log(2.0));
-}
 /*
     This function cycles through each button, and based on what color
     palette is active, it calculates the LED color code in the palette,
@@ -906,6 +903,10 @@ void setupLEDs() {
   strip.begin();  // INITIALIZE NeoPixel strip object
   strip.show();   // Turn OFF all pixels ASAP
   sendToLog("LEDs started...");
+}
+void clearLEDsForBootloader() {
+  strip.clear();
+  strip.show();
 }
 void RAM_FUNC(lightUpLEDs)() {
   if (ledTestMode != LED_TEST_OFF) {

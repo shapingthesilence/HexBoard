@@ -10,8 +10,6 @@
 #include "hardware/GridState.h"
 
 #include "hardware/LedRender.cpp"
-#include "tuning/DynamicJustIntonation.cpp"
 #include "midi/NoteDispatch.cpp"
 #include "synth/SynthAudio.cpp"
-#include "menu/MenuAndDisplay.cpp"
 #include "hardware/GridScanRotary.cpp"

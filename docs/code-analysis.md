@@ -49,13 +49,13 @@ The current source is grouped by file:
 | `src/firmware/FirmwareUnity.cpp` | ordered firmware translation unit for modules not yet moved to standalone compilation |
 | `src/firmware/**/*.h` | explicit cross-module APIs owned by each subsystem; shared board/config, tuning/layout/preset, grid-state, and persistent-schema declarations now live in their owning headers |
 | `src/firmware/app/` | standalone platform/common helpers, non-synth runtime defaults, diagnostics/timing, and lifecycle functions |
-| `src/firmware/tuning/` | standalone tuning tables plus unity-included Dynamic JI retuning |
+| `src/firmware/tuning/` | standalone tuning tables, shared tuning math, and Dynamic JI retuning |
 | `src/firmware/model/` | standalone layout, scale/palette/preset tables, and pitch assignment |
 | `src/firmware/hardware/` | stable board dimensions and pin assignments in `HardwareConfig.h`, standalone grid state, standalone command buttons, scan/rotary input, LED rendering, standalone LED animations |
 | `src/firmware/midi/` | standalone USB/serial transport, MPE/routing, external MIDI LED state, delegated control, and MIDI input parsing, plus unity-included note dispatch |
 | `src/firmware/synth/` | shared synth defaults, standalone built-in single-cycle waveform sources and compatibility wavetable catalog, oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome; hot render/audio helpers remain grouped in `SynthAudio.cpp` |
 | `src/firmware/storage/` | standalone persistent data models, settings/profile persistence, synth preset/wavetable storage, preset-sync protocol helpers, geometry objects, synth object handlers, and message dispatch |
-| `src/firmware/menu/` | unity-included OLED/GEM pages and callbacks, standalone played-note overlay, standalone synth preset menu rebuilds, standalone synth wavetable menu rebuilds |
+| `src/firmware/menu/` | standalone OLED/GEM pages and callbacks, played-note overlay, synth preset menu rebuilds, and synth wavetable menu rebuilds |
 
 ## Core Data Structures
 

@@ -1,5 +1,9 @@
 #include "Tuning.h"
 
+float ratioToCents(float ratio) {
+  return 1200.0 * (std::log(ratio) / std::log(2.0));
+}
+
 // @microtonal
 /*
     Most users will stick to playing in standard Western
