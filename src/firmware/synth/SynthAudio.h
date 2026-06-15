@@ -47,11 +47,9 @@ void RAM_FUNC(trySynthNoteOff)(byte x);
 void panicStopOutput();
 void setupSynth(byte pin, byte slice);
 void setupSynthOutputs();
-inline void RAM_FUNC(clearSynthPortamento)(uint8_t channelIndex);
-inline void RAM_FUNC(beginSynthPortamento)(uint8_t channelIndex, uint32_t targetIncrement);
-inline bool RAM_FUNC(metronomeBrightnessSelected)();
-inline bool RAM_FUNC(metronomeSideButtonsSelected)();
-inline bool RAM_FUNC(metronomeVisualFlashActive)();
+bool RAM_FUNC(metronomeBrightnessSelected)();
+bool RAM_FUNC(metronomeSideButtonsSelected)();
+bool RAM_FUNC(metronomeVisualFlashActive)();
 
 extern byte activeSynthWaveTable[SYNTH_WAVETABLE_FRAME_COUNT][SYNTH_WAVE_SAMPLE_COUNT];
 extern volatile bool synthWaveTableLoadInProgress;

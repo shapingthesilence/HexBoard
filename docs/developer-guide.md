@@ -217,7 +217,7 @@ Current optimization candidates to keep in mind:
 - `midiNoteToHexIndices` is an array of vectors. It is rebuilt when pitch assignment changes, not per audio sample, but a fixed-capacity reverse index would remove heap allocation from mapping refreshes and external MIDI LED lookup.
 - `animateMirror()` in `src/firmware/hardware/LedAnimations.cpp` compares every held note against every visible hex. It is bounded by `LED_COUNT`, but octave/by-note animation could use precomputed step buckets if animation load becomes visible.
 - Incoming SysEx assembly in `src/firmware/midi/MidiInput.cpp` uses growable vectors. Preset-sync is intentionally not a button-scan hot path, but a fixed receive buffer would make memory use more predictable during large transfers.
-- Modules still included through `FirmwareUnity.cpp` keep their `#if HEXBOARD_FIRMWARE_UNITY` guard before library includes. Standalone modules such as `PlatformCommon.cpp`, `RuntimeDefaults.cpp`, `DiagnosticsTiming.cpp`, `Runtime.cpp`, `MidiTransport.cpp`, `MidiRouting.cpp`, `MidiInput.cpp`, `DelegatedControl.cpp`, `ExternalMidiLedState.cpp`, `Tuning.cpp`, `DynamicJustIntonation.cpp`, `Layout.cpp`, `ScalePalettePreset.cpp`, `PitchAssignment.cpp`, `GridState.cpp`, `CommandButtons.cpp`, `LedAnimations.cpp`, `BuiltinWavetables.cpp`, `PersistentDataModels.cpp`, `Settings.cpp`, `SynthPresetStorage.cpp`, `SynthWavetableStorage.cpp`, `PresetSyncProtocol.cpp`, `PresetSyncGeometry.cpp`, `PresetSyncSynthObjects.cpp`, `PresetSync.cpp`, `MenuAndDisplay.cpp`, `PlayedNotesOverlay.cpp`, `SynthPresetMenu.cpp`, and `SynthWavetableMenu.cpp` are omitted from `FirmwareUnity.cpp` and compile normally with direct headers.
+- Each firmware `.cpp` builds independently with direct headers. Keep new declarations in the nearest owning subsystem header, and include the headers a `.cpp` actually uses.
 
 ## Source File Map
 
@@ -225,18 +225,17 @@ The main firmware files are:
 
 - `src/firmware/FirmwareModule.h`: shared Arduino/RP2040/library includes and `RAM_FUNC`
 - `src/firmware/HexBoardFirmware.h`: lifecycle API used by the root sketch
-- `src/firmware/FirmwareUnity.cpp`: ordered firmware translation unit for modules that have not yet been moved to standalone compilation
-- Subsystem `.h` files under `src/firmware/`: explicit cross-module APIs. `hardware/HardwareConfig.h`, `tuning/Tuning.h`, `model/Layout.h`, `model/ScalePalettePreset.h`, `hardware/GridState.h`, and `storage/PersistentDataModels.h` own the shared board/config, model/schema, and grid declarations that used to be available only through unity include order.
-- `src/firmware/app/`: standalone platform/common helpers in `PlatformCommon.cpp`, standalone non-synth runtime defaults in `RuntimeDefaults.cpp`, standalone diagnostics/timing in `DiagnosticsTiming.cpp`, and standalone lifecycle orchestration in `Runtime.cpp`
-- `src/firmware/tuning/`: standalone tuning tables in `Tuning.cpp`, shared tuning math, and standalone Dynamic JI retuning
-- `src/firmware/model/`: standalone layout and scale/palette/preset tables, plus standalone pitch assignment
-- `src/firmware/hardware/`: stable board dimensions and pin assignments in `HardwareConfig.h`, standalone grid state, standalone command buttons, scan/rotary handling, LED rendering, and standalone LED animations
-- `src/firmware/midi/`: standalone USB/serial transport in `MidiTransport.cpp`, standalone MPE/routing in `MidiRouting.cpp`, standalone external MIDI LED state, delegated control, and MIDI input parsing, plus unity-included MIDI note dispatch
-- `src/firmware/synth/`: shared synth defaults in `SynthDefaults.h`, standalone built-in single-cycle waveform sources and compatibility wavetable catalog in `BuiltinWavetables.cpp`, plus synth engine, active wavetable RAM, oscillator/render path, envelopes, arpeggiator, metronome, PWM, and DMA audio in `SynthAudio.cpp`; hot render/audio helpers remain grouped in `SynthAudio.cpp`, and app lifecycle setup uses synth-owned setup APIs instead of reaching into PWM constants
-- `src/firmware/storage/`: standalone persistent data models in `PersistentDataModels.cpp`, standalone settings/profile storage in `Settings.cpp`, standalone synth preset storage in `SynthPresetStorage.cpp`, standalone synth wavetable catalog/profile-reference storage in `SynthWavetableStorage.cpp`, and standalone preset-sync split into protocol helpers (`PresetSyncProtocol.cpp`), geometry objects (`PresetSyncGeometry.cpp`), synth objects (`PresetSyncSynthObjects.cpp`), and message dispatch (`PresetSync.cpp`)
-- `src/firmware/menu/`: standalone OLED/GEM pages and settings callbacks in `MenuAndDisplay.cpp`, standalone played-note drawing in `PlayedNotesOverlay.cpp`, standalone synth preset foldered menu rebuilding in `SynthPresetMenu.cpp`, and standalone synth wavetable foldered menu rebuilding in `SynthWavetableMenu.cpp`
+- Subsystem `.h` files under `src/firmware/`: cross-module APIs owned by each subsystem. Important shared declarations live in `hardware/HardwareConfig.h`, `hardware/GridState.h`, `tuning/Tuning.h`, `model/Layout.h`, `model/ScalePalettePreset.h`, and `storage/PersistentDataModels.h`.
+- `src/firmware/app/`: platform/common helpers, non-synth runtime defaults, diagnostics/timing, and lifecycle orchestration
+- `src/firmware/tuning/`: tuning tables, shared tuning math, and Dynamic JI retuning
+- `src/firmware/model/`: layout tables, scale/palette/preset models, and pitch assignment
+- `src/firmware/hardware/`: board constants, grid state, command buttons, scan/rotary handling, LED rendering, and LED animations
+- `src/firmware/midi/`: USB/serial transport, MPE/routing, external MIDI LED state, delegated control, MIDI input parsing, and MIDI note dispatch
+- `src/firmware/synth/`: synth defaults, built-in single-cycle waveforms, compatibility wavetable catalog, active wavetable RAM, oscillator/render path, envelopes, arpeggiator, metronome, PWM, and DMA audio; hot render/audio helpers remain grouped in `SynthAudio.cpp`
+- `src/firmware/storage/`: persistent data models, settings/profile storage, synth preset/wavetable storage, and preset-sync protocol/geometry/synth-object/message handling
+- `src/firmware/menu/`: OLED/GEM pages and settings callbacks, played-note drawing, synth preset menu rebuilding, and synth wavetable menu rebuilding
 
-If you are changing a behavior, start by locating which of these layers owns it before editing anything. Shared constants, types, and lifecycle calls should be declared in the nearest owning header, while subsystem-owned globals and hot helpers should stay private in their `.cpp` file whenever no other module needs them. The firmware is currently a mixed build: app utility/default/lifecycle modules, MIDI transport/routing/input/control modules, model/tuning modules, pitch assignment, grid state, command buttons, LED animations, built-in synth wavetables, menu modules, persistent data models, settings/profile persistence, synth preset/wavetable storage, and preset-sync storage modules compile standalone, while the remaining guarded hardware scan, LED render, MIDI note dispatch, and synth/audio modules still build through `FirmwareUnity.cpp`.
+If you are changing behavior, start by locating which layer owns it. Shared constants, types, and lifecycle calls belong in the nearest owning header; subsystem-owned globals and hot helpers should stay private in their `.cpp` when no other module needs them. Fix missing declarations by improving the owning headers rather than reintroducing source inclusion.
 
 ## Runtime Data Flow
 

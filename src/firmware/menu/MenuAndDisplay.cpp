@@ -2283,7 +2283,7 @@ void addPreviewMenuItem(GEMPage& page, GEMItem& item, void (*previewCallback)(GE
 void rebootToBootloader() {
   menu.setMenuPageCurrent(menuPageReboot);
   menu.drawMenu();
-  clearLEDsForBootloader();
+  clearLEDs();
   rp2040.rebootToBootloader();
 }
 /*

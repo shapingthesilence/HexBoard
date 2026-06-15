@@ -1,9 +1,10 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "HardwareConfig.h"
 #include "LedRender.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
+#include "GridState.h"
 #include "../synth/SynthAudio.h"
 
 // @LED
@@ -904,7 +905,7 @@ void setupLEDs() {
   strip.show();   // Turn OFF all pixels ASAP
   sendToLog("LEDs started...");
 }
-void clearLEDsForBootloader() {
+void clearLEDs() {
   strip.clear();
   strip.show();
 }
@@ -931,4 +932,3 @@ void RAM_FUNC(lightUpLEDs)() {
   applyLedCurrentLimitToFrame();
   strip.show();
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

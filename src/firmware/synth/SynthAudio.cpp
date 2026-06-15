@@ -1,10 +1,12 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "BuiltinWavetables.h"
 #include "SynthAudio.h"
 #include "../app/DiagnosticsTiming.h"
+#include "../app/PlatformCommon.h"
+#include "../app/RuntimeDefaults.h"
+#include "../hardware/GridState.h"
 #include "../hardware/HardwareConfig.h"
+#include "../hardware/LedRender.h"
 #include "../midi/MidiRouting.h"
 #include "../midi/MidiTransport.h"
 #include "../storage/SynthWavetableStorage.h"
@@ -33,6 +35,8 @@ byte synthOutputSmoothing = SYNTH_OUTPUT_SMOOTHING_OFF;
 
 void RAM_FUNC(idlePhysicalAudioOutputs)();
 void RAM_FUNC(preparePhysicalAudioOutput)(byte destination);
+inline void RAM_FUNC(clearSynthPortamento)(uint8_t channelIndex);
+inline void RAM_FUNC(beginSynthPortamento)(uint8_t channelIndex, uint32_t targetIncrement);
 
 inline bool audioJackAvailable() {
   return Hardware_Version == HARDWARE_V1_2;
@@ -55,6 +59,10 @@ inline byte runtimeAudioDestination(bool buzzerEnabled) {
 void syncAudioDestinationToRuntime() {
   audioD = runtimeAudioDestination(synthBuzzerEnabled);
   preparePhysicalAudioOutput(audioD);
+}
+
+inline uint8_t RAM_FUNC(currentSynthVoiceLimit)() {
+  return synthPlaybackVoiceLimit(playbackMode);
 }
 
 // ============================================================
@@ -2042,11 +2050,11 @@ inline int32_t RAM_FUNC(readMetronomeBeepSample)() {
   return (sample * static_cast<int32_t>(velWheel.curValue)) >> 7;
 }
 
-inline bool RAM_FUNC(metronomeBrightnessSelected)() {
+bool RAM_FUNC(metronomeBrightnessSelected)() {
   return metronomeMode == METRONOME_MODE_BRIGHTNESS;
 }
 
-inline bool RAM_FUNC(metronomeSideButtonsSelected)() {
+bool RAM_FUNC(metronomeSideButtonsSelected)() {
   return metronomeMode == METRONOME_MODE_SIDE_BUTTONS;
 }
 
@@ -2058,7 +2066,7 @@ inline bool RAM_FUNC(metronomeEnabled)() {
   return metronomeMode != METRONOME_MODE_OFF;
 }
 
-inline bool RAM_FUNC(metronomeVisualFlashActive)() {
+bool RAM_FUNC(metronomeVisualFlashActive)() {
   return (metronomeBrightnessSelected() || metronomeSideButtonsSelected()) && runTime < metronomeVisualFlashUntil;
 }
 
@@ -3404,8 +3412,7 @@ void panicStopOutput() {
   arpeggiatingNow = UNUSED_NOTE;
   resetSynthFreqs();
   refreshMidiRouting();
-  strip.clear();
-  strip.show();
+  clearLEDs();
 }
 
 
@@ -3436,4 +3443,3 @@ void RAM_FUNC(arpeggiate)() {
     }
   }
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

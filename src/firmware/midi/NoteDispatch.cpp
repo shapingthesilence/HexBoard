@@ -1,11 +1,11 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/RuntimeDefaults.h"
+#include "../hardware/GridState.h"
 #include "MidiRouting.h"
 #include "NoteDispatch.h"
 #include "../app/PlatformCommon.h"
 #include "../menu/PlayedNotesOverlay.h"
-#include "../synth/SynthDefaults.h"
 #include "../tuning/DynamicJustIntonation.h"
 
 void RAM_FUNC(tryMIDInoteOn)(byte x) {
@@ -102,34 +102,3 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
     h[x].MIDIch = 0;
   }
 }
-
-/*
-    Eight voice polyphony can be simulated.
-    Any more voices and the
-    resolution is too low to distinguish;
-    also, the code becomes too slow to keep
-    up with the poll interval. This value
-    can be safely reduced below eight if
-    there are issues.
-
-    Note this is NOT the same as the MIDI
-    polyphony limit, which is 15 (based
-    on using channel 2 through 16 for
-    polyphonic expression mode).
-  */
-#define POLYPHONY_LIMIT 8
-
-inline uint8_t RAM_FUNC(synthPlaybackVoiceLimit)(byte mode) {
-  if (mode == SYNTH_POLY) {
-    return POLYPHONY_LIMIT;
-  }
-  if (mode == SYNTH_OFF) {
-    return 0;
-  }
-  return 1;
-}
-
-inline uint8_t RAM_FUNC(currentSynthVoiceLimit)() {
-  return synthPlaybackVoiceLimit(playbackMode);
-}
-#endif  // HEXBOARD_FIRMWARE_UNITY

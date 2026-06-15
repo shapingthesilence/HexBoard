@@ -1,12 +1,18 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "CommandButtons.h"
+#include "GridState.h"
 #include "HardwareConfig.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/PlatformCommon.h"
+#include "../app/RuntimeDefaults.h"
+#include "../midi/MidiRouting.h"
+#include "../midi/MidiTransport.h"
 #include "../midi/DelegatedControl.h"
+#include "../midi/NoteDispatch.h"
 #include "GridScanRotary.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
+#include "../synth/SynthAudio.h"
 
 // @interface
 /*
@@ -234,4 +240,3 @@ void setupHardware() {
   }
   syncAudioDestinationToRuntime();
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

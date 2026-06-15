@@ -27,6 +27,10 @@ constexpr byte SYNTH_MONO_LEGATO = 4;
 constexpr byte SYNTH_POLYTBL_LEGACY = 5;
 constexpr byte SYNTH_MONO = SYNTH_MONO_RETRIGGER;  // Legacy stored mono value.
 
+// Audio polyphony is deliberately lower than the MIDI/MPE channel count:
+// higher values reduce PWM resolution and make the ISR harder to keep bounded.
+constexpr uint8_t POLYPHONY_LIMIT = 8;
+
 inline bool RAM_FUNC(isMonoPlaybackMode)(byte mode) {
   return mode == SYNTH_MONO_RETRIGGER || mode == SYNTH_MONO_LEGATO;
 }
@@ -37,6 +41,16 @@ inline bool RAM_FUNC(isPolyPlaybackMode)(byte mode) {
 
 inline bool RAM_FUNC(isValidPlaybackMode)(byte mode) {
   return mode == SYNTH_OFF || isMonoPlaybackMode(mode) || mode == SYNTH_ARPEGGIO || isPolyPlaybackMode(mode);
+}
+
+inline uint8_t RAM_FUNC(synthPlaybackVoiceLimit)(byte mode) {
+  if (mode == SYNTH_POLY) {
+    return POLYPHONY_LIMIT;
+  }
+  if (mode == SYNTH_OFF) {
+    return 0;
+  }
+  return 1;
 }
 
 inline byte RAM_FUNC(normalizeSynthPlaybackMode)(byte mode) {

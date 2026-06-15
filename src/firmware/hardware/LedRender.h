@@ -6,7 +6,7 @@
 extern bool settingsFileMissingOnBoot;
 
 void setupLEDs();
-void clearLEDsForBootloader();
+void clearLEDs();
 void runBootLedSelfCheck();
 void setLEDcolorCodes();
 uint32_t RAM_FUNC(getLEDcode)(colorDef c);

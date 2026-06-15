@@ -46,16 +46,15 @@ The current source is grouped by file:
 | File | Purpose |
 | --- | --- |
 | `HexBoard.ino` | Arduino lifecycle wrappers only |
-| `src/firmware/FirmwareUnity.cpp` | ordered firmware translation unit for modules not yet moved to standalone compilation |
-| `src/firmware/**/*.h` | explicit cross-module APIs owned by each subsystem; shared board/config, tuning/layout/preset, grid-state, and persistent-schema declarations now live in their owning headers |
-| `src/firmware/app/` | standalone platform/common helpers, non-synth runtime defaults, diagnostics/timing, and lifecycle functions |
-| `src/firmware/tuning/` | standalone tuning tables, shared tuning math, and Dynamic JI retuning |
-| `src/firmware/model/` | standalone layout, scale/palette/preset tables, and pitch assignment |
-| `src/firmware/hardware/` | stable board dimensions and pin assignments in `HardwareConfig.h`, standalone grid state, standalone command buttons, scan/rotary input, LED rendering, standalone LED animations |
-| `src/firmware/midi/` | standalone USB/serial transport, MPE/routing, external MIDI LED state, delegated control, and MIDI input parsing, plus unity-included note dispatch |
-| `src/firmware/synth/` | shared synth defaults, standalone built-in single-cycle waveform sources and compatibility wavetable catalog, oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome; hot render/audio helpers remain grouped in `SynthAudio.cpp` |
-| `src/firmware/storage/` | standalone persistent data models, settings/profile persistence, synth preset/wavetable storage, preset-sync protocol helpers, geometry objects, synth object handlers, and message dispatch |
-| `src/firmware/menu/` | standalone OLED/GEM pages and callbacks, played-note overlay, synth preset menu rebuilds, and synth wavetable menu rebuilds |
+| `src/firmware/**/*.h` | cross-module APIs owned by each subsystem |
+| `src/firmware/app/` | platform/common helpers, runtime defaults, diagnostics/timing, and lifecycle functions |
+| `src/firmware/tuning/` | tuning tables, shared tuning math, and Dynamic JI retuning |
+| `src/firmware/model/` | layout tables, scale/palette/preset models, and pitch assignment |
+| `src/firmware/hardware/` | board constants, grid state, command buttons, scan/rotary input, LED rendering, and LED animations |
+| `src/firmware/midi/` | USB/serial transport, MPE/routing, external MIDI LED state, delegated control, MIDI input parsing, and note dispatch |
+| `src/firmware/synth/` | synth defaults, built-in waveforms, wavetable catalog, oscillator/render path, envelopes, PWM, DMA audio, polyphony, arpeggiator, and metronome |
+| `src/firmware/storage/` | persistent data models, settings/profile persistence, synth preset/wavetable storage, and preset-sync handlers |
+| `src/firmware/menu/` | OLED/GEM pages and callbacks, played-note overlay, synth preset menus, and synth wavetable menus |
 
 ## Core Data Structures
 
@@ -113,8 +112,7 @@ uint8_t settingsProfiles[PROFILE_COUNT][NUM_SETTINGS];
 uint8_t* settings;
 ```
 
-There are `9` profiles. Slot `0` is the boot and auto-save slot. `NUM_SETTINGS` is derived from `SettingKey::NumSettings`, so adding settings requires updating the enum, defaults, runtime sync, and menu wiring together.
-The `SettingKey` enum, settings file header, synth preset/wavetable slot structs, geometry object structs, preset key list, and small setting accessors are declared in `src/firmware/storage/PersistentDataModels.h` so storage, menu, and preset-sync modules can include the schema directly. `src/firmware/storage/Settings.cpp` compiles standalone and exposes the factory defaults table, auto-save state, dirty flag, and filesystem availability through `Settings.h`.
+There are `9` profiles. Slot `0` is the boot and auto-save slot. `NUM_SETTINGS` is derived from `SettingKey::NumSettings`, so adding settings requires updating the enum, defaults, runtime sync, and menu wiring together. Shared schema declarations live in `src/firmware/storage/PersistentDataModels.h`; `src/firmware/storage/Settings.cpp` owns the factory defaults table, auto-save state, dirty flag, and filesystem availability exposed through `Settings.h`.
 
 ### Dynamic Containers Still In Runtime Paths
 
@@ -341,7 +339,7 @@ timeout, only encoder activity wakes it. Encoder turns respect the saved
 The protocol is documented in `docs/delegated-control.md`. Keep it isolated from settings and user menu code unless the product decision changes.
 
 The preset-sync SysEx protocol is documented in `docs/preset-sync-sysex.md`.
-Firmware implementation compiles standalone and is split by ownership:
+Preset-sync implementation is split by ownership:
 `PresetSyncProtocol.cpp` handles
 frame encoding, transfer state, packing, and TLV helpers;
 `PresetSyncGeometry.cpp` owns user tuning/layout/scale/color/button-map object
