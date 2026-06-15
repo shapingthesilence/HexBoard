@@ -193,6 +193,12 @@ select {
   gap: 5px;
 }
 
+.fieldControlRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
 .field span {
   color: #59645f;
   font-size: 0.82rem;

@@ -1152,14 +1152,17 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
               </label>
               <label className="field">
                 <span>Center key</span>
-                <input
-                  min={0}
-                  max={139}
-                  type="number"
-                  value={activeLayout.centerButton}
-                  onChange={(event) => updateLayout({ centerButton: clampInteger(Number(event.target.value), 0, 139) })}
-                  {...layoutGuideProps("center")}
-                />
+                <div className="fieldControlRow">
+                  <input
+                    min={0}
+                    max={139}
+                    type="number"
+                    value={activeLayout.centerButton}
+                    onChange={(event) => updateLayout({ centerButton: clampInteger(Number(event.target.value), 0, 139) })}
+                    {...layoutGuideProps("center")}
+                  />
+                  <button type="button" onClick={() => updateLayout({ centerButton: selectedButton })}>Use Selected</button>
+                </div>
               </label>
               <label className="field">
                 <span>{axisLabels.across}</span>
@@ -1242,7 +1245,6 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
               <h2>HexBoard Preview</h2>
               <span className="muted">{status}</span>
             </div>
-            <button type="button" onClick={() => updateLayout({ centerButton: selectedButton })}>Use Selected As Center</button>
           </div>
           <div className="brushToolbar">
             <button
