@@ -1267,7 +1267,6 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
                 onChange={(event) => setPaintbrushColor((current) => hexToScaleDegreeColor(event.target.value, current))}
               />
             </label>
-            <div className="brushSwatch" style={{ backgroundColor: colorToCss(paintbrushColor) }} />
             <button type="button" onClick={() => setPaintbrushColor(selectedPreview.color)}>
               Use Selected Color
             </button>

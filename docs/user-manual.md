@@ -442,7 +442,10 @@ axis field labels follow the four-way preview rotation; for example, at `90`
 degrees, across is shown as `Down` and up-right is shown as `Down-right`.
 The preview also has a `Paintbrush` mode: choose a brush color, enable the
 tool, then click or drag across keys to write manual per-button color overrides
-without selecting each key in the inspector.
+without selecting each key in the inspector. Preview hexagons render with solid
+color fills and outlined white labels so the displayed color remains accurate
+and readable. A sun/moon button in the app header switches the web app between
+light and dark themes.
 
 The tuning editor can create EDO tunings, equal cents-per-step tunings, and
 Scala `.scl` imports. EDO and cents-per-step tunings include editable note
