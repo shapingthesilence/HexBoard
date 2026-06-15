@@ -1,9 +1,11 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "MidiRouting.h"
 #include "MidiTransport.h"
+#include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
+#include "../app/RuntimeDefaults.h"
+#include "../hardware/GridState.h"
+#include "../model/ScalePalettePreset.h"
 
 uint16_t mpeChannelBitmap = 0;  // bitmap of available MPE channels (bit N = channel N+1)
 byte MPEpitchBendsNeeded;
@@ -55,14 +57,6 @@ float stepsToMIDI(int16_t stepsFromA) {  // return the MIDI pitch associated
     referenceOffset = 12.0f * log2f(userGeometryRuntimeReferenceHz / CONCERT_A_HZ);
   }
   return CONCERT_A_MIDI_NOTE + referenceOffset + (static_cast<float>(stepsFromA) * static_cast<float>(current.tuning().stepSize) / 100.0f);
-}
-
-// Do the same thing on each defined MIDI interface. This reduces code
-// duplication. Search for withMIDI to see how it's used.
-template <class F>
-inline void withMIDI(F&& f) {
-  if (midiD & MIDID_USB) f(UMIDI);
-  if (midiD & MIDID_SER) f(SMIDI);
 }
 
 void sendSysExToConfiguredMidiOutputs(unsigned length, const byte* data) {
@@ -181,4 +175,3 @@ void RAM_FUNC(sendMIDIpitchBendToCh1)() {
   withMIDI([&](auto& M) { M.sendPitchBend(pbWheel.curValue, targetChannel); });
   sendToLog("sent pb wheel value " + std::to_string(pbWheel.curValue) + " to ch " + std::to_string(targetChannel));
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

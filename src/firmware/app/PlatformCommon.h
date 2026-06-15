@@ -5,6 +5,8 @@
 constexpr byte HARDWARE_UNKNOWN = 0;
 constexpr byte HARDWARE_V1_1 = 1;
 constexpr byte HARDWARE_V1_2 = 2;
+constexpr byte SDAPIN = 16;
+constexpr byte SCLPIN = 17;
 constexpr byte MIDI_CHANNEL_MIN = 1;
 constexpr byte MIDI_CHANNEL_MAX = 16;
 constexpr byte MIDI_CHANNEL_COUNT = MIDI_CHANNEL_MAX - MIDI_CHANNEL_MIN + 1;

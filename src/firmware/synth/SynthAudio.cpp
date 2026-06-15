@@ -6,6 +6,7 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../midi/MidiRouting.h"
 #include "../midi/MidiTransport.h"
+#include "../storage/SynthWavetableStorage.h"
 #include "../tuning/DynamicJustIntonation.h"
 #include "SynthDefaults.h"
 

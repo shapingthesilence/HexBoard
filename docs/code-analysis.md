@@ -48,11 +48,11 @@ The current source is grouped by file:
 | `HexBoard.ino` | Arduino lifecycle wrappers only |
 | `src/firmware/FirmwareUnity.cpp` | ordered firmware translation unit for modules not yet moved to standalone compilation |
 | `src/firmware/**/*.h` | explicit cross-module APIs owned by each subsystem; shared tuning/layout/preset, grid-state, and persistent-schema declarations now live in their owning headers |
-| `src/firmware/app/` | platform/common helpers, non-synth runtime defaults in `RuntimeDefaults.h`, diagnostics/timing, lifecycle functions |
+| `src/firmware/app/` | standalone platform/common helpers, non-synth runtime defaults, diagnostics/timing, plus unity-included lifecycle functions |
 | `src/firmware/tuning/` | standalone tuning tables plus unity-included Dynamic JI retuning |
 | `src/firmware/model/` | standalone layout and scale/palette/preset tables plus unity-included pitch assignment |
 | `src/firmware/hardware/` | grid state, command buttons, scan/rotary input, LED rendering, LED animations |
-| `src/firmware/midi/` | USB/serial transport, MPE/routing, note dispatch, external MIDI LED state, delegated control, MIDI input parsing |
+| `src/firmware/midi/` | standalone USB/serial transport and MPE/routing, plus unity-included note dispatch, external MIDI LED state, delegated control, MIDI input parsing |
 | `src/firmware/synth/` | shared synth defaults, built-in single-cycle waveform sources and compatibility wavetable catalog, oscillator, envelopes, PWM, DMA audio, polyphony, arpeggiator, metronome; hot render/audio helpers remain grouped in `SynthAudio.cpp` |
 | `src/firmware/storage/` | standalone persistent data models, settings/profile persistence, synth preset/wavetable storage, preset-sync protocol helpers, geometry objects, synth object handlers, and message dispatch |
 | `src/firmware/menu/` | OLED/GEM pages and callbacks, played-note overlay, synth preset menu rebuilds, synth wavetable menu rebuilds |

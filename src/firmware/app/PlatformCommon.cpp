@@ -1,5 +1,3 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
 #include "PlatformCommon.h"
 #include "../hardware/GridScanRotary.h"
@@ -20,8 +18,6 @@
 // @init
 #include <Arduino.h>  // this is necessary to talk to the Hexboard!
 #include <Wire.h>     // this is necessary to connect with I2C devices (such as the oled display)
-constexpr byte SDAPIN = 16;
-constexpr byte SCLPIN = 17;
 #include <GEM_u8g2.h>  // library of code to create menu objects on the B&W display
 #include <algorithm>
 #include <array>
@@ -120,4 +116,3 @@ int32_t midiChannelOffset(int32_t midiIndex) {
   splitExtendedMidiNote(midiIndex, channelOffset, unusedNote);
   return channelOffset;
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY

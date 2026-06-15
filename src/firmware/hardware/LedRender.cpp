@@ -1,6 +1,9 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "LedRender.h"
+#include "../app/RuntimeDefaults.h"
+#include "../synth/SynthAudio.h"
 
 // @LED
 /*

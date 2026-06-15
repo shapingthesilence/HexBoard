@@ -1,6 +1,7 @@
 #if HEXBOARD_FIRMWARE_UNITY
 
 #include "../FirmwareModule.h"
+#include "GridScanRotary.h"
 
 void RAM_FUNC(cmdOn)(byte x) {  // volume and mod wheel read all current buttons
   switch (h[x].note) {

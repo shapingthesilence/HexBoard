@@ -1,6 +1,5 @@
-#if HEXBOARD_FIRMWARE_UNITY
-
 #include "../FirmwareModule.h"
+#include "PlatformCommon.h"
 #include "RuntimeDefaults.h"
 #include "../storage/PersistentDataModels.h"
 #include "../synth/SynthDefaults.h"
@@ -44,12 +43,7 @@ byte synthBPM = 120;
 
 byte arpeggiatorDirection = ARP_DIRECTION_UP;
 
-struct MetronomeSignature {
-  uint8_t beats;
-  uint8_t noteValue;
-};
-
-const MetronomeSignature metronomeSignatures[] = {
+const MetronomeSignature metronomeSignatures[METRONOME_SIGNATURE_COUNT] = {
   { 4, 4 },
   { 3, 4 },
   { 2, 4 },
@@ -58,7 +52,6 @@ const MetronomeSignature metronomeSignatures[] = {
   { 7, 8 },
   { 12, 8 }
 };
-constexpr uint8_t METRONOME_SIGNATURE_COUNT = sizeof(metronomeSignatures) / sizeof(metronomeSignatures[0]);
 
 byte metronomeMode = METRONOME_MODE_OFF;
 byte metronomeSignatureIndex = 0;
@@ -135,11 +128,6 @@ bool bootAnimationEnabled = true;
 
 byte animationType = ANIMATE_BUTTON;
 
-constexpr byte LED_TEST_OFF = 0;
-constexpr byte LED_TEST_RED = 1;
-constexpr byte LED_TEST_GREEN = 2;
-constexpr byte LED_TEST_BLUE = 3;
-constexpr byte LED_TEST_WHITE = 4;
 byte ledTestMode = LED_TEST_OFF;
 
 byte globalBrightness = BRIGHT_DIM;
@@ -209,4 +197,3 @@ void syncLedCurrentLimit() {
   }
   ledCurrentLimitMilliamps = decodeLedCurrentLimitMilliamps(ledCurrentLimitMode);
 }
-#endif  // HEXBOARD_FIRMWARE_UNITY
