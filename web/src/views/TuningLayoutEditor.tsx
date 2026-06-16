@@ -38,9 +38,9 @@ import { ObjectType, type ObjectListRecord } from "../protocol/index.ts";
 import { formatByteLength } from "./format.ts";
 
 const layoutBundleStorageKey = "hexboard.layoutBundles.v1";
-const previewHexHalfStepX = 24;
+const previewHexHalfStepX = 25;
 const previewHexRowStepY = 42;
-const previewHexInset = 24;
+const previewHexInset = 25;
 const rootFolderPath = "/";
 const defaultGeometryFolders = [rootFolderPath, "Tunings", "Layouts"];
 
