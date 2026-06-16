@@ -126,12 +126,18 @@ Current web source layout:
   protocol boundary, and store a four-step `0/90/180/270` device orientation
   value matching the firmware `DeviceRotation` setting. The tuning/layout
   preview paintbrush writes the same per-layout button color override fields as
-  the selected-key inspector. The tuning/layout editor sidebar includes a
+  the selected-key inspector. The tuning/layout editor uses the same
+  left/right column sizing as the synth preset editor. Its sidebar has
+  top-level `File Manager` and `Editor` tabs: `File Manager` includes a
   foldered `Computer Library` for browser-stored bundles and a `HexBoard
-  Library` view backed by device `UserTuning` object-list records. Bundle
-  `folderPath` is encoded into each unpacked `UserTuning`, `UserLayout`,
-  `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` object written to the
-  device. The open bundle keeps `Tuning`, `Layouts`, and `Scales` in subtabs.
+  Library` view backed by device `UserTuning` object-list records, while
+  `Editor` contains `Live send`, runtime `Send Now`, computer/device save
+  actions, bundle metadata, and the open bundle's `Tuning`, `Layouts`, and
+  `Scales` subtabs. Live send writes compatible active geometry objects with
+  `ApplyToRuntime` only; `Save to HexBoard` writes all bundle objects with
+  `SaveToFlash`. Bundle `folderPath` is encoded into each unpacked `UserTuning`,
+  `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` object
+  written to the device.
   Scales are edited with `includedDegrees` only; the text input validates on
   blur so incomplete text can exist while a user is typing. EDO and equal-step
   tunings store editable `keyLabels` and `referenceHz`; key labels default to

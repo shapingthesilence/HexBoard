@@ -430,11 +430,15 @@ runtime when a compatible bundle is sent to HexBoard, and it uses a generic
 color-mode name rather than a separate editable palette field. The active
 layout still starts from an across/up-right vector, and the center key can be
 chosen from the visual board or typed by button index. The editor places a
-foldered geometry library in the left sidebar with `Computer Library` and
-`HexBoard Library` sections, plus `Tuning`, `Layouts`, and `Scales` subtabs for
-the open bundle. `Save to Computer` stores the bundle in browser storage, while
-`Save to HexBoard` writes the bundle's user tuning, layouts, scales, color map,
-and explicit button map into the selected folder on the device. The HexBoard
+left sidebar beside the preview using the same left-to-right proportions as the
+synth preset editor. At the top of `Geometry Bundles`, `File Manager` contains
+the foldered `Computer Library` and `HexBoard Library` sections, while `Editor`
+contains bundle metadata plus the `Tuning`, `Layouts`, and `Scales` subtabs for
+the open bundle. In `Editor`, `Live send` previews compatible EDO/equal-step
+bundle edits on the connected device's runtime without saving them to flash.
+`Save to Computer` stores the bundle in browser storage, while `Save to
+HexBoard` writes the bundle's user tuning, layouts, scales, color map, and
+explicit button map into the selected folder on the device. The HexBoard
 library currently lists saved user-tuning entries by folder because firmware
 stores the unpacked geometry objects rather than a single editable bundle
 object. The larger HexBoard preview plus selected-key inspector stay on the

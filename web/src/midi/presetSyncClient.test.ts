@@ -205,6 +205,37 @@ describe("PresetSyncClient", () => {
     });
   });
 
+  it("sends geometry preview objects with apply-to-runtime only", async () => {
+    const transport = new MockMidiTransport();
+    const originalSend = transport.send.bind(transport);
+    transport.send = async (bytes) => {
+      await originalSend(bytes);
+      const frame = decodePresetSyncFrame(bytes);
+      const nextChunkIndex = frame.message === MessageType.DataChunk
+        ? decodeDataChunkPayload(frame.payload).chunkIndex + 1
+        : 0;
+      transport.emit(encodeAckFrame(frame.transactionId, frame.message, nextChunkIndex));
+    };
+    const client = new PresetSyncClient(transport);
+    const tuning = createGeneratedEdoTuning({
+      objectId: deterministicObjectId("preview geometry tuning"),
+      name: "Preview Geometry Tuning",
+      edoDivisions: 19
+    });
+
+    const frames = await client.sendGeometryObjectPreviewConfirmed(tuning);
+    const decoded = frames.map((frame) => decodePresetSyncFrame(frame));
+
+    expect(decodeWriteBeginPayload(decoded[0].payload)).toMatchObject({
+      objectType: ObjectType.UserTuning,
+      rawByteLength: tuning.body.length,
+      writeFlags: 0x01
+    });
+    expect(decodeWriteCommitPayload(decoded.at(-1)?.payload ?? [])).toMatchObject({
+      commitFlags: 0x01
+    });
+  });
+
   it("ignores non-preset-sync MIDI while waiting for device storage responses", async () => {
     const transport = new MockMidiTransport();
     const client = new PresetSyncClient(transport);

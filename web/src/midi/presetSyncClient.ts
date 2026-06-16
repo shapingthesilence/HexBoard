@@ -390,6 +390,10 @@ export class PresetSyncClient {
     return this.sendGeometryObjectWriteConfirmed(object, WriteFlag.ApplyToRuntime | WriteFlag.SaveToFlash, handle);
   }
 
+  async sendGeometryObjectPreviewConfirmed(object: EncodedCatalogObject, handle = NEW_OBJECT_HANDLE): Promise<number[][]> {
+    return this.sendGeometryObjectWriteConfirmed(object, WriteFlag.ApplyToRuntime, handle);
+  }
+
   private async sendGeometryObjectWriteConfirmed(
     object: EncodedCatalogObject,
     writeFlags: number,

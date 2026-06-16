@@ -1186,6 +1186,10 @@ write the individual objects after the web app unpacks a bundle.
    profile references, and apply bundle switches only after active notes are
    clear or after an explicitly documented panic cleanup.
 
+For web-editor live preview, the app sends only the active compatible runtime
+objects with `ApplyToRuntime` and without `SaveToFlash`. `Save to HexBoard`
+uses `SaveToFlash` for the full unpacked bundle object set.
+
 ### Transfer A Synth Preset
 
 1. Host sends `READ_REQ` or `WRITE_BEGIN` with object type `SynthPreset`.

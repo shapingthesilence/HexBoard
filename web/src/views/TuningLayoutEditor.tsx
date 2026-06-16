@@ -46,6 +46,7 @@ const defaultGeometryFolders = [rootFolderPath, "Tunings", "Layouts"];
 
 type LayoutGuideFocus = "center" | "across" | "upRight";
 type GeometryEditorTab = "tuning" | "layouts" | "scales";
+type GeometrySidebarTab = "library" | "editor";
 type GeometryLibrarySpace = "computer" | "hexboard";
 
 const layoutAxisDirectionLabels = [
@@ -485,6 +486,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     computer: null,
     hexboard: null
   });
+  const [activeSidebarTab, setActiveSidebarTab] = useState<GeometrySidebarTab>("library");
   const [selectedButton, setSelectedButton] = useState(65);
   const [layoutGuideFocus, setLayoutGuideFocus] = useState<LayoutGuideFocus | null>(null);
   const [activeEditorTab, setActiveEditorTab] = useState<GeometryEditorTab>("tuning");
@@ -496,12 +498,14 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   const [includedDegreesError, setIncludedDegreesError] = useState("");
   const [status, setStatus] = useState("Ready");
   const [syncBusy, setSyncBusy] = useState(false);
+  const [liveSend, setLiveSend] = useState(false);
   const bundleInputRef = useRef<HTMLInputElement>(null);
   const scalaInputRef = useRef<HTMLInputElement>(null);
   const keyLabelsInputRef = useRef<HTMLInputElement>(null);
   const includedDegreesInputRef = useRef<HTMLInputElement>(null);
   const paintStrokeActiveRef = useRef(false);
   const lastPaintedButtonRef = useRef<number | null>(null);
+  const skipNextLiveSendRef = useRef(true);
 
   const activeBundle = bundles.find((bundle) => bundle.objectIdHex === activeBundleId) ?? bundles[0] ?? createDefaultLayoutBundle();
   const activeLayout = activeBundle.layouts.find((layout) => layout.objectIdHex === activeBundle.activeLayoutIdHex) ??
@@ -1129,6 +1133,9 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
       ...explicitMaps
     ].filter((object): object is EncodedCatalogObject => Boolean(object));
   }, [activeLayout.objectIdHex, activeScale.objectIdHex, encodedBundle]);
+  const liveSendKey = useMemo(() => activeApplyObjects
+    .map((object) => `${object.objectType}:${objectIdToHex(object.objectId)}:${crc32(object.body).toString(16)}`)
+    .join("|"), [activeApplyObjects]);
   const encodedPreview = encodedBundle.objects
     .map((object) => `${object.name}: ${formatByteLength(object.body)} CRC ${crc32(object.body).toString(16).toUpperCase()}`)
     .join("\n");
@@ -1193,29 +1200,43 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     await saveBundleToHexBoard(activeBundle);
   }
 
-  async function applyActiveBundleToHexBoard() {
+  async function sendActiveBundlePreview(prefix = "Sent") {
     if (transport instanceof MockMidiTransport) {
-      setStatus("Connect HexBoard before applying geometry objects.");
+      setStatus("Connect HexBoard before live-sending geometry objects.");
       return;
     }
     if (activeBundle.tuning.kind === "scala") {
-      setStatus("Scala bundles can be saved and verified, but live Apply needs firmware cents-table tuning support.");
+      setStatus("Scala bundles can be saved and verified, but live send needs firmware cents-table tuning support.");
       return;
     }
     setSyncBusy(true);
     try {
       for (let index = 0; index < activeApplyObjects.length; index += 1) {
         const object = activeApplyObjects[index];
-        setStatus(`Applying ${object.name} (${index + 1}/${activeApplyObjects.length})`);
-        await client.sendGeometryObjectApplyConfirmed(object);
+        setStatus(`${prefix} ${object.name} (${index + 1}/${activeApplyObjects.length})`);
+        await client.sendGeometryObjectPreviewConfirmed(object);
       }
-      setStatus(`Applied ${activeBundle.name} to HexBoard runtime`);
+      setStatus(`${prefix} ${activeBundle.name} to HexBoard runtime`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to apply geometry objects");
+      setStatus(error instanceof Error ? error.message : "Failed to live-send geometry objects");
     } finally {
       setSyncBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (!liveSend || syncBusy || transport instanceof MockMidiTransport || activeBundle.tuning.kind === "scala") {
+      return;
+    }
+    if (skipNextLiveSendRef.current) {
+      skipNextLiveSendRef.current = false;
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      void sendActiveBundlePreview("Auto-sent");
+    }, 450);
+    return () => window.clearTimeout(timeout);
+  }, [activeBundle.tuning.kind, liveSend, liveSendKey, transport]);
 
   async function verifyActiveBundleOnHexBoard() {
     if (transport instanceof MockMidiTransport) {
@@ -1251,114 +1272,156 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
           <h2>Geometry Bundles</h2>
           <span className="countBadge">{bundles.length}</span>
         </div>
-        <div className="row">
-          <button type="button" onClick={addNewBundle}>New</button>
-          <button type="button" onClick={() => downloadBundleFile(activeBundle)}>
-            Export
+        <div className="sidebarTabs bundleManagerTabs" role="tablist" aria-label="Geometry bundle tools">
+          <button
+            aria-selected={activeSidebarTab === "library"}
+            className={activeSidebarTab === "library" ? "active" : ""}
+            onClick={() => setActiveSidebarTab("library")}
+            role="tab"
+            type="button"
+          >
+            File Manager
           </button>
-          <button type="button" onClick={() => bundleInputRef.current?.click()}>Import</button>
-          <button disabled={syncBusy} type="button" onClick={() => void refreshHexBoardGeometryLibrary()}>
-            Refresh HexBoard
-          </button>
-        </div>
-        <div className="row">
-          <input
-            aria-label="New geometry folder"
-            placeholder="New folder"
-            value={newFolder}
-            onChange={(event) => setNewFolder(event.target.value)}
-          />
-          <button type="button" onClick={addFolder}>
-            Add
-          </button>
-        </div>
-        <div className="row">
-          <button type="button" onClick={() => saveActiveBundleToComputer()}>
-            Save to Computer
-          </button>
-          <button className="primary" disabled={syncBusy} type="button" onClick={() => void saveActiveBundleToHexBoard()}>
-            {syncBusy ? "Syncing..." : "Save to HexBoard"}
-          </button>
-          <button disabled={syncBusy} type="button" onClick={() => void applyActiveBundleToHexBoard()}>
-            Apply
-          </button>
-          <button disabled={syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>
-            Verify
+          <button
+            aria-selected={activeSidebarTab === "editor"}
+            className={activeSidebarTab === "editor" ? "active" : ""}
+            onClick={() => setActiveSidebarTab("editor")}
+            role="tab"
+            type="button"
+          >
+            Editor
           </button>
         </div>
         <input ref={bundleInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" onChange={(event) => void importBundleFile(event)} />
         <input ref={scalaInputRef} className="hiddenFileInput" type="file" accept=".scl,text/plain" onChange={(event) => void importScalaFile(event)} />
 
-        <div className="librarySpaces">
-          <GeometryLibrarySpacePanel
-            title="Computer Library"
-            subtitle="Browser-saved geometry bundles"
-            space="computer"
-            bundles={bundles}
-            folders={allFolders}
-            selectedFolder={folderFilters.computer}
-            activeBundleId={activeBundle.objectIdHex}
-            onFolderSelect={toggleFolderFilter}
-            onOpen={openBundle}
-            onUpload={(bundle) => void saveBundleToHexBoard(bundle)}
-            onExport={downloadBundleFile}
-            onErase={deleteBundle}
-          />
-          <HexBoardGeometryLibraryPanel
-            entries={hexboardBundles}
-            folders={allFolders}
-            selectedFolder={folderFilters.hexboard}
-            onFolderSelect={toggleFolderFilter}
-          />
-        </div>
+        {activeSidebarTab === "library" ? (
+          <>
+            <div className="row">
+              <button type="button" onClick={addNewBundle}>New</button>
+              <button type="button" onClick={() => downloadBundleFile(activeBundle)}>
+                Export
+              </button>
+              <button type="button" onClick={() => bundleInputRef.current?.click()}>Import</button>
+              <button disabled={syncBusy} type="button" onClick={() => void refreshHexBoardGeometryLibrary()}>
+                Refresh HexBoard
+              </button>
+            </div>
+            <div className="row">
+              <input
+                aria-label="New geometry folder"
+                placeholder="New folder"
+                value={newFolder}
+                onChange={(event) => setNewFolder(event.target.value)}
+              />
+              <button type="button" onClick={addFolder}>
+                Add
+              </button>
+            </div>
+            <div className="row">
+              <button disabled={syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>
+                Verify
+              </button>
+            </div>
 
-        <label className="field">
-          <span>Bundle name</span>
-          <input value={activeBundle.name} onChange={(event) => updateBundleName(event.target.value)} />
-        </label>
-        <label className="field">
-          <span>Folder</span>
-          <select value={normalizeDisplayFolderPath(activeBundle.folderPath)} onChange={(event) => updateBundleFolder(event.target.value)}>
-            {allFolders.map((folder) => (
-              <option key={folder} value={folder}>
-                {folderLabel(folder)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="warning" type="button" onClick={deleteActiveBundle}>Delete Bundle</button>
+            <div className="librarySpaces">
+              <GeometryLibrarySpacePanel
+                title="Computer Library"
+                subtitle="Browser-saved geometry bundles"
+                space="computer"
+                bundles={bundles}
+                folders={allFolders}
+                selectedFolder={folderFilters.computer}
+                activeBundleId={activeBundle.objectIdHex}
+                onFolderSelect={toggleFolderFilter}
+                onOpen={openBundle}
+                onUpload={(bundle) => void saveBundleToHexBoard(bundle)}
+                onExport={downloadBundleFile}
+                onErase={deleteBundle}
+              />
+              <HexBoardGeometryLibraryPanel
+                entries={hexboardBundles}
+                folders={allFolders}
+                selectedFolder={folderFilters.hexboard}
+                onFolderSelect={toggleFolderFilter}
+              />
+            </div>
+          </>
+        ) : null}
 
-        <div className="sidebarTabs" role="tablist" aria-label="Geometry bundle sections">
-          <button
-            aria-selected={activeEditorTab === "tuning"}
-            className={activeEditorTab === "tuning" ? "active" : ""}
-            onClick={() => setActiveEditorTab("tuning")}
-            role="tab"
-            type="button"
-          >
-            Tuning
-          </button>
-          <button
-            aria-selected={activeEditorTab === "layouts"}
-            className={activeEditorTab === "layouts" ? "active" : ""}
-            onClick={() => setActiveEditorTab("layouts")}
-            role="tab"
-            type="button"
-          >
-            Layouts
-          </button>
-          <button
-            aria-selected={activeEditorTab === "scales"}
-            className={activeEditorTab === "scales" ? "active" : ""}
-            onClick={() => setActiveEditorTab("scales")}
-            role="tab"
-            type="button"
-          >
-            Scales
-          </button>
-        </div>
+        {activeSidebarTab === "editor" ? (
+          <>
+            <div className="row">
+              <label className="checkField">
+                <input
+                  checked={liveSend}
+                  type="checkbox"
+                  onChange={(event) => {
+                    skipNextLiveSendRef.current = true;
+                    setLiveSend(event.target.checked);
+                  }}
+                />
+                <span>Live send</span>
+              </label>
+              <button className="primary" disabled={syncBusy} type="button" onClick={() => void sendActiveBundlePreview("Sent")}>
+                Send Now
+              </button>
+              <button type="button" onClick={() => saveActiveBundleToComputer()}>
+                Save to Computer
+              </button>
+              <button disabled={syncBusy} type="button" onClick={() => void saveActiveBundleToHexBoard()}>
+                Save to HexBoard
+              </button>
+            </div>
+            <label className="field">
+              <span>Bundle name</span>
+              <input value={activeBundle.name} onChange={(event) => updateBundleName(event.target.value)} />
+            </label>
+            <label className="field">
+              <span>Folder</span>
+              <select value={normalizeDisplayFolderPath(activeBundle.folderPath)} onChange={(event) => updateBundleFolder(event.target.value)}>
+                {allFolders.map((folder) => (
+                  <option key={folder} value={folder}>
+                    {folderLabel(folder)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="warning" type="button" onClick={deleteActiveBundle}>Delete Bundle</button>
 
-        {activeEditorTab === "tuning" ? (
+            <div className="sidebarTabs" role="tablist" aria-label="Geometry bundle sections">
+              <button
+                aria-selected={activeEditorTab === "tuning"}
+                className={activeEditorTab === "tuning" ? "active" : ""}
+                onClick={() => setActiveEditorTab("tuning")}
+                role="tab"
+                type="button"
+              >
+                Tuning
+              </button>
+              <button
+                aria-selected={activeEditorTab === "layouts"}
+                className={activeEditorTab === "layouts" ? "active" : ""}
+                onClick={() => setActiveEditorTab("layouts")}
+                role="tab"
+                type="button"
+              >
+                Layouts
+              </button>
+              <button
+                aria-selected={activeEditorTab === "scales"}
+                className={activeEditorTab === "scales" ? "active" : ""}
+                onClick={() => setActiveEditorTab("scales")}
+                role="tab"
+                type="button"
+              >
+                Scales
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {activeSidebarTab === "editor" && activeEditorTab === "tuning" ? (
           <section className="editorSection">
             <h3>Tuning</h3>
             <label className="field">
@@ -1388,7 +1451,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
           </section>
         ) : null}
 
-        {activeEditorTab === "layouts" ? (
+        {activeSidebarTab === "editor" && activeEditorTab === "layouts" ? (
           <section className="editorSection">
             <h3>Layouts</h3>
             <div className="fieldGrid">
@@ -1453,7 +1516,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
           </section>
         ) : null}
 
-        {activeEditorTab === "scales" ? (
+        {activeSidebarTab === "editor" && activeEditorTab === "scales" ? (
           <section className="editorSection">
             <h3>Scales</h3>
             <div className="fieldGrid">
