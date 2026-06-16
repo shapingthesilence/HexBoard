@@ -352,8 +352,11 @@ the user wavetable write path, and raw `/layouts.dat` storage for user tuning,
 layout, scale, scale color map, and explicit button map objects. It also
 implements live Apply for the minimum generated-geometry path: EDO/equal-step
 tunings, vector layouts, included-degree scales, scale-degree color maps, and
-format-1 explicit button maps. Profile transfer, bundle sync, menu catalog
-integration, and Scala/cents-table runtime tuning remain draft.
+format-1 explicit button maps. The OLED `Tuning`, `Layout`, and `Scales` pages
+are now rebuilt from saved user geometry objects, with `UserTuning` entries as
+bundle anchors and linked layouts/scales filtered by the currently selected
+user tuning object id. Profile transfer, formal bundle manifests, and
+Scala/cents-table runtime tuning remain draft.
 
 The companion web app has protocol and catalog helpers for that draft under
 `web/src/protocol/` and `web/src/catalogs/`, plus a mock MIDI transport under
@@ -501,7 +504,9 @@ The web layout bundle model now treats the bundle's single custom
 scale-degree palette as the replacement path for `Tiered` on user-generated
 geometry. When a compatible geometry bundle is applied, firmware renders the
 loaded `ScaleColorMap` before falling back to the factory color modes, and then
-applies explicit per-button color overrides.
+applies explicit per-button color overrides. For those user-generated colors,
+the resting LED cache caps value at `VALUE_NORMAL` before `Rest Bright` scaling
+so full selected values remain available to play and animation states.
 
 Current animation modes include button, star, splash, orbit, octave, by-note, beams, reversed star/splash variants, MIDI-in highlighting, and none.
 
@@ -687,10 +692,12 @@ stores the raw body so hosts can list, read, overwrite, and delete geometry
 objects. Runtime Apply currently parses compatible geometry TLVs into RAM-only
 user tuning/layout/scale/palette/button-map state, rebuilds layout/scale/pitch
 assignment, and uses `ReferenceMilliHz` as an A4 pitch offset for synth and MIDI
-retuning. The OLED tuning/layout/scale menu callbacks clear that RAM-only
-geometry override and reset key to C before returning to factory-backed
-selections. Scala/cents-list tunings still save as raw objects but are rejected
-by runtime Apply until table-backed pitch lookup exists.
+retuning. The OLED tuning/layout/scale pages are foldered dynamic menus backed
+by those saved objects. Selecting a saved `UserTuning` loads its linked first
+layout, first scale, color map, and explicit map; the `Layout` and `Scales`
+pages then expose the other saved objects that reference the selected tuning.
+Scala/cents-list tunings still save as raw objects but are hidden from the
+runtime tuning menu until table-backed pitch lookup exists.
 
 Named user wavetables are stored in `/synth_wavetables.dat` with magic `SYW`,
 version `1`, CRC32, and a counted catalog capped at `64` entries. The selected

@@ -444,7 +444,7 @@ Important implementation details:
 - Core 0 retries synth release commands until the audio renderer consumes one; the renderer clears the retry state when it accepts `StartRelease` so long releases do not repeatedly restart
 - synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `9`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters plus a wavetable folder/name dependency, but do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving the new wavetable dependency from the legacy `Waveform` byte
 - user synth wavetables are stored as a named catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `64` entries, and per-table sample files named from each `16`-byte wavetable object id; each table sample file contains `32 * 512` unsigned waveform bytes. The selected wavetable is also snapshotted per profile in `/profile_wavetables.dat` with magic `PWT`, version `1`, so loading a profile restores its folder/name wavetable reference before runtime sync. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
-- user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `1`, up to `127` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. Runtime Apply currently supports generated EDO/equal-step user tunings, vector layouts, included-degree scales, scale color maps, and format-1 explicit button maps. It does not yet support Scala/cents-table pitch lookup, profile references, menu catalog integration, or settings persistence for the selected geometry bundle.
+- user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `1`, up to `127` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. Runtime Apply currently supports generated EDO/equal-step user tunings, vector layouts, included-degree scales, scale color maps, and format-1 explicit button maps. The visible OLED `Tuning`, `Layout`, and `Scales` pages are rebuilt from these saved user geometry objects: tuning entries are the bundle anchors, layout and scale entries are filtered by the selected tuning object id, and save/delete requests defer a menu rebuild like synth preset menus. It does not yet support Scala/cents-table pitch lookup, profile references, or settings persistence for the selected geometry bundle.
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
@@ -485,8 +485,11 @@ MIDI pitch offset from `ReferenceMilliHz`; vector `UserLayout` objects feed
 `applyLayout()`; `UserScale` included degrees feed `applyScale()`;
 `ScaleColorMap` feeds `setLEDcolorCodes()`; and format-1 `ExplicitButtonMap`
 objects override per-button role, pitch, and color before pitch assignment is
-rebuilt. The normal OLED tuning/layout/scale callbacks clear the RAM-only
-geometry override and reset key to C before applying factory menu selections.
+rebuilt. The visible OLED tuning/layout/scale pages are backed by saved user
+geometry objects: selecting a tuning loads its linked first layout, first scale,
+color map, and button map; selecting layout or scale later swaps only that part
+within the current user tuning. The active user geometry selection remains
+RAM-only and is not yet persisted in profiles or settings.
 Imported Scala/cents tunings still need a cents or ratio table that can
 resolve every `stepsFromC` value for synth frequency, standard MIDI note
 mapping, and MPE bend calculation. Full Scala compatibility needs a firmware
@@ -668,7 +671,10 @@ The Advanced-menu `LED Test` item is intentionally transient. `ledTestMode` is a
 Runtime geometry Apply routes user-generated colors through the active
 `ScaleColorMap` before falling back to factory color modes. Manual per-button
 colors from an `ExplicitButtonMap` override the palette and should not be
-recalculated when root/key or transposition changes.
+recalculated when root/key or transposition changes. `setLEDcolorCodes()` caps
+only the resting value for those user-generated colors at `VALUE_NORMAL` before
+the usual `Rest Bright` scaling, while play and animation caches still use the
+full selected color target.
 
 Startup has a separate bounded LED self-check in `runBootLedSelfCheck()`. Normal boots skip RGB color-channel flashes and run only the smoother rainbow splash, followed by `fadeToNormalLedFrame()` so the resting frame fades in. The persisted `BootAnimationEnabled` setting gates this whole path. The splash center is `bootLedSplashCenterIndex()`, one physical hex to the right of the active layout center; on the default `12 EDO` Wicki-Hayden layout this is `D4` rather than `C4`. The seven command LEDs are overwritten each splash frame by `setBootCommandButtonFade()` so they fade separately instead of joining the splash.
 

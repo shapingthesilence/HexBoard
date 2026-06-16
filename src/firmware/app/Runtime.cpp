@@ -5,6 +5,7 @@
 #include "../hardware/GridState.h"
 #include "../hardware/LedAnimations.h"
 #include "../hardware/LedRender.h"
+#include "../menu/GeometryMenu.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
 #include "../menu/SynthPresetMenu.h"
@@ -104,6 +105,7 @@ void hexboardLoop() {        // run on first core
   }
   serviceSynthPresetMenuRebuild();
   serviceSynthWavetableMenuRebuild();
+  serviceUserGeometryMenuRebuild();
   restoreMenuAfterDelegatedControl();
   drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   checkAndAutoSave();  // save settings

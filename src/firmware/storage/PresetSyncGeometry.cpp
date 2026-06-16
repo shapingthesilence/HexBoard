@@ -367,6 +367,42 @@ bool presetSyncFindTlvU32LE(const std::vector<uint8_t>& body, uint8_t tag, uint3
   return true;
 }
 
+bool geometryObjectReferencesObjectId(const GeometryObjectSlot& object, uint8_t tag, uint8_t objectType, const uint8_t* objectId) {
+  const uint8_t* value = nullptr;
+  uint16_t length = 0;
+  if (!object.valid || !objectId || !presetSyncFindTlv(object.body, tag, value, length) || length < 19) {
+    return false;
+  }
+  return value[0] == objectType && memcmp(value + 3, objectId, GEOMETRY_OBJECT_ID_LENGTH) == 0;
+}
+
+bool geometryObjectRuntimeTuningSupported(const GeometryObjectSlot& object) {
+  uint8_t tuningKind = 0;
+  uint16_t cycleLength = 0;
+  if (!object.valid
+      || object.objectType != PRESET_SYNC_OBJECT_TYPE_USER_TUNING
+      || !presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_TUNING_KIND, tuningKind)
+      || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS, cycleLength)) {
+    return false;
+  }
+  return (tuningKind == PRESET_SYNC_USER_TUNING_KIND_EDO
+          || tuningKind == PRESET_SYNC_USER_TUNING_KIND_EQUAL_STEP)
+         && cycleLength > 0
+         && cycleLength <= MAX_SCALE_DIVISIONS;
+}
+
+int findFirstGeometryObjectReferencing(uint8_t objectType, uint8_t referenceTag, uint8_t referenceObjectType, const uint8_t* referenceObjectId) {
+  for (size_t i = 0; i < geometryObjects.size(); ++i) {
+    const GeometryObjectSlot& object = geometryObjects[i];
+    if (object.valid
+        && object.objectType == objectType
+        && geometryObjectReferencesObjectId(object, referenceTag, referenceObjectType, referenceObjectId)) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
 void clearUserGeometryButtonRuntimeOverrides() {
   for (byte i = 0; i < LED_COUNT; ++i) {
     userGeometryRuntimeButtonDisabled[i] = false;
@@ -383,6 +419,10 @@ void clearUserGeometryRuntimeSelection() {
   userGeometryRuntimeActive = false;
   userGeometryRuntimeScaleActive = false;
   userGeometryRuntimePaletteActive = false;
+  userGeometryRuntimeTuningObjectSelected = false;
+  userGeometryRuntimeLayoutObjectSelected = false;
+  memset(userGeometryRuntimeTuningObjectId, 0, sizeof(userGeometryRuntimeTuningObjectId));
+  memset(userGeometryRuntimeLayoutObjectId, 0, sizeof(userGeometryRuntimeLayoutObjectId));
   userGeometryRuntimeReferenceHz = 440.0f;
   clearUserGeometryButtonRuntimeOverrides();
 }
@@ -448,6 +488,9 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   userGeometryRuntimeTuning.name = object.name;
   userGeometryRuntimeTuning.cycleLength = static_cast<byte>(cycleLength);
   userGeometryRuntimeTuning.stepSize = static_cast<float>(stepMilliCents) / 1000.0f;
+  memcpy(userGeometryRuntimeTuningObjectId, object.objectId, sizeof(userGeometryRuntimeTuningObjectId));
+  userGeometryRuntimeTuningObjectSelected = true;
+  userGeometryRuntimeLayoutObjectSelected = false;
   userGeometryRuntimeReferenceHz = static_cast<float>(referenceMilliHz) / 1000.0f;
   setDefaultRuntimeKeyLabels(cycleLength);
 
@@ -495,6 +538,8 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
   userGeometryRuntimeLayout.acrossSteps = static_cast<int8_t>(acrossSteps);
   userGeometryRuntimeLayout.dnLeftSteps = static_cast<int8_t>(downLeftSteps);
   userGeometryRuntimeLayout.tuning = current.tuningIndex;
+  memcpy(userGeometryRuntimeLayoutObjectId, object.objectId, sizeof(userGeometryRuntimeLayoutObjectId));
+  userGeometryRuntimeLayoutObjectSelected = true;
   userGeometryRuntimeActive = true;
   clearUserGeometryButtonRuntimeOverrides();
   applyLayout();
@@ -653,4 +698,77 @@ bool applyGeometryObjectToRuntime(const GeometryObjectSlot& object) {
     default:
       return false;
   }
+}
+
+bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
+  if (tuningIndex >= geometryObjects.size()) {
+    sendToLog("User geometry menu load rejected: tuning handle is out of range.");
+    return false;
+  }
+  const GeometryObjectSlot& tuningObject = geometryObjects[tuningIndex];
+  if (!geometryObjectRuntimeTuningSupported(tuningObject)) {
+    sendToLog("User geometry menu load rejected: tuning is not runtime-compatible.");
+    return false;
+  }
+
+  clearUserGeometryRuntimeSelection();
+  userGeometryRuntimeLayout = { "User Layout", false, 65, 1, -2, TUNING_12EDO };
+  userGeometryRuntimeScale = { "User Scale", TUNING_12EDO, { 0 } };
+  if (!applyUserGeometryRuntimeTuning(tuningObject)) {
+    return false;
+  }
+
+  int layoutIndex = findFirstGeometryObjectReferencing(
+    PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT,
+    PRESET_SYNC_TLV_LAYOUT_TUNING_REF,
+    PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
+    tuningObject.objectId
+  );
+  if (layoutIndex >= 0 && !applyUserGeometryRuntimeLayout(geometryObjects[layoutIndex])) {
+    return false;
+  }
+
+  int scaleIndex = findFirstGeometryObjectReferencing(
+    PRESET_SYNC_OBJECT_TYPE_USER_SCALE,
+    PRESET_SYNC_TLV_USER_SCALE_TUNING_REF,
+    PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
+    tuningObject.objectId
+  );
+  if (scaleIndex >= 0 && !applyUserGeometryRuntimeScale(geometryObjects[scaleIndex])) {
+    return false;
+  }
+
+  int colorMapIndex = findFirstGeometryObjectReferencing(
+    PRESET_SYNC_OBJECT_TYPE_SCALE_COLOR_MAP,
+    PRESET_SYNC_TLV_SCALE_COLOR_TUNING_REF,
+    PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
+    tuningObject.objectId
+  );
+  if (colorMapIndex >= 0 && !applyUserGeometryRuntimeColorMap(geometryObjects[colorMapIndex])) {
+    return false;
+  }
+
+  int buttonMapIndex = -1;
+  if (layoutIndex >= 0) {
+    buttonMapIndex = findFirstGeometryObjectReferencing(
+      PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP,
+      PRESET_SYNC_TLV_BUTTON_MAP_LAYOUT_REF,
+      PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT,
+      geometryObjects[layoutIndex].objectId
+    );
+  }
+  if (buttonMapIndex < 0) {
+    buttonMapIndex = findFirstGeometryObjectReferencing(
+      PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP,
+      PRESET_SYNC_TLV_BUTTON_MAP_TUNING_REF,
+      PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
+      tuningObject.objectId
+    );
+  }
+  if (buttonMapIndex >= 0 && !applyUserGeometryRuntimeExplicitButtonMap(geometryObjects[buttonMapIndex])) {
+    return false;
+  }
+
+  sendToLog("Loaded user geometry " + std::string(tuningObject.name) + " from menu.");
+  return true;
 }

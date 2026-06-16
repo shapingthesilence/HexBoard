@@ -92,7 +92,11 @@ The main menu includes:
 
 ### Tuning
 
-Use this section to choose the pitch system the whole board runs on.
+Use this section to choose the saved user tuning or geometry bundle the whole
+board runs on. Tunings saved from the web app appear here in folders, with the
+bundle name used as the menu item label. Selecting a tuning also loads the first
+saved layout, scale, color map, and matching explicit button map linked to that
+tuning so the board is immediately playable.
 
 You can change:
 
@@ -116,10 +120,14 @@ the final retuned pitch, then use pitch bend only for the remaining fractional
 part. The onboard synth uses the computed JI cents directly, so its JI pitch
 resolution is not limited by the `MPE Bend` setting.
 
+Scala/cents-table tunings can be saved to HexBoard from the web app, but they
+do not appear as loadable runtime tunings yet because firmware still needs
+table-backed pitch lookup.
+
 Changing tuning also resets:
 
-- Layout to the first valid layout for that tuning
-- Scale to chromatic / none
+- Layout to the first saved layout linked to that tuning
+- Scale to the first saved scale linked to that tuning
 - Key to `C`
 
 ### Layout
@@ -134,7 +142,10 @@ Options include:
 - `Layout Rot`
 - `Device Rot`
 
-Changing layout remaps button pitches. `Layout Rot` rotates the musical pitch
+After a saved user tuning is selected, saved layouts linked to that tuning
+appear here in the same folders. Choosing a layout remaps button pitches and
+loads that layout's matching explicit button map when one exists. `Layout Rot`
+rotates the musical pitch
 pattern around the hex grid in six 60-degree steps. `Device Rot` rotates the
 OLED/device orientation in four 90-degree steps: `0`, `90`, `180`, or `270`
 degrees. Choosing a layout also reloads that layout's default device
@@ -149,6 +160,11 @@ Options include:
 - Key
 - `Scale Lock`
 - Scale selection
+
+After a saved user tuning is selected, this page shows the tuning's note-label
+key selector and the saved scales linked to that tuning. Choosing a scale
+updates scale membership while keeping the current user tuning, layout, color
+map, and button map active.
 
 When `Scale Lock` is enabled, out-of-scale notes stop responding to presses.
 
@@ -418,9 +434,11 @@ A browser-based HexBoard Sync app is being developed in this repository. Its
 first target is preset, tuning/layout, color-map, button-map, and synth-preset
 editing over Web MIDI SysEx. Firmware currently implements synth preset sync,
 the single user-wavetable import path, storage/list/read/write/delete for user
-geometry objects in `/layouts.dat`, and live Apply for generated EDO/equal-step
-geometry bundles. Scala/cents-table tuning objects can be saved and verified,
-but live Scala playback still needs a broader firmware tuning-system overhaul.
+geometry objects in `/layouts.dat`, foldered on-device `Tuning`, `Layout`, and
+`Scales` menus backed by saved geometry objects, and live Apply for generated
+EDO/equal-step geometry bundles. Scala/cents-table tuning objects can be saved
+and verified, but live Scala playback still needs a broader firmware
+tuning-system overhaul.
 
 The `Tunings & Layouts` tab is a browser-side musical geometry editor. It saves
 geometry bundles in browser storage and can import/export those bundles as JSON.
@@ -439,9 +457,11 @@ bundle edits on the connected device's runtime without saving them to flash.
 `Save to Computer` stores the bundle in browser storage, while `Save to
 HexBoard` writes the bundle's user tuning, layouts, scales, color map, and
 explicit button map into the selected folder on the device. The HexBoard
-library currently lists saved user-tuning entries by folder because firmware
-stores the unpacked geometry objects rather than a single editable bundle
-object. The larger HexBoard preview plus selected-key inspector stay on the
+library lists saved user-tuning entries by folder because firmware stores the
+unpacked geometry objects rather than a single editable bundle object. On the
+device, the saved tuning appears under `Tuning`, its linked layouts appear under
+`Layout` after that tuning is selected, and its linked scales appear under
+`Scales`. The larger HexBoard preview plus selected-key inspector stay on the
 right, with the selected-key inspector below the board. The encoded-object debug
 readout sits at the bottom of the editor page. The rotation control is a
 four-step device orientation preview: `0`, `90`, `180`, or `270` degrees. It is
@@ -455,7 +475,11 @@ tool, then click or drag across keys to write manual per-button color overrides
 without selecting each key in the inspector. Preview hexagons render with solid
 color fills and outlined white labels so the displayed color remains accurate
 and readable. A sun/moon button in the app header switches the web app between
-light and dark themes.
+light and dark themes. When a compatible bundle is applied to HexBoard, custom
+scale-degree and per-button colors use the selected color as the active/play
+target, but the resting hardware LEDs are capped to the same normal brightness
+level used by generated modes such as `Rainbow` so animations have brighter
+headroom.
 
 The tuning editor can create EDO tunings, equal cents-per-step tunings, and
 Scala `.scl` imports. EDO and cents-per-step tunings include editable note
@@ -479,10 +503,8 @@ leaves the field, the editor marks it red and reports the validation error.
 Button roles can be marked as note or unused in the exported web model. Applying
 a compatible bundle sends the active tuning, active layout, active scale,
 scale-degree color map, and active layout's explicit button map to the live
-runtime, then saves those objects to HexBoard storage.
-Changing tuning, layout, or scale from the OLED menu clears the web-applied
-runtime geometry, resets key to `C` for the current firmware tuning, and returns
-those controls to the normal firmware lists.
+runtime. Saving to HexBoard stores all bundle objects in `/layouts.dat` and
+rebuilds the on-device geometry menus.
 
 The synth preset editor includes preset name/folder selection, a wavetable
 folder/name selector, Drive and AHDSR sliders, FX envelope AHDSR controls, mono

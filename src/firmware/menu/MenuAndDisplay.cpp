@@ -13,6 +13,7 @@
 #include "../storage/SynthPresetStorage.h"
 #include "../storage/SynthWavetableStorage.h"
 #include "../synth/SynthAudio.h"
+#include "GeometryMenu.h"
 #include "MenuAndDisplay.h"
 #include "PlayedNotesOverlay.h"
 #include "SynthPresetMenu.h"
@@ -2295,7 +2296,7 @@ void rebootToBootloader() {
     generated, and then once any time the tuning changes.
   */
 void showOnlyValidLayoutChoices() {
-  for (byte L = 0; L < layoutCount; L++) {
+  for (size_t L = 0; L < menuItemLayout.size(); L++) {
     menuItemLayout[L]->hide((layoutOptions[L].tuning != current.tuningIndex));
   }
   sendToLog("menu: Layout choices were updated.");
@@ -2309,7 +2310,7 @@ void showOnlyValidLayoutChoices() {
     generated, and then once any time the tuning changes.
   */
 void showOnlyValidScaleChoices() {
-  for (int S = 0; S < scaleCount; S++) {
+  for (size_t S = 0; S < menuItemScales.size(); S++) {
     menuItemScales[S]->hide((scaleOptions[S].tuning != current.tuningIndex) && (scaleOptions[S].tuning != ALL_TUNINGS));
   }
   sendToLog("menu: Scale choices were updated.");
@@ -2324,7 +2325,9 @@ void showOnlyValidScaleChoices() {
   */
 void showOnlyValidKeyChoices() {
   for (int T = 0; T < TUNINGCOUNT; T++) {
-    menuItemKeys[T]->hide((T != current.tuningIndex));
+    if (menuItemKeys[T]) {
+      menuItemKeys[T]->hide((T != current.tuningIndex));
+    }
   }
   sendToLog("menu: Key choices were updated.");
 }
@@ -2546,7 +2549,6 @@ void createProfileMenuItems() {
 
 void setupTuningMenuPage() {
   menuPageMain.addMenuItem(menuGotoTuning);
-  createTuningMenuItems();
   menuPageTuning.addMenuItem(menuItemToggleDynamicJI);
   menuPageTuning.addMenuItem(menuItemSelectDynamicJIRatioTable);
   menuPageTuning.addMenuItem(menuItemToggleJI_BPM);
@@ -2557,7 +2559,6 @@ void setupTuningMenuPage() {
 
 void setupLayoutMenuPage() {
   menuPageMain.addMenuItem(menuGotoLayout);
-  createLayoutMenuItems();
   menuPageLayout.addMenuItem(mirrorLeftRightGEMItem);
   menuPageLayout.addMenuItem(mirrorUpDownGEMItem);
   menuPageLayout.addMenuItem(menuItemSelectLayoutRotation);
@@ -2566,9 +2567,7 @@ void setupLayoutMenuPage() {
 
 void setupScalesMenuPage() {
   menuPageMain.addMenuItem(menuGotoScales);
-  createKeyMenuItems();
   menuPageScales.addMenuItem(menuItemScaleLock);
-  createScaleMenuItems();
 }
 
 void setupColorsMenuPage() {
@@ -2692,6 +2691,7 @@ void setupMenu() {
   setupTuningMenuPage();
   setupLayoutMenuPage();
   setupScalesMenuPage();
+  createUserGeometryMenuItems();
   setupColorsMenuPage();
   setupSynthMenuPage();
   setupMidiMenuPage();

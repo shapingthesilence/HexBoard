@@ -670,7 +670,7 @@ export function createDefaultLayoutBundle(): LayoutBundle {
 export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   const tuningId = bundleObjectId(bundle, "tuning");
   const colorId = bundleObjectId(bundle, "colors");
-  const tuningName = bundle.tuning.name || bundle.name;
+  const tuningName = bundle.name || bundle.tuning.name;
   const folderPath = bundle.folderPath;
   const tuning = (() => {
     switch (bundle.tuning.kind) {
@@ -710,7 +710,12 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     }
   })();
 
-  const layouts = bundle.layouts.map((layout) => createVectorLayout({
+  const orderedLayouts = [...bundle.layouts].sort((left, right) => {
+    if (left.objectIdHex === bundle.activeLayoutIdHex) return -1;
+    if (right.objectIdHex === bundle.activeLayoutIdHex) return 1;
+    return 0;
+  });
+  const layouts = orderedLayouts.map((layout) => createVectorLayout({
     objectId: objectIdFromHex(layout.objectIdHex),
     name: layout.name || `${bundle.name} Layout`,
     folderPath,
@@ -729,7 +734,12 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     defaultColorMode: 0,
     degreeColors: bundle.palette.degreeColors
   });
-  const scales = bundle.scales.map((scale) => createUserScale({
+  const orderedScales = [...bundle.scales].sort((left, right) => {
+    if (left.objectIdHex === bundle.activeScaleIdHex) return -1;
+    if (right.objectIdHex === bundle.activeScaleIdHex) return 1;
+    return 0;
+  });
+  const scales = orderedScales.map((scale) => createUserScale({
     objectId: objectIdFromHex(scale.objectIdHex),
     name: scale.name || `${bundle.name} Scale`,
     folderPath,
@@ -737,7 +747,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     cycleLength: bundle.tuning.cycleLength,
     includedDegrees: normalizeScaleDegrees(scale.includedDegrees, bundle.tuning.cycleLength)
   }));
-  const explicitButtonMaps = bundle.layouts.flatMap((layout, layoutIndex) => {
+  const explicitButtonMaps = orderedLayouts.flatMap((layout, layoutIndex) => {
     const explicitRecords = layout.buttonOverrides.map((override) => ({
       buttonIndex: override.buttonIndex,
       role: roleNameToByte(override.role),

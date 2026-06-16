@@ -62,8 +62,10 @@ named/foldered `/synth_wavetables.dat`, and `/layouts.dat`. The current
 bodies. It can also apply generated EDO/equal-step `UserTuning` objects,
 isomorphic vector `UserLayout` objects, `UserScale` membership,
 `ScaleColorMap` degree colors, and format-1 `ExplicitButtonMap` note/color
-overrides to the live pitch and LED runtime. It does not yet apply Scala/cents
-tables, profile references, bundle manifests, or menu catalog integration.
+overrides to the live pitch and LED runtime. The on-device `Tuning`, `Layout`,
+and `Scales` menus are rebuilt from saved runtime-compatible geometry objects.
+It does not yet apply Scala/cents tables, profile references, or bundle
+manifests.
 
 ## Relationship To Current SysEx
 
@@ -878,7 +880,10 @@ On-device editing can expose a small color chooser per scale degree or a few
 palette templates. The web app can offer batch editing and previews.
 Current firmware live Apply loads this object into a user runtime palette. While
 that palette is active, `setLEDcolorCodes()` uses it before falling back to the
-factory color modes; per-button color overrides still take precedence.
+factory color modes; per-button color overrides still take precedence. The
+stored HSV value remains the active/play color target. Firmware caps only the
+resting hardware LED value at `VALUE_NORMAL` before applying `Rest Bright`, so
+custom colors keep the same animation headroom as generated color modes.
 
 ## Explicit Button Map Object
 
@@ -1181,10 +1186,13 @@ write the individual objects after the web app unpacks a bundle.
    overwrite, delete, or apply the active EDO/equal-step tuning, active vector
    layout, active scale, color map, and matching explicit button map by compact
    preset-sync handle.
-7. Future firmware work still needs to refresh the menu catalog, hide
-   generated-layout controls whenever the active layout is manual, formalize
-   profile references, and apply bundle switches only after active notes are
-   clear or after an explicitly documented panic cleanup.
+7. The device rebuilds its foldered `Tuning`, `Layout`, and `Scales` menus after
+   geometry saves/deletes. `UserTuning` objects are the loadable bundle anchors;
+   linked `UserLayout` and `UserScale` objects appear after that tuning is
+   selected. Future firmware work still needs to hide generated-layout controls
+   whenever the active layout is manual, formalize profile references, and apply
+   bundle switches only after active notes are clear or after an explicitly
+   documented panic cleanup.
 
 For web-editor live preview, the app sends only the active compatible runtime
 objects with `ApplyToRuntime` and without `SaveToFlash`. `Save to HexBoard`

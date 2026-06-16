@@ -2,6 +2,7 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
+#include "../menu/GeometryMenu.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/SynthPresetMenu.h"
 #include "../menu/SynthWavetableMenu.h"
@@ -753,6 +754,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
         geometryObjects[slotIndex] = parsedObject;
       }
       flashSafeSaveGeometryObjects();
+      requestUserGeometryMenuRebuild();
     }
   } else {
     presetSyncWriteTransfer = PresetSyncWriteTransfer{};
@@ -818,6 +820,7 @@ void presetSyncHandleDelete(uint16_t transactionId, const uint8_t* payload, size
     if (!(deleteFlags & 0x01)) {
       geometryObjects.erase(geometryObjects.begin() + handle);
       flashSafeSaveGeometryObjects();
+      requestUserGeometryMenuRebuild();
     }
   } else {
     if (handle >= synthWavetables.size() || !synthWavetables[handle].valid) {

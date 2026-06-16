@@ -29,6 +29,7 @@ constexpr uint16_t BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_MS = 35;
 constexpr uint16_t BOOT_LED_CHECK_FIRST_BOOT_WHITE_HOLD_MS = 2000;
 constexpr uint16_t BOOT_LED_CHECK_WAVE_MS = 30;
 constexpr uint16_t BOOT_LED_CHECK_NORMAL_FADE_MS = 25;
+constexpr byte USER_GEOMETRY_REST_COLOR_VALUE_MAX = VALUE_NORMAL;
 bool settingsFileMissingOnBoot = false;
 
 byte scaleLedChannel(byte channel, uint16_t scale65535) {
@@ -482,12 +483,14 @@ void setLEDcolorCodes() {
   for (byte i = 0; i < LED_COUNT; i++) {
     if (!(h[i].isCmd)) {
       colorDef setColor = { HUE_NONE, SAT_BW, VALUE_BLACK };
+      bool userGeometryColorApplied = false;
       byte paletteIndex = positiveMod(h[i].stepsFromC, cycleLength);
       if (paletteBeginsAtKeyCenter) {
         paletteIndex = current.keyDegree(paletteIndex);
       }
       if (userGeometryRuntimeActive && userGeometryRuntimePaletteActive) {
         setColor = userGeometryRuntimePalette.getColor(paletteIndex);
+        userGeometryColorApplied = true;
       } else if (userGeometryRuntimeActive && colorMode == TIERED_COLOR_MODE) {
         setColor = { 360 * ((float)paletteIndex / (float)current.tuning().cycleLength), SAT_VIVID, VALUE_NORMAL };
       } else {
@@ -742,8 +745,12 @@ void setLEDcolorCodes() {
       }
       if (userGeometryRuntimeActive && userGeometryRuntimeButtonColorActive[i]) {
         setColor = userGeometryRuntimeButtonColor[i];
+        userGeometryColorApplied = true;
       }
       colorDef restColor = setColor;
+      if (userGeometryColorApplied && restColor.val > USER_GEOMETRY_REST_COLOR_VALUE_MAX) {
+        restColor.val = USER_GEOMETRY_REST_COLOR_VALUE_MAX;
+      }
       restColor.val = applyLEDLevel(restColor.val, ledRestBrightness);
       h[i].LEDcodeRest = getLEDcode(restColor);
       colorDef playColor = setColor.tint();
