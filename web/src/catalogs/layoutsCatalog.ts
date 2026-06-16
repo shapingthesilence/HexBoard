@@ -83,6 +83,7 @@ export const ExplicitButtonMapTlv = {
 export interface GeneratedEdoTuningInput {
   objectId: Uint8Array;
   name: string;
+  folderPath?: string;
   edoDivisions: number;
   periodMilliCents?: number;
   referenceMidiNote?: number;
@@ -93,6 +94,7 @@ export interface GeneratedEdoTuningInput {
 export interface EqualStepTuningInput {
   objectId: Uint8Array;
   name: string;
+  folderPath?: string;
   stepMilliCents: number;
   periodMilliCents?: number;
   cycleLength: number;
@@ -104,6 +106,7 @@ export interface EqualStepTuningInput {
 export interface CentsTableTuningInput {
   objectId: Uint8Array;
   name: string;
+  folderPath?: string;
   cents: number[];
   periodMilliCents?: number;
   referenceMidiNote?: number;
@@ -113,6 +116,7 @@ export interface CentsTableTuningInput {
 export interface VectorLayoutInput {
   objectId: Uint8Array;
   name: string;
+  folderPath?: string;
   tuningRef: ObjectReferenceInput;
   centerButton: number;
   acrossSteps: number;
@@ -130,6 +134,7 @@ export interface ScaleDegreeColor {
 export interface ScaleColorMapInput {
   objectId: Uint8Array;
   name: string;
+  folderPath?: string;
   tuningRef?: ObjectReferenceInput;
   cycleLength: number;
   defaultColorMode: number;
@@ -139,6 +144,7 @@ export interface ScaleColorMapInput {
 export interface UserScaleInput {
   objectId: Uint8Array;
   name: string;
+  folderPath?: string;
   tuningRef?: ObjectReferenceInput;
   cycleLength: number;
   rootDegree?: number;
@@ -221,6 +227,7 @@ export type LayoutBundleTuning =
 export interface LayoutBundle {
   objectIdHex: string;
   name: string;
+  folderPath: string;
   tuning: LayoutBundleTuning;
   palette: LayoutBundlePalette;
   layouts: LayoutBundleLayout[];
@@ -247,6 +254,7 @@ export interface ResolvedLayoutBundleColor {
 export interface ExplicitButtonMapInput {
   objectId: Uint8Array;
   name: string;
+  folderPath?: string;
   tuningRef: ObjectReferenceInput;
   layoutRef?: ObjectReferenceInput;
   records: ExplicitButtonRecord[];
@@ -295,6 +303,7 @@ export function createGeneratedEdoTuning(input: GeneratedEdoTuningInput): Encode
     objectType: ObjectType.UserTuning,
     objectId: input.objectId,
     name: input.name,
+    folderPath: input.folderPath,
     records: [
       tlvU8(TuningTlv.TuningKind, UserTuningKind.Edo),
       tlvU16LE(TuningTlv.EdoDivisions, input.edoDivisions),
@@ -312,6 +321,7 @@ export function createEqualStepTuning(input: EqualStepTuningInput): EncodedCatal
     objectType: ObjectType.UserTuning,
     objectId: input.objectId,
     name: input.name,
+    folderPath: input.folderPath,
     records: [
       tlvU8(TuningTlv.TuningKind, UserTuningKind.EqualStep),
       tlvU16LE(TuningTlv.EdoDivisions, input.cycleLength),
@@ -332,6 +342,7 @@ export function createCentsTableTuning(input: CentsTableTuningInput): EncodedCat
     objectType: ObjectType.UserTuning,
     objectId: input.objectId,
     name: input.name,
+    folderPath: input.folderPath,
     records: [
       tlvU8(TuningTlv.TuningKind, UserTuningKind.CentsList),
       tlvU16LE(TuningTlv.EdoDivisions, input.cents.length),
@@ -357,6 +368,7 @@ export function createVectorLayout(input: VectorLayoutInput): EncodedCatalogObje
     objectType: ObjectType.UserLayout,
     objectId: input.objectId,
     name: input.name,
+    folderPath: input.folderPath,
     records: [
       tlvU8(LayoutTlv.LayoutKind, 1),
       tlv(LayoutTlv.TuningRef, encodeObjectReference(input.tuningRef)),
@@ -392,6 +404,7 @@ export function createScaleColorMap(input: ScaleColorMapInput): EncodedCatalogOb
     objectType: ObjectType.ScaleColorMap,
     objectId: input.objectId,
     name: input.name,
+    folderPath: input.folderPath,
     records
   });
 }
@@ -418,6 +431,7 @@ export function createUserScale(input: UserScaleInput): EncodedCatalogObject {
     objectType: ObjectType.UserScale,
     objectId: input.objectId,
     name: input.name,
+    folderPath: input.folderPath,
     records
   });
 }
@@ -450,6 +464,7 @@ export function createExplicitButtonMap(input: ExplicitButtonMapInput): EncodedC
     objectType: ObjectType.ExplicitButtonMap,
     objectId: input.objectId,
     name: input.name,
+    folderPath: input.folderPath,
     records
   });
 }
@@ -631,6 +646,7 @@ export function createDefaultLayoutBundle(): LayoutBundle {
   return {
     objectIdHex: objectIdToHex(objectId),
     name: "19 EDO Wicki",
+    folderPath: "/",
     tuning: {
       kind: "edo",
       name: "19 EDO",
@@ -655,12 +671,14 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   const tuningId = bundleObjectId(bundle, "tuning");
   const colorId = bundleObjectId(bundle, "colors");
   const tuningName = bundle.tuning.name || bundle.name;
+  const folderPath = bundle.folderPath;
   const tuning = (() => {
     switch (bundle.tuning.kind) {
       case "edo":
         return createGeneratedEdoTuning({
           objectId: tuningId,
           name: tuningName,
+          folderPath,
           edoDivisions: bundle.tuning.edoDivisions,
           periodMilliCents: centsToMilliCents(bundle.tuning.periodCents),
           referenceMidiNote: bundle.tuning.referenceMidiNote,
@@ -671,6 +689,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
         return createEqualStepTuning({
           objectId: tuningId,
           name: tuningName,
+          folderPath,
           stepMilliCents: centsToMilliCents(bundle.tuning.stepCents),
           periodMilliCents: centsToMilliCents(equalStepPeriodCents(bundle.tuning)),
           cycleLength: bundle.tuning.cycleLength,
@@ -682,6 +701,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
         return createCentsTableTuning({
           objectId: tuningId,
           name: tuningName,
+          folderPath,
           cents: bundle.tuning.cents,
           periodMilliCents: centsToMilliCents(bundle.tuning.periodCents),
           referenceMidiNote: bundle.tuning.referenceMidiNote,
@@ -693,6 +713,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   const layouts = bundle.layouts.map((layout) => createVectorLayout({
     objectId: objectIdFromHex(layout.objectIdHex),
     name: layout.name || `${bundle.name} Layout`,
+    folderPath,
     tuningRef: tuningReference(tuning),
     centerButton: layout.centerButton,
     acrossSteps: layout.acrossSteps,
@@ -702,6 +723,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   const scaleColorMap = createScaleColorMap({
     objectId: colorId,
     name: GenericScaleColorMapName,
+    folderPath,
     tuningRef: tuningReference(tuning),
     cycleLength: bundle.tuning.cycleLength,
     defaultColorMode: 0,
@@ -710,6 +732,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   const scales = bundle.scales.map((scale) => createUserScale({
     objectId: objectIdFromHex(scale.objectIdHex),
     name: scale.name || `${bundle.name} Scale`,
+    folderPath,
     tuningRef: tuningReference(tuning),
     cycleLength: bundle.tuning.cycleLength,
     includedDegrees: normalizeScaleDegrees(scale.includedDegrees, bundle.tuning.cycleLength)
@@ -731,6 +754,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     return [createExplicitButtonMap({
       objectId: deterministicObjectId(`${bundle.objectIdHex}:button-map:${layout.objectIdHex}`),
       name: `${layout.name || bundle.name} Button Map`,
+      folderPath,
       tuningRef: tuningReference(tuning),
       layoutRef: layoutReference(layouts[layoutIndex]),
       records: explicitRecords
@@ -923,6 +947,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
   return {
     objectIdHex: source.objectIdHex,
     name: source.name,
+    folderPath: stringOr(source.folderPath, "/"),
     tuning,
     palette: {
       degreeColors: normalizeScaleDegreeColors(

@@ -34,15 +34,19 @@ import { MockMidiTransport } from "../midi/mockTransport.ts";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
 import { crc32 } from "../protocol/crc32.ts";
+import { ObjectType, type ObjectListRecord } from "../protocol/index.ts";
 import { formatByteLength } from "./format.ts";
 
 const layoutBundleStorageKey = "hexboard.layoutBundles.v1";
 const previewHexHalfStepX = 24;
 const previewHexRowStepY = 42;
 const previewHexInset = 24;
+const rootFolderPath = "/";
+const defaultGeometryFolders = [rootFolderPath, "Tunings", "Layouts"];
 
 type LayoutGuideFocus = "center" | "across" | "upRight";
 type GeometryEditorTab = "tuning" | "layouts" | "scales";
+type GeometryLibrarySpace = "computer" | "hexboard";
 
 const layoutAxisDirectionLabels = [
   { across: "Right", upRight: "Up-right" },
@@ -73,6 +77,15 @@ interface TuningLayoutEditorProps {
   transport: MidiTransport;
 }
 
+interface HexBoardGeometryBundleEntry {
+  objectIdHex: string;
+  deviceHandle: number;
+  name: string;
+  folderPath: string;
+  schemaMajor: number;
+  schemaMinor: number;
+}
+
 function createUntitledBundle(): LayoutBundle {
   const base = createDefaultLayoutBundle();
   const objectIdHex = objectIdToHex(deterministicObjectId(`layout-bundle:${Date.now()}`));
@@ -82,6 +95,7 @@ function createUntitledBundle(): LayoutBundle {
     ...base,
     objectIdHex,
     name: "Untitled Geometry",
+    folderPath: rootFolderPath,
     tuning: {
       ...base.tuning,
       name: "19 EDO"
@@ -244,6 +258,63 @@ function downloadTextFile(fileName: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
+function normalizeDisplayFolderPath(folderPath: string): string {
+  return folderPath.trim() || rootFolderPath;
+}
+
+function folderLabel(folderPath: string): string {
+  return normalizeDisplayFolderPath(folderPath) === rootFolderPath ? "Root" : folderPath;
+}
+
+function encodeDeviceFolderPath(folderPath: string): string {
+  const normalized = normalizeDisplayFolderPath(folderPath);
+  if (normalized === rootFolderPath) {
+    return rootFolderPath;
+  }
+  return normalized
+    .replace(/%/g, "%25")
+    .replace(/\//g, "%2F")
+    .replace(/\\/g, "%5C");
+}
+
+function decodeDeviceFolderPath(folderPath: string): string {
+  const normalized = normalizeDisplayFolderPath(folderPath);
+  if (normalized === rootFolderPath) {
+    return rootFolderPath;
+  }
+  return normalized.replace(/%(25|2f|2F|5c|5C)/g, (match) => {
+    switch (match.toUpperCase()) {
+      case "%25":
+        return "%";
+      case "%2F":
+        return "/";
+      case "%5C":
+        return "\\";
+      default:
+        return match;
+    }
+  });
+}
+
+function geometryBundleSortKey(item: Pick<LayoutBundle, "folderPath" | "name">): string {
+  return `${normalizeDisplayFolderPath(item.folderPath).toLocaleLowerCase()}\u0000${item.name.toLocaleLowerCase()}`;
+}
+
+function compareGeometryBundles(left: LayoutBundle, right: LayoutBundle): number {
+  return geometryBundleSortKey(left).localeCompare(geometryBundleSortKey(right));
+}
+
+function hexBoardGeometryEntryFromRecord(record: ObjectListRecord): HexBoardGeometryBundleEntry {
+  return {
+    objectIdHex: objectIdToHex(record.objectId),
+    deviceHandle: record.handle,
+    name: record.name || "User Tuning",
+    folderPath: decodeDeviceFolderPath(record.folderPath || rootFolderPath),
+    schemaMajor: record.schemaMajor,
+    schemaMinor: record.schemaMinor
+  };
+}
+
 function upsertOverride(
   overrides: LayoutBundleButtonOverride[],
   buttonIndex: number,
@@ -293,6 +364,7 @@ function noteButtonIndexOrFallback(buttonIndex: number, fallback: number): numbe
 function sanitizeEditorBundle(bundle: LayoutBundle): LayoutBundle {
   return {
     ...bundle,
+    folderPath: normalizeDisplayFolderPath(bundle.folderPath),
     layouts: bundle.layouts.map((layout) => ({
       ...layout,
       centerButton: noteButtonIndexOrFallback(layout.centerButton, 65),
@@ -303,6 +375,33 @@ function sanitizeEditorBundle(bundle: LayoutBundle): LayoutBundle {
           role: override.role === "unused" ? "unused" : "note"
         }))
     }))
+  };
+}
+
+function bundleWithGeneratedOverrideSteps(bundle: LayoutBundle): LayoutBundle {
+  return {
+    ...bundle,
+    layouts: bundle.layouts.map((layout) => ({
+      ...layout,
+      buttonOverrides: layout.buttonOverrides.map((override) => {
+        if (override.stepsFromC !== undefined) {
+          return override;
+        }
+        const key = hexBoardGeometry.find((candidate) => candidate.index === override.buttonIndex);
+        return {
+          ...override,
+          stepsFromC: key ? Math.round(computeVectorLayoutSteps(key, layout)) : 0
+        };
+      })
+    }))
+  };
+}
+
+function bundleForDeviceEncoding(bundle: LayoutBundle): LayoutBundle {
+  const sanitized = bundleWithGeneratedOverrideSteps(sanitizeEditorBundle(bundle));
+  return {
+    ...sanitized,
+    folderPath: encodeDeviceFolderPath(sanitized.folderPath)
   };
 }
 
@@ -378,7 +477,14 @@ function objectReferenceIdHex(value: Uint8Array): string | null {
 
 export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   const [bundles, setBundles] = useState<LayoutBundle[]>(() => loadStoredBundles());
+  const [hexboardBundles, setHexboardBundles] = useState<HexBoardGeometryBundleEntry[]>([]);
   const [activeBundleId, setActiveBundleId] = useState("");
+  const [customFolders, setCustomFolders] = useState(defaultGeometryFolders);
+  const [newFolder, setNewFolder] = useState("");
+  const [folderFilters, setFolderFilters] = useState<Record<GeometryLibrarySpace, string | null>>({
+    computer: null,
+    hexboard: null
+  });
   const [selectedButton, setSelectedButton] = useState(65);
   const [layoutGuideFocus, setLayoutGuideFocus] = useState<LayoutGuideFocus | null>(null);
   const [activeEditorTab, setActiveEditorTab] = useState<GeometryEditorTab>("tuning");
@@ -405,6 +511,14 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     activeBundle.scales[0] ??
     createAllNotesScale(tuningCycleLength(activeBundle.tuning));
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
+  const allFolders = useMemo(() => Array.from(new Set([
+    rootFolderPath,
+    ...defaultGeometryFolders,
+    ...customFolders,
+    ...bundles.map((bundle) => normalizeDisplayFolderPath(bundle.folderPath)),
+    ...hexboardBundles.map((bundle) => normalizeDisplayFolderPath(bundle.folderPath)),
+    normalizeDisplayFolderPath(activeBundle.folderPath)
+  ])).sort((left, right) => folderLabel(left).localeCompare(folderLabel(right))), [activeBundle.folderPath, bundles, customFolders, hexboardBundles]);
 
   useEffect(() => {
     setIncludedDegreesDraft(formatIntegerList(activeScale.includedDegrees));
@@ -422,7 +536,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   }, [activeBundle.tuning]);
 
   function setBundlesAndPersist(nextBundles: LayoutBundle[]) {
-    const sanitized = nextBundles.map(sanitizeEditorBundle);
+    const sanitized = nextBundles.map(sanitizeEditorBundle).sort(compareGeometryBundles);
     setBundles(sanitized);
     persistBundles(sanitized);
   }
@@ -448,15 +562,69 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
       setStatus("Keep at least one geometry bundle in the library");
       return;
     }
-    const nextBundles = bundles.filter((bundle) => bundle.objectIdHex !== activeBundle.objectIdHex);
+    deleteBundle(activeBundle);
+  }
+
+  function deleteBundle(bundleToDelete: LayoutBundle) {
+    if (bundles.length <= 1) {
+      setStatus("Keep at least one geometry bundle in the library");
+      return;
+    }
+    const nextBundles = bundles.filter((bundle) => bundle.objectIdHex !== bundleToDelete.objectIdHex);
     setBundlesAndPersist(nextBundles);
     setActiveBundleId(nextBundles[0]?.objectIdHex ?? "");
     setSelectedButton(nextBundles[0]?.layouts[0]?.centerButton ?? 65);
-    setStatus(`Deleted ${activeBundle.name}`);
+    setStatus(`Deleted ${bundleToDelete.name}`);
+  }
+
+  function openBundle(bundle: LayoutBundle) {
+    setActiveBundleId(bundle.objectIdHex);
+    setSelectedButton(noteButtonIndexOrFallback(
+      bundle.layouts.find((layout) => layout.objectIdHex === bundle.activeLayoutIdHex)?.centerButton ?? bundle.layouts[0]?.centerButton ?? 65,
+      65
+    ));
+    setStatus(`Opened ${bundle.name}`);
+  }
+
+  function downloadBundleFile(bundle: LayoutBundle) {
+    const sanitized = sanitizeEditorBundle(bundle);
+    downloadTextFile(`${sanitized.name}.hexboard-layout.json`, serializeLayoutBundle(sanitized));
   }
 
   function updateBundleName(name: string) {
     updateActiveBundle((bundle) => ({ ...bundle, name }));
+  }
+
+  function updateBundleFolder(folderPath: string) {
+    const normalized = normalizeDisplayFolderPath(folderPath);
+    setCustomFolders((current) => Array.from(new Set([...current, normalized])).sort());
+    updateActiveBundle((bundle) => ({ ...bundle, folderPath: normalized }));
+  }
+
+  function addFolder() {
+    const folder = normalizeDisplayFolderPath(newFolder);
+    if (folder === rootFolderPath && newFolder.trim() === "") {
+      setStatus("Enter a folder name first");
+      return;
+    }
+    setCustomFolders((current) => Array.from(new Set([...current, folder])).sort());
+    updateBundleFolder(folder);
+    setNewFolder("");
+    setStatus(`Added folder ${folderLabel(folder)}`);
+  }
+
+  function toggleFolderFilter(space: GeometryLibrarySpace, folderPath: string) {
+    setFolderFilters((current) => ({
+      ...current,
+      [space]: current[space] === folderPath ? null : folderPath
+    }));
+  }
+
+  function saveActiveBundleToComputer(prefix = "Saved") {
+    const normalized = sanitizeEditorBundle(activeBundle);
+    setBundlesAndPersist(bundles.map((bundle) => bundle.objectIdHex === normalized.objectIdHex ? normalized : bundle));
+    setCustomFolders((current) => Array.from(new Set([...current, normalized.folderPath])).sort());
+    setStatus(`${prefix} ${normalized.name} in Computer Library`);
   }
 
   function updateActiveLayout(updater: (layout: LayoutBundleLayout) => LayoutBundleLayout) {
@@ -942,21 +1110,8 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     });
   }
   const encodedBundle = useMemo(() => {
-    const stepsByButton = new Map(previewKeys.map((item) => [item.key.index, item.stepsFromC]));
-    const sanitizedBundle = sanitizeEditorBundle(activeBundle);
-    return encodeLayoutBundle({
-      ...sanitizedBundle,
-      layouts: sanitizedBundle.layouts.map((layout) => layout.objectIdHex === activeLayout.objectIdHex
-        ? {
-            ...layout,
-            buttonOverrides: layout.buttonOverrides.map((override) => ({
-              ...override,
-              stepsFromC: override.stepsFromC ?? stepsByButton.get(override.buttonIndex)
-            }))
-          }
-        : layout)
-    });
-  }, [activeBundle, activeLayout.objectIdHex, previewKeys]);
+    return encodeLayoutBundle(bundleForDeviceEncoding(activeBundle));
+  }, [activeBundle]);
   const activeApplyObjects = useMemo(() => {
     const activeLayoutObject = encodedBundle.layouts.find((object) => objectIdToHex(object.objectId) === activeLayout.objectIdHex);
     const activeScaleObject = encodedBundle.scales.find((object) => objectIdToHex(object.objectId) === activeScale.objectIdHex);
@@ -984,24 +1139,58 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     return records.find((record) => objectIdToHex(record.objectId) === objectIdHex);
   }
 
-  async function saveActiveBundleToHexBoard() {
+  async function refreshHexBoardGeometryLibrary(successStatus = "Refreshed HexBoard Geometry Library") {
     if (transport instanceof MockMidiTransport) {
-      setStatus("Connect HexBoard before saving geometry objects.");
+      setStatus("Connect HexBoard before refreshing geometry library.");
       return;
     }
     setSyncBusy(true);
     try {
-      for (let index = 0; index < encodedBundle.objects.length; index += 1) {
-        const object = encodedBundle.objects[index];
-        setStatus(`Saving ${object.name} (${index + 1}/${encodedBundle.objects.length})`);
+      setStatus("Requesting HexBoard Geometry Library...");
+      const records = await client.listGeometryObjects(ObjectType.UserTuning, 8);
+      const entries = records
+        .map(hexBoardGeometryEntryFromRecord)
+        .sort((left, right) => `${left.folderPath}/${left.name}`.localeCompare(`${right.folderPath}/${right.name}`));
+      setHexboardBundles(entries);
+      setCustomFolders((current) => Array.from(new Set([...current, ...entries.map((entry) => entry.folderPath)])).sort());
+      setStatus(successStatus);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to refresh HexBoard Geometry Library");
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function saveBundleToHexBoard(bundle: LayoutBundle, prefix = "Saved") {
+    if (transport instanceof MockMidiTransport) {
+      setStatus("Connect HexBoard before saving geometry objects.");
+      return;
+    }
+    const sanitizedBundle = sanitizeEditorBundle(bundle);
+    if (sanitizedBundle.objectIdHex !== activeBundle.objectIdHex) {
+      setActiveBundleId(sanitizedBundle.objectIdHex);
+    }
+    const encoded = sanitizedBundle.objectIdHex === activeBundle.objectIdHex
+      ? encodedBundle
+      : encodeLayoutBundle(bundleForDeviceEncoding(sanitizedBundle));
+    setSyncBusy(true);
+    try {
+      for (let index = 0; index < encoded.objects.length; index += 1) {
+        const object = encoded.objects[index];
+        setStatus(`Saving ${object.name} (${index + 1}/${encoded.objects.length})`);
         await client.sendGeometryObjectSaveConfirmed(object);
       }
-      setStatus(`Saved ${encodedBundle.objects.length} geometry objects to HexBoard`);
+      setCustomFolders((current) => Array.from(new Set([...current, sanitizedBundle.folderPath])).sort());
+      await refreshHexBoardGeometryLibrary(`${prefix} ${sanitizedBundle.name} to HexBoard in ${folderLabel(sanitizedBundle.folderPath)}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to save geometry objects");
     } finally {
       setSyncBusy(false);
     }
+  }
+
+  async function saveActiveBundleToHexBoard() {
+    await saveBundleToHexBoard(activeBundle);
   }
 
   async function applyActiveBundleToHexBoard() {
@@ -1064,12 +1253,29 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
         </div>
         <div className="row">
           <button type="button" onClick={addNewBundle}>New</button>
-          <button type="button" onClick={() => downloadTextFile(`${activeBundle.name}.hexboard-layout.json`, serializeLayoutBundle(sanitizeEditorBundle(activeBundle)))}>
+          <button type="button" onClick={() => downloadBundleFile(activeBundle)}>
             Export
           </button>
           <button type="button" onClick={() => bundleInputRef.current?.click()}>Import</button>
+          <button disabled={syncBusy} type="button" onClick={() => void refreshHexBoardGeometryLibrary()}>
+            Refresh HexBoard
+          </button>
         </div>
         <div className="row">
+          <input
+            aria-label="New geometry folder"
+            placeholder="New folder"
+            value={newFolder}
+            onChange={(event) => setNewFolder(event.target.value)}
+          />
+          <button type="button" onClick={addFolder}>
+            Add
+          </button>
+        </div>
+        <div className="row">
+          <button type="button" onClick={() => saveActiveBundleToComputer()}>
+            Save to Computer
+          </button>
           <button className="primary" disabled={syncBusy} type="button" onClick={() => void saveActiveBundleToHexBoard()}>
             {syncBusy ? "Syncing..." : "Save to HexBoard"}
           </button>
@@ -1082,20 +1288,43 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
         </div>
         <input ref={bundleInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" onChange={(event) => void importBundleFile(event)} />
         <input ref={scalaInputRef} className="hiddenFileInput" type="file" accept=".scl,text/plain" onChange={(event) => void importScalaFile(event)} />
-        <ul className="list">
-          {bundles.map((bundle) => (
-            <li className={bundle.objectIdHex === activeBundle.objectIdHex ? "listItem activeListItem" : "listItem"} key={bundle.objectIdHex}>
-              <button type="button" className="textButton" onClick={() => setActiveBundleId(bundle.objectIdHex)}>
-                <strong>{bundle.name}</strong>
-                <span>{bundle.tuning.name}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+
+        <div className="librarySpaces">
+          <GeometryLibrarySpacePanel
+            title="Computer Library"
+            subtitle="Browser-saved geometry bundles"
+            space="computer"
+            bundles={bundles}
+            folders={allFolders}
+            selectedFolder={folderFilters.computer}
+            activeBundleId={activeBundle.objectIdHex}
+            onFolderSelect={toggleFolderFilter}
+            onOpen={openBundle}
+            onUpload={(bundle) => void saveBundleToHexBoard(bundle)}
+            onExport={downloadBundleFile}
+            onErase={deleteBundle}
+          />
+          <HexBoardGeometryLibraryPanel
+            entries={hexboardBundles}
+            folders={allFolders}
+            selectedFolder={folderFilters.hexboard}
+            onFolderSelect={toggleFolderFilter}
+          />
+        </div>
 
         <label className="field">
           <span>Bundle name</span>
           <input value={activeBundle.name} onChange={(event) => updateBundleName(event.target.value)} />
+        </label>
+        <label className="field">
+          <span>Folder</span>
+          <select value={normalizeDisplayFolderPath(activeBundle.folderPath)} onChange={(event) => updateBundleFolder(event.target.value)}>
+            {allFolders.map((folder) => (
+              <option key={folder} value={folder}>
+                {folderLabel(folder)}
+              </option>
+            ))}
+          </select>
         </label>
         <button className="warning" type="button" onClick={deleteActiveBundle}>Delete Bundle</button>
 
@@ -1439,6 +1668,158 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
         <h2>Object Debug</h2>
         <pre className="dataPreview">{encodedPreview}</pre>
       </section>
+    </section>
+  );
+}
+
+interface GeometryLibrarySpacePanelProps {
+  title: string;
+  subtitle: string;
+  space: GeometryLibrarySpace;
+  bundles: LayoutBundle[];
+  folders: string[];
+  selectedFolder: string | null;
+  activeBundleId: string;
+  onFolderSelect: (space: GeometryLibrarySpace, folderPath: string) => void;
+  onOpen: (bundle: LayoutBundle) => void;
+  onUpload: (bundle: LayoutBundle) => void;
+  onExport: (bundle: LayoutBundle) => void;
+  onErase: (bundle: LayoutBundle) => void;
+}
+
+function GeometryLibrarySpacePanel({
+  title,
+  subtitle,
+  space,
+  bundles,
+  folders,
+  selectedFolder,
+  activeBundleId,
+  onFolderSelect,
+  onOpen,
+  onUpload,
+  onExport,
+  onErase
+}: GeometryLibrarySpacePanelProps) {
+  const visibleBundles = selectedFolder
+    ? bundles.filter((bundle) => normalizeDisplayFolderPath(bundle.folderPath) === selectedFolder)
+    : bundles;
+
+  return (
+    <section className="librarySpace">
+      <div className="librarySpaceHeader">
+        <div>
+          <h3>{title}</h3>
+          <span className="muted">{subtitle}</span>
+        </div>
+        <span className="countBadge">{visibleBundles.length}</span>
+      </div>
+
+      <div className="folderTargets">
+        {folders.map((folder) => (
+          <button
+            aria-pressed={folder === selectedFolder}
+            className={folder === selectedFolder ? "folderTarget active" : "folderTarget"}
+            key={`${space}-${folder}`}
+            onClick={() => onFolderSelect(space, folder)}
+            type="button"
+          >
+            <span>{folderLabel(folder)}</span>
+            <span>{bundles.filter((bundle) => normalizeDisplayFolderPath(bundle.folderPath) === folder).length}</span>
+          </button>
+        ))}
+      </div>
+
+      <ul className="list">
+        {visibleBundles.length === 0 ? (
+          <li className="emptyListItem">{selectedFolder ? `No bundles in ${folderLabel(selectedFolder)}` : "No bundles"}</li>
+        ) : (
+          visibleBundles.map((bundle) => (
+            <li className={bundle.objectIdHex === activeBundleId ? "listItem presetListItem activeListItem" : "listItem presetListItem"} key={bundle.objectIdHex}>
+              <div className="presetMeta">
+                <strong>{bundle.name}</strong>
+                <span>{folderLabel(bundle.folderPath)}</span>
+                <span>{bundle.tuning.name}</span>
+              </div>
+              <div className="presetActions">
+                <button type="button" onClick={() => onOpen(bundle)}>
+                  Open
+                </button>
+                <button type="button" onClick={() => onUpload(bundle)}>
+                  Upload
+                </button>
+                <button type="button" onClick={() => onExport(bundle)}>
+                  Export
+                </button>
+                <button className="warning" type="button" onClick={() => onErase(bundle)}>
+                  Erase
+                </button>
+              </div>
+            </li>
+          ))
+        )}
+      </ul>
+    </section>
+  );
+}
+
+interface HexBoardGeometryLibraryPanelProps {
+  entries: HexBoardGeometryBundleEntry[];
+  folders: string[];
+  selectedFolder: string | null;
+  onFolderSelect: (space: GeometryLibrarySpace, folderPath: string) => void;
+}
+
+function HexBoardGeometryLibraryPanel({
+  entries,
+  folders,
+  selectedFolder,
+  onFolderSelect
+}: HexBoardGeometryLibraryPanelProps) {
+  const visibleEntries = selectedFolder
+    ? entries.filter((entry) => normalizeDisplayFolderPath(entry.folderPath) === selectedFolder)
+    : entries;
+
+  return (
+    <section className="librarySpace">
+      <div className="librarySpaceHeader">
+        <div>
+          <h3>HexBoard Library</h3>
+          <span className="muted">Saved user tuning entries by folder</span>
+        </div>
+        <span className="countBadge">{visibleEntries.length}</span>
+      </div>
+
+      <div className="folderTargets">
+        {folders.map((folder) => (
+          <button
+            aria-pressed={folder === selectedFolder}
+            className={folder === selectedFolder ? "folderTarget active" : "folderTarget"}
+            key={`hexboard-${folder}`}
+            onClick={() => onFolderSelect("hexboard", folder)}
+            type="button"
+          >
+            <span>{folderLabel(folder)}</span>
+            <span>{entries.filter((entry) => normalizeDisplayFolderPath(entry.folderPath) === folder).length}</span>
+          </button>
+        ))}
+      </div>
+
+      <ul className="list">
+        {visibleEntries.length === 0 ? (
+          <li className="emptyListItem">{selectedFolder ? `No saved tunings in ${folderLabel(selectedFolder)}` : "Refresh HexBoard to list saved geometry"}</li>
+        ) : (
+          visibleEntries.map((entry) => (
+            <li className="listItem presetListItem" key={`${entry.deviceHandle}-${entry.objectIdHex}`}>
+              <div className="presetMeta">
+                <strong>{entry.name}</strong>
+                <span>{folderLabel(entry.folderPath)}</span>
+                <span>{entry.objectIdHex.slice(0, 8).toUpperCase()}</span>
+              </div>
+            </li>
+          ))
+        )}
+      </ul>
     </section>
   );
 }

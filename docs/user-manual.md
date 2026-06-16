@@ -429,11 +429,17 @@ more layouts, and one or more scales. The custom palette is applied to the live
 runtime when a compatible bundle is sent to HexBoard, and it uses a generic
 color-mode name rather than a separate editable palette field. The active
 layout still starts from an across/up-right vector, and the center key can be
-chosen from the visual board or typed by button index. The editor places
-bundle tools in a compact left sidebar with `Tuning`, `Layouts`, and `Scales`
-subtabs, and keeps the larger HexBoard preview plus selected-key inspector on
-the right, with the selected-key inspector below the board. The encoded-object
-debug readout sits at the bottom of the editor page. The rotation control is a
+chosen from the visual board or typed by button index. The editor places a
+foldered geometry library in the left sidebar with `Computer Library` and
+`HexBoard Library` sections, plus `Tuning`, `Layouts`, and `Scales` subtabs for
+the open bundle. `Save to Computer` stores the bundle in browser storage, while
+`Save to HexBoard` writes the bundle's user tuning, layouts, scales, color map,
+and explicit button map into the selected folder on the device. The HexBoard
+library currently lists saved user-tuning entries by folder because firmware
+stores the unpacked geometry objects rather than a single editable bundle
+object. The larger HexBoard preview plus selected-key inspector stay on the
+right, with the selected-key inspector below the board. The encoded-object debug
+readout sits at the bottom of the editor page. The rotation control is a
 four-step device orientation preview: `0`, `90`, `180`, or `270` degrees. It is
 intended to line up with the firmware `Device Rot` setting, not to rotate the
 musical axes around individual hexagons. Focusing the center, across, or

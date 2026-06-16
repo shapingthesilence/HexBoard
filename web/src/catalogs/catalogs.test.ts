@@ -281,15 +281,25 @@ Example scale
   });
 
   it("serializes and encodes a layout bundle", () => {
-    const bundle = createDefaultLayoutBundle();
+    const bundle = {
+      ...createDefaultLayoutBundle(),
+      folderPath: "Microtonal"
+    };
     const parsed = parseLayoutBundleFile(JSON.parse(serializeLayoutBundle(bundle)));
     const encoded = encodeLayoutBundle(parsed);
     expect(parsed.name).toBe(bundle.name);
+    expect(parsed.folderPath).toBe("Microtonal");
     expect(encoded.objects.map((object) => object.objectType)).toEqual([
       ObjectType.UserTuning,
       ObjectType.UserLayout,
       ObjectType.UserScale,
       ObjectType.ScaleColorMap
+    ]);
+    expect(encoded.objects.map((object) => textFromBytes(recordValue(object.body, CommonTlv.FolderPath)))).toEqual([
+      "Microtonal",
+      "Microtonal",
+      "Microtonal",
+      "Microtonal"
     ]);
     expect(textFromBytes(recordValue(encoded.scaleColorMap.body, CommonTlv.Name))).toBe(GenericScaleColorMapName);
   });

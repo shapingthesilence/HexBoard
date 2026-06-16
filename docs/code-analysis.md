@@ -368,10 +368,15 @@ across plus up-right steps, and converts that to the old
 `DownLeftSteps` TLV only while the firmware schema still expects it. Bundle
 rotation is a four-step device orientation value (`0/90/180/270`) that matches
 firmware `DeviceRotation`, not a six-step hex-axis transform. The editor keeps
-Tuning, Layouts, and Scales in sidebar subtabs, and the color-map object uses a
-generic future color-mode name rather than an editable palette field. Scale
-editing uses only included degrees; the input stores draft text and validates on
-blur so invalid intermediate typing does not immediately overwrite the model.
+foldered Computer/HexBoard library panes in the sidebar, stores a `folderPath`
+on each browser bundle, and writes that folder path into every unpacked
+geometry object sent to the device. Because firmware stores the unpacked
+objects rather than a single bundle object, the HexBoard library pane lists
+saved `UserTuning` records as the device-side bundle anchor. Tuning, Layouts,
+and Scales stay in sidebar subtabs, and the color-map object uses a generic
+future color-mode name rather than an editable palette field. Scale editing
+uses only included degrees; the input stores draft text and validates on blur
+so invalid intermediate typing does not immediately overwrite the model.
 EDO and equal-step tunings expose note labels and `A = x Hz`; labels default to
 degree-number strings, validate on exit, and encode through `KeyLabels`. The
 preview paintbrush writes per-button color overrides into the active layout,

@@ -1108,7 +1108,8 @@ Recommended use:
   color set, one or more layouts, and one or more scales together in the
   exported JSON. The web app may unpack these into individual `UserTuning`,
   `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` writes
-  when firmware support lands.
+  and preserve the bundle's folder path on each unpacked object until firmware
+  has a first-class editable bundle object.
 - Restore by dry-run validating all objects first.
 - Write dependencies before profiles that reference them.
 - Commit profiles last.
@@ -1174,11 +1175,13 @@ write the individual objects after the web app unpacks a bundle.
 3. Web app writes each `UserLayout`, each `UserScale`, and the bundle's single
    `ScaleColorMap`, all referencing the tuning object id.
 4. Web app writes any `ExplicitButtonMap` objects after their referenced layouts.
-5. Current firmware stores these records in `/layouts.dat` and can list, read,
+5. The web app writes the same `FolderPath` common TLV on every unpacked object
+   in the bundle so device object lists can group related geometry records.
+6. Current firmware stores these records in `/layouts.dat` and can list, read,
    overwrite, delete, or apply the active EDO/equal-step tuning, active vector
    layout, active scale, color map, and matching explicit button map by compact
    preset-sync handle.
-6. Future firmware work still needs to refresh the menu catalog, hide
+7. Future firmware work still needs to refresh the menu catalog, hide
    generated-layout controls whenever the active layout is manual, formalize
    profile references, and apply bundle switches only after active notes are
    clear or after an explicitly documented panic cleanup.
