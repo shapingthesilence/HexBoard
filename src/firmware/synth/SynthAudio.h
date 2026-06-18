@@ -59,7 +59,6 @@ extern char loadedSynthWavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH];
 extern bool userSynthWavetableAvailable;
 extern bool synthBuzzerEnabled;
 extern byte headphoneVolumeCap;
-extern byte synthOutputSmoothing;
 extern const uint32_t AUDIO_DMA_BUFFER_MICROS;
 extern std::atomic<bool> flashWriteInProgress;
 extern std::atomic<bool> synthRuntimeReady;

@@ -552,10 +552,9 @@ Key implementation facts:
   piezo when the `Buzzer` toggle is enabled. Hardware `V1.1` uses piezo.
   Inactive piezo output is switched to GPIO and held low; inactive jack output
   remains PWM-centered.
-- `SynthOutputSmoothing` is a global `Off`/`1..8` setting. When enabled, the
-  renderer applies a Q8 one-pole low-pass to both final jack and piezo PWM
-  levels before DMA encoding; `Off` bypasses and snaps the filter state to the
-  current levels.
+- The renderer computes only the selected physical output path. Jack output uses
+  a centered PWM level and headphone cap scaling; piezo output uses the
+  envelope-derived moving midpoint and piezo scale path.
 - The oscillator counter is a `uint32_t` Q16.16 phase accumulator; the high `16`
   bits are the waveform phase and the low `16` bits carry fractional phase.
 - Held notes use target oscillator increments that the audio block renderer slews toward,
@@ -637,7 +636,7 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `17`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `18`, and `PROFILE_COUNT` is `9`.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the hardware-specific calibrated table above.
 
@@ -646,10 +645,6 @@ files migrate by copying the existing profile prefix and using the factory
 default `41Limit` table selector.
 
 The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
-
-The Synth Options `Out Smooth` control is persisted as `SynthOutputSmoothing`.
-It defaults to `Off`; values `1` through `8` increase a one-pole output
-low-pass applied to both final jack and piezo PWM levels.
 
 The `Waveform` setting remains one persisted byte for settings/preset
 compatibility, but the visible synth source selector uses a wavetable
@@ -743,7 +738,7 @@ Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` through `16` files migrate to version `17` by copying the older per-profile prefix, appending newer settings with factory defaults, remapping legacy envelope time indices when needed, remapping legacy vibrato speed indices, and converting old `DeviceRotation` OLED-driver constants to physical device orientation values; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior; version `16` profiles append `SynthOutputSmoothing = Off`
+- version `2` through `17` files migrate to version `18` by copying the older per-profile prefix, appending newer settings with factory defaults, dropping a retired trailing setting from version `17`, remapping legacy envelope time indices when needed, remapping legacy vibrato speed indices, and converting old `DeviceRotation` OLED-driver constants to physical device orientation values; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults

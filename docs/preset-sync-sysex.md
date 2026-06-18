@@ -354,7 +354,7 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 Example response, transaction `1`, max packed chunk `128`, capabilities
 `0xB7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
 delete user object, plus synth wavetable objects), max raw object bytes `16640`,
-settings schema `17`, synth preset schema `7`, `9` profiles, `128` synth preset
+settings schema `18`, synth preset schema `7`, `9` profiles, `128` synth preset
 entries, `127` slots for each advertised user geometry count, hardware version
 `2`:
 
@@ -715,7 +715,7 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `17` |
+| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `18` |
 | `0x21` | `SettingValues` | Repeated `<setting-key-u8> <value-u8>` records |
 | `0x22` | `TuningRef` | Object reference |
 | `0x23` | `LayoutRef` | Object reference |

@@ -31,10 +31,10 @@
 byte audioD = AUDIO_AJACK;
 bool synthBuzzerEnabled = false;
 byte headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
-byte synthOutputSmoothing = SYNTH_OUTPUT_SMOOTHING_OFF;
 
 void RAM_FUNC(idlePhysicalAudioOutputs)();
 void RAM_FUNC(preparePhysicalAudioOutput)(byte destination);
+inline byte RAM_FUNC(selectedAudioDmaDestination)();
 inline void RAM_FUNC(clearSynthPortamento)(uint8_t channelIndex);
 inline void RAM_FUNC(beginSynthPortamento)(uint8_t channelIndex, uint32_t targetIncrement);
 
@@ -132,38 +132,7 @@ struct AudioOutputLevels {
   uint8_t profileFlags = 0;
 };
 
-struct SmoothedAudioOutputLevels {
-  int32_t piezoQ8 = static_cast<int32_t>(PIEZO_IDLE_LEVEL) << 8;
-  int32_t jackQ8 = static_cast<int32_t>(JACK_IDLE_LEVEL) << 8;
-};
-
-SmoothedAudioOutputLevels smoothedAudioOutputLevels = {};
-
-inline uint16_t RAM_FUNC(smoothAudioOutputLevel)(uint16_t target, int32_t& stateQ8, uint8_t smoothing) {
-  int32_t targetQ8 = static_cast<int32_t>(target) << 8;
-  if (smoothing == SYNTH_OUTPUT_SMOOTHING_OFF) {
-    stateQ8 = targetQ8;
-    return target;
-  }
-  stateQ8 += (targetQ8 - stateQ8) >> smoothing;
-  int32_t rounded = (stateQ8 + 128) >> 8;
-  if (rounded < 0) {
-    return 0;
-  }
-  if (rounded > static_cast<int32_t>(PWM_WRAP)) {
-    return PWM_WRAP;
-  }
-  return static_cast<uint16_t>(rounded);
-}
-
-inline void RAM_FUNC(applySynthOutputSmoothing)(AudioOutputLevels& output) {
-  uint8_t smoothing = synthOutputSmoothing;
-  if (smoothing > SYNTH_OUTPUT_SMOOTHING_MAX) {
-    smoothing = SYNTH_OUTPUT_SMOOTHING_MAX;
-  }
-  output.piezo = smoothAudioOutputLevel(output.piezo, smoothedAudioOutputLevels.piezoQ8, smoothing);
-  output.jack = smoothAudioOutputLevel(output.jack, smoothedAudioOutputLevels.jackQ8, smoothing);
-}
+uint16_t synthPiezoAmplitude = 0;
 
 inline void RAM_FUNC(writeAudioOutputLevels)(uint16_t piezoLevel, uint16_t jackLevel) {
   if (audioD & AUDIO_PIEZO) {
@@ -2161,8 +2130,14 @@ void updateArpeggiatorDirection() {
   arpeggiatorSequenceCursor = 0;
 }
 
-AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
+AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
   AudioOutputLevels output;
+  if (destination == AUDIO_BOTH) {
+    destination = selectedAudioDmaDestination();
+  }
+  if (destination == AUDIO_NONE) {
+    return output;
+  }
   if (flashWriteInProgress.load(std::memory_order_relaxed) || synthWaveTableLoadInProgress) {
     return output;
   }
@@ -2516,7 +2491,6 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
   if ((voices == 0 || velWheel.curValue == 0) && !metronomeAudible) {
     output.voices = voices;
     output.profileFlags = profileFlags;
-    applySynthOutputSmoothing(output);
     return output;
   }
 
@@ -2534,15 +2508,21 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
   if (sample >  SHAPE_CLAMP) sample =  SHAPE_CLAMP;
   if (sample < -SHAPE_CLAMP) sample = -SHAPE_CLAMP;
 
-  // ----- JACK: fixed midpoint with V1.2 headphone-only output cap -----
-  int32_t jackSample = sample;
-  if (headphoneVolumeCap < HEADPHONE_VOLUME_CAP_FULL) {
-    jackSample = (jackSample * static_cast<int32_t>(headphoneVolumeCap)) >> 7;
+  if (destination == AUDIO_AJACK) {
+    synthPiezoAmplitude = 0;
+    // ----- JACK: fixed midpoint with V1.2 headphone-only output cap -----
+    int32_t jackSample = sample;
+    if (headphoneVolumeCap < HEADPHONE_VOLUME_CAP_FULL) {
+      jackSample = (jackSample * static_cast<int32_t>(headphoneVolumeCap)) >> 7;
+    }
+    int32_t jack = PWM_MID + jackSample;
+    if (jack < 0) jack = 0;
+    if (jack > (int32_t)PWM_WRAP) jack = PWM_WRAP;
+    output.jack = static_cast<uint16_t>(jack);
+    output.voices = voices;
+    output.profileFlags = profileFlags;
+    return output;
   }
-  int32_t jack = PWM_MID + jackSample;
-  if (jack < 0) jack = 0;
-  if (jack > (int32_t)PWM_WRAP) jack = PWM_WRAP;
-  uint16_t jackLevel = (uint16_t)jack;
 
   // ----- PIEZO: midpoint follows "actual amplitude" from envSum -----
   //
@@ -2552,8 +2532,6 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
   //
   // This makes piezo loud enough and ensures it fades smoothly as envSum falls.
   //
-  static uint16_t piezoA = 0; // smoothed midpoint/amplitude in PWM units [0..PWM_MID]
-
   // Map envSum -> A_target in [0..PWM_MID]
   uint32_t A_target = (envSum + (1u << (ENV_TO_A_SHIFT - 1))) >> ENV_TO_A_SHIFT;
   if (A_target > (uint32_t)PWM_MID) A_target = PWM_MID;
@@ -2568,36 +2546,31 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)() {
 
   // Smooth A so the piezo hiss doesn't abruptly stop (and to avoid end-click).
   // Smaller shift = faster response; larger = smoother.
-  piezoA += (int16_t)((int32_t)A_target - (int32_t)piezoA) >> 3;
+  synthPiezoAmplitude += (int16_t)((int32_t)A_target - (int32_t)synthPiezoAmplitude) >> 3;
 
   // If very small, turn fully off (by now it’s near 0 so this won’t click).
-  if (piezoA <= PIEZO_OFF_THRESHOLD) piezoA = 0;
+  if (synthPiezoAmplitude <= PIEZO_OFF_THRESHOLD) synthPiezoAmplitude = 0;
 
   int32_t piezoLevel = 0;
-  if (!(audioD & AUDIO_PIEZO)) {
-    piezoA = 0;
-  } else if (piezoA > 0) {
-    // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-piezoA..+piezoA].
+  if (synthPiezoAmplitude > 0) {
+    // Scale sample [-SHAPE_CLAMP..SHAPE_CLAMP] -> outPiezo [-synthPiezoAmplitude..+synthPiezoAmplitude].
     // Use a power-of-two fixed-point scale to keep the piezo path cheap in the
     // audio renderer.
     profileFlags |= ISR_PROFILE_FLAG_PIEZO_SCALE;
-    int32_t outPiezo = scalePiezoSample(sample, piezoA);
+    int32_t outPiezo = scalePiezoSample(sample, synthPiezoAmplitude);
 
-    // Midpoint follows amplitude: range [0..2*piezoA]
-    piezoLevel = (int32_t)piezoA + outPiezo;
-    int32_t piezoMax = (int32_t)piezoA * 2;
+    // Midpoint follows amplitude: range [0..2*synthPiezoAmplitude]
+    piezoLevel = (int32_t)synthPiezoAmplitude + outPiezo;
+    int32_t piezoMax = (int32_t)synthPiezoAmplitude * 2;
 
     if (piezoLevel < 0) piezoLevel = 0;
     if (piezoLevel > piezoMax) piezoLevel = piezoMax;
     if (piezoLevel > (int32_t)PWM_WRAP) piezoLevel = PWM_WRAP;
   }
-  uint16_t piezoOut = (uint16_t)piezoLevel;
 
-  output.piezo = piezoOut;
-  output.jack = jackLevel;
+  output.piezo = static_cast<uint16_t>(piezoLevel);
   output.voices = voices;
   output.profileFlags = profileFlags;
-  applySynthOutputSmoothing(output);
   return output;
 }
 
@@ -2607,7 +2580,7 @@ void RAM_FUNC(poll)() {
   hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
   timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
   uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
-  AudioOutputLevels output = renderAudioOutputLevels();
+  AudioOutputLevels output = renderAudioOutputLevels(selectedAudioDmaDestination());
   writeAudioOutputLevels(output.piezo, output.jack);
   if (_isrStart) {
     recordISRProfileSample(_isrStart, output.voices, output.profileFlags);
@@ -2738,7 +2711,7 @@ void RAM_FUNC(fillAudioDmaBuffer)(uint8_t bufferIndex, byte destination) {
   uint8_t combinedFlags = 0;
   uint32_t* buffer = audioDmaBuffers[bufferIndex];
   for (uint16_t sampleIndex = 0; sampleIndex < AUDIO_DMA_BUFFER_SAMPLE_COUNT; ++sampleIndex) {
-    AudioOutputLevels levels = renderAudioOutputLevels();
+    AudioOutputLevels levels = renderAudioOutputLevels(destination);
     if (levels.voices > maxVoices) {
       maxVoices = levels.voices;
     }

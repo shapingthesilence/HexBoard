@@ -95,7 +95,6 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* SynthLfoWave                 */ SYNTH_LFO_WAVE_SINE,
   /* SynthLfoSpeed                */ SYNTH_LFO_SPEED_DEFAULT,
   /* DynamicJIRatioTable          */ DYNAMIC_JI_RATIO_TABLE_41_LIMIT,
-  /* SynthOutputSmoothing         */ SYNTH_OUTPUT_SMOOTHING_OFF,
 };
 
 // ==================================================
@@ -149,7 +148,7 @@ void applyFactoryDefaultsToSettings() {
 
 bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t settingsPerProfile) {
   size_t previousDataSize = static_cast<size_t>(PROFILE_COUNT) * settingsPerProfile;
-  std::array<uint8_t, SETTINGS_DATA_SIZE> previousProfiles = { 0 };
+  std::array<uint8_t, static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS_V17> previousProfiles = { 0 };
   if (previousDataSize > previousProfiles.size()) {
     sendToLog("Warning: Settings migration source is too large. Restoring defaults.");
     f.close();
@@ -177,9 +176,13 @@ bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t s
 
   applyFactoryDefaultsToSettings();
   for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
+    uint8_t settingsToCopy = settingsPerProfile;
+    if (settingsToCopy > NUM_SETTINGS) {
+      settingsToCopy = NUM_SETTINGS;
+    }
     memcpy(settingsProfiles[profile],
            previousProfiles.data() + (static_cast<size_t>(profile) * settingsPerProfile),
-           settingsPerProfile);
+           settingsToCopy);
     if (header.version < 10) {
       remapLegacyEnvelopeTimeSettings(settingsProfiles[profile], settingsPerProfile);
     }
@@ -270,7 +273,9 @@ bool load_settings() {
     case 15:
       return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V15);
     case 16:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V16);
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS);
+    case 17:
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V17);
     default:
       break;
   }

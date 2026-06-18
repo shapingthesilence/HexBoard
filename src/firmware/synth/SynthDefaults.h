@@ -100,8 +100,6 @@ constexpr byte AUDIO_AJACK = 2;
 constexpr byte AUDIO_BOTH = 3;
 
 constexpr uint8_t HEADPHONE_VOLUME_CAP_FULL = 127;
-constexpr uint8_t SYNTH_OUTPUT_SMOOTHING_OFF = 0;
-constexpr uint8_t SYNTH_OUTPUT_SMOOTHING_MAX = 8;
 
 constexpr byte SYNTH_DRIVE_OFF = 0;
 constexpr byte SYNTH_DRIVE_WARM = 1;
