@@ -16,7 +16,7 @@ constexpr byte METRONOME_MODE_BEEP = 1;
 constexpr byte METRONOME_MODE_BRIGHTNESS = 2;
 constexpr byte METRONOME_MODE_SIDE_BUTTONS = 3;
 
-constexpr uint8_t SYNTH_CONTROL_RATE_SAMPLES = 8;
+constexpr uint8_t SYNTH_CONTROL_RATE_SAMPLES = 16;
 constexpr uint8_t SYNTH_FX_ENVELOPE_CONTROL_TICKS = SYNTH_CONTROL_RATE_SAMPLES;
 
 constexpr byte SYNTH_OFF = 0;
