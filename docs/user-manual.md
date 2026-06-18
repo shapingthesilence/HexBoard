@@ -458,7 +458,9 @@ bundle edits on the connected device's runtime without saving them to flash.
 HexBoard` writes the bundle's user tuning, layouts, scales, color map, and
 explicit button map into the selected folder on the device. The HexBoard
 library lists saved user-tuning entries by folder because firmware stores the
-unpacked geometry objects rather than a single editable bundle object. On the
+unpacked geometry objects rather than a single editable bundle object. Those
+entries can be opened into the editor, downloaded into the computer library,
+exported as bundle JSON, or erased from the device. On the
 device, the saved tuning appears under `Tuning`, its linked layouts appear under
 `Layout` after that tuning is selected, and its linked scales appear under
 `Scales`. The larger HexBoard preview plus selected-key inspector stay on the
@@ -472,9 +474,10 @@ axis field labels follow the four-way preview rotation; for example, at `90`
 degrees, across is shown as `Down` and up-right is shown as `Down-right`.
 The preview also has a `Paintbrush` mode: choose a brush color, enable the
 tool, then click or drag across keys to write manual per-button color overrides
-without selecting each key in the inspector. Preview hexagons render with solid
-color fills and outlined white labels so the displayed color remains accurate
-and readable. A sun/moon button in the app header switches the web app between
+without selecting each key in the inspector. The `Eyedropper` tool temporarily
+overrides the paintbrush so the next preview key clicked becomes the brush
+color. Preview hexagons render with solid color fills and outlined white labels
+so the displayed color remains accurate and readable. A sun/moon button in the app header switches the web app between
 light and dark themes. When a compatible bundle is applied to HexBoard, custom
 scale-degree and per-button colors use the selected color as the active/play
 target, but the resting hardware LEDs are capped to the same normal brightness
@@ -497,7 +500,9 @@ focused on playable notes. The selected-key inspector has a `Color source` dropd
 `Button override` edits only the selected button's color. `Note source` can
 lock an individual button to a fixed `steps from C` value; those manual note
 positions are meant to stay fixed when root note or transposition changes.
-Scales are edited as included scale degrees only. The included-degrees field can
+Scales are edited as included scale degrees only. `All Notes` is always present
+as the default scale, always includes every degree for the current division
+count, and cannot be edited or deleted. The included-degrees field can
 hold incomplete text while typing; if it still contains invalid text when focus
 leaves the field, the editor marks it red and reports the validation error.
 Button roles can be marked as note or unused in the exported web model. Applying

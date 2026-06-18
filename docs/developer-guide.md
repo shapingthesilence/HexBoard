@@ -130,18 +130,24 @@ Current web source layout:
   left/right column sizing as the synth preset editor. Its sidebar has
   top-level `File Manager` and `Editor` tabs: `File Manager` includes a
   foldered `Computer Library` for browser-stored bundles and a `HexBoard
-  Library` view backed by device `UserTuning` object-list records, while
-  `Editor` contains `Live send`, runtime `Send Now`, computer/device save
-  actions, bundle metadata, and the open bundle's `Tuning`, `Layouts`, and
-  `Scales` subtabs. Live send writes compatible active geometry objects with
+  Library` view backed by device `UserTuning` object-list records. Device-side
+  bundle actions read the tuning plus linked layout/scale/color/map objects to
+  reconstruct an editor bundle for Open, Download, and Export; Erase deletes the
+  linked object set in descending handle order. `Editor` contains `Live send`,
+  runtime `Send Now`, computer/device save actions, bundle metadata, and the
+  open bundle's `Tuning`, `Layouts`, and `Scales` subtabs. Live send writes compatible active geometry objects with
   `ApplyToRuntime` only; `Save to HexBoard` writes all bundle objects with
   `SaveToFlash`. Bundle `folderPath` is encoded into each unpacked `UserTuning`,
   `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` object
   written to the device.
-  Scales are edited with `includedDegrees` only; the text input validates on
-  blur so incomplete text can exist while a user is typing. EDO and equal-step
-  tunings store editable `keyLabels` and `referenceHz`; key labels default to
-  degree-number strings and use the same draft-then-blur validation style.
+  Scales are edited with `includedDegrees` only; the protected `All Notes`
+  scale is normalized into every bundle, tracks the current tuning cycle length,
+  and is not editable or deletable. The text input validates on blur so
+  incomplete text can exist while a user is typing. EDO and equal-step tunings
+  store editable `keyLabels` and `referenceHz`; key labels default to
+  degree-number strings and use the same draft-then-blur validation style. The
+  preview paintbrush has an eyedropper subtool that samples a preview key color
+  into the active brush color without writing a button override.
   Equal-step layout-bundle tunings store step
   cents plus cycle length in the editor model; protocol `PeriodMilliCents` is
   derived during encoding. Scala layout-bundle tunings derive period, cycle

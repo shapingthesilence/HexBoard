@@ -6,12 +6,14 @@ import {
   createDefaultDegreeColors,
   createDefaultLayout,
   createDefaultLayoutBundle,
+  currentFirmwareDownLeftToUpRight,
   defaultKeyLabels,
   deterministicObjectId,
   encodeLayoutBundle,
   ExplicitButtonMapTlv,
   hexBoardGeometry,
   isHexBoardCommandIndex,
+  LayoutTlv,
   normalizeScaleDegrees,
   normalizeScaleDegreeColors,
   normalizeKeyLabels,
@@ -20,7 +22,11 @@ import {
   parseLayoutBundleLibrary,
   parseScalaScale,
   resolveLayoutBundleButtonColor,
+  ScaleColorMapTlv,
   serializeLayoutBundle,
+  TuningTlv,
+  UserScaleTlv,
+  UserTuningKind,
   type HexBoardKey,
   type LayoutBundle,
   type LayoutBundleButtonOverride,
@@ -35,6 +41,7 @@ import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
 import { crc32 } from "../protocol/crc32.ts";
 import { ObjectType, type ObjectListRecord } from "../protocol/index.ts";
+import { CommonTlv, decodeObjectBody, textFromBytes, type TlvRecord } from "../protocol/tlv.ts";
 import { formatByteLength } from "./format.ts";
 
 const layoutBundleStorageKey = "hexboard.layoutBundles.v1";
@@ -48,6 +55,7 @@ type LayoutGuideFocus = "center" | "across" | "upRight";
 type GeometryEditorTab = "tuning" | "layouts" | "scales";
 type GeometrySidebarTab = "library" | "editor";
 type GeometryLibrarySpace = "computer" | "hexboard";
+type PaintTool = "brush" | "eyedropper";
 
 const layoutAxisDirectionLabels = [
   { across: "Right", upRight: "Up-right" },
@@ -85,6 +93,12 @@ interface HexBoardGeometryBundleEntry {
   folderPath: string;
   schemaMajor: number;
   schemaMinor: number;
+}
+
+interface DeviceGeometryObject {
+  record: ObjectListRecord;
+  body: Uint8Array;
+  records: TlvRecord[];
 }
 
 function createUntitledBundle(): LayoutBundle {
@@ -149,6 +163,32 @@ function tuningPeriodCents(tuning: LayoutBundleTuning): number {
   return tuning.periodCents;
 }
 
+function isAllNotesScale(scale: Pick<LayoutBundleScale, "name">): boolean {
+  return scale.name.trim().toLocaleLowerCase() === "all notes";
+}
+
+function withProtectedAllNotesScale(bundle: LayoutBundle, cycleLength = tuningCycleLength(bundle.tuning)): LayoutBundle {
+  const protectedScale = createAllNotesScale(cycleLength);
+  const previousAllNotes = bundle.scales.find(isAllNotesScale);
+  const activeWasAllNotes = previousAllNotes?.objectIdHex === bundle.activeScaleIdHex;
+  const userScales = bundle.scales
+    .filter((scale) => !isAllNotesScale(scale))
+    .map((scale) => ({
+      ...scale,
+      includedDegrees: normalizeScaleDegrees(scale.includedDegrees, cycleLength)
+    }));
+  const scales = [protectedScale, ...userScales];
+  const activeScaleIdHex = activeWasAllNotes
+    ? protectedScale.objectIdHex
+    : scales.find((scale) => scale.objectIdHex === bundle.activeScaleIdHex)?.objectIdHex ?? protectedScale.objectIdHex;
+
+  return {
+    ...bundle,
+    scales,
+    activeScaleIdHex
+  };
+}
+
 function layoutAxisLabels(rotationSteps: number): typeof layoutAxisDirectionLabels[number] {
   const index = ((Math.round(rotationSteps) % 4) + 4) % 4;
   return layoutAxisDirectionLabels[index];
@@ -156,8 +196,7 @@ function layoutAxisLabels(rotationSteps: number): typeof layoutAxisDirectionLabe
 
 function withCycleColors(bundle: LayoutBundle, cycleLength: number): LayoutBundle {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  const scales = bundle.scales.length > 0 ? bundle.scales : [createAllNotesScale(safeCycleLength)];
-  return {
+  return withProtectedAllNotesScale({
     ...bundle,
     palette: {
       ...bundle.palette,
@@ -167,12 +206,7 @@ function withCycleColors(bundle: LayoutBundle, cycleLength: number): LayoutBundl
       ...layout,
       rotationSteps: clampInteger(layout.rotationSteps ?? 0, 0, 3)
     })),
-    scales: scales.map((scale) => ({
-      ...scale,
-      includedDegrees: normalizeScaleDegrees(scale.includedDegrees, safeCycleLength)
-    })),
-    activeScaleIdHex: scales.find((scale) => scale.objectIdHex === bundle.activeScaleIdHex)?.objectIdHex ?? scales[0].objectIdHex
-  };
+  }, safeCycleLength);
 }
 
 export function colorToCss(color: ScaleDegreeColor): string {
@@ -363,7 +397,8 @@ function noteButtonIndexOrFallback(buttonIndex: number, fallback: number): numbe
 }
 
 function sanitizeEditorBundle(bundle: LayoutBundle): LayoutBundle {
-  return {
+  const cycleLength = tuningCycleLength(bundle.tuning);
+  return withProtectedAllNotesScale({
     ...bundle,
     folderPath: normalizeDisplayFolderPath(bundle.folderPath),
     layouts: bundle.layouts.map((layout) => ({
@@ -376,7 +411,7 @@ function sanitizeEditorBundle(bundle: LayoutBundle): LayoutBundle {
           role: override.role === "unused" ? "unused" : "note"
         }))
     }))
-  };
+  }, cycleLength);
 }
 
 function bundleWithGeneratedOverrideSteps(bundle: LayoutBundle): LayoutBundle {
@@ -476,6 +511,196 @@ function objectReferenceIdHex(value: Uint8Array): string | null {
   return objectIdToHex(value.slice(3, 19));
 }
 
+function tlvValue(records: TlvRecord[], tag: number): Uint8Array | undefined {
+  return records.find((record) => record.tag === tag)?.value;
+}
+
+function tlvText(records: TlvRecord[], tag: number, fallback: string): string {
+  const value = tlvValue(records, tag);
+  return value ? textFromBytes(value) || fallback : fallback;
+}
+
+function u8(value: Uint8Array | undefined, fallback = 0): number {
+  return value && value.length >= 1 ? value[0] : fallback;
+}
+
+function u16LE(value: Uint8Array | undefined, fallback = 0): number {
+  return value && value.length >= 2 ? value[0] | (value[1] << 8) : fallback;
+}
+
+function i16LE(value: Uint8Array | undefined, fallback = 0): number {
+  const unsigned = u16LE(value, fallback);
+  return unsigned & 0x8000 ? unsigned - 0x10000 : unsigned;
+}
+
+function u32LE(value: Uint8Array | undefined, fallback = 0): number {
+  return value && value.length >= 4
+    ? ((value[0] | (value[1] << 8) | (value[2] << 16) | (value[3] << 24)) >>> 0)
+    : fallback;
+}
+
+function i32LEFromBytes(value: Uint8Array, offset: number): number {
+  const unsigned = (value[offset] | (value[offset + 1] << 8) | (value[offset + 2] << 16) | (value[offset + 3] << 24)) >>> 0;
+  return unsigned > 0x7fffffff ? unsigned - 0x100000000 : unsigned;
+}
+
+function decodeKeyLabels(value: Uint8Array | undefined, cycleLength: number): string[] {
+  if (!value) {
+    return defaultKeyLabels(cycleLength);
+  }
+  const labels: string[] = [];
+  let cursor = 0;
+  while (cursor < value.length && labels.length < cycleLength) {
+    const length = value[cursor];
+    cursor += 1;
+    if (cursor + length > value.length) {
+      return defaultKeyLabels(cycleLength);
+    }
+    labels.push(textFromBytes(value.slice(cursor, cursor + length)));
+    cursor += length;
+  }
+  return normalizeKeyLabels(labels, cycleLength);
+}
+
+function objectReferences(object: DeviceGeometryObject, tag: number, objectType: number, objectIdHex: string): boolean {
+  const value = tlvValue(object.records, tag);
+  return Boolean(value && value.length >= 19 && value[0] === objectType && objectReferenceIdHex(value) === objectIdHex);
+}
+
+function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGeometryObject): LayoutBundleTuning {
+  const kind = u8(tlvValue(object.records, TuningTlv.TuningKind), UserTuningKind.Edo);
+  const cycleLength = clampInteger(u16LE(tlvValue(object.records, TuningTlv.EdoDivisions), 12), 1, 255);
+  const name = tlvText(object.records, CommonTlv.Name, entry.name);
+  const referenceMidiNote = clampInteger(u8(tlvValue(object.records, TuningTlv.ReferenceMidiNote), 69), 0, 127);
+  const referenceHz = u32LE(tlvValue(object.records, TuningTlv.ReferenceMilliHz), 440_000) / 1000;
+
+  if (kind === UserTuningKind.EqualStep) {
+    return {
+      kind: "equal-step",
+      name,
+      stepCents: u32LE(tlvValue(object.records, TuningTlv.StepMilliCents), Math.round(1_200_000 / cycleLength)) / 1000,
+      cycleLength,
+      referenceMidiNote,
+      referenceHz,
+      keyLabels: decodeKeyLabels(tlvValue(object.records, TuningTlv.KeyLabels), cycleLength)
+    };
+  }
+
+  if (kind === UserTuningKind.CentsList) {
+    const centsBytes = tlvValue(object.records, TuningTlv.CentsTable);
+    const cents: number[] = [];
+    if (centsBytes) {
+      for (let offset = 0; offset + 3 < centsBytes.length; offset += 4) {
+        cents.push(i32LEFromBytes(centsBytes, offset) / 1000);
+      }
+    }
+    const safeCents = cents.length > 0 ? cents : [u32LE(tlvValue(object.records, TuningTlv.PeriodMilliCents), 1_200_000) / 1000];
+    return {
+      kind: "scala",
+      name,
+      description: name,
+      cents: safeCents,
+      periodCents: safeCents[safeCents.length - 1] ?? 1200,
+      cycleLength: clampInteger(safeCents.length, 1, 255),
+      referenceMidiNote,
+      referenceHz
+    };
+  }
+
+  return {
+    kind: "edo",
+    name,
+    edoDivisions: cycleLength,
+    periodCents: u32LE(tlvValue(object.records, TuningTlv.PeriodMilliCents), 1_200_000) / 1000,
+    cycleLength,
+    referenceMidiNote,
+    referenceHz,
+    keyLabels: decodeKeyLabels(tlvValue(object.records, TuningTlv.KeyLabels), cycleLength)
+  };
+}
+
+function decodeDeviceColorMap(object: DeviceGeometryObject | undefined, cycleLength: number): ScaleDegreeColor[] {
+  if (!object) {
+    return createDefaultDegreeColors(cycleLength);
+  }
+  const colors = createDefaultDegreeColors(cycleLength);
+  const colorBytes = tlvValue(object.records, ScaleColorMapTlv.DegreeColors);
+  if (!colorBytes) {
+    return colors;
+  }
+  for (let offset = 0; offset + 5 < colorBytes.length; offset += 6) {
+    const degree = colorBytes[offset] | (colorBytes[offset + 1] << 8);
+    if (degree >= cycleLength) {
+      continue;
+    }
+    colors[degree] = clampScaleDegreeColor({
+      degree,
+      hueTenthDegrees: colorBytes[offset + 2] | (colorBytes[offset + 3] << 8),
+      saturation: colorBytes[offset + 4],
+      value: colorBytes[offset + 5]
+    });
+  }
+  return colors;
+}
+
+function decodeDeviceScale(object: DeviceGeometryObject, index: number, cycleLength: number): LayoutBundleScale {
+  const includedBytes = tlvValue(object.records, UserScaleTlv.IncludedDegrees);
+  const includedDegrees: number[] = [];
+  if (includedBytes) {
+    for (let offset = 0; offset + 1 < includedBytes.length; offset += 2) {
+      includedDegrees.push(includedBytes[offset] | (includedBytes[offset + 1] << 8));
+    }
+  }
+  return {
+    objectIdHex: objectIdToHex(object.record.objectId),
+    name: tlvText(object.records, CommonTlv.Name, `Scale ${index + 1}`),
+    includedDegrees: normalizeScaleDegrees(includedDegrees.length > 0 ? includedDegrees : createAllNotesScale(cycleLength).includedDegrees, cycleLength)
+  };
+}
+
+function decodeDeviceButtonOverrides(map: DeviceGeometryObject | undefined): LayoutBundleButtonOverride[] {
+  const records = map ? tlvValue(map.records, ExplicitButtonMapTlv.ButtonRecords) : undefined;
+  if (!records) {
+    return [];
+  }
+  const overrides: LayoutBundleButtonOverride[] = [];
+  for (let offset = 0; offset + 12 < records.length; offset += 13) {
+    const buttonIndex = records[offset] | (records[offset + 1] << 8);
+    if (!isEditableButtonIndex(buttonIndex)) {
+      continue;
+    }
+    const role = records[offset + 2] === 0 ? "unused" : "note";
+    const override: LayoutBundleButtonOverride = {
+      buttonIndex,
+      role,
+      stepsFromC: i32LEFromBytes(records, offset + 3)
+    };
+    if (records[offset + 8] !== 0) {
+      override.hueTenthDegrees = records[offset + 9] | (records[offset + 10] << 8);
+      override.saturation = records[offset + 11];
+      override.value = records[offset + 12];
+    }
+    overrides.push(override);
+  }
+  return overrides.sort((left, right) => left.buttonIndex - right.buttonIndex);
+}
+
+function decodeDeviceLayout(object: DeviceGeometryObject, index: number, buttonMap: DeviceGeometryObject | undefined): LayoutBundleLayout {
+  const rotationSteps = u8(tlvValue(object.records, LayoutTlv.Portrait), 1) === 0 ? 1 : 0;
+  const acrossSteps = i16LE(tlvValue(object.records, LayoutTlv.AcrossSteps), 3);
+  const downLeftSteps = i16LE(tlvValue(object.records, LayoutTlv.DownLeftSteps), -11);
+  return {
+    objectIdHex: objectIdToHex(object.record.objectId),
+    name: tlvText(object.records, CommonTlv.Name, `Layout ${index + 1}`),
+    centerButton: noteButtonIndexOrFallback(u16LE(tlvValue(object.records, LayoutTlv.CenterButton), 65), 65),
+    acrossSteps,
+    upRightSteps: currentFirmwareDownLeftToUpRight(acrossSteps, downLeftSteps),
+    rotationSteps,
+    portrait: rotationSteps % 2 === 0,
+    buttonOverrides: decodeDeviceButtonOverrides(buttonMap)
+  };
+}
+
 export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   const [bundles, setBundles] = useState<LayoutBundle[]>(() => loadStoredBundles());
   const [hexboardBundles, setHexboardBundles] = useState<HexBoardGeometryBundleEntry[]>([]);
@@ -491,6 +716,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   const [layoutGuideFocus, setLayoutGuideFocus] = useState<LayoutGuideFocus | null>(null);
   const [activeEditorTab, setActiveEditorTab] = useState<GeometryEditorTab>("tuning");
   const [paintbrushMode, setPaintbrushMode] = useState(false);
+  const [paintTool, setPaintTool] = useState<PaintTool>("brush");
   const [paintbrushColor, setPaintbrushColor] = useState<ScaleDegreeColor>(() => createDefaultDegreeColors(1)[0]);
   const [keyLabelsDraft, setKeyLabelsDraft] = useState("");
   const [keyLabelsError, setKeyLabelsError] = useState("");
@@ -514,6 +740,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   const activeScale = activeBundle.scales.find((scale) => scale.objectIdHex === activeBundle.activeScaleIdHex) ??
     activeBundle.scales[0] ??
     createAllNotesScale(tuningCycleLength(activeBundle.tuning));
+  const activeScaleIsAllNotes = isAllNotesScale(activeScale);
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
   const allFolders = useMemo(() => Array.from(new Set([
     rootFolderPath,
@@ -525,9 +752,12 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   ])).sort((left, right) => folderLabel(left).localeCompare(folderLabel(right))), [activeBundle.folderPath, bundles, customFolders, hexboardBundles]);
 
   useEffect(() => {
-    setIncludedDegreesDraft(formatIntegerList(activeScale.includedDegrees));
+    const cycleLength = tuningCycleLength(activeBundle.tuning);
+    setIncludedDegreesDraft(formatIntegerList(
+      activeScaleIsAllNotes ? createAllNotesScale(cycleLength).includedDegrees : activeScale.includedDegrees
+    ));
     setIncludedDegreesError("");
-  }, [activeScale.objectIdHex, activeBundle.tuning.cycleLength]);
+  }, [activeScale.objectIdHex, activeScale.includedDegrees, activeScaleIsAllNotes, activeBundle.tuning]);
 
   useEffect(() => {
     if (activeBundle.tuning.kind === "scala") {
@@ -687,6 +917,10 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   }
 
   function updateActiveScale(updater: (scale: LayoutBundleScale) => LayoutBundleScale) {
+    if (activeScaleIsAllNotes) {
+      setStatus("All Notes is always included and cannot be edited.");
+      return;
+    }
     updateActiveBundle((bundle) => ({
       ...bundle,
       scales: bundle.scales.map((scale) => scale.objectIdHex === bundle.activeScaleIdHex ? updater(scale) : scale)
@@ -707,6 +941,10 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   }
 
   function deleteActiveScale() {
+    if (activeScaleIsAllNotes) {
+      setStatus("All Notes is always included and cannot be deleted.");
+      return;
+    }
     if (activeBundle.scales.length <= 1) {
       setStatus("Keep at least one scale in the bundle");
       return;
@@ -722,6 +960,11 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   }
 
   function commitIncludedDegrees(text: string) {
+    if (activeScaleIsAllNotes) {
+      setIncludedDegreesDraft(formatIntegerList(createAllNotesScale(tuningCycleLength(activeBundle.tuning)).includedDegrees));
+      setIncludedDegreesError("");
+      return;
+    }
     const cycleLength = tuningCycleLength(activeBundle.tuning);
     const result = validateIncludedDegreesInput(text, cycleLength);
     if ("error" in result) {
@@ -894,6 +1137,17 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     setStatus(`Painted button ${buttonIndex}`);
   }
 
+  function pickBrushColor(buttonIndex: number) {
+    const preview = previewKeys.find((item) => item.key.index === buttonIndex);
+    if (!preview) {
+      return;
+    }
+    setPaintbrushColor(preview.color);
+    setSelectedButton(buttonIndex);
+    setPaintTool("brush");
+    setStatus(`Picked color from button ${buttonIndex}`);
+  }
+
   function previewButtonIndexFromPointer(event: PointerEvent<HTMLElement>): number | undefined {
     if (typeof document === "undefined") {
       return undefined;
@@ -913,13 +1167,17 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
       return;
     }
     event.preventDefault();
+    if (paintTool === "eyedropper") {
+      pickBrushColor(buttonIndex);
+      return;
+    }
     paintStrokeActiveRef.current = true;
     lastPaintedButtonRef.current = null;
     paintButtonColorOverride(buttonIndex);
   }
 
   function continuePaintStroke(event: PointerEvent<HTMLDivElement>) {
-    if (!paintbrushMode || !paintStrokeActiveRef.current) {
+    if (!paintbrushMode || paintTool === "eyedropper" || !paintStrokeActiveRef.current) {
       return;
     }
     const buttonIndex = previewButtonIndexFromPointer(event);
@@ -1146,6 +1404,158 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     return records.find((record) => objectIdToHex(record.objectId) === objectIdHex);
   }
 
+  async function readDeviceGeometryObject(record: ObjectListRecord): Promise<DeviceGeometryObject> {
+    const body = await client.readGeometryObject(record.objectType, record.handle);
+    const decoded = decodeObjectBody(body);
+    const bodyObjectId = tlvValue(decoded.records, CommonTlv.ObjectId);
+    return {
+      record: {
+        ...record,
+        objectId: bodyObjectId?.length === 16 ? bodyObjectId : record.objectId,
+        name: tlvText(decoded.records, CommonTlv.Name, record.name),
+        folderPath: decodeDeviceFolderPath(tlvText(decoded.records, CommonTlv.FolderPath, record.folderPath || rootFolderPath))
+      },
+      body,
+      records: decoded.records
+    };
+  }
+
+  async function readDeviceGeometryObjects(objectType: number): Promise<DeviceGeometryObject[]> {
+    const records = await client.listGeometryObjects(objectType, 8);
+    const objects: DeviceGeometryObject[] = [];
+    for (const record of records) {
+      objects.push(await readDeviceGeometryObject(record));
+    }
+    return objects;
+  }
+
+  async function readHexBoardGeometryBundle(entry: HexBoardGeometryBundleEntry): Promise<{
+    bundle: LayoutBundle;
+    objects: DeviceGeometryObject[];
+  }> {
+    const tuningRecord: ObjectListRecord = {
+      objectType: ObjectType.UserTuning,
+      handle: entry.deviceHandle,
+      flags: 0,
+      schemaMajor: entry.schemaMajor,
+      schemaMinor: entry.schemaMinor,
+      objectId: new Uint8Array(),
+      name: entry.name,
+      folderPath: entry.folderPath
+    };
+    const tuningObject = await readDeviceGeometryObject(tuningRecord);
+    const tuningObjectIdHex = objectIdToHex(tuningObject.record.objectId);
+    const layoutObjects = await readDeviceGeometryObjects(ObjectType.UserLayout);
+    const scaleObjects = await readDeviceGeometryObjects(ObjectType.UserScale);
+    const colorMapObjects = await readDeviceGeometryObjects(ObjectType.ScaleColorMap);
+    const buttonMapObjects = await readDeviceGeometryObjects(ObjectType.ExplicitButtonMap);
+    const linkedLayouts = layoutObjects.filter((object) => objectReferences(object, LayoutTlv.TuningRef, ObjectType.UserTuning, tuningObjectIdHex));
+    const linkedScales = scaleObjects.filter((object) => objectReferences(object, UserScaleTlv.TuningRef, ObjectType.UserTuning, tuningObjectIdHex));
+    const linkedColorMap = colorMapObjects.find((object) => objectReferences(object, ScaleColorMapTlv.TuningRef, ObjectType.UserTuning, tuningObjectIdHex));
+    const linkedLayoutIds = new Set(linkedLayouts.map((object) => objectIdToHex(object.record.objectId)));
+    const linkedButtonMaps = buttonMapObjects.filter((object) =>
+      objectReferences(object, ExplicitButtonMapTlv.TuningRef, ObjectType.UserTuning, tuningObjectIdHex)
+      || [...linkedLayoutIds].some((layoutIdHex) => objectReferences(object, ExplicitButtonMapTlv.LayoutRef, ObjectType.UserLayout, layoutIdHex))
+    );
+    const tuning = decodeDeviceTuning(entry, tuningObject);
+    const cycleLength = tuningCycleLength(tuning);
+    const layouts = linkedLayouts.length > 0
+      ? linkedLayouts.map((layout, index) => {
+          const layoutIdHex = objectIdToHex(layout.record.objectId);
+          const buttonMap = linkedButtonMaps.find((map) => objectReferences(map, ExplicitButtonMapTlv.LayoutRef, ObjectType.UserLayout, layoutIdHex))
+            ?? linkedButtonMaps.find((map) => objectReferences(map, ExplicitButtonMapTlv.TuningRef, ObjectType.UserTuning, tuningObjectIdHex));
+          return decodeDeviceLayout(layout, index, buttonMap);
+        })
+      : [createDefaultLayout(cycleLength)];
+    const scales = linkedScales.map((scale, index) => decodeDeviceScale(scale, index, cycleLength));
+    const bundle = sanitizeEditorBundle({
+      objectIdHex: objectIdToHex(deterministicObjectId(`device-geometry:${tuningObjectIdHex}`)),
+      name: entry.name,
+      folderPath: entry.folderPath,
+      tuning,
+      palette: {
+        degreeColors: decodeDeviceColorMap(linkedColorMap, cycleLength)
+      },
+      layouts,
+      activeLayoutIdHex: layouts[0].objectIdHex,
+      scales,
+      activeScaleIdHex: scales[0]?.objectIdHex ?? createAllNotesScale(cycleLength).objectIdHex
+    });
+    return {
+      bundle,
+      objects: [
+        tuningObject,
+        ...linkedLayouts,
+        ...linkedScales,
+        ...(linkedColorMap ? [linkedColorMap] : []),
+        ...linkedButtonMaps
+      ]
+    };
+  }
+
+  function openDeviceBundleInEditor(bundle: LayoutBundle, statusText: string) {
+    const nextBundles = [...bundles.filter((candidate) => candidate.objectIdHex !== bundle.objectIdHex), bundle];
+    setBundlesAndPersist(nextBundles);
+    setActiveBundleId(bundle.objectIdHex);
+    setSelectedButton(noteButtonIndexOrFallback(bundle.layouts.find((layout) => layout.objectIdHex === bundle.activeLayoutIdHex)?.centerButton ?? bundle.layouts[0]?.centerButton ?? 65, 65));
+    setCustomFolders((current) => Array.from(new Set([...current, bundle.folderPath])).sort());
+    setStatus(statusText);
+  }
+
+  async function openHexBoardGeometryBundle(entry: HexBoardGeometryBundleEntry) {
+    setSyncBusy(true);
+    try {
+      const { bundle } = await readHexBoardGeometryBundle(entry);
+      openDeviceBundleInEditor(bundle, `Opened ${bundle.name} from HexBoard`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to open HexBoard geometry bundle");
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function downloadHexBoardGeometryBundle(entry: HexBoardGeometryBundleEntry) {
+    setSyncBusy(true);
+    try {
+      const { bundle } = await readHexBoardGeometryBundle(entry);
+      openDeviceBundleInEditor(bundle, `Downloaded ${bundle.name} to Computer Library`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to download HexBoard geometry bundle");
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function exportHexBoardGeometryBundle(entry: HexBoardGeometryBundleEntry) {
+    setSyncBusy(true);
+    try {
+      const { bundle } = await readHexBoardGeometryBundle(entry);
+      downloadBundleFile(bundle);
+      setStatus(`Exported ${bundle.name} from HexBoard`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to export HexBoard geometry bundle");
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  async function eraseHexBoardGeometryBundle(entry: HexBoardGeometryBundleEntry) {
+    setSyncBusy(true);
+    try {
+      const { bundle, objects } = await readHexBoardGeometryBundle(entry);
+      const uniqueObjects = [...new Map(objects.map((object) => [`${object.record.objectType}:${object.record.handle}`, object])).values()]
+        .sort((left, right) => right.record.handle - left.record.handle);
+      for (const object of uniqueObjects) {
+        await client.deleteGeometryObject(object.record.objectType, object.record.handle);
+      }
+      await refreshHexBoardGeometryLibrary(`Erased ${bundle.name} from HexBoard`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to erase HexBoard geometry bundle");
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
   async function refreshHexBoardGeometryLibrary(successStatus = "Refreshed HexBoard Geometry Library") {
     if (transport instanceof MockMidiTransport) {
       setStatus("Connect HexBoard before refreshing geometry library.");
@@ -1344,6 +1754,10 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
                 folders={allFolders}
                 selectedFolder={folderFilters.hexboard}
                 onFolderSelect={toggleFolderFilter}
+                onOpen={(entry) => void openHexBoardGeometryBundle(entry)}
+                onDownload={(entry) => void downloadHexBoardGeometryBundle(entry)}
+                onExport={(entry) => void exportHexBoardGeometryBundle(entry)}
+                onErase={(entry) => void eraseHexBoardGeometryBundle(entry)}
               />
             </div>
           </>
@@ -1533,16 +1947,21 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
               </label>
               <div className="row">
                 <button type="button" onClick={addNewScale}>New Scale</button>
-                <button className="warning" type="button" onClick={deleteActiveScale}>Delete Scale</button>
+                <button className="warning" disabled={activeScaleIsAllNotes} type="button" onClick={deleteActiveScale}>Delete Scale</button>
               </div>
               <label className="field">
                 <span>Scale name</span>
-                <input value={activeScale.name} onChange={(event) => updateActiveScale((scale) => ({ ...scale, name: event.target.value }))} />
+                <input
+                  disabled={activeScaleIsAllNotes}
+                  value={activeScale.name}
+                  onChange={(event) => updateActiveScale((scale) => ({ ...scale, name: event.target.value }))}
+                />
               </label>
               <label className={includedDegreesError ? "field invalidField" : "field"}>
                 <span>Included degrees</span>
                 <input
                   aria-invalid={includedDegreesError ? "true" : "false"}
+                  disabled={activeScaleIsAllNotes}
                   onBlurCapture={(event) => commitIncludedDegrees(event.target.value)}
                   onChange={(event) => {
                     setIncludedDegreesDraft(event.target.value);
@@ -1575,9 +1994,22 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
               onClick={() => {
                 endPaintStroke();
                 setPaintbrushMode((current) => !current);
+                setPaintTool("brush");
               }}
             >
               Paintbrush
+            </button>
+            <button
+              aria-pressed={paintbrushMode && paintTool === "eyedropper"}
+              className={paintbrushMode && paintTool === "eyedropper" ? "primary" : ""}
+              type="button"
+              onClick={() => {
+                endPaintStroke();
+                setPaintbrushMode(true);
+                setPaintTool((current) => current === "eyedropper" ? "brush" : "eyedropper");
+              }}
+            >
+              Eyedropper
             </button>
             <label className="brushColorField">
               <span>Brush color</span>
@@ -1588,13 +2020,14 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
                 onChange={(event) => setPaintbrushColor((current) => hexToScaleDegreeColor(event.target.value, current))}
               />
             </label>
-            <button type="button" onClick={() => setPaintbrushColor(selectedPreview.color)}>
-              Use Selected Color
-            </button>
           </div>
           <div className="hexBoardScroll">
             <div
-              className={paintbrushMode ? "hexBoardSurface paintbrushSurface" : "hexBoardSurface"}
+              className={[
+                "hexBoardSurface",
+                paintbrushMode ? "paintbrushSurface" : "",
+                paintbrushMode && paintTool === "eyedropper" ? "eyedropperSurface" : ""
+              ].filter(Boolean).join(" ")}
               aria-label="HexBoard key layout preview"
               onPointerCancel={endPaintStroke}
               onPointerDown={beginPaintStroke}
@@ -1653,9 +2086,11 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
         </main>
 
         <aside className="panel stack selectedKeyPanel">
-          <h2>Selected Key</h2>
-          <div className="status">
-            Button {selectedPreview.key.index} · row {selectedPreview.key.row} · col {selectedPreview.key.column}
+          <div className="selectedKeyHeading">
+            <h2>Selected Key:</h2>
+            <span className="status">
+              Button {selectedPreview.key.index} · row {selectedPreview.key.row} · col {selectedPreview.key.column}
+            </span>
           </div>
           <div className="fieldGrid">
             <label className="field">
@@ -1831,13 +2266,21 @@ interface HexBoardGeometryLibraryPanelProps {
   folders: string[];
   selectedFolder: string | null;
   onFolderSelect: (space: GeometryLibrarySpace, folderPath: string) => void;
+  onOpen: (entry: HexBoardGeometryBundleEntry) => void;
+  onDownload: (entry: HexBoardGeometryBundleEntry) => void;
+  onExport: (entry: HexBoardGeometryBundleEntry) => void;
+  onErase: (entry: HexBoardGeometryBundleEntry) => void;
 }
 
 function HexBoardGeometryLibraryPanel({
   entries,
   folders,
   selectedFolder,
-  onFolderSelect
+  onFolderSelect,
+  onOpen,
+  onDownload,
+  onExport,
+  onErase
 }: HexBoardGeometryLibraryPanelProps) {
   const visibleEntries = selectedFolder
     ? entries.filter((entry) => normalizeDisplayFolderPath(entry.folderPath) === selectedFolder)
@@ -1878,6 +2321,20 @@ function HexBoardGeometryLibraryPanel({
                 <strong>{entry.name}</strong>
                 <span>{folderLabel(entry.folderPath)}</span>
                 <span>{entry.objectIdHex.slice(0, 8).toUpperCase()}</span>
+              </div>
+              <div className="presetActions">
+                <button type="button" onClick={() => onOpen(entry)}>
+                  Open
+                </button>
+                <button type="button" onClick={() => onDownload(entry)}>
+                  Download
+                </button>
+                <button type="button" onClick={() => onExport(entry)}>
+                  Export
+                </button>
+                <button className="warning" type="button" onClick={() => onErase(entry)}>
+                  Erase
+                </button>
               </div>
             </li>
           ))

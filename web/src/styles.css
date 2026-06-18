@@ -607,6 +607,22 @@ select {
   cursor: crosshair;
 }
 
+.hexBoardSurface.eyedropperSurface,
+.hexBoardSurface.eyedropperSurface .hexKey {
+  cursor: copy;
+}
+
+.selectedKeyHeading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.selectedKeyHeading h2 {
+  margin: 0;
+}
+
 .hexKey {
   position: absolute;
   display: grid;

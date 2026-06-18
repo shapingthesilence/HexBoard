@@ -380,10 +380,18 @@ Save to HexBoard writes all bundle objects with `SaveToFlash`. The browser
 bundle stores a `folderPath` and writes that folder path into every unpacked
 geometry object sent to the device. Because firmware stores the unpacked
 objects rather than a single bundle object, the HexBoard library pane lists
-saved `UserTuning` records as the device-side bundle anchor. The color-map object uses a generic
-future color-mode name rather than an editable palette field. Scale editing uses
-only included degrees; the input stores draft text and validates on blur so
-invalid intermediate typing does not immediately overwrite the model.
+saved `UserTuning` records as the device-side bundle anchor. HexBoard-side Open,
+Download, and Export reconstruct an editor bundle by reading the anchor tuning
+and linked layout, scale, color-map, and button-map objects; Erase deletes that
+linked object set in descending handle order so shifted handles do not skip
+objects. The color-map object uses a generic future color-mode name rather than
+an editable palette field. Scale editing uses only included degrees; the input
+stores draft text and validates on blur so invalid intermediate typing does not
+immediately overwrite the model. The protected `All Notes` scale is normalized
+into every editor bundle, always expands to every degree in the current cycle,
+and cannot be edited or deleted. The preview paintbrush includes an eyedropper
+subtool that samples a preview key color into the brush without writing a
+button override.
 EDO and equal-step tunings expose note labels and `A = x Hz`; labels default to
 degree-number strings, validate on exit, and encode through `KeyLabels`. The
 preview paintbrush writes per-button color overrides into the active layout,
