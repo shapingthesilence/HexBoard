@@ -13,6 +13,8 @@
 #include "SynthPresetStorage.h"
 #include "SynthWavetableStorage.h"
 
+static File presetSyncWriteRawTempFile;
+
 void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
   if (payloadLength != 6) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_HELLO_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
@@ -392,12 +394,12 @@ bool presetSyncCreateWriteTempFile(PresetSyncWriteTransfer& transfer) {
   if (!fileSystemExists) {
     return false;
   }
+  presetSyncCloseWriteTempFile();
   LittleFS.remove(PRESET_SYNC_WRITE_RAW_TEMP_FILE_PATH);
-  File f = LittleFS.open(PRESET_SYNC_WRITE_RAW_TEMP_FILE_PATH, "w");
-  if (!f) {
+  presetSyncWriteRawTempFile = LittleFS.open(PRESET_SYNC_WRITE_RAW_TEMP_FILE_PATH, "w");
+  if (!presetSyncWriteRawTempFile) {
     return false;
   }
-  f.close();
   transfer.streamRawToFile = true;
   snprintf(transfer.streamRawPath,
            sizeof(transfer.streamRawPath),
@@ -407,16 +409,18 @@ bool presetSyncCreateWriteTempFile(PresetSyncWriteTransfer& transfer) {
 }
 
 bool presetSyncAppendWriteTempFile(const PresetSyncWriteTransfer& transfer, const uint8_t* data, size_t length) {
-  if (!transfer.streamRawPath[0]) {
+  if (!transfer.streamRawPath[0] || !presetSyncWriteRawTempFile) {
     return false;
   }
-  File f = LittleFS.open(transfer.streamRawPath, "a");
-  if (!f) {
-    return false;
-  }
-  size_t written = f.write(data, length);
-  f.close();
+  size_t written = presetSyncWriteRawTempFile.write(data, length);
   return written == length;
+}
+
+void presetSyncCloseWriteTempFile() {
+  if (presetSyncWriteRawTempFile) {
+    presetSyncWriteRawTempFile.close();
+    presetSyncWriteRawTempFile = File();
+  }
 }
 
 void presetSyncSendReadBegin() {
@@ -745,6 +749,9 @@ void presetSyncHandleTransferEnd(uint16_t transactionId, const uint8_t* payload,
       || presetSyncWriteTransfer.receivedBytes != presetSyncWriteTransfer.rawByteLength) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_TRANSFER_END, PRESET_SYNC_ERROR_UNEXPECTED_CHUNK, presetSyncWriteTransfer.expectedChunkIndex);
     return;
+  }
+  if (presetSyncWriteTransfer.streamRawToFile) {
+    presetSyncCloseWriteTempFile();
   }
   presetSyncWriteTransfer.ended = true;
   presetSyncSendAck(transactionId, PRESET_SYNC_MSG_TRANSFER_END);

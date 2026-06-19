@@ -128,6 +128,8 @@ const presetFileFormat = "hexboard.synthPreset.v1";
 const wavetableFileFormat = "hexboard.synthWavetable.v1";
 const builtInWavetableFolder = "/Built In";
 const basicWavetableName = "Basic";
+const deviceNameMaxBytes = 31;
+const deviceFolderMaxBytes = 47;
 
 const defaultPreset: EditableSynthPreset = {
   objectIdHex: objectIdToHex(deterministicObjectId("Soft String Pad")),
@@ -471,22 +473,40 @@ function wavetableReferenceFromOptionValue(value: string): { folderPath: string;
 }
 
 function normalizeDisplayFolderPath(folderPath: string): string {
-  return folderPath.trim() || rootFolderPath;
+  return clampUtf8Bytes(folderPath.trim() || rootFolderPath, deviceFolderMaxBytes);
 }
 
 function normalizeWavetableReference(folderPath: string | undefined, name: string | undefined) {
   return {
     folderPath: normalizeDisplayFolderPath(folderPath ?? builtInWavetableFolder),
-    name: (name ?? basicWavetableName).trim() || basicWavetableName
+    name: normalizedWavetableName(name?.trim() ? name : basicWavetableName)
   };
 }
 
 function normalizedPresetName(name: string): string {
-  return name.trim() || "Untitled";
+  return clampUtf8Bytes(name.trim() || "Untitled", deviceNameMaxBytes);
 }
 
 function normalizedWavetableName(name: string): string {
-  return name.trim() || "Wavetable";
+  return clampUtf8Bytes(name.trim() || "Wavetable", deviceNameMaxBytes);
+}
+
+function clampUtf8Bytes(value: string, maxBytes: number): string {
+  const encoder = new TextEncoder();
+  if (encoder.encode(value).length <= maxBytes) {
+    return value;
+  }
+  let output = "";
+  let used = 0;
+  for (const char of value) {
+    const bytes = encoder.encode(char).length;
+    if (used + bytes > maxBytes) {
+      break;
+    }
+    output += char;
+    used += bytes;
+  }
+  return output.trim() || value.slice(0, 1);
 }
 
 function presetSaveKey(preset: EditableSynthPreset): string {
@@ -530,10 +550,19 @@ function encodeDeviceFolderPath(folderPath: string): string {
   if (normalized === rootFolderPath) {
     return rootFolderPath;
   }
-  return normalized
+  const encoded = normalized
     .replace(/%/g, "%25")
     .replace(/\//g, "%2F")
     .replace(/\\/g, "%5C");
+  return trimPartialPercentEscape(clampUtf8Bytes(encoded, deviceFolderMaxBytes));
+}
+
+function trimPartialPercentEscape(value: string): string {
+  const lastPercentIndex = value.lastIndexOf("%");
+  if (lastPercentIndex >= 0 && value.length - lastPercentIndex < 3) {
+    return value.slice(0, lastPercentIndex).trim() || rootFolderPath;
+  }
+  return value;
 }
 
 function encodeDeviceWavetableFolderPath(folderPath: string): string {
@@ -602,7 +631,7 @@ function encodeEditablePreset(preset: EditableSynthPreset) {
   const wavetable = normalizeWavetableReference(preset.wavetableFolderPath, preset.wavetableName);
   return createSynthPresetObject({
     objectId: objectIdFromHex(preset.objectIdHex),
-    name: preset.name.trim() || "Untitled",
+    name: normalizedPresetName(preset.name),
     folderPath: encodeDeviceFolderPath(preset.folderPath),
     favorite: preset.favorite,
     wavetable: {
@@ -657,7 +686,7 @@ function presetFromUnknown(value: unknown): EditableSynthPreset {
     throw new Error("Preset file does not contain a synth preset object");
   }
 
-  const name = typeof source.name === "string" && source.name.trim() ? source.name.trim() : "Imported Preset";
+  const name = normalizedPresetName(typeof source.name === "string" && source.name.trim() ? source.name : "Imported Preset");
   const folderPath = typeof source.folderPath === "string" && source.folderPath.trim() ? normalizeDisplayFolderPath(source.folderPath) : rootFolderPath;
   const importedValues = isRecord(source.values) ? source.values : {};
   const values = { ...defaultPreset.values };
@@ -806,7 +835,7 @@ function wavetableFromUnknown(value: unknown): EditableSynthWavetable {
   if (!isRecord(source)) {
     throw new Error("Wavetable file does not contain a synth wavetable object");
   }
-  const name = typeof source.name === "string" && source.name.trim() ? source.name.trim() : "Imported Wavetable";
+  const name = normalizedWavetableName(typeof source.name === "string" && source.name.trim() ? source.name : "Imported Wavetable");
   const folderPath = typeof source.folderPath === "string" && source.folderPath.trim() ? normalizeDisplayFolderPath(source.folderPath) : "Wavetables";
   let samples: Uint8Array | undefined;
   if (typeof source.samplesBase64 === "string" && source.samplesBase64) {

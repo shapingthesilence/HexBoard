@@ -130,6 +130,7 @@ void presetSyncCancelReadTransfer() {
 }
 
 void presetSyncCancelWriteTransfer() {
+  presetSyncCloseWriteTempFile();
   if (presetSyncWriteTransfer.streamRawToFile && presetSyncWriteTransfer.streamRawPath[0]) {
     LittleFS.remove(presetSyncWriteTransfer.streamRawPath);
   }

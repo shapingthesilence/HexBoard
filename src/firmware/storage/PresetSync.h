@@ -11,7 +11,7 @@ constexpr uint16_t PRESET_SYNC_NEW_OBJECT_HANDLE = 0x3FFF;
 constexpr uint16_t PRESET_SYNC_CURRENT_SYNTH_PRESET_HANDLE = PRESET_SYNC_NEW_OBJECT_HANDLE;
 constexpr uint16_t PRESET_SYNC_RAW_CHUNK_SIZE = 64;
 constexpr size_t PRESET_SYNC_MAX_SYNTH_PRESET_BYTES = 2048;
-constexpr size_t PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES = SYNTH_WAVETABLE_MIP_SAMPLE_BYTES + 256;
+constexpr size_t PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES = SYNTH_WAVETABLE_MIP_SAMPLE_BYTES + 1024;
 constexpr size_t PRESET_SYNC_MAX_RAW_OBJECT_BYTES = PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES;
 constexpr size_t PRESET_SYNC_WAVETABLE_SAMPLE_TLV_CHUNK_BYTES = 32768;
 constexpr char PRESET_SYNC_WRITE_RAW_TEMP_FILE_PATH[] = "/ps_raw.tmp";
@@ -190,6 +190,7 @@ void presetSyncSendAck(uint16_t transactionId, uint8_t ackedMessage, uint32_t ne
 void presetSyncSendNack(uint16_t transactionId, uint8_t failedMessage, uint8_t errorCode, uint32_t expectedChunkIndex = 0, uint8_t detail = 0);
 void presetSyncCancelReadTransfer();
 void presetSyncCancelWriteTransfer();
+void presetSyncCloseWriteTempFile();
 uint8_t presetSyncChunkChecksum(const uint8_t* data, size_t length);
 void presetSyncPack8To7(const uint8_t* raw, size_t rawLength, std::vector<uint8_t>& packed);
 bool presetSyncUnpack8To7(const uint8_t* packed, size_t packedLength, size_t rawLength, std::vector<uint8_t>& raw);

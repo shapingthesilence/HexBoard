@@ -201,7 +201,6 @@ volatile uint8_t activeSynthWaveFrameCount = 1;
 volatile uint8_t activeSynthWavetableMipLevelCount = 1;
 byte synthWavetableMipOctaveOffset = SYNTH_WAVETABLE_MIP_OCTAVE_OFFSET_ZERO;
 uint16_t synthWavetableFramePositionByAmount[128] = {};
-uint8_t synthFxModScaleByDepth[128][128] = {};
 bool userSynthWavetableAvailable = false;
 void setActiveSynthWaveFrameCount(uint8_t frameCount);
 constexpr int16_t SYNTH_PITCH_MOD_Q4_SCALE = 16;
@@ -942,6 +941,10 @@ inline uint8_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue) {
   return static_cast<uint8_t>((static_cast<uint16_t>(modValue) * static_cast<uint16_t>(synthModAmount) + 64u) >> 7);
 }
 
+inline uint8_t RAM_FUNC(scaleSynthFxModDepth)(uint8_t depth, uint8_t value) {
+  return static_cast<uint8_t>((static_cast<uint16_t>(value) * (static_cast<uint16_t>(depth) + 1u)) >> 7);
+}
+
 inline int16_t RAM_FUNC(effectEnvelopeModValue)(uint8_t envelopeIndex, uint8_t target, const EnvelopeState& env) {
   int16_t depth = synthEffectAmountDepth(effectEnvelopeAmount[envelopeIndex]);
   if (depth == 0) {
@@ -962,7 +965,7 @@ inline int16_t RAM_FUNC(effectEnvelopeModValue)(uint8_t envelopeIndex, uint8_t t
   }
 
   uint8_t absDepth = static_cast<uint8_t>(depth > 0 ? depth : -depth);
-  uint8_t scaled = synthFxModScaleByDepth[absDepth][value];
+  uint8_t scaled = scaleSynthFxModDepth(absDepth, static_cast<uint8_t>(value));
   if (negativeVibrato) {
     return static_cast<int16_t>(absDepth - scaled);
   }
@@ -1416,17 +1419,8 @@ void setActiveSynthWaveFrameCount(uint8_t frameCount) {
   activeSynthWaveFrameCount = boundedFrameCount;
 }
 
-void initializeSynthFxModLookup() {
-  for (uint8_t depth = 0; depth < 128; ++depth) {
-    for (uint8_t value = 0; value < 128; ++value) {
-      synthFxModScaleByDepth[depth][value] = static_cast<uint8_t>((static_cast<uint16_t>(value) * (static_cast<uint16_t>(depth) + 1u)) >> 7);
-    }
-  }
-}
-
 void initializeSynthWaveTables() {
   memcpy(synthVibratoSine, waveSineSource, SYNTH_WAVE_SAMPLE_COUNT);
-  initializeSynthFxModLookup();
   initializeSynthPitchModLookup();
   setActiveSynthWaveFrameCount(1);
   setActiveSynthWavetableMipLevelCount(1);

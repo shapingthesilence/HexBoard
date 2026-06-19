@@ -353,13 +353,13 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 
 Example response, transaction `1`, max packed chunk `128`, capabilities
 `0xB7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
-delete user object, plus synth wavetable objects), max raw object bytes `65792`,
+delete user object, plus synth wavetable objects), max raw object bytes `66560`,
 settings schema `18`, synth preset schema `7`, `9` profiles, `128` synth preset
 entries, `127` slots for each advertised user geometry count, hardware version
 `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 16 7E 00 04 02 00 12 07 09 01 00 7F 7F 7F 7F 02 F7
+F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 16 7E 00 04 08 00 12 07 09 01 00 7F 7F 7F 7F 02 F7
 ```
 
 ## Object Addressing
@@ -485,7 +485,9 @@ New sample files are four-level `65,536`-byte fixed mip tables; legacy
 `16,384`-byte base-only files are still streamed and reported as schema `1.0`.
 Host-to-device `SynthWavetable` writes are received through temporary LittleFS
 files for the raw object and concatenated sample TLVs, so fixed mip uploads do
-not require a contiguous object-sized heap buffer.
+not require a contiguous object-sized heap buffer. Firmware keeps the raw-object
+temp file open across incoming data chunks and closes it before validating the
+commit, avoiding repeated append opens during large fixed-mip uploads.
 
 Example read profile slot `0`, transaction `2`:
 

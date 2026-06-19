@@ -456,8 +456,10 @@ prefix in transfer RAM and stream the sample file into outgoing chunks as ACKs
 arrive; new files are `65,536`-byte four-level fixed mip tables and legacy files
 are `16,384`-byte base-only tables. Synth wavetable writes also spool the raw
 object and concatenated sample TLVs through LittleFS temp files so uploads do
-not require an object-sized heap allocation. One-frame control messages, including live synth parameter sets,
-process inline and do not open the modal transfer window. Live synth
+not require an object-sized heap allocation; incoming raw-object writes keep the
+temp file open until `TRANSFER_END` closes it. One-frame control messages,
+including live synth parameter sets, process inline and do not open the modal
+transfer window. Live synth
 parameter sets mark settings dirty after applying valid records, so persistence
 uses the same debounced profile auto-save path as on-device synth menu edits.
 
@@ -596,9 +598,10 @@ Key implementation facts:
   waveform reads, mixing, drive, and output scaling remain audio-rate. If only
   global sources modulate `WT Pos`, the cached frame-pair position is shared
   across active voices; if an FX envelope targets `WT Pos`, each voice caches
-  its own frame context. FX-envelope modulation depth uses a `128 x 128` RAM
-  scale table, and FX envelopes advance by the full `16` audio ticks on each
-  control refresh to preserve long envelope timing.
+  its own frame context. FX-envelope modulation depth is recomputed during the
+  control refresh instead of using a `128 x 128` RAM scale table, and FX
+  envelopes advance by the full `16` audio ticks on each control refresh to
+  preserve long envelope timing.
 - Named user wavetable object type `0x0B` accepts the new four-level fixed mip
   payload (`65,536` bytes) and the legacy base-only payload (`16,384` bytes).
   Firmware validates the TLVs, copies the base data to `activeSynthWaveTable`,

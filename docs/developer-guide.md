@@ -215,7 +215,9 @@ the wavetable sample file as each outgoing chunk is ACKed. New files contain a
 files remain readable; both paths avoid a full wavetable-object heap allocation
 before the transfer screen can open. Device-to-host and host-to-device synth
 wavetable transfers stream the sample-bearing object through temporary LittleFS
-files so fixed mip uploads do not require a contiguous object-sized heap buffer.
+files so fixed mip uploads do not require a contiguous object-sized heap buffer;
+incoming fixed-mip uploads keep the raw-object temp file open for the duration
+of the write transfer and close it before commit validation.
 Live USB MIDI packet output has a much shorter retry window than SysEx stream
 output. If the USB host is connected but not polling, such as a sleeping or
 closed laptop that still supplies power, `writeUsbMidiPacket()` backs off after
@@ -629,10 +631,11 @@ advance, phase warping, waveform reads, amp-envelope level, mixing, drive, and
 output scaling remain audio-rate. When only global sources such as the wheel or
 LFO modulate `WT Pos`, the cached frame-pair position is shared by all voices;
 when an FX envelope targets `WT Pos`, each voice caches its own frame context.
-FX-envelope modulation depth uses a `128 x 128` RAM scale table,
-and FX envelopes advance by the full `16` audio ticks on each control refresh so
-long envelope timing stays aligned while worst-case blocks avoid rebuilding
-modulation every sample.
+FX-envelope modulation depth is recomputed with one small multiply during the
+control refresh instead of using a `128 x 128` RAM scale table, and FX envelopes
+advance by the full `16` audio ticks on each control refresh so long envelope
+timing stays aligned while worst-case blocks avoid rebuilding modulation every
+sample.
 
 New user wavetables are saved through the named wavetable catalog. Presets store
 only the wavetable folder/name dependency, so a missing dependency falls back to

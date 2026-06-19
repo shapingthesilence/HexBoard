@@ -533,6 +533,8 @@ open preset. Refreshing the HexBoard wavetable list reads only device metadata;
 full sample data transfers start only when `Download` or `Export` is chosen.
 Those explicit wavetable reads are large chunked transfers, and HexBoard streams
 the sample file during the transfer instead of preloading the whole object first.
+The web app trims preset and wavetable names/folders to the device's fixed text
+fields before upload so long browser-side labels do not break transfers.
 Presets store the wavetable folder/name rather than a private copy of the
 wavetable data, so a shared preset that needs a third-party table will work once
 a wavetable with the same folder and name is installed on the HexBoard.
