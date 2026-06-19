@@ -189,12 +189,15 @@ inline int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
   return negative ? -shaped : shaped;
 }
 byte activeSynthWaveTable[SYNTH_WAVETABLE_FRAME_COUNT][SYNTH_WAVE_SAMPLE_COUNT] = {};
+byte activeSynthWavetableMipExtraSamples[SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES] = {};
 byte synthVibratoSine[SYNTH_WAVE_SAMPLE_COUNT] = {};
 volatile bool synthWaveTableLoadInProgress = false;
 byte loadedSynthWaveform = 255;
 char loadedSynthWavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = {};
 char loadedSynthWavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
 volatile uint8_t activeSynthWaveFrameCount = 1;
+volatile uint8_t activeSynthWavetableMipLevelCount = 1;
+byte synthWavetableMipOctaveOffset = SYNTH_WAVETABLE_MIP_OCTAVE_OFFSET_ZERO;
 uint16_t synthWavetableFramePositionByAmount[128] = {};
 uint8_t synthFxModScaleByDepth[128][128] = {};
 bool userSynthWavetableAvailable = false;
@@ -233,6 +236,93 @@ inline uint8_t RAM_FUNC(synthWaveInterpolationFraction)(uint16_t phase) {
 
 inline uint16_t RAM_FUNC(synthWavePhaseFromSampleIndex)(uint16_t sampleIndex) {
   return static_cast<uint16_t>(sampleIndex << SYNTH_WAVE_PHASE_FRACTION_BITS);
+}
+
+inline uint16_t RAM_FUNC(synthWavetableMipSampleCount)(uint8_t level) {
+  if (level >= SYNTH_WAVETABLE_MIP_LEVEL_COUNT) {
+    level = SYNTH_WAVETABLE_MIP_LEVEL_COUNT - 1;
+  }
+  return static_cast<uint16_t>(SYNTH_WAVE_SAMPLE_COUNT >> level);
+}
+
+inline uint8_t RAM_FUNC(synthWavetableMipSampleBits)(uint8_t level) {
+  if (level >= SYNTH_WAVETABLE_MIP_LEVEL_COUNT) {
+    level = SYNTH_WAVETABLE_MIP_LEVEL_COUNT - 1;
+  }
+  return static_cast<uint8_t>(SYNTH_WAVE_SAMPLE_BITS - level);
+}
+
+inline size_t RAM_FUNC(synthWavetableMipExtraLevelOffset)(uint8_t level) {
+  switch (level) {
+    case 1: return 0;
+    case 2: return 8192;
+    case 3: return 12288;
+    case 4: return 14336;
+    case 5: return 15360;
+    default: return 0;
+  }
+}
+
+inline byte* RAM_FUNC(activeSynthWavetableMipFrame)(uint8_t level, uint8_t frameIndex) {
+  if (level == 0) {
+    return activeSynthWaveTable[frameIndex];
+  }
+  uint16_t sampleCount = synthWavetableMipSampleCount(level);
+  return activeSynthWavetableMipExtraSamples
+    + synthWavetableMipExtraLevelOffset(level)
+    + (static_cast<size_t>(frameIndex) * sampleCount);
+}
+
+bool isSupportedSynthWavetableSampleLength(size_t sampleLength) {
+  return sampleLength == SYNTH_WAVETABLE_SAMPLE_BYTES
+      || sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES;
+}
+
+void setActiveSynthWavetableMipLevelCount(uint8_t levelCount) {
+  if (levelCount < 1) {
+    levelCount = 1;
+  } else if (levelCount > SYNTH_WAVETABLE_MIP_LEVEL_COUNT) {
+    levelCount = SYNTH_WAVETABLE_MIP_LEVEL_COUNT;
+  }
+  __dmb();
+  activeSynthWavetableMipLevelCount = levelCount;
+}
+
+void rebuildActiveSynthWavetableMipPyramidFromBase() {
+  for (uint8_t level = 1; level < SYNTH_WAVETABLE_MIP_LEVEL_COUNT; ++level) {
+    uint16_t previousSampleCount = synthWavetableMipSampleCount(level - 1);
+    uint16_t sampleCount = synthWavetableMipSampleCount(level);
+    for (uint8_t frameIndex = 0; frameIndex < SYNTH_WAVETABLE_FRAME_COUNT; ++frameIndex) {
+      const byte* previousFrame = activeSynthWavetableMipFrame(level - 1, frameIndex);
+      byte* frame = activeSynthWavetableMipFrame(level, frameIndex);
+      for (uint16_t sampleIndex = 0; sampleIndex < sampleCount; ++sampleIndex) {
+        uint16_t previousIndex = static_cast<uint16_t>(sampleIndex << 1);
+        uint16_t nextIndex = static_cast<uint16_t>(previousIndex + 1);
+        if (nextIndex >= previousSampleCount) {
+          nextIndex = 0;
+        }
+        frame[sampleIndex] = static_cast<byte>((static_cast<uint16_t>(previousFrame[previousIndex])
+                                                + static_cast<uint16_t>(previousFrame[nextIndex])
+                                                + 1u) >> 1);
+      }
+    }
+  }
+  setActiveSynthWavetableMipLevelCount(SYNTH_WAVETABLE_MIP_LEVEL_COUNT);
+}
+
+void loadActiveSynthWavetableSamples(const uint8_t* samples, size_t sampleLength) {
+  if (samples == nullptr || !isSupportedSynthWavetableSampleLength(sampleLength)) {
+    return;
+  }
+  memcpy(&activeSynthWaveTable[0][0], samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
+  if (sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
+    memcpy(activeSynthWavetableMipExtraSamples,
+           samples + SYNTH_WAVETABLE_SAMPLE_BYTES,
+           SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES);
+    setActiveSynthWavetableMipLevelCount(SYNTH_WAVETABLE_MIP_LEVEL_COUNT);
+  } else {
+    rebuildActiveSynthWavetableMipPyramidFromBase();
+  }
 }
 
 inline uint16_t RAM_FUNC(interpolatedWaveSample)(const byte* table, uint16_t phase) {
@@ -1169,6 +1259,7 @@ void generateCompatibilitySynthWavetable(const BuiltinSynthWavetableDefinition& 
         static_cast<uint8_t>(static_cast<int16_t>(sampleA) + ((delta * static_cast<int16_t>(frameFrac)) >> 8));
     }
   }
+  rebuildActiveSynthWavetableMipPyramidFromBase();
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
 }
 
@@ -1304,10 +1395,14 @@ void generateBasicSynthWavetable() {
         static_cast<uint8_t>(static_cast<int16_t>(sampleA) + ((delta * static_cast<int16_t>(frameFrac)) >> 8));
     }
   }
+  rebuildActiveSynthWavetableMipPyramidFromBase();
+  setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
 }
 
 void loadFallbackUserSynthWavetable() {
   memcpy(activeSynthWaveTable[0], waveSineSource, SYNTH_WAVE_SAMPLE_COUNT);
+  rebuildActiveSynthWavetableMipPyramidFromBase();
+  setActiveSynthWaveFrameCount(1);
   userSynthWavetableAvailable = false;
 }
 
@@ -1351,6 +1446,7 @@ void initializeSynthWaveTables() {
   initializeSynthFxModLookup();
   initializeSynthPitchModLookup();
   setActiveSynthWaveFrameCount(1);
+  setActiveSynthWavetableMipLevelCount(1);
   resetSynthRenderCaches();
   loadedSynthWaveform = 255;
   loadedSynthWavetableName[0] = '\0';
@@ -1423,6 +1519,7 @@ struct SynthWavetableReadContext {
   const byte* frameA;
   const byte* frameB;
   uint8_t frameFrac;
+  uint8_t phaseShift;
 };
 
 struct SynthModulationAmounts {
@@ -1449,13 +1546,13 @@ struct SynthVoiceRenderCache {
   int16_t polyWarpAmountTargetQ4 = 0;
   int16_t polyWarpAmountStepQ4 = 0;
   uint8_t warpSlewSamples = 0;
-  SynthWavetableReadContext wavetableContext = { activeSynthWaveTable[0], nullptr, 0 };
+  SynthWavetableReadContext wavetableContext = { activeSynthWaveTable[0], nullptr, 0, SYNTH_WAVE_PHASE_FRACTION_BITS };
 };
 
 SynthModulationAmounts synthBaseModulationCache = {};
 std::array<SynthVoiceRenderCache, POLYPHONY_LIMIT> synthVoiceRenderCaches = {};
 std::array<bool, POLYPHONY_LIMIT> synthVoiceRenderCacheValid = {};
-SynthWavetableReadContext synthSharedWavetableReadContext = { activeSynthWaveTable[0], nullptr, 0 };
+uint16_t synthSharedWavetableFramePosition = 0;
 uint8_t synthControlSampleCountdown = 0;
 
 inline void RAM_FUNC(resetSynthVoiceRenderCache)(uint8_t voiceIndex) {
@@ -1468,7 +1565,7 @@ inline void RAM_FUNC(resetSynthVoiceRenderCache)(uint8_t voiceIndex) {
 
 void RAM_FUNC(resetSynthRenderCaches)() {
   synthBaseModulationCache = {};
-  synthSharedWavetableReadContext = { activeSynthWaveTable[0], nullptr, 0 };
+  synthSharedWavetableFramePosition = 0;
   synthControlSampleCountdown = 0;
   for (uint8_t voiceIndex = 0; voiceIndex < POLYPHONY_LIMIT; ++voiceIndex) {
     resetSynthVoiceRenderCache(voiceIndex);
@@ -1542,8 +1639,8 @@ inline void RAM_FUNC(retargetSynthVoiceSlews)(SynthVoiceRenderCache& cache,
   cache.phaseIncrementTarget = phaseIncrementTarget;
   if (phaseIncrementTarget >= cache.phaseIncrement) {
     uint32_t difference = phaseIncrementTarget - cache.phaseIncrement;
-    uint32_t step = (elapsedTicks == 8)
-                      ? (difference >> 3)
+    uint32_t step = (elapsedTicks == SYNTH_CONTROL_RATE_SAMPLES)
+                      ? (difference >> SYNTH_CONTROL_RATE_SHIFT)
                       : (difference / elapsedTicks);
     if (step == 0 && difference != 0) {
       step = 1;
@@ -1554,8 +1651,8 @@ inline void RAM_FUNC(retargetSynthVoiceSlews)(SynthVoiceRenderCache& cache,
         : step);
   } else {
     uint32_t difference = cache.phaseIncrement - phaseIncrementTarget;
-    uint32_t step = (elapsedTicks == 8)
-                      ? (difference >> 3)
+    uint32_t step = (elapsedTicks == SYNTH_CONTROL_RATE_SAMPLES)
+                      ? (difference >> SYNTH_CONTROL_RATE_SHIFT)
                       : (difference / elapsedTicks);
     if (step == 0 && difference != 0) {
       step = 1;
@@ -1621,27 +1718,59 @@ inline void RAM_FUNC(advanceSynthVoiceSlews)(SynthVoiceRenderCache& cache) {
   }
 }
 
+inline uint8_t RAM_FUNC(synthWavetableMipLevelForPhaseIncrement)(uint32_t phaseIncrement) {
+  uint8_t levelCount = activeSynthWavetableMipLevelCount;
+  if (levelCount <= 1) {
+    return 0;
+  }
+  if (levelCount > SYNTH_WAVETABLE_MIP_LEVEL_COUNT) {
+    levelCount = SYNTH_WAVETABLE_MIP_LEVEL_COUNT;
+  }
+
+  int16_t thresholdShift = static_cast<int16_t>(23)
+    + static_cast<int16_t>(synthWavetableMipOctaveOffset)
+    - static_cast<int16_t>(SYNTH_WAVETABLE_MIP_OCTAVE_OFFSET_ZERO);
+  uint8_t level = 0;
+  while (level + 1 < levelCount) {
+    int16_t currentShift = static_cast<int16_t>(thresholdShift + level);
+    bool useNextLevel = currentShift <= 0;
+    if (!useNextLevel && currentShift < 32) {
+      useNextLevel = phaseIncrement >= (1u << currentShift);
+    }
+    if (!useNextLevel) {
+      break;
+    }
+    ++level;
+  }
+  return level;
+}
+
 inline SynthWavetableReadContext RAM_FUNC(wavetableReadContextFromFramePosition)(uint16_t framePosition,
-                                                                                 uint8_t frameCount) {
+                                                                                 uint8_t frameCount,
+                                                                                 uint8_t mipLevel) {
+  if (mipLevel >= activeSynthWavetableMipLevelCount) {
+    mipLevel = activeSynthWavetableMipLevelCount > 0 ? activeSynthWavetableMipLevelCount - 1 : 0;
+  }
+  uint8_t phaseShift = static_cast<uint8_t>(16 - synthWavetableMipSampleBits(mipLevel));
   if (frameCount <= 1) {
-    return { activeSynthWaveTable[0], nullptr, 0 };
+    return { activeSynthWavetableMipFrame(mipLevel, 0), nullptr, 0, phaseShift };
   }
 
   uint8_t frameIndex = static_cast<uint8_t>(framePosition >> 8);
   uint8_t frameFrac = static_cast<uint8_t>(framePosition & 0xFF);
   uint8_t maxFrameIndex = static_cast<uint8_t>(frameCount - 1);
   if (frameIndex >= maxFrameIndex) {
-    return { activeSynthWaveTable[maxFrameIndex], nullptr, 0 };
+    return { activeSynthWavetableMipFrame(mipLevel, maxFrameIndex), nullptr, 0, phaseShift };
   }
   if (frameFrac == 0) {
-    return { activeSynthWaveTable[frameIndex], nullptr, 0 };
+    return { activeSynthWavetableMipFrame(mipLevel, frameIndex), nullptr, 0, phaseShift };
   }
-  return { activeSynthWaveTable[frameIndex], activeSynthWaveTable[frameIndex + 1], frameFrac };
+  return { activeSynthWavetableMipFrame(mipLevel, frameIndex), activeSynthWavetableMipFrame(mipLevel, frameIndex + 1), frameFrac, phaseShift };
 }
 
 inline uint16_t RAM_FUNC(readActiveWavetableSampleWithContext)(uint16_t phase,
                                                                const SynthWavetableReadContext& context) {
-  uint16_t sampleIndex = synthWaveSampleIndexFromPhase16(phase);
+  uint16_t sampleIndex = phase >> context.phaseShift;
   int16_t sampleA = context.frameA[sampleIndex];
   if (!context.frameB) {
     return static_cast<uint16_t>(sampleA << 8);
@@ -1653,7 +1782,7 @@ inline uint16_t RAM_FUNC(readActiveWavetableSampleWithContext)(uint16_t phase,
 inline uint16_t RAM_FUNC(readActiveWavetableSampleAtFramePosition)(uint16_t phase,
                                                                    uint16_t framePosition,
                                                                    uint8_t frameCount) {
-  return readActiveWavetableSampleWithContext(phase, wavetableReadContextFromFramePosition(framePosition, frameCount));
+  return readActiveWavetableSampleWithContext(phase, wavetableReadContextFromFramePosition(framePosition, frameCount, 0));
 }
 
 inline uint16_t RAM_FUNC(readActiveWavetableSample)(uint16_t phase,
@@ -1995,14 +2124,13 @@ inline void RAM_FUNC(refreshSynthVoiceRenderCache)(uint8_t voiceIndex,
                           elapsedTicks,
                           elapsedTicks == 0 || !synthVoiceRenderCacheValid[voiceIndex]);
   if (activeWavetableHasFrames) {
-    cache.wavetableContext = perVoiceWavetablePosition
-                               ? wavetableReadContextFromFramePosition(
-                                   wavetableFramePositionFromAmount(
-                                     combinedWavetablePositionAmount(voiceModulation.wavetablePosition)),
-                                   activeWaveFrameCount)
-                               : synthSharedWavetableReadContext;
+    uint8_t mipLevel = synthWavetableMipLevelForPhaseIncrement(phaseIncrement);
+    uint16_t framePosition = perVoiceWavetablePosition
+      ? wavetableFramePositionFromAmount(combinedWavetablePositionAmount(voiceModulation.wavetablePosition))
+      : synthSharedWavetableFramePosition;
+    cache.wavetableContext = wavetableReadContextFromFramePosition(framePosition, activeWaveFrameCount, mipLevel);
   } else {
-    cache.wavetableContext = { activeSynthWaveTable[0], nullptr, 0 };
+    cache.wavetableContext = { activeSynthWaveTable[0], nullptr, 0, SYNTH_WAVE_PHASE_FRACTION_BITS };
   }
   synthVoiceRenderCacheValid[voiceIndex] = true;
 }
@@ -2174,13 +2302,10 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
     && ((synthEffectEnvelopeActive[0] && effectEnvelopeTarget[0] == SYNTH_MOD_TARGET_WAVETABLE_POSITION)
         || (synthEffectEnvelopeActive[1] && effectEnvelopeTarget[1] == SYNTH_MOD_TARGET_WAVETABLE_POSITION));
   if (synthControlTick) {
-    synthSharedWavetableReadContext =
+    synthSharedWavetableFramePosition =
       (activeWavetableHasFrames && !perVoiceWavetablePosition)
-        ? wavetableReadContextFromFramePosition(
-            wavetableFramePositionFromAmount(
-              combinedWavetablePositionAmount(synthBaseModulationCache.wavetablePosition)),
-            activeWaveFrameCount)
-        : SynthWavetableReadContext{ activeSynthWaveTable[0], nullptr, 0 };
+        ? wavetableFramePositionFromAmount(combinedWavetablePositionAmount(synthBaseModulationCache.wavetablePosition))
+        : 0;
   }
   for (byte i = 0; i < voiceLimit; i++) {
     EnvelopeState& env = envelopeStates[i];

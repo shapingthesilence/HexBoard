@@ -197,6 +197,7 @@ Options include:
 - `Porta` when a mono mode is selected
 - `WT:...` current-wavetable load menu
 - `WT Pos`
+- `Mip Oct`
 - `Drive`
 - `Wheel FX`
 - `Wheel Amt`
@@ -275,6 +276,12 @@ shows frames `1` through `32`; frame `1` is the first frame and frame `32` is
 the last frame. Modulation can add to or subtract from this base position, so
 setting `WT Pos` above frame `1` lets a negative envelope or LFO amount move
 backward through the wavetable.
+
+`Mip Oct` is a temporary tuning aid for wavetable anti-aliasing. User
+wavetables now carry lower-resolution mip levels one octave apart, and the
+synth chooses a level from each voice's pitch. `Mip Oct` shifts those level
+change points by `-4` to `+4` octaves. It is not saved in presets or profiles;
+it resets to `0` after reboot.
 
 `Drive` adds soft saturation after the voices are mixed:
 
@@ -428,7 +435,7 @@ out of delegated mode.
 A browser-based HexBoard Sync app is being developed in this repository. Its
 first target is preset, tuning/layout, color-map, button-map, and synth-preset
 editing over Web MIDI SysEx. Firmware currently implements synth preset sync,
-the single user-wavetable import path, storage/list/read/write/delete for user
+named synth-wavetable import/read/write/delete, storage/list/read/write/delete for user
 geometry objects in `/layouts.dat`, foldered on-device `Tuning`, `Layout`, and
 `Scales` menus backed by saved geometry objects, and live Apply for generated
 EDO/equal-step geometry bundles. Scala/cents-table tuning objects can be saved
@@ -545,14 +552,17 @@ to acknowledge the write through the flash commit before the app refreshes the
 `Import Wavetable` is in the `Wavetables` library view. It opens an import
 dialog with a file-type selector for Serum/Vital `.wav` tables or HexBoard
 `.hexwav` tables. Serum/Vital imports read the source frames and render the
-table down to the firmware's `32 x 512` byte format. HexBoard `.hexwav` files
-are 8-bit mono WAV containers that already contain the exact firmware sample
-data. The import dialog always stages the selected file into a waveform preview
-before committing it; the frame slider chooses which rendered frame is shown.
+table down to the firmware's `32 x 512` base table, then build five lower mip
+levels at `256`, `128`, `64`, `32`, and `16` samples per frame. HexBoard
+`.hexwav` files are 8-bit mono WAV containers that contain either this full
+six-level pyramid or an older base-only table that the app upgrades on import.
+The import dialog always stages the selected file into a waveform preview
+before committing it; the frame slider chooses which rendered frame is shown
+and the mip slider chooses which stored level is shown.
 The `Import` button at the bottom saves the previewed table. Serum/Vital
 conversion options include nearest or interpolated frame reduction, per-frame
 or whole-table normalization, a Smooth checkbox that softens each rendered
-frame, and optional dither. `.hexwav` imports preview the exact stored HexBoard
+frame, and optional dither. `.hexwav` imports preview the stored HexBoard
 sample data, so those conversion controls are disabled for that file type.
 Imported tables are saved by the selected name/folder in the browser wavetable
 library, uploaded to HexBoard, and used by the open preset with `WT Pos = 0`.

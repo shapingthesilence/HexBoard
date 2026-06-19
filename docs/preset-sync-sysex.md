@@ -1,7 +1,7 @@
 # HexBoard Preset Sync SysEx Protocol Draft
 
 This is the design spec for HexBoard preset sync. The synth preset subset,
-single user-wavetable write path, raw `/layouts.dat` user geometry catalog
+named synth-wavetable write/read path, raw `/layouts.dat` user geometry catalog
 storage, and live Apply for generated EDO/equal-step geometry bundles are
 implemented in firmware; profile, bundle, backup, and full Scala/cents-table
 tuning workflows remain draft design until their runtime models are
@@ -353,13 +353,13 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 
 Example response, transaction `1`, max packed chunk `128`, capabilities
 `0xB7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
-delete user object, plus synth wavetable objects), max raw object bytes `16640`,
+delete user object, plus synth wavetable objects), max raw object bytes `32512`,
 settings schema `18`, synth preset schema `7`, `9` profiles, `128` synth preset
 entries, `127` slots for each advertised user geometry count, hardware version
 `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 00 00 16 7E 00 01 02 00 10 06 09 01 00 7F 7F 7F 7F 02 F7
+F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 16 7E 00 01 7E 00 12 07 09 01 00 7F 7F 7F 7F 02 F7
 ```
 
 ## Object Addressing
@@ -481,6 +481,8 @@ chunk. The device finishes with `TRANSFER_END`, and the host ACKs it.
 For `SynthWavetable` reads, current firmware sends the same object bytes but
 stages only the metadata prefix in RAM; the `WavetableSamples` TLV data is read
 from the per-table LittleFS sample file as each outgoing chunk is requested.
+New sample files are six-level `32,256`-byte mip pyramids; legacy `16,384`-byte
+base-only files are still streamed and reported as schema `1.0`.
 
 Example read profile slot `0`, transaction `2`:
 
@@ -1061,30 +1063,39 @@ entry. Current firmware supports listing, reading, writing, and deleting
 entries. Presets reference wavetables by `SynthWavetableFolderPath` plus
 `SynthWavetableName`; they do not embed table sample data.
 
-The object schema is `1.0`. The body uses the common `HBS1` object header and
-may include common metadata TLVs such as `Name`, `ObjectId`, `Source`, and
-`FolderPath`. Sample-bearing wavetable imports require these synth-wavetable
-TLVs:
+New sample-bearing objects use schema `1.1`. Firmware still accepts schema
+`1.0` base-only wavetable objects for compatibility. The body uses the common
+`HBS1` object header and may include common metadata TLVs such as `Name`,
+`ObjectId`, `Source`, and `FolderPath`. Sample-bearing wavetable imports require
+these synth-wavetable TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
 | `0x30` | `WavetableFrameCount` | `u8`, must be `32` |
 | `0x31` | `WavetableSampleCount` | `u16-le`, must be `512` |
-| `0x32` | `WavetableSamples` | `32 * 512` unsigned bytes, frame-major |
+| `0x32` | `WavetableSamples` | `32,256` unsigned bytes for schema `1.1`; legacy `16,384` bytes for schema `1.0` |
+| `0x33` | `WavetableMipLevels` | `u8`; `6` for the mip pyramid or `1` for legacy base-only data |
+
+The mip payload is level-major and frame-major within each level: `32` frames at
+`512` samples, then `256`, `128`, `64`, `32`, and `16` samples. Levels are one
+octave apart. Hosts should include `WavetableMipLevels = 6` when sending the
+full pyramid; firmware rejects mismatched sample length and mip count pairs.
 
 The web app's Serum/Vital import path reads wavetable `.wav` files,
 interpolates the source frame axis down to `32` frames, resamples each frame to
-`512` samples, normalizes to unsigned byte samples centered on `128`, and sends
-the result with `ApplyToRuntime | SaveToFlash`. The web app's HexBoard export
-path writes `.hexwav` files: 8-bit mono WAV containers whose data chunk is
-exactly the `32 * 512` firmware sample bytes. HexBoard `.hexwav` imports skip
-the Serum/Vital crunching step and send the contained sample bytes directly.
+`512` samples, normalizes to unsigned byte samples centered on `128`, builds
+the lower mip levels, and sends the result with `ApplyToRuntime | SaveToFlash`.
+The web app's HexBoard export path writes `.hexwav` files: 8-bit mono WAV
+containers whose data chunk is exactly the `32,256`-byte mip pyramid. HexBoard
+`.hexwav` imports skip the Serum/Vital crunching step; older `16,384`-byte
+`.hexwav` files are accepted and upgraded to a mip pyramid by the app before
+upload.
 Firmware validates the transfer CRC32, copies the sample TLV into
 `activeSynthWaveTable`, selects the uploaded folder/name for the current runtime
 patch, writes or replaces the matching catalog entry in
-`/synth_wavetables.dat`, and stores the raw `16384` sample bytes in a per-table
-sample file whose short filename is derived from the first 8 bytes of the
-wavetable object id when the save flag is present. Firmware also attempts to
+`/synth_wavetables.dat`, and stores the raw sample bytes in a per-table sample
+file whose short filename is derived from the first 8 bytes of the wavetable
+object id when the save flag is present. Firmware also attempts to
 read and remove the older full-object-id sample path for compatibility, but new
 imports avoid that overlong LittleFS filename. Catalog records with missing
 sample files are skipped/pruned so failed earlier imports do not consume

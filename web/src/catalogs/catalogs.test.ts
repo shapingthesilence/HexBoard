@@ -25,6 +25,8 @@ import {
   parseScalaScale,
   resolveLayoutBundleButtonColor,
   serializeLayoutBundle,
+  SYNTH_WAVETABLE_MIP_LEVEL_COUNT,
+  SYNTH_WAVETABLE_MIP_SAMPLE_BYTES,
   SYNTH_WAVETABLE_SAMPLE_BYTES,
   SynthWavetableTlv,
   TuningTlv,
@@ -223,11 +225,12 @@ Example scale
     });
     const decoded = decodeObjectBody(wavetable.body);
 
-    expect(samples).toHaveLength(SYNTH_WAVETABLE_SAMPLE_BYTES);
+    expect(samples).toHaveLength(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
     expect(decoded.objectType).toBe(ObjectType.SynthWavetable);
     expect(u8(recordValue(wavetable.body, SynthWavetableTlv.FrameCount))).toBe(32);
     expect(u16LE(recordValue(wavetable.body, SynthWavetableTlv.SampleCount))).toBe(512);
-    expect(recordValue(wavetable.body, SynthWavetableTlv.Samples)).toHaveLength(SYNTH_WAVETABLE_SAMPLE_BYTES);
+    expect(u8(recordValue(wavetable.body, SynthWavetableTlv.MipLevels))).toBe(SYNTH_WAVETABLE_MIP_LEVEL_COUNT);
+    expect(recordValue(wavetable.body, SynthWavetableTlv.Samples)).toHaveLength(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
   });
 
   it("applies wavetable import crunch options deterministically", () => {
@@ -250,7 +253,7 @@ Example scale
       dither: true
     });
 
-    expect(samples).toHaveLength(SYNTH_WAVETABLE_SAMPLE_BYTES);
+    expect(samples).toHaveLength(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
     expect(repeated).toEqual(samples);
   });
 
@@ -277,7 +280,8 @@ Example scale
 
     expect(String.fromCharCode(...wav.slice(0, 4))).toBe("RIFF");
     expect(String.fromCharCode(...wav.slice(8, 12))).toBe("WAVE");
-    expect(parsed).toEqual(samples);
+    expect(parsed).toHaveLength(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
+    expect(parsed.slice(0, SYNTH_WAVETABLE_SAMPLE_BYTES)).toEqual(samples);
   });
 
   it("serializes and encodes a layout bundle", () => {

@@ -52,13 +52,21 @@ bool RAM_FUNC(metronomeSideButtonsSelected)();
 bool RAM_FUNC(metronomeVisualFlashActive)();
 
 extern byte activeSynthWaveTable[SYNTH_WAVETABLE_FRAME_COUNT][SYNTH_WAVE_SAMPLE_COUNT];
+extern byte activeSynthWavetableMipExtraSamples[SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES];
 extern volatile bool synthWaveTableLoadInProgress;
+extern volatile uint8_t activeSynthWavetableMipLevelCount;
 extern byte loadedSynthWaveform;
 extern char loadedSynthWavetableName[SYNTH_WAVETABLE_NAME_LENGTH];
 extern char loadedSynthWavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH];
 extern bool userSynthWavetableAvailable;
 extern bool synthBuzzerEnabled;
 extern byte headphoneVolumeCap;
+extern byte synthWavetableMipOctaveOffset;
 extern const uint32_t AUDIO_DMA_BUFFER_MICROS;
 extern std::atomic<bool> flashWriteInProgress;
 extern std::atomic<bool> synthRuntimeReady;
+
+bool isSupportedSynthWavetableSampleLength(size_t sampleLength);
+void loadActiveSynthWavetableSamples(const uint8_t* samples, size_t sampleLength);
+void rebuildActiveSynthWavetableMipPyramidFromBase();
+void setActiveSynthWavetableMipLevelCount(uint8_t levelCount);

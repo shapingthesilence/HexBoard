@@ -185,9 +185,9 @@ struct UserSynthWavetableFileHeader {
 constexpr uint8_t USER_SYNTH_WAVETABLE_FILE_VERSION = 1;
 constexpr char USER_SYNTH_WAVETABLE_FILE_PATH[] = "/user_wavetable.dat";
 
-void applyUploadedSynthWavetableSamples(const uint8_t* samples) {
+void applyUploadedSynthWavetableSamples(const uint8_t* samples, size_t sampleLength) {
   synthWaveTableLoadInProgress = true;
-  memcpy(&activeSynthWaveTable[0][0], samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
+  loadActiveSynthWavetableSamples(samples, sampleLength);
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
   userSynthWavetableAvailable = true;
   setCurrentSynthWavetableReference("/User", "UserTbl");
@@ -238,6 +238,7 @@ bool loadUserSynthWavetableFromFile() {
     userSynthWavetableAvailable = false;
     return false;
   }
+  rebuildActiveSynthWavetableMipPyramidFromBase();
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
   userSynthWavetableAvailable = true;
   return true;
@@ -330,12 +331,25 @@ bool synthWavetableSamplePathExists(const char* samplePath) {
   return true;
 }
 
+size_t synthWavetableSampleFileLength(const char* samplePath) {
+  if (!samplePath || !samplePath[0]) {
+    return 0;
+  }
+  File f = LittleFS.open(samplePath, "r");
+  if (!f) {
+    return 0;
+  }
+  size_t length = f.size();
+  f.close();
+  return length;
+}
+
 bool resolveSynthWavetableSampleFilePath(const SynthWavetableSlot& wavetable, char* output, size_t outputLength) {
   if (!output || outputLength == 0) {
     return false;
   }
   output[0] = '\0';
-  if (synthWavetableSamplePathExists(wavetable.samplePath)) {
+  if (isSupportedSynthWavetableSampleLength(synthWavetableSampleFileLength(wavetable.samplePath))) {
     snprintf(output, outputLength, "%s", wavetable.samplePath);
     return true;
   }
@@ -343,7 +357,7 @@ bool resolveSynthWavetableSampleFilePath(const SynthWavetableSlot& wavetable, ch
   synthWavetableObjectIdToLegacySamplePath(wavetable.objectId, legacySamplePath, sizeof(legacySamplePath));
   if (legacySamplePath[0]
       && strcmp(legacySamplePath, wavetable.samplePath) != 0
-      && synthWavetableSamplePathExists(legacySamplePath)) {
+      && isSupportedSynthWavetableSampleLength(synthWavetableSampleFileLength(legacySamplePath))) {
     snprintf(output, outputLength, "%s", legacySamplePath);
     sendToLog("Read legacy wavetable sample path for " + std::string(wavetable.name));
     return true;
@@ -384,14 +398,14 @@ void removeSynthWavetableSampleFiles(const SynthWavetableSlot& wavetable) {
 }
 
 bool synthWavetableSampleFileExists(const SynthWavetableSlot& wavetable) {
-  if (synthWavetableSamplePathExists(wavetable.samplePath)) {
+  if (isSupportedSynthWavetableSampleLength(synthWavetableSampleFileLength(wavetable.samplePath))) {
     return true;
   }
   char legacySamplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
   synthWavetableObjectIdToLegacySamplePath(wavetable.objectId, legacySamplePath, sizeof(legacySamplePath));
   return legacySamplePath[0]
     && strcmp(legacySamplePath, wavetable.samplePath) != 0
-    && synthWavetableSamplePathExists(legacySamplePath);
+    && isSupportedSynthWavetableSampleLength(synthWavetableSampleFileLength(legacySamplePath));
 }
 
 void pruneMissingSynthWavetables() {
@@ -416,7 +430,7 @@ bool synthWavetableObjectIdIsEmpty(const SynthWavetableSlot& wavetable) {
   return true;
 }
 
-void generateSynthWavetableObjectId(SynthWavetableSlot& wavetable, const uint8_t* samples) {
+void generateSynthWavetableObjectId(SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength) {
   uint32_t hash = 2166136261u;
   auto mixByte = [&](uint8_t value) {
     hash ^= value;
@@ -433,7 +447,7 @@ void generateSynthWavetableObjectId(SynthWavetableSlot& wavetable, const uint8_t
     mixByte(static_cast<uint8_t>(*p));
   }
   if (samples) {
-    uint32_t sampleCrc = crc32(samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
+    uint32_t sampleCrc = crc32(samples, sampleLength == 0 ? SYNTH_WAVETABLE_SAMPLE_BYTES : sampleLength);
     for (uint8_t shift = 0; shift < 32; shift += 8) {
       mixByte(static_cast<uint8_t>((sampleCrc >> shift) & 0xFF));
     }
@@ -445,7 +459,7 @@ void generateSynthWavetableObjectId(SynthWavetableSlot& wavetable, const uint8_t
   }
 }
 
-void normalizeSynthWavetableMetadata(SynthWavetableSlot& wavetable, const uint8_t* samples) {
+void normalizeSynthWavetableMetadata(SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength) {
   if (!wavetable.name[0]) {
     snprintf(wavetable.name, sizeof(wavetable.name), "Wavetable");
   }
@@ -456,7 +470,7 @@ void normalizeSynthWavetableMetadata(SynthWavetableSlot& wavetable, const uint8_
   wavetable.folderPath[sizeof(wavetable.folderPath) - 1] = '\0';
   normalizeSynthWavetableFolderPath(wavetable.folderPath, sizeof(wavetable.folderPath));
   if (synthWavetableObjectIdIsEmpty(wavetable)) {
-    generateSynthWavetableObjectId(wavetable, samples);
+    generateSynthWavetableObjectId(wavetable, samples, sampleLength);
   }
   synthWavetableObjectIdToSamplePath(wavetable.objectId, wavetable.samplePath, sizeof(wavetable.samplePath));
 }
@@ -598,15 +612,19 @@ int chooseSynthWavetableWriteSlot(const SynthWavetableSlot& wavetable) {
   return -1;
 }
 
-bool writeSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, const uint8_t* samples) {
+bool writeSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength) {
+  if (!isSupportedSynthWavetableSampleLength(sampleLength)) {
+    sendToLog("Error: Unsupported wavetable sample length.");
+    return false;
+  }
   File f = LittleFS.open(wavetable.samplePath, "w");
   if (!f) {
     sendToLog("Error: Unable to open wavetable sample file " + std::string(wavetable.samplePath) + ".");
     return false;
   }
-  size_t written = f.write(samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
+  size_t written = f.write(samples, sampleLength);
   f.close();
-  if (written != SYNTH_WAVETABLE_SAMPLE_BYTES) {
+  if (written != sampleLength) {
     sendToLog("Error: Incomplete wavetable sample file write.");
     return false;
   }
@@ -620,11 +638,13 @@ bool loadSynthWavetableFromCatalog(const char* folderPath, const char* name) {
   }
   SynthWavetableSlot& wavetable = synthWavetables[index];
   File f = LittleFS.open(wavetable.samplePath, "r");
+  size_t sampleLength = f ? f.size() : 0;
   if (!f) {
     char legacySamplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
     synthWavetableObjectIdToLegacySamplePath(wavetable.objectId, legacySamplePath, sizeof(legacySamplePath));
     if (legacySamplePath[0] && strcmp(legacySamplePath, wavetable.samplePath) != 0) {
       f = LittleFS.open(legacySamplePath, "r");
+      sampleLength = f ? f.size() : 0;
     }
     if (!f) {
       sendToLog("Missing wavetable sample file for " + std::string(wavetable.name));
@@ -632,11 +652,29 @@ bool loadSynthWavetableFromCatalog(const char* folderPath, const char* name) {
     }
     sendToLog("Loaded legacy wavetable sample path for " + std::string(wavetable.name));
   }
+  if (!isSupportedSynthWavetableSampleLength(sampleLength)) {
+    f.close();
+    sendToLog("Unsupported wavetable sample length for " + std::string(wavetable.name));
+    return false;
+  }
   size_t bytesRead = f.read(&activeSynthWaveTable[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
+  if (bytesRead == SYNTH_WAVETABLE_SAMPLE_BYTES && sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
+    size_t extraBytesRead = f.read(activeSynthWavetableMipExtraSamples, SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES);
+    if (extraBytesRead != SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES) {
+      f.close();
+      sendToLog("Incomplete wavetable mip data for " + std::string(wavetable.name));
+      return false;
+    }
+  }
   f.close();
   if (bytesRead != SYNTH_WAVETABLE_SAMPLE_BYTES) {
     sendToLog("Incomplete wavetable sample file for " + std::string(wavetable.name));
     return false;
+  }
+  if (sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
+    setActiveSynthWavetableMipLevelCount(SYNTH_WAVETABLE_MIP_LEVEL_COUNT);
+  } else {
+    rebuildActiveSynthWavetableMipPyramidFromBase();
   }
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
   return true;

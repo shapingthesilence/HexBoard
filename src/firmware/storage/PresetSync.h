@@ -11,7 +11,7 @@ constexpr uint16_t PRESET_SYNC_NEW_OBJECT_HANDLE = 0x3FFF;
 constexpr uint16_t PRESET_SYNC_CURRENT_SYNTH_PRESET_HANDLE = PRESET_SYNC_NEW_OBJECT_HANDLE;
 constexpr uint16_t PRESET_SYNC_RAW_CHUNK_SIZE = 64;
 constexpr size_t PRESET_SYNC_MAX_SYNTH_PRESET_BYTES = 2048;
-constexpr size_t PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES = SYNTH_WAVETABLE_SAMPLE_BYTES + 256;
+constexpr size_t PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES = SYNTH_WAVETABLE_MIP_SAMPLE_BYTES + 256;
 constexpr size_t PRESET_SYNC_MAX_RAW_OBJECT_BYTES = PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES;
 
 constexpr uint8_t PRESET_SYNC_MSG_HELLO_REQ = 0x01;
@@ -51,6 +51,7 @@ constexpr uint8_t PRESET_SYNC_TLV_SYNTH_WAVETABLE_FOLDER_PATH = 0x27;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_FRAME_COUNT = 0x30;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_SAMPLE_COUNT = 0x31;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_SAMPLES = 0x32;
+constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_MIP_LEVELS = 0x33;
 constexpr uint8_t PRESET_SYNC_TLV_TUNING_KIND = 0x20;
 constexpr uint8_t PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS = 0x21;
 constexpr uint8_t PRESET_SYNC_TLV_TUNING_PERIOD_MILLI_CENTS = 0x22;
@@ -151,7 +152,8 @@ struct ParsedSynthWavetableObject {
   char name[SYNTH_WAVETABLE_NAME_LENGTH] = {};
   char folderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
   const uint8_t* samples = nullptr;
-  uint16_t sampleLength = 0;
+  size_t sampleLength = 0;
+  uint8_t mipLevelCount = 1;
   bool sawObjectId = false;
   bool sawSamples = false;
 };
@@ -203,8 +205,9 @@ bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlo
 bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynthWavetableObject& wavetable, std::string& error);
 bool readSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, std::vector<uint8_t>& samples);
 std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable);
-std::vector<uint8_t> buildSynthWavetableObjectBody(const SynthWavetableSlot& wavetable, const uint8_t* samples);
-void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, const uint8_t* samples);
+std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable, size_t sampleLength);
+std::vector<uint8_t> buildSynthWavetableObjectBody(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength);
+void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength);
 bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& wavetable);
 bool updateSynthWavetableMetadata(uint16_t handle, const ParsedSynthWavetableObject& parsed);
 size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType);

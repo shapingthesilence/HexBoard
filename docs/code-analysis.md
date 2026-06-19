@@ -452,9 +452,10 @@ and `TRANSFER_END` so USB MIDI buffers do not have to absorb the whole object
 transfer at once. The web client treats object-read timeouts as inactivity
 timeouts and sends `TRANSFER_ABORT` when a read stalls; firmware clears matching
 read or write transfers on abort. Synth wavetable reads keep only the metadata
-prefix in transfer RAM and stream the `32 * 512` sample file into outgoing chunks
-as ACKs arrive, avoiding the previous full-object allocation before the transfer
-window can draw. One-frame control messages, including live synth parameter sets,
+prefix in transfer RAM and stream the sample file into outgoing chunks as ACKs
+arrive; new files are `32,256`-byte six-level mip pyramids and legacy files are
+`16,384`-byte base-only tables. This avoids the previous full-object allocation
+before the transfer window can draw. One-frame control messages, including live synth parameter sets,
 process inline and do not open the modal transfer window. Live synth
 parameter sets mark settings dirty after applying valid records, so persistence
 uses the same debounced profile auto-save path as on-device synth menu edits.
@@ -575,27 +576,31 @@ Key implementation facts:
   path; the small vibrato sine table remains RAM-resident because the renderer
   reads it directly.
 - Built-in compatibility wavetables and named user wavetables both load into a
-  single `32`-frame active RAM buffer. Wavetable sampling runs in the normal
-  synth modes, uses `SynthWavetablePosition` plus signed `WT Pos` modulation as
-  frame position, and linearly interpolates adjacent frames. Firmware rebuilds a
-  RAM lookup table when the active frame count changes so the audio renderer can map
+  `32`-frame active RAM base table plus optional extra mip storage. Wavetable
+  sampling runs in the normal synth modes, uses `SynthWavetablePosition` plus
+  signed `WT Pos` modulation as frame position, linearly interpolates adjacent
+  frames, and indexes the selected mip level directly. Firmware rebuilds a RAM
+  lookup table when the active frame count changes so the audio renderer can map
   `WT Pos` values to frame positions without dividing per voice. Modulation work
   runs on a `16`-sample control quantum: wheel smoothing, LFO sampling, FX
-  envelopes, pitch modulation targets, vibrato depth targets, phase-warp targets, and
-  wavetable frame contexts are cached per voice, with note start/release/reset
-  forcing an immediate cache refresh. Per-voice phase increment and phase-warp depths
-  linearly slew between those cached targets at audio rate, while oscillator
-  phase advance, amp-envelope level, phase warping, waveform reads, mixing,
-  drive, and output scaling remain audio-rate. If only global sources modulate
-  `WT Pos`, the cached frame-pair read context is shared across active voices; if
-  an FX envelope targets `WT Pos`, each voice caches its own frame context.
-  FX-envelope modulation depth uses a `128 x 128` RAM scale table, and FX
-  envelopes advance by the full `16`
-  audio ticks on each control refresh to preserve long envelope timing.
-- `WAVEFORM_USER_WAVETABLE` is the one imported wavetable slot. The web app sends
-  object type `0x0B` with exactly `32 * 512` sample bytes; firmware validates the
-  TLVs, copies the data to `activeSynthWaveTable`, and can persist it in
-  `/user_wavetable.dat` with a CRC-protected `UWT` header.
+  envelopes, pitch modulation targets, vibrato depth targets, phase-warp
+  targets, and wavetable frame contexts are cached per voice, with note
+  start/release/reset forcing an immediate cache refresh. Each voice chooses its
+  mip from its pitch-adjusted phase increment; the transient `Mip Oct` menu
+  shifts octave-spaced thresholds and is not persisted. Per-voice phase
+  increment and phase-warp depths linearly slew between cached targets at audio
+  rate, while oscillator phase advance, amp-envelope level, phase warping,
+  waveform reads, mixing, drive, and output scaling remain audio-rate. If only
+  global sources modulate `WT Pos`, the cached frame-pair position is shared
+  across active voices; if an FX envelope targets `WT Pos`, each voice caches
+  its own frame context. FX-envelope modulation depth uses a `128 x 128` RAM
+  scale table, and FX envelopes advance by the full `16` audio ticks on each
+  control refresh to preserve long envelope timing.
+- Named user wavetable object type `0x0B` accepts the new six-level mip payload
+  (`32,256` bytes) and the legacy base-only payload (`16,384` bytes). Firmware
+  validates the TLVs, copies the base data to `activeSynthWaveTable`, stores or
+  rebuilds the lower mip levels in RAM, and persists new objects through the
+  named wavetable catalog instead of writing `/user_wavetable.dat`.
 - All onboard waveforms now use the same phase convention: phase zero starts at
   an upward zero crossing. Byte tables are centered around value `128` and
   rotated to that crossing; generated saw, triangle, square, and hybrid shapes
@@ -666,6 +671,10 @@ the overlong filename that can fail on LittleFS. Catalog load/write paths skip
 or prune records whose sample file is missing, which prevents failed earlier
 imports from exhausting catalog slots.
 
+The transient Synth Options `Mip Oct` item shifts wavetable mip-level thresholds
+by octaves for anti-aliasing tests. It is RAM-only menu state and intentionally
+does not bump `CURRENT_SETTINGS_VERSION`.
+
 The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `FoldWrp` is the default wheel effect and keeps the existing target byte value `0`; `DutyWrp` and `PolyWrp` add target byte values `4` and `5`. All three warp targets apply low-CPU phase warps across the onboard waveforms and active wavetable before sampling. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the on-device menu presents rounded frame anchors labeled `1..32`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator, then reads startup-generated RAM Q16 ratio tables so full positive depth raises each active voice by about `+24` semitones and full negative depth lowers it by about `-24` semitones.
 
 The synth LFO is persisted as `SynthLfoTarget`, `SynthLfoAmount`,
@@ -709,9 +718,12 @@ wavetable reference for each profile is stored separately in
 record per profile; the firmware loads that file into a stack-local struct only
 while saving or loading profile references. Each catalog entry has a valid flag,
 stable `16`-byte object id, name, folder path, and a sample-file
-path generated from the object id. The sample file contains `32 x 512`
-unsigned-byte samples. The legacy `/user_wavetable.dat` `UWT` file is still
-loadable only through the compatibility reference `/User/UserTbl`.
+path generated from the object id. New sample files contain six mip levels with
+`32` frames at `512`, `256`, `128`, `64`, `32`, and `16` samples per frame
+(`32,256` unsigned bytes total). Legacy `16,384`-byte base-only sample files are
+still accepted and expanded into RAM mips when loaded. The legacy
+`/user_wavetable.dat` `UWT` file is still loadable only through the compatibility
+reference `/User/UserTbl`.
 The web app treats wavetable refresh as metadata-only by using object-list
 records; full wavetable reads are deferred to explicit `Download`/`Export`
 actions. Metadata-only `SynthWavetable` writes can update a user wavetable's

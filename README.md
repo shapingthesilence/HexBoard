@@ -160,8 +160,8 @@ The web app currently includes:
   ACK-confirmed
 - firmware-backed synth wavetable upload, download, list, erase, and Serum
   `.wav` import; the web app crunches imported tables to the firmware's
-  `32 x 512` byte format, stores them by folder/name, and sends them over
-  ACKed preset-sync SysEx
+  six-level `32 x 512..16` mipmapped byte format, stores them by folder/name,
+  and sends them over ACKed preset-sync SysEx
 - a compact header device menu that uses preset-sync `HELLO_RESP` to discover a
   compatible HexBoard and only shows a device selector when multiple HexBoards
   respond

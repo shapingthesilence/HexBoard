@@ -12,6 +12,10 @@ import type { EncodedCatalogObject } from "./types.ts";
 export const SYNTH_WAVETABLE_FRAME_COUNT = 32;
 export const SYNTH_WAVETABLE_SAMPLE_COUNT = 512;
 export const SYNTH_WAVETABLE_SAMPLE_BYTES = SYNTH_WAVETABLE_FRAME_COUNT * SYNTH_WAVETABLE_SAMPLE_COUNT;
+export const SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS = [512, 256, 128, 64, 32, 16] as const;
+export const SYNTH_WAVETABLE_MIP_LEVEL_COUNT = SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS.length;
+export const SYNTH_WAVETABLE_MIP_SAMPLE_BYTES =
+  SYNTH_WAVETABLE_FRAME_COUNT * SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS.reduce((total, count) => total + count, 0);
 const SERUM_FRAME_SAMPLE_COUNT = 2048;
 
 export type WavetableFrameReduction = "nearest" | "interpolated";
@@ -27,7 +31,8 @@ export interface SerumWavetableCrunchOptions {
 export const SynthWavetableTlv = {
   FrameCount: 0x30,
   SampleCount: 0x31,
-  Samples: 0x32
+  Samples: 0x32,
+  MipLevels: 0x33
 } as const;
 
 export interface SynthWavetableInput {
@@ -59,9 +64,7 @@ interface WavDataChunk {
 }
 
 export function createSynthWavetableObject(input: SynthWavetableInput): EncodedCatalogObject {
-  if (input.samples.length !== SYNTH_WAVETABLE_SAMPLE_BYTES) {
-    throw new Error(`wavetable sample data must be ${SYNTH_WAVETABLE_SAMPLE_BYTES} bytes`);
-  }
+  const samples = ensureSynthWavetableMipPyramid(input.samples);
   const records: TlvRecord[] = [
     ...createCommonRecords({
       objectId: input.objectId,
@@ -72,12 +75,13 @@ export function createSynthWavetableObject(input: SynthWavetableInput): EncodedC
     }),
     tlvU8(SynthWavetableTlv.FrameCount, SYNTH_WAVETABLE_FRAME_COUNT),
     tlvU16LE(SynthWavetableTlv.SampleCount, SYNTH_WAVETABLE_SAMPLE_COUNT),
-    tlv(SynthWavetableTlv.Samples, input.samples)
+    tlvU8(SynthWavetableTlv.MipLevels, SYNTH_WAVETABLE_MIP_LEVEL_COUNT),
+    tlv(SynthWavetableTlv.Samples, samples)
   ];
   const body = encodeObjectBody({
     objectType: ObjectType.SynthWavetable,
     schemaMajor: 1,
-    schemaMinor: 0,
+    schemaMinor: 1,
     objectFlags: 0,
     records
   });
@@ -85,7 +89,7 @@ export function createSynthWavetableObject(input: SynthWavetableInput): EncodedC
   return {
     objectType: ObjectType.SynthWavetable,
     schemaMajor: 1,
-    schemaMinor: 0,
+    schemaMinor: 1,
     objectId: input.objectId,
     name: input.name,
     folderPath: input.folderPath,
@@ -161,26 +165,24 @@ export function renderSerumWavetable(wav: ParsedSerumWavetable, options: SerumWa
       const peak = findPeak(rendered, start, SYNTH_WAVETABLE_SAMPLE_COUNT);
       quantizeRenderedFrame(rendered, output, start, peak, options.dither === true);
     }
-    return output;
+    return ensureSynthWavetableMipPyramid(output);
   }
 
   const peak = findPeak(rendered, 0, rendered.length);
   if (peak <= 0.000001) {
     output.fill(128);
-    return output;
+    return ensureSynthWavetableMipPyramid(output);
   }
   for (let index = 0; index < rendered.length; index += 1) {
     output[index] = quantizeRenderedSample(rendered[index], peak, options.dither === true, index);
   }
-  return output;
+  return ensureSynthWavetableMipPyramid(output);
 }
 
 export function encodeHexBoardWavetableWav(samples: Uint8Array): Uint8Array {
-  if (samples.length !== SYNTH_WAVETABLE_SAMPLE_BYTES) {
-    throw new Error(`HexBoard wavetable exports must contain ${SYNTH_WAVETABLE_SAMPLE_BYTES} samples`);
-  }
+  const exportSamples = ensureSynthWavetableMipPyramid(samples);
   const headerBytes = 44;
-  const bytes = new Uint8Array(headerBytes + samples.length);
+  const bytes = new Uint8Array(headerBytes + exportSamples.length);
   const view = new DataView(bytes.buffer);
   writeFourCc(bytes, 0, "RIFF");
   view.setUint32(4, bytes.length - 8, true);
@@ -189,13 +191,13 @@ export function encodeHexBoardWavetableWav(samples: Uint8Array): Uint8Array {
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
   view.setUint16(22, 1, true);
-  view.setUint32(24, 16384, true);
-  view.setUint32(28, 16384, true);
+  view.setUint32(24, exportSamples.length, true);
+  view.setUint32(28, exportSamples.length, true);
   view.setUint16(32, 1, true);
   view.setUint16(34, 8, true);
   writeFourCc(bytes, 36, "data");
-  view.setUint32(40, samples.length, true);
-  bytes.set(samples, headerBytes);
+  view.setUint32(40, exportSamples.length, true);
+  bytes.set(exportSamples, headerBytes);
   return bytes;
 }
 
@@ -204,10 +206,103 @@ export function parseHexBoardWavetable(bytes: ArrayBuffer | Uint8Array): Uint8Ar
   if (wav.format.audioFormat !== 1 || wav.format.channels !== 1 || wav.format.bitsPerSample !== 8) {
     throw new Error("HexBoard wavetable files must be 8-bit mono PCM WAV data");
   }
-  if (wav.dataLength !== SYNTH_WAVETABLE_SAMPLE_BYTES) {
-    throw new Error(`HexBoard wavetable files must contain ${SYNTH_WAVETABLE_SAMPLE_BYTES} samples`);
+  if (!isSynthWavetableSampleDataLength(wav.dataLength)) {
+    throw new Error(`HexBoard wavetable files must contain ${SYNTH_WAVETABLE_SAMPLE_BYTES} or ${SYNTH_WAVETABLE_MIP_SAMPLE_BYTES} samples`);
   }
-  return new Uint8Array(wav.view.buffer, wav.view.byteOffset + wav.dataOffset, wav.dataLength).slice();
+  const samples = new Uint8Array(wav.view.buffer, wav.view.byteOffset + wav.dataOffset, wav.dataLength).slice();
+  return ensureSynthWavetableMipPyramid(samples);
+}
+
+export function isSynthWavetableSampleDataLength(length: number): boolean {
+  return length === SYNTH_WAVETABLE_SAMPLE_BYTES || length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES;
+}
+
+export function synthWavetableMipLevelCount(samples: Uint8Array): number {
+  return samples.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES ? SYNTH_WAVETABLE_MIP_LEVEL_COUNT : 1;
+}
+
+export function synthWavetableMipLevelSampleCount(level: number): number {
+  const clamped = Math.max(0, Math.min(SYNTH_WAVETABLE_MIP_LEVEL_COUNT - 1, Math.round(level)));
+  return SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS[clamped];
+}
+
+export function synthWavetableMipLevelOffset(level: number): number {
+  const clamped = Math.max(0, Math.min(SYNTH_WAVETABLE_MIP_LEVEL_COUNT - 1, Math.round(level)));
+  let offset = 0;
+  for (let index = 0; index < clamped; index += 1) {
+    offset += SYNTH_WAVETABLE_FRAME_COUNT * SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS[index];
+  }
+  return offset;
+}
+
+export function synthWavetableBaseSamples(samples: Uint8Array): Uint8Array {
+  if (!isSynthWavetableSampleDataLength(samples.length)) {
+    throw new Error(`wavetable sample data must be ${SYNTH_WAVETABLE_SAMPLE_BYTES} or ${SYNTH_WAVETABLE_MIP_SAMPLE_BYTES} bytes`);
+  }
+  return samples.length === SYNTH_WAVETABLE_SAMPLE_BYTES
+    ? samples
+    : samples.slice(0, SYNTH_WAVETABLE_SAMPLE_BYTES);
+}
+
+export function synthWavetableMipLevelSamples(samples: Uint8Array, level: number): Uint8Array {
+  if (!isSynthWavetableSampleDataLength(samples.length)) {
+    throw new Error(`wavetable sample data must be ${SYNTH_WAVETABLE_SAMPLE_BYTES} or ${SYNTH_WAVETABLE_MIP_SAMPLE_BYTES} bytes`);
+  }
+  if (samples.length === SYNTH_WAVETABLE_SAMPLE_BYTES) {
+    return samples;
+  }
+  const clamped = Math.max(0, Math.min(SYNTH_WAVETABLE_MIP_LEVEL_COUNT - 1, Math.round(level)));
+  const sampleCount = SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS[clamped];
+  const offset = synthWavetableMipLevelOffset(clamped);
+  return samples.slice(offset, offset + SYNTH_WAVETABLE_FRAME_COUNT * sampleCount);
+}
+
+export function ensureSynthWavetableMipPyramid(samples: Uint8Array): Uint8Array {
+  if (samples.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
+    return new Uint8Array(samples);
+  }
+  if (samples.length !== SYNTH_WAVETABLE_SAMPLE_BYTES) {
+    throw new Error(`wavetable sample data must be ${SYNTH_WAVETABLE_SAMPLE_BYTES} or ${SYNTH_WAVETABLE_MIP_SAMPLE_BYTES} bytes`);
+  }
+
+  const output = new Uint8Array(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
+  output.set(samples, 0);
+  for (let level = 1; level < SYNTH_WAVETABLE_MIP_LEVEL_COUNT; level += 1) {
+    const previousCount = SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS[level - 1];
+    const sampleCount = SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS[level];
+    const previousOffset = synthWavetableMipLevelOffset(level - 1);
+    const outputOffset = synthWavetableMipLevelOffset(level);
+    for (let frame = 0; frame < SYNTH_WAVETABLE_FRAME_COUNT; frame += 1) {
+      downsampleMipFrame(output, previousOffset + frame * previousCount, previousCount, output, outputOffset + frame * sampleCount, sampleCount);
+    }
+  }
+  return output;
+}
+
+function downsampleMipFrame(source: Uint8Array, sourceOffset: number, sourceCount: number, output: Uint8Array, outputOffset: number, outputCount: number): void {
+  const radius = 16;
+  for (let sample = 0; sample < outputCount; sample += 1) {
+    const center = sample * 2;
+    let weighted = 0;
+    let weightSum = 0;
+    for (let tap = -radius; tap <= radius; tap += 1) {
+      const sourceIndex = positiveModulo(center + tap, sourceCount);
+      const weight = lowpassWindowedSinc(tap, radius);
+      weighted += ((source[sourceOffset + sourceIndex] ?? 128) - 128) * weight;
+      weightSum += weight;
+    }
+    output[outputOffset + sample] = clampByte(Math.round(128 + weighted / (weightSum || 1)));
+  }
+}
+
+function lowpassWindowedSinc(sampleOffset: number, radius: number): number {
+  const cutoff = 0.25;
+  const x = sampleOffset;
+  const sinc = x === 0
+    ? 2 * cutoff
+    : Math.sin(2 * Math.PI * cutoff * x) / (Math.PI * x);
+  const window = 0.5 + 0.5 * Math.cos((Math.PI * x) / (radius + 1));
+  return sinc * window;
 }
 
 function parseWavSamples(bytes: ArrayBuffer | Uint8Array): ParsedSerumWavetable {

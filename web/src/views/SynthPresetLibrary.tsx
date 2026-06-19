@@ -9,9 +9,13 @@ import {
   objectIdFromHex,
   objectIdToHex,
   parseHexBoardWavetable,
+  synthWavetableBaseSamples,
   SYNTH_WAVETABLE_FRAME_COUNT,
+  SYNTH_WAVETABLE_MIP_SAMPLE_BYTES,
+  synthWavetableMipLevelCount,
+  synthWavetableMipLevelSampleCount,
+  synthWavetableMipLevelSamples,
   SYNTH_WAVETABLE_SAMPLE_BYTES,
-  SYNTH_WAVETABLE_SAMPLE_COUNT,
   SynthPresetTlv,
   SynthSettingKey,
   SynthWavetableTlv,
@@ -765,7 +769,7 @@ function base64ToBytes(value: string): Uint8Array {
 }
 
 function encodeEditableWavetable(wavetable: EditableSynthWavetable) {
-  if (!wavetable.samples || wavetable.samples.length !== SYNTH_WAVETABLE_SAMPLE_BYTES) {
+  if (!wavetable.samples || (wavetable.samples.length !== SYNTH_WAVETABLE_SAMPLE_BYTES && wavetable.samples.length !== SYNTH_WAVETABLE_MIP_SAMPLE_BYTES)) {
     throw new Error(`${wavetable.name} does not have local sample data`);
   }
   return createSynthWavetableObject({
@@ -806,7 +810,7 @@ function wavetableFromUnknown(value: unknown): EditableSynthWavetable {
   let samples: Uint8Array | undefined;
   if (typeof source.samplesBase64 === "string" && source.samplesBase64) {
     samples = base64ToBytes(source.samplesBase64);
-    if (samples.length !== SYNTH_WAVETABLE_SAMPLE_BYTES) {
+    if (samples.length !== SYNTH_WAVETABLE_SAMPLE_BYTES && samples.length !== SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
       throw new Error("Wavetable file has the wrong sample length");
     }
   }
@@ -834,7 +838,7 @@ function wavetableFromObjectBody(body: Uint8Array, deviceHandle?: number): Edita
     } else if (record.tag === CommonTlv.FolderPath) {
       folderPath = decodeDeviceFolderPath(textFromBytes(record.value) || rootFolderPath);
     } else if (record.tag === SynthWavetableTlv.Samples) {
-      if (record.value.length === SYNTH_WAVETABLE_SAMPLE_BYTES) {
+      if (record.value.length === SYNTH_WAVETABLE_SAMPLE_BYTES || record.value.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
         samples = record.value;
       }
     }
@@ -927,13 +931,15 @@ function renderWavetableImportSource(source: WavetableImportSource, options: Ser
     : crunchSerumWavetable(source.bytes, options);
 }
 
-function wavetableFramePreviewPath(samples: Uint8Array, frame: number): string {
+function wavetableFramePreviewPath(samples: Uint8Array, frame: number, mipLevel: number): string {
   const clampedFrame = Math.max(0, Math.min(SYNTH_WAVETABLE_FRAME_COUNT - 1, frame));
-  const start = clampedFrame * SYNTH_WAVETABLE_SAMPLE_COUNT;
+  const levelSamples = synthWavetableMipLevelSamples(samples, mipLevel);
+  const sampleCount = synthWavetableMipLevelSampleCount(samples.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES ? mipLevel : 0);
+  const start = clampedFrame * sampleCount;
   const points: string[] = [];
-  for (let sample = 0; sample < SYNTH_WAVETABLE_SAMPLE_COUNT; sample += 1) {
-    const x = (sample / (SYNTH_WAVETABLE_SAMPLE_COUNT - 1)) * 100;
-    const normalized = ((samples[start + sample] ?? 128) - 128) / 128;
+  for (let sample = 0; sample < sampleCount; sample += 1) {
+    const x = (sample / (sampleCount - 1)) * 100;
+    const normalized = ((levelSamples[start + sample] ?? 128) - 128) / 128;
     const y = 50 - normalized * 44;
     points.push(`${x.toFixed(2)},${y.toFixed(2)}`);
   }
@@ -1009,6 +1015,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [wavetableImportDialogOpen, setWavetableImportDialogOpen] = useState(false);
   const [wavetableImportFormat, setWavetableImportFormat] = useState<WavetableImportFormat>("serum-vital");
   const [wavetablePreviewFrame, setWavetablePreviewFrame] = useState(0);
+  const [wavetablePreviewMipLevel, setWavetablePreviewMipLevel] = useState(0);
   const [wavetableFrameReduction, setWavetableFrameReduction] = useState<WavetableFrameReduction>("interpolated");
   const [wavetableNormalization, setWavetableNormalization] = useState<WavetableNormalization>("whole-table");
   const [wavetableSmooth, setWavetableSmooth] = useState(false);
@@ -1102,7 +1109,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const previewPatch = useMemo<SynthPreviewPatch>(() => ({
     wavetableName: preset.wavetableName,
     wavetableFolderPath: preset.wavetableFolderPath,
-    wavetableSamples: selectedPreviewWavetable?.samples,
+    wavetableSamples: selectedPreviewWavetable?.samples ? synthWavetableBaseSamples(selectedPreviewWavetable.samples) : undefined,
     values: preset.values
   }), [preset.values, preset.wavetableFolderPath, preset.wavetableName, selectedPreviewWavetable?.samples]);
   const draftPreset = useMemo(() => encodeEditablePreset(preset), [preset]);
@@ -1132,11 +1139,17 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       };
     }
   }, [wavetableImportOptions, wavetableImportSource]);
+  const renderedWavetableMipLevelCount = renderedWavetableImport?.samples
+    ? synthWavetableMipLevelCount(renderedWavetableImport.samples)
+    : 1;
+  const renderedWavetableMipSampleCount = synthWavetableMipLevelSampleCount(
+    Math.min(wavetablePreviewMipLevel, renderedWavetableMipLevelCount - 1)
+  );
   const wavetablePreviewPath = useMemo(
     () => renderedWavetableImport?.samples
-      ? wavetableFramePreviewPath(renderedWavetableImport.samples, wavetablePreviewFrame)
+      ? wavetableFramePreviewPath(renderedWavetableImport.samples, wavetablePreviewFrame, Math.min(wavetablePreviewMipLevel, renderedWavetableMipLevelCount - 1))
       : "",
-    [renderedWavetableImport?.samples, wavetablePreviewFrame]
+    [renderedWavetableImport?.samples, renderedWavetableMipLevelCount, wavetablePreviewFrame, wavetablePreviewMipLevel]
   );
   const wavetableImportControlsDisabled = wavetableImportFormat === "hexboard" || renderedWavetableImport?.source.format === "hexboard";
 
@@ -1812,6 +1825,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       };
       setWavetableImportSource(source);
       setWavetablePreviewFrame(0);
+      setWavetablePreviewMipLevel(0);
       setSyncStatus(`Previewing ${file.name}`);
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to import wavetable");
@@ -1871,6 +1885,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     setWavetableImportDialogOpen(false);
     setWavetableImportSource(null);
     setWavetablePreviewFrame(0);
+    setWavetablePreviewMipLevel(0);
   }
 
   async function loadCurrentHexBoardPatch(isCancelled: () => boolean = () => false) {
@@ -2144,6 +2159,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                           setWavetableImportFormat(event.target.value as WavetableImportFormat);
                           setWavetableImportSource(null);
                           setWavetablePreviewFrame(0);
+                          setWavetablePreviewMipLevel(0);
                         }}
                       >
                         <option value="serum-vital">Serum/Vital wavetable</option>
@@ -2235,6 +2251,17 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                               type="range"
                               value={wavetablePreviewFrame}
                               onChange={(event) => setWavetablePreviewFrame(Number(event.target.value))}
+                            />
+                          </label>
+                          <label className="field rangeField">
+                            <span>Mip {Math.min(wavetablePreviewMipLevel, renderedWavetableMipLevelCount - 1) + 1} / {renderedWavetableMipLevelCount} ({renderedWavetableMipSampleCount} samples)</span>
+                            <input
+                              disabled={renderedWavetableMipLevelCount <= 1}
+                              max={Math.max(0, renderedWavetableMipLevelCount - 1)}
+                              min={0}
+                              type="range"
+                              value={Math.min(wavetablePreviewMipLevel, renderedWavetableMipLevelCount - 1)}
+                              onChange={(event) => setWavetablePreviewMipLevel(Number(event.target.value))}
                             />
                           </label>
                         </>

@@ -234,8 +234,15 @@ bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynth
         sawSampleCount = true;
         break;
       }
+      case PRESET_SYNC_TLV_WAVETABLE_MIP_LEVELS:
+        if (length != 1 || value[0] < 1 || value[0] > SYNTH_WAVETABLE_MIP_LEVEL_COUNT) {
+          error = "bad wavetable mip level count";
+          return false;
+        }
+        wavetable.mipLevelCount = value[0];
+        break;
       case PRESET_SYNC_TLV_WAVETABLE_SAMPLES:
-        if (length != SYNTH_WAVETABLE_SAMPLE_BYTES) {
+        if (!isSupportedSynthWavetableSampleLength(length)) {
           error = "bad wavetable sample data length";
           return false;
         }
@@ -255,6 +262,15 @@ bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynth
     error = "missing required wavetable sample metadata";
     return false;
   }
+  if (sawSamples) {
+    uint8_t expectedMipLevels = wavetable.sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES
+      ? SYNTH_WAVETABLE_MIP_LEVEL_COUNT
+      : 1;
+    if (wavetable.mipLevelCount != expectedMipLevels) {
+      error = "wavetable mip level count does not match sample data";
+      return false;
+    }
+  }
   if (!wavetable.name[0]) {
     error = "missing wavetable name";
     return false;
@@ -263,11 +279,16 @@ bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynth
 }
 
 bool readSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, std::vector<uint8_t>& samples) {
-  samples.assign(SYNTH_WAVETABLE_SAMPLE_BYTES, 0);
   char samplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
   if (!resolveSynthWavetableSampleFilePath(wavetable, samplePath, sizeof(samplePath))) {
     return false;
   }
+  size_t sampleLength = synthWavetableSampleFileLength(samplePath);
+  if (!isSupportedSynthWavetableSampleLength(sampleLength)) {
+    sendToLog("Unsupported wavetable sample file length for " + std::string(wavetable.name));
+    return false;
+  }
+  samples.assign(sampleLength, 0);
   if (!readSynthWavetableSampleFileRange(samplePath, 0, samples.data(), samples.size())) {
     sendToLog("Incomplete wavetable sample file for " + std::string(wavetable.name));
     return false;
@@ -275,7 +296,7 @@ bool readSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, std::vect
   return true;
 }
 
-std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable) {
+std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable, size_t sampleLength) {
   std::vector<uint8_t> body;
   body.reserve(256);
   body.push_back('H');
@@ -284,7 +305,7 @@ std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& w
   body.push_back('1');
   body.push_back(PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE);
   body.push_back(1);
-  body.push_back(0);
+  body.push_back(sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES ? 1 : 0);
   body.push_back(0);
   presetSyncAppendTextTlv(body, PRESET_SYNC_TLV_NAME, wavetable.name, sizeof(wavetable.name));
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_OBJECT_ID, wavetable.objectId, sizeof(wavetable.objectId));
@@ -298,22 +319,28 @@ std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& w
   };
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_FRAME_COUNT, &frameCount, 1);
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_SAMPLE_COUNT, sampleCountBytes, sizeof(sampleCountBytes));
+  uint8_t mipLevels = sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES ? SYNTH_WAVETABLE_MIP_LEVEL_COUNT : 1;
+  presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_MIP_LEVELS, &mipLevels, 1);
   body.push_back(PRESET_SYNC_TLV_WAVETABLE_SAMPLES);
-  body.push_back(static_cast<uint8_t>(SYNTH_WAVETABLE_SAMPLE_BYTES & 0xFF));
-  body.push_back(static_cast<uint8_t>((SYNTH_WAVETABLE_SAMPLE_BYTES >> 8) & 0xFF));
+  body.push_back(static_cast<uint8_t>(sampleLength & 0xFF));
+  body.push_back(static_cast<uint8_t>((sampleLength >> 8) & 0xFF));
   return body;
 }
 
-std::vector<uint8_t> buildSynthWavetableObjectBody(const SynthWavetableSlot& wavetable, const uint8_t* samples) {
-  std::vector<uint8_t> body = buildSynthWavetableObjectPrefix(wavetable);
+std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable) {
+  return buildSynthWavetableObjectPrefix(wavetable, SYNTH_WAVETABLE_SAMPLE_BYTES);
+}
+
+std::vector<uint8_t> buildSynthWavetableObjectBody(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength) {
+  std::vector<uint8_t> body = buildSynthWavetableObjectPrefix(wavetable, sampleLength);
   body.reserve(PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES);
-  body.insert(body.end(), samples, samples + SYNTH_WAVETABLE_SAMPLE_BYTES);
+  body.insert(body.end(), samples, samples + sampleLength);
   return body;
 }
 
-void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, const uint8_t* samples) {
+void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength) {
   synthWaveTableLoadInProgress = true;
-  memcpy(&activeSynthWaveTable[0][0], samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
+  loadActiveSynthWavetableSamples(samples, sampleLength);
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
   userSynthWavetableAvailable = true;
   setCurrentSynthWavetableReference(wavetable.folderPath, wavetable.name);
@@ -338,7 +365,7 @@ bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& parsed) {
   }
   snprintf(wavetable.name, sizeof(wavetable.name), "%s", parsed.name);
   snprintf(wavetable.folderPath, sizeof(wavetable.folderPath), "%s", parsed.folderPath);
-  normalizeSynthWavetableMetadata(wavetable, parsed.samples);
+  normalizeSynthWavetableMetadata(wavetable, parsed.samples, parsed.sampleLength);
   pruneMissingSynthWavetables();
 
   int slotIndex = chooseSynthWavetableWriteSlot(wavetable);
@@ -350,7 +377,7 @@ bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& parsed) {
   if (static_cast<size_t>(slotIndex) < synthWavetables.size()) {
     removeSynthWavetableSampleFiles(synthWavetables[slotIndex]);
   }
-  if (!writeSynthWavetableSampleFile(wavetable, parsed.samples)) {
+  if (!writeSynthWavetableSampleFile(wavetable, parsed.samples, parsed.sampleLength)) {
     return false;
   }
   if (static_cast<size_t>(slotIndex) == synthWavetables.size()) {
