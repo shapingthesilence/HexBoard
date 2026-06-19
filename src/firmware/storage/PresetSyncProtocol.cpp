@@ -130,6 +130,10 @@ void presetSyncCancelReadTransfer() {
 }
 
 void presetSyncCancelWriteTransfer() {
+  if (presetSyncWriteTransfer.streamRawToFile && presetSyncWriteTransfer.streamRawPath[0]) {
+    LittleFS.remove(presetSyncWriteTransfer.streamRawPath);
+  }
+  LittleFS.remove(PRESET_SYNC_WAVETABLE_SAMPLE_TEMP_FILE_PATH);
   presetSyncWriteTransfer = PresetSyncWriteTransfer{};
 }
 

@@ -238,7 +238,7 @@ bool loadUserSynthWavetableFromFile() {
     userSynthWavetableAvailable = false;
     return false;
   }
-  rebuildActiveSynthWavetableMipPyramidFromBase();
+  rebuildActiveSynthWavetableFixedMipsFromBase();
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
   userSynthWavetableAvailable = true;
   return true;
@@ -674,7 +674,7 @@ bool loadSynthWavetableFromCatalog(const char* folderPath, const char* name) {
   if (sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
     setActiveSynthWavetableMipLevelCount(SYNTH_WAVETABLE_MIP_LEVEL_COUNT);
   } else {
-    rebuildActiveSynthWavetableMipPyramidFromBase();
+    rebuildActiveSynthWavetableFixedMipsFromBase();
   }
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
   return true;

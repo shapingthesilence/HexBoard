@@ -211,9 +211,11 @@ total-transfer deadline, and sends `TRANSFER_ABORT` if a read stalls so firmware
 can clear the active read transfer immediately. Device-to-host synth wavetable
 reads keep only the object metadata prefix in the read-transfer state and stream
 the wavetable sample file as each outgoing chunk is ACKed. New files contain a
-`32,256`-byte six-level mip pyramid, while legacy `16,384`-byte base-only files
-remain readable; both paths avoid a full wavetable-object heap allocation before
-the transfer screen can open.
+`65,536`-byte four-level fixed mip table, while legacy `16,384`-byte base-only
+files remain readable; both paths avoid a full wavetable-object heap allocation
+before the transfer screen can open. Device-to-host and host-to-device synth
+wavetable transfers stream the sample-bearing object through temporary LittleFS
+files so fixed mip uploads do not require a contiguous object-sized heap buffer.
 Live USB MIDI packet output has a much shorter retry window than SysEx stream
 output. If the USB host is connected but not polling, such as a sleeping or
 closed laptop that still supplies power, `writeUsbMidiPacket()` backs off after
@@ -449,7 +451,7 @@ Important implementation details:
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - Core 0 retries synth release commands until the audio renderer consumes one; the renderer clears the retry state when it accepts `StartRelease` so long releases do not repeatedly restart
 - synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `9`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters plus a wavetable folder/name dependency, but do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving the new wavetable dependency from the legacy `Waveform` byte
-- user synth wavetables are stored as a named catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `64` entries, and per-table sample files named from each `16`-byte wavetable object id; new sample files contain a six-level mip pyramid with `32` frames at `512`, `256`, `128`, `64`, `32`, and `16` samples per frame (`32,256` bytes total), while legacy `16,384`-byte base-only files are still accepted and expanded in RAM. The selected wavetable is also snapshotted per profile in `/profile_wavetables.dat` with magic `PWT`, version `1`, so loading a profile restores its folder/name wavetable reference before runtime sync. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
+- user synth wavetables are stored as a named catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `64` entries, and per-table sample files named from each `16`-byte wavetable object id; new sample files contain four fixed mip levels with `32` frames and `512` samples per frame at harmonic limits `255`, `96`, `48`, and `24` (`65,536` bytes total), while legacy `16,384`-byte base-only files are still accepted and expanded in RAM. The selected wavetable is also snapshotted per profile in `/profile_wavetables.dat` with magic `PWT`, version `1`, so loading a profile restores its folder/name wavetable reference before runtime sync. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
 - user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `1`, up to `127` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. Runtime Apply currently supports generated EDO/equal-step user tunings, vector layouts, included-degree scales, scale color maps, and format-1 explicit button maps. The visible OLED `Tuning`, `Layout`, and `Scales` pages are rebuilt from these saved user geometry objects: tuning entries are the bundle anchors, layout and scale entries are filtered by the selected tuning object id, and save/delete requests defer a menu rebuild like synth preset menus. It does not yet support Scala/cents-table pitch lookup, profile references, or settings persistence for the selected geometry bundle.
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
@@ -605,19 +607,21 @@ OverwriteExisting` rename or move an existing device wavetable without sending
 sample bytes, and firmware rejects object-id changes on those writes.
 
 All active tables use the same RAM path: firmware builds or loads the base
-`32 x 512` table into `activeSynthWaveTable` and stores the five lower mip
-levels in `activeSynthWavetableMipExtraSamples`. The sampler runs in the normal
-synth modes, interpolates adjacent frames from `SynthWavetablePosition` plus
-signed `WT Pos` modulation, and uses direct phase lookup against the selected
-mip level to keep renderer cost bounded. The selected wavetable also rebuilds a
-RAM `WT Pos` lookup table so the audio renderer maps `0..127` position amounts
-to frame positions without a per-voice divide. Modulation work runs on an
-a `16`-sample control quantum: wheel smoothing, LFO sampling, FX envelope state,
-pitch/vibrato targets, phase-warp targets, and wavetable frame contexts are
-cached there, with note start/release/reset forcing an immediate per-voice cache
-refresh. Each voice chooses its wavetable mip level from the pitch-adjusted
-phase increment; levels are one octave apart, and the transient `Mip Oct` menu
-item shifts those thresholds by `-4..+4` octaves without touching
+`32 x 512` table into `activeSynthWaveTable` and stores three additional
+full-length mip levels in `activeSynthWavetableMipExtraSamples`. The sampler
+runs in the normal synth modes, interpolates adjacent frames from
+`SynthWavetablePosition` plus signed `WT Pos` modulation, and uses direct phase
+lookup against the selected mip level to keep renderer cost bounded. The
+selected wavetable also rebuilds a RAM `WT Pos` lookup table so the audio
+renderer maps `0..127` position amounts to frame positions without a per-voice
+divide. Modulation work runs on a `16`-sample control quantum: wheel smoothing,
+LFO sampling, FX envelope state, pitch/vibrato targets, phase-warp targets, mip
+selection, and wavetable frame contexts are cached there, with note
+start/release/reset forcing an immediate per-voice cache refresh. Each voice
+chooses its wavetable mip level from the highest expected pitch after pitch
+modulation and vibrato depth; the selector computes the Nyquist-safe harmonic
+limit, uses hysteresis to avoid vibrato chatter, and the transient `Mip Oct`
+menu item shifts those thresholds by `-4..+4` octaves without touching
 `SettingKey`, `factoryDefaults`, or `CURRENT_SETTINGS_VERSION`. Per-voice phase
 increment and phase-warp depths slew between cached targets at audio rate; the
 normal `16`-sample retarget uses shift math instead of division. Oscillator phase
@@ -636,7 +640,7 @@ only the wavetable folder/name dependency, so a missing dependency falls back to
 has a `UWT` header with version, frame count, sample count, and CRC32, then
 `32 * 512` unsigned waveform bytes; it is still loadable as `/User/UserTbl` for
 compatibility. Preset-sync object type `0x0B` accepts either the legacy
-base-only sample TLV or the new `MipLevels = 6` pyramid sample TLV before
+base-only sample TLV or the new `MipLevels = 4` fixed-mip sample TLVs before
 copying the table into active RAM and optionally writing the named catalog entry
 through the flash-safe mute wrapper.
 

@@ -242,12 +242,11 @@ bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynth
         wavetable.mipLevelCount = value[0];
         break;
       case PRESET_SYNC_TLV_WAVETABLE_SAMPLES:
-        if (!isSupportedSynthWavetableSampleLength(length)) {
+        if (length == 0 || wavetable.sampleBytes.size() + length > SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
           error = "bad wavetable sample data length";
           return false;
         }
-        wavetable.samples = value;
-        wavetable.sampleLength = length;
+        wavetable.sampleBytes.insert(wavetable.sampleBytes.end(), value, value + length);
         wavetable.sawSamples = true;
         sawSamples = true;
         break;
@@ -258,11 +257,88 @@ bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynth
     cursor += length;
   }
 
-  if (sawSamples && (!sawFrameCount || !sawSampleCount || wavetable.samples == nullptr)) {
+  if (sawSamples && (!sawFrameCount || !sawSampleCount || wavetable.sampleBytes.empty())) {
     error = "missing required wavetable sample metadata";
     return false;
   }
   if (sawSamples) {
+    wavetable.sampleLength = wavetable.sampleBytes.size();
+    if (!isSupportedSynthWavetableSampleLength(wavetable.sampleLength)) {
+      error = "bad wavetable sample data length";
+      return false;
+    }
+    uint8_t expectedMipLevels = wavetable.sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES
+      ? SYNTH_WAVETABLE_MIP_LEVEL_COUNT
+      : 1;
+    if (wavetable.mipLevelCount != expectedMipLevels) {
+      error = "wavetable mip level count does not match sample data";
+      return false;
+    }
+    wavetable.samples = wavetable.sampleBytes.data();
+  }
+  if (!wavetable.name[0]) {
+    error = "missing wavetable name";
+    return false;
+  }
+  return true;
+}
+
+bool presetSyncReadExact(File& f, uint8_t* output, size_t length) {
+  return length == 0 || f.read(output, length) == length;
+}
+
+bool presetSyncSkipBytes(File& f, size_t length) {
+  uint8_t discard[96];
+  while (length > 0) {
+    size_t chunkLength = std::min(sizeof(discard), length);
+    if (!presetSyncReadExact(f, discard, chunkLength)) {
+      return false;
+    }
+    length -= chunkLength;
+  }
+  return true;
+}
+
+bool presetSyncReadTextTlv(File& f, char* destination, size_t destinationLength, size_t sourceLength) {
+  if (destinationLength == 0) {
+    return presetSyncSkipBytes(f, sourceLength);
+  }
+  size_t copyLength = std::min(destinationLength - 1, sourceLength);
+  if (!presetSyncReadExact(f, reinterpret_cast<uint8_t*>(destination), copyLength)) {
+    return false;
+  }
+  destination[copyLength] = '\0';
+  return presetSyncSkipBytes(f, sourceLength - copyLength);
+}
+
+bool presetSyncCopySampleTlv(File& input, File& output, size_t length) {
+  uint8_t buffer[128];
+  while (length > 0) {
+    size_t chunkLength = std::min(sizeof(buffer), length);
+    if (!presetSyncReadExact(input, buffer, chunkLength)) {
+      return false;
+    }
+    if (output.write(buffer, chunkLength) != chunkLength) {
+      return false;
+    }
+    length -= chunkLength;
+  }
+  return true;
+}
+
+bool validateParsedSynthWavetableObject(ParsedSynthWavetableObject& wavetable,
+                                        bool sawFrameCount,
+                                        bool sawSampleCount,
+                                        std::string& error) {
+  if (wavetable.sawSamples && (!sawFrameCount || !sawSampleCount || wavetable.sampleLength == 0)) {
+    error = "missing required wavetable sample metadata";
+    return false;
+  }
+  if (wavetable.sawSamples) {
+    if (!isSupportedSynthWavetableSampleLength(wavetable.sampleLength)) {
+      error = "bad wavetable sample data length";
+      return false;
+    }
     uint8_t expectedMipLevels = wavetable.sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES
       ? SYNTH_WAVETABLE_MIP_LEVEL_COUNT
       : 1;
@@ -273,6 +349,196 @@ bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynth
   }
   if (!wavetable.name[0]) {
     error = "missing wavetable name";
+    return false;
+  }
+  return true;
+}
+
+bool parseSynthWavetableObjectFile(const char* bodyPath,
+                                   ParsedSynthWavetableObject& wavetable,
+                                   const char* sampleOutputPath,
+                                   std::string& error) {
+  if (!bodyPath || !bodyPath[0] || !sampleOutputPath || !sampleOutputPath[0]) {
+    error = "missing wavetable temp file";
+    return false;
+  }
+
+  File body = LittleFS.open(bodyPath, "r");
+  if (!body) {
+    error = "missing wavetable object temp file";
+    return false;
+  }
+
+  wavetable = ParsedSynthWavetableObject{};
+  snprintf(wavetable.folderPath, sizeof(wavetable.folderPath), "%s", SYNTH_WAVETABLE_ROOT_FOLDER);
+
+  size_t bodySize = body.size();
+  if (bodySize < 8) {
+    error = "bad object magic";
+    body.close();
+    return false;
+  }
+
+  uint8_t header[8] = {};
+  if (!presetSyncReadExact(body, header, sizeof(header))) {
+    error = "bad object magic";
+    body.close();
+    return false;
+  }
+  if (header[0] != 'H' || header[1] != 'B' || header[2] != 'S' || header[3] != '1') {
+    error = "bad object magic";
+    body.close();
+    return false;
+  }
+  if (header[4] != PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
+    error = "not synth wavetable";
+    body.close();
+    return false;
+  }
+  if (header[5] != 1) {
+    error = "unsupported synth wavetable object schema";
+    body.close();
+    return false;
+  }
+
+  LittleFS.remove(sampleOutputPath);
+  File sampleOutput;
+  bool sawFrameCount = false;
+  bool sawSampleCount = false;
+  size_t cursor = 8;
+  while (cursor < bodySize) {
+    if (cursor + 3 > bodySize) {
+      error = "truncated TLV header";
+      body.close();
+      if (sampleOutput) {
+        sampleOutput.close();
+      }
+      LittleFS.remove(sampleOutputPath);
+      return false;
+    }
+
+    uint8_t tlvHeader[3] = {};
+    if (!presetSyncReadExact(body, tlvHeader, sizeof(tlvHeader))) {
+      error = "truncated TLV header";
+      body.close();
+      if (sampleOutput) {
+        sampleOutput.close();
+      }
+      LittleFS.remove(sampleOutputPath);
+      return false;
+    }
+    uint8_t tag = tlvHeader[0];
+    uint16_t length = static_cast<uint16_t>(tlvHeader[1]) | (static_cast<uint16_t>(tlvHeader[2]) << 8);
+    cursor += 3;
+    if (cursor + length > bodySize) {
+      error = "truncated TLV value";
+      body.close();
+      if (sampleOutput) {
+        sampleOutput.close();
+      }
+      LittleFS.remove(sampleOutputPath);
+      return false;
+    }
+
+    bool ok = true;
+    switch (tag) {
+      case PRESET_SYNC_TLV_NAME:
+        ok = presetSyncReadTextTlv(body, wavetable.name, sizeof(wavetable.name), length);
+        break;
+      case PRESET_SYNC_TLV_OBJECT_ID:
+        if (length != sizeof(wavetable.objectId)) {
+          error = "bad object id length";
+          ok = false;
+          break;
+        }
+        ok = presetSyncReadExact(body, wavetable.objectId, sizeof(wavetable.objectId));
+        wavetable.sawObjectId = ok;
+        break;
+      case PRESET_SYNC_TLV_FOLDER_PATH:
+        ok = presetSyncReadTextTlv(body, wavetable.folderPath, sizeof(wavetable.folderPath), length);
+        if (ok && !wavetable.folderPath[0]) {
+          snprintf(wavetable.folderPath, sizeof(wavetable.folderPath), "%s", SYNTH_WAVETABLE_ROOT_FOLDER);
+        }
+        break;
+      case PRESET_SYNC_TLV_WAVETABLE_FRAME_COUNT: {
+        uint8_t value = 0;
+        ok = length == 1 && presetSyncReadExact(body, &value, 1);
+        if (ok && value != SYNTH_WAVETABLE_FRAME_COUNT) {
+          error = "bad wavetable frame count";
+          ok = false;
+        }
+        sawFrameCount = ok;
+        break;
+      }
+      case PRESET_SYNC_TLV_WAVETABLE_SAMPLE_COUNT: {
+        uint8_t value[2] = {};
+        ok = length == sizeof(value) && presetSyncReadExact(body, value, sizeof(value));
+        uint16_t sampleCount = static_cast<uint16_t>(value[0]) | (static_cast<uint16_t>(value[1]) << 8);
+        if (ok && sampleCount != SYNTH_WAVE_SAMPLE_COUNT) {
+          error = "bad wavetable sample count";
+          ok = false;
+        }
+        sawSampleCount = ok;
+        break;
+      }
+      case PRESET_SYNC_TLV_WAVETABLE_MIP_LEVELS: {
+        uint8_t value = 0;
+        ok = length == 1 && presetSyncReadExact(body, &value, 1);
+        if (ok && (value < 1 || value > SYNTH_WAVETABLE_MIP_LEVEL_COUNT)) {
+          error = "bad wavetable mip level count";
+          ok = false;
+        }
+        if (ok) {
+          wavetable.mipLevelCount = value;
+        }
+        break;
+      }
+      case PRESET_SYNC_TLV_WAVETABLE_SAMPLES:
+        if (length == 0 || wavetable.sampleLength + length > SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
+          error = "bad wavetable sample data length";
+          ok = false;
+          break;
+        }
+        if (!sampleOutput) {
+          sampleOutput = LittleFS.open(sampleOutputPath, "w");
+          if (!sampleOutput) {
+            error = "unable to open wavetable sample temp file";
+            ok = false;
+            break;
+          }
+        }
+        ok = presetSyncCopySampleTlv(body, sampleOutput, length);
+        if (ok) {
+          wavetable.sampleLength += length;
+          wavetable.sawSamples = true;
+        }
+        break;
+      default:
+        ok = presetSyncSkipBytes(body, length);
+        break;
+    }
+
+    if (!ok) {
+      if (error.empty()) {
+        error = "truncated TLV value";
+      }
+      body.close();
+      if (sampleOutput) {
+        sampleOutput.close();
+      }
+      LittleFS.remove(sampleOutputPath);
+      return false;
+    }
+    cursor += length;
+  }
+
+  body.close();
+  if (sampleOutput) {
+    sampleOutput.close();
+  }
+
+  if (!validateParsedSynthWavetableObject(wavetable, sawFrameCount, sawSampleCount, error)) {
+    LittleFS.remove(sampleOutputPath);
     return false;
   }
   return true;
@@ -305,7 +571,7 @@ std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& w
   body.push_back('1');
   body.push_back(PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE);
   body.push_back(1);
-  body.push_back(sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES ? 1 : 0);
+  body.push_back(sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES ? 2 : 0);
   body.push_back(0);
   presetSyncAppendTextTlv(body, PRESET_SYNC_TLV_NAME, wavetable.name, sizeof(wavetable.name));
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_OBJECT_ID, wavetable.objectId, sizeof(wavetable.objectId));
@@ -321,9 +587,6 @@ std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& w
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_SAMPLE_COUNT, sampleCountBytes, sizeof(sampleCountBytes));
   uint8_t mipLevels = sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES ? SYNTH_WAVETABLE_MIP_LEVEL_COUNT : 1;
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_MIP_LEVELS, &mipLevels, 1);
-  body.push_back(PRESET_SYNC_TLV_WAVETABLE_SAMPLES);
-  body.push_back(static_cast<uint8_t>(sampleLength & 0xFF));
-  body.push_back(static_cast<uint8_t>((sampleLength >> 8) & 0xFF));
   return body;
 }
 
@@ -334,7 +597,12 @@ std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& w
 std::vector<uint8_t> buildSynthWavetableObjectBody(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength) {
   std::vector<uint8_t> body = buildSynthWavetableObjectPrefix(wavetable, sampleLength);
   body.reserve(PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES);
-  body.insert(body.end(), samples, samples + sampleLength);
+  size_t offset = 0;
+  while (offset < sampleLength) {
+    size_t chunkLength = std::min(PRESET_SYNC_WAVETABLE_SAMPLE_TLV_CHUNK_BYTES, sampleLength - offset);
+    presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_SAMPLES, samples + offset, chunkLength);
+    offset += chunkLength;
+  }
   return body;
 }
 
@@ -351,6 +619,86 @@ void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, con
   snprintf(loadedSynthWavetableFolderPath, sizeof(loadedSynthWavetableFolderPath), "%s", currentSynthWavetableFolderPath);
   resetSynthRenderCaches();
   synthWaveTableLoadInProgress = false;
+}
+
+bool loadActiveSynthWavetableSamplesFromFile(const char* samplePath, size_t sampleLength) {
+  if (!samplePath || !samplePath[0] || !isSupportedSynthWavetableSampleLength(sampleLength)) {
+    return false;
+  }
+  File f = LittleFS.open(samplePath, "r");
+  if (!f) {
+    return false;
+  }
+  size_t bytesRead = f.read(&activeSynthWaveTable[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
+  if (bytesRead != SYNTH_WAVETABLE_SAMPLE_BYTES) {
+    f.close();
+    return false;
+  }
+  if (sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
+    size_t extraBytesRead = f.read(activeSynthWavetableMipExtraSamples, SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES);
+    if (extraBytesRead != SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES) {
+      f.close();
+      return false;
+    }
+    setActiveSynthWavetableMipLevelCount(SYNTH_WAVETABLE_MIP_LEVEL_COUNT);
+  } else {
+    rebuildActiveSynthWavetableFixedMipsFromBase();
+  }
+  f.close();
+  return true;
+}
+
+bool applyParsedSynthWavetableFileToRuntime(const SynthWavetableSlot& wavetable, const char* samplePath, size_t sampleLength) {
+  synthWaveTableLoadInProgress = true;
+  bool loaded = loadActiveSynthWavetableSamplesFromFile(samplePath, sampleLength);
+  if (!loaded) {
+    synthWaveTableLoadInProgress = false;
+    return false;
+  }
+  setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
+  userSynthWavetableAvailable = true;
+  setCurrentSynthWavetableReference(wavetable.folderPath, wavetable.name);
+  currWave = WAVEFORM_BASIC_WAVETABLE;
+  settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_BASIC_WAVETABLE;
+  loadedSynthWaveform = currWave;
+  snprintf(loadedSynthWavetableName, sizeof(loadedSynthWavetableName), "%s", currentSynthWavetableName);
+  snprintf(loadedSynthWavetableFolderPath, sizeof(loadedSynthWavetableFolderPath), "%s", currentSynthWavetableFolderPath);
+  resetSynthRenderCaches();
+  synthWaveTableLoadInProgress = false;
+  return true;
+}
+
+bool copySynthWavetableSampleFile(const char* sourcePath, const char* destinationPath, size_t sampleLength) {
+  if (!sourcePath || !sourcePath[0] || !destinationPath || !destinationPath[0]
+      || !isSupportedSynthWavetableSampleLength(sampleLength)) {
+    return false;
+  }
+  File input = LittleFS.open(sourcePath, "r");
+  if (!input) {
+    return false;
+  }
+  File output = LittleFS.open(destinationPath, "w");
+  if (!output) {
+    input.close();
+    return false;
+  }
+  uint8_t buffer[128];
+  size_t remaining = sampleLength;
+  bool ok = true;
+  while (remaining > 0) {
+    size_t chunkLength = std::min(sizeof(buffer), remaining);
+    if (input.read(buffer, chunkLength) != chunkLength || output.write(buffer, chunkLength) != chunkLength) {
+      ok = false;
+      break;
+    }
+    remaining -= chunkLength;
+  }
+  input.close();
+  output.close();
+  if (!ok) {
+    LittleFS.remove(destinationPath);
+  }
+  return ok;
 }
 
 bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& parsed) {
@@ -378,6 +726,49 @@ bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& parsed) {
     removeSynthWavetableSampleFiles(synthWavetables[slotIndex]);
   }
   if (!writeSynthWavetableSampleFile(wavetable, parsed.samples, parsed.sampleLength)) {
+    return false;
+  }
+  if (static_cast<size_t>(slotIndex) == synthWavetables.size()) {
+    synthWavetables.push_back(wavetable);
+  } else {
+    synthWavetables[slotIndex] = wavetable;
+  }
+  save_synth_wavetables();
+  requestSynthWavetableMenuRebuild();
+  return true;
+}
+
+bool saveParsedSynthWavetableSampleFile(const ParsedSynthWavetableObject& parsed, const char* samplePath) {
+  if (!fileSystemExists) {
+    sendToLog("File system not available.");
+    return false;
+  }
+  if (!parsed.sawSamples || !isSupportedSynthWavetableSampleLength(parsed.sampleLength)) {
+    sendToLog("Error: Unsupported wavetable sample length.");
+    return false;
+  }
+
+  SynthWavetableSlot wavetable = {};
+  wavetable.valid = 1;
+  if (parsed.sawObjectId) {
+    memcpy(wavetable.objectId, parsed.objectId, sizeof(wavetable.objectId));
+  }
+  snprintf(wavetable.name, sizeof(wavetable.name), "%s", parsed.name);
+  snprintf(wavetable.folderPath, sizeof(wavetable.folderPath), "%s", parsed.folderPath);
+  normalizeSynthWavetableMetadata(wavetable, nullptr, parsed.sampleLength);
+  pruneMissingSynthWavetables();
+
+  int slotIndex = chooseSynthWavetableWriteSlot(wavetable);
+  if (slotIndex < 0) {
+    sendToLog("Synth wavetable library is full.");
+    return false;
+  }
+
+  if (static_cast<size_t>(slotIndex) < synthWavetables.size()) {
+    removeSynthWavetableSampleFiles(synthWavetables[slotIndex]);
+  }
+  if (!copySynthWavetableSampleFile(samplePath, wavetable.samplePath, parsed.sampleLength)) {
+    sendToLog("Error: Incomplete wavetable sample file write.");
     return false;
   }
   if (static_cast<size_t>(slotIndex) == synthWavetables.size()) {

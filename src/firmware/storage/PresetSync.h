@@ -13,6 +13,10 @@ constexpr uint16_t PRESET_SYNC_RAW_CHUNK_SIZE = 64;
 constexpr size_t PRESET_SYNC_MAX_SYNTH_PRESET_BYTES = 2048;
 constexpr size_t PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES = SYNTH_WAVETABLE_MIP_SAMPLE_BYTES + 256;
 constexpr size_t PRESET_SYNC_MAX_RAW_OBJECT_BYTES = PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES;
+constexpr size_t PRESET_SYNC_WAVETABLE_SAMPLE_TLV_CHUNK_BYTES = 32768;
+constexpr char PRESET_SYNC_WRITE_RAW_TEMP_FILE_PATH[] = "/ps_raw.tmp";
+constexpr char PRESET_SYNC_WAVETABLE_SAMPLE_TEMP_FILE_PATH[] = "/ps_wt.tmp";
+constexpr size_t PRESET_SYNC_TEMP_FILE_PATH_LENGTH = 24;
 
 constexpr uint8_t PRESET_SYNC_MSG_HELLO_REQ = 0x01;
 constexpr uint8_t PRESET_SYNC_MSG_HELLO_RESP = 0x02;
@@ -126,6 +130,9 @@ struct PresetSyncWriteTransfer {
   uint8_t writeFlags = 0;
   uint32_t receivedBytes = 0;
   uint32_t expectedChunkIndex = 0;
+  uint32_t receivedCrc32 = 0xFFFFFFFFu;
+  bool streamRawToFile = false;
+  char streamRawPath[PRESET_SYNC_TEMP_FILE_PATH_LENGTH] = {};
   std::vector<uint8_t> rawData;
 };
 
@@ -144,6 +151,7 @@ struct PresetSyncReadTransfer {
   uint32_t sentBytes = 0;
   uint32_t nextChunkIndex = 0;
   char streamSamplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
+  size_t streamSampleLength = 0;
   std::vector<uint8_t> rawData;
 };
 
@@ -153,6 +161,7 @@ struct ParsedSynthWavetableObject {
   char folderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
   const uint8_t* samples = nullptr;
   size_t sampleLength = 0;
+  std::vector<uint8_t> sampleBytes;
   uint8_t mipLevelCount = 1;
   bool sawObjectId = false;
   bool sawSamples = false;
@@ -203,12 +212,18 @@ bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex);
 std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset);
 bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlot& preset, std::string& error);
 bool parseSynthWavetableObjectBody(const std::vector<uint8_t>& body, ParsedSynthWavetableObject& wavetable, std::string& error);
+bool parseSynthWavetableObjectFile(const char* bodyPath,
+                                   ParsedSynthWavetableObject& wavetable,
+                                   const char* sampleOutputPath,
+                                   std::string& error);
 bool readSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, std::vector<uint8_t>& samples);
 std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable);
 std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable, size_t sampleLength);
 std::vector<uint8_t> buildSynthWavetableObjectBody(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength);
 void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength);
+bool applyParsedSynthWavetableFileToRuntime(const SynthWavetableSlot& wavetable, const char* samplePath, size_t sampleLength);
 bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& wavetable);
+bool saveParsedSynthWavetableSampleFile(const ParsedSynthWavetableObject& wavetable, const char* samplePath);
 bool updateSynthWavetableMetadata(uint16_t handle, const ParsedSynthWavetableObject& parsed);
 size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType);
 int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset);

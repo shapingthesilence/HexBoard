@@ -38,6 +38,12 @@ function recordValue(body: Uint8Array, tag: number): Uint8Array {
   return decodeObjectBody(body).records.find((record) => record.tag === tag)?.value ?? new Uint8Array();
 }
 
+function recordValuesLength(body: Uint8Array, tag: number): number {
+  return decodeObjectBody(body).records
+    .filter((record) => record.tag === tag)
+    .reduce((total, record) => total + record.value.length, 0);
+}
+
 function u8(value: Uint8Array): number {
   return value[0];
 }
@@ -227,10 +233,11 @@ Example scale
 
     expect(samples).toHaveLength(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
     expect(decoded.objectType).toBe(ObjectType.SynthWavetable);
+    expect(decoded.schemaMinor).toBe(2);
     expect(u8(recordValue(wavetable.body, SynthWavetableTlv.FrameCount))).toBe(32);
     expect(u16LE(recordValue(wavetable.body, SynthWavetableTlv.SampleCount))).toBe(512);
     expect(u8(recordValue(wavetable.body, SynthWavetableTlv.MipLevels))).toBe(SYNTH_WAVETABLE_MIP_LEVEL_COUNT);
-    expect(recordValue(wavetable.body, SynthWavetableTlv.Samples)).toHaveLength(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
+    expect(recordValuesLength(wavetable.body, SynthWavetableTlv.Samples)).toBe(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
   });
 
   it("applies wavetable import crunch options deterministically", () => {

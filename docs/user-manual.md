@@ -278,10 +278,10 @@ setting `WT Pos` above frame `1` lets a negative envelope or LFO amount move
 backward through the wavetable.
 
 `Mip Oct` is a temporary tuning aid for wavetable anti-aliasing. User
-wavetables now carry lower-resolution mip levels one octave apart, and the
-synth chooses a level from each voice's pitch. `Mip Oct` shifts those level
-change points by `-4` to `+4` octaves. It is not saved in presets or profiles;
-it resets to `0` after reboot.
+wavetables carry fixed-length mip levels with progressively lower harmonic
+limits, and the synth chooses a level from each voice's highest expected pitch.
+`Mip Oct` shifts those level change points by `-4` to `+4` octaves. It is not
+saved in presets or profiles; it resets to `0` after reboot.
 
 `Drive` adds soft saturation after the voices are mixed:
 
@@ -552,10 +552,11 @@ to acknowledge the write through the flash commit before the app refreshes the
 `Import Wavetable` is in the `Wavetables` library view. It opens an import
 dialog with a file-type selector for Serum/Vital `.wav` tables or HexBoard
 `.hexwav` tables. Serum/Vital imports read the source frames and render the
-table down to the firmware's `32 x 512` base table, then build five lower mip
-levels at `256`, `128`, `64`, `32`, and `16` samples per frame. HexBoard
-`.hexwav` files are 8-bit mono WAV containers that contain either this full
-six-level pyramid or an older base-only table that the app upgrades on import.
+table down to the firmware's `32 x 512` base table, then build four fixed
+`512`-sample mip levels with harmonic limits `255`, `96`, `48`, and `24`.
+HexBoard `.hexwav` files are 8-bit mono WAV containers that contain either this
+full fixed-mip table or an older base-only table that the app upgrades on
+import.
 The import dialog always stages the selected file into a waveform preview
 before committing it; the frame slider chooses which rendered frame is shown
 and the mip slider chooses which stored level is shown.

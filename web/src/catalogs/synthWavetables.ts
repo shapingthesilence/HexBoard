@@ -12,10 +12,14 @@ import type { EncodedCatalogObject } from "./types.ts";
 export const SYNTH_WAVETABLE_FRAME_COUNT = 32;
 export const SYNTH_WAVETABLE_SAMPLE_COUNT = 512;
 export const SYNTH_WAVETABLE_SAMPLE_BYTES = SYNTH_WAVETABLE_FRAME_COUNT * SYNTH_WAVETABLE_SAMPLE_COUNT;
-export const SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS = [512, 256, 128, 64, 32, 16] as const;
-export const SYNTH_WAVETABLE_MIP_LEVEL_COUNT = SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS.length;
-export const SYNTH_WAVETABLE_MIP_SAMPLE_BYTES =
-  SYNTH_WAVETABLE_FRAME_COUNT * SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS.reduce((total, count) => total + count, 0);
+export const SYNTH_WAVETABLE_MIP_HARMONIC_LIMITS = [255, 96, 48, 24] as const;
+export const SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_0 = SYNTH_WAVETABLE_MIP_HARMONIC_LIMITS[0];
+export const SYNTH_WAVETABLE_MIP_LEVEL_COUNT = SYNTH_WAVETABLE_MIP_HARMONIC_LIMITS.length;
+export const SYNTH_WAVETABLE_MIP_SAMPLE_BYTES = SYNTH_WAVETABLE_SAMPLE_BYTES * SYNTH_WAVETABLE_MIP_LEVEL_COUNT;
+export const SYNTH_WAVETABLE_MIP_SAMPLE_RATE_HZ = Math.floor(250_000_000 / 1024 / 6);
+export const SYNTH_WAVETABLE_MIP_NYQUIST_HZ = Math.floor(SYNTH_WAVETABLE_MIP_SAMPLE_RATE_HZ / 2);
+export const SYNTH_WAVETABLE_MIP_AA_MODE_FIXED_HARMONIC_LIMITS = 0;
+export const SYNTH_WAVETABLE_SAMPLE_TLV_CHUNK_BYTES = 32768;
 const SERUM_FRAME_SAMPLE_COUNT = 2048;
 
 export type WavetableFrameReduction = "nearest" | "interpolated";
@@ -64,7 +68,7 @@ interface WavDataChunk {
 }
 
 export function createSynthWavetableObject(input: SynthWavetableInput): EncodedCatalogObject {
-  const samples = ensureSynthWavetableMipPyramid(input.samples);
+  const samples = ensureSynthWavetableFixedMips(input.samples);
   const records: TlvRecord[] = [
     ...createCommonRecords({
       objectId: input.objectId,
@@ -76,12 +80,12 @@ export function createSynthWavetableObject(input: SynthWavetableInput): EncodedC
     tlvU8(SynthWavetableTlv.FrameCount, SYNTH_WAVETABLE_FRAME_COUNT),
     tlvU16LE(SynthWavetableTlv.SampleCount, SYNTH_WAVETABLE_SAMPLE_COUNT),
     tlvU8(SynthWavetableTlv.MipLevels, SYNTH_WAVETABLE_MIP_LEVEL_COUNT),
-    tlv(SynthWavetableTlv.Samples, samples)
+    ...synthWavetableSampleTlvRecords(samples)
   ];
   const body = encodeObjectBody({
     objectType: ObjectType.SynthWavetable,
     schemaMajor: 1,
-    schemaMinor: 1,
+    schemaMinor: 2,
     objectFlags: 0,
     records
   });
@@ -89,7 +93,7 @@ export function createSynthWavetableObject(input: SynthWavetableInput): EncodedC
   return {
     objectType: ObjectType.SynthWavetable,
     schemaMajor: 1,
-    schemaMinor: 1,
+    schemaMinor: 2,
     objectId: input.objectId,
     name: input.name,
     folderPath: input.folderPath,
@@ -165,22 +169,22 @@ export function renderSerumWavetable(wav: ParsedSerumWavetable, options: SerumWa
       const peak = findPeak(rendered, start, SYNTH_WAVETABLE_SAMPLE_COUNT);
       quantizeRenderedFrame(rendered, output, start, peak, options.dither === true);
     }
-    return ensureSynthWavetableMipPyramid(output);
+    return ensureSynthWavetableFixedMips(output);
   }
 
   const peak = findPeak(rendered, 0, rendered.length);
   if (peak <= 0.000001) {
     output.fill(128);
-    return ensureSynthWavetableMipPyramid(output);
+    return ensureSynthWavetableFixedMips(output);
   }
   for (let index = 0; index < rendered.length; index += 1) {
     output[index] = quantizeRenderedSample(rendered[index], peak, options.dither === true, index);
   }
-  return ensureSynthWavetableMipPyramid(output);
+  return ensureSynthWavetableFixedMips(output);
 }
 
 export function encodeHexBoardWavetableWav(samples: Uint8Array): Uint8Array {
-  const exportSamples = ensureSynthWavetableMipPyramid(samples);
+  const exportSamples = ensureSynthWavetableFixedMips(samples);
   const headerBytes = 44;
   const bytes = new Uint8Array(headerBytes + exportSamples.length);
   const view = new DataView(bytes.buffer);
@@ -210,11 +214,19 @@ export function parseHexBoardWavetable(bytes: ArrayBuffer | Uint8Array): Uint8Ar
     throw new Error(`HexBoard wavetable files must contain ${SYNTH_WAVETABLE_SAMPLE_BYTES} or ${SYNTH_WAVETABLE_MIP_SAMPLE_BYTES} samples`);
   }
   const samples = new Uint8Array(wav.view.buffer, wav.view.byteOffset + wav.dataOffset, wav.dataLength).slice();
-  return ensureSynthWavetableMipPyramid(samples);
+  return ensureSynthWavetableFixedMips(samples);
 }
 
 export function isSynthWavetableSampleDataLength(length: number): boolean {
   return length === SYNTH_WAVETABLE_SAMPLE_BYTES || length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES;
+}
+
+export function synthWavetableSampleTlvRecords(samples: Uint8Array): TlvRecord[] {
+  const records: TlvRecord[] = [];
+  for (let offset = 0; offset < samples.length; offset += SYNTH_WAVETABLE_SAMPLE_TLV_CHUNK_BYTES) {
+    records.push(tlv(SynthWavetableTlv.Samples, samples.slice(offset, offset + SYNTH_WAVETABLE_SAMPLE_TLV_CHUNK_BYTES)));
+  }
+  return records;
 }
 
 export function synthWavetableMipLevelCount(samples: Uint8Array): number {
@@ -222,17 +234,17 @@ export function synthWavetableMipLevelCount(samples: Uint8Array): number {
 }
 
 export function synthWavetableMipLevelSampleCount(level: number): number {
+  return SYNTH_WAVETABLE_SAMPLE_COUNT;
+}
+
+export function synthWavetableMipLevelHarmonicLimit(level: number): number {
   const clamped = Math.max(0, Math.min(SYNTH_WAVETABLE_MIP_LEVEL_COUNT - 1, Math.round(level)));
-  return SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS[clamped];
+  return SYNTH_WAVETABLE_MIP_HARMONIC_LIMITS[clamped];
 }
 
 export function synthWavetableMipLevelOffset(level: number): number {
   const clamped = Math.max(0, Math.min(SYNTH_WAVETABLE_MIP_LEVEL_COUNT - 1, Math.round(level)));
-  let offset = 0;
-  for (let index = 0; index < clamped; index += 1) {
-    offset += SYNTH_WAVETABLE_FRAME_COUNT * SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS[index];
-  }
-  return offset;
+  return clamped * SYNTH_WAVETABLE_SAMPLE_BYTES;
 }
 
 export function synthWavetableBaseSamples(samples: Uint8Array): Uint8Array {
@@ -252,12 +264,11 @@ export function synthWavetableMipLevelSamples(samples: Uint8Array, level: number
     return samples;
   }
   const clamped = Math.max(0, Math.min(SYNTH_WAVETABLE_MIP_LEVEL_COUNT - 1, Math.round(level)));
-  const sampleCount = SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS[clamped];
   const offset = synthWavetableMipLevelOffset(clamped);
-  return samples.slice(offset, offset + SYNTH_WAVETABLE_FRAME_COUNT * sampleCount);
+  return samples.slice(offset, offset + SYNTH_WAVETABLE_SAMPLE_BYTES);
 }
 
-export function ensureSynthWavetableMipPyramid(samples: Uint8Array): Uint8Array {
+export function ensureSynthWavetableFixedMips(samples: Uint8Array): Uint8Array {
   if (samples.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
     return new Uint8Array(samples);
   }
@@ -267,42 +278,95 @@ export function ensureSynthWavetableMipPyramid(samples: Uint8Array): Uint8Array 
 
   const output = new Uint8Array(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
   output.set(samples, 0);
-  for (let level = 1; level < SYNTH_WAVETABLE_MIP_LEVEL_COUNT; level += 1) {
-    const previousCount = SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS[level - 1];
-    const sampleCount = SYNTH_WAVETABLE_MIP_SAMPLE_COUNTS[level];
-    const previousOffset = synthWavetableMipLevelOffset(level - 1);
-    const outputOffset = synthWavetableMipLevelOffset(level);
-    for (let frame = 0; frame < SYNTH_WAVETABLE_FRAME_COUNT; frame += 1) {
-      downsampleMipFrame(output, previousOffset + frame * previousCount, previousCount, output, outputOffset + frame * sampleCount, sampleCount);
+  const basis = fixedMipFourierBasis();
+  for (let frame = 0; frame < SYNTH_WAVETABLE_FRAME_COUNT; frame += 1) {
+    const frameOffset = frame * SYNTH_WAVETABLE_SAMPLE_COUNT;
+    const spectrum = wavetableFrameSpectrum(samples, frameOffset, basis);
+    for (let level = 1; level < SYNTH_WAVETABLE_MIP_LEVEL_COUNT; level += 1) {
+      renderPrunedWavetableFrame(
+        spectrum,
+        basis,
+        SYNTH_WAVETABLE_MIP_HARMONIC_LIMITS[level],
+        output,
+        synthWavetableMipLevelOffset(level) + frameOffset
+      );
     }
   }
   return output;
 }
 
-function downsampleMipFrame(source: Uint8Array, sourceOffset: number, sourceCount: number, output: Uint8Array, outputOffset: number, outputCount: number): void {
-  const radius = 16;
-  for (let sample = 0; sample < outputCount; sample += 1) {
-    const center = sample * 2;
-    let weighted = 0;
-    let weightSum = 0;
-    for (let tap = -radius; tap <= radius; tap += 1) {
-      const sourceIndex = positiveModulo(center + tap, sourceCount);
-      const weight = lowpassWindowedSinc(tap, radius);
-      weighted += ((source[sourceOffset + sourceIndex] ?? 128) - 128) * weight;
-      weightSum += weight;
-    }
-    output[outputOffset + sample] = clampByte(Math.round(128 + weighted / (weightSum || 1)));
-  }
+interface WavetableFourierBasis {
+  cos: Float32Array[];
+  sin: Float32Array[];
 }
 
-function lowpassWindowedSinc(sampleOffset: number, radius: number): number {
-  const cutoff = 0.25;
-  const x = sampleOffset;
-  const sinc = x === 0
-    ? 2 * cutoff
-    : Math.sin(2 * Math.PI * cutoff * x) / (Math.PI * x);
-  const window = 0.5 + 0.5 * Math.cos((Math.PI * x) / (radius + 1));
-  return sinc * window;
+interface WavetableFrameSpectrum {
+  real: Float64Array;
+  imag: Float64Array;
+}
+
+let cachedFixedMipBasis: WavetableFourierBasis | null = null;
+
+function fixedMipFourierBasis(): WavetableFourierBasis {
+  if (cachedFixedMipBasis) {
+    return cachedFixedMipBasis;
+  }
+  const cos: Float32Array[] = [];
+  const sin: Float32Array[] = [];
+  for (let harmonic = 0; harmonic <= SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_0; harmonic += 1) {
+    const harmonicCos = new Float32Array(SYNTH_WAVETABLE_SAMPLE_COUNT);
+    const harmonicSin = new Float32Array(SYNTH_WAVETABLE_SAMPLE_COUNT);
+    for (let sample = 0; sample < SYNTH_WAVETABLE_SAMPLE_COUNT; sample += 1) {
+      const phase = (2 * Math.PI * harmonic * sample) / SYNTH_WAVETABLE_SAMPLE_COUNT;
+      harmonicCos[sample] = Math.cos(phase);
+      harmonicSin[sample] = Math.sin(phase);
+    }
+    cos[harmonic] = harmonicCos;
+    sin[harmonic] = harmonicSin;
+  }
+  cachedFixedMipBasis = { cos, sin };
+  return cachedFixedMipBasis;
+}
+
+function wavetableFrameSpectrum(samples: Uint8Array, frameOffset: number, basis: WavetableFourierBasis): WavetableFrameSpectrum {
+  const real = new Float64Array(SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_0 + 1);
+  const imag = new Float64Array(SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_0 + 1);
+  for (let harmonic = 0; harmonic <= SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_0; harmonic += 1) {
+    const harmonicCos = basis.cos[harmonic];
+    const harmonicSin = basis.sin[harmonic];
+    let sumReal = 0;
+    let sumImag = 0;
+    for (let sample = 0; sample < SYNTH_WAVETABLE_SAMPLE_COUNT; sample += 1) {
+      const centered = (samples[frameOffset + sample] ?? 128) - 128;
+      sumReal += centered * harmonicCos[sample];
+      sumImag -= centered * harmonicSin[sample];
+    }
+    real[harmonic] = sumReal;
+    imag[harmonic] = sumImag;
+  }
+  return { real, imag };
+}
+
+function renderPrunedWavetableFrame(
+  spectrum: WavetableFrameSpectrum,
+  basis: WavetableFourierBasis,
+  harmonicLimit: number,
+  output: Uint8Array,
+  outputOffset: number
+): void {
+  const clampedLimit = Math.max(0, Math.min(SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_0, Math.floor(harmonicLimit)));
+  const inverseScale = 1 / SYNTH_WAVETABLE_SAMPLE_COUNT;
+  const harmonicScale = 2 * inverseScale;
+  for (let sample = 0; sample < SYNTH_WAVETABLE_SAMPLE_COUNT; sample += 1) {
+    let value = spectrum.real[0] * inverseScale;
+    for (let harmonic = 1; harmonic <= clampedLimit; harmonic += 1) {
+      value += harmonicScale * (
+        spectrum.real[harmonic] * basis.cos[harmonic][sample]
+        - spectrum.imag[harmonic] * basis.sin[harmonic][sample]
+      );
+    }
+    output[outputOffset + sample] = clampByte(Math.round(128 + value));
+  }
 }
 
 function parseWavSamples(bytes: ArrayBuffer | Uint8Array): ParsedSerumWavetable {

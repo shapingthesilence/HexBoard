@@ -68,5 +68,5 @@ extern std::atomic<bool> synthRuntimeReady;
 
 bool isSupportedSynthWavetableSampleLength(size_t sampleLength);
 void loadActiveSynthWavetableSamples(const uint8_t* samples, size_t sampleLength);
-void rebuildActiveSynthWavetableMipPyramidFromBase();
+void rebuildActiveSynthWavetableFixedMipsFromBase();
 void setActiveSynthWavetableMipLevelCount(uint8_t levelCount);

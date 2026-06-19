@@ -260,6 +260,20 @@ uint32_t presetSyncCrc32Finish(uint32_t crc) {
   return ~crc;
 }
 
+size_t presetSyncWavetableSampleTlvChunkLength(size_t sampleLength, size_t sampleOffset) {
+  return std::min(PRESET_SYNC_WAVETABLE_SAMPLE_TLV_CHUNK_BYTES, sampleLength - sampleOffset);
+}
+
+size_t presetSyncWavetableSampleTlvStreamLength(size_t sampleLength) {
+  size_t length = 0;
+  for (size_t sampleOffset = 0; sampleOffset < sampleLength;) {
+    size_t chunkLength = presetSyncWavetableSampleTlvChunkLength(sampleLength, sampleOffset);
+    length += 3 + chunkLength;
+    sampleOffset += chunkLength;
+  }
+  return length;
+}
+
 bool presetSyncComputeStreamedWavetableCrc(const std::vector<uint8_t>& objectPrefix,
                                            const char* samplePath,
                                            size_t sampleLength,
@@ -271,19 +285,74 @@ bool presetSyncComputeStreamedWavetableCrc(const std::vector<uint8_t>& objectPre
   }
 
   uint8_t buffer[128];
-  uint32_t remaining = static_cast<uint32_t>(sampleLength);
-  while (remaining > 0) {
-    size_t readLength = std::min<size_t>(sizeof(buffer), remaining);
-    size_t bytesRead = f.read(buffer, readLength);
-    if (bytesRead != readLength) {
-      f.close();
-      return false;
+  for (size_t sampleOffset = 0; sampleOffset < sampleLength;) {
+    size_t chunkLength = presetSyncWavetableSampleTlvChunkLength(sampleLength, sampleOffset);
+    uint8_t header[3] = {
+      PRESET_SYNC_TLV_WAVETABLE_SAMPLES,
+      static_cast<uint8_t>(chunkLength & 0xFF),
+      static_cast<uint8_t>((chunkLength >> 8) & 0xFF)
+    };
+    crc = presetSyncCrc32Update(crc, header, sizeof(header));
+
+    size_t remaining = chunkLength;
+    while (remaining > 0) {
+      size_t readLength = std::min<size_t>(sizeof(buffer), remaining);
+      size_t bytesRead = f.read(buffer, readLength);
+      if (bytesRead != readLength) {
+        f.close();
+        return false;
+      }
+      crc = presetSyncCrc32Update(crc, buffer, readLength);
+      remaining -= readLength;
     }
-    crc = presetSyncCrc32Update(crc, buffer, readLength);
-    remaining -= readLength;
+    sampleOffset += chunkLength;
   }
   f.close();
   objectCrc32 = presetSyncCrc32Finish(crc);
+  return true;
+}
+
+bool presetSyncReadStreamedWavetableSampleTlvBytes(size_t streamOffset, uint8_t* output, size_t length) {
+  size_t copied = 0;
+  while (copied < length) {
+    size_t localOffset = streamOffset + copied;
+    size_t sampleOffset = 0;
+    size_t chunkLength = 0;
+    while (sampleOffset < presetSyncReadTransfer.streamSampleLength) {
+      chunkLength = presetSyncWavetableSampleTlvChunkLength(presetSyncReadTransfer.streamSampleLength, sampleOffset);
+      size_t segmentLength = 3 + chunkLength;
+      if (localOffset < segmentLength) {
+        break;
+      }
+      localOffset -= segmentLength;
+      sampleOffset += chunkLength;
+    }
+    if (sampleOffset >= presetSyncReadTransfer.streamSampleLength) {
+      return false;
+    }
+
+    if (localOffset < 3) {
+      uint8_t header[3] = {
+        PRESET_SYNC_TLV_WAVETABLE_SAMPLES,
+        static_cast<uint8_t>(chunkLength & 0xFF),
+        static_cast<uint8_t>((chunkLength >> 8) & 0xFF)
+      };
+      size_t copyLength = std::min<size_t>(length - copied, 3 - localOffset);
+      memcpy(output + copied, header + localOffset, copyLength);
+      copied += copyLength;
+      continue;
+    }
+
+    size_t chunkDataOffset = localOffset - 3;
+    size_t copyLength = std::min(length - copied, chunkLength - chunkDataOffset);
+    if (!readSynthWavetableSampleFileRange(presetSyncReadTransfer.streamSamplePath,
+                                           static_cast<uint32_t>(sampleOffset + chunkDataOffset),
+                                           output + copied,
+                                           copyLength)) {
+      return false;
+    }
+    copied += copyLength;
+  }
   return true;
 }
 
@@ -313,11 +382,41 @@ bool presetSyncReadTransferBytes(uint32_t offset, uint8_t* output, size_t length
     return true;
   }
 
-  uint32_t sampleOffset = static_cast<uint32_t>(offset + copied - prefixLength);
-  return readSynthWavetableSampleFileRange(presetSyncReadTransfer.streamSamplePath,
-                                           sampleOffset,
-                                           output + copied,
-                                           length - copied);
+  size_t sampleStreamOffset = offset + copied - prefixLength;
+  return presetSyncReadStreamedWavetableSampleTlvBytes(sampleStreamOffset,
+                                                       output + copied,
+                                                       length - copied);
+}
+
+bool presetSyncCreateWriteTempFile(PresetSyncWriteTransfer& transfer) {
+  if (!fileSystemExists) {
+    return false;
+  }
+  LittleFS.remove(PRESET_SYNC_WRITE_RAW_TEMP_FILE_PATH);
+  File f = LittleFS.open(PRESET_SYNC_WRITE_RAW_TEMP_FILE_PATH, "w");
+  if (!f) {
+    return false;
+  }
+  f.close();
+  transfer.streamRawToFile = true;
+  snprintf(transfer.streamRawPath,
+           sizeof(transfer.streamRawPath),
+           "%s",
+           PRESET_SYNC_WRITE_RAW_TEMP_FILE_PATH);
+  return true;
+}
+
+bool presetSyncAppendWriteTempFile(const PresetSyncWriteTransfer& transfer, const uint8_t* data, size_t length) {
+  if (!transfer.streamRawPath[0]) {
+    return false;
+  }
+  File f = LittleFS.open(transfer.streamRawPath, "a");
+  if (!f) {
+    return false;
+  }
+  size_t written = f.write(data, length);
+  f.close();
+  return written == length;
 }
 
 void presetSyncSendReadBegin() {
@@ -406,7 +505,8 @@ void presetSyncSendStreamedSynthWavetableObject(uint16_t transactionId,
   }
 
   std::vector<uint8_t> objectPrefix = buildSynthWavetableObjectPrefix(wavetable, sampleLength);
-  uint32_t rawByteLength = static_cast<uint32_t>(objectPrefix.size() + sampleLength);
+  uint32_t rawByteLength =
+    static_cast<uint32_t>(objectPrefix.size() + presetSyncWavetableSampleTlvStreamLength(sampleLength));
   if (rawByteLength > PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
     return;
@@ -427,13 +527,14 @@ void presetSyncSendStreamedSynthWavetableObject(uint16_t transactionId,
   presetSyncReadTransfer.transactionId = transactionId;
   presetSyncReadTransfer.transferId = presetSyncAllocateTransferId();
   presetSyncReadTransfer.schemaMajor = 1;
-  presetSyncReadTransfer.schemaMinor = sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES ? 1 : 0;
+  presetSyncReadTransfer.schemaMinor = sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES ? 2 : 0;
   presetSyncReadTransfer.rawByteLength = rawByteLength;
   presetSyncReadTransfer.objectCrc32 = objectCrc32;
   snprintf(presetSyncReadTransfer.streamSamplePath,
            sizeof(presetSyncReadTransfer.streamSamplePath),
            "%s",
            samplePath);
+  presetSyncReadTransfer.streamSampleLength = sampleLength;
   presetSyncReadTransfer.rawData = objectPrefix;
   presetSyncSendReadBegin();
 }
@@ -567,7 +668,16 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
   presetSyncWriteTransfer.objectCrc32 = presetSyncDecodeU35ToU32(payload + 11);
   presetSyncWriteTransfer.rawChunkSize = presetSyncDecodeU14(payload + 16);
   presetSyncWriteTransfer.writeFlags = payload[18];
-  presetSyncWriteTransfer.rawData.assign(rawByteLength, 0);
+  presetSyncWriteTransfer.receivedCrc32 = 0xFFFFFFFFu;
+  if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
+    if (!presetSyncCreateWriteTempFile(presetSyncWriteTransfer)) {
+      presetSyncCancelWriteTransfer();
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_STORAGE_FULL);
+      return;
+    }
+  } else {
+    presetSyncWriteTransfer.rawData.assign(rawByteLength, 0);
+  }
   presetSyncSendAck(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN);
 }
 
@@ -603,7 +713,17 @@ void presetSyncHandleDataChunk(uint16_t transactionId, const uint8_t* payload, s
     return;
   }
 
-  memcpy(presetSyncWriteTransfer.rawData.data() + rawOffset, raw.data(), raw.size());
+  if (presetSyncWriteTransfer.streamRawToFile) {
+    if (!presetSyncAppendWriteTempFile(presetSyncWriteTransfer, raw.data(), raw.size())) {
+      presetSyncCancelWriteTransfer();
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DATA_CHUNK, PRESET_SYNC_ERROR_STORAGE_FULL);
+      return;
+    }
+  } else {
+    memcpy(presetSyncWriteTransfer.rawData.data() + rawOffset, raw.data(), raw.size());
+  }
+  presetSyncWriteTransfer.receivedCrc32 =
+    presetSyncCrc32Update(presetSyncWriteTransfer.receivedCrc32, raw.data(), raw.size());
   presetSyncWriteTransfer.receivedBytes += raw.size();
   ++presetSyncWriteTransfer.expectedChunkIndex;
   presetSyncSendAck(transactionId, PRESET_SYNC_MSG_DATA_CHUNK, presetSyncWriteTransfer.expectedChunkIndex);
@@ -649,8 +769,11 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_UNEXPECTED_CHUNK);
     return;
   }
-  if (crc32(presetSyncWriteTransfer.rawData.data(), presetSyncWriteTransfer.rawData.size()) != objectCrc32) {
-    presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+  uint32_t computedCrc = presetSyncWriteTransfer.streamRawToFile
+    ? presetSyncCrc32Finish(presetSyncWriteTransfer.receivedCrc32)
+    : crc32(presetSyncWriteTransfer.rawData.data(), presetSyncWriteTransfer.rawData.size());
+  if (computedCrc != objectCrc32) {
+    presetSyncCancelWriteTransfer();
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_BAD_CRC);
     return;
   }
@@ -660,7 +783,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     SynthPresetSlot parsedPreset;
     if (!parseSynthPresetObjectBody(presetSyncWriteTransfer.rawData, parsedPreset, parseError)) {
       sendToLog("Preset sync rejected synth preset: " + parseError);
-      presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+      presetSyncCancelWriteTransfer();
       presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
       return;
     }
@@ -672,7 +795,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
       if (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH) {
         int slotIndex = chooseSynthPresetWriteSlot(presetSyncWriteTransfer.handle, parsedPreset);
         if (slotIndex < 0) {
-          presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+          presetSyncCancelWriteTransfer();
           presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
           return;
         }
@@ -691,9 +814,15 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     }
   } else if (presetSyncWriteTransfer.objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
     ParsedSynthWavetableObject parsedWavetable;
-    if (!parseSynthWavetableObjectBody(presetSyncWriteTransfer.rawData, parsedWavetable, parseError)) {
+    bool parsed = presetSyncWriteTransfer.streamRawToFile
+      ? parseSynthWavetableObjectFile(presetSyncWriteTransfer.streamRawPath,
+                                      parsedWavetable,
+                                      PRESET_SYNC_WAVETABLE_SAMPLE_TEMP_FILE_PATH,
+                                      parseError)
+      : parseSynthWavetableObjectBody(presetSyncWriteTransfer.rawData, parsedWavetable, parseError);
+    if (!parsed) {
       sendToLog("Preset sync rejected synth wavetable: " + parseError);
-      presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+      presetSyncCancelWriteTransfer();
       presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
       return;
     }
@@ -702,12 +831,17 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
       if (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH) {
         flashWriteInProgress.store(true, std::memory_order_release);
         delayMicroseconds(AUDIO_DMA_BUFFER_MICROS * 2);
-        bool saved = parsedWavetable.sawSamples
-          ? saveParsedSynthWavetable(parsedWavetable)
-          : updateSynthWavetableMetadata(presetSyncWriteTransfer.handle, parsedWavetable);
+        bool saved = false;
+        if (parsedWavetable.sawSamples) {
+          saved = presetSyncWriteTransfer.streamRawToFile
+            ? saveParsedSynthWavetableSampleFile(parsedWavetable, PRESET_SYNC_WAVETABLE_SAMPLE_TEMP_FILE_PATH)
+            : saveParsedSynthWavetable(parsedWavetable);
+        } else {
+          saved = updateSynthWavetableMetadata(presetSyncWriteTransfer.handle, parsedWavetable);
+        }
         flashWriteInProgress.store(false, std::memory_order_release);
         if (!saved) {
-          presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+          presetSyncCancelWriteTransfer();
           presetSyncSendNack(transactionId,
                              PRESET_SYNC_MSG_WRITE_COMMIT,
                              parsedWavetable.sawSamples ? PRESET_SYNC_ERROR_STORAGE_FULL : PRESET_SYNC_ERROR_VALIDATION_FAILED);
@@ -723,7 +857,19 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
         snprintf(runtimeWavetable.name, sizeof(runtimeWavetable.name), "%s", parsedWavetable.name);
         snprintf(runtimeWavetable.folderPath, sizeof(runtimeWavetable.folderPath), "%s", parsedWavetable.folderPath);
         normalizeSynthWavetableMetadata(runtimeWavetable, parsedWavetable.samples, parsedWavetable.sampleLength);
-        applyParsedSynthWavetableToRuntime(runtimeWavetable, parsedWavetable.samples, parsedWavetable.sampleLength);
+        bool applied = presetSyncWriteTransfer.streamRawToFile
+          ? applyParsedSynthWavetableFileToRuntime(runtimeWavetable,
+                                                   PRESET_SYNC_WAVETABLE_SAMPLE_TEMP_FILE_PATH,
+                                                   parsedWavetable.sampleLength)
+          : (applyParsedSynthWavetableToRuntime(runtimeWavetable,
+                                                parsedWavetable.samples,
+                                                parsedWavetable.sampleLength),
+             true);
+        if (!applied) {
+          presetSyncCancelWriteTransfer();
+          presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
+          return;
+        }
         if (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH) {
           flashSafeSaveCurrentSynthWavetableReference();
         }
@@ -734,7 +880,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     if (!parseGeometryObjectBody(presetSyncWriteTransfer.rawData, parsedObject, parseError)
         || parsedObject.objectType != presetSyncWriteTransfer.objectType) {
       sendToLog("Preset sync rejected geometry object: " + parseError);
-      presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+      presetSyncCancelWriteTransfer();
       presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
       return;
     }
@@ -742,7 +888,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     if (!(commitFlags & PRESET_SYNC_WRITE_DRY_RUN)
         && (commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME)
         && !applyGeometryObjectToRuntime(parsedObject)) {
-      presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+      presetSyncCancelWriteTransfer();
       presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
       return;
     }
@@ -751,7 +897,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
         && (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH)) {
       int slotIndex = chooseGeometryObjectWriteSlot(presetSyncWriteTransfer.handle, parsedObject);
       if (slotIndex < 0) {
-        presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+        presetSyncCancelWriteTransfer();
         presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
         return;
       }
@@ -764,12 +910,12 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
       requestUserGeometryMenuRebuild();
     }
   } else {
-    presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+    presetSyncCancelWriteTransfer();
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
     return;
   }
 
-  presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+  presetSyncCancelWriteTransfer();
   presetSyncSendAck(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT);
 }
 
@@ -781,7 +927,7 @@ void presetSyncHandleTransferAbort(uint16_t transactionId, const uint8_t* payloa
   uint16_t transferId = presetSyncDecodeU14(payload);
   bool matched = false;
   if (presetSyncWriteTransfer.active && presetSyncWriteTransfer.transferId == transferId) {
-    presetSyncWriteTransfer = PresetSyncWriteTransfer{};
+    presetSyncCancelWriteTransfer();
     matched = true;
   }
   if (presetSyncReadTransfer.active && presetSyncReadTransfer.transferId == transferId) {

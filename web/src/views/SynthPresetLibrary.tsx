@@ -13,6 +13,7 @@ import {
   SYNTH_WAVETABLE_FRAME_COUNT,
   SYNTH_WAVETABLE_MIP_SAMPLE_BYTES,
   synthWavetableMipLevelCount,
+  synthWavetableMipLevelHarmonicLimit,
   synthWavetableMipLevelSampleCount,
   synthWavetableMipLevelSamples,
   SYNTH_WAVETABLE_SAMPLE_BYTES,
@@ -829,6 +830,8 @@ function wavetableFromObjectBody(body: Uint8Array, deviceHandle?: number): Edita
   let name = "Device Wavetable";
   let folderPath = rootFolderPath;
   let samples: Uint8Array | undefined;
+  const sampleChunks: Uint8Array[] = [];
+  let sampleLength = 0;
 
   for (const record of decoded.records) {
     if (record.tag === CommonTlv.Name) {
@@ -838,9 +841,16 @@ function wavetableFromObjectBody(body: Uint8Array, deviceHandle?: number): Edita
     } else if (record.tag === CommonTlv.FolderPath) {
       folderPath = decodeDeviceFolderPath(textFromBytes(record.value) || rootFolderPath);
     } else if (record.tag === SynthWavetableTlv.Samples) {
-      if (record.value.length === SYNTH_WAVETABLE_SAMPLE_BYTES || record.value.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
-        samples = record.value;
-      }
+      sampleChunks.push(record.value);
+      sampleLength += record.value.length;
+    }
+  }
+  if (sampleLength === SYNTH_WAVETABLE_SAMPLE_BYTES || sampleLength === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
+    samples = new Uint8Array(sampleLength);
+    let offset = 0;
+    for (const chunk of sampleChunks) {
+      samples.set(chunk, offset);
+      offset += chunk.length;
     }
   }
 
@@ -934,7 +944,7 @@ function renderWavetableImportSource(source: WavetableImportSource, options: Ser
 function wavetableFramePreviewPath(samples: Uint8Array, frame: number, mipLevel: number): string {
   const clampedFrame = Math.max(0, Math.min(SYNTH_WAVETABLE_FRAME_COUNT - 1, frame));
   const levelSamples = synthWavetableMipLevelSamples(samples, mipLevel);
-  const sampleCount = synthWavetableMipLevelSampleCount(samples.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES ? mipLevel : 0);
+  const sampleCount = synthWavetableMipLevelSampleCount(mipLevel);
   const start = clampedFrame * sampleCount;
   const points: string[] = [];
   for (let sample = 0; sample < sampleCount; sample += 1) {
@@ -1143,6 +1153,9 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     ? synthWavetableMipLevelCount(renderedWavetableImport.samples)
     : 1;
   const renderedWavetableMipSampleCount = synthWavetableMipLevelSampleCount(
+    Math.min(wavetablePreviewMipLevel, renderedWavetableMipLevelCount - 1)
+  );
+  const renderedWavetableMipHarmonicLimit = synthWavetableMipLevelHarmonicLimit(
     Math.min(wavetablePreviewMipLevel, renderedWavetableMipLevelCount - 1)
   );
   const wavetablePreviewPath = useMemo(
@@ -2254,7 +2267,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                             />
                           </label>
                           <label className="field rangeField">
-                            <span>Mip {Math.min(wavetablePreviewMipLevel, renderedWavetableMipLevelCount - 1) + 1} / {renderedWavetableMipLevelCount} ({renderedWavetableMipSampleCount} samples)</span>
+                            <span>Mip {Math.min(wavetablePreviewMipLevel, renderedWavetableMipLevelCount - 1) + 1} / {renderedWavetableMipLevelCount} ({renderedWavetableMipSampleCount} samples, {renderedWavetableMipHarmonicLimit} harmonics)</span>
                             <input
                               disabled={renderedWavetableMipLevelCount <= 1}
                               max={Math.max(0, renderedWavetableMipLevelCount - 1)}
