@@ -3,9 +3,10 @@
 This is the design spec for HexBoard preset sync. The synth preset subset,
 named synth-wavetable write/read path, raw `/layouts.dat` user geometry catalog
 storage, and live Apply for generated EDO/equal-step geometry bundles are
-implemented in firmware; profile, bundle, backup, and full Scala/cents-table
-tuning workflows remain draft design until their runtime models are
-implemented.
+implemented in firmware. Factory tuning/layout/scale catalogs are exposed as
+generated read-only geometry objects. Profile, bundle, backup, and full
+Scala/cents-table tuning workflows remain draft design until their runtime
+models are implemented.
 
 The intent is to keep the device-side protocol small while allowing the web app
 to handle tedious editing work such as Scala import, individual button mapping,
@@ -63,9 +64,9 @@ bodies. It can also apply generated EDO/equal-step `UserTuning` objects,
 isomorphic vector `UserLayout` objects, `UserScale` membership,
 `ScaleColorMap` degree colors, and format-1 `ExplicitButtonMap` note/color
 overrides to the live pitch and LED runtime. The on-device `Tuning`, `Layout`,
-and `Scales` menus are rebuilt from saved runtime-compatible geometry objects.
-It does not yet apply Scala/cents tables, profile references, or bundle
-manifests.
+and `Scales` menus are rebuilt from factory read-only geometry objects plus
+saved runtime-compatible user geometry objects. It does not yet apply
+Scala/cents tables, profile references, or bundle manifests.
 
 ## Relationship To Current SysEx
 
@@ -343,6 +344,7 @@ Capability flags:
 | `9` | Delete user object |
 | `10` | Factory object listing |
 | `11` | Synth wavetable write |
+| `12` | Live synth parameter set |
 
 Example hello request, transaction `1`, host max packed chunk `128`, no required
 flags:
@@ -352,14 +354,14 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 ```
 
 Example response, transaction `1`, max packed chunk `128`, capabilities
-`0xB7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
-delete user object, plus synth wavetable objects), max raw object bytes `66560`,
-settings schema `18`, synth preset schema `7`, `9` profiles, `128` synth preset
-entries, `127` slots for each advertised user geometry count, hardware version
-`2`:
+`0x1F7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
+delete user object, factory geometry listing, synth wavetable objects, and live
+synth parameter set), max raw object bytes `66560`, settings schema `19`, synth
+preset schema `7`, `9` profiles, `128` synth preset entries, `127` slots for
+each advertised user geometry count, hardware version `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 16 7E 00 04 08 00 12 07 09 01 00 7F 7F 7F 7F 02 F7
+F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 3E 7E 00 04 08 00 13 07 09 01 00 7F 7F 7F 7F 02 F7
 ```
 
 ## Object Addressing
@@ -372,6 +374,8 @@ object handle:
 - For catalog files such as `/layouts.dat` and the named/foldered
   `/synth_presets.dat`, it is a compact handle returned by `OBJECT_LIST_RESP`.
   The handle may change after create/delete/reorder operations.
+- Factory geometry handles start at `0x2000`, are generated on demand, and are
+  not stored in `/layouts.dat`.
 - Persistent identity comes from the object's `ObjectId` TLV, not from the
   handle.
 - `0x3FFF` is reserved as `NEW_OBJECT` in write requests that create a new
@@ -387,18 +391,19 @@ handle.
 | --- | --- | --- |
 | `0x01` | `DeviceProfile` | Main settings/profile slot, current firmware has `0..8` |
 | `0x02` | `ActiveSnapshot` | Read-only snapshot of the currently active runtime state |
-| `0x03` | `UserTuning` | `/layouts.dat` tuning handle |
-| `0x04` | `UserLayout` | `/layouts.dat` layout handle |
+| `0x03` | `UserTuning` | `/layouts.dat` tuning handle or read-only factory handle |
+| `0x04` | `UserLayout` | `/layouts.dat` layout handle or read-only factory handle |
 | `0x05` | `ScaleColorMap` | `/layouts.dat` color-map handle |
 | `0x06` | `ExplicitButtonMap` | `/layouts.dat` button-map handle |
 | `0x07` | `SynthPreset` | Synth-only preset catalog entry; current firmware returns compact catalog handles up to `127` |
 | `0x08` | `Bundle` | Web-app backup containing multiple objects |
 | `0x09` | `Folder` | Optional virtual folder record for catalog navigation |
-| `0x0A` | `UserScale` | `/layouts.dat` scale handle |
+| `0x0A` | `UserScale` | `/layouts.dat` scale handle or read-only factory handle |
 | `0x0B` | `SynthWavetable` | Synth-only wavetable catalog entry; current firmware returns compact catalog handles up to `63` |
 
-Factory tunings, factory layouts, and factory scales may be listed when the
-device advertises factory object listing, but they are read-only.
+Factory tunings, factory layouts, and factory scales are listed when the device
+advertises factory object listing. They live in folder `/Built In`, use
+deterministic object ids, set record flag bit `1`, and are read-only.
 
 ## Object List
 
@@ -722,7 +727,7 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `18` |
+| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `19` |
 | `0x21` | `SettingValues` | Repeated `<setting-key-u8> <value-u8>` records |
 | `0x22` | `TuningRef` | Object reference |
 | `0x23` | `LayoutRef` | Object reference |
@@ -732,7 +737,8 @@ Recommended TLVs:
 | `0x27` | `ScaleRef` | Optional object reference |
 
 `SettingValues` may use current `SettingKey` ordinals only when
-`SettingsSchemaVersion` matches a schema the firmware knows how to migrate. For
+`SettingsSchemaVersion` exactly matches the firmware's current schema. This
+release resets older `/settings.dat` files instead of migrating them. For
 future-proof sync, keep user tunings/layouts/mappings in separate objects and
 store references here.
 

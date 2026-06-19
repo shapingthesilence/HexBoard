@@ -4,9 +4,22 @@
 #include "../hardware/LedRender.h"
 #include "../model/PitchAssignment.h"
 #include "../model/ScalePalettePreset.h"
+#include "BuiltinGeometry.h"
 #include "PresetSync.h"
 #include "Settings.h"
 #include "SynthPresetStorage.h"
+
+namespace {
+
+char userGeometryRuntimeTuningNameStorage[GEOMETRY_OBJECT_NAME_LENGTH] = "User Tuning";
+char userGeometryRuntimeLayoutNameStorage[GEOMETRY_OBJECT_NAME_LENGTH] = "User Layout";
+char userGeometryRuntimeScaleNameStorage[GEOMETRY_OBJECT_NAME_LENGTH] = "User Scale";
+
+void copyRuntimeGeometryName(char* storage, size_t storageLength, const char* name) {
+  snprintf(storage, storageLength, "%s", name && name[0] ? name : "Geometry");
+}
+
+} // namespace
 
 bool isPresetSyncGeometryObjectType(uint8_t objectType) {
   switch (objectType) {
@@ -280,6 +293,9 @@ int findGeometryObjectByTypeAndObjectId(uint8_t objectType, const uint8_t* objec
 }
 
 int chooseGeometryObjectWriteSlot(uint16_t handle, const GeometryObjectSlot& object) {
+  if (isBuiltinGeometryHandle(handle)) {
+    return -1;
+  }
   if (handle != PRESET_SYNC_NEW_OBJECT_HANDLE
       && handle < geometryObjects.size()
       && geometryObjects[handle].objectType == object.objectType) {
@@ -293,6 +309,17 @@ int chooseGeometryObjectWriteSlot(uint16_t handle, const GeometryObjectSlot& obj
     return static_cast<int>(geometryObjects.size());
   }
   return -1;
+}
+
+bool geometryObjectForHandle(uint16_t handle, GeometryObjectSlot& object) {
+  if (isBuiltinGeometryHandle(handle)) {
+    return buildBuiltinGeometryObject(handle, object);
+  }
+  if (handle >= geometryObjects.size() || !geometryObjects[handle].valid) {
+    return false;
+  }
+  object = geometryObjects[handle];
+  return true;
 }
 
 int userGeometryDefaultSpanCtoA(uint16_t cycleLength) {
@@ -392,6 +419,17 @@ bool geometryObjectRuntimeTuningSupported(const GeometryObjectSlot& object) {
 }
 
 int findFirstGeometryObjectReferencing(uint8_t objectType, uint8_t referenceTag, uint8_t referenceObjectType, const uint8_t* referenceObjectId) {
+  for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
+    BuiltinGeometryMetadata metadata;
+    GeometryObjectSlot object;
+    if (builtinGeometryMetadataByOrdinal(i, metadata)
+        && metadata.objectType == objectType
+        && buildBuiltinGeometryObject(metadata.handle, object)
+        && geometryObjectReferencesObjectId(object, referenceTag, referenceObjectType, referenceObjectId)) {
+      return metadata.handle;
+    }
+  }
+
   for (size_t i = 0; i < geometryObjects.size(); ++i) {
     const GeometryObjectSlot& object = geometryObjects[i];
     if (object.valid
@@ -485,7 +523,8 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
     return false;
   }
 
-  userGeometryRuntimeTuning.name = object.name;
+  copyRuntimeGeometryName(userGeometryRuntimeTuningNameStorage, sizeof(userGeometryRuntimeTuningNameStorage), object.name);
+  userGeometryRuntimeTuning.name = userGeometryRuntimeTuningNameStorage;
   userGeometryRuntimeTuning.cycleLength = static_cast<byte>(cycleLength);
   userGeometryRuntimeTuning.stepSize = static_cast<float>(stepMilliCents) / 1000.0f;
   memcpy(userGeometryRuntimeTuningObjectId, object.objectId, sizeof(userGeometryRuntimeTuningObjectId));
@@ -532,7 +571,8 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
     return false;
   }
 
-  userGeometryRuntimeLayout.name = object.name;
+  copyRuntimeGeometryName(userGeometryRuntimeLayoutNameStorage, sizeof(userGeometryRuntimeLayoutNameStorage), object.name);
+  userGeometryRuntimeLayout.name = userGeometryRuntimeLayoutNameStorage;
   userGeometryRuntimeLayout.isPortrait = portrait != 0;
   userGeometryRuntimeLayout.hexMiddleC = static_cast<byte>(centerButton);
   userGeometryRuntimeLayout.acrossSteps = static_cast<int8_t>(acrossSteps);
@@ -580,7 +620,8 @@ bool applyUserGeometryRuntimeScale(const GeometryObjectSlot& object) {
     return false;
   }
 
-  userGeometryRuntimeScale.name = object.name;
+  copyRuntimeGeometryName(userGeometryRuntimeScaleNameStorage, sizeof(userGeometryRuntimeScaleNameStorage), object.name);
+  userGeometryRuntimeScale.name = userGeometryRuntimeScaleNameStorage;
   userGeometryRuntimeScale.tuning = current.tuningIndex;
   memset(userGeometryRuntimeScale.pattern, 0, sizeof(userGeometryRuntimeScale.pattern));
   for (uint8_t i = 0; i < degreeCount; ++i) {
@@ -701,11 +742,11 @@ bool applyGeometryObjectToRuntime(const GeometryObjectSlot& object) {
 }
 
 bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
-  if (tuningIndex >= geometryObjects.size()) {
+  GeometryObjectSlot tuningObject;
+  if (!geometryObjectForHandle(tuningIndex, tuningObject)) {
     sendToLog("User geometry menu load rejected: tuning handle is out of range.");
     return false;
   }
-  const GeometryObjectSlot& tuningObject = geometryObjects[tuningIndex];
   if (!geometryObjectRuntimeTuningSupported(tuningObject)) {
     sendToLog("User geometry menu load rejected: tuning is not runtime-compatible.");
     return false;
@@ -724,8 +765,13 @@ bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
     PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
     tuningObject.objectId
   );
-  if (layoutIndex >= 0 && !applyUserGeometryRuntimeLayout(geometryObjects[layoutIndex])) {
-    return false;
+  GeometryObjectSlot layoutObject;
+  bool sawLayoutObject = false;
+  if (layoutIndex >= 0) {
+    sawLayoutObject = geometryObjectForHandle(static_cast<uint16_t>(layoutIndex), layoutObject);
+    if (!sawLayoutObject || !applyUserGeometryRuntimeLayout(layoutObject)) {
+      return false;
+    }
   }
 
   int scaleIndex = findFirstGeometryObjectReferencing(
@@ -734,8 +780,12 @@ bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
     PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
     tuningObject.objectId
   );
-  if (scaleIndex >= 0 && !applyUserGeometryRuntimeScale(geometryObjects[scaleIndex])) {
-    return false;
+  if (scaleIndex >= 0) {
+    GeometryObjectSlot scaleObject;
+    if (!geometryObjectForHandle(static_cast<uint16_t>(scaleIndex), scaleObject)
+        || !applyUserGeometryRuntimeScale(scaleObject)) {
+      return false;
+    }
   }
 
   int colorMapIndex = findFirstGeometryObjectReferencing(
@@ -744,17 +794,21 @@ bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
     PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
     tuningObject.objectId
   );
-  if (colorMapIndex >= 0 && !applyUserGeometryRuntimeColorMap(geometryObjects[colorMapIndex])) {
-    return false;
+  if (colorMapIndex >= 0) {
+    GeometryObjectSlot colorMapObject;
+    if (!geometryObjectForHandle(static_cast<uint16_t>(colorMapIndex), colorMapObject)
+        || !applyUserGeometryRuntimeColorMap(colorMapObject)) {
+      return false;
+    }
   }
 
   int buttonMapIndex = -1;
-  if (layoutIndex >= 0) {
+  if (sawLayoutObject) {
     buttonMapIndex = findFirstGeometryObjectReferencing(
       PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP,
       PRESET_SYNC_TLV_BUTTON_MAP_LAYOUT_REF,
       PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT,
-      geometryObjects[layoutIndex].objectId
+      layoutObject.objectId
     );
   }
   if (buttonMapIndex < 0) {
@@ -765,8 +819,12 @@ bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
       tuningObject.objectId
     );
   }
-  if (buttonMapIndex >= 0 && !applyUserGeometryRuntimeExplicitButtonMap(geometryObjects[buttonMapIndex])) {
-    return false;
+  if (buttonMapIndex >= 0) {
+    GeometryObjectSlot buttonMapObject;
+    if (!geometryObjectForHandle(static_cast<uint16_t>(buttonMapIndex), buttonMapObject)
+        || !applyUserGeometryRuntimeExplicitButtonMap(buttonMapObject)) {
+      return false;
+    }
   }
 
   sendToLog("Loaded user geometry " + std::string(tuningObject.name) + " from menu.");

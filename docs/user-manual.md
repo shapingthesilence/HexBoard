@@ -92,11 +92,11 @@ The main menu includes:
 
 ### Tuning
 
-Use this section to choose the saved user tuning or geometry bundle the whole
-board runs on. Tunings saved from the web app appear here in folders, with the
-bundle name used as the menu item label. Selecting a tuning also loads the first
-saved layout, scale, color map, and matching explicit button map linked to that
-tuning so the board is immediately playable.
+Use this section to choose the tuning or geometry bundle the whole board runs
+on. Factory tunings now appear in the `Built In` folder alongside tunings saved
+from the web app. Selecting a tuning also loads the first linked layout, scale,
+color map, and matching explicit button map so the board is immediately
+playable.
 
 You can change:
 
@@ -142,9 +142,9 @@ Options include:
 - `Layout Rot`
 - `Device Rot`
 
-After a saved user tuning is selected, saved layouts linked to that tuning
-appear here in the same folders. Choosing a layout remaps button pitches and
-loads that layout's matching explicit button map when one exists. `Layout Rot`
+After a tuning is selected, factory and saved layouts linked to that tuning
+appear here in their folders. Choosing a layout remaps button pitches and loads
+that layout's matching explicit button map when one exists. `Layout Rot`
 rotates the musical pitch
 pattern around the hex grid in six 60-degree steps. `Device Rot` rotates the
 OLED/device orientation in four 90-degree steps: `0`, `90`, `180`, or `270`
@@ -161,8 +161,8 @@ Options include:
 - `Scale Lock`
 - Scale selection
 
-After a saved user tuning is selected, this page shows the tuning's note-label
-key selector and the saved scales linked to that tuning. Choosing a scale
+After a tuning is selected, this page shows the tuning's note-label key selector
+and the factory or saved scales linked to that tuning. Choosing a scale
 updates scale membership while keeping the current user tuning, layout, color
 map, and button map active.
 
@@ -436,11 +436,11 @@ A browser-based HexBoard Sync app is being developed in this repository. Its
 first target is preset, tuning/layout, color-map, button-map, and synth-preset
 editing over Web MIDI SysEx. Firmware currently implements synth preset sync,
 named synth-wavetable import/read/write/delete, storage/list/read/write/delete for user
-geometry objects in `/layouts.dat`, foldered on-device `Tuning`, `Layout`, and
-`Scales` menus backed by saved geometry objects, and live Apply for generated
-EDO/equal-step geometry bundles. Scala/cents-table tuning objects can be saved
-and verified, but live Scala playback still needs a broader firmware
-tuning-system overhaul.
+geometry objects in `/layouts.dat`, read-only factory tuning/layout/scale
+geometry objects, foldered on-device `Tuning`, `Layout`, and `Scales` menus
+backed by geometry objects, and live Apply for generated EDO/equal-step
+geometry bundles. Scala/cents-table tuning objects can be saved and verified,
+but live Scala playback still needs a broader firmware tuning-system overhaul.
 
 The `Tunings & Layouts` tab is a browser-side musical geometry editor. It saves
 geometry bundles in browser storage and can import/export those bundles as JSON.
@@ -459,14 +459,15 @@ bundle edits on the connected device's runtime without saving them to flash.
 `Save to Computer` stores the bundle in browser storage, while `Save to
 HexBoard` writes the bundle's user tuning, layouts, scales, color map, and
 explicit button map into the selected folder on the device. The HexBoard
-library lists saved user-tuning entries by folder because firmware stores the
-unpacked geometry objects rather than a single editable bundle object. Those
-entries can be opened into the editor, downloaded into the computer library,
-exported as bundle JSON, or erased from the device. On the
-device, the saved tuning appears under `Tuning`, its linked layouts appear under
-`Layout` after that tuning is selected, and its linked scales appear under
-`Scales`. The larger HexBoard preview plus selected-key inspector stay on the
-right, with the selected-key inspector below the board. The encoded-object debug
+library lists factory and saved tuning entries by folder because firmware
+stores the unpacked geometry objects rather than a single editable bundle
+object. Factory entries are read-only: they can be opened, downloaded, and
+exported as bundle JSON, but the web app disables erase for them. Saved user
+entries can also be erased from the device. On the device, the tuning appears
+under `Tuning`, its linked layouts appear under `Layout` after that tuning is
+selected, and its linked scales appear under `Scales`. The larger HexBoard
+preview plus selected-key inspector stay on the right, with the selected-key
+inspector below the board. The encoded-object debug
 readout sits at the bottom of the editor page. The rotation control is a
 four-step device orientation preview: `0`, `90`, `180`, or `270` degrees. It is
 intended to line up with the firmware `Device Rot` setting, not to rotate the
@@ -678,6 +679,7 @@ What to expect:
 - If `Auto-Save` is enabled, HexBoard saves after about `10 seconds` of inactivity
 - Manual profile saves write immediately
 - If saved settings cannot be read, HexBoard restores factory defaults
+- This release also resets older settings-schema files to factory defaults
 - Saving may mute the onboard synth very briefly
 
 ## Microtonal And MPE Behavior
@@ -696,8 +698,8 @@ For DAW, plugin, and hardware synth setup, including pitch-bend range matching a
 
 Important factory defaults include:
 
-- Tuning: `12 EDO`
-- Layout: first 12-EDO layout
+- Tuning: built-in `12 EDO`
+- Layout: first built-in 12-EDO layout
 - Device Rot: `0`
 - Scale: chromatic / none
 - MIDI channel: `1`

@@ -5,7 +5,9 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../hardware/GridState.h"
 #include "../model/PitchAssignment.h"
+#include "../storage/BuiltinGeometry.h"
 #include "../storage/PresetSync.h"
+#include "../storage/Settings.h"
 #include "../storage/SynthPresetStorage.h"
 
 enum class UserGeometryMenuKind : uint8_t {
@@ -49,13 +51,13 @@ GEMPage& userGeometryRootPage(UserGeometryMenuKind kind) {
 const char* emptyUserGeometryLabel(UserGeometryMenuKind kind) {
   switch (kind) {
     case UserGeometryMenuKind::Tuning:
-      return "No User Tunings";
+      return "No Tunings";
     case UserGeometryMenuKind::Layout:
-      return userGeometryRuntimeTuningObjectSelected ? "No User Layouts" : "Select Tuning";
+      return userGeometryRuntimeTuningObjectSelected ? "No Layouts" : "Select Tuning";
     case UserGeometryMenuKind::Scale:
-      return userGeometryRuntimeTuningObjectSelected ? "No User Scales" : "Select Tuning";
+      return userGeometryRuntimeTuningObjectSelected ? "No Scales" : "Select Tuning";
   }
-  return "No User Geometry";
+  return "No Geometry";
 }
 
 char* cloneUserGeometryMenuText(const char* text) {
@@ -115,24 +117,76 @@ bool applyLinkedButtonMapForCurrentUserLayout() {
 }
 
 bool loadUserGeometryLayoutFromSlot(uint16_t objectIndex) {
-  if (objectIndex >= geometryObjects.size()
-      || !geometryObjects[objectIndex].valid
-      || geometryObjects[objectIndex].objectType != PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT) {
+  GeometryObjectSlot object;
+  if (!geometryObjectForHandle(objectIndex, object)
+      || object.objectType != PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT) {
     sendToLog("User geometry layout menu load rejected: object is missing.");
     return false;
   }
-  return applyGeometryObjectToRuntime(geometryObjects[objectIndex])
+  return applyGeometryObjectToRuntime(object)
          && applyLinkedButtonMapForCurrentUserLayout();
 }
 
 bool loadUserGeometryScaleFromSlot(uint16_t objectIndex) {
-  if (objectIndex >= geometryObjects.size()
-      || !geometryObjects[objectIndex].valid
-      || geometryObjects[objectIndex].objectType != PRESET_SYNC_OBJECT_TYPE_USER_SCALE) {
+  GeometryObjectSlot object;
+  if (!geometryObjectForHandle(objectIndex, object)
+      || object.objectType != PRESET_SYNC_OBJECT_TYPE_USER_SCALE) {
     sendToLog("User geometry scale menu load rejected: object is missing.");
     return false;
   }
-  return applyGeometryObjectToRuntime(geometryObjects[objectIndex]);
+  return applyGeometryObjectToRuntime(object);
+}
+
+bool prepareBuiltinGeometrySelection(uint16_t handle) {
+  uint8_t objectType = 0;
+  uint8_t tuningIndex = 0;
+  uint16_t optionIndex = 0;
+  if (!builtinGeometrySelectionForHandle(handle, objectType, tuningIndex, optionIndex)) {
+    return false;
+  }
+  switch (objectType) {
+    case PRESET_SYNC_OBJECT_TYPE_USER_TUNING:
+      current.tuningIndex = tuningIndex;
+      current.layoutIndex = current.layoutsBegin();
+      current.scaleIndex = 0;
+      break;
+    case PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT:
+      current.layoutIndex = optionIndex;
+      break;
+    case PRESET_SYNC_OBJECT_TYPE_USER_SCALE:
+      current.scaleIndex = optionIndex;
+      break;
+    default:
+      break;
+  }
+  return true;
+}
+
+void persistBuiltinGeometrySelection(uint16_t handle) {
+  uint8_t objectType = 0;
+  uint8_t tuningIndex = 0;
+  uint16_t optionIndex = 0;
+  if (!builtinGeometrySelectionForHandle(handle, objectType, tuningIndex, optionIndex)) {
+    return;
+  }
+
+  switch (objectType) {
+    case PRESET_SYNC_OBJECT_TYPE_USER_TUNING:
+      settings[static_cast<uint8_t>(SettingKey::CurrentTuning)] = current.tuningIndex;
+      settings[static_cast<uint8_t>(SettingKey::CurrentLayout)] = current.layoutIndex;
+      settings[static_cast<uint8_t>(SettingKey::CurrentScale)] = current.scaleIndex;
+      settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
+      break;
+    case PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT:
+      settings[static_cast<uint8_t>(SettingKey::CurrentLayout)] = current.layoutIndex;
+      break;
+    case PRESET_SYNC_OBJECT_TYPE_USER_SCALE:
+      settings[static_cast<uint8_t>(SettingKey::CurrentScale)] = current.scaleIndex;
+      break;
+    default:
+      return;
+  }
+  markSettingsDirty();
 }
 
 void loadUserGeometryMenu(GEMCallbackData callbackData) {
@@ -142,6 +196,7 @@ void loadUserGeometryMenu(GEMCallbackData callbackData) {
     return;
   }
 
+  bool builtinSelection = prepareBuiltinGeometrySelection(action->objectIndex);
   bool loaded = false;
   switch (action->kind) {
     case UserGeometryMenuKind::Tuning:
@@ -156,6 +211,9 @@ void loadUserGeometryMenu(GEMCallbackData callbackData) {
       break;
   }
   if (loaded) {
+    if (builtinSelection) {
+      persistBuiltinGeometrySelection(action->objectIndex);
+    }
     loadDeviceRotationFromCurrentLayout();
     applyDeviceDisplayRotation();
   }
@@ -265,35 +323,43 @@ void addEmptyUserGeometryMenuItem(UserGeometryMenuKind kind) {
   userGeometryRootPage(kind).addMenuItem(*emptyItem);
 }
 
+bool includeGeometryObjectInMenu(UserGeometryMenuKind kind, const GeometryObjectSlot& object) {
+  switch (kind) {
+    case UserGeometryMenuKind::Tuning:
+      return geometryObjectRuntimeTuningSupported(object);
+    case UserGeometryMenuKind::Layout:
+      return object.objectType == PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT
+             && userGeometryObjectBelongsToCurrentTuning(object, PRESET_SYNC_TLV_LAYOUT_TUNING_REF);
+    case UserGeometryMenuKind::Scale:
+      return object.objectType == PRESET_SYNC_OBJECT_TYPE_USER_SCALE
+             && userGeometryObjectBelongsToCurrentTuning(object, PRESET_SYNC_TLV_USER_SCALE_TUNING_REF);
+  }
+  return false;
+}
+
+void addGeometryMenuObject(UserGeometryMenuKind kind, const GeometryObjectSlot& object, uint16_t handle, uint16_t& addedCount) {
+  if (!object.valid || !includeGeometryObjectInMenu(kind, object)) {
+    return;
+  }
+  GEMPage& page = userGeometryPageForFolder(kind, object.folderPath);
+  addUserGeometryMenuButton(page, object.name, createUserGeometryMenuAction(kind, handle));
+  ++addedCount;
+}
+
 void addUserGeometryObjectsForKind(UserGeometryMenuKind kind) {
   uint16_t addedCount = 0;
+  for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
+    BuiltinGeometryMetadata metadata;
+    GeometryObjectSlot object;
+    if (builtinGeometryMetadataByOrdinal(i, metadata)
+        && buildBuiltinGeometryObject(metadata.handle, object)) {
+      addGeometryMenuObject(kind, object, metadata.handle, addedCount);
+    }
+  }
+
   for (size_t i = 0; i < geometryObjects.size(); ++i) {
     GeometryObjectSlot& object = geometryObjects[i];
-    if (!object.valid) {
-      continue;
-    }
-
-    bool include = false;
-    switch (kind) {
-      case UserGeometryMenuKind::Tuning:
-        include = geometryObjectRuntimeTuningSupported(object);
-        break;
-      case UserGeometryMenuKind::Layout:
-        include = object.objectType == PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT
-                  && userGeometryObjectBelongsToCurrentTuning(object, PRESET_SYNC_TLV_LAYOUT_TUNING_REF);
-        break;
-      case UserGeometryMenuKind::Scale:
-        include = object.objectType == PRESET_SYNC_OBJECT_TYPE_USER_SCALE
-                  && userGeometryObjectBelongsToCurrentTuning(object, PRESET_SYNC_TLV_USER_SCALE_TUNING_REF);
-        break;
-    }
-    if (!include) {
-      continue;
-    }
-
-    GEMPage& page = userGeometryPageForFolder(kind, object.folderPath);
-    addUserGeometryMenuButton(page, object.name, createUserGeometryMenuAction(kind, static_cast<uint16_t>(i)));
-    ++addedCount;
+    addGeometryMenuObject(kind, object, static_cast<uint16_t>(i), addedCount);
   }
 
   if (addedCount == 0) {

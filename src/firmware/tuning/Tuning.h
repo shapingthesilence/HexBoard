@@ -32,13 +32,12 @@ constexpr byte CMDB = 192;
 constexpr byte UNUSED_NOTE = 255;
 constexpr uint32_t CC_MSG_COOLDOWN_MICROSECONDS = 16667;
 
-class tuningDef {
-public:
-  std::string name;  // limit is 17 characters for GEM menu
+struct tuningDef {
+  const char* name;  // limit is 17 characters for GEM menu
   byte cycleLength;  // steps before period/cycle/octave repeats
   float stepSize;    // in cents, 100 = "normal" semitone.
   SelectOptionInt keyChoices[MAX_SCALE_DIVISIONS];
-  int spanCtoA() {
+  int spanCtoA() const {
     return keyChoices[0].val_int;
   }
 };
@@ -80,7 +79,7 @@ struct EnvelopeParams {
   uint32_t sustainLevel = envelopeMaxLevel;
 };
 
-extern tuningDef tuningOptions[];
+extern const tuningDef tuningOptions[];
 extern EnvelopeParams envelopeParams;
 extern std::array<EnvelopeParams, SYNTH_FX_ENVELOPE_COUNT> effectEnvelopeParams;
 extern std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS> envelopeReleaseIncrementByLevel;

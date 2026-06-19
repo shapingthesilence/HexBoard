@@ -1,7 +1,7 @@
 #include "ScalePalettePreset.h"
 
 // @scales
-scaleDef scaleOptions[] = {
+const scaleDef scaleOptions[] = {
   { "None", ALL_TUNINGS, { 0 } },
   // 12 EDO
   { "Major", TUNING_12EDO, { 2, 2, 1, 2, 2, 2, 1 } },

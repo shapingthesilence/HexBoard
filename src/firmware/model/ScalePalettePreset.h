@@ -5,9 +5,8 @@
 #include "../tuning/Tuning.h"
 #include "Layout.h"
 
-class scaleDef {
-public:
-  std::string name;
+struct scaleDef {
+  const char* name;
   byte tuning;
   byte pattern[MAX_SCALE_DIVISIONS];
 };
@@ -75,7 +74,7 @@ public:
   }
 };
 
-extern scaleDef scaleOptions[];
+extern const scaleDef scaleOptions[];
 extern const byte scaleCount;
 extern paletteDef palette[];
 
@@ -87,25 +86,25 @@ extern scaleDef userGeometryRuntimeScale;
 
 class presetDef {
 public:
-  std::string presetName;
+  const char* presetName;
   int tuningIndex;  // instead of using pointers, i chose to store index value of each option, to be saved to a .pref or .ini or something
   int layoutIndex;
   int scaleIndex;
   int keyStepsFromA;  // what key the scale is in, where zero equals A.
   int transpose;
-  tuningDef tuning() {
+  const tuningDef& tuning() const {
     if (userGeometryRuntimeActive) {
       return userGeometryRuntimeTuning;
     }
     return tuningOptions[tuningIndex];
   }
-  layoutDef layout() {
+  const layoutDef& layout() const {
     if (userGeometryRuntimeActive) {
       return userGeometryRuntimeLayout;
     }
     return layoutOptions[layoutIndex];
   }
-  scaleDef scale() {
+  const scaleDef& scale() const {
     if (userGeometryRuntimeActive && userGeometryRuntimeScaleActive) {
       return userGeometryRuntimeScale;
     }

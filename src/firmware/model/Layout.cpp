@@ -20,7 +20,7 @@
 // - Full Janko otherwise;
 // You might want to arrange them as seems fit for release,
 // including all other layouts as I didn't put them in any particular order
-layoutDef layoutOptions[] = {
+const layoutDef layoutOptions[] = {
   { "Wicki-Hayden", 1, 64, 2, -7, TUNING_12EDO },
   { "Harmonic Table", 0, 75, -7, 3, TUNING_12EDO },
   { "Gerhard", 0, 65, -1, -3, TUNING_12EDO },

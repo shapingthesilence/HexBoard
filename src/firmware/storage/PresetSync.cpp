@@ -8,6 +8,7 @@
 #include "../menu/SynthWavetableMenu.h"
 #include "../midi/DelegatedControl.h"
 #include "../synth/SynthAudio.h"
+#include "BuiltinGeometry.h"
 #include "PresetSync.h"
 #include "Settings.h"
 #include "SynthPresetStorage.h"
@@ -33,6 +34,7 @@ void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_
                       | PRESET_SYNC_CAP_EXPLICIT_BUTTON_MAP
                       | PRESET_SYNC_CAP_DRY_RUN
                       | PRESET_SYNC_CAP_DELETE_USER_OBJECT
+                      | PRESET_SYNC_CAP_FACTORY_GEOMETRY
                       | PRESET_SYNC_CAP_SYNTH_WAVETABLE
                       | PRESET_SYNC_CAP_LIVE_SYNTH_PARAM);
   presetSyncAppendU28(response, PRESET_SYNC_MAX_RAW_OBJECT_BYTES);
@@ -121,6 +123,17 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
     }
   };
   auto includeGeometryObjects = [&](uint8_t geometryType) {
+    for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
+      BuiltinGeometryMetadata metadata;
+      if (!builtinGeometryMetadataByOrdinal(i, metadata) || metadata.objectType != geometryType) {
+        continue;
+      }
+      if (folderFilter[0]
+          && strncmp(metadata.folderPath, folderFilter, GEOMETRY_OBJECT_FOLDER_LENGTH) != 0) {
+        continue;
+      }
+      handles.push_back({ geometryType, metadata.handle });
+    }
     for (size_t i = 0; i < geometryObjects.size(); ++i) {
       if (!geometryObjects[i].valid || geometryObjects[i].objectType != geometryType) {
         continue;
@@ -197,7 +210,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
         normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(handle));
         appendRecord(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET,
                      handle,
-                     0x01,
+                     PRESET_SYNC_RECORD_VALID,
                      1,
                      0,
                      preset.objectId,
@@ -211,7 +224,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
         normalizeSynthWavetableMetadata(wavetable);
         appendRecord(PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE,
                      handle,
-                     0x01,
+                     PRESET_SYNC_RECORD_VALID,
                      1,
                      0,
                      wavetable.objectId,
@@ -220,11 +233,26 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
                      sizeof(wavetable.folderPath),
                      wavetable.name,
                      sizeof(wavetable.name));
+      } else if (isBuiltinGeometryHandle(handle)) {
+        BuiltinGeometryMetadata metadata;
+        if (builtinGeometryMetadataByHandle(handle, metadata)) {
+          appendRecord(metadata.objectType,
+                       handle,
+                       PRESET_SYNC_RECORD_VALID | PRESET_SYNC_RECORD_READ_ONLY,
+                       1,
+                       0,
+                       metadata.objectId,
+                       sizeof(metadata.objectId),
+                       metadata.folderPath,
+                       GEOMETRY_OBJECT_FOLDER_LENGTH,
+                       metadata.name,
+                       GEOMETRY_OBJECT_NAME_LENGTH);
+        }
       } else if (handle < geometryObjects.size() && geometryObjects[handle].valid) {
         GeometryObjectSlot& object = geometryObjects[handle];
         appendRecord(object.objectType,
                      handle,
-                     0x01,
+                     PRESET_SYNC_RECORD_VALID,
                      object.schemaMajor,
                      object.schemaMinor,
                      object.objectId,
@@ -559,18 +587,17 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
   }
   uint16_t handle = presetSyncDecodeU14(payload + 1);
   if (isPresetSyncGeometryObjectType(objectType)) {
-    if (handle >= geometryObjects.size()
-        || !geometryObjects[handle].valid
-        || geometryObjects[handle].objectType != objectType) {
+    GeometryObjectSlot object;
+    if (!geometryObjectForHandle(handle, object) || object.objectType != objectType) {
       presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
       return;
     }
     presetSyncSendRawObject(transactionId,
                             objectType,
                             handle,
-                            geometryObjects[handle].schemaMajor,
-                            geometryObjects[handle].schemaMinor,
-                            geometryObjects[handle].body);
+                            object.schemaMajor,
+                            object.schemaMinor,
+                            object.body);
     return;
   }
   if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
@@ -661,17 +688,26 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
     return;
   }
 
+  uint16_t handle = presetSyncDecodeU14(payload + 1);
+  uint8_t writeFlags = payload[18];
+  if (isPresetSyncGeometryObjectType(objectType)
+      && isBuiltinGeometryHandle(handle)
+      && (writeFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH)) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_WRITE_PROTECTED);
+    return;
+  }
+
   presetSyncWriteTransfer = PresetSyncWriteTransfer{};
   presetSyncWriteTransfer.active = true;
   presetSyncWriteTransfer.objectType = objectType;
-  presetSyncWriteTransfer.handle = presetSyncDecodeU14(payload + 1);
+  presetSyncWriteTransfer.handle = handle;
   presetSyncWriteTransfer.transferId = presetSyncDecodeU14(payload + 3);
   presetSyncWriteTransfer.schemaMajor = payload[5];
   presetSyncWriteTransfer.schemaMinor = payload[6];
   presetSyncWriteTransfer.rawByteLength = rawByteLength;
   presetSyncWriteTransfer.objectCrc32 = presetSyncDecodeU35ToU32(payload + 11);
   presetSyncWriteTransfer.rawChunkSize = presetSyncDecodeU14(payload + 16);
-  presetSyncWriteTransfer.writeFlags = payload[18];
+  presetSyncWriteTransfer.writeFlags = writeFlags;
   presetSyncWriteTransfer.receivedCrc32 = 0xFFFFFFFFu;
   if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
     if (!presetSyncCreateWriteTempFile(presetSyncWriteTransfer)) {
@@ -902,6 +938,11 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
 
     if (!(commitFlags & PRESET_SYNC_WRITE_DRY_RUN)
         && (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH)) {
+      if (isBuiltinGeometryHandle(presetSyncWriteTransfer.handle)) {
+        presetSyncCancelWriteTransfer();
+        presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_WRITE_PROTECTED);
+        return;
+      }
       int slotIndex = chooseGeometryObjectWriteSlot(presetSyncWriteTransfer.handle, parsedObject);
       if (slotIndex < 0) {
         presetSyncCancelWriteTransfer();
@@ -971,6 +1012,15 @@ void presetSyncHandleDelete(uint16_t transactionId, const uint8_t* payload, size
       requestSynthPresetMenuRebuild();
     }
   } else if (isPresetSyncGeometryObjectType(objectType)) {
+    if (isBuiltinGeometryHandle(handle)) {
+      BuiltinGeometryMetadata metadata;
+      if (builtinGeometryMetadataByHandle(handle, metadata) && metadata.objectType == objectType) {
+        presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_WRITE_PROTECTED);
+      } else {
+        presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
+      }
+      return;
+    }
     if (handle >= geometryObjects.size()
         || !geometryObjects[handle].valid
         || geometryObjects[handle].objectType != objectType) {

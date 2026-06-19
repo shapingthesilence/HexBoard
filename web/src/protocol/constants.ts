@@ -87,3 +87,13 @@ export const WriteFlag = {
 } as const;
 
 export type WriteFlagValue = (typeof WriteFlag)[keyof typeof WriteFlag];
+
+export const ObjectListFlag = {
+  Valid: 0x01,
+  ReadOnly: 0x02,
+  Active: 0x04,
+  ReferencesOtherObject: 0x08,
+  Folder: 0x10
+} as const;
+
+export type ObjectListFlagValue = (typeof ObjectListFlag)[keyof typeof ObjectListFlag];

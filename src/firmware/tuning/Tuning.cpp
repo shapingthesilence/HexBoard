@@ -27,7 +27,7 @@ std::array<std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>, SYNTH_FX_EN
     Sko: I felt like maximizing precision for just intonation purposes.
     Values are precalculated by compiler, and MIDI 2.0 or later might benefit from it
   */
-tuningDef tuningOptions[] = {
+const tuningDef tuningOptions[] = {
   { "12 EDO (Normal)", 12, 100.000, { { "C", -9 }, { "C#", -8 }, { "D", -7 }, { "Eb", -6 }, { "E", -5 }, { "F", -4 }, { "F#", -3 }, { "G", -2 }, { "G#", -1 }, { "A", 0 }, { "Bb", 1 }, { "B", 2 } } },
   { "12 TET 34 ZPI", 12, 99.8071807833375, { { "C", -9 }, { "C#", -8 }, { "D", -7 }, { "Eb", -6 }, { "E", -5 }, { "F", -4 }, { "F#", -3 }, { "G", -2 }, { "G#", -1 }, { "A", 0 }, { "Bb", 1 }, { "B", 2 } } },
   { "17 EDO", 17, 1200.0 / 17.0, { { "C", -13 }, { "Db", -12 }, { "C#", -11 }, { "D", -10 }, { "Eb", -9 }, { "D#", -8 }, { "E", -7 }, { "F", -6 }, { "Gb", -5 }, { "F#", -4 }, { "G", -3 }, { "Ab", -2 }, { "G#", -1 }, { "A", 0 }, { "Bb", 1 }, { "A#", 2 }, { "B", 3 } } },

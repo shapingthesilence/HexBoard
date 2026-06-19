@@ -130,10 +130,12 @@ Current web source layout:
   left/right column sizing as the synth preset editor. Its sidebar has
   top-level `File Manager` and `Editor` tabs: `File Manager` includes a
   foldered `Computer Library` for browser-stored bundles and a `HexBoard
-  Library` view backed by device `UserTuning` object-list records. Device-side
-  bundle actions read the tuning plus linked layout/scale/color/map objects to
-  reconstruct an editor bundle for Open, Download, and Export; Erase deletes the
-  linked object set in descending handle order. `Editor` contains `Live send`,
+  Library` view backed by device `UserTuning` object-list records, including
+  read-only factory records. Device-side bundle actions read the tuning plus
+  linked layout/scale/color/map objects to reconstruct an editor bundle for
+  Open, Download, and Export; Erase is disabled for read-only factory records
+  and deletes user-linked object sets in descending handle order. `Editor`
+  contains `Live send`,
   runtime `Send Now`, computer/device save actions, bundle metadata, and the
   open bundle's `Tuning`, `Layouts`, and `Scales` subtabs. Live send writes compatible active geometry objects with
   `ApplyToRuntime` only; `Save to HexBoard` writes all bundle objects with
@@ -433,7 +435,10 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `18`
+- `CURRENT_SETTINGS_VERSION` is currently `19`
+- this release intentionally skips old profile compatibility: any `/settings.dat`
+  file with a version other than `19` is replaced with factory defaults instead
+  of being migrated
 - the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
@@ -452,14 +457,18 @@ Important implementation details:
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - FX Env 2 is stored as `EffectEnvelope2Target`, `EffectEnvelope2Amount`, `EffectEnvelope2AttackIndex`, `EffectEnvelope2HoldIndex`, `EffectEnvelope2DecayIndex`, `EffectEnvelope2SustainLevel`, and `EffectEnvelope2ReleaseIndex`; factory defaults are `Pitch`, `+100%`, and an inactive `0 ms`/`0%` envelope
 - Core 0 retries synth release commands until the audio renderer consumes one; the renderer clears the retry state when it accepts `StartRelease` so long releases do not repeatedly restart
+- built-in tuning, layout, and scale catalogs are exposed as generated read-only
+  geometry objects from `BuiltinGeometry.cpp`; they use handles starting at
+  `0x2000`, live in the `/Built In` folder, and are not stored in
+  `/layouts.dat`
 - synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `9`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters plus a wavetable folder/name dependency, but do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving the new wavetable dependency from the legacy `Waveform` byte
 - user synth wavetables are stored as a named catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `64` entries, and per-table sample files named from each `16`-byte wavetable object id; new sample files contain four fixed mip levels with `32` frames and `512` samples per frame at harmonic limits `255`, `96`, `48`, and `24` (`65,536` bytes total), while legacy `16,384`-byte base-only files are still accepted and expanded in RAM. The selected wavetable is also snapshotted per profile in `/profile_wavetables.dat` with magic `PWT`, version `1`, so loading a profile restores its folder/name wavetable reference before runtime sync. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
-- user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `1`, up to `127` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. Runtime Apply currently supports generated EDO/equal-step user tunings, vector layouts, included-degree scales, scale color maps, and format-1 explicit button maps. The visible OLED `Tuning`, `Layout`, and `Scales` pages are rebuilt from these saved user geometry objects: tuning entries are the bundle anchors, layout and scale entries are filtered by the selected tuning object id, and save/delete requests defer a menu rebuild like synth preset menus. It does not yet support Scala/cents-table pitch lookup, profile references, or settings persistence for the selected geometry bundle.
+- user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `1`, up to `127` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. Runtime Apply currently supports generated EDO/equal-step user tunings, vector layouts, included-degree scales, scale color maps, and format-1 explicit button maps. The visible OLED `Tuning`, `Layout`, and `Scales` pages are rebuilt from generated read-only factory geometry plus saved user geometry: tuning entries are the bundle anchors, layout and scale entries are filtered by the selected tuning object id, and save/delete requests defer a menu rebuild like synth preset menus. It does not yet support Scala/cents-table pitch lookup, profile references, or settings persistence for the selected user geometry bundle.
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
-- version `2` through `17` settings files are migrated in place to version `18` by copying each older profile prefix, appending newer bytes with factory defaults, remapping legacy envelope time indices to the expanded `0 ms` through `4 s` time table when needed, remapping legacy `4/6/8/10 Hz` vibrato speed indices to the `1..12 Hz` table, and converting version `13` and older `DeviceRotation` OLED-driver constants into physical device rotation values; version `7` profiles also seed FX Env 1's new target to the old opposite-of-wheel behavior
+- version `2` through `18` settings files currently restore factory defaults instead of migrating; the older migration helper remains in the code for reference, but `load_settings()` no longer dispatches to it in this release
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` to mute the synth during the write
@@ -468,7 +477,7 @@ Important implementation details:
   stored values are interpreted by checking whether the older byte had the piezo
   bit set
 
-If you add, remove, reorder, or reinterpret settings, think about migration. The current code has explicit migrations for versions `2` through `17` because settings were appended to the schema, one retired trailing setting was later dropped, some setting tables expanded, and `DeviceRotation` was reinterpreted from OLED-driver rotation to physical device rotation. Unknown version mismatches still fall back to defaults.
+If you add, remove, reorder, or reinterpret settings, think about migration. This release deliberately uses defaults-only fallback for any older settings file. Re-enable or replace the older migration helper only if preserving existing profile data becomes a requirement again. Unknown version mismatches still fall back to defaults.
 
 ## MIDI And Tuning Notes
 

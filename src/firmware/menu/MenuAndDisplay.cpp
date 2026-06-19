@@ -8,6 +8,7 @@
 #include "../midi/MidiRouting.h"
 #include "../midi/MidiTransport.h"
 #include "../model/PitchAssignment.h"
+#include "../storage/BuiltinGeometry.h"
 #include "../storage/PresetSync.h"
 #include "../storage/Settings.h"
 #include "../storage/SynthPresetStorage.h"
@@ -2106,6 +2107,50 @@ byte normalizeDynamicJIRatioTable(byte value) {
   }
 }
 
+bool selectionFitsCurrentTuning(uint16_t layoutIndex, uint16_t scaleIndex) {
+  return layoutIndex < layoutCount
+         && layoutOptions[layoutIndex].tuning == current.tuningIndex
+         && scaleIndex < scaleCount
+         && (scaleIndex == 0 || scaleOptions[scaleIndex].tuning == current.tuningIndex);
+}
+
+void applyBuiltinGeometryRuntimeFromSettings() {
+  if (current.tuningIndex >= TUNINGCOUNT) {
+    current.tuningIndex = TUNING_12EDO;
+    settings[static_cast<uint8_t>(SettingKey::CurrentTuning)] = current.tuningIndex;
+  }
+
+  if (!selectionFitsCurrentTuning(current.layoutIndex, current.scaleIndex)) {
+    current.layoutIndex = current.layoutsBegin();
+    current.scaleIndex = 0;
+    settings[static_cast<uint8_t>(SettingKey::CurrentLayout)] = current.layoutIndex;
+    settings[static_cast<uint8_t>(SettingKey::CurrentScale)] = current.scaleIndex;
+  }
+
+  int savedKeyStepsFromA = current.keyStepsFromA;
+  uint16_t tuningHandle = 0;
+  if (!builtinGeometryHandleForLegacyTuning(current.tuningIndex, tuningHandle)
+      || !loadUserGeometryBundleFromTuningSlot(tuningHandle)) {
+    clearUserGeometryRuntimeSelection();
+    return;
+  }
+
+  uint16_t layoutHandle = 0;
+  GeometryObjectSlot object;
+  if (builtinGeometryHandleForLegacyLayout(current.layoutIndex, layoutHandle)
+      && geometryObjectForHandle(layoutHandle, object)) {
+    applyGeometryObjectToRuntime(object);
+  }
+
+  uint16_t scaleHandle = 0;
+  if (builtinGeometryHandleForLegacyScale(current.tuningIndex, current.scaleIndex, scaleHandle)
+      && geometryObjectForHandle(scaleHandle, object)) {
+    applyGeometryObjectToRuntime(object);
+  }
+  current.keyStepsFromA = savedKeyStepsFromA;
+  applyScale();
+}
+
 // --------------------------------------------------------
 // SETTINGS STEP 3 - Callback to sync settings variables on power-up
 // --------------------------------------------------------
@@ -2240,7 +2285,9 @@ void syncSettingsToRuntime() {
   updateSynthMenuVisibility();
 
   // Now *apply* them to the engine/UI:
+  applyBuiltinGeometryRuntimeFromSettings();
   refreshMenuChoicesForCurrentTuning();
+  rebuildUserGeometryMenuItems();
   rebuildRuntimeStateFromCurrentSelection();
   if (programChange > 0) {
     sendProgramChange();
@@ -2484,14 +2531,14 @@ void changeTuning(GEMCallbackData callbackData) {
   */
 void createTuningMenuItems() {
   for (byte T = 0; T < TUNINGCOUNT; T++) {
-    menuItemTuning[T] = new GEMItem(tuningOptions[T].name.c_str(), changeTuning, T);
+    menuItemTuning[T] = new GEMItem(tuningOptions[T].name, changeTuning, T);
     menuPageTuning.addMenuItem(*menuItemTuning[T]);
   }
 }
 void createLayoutMenuItems() {
   menuItemLayout.reserve(layoutCount);
   for (byte L = 0; L < layoutCount; L++) {  // create pointers to all layouts
-    GEMItem* menuItem = new GEMItem(layoutOptions[L].name.c_str(), changeLayout, L);
+    GEMItem* menuItem = new GEMItem(layoutOptions[L].name, changeLayout, L);
     menuItemLayout.push_back(menuItem);
     menuPageLayout.addMenuItem(*menuItem);
   }
@@ -2500,7 +2547,7 @@ void createLayoutMenuItems() {
 void previewKey(GEMPreviewCallbackData previewData);
 void createKeyMenuItems() {
   for (byte T = 0; T < TUNINGCOUNT; T++) {
-    selectKey[T] = new GEMSelect(tuningOptions[T].cycleLength, tuningOptions[T].keyChoices);
+    selectKey[T] = new GEMSelect(tuningOptions[T].cycleLength, const_cast<SelectOptionInt*>(tuningOptions[T].keyChoices));
     menuItemKeys[T] = new GEMItem("Key", current.keyStepsFromA, *selectKey[T], changeKey);
     menuItemKeys[T]->setPreviewCallback(previewKey);
     menuPageScales.addMenuItem(*menuItemKeys[T]);
@@ -2514,7 +2561,7 @@ void previewKey(GEMPreviewCallbackData previewData) {
 void createScaleMenuItems() {
   menuItemScales.reserve(scaleCount);
   for (int S = 0; S < scaleCount; S++) {  // create pointers to all scale items, filter them as you go
-    GEMItem* menuItem = new GEMItem(scaleOptions[S].name.c_str(), changeScale, S);
+    GEMItem* menuItem = new GEMItem(scaleOptions[S].name, changeScale, S);
     menuItemScales.push_back(menuItem);
     menuPageScales.addMenuItem(*menuItem);
   }

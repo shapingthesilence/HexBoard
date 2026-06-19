@@ -40,7 +40,7 @@ import { MockMidiTransport } from "../midi/mockTransport.ts";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
 import { crc32 } from "../protocol/crc32.ts";
-import { ObjectType, type ObjectListRecord } from "../protocol/index.ts";
+import { ObjectListFlag, ObjectType, type ObjectListRecord } from "../protocol/index.ts";
 import { CommonTlv, decodeObjectBody, textFromBytes, type TlvRecord } from "../protocol/tlv.ts";
 import { formatByteLength } from "./format.ts";
 
@@ -93,6 +93,7 @@ interface HexBoardGeometryBundleEntry {
   folderPath: string;
   schemaMajor: number;
   schemaMinor: number;
+  readOnly: boolean;
 }
 
 interface DeviceGeometryObject {
@@ -346,7 +347,8 @@ function hexBoardGeometryEntryFromRecord(record: ObjectListRecord): HexBoardGeom
     name: record.name || "User Tuning",
     folderPath: decodeDeviceFolderPath(record.folderPath || rootFolderPath),
     schemaMajor: record.schemaMajor,
-    schemaMinor: record.schemaMinor
+    schemaMinor: record.schemaMinor,
+    readOnly: (record.flags & ObjectListFlag.ReadOnly) !== 0
   };
 }
 
@@ -1436,7 +1438,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     const tuningRecord: ObjectListRecord = {
       objectType: ObjectType.UserTuning,
       handle: entry.deviceHandle,
-      flags: 0,
+      flags: entry.readOnly ? ObjectListFlag.ReadOnly : 0,
       schemaMajor: entry.schemaMajor,
       schemaMinor: entry.schemaMinor,
       objectId: new Uint8Array(),
@@ -2320,7 +2322,7 @@ function HexBoardGeometryLibraryPanel({
               <div className="presetMeta">
                 <strong>{entry.name}</strong>
                 <span>{folderLabel(entry.folderPath)}</span>
-                <span>{entry.objectIdHex.slice(0, 8).toUpperCase()}</span>
+                <span>{entry.readOnly ? "Factory" : entry.objectIdHex.slice(0, 8).toUpperCase()}</span>
               </div>
               <div className="presetActions">
                 <button type="button" onClick={() => onOpen(entry)}>
@@ -2332,7 +2334,7 @@ function HexBoardGeometryLibraryPanel({
                 <button type="button" onClick={() => onExport(entry)}>
                   Export
                 </button>
-                <button className="warning" type="button" onClick={() => onErase(entry)}>
+                <button className="warning" disabled={entry.readOnly} type="button" onClick={() => onErase(entry)}>
                   Erase
                 </button>
               </div>

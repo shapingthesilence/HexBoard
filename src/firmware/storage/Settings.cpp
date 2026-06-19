@@ -243,44 +243,10 @@ bool load_settings() {
     save_settings();
     return false;
   }
-  switch (header.version) {
-    case 2:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V2);
-    case 3:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V3);
-    case 4:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V4);
-    case 5:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V5);
-    case 6:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V6);
-    case 7:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V7);
-    case 8:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V8);
-    case 9:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_BEFORE_HEADPHONE_CAP);
-    case 10:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_BEFORE_HEADPHONE_CAP);
-    case 11:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V11);
-    case 12:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V12);
-    case 13:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V14);
-    case 14:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V14);
-    case 15:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V15);
-    case 16:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS);
-    case 17:
-      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V17);
-    default:
-      break;
-  }
   if (header.version != CURRENT_SETTINGS_VERSION) {
-    sendToLog("Settings version mismatch. File version: " + std::to_string(header.version) + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION));
+    sendToLog("Settings version mismatch. File version: " + std::to_string(header.version)
+              + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION)
+              + ". Restoring factory defaults for this release.");
     f.close();
     applyFactoryDefaultsToSettings();
     save_settings();

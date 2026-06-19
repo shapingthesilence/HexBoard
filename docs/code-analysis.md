@@ -352,11 +352,13 @@ the user wavetable write path, and raw `/layouts.dat` storage for user tuning,
 layout, scale, scale color map, and explicit button map objects. It also
 implements live Apply for the minimum generated-geometry path: EDO/equal-step
 tunings, vector layouts, included-degree scales, scale-degree color maps, and
-format-1 explicit button maps. The OLED `Tuning`, `Layout`, and `Scales` pages
-are now rebuilt from saved user geometry objects, with `UserTuning` entries as
-bundle anchors and linked layouts/scales filtered by the currently selected
-user tuning object id. Profile transfer, formal bundle manifests, and
-Scala/cents-table runtime tuning remain draft.
+format-1 explicit button maps. Factory tuning/layout/scale catalogs are exposed
+as generated read-only geometry objects instead of saved `/layouts.dat` records.
+The OLED `Tuning`, `Layout`, and `Scales` pages are now rebuilt from factory
+and saved user geometry objects, with `UserTuning` entries as bundle anchors and
+linked layouts/scales filtered by the currently selected tuning object id.
+Profile transfer, formal bundle manifests, and Scala/cents-table runtime tuning
+remain draft.
 
 The companion web app has protocol and catalog helpers for that draft under
 `web/src/protocol/` and `web/src/catalogs/`, plus a mock MIDI transport under
@@ -647,7 +649,10 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `18`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `19`, and `PROFILE_COUNT` is `9`.
+Older settings-schema files are not migrated in this release; `load_settings()`
+restores factory defaults and rewrites `/settings.dat` whenever the header
+version is not `19`.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the hardware-specific calibrated table above.
 
@@ -706,14 +711,23 @@ User geometry objects are stored in `/layouts.dat` with magic `LYT`, version
 can hold `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and
 `ExplicitButtonMap` objects. Preset-sync validates the common `HBS1` object
 envelope, schema major `1`, non-empty `Name`, and 16-byte `ObjectId`, then
-stores the raw body so hosts can list, read, overwrite, and delete geometry
-objects. Runtime Apply currently parses compatible geometry TLVs into RAM-only
-user tuning/layout/scale/palette/button-map state, rebuilds layout/scale/pitch
+stores the raw body so hosts can list, read, overwrite, and delete user
+geometry objects.
+
+`BuiltinGeometry.cpp` generates factory tuning/layout/scale objects on demand
+from the legacy const catalogs. Factory handles start at `0x2000`, use the
+folder `/Built In`, carry deterministic object ids, set the object-list
+read-only flag, and reject save/delete attempts with `WriteProtected`. These
+objects are not stored in `/layouts.dat`, so exposing the built-ins through
+geometry does not consume user geometry slots.
+
+Runtime Apply currently parses compatible geometry TLVs into RAM-only
+tuning/layout/scale/palette/button-map state, rebuilds layout/scale/pitch
 assignment, and uses `ReferenceMilliHz` as an A4 pitch offset for synth and MIDI
 retuning. The OLED tuning/layout/scale pages are foldered dynamic menus backed
-by those saved objects. Selecting a saved `UserTuning` loads its linked first
+by factory and saved objects. Selecting a `UserTuning` loads its linked first
 layout, first scale, color map, and explicit map; the `Layout` and `Scales`
-pages then expose the other saved objects that reference the selected tuning.
+pages then expose the other objects that reference the selected tuning.
 Scala/cents-list tunings still save as raw objects but are hidden from the
 runtime tuning menu until table-backed pitch lookup exists.
 
@@ -757,7 +771,9 @@ Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` through `17` files migrate to version `18` by copying the older per-profile prefix, appending newer settings with factory defaults, dropping a retired trailing setting from version `17`, remapping legacy envelope time indices when needed, remapping legacy vibrato speed indices, and converting old `DeviceRotation` OLED-driver constants to physical device orientation values; version `7` profiles seed FX Env 1's new target from the old opposite-of-wheel behavior
+- version `2` through `18` files currently restore factory defaults instead of
+  migrating; profile compatibility is intentionally skipped for the version
+  `19` geometry-catalog release
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults
