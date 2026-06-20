@@ -43,7 +43,7 @@ void RAM_FUNC(tryMIDInoteOn)(byte x) {
     }
 
     if (h[x].MIDIch) {
-      pressedKeyIDs.push_back(x);  // Dynamic JI pressed key tracking
+      pressedKeyIDs.add(x);  // Dynamic JI pressed key tracking
       justIntonationRetune(x);
       prepareActiveMidiPitch(x);
       int16_t pitchBendValue = 0;
@@ -77,10 +77,7 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
   if (h[x].MIDIch) {  // but just in case, check
     byte noteOff = (h[x].activeMidiNote < 128) ? h[x].activeMidiNote : h[x].note;
     withMIDI([&](auto& M) { M.sendNoteOff(noteOff, velWheel.curValue, h[x].MIDIch); });
-    auto pressedKey = std::find(pressedKeyIDs.begin(), pressedKeyIDs.end(), x);
-    if (pressedKey != pressedKeyIDs.end()) {
-      pressedKeyIDs.erase(pressedKey);  // Dynamic JI pressed key tracking
-    }
+    pressedKeyIDs.remove(x);  // Dynamic JI pressed key tracking
     h[x].jiRetune = 0;
     h[x].jiRetuneCents = 0.0f;
     h[x].jiFrequencyMultiplier = 1.0f;

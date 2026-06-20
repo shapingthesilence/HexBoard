@@ -660,6 +660,11 @@ records are applied. The message marks settings dirty for the normal debounced
 profile autosave path, but it does not synchronously save flash, does not stage
 a read/write transfer, and does not show the `MIDI SysEx Transfer` screen.
 
+Hosts must keep these `SettingKey` ordinals tied to the current settings schema.
+In schema `19`, `Serial Debug` is no longer a persisted setting, so all synth
+setting ordinals are one lower than earlier in-development builds that still had
+the leading `Debug` byte.
+
 Firmware applies each key through the same targeted runtime update used by the
 matching on-device synth menu control. For example, `PlaybackMode` still resets
 current synth frequencies because the on-device control does, while envelope,

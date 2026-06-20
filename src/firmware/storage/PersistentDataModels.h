@@ -15,7 +15,6 @@ constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
 enum class SettingKey : uint8_t {
-  Debug,
   RotaryInvert,
   AutoSave,
   MPEpitchBend,

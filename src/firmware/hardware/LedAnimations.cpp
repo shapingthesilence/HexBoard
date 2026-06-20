@@ -4,6 +4,7 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
+#include "../tuning/Tuning.h"
 
 // @animate
 /*
@@ -80,18 +81,52 @@ void animateRing(byte centerIndex, byte radius, byte stepsPerSide) {
 }
 
 void animateMirror() {
-  for (byte i = 0; i < LED_COUNT; ++i) {                     // check every hex
-    if (!h[i].isCmd && h[i].MIDIch) {                        // that is a held note
-      for (byte j = 0; j < LED_COUNT; ++j) {                 // compare to every hex
-        if (!h[j].isCmd && !h[j].MIDIch) {                   // that is a note not being played
-          int16_t temp = h[i].stepsFromC - h[j].stepsFromC;  // look at difference between notes
-          if (animationType == ANIMATE_OCTAVE) {             // set octave diff to zero if need be
-            temp = positiveMod(temp, current.tuning().cycleLength);
-          }
-          if (temp == 0) {  // highlight if diff is zero
-            h[j].animate = true;
-          }
-        }
+  if (animationType == ANIMATE_OCTAVE) {
+    bool heldPitchClass[MAX_SCALE_DIVISIONS] = {};
+    uint8_t cycleLength = current.tuning().cycleLength;
+    if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
+      return;
+    }
+
+    for (byte i = 0; i < LED_COUNT; ++i) {
+      if (!h[i].isCmd && h[i].MIDIch) {
+        heldPitchClass[positiveMod(h[i].stepsFromC, cycleLength)] = true;
+      }
+    }
+    for (byte j = 0; j < LED_COUNT; ++j) {
+      if (!h[j].isCmd && !h[j].MIDIch && heldPitchClass[positiveMod(h[j].stepsFromC, cycleLength)]) {
+        h[j].animate = true;
+      }
+    }
+    return;
+  }
+
+  std::array<int16_t, LED_COUNT> heldSteps = {};
+  uint8_t heldStepCount = 0;
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    if (h[i].isCmd || !h[i].MIDIch) {
+      continue;
+    }
+    bool alreadyTracked = false;
+    for (uint8_t stepIndex = 0; stepIndex < heldStepCount; ++stepIndex) {
+      if (heldSteps[stepIndex] == h[i].stepsFromC) {
+        alreadyTracked = true;
+        break;
+      }
+    }
+    if (!alreadyTracked && heldStepCount < heldSteps.size()) {
+      heldSteps[heldStepCount++] = h[i].stepsFromC;
+    }
+  }
+
+  for (byte j = 0; j < LED_COUNT; ++j) {
+    if (h[j].isCmd || h[j].MIDIch) {
+      continue;
+    }
+    for (uint8_t stepIndex = 0; stepIndex < heldStepCount; ++stepIndex) {
+      if (heldSteps[stepIndex] == h[j].stepsFromC) {
+        h[j].animate = true;
+        break;
       }
     }
   }

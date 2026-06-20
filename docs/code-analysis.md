@@ -182,9 +182,9 @@ DMA buffers and poll the encoder.
 
 Live and stopped screens show elapsed time, last Core 0 task, last Core 1 task,
 DMA underruns, render overruns, minimum free heap from `rp2040.getFreeHeap()`,
-and max audio block time. If `Serial Debug` was enabled at launch, the benchmark
-emits fixed-buffer live/summary lines every few seconds instead of the verbose
-normal debug stream. Holding the encoder for about `5` seconds requests a clean
+and max audio block time. If runtime `Serial Debug` was enabled at launch, the benchmark
+emits fixed-buffer live/summary lines every few seconds instead of the normal
+general/periodic debug categories. Holding the encoder for about `5` seconds requests a clean
 exit; stop releases benchmark notes, captures audio stats, restores the saved
 runtime state, redraws the menu behind the benchmark, and leaves the stopped
 summary on the OLED until the next menu input.
@@ -306,14 +306,17 @@ This replaces slower sorted-container behavior, but it still depends on correct 
 ### Dynamic Just Intonation
 
 Dynamic just intonation is applied in the MIDI note-on path. The reference key
-tracking uses `pressedKeyIDs`; note-off removes the released button id from that
-list so release order does not corrupt the reference stack. The `JI Table` menu
+tracking uses the fixed-capacity `pressedKeyIDs` structure; note-on appends the
+button id to an oldest-held linked order, and note-off unlinks it in `O(1)` so
+release order does not corrupt the reference stack or allocate heap. The `JI Table` menu
 item is visible only while `Dynamic JI` is enabled and stores
 `DynamicJIRatioTable`, a prime-limit selector from `3Limit` through `41Limit`.
 The default `41Limit` preserves the previous full candidate-ratio behavior, while
 lower limits filter the existing ratio list to simpler numerator/denominator
-prime factors. The active ratio table stores precomputed cents for each
-candidate so note-on matching does not repeatedly convert ratios while scanning.
+prime factors. The active table stores selected ratio indices only; note-on
+matching computes full floating-point cents from the numerator/denominator pair
+for each selected candidate, preserving interval/beat-frequency precision at the
+cost of more work per press.
 `Beat BPM` and `BPM Mult.` use the same Tuning-menu visibility helper and are
 visible only while `JI BPM Sync` is enabled. The visibility helper preserves the
 Tuning page's current item index because GEM resets pages with a Back item near
@@ -645,7 +648,9 @@ Key implementation facts:
   note-less beep is not double-attenuated by that moving-midpoint stage. Piezo
   sample scaling uses a power-of-two fixed-point multiply/shift to keep the
   block renderer bounded.
-- `flashWriteInProgress` mutes output during flash writes because RP2040 flash operations disable interrupts.
+- `beginFlashSafeWrite()` shows an OLED saving notice, ramps output toward the
+  destination idle level over roughly `86` samples, sets `flashWriteInProgress`
+  while flash interrupts are blocked, then fades back in and restores the screen.
 
 Synth changes need extra review when they touch:
 
@@ -672,6 +677,11 @@ The current `SettingsHeader` contains:
 Older settings-schema files are not migrated in this release; `load_settings()`
 restores factory defaults and rewrites `/settings.dat` whenever the header
 version is not `19`.
+
+The in-progress version `19` layout no longer includes the old persisted `Debug`
+byte. `Serial Debug` is RAM-only and starts disabled on boot; its `General Log`,
+`Min Heap`, and `Audio Stats` category toggles live in `DiagnosticsTiming.cpp`
+and are shown only while the runtime debug submenu is enabled.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the hardware-specific calibrated table above.
 
@@ -806,7 +816,9 @@ Save behavior:
 - manual saves write immediately
 - auto-save is debounced for about `10` seconds
 - auto-save snapshots the current runtime settings into profile `0`
-- flash writes go through `flashSafeSave()` so the synth is muted before interrupts are blocked
+- flash writes go through `flashSafeSave()` / `beginFlashSafeWrite()` so the
+  output is faded to idle and the OLED explains the temporary mute before
+  interrupts are blocked
 
 If `SettingKey` entries are added, removed, or reordered, update the version and decide whether defaults-only fallback is acceptable or whether a migration is needed.
 
@@ -854,7 +866,8 @@ The rotary encoder is polled on core 1 and consumed on core 0. Holding the encod
 - The single-file structure makes cross-subsystem side effects easy to miss.
 - Dynamic containers still exist in live paths.
 - Unknown settings schema versions still fall back to defaults on version mismatch.
-- Flash writes still pause interrupt-driven audio, even though the code mutes before saving.
+- Flash writes still pause interrupt-driven audio, even though the code fades to
+  idle and shows a saving notice before writing.
 - Delegated-control input is intentionally external-facing, so SysEx parsing should stay bounds-checked and isolated.
 - Hardware-version behavior is mixed into runtime/menu setup and needs testing on both revisions.
 

@@ -27,7 +27,6 @@ constexpr float BENCHMARK_MAX_NOTE_HZ = 10000.0f;
 
 struct StabilityBenchmarkSavedRuntime {
   bool valid = false;
-  bool debugMessages = true;
   byte playbackMode = SYNTH_POLY;
   byte currWave = WAVEFORM_BASIC_WAVETABLE;
   bool synthBuzzerEnabled = false;
@@ -95,17 +94,8 @@ bool benchmarkModHigh = true;
 bool benchmarkPitchBendHigh = true;
 bool benchmarkSerialReportEnabled = false;
 
-uint32_t readFreeHeapBytes() {
-#if defined(ARDUINO_ARCH_RP2040)
-  int freeHeap = rp2040.getFreeHeap();
-  return freeHeap > 0 ? static_cast<uint32_t>(freeHeap) : 0;
-#else
-  return 0;
-#endif
-}
-
 void updateMinFreeHeap() {
-  uint32_t freeHeap = readFreeHeapBytes();
+  uint32_t freeHeap = readRuntimeFreeHeapBytes();
   if (freeHeap == 0) {
     return;
   }
@@ -217,7 +207,6 @@ void benchmarkNoteOff(byte note) {
 
 void saveRuntimeState() {
   savedRuntime.valid = true;
-  savedRuntime.debugMessages = debugMessages;
   savedRuntime.playbackMode = playbackMode;
   savedRuntime.currWave = currWave;
   savedRuntime.synthBuzzerEnabled = synthBuzzerEnabled;
@@ -330,7 +319,6 @@ void restoreRuntimeState() {
   if (!savedRuntime.valid) {
     return;
   }
-  debugMessages = savedRuntime.debugMessages;
   playbackMode = savedRuntime.playbackMode;
   currWave = savedRuntime.currWave;
   synthBuzzerEnabled = savedRuntime.synthBuzzerEnabled;
@@ -570,8 +558,9 @@ void startStabilityBenchmark() {
   }
 
   saveRuntimeState();
-  benchmarkSerialReportEnabled = debugMessages;
-  debugMessages = false;
+  benchmarkSerialReportEnabled = serialDebugEnabled;
+  setSerialDebugGeneralSuppressed(true);
+  setSerialDebugPeriodicSuppressed(true);
   benchmarkStopRequested = false;
   benchmarkEncoderHoldStartMicros = 0;
   benchmarkEncoderHoldLatched = false;
@@ -597,7 +586,7 @@ void startStabilityBenchmark() {
   applyBenchmarkPatch();
   buildBenchmarkNotePool();
   startISRProfileCapture();
-  benchmarkStartFreeHeap = readFreeHeapBytes();
+  benchmarkStartFreeHeap = readRuntimeFreeHeapBytes();
   benchmarkMinFreeHeap = benchmarkStartFreeHeap;
   startHeldBenchmarkNotes();
   updateMinFreeHeap();
@@ -631,6 +620,8 @@ void stopStabilityBenchmark() {
   drawBenchmarkScreen(true);
   logBenchmarkSummary("stopped");
   benchmarkSerialReportEnabled = false;
+  setSerialDebugPeriodicSuppressed(false);
+  setSerialDebugGeneralSuppressed(false);
   stabilityBenchmarkLastTaskCore0 = STABILITY_TASK_IDLE;
   stabilityBenchmarkLastTaskCore1 = STABILITY_TASK_IDLE;
 }

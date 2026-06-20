@@ -602,17 +602,39 @@ void applySynthPresetToSettings(const SynthPresetSlot& preset) {
   setCurrentSynthWavetableReference(preset.wavetableFolderPath, preset.wavetableName);
 }
 
-// Wrapper that mutes audio before writing to flash and unmutes afterward.
+namespace {
+constexpr uint64_t FLASH_SAVE_AUDIO_MUTE_TIMEOUT_MICROS = 12000ULL;
+
+void waitForAudioOutputMute(bool muted) {
+  uint64_t start = readClock();
+  while (!audioOutputMuteSettled(muted) && (readClock() - start) < FLASH_SAVE_AUDIO_MUTE_TIMEOUT_MICROS) {
+    delayMicroseconds(AUDIO_DMA_BUFFER_MICROS);
+  }
+}
+}  // namespace
+
 // On the RP2040 flash writes disable ALL interrupts on BOTH cores, which
-// starves buffer refills. Muting first gives the DMA path silence to play
-// instead of an audible glitch when interrupts resume.
-void flashSafeWrite(void (*writeOperation)()) {
+// starves buffer refills. Fade to silence first, then give the DMA path queued
+// idle samples before the flash write freezes interrupt handling.
+void beginFlashSafeWrite() {
+  showFlashSaveScreen();
+  setAudioOutputMuteTarget(true);
+  waitForAudioOutputMute(true);
   flashWriteInProgress.store(true, std::memory_order_release);
-  // Allow Core 1 enough time to render queued silence before the flash write
-  // freezes interrupt handling.
   delayMicroseconds(AUDIO_DMA_BUFFER_MICROS * 2);
-  writeOperation();
+}
+
+void endFlashSafeWrite() {
   flashWriteInProgress.store(false, std::memory_order_release);
+  setAudioOutputMuteTarget(false);
+  waitForAudioOutputMute(false);
+  closeFlashSaveScreen();
+}
+
+void flashSafeWrite(void (*writeOperation)()) {
+  beginFlashSafeWrite();
+  writeOperation();
+  endFlashSafeWrite();
 }
 
 void flashSafeSave() {

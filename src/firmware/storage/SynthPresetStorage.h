@@ -6,6 +6,8 @@
 void load_synth_presets();
 void save_synth_presets();
 void flashSafeWrite(void (*writeOperation)());
+void beginFlashSafeWrite();
+void endFlashSafeWrite();
 void flashSafeSave();
 void flashSafeSaveSynthPresets();
 void saveSynthPresetToSlot(uint16_t presetIndex);

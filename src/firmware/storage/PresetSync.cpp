@@ -872,8 +872,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
 
     if (!(commitFlags & PRESET_SYNC_WRITE_DRY_RUN)) {
       if (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH) {
-        flashWriteInProgress.store(true, std::memory_order_release);
-        delayMicroseconds(AUDIO_DMA_BUFFER_MICROS * 2);
+        beginFlashSafeWrite();
         bool saved = false;
         if (parsedWavetable.sawSamples) {
           saved = presetSyncWriteTransfer.streamRawToFile
@@ -882,7 +881,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
         } else {
           saved = updateSynthWavetableMetadata(presetSyncWriteTransfer.handle, parsedWavetable);
         }
-        flashWriteInProgress.store(false, std::memory_order_release);
+        endFlashSafeWrite();
         if (!saved) {
           presetSyncCancelWriteTransfer();
           presetSyncSendNack(transactionId,

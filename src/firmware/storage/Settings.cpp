@@ -14,7 +14,6 @@
 // SETTINGS STEP 2 - Define factory defaults (in the same order as the enum).
 // Adjust values below to match your desired defaults.
 extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
-  /* Debug                        */ 0,
   /* Invert rotary encoder        */ 0,
   /* Auto save settings           */ 1,
   /* MPE pitch bend semitones     */ 48,

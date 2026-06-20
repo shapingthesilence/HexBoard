@@ -26,6 +26,8 @@ void screenSaver();
 void drawDelegatedControlScreen();
 void restoreMenuAfterDelegatedControl();
 bool servicePresetSyncTransfer();
+void showFlashSaveScreen();
+void closeFlashSaveScreen();
 void menuHome();
 void menuSynthOptionsHome();
 void showOnlyValidLayoutChoices();

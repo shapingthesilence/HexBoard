@@ -666,14 +666,20 @@ This page contains maintenance and system settings:
 `Boot Anim` controls the startup LED animation. Turn it off for the fastest,
 quietest visual boot.
 
+`Serial Debug` opens a runtime-only submenu. Turn `Enabled` on to reveal message
+categories: `General Log` controls the normal verbose firmware log, `Min Heap`
+prints current/minimum free heap while the system runs normally, and `Audio Stats`
+prints audio underrun/overrun/max-block counters. These debug choices are
+not saved to profiles and reset on reboot.
+
 `Stability` launches a temporary benchmark and is not saved in profiles. It
 loads a worst-case runtime synth patch, starts eight high notes, forces regular
 voice steals, sweeps modulation and pitch bend, keeps LEDs/display/menu/sync
 services running, and shows live underrun, audio-overrun, minimum-free-heap, max
 audio-block time, and last Core 0/Core 1 task labels. Hold the encoder button
-for about `5` seconds to exit. If `Serial Debug` was enabled when the benchmark
-started, normal verbose debug logs are suppressed during the run and compact
-benchmark status/summary lines are sent instead.
+for about `5` seconds to exit. If runtime `Serial Debug` was enabled when the
+benchmark started, normal debug category output is suppressed during the run and
+compact benchmark status/summary lines are sent instead.
 
 `LED Test` is temporary and is not saved in profiles. Enter it and scroll through `Red`, `Green`, `Blue`, or `White` to light every LED immediately. Leaving the selector snaps it back to `Off` and restores the normal LED display. This is useful for diagnosing LED health or for *very* harsh mood lighting.
 
@@ -686,6 +692,8 @@ What to expect:
 - Changes become ready to save immediately
 - If `Auto-Save` is enabled, HexBoard saves after about `10 seconds` of inactivity
 - Manual profile saves write immediately
+- Flash writes briefly show `Saving` / `Writing flash` / `Audio muted` on the
+  OLED and fade audio down/up so the required flash-write mute is less abrupt
 - If saved settings cannot be read, HexBoard restores factory defaults
 - This release also resets older settings-schema files to factory defaults
 - Saving may mute the onboard synth very briefly

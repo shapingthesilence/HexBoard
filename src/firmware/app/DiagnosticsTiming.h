@@ -6,6 +6,10 @@ constexpr uint8_t ISR_PROFILE_FLAG_RELEASE_START = 0x01;
 constexpr uint8_t ISR_PROFILE_FLAG_PIEZO_SCALE = 0x02;
 
 extern bool debugMessages;
+extern bool serialDebugEnabled;
+extern bool serialDebugGeneralMessages;
+extern bool serialDebugHeapMessages;
+extern bool serialDebugAudioMessages;
 extern uint64_t runTime;
 extern uint64_t lapTime;
 extern uint64_t loopTime;
@@ -35,6 +39,12 @@ extern volatile uint8_t isrProfileMaxFlags;
 #define sendToLog(msg) do { if (debugMessages) { Serial.println((std::string(msg)).c_str()); } } while(0)
 
 uint64_t RAM_FUNC(readClock)();
+uint32_t readRuntimeFreeHeapBytes();
+void resetSerialDebugMinFreeHeap();
+void updateSerialDebugRuntime();
+void serviceSerialDebugMessages();
+void setSerialDebugGeneralSuppressed(bool suppressed);
+void setSerialDebugPeriodicSuppressed(bool suppressed);
 void timeTracker();
 void readAndResetISRProfile();
 void startISRProfileCapture();

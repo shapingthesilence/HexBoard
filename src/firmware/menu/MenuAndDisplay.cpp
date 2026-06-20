@@ -51,6 +51,9 @@ bool audioMenuItemInserted = false;
 bool headphoneVolumeMenuItemInserted = false;
 uint64_t screenTime = 0;                         // GFX timer to count if screensaver should go on
 const uint64_t screenSaverTimeout = (1u << 25);  // 2^25 microseconds ~ 33 seconds
+bool flashSaveScreenVisible = false;
+bool flashSaveScreenWokeDisplayFromSleep = false;
+uint64_t flashSaveSavedScreenTime = 0;
 
 void wakeDelegatedControlScreenForInput() {
   screenTime = 0;
@@ -160,6 +163,52 @@ void closePresetSyncTransferScreen() {
   presetSyncTransferSavedScreenTime = 0;
 }
 
+void showFlashSaveScreen() {
+  if (!flashSaveScreenVisible) {
+    flashSaveScreenWokeDisplayFromSleep = screenSaverOn;
+    flashSaveSavedScreenTime = screenTime;
+  }
+  if (screenSaverOn) {
+    screenSaverOn = 0;
+    u8g2.setContrast(CONTRAST_AWAKE);
+  }
+  noteOverlayVisible = false;
+  noteBadgeVisible = false;
+  noteOverlayTemporaryWake = false;
+  noteOverlayWokeDisplayFromSleep = false;
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x13_tf);
+  u8g2.drawStr(8, 24, "Saving");
+  u8g2.drawStr(8, 48, "Writing flash");
+  u8g2.drawStr(8, 72, "Audio muted");
+  u8g2.drawStr(8, 112, "Please wait...");
+  u8g2.sendBuffer();
+  flashSaveScreenVisible = true;
+}
+
+void closeFlashSaveScreen() {
+  if (!flashSaveScreenVisible) {
+    return;
+  }
+  flashSaveScreenVisible = false;
+  screenTime = flashSaveSavedScreenTime;
+  if (flashSaveScreenWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
+    screenSaverOn = 1;
+    u8g2.setContrast(CONTRAST_SCREENSAVER);
+    u8g2.clear();
+  } else if (presetSyncTransferActive) {
+    drawPresetSyncTransferScreen();
+  } else if (delegatedControl) {
+    delegatedDisplayDirty = true;
+    drawDelegatedControlScreen();
+  } else {
+    menu.drawMenu();
+  }
+  flashSaveScreenWokeDisplayFromSleep = false;
+  flashSaveSavedScreenTime = 0;
+}
+
 bool servicePresetSyncTransfer() {
   if (!presetSyncTransferActive) {
     return false;
@@ -238,6 +287,8 @@ GEMPage menuPageControl("Control Wheel", menuPageMain);
 GEMItem menuGotoControl("Control Wheel", menuPageControl);
 GEMPage menuPageAdvanced("Advanced", menuPageMain);
 GEMItem menuGotoAdvanced("Advanced", menuPageAdvanced);
+GEMPage menuPageSerialDebug("Serial Debug", menuPageAdvanced);
+GEMItem menuGotoSerialDebug("Serial Debug", menuPageSerialDebug);
 GEMPage menuPageSave("Save Profiles", menuPageMain);
 GEMItem menuGotoSave("Save", menuPageSave);
 GEMPage menuPageLoad("Load Profiles", menuPageMain);
@@ -345,6 +396,8 @@ void refreshMenuChoicesForCurrentTuning();
 void rebuildRuntimeStateFromCurrentSelection();
 void updateTuningMenuVisibility();
 void tuningIntonationModeChanged();
+void updateSerialDebugMenuVisibility();
+void serialDebugRuntimeChanged(GEMCallbackData callbackData);
 
 void resetDefaultsMenuCallback() {
   applyFactoryDefaultsToSettings();
@@ -475,13 +528,26 @@ PersistentCallbackInfo callbackInfoRotary = {
 };
 GEMItem menuItemRotary("Invert Encoder", rotaryInvert, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
 
-PersistentCallbackInfo callbackInfoDebug = {
-  static_cast<uint8_t>(SettingKey::Debug),
-  reinterpret_cast<void*>(&debugMessages),
-  nullptr,
-  nullptr
-};
-GEMItem menuItemDebug("Serial Debug", debugMessages, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDebug));
+GEMItem menuItemSerialDebugEnabled("Enabled", serialDebugEnabled, serialDebugRuntimeChanged, static_cast<void*>(nullptr));
+GEMItem menuItemSerialDebugGeneral("General Log", serialDebugGeneralMessages, serialDebugRuntimeChanged, static_cast<void*>(nullptr));
+GEMItem menuItemSerialDebugHeap("Min Heap", serialDebugHeapMessages, serialDebugRuntimeChanged, static_cast<void*>(nullptr));
+GEMItem menuItemSerialDebugAudio("Audio Stats", serialDebugAudioMessages, serialDebugRuntimeChanged, static_cast<void*>(nullptr));
+
+void updateSerialDebugMenuVisibility() {
+  bool showOptions = serialDebugEnabled;
+  menuItemSerialDebugGeneral.hide(!showOptions);
+  menuItemSerialDebugHeap.hide(!showOptions);
+  menuItemSerialDebugAudio.hide(!showOptions);
+}
+
+void serialDebugRuntimeChanged(GEMCallbackData /*callbackData*/) {
+  if (serialDebugEnabled) {
+    resetSerialDebugMinFreeHeap();
+  }
+  updateSerialDebugRuntime();
+  updateSerialDebugMenuVisibility();
+  menu.drawMenu();
+}
 
 void startStabilityBenchmarkMenuCallback() {
   startStabilityBenchmark();
@@ -2152,7 +2218,6 @@ void applyBuiltinGeometryRuntimeFromSettings() {
 // SETTINGS STEP 3 - Callback to sync settings variables on power-up
 // --------------------------------------------------------
 void syncSettingsToRuntime() {
-  debugMessages = settingEnabled(SettingKey::Debug);
   rotaryInvert = settingEnabled(SettingKey::RotaryInvert);
   autoSave = settingEnabled(SettingKey::AutoSave);
   MPEpitchBendSemis = settingValue(SettingKey::MPEpitchBend);
@@ -2701,6 +2766,14 @@ void setupProfileMenuPages() {
   createProfileMenuItems();
 }
 
+void setupSerialDebugMenuPage() {
+  menuPageSerialDebug.addMenuItem(menuItemSerialDebugEnabled);
+  menuPageSerialDebug.addMenuItem(menuItemSerialDebugGeneral);
+  menuPageSerialDebug.addMenuItem(menuItemSerialDebugHeap);
+  menuPageSerialDebug.addMenuItem(menuItemSerialDebugAudio);
+  updateSerialDebugMenuVisibility();
+}
+
 void setupAdvancedMenuPage() {
   menuPageMain.addMenuItem(menuGotoAdvanced);
   menuPageAdvanced.addMenuItem(menuItemVersion);
@@ -2712,7 +2785,7 @@ void setupAdvancedMenuPage() {
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
-  menuPageAdvanced.addMenuItem(menuItemDebug);
+  menuPageAdvanced.addMenuItem(menuGotoSerialDebug);
   menuPageAdvanced.addMenuItem(menuItemStabilityBenchmark);
   addPreviewMenuItem(menuPageAdvanced, menuItemLedTest, previewLedTest);
 }
@@ -2736,6 +2809,7 @@ void setupMenu() {
   setupMidiMenuPage();
   setupControlMenuPage();
   setupProfileMenuPages();
+  setupSerialDebugMenuPage();
   setupAdvancedMenuPage();
 }
 void setupGFX() {

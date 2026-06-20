@@ -80,6 +80,7 @@ void hexboardSetup() {
 }
 void hexboardLoop() {        // run on first core
   timeTracker();     // Time tracking functions
+  serviceSerialDebugMessages();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_PRESET_TRANSFER);
   if (servicePresetSyncTransfer()) {
     return;

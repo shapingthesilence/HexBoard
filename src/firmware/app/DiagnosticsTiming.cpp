@@ -8,7 +8,91 @@
     optional sending of log messages
     to the Serial port
   */
-bool debugMessages = true;
+bool debugMessages = false;
+bool serialDebugEnabled = false;
+bool serialDebugGeneralMessages = true;
+bool serialDebugHeapMessages = true;
+bool serialDebugAudioMessages = false;
+
+namespace {
+constexpr uint64_t SERIAL_DEBUG_REPORT_INTERVAL_MICROS = 2000000ULL;
+
+bool serialDebugGeneralSuppressed = false;
+bool serialDebugPeriodicSuppressed = false;
+uint32_t serialDebugMinFreeHeap = 0;
+uint64_t serialDebugLastReportMicros = 0;
+}  // namespace
+
+uint32_t readRuntimeFreeHeapBytes() {
+#if defined(ARDUINO_ARCH_RP2040)
+  int freeHeap = rp2040.getFreeHeap();
+  return freeHeap > 0 ? static_cast<uint32_t>(freeHeap) : 0;
+#else
+  return 0;
+#endif
+}
+
+void resetSerialDebugMinFreeHeap() {
+  serialDebugMinFreeHeap = 0;
+  serialDebugLastReportMicros = runTime;
+}
+
+void updateSerialDebugRuntime() {
+  debugMessages = serialDebugEnabled && serialDebugGeneralMessages && !serialDebugGeneralSuppressed;
+  if (!serialDebugEnabled) {
+    resetSerialDebugMinFreeHeap();
+  }
+}
+
+void setSerialDebugGeneralSuppressed(bool suppressed) {
+  serialDebugGeneralSuppressed = suppressed;
+  updateSerialDebugRuntime();
+}
+
+void setSerialDebugPeriodicSuppressed(bool suppressed) {
+  serialDebugPeriodicSuppressed = suppressed;
+}
+
+void serviceSerialDebugMessages() {
+  if (!serialDebugEnabled) {
+    return;
+  }
+
+  uint32_t freeHeap = readRuntimeFreeHeapBytes();
+  if (freeHeap > 0 && (serialDebugMinFreeHeap == 0 || freeHeap < serialDebugMinFreeHeap)) {
+    serialDebugMinFreeHeap = freeHeap;
+  }
+
+  if (serialDebugPeriodicSuppressed) {
+    return;
+  }
+
+  if ((runTime - serialDebugLastReportMicros) < SERIAL_DEBUG_REPORT_INTERVAL_MICROS) {
+    return;
+  }
+  serialDebugLastReportMicros = runTime;
+
+  if (serialDebugHeapMessages) {
+    char line[64];
+    snprintf(line,
+             sizeof(line),
+             "Heap free/min: %lu/%lu bytes",
+             static_cast<unsigned long>(freeHeap),
+             static_cast<unsigned long>(serialDebugMinFreeHeap));
+    Serial.println(line);
+  }
+
+  if (serialDebugAudioMessages) {
+    char line[80];
+    snprintf(line,
+             sizeof(line),
+             "Audio underruns/overruns/max: %lu/%lu/%lu us",
+             static_cast<unsigned long>(audioDmaUnderrunCount),
+             static_cast<unsigned long>(isrCycleOverrunCount),
+             static_cast<unsigned long>(isrCycleMax));
+    Serial.println(line);
+  }
+}
 /*
     ISR cycle profiling — lightweight timing measurement for the
     audio poll() interrupt. Tracks min/max/average microseconds

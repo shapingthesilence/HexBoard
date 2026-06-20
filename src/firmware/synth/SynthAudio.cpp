@@ -126,6 +126,8 @@ static_assert(AUDIO_SAMPLE_RATE_HZ == SYNTH_WAVETABLE_MIP_SAMPLE_RATE_HZ,
 extern const uint32_t AUDIO_DMA_BUFFER_MICROS =
   (static_cast<uint64_t>(AUDIO_DMA_BUFFER_SAMPLE_COUNT) * 1000000ull) / AUDIO_SAMPLE_RATE_HZ;
 constexpr uint8_t AUDIO_PWM_CC_LEVEL_SHIFT = 16;
+constexpr uint16_t AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8 = 256;
+constexpr uint8_t AUDIO_OUTPUT_MUTE_RAMP_STEP_Q8 = 3;
 
 struct AudioOutputLevels {
   uint16_t piezo = 0;
@@ -134,7 +136,61 @@ struct AudioOutputLevels {
   uint8_t profileFlags = 0;
 };
 
+volatile uint16_t audioOutputMuteGainQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
+volatile uint16_t audioOutputMuteTargetQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
 uint16_t synthPiezoAmplitude = 0;
+
+void setAudioOutputMuteTarget(bool muted) {
+  audioOutputMuteTargetQ8 = muted ? 0 : AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
+  __dmb();
+}
+
+bool audioOutputMuteSettled(bool muted) {
+  uint16_t target = muted ? 0 : AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
+  return audioOutputMuteGainQ8 == target;
+}
+
+inline void RAM_FUNC(advanceAudioOutputMuteRamp)() {
+  uint16_t target = audioOutputMuteTargetQ8;
+  uint16_t gain = audioOutputMuteGainQ8;
+  if (gain < target) {
+    uint16_t next = static_cast<uint16_t>(gain + AUDIO_OUTPUT_MUTE_RAMP_STEP_Q8);
+    gain = next > target ? target : next;
+  } else if (gain > target) {
+    gain = (gain <= AUDIO_OUTPUT_MUTE_RAMP_STEP_Q8)
+             ? target
+             : static_cast<uint16_t>(gain - AUDIO_OUTPUT_MUTE_RAMP_STEP_Q8);
+    if (gain < target) {
+      gain = target;
+    }
+  }
+  audioOutputMuteGainQ8 = gain;
+}
+
+inline uint16_t RAM_FUNC(applyAudioOutputMuteLevel)(uint16_t level, byte destination) {
+  uint16_t gain = audioOutputMuteGainQ8;
+  if (gain >= AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8) {
+    return level;
+  }
+  int32_t idle = (destination == AUDIO_PIEZO) ? PIEZO_IDLE_LEVEL : JACK_IDLE_LEVEL;
+  int32_t faded = idle + (((static_cast<int32_t>(level) - idle) * static_cast<int32_t>(gain)) >> 8);
+  if (faded < 0) {
+    return 0;
+  }
+  if (faded > PWM_WRAP) {
+    return PWM_WRAP;
+  }
+  return static_cast<uint16_t>(faded);
+}
+
+inline void RAM_FUNC(applyAudioOutputMute)(AudioOutputLevels& output, byte destination) {
+  advanceAudioOutputMuteRamp();
+  if (destination == AUDIO_PIEZO) {
+    output.piezo = applyAudioOutputMuteLevel(output.piezo, AUDIO_PIEZO);
+  } else if (destination == AUDIO_AJACK) {
+    output.jack = applyAudioOutputMuteLevel(output.jack, AUDIO_AJACK);
+  }
+}
 
 inline void RAM_FUNC(writeAudioOutputLevels)(uint16_t piezoLevel, uint16_t jackLevel) {
   if (audioD & AUDIO_PIEZO) {
@@ -2723,6 +2779,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
     output.jack = static_cast<uint16_t>(jack);
     output.voices = voices;
     output.profileFlags = profileFlags;
+    applyAudioOutputMute(output, destination);
     return output;
   }
 
@@ -2773,6 +2830,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
   output.piezo = static_cast<uint16_t>(piezoLevel);
   output.voices = voices;
   output.profileFlags = profileFlags;
+  applyAudioOutputMute(output, destination);
   return output;
 }
 

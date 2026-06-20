@@ -193,7 +193,7 @@ The firmware is split across the RP2040's two cores:
 - Core 0: setup, file system, menu, button scan, MIDI, LEDs, autosave, synth control state
 - Core 1: synth setup, encoder quadrature polling, and delegated-control SysEx polling while delegated mode is active
 
-There is also a timer-driven synth/audio path that must stay responsive. Flash writes on RP2040 disable interrupts on both cores, so the code mutes audio before saving settings to avoid audible garbage.
+There is also a timer-driven synth/audio path that must stay responsive. Flash writes on RP2040 disable interrupts on both cores, so `beginFlashSafeWrite()` shows an OLED saving notice, ramps the audio output gain to idle over roughly `86` samples, queues idle DMA samples, performs the write, then fades back in before restoring the display.
 
 Firmware MIDI input uses a small HexBoard-owned byte parser over the Pico SDK
 `MIDIUSB` byte stream and `Serial1`, so SysEx frame assembly no longer depends on
@@ -247,7 +247,7 @@ limited gain.
 
 Current optimization candidates to keep in mind:
 
-- Dynamic JI note-on work in `src/firmware/tuning/DynamicJustIntonation.cpp` still scans ratio candidates with floating-point cents math. The selected ratio table is cached, but a later pass could precompute fixed-point or octave-reduced candidates and avoid most live floating-point work.
+- Dynamic JI note-on work in `src/firmware/tuning/DynamicJustIntonation.cpp` still scans ratio candidates with floating-point cents math. The selected ratio table caches indices only; avoid fixed-point or octave-reduced matching unless the replacement preserves interval and beat-frequency precision.
 - `pressedKeyIDs` is a `std::vector` used by Dynamic JI note tracking. Replacing it with a fixed-size held-note array or bitset would avoid erase-time shifting and heap behavior in note release paths.
 - `midiNoteToHexIndices` is an array of vectors. It is rebuilt when pitch assignment changes, not per audio sample, but a fixed-capacity reverse index would remove heap allocation from mapping refreshes and external MIDI LED lookup.
 - `animateMirror()` in `src/firmware/hardware/LedAnimations.cpp` compares every held note against every visible hex. It is bounded by `LED_COUNT`, but octave/by-note animation could use precomputed step buckets if animation load becomes visible.
@@ -441,6 +441,10 @@ Important implementation details:
 - this release intentionally skips old profile compatibility: any `/settings.dat`
   file with a version other than `19` is replaced with factory defaults instead
   of being migrated
+- the in-progress version `19` layout no longer stores the old `Debug` byte;
+  runtime `Serial Debug` state is intentionally RAM-only, so this was folded
+  into the same unreleased compatibility break instead of adding another schema
+  version
 - the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
@@ -449,7 +453,7 @@ Important implementation details:
 - synth modulation target calculation runs on a `16`-sample control quantum for CPU headroom; per-voice phase increment and phase-warp depths then linearly slew between cached targets at audio rate to reduce pitch and warp stepping artifacts
 - the synth LFO is stored as `SynthLfoTarget`, `SynthLfoAmount`, `SynthLfoWave`, and `SynthLfoSpeed`; the LFO targets the same modulation destinations as the wheel and FX envelopes, uses a bipolar amount byte where `127` is off, supports sine/triangle/saw/square shapes, and uses a `20`-entry `0.05 Hz` through `20 Hz` speed table
 - onboard synth vibrato speed is stored as `SynthVibratoSpeed`; selectable values are `1 Hz` through `12 Hz`, with factory default `6 Hz`
-- Dynamic JI stores its active candidate-ratio table as `DynamicJIRatioTable`; the menu shows `JI Table` only when `Dynamic JI` is enabled, and shows `Beat BPM`/`BPM Mult.` only when `JI BPM Sync` is enabled; the Tuning visibility helper preserves the current item index because GEM resets pages with a Back item near the top when a hidden item is shown; table options run from `3Limit` through `41Limit`, and factory default `41Limit` preserves the previous full ratio-list behavior; the filtered active table caches ratio cents so the note-on path does not recompute every candidate ratio
+- Dynamic JI stores its selected prime-limit table as `DynamicJIRatioTable`; the menu shows `JI Table` only when `Dynamic JI` is enabled, and shows `Beat BPM`/`BPM Mult.` only when `JI BPM Sync` is enabled; the Tuning visibility helper preserves the current item index because GEM resets pages with a Back item near the top when a hidden item is shown; table options run from `3Limit` through `41Limit`, and factory default `41Limit` preserves the previous full ratio-list behavior; the active table caches ratio indices only, and note-on matching computes full floating-point cents from each selected numerator/denominator candidate to preserve JI interval precision
 - mono portamento is stored as `SynthPortamentoTimeIndex`; it reuses the `0 ms` through `4 s` envelope time table and the menu hides `Porta` outside the two mono modes
 - arpeggiator direction is stored as `ArpeggiatorDirection`; the menu hides `Arp Dir` outside `Arp'gio`; note-sorted directions compare assigned note/frequency rather than physical button number
 - `SynthAttackEffect` is a deprecated hidden byte kept only so version `8` files can migrate by prefix copy
@@ -473,7 +477,9 @@ Important implementation details:
 - version `2` through `18` settings files currently restore factory defaults instead of migrating; the older migration helper remains in the code for reference, but `load_settings()` no longer dispatches to it in this release
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
-- flash writes go through `flashSafeSave()` to mute the synth during the write
+- flash writes go through `flashSafeSave()` / `beginFlashSafeWrite()` to show
+  the saving notice, fade output to idle, and queue idle audio before interrupts
+  are blocked
 - on hardware `V1.2`, the `AudioDestination` setting now behaves as a
   jack-default `Buzzer` toggle that switches synth output to piezo; legacy
   stored values are interpreted by checking whether the older byte had the piezo
@@ -697,14 +703,22 @@ The Advanced-menu `LED Test` item is intentionally transient. `ledTestMode` is a
 The Advanced-menu `Stability` item is also transient. It lives in
 `src/firmware/app/StabilityBenchmark.cpp`, uses the audio profiling counters
 from `DiagnosticsTiming.cpp`, and has no `SettingKey`. It saves/restores runtime
-synth, wheel, metronome, animation, audio-destination, and debug-log state, then
+synth, wheel, metronome, animation, and audio-destination state, then
 drives a worst-case eight-voice patch with periodic voice steals. Runtime task
 labels are stamped from `hexboardLoop()` and `hexboardLoop1()` so the OLED can
 show the last Core 0/Core 1 subsystem entered. During the benchmark, normal
-`sendToLog()` output is suppressed to avoid serial/heap churn; if `Serial Debug`
-was enabled at launch, the benchmark emits its own fixed-buffer status lines.
+`sendToLog()` and periodic serial-debug category output are suppressed to avoid
+serial/heap churn; if `Serial Debug` was enabled at launch, the benchmark emits
+its own fixed-buffer status lines.
 Hold the encoder for about `5` seconds to request exit. Do not add this to
 `factoryDefaults` or bump `CURRENT_SETTINGS_VERSION`.
+
+The Advanced-menu `Serial Debug` submenu is transient. It has no `SettingKey`.
+`serialDebugEnabled` gates the runtime-only message categories in
+`DiagnosticsTiming.cpp`: `General Log` feeds `sendToLog()`, `Min Heap` prints
+current/minimum `rp2040.getFreeHeap()` values during normal operation, and
+`Audio Stats` prints DMA underrun/render-overrun/max-block counters. The menu
+only reveals the category toggles while `Enabled` is on.
 
 Runtime geometry Apply loads the active `ScaleColorMap` and sets `ColorMode`
 from its `DefaultColorMode` TLV. `Custom` renders the map's scale-degree
@@ -818,7 +832,8 @@ Those are good places to review closely before and after edits.
 
 ## Practical Debugging Tips
 
-- Turn on `Serial Debug` from the `Advanced` menu if you need runtime logs
+- Turn on `Advanced` -> `Serial Debug` if you need runtime logs, heap sampling,
+  or audio counters. The setting is not persisted.
 - Use `Advanced` -> `Stability` to run the integrated worst-case benchmark. It
   reports DMA underruns, audio render overruns, min free heap, max audio block
   time, voice steals, max main-loop duration, and last Core 0/Core 1 task labels.

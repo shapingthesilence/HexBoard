@@ -23,7 +23,7 @@
 // Without it - this implementation provides you with n-EDO-sized independent JI rings, unconnected to eachother;
 // TODO: replace floating point math with integer math;
 // TODO: generate the table of ratios with a constexpr function rather than holding a huge block of hardcoded values in the code;
-// TODO: It is a good idea to octave-reduce the ratios, and adjust the code to calculate pitchbend against the octave reduced set of ratios for significant performance improvement;
+// TODO: Any future ratio-cache optimization must preserve full interval precision, not just single-note pitch error.
 inline float centsToFrequencyMultiplier(float cents) {
   if (cents == 0.0f) {
     return 1.0f;
@@ -43,15 +43,10 @@ inline uint8_t largestPrimeFactor(byte value) {
   return largest;
 }
 
-inline bool ratioIsInSelectedJITable(const std::pair<byte, byte>& ratio) {
-  return largestPrimeFactor(ratio.first) <= dynamicJIRatioTable
-      && largestPrimeFactor(ratio.second) <= dynamicJIRatioTable;
-}
-
 // This is a list of ratios sorted from the simplest ones to the most complex ones. The code searches for a first match that's good enough within 1/4 of an EDO step, literally bruteforcing through the list. As a result - the simplest ratio is chosen before more comples ones, prioritising consonant ratios first. In case not a single good ratio is found - the best one found so far is chosen instead
 
 // byte pair was chosen to preserve space. The ratio is "unpacked" later
-std::vector<std::pair<byte, byte>> ratios = {
+static const std::pair<byte, byte> ratios[] = {
   { 1, 1 },
   { 1, 2 },
   { 2, 1 },
@@ -522,29 +517,94 @@ std::vector<std::pair<byte, byte>> ratios = {
   { 38, 5 }
 };
 
-struct DynamicJIRatioCandidate {
-  byte numerator;
-  byte denominator;
-  float cents;
-};
+bool PressedKeySet::add(byte key) {
+  if (key >= BTN_COUNT || active[key]) {
+    return false;
+  }
+  active[key] = true;
+  prevKey[key] = tail;
+  nextKey[key] = INVALID_INDEX;
+  if (tail != INVALID_INDEX) {
+    nextKey[tail] = key;
+  } else {
+    head = key;
+  }
+  tail = key;
+  ++count;
+  return true;
+}
 
-std::vector<byte> pressedKeyIDs = {};
-std::vector<DynamicJIRatioCandidate> activeDynamicJIRatios = {};
+bool PressedKeySet::remove(byte key) {
+  if (key >= BTN_COUNT || !active[key]) {
+    return false;
+  }
+  uint8_t prev = prevKey[key];
+  uint8_t next = nextKey[key];
+  if (prev != INVALID_INDEX) {
+    nextKey[prev] = next;
+  } else {
+    head = next;
+  }
+  if (next != INVALID_INDEX) {
+    prevKey[next] = prev;
+  } else {
+    tail = prev;
+  }
+  active[key] = false;
+  prevKey[key] = INVALID_INDEX;
+  nextKey[key] = INVALID_INDEX;
+  --count;
+  return true;
+}
+
+void PressedKeySet::clear() {
+  nextKey.fill(INVALID_INDEX);
+  prevKey.fill(INVALID_INDEX);
+  active.fill(false);
+  count = 0;
+  head = INVALID_INDEX;
+  tail = INVALID_INDEX;
+}
+
+bool PressedKeySet::contains(byte key) const {
+  return key < BTN_COUNT && active[key];
+}
+
+uint8_t PressedKeySet::size() const {
+  return count;
+}
+
+byte PressedKeySet::operator[](uint8_t ordinal) const {
+  uint8_t key = head;
+  while (key != INVALID_INDEX && ordinal > 0) {
+    key = nextKey[key];
+    --ordinal;
+  }
+  return key == INVALID_INDEX ? 0 : key;
+}
+
+PressedKeySet pressedKeyIDs;
+
+namespace {
+constexpr size_t DYNAMIC_JI_RATIO_COUNT = sizeof(ratios) / sizeof(ratios[0]);
+std::array<uint16_t, DYNAMIC_JI_RATIO_COUNT> activeDynamicJIRatioIndices = {};
+uint16_t activeDynamicJIRatioCount = 0;
+
+inline bool ratioIsInSelectedJITable(const std::pair<byte, byte>& ratio) {
+  return largestPrimeFactor(ratio.first) <= dynamicJIRatioTable
+      && largestPrimeFactor(ratio.second) <= dynamicJIRatioTable;
+}
+}  // namespace
 
 void syncDynamicJIRatioCandidates() {
-  activeDynamicJIRatios.clear();
-  activeDynamicJIRatios.reserve(ratios.size());
-  for (const auto& ratio : ratios) {
-    if (ratioIsInSelectedJITable(ratio)) {
-      activeDynamicJIRatios.push_back({
-        ratio.first,
-        ratio.second,
-        ratioToCents(static_cast<float>(ratio.first) / static_cast<float>(ratio.second))
-      });
+  activeDynamicJIRatioCount = 0;
+  for (uint16_t i = 0; i < DYNAMIC_JI_RATIO_COUNT; ++i) {
+    if (ratioIsInSelectedJITable(ratios[i])) {
+      activeDynamicJIRatioIndices[activeDynamicJIRatioCount++] = i;
     }
   }
-  if (activeDynamicJIRatios.empty()) {
-    activeDynamicJIRatios.push_back({ 1, 1, 0.0f });
+  if (activeDynamicJIRatioCount == 0) {
+    activeDynamicJIRatioIndices[activeDynamicJIRatioCount++] = 0;
   }
 }
 
@@ -615,30 +675,22 @@ int16_t justIntonationRetune(byte x) {
     // detune within a 1/4 of a step, avoid wild detuning but cover the entire pitch range
     float errorThreshold = current.tuning().stepSize / 4.0;
     float deviation = INFINITY;
-      float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
-    std::pair<byte, byte> selectedRatio;
+    float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
 
-    if (activeDynamicJIRatios.empty()) {
+    if (activeDynamicJIRatioCount == 0) {
       syncDynamicJIRatioCandidates();
     }
-    for (int i = 0; i < activeDynamicJIRatios.size(); i++) {
-      auto ratio = activeDynamicJIRatios[i];
-      //if(h[pressedKeyIDs[0]].note < h[x].note)
-      //{
-      //  std::swap(ratio1,ratio0);
-      //}
-      float ratioCents = ratio.cents;
+    for (uint16_t i = 0; i < activeDynamicJIRatioCount; i++) {
+      const auto& ratio = ratios[activeDynamicJIRatioIndices[i]];
+      float ratioCents = ratioToCents(static_cast<float>(ratio.first) / static_cast<float>(ratio.second));
 
       if (std::abs(deviation) > std::abs(ratioCents - EDOCents)) {
         deviation = (EDOCents - ratioCents);
-        selectedRatio.first = ratio.numerator;
-        selectedRatio.second = ratio.denominator;
         if (preferSmallRatios && std::abs(deviation) < errorThreshold) {
-          //ratioFound = true;
-            break;
-          }
+          break;
         }
       }
+    }
     //if(ratioFound)
     {
       pitchAdjustmentCents = deviation + basePitchOffset;

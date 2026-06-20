@@ -26,6 +26,8 @@ void setActiveSynthWaveFrameCount(uint8_t frameCount);
 void disableAudioAlarmInterrupt();
 void setupAudioDma();
 void serviceAudioDmaBuffers();
+void setAudioOutputMuteTarget(bool muted);
+bool audioOutputMuteSettled(bool muted);
 void recomputePitchBendFactor();
 void RAM_FUNC(resetSynthRenderCaches)();
 void synthWaveformChanged();
