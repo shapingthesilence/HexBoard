@@ -658,7 +658,7 @@ This page contains maintenance and system settings:
 - `Reset Defaults`
 - `Update Firmware`
 - `Serial Debug`
-- `ISR Profile`
+- `Stability`
 - `LED Test`
 
 `ColorByKey` makes compatible color modes follow the selected key.
@@ -666,7 +666,14 @@ This page contains maintenance and system settings:
 `Boot Anim` controls the startup LED animation. Turn it off for the fastest,
 quietest visual boot.
 
-`ISR Profile` is a temporary diagnostic toggle and is not saved in profiles. To measure audio block timing, leave `Serial Debug` on, turn `ISR Profile` on, play the scenario you want to test, then turn `ISR Profile` off. HexBoard logs `min/avg/max/count` block-render timing, `cpu min/avg/max` as render time divided by available block time, overrun count, DMA underrun count, and context for the slowest captured block.
+`Stability` launches a temporary benchmark and is not saved in profiles. It
+loads a worst-case runtime synth patch, starts eight high notes, forces regular
+voice steals, sweeps modulation and pitch bend, keeps LEDs/display/menu/sync
+services running, and shows live underrun, audio-overrun, minimum-free-heap, max
+audio-block time, and last Core 0/Core 1 task labels. Hold the encoder button
+for about `5` seconds to exit. If `Serial Debug` was enabled when the benchmark
+started, normal verbose debug logs are suppressed during the run and compact
+benchmark status/summary lines are sent instead.
 
 `LED Test` is temporary and is not saved in profiles. Enter it and scroll through `Red`, `Green`, `Blue`, or `White` to light every LED immediately. Leaving the selector snaps it back to `Off` and restores the normal LED display. This is useful for diagnosing LED health or for *very* harsh mood lighting.
 

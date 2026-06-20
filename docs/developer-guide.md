@@ -694,6 +694,18 @@ LEDs with green accented beats and red non-accented beats.
 
 The Advanced-menu `LED Test` item is intentionally transient. `ledTestMode` is a RAM-only selector state, not a `SettingKey`; `previewLedTest()` updates it while the select is edited, `lightUpLEDs()` renders a solid all-LED test frame while it is nonzero, and both the save callback and preview-reset path restore it to `Off`. The test colors use direct raw RGB channel values through `strip.Color()` instead of `getLEDcode()`, so they bypass perceptual hue mapping while still passing through the final current limiter. Do not add it to `factoryDefaults` or bump `CURRENT_SETTINGS_VERSION`.
 
+The Advanced-menu `Stability` item is also transient. It lives in
+`src/firmware/app/StabilityBenchmark.cpp`, uses the audio profiling counters
+from `DiagnosticsTiming.cpp`, and has no `SettingKey`. It saves/restores runtime
+synth, wheel, metronome, animation, audio-destination, and debug-log state, then
+drives a worst-case eight-voice patch with periodic voice steals. Runtime task
+labels are stamped from `hexboardLoop()` and `hexboardLoop1()` so the OLED can
+show the last Core 0/Core 1 subsystem entered. During the benchmark, normal
+`sendToLog()` output is suppressed to avoid serial/heap churn; if `Serial Debug`
+was enabled at launch, the benchmark emits its own fixed-buffer status lines.
+Hold the encoder for about `5` seconds to request exit. Do not add this to
+`factoryDefaults` or bump `CURRENT_SETTINGS_VERSION`.
+
 Runtime geometry Apply loads the active `ScaleColorMap` and sets `ColorMode`
 from its `DefaultColorMode` TLV. `Custom` renders the map's scale-degree
 palette; other modes use the same generated firmware color modes available
@@ -807,11 +819,9 @@ Those are good places to review closely before and after edits.
 ## Practical Debugging Tips
 
 - Turn on `Serial Debug` from the `Advanced` menu if you need runtime logs
-- Use `Advanced` -> `ISR Profile` to capture audio block timing. Turn it on
-  before the scenario, then turn it off to log `min/avg/max/count`,
-  `cpu min/avg/max` as render time divided by available block time, render
-  overrun count, DMA underrun count, and whether the slowest block coincided
-  with release-start or piezo-scaling math.
+- Use `Advanced` -> `Stability` to run the integrated worst-case benchmark. It
+  reports DMA underruns, audio render overruns, min free heap, max audio block
+  time, voice steals, max main-loop duration, and last Core 0/Core 1 task labels.
 - Search by section tag first, not by scrolling
 - Use `rg` on function names because the same concepts appear in many comments and menu strings
 - When a change "almost works", verify you called the correct recomputation function rather than assuming the math is wrong

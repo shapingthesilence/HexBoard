@@ -38,7 +38,6 @@ volatile uint32_t isrProfilePiezoScaleCount = 0;
 volatile uint32_t isrProfileDmaUnderrunCount = 0;
 volatile uint8_t isrProfileMaxVoices = 0;
 volatile uint8_t isrProfileMaxFlags = 0;
-bool isrProfileMenuEnabled = false;
 
 void captureAndResetISRProfile(bool resumeProfiling) {
   // Briefly disable profiling to get a consistent snapshot

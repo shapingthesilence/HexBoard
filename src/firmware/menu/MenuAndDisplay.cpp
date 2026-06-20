@@ -2,6 +2,7 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
+#include "../app/StabilityBenchmark.h"
 #include "../hardware/GridState.h"
 #include "../hardware/LedRender.h"
 #include "../midi/MidiInput.h"
@@ -482,14 +483,10 @@ PersistentCallbackInfo callbackInfoDebug = {
 };
 GEMItem menuItemDebug("Serial Debug", debugMessages, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDebug));
 
-void isrProfileMenuCallback(GEMCallbackData /*callbackData*/) {
-  if (isrProfileMenuEnabled) {
-    startISRProfileCapture();
-  } else {
-    stopISRProfileCaptureAndLog();
-  }
+void startStabilityBenchmarkMenuCallback() {
+  startStabilityBenchmark();
 }
-GEMItem menuItemISRProfile("ISR Profile", isrProfileMenuEnabled, isrProfileMenuCallback);
+GEMItem menuItemStabilityBenchmark("Stability", startStabilityBenchmarkMenuCallback);
 
 PersistentCallbackInfo callbackInfoDisplayPlayedNotes = {
   static_cast<uint8_t>(SettingKey::DisplayPlayedNotes),
@@ -2716,7 +2713,7 @@ void setupAdvancedMenuPage() {
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
   menuPageAdvanced.addMenuItem(menuItemDebug);
-  menuPageAdvanced.addMenuItem(menuItemISRProfile);
+  menuPageAdvanced.addMenuItem(menuItemStabilityBenchmark);
   addPreviewMenuItem(menuPageAdvanced, menuItemLedTest, previewLedTest);
 }
 

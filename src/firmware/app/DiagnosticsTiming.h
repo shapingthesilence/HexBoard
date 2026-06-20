@@ -6,7 +6,6 @@ constexpr uint8_t ISR_PROFILE_FLAG_RELEASE_START = 0x01;
 constexpr uint8_t ISR_PROFILE_FLAG_PIEZO_SCALE = 0x02;
 
 extern bool debugMessages;
-extern bool isrProfileMenuEnabled;
 extern uint64_t runTime;
 extern uint64_t lapTime;
 extern uint64_t loopTime;
@@ -21,6 +20,17 @@ extern volatile uint32_t isrCycleReleaseStartCount;
 extern volatile uint32_t isrCyclePiezoScaleCount;
 extern volatile uint8_t isrCycleMaxVoices;
 extern volatile uint8_t isrCycleMaxFlags;
+extern volatile uint32_t isrProfileMinUs;
+extern volatile uint32_t isrProfileMaxUs;
+extern volatile uint32_t isrProfileAvgUs;
+extern volatile uint32_t isrProfileCount;
+extern volatile uint32_t isrProfileAvailableUs;
+extern volatile uint32_t isrProfileOverrunCount;
+extern volatile uint32_t isrProfileReleaseStartCount;
+extern volatile uint32_t isrProfilePiezoScaleCount;
+extern volatile uint32_t isrProfileDmaUnderrunCount;
+extern volatile uint8_t isrProfileMaxVoices;
+extern volatile uint8_t isrProfileMaxFlags;
 
 #define sendToLog(msg) do { if (debugMessages) { Serial.println((std::string(msg)).c_str()); } } while(0)
 

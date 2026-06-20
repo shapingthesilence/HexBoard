@@ -1,6 +1,7 @@
 #include "../FirmwareModule.h"
 #include "DiagnosticsTiming.h"
 #include "PlatformCommon.h"
+#include "StabilityBenchmark.h"
 #include "../hardware/GridScanRotary.h"
 #include "../hardware/GridState.h"
 #include "../hardware/LedAnimations.h"
@@ -79,35 +80,53 @@ void hexboardSetup() {
 }
 void hexboardLoop() {        // run on first core
   timeTracker();     // Time tracking functions
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_PRESET_TRANSFER);
   if (servicePresetSyncTransfer()) {
     return;
   }
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_ENVELOPE_RELEASE);
   processEnvelopeReleases();
   retryPendingReleases();
   screenSaver();     // Reduces wear-and-tear on OLED panel
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_BUTTON_SCAN);
   readHexes();       // Read and store the digital button states of the scanning matrix
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_ARPEGGIATOR);
   arpeggiate();      // arpeggiate if synth mode allows it
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_METRONOME);
   runMetronome();    // metronome beep/flash modes share the synth tempo
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_WHEELS);
   updateWheels();    // deal with the pitch/mod wheel
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_MIDI_IN);
   processIncomingMIDI();  // respond to external MIDI input
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_PRESET_TRANSFER);
   if (servicePresetSyncTransfer()) {
     return;
   }
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_LED_ANIMATE);
   animateLEDs();     // deal with animations
   if (!shouldDeferMidiInLedRefresh()) {
+    stabilityBenchmarkSetCore0Task(STABILITY_TASK_LED_RENDER);
     lightUpLEDs();   // refresh LEDs
   }
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_ROTARY_MENU);
   dealWithRotary();  // deal with menu
-  if (delegatedControl) {
+  if (delegatedControl && !stabilityBenchmarkIsActive()) {
+    stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
     drawDelegatedControlScreen();
+    stabilityBenchmarkSetCore0Task(STABILITY_TASK_AUTOSAVE);
     checkAndAutoSave();  // save settings
     return;
   }
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_MENU_REBUILD);
   serviceSynthPresetMenuRebuild();
   serviceSynthWavetableMenuRebuild();
   serviceUserGeometryMenuRebuild();
   restoreMenuAfterDelegatedControl();
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
   drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_BENCHMARK);
+  serviceStabilityBenchmark();
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_AUTOSAVE);
   checkAndAutoSave();  // save settings
 }
 void hexboardSetup1() {  // set up on second core
@@ -118,9 +137,12 @@ void hexboardSetup1() {  // set up on second core
   setupAudioDma();
 }
 void hexboardLoop1() {  // run on second core
+  stabilityBenchmarkSetCore1Task(STABILITY_TASK_AUDIO_DMA);
   serviceAudioDmaBuffers();
   if (delegatedControl) {
+    stabilityBenchmarkSetCore1Task(STABILITY_TASK_DELEGATED_MIDI);
     processIncomingMIDIDelegated();
   }
+  stabilityBenchmarkSetCore1Task(STABILITY_TASK_ENCODER_SCAN);
   readKnob();
 }

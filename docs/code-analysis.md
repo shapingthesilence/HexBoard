@@ -157,23 +157,40 @@ instead of division or reciprocal approximation.
 This deliberately does not move the OLED menu and note-overlay drawing stack.
 Those paths mostly call GEM/U8g2 routines and send data over I2C, so wholesale
 RAM placement would consume much more SRAM than the selected hot-path pass.
-After the DMA renderer, modulation-cache pass, and Q4 pitch-ratio lookup table,
-`make` reports about `152 KB` of globals and about `110 KB` remaining for local
+After the DMA renderer, fixed wavetable mip storage, modulation-cache pass, Q4
+pitch-ratio lookup table, and stability benchmark state, `make` currently
+reports about `210 KB` of globals and about `52 KB` remaining for local
 variables, heap, and stacks.
 
-### Audio Profiling Diagnostic
+### Stability Benchmark Diagnostic
 
-The `Advanced` page exposes a transient `ISR Profile` toggle backed by the
-audio profiling counters. Turning it on resets the counters and starts
-measurement. Turning it off stops profiling and logs `min/avg/max/count`
-block-render timing, `cpu min/avg/max` percentages computed as render time over
-available block time, render-overrun count, release-start count, piezo-scaling
-block count, DMA underrun count, and the active voice count/flag context for the
-slowest captured block. Logs go through
-`sendToLog()`, so `Serial Debug` must be enabled to see the result.
+The `Advanced` page exposes a transient `Stability` launcher implemented in
+`src/firmware/app/StabilityBenchmark.cpp`. It replaces the old user-facing ISR
+profiler toggle, but still uses the audio profiling counters internally. Launch
+saves the current runtime sound/visual state, suppresses normal `sendToLog()`
+traffic, builds a worst-case runtime patch, starts audio profiling, starts eight
+high playable notes, and then periodically forces a ninth note before releasing
+an older slot so the synth voice-stealing path is exercised.
 
-The profiler state is not a `SettingKey`, is not persisted in profiles, and does
-not require a settings-version bump.
+The benchmark patch uses poly mode, the currently loaded fixed-mip wavetable,
+full dirty drive, all three phase-warp render branches, full LFO/FX-envelope
+modulation, high vibrato, pitch-bend sweeps, metronome beep scheduling, and an
+active LED animation. Normal loop services still run: button scan, MIDI/SysEx
+input, preset-sync transfer service, LED animation/render, menu rebuild
+services, display drawing, and auto-save checks. Core 1 continues to fill audio
+DMA buffers and poll the encoder.
+
+Live and stopped screens show elapsed time, last Core 0 task, last Core 1 task,
+DMA underruns, render overruns, minimum free heap from `rp2040.getFreeHeap()`,
+and max audio block time. If `Serial Debug` was enabled at launch, the benchmark
+emits fixed-buffer live/summary lines every few seconds instead of the verbose
+normal debug stream. Holding the encoder for about `5` seconds requests a clean
+exit; stop releases benchmark notes, captures audio stats, restores the saved
+runtime state, redraws the menu behind the benchmark, and leaves the stopped
+summary on the OLED until the next menu input.
+
+The benchmark state is not a `SettingKey`, is not persisted in profiles, and
+does not require a settings-version bump.
 
 ## Startup Sequence
 
@@ -822,6 +839,7 @@ Current top-level user pages are:
 
 The Advanced page includes a read-only `Firmware 1.4 alpha` version label.
 The `Buzzer` toggle is inserted only on hardware `V1.2`.
+`Stability` is a transient launcher, not a setting.
 
 ## Input Interface And Panic Behavior
 
