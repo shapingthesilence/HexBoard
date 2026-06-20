@@ -280,8 +280,11 @@ backward through the wavetable.
 `Mip Oct` is a temporary tuning aid for wavetable anti-aliasing. User
 wavetables carry fixed-length mip levels with progressively lower harmonic
 limits, and the synth chooses a level from each voice's highest expected pitch.
-`Mip Oct` shifts those level change points by `-4` to `+4` octaves. It is not
-saved in presets or profiles; it resets to `0` after reboot.
+Near a level boundary, the synth blends from the duller mip into the brighter
+mip only after the brighter mip is safe, so slow pitch ramps and microtonal notes
+avoid hard level steps while briefly favoring less aliasing over extra
+brightness. `Mip Oct` shifts those level change points by `-4` to `+4` octaves.
+It is not saved in presets or profiles; it resets to `0` after reboot.
 
 `Drive` adds soft saturation after the voices are mixed:
 

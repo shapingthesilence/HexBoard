@@ -604,28 +604,32 @@ Key implementation facts:
   path; the small vibrato sine table remains RAM-resident because the renderer
   reads it directly.
 - Built-in compatibility wavetables and named user wavetables both load into a
-  `32`-frame active RAM base table plus three full-length fixed mip levels.
-  Wavetable sampling runs in the normal synth modes, uses
-  `SynthWavetablePosition` plus signed `WT Pos` modulation as frame position,
-  linearly interpolates adjacent frames, and indexes the selected mip level
-  directly. Firmware rebuilds a RAM lookup table when the active frame count
-  changes so the audio renderer can map `WT Pos` values to frame positions
+  `32`-frame active RAM base table plus fixed full-length mip levels. Wavetable
+  sampling runs in the normal synth modes, uses `SynthWavetablePosition` plus
+  signed `WT Pos` modulation as frame position, and linearly interpolates
+  adjacent frames. Firmware rebuilds a RAM lookup table when the active frame
+  count changes so the audio renderer can map `WT Pos` values to frame positions
   without dividing per voice. Modulation work runs on a `16`-sample control
   quantum: wheel smoothing, LFO sampling, FX envelopes, pitch modulation targets,
   vibrato depth targets, phase-warp targets, mip selection, and wavetable frame
   contexts are cached per voice, with note start/release/reset forcing an
-  immediate cache refresh. Each voice chooses its mip from the highest expected
-  pitch after pitch modulation and vibrato depth by comparing the Nyquist-safe
-  harmonic limit to the fixed limits `255`, `96`, `48`, `24`, `12`, and `6`; the transient
-  `Mip Oct` menu shifts octave thresholds and is not persisted. Per-voice phase
-  increment and phase-warp depths linearly slew between cached targets at audio
-  rate, while oscillator phase advance, amp-envelope level, phase warping,
-  waveform reads, mixing, drive, and output scaling remain audio-rate. If only
-  global sources modulate `WT Pos`, the cached frame-pair position is shared
-  across active voices; if an FX envelope targets `WT Pos`, each voice caches
-  its own frame context. FX-envelope modulation depth uses a startup-filled
-  `128 x 128` RAM scale table again, and FX envelopes advance by the full `16`
-  audio ticks on each control refresh to preserve long envelope timing.
+  immediate cache refresh. Each voice chooses a bright mip and adjacent dull mip
+  from the highest expected pitch after pitch modulation and vibrato depth by
+  comparing Q8 Nyquist-safe harmonic headroom to the fixed limits `255`, `96`,
+  `48`, `24`, `12`, and `6`; the transient `Mip Oct` menu shifts octave
+  thresholds and is not persisted. The selector fades the bright level in only
+  after it is safe, so boundaries briefly favor the duller mip and avoid hard
+  steps during slow pitch ramps or microtonal notes. The render loop performs a
+  second wavetable read only while the cached bright blend is between `1` and
+  `254`; otherwise it reads one selected context. Per-voice phase increment and
+  phase-warp depths linearly slew between cached targets at audio rate, while
+  oscillator phase advance, amp-envelope level, phase warping, waveform reads,
+  mixing, drive, and output scaling remain audio-rate. If only global sources
+  modulate `WT Pos`, the cached frame-pair position is shared across active
+  voices; if an FX envelope targets `WT Pos`, each voice caches its own frame
+  context. FX-envelope modulation depth uses a startup-filled `128 x 128` RAM
+  scale table again, and FX envelopes advance by the full `16` audio ticks on
+  each control refresh to preserve long envelope timing.
 - Named user wavetable object type `0x0B` accepts the new six-level fixed mip
   payload (`98,304` bytes) and the base-only payload (`16,384` bytes).
   Firmware validates the TLVs, copies the base data to `activeSynthWaveTable`,
@@ -712,8 +716,10 @@ or prune records whose sample file is missing, which prevents failed earlier
 imports from exhausting catalog slots.
 
 The transient Synth Options `Mip Oct` item shifts wavetable mip-level thresholds
-by octaves for anti-aliasing tests. It is RAM-only menu state and intentionally
-does not bump `CURRENT_SETTINGS_VERSION`.
+by octaves for anti-aliasing tests. The selector uses Q8 harmonic headroom and
+blends from the duller mip into the brighter mip only after the brighter level is
+safe, so threshold tests err toward dullness rather than aliasing. It is RAM-only
+menu state and intentionally does not bump `CURRENT_SETTINGS_VERSION`.
 
 The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `FoldWrp` is the default wheel effect and keeps the existing target byte value `0`; `DutyWrp` and `PolyWrp` add target byte values `4` and `5`. All three warp targets apply low-CPU phase warps across the onboard waveforms and active wavetable before sampling. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the on-device menu presents rounded frame anchors labeled `1..32`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator, then reads startup-generated RAM Q16 ratio tables so full positive depth raises each active voice by about `+24` semitones and full negative depth lowers it by about `-24` semitones.
 

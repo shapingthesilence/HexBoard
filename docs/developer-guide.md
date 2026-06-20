@@ -626,21 +626,25 @@ OverwriteExisting` rename or move an existing device wavetable without sending
 sample bytes, and firmware rejects object-id changes on those writes.
 
 All active tables use the same RAM path: firmware builds or loads the base
-`32 x 512` table into `activeSynthWaveTable` and stores three additional
+`32 x 512` table into `activeSynthWaveTable` and stores the remaining
 full-length mip levels in `activeSynthWavetableMipExtraSamples`. The sampler
-runs in the normal synth modes, interpolates adjacent frames from
-`SynthWavetablePosition` plus signed `WT Pos` modulation, and uses direct phase
-lookup against the selected mip level to keep renderer cost bounded. The
-selected wavetable also rebuilds a RAM `WT Pos` lookup table so the audio
-renderer maps `0..127` position amounts to frame positions without a per-voice
-divide. Modulation work runs on a `16`-sample control quantum: wheel smoothing,
-LFO sampling, FX envelope state, pitch/vibrato targets, phase-warp targets, mip
+runs in the normal synth modes and interpolates adjacent frames from
+`SynthWavetablePosition` plus signed `WT Pos` modulation. The selected
+wavetable also rebuilds a RAM `WT Pos` lookup table so the audio renderer maps
+`0..127` position amounts to frame positions without a per-voice divide.
+Modulation work runs on a `16`-sample control quantum: wheel smoothing, LFO
+sampling, FX envelope state, pitch/vibrato targets, phase-warp targets, mip
 selection, and wavetable frame contexts are cached there, with note
 start/release/reset forcing an immediate per-voice cache refresh. Each voice
-chooses its wavetable mip level from the highest expected pitch after pitch
-modulation and vibrato depth; the selector computes the Nyquist-safe harmonic
-limit, uses hysteresis to avoid vibrato chatter, and the transient `Mip Oct`
-menu item shifts those thresholds by `-4..+4` octaves without touching
+chooses a bright mip and adjacent dull mip from the highest expected pitch after
+pitch modulation and vibrato depth; the selector computes the Nyquist-safe
+harmonic limit in Q8 fixed point, applies the transient `Mip Oct` threshold
+shift, then fades the brighter mip in across a small safety margin only after
+that brighter level is safe. This removes hard mip steps during slow pitch ramps
+and biases boundary cases toward a duller level instead of aliasing. The render
+loop reads only the bright context outside the blend margin and performs the
+second wavetable read only while the cached bright blend is between `1` and
+`254`. `Mip Oct` shifts the thresholds by `-4..+4` octaves without touching
 `SettingKey`, `factoryDefaults`, or `CURRENT_SETTINGS_VERSION`. Per-voice phase
 increment and phase-warp depths slew between cached targets at audio rate; the
 normal `16`-sample retarget uses shift math instead of division. Oscillator phase
