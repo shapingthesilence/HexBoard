@@ -486,8 +486,8 @@ chunk. The device finishes with `TRANSFER_END`, and the host ACKs it.
 For `SynthWavetable` reads, current firmware sends the same object bytes but
 stages only the metadata prefix in RAM; the `WavetableSamples` TLV data is read
 from the per-table LittleFS sample file as each outgoing chunk is requested.
-New sample files are four-level `65,536`-byte fixed mip tables; legacy
-`16,384`-byte base-only files are still streamed and reported as schema `1.0`.
+New sample files are six-level `98,304`-byte fixed mip tables; `16,384`-byte
+base-only files are still streamed and reported as schema `1.0`.
 Host-to-device `SynthWavetable` writes are received through temporary LittleFS
 files for the raw object and concatenated sample TLVs, so fixed mip uploads do
 not require a contiguous object-sized heap buffer. Firmware keeps the raw-object
@@ -873,10 +873,8 @@ pattern used by `applyScale()` and forces degree `0` to remain included.
 
 `ScaleColorMap` lets users customize scale-degree colors without requiring a
 full per-button map. Each web bundle has one custom scale-degree color set. Its
-object name is generic because the firmware color-mode menu should expose the
-mode generically rather than naming each palette. This color set is the intended
-replacement for the hard-coded firmware `Tiered` color mode for user-generated
-tunings/layouts.
+object name is generic because the firmware color-mode menu exposes the palette
+as `Custom` rather than naming each palette.
 
 Recommended TLVs:
 
@@ -884,19 +882,20 @@ Recommended TLVs:
 | --- | --- | --- |
 | `0x20` | `TuningRef` | Optional object reference |
 | `0x21` | `CycleLength` | `u16-le` |
-| `0x22` | `DefaultColorMode` | `u8`, firmware-defined color mode fallback |
+| `0x22` | `DefaultColorMode` | `u8`, firmware-defined color mode applied with this color map |
 | `0x23` | `DegreeColors` | Repeated `<degree-u16-le> <hue-u16-le> <sat-u8> <val-u8>` |
 
 Hue is `0..3599` tenths of a degree. Saturation and value are `0..255`.
 
 On-device editing can expose a small color chooser per scale degree or a few
-palette templates. The web app can offer batch editing and previews.
-Current firmware live Apply loads this object into a user runtime palette. While
-that palette is active, `setLEDcolorCodes()` uses it before falling back to the
-factory color modes; per-button color overrides still take precedence. The
-stored HSV value remains the active/play color target. Firmware caps only the
-resting hardware LED value at `VALUE_NORMAL` before applying `Rest Bright`, so
-custom colors keep the same animation headroom as generated color modes.
+palette templates. The web app can offer batch editing and previews. Current
+firmware live Apply loads this object into a user runtime palette and sets
+`ColorMode` from `DefaultColorMode`. Value `1` is `Custom` and renders the
+stored scale-degree colors; other firmware-defined values render the generated
+color modes. Per-button color overrides take precedence only when `Custom` is
+active. The stored HSV value remains the active/play color target. Firmware caps only the resting
+hardware LED value at `VALUE_NORMAL` before applying `Rest Bright`, so custom
+colors keep the same animation headroom as generated color modes.
 
 ## Explicit Button Map Object
 
@@ -944,6 +943,7 @@ is the stored note position for that physical button. Transposition changes
 sounded pitch after mapping, and root/key changes affect scale highlighting,
 but neither setting should regenerate or move a manual button record. A button
 record with a color override similarly takes precedence over the bundle palette.
+Color overrides are active only when the selected color mode is `Custom`.
 Current firmware live Apply supports format `1` records on visible button
 indices `0..139`. `Note` records can override `stepsFromC`; `Unused` records
 disable the button; `Command` records restore built-in command behavior only
@@ -1086,16 +1086,16 @@ these synth-wavetable TLVs:
 | --- | --- | --- |
 | `0x30` | `WavetableFrameCount` | `u8`, must be `32` |
 | `0x31` | `WavetableSampleCount` | `u16-le`, must be `512` |
-| `0x32` | `WavetableSamples` | one or more TLVs containing `65,536` unsigned bytes total for schema `1.2`; legacy base-only objects use `16,384` bytes total |
-| `0x33` | `WavetableMipLevels` | `u8`; `4` for the fixed mip table or `1` for legacy base-only data |
+| `0x32` | `WavetableSamples` | one or more TLVs containing `98,304` unsigned bytes total for schema `1.2`; base-only objects use `16,384` bytes total |
+| `0x33` | `WavetableMipLevels` | `u8`; `6` for the fixed mip table or `1` for base-only data |
 
-The mip payload is level-major and frame-major within each level: four levels,
+The mip payload is level-major and frame-major within each level: six levels,
 each with `32` frames and `512` samples per frame. Harmonic limits are `255`,
-`96`, `48`, and `24`. Hosts should include `WavetableMipLevels = 4` when
+`96`, `48`, `24`, `12`, and `6`. Hosts should include `WavetableMipLevels = 6` when
 sending the full fixed mip table; firmware rejects mismatched sample length and
 mip count pairs. The fixed-mip sample payload is split into repeated
 `WavetableSamples` TLVs of at most `32,768` bytes each because a single TLV
-length is 16-bit and the complete fixed-mip payload is `65,536` bytes.
+length is 16-bit and the complete fixed-mip payload is `98,304` bytes.
 
 The web app's Serum/Vital import path reads wavetable `.wav` files,
 interpolates the source frame axis down to `32` frames, resamples each frame to
@@ -1103,7 +1103,7 @@ interpolates the source frame axis down to `32` frames, resamples each frame to
 FFT-pruned fixed mip levels, and sends the result with `ApplyToRuntime |
 SaveToFlash`.
 The web app's HexBoard export path writes `.hexwav` files: 8-bit mono WAV
-containers whose data chunk is exactly the `65,536`-byte fixed mip table.
+containers whose data chunk is exactly the `98,304`-byte fixed mip table.
 HexBoard `.hexwav` imports skip the Serum/Vital crunching step; older
 `16,384`-byte `.hexwav` files are accepted and upgraded to a fixed mip table by
 the app before upload.

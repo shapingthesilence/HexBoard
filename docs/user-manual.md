@@ -181,7 +181,7 @@ Options include:
 - `Rest Bright`
 - `Dim Bright`
 
-Available color modes are `Rainbow`, `Tiered`, `Alt`, `Fifths`, `Piano`, `Alt Piano`, `Filament`, and `Diatonic`. The animation list includes button, octave, by-note, star, splash, orbit, beams, reversed variants, and MIDI-in highlighting.
+Available color modes are `Rainbow`, `Diatonic`, `Alt`, `Fifths`, `Piano`, `Alt Piano`, `Filament`, and `Custom`. `Custom` shows a scale-degree color scheme loaded from the web editor. The animation list includes button, octave, by-note, star, splash, orbit, beams, reversed variants, and MIDI-in highlighting.
 
 `LED Limit` helps prevent power problems by lowering LED output when a bright setting would draw too much current. This matters most in bright modes such as `Filament` and `Diatonic`. `Off` leaves the LEDs uncapped and can cause resets at extreme brightness. The numbered limits use hardware-specific calibration tables for `V1.1` and `V1.2` boards. The factory default is `1.5 A`, calibrated to provide a similar actual USB-side draw on both hardware revisions and stable behavior on most power supplies.
 
@@ -444,10 +444,10 @@ but live Scala playback still needs a broader firmware tuning-system overhaul.
 
 The `Tunings & Layouts` tab is a browser-side musical geometry editor. It saves
 geometry bundles in browser storage and can import/export those bundles as JSON.
-Each bundle contains one tuning, one custom scale-degree color palette, one or
-more layouts, and one or more scales. The custom palette is applied to the live
-runtime when a compatible bundle is sent to HexBoard, and it uses a generic
-color-mode name rather than a separate editable palette field. The active
+Each bundle contains one tuning, one custom scale-degree color palette, one
+default color mode, one or more layouts, and one or more scales. `Custom`
+uses the bundle's scale-degree palette; the other default color mode choices
+preview and apply the same generated modes as the device menu. The active
 layout still starts from an across/up-right vector, and the center key can be
 chosen from the visual board or typed by button index. The editor places a
 left sidebar beside the preview using the same left-to-right proportions as the
@@ -475,17 +475,17 @@ musical axes around individual hexagons. Focusing the center, across, or
 up-right layout fields highlights the relevant preview key relationship. The
 axis field labels follow the four-way preview rotation; for example, at `90`
 degrees, across is shown as `Down` and up-right is shown as `Down-right`.
-The preview also has a `Paintbrush` mode: choose a brush color, enable the
-tool, then click or drag across keys to write manual per-button color overrides
-without selecting each key in the inspector. The `Eyedropper` tool temporarily
-overrides the paintbrush so the next preview key clicked becomes the brush
-color. Preview hexagons render with solid color fills and outlined white labels
+When the default color mode is `Custom`, the preview also has a `Paintbrush`
+mode: choose a brush color, enable the tool, then click or drag across keys to
+write manual per-button color overrides without selecting each key in the
+inspector. The `Eyedropper` tool temporarily overrides the paintbrush so the
+next preview key clicked becomes the brush color. Preview hexagons render with solid color fills and outlined white labels
 so the displayed color remains accurate and readable. A sun/moon button in the app header switches the web app between
-light and dark themes. When a compatible bundle is applied to HexBoard, custom
-scale-degree and per-button colors use the selected color as the active/play
-target, but the resting hardware LEDs are capped to the same normal brightness
-level used by generated modes such as `Rainbow` so animations have brighter
-headroom.
+light and dark themes. When a compatible bundle is applied to HexBoard, `Custom`
+scale-degree colors and Custom-mode per-button colors use the selected color as the
+active/play target, but the resting hardware LEDs are capped to the same normal
+brightness level used by generated modes such as `Rainbow` so animations have
+brighter headroom.
 
 The tuning editor can create EDO tunings, equal cents-per-step tunings, and
 Scala `.scl` imports. EDO and cents-per-step tunings include editable note
@@ -500,7 +500,8 @@ require firmware tuning-system work. The preview uses the current `133` note-key
 hardware shape and omits the seven command buttons so geometry editing stays
 focused on playable notes. The selected-key inspector has a `Color source` dropdown:
 `Scale degree` edits the palette color for the generated degree, while
-`Button override` edits only the selected button's color. `Note source` can
+`Button override` edits only the selected button's color and is available only
+when the default color mode is `Custom`. `Note source` can
 lock an individual button to a fixed `steps from C` value; those manual note
 positions are meant to stay fixed when root note or transposition changes.
 Scales are edited as included scale degrees only. `All Notes` is always present
@@ -555,8 +556,8 @@ to acknowledge the write through the flash commit before the app refreshes the
 `Import Wavetable` is in the `Wavetables` library view. It opens an import
 dialog with a file-type selector for Serum/Vital `.wav` tables or HexBoard
 `.hexwav` tables. Serum/Vital imports read the source frames and render the
-table down to the firmware's `32 x 512` base table, then build four fixed
-`512`-sample mip levels with harmonic limits `255`, `96`, `48`, and `24`.
+table down to the firmware's `32 x 512` base table, then build six fixed
+`512`-sample mip levels with harmonic limits `255`, `96`, `48`, `24`, `12`, and `6`.
 HexBoard `.hexwav` files are 8-bit mono WAV containers that contain either this
 full fixed-mip table or an older base-only table that the app upgrades on
 import.

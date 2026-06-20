@@ -2,6 +2,7 @@ import { ObjectType } from "../protocol/constants.ts";
 import { deterministicObjectId } from "./objectId.ts";
 import {
   createExplicitButtonMap,
+  ColorMode,
   createGeneratedEdoTuning,
   createScaleColorMap,
   createUserScale,
@@ -42,7 +43,7 @@ export const sampleScaleColorMap = createScaleColorMap({
     objectId: nineteenEdoId
   },
   cycleLength: 19,
-  defaultColorMode: 0,
+  defaultColorMode: ColorMode.Custom,
   degreeColors: [
     { degree: 0, hueTenthDegrees: 0, saturation: 220, value: 210 },
     { degree: 3, hueTenthDegrees: 980, saturation: 200, value: 190 },

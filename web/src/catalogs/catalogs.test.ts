@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ObjectType } from "../protocol/constants.ts";
 import { CommonTlv, decodeObjectBody, textFromBytes } from "../protocol/tlv.ts";
 import {
+  ColorMode,
   createExplicitButtonMap,
   createDefaultLayoutBundle,
   createEqualStepTuning,
@@ -24,6 +25,7 @@ import {
   parseLayoutBundleFile,
   parseScalaScale,
   resolveLayoutBundleButtonColor,
+  ScaleColorMapTlv,
   serializeLayoutBundle,
   SYNTH_WAVETABLE_MIP_LEVEL_COUNT,
   SYNTH_WAVETABLE_MIP_SAMPLE_BYTES,
@@ -174,7 +176,7 @@ Example scale
       objectId: deterministicObjectId("colors"),
       name: "Degrees",
       cycleLength: 17,
-      defaultColorMode: 0,
+      defaultColorMode: ColorMode.Custom,
       degreeColors: [{ degree: 0, hueTenthDegrees: 0, saturation: 255, value: 220 }]
     });
     const map = createExplicitButtonMap({
@@ -313,6 +315,7 @@ Example scale
       "Microtonal"
     ]);
     expect(textFromBytes(recordValue(encoded.scaleColorMap.body, CommonTlv.Name))).toBe(GenericScaleColorMapName);
+    expect(u8(recordValue(encoded.scaleColorMap.body, ScaleColorMapTlv.DefaultColorMode))).toBe(ColorMode.Custom);
   });
 
   it("derives equal-step period metadata from step cents and cycle length", () => {
@@ -388,7 +391,8 @@ Example scale
     expect(resolveLayoutBundleButtonColor({
       degreeColors,
       cycleLength: 2,
-      stepsFromC: 1
+      stepsFromC: 1,
+      defaultColorMode: ColorMode.Custom
     })).toMatchObject({
       degree: 1,
       colorSource: "degree",
@@ -398,6 +402,44 @@ Example scale
       degreeColors,
       cycleLength: 2,
       stepsFromC: 1,
+      defaultColorMode: ColorMode.Rainbow
+    })).toMatchObject({
+      degree: 1,
+      colorSource: "degree",
+      color: {
+        degree: 1,
+        hueTenthDegrees: 1800,
+        saturation: 255,
+        value: 180
+      }
+    });
+    expect(resolveLayoutBundleButtonColor({
+      degreeColors,
+      cycleLength: 2,
+      stepsFromC: 1,
+      defaultColorMode: ColorMode.Rainbow,
+      override: {
+        buttonIndex: 64,
+        role: "note",
+        hueTenthDegrees: 2400,
+        saturation: 255,
+        value: 220
+      }
+    })).toMatchObject({
+      degree: 1,
+      colorSource: "degree",
+      color: {
+        degree: 1,
+        hueTenthDegrees: 1800,
+        saturation: 255,
+        value: 180
+      }
+    });
+    expect(resolveLayoutBundleButtonColor({
+      degreeColors,
+      cycleLength: 2,
+      stepsFromC: 1,
+      defaultColorMode: ColorMode.Custom,
       override: {
         buttonIndex: 64,
         role: "note",

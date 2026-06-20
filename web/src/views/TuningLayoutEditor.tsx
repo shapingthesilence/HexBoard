@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEv
 import {
   clampScaleDegreeColor,
   computeVectorLayoutSteps,
+  ColorMode,
   createAllNotesScale,
   createDefaultDegreeColors,
   createDefaultLayout,
@@ -34,6 +35,7 @@ import {
   type LayoutBundleScale,
   type LayoutBundleTuning,
   type ScaleDegreeColor,
+  type ColorModeValue,
   type EncodedCatalogObject
 } from "../catalogs/index.ts";
 import { MockMidiTransport } from "../midi/mockTransport.ts";
@@ -56,6 +58,17 @@ type GeometryEditorTab = "tuning" | "layouts" | "scales";
 type GeometrySidebarTab = "library" | "editor";
 type GeometryLibrarySpace = "computer" | "hexboard";
 type PaintTool = "brush" | "eyedropper";
+
+const colorModeOptions: Array<{ value: ColorModeValue; label: string }> = [
+  { value: ColorMode.Rainbow, label: "Rainbow" },
+  { value: ColorMode.Diatonic, label: "Diatonic" },
+  { value: ColorMode.Alt, label: "Alt" },
+  { value: ColorMode.Fifths, label: "Fifths" },
+  { value: ColorMode.Piano, label: "Piano" },
+  { value: ColorMode.AltPiano, label: "Alt Piano" },
+  { value: ColorMode.Filament, label: "Filament" },
+  { value: ColorMode.Custom, label: "Custom" }
+];
 
 const layoutAxisDirectionLabels = [
   { across: "Right", upRight: "Up-right" },
@@ -645,6 +658,11 @@ function decodeDeviceColorMap(object: DeviceGeometryObject | undefined, cycleLen
   return colors;
 }
 
+function decodeDeviceDefaultColorMode(object: DeviceGeometryObject | undefined): ColorModeValue {
+  const value = u8(tlvValue(object?.records ?? [], ScaleColorMapTlv.DefaultColorMode), ColorMode.Custom);
+  return colorModeOptions.some((option) => option.value === value) ? value as ColorModeValue : ColorMode.Custom;
+}
+
 function decodeDeviceScale(object: DeviceGeometryObject, index: number, cycleLength: number): LayoutBundleScale {
   const includedBytes = tlvValue(object.records, UserScaleTlv.IncludedDegrees);
   const includedDegrees: number[] = [];
@@ -743,6 +761,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     activeBundle.scales[0] ??
     createAllNotesScale(tuningCycleLength(activeBundle.tuning));
   const activeScaleIsAllNotes = isAllNotesScale(activeScale);
+  const customColorModeActive = activeBundle.palette.defaultColorMode === ColorMode.Custom;
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
   const allFolders = useMemo(() => Array.from(new Set([
     rootFolderPath,
@@ -770,6 +789,14 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     setKeyLabelsDraft(formatLabelList(activeBundle.tuning.keyLabels));
     setKeyLabelsError("");
   }, [activeBundle.tuning]);
+
+  useEffect(() => {
+    if (!customColorModeActive && paintbrushMode) {
+      endPaintStroke();
+      setPaintbrushMode(false);
+      setPaintTool("brush");
+    }
+  }, [customColorModeActive, paintbrushMode]);
 
   function setBundlesAndPersist(nextBundles: LayoutBundle[]) {
     const sanitized = nextBundles.map(sanitizeEditorBundle).sort(compareGeometryBundles);
@@ -1119,6 +1146,16 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     }));
   }
 
+  function updateDefaultColorMode(defaultColorMode: ColorModeValue) {
+    updateActiveBundle((bundle) => ({
+      ...bundle,
+      palette: {
+        ...bundle.palette,
+        defaultColorMode
+      }
+    }));
+  }
+
   function updateButtonOverride(buttonIndex: number, patch: Partial<LayoutBundleButtonOverride>) {
     updateActiveLayout((layout) => ({
       ...layout,
@@ -1127,6 +1164,9 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   }
 
   function paintButtonColorOverride(buttonIndex: number) {
+    if (!customColorModeActive) {
+      return;
+    }
     if (lastPaintedButtonRef.current === buttonIndex) {
       return;
     }
@@ -1140,6 +1180,9 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   }
 
   function pickBrushColor(buttonIndex: number) {
+    if (!customColorModeActive) {
+      return;
+    }
     const preview = previewKeys.find((item) => item.key.index === buttonIndex);
     if (!preview) {
       return;
@@ -1161,7 +1204,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   }
 
   function beginPaintStroke(event: PointerEvent<HTMLDivElement>) {
-    if (!paintbrushMode) {
+    if (!paintbrushMode || !customColorModeActive) {
       return;
     }
     const buttonIndex = previewButtonIndexFromPointer(event);
@@ -1292,7 +1335,9 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
       const stepsFromC = override?.stepsFromC ?? generatedStepsFromC;
       const resolvedColor = resolveLayoutBundleButtonColor({
         degreeColors: activeBundle.palette.degreeColors,
+        defaultColorMode: activeBundle.palette.defaultColorMode,
         cycleLength,
+        periodCents: tuningPeriodCents(activeBundle.tuning),
         stepsFromC,
         override
       });
@@ -1356,6 +1401,9 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   function setSelectedColorSource(colorSource: PreviewKey["colorSource"]) {
     if (colorSource === "degree") {
       clearButtonColor(selectedPreview.key.index);
+      return;
+    }
+    if (!customColorModeActive) {
       return;
     }
     updateButtonOverride(selectedPreview.key.index, {
@@ -1476,6 +1524,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
       folderPath: entry.folderPath,
       tuning,
       palette: {
+        defaultColorMode: decodeDeviceDefaultColorMode(linkedColorMap),
         degreeColors: decodeDeviceColorMap(linkedColorMap, cycleLength)
       },
       layouts,
@@ -1947,6 +1996,17 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
                   ))}
                 </select>
               </label>
+              <label className="field">
+                <span>Default color mode</span>
+                <select
+                  value={activeBundle.palette.defaultColorMode}
+                  onChange={(event) => updateDefaultColorMode(Number(event.target.value) as ColorModeValue)}
+                >
+                  {colorModeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
               <div className="row">
                 <button type="button" onClick={addNewScale}>New Scale</button>
                 <button className="warning" disabled={activeScaleIsAllNotes} type="button" onClick={deleteActiveScale}>Delete Scale</button>
@@ -1990,8 +2050,9 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
           </div>
           <div className="brushToolbar">
             <button
-              aria-pressed={paintbrushMode}
-              className={paintbrushMode ? "primary" : ""}
+              aria-pressed={customColorModeActive && paintbrushMode}
+              className={customColorModeActive && paintbrushMode ? "primary" : ""}
+              disabled={!customColorModeActive}
               type="button"
               onClick={() => {
                 endPaintStroke();
@@ -2002,8 +2063,9 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
               Paintbrush
             </button>
             <button
-              aria-pressed={paintbrushMode && paintTool === "eyedropper"}
-              className={paintbrushMode && paintTool === "eyedropper" ? "primary" : ""}
+              aria-pressed={customColorModeActive && paintbrushMode && paintTool === "eyedropper"}
+              className={customColorModeActive && paintbrushMode && paintTool === "eyedropper" ? "primary" : ""}
+              disabled={!customColorModeActive}
               type="button"
               onClick={() => {
                 endPaintStroke();
@@ -2017,6 +2079,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
               <span>Brush color</span>
               <input
                 aria-label="Brush color"
+                disabled={!customColorModeActive}
                 type="color"
                 value={scaleDegreeColorToHex(paintbrushColor)}
                 onChange={(event) => setPaintbrushColor((current) => hexToScaleDegreeColor(event.target.value, current))}
@@ -2132,16 +2195,20 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
             </label>
             <label className="field">
               <span>Color source</span>
-              <select value={selectedPreview.colorSource} onChange={(event) => setSelectedColorSource(event.target.value as PreviewKey["colorSource"])}>
-                <option value="degree">Scale degree</option>
-                <option value="button">Button override</option>
+              <select
+                disabled={!customColorModeActive}
+                value={selectedPreview.colorSource}
+                onChange={(event) => setSelectedColorSource(event.target.value as PreviewKey["colorSource"])}
+              >
+                <option value="degree">{activeBundle.palette.defaultColorMode === ColorMode.Custom ? "Custom palette" : "Default mode"}</option>
+                <option disabled={!customColorModeActive} value="button">Button override</option>
               </select>
             </label>
           </div>
 
           {selectedPreview.colorSource === "degree" ? (
             <section className="editorSection">
-              <h3>Scale Degree Color</h3>
+              <h3>{activeBundle.palette.defaultColorMode === ColorMode.Custom ? "Scale Degree Color" : "Custom Palette Color"}</h3>
               <ColorFields
                 color={selectedDegreeColor}
                 onChange={(patch) => updateDegreeColor(selectedPreview.degree, patch)}

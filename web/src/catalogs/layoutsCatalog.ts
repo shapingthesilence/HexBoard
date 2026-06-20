@@ -20,6 +20,31 @@ export const LegacyLayoutBundleFileFormat = "hexboard.layoutBundle.v1";
 export const LayoutBundleFileFormat = "hexboard.layoutBundle.v2";
 export const GenericScaleColorMapName = "Custom Palette";
 
+export const ColorMode = {
+  Rainbow: 0,
+  Custom: 1,
+  Alt: 2,
+  Fifths: 3,
+  Piano: 5,
+  AltPiano: 4,
+  Filament: 6,
+  Diatonic: 7
+} as const;
+
+export type ColorModeValue = typeof ColorMode[keyof typeof ColorMode];
+
+const VALUE_BLACK = 0;
+const VALUE_SHADE = 164;
+const VALUE_NORMAL = 180;
+const SAT_BW = 0;
+const SAT_TINT = 32;
+const SAT_DULL = 85;
+const SAT_VIVID = 255;
+const HUE_ORANGE = 36;
+const HUE_BLUE = 216;
+const HUE_PURPLE = 288;
+const FIFTH_CENTS = 1200 * Math.log2(3 / 2);
+
 export const UserTuningKind = {
   Edo: 1,
   CentsList: 2,
@@ -190,6 +215,7 @@ export interface LayoutBundleScale {
 }
 
 export interface LayoutBundlePalette {
+  defaultColorMode: ColorModeValue;
   degreeColors: ScaleDegreeColor[];
 }
 
@@ -607,16 +633,161 @@ export function createDefaultLayout(cycleLength: number): LayoutBundleLayout {
   };
 }
 
+function colorFromHsv(degree: number, hueDegrees: number, saturation: number, value: number): ScaleDegreeColor {
+  return clampScaleDegreeColor({
+    degree,
+    hueTenthDegrees: Math.round(hueDegrees * 10),
+    saturation,
+    value
+  });
+}
+
+function stepCentsForPreview(cycleLength: number, periodCents: number | undefined): number {
+  return numberOr(periodCents, 1200) / Math.max(1, Math.round(cycleLength));
+}
+
+function roundedKeyDegree(stepsFromC: number, cycleLength: number, periodCents: number | undefined): number {
+  const stepCents = stepCentsForPreview(cycleLength, periodCents);
+  const octaveSteps = 1200 / stepCents;
+  const semipaletteIndex = positiveModulo(stepsFromC, octaveSteps);
+  return (12 / octaveSteps) * semipaletteIndex;
+}
+
+function isPianoBlackKey(keyDegree: number): boolean {
+  switch (positiveModulo(Math.round(keyDegree), 12)) {
+    case 1:
+    case 3:
+    case 6:
+    case 8:
+    case 10:
+      return true;
+    default:
+      return false;
+  }
+}
+
+function alternateColor(degree: number, stepCents: number): ScaleDegreeColor {
+  const cents = stepCents * degree;
+  let perfect = false;
+  let center = 0;
+  if (cents < 50) { perfect = true; center = 0; }
+  else if (cents < 250) { center = 147.1; }
+  else if (cents < 450) { center = 351; }
+  else if (cents < 600) { perfect = true; center = 498; }
+  else if (cents <= 750) { perfect = true; center = 702; }
+  else if (cents <= 950) { center = 849; }
+  else if (cents <= 1150) { center = 1053; }
+  else if (cents < 1250) { perfect = true; center = 1200; }
+  else if (cents < 1450) { center = 1347.1; }
+  else if (cents < 1650) { center = 1551; }
+  else if (cents < 1850) { perfect = true; center = 1698; }
+  else if (cents <= 1950) { perfect = true; center = 1902; }
+  const offCenter = cents - center;
+  const hue = positiveModulo(150 + (perfect ? (offCenter > 0 ? -72 : 72) : 0) - Math.round(1.44 * offCenter), 360);
+  const deSaturate = perfect && Math.abs(offCenter) < 20 ? 1 - (0.02 * Math.abs(offCenter)) : 0;
+  return colorFromHsv(degree, hue, 255 - Math.round(255 * deSaturate), cents ? VALUE_SHADE : VALUE_NORMAL);
+}
+
+function diatonicColor(degree: number, cycleLength: number, stepCents: number): ScaleDegreeColor | undefined {
+  const fifthSteps = Math.round(FIFTH_CENTS / stepCents);
+  const largeStep = positiveModulo(2 * fifthSteps, cycleLength);
+  const smallRemainder = cycleLength - 5 * largeStep;
+  if (smallRemainder < 0 || smallRemainder % 2 !== 0) {
+    return undefined;
+  }
+  const smallStep = smallRemainder / 2;
+  if (largeStep <= 0 || smallStep <= 0 || largeStep === smallStep) {
+    return undefined;
+  }
+
+  const intervals = [largeStep, largeStep, smallStep, largeStep, largeStep, largeStep, smallStep];
+  const diatonic = [0];
+  for (let index = 1; index < 7; index += 1) {
+    diatonic[index] = diatonic[index - 1] + intervals[index - 1];
+  }
+
+  let lowerIndex = 0;
+  for (let index = 6; index >= 0; index -= 1) {
+    if (diatonic[index] <= degree) {
+      lowerIndex = index;
+      break;
+    }
+  }
+  const upperIndex = (lowerIndex + 1) % 7;
+  const lowerPosition = diatonic[lowerIndex];
+  const upperPosition = upperIndex === 0 ? cycleLength : diatonic[upperIndex];
+  const offsetFromLower = degree - lowerPosition;
+  const offsetFromUpper = upperPosition - degree;
+  if (offsetFromLower === 0) {
+    return colorFromHsv(degree, 0, SAT_BW, VALUE_NORMAL);
+  }
+  if (offsetFromLower === offsetFromUpper) {
+    return colorFromHsv(degree, HUE_PURPLE, SAT_DULL, VALUE_NORMAL);
+  }
+  if (offsetFromLower < offsetFromUpper) {
+    const layer = offsetFromLower;
+    return colorFromHsv(degree, HUE_ORANGE - ((layer - 1) * 36), SAT_VIVID, Math.max(VALUE_SHADE, VALUE_NORMAL - ((layer - 1) * 16)));
+  }
+  const layer = offsetFromUpper;
+  return colorFromHsv(degree, HUE_BLUE + ((layer - 1) * 36), SAT_VIVID, Math.max(VALUE_SHADE, VALUE_NORMAL - ((layer - 1) * 16)));
+}
+
+function colorForDefaultMode(input: {
+  colorMode: number | undefined;
+  customColor: ScaleDegreeColor;
+  cycleLength: number;
+  degree: number;
+  periodCents: number | undefined;
+  stepsFromC: number;
+}): ScaleDegreeColor {
+  const mode = input.colorMode ?? ColorMode.Custom;
+  const stepCents = stepCentsForPreview(input.cycleLength, input.periodCents);
+  switch (mode) {
+    case ColorMode.Custom:
+      return input.customColor;
+    case ColorMode.Alt:
+      return alternateColor(input.degree, stepCents);
+    case ColorMode.Fifths: {
+      const fifthSteps = Math.max(1, Math.round(FIFTH_CENTS / stepCents));
+      return colorFromHsv(input.degree, 360 * (positiveModulo(input.degree * fifthSteps, input.cycleLength) / input.cycleLength), SAT_VIVID, VALUE_NORMAL);
+    }
+    case ColorMode.Piano: {
+      const keyDegree = roundedKeyDegree(input.stepsFromC, input.cycleLength, input.periodCents);
+      return colorFromHsv(input.degree, 360 * (positiveModulo(Math.round(keyDegree), 12) / 12), SAT_TINT, isPianoBlackKey(keyDegree) ? VALUE_BLACK : VALUE_NORMAL);
+    }
+    case ColorMode.AltPiano: {
+      const keyDegree = roundedKeyDegree(input.stepsFromC, input.cycleLength, input.periodCents);
+      const rounded = Math.round(keyDegree);
+      const deviation = (rounded - keyDegree) * 180;
+      return colorFromHsv(input.degree, (isPianoBlackKey(keyDegree) ? 210 : 30) + deviation, SAT_VIVID, VALUE_NORMAL);
+    }
+    case ColorMode.Filament: {
+      const keyDegree = roundedKeyDegree(input.stepsFromC, input.cycleLength, input.periodCents);
+      const deviation = Math.abs(Math.round(keyDegree) - keyDegree);
+      const heat = isPianoBlackKey(keyDegree) ? deviation : 1 - deviation;
+      return colorFromHsv(input.degree, 24 + (heat * 18), 210 - Math.round(heat * 80), 105 + Math.round(heat * 75));
+    }
+    case ColorMode.Diatonic:
+      return diatonicColor(input.degree, input.cycleLength, stepCents)
+        ?? colorFromHsv(input.degree, 360 * (input.degree / input.cycleLength), SAT_VIVID, VALUE_NORMAL);
+    case ColorMode.Rainbow:
+    default:
+      return colorFromHsv(input.degree, 360 * (input.degree / input.cycleLength), SAT_VIVID, VALUE_NORMAL);
+  }
+}
+
 export function resolveLayoutBundleButtonColor(input: {
   degreeColors: ScaleDegreeColor[];
   cycleLength: number;
   stepsFromC: number;
+  defaultColorMode?: number;
+  periodCents?: number;
   override?: LayoutBundleButtonOverride;
 }): ResolvedLayoutBundleColor {
   const degree = positiveModulo(input.stepsFromC, input.cycleLength);
-  const degreeColors = normalizeScaleDegreeColors(input.degreeColors, input.cycleLength);
-  const degreeColor = degreeColors.find((color) => color.degree === degree) ?? degreeColors[0];
+  const mode = input.defaultColorMode ?? ColorMode.Custom;
   if (
+    mode === ColorMode.Custom &&
     input.override?.hueTenthDegrees !== undefined &&
     input.override.saturation !== undefined &&
     input.override.value !== undefined
@@ -632,9 +803,18 @@ export function resolveLayoutBundleButtonColor(input: {
       colorSource: "button"
     };
   }
+  const degreeColors = normalizeScaleDegreeColors(input.degreeColors, input.cycleLength);
+  const degreeColor = degreeColors.find((color) => color.degree === degree) ?? degreeColors[0];
   return {
     degree,
-    color: degreeColor,
+    color: colorForDefaultMode({
+      colorMode: mode,
+      customColor: degreeColor,
+      cycleLength: input.cycleLength,
+      degree,
+      periodCents: input.periodCents,
+      stepsFromC: input.stepsFromC
+    }),
     colorSource: "degree"
   };
 }
@@ -658,6 +838,7 @@ export function createDefaultLayoutBundle(): LayoutBundle {
       keyLabels: defaultKeyLabels(19)
     },
     palette: {
+      defaultColorMode: ColorMode.Custom,
       degreeColors: createDefaultDegreeColors(19)
     },
     layouts: [layout],
@@ -731,7 +912,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     folderPath,
     tuningRef: tuningReference(tuning),
     cycleLength: bundle.tuning.cycleLength,
-    defaultColorMode: 0,
+    defaultColorMode: bundle.palette.defaultColorMode,
     degreeColors: bundle.palette.degreeColors
   });
   const orderedScales = [...bundle.scales].sort((left, right) => {
@@ -952,14 +1133,19 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
     };
   });
   const palette = source.palette ?? {
+    defaultColorMode: ColorMode.Custom,
     degreeColors: source.degreeColors
   };
+  const defaultColorMode = numberOr(palette.defaultColorMode, ColorMode.Custom);
   return {
     objectIdHex: source.objectIdHex,
     name: source.name,
     folderPath: stringOr(source.folderPath, "/"),
     tuning,
     palette: {
+      defaultColorMode: Object.values(ColorMode).includes(defaultColorMode as ColorModeValue)
+        ? defaultColorMode as ColorModeValue
+        : ColorMode.Custom,
       degreeColors: normalizeScaleDegreeColors(
         Array.isArray(palette.degreeColors) ? palette.degreeColors : createDefaultDegreeColors(cycleLength),
         cycleLength

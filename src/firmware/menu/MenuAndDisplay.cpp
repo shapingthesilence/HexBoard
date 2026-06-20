@@ -1173,7 +1173,7 @@ PersistentCallbackInfo callbackInfoDynamicJIRatioTable = {
 GEMItem menuItemSelectDynamicJIRatioTable("JI Table", dynamicJIRatioTable, selectDynamicJIRatioTable, universalSaveCallback,
                                           reinterpret_cast<void*>(&callbackInfoDynamicJIRatioTable));
 
-SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Diatonic", DIATONIC_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE }, { "Tiered", TIERED_COLOR_MODE } };
+SelectOptionByte optionByteColor[] = { { "Rainbow", RAINBOW_MODE }, { "Diatonic", DIATONIC_COLOR_MODE }, { "Alt", ALTERNATE_COLOR_MODE }, { "Fifths", RAINBOW_OF_FIFTHS_MODE }, { "Piano", PIANO_COLOR_MODE }, { "Alt Piano", PIANO_ALT_COLOR_MODE }, { "Filament", PIANO_INCANDESCENT_COLOR_MODE }, { "Custom", CUSTOM_COLOR_MODE } };
 GEMSelect selectColor(sizeof(optionByteColor) / sizeof(SelectOptionByte), optionByteColor);
 PersistentCallbackInfo callbackInfoColorMode = {
   static_cast<uint8_t>(SettingKey::ColorMode),

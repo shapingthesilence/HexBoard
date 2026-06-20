@@ -1,5 +1,6 @@
 #include "../FirmwareModule.h"
 #include "../app/DiagnosticsTiming.h"
+#include "../app/RuntimeDefaults.h"
 #include "../hardware/GridState.h"
 #include "../hardware/LedRender.h"
 #include "../model/PitchAssignment.h"
@@ -637,6 +638,7 @@ bool applyUserGeometryRuntimeScale(const GeometryObjectSlot& object) {
 
 bool applyUserGeometryRuntimeColorMap(const GeometryObjectSlot& object) {
   uint16_t cycleLength = 0;
+  uint8_t defaultColorMode = CUSTOM_COLOR_MODE;
   const uint8_t* degreeColors = nullptr;
   uint16_t degreeColorLength = 0;
   if (!presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_SCALE_COLOR_CYCLE_LENGTH, cycleLength)
@@ -648,6 +650,10 @@ bool applyUserGeometryRuntimeColorMap(const GeometryObjectSlot& object) {
   if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
     sendToLog("Geometry runtime color map apply rejected: cycle length is out of range.");
     return false;
+  }
+  presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_SCALE_COLOR_DEFAULT_COLOR_MODE, defaultColorMode);
+  if (defaultColorMode > DIATONIC_COLOR_MODE) {
+    defaultColorMode = CUSTOM_COLOR_MODE;
   }
 
   for (uint16_t degree = 0; degree < MAX_SCALE_DIVISIONS; ++degree) {
@@ -674,6 +680,8 @@ bool applyUserGeometryRuntimeColorMap(const GeometryObjectSlot& object) {
 
   userGeometryRuntimePaletteActive = true;
   userGeometryRuntimeActive = true;
+  colorMode = defaultColorMode;
+  settings[static_cast<uint8_t>(SettingKey::ColorMode)] = colorMode;
   setLEDcolorCodes();
   return true;
 }

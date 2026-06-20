@@ -201,6 +201,7 @@ volatile uint8_t activeSynthWaveFrameCount = 1;
 volatile uint8_t activeSynthWavetableMipLevelCount = 1;
 byte synthWavetableMipOctaveOffset = SYNTH_WAVETABLE_MIP_OCTAVE_OFFSET_ZERO;
 uint16_t synthWavetableFramePositionByAmount[128] = {};
+uint8_t synthFxModScaleByDepth[128][128] = {};
 bool userSynthWavetableAvailable = false;
 void setActiveSynthWaveFrameCount(uint8_t frameCount);
 constexpr int16_t SYNTH_PITCH_MOD_Q4_SCALE = 16;
@@ -942,7 +943,7 @@ inline uint8_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue) {
 }
 
 inline uint8_t RAM_FUNC(scaleSynthFxModDepth)(uint8_t depth, uint8_t value) {
-  return static_cast<uint8_t>((static_cast<uint16_t>(value) * (static_cast<uint16_t>(depth) + 1u)) >> 7);
+  return synthFxModScaleByDepth[depth & 0x7F][value & 0x7F];
 }
 
 inline int16_t RAM_FUNC(effectEnvelopeModValue)(uint8_t envelopeIndex, uint8_t target, const EnvelopeState& env) {
@@ -1407,6 +1408,15 @@ void rebuildSynthWavetableFramePositionLookup(uint8_t frameCount) {
   }
 }
 
+void initializeSynthFxModScaleLookup() {
+  for (uint16_t depth = 0; depth < 128; ++depth) {
+    for (uint16_t value = 0; value < 128; ++value) {
+      synthFxModScaleByDepth[depth][value] =
+        static_cast<uint8_t>((value * (depth + 1u)) >> 7);
+    }
+  }
+}
+
 void setActiveSynthWaveFrameCount(uint8_t frameCount) {
   uint8_t boundedFrameCount = frameCount;
   if (boundedFrameCount < 1) {
@@ -1421,6 +1431,7 @@ void setActiveSynthWaveFrameCount(uint8_t frameCount) {
 
 void initializeSynthWaveTables() {
   memcpy(synthVibratoSine, waveSineSource, SYNTH_WAVE_SAMPLE_COUNT);
+  initializeSynthFxModScaleLookup();
   initializeSynthPitchModLookup();
   setActiveSynthWaveFrameCount(1);
   setActiveSynthWavetableMipLevelCount(1);
@@ -1701,7 +1712,9 @@ inline uint16_t RAM_FUNC(synthWavetableMipHarmonicLimit)(uint8_t level) {
     case 0: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_0;
     case 1: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_1;
     case 2: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_2;
-    default: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_3;
+    case 3: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_3;
+    case 4: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_4;
+    default: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_5;
   }
 }
 

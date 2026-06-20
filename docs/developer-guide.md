@@ -141,7 +141,9 @@ Current web source layout:
   `ApplyToRuntime` only; `Save to HexBoard` writes all bundle objects with
   `SaveToFlash`. Bundle `folderPath` is encoded into each unpacked `UserTuning`,
   `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` object
-  written to the device.
+  written to the device. The Scales subtab owns both `includedDegrees` editing
+  and the bundle `DefaultColorMode` selector; the preview board resolves colors
+  through that mode, with `Custom` using the bundle scale-degree palette.
   Scales are edited with `includedDegrees` only; the protected `All Notes`
   scale is normalized into every bundle, tracks the current tuning cycle length,
   and is not editable or deletable. The text input validates on blur so
@@ -213,7 +215,7 @@ total-transfer deadline, and sends `TRANSFER_ABORT` if a read stalls so firmware
 can clear the active read transfer immediately. Device-to-host synth wavetable
 reads keep only the object metadata prefix in the read-transfer state and stream
 the wavetable sample file as each outgoing chunk is ACKed. New files contain a
-`65,536`-byte four-level fixed mip table, while legacy `16,384`-byte base-only
+`98,304`-byte six-level fixed mip table, while base-only `16,384`-byte
 files remain readable; both paths avoid a full wavetable-object heap allocation
 before the transfer screen can open. Device-to-host and host-to-device synth
 wavetable transfers stream the sample-bearing object through temporary LittleFS
@@ -462,7 +464,7 @@ Important implementation details:
   `0x2000`, live in the `/Built In` folder, and are not stored in
   `/layouts.dat`
 - synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `9`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters plus a wavetable folder/name dependency, but do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving the new wavetable dependency from the legacy `Waveform` byte
-- user synth wavetables are stored as a named catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `64` entries, and per-table sample files named from each `16`-byte wavetable object id; new sample files contain four fixed mip levels with `32` frames and `512` samples per frame at harmonic limits `255`, `96`, `48`, and `24` (`65,536` bytes total), while legacy `16,384`-byte base-only files are still accepted and expanded in RAM. The selected wavetable is also snapshotted per profile in `/profile_wavetables.dat` with magic `PWT`, version `1`, so loading a profile restores its folder/name wavetable reference before runtime sync. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
+- user synth wavetables are stored as a named catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `64` entries, and per-table sample files named from each `16`-byte wavetable object id; new sample files contain six fixed mip levels with `32` frames and `512` samples per frame at harmonic limits `255`, `96`, `48`, `24`, `12`, and `6` (`98,304` bytes total), while `16,384`-byte base-only files are still accepted and expanded in RAM. The selected wavetable is also snapshotted per profile in `/profile_wavetables.dat` with magic `PWT`, version `1`, so loading a profile restores its folder/name wavetable reference before runtime sync. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
 - user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `1`, up to `127` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. Runtime Apply currently supports generated EDO/equal-step user tunings, vector layouts, included-degree scales, scale color maps, and format-1 explicit button maps. The visible OLED `Tuning`, `Layout`, and `Scales` pages are rebuilt from generated read-only factory geometry plus saved user geometry: tuning entries are the bundle anchors, layout and scale entries are filtered by the selected tuning object id, and save/delete requests defer a menu rebuild like synth preset menus. It does not yet support Scala/cents-table pitch lookup, profile references, or settings persistence for the selected user geometry bundle.
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
@@ -640,11 +642,10 @@ advance, phase warping, waveform reads, amp-envelope level, mixing, drive, and
 output scaling remain audio-rate. When only global sources such as the wheel or
 LFO modulate `WT Pos`, the cached frame-pair position is shared by all voices;
 when an FX envelope targets `WT Pos`, each voice caches its own frame context.
-FX-envelope modulation depth is recomputed with one small multiply during the
-control refresh instead of using a `128 x 128` RAM scale table, and FX envelopes
-advance by the full `16` audio ticks on each control refresh so long envelope
-timing stays aligned while worst-case blocks avoid rebuilding modulation every
-sample.
+FX-envelope modulation depth reads a startup-filled `128 x 128` RAM scale table
+instead of multiplying in the control refresh, and FX envelopes advance by the
+full `16` audio ticks on each control refresh so long envelope timing stays
+aligned while worst-case blocks avoid rebuilding modulation every sample.
 
 New user wavetables are saved through the named wavetable catalog. Presets store
 only the wavetable folder/name dependency, so a missing dependency falls back to
@@ -652,7 +653,7 @@ only the wavetable folder/name dependency, so a missing dependency falls back to
 has a `UWT` header with version, frame count, sample count, and CRC32, then
 `32 * 512` unsigned waveform bytes; it is still loadable as `/User/UserTbl` for
 compatibility. Preset-sync object type `0x0B` accepts either the legacy
-base-only sample TLV or the new `MipLevels = 4` fixed-mip sample TLVs before
+base-only sample TLV or the new `MipLevels = 6` fixed-mip sample TLVs before
 copying the table into active RAM and optionally writing the named catalog entry
 through the flash-safe mute wrapper.
 
@@ -693,13 +694,16 @@ LEDs with green accented beats and red non-accented beats.
 
 The Advanced-menu `LED Test` item is intentionally transient. `ledTestMode` is a RAM-only selector state, not a `SettingKey`; `previewLedTest()` updates it while the select is edited, `lightUpLEDs()` renders a solid all-LED test frame while it is nonzero, and both the save callback and preview-reset path restore it to `Off`. The test colors use direct raw RGB channel values through `strip.Color()` instead of `getLEDcode()`, so they bypass perceptual hue mapping while still passing through the final current limiter. Do not add it to `factoryDefaults` or bump `CURRENT_SETTINGS_VERSION`.
 
-Runtime geometry Apply routes user-generated colors through the active
-`ScaleColorMap` before falling back to factory color modes. Manual per-button
-colors from an `ExplicitButtonMap` override the palette and should not be
+Runtime geometry Apply loads the active `ScaleColorMap` and sets `ColorMode`
+from its `DefaultColorMode` TLV. `Custom` renders the map's scale-degree
+palette; other modes use the same generated firmware color modes available
+from the device menu. Manual per-button
+colors from an `ExplicitButtonMap` override the palette only while `Custom` is
+selected and should not be
 recalculated when root/key or transposition changes. `setLEDcolorCodes()` caps
-only the resting value for those user-generated colors at `VALUE_NORMAL` before
-the usual `Rest Bright` scaling, while play and animation caches still use the
-full selected color target.
+only the resting value for user-generated colors at `VALUE_NORMAL` before the
+usual `Rest Bright` scaling, while play and animation caches still use the full
+selected color target.
 
 Startup has a separate bounded LED self-check in `runBootLedSelfCheck()`. Normal boots skip RGB color-channel flashes and run only the smoother rainbow splash, followed by `fadeToNormalLedFrame()` so the resting frame fades in. The persisted `BootAnimationEnabled` setting gates this whole path. The splash center is `bootLedSplashCenterIndex()`, one physical hex to the right of the active layout center; on the default `12 EDO` Wicki-Hayden layout this is `D4` rather than `C4`. The seven command LEDs are overwritten each splash frame by `setBootCommandButtonFade()` so they fade separately instead of joining the splash.
 

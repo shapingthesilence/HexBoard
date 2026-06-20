@@ -21,7 +21,7 @@ constexpr byte DYNAMIC_JI_RATIO_TABLE_37_LIMIT = 37;
 constexpr byte DYNAMIC_JI_RATIO_TABLE_41_LIMIT = 41;
 
 constexpr byte RAINBOW_MODE = 0;
-constexpr byte TIERED_COLOR_MODE = 1;
+constexpr byte CUSTOM_COLOR_MODE = 1;
 constexpr byte ALTERNATE_COLOR_MODE = 2;
 constexpr byte RAINBOW_OF_FIFTHS_MODE = 3;
 constexpr byte PIANO_ALT_COLOR_MODE = 4;

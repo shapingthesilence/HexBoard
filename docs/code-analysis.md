@@ -395,9 +395,10 @@ and cannot be edited or deleted. The preview paintbrush includes an eyedropper
 subtool that samples a preview key color into the brush without writing a
 button override.
 EDO and equal-step tunings expose note labels and `A = x Hz`; labels default to
-degree-number strings, validate on exit, and encode through `KeyLabels`. The
-preview paintbrush writes per-button color overrides into the active layout,
-using the same explicit override records as the selected-key inspector.
+degree-number strings, validate on exit, and encode through `KeyLabels`. When
+`Custom` is the selected default color mode, the preview paintbrush writes
+per-button color overrides into the active layout, using the same explicit
+override records as the selected-key inspector.
 Equal-step tunings expose step cents and cycle length in the editor; their
 protocol period metadata is derived from those values during encoding. Scala
 `.scl` files are parsed in the web app into cents-table tuning objects, and
@@ -455,8 +456,8 @@ transfer at once. The web client treats object-read timeouts as inactivity
 timeouts and sends `TRANSFER_ABORT` when a read stalls; firmware clears matching
 read or write transfers on abort. Synth wavetable reads keep only the metadata
 prefix in transfer RAM and stream the sample file into outgoing chunks as ACKs
-arrive; new files are `65,536`-byte four-level fixed mip tables and legacy files
-are `16,384`-byte base-only tables. Synth wavetable writes also spool the raw
+arrive; new files are `98,304`-byte six-level fixed mip tables and base-only
+files are `16,384` bytes. Synth wavetable writes also spool the raw
 object and concatenated sample TLVs through LittleFS temp files so uploads do
 not require an object-sized heap allocation; incoming raw-object writes keep the
 temp file open until `TRANSFER_END` closes it. One-frame control messages,
@@ -506,7 +507,7 @@ If `/settings.dat` is missing, `load_settings()` sets the RAM-only `settingsFile
 Current color modes include:
 
 - `Rainbow`
-- `Tiered`
+- `Custom`
 - `Alt`
 - `Fifths`
 - `Piano`
@@ -515,12 +516,14 @@ Current color modes include:
 - `Diatonic`
 
 The web layout bundle model now treats the bundle's single custom
-scale-degree palette as the replacement path for `Tiered` on user-generated
-geometry. When a compatible geometry bundle is applied, firmware renders the
-loaded `ScaleColorMap` before falling back to the factory color modes, and then
-applies explicit per-button color overrides. For those user-generated colors,
-the resting LED cache caps value at `VALUE_NORMAL` before `Rest Bright` scaling
-so full selected values remain available to play and animation states.
+scale-degree palette as the `Custom` color mode for user-generated geometry.
+When a compatible geometry bundle is applied, firmware reads the
+`ScaleColorMap` `DefaultColorMode`: `Custom` renders the loaded scale-degree
+palette, while the other values render the generated firmware color modes. It
+then applies explicit per-button color overrides only while `Custom` is active.
+For user-generated colors, the resting LED cache caps value at `VALUE_NORMAL`
+before `Rest Bright` scaling so full selected values remain available to play
+and animation states.
 
 Current animation modes include button, star, splash, orbit, octave, by-note, beams, reversed star/splash variants, MIDI-in highlighting, and none.
 
@@ -593,19 +596,18 @@ Key implementation facts:
   contexts are cached per voice, with note start/release/reset forcing an
   immediate cache refresh. Each voice chooses its mip from the highest expected
   pitch after pitch modulation and vibrato depth by comparing the Nyquist-safe
-  harmonic limit to the fixed limits `255`, `96`, `48`, and `24`; the transient
+  harmonic limit to the fixed limits `255`, `96`, `48`, `24`, `12`, and `6`; the transient
   `Mip Oct` menu shifts octave thresholds and is not persisted. Per-voice phase
   increment and phase-warp depths linearly slew between cached targets at audio
   rate, while oscillator phase advance, amp-envelope level, phase warping,
   waveform reads, mixing, drive, and output scaling remain audio-rate. If only
   global sources modulate `WT Pos`, the cached frame-pair position is shared
   across active voices; if an FX envelope targets `WT Pos`, each voice caches
-  its own frame context. FX-envelope modulation depth is recomputed during the
-  control refresh instead of using a `128 x 128` RAM scale table, and FX
-  envelopes advance by the full `16` audio ticks on each control refresh to
-  preserve long envelope timing.
-- Named user wavetable object type `0x0B` accepts the new four-level fixed mip
-  payload (`65,536` bytes) and the legacy base-only payload (`16,384` bytes).
+  its own frame context. FX-envelope modulation depth uses a startup-filled
+  `128 x 128` RAM scale table again, and FX envelopes advance by the full `16`
+  audio ticks on each control refresh to preserve long envelope timing.
+- Named user wavetable object type `0x0B` accepts the new six-level fixed mip
+  payload (`98,304` bytes) and the base-only payload (`16,384` bytes).
   Firmware validates the TLVs, copies the base data to `activeSynthWaveTable`,
   stores or rebuilds the extra fixed mip levels in RAM, and persists new objects
   through the named wavetable catalog instead of writing `/user_wavetable.dat`.
@@ -738,9 +740,9 @@ wavetable reference for each profile is stored separately in
 record per profile; the firmware loads that file into a stack-local struct only
 while saving or loading profile references. Each catalog entry has a valid flag,
 stable `16`-byte object id, name, folder path, and a sample-file path generated
-from the object id. New sample files contain four fixed mip
+from the object id. New sample files contain six fixed mip
 levels with `32` frames and `512` samples per frame at harmonic limits `255`,
-`96`, `48`, and `24` (`65,536` unsigned bytes total). Legacy `16,384`-byte
+`96`, `48`, `24`, `12`, and `6` (`98,304` unsigned bytes total). `16,384`-byte
 base-only sample files are still accepted and expanded into RAM mips when
 loaded. The legacy
 `/user_wavetable.dat` `UWT` file is still loadable only through the compatibility
@@ -852,7 +854,7 @@ Run or manually verify the areas your change touches:
 - synth off, mono retrigger, mono legato, arpeggio, portamento, and poly modes
 - command-button wheels
 - rotary panic stop
-- color modes, including `Tiered` and `Diatonic`
+- color modes, including `Custom` and `Diatonic`
 - `ANIMATE_MIDI_IN` if external MIDI display behavior changed
 - `DisplayNotes` compact menu badge, full screensaver-wake overlay in `12 EDO`, 12-EDO chord labels, a non-12 tuning, chord release, and screensaver wake
 - delegated-control enter, LED update, button event, and exit SysEx

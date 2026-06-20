@@ -488,14 +488,14 @@ void setLEDcolorCodes() {
       if (paletteBeginsAtKeyCenter) {
         paletteIndex = current.keyDegree(paletteIndex);
       }
-      if (userGeometryRuntimeActive && userGeometryRuntimePaletteActive) {
+      if (userGeometryRuntimeActive && userGeometryRuntimePaletteActive && colorMode == CUSTOM_COLOR_MODE) {
         setColor = userGeometryRuntimePalette.getColor(paletteIndex);
         userGeometryColorApplied = true;
-      } else if (userGeometryRuntimeActive && colorMode == TIERED_COLOR_MODE) {
+      } else if (userGeometryRuntimeActive && colorMode == CUSTOM_COLOR_MODE) {
         setColor = { 360 * ((float)paletteIndex / (float)current.tuning().cycleLength), SAT_VIVID, VALUE_NORMAL };
       } else {
         switch (colorMode) {
-          case TIERED_COLOR_MODE:  // This mode sets the color based on the palettes defined above.
+          case CUSTOM_COLOR_MODE:  // This mode sets the color based on the palettes defined above.
             setColor = palette[current.tuningIndex].getColor(paletteIndex);
             break;
           case RAINBOW_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
@@ -743,7 +743,7 @@ void setLEDcolorCodes() {
             break;
         }
       }
-      if (userGeometryRuntimeActive && userGeometryRuntimeButtonColorActive[i]) {
+      if (userGeometryRuntimeActive && userGeometryRuntimeButtonColorActive[i] && colorMode == CUSTOM_COLOR_MODE) {
         setColor = userGeometryRuntimeButtonColor[i];
         userGeometryColorApplied = true;
       }
