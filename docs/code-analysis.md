@@ -764,12 +764,16 @@ tuning/layout/scale/palette/button-map state, rebuilds layout/scale/pitch
 assignment, and uses `ReferenceMilliHz` as an A4 pitch offset for synth and MIDI
 retuning. The OLED tuning/layout/scale pages are fixed-memory scrolling
 browsers backed by factory and saved objects. A shared Back-plus-ten-row GEM
-slot set is attached to the active page, and the backing labels slide as the
-selection reaches the top or bottom row. Built-in entries are shown flat even
-though their object metadata lives in `/Built In`; saved user entries include
-folder/name labels only when needed. Selecting a `UserTuning` loads its linked
-first layout, first scale, color map, and explicit map; the `Layout` and
-`Scales` pages then expose the other objects that reference the selected tuning.
+slot set is attached to the active page, and the backing window advances in
+ten-entry pages when the selection scrolls past the last visible row. Built-in
+entries are shown flat even though their object metadata lives in `/Built In`;
+saved user entries include folder/name labels only when needed. Selecting a
+`UserTuning` loads its linked first layout, first scale, color map, and explicit
+map; the `Layout` and `Scales` pages then expose the other objects that
+reference the selected tuning.
+`dealWithRotary()` calls `handleUserGeometryMenuKey()` before passing up/down
+turns to GEM so virtual page boundaries redraw once instead of first wrapping to
+Back and then redrawing the next fixed window.
 Scala/cents-list tunings still save as raw objects but are hidden from the
 runtime tuning menu until table-backed pitch lookup exists.
 

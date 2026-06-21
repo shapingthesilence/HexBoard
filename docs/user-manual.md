@@ -100,8 +100,10 @@ saved, the preset name is shown with a leading `*`.
 Use this section to choose the tuning or geometry bundle the whole board runs
 on. The page is a fixed-memory scrolling browser: factory tunings appear as
 flat entries, while saved user tunings can include a folder/name label when
-needed. Selecting a tuning also loads the first linked layout, scale, color map,
-and matching explicit button map so the board is immediately playable.
+needed. Scrolling past the last visible entry jumps to the first entry in the
+next window, matching the usual menu page feel. Selecting a tuning also loads
+the first linked layout, scale, color map, and matching explicit button map so
+the board is immediately playable.
 
 The Dynamic JI controls are temporarily not in this page while the menu layout
 is being simplified for the 2.0 release.

@@ -11,6 +11,7 @@
 #include "../midi/DelegatedControl.h"
 #include "../midi/NoteDispatch.h"
 #include "GridScanRotary.h"
+#include "../menu/GeometryMenu.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
 #include "../synth/SynthAudio.h"
@@ -228,9 +229,12 @@ void dealWithRotary() {
     if (storeRotaryTurn != 0) {
       bool turnIsClockwise = (storeRotaryTurn == 8);
       dismissPlayedNotesOverlayForMenuInput();
-      menu.registerKeyPress(rotaryInvert
-                              ? (turnIsClockwise ? GEM_KEY_DOWN : GEM_KEY_UP)
-                              : (turnIsClockwise ? GEM_KEY_UP : GEM_KEY_DOWN));
+      byte keyCode = rotaryInvert
+                       ? (turnIsClockwise ? GEM_KEY_DOWN : GEM_KEY_UP)
+                       : (turnIsClockwise ? GEM_KEY_UP : GEM_KEY_DOWN);
+      if (!handleUserGeometryMenuKey(keyCode)) {
+        menu.registerKeyPress(keyCode);
+      }
       noteOverlayDirty = true;
       storeRotaryTurn = 0;
       screenTime = 0;
