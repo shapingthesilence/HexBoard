@@ -1,6 +1,8 @@
 #include "../FirmwareModule.h"
 #include "GeometryMenu.h"
+#include "MenuFolderUtils.h"
 #include "MenuAndDisplay.h"
+#include "SynthPresetMenu.h"
 #include "VirtualListMenu.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../hardware/GridState.h"
@@ -19,11 +21,23 @@ enum class UserGeometryMenuKind : uint8_t {
 constexpr uint16_t USER_GEOMETRY_MENU_INVALID_HANDLE = 0xFFFFu;
 constexpr uint16_t USER_GEOMETRY_MENU_MAX_ENTRIES = GEOMETRY_OBJECT_MAX_COUNT + 256;
 
-uint16_t userGeometryVirtualHandles[USER_GEOMETRY_MENU_MAX_ENTRIES] = {};
+enum class UserGeometryMenuRowKind : uint8_t {
+  Folder,
+  Item
+};
+
+struct UserGeometryMenuRow {
+  UserGeometryMenuRowKind kind = UserGeometryMenuRowKind::Item;
+  uint16_t handle = USER_GEOMETRY_MENU_INVALID_HANDLE;
+};
+
+UserGeometryMenuRow userGeometryVirtualRows[USER_GEOMETRY_MENU_MAX_ENTRIES] = {};
 uint16_t userGeometryVirtualCount = 0;
 UserGeometryMenuKind userGeometryVirtualKind = UserGeometryMenuKind::Tuning;
 bool userGeometryMenuRebuildPending = false;
 bool userGeometryMenuOverflowLogged = false;
+char userGeometryMenuCurrentFolder[GEOMETRY_OBJECT_FOLDER_LENGTH] = "/";
+char userGeometryMenuTitleBuffer[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
 
 const char* userGeometryMenuTitle(UserGeometryMenuKind kind) {
   switch (kind) {
@@ -57,7 +71,19 @@ bool appendUserGeometryHandle(uint16_t handle) {
     }
     return false;
   }
-  userGeometryVirtualHandles[userGeometryVirtualCount++] = handle;
+  userGeometryVirtualRows[userGeometryVirtualCount++] = { UserGeometryMenuRowKind::Item, handle };
+  return true;
+}
+
+bool appendUserGeometryFolder(uint16_t handle) {
+  if (userGeometryVirtualCount >= USER_GEOMETRY_MENU_MAX_ENTRIES) {
+    if (!userGeometryMenuOverflowLogged) {
+      sendToLog("User geometry menu truncated: too many entries.");
+      userGeometryMenuOverflowLogged = true;
+    }
+    return false;
+  }
+  userGeometryVirtualRows[userGeometryVirtualCount++] = { UserGeometryMenuRowKind::Folder, handle };
   return true;
 }
 
@@ -225,25 +251,87 @@ bool includeBuiltinGeometryMetadataInMenu(UserGeometryMenuKind kind, const Built
   return false;
 }
 
+const GeometryObjectSlot* userGeometryObjectForRow(const UserGeometryMenuRow& row) {
+  if (row.handle >= geometryObjects.size() || !geometryObjects[row.handle].valid) {
+    return nullptr;
+  }
+  return &geometryObjects[row.handle];
+}
+
+bool userGeometryFolderRowPath(const UserGeometryMenuRow& row, char* output, size_t outputLength) {
+  const GeometryObjectSlot* object = userGeometryObjectForRow(row);
+  return object
+         && menuFolderImmediateChildPath(object->folderPath,
+                                         userGeometryMenuCurrentFolder,
+                                         output,
+                                         outputLength);
+}
+
+bool userGeometryFolderAlreadyListed(const char* childFolderPath) {
+  char existing[GEOMETRY_OBJECT_FOLDER_LENGTH] = {};
+  for (uint16_t i = 0; i < userGeometryVirtualCount; ++i) {
+    if (userGeometryVirtualRows[i].kind == UserGeometryMenuRowKind::Folder
+        && userGeometryFolderRowPath(userGeometryVirtualRows[i], existing, sizeof(existing))
+        && menuFolderEquals(existing, childFolderPath)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void updateUserGeometryMenuTitle(UserGeometryMenuKind kind) {
+  if (kind != UserGeometryMenuKind::Tuning || menuFolderIsRoot(userGeometryMenuCurrentFolder)) {
+    snprintf(userGeometryMenuTitleBuffer,
+             sizeof(userGeometryMenuTitleBuffer),
+             "%s",
+             userGeometryMenuTitle(kind));
+    return;
+  }
+  synthPresetFolderLabel(userGeometryMenuCurrentFolder,
+                         userGeometryMenuTitleBuffer,
+                         sizeof(userGeometryMenuTitleBuffer));
+}
+
 void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
   userGeometryVirtualKind = kind;
   userGeometryVirtualCount = 0;
   userGeometryMenuOverflowLogged = false;
 
-  for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
-    BuiltinGeometryMetadata metadata;
-    if (builtinGeometryMetadataByOrdinal(i, metadata)
-        && includeBuiltinGeometryMetadataInMenu(kind, metadata)) {
-      appendUserGeometryHandle(metadata.handle);
+  if (kind != UserGeometryMenuKind::Tuning || menuFolderIsRoot(userGeometryMenuCurrentFolder)) {
+    for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
+      BuiltinGeometryMetadata metadata;
+      if (builtinGeometryMetadataByOrdinal(i, metadata)
+          && includeBuiltinGeometryMetadataInMenu(kind, metadata)) {
+        appendUserGeometryHandle(metadata.handle);
+      }
+    }
+  }
+
+  if (kind == UserGeometryMenuKind::Tuning) {
+    char childFolder[GEOMETRY_OBJECT_FOLDER_LENGTH] = {};
+    for (size_t i = 0; i < geometryObjects.size(); ++i) {
+      const GeometryObjectSlot& object = geometryObjects[i];
+      if (object.valid
+          && includeGeometryObjectInMenu(kind, object)
+          && menuFolderImmediateChildPath(object.folderPath,
+                                          userGeometryMenuCurrentFolder,
+                                          childFolder,
+                                          sizeof(childFolder))
+          && !userGeometryFolderAlreadyListed(childFolder)) {
+        appendUserGeometryFolder(static_cast<uint16_t>(i));
+      }
     }
   }
 
   for (size_t i = 0; i < geometryObjects.size(); ++i) {
     const GeometryObjectSlot& object = geometryObjects[i];
-    if (object.valid && includeGeometryObjectInMenu(kind, object)) {
+    bool inActiveFolder = kind != UserGeometryMenuKind::Tuning
+                          || menuFolderEntryBelongsToCurrentFolder(object.folderPath, userGeometryMenuCurrentFolder);
+    if (object.valid && inActiveFolder && includeGeometryObjectInMenu(kind, object)) {
       appendUserGeometryHandle(static_cast<uint16_t>(i));
     }
   }
+  updateUserGeometryMenuTitle(kind);
 }
 
 uint16_t userGeometryVirtualCountProvider(void*) {
@@ -259,7 +347,17 @@ bool userGeometryVirtualLabelProvider(void*, uint16_t index, char* output, size_
     return false;
   }
 
-  uint16_t handle = userGeometryVirtualHandles[index];
+  const UserGeometryMenuRow& row = userGeometryVirtualRows[index];
+  if (row.kind == UserGeometryMenuRowKind::Folder) {
+    char folderPath[GEOMETRY_OBJECT_FOLDER_LENGTH] = {};
+    if (!userGeometryFolderRowPath(row, folderPath, sizeof(folderPath))) {
+      return false;
+    }
+    synthPresetFolderLabel(folderPath, output, outputLength);
+    return output[0] != '\0';
+  }
+
+  uint16_t handle = row.handle;
   if (isBuiltinGeometryHandle(handle)) {
     BuiltinGeometryMetadata metadata;
     if (!builtinGeometryMetadataByHandle(handle, metadata)) {
@@ -274,6 +372,15 @@ bool userGeometryVirtualLabelProvider(void*, uint16_t index, char* output, size_
   }
   snprintf(output, outputLength, "%s", geometryObjects[handle].name);
   return true;
+}
+
+VirtualListMenuRowType userGeometryVirtualRowType(void*, uint16_t index) {
+  if (index >= userGeometryVirtualCount) {
+    return VirtualListMenuRowType::Button;
+  }
+  return userGeometryVirtualRows[index].kind == UserGeometryMenuRowKind::Folder
+           ? VirtualListMenuRowType::Link
+           : VirtualListMenuRowType::Button;
 }
 
 void loadUserGeometryHandle(UserGeometryMenuKind kind, uint16_t handle) {
@@ -312,7 +419,30 @@ void userGeometryVirtualSelect(void*, uint16_t index) {
     redrawVirtualListMenu();
     return;
   }
-  loadUserGeometryHandle(userGeometryVirtualKind, userGeometryVirtualHandles[index]);
+  const UserGeometryMenuRow& row = userGeometryVirtualRows[index];
+  if (row.kind == UserGeometryMenuRowKind::Folder) {
+    char childFolder[GEOMETRY_OBJECT_FOLDER_LENGTH] = {};
+    if (userGeometryFolderRowPath(row, childFolder, sizeof(childFolder))) {
+      snprintf(userGeometryMenuCurrentFolder, sizeof(userGeometryMenuCurrentFolder), "%s", childFolder);
+      rebuildUserGeometryVirtualList(userGeometryVirtualKind);
+      resetVirtualListMenuSelection();
+    }
+    return;
+  }
+  loadUserGeometryHandle(userGeometryVirtualKind, row.handle);
+}
+
+bool userGeometryVirtualBack(void*) {
+  if (userGeometryVirtualKind != UserGeometryMenuKind::Tuning
+      || menuFolderIsRoot(userGeometryMenuCurrentFolder)) {
+    return false;
+  }
+  menuFolderParentPath(userGeometryMenuCurrentFolder,
+                       userGeometryMenuCurrentFolder,
+                       sizeof(userGeometryMenuCurrentFolder));
+  rebuildUserGeometryVirtualList(userGeometryVirtualKind);
+  resetVirtualListMenuSelection();
+  return true;
 }
 
 void userGeometryVirtualClose(void*) {
@@ -320,12 +450,18 @@ void userGeometryVirtualClose(void*) {
 }
 
 void openUserGeometryMenu(UserGeometryMenuKind kind) {
+  snprintf(userGeometryMenuCurrentFolder,
+           sizeof(userGeometryMenuCurrentFolder),
+           "%s",
+           SYNTH_PRESET_ROOT_FOLDER);
   rebuildUserGeometryVirtualList(kind);
   VirtualListMenuProvider provider;
-  provider.title = userGeometryMenuTitle(kind);
+  provider.title = userGeometryMenuTitleBuffer;
   provider.getCount = userGeometryVirtualCountProvider;
   provider.getLabel = userGeometryVirtualLabelProvider;
+  provider.getRowType = userGeometryVirtualRowType;
   provider.select = userGeometryVirtualSelect;
+  provider.back = userGeometryVirtualBack;
   provider.close = userGeometryVirtualClose;
   provider.emptyLabel = emptyUserGeometryLabel(kind);
   openVirtualListMenu(provider);

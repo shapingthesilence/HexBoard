@@ -15,9 +15,6 @@ extern GEMPage menuPageTuning;
 extern GEMPage menuPageLayout;
 extern GEMPage menuPageScales;
 extern GEMPage menuPageSynth;
-extern GEMPage menuPageSynthPresetSave;
-extern GEMPage menuPageSynthPresetLoad;
-extern GEMPage menuPageSynthWavetableLoad;
 
 void wakeDelegatedControlScreenForInput();
 void setupMenu();

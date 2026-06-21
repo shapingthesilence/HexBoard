@@ -8,5 +8,6 @@ extern char currentSynthWavetableMenuLabel[SYNTH_WAVETABLE_MENU_LABEL_LENGTH];
 
 void createSynthWavetableMenuItems();
 void updateCurrentSynthWavetableMenuLabel();
+void openSynthWavetableLoadMenu();
 void requestSynthWavetableMenuRebuild();
 void serviceSynthWavetableMenuRebuild();

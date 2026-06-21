@@ -17,6 +17,10 @@ static const unsigned char arrowLeftBits[] U8X8_PROGMEM = {
   0xc0, 0xc4, 0xc6, 0xc7, 0xc6, 0xc4, 0xc0, 0xc0
 };
 
+static const unsigned char arrowRightBits[] U8X8_PROGMEM = {
+  0xc0, 0xc4, 0xcc, 0xdc, 0xcc, 0xc4, 0xc0, 0xc0
+};
+
 static const unsigned char arrowButtonBits[] U8X8_PROGMEM = {
   0xc0, 0xc3, 0xc5, 0xc9, 0xc5, 0xc3, 0xc0, 0xc0
 };
@@ -92,6 +96,18 @@ void rowLabel(uint16_t itemIndex, char* output, size_t outputLength) {
   activeProvider.getLabel(activeProvider.context, providerIndex, output, outputLength);
 }
 
+VirtualListMenuRowType rowType(uint16_t itemIndex) {
+  uint16_t itemCount = providerItemCount();
+  if (itemIndex == VIRTUAL_LIST_BACK_INDEX || itemCount == 0 || !activeProvider.getRowType) {
+    return VirtualListMenuRowType::Button;
+  }
+  uint16_t providerIndex = static_cast<uint16_t>(itemIndex - 1);
+  if (providerIndex >= itemCount) {
+    return VirtualListMenuRowType::Button;
+  }
+  return activeProvider.getRowType(activeProvider.context, providerIndex);
+}
+
 void drawRows() {
   uint8_t perScreen = menuItemsPerScreen();
   uint16_t screenStart = static_cast<uint16_t>((currentItemIndex / perScreen) * perScreen);
@@ -114,8 +130,24 @@ void drawRows() {
       if (providerItemCount() == 0) {
         u8g2.setCursor(5, yText);
       } else {
-        u8g2.setCursor(11, yText);
-        u8g2.drawXBMP(5, yDraw, VIRTUAL_LIST_SPRITE_WIDTH, VIRTUAL_LIST_SPRITE_HEIGHT, arrowButtonBits);
+        switch (rowType(itemIndex)) {
+          case VirtualListMenuRowType::Link:
+            u8g2.setCursor(5, yText);
+            u8g2.drawXBMP(u8g2.getDisplayWidth() - 8,
+                          yDraw,
+                          VIRTUAL_LIST_SPRITE_WIDTH,
+                          VIRTUAL_LIST_SPRITE_HEIGHT,
+                          arrowRightBits);
+            break;
+          case VirtualListMenuRowType::Label:
+            u8g2.setCursor(5, yText);
+            break;
+          case VirtualListMenuRowType::Button:
+          default:
+            u8g2.setCursor(11, yText);
+            u8g2.drawXBMP(5, yDraw, VIRTUAL_LIST_SPRITE_WIDTH, VIRTUAL_LIST_SPRITE_HEIGHT, arrowButtonBits);
+            break;
+        }
       }
       printMenuString(label, menuItemFullLength());
     }
@@ -153,10 +185,17 @@ void drawScrollbar() {
                 static_cast<uint16_t>(scrollbarPosition + scrollbarHeight));
 }
 
+void handleBackRow() {
+  if (activeProvider.back && activeProvider.back(activeProvider.context)) {
+    return;
+  }
+  closeVirtualListMenu();
+}
+
 void selectCurrentItem() {
   uint16_t itemCount = providerItemCount();
   if (currentItemIndex == VIRTUAL_LIST_BACK_INDEX) {
-    closeVirtualListMenu();
+    handleBackRow();
     return;
   }
   if (itemCount == 0) {
@@ -211,7 +250,7 @@ bool handleVirtualListMenuKey(byte keyCode) {
       return true;
     case GEM_KEY_LEFT:
     case GEM_KEY_CANCEL:
-      closeVirtualListMenu();
+      handleBackRow();
       return true;
     default:
       return true;
@@ -234,6 +273,14 @@ void redrawVirtualListMenu() {
     drawPointer();
     drawScrollbar();
   } while (u8g2.nextPage());
+}
+
+void resetVirtualListMenuSelection() {
+  if (!active) {
+    return;
+  }
+  currentItemIndex = virtualItemCount() > 1 ? 1 : VIRTUAL_LIST_BACK_INDEX;
+  redrawVirtualListMenu();
 }
 
 void closeVirtualListMenu() {

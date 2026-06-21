@@ -1,140 +1,52 @@
 #include "../FirmwareModule.h"
-#include "SynthPresetMenu.h"
+#include "MenuFolderUtils.h"
 #include "MenuAndDisplay.h"
+#include "SynthPresetMenu.h"
+#include "VirtualListMenu.h"
 #include "../storage/SynthPresetStorage.h"
 
 namespace {
-constexpr uint8_t SYNTH_PRESET_MENU_PAGE_SIZE = 5;
-
 enum class SynthPresetMenuMode : uint8_t {
   Save,
   Load
 };
 
-struct SynthPresetMenuAction {
-  uint16_t presetIndex = 0;
-  int8_t pageDelta = 0;
-  bool createNew = false;
-  bool loadBlank = false;
-  SynthPresetMenuMode mode = SynthPresetMenuMode::Save;
+enum class SynthPresetMenuReturn : uint8_t {
+  Main,
+  SynthEditor
 };
 
-void saveSynthPresetMenu(GEMCallbackData callbackData);
-void loadSynthPresetMenu(GEMCallbackData callbackData);
-void pageSynthPresetMenu(GEMCallbackData callbackData);
-
-struct SynthPresetMenuSlotItem {
-  char label[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
-  SynthPresetMenuAction action = {};
-  GEMItem item;
-
-  SynthPresetMenuSlotItem(void (*callback)(GEMCallbackData), SynthPresetMenuMode mode)
-    : item(label, callback, reinterpret_cast<void*>(&action)) {
-    action.mode = mode;
-  }
+enum class SynthPresetMenuRowKind : uint8_t {
+  Action,
+  Folder,
+  Preset
 };
 
-char synthPresetSaveNewLabel[] = "New Preset";
-char synthPresetLoadBlankLabel[] = "Blank";
-char synthPresetPrevLabel[] = "Prev";
-char synthPresetNextLabel[] = "Next";
-
-SynthPresetMenuAction synthPresetSaveNewAction = {
-  0,
-  0,
-  true,
-  false,
-  SynthPresetMenuMode::Save
-};
-SynthPresetMenuAction synthPresetLoadBlankAction = {
-  0,
-  0,
-  false,
-  true,
-  SynthPresetMenuMode::Load
-};
-SynthPresetMenuAction synthPresetSavePrevAction = {
-  0,
-  -1,
-  false,
-  false,
-  SynthPresetMenuMode::Save
-};
-SynthPresetMenuAction synthPresetSaveNextAction = {
-  0,
-  1,
-  false,
-  false,
-  SynthPresetMenuMode::Save
-};
-SynthPresetMenuAction synthPresetLoadPrevAction = {
-  0,
-  -1,
-  false,
-  false,
-  SynthPresetMenuMode::Load
-};
-SynthPresetMenuAction synthPresetLoadNextAction = {
-  0,
-  1,
-  false,
-  false,
-  SynthPresetMenuMode::Load
+struct SynthPresetMenuRow {
+  SynthPresetMenuRowKind kind = SynthPresetMenuRowKind::Preset;
+  uint16_t index = 0;
 };
 
-GEMItem menuItemSaveSynthPresetNew(synthPresetSaveNewLabel,
-                                   saveSynthPresetMenu,
-                                   reinterpret_cast<void*>(&synthPresetSaveNewAction));
-GEMItem menuItemLoadSynthPresetBlank(synthPresetLoadBlankLabel,
-                                     loadSynthPresetMenu,
-                                     reinterpret_cast<void*>(&synthPresetLoadBlankAction));
-GEMItem menuItemSaveSynthPresetPrev(synthPresetPrevLabel,
-                                    pageSynthPresetMenu,
-                                    reinterpret_cast<void*>(&synthPresetSavePrevAction));
-GEMItem menuItemSaveSynthPresetNext(synthPresetNextLabel,
-                                    pageSynthPresetMenu,
-                                    reinterpret_cast<void*>(&synthPresetSaveNextAction));
-GEMItem menuItemLoadSynthPresetPrev(synthPresetPrevLabel,
-                                    pageSynthPresetMenu,
-                                    reinterpret_cast<void*>(&synthPresetLoadPrevAction));
-GEMItem menuItemLoadSynthPresetNext(synthPresetNextLabel,
-                                    pageSynthPresetMenu,
-                                    reinterpret_cast<void*>(&synthPresetLoadNextAction));
+constexpr uint16_t SYNTH_PRESET_MENU_MAX_ROWS = 1 + SYNTH_PRESET_MAX_COUNT + SYNTH_PRESET_MAX_COUNT;
 
-SynthPresetMenuSlotItem synthPresetSaveSlots[SYNTH_PRESET_MENU_PAGE_SIZE] = {
-  { saveSynthPresetMenu, SynthPresetMenuMode::Save },
-  { saveSynthPresetMenu, SynthPresetMenuMode::Save },
-  { saveSynthPresetMenu, SynthPresetMenuMode::Save },
-  { saveSynthPresetMenu, SynthPresetMenuMode::Save },
-  { saveSynthPresetMenu, SynthPresetMenuMode::Save }
-};
-
-SynthPresetMenuSlotItem synthPresetLoadSlots[SYNTH_PRESET_MENU_PAGE_SIZE] = {
-  { loadSynthPresetMenu, SynthPresetMenuMode::Load },
-  { loadSynthPresetMenu, SynthPresetMenuMode::Load },
-  { loadSynthPresetMenu, SynthPresetMenuMode::Load },
-  { loadSynthPresetMenu, SynthPresetMenuMode::Load },
-  { loadSynthPresetMenu, SynthPresetMenuMode::Load }
-};
-
-bool synthPresetMenuItemsCreated = false;
+SynthPresetMenuMode activeSynthPresetMenuMode = SynthPresetMenuMode::Load;
+SynthPresetMenuReturn activeSynthPresetMenuReturn = SynthPresetMenuReturn::SynthEditor;
+SynthPresetMenuRow synthPresetMenuRows[SYNTH_PRESET_MENU_MAX_ROWS] = {};
+uint16_t synthPresetMenuRowCount = 0;
 bool synthPresetMenuRebuildPending = false;
-uint16_t synthPresetSavePageStart = 0;
-uint16_t synthPresetLoadPageStart = 0;
+char synthPresetMenuCurrentFolder[SYNTH_PRESET_FOLDER_LENGTH] = "/";
+char synthPresetMenuTitleBuffer[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
 
-uint16_t synthPresetMenuLastPageStart() {
-  size_t presetCount = synthPresets.size();
-  if (presetCount <= SYNTH_PRESET_MENU_PAGE_SIZE) {
-    return 0;
-  }
-  return static_cast<uint16_t>(((presetCount - 1) / SYNTH_PRESET_MENU_PAGE_SIZE) * SYNTH_PRESET_MENU_PAGE_SIZE);
+const char* synthPresetMenuTitle() {
+  return activeSynthPresetMenuMode == SynthPresetMenuMode::Save ? "Save Preset" : "Load Preset";
 }
 
-void clampSynthPresetMenuPageStart(uint16_t& pageStart) {
-  uint16_t lastPageStart = synthPresetMenuLastPageStart();
-  if (pageStart > lastPageStart) {
-    pageStart = lastPageStart;
-  }
+const char* synthPresetMenuEmptyLabel() {
+  return activeSynthPresetMenuMode == SynthPresetMenuMode::Save ? "No Presets" : "Blank";
+}
+
+uint16_t synthPresetVirtualCount(void*) {
+  return synthPresetMenuRowCount;
 }
 
 void formatSynthPresetMenuLabel(uint16_t presetIndex, char* output, size_t outputLength) {
@@ -146,8 +58,8 @@ void formatSynthPresetMenuLabel(uint16_t presetIndex, char* output, size_t outpu
     return;
   }
 
-  SynthPresetSlot& preset = synthPresets[presetIndex];
-  if (strcmp(preset.folderPath, SYNTH_PRESET_ROOT_FOLDER) == 0) {
+  const SynthPresetSlot& preset = synthPresets[presetIndex];
+  if (menuFolderEntryBelongsToCurrentFolder(preset.folderPath, synthPresetMenuCurrentFolder)) {
     snprintf(output, outputLength, "%u %s", static_cast<unsigned>(presetIndex + 1), preset.name);
     return;
   }
@@ -162,88 +74,192 @@ void formatSynthPresetMenuLabel(uint16_t presetIndex, char* output, size_t outpu
            preset.name);
 }
 
-void updateSynthPresetMenuPage(SynthPresetMenuSlotItem* slots,
-                               uint16_t pageStart,
-                               GEMItem& prevItem,
-                               GEMItem& nextItem) {
-  bool hasPrevious = pageStart > 0;
-  bool hasNext = pageStart + SYNTH_PRESET_MENU_PAGE_SIZE < synthPresets.size();
-  prevItem.hide(!hasPrevious);
-  nextItem.hide(!hasNext);
-
-  for (uint8_t i = 0; i < SYNTH_PRESET_MENU_PAGE_SIZE; ++i) {
-    uint16_t presetIndex = static_cast<uint16_t>(pageStart + i);
-    bool visible = presetIndex < synthPresets.size();
-    if (visible) {
-      formatSynthPresetMenuLabel(presetIndex, slots[i].label, sizeof(slots[i].label));
-      slots[i].action.presetIndex = presetIndex;
-    } else {
-      slots[i].label[0] = '\0';
-      slots[i].action.presetIndex = 0;
-    }
-    slots[i].item.setTitle(slots[i].label);
-    slots[i].item.hide(!visible);
+const SynthPresetSlot* synthPresetForRow(const SynthPresetMenuRow& row) {
+  if (row.index >= synthPresets.size()) {
+    return nullptr;
   }
+  return &synthPresets[row.index];
 }
 
-void updateSynthPresetMenuPages() {
+bool synthPresetFolderRowPath(const SynthPresetMenuRow& row, char* output, size_t outputLength) {
+  const SynthPresetSlot* preset = synthPresetForRow(row);
+  return preset
+         && menuFolderImmediateChildPath(preset->folderPath, synthPresetMenuCurrentFolder, output, outputLength);
+}
+
+bool synthPresetFolderAlreadyListed(const char* childFolderPath) {
+  char existing[SYNTH_PRESET_FOLDER_LENGTH] = {};
+  for (uint16_t i = 0; i < synthPresetMenuRowCount; ++i) {
+    if (synthPresetMenuRows[i].kind == SynthPresetMenuRowKind::Folder
+        && synthPresetFolderRowPath(synthPresetMenuRows[i], existing, sizeof(existing))
+        && menuFolderEquals(existing, childFolderPath)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void appendSynthPresetMenuRow(SynthPresetMenuRowKind kind, uint16_t index) {
+  if (synthPresetMenuRowCount >= SYNTH_PRESET_MENU_MAX_ROWS) {
+    return;
+  }
+  synthPresetMenuRows[synthPresetMenuRowCount++] = { kind, index };
+}
+
+void updateSynthPresetMenuTitle() {
+  if (menuFolderIsRoot(synthPresetMenuCurrentFolder)) {
+    snprintf(synthPresetMenuTitleBuffer,
+             sizeof(synthPresetMenuTitleBuffer),
+             "%s",
+             synthPresetMenuTitle());
+    return;
+  }
+  char folderLabel[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
+  synthPresetFolderLabel(synthPresetMenuCurrentFolder, folderLabel, sizeof(folderLabel));
+  snprintf(synthPresetMenuTitleBuffer,
+           sizeof(synthPresetMenuTitleBuffer),
+           "%s",
+           folderLabel);
+}
+
+void rebuildSynthPresetVirtualList() {
   compactSynthPresets();
-  clampSynthPresetMenuPageStart(synthPresetSavePageStart);
-  clampSynthPresetMenuPageStart(synthPresetLoadPageStart);
-  updateSynthPresetMenuPage(synthPresetSaveSlots,
-                            synthPresetSavePageStart,
-                            menuItemSaveSynthPresetPrev,
-                            menuItemSaveSynthPresetNext);
-  updateSynthPresetMenuPage(synthPresetLoadSlots,
-                            synthPresetLoadPageStart,
-                            menuItemLoadSynthPresetPrev,
-                            menuItemLoadSynthPresetNext);
-}
+  synthPresetMenuRowCount = 0;
+  appendSynthPresetMenuRow(SynthPresetMenuRowKind::Action, 0);
 
-void saveSynthPresetMenu(GEMCallbackData callbackData) {
-  SynthPresetMenuAction* action = reinterpret_cast<SynthPresetMenuAction*>(callbackData.valPointer);
-  if (action) {
-    if (action->createNew) {
-      saveSynthPresetAsNew(SYNTH_PRESET_ROOT_FOLDER);
-    } else {
-      saveSynthPresetToSlot(action->presetIndex);
+  char childFolder[SYNTH_PRESET_FOLDER_LENGTH] = {};
+  for (size_t i = 0; i < synthPresets.size(); ++i) {
+    const SynthPresetSlot& preset = synthPresets[i];
+    if (menuFolderImmediateChildPath(preset.folderPath,
+                                     synthPresetMenuCurrentFolder,
+                                     childFolder,
+                                     sizeof(childFolder))
+        && !synthPresetFolderAlreadyListed(childFolder)) {
+      appendSynthPresetMenuRow(SynthPresetMenuRowKind::Folder, static_cast<uint16_t>(i));
     }
   }
-  menuSynthOptionsHome();
-  requestSynthPresetMenuRebuild();
-}
 
-void loadSynthPresetMenu(GEMCallbackData callbackData) {
-  SynthPresetMenuAction* action = reinterpret_cast<SynthPresetMenuAction*>(callbackData.valPointer);
-  if (action) {
-    if (action->loadBlank) {
-      loadBlankSynthPreset();
-    } else {
-      loadSynthPresetFromSlot(action->presetIndex);
+  for (size_t i = 0; i < synthPresets.size(); ++i) {
+    if (menuFolderEntryBelongsToCurrentFolder(synthPresets[i].folderPath, synthPresetMenuCurrentFolder)) {
+      appendSynthPresetMenuRow(SynthPresetMenuRowKind::Preset, static_cast<uint16_t>(i));
     }
   }
-  menuSynthOptionsHome();
+  updateSynthPresetMenuTitle();
 }
 
-void pageSynthPresetMenu(GEMCallbackData callbackData) {
-  SynthPresetMenuAction* action = reinterpret_cast<SynthPresetMenuAction*>(callbackData.valPointer);
-  if (!action || action->pageDelta == 0) {
+bool synthPresetVirtualLabel(void*, uint16_t index, char* output, size_t outputLength) {
+  if (outputLength == 0) {
+    return false;
+  }
+  output[0] = '\0';
+  if (index >= synthPresetMenuRowCount) {
+    return false;
+  }
+  const SynthPresetMenuRow& row = synthPresetMenuRows[index];
+  switch (row.kind) {
+    case SynthPresetMenuRowKind::Action:
+      snprintf(output,
+               outputLength,
+               "%s",
+               activeSynthPresetMenuMode == SynthPresetMenuMode::Save ? "New Preset" : "Blank");
+      return true;
+    case SynthPresetMenuRowKind::Folder:
+      {
+        char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
+        if (!synthPresetFolderRowPath(row, folderPath, sizeof(folderPath))) {
+          return false;
+        }
+        synthPresetFolderLabel(folderPath, output, outputLength);
+        return output[0] != '\0';
+      }
+    case SynthPresetMenuRowKind::Preset:
+      formatSynthPresetMenuLabel(row.index, output, outputLength);
+      return output[0] != '\0';
+  }
+  return false;
+}
+
+VirtualListMenuRowType synthPresetVirtualRowType(void*, uint16_t index) {
+  if (index >= synthPresetMenuRowCount) {
+    return VirtualListMenuRowType::Button;
+  }
+  return synthPresetMenuRows[index].kind == SynthPresetMenuRowKind::Folder
+           ? VirtualListMenuRowType::Link
+           : VirtualListMenuRowType::Button;
+}
+
+void returnFromSynthPresetMenu() {
+  deactivateVirtualListMenu();
+  if (activeSynthPresetMenuReturn == SynthPresetMenuReturn::Main) {
+    menuHome();
+  } else {
+    menuSynthOptionsHome();
+  }
+}
+
+void synthPresetVirtualSelect(void*, uint16_t index) {
+  if (index >= synthPresetMenuRowCount) {
+    returnFromSynthPresetMenu();
     return;
   }
 
-  uint16_t& pageStart = action->mode == SynthPresetMenuMode::Save
-    ? synthPresetSavePageStart
-    : synthPresetLoadPageStart;
-  if (action->pageDelta < 0) {
-    pageStart = pageStart > SYNTH_PRESET_MENU_PAGE_SIZE
-      ? static_cast<uint16_t>(pageStart - SYNTH_PRESET_MENU_PAGE_SIZE)
-      : 0;
-  } else if (pageStart + SYNTH_PRESET_MENU_PAGE_SIZE < synthPresets.size()) {
-    pageStart = static_cast<uint16_t>(pageStart + SYNTH_PRESET_MENU_PAGE_SIZE);
+  const SynthPresetMenuRow& row = synthPresetMenuRows[index];
+  if (row.kind == SynthPresetMenuRowKind::Folder) {
+    char childFolder[SYNTH_PRESET_FOLDER_LENGTH] = {};
+    if (synthPresetFolderRowPath(row, childFolder, sizeof(childFolder))) {
+      snprintf(synthPresetMenuCurrentFolder, sizeof(synthPresetMenuCurrentFolder), "%s", childFolder);
+      rebuildSynthPresetVirtualList();
+      resetVirtualListMenuSelection();
+    }
+    return;
   }
 
-  updateSynthPresetMenuPages();
-  menu.drawMenu();
+  if (activeSynthPresetMenuMode == SynthPresetMenuMode::Save) {
+    if (row.kind == SynthPresetMenuRowKind::Action) {
+      saveSynthPresetAsNew(synthPresetMenuCurrentFolder);
+    } else {
+      saveSynthPresetToSlot(row.index);
+    }
+    requestSynthPresetMenuRebuild();
+  } else if (row.kind == SynthPresetMenuRowKind::Action) {
+    loadBlankSynthPreset();
+  } else {
+    loadSynthPresetFromSlot(row.index);
+  }
+  returnFromSynthPresetMenu();
+}
+
+bool synthPresetVirtualBack(void*) {
+  if (menuFolderIsRoot(synthPresetMenuCurrentFolder)) {
+    return false;
+  }
+  menuFolderParentPath(synthPresetMenuCurrentFolder,
+                       synthPresetMenuCurrentFolder,
+                       sizeof(synthPresetMenuCurrentFolder));
+  rebuildSynthPresetVirtualList();
+  resetVirtualListMenuSelection();
+  return true;
+}
+
+void synthPresetVirtualClose(void*) {
+  returnFromSynthPresetMenu();
+}
+
+void openSynthPresetMenu(SynthPresetMenuMode mode, SynthPresetMenuReturn destination) {
+  activeSynthPresetMenuMode = mode;
+  activeSynthPresetMenuReturn = destination;
+  snprintf(synthPresetMenuCurrentFolder, sizeof(synthPresetMenuCurrentFolder), "%s", SYNTH_PRESET_ROOT_FOLDER);
+  rebuildSynthPresetVirtualList();
+  VirtualListMenuProvider provider;
+  provider.title = synthPresetMenuTitleBuffer;
+  provider.getCount = synthPresetVirtualCount;
+  provider.getLabel = synthPresetVirtualLabel;
+  provider.getRowType = synthPresetVirtualRowType;
+  provider.select = synthPresetVirtualSelect;
+  provider.back = synthPresetVirtualBack;
+  provider.close = synthPresetVirtualClose;
+  provider.emptyLabel = synthPresetMenuEmptyLabel();
+  openVirtualListMenu(provider);
 }
 }  // namespace
 
@@ -297,8 +313,23 @@ void synthPresetFolderLabel(const char* folderPath, char* output, size_t outputL
   decodeSynthPresetFolderComponent(labelStart, output, outputLength);
 }
 
+void openMainSynthPresetLoadMenu() {
+  openSynthPresetMenu(SynthPresetMenuMode::Load, SynthPresetMenuReturn::Main);
+}
+
+void openSynthPresetLoadMenu() {
+  openSynthPresetMenu(SynthPresetMenuMode::Load, SynthPresetMenuReturn::SynthEditor);
+}
+
+void openSynthPresetSaveMenu() {
+  openSynthPresetMenu(SynthPresetMenuMode::Save, SynthPresetMenuReturn::SynthEditor);
+}
+
 void rebuildSynthPresetMenuItems() {
-  updateSynthPresetMenuPages();
+  if (virtualListMenuIsActive()) {
+    rebuildSynthPresetVirtualList();
+    redrawVirtualListMenu();
+  }
 }
 
 void requestSynthPresetMenuRebuild() {
@@ -310,10 +341,6 @@ void serviceSynthPresetMenuRebuild() {
     return;
   }
   synthPresetMenuRebuildPending = false;
-  if (menu.getCurrentMenuPage() == &menuPageSynthPresetSave
-      || menu.getCurrentMenuPage() == &menuPageSynthPresetLoad) {
-    menu.setMenuPageCurrent(menuPageSynth);
-  }
   rebuildSynthPresetMenuItems();
   if (menu.getCurrentMenuPage() == &menuPageSynth) {
     menu.drawMenu();
@@ -321,21 +348,5 @@ void serviceSynthPresetMenuRebuild() {
 }
 
 void createSynthPresetMenuItems() {
-  if (!synthPresetMenuItemsCreated) {
-    menuPageSynthPresetSave.addMenuItem(menuItemSaveSynthPresetNew);
-    menuPageSynthPresetSave.addMenuItem(menuItemSaveSynthPresetPrev);
-    menuPageSynthPresetSave.addMenuItem(menuItemSaveSynthPresetNext);
-    for (uint8_t i = 0; i < SYNTH_PRESET_MENU_PAGE_SIZE; ++i) {
-      menuPageSynthPresetSave.addMenuItem(synthPresetSaveSlots[i].item);
-    }
-
-    menuPageSynthPresetLoad.addMenuItem(menuItemLoadSynthPresetBlank);
-    menuPageSynthPresetLoad.addMenuItem(menuItemLoadSynthPresetPrev);
-    menuPageSynthPresetLoad.addMenuItem(menuItemLoadSynthPresetNext);
-    for (uint8_t i = 0; i < SYNTH_PRESET_MENU_PAGE_SIZE; ++i) {
-      menuPageSynthPresetLoad.addMenuItem(synthPresetLoadSlots[i].item);
-    }
-    synthPresetMenuItemsCreated = true;
-  }
   rebuildSynthPresetMenuItems();
 }

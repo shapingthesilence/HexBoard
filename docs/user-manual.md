@@ -99,10 +99,11 @@ saved, the preset name is shown with a leading `*`.
 
 Use this section to choose the tuning or geometry bundle the whole board runs
 on. The page is a GEM-style virtual list backed by geometry objects: factory
-and saved tunings appear as flat entries without folder rows. Scrolling follows
-normal GEM list behavior, including page jumps at the 11 visible-row boundary.
-Selecting a tuning also loads the first linked layout, scale, color map, and
-matching explicit button map so the board is immediately playable.
+tunings appear at the root, and saved user tunings can be organized into
+folders. Scrolling follows normal GEM list behavior, including page jumps at
+the 11 visible-row boundary. Selecting a tuning also loads the first linked
+layout, scale, color map, and matching explicit button map so the board is
+immediately playable.
 
 The Dynamic JI controls are temporarily not in this page while the menu layout
 is being simplified for the 2.0 release.
@@ -239,7 +240,9 @@ actual assigned note/frequency for `Up`, `Down`, `UpDown`, and `DownUp`; it can
 also follow `Played`, `RevPlay`, or `Random` order. `Played` means the order in
 which held notes were pressed, not the physical button numbers.
 
-`WT:...` shows the currently loaded wavetable and opens a foldered load menu.
+`WT:...` shows the currently loaded wavetable and opens a virtual load list.
+Built-in tables appear at the root, and user-imported wavetables can be
+organized into folders.
 Built-in compatibility tables include:
 
 - `Basic`: sine, triangle, saw, and square anchors
@@ -253,9 +256,9 @@ Old presets that used the previous `Waveform` selector are migrated by choosing
 one of these tables and setting `WT Pos` to the matching anchor. The old
 `Hybrid` waveform now maps to `Basic` at `0%`.
 
-User-imported wavetables appear in the same foldered `WT:...` menu after
-they are saved through the web app. If a preset references a wavetable that is
-not installed on the HexBoard, the synth loads `Basic` instead until a matching
+User-imported wavetables appear in the same `WT:...` browser after they are
+saved through the web app. If a preset references a wavetable that is not
+installed on the HexBoard, the synth loads `Basic` instead until a matching
 folder/name wavetable is added.
 
 `WT Pos` chooses the starting frame for wavetable waveforms. On device, the menu
@@ -339,18 +342,19 @@ down as the envelope level rises. The default FX envelope times are `0 ms`, and
 default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 
 The top-level `Synth: <preset>` item and the `Load Preset` item inside
-`Synth Editor` both open the same synth preset load menu. `Save Preset` and
+`Synth Editor` both open synth preset load lists. `Save Preset` and
 `Load Preset` use synth-only preset libraries with room for
 up to `64` device presets. Presets are stored separately from the main settings
 file as named, foldered synth sounds and do not remember which preset was last
-loaded. On the device, presets appear in a paged list with folder/name labels
-and `Prev` / `Next` controls when needed; `New Preset` saves into the root
-folder. Factory presets are copied into normal editable root-folder preset slots
+loaded. On the device, presets appear in a virtual folder browser; `New Preset`
+saves into the currently open folder. Factory presets are copied into normal
+editable root-folder preset slots
 when defaults are restored, so they can be changed or erased like any other
 preset and restored later by Reset Defaults or from the web editor's browser
 library. The web app still shows the foldered library and can create foldered
 presets.
-`Load Preset` also includes `Blank`. Saving or loading a preset returns to
+`Load Preset` also includes `Blank`. Loading from the top-level `Synth` item
+returns to the main menu; loading or saving from `Synth Editor` returns to
 `Synth Editor`. Loading a preset changes only the current synth parameters and
 wavetable reference, which can still be auto-saved by the normal settings
 system.

@@ -978,11 +978,11 @@ Slot 20
 ```
 
 After that migration, the user-facing model should be a foldered preset library
-rather than a numbered slot bank. The web app presents the foldered library; the
-device uses a fixed paged list with folder/name labels to avoid per-preset heap
-allocation. Factory defaults copy the factory synth sounds into ordinary
-catalog entries, so hosts should treat restored factory presets like editable
-and erasable user presets.
+rather than a numbered slot bank. The web app presents the foldered library, and
+the device uses `VirtualListMenu` as a folder browser without allocating
+per-preset `GEMItem` objects. Factory defaults copy the factory synth sounds
+into ordinary catalog entries, so hosts should treat restored factory presets
+like editable and erasable user presets.
 
 Recommended TLVs:
 
