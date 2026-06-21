@@ -116,7 +116,7 @@ constexpr uint8_t NUM_SETTINGS_V17 = static_cast<uint8_t>(NUM_SETTINGS + 1);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
-constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
+constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 64;
 constexpr uint8_t LEGACY_SYNTH_PRESET_COUNT = 8;
 constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 9;
 constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 7;
@@ -207,6 +207,95 @@ struct SynthPresetSlot {
   char wavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = {};
   char wavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
   uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
+};
+
+class SynthPresetCatalog {
+public:
+  using iterator = SynthPresetSlot*;
+  using const_iterator = const SynthPresetSlot*;
+
+  void clear() {
+    count_ = 0;
+  }
+
+  size_t size() const {
+    return count_;
+  }
+
+  bool empty() const {
+    return count_ == 0;
+  }
+
+  size_t capacity() const {
+    return slots_.size();
+  }
+
+  SynthPresetSlot* data() {
+    return slots_.data();
+  }
+
+  const SynthPresetSlot* data() const {
+    return slots_.data();
+  }
+
+  SynthPresetSlot& operator[](size_t index) {
+    return slots_[index];
+  }
+
+  const SynthPresetSlot& operator[](size_t index) const {
+    return slots_[index];
+  }
+
+  iterator begin() {
+    return slots_.data();
+  }
+
+  iterator end() {
+    return slots_.data() + count_;
+  }
+
+  const_iterator begin() const {
+    return slots_.data();
+  }
+
+  const_iterator end() const {
+    return slots_.data() + count_;
+  }
+
+  bool push_back(const SynthPresetSlot& preset) {
+    if (count_ >= slots_.size()) {
+      return false;
+    }
+    slots_[count_++] = preset;
+    return true;
+  }
+
+  void resize(size_t newSize) {
+    count_ = std::min(newSize, slots_.size());
+  }
+
+  iterator erase(iterator position) {
+    if (position < begin() || position >= end()) {
+      return end();
+    }
+    size_t index = static_cast<size_t>(position - begin());
+    eraseAt(index);
+    return begin() + index;
+  }
+
+  void eraseAt(size_t index) {
+    if (index >= count_) {
+      return;
+    }
+    for (size_t i = index; i + 1 < count_; ++i) {
+      slots_[i] = slots_[i + 1];
+    }
+    --count_;
+  }
+
+private:
+  std::array<SynthPresetSlot, SYNTH_PRESET_MAX_COUNT> slots_ = {};
+  size_t count_ = 0;
 };
 
 struct SynthPresetSlotV8 {
@@ -300,7 +389,7 @@ extern uint8_t settingsProfiles[PROFILE_COUNT][NUM_SETTINGS];
 extern uint8_t* settings;
 extern uint8_t activeProfileIndex;
 extern uint8_t defaultProfileIndex;
-extern std::vector<SynthPresetSlot> synthPresets;
+extern SynthPresetCatalog synthPresets;
 extern std::vector<SynthWavetableSlot> synthWavetables;
 extern std::vector<GeometryObjectSlot> geometryObjects;
 

@@ -78,17 +78,22 @@ The panic stop sends note-off style cleanup and clears active output. It is the 
 
 The main menu includes:
 
-- `Tuning`
-- `Layout`
-- `Scales`
-- `Color Options`
-- `Synth Options`
-- `MIDI Options`
-- `Control Wheel`
+- `Tuning: <current>`
+- `Layout: <current>`
+- `Key`
+- `Scale: <current>`
+- `Scale Lock`
+- `Synth: <current preset>`
+- `Lights & Colors`
 - `Transpose`
-- `Save`
-- `Load`
-- `Advanced`
+- `Options`
+- `Load Profile`
+- `Save Profile`
+- `Synth Editor`
+
+`Synth: <current preset>` opens the synth preset load menu from the top level.
+If the runtime synth sound has changed since the loaded preset was selected or
+saved, the preset name is shown with a leading `*`.
 
 ### Tuning
 
@@ -151,7 +156,7 @@ OLED/device orientation in four 90-degree steps: `0`, `90`, `180`, or `270`
 degrees. Choosing a layout also reloads that layout's default device
 orientation: portrait layouts use `0`, and landscape layouts use `90`.
 
-### Scales
+### Scale
 
 Use this page to constrain the playable notes and recolor the surface.
 
@@ -168,7 +173,7 @@ map, and button map active.
 
 When `Scale Lock` is enabled, out-of-scale notes stop responding to presses.
 
-### Color Options
+### Lights & Colors
 
 This page controls LED appearance.
 
@@ -185,7 +190,7 @@ Available color modes are `Rainbow`, `Diatonic`, `Alt`, `Fifths`, `Piano`, `Alt 
 
 `LED Limit` helps prevent power problems by lowering LED output when a bright setting would draw too much current. This matters most in bright modes such as `Filament` and `Diatonic`. `Off` leaves the LEDs uncapped and can cause resets at extreme brightness. The numbered limits use hardware-specific calibration tables for `V1.1` and `V1.2` boards. The factory default is `1.5 A`, calibrated to provide a similar actual USB-side draw on both hardware revisions and stable behavior on most power supplies.
 
-### Synth Options
+### Synth Editor
 
 This page controls the onboard synth.
 
@@ -213,8 +218,8 @@ Options include:
 - `Tempo`
 - `Metronome`
 - `Time Sig`
-- `Save Preset`
 - `Load Preset`
+- `Save Preset`
 
 On hardware `V1.1`, the onboard synth plays through the piezo buzzer when the
 synth is active. There is no headphone-jack output path and no `Buzzer` menu
@@ -351,17 +356,22 @@ return smoothly to their base values as the FX envelope falls back to zero. Nega
 down as the envelope level rises. The default FX envelope times are `0 ms`, and
 default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 
-`Save Preset` and `Load Preset` open synth-only preset libraries with room for
-up to `128` device presets. Presets are stored separately from the main settings
+The top-level `Synth: <preset>` item and the `Load Preset` item inside
+`Synth Editor` both open the same synth preset load menu. `Save Preset` and
+`Load Preset` use synth-only preset libraries with room for
+up to `64` device presets. Presets are stored separately from the main settings
 file as named, foldered synth sounds and do not remember which preset was last
-loaded. Older fixed-slot preset files are migrated so saved slots appear in the
-root folder `/` with their existing `Slot 1` through `Slot 20` names intact.
-Foldered web-app presets appear as submenus on the device; preset items inside a
-folder show only the preset name. A slash typed as part of a web-app folder name
-is preserved as part of that folder label instead of creating extra submenus.
+loaded. On
+the device, presets appear in a paged list with folder/name labels and `Prev` /
+`Next` controls when needed; `New Preset` saves into the root folder. Factory
+presets are copied into normal editable preset slots when defaults are restored,
+so they can be changed or erased like any other preset and restored later by
+Reset Defaults or from the web editor's browser library. The web app still
+shows the foldered library and can create foldered presets.
 `Load Preset` also includes `Blank`. Saving or loading a preset returns to
-`Synth Options`. Loading a preset changes the current synth parameters, which
-can still be auto-saved by the normal settings system.
+`Synth Editor`. Loading a preset changes only the current synth parameters and
+wavetable reference, which can still be auto-saved by the normal settings
+system.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial
 peak longer before decay. Low `Sustain` makes a note fade away even while you
@@ -395,9 +405,14 @@ example, `Wheel FX` = `FoldWrp`, `FX Env 1 Target` = `Vibrato`, `Amount` = `+50%
 start of each note. For a falling pitch tail, try `FX Env 2 Target` = `Pitch`,
 `Amount` = `-25%`, `Sustain` = `100%`, and a longer `Release`.
 
-### MIDI Options
+### Options
 
-This page controls how HexBoard talks to external MIDI gear and music software.
+`Options` contains MIDI setup, command-wheel behavior, and the `Advanced`
+maintenance page.
+
+#### MIDI
+
+These controls set how HexBoard talks to external MIDI gear and music software.
 
 Options include:
 
@@ -538,6 +553,11 @@ open preset. Refreshing the HexBoard wavetable list reads only device metadata;
 full sample data transfers start only when `Download` or `Export` is chosen.
 Those explicit wavetable reads are large chunked transfers, and HexBoard streams
 the sample file during the transfer instead of preloading the whole object first.
+The browser wavetable library is also seeded with the factory built-in tables
+rendered from the firmware anchor waves. These factory tables use interpolated
+`32`-frame bases plus the same six fixed mip levels as imported wavetables, so
+they can be previewed, exported, edited, uploaded, or restored through the web
+editor like normal wavetable entries.
 The web app trims preset and wavetable names/folders to the device's fixed text
 fields before upload so long browser-side labels do not break transfers.
 Presets store the wavetable folder/name rather than a private copy of the
@@ -602,9 +622,9 @@ incoming MIDI. The message clears when the transfer is idle or times out. If the
 OLED screensaver was already active, HexBoard returns to that dimmed/cleared
 state after the transfer instead of waking the menu.
 
-### Control Wheel
+#### Control Wheel
 
-This page adjusts how quickly the command-button wheels move and whether they snap back.
+These controls adjust how quickly the command-button wheels move and whether they snap back.
 
 Options include:
 
@@ -627,7 +647,7 @@ pitch-bend and modulation messages.
 
 `Transpose` shifts sounded pitch without changing the visual layout.
 
-### Save And Load
+### Load Profile And Save Profile
 
 HexBoard supports `9` profile slots:
 
@@ -647,7 +667,7 @@ How it behaves:
 - Loading a slot immediately replaces the current setup, including the selected wavetable
 - Saving stores the current setup, including the selected wavetable, in the chosen slot
 
-### Advanced
+#### Advanced
 
 This page contains maintenance and system settings:
 
@@ -672,8 +692,9 @@ quietest visual boot.
 `Serial Debug` opens a runtime-only submenu. Turn `Enabled` on to reveal message
 categories: `General Log` controls the normal verbose firmware log, `Min Heap`
 prints current/minimum free heap while the system runs normally, and `Audio Stats`
-prints audio underrun/overrun/max-block counters. These debug choices are
-not saved to profiles and reset on reboot.
+prints audio CPU for the last reporting window, the worst CPU reading since
+Serial Debug was enabled, and audio underrun/overrun/max-block counters. These
+debug choices are not saved to profiles and reset on reboot.
 
 `Stability` launches a temporary benchmark and is not saved in profiles. It
 loads a worst-case runtime synth patch, starts eight high notes, forces regular
@@ -733,7 +754,7 @@ Important factory defaults include:
 - Amp Hold: `0 ms`
 - FX Env 1: `Vibrato`, `+100%`, `0 ms` attack, `0 ms` hold, `0 ms` decay, `0%` sustain, `0 ms` release
 - FX Env 2: `Pitch`, `+100%`, `0 ms` attack, `0 ms` hold, `0 ms` decay, `0%` sustain, `0 ms` release
-- Synth presets: empty until saved
+- Synth presets: `Soft String Pad` and `Bright Mono Lead` restored as editable slots
 - Boot animation: `On`
 - Metronome: `Off`
 - Time signature: `4/4`
@@ -783,7 +804,7 @@ That is expected when you only changed color, brightness, or animation settings.
 
 ### The board resets when lots of LEDs turn white
 
-That usually means the LED draw is too high for the current power source. Lower `Brightness`, lower `Rest Bright`, or (most importantly) set `LED Limit` in `Color Options` to a safer value such as `500 mA`, `1.0 A`, or the factory-default `1.5 A`.
+That usually means the LED draw is too high for the current power source. Lower `Brightness`, lower `Rest Bright`, or (most importantly) set `LED Limit` in `Lights & Colors` to a safer value such as `500 mA`, `1.0 A`, or the factory-default `1.5 A`.
 
 ### The board feels laggy when plugged into a sleeping or closed computer
 

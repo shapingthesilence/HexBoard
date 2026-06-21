@@ -41,6 +41,7 @@ extern volatile uint8_t isrProfileMaxFlags;
 uint64_t RAM_FUNC(readClock)();
 uint32_t readRuntimeFreeHeapBytes();
 void resetSerialDebugMinFreeHeap();
+void resetSerialDebugAudioStats();
 void updateSerialDebugRuntime();
 void serviceSerialDebugMessages();
 void setSerialDebugGeneralSuppressed(bool suppressed);

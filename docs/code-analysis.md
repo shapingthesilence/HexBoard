@@ -617,12 +617,12 @@ Key implementation facts:
   from the highest expected pitch after pitch modulation and vibrato depth by
   comparing Q8 Nyquist-safe harmonic headroom to the fixed limits `255`, `96`,
   `48`, `24`, `12`, and `6`; the transient `Mip Oct` menu shifts octave
-  thresholds and is not persisted. The selector fades the bright level in only
-  after it is safe, so boundaries briefly favor the duller mip and avoid hard
-  steps during slow pitch ramps or microtonal notes. The render loop performs a
-  second wavetable read only while the cached bright blend is between `1` and
-  `254`; otherwise it reads one selected context. Per-voice phase increment and
-  phase-warp depths linearly slew between cached targets at audio rate, while
+  thresholds and is not persisted. The selector picks one table pointer for the
+  per-sample renderer and favors the duller level until the brighter level is
+  safely inside the threshold. Wavetable frame contexts and mip selection update
+  every other modulation quantum, so the render loop keeps one wavetable read
+  per active voice while reducing hard mip steps enough for tuning tests.
+  Per-voice phase increment and phase-warp depths linearly slew between cached targets at audio rate, while
   oscillator phase advance, amp-envelope level, phase warping, waveform reads,
   mixing, drive, and output scaling remain audio-rate. If only global sources
   modulate `WT Pos`, the cached frame-pair position is shared across active
@@ -685,7 +685,10 @@ version is not `19`.
 The in-progress version `19` layout no longer includes the old persisted `Debug`
 byte. `Serial Debug` is RAM-only and starts disabled on boot; its `General Log`,
 `Min Heap`, and `Audio Stats` category toggles live in `DiagnosticsTiming.cpp`
-and are shown only while the runtime debug submenu is enabled.
+and are shown only while the runtime debug submenu is enabled. `Audio Stats`
+captures the audio profiler window on each report and prints average CPU, max
+CPU, worst max CPU since Serial Debug was enabled, and underrun/overrun timing
+counters.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the hardware-specific calibrated table above.
 
@@ -693,7 +696,7 @@ Version `16` appends `DynamicJIRatioTable` to settings profiles. Version `15`
 files migrate by copying the existing profile prefix and using the factory
 default `41Limit` table selector.
 
-The Synth Options `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
+The Synth Editor `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
 
 The `Waveform` setting remains one persisted byte for settings/preset
 compatibility, but the visible synth source selector uses a wavetable
@@ -715,13 +718,13 @@ the overlong filename that can fail on LittleFS. Catalog load/write paths skip
 or prune records whose sample file is missing, which prevents failed earlier
 imports from exhausting catalog slots.
 
-The transient Synth Options `Mip Oct` item shifts wavetable mip-level thresholds
+The transient Synth Editor `Mip Oct` item shifts wavetable mip-level thresholds
 by octaves for anti-aliasing tests. The selector uses Q8 harmonic headroom and
 blends from the duller mip into the brighter mip only after the brighter level is
 safe, so threshold tests err toward dullness rather than aliasing. It is RAM-only
 menu state and intentionally does not bump `CURRENT_SETTINGS_VERSION`.
 
-The Synth Options wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `FoldWrp` is the default wheel effect and keeps the existing target byte value `0`; `DutyWrp` and `PolyWrp` add target byte values `4` and `5`. All three warp targets apply low-CPU phase warps across the onboard waveforms and active wavetable before sampling. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the on-device menu presents rounded frame anchors labeled `1..32`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator, then reads startup-generated RAM Q16 ratio tables so full positive depth raises each active voice by about `+24` semitones and full negative depth lowers it by about `-24` semitones.
+The Synth Editor wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `FoldWrp` is the default wheel effect and keeps the existing target byte value `0`; `DutyWrp` and `PolyWrp` add target byte values `4` and `5`. All three warp targets apply low-CPU phase warps across the onboard waveforms and active wavetable before sampling. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the on-device menu presents rounded frame anchors labeled `1..32`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator, then reads startup-generated RAM Q16 ratio tables so full positive depth raises each active voice by about `+24` semitones and full negative depth lowers it by about `-24` semitones.
 
 The synth LFO is persisted as `SynthLfoTarget`, `SynthLfoAmount`,
 `SynthLfoWave`, and `SynthLfoSpeed`. It uses the same target accumulator as the
@@ -739,7 +742,7 @@ restart their release stage.
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
-Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `9`, CRC32, and a counted catalog capped at `128` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, wavetable name/folder path, and the sound-focused synth setting bytes. A preset copies sound-focused synth settings and the wavetable reference into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app full-preset preview applies a transferred synth preset to runtime and marks settings dirty for debounced autosave, compact live synth parameter edits also mark settings dirty, and save requests update `/synth_presets.dat`. The on-device save/load menus are rebuilt from the catalog as folder submenus; preset items inside those folders display only the preset name. Folder path separators are still `/`, but the firmware decodes `%2F`, `%5C`, and `%25` in menu labels so web-app folder names can contain literal slash, backslash, or percent characters. Rebuilds are requested from save/delete paths and serviced from the main loop after GEM input handling, with owned menu items removed from their parent pages before deletion. The load menu has a `Blank` item. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending `SynthPortamentoTimeIndex` and `ArpeggiatorDirection` defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving wavetable name/folder fields from the old `Waveform` value before being rewritten.
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `9`, CRC32, and a counted catalog capped at `64` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, wavetable name/folder path, and the sound-focused synth setting bytes. The active catalog is a fixed-capacity RAM array rather than a heap-growing `std::vector`, so creating presets on-device or saving them from preset-sync does not allocate persistent heap per preset. Factory defaults copy `Soft String Pad` and `Bright Mono Lead` into ordinary editable preset slots, so they can be changed or erased and restored later by Reset Defaults or the web editor library. A preset copies sound-focused synth settings and the wavetable reference into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app full-preset preview applies a transferred synth preset to runtime and marks settings dirty for debounced autosave, compact live synth parameter edits also mark settings dirty, and save requests update `/synth_presets.dat`. Synth preset load and full-preset preview call `syncSynthSettingsToRuntime()` instead of the full settings sync, so tuning/layout/scale/LED assignment rebuilds are not rerun for synth patch changes. The on-device save/load menus use a fixed set of reusable GEM items as paged flat lists with folder/name labels; the web app still presents the foldered library. The load menu has a `Blank` item. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending `SynthPortamentoTimeIndex` and `ArpeggiatorDirection` defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving wavetable name/folder fields from the old `Waveform` value before being rewritten.
 
 User geometry objects are stored in `/layouts.dat` with magic `LYT`, version
 `1`, CRC32, and a counted raw-body catalog capped at `127` entries. The catalog
@@ -783,9 +786,13 @@ reference `/User/UserTbl`.
 The web app treats wavetable refresh as metadata-only by using object-list
 records; full wavetable reads are deferred to explicit `Download`/`Export`
 actions. Metadata-only `SynthWavetable` writes can update a user wavetable's
-name/folder when the handle and object id still match the catalog entry.
+name/folder without resending samples. The browser factory wavetable catalog is
+generated by `web/scripts/generate-factory-wavetables.mjs` from firmware
+`BuiltinWavetables.cpp` anchors. It mirrors firmware's 32-frame interpolation,
+then runs the web FFT-pruned six-level mip generator so `/Built In` tables can
+be previewed, exported, uploaded, or restored with proper fixed mips.
 
-The Synth Options metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator; `ArpeggiatorDivision` sets rhythmic subdivision and `ArpeggiatorDirection` selects `Up`, `Down`, `Played`, `RevPlay`, `UpDown`, `DownUp`, or `Random`. The metronome runs its beat scheduler on core 0 and feeds the beep mode into the RAM-resident audio renderer through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
+The Synth Editor metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator; `ArpeggiatorDivision` sets rhythmic subdivision and `ArpeggiatorDirection` selects `Up`, `Down`, `Played`, `RevPlay`, `UpDown`, `DownUp`, or `Random`. The metronome runs its beat scheduler on core 0 and feeds the beep mode into the RAM-resident audio renderer through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 
 The Advanced-menu boot animation toggle is persisted as `BootAnimationEnabled`. It defaults on and skips `runBootLedSelfCheck()` when off.
 
@@ -843,17 +850,18 @@ The GEM menu is built around persistent callback metadata:
 
 Current top-level user pages are:
 
-- `Tuning`
-- `Layout`
-- `Scales`
-- `Color Options`
-- `Synth Options`
-- `MIDI Options`
-- `Control Wheel`
+- `Tuning: <current>`
+- `Layout: <current>`
+- `Key`
+- `Scale: <current>`
+- `Scale Lock`
+- `Synth: <current preset>` with a leading `*` when the runtime patch differs from the tracked preset
+- `Lights & Colors`
 - `Transpose`
-- `Save`
-- `Load`
-- `Advanced`
+- `Options`, containing MIDI controls, command-wheel controls, and `Advanced`
+- `Load Profile`
+- `Save Profile`
+- `Synth Editor`
 
 The Advanced page includes a read-only `Firmware 1.4 alpha` version label.
 The `Buzzer` toggle is inserted only on hardware `V1.2`.

@@ -258,17 +258,22 @@ bool servicePresetSyncTransfer() {
     The first parameter is the item label.
     The second parameter is the destination page when that item is selected.
   */
+char mainTuningMenuLabel[40] = "Tuning";
+char mainLayoutMenuLabel[40] = "Layout";
+char mainScaleMenuLabel[40] = "Scale";
+char mainSynthPresetMenuLabel[48] = "Synth: Current";
+
 GEMPage menuPageMain("HexBoard MIDI Controller");
 GEMPage menuPageTuning("Tuning", menuPageMain);
-GEMItem menuGotoTuning("Tuning", menuPageTuning);
+GEMItem menuGotoTuning(mainTuningMenuLabel, menuPageTuning);
 GEMPage menuPageLayout("Layout", menuPageMain);
-GEMItem menuGotoLayout("Layout", menuPageLayout);
+GEMItem menuGotoLayout(mainLayoutMenuLabel, menuPageLayout);
 GEMPage menuPageScales("Scales", menuPageMain);
-GEMItem menuGotoScales("Scales", menuPageScales);
-GEMPage menuPageColors("Color Options", menuPageMain);
-GEMItem menuGotoColors("Color Options", menuPageColors);
-GEMPage menuPageSynth("Synth Options", menuPageMain);
-GEMItem menuGotoSynth("Synth Options", menuPageSynth);
+GEMItem menuGotoScales(mainScaleMenuLabel, menuPageScales);
+GEMPage menuPageColors("Lights & Colors", menuPageMain);
+GEMItem menuGotoColors("Lights & Colors", menuPageColors);
+GEMPage menuPageSynth("Synth Editor", menuPageMain);
+GEMItem menuGotoSynth("Synth Editor", menuPageSynth);
 GEMPage menuPageSynthWavetableLoad("Wavetables", menuPageSynth);
 GEMItem menuGotoSynthWavetableLoad(currentSynthWavetableMenuLabel, menuPageSynthWavetableLoad);
 GEMPage menuPageSynthLfo("LFO", menuPageSynth);
@@ -280,19 +285,18 @@ GEMItem menuGotoSynthFx2("FX Env 2", menuPageSynthFx2);
 GEMPage menuPageSynthPresetSave("Save Preset", menuPageSynth);
 GEMItem menuGotoSynthPresetSave("Save Preset", menuPageSynthPresetSave);
 GEMPage menuPageSynthPresetLoad("Load Preset", menuPageSynth);
-GEMItem menuGotoSynthPresetLoad("Load Preset", menuPageSynthPresetLoad);
-GEMPage menuPageMIDI("MIDI Options", menuPageMain);
-GEMItem menuGotoMIDI("MIDI Options", menuPageMIDI);
-GEMPage menuPageControl("Control Wheel", menuPageMain);
-GEMItem menuGotoControl("Control Wheel", menuPageControl);
-GEMPage menuPageAdvanced("Advanced", menuPageMain);
+GEMItem menuGotoMainSynthPresetLoad(mainSynthPresetMenuLabel, menuPageSynthPresetLoad);
+GEMItem menuGotoSynthPresetLoad(mainSynthPresetMenuLabel, menuPageSynthPresetLoad);
+GEMPage menuPageOptions("Options", menuPageMain);
+GEMItem menuGotoOptions("Options", menuPageOptions);
+GEMPage menuPageAdvanced("Advanced", menuPageOptions);
 GEMItem menuGotoAdvanced("Advanced", menuPageAdvanced);
 GEMPage menuPageSerialDebug("Serial Debug", menuPageAdvanced);
 GEMItem menuGotoSerialDebug("Serial Debug", menuPageSerialDebug);
 GEMPage menuPageSave("Save Profiles", menuPageMain);
-GEMItem menuGotoSave("Save", menuPageSave);
+GEMItem menuGotoSave("Save Profile", menuPageSave);
 GEMPage menuPageLoad("Load Profiles", menuPageMain);
-GEMItem menuGotoLoad("Load", menuPageLoad);
+GEMItem menuGotoLoad("Load Profile", menuPageLoad);
 GEMPage menuPageReboot("Ready to flash firmware!");
 
 // --------------------------------------------------------
@@ -392,9 +396,11 @@ GEMItem menuItemHardware("Hardware", Hardware_Version, selectHardware, GEM_READO
 GEMItem menuItemUSBBootloader("Update Firmware", rebootToBootloader);
 
 void syncSettingsToRuntime();
+void syncSynthSettingsToRuntime();
 void refreshMenuChoicesForCurrentTuning();
 void rebuildRuntimeStateFromCurrentSelection();
 void updateTuningMenuVisibility();
+void updateMainMenuDynamicLabels();
 void tuningIntonationModeChanged();
 void updateSerialDebugMenuVisibility();
 void serialDebugRuntimeChanged(GEMCallbackData callbackData);
@@ -438,6 +444,7 @@ std::vector<GEMItem*> menuItemLayout;
 std::vector<GEMItem*> menuItemScales;
 GEMSelect* selectKey[TUNINGCOUNT];
 GEMItem* menuItemKeys[TUNINGCOUNT];
+GEMItem* menuItemMainKeys[TUNINGCOUNT];
 GEMItem* menuItemSaveProfile[PROFILE_COUNT];
 GEMItem* menuItemLoadProfile[PROFILE_COUNT];
 char saveProfileLabels[PROFILE_COUNT][24];
@@ -487,6 +494,7 @@ PersistentCallbackInfo callbackInfoScaleLock = {
   nullptr
 };
 GEMItem menuItemScaleLock("Scale Lock", scaleLock, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoScaleLock));
+GEMItem menuItemMainScaleLock("Scale Lock", scaleLock, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoScaleLock));
 
 PersistentCallbackInfo callbackInfoShiftColor = {
   static_cast<uint8_t>(SettingKey::PaletteCenterOnKey),
@@ -543,6 +551,7 @@ void updateSerialDebugMenuVisibility() {
 void serialDebugRuntimeChanged(GEMCallbackData /*callbackData*/) {
   if (serialDebugEnabled) {
     resetSerialDebugMinFreeHeap();
+    resetSerialDebugAudioStats();
   }
   updateSerialDebugRuntime();
   updateSerialDebugMenuVisibility();
@@ -2217,6 +2226,66 @@ void applyBuiltinGeometryRuntimeFromSettings() {
 // --------------------------------------------------------
 // SETTINGS STEP 3 - Callback to sync settings variables on power-up
 // --------------------------------------------------------
+void syncSynthSettingsToRuntime() {
+  playbackMode = normalizeSynthPlaybackMode(settingValue(SettingKey::PlaybackMode));
+  settings[static_cast<uint8_t>(SettingKey::PlaybackMode)] = playbackMode;
+  currWave = settingValue(SettingKey::Waveform);
+  synthWavetablePosition = settingValue(SettingKey::SynthWavetablePosition);
+  if (!currentSynthWavetableReferenceValid) {
+    selectCompatibilitySynthWavetableForLegacyWaveform(currWave, true);
+    settings[static_cast<uint8_t>(SettingKey::SynthWavetablePosition)] = synthWavetablePosition;
+  }
+  loadSelectedSynthWavetable();
+  updateCurrentSynthWavetableMenuLabel();
+  synthDrive = settingValue(SettingKey::SynthDrive);
+  if (synthDrive > SYNTH_DRIVE_DIRTY) {
+    synthDrive = SYNTH_DRIVE_OFF;
+  }
+  synthModTarget = settingValue(SettingKey::SynthModTarget);
+  synthModAmount = settingValue(SettingKey::SynthModAmount);
+  synthVibratoSpeed = settingValue(SettingKey::SynthVibratoSpeed);
+  synthLfoTarget = settingValue(SettingKey::SynthLfoTarget);
+  synthLfoAmount = settingValue(SettingKey::SynthLfoAmount);
+  synthLfoWave = settingValue(SettingKey::SynthLfoWave);
+  synthLfoSpeed = settingValue(SettingKey::SynthLfoSpeed);
+  arpeggiatorDivision = settingValue(SettingKey::ArpeggiatorDivision);
+  if (arpeggiatorDivision == 0) {
+    arpeggiatorDivision = 1;
+  }
+  arpeggiatorDirection = settingValue(SettingKey::ArpeggiatorDirection);
+  updateArpeggiatorDirection();
+  synthBPM = settingValue(SettingKey::SynthBPM);
+  if (synthBPM == 0) {
+    synthBPM = 1;
+  }
+  synthPortamentoTimeIndex = settingValue(SettingKey::SynthPortamentoTimeIndex);
+  updateSynthPortamentoSettings();
+  envelopeAttackIndex = settingValue(SettingKey::EnvelopeAttackIndex);
+  envelopeHoldIndex = settingValue(SettingKey::EnvelopeHoldIndex);
+  envelopeDecayIndex = settingValue(SettingKey::EnvelopeDecayIndex);
+  envelopeSustainLevel = settingValue(SettingKey::EnvelopeSustainLevel);
+  envelopeReleaseIndex = settingValue(SettingKey::EnvelopeReleaseIndex);
+  effectEnvelopeAttackIndex[0] = settingValue(SettingKey::EffectEnvelopeAttackIndex);
+  effectEnvelopeHoldIndex[0] = settingValue(SettingKey::EffectEnvelopeHoldIndex);
+  effectEnvelopeDecayIndex[0] = settingValue(SettingKey::EffectEnvelopeDecayIndex);
+  effectEnvelopeSustainLevel[0] = settingValue(SettingKey::EffectEnvelopeSustainLevel);
+  effectEnvelopeReleaseIndex[0] = settingValue(SettingKey::EffectEnvelopeReleaseIndex);
+  effectEnvelopeTarget[0] = settingValue(SettingKey::EffectEnvelopeTarget);
+  effectEnvelopeAmount[0] = settingValue(SettingKey::EffectEnvelopeAmount);
+  effectEnvelopeTarget[1] = settingValue(SettingKey::EffectEnvelope2Target);
+  effectEnvelopeAmount[1] = settingValue(SettingKey::EffectEnvelope2Amount);
+  effectEnvelopeAttackIndex[1] = settingValue(SettingKey::EffectEnvelope2AttackIndex);
+  effectEnvelopeHoldIndex[1] = settingValue(SettingKey::EffectEnvelope2HoldIndex);
+  effectEnvelopeDecayIndex[1] = settingValue(SettingKey::EffectEnvelope2DecayIndex);
+  effectEnvelopeSustainLevel[1] = settingValue(SettingKey::EffectEnvelope2SustainLevel);
+  effectEnvelopeReleaseIndex[1] = settingValue(SettingKey::EffectEnvelope2ReleaseIndex);
+  updateSynthModulationParams();
+  updateEnvelopeParamsFromSettings();
+  updateEffectEnvelopeParamsFromSettings();
+  updateArpeggiatorTiming();
+  updateSynthMenuVisibility();
+}
+
 void syncSettingsToRuntime() {
   rotaryInvert = settingEnabled(SettingKey::RotaryInvert);
   autoSave = settingEnabled(SettingKey::AutoSave);
@@ -2263,45 +2332,13 @@ void syncSettingsToRuntime() {
   velWheelSpeed = settingValue(SettingKey::VelWheelSpeed);
   if (velWheelSpeed > 127) velWheelSpeed = 127;
 
-  playbackMode = normalizeSynthPlaybackMode(settingValue(SettingKey::PlaybackMode));
-  settings[static_cast<uint8_t>(SettingKey::PlaybackMode)] = playbackMode;
-  currWave = settingValue(SettingKey::Waveform);
-  synthWavetablePosition = settingValue(SettingKey::SynthWavetablePosition);
-  if (!currentSynthWavetableReferenceValid) {
-    selectCompatibilitySynthWavetableForLegacyWaveform(currWave, true);
-    settings[static_cast<uint8_t>(SettingKey::SynthWavetablePosition)] = synthWavetablePosition;
-  }
-  loadSelectedSynthWavetable();
-  updateCurrentSynthWavetableMenuLabel();
-  synthDrive = settingValue(SettingKey::SynthDrive);
-  if (synthDrive > SYNTH_DRIVE_DIRTY) {
-    synthDrive = SYNTH_DRIVE_OFF;
-  }
-  synthModTarget = settingValue(SettingKey::SynthModTarget);
-  synthModAmount = settingValue(SettingKey::SynthModAmount);
-  synthVibratoSpeed = settingValue(SettingKey::SynthVibratoSpeed);
-  synthLfoTarget = settingValue(SettingKey::SynthLfoTarget);
-  synthLfoAmount = settingValue(SettingKey::SynthLfoAmount);
-  synthLfoWave = settingValue(SettingKey::SynthLfoWave);
-  synthLfoSpeed = settingValue(SettingKey::SynthLfoSpeed);
+  syncSynthSettingsToRuntime();
   synthBuzzerEnabled = decodeStoredBuzzerEnabled(settingValue(SettingKey::AudioDestination));
   syncAudioDestinationToRuntime();
   headphoneVolumeCap = settingValue(SettingKey::HeadphoneVolumeCap);
   if (headphoneVolumeCap > HEADPHONE_VOLUME_CAP_FULL) {
     headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
   }
-  arpeggiatorDivision = settingValue(SettingKey::ArpeggiatorDivision);
-  if (arpeggiatorDivision == 0) {
-    arpeggiatorDivision = 1;
-  }
-  arpeggiatorDirection = settingValue(SettingKey::ArpeggiatorDirection);
-  updateArpeggiatorDirection();
-  synthBPM = settingValue(SettingKey::SynthBPM);
-  if (synthBPM == 0) {
-    synthBPM = 1;
-  }
-  synthPortamentoTimeIndex = settingValue(SettingKey::SynthPortamentoTimeIndex);
-  updateSynthPortamentoSettings();
   metronomeMode = settingValue(SettingKey::MetronomeMode);
   metronomeSignatureIndex = settingValue(SettingKey::MetronomeSignature);
   colorMode = settingValue(SettingKey::ColorMode);
@@ -2319,32 +2356,8 @@ void syncSettingsToRuntime() {
   useDynamicJustIntonation = settingEnabled(SettingKey::DynamicJI);
   dynamicJIRatioTable = normalizeDynamicJIRatioTable(settingValue(SettingKey::DynamicJIRatioTable));
   updateTuningMenuVisibility();
-  envelopeAttackIndex = settingValue(SettingKey::EnvelopeAttackIndex);
-  envelopeHoldIndex = settingValue(SettingKey::EnvelopeHoldIndex);
-  envelopeDecayIndex = settingValue(SettingKey::EnvelopeDecayIndex);
-  envelopeSustainLevel = settingValue(SettingKey::EnvelopeSustainLevel);
-  envelopeReleaseIndex = settingValue(SettingKey::EnvelopeReleaseIndex);
-  effectEnvelopeAttackIndex[0] = settingValue(SettingKey::EffectEnvelopeAttackIndex);
-  effectEnvelopeHoldIndex[0] = settingValue(SettingKey::EffectEnvelopeHoldIndex);
-  effectEnvelopeDecayIndex[0] = settingValue(SettingKey::EffectEnvelopeDecayIndex);
-  effectEnvelopeSustainLevel[0] = settingValue(SettingKey::EffectEnvelopeSustainLevel);
-  effectEnvelopeReleaseIndex[0] = settingValue(SettingKey::EffectEnvelopeReleaseIndex);
-  effectEnvelopeTarget[0] = settingValue(SettingKey::EffectEnvelopeTarget);
-  effectEnvelopeAmount[0] = settingValue(SettingKey::EffectEnvelopeAmount);
-  effectEnvelopeTarget[1] = settingValue(SettingKey::EffectEnvelope2Target);
-  effectEnvelopeAmount[1] = settingValue(SettingKey::EffectEnvelope2Amount);
-  effectEnvelopeAttackIndex[1] = settingValue(SettingKey::EffectEnvelope2AttackIndex);
-  effectEnvelopeHoldIndex[1] = settingValue(SettingKey::EffectEnvelope2HoldIndex);
-  effectEnvelopeDecayIndex[1] = settingValue(SettingKey::EffectEnvelope2DecayIndex);
-  effectEnvelopeSustainLevel[1] = settingValue(SettingKey::EffectEnvelope2SustainLevel);
-  effectEnvelopeReleaseIndex[1] = settingValue(SettingKey::EffectEnvelope2ReleaseIndex);
   bootAnimationEnabled = settingEnabled(SettingKey::BootAnimationEnabled);
   displayPlayedNotes = settingEnabled(SettingKey::DisplayPlayedNotes);
-  updateSynthModulationParams();
-  updateEnvelopeParamsFromSettings();
-  updateEffectEnvelopeParamsFromSettings();
-  updateArpeggiatorTiming();
-  updateSynthMenuVisibility();
 
   // Now *apply* them to the engine/UI:
   applyBuiltinGeometryRuntimeFromSettings();
@@ -2357,13 +2370,35 @@ void syncSettingsToRuntime() {
   menuHome();                    // Refresh main screen to match rotation
 }
 
+void updateMainMenuDynamicLabels() {
+  snprintf(mainTuningMenuLabel,
+           sizeof(mainTuningMenuLabel),
+           "Tuning: %s",
+           current.tuning().name ? current.tuning().name : "Current");
+  snprintf(mainLayoutMenuLabel,
+           sizeof(mainLayoutMenuLabel),
+           "Layout: %s",
+           current.layout().name ? current.layout().name : "Current");
+  snprintf(mainScaleMenuLabel,
+           sizeof(mainScaleMenuLabel),
+           "Scale: %s",
+           current.scale().name ? current.scale().name : "Current");
+  snprintf(mainSynthPresetMenuLabel,
+           sizeof(mainSynthPresetMenuLabel),
+           "Synth: %s%s",
+           currentSynthPresetRuntimeModified() ? "*" : "",
+           currentSynthPresetDisplayName());
+}
+
 // Call this procedure to return to the main menu
 void menuHome() {
+  updateMainMenuDynamicLabels();
   menu.setMenuPageCurrent(menuPageMain);
   menu.drawMenu();
 }
 
 void menuSynthOptionsHome() {
+  updateMainMenuDynamicLabels();
   menu.setMenuPageCurrent(menuPageSynth);
   menu.drawMenu();
 }
@@ -2431,6 +2466,9 @@ void showOnlyValidKeyChoices() {
   for (int T = 0; T < TUNINGCOUNT; T++) {
     if (menuItemKeys[T]) {
       menuItemKeys[T]->hide((T != current.tuningIndex));
+    }
+    if (menuItemMainKeys[T]) {
+      menuItemMainKeys[T]->hide((T != current.tuningIndex));
     }
   }
   sendToLog("menu: Key choices were updated.");
@@ -2613,6 +2651,9 @@ void createKeyMenuItems() {
     menuItemKeys[T] = new GEMItem("Key", current.keyStepsFromA, *selectKey[T], changeKey);
     menuItemKeys[T]->setPreviewCallback(previewKey);
     menuPageScales.addMenuItem(*menuItemKeys[T]);
+    menuItemMainKeys[T] = new GEMItem("Key", current.keyStepsFromA, *selectKey[T], changeKey);
+    menuItemMainKeys[T]->setPreviewCallback(previewKey);
+    menuPageMain.addMenuItem(*menuItemMainKeys[T]);
   }
   showOnlyValidKeyChoices();
 }
@@ -2671,6 +2712,7 @@ void setupLayoutMenuPage() {
 
 void setupScalesMenuPage() {
   menuPageMain.addMenuItem(menuGotoScales);
+  menuPageMain.addMenuItem(menuItemMainScaleLock);
   menuPageScales.addMenuItem(menuItemScaleLock);
 }
 
@@ -2728,41 +2770,38 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynth, menuItemSynthBPM, previewSynthBPM);
   addPreviewMenuItem(menuPageSynth, menuItemMetronomeMode, previewMetronomeMode);
   addPreviewMenuItem(menuPageSynth, menuItemMetronomeSignature, previewMetronomeSignature);
-  menuPageSynth.addMenuItem(menuGotoSynthPresetSave);
   menuPageSynth.addMenuItem(menuGotoSynthPresetLoad);
+  menuPageSynth.addMenuItem(menuGotoSynthPresetSave);
   createSynthWavetableMenuItems();
   createSynthPresetMenuItems();
   updateSynthMenuVisibility();
 }
 
 void setupMidiMenuPage() {
-  menuPageMain.addMenuItem(menuGotoMIDI);
-  menuPageMIDI.addMenuItem(menuItemSelectMIDIChannel);
-  menuPageMIDI.addMenuItem(menuItemSelectMPEMode);
-  menuPageMIDI.addMenuItem(menuItemMPEpitchBend);
-  menuPageMIDI.addMenuItem(menuItemSelectMPELowChannel);
-  menuPageMIDI.addMenuItem(menuItemSelectMPEHighChannel);
-  menuPageMIDI.addMenuItem(menuItemToggleMPELowPriority);
-  menuPageMIDI.addMenuItem(menuItemToggleExtraMPE);
-  menuPageMIDI.addMenuItem(menuItemSelectCC74value);
-  menuPageMIDI.addMenuItem(menuItemRolandMT32);
-  menuPageMIDI.addMenuItem(menuItemGeneralMidi);
+  menuPageOptions.addMenuItem(menuItemSelectMIDIChannel);
+  menuPageOptions.addMenuItem(menuItemSelectMPEMode);
+  menuPageOptions.addMenuItem(menuItemMPEpitchBend);
+  menuPageOptions.addMenuItem(menuItemSelectMPELowChannel);
+  menuPageOptions.addMenuItem(menuItemSelectMPEHighChannel);
+  menuPageOptions.addMenuItem(menuItemToggleMPELowPriority);
+  menuPageOptions.addMenuItem(menuItemToggleExtraMPE);
+  menuPageOptions.addMenuItem(menuItemSelectCC74value);
+  menuPageOptions.addMenuItem(menuItemRolandMT32);
+  menuPageOptions.addMenuItem(menuItemGeneralMidi);
 }
 
 void setupControlMenuPage() {
-  menuPageMain.addMenuItem(menuGotoControl);
-  addPreviewMenuItem(menuPageControl, menuItemVelSpeed, previewVelSpeed);
-  addPreviewMenuItem(menuPageControl, menuItemPBSpeed, previewPBSpeed);
-  addPreviewMenuItem(menuPageControl, menuItemModSpeed, previewModSpeed);
-  addPreviewMenuItem(menuPageControl, menuItemPBBehave, previewPBBehave);
-  addPreviewMenuItem(menuPageControl, menuItemModBehave, previewModBehave);
-  addPreviewMenuItem(menuPageMain, menuItemTransposeSteps, previewTranspose);
+  addPreviewMenuItem(menuPageOptions, menuItemVelSpeed, previewVelSpeed);
+  addPreviewMenuItem(menuPageOptions, menuItemPBSpeed, previewPBSpeed);
+  addPreviewMenuItem(menuPageOptions, menuItemModSpeed, previewModSpeed);
+  addPreviewMenuItem(menuPageOptions, menuItemPBBehave, previewPBBehave);
+  addPreviewMenuItem(menuPageOptions, menuItemModBehave, previewModBehave);
 }
 
 void setupProfileMenuPages() {
+  menuPageMain.addMenuItem(menuGotoLoad);
   menuPageMain.addMenuItem(menuGotoSave);
   menuPageSave.addMenuItem(menuItemAutoSave);
-  menuPageMain.addMenuItem(menuGotoLoad);
   createProfileMenuItems();
 }
 
@@ -2775,7 +2814,7 @@ void setupSerialDebugMenuPage() {
 }
 
 void setupAdvancedMenuPage() {
-  menuPageMain.addMenuItem(menuGotoAdvanced);
+  menuPageOptions.addMenuItem(menuGotoAdvanced);
   menuPageAdvanced.addMenuItem(menuItemVersion);
   menuPageAdvanced.addMenuItem(menuItemHardware);
   menuPageAdvanced.addMenuItem(menuItemRotary);
@@ -2790,8 +2829,21 @@ void setupAdvancedMenuPage() {
   addPreviewMenuItem(menuPageAdvanced, menuItemLedTest, previewLedTest);
 }
 
+void setupMainSynthPresetLoadMenuItem() {
+  menuPageMain.addMenuItem(menuGotoMainSynthPresetLoad);
+}
+
+void setupOptionsMenuPage() {
+  menuPageMain.addMenuItem(menuGotoOptions);
+}
+
+void setupTransposeMenuItem() {
+  addPreviewMenuItem(menuPageMain, menuItemTransposeSteps, previewTranspose);
+}
+
 void setupMenu() {
   initTransposeOptions();
+  updateMainMenuDynamicLabels();
   menu.setSplashDelay(0);
   menu.init();
   menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
@@ -2802,15 +2854,19 @@ void setupMenu() {
     */
   setupTuningMenuPage();
   setupLayoutMenuPage();
+  createKeyMenuItems();
   setupScalesMenuPage();
   createUserGeometryMenuItems();
+  setupMainSynthPresetLoadMenuItem();
   setupColorsMenuPage();
-  setupSynthMenuPage();
+  setupTransposeMenuItem();
+  setupOptionsMenuPage();
   setupMidiMenuPage();
   setupControlMenuPage();
-  setupProfileMenuPages();
   setupSerialDebugMenuPage();
   setupAdvancedMenuPage();
+  setupProfileMenuPages();
+  setupSynthMenuPage();
 }
 void setupGFX() {
   u8g2.begin();                      // Menu and graphics setup

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "generate:factory-wavetables": "node scripts/generate-factory-wavetables.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",

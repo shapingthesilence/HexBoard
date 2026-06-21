@@ -866,7 +866,7 @@ int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset) {
 
 void applySynthPresetRuntimeOnly(const SynthPresetSlot& preset) {
   applySynthPresetToSettings(preset);
-  syncSettingsToRuntime();
+  syncSynthSettingsToRuntime();
   markSettingsDirty();
 }
 

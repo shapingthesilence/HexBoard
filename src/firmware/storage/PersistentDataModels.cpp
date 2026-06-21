@@ -92,7 +92,7 @@ uint8_t* settings = settingsProfiles[DEFAULT_PROFILE_INDEX];
 uint8_t activeProfileIndex = DEFAULT_PROFILE_INDEX;
 uint8_t defaultProfileIndex = DEFAULT_PROFILE_INDEX;
 
-std::vector<SynthPresetSlot> synthPresets;
+SynthPresetCatalog synthPresets;
 std::vector<SynthWavetableSlot> synthWavetables;
 std::vector<GeometryObjectSlot> geometryObjects;
 

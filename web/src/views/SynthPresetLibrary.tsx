@@ -3,6 +3,7 @@ import {
   createSynthPresetObject,
   createSynthWavetableObject,
   createSynthWavetableMetadataObject,
+  createFactorySynthWavetables,
   crunchSerumWavetable,
   deterministicObjectId,
   encodeHexBoardWavetableWav,
@@ -124,6 +125,7 @@ interface DraggedPreset {
 
 const computerLibraryStorageKey = "hexboard.synthPresetComputerLibrary.v1";
 const computerWavetableStorageKey = "hexboard.synthWavetableComputerLibrary.v1";
+const computerWavetableFactorySeedStorageKey = "hexboard.synthWavetableFactorySeed.v1";
 const presetFileFormat = "hexboard.synthPreset.v1";
 const wavetableFileFormat = "hexboard.synthWavetable.v1";
 const builtInWavetableFolder = "/Built In";
@@ -597,6 +599,30 @@ function compareWavetables(left: EditableSynthWavetable, right: EditableSynthWav
   return `${left.folderPath}/${left.name}`.localeCompare(`${right.folderPath}/${right.name}`);
 }
 
+let factoryWavetableCache: EditableSynthWavetable[] | null = null;
+
+function factoryWavetableSources(): EditableSynthWavetable[] {
+  if (!factoryWavetableCache) {
+    factoryWavetableCache = createFactorySynthWavetables()
+      .map((wavetable) => ({
+        ...wavetable,
+        sampleCrc: crc32(wavetable.samples)
+      }))
+      .sort(compareWavetables);
+  }
+  return factoryWavetableCache;
+}
+
+function factoryComputerWavetables(): EditableSynthWavetable[] {
+  return factoryWavetableSources().map(cloneWavetable);
+}
+
+function mergeMissingFactoryWavetables(wavetables: EditableSynthWavetable[]): EditableSynthWavetable[] {
+  const existingKeys = new Set(wavetables.map((wavetable) => wavetableSaveKey(wavetable)));
+  const additions = factoryComputerWavetables().filter((wavetable) => !existingKeys.has(wavetableSaveKey(wavetable)));
+  return [...wavetables.map(cloneWavetable), ...additions].sort(compareWavetables);
+}
+
 function upsertPreset(presets: EditableSynthPreset[], preset: EditableSynthPreset): EditableSynthPreset[] {
   const nextPreset = clonePreset(preset);
   const index = presets.findIndex((candidate) => candidate.objectIdHex === nextPreset.objectIdHex);
@@ -932,20 +958,27 @@ function saveComputerPresets(presets: EditableSynthPreset[]) {
 
 function loadComputerWavetables(): EditableSynthWavetable[] {
   if (typeof window === "undefined") {
-    return [];
+    return factoryComputerWavetables();
   }
 
   try {
+    const factorySeeded = window.localStorage.getItem(computerWavetableFactorySeedStorageKey) === "1";
     const stored = window.localStorage.getItem(computerWavetableStorageKey);
     const parsed = stored ? JSON.parse(stored) : null;
     if (Array.isArray(parsed)) {
-      return parsed.map(wavetableFromUnknown).sort(compareWavetables);
+      const wavetables = parsed.map(wavetableFromUnknown);
+      if (!factorySeeded) {
+        window.localStorage.setItem(computerWavetableFactorySeedStorageKey, "1");
+        return mergeMissingFactoryWavetables(wavetables);
+      }
+      return wavetables.sort(compareWavetables);
     }
   } catch {
     window.localStorage.removeItem(computerWavetableStorageKey);
   }
 
-  return [];
+  window.localStorage.setItem(computerWavetableFactorySeedStorageKey, "1");
+  return factoryComputerWavetables();
 }
 
 function saveComputerWavetables(wavetables: EditableSynthWavetable[]) {
@@ -1141,7 +1174,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }, [computerWavetables, hexboardWavetables, preset.wavetableFolderPath, preset.wavetableName]);
   const selectedPreviewWavetable = useMemo(() => {
     const selectedKey = wavetableSaveKey(normalizeWavetableReference(preset.wavetableFolderPath, preset.wavetableName));
-    return [...computerWavetables, ...hexboardWavetables].find((wavetable) =>
+    return [...computerWavetables, ...hexboardWavetables, ...factoryWavetableSources()].find((wavetable) =>
       wavetable.samples && wavetableSaveKey(wavetable) === selectedKey
     );
   }, [computerWavetables, hexboardWavetables, preset.wavetableFolderPath, preset.wavetableName]);

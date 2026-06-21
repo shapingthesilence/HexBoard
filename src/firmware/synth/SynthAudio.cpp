@@ -1591,10 +1591,7 @@ struct SynthVoiceRenderCache {
   int16_t polyWarpAmountStepQ4 = 0;
   uint8_t warpSlewSamples = 0;
   uint8_t wavetableMipLevel = 0;
-  uint8_t wavetableMipDullLevel = 0;
-  uint8_t wavetableMipBrightBlend = 255;
   SynthWavetableReadContext wavetableContext = { activeSynthWaveTable[0], nullptr, 0 };
-  SynthWavetableReadContext wavetableDullContext = { activeSynthWaveTable[0], nullptr, 0 };
 };
 
 SynthModulationAmounts synthBaseModulationCache = {};
@@ -1602,6 +1599,7 @@ std::array<SynthVoiceRenderCache, POLYPHONY_LIMIT> synthVoiceRenderCaches = {};
 std::array<bool, POLYPHONY_LIMIT> synthVoiceRenderCacheValid = {};
 uint16_t synthSharedWavetableFramePosition = 0;
 uint8_t synthControlSampleCountdown = 0;
+uint8_t synthWavetableContextTickDivider = 0;
 
 inline void RAM_FUNC(resetSynthVoiceRenderCache)(uint8_t voiceIndex) {
   if (voiceIndex >= POLYPHONY_LIMIT) {
@@ -1615,6 +1613,7 @@ void RAM_FUNC(resetSynthRenderCaches)() {
   synthBaseModulationCache = {};
   synthSharedWavetableFramePosition = 0;
   synthControlSampleCountdown = 0;
+  synthWavetableContextTickDivider = 0;
   for (uint8_t voiceIndex = 0; voiceIndex < POLYPHONY_LIMIT; ++voiceIndex) {
     resetSynthVoiceRenderCache(voiceIndex);
   }
@@ -1886,23 +1885,6 @@ inline uint16_t RAM_FUNC(readActiveWavetableSampleWithContext)(uint16_t phase,
   }
   int16_t sampleB = context.frameB[sampleIndex];
   return static_cast<uint16_t>((sampleA << 8) + ((sampleB - sampleA) * static_cast<int16_t>(context.frameFrac)));
-}
-
-inline uint16_t RAM_FUNC(readActiveWavetableSampleWithMipBlend)(uint16_t phase,
-                                                                const SynthVoiceRenderCache& cache) {
-  if (cache.wavetableMipBrightBlend == 255 || cache.wavetableMipLevel == cache.wavetableMipDullLevel) {
-    return readActiveWavetableSampleWithContext(phase, cache.wavetableContext);
-  }
-  if (cache.wavetableMipBrightBlend == 0) {
-    return readActiveWavetableSampleWithContext(phase, cache.wavetableDullContext);
-  }
-
-  uint16_t brightSample = readActiveWavetableSampleWithContext(phase, cache.wavetableContext);
-  uint16_t dullSample = readActiveWavetableSampleWithContext(phase, cache.wavetableDullContext);
-  int32_t delta = static_cast<int32_t>(brightSample) - static_cast<int32_t>(dullSample);
-  return static_cast<uint16_t>(
-    static_cast<int32_t>(dullSample)
-    + ((delta * static_cast<int32_t>(cache.wavetableMipBrightBlend) + 127) >> 8));
 }
 
 inline uint16_t RAM_FUNC(readActiveWavetableSampleAtFramePosition)(uint16_t phase,
@@ -2222,6 +2204,7 @@ inline void RAM_FUNC(refreshSynthVoiceRenderCache)(uint8_t voiceIndex,
                                                    uint8_t elapsedTicks,
                                                    bool activeWavetableHasFrames,
                                                    bool perVoiceWavetablePosition,
+                                                   bool refreshWavetableContext,
                                                    uint8_t activeWaveFrameCount,
                                                    bool& synthVibratoSampleReady,
                                                    int16_t& synthVibratoSample) {
@@ -2283,27 +2266,23 @@ inline void RAM_FUNC(refreshSynthVoiceRenderCache)(uint8_t voiceIndex,
                           voiceModulation,
                           elapsedTicks,
                           elapsedTicks == 0 || !synthVoiceRenderCacheValid[voiceIndex]);
-  if (activeWavetableHasFrames) {
+  if (activeWavetableHasFrames && refreshWavetableContext) {
     SynthWavetableMipSelection mipSelection =
       synthWavetableMipSelectionForMaxPhaseIncrement(maxExpectedPhaseIncrement);
-    cache.wavetableMipLevel = mipSelection.brightLevel;
-    cache.wavetableMipDullLevel = mipSelection.dullLevel;
-    cache.wavetableMipBrightBlend = mipSelection.brightBlend;
+    uint8_t selectedMipLevel =
+      (mipSelection.brightLevel == mipSelection.dullLevel
+       || mipSelection.brightBlend >= SYNTH_WAVETABLE_MIP_BRIGHT_SELECT_THRESHOLD)
+        ? mipSelection.brightLevel
+        : mipSelection.dullLevel;
+    cache.wavetableMipLevel = selectedMipLevel;
     uint16_t framePosition = perVoiceWavetablePosition
       ? wavetableFramePositionFromAmount(combinedWavetablePositionAmount(voiceModulation.wavetablePosition))
       : synthSharedWavetableFramePosition;
     cache.wavetableContext =
-      wavetableReadContextFromFramePosition(framePosition, activeWaveFrameCount, mipSelection.brightLevel);
-    cache.wavetableDullContext =
-      (mipSelection.brightBlend == 255 || mipSelection.brightLevel == mipSelection.dullLevel)
-        ? cache.wavetableContext
-        : wavetableReadContextFromFramePosition(framePosition, activeWaveFrameCount, mipSelection.dullLevel);
-  } else {
+      wavetableReadContextFromFramePosition(framePosition, activeWaveFrameCount, selectedMipLevel);
+  } else if (!activeWavetableHasFrames) {
     cache.wavetableContext = { activeSynthWaveTable[0], nullptr, 0 };
-    cache.wavetableDullContext = cache.wavetableContext;
     cache.wavetableMipLevel = 0;
-    cache.wavetableMipDullLevel = 0;
-    cache.wavetableMipBrightBlend = 255;
   }
   synthVoiceRenderCacheValid[voiceIndex] = true;
 }
@@ -2446,8 +2425,15 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
   const int32_t metronomeSample = readMetronomeBeepSample();
   const bool metronomeAudible = metronomeSample != 0;
   const bool synthControlTick = synthControlTickDue();
+  bool synthWavetableContextTick = false;
   if (synthControlTick) {
     refreshSynthBaseModulationCache(SYNTH_CONTROL_RATE_SAMPLES);
+    if (synthWavetableContextTickDivider == 0) {
+      synthWavetableContextTick = true;
+      synthWavetableContextTickDivider = SYNTH_WAVETABLE_CONTEXT_RATE_DIVIDER - 1;
+    } else {
+      --synthWavetableContextTickDivider;
+    }
   }
   int16_t synthVibratoSample = 0;
   bool synthVibratoSampleReady = false;
@@ -2474,7 +2460,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
     activeWavetableHasFrames
     && ((synthEffectEnvelopeActive[0] && effectEnvelopeTarget[0] == SYNTH_MOD_TARGET_WAVETABLE_POSITION)
         || (synthEffectEnvelopeActive[1] && effectEnvelopeTarget[1] == SYNTH_MOD_TARGET_WAVETABLE_POSITION));
-  if (synthControlTick) {
+  if (synthControlTick && synthWavetableContextTick) {
     synthSharedWavetableFramePosition =
       (activeWavetableHasFrames && !perVoiceWavetablePosition)
         ? wavetableFramePositionFromAmount(combinedWavetablePositionAmount(synthBaseModulationCache.wavetablePosition))
@@ -2635,12 +2621,22 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
     }
 
     if (synthControlTick || forceVoiceRenderCacheRefresh || !synthVoiceRenderCacheValid[i]) {
+      bool refreshWavetableContext =
+        forceVoiceRenderCacheRefresh || !synthVoiceRenderCacheValid[i] || synthWavetableContextTick;
+      if (refreshWavetableContext
+          && activeWavetableHasFrames
+          && !perVoiceWavetablePosition
+          && !synthWavetableContextTick) {
+        synthSharedWavetableFramePosition =
+          wavetableFramePositionFromAmount(combinedWavetablePositionAmount(synthBaseModulationCache.wavetablePosition));
+      }
       refreshSynthVoiceRenderCache(i,
                                    (synthControlTick && !forceVoiceRenderCacheRefresh)
                                      ? SYNTH_FX_ENVELOPE_CONTROL_TICKS
                                      : 0,
                                    activeWavetableHasFrames,
                                    perVoiceWavetablePosition,
+                                   refreshWavetableContext,
                                    activeWaveFrameCount,
                                    synthVibratoSampleReady,
                                    synthVibratoSample);
@@ -2659,7 +2655,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
     }
     advanceSynthVoiceSlews(voiceCache);
     if (activeWavetableHasFrames) {
-      p = readActiveWavetableSampleWithMipBlend(p, voiceCache);
+      p = readActiveWavetableSampleWithContext(p, voiceCache.wavetableContext);
     } else {
       t = p >> 8;
       switch (currWave) {

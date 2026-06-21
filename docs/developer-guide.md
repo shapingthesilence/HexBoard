@@ -78,6 +78,7 @@ Typical local web flow:
 ```sh
 cd web
 npm install
+npm run generate:factory-wavetables
 npm run dev
 npm test
 ```
@@ -97,9 +98,15 @@ browser-only AudioWorklet synth preview implementation exists for future offline
 preset audition, but its UI is currently gated off by `auditionFeatureVisible`
 in the synth editor. When re-enabled, it consumes the same preset byte model,
 maps computer keys in a piano-style `a w s e d...` layout with octave selection,
-uses selected local wavetable sample data when available, generates approximate
-built-in wavetable tables by name, and intentionally does not try to match
-RP2040 PWM, piezo/jack staging, or fixed-point render parity. The editor mirrors
+uses selected local wavetable sample data when available, and intentionally
+does not try to match RP2040 PWM, piezo/jack staging, or fixed-point render
+parity. Built-in factory wavetables are generated for the browser by
+`web/scripts/generate-factory-wavetables.mjs`, which reads the firmware anchor
+tables from `src/firmware/synth/BuiltinWavetables.cpp`, mirrors firmware's
+32-frame anchor interpolation, and runs the web FFT-pruned fixed-mip builder.
+The generated `web/src/catalogs/factoryWavetables.ts` file seeds the browser
+wavetable library once and is also used as preview fallback for `/Built In`
+tables. The editor mirrors
 firmware synth-mode, portamento, arpeggiator speed/direction, tempo, named
 wavetable dependency, wavetable position, phase-warp, and LFO controls for synth
 preset schema `7`, and splits the synth library into `Presets` and `Wavetables`
@@ -447,7 +454,7 @@ Important implementation details:
   version
 - the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
-- the Synth Options `Drive` setting is stored as `SynthDrive`; factory default is `Off`
+- the Synth Editor `Drive` setting is stored as `SynthDrive`; factory default is `Off`
 - `PlaybackMode` defaults to `Poly`; valid values are `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, and `Poly`; legacy stored mono value `1` now means `MonoRtg`; legacy transient `PolyTbl` value `5` is normalized to `Poly`
 - onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `FoldWrp` and `100%`; valid runtime targets are `Vibrato`, `Pitch`, `WT Pos`, `FoldWrp`, `DutyWrp`, and `PolyWrp`; pitch target depth maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator spanning about `+/-24` semitones, then reads startup-generated RAM Q16 ratio tables; the three warp targets apply low-CPU phase warps before waveform or wavetable sampling, while `WT Pos` offsets wavetable frame position from the persisted `SynthWavetablePosition` base. `SynthWavetablePosition` remains a `0..127` byte internally, but the on-device menu labels it as frames `1..32` using rounded frame-anchor byte values.
 - synth modulation target calculation runs on a `16`-sample control quantum for CPU headroom; per-voice phase increment and phase-warp depths then linearly slew between cached targets at audio rate to reduce pitch and warp stepping artifacts
@@ -467,7 +474,7 @@ Important implementation details:
   geometry objects from `BuiltinGeometry.cpp`; they use handles starting at
   `0x2000`, live in the `/Built In` folder, and are not stored in
   `/layouts.dat`
-- synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `9`; entries are stored as a counted catalog with a firmware cap of `128` presets; presets save synth sound parameters plus a wavetable folder/name dependency, but do not persist a current preset id; the on-device save/load menus are rebuilt as folder submenus with plain preset-name items; menu rebuilds are deferred out of GEM callbacks so active menu items are not deleted while GEM is still dispatching; literal slashes in web-app folder names are stored as `%2F` so the menu displays them without splitting them into nested submenus; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving the new wavetable dependency from the legacy `Waveform` byte
+- synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `9`; entries are stored as a counted catalog with a firmware cap of `64` presets; the active catalog is backed by a fixed-capacity RAM array instead of a heap-growing `std::vector`, so creating or uploading synth presets does not consume heap per preset; factory defaults copy `Soft String Pad` and `Bright Mono Lead` into ordinary editable preset slots, so users can erase or modify them and recover them with Reset Defaults or the web editor library; presets save synth sound parameters plus a wavetable folder/name dependency, but do not persist a current preset id; the on-device save/load menus use a fixed set of reusable GEM items as paged flat lists with folder/name labels, while the web app remains foldered; synth preset load and web preview call `syncSynthSettingsToRuntime()` so they update only synth runtime state and do not rerun tuning/layout/scale/LED assignment rebuilds; version `1` through `3` files are migrated from the old `8`-slot layout, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending portamento and arpeggiator direction defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving the new wavetable dependency from the legacy `Waveform` byte
 - user synth wavetables are stored as a named catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `64` entries, and per-table sample files named from each `16`-byte wavetable object id; new sample files contain six fixed mip levels with `32` frames and `512` samples per frame at harmonic limits `255`, `96`, `48`, `24`, `12`, and `6` (`98,304` bytes total), while `16,384`-byte base-only files are still accepted and expanded in RAM. The selected wavetable is also snapshotted per profile in `/profile_wavetables.dat` with magic `PWT`, version `1`, so loading a profile restores its folder/name wavetable reference before runtime sync. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
 - user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `1`, up to `127` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. Runtime Apply currently supports generated EDO/equal-step user tunings, vector layouts, included-degree scales, scale color maps, and format-1 explicit button maps. The visible OLED `Tuning`, `Layout`, and `Scales` pages are rebuilt from generated read-only factory geometry plus saved user geometry: tuning entries are the bundle anchors, layout and scale entries are filtered by the selected tuning object id, and save/delete requests defer a menu rebuild like synth preset menus. It does not yet support Scala/cents-table pitch lookup, profile references, or settings persistence for the selected user geometry bundle.
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
@@ -639,15 +646,17 @@ start/release/reset forcing an immediate per-voice cache refresh. Each voice
 chooses a bright mip and adjacent dull mip from the highest expected pitch after
 pitch modulation and vibrato depth; the selector computes the Nyquist-safe
 harmonic limit in Q8 fixed point, applies the transient `Mip Oct` threshold
-shift, then fades the brighter mip in across a small safety margin only after
-that brighter level is safe. This removes hard mip steps during slow pitch ramps
-and biases boundary cases toward a duller level instead of aliasing. The render
-loop reads only the bright context outside the blend margin and performs the
-second wavetable read only while the cached bright blend is between `1` and
-`254`. `Mip Oct` shifts the thresholds by `-4..+4` octaves without touching
-`SettingKey`, `factoryDefaults`, or `CURRENT_SETTINGS_VERSION`. Per-voice phase
-increment and phase-warp depths slew between cached targets at audio rate; the
-normal `16`-sample retarget uses shift math instead of division. Oscillator phase
+shift, and selects one table pointer for the per-sample renderer. Selection is
+biased toward the duller level until the brighter level is safely inside the
+threshold, which avoids aliasing at boundaries without per-sample mip blending.
+Wavetable frame contexts and mip decisions update every other modulation
+quantum by `SYNTH_WAVETABLE_CONTEXT_RATE_DIVIDER`, halving the earlier frame/mip
+interpolation cost while pitch and warp slews still retarget on the normal
+`16`-sample quantum. `Mip Oct` shifts the thresholds by `-4..+4` octaves without
+touching `SettingKey`, `factoryDefaults`, or `CURRENT_SETTINGS_VERSION`.
+Per-voice phase increment and phase-warp depths slew between cached targets at
+audio rate; the normal `16`-sample retarget uses shift math instead of division.
+Oscillator phase
 advance, phase warping, waveform reads, amp-envelope level, mixing, drive, and
 output scaling remain audio-rate. When only global sources such as the wheel or
 LFO modulate `WT Pos`, the cached frame-pair position is shared by all voices;
@@ -721,8 +730,10 @@ The Advanced-menu `Serial Debug` submenu is transient. It has no `SettingKey`.
 `serialDebugEnabled` gates the runtime-only message categories in
 `DiagnosticsTiming.cpp`: `General Log` feeds `sendToLog()`, `Min Heap` prints
 current/minimum `rp2040.getFreeHeap()` values during normal operation, and
-`Audio Stats` prints DMA underrun/render-overrun/max-block counters. The menu
-only reveals the category toggles while `Enabled` is on.
+`Audio Stats` captures the audio profiler window and prints average CPU, max
+CPU, worst max CPU since Serial Debug was enabled, and DMA
+underrun/render-overrun/max-block counters. The menu only reveals the category
+toggles while `Enabled` is on.
 
 Runtime geometry Apply loads the active `ScaleColorMap` and sets `ColorMode`
 from its `DefaultColorMode` TLV. `Custom` renders the map's scale-degree

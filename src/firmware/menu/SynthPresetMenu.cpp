@@ -3,17 +3,208 @@
 #include "MenuAndDisplay.h"
 #include "../storage/SynthPresetStorage.h"
 
+namespace {
+constexpr uint8_t SYNTH_PRESET_MENU_PAGE_SIZE = 5;
+
+enum class SynthPresetMenuMode : uint8_t {
+  Save,
+  Load
+};
+
 struct SynthPresetMenuAction {
   uint16_t presetIndex = 0;
+  int8_t pageDelta = 0;
   bool createNew = false;
-  char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
+  bool loadBlank = false;
+  SynthPresetMenuMode mode = SynthPresetMenuMode::Save;
 };
+
+void saveSynthPresetMenu(GEMCallbackData callbackData);
+void loadSynthPresetMenu(GEMCallbackData callbackData);
+void pageSynthPresetMenu(GEMCallbackData callbackData);
+
+struct SynthPresetMenuSlotItem {
+  char label[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
+  SynthPresetMenuAction action = {};
+  GEMItem item;
+
+  SynthPresetMenuSlotItem(void (*callback)(GEMCallbackData), SynthPresetMenuMode mode)
+    : item(label, callback, reinterpret_cast<void*>(&action)) {
+    action.mode = mode;
+  }
+};
+
+char synthPresetSaveNewLabel[] = "New Preset";
+char synthPresetLoadBlankLabel[] = "Blank";
+char synthPresetPrevLabel[] = "Prev";
+char synthPresetNextLabel[] = "Next";
+
+SynthPresetMenuAction synthPresetSaveNewAction = {
+  0,
+  0,
+  true,
+  false,
+  SynthPresetMenuMode::Save
+};
+SynthPresetMenuAction synthPresetLoadBlankAction = {
+  0,
+  0,
+  false,
+  true,
+  SynthPresetMenuMode::Load
+};
+SynthPresetMenuAction synthPresetSavePrevAction = {
+  0,
+  -1,
+  false,
+  false,
+  SynthPresetMenuMode::Save
+};
+SynthPresetMenuAction synthPresetSaveNextAction = {
+  0,
+  1,
+  false,
+  false,
+  SynthPresetMenuMode::Save
+};
+SynthPresetMenuAction synthPresetLoadPrevAction = {
+  0,
+  -1,
+  false,
+  false,
+  SynthPresetMenuMode::Load
+};
+SynthPresetMenuAction synthPresetLoadNextAction = {
+  0,
+  1,
+  false,
+  false,
+  SynthPresetMenuMode::Load
+};
+
+GEMItem menuItemSaveSynthPresetNew(synthPresetSaveNewLabel,
+                                   saveSynthPresetMenu,
+                                   reinterpret_cast<void*>(&synthPresetSaveNewAction));
+GEMItem menuItemLoadSynthPresetBlank(synthPresetLoadBlankLabel,
+                                     loadSynthPresetMenu,
+                                     reinterpret_cast<void*>(&synthPresetLoadBlankAction));
+GEMItem menuItemSaveSynthPresetPrev(synthPresetPrevLabel,
+                                    pageSynthPresetMenu,
+                                    reinterpret_cast<void*>(&synthPresetSavePrevAction));
+GEMItem menuItemSaveSynthPresetNext(synthPresetNextLabel,
+                                    pageSynthPresetMenu,
+                                    reinterpret_cast<void*>(&synthPresetSaveNextAction));
+GEMItem menuItemLoadSynthPresetPrev(synthPresetPrevLabel,
+                                    pageSynthPresetMenu,
+                                    reinterpret_cast<void*>(&synthPresetLoadPrevAction));
+GEMItem menuItemLoadSynthPresetNext(synthPresetNextLabel,
+                                    pageSynthPresetMenu,
+                                    reinterpret_cast<void*>(&synthPresetLoadNextAction));
+
+SynthPresetMenuSlotItem synthPresetSaveSlots[SYNTH_PRESET_MENU_PAGE_SIZE] = {
+  { saveSynthPresetMenu, SynthPresetMenuMode::Save },
+  { saveSynthPresetMenu, SynthPresetMenuMode::Save },
+  { saveSynthPresetMenu, SynthPresetMenuMode::Save },
+  { saveSynthPresetMenu, SynthPresetMenuMode::Save },
+  { saveSynthPresetMenu, SynthPresetMenuMode::Save }
+};
+
+SynthPresetMenuSlotItem synthPresetLoadSlots[SYNTH_PRESET_MENU_PAGE_SIZE] = {
+  { loadSynthPresetMenu, SynthPresetMenuMode::Load },
+  { loadSynthPresetMenu, SynthPresetMenuMode::Load },
+  { loadSynthPresetMenu, SynthPresetMenuMode::Load },
+  { loadSynthPresetMenu, SynthPresetMenuMode::Load },
+  { loadSynthPresetMenu, SynthPresetMenuMode::Load }
+};
+
+bool synthPresetMenuItemsCreated = false;
+bool synthPresetMenuRebuildPending = false;
+uint16_t synthPresetSavePageStart = 0;
+uint16_t synthPresetLoadPageStart = 0;
+
+uint16_t synthPresetMenuLastPageStart() {
+  size_t presetCount = synthPresets.size();
+  if (presetCount <= SYNTH_PRESET_MENU_PAGE_SIZE) {
+    return 0;
+  }
+  return static_cast<uint16_t>(((presetCount - 1) / SYNTH_PRESET_MENU_PAGE_SIZE) * SYNTH_PRESET_MENU_PAGE_SIZE);
+}
+
+void clampSynthPresetMenuPageStart(uint16_t& pageStart) {
+  uint16_t lastPageStart = synthPresetMenuLastPageStart();
+  if (pageStart > lastPageStart) {
+    pageStart = lastPageStart;
+  }
+}
+
+void formatSynthPresetMenuLabel(uint16_t presetIndex, char* output, size_t outputLength) {
+  if (outputLength == 0) {
+    return;
+  }
+  output[0] = '\0';
+  if (presetIndex >= synthPresets.size()) {
+    return;
+  }
+
+  SynthPresetSlot& preset = synthPresets[presetIndex];
+  if (strcmp(preset.folderPath, SYNTH_PRESET_ROOT_FOLDER) == 0) {
+    snprintf(output, outputLength, "%u %s", static_cast<unsigned>(presetIndex + 1), preset.name);
+    return;
+  }
+
+  char folderLabel[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
+  synthPresetFolderLabel(preset.folderPath, folderLabel, sizeof(folderLabel));
+  snprintf(output,
+           outputLength,
+           "%u %s/%s",
+           static_cast<unsigned>(presetIndex + 1),
+           folderLabel,
+           preset.name);
+}
+
+void updateSynthPresetMenuPage(SynthPresetMenuSlotItem* slots,
+                               uint16_t pageStart,
+                               GEMItem& prevItem,
+                               GEMItem& nextItem) {
+  bool hasPrevious = pageStart > 0;
+  bool hasNext = pageStart + SYNTH_PRESET_MENU_PAGE_SIZE < synthPresets.size();
+  prevItem.hide(!hasPrevious);
+  nextItem.hide(!hasNext);
+
+  for (uint8_t i = 0; i < SYNTH_PRESET_MENU_PAGE_SIZE; ++i) {
+    uint16_t presetIndex = static_cast<uint16_t>(pageStart + i);
+    bool visible = presetIndex < synthPresets.size();
+    if (visible) {
+      formatSynthPresetMenuLabel(presetIndex, slots[i].label, sizeof(slots[i].label));
+      slots[i].action.presetIndex = presetIndex;
+    } else {
+      slots[i].label[0] = '\0';
+      slots[i].action.presetIndex = 0;
+    }
+    slots[i].item.setTitle(slots[i].label);
+    slots[i].item.hide(!visible);
+  }
+}
+
+void updateSynthPresetMenuPages() {
+  compactSynthPresets();
+  clampSynthPresetMenuPageStart(synthPresetSavePageStart);
+  clampSynthPresetMenuPageStart(synthPresetLoadPageStart);
+  updateSynthPresetMenuPage(synthPresetSaveSlots,
+                            synthPresetSavePageStart,
+                            menuItemSaveSynthPresetPrev,
+                            menuItemSaveSynthPresetNext);
+  updateSynthPresetMenuPage(synthPresetLoadSlots,
+                            synthPresetLoadPageStart,
+                            menuItemLoadSynthPresetPrev,
+                            menuItemLoadSynthPresetNext);
+}
 
 void saveSynthPresetMenu(GEMCallbackData callbackData) {
   SynthPresetMenuAction* action = reinterpret_cast<SynthPresetMenuAction*>(callbackData.valPointer);
   if (action) {
     if (action->createNew) {
-      saveSynthPresetAsNew(action->folderPath);
+      saveSynthPresetAsNew(SYNTH_PRESET_ROOT_FOLDER);
     } else {
       saveSynthPresetToSlot(action->presetIndex);
     }
@@ -25,89 +216,36 @@ void saveSynthPresetMenu(GEMCallbackData callbackData) {
 void loadSynthPresetMenu(GEMCallbackData callbackData) {
   SynthPresetMenuAction* action = reinterpret_cast<SynthPresetMenuAction*>(callbackData.valPointer);
   if (action) {
-    loadSynthPresetFromSlot(action->presetIndex);
-  }
-  menuSynthOptionsHome();
-}
-
-void loadBlankSynthPresetMenu(GEMCallbackData callbackData) {
-  (void)callbackData;
-  loadBlankSynthPreset();
-  menuSynthOptionsHome();
-}
-
-GEMItem* menuItemLoadSynthPresetBlank;
-
-struct SynthPresetMenuFolderNode {
-  char path[SYNTH_PRESET_FOLDER_LENGTH] = {};
-  char label[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
-  GEMPage* savePage = nullptr;
-  GEMPage* loadPage = nullptr;
-};
-
-std::vector<GEMItem*> synthPresetMenuItems;
-std::vector<GEMPage*> synthPresetMenuPages;
-std::vector<SynthPresetMenuAction*> synthPresetMenuActions;
-std::vector<SynthPresetMenuFolderNode*> synthPresetMenuFolders;
-std::vector<char*> synthPresetMenuLabels;
-bool synthPresetMenuRebuildPending = false;
-
-char* cloneSynthPresetMenuText(const char* text) {
-  size_t length = strlen(text);
-  char* copy = new char[length + 1];
-  memcpy(copy, text, length + 1);
-  synthPresetMenuLabels.push_back(copy);
-  return copy;
-}
-
-SynthPresetMenuAction* createSynthPresetMenuAction(uint16_t presetIndex, bool createNew, const char* folderPath) {
-  SynthPresetMenuAction* action = new SynthPresetMenuAction{};
-  action->presetIndex = presetIndex;
-  action->createNew = createNew;
-  snprintf(action->folderPath, sizeof(action->folderPath), "%s", folderPath && folderPath[0] ? folderPath : SYNTH_PRESET_ROOT_FOLDER);
-  normalizeSynthPresetFolderPath(action->folderPath, sizeof(action->folderPath));
-  synthPresetMenuActions.push_back(action);
-  return action;
-}
-
-void addSynthPresetMenuButton(GEMPage& page, const char* label, void (*callback)(GEMCallbackData), SynthPresetMenuAction* action) {
-  GEMItem* item = new GEMItem(cloneSynthPresetMenuText(label), callback, reinterpret_cast<void*>(action));
-  synthPresetMenuItems.push_back(item);
-  page.addMenuItem(*item);
-}
-
-void addSynthPresetNewMenuButton(GEMPage& page, const char* folderPath) {
-  addSynthPresetMenuButton(
-    page,
-    "New Preset",
-    saveSynthPresetMenu,
-    createSynthPresetMenuAction(0, true, folderPath)
-  );
-}
-
-SynthPresetMenuFolderNode* findSynthPresetMenuFolder(const char* folderPath) {
-  for (SynthPresetMenuFolderNode* folder : synthPresetMenuFolders) {
-    if (strncmp(folder->path, folderPath, sizeof(folder->path)) == 0) {
-      return folder;
+    if (action->loadBlank) {
+      loadBlankSynthPreset();
+    } else {
+      loadSynthPresetFromSlot(action->presetIndex);
     }
   }
-  return nullptr;
+  menuSynthOptionsHome();
 }
 
-void parentSynthPresetFolderPath(const char* folderPath, char* output, size_t outputLength) {
-  if (outputLength == 0) {
+void pageSynthPresetMenu(GEMCallbackData callbackData) {
+  SynthPresetMenuAction* action = reinterpret_cast<SynthPresetMenuAction*>(callbackData.valPointer);
+  if (!action || action->pageDelta == 0) {
     return;
   }
-  const char* slash = strrchr(folderPath, '/');
-  if (!slash) {
-    snprintf(output, outputLength, "%s", SYNTH_PRESET_ROOT_FOLDER);
-  } else {
-    size_t length = std::min(static_cast<size_t>(slash - folderPath), outputLength - 1);
-    memcpy(output, folderPath, length);
-    output[length] = '\0';
-    normalizeSynthPresetFolderPath(output, outputLength);
+
+  uint16_t& pageStart = action->mode == SynthPresetMenuMode::Save
+    ? synthPresetSavePageStart
+    : synthPresetLoadPageStart;
+  if (action->pageDelta < 0) {
+    pageStart = pageStart > SYNTH_PRESET_MENU_PAGE_SIZE
+      ? static_cast<uint16_t>(pageStart - SYNTH_PRESET_MENU_PAGE_SIZE)
+      : 0;
+  } else if (pageStart + SYNTH_PRESET_MENU_PAGE_SIZE < synthPresets.size()) {
+    pageStart = static_cast<uint16_t>(pageStart + SYNTH_PRESET_MENU_PAGE_SIZE);
   }
+
+  updateSynthPresetMenuPages();
+  menu.drawMenu();
 }
+}  // namespace
 
 int decodeSynthPresetFolderHex(char value) {
   if (value >= '0' && value <= '9') {
@@ -159,125 +297,12 @@ void synthPresetFolderLabel(const char* folderPath, char* output, size_t outputL
   decodeSynthPresetFolderComponent(labelStart, output, outputLength);
 }
 
-SynthPresetMenuFolderNode* ensureSynthPresetMenuFolder(const char* folderPath) {
-  char normalized[SYNTH_PRESET_FOLDER_LENGTH] = {};
-  snprintf(normalized, sizeof(normalized), "%s", folderPath && folderPath[0] ? folderPath : SYNTH_PRESET_ROOT_FOLDER);
-  normalizeSynthPresetFolderPath(normalized, sizeof(normalized));
-  if (strcmp(normalized, SYNTH_PRESET_ROOT_FOLDER) == 0) {
-    return nullptr;
-  }
-
-  SynthPresetMenuFolderNode* existing = findSynthPresetMenuFolder(normalized);
-  if (existing) {
-    return existing;
-  }
-
-  char parentPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
-  parentSynthPresetFolderPath(normalized, parentPath, sizeof(parentPath));
-  SynthPresetMenuFolderNode* parent = ensureSynthPresetMenuFolder(parentPath);
-  GEMPage& saveParent = parent ? *parent->savePage : menuPageSynthPresetSave;
-  GEMPage& loadParent = parent ? *parent->loadPage : menuPageSynthPresetLoad;
-
-  SynthPresetMenuFolderNode* folder = new SynthPresetMenuFolderNode{};
-  snprintf(folder->path, sizeof(folder->path), "%s", normalized);
-  synthPresetFolderLabel(normalized, folder->label, sizeof(folder->label));
-  folder->savePage = new GEMPage(folder->label, saveParent);
-  folder->loadPage = new GEMPage(folder->label, loadParent);
-  synthPresetMenuPages.push_back(folder->savePage);
-  synthPresetMenuPages.push_back(folder->loadPage);
-  synthPresetMenuFolders.push_back(folder);
-
-  GEMItem* saveGoto = new GEMItem(folder->label, *folder->savePage);
-  GEMItem* loadGoto = new GEMItem(folder->label, *folder->loadPage);
-  synthPresetMenuItems.push_back(saveGoto);
-  synthPresetMenuItems.push_back(loadGoto);
-  saveParent.addMenuItem(*saveGoto);
-  loadParent.addMenuItem(*loadGoto);
-  addSynthPresetNewMenuButton(*folder->savePage, folder->path);
-  return folder;
-}
-
-void clearSynthPresetMenuItems() {
-  for (GEMItem* item : synthPresetMenuItems) {
-    item->remove();
-    delete item;
-  }
-  synthPresetMenuItems.clear();
-  menuItemLoadSynthPresetBlank = nullptr;
-
-  for (GEMPage* page : synthPresetMenuPages) {
-    delete page;
-  }
-  synthPresetMenuPages.clear();
-
-  for (SynthPresetMenuAction* action : synthPresetMenuActions) {
-    delete action;
-  }
-  synthPresetMenuActions.clear();
-
-  for (SynthPresetMenuFolderNode* folder : synthPresetMenuFolders) {
-    delete folder;
-  }
-  synthPresetMenuFolders.clear();
-
-  for (char* label : synthPresetMenuLabels) {
-    delete[] label;
-  }
-  synthPresetMenuLabels.clear();
-}
-
-bool synthPresetMenuOwnsPage(GEMPage* page) {
-  if (page == &menuPageSynthPresetSave || page == &menuPageSynthPresetLoad) {
-    return true;
-  }
-  for (GEMPage* ownedPage : synthPresetMenuPages) {
-    if (page == ownedPage) {
-      return true;
-    }
-  }
-  return false;
+void rebuildSynthPresetMenuItems() {
+  updateSynthPresetMenuPages();
 }
 
 void requestSynthPresetMenuRebuild() {
   synthPresetMenuRebuildPending = true;
-}
-
-GEMPage& synthPresetSavePageForFolder(const char* folderPath) {
-  SynthPresetMenuFolderNode* folder = ensureSynthPresetMenuFolder(folderPath);
-  return folder ? *folder->savePage : menuPageSynthPresetSave;
-}
-
-GEMPage& synthPresetLoadPageForFolder(const char* folderPath) {
-  SynthPresetMenuFolderNode* folder = ensureSynthPresetMenuFolder(folderPath);
-  return folder ? *folder->loadPage : menuPageSynthPresetLoad;
-}
-
-void rebuildSynthPresetMenuItems() {
-  clearSynthPresetMenuItems();
-
-  addSynthPresetNewMenuButton(menuPageSynthPresetSave, SYNTH_PRESET_ROOT_FOLDER);
-  menuItemLoadSynthPresetBlank = new GEMItem("Blank", loadBlankSynthPresetMenu);
-  synthPresetMenuItems.push_back(menuItemLoadSynthPresetBlank);
-  menuPageSynthPresetLoad.addMenuItem(*menuItemLoadSynthPresetBlank);
-
-  compactSynthPresets();
-  for (size_t i = 0; i < synthPresets.size(); ++i) {
-    SynthPresetSlot& preset = synthPresets[i];
-    GEMPage& savePage = synthPresetSavePageForFolder(preset.folderPath);
-    GEMPage& loadPage = synthPresetLoadPageForFolder(preset.folderPath);
-    addSynthPresetMenuButton(
-      savePage,
-      preset.name,
-      saveSynthPresetMenu,
-      createSynthPresetMenuAction(static_cast<uint16_t>(i), false, preset.folderPath)
-    );
-    addSynthPresetMenuButton(
-      loadPage,
-      preset.name,
-      loadSynthPresetMenu,
-      createSynthPresetMenuAction(static_cast<uint16_t>(i), false, preset.folderPath)
-    );
-  }
 }
 
 void serviceSynthPresetMenuRebuild() {
@@ -285,7 +310,8 @@ void serviceSynthPresetMenuRebuild() {
     return;
   }
   synthPresetMenuRebuildPending = false;
-  if (synthPresetMenuOwnsPage(menu.getCurrentMenuPage())) {
+  if (menu.getCurrentMenuPage() == &menuPageSynthPresetSave
+      || menu.getCurrentMenuPage() == &menuPageSynthPresetLoad) {
     menu.setMenuPageCurrent(menuPageSynth);
   }
   rebuildSynthPresetMenuItems();
@@ -294,7 +320,22 @@ void serviceSynthPresetMenuRebuild() {
   }
 }
 
-
 void createSynthPresetMenuItems() {
+  if (!synthPresetMenuItemsCreated) {
+    menuPageSynthPresetSave.addMenuItem(menuItemSaveSynthPresetNew);
+    menuPageSynthPresetSave.addMenuItem(menuItemSaveSynthPresetPrev);
+    menuPageSynthPresetSave.addMenuItem(menuItemSaveSynthPresetNext);
+    for (uint8_t i = 0; i < SYNTH_PRESET_MENU_PAGE_SIZE; ++i) {
+      menuPageSynthPresetSave.addMenuItem(synthPresetSaveSlots[i].item);
+    }
+
+    menuPageSynthPresetLoad.addMenuItem(menuItemLoadSynthPresetBlank);
+    menuPageSynthPresetLoad.addMenuItem(menuItemLoadSynthPresetPrev);
+    menuPageSynthPresetLoad.addMenuItem(menuItemLoadSynthPresetNext);
+    for (uint8_t i = 0; i < SYNTH_PRESET_MENU_PAGE_SIZE; ++i) {
+      menuPageSynthPresetLoad.addMenuItem(synthPresetLoadSlots[i].item);
+    }
+    synthPresetMenuItemsCreated = true;
+  }
   rebuildSynthPresetMenuItems();
 }

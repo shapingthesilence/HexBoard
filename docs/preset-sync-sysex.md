@@ -357,11 +357,11 @@ Example response, transaction `1`, max packed chunk `128`, capabilities
 `0x1F7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
 delete user object, factory geometry listing, synth wavetable objects, and live
 synth parameter set), max raw object bytes `66560`, settings schema `19`, synth
-preset schema `7`, `9` profiles, `128` synth preset entries, `127` slots for
+preset schema `7`, `9` profiles, `64` synth preset entries, `127` slots for
 each advertised user geometry count, hardware version `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 3E 7E 00 04 08 00 13 07 09 01 00 7F 7F 7F 7F 02 F7
+F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 3E 7E 00 04 08 00 13 07 09 00 40 7F 7F 7F 7F 02 F7
 ```
 
 ## Object Addressing
@@ -395,7 +395,7 @@ handle.
 | `0x04` | `UserLayout` | `/layouts.dat` layout handle or read-only factory handle |
 | `0x05` | `ScaleColorMap` | `/layouts.dat` color-map handle |
 | `0x06` | `ExplicitButtonMap` | `/layouts.dat` button-map handle |
-| `0x07` | `SynthPreset` | Synth-only preset catalog entry; current firmware returns compact catalog handles up to `127` |
+| `0x07` | `SynthPreset` | Synth-only preset catalog entry; current firmware returns compact catalog handles up to `63` |
 | `0x08` | `Bundle` | Web-app backup containing multiple objects |
 | `0x09` | `Folder` | Optional virtual folder record for catalog navigation |
 | `0x0A` | `UserScale` | `/layouts.dat` scale handle or read-only factory handle |
@@ -961,7 +961,7 @@ The current synth setup is already cohesive, so v1 should transfer synth presets
 as synth-only objects, separate from tuning/layout/profile objects.
 
 Synth presets are named and organized by folder path. Current firmware stores a
-counted catalog capped at `128` entries instead of a fixed slot array. The old
+counted catalog capped at `64` entries instead of a fixed slot array. The old
 fixed `20` slots in version `4` firmware and the fixed named/foldered version
 `5` file migrate into the version `6` counted catalog; version `6` records are
 rewritten as version `7` with appended portamento and arpeggiator-direction
@@ -977,8 +977,11 @@ Slot 20
 ```
 
 After that migration, the user-facing model should be a foldered preset library
-rather than a numbered slot bank. A device menu can still present this simply as
-folders plus preset names.
+rather than a numbered slot bank. The web app presents the foldered library; the
+device uses a fixed paged list with folder/name labels to avoid per-preset heap
+allocation. Factory defaults copy the factory synth sounds into ordinary
+catalog entries, so hosts should treat restored factory presets like editable
+and erasable user presets.
 
 Recommended TLVs:
 
@@ -1101,6 +1104,9 @@ sending the full fixed mip table; firmware rejects mismatched sample length and
 mip count pairs. The fixed-mip sample payload is split into repeated
 `WavetableSamples` TLVs of at most `32,768` bytes each because a single TLV
 length is 16-bit and the complete fixed-mip payload is `98,304` bytes.
+The web editor's factory wavetable bank is generated from firmware built-in
+anchor waves, interpolated to the same `32` base frames, and then processed
+through the same FFT-pruned mip builder as imported wavetables.
 
 The web app's Serum/Vital import path reads wavetable `.wav` files,
 interpolates the source frame axis down to `32` frames, resamples each frame to
@@ -1241,9 +1247,9 @@ uses `SaveToFlash` for the full unpacked bundle object set.
    without changing the loaded sound.
 3. Device validates `SynthPresetSchemaVersion`, `Name`, `FolderPath`, and,
    when present, the wavetable folder/name dependency TLVs.
-4. Commit with `apply` changes the current synth runtime for auditioning and
-   marks settings dirty for the normal debounced profile autosave path. Commit
-   with `save` updates `/synth_presets.dat`.
+4. Commit with `apply` changes only the current synth runtime for auditioning
+   and marks settings dirty for the normal debounced profile autosave path.
+   Commit with `save` updates `/synth_presets.dat`.
 5. Commit with `save` writes the named preset catalog to `/synth_presets.dat`
    through the existing flash-safe save path.
 6. The current web app requests one synth preset or wavetable record per

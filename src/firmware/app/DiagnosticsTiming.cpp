@@ -21,7 +21,12 @@ bool serialDebugGeneralSuppressed = false;
 bool serialDebugPeriodicSuppressed = false;
 uint32_t serialDebugMinFreeHeap = 0;
 uint64_t serialDebugLastReportMicros = 0;
+uint32_t serialDebugWorstAudioCpuTenths = 0;
 }  // namespace
+
+void captureAndResetISRProfile(bool resumeProfiling);
+uint32_t profileCpuTenths(uint32_t usedUs, uint32_t availableUs);
+std::string formatProfileCpuPercentTenths(uint32_t cpuTenths);
 
 uint32_t readRuntimeFreeHeapBytes() {
 #if defined(ARDUINO_ARCH_RP2040)
@@ -37,10 +42,18 @@ void resetSerialDebugMinFreeHeap() {
   serialDebugLastReportMicros = runTime;
 }
 
+void resetSerialDebugAudioStats() {
+  serialDebugWorstAudioCpuTenths = 0;
+  if (serialDebugEnabled && serialDebugAudioMessages) {
+    captureAndResetISRProfile(true);
+  }
+}
+
 void updateSerialDebugRuntime() {
   debugMessages = serialDebugEnabled && serialDebugGeneralMessages && !serialDebugGeneralSuppressed;
   if (!serialDebugEnabled) {
     resetSerialDebugMinFreeHeap();
+    serialDebugWorstAudioCpuTenths = 0;
   }
 }
 
@@ -83,13 +96,28 @@ void serviceSerialDebugMessages() {
   }
 
   if (serialDebugAudioMessages) {
-    char line[80];
+    if (!isrProfilingEnabled) {
+      captureAndResetISRProfile(true);
+    }
+    captureAndResetISRProfile(true);
+    uint32_t avgCpuTenths = profileCpuTenths(isrProfileAvgUs, isrProfileAvailableUs);
+    uint32_t maxCpuTenths = profileCpuTenths(isrProfileMaxUs, isrProfileAvailableUs);
+    if (maxCpuTenths > serialDebugWorstAudioCpuTenths) {
+      serialDebugWorstAudioCpuTenths = maxCpuTenths;
+    }
+    std::string avgCpuText = formatProfileCpuPercentTenths(avgCpuTenths);
+    std::string maxCpuText = formatProfileCpuPercentTenths(maxCpuTenths);
+    std::string worstCpuText = formatProfileCpuPercentTenths(serialDebugWorstAudioCpuTenths);
+    char line[128];
     snprintf(line,
              sizeof(line),
-             "Audio underruns/overruns/max: %lu/%lu/%lu us",
-             static_cast<unsigned long>(audioDmaUnderrunCount),
-             static_cast<unsigned long>(isrCycleOverrunCount),
-             static_cast<unsigned long>(isrCycleMax));
+             "Audio cpu avg/max/worst: %s/%s/%s, underruns/overruns/max: %lu/%lu/%lu us",
+             avgCpuText.c_str(),
+             maxCpuText.c_str(),
+             worstCpuText.c_str(),
+             static_cast<unsigned long>(isrProfileDmaUnderrunCount),
+             static_cast<unsigned long>(isrProfileOverrunCount),
+             static_cast<unsigned long>(isrProfileMaxUs));
     Serial.println(line);
   }
 }
@@ -163,13 +191,23 @@ void startISRProfileCapture() {
   sendToLog("ISR profile started.");
 }
 
+uint32_t profileCpuTenths(uint32_t usedUs, uint32_t availableUs) {
+  if (availableUs == 0) {
+    return 0;
+  }
+  return static_cast<uint32_t>(
+    (static_cast<uint64_t>(usedUs) * 1000ull + (availableUs / 2u)) / availableUs);
+}
+
+std::string formatProfileCpuPercentTenths(uint32_t tenths) {
+  return std::to_string(tenths / 10u) + "." + std::to_string(tenths % 10u) + "%";
+}
+
 std::string formatProfileCpuPercent(uint32_t usedUs, uint32_t availableUs) {
   if (availableUs == 0) {
     return "n/a";
   }
-  uint32_t tenths = static_cast<uint32_t>(
-    (static_cast<uint64_t>(usedUs) * 1000ull + (availableUs / 2u)) / availableUs);
-  return std::to_string(tenths / 10u) + "." + std::to_string(tenths % 10u) + "%";
+  return formatProfileCpuPercentTenths(profileCpuTenths(usedUs, availableUs));
 }
 
 void stopISRProfileCaptureAndLog() {

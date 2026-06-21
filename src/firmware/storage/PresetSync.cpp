@@ -843,7 +843,11 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
           return;
         }
         if (static_cast<size_t>(slotIndex) == synthPresets.size()) {
-          synthPresets.push_back(parsedPreset);
+          if (!synthPresets.push_back(parsedPreset)) {
+            presetSyncCancelWriteTransfer();
+            presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
+            return;
+          }
         } else {
           synthPresets[slotIndex] = parsedPreset;
         }

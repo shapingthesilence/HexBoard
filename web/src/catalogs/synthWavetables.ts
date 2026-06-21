@@ -183,6 +183,40 @@ export function renderSerumWavetable(wav: ParsedSerumWavetable, options: SerumWa
   return ensureSynthWavetableFixedMips(output);
 }
 
+export function renderInterpolatedAnchorWavetable(anchorFrames: readonly Uint8Array[]): Uint8Array {
+  if (anchorFrames.length < 1) {
+    throw new Error("at least one anchor frame is required");
+  }
+  for (const frame of anchorFrames) {
+    if (frame.length !== SYNTH_WAVETABLE_SAMPLE_COUNT) {
+      throw new Error(`anchor frames must contain ${SYNTH_WAVETABLE_SAMPLE_COUNT} samples`);
+    }
+  }
+
+  const output = new Uint8Array(SYNTH_WAVETABLE_SAMPLE_BYTES);
+  const lastAnchorPosition = (anchorFrames.length - 1) * 256;
+  for (let frame = 0; frame < SYNTH_WAVETABLE_FRAME_COUNT; frame += 1) {
+    if (anchorFrames.length === 1 || frame === SYNTH_WAVETABLE_FRAME_COUNT - 1) {
+      output.set(anchorFrames[anchorFrames.length - 1], frame * SYNTH_WAVETABLE_SAMPLE_COUNT);
+      continue;
+    }
+
+    const anchorPosition = Math.floor((frame * lastAnchorPosition) / (SYNTH_WAVETABLE_FRAME_COUNT - 1));
+    const anchorA = anchorPosition >> 8;
+    const anchorB = Math.min(anchorA + 1, anchorFrames.length - 1);
+    const frameFrac = anchorPosition & 0xff;
+    const frameOffset = frame * SYNTH_WAVETABLE_SAMPLE_COUNT;
+    const frameA = anchorFrames[anchorA];
+    const frameB = anchorFrames[anchorB];
+    for (let sample = 0; sample < SYNTH_WAVETABLE_SAMPLE_COUNT; sample += 1) {
+      const sampleA = frameA[sample] ?? 128;
+      const sampleB = frameB[sample] ?? sampleA;
+      output[frameOffset + sample] = clampByte(sampleA + (((sampleB - sampleA) * frameFrac) >> 8));
+    }
+  }
+  return ensureSynthWavetableFixedMips(output);
+}
+
 export function encodeHexBoardWavetableWav(samples: Uint8Array): Uint8Array {
   const exportSamples = ensureSynthWavetableFixedMips(samples);
   const headerBytes = 44;

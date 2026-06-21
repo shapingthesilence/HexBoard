@@ -14,6 +14,8 @@ void saveSynthPresetToSlot(uint16_t presetIndex);
 void saveSynthPresetAsNew(const char* folderPath);
 void loadSynthPresetFromSlot(uint16_t presetIndex);
 void loadBlankSynthPreset();
+const char* currentSynthPresetDisplayName();
+bool currentSynthPresetRuntimeModified();
 void captureCurrentSynthPreset(SynthPresetSlot& preset);
 SynthPresetSlot buildCurrentSynthPresetObject();
 void applySynthPresetToSettings(const SynthPresetSlot& preset);

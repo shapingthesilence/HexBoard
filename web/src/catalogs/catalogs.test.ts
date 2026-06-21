@@ -6,6 +6,7 @@ import {
   createExplicitButtonMap,
   createDefaultLayoutBundle,
   createEqualStepTuning,
+  createFactorySynthWavetables,
   createGeneratedEdoTuning,
   createScaleColorMap,
   createSynthPresetObject,
@@ -24,12 +25,14 @@ import {
   parseLayoutBundleLibrary,
   parseLayoutBundleFile,
   parseScalaScale,
+  renderInterpolatedAnchorWavetable,
   resolveLayoutBundleButtonColor,
   ScaleColorMapTlv,
   serializeLayoutBundle,
   SYNTH_WAVETABLE_MIP_LEVEL_COUNT,
   SYNTH_WAVETABLE_MIP_SAMPLE_BYTES,
   SYNTH_WAVETABLE_SAMPLE_BYTES,
+  SYNTH_WAVETABLE_SAMPLE_COUNT,
   SynthWavetableTlv,
   TuningTlv,
   UserScaleTlv,
@@ -264,6 +267,25 @@ Example scale
 
     expect(samples).toHaveLength(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
     expect(repeated).toEqual(samples);
+  });
+
+  it("renders factory wavetables with interpolated anchors and fixed mips", () => {
+    const low = new Uint8Array(SYNTH_WAVETABLE_SAMPLE_COUNT);
+    const high = new Uint8Array(SYNTH_WAVETABLE_SAMPLE_COUNT);
+    high.fill(255);
+    const rendered = renderInterpolatedAnchorWavetable([low, high]);
+    const base = rendered.slice(0, SYNTH_WAVETABLE_SAMPLE_BYTES);
+
+    expect(rendered).toHaveLength(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
+    expect(base[0]).toBe(0);
+    expect(base[SYNTH_WAVETABLE_SAMPLE_BYTES - SYNTH_WAVETABLE_SAMPLE_COUNT]).toBe(255);
+    expect(base[SYNTH_WAVETABLE_SAMPLE_COUNT]).toBeGreaterThan(0);
+    expect(base[SYNTH_WAVETABLE_SAMPLE_COUNT]).toBeLessThan(255);
+
+    const factory = createFactorySynthWavetables();
+    expect(factory.map((wavetable) => wavetable.name)).toEqual(["Basic", "Classic", "Edge", "Glass", "Digital", "Motion"]);
+    expect(factory.every((wavetable) => wavetable.folderPath === "/Built In")).toBe(true);
+    expect(factory.every((wavetable) => wavetable.samples.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES)).toBe(true);
   });
 
   it("encodes wavetable metadata without sample data", () => {
