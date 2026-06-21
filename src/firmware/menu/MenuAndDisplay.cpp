@@ -265,11 +265,11 @@ char mainSynthPresetMenuLabel[48] = "Synth: Current";
 
 GEMPage menuPageMain("HexBoard MIDI Controller");
 GEMPage menuPageTuning("Tuning", menuPageMain);
-GEMItem menuGotoTuning(mainTuningMenuLabel, menuPageTuning);
+GEMItem menuGotoTuning(mainTuningMenuLabel, openUserGeometryTuningMenu);
 GEMPage menuPageLayout("Layout", menuPageMain);
-GEMItem menuGotoLayout(mainLayoutMenuLabel, menuPageLayout);
+GEMItem menuGotoLayout(mainLayoutMenuLabel, openUserGeometryLayoutMenu);
 GEMPage menuPageScales("Scales", menuPageMain);
-GEMItem menuGotoScales(mainScaleMenuLabel, menuPageScales);
+GEMItem menuGotoScales(mainScaleMenuLabel, openUserGeometryScaleMenu);
 GEMPage menuPageColors("Lights & Colors", menuPageMain);
 GEMItem menuGotoColors("Lights & Colors", menuPageColors);
 GEMPage menuPageSynth("Synth Editor", menuPageMain);
@@ -425,25 +425,11 @@ void loadProfileMenu(GEMCallbackData callbackData) {
 }
 
 /*
-    Tunings, layouts, scales, and keys are defined
-    earlier in this code. We should not have to
-    manually type in menu objects for those
-    pre-loaded values. Instead, we will use routines to
-    construct menu items automatically.
-
-    These lines are forward declarations for
-    the menu objects we will make later.
-    This allocates space in memory with
-    enough size to procedurally fill
-    the objects based on the contents of
-    the pre-loaded tuning/layout/etc. definitions
-    we defined above.
+    Key selectors are defined per tuning because each tuning can have its own
+    cycle length and key-name labels. Tuning, layout, and scale preset lists use
+    the fixed-memory geometry browser instead of per-preset GEM items.
   */
-GEMItem* menuItemTuning[TUNINGCOUNT];
-std::vector<GEMItem*> menuItemLayout;
-std::vector<GEMItem*> menuItemScales;
 GEMSelect* selectKey[TUNINGCOUNT];
-GEMItem* menuItemKeys[TUNINGCOUNT];
 GEMItem* menuItemMainKeys[TUNINGCOUNT];
 GEMItem* menuItemSaveProfile[PROFILE_COUNT];
 GEMItem* menuItemLoadProfile[PROFILE_COUNT];
@@ -2404,8 +2390,6 @@ void menuSynthOptionsHome() {
 }
 
 void refreshMenuChoicesForCurrentTuning() {
-  showOnlyValidLayoutChoices();
-  showOnlyValidScaleChoices();
   showOnlyValidKeyChoices();
 }
 
@@ -2427,34 +2411,6 @@ void rebootToBootloader() {
   rp2040.rebootToBootloader();
 }
 /*
-    This procedure sets each layout menu item to be either
-    visible if that layout is available in the current tuning,
-    or hidden if not.
-
-    It should run once after the layout menu items are
-    generated, and then once any time the tuning changes.
-  */
-void showOnlyValidLayoutChoices() {
-  for (size_t L = 0; L < menuItemLayout.size(); L++) {
-    menuItemLayout[L]->hide((layoutOptions[L].tuning != current.tuningIndex));
-  }
-  sendToLog("menu: Layout choices were updated.");
-}
-/*
-    This procedure sets each scale menu item to be either
-    visible if that scale is available in the current tuning,
-    or hidden if not.
-
-    It should run once after the scale menu items are
-    generated, and then once any time the tuning changes.
-  */
-void showOnlyValidScaleChoices() {
-  for (size_t S = 0; S < menuItemScales.size(); S++) {
-    menuItemScales[S]->hide((scaleOptions[S].tuning != current.tuningIndex) && (scaleOptions[S].tuning != ALL_TUNINGS));
-  }
-  sendToLog("menu: Scale choices were updated.");
-}
-/*
     This procedure sets each key spinner menu item to be either
     visible if the key names correspond to the current tuning,
     or hidden if not.
@@ -2464,9 +2420,6 @@ void showOnlyValidScaleChoices() {
   */
 void showOnlyValidKeyChoices() {
   for (int T = 0; T < TUNINGCOUNT; T++) {
-    if (menuItemKeys[T]) {
-      menuItemKeys[T]->hide((T != current.tuningIndex));
-    }
     if (menuItemMainKeys[T]) {
       menuItemMainKeys[T]->hide((T != current.tuningIndex));
     }
@@ -2499,52 +2452,6 @@ void applyDeviceDisplayRotation() {
       u8g2.setDisplayRotation(U8G2_R3);
       break;
   }
-}
-/*
-    This procedure is run when a layout is selected via the menu.
-    It sets the current layout to the selected value.
-    If it's different from the previous one, then
-    re-apply the layout to the grid. In any case, go to the
-    main menu when done.
-  */
-void changeLayout(GEMCallbackData callbackData) {
-  byte selection = callbackData.valByte;
-  bool hadUserGeometryRuntime = userGeometryRuntimeActive;
-  if (hadUserGeometryRuntime) {
-    clearUserGeometryRuntimeSelection();
-    current.keyStepsFromA = current.tuning().spanCtoA();
-    settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
-  }
-  if (selection != current.layoutIndex || hadUserGeometryRuntime) {
-    current.layoutIndex = selection;
-    settings[static_cast<uint8_t>(SettingKey::CurrentLayout)] = selection;
-    loadDeviceRotationFromCurrentLayout();
-    markSettingsDirty();
-    updateLayoutAndRotate();
-  }
-  menuHome();
-}
-/*
-    This procedure is run when a scale is selected via the menu.
-    It sets the current scale to the selected value.
-    If it's different from the previous one, then
-    re-apply the scale to the grid. In any case, go to the
-    main menu when done.
-  */
-void changeScale(GEMCallbackData callbackData) {  // when you change the scale via the menu
-  int selection = callbackData.valInt;
-  bool hadUserGeometryRuntime = userGeometryRuntimeActive;
-  if (hadUserGeometryRuntime) {
-    clearUserGeometryRuntimeSelection();
-    current.keyStepsFromA = current.tuning().spanCtoA();
-    settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
-  }
-  if (selection != current.scaleIndex || hadUserGeometryRuntime) {
-    current.scaleIndex = selection;
-    settings[static_cast<uint8_t>(SettingKey::CurrentScale)] = selection;
-    applyScale();
-  }
-  menuHome();
 }
 /*
     This procedure is run when the key is changed via the menu.
@@ -2580,77 +2487,11 @@ void changeTranspose() {  // when you change the transpose via the menu
   assignPitches();
   updateSynthWithNewFreqs();
 }
-/*
-    This procedure is run when the tuning is changed via the menu.
-    It affects almost everything in the program, so
-    quite a few items are reset, refreshed, and redone
-    when the tuning changes.
-  */
-void changeTuning(GEMCallbackData callbackData) {
-  byte selection = callbackData.valByte;
-  bool hadUserGeometryRuntime = userGeometryRuntimeActive;
-  if (hadUserGeometryRuntime) {
-    clearUserGeometryRuntimeSelection();
-  }
-  if (selection != current.tuningIndex || hadUserGeometryRuntime) {
-    // 1) Update runtime state
-    current.tuningIndex = selection;
-    current.layoutIndex = current.layoutsBegin();         // reset layout to first in list
-    current.scaleIndex = 0;                               // reset scale to "no scale"
-    current.keyStepsFromA = current.tuning().spanCtoA();  // reset key to C
-    // 2) Copy and save all values to settings
-    settings[static_cast<uint8_t>(SettingKey::CurrentTuning)]        = current.tuningIndex;
-    settings[static_cast<uint8_t>(SettingKey::CurrentLayout)]        = current.layoutIndex;
-    settings[static_cast<uint8_t>(SettingKey::CurrentScale)]         = current.scaleIndex;
-    // bias the signed keyStepsFromA by +128
-    settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
-    loadDeviceRotationFromCurrentLayout();
-    markSettingsDirty();                                  // auto‑save (after debounce)
-    // 3) Apply all values
-    refreshMenuChoicesForCurrentTuning();                 // change list of choices in GEM Menu
-    rebuildRuntimeStateFromCurrentSelection();
-  }
-  menuHome();
-}
-/*
-    The procedure below builds menu items for tuning,
-    layout, scales, and keys based on what's preloaded.
-    We already declared arrays of menu item objects earlier.
-    Now we cycle through those arrays, and create GEMItem objects for
-    each index. What's nice about doing this in an array is,
-    we do not have to assign a variable name to each object; we just
-    refer to it by its index in the array.
 
-    The constructor "new GEMItem" is populated with the different
-    variables in the preset objects we defined earlier.
-    Then the menu item is added to the associated page.
-    The item must be entered with the asterisk operator
-    because an array index technically returns an address in memory
-    pointing to the object; the addMenuItem procedure wants
-    the contents of that item, which is what the * beforehand does.
-  */
-void createTuningMenuItems() {
-  for (byte T = 0; T < TUNINGCOUNT; T++) {
-    menuItemTuning[T] = new GEMItem(tuningOptions[T].name, changeTuning, T);
-    menuPageTuning.addMenuItem(*menuItemTuning[T]);
-  }
-}
-void createLayoutMenuItems() {
-  menuItemLayout.reserve(layoutCount);
-  for (byte L = 0; L < layoutCount; L++) {  // create pointers to all layouts
-    GEMItem* menuItem = new GEMItem(layoutOptions[L].name, changeLayout, L);
-    menuItemLayout.push_back(menuItem);
-    menuPageLayout.addMenuItem(*menuItem);
-  }
-  showOnlyValidLayoutChoices();
-}
 void previewKey(GEMPreviewCallbackData previewData);
 void createKeyMenuItems() {
   for (byte T = 0; T < TUNINGCOUNT; T++) {
     selectKey[T] = new GEMSelect(tuningOptions[T].cycleLength, const_cast<SelectOptionInt*>(tuningOptions[T].keyChoices));
-    menuItemKeys[T] = new GEMItem("Key", current.keyStepsFromA, *selectKey[T], changeKey);
-    menuItemKeys[T]->setPreviewCallback(previewKey);
-    menuPageScales.addMenuItem(*menuItemKeys[T]);
     menuItemMainKeys[T] = new GEMItem("Key", current.keyStepsFromA, *selectKey[T], changeKey);
     menuItemMainKeys[T]->setPreviewCallback(previewKey);
     menuPageMain.addMenuItem(*menuItemMainKeys[T]);
@@ -2660,15 +2501,6 @@ void createKeyMenuItems() {
 void previewKey(GEMPreviewCallbackData previewData) {
   current.keyStepsFromA = previewData.previewValInt;
   applyScale();
-}
-void createScaleMenuItems() {
-  menuItemScales.reserve(scaleCount);
-  for (int S = 0; S < scaleCount; S++) {  // create pointers to all scale items, filter them as you go
-    GEMItem* menuItem = new GEMItem(scaleOptions[S].name, changeScale, S);
-    menuItemScales.push_back(menuItem);
-    menuPageScales.addMenuItem(*menuItem);
-  }
-  showOnlyValidScaleChoices();
 }
 
 void createProfileMenuItems() {
@@ -2694,26 +2526,15 @@ void createProfileMenuItems() {
 
 void setupTuningMenuPage() {
   menuPageMain.addMenuItem(menuGotoTuning);
-  menuPageTuning.addMenuItem(menuItemToggleDynamicJI);
-  menuPageTuning.addMenuItem(menuItemSelectDynamicJIRatioTable);
-  menuPageTuning.addMenuItem(menuItemToggleJI_BPM);
-  menuPageTuning.addMenuItem(menuItemSetJI_BPM);
-  menuPageTuning.addMenuItem(menuItemSetJI_BPM_Multiplier);
-  updateTuningMenuVisibility();
 }
 
 void setupLayoutMenuPage() {
   menuPageMain.addMenuItem(menuGotoLayout);
-  menuPageLayout.addMenuItem(mirrorLeftRightGEMItem);
-  menuPageLayout.addMenuItem(mirrorUpDownGEMItem);
-  menuPageLayout.addMenuItem(menuItemSelectLayoutRotation);
-  menuPageLayout.addMenuItem(menuItemSelectDeviceRotation);
 }
 
 void setupScalesMenuPage() {
   menuPageMain.addMenuItem(menuGotoScales);
   menuPageMain.addMenuItem(menuItemMainScaleLock);
-  menuPageScales.addMenuItem(menuItemScaleLock);
 }
 
 void setupColorsMenuPage() {

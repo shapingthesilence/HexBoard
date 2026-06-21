@@ -136,7 +136,7 @@ const deviceFolderMaxBytes = 47;
 const defaultPreset: EditableSynthPreset = {
   objectIdHex: objectIdToHex(deterministicObjectId("Soft String Pad")),
   name: "Soft String Pad",
-  folderPath: "Pads/Warm",
+  folderPath: "/",
   wavetableName: "Classic",
   wavetableFolderPath: builtInWavetableFolder,
   favorite: true,
@@ -183,7 +183,7 @@ const initialComputerPresets: EditableSynthPreset[] = [
   {
     objectIdHex: objectIdToHex(deterministicObjectId("Bright Mono Lead")),
     name: "Bright Mono Lead",
-    folderPath: "Leads",
+    folderPath: "/",
     wavetableName: basicWavetableName,
     wavetableFolderPath: builtInWavetableFolder,
     favorite: false,

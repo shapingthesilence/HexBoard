@@ -30,8 +30,6 @@ void showFlashSaveScreen();
 void closeFlashSaveScreen();
 void menuHome();
 void menuSynthOptionsHome();
-void showOnlyValidLayoutChoices();
-void showOnlyValidScaleChoices();
 void showOnlyValidKeyChoices();
 void applyDeviceDisplayRotation();
 void loadDeviceRotationFromCurrentLayout();

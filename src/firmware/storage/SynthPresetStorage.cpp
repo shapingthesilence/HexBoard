@@ -113,7 +113,7 @@ void applyDefaultSynthPresets() {
   synthPresets.clear();
 
   SynthPresetSlot softStringPad = makeFactorySynthPreset("Soft String Pad",
-                                                         "Pads/Warm",
+                                                         SYNTH_PRESET_ROOT_FOLDER,
                                                          "Classic",
                                                          SYNTH_WAVETABLE_BUILTIN_FOLDER,
                                                          true);
@@ -144,7 +144,7 @@ void applyDefaultSynthPresets() {
   appendFactorySynthPreset(softStringPad);
 
   SynthPresetSlot brightMonoLead = makeFactorySynthPreset("Bright Mono Lead",
-                                                          "Leads",
+                                                          SYNTH_PRESET_ROOT_FOLDER,
                                                           SYNTH_WAVETABLE_BASIC_NAME,
                                                           SYNTH_WAVETABLE_BUILTIN_FOLDER,
                                                           false);

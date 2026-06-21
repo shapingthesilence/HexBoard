@@ -98,19 +98,13 @@ saved, the preset name is shown with a leading `*`.
 ### Tuning
 
 Use this section to choose the tuning or geometry bundle the whole board runs
-on. Factory tunings now appear in the `Built In` folder alongside tunings saved
-from the web app. Selecting a tuning also loads the first linked layout, scale,
-color map, and matching explicit button map so the board is immediately
-playable.
+on. The page is a fixed-memory scrolling browser: factory tunings appear as
+flat entries, while saved user tunings can include a folder/name label when
+needed. Selecting a tuning also loads the first linked layout, scale, color map,
+and matching explicit button map so the board is immediately playable.
 
-You can change:
-
-- The active tuning
-- `Dynamic JI`
-- `JI Table`, shown only when `Dynamic JI` is on
-- `JI BPM Sync`
-- `Beat BPM`, shown only when `JI BPM Sync` is on
-- `BPM Mult.`, shown only when `JI BPM Sync` is on
+The Dynamic JI controls are temporarily not in this page while the menu layout
+is being simplified for the 2.0 release.
 
 `JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
 `3Limit`, `5Limit`, `7Limit`, and higher options through `41Limit`. Lower-limit
@@ -137,39 +131,28 @@ Changing tuning also resets:
 
 ### Layout
 
-Use this page to change how pitch moves across the hex grid.
+Use this page to choose how pitch moves across the hex grid. After a tuning is
+selected, factory and saved layouts linked to that tuning appear in a
+fixed-memory scrolling browser. Factory layouts are shown as flat entries;
+saved user layouts can include folder/name labels when needed.
 
-Options include:
-
-- Layout choice
-- `Mirror Ver.`
-- `Mirror Hor.`
-- `Layout Rot`
-- `Device Rot`
-
-After a tuning is selected, factory and saved layouts linked to that tuning
-appear here in their folders. Choosing a layout remaps button pitches and loads
-that layout's matching explicit button map when one exists. `Layout Rot`
-rotates the musical pitch
-pattern around the hex grid in six 60-degree steps. `Device Rot` rotates the
-OLED/device orientation in four 90-degree steps: `0`, `90`, `180`, or `270`
-degrees. Choosing a layout also reloads that layout's default device
+Choosing a layout remaps button pitches, loads that layout's matching explicit
+button map when one exists, and reloads that layout's default device
 orientation: portrait layouts use `0`, and landscape layouts use `90`.
+
+The mirror and rotation editor controls are temporarily not in this page while
+the menu layout is being simplified for the 2.0 release.
 
 ### Scale
 
-Use this page to constrain the playable notes and recolor the surface.
+Use this page to choose the active scale. After a tuning is selected, factory
+and saved scales linked to that tuning appear in a fixed-memory scrolling
+browser. Factory scales are shown as flat entries; saved user scales can include
+folder/name labels when needed.
 
-Options include:
-
-- Key
-- `Scale Lock`
-- Scale selection
-
-After a tuning is selected, this page shows the tuning's note-label key selector
-and the factory or saved scales linked to that tuning. Choosing a scale
-updates scale membership while keeping the current user tuning, layout, color
-map, and button map active.
+Choosing a scale updates scale membership while keeping the current user tuning,
+layout, color map, and button map active. `Key` and `Scale Lock` are on the main
+menu.
 
 When `Scale Lock` is enabled, out-of-scale notes stop responding to presses.
 
@@ -361,13 +344,13 @@ The top-level `Synth: <preset>` item and the `Load Preset` item inside
 `Load Preset` use synth-only preset libraries with room for
 up to `64` device presets. Presets are stored separately from the main settings
 file as named, foldered synth sounds and do not remember which preset was last
-loaded. On
-the device, presets appear in a paged list with folder/name labels and `Prev` /
-`Next` controls when needed; `New Preset` saves into the root folder. Factory
-presets are copied into normal editable preset slots when defaults are restored,
-so they can be changed or erased like any other preset and restored later by
-Reset Defaults or from the web editor's browser library. The web app still
-shows the foldered library and can create foldered presets.
+loaded. On the device, presets appear in a paged list with folder/name labels
+and `Prev` / `Next` controls when needed; `New Preset` saves into the root
+folder. Factory presets are copied into normal editable root-folder preset slots
+when defaults are restored, so they can be changed or erased like any other
+preset and restored later by Reset Defaults or from the web editor's browser
+library. The web app still shows the foldered library and can create foldered
+presets.
 `Load Preset` also includes `Blank`. Saving or loading a preset returns to
 `Synth Editor`. Loading a preset changes only the current synth parameters and
 wavetable reference, which can still be auto-saved by the normal settings
@@ -455,10 +438,11 @@ first target is preset, tuning/layout, color-map, button-map, and synth-preset
 editing over Web MIDI SysEx. Firmware currently implements synth preset sync,
 named synth-wavetable import/read/write/delete, storage/list/read/write/delete for user
 geometry objects in `/layouts.dat`, read-only factory tuning/layout/scale
-geometry objects, foldered on-device `Tuning`, `Layout`, and `Scales` menus
-backed by geometry objects, and live Apply for generated EDO/equal-step
-geometry bundles. Scala/cents-table tuning objects can be saved and verified,
-but live Scala playback still needs a broader firmware tuning-system overhaul.
+geometry objects, fixed-memory scrolling on-device `Tuning`, `Layout`, and
+`Scales` browsers backed by geometry objects, and live Apply for generated
+EDO/equal-step geometry bundles. Scala/cents-table tuning objects can be saved
+and verified, but live Scala playback still needs a broader firmware
+tuning-system overhaul.
 
 The `Tunings & Layouts` tab is a browser-side musical geometry editor. It saves
 geometry bundles in browser storage and can import/export those bundles as JSON.
@@ -483,8 +467,10 @@ object. Factory entries are read-only: they can be opened, downloaded, and
 exported as bundle JSON, but the web app disables erase for them. Saved user
 entries can also be erased from the device. On the device, the tuning appears
 under `Tuning`, its linked layouts appear under `Layout` after that tuning is
-selected, and its linked scales appear under `Scales`. The larger HexBoard
-preview plus selected-key inspector stay on the right, with the selected-key
+selected, and its linked scales appear under `Scales`; the device browser keeps
+factory entries flat and uses folder/name labels only for saved user entries
+that need them. The larger HexBoard preview plus selected-key inspector stay on
+the right, with the selected-key
 inspector below the board. The encoded-object debug
 readout sits at the bottom of the editor page. The rotation control is a
 four-step device orientation preview: `0`, `90`, `180`, or `270` degrees. It is
