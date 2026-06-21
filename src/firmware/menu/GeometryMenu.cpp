@@ -1,14 +1,13 @@
 #include "../FirmwareModule.h"
 #include "GeometryMenu.h"
 #include "MenuAndDisplay.h"
-#include "SynthPresetMenu.h"
+#include "VirtualListMenu.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../hardware/GridState.h"
 #include "../model/PitchAssignment.h"
 #include "../storage/BuiltinGeometry.h"
 #include "../storage/PresetSync.h"
 #include "../storage/Settings.h"
-#include "../storage/SynthPresetStorage.h"
 
 namespace {
 enum class UserGeometryMenuKind : uint8_t {
@@ -17,82 +16,25 @@ enum class UserGeometryMenuKind : uint8_t {
   Scale
 };
 
-constexpr uint8_t USER_GEOMETRY_MENU_VISIBLE_SLOTS = 10;
 constexpr uint16_t USER_GEOMETRY_MENU_INVALID_HANDLE = 0xFFFFu;
+constexpr uint16_t USER_GEOMETRY_MENU_MAX_ENTRIES = GEOMETRY_OBJECT_MAX_COUNT + 256;
 
-struct UserGeometryMenuAction {
-  UserGeometryMenuKind kind = UserGeometryMenuKind::Tuning;
-  uint16_t objectIndex = USER_GEOMETRY_MENU_INVALID_HANDLE;
-};
-
-void loadUserGeometryMenu(GEMCallbackData callbackData);
-
-struct UserGeometryMenuSlotItem {
-  char label[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
-  UserGeometryMenuAction action = {};
-  GEMItem item;
-
-  UserGeometryMenuSlotItem()
-    : item(label, loadUserGeometryMenu, reinterpret_cast<void*>(&action)) {}
-};
-
-struct UserGeometryMenuEntry {
-  bool valid = false;
-  bool builtin = false;
-  uint16_t handle = USER_GEOMETRY_MENU_INVALID_HANDLE;
-  GeometryObjectSlot object = {};
-};
-
-UserGeometryMenuSlotItem userGeometrySlots[USER_GEOMETRY_MENU_VISIBLE_SLOTS];
-
-bool userGeometryBrowserAttached = false;
+uint16_t userGeometryVirtualHandles[USER_GEOMETRY_MENU_MAX_ENTRIES] = {};
+uint16_t userGeometryVirtualCount = 0;
+UserGeometryMenuKind userGeometryVirtualKind = UserGeometryMenuKind::Tuning;
 bool userGeometryMenuRebuildPending = false;
-UserGeometryMenuKind userGeometryBrowserKind = UserGeometryMenuKind::Tuning;
-uint16_t userGeometryBrowserEntryCount = 0;
-uint8_t userGeometryBrowserVisibleCount = 0;
-byte userGeometryBrowserLastItemIndex = 0;
-uint16_t userGeometryTuningPageStart = 0;
-uint16_t userGeometryLayoutPageStart = 0;
-uint16_t userGeometryScalePageStart = 0;
+bool userGeometryMenuOverflowLogged = false;
 
-GEMPage& userGeometryRootPage(UserGeometryMenuKind kind) {
+const char* userGeometryMenuTitle(UserGeometryMenuKind kind) {
   switch (kind) {
     case UserGeometryMenuKind::Tuning:
-      return menuPageTuning;
+      return "Tuning";
     case UserGeometryMenuKind::Layout:
-      return menuPageLayout;
+      return "Layout";
     case UserGeometryMenuKind::Scale:
-      return menuPageScales;
+      return "Scales";
   }
-  return menuPageTuning;
-}
-
-bool userGeometryMenuOwnsKindPage(GEMPage* page, UserGeometryMenuKind& kind) {
-  if (page == &menuPageTuning) {
-    kind = UserGeometryMenuKind::Tuning;
-    return true;
-  }
-  if (page == &menuPageLayout) {
-    kind = UserGeometryMenuKind::Layout;
-    return true;
-  }
-  if (page == &menuPageScales) {
-    kind = UserGeometryMenuKind::Scale;
-    return true;
-  }
-  return false;
-}
-
-uint16_t& userGeometryPageStart(UserGeometryMenuKind kind) {
-  switch (kind) {
-    case UserGeometryMenuKind::Tuning:
-      return userGeometryTuningPageStart;
-    case UserGeometryMenuKind::Layout:
-      return userGeometryLayoutPageStart;
-    case UserGeometryMenuKind::Scale:
-      return userGeometryScalePageStart;
-  }
-  return userGeometryTuningPageStart;
+  return "Geometry";
 }
 
 const char* emptyUserGeometryLabel(UserGeometryMenuKind kind) {
@@ -105,6 +47,18 @@ const char* emptyUserGeometryLabel(UserGeometryMenuKind kind) {
       return userGeometryRuntimeTuningObjectSelected ? "No Scales" : "Select Tuning";
   }
   return "No Geometry";
+}
+
+bool appendUserGeometryHandle(uint16_t handle) {
+  if (userGeometryVirtualCount >= USER_GEOMETRY_MENU_MAX_ENTRIES) {
+    if (!userGeometryMenuOverflowLogged) {
+      sendToLog("User geometry menu truncated: too many entries.");
+      userGeometryMenuOverflowLogged = true;
+    }
+    return false;
+  }
+  userGeometryVirtualHandles[userGeometryVirtualCount++] = handle;
+  return true;
 }
 
 int findFirstUserGeometryObjectReferencing(uint8_t objectType,
@@ -244,292 +198,140 @@ bool includeGeometryObjectInMenu(UserGeometryMenuKind kind, const GeometryObject
   return false;
 }
 
-bool geometryMenuEntryForOrdinal(UserGeometryMenuKind kind, uint16_t ordinal, UserGeometryMenuEntry& entry) {
-  uint16_t candidateIndex = 0;
+bool builtinTuningMatchesCurrentRuntime(uint8_t legacyTuningIndex) {
+  if (!userGeometryRuntimeTuningObjectSelected) {
+    return false;
+  }
+  uint16_t tuningHandle = 0;
+  BuiltinGeometryMetadata tuningMetadata;
+  return builtinGeometryHandleForLegacyTuning(legacyTuningIndex, tuningHandle)
+         && builtinGeometryMetadataByHandle(tuningHandle, tuningMetadata)
+         && memcmp(tuningMetadata.objectId,
+                   userGeometryRuntimeTuningObjectId,
+                   GEOMETRY_OBJECT_ID_LENGTH) == 0;
+}
+
+bool includeBuiltinGeometryMetadataInMenu(UserGeometryMenuKind kind, const BuiltinGeometryMetadata& metadata) {
+  switch (kind) {
+    case UserGeometryMenuKind::Tuning:
+      return metadata.objectType == PRESET_SYNC_OBJECT_TYPE_USER_TUNING;
+    case UserGeometryMenuKind::Layout:
+      return metadata.objectType == PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT
+             && builtinTuningMatchesCurrentRuntime(metadata.legacyTuningIndex);
+    case UserGeometryMenuKind::Scale:
+      return metadata.objectType == PRESET_SYNC_OBJECT_TYPE_USER_SCALE
+             && builtinTuningMatchesCurrentRuntime(metadata.legacyTuningIndex);
+  }
+  return false;
+}
+
+void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
+  userGeometryVirtualKind = kind;
+  userGeometryVirtualCount = 0;
+  userGeometryMenuOverflowLogged = false;
+
   for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
     BuiltinGeometryMetadata metadata;
-    GeometryObjectSlot object;
     if (builtinGeometryMetadataByOrdinal(i, metadata)
-        && buildBuiltinGeometryObject(metadata.handle, object)
-        && includeGeometryObjectInMenu(kind, object)) {
-      if (candidateIndex == ordinal) {
-        entry.valid = true;
-        entry.builtin = true;
-        entry.handle = metadata.handle;
-        entry.object = object;
-        return true;
-      }
-      ++candidateIndex;
+        && includeBuiltinGeometryMetadataInMenu(kind, metadata)) {
+      appendUserGeometryHandle(metadata.handle);
     }
   }
 
   for (size_t i = 0; i < geometryObjects.size(); ++i) {
-    GeometryObjectSlot& object = geometryObjects[i];
+    const GeometryObjectSlot& object = geometryObjects[i];
     if (object.valid && includeGeometryObjectInMenu(kind, object)) {
-      if (candidateIndex == ordinal) {
-        entry.valid = true;
-        entry.builtin = false;
-        entry.handle = static_cast<uint16_t>(i);
-        entry.object = object;
-        return true;
-      }
-      ++candidateIndex;
+      appendUserGeometryHandle(static_cast<uint16_t>(i));
     }
   }
-
-  entry = {};
-  return false;
 }
 
-uint16_t userGeometryMenuEntryCount(UserGeometryMenuKind kind) {
-  uint16_t count = 0;
-  UserGeometryMenuEntry entry;
-  while (geometryMenuEntryForOrdinal(kind, count, entry)) {
-    ++count;
-  }
-  return count;
+uint16_t userGeometryVirtualCountProvider(void*) {
+  return userGeometryVirtualCount;
 }
 
-uint16_t userGeometryMenuLastPageStart(uint16_t entryCount) {
-  if (entryCount <= USER_GEOMETRY_MENU_VISIBLE_SLOTS) {
-    return 0;
-  }
-  return static_cast<uint16_t>(((entryCount - 1) / USER_GEOMETRY_MENU_VISIBLE_SLOTS) * USER_GEOMETRY_MENU_VISIBLE_SLOTS);
-}
-
-void clampUserGeometryMenuPageStart(UserGeometryMenuKind kind, uint16_t entryCount) {
-  uint16_t& pageStart = userGeometryPageStart(kind);
-  uint16_t lastPageStart = userGeometryMenuLastPageStart(entryCount);
-  if (pageStart > lastPageStart) {
-    pageStart = lastPageStart;
-  }
-}
-
-void formatUserGeometryMenuLabel(const UserGeometryMenuEntry& entry,
-                                 uint16_t ordinal,
-                                 char* output,
-                                 size_t outputLength) {
+bool userGeometryVirtualLabelProvider(void*, uint16_t index, char* output, size_t outputLength) {
   if (outputLength == 0) {
-    return;
+    return false;
   }
   output[0] = '\0';
-  if (!entry.valid) {
-    return;
+  if (index >= userGeometryVirtualCount) {
+    return false;
   }
 
-  const char* folderPath = entry.object.folderPath;
-  bool showFolder = !entry.builtin
-                    && folderPath[0]
-                    && strcmp(folderPath, SYNTH_PRESET_ROOT_FOLDER) != 0
-                    && strcmp(folderPath, SYNTH_WAVETABLE_BUILTIN_FOLDER) != 0;
-  if (!showFolder) {
-    snprintf(output, outputLength, "%u %s", static_cast<unsigned>(ordinal + 1), entry.object.name);
-    return;
-  }
-
-  char folderLabel[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
-  synthPresetFolderLabel(folderPath, folderLabel, sizeof(folderLabel));
-  snprintf(output,
-           outputLength,
-           "%u %s/%s",
-           static_cast<unsigned>(ordinal + 1),
-           folderLabel,
-           entry.object.name);
-}
-
-void updateUserGeometryMenuPage(UserGeometryMenuKind kind) {
-  userGeometryBrowserKind = kind;
-  userGeometryBrowserEntryCount = userGeometryMenuEntryCount(kind);
-  clampUserGeometryMenuPageStart(kind, userGeometryBrowserEntryCount);
-  uint16_t pageStart = userGeometryPageStart(kind);
-  userGeometryBrowserVisibleCount = 0;
-
-  if (userGeometryBrowserEntryCount == 0) {
-    snprintf(userGeometrySlots[0].label, sizeof(userGeometrySlots[0].label), "%s", emptyUserGeometryLabel(kind));
-    userGeometrySlots[0].action.kind = kind;
-    userGeometrySlots[0].action.objectIndex = USER_GEOMETRY_MENU_INVALID_HANDLE;
-    userGeometrySlots[0].item.setTitle(userGeometrySlots[0].label);
-    userGeometrySlots[0].item.hide(false);
-    for (uint8_t i = 1; i < USER_GEOMETRY_MENU_VISIBLE_SLOTS; ++i) {
-      userGeometrySlots[i].label[0] = '\0';
-      userGeometrySlots[i].action.kind = kind;
-      userGeometrySlots[i].action.objectIndex = USER_GEOMETRY_MENU_INVALID_HANDLE;
-      userGeometrySlots[i].item.setTitle(userGeometrySlots[i].label);
-      userGeometrySlots[i].item.hide(true);
+  uint16_t handle = userGeometryVirtualHandles[index];
+  if (isBuiltinGeometryHandle(handle)) {
+    BuiltinGeometryMetadata metadata;
+    if (!builtinGeometryMetadataByHandle(handle, metadata)) {
+      return false;
     }
+    snprintf(output, outputLength, "%s", metadata.name);
+    return true;
+  }
+
+  if (handle >= geometryObjects.size() || !geometryObjects[handle].valid) {
+    return false;
+  }
+  snprintf(output, outputLength, "%s", geometryObjects[handle].name);
+  return true;
+}
+
+void loadUserGeometryHandle(UserGeometryMenuKind kind, uint16_t handle) {
+  if (handle == USER_GEOMETRY_MENU_INVALID_HANDLE) {
+    redrawVirtualListMenu();
     return;
   }
 
-  for (uint8_t i = 0; i < USER_GEOMETRY_MENU_VISIBLE_SLOTS; ++i) {
-    uint16_t ordinal = static_cast<uint16_t>(pageStart + i);
-    UserGeometryMenuEntry entry;
-    bool visible = geometryMenuEntryForOrdinal(kind, ordinal, entry);
-    userGeometrySlots[i].action.kind = kind;
-    if (visible) {
-      formatUserGeometryMenuLabel(entry, ordinal, userGeometrySlots[i].label, sizeof(userGeometrySlots[i].label));
-      userGeometrySlots[i].action.objectIndex = entry.handle;
-    } else {
-      userGeometrySlots[i].label[0] = '\0';
-      userGeometrySlots[i].action.objectIndex = USER_GEOMETRY_MENU_INVALID_HANDLE;
-    }
-    if (visible) {
-      ++userGeometryBrowserVisibleCount;
-    }
-    userGeometrySlots[i].item.setTitle(userGeometrySlots[i].label);
-    userGeometrySlots[i].item.hide(!visible);
-  }
-}
-
-void detachUserGeometryBrowserItems() {
-  if (!userGeometryBrowserAttached) {
-    return;
-  }
-  for (uint8_t i = 0; i < USER_GEOMETRY_MENU_VISIBLE_SLOTS; ++i) {
-    userGeometrySlots[i].item.remove();
-  }
-  userGeometryBrowserAttached = false;
-}
-
-void attachUserGeometryBrowserItems(UserGeometryMenuKind kind) {
-  detachUserGeometryBrowserItems();
-  GEMPage& page = userGeometryRootPage(kind);
-  for (uint8_t i = 0; i < USER_GEOMETRY_MENU_VISIBLE_SLOTS; ++i) {
-    page.addMenuItem(userGeometrySlots[i].item);
-  }
-  userGeometryBrowserAttached = true;
-  userGeometryBrowserKind = kind;
-}
-
-void openUserGeometryMenu(UserGeometryMenuKind kind) {
-  userGeometryPageStart(kind) = 0;
-  attachUserGeometryBrowserItems(kind);
-  updateUserGeometryMenuPage(kind);
-  userGeometryBrowserLastItemIndex = userGeometryBrowserEntryCount > 0 ? 1 : 0;
-  userGeometryRootPage(kind).setCurrentMenuItemIndex(userGeometryBrowserLastItemIndex);
-  menu.setMenuPageCurrent(userGeometryRootPage(kind));
-  menu.drawMenu();
-}
-
-void loadUserGeometryMenu(GEMCallbackData callbackData) {
-  UserGeometryMenuAction* action = reinterpret_cast<UserGeometryMenuAction*>(callbackData.valPointer);
-  if (!action || action->objectIndex == USER_GEOMETRY_MENU_INVALID_HANDLE) {
-    menu.drawMenu();
-    return;
-  }
-
-  bool builtinSelection = prepareBuiltinGeometrySelection(action->objectIndex);
+  bool builtinSelection = prepareBuiltinGeometrySelection(handle);
   bool loaded = false;
-  switch (action->kind) {
+  switch (kind) {
     case UserGeometryMenuKind::Tuning:
-      loaded = loadUserGeometryBundleFromTuningSlot(action->objectIndex);
+      loaded = loadUserGeometryBundleFromTuningSlot(handle);
       requestUserGeometryMenuRebuild();
       break;
     case UserGeometryMenuKind::Layout:
-      loaded = loadUserGeometryLayoutFromSlot(action->objectIndex);
+      loaded = loadUserGeometryLayoutFromSlot(handle);
       break;
     case UserGeometryMenuKind::Scale:
-      loaded = loadUserGeometryScaleFromSlot(action->objectIndex);
+      loaded = loadUserGeometryScaleFromSlot(handle);
       break;
   }
   if (loaded) {
     if (builtinSelection) {
-      persistBuiltinGeometrySelection(action->objectIndex);
+      persistBuiltinGeometrySelection(handle);
     }
     loadDeviceRotationFromCurrentLayout();
     applyDeviceDisplayRotation();
   }
+  deactivateVirtualListMenu();
   menuHome();
 }
 
-void serviceUserGeometryBrowserScroll() {
-  UserGeometryMenuKind kind;
-  GEMPage* currentPage = menu.getCurrentMenuPage();
-  if (!userGeometryBrowserAttached || !userGeometryMenuOwnsKindPage(currentPage, kind)) {
-    userGeometryBrowserLastItemIndex = 0;
+void userGeometryVirtualSelect(void*, uint16_t index) {
+  if (index >= userGeometryVirtualCount) {
+    redrawVirtualListMenu();
     return;
   }
+  loadUserGeometryHandle(userGeometryVirtualKind, userGeometryVirtualHandles[index]);
+}
 
-  uint16_t entryCount = userGeometryBrowserEntryCount;
-  if (entryCount <= USER_GEOMETRY_MENU_VISIBLE_SLOTS) {
-    userGeometryBrowserLastItemIndex = userGeometryRootPage(kind).getCurrentMenuItemIndex();
-    return;
-  }
+void userGeometryVirtualClose(void*) {
+  menuHome();
+}
 
-  GEMPage& page = userGeometryRootPage(kind);
-  byte currentIndex = page.getCurrentMenuItemIndex();
-  uint16_t& pageStart = userGeometryPageStart(kind);
-  bool shifted = false;
-
-  if (currentIndex == 0
-      && userGeometryBrowserLastItemIndex == userGeometryBrowserVisibleCount
-      && pageStart + userGeometryBrowserVisibleCount < entryCount) {
-    pageStart = static_cast<uint16_t>(pageStart + USER_GEOMETRY_MENU_VISIBLE_SLOTS);
-    updateUserGeometryMenuPage(kind);
-    currentIndex = userGeometryBrowserVisibleCount > 0 ? 1 : 0;
-    page.setCurrentMenuItemIndex(currentIndex);
-    shifted = true;
-  } else if (currentIndex == 0
-             && userGeometryBrowserLastItemIndex == 1
-             && pageStart > 0) {
-    pageStart = pageStart > USER_GEOMETRY_MENU_VISIBLE_SLOTS
-                  ? static_cast<uint16_t>(pageStart - USER_GEOMETRY_MENU_VISIBLE_SLOTS)
-                  : 0;
-    updateUserGeometryMenuPage(kind);
-    currentIndex = userGeometryBrowserVisibleCount;
-    page.setCurrentMenuItemIndex(currentIndex);
-    shifted = true;
-  }
-
-  if (shifted) {
-    menu.drawMenu();
-  }
-  userGeometryBrowserLastItemIndex = currentIndex;
+void openUserGeometryMenu(UserGeometryMenuKind kind) {
+  rebuildUserGeometryVirtualList(kind);
+  VirtualListMenuProvider provider;
+  provider.title = userGeometryMenuTitle(kind);
+  provider.getCount = userGeometryVirtualCountProvider;
+  provider.getLabel = userGeometryVirtualLabelProvider;
+  provider.select = userGeometryVirtualSelect;
+  provider.close = userGeometryVirtualClose;
+  provider.emptyLabel = emptyUserGeometryLabel(kind);
+  openVirtualListMenu(provider);
 }
 
 }  // namespace
-
-bool handleUserGeometryMenuKey(byte keyCode) {
-  if (keyCode != GEM_KEY_UP && keyCode != GEM_KEY_DOWN) {
-    return false;
-  }
-
-  UserGeometryMenuKind kind;
-  GEMPage* currentPage = menu.getCurrentMenuPage();
-  if (!userGeometryBrowserAttached || !userGeometryMenuOwnsKindPage(currentPage, kind)) {
-    return false;
-  }
-  if (userGeometryBrowserEntryCount <= USER_GEOMETRY_MENU_VISIBLE_SLOTS) {
-    return false;
-  }
-
-  GEMPage& page = userGeometryRootPage(kind);
-  byte currentIndex = page.getCurrentMenuItemIndex();
-  uint16_t& pageStart = userGeometryPageStart(kind);
-
-  if (keyCode == GEM_KEY_DOWN
-      && currentIndex == userGeometryBrowserVisibleCount
-      && pageStart + userGeometryBrowserVisibleCount < userGeometryBrowserEntryCount) {
-    pageStart = static_cast<uint16_t>(pageStart + USER_GEOMETRY_MENU_VISIBLE_SLOTS);
-    updateUserGeometryMenuPage(kind);
-    userGeometryBrowserLastItemIndex = userGeometryBrowserVisibleCount > 0 ? 1 : 0;
-    page.setCurrentMenuItemIndex(userGeometryBrowserLastItemIndex);
-    menu.drawMenu();
-    return true;
-  }
-
-  if (keyCode == GEM_KEY_UP && currentIndex == 1 && pageStart > 0) {
-    pageStart = pageStart > USER_GEOMETRY_MENU_VISIBLE_SLOTS
-                  ? static_cast<uint16_t>(pageStart - USER_GEOMETRY_MENU_VISIBLE_SLOTS)
-                  : 0;
-    updateUserGeometryMenuPage(kind);
-    userGeometryBrowserLastItemIndex = userGeometryBrowserVisibleCount;
-    page.setCurrentMenuItemIndex(userGeometryBrowserLastItemIndex);
-    menu.drawMenu();
-    return true;
-  }
-
-  return false;
-}
 
 void openUserGeometryTuningMenu() {
   openUserGeometryMenu(UserGeometryMenuKind::Tuning);
@@ -548,27 +350,24 @@ void requestUserGeometryMenuRebuild() {
 }
 
 void rebuildUserGeometryMenuItems() {
-  updateUserGeometryMenuPage(userGeometryBrowserKind);
+  if (virtualListMenuIsActive()) {
+    rebuildUserGeometryVirtualList(userGeometryVirtualKind);
+    redrawVirtualListMenu();
+  }
 }
 
 void serviceUserGeometryMenuRebuild() {
-  serviceUserGeometryBrowserScroll();
   if (!userGeometryMenuRebuildPending) {
     return;
   }
   userGeometryMenuRebuildPending = false;
-  UserGeometryMenuKind pageKind;
-  if (userGeometryMenuOwnsKindPage(menu.getCurrentMenuPage(), pageKind)) {
-    attachUserGeometryBrowserItems(pageKind);
-    updateUserGeometryMenuPage(pageKind);
-    userGeometryBrowserLastItemIndex = userGeometryBrowserEntryCount > 0 ? 1 : 0;
-    userGeometryRootPage(pageKind).setCurrentMenuItemIndex(userGeometryBrowserLastItemIndex);
-    menu.drawMenu();
+  if (virtualListMenuIsActive()) {
+    rebuildUserGeometryVirtualList(userGeometryVirtualKind);
+    redrawVirtualListMenu();
   } else if (menu.getCurrentMenuPage() == &menuPageMain) {
     menu.drawMenu();
   }
 }
 
 void createUserGeometryMenuItems() {
-  rebuildUserGeometryMenuItems();
 }

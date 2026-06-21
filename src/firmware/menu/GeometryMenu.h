@@ -9,4 +9,3 @@ void serviceUserGeometryMenuRebuild();
 void openUserGeometryTuningMenu();
 void openUserGeometryLayoutMenu();
 void openUserGeometryScaleMenu();
-bool handleUserGeometryMenuKey(byte keyCode);

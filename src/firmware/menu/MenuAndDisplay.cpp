@@ -20,6 +20,7 @@
 #include "PlayedNotesOverlay.h"
 #include "SynthPresetMenu.h"
 #include "SynthWavetableMenu.h"
+#include "VirtualListMenu.h"
 
 // @menu
 /*
@@ -2378,12 +2379,14 @@ void updateMainMenuDynamicLabels() {
 
 // Call this procedure to return to the main menu
 void menuHome() {
+  deactivateVirtualListMenu();
   updateMainMenuDynamicLabels();
   menu.setMenuPageCurrent(menuPageMain);
   menu.drawMenu();
 }
 
 void menuSynthOptionsHome() {
+  deactivateVirtualListMenu();
   updateMainMenuDynamicLabels();
   menu.setMenuPageCurrent(menuPageSynth);
   menu.drawMenu();

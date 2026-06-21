@@ -11,9 +11,9 @@
 #include "../midi/DelegatedControl.h"
 #include "../midi/NoteDispatch.h"
 #include "GridScanRotary.h"
-#include "../menu/GeometryMenu.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
+#include "../menu/VirtualListMenu.h"
 #include "../synth/SynthAudio.h"
 
 // @interface
@@ -219,7 +219,25 @@ void dealWithRotary() {
     }
   }
 
-  if (menu.readyForKey()) {
+  if (virtualListMenuIsActive()) {
+    if (justReleased && !rotaryPanicSuppressClick) {
+      dismissPlayedNotesOverlayForMenuInput();
+      handleVirtualListMenuKey(GEM_KEY_OK);
+      noteOverlayDirty = true;
+      screenTime = 0;
+    }
+    if (storeRotaryTurn != 0) {
+      bool turnIsClockwise = (storeRotaryTurn == 8);
+      dismissPlayedNotesOverlayForMenuInput();
+      byte keyCode = rotaryInvert
+                       ? (turnIsClockwise ? GEM_KEY_DOWN : GEM_KEY_UP)
+                       : (turnIsClockwise ? GEM_KEY_UP : GEM_KEY_DOWN);
+      handleVirtualListMenuKey(keyCode);
+      noteOverlayDirty = true;
+      storeRotaryTurn = 0;
+      screenTime = 0;
+    }
+  } else if (menu.readyForKey()) {
     if (justReleased && !rotaryPanicSuppressClick) {
       dismissPlayedNotesOverlayForMenuInput();
       menu.registerKeyPress(GEM_KEY_OK);
@@ -232,9 +250,7 @@ void dealWithRotary() {
       byte keyCode = rotaryInvert
                        ? (turnIsClockwise ? GEM_KEY_DOWN : GEM_KEY_UP)
                        : (turnIsClockwise ? GEM_KEY_UP : GEM_KEY_DOWN);
-      if (!handleUserGeometryMenuKey(keyCode)) {
-        menu.registerKeyPress(keyCode);
-      }
+      menu.registerKeyPress(keyCode);
       noteOverlayDirty = true;
       storeRotaryTurn = 0;
       screenTime = 0;

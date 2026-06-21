@@ -762,18 +762,18 @@ geometry does not consume user geometry slots.
 Runtime Apply currently parses compatible geometry TLVs into RAM-only
 tuning/layout/scale/palette/button-map state, rebuilds layout/scale/pitch
 assignment, and uses `ReferenceMilliHz` as an A4 pitch offset for synth and MIDI
-retuning. The OLED tuning/layout/scale pages are fixed-memory scrolling
-browsers backed by factory and saved objects. A shared Back-plus-ten-row GEM
-slot set is attached to the active page, and the backing window advances in
-ten-entry pages when the selection scrolls past the last visible row. Built-in
-entries are shown flat even though their object metadata lives in `/Built In`;
-saved user entries include folder/name labels only when needed. Selecting a
-`UserTuning` loads its linked first layout, first scale, color map, and explicit
-map; the `Layout` and `Scales` pages then expose the other objects that
-reference the selected tuning.
-`dealWithRotary()` calls `handleUserGeometryMenuKey()` before passing up/down
-turns to GEM so virtual page boundaries redraw once instead of first wrapping to
-Back and then redrawing the next fixed window.
+retuning. The OLED tuning/layout/scale pages use `VirtualListMenu`, a
+HexBoard-owned renderer that copies GEM's title, Back row, button rows,
+11-row paging, wrapping, pointer, and scrollbar behavior without allocating a
+`GEMItem` per geometry object. The active browser caches only 16-bit factory or
+user geometry handles; row labels are fetched from built-in metadata or stored
+object names without copying geometry bodies. Built-in entries are shown flat
+even though their object metadata lives in `/Built In`, and saved user entries
+are also flat on-device. Selecting a `UserTuning` loads its linked first
+layout, first scale, color map, and explicit map; the `Layout` and `Scales`
+pages then expose the other objects that reference the selected tuning.
+`dealWithRotary()` sends encoder turns and clicks to `VirtualListMenu` while it
+is active and otherwise falls back to normal GEM input.
 Scala/cents-list tunings still save as raw objects but are hidden from the
 runtime tuning menu until table-backed pitch lookup exists.
 

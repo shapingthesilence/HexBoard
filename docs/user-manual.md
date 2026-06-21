@@ -98,12 +98,11 @@ saved, the preset name is shown with a leading `*`.
 ### Tuning
 
 Use this section to choose the tuning or geometry bundle the whole board runs
-on. The page is a fixed-memory scrolling browser: factory tunings appear as
-flat entries, while saved user tunings can include a folder/name label when
-needed. Scrolling past the last visible entry jumps to the first entry in the
-next window, matching the usual menu page feel. Selecting a tuning also loads
-the first linked layout, scale, color map, and matching explicit button map so
-the board is immediately playable.
+on. The page is a GEM-style virtual list backed by geometry objects: factory
+and saved tunings appear as flat entries without folder rows. Scrolling follows
+normal GEM list behavior, including page jumps at the 11 visible-row boundary.
+Selecting a tuning also loads the first linked layout, scale, color map, and
+matching explicit button map so the board is immediately playable.
 
 The Dynamic JI controls are temporarily not in this page while the menu layout
 is being simplified for the 2.0 release.
@@ -135,8 +134,7 @@ Changing tuning also resets:
 
 Use this page to choose how pitch moves across the hex grid. After a tuning is
 selected, factory and saved layouts linked to that tuning appear in a
-fixed-memory scrolling browser. Factory layouts are shown as flat entries;
-saved user layouts can include folder/name labels when needed.
+GEM-style virtual list as flat entries.
 
 Choosing a layout remaps button pitches, loads that layout's matching explicit
 button map when one exists, and reloads that layout's default device
@@ -148,9 +146,8 @@ the menu layout is being simplified for the 2.0 release.
 ### Scale
 
 Use this page to choose the active scale. After a tuning is selected, factory
-and saved scales linked to that tuning appear in a fixed-memory scrolling
-browser. Factory scales are shown as flat entries; saved user scales can include
-folder/name labels when needed.
+and saved scales linked to that tuning appear in a GEM-style virtual list as
+flat entries.
 
 Choosing a scale updates scale membership while keeping the current user tuning,
 layout, color map, and button map active. `Key` and `Scale Lock` are on the main
@@ -440,8 +437,8 @@ first target is preset, tuning/layout, color-map, button-map, and synth-preset
 editing over Web MIDI SysEx. Firmware currently implements synth preset sync,
 named synth-wavetable import/read/write/delete, storage/list/read/write/delete for user
 geometry objects in `/layouts.dat`, read-only factory tuning/layout/scale
-geometry objects, fixed-memory scrolling on-device `Tuning`, `Layout`, and
-`Scales` browsers backed by geometry objects, and live Apply for generated
+geometry objects, virtual on-device `Tuning`, `Layout`, and `Scales` browsers
+backed by geometry objects, and live Apply for generated
 EDO/equal-step geometry bundles. Scala/cents-table tuning objects can be saved
 and verified, but live Scala playback still needs a broader firmware
 tuning-system overhaul.
@@ -470,8 +467,8 @@ exported as bundle JSON, but the web app disables erase for them. Saved user
 entries can also be erased from the device. On the device, the tuning appears
 under `Tuning`, its linked layouts appear under `Layout` after that tuning is
 selected, and its linked scales appear under `Scales`; the device browser keeps
-factory entries flat and uses folder/name labels only for saved user entries
-that need them. The larger HexBoard preview plus selected-key inspector stay on
+factory and saved entries flat. The larger HexBoard preview plus selected-key
+inspector stay on
 the right, with the selected-key
 inspector below the board. The encoded-object debug
 readout sits at the bottom of the editor page. The rotation control is a

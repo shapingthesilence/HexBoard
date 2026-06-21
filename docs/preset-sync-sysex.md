@@ -1226,11 +1226,10 @@ write the individual objects after the web app unpacks a bundle.
    overwrite, delete, or apply the active EDO/equal-step tuning, active vector
    layout, active scale, color map, and matching explicit button map by compact
    preset-sync handle.
-7. The device refreshes its fixed-memory scrolling `Tuning`, `Layout`, and
-   `Scales` browsers after geometry saves/deletes. `UserTuning` objects are the
-   loadable bundle anchors; linked `UserLayout` and `UserScale` objects appear
-   after that tuning is selected. Future firmware work still needs to hide
-   generated-layout controls
+7. The device refreshes its virtual `Tuning`, `Layout`, and `Scales` browsers
+   after geometry saves/deletes. `UserTuning` objects are the loadable bundle
+   anchors; linked `UserLayout` and `UserScale` objects appear after that tuning
+   is selected. Future firmware work still needs to hide generated-layout controls
    whenever the active layout is manual, formalize profile references, and apply
    bundle switches only after active notes are clear or after an explicitly
    documented panic cleanup.
