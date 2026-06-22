@@ -652,8 +652,12 @@ enum class EnvelopeCommand : uint8_t {
   None,
   StartAttack,
   StartRelease,
+  StartStealFade,
   Reset
 };
+
+constexpr uint16_t SYNTH_STEAL_FADE_SAMPLES = 64;
+constexpr int16_t NO_SYNTH_OWNER = -1;
 
 // Core 0 publishes the latest envelope command for each voice, and the audio
 // ISR on core 1 consumes it. The sequence byte tells the consumer whether a
@@ -670,12 +674,19 @@ std::array<uint8_t, POLYPHONY_LIMIT> voiceFreedConsumedSeq = {};
 std::array<std::atomic<bool>, POLYPHONY_LIMIT> channelInUse = {};
 std::array<std::atomic<uint32_t>, POLYPHONY_LIMIT> voiceGenerations;
 std::array<std::atomic<int16_t>, POLYPHONY_LIMIT> synthChannelOwners;
+std::array<uint64_t, POLYPHONY_LIMIT> synthVoiceStartTimes = {};
+std::array<uint64_t, POLYPHONY_LIMIT> synthVoiceReleaseTimes = {};
+std::array<uint16_t, POLYPHONY_LIMIT> synthStealFadeSamplesRemaining = {};
+std::array<int16_t, POLYPHONY_LIMIT> pendingSynthStealOwners = [] {
+  std::array<int16_t, POLYPHONY_LIMIT> owners = {};
+  owners.fill(NO_SYNTH_OWNER);
+  return owners;
+}();
 std::atomic<uint32_t> nextVoiceGeneration = 1;
 // Flag set by Core 0 before flash writes. When true, the audio renderer outputs
 // silence so DMA resumes cleanly after flash operations (which disable all
 // interrupts on both cores of the RP2040).
 std::atomic<bool> flashWriteInProgress = false;
-constexpr int16_t NO_SYNTH_OWNER = -1;
 float pitchBendFactor = 1.0f;
 std::array<uint8_t, POLYPHONY_LIMIT> releaseRetries = {};
 std::array<uint8_t, POLYPHONY_LIMIT> releaseRetryCountdown = {};
@@ -2396,6 +2407,89 @@ void updateArpeggiatorDirection() {
   arpeggiatorSequenceCursor = 0;
 }
 
+inline bool RAM_FUNC(synthStealFadeInProgress)(uint8_t channelIndex) {
+  return channelIndex < POLYPHONY_LIMIT && synthStealFadeSamplesRemaining[channelIndex] != 0;
+}
+
+inline bool RAM_FUNC(synthStealHandoffPending)(uint8_t channelIndex) {
+  return channelIndex < POLYPHONY_LIMIT
+      && (synthStealFadeInProgress(channelIndex)
+          || pendingSynthStealOwners[channelIndex] != NO_SYNTH_OWNER);
+}
+
+inline void RAM_FUNC(clearSynthStealFade)(uint8_t channelIndex) {
+  if (channelIndex >= POLYPHONY_LIMIT) {
+    return;
+  }
+  synthStealFadeSamplesRemaining[channelIndex] = 0;
+  pendingSynthStealOwners[channelIndex] = NO_SYNTH_OWNER;
+}
+
+inline uint16_t RAM_FUNC(synthStealFadeGainQ8)(uint8_t channelIndex) {
+  uint16_t remaining = synthStealFadeSamplesRemaining[channelIndex];
+  if (remaining == 0 || remaining >= SYNTH_STEAL_FADE_SAMPLES) {
+    return 256;
+  }
+  return static_cast<uint16_t>((static_cast<uint32_t>(remaining) * 256u) / SYNTH_STEAL_FADE_SAMPLES);
+}
+
+inline void RAM_FUNC(startSynthVoiceAttackInRender)(uint8_t channelIndex,
+                                                    EnvelopeState& env,
+                                                    bool& forceVoiceRenderCacheRefresh) {
+  resetSynthVoiceRenderCache(channelIndex);
+  forceVoiceRenderCacheRefresh = true;
+  env.releaseIncrement = 0;
+  env.holdTicksRemaining = 0;
+  if (envelopeParams.attackTicks == 0) {
+    advanceEnvelopeFromAttackPeak(envelopeParams, env);
+  } else {
+    env.stage = EnvelopeStage::Attack;
+    env.level = 0;
+  }
+  for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
+    EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][channelIndex];
+    resetCachedEffectEnvelopeModValue(envelopeIndex, channelIndex);
+    if (synthEffectEnvelopeActive[envelopeIndex]) {
+      startEffectEnvelopeAttack(envelopeIndex, effectEnv);
+    } else {
+      resetEnvelopeState(effectEnv);
+    }
+  }
+}
+
+inline void RAM_FUNC(resetSynthVoiceAfterAbandonedSteal)(uint8_t channelIndex) {
+  resetEnvelopeState(envelopeStates[channelIndex]);
+  for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
+    resetEnvelopeState(effectEnvelopeStates[envelopeIndex][channelIndex]);
+    resetCachedEffectEnvelopeModValue(envelopeIndex, channelIndex);
+  }
+  synth[channelIndex].increment = 0;
+  synth[channelIndex].targetIncrement = 0;
+  synth[channelIndex].counter = 0;
+  clearSynthPortamento(channelIndex);
+  resetSynthVoiceRenderCache(channelIndex);
+  synthChannelOwners[channelIndex].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
+  synthVoiceStartTimes[channelIndex] = 0;
+  synthVoiceReleaseTimes[channelIndex] = 0;
+  voiceGenerations[channelIndex].store(0, std::memory_order_relaxed);
+  publishVoiceFreed(channelIndex);
+}
+
+inline void RAM_FUNC(finishSynthStealFade)(uint8_t channelIndex,
+                                           EnvelopeState& env,
+                                           bool& forceVoiceRenderCacheRefresh) {
+  int16_t owner = pendingSynthStealOwners[channelIndex];
+  clearSynthStealFade(channelIndex);
+  if (owner < 0 || owner >= BTN_COUNT || h[owner].synthCh != static_cast<byte>(channelIndex + 1)) {
+    resetSynthVoiceAfterAbandonedSteal(channelIndex);
+    return;
+  }
+  synthChannelOwners[channelIndex].store(owner, std::memory_order_relaxed);
+  synthVoiceReleaseTimes[channelIndex] = 0;
+  setSynthFreq(h[owner].frequency, static_cast<byte>(channelIndex + 1), true);
+  startSynthVoiceAttackInRender(channelIndex, env, forceVoiceRenderCacheRefresh);
+}
+
 AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
   AudioOutputLevels output;
   if (destination == AUDIO_BOTH) {
@@ -2459,28 +2553,12 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
     EnvelopeCommand pendingCommand = consumeEnvelopeCommand(i);
     switch (pendingCommand) {
       case EnvelopeCommand::StartAttack: {
-        resetSynthVoiceRenderCache(i);
-        forceVoiceRenderCacheRefresh = true;
-        env.releaseIncrement = 0;
-        env.holdTicksRemaining = 0;
-        if (envelopeParams.attackTicks == 0) {
-          advanceEnvelopeFromAttackPeak(envelopeParams, env);
-        } else {
-          env.stage = EnvelopeStage::Attack;
-          env.level = 0;
-        }
-        for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
-          EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][i];
-          resetCachedEffectEnvelopeModValue(envelopeIndex, i);
-          if (synthEffectEnvelopeActive[envelopeIndex]) {
-            startEffectEnvelopeAttack(envelopeIndex, effectEnv);
-          } else {
-            resetEnvelopeState(effectEnv);
-          }
-        }
+        clearSynthStealFade(i);
+        startSynthVoiceAttackInRender(i, env, forceVoiceRenderCacheRefresh);
         break;
       }
       case EnvelopeCommand::StartRelease: {
+        clearSynthStealFade(i);
         resetSynthVoiceRenderCache(i);
         forceVoiceRenderCacheRefresh = true;
         releaseRetries[i] = 0;
@@ -2516,7 +2594,13 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
         }
         break;
       }
+      case EnvelopeCommand::StartStealFade:
+        releaseRetries[i] = 0;
+        releaseRetryCountdown[i] = 0;
+        synthStealFadeSamplesRemaining[i] = SYNTH_STEAL_FADE_SAMPLES;
+        break;
       case EnvelopeCommand::Reset: {
+        clearSynthStealFade(i);
         resetSynthVoiceRenderCache(i);
         resetEnvelopeState(env);
         for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
@@ -2529,6 +2613,8 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
         clearSynthPortamento(i);
         channelInUse[i].store(false, std::memory_order_relaxed);
         voiceGenerations[i].store(0, std::memory_order_relaxed);
+        synthVoiceStartTimes[i] = 0;
+        synthVoiceReleaseTimes[i] = 0;
         break;
       }
       case EnvelopeCommand::None:
@@ -2537,6 +2623,9 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
     }
 
     if (!synth[i].targetIncrement && env.stage == EnvelopeStage::Idle) {
+      if (synthStealFadeInProgress(i)) {
+        finishSynthStealFade(i, env, forceVoiceRenderCacheRefresh);
+      }
       continue;
     }
 
@@ -2691,14 +2780,27 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
     // Apply the audible envelope level (0..65535). The envelope state keeps
     // fractional bits for long times, but the mix multiply stays 32-bit.
     uint32_t envAudio = envelopeAudioLevel(env.level);
+    uint32_t audibleEnvAudio = envAudio;
+    uint16_t stealFadeGain = synthStealFadeGainQ8(i);
+    if (stealFadeGain < 256) {
+      s = (s * static_cast<int32_t>(stealFadeGain)) >> 8;
+      audibleEnvAudio = (audibleEnvAudio * static_cast<uint32_t>(stealFadeGain)) >> 8;
+    }
     s = (s * static_cast<int32_t>(envAudio)) >> 16;
 
     // Accumulate signed mix
     mix += s;
 
     // For Step 1 smooth normalization:
-    envSum += envAudio;
+    envSum += audibleEnvAudio;
     ++voices;
+
+    if (synthStealFadeInProgress(i)) {
+      --synthStealFadeSamplesRemaining[i];
+      if (!synthStealFadeInProgress(i)) {
+        finishSynthStealFade(i, env, forceVoiceRenderCacheRefresh);
+      }
+    }
   }
 
   // Compute effective voices in Q8 (fixed-point, 8 fractional bits).
@@ -3214,6 +3316,7 @@ void RAM_FUNC(setSynthFreq)(float frequency, byte channel, bool resetPhase, bool
 
 void RAM_FUNC(beginEnvelopeAttack)(uint8_t channel) {
   channelInUse[channel].store(true, std::memory_order_relaxed);
+  synthVoiceReleaseTimes[channel] = 0;
   releaseRetries[channel] = 0;
   releaseRetryCountdown[channel] = 0;
   // Reusing a voice discards any older "voice finished" event that core 1 may
@@ -3226,6 +3329,7 @@ void RAM_FUNC(beginEnvelopeRelease)(uint8_t channel) {
   if (channel >= POLYPHONY_LIMIT) {
     return;
   }
+  synthVoiceReleaseTimes[channel] = runTime ? runTime : 1;
   releaseRetries[channel] = releaseRetryLimit;
   releaseRetryCountdown[channel] = 0;
   publishEnvelopeCommand(channel, EnvelopeCommand::StartRelease);
@@ -3440,6 +3544,9 @@ void RAM_FUNC(resetSynthFreqs)() {
     channelInUse[i].store(false, std::memory_order_relaxed);
     voiceGenerations[i].store(0, std::memory_order_relaxed);
     synthChannelOwners[i].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
+    synthVoiceStartTimes[i] = 0;
+    synthVoiceReleaseTimes[i] = 0;
+    clearSynthStealFade(i);
     clearPendingVoiceFreed(i);
     releaseRetries[i] = 0;
     releaseRetryCountdown[i] = 0;
@@ -3477,7 +3584,12 @@ void RAM_FUNC(updateSynthWithNewFreqs)() {
   for (byte i = 0; i < BTN_COUNT; i++) {
     if (!(h[i].isCmd)) {
       if (h[i].synthCh) {
-        setSynthFreq(h[i].frequency, h[i].synthCh);  // pass all notes thru synth again if the pitch bend changes
+        uint8_t channelIndex = h[i].synthCh - 1;
+        if (channelIndex < POLYPHONY_LIMIT
+            && !synthStealHandoffPending(channelIndex)
+            && synthChannelOwners[channelIndex].load(std::memory_order_relaxed) == static_cast<int16_t>(i)) {
+          setSynthFreq(h[i].frequency, h[i].synthCh);  // pass all notes thru synth again if the pitch bend changes
+        }
       }
     }
   }
@@ -3490,6 +3602,9 @@ void RAM_FUNC(processEnvelopeReleases)() {
       voiceGenerations[i].store(0, std::memory_order_relaxed);
       int16_t owner = synthChannelOwners[i].load(std::memory_order_relaxed);
       synthChannelOwners[i].store(NO_SYNTH_OWNER, std::memory_order_relaxed);
+      synthVoiceStartTimes[i] = 0;
+      synthVoiceReleaseTimes[i] = 0;
+      clearSynthStealFade(i);
       if (owner >= 0 && owner < BTN_COUNT) {
         if (h[owner].synthCh == static_cast<byte>(i + 1)) {
           h[owner].synthCh = 0;
@@ -3526,32 +3641,127 @@ void RAM_FUNC(retryPendingReleases)() {
   }
 }
 
-bool RAM_FUNC(stealOldestSynthVoice)(byte& channelOut, int16_t& previousOwner) {
-  previousOwner = NO_SYNTH_OWNER;
-  uint32_t oldestGeneration = std::numeric_limits<uint32_t>::max();
-  int8_t oldestIndex = -1;
-  uint8_t voiceLimit = currentSynthVoiceLimit();
-  for (uint8_t i = 0; i < voiceLimit; ++i) {
-    if (!channelInUse[i].load(std::memory_order_relaxed)) {
-      continue;
-    }
-    if (synthChannelOwners[i].load(std::memory_order_relaxed) == NO_SYNTH_OWNER) {
-      continue;
-    }
-    uint32_t generation = voiceGenerations[i].load(std::memory_order_relaxed);
-    if (generation == 0) {
-      continue;
-    }
-    if (generation < oldestGeneration) {
-      oldestGeneration = generation;
-      oldestIndex = static_cast<int8_t>(i);
-    }
+inline bool RAM_FUNC(synthVoiceOwnerValid)(int16_t owner) {
+  return owner >= 0 && owner < BTN_COUNT;
+}
+
+inline uint64_t RAM_FUNC(synthVoiceStartOrder)(uint8_t channelIndex) {
+  uint64_t startTime = synthVoiceStartTimes[channelIndex];
+  if (startTime != 0) {
+    return startTime;
   }
-  if (oldestIndex < 0) {
+  return voiceGenerations[channelIndex].load(std::memory_order_relaxed);
+}
+
+inline bool RAM_FUNC(synthVoicePitchComesBefore)(int16_t leftOwner, int16_t rightOwner) {
+  if (h[leftOwner].frequency < h[rightOwner].frequency) {
+    return true;
+  }
+  if (h[leftOwner].frequency > h[rightOwner].frequency) {
     return false;
   }
-  previousOwner = synthChannelOwners[oldestIndex].load(std::memory_order_relaxed);
-  channelOut = static_cast<byte>(oldestIndex + 1);
+  if (h[leftOwner].midiNoteIndex < h[rightOwner].midiNoteIndex) {
+    return true;
+  }
+  if (h[leftOwner].midiNoteIndex > h[rightOwner].midiNoteIndex) {
+    return false;
+  }
+  return leftOwner < rightOwner;
+}
+
+inline bool RAM_FUNC(synthVoiceDuplicatesNote)(int16_t owner, byte newNote) {
+  if (!synthVoiceOwnerValid(owner) || newNote >= BTN_COUNT) {
+    return false;
+  }
+  return h[owner].midiNoteIndex == h[newNote].midiNoteIndex
+      || h[owner].stepsFromC == h[newNote].stepsFromC
+      || h[owner].frequency == h[newNote].frequency;
+}
+
+inline bool RAM_FUNC(synthVoiceIsHeld)(uint8_t channelIndex, int16_t owner) {
+  return synthVoiceOwnerValid(owner)
+      && synthVoiceReleaseTimes[channelIndex] == 0
+      && h[owner].synthCh == static_cast<byte>(channelIndex + 1);
+}
+
+inline bool RAM_FUNC(synthVoiceCanBeStolen)(uint8_t channelIndex, int16_t owner) {
+  return channelIndex < currentSynthVoiceLimit()
+      && channelInUse[channelIndex].load(std::memory_order_relaxed)
+      && !synthStealHandoffPending(channelIndex)
+      && synthVoiceOwnerValid(owner)
+      && voiceGenerations[channelIndex].load(std::memory_order_relaxed) != 0;
+}
+
+int8_t RAM_FUNC(findGuardedLowestHeldSynthVoice)() {
+  int8_t guardedIndex = -1;
+  uint8_t voiceLimit = currentSynthVoiceLimit();
+  for (uint8_t i = 0; i < voiceLimit; ++i) {
+    int16_t owner = synthChannelOwners[i].load(std::memory_order_relaxed);
+    if (!synthVoiceCanBeStolen(i, owner) || !synthVoiceIsHeld(i, owner)) {
+      continue;
+    }
+    if (guardedIndex < 0) {
+      guardedIndex = static_cast<int8_t>(i);
+      continue;
+    }
+    int16_t guardedOwner = synthChannelOwners[guardedIndex].load(std::memory_order_relaxed);
+    if (synthVoicePitchComesBefore(owner, guardedOwner)) {
+      guardedIndex = static_cast<int8_t>(i);
+    }
+  }
+  return guardedIndex;
+}
+
+bool RAM_FUNC(stealOldestSynthVoice)(byte newNote, byte& channelOut, int16_t& previousOwner) {
+  previousOwner = NO_SYNTH_OWNER;
+  int8_t guardedLowestHeld = findGuardedLowestHeldSynthVoice();
+  int8_t oldestDuplicateIndex = -1;
+  int8_t oldestReleasedIndex = -1;
+  int8_t oldestHeldIndex = -1;
+  uint64_t oldestDuplicateStart = std::numeric_limits<uint64_t>::max();
+  uint64_t oldestReleaseTime = std::numeric_limits<uint64_t>::max();
+  uint64_t oldestHeldStart = std::numeric_limits<uint64_t>::max();
+  uint8_t voiceLimit = currentSynthVoiceLimit();
+
+  for (uint8_t i = 0; i < voiceLimit; ++i) {
+    int16_t owner = synthChannelOwners[i].load(std::memory_order_relaxed);
+    if (!synthVoiceCanBeStolen(i, owner) || static_cast<int8_t>(i) == guardedLowestHeld) {
+      continue;
+    }
+
+    uint64_t startOrder = synthVoiceStartOrder(i);
+    if (synthVoiceDuplicatesNote(owner, newNote) && startOrder < oldestDuplicateStart) {
+      oldestDuplicateStart = startOrder;
+      oldestDuplicateIndex = static_cast<int8_t>(i);
+    }
+
+    uint64_t releaseTime = synthVoiceReleaseTimes[i];
+    if (releaseTime != 0) {
+      if (releaseTime < oldestReleaseTime) {
+        oldestReleaseTime = releaseTime;
+        oldestReleasedIndex = static_cast<int8_t>(i);
+      }
+      continue;
+    }
+
+    if (startOrder < oldestHeldStart) {
+      oldestHeldStart = startOrder;
+      oldestHeldIndex = static_cast<int8_t>(i);
+    }
+  }
+
+  int8_t selectedIndex = oldestDuplicateIndex;
+  if (selectedIndex < 0) {
+    selectedIndex = oldestReleasedIndex;
+  }
+  if (selectedIndex < 0) {
+    selectedIndex = oldestHeldIndex;
+  }
+  if (selectedIndex < 0) {
+    return false;
+  }
+  previousOwner = synthChannelOwners[selectedIndex].load(std::memory_order_relaxed);
+  channelOut = static_cast<byte>(selectedIndex + 1);
   return true;
 }
 
@@ -3564,20 +3774,28 @@ void RAM_FUNC(trySynthNoteOn)(byte x) {
     if (synthChQueue.empty()) {
       byte stolenChannel = 0;
       int16_t previousOwner = NO_SYNTH_OWNER;
-      if (!stealOldestSynthVoice(stolenChannel, previousOwner)) {
+      if (!stealOldestSynthVoice(x, stolenChannel, previousOwner)) {
         sendToLog("synth channels all firing, so did not add one");
         return;
       }
+      uint8_t stolenIndex = stolenChannel - 1;
       if (previousOwner >= 0 && previousOwner < BTN_COUNT) {
         if (h[previousOwner].synthCh == stolenChannel) {
           h[previousOwner].synthCh = 0;
         }
       }
       h[x].synthCh = stolenChannel;
-      synthChannelOwners[stolenChannel - 1].store(static_cast<int16_t>(x), std::memory_order_relaxed);
-      voiceGenerations[stolenChannel - 1].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
-      beginEnvelopeAttack(stolenChannel - 1);
-      setSynthFreq(h[x].frequency, stolenChannel, true);
+      synthChannelOwners[stolenIndex].store(static_cast<int16_t>(x), std::memory_order_relaxed);
+      voiceGenerations[stolenIndex].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
+      synthVoiceStartTimes[stolenIndex] = h[x].timePressed ? h[x].timePressed : runTime;
+      synthVoiceReleaseTimes[stolenIndex] = 0;
+      pendingSynthStealOwners[stolenIndex] = static_cast<int16_t>(x);
+      synthStealFadeSamplesRemaining[stolenIndex] = 0;
+      channelInUse[stolenIndex].store(true, std::memory_order_relaxed);
+      releaseRetries[stolenIndex] = 0;
+      releaseRetryCountdown[stolenIndex] = 0;
+      clearPendingVoiceFreed(stolenIndex);
+      publishEnvelopeCommand(stolenIndex, EnvelopeCommand::StartStealFade);
       sendToLog("stole synth channel " + std::to_string(stolenChannel));
       return;
     }
@@ -3586,6 +3804,9 @@ void RAM_FUNC(trySynthNoteOn)(byte x) {
     h[x].synthCh = channel;
     synthChannelOwners[channel - 1].store(static_cast<int16_t>(x), std::memory_order_relaxed);
     voiceGenerations[channel - 1].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
+    synthVoiceStartTimes[channel - 1] = h[x].timePressed ? h[x].timePressed : runTime;
+    synthVoiceReleaseTimes[channel - 1] = 0;
+    clearSynthStealFade(channel - 1);
     beginEnvelopeAttack(channel - 1);
     setSynthFreq(h[x].frequency, channel, true);
     sendToLog("popped " + std::to_string(channel) + " off the synth queue");

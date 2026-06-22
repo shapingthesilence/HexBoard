@@ -684,6 +684,15 @@ voices and only resets phase for new synth notes. The audio block renderer slews
 each voice's current increment toward that target, and wheel modulation reads a
 smoothed value instead of `modWheel.curValue` directly.
 
+Poly voice stealing is intentionally more specific than "oldest voice wins".
+`stealOldestSynthVoice()` guards the lowest held voice, then prioritizes the
+oldest duplicate note, the oldest released voice by release time, and finally
+the oldest remaining held voice by start time. Steals publish a renderer-side
+handoff command: the old voice keeps its oscillator for a `64`-sample fade, and
+the replacement note's frequency/envelope attack are applied only after that
+fade completes. Keep retune and release paths aware of
+`synthStealHandoffPending()` so pending voices are not retuned early.
+
 The jack and piezo output stages intentionally differ. The jack path stays
 centered at the PWM midpoint, while the piezo path normally moves its midpoint
 with the active voice envelope to stay quiet when idle. Piezo sample scaling uses

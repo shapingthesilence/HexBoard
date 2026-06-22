@@ -229,6 +229,12 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 - `Arp'gio`: cycles through held notes rhythmically
 - `Poly`: plays chords, up to `8` notes at a time - a bit quieter due to headroom needed
 
+In `Poly`, playing more than `8` overlapping synth notes steals an existing
+voice. HexBoard protects the lowest held note, then prefers to replace the
+oldest duplicate note, the oldest released note still fading out, and finally
+the oldest remaining held note. The stolen voice fades out over `64` audio
+samples before the new note starts, which keeps dense playing from clicking.
+
 `Porta` appears for the two mono modes. It sets the pitch-glide time from
 `0 ms` through `4 s`. With `MonoRtg`, the envelope restarts but the pitch can
 still glide. With `MonoLeg`, held note changes keep the envelope running and

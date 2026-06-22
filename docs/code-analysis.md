@@ -568,6 +568,12 @@ Key implementation facts:
 - `POLYPHONY_LIMIT` is `8`; the single `Poly` mode queues the full `8` compiled
   synth voices. Legacy stored playback value `5` from the temporary wavetable
   experiment is normalized to `Poly`.
+- When `Poly` is full, note stealing protects the lowest held voice first,
+  then searches for the oldest duplicate note, the oldest released voice by
+  release time, and finally the oldest remaining held voice by start time. A
+  stolen voice is not retuned immediately; the audio renderer applies a
+  `64`-sample fade to the old voice and starts the replacement note only after
+  that handoff fade completes.
 - `PWM_BITS` defaults to `10`.
 - `8`, `9`, and `10` bit PWM builds are supported. `9`-bit mode is available
   as a midpoint between `8`-bit quantization noise and `10`-bit carrier
