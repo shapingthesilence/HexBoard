@@ -102,19 +102,20 @@ Exit delegated mode:
 F0 7D 02 F7
 ```
 
-Entering delegated mode clears `delegatedColors[]` to black, restores the
-delegated note map to defaults, clears delegated active-note tracking, wakes the
-OLED, and calls `setupMIDI()` to reset MIDI parser state. If the enter command
-is received while delegated mode is already active, active delegated notes are
-released first and the delegated session state is reset.
+Entering delegated mode clears `delegatedColors[]` to black, clears delegated
+active-note tracking, wakes the OLED, and calls `setupMIDI()` to reset MIDI
+parser state. It does not reset the delegated note map. If the enter command is
+received while delegated mode is already active, active delegated notes are
+released first and the delegated control surface state is reset without clearing
+the note map.
 
 The optional application name payload is printable `7`-bit ASCII. Firmware keeps
 up to `20` visible characters and displays the name under `Delegated Control
 Mode`. If the host omits a valid name, the display uses `Host Application`.
 
-Exiting delegated mode sends note-off messages for active delegated notes,
-restores the delegated note map to defaults, and then returns to normal
-HexBoard behavior.
+Exiting delegated mode sends note-off messages for active delegated notes and
+then returns to normal HexBoard behavior. It does not reset the delegated note
+map.
 
 ## Encoder Event Output
 
@@ -229,9 +230,10 @@ Reset the whole delegated note map to the default button-index encoding:
 F0 7D 05 F7
 ```
 
-Mappings are session-only RAM state. They are not saved to settings, profiles,
-or `/layouts.dat`, and they reset on boot, delegated enter, delegated exit, and
-`SYSEX_DELEGATED_NOTE_MAP_RESET`.
+Mappings are RAM-resident runtime state. They are not saved to settings,
+profiles, or `/layouts.dat`. A host can send the note map once and keep using it
+across delegated LED updates and delegated enter/exit cycles. The map resets
+only on power cycle/boot or `SYSEX_DELEGATED_NOTE_MAP_RESET`.
 
 When a key is pressed, firmware stores the actual delegated channel and note
 sent for that press. The matching release uses the stored channel and note, even

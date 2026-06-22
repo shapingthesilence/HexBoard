@@ -345,10 +345,12 @@ When active:
 - OLED menu navigation is disabled and replaced by the delegated status screen
   plus encoder events sent to the host
 
-Delegated MIDI note mapping is session-only RAM state. Hosts can assign a
+Delegated MIDI note mapping is RAM-resident runtime state. Hosts can assign a
 channel/note pair to each visible key through delegated SysEx; the default map
-preserves the original button-index encoding. Active delegated presses remember
-the channel/note sent on note-on so live remapping cannot strand note-offs.
+preserves the original button-index encoding. The map persists across delegated
+LED updates and delegated enter/exit cycles until boot or explicit reset.
+Active delegated presses remember the channel/note sent on note-on so live
+remapping cannot strand note-offs.
 
 The delegated enter command may include a printable ASCII application name for
 the OLED. The delegated screen still uses the normal screensaver timer; after
@@ -616,15 +618,12 @@ Key implementation facts:
   immediate cache refresh. Each voice chooses a bright mip and adjacent dull mip
   from the highest expected pitch after pitch modulation and vibrato depth by
   comparing Q8 Nyquist-safe harmonic headroom to the fixed limits `255`, `96`,
-  `48`, `24`, `12`, and `6`; the transient `Mip Oct` menu shifts octave
-  thresholds and is not persisted. The transient `WT Res` menu quantizes
-  wavetable sample-index reads to `512`, `256`, `128`, or `64` effective samples
-  per frame for on-device resolution testing without changing stored wavetable
-  files. The selector picks one table pointer for the per-sample renderer and
-  favors the duller level until the brighter level is safely inside the threshold.
+  `48`, `24`, `12`, and `6`. The selector picks one table pointer for the
+  per-sample renderer and favors the duller level until the brighter level is
+  safely inside the threshold.
   Wavetable frame contexts and mip selection update every other modulation
   quantum, so the render loop keeps one wavetable read per active voice while
-  reducing hard mip steps enough for tuning tests.
+  reducing hard mip steps without adding per-sample mip blending.
   Per-voice phase increment and phase-warp depths linearly slew between cached
   targets at audio rate, while
   oscillator phase advance, amp-envelope level, phase warping, waveform reads,
@@ -721,12 +720,6 @@ a legacy full-object-id path fallback for reads/deletes, but new writes avoid
 the overlong filename that can fail on LittleFS. Catalog load/write paths skip
 or prune records whose sample file is missing, which prevents failed earlier
 imports from exhausting catalog slots.
-
-The transient Synth Editor `Mip Oct` item shifts wavetable mip-level thresholds
-by octaves for anti-aliasing tests. The selector uses Q8 harmonic headroom and
-blends from the duller mip into the brighter mip only after the brighter level is
-safe, so threshold tests err toward dullness rather than aliasing. It is RAM-only
-menu state and intentionally does not bump `CURRENT_SETTINGS_VERSION`.
 
 The Synth Editor wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `FoldWrp` is the default wheel effect and keeps the existing target byte value `0`; `DutyWrp` and `PolyWrp` add target byte values `4` and `5`. All three warp targets apply low-CPU phase warps across the onboard waveforms and active wavetable before sampling. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the on-device menu presents rounded frame anchors labeled `1..32`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator, then reads startup-generated RAM Q16 ratio tables so full positive depth raises each active voice by about `+24` semitones and full negative depth lowers it by about `-24` semitones.
 

@@ -505,9 +505,10 @@ The MIDI subsystem supports three broad modes:
 - MPE with per-note pitch bend
 
 For the external-only raw button/LED surface mode, see `docs/delegated-control.md`.
-Delegated control also has a session-only MIDI note map that hosts can update
-with live SysEx commands. It deliberately does not use `SettingKey`, profiles,
-or the preset-sync object store; keep it transient unless that product decision
+Delegated control also has a RAM-resident MIDI note map that hosts can update
+with live SysEx commands. It persists across delegated enter/exit cycles and LED
+updates, but deliberately does not use `SettingKey`, profiles, or the
+preset-sync object store; keep it transient unless that product decision
 changes.
 The delegated enter command can carry a short printable app name for the OLED,
 and `dealWithRotary()` switches from GEM menu input to delegated encoder-event
@@ -647,19 +648,14 @@ selection, and wavetable frame contexts are cached there, with note
 start/release/reset forcing an immediate per-voice cache refresh. Each voice
 chooses a bright mip and adjacent dull mip from the highest expected pitch after
 pitch modulation and vibrato depth; the selector computes the Nyquist-safe
-harmonic limit in Q8 fixed point, applies the transient `Mip Oct` threshold
-shift, and selects one table pointer for the per-sample renderer. Selection is
-biased toward the duller level until the brighter level is safely inside the
-threshold, which avoids aliasing at boundaries without per-sample mip blending.
+harmonic limit in Q8 fixed point and selects one table pointer for the
+per-sample renderer. Selection is biased toward the duller level until the
+brighter level is safely inside the threshold, which avoids aliasing at
+boundaries without per-sample mip blending.
 Wavetable frame contexts and mip decisions update every other modulation
 quantum by `SYNTH_WAVETABLE_CONTEXT_RATE_DIVIDER`, halving the earlier frame/mip
 interpolation cost while pitch and warp slews still retarget on the normal
-`16`-sample quantum. `Mip Oct` shifts the thresholds by `-4..+4` octaves without
-touching `SettingKey`, `factoryDefaults`, or `CURRENT_SETTINGS_VERSION`. The
-transient `WT Res` menu quantizes wavetable phase reads to `512`, `256`, `128`,
-or `64` effective samples per frame by changing only the sample-index shift used
-by wavetable readers; it is also RAM-only and does not change the stored table
-format.
+`16`-sample quantum.
 Per-voice phase increment and phase-warp depths slew between cached targets at
 audio rate; the normal `16`-sample retarget uses shift math instead of division.
 Oscillator phase

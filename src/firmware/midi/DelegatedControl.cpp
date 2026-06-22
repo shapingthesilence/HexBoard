@@ -75,7 +75,6 @@ void enterDelegatedControl(const uint8_t* appNameData = nullptr, const unsigned 
   setDelegatedAppName(appNameData, appNameLen);
   delegatedControl = true;
   memset(delegatedColors, 0, sizeof(delegatedColors));
-  resetDelegatedNoteMap();
   clearDelegatedNoteActivity();
   delegatedDisplayDirty = true;
   delegatedDisplayWakeRequested = true;
@@ -90,7 +89,6 @@ void exitDelegatedControl() {
     return;
   }
   releaseActiveDelegatedNotes();
-  resetDelegatedNoteMap();
   delegatedControl = false;
   delegatedDisplayDirty = false;
   delegatedDisplayWakeRequested = false;

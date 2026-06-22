@@ -185,7 +185,6 @@ Options include:
 - `Porta` when a mono mode is selected
 - `WT:...` current-wavetable load menu
 - `WT Pos`
-- `Mip Oct`
 - `Drive`
 - `Wheel FX`
 - `Wheel Amt`
@@ -266,20 +265,6 @@ shows frames `1` through `32`; frame `1` is the first frame and frame `32` is
 the last frame. Modulation can add to or subtract from this base position, so
 setting `WT Pos` above frame `1` lets a negative envelope or LFO amount move
 backward through the wavetable.
-
-`Mip Oct` is a temporary tuning aid for wavetable anti-aliasing. User
-wavetables carry fixed-length mip levels with progressively lower harmonic
-limits, and the synth chooses a level from each voice's highest expected pitch.
-Near a level boundary, the synth blends from the duller mip into the brighter
-mip only after the brighter mip is safe, so slow pitch ramps and microtonal notes
-avoid hard level steps while briefly favoring less aliasing over extra
-brightness. `Mip Oct` shifts those level change points by `-4` to `+4` octaves.
-It is not saved in presets or profiles; it resets to `0` after reboot.
-
-`WT Res` is a temporary wavetable-resolution test aid. It snaps wavetable phase
-reads to `512`, `256`, `128`, or `64` effective samples per frame without
-changing the stored wavetable file. It applies globally while testing, is not
-saved in presets or profiles, and resets to `512` after reboot.
 
 `Drive` adds soft saturation after the voices are mixed:
 
@@ -426,10 +411,11 @@ Some external software can temporarily take over HexBoard as a button-and-light 
 
 Delegated control is only for compatible host software. It is not shown in the OLED menu, is not saved in profiles, and starts disabled every time HexBoard boots. Host-driven LEDs still respect `Brightness` and `LED Limit`.
 
-Compatible hosts can temporarily assign delegated MIDI channel/note output per
-visible key for the current delegated session. If the host does not send a
-mapping, keys use the standard delegated button-index encoding. These delegated
-assignments reset on boot, delegated entry, delegated exit, or host reset.
+Compatible hosts can assign delegated MIDI channel/note output per visible key.
+If the host does not send a mapping, keys use the standard delegated
+button-index encoding. These delegated assignments stay in RAM across delegated
+LED updates and delegated enter/exit cycles. They reset on power cycle or host
+reset.
 
 When delegated mode starts, the OLED shows `Delegated Control Mode` and, when
 provided by the host, the controlling app name. The normal menu is disabled.
