@@ -1089,7 +1089,7 @@ these synth-wavetable TLVs:
 | `0x33` | `WavetableMipLevels` | `u8`; `6` for the fixed mip table or `1` for base-only data |
 
 The mip payload is level-major and frame-major within each level: six levels,
-each with `16` frames and `512` samples per frame. Harmonic limits are `255`,
+each with `16` frames and `512` samples per frame. Harmonic limits are `192`,
 `96`, `48`, `24`, `12`, and `6`. Hosts should include `WavetableMipLevels = 6` when
 sending the full fixed mip table; firmware rejects mismatched sample length and
 mip count pairs. The fixed-mip sample payload is split into repeated

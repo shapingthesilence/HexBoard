@@ -623,7 +623,7 @@ Key implementation facts:
   contexts are cached per voice, with note start/release/reset forcing an
   immediate cache refresh. Each voice chooses a bright mip and adjacent dull mip
   from the highest expected pitch after pitch modulation and vibrato depth by
-  comparing Q8 Nyquist-safe harmonic headroom to the fixed limits `255`, `96`,
+  comparing Q8 Nyquist-safe harmonic headroom to the fixed limits `192`, `96`,
   `48`, `24`, `12`, and `6`. The selector picks one table pointer for the
   per-sample renderer and favors the duller level until the brighter level is
   safely inside the threshold.
@@ -791,7 +791,7 @@ record per profile; the firmware loads that file into a stack-local struct only
 while saving or loading profile references. Each catalog entry has a valid flag,
 stable `16`-byte object id, name, folder path, and a sample-file path generated
 from the object id. New sample files contain six fixed mip
-levels with `16` frames and `512` samples per frame at harmonic limits `255`,
+levels with `16` frames and `512` samples per frame at harmonic limits `192`,
 `96`, `48`, `24`, `12`, and `6` (`49,152` unsigned bytes total). `8,192`-byte
 base-only sample files are still accepted and expanded into RAM mips when
 loaded. The legacy

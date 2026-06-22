@@ -565,8 +565,8 @@ to acknowledge the write through the flash commit before the app refreshes the
 `Import Wavetable` is in the `Wavetables` library view. It opens an import
 dialog with a file-type selector for Serum/Vital `.wav` tables or HexBoard
 `.hexwav` tables. Serum/Vital imports read the source frames and render the
-table down to the firmware's `32 x 512` base table, then build six fixed
-`512`-sample mip levels with harmonic limits `255`, `96`, `48`, `24`, `12`, and `6`.
+table down to the firmware's `16 x 512` base table, then build six fixed
+`512`-sample mip levels with harmonic limits `192`, `96`, `48`, `24`, `12`, and `6`.
 HexBoard `.hexwav` files are 8-bit mono WAV containers that contain either this
 full fixed-mip table or an older base-only table that the app upgrades on
 import.
