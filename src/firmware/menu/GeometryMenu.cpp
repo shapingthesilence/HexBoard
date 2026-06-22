@@ -92,10 +92,12 @@ int findFirstUserGeometryObjectReferencing(uint8_t objectType,
                                            uint8_t referenceObjectType,
                                            const uint8_t* referenceObjectId) {
   for (size_t i = 0; i < geometryObjects.size(); ++i) {
-    const GeometryObjectSlot& object = geometryObjects[i];
+    const GeometryObjectIndexEntry& object = geometryObjects[i];
+    GeometryObjectSlot fullObject;
     if (object.valid
         && object.objectType == objectType
-        && geometryObjectReferencesObjectId(object, referenceTag, referenceObjectType, referenceObjectId)) {
+        && geometryObjectForHandle(static_cast<uint16_t>(i), fullObject)
+        && geometryObjectReferencesObjectId(fullObject, referenceTag, referenceObjectType, referenceObjectId)) {
       return static_cast<int>(i);
     }
   }
@@ -124,7 +126,12 @@ bool applyLinkedButtonMapForCurrentUserLayout() {
       userGeometryRuntimeTuningObjectId
     );
   }
-  return buttonMapIndex < 0 || applyGeometryObjectToRuntime(geometryObjects[buttonMapIndex]);
+  if (buttonMapIndex < 0) {
+    return true;
+  }
+  GeometryObjectSlot buttonMapObject;
+  return geometryObjectForHandle(static_cast<uint16_t>(buttonMapIndex), buttonMapObject)
+         && applyGeometryObjectToRuntime(buttonMapObject);
 }
 
 bool loadUserGeometryLayoutFromSlot(uint16_t objectIndex) {
@@ -200,26 +207,34 @@ void persistBuiltinGeometrySelection(uint16_t handle) {
   markSettingsDirty();
 }
 
-bool userGeometryObjectBelongsToCurrentTuning(const GeometryObjectSlot& object, uint8_t referenceTag) {
-  return userGeometryRuntimeTuningObjectSelected
+bool userGeometryObjectBelongsToCurrentTuning(uint16_t handle, uint8_t referenceTag) {
+  if (!userGeometryRuntimeTuningObjectSelected) {
+    return false;
+  }
+  GeometryObjectSlot object;
+  return geometryObjectForHandle(handle, object)
          && geometryObjectReferencesObjectId(
-           object,
-           referenceTag,
-           PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
-           userGeometryRuntimeTuningObjectId
-         );
+              object,
+              referenceTag,
+              PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
+              userGeometryRuntimeTuningObjectId
+            );
 }
 
-bool includeGeometryObjectInMenu(UserGeometryMenuKind kind, const GeometryObjectSlot& object) {
+bool includeGeometryObjectInMenu(UserGeometryMenuKind kind, uint16_t handle, const GeometryObjectIndexEntry& object) {
   switch (kind) {
     case UserGeometryMenuKind::Tuning:
-      return geometryObjectRuntimeTuningSupported(object);
+      {
+        GeometryObjectSlot fullObject;
+        return geometryObjectForHandle(handle, fullObject)
+               && geometryObjectRuntimeTuningSupported(fullObject);
+      }
     case UserGeometryMenuKind::Layout:
       return object.objectType == PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT
-             && userGeometryObjectBelongsToCurrentTuning(object, PRESET_SYNC_TLV_LAYOUT_TUNING_REF);
+             && userGeometryObjectBelongsToCurrentTuning(handle, PRESET_SYNC_TLV_LAYOUT_TUNING_REF);
     case UserGeometryMenuKind::Scale:
       return object.objectType == PRESET_SYNC_OBJECT_TYPE_USER_SCALE
-             && userGeometryObjectBelongsToCurrentTuning(object, PRESET_SYNC_TLV_USER_SCALE_TUNING_REF);
+             && userGeometryObjectBelongsToCurrentTuning(handle, PRESET_SYNC_TLV_USER_SCALE_TUNING_REF);
   }
   return false;
 }
@@ -251,7 +266,7 @@ bool includeBuiltinGeometryMetadataInMenu(UserGeometryMenuKind kind, const Built
   return false;
 }
 
-const GeometryObjectSlot* userGeometryObjectForRow(const UserGeometryMenuRow& row) {
+const GeometryObjectIndexEntry* userGeometryObjectForRow(const UserGeometryMenuRow& row) {
   if (row.handle >= geometryObjects.size() || !geometryObjects[row.handle].valid) {
     return nullptr;
   }
@@ -259,7 +274,7 @@ const GeometryObjectSlot* userGeometryObjectForRow(const UserGeometryMenuRow& ro
 }
 
 bool userGeometryFolderRowPath(const UserGeometryMenuRow& row, char* output, size_t outputLength) {
-  const GeometryObjectSlot* object = userGeometryObjectForRow(row);
+  const GeometryObjectIndexEntry* object = userGeometryObjectForRow(row);
   return object
          && menuFolderImmediateChildPath(object->folderPath,
                                          userGeometryMenuCurrentFolder,
@@ -296,6 +311,7 @@ void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
   userGeometryVirtualKind = kind;
   userGeometryVirtualCount = 0;
   userGeometryMenuOverflowLogged = false;
+  uint8_t associatedObjectCount = 0;
 
   if (kind != UserGeometryMenuKind::Tuning || menuFolderIsRoot(userGeometryMenuCurrentFolder)) {
     for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
@@ -310,9 +326,9 @@ void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
   if (kind == UserGeometryMenuKind::Tuning) {
     char childFolder[GEOMETRY_OBJECT_FOLDER_LENGTH] = {};
     for (size_t i = 0; i < geometryObjects.size(); ++i) {
-      const GeometryObjectSlot& object = geometryObjects[i];
+      const GeometryObjectIndexEntry& object = geometryObjects[i];
       if (object.valid
-          && includeGeometryObjectInMenu(kind, object)
+          && includeGeometryObjectInMenu(kind, static_cast<uint16_t>(i), object)
           && menuFolderImmediateChildPath(object.folderPath,
                                           userGeometryMenuCurrentFolder,
                                           childFolder,
@@ -324,11 +340,15 @@ void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
   }
 
   for (size_t i = 0; i < geometryObjects.size(); ++i) {
-    const GeometryObjectSlot& object = geometryObjects[i];
+    const GeometryObjectIndexEntry& object = geometryObjects[i];
     bool inActiveFolder = kind != UserGeometryMenuKind::Tuning
                           || menuFolderEntryBelongsToCurrentFolder(object.folderPath, userGeometryMenuCurrentFolder);
-    if (object.valid && inActiveFolder && includeGeometryObjectInMenu(kind, object)) {
+    if (object.valid && inActiveFolder && includeGeometryObjectInMenu(kind, static_cast<uint16_t>(i), object)) {
       appendUserGeometryHandle(static_cast<uint16_t>(i));
+      if (kind != UserGeometryMenuKind::Tuning
+          && ++associatedObjectCount >= GEOMETRY_ASSOCIATED_MAX_COUNT) {
+        break;
+      }
     }
   }
   updateUserGeometryMenuTitle(kind);

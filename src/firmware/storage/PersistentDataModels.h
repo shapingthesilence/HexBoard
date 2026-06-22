@@ -116,15 +116,16 @@ constexpr uint8_t NUM_SETTINGS_V17 = static_cast<uint8_t>(NUM_SETTINGS + 1);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
-constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 64;
+constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
 constexpr uint8_t LEGACY_SYNTH_PRESET_COUNT = 8;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 9;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 10;
 constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 7;
 constexpr uint8_t SYNTH_WAVETABLE_FILE_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_SCHEMA_VERSION = 1;
-constexpr uint8_t SYNTH_WAVETABLE_MAX_COUNT = 64;
+constexpr uint8_t SYNTH_WAVETABLE_MAX_COUNT = 32;
 constexpr uint8_t GEOMETRY_OBJECT_FILE_VERSION = 1;
-constexpr uint8_t GEOMETRY_OBJECT_MAX_COUNT = 127;
+constexpr uint8_t GEOMETRY_OBJECT_MAX_COUNT = 64;
+constexpr uint8_t GEOMETRY_ASSOCIATED_MAX_COUNT = 24;
 constexpr size_t GEOMETRY_OBJECT_NAME_LENGTH = 48;
 constexpr size_t GEOMETRY_OBJECT_FOLDER_LENGTH = 48;
 constexpr size_t GEOMETRY_OBJECT_ID_LENGTH = 16;
@@ -209,10 +210,11 @@ struct SynthPresetSlot {
   uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
 };
 
-class SynthPresetCatalog {
+template <typename Slot, size_t Capacity>
+class FixedCatalog {
 public:
-  using iterator = SynthPresetSlot*;
-  using const_iterator = const SynthPresetSlot*;
+  using iterator = Slot*;
+  using const_iterator = const Slot*;
 
   void clear() {
     count_ = 0;
@@ -230,19 +232,19 @@ public:
     return slots_.size();
   }
 
-  SynthPresetSlot* data() {
+  Slot* data() {
     return slots_.data();
   }
 
-  const SynthPresetSlot* data() const {
+  const Slot* data() const {
     return slots_.data();
   }
 
-  SynthPresetSlot& operator[](size_t index) {
+  Slot& operator[](size_t index) {
     return slots_[index];
   }
 
-  const SynthPresetSlot& operator[](size_t index) const {
+  const Slot& operator[](size_t index) const {
     return slots_[index];
   }
 
@@ -262,11 +264,12 @@ public:
     return slots_.data() + count_;
   }
 
-  bool push_back(const SynthPresetSlot& preset) {
+  bool push_back(const Slot& preset) {
     if (count_ >= slots_.size()) {
       return false;
     }
-    slots_[count_++] = preset;
+    slots_[count_] = preset;
+    ++count_;
     return true;
   }
 
@@ -294,9 +297,19 @@ public:
   }
 
 private:
-  std::array<SynthPresetSlot, SYNTH_PRESET_MAX_COUNT> slots_ = {};
+  std::array<Slot, Capacity> slots_ = {};
   size_t count_ = 0;
 };
+
+struct SynthPresetIndexEntry {
+  uint8_t valid = 0;
+  uint8_t favorite = 0;
+  uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
+  char name[SYNTH_PRESET_NAME_LENGTH] = {};
+  char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
+};
+
+using SynthPresetCatalog = FixedCatalog<SynthPresetIndexEntry, SYNTH_PRESET_MAX_COUNT>;
 
 struct SynthPresetSlotV8 {
   uint8_t valid = 0;
@@ -385,14 +398,32 @@ struct GeometryObjectSlot {
   std::vector<uint8_t> body;
 };
 
+struct GeometryObjectIndexEntry {
+  uint8_t valid = 0;
+  uint8_t objectType = 0;
+  uint8_t schemaMajor = 1;
+  uint8_t schemaMinor = 0;
+  uint8_t objectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
+  char name[GEOMETRY_OBJECT_NAME_LENGTH] = {};
+  char folderPath[GEOMETRY_OBJECT_FOLDER_LENGTH] = {};
+  uint32_t storageOffset = 0;
+  uint32_t bodyLength = 0;
+};
+
+using SynthWavetableCatalog = FixedCatalog<SynthWavetableSlot, SYNTH_WAVETABLE_MAX_COUNT>;
+using GeometryObjectCatalog = FixedCatalog<GeometryObjectIndexEntry, GEOMETRY_OBJECT_MAX_COUNT>;
+
 extern uint8_t settingsProfiles[PROFILE_COUNT][NUM_SETTINGS];
 extern uint8_t* settings;
 extern uint8_t activeProfileIndex;
 extern uint8_t defaultProfileIndex;
 extern SynthPresetCatalog synthPresets;
-extern std::vector<SynthWavetableSlot> synthWavetables;
-extern std::vector<GeometryObjectSlot> geometryObjects;
+extern SynthWavetableCatalog synthWavetables;
+extern GeometryObjectCatalog geometryObjects;
 
+uint32_t crc32Begin();
+uint32_t crc32Update(uint32_t crc, const uint8_t* data, size_t length);
+uint32_t crc32Finish(uint32_t crc);
 uint32_t crc32(const uint8_t* data, size_t length);
 
 void remapLegacyEnvelopeTimeSettings(uint8_t* profileSettings, uint8_t settingsPerProfile);

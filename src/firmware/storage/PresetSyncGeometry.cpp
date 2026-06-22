@@ -10,14 +10,109 @@
 #include "Settings.h"
 #include "SynthPresetStorage.h"
 
+bool isPresetSyncGeometryObjectType(uint8_t objectType);
+void load_geometry_objects();
+
 namespace {
 
 char userGeometryRuntimeTuningNameStorage[GEOMETRY_OBJECT_NAME_LENGTH] = "User Tuning";
 char userGeometryRuntimeLayoutNameStorage[GEOMETRY_OBJECT_NAME_LENGTH] = "User Layout";
 char userGeometryRuntimeScaleNameStorage[GEOMETRY_OBJECT_NAME_LENGTH] = "User Scale";
+constexpr char GEOMETRY_OBJECT_CATALOG_FILE_PATH[] = "/layouts.dat";
+constexpr char GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH[] = "/layouts.tmp";
+GeometryObjectSlot pendingGeometrySaveObject;
+bool pendingGeometrySaveObjectValid = false;
 
 void copyRuntimeGeometryName(char* storage, size_t storageLength, const char* name) {
   snprintf(storage, storageLength, "%s", name && name[0] ? name : "Geometry");
+}
+
+void copyGeometryIndexEntryFromObject(GeometryObjectIndexEntry& entry,
+                                      const GeometryObjectSlot& object,
+                                      uint32_t storageOffset = 0,
+                                      uint32_t bodyLength = 0) {
+  entry.valid = object.valid;
+  entry.objectType = object.objectType;
+  entry.schemaMajor = object.schemaMajor;
+  entry.schemaMinor = object.schemaMinor;
+  memcpy(entry.objectId, object.objectId, sizeof(entry.objectId));
+  snprintf(entry.name, sizeof(entry.name), "%s", object.name);
+  snprintf(entry.folderPath, sizeof(entry.folderPath), "%s", object.folderPath);
+  entry.storageOffset = storageOffset;
+  entry.bodyLength = bodyLength;
+}
+
+bool geometryIndexEntryMatchesObject(const GeometryObjectIndexEntry& entry, const GeometryObjectSlot& object) {
+  return entry.valid
+         && object.valid
+         && entry.objectType == object.objectType
+         && memcmp(entry.objectId, object.objectId, sizeof(entry.objectId)) == 0;
+}
+
+bool writeGeometryBytes(File& f, const uint8_t* data, size_t length, uint32_t& crc) {
+  if (length == 0) {
+    return true;
+  }
+  if (f.write(data, length) != length) {
+    return false;
+  }
+  crc = crc32Update(crc, data, length);
+  return true;
+}
+
+bool writeGeometryByte(File& f, uint8_t value, uint32_t& crc) {
+  return writeGeometryBytes(f, &value, 1, crc);
+}
+
+bool writeGeometryU32(File& f, uint32_t value, uint32_t& crc) {
+  uint8_t bytes[4] = {
+    static_cast<uint8_t>(value & 0xFF),
+    static_cast<uint8_t>((value >> 8) & 0xFF),
+    static_cast<uint8_t>((value >> 16) & 0xFF),
+    static_cast<uint8_t>((value >> 24) & 0xFF)
+  };
+  return writeGeometryBytes(f, bytes, sizeof(bytes), crc);
+}
+
+bool readGeometryObjectBody(const GeometryObjectIndexEntry& entry, std::vector<uint8_t>& body) {
+  body.clear();
+  if (!fileSystemExists || !entry.valid || entry.bodyLength == 0 || entry.bodyLength > GEOMETRY_OBJECT_MAX_RAW_BYTES) {
+    return false;
+  }
+  File f = LittleFS.open(GEOMETRY_OBJECT_CATALOG_FILE_PATH, "r");
+  if (!f || !f.seek(entry.storageOffset)) {
+    if (f) {
+      f.close();
+    }
+    return false;
+  }
+  body.assign(entry.bodyLength, 0);
+  size_t bytesRead = f.read(body.data(), body.size());
+  f.close();
+  if (bytesRead != body.size()) {
+    body.clear();
+    return false;
+  }
+  return true;
+}
+
+bool writeGeometryObjectRecord(File& f, const GeometryObjectSlot& object, uint32_t& crc) {
+  if (!object.valid || !isPresetSyncGeometryObjectType(object.objectType) || object.body.empty()) {
+    return true;
+  }
+  size_t nameLength = std::min<size_t>(boundedCStringLength(object.name, sizeof(object.name)), 255);
+  size_t folderLength = std::min<size_t>(boundedCStringLength(object.folderPath, sizeof(object.folderPath)), 255);
+  return writeGeometryByte(f, object.objectType, crc)
+         && writeGeometryByte(f, object.schemaMajor, crc)
+         && writeGeometryByte(f, object.schemaMinor, crc)
+         && writeGeometryByte(f, 0, crc)
+         && writeGeometryBytes(f, object.objectId, sizeof(object.objectId), crc)
+         && writeGeometryByte(f, static_cast<uint8_t>(nameLength), crc)
+         && writeGeometryBytes(f, reinterpret_cast<const uint8_t*>(object.name), nameLength, crc)
+         && writeGeometryByte(f, static_cast<uint8_t>(folderLength), crc)
+         && writeGeometryBytes(f, reinterpret_cast<const uint8_t*>(object.folderPath), folderLength, crc)
+         && writeGeometryU32(f, static_cast<uint32_t>(object.body.size()), crc)
+         && writeGeometryBytes(f, object.body.data(), object.body.size(), crc);
 }
 
 } // namespace
@@ -41,74 +136,69 @@ bool isPresetSyncSupportedObjectType(uint8_t objectType) {
          || isPresetSyncGeometryObjectType(objectType);
 }
 
-void geometryCatalogAppendU32(std::vector<uint8_t>& output, uint32_t value) {
-  output.push_back(value & 0xFF);
-  output.push_back((value >> 8) & 0xFF);
-  output.push_back((value >> 16) & 0xFF);
-  output.push_back((value >> 24) & 0xFF);
-}
-
-bool geometryCatalogReadU32(const std::vector<uint8_t>& input, size_t& cursor, uint32_t& value) {
-  if (cursor + 4 > input.size()) {
-    return false;
-  }
-  value = static_cast<uint32_t>(input[cursor])
-          | (static_cast<uint32_t>(input[cursor + 1]) << 8)
-          | (static_cast<uint32_t>(input[cursor + 2]) << 16)
-          | (static_cast<uint32_t>(input[cursor + 3]) << 24);
-  cursor += 4;
-  return true;
-}
-
-std::vector<uint8_t> serializeGeometryObjectsForStorage() {
-  std::vector<uint8_t> data;
-  for (const GeometryObjectSlot& object : geometryObjects) {
-    if (!object.valid || !isPresetSyncGeometryObjectType(object.objectType) || object.body.empty()) {
-      continue;
-    }
-    data.push_back(object.objectType);
-    data.push_back(object.schemaMajor);
-    data.push_back(object.schemaMinor);
-    data.push_back(0);
-    data.insert(data.end(), object.objectId, object.objectId + sizeof(object.objectId));
-    size_t nameLength = std::min<size_t>(boundedCStringLength(object.name, sizeof(object.name)), 255);
-    size_t folderLength = std::min<size_t>(boundedCStringLength(object.folderPath, sizeof(object.folderPath)), 255);
-    data.push_back(nameLength);
-    data.insert(data.end(), object.name, object.name + nameLength);
-    data.push_back(folderLength);
-    data.insert(data.end(), object.folderPath, object.folderPath + folderLength);
-    geometryCatalogAppendU32(data, static_cast<uint32_t>(object.body.size()));
-    data.insert(data.end(), object.body.begin(), object.body.end());
-  }
-  return data;
-}
-
 void save_geometry_objects() {
   if (!fileSystemExists) {
     sendToLog("File system not available.");
     return;
   }
-  if (geometryObjects.size() > GEOMETRY_OBJECT_MAX_COUNT) {
-    geometryObjects.resize(GEOMETRY_OBJECT_MAX_COUNT);
-  }
-
-  std::vector<uint8_t> data = serializeGeometryObjectsForStorage();
   GeometryObjectFileHeader header = {};
   header.magic[0] = 'L'; header.magic[1] = 'Y'; header.magic[2] = 'T';
   header.version = GEOMETRY_OBJECT_FILE_VERSION;
   header.count = static_cast<uint16_t>(geometryObjects.size());
-  header.crc32 = data.empty() ? 0 : crc32(data.data(), data.size());
 
-  File f = LittleFS.open("/layouts.dat", "w");
+  LittleFS.remove(GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH);
+  File f = LittleFS.open(GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH, "w");
   if (!f) {
-    sendToLog("Error: Unable to open /layouts.dat for writing.");
+    sendToLog("Error: Unable to open /layouts.tmp for writing.");
     return;
   }
   f.write(reinterpret_cast<uint8_t*>(&header), sizeof(header));
-  if (!data.empty()) {
-    f.write(data.data(), data.size());
+
+  uint32_t crc = crc32Begin();
+  for (size_t i = 0; i < geometryObjects.size(); ++i) {
+    GeometryObjectSlot object = {};
+    bool usePending = pendingGeometrySaveObjectValid
+                      && geometryIndexEntryMatchesObject(geometryObjects[i], pendingGeometrySaveObject);
+    if (usePending) {
+      object = pendingGeometrySaveObject;
+    } else {
+      object.valid = geometryObjects[i].valid;
+      object.objectType = geometryObjects[i].objectType;
+      object.schemaMajor = geometryObjects[i].schemaMajor;
+      object.schemaMinor = geometryObjects[i].schemaMinor;
+      memcpy(object.objectId, geometryObjects[i].objectId, sizeof(object.objectId));
+      snprintf(object.name, sizeof(object.name), "%s", geometryObjects[i].name);
+      snprintf(object.folderPath, sizeof(object.folderPath), "%s", geometryObjects[i].folderPath);
+      if (!readGeometryObjectBody(geometryObjects[i], object.body)) {
+        continue;
+      }
+    }
+    if (!writeGeometryObjectRecord(f, object, crc)) {
+      f.close();
+      pendingGeometrySaveObjectValid = false;
+      LittleFS.remove(GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH);
+      sendToLog("Error: Incomplete geometry catalog write.");
+      return;
+    }
+  }
+  header.crc32 = crc32Finish(crc);
+  if (!f.seek(0)
+      || f.write(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)) {
+    f.close();
+    pendingGeometrySaveObjectValid = false;
+    LittleFS.remove(GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH);
+    sendToLog("Error: Incomplete geometry catalog header write.");
+    return;
   }
   f.close();
+  pendingGeometrySaveObjectValid = false;
+  LittleFS.remove(GEOMETRY_OBJECT_CATALOG_FILE_PATH);
+  if (!LittleFS.rename(GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH, GEOMETRY_OBJECT_CATALOG_FILE_PATH)) {
+    LittleFS.remove(GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH);
+    sendToLog("Error: Unable to replace /layouts.dat.");
+    return;
+  }
+  load_geometry_objects();
   sendToLog("Geometry objects saved (" + std::to_string(geometryObjects.size()) + ").");
 }
 
@@ -189,7 +279,7 @@ void load_geometry_objects() {
     sendToLog("File system not available. Using empty geometry catalog.");
     return;
   }
-  File f = LittleFS.open("/layouts.dat", "r");
+  File f = LittleFS.open(GEOMETRY_OBJECT_CATALOG_FILE_PATH, "r");
   if (!f) {
     sendToLog("Geometry catalog file not found. Starting with empty layout objects.");
     return;
@@ -208,77 +298,149 @@ void load_geometry_objects() {
   }
 
   size_t dataSize = f.size() > sizeof(header) ? f.size() - sizeof(header) : 0;
-  std::vector<uint8_t> data(dataSize);
-  size_t bytesRead = dataSize == 0 ? 0 : f.read(data.data(), data.size());
-  f.close();
-  if (bytesRead != dataSize) {
-    sendToLog("Warning: Geometry catalog data incomplete. Starting with empty layout objects.");
-    geometryObjects.clear();
-    return;
+  uint32_t crc = crc32Begin();
+  uint8_t crcBuffer[128] = {};
+  size_t remaining = dataSize;
+  while (remaining > 0) {
+    size_t chunkLength = std::min(sizeof(crcBuffer), remaining);
+    size_t bytesRead = f.read(crcBuffer, chunkLength);
+    if (bytesRead != chunkLength) {
+      sendToLog("Warning: Geometry catalog data incomplete. Starting with empty layout objects.");
+      geometryObjects.clear();
+      f.close();
+      return;
+    }
+    crc = crc32Update(crc, crcBuffer, chunkLength);
+    remaining -= chunkLength;
   }
-  uint32_t computed = data.empty() ? 0 : crc32(data.data(), data.size());
-  if (computed != header.crc32) {
+  if (crc32Finish(crc) != header.crc32) {
     sendToLog("Geometry catalog CRC32 mismatch. Starting with empty layout objects.");
     geometryObjects.clear();
+    f.close();
     return;
   }
 
+  if (!f.seek(sizeof(header))) {
+    f.close();
+    return;
+  }
   size_t cursor = 0;
-  while (cursor < data.size() && geometryObjects.size() < GEOMETRY_OBJECT_MAX_COUNT) {
-    if (cursor + 20 > data.size()) {
+  while (cursor < dataSize && geometryObjects.size() < GEOMETRY_OBJECT_MAX_COUNT) {
+    if (cursor + 20 > dataSize) {
       sendToLog("Warning: Geometry catalog record truncated.");
       geometryObjects.clear();
+      f.close();
       return;
     }
-    GeometryObjectSlot object = {};
+    GeometryObjectIndexEntry object = {};
     object.valid = 1;
-    object.objectType = data[cursor++];
-    object.schemaMajor = data[cursor++];
-    object.schemaMinor = data[cursor++];
-    ++cursor;
-    memcpy(object.objectId, data.data() + cursor, sizeof(object.objectId));
-    cursor += sizeof(object.objectId);
+    uint8_t fixedHeader[20] = {};
+    if (f.read(fixedHeader, sizeof(fixedHeader)) != sizeof(fixedHeader)) {
+      sendToLog("Warning: Geometry catalog record truncated.");
+      geometryObjects.clear();
+      f.close();
+      return;
+    }
+    object.objectType = fixedHeader[0];
+    object.schemaMajor = fixedHeader[1];
+    object.schemaMinor = fixedHeader[2];
+    memcpy(object.objectId, fixedHeader + 4, sizeof(object.objectId));
+    cursor += sizeof(fixedHeader);
 
-    uint8_t nameLength = data[cursor++];
-    if (cursor + nameLength > data.size()) {
+    uint8_t nameLength = 0;
+    if (f.read(&nameLength, 1) != 1) {
       sendToLog("Warning: Geometry catalog name truncated.");
       geometryObjects.clear();
+      f.close();
       return;
     }
-    copyPresetSyncText(object.name, sizeof(object.name), data.data() + cursor, nameLength);
+    ++cursor;
+    if (cursor + nameLength > dataSize) {
+      sendToLog("Warning: Geometry catalog name truncated.");
+      geometryObjects.clear();
+      f.close();
+      return;
+    }
+    uint8_t textBuffer[GEOMETRY_OBJECT_NAME_LENGTH] = {};
+    size_t nameCopyLength = std::min<size_t>(nameLength, sizeof(textBuffer));
+    if (nameCopyLength > 0 && f.read(textBuffer, nameCopyLength) != nameCopyLength) {
+      sendToLog("Warning: Geometry catalog name truncated.");
+      geometryObjects.clear();
+      f.close();
+      return;
+    }
+    copyPresetSyncText(object.name, sizeof(object.name), textBuffer, nameCopyLength);
+    if (nameLength > nameCopyLength && !f.seek(f.position() + (nameLength - nameCopyLength))) {
+      geometryObjects.clear();
+      f.close();
+      return;
+    }
     cursor += nameLength;
 
-    uint8_t folderLength = data[cursor++];
-    if (cursor + folderLength > data.size()) {
+    uint8_t folderLength = 0;
+    if (f.read(&folderLength, 1) != 1) {
       sendToLog("Warning: Geometry catalog folder truncated.");
       geometryObjects.clear();
+      f.close();
       return;
     }
-    copyPresetSyncText(object.folderPath, sizeof(object.folderPath), data.data() + cursor, folderLength);
+    ++cursor;
+    if (cursor + folderLength > dataSize) {
+      sendToLog("Warning: Geometry catalog folder truncated.");
+      geometryObjects.clear();
+      f.close();
+      return;
+    }
+    uint8_t folderBuffer[GEOMETRY_OBJECT_FOLDER_LENGTH] = {};
+    size_t folderCopyLength = std::min<size_t>(folderLength, sizeof(folderBuffer));
+    if (folderCopyLength > 0 && f.read(folderBuffer, folderCopyLength) != folderCopyLength) {
+      sendToLog("Warning: Geometry catalog folder truncated.");
+      geometryObjects.clear();
+      f.close();
+      return;
+    }
+    copyPresetSyncText(object.folderPath, sizeof(object.folderPath), folderBuffer, folderCopyLength);
+    if (folderLength > folderCopyLength && !f.seek(f.position() + (folderLength - folderCopyLength))) {
+      geometryObjects.clear();
+      f.close();
+      return;
+    }
     cursor += folderLength;
 
-    uint32_t bodyLength = 0;
-    if (!geometryCatalogReadU32(data, cursor, bodyLength)
-        || bodyLength == 0
-        || bodyLength > GEOMETRY_OBJECT_MAX_RAW_BYTES
-        || cursor + bodyLength > data.size()) {
+    uint8_t bodyLengthBytes[4] = {};
+    if (f.read(bodyLengthBytes, sizeof(bodyLengthBytes)) != sizeof(bodyLengthBytes)) {
       sendToLog("Warning: Geometry catalog body truncated.");
       geometryObjects.clear();
+      f.close();
       return;
     }
-    object.body.assign(data.begin() + cursor, data.begin() + cursor + bodyLength);
-    cursor += bodyLength;
+    object.bodyLength = static_cast<uint32_t>(bodyLengthBytes[0])
+                        | (static_cast<uint32_t>(bodyLengthBytes[1]) << 8)
+                        | (static_cast<uint32_t>(bodyLengthBytes[2]) << 16)
+                        | (static_cast<uint32_t>(bodyLengthBytes[3]) << 24);
+    cursor += sizeof(bodyLengthBytes);
+    if (object.bodyLength == 0
+        || object.bodyLength > GEOMETRY_OBJECT_MAX_RAW_BYTES
+        || cursor + object.bodyLength > dataSize) {
+      sendToLog("Warning: Geometry catalog body truncated.");
+      geometryObjects.clear();
+      f.close();
+      return;
+    }
+    object.storageOffset = f.position();
+    if (!f.seek(object.storageOffset + object.bodyLength)) {
+      sendToLog("Warning: Geometry catalog body truncated.");
+      geometryObjects.clear();
+      f.close();
+      return;
+    }
+    cursor += object.bodyLength;
 
-    GeometryObjectSlot validated;
-    std::string parseError;
-    if (parseGeometryObjectBody(object.body, validated, parseError)
-        && validated.objectType == object.objectType
-        && validated.schemaMajor == object.schemaMajor
-        && validated.schemaMinor == object.schemaMinor
-        && memcmp(validated.objectId, object.objectId, sizeof(object.objectId)) == 0) {
-      geometryObjects.push_back(validated);
+    if (isPresetSyncGeometryObjectType(object.objectType)) {
+      geometryObjects.push_back(object);
     }
   }
+  f.close();
   sendToLog("Geometry objects loaded successfully (" + std::to_string(geometryObjects.size()) + ").");
 }
 
@@ -312,6 +474,32 @@ int chooseGeometryObjectWriteSlot(uint16_t handle, const GeometryObjectSlot& obj
   return -1;
 }
 
+bool writeGeometryObjectToCatalogSlot(uint16_t slotIndex, const GeometryObjectSlot& object) {
+  if (slotIndex > geometryObjects.size()
+      || (slotIndex == geometryObjects.size() && geometryObjects.size() >= GEOMETRY_OBJECT_MAX_COUNT)) {
+    sendToLog("Geometry object library is full.");
+    return false;
+  }
+  if (!object.valid || object.body.empty() || object.body.size() > GEOMETRY_OBJECT_MAX_RAW_BYTES) {
+    sendToLog("Geometry object write rejected: invalid object body.");
+    return false;
+  }
+  GeometryObjectIndexEntry metadata = {};
+  copyGeometryIndexEntryFromObject(metadata, object, 0, static_cast<uint32_t>(object.body.size()));
+  if (slotIndex == geometryObjects.size()) {
+    if (!geometryObjects.push_back(metadata)) {
+      sendToLog("Geometry object library is full.");
+      return false;
+    }
+  } else {
+    geometryObjects[slotIndex] = metadata;
+  }
+  pendingGeometrySaveObject = object;
+  pendingGeometrySaveObjectValid = true;
+  flashSafeSaveGeometryObjects();
+  return true;
+}
+
 bool geometryObjectForHandle(uint16_t handle, GeometryObjectSlot& object) {
   if (isBuiltinGeometryHandle(handle)) {
     return buildBuiltinGeometryObject(handle, object);
@@ -319,7 +507,22 @@ bool geometryObjectForHandle(uint16_t handle, GeometryObjectSlot& object) {
   if (handle >= geometryObjects.size() || !geometryObjects[handle].valid) {
     return false;
   }
-  object = geometryObjects[handle];
+  const GeometryObjectIndexEntry& entry = geometryObjects[handle];
+  std::vector<uint8_t> body;
+  if (!readGeometryObjectBody(entry, body)) {
+    return false;
+  }
+  GeometryObjectSlot parsed;
+  std::string parseError;
+  if (!parseGeometryObjectBody(body, parsed, parseError)
+      || parsed.objectType != entry.objectType
+      || parsed.schemaMajor != entry.schemaMajor
+      || parsed.schemaMinor != entry.schemaMinor
+      || memcmp(parsed.objectId, entry.objectId, sizeof(entry.objectId)) != 0) {
+    sendToLog("Geometry object read rejected: " + parseError);
+    return false;
+  }
+  object = parsed;
   return true;
 }
 
@@ -432,10 +635,12 @@ int findFirstGeometryObjectReferencing(uint8_t objectType, uint8_t referenceTag,
   }
 
   for (size_t i = 0; i < geometryObjects.size(); ++i) {
-    const GeometryObjectSlot& object = geometryObjects[i];
+    const GeometryObjectIndexEntry& object = geometryObjects[i];
+    GeometryObjectSlot fullObject;
     if (object.valid
         && object.objectType == objectType
-        && geometryObjectReferencesObjectId(object, referenceTag, referenceObjectType, referenceObjectId)) {
+        && geometryObjectForHandle(static_cast<uint16_t>(i), fullObject)
+        && geometryObjectReferencesObjectId(fullObject, referenceTag, referenceObjectType, referenceObjectId)) {
       return static_cast<int>(i);
     }
   }

@@ -206,8 +206,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
       PresetSyncListHandle listHandle = handles[listIndex];
       uint16_t handle = listHandle.handle;
       if (listHandle.objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
-        SynthPresetSlot& preset = synthPresets[handle];
-        normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(handle));
+        SynthPresetIndexEntry& preset = synthPresets[handle];
         appendRecord(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET,
                      handle,
                      PRESET_SYNC_RECORD_VALID,
@@ -249,7 +248,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
                        GEOMETRY_OBJECT_NAME_LENGTH);
         }
       } else if (handle < geometryObjects.size() && geometryObjects[handle].valid) {
-        GeometryObjectSlot& object = geometryObjects[handle];
+        GeometryObjectIndexEntry& object = geometryObjects[handle];
         appendRecord(object.objectType,
                      handle,
                      PRESET_SYNC_RECORD_VALID,
@@ -619,8 +618,12 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
     return;
   }
-  normalizeSynthPresetMetadata(synthPresets[handle], handle);
-  presetSyncSendRawObject(transactionId, PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, handle, 1, 0, buildSynthPresetObjectBody(synthPresets[handle]));
+  SynthPresetSlot preset = {};
+  if (!readSynthPresetFromCatalog(handle, preset)) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
+    return;
+  }
+  presetSyncSendRawObject(transactionId, PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, handle, 1, 0, buildSynthPresetObjectBody(preset));
 }
 
 void presetSyncHandleAck(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
@@ -842,17 +845,11 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
           presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
           return;
         }
-        if (static_cast<size_t>(slotIndex) == synthPresets.size()) {
-          if (!synthPresets.push_back(parsedPreset)) {
-            presetSyncCancelWriteTransfer();
-            presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
-            return;
-          }
-        } else {
-          synthPresets[slotIndex] = parsedPreset;
+        if (!writeSynthPresetToCatalogSlot(static_cast<uint16_t>(slotIndex), parsedPreset)) {
+          presetSyncCancelWriteTransfer();
+          presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
+          return;
         }
-        normalizeSynthPresetMetadata(synthPresets[slotIndex], static_cast<uint8_t>(slotIndex));
-        flashSafeSaveSynthPresets();
         requestSynthPresetMenuRebuild();
         if (commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME) {
           flashSafeSaveCurrentSynthWavetableReference();
@@ -952,12 +949,11 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
         presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
         return;
       }
-      if (static_cast<size_t>(slotIndex) == geometryObjects.size()) {
-        geometryObjects.push_back(parsedObject);
-      } else {
-        geometryObjects[slotIndex] = parsedObject;
+      if (!writeGeometryObjectToCatalogSlot(static_cast<uint16_t>(slotIndex), parsedObject)) {
+        presetSyncCancelWriteTransfer();
+        presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
+        return;
       }
-      flashSafeSaveGeometryObjects();
       requestUserGeometryMenuRebuild();
     }
   } else {

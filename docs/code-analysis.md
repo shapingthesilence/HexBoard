@@ -617,12 +617,16 @@ Key implementation facts:
   from the highest expected pitch after pitch modulation and vibrato depth by
   comparing Q8 Nyquist-safe harmonic headroom to the fixed limits `255`, `96`,
   `48`, `24`, `12`, and `6`; the transient `Mip Oct` menu shifts octave
-  thresholds and is not persisted. The selector picks one table pointer for the
-  per-sample renderer and favors the duller level until the brighter level is
-  safely inside the threshold. Wavetable frame contexts and mip selection update
-  every other modulation quantum, so the render loop keeps one wavetable read
-  per active voice while reducing hard mip steps enough for tuning tests.
-  Per-voice phase increment and phase-warp depths linearly slew between cached targets at audio rate, while
+  thresholds and is not persisted. The transient `WT Res` menu quantizes
+  wavetable sample-index reads to `512`, `256`, `128`, or `64` effective samples
+  per frame for on-device resolution testing without changing stored wavetable
+  files. The selector picks one table pointer for the per-sample renderer and
+  favors the duller level until the brighter level is safely inside the threshold.
+  Wavetable frame contexts and mip selection update every other modulation
+  quantum, so the render loop keeps one wavetable read per active voice while
+  reducing hard mip steps enough for tuning tests.
+  Per-voice phase increment and phase-warp depths linearly slew between cached
+  targets at audio rate, while
   oscillator phase advance, amp-envelope level, phase warping, waveform reads,
   mixing, drive, and output scaling remain audio-rate. If only global sources
   modulate `WT Pos`, the cached frame-pair position is shared across active
@@ -742,15 +746,16 @@ restart their release stage.
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
-Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `9`, CRC32, and a counted catalog capped at `64` entries. Each entry has a valid flag, favorite flag, stable 16-byte object id, name, folder path, wavetable name/folder path, and the sound-focused synth setting bytes. The active catalog is a fixed-capacity RAM array rather than a heap-growing `std::vector`, so creating presets on-device or saving them from preset-sync does not allocate persistent heap per preset. Factory defaults copy `Soft String Pad` and `Bright Mono Lead` into ordinary editable preset slots, so they can be changed or erased and restored later by Reset Defaults or the web editor library. A preset copies sound-focused synth settings and the wavetable reference into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app full-preset preview applies a transferred synth preset to runtime and marks settings dirty for debounced autosave, compact live synth parameter edits also mark settings dirty, and save requests update `/synth_presets.dat`. Synth preset load and full-preset preview call `syncSynthSettingsToRuntime()` instead of the full settings sync, so tuning/layout/scale/LED assignment rebuilds are not rerun for synth patch changes. The on-device save/load menus use `VirtualListMenu` as a folder browser with `New Preset` or `Blank` as the first action row in the active folder; the web app also presents the foldered library. Version `1` through `3` preset files are accepted as the old `8`-slot layout; version `1` files have saved envelope time indices remapped to the expanded time table, version `1` and `2` files remap legacy vibrato speed indices, version `4` fixed-slot files migrate saved presets into the root folder `/` with `Slot N` names, version `5` fixed named/foldered arrays migrate into the counted version `6` catalog, version `6` records migrate by appending `SynthPortamentoTimeIndex` and `ArpeggiatorDirection` defaults, version `7` records migrate by appending wavetable position and LFO defaults, and version `8` records migrate by deriving wavetable name/folder fields from the old `Waveform` value before being rewritten.
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `10`, CRC32, and a counted catalog capped at `128` entries. The flash records still contain the favorite flag, stable 16-byte object id, name, folder path, wavetable name/folder path, and sound-focused synth setting bytes, but RAM keeps only a fixed metadata index plus the currently loaded full preset record. Loading, saving, preset-sync reads, and modified-state checks read or stream the full record on demand. Factory defaults copy `Soft String Pad` and `Bright Mono Lead` into ordinary editable preset slots, so they can be changed or erased and restored later by Reset Defaults or the web editor library. A preset copies sound-focused synth settings and the wavetable reference into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app full-preset preview applies a transferred synth preset to runtime and marks settings dirty for debounced autosave, compact live synth parameter edits also mark settings dirty, and save requests update `/synth_presets.dat`. Synth preset load and full-preset preview call `syncSynthSettingsToRuntime()` instead of the full settings sync, so tuning/layout/scale/LED assignment rebuilds are not rerun for synth patch changes. The on-device save/load menus use `VirtualListMenu` as a folder browser with `New Preset` or `Blank` as the first action row in the active folder; the web app also presents the foldered library. Older preset files are not migrated in this 2.0 development format.
 
 User geometry objects are stored in `/layouts.dat` with magic `LYT`, version
-`1`, CRC32, and a counted raw-body catalog capped at `127` entries. The catalog
+`1`, CRC32, and a counted raw-body catalog capped at `64` entries. The catalog
 can hold `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and
 `ExplicitButtonMap` objects. Preset-sync validates the common `HBS1` object
 envelope, schema major `1`, non-empty `Name`, and 16-byte `ObjectId`, then
 stores the raw body so hosts can list, read, overwrite, and delete user
-geometry objects.
+geometry objects. Runtime RAM keeps a fixed metadata/offset index; raw object
+bodies are read from flash only when applying, reading, or checking references.
 
 `BuiltinGeometry.cpp` generates factory tuning/layout/scale objects on demand
 from the legacy const catalogs. Factory handles start at `0x2000`, use the
@@ -766,19 +771,21 @@ retuning. The OLED tuning/layout/scale pages use `VirtualListMenu`, a
 HexBoard-owned renderer that copies GEM's title, Back row, button rows,
 11-row paging, wrapping, pointer, and scrollbar behavior without allocating a
 `GEMItem` per geometry object. The active browser caches only 16-bit factory or
-user geometry handles; row labels are fetched from built-in metadata or stored
-object names without copying geometry bodies. Built-in tuning entries are shown
-flat at the root, saved user tunings can be foldered, and `Layout` and `Scales`
-stay flat after a tuning is selected. Selecting a `UserTuning` loads its linked
-first layout, first scale, color map, and explicit map; the `Layout` and
-`Scales` pages then expose the other objects that reference the selected tuning.
+user geometry handles; user object names and folders come from the fixed
+metadata index, and raw bodies are lazy-loaded from `/layouts.dat` only when
+reference checks or runtime apply need them. Built-in tuning
+entries are shown flat at the root, saved user tunings can be foldered, and
+`Layout` and `Scales` stay flat after a tuning is selected. Selecting a
+`UserTuning` loads its linked first layout, first scale, color map, and explicit
+map; the `Layout` and `Scales` pages expose up to `24` user objects that
+reference the selected tuning.
 `dealWithRotary()` sends encoder turns and clicks to `VirtualListMenu` while it
 is active and otherwise falls back to normal GEM input.
 Scala/cents-list tunings still save as raw objects but are hidden from the
 runtime tuning menu until table-backed pitch lookup exists.
 
 Named user wavetables are stored in `/synth_wavetables.dat` with magic `SYW`,
-version `1`, CRC32, and a counted catalog capped at `64` entries. The selected
+version `1`, CRC32, and a counted fixed-capacity catalog capped at `32` entries. The selected
 wavetable reference for each profile is stored separately in
 `/profile_wavetables.dat` with magic `PWT`, version `1`, and one folder/name
 record per profile; the firmware loads that file into a stack-local struct only

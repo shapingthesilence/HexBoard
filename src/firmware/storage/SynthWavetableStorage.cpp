@@ -270,7 +270,6 @@ constexpr char SYNTH_WAVETABLE_CATALOG_FILE_PATH[] = "/synth_wavetables.dat";
 
 void applyDefaultSynthWavetables() {
   synthWavetables.clear();
-  synthWavetables.reserve(8);
 }
 
 void synthWavetableObjectIdToSamplePath(const uint8_t* objectId, char* output, size_t outputLength) {
@@ -410,12 +409,18 @@ bool synthWavetableSampleFileExists(const SynthWavetableSlot& wavetable) {
 
 void pruneMissingSynthWavetables() {
   size_t before = synthWavetables.size();
-  synthWavetables.erase(
-    std::remove_if(synthWavetables.begin(), synthWavetables.end(), [](const SynthWavetableSlot& wavetable) {
-      return !wavetable.valid || !synthWavetableSampleFileExists(wavetable);
-    }),
-    synthWavetables.end()
-  );
+  size_t writeIndex = 0;
+  for (size_t readIndex = 0; readIndex < synthWavetables.size(); ++readIndex) {
+    const SynthWavetableSlot& wavetable = synthWavetables[readIndex];
+    if (!wavetable.valid || !synthWavetableSampleFileExists(wavetable)) {
+      continue;
+    }
+    if (writeIndex != readIndex) {
+      synthWavetables[writeIndex] = wavetable;
+    }
+    ++writeIndex;
+  }
+  synthWavetables.resize(writeIndex);
   if (synthWavetables.size() != before) {
     sendToLog("Removed missing synth wavetable catalog entries.");
   }
@@ -476,18 +481,18 @@ void normalizeSynthWavetableMetadata(SynthWavetableSlot& wavetable, const uint8_
 }
 
 void compactSynthWavetables() {
-  synthWavetables.erase(
-    std::remove_if(synthWavetables.begin(), synthWavetables.end(), [](const SynthWavetableSlot& wavetable) {
-      return !wavetable.valid;
-    }),
-    synthWavetables.end()
-  );
-  if (synthWavetables.size() > SYNTH_WAVETABLE_MAX_COUNT) {
-    synthWavetables.resize(SYNTH_WAVETABLE_MAX_COUNT);
+  size_t writeIndex = 0;
+  for (size_t readIndex = 0; readIndex < synthWavetables.size(); ++readIndex) {
+    if (!synthWavetables[readIndex].valid) {
+      continue;
+    }
+    if (writeIndex != readIndex) {
+      synthWavetables[writeIndex] = synthWavetables[readIndex];
+    }
+    normalizeSynthWavetableMetadata(synthWavetables[writeIndex]);
+    ++writeIndex;
   }
-  for (SynthWavetableSlot& wavetable : synthWavetables) {
-    normalizeSynthWavetableMetadata(wavetable);
-  }
+  synthWavetables.resize(writeIndex);
 }
 
 uint32_t synthWavetableCatalogCrc(const SynthWavetableSlot* wavetables, size_t wavetableCount) {
@@ -544,33 +549,39 @@ void load_synth_wavetables() {
     applyDefaultSynthWavetables();
     return;
   }
-  std::vector<SynthWavetableSlot> loaded(header.count);
-  size_t dataSize = sizeof(SynthWavetableSlot) * loaded.size();
-  size_t bytesRead = dataSize == 0 ? 0 : f.read(reinterpret_cast<uint8_t*>(loaded.data()), dataSize);
+  uint32_t crc = crc32Begin();
+  SynthWavetableSlot loaded = {};
+  size_t loadedCount = 0;
+  for (uint16_t i = 0; i < header.count; ++i) {
+    size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&loaded), sizeof(loaded));
+    if (bytesRead != sizeof(loaded)) {
+      f.close();
+      sendToLog("Warning: Synth wavetable catalog incomplete. Using built-in wavetables.");
+      applyDefaultSynthWavetables();
+      return;
+    }
+    crc = crc32Update(crc, reinterpret_cast<const uint8_t*>(&loaded), sizeof(loaded));
+    if (!loaded.valid) {
+      continue;
+    }
+    normalizeSynthWavetableMetadata(loaded);
+    if (!synthWavetableSampleFileExists(loaded)) {
+      sendToLog("Skipping wavetable with missing sample file: " + std::string(loaded.name));
+      continue;
+    }
+    if (!synthWavetables.push_back(loaded)) {
+      sendToLog("Synth wavetable catalog truncated at capacity.");
+      break;
+    }
+    ++loadedCount;
+  }
   f.close();
-  if (bytesRead != dataSize) {
+  if (crc32Finish(crc) != header.crc32) {
     sendToLog("Warning: Synth wavetable catalog incomplete. Using built-in wavetables.");
     applyDefaultSynthWavetables();
     return;
   }
-  if (synthWavetableCatalogCrc(loaded.data(), loaded.size()) != header.crc32) {
-    sendToLog("Synth wavetable catalog CRC32 mismatch. Using built-in wavetables.");
-    applyDefaultSynthWavetables();
-    return;
-  }
-  synthWavetables.clear();
-  synthWavetables.reserve(loaded.size());
-  for (SynthWavetableSlot& wavetable : loaded) {
-    if (!wavetable.valid) {
-      continue;
-    }
-    normalizeSynthWavetableMetadata(wavetable);
-    if (!synthWavetableSampleFileExists(wavetable)) {
-      sendToLog("Skipping wavetable with missing sample file: " + std::string(wavetable.name));
-      continue;
-    }
-    synthWavetables.push_back(wavetable);
-  }
+  sendToLog("Synth wavetables loaded successfully (" + std::to_string(loadedCount) + ").");
 }
 
 int findSynthWavetableByObjectId(const uint8_t* objectId) {

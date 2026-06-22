@@ -51,11 +51,11 @@ describe("preset-sync SysEx", () => {
       0x13,
       0x07,
       0x09,
-      0x00, 0x40,
-      0x7f,
-      0x7f,
-      0x7f,
-      0x7f,
+      0x01, 0x00,
+      0x40,
+      0x40,
+      0x40,
+      0x40,
       0x02
     ]);
 
@@ -68,11 +68,11 @@ describe("preset-sync SysEx", () => {
       settingsSchemaVersion: 19,
       synthPresetSchemaVersion: 7,
       profileCount: 9,
-      synthPresetCount: 64,
-      userTuningSlots: 127,
-      userLayoutSlots: 127,
-      scaleColorMapSlots: 127,
-      explicitButtonMapSlots: 127,
+      synthPresetCount: 128,
+      userTuningSlots: 64,
+      userLayoutSlots: 64,
+      scaleColorMapSlots: 64,
+      explicitButtonMapSlots: 64,
       hardwareVersion: 2
     });
   });

@@ -1466,6 +1466,23 @@ void previewSynthWavetableMipOffset(GEMPreviewCallbackData previewData) {
   resetSynthRenderCaches();
 }
 
+SelectOptionByte optionByteSynthWavetableResolution[] = {
+  { "512", SYNTH_WAVETABLE_RESOLUTION_TEST_BITS_FULL },
+  { "256", 8 },
+  { "128", 7 },
+  { "64", SYNTH_WAVETABLE_RESOLUTION_TEST_BITS_MIN }
+};
+GEMSelect selectSynthWavetableResolution(sizeof(optionByteSynthWavetableResolution) / sizeof(SelectOptionByte),
+                                         optionByteSynthWavetableResolution);
+void synthWavetableResolutionCallback(GEMCallbackData /*callbackData*/) {
+  setSynthWavetableResolutionTestBits(synthWavetableResolutionTestBits);
+}
+GEMItem menuItemSynthWavetableResolution("WT Res", synthWavetableResolutionTestBits, selectSynthWavetableResolution,
+                                         synthWavetableResolutionCallback);
+void previewSynthWavetableResolution(GEMPreviewCallbackData previewData) {
+  setSynthWavetableResolutionTestBits(previewData.previewValByte);
+}
+
 SelectOptionByte optionByteSynthDrive[] = {
   { "Off", SYNTH_DRIVE_OFF },
   { "Warm", SYNTH_DRIVE_WARM },
@@ -2558,6 +2575,7 @@ void setupSynthMenuPage() {
   menuPageSynth.addMenuItem(menuGotoSynthWavetableLoad);
   addPreviewMenuItem(menuPageSynth, menuItemSynthWavetablePosition, previewSynthWavetablePosition);
   addPreviewMenuItem(menuPageSynth, menuItemSynthWavetableMipOffset, previewSynthWavetableMipOffset);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthWavetableResolution, previewSynthWavetableResolution);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
   addPreviewMenuItem(menuPageSynth, menuItemSynthModTarget, previewSynthModTarget);
   addPreviewMenuItem(menuPageSynth, menuItemSynthModAmount, previewSynthModAmount);

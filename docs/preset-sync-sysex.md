@@ -358,11 +358,11 @@ Example response, transaction `1`, max packed chunk `128`, capabilities
 `0x1F7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
 delete user object, factory geometry listing, synth wavetable objects, and live
 synth parameter set), max raw object bytes `66560`, settings schema `19`, synth
-preset schema `7`, `9` profiles, `64` synth preset entries, `127` slots for
+preset schema `7`, `9` profiles, `128` synth preset entries, `64` slots for
 each advertised user geometry count, hardware version `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 3E 7E 00 04 08 00 13 07 09 00 40 7F 7F 7F 7F 02 F7
+F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 3E 7E 00 04 08 00 13 07 09 01 00 40 40 40 40 02 F7
 ```
 
 ## Object Addressing
@@ -962,27 +962,17 @@ The current synth setup is already cohesive, so v1 should transfer synth presets
 as synth-only objects, separate from tuning/layout/profile objects.
 
 Synth presets are named and organized by folder path. Current firmware stores a
-counted catalog capped at `64` entries instead of a fixed slot array. The old
-fixed `20` slots in version `4` firmware and the fixed named/foldered version
-`5` file migrate into the version `6` counted catalog; version `6` records are
-rewritten as version `7` with appended portamento and arpeggiator-direction
-defaults; version `7` records are rewritten as version `8` with appended
-wavetable-position and LFO defaults. Version `4` entries migrate into the root
-folder `/` with their current slot names intact:
+counted catalog capped at `128` entries. The 2.0 development file format uses
+fixed-size flash records and keeps only preset metadata plus the current loaded
+preset record in RAM; older on-device preset files are intentionally reset to
+factory defaults instead of migrated.
 
-```text
-Slot 1
-Slot 2
-...
-Slot 20
-```
-
-After that migration, the user-facing model should be a foldered preset library
-rather than a numbered slot bank. The web app presents the foldered library, and
-the device uses `VirtualListMenu` as a folder browser without allocating
-per-preset `GEMItem` objects. Factory defaults copy the factory synth sounds
-into ordinary catalog entries, so hosts should treat restored factory presets
-like editable and erasable user presets.
+The user-facing model is a foldered preset library rather than a numbered slot
+bank. The web app presents the foldered library, and the device uses
+`VirtualListMenu` as a folder browser without allocating per-preset `GEMItem`
+objects. Factory defaults copy the factory synth sounds into ordinary catalog
+entries, so hosts should treat restored factory presets like editable and
+erasable user presets.
 
 Recommended TLVs:
 
@@ -1286,9 +1276,9 @@ uses `SaveToFlash` for the full unpacked bundle object set.
 
 ## Open Design Questions
 
-- User slot counts: current raw `/layouts.dat` storage allows `127` geometry
-  objects total; future menu-facing limits may need lower per-type caps based
-  on LittleFS space and menu usability.
+- User slot counts: current raw `/layouts.dat` storage allows `64` geometry
+  objects total, and on-device associated layout/scale menus show up to `24`
+  user objects for the selected tuning.
 - Object id format: 16 random bytes are robust, but a shorter CRC-based id may
   be easier on-device. The important rule is that profiles should not silently
   bind to the wrong object after slot moves.

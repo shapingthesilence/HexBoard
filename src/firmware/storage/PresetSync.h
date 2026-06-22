@@ -213,6 +213,7 @@ bool isPresetSyncGeometryObjectType(uint8_t objectType);
 bool isPresetSyncSupportedObjectType(uint8_t objectType);
 bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlot& object, std::string& error);
 int chooseGeometryObjectWriteSlot(uint16_t handle, const GeometryObjectSlot& object);
+bool writeGeometryObjectToCatalogSlot(uint16_t slotIndex, const GeometryObjectSlot& object);
 bool geometryObjectForHandle(uint16_t handle, GeometryObjectSlot& object);
 void clearUserGeometryRuntimeSelection();
 bool applyGeometryObjectToRuntime(const GeometryObjectSlot& object);

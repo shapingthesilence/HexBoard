@@ -276,6 +276,11 @@ avoid hard level steps while briefly favoring less aliasing over extra
 brightness. `Mip Oct` shifts those level change points by `-4` to `+4` octaves.
 It is not saved in presets or profiles; it resets to `0` after reboot.
 
+`WT Res` is a temporary wavetable-resolution test aid. It snaps wavetable phase
+reads to `512`, `256`, `128`, or `64` effective samples per frame without
+changing the stored wavetable file. It applies globally while testing, is not
+saved in presets or profiles, and resets to `512` after reboot.
+
 `Drive` adds soft saturation after the voices are mixed:
 
 - `Off`: clean output, and the factory default
@@ -344,7 +349,7 @@ default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 The top-level `Synth: <preset>` item and the `Load Preset` item inside
 `Synth Editor` both open synth preset load lists. `Save Preset` and
 `Load Preset` use synth-only preset libraries with room for
-up to `64` device presets. Presets are stored separately from the main settings
+up to `128` device presets. Presets are stored separately from the main settings
 file as named, foldered synth sounds and do not remember which preset was last
 loaded. On the device, presets appear in a virtual folder browser; `New Preset`
 saves into the currently open folder. Factory presets are copied into normal

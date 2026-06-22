@@ -58,7 +58,7 @@ void formatSynthPresetMenuLabel(uint16_t presetIndex, char* output, size_t outpu
     return;
   }
 
-  const SynthPresetSlot& preset = synthPresets[presetIndex];
+  const SynthPresetIndexEntry& preset = synthPresets[presetIndex];
   if (menuFolderEntryBelongsToCurrentFolder(preset.folderPath, synthPresetMenuCurrentFolder)) {
     snprintf(output, outputLength, "%u %s", static_cast<unsigned>(presetIndex + 1), preset.name);
     return;
@@ -74,7 +74,7 @@ void formatSynthPresetMenuLabel(uint16_t presetIndex, char* output, size_t outpu
            preset.name);
 }
 
-const SynthPresetSlot* synthPresetForRow(const SynthPresetMenuRow& row) {
+const SynthPresetIndexEntry* synthPresetForRow(const SynthPresetMenuRow& row) {
   if (row.index >= synthPresets.size()) {
     return nullptr;
   }
@@ -82,7 +82,7 @@ const SynthPresetSlot* synthPresetForRow(const SynthPresetMenuRow& row) {
 }
 
 bool synthPresetFolderRowPath(const SynthPresetMenuRow& row, char* output, size_t outputLength) {
-  const SynthPresetSlot* preset = synthPresetForRow(row);
+  const SynthPresetIndexEntry* preset = synthPresetForRow(row);
   return preset
          && menuFolderImmediateChildPath(preset->folderPath, synthPresetMenuCurrentFolder, output, outputLength);
 }
@@ -129,7 +129,7 @@ void rebuildSynthPresetVirtualList() {
 
   char childFolder[SYNTH_PRESET_FOLDER_LENGTH] = {};
   for (size_t i = 0; i < synthPresets.size(); ++i) {
-    const SynthPresetSlot& preset = synthPresets[i];
+    const SynthPresetIndexEntry& preset = synthPresets[i];
     if (menuFolderImmediateChildPath(preset.folderPath,
                                      synthPresetMenuCurrentFolder,
                                      childFolder,
