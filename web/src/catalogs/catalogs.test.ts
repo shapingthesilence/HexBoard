@@ -29,6 +29,7 @@ import {
   resolveLayoutBundleButtonColor,
   ScaleColorMapTlv,
   serializeLayoutBundle,
+  SYNTH_WAVETABLE_FRAME_COUNT,
   SYNTH_WAVETABLE_MIP_LEVEL_COUNT,
   SYNTH_WAVETABLE_MIP_SAMPLE_BYTES,
   SYNTH_WAVETABLE_SAMPLE_BYTES,
@@ -239,7 +240,7 @@ Example scale
     expect(samples).toHaveLength(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
     expect(decoded.objectType).toBe(ObjectType.SynthWavetable);
     expect(decoded.schemaMinor).toBe(2);
-    expect(u8(recordValue(wavetable.body, SynthWavetableTlv.FrameCount))).toBe(32);
+    expect(u8(recordValue(wavetable.body, SynthWavetableTlv.FrameCount))).toBe(SYNTH_WAVETABLE_FRAME_COUNT);
     expect(u16LE(recordValue(wavetable.body, SynthWavetableTlv.SampleCount))).toBe(512);
     expect(u8(recordValue(wavetable.body, SynthWavetableTlv.MipLevels))).toBe(SYNTH_WAVETABLE_MIP_LEVEL_COUNT);
     expect(recordValuesLength(wavetable.body, SynthWavetableTlv.Samples)).toBe(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);

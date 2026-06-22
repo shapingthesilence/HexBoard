@@ -267,7 +267,7 @@ installed on the HexBoard, the synth loads `Basic` instead until a matching
 folder/name wavetable is added.
 
 `WT Pos` chooses the starting frame for wavetable waveforms. On device, the menu
-shows frames `1` through `32`; frame `1` is the first frame and frame `32` is
+shows frames `1` through `16`; frame `1` is the first frame and frame `16` is
 the last frame. Modulation can add to or subtract from this base position, so
 setting `WT Pos` above frame `1` lets a negative envelope or LFO amount move
 backward through the wavetable.
@@ -368,9 +368,9 @@ Use these as starting points, then adjust by ear.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Plucky | `Poly` or `MonoRtg` | `Basic` around frame `1` to `11` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` or `10%` | `50 ms` to `200 ms` | Fast start, quick fade, little held level |
 | Smooth pad | `Poly` | `Basic` at frame `1` or `Classic` at frame `1` | `200 ms` to `1 s` | `0 ms` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
-| Lead | `MonoRtg` or `MonoLeg` | `Basic` around frame `22` to `32` | `0 ms` or `10 ms` | `0 ms` to `50 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Use `Porta` for glide or keep it at `0 ms` for immediate melodies |
-| Chime or bell | `Poly` | `Basic` at frame `1` or `Digital` near frame `22` | `0 ms` or `5 ms` | `0 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
-| Arpeggio | `Arp'gio` | `Basic` around frame `22` or `Edge` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed`, `Arp Dir`, and `Tempo` for rhythm |
+| Lead | `MonoRtg` or `MonoLeg` | `Basic` around frame `11` to `16` | `0 ms` or `10 ms` | `0 ms` to `50 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Use `Porta` for glide or keep it at `0 ms` for immediate melodies |
+| Chime or bell | `Poly` | `Basic` at frame `1` or `Digital` near frame `11` | `0 ms` or `5 ms` | `0 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
+| Arpeggio | `Arp'gio` | `Basic` around frame `11` or `Edge` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed`, `Arp Dir`, and `Tempo` for rhythm |
 
 For a sharper sound, use `Basic` at a higher `WT Pos` frame or one of the
 `Edge` anchors, and keep `Attack` short. For a smoother sound, use `Basic` near
@@ -541,7 +541,7 @@ Those explicit wavetable reads are large chunked transfers, and HexBoard streams
 the sample file during the transfer instead of preloading the whole object first.
 The browser wavetable library is also seeded with the factory built-in tables
 rendered from the firmware anchor waves. These factory tables use interpolated
-`32`-frame bases plus the same six fixed mip levels as imported wavetables, so
+`16`-frame bases plus the same six fixed mip levels as imported wavetables, so
 they can be previewed, exported, edited, uploaded, or restored through the web
 editor like normal wavetable entries.
 The web app trims preset and wavetable names/folders to the device's fixed text

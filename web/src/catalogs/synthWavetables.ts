@@ -9,7 +9,7 @@ import {
 } from "../protocol/tlv.ts";
 import type { EncodedCatalogObject } from "./types.ts";
 
-export const SYNTH_WAVETABLE_FRAME_COUNT = 32;
+export const SYNTH_WAVETABLE_FRAME_COUNT = 16;
 export const SYNTH_WAVETABLE_SAMPLE_COUNT = 512;
 export const SYNTH_WAVETABLE_SAMPLE_BYTES = SYNTH_WAVETABLE_FRAME_COUNT * SYNTH_WAVETABLE_SAMPLE_COUNT;
 export const SYNTH_WAVETABLE_MIP_HARMONIC_LIMITS = [255, 96, 48, 24, 12, 6] as const;

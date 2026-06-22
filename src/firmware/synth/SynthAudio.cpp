@@ -13,6 +13,12 @@
 #include "../tuning/DynamicJustIntonation.h"
 #include "SynthDefaults.h"
 
+#if defined(__GNUC__) && !defined(__clang__)
+#define SYNTH_HOT_OPTIMIZE __attribute__((optimize("O2")))
+#else
+#define SYNTH_HOT_OPTIMIZE
+#endif
+
 // @synth
 /*
     This section of the code handles audio
@@ -1185,7 +1191,7 @@ inline uint32_t RAM_FUNC(applySynthVibrato)(uint32_t increment, int16_t vibratoA
   return increment + positiveOffset;
 }
 
-inline uint16_t RAM_FUNC(applySynthFoldPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4) {
+inline uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(applySynthFoldPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4) {
   if (warpAmountQ4 == 0) {
     return phase;
   }
@@ -1197,7 +1203,7 @@ inline uint16_t RAM_FUNC(applySynthFoldPhaseWarpQ4)(uint16_t phase, int16_t warp
                             : static_cast<uint16_t>(phase + offset);
 }
 
-inline uint16_t RAM_FUNC(applySynthDutyPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4) {
+inline uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(applySynthDutyPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4) {
   if (warpAmountQ4 == 0) {
     return phase;
   }
@@ -1209,7 +1215,7 @@ inline uint16_t RAM_FUNC(applySynthDutyPhaseWarpQ4)(uint16_t phase, int16_t warp
                    : static_cast<uint16_t>(phase - offset);
 }
 
-inline uint16_t RAM_FUNC(applySynthPolyPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4) {
+inline uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(applySynthPolyPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4) {
   if (warpAmountQ4 == 0) {
     return phase;
   }
@@ -1600,6 +1606,8 @@ struct SynthVoiceRenderCache {
   int16_t polyWarpAmountTargetQ4 = 0;
   int16_t polyWarpAmountStepQ4 = 0;
   uint8_t warpSlewSamples = 0;
+  uint8_t phaseWarpActive = 0;
+  uint8_t slewsActive = 0;
   uint8_t wavetableMipLevel = 0;
   SynthWavetableReadContext wavetableContext = { activeSynthWaveTable[0], nullptr, 0 };
 };
@@ -1619,6 +1627,13 @@ inline void RAM_FUNC(resetSynthVoiceRenderCache)(uint8_t voiceIndex) {
   synthVoiceRenderCacheValid[voiceIndex] = false;
 }
 
+inline void RAM_FUNC(updateSynthVoiceRenderCacheFlags)(SynthVoiceRenderCache& cache) {
+  cache.phaseWarpActive =
+    (cache.foldWarpAmountQ4 != 0 || cache.dutyWarpAmountQ4 != 0 || cache.polyWarpAmountQ4 != 0) ? 1 : 0;
+  cache.slewsActive =
+    (cache.phaseIncrementSlewSamples != 0 || cache.warpSlewSamples != 0) ? 1 : 0;
+}
+
 void RAM_FUNC(resetSynthRenderCaches)() {
   synthBaseModulationCache = {};
   synthSharedWavetableFramePosition = 0;
@@ -1629,17 +1644,22 @@ void RAM_FUNC(resetSynthRenderCaches)() {
   }
 }
 
-inline void RAM_FUNC(retargetSynthWarpSlew)(int16_t amountTarget,
+inline bool RAM_FUNC(retargetSynthWarpSlew)(int16_t amountTarget,
                                             int16_t& amountQ4,
                                             int16_t& amountTargetQ4,
                                             int16_t& amountStepQ4,
                                             uint8_t elapsedTicks) {
   amountTargetQ4 = static_cast<int16_t>(amountTarget * 16);
   int16_t delta = static_cast<int16_t>(amountTargetQ4 - amountQ4);
+  if (delta == 0) {
+    amountStepQ4 = 0;
+    return false;
+  }
   amountStepQ4 = static_cast<int16_t>(delta / static_cast<int16_t>(elapsedTicks));
   if (amountStepQ4 == 0 && delta != 0) {
     amountStepQ4 = (delta > 0) ? 1 : -1;
   }
+  return true;
 }
 
 inline void RAM_FUNC(snapSynthWarpSlew)(int16_t amountTarget,
@@ -1690,11 +1710,15 @@ inline void RAM_FUNC(retargetSynthVoiceSlews)(SynthVoiceRenderCache& cache,
                       cache.polyWarpAmountTargetQ4,
                       cache.polyWarpAmountStepQ4);
     cache.warpSlewSamples = 0;
+    updateSynthVoiceRenderCacheFlags(cache);
     return;
   }
 
   cache.phaseIncrementTarget = phaseIncrementTarget;
-  if (phaseIncrementTarget >= cache.phaseIncrement) {
+  if (phaseIncrementTarget == cache.phaseIncrement) {
+    cache.phaseIncrementStep = 0;
+    cache.phaseIncrementSlewSamples = 0;
+  } else if (phaseIncrementTarget >= cache.phaseIncrement) {
     uint32_t difference = phaseIncrementTarget - cache.phaseIncrement;
     uint32_t step = (elapsedTicks == SYNTH_CONTROL_RATE_SAMPLES)
                       ? (difference >> SYNTH_CONTROL_RATE_SHIFT)
@@ -1706,6 +1730,7 @@ inline void RAM_FUNC(retargetSynthVoiceSlews)(SynthVoiceRenderCache& cache,
       step > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())
         ? static_cast<uint32_t>(std::numeric_limits<int32_t>::max())
         : step);
+    cache.phaseIncrementSlewSamples = elapsedTicks;
   } else {
     uint32_t difference = cache.phaseIncrement - phaseIncrementTarget;
     uint32_t step = (elapsedTicks == SYNTH_CONTROL_RATE_SAMPLES)
@@ -1718,25 +1743,27 @@ inline void RAM_FUNC(retargetSynthVoiceSlews)(SynthVoiceRenderCache& cache,
       step > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())
         ? static_cast<uint32_t>(std::numeric_limits<int32_t>::max())
         : step);
+    cache.phaseIncrementSlewSamples = elapsedTicks;
   }
-  cache.phaseIncrementSlewSamples = elapsedTicks;
 
-  retargetSynthWarpSlew(voiceModulation.foldWarp,
-                        cache.foldWarpAmountQ4,
-                        cache.foldWarpAmountTargetQ4,
-                        cache.foldWarpAmountStepQ4,
-                        elapsedTicks);
-  retargetSynthWarpSlew(voiceModulation.dutyWarp,
-                        cache.dutyWarpAmountQ4,
-                        cache.dutyWarpAmountTargetQ4,
-                        cache.dutyWarpAmountStepQ4,
-                        elapsedTicks);
-  retargetSynthWarpSlew(voiceModulation.polyWarp,
-                        cache.polyWarpAmountQ4,
-                        cache.polyWarpAmountTargetQ4,
-                        cache.polyWarpAmountStepQ4,
-                        elapsedTicks);
-  cache.warpSlewSamples = elapsedTicks;
+  bool warpSlewActive = false;
+  warpSlewActive |= retargetSynthWarpSlew(voiceModulation.foldWarp,
+                                          cache.foldWarpAmountQ4,
+                                          cache.foldWarpAmountTargetQ4,
+                                          cache.foldWarpAmountStepQ4,
+                                          elapsedTicks);
+  warpSlewActive |= retargetSynthWarpSlew(voiceModulation.dutyWarp,
+                                          cache.dutyWarpAmountQ4,
+                                          cache.dutyWarpAmountTargetQ4,
+                                          cache.dutyWarpAmountStepQ4,
+                                          elapsedTicks);
+  warpSlewActive |= retargetSynthWarpSlew(voiceModulation.polyWarp,
+                                          cache.polyWarpAmountQ4,
+                                          cache.polyWarpAmountTargetQ4,
+                                          cache.polyWarpAmountStepQ4,
+                                          elapsedTicks);
+  cache.warpSlewSamples = warpSlewActive ? elapsedTicks : 0;
+  updateSynthVoiceRenderCacheFlags(cache);
 }
 
 inline void RAM_FUNC(advanceSynthVoiceSlews)(SynthVoiceRenderCache& cache) {
@@ -1773,6 +1800,7 @@ inline void RAM_FUNC(advanceSynthVoiceSlews)(SynthVoiceRenderCache& cache) {
                          cache.polyWarpAmountStepQ4,
                          finalSample);
   }
+  updateSynthVoiceRenderCacheFlags(cache);
 }
 
 inline uint16_t RAM_FUNC(synthWavetableMipHarmonicLimit)(uint8_t level) {
@@ -1873,15 +1901,25 @@ inline SynthWavetableReadContext RAM_FUNC(wavetableReadContextFromFramePosition)
   return { activeSynthWavetableMipFrame(mipLevel, frameIndex), activeSynthWavetableMipFrame(mipLevel, frameIndex + 1), frameFrac };
 }
 
-inline uint16_t RAM_FUNC(readActiveWavetableSampleWithContext)(uint16_t phase,
-                                                               const SynthWavetableReadContext& context) {
+inline uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(readActiveWavetableFrameSample)(uint16_t phase,
+                                                                            const byte* frame) {
+  uint16_t sampleIndex = synthWaveSampleIndexFromPhase16(phase);
+  return static_cast<uint16_t>(frame[sampleIndex] << 8);
+}
+
+inline uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(readActiveWavetableInterpolatedFrameSample)(uint16_t phase,
+                                                                                       const SynthWavetableReadContext& context) {
   uint16_t sampleIndex = synthWaveSampleIndexFromPhase16(phase);
   int16_t sampleA = context.frameA[sampleIndex];
-  if (!context.frameB) {
-    return static_cast<uint16_t>(sampleA << 8);
-  }
   int16_t sampleB = context.frameB[sampleIndex];
   return static_cast<uint16_t>((sampleA << 8) + ((sampleB - sampleA) * static_cast<int16_t>(context.frameFrac)));
+}
+
+inline uint16_t RAM_FUNC(readActiveWavetableSampleWithContext)(uint16_t phase,
+                                                               const SynthWavetableReadContext& context) {
+  return context.frameB
+    ? readActiveWavetableInterpolatedFrameSample(phase, context)
+    : readActiveWavetableFrameSample(phase, context.frameA);
 }
 
 inline uint16_t RAM_FUNC(readActiveWavetableSampleAtFramePosition)(uint16_t phase,
@@ -2719,18 +2757,25 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
     SynthVoiceRenderCache& voiceCache = synthVoiceRenderCaches[i];
     synth[i].counter += voiceCache.phaseIncrement;  // high 16 bits loop from 65535 -> 0
     p = static_cast<uint16_t>(synth[i].counter >> 16);
-    if (voiceCache.foldWarpAmountQ4 != 0) {
-      p = applySynthFoldPhaseWarpQ4(p, voiceCache.foldWarpAmountQ4);
+    if (voiceCache.phaseWarpActive) {
+      if (voiceCache.foldWarpAmountQ4 != 0) {
+        p = applySynthFoldPhaseWarpQ4(p, voiceCache.foldWarpAmountQ4);
+      }
+      if (voiceCache.dutyWarpAmountQ4 != 0) {
+        p = applySynthDutyPhaseWarpQ4(p, voiceCache.dutyWarpAmountQ4);
+      }
+      if (voiceCache.polyWarpAmountQ4 != 0) {
+        p = applySynthPolyPhaseWarpQ4(p, voiceCache.polyWarpAmountQ4);
+      }
     }
-    if (voiceCache.dutyWarpAmountQ4 != 0) {
-      p = applySynthDutyPhaseWarpQ4(p, voiceCache.dutyWarpAmountQ4);
+    if (voiceCache.slewsActive) {
+      advanceSynthVoiceSlews(voiceCache);
     }
-    if (voiceCache.polyWarpAmountQ4 != 0) {
-      p = applySynthPolyPhaseWarpQ4(p, voiceCache.polyWarpAmountQ4);
-    }
-    advanceSynthVoiceSlews(voiceCache);
     if (activeWavetableHasFrames) {
-      p = readActiveWavetableSampleWithContext(p, voiceCache.wavetableContext);
+      const SynthWavetableReadContext& context = voiceCache.wavetableContext;
+      p = context.frameB
+        ? readActiveWavetableInterpolatedFrameSample(p, context)
+        : readActiveWavetableFrameSample(p, context.frameA);
     } else {
       t = p >> 8;
       switch (currWave) {

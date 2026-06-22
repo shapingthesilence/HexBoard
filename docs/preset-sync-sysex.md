@@ -487,7 +487,7 @@ chunk. The device finishes with `TRANSFER_END`, and the host ACKs it.
 For `SynthWavetable` reads, current firmware sends the same object bytes but
 stages only the metadata prefix in RAM; the `WavetableSamples` TLV data is read
 from the per-table LittleFS sample file as each outgoing chunk is requested.
-New sample files are six-level `98,304`-byte fixed mip tables; `16,384`-byte
+New sample files are six-level `49,152`-byte fixed mip tables; `8,192`-byte
 base-only files are still streamed and reported as schema `1.0`.
 Host-to-device `SynthWavetable` writes are received through temporary LittleFS
 files for the raw object and concatenated sample TLVs, so fixed mip uploads do
@@ -1083,31 +1083,31 @@ these synth-wavetable TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x30` | `WavetableFrameCount` | `u8`, must be `32` |
+| `0x30` | `WavetableFrameCount` | `u8`, must be `16` |
 | `0x31` | `WavetableSampleCount` | `u16-le`, must be `512` |
-| `0x32` | `WavetableSamples` | one or more TLVs containing `98,304` unsigned bytes total for schema `1.2`; base-only objects use `16,384` bytes total |
+| `0x32` | `WavetableSamples` | one or more TLVs containing `49,152` unsigned bytes total for schema `1.2`; base-only objects use `8,192` bytes total |
 | `0x33` | `WavetableMipLevels` | `u8`; `6` for the fixed mip table or `1` for base-only data |
 
 The mip payload is level-major and frame-major within each level: six levels,
-each with `32` frames and `512` samples per frame. Harmonic limits are `255`,
+each with `16` frames and `512` samples per frame. Harmonic limits are `255`,
 `96`, `48`, `24`, `12`, and `6`. Hosts should include `WavetableMipLevels = 6` when
 sending the full fixed mip table; firmware rejects mismatched sample length and
 mip count pairs. The fixed-mip sample payload is split into repeated
 `WavetableSamples` TLVs of at most `32,768` bytes each because a single TLV
-length is 16-bit and the complete fixed-mip payload is `98,304` bytes.
+length is 16-bit and the complete fixed-mip payload is `49,152` bytes.
 The web editor's factory wavetable bank is generated from firmware built-in
-anchor waves, interpolated to the same `32` base frames, and then processed
+anchor waves, interpolated to the same `16` base frames, and then processed
 through the same FFT-pruned mip builder as imported wavetables.
 
 The web app's Serum/Vital import path reads wavetable `.wav` files,
-interpolates the source frame axis down to `32` frames, resamples each frame to
+interpolates the source frame axis down to `16` frames, resamples each frame to
 `512` samples, normalizes to unsigned byte samples centered on `128`, builds
 FFT-pruned fixed mip levels, and sends the result with `ApplyToRuntime |
 SaveToFlash`.
 The web app's HexBoard export path writes `.hexwav` files: 8-bit mono WAV
-containers whose data chunk is exactly the `98,304`-byte fixed mip table.
+containers whose data chunk is exactly the `49,152`-byte fixed mip table.
 HexBoard `.hexwav` imports skip the Serum/Vital crunching step; older
-`16,384`-byte `.hexwav` files are accepted and upgraded to a fixed mip table by
+`8,192`-byte `.hexwav` files are accepted and upgraded to a fixed mip table by
 the app before upload.
 Firmware validates the transfer CRC32, copies the sample TLVs into active
 wavetable RAM or a temporary sample file, selects the uploaded folder/name for
