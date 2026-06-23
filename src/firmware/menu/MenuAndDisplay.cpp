@@ -557,11 +557,17 @@ GEMItem menuItemStabilityBenchmark("Stability", startStabilityBenchmarkMenuCallb
 
 PersistentCallbackInfo callbackInfoDisplayPlayedNotes = {
   static_cast<uint8_t>(SettingKey::DisplayPlayedNotes),
-  reinterpret_cast<void*>(&displayPlayedNotes),
+  reinterpret_cast<void*>(&noteDisplayMode),
   nullptr,
   onToggleDisplayPlayedNotes
 };
-GEMItem menuItemDisplayPlayedNotes("DisplayNotes", displayPlayedNotes, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDisplayPlayedNotes));
+SelectOptionByte optionByteNoteDisplayMode[] = {
+  { "Off", NOTE_DISPLAY_OFF },
+  { "Label", NOTE_DISPLAY_LABEL },
+  { "Number", NOTE_DISPLAY_NUMBER }
+};
+GEMSelect selectNoteDisplayMode(sizeof(optionByteNoteDisplayMode) / sizeof(SelectOptionByte), optionByteNoteDisplayMode);
+GEMItem menuItemDisplayPlayedNotes("DisplayNotes", noteDisplayMode, selectNoteDisplayMode, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDisplayPlayedNotes));
 
 PersistentCallbackInfo callbackInfoBootAnimation = {
   static_cast<uint8_t>(SettingKey::BootAnimationEnabled),
@@ -2310,7 +2316,8 @@ void syncSettingsToRuntime() {
   dynamicJIRatioTable = normalizeDynamicJIRatioTable(settingValue(SettingKey::DynamicJIRatioTable));
   updateTuningMenuVisibility();
   bootAnimationEnabled = settingEnabled(SettingKey::BootAnimationEnabled);
-  displayPlayedNotes = settingEnabled(SettingKey::DisplayPlayedNotes);
+  noteDisplayMode = normalizeNoteDisplayMode(settingValue(SettingKey::DisplayPlayedNotes));
+  settings[static_cast<uint8_t>(SettingKey::DisplayPlayedNotes)] = noteDisplayMode;
 
   // Now *apply* them to the engine/UI:
   applyBuiltinGeometryRuntimeFromSettings();

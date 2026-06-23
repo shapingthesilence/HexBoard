@@ -6,7 +6,7 @@
 #include "../hardware/GridState.h"
 
 // --- Note display overlay when pressing keys ---
-bool displayPlayedNotes = false;
+byte noteDisplayMode = NOTE_DISPLAY_OFF;
 bool noteOverlayVisible = false;
 bool noteBadgeVisible = false;
 bool noteOverlayDirty = true;
@@ -18,7 +18,7 @@ int16_t displayedNotes[DISPLAYED_NOTES_MAX] = {
   DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED,
   DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED, DISPLAYED_NOTE_UNUSED
 };
-char noteBadgeText[12] = "";
+char noteBadgeText[PLAYED_NOTE_TEXT_MAX] = "";
 
 const char* const chromaticNames[12] = {
   "C", "C#", "D", "Eb", "E", "F",
@@ -76,9 +76,26 @@ byte displayedNoteCount(const int16_t* notes);
 bool displayedNotesEqual(const int16_t* first, const int16_t* second);
 bool buildDisplayedChordName(const int16_t* notes, byte count, char* chordText, size_t chordTextSize);
 bool newestHeldDisplayedPitch(int16_t& displayedPitchOut);
+void formatDisplayedPitchNumber(int16_t displayedPitch, char* noteText, size_t noteTextSize);
+void formatDisplayedPitchLabel(int16_t displayedPitch, char* noteText, size_t noteTextSize);
 void formatDisplayedPitch(int16_t displayedPitch, char* noteText, size_t noteTextSize);
 void drawCompactPlayedNoteBadge();
 extern bool screenSaverOn;
+
+byte normalizeNoteDisplayMode(byte mode) {
+  switch (mode) {
+    case NOTE_DISPLAY_OFF:
+    case NOTE_DISPLAY_LABEL:
+    case NOTE_DISPLAY_NUMBER:
+      return mode;
+    default:
+      return NOTE_DISPLAY_LABEL;
+  }
+}
+
+bool noteDisplayEnabled() {
+  return noteDisplayMode != NOTE_DISPLAY_OFF;
+}
 
 bool setNoteOverlayTemporaryWake(bool enabled) {
   noteOverlayTemporaryWake = enabled;
@@ -230,8 +247,17 @@ bool writeChordName(uint16_t pitchClassMask, byte rootPitchClass, byte bassPitch
   return true;
 }
 
+bool tuningSupportsChordNames() {
+  const tuningDef& tuning = current.tuning();
+  float stepDelta = tuning.stepSize - 100.0f;
+  if (stepDelta < 0.0f) {
+    stepDelta = -stepDelta;
+  }
+  return tuning.cycleLength == 12 && stepDelta < 0.01f;
+}
+
 bool buildDisplayedChordName(const int16_t* notes, byte count, char* chordText, size_t chordTextSize) {
-  if (current.tuningIndex != TUNING_12EDO || chordTextSize == 0) {
+  if (!tuningSupportsChordNames() || chordTextSize == 0) {
     return false;
   }
 
@@ -295,17 +321,42 @@ bool newestHeldDisplayedPitch(int16_t& displayedPitchOut) {
   return found;
 }
 
+void formatDisplayedPitchNumber(int16_t displayedPitch, char* noteText, size_t noteTextSize) {
+  int cycleLength = current.tuning().cycleLength;
+  if (cycleLength <= 0) {
+    snprintf(noteText, noteTextSize, "?");
+    return;
+  }
+  int step = positiveMod(displayedPitch, cycleLength);
+  int octave = ((displayedPitch - step) / cycleLength) + 4;
+  snprintf(noteText, noteTextSize, "%d.%d", step, octave);
+}
+
+void formatDisplayedPitchLabel(int16_t displayedPitch, char* noteText, size_t noteTextSize) {
+  int cycleLength = current.tuning().cycleLength;
+  if (cycleLength <= 0) {
+    snprintf(noteText, noteTextSize, "?");
+    return;
+  }
+
+  int step = positiveMod(displayedPitch, cycleLength);
+  const char* label = current.tuning().keyChoices[step].name;
+  while (label && *label == ' ') {
+    ++label;
+  }
+  if (!label || label[0] == '\0') {
+    formatDisplayedPitchNumber(displayedPitch, noteText, noteTextSize);
+    return;
+  }
+  int octave = ((displayedPitch - step) / cycleLength) + 4;
+  snprintf(noteText, noteTextSize, "%.*s%d", 8, label, octave);
+}
+
 void formatDisplayedPitch(int16_t displayedPitch, char* noteText, size_t noteTextSize) {
-  if (current.tuningIndex == TUNING_12EDO) {
-    int midiNote = displayedPitch + 60;
-    const char* label = chromaticNames[positiveMod(midiNote, 12)];
-    int octave = (midiNote / 12) - 1;
-    snprintf(noteText, noteTextSize, "%s%d", label, octave);
+  if (noteDisplayMode == NOTE_DISPLAY_NUMBER) {
+    formatDisplayedPitchNumber(displayedPitch, noteText, noteTextSize);
   } else {
-    int cycleLength = current.tuning().cycleLength;
-    int step = positiveMod(displayedPitch, cycleLength);
-    int octave = ((displayedPitch - step) / cycleLength) + 4;
-    snprintf(noteText, noteTextSize, "%d.%d", step, octave);
+    formatDisplayedPitchLabel(displayedPitch, noteText, noteTextSize);
   }
 }
 
@@ -354,7 +405,7 @@ void drawCompactPlayedNoteBadge() {
 }
 
 void onToggleDisplayPlayedNotes() {
-  if (!displayPlayedNotes && (noteOverlayVisible || noteBadgeVisible)) {
+  if (!noteDisplayEnabled() && (noteOverlayVisible || noteBadgeVisible)) {
     noteOverlayVisible = false;
     noteBadgeVisible = false;
     noteOverlayDirty = false;
@@ -366,7 +417,7 @@ void onToggleDisplayPlayedNotes() {
     if (!returnedToSleep) {
       restoreInteractiveMenuDisplay();
     }
-  } else if (displayPlayedNotes) {
+  } else if (noteDisplayEnabled()) {
     noteOverlayDirty = true;
   }
 }
@@ -376,7 +427,7 @@ void drawPlayedNotesOverlay() {
     return;
   }
 
-  if (!displayPlayedNotes) {
+  if (!noteDisplayEnabled()) {
     if (noteBadgeVisible || noteOverlayVisible) {
       noteBadgeVisible = false;
       noteOverlayVisible = false;
@@ -455,7 +506,7 @@ void drawPlayedNotesOverlay() {
 
   for (byte i = 0; i < count; i++) {
     int16_t displayedPitch = displayedNotes[i];
-    char noteText[12];
+    char noteText[PLAYED_NOTE_TEXT_MAX];
     formatDisplayedPitch(displayedPitch, noteText, sizeof(noteText));
 
     byte col = i % 3;

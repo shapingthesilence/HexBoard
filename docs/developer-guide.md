@@ -446,14 +446,14 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `19`
+- `CURRENT_SETTINGS_VERSION` is currently `20`
 - this release intentionally skips old profile compatibility: any `/settings.dat`
-  file with a version other than `19` is replaced with factory defaults instead
+  file with a version other than `20` is replaced with factory defaults instead
   of being migrated
-- the in-progress version `19` layout no longer stores the old `Debug` byte;
-  runtime `Serial Debug` state is intentionally RAM-only, so this was folded
-  into the same unreleased compatibility break instead of adding another schema
-  version
+- version `20` reinterprets `DisplayPlayedNotes` as `Off`/`Label`/`Number`
+  instead of a boolean; the byte position is unchanged
+- version `19` no longer stores the old `Debug` byte;
+  runtime `Serial Debug` state is intentionally RAM-only
 - the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
 - the Synth Editor `Drive` setting is stored as `SynthDrive`; factory default is `Off`
@@ -485,7 +485,7 @@ Important implementation details:
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
-- version `2` through `18` settings files currently restore factory defaults instead of migrating; the older migration helper remains in the code for reference, but `load_settings()` no longer dispatches to it in this release
+- version `2` through `19` settings files currently restore factory defaults instead of migrating; the older migration helper remains in the code for reference, but `load_settings()` no longer dispatches to it in this release
 - auto-save is debounced for `10 seconds`
 - auto-save copies runtime state back into slot `0` before writing
 - flash writes go through `flashSafeSave()` / `beginFlashSafeWrite()` to show

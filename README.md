@@ -44,7 +44,7 @@ The current code supports:
 - boot and Advanced-menu LED test modes for spotting failed pixels or color channels
 - an Advanced-menu stability benchmark for worst-case synth, LED, display, and sync stress testing
 - a USB-meter-calibrated LED current limiter to reduce brownouts in bright modes
-- an optional OLED note overlay that shows currently played notes
+- an optional OLED note overlay that shows currently played notes as labels or scale-step numbers
 - standard MIDI, extended multi-channel MIDI mapping, and MPE behavior
 - dynamic just intonation and BPM-linked retuning options
 - onboard synth waveform/wavetable banks, Serum/Vital and HexBoard wavetable import, mono portamento, AHDSR envelope, phase-warp/wavetable/LFO modulation, preset, and arpeggiator settings

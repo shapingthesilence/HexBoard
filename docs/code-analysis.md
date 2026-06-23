@@ -490,14 +490,26 @@ uses the same debounced profile auto-save path as on-device synth menu edits.
 
 ## Played Note OLED Overlay
 
-`DisplayNotes` is a normal persisted Advanced-menu setting that is enabled by default. The overlay implementation lives in `src/firmware/menu/PlayedNotesOverlay.cpp`; menu item wiring remains in `MenuAndDisplay.cpp`. Synth preset, wavetable, and geometry browsers use the shared `VirtualListMenu` renderer instead of allocating one GEM page/item tree per library entry. When enabled, MIDI note on/off updates mark a small OLED display region dirty. `drawPlayedNotesOverlay()` runs from the main loop after menu input handling. During normal menu display it draws only the newest currently held note as a top-right badge using the same large note font as the full overlay. During a temporary screensaver wake it renders the larger `Now Playing` overlay with up to `6` unique active notes.
+`DisplayNotes` is a normal persisted Advanced-menu setting with `Off`, `Label`,
+and `Number` modes. It defaults to `Label`. The overlay implementation lives in
+`src/firmware/menu/PlayedNotesOverlay.cpp`; menu item wiring remains in
+`MenuAndDisplay.cpp`. Synth preset, wavetable, and geometry browsers use the
+shared `VirtualListMenu` renderer instead of allocating one GEM page/item tree
+per library entry. When enabled, MIDI note-on updates mark a small OLED display
+region dirty, and note-on can temporarily wake the display from screensaver.
+`drawPlayedNotesOverlay()` runs from the main loop after menu input handling.
+During normal menu display it draws only the newest currently held note as a
+top-right badge using the same large note font as the full overlay. During a
+temporary screensaver wake it renders the larger `Now Playing` overlay with up
+to `6` unique active notes.
 
 Display behavior:
 
-- `12 EDO` notes render as chromatic note names with octave numbers.
-- Other tunings render as `step.octave`.
+- `Label` mode renders the active tuning's `keyChoices` labels with octave
+  numbers. User geometry `KeyLabels` feed the same runtime label table.
+- `Number` mode renders all tunings as `step.octave`.
 - Active notes are displayed from lowest to highest pitch; if more than `6` unique notes are active, the lowest `6` are shown.
-- In `12 EDO`, the larger screensaver-wake overlay names common triads, sixth chords, seventh chords, ninth chords, and related suspended/extended chords below the note rows at a fixed position. Inversions use slash-bass notation when the detected root is not the lowest displayed pitch class.
+- In `12 EDO`, the larger screensaver-wake overlay names common triads, sixth chords, seventh chords, ninth chords, and related suspended/extended chords below the note rows at a fixed position. Inversions use slash-bass notation when the detected root is not the lowest displayed pitch class. Other 12-step tunings and non-12 tunings skip chord names.
 - Encoder click/turn input dismisses the larger overlay immediately and returns to menu/badge mode.
 - Note rows use stable fixed columns spread close to the OLED edges, so changing label widths do not shift note positions.
 - The overlay stays visible briefly after release.
@@ -686,18 +698,19 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `19`, and `PROFILE_COUNT` is `9`.
+`CURRENT_SETTINGS_VERSION` is currently `20`, and `PROFILE_COUNT` is `9`.
 Older settings-schema files are not migrated in this release; `load_settings()`
 restores factory defaults and rewrites `/settings.dat` whenever the header
-version is not `19`.
+version is not `20`.
 
-The in-progress version `19` layout no longer includes the old persisted `Debug`
-byte. `Serial Debug` is RAM-only and starts disabled on boot; its `General Log`,
-`Min Heap`, and `Audio Stats` category toggles live in `DiagnosticsTiming.cpp`
-and are shown only while the runtime debug submenu is enabled. `Audio Stats`
-captures the audio profiler window on each report and prints average CPU, max
-CPU, worst max CPU since Serial Debug was enabled, and underrun/overrun timing
-counters.
+Version `20` reinterprets the existing `DisplayPlayedNotes` byte from a boolean
+as `Off`/`Label`/`Number`; the persisted byte position did not move. Version
+`19` removed the old persisted `Debug` byte. `Serial Debug` is RAM-only and
+starts disabled on boot; its `General Log`, `Min Heap`, and `Audio Stats`
+category toggles live in `DiagnosticsTiming.cpp` and are shown only while the
+runtime debug submenu is enabled. `Audio Stats` captures the audio profiler
+window on each report and prints average CPU, max CPU, worst max CPU since
+Serial Debug was enabled, and underrun/overrun timing counters.
 
 The LED current-limit calibration changed without a settings-version bump because the persisted byte layout did not change. Existing saved profiles keep their selected `LedCurrentLimitMode`, but the runtime budget for each numbered mode now follows the hardware-specific calibrated table above.
 
@@ -834,9 +847,9 @@ Load behavior:
 
 - missing settings file sets `settingsFileMissingOnBoot`, creates factory defaults, and saves them
 - magic mismatch restores defaults
-- version `2` through `18` files currently restore factory defaults instead of
+- version `2` through `19` files currently restore factory defaults instead of
   migrating; profile compatibility is intentionally skipped for the version
-  `19` geometry-catalog release
+  `20` played-note display mode release
 - unknown version mismatches restore defaults
 - short read restores defaults
 - CRC32 mismatch restores defaults
@@ -923,7 +936,7 @@ Run or manually verify the areas your change touches:
 - rotary panic stop
 - color modes, including `Custom` and `Diatonic`
 - `ANIMATE_MIDI_IN` if external MIDI display behavior changed
-- `DisplayNotes` compact menu badge, full screensaver-wake overlay in `12 EDO`, 12-EDO chord labels, a non-12 tuning, chord release, and screensaver wake
+- `DisplayNotes` `Off`/`Label`/`Number` modes, compact menu badge, full screensaver-wake overlay in `12 EDO`, 12-EDO chord labels, a non-12 tuning, chord release, and screensaver wake
 - delegated-control enter, LED update, button event, and exit SysEx
 
 For docs-only changes, a compile is not necessary, but keep terminology aligned with `HexBoard.ino` and `src/firmware/`.

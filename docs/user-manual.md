@@ -45,9 +45,12 @@ If `Scale Lock` is off, every note button can play. If `Scale Lock` is on, only 
 
 ### Played Note Display
 
-The `DisplayNotes` option in `Advanced` can show a temporary `Now Playing` overlay on the OLED while notes are held. In `12 EDO`, notes display as names such as `C4` or `Eb5`. In other tunings, notes display as step-and-octave values such as `7.4`.
+The `DisplayNotes` option in `Advanced` controls the OLED played-note overlay.
+Set it to `Off`, `Label`, or `Number`. `Label` shows the active tuning's note
+labels with octave numbers, including labels provided by user geometry objects.
+`Number` shows scale step and octave values such as `7.4`.
 
-While the menu is visible, the top-right corner shows only the most recent held note. If the OLED screensaver is active, playing a note can wake a larger `Now Playing` display that shows up to `6` unique played notes from lowest to highest. Turning or pressing the encoder returns to the menu display. In `12 EDO`, recognized chord names appear near the bottom of that larger display. `DisplayNotes` is on by default.
+While the menu is visible, the top-right corner shows only the most recent held note. If the OLED screensaver is active, playing a note can wake a larger `Now Playing` display that shows up to `6` unique played notes from lowest to highest. Turning or pressing the encoder returns to the menu display. Recognized chord names appear near the bottom of that larger display only for `12 EDO`. `DisplayNotes` defaults to `Label`.
 
 ## Live Performance Controls
 
@@ -665,7 +668,7 @@ This page contains maintenance and system settings:
 - Hardware revision
 - `Invert Encoder`
 - `ColorByKey`
-- `DisplayNotes`
+- `DisplayNotes`: `Off`, `Label`, or `Number`
 - `Boot Anim`
 - `HP Vol Cap` on hardware `V1.2`
 - `Reset Defaults`

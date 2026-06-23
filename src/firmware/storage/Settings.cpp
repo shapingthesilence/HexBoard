@@ -4,6 +4,7 @@
 #include "../app/RuntimeDefaults.h"
 #include "../hardware/LedRender.h"
 #include "../menu/MenuAndDisplay.h"
+#include "../menu/PlayedNotesOverlay.h"
 #include "../model/ScalePalettePreset.h"
 #include "../synth/SynthDefaults.h"
 #include "../synth/SynthAudio.h"
@@ -59,7 +60,7 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* EnvelopeDecayIndex           */ 4,
   /* EnvelopeSustainLevel         */ 127,
   /* EnvelopeReleaseIndex         */ 4,
-  /* Display played notes         */ 1,
+  /* Display played note mode     */ NOTE_DISPLAY_LABEL,
   /* LED current limit mode       */ LED_CURRENT_LIMIT_1500MA,
   /* SynthDrive                   */ SYNTH_DRIVE_OFF,
   /* SynthModTarget               */ SYNTH_MOD_TARGET_FOLD_WARP,

@@ -9,7 +9,7 @@
 #include "../tuning/DynamicJustIntonation.h"
 
 void RAM_FUNC(tryMIDInoteOn)(byte x) {
-  if (displayPlayedNotes && screenSaverOn) {
+  if (noteDisplayEnabled() && screenSaverOn) {
     setNoteOverlayTemporaryWake(true);
     noteOverlayDirty = true;
   }
