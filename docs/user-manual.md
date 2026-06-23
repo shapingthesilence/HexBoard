@@ -489,7 +489,10 @@ When the default color mode is `Custom`, the preview also has a `Paintbrush`
 mode: choose a brush color, enable the tool, then click or drag across keys to
 write manual per-button color overrides without selecting each key in the
 inspector. The `Eyedropper` tool temporarily overrides the paintbrush so the
-next preview key clicked becomes the brush color. Preview hexagons render with solid color fills and outlined white labels
+next preview key clicked becomes the brush color. `Reset Colors` asks for
+confirmation, then clears all per-button color overrides in the active layout
+so keys return to their scale-degree colors while note and role overrides stay
+unchanged. Preview hexagons render with solid color fills and outlined white labels
 so the displayed color remains accurate and readable. A sun/moon button in the app header switches the web app between
 light and dark themes. When a compatible bundle is applied to HexBoard, `Custom`
 scale-degree colors and Custom-mode per-button colors use the selected color as the

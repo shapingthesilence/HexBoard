@@ -397,6 +397,21 @@ function removeOverrideColor(override: LayoutBundleButtonOverride): LayoutBundle
   return rest;
 }
 
+function overrideHasColor(override: LayoutBundleButtonOverride): boolean {
+  return override.hueTenthDegrees !== undefined || override.saturation !== undefined || override.value !== undefined;
+}
+
+export function resetOverridesToScaleDegreeColors(overrides: LayoutBundleButtonOverride[]): LayoutBundleButtonOverride[] {
+  return overrides.flatMap((override) => {
+    if (!overrideHasColor(override)) {
+      return [override];
+    }
+    const withoutColor = removeOverrideColor(override);
+    const shouldRemove = isRoleDefault(override.buttonIndex, withoutColor.role) && withoutColor.stepsFromC === undefined;
+    return shouldRemove ? [] : [withoutColor];
+  });
+}
+
 function isRoleDefault(buttonIndex: number, role: LayoutBundleButtonOverride["role"]): boolean {
   return isHexBoardCommandIndex(buttonIndex) || role === "note";
 }
@@ -1283,6 +1298,23 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     });
   }
 
+  function resetAllButtonColors() {
+    const colorOverrideCount = activeLayout.buttonOverrides.filter(overrideHasColor).length;
+    if (colorOverrideCount === 0) {
+      setStatus("No button color overrides to reset");
+      return;
+    }
+    if (typeof window !== "undefined" && !window.confirm("Reset all keys to scale degree colors? This clears per-button color overrides for the active layout.")) {
+      return;
+    }
+    updateActiveLayout((layout) => ({
+      ...layout,
+      buttonOverrides: resetOverridesToScaleDegreeColors(layout.buttonOverrides)
+    }));
+    setPaintTool("brush");
+    setStatus(`Reset ${colorOverrideCount} button color ${colorOverrideCount === 1 ? "override" : "overrides"}`);
+  }
+
   function clearButtonNote(buttonIndex: number) {
     updateActiveLayout((layout) => {
       const override = layout.buttonOverrides.find((candidate) => candidate.buttonIndex === buttonIndex);
@@ -2110,6 +2142,16 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
                 onChange={(event) => setPaintbrushColor((current) => hexToScaleDegreeColor(event.target.value, current))}
               />
             </label>
+            <button
+              disabled={!customColorModeActive}
+              type="button"
+              onClick={() => {
+                endPaintStroke();
+                resetAllButtonColors();
+              }}
+            >
+              Reset Colors
+            </button>
           </div>
           <div className="hexBoardScroll">
             <div

@@ -160,7 +160,9 @@ Current web source layout:
   store editable `keyLabels` and `referenceHz`; key labels default to
   degree-number strings and use the same draft-then-blur validation style. The
   preview paintbrush has an eyedropper subtool that samples a preview key color
-  into the active brush color without writing a button override.
+  into the active brush color without writing a button override, plus a reset
+  action that strips color fields from active-layout button overrides while
+  preserving role and note overrides.
   Equal-step layout-bundle tunings store step
   cents plus cycle length in the editor model; protocol `PeriodMilliCents` is
   derived during encoding. Scala layout-bundle tunings derive period, cycle

@@ -415,7 +415,8 @@ immediately overwrite the model. The protected `All Notes` scale is normalized
 into every editor bundle, always expands to every degree in the current cycle,
 and cannot be edited or deleted. The preview paintbrush includes an eyedropper
 subtool that samples a preview key color into the brush without writing a
-button override.
+button override, and a reset action that clears active-layout per-button color
+overrides after confirmation without clearing note or role overrides.
 EDO and equal-step tunings expose note labels and `A = x Hz`; labels default to
 degree-number strings, are capped at `7` characters for the on-device Key
 selector, validate on exit, and encode through `KeyLabels`. Geometry object
