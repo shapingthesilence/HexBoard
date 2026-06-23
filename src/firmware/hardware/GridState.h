@@ -133,7 +133,7 @@ extern bool userGeometryRuntimeLayoutObjectSelected;
 extern uint8_t userGeometryRuntimeTuningObjectId[16];
 extern uint8_t userGeometryRuntimeLayoutObjectId[16];
 extern float userGeometryRuntimeReferenceHz;
-extern char userGeometryRuntimeKeyLabelStorage[MAX_SCALE_DIVISIONS][9];
+extern char userGeometryRuntimeKeyLabelStorage[MAX_SCALE_DIVISIONS][TUNING_KEY_LABEL_LENGTH];
 extern tuningDef userGeometryRuntimeTuning;
 extern layoutDef userGeometryRuntimeLayout;
 extern scaleDef userGeometryRuntimeScale;

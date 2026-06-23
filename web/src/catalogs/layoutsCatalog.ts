@@ -19,6 +19,8 @@ import { deterministicObjectId, objectIdFromHex, objectIdToHex } from "./objectI
 export const LegacyLayoutBundleFileFormat = "hexboard.layoutBundle.v1";
 export const LayoutBundleFileFormat = "hexboard.layoutBundle.v2";
 export const GenericScaleColorMapName = "Custom Palette";
+export const GeometryMenuTextMaxLength = 19;
+export const NoteLabelTextMaxLength = 7;
 
 export const ColorMode = {
   Rainbow: 0,
@@ -529,14 +531,14 @@ export function normalizeKeyLabels(labels: string[] | undefined, cycleLength: nu
   const defaults = defaultKeyLabels(cycleLength);
   return defaults.map((fallback, index) => {
     const label = labels?.[index]?.trim();
-    return label || fallback;
+    return clampNoteLabelText(label || fallback, fallback);
   });
 }
 
 function encodeKeyLabels(labels: string[]): Uint8Array {
   const encoder = new TextEncoder();
   const labelBytes = labels.map((label) => {
-    const bytes = encoder.encode(label);
+    const bytes = encoder.encode(clampNoteLabelText(label, "0"));
     return bytesFromNumbers([Math.min(bytes.length, 255), ...bytes.slice(0, 255)]);
   });
   return concatBytes(labelBytes);
@@ -851,8 +853,8 @@ export function createDefaultLayoutBundle(): LayoutBundle {
 export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   const tuningId = bundleObjectId(bundle, "tuning");
   const colorId = bundleObjectId(bundle, "colors");
-  const tuningName = bundle.name || bundle.tuning.name;
-  const folderPath = bundle.folderPath;
+  const tuningName = clampGeometryMenuText(bundle.name || bundle.tuning.name, "User Tuning");
+  const folderPath = clampGeometryFolderPath(bundle.folderPath);
   const tuning = (() => {
     switch (bundle.tuning.kind) {
       case "edo":
@@ -898,7 +900,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   });
   const layouts = orderedLayouts.map((layout) => createVectorLayout({
     objectId: objectIdFromHex(layout.objectIdHex),
-    name: layout.name || `${bundle.name} Layout`,
+    name: clampGeometryMenuText(layout.name || `${bundle.name} Layout`, "User Layout"),
     folderPath,
     tuningRef: tuningReference(tuning),
     centerButton: layout.centerButton,
@@ -908,7 +910,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   }));
   const scaleColorMap = createScaleColorMap({
     objectId: colorId,
-    name: GenericScaleColorMapName,
+    name: clampGeometryMenuText(GenericScaleColorMapName, "Palette"),
     folderPath,
     tuningRef: tuningReference(tuning),
     cycleLength: bundle.tuning.cycleLength,
@@ -922,7 +924,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   });
   const scales = orderedScales.map((scale) => createUserScale({
     objectId: objectIdFromHex(scale.objectIdHex),
-    name: scale.name || `${bundle.name} Scale`,
+    name: clampGeometryMenuText(scale.name || `${bundle.name} Scale`, "User Scale"),
     folderPath,
     tuningRef: tuningReference(tuning),
     cycleLength: bundle.tuning.cycleLength,
@@ -944,7 +946,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     }
     return [createExplicitButtonMap({
       objectId: deterministicObjectId(`${bundle.objectIdHex}:button-map:${layout.objectIdHex}`),
-      name: `${layout.name || bundle.name} Button Map`,
+      name: clampGeometryMenuText(`${layout.name || bundle.name} Button Map`, "Button Map"),
       folderPath,
       tuningRef: tuningReference(tuning),
       layoutRef: layoutReference(layouts[layoutIndex]),
@@ -1004,6 +1006,25 @@ function stringOr(value: unknown, fallback: string): string {
   return typeof value === "string" && value ? value : fallback;
 }
 
+export function clampGeometryMenuText(value: string, fallback: string): string {
+  const trimmed = value.trim();
+  return (trimmed || fallback).slice(0, GeometryMenuTextMaxLength);
+}
+
+export function clampNoteLabelText(value: string, fallback: string): string {
+  const trimmed = value.trim();
+  return (trimmed || fallback).slice(0, NoteLabelTextMaxLength);
+}
+
+export function clampGeometryFolderPath(value: string | undefined): string {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed || trimmed === "/") {
+    return "/";
+  }
+  const firstComponent = trimmed.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean)[0] ?? "";
+  return firstComponent ? clampGeometryMenuText(firstComponent, "Geometry") : "/";
+}
+
 function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
   const tuning = value as Partial<LayoutBundleTuning> & {
     edoDivisions?: unknown;
@@ -1015,7 +1036,7 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
     referenceHz?: unknown;
     keyLabels?: unknown;
   };
-  const name = stringOr(tuning.name, "User Tuning");
+  const name = clampGeometryMenuText(stringOr(tuning.name, "User Tuning"), "User Tuning");
   const referenceMidiNote = clampInteger(numberOr(tuning.referenceMidiNote, 69), 0, 127);
   const referenceHz = numberOr(tuning.referenceHz, 440);
 
@@ -1089,7 +1110,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
     : legacyLayout
       ? [{
           objectIdHex: objectIdToHex(deterministicObjectId(`${source.objectIdHex}:legacy-layout`)),
-          name: `${source.name} Layout`,
+          name: clampGeometryMenuText(`${source.name} Layout`, "User Layout"),
           centerButton: legacyLayout.centerButton ?? 65,
           acrossSteps: legacyLayout.acrossSteps ?? 3,
           upRightSteps: legacyLayout.upRightSteps ?? 11,
@@ -1106,7 +1127,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
     const rotationSteps = Math.max(0, Math.min(3, Math.round(layout.rotationSteps ?? 0)));
     return {
       objectIdHex,
-      name: typeof layout.name === "string" && layout.name ? layout.name : `${source.name} Layout ${index + 1}`,
+      name: clampGeometryMenuText(typeof layout.name === "string" ? layout.name : "", `Layout ${index + 1}`),
       centerButton: clampInteger(layout.centerButton ?? 65, 0, 139),
       acrossSteps: Math.round(layout.acrossSteps ?? 3),
       upRightSteps: Math.round(layout.upRightSteps ?? 11),
@@ -1128,7 +1149,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
       : createAllNotesScale(cycleLength).includedDegrees;
     return {
       objectIdHex,
-      name: typeof scale.name === "string" && scale.name ? scale.name : `Scale ${index + 1}`,
+      name: clampGeometryMenuText(typeof scale.name === "string" ? scale.name : "", `Scale ${index + 1}`),
       includedDegrees
     };
   });
@@ -1139,8 +1160,8 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
   const defaultColorMode = numberOr(palette.defaultColorMode, ColorMode.Custom);
   return {
     objectIdHex: source.objectIdHex,
-    name: source.name,
-    folderPath: stringOr(source.folderPath, "/"),
+    name: clampGeometryMenuText(source.name, "Geometry"),
+    folderPath: clampGeometryFolderPath(stringOr(source.folderPath, "/")),
     tuning,
     palette: {
       defaultColorMode: Object.values(ColorMode).includes(defaultColorMode as ColorModeValue)

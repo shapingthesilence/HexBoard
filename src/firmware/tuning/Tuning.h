@@ -27,6 +27,7 @@ constexpr byte TUNING_GAMMA = 21;
 constexpr byte TUNINGCOUNT = 22;
 
 constexpr uint16_t MAX_SCALE_DIVISIONS = 87;
+constexpr size_t TUNING_KEY_LABEL_LENGTH = 8;  // 7 visible chars plus NUL.
 constexpr byte ALL_TUNINGS = 255;
 constexpr byte CMDB = 192;
 constexpr byte UNUSED_NOTE = 255;

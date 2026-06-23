@@ -48,7 +48,8 @@ If `Scale Lock` is off, every note button can play. If `Scale Lock` is on, only 
 The `DisplayNotes` option in `Advanced` controls the OLED played-note overlay.
 Set it to `Off`, `Label`, or `Number`. `Label` shows the active tuning's note
 labels with octave numbers, including labels provided by user geometry objects.
-`Number` shows scale step and octave values such as `7.4`.
+Custom note labels are limited to `7` characters so they fit the on-device Key
+selector. `Number` shows scale step and octave values such as `7.4`.
 
 While the menu is visible, the top-right corner shows only the most recent held note. If the OLED screensaver is active, playing a note can wake a larger `Now Playing` display that shows up to `6` unique played notes from lowest to highest. Turning or pressing the encoder returns to the menu display. Recognized chord names appear near the bottom of that larger display only for `12 EDO`. `DisplayNotes` defaults to `Label`.
 
@@ -81,12 +82,12 @@ The panic stop sends note-off style cleanup and clears active output. It is the 
 
 The main menu includes:
 
-- `Tuning: <current>`
-- `Layout: <current>`
+- `Tuning:<current>`
+- `Layout:<current>`
 - `Key`
-- `Scale: <current>`
+- `Scale:<current>`
 - `Scale Lock`
-- `Synth: <current preset>`
+- `Synth:<current preset>`
 - `Lights & Colors`
 - `Transpose`
 - `Options`
@@ -94,7 +95,7 @@ The main menu includes:
 - `Save Profile`
 - `Synth Editor`
 
-`Synth: <current preset>` opens the synth preset load menu from the top level.
+`Synth:<current preset>` opens the synth preset load menu from the top level.
 If the runtime synth sound has changed since the loaded preset was selected or
 saved, the preset name is shown with a leading `*`.
 
@@ -341,7 +342,7 @@ return smoothly to their base values as the FX envelope falls back to zero. Nega
 down as the envelope level rises. The default FX envelope times are `0 ms`, and
 default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 
-The top-level `Synth: <preset>` item and the `Load Preset` item inside
+The top-level `Synth:<preset>` item and the `Load Preset` item inside
 `Synth Editor` both open synth preset load lists. `Save Preset` and
 `Load Preset` use synth-only preset libraries with room for
 up to `128` device presets. Presets are stored separately from the main settings

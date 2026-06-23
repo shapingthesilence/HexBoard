@@ -417,7 +417,9 @@ and cannot be edited or deleted. The preview paintbrush includes an eyedropper
 subtool that samples a preview key color into the brush without writing a
 button override.
 EDO and equal-step tunings expose note labels and `A = x Hz`; labels default to
-degree-number strings, validate on exit, and encode through `KeyLabels`. When
+degree-number strings, are capped at `7` characters for the on-device Key
+selector, validate on exit, and encode through `KeyLabels`. Geometry object
+names and single folder labels are capped at `19` display characters. When
 `Custom` is the selected default color mode, the preview paintbrush writes
 per-button color overrides into the active layout, using the same explicit
 override records as the selected-key inspector.
@@ -762,13 +764,16 @@ restart their release stage.
 Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `10`, CRC32, and a counted catalog capped at `128` entries. The flash records still contain the favorite flag, stable 16-byte object id, name, folder path, wavetable name/folder path, and sound-focused synth setting bytes, but RAM keeps only a fixed metadata index plus the currently loaded full preset record. Loading, saving, preset-sync reads, and modified-state checks read or stream the full record on demand. Factory defaults copy `Soft String Pad` and `Bright Mono Lead` into ordinary editable preset slots, so they can be changed or erased and restored later by Reset Defaults or the web editor library. A preset copies sound-focused synth settings and the wavetable reference into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app full-preset preview applies a transferred synth preset to runtime and marks settings dirty for debounced autosave, compact live synth parameter edits also mark settings dirty, and save requests update `/synth_presets.dat`. Synth preset load and full-preset preview call `syncSynthSettingsToRuntime()` instead of the full settings sync, so tuning/layout/scale/LED assignment rebuilds are not rerun for synth patch changes. The on-device save/load menus use `VirtualListMenu` as a folder browser with `New Preset` or `Blank` as the first action row in the active folder; the web app also presents the foldered library. Older preset files are not migrated in this 2.0 development format.
 
 User geometry objects are stored in `/layouts.dat` with magic `LYT`, version
-`1`, CRC32, and a counted raw-body catalog capped at `64` entries. The catalog
+`2`, CRC32, and a counted raw-body catalog capped at `64` entries. The catalog
 can hold `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and
 `ExplicitButtonMap` objects. Preset-sync validates the common `HBS1` object
 envelope, schema major `1`, non-empty `Name`, and 16-byte `ObjectId`, then
 stores the raw body so hosts can list, read, overwrite, and delete user
-geometry objects. Runtime RAM keeps a fixed metadata/offset index; raw object
-bodies are read from flash only when applying, reading, or checking references.
+geometry objects. Runtime RAM keeps a fixed metadata/offset index with
+`20`-byte name and folder buffers; raw object bodies are read from flash only
+when applying, reading, or checking references. Version `2` reduced those
+metadata buffers to match the `19` visible characters available in the virtual
+list row after the arrow icon.
 
 `BuiltinGeometry.cpp` generates factory tuning/layout/scale objects on demand
 from the legacy const catalogs. Factory handles start at `0x2000`, use the
@@ -885,12 +890,12 @@ The GEM menu is built around persistent callback metadata:
 
 Current top-level user pages are:
 
-- `Tuning: <current>`
-- `Layout: <current>`
+- `Tuning:<current>`
+- `Layout:<current>`
 - `Key`
-- `Scale: <current>`
+- `Scale:<current>`
 - `Scale Lock`
-- `Synth: <current preset>` with a leading `*` when the runtime patch differs from the tracked preset
+- `Synth:<current preset>` with a leading `*` when the runtime patch differs from the tracked preset
 - `Lights & Colors`
 - `Transpose`
 - `Options`, containing MIDI controls, command-wheel controls, and `Advanced`

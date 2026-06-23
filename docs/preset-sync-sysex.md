@@ -702,6 +702,10 @@ Common TLV tags:
 | `0x07` | `SortName` | Optional UTF-8 normalized sort/display key |
 | `0x08` | `Tags` | UTF-8 comma-separated tags, optional |
 
+For geometry objects, firmware stores menu-facing `Name` and `FolderPath`
+metadata in fixed `20`-byte buffers, so hosts should cap each visible geometry
+name or single folder label at `19` characters.
+
 Object reference record:
 
 ```text
@@ -765,7 +769,7 @@ Recommended TLVs:
 | `0x25` | `ReferenceMilliHz` | `u32-le`, default `440000` |
 | `0x26` | `CentsTable` | Repeated `i32-le` mill cent offsets within period |
 | `0x27` | `RatioTable` | Repeated `<numerator-u32-le> <denominator-u32-le>` |
-| `0x28` | `KeyLabels` | Repeated length-prefixed labels, one per cycle degree |
+| `0x28` | `KeyLabels` | Repeated length-prefixed labels, one per cycle degree; each label should be capped at `7` display characters |
 
 The device can create and edit an EDO object with only `Name`, `TuningKind`,
 `EdoDivisions`, and `PeriodMilliCents`. The web app can also create equal

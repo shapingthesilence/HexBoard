@@ -12,12 +12,14 @@ import {
   deterministicObjectId,
   encodeLayoutBundle,
   ExplicitButtonMapTlv,
+  GeometryMenuTextMaxLength,
   hexBoardGeometry,
   isHexBoardCommandIndex,
   LayoutTlv,
   normalizeScaleDegrees,
   normalizeScaleDegreeColors,
   normalizeKeyLabels,
+  NoteLabelTextMaxLength,
   objectIdToHex,
   parseLayoutBundleFile,
   parseLayoutBundleLibrary,
@@ -28,6 +30,9 @@ import {
   TuningTlv,
   UserScaleTlv,
   UserTuningKind,
+  clampGeometryFolderPath,
+  clampGeometryMenuText,
+  clampNoteLabelText,
   type HexBoardKey,
   type LayoutBundle,
   type LayoutBundleButtonOverride,
@@ -308,7 +313,7 @@ function downloadTextFile(fileName: string, text: string) {
 }
 
 function normalizeDisplayFolderPath(folderPath: string): string {
-  return folderPath.trim() || rootFolderPath;
+  return clampGeometryFolderPath(folderPath);
 }
 
 function folderLabel(folderPath: string): string {
@@ -415,9 +420,18 @@ function sanitizeEditorBundle(bundle: LayoutBundle): LayoutBundle {
   const cycleLength = tuningCycleLength(bundle.tuning);
   return withProtectedAllNotesScale({
     ...bundle,
+    name: clampGeometryMenuText(bundle.name, "Untitled Bundle"),
     folderPath: normalizeDisplayFolderPath(bundle.folderPath),
+    tuning: {
+      ...bundle.tuning,
+      name: clampGeometryMenuText(bundle.tuning.name, "User Tuning"),
+      keyLabels: "keyLabels" in bundle.tuning
+        ? normalizeKeyLabels(bundle.tuning.keyLabels, cycleLength)
+        : undefined
+    } as LayoutBundleTuning,
     layouts: bundle.layouts.map((layout) => ({
       ...layout,
+      name: clampGeometryMenuText(layout.name, "User Layout"),
       centerButton: noteButtonIndexOrFallback(layout.centerButton, 65),
       buttonOverrides: layout.buttonOverrides
         .filter((override) => isEditableButtonIndex(override.buttonIndex))
@@ -425,6 +439,10 @@ function sanitizeEditorBundle(bundle: LayoutBundle): LayoutBundle {
           ...override,
           role: override.role === "unused" ? "unused" : "note"
         }))
+    })),
+    scales: bundle.scales.map((scale, index) => ({
+      ...scale,
+      name: clampGeometryMenuText(scale.name, `Scale ${index + 1}`)
     }))
   }, cycleLength);
 }
@@ -477,11 +495,11 @@ function validateKeyLabelsInput(text: string, cycleLength: number): { labels: st
   if (labels.length !== safeCycleLength) {
     return { error: `Note labels must include exactly ${safeCycleLength} labels.` };
   }
-  const invalidLabel = labels.find((label) => label.length > 8 || !/^[A-Za-z0-9+#b-]+$/.test(label));
+  const invalidLabel = labels.find((label) => label.length > NoteLabelTextMaxLength || !/^[A-Za-z0-9+#b-]+$/.test(label));
   if (invalidLabel) {
-    return { error: `Invalid note label "${invalidLabel}". Use letters, numbers, +, #, b, or -.` };
+    return { error: `Invalid note label "${invalidLabel}". Use ${NoteLabelTextMaxLength} or fewer letters, numbers, +, #, b, or -.` };
   }
-  return { labels };
+  return { labels: labels.map((label, index) => clampNoteLabelText(label, String(index))) };
 }
 
 function validateIncludedDegreesInput(text: string, cycleLength: number): { degrees: number[] } | { error: string } {
@@ -855,7 +873,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   }
 
   function updateBundleName(name: string) {
-    updateActiveBundle((bundle) => ({ ...bundle, name }));
+    updateActiveBundle((bundle) => ({ ...bundle, name: clampGeometryMenuText(name, "Untitled Bundle") }));
   }
 
   function updateBundleFolder(folderPath: string) {
@@ -900,7 +918,8 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   function updateLayout(patch: Partial<LayoutBundleLayout>) {
     updateActiveLayout((layout) => ({
       ...layout,
-      ...patch
+      ...patch,
+      name: patch.name !== undefined ? clampGeometryMenuText(patch.name, "User Layout") : layout.name
     }));
   }
 
@@ -1070,6 +1089,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
         ...current,
         ...patch
       };
+      tuning.name = clampGeometryMenuText(tuning.name, "User Tuning");
       tuning.edoDivisions = clampInteger(tuning.edoDivisions, 1, 255);
       tuning.cycleLength = tuning.edoDivisions;
       tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
@@ -1095,6 +1115,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
         ...current,
         ...patch
       };
+      tuning.name = clampGeometryMenuText(tuning.name, "User Tuning");
       tuning.cycleLength = clampInteger(tuning.cycleLength, 1, 255);
       tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
       tuning.referenceHz = Number.isFinite(tuning.referenceHz) && tuning.referenceHz > 0 ? tuning.referenceHz : 440;
@@ -1118,6 +1139,8 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
         ...current,
         ...patch
       };
+      tuning.name = clampGeometryMenuText(tuning.name, "User Tuning");
+      tuning.description = clampGeometryMenuText(tuning.description, tuning.name);
       tuning.periodCents = tuning.cents[tuning.cents.length - 1] ?? 1200;
       tuning.cycleLength = clampInteger(tuning.cents.length, 1, 255);
       return withCycleColors({ ...bundle, tuning }, tuning.cycleLength);
@@ -1773,7 +1796,8 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
                 aria-label="New geometry folder"
                 placeholder="New folder"
                 value={newFolder}
-                onChange={(event) => setNewFolder(event.target.value)}
+                maxLength={GeometryMenuTextMaxLength}
+                onChange={(event) => setNewFolder(clampGeometryMenuText(event.target.value, ""))}
               />
               <button type="button" onClick={addFolder}>
                 Add
@@ -1840,7 +1864,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
             </div>
             <label className="field">
               <span>Bundle name</span>
-              <input value={activeBundle.name} onChange={(event) => updateBundleName(event.target.value)} />
+              <input maxLength={GeometryMenuTextMaxLength} value={activeBundle.name} onChange={(event) => updateBundleName(event.target.value)} />
             </label>
             <label className="field">
               <span>Folder</span>
@@ -1934,7 +1958,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
               </div>
               <label className="field">
                 <span>Layout name</span>
-                <input value={activeLayout.name} onChange={(event) => updateLayout({ name: event.target.value })} />
+                <input maxLength={GeometryMenuTextMaxLength} value={activeLayout.name} onChange={(event) => updateLayout({ name: event.target.value })} />
               </label>
               <label className="field">
                 <span>Center key</span>
@@ -2016,7 +2040,8 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
                 <input
                   disabled={activeScaleIsAllNotes}
                   value={activeScale.name}
-                  onChange={(event) => updateActiveScale((scale) => ({ ...scale, name: event.target.value }))}
+                  maxLength={GeometryMenuTextMaxLength}
+                  onChange={(event) => updateActiveScale((scale) => ({ ...scale, name: clampGeometryMenuText(event.target.value, "User Scale") }))}
                 />
               </label>
               <label className={includedDegreesError ? "field invalidField" : "field"}>
@@ -2445,7 +2470,7 @@ function TuningControls({
       <div className="fieldGrid">
         <label className="field">
           <span>Name</span>
-          <input value={tuning.name} onChange={(event) => onEdoChange({ name: event.target.value })} />
+          <input maxLength={GeometryMenuTextMaxLength} value={tuning.name} onChange={(event) => onEdoChange({ name: event.target.value })} />
         </label>
         <label className="field">
           <span>Divisions</span>
@@ -2480,7 +2505,7 @@ function TuningControls({
       <div className="fieldGrid">
         <label className="field">
           <span>Name</span>
-          <input value={tuning.name} onChange={(event) => onEqualStepChange({ name: event.target.value })} />
+          <input maxLength={GeometryMenuTextMaxLength} value={tuning.name} onChange={(event) => onEqualStepChange({ name: event.target.value })} />
         </label>
         <label className="field">
           <span>Step cents</span>
@@ -2518,7 +2543,7 @@ function TuningControls({
       </div>
       <label className="field">
         <span>Name</span>
-        <input value={tuning.name} onChange={(event) => onScalaChange({ name: event.target.value })} />
+        <input maxLength={GeometryMenuTextMaxLength} value={tuning.name} onChange={(event) => onScalaChange({ name: event.target.value })} />
       </label>
       <label className="field">
         <span>Description</span>

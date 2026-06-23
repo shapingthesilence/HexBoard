@@ -349,7 +349,7 @@ void formatDisplayedPitchLabel(int16_t displayedPitch, char* noteText, size_t no
     return;
   }
   int octave = ((displayedPitch - step) / cycleLength) + 4;
-  snprintf(noteText, noteTextSize, "%.*s%d", 8, label, octave);
+  snprintf(noteText, noteTextSize, "%.*s%d", static_cast<int>(TUNING_KEY_LABEL_LENGTH - 1), label, octave);
 }
 
 void formatDisplayedPitch(int16_t displayedPitch, char* noteText, size_t noteTextSize) {

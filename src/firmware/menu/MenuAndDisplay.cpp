@@ -270,7 +270,7 @@ bool servicePresetSyncTransfer() {
 char mainTuningMenuLabel[40] = "Tuning";
 char mainLayoutMenuLabel[40] = "Layout";
 char mainScaleMenuLabel[40] = "Scale";
-char mainSynthPresetMenuLabel[48] = "Synth: Current";
+char mainSynthPresetMenuLabel[48] = "Synth:Current";
 
 GEMPage menuPageMain("HexBoard MIDI Controller");
 GEMPage menuPageTuning("Tuning", menuPageMain);
@@ -2333,19 +2333,19 @@ void syncSettingsToRuntime() {
 void updateMainMenuDynamicLabels() {
   snprintf(mainTuningMenuLabel,
            sizeof(mainTuningMenuLabel),
-           "Tuning: %s",
+           "Tuning:%s",
            current.tuning().name ? current.tuning().name : "Current");
   snprintf(mainLayoutMenuLabel,
            sizeof(mainLayoutMenuLabel),
-           "Layout: %s",
+           "Layout:%s",
            current.layout().name ? current.layout().name : "Current");
   snprintf(mainScaleMenuLabel,
            sizeof(mainScaleMenuLabel),
-           "Scale: %s",
+           "Scale:%s",
            current.scale().name ? current.scale().name : "Current");
   snprintf(mainSynthPresetMenuLabel,
            sizeof(mainSynthPresetMenuLabel),
-           "Synth: %s%s",
+           "Synth:%s%s",
            currentSynthPresetRuntimeModified() ? "*" : "",
            currentSynthPresetDisplayName());
 }

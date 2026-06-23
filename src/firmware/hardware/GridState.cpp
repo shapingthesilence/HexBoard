@@ -50,7 +50,7 @@ uint32_t columnMasks[COLCOUNT] = { 0 };
   */
 buttonDef h[BTN_COUNT];
 
-char userGeometryRuntimeKeyLabelStorage[MAX_SCALE_DIVISIONS][9] = {};
+char userGeometryRuntimeKeyLabelStorage[MAX_SCALE_DIVISIONS][TUNING_KEY_LABEL_LENGTH] = {};
 bool userGeometryRuntimeActive = false;
 bool userGeometryRuntimeScaleActive = false;
 bool userGeometryRuntimePaletteActive = false;
