@@ -16,10 +16,8 @@ extern const byte waveSineSource[];
 extern const BuiltinSynthWavetableDefinition builtinSynthWavetables[];
 extern const size_t SYNTH_BUILTIN_WAVETABLE_COUNT;
 
-bool isValidSynthWaveform(byte waveform);
 const byte* synthWaveformSource(byte waveform);
 size_t synthBuiltinWavetableCount();
 const BuiltinSynthWavetableDefinition* synthBuiltinWavetableAt(size_t index);
-bool synthWavetableFolderMatches(const char* candidateFolderPath, const char* tableFolderPath);
 int findBuiltinSynthWavetable(const char* folderPath, const char* name);
 uint8_t compatibilityWavetablePositionForAnchor(uint8_t anchorIndex, uint8_t anchorCount);

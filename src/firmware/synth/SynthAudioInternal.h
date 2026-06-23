@@ -68,8 +68,6 @@ constexpr uint8_t AUDIO_PWM_CC_LEVEL_SHIFT = 16;
 constexpr uint16_t AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8 = 256;
 constexpr uint8_t AUDIO_OUTPUT_MUTE_RAMP_STEP_Q8 = 3;
 
-#define ALARM_NUM 2
-#define ALARM_IRQ TIMER_IRQ_2
 #define EQUAL_LOUDNESS_ADJUST true
 
 #define TRANSITION_SQUARE 220.0
@@ -77,8 +75,6 @@ constexpr uint8_t AUDIO_OUTPUT_MUTE_RAMP_STEP_Q8 = 3;
 #define TRANSITION_SAW_HIGH 880.0
 #define TRANSITION_TRIANGLE 1760.0
 
-constexpr uint32_t POLL_INTERVAL_IN_MICROSECONDS =
-  (1000000u + (AUDIO_SAMPLE_RATE_HZ / 2u)) / AUDIO_SAMPLE_RATE_HZ;
 constexpr uint8_t SYNTH_PITCH_SMOOTH_SHIFT = 9;
 constexpr uint8_t SYNTH_MOD_SMOOTH_SHIFT = 9;
 constexpr uint32_t audioPhaseIncrementFromHz(uint16_t hz) {
@@ -268,7 +264,6 @@ void RAM_FUNC(writeAudioOutputLevels)(uint16_t piezoLevel, uint16_t jackLevel);
 void RAM_FUNC(applyAudioOutputMute)(AudioOutputLevels& output, byte destination);
 int32_t RAM_FUNC(scalePiezoSample)(int32_t sample, uint16_t amplitude);
 int32_t RAM_FUNC(applySynthDrive)(int32_t sample);
-void RAM_FUNC(recordISRProfileSample)(uint32_t startTime, uint8_t voices, uint8_t flags);
 void RAM_FUNC(recordAudioBufferProfileSample)(uint32_t startTime, uint8_t voices, uint8_t flags);
 
 uint8_t RAM_FUNC(currentSynthVoiceLimit)();
@@ -310,9 +305,6 @@ uint16_t RAM_FUNC(readLoadedWaveFrameSample)(uint16_t phase);
 SynthWavetableReadContext RAM_FUNC(wavetableReadContextFromFramePosition)(uint16_t framePosition, uint8_t frameCount, uint8_t mipLevel);
 uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(readActiveWavetableFrameSample)(uint16_t phase, const byte* frame);
 uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(readActiveWavetableInterpolatedFrameSample)(uint16_t phase, const SynthWavetableReadContext& context);
-uint16_t RAM_FUNC(readActiveWavetableSampleWithContext)(uint16_t phase, const SynthWavetableReadContext& context);
-uint16_t RAM_FUNC(readActiveWavetableSampleAtFramePosition)(uint16_t phase, uint16_t framePosition, uint8_t frameCount);
-uint16_t RAM_FUNC(readActiveWavetableSample)(uint16_t phase, int16_t positionAmount, uint8_t frameCount);
 void RAM_FUNC(clearSynthPortamento)(uint8_t channelIndex);
 
 uint8_t RAM_FUNC(smoothedSynthModValue)(uint8_t elapsedTicks);

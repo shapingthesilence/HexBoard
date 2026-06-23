@@ -4,27 +4,6 @@ volatile uint16_t metronomeBeepSamplesRemaining = 0;
 volatile uint32_t metronomeBeepPhaseIncrement = METRONOME_BEEP_NORMAL_INCREMENT;
 uint32_t metronomeBeepPhase = 0;
 
-void RAM_FUNC(recordISRProfileSample)(uint32_t startTime, uint8_t voices, uint8_t flags) {
-  uint32_t dt = timer_hw->timerawl - startTime;
-  isrCycleAvailableUs = POLL_INTERVAL_IN_MICROSECONDS;
-  if (dt < isrCycleMin) {
-    isrCycleMin = dt;
-  }
-  if (dt > isrCycleMax) {
-    isrCycleMax = dt;
-    isrCycleMaxVoices = voices;
-    isrCycleMaxFlags = flags;
-  }
-  if (dt > POLL_INTERVAL_IN_MICROSECONDS) {
-    isrCycleOverrunCount++;
-  }
-  if (flags & ISR_PROFILE_FLAG_PIEZO_SCALE) {
-    isrCyclePiezoScaleCount++;
-  }
-  isrCycleSum += dt;
-  isrCycleCount++;
-}
-
 void RAM_FUNC(recordAudioBufferProfileSample)(uint32_t startTime, uint8_t voices, uint8_t flags) {
   uint32_t dt = timer_hw->timerawl - startTime;
   isrCycleAvailableUs = AUDIO_DMA_BUFFER_MICROS;
@@ -793,21 +772,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
   return output;
 }
 
-// Legacy direct renderer retained for diagnostics/fallback; the normal synth
-// output path is DMA-buffered.
-void RAM_FUNC(poll)() {
-  hw_clear_bits(&timer_hw->intr, 1u << ALARM_NUM);
-  timer_hw->alarm[ALARM_NUM] = readClock() + POLL_INTERVAL_IN_MICROSECONDS;
-  uint32_t _isrStart = isrProfilingEnabled ? timer_hw->timerawl : 0;
-  AudioOutputLevels output = renderAudioOutputLevels(selectedAudioDmaDestination());
-  writeAudioOutputLevels(output.piezo, output.jack);
-  if (_isrStart) {
-    recordISRProfileSample(_isrStart, output.voices, output.profileFlags);
-  }
-}
-
-
-void setupSynth(byte pin, byte slice) {
+static void setupSynth(byte pin, byte slice) {
   gpio_set_function(pin, GPIO_FUNC_PWM);          // set that pin as PWM
   pwm_set_phase_correct(slice, true);             // phase correct sounds better
   pwm_set_wrap(slice, PWM_WRAP);                  // essentionally sets the "bit-rate"

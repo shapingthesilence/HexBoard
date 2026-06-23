@@ -664,11 +664,6 @@ const byte mpWaveWooSource[] __in_flash("synth_waveforms") = {
 };
 
 
-bool isValidSynthWaveform(byte waveform) {
-  return waveform <= WAVEFORM_CLARINET
-      || (waveform >= WAVEFORM_HYBRID && waveform <= WAVEFORM_USER_WAVETABLE);
-}
-
 const byte* synthWaveformSource(byte waveform) {
   switch (waveform) {
     case WAVEFORM_SINE: return waveSineSource;
@@ -705,7 +700,7 @@ const BuiltinSynthWavetableDefinition* synthBuiltinWavetableAt(size_t index) {
   return &builtinSynthWavetables[index];
 }
 
-bool synthWavetableFolderMatches(const char* candidateFolderPath, const char* tableFolderPath) {
+static bool synthWavetableFolderMatches(const char* candidateFolderPath, const char* tableFolderPath) {
   if (strcmp(candidateFolderPath, tableFolderPath) == 0) {
     return true;
   }

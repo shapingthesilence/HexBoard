@@ -44,7 +44,6 @@
 void hexboardSetup() {
   setupUSBDescriptors();
   Serial.begin(115200);
-  disableAudioAlarmInterrupt();
   setupMIDI();
   // Give the USB stack time to complete enumeration before any flash
   // operations (which disable interrupts and starve the USB IRQ handler).

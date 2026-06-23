@@ -586,25 +586,6 @@ uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(readActiveWavetableInterpolatedFrameSample)
   return static_cast<uint16_t>((sampleA << 8) + ((sampleB - sampleA) * static_cast<int16_t>(context.frameFrac)));
 }
 
-uint16_t RAM_FUNC(readActiveWavetableSampleWithContext)(uint16_t phase,
-                                                               const SynthWavetableReadContext& context) {
-  return context.frameB
-    ? readActiveWavetableInterpolatedFrameSample(phase, context)
-    : readActiveWavetableFrameSample(phase, context.frameA);
-}
-
-uint16_t RAM_FUNC(readActiveWavetableSampleAtFramePosition)(uint16_t phase,
-                                                                   uint16_t framePosition,
-                                                                   uint8_t frameCount) {
-  return readActiveWavetableSampleWithContext(phase, wavetableReadContextFromFramePosition(framePosition, frameCount, 0));
-}
-
-uint16_t RAM_FUNC(readActiveWavetableSample)(uint16_t phase,
-                                                    int16_t positionAmount,
-                                                    uint8_t frameCount) {
-  return readActiveWavetableSampleAtFramePosition(phase, wavetableFramePositionFromAmount(positionAmount), frameCount);
-}
-
 int16_t RAM_FUNC(clampSynthModAccumulator)(int16_t value) {
   if (value > 127) {
     return 127;

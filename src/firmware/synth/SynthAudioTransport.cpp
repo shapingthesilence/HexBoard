@@ -158,10 +158,6 @@ int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
   return negative ? -shaped : shaped;
 }
 
-void disableAudioAlarmInterrupt() {
-  irq_set_enabled(ALARM_IRQ, false);
-}
-
 uint32_t audioDmaBuffers[2][AUDIO_DMA_BUFFER_SAMPLE_COUNT] = {};
 uint32_t audioDmaSilenceBuffer[AUDIO_DMA_BUFFER_SAMPLE_COUNT] = {};
 volatile bool audioDmaBufferReady[2] = { false, false };

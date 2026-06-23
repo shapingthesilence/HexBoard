@@ -154,57 +154,6 @@ uint8_t sample16ToWaveByte(uint16_t sample) {
   return static_cast<uint8_t>(sample >> 8);
 }
 
-uint8_t readCompatibilityWaveformSample(byte waveform, uint16_t sampleIndex) {
-  const byte* source = synthWaveformSource(waveform);
-  if (source) {
-    return source[sampleIndex];
-  }
-
-  uint16_t phase = synthWavePhaseFromSampleIndex(sampleIndex);
-  switch (waveform) {
-    case WAVEFORM_TRIANGLE:
-      return sample16ToWaveByte(readTriangleWaveSample(phase));
-    case WAVEFORM_SAW:
-      return sample16ToWaveByte(static_cast<uint16_t>(phase + 32768u));
-    case WAVEFORM_SQUARE:
-      return sample16ToWaveByte(readSquareWaveSample(phase));
-    case WAVEFORM_HYBRID:
-    case WAVEFORM_SINE:
-    default:
-      return waveSineSource[sampleIndex];
-  }
-}
-
-void generateCompatibilitySynthWavetable(const BuiltinSynthWavetableDefinition& table) {
-  const uint8_t anchorCount = std::max<uint8_t>(1, table.waveformCount);
-  const uint16_t lastAnchorPosition = static_cast<uint16_t>(anchorCount - 1) << 8;
-  for (uint8_t frameIndex = 0; frameIndex < SYNTH_WAVETABLE_FRAME_COUNT; ++frameIndex) {
-    if (anchorCount == 1 || frameIndex == SYNTH_WAVETABLE_LAST_FRAME) {
-      byte waveform = table.waveforms[anchorCount - 1];
-      for (uint16_t sampleIndex = 0; sampleIndex < SYNTH_WAVE_SAMPLE_COUNT; ++sampleIndex) {
-        activeSynthWaveTable[frameIndex][sampleIndex] = readCompatibilityWaveformSample(waveform, sampleIndex);
-      }
-      continue;
-    }
-
-    uint16_t anchorPosition = static_cast<uint16_t>(
-      (static_cast<uint32_t>(frameIndex) * lastAnchorPosition) / SYNTH_WAVETABLE_LAST_FRAME
-    );
-    uint8_t anchorA = static_cast<uint8_t>(anchorPosition >> 8);
-    uint8_t frameFrac = static_cast<uint8_t>(anchorPosition & 0xFF);
-    uint8_t anchorB = static_cast<uint8_t>(std::min<uint8_t>(anchorA + 1, anchorCount - 1));
-    for (uint16_t sampleIndex = 0; sampleIndex < SYNTH_WAVE_SAMPLE_COUNT; ++sampleIndex) {
-      uint8_t sampleA = readCompatibilityWaveformSample(table.waveforms[anchorA], sampleIndex);
-      uint8_t sampleB = readCompatibilityWaveformSample(table.waveforms[anchorB], sampleIndex);
-      int16_t delta = static_cast<int16_t>(sampleB) - static_cast<int16_t>(sampleA);
-      activeSynthWaveTable[frameIndex][sampleIndex] =
-        static_cast<uint8_t>(static_cast<int16_t>(sampleA) + ((delta * static_cast<int16_t>(frameFrac)) >> 8));
-    }
-  }
-  rebuildActiveSynthWavetableFixedMipsFromBase();
-  setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
-}
-
 void loadBuiltinSynthWavetableSamples(const BuiltinSynthWavetableDefinition& table) {
   loadActiveSynthWavetableSamples(table.samples, table.sampleLength);
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
@@ -296,28 +245,6 @@ uint8_t readBasicWavetableAnchorSample(uint8_t anchor, uint16_t sampleIndex) {
   }
 }
 
-void fillGeneratedWaveFrame(byte waveform, uint8_t frameIndex) {
-  byte* frame = activeSynthWaveTable[frameIndex];
-  for (uint16_t sampleIndex = 0; sampleIndex < SYNTH_WAVE_SAMPLE_COUNT; ++sampleIndex) {
-    uint16_t phase = synthWavePhaseFromSampleIndex(sampleIndex);
-    switch (waveform) {
-      case WAVEFORM_SQUARE:
-        frame[sampleIndex] = sample16ToWaveByte(readSquareWaveSample(phase));
-        break;
-      case WAVEFORM_SAW:
-        frame[sampleIndex] = sample16ToWaveByte(static_cast<uint16_t>(phase + 32768u));
-        break;
-      case WAVEFORM_TRIANGLE:
-        frame[sampleIndex] = sample16ToWaveByte(readTriangleWaveSample(phase));
-        break;
-      case WAVEFORM_HYBRID:
-      default:
-        frame[sampleIndex] = waveSineSource[sampleIndex];
-        break;
-    }
-  }
-}
-
 void generateBasicSynthWavetable() {
   constexpr uint8_t anchorCount = 4;
   constexpr uint16_t lastAnchorPosition = (anchorCount - 1) << 8;
@@ -344,13 +271,6 @@ void generateBasicSynthWavetable() {
   }
   rebuildActiveSynthWavetableFixedMipsFromBase();
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
-}
-
-void loadFallbackUserSynthWavetable() {
-  memcpy(activeSynthWaveTable[0], waveSineSource, SYNTH_WAVE_SAMPLE_COUNT);
-  rebuildActiveSynthWavetableFixedMipsFromBase();
-  setActiveSynthWaveFrameCount(1);
-  userSynthWavetableAvailable = false;
 }
 
 void rebuildSynthWavetableFramePositionLookup(uint8_t frameCount) {

@@ -202,8 +202,3 @@ void updateEffectEnvelopeParamsFromSettings() {
     updateEffectEnvelopeParamsFromSettings(envelopeIndex);
   }
 }
-/*
-    This defines which hardware alarm
-    and interrupt address are used
-    to time the call of the poll() function.
-  */

@@ -123,8 +123,8 @@ void serviceSerialDebugMessages() {
 }
 /*
     ISR cycle profiling — lightweight timing measurement for the
-    audio poll() interrupt. Tracks min/max/average microseconds
-    per ISR invocation. Enabled/disabled at runtime via
+    DMA audio buffer renderer. Tracks min/max/average microseconds
+    per filled audio block. Enabled/disabled at runtime via
     isrProfilingEnabled flag. Stats are read and reset atomically
     from Core 0 via readAndResetISRProfile().
   */
