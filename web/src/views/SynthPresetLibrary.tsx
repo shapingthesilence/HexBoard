@@ -129,7 +129,7 @@ const computerWavetableFactorySeedStorageKey = "hexboard.synthWavetableFactorySe
 const presetFileFormat = "hexboard.synthPreset.v1";
 const wavetableFileFormat = "hexboard.synthWavetable.v1";
 const builtInWavetableFolder = "/Built In";
-const basicWavetableName = "Basic";
+const basicWavetableName = "Basic Shapes";
 const deviceNameMaxBytes = 31;
 const deviceFolderMaxBytes = 47;
 
@@ -214,12 +214,13 @@ const rootFolderPath = "/";
 const defaultFolders = [rootFolderPath, "Pads/Warm", "Leads", "FX/Animated"];
 
 const builtInWavetables = [
-  { name: "Basic", folderPath: builtInWavetableFolder },
+  { name: "Basic Shapes", folderPath: builtInWavetableFolder },
   { name: "Classic", folderPath: builtInWavetableFolder },
-  { name: "Edge", folderPath: builtInWavetableFolder },
-  { name: "Glass", folderPath: builtInWavetableFolder },
-  { name: "Digital", folderPath: builtInWavetableFolder },
-  { name: "Motion", folderPath: builtInWavetableFolder }
+  { name: "Vowels", folderPath: builtInWavetableFolder },
+  { name: "HarshDigitalBois", folderPath: builtInWavetableFolder },
+  { name: "RustyBlade", folderPath: builtInWavetableFolder },
+  { name: "RoundThe808", folderPath: builtInWavetableFolder },
+  { name: "GlassyBells", folderPath: builtInWavetableFolder }
 ] as const;
 
 const legacyWaveformCompatibility = new Map<number, { name: string; folderPath: string; position: number }>([
@@ -230,22 +231,22 @@ const legacyWaveformCompatibility = new Map<number, { name: string; folderPath: 
   [0, { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 0 }],
   [1, { name: "Classic", folderPath: builtInWavetableFolder, position: 0 }],
   [2, { name: "Classic", folderPath: builtInWavetableFolder, position: 127 }],
-  [11, { name: "Motion", folderPath: builtInWavetableFolder, position: 0 }],
-  [12, { name: "Edge", folderPath: builtInWavetableFolder, position: 0 }],
-  [13, { name: "Edge", folderPath: builtInWavetableFolder, position: 42 }],
-  [14, { name: "Glass", folderPath: builtInWavetableFolder, position: 0 }],
-  [15, { name: "Digital", folderPath: builtInWavetableFolder, position: 0 }],
-  [16, { name: "Digital", folderPath: builtInWavetableFolder, position: 42 }],
-  [17, { name: "Digital", folderPath: builtInWavetableFolder, position: 85 }],
-  [18, { name: "Glass", folderPath: builtInWavetableFolder, position: 42 }],
-  [19, { name: "Glass", folderPath: builtInWavetableFolder, position: 85 }],
-  [20, { name: "Digital", folderPath: builtInWavetableFolder, position: 127 }],
-  [21, { name: "Motion", folderPath: builtInWavetableFolder, position: 42 }],
-  [22, { name: "Glass", folderPath: builtInWavetableFolder, position: 127 }],
-  [23, { name: "Motion", folderPath: builtInWavetableFolder, position: 85 }],
-  [24, { name: "Edge", folderPath: builtInWavetableFolder, position: 85 }],
-  [25, { name: "Edge", folderPath: builtInWavetableFolder, position: 127 }],
-  [26, { name: "Motion", folderPath: builtInWavetableFolder, position: 127 }],
+  [11, { name: "HarshDigitalBois", folderPath: builtInWavetableFolder, position: 95 }],
+  [12, { name: "HarshDigitalBois", folderPath: builtInWavetableFolder, position: 0 }],
+  [13, { name: "RustyBlade", folderPath: builtInWavetableFolder, position: 0 }],
+  [14, { name: "GlassyBells", folderPath: builtInWavetableFolder, position: 0 }],
+  [15, { name: "RustyBlade", folderPath: builtInWavetableFolder, position: 42 }],
+  [16, { name: "HarshDigitalBois", folderPath: builtInWavetableFolder, position: 127 }],
+  [17, { name: "GlassyBells", folderPath: builtInWavetableFolder, position: 127 }],
+  [18, { name: "GlassyBells", folderPath: builtInWavetableFolder, position: 85 }],
+  [19, { name: "RoundThe808", folderPath: builtInWavetableFolder, position: 0 }],
+  [20, { name: "RoundThe808", folderPath: builtInWavetableFolder, position: 127 }],
+  [21, { name: "RustyBlade", folderPath: builtInWavetableFolder, position: 85 }],
+  [22, { name: "RoundThe808", folderPath: builtInWavetableFolder, position: 64 }],
+  [23, { name: "HarshDigitalBois", folderPath: builtInWavetableFolder, position: 64 }],
+  [24, { name: "HarshDigitalBois", folderPath: builtInWavetableFolder, position: 32 }],
+  [25, { name: "GlassyBells", folderPath: builtInWavetableFolder, position: 42 }],
+  [26, { name: "RustyBlade", folderPath: builtInWavetableFolder, position: 127 }],
   [27, { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 0 }],
   [28, { name: "UserTbl", folderPath: "/User", position: 0 }]
 ]);
@@ -399,6 +400,16 @@ function clampSynthValue(key: EditableSynthValueKey, value: number): number {
   }
   const [min, max] = synthValueBounds[key];
   return clampNumber(value, min, max);
+}
+
+function wavetablePositionByteToFrame(value: number): number {
+  const clamped = clampNumber(value, 0, 127);
+  return clampNumber((clamped * (SYNTH_WAVETABLE_FRAME_COUNT - 1)) / 127, 0, SYNTH_WAVETABLE_FRAME_COUNT - 1) + 1;
+}
+
+function wavetableFrameToPositionByte(frame: number): number {
+  const zeroBasedFrame = clampNumber(frame, 1, SYNTH_WAVETABLE_FRAME_COUNT) - 1;
+  return clampNumber((zeroBasedFrame * 127) / (SYNTH_WAVETABLE_FRAME_COUNT - 1), 0, 127);
 }
 
 function clampEnvelopeTimeIndex(value: number): number {
@@ -2552,7 +2563,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 ))}
               </select>
             </label>
-            <RangeField label="WT Pos" value={preset.values.SynthWavetablePosition} min={0} max={127} onChange={(value) => updateValue("SynthWavetablePosition", value)} suffix="/127" />
+            <RangeField label="WT Pos" value={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition)} min={1} max={SYNTH_WAVETABLE_FRAME_COUNT} onChange={(value) => updateValue("SynthWavetablePosition", wavetableFrameToPositionByte(value))} suffix={`/${SYNTH_WAVETABLE_FRAME_COUNT}`} />
             <RangeField label="Drive" value={preset.values.SynthDrive} min={0} max={3} onChange={(value) => updateValue("SynthDrive", value)} suffix={` (${driveLabel(preset.values.SynthDrive)})`} />
             <SelectField label="Wheel FX" value={preset.values.SynthModTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthModTarget", value)} />
             <RangeField label="Wheel Amt" value={preset.values.SynthModAmount} min={0} max={127} onChange={(value) => updateValue("SynthModAmount", value)} suffix="/127" />

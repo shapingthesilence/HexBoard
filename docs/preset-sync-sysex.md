@@ -1046,8 +1046,8 @@ to `Poly` on import. `Waveform` remains in the value list for compatibility, but
 new preset objects use `SynthWavetableName` and `SynthWavetableFolderPath` as
 the actual source dependency. Old `Waveform` values map into the built-in
 compatibility tables and update `SynthWavetablePosition` to the matching anchor;
-`Hybrid` maps to `Basic` at position `0`, and missing named dependencies load
-`Basic` until the matching table is installed.
+`Hybrid` maps to `Basic Shapes` at position `0`, and missing named dependencies
+load `Basic Shapes` until the matching table is installed.
 Built-in wavetable dependencies use the reserved folder path `/Built In`
 unescaped. Firmware accepts the older escaped `%2FBuilt In` alias and the
 normalizer-stripped `Built In` alias for compatibility with earlier saves, but
@@ -1095,9 +1095,11 @@ sending the full fixed mip table; firmware rejects mismatched sample length and
 mip count pairs. The fixed-mip sample payload is split into repeated
 `WavetableSamples` TLVs of at most `32,768` bytes each because a single TLV
 length is 16-bit and the complete fixed-mip payload is `49,152` bytes.
-The web editor's factory wavetable bank is generated from firmware built-in
-anchor waves, interpolated to the same `16` base frames, and then processed
-through the same FFT-pruned mip builder as imported wavetables.
+The web editor's factory wavetable bank is generated from the same sources as
+firmware's flash-resident factory tables: `Basic Shapes` and `Classic` use
+firmware anchor waves, and the other factory entries use default WAV sources.
+All are rendered to the same `16` base frames and processed through the same
+FFT-pruned mip builder as imported wavetables.
 
 The web app's Serum/Vital import path reads wavetable `.wav` files,
 interpolates the source frame axis down to `16` frames, resamples each frame to

@@ -104,7 +104,7 @@ uint8_t synthPortamentoTimeIndex = 0;
 uint32_t synthPortamentoTicks = 0;
 
 byte currWave = WAVEFORM_HYBRID;
-char currentSynthWavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = "Basic";
+char currentSynthWavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = "Basic Shapes";
 char currentSynthWavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = "/Built In";
 bool currentSynthWavetableReferenceValid = false;
 

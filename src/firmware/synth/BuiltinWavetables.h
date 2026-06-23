@@ -6,11 +6,15 @@
 struct BuiltinSynthWavetableDefinition {
   const char* name;
   const char* folderPath;
-  byte waveforms[4];
+  const byte* samples;
+  size_t sampleLength;
+  byte waveforms[8];
   uint8_t waveformCount;
 };
 
 extern const byte waveSineSource[];
+extern const BuiltinSynthWavetableDefinition builtinSynthWavetables[];
+extern const size_t SYNTH_BUILTIN_WAVETABLE_COUNT;
 
 bool isValidSynthWaveform(byte waveform);
 const byte* synthWaveformSource(byte waveform);

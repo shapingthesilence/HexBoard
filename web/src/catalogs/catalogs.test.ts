@@ -270,7 +270,7 @@ Example scale
     expect(repeated).toEqual(samples);
   });
 
-  it("renders factory wavetables with interpolated anchors and fixed mips", () => {
+  it("renders factory wavetables with fixed mips", () => {
     const low = new Uint8Array(SYNTH_WAVETABLE_SAMPLE_COUNT);
     const high = new Uint8Array(SYNTH_WAVETABLE_SAMPLE_COUNT);
     high.fill(255);
@@ -284,7 +284,15 @@ Example scale
     expect(base[SYNTH_WAVETABLE_SAMPLE_COUNT]).toBeLessThan(255);
 
     const factory = createFactorySynthWavetables();
-    expect(factory.map((wavetable) => wavetable.name)).toEqual(["Basic", "Classic", "Edge", "Glass", "Digital", "Motion"]);
+    expect(factory.map((wavetable) => wavetable.name)).toEqual([
+      "Basic Shapes",
+      "Classic",
+      "Vowels",
+      "HarshDigitalBois",
+      "RustyBlade",
+      "RoundThe808",
+      "GlassyBells"
+    ]);
     expect(factory.every((wavetable) => wavetable.folderPath === "/Built In")).toBe(true);
     expect(factory.every((wavetable) => wavetable.samples.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES)).toBe(true);
   });

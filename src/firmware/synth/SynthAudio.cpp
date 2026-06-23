@@ -1322,6 +1322,11 @@ void generateCompatibilitySynthWavetable(const BuiltinSynthWavetableDefinition& 
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
 }
 
+void loadBuiltinSynthWavetableSamples(const BuiltinSynthWavetableDefinition& table) {
+  loadActiveSynthWavetableSamples(table.samples, table.sampleLength);
+  setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
+}
+
 void setCurrentSynthWavetableReference(const char* folderPath, const char* name) {
   const char* normalizedFolderPath = folderPath && folderPath[0] ? folderPath : SYNTH_WAVETABLE_ROOT_FOLDER;
   if (strcmp(normalizedFolderPath, "Built In") == 0
@@ -1528,7 +1533,7 @@ void loadSelectedSynthWavetable() {
   const BuiltinSynthWavetableDefinition* builtinTable =
     builtinIndex >= 0 ? synthBuiltinWavetableAt(static_cast<size_t>(builtinIndex)) : nullptr;
   if (builtinTable) {
-    generateCompatibilitySynthWavetable(*builtinTable);
+    loadBuiltinSynthWavetableSamples(*builtinTable);
     loaded = true;
   } else if (loadSynthWavetableFromCatalog(currentSynthWavetableFolderPath, currentSynthWavetableName)) {
     loaded = true;
@@ -1540,7 +1545,7 @@ void loadSelectedSynthWavetable() {
     selectFallbackSynthWavetable();
     const BuiltinSynthWavetableDefinition* fallbackTable = synthBuiltinWavetableAt(0);
     if (fallbackTable) {
-      generateCompatibilitySynthWavetable(*fallbackTable);
+      loadBuiltinSynthWavetableSamples(*fallbackTable);
     } else {
       generateBasicSynthWavetable();
     }

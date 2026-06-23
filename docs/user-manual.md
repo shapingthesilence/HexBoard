@@ -250,20 +250,21 @@ Built-in tables appear at the root, and user-imported wavetables can be
 organized into folders.
 Built-in compatibility tables include:
 
-- `Basic`: sine, triangle, saw, and square anchors
+- `Basic Shapes`: sine, triangle, saw, and square anchors
 - `Classic`: strings and clarinet anchors
-- `Edge`: bright or sync-like MP waves
-- `Glass`: smoother rounded or glassy MP waves
-- `Digital`: bellish or 808-like MP waves
-- `Motion`: MP waves with stronger movement
+- `Vowels`: the factory vowel wavetable
+- `HarshDigitalBois`: bright or sync-like MP waves
+- `RustyBlade`: buzzy and rough MP waves
+- `RoundThe808`: rounded and 808-like MP waves
+- `GlassyBells`: glassy and bell-like MP waves
 
 Old presets that used the previous `Waveform` selector are migrated by choosing
 one of these tables and setting `WT Pos` to the matching anchor. The old
-`Hybrid` waveform now maps to `Basic` at `0%`.
+`Hybrid` waveform now maps to `Basic Shapes` at `0%`.
 
 User-imported wavetables appear in the same `WT:...` browser after they are
 saved through the web app. If a preset references a wavetable that is not
-installed on the HexBoard, the synth loads `Basic` instead until a matching
+installed on the HexBoard, the synth loads `Basic Shapes` instead until a matching
 folder/name wavetable is added.
 
 `WT Pos` chooses the starting frame for wavetable waveforms. On device, the menu
@@ -366,15 +367,16 @@ Use these as starting points, then adjust by ear.
 
 | Sound | Synth Mode | Wavetable / WT Pos | Attack | Hold | Decay | Sustain | Release | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Plucky | `Poly` or `MonoRtg` | `Basic` around frame `1` to `11` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` or `10%` | `50 ms` to `200 ms` | Fast start, quick fade, little held level |
-| Smooth pad | `Poly` | `Basic` at frame `1` or `Classic` at frame `1` | `200 ms` to `1 s` | `0 ms` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
-| Lead | `MonoRtg` or `MonoLeg` | `Basic` around frame `11` to `16` | `0 ms` or `10 ms` | `0 ms` to `50 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Use `Porta` for glide or keep it at `0 ms` for immediate melodies |
-| Chime or bell | `Poly` | `Basic` at frame `1` or `Digital` near frame `11` | `0 ms` or `5 ms` | `0 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
-| Arpeggio | `Arp'gio` | `Basic` around frame `11` or `Edge` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed`, `Arp Dir`, and `Tempo` for rhythm |
+| Plucky | `Poly` or `MonoRtg` | `Basic Shapes` around frame `1` to `11` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` or `10%` | `50 ms` to `200 ms` | Fast start, quick fade, little held level |
+| Smooth pad | `Poly` | `Basic Shapes` at frame `1` or `Classic` at frame `1` | `200 ms` to `1 s` | `0 ms` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
+| Lead | `MonoRtg` or `MonoLeg` | `Basic Shapes` around frame `11` to `16` | `0 ms` or `10 ms` | `0 ms` to `50 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Use `Porta` for glide or keep it at `0 ms` for immediate melodies |
+| Chime or bell | `Poly` | `GlassyBells` or `RoundThe808` | `0 ms` or `5 ms` | `0 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
+| Arpeggio | `Arp'gio` | `Basic Shapes` around frame `11` or `HarshDigitalBois` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed`, `Arp Dir`, and `Tempo` for rhythm |
 
-For a sharper sound, use `Basic` at a higher `WT Pos` frame or one of the
-`Edge` anchors, and keep `Attack` short. For a smoother sound, use `Basic` near
-frame `1` or `Classic`, then increase `Attack` and `Release`.
+For a sharper sound, use `Basic Shapes` at a higher `WT Pos` frame or one of
+the `HarshDigitalBois` or `RustyBlade` frames, and keep `Attack` short. For a
+smoother sound, use `Basic Shapes` near frame `1` or `Classic`, then increase
+`Attack` and `Release`.
 
 If a sound feels too clicky, raise `Attack` one step. If notes smear together,
 lower `Release`. If a pluck does not fade away enough, lower `Sustain` or lower
@@ -539,11 +541,13 @@ open preset. Refreshing the HexBoard wavetable list reads only device metadata;
 full sample data transfers start only when `Download` or `Export` is chosen.
 Those explicit wavetable reads are large chunked transfers, and HexBoard streams
 the sample file during the transfer instead of preloading the whole object first.
-The browser wavetable library is also seeded with the factory built-in tables
-rendered from the firmware anchor waves. These factory tables use interpolated
-`16`-frame bases plus the same six fixed mip levels as imported wavetables, so
-they can be previewed, exported, edited, uploaded, or restored through the web
-editor like normal wavetable entries.
+The browser wavetable library is also seeded with the same factory built-in
+tables that ship in firmware flash. `Basic Shapes` and `Classic` are rendered
+from firmware anchor waves, and the other factory tables are rendered from the
+default wavetable WAV sources. These factory tables use `16`-frame bases plus
+the same six fixed mip levels as imported wavetables, so they can be previewed,
+exported, edited, uploaded, or restored through the web editor like normal
+wavetable entries.
 The web app trims preset and wavetable names/folders to the device's fixed text
 fields before upload so long browser-side labels do not break transfers.
 Presets store the wavetable folder/name rather than a private copy of the
@@ -583,7 +587,7 @@ library, uploaded to HexBoard, and used by the open preset with `WT Pos = 0`.
 
 The HexBoard stores named wavetable references separately from the byte-oriented
 settings data. Rebooting, loading a preset, or loading a saved profile restores
-the expected folder/name wavetable instead of falling back to `Basic`.
+the expected folder/name wavetable instead of falling back to `Basic Shapes`.
 
 The app requires a Web MIDI SysEx-capable browser such as Chrome or Edge running
 from `localhost` or HTTPS. Use `Connect HexBoard` in the top bar; the app sends
@@ -703,7 +707,8 @@ What to expect:
 - If `Auto-Save` is enabled, HexBoard saves after about `10 seconds` of inactivity
 - Manual profile saves write immediately
 - Flash writes briefly show `Saving` / `Writing flash` / `Audio muted` on the
-  OLED and fade audio down/up so the required flash-write mute is less abrupt
+  OLED, fade audio down/up so the required flash-write mute is less abrupt, and
+  return to the active menu or browser afterward
 - If saved settings cannot be read, HexBoard restores factory defaults
 - This release also resets older settings-schema files to factory defaults
 - Saving may mute the onboard synth very briefly
@@ -731,7 +736,7 @@ Important factory defaults include:
 - MIDI channel: `1`
 - MPE mode: `Auto`
 - Synth: `Poly`
-- Wavetable: `Basic`
+- Wavetable: `Basic Shapes`
 - WT Pos: frame `1`
 - Drive: `Off`
 - Wheel FX: `FoldWrp`

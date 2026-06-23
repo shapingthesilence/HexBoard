@@ -10,7 +10,7 @@
 #include "../synth/SynthAudio.h"
 #include "../storage/SynthWavetableStorage.h"
 
-char currentSynthWavetableMenuLabel[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = "WT:Basic";
+char currentSynthWavetableMenuLabel[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = "WT:Basic Shapes";
 
 namespace {
 enum class SynthWavetableMenuRowKind : uint8_t {
