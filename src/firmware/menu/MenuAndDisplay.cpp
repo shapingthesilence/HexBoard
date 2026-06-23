@@ -103,13 +103,21 @@ void drawDelegatedControlScreen() {
   delegatedDisplayDirty = false;
 }
 
+void restoreInteractiveMenuDisplay() {
+  if (virtualListMenuIsActive()) {
+    redrawVirtualListMenu();
+  } else {
+    menu.drawMenu();
+  }
+}
+
 void restoreMenuAfterDelegatedControl() {
   if (!delegatedReturnToMenuRequested) {
     return;
   }
   delegatedReturnToMenuRequested = false;
   if (!screenSaverOn) {
-    menu.drawMenu();
+    restoreInteractiveMenuDisplay();
   }
 }
 
@@ -158,7 +166,7 @@ void closePresetSyncTransferScreen() {
     delegatedDisplayDirty = true;
     drawDelegatedControlScreen();
   } else {
-    menu.drawMenu();
+    restoreInteractiveMenuDisplay();
   }
   presetSyncTransferScreenWokeDisplayFromSleep = false;
   presetSyncTransferSavedScreenTime = 0;
@@ -204,7 +212,7 @@ void closeFlashSaveScreen() {
     delegatedDisplayDirty = true;
     drawDelegatedControlScreen();
   } else {
-    menu.drawMenu();
+    restoreInteractiveMenuDisplay();
   }
   flashSaveScreenWokeDisplayFromSleep = false;
   flashSaveSavedScreenTime = 0;
@@ -1397,37 +1405,21 @@ void previewWaveform(GEMPreviewCallbackData previewData) {
 
 SelectOptionByte optionByteWavetablePosition[] = {
   { "1", 0 },
-  { "2", 4 },
-  { "3", 8 },
-  { "4", 12 },
-  { "5", 16 },
-  { "6", 20 },
-  { "7", 25 },
-  { "8", 29 },
-  { "9", 33 },
-  { "10", 37 },
-  { "11", 41 },
-  { "12", 45 },
-  { "13", 49 },
-  { "14", 53 },
-  { "15", 57 },
-  { "16", 61 },
-  { "17", 66 },
-  { "18", 70 },
-  { "19", 74 },
-  { "20", 78 },
-  { "21", 82 },
-  { "22", 86 },
-  { "23", 90 },
-  { "24", 94 },
-  { "25", 98 },
-  { "26", 102 },
-  { "27", 107 },
-  { "28", 111 },
-  { "29", 115 },
-  { "30", 119 },
-  { "31", 123 },
-  { "32", 127 }
+  { "2", 8 },
+  { "3", 17 },
+  { "4", 25 },
+  { "5", 34 },
+  { "6", 42 },
+  { "7", 51 },
+  { "8", 59 },
+  { "9", 68 },
+  { "10", 76 },
+  { "11", 85 },
+  { "12", 93 },
+  { "13", 102 },
+  { "14", 110 },
+  { "15", 119 },
+  { "16", 127 }
 };
 GEMSelect selectWavetablePosition(sizeof(optionByteWavetablePosition) / sizeof(SelectOptionByte), optionByteWavetablePosition);
 PersistentCallbackInfo callbackInfoSynthWavetablePosition = {

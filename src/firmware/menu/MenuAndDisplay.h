@@ -20,6 +20,7 @@ void wakeDelegatedControlScreenForInput();
 void setupMenu();
 void setupGFX();
 void screenSaver();
+void restoreInteractiveMenuDisplay();
 void drawDelegatedControlScreen();
 void restoreMenuAfterDelegatedControl();
 bool servicePresetSyncTransfer();

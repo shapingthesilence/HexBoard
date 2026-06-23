@@ -316,7 +316,7 @@ void drawCompactPlayedNoteBadge() {
       noteBadgeVisible = false;
       noteBadgeText[0] = '\0';
       noteOverlayDirty = false;
-      menu.drawMenu();
+      restoreInteractiveMenuDisplay();
     } else {
       noteOverlayDirty = false;
     }
@@ -364,7 +364,7 @@ void onToggleDisplayPlayedNotes() {
     noteBadgeText[0] = '\0';
     clearDisplayedNotes(displayedNotes);
     if (!returnedToSleep) {
-      menu.drawMenu();
+      restoreInteractiveMenuDisplay();
     }
   } else if (displayPlayedNotes) {
     noteOverlayDirty = true;
@@ -385,7 +385,7 @@ void drawPlayedNotesOverlay() {
       bool returnedToSleep = setNoteOverlayTemporaryWake(false);
       clearDisplayedNotes(displayedNotes);
       if (!returnedToSleep) {
-        menu.drawMenu();
+        restoreInteractiveMenuDisplay();
       }
     }
     return;
@@ -434,7 +434,7 @@ void drawPlayedNotesOverlay() {
       noteOverlayVisible = false;
       noteOverlayDirty = false;
       if (!returnedToSleep) {
-        menu.drawMenu();
+        restoreInteractiveMenuDisplay();
       }
     }
     return;
