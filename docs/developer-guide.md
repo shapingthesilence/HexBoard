@@ -275,7 +275,7 @@ The main firmware files are:
 - `src/firmware/model/`: layout tables, scale/palette/preset models, and pitch assignment
 - `src/firmware/hardware/`: board constants, grid state, command buttons, scan/rotary handling, LED rendering, and LED animations
 - `src/firmware/midi/`: USB/serial transport, MPE/routing, external MIDI LED state, delegated control, MIDI input parsing, and MIDI note dispatch
-- `src/firmware/synth/`: synth defaults, built-in single-cycle waveforms, compatibility wavetable catalog, active wavetable RAM, oscillator/render path, envelopes, arpeggiator, metronome, PWM, and DMA audio; hot render/audio helpers remain grouped in `SynthAudio.cpp`
+- `src/firmware/synth/`: synth defaults, built-in single-cycle waveforms, compatibility wavetable catalog, render orchestration, audio transport, oscillator/wavetable runtime, envelopes, modulation caches, voice allocation, arpeggiator, and metronome; hot render glue remains in `SynthAudio.cpp`, and synth-private declarations live in `SynthAudioInternal.h`
 - `src/firmware/storage/`: persistent data models, settings/profile storage, synth preset/wavetable storage, and preset-sync protocol/geometry/synth-object/message handling
 - `src/firmware/menu/`: OLED/GEM pages and settings callbacks, played-note drawing, synth preset menu rebuilding, and synth wavetable menu rebuilding
 
@@ -603,7 +603,7 @@ crossing: `sine`, `strings`, and `clarinet` are rotated byte tables, the MP
 single-cycle tables are generated the same way from their source WAV files, and the generated
 saw/triangle/square/hybrid paths apply the matching phase offset in
 RAM-resident helpers. Table-backed waveform source cycles live in
-`src/firmware/synth/SynthAudio.cpp`, but only the selected waveform or wavetable is copied into
+`src/firmware/synth/SynthOscillatorBank.cpp`, but only the selected waveform or wavetable is copied into
 the preallocated `activeSynthWaveTable` RAM buffer used by the audio renderer.
 The vibrato sine lookup remains a separate RAM table because the renderer reads
 it directly.

@@ -4,8 +4,6 @@
 #include "../storage/PersistentDataModels.h"
 #include "SynthDefaults.h"
 
-enum class EnvelopeCommand : uint8_t;
-
 void updateEnvelopeParamsFromSettings();
 void updateEffectEnvelopeParamsFromSettings();
 void updateEffectEnvelopeParamsFromSettings(uint8_t envelopeIndex);
@@ -40,8 +38,6 @@ void metronomeModeChanged();
 void RAM_FUNC(runMetronome)();
 void RAM_FUNC(arpeggiate)();
 void RAM_FUNC(setSynthFreq)(float frequency, byte channel, bool resetPhase = false, bool allowPortamento = false);
-void RAM_FUNC(beginEnvelopeAttack)(uint8_t channel);
-void RAM_FUNC(beginEnvelopeRelease)(uint8_t channel);
 void RAM_FUNC(processEnvelopeReleases)();
 void RAM_FUNC(retryPendingReleases)();
 void RAM_FUNC(trySynthNoteOn)(byte x);

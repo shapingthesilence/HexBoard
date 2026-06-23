@@ -52,7 +52,7 @@ The current source is grouped by file:
 | `src/firmware/model/` | layout tables, scale/palette/preset models, and pitch assignment |
 | `src/firmware/hardware/` | board constants, grid state, command buttons, scan/rotary input, LED rendering, and LED animations |
 | `src/firmware/midi/` | USB/serial transport, MPE/routing, external MIDI LED state, delegated control, MIDI input parsing, and note dispatch |
-| `src/firmware/synth/` | synth defaults, built-in waveforms, wavetable catalog, oscillator/render path, envelopes, PWM, DMA audio, polyphony, arpeggiator, and metronome |
+| `src/firmware/synth/` | synth defaults, built-in waveforms, wavetable catalog, render orchestration, audio transport, oscillator/wavetable runtime, envelopes, modulation caches, voice allocation, arpeggiator, and metronome |
 | `src/firmware/storage/` | persistent data models, settings/profile persistence, synth preset/wavetable storage, and preset-sync handlers |
 | `src/firmware/menu/` | OLED/GEM pages and callbacks, played-note overlay, synth preset menus, and synth wavetable menus |
 

@@ -22,7 +22,7 @@ Primary implementation points:
 - delegated OLED drawing lives in `src/firmware/menu/MenuAndDisplay.cpp`.
 - `lightUpLEDs()` lives in `src/firmware/hardware/LedRender.cpp`.
 - `animateLEDs()` lives in `src/firmware/hardware/LedAnimations.cpp`.
-- `arpeggiate()` lives in `src/firmware/synth/SynthAudio.cpp`.
+- `arpeggiate()` lives in `src/firmware/synth/SynthVoiceAllocation.cpp`.
 - `hexboardLoop1()` lives in `src/firmware/app/Runtime.cpp` and contains the delegated-mode core-1 MIDI polling gate.
 
 `HexBoard.ino` is the root Arduino sketch used by the `Makefile`; firmware implementation lives under `src/firmware/`. Generated files under `build/` should not be edited as source.

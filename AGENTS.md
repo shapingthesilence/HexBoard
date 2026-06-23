@@ -7,6 +7,7 @@ These instructions apply to the entire repository. This guide is for future AI a
 - Edit the root `HexBoard.ino` only for Arduino lifecycle wrappers.
 - Edit firmware implementation under `src/firmware/` as the primary firmware source.
 - Keep firmware `.cpp` files independently compilable with direct headers; do not include `.cpp` files from other `.cpp` files.
+- For synth/audio work, keep `src/firmware/synth/SynthAudio.h` as the public cross-subsystem API and `src/firmware/synth/SynthAudioInternal.h` as synth-private glue between synth modules.
 - Put shared firmware types, constants, and cross-module function declarations in the nearest owning subsystem header under `src/firmware/`; keep implementation-private globals in the owning `.cpp` where practical.
 - Do not edit generated files under `build/` as source.
 - Keep audio ISR code, synth helper code called from the ISR, button/knob scan paths, and other latency-sensitive runtime helpers in RAM with `RAM_FUNC` or RAM-resident data. Do not move hot audio/control tables into flash.
