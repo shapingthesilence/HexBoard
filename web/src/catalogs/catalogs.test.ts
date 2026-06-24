@@ -466,7 +466,7 @@ Example scale
         degree: 1,
         hueTenthDegrees: 1800,
         saturation: 255,
-        value: 180
+        value: 255
       }
     });
     expect(resolveLayoutBundleButtonColor({
@@ -488,7 +488,7 @@ Example scale
         degree: 1,
         hueTenthDegrees: 1800,
         saturation: 255,
-        value: 180
+        value: 255
       }
     });
     expect(resolveLayoutBundleButtonColor({

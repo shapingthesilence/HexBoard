@@ -2085,17 +2085,6 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
                   ))}
                 </select>
               </label>
-              <label className="field">
-                <span>Default color mode</span>
-                <select
-                  value={activeBundle.palette.defaultColorMode}
-                  onChange={(event) => updateDefaultColorMode(Number(event.target.value) as ColorModeValue)}
-                >
-                  {colorModeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
               <div className="row">
                 <button type="button" onClick={addNewScale}>New Scale</button>
                 <button className="warning" disabled={activeScaleIsAllNotes} type="button" onClick={deleteActiveScale}>Delete Scale</button>
@@ -2139,6 +2128,17 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
             </div>
           </div>
           <div className="brushToolbar">
+            <label className="toolbarSelectField">
+              <span>Default color mode</span>
+              <select
+                value={activeBundle.palette.defaultColorMode}
+                onChange={(event) => updateDefaultColorMode(Number(event.target.value) as ColorModeValue)}
+              >
+                {colorModeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
             <button
               aria-pressed={customColorModeActive && paintbrushMode}
               className={customColorModeActive && paintbrushMode ? "primary" : ""}

@@ -150,9 +150,11 @@ Current web source layout:
   `ApplyToRuntime` only; `Save to HexBoard` writes all bundle objects with
   `SaveToFlash`. Bundle `folderPath` is encoded into each unpacked `UserTuning`,
   `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` object
-  written to the device. The Scales subtab owns both `includedDegrees` editing
-  and the bundle `DefaultColorMode` selector; the preview board resolves colors
-  through that mode, with `Custom` using the bundle scale-degree palette.
+  written to the device. The preview toolbar owns the bundle-level
+  `DefaultColorMode` selector; the preview board resolves colors through that
+  mode, with `Custom` using the bundle scale-degree palette and generated
+  modes rendered at full brightness in the browser preview.
+  The Scales subtab owns `includedDegrees` editing.
   Scales are edited with `includedDegrees` only; the protected `All Notes`
   scale is normalized into every bundle, tracks the current tuning cycle length,
   and is not editable or deletable. The text input validates on blur so

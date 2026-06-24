@@ -689,6 +689,10 @@ function colorFromHsv(degree: number, hueDegrees: number, saturation: number, va
   });
 }
 
+function fullBrightnessPreviewColor(color: ScaleDegreeColor): ScaleDegreeColor {
+  return color.value === VALUE_BLACK ? color : { ...color, value: 255 };
+}
+
 function stepCentsForPreview(cycleLength: number, periodCents: number | undefined): number {
   return numberOr(periodCents, 1200) / Math.max(1, Math.round(cycleLength));
 }
@@ -793,33 +797,53 @@ function colorForDefaultMode(input: {
     case ColorMode.Custom:
       return input.customColor;
     case ColorMode.Alt:
-      return alternateColor(input.degree, stepCents);
+      return fullBrightnessPreviewColor(alternateColor(input.degree, stepCents));
     case ColorMode.Fifths: {
       const fifthSteps = Math.max(1, Math.round(FIFTH_CENTS / stepCents));
-      return colorFromHsv(input.degree, 360 * (positiveModulo(input.degree * fifthSteps, input.cycleLength) / input.cycleLength), SAT_VIVID, VALUE_NORMAL);
+      return fullBrightnessPreviewColor(colorFromHsv(
+        input.degree,
+        360 * (positiveModulo(input.degree * fifthSteps, input.cycleLength) / input.cycleLength),
+        SAT_VIVID,
+        VALUE_NORMAL
+      ));
     }
     case ColorMode.Piano: {
       const keyDegree = roundedKeyDegree(input.stepsFromC, input.cycleLength, input.periodCents);
-      return colorFromHsv(input.degree, 360 * (positiveModulo(Math.round(keyDegree), 12) / 12), SAT_TINT, isPianoBlackKey(keyDegree) ? VALUE_BLACK : VALUE_NORMAL);
+      return fullBrightnessPreviewColor(colorFromHsv(
+        input.degree,
+        360 * (positiveModulo(Math.round(keyDegree), 12) / 12),
+        SAT_TINT,
+        isPianoBlackKey(keyDegree) ? VALUE_BLACK : VALUE_NORMAL
+      ));
     }
     case ColorMode.AltPiano: {
       const keyDegree = roundedKeyDegree(input.stepsFromC, input.cycleLength, input.periodCents);
       const rounded = Math.round(keyDegree);
       const deviation = (rounded - keyDegree) * 180;
-      return colorFromHsv(input.degree, (isPianoBlackKey(keyDegree) ? 210 : 30) + deviation, SAT_VIVID, VALUE_NORMAL);
+      return fullBrightnessPreviewColor(colorFromHsv(
+        input.degree,
+        (isPianoBlackKey(keyDegree) ? 210 : 30) + deviation,
+        SAT_VIVID,
+        VALUE_NORMAL
+      ));
     }
     case ColorMode.Filament: {
       const keyDegree = roundedKeyDegree(input.stepsFromC, input.cycleLength, input.periodCents);
       const deviation = Math.abs(Math.round(keyDegree) - keyDegree);
       const heat = isPianoBlackKey(keyDegree) ? deviation : 1 - deviation;
-      return colorFromHsv(input.degree, 24 + (heat * 18), 210 - Math.round(heat * 80), 105 + Math.round(heat * 75));
+      return fullBrightnessPreviewColor(colorFromHsv(
+        input.degree,
+        24 + (heat * 18),
+        210 - Math.round(heat * 80),
+        105 + Math.round(heat * 75)
+      ));
     }
     case ColorMode.Diatonic:
-      return diatonicColor(input.degree, input.cycleLength, stepCents)
-        ?? colorFromHsv(input.degree, 360 * (input.degree / input.cycleLength), SAT_VIVID, VALUE_NORMAL);
+      return fullBrightnessPreviewColor(diatonicColor(input.degree, input.cycleLength, stepCents)
+        ?? colorFromHsv(input.degree, 360 * (input.degree / input.cycleLength), SAT_VIVID, VALUE_NORMAL));
     case ColorMode.Rainbow:
     default:
-      return colorFromHsv(input.degree, 360 * (input.degree / input.cycleLength), SAT_VIVID, VALUE_NORMAL);
+      return fullBrightnessPreviewColor(colorFromHsv(input.degree, 360 * (input.degree / input.cycleLength), SAT_VIVID, VALUE_NORMAL));
   }
 }
 

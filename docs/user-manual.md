@@ -455,7 +455,8 @@ geometry bundles in browser storage and can import/export those bundles as JSON.
 Each bundle contains one tuning, one custom scale-degree color palette, one
 default color mode, one or more layouts, and one or more scales. `Custom`
 uses the bundle's scale-degree palette; the other default color mode choices
-preview and apply the same generated modes as the device menu. The active
+preview the same generated hues as the device menu at full brightness and apply
+the corresponding generated modes on the device. The active
 layout still starts from an across/up-right vector, and the center key can be
 chosen from the visual board or typed by button index. The editor places a
 left sidebar beside the preview using the same left-to-right proportions as the
@@ -485,15 +486,16 @@ musical axes around individual hexagons. Focusing the center, across, or
 up-right layout fields highlights the relevant preview key relationship. The
 axis field labels follow the four-way preview rotation; for example, at `90`
 degrees, across is shown as `Down` and up-right is shown as `Down-right`.
-When the default color mode is `Custom`, the preview also has a `Paintbrush`
-mode: choose a brush color, enable the tool, then click or drag across keys to
-write manual per-button color overrides without selecting each key in the
-inspector. The `Eyedropper` tool temporarily overrides the paintbrush so the
+The preview toolbar includes the bundle-level default color mode selector.
+When that mode is `Custom`, the preview also has a `Paintbrush` mode: choose a
+brush color, enable the tool, then click or drag across keys to write manual
+per-button color overrides without selecting each key in the inspector. The
+`Eyedropper` tool temporarily overrides the paintbrush so the
 next preview key clicked becomes the brush color. `Reset Colors` asks for
 confirmation, then clears all per-button color overrides in the active layout
 so keys return to their scale-degree colors while note and role overrides stay
-unchanged. Preview hexagons render with solid color fills and outlined white labels
-so the displayed color remains accurate and readable. A sun/moon button in the app header switches the web app between
+unchanged. Preview hexagons render with solid, full-bright color fills and outlined white labels
+so the displayed hue remains accurate and readable. A sun/moon button in the app header switches the web app between
 light and dark themes. When a compatible bundle is applied to HexBoard, `Custom`
 scale-degree colors and Custom-mode per-button colors use the selected color as the
 active/play target, but the resting hardware LEDs are capped to the same normal

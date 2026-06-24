@@ -561,6 +561,8 @@ When a compatible geometry bundle is applied, firmware reads the
 `ScaleColorMap` `DefaultColorMode`: `Custom` renders the loaded scale-degree
 palette, while the other values render the generated firmware color modes. It
 then applies explicit per-button color overrides only while `Custom` is active.
+The web preview renders non-black generated color-mode results at full HSV value
+so the preview shows hue rather than the firmware resting-brightness headroom.
 For user-generated colors, the resting LED cache caps value at `VALUE_NORMAL`
 before `Rest Bright` scaling so full selected values remain available to play
 and animation states.

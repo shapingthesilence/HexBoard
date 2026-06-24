@@ -556,6 +556,18 @@ select {
   background: #fbfcfa;
 }
 
+.toolbarSelectField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #59645f;
+  font-size: 0.82rem;
+}
+
+.toolbarSelectField select {
+  min-width: 128px;
+}
+
 .brushColorField {
   display: flex;
   align-items: center;
@@ -898,6 +910,7 @@ select {
 :root[data-theme="dark"] .listItem > span,
 :root[data-theme="dark"] .muted,
 :root[data-theme="dark"] .auditionKey span,
+:root[data-theme="dark"] .toolbarSelectField,
 :root[data-theme="dark"] .brushColorField {
   color: #a7b5ae;
 }
