@@ -809,10 +809,10 @@ select key through `handleVirtualListLauncherKey()` so they open
 `VirtualListMenu` directly, then sends encoder turns and clicks to
 `VirtualListMenu` while a browser is active and otherwise falls back to normal
 GEM input. `serviceVirtualListLauncherLabelScroll()` runs from the main loop,
-waits `1` second on the selected launcher row, and advances long current-name
+waits `1.5` seconds on the selected launcher row, and advances long current-name
 windows one character every `250` ms within GEM's `19`-character link row. It
 holds the final window for `1` second, returns to the beginning for another
-`1` second, and suppresses scrolling while either played-note overlay is
+`1.5` seconds, and suppresses scrolling while either played-note overlay is
 visible.
 Display restore paths that temporarily replace the OLED contents, including
 flash-save prompts, redraw the active `VirtualListMenu` when one is open rather

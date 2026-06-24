@@ -57,7 +57,8 @@ bool flashSaveScreenWokeDisplayFromSleep = false;
 uint64_t flashSaveSavedScreenTime = 0;
 
 constexpr uint8_t VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS = 19;
-constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_DELAY_MICROS = 1000000ULL;
+constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_START_DELAY_MICROS = 1500000ULL;
+constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_END_DELAY_MICROS = 1000000ULL;
 constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_INTERVAL_MICROS = 250000ULL;
 
 GEMPage* virtualListLauncherFocusedPage = nullptr;
@@ -2533,15 +2534,15 @@ void serviceVirtualListLauncherLabelScroll() {
 
   uint16_t maxOffset = static_cast<uint16_t>(valueLength - windowLength);
   uint64_t scrollDuration = static_cast<uint64_t>(maxOffset) * VIRTUAL_LIST_LAUNCHER_SCROLL_INTERVAL_MICROS;
-  uint64_t cycleLength = VIRTUAL_LIST_LAUNCHER_SCROLL_DELAY_MICROS
+  uint64_t cycleLength = VIRTUAL_LIST_LAUNCHER_SCROLL_START_DELAY_MICROS
                          + scrollDuration
-                         + VIRTUAL_LIST_LAUNCHER_SCROLL_DELAY_MICROS;
+                         + VIRTUAL_LIST_LAUNCHER_SCROLL_END_DELAY_MICROS;
   uint64_t cycleElapsed = (runTime - virtualListLauncherFocusStartMicros) % cycleLength;
   uint16_t nextOffset = 0;
-  if (cycleElapsed < VIRTUAL_LIST_LAUNCHER_SCROLL_DELAY_MICROS) {
+  if (cycleElapsed < VIRTUAL_LIST_LAUNCHER_SCROLL_START_DELAY_MICROS) {
     nextOffset = 0;
-  } else if (cycleElapsed < VIRTUAL_LIST_LAUNCHER_SCROLL_DELAY_MICROS + scrollDuration) {
-    uint64_t scrollElapsed = cycleElapsed - VIRTUAL_LIST_LAUNCHER_SCROLL_DELAY_MICROS;
+  } else if (cycleElapsed < VIRTUAL_LIST_LAUNCHER_SCROLL_START_DELAY_MICROS + scrollDuration) {
+    uint64_t scrollElapsed = cycleElapsed - VIRTUAL_LIST_LAUNCHER_SCROLL_START_DELAY_MICROS;
     nextOffset = static_cast<uint16_t>(
       std::min<uint64_t>((scrollElapsed / VIRTUAL_LIST_LAUNCHER_SCROLL_INTERVAL_MICROS) + 1, maxOffset)
     );
