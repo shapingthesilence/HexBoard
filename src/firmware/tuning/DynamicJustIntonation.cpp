@@ -659,16 +659,16 @@ int16_t justIntonationRetune(byte x) {
   float pitchAdjustmentCents = 0.0f;
   float basePitchOffset = 0;
   if (useJustIntonationBPM) {
-    int16_t stepsFromA = static_cast<int16_t>(current.pitchRelToA4(h[x].stepsFromC));
-    float buttonCentsToReference = -stepsToCentsFromReference(stepsFromA);
+    int16_t stepsFromReference = static_cast<int16_t>(currentPitchStepsFromReference(h[x].stepsFromC));
+    float buttonCentsToReference = -stepsToCentsFromReference(stepsFromReference);
     float referenceHz = currentTuningReferenceHz();
     // It was planned to use integer math but floating point arithmetics works fast enough so far
     float rounding = ((float)justIntonationBPM / 60.0 * justIntonationBPM_Multiplier);
     pitchAdjustmentCents = buttonCentsToReference - ratioToCents(round(referenceHz / rounding) / round(h[x].frequency / rounding));
 
     if (pressedKeyIDs.size() > 1 && useDynamicJustIntonation) {
-      int16_t baseStepsFromA = static_cast<int16_t>(current.pitchRelToA4(h[pressedKeyIDs[0]].stepsFromC));
-      float baseCentsToReference = -stepsToCentsFromReference(baseStepsFromA);
+      int16_t baseStepsFromReference = static_cast<int16_t>(currentPitchStepsFromReference(h[pressedKeyIDs[0]].stepsFromC));
+      float baseCentsToReference = -stepsToCentsFromReference(baseStepsFromReference);
       basePitchOffset = baseCentsToReference - ratioToCents(round(referenceHz / rounding) / round(h[pressedKeyIDs[0]].frequency / rounding));
     }
   }

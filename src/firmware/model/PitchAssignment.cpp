@@ -24,12 +24,10 @@ void assignPitches() {
   int32_t lowestMidiIndex = std::numeric_limits<int32_t>::max();
   for (byte i = 0; i < LED_COUNT; i++) {
     if (!(h[i].isCmd)) {
-      // steps is the distance from C
-      // the stepsToMIDI function needs distance from A4
-      // it also needs to reflect any transposition, but
-      // NOT the key of the scale.
-      int32_t relativeSteps = current.pitchRelToA4(h[i].stepsFromC);
-      int32_t midiIndex = relativeSteps + 69;
+      // Runtime tunings define which board step is the reference MIDI note.
+      // Scale key changes do not alter the played pitch grid.
+      int32_t relativeSteps = currentPitchStepsFromReference(h[i].stepsFromC);
+      int32_t midiIndex = static_cast<int32_t>(currentTuningReferenceMidiNote()) + relativeSteps;
       h[i].midiNoteIndex = midiIndex;
       if (standardMidiMicrotonalActive && midiIndex < lowestMidiIndex) {
         lowestMidiIndex = midiIndex;
@@ -47,7 +45,7 @@ void assignPitches() {
 
   for (byte i = 0; i < LED_COUNT; i++) {
     if (!(h[i].isCmd)) {
-      int32_t relativeSteps = current.pitchRelToA4(h[i].stepsFromC);
+      int32_t relativeSteps = currentPitchStepsFromReference(h[i].stepsFromC);
       float N = stepsToMIDI(static_cast<int16_t>(relativeSteps));
       float targetFrequency = stepsToFrequency(static_cast<int16_t>(relativeSteps));
       h[i].midiPitch = N;

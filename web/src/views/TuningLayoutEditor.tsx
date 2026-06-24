@@ -21,12 +21,15 @@ import {
   normalizeScaleDegreeColors,
   keyLabelIndexFromStepsFromC,
   keyLabelsFromTlvOrder,
+  keyLabelsFromScalaIntervalLabels,
+  midiNoteToFrequency,
   normalizeKeyLabels,
   NoteLabelTextMaxLength,
   objectIdToHex,
   parseLayoutBundleFile,
   parseLayoutBundleLibrary,
   parseScalaScale,
+  referenceStepsFromC,
   resolveLayoutBundleButtonColor,
   ScaleColorMapTlv,
   serializeLayoutBundle,
@@ -59,6 +62,7 @@ const previewHexHalfStepX = 25;
 const previewHexRowStepY = 42;
 const previewHexInset = 25;
 const rootFolderPath = "/";
+const defaultScalaReferenceMidiNote = 60;
 const defaultGeometryFolders = [rootFolderPath, "Tunings", "Layouts"];
 
 type LayoutGuideFocus = "center" | "across" | "upRight";
@@ -191,6 +195,16 @@ function tuningStepCents(tuning: LayoutBundleTuning): number {
     return tuning.stepCents;
   }
   return tuningPeriodCents(tuning) / tuningCycleLength(tuning);
+}
+
+function tuningStepsToCentsFromReference(tuning: LayoutBundleTuning, stepsFromReference: number): number {
+  if (tuning.kind !== "scala") {
+    return stepsFromReference * tuningStepCents(tuning);
+  }
+  const cycleLength = tuningCycleLength(tuning);
+  const periodOffset = Math.floor(stepsFromReference / cycleLength);
+  const degree = ((stepsFromReference % cycleLength) + cycleLength) % cycleLength;
+  return (periodOffset * tuning.periodCents) + (degree > 0 ? tuning.cents[degree - 1] ?? 0 : 0);
 }
 
 function formatSignedInteger(value: number): string {
@@ -466,9 +480,7 @@ function sanitizeEditorBundle(bundle: LayoutBundle): LayoutBundle {
     tuning: {
       ...bundle.tuning,
       name: clampGeometryMenuText(bundle.tuning.name, "User Tuning"),
-      keyLabels: "keyLabels" in bundle.tuning
-        ? normalizeKeyLabels(bundle.tuning.keyLabels, cycleLength)
-        : undefined
+      keyLabels: normalizeKeyLabels(bundle.tuning.keyLabels, cycleLength)
     } as LayoutBundleTuning,
     layouts: bundle.layouts.map((layout) => ({
       ...layout,
@@ -536,9 +548,9 @@ function validateKeyLabelsInput(text: string, cycleLength: number): { labels: st
   if (labels.length !== safeCycleLength) {
     return { error: `Note labels must include exactly ${safeCycleLength} labels.` };
   }
-  const invalidLabel = labels.find((label) => label.length > NoteLabelTextMaxLength || !/^[A-Za-z0-9+#b-]+$/.test(label));
+  const invalidLabel = labels.find((label) => label.length > NoteLabelTextMaxLength || !/^[A-Za-z0-9+#b/_\\.'-]+$/.test(label));
   if (invalidLabel) {
-    return { error: `Invalid note label "${invalidLabel}". Use ${NoteLabelTextMaxLength} or fewer letters, numbers, +, #, b, or -.` };
+    return { error: `Invalid note label "${invalidLabel}". Use ${NoteLabelTextMaxLength} or fewer letters, numbers, +, #, b, /, _, \\, ., or -.` };
   }
   return { labels: labels.map((label, index) => clampNoteLabelText(label, String(index))) };
 }
@@ -677,7 +689,8 @@ function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGe
       periodCents: safeCents[safeCents.length - 1] ?? 1200,
       cycleLength: clampInteger(safeCents.length, 1, 255),
       referenceMidiNote,
-      referenceHz
+      referenceHz,
+      keyLabels: decodeKeyLabels(tlvValue(object.records, TuningTlv.KeyLabels), safeCents.length)
     };
   }
 
@@ -851,11 +864,6 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   }, [activeScale.objectIdHex, activeScale.includedDegrees, activeScaleIsAllNotes, activeBundle.tuning]);
 
   useEffect(() => {
-    if (activeBundle.tuning.kind === "scala") {
-      setKeyLabelsDraft("");
-      setKeyLabelsError("");
-      return;
-    }
     setKeyLabelsDraft(formatLabelList(activeBundle.tuning.keyLabels));
     setKeyLabelsError("");
   }, [activeBundle.tuning]);
@@ -1081,9 +1089,6 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   }
 
   function commitKeyLabels(text: string) {
-    if (activeBundle.tuning.kind === "scala") {
-      return;
-    }
     const cycleLength = tuningCycleLength(activeBundle.tuning);
     const result = validateKeyLabelsInput(text, cycleLength);
     if ("error" in result) {
@@ -1095,8 +1100,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     setKeyLabelsDraft(formatLabelList(result.labels));
     if (activeBundle.tuning.kind === "edo") {
       updateEdoTuning({ keyLabels: result.labels });
-    } else {
+    } else if (activeBundle.tuning.kind === "equal-step") {
       updateEqualStepTuning({ keyLabels: result.labels });
+    } else {
+      updateScalaTuning({ keyLabels: result.labels });
     }
   }
 
@@ -1135,7 +1142,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         cycleLength: tuningCycleLength(bundle.tuning),
         referenceMidiNote: bundle.tuning.referenceMidiNote,
         referenceHz: bundle.tuning.referenceHz,
-        keyLabels: bundle.tuning.kind === "scala" ? defaultKeyLabels(tuningCycleLength(bundle.tuning)) : bundle.tuning.keyLabels
+        keyLabels: bundle.tuning.keyLabels
       };
       const tuning = {
         ...current,
@@ -1145,6 +1152,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       tuning.edoDivisions = clampInteger(tuning.edoDivisions, 1, 255);
       tuning.cycleLength = tuning.edoDivisions;
       tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
+      tuning.referenceMidiNote = clampInteger(tuning.referenceMidiNote, 0, 127);
       tuning.referenceHz = Number.isFinite(tuning.referenceHz) && tuning.referenceHz > 0 ? tuning.referenceHz : 440;
       return withCycleColors({ ...bundle, tuning }, tuning.cycleLength);
     });
@@ -1161,7 +1169,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         cycleLength: tuningCycleLength(bundle.tuning),
         referenceMidiNote: bundle.tuning.referenceMidiNote,
         referenceHz: bundle.tuning.referenceHz,
-        keyLabels: bundle.tuning.kind === "scala" ? defaultKeyLabels(tuningCycleLength(bundle.tuning)) : bundle.tuning.keyLabels
+        keyLabels: bundle.tuning.keyLabels
       };
       const tuning = {
         ...current,
@@ -1170,6 +1178,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       tuning.name = clampGeometryMenuText(tuning.name, "User Tuning");
       tuning.cycleLength = clampInteger(tuning.cycleLength, 1, 255);
       tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
+      tuning.referenceMidiNote = clampInteger(tuning.referenceMidiNote, 0, 127);
       tuning.referenceHz = Number.isFinite(tuning.referenceHz) && tuning.referenceHz > 0 ? tuning.referenceHz : 440;
       return withCycleColors({ ...bundle, tuning }, tuning.cycleLength);
     });
@@ -1185,7 +1194,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         periodCents: 1200,
         cycleLength: 1,
         referenceMidiNote: bundle.tuning.referenceMidiNote,
-        referenceHz: bundle.tuning.referenceHz
+        referenceHz: bundle.tuning.referenceHz,
+        keyLabels: defaultKeyLabels(1)
       };
       const tuning = {
         ...current,
@@ -1195,6 +1205,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       tuning.description = clampGeometryMenuText(tuning.description, tuning.name);
       tuning.periodCents = tuning.cents[tuning.cents.length - 1] ?? 1200;
       tuning.cycleLength = clampInteger(tuning.cents.length, 1, 255);
+      tuning.referenceMidiNote = clampInteger(tuning.referenceMidiNote, 0, 127);
+      tuning.referenceHz = Number.isFinite(tuning.referenceHz) && tuning.referenceHz > 0 ? tuning.referenceHz : midiNoteToFrequency(tuning.referenceMidiNote);
+      tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
       return withCycleColors({ ...bundle, tuning }, tuning.cycleLength);
     });
   }
@@ -1396,6 +1409,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     }
     try {
       const parsed = parseScalaScale(await file.text());
+      const currentScalaReference = activeBundle.tuning.kind === "scala";
+      const referenceMidiNote = currentScalaReference ? activeBundle.tuning.referenceMidiNote : defaultScalaReferenceMidiNote;
+      const referenceHz = currentScalaReference ? activeBundle.tuning.referenceHz : midiNoteToFrequency(referenceMidiNote);
+      const importedLabels = keyLabelsFromScalaIntervalLabels(parsed.count, parsed.intervalLabels, referenceMidiNote);
       updateActiveBundle((bundle) => withCycleColors({
         ...bundle,
         tuning: {
@@ -1405,8 +1422,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           cents: parsed.cents,
           periodCents: parsed.periodCents,
           cycleLength: parsed.count,
-          referenceMidiNote: bundle.tuning.referenceMidiNote,
-          referenceHz: bundle.tuning.referenceHz
+          referenceMidiNote,
+          referenceHz,
+          keyLabels: importedLabels
         }
       }, parsed.count));
       setStatus(`Imported Scala tuning ${file.name}`);
@@ -1450,12 +1468,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
 
   const selectedPreview = previewKeys.find((item) => item.key.index === selectedButton) ?? previewKeys[0];
   const activeCycleLength = tuningCycleLength(activeBundle.tuning);
-  const selectedStepsFromA = selectedPreview.stepsFromC + defaultSpanCtoA(activeCycleLength);
-  const selectedPitchCents = selectedStepsFromA * tuningStepCents(activeBundle.tuning);
+  const selectedStepsFromReference = selectedPreview.stepsFromC - referenceStepsFromC(activeCycleLength, activeBundle.tuning.referenceMidiNote);
+  const selectedPitchCents = tuningStepsToCentsFromReference(activeBundle.tuning, selectedStepsFromReference);
   const selectedFrequencyHz = activeBundle.tuning.referenceHz * (2 ** (selectedPitchCents / 1200));
-  const selectedKeyLabels = "keyLabels" in activeBundle.tuning
-    ? normalizeKeyLabels(activeBundle.tuning.keyLabels, activeCycleLength)
-    : defaultKeyLabels(activeCycleLength);
+  const selectedKeyLabels = normalizeKeyLabels(activeBundle.tuning.keyLabels, activeCycleLength);
   const selectedPitchLabel = selectedKeyLabels[keyLabelIndexFromStepsFromC(selectedPreview.stepsFromC, activeCycleLength)] ?? selectedKeyLabels[0] ?? "A";
   const selectedDegreeColor = normalizeScaleDegreeColors(activeBundle.palette.degreeColors, tuningCycleLength(activeBundle.tuning))
     .find((color) => color.degree === selectedPreview.degree) ?? createDefaultDegreeColors(1)[0];
@@ -2307,8 +2323,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               <input readOnly value={selectedPitchLabel} />
             </label>
             <label className="field">
-              <span>Steps from A4</span>
-              <input readOnly value={`${formatSignedInteger(selectedStepsFromA)} (${formatCents(selectedPitchCents)})`} />
+              <span>Steps from ref</span>
+              <input readOnly value={`${formatSignedInteger(selectedStepsFromReference)} (${formatCents(selectedPitchCents)})`} />
             </label>
             <label className="field">
               <span>Frequency</span>
@@ -2542,7 +2558,7 @@ interface TuningControlsProps {
   tuning: LayoutBundleTuning;
   onEdoChange: (patch: Partial<Extract<LayoutBundleTuning, { kind: "edo" }>>) => void;
   onEqualStepChange: (patch: Partial<Extract<LayoutBundleTuning, { kind: "equal-step" }>>) => void;
-  onScalaChange: (patch: Partial<Pick<Extract<LayoutBundleTuning, { kind: "scala" }>, "name" | "description">>) => void;
+  onScalaChange: (patch: Partial<Extract<LayoutBundleTuning, { kind: "scala" }>>) => void;
   onImportScala: () => void;
   keyLabelsDraft: string;
   keyLabelsError: string;
@@ -2636,7 +2652,7 @@ function TuningControls({
   }
 
   return (
-    <div className="stack compact">
+    <div className="fieldGrid">
       <div className="row">
         <button type="button" onClick={onImportScala}>Import .scl</button>
         <span className="muted">{tuning.cents.length} intervals</span>
@@ -2648,6 +2664,26 @@ function TuningControls({
       <label className="field">
         <span>Description</span>
         <input value={tuning.description} onChange={(event) => onScalaChange({ description: event.target.value })} />
+      </label>
+      <label className="field">
+        <span>1/1 MIDI note</span>
+        <input min={0} max={127} type="number" value={tuning.referenceMidiNote} onChange={(event) => onScalaChange({ referenceMidiNote: Number(event.target.value) })} />
+      </label>
+      <label className="field">
+        <span>1/1 Hz</span>
+        <input min={0.01} step={0.01} type="number" value={tuning.referenceHz} onChange={(event) => onScalaChange({ referenceHz: Number(event.target.value) })} />
+      </label>
+      <label className={keyLabelsError ? "field invalidField" : "field"}>
+        <span>Note labels</span>
+        <input
+          aria-invalid={keyLabelsError ? "true" : "false"}
+          onBlurCapture={(event) => onKeyLabelsBlur(event.target.value)}
+          onChange={(event) => onKeyLabelsChange(event.target.value)}
+          onKeyDown={onKeyLabelsKeyDown}
+          ref={keyLabelsInputRef}
+          value={keyLabelsDraft}
+        />
+        {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
       </label>
     </div>
   );

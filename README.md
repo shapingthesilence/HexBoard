@@ -154,8 +154,8 @@ The web app currently includes:
   layouts, four-step device orientation preview matching firmware `Device Rot`,
   scale-degree colors, per-button role/color overrides, and real-device
   save/apply/verify controls for compatible geometry bundles, including
-  firmware-backed Scala/cents-table runtime playback on devices that advertise
-  that capability
+  Scala/cents-table note-label import plus firmware-backed runtime playback on
+  devices that advertise that capability
 - firmware-backed synth preset upload, download, list, erase, current-patch
   loading, and live preview, with controls for mono retrigger/legato,
   portamento, arpeggiator direction, and named wavetable dependencies; opened

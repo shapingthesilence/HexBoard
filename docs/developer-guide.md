@@ -158,13 +158,15 @@ Current web source layout:
   Scales are edited with `includedDegrees` only; the protected `All Notes`
   scale is normalized into every bundle, tracks the current tuning cycle length,
   and is not editable or deletable. The text input validates on blur so
-  incomplete text can exist while a user is typing. EDO and equal-step tunings
-  store editable `keyLabels` and `referenceHz`; key labels default to
-  A-first pitch-label strings in the editor, rotate to firmware C-order when
-  encoded as `KeyLabels`, and use the same draft-then-blur validation style.
-  The selected-key inspector derives the displayed note label, A4-relative
-  step/cents offset, and frequency from `stepsFromC`, the default C-to-A span,
-  and the tuning's `referenceHz`. The
+  incomplete text can exist while a user is typing. EDO, equal-step, and Scala
+  tunings store editable `keyLabels`, `referenceMidiNote`, and `referenceHz`;
+  key labels default to A-first pitch-label strings in the editor, rotate to
+  firmware C-order when encoded as `KeyLabels`, and use the same
+  draft-then-blur validation style. Scala import converts trailing `.scl`
+  interval labels into that A-first editor order, using the period-row label as
+  the implicit 1/1 root when present. The selected-key inspector derives the
+  displayed note label, reference-relative step/cents offset, and frequency
+  from `stepsFromC`, the tuning's reference MIDI note, and `referenceHz`. The
   preview paintbrush has an eyedropper subtool that samples a preview key color
   into the active brush color without writing a button override, plus a reset
   action that strips color fields from active-layout button overrides while
@@ -172,7 +174,8 @@ Current web source layout:
   Equal-step layout-bundle tunings store step
   cents plus cycle length in the editor model; protocol `PeriodMilliCents` is
   derived during encoding. Scala layout-bundle tunings store the imported
-  cents table and period metadata instead of exposing separate step fields. The
+  cents table, imported or edited labels, period metadata, and an explicit 1/1
+  reference instead of exposing separate step fields. The
   tuning/layout editor uses real-device `Save`, `Send Now`, `Live send`, and
   `Verify` controls: `Save` writes all bundle objects with `SaveToFlash`,
   runtime sends write the active EDO/equal-step/Scala-compatible objects with
@@ -545,9 +548,10 @@ For the host sync protocol covering profiles, user tunings/layouts, mapping
 objects, and named synth presets, see `docs/preset-sync-sysex.md`. Current
 firmware can persist, round-trip, and live-apply the core geometry path:
 generated EDO/equal-step `UserTuning` objects feed `current.tuning()` and the
-MIDI pitch offset from `ReferenceMilliHz`; Scala/cents-list `UserTuning`
-objects also load a RAM cents table that resolves every `stepsFromC` value into
-synth frequency, MIDI note choice, and MPE bend; vector `UserLayout` objects feed
+MIDI pitch offset from `ReferenceMidiNote`/`ReferenceMilliHz`; Scala/cents-list
+`UserTuning` objects also load a RAM cents table that resolves every
+`stepsFromC` value against that 1/1 reference into synth frequency, MIDI note
+choice, and MPE bend; vector `UserLayout` objects feed
 `applyLayout()`; `UserScale` included degrees feed `applyScale()`;
 `ScaleColorMap` feeds `setLEDcolorCodes()`; and format-1 `ExplicitButtonMap`
 objects override per-button role, pitch, and color before pitch assignment is

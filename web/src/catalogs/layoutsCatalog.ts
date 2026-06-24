@@ -146,6 +146,7 @@ export interface CentsTableTuningInput {
   periodMilliCents?: number;
   referenceMidiNote?: number;
   referenceMilliHz?: number;
+  keyLabels?: string[];
 }
 
 export interface VectorLayoutInput {
@@ -258,6 +259,7 @@ export type LayoutBundleTuning =
       cycleLength: number;
       referenceMidiNote: number;
       referenceHz: number;
+      keyLabels: string[];
     };
 
 export interface LayoutBundle {
@@ -373,6 +375,7 @@ export function createEqualStepTuning(input: EqualStepTuningInput): EncodedCatal
 export function createCentsTableTuning(input: CentsTableTuningInput): EncodedCatalogObject {
   const tableBytes = input.cents.map((cents) => bytesFromNumbers(encodeInt32LE(Math.round(cents * 1000))));
   const periodMilliCents = input.periodMilliCents ?? Math.round((input.cents[input.cents.length - 1] ?? 1200) * 1000);
+  const cycleLength = Math.max(1, input.cents.length);
 
   return buildCatalogObject({
     objectType: ObjectType.UserTuning,
@@ -385,6 +388,7 @@ export function createCentsTableTuning(input: CentsTableTuningInput): EncodedCat
       tlvU32LE(TuningTlv.PeriodMilliCents, periodMilliCents),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
       tlvU32LE(TuningTlv.ReferenceMilliHz, input.referenceMilliHz ?? 440_000),
+      tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(input.keyLabels ?? defaultKeyLabels(cycleLength), cycleLength))),
       tlv(TuningTlv.CentsTable, concatBytes(tableBytes))
     ]
   });
@@ -539,6 +543,17 @@ export function keyLabelIndexFromStepsFromC(stepsFromC: number, cycleLength: num
   return positiveModulo(stepsFromC + defaultSpanCtoA(cycleLength), cycleLength);
 }
 
+export function referenceStepsFromC(cycleLength: number, referenceMidiNote: number): number {
+  const safeCycleLength = Math.max(1, Math.round(cycleLength));
+  const safeReferenceMidiNote = clampInteger(referenceMidiNote, 0, 127);
+  return Math.round((safeCycleLength * (safeReferenceMidiNote - 60)) / 12);
+}
+
+export function midiNoteToFrequency(midiNote: number): number {
+  const safeMidiNote = clampInteger(midiNote, 0, 127);
+  return 440 * (2 ** ((safeMidiNote - 69) / 12));
+}
+
 export function defaultKeyLabels(cycleLength: number): string[] {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
   const cOrderedLabels = cOrderedDefaultKeyLabels[safeCycleLength];
@@ -554,6 +569,27 @@ export function normalizeKeyLabels(labels: string[] | undefined, cycleLength: nu
     const label = labels?.[index]?.trim();
     return clampNoteLabelText(label || fallback, fallback);
   });
+}
+
+export function keyLabelsFromScalaIntervalLabels(cycleLength: number, intervalLabels: Array<string | undefined>, referenceMidiNote = 60): string[] {
+  const safeCycleLength = Math.max(1, Math.round(cycleLength));
+  const defaults = defaultKeyLabels(safeCycleLength);
+  if (!intervalLabels.some((label) => label?.trim())) {
+    return defaults;
+  }
+
+  const labels = [...defaults];
+  const referenceStep = referenceStepsFromC(safeCycleLength, referenceMidiNote);
+  const rootLabel = intervalLabels[safeCycleLength - 1]?.trim() || "1/1";
+  for (let degree = 0; degree < safeCycleLength; degree += 1) {
+    const sourceLabel = degree === 0 ? rootLabel : intervalLabels[degree - 1]?.trim();
+    if (!sourceLabel) {
+      continue;
+    }
+    const labelIndex = keyLabelIndexFromStepsFromC(referenceStep + degree, safeCycleLength);
+    labels[labelIndex] = clampNoteLabelText(sourceLabel, defaults[labelIndex]);
+  }
+  return normalizeKeyLabels(labels, safeCycleLength);
 }
 
 function migrateLegacyDegreeNumberKeyLabels(labels: string[] | undefined, cycleLength: number): string[] | undefined {
@@ -957,7 +993,8 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
           cents: bundle.tuning.cents,
           periodMilliCents: centsToMilliCents(bundle.tuning.periodCents),
           referenceMidiNote: bundle.tuning.referenceMidiNote,
-          referenceMilliHz: hertzToMilliHertz(bundle.tuning.referenceHz)
+          referenceMilliHz: hertzToMilliHertz(bundle.tuning.referenceHz),
+          keyLabels: bundle.tuning.keyLabels
         });
     }
   })();
@@ -1149,7 +1186,8 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
       periodCents: safeCents[safeCents.length - 1] ?? 1200,
       cycleLength: clampInteger(safeCents.length, 1, 255),
       referenceMidiNote,
-      referenceHz
+      referenceHz,
+      keyLabels: normalizeKeyLabels(migrateLegacyDegreeNumberKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, safeCents.length), safeCents.length)
     };
   }
 
@@ -1248,8 +1286,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
   };
 }
 
-function parseScalaIntervalToCents(line: string): number {
-  const token = line.trim().split(/\s+/)[0];
+function parseScalaIntervalTokenToCents(token: string): number {
   if (!token) {
     throw new Error("Scala interval is empty");
   }
@@ -1279,7 +1316,24 @@ export interface ParsedScalaScale {
   description: string;
   count: number;
   cents: number[];
+  intervalLabels: Array<string | undefined>;
   periodCents: number;
+}
+
+function parseScalaIntervalLine(line: string): { cents: number; label: string | undefined } {
+  const trimmed = line.trim();
+  const match = /^(\S+)(?:\s+(.*))?$/.exec(trimmed);
+  if (!match) {
+    throw new Error("Scala interval is empty");
+  }
+  const trailingText = match[2]?.trim();
+  const labelToken = trailingText && !trailingText.startsWith("!")
+    ? trailingText.split(/\s+/)[0]
+    : undefined;
+  return {
+    cents: parseScalaIntervalTokenToCents(match[1]),
+    label: labelToken ? clampNoteLabelText(labelToken, labelToken) : undefined
+  };
 }
 
 export function parseScalaScale(text: string): ParsedScalaScale {
@@ -1299,11 +1353,13 @@ export function parseScalaScale(text: string): ParsedScalaScale {
   if (intervalLines.length !== count) {
     throw new Error(`Scala .scl expected ${count} interval lines`);
   }
-  const cents = intervalLines.map(parseScalaIntervalToCents);
+  const intervals = intervalLines.map(parseScalaIntervalLine);
+  const cents = intervals.map((interval) => interval.cents);
   return {
     description,
     count,
     cents,
+    intervalLabels: intervals.map((interval) => interval.label),
     periodCents: cents[cents.length - 1] ?? 1200
   };
 }

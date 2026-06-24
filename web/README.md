@@ -81,9 +81,9 @@ and `TRANSFER_END` so firmware can pace object transfers.
   palette editing, A-first note labels, selected-key pitch readouts and
   overrides, and a paintbrush mode for applying per-button color overrides
   directly on the preview, including a confirmed reset that returns all keys in
-  the active layout to scale-degree colors. Scala/cents-table live send is
-  enabled when the connected firmware advertises cents-table runtime tuning
-  support.
+  the active layout to scale-degree colors. Scala `.scl` import reads trailing
+  interval labels, exposes the 1/1 MIDI note and Hz reference, and enables
+  cents-table live send when the connected firmware advertises runtime support.
 - A synth preset editor with name and folder selection, folder creation, main
   synth parameter controls, mono retrigger/legato, mono portamento,
   arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,

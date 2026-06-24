@@ -518,14 +518,18 @@ labels and an `A = x Hz` reference pitch; note labels default to an A-first
 pitch-label sequence and validate like included degrees when the field is exited. The cents-per-step
 editor takes only step size and cycle length; its period is derived from those
 two fields. Scala import derives period and cycle length from the imported
-interval table and keeps the bundle's current reference pitch, so the Scala
-editor does not expose separate step-size fields. Scala text is parsed in the
-web app and stored in the bundle as cents data. On supported firmware, applied
-Scala bundles use that cents table for onboard synth frequency, MIDI note
-selection, and MPE pitch bend. The preview uses the current `133` note-key
-hardware shape and omits the seven command buttons so geometry editing stays
-focused on playable notes. The selected-key inspector shows the resolved note
-label, A4-relative step/cents offset, and frequency for the selected key, and has a `Color source` dropdown:
+interval table, reads one-token note labels after interval values, and uses the
+final period label as the implicit 1/1 root label when present. New `.scl`
+imports default the 1/1 reference to MIDI note `60` at standard C4 frequency,
+matching the common no-keyboard-mapping Scala convention, while the Scala
+editor exposes both `1/1 MIDI note` and `1/1 Hz` so the base pitch can be set
+explicitly. Scala text is parsed in the web app and stored in the bundle as
+cents data. On supported firmware, applied Scala bundles use that cents table
+and 1/1 reference for onboard synth frequency, MIDI note selection, and MPE
+pitch bend. The preview uses the current `133` note-key hardware shape and
+omits the seven command buttons so geometry editing stays focused on playable
+notes. The selected-key inspector shows the resolved note label,
+reference-relative step/cents offset, and frequency for the selected key, and has a `Color source` dropdown:
 `Scale degree` edits the palette color for the generated degree, while
 `Button override` edits only the selected button's color and is available only
 when the default color mode is `Custom`. `Note source` can

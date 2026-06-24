@@ -36,6 +36,24 @@ uint16_t wrappedTableDegree(int32_t stepsFromA, uint16_t cycleLength) {
   return static_cast<uint16_t>(remainder);
 }
 
+int32_t roundedDiv(int32_t numerator, int32_t denominator) {
+  if (denominator <= 0) {
+    return 0;
+  }
+  if (numerator >= 0) {
+    return (numerator + (denominator / 2)) / denominator;
+  }
+  return -((-numerator + (denominator / 2)) / denominator);
+}
+
+int32_t referenceStepsFromC() {
+  if (!userGeometryRuntimeActive) {
+    return -current.tuning().spanCtoA();
+  }
+  int32_t semitonesFromC4 = static_cast<int32_t>(currentTuningReferenceMidiNote()) - 60;
+  return roundedDiv(static_cast<int32_t>(current.tuning().cycleLength) * semitonesFromC4, 12);
+}
+
 bool centsTableMatchesStandardSemitones() {
   if (!userGeometryRuntimeCentsTableActive
       || userGeometryRuntimeCentsTableLength == 0
@@ -50,8 +68,8 @@ bool centsTableMatchesStandardSemitones() {
   return true;
 }
 
-bool referenceHzIsConcertA() {
-  return std::fabs(currentTuningReferenceHz() - CONCERT_A_HZ) < 0.001f;
+bool referenceHzMatchesStandardMidiNote() {
+  return std::fabs(currentTuningReferenceHz() - MIDItoFreq(currentTuningReferenceMidiNote())) < 0.001f;
 }
 
 }  // namespace
@@ -97,6 +115,13 @@ float MIDItoFreq(float midi) {  // formula to convert from MIDI note to Hz
   return CONCERT_A_HZ * exp2((midi - CONCERT_A_MIDI_NOTE) / 12.0f);
 }
 
+uint8_t currentTuningReferenceMidiNote() {
+  if (userGeometryRuntimeActive) {
+    return userGeometryRuntimeReferenceMidiNote;
+  }
+  return static_cast<uint8_t>(CONCERT_A_MIDI_NOTE);
+}
+
 float currentTuningReferenceHz() {
   if (userGeometryRuntimeActive && userGeometryRuntimeReferenceHz > 0.0f) {
     return userGeometryRuntimeReferenceHz;
@@ -115,38 +140,45 @@ float currentTuningNominalStepSizeCents() {
   return current.tuning().stepSize;
 }
 
-float stepsToCentsFromReference(int16_t stepsFromA) {
+int32_t currentPitchStepsFromReference(int16_t stepsFromC) {
+  if (!userGeometryRuntimeActive) {
+    return current.pitchRelToA4(stepsFromC);
+  }
+  return static_cast<int32_t>(stepsFromC) + current.transpose - referenceStepsFromC();
+}
+
+float stepsToCentsFromReference(int16_t stepsFromReference) {
   if (userGeometryRuntimeActive
       && userGeometryRuntimeCentsTableActive
       && userGeometryRuntimeCentsTableLength > 0
       && userGeometryRuntimePeriodMilliCents > 0) {
     uint16_t cycleLength = userGeometryRuntimeCentsTableLength;
-    int32_t periodOffset = floorDiv(stepsFromA, cycleLength);
-    uint16_t degree = wrappedTableDegree(stepsFromA, cycleLength);
+    int32_t periodOffset = floorDiv(stepsFromReference, cycleLength);
+    uint16_t degree = wrappedTableDegree(stepsFromReference, cycleLength);
     int64_t milliCents = static_cast<int64_t>(periodOffset) * userGeometryRuntimePeriodMilliCents;
     if (degree > 0) {
       milliCents += userGeometryRuntimeCentsTableMilliCents[degree - 1];
     }
     return static_cast<float>(milliCents) / 1000.0f;
   }
-  return static_cast<float>(stepsFromA) * static_cast<float>(current.tuning().stepSize);
+  return static_cast<float>(stepsFromReference) * static_cast<float>(current.tuning().stepSize);
 }
 
-float stepsToFrequency(int16_t stepsFromA) {
+float stepsToFrequency(int16_t stepsFromReference) {
   float referenceHz = currentTuningReferenceHz();
   if (referenceHz <= 0.0f) {
     return 0.0f;
   }
-  return referenceHz * exp2f(stepsToCentsFromReference(stepsFromA) / 1200.0f);
+  return referenceHz * exp2f(stepsToCentsFromReference(stepsFromReference) / 1200.0f);
 }
 
-float stepsToMIDI(int16_t stepsFromA) {  // return the MIDI pitch associated
-  float frequency = stepsToFrequency(stepsFromA);
+float stepsToMIDI(int16_t stepsFromReference) {  // return the MIDI pitch associated
+  float frequency = stepsToFrequency(stepsFromReference);
   return frequency > 0.0f ? freqToMIDI(frequency) : -1.0f;
 }
 
 bool currentTuningIsStandardSemitone() {
-  if (!referenceHzIsConcertA()) {
+  if (!referenceHzMatchesStandardMidiNote()) {
     return false;
   }
   if (userGeometryRuntimeActive && userGeometryRuntimeCentsTableActive) {

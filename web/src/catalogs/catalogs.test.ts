@@ -21,6 +21,8 @@ import {
   encodeHexBoardWavetableWav,
   encodeLayoutBundle,
   GenericScaleColorMapName,
+  keyLabelsForTlvOrder,
+  keyLabelsFromScalaIntervalLabels,
   LayoutTlv,
   parseHexBoardWavetable,
   parseLayoutBundleLibrary,
@@ -182,14 +184,16 @@ describe("catalog object encoding", () => {
 ! example.scl
 Example scale
 3
-100.0
-3/2
-2/1
+100.0 C#
+3/2 G
+2/1 C
 `);
     expect(parsed.description).toBe("Example scale");
     expect(parsed.count).toBe(3);
     expect(parsed.cents[0]).toBeCloseTo(100);
     expect(parsed.cents[1]).toBeCloseTo(701.955, 3);
+    expect(parsed.intervalLabels).toEqual(["C#", "G", "C"]);
+    expect(keyLabelsForTlvOrder(keyLabelsFromScalaIntervalLabels(parsed.count, parsed.intervalLabels, 60), parsed.count)).toEqual(["C", "C#", "G"]);
     expect(parsed.periodCents).toBeCloseTo(1200);
   });
 
@@ -407,7 +411,8 @@ Example scale
         periodCents: 702,
         cycleLength: 3,
         referenceMidiNote: 69,
-        referenceHz: 440
+        referenceHz: 440,
+        keyLabels: ["A", "A+1", "A+2"]
       }
     }));
 

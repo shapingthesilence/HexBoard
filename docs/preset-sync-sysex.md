@@ -781,27 +781,33 @@ The device can create and edit an EDO object with only `Name`, `TuningKind`,
 cents-per-step tunings with `TuningKind = 4`, `StepMilliCents`, and a cycle
 length in `EdoDivisions` for labels/colors; host tooling derives
 `PeriodMilliCents` from those two values so they cannot diverge. Generated EDO
-and equal-step tunings can include `KeyLabels` and `ReferenceMilliHz`; the web
-editor presents labels in A-first order, defaults to A-first pitch labels, and
-rotates them into the firmware's C-centered cycle order for `KeyLabels`. Scala
-`.scl` import is a host-side feature. Current firmware live Apply supports
-`TuningKind = 1`, `TuningKind = 2`, and `TuningKind = 4`; it loads cycle
-length, nominal step size, key labels when present, `ReferenceMilliHz`, and for
+and equal-step tunings can include `KeyLabels`, `ReferenceMidiNote`, and
+`ReferenceMilliHz`; the web editor presents labels in A-first order, defaults
+to A-first pitch labels, and rotates them into the firmware's C-centered cycle
+order for `KeyLabels`. Scala imports default to a MIDI-note-60 1/1 reference
+when no existing Scala reference is being preserved. Scala
+`.scl` import is a host-side feature; the web app treats a one-token suffix
+after an interval value as a note label and can reuse the final period-row label
+for the implicit 1/1 root. Current firmware live Apply supports `TuningKind =
+1`, `TuningKind = 2`, and `TuningKind = 4`; it loads cycle length, nominal step
+size, key labels when present, `ReferenceMidiNote`, `ReferenceMilliHz`, and for
 cents-list tunings a RAM copy of `CentsTable`. Cents-list playback treats degree
-`0` as an implicit `0`-cent reference, uses table entry `1` as the first
-interval, and wraps all positive or negative step values by
-`PeriodMilliCents`. The web app parses Scala text, derives period/cycle
-metadata, and writes the cents table. Firmware does not parse Scala text.
+`0` as an implicit `0`-cent reference at `ReferenceMidiNote`/`ReferenceMilliHz`,
+uses table entry `1` as the first interval, and wraps all positive or negative
+step values by `PeriodMilliCents`. The web app parses Scala text, derives
+period/cycle metadata, and writes the cents table. Firmware does not parse
+Scala text.
 
 The tuning object must be complete enough for both the onboard synth and every
 MIDI output mode. For equal-step tunings, firmware can derive frequency,
 single-channel MIDI note numbers, and MPE bend offsets from `StepMilliCents`,
 `PeriodMilliCents`, `ReferenceMidiNote`, and `ReferenceMilliHz`. For imported
-or irregular cents-list tunings, firmware uses `CentsTable` to compute the
-exact frequency for each `stepsFromC` value, then decides whether standard
-MIDI, multi-channel non-MPE retuning, or MPE pitch bend is required from the
-same resolved cent offset. `RatioTable` remains reserved and is not currently
-runtime-compatible.
+or irregular cents-list tunings, firmware first maps `ReferenceMidiNote` to the
+tuning step that should act as the implicit 1/1 degree, then uses `CentsTable`
+to compute the exact frequency for each `stepsFromC` value. It decides whether
+standard MIDI, multi-channel non-MPE retuning, or MPE pitch bend is required
+from the same resolved cent offset. `RatioTable` remains reserved and is not
+currently runtime-compatible.
 
 Example raw TLV snippet for a generated `19 EDO` tuning:
 

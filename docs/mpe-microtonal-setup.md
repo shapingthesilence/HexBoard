@@ -127,7 +127,7 @@ Live 12 can load built-in tunings, Scala `.scl` files, and Ableton `.ascl` tunin
 
 If Live is retuning a third-party plugin or external instrument through MPE, Live's documentation expects the receiving instrument to use a `+/-48` semitone per-note pitch-bend range. That is downstream from Live and separate from HexBoard's `MPE Bend`, because HexBoard's MPE retuning is disabled in this workflow.
 
-This works best when Live's loaded tuning uses the same note order and reference pitch as the selected HexBoard tuning. HexBoard computes pitches from A4 = `440 Hz`. If a Scala `.scl` file sounds offset in Live, adjust Live's reference pitch and save the result as an `.ascl` file. If Live uses a tuning that HexBoard does not have, HexBoard can still send note numbers, but its layout, labels, and LEDs may not correspond to Live's final pitches.
+This works best when Live's loaded tuning uses the same note order and reference pitch as the selected HexBoard tuning. Built-in HexBoard tunings default to A4 = `440 Hz`; imported Scala/cents-table geometry bundles use their editable 1/1 MIDI note and Hz reference. If a Scala `.scl` file sounds offset in Live, align Live's reference pitch with the HexBoard bundle or save the Live result as an `.ascl` file. If Live uses a tuning that HexBoard does not have, HexBoard can still send note numbers, but its layout, labels, and LEDs may not correspond to Live's final pitches.
 
 Tradeoffs:
 
