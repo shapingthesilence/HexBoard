@@ -130,6 +130,16 @@ make PWM_BITS=9
 
 Supported values are `8`, `9`, and `10`; the default is `10`.
 
+The in-port sequencer menu shell is compiled out by default. To expose the
+placeholder shell for porting work, build with:
+
+```sh
+make HEXBOARD_ENABLE_SEQUENCER=1
+```
+
+That flag only adds the placeholder `Sequencer` menu entry; it does not enable
+sequencer editing, playback, storage, or LED override behavior.
+
 The expected output artifact is:
 
 ```text

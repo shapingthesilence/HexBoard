@@ -96,6 +96,10 @@ The main menu includes:
 - `Save Profile`
 - `Synth Editor`
 
+Developer builds compiled with `HEXBOARD_ENABLE_SEQUENCER=1` also show a
+`Sequencer` entry. It opens a placeholder shell only; default firmware does not
+show it, and no sequencer editing, playback, or storage behavior is enabled.
+
 `Synth:<current preset>` opens the synth preset load menu from the top level.
 If the runtime synth sound has changed since the loaded preset was selected or
 saved, the preset name is shown with a leading `*`.

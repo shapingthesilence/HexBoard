@@ -1,9 +1,10 @@
 # HexBoard RP2040 build target.
 FQBN = rp2040:rp2040:generic:flash=16777216_8388608,freq=250,opt=Small,os=none,profile=Disabled,rtti=Disabled,stackprotect=Disabled,exceptions=Disabled,dbgport=Disabled,dbglvl=None,boot2=boot2_generic_03h_4_padded_checksum,usbstack=picosdk,ipbtstack=ipv4only,uploadmethod=default
 PWM_BITS ?= 10
+HEXBOARD_ENABLE_SEQUENCER ?= 0
 USB_MANUFACTURER ?= \"HexBoard\"
 USB_PRODUCT ?= \"HexBoard\"
-BUILD_PROPERTIES = --build-property compiler.cpp.extra_flags="-DPWM_BITS=$(PWM_BITS)" \
+BUILD_PROPERTIES = --build-property compiler.cpp.extra_flags="-DPWM_BITS=$(PWM_BITS) -DHEXBOARD_ENABLE_SEQUENCER=$(HEXBOARD_ENABLE_SEQUENCER)" \
 	--build-property build.usb_manufacturer="$(USB_MANUFACTURER)" \
 	--build-property build.usb_product="$(USB_PRODUCT)"
 

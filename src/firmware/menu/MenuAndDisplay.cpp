@@ -14,6 +14,7 @@
 #include "../storage/Settings.h"
 #include "../storage/SynthPresetStorage.h"
 #include "../storage/SynthWavetableStorage.h"
+#include "../sequencer/SequencerMode.h"
 #include "../synth/SynthAudio.h"
 #include "GeometryMenu.h"
 #include "MenuAndDisplay.h"
@@ -2923,6 +2924,7 @@ void setupMenu() {
   setupAdvancedMenuPage();
   setupProfileMenuPages();
   setupSynthMenuPage();
+  setupSequencerMenu();
 }
 void setupGFX() {
   u8g2.begin();                      // Menu and graphics setup

@@ -67,6 +67,21 @@ make PWM_BITS=9
 
 The default is `10`.
 
+The optional sequencer shell is gated by `HEXBOARD_ENABLE_SEQUENCER`, which
+defaults to `0` in both `Makefile` and `src/firmware/config/FeatureFlags.h`.
+Arduino IDE builds therefore keep current firmware behavior without custom
+flags. For porting work that needs the placeholder menu entry, run:
+
+```sh
+make HEXBOARD_ENABLE_SEQUENCER=1
+```
+
+When the flag is `0`, `setupSequencerMenu()` is a no-op and no top-level
+Sequencer menu item is installed. When the flag is `1`, the firmware installs
+only a minimal `Sequencer` page with read-only placeholder rows; sequencer
+editing, transport, storage, MIDI sync, LED overrides, and alternate board-mode
+dispatch are intentionally not present yet.
+
 ### Web App Tooling
 
 The companion app is intentionally self-contained under `web/`. Keep Node
@@ -281,6 +296,7 @@ The main firmware files are:
 
 - `src/firmware/FirmwareModule.h`: shared Arduino/RP2040/library includes and `RAM_FUNC`
 - `src/firmware/HexBoardFirmware.h`: lifecycle API used by the root sketch
+- `src/firmware/config/`: compile-time feature flags and other source-level build toggles
 - Subsystem `.h` files under `src/firmware/`: cross-module APIs owned by each subsystem. Important shared declarations live in `hardware/HardwareConfig.h`, `hardware/GridState.h`, `tuning/Tuning.h`, `model/Layout.h`, `model/ScalePalettePreset.h`, and `storage/PersistentDataModels.h`.
 - `src/firmware/app/`: platform/common helpers, non-synth runtime defaults, diagnostics/timing, and lifecycle orchestration
 - `src/firmware/tuning/`: tuning tables, shared tuning math, and Dynamic JI retuning
@@ -290,6 +306,7 @@ The main firmware files are:
 - `src/firmware/synth/`: synth defaults, built-in single-cycle waveforms, compatibility wavetable catalog, render orchestration, audio transport, oscillator/wavetable runtime, envelopes, modulation caches, voice allocation, arpeggiator, and metronome; hot render glue remains in `SynthAudio.cpp`, and synth-private declarations live in `SynthAudioInternal.h`
 - `src/firmware/storage/`: persistent data models, settings/profile storage, synth preset/wavetable storage, and preset-sync protocol/geometry/synth-object/message handling
 - `src/firmware/menu/`: OLED/GEM pages and settings callbacks, played-note drawing, synth preset menu rebuilding, and synth wavetable menu rebuilding
+- `src/firmware/sequencer/`: default-off sequencer porting shell; keep future sequencer-owned menu pages and integration hooks here rather than in the root sketch
 
 If you are changing behavior, start by locating which layer owns it. Shared constants, types, and lifecycle calls belong in the nearest owning header; subsystem-owned globals and hot helpers should stay private in their `.cpp` when no other module needs them. Fix missing declarations by improving the owning headers rather than reintroducing source inclusion.
 
