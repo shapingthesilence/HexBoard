@@ -2487,7 +2487,9 @@ void resetVirtualListLauncherScrollTracking(bool restoreLabels) {
 
 void redrawMenuAfterVirtualListLauncherScroll() {
   menu.drawMenu();
-  noteOverlayDirty = true;
+  if (!noteBadgeVisible) {
+    noteOverlayDirty = true;
+  }
 }
 
 void serviceVirtualListLauncherLabelScroll() {
@@ -2899,6 +2901,7 @@ void setupMenu() {
   updateMainMenuDynamicLabels();
   menu.setSplashDelay(0);
   menu.init();
+  menu.setDrawMenuCallback(drawPlayedNoteBadgeOnMenuFrame);
   menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
   /*
       addMenuItem procedure adds that GEM object to the given page.

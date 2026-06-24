@@ -505,9 +505,12 @@ per library entry. When enabled, MIDI note-on updates mark a small OLED display
 region dirty, and note-on can temporarily wake the display from screensaver.
 `drawPlayedNotesOverlay()` runs from the main loop after menu input handling.
 During normal menu display it draws only the newest currently held note as a
-top-right badge using the same large note font as the full overlay. During a
-temporary screensaver wake it renders the larger `Now Playing` overlay with up
-to `6` unique active notes.
+top-right badge using the same large note font as the full overlay. GEM menu
+redraws use `drawPlayedNoteBadgeOnMenuFrame()` as a draw callback, and
+`VirtualListMenu` calls the same frame helper before flushing the page, so menu
+updates and the badge are sent in one OLED frame. During a temporary screensaver
+wake it renders the larger `Now Playing` overlay with up to `6` unique active
+notes.
 
 Display behavior:
 

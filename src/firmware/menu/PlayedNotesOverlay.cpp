@@ -79,6 +79,7 @@ bool newestHeldDisplayedPitch(int16_t& displayedPitchOut);
 void formatDisplayedPitchNumber(int16_t displayedPitch, char* noteText, size_t noteTextSize);
 void formatDisplayedPitchLabel(int16_t displayedPitch, char* noteText, size_t noteTextSize);
 void formatDisplayedPitch(int16_t displayedPitch, char* noteText, size_t noteTextSize);
+void drawCompactPlayedNoteBadgeFrame(const char* noteText);
 void drawCompactPlayedNoteBadge();
 extern bool screenSaverOn;
 
@@ -360,6 +361,41 @@ void formatDisplayedPitch(int16_t displayedPitch, char* noteText, size_t noteTex
   }
 }
 
+void drawCompactPlayedNoteBadgeFrame(const char* noteText) {
+  if (!noteText || noteText[0] == '\0') {
+    return;
+  }
+
+  int badgeX = u8g2.getDisplayWidth() - PLAYED_NOTE_BADGE_WIDTH;
+  if (badgeX < 0) {
+    badgeX = 0;
+  }
+
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(badgeX, 0, PLAYED_NOTE_BADGE_WIDTH, PLAYED_NOTE_BADGE_HEIGHT);
+  u8g2.setDrawColor(1);
+  u8g2.setFont(u8g2_font_logisoso16_tf);
+  int noteWidth = u8g2.getStrWidth(noteText);
+  int noteX = u8g2.getDisplayWidth() - noteWidth - PLAYED_NOTE_BADGE_MARGIN;
+  if (noteX < 0) {
+    noteX = 0;
+  }
+  u8g2.drawStr(noteX, PLAYED_NOTE_BADGE_BASELINE, noteText);
+}
+
+void drawPlayedNoteBadgeOnMenuFrame() {
+  if (!noteDisplayEnabled()
+      || noteOverlayTemporaryWake
+      || noteOverlayVisible
+      || !noteBadgeVisible
+      || noteBadgeText[0] == '\0'
+      || screenSaverOn) {
+    return;
+  }
+
+  drawCompactPlayedNoteBadgeFrame(noteBadgeText);
+}
+
 void drawCompactPlayedNoteBadge() {
   int16_t displayedPitch = 0;
   if (!newestHeldDisplayedPitch(displayedPitch)) {
@@ -386,21 +422,7 @@ void drawCompactPlayedNoteBadge() {
   noteOverlayVisible = false;
   noteOverlayDirty = false;
 
-  int badgeX = u8g2.getDisplayWidth() - PLAYED_NOTE_BADGE_WIDTH;
-  if (badgeX < 0) {
-    badgeX = 0;
-  }
-
-  u8g2.setDrawColor(0);
-  u8g2.drawBox(badgeX, 0, PLAYED_NOTE_BADGE_WIDTH, PLAYED_NOTE_BADGE_HEIGHT);
-  u8g2.setDrawColor(1);
-  u8g2.setFont(u8g2_font_logisoso16_tf);
-  int noteWidth = u8g2.getStrWidth(noteBadgeText);
-  int noteX = u8g2.getDisplayWidth() - noteWidth - PLAYED_NOTE_BADGE_MARGIN;
-  if (noteX < 0) {
-    noteX = 0;
-  }
-  u8g2.drawStr(noteX, PLAYED_NOTE_BADGE_BASELINE, noteBadgeText);
+  drawCompactPlayedNoteBadgeFrame(noteBadgeText);
   u8g2.sendBuffer();
 }
 

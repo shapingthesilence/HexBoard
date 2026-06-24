@@ -1,5 +1,6 @@
 #include "../FirmwareModule.h"
 #include "MenuAndDisplay.h"
+#include "PlayedNotesOverlay.h"
 #include "VirtualListMenu.h"
 #include "../storage/PersistentDataModels.h"
 
@@ -272,6 +273,7 @@ void redrawVirtualListMenu() {
     drawRows();
     drawPointer();
     drawScrollbar();
+    drawPlayedNoteBadgeOnMenuFrame();
   } while (u8g2.nextPage());
 }
 
