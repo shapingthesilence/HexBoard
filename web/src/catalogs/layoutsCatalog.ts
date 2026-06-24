@@ -107,6 +107,14 @@ export const ExplicitButtonMapTlv = {
   ButtonRecords: 0x23
 } as const;
 
+const cOrderedDefaultKeyLabels: Partial<Record<number, string[]>> = {
+  12: ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"],
+  17: ["C", "Db", "C#", "D", "Eb", "D#", "E", "F", "Gb", "F#", "G", "Ab", "G#", "A", "Bb", "A#", "B"],
+  19: ["C", "C#", "Db", "D", "D#", "Eb", "E", "E#", "F", "F#", "Gb", "G", "G#", "Ab", "A", "A#", "Bb", "B", "Cb"],
+  24: ["C", "C+", "C#", "Dd", "D", "D+", "Eb", "Ed", "E", "E+", "F", "F+", "F#", "Gd", "G", "G+", "G#", "Ad", "A", "A+", "Bb", "Bd", "B", "Cd"],
+  31: ["C", "C+", "C#", "Db", "Dd", "D", "D+", "D#", "Eb", "Ed", "E", "E+", "Fd", "F", "F+", "F#", "Gb", "Gd", "G", "G+", "G#", "Ab", "Ad", "A", "A+", "A#", "Bb", "Bd", "B", "B+", "Cd"]
+};
+
 export interface GeneratedEdoTuningInput {
   objectId: Uint8Array;
   name: string;
@@ -339,7 +347,7 @@ export function createGeneratedEdoTuning(input: GeneratedEdoTuningInput): Encode
       tlvU32LE(TuningTlv.StepMilliCents, stepMilliCents),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
       tlvU32LE(TuningTlv.ReferenceMilliHz, input.referenceMilliHz ?? 440_000),
-      tlv(TuningTlv.KeyLabels, encodeKeyLabels(input.keyLabels ?? defaultKeyLabels(input.edoDivisions)))
+      tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(input.keyLabels ?? defaultKeyLabels(input.edoDivisions), input.edoDivisions)))
     ]
   });
 }
@@ -357,7 +365,7 @@ export function createEqualStepTuning(input: EqualStepTuningInput): EncodedCatal
       tlvU32LE(TuningTlv.StepMilliCents, input.stepMilliCents),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
       tlvU32LE(TuningTlv.ReferenceMilliHz, input.referenceMilliHz ?? 440_000),
-      tlv(TuningTlv.KeyLabels, encodeKeyLabels(input.keyLabels ?? defaultKeyLabels(input.cycleLength)))
+      tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(input.keyLabels ?? defaultKeyLabels(input.cycleLength), input.cycleLength)))
     ]
   });
 }
@@ -522,9 +530,22 @@ function centsToMilliCents(cents: number): number {
   return Math.round(cents * 1000);
 }
 
+export function defaultSpanCtoA(cycleLength: number): number {
+  const safeCycleLength = Math.max(1, Math.round(cycleLength));
+  return -Math.floor(((safeCycleLength * 9) + 6) / 12);
+}
+
+export function keyLabelIndexFromStepsFromC(stepsFromC: number, cycleLength: number): number {
+  return positiveModulo(stepsFromC + defaultSpanCtoA(cycleLength), cycleLength);
+}
+
 export function defaultKeyLabels(cycleLength: number): string[] {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  return Array.from({ length: safeCycleLength }, (_, degree) => String(degree));
+  const cOrderedLabels = cOrderedDefaultKeyLabels[safeCycleLength];
+  if (!cOrderedLabels) {
+    return Array.from({ length: safeCycleLength }, (_, degree) => degree === 0 ? "A" : `A+${degree}`);
+  }
+  return keyLabelsFromTlvOrder(cOrderedLabels, safeCycleLength);
 }
 
 export function normalizeKeyLabels(labels: string[] | undefined, cycleLength: number): string[] {
@@ -533,6 +554,30 @@ export function normalizeKeyLabels(labels: string[] | undefined, cycleLength: nu
     const label = labels?.[index]?.trim();
     return clampNoteLabelText(label || fallback, fallback);
   });
+}
+
+function migrateLegacyDegreeNumberKeyLabels(labels: string[] | undefined, cycleLength: number): string[] | undefined {
+  const safeCycleLength = Math.max(1, Math.round(cycleLength));
+  if (labels?.length === safeCycleLength && labels.every((label, index) => label.trim() === String(index))) {
+    return undefined;
+  }
+  return labels;
+}
+
+export function keyLabelsForTlvOrder(labels: string[], cycleLength: number): string[] {
+  const safeCycleLength = Math.max(1, Math.round(cycleLength));
+  const normalized = normalizeKeyLabels(labels, safeCycleLength);
+  const spanCtoA = defaultSpanCtoA(safeCycleLength);
+  return Array.from({ length: safeCycleLength }, (_, cIndex) => normalized[positiveModulo(spanCtoA + cIndex, safeCycleLength)]);
+}
+
+export function keyLabelsFromTlvOrder(labels: string[], cycleLength: number): string[] {
+  const safeCycleLength = Math.max(1, Math.round(cycleLength));
+  const spanCtoA = defaultSpanCtoA(safeCycleLength);
+  return Array.from({ length: safeCycleLength }, (_, aIndex) => {
+    const cIndex = positiveModulo(aIndex - spanCtoA, safeCycleLength);
+    return labels[cIndex]?.trim() || (aIndex === 0 ? "A" : `A+${aIndex}`);
+  }).map((label, index) => clampNoteLabelText(label, index === 0 ? "A" : `A+${index}`));
 }
 
 function encodeKeyLabels(labels: string[]): Uint8Array {
@@ -1050,7 +1095,7 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
       cycleLength: edoDivisions,
       referenceMidiNote,
       referenceHz,
-      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, edoDivisions)
+      keyLabels: normalizeKeyLabels(migrateLegacyDegreeNumberKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, edoDivisions), edoDivisions)
     };
   }
 
@@ -1063,7 +1108,7 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
       cycleLength,
       referenceMidiNote,
       referenceHz,
-      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, cycleLength)
+      keyLabels: normalizeKeyLabels(migrateLegacyDegreeNumberKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, cycleLength), cycleLength)
     };
   }
 

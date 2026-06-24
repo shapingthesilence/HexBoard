@@ -78,9 +78,10 @@ and `TRANSFER_END` so firmware can pace object transfers.
 - TLV object encoding for user tunings, layouts, scale color maps, explicit
   button maps, and named/foldered synth presets.
 - A tuning/layout bundle editor with a visual HexBoard preview, scale-degree
-  palette editing, selected-key overrides, and a paintbrush mode for applying
-  per-button color overrides directly on the preview, including a confirmed
-  reset that returns all keys in the active layout to scale-degree colors.
+  palette editing, A-first note labels, selected-key pitch readouts and
+  overrides, and a paintbrush mode for applying per-button color overrides
+  directly on the preview, including a confirmed reset that returns all keys in
+  the active layout to scale-degree colors.
 - A synth preset editor with name and folder selection, folder creation, main
   synth parameter controls, mono retrigger/legato, mono portamento,
   arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,

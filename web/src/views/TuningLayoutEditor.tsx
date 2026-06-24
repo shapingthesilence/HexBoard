@@ -7,6 +7,7 @@ import {
   createDefaultDegreeColors,
   createDefaultLayout,
   createDefaultLayoutBundle,
+  defaultSpanCtoA,
   currentFirmwareDownLeftToUpRight,
   defaultKeyLabels,
   deterministicObjectId,
@@ -18,6 +19,8 @@ import {
   LayoutTlv,
   normalizeScaleDegrees,
   normalizeScaleDegreeColors,
+  keyLabelIndexFromStepsFromC,
+  keyLabelsFromTlvOrder,
   normalizeKeyLabels,
   NoteLabelTextMaxLength,
   objectIdToHex,
@@ -180,6 +183,28 @@ function tuningPeriodCents(tuning: LayoutBundleTuning): number {
     return tuning.stepCents * tuningCycleLength(tuning);
   }
   return tuning.periodCents;
+}
+
+function tuningStepCents(tuning: LayoutBundleTuning): number {
+  if (tuning.kind === "equal-step") {
+    return tuning.stepCents;
+  }
+  return tuningPeriodCents(tuning) / tuningCycleLength(tuning);
+}
+
+function formatSignedInteger(value: number): string {
+  return value > 0 ? `+${value}` : String(value);
+}
+
+function formatCents(value: number): string {
+  return `${value.toFixed(2)} cents`;
+}
+
+function formatHertz(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0 Hz";
+  }
+  return `${value.toFixed(value >= 100 ? 2 : 3)} Hz`;
 }
 
 function isAllNotesScale(scale: Pick<LayoutBundleScale, "name">): boolean {
@@ -607,7 +632,7 @@ function decodeKeyLabels(value: Uint8Array | undefined, cycleLength: number): st
     labels.push(textFromBytes(value.slice(cursor, cursor + length)));
     cursor += length;
   }
-  return normalizeKeyLabels(labels, cycleLength);
+  return normalizeKeyLabels(keyLabelsFromTlvOrder(labels, cycleLength), cycleLength);
 }
 
 function objectReferences(object: DeviceGeometryObject, tag: number, objectType: number, objectIdHex: string): boolean {
@@ -1412,6 +1437,14 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   }, [activeBundle, activeLayout, activeScale]);
 
   const selectedPreview = previewKeys.find((item) => item.key.index === selectedButton) ?? previewKeys[0];
+  const activeCycleLength = tuningCycleLength(activeBundle.tuning);
+  const selectedStepsFromA = selectedPreview.stepsFromC + defaultSpanCtoA(activeCycleLength);
+  const selectedPitchCents = selectedStepsFromA * tuningStepCents(activeBundle.tuning);
+  const selectedFrequencyHz = activeBundle.tuning.referenceHz * (2 ** (selectedPitchCents / 1200));
+  const selectedKeyLabels = "keyLabels" in activeBundle.tuning
+    ? normalizeKeyLabels(activeBundle.tuning.keyLabels, activeCycleLength)
+    : defaultKeyLabels(activeCycleLength);
+  const selectedPitchLabel = selectedKeyLabels[keyLabelIndexFromStepsFromC(selectedPreview.stepsFromC, activeCycleLength)] ?? selectedKeyLabels[0] ?? "A";
   const selectedDegreeColor = normalizeScaleDegreeColors(activeBundle.palette.degreeColors, tuningCycleLength(activeBundle.tuning))
     .find((color) => color.degree === selectedPreview.degree) ?? createDefaultDegreeColors(1)[0];
   const axisLabels = layoutAxisLabels(activeLayout.rotationSteps);
@@ -2255,6 +2288,18 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
             <label className="field">
               <span>Scale degree</span>
               <input readOnly value={selectedPreview.degree} />
+            </label>
+            <label className="field">
+              <span>Note label</span>
+              <input readOnly value={selectedPitchLabel} />
+            </label>
+            <label className="field">
+              <span>Steps from A4</span>
+              <input readOnly value={`${formatSignedInteger(selectedStepsFromA)} (${formatCents(selectedPitchCents)})`} />
+            </label>
+            <label className="field">
+              <span>Frequency</span>
+              <input readOnly value={formatHertz(selectedFrequencyHz)} />
             </label>
             <label className="field">
               <span>Scale membership</span>

@@ -418,8 +418,11 @@ subtool that samples a preview key color into the brush without writing a
 button override, and a reset action that clears active-layout per-button color
 overrides after confirmation without clearing note or role overrides.
 EDO and equal-step tunings expose note labels and `A = x Hz`; labels default to
-degree-number strings, are capped at `7` characters for the on-device Key
-selector, validate on exit, and encode through `KeyLabels`. Geometry object
+A-first pitch-label strings in the editor, are capped at `7` characters for the on-device Key
+selector, validate on exit, rotate into firmware C-order during `KeyLabels`
+encoding, and rotate back when device objects are opened. The selected-key
+inspector shows the resolved note label, A4-relative step/cents offset, and
+frequency for the selected button. Geometry object
 names and single folder labels are capped at `19` display characters. When
 `Custom` is the selected default color mode, the preview paintbrush writes
 per-button color overrides into the active layout, using the same explicit

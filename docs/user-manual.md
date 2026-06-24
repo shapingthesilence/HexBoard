@@ -502,8 +502,8 @@ brighter headroom.
 
 The tuning editor can create EDO tunings, equal cents-per-step tunings, and
 Scala `.scl` imports. EDO and cents-per-step tunings include editable note
-labels and an `A = x Hz` reference pitch; note labels default to degree numbers
-and validate like included degrees when the field is exited. The cents-per-step
+labels and an `A = x Hz` reference pitch; note labels default to an A-first
+pitch-label sequence and validate like included degrees when the field is exited. The cents-per-step
 editor takes only step size and cycle length; its period is derived from those
 two fields. Scala import derives period, cycle length, labels, and reference
 pitch from the imported file path as support is added, so the Scala editor does
@@ -511,7 +511,8 @@ not expose those fields. Scala text is parsed in the web app and stored in the
 bundle as cents data, but full Scala playback and sync compatibility still
 require firmware tuning-system work. The preview uses the current `133` note-key
 hardware shape and omits the seven command buttons so geometry editing stays
-focused on playable notes. The selected-key inspector has a `Color source` dropdown:
+focused on playable notes. The selected-key inspector shows the resolved note
+label, A4-relative step/cents offset, and frequency for the selected key, and has a `Color source` dropdown:
 `Scale degree` edits the palette color for the generated degree, while
 `Button override` edits only the selected button's color and is available only
 when the default color mode is `Custom`. `Note source` can

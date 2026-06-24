@@ -777,7 +777,8 @@ cents-per-step tunings with `TuningKind = 4`, `StepMilliCents`, and a cycle
 length in `EdoDivisions` for labels/colors; host tooling derives
 `PeriodMilliCents` from those two values so they cannot diverge. Generated EDO
 and equal-step tunings can include `KeyLabels` and `ReferenceMilliHz`; the web
-editor defaults labels to degree numbers. Scala `.scl` import is a host-side
+editor presents labels in A-first order, defaults to A-first pitch labels, and
+rotates them into the firmware's C-centered cycle order for `KeyLabels`. Scala `.scl` import is a host-side
 feature. Current firmware live Apply supports only `TuningKind = 1` and
 `TuningKind = 4`; it loads cycle length, step size, key labels, and
 `ReferenceMilliHz` into runtime tuning state and resets the key to the uploaded

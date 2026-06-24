@@ -16,6 +16,7 @@ import {
   createVectorLayout,
   crunchSerumWavetable,
   currentFirmwareDownLeftToUpRight,
+  defaultKeyLabels,
   deterministicObjectId,
   encodeHexBoardWavetableWav,
   encodeLayoutBundle,
@@ -122,7 +123,10 @@ describe("catalog object encoding", () => {
     const decoded = decodeObjectBody(tuning.body);
     expect(decoded.objectType).toBe(ObjectType.UserTuning);
     expect(textFromBytes(decoded.records.find((record) => record.tag === CommonTlv.Name)?.value ?? new Uint8Array())).toBe("17 EDO");
-    expect(keyLabels(recordValue(tuning.body, TuningTlv.KeyLabels))).toEqual(Array.from({ length: 17 }, (_, degree) => String(degree)));
+    expect(defaultKeyLabels(17).slice(0, 4)).toEqual(["A", "Bb", "A#", "B"]);
+    expect(keyLabels(recordValue(tuning.body, TuningTlv.KeyLabels))).toEqual([
+      "C", "Db", "C#", "D", "Eb", "D#", "E", "F", "Gb", "F#", "G", "Ab", "G#", "A", "Bb", "A#", "B"
+    ]);
   });
 
   it("round trips a vector layout", () => {
@@ -138,6 +142,27 @@ describe("catalog object encoding", () => {
     expect(decodeObjectBody(layout.body).objectType).toBe(ObjectType.UserLayout);
     expect(i16LE(recordValue(layout.body, LayoutTlv.DownLeftSteps))).toBe(-7);
     expect(currentFirmwareDownLeftToUpRight(3, -11)).toBe(11);
+  });
+
+  it("migrates legacy degree-number key labels to A-first defaults", () => {
+    const serialized = JSON.parse(serializeLayoutBundle({
+      ...createDefaultLayoutBundle(),
+      tuning: {
+        kind: "edo",
+        name: "12 EDO",
+        edoDivisions: 12,
+        periodCents: 1200,
+        cycleLength: 12,
+        referenceMidiNote: 69,
+        referenceHz: 440,
+        keyLabels: Array.from({ length: 12 }, (_, degree) => String(degree))
+      }
+    }));
+
+    const parsed = parseLayoutBundleFile(serialized);
+
+    expect(parsed.tuning.kind).toBe("edo");
+    expect("keyLabels" in parsed.tuning ? parsed.tuning.keyLabels.slice(0, 4) : []).toEqual(["A", "Bb", "B", "C"]);
   });
 
   it("round trips an equal-step tuning", () => {

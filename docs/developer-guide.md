@@ -158,7 +158,11 @@ Current web source layout:
   and is not editable or deletable. The text input validates on blur so
   incomplete text can exist while a user is typing. EDO and equal-step tunings
   store editable `keyLabels` and `referenceHz`; key labels default to
-  degree-number strings and use the same draft-then-blur validation style. The
+  A-first pitch-label strings in the editor, rotate to firmware C-order when
+  encoded as `KeyLabels`, and use the same draft-then-blur validation style.
+  The selected-key inspector derives the displayed note label, A4-relative
+  step/cents offset, and frequency from `stepsFromC`, the default C-to-A span,
+  and the tuning's `referenceHz`. The
   preview paintbrush has an eyedropper subtool that samples a preview key color
   into the active brush color without writing a button override, plus a reset
   action that strips color fields from active-layout button overrides while
