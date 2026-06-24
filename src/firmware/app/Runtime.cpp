@@ -122,6 +122,7 @@ void hexboardLoop() {        // run on first core
   serviceSynthWavetableMenuRebuild();
   serviceUserGeometryMenuRebuild();
   restoreMenuAfterDelegatedControl();
+  serviceVirtualListLauncherLabelScroll();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
   drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_BENCHMARK);

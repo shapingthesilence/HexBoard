@@ -240,7 +240,9 @@ void dealWithRotary() {
   } else if (menu.readyForKey()) {
     if (justReleased && !rotaryPanicSuppressClick) {
       dismissPlayedNotesOverlayForMenuInput();
-      menu.registerKeyPress(GEM_KEY_OK);
+      if (!handleVirtualListLauncherKey(GEM_KEY_OK)) {
+        menu.registerKeyPress(GEM_KEY_OK);
+      }
       noteOverlayDirty = true;
       screenTime = 0;
     }

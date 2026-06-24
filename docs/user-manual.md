@@ -98,6 +98,14 @@ The main menu includes:
 `Synth:<current preset>` opens the synth preset load menu from the top level.
 If the runtime synth sound has changed since the loaded preset was selected or
 saved, the preset name is shown with a leading `*`.
+Rows that open virtual browsers, including tuning/layout/scale, synth preset,
+and wavetable browsers, use the same right-side arrow cue as folder/submenu
+rows. Inside those browsers, folders keep that right-side arrow and selectable
+actions or entries use the action arrow. When the selector rests on one of
+those launcher rows, long current names begin scrolling after `1` second and
+advance one character every `250` ms. The final scroll position pauses for
+`1` second before the name returns to the beginning and waits again. Scrolling
+pauses while the played-note badge or full-screen played-note overlay is shown.
 
 ### Tuning
 

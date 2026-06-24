@@ -56,6 +56,17 @@ bool flashSaveScreenVisible = false;
 bool flashSaveScreenWokeDisplayFromSleep = false;
 uint64_t flashSaveSavedScreenTime = 0;
 
+constexpr uint8_t VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS = 19;
+constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_DELAY_MICROS = 1000000ULL;
+constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_INTERVAL_MICROS = 250000ULL;
+
+GEMPage* virtualListLauncherFocusedPage = nullptr;
+GEMItem* virtualListLauncherFocusedItem = nullptr;
+uint64_t virtualListLauncherFocusStartMicros = 0;
+uint16_t virtualListLauncherScrollOffset = 0;
+bool virtualListLauncherScrollApplied = false;
+char virtualListLauncherValueBuffer[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = {};
+
 void wakeDelegatedControlScreenForInput() {
   screenTime = 0;
   if (screenSaverOn) {
@@ -274,25 +285,29 @@ char mainSynthPresetMenuLabel[48] = "Synth:Current";
 
 GEMPage menuPageMain("HexBoard MIDI Controller");
 GEMPage menuPageTuning("Tuning", menuPageMain);
-GEMItem menuGotoTuning(mainTuningMenuLabel, openUserGeometryTuningMenu);
+GEMItem menuGotoTuning(mainTuningMenuLabel, menuPageTuning);
 GEMPage menuPageLayout("Layout", menuPageMain);
-GEMItem menuGotoLayout(mainLayoutMenuLabel, openUserGeometryLayoutMenu);
+GEMItem menuGotoLayout(mainLayoutMenuLabel, menuPageLayout);
 GEMPage menuPageScales("Scales", menuPageMain);
-GEMItem menuGotoScales(mainScaleMenuLabel, openUserGeometryScaleMenu);
+GEMItem menuGotoScales(mainScaleMenuLabel, menuPageScales);
 GEMPage menuPageColors("Lights & Colors", menuPageMain);
 GEMItem menuGotoColors("Lights & Colors", menuPageColors);
 GEMPage menuPageSynth("Synth Editor", menuPageMain);
 GEMItem menuGotoSynth("Synth Editor", menuPageSynth);
-GEMItem menuGotoSynthWavetableLoad(currentSynthWavetableMenuLabel, openSynthWavetableLoadMenu);
+GEMPage menuPageSynthWavetableLoad("Wavetables", menuPageSynth);
+GEMItem menuGotoSynthWavetableLoad(currentSynthWavetableMenuLabel, menuPageSynthWavetableLoad);
 GEMPage menuPageSynthLfo("LFO", menuPageSynth);
 GEMItem menuGotoSynthLfo("LFO", menuPageSynthLfo);
 GEMPage menuPageSynthFx1("FX Env 1", menuPageSynth);
 GEMItem menuGotoSynthFx1("FX Env 1", menuPageSynthFx1);
 GEMPage menuPageSynthFx2("FX Env 2", menuPageSynth);
 GEMItem menuGotoSynthFx2("FX Env 2", menuPageSynthFx2);
-GEMItem menuGotoSynthPresetSave("Save Preset", openSynthPresetSaveMenu);
-GEMItem menuGotoMainSynthPresetLoad(mainSynthPresetMenuLabel, openMainSynthPresetLoadMenu);
-GEMItem menuGotoSynthPresetLoad(mainSynthPresetMenuLabel, openSynthPresetLoadMenu);
+GEMPage menuPageSynthPresetSave("Save Preset", menuPageSynth);
+GEMItem menuGotoSynthPresetSave("Save Preset", menuPageSynthPresetSave);
+GEMPage menuPageMainSynthPresetLoad("Load Preset", menuPageMain);
+GEMItem menuGotoMainSynthPresetLoad(mainSynthPresetMenuLabel, menuPageMainSynthPresetLoad);
+GEMPage menuPageSynthPresetLoad("Load Preset", menuPageSynth);
+GEMItem menuGotoSynthPresetLoad(mainSynthPresetMenuLabel, menuPageSynthPresetLoad);
 GEMPage menuPageOptions("Options", menuPageMain);
 GEMItem menuGotoOptions("Options", menuPageOptions);
 GEMPage menuPageAdvanced("Advanced", menuPageOptions);
@@ -2350,19 +2365,251 @@ void updateMainMenuDynamicLabels() {
            currentSynthPresetDisplayName());
 }
 
+void restoreVirtualListLauncherLabels() {
+  updateMainMenuDynamicLabels();
+  updateCurrentSynthWavetableMenuLabel();
+}
+
+bool virtualListLauncherLabelParts(GEMItem* item,
+                                   char*& label,
+                                   size_t& labelLength,
+                                   const char*& prefix,
+                                   const char*& value) {
+  label = nullptr;
+  labelLength = 0;
+  prefix = "";
+  value = "";
+
+  if (item == &menuGotoTuning) {
+    label = mainTuningMenuLabel;
+    labelLength = sizeof(mainTuningMenuLabel);
+    prefix = "Tuning:";
+    value = current.tuning().name ? current.tuning().name : "Current";
+  } else if (item == &menuGotoLayout) {
+    label = mainLayoutMenuLabel;
+    labelLength = sizeof(mainLayoutMenuLabel);
+    prefix = "Layout:";
+    value = current.layout().name ? current.layout().name : "Current";
+  } else if (item == &menuGotoScales) {
+    label = mainScaleMenuLabel;
+    labelLength = sizeof(mainScaleMenuLabel);
+    prefix = "Scale:";
+    value = current.scale().name ? current.scale().name : "Current";
+  } else if (item == &menuGotoMainSynthPresetLoad || item == &menuGotoSynthPresetLoad) {
+    label = mainSynthPresetMenuLabel;
+    labelLength = sizeof(mainSynthPresetMenuLabel);
+    prefix = currentSynthPresetRuntimeModified() ? "Synth:*" : "Synth:";
+    value = currentSynthPresetDisplayName();
+  } else if (item == &menuGotoSynthWavetableLoad) {
+    label = currentSynthWavetableMenuLabel;
+    labelLength = sizeof(currentSynthWavetableMenuLabel);
+    prefix = "WT:";
+    const char* name = loadedSynthWavetableName[0] ? loadedSynthWavetableName : currentSynthWavetableName;
+    const char* folder = loadedSynthWavetableFolderPath[0] ? loadedSynthWavetableFolderPath : currentSynthWavetableFolderPath;
+    if (!name || !name[0]) {
+      name = SYNTH_WAVETABLE_BASIC_NAME;
+    }
+    if (!folder || !folder[0]
+        || strcmp(folder, SYNTH_WAVETABLE_BUILTIN_FOLDER) == 0
+        || strcmp(folder, SYNTH_WAVETABLE_ROOT_FOLDER) == 0) {
+      snprintf(virtualListLauncherValueBuffer, sizeof(virtualListLauncherValueBuffer), "%s", name);
+    } else {
+      char folderLabel[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = {};
+      synthPresetFolderLabel(folder, folderLabel, sizeof(folderLabel));
+      snprintf(virtualListLauncherValueBuffer,
+               sizeof(virtualListLauncherValueBuffer),
+               "%s/%s",
+               folderLabel,
+               name);
+    }
+    value = virtualListLauncherValueBuffer;
+  } else {
+    return false;
+  }
+  return label && labelLength > 0 && value;
+}
+
+uint8_t launcherValueWindowLength(const char* prefix) {
+  size_t prefixLength = strlen(prefix);
+  if (prefixLength >= VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS) {
+    return 0;
+  }
+  return static_cast<uint8_t>(VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS - prefixLength);
+}
+
+void writeVirtualListLauncherLabel(char* label,
+                                   size_t labelLength,
+                                   const char* prefix,
+                                   const char* value,
+                                   uint16_t offset) {
+  if (!label || labelLength == 0) {
+    return;
+  }
+  label[0] = '\0';
+
+  uint8_t windowLength = launcherValueWindowLength(prefix);
+  if (windowLength == 0) {
+    snprintf(label, labelLength, "%.*s", VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS, prefix);
+    return;
+  }
+
+  char visibleValue[VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS + 1] = {};
+  size_t valueLength = strlen(value);
+  if (valueLength <= windowLength) {
+    snprintf(visibleValue, sizeof(visibleValue), "%s", value);
+  } else {
+    for (uint8_t i = 0; i < windowLength && offset + i < valueLength; ++i) {
+      visibleValue[i] = value[offset + i];
+    }
+    visibleValue[windowLength] = '\0';
+  }
+  snprintf(label, labelLength, "%s%s", prefix, visibleValue);
+}
+
+void resetVirtualListLauncherScrollTracking(bool restoreLabels) {
+  if (restoreLabels && virtualListLauncherScrollApplied) {
+    restoreVirtualListLauncherLabels();
+  }
+  virtualListLauncherFocusedPage = nullptr;
+  virtualListLauncherFocusedItem = nullptr;
+  virtualListLauncherFocusStartMicros = 0;
+  virtualListLauncherScrollOffset = 0;
+  virtualListLauncherScrollApplied = false;
+}
+
+void redrawMenuAfterVirtualListLauncherScroll() {
+  menu.drawMenu();
+  noteOverlayDirty = true;
+}
+
+void serviceVirtualListLauncherLabelScroll() {
+  if (virtualListMenuIsActive()
+      || delegatedControl
+      || presetSyncTransferActive
+      || flashSaveScreenVisible
+      || noteBadgeVisible
+      || noteOverlayVisible
+      || screenSaverOn) {
+    resetVirtualListLauncherScrollTracking(true);
+    return;
+  }
+
+  GEMPage* currentPage = menu.getCurrentMenuPage();
+  GEMItem* currentItem = currentPage ? currentPage->getCurrentMenuItem() : nullptr;
+  bool focusChanged = currentPage != virtualListLauncherFocusedPage
+                      || currentItem != virtualListLauncherFocusedItem;
+  bool needsRedraw = false;
+  if (focusChanged) {
+    if (virtualListLauncherScrollApplied) {
+      restoreVirtualListLauncherLabels();
+      needsRedraw = true;
+    }
+    virtualListLauncherFocusedPage = currentPage;
+    virtualListLauncherFocusedItem = currentItem;
+    virtualListLauncherFocusStartMicros = runTime;
+    virtualListLauncherScrollOffset = 0;
+    virtualListLauncherScrollApplied = false;
+  }
+
+  char* label = nullptr;
+  size_t labelLength = 0;
+  const char* prefix = "";
+  const char* value = "";
+  if (!virtualListLauncherLabelParts(currentItem, label, labelLength, prefix, value)) {
+    if (needsRedraw) {
+      redrawMenuAfterVirtualListLauncherScroll();
+    }
+    return;
+  }
+
+  uint8_t windowLength = launcherValueWindowLength(prefix);
+  size_t valueLength = strlen(value);
+  if (windowLength == 0 || valueLength <= windowLength) {
+    if (needsRedraw) {
+      redrawMenuAfterVirtualListLauncherScroll();
+    }
+    return;
+  }
+
+  uint16_t maxOffset = static_cast<uint16_t>(valueLength - windowLength);
+  uint64_t scrollDuration = static_cast<uint64_t>(maxOffset) * VIRTUAL_LIST_LAUNCHER_SCROLL_INTERVAL_MICROS;
+  uint64_t cycleLength = VIRTUAL_LIST_LAUNCHER_SCROLL_DELAY_MICROS
+                         + scrollDuration
+                         + VIRTUAL_LIST_LAUNCHER_SCROLL_DELAY_MICROS;
+  uint64_t cycleElapsed = (runTime - virtualListLauncherFocusStartMicros) % cycleLength;
+  uint16_t nextOffset = 0;
+  if (cycleElapsed < VIRTUAL_LIST_LAUNCHER_SCROLL_DELAY_MICROS) {
+    nextOffset = 0;
+  } else if (cycleElapsed < VIRTUAL_LIST_LAUNCHER_SCROLL_DELAY_MICROS + scrollDuration) {
+    uint64_t scrollElapsed = cycleElapsed - VIRTUAL_LIST_LAUNCHER_SCROLL_DELAY_MICROS;
+    nextOffset = static_cast<uint16_t>(
+      std::min<uint64_t>((scrollElapsed / VIRTUAL_LIST_LAUNCHER_SCROLL_INTERVAL_MICROS) + 1, maxOffset)
+    );
+  } else {
+    nextOffset = maxOffset;
+  }
+  if (nextOffset == 0 && !virtualListLauncherScrollApplied) {
+    if (needsRedraw) {
+      redrawMenuAfterVirtualListLauncherScroll();
+    }
+    return;
+  }
+  if (!virtualListLauncherScrollApplied || nextOffset != virtualListLauncherScrollOffset) {
+    writeVirtualListLauncherLabel(label, labelLength, prefix, value, nextOffset);
+    virtualListLauncherScrollOffset = nextOffset;
+    virtualListLauncherScrollApplied = true;
+    redrawMenuAfterVirtualListLauncherScroll();
+  } else if (needsRedraw) {
+    redrawMenuAfterVirtualListLauncherScroll();
+  }
+}
+
 // Call this procedure to return to the main menu
 void menuHome() {
   deactivateVirtualListMenu();
-  updateMainMenuDynamicLabels();
+  resetVirtualListLauncherScrollTracking(false);
+  restoreVirtualListLauncherLabels();
   menu.setMenuPageCurrent(menuPageMain);
   menu.drawMenu();
 }
 
 void menuSynthOptionsHome() {
   deactivateVirtualListMenu();
-  updateMainMenuDynamicLabels();
+  resetVirtualListLauncherScrollTracking(false);
+  restoreVirtualListLauncherLabels();
   menu.setMenuPageCurrent(menuPageSynth);
   menu.drawMenu();
+}
+
+bool handleVirtualListLauncherKey(byte keyCode) {
+  if (keyCode != GEM_KEY_OK && keyCode != GEM_KEY_RIGHT) {
+    return false;
+  }
+
+  GEMPage* currentPage = menu.getCurrentMenuPage();
+  if (!currentPage) {
+    return false;
+  }
+
+  GEMItem* currentItem = currentPage->getCurrentMenuItem();
+  if (currentItem == &menuGotoTuning) {
+    openUserGeometryTuningMenu();
+  } else if (currentItem == &menuGotoLayout) {
+    openUserGeometryLayoutMenu();
+  } else if (currentItem == &menuGotoScales) {
+    openUserGeometryScaleMenu();
+  } else if (currentItem == &menuGotoMainSynthPresetLoad) {
+    openMainSynthPresetLoadMenu();
+  } else if (currentItem == &menuGotoSynthPresetLoad) {
+    openSynthPresetLoadMenu();
+  } else if (currentItem == &menuGotoSynthPresetSave) {
+    openSynthPresetSaveMenu();
+  } else if (currentItem == &menuGotoSynthWavetableLoad) {
+    openSynthWavetableLoadMenu();
+  } else {
+    return false;
+  }
+  return true;
 }
 
 void refreshMenuChoicesForCurrentTuning() {

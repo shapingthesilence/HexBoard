@@ -803,8 +803,17 @@ entries are shown flat at the root, saved user tunings can be foldered, and
 `UserTuning` loads its linked first layout, first scale, color map, and explicit
 map; the `Layout` and `Scales` pages expose up to `24` user objects that
 reference the selected tuning.
-`dealWithRotary()` sends encoder turns and clicks to `VirtualListMenu` while it
-is active and otherwise falls back to normal GEM input.
+Virtual-list launcher rows are GEM link items visually, so they use the same
+right-side arrow cue as submenus and folders. `dealWithRotary()` routes their
+select key through `handleVirtualListLauncherKey()` so they open
+`VirtualListMenu` directly, then sends encoder turns and clicks to
+`VirtualListMenu` while a browser is active and otherwise falls back to normal
+GEM input. `serviceVirtualListLauncherLabelScroll()` runs from the main loop,
+waits `1` second on the selected launcher row, and advances long current-name
+windows one character every `250` ms within GEM's `19`-character link row. It
+holds the final window for `1` second, returns to the beginning for another
+`1` second, and suppresses scrolling while either played-note overlay is
+visible.
 Display restore paths that temporarily replace the OLED contents, including
 flash-save prompts, redraw the active `VirtualListMenu` when one is open rather
 than falling back to the GEM page renderer.

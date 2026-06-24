@@ -385,6 +385,16 @@ Most editable settings follow this pattern:
 
 The code literally documents this as "SETTINGS STEP 1-4". Follow that pattern instead of inventing a new path.
 
+Virtual-list launchers are intentionally built as GEM link items so they render
+with the same right-side arrow as submenu and folder rows. `dealWithRotary()`
+calls `handleVirtualListLauncherKey()` before normal GEM key dispatch so those
+placeholder links open `VirtualListMenu` browsers directly instead of entering
+empty GEM pages. `serviceVirtualListLauncherLabelScroll()` keeps the launcher
+prefix fixed, waits `1` second on the selected row, then scrolls long current
+names through the remaining row space every `250` ms. The last window is held
+for another `1` second before the label returns to the beginning, and scrolling
+is suppressed while played-note badge or full-screen overlays are visible.
+
 ### Callback behavior
 
 `universalSaveCallback()` is the standard writeback path. It:

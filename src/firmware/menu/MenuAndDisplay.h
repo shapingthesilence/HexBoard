@@ -28,6 +28,8 @@ void showFlashSaveScreen();
 void closeFlashSaveScreen();
 void menuHome();
 void menuSynthOptionsHome();
+bool handleVirtualListLauncherKey(byte keyCode);
+void serviceVirtualListLauncherLabelScroll();
 void showOnlyValidKeyChoices();
 void applyDeviceDisplayRotation();
 void loadDeviceRotationFromCurrentLayout();
