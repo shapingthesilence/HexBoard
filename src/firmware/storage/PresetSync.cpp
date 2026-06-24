@@ -929,11 +929,13 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     }
 
     if (!(commitFlags & PRESET_SYNC_WRITE_DRY_RUN)
-        && (commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME)
-        && !applyGeometryObjectToRuntime(parsedObject)) {
-      presetSyncCancelWriteTransfer();
-      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
-      return;
+        && (commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME)) {
+      if (!applyGeometryObjectToRuntime(parsedObject)) {
+        presetSyncCancelWriteTransfer();
+        presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
+        return;
+      }
+      refreshMenuChoicesForCurrentTuning();
     }
 
     if (!(commitFlags & PRESET_SYNC_WRITE_DRY_RUN)

@@ -427,6 +427,7 @@ void loadUserGeometryHandle(UserGeometryMenuKind kind, uint16_t handle) {
     if (builtinSelection) {
       persistBuiltinGeometrySelection(handle);
     }
+    refreshMenuChoicesForCurrentTuning();
     loadDeviceRotationFromCurrentLayout();
     applyDeviceDisplayRotation();
   }

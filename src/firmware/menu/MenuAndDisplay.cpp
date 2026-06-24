@@ -400,6 +400,7 @@ void universalSaveCallback(GEMCallbackData callbackData) {
     this procedure in full.
   */
 void changeTranspose();
+void changeKey();
 void rebootToBootloader();
 /*
     These GEMItems are read-only display items.
@@ -446,13 +447,19 @@ void loadProfileMenu(GEMCallbackData callbackData) {
   menuHome();
 }
 
-/*
-    Key selectors are defined per tuning because each tuning can have its own
-    cycle length and key-name labels. Tuning, layout, and scale preset lists use
-    the fixed-memory geometry browser instead of per-preset GEM items.
-  */
-GEMSelect* selectKey[TUNINGCOUNT];
-GEMItem* menuItemMainKeys[TUNINGCOUNT];
+class RuntimeKeySelect : public GEMSelect {
+public:
+  RuntimeKeySelect(byte length, SelectOptionInt* options)
+    : GEMSelect(length, options) {}
+
+  void setLength(byte length) {
+    _length = length;
+  }
+};
+
+SelectOptionInt currentKeyChoices[MAX_SCALE_DIVISIONS] = {};
+RuntimeKeySelect selectCurrentKey(MAX_SCALE_DIVISIONS, currentKeyChoices);
+GEMItem menuItemMainKey("Key", current.keyStepsFromA, selectCurrentKey, changeKey);
 GEMItem* menuItemSaveProfile[PROFILE_COUNT];
 GEMItem* menuItemLoadProfile[PROFILE_COUNT];
 char saveProfileLabels[PROFILE_COUNT][24];
@@ -2643,11 +2650,17 @@ void rebootToBootloader() {
     generated, and then once any time the tuning changes.
   */
 void showOnlyValidKeyChoices() {
-  for (int T = 0; T < TUNINGCOUNT; T++) {
-    if (menuItemMainKeys[T]) {
-      menuItemMainKeys[T]->hide((T != current.tuningIndex));
-    }
+  const tuningDef& tuning = current.tuning();
+  byte cycleLength = tuning.cycleLength;
+  if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
+    cycleLength = 1;
   }
+  for (byte i = 0; i < cycleLength; ++i) {
+    currentKeyChoices[i].name = tuning.keyChoices[i].name ? tuning.keyChoices[i].name : "";
+    currentKeyChoices[i].val_int = tuning.keyChoices[i].val_int;
+  }
+  selectCurrentKey.setLength(cycleLength);
+  menuItemMainKey.hide(false);
   sendToLog("menu: Key choices were updated.");
 }
 
@@ -2714,12 +2727,8 @@ void changeTranspose() {  // when you change the transpose via the menu
 
 void previewKey(GEMPreviewCallbackData previewData);
 void createKeyMenuItems() {
-  for (byte T = 0; T < TUNINGCOUNT; T++) {
-    selectKey[T] = new GEMSelect(tuningOptions[T].cycleLength, const_cast<SelectOptionInt*>(tuningOptions[T].keyChoices));
-    menuItemMainKeys[T] = new GEMItem("Key", current.keyStepsFromA, *selectKey[T], changeKey);
-    menuItemMainKeys[T]->setPreviewCallback(previewKey);
-    menuPageMain.addMenuItem(*menuItemMainKeys[T]);
-  }
+  menuItemMainKey.setPreviewCallback(previewKey);
+  menuPageMain.addMenuItem(menuItemMainKey);
   showOnlyValidKeyChoices();
 }
 void previewKey(GEMPreviewCallbackData previewData) {

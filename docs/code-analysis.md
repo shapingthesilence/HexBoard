@@ -803,6 +803,9 @@ entries are shown flat at the root, saved user tunings can be foldered, and
 `UserTuning` loads its linked first layout, first scale, color map, and explicit
 map; the `Layout` and `Scales` pages expose up to `24` user objects that
 reference the selected tuning.
+The main-menu `Key` selector is a mutable GEM select refreshed from
+`current.tuning().keyChoices`, so user geometry `KeyLabels` and built-in tuning
+labels share one device selector path.
 Virtual-list launcher rows are GEM link items visually, so they use the same
 right-side arrow cue as submenus and folders. `dealWithRotary()` routes their
 select key through `handleVirtualListLauncherKey()` so they open

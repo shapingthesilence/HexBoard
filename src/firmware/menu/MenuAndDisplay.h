@@ -30,6 +30,7 @@ void menuHome();
 void menuSynthOptionsHome();
 bool handleVirtualListLauncherKey(byte keyCode);
 void serviceVirtualListLauncherLabelScroll();
+void refreshMenuChoicesForCurrentTuning();
 void showOnlyValidKeyChoices();
 void applyDeviceDisplayRotation();
 void loadDeviceRotationFromCurrentLayout();

@@ -394,6 +394,9 @@ prefix fixed, waits `1.5` seconds on the selected row, then scrolls long current
 names through the remaining row space every `250` ms. The last window is held
 for another `1` second before the label returns to the beginning, and scrolling
 is suppressed while played-note badge or full-screen overlays are visible.
+The main `Key` selector is a mutable GEM select backed by `current.tuning()`;
+call `refreshMenuChoicesForCurrentTuning()` after runtime tuning changes so
+built-in and user-geometry `keyChoices` labels are reflected on-device.
 
 ### Callback behavior
 

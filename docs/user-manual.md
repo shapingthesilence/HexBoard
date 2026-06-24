@@ -49,7 +49,8 @@ The `DisplayNotes` option in `Advanced` controls the OLED played-note overlay.
 Set it to `Off`, `Label`, or `Number`. `Label` shows the active tuning's note
 labels with octave numbers, including labels provided by user geometry objects.
 Custom note labels are limited to `7` characters so they fit the on-device Key
-selector. `Number` shows scale step and octave values such as `7.4`.
+selector. The main-menu `Key` selector uses those same active tuning labels.
+`Number` shows scale step and octave values such as `7.4`.
 
 While the menu is visible, the top-right corner shows only the most recent held note. If the OLED screensaver is active, playing a note can wake a larger `Now Playing` display that shows up to `6` unique played notes from lowest to highest. Turning or pressing the encoder returns to the menu display. Recognized chord names appear near the bottom of that larger display only for `12 EDO`. `DisplayNotes` defaults to `Label`.
 
