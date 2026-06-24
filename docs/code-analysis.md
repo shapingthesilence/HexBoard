@@ -372,15 +372,15 @@ It reserves its own command family. Firmware currently implements the synth
 preset subset for named/foldered preset list/read/write/delete and live preview,
 the user wavetable write path, and raw `/layouts.dat` storage for user tuning,
 layout, scale, scale color map, and explicit button map objects. It also
-implements live Apply for the minimum generated-geometry path: EDO/equal-step
-tunings, vector layouts, included-degree scales, scale-degree color maps, and
-format-1 explicit button maps. Factory tuning/layout/scale catalogs are exposed
+implements live Apply for the generated/cents-table geometry path:
+EDO/equal-step/Scala cents-list tunings, vector layouts, included-degree
+scales, scale-degree color maps, and format-1 explicit button maps. Factory
+tuning/layout/scale catalogs are exposed
 as generated read-only geometry objects instead of saved `/layouts.dat` records.
 The OLED `Tuning`, `Layout`, and `Scales` pages are now rebuilt from factory
 and saved user geometry objects, with `UserTuning` entries as bundle anchors and
 linked layouts/scales filtered by the currently selected tuning object id.
-Profile transfer, formal bundle manifests, and Scala/cents-table runtime tuning
-remain draft.
+Profile transfer and formal bundle manifests remain draft.
 
 The companion web app has protocol and catalog helpers for that draft under
 `web/src/protocol/` and `web/src/catalogs/`, plus a mock MIDI transport under
@@ -429,16 +429,16 @@ per-button color overrides into the active layout, using the same explicit
 override records as the selected-key inspector.
 Equal-step tunings expose step cents and cycle length in the editor; their
 protocol period metadata is derived from those values during encoding. Scala
-`.scl` files are parsed in the web app into cents-table tuning objects, and
-Scala period/cycle metadata, labels, and reference pitch are reserved for
-imported file data rather than separate Scala editor fields. Firmware does not
-parse Scala text, and full Scala compatibility requires a tuning-system
-overhaul rather than only host-side import support. Current `/layouts.dat`
-support stores raw validated `UserTuning`, `UserLayout`, `UserScale`,
-`ScaleColorMap`, and `ExplicitButtonMap` bodies for preset-sync round-trip, and
-the Apply path loads compatible active objects into `current`, `h[]`, MIDI pitch
-assignment, and LED color caches. The live runtime state is intentionally not
-yet a persisted settings/profile selection. Future firmware work should make
+`.scl` files are parsed in the web app into cents-table tuning objects. The
+firmware does not parse Scala text, but `TuningKind = 2` loads the `CentsTable`
+into RAM, treats degree `0` as the implicit reference pitch, wraps by
+`PeriodMilliCents`, and resolves each assigned `stepsFromC` value into synth
+frequency plus MIDI/MPE note and bend data. Current `/layouts.dat` support
+stores raw validated `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`,
+and `ExplicitButtonMap` bodies for preset-sync round-trip, and the Apply path
+loads compatible active objects into `current`, `h[]`, MIDI pitch assignment,
+and LED color caches. The live runtime state is intentionally not yet a
+persisted settings/profile selection. Future firmware work should make
 manual explicit button records keep their stored `stepsFromC` and color
 regardless of root/key or transposition changes, and generated layout menu
 controls should be hidden when a manual layout is active.
@@ -823,8 +823,10 @@ visible.
 Display restore paths that temporarily replace the OLED contents, including
 flash-save prompts, redraw the active `VirtualListMenu` when one is open rather
 than falling back to the GEM page renderer.
-Scala/cents-list tunings still save as raw objects but are hidden from the
-runtime tuning menu until table-backed pitch lookup exists.
+Scala/cents-list tunings are visible in the runtime tuning menu when their
+table length is within the firmware tuning-table limit and the last table entry
+matches the period metadata. Ratio-list tunings still save as raw objects but
+are not runtime-compatible.
 
 Named user wavetables are stored in `/synth_wavetables.dat` with magic `SYW`,
 version `1`, CRC32, and a counted fixed-capacity catalog capped at `32` entries. The selected

@@ -50,7 +50,7 @@ import { MockMidiTransport } from "../midi/mockTransport.ts";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
 import { crc32 } from "../protocol/crc32.ts";
-import { ObjectListFlag, ObjectType, type ObjectListRecord } from "../protocol/index.ts";
+import { CapabilityFlag, ObjectListFlag, ObjectType, type HelloResponsePayload, type ObjectListRecord } from "../protocol/index.ts";
 import { CommonTlv, decodeObjectBody, textFromBytes, type TlvRecord } from "../protocol/tlv.ts";
 import { formatByteLength } from "./format.ts";
 
@@ -105,6 +105,7 @@ interface GuideHalo {
 
 interface TuningLayoutEditorProps {
   transport: MidiTransport;
+  deviceHello?: HelloResponsePayload | null;
 }
 
 interface HexBoardGeometryBundleEntry {
@@ -779,7 +780,7 @@ function decodeDeviceLayout(object: DeviceGeometryObject, index: number, buttonM
   };
 }
 
-export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
+export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayoutEditorProps) {
   const [bundles, setBundles] = useState<LayoutBundle[]>(() => loadStoredBundles());
   const [hexboardBundles, setHexboardBundles] = useState<HexBoardGeometryBundleEntry[]>([]);
   const [activeBundleId, setActiveBundleId] = useState("");
@@ -820,7 +821,18 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
     createAllNotesScale(tuningCycleLength(activeBundle.tuning));
   const activeScaleIsAllNotes = isAllNotesScale(activeScale);
   const customColorModeActive = activeBundle.palette.defaultColorMode === ColorMode.Custom;
+  const centsTableRuntimeSupported = Boolean(
+    deviceHello?.capabilityFlags && (deviceHello.capabilityFlags & CapabilityFlag.CentsTableRuntimeTuning)
+  );
+  const runtimeSendSupported = activeBundle.tuning.kind !== "scala" || centsTableRuntimeSupported;
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
+
+  useEffect(() => {
+    if (!runtimeSendSupported && liveSend) {
+      setLiveSend(false);
+    }
+  }, [liveSend, runtimeSendSupported]);
+
   const allFolders = useMemo(() => Array.from(new Set([
     rootFolderPath,
     ...defaultGeometryFolders,
@@ -1754,8 +1766,8 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
       setStatus("Connect HexBoard before live-sending geometry objects.");
       return;
     }
-    if (activeBundle.tuning.kind === "scala") {
-      setStatus("Scala bundles can be saved and verified, but live send needs firmware cents-table tuning support.");
+    if (!runtimeSendSupported) {
+      setStatus("Connected firmware does not advertise cents-table runtime tuning.");
       return;
     }
     setSyncBusy(true);
@@ -1774,7 +1786,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
   }
 
   useEffect(() => {
-    if (!liveSend || syncBusy || transport instanceof MockMidiTransport || activeBundle.tuning.kind === "scala") {
+    if (!liveSend || syncBusy || transport instanceof MockMidiTransport || !runtimeSendSupported) {
       return;
     }
     if (skipNextLiveSendRef.current) {
@@ -1785,7 +1797,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
       void sendActiveBundlePreview("Auto-sent");
     }, 450);
     return () => window.clearTimeout(timeout);
-  }, [activeBundle.tuning.kind, liveSend, liveSendKey, transport]);
+  }, [liveSend, liveSendKey, runtimeSendSupported, syncBusy, transport]);
 
   async function verifyActiveBundleOnHexBoard() {
     if (transport instanceof MockMidiTransport) {
@@ -1909,6 +1921,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
               <label className="checkField">
                 <input
                   checked={liveSend}
+                  disabled={!runtimeSendSupported}
                   type="checkbox"
                   onChange={(event) => {
                     skipNextLiveSendRef.current = true;
@@ -1917,7 +1930,7 @@ export function TuningLayoutEditor({ transport }: TuningLayoutEditorProps) {
                 />
                 <span>Live send</span>
               </label>
-              <button className="primary" disabled={syncBusy} type="button" onClick={() => void sendActiveBundlePreview("Sent")}>
+              <button className="primary" disabled={syncBusy || !runtimeSendSupported} type="button" onClick={() => void sendActiveBundlePreview("Sent")}>
                 Send Now
               </button>
               <button type="button" onClick={() => saveActiveBundleToComputer()}>

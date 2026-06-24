@@ -659,13 +659,17 @@ int16_t justIntonationRetune(byte x) {
   float pitchAdjustmentCents = 0.0f;
   float basePitchOffset = 0;
   if (useJustIntonationBPM) {
-    float buttonStepsFromA = -current.tuning().spanCtoA() - h[x].stepsFromC;
+    int16_t stepsFromA = static_cast<int16_t>(current.pitchRelToA4(h[x].stepsFromC));
+    float buttonCentsToReference = -stepsToCentsFromReference(stepsFromA);
+    float referenceHz = currentTuningReferenceHz();
     // It was planned to use integer math but floating point arithmetics works fast enough so far
     float rounding = ((float)justIntonationBPM / 60.0 * justIntonationBPM_Multiplier);
-    pitchAdjustmentCents = (buttonStepsFromA * current.tuning().stepSize) - ratioToCents(round(440.0 / rounding) / round(h[x].frequency / rounding));
+    pitchAdjustmentCents = buttonCentsToReference - ratioToCents(round(referenceHz / rounding) / round(h[x].frequency / rounding));
 
     if (pressedKeyIDs.size() > 1 && useDynamicJustIntonation) {
-      basePitchOffset = ((-current.tuning().spanCtoA() - h[pressedKeyIDs[0]].stepsFromC) * current.tuning().stepSize) - ratioToCents(round(440.0 / rounding) / round(h[pressedKeyIDs[0]].frequency / rounding));
+      int16_t baseStepsFromA = static_cast<int16_t>(current.pitchRelToA4(h[pressedKeyIDs[0]].stepsFromC));
+      float baseCentsToReference = -stepsToCentsFromReference(baseStepsFromA);
+      basePitchOffset = baseCentsToReference - ratioToCents(round(referenceHz / rounding) / round(h[pressedKeyIDs[0]].frequency / rounding));
     }
   }
   if (useDynamicJustIntonation && pressedKeyIDs.size() > 1) {
@@ -673,7 +677,7 @@ int16_t justIntonationRetune(byte x) {
     bool preferSmallRatios = true;  // if false - the closest found ratio will be chosen from the ratio table
 
     // detune within a 1/4 of a step, avoid wild detuning but cover the entire pitch range
-    float errorThreshold = current.tuning().stepSize / 4.0;
+    float errorThreshold = currentTuningNominalStepSizeCents() / 4.0f;
     float deviation = INFINITY;
     float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
 

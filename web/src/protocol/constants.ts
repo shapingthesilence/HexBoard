@@ -97,3 +97,22 @@ export const ObjectListFlag = {
 } as const;
 
 export type ObjectListFlagValue = (typeof ObjectListFlag)[keyof typeof ObjectListFlag];
+
+export const CapabilityFlag = {
+  Profile: 1 << 0,
+  SynthPreset: 1 << 1,
+  UserTuning: 1 << 2,
+  UserLayout: 1 << 3,
+  UserScale: 1 << 4,
+  ScaleColorMap: 1 << 5,
+  ExplicitButtonMap: 1 << 6,
+  ActiveSnapshot: 1 << 7,
+  DryRun: 1 << 8,
+  DeleteUserObject: 1 << 9,
+  FactoryGeometry: 1 << 10,
+  SynthWavetable: 1 << 11,
+  LiveSynthParam: 1 << 12,
+  CentsTableRuntimeTuning: 1 << 13
+} as const;
+
+export type CapabilityFlagValue = (typeof CapabilityFlag)[keyof typeof CapabilityFlag];

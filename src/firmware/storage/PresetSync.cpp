@@ -36,7 +36,8 @@ void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_
                       | PRESET_SYNC_CAP_DELETE_USER_OBJECT
                       | PRESET_SYNC_CAP_FACTORY_GEOMETRY
                       | PRESET_SYNC_CAP_SYNTH_WAVETABLE
-                      | PRESET_SYNC_CAP_LIVE_SYNTH_PARAM);
+                      | PRESET_SYNC_CAP_LIVE_SYNTH_PARAM
+                      | PRESET_SYNC_CAP_CENTS_TABLE_RUNTIME_TUNING);
   presetSyncAppendU28(response, PRESET_SYNC_MAX_RAW_OBJECT_BYTES);
   response.push_back(CURRENT_SETTINGS_VERSION);
   response.push_back(SYNTH_PRESET_SCHEMA_VERSION);

@@ -5,6 +5,7 @@ import { SynthPresetLibrary } from "./views/SynthPresetLibrary.tsx";
 import { TuningLayoutEditor } from "./views/TuningLayoutEditor.tsx";
 import { MockMidiTransport } from "./midi/mockTransport.ts";
 import type { MidiTransport } from "./midi/types.ts";
+import type { HelloResponsePayload } from "./protocol/index.ts";
 
 type ViewKey = "synth" | "profiles" | "layouts";
 type ThemeMode = "light" | "dark";
@@ -31,6 +32,7 @@ function loadStoredTheme(): ThemeMode {
 export function App() {
   const [activeView, setActiveView] = useState<ViewKey>("synth");
   const [transport, setTransport] = useState<MidiTransport>(() => new MockMidiTransport());
+  const [deviceHello, setDeviceHello] = useState<HelloResponsePayload | null>(null);
   const [connectionLabel, setConnectionLabel] = useState("Mock device");
   const [theme, setTheme] = useState<ThemeMode>(() => loadStoredTheme());
 
@@ -44,11 +46,11 @@ export function App() {
       case "profiles":
         return <ProfileSync transport={transport} />;
       case "layouts":
-        return <TuningLayoutEditor transport={transport} />;
+        return <TuningLayoutEditor transport={transport} deviceHello={deviceHello} />;
       case "synth":
         return <SynthPresetLibrary transport={transport} />;
     }
-  }, [activeView, transport]);
+  }, [activeView, deviceHello, transport]);
 
   return (
     <main className="appShell">
@@ -79,6 +81,7 @@ export function App() {
         </button>
         <DeviceConnect
           onTransportChange={setTransport}
+          onHelloChange={setDeviceHello}
           connectionLabel={connectionLabel}
           onConnectionLabelChange={setConnectionLabel}
         />

@@ -2,10 +2,10 @@
 
 This is the design spec for HexBoard preset sync. The synth preset subset,
 named synth-wavetable write/read path, raw `/layouts.dat` user geometry catalog
-storage, and live Apply for generated EDO/equal-step geometry bundles are
-implemented in firmware. Factory tuning/layout/scale catalogs are exposed as
-generated read-only geometry objects. Profile, bundle, backup, and full
-Scala/cents-table tuning workflows remain draft design until their runtime
+storage, and live Apply for generated EDO/equal-step plus Scala/cents-table
+geometry bundles are implemented in firmware. Factory tuning/layout/scale
+catalogs are exposed as generated read-only geometry objects. Profile, bundle,
+backup, and ratio-list tuning workflows remain draft design until their runtime
 models are implemented.
 
 The intent is to keep the device-side protocol small while allowing the web app
@@ -60,14 +60,15 @@ File headers:
 The current firmware has `/settings.dat`, named/foldered `/synth_presets.dat`,
 named/foldered `/synth_wavetables.dat`, and `/layouts.dat`. The current
 `/layouts.dat` implementation stores and round-trips raw validated object
-bodies. It can also apply generated EDO/equal-step `UserTuning` objects,
-isomorphic vector `UserLayout` objects, `UserScale` membership,
-`ScaleColorMap` degree colors, and format-1 `ExplicitButtonMap` note/color
-overrides to the live pitch and LED runtime. The on-device `Tuning`, `Layout`,
-and `Scales` browsers are backed by factory read-only geometry objects plus
-saved runtime-compatible user geometry objects. Factory entries are shown flat
-on-device even though their protocol folder remains `/Built In`. It does not
-yet apply Scala/cents tables, profile references, or bundle manifests.
+bodies. It can also apply generated EDO/equal-step and Scala/cents-list
+`UserTuning` objects, isomorphic vector `UserLayout` objects, `UserScale`
+membership, `ScaleColorMap` degree colors, and format-1 `ExplicitButtonMap`
+note/color overrides to the live pitch and LED runtime. The on-device `Tuning`,
+`Layout`, and `Scales` browsers are backed by factory read-only geometry
+objects plus saved runtime-compatible user geometry objects. Factory entries
+are shown flat on-device even though their protocol folder remains `/Built In`.
+It does not yet apply profile references, bundle manifests, or ratio-list
+tunings.
 
 ## Relationship To Current SysEx
 
@@ -346,6 +347,7 @@ Capability flags:
 | `10` | Factory object listing |
 | `11` | Synth wavetable write |
 | `12` | Live synth parameter set |
+| `13` | Cents-table runtime tuning |
 
 Example hello request, transaction `1`, host max packed chunk `128`, no required
 flags:
@@ -355,14 +357,15 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 ```
 
 Example response, transaction `1`, max packed chunk `128`, capabilities
-`0x1F7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
-delete user object, factory geometry listing, synth wavetable objects, and live
-synth parameter set), max raw object bytes `66560`, settings schema `19`, synth
+`0x3F7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
+delete user object, factory geometry listing, synth wavetable objects, live
+synth parameter set, and cents-table runtime tuning), max raw object bytes
+`66560`, settings schema `19`, synth
 preset schema `7`, `9` profiles, `128` synth preset entries, `64` slots for
 each advertised user geometry count, hardware version `2`:
 
 ```text
-F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 3E 7E 00 04 08 00 13 07 09 01 00 40 40 40 40 02 F7
+F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 7F 7E 00 04 08 00 13 07 09 01 00 40 40 40 40 02 F7
 ```
 
 ## Object Addressing
@@ -531,10 +534,12 @@ Write flags:
 | `3` | Dry-run validation only; do not apply or save |
 
 For geometry object writes, firmware validates and applies the runtime object
-before saving when both `ApplyToRuntime` and `SaveToFlash` are set. Unsupported
-runtime objects, such as current cents-table/Scala tunings, are rejected for
-Apply and are not saved through that combined path; hosts can still save those
-objects with `SaveToFlash` only.
+before saving when both `ApplyToRuntime` and `SaveToFlash` are set. Generated
+EDO/equal-step tunings and cents-list Scala imports are runtime-compatible when
+their cycle length fits the firmware table limit and their final cents-table
+entry matches `PeriodMilliCents`. Unsupported runtime objects, such as
+ratio-list tunings, are rejected for Apply and are not saved through that
+combined path; hosts can still save those objects with `SaveToFlash` only.
 
 The device ACKs `WRITE_BEGIN` if it can accept the transfer. The host then sends
 `DATA_CHUNK` messages in order. The device ACKs every accepted chunk with the
@@ -778,23 +783,25 @@ length in `EdoDivisions` for labels/colors; host tooling derives
 `PeriodMilliCents` from those two values so they cannot diverge. Generated EDO
 and equal-step tunings can include `KeyLabels` and `ReferenceMilliHz`; the web
 editor presents labels in A-first order, defaults to A-first pitch labels, and
-rotates them into the firmware's C-centered cycle order for `KeyLabels`. Scala `.scl` import is a host-side
-feature. Current firmware live Apply supports only `TuningKind = 1` and
-`TuningKind = 4`; it loads cycle length, step size, key labels, and
-`ReferenceMilliHz` into runtime tuning state and resets the key to the uploaded
-tuning's C offset. The web app parses Scala text, derives period/cycle metadata
-and any file-defined labels/reference pitch as support is added, and writes a
-cents table. Firmware does not need to parse Scala text, but full
-Scala-compatible playback requires broader firmware tuning-system support.
+rotates them into the firmware's C-centered cycle order for `KeyLabels`. Scala
+`.scl` import is a host-side feature. Current firmware live Apply supports
+`TuningKind = 1`, `TuningKind = 2`, and `TuningKind = 4`; it loads cycle
+length, nominal step size, key labels when present, `ReferenceMilliHz`, and for
+cents-list tunings a RAM copy of `CentsTable`. Cents-list playback treats degree
+`0` as an implicit `0`-cent reference, uses table entry `1` as the first
+interval, and wraps all positive or negative step values by
+`PeriodMilliCents`. The web app parses Scala text, derives period/cycle
+metadata, and writes the cents table. Firmware does not parse Scala text.
 
 The tuning object must be complete enough for both the onboard synth and every
 MIDI output mode. For equal-step tunings, firmware can derive frequency,
 single-channel MIDI note numbers, and MPE bend offsets from `StepMilliCents`,
 `PeriodMilliCents`, `ReferenceMidiNote`, and `ReferenceMilliHz`. For imported
-or irregular tunings, firmware should use `CentsTable`/`RatioTable` to compute
-the exact frequency for each `stepsFromC` value, then decide whether standard
+or irregular cents-list tunings, firmware uses `CentsTable` to compute the
+exact frequency for each `stepsFromC` value, then decides whether standard
 MIDI, multi-channel non-MPE retuning, or MPE pitch bend is required from the
-same resolved cent offset.
+same resolved cent offset. `RatioTable` remains reserved and is not currently
+runtime-compatible.
 
 Example raw TLV snippet for a generated `19 EDO` tuning:
 
@@ -1194,11 +1201,11 @@ write the individual objects after the web app unpacks a bundle.
 2. Web app derives period/cycle metadata from the file and converts Scala data
    into a `UserTuning` `CentsTable`.
 3. Web app writes the object through the same chunked transfer path.
-4. Device stores the converted tuning object. It does not need to parse Scala
-   text, but it still needs full cents-table tuning support before Scala
-   imports are completely compatible with synth and MIDI output.
-5. Hosts should use `SaveToFlash` only for Scala/cents-table tunings until the
-   firmware advertises runtime cents-table support.
+4. Device stores the converted tuning object. It does not parse Scala text; it
+   uses the converted cents table for synth frequency, MIDI note selection, and
+   MPE pitch bend when the object is applied.
+5. Hosts should require the cents-table runtime tuning capability bit before
+   using `ApplyToRuntime` with Scala/cents-table tunings.
 
 ### Write Individual Button Edits
 
@@ -1220,9 +1227,9 @@ write the individual objects after the web app unpacks a bundle.
 5. The web app writes the same `FolderPath` common TLV on every unpacked object
    in the bundle so device object lists can group related geometry records.
 6. Current firmware stores these records in `/layouts.dat` and can list, read,
-   overwrite, delete, or apply the active EDO/equal-step tuning, active vector
-   layout, active scale, color map, and matching explicit button map by compact
-   preset-sync handle.
+   overwrite, delete, or apply the active EDO/equal-step/Scala cents-list
+   tuning, active vector layout, active scale, color map, and matching explicit
+   button map by compact preset-sync handle.
 7. The device refreshes its virtual `Tuning`, `Layout`, and `Scales` browsers
    after geometry saves/deletes. `UserTuning` objects are the loadable bundle
    anchors; linked `UserLayout` and `UserScale` objects appear after that tuning

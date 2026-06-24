@@ -16,7 +16,7 @@ For a longer historical deep dive, see `docs/code-analysis.md`, but treat this g
 - `Makefile`: local build shortcut that compiles the root sketch and firmware modules
 - `docs/code-analysis.md`: older, broader analysis document
 - `docs/delegated-control.md`: external delegated-control protocol and implementation notes
-- `docs/preset-sync-sysex.md`: protocol design for implemented synth-preset sync, wavetable import, raw user geometry catalog storage, EDO/equal-step live geometry Apply, and future profile/Scala sync
+- `docs/preset-sync-sysex.md`: protocol design for implemented synth-preset sync, wavetable import, raw user geometry catalog storage, EDO/equal-step/Scala cents-table live geometry Apply, and future profile sync
 
 Keep the root `HexBoard.ino` thin. Do not edit generated files under `build/` as a source of truth.
 
@@ -171,13 +171,14 @@ Current web source layout:
   preserving role and note overrides.
   Equal-step layout-bundle tunings store step
   cents plus cycle length in the editor model; protocol `PeriodMilliCents` is
-  derived during encoding. Scala layout-bundle tunings derive period, cycle
-  length, labels, and reference pitch from imported file data instead of
-  exposing those as separate editor fields. The tuning/layout editor uses
-  real-device `Save`, `Apply`, and `Verify` controls: `Save` writes all bundle
-  objects with `SaveToFlash`, `Apply` writes the active EDO/equal-step runtime
-  objects with `ApplyToRuntime | SaveToFlash`, and `Verify` reads saved objects
-  back by object id and byte-compares them.
+  derived during encoding. Scala layout-bundle tunings store the imported
+  cents table and period metadata instead of exposing separate step fields. The
+  tuning/layout editor uses real-device `Save`, `Send Now`, `Live send`, and
+  `Verify` controls: `Save` writes all bundle objects with `SaveToFlash`,
+  runtime sends write the active EDO/equal-step/Scala-compatible objects with
+  `ApplyToRuntime`, and `Verify` reads saved objects back by object id and
+  byte-compares them. The web app enables Scala runtime sends only when the
+  connected firmware advertises cents-table runtime tuning support.
 - `web/src/catalogs/hexBoardGeometry.ts`: browser-side model of the current
   140-key surface, including `133` main note keys and command indices
   `0,20,40,60,80,100,120`; tests should use this helper instead of duplicating
@@ -504,7 +505,7 @@ Important implementation details:
   because they are filtered by the selected tuning
 - synth presets are stored separately in `/synth_presets.dat` with magic `SYP`; preset file version is `10`; entries are stored as fixed-size flash records with a firmware cap of `128` presets; RAM keeps a fixed metadata index and one current full preset record, so preset values are read from flash only when loading, saving, comparing modified state, or serving preset-sync reads; factory defaults copy `Soft String Pad` and `Bright Mono Lead` into ordinary editable root-folder preset slots, so users can erase or modify them and recover them with Reset Defaults or the web editor library; presets save synth sound parameters plus a wavetable folder/name dependency, but do not persist a current preset id; the on-device save/load menus use `VirtualListMenu` as folder browsers with `New Preset` or `Blank` as the first action row in the active folder; synth preset load and web preview call `syncSynthSettingsToRuntime()` so they update only synth runtime state and do not rerun tuning/layout/scale/LED assignment rebuilds; older preset files are intentionally not migrated in this 2.0 development format
 - user synth wavetables are stored as a named fixed-capacity catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `32` entries, and per-table sample files named from each `16`-byte wavetable object id; new sample files contain six fixed mip levels with `16` frames and `512` samples per frame at harmonic limits `192`, `96`, `48`, `24`, `12`, and `6` (`49,152` bytes total), while `8,192`-byte base-only files are still accepted and expanded in RAM. The selected wavetable is also snapshotted per profile in `/profile_wavetables.dat` with magic `PWT`, version `1`, so loading a profile restores its folder/name wavetable reference before runtime sync. The on-device wavetable load menu uses `VirtualListMenu` with built-in tables at the root and folder navigation for user tables. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
-- user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `2`, up to `64` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. Runtime Apply currently supports generated EDO/equal-step user tunings, vector layouts, included-degree scales, scale color maps, and format-1 explicit button maps. RAM keeps fixed metadata/file-offset entries with `20`-byte geometry name/folder buffers and lazy-loads raw bodies from flash when applying or serving reads. The web editor caps geometry object names and single folder labels at `19` display characters and note labels at `7` characters. The visible OLED `Tuning`, `Layout`, and `Scales` pages use `VirtualListMenu`, a fixed-memory renderer that mirrors GEM Back/button-list drawing, 11-row paging, wrapping, pointer, and scrollbar behavior while caching only 16-bit geometry handles instead of allocating one `GEMItem` per object. Tuning entries are bundle anchors, layout/scale entries are filtered by the selected tuning object id, and user layout/scale rows are capped at `24` associated objects. Built-in tuning entries are shown flat at the root, saved user tunings can be foldered, and Layout/Scales remain flat on-device. Save/delete requests defer a menu rebuild like synth preset menus. It does not yet support Scala/cents-table pitch lookup, profile references, or settings persistence for the selected user geometry bundle.
+- user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `2`, up to `64` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. Runtime Apply currently supports generated EDO/equal-step and Scala/cents-list user tunings, vector layouts, included-degree scales, scale color maps, and format-1 explicit button maps. RAM keeps fixed metadata/file-offset entries with `20`-byte geometry name/folder buffers and lazy-loads raw bodies from flash when applying or serving reads. The web editor caps geometry object names and single folder labels at `19` display characters and note labels at `7` characters. The visible OLED `Tuning`, `Layout`, and `Scales` pages use `VirtualListMenu`, a fixed-memory renderer that mirrors GEM Back/button-list drawing, 11-row paging, wrapping, pointer, and scrollbar behavior while caching only 16-bit geometry handles instead of allocating one `GEMItem` per object. Tuning entries are bundle anchors, layout/scale entries are filtered by the selected tuning object id, and user layout/scale rows are capped at `24` associated objects. Built-in tuning entries are shown flat at the root, saved user tunings can be foldered, and Layout/Scales remain flat on-device. Save/delete requests defer a menu rebuild like synth preset menus. Profile references and settings persistence for the selected user geometry bundle remain future work.
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
 - the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
@@ -542,9 +543,11 @@ SysEx while delegated mode is active. A 5-second encoder hold is the local
 escape path; do not route that through the normal 2-second panic behavior.
 For the host sync protocol covering profiles, user tunings/layouts, mapping
 objects, and named synth presets, see `docs/preset-sync-sysex.md`. Current
-firmware can persist, round-trip, and live-apply the minimum geometry path:
+firmware can persist, round-trip, and live-apply the core geometry path:
 generated EDO/equal-step `UserTuning` objects feed `current.tuning()` and the
-MIDI pitch offset from `ReferenceMilliHz`; vector `UserLayout` objects feed
+MIDI pitch offset from `ReferenceMilliHz`; Scala/cents-list `UserTuning`
+objects also load a RAM cents table that resolves every `stepsFromC` value into
+synth frequency, MIDI note choice, and MPE bend; vector `UserLayout` objects feed
 `applyLayout()`; `UserScale` included degrees feed `applyScale()`;
 `ScaleColorMap` feeds `setLEDcolorCodes()`; and format-1 `ExplicitButtonMap`
 objects override per-button role, pitch, and color before pitch assignment is
@@ -553,13 +556,12 @@ geometry objects: selecting a tuning loads its linked first layout, first scale,
 color map, and button map; selecting layout or scale later swaps only that part
 within the current user tuning. The active user geometry selection remains
 RAM-only and is not yet persisted in profiles or settings.
-Imported Scala/cents tunings still need a cents or ratio table that can
-resolve every `stepsFromC` value for synth frequency, standard MIDI note
-mapping, and MPE bend calculation. Full Scala compatibility needs a firmware
-tuning-system overhaul, not just `.scl` parsing in the host app. Manual
-`ExplicitButtonMap` note positions are absolute `stepsFromC` values. Root/key
-and transposition settings should affect scale highlighting and final sounded
-pitch, but should not regenerate those manual button records.
+Cents-list playback treats degree `0` as an implicit `0`-cent reference and
+wraps positive or negative step values by the table period; ratio-list tuning
+objects are still not a runtime-supported kind. Manual `ExplicitButtonMap`
+note positions are absolute `stepsFromC` values. Root/key and transposition
+settings should affect scale highlighting and final sounded pitch, but should
+not regenerate those manual button records.
 
 Core functions:
 

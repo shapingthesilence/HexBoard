@@ -134,9 +134,10 @@ the final retuned pitch, then use pitch bend only for the remaining fractional
 part. The onboard synth uses the computed JI cents directly, so its JI pitch
 resolution is not limited by the `MPE Bend` setting.
 
-Scala/cents-table tunings can be saved to HexBoard from the web app, but they
-do not appear as loadable runtime tunings yet because firmware still needs
-table-backed pitch lookup.
+Scala/cents-table tunings imported from the web app are loadable runtime
+tunings. The firmware does not parse `.scl` text itself; the web app converts
+the import to a `UserTuning` cents table, and the synth plus MIDI/MPE pitch
+paths use that table when the tuning is applied.
 
 Changing tuning also resets:
 
@@ -454,10 +455,8 @@ editing over Web MIDI SysEx. Firmware currently implements synth preset sync,
 named synth-wavetable import/read/write/delete, storage/list/read/write/delete for user
 geometry objects in `/layouts.dat`, read-only factory tuning/layout/scale
 geometry objects, virtual on-device `Tuning`, `Layout`, and `Scales` browsers
-backed by geometry objects, and live Apply for generated
-EDO/equal-step geometry bundles. Scala/cents-table tuning objects can be saved
-and verified, but live Scala playback still needs a broader firmware
-tuning-system overhaul.
+backed by geometry objects, and live Apply for generated EDO, equal-step, and
+Scala/cents-table geometry bundles.
 
 The `Tunings & Layouts` tab is a browser-side musical geometry editor. It saves
 geometry bundles in browser storage and can import/export those bundles as JSON.
@@ -472,8 +471,10 @@ left sidebar beside the preview using the same left-to-right proportions as the
 synth preset editor. At the top of `Geometry Bundles`, `File Manager` contains
 the foldered `Computer Library` and `HexBoard Library` sections, while `Editor`
 contains bundle metadata plus the `Tuning`, `Layouts`, and `Scales` subtabs for
-the open bundle. In `Editor`, `Live send` previews compatible EDO/equal-step
-bundle edits on the connected device's runtime without saving them to flash.
+the open bundle. In `Editor`, `Live send` previews compatible EDO, equal-step,
+and Scala/cents-table bundle edits on the connected device's runtime without
+saving them to flash. Scala live-send is enabled only when the connected
+firmware advertises cents-table runtime tuning support.
 `Save to Computer` stores the bundle in browser storage, while `Save to
 HexBoard` writes the bundle's user tuning, layouts, scales, color map, and
 explicit button map into the selected folder on the device. The HexBoard
@@ -516,11 +517,12 @@ Scala `.scl` imports. EDO and cents-per-step tunings include editable note
 labels and an `A = x Hz` reference pitch; note labels default to an A-first
 pitch-label sequence and validate like included degrees when the field is exited. The cents-per-step
 editor takes only step size and cycle length; its period is derived from those
-two fields. Scala import derives period, cycle length, labels, and reference
-pitch from the imported file path as support is added, so the Scala editor does
-not expose those fields. Scala text is parsed in the web app and stored in the
-bundle as cents data, but full Scala playback and sync compatibility still
-require firmware tuning-system work. The preview uses the current `133` note-key
+two fields. Scala import derives period and cycle length from the imported
+interval table and keeps the bundle's current reference pitch, so the Scala
+editor does not expose separate step-size fields. Scala text is parsed in the
+web app and stored in the bundle as cents data. On supported firmware, applied
+Scala bundles use that cents table for onboard synth frequency, MIDI note
+selection, and MPE pitch bend. The preview uses the current `133` note-key
 hardware shape and omits the seven command buttons so geometry editing stays
 focused on playable notes. The selected-key inspector shows the resolved note
 label, A4-relative step/cents offset, and frequency for the selected key, and has a `Color source` dropdown:

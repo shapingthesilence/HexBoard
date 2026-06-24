@@ -11,10 +11,11 @@ import {
   isWebMidiSupported,
   requestPresetSyncMidiAccess
 } from "../midi/webMidi.ts";
-import { PROTOCOL_MAJOR, type HelloResponsePayload } from "../protocol/index.ts";
+import { CapabilityFlag, PROTOCOL_MAJOR, type HelloResponsePayload } from "../protocol/index.ts";
 
 interface DeviceConnectProps {
   onTransportChange: (transport: MidiTransport) => void;
+  onHelloChange: (hello: HelloResponsePayload | null) => void;
   connectionLabel: string;
   onConnectionLabelChange: (label: string) => void;
 }
@@ -27,7 +28,6 @@ interface DiscoveredHexBoard {
   hello: HelloResponsePayload;
 }
 
-const synthPresetCapabilityBit = 1 << 1;
 const helloProbeTimeoutMs = 900;
 
 function portName(port: WebMidiInput | WebMidiOutput): string {
@@ -71,7 +71,7 @@ function matchingInputs(output: WebMidiOutput, inputs: WebMidiInput[]): WebMidiI
 
 function isCompatibleHello(hello: HelloResponsePayload): boolean {
   return hello.negotiatedMajor === PROTOCOL_MAJOR
-    && (hello.capabilityFlags & synthPresetCapabilityBit) !== 0
+    && (hello.capabilityFlags & CapabilityFlag.SynthPreset) !== 0
     && hello.synthPresetSchemaVersion >= 3;
 }
 
@@ -81,6 +81,7 @@ function firmwareLabel(hello: HelloResponsePayload): string {
 
 export function DeviceConnect({
   onTransportChange,
+  onHelloChange,
   connectionLabel,
   onConnectionLabelChange
 }: DeviceConnectProps) {
@@ -139,6 +140,7 @@ export function DeviceConnect({
     await device.input.open?.();
     const webTransport = new WebMidiTransport(device.output, device.input);
     onTransportChange(webTransport);
+    onHelloChange(device.hello);
     onConnectionLabelChange(`HexBoard: ${device.label}`);
     setSelectedDeviceKey(device.key);
     setStatus(`Connected ${device.label} (${firmwareLabel(device.hello)})`);

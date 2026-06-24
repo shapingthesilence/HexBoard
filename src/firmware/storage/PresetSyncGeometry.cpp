@@ -598,6 +598,43 @@ bool presetSyncFindTlvU32LE(const std::vector<uint8_t>& body, uint8_t tag, uint3
   return true;
 }
 
+bool readRuntimeCentsTable(const GeometryObjectSlot& object,
+                           uint16_t cycleLength,
+                           int32_t& periodMilliCents,
+                           int32_t* destination) {
+  if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
+    return false;
+  }
+
+  const uint8_t* centsTable = nullptr;
+  uint16_t centsTableLength = 0;
+  if (!presetSyncFindTlv(object.body, PRESET_SYNC_TLV_TUNING_CENTS_TABLE, centsTable, centsTableLength)
+      || centsTableLength != static_cast<uint16_t>(cycleLength * sizeof(int32_t))) {
+    return false;
+  }
+
+  uint32_t periodFromTlv = 0;
+  bool sawPeriod = presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_PERIOD_MILLI_CENTS, periodFromTlv);
+  if (sawPeriod && periodFromTlv > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+    return false;
+  }
+
+  int32_t previousMilliCents = 0;
+  for (uint16_t degree = 0; degree < cycleLength; ++degree) {
+    int32_t milliCents = presetSyncReadI32LE(centsTable + (degree * sizeof(int32_t)));
+    if (milliCents <= previousMilliCents) {
+      return false;
+    }
+    if (destination) {
+      destination[degree] = milliCents;
+    }
+    previousMilliCents = milliCents;
+  }
+
+  periodMilliCents = sawPeriod ? static_cast<int32_t>(periodFromTlv) : previousMilliCents;
+  return periodMilliCents > 0 && previousMilliCents == periodMilliCents;
+}
+
 bool geometryObjectReferencesObjectId(const GeometryObjectSlot& object, uint8_t tag, uint8_t objectType, const uint8_t* objectId) {
   const uint8_t* value = nullptr;
   uint16_t length = 0;
@@ -616,10 +653,18 @@ bool geometryObjectRuntimeTuningSupported(const GeometryObjectSlot& object) {
       || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS, cycleLength)) {
     return false;
   }
-  return (tuningKind == PRESET_SYNC_USER_TUNING_KIND_EDO
-          || tuningKind == PRESET_SYNC_USER_TUNING_KIND_EQUAL_STEP)
-         && cycleLength > 0
-         && cycleLength <= MAX_SCALE_DIVISIONS;
+  if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
+    return false;
+  }
+  if (tuningKind == PRESET_SYNC_USER_TUNING_KIND_EDO
+      || tuningKind == PRESET_SYNC_USER_TUNING_KIND_EQUAL_STEP) {
+    return true;
+  }
+  if (tuningKind == PRESET_SYNC_USER_TUNING_KIND_CENTS_LIST) {
+    int32_t periodMilliCents = 0;
+    return readRuntimeCentsTable(object, cycleLength, periodMilliCents, nullptr);
+  }
+  return false;
 }
 
 int findFirstGeometryObjectReferencing(uint8_t objectType, uint8_t referenceTag, uint8_t referenceObjectType, const uint8_t* referenceObjectId) {
@@ -667,6 +712,11 @@ void clearUserGeometryRuntimeSelection() {
   userGeometryRuntimeLayoutObjectSelected = false;
   memset(userGeometryRuntimeTuningObjectId, 0, sizeof(userGeometryRuntimeTuningObjectId));
   memset(userGeometryRuntimeLayoutObjectId, 0, sizeof(userGeometryRuntimeLayoutObjectId));
+  userGeometryRuntimeCentsTableActive = false;
+  userGeometryRuntimeCentsTableLength = 0;
+  memset(userGeometryRuntimeCentsTableMilliCents, 0, sizeof(userGeometryRuntimeCentsTableMilliCents));
+  userGeometryRuntimePeriodMilliCents = 1200000;
+  userGeometryRuntimeReferenceMidiNote = 69;
   userGeometryRuntimeReferenceHz = 440.0f;
   clearUserGeometryButtonRuntimeOverrides();
 }
@@ -703,6 +753,7 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   uint16_t cycleLength = 0;
   uint32_t periodMilliCents = 1200000;
   uint32_t stepMilliCents = 0;
+  uint8_t referenceMidiNote = 69;
   uint32_t referenceMilliHz = 440000;
   if (!presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_TUNING_KIND, tuningKind)
       || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS, cycleLength)) {
@@ -710,6 +761,7 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
     return false;
   }
   if (tuningKind != PRESET_SYNC_USER_TUNING_KIND_EDO
+      && tuningKind != PRESET_SYNC_USER_TUNING_KIND_CENTS_LIST
       && tuningKind != PRESET_SYNC_USER_TUNING_KIND_EQUAL_STEP) {
     sendToLog("Geometry runtime tuning apply rejected: tuning kind needs full firmware tuning support.");
     return false;
@@ -720,13 +772,37 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   }
   presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_PERIOD_MILLI_CENTS, periodMilliCents);
   presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_STEP_MILLI_CENTS, stepMilliCents);
+  presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_MIDI_NOTE, referenceMidiNote);
   presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_MILLI_HZ, referenceMilliHz);
-  if (stepMilliCents == 0) {
-    stepMilliCents = periodMilliCents / cycleLength;
-  }
-  if (stepMilliCents == 0 || referenceMilliHz == 0) {
-    sendToLog("Geometry runtime tuning apply rejected: step size or reference Hz is invalid.");
+  if (referenceMidiNote > 127) {
+    sendToLog("Geometry runtime tuning apply rejected: reference MIDI note is invalid.");
     return false;
+  }
+  if (referenceMilliHz == 0 || periodMilliCents == 0
+      || periodMilliCents > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+    sendToLog("Geometry runtime tuning apply rejected: period or reference Hz is invalid.");
+    return false;
+  }
+
+  bool centsTableActive = false;
+  int32_t centsTablePeriod = static_cast<int32_t>(periodMilliCents);
+  int32_t parsedCentsTable[MAX_SCALE_DIVISIONS] = {};
+  if (tuningKind == PRESET_SYNC_USER_TUNING_KIND_CENTS_LIST) {
+    if (!readRuntimeCentsTable(object, cycleLength, centsTablePeriod, parsedCentsTable)) {
+      sendToLog("Geometry runtime tuning apply rejected: cents table is invalid.");
+      return false;
+    }
+    periodMilliCents = static_cast<uint32_t>(centsTablePeriod);
+    stepMilliCents = periodMilliCents / cycleLength;
+    centsTableActive = true;
+  } else {
+    if (stepMilliCents == 0) {
+      stepMilliCents = periodMilliCents / cycleLength;
+    }
+    if (stepMilliCents == 0) {
+      sendToLog("Geometry runtime tuning apply rejected: step size is invalid.");
+      return false;
+    }
   }
 
   copyRuntimeGeometryName(userGeometryRuntimeTuningNameStorage, sizeof(userGeometryRuntimeTuningNameStorage), object.name);
@@ -736,6 +812,14 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   memcpy(userGeometryRuntimeTuningObjectId, object.objectId, sizeof(userGeometryRuntimeTuningObjectId));
   userGeometryRuntimeTuningObjectSelected = true;
   userGeometryRuntimeLayoutObjectSelected = false;
+  userGeometryRuntimeCentsTableActive = centsTableActive;
+  userGeometryRuntimeCentsTableLength = centsTableActive ? cycleLength : 0;
+  memset(userGeometryRuntimeCentsTableMilliCents, 0, sizeof(userGeometryRuntimeCentsTableMilliCents));
+  if (centsTableActive) {
+    memcpy(userGeometryRuntimeCentsTableMilliCents, parsedCentsTable, cycleLength * sizeof(parsedCentsTable[0]));
+  }
+  userGeometryRuntimePeriodMilliCents = static_cast<int32_t>(periodMilliCents);
+  userGeometryRuntimeReferenceMidiNote = referenceMidiNote;
   userGeometryRuntimeReferenceHz = static_cast<float>(referenceMilliHz) / 1000.0f;
   setDefaultRuntimeKeyLabels(cycleLength);
 

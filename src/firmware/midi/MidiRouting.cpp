@@ -11,6 +11,51 @@ uint16_t mpeChannelBitmap = 0;  // bitmap of available MPE channels (bit N = cha
 byte MPEpitchBendsNeeded;
 bool mpeChannelQueueActive = false;
 
+namespace {
+
+int32_t floorDiv(int32_t numerator, int32_t denominator) {
+  if (denominator <= 0) {
+    return 0;
+  }
+  int32_t quotient = numerator / denominator;
+  int32_t remainder = numerator % denominator;
+  if (remainder < 0) {
+    --quotient;
+  }
+  return quotient;
+}
+
+uint16_t wrappedTableDegree(int32_t stepsFromA, uint16_t cycleLength) {
+  if (cycleLength == 0) {
+    return 0;
+  }
+  int32_t remainder = stepsFromA % static_cast<int32_t>(cycleLength);
+  if (remainder < 0) {
+    remainder += cycleLength;
+  }
+  return static_cast<uint16_t>(remainder);
+}
+
+bool centsTableMatchesStandardSemitones() {
+  if (!userGeometryRuntimeCentsTableActive
+      || userGeometryRuntimeCentsTableLength == 0
+      || userGeometryRuntimePeriodMilliCents != static_cast<int32_t>(userGeometryRuntimeCentsTableLength * 100000)) {
+    return false;
+  }
+  for (uint16_t degree = 1; degree <= userGeometryRuntimeCentsTableLength; ++degree) {
+    if (userGeometryRuntimeCentsTableMilliCents[degree - 1] != static_cast<int32_t>(degree * 100000)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool referenceHzIsConcertA() {
+  return std::fabs(currentTuningReferenceHz() - CONCERT_A_HZ) < 0.001f;
+}
+
+}  // namespace
+
 uint8_t mpePlayableChannelCount() {
   if (mpeHighestChannel < mpeLowestChannel) {
     return 0;
@@ -51,12 +96,63 @@ float freqToMIDI(float Hz) {  // formula to convert from Hz to MIDI note
 float MIDItoFreq(float midi) {  // formula to convert from MIDI note to Hz
   return CONCERT_A_HZ * exp2((midi - CONCERT_A_MIDI_NOTE) / 12.0f);
 }
-float stepsToMIDI(int16_t stepsFromA) {  // return the MIDI pitch associated
-  float referenceOffset = 0.0f;
+
+float currentTuningReferenceHz() {
   if (userGeometryRuntimeActive && userGeometryRuntimeReferenceHz > 0.0f) {
-    referenceOffset = 12.0f * log2f(userGeometryRuntimeReferenceHz / CONCERT_A_HZ);
+    return userGeometryRuntimeReferenceHz;
   }
-  return CONCERT_A_MIDI_NOTE + referenceOffset + (static_cast<float>(stepsFromA) * static_cast<float>(current.tuning().stepSize) / 100.0f);
+  return CONCERT_A_HZ;
+}
+
+float currentTuningNominalStepSizeCents() {
+  if (userGeometryRuntimeActive
+      && userGeometryRuntimeCentsTableActive
+      && userGeometryRuntimeCentsTableLength > 0
+      && userGeometryRuntimePeriodMilliCents > 0) {
+    return (static_cast<float>(userGeometryRuntimePeriodMilliCents) / 1000.0f)
+           / static_cast<float>(userGeometryRuntimeCentsTableLength);
+  }
+  return current.tuning().stepSize;
+}
+
+float stepsToCentsFromReference(int16_t stepsFromA) {
+  if (userGeometryRuntimeActive
+      && userGeometryRuntimeCentsTableActive
+      && userGeometryRuntimeCentsTableLength > 0
+      && userGeometryRuntimePeriodMilliCents > 0) {
+    uint16_t cycleLength = userGeometryRuntimeCentsTableLength;
+    int32_t periodOffset = floorDiv(stepsFromA, cycleLength);
+    uint16_t degree = wrappedTableDegree(stepsFromA, cycleLength);
+    int64_t milliCents = static_cast<int64_t>(periodOffset) * userGeometryRuntimePeriodMilliCents;
+    if (degree > 0) {
+      milliCents += userGeometryRuntimeCentsTableMilliCents[degree - 1];
+    }
+    return static_cast<float>(milliCents) / 1000.0f;
+  }
+  return static_cast<float>(stepsFromA) * static_cast<float>(current.tuning().stepSize);
+}
+
+float stepsToFrequency(int16_t stepsFromA) {
+  float referenceHz = currentTuningReferenceHz();
+  if (referenceHz <= 0.0f) {
+    return 0.0f;
+  }
+  return referenceHz * exp2f(stepsToCentsFromReference(stepsFromA) / 1200.0f);
+}
+
+float stepsToMIDI(int16_t stepsFromA) {  // return the MIDI pitch associated
+  float frequency = stepsToFrequency(stepsFromA);
+  return frequency > 0.0f ? freqToMIDI(frequency) : -1.0f;
+}
+
+bool currentTuningIsStandardSemitone() {
+  if (!referenceHzIsConcertA()) {
+    return false;
+  }
+  if (userGeometryRuntimeActive && userGeometryRuntimeCentsTableActive) {
+    return centsTableMatchesStandardSemitones();
+  }
+  return current.tuning().stepSize == 100.0f;
 }
 
 void sendSysExToConfiguredMidiOutputs(unsigned length, const byte* data) {
@@ -100,7 +196,7 @@ void resetTuningMIDI() {
       multiples of 100 cents, then MPE is not necessary.
     */
   standardMidiMicrotonalActive = false;
-  bool tuningIsStandardSemitone = (current.tuning().stepSize == 100.0);
+  bool tuningIsStandardSemitone = currentTuningIsStandardSemitone();
   bool forceMPE = (mpeUserMode == MPE_MODE_FORCE);
   bool disableMPE = (mpeUserMode == MPE_MODE_DISABLE);
   bool mpeOptional = !forceMPE && !useDynamicJustIntonation && !useJustIntonationBPM;

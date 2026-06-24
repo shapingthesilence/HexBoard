@@ -81,7 +81,9 @@ and `TRANSFER_END` so firmware can pace object transfers.
   palette editing, A-first note labels, selected-key pitch readouts and
   overrides, and a paintbrush mode for applying per-button color overrides
   directly on the preview, including a confirmed reset that returns all keys in
-  the active layout to scale-degree colors.
+  the active layout to scale-degree colors. Scala/cents-table live send is
+  enabled when the connected firmware advertises cents-table runtime tuning
+  support.
 - A synth preset editor with name and folder selection, folder creation, main
   synth parameter controls, mono retrigger/legato, mono portamento,
   arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,
@@ -103,5 +105,6 @@ and `TRANSFER_END` so firmware can pace object transfers.
 - Basic React views for device connection, profile sync, tuning/layout editing,
   and synth preset organization.
 
-Firmware currently implements the synth preset subset of preset sync. Mock mode
-still covers UI work for protocol areas that firmware does not implement yet.
+Firmware currently implements synth preset, wavetable, and geometry preset-sync
+paths used by the app. Mock mode still covers UI work when no compatible device
+is connected.

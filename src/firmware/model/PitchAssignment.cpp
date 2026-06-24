@@ -49,7 +49,7 @@ void assignPitches() {
     if (!(h[i].isCmd)) {
       int32_t relativeSteps = current.pitchRelToA4(h[i].stepsFromC);
       float N = stepsToMIDI(static_cast<int16_t>(relativeSteps));
-      float targetFrequency = MIDItoFreq(N);
+      float targetFrequency = stepsToFrequency(static_cast<int16_t>(relativeSteps));
       h[i].midiPitch = N;
       if (standardMidiMicrotonalActive) {
         byte mappedNote = 0;
