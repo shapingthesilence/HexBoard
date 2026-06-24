@@ -139,8 +139,11 @@ make HEXBOARD_ENABLE_SEQUENCER=1
 
 That flag enables the foundation editor only: Sequencer mode entry/exit, 32-step
 selection/deselection, basic tuning-relative note entry, confirm-hold step clear,
-and sequencer-owned step/function LEDs. Playback, persistence, storage/browser
-flows, settings schema changes, MIDI sync, and tools are not enabled yet.
+and sequencer-owned step/function LEDs. Empty steps are off, programmed steps
+are green, selected steps pulse, the transport key at button `9` shows the
+stopped red state, and the confirm/clear key at button `19` uses the legacy blue
+action color. Playback, persistence, storage/browser flows, settings schema
+changes, MIDI sync, and tools are not enabled yet.
 
 Builds keep the flashable file named `HexBoard.ino.uf2`, with separate output
 folders for the default and sequencer-enabled variants:

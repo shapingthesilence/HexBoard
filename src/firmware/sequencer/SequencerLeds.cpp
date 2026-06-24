@@ -19,6 +19,8 @@ constexpr byte kConfirmClearButtonIndex = 19;
 constexpr byte kFunctionGuardButtonIndex = 29;
 constexpr byte kPostStepGuardButtonIndexA = 38;
 constexpr byte kPostStepGuardButtonIndexB = 39;
+constexpr float kActionBlueHue = 250.0f;
+constexpr byte kActionBlueValue = 211;
 
 uint32_t ledColor(float hue, byte saturation, byte value) {
   colorDef color = {
@@ -42,13 +44,16 @@ uint32_t programmedStepColor(bool selected) {
   return ledColor(HUE_CYAN, SAT_VIVID, value);
 }
 
+uint32_t stoppedTransportColor() {
+  return ledColor(HUE_RED, SAT_VIVID, VALUE_FULL);
+}
+
 uint32_t confirmClearColor() {
-  byte value = confirmClearHeld() ? VALUE_FULL : VALUE_SHADE;
-  return ledColor(HUE_MAGENTA, SAT_VIVID, value);
+  byte value = confirmClearHeld() ? VALUE_FULL : kActionBlueValue;
+  return ledColor(kActionBlueHue, SAT_VIVID, value);
 }
 
 void neutralizeOwnedGuards(SetLedPixelFn setLedPixel) {
-  setLedPixel(kTransportGuardButtonIndex, 0);
   setLedPixel(kOverviewGuardButtonIndex, 0);
   setLedPixel(kFunctionGuardButtonIndex, 0);
   setLedPixel(kPostStepGuardButtonIndexA, 0);
@@ -63,6 +68,7 @@ void renderLedOverrides(SetLedPixelFn setLedPixel) {
   }
 
   neutralizeOwnedGuards(setLedPixel);
+  setLedPixel(kTransportGuardButtonIndex, stoppedTransportColor());
 
   for (byte stepIndex = 0; stepIndex < kStepCount; ++stepIndex) {
     int8_t buttonIndex = stepToButtonIndex(stepIndex);

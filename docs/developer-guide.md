@@ -90,9 +90,11 @@ When the flag is `0`, `setupSequencerMenu()` is a no-op and no top-level
 Sequencer menu item is installed. When the flag is `1`, the firmware installs
 a Sequencer mode foundation with mode entry/exit, 32-step selection/deselection,
 basic tuning-relative note entry, confirm-hold selected-step clear, and
-sequencer-owned step/function LED rendering. Playback, persistence,
-storage/browser flows, settings schema changes, MIDI sync, and tools are
-intentionally not present yet.
+sequencer-owned step/function LED rendering. Empty steps are off, programmed
+steps are green, selected steps pulse, button `9` shows the stopped red
+transport state, and button `19` uses the legacy blue action/clear color.
+Playback, persistence, storage/browser flows, settings schema changes, MIDI
+sync, and tools are intentionally not present yet.
 
 ### Web App Tooling
 
