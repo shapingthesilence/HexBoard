@@ -114,7 +114,8 @@ Use this section to choose the tuning or geometry bundle the whole board runs
 on. The page is a GEM-style virtual list backed by geometry objects: factory
 tunings appear at the root, and saved user tunings can be organized into
 folders. Scrolling follows normal GEM list behavior, including page jumps at
-the 11 visible-row boundary. Selecting a tuning also loads the first linked
+the 11 visible-row boundary. The active tuning is marked with a leading `*`
+when it appears in the list. Selecting a tuning also loads the first linked
 layout, scale, color map, and matching explicit button map so the board is
 immediately playable.
 
@@ -149,7 +150,8 @@ Changing tuning also resets:
 
 Use this page to choose how pitch moves across the hex grid. After a tuning is
 selected, factory and saved layouts linked to that tuning appear in a
-GEM-style virtual list as flat entries.
+GEM-style virtual list as flat entries. The active layout is marked with a
+leading `*` when it appears in the list.
 
 Choosing a layout remaps button pitches, loads that layout's matching explicit
 button map when one exists, and reloads that layout's default device
@@ -162,7 +164,8 @@ the menu layout is being simplified for the 2.0 release.
 
 Use this page to choose the active scale. After a tuning is selected, factory
 and saved scales linked to that tuning appear in a GEM-style virtual list as
-flat entries.
+flat entries. The active scale is marked with a leading `*` when it appears in
+the list.
 
 Choosing a scale updates scale membership while keeping the current user tuning,
 layout, color map, and button map active. `Key` and `Scale Lock` are on the main

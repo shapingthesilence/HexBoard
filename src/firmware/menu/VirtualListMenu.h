@@ -14,6 +14,8 @@ struct VirtualListMenuProvider {
   uint16_t (*getCount)(void* context) = nullptr;
   bool (*getLabel)(void* context, uint16_t index, char* output, size_t outputLength) = nullptr;
   VirtualListMenuRowType (*getRowType)(void* context, uint16_t index) = nullptr;
+  bool (*isCurrent)(void* context, uint16_t index) = nullptr;
+  bool (*getInitialSelection)(void* context, uint16_t* index) = nullptr;
   void (*select)(void* context, uint16_t index) = nullptr;
   bool (*back)(void* context) = nullptr;
   void (*close)(void* context) = nullptr;

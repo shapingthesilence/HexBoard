@@ -266,6 +266,47 @@ bool includeBuiltinGeometryMetadataInMenu(UserGeometryMenuKind kind, const Built
   return false;
 }
 
+bool geometryHandleMatchesObjectId(uint16_t handle, const uint8_t* objectId) {
+  if (isBuiltinGeometryHandle(handle)) {
+    BuiltinGeometryMetadata metadata;
+    return builtinGeometryMetadataByHandle(handle, metadata)
+           && memcmp(metadata.objectId, objectId, GEOMETRY_OBJECT_ID_LENGTH) == 0;
+  }
+  return handle < geometryObjects.size()
+         && geometryObjects[handle].valid
+         && memcmp(geometryObjects[handle].objectId, objectId, GEOMETRY_OBJECT_ID_LENGTH) == 0;
+}
+
+bool userGeometryHandleIsCurrent(UserGeometryMenuKind kind, uint16_t handle) {
+  if (handle == USER_GEOMETRY_MENU_INVALID_HANDLE) {
+    return false;
+  }
+  switch (kind) {
+    case UserGeometryMenuKind::Tuning:
+      return userGeometryRuntimeTuningObjectSelected
+             && geometryHandleMatchesObjectId(handle, userGeometryRuntimeTuningObjectId);
+    case UserGeometryMenuKind::Layout:
+      return userGeometryRuntimeLayoutObjectSelected
+             && geometryHandleMatchesObjectId(handle, userGeometryRuntimeLayoutObjectId);
+    case UserGeometryMenuKind::Scale:
+      return userGeometryRuntimeScaleObjectSelected
+             && geometryHandleMatchesObjectId(handle, userGeometryRuntimeScaleObjectId);
+  }
+  return false;
+}
+
+bool findCurrentUserGeometryRow(uint16_t& index) {
+  for (uint16_t i = 0; i < userGeometryVirtualCount; ++i) {
+    const UserGeometryMenuRow& row = userGeometryVirtualRows[i];
+    if (row.kind == UserGeometryMenuRowKind::Item
+        && userGeometryHandleIsCurrent(userGeometryVirtualKind, row.handle)) {
+      index = i;
+      return true;
+    }
+  }
+  return false;
+}
+
 const GeometryObjectIndexEntry* userGeometryObjectForRow(const UserGeometryMenuRow& row) {
   if (row.handle >= geometryObjects.size() || !geometryObjects[row.handle].valid) {
     return nullptr;
@@ -403,6 +444,21 @@ VirtualListMenuRowType userGeometryVirtualRowType(void*, uint16_t index) {
            : VirtualListMenuRowType::Button;
 }
 
+bool userGeometryVirtualIsCurrent(void*, uint16_t index) {
+  if (index >= userGeometryVirtualCount
+      || userGeometryVirtualRows[index].kind != UserGeometryMenuRowKind::Item) {
+    return false;
+  }
+  return userGeometryHandleIsCurrent(userGeometryVirtualKind, userGeometryVirtualRows[index].handle);
+}
+
+bool userGeometryVirtualInitialSelection(void*, uint16_t* index) {
+  if (!index) {
+    return false;
+  }
+  return findCurrentUserGeometryRow(*index);
+}
+
 void loadUserGeometryHandle(UserGeometryMenuKind kind, uint16_t handle) {
   if (handle == USER_GEOMETRY_MENU_INVALID_HANDLE) {
     redrawVirtualListMenu();
@@ -481,6 +537,8 @@ void openUserGeometryMenu(UserGeometryMenuKind kind) {
   provider.getCount = userGeometryVirtualCountProvider;
   provider.getLabel = userGeometryVirtualLabelProvider;
   provider.getRowType = userGeometryVirtualRowType;
+  provider.isCurrent = userGeometryVirtualIsCurrent;
+  provider.getInitialSelection = userGeometryVirtualInitialSelection;
   provider.select = userGeometryVirtualSelect;
   provider.back = userGeometryVirtualBack;
   provider.close = userGeometryVirtualClose;
