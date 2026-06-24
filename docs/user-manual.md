@@ -69,6 +69,11 @@ The wheel behavior depends on menu settings:
 - `Springy`: returns to its default value when released
 - `Sticky`: holds its last value
 
+When the OLED menu or a list browser is active, hold the bottom command button
+as a modifier and press the top two command buttons to navigate: top moves up,
+middle moves down. While editing a menu value, top increases the value and
+middle decreases it.
+
 ### Rotary Encoder
 
 The encoder controls the OLED menu:

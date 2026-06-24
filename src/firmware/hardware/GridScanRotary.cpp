@@ -59,6 +59,48 @@ uint64_t rotaryPressStart = 0;
 bool rotaryPanicLatched = false;
 bool rotaryPanicSuppressClick = false;
 
+static bool RAM_FUNC(menuShortcutButtonsEnabled)() {
+  if (delegatedControl || stabilityBenchmarkIsActive()) {
+    return false;
+  }
+  byte modifierState = h[assignCmd[6]].btnState;
+  bool modifierHeld = (modifierState == BTN_STATE_NEWPRESS || modifierState == BTN_STATE_HELD);
+  return modifierHeld && (virtualListMenuIsActive() || menu.readyForKey());
+}
+
+static bool RAM_FUNC(menuShortcutUsesValueDirection)() {
+  return menu.isEditMode();
+}
+
+static byte RAM_FUNC(menuShortcutMenuKey)(bool isTopShortcutButton) {
+  if (menuShortcutUsesValueDirection()) {
+    return isTopShortcutButton ? GEM_KEY_DOWN : GEM_KEY_UP;
+  }
+  return isTopShortcutButton ? GEM_KEY_UP : GEM_KEY_DOWN;
+}
+
+static bool RAM_FUNC(handleMenuShortcutButton)(byte buttonIndex, bool pressed) {
+  if (buttonIndex != assignCmd[0] && buttonIndex != assignCmd[1]) {
+    return false;
+  }
+  if (!menuShortcutButtonsEnabled()) {
+    return false;
+  }
+
+  if (pressed) {
+    dismissPlayedNotesOverlayForMenuInput();
+    byte keyCode = menuShortcutMenuKey(buttonIndex == assignCmd[0]);
+    if (virtualListMenuIsActive()) {
+      handleVirtualListMenuKey(keyCode);
+    } else {
+      menu.registerKeyPress(keyCode);
+    }
+    noteOverlayDirty = true;
+    screenTime = 0;
+  }
+  return true;
+}
+
 void RAM_FUNC(readHexes)() {
 
   // Optimized button reading using SIO registers - much faster!
@@ -83,6 +125,9 @@ void RAM_FUNC(readHexes)() {
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
+        if (handleMenuShortcutButton(i, true)) {
+          break;
+        }
         if (delegatedControl) {
           delegatedButtonEvent(i, true);
         } else if (h[i].isCmd) {
@@ -93,6 +138,9 @@ void RAM_FUNC(readHexes)() {
         }
         break;
       case BTN_STATE_RELEASED:  // just released
+        if (handleMenuShortcutButton(i, false)) {
+          break;
+        }
         if (delegatedControl) {
           delegatedButtonEvent(i, false);
         } else if (h[i].isCmd) {
@@ -113,6 +161,17 @@ void RAM_FUNC(updateWheels)() {
   if (delegatedControl) {
     return;
   }
+
+  bool menuShortcutButtonsActive = menuShortcutButtonsEnabled();
+  byte savedMenuShortcutTopState = h[assignCmd[0]].btnState;
+  byte savedMenuShortcutMidState = h[assignCmd[1]].btnState;
+  byte savedMenuShortcutModifierState = h[assignCmd[6]].btnState;
+  if (menuShortcutButtonsActive) {
+    h[assignCmd[0]].btnState = BTN_STATE_OFF;
+    h[assignCmd[1]].btnState = BTN_STATE_OFF;
+    h[assignCmd[6]].btnState = BTN_STATE_OFF;
+  }
+
   velWheel.setTargetValue();
   bool upd = velWheel.updateValue(runTime);
   if (upd) {
@@ -131,6 +190,12 @@ void RAM_FUNC(updateWheels)() {
     if (upd) {
       sendMIDImodulationToCh1();
     }
+  }
+
+  if (menuShortcutButtonsActive) {
+    h[assignCmd[0]].btnState = savedMenuShortcutTopState;
+    h[assignCmd[1]].btnState = savedMenuShortcutMidState;
+    h[assignCmd[6]].btnState = savedMenuShortcutModifierState;
   }
 }
 void setupRotary() {
