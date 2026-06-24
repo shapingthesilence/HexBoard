@@ -16,6 +16,7 @@
 #include "../midi/MidiInput.h"
 #include "../midi/MidiTransport.h"
 #include "../midi/MidiRouting.h"
+#include "../sequencer/SequencerMode.h"
 #include "../storage/PresetSync.h"
 #include "../storage/Settings.h"
 #include "../storage/SynthPresetStorage.h"
@@ -90,6 +91,7 @@ void hexboardLoop() {        // run on first core
   screenSaver();     // Reduces wear-and-tear on OLED panel
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_BUTTON_SCAN);
   readHexes();       // Read and store the digital button states of the scanning matrix
+  serviceSequencerMode();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_ARPEGGIATOR);
   arpeggiate();      // arpeggiate if synth mode allows it
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_METRONOME);

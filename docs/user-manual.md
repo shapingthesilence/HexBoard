@@ -97,8 +97,11 @@ The main menu includes:
 - `Synth Editor`
 
 Developer builds compiled with `HEXBOARD_ENABLE_SEQUENCER=1` also show a
-`Sequencer` entry. It opens a placeholder shell only; default firmware does not
-show it, and no sequencer editing, playback, or storage behavior is enabled.
+`Sequencer` entry. It opens a foundation editor with mode entry/exit, 32-step
+selection/deselection, basic note entry into the selected step, confirm-hold step
+clear, and sequencer-owned step/function LEDs. Default firmware does not show
+it, and playback, persistence, storage/browser flows, settings schema changes,
+MIDI sync, and tools are not enabled yet.
 
 `Synth:<current preset>` opens the synth preset load menu from the top level.
 If the runtime synth sound has changed since the loaded preset was selected or

@@ -5,6 +5,8 @@
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
 #include "GridState.h"
+#include "../sequencer/SequencerLeds.h"
+#include "../sequencer/SequencerMode.h"
 #include "../synth/SynthAudio.h"
 
 // @LED
@@ -935,6 +937,12 @@ void RAM_FUNC(lightUpLEDs)() {
     resetWheelLEDs();
     renderMetronomeSideButtonFlash();
     applyMetronomeBrightnessFlash();
+    if (sequencerModeActive()) {
+      sequencer::renderLedOverrides(
+        [](byte buttonIndex, uint32_t color) {
+          strip.setPixelColor(buttonIndex, color);
+        });
+    }
   }
   applyLedCurrentLimitToFrame();
   strip.show();

@@ -130,15 +130,17 @@ make PWM_BITS=9
 
 Supported values are `8`, `9`, and `10`; the default is `10`.
 
-The in-port sequencer menu shell is compiled out by default. To expose the
-placeholder shell for porting work, build with:
+The in-port sequencer foundation is compiled out by default. To expose the
+Sequencer entry for porting work, build with:
 
 ```sh
 make HEXBOARD_ENABLE_SEQUENCER=1
 ```
 
-That flag only adds the placeholder `Sequencer` menu entry; it does not enable
-sequencer editing, playback, storage, or LED override behavior.
+That flag enables the foundation editor only: Sequencer mode entry/exit, 32-step
+selection/deselection, basic tuning-relative note entry, confirm-hold step clear,
+and sequencer-owned step/function LEDs. Playback, persistence, storage/browser
+flows, settings schema changes, MIDI sync, and tools are not enabled yet.
 
 The expected output artifact is:
 

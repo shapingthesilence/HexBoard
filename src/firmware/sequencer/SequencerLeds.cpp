@@ -1,0 +1,95 @@
+#include "SequencerLeds.h"
+
+#include "../config/FeatureFlags.h"
+
+#if HEXBOARD_ENABLE_SEQUENCER
+#include "SequencerInput.h"
+#include "SequencerState.h"
+#include "../app/DiagnosticsTiming.h"
+#include "../app/RuntimeDefaults.h"
+#include "../hardware/LedRender.h"
+#include "../model/ScalePalettePreset.h"
+
+namespace sequencer {
+namespace {
+
+constexpr byte kTransportGuardButtonIndex = 9;
+constexpr byte kOverviewGuardButtonIndex = 18;
+constexpr byte kConfirmClearButtonIndex = 19;
+constexpr byte kFunctionGuardButtonIndex = 29;
+constexpr byte kPostStepGuardButtonIndexA = 38;
+constexpr byte kPostStepGuardButtonIndexB = 39;
+
+uint32_t ledColor(float hue, byte saturation, byte value) {
+  colorDef color = {
+    hue,
+    saturation,
+    applyLEDLevel(value, ledRestBrightness)
+  };
+  return getLEDcode(color);
+}
+
+uint32_t emptySelectedStepColor() {
+  byte value = ((runTime / 250000ULL) % 2) == 0 ? VALUE_FULL : VALUE_LOW;
+  return ledColor(HUE_BLUE, SAT_MODERATE, value);
+}
+
+uint32_t programmedStepColor(bool selected) {
+  if (!selected) {
+    return ledColor(HUE_GREEN, SAT_VIVID, VALUE_SHADE);
+  }
+  byte value = ((runTime / 250000ULL) % 2) == 0 ? VALUE_FULL : VALUE_NORMAL;
+  return ledColor(HUE_CYAN, SAT_VIVID, value);
+}
+
+uint32_t confirmClearColor() {
+  byte value = confirmClearHeld() ? VALUE_FULL : VALUE_SHADE;
+  return ledColor(HUE_MAGENTA, SAT_VIVID, value);
+}
+
+void neutralizeOwnedGuards(SetLedPixelFn setLedPixel) {
+  setLedPixel(kTransportGuardButtonIndex, 0);
+  setLedPixel(kOverviewGuardButtonIndex, 0);
+  setLedPixel(kFunctionGuardButtonIndex, 0);
+  setLedPixel(kPostStepGuardButtonIndexA, 0);
+  setLedPixel(kPostStepGuardButtonIndexB, 0);
+}
+
+}  // namespace
+
+void renderLedOverrides(SetLedPixelFn setLedPixel) {
+  if (setLedPixel == nullptr) {
+    return;
+  }
+
+  neutralizeOwnedGuards(setLedPixel);
+
+  for (byte stepIndex = 0; stepIndex < kStepCount; ++stepIndex) {
+    int8_t buttonIndex = stepToButtonIndex(stepIndex);
+    if (buttonIndex < 0) {
+      continue;
+    }
+
+    bool selected = selectedStepIndex() == static_cast<int8_t>(stepIndex);
+    bool programmed = stepIsProgrammed(stepIndex);
+    if (!programmed && !selected) {
+      setLedPixel(static_cast<byte>(buttonIndex), 0);
+      continue;
+    }
+
+    uint32_t color = programmed ? programmedStepColor(selected) : emptySelectedStepColor();
+    setLedPixel(static_cast<byte>(buttonIndex), color);
+  }
+
+  setLedPixel(kConfirmClearButtonIndex, hasSelectedStep() ? confirmClearColor() : 0);
+}
+
+}  // namespace sequencer
+#else
+namespace sequencer {
+
+void renderLedOverrides(SetLedPixelFn /*setLedPixel*/) {
+}
+
+}  // namespace sequencer
+#endif
