@@ -142,11 +142,15 @@ selection/deselection, basic tuning-relative note entry, confirm-hold step clear
 and sequencer-owned step/function LEDs. Playback, persistence, storage/browser
 flows, settings schema changes, MIDI sync, and tools are not enabled yet.
 
-The expected output artifact is:
+Builds keep the flashable file named `HexBoard.ino.uf2`, with separate output
+folders for the default and sequencer-enabled variants:
 
 ```text
-build/HexBoard.ino.uf2
+build/sequencer-disabled/HexBoard.ino.uf2
+build/sequencer-enabled/HexBoard.ino.uf2
 ```
+
+You can also build both variants with `make sequencer-builds`.
 
 ## Companion Web App
 

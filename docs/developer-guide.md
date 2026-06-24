@@ -76,6 +76,16 @@ flags. For porting work that needs the Sequencer menu entry, run:
 make HEXBOARD_ENABLE_SEQUENCER=1
 ```
 
+The Makefile writes variant builds to separate folders while preserving the
+flashable filename:
+
+```text
+build/sequencer-disabled/HexBoard.ino.uf2
+build/sequencer-enabled/HexBoard.ino.uf2
+```
+
+Use `make sequencer-builds` to compile both variants.
+
 When the flag is `0`, `setupSequencerMenu()` is a no-op and no top-level
 Sequencer menu item is installed. When the flag is `1`, the firmware installs
 a Sequencer mode foundation with mode entry/exit, 32-step selection/deselection,
