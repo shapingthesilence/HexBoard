@@ -937,10 +937,15 @@ The `Buzzer` toggle is inserted only on hardware `V1.2`.
 When enabled, Sequencer mode currently supports 32-step selection, selected-step
 note entry using tuning-relative `stepsFromC`, confirm-hold clear, sequencer LED
 overrides, and basic MIDI transport playback. Button `9` toggles an internal
-120 BPM forward 16th-note clock over all `32` steps. Playback emits programmed
-step notes through the current tuning, transpose, MIDI routing, and MPE helpers;
-empty steps advance silently. Sequencer persistence, external sync, MIDI clock
-send, onboard synth playback, preview/audition, direction modes, probability,
+16th-note clock. The sequencer-owned `Playback Settings` page exposes volatile
+`Steps`, `Direction`, and `Tempo` values without touching `SettingKey` profile
+storage. `Tempo` defaults to `120` BPM and ranges from `1` to `255`; `Steps`
+defaults to `32` and ranges from `1` to `32`; `Direction` defaults to
+`Forward` and also supports `Backward`, `Ping-Pong`, `Random`, `Brownian`, and
+`Drunk`. Playback emits programmed step notes through the current tuning,
+transpose, MIDI routing, and MPE helpers; empty steps advance silently. Step
+LEDs outside the active step range remain off. Sequencer persistence, external
+sync, MIDI clock send, onboard synth playback, preview/audition, probability,
 ties, and detailed editing screens remain intentionally absent.
 
 ## Input Interface And Panic Behavior

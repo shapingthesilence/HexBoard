@@ -4,6 +4,7 @@
 
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerInput.h"
+#include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
 #include "SequencerTransport.h"
 #include "../app/DiagnosticsTiming.h"
@@ -85,9 +86,15 @@ void renderLedOverrides(SetLedPixelFn setLedPixel) {
   neutralizeOwnedGuards(setLedPixel);
   setLedPixel(kTransportGuardButtonIndex, transportRunning() ? runningTransportColor() : stoppedTransportColor());
 
+  byte activeSteps = activeStepCount();
   for (byte stepIndex = 0; stepIndex < kStepCount; ++stepIndex) {
     int8_t buttonIndex = stepToButtonIndex(stepIndex);
     if (buttonIndex < 0) {
+      continue;
+    }
+
+    if (stepIndex >= activeSteps) {
+      setLedPixel(static_cast<byte>(buttonIndex), 0);
       continue;
     }
 

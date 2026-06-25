@@ -4,18 +4,18 @@
 
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerMidi.h"
+#include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
 #include "../app/DiagnosticsTiming.h"
 
 namespace sequencer {
 namespace {
 
-constexpr uint64_t kDefaultBpm = 120;
-constexpr uint64_t kStepDurationMicros = 60000000ULL / kDefaultBpm / 4ULL;
-
 bool running = false;
 int8_t playingStep = kNoSelectedStep;
+int8_t pingPongDelta = 1;
 uint64_t nextStepAt = 0;
+uint64_t currentStepStartedAt = 0;
 SequencerMidiNoteHandle activeNotes[kMaxNotesPerStep];
 byte activeNoteCount = 0;
 
@@ -27,10 +27,66 @@ void releaseActiveNotes() {
 }
 
 byte nextPlayingStep() {
-  if (playingStep < 0 || playingStep >= static_cast<int8_t>(kStepCount - 1)) {
+  byte activeSteps = activeStepCount();
+  if (activeSteps <= 1) {
     return 0;
   }
-  return static_cast<byte>(playingStep + 1);
+
+  switch (playbackDirection()) {
+    case kDirectionBackward:
+      if (playingStep < 0 || playingStep >= static_cast<int8_t>(activeSteps)) {
+        return static_cast<byte>(activeSteps - 1);
+      }
+      return static_cast<byte>((playingStep + activeSteps - 1) % activeSteps);
+
+    case kDirectionPingPong:
+      if (playingStep < 0 || playingStep >= static_cast<int8_t>(activeSteps)) {
+        pingPongDelta = 1;
+        return 0;
+      }
+      if (playingStep >= static_cast<int8_t>(activeSteps - 1)) {
+        pingPongDelta = -1;
+      } else if (playingStep <= 0) {
+        pingPongDelta = 1;
+      }
+      return static_cast<byte>(playingStep + pingPongDelta);
+
+    case kDirectionRandom:
+      return static_cast<byte>(random(activeSteps));
+
+    case kDirectionBrownian:
+      if (playingStep < 0 || playingStep >= static_cast<int8_t>(activeSteps)) {
+        return 0;
+      }
+      if (playingStep <= 0) {
+        return 1;
+      }
+      if (playingStep >= static_cast<int8_t>(activeSteps - 1)) {
+        return static_cast<byte>(activeSteps - 2);
+      }
+      return static_cast<byte>(playingStep + (random(2) == 0 ? -1 : 1));
+
+    case kDirectionDrunk:
+      if (playingStep < 0 || playingStep >= static_cast<int8_t>(activeSteps)) {
+        return 0;
+      }
+      {
+        int8_t candidate = static_cast<int8_t>(playingStep + static_cast<int8_t>(random(3)) - 1);
+        if (candidate < 0) {
+          candidate = 0;
+        } else if (candidate >= static_cast<int8_t>(activeSteps)) {
+          candidate = static_cast<int8_t>(activeSteps - 1);
+        }
+        return static_cast<byte>(candidate);
+      }
+
+    case kDirectionForward:
+    default:
+      if (playingStep < 0 || playingStep >= static_cast<int8_t>(activeSteps)) {
+        return 0;
+      }
+      return static_cast<byte>((playingStep + 1) % activeSteps);
+  }
 }
 
 void startStepNotes(byte stepIndex) {
@@ -53,6 +109,13 @@ void advanceStep() {
   startStepNotes(nextStep);
 }
 
+void rescheduleNextStepFromCurrentStart() {
+  if (currentStepStartedAt == 0) {
+    currentStepStartedAt = runTime;
+  }
+  nextStepAt = currentStepStartedAt + playbackStepDurationMicros();
+}
+
 }  // namespace
 
 bool transportRunning() {
@@ -67,13 +130,17 @@ void startTransport() {
   releaseActiveNotes();
   running = true;
   playingStep = kNoSelectedStep;
+  pingPongDelta = 1;
+  currentStepStartedAt = runTime;
   nextStepAt = runTime;
 }
 
 void stopTransport() {
   running = false;
   playingStep = kNoSelectedStep;
+  pingPongDelta = 1;
   nextStepAt = 0;
+  currentStepStartedAt = 0;
   releaseActiveNotes();
 }
 
@@ -90,16 +157,41 @@ void serviceTransport() {
     return;
   }
   if (nextStepAt == 0) {
+    currentStepStartedAt = runTime;
     nextStepAt = runTime;
   }
   if (runTime >= nextStepAt) {
-    nextStepAt += kStepDurationMicros;
+    currentStepStartedAt = nextStepAt;
     advanceStep();
+    rescheduleNextStepFromCurrentStart();
   }
 }
 
 void releasePlaybackNotesForPanic() {
   stopTransport();
+}
+
+void handlePlaybackSettingsChanged(bool resetDirectionState) {
+  normalizePlaybackSettings();
+  if (resetDirectionState) {
+    pingPongDelta = 1;
+  }
+
+  if (!running) {
+    return;
+  }
+
+  byte activeSteps = activeStepCount();
+  if (playingStep >= static_cast<int8_t>(activeSteps)) {
+    releaseActiveNotes();
+    playingStep = kNoSelectedStep;
+    pingPongDelta = 1;
+    currentStepStartedAt = runTime;
+    nextStepAt = runTime;
+    return;
+  }
+
+  rescheduleNextStepFromCurrentStart();
 }
 
 }  // namespace sequencer
@@ -127,6 +219,9 @@ void serviceTransport() {
 }
 
 void releasePlaybackNotesForPanic() {
+}
+
+void handlePlaybackSettingsChanged(bool /*resetDirectionState*/) {
 }
 
 }  // namespace sequencer

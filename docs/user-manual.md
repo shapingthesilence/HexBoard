@@ -100,8 +100,10 @@ Developer builds compiled with `HEXBOARD_ENABLE_SEQUENCER=1` also show a
 `Sequencer` entry. Default firmware builds may not include this menu item. If
 Sequencer mode is enabled, enter it from the main menu's `Sequencer` row and
 exit by returning to `Keyboard`. It is a step-based MIDI sequencer for
-programming notes into steps and playing them back. For full sequencer
-information, see the [Sequencer Manual](sequencer-manual.md).
+programming notes into steps and playing them back. Its Playback Settings page
+currently has volatile `Steps`, `Direction`, and `Tempo` controls; they reset
+on reboot and will become file-backed when sequencer persistence lands. For
+full sequencer information, see the [Sequencer Manual](sequencer-manual.md).
 
 `Synth:<current preset>` opens the synth preset load menu from the top level.
 If the runtime synth sound has changed since the loaded preset was selected or

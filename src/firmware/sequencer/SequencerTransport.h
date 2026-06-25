@@ -11,5 +11,6 @@ void stopTransport();
 void toggleTransport();
 void serviceTransport();
 void releasePlaybackNotesForPanic();
+void handlePlaybackSettingsChanged(bool resetDirectionState);
 
 }  // namespace sequencer

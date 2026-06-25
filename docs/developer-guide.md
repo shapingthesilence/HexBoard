@@ -95,15 +95,20 @@ Sequencer menu item is installed. When the flag is `1`, the firmware installs
 a Sequencer mode foundation with mode entry/exit, 32-step selection/deselection,
 basic tuning-relative note entry, confirm-hold selected-step clear,
 sequencer-owned step/function LED rendering, and basic MIDI transport playback.
-Button `9` toggles an internal 120 BPM forward transport over all `32` steps;
-each step is one 16th note. Programmed steps emit their stored pitch-step notes
-through the current tuning, transpose, MIDI routing, and MPE settings, while
-empty steps advance silently. Button `9` is red when stopped and green when
-playing, and the current play step is highlighted even when empty. Persistence,
-storage/browser flows, settings schema changes, external MIDI sync, MIDI
-clock/transport send, onboard synth sequencer playback, preview or audition
-sound, direction modes, probability, ties, and tools are intentionally not
-present yet.
+Button `9` toggles the internal transport. The Sequencer page links to
+`Playback Settings`, where `Steps`, `Direction`, and `Tempo` are volatile
+sequencer-owned values rather than `SettingKey` profile data. `Tempo` defaults
+to `120` and ranges from `1` to `255`; each step is one 16th note. `Steps`
+defaults to `32` and ranges from `1` to `32`; transport and step LEDs ignore
+steps beyond the active count. `Direction` defaults to `Forward` and supports
+`Forward`, `Backward`, `Ping-Pong`, `Random`, `Brownian`, and `Drunk`.
+Programmed steps emit their stored pitch-step notes through the current tuning,
+transpose, MIDI routing, and MPE settings, while empty steps advance silently.
+Button `9` is red when stopped and green when playing, and the current active
+play step is highlighted even when empty. Persistence, storage/browser flows,
+settings schema changes, external MIDI sync, MIDI clock/transport send, onboard
+synth sequencer playback, preview or audition sound, probability, ties, and
+tools are intentionally not present yet.
 
 ### Web App Tooling
 
