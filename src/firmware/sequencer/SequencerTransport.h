@@ -11,6 +11,7 @@ void stopTransport();
 void toggleTransport();
 void serviceTransport();
 void releasePlaybackNotesForPanic();
+void releasePlaybackForStep(byte stepIndex);
 void handlePlaybackSettingsChanged(bool resetDirectionState);
 
 }  // namespace sequencer
