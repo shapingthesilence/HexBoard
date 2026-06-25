@@ -29,14 +29,15 @@ Sequencer page to edit these playback controls:
 - `Direction`: `Forward`, `Backward`, `Ping-Pong`, `Random`, `Brownian`, or
   `Drunk`, default `Forward`.
 - `Tempo`: internal tempo, `1` through `255` BPM, default `120`.
-- `Clock Source`: `Internal` or `External MIDI`, default `Internal`.
 - `Play Type`: `MIDI` or `OB Synth`, default `MIDI`.
+- `MIDI Sync`: opens `Clock Source`, `Send Clock`, and `Send Transport`.
 - `Tap Preview`: `Off` or `On`, default `On`.
 - `Monophonic`: `Off` or `On`, default `Off`.
 
 `Steps`, `Direction`, `Tempo`, and `Play Type` are sequence-owned values and
-are saved in sequence files. `Clock Source`, `Tap Preview`, and `Monophonic`
-are saved in the current board profile, not in sequence files.
+are saved in sequence files. `Clock Source`, `Send Clock`, `Send Transport`,
+`Tap Preview`, and `Monophonic` are saved in the current board profile, not in
+sequence files.
 
 When `Clock Source` is `Internal`, `Tempo` is the active clock and button `9`
 starts or stops the sequencer as before. When `Clock Source` is `External MIDI`,
@@ -46,6 +47,12 @@ beginning, Stop `0xFC` stops playback and releases sequencer playback notes,
 and Continue `0xFB` follows the current firmware's old-sequencer-compatible
 start-like resume behavior. `Tempo` remains stored and displayed, but it does
 not advance steps while External MIDI clock is selected.
+
+`Send Clock` and `Send Transport` both default to `Off`. They only apply while
+`Clock Source` is `Internal`: `Send Clock` emits six MIDI Clock pulses per
+sequencer step while local transport is running, and `Send Transport` makes
+local Play/Stop send MIDI Start/Stop. External MIDI transport receive does not
+echo outbound realtime messages.
 
 Open `Seq Lights` from the Sequencer page to edit three profile-backed light
 preferences:

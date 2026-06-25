@@ -13,6 +13,7 @@ void serviceTransport();
 void releasePlaybackNotesForPanic();
 void releasePlaybackForStep(byte stepIndex);
 void handlePlaybackSettingsChanged(bool resetDirectionState);
+void handleMidiSyncSendSettingsChanged();
 void handleExternalMidiClock();
 void handleExternalMidiStart();
 void handleExternalMidiStop();

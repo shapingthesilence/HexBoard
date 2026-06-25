@@ -14,6 +14,8 @@ byte preview = kTapPreviewDefault;
 byte outputType = kPlayTypeDefault;
 byte monoMode = kMonophonicModeDefault;
 byte syncSource = kClockSourceDefault;
+byte midiClockSend = kSendClockDefault;
+byte midiTransportSend = kSendTransportDefault;
 
 byte clampByte(byte value, byte minValue, byte maxValue) {
   if (value < minValue) {
@@ -43,6 +45,14 @@ bool validMonophonicMode(byte value) {
 
 bool validClockSource(byte value) {
   return value == kClockSourceInternal || value == kClockSourceExternalMidi;
+}
+
+bool validSendClock(byte value) {
+  return value == kSendClockOff || value == kSendClockOn;
+}
+
+bool validSendTransport(byte value) {
+  return value == kSendTransportOff || value == kSendTransportOn;
 }
 
 }  // namespace
@@ -75,8 +85,24 @@ byte clockSource() {
   return validClockSource(syncSource) ? syncSource : kClockSourceDefault;
 }
 
+byte sendClock() {
+  return validSendClock(midiClockSend) ? midiClockSend : kSendClockDefault;
+}
+
+byte sendTransport() {
+  return validSendTransport(midiTransportSend) ? midiTransportSend : kSendTransportDefault;
+}
+
 bool usesExternalClock() {
   return clockSource() == kClockSourceExternalMidi;
+}
+
+bool shouldSendMidiClock() {
+  return !usesExternalClock() && sendClock() == kSendClockOn;
+}
+
+bool shouldSendMidiTransport() {
+  return !usesExternalClock() && sendTransport() == kSendTransportOn;
 }
 
 uint64_t playbackStepDurationMicros() {
@@ -111,6 +137,14 @@ byte& clockSourceMutable() {
   return syncSource;
 }
 
+byte& sendClockMutable() {
+  return midiClockSend;
+}
+
+byte& sendTransportMutable() {
+  return midiTransportSend;
+}
+
 void normalizePlaybackSettings() {
   tempo = playbackTempo();
   stepCount = activeStepCount();
@@ -119,6 +153,8 @@ void normalizePlaybackSettings() {
   outputType = playType();
   monoMode = monophonicMode();
   syncSource = clockSource();
+  midiClockSend = sendClock();
+  midiTransportSend = sendTransport();
 }
 
 void applyPlaybackPreferencesFromProfile() {
@@ -131,9 +167,17 @@ void applyPlaybackPreferencesFromProfile() {
   syncSource = validClockSource(settingValue(SettingKey::SequencerClockSource))
                  ? settingValue(SettingKey::SequencerClockSource)
                  : kClockSourceDefault;
+  midiClockSend = validSendClock(settingValue(SettingKey::SequencerSendClock))
+                    ? settingValue(SettingKey::SequencerSendClock)
+                    : kSendClockDefault;
+  midiTransportSend = validSendTransport(settingValue(SettingKey::SequencerSendTransport))
+                        ? settingValue(SettingKey::SequencerSendTransport)
+                        : kSendTransportDefault;
   settings[static_cast<uint8_t>(SettingKey::SequencerMonophonicMode)] = monoMode;
   settings[static_cast<uint8_t>(SettingKey::SequencerTapPreview)] = preview;
   settings[static_cast<uint8_t>(SettingKey::SequencerClockSource)] = syncSource;
+  settings[static_cast<uint8_t>(SettingKey::SequencerSendClock)] = midiClockSend;
+  settings[static_cast<uint8_t>(SettingKey::SequencerSendTransport)] = midiTransportSend;
 }
 
 void persistMonophonicModeToProfile() {
@@ -151,6 +195,18 @@ void persistTapPreviewToProfile() {
 void persistClockSourceToProfile() {
   syncSource = clockSource();
   settings[static_cast<uint8_t>(SettingKey::SequencerClockSource)] = syncSource;
+  markSettingsDirty();
+}
+
+void persistSendClockToProfile() {
+  midiClockSend = sendClock();
+  settings[static_cast<uint8_t>(SettingKey::SequencerSendClock)] = midiClockSend;
+  markSettingsDirty();
+}
+
+void persistSendTransportToProfile() {
+  midiTransportSend = sendTransport();
+  settings[static_cast<uint8_t>(SettingKey::SequencerSendTransport)] = midiTransportSend;
   markSettingsDirty();
 }
 

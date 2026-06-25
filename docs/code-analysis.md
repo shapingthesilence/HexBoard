@@ -717,16 +717,19 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `21`, and `PROFILE_COUNT` is `9`.
-`load_settings()` migrates version `20` files by copying the previous profile
-bytes and filling the new `SequencerTapPreview` byte from factory defaults.
-Other settings-schema mismatches restore factory defaults and rewrite
+`CURRENT_SETTINGS_VERSION` is currently `22`, and `PROFILE_COUNT` is `9`.
+`load_settings()` migrates version `20` and `21` files by copying the previous
+profile bytes and filling newly appended sequencer profile bytes from factory
+defaults. Other settings-schema mismatches restore factory defaults and rewrite
 `/settings.dat`. The optional sequencer profile bytes include
 `SequencerStepAccentEvery`, `SequencerStepColorMode`, `SequencerStepHue`,
-`SequencerMonophonicMode`, `SequencerTapPreview`, and `SequencerClockSource`.
+`SequencerMonophonicMode`, `SequencerTapPreview`, `SequencerClockSource`,
+`SequencerSendClock`, and `SequencerSendTransport`.
 `SequencerClockSource` was appended during the in-flight sequencer development
 branch without bumping `CURRENT_SETTINGS_VERSION`; old local development
-settings files with the shorter version-21 payload may restore defaults.
+settings files with the shorter version-21 payload may still restore defaults,
+while valid version-21 payloads now migrate by defaulting the two MIDI sync send
+settings to `Off`.
 
 Version `20` reinterprets the existing `DisplayPlayedNotes` byte from a boolean
 as `Off`/`Label`/`Number`; the persisted byte position did not move. Version
@@ -949,17 +952,22 @@ When enabled, Sequencer mode currently supports 32-step selection, selected-step
 note entry using tuning-relative `stepsFromC`, selected-step undo, hold-clear,
 step tools, sequencer LED overrides, and routed transport playback. Button `9`
 toggles the local transport. The sequencer-owned `Playback Settings`
-page exposes `Steps`, `Direction`, `Tempo`, `Clock Source`, `Play Type`,
-`Tap Preview`, and `Monophonic`. `Tempo` defaults to `120` BPM and ranges from `1` to
+page exposes `Steps`, `Direction`, `Tempo`, `Play Type`, `MIDI Sync`,
+`Tap Preview`, and `Monophonic`. `MIDI Sync` contains `Clock Source`, `Send Clock`,
+and `Send Transport`. `Tempo` defaults to `120` BPM and ranges from `1` to
 `255`; `Clock Source` defaults to `Internal`, while `External MIDI` makes
 incoming MIDI Clock pulses advance one step every six pulses and handles
-incoming Start, Stop, and start-like Continue transport messages; `Steps`
+incoming Start, Stop, and start-like Continue transport messages. With
+`Clock Source` set to `Internal`, `Send Clock` sends six MIDI Clock pulses per
+step while local transport is running, and `Send Transport` sends MIDI
+Start/Stop from local Play/Stop; both send settings default to `Off`; `Steps`
 defaults to `32` and ranges from `1` to `32`; `Direction`
 defaults to `Forward` and also supports `Backward`, `Ping-Pong`, `Random`,
 `Brownian`, and `Drunk`; `Play Type` defaults to `MIDI` and can route
 sequencer-managed notes to the onboard synth; `Tap Preview` defaults to `On`.
 `Steps`, `Direction`, `Tempo`, and `Play Type` are sequence-file data.
-`Clock Source`, `Tap Preview`, and `Monophonic` are profile-backed;
+`Clock Source`, `Send Clock`, `Send Transport`, `Tap Preview`, and
+`Monophonic` are profile-backed;
 `Monophonic` affects
 selected-step entry only: Off preserves chord toggle entry, while On removes an
 existing pressed pitch or replaces the selected step with one newly pressed

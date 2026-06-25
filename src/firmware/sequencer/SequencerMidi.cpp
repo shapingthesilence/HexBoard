@@ -131,6 +131,18 @@ void stopMidiNote(SequencerMidiNoteHandle& handle) {
   handle = SequencerMidiNoteHandle{};
 }
 
+void sendMidiClockPulse() {
+  sendRealTimeToConfiguredMidiOutputs(0xF8);
+}
+
+void sendMidiTransportStart() {
+  sendRealTimeToConfiguredMidiOutputs(0xFA);
+}
+
+void sendMidiTransportStop() {
+  sendRealTimeToConfiguredMidiOutputs(0xFC);
+}
+
 }  // namespace sequencer
 #else
 namespace sequencer {
@@ -142,6 +154,15 @@ bool startMidiNote(int16_t /*pitchSteps*/, byte /*velocity*/, SequencerMidiNoteH
 
 void stopMidiNote(SequencerMidiNoteHandle& handle) {
   handle = SequencerMidiNoteHandle{};
+}
+
+void sendMidiClockPulse() {
+}
+
+void sendMidiTransportStart() {
+}
+
+void sendMidiTransportStop() {
 }
 
 }  // namespace sequencer

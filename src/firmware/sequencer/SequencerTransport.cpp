@@ -4,6 +4,7 @@
 
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerManagedNotes.h"
+#include "SequencerMidi.h"
 #include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
 #include "../app/DiagnosticsTiming.h"
@@ -43,11 +44,42 @@ int8_t playingStep = kNoSelectedStep;
 int8_t pingPongDelta = 1;
 uint64_t nextStepAt = 0;
 uint64_t currentStepStartedAt = 0;
+uint64_t nextMidiClockAt = 0;
 ExternalClockState externalClock = {};
 PlaybackGroup playbackGroups[kPlaybackGroupCount];
 
 void resetExternalClockState() {
   externalClock = ExternalClockState{};
+}
+
+void resetInternalMidiClockState() {
+  nextMidiClockAt = 0;
+}
+
+void primeInternalMidiClockIfNeeded() {
+  if (running && shouldSendMidiClock()) {
+    nextMidiClockAt = runTime;
+  }
+}
+
+void serviceInternalMidiClock() {
+  if (!running || !shouldSendMidiClock()) {
+    return;
+  }
+
+  uint64_t clockPulseDuration = playbackStepDurationMicros() / kMidiClocksPerStep;
+  if (clockPulseDuration == 0) {
+    clockPulseDuration = 1;
+  }
+
+  if (nextMidiClockAt == 0) {
+    nextMidiClockAt = runTime;
+  }
+
+  while (runTime >= nextMidiClockAt) {
+    sendMidiClockPulse();
+    nextMidiClockAt += clockPulseDuration;
+  }
 }
 
 uint64_t currentStepDurationMicros() {
@@ -424,33 +456,51 @@ int8_t playingStepIndex() {
   return playingStep;
 }
 
-void startTransport() {
+void startTransportInternal(bool sendMidiTransport) {
   stopPreviewNotes();
   releaseAllPlaybackGroups();
   resetExternalClockState();
+  resetInternalMidiClockState();
   running = true;
   playingStep = kNoSelectedStep;
   pingPongDelta = 1;
   currentStepStartedAt = runTime;
   nextStepAt = usesExternalClock() ? 0 : runTime;
+  if (sendMidiTransport && shouldSendMidiTransport()) {
+    sendMidiTransportStart();
+  }
+  primeInternalMidiClockIfNeeded();
 }
 
-void stopTransport() {
+void stopTransportInternal(bool sendMidiTransport) {
+  bool wasRunning = running;
   running = false;
   playingStep = kNoSelectedStep;
   pingPongDelta = 1;
   nextStepAt = 0;
   currentStepStartedAt = 0;
   resetExternalClockState();
+  resetInternalMidiClockState();
   stopPreviewNotes();
   releaseAllPlaybackGroups();
+  if (wasRunning && sendMidiTransport && shouldSendMidiTransport()) {
+    sendMidiTransportStop();
+  }
+}
+
+void startTransport() {
+  startTransportInternal(false);
+}
+
+void stopTransport() {
+  stopTransportInternal(false);
 }
 
 void toggleTransport() {
   if (running) {
-    stopTransport();
+    stopTransportInternal(true);
   } else {
-    startTransport();
+    startTransportInternal(true);
   }
 }
 
@@ -458,6 +508,7 @@ void serviceTransport() {
   if (!running) {
     return;
   }
+  serviceInternalMidiClock();
   if (usesExternalClock()) {
     servicePlaybackGroups();
     return;
@@ -492,6 +543,7 @@ void releasePlaybackForStep(byte stepIndex) {
 void handlePlaybackSettingsChanged(bool resetDirectionState) {
   normalizePlaybackSettings();
   resetExternalClockState();
+  resetInternalMidiClockState();
   if (resetDirectionState) {
     pingPongDelta = 1;
   }
@@ -507,6 +559,7 @@ void handlePlaybackSettingsChanged(bool resetDirectionState) {
     pingPongDelta = 1;
     currentStepStartedAt = runTime;
     nextStepAt = usesExternalClock() ? 0 : runTime;
+    primeInternalMidiClockIfNeeded();
     return;
   }
 
@@ -522,6 +575,13 @@ void handlePlaybackSettingsChanged(bool resetDirectionState) {
   } else {
     rescheduleNextStepFromCurrentStart();
   }
+  primeInternalMidiClockIfNeeded();
+}
+
+void handleMidiSyncSendSettingsChanged() {
+  normalizePlaybackSettings();
+  resetInternalMidiClockState();
+  primeInternalMidiClockIfNeeded();
 }
 
 void handleExternalMidiClock() {
@@ -606,6 +666,9 @@ void releasePlaybackForStep(byte /*stepIndex*/) {
 }
 
 void handlePlaybackSettingsChanged(bool /*resetDirectionState*/) {
+}
+
+void handleMidiSyncSendSettingsChanged() {
 }
 
 void handleExternalMidiClock() {

@@ -14,5 +14,8 @@ struct SequencerMidiNoteHandle {
 
 bool startMidiNote(int16_t pitchSteps, byte velocity, SequencerMidiNoteHandle& handle);
 void stopMidiNote(SequencerMidiNoteHandle& handle);
+void sendMidiClockPulse();
+void sendMidiTransportStart();
+void sendMidiTransportStop();
 
 }  // namespace sequencer

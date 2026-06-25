@@ -97,12 +97,16 @@ basic tuning-relative note entry, confirm-hold selected-step clear,
 selected-step undo, step tools, sequencer-owned step/function LED rendering,
 and routed transport playback with per-step length, velocity, probability, and
 Tie semantics. Button `9` toggles the local transport. The Sequencer page links
-to `Playback Settings`, where `Steps`, `Direction`, `Tempo`, `Clock Source`,
-`Play Type`, and `Tap Preview` are edited. `Tempo` defaults to `120` and ranges from `1` to
-`255`; each step is one 16th note. `Clock Source` defaults to `Internal`; when
-set to `External MIDI`, incoming MIDI Clock advances one step every six pulses,
+to `Playback Settings`, where `Steps`, `Direction`, `Tempo`, `Play Type`,
+`MIDI Sync`, and `Tap Preview` are edited. `Tempo` defaults to `120` and ranges from `1` to
+`255`; each step is one 16th note. `MIDI Sync` contains `Clock Source`, `Send Clock`,
+and `Send Transport`. `Clock Source` defaults to `Internal`; when set to
+`External MIDI`, incoming MIDI Clock advances one step every six pulses,
 Start begins from the first step, Stop releases sequencer playback notes, and
-Continue follows the old start-like sequencer resume behavior. `Steps` defaults to `32` and ranges from `1` to `32`;
+Continue follows the old start-like sequencer resume behavior. When `Clock Source`
+is `Internal`, `Send Clock` emits six MIDI Clock pulses per step while local
+transport is running and `Send Transport` makes local Play/Stop send MIDI
+Start/Stop; both send settings default to `Off`. `Steps` defaults to `32` and ranges from `1` to `32`;
 transport and step LEDs ignore steps beyond the active count. `Direction`
 defaults to `Forward` and supports `Forward`, `Backward`, `Ping-Pong`, `Random`,
 `Brownian`, and `Drunk`. `Play Type` defaults to `MIDI`; `OB Synth` routes
@@ -113,8 +117,8 @@ The Sequencer page also links to `Seq Lights`. Its `Accent Every`, `Step Color`,
 and `Step Hue` controls are profile-backed `SettingKey` values, not sequence
 file data. The defaults are accent every `4`, regular step color, and `Indigo`
 step hue.
-`Clock Source`, `Tap Preview`, and `Monophonic` are profile-backed and stay out
-of sequence files. `Monophonic` controls selected-step note entry only: Off preserves
+`Clock Source`, `Send Clock`, `Send Transport`, `Tap Preview`, and
+`Monophonic` are profile-backed and stay out of sequence files. `Monophonic` controls selected-step note entry only: Off preserves
 chord toggle entry, while On removes an existing pressed pitch or replaces the
 selected step with one newly pressed pitch. Programmed steps, tap preview, and
 lower-grid audition resolve stored pitch steps through the current
@@ -563,15 +567,19 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `21`
-- version `20` settings are migrated to `21` by copying the previous profile
-  bytes and filling the new `SequencerTapPreview` byte from factory defaults;
+- `CURRENT_SETTINGS_VERSION` is currently `22`
+- version `20` settings are migrated to `22` by copying the previous profile
+  bytes and filling the new sequencer profile bytes from factory defaults;
+  version `21` settings are migrated by preserving existing bytes and filling
+  `SequencerSendClock` and `SequencerSendTransport` from factory defaults;
   other version mismatches are replaced with factory defaults
 - `SequencerStepAccentEvery`, `SequencerStepColorMode`, `SequencerStepHue`,
   `SequencerMonophonicMode`, `SequencerTapPreview`, and
-  `SequencerClockSource` are profile bytes for optional sequencer preferences
+  `SequencerClockSource`, `SequencerSendClock`, and `SequencerSendTransport`
+  are profile bytes for optional sequencer preferences
 - `SequencerTapPreview` defaults to `On`; `SequencerClockSource` defaults to
-  `Internal`; neither is sequence-file data
+  `Internal`; `SequencerSendClock` and `SequencerSendTransport` default to
+  `Off`; none of these are sequence-file data
 - the current development branch appended `SequencerClockSource` without
   bumping `CURRENT_SETTINGS_VERSION` because the branch had not shipped as a
   stable settings release
