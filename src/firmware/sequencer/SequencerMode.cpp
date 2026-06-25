@@ -5,6 +5,7 @@
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerInput.h"
 #include "SequencerState.h"
+#include "SequencerTransport.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../synth/SynthAudio.h"
 
@@ -62,6 +63,7 @@ void enterSequencerMode() {
 
 void exitSequencerMode() {
 #if HEXBOARD_ENABLE_SEQUENCER
+  sequencer::stopTransport();
   sequencerActive = false;
   sequencer::deselectStep();
   sequencer::resetInputState();
@@ -75,6 +77,7 @@ void serviceSequencerMode() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
     sequencer::serviceInput();
+    sequencer::serviceTransport();
   }
 #endif
 }

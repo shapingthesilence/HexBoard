@@ -57,6 +57,10 @@ The `Makefile` currently compiles with:
 - USB manufacturer/product build descriptors: `HexBoard`
 
 If you build manually, match the options in `Makefile`.
+The Makefile stages an ignored sketch copy under `build/.../sketch/HexBoard`
+before invoking `arduino-cli`, because Arduino sketch discovery requires the
+folder name to match `HexBoard.ino` even when this checkout has a different
+directory name.
 The `Generic SPI /4` boot2 selection is required for the local `250 MHz` build to avoid overdriving external flash; `Generic SPI /2` may compile but can crash the board at runtime. The higher CPU clock gives the synth block renderer enough headroom for dense AHDSR and FX-envelope patches that can otherwise report overruns.
 
 The `Makefile` accepts `PWM_BITS=8`, `PWM_BITS=9`, or `PWM_BITS=10` for onboard synth PWM comparisons:
@@ -89,12 +93,17 @@ Use `make sequencer-builds` to compile both variants.
 When the flag is `0`, `setupSequencerMenu()` is a no-op and no top-level
 Sequencer menu item is installed. When the flag is `1`, the firmware installs
 a Sequencer mode foundation with mode entry/exit, 32-step selection/deselection,
-basic tuning-relative note entry, confirm-hold selected-step clear, and
-sequencer-owned step/function LED rendering. Empty steps are off, programmed
-steps are green, selected steps pulse, button `9` shows the stopped red
-transport state, and button `19` uses the legacy blue action/clear color.
-Playback, persistence, storage/browser flows, settings schema changes, MIDI
-sync, and tools are intentionally not present yet.
+basic tuning-relative note entry, confirm-hold selected-step clear,
+sequencer-owned step/function LED rendering, and basic MIDI transport playback.
+Button `9` toggles an internal 120 BPM forward transport over all `32` steps;
+each step is one 16th note. Programmed steps emit their stored pitch-step notes
+through the current tuning, transpose, MIDI routing, and MPE settings, while
+empty steps advance silently. Button `9` is red when stopped and green when
+playing, and the current play step is highlighted even when empty. Persistence,
+storage/browser flows, settings schema changes, external MIDI sync, MIDI
+clock/transport send, onboard synth sequencer playback, preview or audition
+sound, direction modes, probability, ties, and tools are intentionally not
+present yet.
 
 ### Web App Tooling
 
@@ -320,7 +329,7 @@ The main firmware files are:
 - `src/firmware/synth/`: synth defaults, built-in single-cycle waveforms, compatibility wavetable catalog, render orchestration, audio transport, oscillator/wavetable runtime, envelopes, modulation caches, voice allocation, arpeggiator, and metronome; hot render glue remains in `SynthAudio.cpp`, and synth-private declarations live in `SynthAudioInternal.h`
 - `src/firmware/storage/`: persistent data models, settings/profile storage, synth preset/wavetable storage, and preset-sync protocol/geometry/synth-object/message handling
 - `src/firmware/menu/`: OLED/GEM pages and settings callbacks, played-note drawing, synth preset menu rebuilding, and synth wavetable menu rebuilding
-- `src/firmware/sequencer/`: default-off sequencer foundation; keep sequencer-owned state, input, LED rendering, menu pages, and integration hooks here rather than in the root sketch
+- `src/firmware/sequencer/`: default-off sequencer foundation; keep sequencer-owned state, input, LED rendering, menu pages, MIDI playback bridge, transport timing, and integration hooks here rather than in the root sketch
 
 If you are changing behavior, start by locating which layer owns it. Shared constants, types, and lifecycle calls belong in the nearest owning header; subsystem-owned globals and hot helpers should stay private in their `.cpp` when no other module needs them. Fix missing declarations by improving the owning headers rather than reintroducing source inclusion.
 

@@ -11,6 +11,8 @@ DEFAULT_BUILD_DIR = build/sequencer-disabled
 endif
 BUILD_DIR ?= $(DEFAULT_BUILD_DIR)
 FIRMWARE_UF2 = $(BUILD_DIR)/HexBoard.ino.uf2
+SKETCH_STAGING_ROOT = $(BUILD_DIR)/sketch
+SKETCH_STAGING_DIR = $(SKETCH_STAGING_ROOT)/HexBoard
 BUILD_PROPERTIES = --build-property compiler.cpp.extra_flags="-DPWM_BITS=$(PWM_BITS) -DHEXBOARD_ENABLE_SEQUENCER=$(HEXBOARD_ENABLE_SEQUENCER)" \
 	--build-property build.usb_manufacturer="$(USB_MANUFACTURER)" \
 	--build-property build.usb_product="$(USB_PRODUCT)"
@@ -22,7 +24,11 @@ FIRMWARE_SOURCES := HexBoard.ino $(shell find src/firmware -type f)
 all: $(FIRMWARE_UF2)
 
 $(FIRMWARE_UF2): $(FIRMWARE_SOURCES) Makefile | $(BUILD_DIR)
-	arduino-cli compile -b $(FQBN) $(BUILD_PROPERTIES) --output-dir $(BUILD_DIR) .
+	rm -rf "$(SKETCH_STAGING_ROOT)"
+	mkdir -p "$(SKETCH_STAGING_DIR)"
+	cp HexBoard.ino "$(SKETCH_STAGING_DIR)/HexBoard.ino"
+	cp -R src "$(SKETCH_STAGING_DIR)/src"
+	arduino-cli compile -b $(FQBN) $(BUILD_PROPERTIES) --output-dir $(BUILD_DIR) "$(SKETCH_STAGING_DIR)"
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)

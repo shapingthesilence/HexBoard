@@ -99,11 +99,18 @@ The main menu includes:
 Developer builds compiled with `HEXBOARD_ENABLE_SEQUENCER=1` also show a
 `Sequencer` entry. It opens a foundation editor with mode entry/exit, 32-step
 selection/deselection, basic note entry into the selected step, confirm-hold step
-clear, and sequencer-owned step/function LEDs. Empty steps are off, programmed
-steps are green, selected steps pulse, button `9` shows the stopped red
-transport state, and button `19` uses the legacy blue action/clear color.
-Default firmware does not show it, and playback, persistence, storage/browser
-flows, settings schema changes, MIDI sync, and tools are not enabled yet.
+clear, sequencer-owned step/function LEDs, and basic MIDI transport playback.
+Select a step pad, then press playable note keys to toggle up to `6`
+tuning-relative notes into that step. Button `9` starts and stops an internal
+120 BPM forward transport across all `32` steps, with each step lasting one
+16th note. Programmed steps send MIDI using the current tuning, transpose, MIDI
+routing, and MPE settings; empty steps advance silently. Button `9` is red when
+stopped and green while playing, and the current play step is highlighted even
+when empty. Button `19` uses the legacy blue action/clear color. Default
+firmware does not show Sequencer mode, and persistence, storage/browser flows,
+settings schema changes, external MIDI sync, MIDI clock/transport send, onboard
+synth sequencer playback, preview or audition sound, direction modes,
+probability, ties, and tools are not enabled yet.
 
 `Synth:<current preset>` opens the synth preset load menu from the top level.
 If the runtime synth sound has changed since the loaded preset was selected or

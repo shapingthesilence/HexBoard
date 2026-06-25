@@ -4,6 +4,7 @@
 
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerState.h"
+#include "SequencerTransport.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../hardware/GridState.h"
 
@@ -11,6 +12,7 @@ namespace sequencer {
 namespace {
 
 constexpr byte kConfirmClearButtonIndex = 19;
+constexpr byte kTransportButtonIndex = 9;
 constexpr uint64_t kClearHoldMicros = 1000000ULL;
 
 bool confirmHeld = false;
@@ -86,6 +88,12 @@ void handleButtonEvent(byte buttonIndex, bool pressed) {
       confirmHeld = true;
       confirmPressedAt = runTime;
     }
+    return;
+  }
+
+  if (buttonIndex == kTransportButtonIndex) {
+    toggleTransport();
+    resetInputState();
     return;
   }
 

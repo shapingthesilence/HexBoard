@@ -5,6 +5,7 @@
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerInput.h"
 #include "SequencerState.h"
+#include "SequencerTransport.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../app/RuntimeDefaults.h"
 #include "../hardware/LedRender.h"
@@ -48,6 +49,20 @@ uint32_t stoppedTransportColor() {
   return ledColor(HUE_RED, SAT_VIVID, VALUE_FULL);
 }
 
+uint32_t runningTransportColor() {
+  return ledColor(HUE_GREEN, SAT_VIVID, VALUE_FULL);
+}
+
+uint32_t playingStepColor(bool programmed, bool selected) {
+  if (selected) {
+    return ledColor(HUE_YELLOW, SAT_VIVID, VALUE_FULL);
+  }
+  if (programmed) {
+    return ledColor(HUE_LIME, SAT_VIVID, VALUE_FULL);
+  }
+  return ledColor(HUE_YELLOW, SAT_MODERATE, VALUE_NORMAL);
+}
+
 uint32_t confirmClearColor() {
   byte value = confirmClearHeld() ? VALUE_FULL : kActionBlueValue;
   return ledColor(kActionBlueHue, SAT_VIVID, value);
@@ -68,7 +83,7 @@ void renderLedOverrides(SetLedPixelFn setLedPixel) {
   }
 
   neutralizeOwnedGuards(setLedPixel);
-  setLedPixel(kTransportGuardButtonIndex, stoppedTransportColor());
+  setLedPixel(kTransportGuardButtonIndex, transportRunning() ? runningTransportColor() : stoppedTransportColor());
 
   for (byte stepIndex = 0; stepIndex < kStepCount; ++stepIndex) {
     int8_t buttonIndex = stepToButtonIndex(stepIndex);
@@ -78,12 +93,14 @@ void renderLedOverrides(SetLedPixelFn setLedPixel) {
 
     bool selected = selectedStepIndex() == static_cast<int8_t>(stepIndex);
     bool programmed = stepIsProgrammed(stepIndex);
-    if (!programmed && !selected) {
+    bool playing = playingStepIndex() == static_cast<int8_t>(stepIndex);
+    if (!programmed && !selected && !playing) {
       setLedPixel(static_cast<byte>(buttonIndex), 0);
       continue;
     }
 
-    uint32_t color = programmed ? programmedStepColor(selected) : emptySelectedStepColor();
+    uint32_t color = playing ? playingStepColor(programmed, selected)
+                             : (programmed ? programmedStepColor(selected) : emptySelectedStepColor());
     setLedPixel(static_cast<byte>(buttonIndex), color);
   }
 

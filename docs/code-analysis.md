@@ -55,6 +55,7 @@ The current source is grouped by file:
 | `src/firmware/synth/` | synth defaults, built-in waveforms, wavetable catalog, render orchestration, audio transport, oscillator/wavetable runtime, envelopes, modulation caches, voice allocation, arpeggiator, and metronome |
 | `src/firmware/storage/` | persistent data models, settings/profile persistence, synth preset/wavetable storage, and preset-sync handlers |
 | `src/firmware/menu/` | OLED/GEM pages and callbacks, played-note overlay, synth preset menus, and synth wavetable menus |
+| `src/firmware/sequencer/` | default-off Sequencer mode state, input, LEDs, menu integration, MIDI playback bridge, and internal transport timing |
 
 ## Core Data Structures
 
@@ -927,10 +928,20 @@ Current top-level user pages are:
 - `Load Profile`
 - `Save Profile`
 - `Synth Editor`
+- optional `Sequencer` when built with `HEXBOARD_ENABLE_SEQUENCER=1`
 
 The Advanced page includes a read-only `Firmware 1.4 alpha` version label.
 The `Buzzer` toggle is inserted only on hardware `V1.2`.
 `Stability` is a transient launcher, not a setting.
+
+When enabled, Sequencer mode currently supports 32-step selection, selected-step
+note entry using tuning-relative `stepsFromC`, confirm-hold clear, sequencer LED
+overrides, and basic MIDI transport playback. Button `9` toggles an internal
+120 BPM forward 16th-note clock over all `32` steps. Playback emits programmed
+step notes through the current tuning, transpose, MIDI routing, and MPE helpers;
+empty steps advance silently. Sequencer persistence, external sync, MIDI clock
+send, onboard synth playback, preview/audition, direction modes, probability,
+ties, and detailed editing screens remain intentionally absent.
 
 ## Input Interface And Panic Behavior
 

@@ -119,7 +119,7 @@ The simplest local build is:
 make
 ```
 
-The `Makefile` builds the root `HexBoard.ino` sketch using the board options for this project. Firmware implementation lives under `src/firmware/`; do not edit generated files under `build/` as source.
+The `Makefile` builds the root `HexBoard.ino` sketch using the board options for this project. Because Arduino sketch discovery expects the sketch folder to match the `.ino` basename, the build stages an ignored copy at `build/.../sketch/HexBoard` before invoking `arduino-cli`. Firmware implementation lives under `src/firmware/`; do not edit generated files under `build/` as source.
 The local `250 MHz` build intentionally uses `Generic SPI /4` boot2 to keep the external flash clock stable while giving the synth block renderer enough headroom for dense AHDSR and FX-envelope patches.
 
 To compare onboard synth PWM resolutions, pass `PWM_BITS` at build time:
@@ -137,13 +137,18 @@ Sequencer entry for porting work, build with:
 make HEXBOARD_ENABLE_SEQUENCER=1
 ```
 
-That flag enables the foundation editor only: Sequencer mode entry/exit, 32-step
-selection/deselection, basic tuning-relative note entry, confirm-hold step clear,
-and sequencer-owned step/function LEDs. Empty steps are off, programmed steps
-are green, selected steps pulse, the transport key at button `9` shows the
-stopped red state, and the confirm/clear key at button `19` uses the legacy blue
-action color. Playback, persistence, storage/browser flows, settings schema
-changes, MIDI sync, and tools are not enabled yet.
+That flag enables the in-port Sequencer mode foundation: mode entry/exit,
+32-step selection/deselection, basic tuning-relative note entry, confirm-hold
+step clear, sequencer-owned step/function LEDs, and basic MIDI transport
+playback. Button `9` toggles an internal 120 BPM forward transport across all
+32 steps, with each step lasting one 16th note. Programmed steps emit their
+stored pitch-step notes through the current tuning, transpose, MIDI routing, and
+MPE settings; empty steps advance silently. Button `9` is red when stopped and
+green when playing, and the current play step is highlighted even when it is
+empty. Persistence, storage/browser flows, settings schema changes, external
+MIDI sync, MIDI clock/transport send, onboard synth sequencer playback, preview
+or audition sound, direction modes, probability, ties, and tools are not enabled
+yet.
 
 Builds keep the flashable file named `HexBoard.ino.uf2`, with separate output
 folders for the default and sequencer-enabled variants:

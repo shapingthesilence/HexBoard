@@ -1,4 +1,5 @@
 #include "SynthAudioInternal.h"
+#include "../sequencer/SequencerTransport.h"
 
 std::queue<byte> synthChQueue;
 std::array<std::atomic<bool>, POLYPHONY_LIMIT> channelInUse = {};
@@ -663,6 +664,7 @@ void RAM_FUNC(trySynthNoteOff)(byte x) {
 
 void panicStopOutput() {
   sendToLog("Panic: stopping all MIDI and synth output.");
+  sequencer::releasePlaybackNotesForPanic();
 
   for (byte channel = 1; channel <= 16; ++channel) {
     withMIDI([&](auto& M) {
