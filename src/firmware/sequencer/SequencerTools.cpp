@@ -6,6 +6,7 @@
 #include "SequencerManagedNotes.h"
 #include "SequencerOverlay.h"
 #include "SequencerPlaybackSettings.h"
+#include "SequencerStorage.h"
 #include "SequencerTransport.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../model/ScalePalettePreset.h"
@@ -178,6 +179,7 @@ void exitExactLength(bool saveChanges) {
     }
     if (setStepGatePercent(selected, finalValue)) {
       releasePlaybackForStep(selected);
+      markSequenceDirty();
     }
     quickGateDisplay = step(selected).gatePercent;
     lengthOriginal = quickGateDisplay;
@@ -197,6 +199,7 @@ void exitExactVelocity(bool saveChanges) {
     byte selected = static_cast<byte>(selectedStepIndex());
     if (saveChanges && setStepVelocity(selected, velocityEditDisplay)) {
       releasePlaybackForStep(selected);
+      markSequenceDirty();
     }
     velocityEditDisplay = step(selected).velocity;
   }
@@ -213,6 +216,7 @@ void exitExactProbability(bool saveChanges) {
     byte selected = static_cast<byte>(selectedStepIndex());
     if (saveChanges && setStepProbability(selected, probabilityEditDisplay)) {
       releasePlaybackForStep(selected);
+      markSequenceDirty();
     }
     probabilityEditDisplay = step(selected).probability;
   }
@@ -270,6 +274,7 @@ void applyTranspose(int16_t pitchStepDelta, const char* toolName) {
   switch (result) {
     case SequencerTransposeResult::Changed:
       releasePlaybackForStep(selected);
+      markSequenceDirty();
       setMode(SequencerToolMode::ToolsPicker);
       return;
     case SequencerTransposeResult::Empty:
@@ -481,6 +486,7 @@ void restoreSelectedStepFromUndo() {
   restoreStep(selected, undoSnapshot);
   releasePlaybackForStep(selected);
   loadEditDisplaysFromSelectedStep();
+  markSequenceDirty();
   setMode(SequencerToolMode::Normal);
 }
 
@@ -493,6 +499,7 @@ void clearSelectedStepForHold() {
   stopPreviewNotes();
   releasePlaybackForStep(selected);
   loadEditDisplaysFromSelectedStep();
+  markSequenceDirty();
   setMode(SequencerToolMode::StepCleared);
 }
 
@@ -529,6 +536,7 @@ bool handleToolAction(SequencerToolAction action) {
         byte selected = static_cast<byte>(selectedStepIndex());
         if (setStepTie(selected, !step(selected).tie)) {
           releasePlaybackForStep(selected);
+          markSequenceDirty();
         }
         setMode(SequencerToolMode::ToolsPicker);
       }
@@ -661,6 +669,7 @@ bool handleRotaryTurn(int8_t direction) {
   uint16_t newGate = kGateChoices[nextIndex];
   if (newGate != currentGate && setStepGatePercent(selected, newGate)) {
     releasePlaybackForStep(selected);
+    markSequenceDirty();
   }
   quickGateDisplay = step(selected).gatePercent;
   modeUntil = runTime + kSequencerMessageMicros;

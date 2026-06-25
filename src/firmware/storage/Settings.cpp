@@ -101,6 +101,7 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* SequencerStepColorMode       */ sequencer::kStepColorDefault,
   /* SequencerStepHue             */ sequencer::kStepHueDefault,
   /* SequencerMonophonicMode      */ sequencer::kMonophonicModeDefault,
+  /* SequencerTapPreview          */ sequencer::kTapPreviewDefault,
 };
 
 // ==================================================
@@ -250,6 +251,11 @@ bool load_settings() {
     return false;
   }
   if (header.version != CURRENT_SETTINGS_VERSION) {
+    if (header.version == 20) {
+      sendToLog("Settings version mismatch. Migrating version 20 settings to version "
+                + std::to_string(CURRENT_SETTINGS_VERSION) + ".");
+      return migrateSettingsFromVersion(f, header, NUM_SETTINGS_V20);
+    }
     sendToLog("Settings version mismatch. File version: " + std::to_string(header.version)
               + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION)
               + ". Restoring factory defaults for this release.");

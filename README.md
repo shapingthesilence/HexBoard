@@ -144,9 +144,10 @@ step tools for length, velocity, probability, octave transpose, Tie, and Copy,
 sequencer-owned step/function LEDs, routed transport playback with per-step
 length, velocity, probability, and Tie semantics, MIDI or OB Synth note
 audition, tap preview, and transport output, compact selected-step/tool
-overlays, volatile Tempo, Steps, Direction, Play Type, and Tap Preview
-controls, profile-backed Monophonic note-entry mode, and profile-backed
-Seq Lights controls.
+overlays, sequence files under `/Sequences` with on-device save/load/folder
+management and startup restore, sequence-backed Tempo, Steps, Direction, and
+Play Type controls, profile-backed Tap Preview and Monophonic note-entry mode,
+and profile-backed Seq Lights controls.
 See the [Sequencer Manual](docs/sequencer-manual.md) for current sequencer
 behavior and the features still being ported.
 

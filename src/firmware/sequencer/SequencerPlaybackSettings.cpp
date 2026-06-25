@@ -107,12 +107,22 @@ void applyPlaybackPreferencesFromProfile() {
   monoMode = validMonophonicMode(settingValue(SettingKey::SequencerMonophonicMode))
                ? settingValue(SettingKey::SequencerMonophonicMode)
                : kMonophonicModeDefault;
+  preview = validTapPreview(settingValue(SettingKey::SequencerTapPreview))
+              ? settingValue(SettingKey::SequencerTapPreview)
+              : kTapPreviewDefault;
   settings[static_cast<uint8_t>(SettingKey::SequencerMonophonicMode)] = monoMode;
+  settings[static_cast<uint8_t>(SettingKey::SequencerTapPreview)] = preview;
 }
 
 void persistMonophonicModeToProfile() {
   monoMode = monophonicMode();
   settings[static_cast<uint8_t>(SettingKey::SequencerMonophonicMode)] = monoMode;
+  markSettingsDirty();
+}
+
+void persistTapPreviewToProfile() {
+  preview = tapPreview();
+  settings[static_cast<uint8_t>(SettingKey::SequencerTapPreview)] = preview;
   markSettingsDirty();
 }
 

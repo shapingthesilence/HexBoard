@@ -74,6 +74,7 @@ void hexboardSetup() {
   setupHardware();
   initializeSynthWaveTables();
   syncSettingsToRuntime();
+  restoreSequencerAtStartup();
   recomputePitchBendFactor();
   synthRuntimeReady.store(true, std::memory_order_release);
   runBootLedSelfCheck();

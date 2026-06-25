@@ -6,6 +6,7 @@
 #include "SequencerManagedNotes.h"
 #include "SequencerOverlay.h"
 #include "SequencerPlaybackSettings.h"
+#include "SequencerStorage.h"
 #include "SequencerTransport.h"
 
 namespace sequencer {
@@ -67,16 +68,19 @@ GEMSelect monophonicSelect(sizeof(monophonicOptions) / sizeof(SelectOptionByte),
 
 void playbackTempoChanged() {
   normalizePlaybackSettings();
+  markSequenceDirty();
   handlePlaybackSettingsChanged(false);
 }
 
 void playbackStepCountChanged() {
   normalizePlaybackSettings();
+  markSequenceDirty();
   handlePlaybackSettingsChanged(false);
 }
 
 void playbackDirectionChanged() {
   normalizePlaybackSettings();
+  markSequenceDirty();
   handlePlaybackSettingsChanged(true);
 }
 
@@ -88,6 +92,7 @@ void tapPreviewChanged() {
 
 void playTypeChanged() {
   normalizePlaybackSettings();
+  markSequenceDirty();
 }
 
 void monophonicModeChanged() {
@@ -109,6 +114,7 @@ void playbackDirectionMenuCallback(GEMCallbackData /*callbackData*/) {
 
 void tapPreviewMenuCallback(GEMCallbackData /*callbackData*/) {
   tapPreviewChanged();
+  persistTapPreviewToProfile();
 }
 
 void playTypeMenuCallback(GEMCallbackData /*callbackData*/) {

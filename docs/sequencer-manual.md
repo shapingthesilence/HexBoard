@@ -34,8 +34,9 @@ these playback controls:
 - `Tap Preview`: `Off` or `On`, default `On`.
 - `Monophonic`: `Off` or `On`, default `Off`.
 
-`Steps`, `Direction`, `Tempo`, `Play Type`, and `Tap Preview` are volatile in
-this slice. `Monophonic` is saved in the current board profile.
+`Steps`, `Direction`, `Tempo`, and `Play Type` are sequence-owned values and
+are saved in sequence files. `Tap Preview` and `Monophonic` are saved in the
+current board profile, not in sequence files.
 
 Open `Seq Lights` from the Sequencer page to edit three profile-backed light
 preferences:
@@ -138,16 +139,66 @@ hue. In `Step Color = Regular`, programmed steps use the selected `Step Hue`.
 In `Step Color = Note`, programmed steps use the stored step's lowest note and
 the current keyboard color palette, including color mode and ColorByKey.
 
-Patterns and sequence-owned Playback Settings are not persistent yet. Rebooting clears
-programmed sequencer steps, including length, velocity, probability, and Tie,
-and restores `Steps`, `Direction`, `Tempo`, `Play Type`, and `Tap Preview` to
-their defaults. `Monophonic` and `Seq Lights` preferences are saved in the
-current board profile and are not stored in sequence files. `Play Type` is
-volatile until sequence-file persistence is ported, because the old sequencer
-stored it with each sequence file.
+## Files And Persistence
+
+Open `File Management` from the Sequencer page for `New`, `Save`, `Save New`,
+`Load`, `Revert`, `Create Folder`, and `Rename/Delete`.
+
+Sequence files live under `/Sequences` and use the `.hbseq` extension. The file
+browser scans only the current folder. Folders appear before sequence files;
+selecting a folder enters it, and the back row moves up to the parent folder.
+`Save New` saves into the current folder after naming the sequence.
+
+`New` stops playback, releases sequencer-held notes, clears all sequence-owned
+data to defaults, clears the current file path, and clears the dirty title
+marker. It preserves profile-backed `Tap Preview`, `Monophonic`, and
+`Seq Lights`.
+
+`Save` writes the current file when one is loaded. If no file is loaded, it
+opens the same folder-selection and naming flow as `Save New`. `Save New`
+always prompts for a new sequence name, appends `.hbseq` internally, sets the
+new file as current, and clears the dirty marker after a successful save.
+
+`Load` stops playback, releases sequencer-held notes, loads the chosen `.hbseq`
+file, makes it the current file, and clears the dirty marker. `Revert` reloads
+the current file; when there is no current file, it resets to a blank/default
+sequence. If the remembered startup file is missing or invalid, startup clears
+the remembered path and leaves a blank/default sequence.
+
+The sequencer remembers the current sequence path in `/Sequences/.current`.
+After settings/profile restore during startup, the firmware reloads that file
+when it exists and parses successfully. Profile-backed settings are not
+overwritten by the sequence file.
+
+The Sequencer page title reads `Sequencer` when no file is loaded. When a file
+is loaded, it shows `Seq-NAME`. Unsaved sequence-owned changes show a dirty
+marker, for example `Seq-*NAME`. The marker clears after successful `Save`,
+`Save New`, `Load`, `Revert`, or `New`.
+
+The naming screen accepts letters, numbers, spaces, and hyphen, up to `20`
+visible characters. Duplicate names are rejected in the target folder. Cancel
+leaves the file, folder, and current-path state unchanged.
+
+Renaming supports sequence files and folders. If the current file is renamed,
+or a containing folder is renamed, the remembered current path is repaired.
+Deleting supports sequence files and folders; folder delete is recursive.
+Deleting the current file, or a folder containing it, clears the current path.
+
+Saved sequence files store:
+
+- 32 step records with tuning-relative pitch-step values and note counts
+- per-step length, velocity, probability, and Tie
+- `Tempo`
+- active `Steps`
+- `Direction`
+- `Play Type`
+
+Sequence files do not store selected step, undo/tool/naming/browser state,
+overlay messages, active note handles, transport timing, dirty state,
+`Tap Preview`, `Monophonic`, or `Seq Lights`.
 
 ## Not Yet Ported
 
-The current sequencer slice does not include persistence, save/load/browser
-flows, external MIDI clock, MIDI start/stop/clock send, backup tools,
-sequence-file persistence, or per-sequence Play Type storage.
+The current sequencer slice does not include external MIDI clock, MIDI
+start/stop/clock send, USB Backup, desktop backup scripts or launchers, or the
+performance monitor overlay.

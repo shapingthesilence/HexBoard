@@ -98,23 +98,23 @@ selected-step undo, step tools, sequencer-owned step/function LED rendering,
 and routed transport playback with per-step length, velocity, probability, and
 Tie semantics. Button `9` toggles the internal transport. The Sequencer page links to
 `Playback Settings`, where `Steps`, `Direction`, `Tempo`, `Play Type`, and
-`Tap Preview` are volatile sequencer-owned values rather than `SettingKey`
-profile data. `Tempo` defaults to `120` and ranges from `1` to `255`; each step
-is one 16th note. `Steps` defaults to `32` and ranges from `1` to `32`;
+`Tap Preview` are edited. `Tempo` defaults to `120` and ranges from `1` to
+`255`; each step is one 16th note. `Steps` defaults to `32` and ranges from `1` to `32`;
 transport and step LEDs ignore steps beyond the active count. `Direction`
 defaults to `Forward` and supports `Forward`, `Backward`, `Ping-Pong`, `Random`,
 `Brownian`, and `Drunk`. `Play Type` defaults to `MIDI`; `OB Synth` routes
 sequencer-managed notes into the shared onboard synth engine. `Tap Preview`
 defaults to `On`; selecting a programmed step previews its stored note or chord
-through the current Play Type unless the volatile toggle is set to `Off`.
+through the current Play Type unless the profile-backed toggle is set to `Off`.
 The Sequencer page also links to `Seq Lights`. Its `Accent Every`, `Step Color`,
 and `Step Hue` controls are profile-backed `SettingKey` values, not sequence
 file data. The defaults are accent every `4`, regular step color, and `Indigo`
 step hue.
-`Monophonic` is also profile-backed and controls selected-step note entry only:
-Off preserves chord toggle entry, while On removes an existing pressed pitch or
-replaces the selected step with one newly pressed pitch. Programmed steps, tap
-preview, and lower-grid audition resolve stored pitch steps through the current
+`Tap Preview` is profile-backed and stays out of sequence files. `Monophonic`
+is also profile-backed and controls selected-step note entry only: Off preserves
+chord toggle entry, while On removes an existing pressed pitch or replaces the
+selected step with one newly pressed pitch. Programmed steps, tap preview, and
+lower-grid audition resolve stored pitch steps through the current
 tuning and transpose at note start. MIDI output uses the existing MIDI routing
 and MPE settings; OB Synth output uses a small synth preview-note API backed by
 hidden matrix slots `141..159`, leaving slot `140` reserved for hardware
@@ -137,9 +137,19 @@ step selection. `GridScanRotary.cpp` offers encoder turns and clicks to
 Sequencer mode first; Sequencer returns `false` outside selected-step/tool
 states so GEM and `VirtualListMenu` behavior is preserved.
 
-Persistence, storage/browser flows, external MIDI sync, MIDI clock/transport
-send, per-sequence Play Type storage, and backup tools are intentionally not
-present yet.
+`src/firmware/sequencer/SequencerStorage.*` owns sequence file serialization,
+the `/Sequences/.current` remembered path, title/dirty state, and startup
+restore. Saved `.hbseq` files use the old text-compatible `format=HBSEQ`,
+`version=3`, `noteFormat=stepsFromC` format and store steps, notes, gate,
+velocity, probability, Tie, Tempo, active Steps, Direction, and Play Type.
+Current-path metadata is a sidecar under `/Sequences`, not a profile byte.
+`src/firmware/sequencer/SequencerFileMenu.*` owns the on-device file browser,
+folder creation, rename/delete, and naming overlay. The browser uses
+`VirtualListMenu` callbacks over the current folder and does not keep a
+tree-wide sequence list in RAM.
+
+External MIDI sync, MIDI clock/transport send, USB Backup, desktop backup
+scripts, and the performance monitor overlay are intentionally not present yet.
 
 ### Web App Tooling
 
@@ -365,7 +375,7 @@ The main firmware files are:
 - `src/firmware/synth/`: synth defaults, built-in single-cycle waveforms, compatibility wavetable catalog, render orchestration, audio transport, oscillator/wavetable runtime, envelopes, modulation caches, voice allocation, arpeggiator, and metronome; hot render glue remains in `SynthAudio.cpp`, and synth-private declarations live in `SynthAudioInternal.h`
 - `src/firmware/storage/`: persistent data models, settings/profile storage, synth preset/wavetable storage, and preset-sync protocol/geometry/synth-object/message handling
 - `src/firmware/menu/`: OLED/GEM pages and settings callbacks, played-note drawing, synth preset menu rebuilding, and synth wavetable menu rebuilding
-- `src/firmware/sequencer/`: default-off sequencer foundation; keep sequencer-owned state, input, LED rendering, menu pages, MIDI playback bridge, transport timing, and integration hooks here rather than in the root sketch
+- `src/firmware/sequencer/`: default-off sequencer foundation; keep sequencer-owned state, input, LED rendering, menu pages, file storage/browser flows, MIDI playback bridge, transport timing, and integration hooks here rather than in the root sketch
 
 If you are changing behavior, start by locating which layer owns it. Shared constants, types, and lifecycle calls belong in the nearest owning header; subsystem-owned globals and hot helpers should stay private in their `.cpp` when no other module needs them. Fix missing declarations by improving the owning headers rather than reintroducing source inclusion.
 
@@ -550,15 +560,14 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `20`
-- this release intentionally skips old profile compatibility: any `/settings.dat`
-  file with a version other than `20` is replaced with factory defaults instead
-  of being migrated
+- `CURRENT_SETTINGS_VERSION` is currently `21`
+- version `20` settings are migrated to `21` by copying the previous profile
+  bytes and filling the new `SequencerTapPreview` byte from factory defaults;
+  other version mismatches are replaced with factory defaults
 - `SequencerStepAccentEvery`, `SequencerStepColorMode`, `SequencerStepHue`, and
-  `SequencerMonophonicMode` are appended profile bytes for the optional
-  sequencer's general preferences; this development branch intentionally leaves
-  `CURRENT_SETTINGS_VERSION` at `20`, so older shorter version-20 settings files
-  restore factory defaults through the existing length/CRC failure path
+  `SequencerMonophonicMode` are profile bytes for optional sequencer preferences
+- `SequencerTapPreview` is also profile-backed; it defaults to `On` and is not
+  sequence-file data
 - version `20` reinterprets `DisplayPlayedNotes` as `Off`/`Label`/`Number`
   instead of a boolean; the byte position is unchanged
 - version `19` no longer stores the old `Debug` byte;

@@ -7,6 +7,7 @@ bool sequencerModeActive();
 void enterSequencerMode();
 void exitSequencerMode();
 void serviceSequencerMode();
+void restoreSequencerAtStartup();
 void handleSequencerButtonEvent(byte buttonIndex, bool pressed);
 bool handleSequencerRotaryTurn(int8_t direction);
 bool handleSequencerEncoderClick();

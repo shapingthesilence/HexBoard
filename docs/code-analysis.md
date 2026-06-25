@@ -717,14 +717,13 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `20`, and `PROFILE_COUNT` is `9`.
-Older settings-schema files are not migrated in this release; `load_settings()`
-restores factory defaults and rewrites `/settings.dat` whenever the header
-version is not `20`. The optional sequencer's `SequencerStepAccentEvery`,
-`SequencerStepColorMode`, `SequencerStepHue`, and `SequencerMonophonicMode`
-profile bytes were appended without changing `CURRENT_SETTINGS_VERSION`, so
-shorter older version-20 files also restore defaults through the existing
-profile data length or CRC failure path.
+`CURRENT_SETTINGS_VERSION` is currently `21`, and `PROFILE_COUNT` is `9`.
+`load_settings()` migrates version `20` files by copying the previous profile
+bytes and filling the new `SequencerTapPreview` byte from factory defaults.
+Other settings-schema mismatches restore factory defaults and rewrite
+`/settings.dat`. The optional sequencer profile bytes include
+`SequencerStepAccentEvery`, `SequencerStepColorMode`, `SequencerStepHue`,
+`SequencerMonophonicMode`, and `SequencerTapPreview`.
 
 Version `20` reinterprets the existing `DisplayPlayedNotes` byte from a boolean
 as `Off`/`Label`/`Number`; the persisted byte position did not move. Version
@@ -947,17 +946,19 @@ When enabled, Sequencer mode currently supports 32-step selection, selected-step
 note entry using tuning-relative `stepsFromC`, selected-step undo, hold-clear,
 step tools, sequencer LED overrides, and routed transport playback. Button `9`
 toggles an internal 16th-note clock. The sequencer-owned `Playback Settings`
-page exposes volatile `Steps`, `Direction`, `Tempo`, `Play Type`, and
-`Tap Preview` values. `Tempo` defaults to `120` BPM and ranges from `1` to
+page exposes `Steps`, `Direction`, `Tempo`, `Play Type`, `Tap Preview`, and
+`Monophonic`. `Tempo` defaults to `120` BPM and ranges from `1` to
 `255`; `Steps` defaults to `32` and ranges from `1` to `32`; `Direction`
 defaults to `Forward` and also supports `Backward`, `Ping-Pong`, `Random`,
 `Brownian`, and `Drunk`; `Play Type` defaults to `MIDI` and can route
 sequencer-managed notes to the onboard synth; `Tap Preview` defaults to `On`.
-The `Monophonic` setting is profile-backed and affects selected-step entry
-only: Off preserves chord toggle entry, while On removes an existing pressed
-pitch or replaces the selected step with one newly pressed pitch. Playback, tap
-preview, and lower-grid audition resolve pitch steps through the current tuning
-and transpose at note start. MIDI output uses the current MIDI routing and MPE
+`Steps`, `Direction`, `Tempo`, and `Play Type` are sequence-file data.
+`Tap Preview` and `Monophonic` are profile-backed; `Monophonic` affects
+selected-step entry only: Off preserves chord toggle entry, while On removes an
+existing pressed pitch or replaces the selected step with one newly pressed
+pitch. Playback, tap preview, and lower-grid audition resolve pitch steps
+through the current tuning and transpose at note start. MIDI output uses the
+current MIDI routing and MPE
 helpers. OB Synth output uses a sequencer output handle plus a synth
 preview-note API backed by hidden matrix slots `141..159`, preserving slot `140`
 for hardware detection and scaling preview voices by step/audition velocity.
@@ -978,9 +979,16 @@ and the current board palette color.
 
 Step tool modal state lives in `SequencerTools.*`; transport note lifetimes use
 bounded playback groups rather than a single active note list so overlength and
-tied steps can overlap later steps. Sequencer persistence, external sync, MIDI
-clock send, per-sequence Play Type storage, backup tools, and sequence-file
-storage remain intentionally absent.
+tied steps can overlap later steps. `SequencerStorage.*` owns `.hbseq`
+serialization under `/Sequences`, `/Sequences/.current`, title/dirty state, and
+startup restore after profile settings are synced. Saved files use
+`format=HBSEQ`, `version=3`, `noteFormat=stepsFromC`, ignore unknown keys, and
+clamp invalid values. `SequencerFileMenu.*` owns the current-folder browser,
+folder creation, rename/delete, and the naming overlay. It uses
+`VirtualListMenu` callbacks and repeated current-folder scans instead of keeping
+a tree-wide path list. External sync, MIDI clock/transport send, USB Backup,
+desktop backup scripts, and the performance monitor overlay remain intentionally
+absent.
 
 ## Input Interface And Panic Behavior
 

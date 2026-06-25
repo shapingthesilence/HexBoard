@@ -3,6 +3,7 @@
 #include "../config/FeatureFlags.h"
 
 #if HEXBOARD_ENABLE_SEQUENCER
+#include "SequencerFileMenu.h"
 #include "SequencerInput.h"
 #include "SequencerLightSettings.h"
 #include "SequencerPlaybackSettings.h"
@@ -233,6 +234,8 @@ void renderLedOverrides(SetLedPixelFn setLedPixel) {
       setLedPixel(keys[i].buttonIndex, blue);
     }
   }
+
+  renderFileMenuLedOverrides(setLedPixel);
 }
 
 }  // namespace sequencer

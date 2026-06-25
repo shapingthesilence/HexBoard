@@ -3,12 +3,14 @@
 #include "../config/FeatureFlags.h"
 
 #if HEXBOARD_ENABLE_SEQUENCER
+#include "SequencerFileMenu.h"
 #include "SequencerInput.h"
 #include "SequencerLightMenu.h"
 #include "SequencerManagedNotes.h"
 #include "SequencerOverlay.h"
 #include "SequencerPlaybackMenu.h"
 #include "SequencerState.h"
+#include "SequencerStorage.h"
 #include "SequencerTools.h"
 #include "SequencerTransport.h"
 #include "../menu/MenuAndDisplay.h"
@@ -18,6 +20,8 @@ namespace {
 
 bool sequencerMenuInstalled = false;
 bool sequencerActive = false;
+char sequencerTitleLabel[sequencer::kSequenceTitleLength] = "Sequencer";
+uint32_t sequencerTitleSeenVersion = 0;
 
 GEMPage& sequencerMenuPage() {
   static GEMPage page("Sequencer");
@@ -35,13 +39,29 @@ GEMItem& sequencerKeyboardAction() {
 }
 
 GEMItem& sequencerTitleRow() {
-  static GEMItem item("Step edit ready");
+  static GEMItem item(sequencerTitleLabel);
   return item;
 }
 
 GEMItem& sequencerShellStatusRow() {
   static GEMItem item("Hold 19 clears");
   return item;
+}
+
+void refreshSequencerTitleRow(bool redrawIfVisible = false) {
+  uint32_t titleVersion = sequencer::sequenceTitleVersion();
+  const char* title = sequencer::sequenceTitle();
+  if (titleVersion == sequencerTitleSeenVersion && strcmp(sequencerTitleLabel, title) == 0) {
+    return;
+  }
+
+  snprintf(sequencerTitleLabel, sizeof(sequencerTitleLabel), "%s", title);
+  sequencerTitleRow().setTitle(sequencerTitleLabel);
+  sequencerTitleSeenVersion = titleVersion;
+
+  if (redrawIfVisible && sequencerActive && menu.getCurrentMenuPage() == &sequencerMenuPage()) {
+    menu.drawMenu();
+  }
 }
 
 }  // namespace
@@ -58,12 +78,14 @@ bool sequencerModeActive() {
 void enterSequencerMode() {
 #if HEXBOARD_ENABLE_SEQUENCER
   sequencerActive = true;
+  sequencer::initializeSequenceStorage();
   sequencer::resetInputState();
   sequencer::resetToolsState();
   sequencer::resetOverlayState();
   panicStopOutput();
   screenTime = 0;
   menu.setMenuPageCurrent(sequencerMenuPage());
+  refreshSequencerTitleRow(false);
   menu.drawMenu();
 #endif
 }
@@ -85,6 +107,7 @@ void exitSequencerMode() {
 void serviceSequencerMode() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
+    refreshSequencerTitleRow(true);
     sequencer::serviceInput();
     sequencer::serviceTransport();
     sequencer::serviceManagedNotes();
@@ -92,9 +115,18 @@ void serviceSequencerMode() {
 #endif
 }
 
+void restoreSequencerAtStartup() {
+#if HEXBOARD_ENABLE_SEQUENCER
+  sequencer::restoreRememberedSequenceAtStartup();
+#endif
+}
+
 void handleSequencerButtonEvent(byte buttonIndex, bool pressed) {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
+    if (sequencer::handleFileMenuButtonEvent(buttonIndex, pressed)) {
+      return;
+    }
     sequencer::handleButtonEvent(buttonIndex, pressed);
   }
 #else
@@ -106,6 +138,9 @@ void handleSequencerButtonEvent(byte buttonIndex, bool pressed) {
 bool handleSequencerRotaryTurn(int8_t direction) {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
+    if (sequencer::handleFileMenuRotaryTurn(direction)) {
+      return true;
+    }
     return sequencer::handleRotaryTurn(direction);
   }
 #else
@@ -117,6 +152,9 @@ bool handleSequencerRotaryTurn(int8_t direction) {
 bool handleSequencerEncoderClick() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
+    if (sequencer::handleFileMenuEncoderClick()) {
+      return true;
+    }
     return sequencer::handleEncoderClick();
   }
 #endif
@@ -126,6 +164,10 @@ bool handleSequencerEncoderClick() {
 void drawSequencerModeDisplay() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
+    if (sequencer::fileNamingActive()) {
+      sequencer::drawFileMenuOverlay();
+      return;
+    }
     sequencer::drawSequencerOverlay();
   }
 #endif
@@ -139,8 +181,11 @@ void setupSequencerMenu() {
 
   GEMPage& page = sequencerMenuPage();
   page.addMenuItem(sequencerKeyboardAction());
+  sequencer::initializeSequenceStorage();
+  sequencer::setupSequenceFileMenu(page);
   sequencer::setupPlaybackSettingsMenu(page);
   sequencer::setupLightSettingsMenu(page);
+  refreshSequencerTitleRow(false);
   page.addMenuItem(sequencerTitleRow());
   page.addMenuItem(sequencerShellStatusRow());
   menuPageMain.addMenuItem(sequencerMenuAction());

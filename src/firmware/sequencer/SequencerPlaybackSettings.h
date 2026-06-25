@@ -49,5 +49,6 @@ byte& monophonicModeMutable();
 void normalizePlaybackSettings();
 void applyPlaybackPreferencesFromProfile();
 void persistMonophonicModeToProfile();
+void persistTapPreviewToProfile();
 
 }  // namespace sequencer

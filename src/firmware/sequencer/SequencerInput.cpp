@@ -7,6 +7,7 @@
 #include "SequencerOverlay.h"
 #include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
+#include "SequencerStorage.h"
 #include "SequencerTools.h"
 #include "SequencerTransport.h"
 #include "../app/DiagnosticsTiming.h"
@@ -198,6 +199,7 @@ void handleButtonEvent(byte buttonIndex, bool pressed) {
       byte target = static_cast<byte>(destinationStep);
       copyStep(static_cast<byte>(sourceStep), target);
       releasePlaybackForStep(target);
+      markSequenceDirty();
       stopPreviewNotes();
       selectStepForEditing(target, SequencerToolMode::ToolsPicker);
       if (tapPreview() == kTapPreviewOn) {
@@ -221,6 +223,7 @@ void handleButtonEvent(byte buttonIndex, bool pressed) {
     if (hasSelectedStep() && togglePitchOnSelectedStep(pitchSteps, replaceWithSingleNote)) {
       releasePlaybackForStep(static_cast<byte>(selectedStepIndex()));
       returnToNormalEditing();
+      markSequenceDirty();
       markOverlayDirty();
     }
   }
