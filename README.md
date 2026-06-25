@@ -14,13 +14,14 @@ You can [order a HexBoard](https://shapingthesilence.com/) if you are interested
 ## Documentation
 
 - [User Manual](docs/user-manual.md)
+- [Sequencer Manual](docs/sequencer-manual.md)
 - [MPE Microtonal Setup Guide](docs/mpe-microtonal-setup.md)
 - [Developer Guide](docs/developer-guide.md)
 - [Code Analysis](docs/code-analysis.md)
 - [Delegated Control Protocol](docs/delegated-control.md)
 - [Preset Sync SysEx Draft](docs/preset-sync-sysex.md)
 
-The user manual is for players and owners of the device. The MPE setup guide is for configuring DAWs, plugins, and synths for HexBoard's microtonal MIDI output. The developer guide is for people editing the firmware in this repository.
+The user manual is for players and owners of the device. The sequencer manual covers the optional in-port sequencer. The MPE setup guide is for configuring DAWs, plugins, and synths for HexBoard's microtonal MIDI output. The developer guide is for people editing the firmware in this repository.
 
 ## Repository Layout
 
@@ -140,15 +141,8 @@ make HEXBOARD_ENABLE_SEQUENCER=1
 That flag enables the in-port Sequencer mode foundation: mode entry/exit,
 32-step selection/deselection, basic tuning-relative note entry, confirm-hold
 step clear, sequencer-owned step/function LEDs, and basic MIDI transport
-playback. Button `9` toggles an internal 120 BPM forward transport across all
-32 steps, with each step lasting one 16th note. Programmed steps emit their
-stored pitch-step notes through the current tuning, transpose, MIDI routing, and
-MPE settings; empty steps advance silently. Button `9` is red when stopped and
-green when playing, and the current play step is highlighted even when it is
-empty. Persistence, storage/browser flows, settings schema changes, external
-MIDI sync, MIDI clock/transport send, onboard synth sequencer playback, preview
-or audition sound, direction modes, probability, ties, and tools are not enabled
-yet.
+playback. See the [Sequencer Manual](docs/sequencer-manual.md) for current
+sequencer behavior and the features still being ported.
 
 Builds keep the flashable file named `HexBoard.ino.uf2`, with separate output
 folders for the default and sequencer-enabled variants:
