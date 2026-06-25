@@ -275,9 +275,13 @@ void markOverlayDirty() {
 }
 
 void hideSelectedStepOverlay() {
+  bool wasVisible = overlayVisible;
   overlayVisible = false;
   overlayDirty = false;
-  menu.drawMenu();
+  if (wasVisible) {
+    u8g2.clearBuffer();
+    u8g2.sendBuffer();
+  }
 }
 
 void resetOverlayState() {

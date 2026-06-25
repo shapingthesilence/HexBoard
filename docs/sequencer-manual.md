@@ -23,9 +23,9 @@ tuning-relative notes into that step. Each step can hold up to `6` notes.
 
 Button `9` is Play/Stop. A short press starts and stops local playback. If a
 step is selected, the short press first closes that selected-step edit focus,
-then toggles transport. Playback runs through the active step range, and each
-step is one 16th note. Open `Playback Settings` from the Sequencer page to edit
-these playback controls:
+blanking the sequencer display, then toggles transport. Playback runs through
+the active step range, and each step is one 16th note. Open `Playback Settings`
+from the Sequencer page to edit these playback controls:
 
 - `Steps`: active loop length, `1` through `32`, default `32`.
 - `Direction`: `Forward`, `Backward`, `Ping-Pong`, `Random`, `Brownian`, or
@@ -146,11 +146,15 @@ area stays on one line when labels fit and wraps to a second line when needed.
 `12 EDO` labels use familiar names such as `C3`; other tunings use numeric
 `step.octave` labels.
 
+Pressing the selected step pad again closes edit focus and blanks the sequencer
+display instead of returning to the Sequencer menu. The next step selection,
+Overview, Tools, or menu action draws its normal screen.
+
 Turning the encoder while a step is selected changes that step's length through
 the quick choices `0`, `25`, `50`, `75`, `100`, `150`, `200`, `250`, `300`,
 `350`, `400`, `500`, `600`, `700`, `800`, `900`, and `1000` percent. Pressing
-the encoder while a step is selected deselects the step and returns to the
-normal Sequencer menu view.
+the encoder while a step is selected deselects the step and blanks the
+sequencer display.
 
 Button `19` is the blue action key. A short press restores the selected step to
 the state it had when selected, including notes, length, velocity, probability,
