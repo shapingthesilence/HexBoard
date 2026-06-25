@@ -8,6 +8,7 @@
 #include "SequencerLightMenu.h"
 #include "SequencerManagedNotes.h"
 #include "SequencerOverlay.h"
+#include "SequencerPerformanceMonitor.h"
 #include "SequencerPlaybackMenu.h"
 #include "SequencerState.h"
 #include "SequencerStorage.h"
@@ -141,6 +142,9 @@ bool handleSequencerRotaryTurn(int8_t direction) {
     if (sequencer::handleFileMenuRotaryTurn(direction)) {
       return true;
     }
+    if (sequencer::performanceMonitorActive()) {
+      return true;
+    }
     return sequencer::handleRotaryTurn(direction);
   }
 #else
@@ -153,6 +157,9 @@ bool handleSequencerEncoderClick() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
     if (sequencer::handleFileMenuEncoderClick()) {
+      return true;
+    }
+    if (sequencer::performanceMonitorActive()) {
       return true;
     }
     return sequencer::handleEncoderClick();

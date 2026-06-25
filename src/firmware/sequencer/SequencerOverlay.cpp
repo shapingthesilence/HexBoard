@@ -3,6 +3,7 @@
 #include "../config/FeatureFlags.h"
 
 #if HEXBOARD_ENABLE_SEQUENCER
+#include "SequencerPerformanceMonitor.h"
 #include "SequencerState.h"
 #include "SequencerTools.h"
 #include "../app/DiagnosticsTiming.h"
@@ -95,6 +96,60 @@ void fillOverlayNoteLines(const SequencerStep& target, char* lineOne, size_t lin
   }
 }
 
+void keepOverlayDisplayAwake() {
+  screenTime = 0;
+  if (::screenSaverOn) {
+    ::screenSaverOn = false;
+    u8g2.setContrast(CONTRAST_AWAKE);
+  }
+}
+
+void drawPerformanceMonitorOverlay() {
+  refreshPerformanceMonitorStats(false);
+  const SequencerPerformanceSnapshot& stats = performanceMonitorSnapshot();
+
+  char cpuLine[20];
+  char memoryLine[24];
+  char storageLine[24];
+  char midiQueueLine[20];
+  char midiStateLine[24];
+  char usedLabel[10];
+  char totalLabel[10];
+
+  snprintf(cpuLine, sizeof(cpuLine), "AudioEng %u%%", static_cast<unsigned>(stats.audioEnginePercent));
+
+  formatPerformanceMonitorByteLabel(stats.heapUsedBytes, usedLabel, sizeof(usedLabel));
+  formatPerformanceMonitorByteLabel(stats.heapTotalBytes, totalLabel, sizeof(totalLabel));
+  snprintf(memoryLine, sizeof(memoryLine), "Mem %s/%s", usedLabel, totalLabel);
+
+  if (stats.storageAvailable) {
+    formatPerformanceMonitorByteLabel(stats.storageUsedBytes, usedLabel, sizeof(usedLabel));
+    formatPerformanceMonitorByteLabel(stats.storageTotalBytes, totalLabel, sizeof(totalLabel));
+    snprintf(storageLine, sizeof(storageLine), "FS  %s/%s", usedLabel, totalLabel);
+  } else {
+    snprintf(storageLine, sizeof(storageLine), "FS  unavailable");
+  }
+
+  snprintf(midiQueueLine, sizeof(midiQueueLine), "MIDI Q %u", static_cast<unsigned>(stats.midi.pendingBytes));
+  snprintf(midiStateLine,
+           sizeof(midiStateLine),
+           "Drop %u Late %u",
+           static_cast<unsigned>(stats.midi.droppedBacklogEpisodes),
+           static_cast<unsigned>(stats.midi.lateBacklogEpisodes));
+
+  overlayVisible = true;
+  overlayDirty = false;
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x13_tf);
+  u8g2.drawStr(8, 16, cpuLine);
+  u8g2.drawStr(8, 36, memoryLine);
+  u8g2.drawStr(8, 56, storageLine);
+  u8g2.drawStr(8, 76, midiQueueLine);
+  u8g2.drawStr(8, 96, midiStateLine);
+  u8g2.sendBuffer();
+}
+
 }  // namespace
 
 void markOverlayDirty() {
@@ -110,10 +165,17 @@ void hideSelectedStepOverlay() {
 void resetOverlayState() {
   overlayVisible = false;
   overlayDirty = true;
+  resetPerformanceMonitorState();
 }
 
 void drawSequencerOverlay() {
   SequencerToolMode mode = toolMode();
+
+  if (performanceMonitorActive()) {
+    keepOverlayDisplayAwake();
+    drawPerformanceMonitorOverlay();
+    return;
+  }
 
   if (!hasSelectedStep() && mode != SequencerToolMode::StatusMessage) {
     if (overlayVisible) {
@@ -126,11 +188,7 @@ void drawSequencerOverlay() {
     return;
   }
 
-  screenTime = 0;
-  if (::screenSaverOn) {
-    ::screenSaverOn = false;
-    u8g2.setContrast(CONTRAST_AWAKE);
-  }
+  keepOverlayDisplayAwake();
 
   char headerLabel[20];
   char infoLine[32];

@@ -96,7 +96,9 @@ a Sequencer mode foundation with mode entry/exit, 32-step selection/deselection,
 basic tuning-relative note entry, confirm-hold selected-step clear,
 selected-step undo, step tools, sequencer-owned step/function LED rendering,
 and routed transport playback with per-step length, velocity, probability, and
-Tie semantics. Button `9` toggles the local transport. The Sequencer page links
+Tie semantics. Button `9` is Play/Stop: a short press closes selected-step edit
+focus when needed and toggles local transport, while a roughly two-second hold
+opens the temporary Performance Monitor overlay until release. The Sequencer page links
 to `Playback Settings`, where `Steps`, `Direction`, `Tempo`, `Play Type`,
 `MIDI Sync`, and `Tap Preview` are edited. `Tempo` defaults to `120` and ranges from `1` to
 `255`; each step is one 16th note. `MIDI Sync` contains `Clock Source`, `Send Clock`,
@@ -128,11 +130,14 @@ hidden matrix slots `141..159`, leaving slot `140` reserved for hardware
 detection. Empty, zero-length, probability-skipped, and unsupported tied
 playback steps advance silently. A sequencer-owned overlay renders selected-step
 `Edit #NN`, tool picker, exact length/velocity/probability, copy target,
-temporary status, and clear feedback screens. Tied steps display `T` instead of
-note labels in selected-step and tool overlays. Button `9` is red when stopped
-and green when playing, and the current active play step is highlighted even
-when empty. Selected-step blink gates the step fully off before normal
-empty/programmed color rendering. `Seq Lights` rendering uses the board
+temporary status, clear feedback screens, and the diagnostic-only Performance
+Monitor. The monitor samples existing ISR profile data, heap/storage usage, and
+MIDI input backlog counters; it is not persisted in settings or sequence files.
+Tied steps display `T` instead of note labels in selected-step and tool
+overlays. Button `9` is red when stopped and green when playing, and the
+current active play step is highlighted even when empty. Selected-step blink
+gates the step fully off before normal empty/programmed color rendering.
+`Seq Lights` rendering uses the board
 palette's base hue/saturation cache for `Step Color = Note`, then applies
 sequencer brightness in linear RGB before a single gamma pass.
 
@@ -155,8 +160,7 @@ folder creation, rename/delete, and naming overlay. The browser uses
 `VirtualListMenu` callbacks over the current folder, caches only folder counts
 and the visible row window, and does not keep a tree-wide sequence list in RAM.
 
-MIDI clock/transport send, USB Backup, desktop backup scripts, and the
-performance monitor overlay are intentionally not present yet.
+USB Backup and desktop backup scripts are intentionally not present yet.
 
 ### Web App Tooling
 

@@ -5,6 +5,7 @@
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerManagedNotes.h"
 #include "SequencerOverlay.h"
+#include "SequencerPerformanceMonitor.h"
 #include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
 #include "SequencerStorage.h"
@@ -20,9 +21,13 @@ namespace {
 constexpr byte kConfirmClearButtonIndex = 19;
 constexpr byte kTransportButtonIndex = 9;
 constexpr uint64_t kClearHoldMicros = 1000000ULL;
+constexpr uint64_t kPerformanceHoldMicros = 2000000ULL;
 
 bool confirmHeld = false;
 uint64_t confirmPressedAt = 0;
+bool transportHeld = false;
+bool transportHoldConsumed = false;
+uint64_t transportPressedAt = 0;
 
 bool buttonPitchSteps(byte buttonIndex, int16_t& pitchSteps) {
   if (buttonIndex >= LED_COUNT) {
@@ -100,20 +105,60 @@ bool confirmClearHeld() {
 void resetInputState() {
   confirmHeld = false;
   confirmPressedAt = 0;
+  transportHeld = false;
+  transportHoldConsumed = false;
+  transportPressedAt = 0;
+  if (performanceMonitorActive()) {
+    hidePerformanceMonitor();
+    markOverlayDirty();
+  }
 }
 
 void serviceInput() {
   serviceTools();
-  if (!confirmHeld || !hasSelectedStep()) {
-    return;
+
+  if (transportHeld && transportPressedAt != 0 && !transportHoldConsumed) {
+    uint64_t heldMicros = runTime - transportPressedAt;
+    if (heldMicros >= kPerformanceHoldMicros) {
+      showPerformanceMonitor();
+      transportHoldConsumed = true;
+      markOverlayDirty();
+    }
   }
-  if ((runTime - confirmPressedAt) >= kClearHoldMicros) {
+
+  if (confirmHeld && hasSelectedStep() && (runTime - confirmPressedAt) >= kClearHoldMicros) {
     clearSelectedStepForHold();
-    resetInputState();
+    confirmHeld = false;
+    confirmPressedAt = 0;
   }
 }
 
 void handleButtonEvent(byte buttonIndex, bool pressed) {
+  if (buttonIndex == kTransportButtonIndex) {
+    if (pressed) {
+      transportHeld = true;
+      transportHoldConsumed = false;
+      transportPressedAt = runTime;
+    } else {
+      bool showedPerformanceMonitor = performanceMonitorActive() || transportHoldConsumed;
+      transportHeld = false;
+      transportHoldConsumed = false;
+      transportPressedAt = 0;
+      if (showedPerformanceMonitor) {
+        hidePerformanceMonitor();
+        markOverlayDirty();
+      } else {
+        if (hasSelectedStep()) {
+          deselectSelectedStep();
+        }
+        toggleTransport();
+      }
+    }
+    confirmHeld = false;
+    confirmPressedAt = 0;
+    return;
+  }
+
   if (!pressed) {
     if (buttonIndex == kConfirmClearButtonIndex) {
       if (confirmHeld && hasSelectedStep()) {
@@ -128,9 +173,7 @@ void handleButtonEvent(byte buttonIndex, bool pressed) {
     return;
   }
 
-  if (buttonIndex == kTransportButtonIndex) {
-    toggleTransport();
-    resetInputState();
+  if (performanceMonitorActive()) {
     return;
   }
 

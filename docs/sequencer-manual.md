@@ -21,9 +21,11 @@ The current sequencer is a simple 32-step sequencer with MIDI or onboard synth
 output. Select a step pad, then press playable note keys to enter
 tuning-relative notes into that step. Each step can hold up to `6` notes.
 
-Button `9` starts and stops local playback. Playback runs through the active
-step range, and each step is one 16th note. Open `Playback Settings` from the
-Sequencer page to edit these playback controls:
+Button `9` is Play/Stop. A short press starts and stops local playback. If a
+step is selected, the short press first closes that selected-step edit focus,
+then toggles transport. Playback runs through the active step range, and each
+step is one 16th note. Open `Playback Settings` from the Sequencer page to edit
+these playback controls:
 
 - `Steps`: active loop length, `1` through `32`, default `32`.
 - `Direction`: `Forward`, `Backward`, `Ping-Pong`, `Random`, `Brownian`, or
@@ -53,6 +55,23 @@ not advance steps while External MIDI clock is selected.
 sequencer step while local transport is running, and `Send Transport` makes
 local Play/Stop send MIDI Start/Stop. External MIDI transport receive does not
 echo outbound realtime messages.
+
+Hold Play/Stop for about two seconds to show the temporary Performance Monitor.
+It stays visible only while Play/Stop remains held, does not toggle transport
+when the hold is consumed, and returns to the previous sequencer view when
+released. File Management and naming screens remain modal, so this gesture does
+not run while those workflows are active.
+
+The Performance Monitor shows:
+
+- `AudioEng`: approximate audio engine load percentage from the existing audio
+  ISR profile.
+- `Mem`: heap used versus total heap.
+- `FS`: LittleFS used versus total storage, or `FS  unavailable` when storage
+  information cannot be read.
+- `MIDI Q`: current pending incoming MIDI bytes.
+- `Drop` and `Late`: receive-stress episode counters for MIDI backlog pressure,
+  not exact hardware packet-loss counters.
 
 Open `Seq Lights` from the Sequencer page to edit three profile-backed light
 preferences:
@@ -215,6 +234,5 @@ overlay messages, active note handles, transport timing, dirty state,
 
 ## Not Yet Ported
 
-The current sequencer slice does not include MIDI clock send, MIDI transport
-send, USB Backup, desktop backup scripts or launchers, or the performance
-monitor overlay.
+The current sequencer slice does not include USB Backup or desktop backup
+scripts and launchers.

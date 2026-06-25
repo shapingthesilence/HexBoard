@@ -951,7 +951,9 @@ The `Buzzer` toggle is inserted only on hardware `V1.2`.
 When enabled, Sequencer mode currently supports 32-step selection, selected-step
 note entry using tuning-relative `stepsFromC`, selected-step undo, hold-clear,
 step tools, sequencer LED overrides, and routed transport playback. Button `9`
-toggles the local transport. The sequencer-owned `Playback Settings`
+is Play/Stop: a short press closes selected-step edit focus when needed and
+toggles the local transport, while a roughly two-second hold opens the
+temporary Performance Monitor until release. The sequencer-owned `Playback Settings`
 page exposes `Steps`, `Direction`, `Tempo`, `Play Type`, `MIDI Sync`,
 `Tap Preview`, and `Monophonic`. `MIDI Sync` contains `Clock Source`, `Send Clock`,
 and `Send Transport`. `Tempo` defaults to `120` BPM and ranges from `1` to
@@ -983,8 +985,11 @@ step boundary, and Tie extends the nearest earlier active source from the same
 pattern pass without wrapping across the loop boundary. A sequencer-owned
 overlay renders `Edit #NN`, the Step Tools picker, exact
 length/velocity/probability editors, copy target, temporary status, and clear
-feedback screens. Tied steps show `T` instead of note labels in edit/tool
-overlays. Step LEDs outside the active step range remain off, and selected-step
+feedback screens. `SequencerPerformanceMonitor.*` owns the diagnostic-only
+Performance Monitor snapshot, formatting, and profiler lifecycle; drawing stays
+inside the sequencer overlay path. MIDI backlog stats are exposed through a
+narrow `MidiInput` monitor snapshot and remain observational only. Tied steps
+show `T` instead of note labels in edit/tool overlays. Step LEDs outside the active step range remain off, and selected-step
 blink gates selected steps fully off before normal empty/programmed color
 rendering. The `Seq Lights` page stores `Accent Every`, `Step Color`, and
 `Step Hue` in the active profile. Programmed steps use medium, high, or highest
@@ -1001,9 +1006,8 @@ startup restore after profile settings are synced. Saved files use
 clamp invalid values. `SequencerFileMenu.*` owns the current-folder browser,
 folder creation, rename/delete, and the naming overlay. It uses
 `VirtualListMenu` callbacks with cached current-folder counts and an 8-row
-visible-window cache instead of keeping a tree-wide path list. MIDI
-clock/transport send, USB Backup, desktop backup scripts, and the performance
-monitor overlay remain intentionally absent.
+visible-window cache instead of keeping a tree-wide path list. USB Backup and
+desktop backup scripts remain intentionally absent.
 
 ## Input Interface And Panic Behavior
 
