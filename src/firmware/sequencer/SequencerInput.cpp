@@ -19,6 +19,7 @@ namespace sequencer {
 namespace {
 
 constexpr byte kConfirmClearButtonIndex = 19;
+constexpr byte kOverviewButtonIndex = 18;
 constexpr byte kTransportButtonIndex = 9;
 constexpr uint64_t kClearHoldMicros = 1000000ULL;
 constexpr uint64_t kPerformanceHoldMicros = 2000000ULL;
@@ -120,6 +121,7 @@ void serviceInput() {
   if (transportHeld && transportPressedAt != 0 && !transportHoldConsumed) {
     uint64_t heldMicros = runTime - transportPressedAt;
     if (heldMicros >= kPerformanceHoldMicros) {
+      hideOverview();
       showPerformanceMonitor();
       transportHoldConsumed = true;
       markOverlayDirty();
@@ -149,6 +151,7 @@ void handleButtonEvent(byte buttonIndex, bool pressed) {
         markOverlayDirty();
       } else {
         if (hasSelectedStep()) {
+          hideOverview();
           deselectSelectedStep();
         }
         toggleTransport();
@@ -178,6 +181,7 @@ void handleButtonEvent(byte buttonIndex, bool pressed) {
   }
 
   if (buttonIndex == kToolsButtonIndex) {
+    hideOverview();
     if (!cancelCurrentToolEdit()) {
       openToolsForSelectedStep();
     }
@@ -188,6 +192,10 @@ void handleButtonEvent(byte buttonIndex, bool pressed) {
   if (toolMode() == SequencerToolMode::StatusMessage && toolModeSuppressesNoteEntry()) {
     extendToolsStatusMessage();
     return;
+  }
+
+  if (overviewActive() && buttonIndex != kOverviewButtonIndex) {
+    hideOverview();
   }
 
   if (buttonIndex == kConfirmClearButtonIndex) {
@@ -249,6 +257,12 @@ void handleButtonEvent(byte buttonIndex, bool pressed) {
         previewStep(target);
       }
     }
+    return;
+  }
+
+  if (buttonIndex == kOverviewButtonIndex) {
+    showOverviewPage(overviewActive());
+    resetInputState();
     return;
   }
 

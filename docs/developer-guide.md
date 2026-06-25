@@ -130,13 +130,16 @@ hidden matrix slots `141..159`, leaving slot `140` reserved for hardware
 detection. Empty, zero-length, probability-skipped, and unsupported tied
 playback steps advance silently. A sequencer-owned overlay renders selected-step
 `Edit #NN`, tool picker, exact length/velocity/probability, copy target,
-temporary status, clear feedback screens, and the diagnostic-only Performance
-Monitor. The monitor samples existing ISR profile data, heap/storage usage, and
-MIDI input backlog counters; it is not persisted in settings or sequence files.
+temporary status, clear feedback screens, the packed 32-step Overview screen,
+and the diagnostic-only Performance Monitor. The monitor samples existing ISR
+profile data, heap/storage usage, and MIDI input backlog counters; it is not
+persisted in settings or sequence files.
 Tied steps display `T` instead of note labels in selected-step and tool
 overlays. Button `9` is red when stopped and green when playing, and the
-current active play step is highlighted even when empty. Selected-step blink
-gates the step fully off before normal empty/programmed color rendering.
+Overview utility button `18` is medium white idle and brighter white while the
+Overview is active. The current active play step is highlighted even when empty.
+Selected-step blink gates the step fully off before normal empty/programmed
+color rendering.
 `Seq Lights` rendering uses the board
 palette's base hue/saturation cache for `Step Color = Note`, then applies
 sequencer brightness in linear RGB before a single gamma pass.

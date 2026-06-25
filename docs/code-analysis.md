@@ -985,14 +985,19 @@ step boundary, and Tie extends the nearest earlier active source from the same
 pattern pass without wrapping across the loop boundary. A sequencer-owned
 overlay renders `Edit #NN`, the Step Tools picker, exact
 length/velocity/probability editors, copy target, temporary status, and clear
-feedback screens. `SequencerPerformanceMonitor.*` owns the diagnostic-only
-Performance Monitor snapshot, formatting, and profiler lifecycle; drawing stays
+feedback screens, plus a packed Overview screen that pages through the full
+32-step pattern using button `18`. `SequencerPerformanceMonitor.*` owns the
+diagnostic-only Performance Monitor snapshot, formatting, and profiler
+lifecycle; drawing stays
 inside the sequencer overlay path. MIDI backlog stats are exposed through a
 narrow `MidiInput` monitor snapshot and remain observational only. Tied steps
-show `T` instead of note labels in edit/tool overlays. Step LEDs outside the active step range remain off, and selected-step
+show `T` instead of note labels in edit/tool overlays. Step LEDs outside the
+active step range remain off, and selected-step
 blink gates selected steps fully off before normal empty/programmed color
-rendering. The `Seq Lights` page stores `Accent Every`, `Step Color`, and
-`Step Hue` in the active profile. Programmed steps use medium, high, or highest
+rendering. Button `18` is a white utility LED, medium while idle and brighter
+while the Overview is active. The `Seq Lights` page stores `Accent Every`,
+`Step Color`, and `Step Hue` in the active profile. Programmed steps use
+medium, high, or highest
 brightness; accents alter brightness only. `Step Color = Regular` uses the
 chosen named hue, while `Step Color = Note` uses the step's lowest stored pitch
 and the current board palette color.

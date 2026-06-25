@@ -107,6 +107,28 @@ transport playback only; tap preview ignores probability. Tied steps stay
 silent during tap preview because transport treats them as continuations rather
 than new note starts.
 
+Button `18`, the 9th key on the second row, opens the Overview screen. The
+Overview has no title bar and packs as many steps as fit on the OLED at once:
+
+```text
+01 C4 E4 G4
+   B4 D5 F5
+02 _
+03 A2 C3 E3
+04 T
+```
+
+Press button `18` again while the Overview is open to advance to the next
+packed page; repeated presses cycle through the full 32-step pattern and wrap
+back to step `1`. Empty steps show `_`, tied steps show `T`, and chord notes
+display low-to-high. A chord stays on one line when the note labels fit and
+continues on a second indented line only when needed. In `12 EDO`, note labels
+use names such as `C4`; other tunings use `step.octave` labels such as `7.4`.
+Pressing a step pad or lower note-entry key hides the Overview first, then
+continues the normal selection, tap-preview, audition, or note-edit action.
+Button `18` stays medium white while idle and becomes brighter white while the
+Overview is open.
+
 Selecting a step shows a compact Edit overlay:
 
 - `Edit #NN`

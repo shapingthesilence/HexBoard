@@ -18,10 +18,18 @@ namespace sequencer {
 namespace {
 
 constexpr uint8_t kOverlayUsableWidthPixels = 116;
+constexpr uint8_t kOverviewUsableWidthPixels = 124;
+constexpr int kOverviewFirstLineY = 12;
+constexpr int kOverviewMaxBaselineY = 120;
+constexpr int kOverviewSecondLineOffset = 12;
+constexpr int kOverviewSingleStepAdvance = 14;
+constexpr int kOverviewDoubleStepAdvance = 24;
 constexpr byte kNoteLineSize = 24;
 
 bool overlayVisible = false;
 bool overlayDirty = true;
+bool overviewShown = false;
+byte overviewStartStep = 0;
 
 const char* const kChromaticNames[12] = {
   "C", "C#", "D", "Eb", "E", "F",
@@ -73,6 +81,26 @@ bool appendOverlayLabelToLine(char* line, size_t lineSize, const char* label) {
   return true;
 }
 
+bool appendOverviewLabelToLine(char* line, size_t lineSize, const char* label) {
+  if (line == nullptr || lineSize == 0 || label == nullptr || label[0] == '\0') {
+    return false;
+  }
+
+  char candidate[kNoteLineSize];
+  snprintf(candidate, sizeof(candidate), "%s%s%s", line, (line[0] != '\0') ? " " : "", label);
+  if (strlen(candidate) >= lineSize) {
+    return false;
+  }
+
+  u8g2.setFont(u8g2_font_6x13_tf);
+  if (u8g2.getStrWidth(candidate) > kOverviewUsableWidthPixels) {
+    return false;
+  }
+
+  snprintf(line, lineSize, "%s", candidate);
+  return true;
+}
+
 void fillOverlayNoteLines(const SequencerStep& target, char* lineOne, size_t lineOneSize, char* lineTwo, size_t lineTwoSize) {
   lineOne[0] = '\0';
   lineTwo[0] = '\0';
@@ -94,6 +122,68 @@ void fillOverlayNoteLines(const SequencerStep& target, char* lineOne, size_t lin
       appendOverlayLabelToLine(lineTwo, lineTwoSize, noteLabel);
     }
   }
+}
+
+void fillOverviewStepLines(byte stepIndex, char* lineOne, size_t lineOneSize, char* lineTwo, size_t lineTwoSize) {
+  if (lineOne == nullptr || lineTwo == nullptr || lineOneSize == 0 || lineTwoSize == 0) {
+    return;
+  }
+
+  lineOne[0] = '\0';
+  lineTwo[0] = '\0';
+  if (stepIndex >= kStepCount) {
+    return;
+  }
+
+  const SequencerStep& target = step(stepIndex);
+  if (target.tie) {
+    snprintf(lineOne, lineOneSize, "%02u T", static_cast<unsigned>(stepIndex + 1));
+    return;
+  }
+
+  if (target.noteCount == 0) {
+    snprintf(lineOne, lineOneSize, "%02u _", static_cast<unsigned>(stepIndex + 1));
+    return;
+  }
+
+  snprintf(lineOne, lineOneSize, "%02u", static_cast<unsigned>(stepIndex + 1));
+
+  char noteLabel[12];
+  for (byte i = 0; i < target.noteCount && i < kMaxNotesPerStep; ++i) {
+    formatStepNoteLabel(target.pitchSteps[i], noteLabel, sizeof(noteLabel));
+    if (!appendOverviewLabelToLine(lineOne, lineOneSize, noteLabel)) {
+      if (lineTwo[0] == '\0') {
+        snprintf(lineTwo, lineTwoSize, "   ");
+      }
+      appendOverviewLabelToLine(lineTwo, lineTwoSize, noteLabel);
+    }
+  }
+}
+
+byte countOverviewStepsThatFit(byte firstStep) {
+  if (firstStep >= kStepCount) {
+    return 0;
+  }
+
+  u8g2.setFont(u8g2_font_6x13_tf);
+  int y = kOverviewFirstLineY;
+  byte count = 0;
+  char lineOne[kNoteLineSize];
+  char lineTwo[kNoteLineSize];
+
+  for (byte stepIndex = firstStep; stepIndex < kStepCount; ++stepIndex) {
+    fillOverviewStepLines(stepIndex, lineOne, sizeof(lineOne), lineTwo, sizeof(lineTwo));
+    bool usesSecondLine = lineTwo[0] != '\0';
+    int lastBaseline = usesSecondLine ? (y + kOverviewSecondLineOffset) : y;
+    if (lastBaseline > kOverviewMaxBaselineY) {
+      break;
+    }
+
+    ++count;
+    y += usesSecondLine ? kOverviewDoubleStepAdvance : kOverviewSingleStepAdvance;
+  }
+
+  return (count > 0) ? count : 1;
 }
 
 void keepOverlayDisplayAwake() {
@@ -150,6 +240,34 @@ void drawPerformanceMonitorOverlay() {
   u8g2.sendBuffer();
 }
 
+void drawOverviewOverlay() {
+  overlayVisible = true;
+  overlayDirty = false;
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x13_tf);
+
+  int y = kOverviewFirstLineY;
+  char lineOne[kNoteLineSize];
+  char lineTwo[kNoteLineSize];
+  for (byte stepIndex = overviewStartStep; stepIndex < kStepCount; ++stepIndex) {
+    fillOverviewStepLines(stepIndex, lineOne, sizeof(lineOne), lineTwo, sizeof(lineTwo));
+    bool usesSecondLine = lineTwo[0] != '\0';
+    int lastBaseline = usesSecondLine ? (y + kOverviewSecondLineOffset) : y;
+    if (lastBaseline > kOverviewMaxBaselineY) {
+      break;
+    }
+
+    u8g2.drawStr(4, y, lineOne);
+    if (usesSecondLine) {
+      u8g2.drawStr(4, y + kOverviewSecondLineOffset, lineTwo);
+    }
+    y += usesSecondLine ? kOverviewDoubleStepAdvance : kOverviewSingleStepAdvance;
+  }
+
+  u8g2.sendBuffer();
+}
+
 }  // namespace
 
 void markOverlayDirty() {
@@ -165,7 +283,41 @@ void hideSelectedStepOverlay() {
 void resetOverlayState() {
   overlayVisible = false;
   overlayDirty = true;
+  overviewShown = false;
+  overviewStartStep = 0;
   resetPerformanceMonitorState();
+}
+
+bool overviewActive() {
+  return overviewShown;
+}
+
+void showOverviewPage(bool advancePage) {
+  if (advancePage && overviewShown) {
+    byte displayedCount = countOverviewStepsThatFit(overviewStartStep);
+    byte nextStart = static_cast<byte>(overviewStartStep + displayedCount);
+    overviewStartStep = (nextStart < kStepCount) ? nextStart : 0;
+  } else {
+    overviewStartStep = 0;
+  }
+
+  overviewShown = true;
+  overlayVisible = false;
+  overlayDirty = true;
+}
+
+void hideOverview() {
+  if (!overviewShown) {
+    return;
+  }
+
+  overviewShown = false;
+  overviewStartStep = 0;
+  overlayVisible = false;
+  overlayDirty = true;
+  if (!hasSelectedStep() && toolMode() == SequencerToolMode::Normal) {
+    menu.drawMenu();
+  }
 }
 
 void drawSequencerOverlay() {
@@ -174,6 +326,15 @@ void drawSequencerOverlay() {
   if (performanceMonitorActive()) {
     keepOverlayDisplayAwake();
     drawPerformanceMonitorOverlay();
+    return;
+  }
+
+  if (overviewShown) {
+    if (!overlayDirty && overlayVisible) {
+      return;
+    }
+    keepOverlayDisplayAwake();
+    drawOverviewOverlay();
     return;
   }
 
@@ -410,6 +571,16 @@ void hideSelectedStepOverlay() {
 }
 
 void resetOverlayState() {
+}
+
+bool overviewActive() {
+  return false;
+}
+
+void showOverviewPage(bool /*advancePage*/) {
+}
+
+void hideOverview() {
 }
 
 void drawSequencerOverlay() {

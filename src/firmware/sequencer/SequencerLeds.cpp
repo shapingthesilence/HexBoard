@@ -6,6 +6,7 @@
 #include "SequencerFileMenu.h"
 #include "SequencerInput.h"
 #include "SequencerLightSettings.h"
+#include "SequencerOverlay.h"
 #include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
 #include "SequencerTools.h"
@@ -185,6 +186,7 @@ void renderLedOverrides(SetLedPixelFn setLedPixel) {
 
   neutralizeOwnedGuards(setLedPixel);
   setLedPixel(kTransportGuardButtonIndex, transportRunning() ? runningTransportColor() : stoppedTransportColor());
+  setLedPixel(kOverviewGuardButtonIndex, utilityWhiteColor(overviewActive()));
 
   byte activeSteps = activeStepCount();
   for (byte stepIndex = 0; stepIndex < kStepCount; ++stepIndex) {
