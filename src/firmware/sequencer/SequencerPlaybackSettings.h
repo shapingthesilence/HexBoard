@@ -20,14 +20,20 @@ constexpr byte kDirectionBrownian = 4;
 constexpr byte kDirectionDrunk = 5;
 constexpr byte kDirectionDefault = kDirectionForward;
 
+constexpr byte kTapPreviewOff = 0;
+constexpr byte kTapPreviewOn = 1;
+constexpr byte kTapPreviewDefault = kTapPreviewOn;
+
 byte playbackTempo();
 byte activeStepCount();
 byte playbackDirection();
+byte tapPreview();
 uint64_t playbackStepDurationMicros();
 
 byte& playbackTempoMutable();
 byte& activeStepCountMutable();
 byte& playbackDirectionMutable();
+byte& tapPreviewMutable();
 void normalizePlaybackSettings();
 
 }  // namespace sequencer

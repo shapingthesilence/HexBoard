@@ -3,6 +3,8 @@
 #include "../config/FeatureFlags.h"
 
 #if HEXBOARD_ENABLE_SEQUENCER
+#include "SequencerManagedNotes.h"
+#include "SequencerOverlay.h"
 #include "SequencerPlaybackSettings.h"
 #include "SequencerTransport.h"
 
@@ -45,6 +47,12 @@ SelectOptionByte directionOptions[] = {
 };
 GEMSelect directionSelect(sizeof(directionOptions) / sizeof(SelectOptionByte), directionOptions);
 
+SelectOptionByte tapPreviewOptions[] = {
+  { "Off", kTapPreviewOff },
+  { "On", kTapPreviewOn }
+};
+GEMSelect tapPreviewSelect(sizeof(tapPreviewOptions) / sizeof(SelectOptionByte), tapPreviewOptions);
+
 void playbackTempoChanged() {
   normalizePlaybackSettings();
   handlePlaybackSettingsChanged(false);
@@ -60,6 +68,12 @@ void playbackDirectionChanged() {
   handlePlaybackSettingsChanged(true);
 }
 
+void tapPreviewChanged() {
+  normalizePlaybackSettings();
+  stopPreviewNotes();
+  markOverlayDirty();
+}
+
 void playbackTempoMenuCallback(GEMCallbackData /*callbackData*/) {
   playbackTempoChanged();
 }
@@ -70,6 +84,10 @@ void playbackStepCountMenuCallback(GEMCallbackData /*callbackData*/) {
 
 void playbackDirectionMenuCallback(GEMCallbackData /*callbackData*/) {
   playbackDirectionChanged();
+}
+
+void tapPreviewMenuCallback(GEMCallbackData /*callbackData*/) {
+  tapPreviewChanged();
 }
 
 void previewPlaybackTempo(GEMPreviewCallbackData previewData) {
@@ -87,6 +105,11 @@ void previewPlaybackDirection(GEMPreviewCallbackData previewData) {
   playbackDirectionChanged();
 }
 
+void previewTapPreview(GEMPreviewCallbackData previewData) {
+  tapPreviewMutable() = previewData.previewValByte;
+  tapPreviewChanged();
+}
+
 GEMItem& stepCountItem() {
   static GEMItem item("Steps", activeStepCountMutable(), stepCountSpinner, playbackStepCountMenuCallback);
   return item;
@@ -102,6 +125,11 @@ GEMItem& tempoItem() {
   return item;
 }
 
+GEMItem& tapPreviewItem() {
+  static GEMItem item("Tap Preview", tapPreviewMutable(), tapPreviewSelect, tapPreviewMenuCallback);
+  return item;
+}
+
 }  // namespace
 
 void setupPlaybackSettingsMenu(GEMPage& sequencerMenuPage) {
@@ -113,14 +141,17 @@ void setupPlaybackSettingsMenu(GEMPage& sequencerMenuPage) {
   GEMItem& steps = stepCountItem();
   GEMItem& direction = directionItem();
   GEMItem& tempo = tempoItem();
+  GEMItem& preview = tapPreviewItem();
 
   steps.setPreviewCallback(previewPlaybackStepCount);
   direction.setPreviewCallback(previewPlaybackDirection);
   tempo.setPreviewCallback(previewPlaybackTempo);
+  preview.setPreviewCallback(previewTapPreview);
 
   page.addMenuItem(steps);
   page.addMenuItem(direction);
   page.addMenuItem(tempo);
+  page.addMenuItem(preview);
   sequencerMenuPage.addMenuItem(playbackSettingsLink(sequencerMenuPage));
   playbackMenuInstalled = true;
 }

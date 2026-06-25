@@ -3,10 +3,14 @@
 #include "../config/FeatureFlags.h"
 
 #if HEXBOARD_ENABLE_SEQUENCER
+#include "SequencerManagedNotes.h"
+#include "SequencerOverlay.h"
+#include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
 #include "SequencerTransport.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../hardware/GridState.h"
+#include "../tuning/Tuning.h"
 
 namespace sequencer {
 namespace {
@@ -18,8 +22,41 @@ constexpr uint64_t kClearHoldMicros = 1000000ULL;
 bool confirmHeld = false;
 uint64_t confirmPressedAt = 0;
 
-bool isPlayableNoteButton(byte buttonIndex) {
-  return buttonIndex < LED_COUNT && !h[buttonIndex].isCmd;
+bool buttonPitchSteps(byte buttonIndex, int16_t& pitchSteps) {
+  if (buttonIndex >= LED_COUNT) {
+    return false;
+  }
+
+  byte row = buttonIndex / COLCOUNT;
+  if (row < 4 || h[buttonIndex].isCmd || h[buttonIndex].note == UNUSED_NOTE || h[buttonIndex].frequency <= 0.0f) {
+    return false;
+  }
+
+  pitchSteps = h[buttonIndex].stepsFromC;
+  return true;
+}
+
+byte auditionVelocity() {
+  if (!hasSelectedStep()) {
+    return kDefaultVelocity;
+  }
+  return step(static_cast<byte>(selectedStepIndex())).velocity;
+}
+
+void selectOrDeselectStep(byte stepIndex) {
+  stopPreviewNotes();
+
+  if (selectedStepIndex() == static_cast<int8_t>(stepIndex)) {
+    deselectStep();
+    hideSelectedStepOverlay();
+    return;
+  }
+
+  selectStep(stepIndex);
+  markOverlayDirty();
+  if (tapPreview() == kTapPreviewOn) {
+    previewStep(stepIndex);
+  }
 }
 
 }  // namespace
@@ -71,6 +108,8 @@ void serviceInput() {
   }
   if ((runTime - confirmPressedAt) >= kClearHoldMicros) {
     resetStep(static_cast<byte>(selectedStepIndex()));
+    stopPreviewNotes();
+    markOverlayDirty();
     resetInputState();
   }
 }
@@ -79,6 +118,10 @@ void handleButtonEvent(byte buttonIndex, bool pressed) {
   if (!pressed) {
     if (buttonIndex == kConfirmClearButtonIndex) {
       resetInputState();
+    }
+    int16_t releasedPitchSteps = 0;
+    if (buttonPitchSteps(buttonIndex, releasedPitchSteps)) {
+      stopManagedNote(releasedPitchSteps, SequencerManagedNoteRole::Audition);
     }
     return;
   }
@@ -99,17 +142,17 @@ void handleButtonEvent(byte buttonIndex, bool pressed) {
 
   int8_t stepIndex = buttonIndexToStep(buttonIndex);
   if (stepIndex >= 0) {
-    if (selectedStepIndex() == stepIndex) {
-      deselectStep();
-    } else {
-      selectStep(static_cast<byte>(stepIndex));
-    }
+    selectOrDeselectStep(static_cast<byte>(stepIndex));
     resetInputState();
     return;
   }
 
-  if (hasSelectedStep() && isPlayableNoteButton(buttonIndex)) {
-    togglePitchOnSelectedStep(h[buttonIndex].stepsFromC);
+  int16_t pitchSteps = 0;
+  if (buttonPitchSteps(buttonIndex, pitchSteps)) {
+    startManagedNote(pitchSteps, auditionVelocity(), SequencerManagedNoteRole::Audition);
+    if (hasSelectedStep() && togglePitchOnSelectedStep(pitchSteps)) {
+      markOverlayDirty();
+    }
   }
 }
 

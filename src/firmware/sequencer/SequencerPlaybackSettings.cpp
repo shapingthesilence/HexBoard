@@ -8,6 +8,7 @@ namespace {
 byte tempo = kPlaybackTempoDefault;
 byte stepCount = kActiveStepCountDefault;
 byte direction = kDirectionDefault;
+byte preview = kTapPreviewDefault;
 
 byte clampByte(byte value, byte minValue, byte maxValue) {
   if (value < minValue) {
@@ -23,6 +24,10 @@ bool validDirection(byte value) {
   return value >= kDirectionForward && value <= kDirectionDrunk;
 }
 
+bool validTapPreview(byte value) {
+  return value == kTapPreviewOff || value == kTapPreviewOn;
+}
+
 }  // namespace
 
 byte playbackTempo() {
@@ -35,6 +40,10 @@ byte activeStepCount() {
 
 byte playbackDirection() {
   return validDirection(direction) ? direction : kDirectionDefault;
+}
+
+byte tapPreview() {
+  return validTapPreview(preview) ? preview : kTapPreviewDefault;
 }
 
 uint64_t playbackStepDurationMicros() {
@@ -53,10 +62,15 @@ byte& playbackDirectionMutable() {
   return direction;
 }
 
+byte& tapPreviewMutable() {
+  return preview;
+}
+
 void normalizePlaybackSettings() {
   tempo = playbackTempo();
   stepCount = activeStepCount();
   direction = playbackDirection();
+  preview = tapPreview();
 }
 
 }  // namespace sequencer

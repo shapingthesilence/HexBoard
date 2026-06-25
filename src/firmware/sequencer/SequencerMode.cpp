@@ -4,6 +4,8 @@
 
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerInput.h"
+#include "SequencerManagedNotes.h"
+#include "SequencerOverlay.h"
 #include "SequencerPlaybackMenu.h"
 #include "SequencerState.h"
 #include "SequencerTransport.h"
@@ -55,6 +57,7 @@ void enterSequencerMode() {
 #if HEXBOARD_ENABLE_SEQUENCER
   sequencerActive = true;
   sequencer::resetInputState();
+  sequencer::resetOverlayState();
   panicStopOutput();
   screenTime = 0;
   menu.setMenuPageCurrent(sequencerMenuPage());
@@ -68,6 +71,7 @@ void exitSequencerMode() {
   sequencerActive = false;
   sequencer::deselectStep();
   sequencer::resetInputState();
+  sequencer::resetOverlayState();
   panicStopOutput();
   screenTime = 0;
   menuHome();
@@ -79,6 +83,7 @@ void serviceSequencerMode() {
   if (sequencerActive) {
     sequencer::serviceInput();
     sequencer::serviceTransport();
+    sequencer::serviceManagedNotes();
   }
 #endif
 }
@@ -91,6 +96,14 @@ void handleSequencerButtonEvent(byte buttonIndex, bool pressed) {
 #else
   (void)buttonIndex;
   (void)pressed;
+#endif
+}
+
+void drawSequencerModeDisplay() {
+#if HEXBOARD_ENABLE_SEQUENCER
+  if (sequencerActive) {
+    sequencer::drawSequencerOverlay();
+  }
 #endif
 }
 

@@ -3,7 +3,7 @@
 #include "../config/FeatureFlags.h"
 
 #if HEXBOARD_ENABLE_SEQUENCER
-#include "SequencerMidi.h"
+#include "SequencerManagedNotes.h"
 #include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
 #include "../app/DiagnosticsTiming.h"
@@ -16,12 +16,13 @@ int8_t playingStep = kNoSelectedStep;
 int8_t pingPongDelta = 1;
 uint64_t nextStepAt = 0;
 uint64_t currentStepStartedAt = 0;
-SequencerMidiNoteHandle activeNotes[kMaxNotesPerStep];
+int16_t activePitchSteps[kMaxNotesPerStep] = {};
 byte activeNoteCount = 0;
 
 void releaseActiveNotes() {
   for (byte i = 0; i < activeNoteCount && i < kMaxNotesPerStep; ++i) {
-    stopMidiNote(activeNotes[i]);
+    stopManagedNote(activePitchSteps[i], SequencerManagedNoteRole::Playback);
+    activePitchSteps[i] = 0;
   }
   activeNoteCount = 0;
 }
@@ -96,8 +97,8 @@ void startStepNotes(byte stepIndex) {
   }
 
   for (byte i = 0; i < target.noteCount && i < kMaxNotesPerStep; ++i) {
-    if (startMidiNote(target.pitchSteps[i], target.velocity, activeNotes[activeNoteCount])) {
-      ++activeNoteCount;
+    if (startManagedNote(target.pitchSteps[i], target.velocity, SequencerManagedNoteRole::Playback)) {
+      activePitchSteps[activeNoteCount++] = target.pitchSteps[i];
     }
   }
 }
@@ -127,6 +128,7 @@ int8_t playingStepIndex() {
 }
 
 void startTransport() {
+  stopPreviewNotes();
   releaseActiveNotes();
   running = true;
   playingStep = kNoSelectedStep;
@@ -141,6 +143,7 @@ void stopTransport() {
   pingPongDelta = 1;
   nextStepAt = 0;
   currentStepStartedAt = 0;
+  stopPreviewNotes();
   releaseActiveNotes();
 }
 
@@ -169,6 +172,7 @@ void serviceTransport() {
 
 void releasePlaybackNotesForPanic() {
   stopTransport();
+  stopAllManagedNotes();
 }
 
 void handlePlaybackSettingsChanged(bool resetDirectionState) {

@@ -8,3 +8,4 @@ void enterSequencerMode();
 void exitSequencerMode();
 void serviceSequencerMode();
 void handleSequencerButtonEvent(byte buttonIndex, bool pressed);
+void drawSequencerModeDisplay();

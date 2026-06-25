@@ -938,15 +938,19 @@ When enabled, Sequencer mode currently supports 32-step selection, selected-step
 note entry using tuning-relative `stepsFromC`, confirm-hold clear, sequencer LED
 overrides, and basic MIDI transport playback. Button `9` toggles an internal
 16th-note clock. The sequencer-owned `Playback Settings` page exposes volatile
-`Steps`, `Direction`, and `Tempo` values without touching `SettingKey` profile
-storage. `Tempo` defaults to `120` BPM and ranges from `1` to `255`; `Steps`
-defaults to `32` and ranges from `1` to `32`; `Direction` defaults to
-`Forward` and also supports `Backward`, `Ping-Pong`, `Random`, `Brownian`, and
-`Drunk`. Playback emits programmed step notes through the current tuning,
-transpose, MIDI routing, and MPE helpers; empty steps advance silently. Step
-LEDs outside the active step range remain off. Sequencer persistence, external
-sync, MIDI clock send, onboard synth playback, preview/audition, probability,
-ties, and detailed editing screens remain intentionally absent.
+`Steps`, `Direction`, `Tempo`, and `Tap Preview` values without touching
+`SettingKey` profile storage. `Tempo` defaults to `120` BPM and ranges from `1`
+to `255`; `Steps` defaults to `32` and ranges from `1` to `32`; `Direction`
+defaults to `Forward` and also supports `Backward`, `Ping-Pong`, `Random`,
+`Brownian`, and `Drunk`; `Tap Preview` defaults to `On`. Playback, tap preview,
+and lower-grid audition emit MIDI through the current tuning, transpose, MIDI
+routing, and MPE helpers; empty playback steps advance silently. A
+sequencer-owned selected-step overlay renders `Edit #NN`, default/current
+length, velocity, probability, and all stored step notes sorted low-to-high,
+wrapping to two note rows only when needed. Step LEDs outside the active step
+range remain off. Sequencer persistence, external sync, MIDI clock send,
+onboard synth playback/preview, probability playback behavior, ties, and
+detailed editing screens remain intentionally absent.
 
 ## Input Interface And Panic Behavior
 
