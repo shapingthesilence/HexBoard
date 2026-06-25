@@ -8,6 +8,7 @@
 #include "SequencerPlaybackSettings.h"
 #include "SequencerTransport.h"
 #include "../app/DiagnosticsTiming.h"
+#include "../model/ScalePalettePreset.h"
 #include "../tuning/Tuning.h"
 
 namespace sequencer {
@@ -442,6 +443,13 @@ void deselectSelectedStep() {
   hideSelectedStepOverlay();
 }
 
+void returnToNormalEditing() {
+  currentMode = SequencerToolMode::Normal;
+  copySourceStep = kNoSelectedStep;
+  modeUntil = 0;
+  markToolsDirty();
+}
+
 void openToolsForSelectedStep() {
   if (!hasSelectedStep()) {
     showPersistentStatusMessage("Select step", "Then open tools");
@@ -456,6 +464,13 @@ void showPersistentStatusMessage(const char* lineOne, const char* lineTwo) {
 
 void showStatusMessageAndReturnToTools(const char* lineOne, const char* lineTwo) {
   showStatusMessage(lineOne, lineTwo, SequencerToolMode::ToolsPicker, runTime + kSequencerMessageMicros);
+}
+
+void extendToolsStatusMessage() {
+  if (currentMode == SequencerToolMode::StatusMessage && returnMode == SequencerToolMode::ToolsPicker) {
+    modeUntil = runTime + kSequencerMessageMicros;
+    markToolsDirty();
+  }
 }
 
 void restoreSelectedStepFromUndo() {
@@ -526,6 +541,28 @@ bool handleToolAction(SequencerToolAction action) {
       return true;
   }
   return true;
+}
+
+bool cancelCurrentToolEdit() {
+  switch (currentMode) {
+    case SequencerToolMode::CopyTarget:
+      exitCopyTarget();
+      return true;
+    case SequencerToolMode::ExactLength:
+      exitExactLength(false);
+      return true;
+    case SequencerToolMode::ExactVelocity:
+      exitExactVelocity(false);
+      return true;
+    case SequencerToolMode::ExactProbability:
+      exitExactProbability(false);
+      return true;
+    case SequencerToolMode::ToolsPicker:
+      returnToNormalEditing();
+      return true;
+    default:
+      return false;
+  }
 }
 
 bool handleExactLengthButton(byte buttonIndex) {
@@ -758,6 +795,9 @@ void selectStepForEditing(byte /*stepIndex*/, SequencerToolMode /*nextMode*/) {
 void deselectSelectedStep() {
 }
 
+void returnToNormalEditing() {
+}
+
 void openToolsForSelectedStep() {
 }
 
@@ -767,6 +807,9 @@ void showPersistentStatusMessage(const char* /*lineOne*/, const char* /*lineTwo*
 void showStatusMessageAndReturnToTools(const char* /*lineOne*/, const char* /*lineTwo*/) {
 }
 
+void extendToolsStatusMessage() {
+}
+
 void restoreSelectedStepFromUndo() {
 }
 
@@ -774,6 +817,10 @@ void clearSelectedStepForHold() {
 }
 
 bool handleToolAction(SequencerToolAction /*action*/) {
+  return false;
+}
+
+bool cancelCurrentToolEdit() {
   return false;
 }
 

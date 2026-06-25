@@ -7,6 +7,7 @@
 #include "SequencerLightSettings.h"
 #include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
+#include "SequencerTools.h"
 #include "SequencerTransport.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../app/RuntimeDefaults.h"
@@ -134,6 +135,20 @@ uint32_t confirmClearColor() {
   return ledColor(kActionBlueHue, SAT_VIVID, value);
 }
 
+uint32_t utilityWhiteColor(bool active) {
+  return ledColor(HUE_NONE, SAT_BW, active ? kStepLightHigh : kStepLightMedium);
+}
+
+uint32_t actionBlueColor() {
+  return ledColor(kActionBlueHue, SAT_VIVID, kActionBlueValue);
+}
+
+void clearLedFrame(SetLedPixelFn setLedPixel) {
+  for (byte buttonIndex = 0; buttonIndex < LED_COUNT; ++buttonIndex) {
+    setLedPixel(buttonIndex, 0);
+  }
+}
+
 void neutralizeOwnedGuards(SetLedPixelFn setLedPixel) {
   setLedPixel(kOverviewGuardButtonIndex, 0);
   setLedPixel(kFunctionGuardButtonIndex, 0);
@@ -146,6 +161,15 @@ void neutralizeOwnedGuards(SetLedPixelFn setLedPixel) {
 void renderLedOverrides(SetLedPixelFn setLedPixel) {
   if (setLedPixel == nullptr) {
     return;
+  }
+
+  SequencerToolMode mode = toolMode();
+  if (mode == SequencerToolMode::ToolsPicker ||
+      mode == SequencerToolMode::ExactLength ||
+      mode == SequencerToolMode::ExactVelocity ||
+      mode == SequencerToolMode::ExactProbability ||
+      mode == SequencerToolMode::CopyTarget) {
+    clearLedFrame(setLedPixel);
   }
 
   neutralizeOwnedGuards(setLedPixel);
@@ -177,6 +201,23 @@ void renderLedOverrides(SetLedPixelFn setLedPixel) {
   }
 
   setLedPixel(kConfirmClearButtonIndex, hasSelectedStep() ? confirmClearColor() : 0);
+  setLedPixel(
+    kFunctionGuardButtonIndex,
+    utilityWhiteColor(mode == SequencerToolMode::ToolsPicker || statusMessageIsToolsPrompt()));
+
+  if (mode == SequencerToolMode::ToolsPicker) {
+    const SequencerToolKey* keys = toolKeys();
+    uint32_t blue = actionBlueColor();
+    for (byte i = 0; i < toolKeyCount(); ++i) {
+      setLedPixel(keys[i].buttonIndex, blue);
+    }
+  } else if (mode == SequencerToolMode::ExactLength) {
+    const SequencerTextKey* keys = exactLengthKeys();
+    uint32_t blue = actionBlueColor();
+    for (byte i = 0; i < exactLengthKeyCount(); ++i) {
+      setLedPixel(keys[i].buttonIndex, blue);
+    }
+  }
 }
 
 }  // namespace sequencer

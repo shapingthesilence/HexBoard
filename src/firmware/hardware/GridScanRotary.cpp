@@ -224,6 +224,28 @@ void dealWithRotary() {
     }
   }
 
+  if (sequencerModeActive() && storeRotaryTurn != 0) {
+    bool turnIsClockwise = (storeRotaryTurn == 8);
+    int8_t direction = rotaryInvert
+                         ? (turnIsClockwise ? 1 : -1)
+                         : (turnIsClockwise ? -1 : 1);
+    if (handleSequencerRotaryTurn(direction)) {
+      storeRotaryTurn = 0;
+      screenTime = 0;
+    }
+  }
+
+  if (sequencerModeActive() && justReleased && !rotaryPanicSuppressClick) {
+    if (handleSequencerEncoderClick()) {
+      noteOverlayDirty = true;
+      screenTime = 0;
+      rotaryPressStart = 0;
+      rotaryPanicLatched = false;
+      rotaryButtonPressed = buttonPressed;
+      return;
+    }
+  }
+
   if (virtualListMenuIsActive()) {
     if (justReleased && !rotaryPanicSuppressClick) {
       dismissPlayedNotesOverlayForMenuInput();

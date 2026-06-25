@@ -80,6 +80,7 @@ void returnToNormalEditing();
 void openToolsForSelectedStep();
 void showPersistentStatusMessage(const char* lineOne, const char* lineTwo);
 void showStatusMessageAndReturnToTools(const char* lineOne, const char* lineTwo);
+void extendToolsStatusMessage();
 void restoreSelectedStepFromUndo();
 void clearSelectedStepForHold();
 bool handleToolAction(SequencerToolAction action);

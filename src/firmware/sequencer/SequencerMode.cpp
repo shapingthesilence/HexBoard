@@ -9,6 +9,7 @@
 #include "SequencerOverlay.h"
 #include "SequencerPlaybackMenu.h"
 #include "SequencerState.h"
+#include "SequencerTools.h"
 #include "SequencerTransport.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../synth/SynthAudio.h"
@@ -58,6 +59,7 @@ void enterSequencerMode() {
 #if HEXBOARD_ENABLE_SEQUENCER
   sequencerActive = true;
   sequencer::resetInputState();
+  sequencer::resetToolsState();
   sequencer::resetOverlayState();
   panicStopOutput();
   screenTime = 0;
@@ -72,6 +74,7 @@ void exitSequencerMode() {
   sequencerActive = false;
   sequencer::deselectStep();
   sequencer::resetInputState();
+  sequencer::resetToolsState();
   sequencer::resetOverlayState();
   panicStopOutput();
   screenTime = 0;
@@ -98,6 +101,26 @@ void handleSequencerButtonEvent(byte buttonIndex, bool pressed) {
   (void)buttonIndex;
   (void)pressed;
 #endif
+}
+
+bool handleSequencerRotaryTurn(int8_t direction) {
+#if HEXBOARD_ENABLE_SEQUENCER
+  if (sequencerActive) {
+    return sequencer::handleRotaryTurn(direction);
+  }
+#else
+  (void)direction;
+#endif
+  return false;
+}
+
+bool handleSequencerEncoderClick() {
+#if HEXBOARD_ENABLE_SEQUENCER
+  if (sequencerActive) {
+    return sequencer::handleEncoderClick();
+  }
+#endif
+  return false;
 }
 
 void drawSequencerModeDisplay() {

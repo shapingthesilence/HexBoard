@@ -94,8 +94,9 @@ When the flag is `0`, `setupSequencerMenu()` is a no-op and no top-level
 Sequencer menu item is installed. When the flag is `1`, the firmware installs
 a Sequencer mode foundation with mode entry/exit, 32-step selection/deselection,
 basic tuning-relative note entry, confirm-hold selected-step clear,
-sequencer-owned step/function LED rendering, and basic MIDI transport playback.
-Button `9` toggles the internal transport. The Sequencer page links to
+selected-step undo, step tools, sequencer-owned step/function LED rendering,
+and MIDI transport playback with per-step length, velocity, probability, and
+Tie semantics. Button `9` toggles the internal transport. The Sequencer page links to
 `Playback Settings`, where `Steps`, `Direction`, `Tempo`, and `Tap Preview` are volatile
 sequencer-owned values rather than `SettingKey` profile data. `Tempo` defaults
 to `120` and ranges from `1` to `255`; each step is one 16th note. `Steps`
@@ -109,17 +110,28 @@ and `Step Hue` controls are profile-backed `SettingKey` values, not sequence
 file data. The defaults are accent every `4`, regular step color, and `Indigo`
 step hue.
 Programmed steps, tap preview, and lower-grid audition emit through the current
-tuning, transpose, MIDI routing, and MPE settings, while empty playback steps
-advance silently. Audition and preview are MIDI-only in this slice. A
-sequencer-owned overlay renders selected-step `Edit #NN`, length, velocity,
-probability, and one or two wrapped low-to-high note-label rows. Button `9` is
-red when stopped and green when playing, and the current active play step is
+tuning, transpose, MIDI routing, and MPE settings, while empty, zero-length,
+probability-skipped, and unsupported tied playback steps advance silently.
+Audition and preview are MIDI-only in this slice. A sequencer-owned overlay
+renders selected-step `Edit #NN`, tool picker, exact length/velocity/probability,
+copy target, temporary status, and clear feedback screens. Tied steps display
+`T` instead of note labels in selected-step and tool overlays. Button `9` is red
+when stopped and green when playing, and the current active play step is
 highlighted even when empty. `Seq Lights` rendering uses the board palette's
 base hue/saturation cache for `Step Color = Note`, then applies sequencer
-brightness in linear RGB before a single gamma pass. Persistence,
-storage/browser flows, external MIDI sync, MIDI clock/transport send, onboard synth sequencer
-playback or preview, probability playback behavior, ties, and tools are
-intentionally not present yet.
+brightness in linear RGB before a single gamma pass.
+
+`src/firmware/sequencer/SequencerTools.*` owns the selected-step tool modal
+state, exact-entry buffers, copy source, quick length display value, and
+selected-step undo snapshot. `SequencerInput` should continue to do only
+physical button dispatch into those tools, note audition, transport toggle, and
+step selection. `GridScanRotary.cpp` offers encoder turns and clicks to
+Sequencer mode first; Sequencer returns `false` outside selected-step/tool
+states so GEM and `VirtualListMenu` behavior is preserved.
+
+Persistence, storage/browser flows, external MIDI sync, MIDI clock/transport
+send, onboard synth sequencer playback or preview, Play Type settings,
+Monophonic mode, and backup tools are intentionally not present yet.
 
 ### Web App Tooling
 
