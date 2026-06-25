@@ -141,10 +141,12 @@ make HEXBOARD_ENABLE_SEQUENCER=1
 That flag enables the in-port Sequencer mode foundation: mode entry/exit,
 32-step selection/deselection, tuning-relative note entry, undo/hold-clear,
 step tools for length, velocity, probability, octave transpose, Tie, and Copy,
-sequencer-owned step/function LEDs, MIDI transport playback with per-step
-length, velocity, probability, and Tie semantics, MIDI-only note audition and
-tap preview, compact selected-step/tool overlays, volatile Tempo, Steps,
-Direction, and Tap Preview controls, and profile-backed Seq Lights controls.
+sequencer-owned step/function LEDs, routed transport playback with per-step
+length, velocity, probability, and Tie semantics, MIDI or OB Synth note
+audition, tap preview, and transport output, compact selected-step/tool
+overlays, volatile Tempo, Steps, Direction, Play Type, and Tap Preview
+controls, profile-backed Monophonic note-entry mode, and profile-backed
+Seq Lights controls.
 See the [Sequencer Manual](docs/sequencer-manual.md) for current sequencer
 behavior and the features still being ported.
 

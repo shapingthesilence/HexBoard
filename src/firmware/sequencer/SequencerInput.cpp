@@ -217,7 +217,8 @@ void handleButtonEvent(byte buttonIndex, bool pressed) {
   int16_t pitchSteps = 0;
   if (buttonPitchSteps(buttonIndex, pitchSteps)) {
     startManagedNote(pitchSteps, auditionVelocity(), SequencerManagedNoteRole::Audition);
-    if (hasSelectedStep() && togglePitchOnSelectedStep(pitchSteps)) {
+    bool replaceWithSingleNote = monophonicMode() == kMonophonicModeOn;
+    if (hasSelectedStep() && togglePitchOnSelectedStep(pitchSteps, replaceWithSingleNote)) {
       releasePlaybackForStep(static_cast<byte>(selectedStepIndex()));
       returnToNormalEditing();
       markOverlayDirty();

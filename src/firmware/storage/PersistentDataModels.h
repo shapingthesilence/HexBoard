@@ -98,6 +98,7 @@ enum class SettingKey : uint8_t {
   SequencerStepAccentEvery,
   SequencerStepColorMode,
   SequencerStepHue,
+  SequencerMonophonicMode,
   // This must remain last - it gives the total number of settings.
   NumSettings
 };

@@ -53,6 +53,18 @@ SelectOptionByte tapPreviewOptions[] = {
 };
 GEMSelect tapPreviewSelect(sizeof(tapPreviewOptions) / sizeof(SelectOptionByte), tapPreviewOptions);
 
+SelectOptionByte playTypeOptions[] = {
+  { "MIDI", kPlayTypeMidi },
+  { "OB Synth", kPlayTypeObSynth }
+};
+GEMSelect playTypeSelect(sizeof(playTypeOptions) / sizeof(SelectOptionByte), playTypeOptions);
+
+SelectOptionByte monophonicOptions[] = {
+  { "Off", kMonophonicModeOff },
+  { "On", kMonophonicModeOn }
+};
+GEMSelect monophonicSelect(sizeof(monophonicOptions) / sizeof(SelectOptionByte), monophonicOptions);
+
 void playbackTempoChanged() {
   normalizePlaybackSettings();
   handlePlaybackSettingsChanged(false);
@@ -74,6 +86,15 @@ void tapPreviewChanged() {
   markOverlayDirty();
 }
 
+void playTypeChanged() {
+  normalizePlaybackSettings();
+}
+
+void monophonicModeChanged() {
+  normalizePlaybackSettings();
+  persistMonophonicModeToProfile();
+}
+
 void playbackTempoMenuCallback(GEMCallbackData /*callbackData*/) {
   playbackTempoChanged();
 }
@@ -88,6 +109,14 @@ void playbackDirectionMenuCallback(GEMCallbackData /*callbackData*/) {
 
 void tapPreviewMenuCallback(GEMCallbackData /*callbackData*/) {
   tapPreviewChanged();
+}
+
+void playTypeMenuCallback(GEMCallbackData /*callbackData*/) {
+  playTypeChanged();
+}
+
+void monophonicModeMenuCallback(GEMCallbackData /*callbackData*/) {
+  monophonicModeChanged();
 }
 
 void previewPlaybackTempo(GEMPreviewCallbackData previewData) {
@@ -110,6 +139,16 @@ void previewTapPreview(GEMPreviewCallbackData previewData) {
   tapPreviewChanged();
 }
 
+void previewPlayType(GEMPreviewCallbackData previewData) {
+  playTypeMutable() = previewData.previewValByte;
+  playTypeChanged();
+}
+
+void previewMonophonicMode(GEMPreviewCallbackData previewData) {
+  monophonicModeMutable() = previewData.previewValByte;
+  normalizePlaybackSettings();
+}
+
 GEMItem& stepCountItem() {
   static GEMItem item("Steps", activeStepCountMutable(), stepCountSpinner, playbackStepCountMenuCallback);
   return item;
@@ -130,6 +169,21 @@ GEMItem& tapPreviewItem() {
   return item;
 }
 
+GEMItem& playTypeItem() {
+  static GEMItem item("Play Type", playTypeMutable(), playTypeSelect, playTypeMenuCallback);
+  return item;
+}
+
+GEMItem& playbackDividerItem() {
+  static GEMItem item("----------");
+  return item;
+}
+
+GEMItem& monophonicModeItem() {
+  static GEMItem item("Monophonic", monophonicModeMutable(), monophonicSelect, monophonicModeMenuCallback);
+  return item;
+}
+
 }  // namespace
 
 void setupPlaybackSettingsMenu(GEMPage& sequencerMenuPage) {
@@ -141,17 +195,25 @@ void setupPlaybackSettingsMenu(GEMPage& sequencerMenuPage) {
   GEMItem& steps = stepCountItem();
   GEMItem& direction = directionItem();
   GEMItem& tempo = tempoItem();
+  GEMItem& output = playTypeItem();
   GEMItem& preview = tapPreviewItem();
+  GEMItem& divider = playbackDividerItem();
+  GEMItem& mono = monophonicModeItem();
 
   steps.setPreviewCallback(previewPlaybackStepCount);
   direction.setPreviewCallback(previewPlaybackDirection);
   tempo.setPreviewCallback(previewPlaybackTempo);
+  output.setPreviewCallback(previewPlayType);
   preview.setPreviewCallback(previewTapPreview);
+  mono.setPreviewCallback(previewMonophonicMode);
 
   page.addMenuItem(steps);
   page.addMenuItem(direction);
   page.addMenuItem(tempo);
+  page.addMenuItem(output);
   page.addMenuItem(preview);
+  page.addMenuItem(divider);
+  page.addMenuItem(mono);
   sequencerMenuPage.addMenuItem(playbackSettingsLink(sequencerMenuPage));
   playbackMenuInstalled = true;
 }

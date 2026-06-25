@@ -161,7 +161,7 @@ bool stepIsProgrammed(byte stepIndex) {
   return target.noteCount > 0 || target.tie;
 }
 
-bool togglePitchOnSelectedStep(int16_t pitchSteps) {
+bool togglePitchOnSelectedStep(int16_t pitchSteps, bool replaceWithSingleNote) {
   if (!hasSelectedStep()) {
     return false;
   }
@@ -176,6 +176,13 @@ bool togglePitchOnSelectedStep(int16_t pitchSteps) {
       --target.noteCount;
       target.pitchSteps[target.noteCount] = 0;
     }
+    return true;
+  }
+
+  if (replaceWithSingleNote) {
+    clearStepNotes(target);
+    target.pitchSteps[0] = pitchSteps;
+    target.noteCount = 1;
     return true;
   }
 

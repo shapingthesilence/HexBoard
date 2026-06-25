@@ -12,25 +12,30 @@ sequencer manual will be ported here later.
 Open `Sequencer` from the main menu to enter Sequencer mode. Return to
 `Keyboard` to exit Sequencer mode.
 
-Exiting Sequencer mode stops sequencer playback and releases sequencer-held MIDI
+Exiting Sequencer mode stops sequencer playback and releases sequencer-held
 notes.
 
 ## Current Behavior
 
-The current sequencer is a simple 32-step MIDI sequencer. Select a step pad,
-then press playable note keys to toggle tuning-relative notes into that step.
-Each step can hold up to `6` notes.
+The current sequencer is a simple 32-step sequencer with MIDI or onboard synth
+output. Select a step pad, then press playable note keys to enter
+tuning-relative notes into that step. Each step can hold up to `6` notes.
 
 Button `9` starts and stops playback. Playback uses the internal clock only,
 runs through the active step range, and defaults to `120 BPM` with each step
 lasting one 16th note. Open `Playback Settings` from the Sequencer page to edit
-four volatile controls:
+these playback controls:
 
 - `Steps`: active loop length, `1` through `32`, default `32`.
 - `Direction`: `Forward`, `Backward`, `Ping-Pong`, `Random`, `Brownian`, or
   `Drunk`, default `Forward`.
 - `Tempo`: internal tempo, `1` through `255` BPM, default `120`.
+- `Play Type`: `MIDI` or `OB Synth`, default `MIDI`.
 - `Tap Preview`: `Off` or `On`, default `On`.
+- `Monophonic`: `Off` or `On`, default `Off`.
+
+`Steps`, `Direction`, `Tempo`, `Play Type`, and `Tap Preview` are volatile in
+this slice. `Monophonic` is saved in the current board profile.
 
 Open `Seq Lights` from the Sequencer page to edit three profile-backed light
 preferences:
@@ -42,24 +47,29 @@ preferences:
   `Lt Blue`, `Blue`, `Indigo`, `Purple`, `Magenta`, or `Pink`, default
   `Indigo`. This item is shown only when `Step Color` is `Regular`.
 
-Programmed steps send MIDI using the current tuning, transpose, MIDI routing,
-and MPE settings. Empty steps, zero-length steps, probability-skipped steps,
-and tied steps without an active source advance silently.
+When `Play Type` is `MIDI`, programmed steps send MIDI using the current
+tuning, transpose, MIDI routing, and MPE settings. When `Play Type` is
+`OB Synth`, programmed steps use the onboard synth engine with the shared synth
+settings from Synth Options. Empty steps, zero-length steps,
+probability-skipped steps, and tied steps without an active source advance
+silently in both modes.
 
-Lower-grid playable note keys audition MIDI while Sequencer mode is active.
-With no step selected, a note press auditions only. With a step selected, the
-same note press auditions and toggles that tuning-relative pitch in the selected
-step. Audition is MIDI-only for now; onboard synth and OB Synth preview are not
-part of this slice. Releasing the key releases the sequencer-managed audition
-note, and panic, playback changes, or leaving Sequencer mode clears any held
-sequencer notes.
+Lower-grid playable note keys audition through the current `Play Type` while
+Sequencer mode is active. With no step selected, a note press auditions only.
+With a step selected and `Monophonic` Off, the same note press auditions and
+toggles that tuning-relative pitch in the selected step. With `Monophonic` On,
+pressing a pitch already in the selected step removes it; pressing a different
+pitch replaces the selected step's notes with only that pitch. Turning
+`Monophonic` On does not rewrite existing chord steps. Releasing the key
+releases the sequencer-managed audition note, and panic, playback changes, or
+leaving Sequencer mode clears any held sequencer notes.
 
 When `Tap Preview` is `On`, selecting a programmed step previews its stored note
-or chord through MIDI. When it is `Off`, step selection still updates the Edit
-overlay without playing preview notes. Probability affects transport playback
-only; tap preview ignores probability. Tied steps stay silent during tap
-preview because transport treats them as continuations rather than new note
-starts.
+or chord through the current `Play Type`. When it is `Off`, step selection still
+updates the Edit overlay without playing preview notes. Probability affects
+transport playback only; tap preview ignores probability. Tied steps stay
+silent during tap preview because transport treats them as continuations rather
+than new note starts.
 
 Selecting a step shows a compact Edit overlay:
 
@@ -127,15 +137,16 @@ hue. In `Step Color = Regular`, programmed steps use the selected `Step Hue`.
 In `Step Color = Note`, programmed steps use the stored step's lowest note and
 the current keyboard color palette, including color mode and ColorByKey.
 
-Patterns and Playback Settings are not persistent yet. Rebooting clears
+Patterns and sequence-owned Playback Settings are not persistent yet. Rebooting clears
 programmed sequencer steps, including length, velocity, probability, and Tie,
-and restores `Steps`, `Direction`, `Tempo`, and `Tap Preview` to their defaults.
-`Seq Lights` preferences are saved in the current board profile and are not
-stored in sequence files.
+and restores `Steps`, `Direction`, `Tempo`, `Play Type`, and `Tap Preview` to
+their defaults. `Monophonic` and `Seq Lights` preferences are saved in the
+current board profile and are not stored in sequence files. `Play Type` is
+volatile until sequence-file persistence is ported, because the old sequencer
+stored it with each sequence file.
 
 ## Not Yet Ported
 
 The current sequencer slice does not include persistence, save/load/browser
-flows, external MIDI clock, MIDI start/stop/clock send, onboard synth playback,
-onboard synth or OB Synth audition/preview, Play Type settings, Monophonic mode,
-backup tools, or sequence-file persistence.
+flows, external MIDI clock, MIDI start/stop/clock send, backup tools,
+sequence-file persistence, or per-sequence Play Type storage.

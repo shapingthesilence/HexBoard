@@ -16,6 +16,7 @@
 #include "../storage/SynthWavetableStorage.h"
 #include "../sequencer/SequencerLightSettings.h"
 #include "../sequencer/SequencerMode.h"
+#include "../sequencer/SequencerPlaybackSettings.h"
 #include "../synth/SynthAudio.h"
 #include "GeometryMenu.h"
 #include "MenuAndDisplay.h"
@@ -2344,6 +2345,7 @@ void syncSettingsToRuntime() {
   noteDisplayMode = normalizeNoteDisplayMode(settingValue(SettingKey::DisplayPlayedNotes));
   settings[static_cast<uint8_t>(SettingKey::DisplayPlayedNotes)] = noteDisplayMode;
   sequencer::applyLightSettingsFromProfile();
+  sequencer::applyPlaybackPreferencesFromProfile();
 
   // Now *apply* them to the engine/UI:
   applyBuiltinGeometryRuntimeFromSettings();

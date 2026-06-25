@@ -24,16 +24,30 @@ constexpr byte kTapPreviewOff = 0;
 constexpr byte kTapPreviewOn = 1;
 constexpr byte kTapPreviewDefault = kTapPreviewOn;
 
+constexpr byte kPlayTypeMidi = 0;
+constexpr byte kPlayTypeObSynth = 1;
+constexpr byte kPlayTypeDefault = kPlayTypeMidi;
+
+constexpr byte kMonophonicModeOff = 0;
+constexpr byte kMonophonicModeOn = 1;
+constexpr byte kMonophonicModeDefault = kMonophonicModeOff;
+
 byte playbackTempo();
 byte activeStepCount();
 byte playbackDirection();
 byte tapPreview();
+byte playType();
+byte monophonicMode();
 uint64_t playbackStepDurationMicros();
 
 byte& playbackTempoMutable();
 byte& activeStepCountMutable();
 byte& playbackDirectionMutable();
 byte& tapPreviewMutable();
+byte& playTypeMutable();
+byte& monophonicModeMutable();
 void normalizePlaybackSettings();
+void applyPlaybackPreferencesFromProfile();
+void persistMonophonicModeToProfile();
 
 }  // namespace sequencer

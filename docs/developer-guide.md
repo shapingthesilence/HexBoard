@@ -95,31 +95,38 @@ Sequencer menu item is installed. When the flag is `1`, the firmware installs
 a Sequencer mode foundation with mode entry/exit, 32-step selection/deselection,
 basic tuning-relative note entry, confirm-hold selected-step clear,
 selected-step undo, step tools, sequencer-owned step/function LED rendering,
-and MIDI transport playback with per-step length, velocity, probability, and
+and routed transport playback with per-step length, velocity, probability, and
 Tie semantics. Button `9` toggles the internal transport. The Sequencer page links to
-`Playback Settings`, where `Steps`, `Direction`, `Tempo`, and `Tap Preview` are volatile
-sequencer-owned values rather than `SettingKey` profile data. `Tempo` defaults
-to `120` and ranges from `1` to `255`; each step is one 16th note. `Steps`
-defaults to `32` and ranges from `1` to `32`; transport and step LEDs ignore
-steps beyond the active count. `Direction` defaults to `Forward` and supports
-`Forward`, `Backward`, `Ping-Pong`, `Random`, `Brownian`, and `Drunk`. `Tap
-Preview` defaults to `On`; selecting a programmed step previews its stored note
-or chord through MIDI unless the volatile toggle is set to `Off`.
+`Playback Settings`, where `Steps`, `Direction`, `Tempo`, `Play Type`, and
+`Tap Preview` are volatile sequencer-owned values rather than `SettingKey`
+profile data. `Tempo` defaults to `120` and ranges from `1` to `255`; each step
+is one 16th note. `Steps` defaults to `32` and ranges from `1` to `32`;
+transport and step LEDs ignore steps beyond the active count. `Direction`
+defaults to `Forward` and supports `Forward`, `Backward`, `Ping-Pong`, `Random`,
+`Brownian`, and `Drunk`. `Play Type` defaults to `MIDI`; `OB Synth` routes
+sequencer-managed notes into the shared onboard synth engine. `Tap Preview`
+defaults to `On`; selecting a programmed step previews its stored note or chord
+through the current Play Type unless the volatile toggle is set to `Off`.
 The Sequencer page also links to `Seq Lights`. Its `Accent Every`, `Step Color`,
 and `Step Hue` controls are profile-backed `SettingKey` values, not sequence
 file data. The defaults are accent every `4`, regular step color, and `Indigo`
 step hue.
-Programmed steps, tap preview, and lower-grid audition emit through the current
-tuning, transpose, MIDI routing, and MPE settings, while empty, zero-length,
-probability-skipped, and unsupported tied playback steps advance silently.
-Audition and preview are MIDI-only in this slice. A sequencer-owned overlay
-renders selected-step `Edit #NN`, tool picker, exact length/velocity/probability,
-copy target, temporary status, and clear feedback screens. Tied steps display
-`T` instead of note labels in selected-step and tool overlays. Button `9` is red
-when stopped and green when playing, and the current active play step is
-highlighted even when empty. `Seq Lights` rendering uses the board palette's
-base hue/saturation cache for `Step Color = Note`, then applies sequencer
-brightness in linear RGB before a single gamma pass.
+`Monophonic` is also profile-backed and controls selected-step note entry only:
+Off preserves chord toggle entry, while On removes an existing pressed pitch or
+replaces the selected step with one newly pressed pitch. Programmed steps, tap
+preview, and lower-grid audition resolve stored pitch steps through the current
+tuning and transpose at note start. MIDI output uses the existing MIDI routing
+and MPE settings; OB Synth output uses a small synth preview-note API backed by
+hidden matrix slots `141..159`, leaving slot `140` reserved for hardware
+detection. Empty, zero-length, probability-skipped, and unsupported tied
+playback steps advance silently. A sequencer-owned overlay renders selected-step
+`Edit #NN`, tool picker, exact length/velocity/probability, copy target,
+temporary status, and clear feedback screens. Tied steps display `T` instead of
+note labels in selected-step and tool overlays. Button `9` is red when stopped
+and green when playing, and the current active play step is highlighted even
+when empty. `Seq Lights` rendering uses the board palette's base hue/saturation
+cache for `Step Color = Note`, then applies sequencer brightness in linear RGB
+before a single gamma pass.
 
 `src/firmware/sequencer/SequencerTools.*` owns the selected-step tool modal
 state, exact-entry buffers, copy source, quick length display value, and
@@ -130,8 +137,8 @@ Sequencer mode first; Sequencer returns `false` outside selected-step/tool
 states so GEM and `VirtualListMenu` behavior is preserved.
 
 Persistence, storage/browser flows, external MIDI sync, MIDI clock/transport
-send, onboard synth sequencer playback or preview, Play Type settings,
-Monophonic mode, and backup tools are intentionally not present yet.
+send, per-sequence Play Type storage, and backup tools are intentionally not
+present yet.
 
 ### Web App Tooling
 
@@ -546,9 +553,9 @@ Important implementation details:
 - this release intentionally skips old profile compatibility: any `/settings.dat`
   file with a version other than `20` is replaced with factory defaults instead
   of being migrated
-- `SequencerStepAccentEvery`, `SequencerStepColorMode`, and
-  `SequencerStepHue` are appended profile bytes for the optional sequencer's
-  `Seq Lights` controls; this development branch intentionally leaves
+- `SequencerStepAccentEvery`, `SequencerStepColorMode`, `SequencerStepHue`, and
+  `SequencerMonophonicMode` are appended profile bytes for the optional
+  sequencer's general preferences; this development branch intentionally leaves
   `CURRENT_SETTINGS_VERSION` at `20`, so older shorter version-20 settings files
   restore factory defaults through the existing length/CRC failure path
 - version `20` reinterprets `DisplayPlayedNotes` as `Off`/`Label`/`Number`

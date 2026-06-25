@@ -3,7 +3,7 @@
 #include "../config/FeatureFlags.h"
 
 #if HEXBOARD_ENABLE_SEQUENCER
-#include "SequencerMidi.h"
+#include "SequencerOutput.h"
 #include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
 #include "../app/DiagnosticsTiming.h"
@@ -19,7 +19,7 @@ struct ManagedHeldNote {
   byte auditionCount = 0;
   byte previewCount = 0;
   byte playbackCount = 0;
-  SequencerMidiNoteHandle handle;
+  SequencerOutputNoteHandle handle;
 };
 
 struct PreviewGroup {
@@ -91,7 +91,7 @@ bool startManagedNote(int16_t pitchSteps, byte velocity, SequencerManagedNoteRol
   ManagedHeldNote& heldNote = heldNotes[slotIndex];
   byte& count = roleCount(heldNote, role);
   if (heldNote.auditionCount == 0 && heldNote.previewCount == 0 && heldNote.playbackCount == 0) {
-    if (!startMidiNote(pitchSteps, velocity, heldNote.handle)) {
+    if (!startOutputNote(pitchSteps, velocity, heldNote.handle)) {
       heldNote = ManagedHeldNote{};
       return false;
     }
@@ -116,7 +116,7 @@ void stopManagedNote(int16_t pitchSteps, SequencerManagedNoteRole role) {
   }
 
   if (heldNote.auditionCount == 0 && heldNote.previewCount == 0 && heldNote.playbackCount == 0) {
-    stopMidiNote(heldNote.handle);
+    stopOutputNote(heldNote.handle);
     heldNote = ManagedHeldNote{};
   }
 }
@@ -143,7 +143,7 @@ void stopAllManagedNotes() {
   clearPreviewGroup();
   for (byte i = 0; i < kManagedNoteSlots; ++i) {
     if (heldNotes[i].active) {
-      stopMidiNote(heldNotes[i].handle);
+      stopOutputNote(heldNotes[i].handle);
       heldNotes[i] = ManagedHeldNote{};
     }
   }

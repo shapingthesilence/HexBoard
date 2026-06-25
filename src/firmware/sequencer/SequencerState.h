@@ -44,7 +44,7 @@ void deselectStep();
 void resetStep(byte stepIndex);
 void resetAllSteps();
 bool stepIsProgrammed(byte stepIndex);
-bool togglePitchOnSelectedStep(int16_t pitchSteps);
+bool togglePitchOnSelectedStep(int16_t pitchSteps, bool replaceWithSingleNote = false);
 void snapshotStep(byte stepIndex, SequencerStepSnapshot& snapshot);
 void restoreStep(byte stepIndex, const SequencerStepSnapshot& snapshot);
 void clearStepNotesAndTie(byte stepIndex);

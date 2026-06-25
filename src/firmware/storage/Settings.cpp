@@ -7,6 +7,7 @@
 #include "../menu/PlayedNotesOverlay.h"
 #include "../model/ScalePalettePreset.h"
 #include "../sequencer/SequencerLightSettings.h"
+#include "../sequencer/SequencerPlaybackSettings.h"
 #include "../synth/SynthDefaults.h"
 #include "../synth/SynthAudio.h"
 #include "Settings.h"
@@ -99,6 +100,7 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* SequencerStepAccentEvery     */ sequencer::kStepAccentEveryDefault,
   /* SequencerStepColorMode       */ sequencer::kStepColorDefault,
   /* SequencerStepHue             */ sequencer::kStepHueDefault,
+  /* SequencerMonophonicMode      */ sequencer::kMonophonicModeDefault,
 };
 
 // ==================================================

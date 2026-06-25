@@ -721,10 +721,10 @@ The current `SettingsHeader` contains:
 Older settings-schema files are not migrated in this release; `load_settings()`
 restores factory defaults and rewrites `/settings.dat` whenever the header
 version is not `20`. The optional sequencer's `SequencerStepAccentEvery`,
-`SequencerStepColorMode`, and `SequencerStepHue` profile bytes were appended
-without changing `CURRENT_SETTINGS_VERSION`, so shorter older version-20 files
-also restore defaults through the existing profile data length or CRC failure
-path.
+`SequencerStepColorMode`, `SequencerStepHue`, and `SequencerMonophonicMode`
+profile bytes were appended without changing `CURRENT_SETTINGS_VERSION`, so
+shorter older version-20 files also restore defaults through the existing
+profile data length or CRC failure path.
 
 Version `20` reinterprets the existing `DisplayPlayedNotes` byte from a boolean
 as `Off`/`Label`/`Number`; the persisted byte position did not move. Version
@@ -945,33 +945,41 @@ The `Buzzer` toggle is inserted only on hardware `V1.2`.
 
 When enabled, Sequencer mode currently supports 32-step selection, selected-step
 note entry using tuning-relative `stepsFromC`, selected-step undo, hold-clear,
-step tools, sequencer LED overrides, and MIDI transport playback. Button `9`
+step tools, sequencer LED overrides, and routed transport playback. Button `9`
 toggles an internal 16th-note clock. The sequencer-owned `Playback Settings`
-page exposes volatile `Steps`, `Direction`, `Tempo`, and `Tap Preview` values
-without touching `SettingKey` profile storage. `Tempo` defaults to `120` BPM
-and ranges from `1` to `255`; `Steps` defaults to `32` and ranges from `1` to
-`32`; `Direction` defaults to `Forward` and also supports `Backward`,
-`Ping-Pong`, `Random`, `Brownian`, and `Drunk`; `Tap Preview` defaults to `On`.
-Playback, tap preview, and lower-grid audition emit MIDI through the current
-tuning, transpose, MIDI routing, and MPE helpers. Transport playback applies
-per-step velocity, probability, length, and Tie; probability gates the whole
-step, length schedules note-off groups from the step boundary, and Tie extends
-the nearest earlier active source from the same pattern pass without wrapping
-across the loop boundary. A sequencer-owned overlay renders `Edit #NN`, the
-Step Tools picker, exact length/velocity/probability editors, copy target,
-temporary status, and clear feedback screens. Tied steps show `T` instead of
-note labels in edit/tool overlays. Step LEDs outside the active step range
-remain off. The `Seq Lights` page stores `Accent Every`, `Step Color`, and
-`Step Hue` in the active profile. Programmed steps use medium, high, or highest
-brightness; accents alter brightness only. `Step Color = Regular` uses the
-chosen named hue, while `Step Color = Note` uses the step's lowest stored pitch
-and the current board palette color.
+page exposes volatile `Steps`, `Direction`, `Tempo`, `Play Type`, and
+`Tap Preview` values. `Tempo` defaults to `120` BPM and ranges from `1` to
+`255`; `Steps` defaults to `32` and ranges from `1` to `32`; `Direction`
+defaults to `Forward` and also supports `Backward`, `Ping-Pong`, `Random`,
+`Brownian`, and `Drunk`; `Play Type` defaults to `MIDI` and can route
+sequencer-managed notes to the onboard synth; `Tap Preview` defaults to `On`.
+The `Monophonic` setting is profile-backed and affects selected-step entry
+only: Off preserves chord toggle entry, while On removes an existing pressed
+pitch or replaces the selected step with one newly pressed pitch. Playback, tap
+preview, and lower-grid audition resolve pitch steps through the current tuning
+and transpose at note start. MIDI output uses the current MIDI routing and MPE
+helpers. OB Synth output uses a sequencer output handle plus a synth
+preview-note API backed by hidden matrix slots `141..159`, preserving slot `140`
+for hardware detection and scaling preview voices by step/audition velocity.
+Transport playback applies per-step velocity, probability, length, and Tie;
+probability gates the whole step, length schedules note-off groups from the
+step boundary, and Tie extends the nearest earlier active source from the same
+pattern pass without wrapping across the loop boundary. A sequencer-owned
+overlay renders `Edit #NN`, the Step Tools picker, exact
+length/velocity/probability editors, copy target, temporary status, and clear
+feedback screens. Tied steps show `T` instead of note labels in edit/tool
+overlays. Step LEDs outside the active step range remain off. The `Seq Lights`
+page stores `Accent Every`, `Step Color`, and `Step Hue` in the active profile.
+Programmed steps use medium, high, or highest brightness; accents alter
+brightness only. `Step Color = Regular` uses the chosen named hue, while
+`Step Color = Note` uses the step's lowest stored pitch and the current board
+palette color.
 
 Step tool modal state lives in `SequencerTools.*`; transport note lifetimes use
 bounded playback groups rather than a single active note list so overlength and
 tied steps can overlap later steps. Sequencer persistence, external sync, MIDI
-clock send, onboard synth playback/preview, Play Type settings, Monophonic
-mode, backup tools, and sequence-file storage remain intentionally absent.
+clock send, per-sequence Play Type storage, backup tools, and sequence-file
+storage remain intentionally absent.
 
 ## Input Interface And Panic Behavior
 
