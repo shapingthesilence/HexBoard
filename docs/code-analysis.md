@@ -985,10 +985,10 @@ startup restore after profile settings are synced. Saved files use
 `format=HBSEQ`, `version=3`, `noteFormat=stepsFromC`, ignore unknown keys, and
 clamp invalid values. `SequencerFileMenu.*` owns the current-folder browser,
 folder creation, rename/delete, and the naming overlay. It uses
-`VirtualListMenu` callbacks and repeated current-folder scans instead of keeping
-a tree-wide path list. External sync, MIDI clock/transport send, USB Backup,
-desktop backup scripts, and the performance monitor overlay remain intentionally
-absent.
+`VirtualListMenu` callbacks with cached current-folder counts and an 8-row
+visible-window cache instead of keeping a tree-wide path list. External sync,
+MIDI clock/transport send, USB Backup, desktop backup scripts, and the
+performance monitor overlay remain intentionally absent.
 
 ## Input Interface And Panic Behavior
 

@@ -145,8 +145,8 @@ velocity, probability, Tie, Tempo, active Steps, Direction, and Play Type.
 Current-path metadata is a sidecar under `/Sequences`, not a profile byte.
 `src/firmware/sequencer/SequencerFileMenu.*` owns the on-device file browser,
 folder creation, rename/delete, and naming overlay. The browser uses
-`VirtualListMenu` callbacks over the current folder and does not keep a
-tree-wide sequence list in RAM.
+`VirtualListMenu` callbacks over the current folder, caches only folder counts
+and the visible row window, and does not keep a tree-wide sequence list in RAM.
 
 External MIDI sync, MIDI clock/transport send, USB Backup, desktop backup
 scripts, and the performance monitor overlay are intentionally not present yet.

@@ -24,6 +24,7 @@ namespace {
 constexpr size_t kBrowserTitleLength = 20;
 constexpr size_t kBrowserLabelLength = 28;
 constexpr uint16_t kNoRowIndex = 0xFFFFu;
+constexpr uint16_t kBrowserCacheRows = 8;
 constexpr float kNamingBlueHue = 250.0f;
 constexpr byte kNamingBlueValue = 211;
 
@@ -135,6 +136,19 @@ byte g_namingLength = 0;
 char g_renameSourcePath[kSequencePathLength] = "";
 char g_namingErrorOne[20] = "";
 char g_namingErrorTwo[20] = "";
+bool g_browserCountsValid = false;
+BrowserMode g_browserCountsMode = BrowserMode::None;
+char g_browserCountsPath[kSequencePathLength] = "";
+uint16_t g_cachedActionCount = 0;
+uint16_t g_cachedFolderCount = 0;
+uint16_t g_cachedFileCount = 0;
+uint16_t g_cachedTotalCount = 0;
+bool g_browserRowsValid = false;
+BrowserMode g_browserRowsMode = BrowserMode::None;
+char g_browserRowsPath[kSequencePathLength] = "";
+uint16_t g_browserRowsFirstIndex = kNoRowIndex;
+uint16_t g_browserRowsCount = 0;
+BrowserRow g_browserRows[kBrowserCacheRows];
 
 void openBrowser(BrowserMode mode);
 void showBrowser();
@@ -217,6 +231,37 @@ uint16_t browserActionRowCount() {
   }
 }
 
+void invalidateBrowserRowsCache() {
+  g_browserRowsValid = false;
+  g_browserRowsMode = BrowserMode::None;
+  g_browserRowsPath[0] = '\0';
+  g_browserRowsFirstIndex = kNoRowIndex;
+  g_browserRowsCount = 0;
+}
+
+void invalidateBrowserCache() {
+  g_browserCountsValid = false;
+  g_browserCountsMode = BrowserMode::None;
+  g_browserCountsPath[0] = '\0';
+  g_cachedActionCount = 0;
+  g_cachedFolderCount = 0;
+  g_cachedFileCount = 0;
+  g_cachedTotalCount = 0;
+  invalidateBrowserRowsCache();
+}
+
+bool browserCacheMatches(BrowserMode cachedMode, const char* cachedPath) {
+  return cachedMode == g_browserMode && strcmp(cachedPath, g_browserPath) == 0;
+}
+
+uint16_t minBrowserIndex(uint16_t lhs, uint16_t rhs) {
+  return lhs < rhs ? lhs : rhs;
+}
+
+uint16_t maxBrowserIndex(uint16_t lhs, uint16_t rhs) {
+  return lhs > rhs ? lhs : rhs;
+}
+
 bool actionRow(uint16_t index, BrowserRow& row) {
   if (g_browserMode == BrowserMode::SaveNew) {
     if (index == 0) {
@@ -249,11 +294,9 @@ bool actionRow(uint16_t index, BrowserRow& row) {
   return false;
 }
 
-bool scanDirectoryEntry(bool wantFolder, Dir& dir, char* path, size_t pathLength, char* label, size_t labelLength) {
+bool scanDirectoryEntry(Dir& dir, BrowserRow& row) {
+  row = BrowserRow{};
   const bool isFolder = dir.isDirectory();
-  if (isFolder != wantFolder) {
-    return false;
-  }
 
   String entryName = dir.fileName();
   if (entryNameIsHidden(entryName.c_str())) {
@@ -263,29 +306,63 @@ bool scanDirectoryEntry(bool wantFolder, Dir& dir, char* path, size_t pathLength
     return false;
   }
 
-  joinSequencePath(g_browserPath, entryName.c_str(), path, pathLength);
-  if (!sequencePathIsSafeStoragePath(path)) {
+  joinSequencePath(g_browserPath, entryName.c_str(), row.path, sizeof(row.path));
+  if (!sequencePathIsSafeStoragePath(row.path)) {
     return false;
   }
-  formatEntryLabel(path, isFolder, label, labelLength);
-  return label[0] != '\0';
+  row.kind = isFolder ? RowKind::Folder : RowKind::File;
+  row.isFolder = isFolder;
+  formatEntryLabel(row.path, isFolder, row.label, sizeof(row.label));
+  return row.label[0] != '\0';
 }
 
-uint16_t countEntries(bool wantFolder) {
-  if (!fileSystemExists || !safeBrowserPath(g_browserPath)) {
-    return 0;
+bool scanDirectoryEntry(bool wantFolder, Dir& dir, char* path, size_t pathLength, char* label, size_t labelLength) {
+  BrowserRow row;
+  if (!scanDirectoryEntry(dir, row) || row.isFolder != wantFolder) {
+    return false;
+  }
+  copyString(path, pathLength, row.path);
+  copyString(label, labelLength, row.label);
+  return true;
+}
+
+void ensureBrowserCounts() {
+  if (g_browserCountsValid && browserCacheMatches(g_browserCountsMode, g_browserCountsPath)) {
+    return;
   }
 
-  uint16_t count = 0;
+  g_cachedActionCount = 0;
+  g_cachedFolderCount = 0;
+  g_cachedFileCount = 0;
+  g_cachedTotalCount = 0;
+  invalidateBrowserRowsCache();
+
+  if (!fileSystemExists || !safeBrowserPath(g_browserPath)) {
+    g_browserCountsValid = true;
+    g_browserCountsMode = g_browserMode;
+    copyString(g_browserCountsPath, sizeof(g_browserCountsPath), g_browserPath);
+    return;
+  }
+
+  g_cachedActionCount = browserActionRowCount();
   Dir dir = LittleFS.openDir(g_browserPath);
   while (dir.next()) {
-    char path[kSequencePathLength] = "";
-    char label[kBrowserLabelLength] = "";
-    if (scanDirectoryEntry(wantFolder, dir, path, sizeof(path), label, sizeof(label))) {
-      ++count;
+    BrowserRow row;
+    if (!scanDirectoryEntry(dir, row)) {
+      continue;
+    }
+    if (row.isFolder) {
+      ++g_cachedFolderCount;
+    } else if (browserIncludesFiles()) {
+      ++g_cachedFileCount;
     }
   }
-  return count;
+
+  g_cachedTotalCount =
+    static_cast<uint16_t>(g_cachedActionCount + g_cachedFolderCount + g_cachedFileCount);
+  g_browserCountsValid = true;
+  g_browserCountsMode = g_browserMode;
+  copyString(g_browserCountsPath, sizeof(g_browserCountsPath), g_browserPath);
 }
 
 int compareEntryKey(const char* label, const char* path, const char* otherLabel, const char* otherPath) {
@@ -345,30 +422,135 @@ bool findSortedEntry(bool wantFolder, uint16_t rank, BrowserRow& row) {
   return true;
 }
 
+bool findNextSortedEntry(bool wantFolder,
+                         bool havePrevious,
+                         const char* previousLabel,
+                         const char* previousPath,
+                         BrowserRow& row) {
+  bool found = false;
+  BrowserRow best;
+
+  Dir dir = LittleFS.openDir(g_browserPath);
+  while (dir.next()) {
+    BrowserRow candidate;
+    if (!scanDirectoryEntry(dir, candidate) || candidate.isFolder != wantFolder) {
+      continue;
+    }
+    if (havePrevious &&
+        compareEntryKey(candidate.label, candidate.path, previousLabel, previousPath) <= 0) {
+      continue;
+    }
+    if (!found || compareEntryKey(candidate.label, candidate.path, best.label, best.path) < 0) {
+      best = candidate;
+      found = true;
+    }
+  }
+
+  if (!found) {
+    return false;
+  }
+  row = best;
+  return true;
+}
+
+void appendBrowserCacheRow(const BrowserRow& row) {
+  if (g_browserRowsCount >= kBrowserCacheRows) {
+    return;
+  }
+  g_browserRows[g_browserRowsCount++] = row;
+}
+
+void appendSortedRowsToBrowserCache(bool wantFolder, uint16_t firstRank, uint16_t rowCount) {
+  BrowserRow previous;
+  bool havePrevious = false;
+  const uint16_t stopRank = static_cast<uint16_t>(firstRank + rowCount);
+
+  for (uint16_t rank = 0; rank < stopRank; ++rank) {
+    BrowserRow current;
+    if (!findNextSortedEntry(wantFolder, havePrevious, previous.label, previous.path, current)) {
+      return;
+    }
+    if (rank >= firstRank) {
+      appendBrowserCacheRow(current);
+    }
+    previous = current;
+    havePrevious = true;
+  }
+}
+
+void populateBrowserRowsCache(uint16_t startIndex) {
+  ensureBrowserCounts();
+  invalidateBrowserRowsCache();
+
+  g_browserRowsValid = true;
+  g_browserRowsMode = g_browserMode;
+  copyString(g_browserRowsPath, sizeof(g_browserRowsPath), g_browserPath);
+  g_browserRowsFirstIndex = startIndex;
+
+  if (startIndex >= g_cachedTotalCount) {
+    return;
+  }
+
+  const uint16_t windowEnd =
+    minBrowserIndex(static_cast<uint16_t>(startIndex + kBrowserCacheRows), g_cachedTotalCount);
+
+  for (uint16_t index = startIndex;
+       index < windowEnd && index < g_cachedActionCount && g_browserRowsCount < kBrowserCacheRows;
+       ++index) {
+    BrowserRow row;
+    if (actionRow(index, row)) {
+      appendBrowserCacheRow(row);
+    }
+  }
+
+  const uint16_t folderStart = g_cachedActionCount;
+  const uint16_t folderEnd = static_cast<uint16_t>(folderStart + g_cachedFolderCount);
+  if (windowEnd > folderStart && startIndex < folderEnd && g_browserRowsCount < kBrowserCacheRows) {
+    const uint16_t firstIndex = maxBrowserIndex(startIndex, folderStart);
+    const uint16_t lastIndex = minBrowserIndex(windowEnd, folderEnd);
+    appendSortedRowsToBrowserCache(true,
+                                   static_cast<uint16_t>(firstIndex - folderStart),
+                                   static_cast<uint16_t>(lastIndex - firstIndex));
+  }
+
+  const uint16_t fileStart = folderEnd;
+  const uint16_t fileEnd = static_cast<uint16_t>(fileStart + g_cachedFileCount);
+  if (windowEnd > fileStart && startIndex < fileEnd && g_browserRowsCount < kBrowserCacheRows) {
+    const uint16_t firstIndex = maxBrowserIndex(startIndex, fileStart);
+    const uint16_t lastIndex = minBrowserIndex(windowEnd, fileEnd);
+    appendSortedRowsToBrowserCache(false,
+                                   static_cast<uint16_t>(firstIndex - fileStart),
+                                   static_cast<uint16_t>(lastIndex - firstIndex));
+  }
+}
+
+bool browserRowsCacheCovers(uint16_t index) {
+  return g_browserRowsValid && browserCacheMatches(g_browserRowsMode, g_browserRowsPath) &&
+         index >= g_browserRowsFirstIndex &&
+         index < static_cast<uint16_t>(g_browserRowsFirstIndex + g_browserRowsCount);
+}
+
 uint16_t browserRowCount(void*) {
-  const uint16_t folderCount = countEntries(true);
-  const uint16_t fileCount = browserIncludesFiles() ? countEntries(false) : 0;
-  return static_cast<uint16_t>(browserActionRowCount() + folderCount + fileCount);
+  ensureBrowserCounts();
+  return g_cachedTotalCount;
 }
 
 bool rowForIndex(uint16_t index, BrowserRow& row) {
   row = BrowserRow{};
-  const uint16_t actionCount = browserActionRowCount();
-  if (index < actionCount) {
-    return actionRow(index, row);
+  ensureBrowserCounts();
+  if (index >= g_cachedTotalCount) {
+    return false;
   }
 
-  uint16_t entryIndex = static_cast<uint16_t>(index - actionCount);
-  const uint16_t folderCount = countEntries(true);
-  if (entryIndex < folderCount) {
-    return findSortedEntry(true, entryIndex, row);
+  if (!browserRowsCacheCovers(index)) {
+    populateBrowserRowsCache(index);
+  }
+  if (!browserRowsCacheCovers(index)) {
+    return false;
   }
 
-  entryIndex = static_cast<uint16_t>(entryIndex - folderCount);
-  if (browserIncludesFiles()) {
-    return findSortedEntry(false, entryIndex, row);
-  }
-  return false;
+  row = g_browserRows[index - g_browserRowsFirstIndex];
+  return true;
 }
 
 bool browserLabel(void*, uint16_t index, char* output, size_t outputLength) {
@@ -425,6 +607,7 @@ void setBrowserPath(const char* path) {
   } else {
     copyString(g_browserPath, sizeof(g_browserPath), kSequenceStorageRoot);
   }
+  invalidateBrowserCache();
 }
 
 void statusForPath(const char* lineOne, const char* path) {
@@ -441,6 +624,7 @@ void returnToSequencerMenu() {
   g_fileUiActive = false;
   g_browserMode = BrowserMode::None;
   g_namingTarget = NamingTarget::None;
+  invalidateBrowserCache();
   if (g_sequencerPage != nullptr) {
     menu.setMenuPageCurrent(*g_sequencerPage);
     menu.drawMenu();
@@ -918,6 +1102,7 @@ void confirmDeleteCallback() {
   }
 
   if (deleted) {
+    invalidateBrowserCache();
     showBrowser();
   } else {
     showBrowser();
@@ -942,6 +1127,7 @@ void finishNamingToBrowser() {
   g_renameSourcePath[0] = '\0';
   g_namingErrorOne[0] = '\0';
   g_namingErrorTwo[0] = '\0';
+  invalidateBrowserCache();
   showBrowser();
 }
 
@@ -989,6 +1175,7 @@ bool commitNaming() {
     }
     if (saveSequenceToPath(targetPath)) {
       g_namingTarget = NamingTarget::None;
+      invalidateBrowserCache();
       returnToSequencerMenu();
       statusForPath("Saved New", targetPath);
       return true;
