@@ -124,9 +124,10 @@ playback steps advance silently. A sequencer-owned overlay renders selected-step
 temporary status, and clear feedback screens. Tied steps display `T` instead of
 note labels in selected-step and tool overlays. Button `9` is red when stopped
 and green when playing, and the current active play step is highlighted even
-when empty. `Seq Lights` rendering uses the board palette's base hue/saturation
-cache for `Step Color = Note`, then applies sequencer brightness in linear RGB
-before a single gamma pass.
+when empty. Selected-step blink gates the step fully off before normal
+empty/programmed color rendering. `Seq Lights` rendering uses the board
+palette's base hue/saturation cache for `Step Color = Note`, then applies
+sequencer brightness in linear RGB before a single gamma pass.
 
 `src/firmware/sequencer/SequencerTools.*` owns the selected-step tool modal
 state, exact-entry buffers, copy source, quick length display value, and

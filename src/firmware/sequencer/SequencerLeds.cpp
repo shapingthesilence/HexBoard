@@ -25,6 +25,16 @@ constexpr byte kPostStepGuardButtonIndexA = 38;
 constexpr byte kPostStepGuardButtonIndexB = 39;
 constexpr float kActionBlueHue = 250.0f;
 constexpr byte kActionBlueValue = 211;
+constexpr uint64_t kSelectedStepBlinkOnMicros = 600000ULL;
+constexpr uint64_t kSelectedStepBlinkOffMicros = 200000ULL;
+
+bool selectedStepBlinkLit() {
+  uint64_t cycleMicros = kSelectedStepBlinkOnMicros + kSelectedStepBlinkOffMicros;
+  if (cycleMicros == 0) {
+    return true;
+  }
+  return (runTime % cycleMicros) < kSelectedStepBlinkOnMicros;
+}
 
 uint32_t ledColor(float hue, byte saturation, byte value) {
   colorDef color = {
@@ -191,6 +201,11 @@ void renderLedOverrides(SetLedPixelFn setLedPixel) {
     bool programmed = stepIsProgrammed(stepIndex);
     bool playing = playingStepIndex() == static_cast<int8_t>(stepIndex);
     bool accented = stepIsAccented(stepIndex);
+    if (selected && !selectedStepBlinkLit()) {
+      setLedPixel(static_cast<byte>(buttonIndex), 0);
+      continue;
+    }
+
     if (!programmed) {
       setLedPixel(static_cast<byte>(buttonIndex), emptyStepColor(selected, playing, accented));
       continue;

@@ -968,12 +968,13 @@ pattern pass without wrapping across the loop boundary. A sequencer-owned
 overlay renders `Edit #NN`, the Step Tools picker, exact
 length/velocity/probability editors, copy target, temporary status, and clear
 feedback screens. Tied steps show `T` instead of note labels in edit/tool
-overlays. Step LEDs outside the active step range remain off. The `Seq Lights`
-page stores `Accent Every`, `Step Color`, and `Step Hue` in the active profile.
-Programmed steps use medium, high, or highest brightness; accents alter
-brightness only. `Step Color = Regular` uses the chosen named hue, while
-`Step Color = Note` uses the step's lowest stored pitch and the current board
-palette color.
+overlays. Step LEDs outside the active step range remain off, and selected-step
+blink gates selected steps fully off before normal empty/programmed color
+rendering. The `Seq Lights` page stores `Accent Every`, `Step Color`, and
+`Step Hue` in the active profile. Programmed steps use medium, high, or highest
+brightness; accents alter brightness only. `Step Color = Regular` uses the
+chosen named hue, while `Step Color = Note` uses the step's lowest stored pitch
+and the current board palette color.
 
 Step tool modal state lives in `SequencerTools.*`; transport note lifetimes use
 bounded playback groups rather than a single active note list so overlength and

@@ -128,7 +128,8 @@ button, transport state, and the current play position. Button `9` is red when
 stopped and green while playing. Step LEDs beyond the active `Steps` range stay
 off even if those steps contain notes. Empty unselected non-accented steps stay
 off, while empty accented steps are visible at medium neutral brightness.
-Selected or playing empty steps stay visibly highlighted.
+Selected steps blink roughly `600ms` on and `200ms` off, including empty
+selected steps. Playing empty steps stay visibly highlighted.
 
 Programmed steps use a brightness ladder: normal programmed steps are medium,
 selected or accented programmed steps are high, and the current playing
