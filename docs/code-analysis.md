@@ -511,7 +511,10 @@ Sequencer lower-grid audition notes use a narrow source API from
 mode has no selected step; tap preview, selected-step entry, and transport
 playback do not feed this display source. `drawPlayedNotesOverlay()` runs from
 the main loop after menu input handling, including after the Sequencer display
-gets first chance to draw.
+gets first chance to draw. When selected-step edit focus closes and leaves the
+sequencer display blank, that blank state is tracked by `SequencerOverlay.cpp`;
+no-selection audition notes then force the full temporary `Now Playing` overlay
+and restore the blank state afterward instead of redrawing the Sequencer menu.
 During normal menu display it draws only the newest currently held note as a
 top-right badge using the same large note font as the full overlay. GEM menu
 redraws use `drawPlayedNoteBadgeOnMenuFrame()` as a draw callback, and

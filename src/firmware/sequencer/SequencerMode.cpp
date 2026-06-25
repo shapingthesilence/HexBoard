@@ -195,6 +195,10 @@ void restoreSequencerDisplayAfterPlayedNotesOverlay() {
       sequencer::drawSequencerOverlay();
       return;
     }
+    if (sequencer::sequencerIdleDisplayBlanked()) {
+      sequencer::redrawSequencerIdleBlankDisplay();
+      return;
+    }
   }
   restoreInteractiveMenuDisplay();
 #endif

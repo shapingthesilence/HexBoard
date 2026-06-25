@@ -93,9 +93,11 @@ silently in both modes.
 Lower-grid playable note keys audition through the current `Play Type` while
 Sequencer mode is active. With no step selected, a note press auditions only.
 If `DisplayNotes` is enabled, those no-selection audition notes also drive the
-normal compact played-note badge or screensaver `Now Playing` overlay. The
-overlay uses the same label/number mode, six-note cap, release timing, and
-12-EDO chord names as Keyboard mode.
+normal compact played-note badge when the Sequencer menu is visible. If the
+OLED screensaver is active, or if the sequencer display is blank after closing
+selected-step edit focus, they use the full `Now Playing` overlay and return to
+that blank display afterward. The overlay uses the same label/number mode,
+six-note cap, release timing, and 12-EDO chord names as Keyboard mode.
 With a step selected and `Monophonic` Off, the same note press auditions and
 toggles that tuning-relative pitch in the selected step. With `Monophonic` On,
 pressing a pitch already in the selected step removes it; pressing a different

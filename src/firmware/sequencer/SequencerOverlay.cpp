@@ -29,6 +29,7 @@ constexpr byte kNoteLineSize = 24;
 bool overlayVisible = false;
 bool overlayDirty = true;
 bool overviewShown = false;
+bool idleDisplayBlanked = false;
 byte overviewStartStep = 0;
 
 const char* const kChromaticNames[12] = {
@@ -229,6 +230,7 @@ void drawPerformanceMonitorOverlay() {
 
   overlayVisible = true;
   overlayDirty = false;
+  idleDisplayBlanked = false;
 
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x13_tf);
@@ -243,6 +245,7 @@ void drawPerformanceMonitorOverlay() {
 void drawOverviewOverlay() {
   overlayVisible = true;
   overlayDirty = false;
+  idleDisplayBlanked = false;
 
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x13_tf);
@@ -279,15 +282,31 @@ void hideSelectedStepOverlay() {
   overlayVisible = false;
   overlayDirty = false;
   if (wasVisible) {
-    u8g2.clearBuffer();
-    u8g2.sendBuffer();
+    redrawSequencerIdleBlankDisplay();
   }
+}
+
+bool sequencerIdleDisplayBlanked() {
+  return idleDisplayBlanked;
+}
+
+void redrawSequencerIdleBlankDisplay() {
+  overlayVisible = false;
+  overlayDirty = false;
+  idleDisplayBlanked = true;
+  u8g2.clearBuffer();
+  u8g2.sendBuffer();
+}
+
+void clearSequencerIdleDisplayBlanked() {
+  idleDisplayBlanked = false;
 }
 
 void resetOverlayState() {
   overlayVisible = false;
   overlayDirty = true;
   overviewShown = false;
+  idleDisplayBlanked = false;
   overviewStartStep = 0;
   resetPerformanceMonitorState();
 }
@@ -308,6 +327,7 @@ void showOverviewPage(bool advancePage) {
   overviewShown = true;
   overlayVisible = false;
   overlayDirty = true;
+  idleDisplayBlanked = false;
 }
 
 void hideOverview() {
@@ -320,6 +340,7 @@ void hideOverview() {
   overlayVisible = false;
   overlayDirty = true;
   if (!hasSelectedStep() && toolMode() == SequencerToolMode::Normal) {
+    idleDisplayBlanked = false;
     menu.drawMenu();
   }
 }
@@ -354,6 +375,7 @@ void drawSequencerOverlay() {
   }
 
   keepOverlayDisplayAwake();
+  idleDisplayBlanked = false;
 
   char headerLabel[20];
   char infoLine[32];
@@ -572,6 +594,16 @@ void markOverlayDirty() {
 }
 
 void hideSelectedStepOverlay() {
+}
+
+bool sequencerIdleDisplayBlanked() {
+  return false;
+}
+
+void redrawSequencerIdleBlankDisplay() {
+}
+
+void clearSequencerIdleDisplayBlanked() {
 }
 
 void resetOverlayState() {

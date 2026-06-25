@@ -6,6 +6,7 @@
 #include "../hardware/GridState.h"
 #include "../sequencer/SequencerManagedNotes.h"
 #include "../sequencer/SequencerMode.h"
+#include "../sequencer/SequencerOverlay.h"
 
 // --- Note display overlay when pressing keys ---
 byte noteDisplayMode = NOTE_DISPLAY_OFF;
@@ -440,6 +441,10 @@ void drawCompactPlayedNoteBadgeFrame(const char* noteText) {
 }
 
 void drawPlayedNoteBadgeOnMenuFrame() {
+  if (sequencerModeActive()) {
+    sequencer::clearSequencerIdleDisplayBlanked();
+  }
+
   if (!noteDisplayEnabled()
       || noteOverlayTemporaryWake
       || noteOverlayVisible

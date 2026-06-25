@@ -6,6 +6,7 @@
 
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerOutput.h"
+#include "SequencerOverlay.h"
 #include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
 #include "../app/DiagnosticsTiming.h"
@@ -119,7 +120,7 @@ void notifyAuditionDisplayStart() {
     return;
   }
 
-  if (noteDisplayEnabled() && screenSaverOn) {
+  if (noteDisplayEnabled() && (screenSaverOn || sequencerIdleDisplayBlanked())) {
     setNoteOverlayTemporaryWake(true);
   }
   noteOverlayReleaseGraceUntil = 0;
