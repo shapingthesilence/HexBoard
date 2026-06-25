@@ -33,6 +33,8 @@ constexpr uint16_t BOOT_LED_CHECK_WAVE_MS = 30;
 constexpr uint16_t BOOT_LED_CHECK_NORMAL_FADE_MS = 25;
 constexpr byte USER_GEOMETRY_REST_COLOR_VALUE_MAX = VALUE_NORMAL;
 bool settingsFileMissingOnBoot = false;
+colorDef baseLedColorCache[LED_COUNT] = {};
+bool baseLedColorCacheValid[LED_COUNT] = {};
 
 byte scaleLedChannel(byte channel, uint16_t scale65535) {
   return static_cast<byte>((static_cast<uint32_t>(channel) * scale65535 + 32767u) / 65535u);
@@ -197,6 +199,25 @@ colorDef getColor(int32_t temp) {
   */
 uint32_t RAM_FUNC(getLEDcode)(colorDef c) {
   return strip.gamma32(strip.ColorHSV(transformHue(c.hue), c.sat, c.val * globalBrightness / 255));
+}
+
+uint32_t RAM_FUNC(getLEDcodeLinear)(colorDef c) {
+  return strip.ColorHSV(transformHue(c.hue), c.sat, c.val * globalBrightness / 255);
+}
+
+uint32_t RAM_FUNC(gammaLEDcode)(uint32_t color) {
+  return strip.gamma32(color);
+}
+
+bool RAM_FUNC(getBaseLedColorForPitchSteps)(int16_t pitchSteps, colorDef& colorOut) {
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    if (h[i].isCmd || !baseLedColorCacheValid[i] || h[i].stepsFromC != pitchSteps) {
+      continue;
+    }
+    colorOut = baseLedColorCache[i];
+    return true;
+  }
+  return false;
 }
 
 byte applyBootLedCheckLevels(byte value) {
@@ -483,6 +504,7 @@ void setLEDcolorCodes() {
   // ---- End diatonic MOS precomputation ----
 
   for (byte i = 0; i < LED_COUNT; i++) {
+    baseLedColorCacheValid[i] = false;
     if (!(h[i].isCmd)) {
       colorDef setColor = { HUE_NONE, SAT_BW, VALUE_BLACK };
       bool userGeometryColorApplied = false;
@@ -749,6 +771,8 @@ void setLEDcolorCodes() {
         setColor = userGeometryRuntimeButtonColor[i];
         userGeometryColorApplied = true;
       }
+      baseLedColorCache[i] = setColor;
+      baseLedColorCacheValid[i] = true;
       colorDef restColor = setColor;
       if (userGeometryColorApplied && restColor.val > USER_GEOMETRY_REST_COLOR_VALUE_MAX) {
         restColor.val = USER_GEOMETRY_REST_COLOR_VALUE_MAX;

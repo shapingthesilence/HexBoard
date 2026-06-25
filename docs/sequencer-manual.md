@@ -32,6 +32,16 @@ four volatile controls:
 - `Tempo`: internal tempo, `1` through `255` BPM, default `120`.
 - `Tap Preview`: `Off` or `On`, default `On`.
 
+Open `Seq Lights` from the Sequencer page to edit three profile-backed light
+preferences:
+
+- `Accent Every`: `Off` or `2` through `8`, default `4`. Accents start at step
+  `1`, so `4` accents steps `1`, `5`, `9`, and so on.
+- `Step Color`: `Note` or `Regular`, default `Regular`.
+- `Step Hue`: `Red`, `Orange`, `Yellow`, `Lime`, `Green`, `Teal`, `Cyan`,
+  `Lt Blue`, `Blue`, `Indigo`, `Purple`, `Magenta`, or `Pink`, default
+  `Indigo`. This item is shown only when `Step Color` is `Regular`.
+
 Programmed steps send MIDI using the current tuning, transpose, MIDI routing,
 and MPE settings. Empty steps advance silently.
 
@@ -60,21 +70,29 @@ other tunings use numeric `step.octave` labels.
 
 Button `19` clears the selected step after the current confirm-hold gesture.
 
-Sequencer LEDs show selected steps, programmed steps, the clear button,
-transport state, and the current play position. Button `9` is red when stopped
-and green while playing. The current play step is highlighted, including empty
-steps. Step LEDs beyond the active `Steps` range stay off even if those steps
-contain notes.
+Sequencer LEDs show selected steps, programmed steps, accents, the clear
+button, transport state, and the current play position. Button `9` is red when
+stopped and green while playing. Step LEDs beyond the active `Steps` range stay
+off even if those steps contain notes. Empty unselected non-accented steps stay
+off, while empty accented steps are visible at medium neutral brightness.
+Selected or playing empty steps stay visibly highlighted.
+
+Programmed steps use a brightness ladder: normal programmed steps are medium,
+selected or accented programmed steps are high, and the current playing
+programmed step is highest. Accents change brightness only; they do not change
+hue. In `Step Color = Regular`, programmed steps use the selected `Step Hue`.
+In `Step Color = Note`, programmed steps use the stored step's lowest note and
+the current keyboard color palette, including color mode and ColorByKey.
 
 Patterns and Playback Settings are not persistent yet. Rebooting clears
 programmed sequencer steps and restores `Steps`, `Direction`, `Tempo`, and
-`Tap Preview` to their defaults. These controls will become file-backed when
-sequencer persistence lands.
+`Tap Preview` to their defaults. `Seq Lights` preferences are saved in the
+current board profile and are not stored in sequence files.
 
 ## Not Yet Ported
 
 The current sequencer slice does not include persistence, save/load/browser
 flows, external MIDI clock, MIDI start/stop/clock send, onboard synth playback,
 onboard synth or OB Synth audition/preview, Play Type settings, probability
-playback behavior, ties, backup tools, exact edit screens, or settings schema
-changes.
+playback behavior, ties, backup tools, exact edit screens, or sequence-file
+persistence.

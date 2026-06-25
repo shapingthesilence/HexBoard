@@ -540,7 +540,12 @@ The LED pipeline uses cached per-button colors:
 - `LEDcodePlay`
 - `LEDcodeAnim`
 
-`setLEDcolorCodes()` recomputes those caches. Call it after changes that affect palette, scale, tuning relationships, key-centered color placement, brightness, or color mode.
+`setLEDcolorCodes()` recomputes those caches plus a base `colorDef` cache used
+by Sequencer Note-colored steps. Call it after changes that affect palette,
+scale, tuning relationships, key-centered color placement, brightness, or color
+mode. Sequencer step brightness should use the base hue/saturation cache and
+linear HSV/RGB helpers before applying gamma once; do not rescale packed
+`LEDcodeRest` or `LEDcodeDim` values.
 
 `lightUpLEDs()` writes the final frame into the NeoPixel buffer and then calls `applyLedCurrentLimitToFrame()` before `strip.show()`. The limiter uses a rough WS2812 estimate of `20 mA` per color channel at full scale plus `1 mA` idle per LED, then scales the final RGB bytes if the configured `LED Limit` budget would be exceeded. `decodeLedCurrentLimitMilliamps()` maps the visible USB-side menu labels through a hardware-specific meter calibration table. On `V1.2`, the internal limiter budgets are `250 mA -> 250`, `500 mA -> 500`, `750 mA -> 900`, `1.0 A -> 1350`, `1.5 A -> 2000`, `2.0 A -> 3150`, and `3.0 A -> 5000`. On `V1.1`, the budgets are `250 mA -> 600`, `500 mA -> 1160`, `750 mA -> 2100`, `1.0 A -> 3150`, `1.5 A -> 4600`, `2.0 A -> 7100`, and `3.0 A -> 8500`. The `1.5 A` menu value is the factory default because it preserves the old stable `V1.2` draw and is calibrated to land near that same actual draw on `V1.1`. Because the scaling happens at the final frame stage, it also affects delegated-control LED frames.
 
@@ -715,7 +720,11 @@ The current `SettingsHeader` contains:
 `CURRENT_SETTINGS_VERSION` is currently `20`, and `PROFILE_COUNT` is `9`.
 Older settings-schema files are not migrated in this release; `load_settings()`
 restores factory defaults and rewrites `/settings.dat` whenever the header
-version is not `20`.
+version is not `20`. The optional sequencer's `SequencerStepAccentEvery`,
+`SequencerStepColorMode`, and `SequencerStepHue` profile bytes were appended
+without changing `CURRENT_SETTINGS_VERSION`, so shorter older version-20 files
+also restore defaults through the existing profile data length or CRC failure
+path.
 
 Version `20` reinterprets the existing `DisplayPlayedNotes` byte from a boolean
 as `Off`/`Label`/`Number`; the persisted byte position did not move. Version
@@ -948,9 +957,13 @@ routing, and MPE helpers; empty playback steps advance silently. A
 sequencer-owned selected-step overlay renders `Edit #NN`, default/current
 length, velocity, probability, and all stored step notes sorted low-to-high,
 wrapping to two note rows only when needed. Step LEDs outside the active step
-range remain off. Sequencer persistence, external sync, MIDI clock send,
-onboard synth playback/preview, probability playback behavior, ties, and
-detailed editing screens remain intentionally absent.
+range remain off. The `Seq Lights` page stores `Accent Every`, `Step Color`,
+and `Step Hue` in the active profile. Programmed steps use medium, high, or
+highest brightness; accents alter brightness only. `Step Color = Regular` uses
+the chosen named hue, while `Step Color = Note` uses the step's lowest stored
+pitch and the current board palette color. Sequencer persistence, external
+sync, MIDI clock send, onboard synth playback/preview, probability playback
+behavior, ties, and detailed editing screens remain intentionally absent.
 
 ## Input Interface And Panic Behavior
 

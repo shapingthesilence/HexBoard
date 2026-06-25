@@ -104,14 +104,20 @@ steps beyond the active count. `Direction` defaults to `Forward` and supports
 `Forward`, `Backward`, `Ping-Pong`, `Random`, `Brownian`, and `Drunk`. `Tap
 Preview` defaults to `On`; selecting a programmed step previews its stored note
 or chord through MIDI unless the volatile toggle is set to `Off`.
+The Sequencer page also links to `Seq Lights`. Its `Accent Every`, `Step Color`,
+and `Step Hue` controls are profile-backed `SettingKey` values, not sequence
+file data. The defaults are accent every `4`, regular step color, and `Indigo`
+step hue.
 Programmed steps, tap preview, and lower-grid audition emit through the current
 tuning, transpose, MIDI routing, and MPE settings, while empty playback steps
 advance silently. Audition and preview are MIDI-only in this slice. A
 sequencer-owned overlay renders selected-step `Edit #NN`, length, velocity,
 probability, and one or two wrapped low-to-high note-label rows. Button `9` is
 red when stopped and green when playing, and the current active play step is
-highlighted even when empty. Persistence, storage/browser flows, settings schema
-changes, external MIDI sync, MIDI clock/transport send, onboard synth sequencer
+highlighted even when empty. `Seq Lights` rendering uses the board palette's
+base hue/saturation cache for `Step Color = Note`, then applies sequencer
+brightness in linear RGB before a single gamma pass. Persistence,
+storage/browser flows, external MIDI sync, MIDI clock/transport send, onboard synth sequencer
 playback or preview, probability playback behavior, ties, and tools are
 intentionally not present yet.
 
@@ -528,6 +534,11 @@ Important implementation details:
 - this release intentionally skips old profile compatibility: any `/settings.dat`
   file with a version other than `20` is replaced with factory defaults instead
   of being migrated
+- `SequencerStepAccentEvery`, `SequencerStepColorMode`, and
+  `SequencerStepHue` are appended profile bytes for the optional sequencer's
+  `Seq Lights` controls; this development branch intentionally leaves
+  `CURRENT_SETTINGS_VERSION` at `20`, so older shorter version-20 settings files
+  restore factory defaults through the existing length/CRC failure path
 - version `20` reinterprets `DisplayPlayedNotes` as `Off`/`Label`/`Number`
   instead of a boolean; the byte position is unchanged
 - version `19` no longer stores the old `Debug` byte;

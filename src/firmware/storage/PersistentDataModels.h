@@ -95,6 +95,9 @@ enum class SettingKey : uint8_t {
   SynthLfoWave,
   SynthLfoSpeed,
   DynamicJIRatioTable,
+  SequencerStepAccentEvery,
+  SequencerStepColorMode,
+  SequencerStepHue,
   // This must remain last - it gives the total number of settings.
   NumSettings
 };

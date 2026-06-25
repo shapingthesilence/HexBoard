@@ -4,6 +4,7 @@
 
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerInput.h"
+#include "SequencerLightSettings.h"
 #include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
 #include "SequencerTransport.h"
@@ -34,16 +35,80 @@ uint32_t ledColor(float hue, byte saturation, byte value) {
 }
 
 uint32_t emptySelectedStepColor() {
-  byte value = ((runTime / 250000ULL) % 2) == 0 ? VALUE_FULL : VALUE_LOW;
-  return ledColor(HUE_BLUE, SAT_MODERATE, value);
+  return ledColor(HUE_NONE, SAT_BW, kStepLightHigh);
 }
 
-uint32_t programmedStepColor(bool selected) {
-  if (!selected) {
-    return ledColor(HUE_GREEN, SAT_VIVID, VALUE_SHADE);
+uint32_t neutralStepColor(byte value) {
+  return ledColor(HUE_NONE, SAT_BW, value);
+}
+
+byte programmedStepLightLevel(bool selected, bool playing, bool accented) {
+  if (playing) {
+    return kStepLightHighest;
   }
-  byte value = ((runTime / 250000ULL) % 2) == 0 ? VALUE_FULL : VALUE_NORMAL;
-  return ledColor(HUE_CYAN, SAT_VIVID, value);
+  if (selected || accented) {
+    return kStepLightHigh;
+  }
+  return kStepLightMedium;
+}
+
+uint32_t scaleLinearLedColor(uint32_t color, byte level) {
+  if (level == kStepLightOff) {
+    return 0;
+  }
+  if (level >= kStepLightHighest) {
+    return gammaLEDcode(color);
+  }
+
+  uint32_t scaled = 0;
+  for (byte shift = 0; shift <= 16; shift += 8) {
+    uint32_t channel = (color >> shift) & 0xFF;
+    channel = (channel * level + 127) / 255;
+    scaled |= (channel << shift);
+  }
+  return gammaLEDcode(scaled);
+}
+
+uint32_t filledStepColor(float hue, byte saturation, byte level) {
+  colorDef referenceColor = {
+    hue,
+    saturation,
+    applyLEDLevel(kStepLightHighest, ledRestBrightness)
+  };
+  return scaleLinearLedColor(getLEDcodeLinear(referenceColor), level);
+}
+
+uint32_t regularProgrammedStepColor(bool selected, bool playing, bool accented) {
+  byte level = programmedStepLightLevel(selected, playing, accented);
+  return filledStepColor(stepHueValue(stepHue()), SAT_VIVID, level);
+}
+
+bool noteProgrammedStepColor(int16_t pitchSteps,
+                             bool selected,
+                             bool playing,
+                             bool accented,
+                             uint32_t& colorOut) {
+  colorDef baseColor = {};
+  if (!getBaseLedColorForPitchSteps(pitchSteps, baseColor)) {
+    return false;
+  }
+
+  byte level = programmedStepLightLevel(selected, playing, accented);
+  colorOut = filledStepColor(baseColor.hue, baseColor.sat, level);
+  return true;
+}
+
+uint32_t programmedStepColor(byte stepIndex, bool selected, bool playing, bool accented) {
+  if (stepColorMode() == kStepColorNote) {
+    const SequencerStep& target = step(stepIndex);
+    if (target.noteCount > 0) {
+      uint32_t color = 0;
+      if (noteProgrammedStepColor(target.pitchSteps[0], selected, playing, accented, color)) {
+        return color;
+      }
+    }
+  }
+  return regularProgrammedStepColor(selected, playing, accented);
 }
 
 uint32_t stoppedTransportColor() {
@@ -54,14 +119,14 @@ uint32_t runningTransportColor() {
   return ledColor(HUE_GREEN, SAT_VIVID, VALUE_FULL);
 }
 
-uint32_t playingStepColor(bool programmed, bool selected) {
-  if (selected) {
-    return ledColor(HUE_YELLOW, SAT_VIVID, VALUE_FULL);
+uint32_t emptyStepColor(bool selected, bool playing, bool accented) {
+  if (accented) {
+    return neutralStepColor((selected || playing) ? kStepLightHighest : kStepLightMedium);
   }
-  if (programmed) {
-    return ledColor(HUE_LIME, SAT_VIVID, VALUE_FULL);
+  if (selected || playing) {
+    return emptySelectedStepColor();
   }
-  return ledColor(HUE_YELLOW, SAT_MODERATE, VALUE_NORMAL);
+  return 0;
 }
 
 uint32_t confirmClearColor() {
@@ -101,13 +166,13 @@ void renderLedOverrides(SetLedPixelFn setLedPixel) {
     bool selected = selectedStepIndex() == static_cast<int8_t>(stepIndex);
     bool programmed = stepIsProgrammed(stepIndex);
     bool playing = playingStepIndex() == static_cast<int8_t>(stepIndex);
-    if (!programmed && !selected && !playing) {
-      setLedPixel(static_cast<byte>(buttonIndex), 0);
+    bool accented = stepIsAccented(stepIndex);
+    if (!programmed) {
+      setLedPixel(static_cast<byte>(buttonIndex), emptyStepColor(selected, playing, accented));
       continue;
     }
 
-    uint32_t color = playing ? playingStepColor(programmed, selected)
-                             : (programmed ? programmedStepColor(selected) : emptySelectedStepColor());
+    uint32_t color = programmedStepColor(stepIndex, selected, playing, accented);
     setLedPixel(static_cast<byte>(buttonIndex), color);
   }
 

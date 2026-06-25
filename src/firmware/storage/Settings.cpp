@@ -6,6 +6,7 @@
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
 #include "../model/ScalePalettePreset.h"
+#include "../sequencer/SequencerLightSettings.h"
 #include "../synth/SynthDefaults.h"
 #include "../synth/SynthAudio.h"
 #include "Settings.h"
@@ -95,6 +96,9 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* SynthLfoWave                 */ SYNTH_LFO_WAVE_SINE,
   /* SynthLfoSpeed                */ SYNTH_LFO_SPEED_DEFAULT,
   /* DynamicJIRatioTable          */ DYNAMIC_JI_RATIO_TABLE_41_LIMIT,
+  /* SequencerStepAccentEvery     */ sequencer::kStepAccentEveryDefault,
+  /* SequencerStepColorMode       */ sequencer::kStepColorDefault,
+  /* SequencerStepHue             */ sequencer::kStepHueDefault,
 };
 
 // ==================================================

@@ -4,6 +4,7 @@
 
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerInput.h"
+#include "SequencerLightMenu.h"
 #include "SequencerManagedNotes.h"
 #include "SequencerOverlay.h"
 #include "SequencerPlaybackMenu.h"
@@ -116,6 +117,7 @@ void setupSequencerMenu() {
   GEMPage& page = sequencerMenuPage();
   page.addMenuItem(sequencerKeyboardAction());
   sequencer::setupPlaybackSettingsMenu(page);
+  sequencer::setupLightSettingsMenu(page);
   page.addMenuItem(sequencerTitleRow());
   page.addMenuItem(sequencerShellStatusRow());
   menuPageMain.addMenuItem(sequencerMenuAction());
