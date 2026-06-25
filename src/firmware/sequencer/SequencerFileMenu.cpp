@@ -335,6 +335,7 @@ bool findSortedEntry(bool wantFolder, uint16_t rank, BrowserRow& row) {
 
     copyString(previousLabel, sizeof(previousLabel), bestLabel);
     copyString(previousPath, sizeof(previousPath), bestPath);
+    havePrevious = true;
   }
 
   row.kind = wantFolder ? RowKind::Folder : RowKind::File;
