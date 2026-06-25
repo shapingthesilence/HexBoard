@@ -13,6 +13,7 @@ byte direction = kDirectionDefault;
 byte preview = kTapPreviewDefault;
 byte outputType = kPlayTypeDefault;
 byte monoMode = kMonophonicModeDefault;
+byte syncSource = kClockSourceDefault;
 
 byte clampByte(byte value, byte minValue, byte maxValue) {
   if (value < minValue) {
@@ -40,6 +41,10 @@ bool validMonophonicMode(byte value) {
   return value == kMonophonicModeOff || value == kMonophonicModeOn;
 }
 
+bool validClockSource(byte value) {
+  return value == kClockSourceInternal || value == kClockSourceExternalMidi;
+}
+
 }  // namespace
 
 byte playbackTempo() {
@@ -64,6 +69,14 @@ byte playType() {
 
 byte monophonicMode() {
   return validMonophonicMode(monoMode) ? monoMode : kMonophonicModeDefault;
+}
+
+byte clockSource() {
+  return validClockSource(syncSource) ? syncSource : kClockSourceDefault;
+}
+
+bool usesExternalClock() {
+  return clockSource() == kClockSourceExternalMidi;
 }
 
 uint64_t playbackStepDurationMicros() {
@@ -94,6 +107,10 @@ byte& monophonicModeMutable() {
   return monoMode;
 }
 
+byte& clockSourceMutable() {
+  return syncSource;
+}
+
 void normalizePlaybackSettings() {
   tempo = playbackTempo();
   stepCount = activeStepCount();
@@ -101,6 +118,7 @@ void normalizePlaybackSettings() {
   preview = tapPreview();
   outputType = playType();
   monoMode = monophonicMode();
+  syncSource = clockSource();
 }
 
 void applyPlaybackPreferencesFromProfile() {
@@ -110,8 +128,12 @@ void applyPlaybackPreferencesFromProfile() {
   preview = validTapPreview(settingValue(SettingKey::SequencerTapPreview))
               ? settingValue(SettingKey::SequencerTapPreview)
               : kTapPreviewDefault;
+  syncSource = validClockSource(settingValue(SettingKey::SequencerClockSource))
+                 ? settingValue(SettingKey::SequencerClockSource)
+                 : kClockSourceDefault;
   settings[static_cast<uint8_t>(SettingKey::SequencerMonophonicMode)] = monoMode;
   settings[static_cast<uint8_t>(SettingKey::SequencerTapPreview)] = preview;
+  settings[static_cast<uint8_t>(SettingKey::SequencerClockSource)] = syncSource;
 }
 
 void persistMonophonicModeToProfile() {
@@ -123,6 +145,12 @@ void persistMonophonicModeToProfile() {
 void persistTapPreviewToProfile() {
   preview = tapPreview();
   settings[static_cast<uint8_t>(SettingKey::SequencerTapPreview)] = preview;
+  markSettingsDirty();
+}
+
+void persistClockSourceToProfile() {
+  syncSource = clockSource();
+  settings[static_cast<uint8_t>(SettingKey::SequencerClockSource)] = syncSource;
   markSettingsDirty();
 }
 

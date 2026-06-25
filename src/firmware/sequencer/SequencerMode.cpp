@@ -173,6 +173,38 @@ void drawSequencerModeDisplay() {
 #endif
 }
 
+void handleSequencerExternalMidiClock() {
+#if HEXBOARD_ENABLE_SEQUENCER
+  if (sequencerActive) {
+    sequencer::handleExternalMidiClock();
+  }
+#endif
+}
+
+void handleSequencerExternalMidiStart() {
+#if HEXBOARD_ENABLE_SEQUENCER
+  if (sequencerActive) {
+    sequencer::handleExternalMidiStart();
+  }
+#endif
+}
+
+void handleSequencerExternalMidiStop() {
+#if HEXBOARD_ENABLE_SEQUENCER
+  if (sequencerActive) {
+    sequencer::handleExternalMidiStop();
+  }
+#endif
+}
+
+void handleSequencerExternalMidiContinue() {
+#if HEXBOARD_ENABLE_SEQUENCER
+  if (sequencerActive) {
+    sequencer::handleExternalMidiContinue();
+  }
+#endif
+}
+
 void setupSequencerMenu() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerMenuInstalled) {

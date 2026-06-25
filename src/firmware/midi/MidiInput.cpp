@@ -5,6 +5,7 @@
 #include "MidiTransport.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../hardware/GridState.h"
+#include "../sequencer/SequencerMode.h"
 
 uint8_t midiDataLengthForStatus(uint8_t status) {
   switch (status & 0xF0) {
@@ -48,8 +49,32 @@ void dispatchIncomingSysEx(MidiInputParser& parser, bool delegatedMode) {
   resetMidiInputParser(parser);
 }
 
+void processIncomingRealtimeMessage(uint8_t value, bool delegatedMode) {
+  if (delegatedMode) {
+    return;
+  }
+
+  switch (value) {
+    case 0xF8:
+      handleSequencerExternalMidiClock();
+      break;
+    case 0xFA:
+      handleSequencerExternalMidiStart();
+      break;
+    case 0xFB:
+      handleSequencerExternalMidiContinue();
+      break;
+    case 0xFC:
+      handleSequencerExternalMidiStop();
+      break;
+    default:
+      break;
+  }
+}
+
 bool processIncomingMidiByte(MidiInputParser& parser, uint8_t value, bool delegatedMode) {
   if (value >= 0xF8) {
+    processIncomingRealtimeMessage(value, delegatedMode);
     return true;
   }
 

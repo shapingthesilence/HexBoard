@@ -32,12 +32,18 @@ constexpr byte kMonophonicModeOff = 0;
 constexpr byte kMonophonicModeOn = 1;
 constexpr byte kMonophonicModeDefault = kMonophonicModeOff;
 
+constexpr byte kClockSourceInternal = 0;
+constexpr byte kClockSourceExternalMidi = 1;
+constexpr byte kClockSourceDefault = kClockSourceInternal;
+
 byte playbackTempo();
 byte activeStepCount();
 byte playbackDirection();
 byte tapPreview();
 byte playType();
 byte monophonicMode();
+byte clockSource();
+bool usesExternalClock();
 uint64_t playbackStepDurationMicros();
 
 byte& playbackTempoMutable();
@@ -46,9 +52,11 @@ byte& playbackDirectionMutable();
 byte& tapPreviewMutable();
 byte& playTypeMutable();
 byte& monophonicModeMutable();
+byte& clockSourceMutable();
 void normalizePlaybackSettings();
 void applyPlaybackPreferencesFromProfile();
 void persistMonophonicModeToProfile();
 void persistTapPreviewToProfile();
+void persistClockSourceToProfile();
 
 }  // namespace sequencer

@@ -102,6 +102,7 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* SequencerStepHue             */ sequencer::kStepHueDefault,
   /* SequencerMonophonicMode      */ sequencer::kMonophonicModeDefault,
   /* SequencerTapPreview          */ sequencer::kTapPreviewDefault,
+  /* SequencerClockSource         */ sequencer::kClockSourceDefault,
 };
 
 // ==================================================

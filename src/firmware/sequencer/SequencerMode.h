@@ -12,3 +12,7 @@ void handleSequencerButtonEvent(byte buttonIndex, bool pressed);
 bool handleSequencerRotaryTurn(int8_t direction);
 bool handleSequencerEncoderClick();
 void drawSequencerModeDisplay();
+void handleSequencerExternalMidiClock();
+void handleSequencerExternalMidiStart();
+void handleSequencerExternalMidiStop();
+void handleSequencerExternalMidiContinue();

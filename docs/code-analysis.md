@@ -723,7 +723,10 @@ bytes and filling the new `SequencerTapPreview` byte from factory defaults.
 Other settings-schema mismatches restore factory defaults and rewrite
 `/settings.dat`. The optional sequencer profile bytes include
 `SequencerStepAccentEvery`, `SequencerStepColorMode`, `SequencerStepHue`,
-`SequencerMonophonicMode`, and `SequencerTapPreview`.
+`SequencerMonophonicMode`, `SequencerTapPreview`, and `SequencerClockSource`.
+`SequencerClockSource` was appended during the in-flight sequencer development
+branch without bumping `CURRENT_SETTINGS_VERSION`; old local development
+settings files with the shorter version-21 payload may restore defaults.
 
 Version `20` reinterprets the existing `DisplayPlayedNotes` byte from a boolean
 as `Off`/`Label`/`Number`; the persisted byte position did not move. Version
@@ -945,15 +948,19 @@ The `Buzzer` toggle is inserted only on hardware `V1.2`.
 When enabled, Sequencer mode currently supports 32-step selection, selected-step
 note entry using tuning-relative `stepsFromC`, selected-step undo, hold-clear,
 step tools, sequencer LED overrides, and routed transport playback. Button `9`
-toggles an internal 16th-note clock. The sequencer-owned `Playback Settings`
-page exposes `Steps`, `Direction`, `Tempo`, `Play Type`, `Tap Preview`, and
-`Monophonic`. `Tempo` defaults to `120` BPM and ranges from `1` to
-`255`; `Steps` defaults to `32` and ranges from `1` to `32`; `Direction`
+toggles the local transport. The sequencer-owned `Playback Settings`
+page exposes `Steps`, `Direction`, `Tempo`, `Clock Source`, `Play Type`,
+`Tap Preview`, and `Monophonic`. `Tempo` defaults to `120` BPM and ranges from `1` to
+`255`; `Clock Source` defaults to `Internal`, while `External MIDI` makes
+incoming MIDI Clock pulses advance one step every six pulses and handles
+incoming Start, Stop, and start-like Continue transport messages; `Steps`
+defaults to `32` and ranges from `1` to `32`; `Direction`
 defaults to `Forward` and also supports `Backward`, `Ping-Pong`, `Random`,
 `Brownian`, and `Drunk`; `Play Type` defaults to `MIDI` and can route
 sequencer-managed notes to the onboard synth; `Tap Preview` defaults to `On`.
 `Steps`, `Direction`, `Tempo`, and `Play Type` are sequence-file data.
-`Tap Preview` and `Monophonic` are profile-backed; `Monophonic` affects
+`Clock Source`, `Tap Preview`, and `Monophonic` are profile-backed;
+`Monophonic` affects
 selected-step entry only: Off preserves chord toggle entry, while On removes an
 existing pressed pitch or replaces the selected step with one newly pressed
 pitch. Playback, tap preview, and lower-grid audition resolve pitch steps
@@ -986,9 +993,9 @@ startup restore after profile settings are synced. Saved files use
 clamp invalid values. `SequencerFileMenu.*` owns the current-folder browser,
 folder creation, rename/delete, and the naming overlay. It uses
 `VirtualListMenu` callbacks with cached current-folder counts and an 8-row
-visible-window cache instead of keeping a tree-wide path list. External sync,
-MIDI clock/transport send, USB Backup, desktop backup scripts, and the
-performance monitor overlay remain intentionally absent.
+visible-window cache instead of keeping a tree-wide path list. MIDI
+clock/transport send, USB Backup, desktop backup scripts, and the performance
+monitor overlay remain intentionally absent.
 
 ## Input Interface And Panic Behavior
 

@@ -66,6 +66,12 @@ SelectOptionByte monophonicOptions[] = {
 };
 GEMSelect monophonicSelect(sizeof(monophonicOptions) / sizeof(SelectOptionByte), monophonicOptions);
 
+SelectOptionByte clockSourceOptions[] = {
+  { "Internal", kClockSourceInternal },
+  { "External MIDI", kClockSourceExternalMidi }
+};
+GEMSelect clockSourceSelect(sizeof(clockSourceOptions) / sizeof(SelectOptionByte), clockSourceOptions);
+
 void playbackTempoChanged() {
   normalizePlaybackSettings();
   markSequenceDirty();
@@ -100,6 +106,12 @@ void monophonicModeChanged() {
   persistMonophonicModeToProfile();
 }
 
+void clockSourceChanged() {
+  normalizePlaybackSettings();
+  handlePlaybackSettingsChanged(false);
+  persistClockSourceToProfile();
+}
+
 void playbackTempoMenuCallback(GEMCallbackData /*callbackData*/) {
   playbackTempoChanged();
 }
@@ -123,6 +135,10 @@ void playTypeMenuCallback(GEMCallbackData /*callbackData*/) {
 
 void monophonicModeMenuCallback(GEMCallbackData /*callbackData*/) {
   monophonicModeChanged();
+}
+
+void clockSourceMenuCallback(GEMCallbackData /*callbackData*/) {
+  clockSourceChanged();
 }
 
 void previewPlaybackTempo(GEMPreviewCallbackData previewData) {
@@ -155,6 +171,11 @@ void previewMonophonicMode(GEMPreviewCallbackData previewData) {
   normalizePlaybackSettings();
 }
 
+void previewClockSource(GEMPreviewCallbackData previewData) {
+  clockSourceMutable() = previewData.previewValByte;
+  normalizePlaybackSettings();
+}
+
 GEMItem& stepCountItem() {
   static GEMItem item("Steps", activeStepCountMutable(), stepCountSpinner, playbackStepCountMenuCallback);
   return item;
@@ -167,6 +188,11 @@ GEMItem& directionItem() {
 
 GEMItem& tempoItem() {
   static GEMItem item("Tempo", playbackTempoMutable(), tempoSpinner, playbackTempoMenuCallback);
+  return item;
+}
+
+GEMItem& clockSourceItem() {
+  static GEMItem item("Clock Source", clockSourceMutable(), clockSourceSelect, clockSourceMenuCallback);
   return item;
 }
 
@@ -201,6 +227,7 @@ void setupPlaybackSettingsMenu(GEMPage& sequencerMenuPage) {
   GEMItem& steps = stepCountItem();
   GEMItem& direction = directionItem();
   GEMItem& tempo = tempoItem();
+  GEMItem& clock = clockSourceItem();
   GEMItem& output = playTypeItem();
   GEMItem& preview = tapPreviewItem();
   GEMItem& divider = playbackDividerItem();
@@ -209,6 +236,7 @@ void setupPlaybackSettingsMenu(GEMPage& sequencerMenuPage) {
   steps.setPreviewCallback(previewPlaybackStepCount);
   direction.setPreviewCallback(previewPlaybackDirection);
   tempo.setPreviewCallback(previewPlaybackTempo);
+  clock.setPreviewCallback(previewClockSource);
   output.setPreviewCallback(previewPlayType);
   preview.setPreviewCallback(previewTapPreview);
   mono.setPreviewCallback(previewMonophonicMode);
@@ -216,6 +244,7 @@ void setupPlaybackSettingsMenu(GEMPage& sequencerMenuPage) {
   page.addMenuItem(steps);
   page.addMenuItem(direction);
   page.addMenuItem(tempo);
+  page.addMenuItem(clock);
   page.addMenuItem(output);
   page.addMenuItem(preview);
   page.addMenuItem(divider);

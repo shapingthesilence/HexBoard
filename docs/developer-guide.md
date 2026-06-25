@@ -96,10 +96,13 @@ a Sequencer mode foundation with mode entry/exit, 32-step selection/deselection,
 basic tuning-relative note entry, confirm-hold selected-step clear,
 selected-step undo, step tools, sequencer-owned step/function LED rendering,
 and routed transport playback with per-step length, velocity, probability, and
-Tie semantics. Button `9` toggles the internal transport. The Sequencer page links to
-`Playback Settings`, where `Steps`, `Direction`, `Tempo`, `Play Type`, and
-`Tap Preview` are edited. `Tempo` defaults to `120` and ranges from `1` to
-`255`; each step is one 16th note. `Steps` defaults to `32` and ranges from `1` to `32`;
+Tie semantics. Button `9` toggles the local transport. The Sequencer page links
+to `Playback Settings`, where `Steps`, `Direction`, `Tempo`, `Clock Source`,
+`Play Type`, and `Tap Preview` are edited. `Tempo` defaults to `120` and ranges from `1` to
+`255`; each step is one 16th note. `Clock Source` defaults to `Internal`; when
+set to `External MIDI`, incoming MIDI Clock advances one step every six pulses,
+Start begins from the first step, Stop releases sequencer playback notes, and
+Continue follows the old start-like sequencer resume behavior. `Steps` defaults to `32` and ranges from `1` to `32`;
 transport and step LEDs ignore steps beyond the active count. `Direction`
 defaults to `Forward` and supports `Forward`, `Backward`, `Ping-Pong`, `Random`,
 `Brownian`, and `Drunk`. `Play Type` defaults to `MIDI`; `OB Synth` routes
@@ -110,8 +113,8 @@ The Sequencer page also links to `Seq Lights`. Its `Accent Every`, `Step Color`,
 and `Step Hue` controls are profile-backed `SettingKey` values, not sequence
 file data. The defaults are accent every `4`, regular step color, and `Indigo`
 step hue.
-`Tap Preview` is profile-backed and stays out of sequence files. `Monophonic`
-is also profile-backed and controls selected-step note entry only: Off preserves
+`Clock Source`, `Tap Preview`, and `Monophonic` are profile-backed and stay out
+of sequence files. `Monophonic` controls selected-step note entry only: Off preserves
 chord toggle entry, while On removes an existing pressed pitch or replaces the
 selected step with one newly pressed pitch. Programmed steps, tap preview, and
 lower-grid audition resolve stored pitch steps through the current
@@ -148,8 +151,8 @@ folder creation, rename/delete, and naming overlay. The browser uses
 `VirtualListMenu` callbacks over the current folder, caches only folder counts
 and the visible row window, and does not keep a tree-wide sequence list in RAM.
 
-External MIDI sync, MIDI clock/transport send, USB Backup, desktop backup
-scripts, and the performance monitor overlay are intentionally not present yet.
+MIDI clock/transport send, USB Backup, desktop backup scripts, and the
+performance monitor overlay are intentionally not present yet.
 
 ### Web App Tooling
 
@@ -564,10 +567,14 @@ Important implementation details:
 - version `20` settings are migrated to `21` by copying the previous profile
   bytes and filling the new `SequencerTapPreview` byte from factory defaults;
   other version mismatches are replaced with factory defaults
-- `SequencerStepAccentEvery`, `SequencerStepColorMode`, `SequencerStepHue`, and
-  `SequencerMonophonicMode` are profile bytes for optional sequencer preferences
-- `SequencerTapPreview` is also profile-backed; it defaults to `On` and is not
-  sequence-file data
+- `SequencerStepAccentEvery`, `SequencerStepColorMode`, `SequencerStepHue`,
+  `SequencerMonophonicMode`, `SequencerTapPreview`, and
+  `SequencerClockSource` are profile bytes for optional sequencer preferences
+- `SequencerTapPreview` defaults to `On`; `SequencerClockSource` defaults to
+  `Internal`; neither is sequence-file data
+- the current development branch appended `SequencerClockSource` without
+  bumping `CURRENT_SETTINGS_VERSION` because the branch had not shipped as a
+  stable settings release
 - version `20` reinterprets `DisplayPlayedNotes` as `Off`/`Label`/`Number`
   instead of a boolean; the byte position is unchanged
 - version `19` no longer stores the old `Debug` byte;

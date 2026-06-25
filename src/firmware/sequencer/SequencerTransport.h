@@ -13,5 +13,9 @@ void serviceTransport();
 void releasePlaybackNotesForPanic();
 void releasePlaybackForStep(byte stepIndex);
 void handlePlaybackSettingsChanged(bool resetDirectionState);
+void handleExternalMidiClock();
+void handleExternalMidiStart();
+void handleExternalMidiStop();
+void handleExternalMidiContinue();
 
 }  // namespace sequencer

@@ -21,22 +21,31 @@ The current sequencer is a simple 32-step sequencer with MIDI or onboard synth
 output. Select a step pad, then press playable note keys to enter
 tuning-relative notes into that step. Each step can hold up to `6` notes.
 
-Button `9` starts and stops playback. Playback uses the internal clock only,
-runs through the active step range, and defaults to `120 BPM` with each step
-lasting one 16th note. Open `Playback Settings` from the Sequencer page to edit
-these playback controls:
+Button `9` starts and stops local playback. Playback runs through the active
+step range, and each step is one 16th note. Open `Playback Settings` from the
+Sequencer page to edit these playback controls:
 
 - `Steps`: active loop length, `1` through `32`, default `32`.
 - `Direction`: `Forward`, `Backward`, `Ping-Pong`, `Random`, `Brownian`, or
   `Drunk`, default `Forward`.
 - `Tempo`: internal tempo, `1` through `255` BPM, default `120`.
+- `Clock Source`: `Internal` or `External MIDI`, default `Internal`.
 - `Play Type`: `MIDI` or `OB Synth`, default `MIDI`.
 - `Tap Preview`: `Off` or `On`, default `On`.
 - `Monophonic`: `Off` or `On`, default `Off`.
 
 `Steps`, `Direction`, `Tempo`, and `Play Type` are sequence-owned values and
-are saved in sequence files. `Tap Preview` and `Monophonic` are saved in the
-current board profile, not in sequence files.
+are saved in sequence files. `Clock Source`, `Tap Preview`, and `Monophonic`
+are saved in the current board profile, not in sequence files.
+
+When `Clock Source` is `Internal`, `Tempo` is the active clock and button `9`
+starts or stops the sequencer as before. When `Clock Source` is `External MIDI`,
+incoming MIDI Clock pulses drive playback instead: every six `0xF8` pulses
+advance one sequencer step. Incoming MIDI Start `0xFA` starts from the
+beginning, Stop `0xFC` stops playback and releases sequencer playback notes,
+and Continue `0xFB` follows the current firmware's old-sequencer-compatible
+start-like resume behavior. `Tempo` remains stored and displayed, but it does
+not advance steps while External MIDI clock is selected.
 
 Open `Seq Lights` from the Sequencer page to edit three profile-backed light
 preferences:
@@ -152,7 +161,7 @@ selecting a folder enters it, and the back row moves up to the parent folder.
 `New` stops playback, releases sequencer-held notes, clears all sequence-owned
 data to defaults, clears the current file path, and clears the dirty title
 marker. It preserves profile-backed `Tap Preview`, `Monophonic`, and
-`Seq Lights`.
+`Clock Source`, plus `Seq Lights`.
 
 `Save` writes the current file when one is loaded. If no file is loaded, it
 opens the same folder-selection and naming flow as `Save New`. `Save New`
@@ -195,10 +204,10 @@ Saved sequence files store:
 
 Sequence files do not store selected step, undo/tool/naming/browser state,
 overlay messages, active note handles, transport timing, dirty state,
-`Tap Preview`, `Monophonic`, or `Seq Lights`.
+`Clock Source`, `Tap Preview`, `Monophonic`, or `Seq Lights`.
 
 ## Not Yet Ported
 
-The current sequencer slice does not include external MIDI clock, MIDI
-start/stop/clock send, USB Backup, desktop backup scripts or launchers, or the
-performance monitor overlay.
+The current sequencer slice does not include MIDI clock send, MIDI transport
+send, USB Backup, desktop backup scripts or launchers, or the performance
+monitor overlay.
