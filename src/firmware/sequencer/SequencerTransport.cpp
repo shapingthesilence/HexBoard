@@ -11,20 +11,39 @@
 namespace sequencer {
 namespace {
 
+constexpr byte kPlaybackGroupCount = 16;
+
+struct PlaybackGroup {
+  bool active = false;
+  int16_t pitchSteps[kMaxNotesPerStep] = {};
+  byte noteCount = 0;
+  int8_t sourceStep = kNoSelectedStep;
+  uint64_t noteOffAt = 0;
+};
+
 bool running = false;
 int8_t playingStep = kNoSelectedStep;
 int8_t pingPongDelta = 1;
 uint64_t nextStepAt = 0;
 uint64_t currentStepStartedAt = 0;
-int16_t activePitchSteps[kMaxNotesPerStep] = {};
-byte activeNoteCount = 0;
+PlaybackGroup playbackGroups[kPlaybackGroupCount];
 
-void releaseActiveNotes() {
-  for (byte i = 0; i < activeNoteCount && i < kMaxNotesPerStep; ++i) {
-    stopManagedNote(activePitchSteps[i], SequencerManagedNoteRole::Playback);
-    activePitchSteps[i] = 0;
+void clearPlaybackGroup(PlaybackGroup& group, bool stopNotes = true) {
+  if (stopNotes) {
+    for (byte i = 0; i < group.noteCount && i < kMaxNotesPerStep; ++i) {
+      stopManagedNote(group.pitchSteps[i], SequencerManagedNoteRole::Playback);
+    }
   }
-  activeNoteCount = 0;
+  group = PlaybackGroup{};
+}
+
+void releaseAllPlaybackGroups() {
+  for (byte i = 0; i < kPlaybackGroupCount; ++i) {
+    if (playbackGroups[i].active) {
+      clearPlaybackGroup(playbackGroups[i], true);
+    }
+  }
+  stopPlaybackNotes();
 }
 
 byte nextPlayingStep() {
@@ -90,24 +109,156 @@ byte nextPlayingStep() {
   }
 }
 
-void startStepNotes(byte stepIndex) {
-  const SequencerStep& target = step(stepIndex);
-  if (target.noteCount == 0 || target.gatePercent == 0) {
-    return;
+bool stepHasPlayableNoteData(byte stepIndex) {
+  if (stepIndex >= kStepCount) {
+    return false;
   }
+  const SequencerStep& target = step(stepIndex);
+  return !target.tie && target.noteCount > 0 && target.gatePercent > 0;
+}
 
-  for (byte i = 0; i < target.noteCount && i < kMaxNotesPerStep; ++i) {
-    if (startManagedNote(target.pitchSteps[i], target.velocity, SequencerManagedNoteRole::Playback)) {
-      activePitchSteps[activeNoteCount++] = target.pitchSteps[i];
+int8_t findTieSourceStep(byte stepIndex, byte activeSteps) {
+  if (stepIndex == 0 || stepIndex >= activeSteps || !step(stepIndex).tie) {
+    return kNoSelectedStep;
+  }
+  for (int8_t sourceStep = static_cast<int8_t>(stepIndex - 1); sourceStep >= 0; --sourceStep) {
+    if (stepHasPlayableNoteData(static_cast<byte>(sourceStep))) {
+      return sourceStep;
+    }
+  }
+  return kNoSelectedStep;
+}
+
+int findActivePlaybackGroup(byte sourceStep) {
+  for (byte i = 0; i < kPlaybackGroupCount; ++i) {
+    if (playbackGroups[i].active && playbackGroups[i].sourceStep == static_cast<int8_t>(sourceStep)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+bool nextStepContinuesSource(byte stepIndex, byte activeSteps) {
+  byte nextStep = static_cast<byte>(stepIndex + 1);
+  return nextStep < activeSteps && findTieSourceStep(nextStep, activeSteps) == static_cast<int8_t>(stepIndex);
+}
+
+bool stepContinuesGroup(int8_t stepIndex, byte activeSteps, const PlaybackGroup& group) {
+  if (stepIndex < 0 || stepIndex >= static_cast<int8_t>(activeSteps) || group.sourceStep < 0) {
+    return false;
+  }
+  return findTieSourceStep(static_cast<byte>(stepIndex), activeSteps) == group.sourceStep;
+}
+
+void releasePlaybackGroupsForStepBoundary(int8_t nextStepIndex, byte activeSteps) {
+  for (byte i = 0; i < kPlaybackGroupCount; ++i) {
+    PlaybackGroup& group = playbackGroups[i];
+    if (!group.active || runTime < group.noteOffAt) {
+      continue;
+    }
+    // Boundary note-offs happen before the next non-tied step starts; ties keep the source alive.
+    if (stepContinuesGroup(nextStepIndex, activeSteps, group)) {
+      continue;
+    }
+    clearPlaybackGroup(group, true);
+  }
+}
+
+void servicePlaybackGroups() {
+  for (byte i = 0; i < kPlaybackGroupCount; ++i) {
+    PlaybackGroup& group = playbackGroups[i];
+    if (group.active && runTime >= group.noteOffAt) {
+      clearPlaybackGroup(group, true);
     }
   }
 }
 
+int allocatePlaybackGroup() {
+  for (byte i = 0; i < kPlaybackGroupCount; ++i) {
+    if (!playbackGroups[i].active) {
+      return i;
+    }
+  }
+
+  byte earliest = 0;
+  for (byte i = 1; i < kPlaybackGroupCount; ++i) {
+    if (playbackGroups[i].noteOffAt < playbackGroups[earliest].noteOffAt) {
+      earliest = i;
+    }
+  }
+  clearPlaybackGroup(playbackGroups[earliest], true);
+  return earliest;
+}
+
+void startStepNotes(byte stepIndex, uint64_t stepDuration) {
+  const SequencerStep& target = step(stepIndex);
+  if (target.noteCount == 0 || target.gatePercent == 0 || target.tie) {
+    return;
+  }
+  if (target.probability == 0) {
+    return;
+  }
+  if (target.probability < 100 && static_cast<byte>(random(100)) >= target.probability) {
+    return;
+  }
+
+  int groupIndex = allocatePlaybackGroup();
+  if (groupIndex < 0) {
+    return;
+  }
+
+  PlaybackGroup& group = playbackGroups[groupIndex];
+  group = PlaybackGroup{};
+  group.active = true;
+  group.sourceStep = static_cast<int8_t>(stepIndex);
+
+  uint64_t playbackStartedAt = (currentStepStartedAt != 0) ? currentStepStartedAt : runTime;
+  group.noteOffAt = playbackStartedAt + ((stepDuration * static_cast<uint64_t>(target.gatePercent)) / 100ULL);
+  uint64_t stepBoundary = playbackStartedAt + stepDuration;
+  if (nextStepContinuesSource(stepIndex, activeStepCount()) && group.noteOffAt < stepBoundary) {
+    group.noteOffAt = stepBoundary;
+  }
+
+  for (byte i = 0; i < target.noteCount && i < kMaxNotesPerStep; ++i) {
+    if (startManagedNote(target.pitchSteps[i], target.velocity, SequencerManagedNoteRole::Playback)) {
+      group.pitchSteps[group.noteCount++] = target.pitchSteps[i];
+    }
+  }
+
+  if (group.noteCount == 0) {
+    clearPlaybackGroup(group, false);
+  }
+}
+
+void continueTiePlayback(byte stepIndex, uint64_t stepDuration) {
+  byte activeSteps = activeStepCount();
+  int8_t sourceStep = findTieSourceStep(stepIndex, activeSteps);
+  if (sourceStep < 0) {
+    return;
+  }
+
+  int groupIndex = findActivePlaybackGroup(static_cast<byte>(sourceStep));
+  if (groupIndex < 0) {
+    return;
+  }
+
+  PlaybackGroup& group = playbackGroups[groupIndex];
+  uint64_t tieNoteOffAt = ((currentStepStartedAt != 0) ? currentStepStartedAt : runTime) + stepDuration;
+  if (group.noteOffAt < tieNoteOffAt) {
+    group.noteOffAt = tieNoteOffAt;
+  }
+}
+
 void advanceStep() {
-  releaseActiveNotes();
+  byte activeSteps = activeStepCount();
   byte nextStep = nextPlayingStep();
+  releasePlaybackGroupsForStepBoundary(static_cast<int8_t>(nextStep), activeSteps);
   playingStep = static_cast<int8_t>(nextStep);
-  startStepNotes(nextStep);
+  if (step(nextStep).tie) {
+    continueTiePlayback(nextStep, playbackStepDurationMicros());
+    return;
+  }
+  startStepNotes(nextStep, playbackStepDurationMicros());
 }
 
 void rescheduleNextStepFromCurrentStart() {
@@ -129,7 +280,7 @@ int8_t playingStepIndex() {
 
 void startTransport() {
   stopPreviewNotes();
-  releaseActiveNotes();
+  releaseAllPlaybackGroups();
   running = true;
   playingStep = kNoSelectedStep;
   pingPongDelta = 1;
@@ -144,7 +295,7 @@ void stopTransport() {
   nextStepAt = 0;
   currentStepStartedAt = 0;
   stopPreviewNotes();
-  releaseActiveNotes();
+  releaseAllPlaybackGroups();
 }
 
 void toggleTransport() {
@@ -167,12 +318,23 @@ void serviceTransport() {
     currentStepStartedAt = nextStepAt;
     advanceStep();
     rescheduleNextStepFromCurrentStart();
+  } else {
+    servicePlaybackGroups();
   }
 }
 
 void releasePlaybackNotesForPanic() {
   stopTransport();
   stopAllManagedNotes();
+}
+
+void releasePlaybackForStep(byte stepIndex) {
+  for (byte i = 0; i < kPlaybackGroupCount; ++i) {
+    PlaybackGroup& group = playbackGroups[i];
+    if (group.active && group.sourceStep == static_cast<int8_t>(stepIndex)) {
+      clearPlaybackGroup(group, true);
+    }
+  }
 }
 
 void handlePlaybackSettingsChanged(bool resetDirectionState) {
@@ -187,12 +349,19 @@ void handlePlaybackSettingsChanged(bool resetDirectionState) {
 
   byte activeSteps = activeStepCount();
   if (playingStep >= static_cast<int8_t>(activeSteps)) {
-    releaseActiveNotes();
+    releaseAllPlaybackGroups();
     playingStep = kNoSelectedStep;
     pingPongDelta = 1;
     currentStepStartedAt = runTime;
     nextStepAt = runTime;
     return;
+  }
+
+  for (byte i = 0; i < kPlaybackGroupCount; ++i) {
+    PlaybackGroup& group = playbackGroups[i];
+    if (group.active && group.sourceStep >= static_cast<int8_t>(activeSteps)) {
+      clearPlaybackGroup(group, true);
+    }
   }
 
   rescheduleNextStepFromCurrentStart();
@@ -223,6 +392,9 @@ void serviceTransport() {
 }
 
 void releasePlaybackNotesForPanic() {
+}
+
+void releasePlaybackForStep(byte /*stepIndex*/) {
 }
 
 void handlePlaybackSettingsChanged(bool /*resetDirectionState*/) {

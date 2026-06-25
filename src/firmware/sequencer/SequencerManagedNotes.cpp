@@ -162,7 +162,7 @@ void previewStep(byte stepIndex) {
   }
 
   const SequencerStep& target = step(stepIndex);
-  if (target.noteCount == 0 || target.gatePercent == 0) {
+  if (target.tie || target.noteCount == 0 || target.gatePercent == 0) {
     return;
   }
 
