@@ -12,6 +12,10 @@ enum class SequencerManagedNoteRole : byte {
 
 bool startManagedNote(int16_t pitchSteps, byte velocity, SequencerManagedNoteRole role);
 void stopManagedNote(int16_t pitchSteps, SequencerManagedNoteRole role);
+bool sequencerPlayedNoteDisplayEligible();
+bool sequencerPlayedNoteDisplayActive();
+byte rebuildSequencerPlayedNoteDisplay(int16_t* notes, byte maxCount);
+bool newestSequencerPlayedNoteDisplayPitch(int16_t& displayedPitchOut);
 void stopAuditionNotes();
 void stopPreviewNotes();
 void stopPlaybackNotes();

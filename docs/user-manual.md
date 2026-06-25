@@ -52,7 +52,7 @@ Custom note labels are limited to `7` characters so they fit the on-device Key
 selector. The main-menu `Key` selector uses those same active tuning labels.
 `Number` shows scale step and octave values such as `7.4`.
 
-While the menu is visible, the top-right corner shows only the most recent held note. The badge is composited into normal menu redraws so menu updates do not momentarily erase it. If the OLED screensaver is active, playing a note can wake a larger `Now Playing` display that shows up to `6` unique played notes from lowest to highest. Turning or pressing the encoder returns to the menu display. Recognized chord names appear near the bottom of that larger display only for `12 EDO`. `DisplayNotes` defaults to `Label`.
+While the menu is visible, the top-right corner shows only the most recent held note. The badge is composited into normal menu redraws so menu updates do not momentarily erase it. If the OLED screensaver is active, playing a note can wake a larger `Now Playing` display that shows up to `6` unique played notes from lowest to highest. Turning or pressing the encoder returns to the menu display. Recognized chord names appear near the bottom of that larger display only for `12 EDO`. In Sequencer mode, the same display applies to lower-grid audition notes when no step is selected; selected-step entry, tap preview, and transport playback keep the Sequencer screens focused instead. `DisplayNotes` defaults to `Label`.
 
 ## Live Performance Controls
 

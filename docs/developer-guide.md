@@ -127,7 +127,11 @@ lower-grid audition resolve stored pitch steps through the current
 tuning and transpose at note start. MIDI output uses the existing MIDI routing
 and MPE settings; OB Synth output uses a small synth preview-note API backed by
 hidden matrix slots `141..159`, leaving slot `140` reserved for hardware
-detection. Empty, zero-length, probability-skipped, and unsupported tied
+detection. Sequencer lower-grid audition notes also expose a narrow played-note
+display source while no step is selected, so `DisplayNotes` can reuse the
+Keyboard-mode compact badge and screensaver `Now Playing` renderer without
+making selected-step entry, tap preview, or transport playback take over the
+display. Empty, zero-length, probability-skipped, and unsupported tied
 playback steps advance silently. A sequencer-owned overlay renders selected-step
 `Edit #NN`, tool picker, exact length/velocity/probability, copy target,
 temporary status, clear feedback screens, the packed 32-step Overview screen,

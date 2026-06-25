@@ -129,9 +129,8 @@ void hexboardLoop() {        // run on first core
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
   if (sequencerModeActive()) {
     drawSequencerModeDisplay();
-  } else {
-    drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   }
+  drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_BENCHMARK);
   serviceStabilityBenchmark();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_AUTOSAVE);

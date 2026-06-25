@@ -506,7 +506,12 @@ and `Number` modes. It defaults to `Label`. The overlay implementation lives in
 shared `VirtualListMenu` renderer instead of allocating one GEM page/item tree
 per library entry. When enabled, MIDI note-on updates mark a small OLED display
 region dirty, and note-on can temporarily wake the display from screensaver.
-`drawPlayedNotesOverlay()` runs from the main loop after menu input handling.
+Sequencer lower-grid audition notes use a narrow source API from
+`SequencerManagedNotes.cpp` so the same overlay can render them when Sequencer
+mode has no selected step; tap preview, selected-step entry, and transport
+playback do not feed this display source. `drawPlayedNotesOverlay()` runs from
+the main loop after menu input handling, including after the Sequencer display
+gets first chance to draw.
 During normal menu display it draws only the newest currently held note as a
 top-right badge using the same large note font as the full overlay. GEM menu
 redraws use `drawPlayedNoteBadgeOnMenuFrame()` as a draw callback, and
@@ -979,6 +984,9 @@ current MIDI routing and MPE
 helpers. OB Synth output uses a sequencer output handle plus a synth
 preview-note API backed by hidden matrix slots `141..159`, preserving slot `140`
 for hardware detection and scaling preview voices by step/audition velocity.
+No-selection lower-grid audition notes expose their active pitch set and newest
+press timestamp to the shared played-note overlay; the source is disabled while
+a step is selected, and preview/playback roles stay out of it.
 Transport playback applies per-step velocity, probability, length, and Tie;
 probability gates the whole step, length schedules note-off groups from the
 step boundary, and Tie extends the nearest earlier active source from the same

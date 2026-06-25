@@ -92,13 +92,18 @@ silently in both modes.
 
 Lower-grid playable note keys audition through the current `Play Type` while
 Sequencer mode is active. With no step selected, a note press auditions only.
+If `DisplayNotes` is enabled, those no-selection audition notes also drive the
+normal compact played-note badge or screensaver `Now Playing` overlay. The
+overlay uses the same label/number mode, six-note cap, release timing, and
+12-EDO chord names as Keyboard mode.
 With a step selected and `Monophonic` Off, the same note press auditions and
 toggles that tuning-relative pitch in the selected step. With `Monophonic` On,
 pressing a pitch already in the selected step removes it; pressing a different
 pitch replaces the selected step's notes with only that pitch. Turning
 `Monophonic` On does not rewrite existing chord steps. Releasing the key
 releases the sequencer-managed audition note, and panic, playback changes, or
-leaving Sequencer mode clears any held sequencer notes.
+leaving Sequencer mode clears any held sequencer notes. Selected-step entry,
+tap preview, and transport playback do not drive the played-note overlay.
 
 When `Tap Preview` is `On`, selecting a programmed step previews its stored note
 or chord through the current `Play Type`. When it is `Off`, step selection still

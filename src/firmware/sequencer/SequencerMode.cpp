@@ -180,6 +180,26 @@ void drawSequencerModeDisplay() {
 #endif
 }
 
+void restoreSequencerDisplayAfterPlayedNotesOverlay() {
+#if HEXBOARD_ENABLE_SEQUENCER
+  if (sequencerActive) {
+    if (sequencer::fileNamingActive()) {
+      sequencer::drawFileMenuOverlay();
+      return;
+    }
+    if (sequencer::performanceMonitorActive() ||
+        sequencer::overviewActive() ||
+        sequencer::hasSelectedStep() ||
+        sequencer::toolMode() != sequencer::SequencerToolMode::Normal) {
+      sequencer::markOverlayDirty();
+      sequencer::drawSequencerOverlay();
+      return;
+    }
+  }
+  restoreInteractiveMenuDisplay();
+#endif
+}
+
 void handleSequencerExternalMidiClock() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {

@@ -1,6 +1,8 @@
 #include "SequencerManagedNotes.h"
 
 #include "../config/FeatureFlags.h"
+#include "../menu/PlayedNotesOverlay.h"
+#include "../model/ScalePalettePreset.h"
 
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerOutput.h"
@@ -19,6 +21,7 @@ struct ManagedHeldNote {
   byte auditionCount = 0;
   byte previewCount = 0;
   byte playbackCount = 0;
+  uint64_t auditionStartedAt = 0;
   SequencerOutputNoteHandle handle;
 };
 
@@ -77,6 +80,61 @@ void clearPreviewGroup() {
   previewGroup = PreviewGroup{};
 }
 
+bool auditionNoteVisible(const ManagedHeldNote& heldNote) {
+  return heldNote.active && heldNote.auditionCount > 0;
+}
+
+byte insertSequencerDisplayedNoteSorted(int16_t* notes, byte count, byte maxCount, int16_t displayedPitch) {
+  for (byte i = 0; i < count; ++i) {
+    if (notes[i] == displayedPitch) {
+      return count;
+    }
+  }
+
+  byte insertAt = 0;
+  while (insertAt < count && notes[insertAt] < displayedPitch) {
+    ++insertAt;
+  }
+
+  if (count < maxCount) {
+    for (byte i = count; i > insertAt; --i) {
+      notes[i] = notes[i - 1];
+    }
+    notes[insertAt] = displayedPitch;
+    return static_cast<byte>(count + 1);
+  }
+
+  if (insertAt < maxCount) {
+    for (byte i = static_cast<byte>(maxCount - 1); i > insertAt; --i) {
+      notes[i] = notes[i - 1];
+    }
+    notes[insertAt] = displayedPitch;
+  }
+
+  return count;
+}
+
+void notifyAuditionDisplayStart() {
+  if (!sequencerPlayedNoteDisplayEligible()) {
+    return;
+  }
+
+  if (noteDisplayEnabled() && screenSaverOn) {
+    setNoteOverlayTemporaryWake(true);
+  }
+  noteOverlayReleaseGraceUntil = 0;
+  noteOverlayDirty = true;
+}
+
+void notifyAuditionDisplayStop() {
+  if (!sequencerPlayedNoteDisplayEligible()) {
+    return;
+  }
+
+  noteOverlayReleaseGraceUntil = runTime + DISPLAYED_NOTES_RELEASE_GRACE_MICROS;
+  noteOverlayDirty = true;
+}
+
 }  // namespace
 
 bool startManagedNote(int16_t pitchSteps, byte velocity, SequencerManagedNoteRole role) {
@@ -100,6 +158,10 @@ bool startManagedNote(int16_t pitchSteps, byte velocity, SequencerManagedNoteRol
   if (count < 255) {
     ++count;
   }
+  if (role == SequencerManagedNoteRole::Audition) {
+    heldNote.auditionStartedAt = runTime;
+    notifyAuditionDisplayStart();
+  }
   return true;
 }
 
@@ -111,14 +173,80 @@ void stopManagedNote(int16_t pitchSteps, SequencerManagedNoteRole role) {
 
   ManagedHeldNote& heldNote = heldNotes[slotIndex];
   byte& count = roleCount(heldNote, role);
+  bool auditionDropped = role == SequencerManagedNoteRole::Audition && count > 0;
   if (count > 0) {
     --count;
+  }
+
+  if (auditionDropped) {
+    notifyAuditionDisplayStop();
   }
 
   if (heldNote.auditionCount == 0 && heldNote.previewCount == 0 && heldNote.playbackCount == 0) {
     stopOutputNote(heldNote.handle);
     heldNote = ManagedHeldNote{};
   }
+}
+
+bool sequencerPlayedNoteDisplayEligible() {
+  return !hasSelectedStep();
+}
+
+bool sequencerPlayedNoteDisplayActive() {
+  if (!sequencerPlayedNoteDisplayEligible()) {
+    return false;
+  }
+
+  for (byte i = 0; i < kManagedNoteSlots; ++i) {
+    if (auditionNoteVisible(heldNotes[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+byte rebuildSequencerPlayedNoteDisplay(int16_t* notes, byte maxCount) {
+  if (notes == nullptr || maxCount == 0) {
+    return 0;
+  }
+
+  for (byte i = 0; i < maxCount; ++i) {
+    notes[i] = DISPLAYED_NOTE_UNUSED;
+  }
+
+  if (!sequencerPlayedNoteDisplayEligible()) {
+    return 0;
+  }
+
+  byte out = 0;
+  for (byte i = 0; i < kManagedNoteSlots; ++i) {
+    if (!auditionNoteVisible(heldNotes[i])) {
+      continue;
+    }
+    int16_t displayedPitch = static_cast<int16_t>(heldNotes[i].pitchSteps + current.transpose);
+    out = insertSequencerDisplayedNoteSorted(notes, out, maxCount, displayedPitch);
+  }
+  return out;
+}
+
+bool newestSequencerPlayedNoteDisplayPitch(int16_t& displayedPitchOut) {
+  if (!sequencerPlayedNoteDisplayEligible()) {
+    return false;
+  }
+
+  bool found = false;
+  uint64_t newestPressTime = 0;
+  for (byte i = 0; i < kManagedNoteSlots; ++i) {
+    if (!auditionNoteVisible(heldNotes[i])) {
+      continue;
+    }
+    if (!found || heldNotes[i].auditionStartedAt >= newestPressTime) {
+      newestPressTime = heldNotes[i].auditionStartedAt;
+      displayedPitchOut = static_cast<int16_t>(heldNotes[i].pitchSteps + current.transpose);
+      found = true;
+    }
+  }
+  return found;
 }
 
 void stopAuditionNotes() {
@@ -140,12 +268,16 @@ void stopPlaybackNotes() {
 }
 
 void stopAllManagedNotes() {
+  bool hadAuditionDisplayNotes = sequencerPlayedNoteDisplayActive();
   clearPreviewGroup();
   for (byte i = 0; i < kManagedNoteSlots; ++i) {
     if (heldNotes[i].active) {
       stopOutputNote(heldNotes[i].handle);
       heldNotes[i] = ManagedHeldNote{};
     }
+  }
+  if (hadAuditionDisplayNotes) {
+    notifyAuditionDisplayStop();
   }
 }
 
@@ -194,6 +326,27 @@ bool startManagedNote(int16_t /*pitchSteps*/, byte /*velocity*/, SequencerManage
 }
 
 void stopManagedNote(int16_t /*pitchSteps*/, SequencerManagedNoteRole /*role*/) {
+}
+
+bool sequencerPlayedNoteDisplayEligible() {
+  return false;
+}
+
+bool sequencerPlayedNoteDisplayActive() {
+  return false;
+}
+
+byte rebuildSequencerPlayedNoteDisplay(int16_t* notes, byte maxCount) {
+  if (notes != nullptr) {
+    for (byte i = 0; i < maxCount; ++i) {
+      notes[i] = DISPLAYED_NOTE_UNUSED;
+    }
+  }
+  return 0;
+}
+
+bool newestSequencerPlayedNoteDisplayPitch(int16_t& /*displayedPitchOut*/) {
+  return false;
 }
 
 void stopAuditionNotes() {
