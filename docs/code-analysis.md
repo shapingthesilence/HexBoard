@@ -1020,10 +1020,16 @@ serialization under `/Sequences`, `/Sequences/.current`, title/dirty state, and
 startup restore after profile settings are synced. Saved files use
 `format=HBSEQ`, `version=3`, `noteFormat=stepsFromC`, ignore unknown keys, and
 clamp invalid values. `SequencerFileMenu.*` owns the current-folder browser,
-folder creation, rename/delete, and the naming overlay. It uses
-`VirtualListMenu` callbacks with cached current-folder counts and an 8-row
-visible-window cache instead of keeping a tree-wide path list. USB Backup and
-desktop backup scripts remain intentionally absent.
+folder creation, rename/delete, naming overlay, and USB Backup menu page. It
+uses `VirtualListMenu` callbacks with cached current-folder counts and an 8-row
+visible-window cache instead of keeping a tree-wide path list.
+`SequencerUsbBackup.*` owns the enabled-only HBK1 USB-serial backup session for
+`/Sequences`, including path validation, `.hbseq` file-operation restrictions,
+LIST/GET/PUT/MKDIR/DELETE/RMDIR/RENAME handling, temporary-file PUT restore,
+transfer-timeout cleanup, status lines, and serial-debug suppression while a
+session is active. Host-side backup support is copied into `scripts/`, with
+`hexboard_backup_gui.py` as the primary user workflow and `hexboard_backup.py`
+as support/debug CLI tooling.
 
 ## Input Interface And Panic Behavior
 

@@ -167,7 +167,23 @@ folder creation, rename/delete, and naming overlay. The browser uses
 `VirtualListMenu` callbacks over the current folder, caches only folder counts
 and the visible row window, and does not keep a tree-wide sequence list in RAM.
 
-USB Backup and desktop backup scripts are intentionally not present yet.
+`src/firmware/sequencer/SequencerUsbBackup.*` owns the enabled-only USB Backup
+session and HBK1 USB-serial protocol for `/Sequences`. It preserves the legacy
+commands `HELLO`, `PING`, `LIST`, `GET`, `PUT`, `MKDIR`, `DELETE`, `RMDIR`,
+and `RENAME`, keeps paths restricted to `/Sequences`, restricts direct file
+operations to `.hbseq` files, writes PUT payloads to a temporary file before
+renaming into place, and clears partial incoming files on timeout or session
+exit. `SequencerFileMenu.*` owns the `File Management` -> `USB Backup` page,
+Start/Stop controls, leave/stop confirmations, UI status refresh, storage
+workflow guards while active, and the old active-session behavior that blanks
+sequencer LEDs and consumes hex-button editing/play actions while leaving
+encoder menu navigation available.
+
+The host backup tools live under `scripts/`: `hexboard_backup_gui.py` is the
+primary desktop workflow, `hexboard_backup_lib.py` owns the shared HBK1 client
+operations, and `hexboard_backup.py` is support/debug CLI tooling. The repo
+root launchers `Launch HexBoard Backup.command` and `Launch HexBoard
+Backup.bat` run the GUI for users who already have Python 3 and `pyserial`.
 
 ### Web App Tooling
 

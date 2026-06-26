@@ -14,6 +14,7 @@
 #include "SequencerStorage.h"
 #include "SequencerTools.h"
 #include "SequencerTransport.h"
+#include "SequencerUsbBackup.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../synth/SynthAudio.h"
 
@@ -93,6 +94,7 @@ void enterSequencerMode() {
 
 void exitSequencerMode() {
 #if HEXBOARD_ENABLE_SEQUENCER
+  sequencer::exitUsbBackupMode();
   sequencer::stopTransport();
   sequencerActive = false;
   sequencer::deselectStep();
@@ -109,6 +111,10 @@ void serviceSequencerMode() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
     refreshSequencerTitleRow(true);
+    sequencer::serviceUsbBackup();
+    if (sequencer::isUsbBackupActive()) {
+      return;
+    }
     sequencer::serviceInput();
     sequencer::serviceTransport();
     sequencer::serviceManagedNotes();
@@ -125,6 +131,9 @@ void restoreSequencerAtStartup() {
 void handleSequencerButtonEvent(byte buttonIndex, bool pressed) {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
+    if (sequencer::isUsbBackupActive()) {
+      return;
+    }
     if (sequencer::handleFileMenuButtonEvent(buttonIndex, pressed)) {
       return;
     }
@@ -139,6 +148,9 @@ void handleSequencerButtonEvent(byte buttonIndex, bool pressed) {
 bool handleSequencerRotaryTurn(int8_t direction) {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
+    if (sequencer::isUsbBackupActive()) {
+      return false;
+    }
     if (sequencer::handleFileMenuRotaryTurn(direction)) {
       return true;
     }
@@ -156,6 +168,9 @@ bool handleSequencerRotaryTurn(int8_t direction) {
 bool handleSequencerEncoderClick() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
+    if (sequencer::isUsbBackupActive()) {
+      return false;
+    }
     if (sequencer::handleFileMenuEncoderClick()) {
       return true;
     }
@@ -171,6 +186,7 @@ bool handleSequencerEncoderClick() {
 void drawSequencerModeDisplay() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
+    sequencer::serviceSequenceFileMenu();
     if (sequencer::fileNamingActive()) {
       sequencer::drawFileMenuOverlay();
       return;
@@ -183,6 +199,7 @@ void drawSequencerModeDisplay() {
 void restoreSequencerDisplayAfterPlayedNotesOverlay() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
+    sequencer::serviceSequenceFileMenu();
     if (sequencer::fileNamingActive()) {
       sequencer::drawFileMenuOverlay();
       return;
@@ -245,6 +262,7 @@ void setupSequencerMenu() {
   GEMPage& page = sequencerMenuPage();
   page.addMenuItem(sequencerKeyboardAction());
   sequencer::initializeSequenceStorage();
+  sequencer::setupUsbBackup();
   sequencer::setupSequenceFileMenu(page);
   sequencer::setupPlaybackSettingsMenu(page);
   sequencer::setupLightSettingsMenu(page);

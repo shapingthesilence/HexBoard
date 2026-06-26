@@ -11,6 +11,7 @@
 #include "SequencerState.h"
 #include "SequencerTools.h"
 #include "SequencerTransport.h"
+#include "SequencerUsbBackup.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../app/RuntimeDefaults.h"
 #include "../hardware/LedRender.h"
@@ -172,6 +173,11 @@ void neutralizeOwnedGuards(SetLedPixelFn setLedPixel) {
 
 void renderLedOverrides(SetLedPixelFn setLedPixel) {
   if (setLedPixel == nullptr) {
+    return;
+  }
+
+  if (isUsbBackupActive()) {
+    clearLedFrame(setLedPixel);
     return;
   }
 

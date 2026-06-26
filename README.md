@@ -33,6 +33,7 @@ The user manual is for players and owners of the device. The sequencer manual co
 - `Makefile`: local build shortcut for `arduino-cli`
 
 The current firmware uses the standard Arduino root-sketch layout. `HexBoard.ino` delegates to lifecycle functions in `src/firmware/`, where subsystem modules cover tuning, layout, LEDs, MIDI, synth, persistence, menu, input, and runtime orchestration. Shared firmware models and schema declarations live in explicit subsystem headers under `src/firmware/`.
+Host-side utility scripts, including the optional HexBoard Backup GUI, live under `scripts/`.
 
 ## Current Firmware Highlights
 
@@ -147,7 +148,8 @@ audition, tap preview, and transport output, compact selected-step/tool
 overlays, sequence files under `/Sequences` with on-device save/load/folder
 management and startup restore, sequence-backed Tempo, Steps, Direction, and
 Play Type controls, profile-backed Tap Preview and Monophonic note-entry mode,
-and profile-backed Seq Lights controls.
+profile-backed Seq Lights controls, and USB Backup for moving `.hbseq` files
+through the desktop HexBoard Backup GUI.
 See the [Sequencer Manual](docs/sequencer-manual.md) for current sequencer
 behavior and the features still being ported.
 
@@ -160,6 +162,22 @@ build/sequencer-enabled/HexBoard.ino.uf2
 ```
 
 You can also build both variants with `make sequencer-builds`.
+
+### HexBoard Backup GUI
+
+Sequencer-enabled builds include `File Management` -> `USB Backup` on the
+board. Start a USB Backup session there first, then launch the desktop GUI from
+the repo root with:
+
+```sh
+python3 scripts/hexboard_backup_gui.py
+```
+
+The GUI requires Python 3 and `pyserial`. Users who already have those
+installed can also open `Launch HexBoard Backup.command` on macOS or
+`Launch HexBoard Backup.bat` on Windows. The command-line wrapper
+`scripts/hexboard_backup.py` is included as support/debug tooling; the GUI is
+the intended user-facing workflow.
 
 ## Companion Web App
 

@@ -14,9 +14,12 @@
 #include "../menu/PlayedNotesOverlay.h"
 #include "../menu/VirtualListMenu.h"
 #include "../storage/Settings.h"
+#include "SequencerManagedNotes.h"
 #include "SequencerOverlay.h"
 #include "SequencerStorage.h"
 #include "SequencerTools.h"
+#include "SequencerTransport.h"
+#include "SequencerUsbBackup.h"
 
 namespace sequencer {
 namespace {
@@ -116,6 +119,10 @@ const NamingKey kNamingKeys[] = {
 };
 
 GEMPage* g_sequencerPage = nullptr;
+GEMPage* g_usbBackupPage = nullptr;
+GEMPage* g_usbBackupExitPage = nullptr;
+GEMPage* g_usbBackupStopPage = nullptr;
+GEMPage* g_lastMenuPage = nullptr;
 bool g_fileMenuInstalled = false;
 bool g_fileUiActive = false;
 BrowserMode g_browserMode = BrowserMode::None;
@@ -130,6 +137,8 @@ char g_promptLineOne[kBrowserLabelLength] = "";
 char g_promptLineTwo[kBrowserLabelLength] = "";
 char g_promptLineThree[kBrowserLabelLength] = "";
 char g_promptLineFour[kBrowserLabelLength] = "";
+char g_usbBackupStatusLineOne[kBrowserLabelLength] = "USB Backup Off";
+char g_usbBackupStatusLineTwo[kBrowserLabelLength] = "Host tool idle";
 NamingTarget g_namingTarget = NamingTarget::None;
 char g_namingBuffer[kSequenceNameLength + 1] = "";
 byte g_namingLength = 0;
@@ -160,6 +169,14 @@ void actionCancelCallback();
 void confirmDeleteCallback();
 void cancelDeleteCallback();
 void promptCallback();
+void usbBackupStatusCallback();
+void startUsbBackupCallback();
+void stopUsbBackupCallback();
+void usbBackupPromptCallback();
+void confirmUsbBackupExitCallback();
+void cancelUsbBackupExitCallback();
+void confirmUsbBackupStopCallback();
+void cancelUsbBackupStopCallback();
 
 void copyString(char* destination, size_t destinationLength, const char* source) {
   if (destinationLength == 0) {
@@ -619,6 +636,14 @@ void statusForPath(const char* lineOne, const char* path) {
   showPersistentStatusMessage(lineOne, label);
 }
 
+bool guardSequencerStorageForUsbBackup(const char* actionLineTwo) {
+  if (!isUsbBackupActive()) {
+    return true;
+  }
+  showPersistentStatusMessage("USB Backup", actionLineTwo);
+  return false;
+}
+
 void returnToSequencerMenu() {
   deactivateVirtualListMenu();
   g_fileUiActive = false;
@@ -746,6 +771,9 @@ void showBrowser() {
 }
 
 void openBrowser(BrowserMode mode) {
+  if (!guardSequencerStorageForUsbBackup("Stop session first")) {
+    return;
+  }
   if (!fileSystemExists || !ensureSequenceStorageRoot()) {
     showPersistentStatusMessage("No Storage", "Flash unavailable");
     return;
@@ -769,12 +797,18 @@ void openBrowser(BrowserMode mode) {
 }
 
 void newSequenceCallback() {
+  if (!guardSequencerStorageForUsbBackup("Stop session first")) {
+    return;
+  }
   newBlankSequence();
   returnToSequencerMenu();
   showPersistentStatusMessage("New", "Blank sequence");
 }
 
 void saveSequenceCallback() {
+  if (!guardSequencerStorageForUsbBackup("Stop session first")) {
+    return;
+  }
   if (hasCurrentSequencePath()) {
     const char* savedPath = currentSequencePath();
     if (saveSequenceToCurrentPath()) {
@@ -789,14 +823,23 @@ void saveSequenceCallback() {
 }
 
 void saveNewCallback() {
+  if (!guardSequencerStorageForUsbBackup("Stop session first")) {
+    return;
+  }
   openBrowser(BrowserMode::SaveNew);
 }
 
 void loadCallback() {
+  if (!guardSequencerStorageForUsbBackup("Stop session first")) {
+    return;
+  }
   openBrowser(BrowserMode::Load);
 }
 
 void revertCallback() {
+  if (!guardSequencerStorageForUsbBackup("Stop session first")) {
+    return;
+  }
   const bool hadPath = hasCurrentSequencePath();
   char path[kSequencePathLength] = "";
   if (hadPath) {
@@ -815,10 +858,16 @@ void revertCallback() {
 }
 
 void createFolderCallback() {
+  if (!guardSequencerStorageForUsbBackup("Stop session first")) {
+    return;
+  }
   openBrowser(BrowserMode::CreateFolder);
 }
 
 void manageCallback() {
+  if (!guardSequencerStorageForUsbBackup("Stop session first")) {
+    return;
+  }
   openBrowser(BrowserMode::Manage);
 }
 
@@ -864,6 +913,106 @@ GEMItem& createFolderItem() {
 
 GEMItem& manageItem() {
   static GEMItem item("Rename/Delete", manageCallback);
+  return item;
+}
+
+GEMPage& usbBackupPage(GEMPage& parentPage) {
+  static GEMPage page("USB Backup", fileMenuPage(parentPage));
+  return page;
+}
+
+GEMPage& usbBackupExitPage(GEMPage& parentPage) {
+  static GEMPage page("Leave Backup?", usbBackupPage(parentPage));
+  return page;
+}
+
+GEMPage& usbBackupStopPage(GEMPage& parentPage) {
+  static GEMPage page("Stop Session?", usbBackupPage(parentPage));
+  return page;
+}
+
+GEMItem& usbBackupLinkItem(GEMPage& parentPage) {
+  static GEMItem item("USB Backup", usbBackupPage(parentPage));
+  return item;
+}
+
+GEMItem& usbBackupStatusOneItem() {
+  static GEMItem item(g_usbBackupStatusLineOne, usbBackupStatusCallback);
+  return item;
+}
+
+GEMItem& usbBackupStatusTwoItem() {
+  static GEMItem item(g_usbBackupStatusLineTwo, usbBackupStatusCallback);
+  return item;
+}
+
+GEMItem& usbBackupStartItem() {
+  static GEMItem item("Start Session", startUsbBackupCallback);
+  return item;
+}
+
+GEMItem& usbBackupStopItem() {
+  static GEMItem item("Stop Session", stopUsbBackupCallback);
+  return item;
+}
+
+GEMItem& usbBackupExitPromptOneItem() {
+  static GEMItem item("Leaving this page", usbBackupPromptCallback);
+  return item;
+}
+
+GEMItem& usbBackupExitPromptTwoItem() {
+  static GEMItem item("will close", usbBackupPromptCallback);
+  return item;
+}
+
+GEMItem& usbBackupExitPromptThreeItem() {
+  static GEMItem item("USB Backup.", usbBackupPromptCallback);
+  return item;
+}
+
+GEMItem& usbBackupExitPromptFourItem() {
+  static GEMItem item("Continue?", usbBackupPromptCallback);
+  return item;
+}
+
+GEMItem& usbBackupExitYesItem() {
+  static GEMItem item("Yes, Leave", confirmUsbBackupExitCallback);
+  return item;
+}
+
+GEMItem& usbBackupExitNoItem() {
+  static GEMItem item("No, Stay", cancelUsbBackupExitCallback);
+  return item;
+}
+
+GEMItem& usbBackupStopPromptOneItem() {
+  static GEMItem item("Stopping this", usbBackupPromptCallback);
+  return item;
+}
+
+GEMItem& usbBackupStopPromptTwoItem() {
+  static GEMItem item("session ends", usbBackupPromptCallback);
+  return item;
+}
+
+GEMItem& usbBackupStopPromptThreeItem() {
+  static GEMItem item("any transfer.", usbBackupPromptCallback);
+  return item;
+}
+
+GEMItem& usbBackupStopPromptFourItem() {
+  static GEMItem item("Continue?", usbBackupPromptCallback);
+  return item;
+}
+
+GEMItem& usbBackupStopYesItem() {
+  static GEMItem item("Yes, Stop", confirmUsbBackupStopCallback);
+  return item;
+}
+
+GEMItem& usbBackupStopNoItem() {
+  static GEMItem item("No, Stay", cancelUsbBackupStopCallback);
   return item;
 }
 
@@ -943,6 +1092,133 @@ GEMItem& deleteCancelItem() {
 }
 
 void promptCallback() {
+}
+
+void refreshUsbBackupMenu(bool redrawMenu) {
+  if (isUsbBackupActive()) {
+    char statusLineOne[kBrowserLabelLength];
+    char statusLineTwo[kBrowserLabelLength];
+    getUsbBackupStatusLines(statusLineOne, sizeof(statusLineOne),
+                            statusLineTwo, sizeof(statusLineTwo));
+    copyString(g_usbBackupStatusLineOne, sizeof(g_usbBackupStatusLineOne), statusLineOne);
+    copyString(g_usbBackupStatusLineTwo, sizeof(g_usbBackupStatusLineTwo), statusLineTwo);
+    usbBackupStartItem().hide();
+    usbBackupStopItem().show();
+  } else {
+    copyString(g_usbBackupStatusLineOne, sizeof(g_usbBackupStatusLineOne), "USB Backup Off");
+    copyString(g_usbBackupStatusLineTwo, sizeof(g_usbBackupStatusLineTwo), "Host tool idle");
+    usbBackupStartItem().show();
+    usbBackupStopItem().hide();
+  }
+
+  usbBackupStatusOneItem().setTitle(g_usbBackupStatusLineOne);
+  usbBackupStatusTwoItem().setTitle(g_usbBackupStatusLineTwo);
+
+  if (redrawMenu && g_usbBackupPage != nullptr && menu.getCurrentMenuPage() == g_usbBackupPage) {
+    menu.drawMenu();
+  }
+}
+
+void usbBackupStatusCallback() {
+}
+
+void usbBackupPromptCallback() {
+}
+
+void startUsbBackupCallback() {
+  if (enterUsbBackupMode()) {
+    stopTransport();
+    stopAllManagedNotes();
+    resetOverlayState();
+    showPersistentStatusMessage("USB Backup", "Run host tool");
+  } else {
+    showPersistentStatusMessage("USB Backup", "FS unavailable");
+  }
+  refreshUsbBackupMenu(true);
+}
+
+void stopUsbBackupCallback() {
+  if (!isUsbBackupActive()) {
+    exitUsbBackupMode();
+    showPersistentStatusMessage("USB Backup", "Session closed");
+    refreshUsbBackupMenu(true);
+    return;
+  }
+
+  if (g_usbBackupStopPage == nullptr) {
+    return;
+  }
+  menu.setMenuPageCurrent(*g_usbBackupStopPage);
+  menu.drawMenu();
+  g_lastMenuPage = g_usbBackupStopPage;
+}
+
+void confirmUsbBackupExitCallback() {
+  exitUsbBackupMode();
+  if (g_usbBackupPage != nullptr) {
+    refreshUsbBackupMenu(false);
+  }
+  if (g_sequencerPage != nullptr) {
+    menu.setMenuPageCurrent(fileMenuPage(*g_sequencerPage));
+    menu.drawMenu();
+    g_lastMenuPage = &fileMenuPage(*g_sequencerPage);
+  }
+  showPersistentStatusMessage("USB Backup", "Session closed");
+}
+
+void cancelUsbBackupExitCallback() {
+  if (g_usbBackupPage == nullptr) {
+    return;
+  }
+  menu.setMenuPageCurrent(*g_usbBackupPage);
+  refreshUsbBackupMenu(false);
+  menu.drawMenu();
+  showPersistentStatusMessage("USB Backup", "Session active");
+  g_lastMenuPage = g_usbBackupPage;
+}
+
+void confirmUsbBackupStopCallback() {
+  exitUsbBackupMode();
+  if (g_usbBackupPage == nullptr) {
+    return;
+  }
+  menu.setMenuPageCurrent(*g_usbBackupPage);
+  refreshUsbBackupMenu(false);
+  menu.drawMenu();
+  showPersistentStatusMessage("USB Backup", "Session closed");
+  g_lastMenuPage = g_usbBackupPage;
+}
+
+void cancelUsbBackupStopCallback() {
+  if (g_usbBackupPage == nullptr) {
+    return;
+  }
+  menu.setMenuPageCurrent(*g_usbBackupPage);
+  refreshUsbBackupMenu(false);
+  menu.drawMenu();
+  showPersistentStatusMessage("USB Backup", "Session active");
+  g_lastMenuPage = g_usbBackupPage;
+}
+
+void guardUsbBackupMenuExit() {
+  if (g_usbBackupPage == nullptr ||
+      g_usbBackupExitPage == nullptr ||
+      g_usbBackupStopPage == nullptr) {
+    return;
+  }
+
+  GEMPage* currentPage = menu.getCurrentMenuPage();
+  if (g_lastMenuPage == g_usbBackupPage &&
+      currentPage != g_usbBackupPage &&
+      currentPage != g_usbBackupExitPage &&
+      currentPage != g_usbBackupStopPage &&
+      isUsbBackupActive()) {
+    menu.setMenuPageCurrent(*g_usbBackupExitPage);
+    menu.drawMenu();
+    g_lastMenuPage = g_usbBackupExitPage;
+    return;
+  }
+  g_lastMenuPage = currentPage;
 }
 
 void refreshActionPage() {
@@ -1260,6 +1536,27 @@ void setupSequenceFileMenu(GEMPage& sequencerMenuPage) {
   page.addMenuItem(revertItem());
   page.addMenuItem(createFolderItem());
   page.addMenuItem(manageItem());
+  page.addMenuItem(usbBackupLinkItem(sequencerMenuPage));
+
+  g_usbBackupPage = &usbBackupPage(sequencerMenuPage);
+  g_usbBackupExitPage = &usbBackupExitPage(sequencerMenuPage);
+  g_usbBackupStopPage = &usbBackupStopPage(sequencerMenuPage);
+  g_usbBackupPage->addMenuItem(usbBackupStatusOneItem());
+  g_usbBackupPage->addMenuItem(usbBackupStatusTwoItem());
+  g_usbBackupPage->addMenuItem(usbBackupStartItem());
+  g_usbBackupPage->addMenuItem(usbBackupStopItem());
+  g_usbBackupExitPage->addMenuItem(usbBackupExitPromptOneItem());
+  g_usbBackupExitPage->addMenuItem(usbBackupExitPromptTwoItem());
+  g_usbBackupExitPage->addMenuItem(usbBackupExitPromptThreeItem());
+  g_usbBackupExitPage->addMenuItem(usbBackupExitPromptFourItem());
+  g_usbBackupExitPage->addMenuItem(usbBackupExitYesItem());
+  g_usbBackupExitPage->addMenuItem(usbBackupExitNoItem());
+  g_usbBackupStopPage->addMenuItem(usbBackupStopPromptOneItem());
+  g_usbBackupStopPage->addMenuItem(usbBackupStopPromptTwoItem());
+  g_usbBackupStopPage->addMenuItem(usbBackupStopPromptThreeItem());
+  g_usbBackupStopPage->addMenuItem(usbBackupStopPromptFourItem());
+  g_usbBackupStopPage->addMenuItem(usbBackupStopYesItem());
+  g_usbBackupStopPage->addMenuItem(usbBackupStopNoItem());
 
   actionPage().addMenuItem(actionPromptOneItem());
   actionPage().addMenuItem(actionPromptTwoItem());
@@ -1277,18 +1574,29 @@ void setupSequenceFileMenu(GEMPage& sequencerMenuPage) {
   deletePage().addMenuItem(deleteCancelItem());
 
   sequencerMenuPage.addMenuItem(fileMenuLink(sequencerMenuPage));
+  refreshUsbBackupMenu(false);
   g_fileMenuInstalled = true;
 }
 
 bool fileWorkflowActive() {
-  return g_fileUiActive || g_namingTarget != NamingTarget::None;
+  return g_fileUiActive || g_namingTarget != NamingTarget::None || isUsbBackupActive();
 }
 
 bool fileNamingActive() {
   return g_namingTarget != NamingTarget::None;
 }
 
+void serviceSequenceFileMenu() {
+  guardUsbBackupMenuExit();
+  if (consumeUsbBackupUiRefreshRequested()) {
+    refreshUsbBackupMenu(g_usbBackupPage != nullptr && menu.getCurrentMenuPage() == g_usbBackupPage);
+  }
+}
+
 bool handleFileMenuButtonEvent(byte buttonIndex, bool pressed) {
+  if (isUsbBackupActive()) {
+    return true;
+  }
   if (g_namingTarget == NamingTarget::None) {
     return g_fileUiActive;
   }
@@ -1387,6 +1695,7 @@ namespace sequencer {
 void setupSequenceFileMenu(GEMPage&) {}
 bool fileWorkflowActive() { return false; }
 bool fileNamingActive() { return false; }
+void serviceSequenceFileMenu() {}
 bool handleFileMenuButtonEvent(byte, bool) { return false; }
 bool handleFileMenuRotaryTurn(int8_t) { return false; }
 bool handleFileMenuEncoderClick() { return false; }

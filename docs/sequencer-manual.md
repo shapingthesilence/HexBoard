@@ -265,7 +265,56 @@ Sequence files do not store selected step, undo/tool/naming/browser state,
 overlay messages, active note handles, transport timing, dirty state,
 `Clock Source`, `Tap Preview`, `Monophonic`, or `Seq Lights`.
 
-## Not Yet Ported
+## USB Backup
 
-The current sequencer slice does not include USB Backup or desktop backup
-scripts and launchers.
+Sequencer-enabled builds include `USB Backup` under `File Management`. This is
+the user-facing way to move sequence files between the board and a desktop
+backup folder.
+
+On the board:
+
+- Open `Sequencer` -> `File Management` -> `USB Backup`.
+- Choose `Start Session` before launching the desktop tool.
+- The first two rows show live status, such as `USB Backup Off` /
+  `Host tool idle`, `Session Active` / `Run host tool`, `Session Active` /
+  `Host connected`, `Backup Ready` / `Listed files`, `Backup Sent` /
+  `File transferred`, `Restore Busy` / `Receiving file`, `Restore OK`, or
+  `Backup Error`.
+- While a session is active, sequencer hex-button editing and playback actions
+  are ignored and the sequencer LEDs are blanked. Encoder menu navigation and
+  confirmation continue to work.
+- Choosing `Stop Session` asks for confirmation because stopping ends any
+  current transfer. Leaving the USB Backup page while active also asks for
+  confirmation because leaving closes USB Backup.
+- Exiting Sequencer mode closes USB Backup and removes any partial incoming
+  restore file.
+
+On the computer, use the desktop GUI as the primary workflow:
+
+```sh
+python3 scripts/hexboard_backup_gui.py
+```
+
+The repo root also includes `Launch HexBoard Backup.command` for macOS and
+`Launch HexBoard Backup.bat` for Windows. The GUI requires Python 3 and
+`pyserial`.
+
+The GUI operates on the remote `/Sequences` tree and supports:
+
+- `Refresh Ports` and `Refresh Remote`
+- `Backup All` and `Restore Backup`
+- `Download Selected`
+- `Upload File` and `Upload Folder`
+- `Rename File` and `Rename Folder`
+- `Delete Selected`
+
+The remote tree shows folders and `.hbseq` files with raw file sizes in the
+`Size Bytes` column. Upload File and Upload Folder warn before overwriting
+remote files; Upload Folder merges into the target folder and prompts one
+conflicting file at a time. Rename validation follows the on-device naming
+rules: letters, numbers, spaces, and hyphen only, no periods, and up to `20`
+characters. Multi-select is available for delete; single-target actions are
+disabled when multiple remote items are selected.
+
+`scripts/hexboard_backup.py` is included for support/debug use and shares the
+same protocol library, but direct CLI use is not the normal acceptance path.
