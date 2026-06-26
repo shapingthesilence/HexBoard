@@ -13,7 +13,4 @@ bool handleSequencerRotaryTurn(int8_t direction);
 bool handleSequencerEncoderClick();
 void drawSequencerModeDisplay();
 void restoreSequencerDisplayAfterPlayedNotesOverlay();
-void handleSequencerExternalMidiClock();
-void handleSequencerExternalMidiStart();
-void handleSequencerExternalMidiStop();
-void handleSequencerExternalMidiContinue();
+void handleSequencerExternalMidiRealtime(uint8_t status);

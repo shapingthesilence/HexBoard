@@ -13,6 +13,8 @@ std::array<int16_t, POLYPHONY_LIMIT> pendingSynthStealOwners = [] {
   owners.fill(NO_SYNTH_OWNER);
   return owners;
 }();
+// Sequencer OB Synth output uses these hidden slots to enter the normal synth
+// voice lifecycle without pretending a visible key is physically held.
 std::array<byte, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewVelocityForSlot = {};
 std::array<bool, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewSlotActive = {};
 std::atomic<uint32_t> nextVoiceGeneration = 1;

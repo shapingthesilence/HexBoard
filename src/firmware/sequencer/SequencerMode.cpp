@@ -221,35 +221,30 @@ void restoreSequencerDisplayAfterPlayedNotesOverlay() {
 #endif
 }
 
-void handleSequencerExternalMidiClock() {
+void handleSequencerExternalMidiRealtime(uint8_t status) {
 #if HEXBOARD_ENABLE_SEQUENCER
-  if (sequencerActive) {
-    sequencer::handleExternalMidiClock();
+  if (!sequencerActive) {
+    return;
   }
-#endif
-}
 
-void handleSequencerExternalMidiStart() {
-#if HEXBOARD_ENABLE_SEQUENCER
-  if (sequencerActive) {
-    sequencer::handleExternalMidiStart();
+  switch (status) {
+    case 0xF8:
+      sequencer::handleExternalMidiClock();
+      break;
+    case 0xFA:
+      sequencer::handleExternalMidiStart();
+      break;
+    case 0xFB:
+      sequencer::handleExternalMidiContinue();
+      break;
+    case 0xFC:
+      sequencer::handleExternalMidiStop();
+      break;
+    default:
+      break;
   }
-#endif
-}
-
-void handleSequencerExternalMidiStop() {
-#if HEXBOARD_ENABLE_SEQUENCER
-  if (sequencerActive) {
-    sequencer::handleExternalMidiStop();
-  }
-#endif
-}
-
-void handleSequencerExternalMidiContinue() {
-#if HEXBOARD_ENABLE_SEQUENCER
-  if (sequencerActive) {
-    sequencer::handleExternalMidiContinue();
-  }
+#else
+  (void)status;
 #endif
 }
 

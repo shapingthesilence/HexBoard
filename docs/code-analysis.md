@@ -987,6 +987,10 @@ current MIDI routing and MPE
 helpers. OB Synth output uses a sequencer output handle plus a synth
 preview-note API backed by hidden matrix slots `141..159`, preserving slot `140`
 for hardware detection and scaling preview voices by step/audition velocity.
+Sequencer policy should remain in `src/firmware/sequencer/`; the intentional
+external bridge points are MIDI realtime byte forwarding from `MidiInput`,
+shared played-note overlay rendering, base LED palette lookup plus final LED
+overrides, and the synth preview-note API.
 No-selection lower-grid audition notes expose their active pitch set and newest
 press timestamp to the shared played-note overlay; the source is disabled while
 a step is selected, and preview/playback roles stay out of it.

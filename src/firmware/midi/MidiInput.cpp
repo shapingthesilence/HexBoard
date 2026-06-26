@@ -116,23 +116,9 @@ void processIncomingRealtimeMessage(uint8_t value, bool delegatedMode) {
   if (delegatedMode) {
     return;
   }
-
-  switch (value) {
-    case 0xF8:
-      handleSequencerExternalMidiClock();
-      break;
-    case 0xFA:
-      handleSequencerExternalMidiStart();
-      break;
-    case 0xFB:
-      handleSequencerExternalMidiContinue();
-      break;
-    case 0xFC:
-      handleSequencerExternalMidiStop();
-      break;
-    default:
-      break;
-  }
+  // The MIDI parser only forwards realtime status bytes; Sequencer mode owns
+  // the clock/start/continue/stop policy.
+  handleSequencerExternalMidiRealtime(value);
 }
 
 bool processIncomingMidiByte(MidiInputParser& parser, uint8_t value, bool delegatedMode) {

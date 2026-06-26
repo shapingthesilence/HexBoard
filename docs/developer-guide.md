@@ -156,6 +156,14 @@ step selection. `GridScanRotary.cpp` offers encoder turns and clicks to
 Sequencer mode first; Sequencer returns `false` outside selected-step/tool
 states so GEM and `VirtualListMenu` behavior is preserved.
 
+Keep new Sequencer policy in `src/firmware/sequencer/`. The expected
+cross-subsystem bridge points are narrow: `MidiInput.cpp` forwards MIDI
+realtime bytes to `SequencerMode`, `PlayedNotesOverlay.cpp` shares its renderer
+with lower-grid audition notes, `LedRender.cpp` exposes base palette color and
+applies final Sequencer LED overrides, and the synth preview-note API lets
+Sequencer OB Synth output use hidden matrix slots without duplicating voice
+allocation.
+
 `src/firmware/sequencer/SequencerStorage.*` owns sequence file serialization,
 the `/Sequences/.current` remembered path, title/dirty state, and startup
 restore. Saved `.hbseq` files use the old text-compatible `format=HBSEQ`,

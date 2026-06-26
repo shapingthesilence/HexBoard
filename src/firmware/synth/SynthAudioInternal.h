@@ -113,6 +113,8 @@ constexpr int16_t SYNTH_PITCH_MOD_MAX_Q4 = 127 * SYNTH_PITCH_MOD_Q4_SCALE;
 constexpr uint16_t SYNTH_PITCH_MOD_RATIO_Q4_COUNT = (SYNTH_PITCH_MOD_MAX_Q4 / 2) + 1;
 constexpr uint16_t SYNTH_STEAL_FADE_SAMPLES = 64;
 constexpr int16_t NO_SYNTH_OWNER = -1;
+// Hidden matrix slots after the hardware-detection flag are borrowed for
+// Sequencer OB Synth preview/playback notes that are not physical key presses.
 constexpr byte SYNTH_PREVIEW_SLOT_START = FIRST_FLAG_BUTTON_INDEX + 1;
 constexpr byte SYNTH_PREVIEW_SLOT_COUNT = BTN_COUNT - SYNTH_PREVIEW_SLOT_START;
 constexpr uint8_t releaseRetryLimit = 2;

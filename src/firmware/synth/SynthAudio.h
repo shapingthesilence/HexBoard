@@ -4,6 +4,7 @@
 #include "../storage/PersistentDataModels.h"
 #include "SynthDefaults.h"
 
+// Handle for non-key synth notes, currently used by Sequencer OB Synth output.
 struct SynthPreviewNoteHandle {
   bool active = false;
   int16_t slot = -1;

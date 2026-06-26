@@ -33,6 +33,8 @@ constexpr uint16_t BOOT_LED_CHECK_WAVE_MS = 30;
 constexpr uint16_t BOOT_LED_CHECK_NORMAL_FADE_MS = 25;
 constexpr byte USER_GEOMETRY_REST_COLOR_VALUE_MAX = VALUE_NORMAL;
 bool settingsFileMissingOnBoot = false;
+// Sequencer Note-colored steps reuse the keyboard palette before gamma/current
+// limiting, so cache the base hue/saturation where the palette is calculated.
 colorDef baseLedColorCache[LED_COUNT] = {};
 bool baseLedColorCacheValid[LED_COUNT] = {};
 
@@ -962,6 +964,8 @@ void RAM_FUNC(lightUpLEDs)() {
     renderMetronomeSideButtonFlash();
     applyMetronomeBrightnessFlash();
     if (sequencerModeActive()) {
+      // Sequencer owns its mode-specific LED policy; this renderer only applies
+      // those overrides after the normal keyboard/metronome frame is built.
       sequencer::renderLedOverrides(
         [](byte buttonIndex, uint32_t color) {
           strip.setPixelColor(buttonIndex, color);

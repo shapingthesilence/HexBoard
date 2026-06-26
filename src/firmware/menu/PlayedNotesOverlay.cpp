@@ -72,6 +72,8 @@ const ChordPattern chordPatterns[] = {
 };
 const byte CHORD_PATTERN_COUNT = sizeof(chordPatterns) / sizeof(chordPatterns[0]);
 
+// The overlay renderer is shared by keyboard notes and Sequencer lower-grid
+// audition notes; Sequencer supplies snapshots through a narrow source API.
 enum class PlayedNoteDisplaySource : byte {
   None,
   Keyboard,
