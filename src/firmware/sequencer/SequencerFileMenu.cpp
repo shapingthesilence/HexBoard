@@ -233,6 +233,32 @@ bool browserIncludesFiles() {
   return g_browserMode == BrowserMode::Load || g_browserMode == BrowserMode::Manage;
 }
 
+void suggestNewSequenceName(char* output, size_t outputLength) {
+  if (outputLength == 0) {
+    return;
+  }
+  output[0] = '\0';
+
+  for (unsigned number = 0; number <= 9999; ++number) {
+    char candidate[kSequenceNameLength + 1] = "";
+    char leaf[32] = "";
+    char path[kSequencePathLength] = "";
+    if (number == 0) {
+      copyString(candidate, sizeof(candidate), "New");
+    } else {
+      snprintf(candidate, sizeof(candidate), "New %03u", number);
+    }
+    snprintf(leaf, sizeof(leaf), "%s%s", candidate, kSequenceFileExtension);
+    joinSequencePath(g_browserPath, leaf, path, sizeof(path));
+    if (!LittleFS.exists(path)) {
+      copyString(output, outputLength, candidate);
+      return;
+    }
+  }
+
+  copyString(output, outputLength, "New");
+}
+
 uint16_t browserActionRowCount() {
   switch (g_browserMode) {
     case BrowserMode::SaveNew:
@@ -671,19 +697,7 @@ void showBrowser() {
 
     if (row.kind == RowKind::SaveHere) {
       char suggestedName[kSequenceNameLength + 1] = "";
-      for (unsigned number = 1; number <= 9999; ++number) {
-        char leaf[32] = "";
-        char path[kSequencePathLength] = "";
-        snprintf(leaf, sizeof(leaf), "Sequence %03u%s", number, kSequenceFileExtension);
-        joinSequencePath(g_browserPath, leaf, path, sizeof(path));
-        if (!LittleFS.exists(path)) {
-          extractSequenceDisplayName(path, suggestedName, sizeof(suggestedName));
-          break;
-        }
-      }
-      if (suggestedName[0] == '\0') {
-        copyString(suggestedName, sizeof(suggestedName), "SEQUENCE");
-      }
+      suggestNewSequenceName(suggestedName, sizeof(suggestedName));
       g_namingTarget = NamingTarget::Sequence;
       copyString(g_namingBuffer, sizeof(g_namingBuffer), suggestedName);
       g_namingLength = static_cast<byte>(strlen(g_namingBuffer));

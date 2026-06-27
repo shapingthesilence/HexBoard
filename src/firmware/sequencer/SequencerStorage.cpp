@@ -86,7 +86,7 @@ bool endsWithIgnoreCase(const char* value, const char* suffix) {
 void updateSequenceTitle() {
   char nextTitle[kSequenceTitleLength] = "";
   if (g_currentPath[0] == '\0') {
-    copyString(nextTitle, sizeof(nextTitle), "Sequencer");
+    snprintf(nextTitle, sizeof(nextTitle), "Seq-%sNew", g_dirty ? "*" : "");
   } else {
     char name[kSequenceNameLength + 1] = "";
     extractSequenceDisplayName(g_currentPath, name, sizeof(name));
@@ -788,7 +788,7 @@ bool revertSequence() { return false; }
 void markSequenceDirty() {}
 void clearSequenceDirty() {}
 bool sequenceDirty() { return false; }
-const char* sequenceTitle() { return "Sequencer"; }
+const char* sequenceTitle() { return "Seq-New"; }
 uint32_t sequenceTitleVersion() { return 0; }
 bool hasCurrentSequencePath() { return false; }
 const char* currentSequencePath() { return ""; }

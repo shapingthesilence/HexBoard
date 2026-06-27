@@ -223,9 +223,10 @@ marker. It preserves profile-backed `Tap Preview`, `Monophonic`, and
 `Clock Source`, plus `Seq Lights`.
 
 `Save` writes the current file when one is loaded. If no file is loaded, it
-opens the same folder-selection and naming flow as `Save New`. `Save New`
-always prompts for a new sequence name, appends `.hbseq` internally, sets the
-new file as current, and clears the dirty marker after a successful save.
+opens the same folder-selection and naming flow as `Save New`, suggesting `New`
+or the next available `New 001`-style name. `Save New` always prompts for a new
+sequence name, appends `.hbseq` internally, sets the new file as current, and
+clears the dirty marker after a successful save.
 
 `Load` stops playback, releases sequencer-held notes, loads the chosen `.hbseq`
 file, makes it the current file, and clears the dirty marker. `Revert` reloads
@@ -238,10 +239,11 @@ After settings/profile restore during startup, the firmware reloads that file
 when it exists and parses successfully. Profile-backed settings are not
 overwritten by the sequence file.
 
-The Sequencer page title reads `Sequencer` when no file is loaded. When a file
-is loaded, it shows `Seq-NAME`. Unsaved sequence-owned changes show a dirty
-marker, for example `Seq-*NAME`. The marker clears after successful `Save`,
-`Save New`, `Load`, `Revert`, or `New`.
+The Sequencer page title reads `Seq-New` when no file is loaded. Unsaved
+sequence-owned changes to that blank state show `Seq-*New`. When a file is
+loaded, it shows `Seq-NAME`. Unsaved sequence-owned changes show a dirty marker,
+for example `Seq-*NAME`. The marker clears after successful `Save`, `Save New`,
+`Load`, `Revert`, or `New`.
 
 File actions and file errors show a brief confirmation message before normal
 menu navigation resumes.
