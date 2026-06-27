@@ -45,11 +45,6 @@ GEMItem& sequencerTitleRow() {
   return item;
 }
 
-GEMItem& sequencerShellStatusRow() {
-  static GEMItem item("Hold 19 clears");
-  return item;
-}
-
 void refreshSequencerTitleRow(bool redrawIfVisible = false) {
   uint32_t titleVersion = sequencer::sequenceTitleVersion();
   const char* title = sequencer::sequenceTitle();
@@ -263,7 +258,6 @@ void setupSequencerMenu() {
   sequencer::setupLightSettingsMenu(page);
   refreshSequencerTitleRow(false);
   page.addMenuItem(sequencerTitleRow());
-  page.addMenuItem(sequencerShellStatusRow());
   menuPageMain.addMenuItem(sequencerMenuAction());
   sequencerMenuInstalled = true;
 #endif
