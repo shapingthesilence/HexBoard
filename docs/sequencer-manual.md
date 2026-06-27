@@ -239,13 +239,13 @@ After settings/profile restore during startup, the firmware reloads that file
 when it exists and parses successfully. Profile-backed settings are not
 overwritten by the sequence file.
 
-The Sequencer page shows the current sequence name as a highlighted strip below
-the `Sequencer` title. This strip is informational and is not a selectable menu
-row. It reads `Seq-New` when no file is loaded. Unsaved sequence-owned changes
-to that blank state show `Seq-*New`. When a file is loaded, it shows `Seq-NAME`.
-Unsaved sequence-owned changes show a dirty marker, for example `Seq-*NAME`.
-The marker clears after successful `Save`, `Save New`, `Load`, `Revert`, or
-`New`.
+The Sequencer page shows the current sequence name as a filename header with a
+thin divider line below it. This header is informational and is not a selectable
+menu row. It reads `Seq-New` when no file is loaded. Unsaved sequence-owned
+changes to that blank state show `Seq-*New`. When a file is loaded, it shows
+`Seq-NAME`. Unsaved sequence-owned changes show a dirty marker, for example
+`Seq-*NAME`. The marker clears after successful `Save`, `Save New`, `Load`,
+`Revert`, or `New`.
 
 File actions and file errors show a brief confirmation message before normal
 menu navigation resumes.

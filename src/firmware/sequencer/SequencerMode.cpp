@@ -21,12 +21,11 @@
 namespace {
 
 constexpr byte kSequencerMenuItemHeight = 10;
-constexpr byte kSequencerMenuTitleStripTop = 10;
-constexpr byte kSequencerMenuTitleStripHeight = 11;
 constexpr byte kSequencerMenuTopOffset = 22;
 constexpr byte kSequencerMenuValuesLeftOffset = 78;
-constexpr byte kSequencerMenuTitleStripTextX = 4;
-constexpr byte kSequencerMenuTitleStripTextTop = kSequencerMenuTitleStripTop + 1;
+constexpr byte kSequencerMenuFilenameHeaderTop = 11;
+constexpr byte kSequencerMenuFilenameHeaderTextX = 4;
+constexpr byte kSequencerMenuFilenameHeaderDividerY = kSequencerMenuTopOffset - 2;
 
 bool sequencerMenuInstalled = false;
 bool sequencerActive = false;
@@ -82,14 +81,14 @@ void refreshSequencerTitleRow(bool redrawIfVisible = false) {
   }
 }
 
-void copyFittingTitleStripText(char* output, size_t outputLength) {
+void copyFittingFilenameHeaderText(char* output, size_t outputLength) {
   if (outputLength == 0) {
     return;
   }
 
   output[0] = '\0';
   u8g2.setFont(GEM_FONT_BIG);
-  const int maxWidth = static_cast<int>(u8g2.getDisplayWidth()) - (kSequencerMenuTitleStripTextX * 2);
+  const int maxWidth = static_cast<int>(u8g2.getDisplayWidth()) - (kSequencerMenuFilenameHeaderTextX * 2);
   for (size_t i = 0; sequencerTitleLabel[i] != '\0' && i < outputLength - 1; ++i) {
     output[i] = sequencerTitleLabel[i];
     output[i + 1] = '\0';
@@ -246,7 +245,7 @@ void drawSequencerModeDisplay() {
 #endif
 }
 
-void drawSequencerMenuTitleStrip() {
+void drawSequencerMenuFilenameHeader() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (!sequencerActive || menu.getCurrentMenuPage() != &sequencerMenuPage()) {
     return;
@@ -255,14 +254,13 @@ void drawSequencerMenuTitleStrip() {
   refreshSequencerTitleRow(false);
 
   char visibleTitle[sequencer::kSequenceTitleLength] = "";
-  copyFittingTitleStripText(visibleTitle, sizeof(visibleTitle));
+  copyFittingFilenameHeaderText(visibleTitle, sizeof(visibleTitle));
 
   u8g2.setDrawColor(1);
-  u8g2.drawBox(0, kSequencerMenuTitleStripTop, u8g2.getDisplayWidth(), kSequencerMenuTitleStripHeight);
-  u8g2.setDrawColor(0);
   u8g2.setFontPosTop();
   u8g2.setFont(GEM_FONT_BIG);
-  u8g2.drawStr(kSequencerMenuTitleStripTextX, kSequencerMenuTitleStripTextTop, visibleTitle);
+  u8g2.drawStr(kSequencerMenuFilenameHeaderTextX, kSequencerMenuFilenameHeaderTop, visibleTitle);
+  u8g2.drawHLine(0, kSequencerMenuFilenameHeaderDividerY, u8g2.getDisplayWidth());
   u8g2.setDrawColor(1);
 #endif
 }

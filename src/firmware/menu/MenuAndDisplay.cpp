@@ -2902,7 +2902,7 @@ void setupTransposeMenuItem() {
 }
 
 void drawMenuFrameOverlays() {
-  drawSequencerMenuTitleStrip();
+  drawSequencerMenuFilenameHeader();
   drawPlayedNoteBadgeOnMenuFrame();
 }
 
