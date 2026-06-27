@@ -58,6 +58,7 @@ The current code supports:
 - Jared DeCook has been writing music, developing hardware, and performing as [Shaping The Silence](https://shapingthesilence.com/) for over a decade.
 - Zach DeCook has been listening to music, breaking hardware, and occasionally writing software since the former discovered his exploitable talents.
 - Nicholas Fox has been hexperimenting with the firmware since before receiving a HexBoard in the mail.
+- Robert Wierzbicki created the sequencer and a few random other changes.
 
 ## Related Firmware History
 
