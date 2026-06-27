@@ -26,7 +26,7 @@ constexpr byte kSequencerMenuTitleStripHeight = 11;
 constexpr byte kSequencerMenuTopOffset = 22;
 constexpr byte kSequencerMenuValuesLeftOffset = 78;
 constexpr byte kSequencerMenuTitleStripTextX = 4;
-constexpr byte kSequencerMenuTitleStripTextBaseline = 19;
+constexpr byte kSequencerMenuTitleStripTextTop = kSequencerMenuTitleStripTop + 1;
 
 bool sequencerMenuInstalled = false;
 bool sequencerActive = false;
@@ -260,8 +260,9 @@ void drawSequencerMenuTitleStrip() {
   u8g2.setDrawColor(1);
   u8g2.drawBox(0, kSequencerMenuTitleStripTop, u8g2.getDisplayWidth(), kSequencerMenuTitleStripHeight);
   u8g2.setDrawColor(0);
+  u8g2.setFontPosTop();
   u8g2.setFont(GEM_FONT_BIG);
-  u8g2.drawStr(kSequencerMenuTitleStripTextX, kSequencerMenuTitleStripTextBaseline, visibleTitle);
+  u8g2.drawStr(kSequencerMenuTitleStripTextX, kSequencerMenuTitleStripTextTop, visibleTitle);
   u8g2.setDrawColor(1);
 #endif
 }
