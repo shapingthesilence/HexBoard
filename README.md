@@ -52,6 +52,7 @@ The current code supports:
 - onboard synth waveform/wavetable banks, Serum/Vital and HexBoard wavetable import, mono portamento, AHDSR envelope, phase-warp/wavetable/LFO modulation, preset, and arpeggiator settings
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
+- optional sequencer, build instructions below describe how to compile it into the firmware.
 
 ## Team
 
