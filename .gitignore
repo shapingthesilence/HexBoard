@@ -1,5 +1,7 @@
 build
 TAGS
+__pycache__/
+*.py[cod]
 src/MP Single Cycle Waveforms/.DS_Store
 web/node_modules
 web/.vite
