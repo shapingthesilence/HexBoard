@@ -150,6 +150,7 @@ bool handleSequencerRotaryTurn(int8_t direction) {
       return true;
     }
     if (!sequencer::sequencerOverlayOwnsEncoderInput()) {
+      sequencer::releaseSequencerOverlayForMenuDisplay();
       return false;
     }
     if (sequencer::performanceMonitorActive()) {
@@ -173,6 +174,7 @@ bool handleSequencerEncoderClick() {
       return true;
     }
     if (!sequencer::sequencerOverlayOwnsEncoderInput()) {
+      sequencer::releaseSequencerOverlayForMenuDisplay();
       return false;
     }
     if (sequencer::performanceMonitorActive()) {
@@ -192,7 +194,7 @@ void drawSequencerModeDisplay() {
       sequencer::drawFileMenuOverlay();
       return;
     }
-    if (sequencer::fileWorkflowActive()) {
+    if (sequencer::fileWorkflowActive() || menu.getCurrentMenuPage() != &sequencerMenuPage()) {
       sequencer::releaseSequencerOverlayForMenuDisplay();
       return;
     }

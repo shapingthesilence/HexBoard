@@ -287,10 +287,11 @@ void hideSelectedStepOverlay() {
 }
 
 bool sequencerOverlayOwnsEncoderInput() {
+  SequencerToolMode mode = toolMode();
   return performanceMonitorActive() ||
          overviewShown ||
-         overlayVisible ||
-         toolMode() != SequencerToolMode::Normal;
+         toolModeIsModal() ||
+         (overlayVisible && mode != SequencerToolMode::StatusMessage);
 }
 
 bool sequencerIdleDisplayBlanked() {
@@ -310,6 +311,9 @@ void clearSequencerIdleDisplayBlanked() {
 }
 
 void releaseSequencerOverlayForMenuDisplay() {
+  if (toolMode() == SequencerToolMode::StatusMessage && !toolModeIsModal()) {
+    returnToNormalEditing();
+  }
   if (overviewShown) {
     overviewShown = false;
     overviewStartStep = 0;

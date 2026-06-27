@@ -464,7 +464,7 @@ void openToolsForSelectedStep() {
 }
 
 void showPersistentStatusMessage(const char* lineOne, const char* lineTwo) {
-  showStatusMessage(lineOne, lineTwo, SequencerToolMode::Normal, static_cast<uint64_t>(-1));
+  showStatusMessage(lineOne, lineTwo, SequencerToolMode::Normal, runTime + kSequencerMessageMicros);
 }
 
 void showStatusMessageAndReturnToTools(const char* lineOne, const char* lineTwo) {
