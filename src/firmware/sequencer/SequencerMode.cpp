@@ -45,6 +45,14 @@ GEMItem& sequencerTitleRow() {
   return item;
 }
 
+bool sequencerDisplayOverlayActive() {
+  return sequencer::performanceMonitorActive() ||
+         sequencer::overviewActive() ||
+         sequencer::hasSelectedStep() ||
+         sequencer::toolMode() != sequencer::SequencerToolMode::Normal ||
+         sequencer::sequencerIdleDisplayBlanked();
+}
+
 void refreshSequencerTitleRow(bool redrawIfVisible = false) {
   uint32_t titleVersion = sequencer::sequenceTitleVersion();
   const char* title = sequencer::sequenceTitle();
@@ -57,7 +65,11 @@ void refreshSequencerTitleRow(bool redrawIfVisible = false) {
   sequencerTitleSeenVersion = titleVersion;
 
   if (redrawIfVisible && sequencerActive && menu.getCurrentMenuPage() == &sequencerMenuPage()) {
-    menu.drawMenu();
+    if (sequencerDisplayOverlayActive()) {
+      sequencer::markOverlayDirty();
+    } else {
+      menu.drawMenu();
+    }
   }
 }
 

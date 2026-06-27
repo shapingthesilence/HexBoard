@@ -414,7 +414,10 @@ void drawSequencerOverlay() {
     return;
   }
 
-  if (!overlayDirty && overlayVisible && mode != SequencerToolMode::ExactLength) {
+  if (!overlayDirty &&
+      overlayVisible &&
+      mode != SequencerToolMode::ExactLength &&
+      mode != SequencerToolMode::StatusMessage) {
     return;
   }
 
