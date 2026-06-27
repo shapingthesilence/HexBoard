@@ -20,10 +20,25 @@
 
 namespace {
 
+constexpr byte kSequencerMenuItemHeight = 10;
+constexpr byte kSequencerMenuTitleStripTop = 10;
+constexpr byte kSequencerMenuTitleStripHeight = 11;
+constexpr byte kSequencerMenuTopOffset = 22;
+constexpr byte kSequencerMenuValuesLeftOffset = 78;
+constexpr byte kSequencerMenuTitleStripTextX = 4;
+constexpr byte kSequencerMenuTitleStripTextBaseline = 19;
+
 bool sequencerMenuInstalled = false;
 bool sequencerActive = false;
 char sequencerTitleLabel[sequencer::kSequenceTitleLength] = "Sequencer";
 uint32_t sequencerTitleSeenVersion = 0;
+GEMAppearance sequencerMenuAppearance = {
+  GEM_POINTER_ROW,
+  GEM_ITEMS_COUNT_AUTO,
+  kSequencerMenuItemHeight,
+  kSequencerMenuTopOffset,
+  kSequencerMenuValuesLeftOffset
+};
 
 GEMPage& sequencerMenuPage() {
   static GEMPage page("Sequencer");
@@ -37,11 +52,6 @@ GEMItem& sequencerMenuAction() {
 
 GEMItem& sequencerKeyboardAction() {
   static GEMItem item("Keyboard", exitSequencerMode);
-  return item;
-}
-
-GEMItem& sequencerTitleRow() {
-  static GEMItem item(sequencerTitleLabel);
   return item;
 }
 
@@ -61,7 +71,6 @@ void refreshSequencerTitleRow(bool redrawIfVisible = false) {
   }
 
   snprintf(sequencerTitleLabel, sizeof(sequencerTitleLabel), "%s", title);
-  sequencerTitleRow().setTitle(sequencerTitleLabel);
   sequencerTitleSeenVersion = titleVersion;
 
   if (redrawIfVisible && sequencerActive && menu.getCurrentMenuPage() == &sequencerMenuPage()) {
@@ -69,6 +78,24 @@ void refreshSequencerTitleRow(bool redrawIfVisible = false) {
       sequencer::markOverlayDirty();
     } else {
       menu.drawMenu();
+    }
+  }
+}
+
+void copyFittingTitleStripText(char* output, size_t outputLength) {
+  if (outputLength == 0) {
+    return;
+  }
+
+  output[0] = '\0';
+  u8g2.setFont(GEM_FONT_BIG);
+  const int maxWidth = static_cast<int>(u8g2.getDisplayWidth()) - (kSequencerMenuTitleStripTextX * 2);
+  for (size_t i = 0; sequencerTitleLabel[i] != '\0' && i < outputLength - 1; ++i) {
+    output[i] = sequencerTitleLabel[i];
+    output[i + 1] = '\0';
+    if (u8g2.getStrWidth(output) > maxWidth) {
+      output[i] = '\0';
+      return;
     }
   }
 }
@@ -219,6 +246,26 @@ void drawSequencerModeDisplay() {
 #endif
 }
 
+void drawSequencerMenuTitleStrip() {
+#if HEXBOARD_ENABLE_SEQUENCER
+  if (!sequencerActive || menu.getCurrentMenuPage() != &sequencerMenuPage()) {
+    return;
+  }
+
+  refreshSequencerTitleRow(false);
+
+  char visibleTitle[sequencer::kSequenceTitleLength] = "";
+  copyFittingTitleStripText(visibleTitle, sizeof(visibleTitle));
+
+  u8g2.setDrawColor(1);
+  u8g2.drawBox(0, kSequencerMenuTitleStripTop, u8g2.getDisplayWidth(), kSequencerMenuTitleStripHeight);
+  u8g2.setDrawColor(0);
+  u8g2.setFont(GEM_FONT_BIG);
+  u8g2.drawStr(kSequencerMenuTitleStripTextX, kSequencerMenuTitleStripTextBaseline, visibleTitle);
+  u8g2.setDrawColor(1);
+#endif
+}
+
 void restoreSequencerDisplayAfterPlayedNotesOverlay() {
 #if HEXBOARD_ENABLE_SEQUENCER
   if (sequencerActive) {
@@ -278,6 +325,7 @@ void setupSequencerMenu() {
   }
 
   GEMPage& page = sequencerMenuPage();
+  page.setAppearance(&sequencerMenuAppearance);
   page.addMenuItem(sequencerKeyboardAction());
   sequencer::initializeSequenceStorage();
   sequencer::setupUsbBackup();
@@ -285,7 +333,6 @@ void setupSequencerMenu() {
   sequencer::setupPlaybackSettingsMenu(page);
   sequencer::setupLightSettingsMenu(page);
   refreshSequencerTitleRow(false);
-  page.addMenuItem(sequencerTitleRow());
   menuPageMain.addMenuItem(sequencerMenuAction());
   sequencerMenuInstalled = true;
 #endif

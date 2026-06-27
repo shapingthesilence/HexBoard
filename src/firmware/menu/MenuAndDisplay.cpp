@@ -2901,12 +2901,17 @@ void setupTransposeMenuItem() {
   addPreviewMenuItem(menuPageMain, menuItemTransposeSteps, previewTranspose);
 }
 
+void drawMenuFrameOverlays() {
+  drawSequencerMenuTitleStrip();
+  drawPlayedNoteBadgeOnMenuFrame();
+}
+
 void setupMenu() {
   initTransposeOptions();
   updateMainMenuDynamicLabels();
   menu.setSplashDelay(0);
   menu.init();
-  menu.setDrawMenuCallback(drawPlayedNoteBadgeOnMenuFrame);
+  menu.setDrawMenuCallback(drawMenuFrameOverlays);
   menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
   /*
       addMenuItem procedure adds that GEM object to the given page.

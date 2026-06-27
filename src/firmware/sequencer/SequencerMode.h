@@ -12,5 +12,6 @@ void handleSequencerButtonEvent(byte buttonIndex, bool pressed);
 bool handleSequencerRotaryTurn(int8_t direction);
 bool handleSequencerEncoderClick();
 void drawSequencerModeDisplay();
+void drawSequencerMenuTitleStrip();
 void restoreSequencerDisplayAfterPlayedNotesOverlay();
 void handleSequencerExternalMidiRealtime(uint8_t status);
