@@ -709,6 +709,9 @@ void serviceCommandInput() {
       g_commandLength = 0;
       g_commandBuffer[0] = '\0';
       g_lastIoAt = millis();
+      if (g_receiveState != ReceiveState::Command) {
+        return;
+      }
       continue;
     }
     if (g_commandLength + 1 >= sizeof(g_commandBuffer)) {
