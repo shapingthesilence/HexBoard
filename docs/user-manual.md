@@ -264,7 +264,8 @@ which held notes were pressed, not the physical button numbers.
 
 `WT:...` shows the currently loaded wavetable and opens a virtual load list.
 Built-in tables appear at the root, and user-imported wavetables can be
-organized into folders.
+organized into folders. The active wavetable is marked with a leading `*` when
+it appears in the list.
 Built-in compatibility tables include:
 
 - `Basic Shapes`: sine, triangle, saw, and square anchors
@@ -371,7 +372,9 @@ presets.
 returns to the main menu; loading or saving from `Synth Editor` returns to
 `Synth Editor`. Loading a preset changes only the current synth parameters and
 wavetable reference, which can still be auto-saved by the normal settings
-system.
+system. The currently loaded catalog preset is marked with a leading `*` when
+it appears in the load list; `Blank`, `New Preset`, and the unselected
+`Current` state are not marked.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial
 peak longer before decay. Low `Sustain` makes a note fade away even while you

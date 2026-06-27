@@ -81,6 +81,57 @@ bool synthWavetableFolderAlreadyListed(const char* childFolderPath) {
   return false;
 }
 
+const char* currentSynthWavetableMenuReferenceName() {
+  return loadedSynthWavetableName[0] ? loadedSynthWavetableName : currentSynthWavetableName;
+}
+
+const char* currentSynthWavetableMenuReferenceFolder() {
+  return loadedSynthWavetableFolderPath[0] ? loadedSynthWavetableFolderPath : currentSynthWavetableFolderPath;
+}
+
+bool synthWavetableRowMatchesReference(const char* folderPath, const char* name) {
+  const char* currentName = currentSynthWavetableMenuReferenceName();
+  const char* currentFolder = currentSynthWavetableMenuReferenceFolder();
+  if (!currentName || !currentName[0]) {
+    currentName = SYNTH_WAVETABLE_BASIC_NAME;
+  }
+  if (!currentFolder || !currentFolder[0]) {
+    currentFolder = SYNTH_WAVETABLE_BUILTIN_FOLDER;
+  }
+  return strncmp(name, currentName, SYNTH_WAVETABLE_NAME_LENGTH) == 0
+         && strncmp(folderPath, currentFolder, SYNTH_WAVETABLE_FOLDER_LENGTH) == 0;
+}
+
+bool synthWavetableRowIsCurrent(const SynthWavetableMenuRow& row) {
+  switch (row.kind) {
+    case SynthWavetableMenuRowKind::BuiltIn:
+      {
+        const BuiltinSynthWavetableDefinition* wavetable = synthBuiltinWavetableAt(row.index);
+        return wavetable
+               && synthWavetableRowMatchesReference(wavetable->folderPath, wavetable->name);
+      }
+    case SynthWavetableMenuRowKind::User:
+      {
+        const SynthWavetableSlot* wavetable = userSynthWavetableForRow(row);
+        return wavetable
+               && synthWavetableRowMatchesReference(wavetable->folderPath, wavetable->name);
+      }
+    case SynthWavetableMenuRowKind::Folder:
+      return false;
+  }
+  return false;
+}
+
+bool findCurrentSynthWavetableRow(uint16_t& index) {
+  for (uint16_t i = 0; i < synthWavetableMenuRowCount; ++i) {
+    if (synthWavetableRowIsCurrent(synthWavetableMenuRows[i])) {
+      index = i;
+      return true;
+    }
+  }
+  return false;
+}
+
 void appendSynthWavetableMenuRow(SynthWavetableMenuRowKind kind, uint16_t index) {
   if (synthWavetableMenuRowCount >= SYNTH_WAVETABLE_MENU_MAX_ROWS) {
     return;
@@ -182,6 +233,18 @@ VirtualListMenuRowType synthWavetableVirtualRowType(void*, uint16_t index) {
            : VirtualListMenuRowType::Button;
 }
 
+bool synthWavetableVirtualIsCurrent(void*, uint16_t index) {
+  return index < synthWavetableMenuRowCount
+         && synthWavetableRowIsCurrent(synthWavetableMenuRows[index]);
+}
+
+bool synthWavetableVirtualInitialSelection(void*, uint16_t* index) {
+  if (!index) {
+    return false;
+  }
+  return findCurrentSynthWavetableRow(*index);
+}
+
 void selectSynthWavetableByVirtualIndex(uint16_t index) {
   bool selected = false;
   if (index >= synthWavetableMenuRowCount) {
@@ -279,6 +342,8 @@ void openSynthWavetableLoadMenu() {
   provider.getCount = synthWavetableVirtualCount;
   provider.getLabel = synthWavetableVirtualLabel;
   provider.getRowType = synthWavetableVirtualRowType;
+  provider.isCurrent = synthWavetableVirtualIsCurrent;
+  provider.getInitialSelection = synthWavetableVirtualInitialSelection;
   provider.select = synthWavetableVirtualSelect;
   provider.back = synthWavetableVirtualBack;
   provider.close = synthWavetableVirtualClose;
