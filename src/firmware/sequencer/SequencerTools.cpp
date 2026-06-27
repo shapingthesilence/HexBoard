@@ -49,6 +49,8 @@ const SequencerToolKey kToolKeys[] = {
   { kToolsCancelButtonIndex, SequencerToolAction::Cancel }
 };
 
+constexpr uint64_t kSequencerStatusToastMicros = 3000000ULL;
+
 SequencerToolMode currentMode = SequencerToolMode::Normal;
 SequencerToolMode returnMode = SequencerToolMode::Normal;
 uint64_t modeUntil = 0;
@@ -457,14 +459,14 @@ void returnToNormalEditing() {
 
 void openToolsForSelectedStep() {
   if (!hasSelectedStep()) {
-    showPersistentStatusMessage("Select step", "Then open tools");
+    showStatusToast("Select step", "Then open tools");
     return;
   }
   setMode(SequencerToolMode::ToolsPicker);
 }
 
-void showPersistentStatusMessage(const char* lineOne, const char* lineTwo) {
-  showStatusMessage(lineOne, lineTwo, SequencerToolMode::Normal, runTime + kSequencerMessageMicros);
+void showStatusToast(const char* lineOne, const char* lineTwo) {
+  showStatusMessage(lineOne, lineTwo, SequencerToolMode::Normal, runTime + kSequencerStatusToastMicros);
 }
 
 void showStatusMessageAndReturnToTools(const char* lineOne, const char* lineTwo) {
@@ -810,7 +812,7 @@ void returnToNormalEditing() {
 void openToolsForSelectedStep() {
 }
 
-void showPersistentStatusMessage(const char* /*lineOne*/, const char* /*lineTwo*/) {
+void showStatusToast(const char* /*lineOne*/, const char* /*lineTwo*/) {
 }
 
 void showStatusMessageAndReturnToTools(const char* /*lineOne*/, const char* /*lineTwo*/) {

@@ -78,7 +78,7 @@ void selectStepForEditing(byte stepIndex, SequencerToolMode nextMode = Sequencer
 void deselectSelectedStep();
 void returnToNormalEditing();
 void openToolsForSelectedStep();
-void showPersistentStatusMessage(const char* lineOne, const char* lineTwo);
+void showStatusToast(const char* lineOne, const char* lineTwo);
 void showStatusMessageAndReturnToTools(const char* lineOne, const char* lineTwo);
 void extendToolsStatusMessage();
 void restoreSelectedStepFromUndo();

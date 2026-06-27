@@ -243,6 +243,9 @@ is loaded, it shows `Seq-NAME`. Unsaved sequence-owned changes show a dirty
 marker, for example `Seq-*NAME`. The marker clears after successful `Save`,
 `Save New`, `Load`, `Revert`, or `New`.
 
+File actions and file errors show a brief confirmation message before normal
+menu navigation resumes.
+
 The naming screen accepts letters, numbers, spaces, and hyphen, up to `20`
 visible characters. Duplicate names are rejected in the target folder. Cancel
 leaves the file, folder, and current-path state unchanged.

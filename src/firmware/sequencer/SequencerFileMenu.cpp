@@ -633,14 +633,14 @@ void statusForPath(const char* lineOne, const char* path) {
   if (label[0] == '\0') {
     folderDisplayName(path, label, sizeof(label));
   }
-  showPersistentStatusMessage(lineOne, label);
+  showStatusToast(lineOne, label);
 }
 
 bool guardSequencerStorageForUsbBackup(const char* actionLineTwo) {
   if (!isUsbBackupActive()) {
     return true;
   }
-  showPersistentStatusMessage("USB Backup", actionLineTwo);
+  showStatusToast("USB Backup", actionLineTwo);
   return false;
 }
 
@@ -739,7 +739,7 @@ void showBrowser() {
         returnToSequencerMenu();
         statusForPath("Loaded", row.path);
       } else {
-        showPersistentStatusMessage("Error Loading", "Read failed");
+        showStatusToast("Error Loading", "Read failed");
       }
       return;
     }
@@ -775,7 +775,7 @@ void openBrowser(BrowserMode mode) {
     return;
   }
   if (!fileSystemExists || !ensureSequenceStorageRoot()) {
-    showPersistentStatusMessage("No Storage", "Flash unavailable");
+    showStatusToast("No Storage", "Flash unavailable");
     return;
   }
 
@@ -802,7 +802,7 @@ void newSequenceCallback() {
   }
   newBlankSequence();
   returnToSequencerMenu();
-  showPersistentStatusMessage("New", "Blank sequence");
+  showStatusToast("New", "Blank sequence");
 }
 
 void saveSequenceCallback() {
@@ -815,7 +815,7 @@ void saveSequenceCallback() {
       returnToSequencerMenu();
       statusForPath("Saved", savedPath);
     } else {
-      showPersistentStatusMessage("Error Saving", "Flash failed");
+      showStatusToast("Error Saving", "Flash failed");
     }
     return;
   }
@@ -850,10 +850,10 @@ void revertCallback() {
     if (hadPath) {
       statusForPath("Reverted", path);
     } else {
-      showPersistentStatusMessage("Reverted", "Blank sequence");
+      showStatusToast("Reverted", "Blank sequence");
     }
   } else {
-    showPersistentStatusMessage("Error Loading", "Read failed");
+    showStatusToast("Error Loading", "Read failed");
   }
 }
 
@@ -1130,9 +1130,9 @@ void startUsbBackupCallback() {
     stopTransport();
     stopAllManagedNotes();
     resetOverlayState();
-    showPersistentStatusMessage("USB Backup", "Run host tool");
+    showStatusToast("USB Backup", "Run host tool");
   } else {
-    showPersistentStatusMessage("USB Backup", "FS unavailable");
+    showStatusToast("USB Backup", "FS unavailable");
   }
   refreshUsbBackupMenu(true);
 }
@@ -1140,7 +1140,7 @@ void startUsbBackupCallback() {
 void stopUsbBackupCallback() {
   if (!isUsbBackupActive()) {
     exitUsbBackupMode();
-    showPersistentStatusMessage("USB Backup", "Session closed");
+    showStatusToast("USB Backup", "Session closed");
     refreshUsbBackupMenu(true);
     return;
   }
@@ -1163,7 +1163,7 @@ void confirmUsbBackupExitCallback() {
     menu.drawMenu();
     g_lastMenuPage = &fileMenuPage(*g_sequencerPage);
   }
-  showPersistentStatusMessage("USB Backup", "Session closed");
+  showStatusToast("USB Backup", "Session closed");
 }
 
 void cancelUsbBackupExitCallback() {
@@ -1173,7 +1173,7 @@ void cancelUsbBackupExitCallback() {
   menu.setMenuPageCurrent(*g_usbBackupPage);
   refreshUsbBackupMenu(false);
   menu.drawMenu();
-  showPersistentStatusMessage("USB Backup", "Session active");
+  showStatusToast("USB Backup", "Session active");
   g_lastMenuPage = g_usbBackupPage;
 }
 
@@ -1185,7 +1185,7 @@ void confirmUsbBackupStopCallback() {
   menu.setMenuPageCurrent(*g_usbBackupPage);
   refreshUsbBackupMenu(false);
   menu.drawMenu();
-  showPersistentStatusMessage("USB Backup", "Session closed");
+  showStatusToast("USB Backup", "Session closed");
   g_lastMenuPage = g_usbBackupPage;
 }
 
@@ -1196,7 +1196,7 @@ void cancelUsbBackupStopCallback() {
   menu.setMenuPageCurrent(*g_usbBackupPage);
   refreshUsbBackupMenu(false);
   menu.drawMenu();
-  showPersistentStatusMessage("USB Backup", "Session active");
+  showStatusToast("USB Backup", "Session active");
   g_lastMenuPage = g_usbBackupPage;
 }
 

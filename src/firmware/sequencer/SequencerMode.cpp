@@ -194,6 +194,10 @@ void drawSequencerModeDisplay() {
       sequencer::drawFileMenuOverlay();
       return;
     }
+    if (sequencer::toolMode() == sequencer::SequencerToolMode::StatusMessage) {
+      sequencer::drawSequencerOverlay();
+      return;
+    }
     if (sequencer::fileWorkflowActive() || menu.getCurrentMenuPage() != &sequencerMenuPage()) {
       sequencer::releaseSequencerOverlayForMenuDisplay();
       return;

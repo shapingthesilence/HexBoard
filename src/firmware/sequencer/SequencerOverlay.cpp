@@ -28,6 +28,7 @@ constexpr byte kNoteLineSize = 24;
 
 bool overlayVisible = false;
 bool overlayDirty = true;
+bool overlayVisibleWasStatus = false;
 bool overviewShown = false;
 bool idleDisplayBlanked = false;
 byte overviewStartStep = 0;
@@ -280,6 +281,7 @@ void markOverlayDirty() {
 void hideSelectedStepOverlay() {
   bool wasVisible = overlayVisible;
   overlayVisible = false;
+  overlayVisibleWasStatus = false;
   overlayDirty = false;
   if (wasVisible) {
     redrawSequencerIdleBlankDisplay();
@@ -300,6 +302,7 @@ bool sequencerIdleDisplayBlanked() {
 
 void redrawSequencerIdleBlankDisplay() {
   overlayVisible = false;
+  overlayVisibleWasStatus = false;
   overlayDirty = false;
   idleDisplayBlanked = true;
   u8g2.clearBuffer();
@@ -314,6 +317,14 @@ void releaseSequencerOverlayForMenuDisplay() {
   if (toolMode() == SequencerToolMode::StatusMessage && !toolModeIsModal()) {
     returnToNormalEditing();
   }
+  if (overlayVisibleWasStatus) {
+    overlayVisible = false;
+    overlayVisibleWasStatus = false;
+    overlayDirty = false;
+    idleDisplayBlanked = false;
+    restoreInteractiveMenuDisplay();
+    return;
+  }
   if (overviewShown) {
     overviewShown = false;
     overviewStartStep = 0;
@@ -322,11 +333,13 @@ void releaseSequencerOverlayForMenuDisplay() {
     overlayDirty = true;
   }
   overlayVisible = false;
+  overlayVisibleWasStatus = false;
   idleDisplayBlanked = false;
 }
 
 void resetOverlayState() {
   overlayVisible = false;
+  overlayVisibleWasStatus = false;
   overlayDirty = true;
   overviewShown = false;
   idleDisplayBlanked = false;
@@ -388,7 +401,15 @@ void drawSequencerOverlay() {
 
   if (!hasSelectedStep() && mode != SequencerToolMode::StatusMessage) {
     if (overlayVisible) {
-      hideSelectedStepOverlay();
+      if (overlayVisibleWasStatus) {
+        overlayVisible = false;
+        overlayVisibleWasStatus = false;
+        overlayDirty = false;
+        idleDisplayBlanked = false;
+        restoreInteractiveMenuDisplay();
+      } else {
+        hideSelectedStepOverlay();
+      }
     }
     return;
   }
@@ -409,6 +430,7 @@ void drawSequencerOverlay() {
 
   if (mode == SequencerToolMode::StatusMessage) {
     overlayVisible = true;
+    overlayVisibleWasStatus = true;
     overlayDirty = false;
 
     u8g2.clearBuffer();
