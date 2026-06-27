@@ -1579,7 +1579,18 @@ void setupSequenceFileMenu(GEMPage& sequencerMenuPage) {
 }
 
 bool fileWorkflowActive() {
-  return g_fileUiActive || g_namingTarget != NamingTarget::None || isUsbBackupActive();
+  if (g_fileUiActive || g_namingTarget != NamingTarget::None || isUsbBackupActive()) {
+    return true;
+  }
+  if (g_sequencerPage == nullptr) {
+    return false;
+  }
+
+  GEMPage* currentPage = menu.getCurrentMenuPage();
+  return currentPage == &fileMenuPage(*g_sequencerPage) ||
+         currentPage == g_usbBackupPage ||
+         currentPage == g_usbBackupExitPage ||
+         currentPage == g_usbBackupStopPage;
 }
 
 bool fileNamingActive() {

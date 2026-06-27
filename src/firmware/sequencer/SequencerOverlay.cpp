@@ -286,6 +286,13 @@ void hideSelectedStepOverlay() {
   }
 }
 
+bool sequencerOverlayOwnsEncoderInput() {
+  return performanceMonitorActive() ||
+         overviewShown ||
+         overlayVisible ||
+         toolMode() != SequencerToolMode::Normal;
+}
+
 bool sequencerIdleDisplayBlanked() {
   return idleDisplayBlanked;
 }
@@ -299,6 +306,18 @@ void redrawSequencerIdleBlankDisplay() {
 }
 
 void clearSequencerIdleDisplayBlanked() {
+  idleDisplayBlanked = false;
+}
+
+void releaseSequencerOverlayForMenuDisplay() {
+  if (overviewShown) {
+    overviewShown = false;
+    overviewStartStep = 0;
+  }
+  if (overlayVisible || idleDisplayBlanked) {
+    overlayDirty = true;
+  }
+  overlayVisible = false;
   idleDisplayBlanked = false;
 }
 
@@ -596,6 +615,10 @@ void markOverlayDirty() {
 void hideSelectedStepOverlay() {
 }
 
+bool sequencerOverlayOwnsEncoderInput() {
+  return false;
+}
+
 bool sequencerIdleDisplayBlanked() {
   return false;
 }
@@ -604,6 +627,9 @@ void redrawSequencerIdleBlankDisplay() {
 }
 
 void clearSequencerIdleDisplayBlanked() {
+}
+
+void releaseSequencerOverlayForMenuDisplay() {
 }
 
 void resetOverlayState() {

@@ -149,6 +149,9 @@ bool handleSequencerRotaryTurn(int8_t direction) {
     if (sequencer::handleFileMenuRotaryTurn(direction)) {
       return true;
     }
+    if (!sequencer::sequencerOverlayOwnsEncoderInput()) {
+      return false;
+    }
     if (sequencer::performanceMonitorActive()) {
       return true;
     }
@@ -169,6 +172,9 @@ bool handleSequencerEncoderClick() {
     if (sequencer::handleFileMenuEncoderClick()) {
       return true;
     }
+    if (!sequencer::sequencerOverlayOwnsEncoderInput()) {
+      return false;
+    }
     if (sequencer::performanceMonitorActive()) {
       return true;
     }
@@ -184,6 +190,10 @@ void drawSequencerModeDisplay() {
     sequencer::serviceSequenceFileMenu();
     if (sequencer::fileNamingActive()) {
       sequencer::drawFileMenuOverlay();
+      return;
+    }
+    if (sequencer::fileWorkflowActive()) {
+      sequencer::releaseSequencerOverlayForMenuDisplay();
       return;
     }
     sequencer::drawSequencerOverlay();
