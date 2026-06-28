@@ -365,6 +365,10 @@ step every two command-message cooldown windows. Positive values keep the old
 one-step-per-cooldown behavior, so existing profile bytes remain meaningful
 after the user-facing speed names shifted.
 
+`GridScanRotary.cpp` intercepts the bottom-command-button menu shortcut before
+normal command-button behavior and masks those shortcut buttons during wheel
+updates so menu navigation does not also move velocity, modulation, or pitch bend.
+
 If you repurpose command buttons:
 
 - update the `CMDBTN_*` mapping
