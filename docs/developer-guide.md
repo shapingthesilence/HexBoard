@@ -57,6 +57,10 @@ The `Makefile` currently compiles with:
 - USB manufacturer/product build descriptors: `HexBoard`
 
 If you build manually, match the options in `Makefile`.
+The Makefile stages an ignored sketch copy under `build/.../sketch/HexBoard`
+before invoking `arduino-cli`, because Arduino sketch discovery requires the
+folder name to match `HexBoard.ino` even when this checkout has a different
+directory name.
 The `Generic SPI /4` boot2 selection is required for the local `250 MHz` build to avoid overdriving external flash; `Generic SPI /2` may compile but can crash the board at runtime. The higher CPU clock gives the synth block renderer enough headroom for dense AHDSR and FX-envelope patches that can otherwise report overruns.
 
 The `Makefile` accepts `PWM_BITS=8`, `PWM_BITS=9`, or `PWM_BITS=10` for onboard synth PWM comparisons:
@@ -66,6 +70,128 @@ make PWM_BITS=9
 ```
 
 The default is `10`.
+
+The optional sequencer foundation is gated by `HEXBOARD_ENABLE_SEQUENCER`, which
+defaults to `0` in both `Makefile` and `src/firmware/config/FeatureFlags.h`.
+Arduino IDE builds therefore keep current firmware behavior without custom
+flags. For porting work that needs the Sequencer menu entry, run:
+
+```sh
+make HEXBOARD_ENABLE_SEQUENCER=1
+```
+
+The Makefile writes variant builds to separate folders while preserving the
+flashable filename:
+
+```text
+build/sequencer-disabled/HexBoard.ino.uf2
+build/sequencer-enabled/HexBoard.ino.uf2
+```
+
+Use `make sequencer-builds` to compile both variants.
+
+When the flag is `0`, `setupSequencerMenu()` is a no-op and no top-level
+Sequencer menu item is installed. When the flag is `1`, the firmware installs
+a Sequencer mode foundation with mode entry/exit, 32-step selection/deselection,
+basic tuning-relative note entry, confirm-hold selected-step clear,
+selected-step undo, step tools, sequencer-owned step/function LED rendering,
+and routed transport playback with per-step length, velocity, probability, and
+Tie semantics. Button `9` is Play/Stop: a short press closes selected-step edit
+focus when needed and toggles local transport, while a roughly two-second hold
+opens the temporary Performance Monitor overlay until release. The Sequencer page links
+to `Playback Settings`, where `Steps`, `Direction`, `Tempo`, `Play Type`,
+`MIDI Sync`, and `Tap Preview` are edited. `Tempo` defaults to `120` and ranges from `1` to
+`255`; each step is one 16th note. `MIDI Sync` contains `Clock Source`, `Send Clock`,
+and `Send Transport`. `Clock Source` defaults to `Internal`; when set to
+`External MIDI`, incoming MIDI Clock advances one step every six pulses,
+Start begins from the first step, Stop releases sequencer playback notes, and
+Continue follows the old start-like sequencer resume behavior. When `Clock Source`
+is `Internal`, `Send Clock` emits six MIDI Clock pulses per step while local
+transport is running and `Send Transport` makes local Play/Stop send MIDI
+Start/Stop; both send settings default to `Off`. `Steps` defaults to `32` and ranges from `1` to `32`;
+transport and step LEDs ignore steps beyond the active count. `Direction`
+defaults to `Forward` and supports `Forward`, `Backward`, `Ping-Pong`, `Random`,
+`Brownian`, and `Drunk`. `Play Type` defaults to `MIDI`; `OB Synth` routes
+sequencer-managed notes into the shared onboard synth engine. `Tap Preview`
+defaults to `On`; selecting a programmed step previews its stored note or chord
+through the current Play Type unless the profile-backed toggle is set to `Off`.
+The Sequencer page also links to `Seq Lights`. Its `Accent Every`, `Step Color`,
+and `Step Hue` controls are profile-backed `SettingKey` values, not sequence
+file data. The defaults are accent every `4`, regular step color, and `Indigo`
+step hue.
+`Clock Source`, `Send Clock`, `Send Transport`, `Tap Preview`, and
+`Monophonic` are profile-backed and stay out of sequence files. `Monophonic` controls selected-step note entry only: Off preserves
+chord toggle entry, while On removes an existing pressed pitch or replaces the
+selected step with one newly pressed pitch. Programmed steps, tap preview, and
+lower-grid audition resolve stored pitch steps through the current
+tuning and transpose at note start. MIDI output uses the existing MIDI routing
+and MPE settings; OB Synth output uses a small synth preview-note API backed by
+hidden matrix slots `141..159`, leaving slot `140` reserved for hardware
+detection. Sequencer lower-grid audition notes also expose a narrow played-note
+display source while no step is selected, so `DisplayNotes` can reuse the
+Keyboard-mode compact badge and screensaver `Now Playing` renderer without
+making selected-step entry, tap preview, or transport playback take over the
+display. Empty, zero-length, probability-skipped, and unsupported tied
+playback steps advance silently. A sequencer-owned overlay renders selected-step
+`Edit #NN`, tool picker, exact length/velocity/probability, copy target,
+temporary status, clear feedback screens, the packed 32-step Overview screen,
+and the diagnostic-only Performance Monitor. The monitor samples existing ISR
+profile data, heap/storage usage, and MIDI input backlog counters; it is not
+persisted in settings or sequence files.
+Tied steps display `T` instead of note labels in selected-step and tool
+overlays. Button `9` is red when stopped and green when playing, and the
+Overview utility button `18` is medium white idle and brighter white while the
+Overview is active. The current active play step is highlighted even when empty.
+Selected-step blink gates the step fully off before normal empty/programmed
+color rendering.
+`Seq Lights` rendering uses the board
+palette's base hue/saturation cache for `Step Color = Note`, then applies
+sequencer brightness in linear RGB before a single gamma pass.
+
+`src/firmware/sequencer/SequencerTools.*` owns the selected-step tool modal
+state, exact-entry buffers, copy source, quick length display value, and
+selected-step undo snapshot. `SequencerInput` should continue to do only
+physical button dispatch into those tools, note audition, transport toggle, and
+step selection. `GridScanRotary.cpp` offers encoder turns and clicks to
+Sequencer mode first; Sequencer returns `false` outside selected-step/tool
+states so GEM and `VirtualListMenu` behavior is preserved.
+
+Keep new Sequencer policy in `src/firmware/sequencer/`. The expected
+cross-subsystem bridge points are narrow: `MidiInput.cpp` forwards MIDI
+realtime bytes to `SequencerMode`, `PlayedNotesOverlay.cpp` shares its renderer
+with lower-grid audition notes, `LedRender.cpp` exposes base palette color and
+applies final Sequencer LED overrides, and the synth preview-note API lets
+Sequencer OB Synth output use hidden matrix slots without duplicating voice
+allocation.
+
+`src/firmware/sequencer/SequencerStorage.*` owns sequence file serialization,
+the `/Sequences/.current` remembered path, title/dirty state, and startup
+restore. Saved `.hbseq` files use the old text-compatible `format=HBSEQ`,
+`version=3`, `noteFormat=stepsFromC` format and store steps, notes, gate,
+velocity, probability, Tie, Tempo, active Steps, Direction, and Play Type.
+Current-path metadata is a sidecar under `/Sequences`, not a profile byte.
+`src/firmware/sequencer/SequencerFileMenu.*` owns the on-device file browser,
+folder creation, rename/delete, and naming overlay. The browser uses
+`VirtualListMenu` callbacks over the current folder, caches only folder counts
+and the visible row window, and does not keep a tree-wide sequence list in RAM.
+
+`src/firmware/sequencer/SequencerUsbBackup.*` owns the enabled-only USB Backup
+session and HBK1 USB-serial protocol for `/Sequences`. It preserves the legacy
+commands `HELLO`, `PING`, `LIST`, `GET`, `PUT`, `MKDIR`, `DELETE`, `RMDIR`,
+and `RENAME`, keeps paths restricted to `/Sequences`, restricts direct file
+operations to `.hbseq` files, writes PUT payloads to a temporary file before
+renaming into place, and clears partial incoming files on timeout or session
+exit. `SequencerFileMenu.*` owns the `File Management` -> `USB Backup` page,
+Start/Stop controls, leave/stop confirmations, UI status refresh, storage
+workflow guards while active, and the old active-session behavior that blanks
+sequencer LEDs and consumes hex-button editing/play actions while leaving
+encoder menu navigation available.
+
+The host backup tools live under `scripts/`: `hexboard_backup_gui.py` is the
+primary desktop workflow, `hexboard_backup_lib.py` owns the shared HBK1 client
+operations, and `hexboard_backup.py` is support/debug CLI tooling. The repo
+root launchers `Launch HexBoard Backup.command` and `Launch HexBoard
+Backup.bat` run the GUI for users who already have Python 3 and `pyserial`.
 
 ### Web App Tooling
 
@@ -281,6 +407,7 @@ The main firmware files are:
 
 - `src/firmware/FirmwareModule.h`: shared Arduino/RP2040/library includes and `RAM_FUNC`
 - `src/firmware/HexBoardFirmware.h`: lifecycle API used by the root sketch
+- `src/firmware/config/`: compile-time feature flags and other source-level build toggles
 - Subsystem `.h` files under `src/firmware/`: cross-module APIs owned by each subsystem. Important shared declarations live in `hardware/HardwareConfig.h`, `hardware/GridState.h`, `tuning/Tuning.h`, `model/Layout.h`, `model/ScalePalettePreset.h`, and `storage/PersistentDataModels.h`.
 - `src/firmware/app/`: platform/common helpers, non-synth runtime defaults, diagnostics/timing, and lifecycle orchestration
 - `src/firmware/tuning/`: tuning tables, shared tuning math, and Dynamic JI retuning
@@ -290,6 +417,7 @@ The main firmware files are:
 - `src/firmware/synth/`: synth defaults, built-in single-cycle waveforms, compatibility wavetable catalog, render orchestration, audio transport, oscillator/wavetable runtime, envelopes, modulation caches, voice allocation, arpeggiator, and metronome; hot render glue remains in `SynthAudio.cpp`, and synth-private declarations live in `SynthAudioInternal.h`
 - `src/firmware/storage/`: persistent data models, settings/profile storage, synth preset/wavetable storage, and preset-sync protocol/geometry/synth-object/message handling
 - `src/firmware/menu/`: OLED/GEM pages and settings callbacks, played-note drawing, synth preset menu rebuilding, and synth wavetable menu rebuilding
+- `src/firmware/sequencer/`: default-off sequencer foundation; keep sequencer-owned state, input, LED rendering, menu pages, file storage/browser flows, MIDI playback bridge, transport timing, and integration hooks here rather than in the root sketch
 
 If you are changing behavior, start by locating which layer owns it. Shared constants, types, and lifecycle calls belong in the nearest owning header; subsystem-owned globals and hot helpers should stay private in their `.cpp` when no other module needs them. Fix missing declarations by improving the owning headers rather than reintroducing source inclusion.
 
@@ -484,10 +612,22 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `20`
-- this release intentionally skips old profile compatibility: any `/settings.dat`
-  file with a version other than `20` is replaced with factory defaults instead
-  of being migrated
+- `CURRENT_SETTINGS_VERSION` is currently `22`
+- version `20` settings are migrated to `22` by copying the previous profile
+  bytes and filling the new sequencer profile bytes from factory defaults;
+  version `21` settings are migrated by preserving existing bytes and filling
+  `SequencerSendClock` and `SequencerSendTransport` from factory defaults;
+  other version mismatches are replaced with factory defaults
+- `SequencerStepAccentEvery`, `SequencerStepColorMode`, `SequencerStepHue`,
+  `SequencerMonophonicMode`, `SequencerTapPreview`, and
+  `SequencerClockSource`, `SequencerSendClock`, and `SequencerSendTransport`
+  are profile bytes for optional sequencer preferences
+- `SequencerTapPreview` defaults to `On`; `SequencerClockSource` defaults to
+  `Internal`; `SequencerSendClock` and `SequencerSendTransport` default to
+  `Off`; none of these are sequence-file data
+- the current development branch appended `SequencerClockSource` without
+  bumping `CURRENT_SETTINGS_VERSION` because the branch had not shipped as a
+  stable settings release
 - version `20` reinterprets `DisplayPlayedNotes` as `Off`/`Label`/`Number`
   instead of a boolean; the byte position is unchanged
 - version `19` no longer stores the old `Debug` byte;

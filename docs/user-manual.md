@@ -52,7 +52,18 @@ Custom note labels are limited to `7` characters so they fit the on-device Key
 selector. The main-menu `Key` selector uses those same active tuning labels.
 `Number` shows scale step and octave values such as `7.4`.
 
-While the menu is visible, the top-right corner shows only the most recent held note. The badge is composited into normal menu redraws so menu updates do not momentarily erase it. If the OLED screensaver is active, playing a note can wake a larger `Now Playing` display that shows up to `6` unique played notes from lowest to highest. Turning or pressing the encoder returns to the menu display. Recognized chord names appear near the bottom of that larger display only for `12 EDO`. `DisplayNotes` defaults to `Label`.
+While the menu is visible, the top-right corner shows only the most recent held
+note. The badge is composited into normal menu redraws so menu updates do not
+momentarily erase it. If the OLED screensaver is active, playing a note can wake
+a larger `Now Playing` display that shows up to `6` unique played notes from
+lowest to highest. Turning or pressing the encoder returns to the menu display.
+Recognized chord names appear near the bottom of that larger display only for
+`12 EDO`. In Sequencer mode, the same display applies to lower-grid audition
+notes when no step is selected; if selected-step edit focus was closed and the
+sequencer display is blank, audition notes use the larger overlay and return to
+blank afterward instead of redrawing the menu. Selected-step entry, tap preview,
+and transport playback keep the Sequencer screens focused instead.
+`DisplayNotes` defaults to `Label`.
 
 ## Live Performance Controls
 
@@ -100,6 +111,13 @@ The main menu includes:
 - `Load Profile`
 - `Save Profile`
 - `Synth Editor`
+
+Developer builds compiled with `HEXBOARD_ENABLE_SEQUENCER=1` also show a main
+menu item named `Sequencer`. Default firmware builds may not include it. For
+sequencer information, see the [Sequencer Manual](sequencer-manual.md).
+Sequencer-enabled builds also include `File Management` -> `USB Backup` for
+using the desktop HexBoard Backup GUI with saved `.hbseq` sequences.
+<!-- Agent note: Do not add sequencer behavior details here unless explicitly requested. Keep detailed sequencer information in docs/sequencer-manual.md. -->
 
 `Synth:<current preset>` opens the synth preset load menu from the top level.
 If the runtime synth sound has changed since the loaded preset was selected or

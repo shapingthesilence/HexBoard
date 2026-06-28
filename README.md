@@ -14,13 +14,14 @@ You can [order a HexBoard](https://shapingthesilence.com/) if you are interested
 ## Documentation
 
 - [User Manual](docs/user-manual.md)
+- [Sequencer Manual](docs/sequencer-manual.md)
 - [MPE Microtonal Setup Guide](docs/mpe-microtonal-setup.md)
 - [Developer Guide](docs/developer-guide.md)
 - [Code Analysis](docs/code-analysis.md)
 - [Delegated Control Protocol](docs/delegated-control.md)
 - [Preset Sync SysEx Draft](docs/preset-sync-sysex.md)
 
-The user manual is for players and owners of the device. The MPE setup guide is for configuring DAWs, plugins, and synths for HexBoard's microtonal MIDI output. The developer guide is for people editing the firmware in this repository.
+The user manual is for players and owners of the device. The sequencer manual covers the optional in-port sequencer. The MPE setup guide is for configuring DAWs, plugins, and synths for HexBoard's microtonal MIDI output. The developer guide is for people editing the firmware in this repository.
 
 ## Repository Layout
 
@@ -32,6 +33,7 @@ The user manual is for players and owners of the device. The MPE setup guide is 
 - `Makefile`: local build shortcut for `arduino-cli`
 
 The current firmware uses the standard Arduino root-sketch layout. `HexBoard.ino` delegates to lifecycle functions in `src/firmware/`, where subsystem modules cover tuning, layout, LEDs, MIDI, synth, persistence, menu, input, and runtime orchestration. Shared firmware models and schema declarations live in explicit subsystem headers under `src/firmware/`.
+Host-side utility scripts, including the optional HexBoard Backup GUI, live under `scripts/`.
 
 ## Current Firmware Highlights
 
@@ -50,12 +52,14 @@ The current code supports:
 - onboard synth waveform/wavetable banks, Serum/Vital and HexBoard wavetable import, mono portamento, AHDSR envelope, phase-warp/wavetable/LFO modulation, preset, and arpeggiator settings
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
+- optional sequencer, build instructions below describe how to compile it into the firmware.
 
 ## Team
 
 - Jared DeCook has been writing music, developing hardware, and performing as [Shaping The Silence](https://shapingthesilence.com/) for over a decade.
 - Zach DeCook has been listening to music, breaking hardware, and occasionally writing software since the former discovered his exploitable talents.
 - Nicholas Fox has been hexperimenting with the firmware since before receiving a HexBoard in the mail.
+- Robert Wierzbicki created the sequencer and a few random other changes.
 
 ## Related Firmware History
 
@@ -119,7 +123,7 @@ The simplest local build is:
 make
 ```
 
-The `Makefile` builds the root `HexBoard.ino` sketch using the board options for this project. Firmware implementation lives under `src/firmware/`; do not edit generated files under `build/` as source.
+The `Makefile` builds the root `HexBoard.ino` sketch using the board options for this project. Because Arduino sketch discovery expects the sketch folder to match the `.ino` basename, the build stages an ignored copy at `build/.../sketch/HexBoard` before invoking `arduino-cli`. Firmware implementation lives under `src/firmware/`; do not edit generated files under `build/` as source.
 The local `250 MHz` build intentionally uses `Generic SPI /4` boot2 to keep the external flash clock stable while giving the synth block renderer enough headroom for dense AHDSR and FX-envelope patches.
 
 To compare onboard synth PWM resolutions, pass `PWM_BITS` at build time:
@@ -130,11 +134,52 @@ make PWM_BITS=9
 
 Supported values are `8`, `9`, and `10`; the default is `10`.
 
-The expected output artifact is:
+The in-port sequencer foundation is compiled out by default. To expose the
+Sequencer entry for porting work, build with:
+
+```sh
+make HEXBOARD_ENABLE_SEQUENCER=1
+```
+
+That flag enables the in-port Sequencer mode foundation: mode entry/exit,
+32-step selection/deselection, tuning-relative note entry, undo/hold-clear,
+step tools for length, velocity, probability, octave transpose, Tie, and Copy,
+sequencer-owned step/function LEDs, routed transport playback with per-step
+length, velocity, probability, and Tie semantics, MIDI or OB Synth note
+audition, tap preview, and transport output, compact selected-step/tool
+overlays, sequence files under `/Sequences` with on-device save/load/folder
+management and startup restore, sequence-backed Tempo, Steps, Direction, and
+Play Type controls, profile-backed Tap Preview and Monophonic note-entry mode,
+profile-backed Seq Lights controls, and USB Backup for moving `.hbseq` files
+through the desktop HexBoard Backup GUI.
+See the [Sequencer Manual](docs/sequencer-manual.md) for current sequencer
+behavior and the features still being ported.
+
+Builds keep the flashable file named `HexBoard.ino.uf2`, with separate output
+folders for the default and sequencer-enabled variants:
 
 ```text
-build/HexBoard.ino.uf2
+build/sequencer-disabled/HexBoard.ino.uf2
+build/sequencer-enabled/HexBoard.ino.uf2
 ```
+
+You can also build both variants with `make sequencer-builds`.
+
+### HexBoard Backup GUI
+
+Sequencer-enabled builds include `File Management` -> `USB Backup` on the
+board. Start a USB Backup session there first, then launch the desktop GUI from
+the repo root with:
+
+```sh
+python3 scripts/hexboard_backup_gui.py
+```
+
+The GUI requires Python 3 and `pyserial`. Users who already have those
+installed can also open `Launch HexBoard Backup.command` on macOS or
+`Launch HexBoard Backup.bat` on Windows. The command-line wrapper
+`scripts/hexboard_backup.py` is included as support/debug tooling; the GUI is
+the intended user-facing workflow.
 
 ## Companion Web App
 

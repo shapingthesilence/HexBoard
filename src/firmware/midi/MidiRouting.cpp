@@ -191,6 +191,10 @@ void sendSysExToConfiguredMidiOutputs(unsigned length, const byte* data) {
   withMIDI([&](auto& M) { M.sendSysEx(length, data); });
 }
 
+void sendRealTimeToConfiguredMidiOutputs(uint8_t status) {
+  withMIDI([&](auto& M) { M.sendRealTime(status); });
+}
+
 void setPitchBendRange(byte Ch, byte semitones) {
   withMIDI([&](auto& M) {
     M.beginRpn(0, Ch);

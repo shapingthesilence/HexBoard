@@ -14,6 +14,9 @@
 #include "../storage/Settings.h"
 #include "../storage/SynthPresetStorage.h"
 #include "../storage/SynthWavetableStorage.h"
+#include "../sequencer/SequencerLightSettings.h"
+#include "../sequencer/SequencerMode.h"
+#include "../sequencer/SequencerPlaybackSettings.h"
 #include "../synth/SynthAudio.h"
 #include "GeometryMenu.h"
 #include "MenuAndDisplay.h"
@@ -2341,6 +2344,8 @@ void syncSettingsToRuntime() {
   bootAnimationEnabled = settingEnabled(SettingKey::BootAnimationEnabled);
   noteDisplayMode = normalizeNoteDisplayMode(settingValue(SettingKey::DisplayPlayedNotes));
   settings[static_cast<uint8_t>(SettingKey::DisplayPlayedNotes)] = noteDisplayMode;
+  sequencer::applyLightSettingsFromProfile();
+  sequencer::applyPlaybackPreferencesFromProfile();
 
   // Now *apply* them to the engine/UI:
   applyBuiltinGeometryRuntimeFromSettings();
@@ -2896,12 +2901,17 @@ void setupTransposeMenuItem() {
   addPreviewMenuItem(menuPageMain, menuItemTransposeSteps, previewTranspose);
 }
 
+void drawMenuFrameOverlays() {
+  drawSequencerMenuFilenameHeader();
+  drawPlayedNoteBadgeOnMenuFrame();
+}
+
 void setupMenu() {
   initTransposeOptions();
   updateMainMenuDynamicLabels();
   menu.setSplashDelay(0);
   menu.init();
-  menu.setDrawMenuCallback(drawPlayedNoteBadgeOnMenuFrame);
+  menu.setDrawMenuCallback(drawMenuFrameOverlays);
   menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
   /*
       addMenuItem procedure adds that GEM object to the given page.
@@ -2923,6 +2933,7 @@ void setupMenu() {
   setupAdvancedMenuPage();
   setupProfileMenuPages();
   setupSynthMenuPage();
+  setupSequencerMenu();
 }
 void setupGFX() {
   u8g2.begin();                      // Menu and graphics setup

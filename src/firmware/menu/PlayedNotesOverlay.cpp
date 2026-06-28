@@ -4,6 +4,9 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
 #include "../hardware/GridState.h"
+#include "../sequencer/SequencerManagedNotes.h"
+#include "../sequencer/SequencerMode.h"
+#include "../sequencer/SequencerOverlay.h"
 
 // --- Note display overlay when pressing keys ---
 byte noteDisplayMode = NOTE_DISPLAY_OFF;
@@ -69,6 +72,14 @@ const ChordPattern chordPatterns[] = {
 };
 const byte CHORD_PATTERN_COUNT = sizeof(chordPatterns) / sizeof(chordPatterns[0]);
 
+// The overlay renderer is shared by keyboard notes and Sequencer lower-grid
+// audition notes; Sequencer supplies snapshots through a narrow source API.
+enum class PlayedNoteDisplaySource : byte {
+  None,
+  Keyboard,
+  Sequencer
+};
+
 void clearDisplayedNotes(int16_t* notes);
 void copyDisplayedNotes(int16_t* destination, const int16_t* source);
 byte rebuildDisplayedNotes(int16_t* notes);
@@ -76,11 +87,15 @@ byte displayedNoteCount(const int16_t* notes);
 bool displayedNotesEqual(const int16_t* first, const int16_t* second);
 bool buildDisplayedChordName(const int16_t* notes, byte count, char* chordText, size_t chordTextSize);
 bool newestHeldDisplayedPitch(int16_t& displayedPitchOut);
+PlayedNoteDisplaySource activePlayedNoteDisplaySource();
+byte rebuildDisplayedNotesForSource(PlayedNoteDisplaySource source, int16_t* notes);
+bool newestHeldDisplayedPitchForSource(PlayedNoteDisplaySource source, int16_t& displayedPitchOut);
 void formatDisplayedPitchNumber(int16_t displayedPitch, char* noteText, size_t noteTextSize);
 void formatDisplayedPitchLabel(int16_t displayedPitch, char* noteText, size_t noteTextSize);
 void formatDisplayedPitch(int16_t displayedPitch, char* noteText, size_t noteTextSize);
+void restorePlayedNotesUnderlyingDisplay();
 void drawCompactPlayedNoteBadgeFrame(const char* noteText);
-void drawCompactPlayedNoteBadge();
+void drawCompactPlayedNoteBadge(PlayedNoteDisplaySource source);
 extern bool screenSaverOn;
 
 byte normalizeNoteDisplayMode(byte mode) {
@@ -211,6 +226,50 @@ bool displayedNotesEqual(const int16_t* first, const int16_t* second) {
     }
   }
   return true;
+}
+
+PlayedNoteDisplaySource activePlayedNoteDisplaySource() {
+  if (!sequencerModeActive()) {
+    return PlayedNoteDisplaySource::Keyboard;
+  }
+
+  if (!sequencer::sequencerPlayedNoteDisplayEligible()) {
+    return PlayedNoteDisplaySource::None;
+  }
+
+  if (sequencer::sequencerPlayedNoteDisplayActive()
+      || noteOverlayTemporaryWake
+      || noteOverlayVisible
+      || noteBadgeVisible
+      || displayedNoteCount(displayedNotes) > 0) {
+    return PlayedNoteDisplaySource::Sequencer;
+  }
+  return PlayedNoteDisplaySource::None;
+}
+
+byte rebuildDisplayedNotesForSource(PlayedNoteDisplaySource source, int16_t* notes) {
+  switch (source) {
+    case PlayedNoteDisplaySource::Keyboard:
+      return rebuildDisplayedNotes(notes);
+    case PlayedNoteDisplaySource::Sequencer:
+      return sequencer::rebuildSequencerPlayedNoteDisplay(notes, DISPLAYED_NOTES_MAX);
+    case PlayedNoteDisplaySource::None:
+    default:
+      clearDisplayedNotes(notes);
+      return 0;
+  }
+}
+
+bool newestHeldDisplayedPitchForSource(PlayedNoteDisplaySource source, int16_t& displayedPitchOut) {
+  switch (source) {
+    case PlayedNoteDisplaySource::Keyboard:
+      return newestHeldDisplayedPitch(displayedPitchOut);
+    case PlayedNoteDisplaySource::Sequencer:
+      return sequencer::newestSequencerPlayedNoteDisplayPitch(displayedPitchOut);
+    case PlayedNoteDisplaySource::None:
+    default:
+      return false;
+  }
 }
 
 uint16_t pitchClassMaskRelativeToRoot(uint16_t pitchClassMask, byte rootPitchClass) {
@@ -384,6 +443,10 @@ void drawCompactPlayedNoteBadgeFrame(const char* noteText) {
 }
 
 void drawPlayedNoteBadgeOnMenuFrame() {
+  if (sequencerModeActive()) {
+    sequencer::clearSequencerIdleDisplayBlanked();
+  }
+
   if (!noteDisplayEnabled()
       || noteOverlayTemporaryWake
       || noteOverlayVisible
@@ -396,14 +459,22 @@ void drawPlayedNoteBadgeOnMenuFrame() {
   drawCompactPlayedNoteBadgeFrame(noteBadgeText);
 }
 
-void drawCompactPlayedNoteBadge() {
+void restorePlayedNotesUnderlyingDisplay() {
+  if (sequencerModeActive()) {
+    restoreSequencerDisplayAfterPlayedNotesOverlay();
+  } else {
+    restoreInteractiveMenuDisplay();
+  }
+}
+
+void drawCompactPlayedNoteBadge(PlayedNoteDisplaySource source) {
   int16_t displayedPitch = 0;
-  if (!newestHeldDisplayedPitch(displayedPitch)) {
+  if (!newestHeldDisplayedPitchForSource(source, displayedPitch)) {
     if (noteBadgeVisible) {
       noteBadgeVisible = false;
       noteBadgeText[0] = '\0';
       noteOverlayDirty = false;
-      restoreInteractiveMenuDisplay();
+      restorePlayedNotesUnderlyingDisplay();
     } else {
       noteOverlayDirty = false;
     }
@@ -427,7 +498,7 @@ void drawCompactPlayedNoteBadge() {
 }
 
 void onToggleDisplayPlayedNotes() {
-  if (!noteDisplayEnabled() && (noteOverlayVisible || noteBadgeVisible)) {
+  if (!noteDisplayEnabled() && (noteOverlayVisible || noteBadgeVisible || noteOverlayTemporaryWake)) {
     noteOverlayVisible = false;
     noteBadgeVisible = false;
     noteOverlayDirty = false;
@@ -437,7 +508,7 @@ void onToggleDisplayPlayedNotes() {
     noteBadgeText[0] = '\0';
     clearDisplayedNotes(displayedNotes);
     if (!returnedToSleep) {
-      restoreInteractiveMenuDisplay();
+      restorePlayedNotesUnderlyingDisplay();
     }
   } else if (noteDisplayEnabled()) {
     noteOverlayDirty = true;
@@ -449,16 +520,20 @@ void drawPlayedNotesOverlay() {
     return;
   }
 
-  if (!noteDisplayEnabled()) {
-    if (noteBadgeVisible || noteOverlayVisible) {
+  PlayedNoteDisplaySource source = activePlayedNoteDisplaySource();
+
+  if (!noteDisplayEnabled() || source == PlayedNoteDisplaySource::None) {
+    if (noteBadgeVisible || noteOverlayVisible || noteOverlayTemporaryWake) {
       noteBadgeVisible = false;
       noteOverlayVisible = false;
       noteOverlayDirty = false;
       noteBadgeText[0] = '\0';
       bool returnedToSleep = setNoteOverlayTemporaryWake(false);
+      noteOverlayHoldUntil = 0;
+      noteOverlayReleaseGraceUntil = 0;
       clearDisplayedNotes(displayedNotes);
       if (!returnedToSleep) {
-        restoreInteractiveMenuDisplay();
+        restorePlayedNotesUnderlyingDisplay();
       }
     }
     return;
@@ -469,12 +544,12 @@ void drawPlayedNotesOverlay() {
   }
 
   if (!noteOverlayTemporaryWake) {
-    drawCompactPlayedNoteBadge();
+    drawCompactPlayedNoteBadge(source);
     return;
   }
 
   int16_t activeDisplayedNotes[DISPLAYED_NOTES_MAX];
-  byte activeCount = rebuildDisplayedNotes(activeDisplayedNotes);
+  byte activeCount = rebuildDisplayedNotesForSource(source, activeDisplayedNotes);
   byte countBefore = displayedNoteCount(displayedNotes);
   bool snapshotChanged = false;
 
@@ -507,7 +582,7 @@ void drawPlayedNotesOverlay() {
       noteOverlayVisible = false;
       noteOverlayDirty = false;
       if (!returnedToSleep) {
-        restoreInteractiveMenuDisplay();
+        restorePlayedNotesUnderlyingDisplay();
       }
     }
     return;

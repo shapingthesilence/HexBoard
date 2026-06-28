@@ -10,6 +10,7 @@
 #include "../midi/MidiTransport.h"
 #include "../midi/DelegatedControl.h"
 #include "../midi/NoteDispatch.h"
+#include "../sequencer/SequencerMode.h"
 #include "GridScanRotary.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
@@ -132,6 +133,8 @@ void RAM_FUNC(readHexes)() {
           delegatedButtonEvent(i, true);
         } else if (h[i].isCmd) {
           cmdOn(i);
+        } else if (sequencerModeActive()) {
+          handleSequencerButtonEvent(i, true);
         } else if (h[i].inScale || (!scaleLock)) {
           tryMIDInoteOn(i);
           trySynthNoteOn(i);
@@ -145,6 +148,8 @@ void RAM_FUNC(readHexes)() {
           delegatedButtonEvent(i, false);
         } else if (h[i].isCmd) {
           cmdOff(i);
+        } else if (sequencerModeActive()) {
+          handleSequencerButtonEvent(i, false);
         } else if (h[i].inScale || (!scaleLock)) {
           tryMIDInoteOff(i);
           trySynthNoteOff(i);
@@ -281,6 +286,28 @@ void dealWithRotary() {
       panicStopOutput();
       rotaryPanicLatched = true;
       rotaryPanicSuppressClick = true;
+    }
+  }
+
+  if (sequencerModeActive() && storeRotaryTurn != 0) {
+    bool turnIsClockwise = (storeRotaryTurn == 8);
+    int8_t direction = rotaryInvert
+                         ? (turnIsClockwise ? 1 : -1)
+                         : (turnIsClockwise ? -1 : 1);
+    if (handleSequencerRotaryTurn(direction)) {
+      storeRotaryTurn = 0;
+      screenTime = 0;
+    }
+  }
+
+  if (sequencerModeActive() && justReleased && !rotaryPanicSuppressClick) {
+    if (handleSequencerEncoderClick()) {
+      noteOverlayDirty = true;
+      screenTime = 0;
+      rotaryPressStart = 0;
+      rotaryPanicLatched = false;
+      rotaryButtonPressed = buttonPressed;
+      return;
     }
   }
 

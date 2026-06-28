@@ -601,6 +601,14 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
       audibleEnvAudio = (audibleEnvAudio * static_cast<uint32_t>(stealFadeGain)) >> 8;
     }
     s = (s * static_cast<int32_t>(envAudio)) >> 16;
+    int16_t owner = synthChannelOwners[i].load(std::memory_order_relaxed);
+    if (owner >= SYNTH_PREVIEW_SLOT_START && owner < BTN_COUNT) {
+      uint8_t slotIndex = static_cast<uint8_t>(owner - SYNTH_PREVIEW_SLOT_START);
+      if (slotIndex < SYNTH_PREVIEW_SLOT_COUNT) {
+        // Sequencer preview slots carry per-step velocity into the shared synth mix.
+        s = (s * static_cast<int32_t>(synthPreviewVelocityForSlot[slotIndex])) >> 7;
+      }
+    }
 
     // Accumulate signed mix
     mix += s;

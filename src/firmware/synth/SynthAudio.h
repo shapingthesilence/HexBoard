@@ -4,6 +4,12 @@
 #include "../storage/PersistentDataModels.h"
 #include "SynthDefaults.h"
 
+// Handle for non-key synth notes, currently used by Sequencer OB Synth output.
+struct SynthPreviewNoteHandle {
+  bool active = false;
+  int16_t slot = -1;
+};
+
 void updateEnvelopeParamsFromSettings();
 void updateEffectEnvelopeParamsFromSettings();
 void updateEffectEnvelopeParamsFromSettings(uint8_t envelopeIndex);
@@ -41,6 +47,8 @@ void RAM_FUNC(processEnvelopeReleases)();
 void RAM_FUNC(retryPendingReleases)();
 void RAM_FUNC(trySynthNoteOn)(byte x);
 void RAM_FUNC(trySynthNoteOff)(byte x);
+bool startSynthPreviewNote(int16_t pitchSteps, float frequency, byte displayNote, byte velocity, SynthPreviewNoteHandle& handle);
+void stopSynthPreviewNote(SynthPreviewNoteHandle& handle);
 void panicStopOutput();
 void setupSynthOutputs();
 bool RAM_FUNC(metronomeBrightnessSelected)();

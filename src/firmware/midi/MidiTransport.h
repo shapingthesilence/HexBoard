@@ -109,6 +109,18 @@ public:
     }
   }
 
+  void sendRealTime(uint8_t status) {
+    if (status < 0xF8) {
+      return;
+    }
+    if (transport_ == MidiOutputTransport::Usb) {
+      uint8_t packet[4] = { 0x0F, status, 0, 0 };
+      writeUsbMidiPacket(packet);
+    } else {
+      Serial1.write(status);
+    }
+  }
+
 private:
   MidiOutputTransport transport_;
 

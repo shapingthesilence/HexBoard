@@ -25,3 +25,4 @@ float stepsToMIDI(int16_t stepsFromReference);
 bool currentTuningIsStandardSemitone();
 void refreshMidiRouting();
 void sendSysExToConfiguredMidiOutputs(unsigned length, const byte* data);
+void sendRealTimeToConfiguredMidiOutputs(uint8_t status);

@@ -1,4 +1,5 @@
 #include "SynthAudioInternal.h"
+#include "../sequencer/SequencerTransport.h"
 
 std::queue<byte> synthChQueue;
 std::array<std::atomic<bool>, POLYPHONY_LIMIT> channelInUse = {};
@@ -12,6 +13,10 @@ std::array<int16_t, POLYPHONY_LIMIT> pendingSynthStealOwners = [] {
   owners.fill(NO_SYNTH_OWNER);
   return owners;
 }();
+// Sequencer OB Synth output uses these hidden slots to enter the normal synth
+// voice lifecycle without pretending a visible key is physically held.
+std::array<byte, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewVelocityForSlot = {};
+std::array<bool, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewSlotActive = {};
 std::atomic<uint32_t> nextVoiceGeneration = 1;
 std::atomic<bool> flashWriteInProgress = false;
 std::array<uint8_t, POLYPHONY_LIMIT> releaseRetries = {};
@@ -26,6 +31,59 @@ std::array<byte, ARPEGGIATOR_SEQUENCE_MAX> arpeggiatorSequence = {};
 uint16_t arpeggiatorSequenceLength = 0;
 uint16_t arpeggiatorSequenceCursor = 0;
 uint32_t arpeggiatorRandomState = 0xA341316Cu;
+
+namespace {
+
+bool synthPreviewSlotIndex(int16_t slot, uint8_t& indexOut) {
+  if (slot < SYNTH_PREVIEW_SLOT_START || slot >= BTN_COUNT) {
+    return false;
+  }
+  indexOut = static_cast<uint8_t>(slot - SYNTH_PREVIEW_SLOT_START);
+  return indexOut < SYNTH_PREVIEW_SLOT_COUNT;
+}
+
+void clearSynthPreviewSlot(int16_t slot) {
+  uint8_t slotIndex = 0;
+  if (!synthPreviewSlotIndex(slot, slotIndex)) {
+    return;
+  }
+  synthPreviewSlotActive[slotIndex] = false;
+  synthPreviewVelocityForSlot[slotIndex] = 127;
+  h[slot].note = UNUSED_NOTE;
+  h[slot].MIDIch = 0;
+  h[slot].activeMidiNote = UNUSED_NOTE;
+  h[slot].activePitchBend = 0;
+  h[slot].synthCh = 0;
+  h[slot].frequency = 0.0f;
+  h[slot].midiPitch = 0.0f;
+  h[slot].midiNoteIndex = 0;
+  h[slot].mappedMidiChannel = 0;
+  h[slot].stepsFromC = 0;
+  h[slot].timePressed = 0;
+  h[slot].jiRetune = 0;
+  h[slot].jiRetuneCents = 0.0f;
+  h[slot].jiFrequencyMultiplier = 1.0f;
+}
+
+int16_t allocateSynthPreviewSlot() {
+  for (uint8_t i = 0; i < SYNTH_PREVIEW_SLOT_COUNT; ++i) {
+    if (!synthPreviewSlotActive[i]) {
+      int16_t slot = static_cast<int16_t>(SYNTH_PREVIEW_SLOT_START + i);
+      synthPreviewSlotActive[i] = true;
+      synthPreviewVelocityForSlot[i] = 127;
+      return slot;
+    }
+  }
+  return -1;
+}
+
+void resetSynthPreviewSlots() {
+  for (uint8_t i = 0; i < SYNTH_PREVIEW_SLOT_COUNT; ++i) {
+    clearSynthPreviewSlot(static_cast<int16_t>(SYNTH_PREVIEW_SLOT_START + i));
+  }
+}
+
+}  // namespace
 
 bool RAM_FUNC(synthStealFadeInProgress)(uint8_t channelIndex) {
   return channelIndex < POLYPHONY_LIMIT && synthStealFadeSamplesRemaining[channelIndex] != 0;
@@ -353,12 +411,68 @@ void RAM_FUNC(resetSynthFreqs)() {
   }
   arpeggiatingNow = UNUSED_NOTE;
   clearArpeggiatorHeldNotes();
+  resetSynthPreviewSlots();
   if (isPolyPlaybackMode(playbackMode)) {
     uint8_t voiceLimit = currentSynthVoiceLimit();
     for (byte i = 0; i < voiceLimit; i++) {
       synthChQueue.push(i + 1);
     }
   }
+}
+
+bool startSynthPreviewNote(int16_t pitchSteps,
+                           float frequency,
+                           byte displayNote,
+                           byte velocity,
+                           SynthPreviewNoteHandle& handle) {
+  handle = SynthPreviewNoteHandle{};
+  if (playbackMode == SYNTH_OFF || frequency <= 0.0f) {
+    return false;
+  }
+
+  int16_t slot = allocateSynthPreviewSlot();
+  if (slot < SYNTH_PREVIEW_SLOT_START || slot >= BTN_COUNT) {
+    return false;
+  }
+
+  uint8_t slotIndex = static_cast<uint8_t>(slot - SYNTH_PREVIEW_SLOT_START);
+  byte safeVelocity = velocity == 0 ? 1 : velocity;
+  synthPreviewVelocityForSlot[slotIndex] = safeVelocity;
+  h[slot].stepsFromC = pitchSteps;
+  h[slot].note = displayNote < 128 ? displayNote : 127;
+  h[slot].frequency = frequency;
+  h[slot].midiPitch = 0.0f;
+  h[slot].midiNoteIndex = h[slot].note;
+  h[slot].timePressed = runTime;
+  h[slot].MIDIch = 1;
+  h[slot].mappedMidiChannel = defaultMidiChannel;
+  h[slot].jiRetune = 0;
+  h[slot].jiRetuneCents = 0.0f;
+  h[slot].jiFrequencyMultiplier = 1.0f;
+
+  trySynthNoteOn(static_cast<byte>(slot));
+  if (h[slot].synthCh == 0) {
+    clearSynthPreviewSlot(slot);
+    return false;
+  }
+
+  handle.active = true;
+  handle.slot = slot;
+  return true;
+}
+
+void stopSynthPreviewNote(SynthPreviewNoteHandle& handle) {
+  if (!handle.active) {
+    return;
+  }
+
+  int16_t slot = handle.slot;
+  if (slot >= SYNTH_PREVIEW_SLOT_START && slot < BTN_COUNT) {
+    trySynthNoteOff(static_cast<byte>(slot));
+    clearSynthPreviewSlot(slot);
+  }
+
+  handle = SynthPreviewNoteHandle{};
 }
 
 void synthWaveformChanged() {
@@ -663,6 +777,7 @@ void RAM_FUNC(trySynthNoteOff)(byte x) {
 
 void panicStopOutput() {
   sendToLog("Panic: stopping all MIDI and synth output.");
+  sequencer::releasePlaybackNotesForPanic();
 
   for (byte channel = 1; channel <= 16; ++channel) {
     withMIDI([&](auto& M) {

@@ -6,6 +6,8 @@
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
 #include "../model/ScalePalettePreset.h"
+#include "../sequencer/SequencerLightSettings.h"
+#include "../sequencer/SequencerPlaybackSettings.h"
 #include "../synth/SynthDefaults.h"
 #include "../synth/SynthAudio.h"
 #include "Settings.h"
@@ -95,6 +97,14 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* SynthLfoWave                 */ SYNTH_LFO_WAVE_SINE,
   /* SynthLfoSpeed                */ SYNTH_LFO_SPEED_DEFAULT,
   /* DynamicJIRatioTable          */ DYNAMIC_JI_RATIO_TABLE_41_LIMIT,
+  /* SequencerStepAccentEvery     */ sequencer::kStepAccentEveryDefault,
+  /* SequencerStepColorMode       */ sequencer::kStepColorDefault,
+  /* SequencerStepHue             */ sequencer::kStepHueDefault,
+  /* SequencerMonophonicMode      */ sequencer::kMonophonicModeDefault,
+  /* SequencerTapPreview          */ sequencer::kTapPreviewDefault,
+  /* SequencerClockSource         */ sequencer::kClockSourceDefault,
+  /* SequencerSendClock           */ sequencer::kSendClockDefault,
+  /* SequencerSendTransport       */ sequencer::kSendTransportDefault,
 };
 
 // ==================================================
@@ -244,6 +254,14 @@ bool load_settings() {
     return false;
   }
   if (header.version != CURRENT_SETTINGS_VERSION) {
+    if (header.version == 20 || header.version == 21) {
+      sendToLog("Settings version mismatch. Migrating version " + std::to_string(header.version) + " settings to version "
+                + std::to_string(CURRENT_SETTINGS_VERSION) + ".");
+      return migrateSettingsFromVersion(
+        f,
+        header,
+        header.version == 20 ? NUM_SETTINGS_V20 : NUM_SETTINGS_V21);
+    }
     sendToLog("Settings version mismatch. File version: " + std::to_string(header.version)
               + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION)
               + ". Restoring factory defaults for this release.");

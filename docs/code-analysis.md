@@ -55,6 +55,7 @@ The current source is grouped by file:
 | `src/firmware/synth/` | synth defaults, built-in waveforms, wavetable catalog, render orchestration, audio transport, oscillator/wavetable runtime, envelopes, modulation caches, voice allocation, arpeggiator, and metronome |
 | `src/firmware/storage/` | persistent data models, settings/profile persistence, synth preset/wavetable storage, and preset-sync handlers |
 | `src/firmware/menu/` | OLED/GEM pages and callbacks, played-note overlay, synth preset menus, and synth wavetable menus |
+| `src/firmware/sequencer/` | default-off Sequencer mode state, input, LEDs, menu integration, MIDI playback bridge, and internal transport timing |
 
 ## Core Data Structures
 
@@ -505,7 +506,15 @@ and `Number` modes. It defaults to `Label`. The overlay implementation lives in
 shared `VirtualListMenu` renderer instead of allocating one GEM page/item tree
 per library entry. When enabled, MIDI note-on updates mark a small OLED display
 region dirty, and note-on can temporarily wake the display from screensaver.
-`drawPlayedNotesOverlay()` runs from the main loop after menu input handling.
+Sequencer lower-grid audition notes use a narrow source API from
+`SequencerManagedNotes.cpp` so the same overlay can render them when Sequencer
+mode has no selected step; tap preview, selected-step entry, and transport
+playback do not feed this display source. `drawPlayedNotesOverlay()` runs from
+the main loop after menu input handling, including after the Sequencer display
+gets first chance to draw. When selected-step edit focus closes and leaves the
+sequencer display blank, that blank state is tracked by `SequencerOverlay.cpp`;
+no-selection audition notes then force the full temporary `Now Playing` overlay
+and restore the blank state afterward instead of redrawing the Sequencer menu.
 During normal menu display it draws only the newest currently held note as a
 top-right badge using the same large note font as the full overlay. GEM menu
 redraws use `drawPlayedNoteBadgeOnMenuFrame()` as a draw callback, and
@@ -539,7 +548,12 @@ The LED pipeline uses cached per-button colors:
 - `LEDcodePlay`
 - `LEDcodeAnim`
 
-`setLEDcolorCodes()` recomputes those caches. Call it after changes that affect palette, scale, tuning relationships, key-centered color placement, brightness, or color mode.
+`setLEDcolorCodes()` recomputes those caches plus a base `colorDef` cache used
+by Sequencer Note-colored steps. Call it after changes that affect palette,
+scale, tuning relationships, key-centered color placement, brightness, or color
+mode. Sequencer step brightness should use the base hue/saturation cache and
+linear HSV/RGB helpers before applying gamma once; do not rescale packed
+`LEDcodeRest` or `LEDcodeDim` values.
 
 `lightUpLEDs()` writes the final frame into the NeoPixel buffer and then calls `applyLedCurrentLimitToFrame()` before `strip.show()`. The limiter uses a rough WS2812 estimate of `20 mA` per color channel at full scale plus `1 mA` idle per LED, then scales the final RGB bytes if the configured `LED Limit` budget would be exceeded. `decodeLedCurrentLimitMilliamps()` maps the visible USB-side menu labels through a hardware-specific meter calibration table. On `V1.2`, the internal limiter budgets are `250 mA -> 250`, `500 mA -> 500`, `750 mA -> 900`, `1.0 A -> 1350`, `1.5 A -> 2000`, `2.0 A -> 3150`, and `3.0 A -> 5000`. On `V1.1`, the budgets are `250 mA -> 600`, `500 mA -> 1160`, `750 mA -> 2100`, `1.0 A -> 3150`, `1.5 A -> 4600`, `2.0 A -> 7100`, and `3.0 A -> 8500`. The `1.5 A` menu value is the factory default because it preserves the old stable `V1.2` draw and is calibrated to land near that same actual draw on `V1.1`. Because the scaling happens at the final frame stage, it also affects delegated-control LED frames.
 
@@ -711,10 +725,19 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `20`, and `PROFILE_COUNT` is `9`.
-Older settings-schema files are not migrated in this release; `load_settings()`
-restores factory defaults and rewrites `/settings.dat` whenever the header
-version is not `20`.
+`CURRENT_SETTINGS_VERSION` is currently `22`, and `PROFILE_COUNT` is `9`.
+`load_settings()` migrates version `20` and `21` files by copying the previous
+profile bytes and filling newly appended sequencer profile bytes from factory
+defaults. Other settings-schema mismatches restore factory defaults and rewrite
+`/settings.dat`. The optional sequencer profile bytes include
+`SequencerStepAccentEvery`, `SequencerStepColorMode`, `SequencerStepHue`,
+`SequencerMonophonicMode`, `SequencerTapPreview`, `SequencerClockSource`,
+`SequencerSendClock`, and `SequencerSendTransport`.
+`SequencerClockSource` was appended during the in-flight sequencer development
+branch without bumping `CURRENT_SETTINGS_VERSION`; old local development
+settings files with the shorter version-21 payload may still restore defaults,
+while valid version-21 payloads now migrate by defaulting the two MIDI sync send
+settings to `Off`.
 
 Version `20` reinterprets the existing `DisplayPlayedNotes` byte from a boolean
 as `Off`/`Label`/`Number`; the persisted byte position did not move. Version
@@ -928,10 +951,90 @@ Current top-level user pages are:
 - `Load Profile`
 - `Save Profile`
 - `Synth Editor`
+- optional `Sequencer` when built with `HEXBOARD_ENABLE_SEQUENCER=1`
 
 The Advanced page includes a read-only `Firmware 1.4 alpha` version label.
 The `Buzzer` toggle is inserted only on hardware `V1.2`.
 `Stability` is a transient launcher, not a setting.
+
+When enabled, Sequencer mode currently supports 32-step selection, selected-step
+note entry using tuning-relative `stepsFromC`, selected-step undo, hold-clear,
+step tools, sequencer LED overrides, and routed transport playback. Button `9`
+is Play/Stop: a short press closes selected-step edit focus when needed and
+toggles the local transport, while a roughly two-second hold opens the
+temporary Performance Monitor until release. The sequencer-owned `Playback Settings`
+page exposes `Steps`, `Direction`, `Tempo`, `Play Type`, `MIDI Sync`,
+`Tap Preview`, and `Monophonic`. `MIDI Sync` contains `Clock Source`, `Send Clock`,
+and `Send Transport`. `Tempo` defaults to `120` BPM and ranges from `1` to
+`255`; `Clock Source` defaults to `Internal`, while `External MIDI` makes
+incoming MIDI Clock pulses advance one step every six pulses and handles
+incoming Start, Stop, and start-like Continue transport messages. With
+`Clock Source` set to `Internal`, `Send Clock` sends six MIDI Clock pulses per
+step while local transport is running, and `Send Transport` sends MIDI
+Start/Stop from local Play/Stop; both send settings default to `Off`; `Steps`
+defaults to `32` and ranges from `1` to `32`; `Direction`
+defaults to `Forward` and also supports `Backward`, `Ping-Pong`, `Random`,
+`Brownian`, and `Drunk`; `Play Type` defaults to `MIDI` and can route
+sequencer-managed notes to the onboard synth; `Tap Preview` defaults to `On`.
+`Steps`, `Direction`, `Tempo`, and `Play Type` are sequence-file data.
+`Clock Source`, `Send Clock`, `Send Transport`, `Tap Preview`, and
+`Monophonic` are profile-backed;
+`Monophonic` affects
+selected-step entry only: Off preserves chord toggle entry, while On removes an
+existing pressed pitch or replaces the selected step with one newly pressed
+pitch. Playback, tap preview, and lower-grid audition resolve pitch steps
+through the current tuning and transpose at note start. MIDI output uses the
+current MIDI routing and MPE
+helpers. OB Synth output uses a sequencer output handle plus a synth
+preview-note API backed by hidden matrix slots `141..159`, preserving slot `140`
+for hardware detection and scaling preview voices by step/audition velocity.
+Sequencer policy should remain in `src/firmware/sequencer/`; the intentional
+external bridge points are MIDI realtime byte forwarding from `MidiInput`,
+shared played-note overlay rendering, base LED palette lookup plus final LED
+overrides, and the synth preview-note API.
+No-selection lower-grid audition notes expose their active pitch set and newest
+press timestamp to the shared played-note overlay; the source is disabled while
+a step is selected, and preview/playback roles stay out of it.
+Transport playback applies per-step velocity, probability, length, and Tie;
+probability gates the whole step, length schedules note-off groups from the
+step boundary, and Tie extends the nearest earlier active source from the same
+pattern pass without wrapping across the loop boundary. A sequencer-owned
+overlay renders `Edit #NN`, the Step Tools picker, exact
+length/velocity/probability editors, copy target, temporary status, and clear
+feedback screens, plus a packed Overview screen that pages through the full
+32-step pattern using button `18`. `SequencerPerformanceMonitor.*` owns the
+diagnostic-only Performance Monitor snapshot, formatting, and profiler
+lifecycle; drawing stays
+inside the sequencer overlay path. MIDI backlog stats are exposed through a
+narrow `MidiInput` monitor snapshot and remain observational only. Tied steps
+show `T` instead of note labels in edit/tool overlays. Step LEDs outside the
+active step range remain off, and selected-step
+blink gates selected steps fully off before normal empty/programmed color
+rendering. Button `18` is a white utility LED, medium while idle and brighter
+while the Overview is active. The `Seq Lights` page stores `Accent Every`,
+`Step Color`, and `Step Hue` in the active profile. Programmed steps use
+medium, high, or highest
+brightness; accents alter brightness only. `Step Color = Regular` uses the
+chosen named hue, while `Step Color = Note` uses the step's lowest stored pitch
+and the current board palette color.
+
+Step tool modal state lives in `SequencerTools.*`; transport note lifetimes use
+bounded playback groups rather than a single active note list so overlength and
+tied steps can overlap later steps. `SequencerStorage.*` owns `.hbseq`
+serialization under `/Sequences`, `/Sequences/.current`, title/dirty state, and
+startup restore after profile settings are synced. Saved files use
+`format=HBSEQ`, `version=3`, `noteFormat=stepsFromC`, ignore unknown keys, and
+clamp invalid values. `SequencerFileMenu.*` owns the current-folder browser,
+folder creation, rename/delete, naming overlay, and USB Backup menu page. It
+uses `VirtualListMenu` callbacks with cached current-folder counts and an 8-row
+visible-window cache instead of keeping a tree-wide path list.
+`SequencerUsbBackup.*` owns the enabled-only HBK1 USB-serial backup session for
+`/Sequences`, including path validation, `.hbseq` file-operation restrictions,
+LIST/GET/PUT/MKDIR/DELETE/RMDIR/RENAME handling, temporary-file PUT restore,
+transfer-timeout cleanup, status lines, and serial-debug suppression while a
+session is active. Host-side backup support is copied into `scripts/`, with
+`hexboard_backup_gui.py` as the primary user workflow and `hexboard_backup.py`
+as support/debug CLI tooling.
 
 ## Input Interface And Panic Behavior
 
