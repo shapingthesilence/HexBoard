@@ -58,7 +58,8 @@ std::array<std::vector<uint8_t>, 128> midiNoteToHexIndices = {};
     positive.
   */
 int RAM_FUNC(positiveMod)(int n, int d) {
-  return (((n % d) + d) % d);
+  int remainder = n % d;
+  return (remainder < 0) ? (remainder + d) : remainder;
 }
 /*
     There may already exist linear interpolation
