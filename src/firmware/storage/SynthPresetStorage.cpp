@@ -536,6 +536,18 @@ bool currentSynthPresetRuntimeModified() {
     : false;
 }
 
+bool currentSynthPresetCatalogIndex(uint16_t& presetIndex) {
+  if (currentSynthPresetIsBlank) {
+    return false;
+  }
+  const SynthPresetIndexEntry* metadata = trackedCurrentSynthPresetEntry();
+  if (!metadata || currentSynthPresetIndex >= synthPresets.size()) {
+    return false;
+  }
+  presetIndex = currentSynthPresetIndex;
+  return true;
+}
+
 void captureCurrentSynthPreset(SynthPresetSlot& preset) {
   preset.valid = 1;
   for (size_t i = 0; i < synthPresetKeys.size(); ++i) {

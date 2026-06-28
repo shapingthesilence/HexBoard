@@ -710,8 +710,10 @@ void clearUserGeometryRuntimeSelection() {
   userGeometryRuntimePaletteActive = false;
   userGeometryRuntimeTuningObjectSelected = false;
   userGeometryRuntimeLayoutObjectSelected = false;
+  userGeometryRuntimeScaleObjectSelected = false;
   memset(userGeometryRuntimeTuningObjectId, 0, sizeof(userGeometryRuntimeTuningObjectId));
   memset(userGeometryRuntimeLayoutObjectId, 0, sizeof(userGeometryRuntimeLayoutObjectId));
+  memset(userGeometryRuntimeScaleObjectId, 0, sizeof(userGeometryRuntimeScaleObjectId));
   userGeometryRuntimeCentsTableActive = false;
   userGeometryRuntimeCentsTableLength = 0;
   memset(userGeometryRuntimeCentsTableMilliCents, 0, sizeof(userGeometryRuntimeCentsTableMilliCents));
@@ -812,6 +814,7 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   memcpy(userGeometryRuntimeTuningObjectId, object.objectId, sizeof(userGeometryRuntimeTuningObjectId));
   userGeometryRuntimeTuningObjectSelected = true;
   userGeometryRuntimeLayoutObjectSelected = false;
+  userGeometryRuntimeScaleObjectSelected = false;
   userGeometryRuntimeCentsTableActive = centsTableActive;
   userGeometryRuntimeCentsTableLength = centsTableActive ? cycleLength : 0;
   memset(userGeometryRuntimeCentsTableMilliCents, 0, sizeof(userGeometryRuntimeCentsTableMilliCents));
@@ -913,6 +916,8 @@ bool applyUserGeometryRuntimeScale(const GeometryObjectSlot& object) {
   copyRuntimeGeometryName(userGeometryRuntimeScaleNameStorage, sizeof(userGeometryRuntimeScaleNameStorage), object.name);
   userGeometryRuntimeScale.name = userGeometryRuntimeScaleNameStorage;
   userGeometryRuntimeScale.tuning = current.tuningIndex;
+  memcpy(userGeometryRuntimeScaleObjectId, object.objectId, sizeof(userGeometryRuntimeScaleObjectId));
+  userGeometryRuntimeScaleObjectSelected = true;
   memset(userGeometryRuntimeScale.pattern, 0, sizeof(userGeometryRuntimeScale.pattern));
   for (uint8_t i = 0; i < degreeCount; ++i) {
     uint8_t currentDegree = degrees[i];

@@ -109,6 +109,36 @@ VirtualListMenuRowType rowType(uint16_t itemIndex) {
   return activeProvider.getRowType(activeProvider.context, providerIndex);
 }
 
+bool rowIsCurrent(uint16_t itemIndex) {
+  uint16_t itemCount = providerItemCount();
+  if (itemIndex == VIRTUAL_LIST_BACK_INDEX || itemCount == 0 || !activeProvider.isCurrent) {
+    return false;
+  }
+  uint16_t providerIndex = static_cast<uint16_t>(itemIndex - 1);
+  return providerIndex < itemCount
+         && rowType(itemIndex) == VirtualListMenuRowType::Button
+         && activeProvider.isCurrent(activeProvider.context, providerIndex);
+}
+
+uint16_t defaultSelectionIndex() {
+  return virtualItemCount() > 1 ? 1 : VIRTUAL_LIST_BACK_INDEX;
+}
+
+uint16_t initialSelectionIndex() {
+  uint16_t itemCount = providerItemCount();
+  uint16_t providerIndex = 0;
+  if (itemCount > 0
+      && activeProvider.getInitialSelection
+      && activeProvider.getInitialSelection(activeProvider.context, &providerIndex)
+      && providerIndex < itemCount) {
+    uint16_t itemIndex = static_cast<uint16_t>(providerIndex + 1);
+    if (rowType(itemIndex) == VirtualListMenuRowType::Button) {
+      return itemIndex;
+    }
+  }
+  return defaultSelectionIndex();
+}
+
 void drawRows() {
   uint8_t perScreen = menuItemsPerScreen();
   uint16_t screenStart = static_cast<uint16_t>((currentItemIndex / perScreen) * perScreen);
@@ -131,7 +161,8 @@ void drawRows() {
       if (providerItemCount() == 0) {
         u8g2.setCursor(5, yText);
       } else {
-        switch (rowType(itemIndex)) {
+        VirtualListMenuRowType type = rowType(itemIndex);
+        switch (type) {
           case VirtualListMenuRowType::Link:
             u8g2.setCursor(5, yText);
             u8g2.drawXBMP(u8g2.getDisplayWidth() - 8,
@@ -150,7 +181,12 @@ void drawRows() {
             break;
         }
       }
-      printMenuString(label, menuItemFullLength());
+      uint8_t maxChars = menuItemFullLength();
+      if (rowIsCurrent(itemIndex) && maxChars > 2) {
+        u8g2.print("* ");
+        maxChars = static_cast<uint8_t>(maxChars - 2);
+      }
+      printMenuString(label, maxChars);
     }
 
     y = static_cast<uint8_t>(y + VIRTUAL_LIST_ITEM_HEIGHT);
@@ -214,7 +250,7 @@ void selectCurrentItem() {
 void openVirtualListMenu(const VirtualListMenuProvider& provider) {
   activeProvider = provider;
   active = true;
-  currentItemIndex = virtualItemCount() > 1 ? 1 : VIRTUAL_LIST_BACK_INDEX;
+  currentItemIndex = initialSelectionIndex();
   redrawVirtualListMenu();
 }
 
@@ -281,7 +317,7 @@ void resetVirtualListMenuSelection() {
   if (!active) {
     return;
   }
-  currentItemIndex = virtualItemCount() > 1 ? 1 : VIRTUAL_LIST_BACK_INDEX;
+  currentItemIndex = initialSelectionIndex();
   redrawVirtualListMenu();
 }
 

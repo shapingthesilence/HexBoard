@@ -18,6 +18,7 @@ void loadBlankSynthPreset();
 bool readSynthPresetFromCatalog(uint16_t presetIndex, SynthPresetSlot& preset);
 const char* currentSynthPresetDisplayName();
 bool currentSynthPresetRuntimeModified();
+bool currentSynthPresetCatalogIndex(uint16_t& presetIndex);
 void captureCurrentSynthPreset(SynthPresetSlot& preset);
 SynthPresetSlot buildCurrentSynthPresetObject();
 void applySynthPresetToSettings(const SynthPresetSlot& preset);

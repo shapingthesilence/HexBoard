@@ -99,6 +99,25 @@ bool synthPresetFolderAlreadyListed(const char* childFolderPath) {
   return false;
 }
 
+bool synthPresetRowIsCurrent(const SynthPresetMenuRow& row) {
+  if (activeSynthPresetMenuMode != SynthPresetMenuMode::Load
+      || row.kind != SynthPresetMenuRowKind::Preset) {
+    return false;
+  }
+  uint16_t presetIndex = 0;
+  return currentSynthPresetCatalogIndex(presetIndex) && row.index == presetIndex;
+}
+
+bool findCurrentSynthPresetRow(uint16_t& index) {
+  for (uint16_t i = 0; i < synthPresetMenuRowCount; ++i) {
+    if (synthPresetRowIsCurrent(synthPresetMenuRows[i])) {
+      index = i;
+      return true;
+    }
+  }
+  return false;
+}
+
 void appendSynthPresetMenuRow(SynthPresetMenuRowKind kind, uint16_t index) {
   if (synthPresetMenuRowCount >= SYNTH_PRESET_MENU_MAX_ROWS) {
     return;
@@ -188,6 +207,18 @@ VirtualListMenuRowType synthPresetVirtualRowType(void*, uint16_t index) {
            : VirtualListMenuRowType::Button;
 }
 
+bool synthPresetVirtualIsCurrent(void*, uint16_t index) {
+  return index < synthPresetMenuRowCount
+         && synthPresetRowIsCurrent(synthPresetMenuRows[index]);
+}
+
+bool synthPresetVirtualInitialSelection(void*, uint16_t* index) {
+  if (!index) {
+    return false;
+  }
+  return findCurrentSynthPresetRow(*index);
+}
+
 void returnFromSynthPresetMenu() {
   deactivateVirtualListMenu();
   if (activeSynthPresetMenuReturn == SynthPresetMenuReturn::Main) {
@@ -255,6 +286,8 @@ void openSynthPresetMenu(SynthPresetMenuMode mode, SynthPresetMenuReturn destina
   provider.getCount = synthPresetVirtualCount;
   provider.getLabel = synthPresetVirtualLabel;
   provider.getRowType = synthPresetVirtualRowType;
+  provider.isCurrent = synthPresetVirtualIsCurrent;
+  provider.getInitialSelection = synthPresetVirtualInitialSelection;
   provider.select = synthPresetVirtualSelect;
   provider.back = synthPresetVirtualBack;
   provider.close = synthPresetVirtualClose;

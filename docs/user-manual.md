@@ -119,7 +119,8 @@ Use this section to choose the tuning or geometry bundle the whole board runs
 on. The page is a GEM-style virtual list backed by geometry objects: factory
 tunings appear at the root, and saved user tunings can be organized into
 folders. Scrolling follows normal GEM list behavior, including page jumps at
-the 11 visible-row boundary. Selecting a tuning also loads the first linked
+the 11 visible-row boundary. The active tuning is marked with a leading `*`
+when it appears in the list. Selecting a tuning also loads the first linked
 layout, scale, color map, and matching explicit button map so the board is
 immediately playable.
 
@@ -154,7 +155,8 @@ Changing tuning also resets:
 
 Use this page to choose how pitch moves across the hex grid. After a tuning is
 selected, factory and saved layouts linked to that tuning appear in a
-GEM-style virtual list as flat entries.
+GEM-style virtual list as flat entries. The active layout is marked with a
+leading `*` when it appears in the list.
 
 Choosing a layout remaps button pitches, loads that layout's matching explicit
 button map when one exists, and reloads that layout's default device
@@ -167,7 +169,8 @@ the menu layout is being simplified for the 2.0 release.
 
 Use this page to choose the active scale. After a tuning is selected, factory
 and saved scales linked to that tuning appear in a GEM-style virtual list as
-flat entries.
+flat entries. The active scale is marked with a leading `*` when it appears in
+the list.
 
 Choosing a scale updates scale membership while keeping the current user tuning,
 layout, color map, and button map active. `Key` and `Scale Lock` are on the main
@@ -266,7 +269,8 @@ which held notes were pressed, not the physical button numbers.
 
 `WT:...` shows the currently loaded wavetable and opens a virtual load list.
 Built-in tables appear at the root, and user-imported wavetables can be
-organized into folders.
+organized into folders. The active wavetable is marked with a leading `*` when
+it appears in the list.
 Built-in compatibility tables include:
 
 - `Basic Shapes`: sine, triangle, saw, and square anchors
@@ -373,7 +377,9 @@ presets.
 returns to the main menu; loading or saving from `Synth Editor` returns to
 `Synth Editor`. Loading a preset changes only the current synth parameters and
 wavetable reference, which can still be auto-saved by the normal settings
-system.
+system. The currently loaded catalog preset is marked with a leading `*` when
+it appears in the load list; `Blank`, `New Preset`, and the unselected
+`Current` state are not marked.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial
 peak longer before decay. Low `Sustain` makes a note fade away even while you
