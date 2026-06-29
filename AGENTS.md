@@ -13,6 +13,11 @@ These instructions apply to the entire repository. This guide is for future AI a
 - Keep audio ISR code, synth helper code called from the ISR, button/knob scan paths, and other latency-sensitive runtime helpers in RAM with `RAM_FUNC` or RAM-resident data. Do not move hot audio/control tables into flash.
 - When firmware behavior, settings, menus, synth preset schema, or preset-sync protocol changes affect companion-app behavior, update the web app in `web/` in the same change.
 
+## Engineering Preference
+
+- Prefer code changes designed for cleanliness, clear ownership, and long-term maintainability over the quickest implementation. Avoid stacking narrow patches on top of earlier patches when a small, coherent redesign would leave the subsystem easier to understand and maintain.
+- When a quick fix and a cleaner design differ materially, choose the cleaner design unless the user explicitly asks for a temporary workaround or urgent minimal patch.
+
 ## Documentation Requirement
 
 Every behavior, setting, protocol, menu, build, hardware, or architecture change must include a documentation pass before the task is considered complete.
@@ -21,9 +26,9 @@ When code changes, check and update the relevant docs:
 
 - `README.md` for project overview, build target, feature highlights, repository layout, or build/flash instructions.
 - `docs/user-manual.md` for user-visible behavior, menu items, defaults, workflows, troubleshooting, or hardware-facing usage.
-- `docs/developer-guide.md` for implementation patterns, settings wiring, architecture, source map, risk areas, or edit recipes.
-- `docs/code-analysis.md` for subsystem-level technical analysis, runtime flow, settings schema/version, verification checklist, or current implementation facts.
+- `docs/developer-guide.md` for current firmware architecture, subsystem ownership, settings wiring, runtime flow, risk areas, edit recipes, or verification checklist updates.
 - `docs/delegated-control.md` for external delegated-control protocol, SysEx behavior, host integration, or delegated runtime gates.
+- `docs/preset-sync-sysex.md` for preset-sync SysEx behavior, object schemas, host integration, or future tuning/layout/preset storage design.
 
 If a code change does not require documentation updates, explicitly say why in the final response.
 
@@ -31,7 +36,7 @@ If a code change does not require documentation updates, explicitly say why in t
 
 - When adding, removing, or reordering `SettingKey` entries, update `factoryDefaults`, `syncSettingsToRuntime()`, menu wiring if needed, and documentation.
 - Bump `CURRENT_SETTINGS_VERSION` when persisted settings layout changes.
-- Document settings-version changes in `docs/developer-guide.md` and `docs/code-analysis.md`.
+- Document settings-version changes in `docs/developer-guide.md`.
 
 ## Verification
 

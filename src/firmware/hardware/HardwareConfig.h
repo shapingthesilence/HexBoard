@@ -23,6 +23,7 @@ constexpr byte ROWCOUNT = 16;
 constexpr byte BTN_COUNT = COLCOUNT * ROWCOUNT;
 constexpr byte FIRST_FLAG_BUTTON_INDEX = LED_COUNT;
 constexpr byte CMDCOUNT = 7;
+constexpr byte HEXBOARD_CENTER_BUTTON = 65;
 
 // Matrix scan GPIO assignments.
 constexpr byte MPLEX_1_PIN = 4;
