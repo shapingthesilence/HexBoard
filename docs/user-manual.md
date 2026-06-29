@@ -113,10 +113,10 @@ The main menu includes:
 
 Developer builds compiled with `HEXBOARD_ENABLE_SEQUENCER=1` also show a main
 menu item named `Sequencer`. Default firmware builds may not include it. For
-sequencer information, see the [Sequencer Manual](sequencer-manual.md).
+sequencer information, see the [Sequencer Manual](sequencer/manuals/sequencer_manual.txt).
 Sequencer-enabled builds also include `File Management` -> `USB Backup` for
 using the desktop HexBoard Backup GUI with saved `.hbseq` sequences.
-<!-- Agent note: Do not add sequencer behavior details here unless explicitly requested. Keep detailed sequencer information in docs/sequencer-manual.md. -->
+<!-- Agent note: Do not add sequencer behavior details here unless explicitly requested. Keep detailed sequencer information under docs/sequencer/. -->
 
 `Synth:<current preset>` opens the synth preset load menu from the top level.
 If the runtime synth sound has changed since the loaded preset was selected or

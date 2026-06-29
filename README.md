@@ -14,7 +14,7 @@ You can [order a HexBoard](https://shapingthesilence.com/) if you are interested
 ## Documentation
 
 - [User Manual](docs/user-manual.md)
-- [Sequencer Manual](docs/sequencer-manual.md)
+- [Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt)
 - [MPE Microtonal Setup Guide](docs/mpe-microtonal-setup.md)
 - [Developer Guide](docs/developer-guide.md)
 - [Code Analysis](docs/code-analysis.md)
@@ -152,7 +152,7 @@ management and startup restore, sequence-backed Tempo, Steps, Direction, and
 Play Type controls, profile-backed Tap Preview and Monophonic note-entry mode,
 profile-backed Seq Lights controls, and USB Backup for moving `.hbseq` files
 through the desktop HexBoard Backup GUI.
-See the [Sequencer Manual](docs/sequencer-manual.md) for current sequencer
+See the [Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt) for current sequencer
 behavior and the features still being ported.
 
 Builds compile the repository sketch directly and write flashable files under
