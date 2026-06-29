@@ -482,6 +482,27 @@ Options include:
 
 Most users can leave `MPE Mode` on `Auto`. Use `MPE Bend`, `MPE Low Ch`, and `MPE High Ch` when matching HexBoard to an MPE synth or plugin. `RolandMT32` and `GeneralMidi` send preset-selection messages for compatible external devices.
 
+#### Control Wheel
+
+These controls adjust how quickly the command-button wheels move and whether they snap back.
+
+Options include:
+
+- `Vel Wheel`
+- `PB Wheel`
+- `Mod Wheel`
+- `Pitch Bend`: `Springy` or `Sticky`
+- `Mod Wheel`: `Springy` or `Sticky`
+
+Wheel speed choices run from `TooSlow`, `Turtle`, `Slow`, `Medium`, `Fast`,
+`Cheetah`, and `VeryFast` to `Instant`. `Fast` is the previous `Medium` speed;
+`TooSlow` is a new slower option.
+
+The onboard synth smooths pitch-bend wheel changes, phase-warp depth, and
+vibrato depth internally so button-controlled bends and warp changes do not jump
+as hard between command-wheel updates. External MIDI still receives the normal
+pitch-bend and modulation messages.
+
 ### External Delegated Control
 
 Some external software can temporarily take over HexBoard as a button-and-light surface. In that mode, normal playing, arpeggiation, control wheels, and built-in LED animations are paused while the host controls the surface.
@@ -504,214 +525,35 @@ out of delegated mode.
 
 ### Companion Web App
 
-A browser-based HexBoard Sync app is being developed in this repository. Its
-first target is preset, tuning/layout, color-map, button-map, and synth-preset
-editing over Web MIDI SysEx. Firmware currently implements synth preset sync,
-named synth-wavetable import/read/write/delete, storage/list/read/write/delete for user
-geometry objects in `/layouts.dat`, read-only factory tuning/layout/scale
-geometry objects, virtual on-device `Tuning`, `Layout`, and `Scales` browsers
-backed by geometry objects, and live Apply for generated EDO, equal-step, and
-Scala/cents-table geometry bundles.
+A browser-based HexBoard Sync app lives in this repository. It uses Web MIDI
+SysEx to edit and sync tunings/layouts, color maps, explicit button maps, synth
+presets, and user wavetables.
 
-The `Tunings & Layouts` tab is a browser-side musical geometry editor. It saves
-geometry bundles in browser storage and can import/export those bundles as JSON.
-Each bundle contains one tuning, one custom scale-degree color palette, one
-default color mode, one or more layouts, and one or more scales. `Custom`
-uses the bundle's scale-degree palette; the other default color mode choices
-preview the same generated hues as the device menu at full brightness and apply
-the corresponding generated modes on the device. The active
-layout still starts from an across/up-right vector, and the center key can be
-chosen from the visual board or typed by button index. The editor places a
-left sidebar beside the preview using the same left-to-right proportions as the
-synth preset editor. At the top of `Geometry Bundles`, `File Manager` contains
-the foldered `Computer Library` and `HexBoard Library` sections, while `Editor`
-contains bundle metadata plus the `Tuning`, `Layouts`, and `Scales` subtabs for
-the open bundle. In `Editor`, `Live send` previews compatible EDO, equal-step,
-and Scala/cents-table bundle edits on the connected device's runtime without
-saving them to flash. Scala live-send is enabled only when the connected
-firmware advertises cents-table runtime tuning support.
-`Save to Computer` stores the bundle in browser storage, while `Save to
-HexBoard` writes the bundle's user tuning, layouts, scales, color map, and
-explicit button map into the selected folder on the device. The HexBoard
-library lists factory and saved tuning entries by folder because firmware
-stores the unpacked geometry objects rather than a single editable bundle
-object. Factory entries are read-only: they can be opened, downloaded, and
-exported as bundle JSON, but the web app disables erase for them. Saved user
-entries can also be erased from the device. On the device, the tuning appears
-under `Tuning`, its linked layouts appear under `Layout` after that tuning is
-selected, and its linked scales appear under `Scales`; the device browser keeps
-factory and saved entries flat. The larger HexBoard preview plus selected-key
-inspector stay on
-the right, with the selected-key
-inspector below the board. The encoded-object debug
-readout sits at the bottom of the editor page. The rotation control is a
-four-step device orientation preview: `0`, `90`, `180`, or `270` degrees. It is
-intended to line up with the firmware `Display Rot` setting, not to rotate the
-musical axes around individual hexagons. Focusing the center, across, or
-up-right layout fields highlights the relevant preview key relationship. The
-axis field labels follow the four-way preview rotation; for example, at `90`
-degrees, across is shown as `Down` and up-right is shown as `Down-right`.
-The preview toolbar includes the bundle-level default color mode selector.
-When that mode is `Custom`, the preview also has a `Paintbrush` mode: choose a
-brush color, enable the tool, then click or drag across keys to write manual
-per-button color overrides without selecting each key in the inspector. The
-`Eyedropper` tool temporarily overrides the paintbrush so the
-next preview key clicked becomes the brush color. `Reset Colors` asks for
-confirmation, then clears all per-button color overrides in the active layout
-so keys return to their scale-degree colors while note and role overrides stay
-unchanged. Preview hexagons render with solid, full-bright color fills and outlined white labels
-so the displayed hue remains accurate and readable. A sun/moon button in the app header switches the web app between
-light and dark themes. When a compatible bundle is applied to HexBoard, `Custom`
-scale-degree colors and Custom-mode per-button colors use the selected color as the
-active/play target, but the resting hardware LEDs are capped to the same normal
-brightness level used by generated modes such as `Rainbow` so animations have
-brighter headroom.
+The app requires a Web MIDI SysEx-capable browser, usually Chrome or Edge, from
+`localhost` or HTTPS. Use `Connect HexBoard` in the top bar. The app checks the
+connected device's preset-sync support and connects automatically when exactly
+one compatible HexBoard replies; a device selector appears when multiple
+compatible boards are connected.
 
-The tuning editor can create EDO tunings, equal cents-per-step tunings, and
-Scala `.scl` imports. EDO and cents-per-step tunings include editable note
-labels and an `A = x Hz` reference pitch; note labels default to an A-first
-pitch-label sequence and validate like included degrees when the field is exited. The cents-per-step
-editor takes only step size and cycle length; its period is derived from those
-two fields. Scala import derives period and cycle length from the imported
-interval table, reads one-token note labels after interval values, and uses the
-final period label as the implicit 1/1 root label when present. New `.scl`
-imports default the 1/1 reference to MIDI note `60` at standard C4 frequency,
-matching the common no-keyboard-mapping Scala convention, while the Scala
-editor exposes both `1/1 MIDI note` and `1/1 Hz` so the base pitch can be set
-explicitly. Scala text is parsed in the web app and stored in the bundle as
-cents data. On supported firmware, applied Scala bundles use that cents table
-and 1/1 reference for onboard synth frequency, MIDI note selection, and MPE
-pitch bend. The preview uses the current `133` note-key hardware shape and
-omits the seven command buttons so geometry editing stays focused on playable
-notes. The selected-key inspector shows the resolved note label,
-reference-relative step/cents offset, and frequency for the selected key, and has a `Color source` dropdown:
-`Scale degree` edits the palette color for the generated degree, while
-`Button override` edits only the selected button's color and is available only
-when the default color mode is `Custom`. `Note source` can
-lock an individual button to a fixed `steps from C` value; those manual note
-positions are meant to stay fixed when root note or transposition changes.
-Scales are edited as included scale degrees only. `All Notes` is always present
-as the default scale, always includes every degree for the current division
-count, and cannot be edited or deleted. The included-degrees field can
-hold incomplete text while typing; if it still contains invalid text when focus
-leaves the field, the editor marks it red and reports the validation error.
-Button roles can be marked as note or unused in the exported web model. Applying
-a compatible bundle sends the active tuning, active layout, active scale,
-scale-degree color map, and active layout's explicit button map to the live
-runtime. Saving to HexBoard stores all bundle objects in `/layouts.dat` and
-rebuilds the on-device geometry menus.
+In the tuning/layout editor, you can create EDO tunings, equal-step tunings,
+Scala `.scl` imports, vector layouts, scales, custom scale-degree colors, and
+per-button note/color overrides. `Live send` previews compatible edits on the
+connected HexBoard without saving them to flash. `Save to Computer` stores the
+bundle in browser storage, and `Save to HexBoard` writes it to the device so it
+appears in the on-device `Tuning`, `Layout`, and `Scales` browsers.
 
-The synth preset editor includes preset name/folder selection, a wavetable
-folder/name selector, Drive and AHDSR sliders, FX envelope AHDSR controls, mono
-portamento, arpeggiator direction/speed/tempo, and other main synth parameter
-controls. The synth library has a top selector for `Presets` and `Wavetables`.
-Both views have a `Computer Library` for browser-saved/imported items and a
-`HexBoard Library` loaded from the connected device through SysEx.
+In the synth editor, you can manage synth presets and user wavetables. Presets
+can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,
+exported/imported as JSON, opened for audition, erased, and organized into
+folders. Wavetables can be imported from Serum/Vital `.wav` files or HexBoard
+`.hexwav` files, previewed, uploaded, downloaded, exported, renamed, moved, and
+selected for the open preset.
 
-In `Presets`, items can be opened, erased, exported as JSON files, imported
-from JSON files, uploaded to HexBoard, downloaded back to the computer library,
-refreshed from the device, and dragged between library areas or into folder
-targets. Folder buttons filter each library area; clicking the active folder
-again clears the filter and shows all presets in that area.
-
-In `Wavetables`, imported or downloaded tables can be uploaded to HexBoard,
-downloaded to the computer library, exported as `.hexwav` wavetable files,
-renamed, moved to a different folder, erased, or selected with `Use` for the
-open preset. Refreshing the HexBoard wavetable list reads only device metadata;
-full sample data transfers start only when `Download` or `Export` is chosen.
-Those explicit wavetable reads are large chunked transfers, and HexBoard streams
-the sample file during the transfer instead of preloading the whole object first.
-The browser wavetable library is also seeded with the same factory built-in
-tables that ship in firmware flash. `Basic Shapes` and `Classic` are rendered
-from firmware anchor waves, and the other factory tables are rendered from the
-default wavetable WAV sources. These factory tables use `16`-frame bases plus
-the same six fixed mip levels as imported wavetables, so they can be previewed,
-exported, edited, uploaded, or restored through the web editor like normal
-wavetable entries.
-The web app trims preset and wavetable names/folders to the device's fixed text
-fields before upload so long browser-side labels do not break transfers.
-Presets store the wavetable folder/name rather than a private copy of the
-wavetable data, so a shared preset that needs a third-party table will work once
-a wavetable with the same folder and name is installed on the HexBoard.
-
-When the Synth Presets tab opens with a HexBoard input connected, the editor
-requests the current HexBoard synth patch instead of sending one of the browser
-sample presets. Choosing `Open` on a preset loads it onto the HexBoard
-immediately for auditioning. When `Live send` is on, later editor changes are
-sent as apply-only preset-sync messages over the active MIDI transport; they are
-temporary, including name and folder changes, and are not immediate flash
-saves. `Save to Computer` and `Save to HexBoard` create a new preset when the
-folder/name is unique. If the target library already has the same folder/name,
-the app asks before overwriting that preset. Device saves wait for the HexBoard
-to acknowledge the write through the flash commit before the app refreshes the
-`HexBoard Library`.
-
-`Import Wavetable` is in the `Wavetables` library view. It opens an import
-dialog with a file-type selector for Serum/Vital `.wav` tables or HexBoard
-`.hexwav` tables. Serum/Vital imports read the source frames and render the
-table down to the firmware's `16 x 512` base table, then build six fixed
-`512`-sample mip levels with harmonic limits `192`, `96`, `48`, `24`, `12`, and `6`.
-HexBoard `.hexwav` files are 8-bit mono WAV containers that contain either this
-full fixed-mip table or an older base-only table that the app upgrades on
-import.
-The import dialog always stages the selected file into a waveform preview
-before committing it; the frame slider chooses which rendered frame is shown
-and the mip slider chooses which stored level is shown.
-The `Import` button at the bottom saves the previewed table. Serum/Vital
-conversion options include nearest or interpolated frame reduction, per-frame
-or whole-table normalization, a Smooth checkbox that softens each rendered
-frame, and optional dither. `.hexwav` imports preview the stored HexBoard
-sample data, so those conversion controls are disabled for that file type.
-Imported tables are saved by the selected name/folder in the browser wavetable
-library, uploaded to HexBoard, and used by the open preset with `WT Pos = 0`.
-
-The HexBoard stores named wavetable references separately from the byte-oriented
-settings data. Rebooting, loading a preset, or loading a saved profile restores
-the expected folder/name wavetable instead of falling back to `Basic Shapes`.
-
-The app requires a Web MIDI SysEx-capable browser such as Chrome or Edge running
-from `localhost` or HTTPS. Use `Connect HexBoard` in the top bar; the app sends
-the preset-sync hello inquiry, checks the returned protocol and synth preset
-schema, and connects automatically when one compatible HexBoard replies. A
-device selector appears only when multiple compatible HexBoards are connected.
-Live parameter editing can work with output only, but loading the current patch
-and reading the `HexBoard Library` require the matching input port that receives
-HexBoard SysEx replies.
-
-Single synth-parameter edits from the web editor are sent as compact live
-updates. They do not show the `MIDI SysEx Transfer` screen, do not pause
-button/LED/menu work, and are marked for the normal debounced auto-save path
-the same way on-device synth menu edits are. They only restart active synth
-notes for parameters whose matching on-device menu control also restarts notes,
-such as `Synth Mode`.
-
-While a chunked preset-sync SysEx object transfer is active, such as opening or
-saving a full preset or importing a wavetable, the HexBoard display shows
-`MIDI SysEx Transfer` and pauses normal menu/button/LED work while it services
-incoming MIDI. The message clears when the transfer is idle or times out. If the
-OLED screensaver was already active, HexBoard returns to that dimmed/cleared
-state after the transfer instead of waking the menu.
-
-#### Control Wheel
-
-These controls adjust how quickly the command-button wheels move and whether they snap back.
-
-Options include:
-
-- `Vel Wheel`
-- `PB Wheel`
-- `Mod Wheel`
-- `Pitch Bend`: `Springy` or `Sticky`
-- `Mod Wheel`: `Springy` or `Sticky`
-
-Wheel speed choices run from `TooSlow`, `Turtle`, `Slow`, `Medium`, `Fast`,
-`Cheetah`, and `VeryFast` to `Instant`. `Fast` is the previous `Medium` speed;
-`TooSlow` is a new slower option.
-
-The onboard synth smooths pitch-bend wheel changes, phase-warp depth, and
-vibrato depth internally so button-controlled bends and warp changes do not jump
-as hard between command-wheel updates. External MIDI still receives the normal
-pitch-bend and modulation messages.
+Single live synth-parameter edits do not show the `MIDI SysEx Transfer` screen
+and are saved by the normal debounced auto-save path. Larger object transfers,
+such as full preset saves or wavetable imports, show `MIDI SysEx Transfer` on
+the HexBoard and briefly pause normal menu/button/LED work while the transfer is
+serviced.
 
 ### Transpose
 
@@ -805,7 +647,8 @@ HexBoard supports standard `12 EDO` and many non-12-EDO tunings. Depending on th
 
 In `Auto` mode, standard `12 EDO` generally stays in normal MIDI mode, while microtonal setups may switch to MPE automatically.
 
-For DAW, plugin, and hardware synth setup, including pitch-bend range matching and channel-zone examples, see `docs/mpe-microtonal-setup.md`.
+For DAW, plugin, and hardware synth setup, including pitch-bend range matching
+and channel-zone examples, see the [MPE Microtonal Setup Guide](mpe-microtonal-setup.md).
 
 ## Factory Defaults
 
@@ -835,7 +678,7 @@ Important factory defaults include:
 - LED brightness: `Dim`
 - LED limit: `Off`
 - Animation: `Button`
-- Display notes: `On`
+- Display notes: `Label`
 - Auto-save: `On`
 
 ## Updating Firmware

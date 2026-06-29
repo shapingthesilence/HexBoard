@@ -26,9 +26,9 @@ When code changes, check and update the relevant docs:
 
 - `README.md` for project overview, build target, feature highlights, repository layout, or build/flash instructions.
 - `docs/user-manual.md` for user-visible behavior, menu items, defaults, workflows, troubleshooting, or hardware-facing usage.
-- `docs/developer-guide.md` for implementation patterns, settings wiring, architecture, source map, risk areas, or edit recipes.
-- `docs/code-analysis.md` for subsystem-level technical analysis, runtime flow, settings schema/version, verification checklist, or current implementation facts.
+- `docs/developer-guide.md` for current firmware architecture, subsystem ownership, settings wiring, runtime flow, risk areas, edit recipes, or verification checklist updates.
 - `docs/delegated-control.md` for external delegated-control protocol, SysEx behavior, host integration, or delegated runtime gates.
+- `docs/preset-sync-sysex.md` for preset-sync SysEx behavior, object schemas, host integration, or future tuning/layout/preset storage design.
 
 If a code change does not require documentation updates, explicitly say why in the final response.
 
@@ -36,7 +36,7 @@ If a code change does not require documentation updates, explicitly say why in t
 
 - When adding, removing, or reordering `SettingKey` entries, update `factoryDefaults`, `syncSettingsToRuntime()`, menu wiring if needed, and documentation.
 - Bump `CURRENT_SETTINGS_VERSION` when persisted settings layout changes.
-- Document settings-version changes in `docs/developer-guide.md` and `docs/code-analysis.md`.
+- Document settings-version changes in `docs/developer-guide.md`.
 
 ## Verification
 
