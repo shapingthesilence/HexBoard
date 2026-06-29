@@ -1,0 +1,241 @@
+HEXBOARD SEQUENCER SCREEN AND OVERLAY REQUIREMENTS
+
+ID: SEQ-UI-001
+Title: Edit Overlay
+Status: Active
+Area: UI
+Priority: High
+
+Requirement:
+Selecting a step shall show an edit overlay for that step.
+
+Details:
+- The header shall use the form Edit #NN.
+- The overlay shall show a compact info line in the form L ...% V ... P ...%.
+- The overlay shall show the selected step notes in ascending order across one
+  or two OLED note lines.
+- Steps whose note labels fit on one line shall not reserve a blank second line.
+- Step note labels shall follow the current tuning naming style.
+- If the selected step has Tie enabled, the note area shall show `T` instead of
+  note labels.
+
+
+ID: SEQ-UI-002
+Title: Selected Step Blink
+Status: Active
+Area: UI
+Priority: High
+
+Requirement:
+The selected step shall blink to show selection.
+
+Details:
+- Blink timing is 0.6 seconds on and 0.2 seconds off.
+- Empty selected steps blink visibly instead of staying dark.
+- A selected empty step uses the highest step-light level while blinking.
+
+
+ID: SEQ-UI-003
+Title: Selected Step Brightness
+Status: Active
+Area: UI
+Priority: Medium
+
+Requirement:
+During the visible phase of the selected-step blink, a note step shall use a
+brighter selected-note color that preserves the note's hue better than the play
+highlight tint.
+
+Details:
+- Selected note steps shall use the high level in the sequencer step-light
+  brightness ladder.
+- An accented selected note step shall keep the same hue and use that high
+  brightness level.
+
+
+ID: SEQ-UI-004
+Title: Step Tools Overlay
+Status: Active
+Area: UI
+Priority: High
+
+Requirement:
+The step tools overlay shall show the selected step number, the compact length
+length, velocity, and probability line, the selected step notes across one or
+two OLED note lines, and the
+currently available tool labels.
+
+Details:
+- Step note labels shall follow the current tuning naming style.
+- Steps whose note labels fit on one line shall not reserve a blank second line.
+- If the selected step has Tie enabled, the note area shall show `T` instead of
+  note labels.
+- While this overlay is open, the normal sequencer step LEDs shall remain
+  visible.
+- The tool buttons shall move to lower rows so the top 4 step rows remain free
+  for step selection.
+- Tool selection keys shall be lit blue at the sequencer medium light level.
+
+
+ID: SEQ-UI-005
+Title: Exact Length Overlay
+Status: Active
+Area: UI
+Priority: High
+
+Requirement:
+The exact length overlay shall show the selected step number, the current value,
+a separate new-entry value with a blinking underscore cursor, the keypad
+layout, and a save instruction.
+
+Details:
+- The overlay header shall use the form `Exact Length #NN`.
+- The current-value row and new-entry row shall be vertically compact with no
+  blank spacer line between them.
+- The top 4 sequencer step rows shall remain visible while the exact-length
+  keypad is open.
+- The exact-length keypad shall move to the lower board area.
+- Exact-length keypad keys shall be lit blue at the sequencer medium light
+  level.
+- Backspace is on the eighth-row first key.
+- Cancel uses the same lower cancel area as the tools picker.
+
+
+ID: SEQ-UI-006
+Title: Exact Velocity Overlay
+Status: Active
+Area: UI
+Priority: High
+
+Requirement:
+The exact velocity overlay shall show the selected step number, the compact
+length, velocity, and probability line, the selected step notes across one or
+two OLED note lines, the large current velocity value, and the short encoder
+instructions.
+
+Details:
+- Exact velocity editing is encoder-driven and does not require dedicated lit
+  button hints.
+- While this overlay is open, the normal sequencer step LEDs and function LEDs
+  shall remain visible.
+- While this overlay is open, tapping another step pad shall switch the
+  velocity editor to that step without saving pending changes from the previous
+  step.
+- While this overlay is open, lower note-entry keys shall not edit notes.
+- The helper text shall instruct the user to press the encoder to save.
+- Steps whose note labels fit on one line shall not reserve a blank second line.
+- If the selected step has Tie enabled, the note area shall show `T` instead of
+  note labels.
+
+
+ID: SEQ-UI-012
+Title: Exact Probability Overlay
+Status: Active
+Area: UI
+Priority: High
+
+Requirement:
+The exact probability overlay shall show the selected step number, the compact
+length, velocity, and probability line, the selected step notes across one or
+two OLED note lines, the large current probability value, and the short
+encoder instructions.
+
+Details:
+- Exact probability editing is encoder-driven and does not require dedicated
+  lit button hints.
+- While this overlay is open, the normal sequencer step LEDs and function LEDs
+  shall remain visible.
+- While this overlay is open, tapping another step pad shall switch the
+  probability editor to that step without saving pending changes from the
+  previous step.
+- While this overlay is open, lower note-entry keys shall not edit notes.
+- The helper text shall instruct the user to press the encoder to save.
+- Steps whose note labels fit on one line shall not reserve a blank second line.
+- If the selected step has Tie enabled, the note area shall show `T` instead of
+  note labels.
+
+
+ID: SEQ-UI-007
+Title: Overview Overlay
+Status: Active
+Area: UI
+Priority: High
+
+Requirement:
+The overview overlay shall pack in as many steps as fit on screen and page
+through the 32-step pattern.
+
+Details:
+- Empty steps show underscores.
+- Note labels follow the current tuning naming style.
+- Steps that fit on one line shall not reserve a blank second line.
+- Steps may use a second indented line when needed so all stored notes remain
+  visible.
+- A tied step shall show `T` by itself with no appended note labels.
+
+
+ID: SEQ-UI-008
+Title: Naming Overlay
+Status: Active
+Area: UI
+Priority: High
+
+Requirement:
+Naming mode shall show the current name line, a blinking cursor, and the
+on-screen character layout.
+
+Details:
+- Naming input keys shall be lit blue at the sequencer medium light level.
+- Non-input keys shall stay dark while naming is active.
+
+
+ID: SEQ-UI-009
+Title: Performance Monitor Overlay
+Status: Active
+Area: UI
+Priority: High
+
+Requirement:
+The performance monitor overlay shall show AudioEng, Mem, FS, MIDI Q, Drop,
+and Late while the Play/Stop key is held.
+
+Details:
+- The performance monitor closes when the Play/Stop key is released.
+
+
+ID: SEQ-UI-010
+Title: Overlay Wake Behavior
+Status: Active
+Area: UI
+Priority: Medium
+
+Requirement:
+Active sequencer overlays shall keep the display awake while they are in use.
+
+
+ID: SEQ-UI-011
+Title: Status Messages
+Status: Active
+Area: UI
+Priority: Medium
+
+Requirement:
+The sequencer shall use temporary status overlays for actions such as save,
+revert, erase, and other short workflow messages.
+
+
+ID: SEQ-UI-013
+Title: Sequencer Now Playing Source
+Status: Active
+Area: UI
+Priority: Medium
+
+Requirement:
+When the shared DisplayNotes setting is enabled, the board's Now Playing
+overlay shall work in Sequencer mode only for manual lower-keyboard playing
+when no step is selected.
+
+Details:
+- Step editing shall not drive the Now Playing overlay.
+- Sequencer playback notes shall not drive the Now Playing overlay.
+- The sequencer shall use the same note naming style as the keyboard overlay.

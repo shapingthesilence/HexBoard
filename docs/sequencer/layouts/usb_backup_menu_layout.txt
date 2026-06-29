@@ -1,0 +1,49 @@
+USB BACKUP MENU LAYOUT
+
+Title:
+
+  USB Backup
+
+Menu order:
+
+  USB Backup Off
+  Host tool idle
+  Start Session
+
+Active session example:
+
+  Session Active
+  Host connected
+  Stop Session
+
+Leave-page confirm example:
+
+  Leaving this page
+  will close
+  USB Backup.
+  Continue?
+  Yes, Leave
+  No, Stay
+
+Stop confirm example:
+
+  Stopping this
+  session ends
+  any transfer.
+  Continue?
+  Yes, Stop
+  No, Stay
+
+Notes:
+
+- This page lives under File Management.
+- The first two rows are read-only status lines fed by the USB backup service.
+- Start Session is shown when backup mode is inactive.
+- Stop Session is shown when backup mode is active.
+- Leaving the page while a session is active opens a confirmation page before
+  the session is closed.
+- Stop Session opens a confirmation page before the session is closed.
+- Starting a session stops sequencer transport and prepares LittleFS for
+  host-side backup or restore actions over USB serial.
+- While the session is active, the hex-button LEDs are blank and the encoder is
+  the intended control for the menu.
