@@ -322,6 +322,7 @@ void save_settings() {
   f.write(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
   f.close();
   saveCurrentSynthWavetableReference();
+  saveCurrentSynthPresetReference();
   sendToLog("Settings saved.");
 }
 
