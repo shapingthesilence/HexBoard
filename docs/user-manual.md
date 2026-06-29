@@ -124,13 +124,12 @@ saved, the preset name is shown with a leading `*`.
 Rows that open virtual browsers, including tuning/layout/scale, synth preset,
 and wavetable browsers, use the same right-side arrow cue as folder/submenu
 rows. Inside those browsers, folders keep that right-side arrow and selectable
-actions or entries use the action arrow. The currently loaded row swaps that
-left action arrow for a diamond, keeping the full label width available. When
-the selector rests on one of those launcher rows, long current names begin
-scrolling after `1.5` seconds and advance one character every `250` ms. The
-final scroll position pauses for `1` second before the name returns to the
-beginning and waits again. Scrolling pauses while the played-note badge or
-full-screen played-note overlay is shown.
+actions or entries use the action arrow. The currently loaded row uses a
+diamond in the left action-icon slot. When the selector rests on one of those
+launcher rows, long current names begin scrolling after `1.5` seconds and
+advance one character every `250` ms. The final scroll position pauses for
+`1` second before the name returns to the beginning and waits again. Scrolling
+pauses while the played-note badge or full-screen played-note overlay is shown.
 
 ### Tuning
 

@@ -539,10 +539,10 @@ badge in one OLED frame instead of repainting the badge afterward.
 `VirtualListMenuProvider` can optionally expose a current selectable row with
 `isCurrent` and an initial provider-index cursor target with
 `getInitialSelection`; the renderer applies the current marker only to button
-rows by swapping the left action-arrow sprite for a diamond, so labels keep
-their full row width and Back, folder links, and labels keep their existing
-visuals. The geometry, synth preset load, and synth wavetable load browsers use
-these hooks to mark and focus their active row when it is visible.
+rows by drawing a diamond in the left action-icon slot. Back, folder links, and
+labels keep their existing visuals. The geometry, synth preset load, and synth
+wavetable load browsers use these hooks to mark and focus their active row when
+it is visible.
 The main `Key` selector is a mutable GEM select backed by `current.tuning()`;
 call `refreshMenuChoicesForCurrentTuning()` after runtime tuning changes so
 built-in and user-geometry `keyChoices` labels are reflected on-device.

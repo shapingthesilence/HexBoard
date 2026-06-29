@@ -504,8 +504,8 @@ and `Number` modes. It defaults to `Label`. The overlay implementation lives in
 `src/firmware/menu/PlayedNotesOverlay.cpp`; menu item wiring remains in
 `MenuAndDisplay.cpp`. Synth preset, wavetable, and geometry browsers use the
 shared `VirtualListMenu` renderer instead of allocating one GEM page/item tree
-per library entry; current button rows replace the left action arrow with a
-diamond sprite instead of consuming label characters. When enabled, MIDI note-on updates mark a small OLED display
+per library entry; current button rows draw a diamond sprite in the left
+action-icon slot. When enabled, MIDI note-on updates mark a small OLED display
 region dirty, and note-on can temporarily wake the display from screensaver.
 Sequencer lower-grid audition notes use a narrow source API from
 `SequencerManagedNotes.cpp` so the same overlay can render them when Sequencer
