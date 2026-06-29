@@ -124,11 +124,13 @@ saved, the preset name is shown with a leading `*`.
 Rows that open virtual browsers, including tuning/layout/scale, synth preset,
 and wavetable browsers, use the same right-side arrow cue as folder/submenu
 rows. Inside those browsers, folders keep that right-side arrow and selectable
-actions or entries use the action arrow. When the selector rests on one of
-those launcher rows, long current names begin scrolling after `1.5` seconds and
-advance one character every `250` ms. The final scroll position pauses for
-`1` second before the name returns to the beginning and waits again. Scrolling
-pauses while the played-note badge or full-screen played-note overlay is shown.
+actions or entries use the action arrow. The currently loaded row swaps that
+left action arrow for a diamond, keeping the full label width available. When
+the selector rests on one of those launcher rows, long current names begin
+scrolling after `1.5` seconds and advance one character every `250` ms. The
+final scroll position pauses for `1` second before the name returns to the
+beginning and waits again. Scrolling pauses while the played-note badge or
+full-screen played-note overlay is shown.
 
 ### Tuning
 
@@ -136,10 +138,10 @@ Use this section to choose the tuning or geometry bundle the whole board runs
 on. The page is a GEM-style virtual list backed by geometry objects: factory
 tunings appear at the root, and saved user tunings can be organized into
 folders. Scrolling follows normal GEM list behavior, including page jumps at
-the 11 visible-row boundary. The active tuning is marked with a leading `*`
-when it appears in the list. Selecting a tuning also loads the first linked
-layout, scale, color map, and matching explicit button map so the board is
-immediately playable.
+the 11 visible-row boundary. The active tuning shows a diamond in the left
+action-icon slot when it appears in the list. Selecting a tuning also loads the
+first linked layout, scale, color map, and matching explicit button map so the
+board is immediately playable.
 
 Dynamic JI controls live under `Editor`.
 
@@ -163,8 +165,8 @@ Changing tuning also resets:
 
 Use this page to choose how pitch moves across the hex grid. After a tuning is
 selected, factory and saved layouts linked to that tuning appear in a
-GEM-style virtual list as flat entries. The active layout is marked with a
-leading `*` when it appears in the list.
+GEM-style virtual list as flat entries. The active layout shows a diamond in
+the left action-icon slot when it appears in the list.
 
 Choosing a layout remaps button pitches, loads that layout's matching explicit
 button map when one exists, and reloads that layout's default device
@@ -176,8 +178,8 @@ Layout rotation, flip, and display rotation controls live under `Editor`.
 
 Use this page to choose the active scale. After a tuning is selected, factory
 and saved scales linked to that tuning appear in a GEM-style virtual list as
-flat entries. The active scale is marked with a leading `*` when it appears in
-the list.
+flat entries. The active scale shows a diamond in the left action-icon slot
+when it appears in the list.
 
 Choosing a scale updates scale membership while keeping the current user tuning,
 layout, color map, and button map active. `Key` and `Scale Lock` are on the main
@@ -311,8 +313,8 @@ which held notes were pressed, not the physical button numbers.
 
 `WT:...` shows the currently loaded wavetable and opens a virtual load list.
 Built-in tables appear at the root, and user-imported wavetables can be
-organized into folders. The active wavetable is marked with a leading `*` when
-it appears in the list.
+organized into folders. The active wavetable shows a diamond in the left
+action-icon slot when it appears in the list.
 Built-in compatibility tables include:
 
 - `Basic Shapes`: sine, triangle, saw, and square anchors
@@ -419,9 +421,9 @@ presets.
 returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
 wavetable reference, which can still be auto-saved by the normal settings
-system. The currently loaded catalog preset is marked with a leading `*` when
-it appears in the load list; `Blank`, `New Preset`, and the unselected
-`Current` state are not marked.
+system. The currently loaded catalog preset shows a diamond in the left
+action-icon slot when it appears in the load list; `Blank`, `New Preset`, and
+the unselected `Current` state are not marked.
 
 Short `Attack` feels immediate. Long `Attack` fades in. `Hold` keeps the initial
 peak longer before decay. Low `Sustain` makes a note fade away even while you

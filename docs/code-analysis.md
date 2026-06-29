@@ -504,7 +504,8 @@ and `Number` modes. It defaults to `Label`. The overlay implementation lives in
 `src/firmware/menu/PlayedNotesOverlay.cpp`; menu item wiring remains in
 `MenuAndDisplay.cpp`. Synth preset, wavetable, and geometry browsers use the
 shared `VirtualListMenu` renderer instead of allocating one GEM page/item tree
-per library entry. When enabled, MIDI note-on updates mark a small OLED display
+per library entry; current button rows replace the left action arrow with a
+diamond sprite instead of consuming label characters. When enabled, MIDI note-on updates mark a small OLED display
 region dirty, and note-on can temporarily wake the display from screensaver.
 Sequencer lower-grid audition notes use a narrow source API from
 `SequencerManagedNotes.cpp` so the same overlay can render them when Sequencer
@@ -796,7 +797,7 @@ restart their release stage.
 
 `SynthAttackEffect` is now deprecated. The byte remains in the persisted settings layout so version `8` files can migrate by prefix copy, but the runtime and menu ignore it.
 
-Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `10`, CRC32, and a counted catalog capped at `128` entries. The flash records still contain the favorite flag, stable 16-byte object id, name, folder path, wavetable name/folder path, and sound-focused synth setting bytes, but RAM keeps only a fixed metadata index plus the currently loaded full preset record. Loading, saving, preset-sync reads, modified-state checks, and current-row lookup for the on-device load menu read or stream the full record on demand. Factory defaults copy `Soft String Pad` and `Bright Mono Lead` into ordinary editable preset slots, so they can be changed or erased and restored later by Reset Defaults or the web editor library. A preset copies sound-focused synth settings and the wavetable reference into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app full-preset preview applies a transferred synth preset to runtime and marks settings dirty for debounced autosave, compact live synth parameter edits also mark settings dirty, and save requests update `/synth_presets.dat`. Synth preset load and full-preset preview call `syncSynthSettingsToRuntime()` instead of the full settings sync, so tuning/layout/scale/LED assignment rebuilds are not rerun for synth patch changes. The on-device save/load menus use `VirtualListMenu` as a folder browser with `New Preset` or `Blank` as the first action row in the active folder; the load menu marks and focuses the current catalog preset only while a preset is tracked. The web app also presents the foldered library. Older preset files are not migrated in this 2.0 development format.
+Synth presets are stored outside `/settings.dat` in `/synth_presets.dat` with magic `SYP`, version `10`, CRC32, and a counted catalog capped at `128` entries. The flash records still contain the favorite flag, stable 16-byte object id, name, folder path, wavetable name/folder path, and sound-focused synth setting bytes, but RAM keeps only a fixed metadata index plus the currently loaded full preset record. Loading, saving, preset-sync reads, modified-state checks, and current-row lookup for the on-device load menu read or stream the full record on demand. Factory defaults copy `Soft String Pad` and `Bright Mono Lead` into ordinary editable preset slots, so they can be changed or erased and restored later by Reset Defaults or the web editor library. A preset copies sound-focused synth settings and the wavetable reference into the active runtime/settings profile when loaded from the on-device menu, marks settings dirty for normal auto-save, and deliberately does not persist which preset was loaded. Web-app full-preset preview applies a transferred synth preset to runtime and marks settings dirty for debounced autosave, compact live synth parameter edits also mark settings dirty, and save requests update `/synth_presets.dat`. Synth preset load and full-preset preview call `syncSynthSettingsToRuntime()` instead of the full settings sync, so tuning/layout/scale/LED assignment rebuilds are not rerun for synth patch changes. The on-device save/load menus use `VirtualListMenu` as a folder browser with `New Preset` or `Blank` as the first action row in the active folder; the load menu marks and focuses the current catalog preset with a diamond sprite only while a preset is tracked. The web app also presents the foldered library. Older preset files are not migrated in this 2.0 development format.
 
 User geometry objects are stored in `/layouts.dat` with magic `LYT`, version
 `2`, CRC32, and a counted raw-body catalog capped at `64` entries. The catalog
@@ -869,7 +870,8 @@ loaded. The legacy
 `/user_wavetable.dat` `UWT` file is still loadable only through the compatibility
 reference `/User/UserTbl`. The on-device wavetable loader uses `VirtualListMenu`
 with built-in tables at the root and folder navigation for user tables, and it
-marks/focuses the active row when the current wavetable is visible.
+marks/focuses the active row with a diamond sprite when the current wavetable
+is visible.
 The web app treats wavetable refresh as metadata-only by using object-list
 records; full wavetable reads are deferred to explicit `Download`/`Export`
 actions. Metadata-only `SynthWavetable` writes can update a user wavetable's

@@ -26,6 +26,10 @@ static const unsigned char arrowButtonBits[] U8X8_PROGMEM = {
   0xc0, 0xc3, 0xc5, 0xc9, 0xc5, 0xc3, 0xc0, 0xc0
 };
 
+static const unsigned char currentDiamondBits[] U8X8_PROGMEM = {
+  0xc0, 0xc4, 0xce, 0xdf, 0xce, 0xc4, 0xc0, 0xc0
+};
+
 VirtualListMenuProvider activeProvider;
 bool active = false;
 uint16_t currentItemIndex = VIRTUAL_LIST_BACK_INDEX;
@@ -158,6 +162,7 @@ void drawRows() {
       u8g2.drawXBMP(5, yDraw, VIRTUAL_LIST_SPRITE_WIDTH, VIRTUAL_LIST_SPRITE_HEIGHT, arrowLeftBits);
     } else {
       rowLabel(itemIndex, label, sizeof(label));
+      bool currentRow = rowIsCurrent(itemIndex);
       if (providerItemCount() == 0) {
         u8g2.setCursor(5, yText);
       } else {
@@ -177,16 +182,15 @@ void drawRows() {
           case VirtualListMenuRowType::Button:
           default:
             u8g2.setCursor(11, yText);
-            u8g2.drawXBMP(5, yDraw, VIRTUAL_LIST_SPRITE_WIDTH, VIRTUAL_LIST_SPRITE_HEIGHT, arrowButtonBits);
+            u8g2.drawXBMP(5,
+                          yDraw,
+                          VIRTUAL_LIST_SPRITE_WIDTH,
+                          VIRTUAL_LIST_SPRITE_HEIGHT,
+                          currentRow ? currentDiamondBits : arrowButtonBits);
             break;
         }
       }
-      uint8_t maxChars = menuItemFullLength();
-      if (rowIsCurrent(itemIndex) && maxChars > 2) {
-        u8g2.print("* ");
-        maxChars = static_cast<uint8_t>(maxChars - 2);
-      }
-      printMenuString(label, maxChars);
+      printMenuString(label, menuItemFullLength());
     }
 
     y = static_cast<uint8_t>(y + VIRTUAL_LIST_ITEM_HEIGHT);
