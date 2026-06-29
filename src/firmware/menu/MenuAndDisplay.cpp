@@ -285,6 +285,7 @@ char mainTuningMenuLabel[40] = "Tuning";
 char mainLayoutMenuLabel[40] = "Layout";
 char mainScaleMenuLabel[40] = "Scale";
 char mainSynthPresetMenuLabel[48] = "Synth:Current";
+char synthPresetMenuLabel[48] = "Preset:Current";
 
 GEMPage menuPageMain("HexBoard MIDI Controller");
 GEMPage menuPageTuning("Tuning", menuPageMain);
@@ -301,6 +302,8 @@ GEMPage menuPageSynth("Synth", menuPageEditor);
 GEMItem menuGotoSynth("Synth", menuPageSynth);
 GEMPage menuPageSynthWavetableLoad("Wavetables", menuPageSynth);
 GEMItem menuGotoSynthWavetableLoad(currentSynthWavetableMenuLabel, menuPageSynthWavetableLoad);
+GEMPage menuPageSynthAmpEnv("Amp Env", menuPageSynth);
+GEMItem menuGotoSynthAmpEnv("Amp Env", menuPageSynthAmpEnv);
 GEMPage menuPageSynthLfo("LFO", menuPageSynth);
 GEMItem menuGotoSynthLfo("LFO", menuPageSynthLfo);
 GEMPage menuPageSynthFx1("FX Env 1", menuPageSynth);
@@ -312,7 +315,7 @@ GEMItem menuGotoSynthPresetSave("Save Preset", menuPageSynthPresetSave);
 GEMPage menuPageMainSynthPresetLoad("Load Preset", menuPageMain);
 GEMItem menuGotoMainSynthPresetLoad(mainSynthPresetMenuLabel, menuPageMainSynthPresetLoad);
 GEMPage menuPageSynthPresetLoad("Load Preset", menuPageSynth);
-GEMItem menuGotoSynthPresetLoad(mainSynthPresetMenuLabel, menuPageSynthPresetLoad);
+GEMItem menuGotoSynthPresetLoad(synthPresetMenuLabel, menuPageSynthPresetLoad);
 GEMPage menuPageOptions("Settings", menuPageMain);
 GEMItem menuGotoOptions("Settings", menuPageOptions);
 GEMPage menuPageAdvanced("Advanced", menuPageOptions);
@@ -1981,31 +1984,31 @@ void previewPortamentoTime(GEMPreviewCallbackData previewData) {
   updateSynthPortamentoSettings();
 }
 
-GEMItem menuItemEnvelopeAttack("Amp Atk", envelopeAttackIndex, selectEnvelopeAttack, universalSaveCallback,
+GEMItem menuItemEnvelopeAttack("Attack", envelopeAttackIndex, selectEnvelopeAttack, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoEnvelopeAttack));
 void previewEnvelopeAttack(GEMPreviewCallbackData previewData) {
   envelopeAttackIndex = previewData.previewValByte;
   updateEnvelopeParamsFromSettings();
 }
-GEMItem menuItemEnvelopeHold("Amp Hold", envelopeHoldIndex, selectEnvelopeHold, universalSaveCallback,
+GEMItem menuItemEnvelopeHold("Hold", envelopeHoldIndex, selectEnvelopeHold, universalSaveCallback,
                              reinterpret_cast<void*>(&callbackInfoEnvelopeHold));
 void previewEnvelopeHold(GEMPreviewCallbackData previewData) {
   envelopeHoldIndex = previewData.previewValByte;
   updateEnvelopeParamsFromSettings();
 }
-GEMItem menuItemEnvelopeDecay("Amp Dec", envelopeDecayIndex, selectEnvelopeDecay, universalSaveCallback,
+GEMItem menuItemEnvelopeDecay("Decay", envelopeDecayIndex, selectEnvelopeDecay, universalSaveCallback,
                               reinterpret_cast<void*>(&callbackInfoEnvelopeDecay));
 void previewEnvelopeDecay(GEMPreviewCallbackData previewData) {
   envelopeDecayIndex = previewData.previewValByte;
   updateEnvelopeParamsFromSettings();
 }
-GEMItem menuItemEnvelopeSustain("Amp Sus", envelopeSustainLevel, selectEnvelopeSustain, universalSaveCallback,
+GEMItem menuItemEnvelopeSustain("Sustain", envelopeSustainLevel, selectEnvelopeSustain, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoEnvelopeSustain));
 void previewEnvelopeSustain(GEMPreviewCallbackData previewData) {
   envelopeSustainLevel = previewData.previewValByte;
   updateEnvelopeParamsFromSettings();
 }
-GEMItem menuItemEnvelopeRelease("Amp Rel", envelopeReleaseIndex, selectEnvelopeRelease, universalSaveCallback,
+GEMItem menuItemEnvelopeRelease("Release", envelopeReleaseIndex, selectEnvelopeRelease, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoEnvelopeRelease));
 void previewEnvelopeRelease(GEMPreviewCallbackData previewData) {
   envelopeReleaseIndex = previewData.previewValByte;
@@ -2403,6 +2406,11 @@ void updateMainMenuDynamicLabels() {
            "Synth:%s%s",
            currentSynthPresetRuntimeModified() ? "*" : "",
            currentSynthPresetDisplayName());
+  snprintf(synthPresetMenuLabel,
+           sizeof(synthPresetMenuLabel),
+           "Preset:%s%s",
+           currentSynthPresetRuntimeModified() ? "*" : "",
+           currentSynthPresetDisplayName());
 }
 
 void restoreVirtualListLauncherLabels() {
@@ -2435,10 +2443,15 @@ bool virtualListLauncherLabelParts(GEMItem* item,
     labelLength = sizeof(mainScaleMenuLabel);
     prefix = "Scale:";
     value = current.scale().name ? current.scale().name : "Current";
-  } else if (item == &menuGotoMainSynthPresetLoad || item == &menuGotoSynthPresetLoad) {
+  } else if (item == &menuGotoMainSynthPresetLoad) {
     label = mainSynthPresetMenuLabel;
     labelLength = sizeof(mainSynthPresetMenuLabel);
     prefix = currentSynthPresetRuntimeModified() ? "Synth:*" : "Synth:";
+    value = currentSynthPresetDisplayName();
+  } else if (item == &menuGotoSynthPresetLoad) {
+    label = synthPresetMenuLabel;
+    labelLength = sizeof(synthPresetMenuLabel);
+    prefix = currentSynthPresetRuntimeModified() ? "Preset:*" : "Preset:";
     value = currentSynthPresetDisplayName();
   } else if (item == &menuGotoSynthWavetableLoad) {
     label = currentSynthWavetableMenuLabel;
@@ -2840,14 +2853,12 @@ void setupSynthMenuPage() {
   menuPageSynth.addMenuItem(menuGotoSynthWavetableLoad);
   addPreviewMenuItem(menuPageSynth, menuItemSynthWavetablePosition, previewSynthWavetablePosition);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);
-  addPreviewMenuItem(menuPageSynth, menuItemSynthModTarget, previewSynthModTarget);
-  addPreviewMenuItem(menuPageSynth, menuItemSynthModAmount, previewSynthModAmount);
-  addPreviewMenuItem(menuPageSynth, menuItemSynthVibratoSpeed, previewSynthVibratoSpeed);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeAttack, previewEnvelopeAttack);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeHold, previewEnvelopeHold);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeDecay, previewEnvelopeDecay);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeSustain, previewEnvelopeSustain);
-  addPreviewMenuItem(menuPageSynth, menuItemEnvelopeRelease, previewEnvelopeRelease);
+  menuPageSynth.addMenuItem(menuGotoSynthAmpEnv);
+  addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeAttack, previewEnvelopeAttack);
+  addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeHold, previewEnvelopeHold);
+  addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeDecay, previewEnvelopeDecay);
+  addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeSustain, previewEnvelopeSustain);
+  addPreviewMenuItem(menuPageSynthAmpEnv, menuItemEnvelopeRelease, previewEnvelopeRelease);
   menuPageSynth.addMenuItem(menuGotoSynthFx1);
   addPreviewMenuItem(menuPageSynthFx1, menuItemEffectEnvelopeTarget, previewEffectEnvelopeTarget);
   addPreviewMenuItem(menuPageSynthFx1, menuItemEffectEnvelopeAmount, previewEffectEnvelopeAmount);
@@ -2869,6 +2880,9 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoAmount, previewSynthLfoAmount);
   addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoWave, previewSynthLfoWave);
   addPreviewMenuItem(menuPageSynthLfo, menuItemSynthLfoSpeed, previewSynthLfoSpeed);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthModTarget, previewSynthModTarget);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthModAmount, previewSynthModAmount);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthVibratoSpeed, previewSynthVibratoSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemSynthBPM, previewSynthBPM);
   addPreviewMenuItem(menuPageSynth, menuItemMetronomeMode, previewMetronomeMode);
   addPreviewMenuItem(menuPageSynth, menuItemMetronomeSignature, previewMetronomeSignature);

@@ -250,21 +250,17 @@ Options include:
 - `WT:...` current-wavetable load menu
 - `WT Pos`
 - `Drive`
-- `Wheel FX`
-- `Wheel Amt`
-- `Vib Speed`
-- `Amp Atk`
-- `Amp Hold`
-- `Amp Dec`
-- `Amp Sus`
-- `Amp Rel`
+- `Amp Env`
 - `FX Env 1`
 - `FX Env 2`
 - `LFO`
+- `Wheel FX`
+- `Wheel Amt`
+- `Vib Speed`
 - `Tempo`
 - `Metronome`
 - `Time Sig`
-- `Load Preset`
+- `Preset:<current preset>`
 - `Save Preset`
 
 On hardware `V1.1`, the onboard synth plays through the piezo buzzer when the
@@ -347,41 +343,11 @@ backward through the wavetable.
 - `Edge`: obvious bite and clipping
 - `Dirty`: stronger saturation for rougher synth tones
 
-`Wheel FX` chooses how the mod wheel affects the onboard synth:
-
-- `Vibrato`: adds pitch vibrato to the active synth voices
-- `Pitch`: bends pitch up with the wheel or positive FX amounts, and down with negative FX amounts. Full-depth pitch modulation spans about `+/-24` semitones.
-- `WT Pos`: scans the selected wavetable forward or backward from the base `WT Pos`
-- `FoldWrp`: applies the original folded phase-warp color movement across the onboard waveforms
-- `DutyWrp`: shifts the two halves of the oscillator cycle in opposite directions for a sharper duty-style phase warp
-- `PolyWrp`: applies a smoother polynomial phase warp that bends most strongly inside each half-cycle
-
-External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed` sets
-the onboard vibrato LFO speed from `1 Hz` to `12 Hz` for wheel or envelope
-vibrato. `Wheel Amt` scales how strongly the mod wheel affects its target.
-
-`LFO` opens the synth LFO page. `Target` uses the same targets as `Wheel FX`;
-`Amount` is bipolar from `-100%` through `Off` to `+100%`; `Wave` selects
-`Sine`, `Triangl`, `Saw`, or `Square`; and `Speed` ranges from `0.05 Hz` to
-`20 Hz`, with extra slow choices below `1 Hz` for gradual wavetable or phase-warp
-movement.
-
-`Tempo` is shared by the arpeggiator and metronome. `Metronome` has four modes:
-
-- `Off`: no metronome
-- `Beep`: a short metronome beep on each beat through the active synth output
-- `Bright`: strongly dims the LED frame between beats and returns toward the selected brightness on each beat
-- `Side Btns`: the seven side command buttons flash green on the first beat and red on the other beats
-
-`Time Sig` sets the metronome accent cycle and beat length. The first beat of
-each measure is accented.
-
-`Amp Atk`, `Amp Hold`, `Amp Dec`, `Amp Sus`, and `Amp Rel` shape the loudness of
-each note. These five controls are often called the amp envelope.
-Envelope time choices run from `0 ms` to `4 s`, with extra points in the short
-and medium ranges for finer synth shaping. The longest envelope choices use
-slightly coarser internal timing to keep the synth responsive under heavy
-polyphony.
+`Amp Env` opens the amp-envelope page. `Attack`, `Hold`, `Decay`, `Sustain`,
+and `Release` shape the loudness of each note. Envelope time choices run from
+`0 ms` to `4 s`, with extra points in the short and medium ranges for finer
+synth shaping. The longest envelope choices use slightly coarser internal
+timing to keep the synth responsive under heavy polyphony.
 
 - `Attack`: how quickly the sound fades in after pressing a note
 - `Hold`: how long the envelope stays at full level before decaying
@@ -391,6 +357,12 @@ polyphony.
 
 `FX Env 1` and `FX Env 2` open separate modulation-envelope pages. Each page has
 `Target`, `Amount`, `Attack`, `Hold`, `Decay`, `Sustain`, and `Release`.
+
+`LFO` opens the synth LFO page. `Target` uses the same targets as `Wheel FX`;
+`Amount` is bipolar from `-100%` through `Off` to `+100%`; `Wave` selects
+`Sine`, `Triangl`, `Saw`, or `Square`; and `Speed` ranges from `0.05 Hz` to
+`20 Hz`, with extra slow choices below `1 Hz` for gradual wavetable or phase-warp
+movement.
 
 `Target` chooses `Vibrato`, `Pitch`, `WT Pos`, `FoldWrp`, `DutyWrp`, or
 `PolyWrp`. The wheel, both FX envelopes, and the LFO can choose the same target;
@@ -405,19 +377,42 @@ return smoothly to their base values as the FX envelope falls back to zero. Nega
 down as the envelope level rises. The default FX envelope times are `0 ms`, and
 default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 
-The top-level `Synth:<preset>` item and the `Load Preset` item inside
-`Editor` -> `Synth` both open synth preset load lists. `Save Preset` and
-`Load Preset` use synth-only preset libraries with room for
-up to `128` device presets. Presets are stored separately from the main settings
-file as named, foldered synth sounds and do not remember which preset was last
-loaded. On the device, presets appear in a virtual folder browser; `New Preset`
-saves into the currently open folder. Factory presets are copied into normal
+`Wheel FX` chooses how the mod wheel affects the onboard synth:
+
+- `Vibrato`: adds pitch vibrato to the active synth voices
+- `Pitch`: bends pitch up with the wheel or positive FX amounts, and down with negative FX amounts. Full-depth pitch modulation spans about `+/-24` semitones.
+- `WT Pos`: scans the selected wavetable forward or backward from the base `WT Pos`
+- `FoldWrp`: applies the original folded phase-warp color movement across the onboard waveforms
+- `DutyWrp`: shifts the two halves of the oscillator cycle in opposite directions for a sharper duty-style phase warp
+- `PolyWrp`: applies a smoother polynomial phase warp that bends most strongly inside each half-cycle
+
+External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed` sets
+the onboard vibrato LFO speed from `1 Hz` to `12 Hz` for wheel or envelope
+vibrato. `Wheel Amt` scales how strongly the mod wheel affects its target.
+
+`Tempo` is shared by the arpeggiator and metronome. `Metronome` has four modes:
+
+- `Off`: no metronome
+- `Beep`: a short metronome beep on each beat through the active synth output
+- `Bright`: strongly dims the LED frame between beats and returns toward the selected brightness on each beat
+- `Side Btns`: the seven side command buttons flash green on the first beat and red on the other beats
+
+`Time Sig` sets the metronome accent cycle and beat length. The first beat of
+each measure is accented.
+
+The top-level `Synth:<preset>` item and the `Preset:<preset>` item inside
+`Editor` -> `Synth` both open synth preset load lists. `Save Preset` and the
+preset load lists use synth-only preset libraries with room for up to `128`
+device presets. Presets are stored separately from the main settings file as
+named, foldered synth sounds and do not remember which preset was last loaded.
+On the device, presets appear in a virtual folder browser; `New Preset` saves
+into the currently open folder. Factory presets are copied into normal
 editable root-folder preset slots
 when defaults are restored, so they can be changed or erased like any other
 preset and restored later by Reset Defaults or from the web editor's browser
 library. The web app still shows the foldered library and can create foldered
 presets.
-`Load Preset` also includes `Blank`. Loading from the top-level `Synth` item
+The load list also includes `Blank`. Loading from the top-level `Synth` item
 returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
 wavetable reference, which can still be auto-saved by the normal settings
@@ -668,7 +663,7 @@ Important factory defaults include:
 - Wheel FX: `FoldWrp`
 - Wheel Amt: `100%`
 - Vibrato speed: `6 Hz`
-- Amp Hold: `0 ms`
+- Amp Env Hold: `0 ms`
 - FX Env 1: `Vibrato`, `+100%`, `0 ms` attack, `0 ms` hold, `0 ms` decay, `0%` sustain, `0 ms` release
 - FX Env 2: `Pitch`, `+100%`, `0 ms` attack, `0 ms` hold, `0 ms` decay, `0%` sustain, `0 ms` release
 - Synth presets: `Soft String Pad` and `Bright Mono Lead` restored as editable slots
