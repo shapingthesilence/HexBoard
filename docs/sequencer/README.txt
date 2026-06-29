@@ -14,5 +14,3 @@ Subfolders
 Notes
 
 - These files are maintained separately from the Keyboard docs on purpose.
-- Sequencer documentation is generally the higher-confidence user-facing
-  reference because it was built alongside the feature work.
