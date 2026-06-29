@@ -8,6 +8,30 @@
 #include "../midi/MidiRouting.h"
 #include "../tuning/DynamicJustIntonation.h"
 
+namespace {
+int16_t layoutStepsForDelta(int8_t distCol, int8_t distRow, int8_t acrossSteps, int8_t dnLeftSteps) {
+  return ((distCol * acrossSteps) + (distRow * (acrossSteps + (2 * dnLeftSteps)))) / 2;
+}
+
+void mirrorLayoutUpDown(int8_t& acrossSteps, int8_t& dnLeftSteps) {
+  dnLeftSteps = -(acrossSteps + dnLeftSteps);  // y = -(x + y)
+}
+
+void mirrorLayoutLeftRight(int8_t& acrossSteps, int8_t& dnLeftSteps) {
+  dnLeftSteps = acrossSteps + dnLeftSteps;  // y = x + y
+  acrossSteps = -acrossSteps;               // x = -x
+}
+
+void rotateLayoutClockwise(int8_t& acrossSteps, int8_t& dnLeftSteps) {
+  int8_t keyOffsetY = dnLeftSteps;
+  int8_t keyOffsetX = acrossSteps;
+  dnLeftSteps = keyOffsetX + keyOffsetY;
+  keyOffsetY = dnLeftSteps;
+  dnLeftSteps = -acrossSteps;
+  acrossSteps = keyOffsetY;
+}
+}  // namespace
+
 // @assignment
 /*
     This section of the code contains broad
@@ -178,26 +202,31 @@ void applyLayout() {  // call this function when the layout changes
   int8_t acrossSteps = current.layout().acrossSteps;  // x
   int8_t dnLeftSteps = current.layout().dnLeftSteps;  // y
   if (mirrorUpDown) {
-    dnLeftSteps = -(acrossSteps + dnLeftSteps);  // y = -(x + y)
+    mirrorLayoutUpDown(acrossSteps, dnLeftSteps);
   }
+
+  int8_t unmirroredAcrossSteps = acrossSteps;
+  int8_t unmirroredDnLeftSteps = dnLeftSteps;
   if (mirrorLeftRight) {
-    dnLeftSteps = acrossSteps + dnLeftSteps;  // y = x + y
-    acrossSteps = -acrossSteps;               // x = -x
+    mirrorLayoutLeftRight(acrossSteps, dnLeftSteps);
   }
   for (byte rotations = 0; rotations < layoutRotation; rotations++) {
-    byte keyOffsetY = dnLeftSteps;
-    byte keyOffsetX = acrossSteps;
-    dnLeftSteps = keyOffsetX + keyOffsetY;
-    keyOffsetY = dnLeftSteps;
-    dnLeftSteps = -acrossSteps;
-    acrossSteps = keyOffsetY;
+    rotateLayoutClockwise(acrossSteps, dnLeftSteps);
+    rotateLayoutClockwise(unmirroredAcrossSteps, unmirroredDnLeftSteps);
   }
   ////////////////////////////////////////////////////////////////////////////////////////
+  int16_t mirrorLeftRightOffset = 0;
+  if (mirrorLeftRight && HEXBOARD_CENTER_BUTTON < LED_COUNT) {
+    int8_t centerDistCol = h[HEXBOARD_CENTER_BUTTON].coordCol - h[current.layout().hexMiddleC].coordCol;
+    int8_t centerDistRow = h[HEXBOARD_CENTER_BUTTON].coordRow - h[current.layout().hexMiddleC].coordRow;
+    mirrorLeftRightOffset = layoutStepsForDelta(centerDistCol, centerDistRow, unmirroredAcrossSteps, unmirroredDnLeftSteps)
+                            - layoutStepsForDelta(centerDistCol, centerDistRow, acrossSteps, dnLeftSteps);
+  }
   for (byte i = 0; i < LED_COUNT; i++) {
     if (!(h[i].isCmd)) {
       int8_t distCol = h[i].coordCol - h[current.layout().hexMiddleC].coordCol;
       int8_t distRow = h[i].coordRow - h[current.layout().hexMiddleC].coordRow;
-      h[i].stepsFromC = ((distCol * acrossSteps) + (distRow * (acrossSteps + (2 * dnLeftSteps)))) / 2;
+      h[i].stepsFromC = layoutStepsForDelta(distCol, distRow, acrossSteps, dnLeftSteps) + mirrorLeftRightOffset;
       sendToLog(
         "hex #" + std::to_string(i) + ", " + "steps from C4=" + std::to_string(h[i].stepsFromC) + ".");
     }

@@ -440,6 +440,9 @@ The mapping path looks like this:
 2. `applyScale()` marks each button `inScale`
 3. `assignPitches()` computes MIDI note, channel, bend, and frequency
 
+`Flip L/R` keeps physical button `65` fixed as the mirror center by applying a
+pitch offset after the mirrored layout vector is calculated.
+
 That ordering matters. If you change the layout or tuning and only call one of those functions, your runtime state will drift out of sync.
 
 ## Key Global Structures
@@ -946,7 +949,7 @@ only the resting value for user-generated colors at `VALUE_NORMAL` before the
 usual `Rest Bright` scaling, while play and animation caches still use the full
 selected color target.
 
-Startup has a separate bounded LED self-check in `runBootLedSelfCheck()`. Normal boots skip RGB color-channel flashes and run only the smoother rainbow splash, followed by `fadeToNormalLedFrame()` so the resting frame fades in. The persisted `BootAnimationEnabled` setting gates this whole path. The splash center is `bootLedSplashCenterIndex()`, one physical hex to the right of the active layout center; on the default `12 EDO` Wicki-Hayden layout this is `D4` rather than `C4`. The seven command LEDs are overwritten each splash frame by `setBootCommandButtonFade()` so they fade separately instead of joining the splash.
+Startup has a separate bounded LED self-check in `runBootLedSelfCheck()`. Normal boots skip RGB color-channel flashes and run only the smoother rainbow splash, followed by `fadeToNormalLedFrame()` so the resting frame fades in. The persisted `BootAnimationEnabled` setting gates this whole path. The splash center is physical button `65` through `bootLedSplashCenterIndex()`, independent of the selected layout. The seven command LEDs are overwritten each splash frame by `setBootCommandButtonFade()` so they fade separately instead of joining the splash.
 
 When `settingsFileMissingOnBoot` is true, `showFirstBootWhiteDiagnostic()` runs before the splash. It fades all LEDs to a moderate white level derived through the saved/default `Brightness` and `Rest Bright` path, then holds for `2 seconds`. This flag is RAM-only and does not add a persisted setting or require a settings-version bump.
 

@@ -13,6 +13,11 @@ These instructions apply to the entire repository. This guide is for future AI a
 - Keep audio ISR code, synth helper code called from the ISR, button/knob scan paths, and other latency-sensitive runtime helpers in RAM with `RAM_FUNC` or RAM-resident data. Do not move hot audio/control tables into flash.
 - When firmware behavior, settings, menus, synth preset schema, or preset-sync protocol changes affect companion-app behavior, update the web app in `web/` in the same change.
 
+## Engineering Preference
+
+- Prefer code changes designed for cleanliness, clear ownership, and long-term maintainability over the quickest implementation. Avoid stacking narrow patches on top of earlier patches when a small, coherent redesign would leave the subsystem easier to understand and maintain.
+- When a quick fix and a cleaner design differ materially, choose the cleaner design unless the user explicitly asks for a temporary workaround or urgent minimal patch.
+
 ## Documentation Requirement
 
 Every behavior, setting, protocol, menu, build, hardware, or architecture change must include a documentation pass before the task is considered complete.

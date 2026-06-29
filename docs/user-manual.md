@@ -229,8 +229,9 @@ candidate set.
 `Beat BPM` and `BPM Mult.` control the BPM-synced retuning grid and are hidden
 when `JI BPM Sync` is off.
 
-`Layout Rot` rotates the musical axes in 60-degree steps. `Flip L/R` and
-`Flip U/D` mirror the layout across the grid. `Display Rot` changes the physical
+`Layout Rot` rotates the musical axes in 60-degree steps. `Flip L/R` mirrors
+the layout around the middle key, physical button `65`. `Flip U/D` mirrors the
+layout vertically across the grid. `Display Rot` changes the physical
 device/display orientation in 90-degree steps without changing the musical
 layout.
 

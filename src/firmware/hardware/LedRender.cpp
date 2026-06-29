@@ -323,19 +323,7 @@ byte hexDistance(byte firstIndex, byte secondIndex) {
 }
 
 byte bootLedSplashCenterIndex() {
-  byte centerIndex = current.layout().hexMiddleC;
-  if (centerIndex >= LED_COUNT) {
-    return LED_COUNT / 2;
-  }
-
-  int8_t targetRow = h[centerIndex].coordRow;
-  int8_t targetCol = h[centerIndex].coordCol + 2;
-  for (byte i = 0; i < LED_COUNT; ++i) {
-    if (!h[i].isCmd && h[i].coordRow == targetRow && h[i].coordCol == targetCol) {
-      return i;
-    }
-  }
-  return centerIndex;
+  return HEXBOARD_CENTER_BUTTON < LED_COUNT ? HEXBOARD_CENTER_BUTTON : LED_COUNT / 2;
 }
 
 void showFirstBootWhiteDiagnostic() {

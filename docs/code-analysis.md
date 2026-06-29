@@ -68,6 +68,7 @@ The current source is grouped by file:
 - `ROWCOUNT = 16`
 - `BTN_COUNT = 160`
 - `FIRST_FLAG_BUTTON_INDEX = LED_COUNT`
+- `HEXBOARD_CENTER_BUTTON = 65`
 
 Visible buttons are indices `0` through `139`. Matrix slots `140` through `159` are internal flags and hardware-detection positions, not playable hexes.
 
@@ -258,6 +259,9 @@ Common refresh functions:
 | `assignPitches()` | transpose or pitch math changes without moving button positions |
 | `updateLayoutAndRotate()` | layout, mirror, or rotation changes |
 | `refreshMidiRouting()` | MPE, MIDI channel, or microtonal routing rules change |
+
+`Flip L/R` mirrors the layout vectors and then offsets the result so physical
+button `65` remains the mirror center.
 
 Using the wrong refresh path creates stale LEDs, stale MIDI note assignments, or bad synth frequencies.
 
@@ -560,7 +564,7 @@ linear HSV/RGB helpers before applying gamma once; do not rescale packed
 
 `ledTestMode` is a transient Advanced-menu selector, not persisted profile data. While it is `Red`, `Green`, `Blue`, or `White`, `lightUpLEDs()` renders that solid color across all `140` LEDs and skips the normal note/delegated frame for that loop. These diagnostic colors are direct raw RGB channel values from `strip.Color()`, not palette HSV values from `getLEDcode()`. The preview reset and save callback both set it back to `Off`, so leaving the selector restores normal rendering.
 
-`runBootLedSelfCheck()` is a startup-only diagnostic path, not a menu animation mode. It runs after settings are synced and pitch-bend factors are recomputed, unless `BootAnimationEnabled` is off. Its colors are scaled through the saved/default `Brightness` and `Rest Bright` path. Normal boots skip RGB color-channel flashes and run a smooth rainbow splash based on hex-grid distance from `bootLedSplashCenterIndex()`, which is one physical hex to the right of the active layout center. On the default layout that makes the splash radiate from `D4` instead of `C4`. The command LEDs are excluded from the splash and receive a separate color fade from `setBootCommandButtonFade()`.
+`runBootLedSelfCheck()` is a startup-only diagnostic path, not a menu animation mode. It runs after settings are synced and pitch-bend factors are recomputed, unless `BootAnimationEnabled` is off. Its colors are scaled through the saved/default `Brightness` and `Rest Bright` path. Normal boots skip RGB color-channel flashes and run a smooth rainbow splash based on hex-grid distance from `bootLedSplashCenterIndex()`, which returns physical button `65` independent of the selected layout. The command LEDs are excluded from the splash and receive a separate color fade from `setBootCommandButtonFade()`.
 
 If `/settings.dat` is missing, `load_settings()` sets the RAM-only `settingsFileMissingOnBoot` flag before saving factory defaults. That boot gets an additional white diagnostic: `showFirstBootWhiteDiagnostic()` fades all LEDs to moderate white and holds for `2 seconds` before the normal splash. `fadeToNormalLedFrame()` crossfades from the final animation frame into the actual resting LED frame so the first loop render does not pop.
 
