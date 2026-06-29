@@ -9,7 +9,7 @@ interface ProfileSyncProps {
 }
 
 const profiles = [
-  "Boot/Auto-Save Slot",
+  "Boot/Auto-Save",
   "Slot 1",
   "Slot 2",
   "Slot 3",
@@ -67,4 +67,3 @@ export function ProfileSync({ transport }: ProfileSyncProps) {
     </section>
   );
 }
-

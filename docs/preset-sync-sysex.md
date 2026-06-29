@@ -742,7 +742,7 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `19` |
+| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `23` |
 | `0x21` | `SettingValues` | Repeated `<setting-key-u8> <value-u8>` records |
 | `0x22` | `TuningRef` | Object reference |
 | `0x23` | `LayoutRef` | Object reference |
@@ -752,10 +752,10 @@ Recommended TLVs:
 | `0x27` | `ScaleRef` | Optional object reference |
 
 `SettingValues` may use current `SettingKey` ordinals only when
-`SettingsSchemaVersion` exactly matches the firmware's current schema. This
-release resets older `/settings.dat` files instead of migrating them. For
-future-proof sync, keep user tunings/layouts/mappings in separate objects and
-store references here.
+`SettingsSchemaVersion` exactly matches the firmware's current schema. Current
+firmware migrates `/settings.dat` versions `20` through `22`; older or unknown
+versions reset to factory defaults. For future-proof sync, keep user
+tunings/layouts/mappings in separate objects and store references here.
 
 ## User Tuning Object
 

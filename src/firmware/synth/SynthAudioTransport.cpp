@@ -12,6 +12,7 @@
 byte audioD = AUDIO_AJACK;
 bool synthBuzzerEnabled = false;
 byte headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
+byte piezoVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
 extern const uint32_t AUDIO_DMA_BUFFER_MICROS =
   (static_cast<uint64_t>(AUDIO_DMA_BUFFER_SAMPLE_COUNT) * 1000000ull) / AUDIO_SAMPLE_RATE_HZ;
 volatile uint16_t audioOutputMuteGainQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;

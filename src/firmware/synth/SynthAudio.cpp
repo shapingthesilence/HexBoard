@@ -748,6 +748,9 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
     // the moving-midpoint drive does not attenuate it a second time.
     A_target = PWM_MID;
   }
+  if (piezoVolumeCap < HEADPHONE_VOLUME_CAP_FULL) {
+    A_target = (A_target * static_cast<uint32_t>(piezoVolumeCap)) >> 7;
+  }
 
   // Smooth A so the piezo hiss doesn't abruptly stop (and to avoid end-click).
   // Smaller shift = faster response; larger = smoother.

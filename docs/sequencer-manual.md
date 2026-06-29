@@ -86,7 +86,7 @@ preferences:
 When `Play Type` is `MIDI`, programmed steps send MIDI using the current
 tuning, transpose, MIDI routing, and MPE settings. When `Play Type` is
 `OB Synth`, programmed steps use the onboard synth engine with the shared synth
-settings from Synth Options. Empty steps, zero-length steps,
+settings from the `Editor` -> `Synth` menu. Empty steps, zero-length steps,
 probability-skipped steps, and tied steps without an active source advance
 silently in both modes.
 

@@ -80,15 +80,18 @@ flags. For porting work that needs the Sequencer menu entry, run:
 make HEXBOARD_ENABLE_SEQUENCER=1
 ```
 
-The Makefile writes variant builds to separate folders while preserving the
-flashable filename:
+The Makefile compiles the repository sketch directly and writes flashable files
+under `build/`. It does not copy the source into a staging sketch folder. The
+default build renames Arduino's generated UF2 to `HexBoard.uf2`, while
+sequencer builds rename it separately:
 
 ```text
-build/sequencer-disabled/HexBoard.ino.uf2
-build/sequencer-enabled/HexBoard.ino.uf2
+build/HexBoard.uf2
+build/HexBoard_Sequencer.uf2
 ```
 
-Use `make sequencer-builds` to compile both variants.
+Use `make sequencer-builds` to compile both variants and leave both UF2 files in
+`build/`.
 
 When the flag is `0`, `setupSequencerMenu()` is a no-op and no top-level
 Sequencer menu item is installed. When the flag is `1`, the firmware installs
@@ -612,8 +615,10 @@ Settings are stored in `/settings.dat` on LittleFS with:
 
 Important implementation details:
 
-- `CURRENT_SETTINGS_VERSION` is currently `22`
-- version `20` settings are migrated to `22` by copying the previous profile
+- `CURRENT_SETTINGS_VERSION` is currently `23`
+- version `22` settings are migrated to `23` by copying the previous profile
+  bytes and filling `PiezoVolumeCap` from factory defaults
+- version `20` settings are migrated to `23` by copying the previous profile
   bytes and filling the new sequencer profile bytes from factory defaults;
   version `21` settings are migrated by preserving existing bytes and filling
   `SequencerSendClock` and `SequencerSendTransport` from factory defaults;
@@ -634,17 +639,18 @@ Important implementation details:
   runtime `Serial Debug` state is intentionally RAM-only
 - the LED current-limit default is `1.5 A`; its internal limiter budget is hardware-specific so `V1.1` and `V1.2` boards land near the same actual USB-side draw
 - the LED current-limit calibration did not bump `CURRENT_SETTINGS_VERSION` because no persisted bytes were added, removed, or reordered
-- the Synth Editor `Drive` setting is stored as `SynthDrive`; factory default is `Off`
+- the Synth `Drive` setting is stored as `SynthDrive`; factory default is `Off`
 - `PlaybackMode` defaults to `Poly`; valid values are `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, and `Poly`; legacy stored mono value `1` now means `MonoRtg`; legacy transient `PolyTbl` value `5` is normalized to `Poly`
 - onboard synth wheel effect is stored as `SynthModTarget` and `SynthModAmount`; factory defaults are `FoldWrp` and `100%`; valid runtime targets are `Vibrato`, `Pitch`, `WT Pos`, `FoldWrp`, `DutyWrp`, and `PolyWrp`; pitch target depth maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator spanning about `+/-24` semitones, then reads startup-generated RAM Q16 ratio tables; the three warp targets apply low-CPU phase warps before waveform or wavetable sampling, while `WT Pos` offsets wavetable frame position from the persisted `SynthWavetablePosition` base. `SynthWavetablePosition` remains a `0..127` byte internally, but the device and web selectors label it as frames `1..16` using rounded frame-anchor byte values.
 - synth modulation target calculation runs on a `16`-sample control quantum for CPU headroom; per-voice phase increment and phase-warp depths then linearly slew between cached targets at audio rate to reduce pitch and warp stepping artifacts
 - the synth LFO is stored as `SynthLfoTarget`, `SynthLfoAmount`, `SynthLfoWave`, and `SynthLfoSpeed`; the LFO targets the same modulation destinations as the wheel and FX envelopes, uses a bipolar amount byte where `127` is off, supports sine/triangle/saw/square shapes, and uses a `20`-entry `0.05 Hz` through `20 Hz` speed table
 - onboard synth vibrato speed is stored as `SynthVibratoSpeed`; selectable values are `1 Hz` through `12 Hz`, with factory default `6 Hz`
-- Dynamic JI stores its selected prime-limit table as `DynamicJIRatioTable`; table options run from `3Limit` through `41Limit`, and factory default `41Limit` preserves the previous full ratio-list behavior; the active table caches ratio indices only, and note-on matching computes full floating-point cents from each selected numerator/denominator candidate to preserve JI interval precision. The Dynamic JI and JI BPM controls are not currently installed on the fixed-memory `Tuning` browser and need a new menu home before release.
+- Dynamic JI stores its selected prime-limit table as `DynamicJIRatioTable`; table options run from `3Limit` through `41Limit`, and factory default `41Limit` preserves the previous full ratio-list behavior; the active table caches ratio indices only, and note-on matching computes full floating-point cents from each selected numerator/denominator candidate to preserve JI interval precision. `Dynamic JI`, `JI Table`, `JI BPM Sync`, `Beat BPM`, and `BPM Mult.` are installed under the `Editor` page instead of the fixed-memory `Tuning` browser.
 - mono portamento is stored as `SynthPortamentoTimeIndex`; it reuses the `0 ms` through `4 s` envelope time table and the menu hides `Porta` outside the two mono modes
 - arpeggiator direction is stored as `ArpeggiatorDirection`; the menu hides `Arp Dir` outside `Arp'gio`; note-sorted directions compare assigned note/frequency rather than physical button number
 - `SynthAttackEffect` is a deprecated hidden byte kept only so version `8` files can migrate by prefix copy
-- `DeviceRotation` stores the four-step physical device orientation used by the Layout menu's `Device Rot` item; firmware maps that value to the OLED driver's opposite rotation because the mounted display is physically inverted. Selecting a layout seeds `DeviceRotation` from legacy `layoutDef.isPortrait` metadata: portrait layouts use `0`, and landscape layouts use `90`.
+- `DeviceRotation` stores the four-step physical device orientation used by the Editor menu's `Display Rot` item; firmware maps that value to the OLED driver's opposite rotation because the mounted display is physically inverted. Selecting a layout seeds `DeviceRotation` from legacy `layoutDef.isPortrait` metadata: portrait layouts use `0`, and landscape layouts use `90`.
+- the Synth menu `Volume` item edits `HeadphoneVolumeCap` when the active output is the jack and `PiezoVolumeCap` when the active output is the piezo; both default to `100%` and are profile bytes, while synth presets intentionally do not store output volume
 - metronome mode and time signature are stored as `MetronomeMode` and `MetronomeSignature`; factory defaults are `Off` and `4/4`
 - the amp envelope has `EnvelopeAttackIndex`, `EnvelopeHoldIndex`, `EnvelopeDecayIndex`, `EnvelopeSustainLevel`, and `EnvelopeReleaseIndex`
 - FX Env 1 is stored as `EffectEnvelopeTarget`, `EffectEnvelopeAmount`, `EffectEnvelopeAttackIndex`, `EffectEnvelopeHoldIndex`, `EffectEnvelopeDecayIndex`, `EffectEnvelopeSustainLevel`, and `EffectEnvelopeReleaseIndex`; factory defaults are `Vibrato`, `+100%`, and an inactive `0 ms`/`0%` envelope
@@ -660,7 +666,6 @@ Important implementation details:
 - user synth wavetables are stored as a named fixed-capacity catalog in `/synth_wavetables.dat` with magic `SYW`, version `1`, up to `32` entries, and per-table sample files named from each `16`-byte wavetable object id; new sample files contain six fixed mip levels with `16` frames and `512` samples per frame at harmonic limits `192`, `96`, `48`, `24`, `12`, and `6` (`49,152` bytes total), while `8,192`-byte base-only files are still accepted and expanded in RAM. The selected wavetable is also snapshotted per profile in `/profile_wavetables.dat` with magic `PWT`, version `1`, so loading a profile restores its folder/name wavetable reference before runtime sync. The on-device wavetable load menu uses `VirtualListMenu` with built-in tables at the root and folder navigation for user tables, and it marks/focuses the active wavetable row when that row is visible. The old `/user_wavetable.dat` `UWT` slot remains loadable only as legacy `/User/UserTbl` compatibility.
 - user geometry objects are stored in `/layouts.dat` with magic `LYT`, version `2`, up to `64` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`; preset-sync validates the common `HBS1` object envelope, schema major `1`, `Name`, and `ObjectId`, then preserves the raw body for list/read/write/delete round-trip. Runtime Apply currently supports generated EDO/equal-step and Scala/cents-list user tunings, vector layouts, included-degree scales, scale color maps, and format-1 explicit button maps. RAM keeps fixed metadata/file-offset entries with `20`-byte geometry name/folder buffers and lazy-loads raw bodies from flash when applying or serving reads, and the active tuning/layout/scale object ids are retained in runtime state so the on-device browsers can mark and focus the current row when it is visible. The web editor caps geometry object names and single folder labels at `19` display characters and note labels at `7` characters. The visible OLED `Tuning`, `Layout`, and `Scales` pages use `VirtualListMenu`, a fixed-memory renderer that mirrors GEM Back/button-list drawing, 11-row paging, wrapping, pointer, and scrollbar behavior while caching only 16-bit geometry handles instead of allocating one `GEMItem` per object. Tuning entries are bundle anchors, layout/scale entries are filtered by the selected tuning object id, and user layout/scale rows are capped at `24` associated objects. Built-in tuning entries are shown flat at the root, saved user tunings can be foldered, and Layout/Scales remain flat on-device. Save/delete requests defer a menu rebuild like synth preset menus. Profile references and settings persistence for the selected user geometry bundle remain future work.
 - the Advanced-menu boot animation toggle is stored as `BootAnimationEnabled`; factory default is enabled
-- the Advanced-menu headphone output cap is stored as `HeadphoneVolumeCap`; factory default is `100%`; `setupHardware()` inserts its menu item only on hardware `V1.2`, and the audio block renderer applies it only to the jack sample before DMA writes the `AJACK` PWM level
 - a missing `/settings.dat` sets `settingsFileMissingOnBoot` for the current boot before factory defaults are saved
 - invalid or mismatched settings files restore factory defaults
 - version `2` through `19` settings files currently restore factory defaults instead of migrating; the older migration helper remains in the code for reference, but `load_settings()` no longer dispatches to it in this release

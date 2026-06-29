@@ -155,15 +155,18 @@ through the desktop HexBoard Backup GUI.
 See the [Sequencer Manual](docs/sequencer-manual.md) for current sequencer
 behavior and the features still being ported.
 
-Builds keep the flashable file named `HexBoard.ino.uf2`, with separate output
-folders for the default and sequencer-enabled variants:
+Builds compile the repository sketch directly and write flashable files under
+`build/`. The default build renames Arduino's generated UF2 to `HexBoard.uf2`.
+Builds with `HEXBOARD_ENABLE_SEQUENCER=1` rename the UF2 to
+`HexBoard_Sequencer.uf2`:
 
 ```text
-build/sequencer-disabled/HexBoard.ino.uf2
-build/sequencer-enabled/HexBoard.ino.uf2
+build/HexBoard.uf2
+build/HexBoard_Sequencer.uf2
 ```
 
-You can also build both variants with `make sequencer-builds`.
+You can also build both variants with `make sequencer-builds`; it leaves both
+UF2 files in `build/`.
 
 ### HexBoard Backup GUI
 
@@ -196,7 +199,7 @@ The web app currently includes:
   maps, named/foldered synth presets, and named/foldered synth wavetables
 - a browser-stored tuning/layout bundle editor with an interactive HexBoard
   preview, EDO/equal-step/Scala `.scl` tuning inputs, across/up-right vector
-  layouts, four-step device orientation preview matching firmware `Device Rot`,
+  layouts, four-step device orientation preview matching firmware `Display Rot`,
   scale-degree colors, per-button role/color overrides, and real-device
   save/apply/verify controls for compatible geometry bundles, including
   Scala/cents-table note-label import plus firmware-backed runtime playback on

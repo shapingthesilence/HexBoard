@@ -10,7 +10,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 22;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 23;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -103,6 +103,7 @@ enum class SettingKey : uint8_t {
   SequencerClockSource,
   SequencerSendClock,
   SequencerSendTransport,
+  PiezoVolumeCap,
   // This must remain last - it gives the total number of settings.
   NumSettings
 };
@@ -123,6 +124,7 @@ constexpr uint8_t NUM_SETTINGS_V15 = static_cast<uint8_t>(SettingKey::DynamicJIR
 constexpr uint8_t NUM_SETTINGS_V17 = static_cast<uint8_t>(NUM_SETTINGS + 1);
 constexpr uint8_t NUM_SETTINGS_V20 = static_cast<uint8_t>(SettingKey::SequencerTapPreview);
 constexpr uint8_t NUM_SETTINGS_V21 = static_cast<uint8_t>(SettingKey::SequencerSendClock);
+constexpr uint8_t NUM_SETTINGS_V22 = static_cast<uint8_t>(SettingKey::PiezoVolumeCap);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;

@@ -105,6 +105,7 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* SequencerClockSource         */ sequencer::kClockSourceDefault,
   /* SequencerSendClock           */ sequencer::kSendClockDefault,
   /* SequencerSendTransport       */ sequencer::kSendTransportDefault,
+  /* PiezoVolumeCap               */ HEADPHONE_VOLUME_CAP_FULL,
 };
 
 // ==================================================
@@ -254,13 +255,19 @@ bool load_settings() {
     return false;
   }
   if (header.version != CURRENT_SETTINGS_VERSION) {
-    if (header.version == 20 || header.version == 21) {
+    if (header.version == 20 || header.version == 21 || header.version == 22) {
       sendToLog("Settings version mismatch. Migrating version " + std::to_string(header.version) + " settings to version "
                 + std::to_string(CURRENT_SETTINGS_VERSION) + ".");
+      uint8_t settingsPerProfile = NUM_SETTINGS_V22;
+      if (header.version == 20) {
+        settingsPerProfile = NUM_SETTINGS_V20;
+      } else if (header.version == 21) {
+        settingsPerProfile = NUM_SETTINGS_V21;
+      }
       return migrateSettingsFromVersion(
         f,
         header,
-        header.version == 20 ? NUM_SETTINGS_V20 : NUM_SETTINGS_V21);
+        settingsPerProfile);
     }
     sendToLog("Settings version mismatch. File version: " + std::to_string(header.version)
               + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION)

@@ -107,10 +107,9 @@ The main menu includes:
 - `Synth:<current preset>`
 - `Lights & Colors`
 - `Transpose`
-- `Options`
-- `Load Profile`
-- `Save Profile`
-- `Synth Editor`
+- `Editor`
+- `Settings`
+- `Profiles`
 
 Developer builds compiled with `HEXBOARD_ENABLE_SEQUENCER=1` also show a main
 menu item named `Sequencer`. Default firmware builds may not include it. For
@@ -142,16 +141,7 @@ when it appears in the list. Selecting a tuning also loads the first linked
 layout, scale, color map, and matching explicit button map so the board is
 immediately playable.
 
-The Dynamic JI controls are temporarily not in this page while the menu layout
-is being simplified for the 2.0 release.
-
-`JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
-`3Limit`, `5Limit`, `7Limit`, and higher options through `41Limit`. Lower-limit
-tables use simpler ratios; higher-limit tables preserve the broader legacy
-candidate set.
-
-`Beat BPM` and `BPM Mult.` control the BPM-synced retuning grid and are hidden
-when `JI BPM Sync` is off.
+Dynamic JI controls live under `Editor`.
 
 When MPE is active, Dynamic JI and JI BPM Sync send the closest MIDI note for
 the final retuned pitch, then use pitch bend only for the remaining fractional
@@ -180,8 +170,7 @@ Choosing a layout remaps button pitches, loads that layout's matching explicit
 button map when one exists, and reloads that layout's default device
 orientation: portrait layouts use `0`, and landscape layouts use `90`.
 
-The mirror and rotation editor controls are temporarily not in this page while
-the menu layout is being simplified for the 2.0 release.
+Layout rotation, flip, and display rotation controls live under `Editor`.
 
 ### Scale
 
@@ -213,13 +202,46 @@ Available color modes are `Rainbow`, `Diatonic`, `Alt`, `Fifths`, `Piano`, `Alt 
 
 `LED Limit` helps prevent power problems by lowering LED output when a bright setting would draw too much current. This matters most in bright modes such as `Filament` and `Diatonic`. `Off` leaves the LEDs uncapped and can cause resets at extreme brightness. The numbered limits use hardware-specific calibration tables for `V1.1` and `V1.2` boards. The factory default is `1.5 A`, calibrated to provide a similar actual USB-side draw on both hardware revisions and stable behavior on most power supplies.
 
-### Synth Editor
+### Editor
+
+`Editor` contains fine controls that shape how the current setup behaves without
+choosing a new tuning, layout, scale, or profile.
+
+Options include:
+
+- `Synth`
+- `Dynamic JI`
+- `JI Table` when `Dynamic JI` is enabled
+- `JI BPM Sync`
+- `Beat BPM` when `JI BPM Sync` is enabled
+- `BPM Mult.` when `JI BPM Sync` is enabled
+- `Layout Rot`
+- `Flip L/R`
+- `Flip U/D`
+- `Display Rot`
+
+`JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
+`3Limit`, `5Limit`, `7Limit`, and higher options through `41Limit`. Lower-limit
+tables use simpler ratios; higher-limit tables preserve the broader legacy
+candidate set.
+
+`Beat BPM` and `BPM Mult.` control the BPM-synced retuning grid and are hidden
+when `JI BPM Sync` is off.
+
+`Layout Rot` rotates the musical axes in 60-degree steps. `Flip L/R` and
+`Flip U/D` mirror the layout across the grid. `Display Rot` changes the physical
+device/display orientation in 90-degree steps without changing the musical
+layout.
+
+#### Synth
 
 This page controls the onboard synth.
 
 Options include:
 
 - `Synth Mode`: `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, `Poly`
+- `Volume`
+- `Buzzer` on hardware `V1.2`
 - `Arp Speed` when `Arp'gio` is selected
 - `Arp Dir` when `Arp'gio` is selected
 - `Porta` when a mono mode is selected
@@ -250,9 +272,11 @@ toggle.
 On hardware `V1.2`, the headphone jack is active by default and an extra
 `Buzzer` toggle appears. Turning `Buzzer` on switches synth output to the piezo
 instead of the jack. When the buzzer is off, the piezo pin is held low; when the
-jack is inactive, it stays centered at its PWM midpoint. The `Advanced` menu also
-has `HP Vol Cap`, which limits only the headphone-jack output from `25%` to
-`100%` in `5%` steps.
+jack is inactive, it stays centered at its PWM midpoint.
+
+`Volume` limits the active synth output from `25%` to `100%` in `5%` steps. The
+headphone jack and piezo each have their own saved value, so changing `Buzzer`
+recalls the volume for that output.
 
 #### Synth Terms In Plain Language
 
@@ -380,7 +404,7 @@ down as the envelope level rises. The default FX envelope times are `0 ms`, and
 default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 
 The top-level `Synth:<preset>` item and the `Load Preset` item inside
-`Synth Editor` both open synth preset load lists. `Save Preset` and
+`Editor` -> `Synth` both open synth preset load lists. `Save Preset` and
 `Load Preset` use synth-only preset libraries with room for
 up to `128` device presets. Presets are stored separately from the main settings
 file as named, foldered synth sounds and do not remember which preset was last
@@ -392,8 +416,8 @@ preset and restored later by Reset Defaults or from the web editor's browser
 library. The web app still shows the foldered library and can create foldered
 presets.
 `Load Preset` also includes `Blank`. Loading from the top-level `Synth` item
-returns to the main menu; loading or saving from `Synth Editor` returns to
-`Synth Editor`. Loading a preset changes only the current synth parameters and
+returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
+`Synth`. Loading a preset changes only the current synth parameters and
 wavetable reference, which can still be auto-saved by the normal settings
 system. The currently loaded catalog preset is marked with a leading `*` when
 it appears in the load list; `Blank`, `New Preset`, and the unselected
@@ -432,9 +456,9 @@ example, `Wheel FX` = `FoldWrp`, `FX Env 1 Target` = `Vibrato`, `Amount` = `+50%
 start of each note. For a falling pitch tail, try `FX Env 2 Target` = `Pitch`,
 `Amount` = `-25%`, `Sustain` = `100%`, and a longer `Release`.
 
-### Options
+### Settings
 
-`Options` contains MIDI setup, command-wheel behavior, and the `Advanced`
+`Settings` contains MIDI setup, command-wheel behavior, and the `Advanced`
 maintenance page.
 
 #### MIDI
@@ -520,7 +544,7 @@ the right, with the selected-key
 inspector below the board. The encoded-object debug
 readout sits at the bottom of the editor page. The rotation control is a
 four-step device orientation preview: `0`, `90`, `180`, or `270` degrees. It is
-intended to line up with the firmware `Device Rot` setting, not to rotate the
+intended to line up with the firmware `Display Rot` setting, not to rotate the
 musical axes around individual hexagons. Focusing the center, across, or
 up-right layout fields highlights the relevant preview key relationship. The
 axis field labels follow the four-way preview rotation; for example, at `90`
@@ -691,11 +715,11 @@ pitch-bend and modulation messages.
 
 `Transpose` shifts sounded pitch without changing the visual layout.
 
-### Load Profile And Save Profile
+### Profiles
 
 HexBoard supports `9` profile slots:
 
-- `Boot/Auto-Save Slot`
+- `Boot/Auto-Save`
 - `Slot 1`
 - `Slot 2`
 - `Slot 3`
@@ -707,7 +731,10 @@ HexBoard supports `9` profile slots:
 
 How it behaves:
 
-- Auto-save always snapshots the current setup back into the `Boot/Auto-Save Slot`
+- `Auto-Save` is at the top of the `Profiles` menu
+- Load rows appear next: `Load Boot/Auto-Save`, `Load Slot 1`, and so on
+- Save rows appear below the load rows: `Save Boot/Auto-Save`, `Save Slot 1`, and so on
+- Auto-save always snapshots the current setup back into the `Boot/Auto-Save` profile
 - Loading a slot immediately replaces the current setup, including the selected wavetable
 - Saving stores the current setup, including the selected wavetable, in the chosen slot
 
@@ -721,7 +748,6 @@ This page contains maintenance and system settings:
 - `ColorByKey`
 - `DisplayNotes`: `Off`, `Label`, or `Number`
 - `Boot Anim`
-- `HP Vol Cap` on hardware `V1.2`
 - `Reset Defaults`
 - `Update Firmware`
 - `Serial Debug`
@@ -785,11 +811,12 @@ Important factory defaults include:
 
 - Tuning: built-in `12 EDO`
 - Layout: first built-in 12-EDO layout
-- Device Rot: `0`
+- Display Rot: `0`
 - Scale: chromatic / none
 - MIDI channel: `1`
 - MPE mode: `Auto`
 - Synth: `Poly`
+- Synth output volume: `100%` for headphone and piezo
 - Wavetable: `Basic Shapes`
 - WT Pos: frame `1`
 - Drive: `Off`

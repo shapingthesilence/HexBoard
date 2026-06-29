@@ -52,7 +52,6 @@ GEM_u8g2 menu(
   MENU_ITEM_HEIGHT, MENU_PAGE_SCREEN_TOP_OFFSET, MENU_VALUES_LEFT_OFFSET);
 bool screenSaverOn = 0;
 bool audioMenuItemInserted = false;
-bool headphoneVolumeMenuItemInserted = false;
 uint64_t screenTime = 0;                         // GFX timer to count if screensaver should go on
 const uint64_t screenSaverTimeout = (1u << 25);  // 2^25 microseconds ~ 33 seconds
 bool flashSaveScreenVisible = false;
@@ -296,8 +295,10 @@ GEMPage menuPageScales("Scales", menuPageMain);
 GEMItem menuGotoScales(mainScaleMenuLabel, menuPageScales);
 GEMPage menuPageColors("Lights & Colors", menuPageMain);
 GEMItem menuGotoColors("Lights & Colors", menuPageColors);
-GEMPage menuPageSynth("Synth Editor", menuPageMain);
-GEMItem menuGotoSynth("Synth Editor", menuPageSynth);
+GEMPage menuPageEditor("Editor", menuPageMain);
+GEMItem menuGotoEditor("Editor", menuPageEditor);
+GEMPage menuPageSynth("Synth", menuPageEditor);
+GEMItem menuGotoSynth("Synth", menuPageSynth);
 GEMPage menuPageSynthWavetableLoad("Wavetables", menuPageSynth);
 GEMItem menuGotoSynthWavetableLoad(currentSynthWavetableMenuLabel, menuPageSynthWavetableLoad);
 GEMPage menuPageSynthLfo("LFO", menuPageSynth);
@@ -312,16 +313,14 @@ GEMPage menuPageMainSynthPresetLoad("Load Preset", menuPageMain);
 GEMItem menuGotoMainSynthPresetLoad(mainSynthPresetMenuLabel, menuPageMainSynthPresetLoad);
 GEMPage menuPageSynthPresetLoad("Load Preset", menuPageSynth);
 GEMItem menuGotoSynthPresetLoad(mainSynthPresetMenuLabel, menuPageSynthPresetLoad);
-GEMPage menuPageOptions("Options", menuPageMain);
-GEMItem menuGotoOptions("Options", menuPageOptions);
+GEMPage menuPageOptions("Settings", menuPageMain);
+GEMItem menuGotoOptions("Settings", menuPageOptions);
 GEMPage menuPageAdvanced("Advanced", menuPageOptions);
 GEMItem menuGotoAdvanced("Advanced", menuPageAdvanced);
 GEMPage menuPageSerialDebug("Serial Debug", menuPageAdvanced);
 GEMItem menuGotoSerialDebug("Serial Debug", menuPageSerialDebug);
-GEMPage menuPageSave("Save Profiles", menuPageMain);
-GEMItem menuGotoSave("Save Profile", menuPageSave);
-GEMPage menuPageLoad("Load Profiles", menuPageMain);
-GEMItem menuGotoLoad("Load Profile", menuPageLoad);
+GEMPage menuPageProfiles("Profiles", menuPageMain);
+GEMItem menuGotoProfiles("Profiles", menuPageProfiles);
 GEMPage menuPageReboot("Ready to flash firmware!");
 
 // --------------------------------------------------------
@@ -425,7 +424,7 @@ void syncSettingsToRuntime();
 void syncSynthSettingsToRuntime();
 void refreshMenuChoicesForCurrentTuning();
 void rebuildRuntimeStateFromCurrentSelection();
-void updateTuningMenuVisibility();
+void updateEditorMenuVisibility();
 void updateMainMenuDynamicLabels();
 void tuningIntonationModeChanged();
 void updateSerialDebugMenuVisibility();
@@ -623,16 +622,43 @@ SelectOptionByte optionByteHeadphoneVolumeCap[] = {
   { "100%", HEADPHONE_VOLUME_CAP_FULL }
 };
 GEMSelect selectHeadphoneVolumeCap(sizeof(optionByteHeadphoneVolumeCap) / sizeof(SelectOptionByte), optionByteHeadphoneVolumeCap);
-PersistentCallbackInfo callbackInfoHeadphoneVolumeCap = {
-  static_cast<uint8_t>(SettingKey::HeadphoneVolumeCap),
-  reinterpret_cast<void*>(&headphoneVolumeCap),
-  nullptr,
-  nullptr
-};
-GEMItem menuItemHeadphoneVolumeCap("HP Vol Cap", headphoneVolumeCap, selectHeadphoneVolumeCap, universalSaveCallback,
-                                   reinterpret_cast<void*>(&callbackInfoHeadphoneVolumeCap));
-void previewHeadphoneVolumeCap(GEMPreviewCallbackData previewData) {
-  headphoneVolumeCap = previewData.previewValByte;
+byte activeSynthOutputVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
+
+byte normalizeSynthOutputVolumeCap(byte value) {
+  return value > HEADPHONE_VOLUME_CAP_FULL ? HEADPHONE_VOLUME_CAP_FULL : value;
+}
+
+SettingKey activeSynthOutputVolumeSettingKey() {
+  return runtimeAudioDestination(synthBuzzerEnabled) == AUDIO_PIEZO
+           ? SettingKey::PiezoVolumeCap
+           : SettingKey::HeadphoneVolumeCap;
+}
+
+void syncActiveSynthOutputVolumeMenuValue() {
+  activeSynthOutputVolumeCap = activeSynthOutputVolumeSettingKey() == SettingKey::PiezoVolumeCap
+                                 ? piezoVolumeCap
+                                 : headphoneVolumeCap;
+}
+
+void applyActiveSynthOutputVolume(byte value) {
+  value = normalizeSynthOutputVolumeCap(value);
+  activeSynthOutputVolumeCap = value;
+  if (activeSynthOutputVolumeSettingKey() == SettingKey::PiezoVolumeCap) {
+    piezoVolumeCap = value;
+  } else {
+    headphoneVolumeCap = value;
+  }
+}
+
+void saveSynthOutputVolumeMenu(GEMCallbackData /*callbackData*/) {
+  applyActiveSynthOutputVolume(activeSynthOutputVolumeCap);
+  settings[static_cast<uint8_t>(activeSynthOutputVolumeSettingKey())] = activeSynthOutputVolumeCap;
+  markSettingsDirty();
+}
+
+GEMItem menuItemSynthOutputVolume("Volume", activeSynthOutputVolumeCap, selectHeadphoneVolumeCap, saveSynthOutputVolumeMenu);
+void previewSynthOutputVolume(GEMPreviewCallbackData previewData) {
+  applyActiveSynthOutputVolume(previewData.previewValByte);
 }
 
 SelectOptionByte optionByteLedTest[] = {
@@ -704,9 +730,14 @@ PersistentCallbackInfo callbackInfoAudioDest = {
   static_cast<uint8_t>(SettingKey::AudioDestination),
   reinterpret_cast<void*>(&synthBuzzerEnabled),
   nullptr,
-  syncAudioDestinationToRuntime
+  nullptr
 };
-GEMItem menuItemAudioD("Buzzer", synthBuzzerEnabled, universalSaveCallback,
+void audioDestinationChanged(GEMCallbackData callbackData) {
+  universalSaveCallback(callbackData);
+  syncAudioDestinationToRuntime();
+  syncActiveSynthOutputVolumeMenuValue();
+}
+GEMItem menuItemAudioD("Buzzer", synthBuzzerEnabled, audioDestinationChanged,
                        reinterpret_cast<void*>(&callbackInfoAudioDest));
 
 void installHardwareSpecificMenuItems() {
@@ -714,11 +745,6 @@ void installHardwareSpecificMenuItems() {
     if (!audioMenuItemInserted) {
       menuPageSynth.addMenuItem(menuItemAudioD, 2);
       audioMenuItemInserted = true;
-    }
-    if (!headphoneVolumeMenuItemInserted) {
-      menuItemHeadphoneVolumeCap.setPreviewCallback(previewHeadphoneVolumeCap);
-      menuPageAdvanced.addMenuItem(menuItemHeadphoneVolumeCap, 6);
-      headphoneVolumeMenuItemInserted = true;
     }
   }
 }
@@ -1186,7 +1212,7 @@ PersistentCallbackInfo callbackInfoDeviceRotation = {
   nullptr,
   applyDeviceDisplayRotation
 };
-GEMItem menuItemSelectDeviceRotation("Device Rot", deviceRotation, selectDeviceRotation, universalSaveCallback,
+GEMItem menuItemSelectDeviceRotation("Display Rot", deviceRotation, selectDeviceRotation, universalSaveCallback,
                                      reinterpret_cast<void*>(&callbackInfoDeviceRotation));
 
 // Layout mirroring toggles
@@ -1196,7 +1222,7 @@ PersistentCallbackInfo callbackInfoMirrorLR = {
   nullptr,
   updateLayoutAndRotate
 };
-GEMItem mirrorLeftRightGEMItem("Mirror Ver.", mirrorLeftRight, universalSaveCallback,
+GEMItem mirrorLeftRightGEMItem("Flip L/R", mirrorLeftRight, universalSaveCallback,
                                 reinterpret_cast<void*>(&callbackInfoMirrorLR));
 
 PersistentCallbackInfo callbackInfoMirrorUD = {
@@ -1205,7 +1231,7 @@ PersistentCallbackInfo callbackInfoMirrorUD = {
   nullptr,
   updateLayoutAndRotate
 };
-GEMItem mirrorUpDownGEMItem("Mirror Hor.", mirrorUpDown, universalSaveCallback,
+GEMItem mirrorUpDownGEMItem("Flip U/D", mirrorUpDown, universalSaveCallback,
                              reinterpret_cast<void*>(&callbackInfoMirrorUD));
 
 // Dynamic just intonation toggles and parameters
@@ -2123,24 +2149,24 @@ void playbackModeChanged() {
   updateSynthMenuVisibility();
 }
 
-void updateTuningMenuVisibility() {
-  byte currentIndex = menuPageTuning.getCurrentMenuItemIndex();
+void updateEditorMenuVisibility() {
+  byte currentIndex = menuPageEditor.getCurrentMenuItemIndex();
 
   menuItemSelectDynamicJIRatioTable.hide(!useDynamicJustIntonation);
   menuItemSetJI_BPM.hide(!useJustIntonationBPM);
   menuItemSetJI_BPM_Multiplier.hide(!useJustIntonationBPM);
 
-  byte itemCount = menuPageTuning.getItemsCount();
+  byte itemCount = menuPageEditor.getItemsCount();
   if (itemCount > 0) {
     if (currentIndex >= itemCount) {
       currentIndex = itemCount - 1;
     }
-    menuPageTuning.setCurrentMenuItemIndex(currentIndex);
+    menuPageEditor.setCurrentMenuItemIndex(currentIndex);
   }
 }
 
 void tuningIntonationModeChanged() {
-  updateTuningMenuVisibility();
+  updateEditorMenuVisibility();
   refreshMidiRouting();
 }
 
@@ -2320,10 +2346,11 @@ void syncSettingsToRuntime() {
   syncSynthSettingsToRuntime();
   synthBuzzerEnabled = decodeStoredBuzzerEnabled(settingValue(SettingKey::AudioDestination));
   syncAudioDestinationToRuntime();
-  headphoneVolumeCap = settingValue(SettingKey::HeadphoneVolumeCap);
-  if (headphoneVolumeCap > HEADPHONE_VOLUME_CAP_FULL) {
-    headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
-  }
+  headphoneVolumeCap = normalizeSynthOutputVolumeCap(settingValue(SettingKey::HeadphoneVolumeCap));
+  piezoVolumeCap = normalizeSynthOutputVolumeCap(settingValue(SettingKey::PiezoVolumeCap));
+  settings[static_cast<uint8_t>(SettingKey::HeadphoneVolumeCap)] = headphoneVolumeCap;
+  settings[static_cast<uint8_t>(SettingKey::PiezoVolumeCap)] = piezoVolumeCap;
+  syncActiveSynthOutputVolumeMenuValue();
   metronomeMode = settingValue(SettingKey::MetronomeMode);
   metronomeSignatureIndex = settingValue(SettingKey::MetronomeSignature);
   colorMode = settingValue(SettingKey::ColorMode);
@@ -2340,7 +2367,7 @@ void syncSettingsToRuntime() {
   justIntonationBPM_Multiplier = settingValue(SettingKey::BPMMultiplier);
   useDynamicJustIntonation = settingEnabled(SettingKey::DynamicJI);
   dynamicJIRatioTable = normalizeDynamicJIRatioTable(settingValue(SettingKey::DynamicJIRatioTable));
-  updateTuningMenuVisibility();
+  updateEditorMenuVisibility();
   bootAnimationEnabled = settingEnabled(SettingKey::BootAnimationEnabled);
   noteDisplayMode = normalizeNoteDisplayMode(settingValue(SettingKey::DisplayPlayedNotes));
   settings[static_cast<uint8_t>(SettingKey::DisplayPlayedNotes)] = noteDisplayMode;
@@ -2746,21 +2773,21 @@ void previewKey(GEMPreviewCallbackData previewData) {
 void createProfileMenuItems() {
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     if (i == 0) {
-      snprintf(saveProfileLabels[i], sizeof(saveProfileLabels[i]), "Boot/Auto-Save Slot");
+      snprintf(loadProfileLabels[i], sizeof(loadProfileLabels[i]), "Load Boot/Auto-Save");
     } else {
-      snprintf(saveProfileLabels[i], sizeof(saveProfileLabels[i]), "Slot %u", static_cast<unsigned>(i));
+      snprintf(loadProfileLabels[i], sizeof(loadProfileLabels[i]), "Load Slot %u", static_cast<unsigned>(i));
     }
-    menuItemSaveProfile[i] = new GEMItem(saveProfileLabels[i], saveProfileMenu, i);
-    menuPageSave.addMenuItem(*menuItemSaveProfile[i]);
+    menuItemLoadProfile[i] = new GEMItem(loadProfileLabels[i], loadProfileMenu, i);
+    menuPageProfiles.addMenuItem(*menuItemLoadProfile[i]);
   }
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     if (i == 0) {
-      snprintf(loadProfileLabels[i], sizeof(loadProfileLabels[i]), "Boot/Auto-Save Slot");
+      snprintf(saveProfileLabels[i], sizeof(saveProfileLabels[i]), "Save Boot/Auto-Save");
     } else {
-      snprintf(loadProfileLabels[i], sizeof(loadProfileLabels[i]), "Slot %u", static_cast<unsigned>(i));
+      snprintf(saveProfileLabels[i], sizeof(saveProfileLabels[i]), "Save Slot %u", static_cast<unsigned>(i));
     }
-    menuItemLoadProfile[i] = new GEMItem(loadProfileLabels[i], loadProfileMenu, i);
-    menuPageLoad.addMenuItem(*menuItemLoadProfile[i]);
+    menuItemSaveProfile[i] = new GEMItem(saveProfileLabels[i], saveProfileMenu, i);
+    menuPageProfiles.addMenuItem(*menuItemSaveProfile[i]);
   }
 }
 
@@ -2787,9 +2814,24 @@ void setupColorsMenuPage() {
   addPreviewMenuItem(menuPageColors, menuItemDimLedLevel, previewDimLedLevel);
 }
 
+void setupEditorMenuPage() {
+  menuPageMain.addMenuItem(menuGotoEditor);
+  menuPageEditor.addMenuItem(menuGotoSynth);
+  menuPageEditor.addMenuItem(menuItemToggleDynamicJI);
+  menuPageEditor.addMenuItem(menuItemSelectDynamicJIRatioTable);
+  menuPageEditor.addMenuItem(menuItemToggleJI_BPM);
+  menuPageEditor.addMenuItem(menuItemSetJI_BPM);
+  menuPageEditor.addMenuItem(menuItemSetJI_BPM_Multiplier);
+  menuPageEditor.addMenuItem(menuItemSelectLayoutRotation);
+  menuPageEditor.addMenuItem(mirrorLeftRightGEMItem);
+  menuPageEditor.addMenuItem(mirrorUpDownGEMItem);
+  menuPageEditor.addMenuItem(menuItemSelectDeviceRotation);
+  updateEditorMenuVisibility();
+}
+
 void setupSynthMenuPage() {
-  menuPageMain.addMenuItem(menuGotoSynth);
   menuPageSynth.addMenuItem(menuItemPlayback);
+  addPreviewMenuItem(menuPageSynth, menuItemSynthOutputVolume, previewSynthOutputVolume);
   // menuItemAudioD added here for hardware V1.2
   addPreviewMenuItem(menuPageSynth, menuItemArpSpeed, previewArpSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemArpDirection, previewArpDirection);
@@ -2859,9 +2901,8 @@ void setupControlMenuPage() {
 }
 
 void setupProfileMenuPages() {
-  menuPageMain.addMenuItem(menuGotoLoad);
-  menuPageMain.addMenuItem(menuGotoSave);
-  menuPageSave.addMenuItem(menuItemAutoSave);
+  menuPageMain.addMenuItem(menuGotoProfiles);
+  menuPageProfiles.addMenuItem(menuItemAutoSave);
   createProfileMenuItems();
 }
 
@@ -2926,6 +2967,7 @@ void setupMenu() {
   setupMainSynthPresetLoadMenuItem();
   setupColorsMenuPage();
   setupTransposeMenuItem();
+  setupEditorMenuPage();
   setupOptionsMenuPage();
   setupMidiMenuPage();
   setupControlMenuPage();

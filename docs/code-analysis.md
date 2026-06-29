@@ -310,7 +310,7 @@ Dynamic just intonation is applied in the MIDI note-on path. The reference key
 tracking uses the fixed-capacity `pressedKeyIDs` structure; note-on appends the
 button id to an oldest-held linked order, and note-off unlinks it in `O(1)` so
 release order does not corrupt the reference stack or allocate heap. The `JI Table` menu
-item is visible only while `Dynamic JI` is enabled and stores
+item lives under `Editor`, is visible only while `Dynamic JI` is enabled, and stores
 `DynamicJIRatioTable`, a prime-limit selector from `3Limit` through `41Limit`.
 The default `41Limit` preserves the previous full candidate-ratio behavior, while
 lower limits filter the existing ratio list to simpler numerator/denominator
@@ -318,9 +318,9 @@ prime factors. The active table stores selected ratio indices only; note-on
 matching computes full floating-point cents from the numerator/denominator pair
 for each selected candidate, preserving interval/beat-frequency precision at the
 cost of more work per press.
-`Beat BPM` and `BPM Mult.` use the same Tuning-menu visibility helper and are
+`Beat BPM` and `BPM Mult.` use the same Editor-menu visibility helper and are
 visible only while `JI BPM Sync` is enabled. The visibility helper preserves the
-Tuning page's current item index because GEM resets pages with a Back item near
+Editor page's current item index because GEM resets pages with a Back item near
 the top when a hidden item is shown.
 
 JI retuning now keeps the synth and MIDI output paths separate. The synth reads
@@ -725,9 +725,9 @@ The current `SettingsHeader` contains:
 - default profile index field
 - CRC32 of all profile data bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `22`, and `PROFILE_COUNT` is `9`.
-`load_settings()` migrates version `20` and `21` files by copying the previous
-profile bytes and filling newly appended sequencer profile bytes from factory
+`CURRENT_SETTINGS_VERSION` is currently `23`, and `PROFILE_COUNT` is `9`.
+`load_settings()` migrates version `20`, `21`, and `22` files by copying the
+previous profile bytes and filling newly appended profile bytes from factory
 defaults. Other settings-schema mismatches restore factory defaults and rewrite
 `/settings.dat`. The optional sequencer profile bytes include
 `SequencerStepAccentEvery`, `SequencerStepColorMode`, `SequencerStepHue`,
@@ -737,7 +737,8 @@ defaults. Other settings-schema mismatches restore factory defaults and rewrite
 branch without bumping `CURRENT_SETTINGS_VERSION`; old local development
 settings files with the shorter version-21 payload may still restore defaults,
 while valid version-21 payloads now migrate by defaulting the two MIDI sync send
-settings to `Off`.
+settings to `Off`. Version `22` payloads migrate by defaulting the new
+`PiezoVolumeCap` profile byte to `100%`.
 
 Version `20` reinterprets the existing `DisplayPlayedNotes` byte from a boolean
 as `Off`/`Label`/`Number`; the persisted byte position did not move. Version
@@ -754,7 +755,7 @@ Version `16` appends `DynamicJIRatioTable` to settings profiles. Version `15`
 files migrate by copying the existing profile prefix and using the factory
 default `41Limit` table selector.
 
-The Synth Editor `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
+The Synth `Drive` control is persisted as `SynthDrive`. It defaults to `Off` and applies a RAM-resident soft-saturation stage after voice mixing when enabled. The enabled modes use increasing pre-gain so `Dirty` reaches heavier clipping than the lower settings.
 
 The `Waveform` setting remains one persisted byte for settings/preset
 compatibility, but the visible synth source selector uses a wavetable
@@ -777,7 +778,7 @@ the overlong filename that can fail on LittleFS. Catalog load/write paths skip
 or prune records whose sample file is missing, which prevents failed earlier
 imports from exhausting catalog slots.
 
-The Synth Editor wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `FoldWrp` is the default wheel effect and keeps the existing target byte value `0`; `DutyWrp` and `PolyWrp` add target byte values `4` and `5`. All three warp targets apply low-CPU phase warps across the onboard waveforms and active wavetable before sampling. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the device and web selectors present rounded frame anchors labeled `1..16`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator, then reads startup-generated RAM Q16 ratio tables so full positive depth raises each active voice by about `+24` semitones and full negative depth lowers it by about `-24` semitones.
+The Synth wheel effect controls are persisted as `SynthModTarget`, `SynthModAmount`, and `SynthVibratoSpeed`. `SynthVibratoSpeed` stores a `1 Hz` through `12 Hz` table index and factory-defaults to `6 Hz`; version `10` and older files remap the old `4/6/8/10 Hz` indices. `FoldWrp` is the default wheel effect and keeps the existing target byte value `0`; `DutyWrp` and `PolyWrp` add target byte values `4` and `5`. All three warp targets apply low-CPU phase warps across the onboard waveforms and active wavetable before sampling. `WT Pos` is a separate target that offsets the persisted `SynthWavetablePosition` base before the active wavetable sampler interpolates frames. `SynthWavetablePosition` remains a `0..127` byte, while the device and web selectors present rounded frame anchors labeled `1..16`. `Vibrato` uses one shared RAM-resident phase accumulator and applies a small pitch offset to each active voice increment when the wheel or an FX envelope asks for vibrato. `Pitch` maps the signed `-127..127` runtime amount into a Q4 internal pitch accumulator, then reads startup-generated RAM Q16 ratio tables so full positive depth raises each active voice by about `+24` semitones and full negative depth lowers it by about `-24` semitones.
 
 The synth LFO is persisted as `SynthLfoTarget`, `SynthLfoAmount`,
 `SynthLfoWave`, and `SynthLfoSpeed`. It uses the same target accumulator as the
@@ -880,19 +881,20 @@ then runs the web FFT-pruned six-level mip generator. The generated browser
 catalog seeds and previews `/Built In` tables, while `BuiltinWavetableData.cpp`
 stores the same fixed-mip bytes in firmware flash.
 
-The Synth Editor metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator; `ArpeggiatorDivision` sets rhythmic subdivision and `ArpeggiatorDirection` selects `Up`, `Down`, `Played`, `RevPlay`, `UpDown`, `DownUp`, or `Random`. The metronome runs its beat scheduler on core 0 and feeds the beep mode into the RAM-resident audio renderer through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
+The Synth menu metronome controls are persisted as `MetronomeMode` and `MetronomeSignature`. The metronome shares `SynthBPM` with the arpeggiator; `ArpeggiatorDivision` sets rhythmic subdivision and `ArpeggiatorDirection` selects `Up`, `Down`, `Played`, `RevPlay`, `UpDown`, `DownUp`, or `Random`. The metronome runs its beat scheduler on core 0 and feeds the beep mode into the RAM-resident audio renderer through a short countdown. `Bright` mode creates strong contrast by dimming the LED frame between beats and returning toward the selected brightness on each beat instead of boosting above the selected brightness. `Side Btns` mode flashes the seven command LEDs green on accented first beats and red on the other beats.
 
 The Advanced-menu boot animation toggle is persisted as `BootAnimationEnabled`. It defaults on and skips `runBootLedSelfCheck()` when off.
 
-The Advanced-menu headphone volume cap is persisted as `HeadphoneVolumeCap`.
-It defaults to `100%`, is inserted into the menu only for hardware `V1.2`, and
-scales only the centered headphone-jack sample before the `AJACK` PWM write.
-The piezo path still uses the velocity wheel and envelope-derived amplitude
-without this cap.
+The Synth-menu `Volume` control edits the active output volume cap. When the
+active output is the jack, it writes `HeadphoneVolumeCap` and scales the centered
+headphone-jack sample before the `AJACK` PWM write. When the active output is
+the piezo, it writes `PiezoVolumeCap` and scales the piezo moving-midpoint
+amplitude before the PWM level is produced. Both profile bytes default to
+`100%`; the menu selector presents `25%` through `100%` in `5%` steps.
 
 `DeviceRotation` stores the four-step physical device orientation used by the
-Layout menu's `Device Rot` item. The OLED driver rotation is derived from that
-physical value with a 180-degree mounting offset, so `Device Rot` value `0`
+Editor menu's `Display Rot` item. The OLED driver rotation is derived from that
+physical value with a 180-degree mounting offset, so `Display Rot` value `0`
 drives the display as the old OLED-driver value `2`. Selecting a layout seeds
 `DeviceRotation` from legacy `layoutDef.isPortrait` metadata: portrait layouts
 use `0`, and landscape layouts use `90`.
@@ -947,14 +949,13 @@ Current top-level user pages are:
 - `Synth:<current preset>` with a leading `*` when the runtime patch differs from the tracked preset
 - `Lights & Colors`
 - `Transpose`
-- `Options`, containing MIDI controls, command-wheel controls, and `Advanced`
-- `Load Profile`
-- `Save Profile`
-- `Synth Editor`
+- `Editor`, containing `Synth`, Dynamic JI controls, layout rotation/flip controls, and `Display Rot`
+- `Settings`, containing MIDI controls, command-wheel controls, and `Advanced`
+- `Profiles`, containing `Auto-Save`, load profile rows, and save profile rows
 - optional `Sequencer` when built with `HEXBOARD_ENABLE_SEQUENCER=1`
 
 The Advanced page includes a read-only `Firmware 1.4 alpha` version label.
-The `Buzzer` toggle is inserted only on hardware `V1.2`.
+The Synth `Buzzer` toggle is inserted only on hardware `V1.2`.
 `Stability` is a transient launcher, not a setting.
 
 When enabled, Sequencer mode currently supports 32-step selection, selected-step
