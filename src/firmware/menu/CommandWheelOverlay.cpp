@@ -107,21 +107,26 @@ void drawStandardMeter() {
 }
 
 void drawCenteredMeter() {
+  u8g2.setDrawColor(1);
   u8g2.drawFrame(kMeterX, kMeterY, kMeterWidth, kMeterHeight);
-  int centerX = kMeterInnerX + (kMeterInnerWidth / 2);
-  u8g2.drawVLine(centerX, kMeterInnerY - 2, kMeterInnerHeight + 4);
-
+  const int leftBound = kMeterInnerX;
+  const int rightBound = kMeterInnerX + kMeterInnerWidth - 1;
+  const int centerX = kMeterInnerX + (kMeterInnerWidth / 2);
   int percent = pitchBendPercent(overlayCurrentValue);
-  int width = std::min(kMeterInnerWidth / 2,
-                       (std::abs(percent) * (kMeterInnerWidth / 2) + 50) / 100);
-  if (width <= 0) {
-    return;
-  }
+
   if (percent > 0) {
-    u8g2.drawBox(centerX + 1, kMeterInnerY, width, kMeterInnerHeight);
-  } else {
-    u8g2.drawBox(centerX - width, kMeterInnerY, width, kMeterInnerHeight);
+    const int rightSpan = rightBound - centerX;
+    int rightEdge = centerX + ((percent * rightSpan + 50) / 100);
+    rightEdge = std::max(centerX + 1, std::min(rightBound, rightEdge));
+    u8g2.drawBox(centerX + 1, kMeterInnerY, rightEdge - centerX, kMeterInnerHeight);
+  } else if (percent < 0) {
+    const int leftSpan = centerX - leftBound;
+    int leftEdge = centerX - (((-percent) * leftSpan + 50) / 100);
+    leftEdge = std::max(leftBound, std::min(centerX - 1, leftEdge));
+    u8g2.drawBox(leftEdge, kMeterInnerY, centerX - leftEdge, kMeterInnerHeight);
   }
+
+  u8g2.drawVLine(centerX, kMeterInnerY - 2, kMeterInnerHeight + 4);
 }
 
 void restoreUnderlyingDisplay() {
@@ -208,6 +213,7 @@ void drawCommandWheelOverlay() {
   formatValue(overlayType, overlayCurrentValue, valueLabel, sizeof(valueLabel));
 
   u8g2.clearBuffer();
+  u8g2.setDrawColor(1);
   u8g2.setFont(u8g2_font_7x14_tf);
   drawCenteredText(overlayTitle(overlayType), 14);
   u8g2.drawHLine(12, 34, 104);
@@ -235,5 +241,6 @@ void drawCommandWheelOverlay() {
 
   overlayVisible = true;
   overlayDirty = false;
+  u8g2.setDrawColor(1);
   u8g2.sendBuffer();
 }
