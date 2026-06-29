@@ -12,6 +12,7 @@
 #include "../midi/NoteDispatch.h"
 #include "../sequencer/SequencerMode.h"
 #include "GridScanRotary.h"
+#include "../menu/CommandWheelOverlay.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
 #include "../menu/VirtualListMenu.h"
@@ -59,6 +60,9 @@ constexpr uint64_t ROTARY_PANIC_HOLD_MICROS = 2000000ULL;  // 2 seconds
 uint64_t rotaryPressStart = 0;
 bool rotaryPanicLatched = false;
 bool rotaryPanicSuppressClick = false;
+byte lastVelocityWheelGestureMask = 0;
+byte lastModulationWheelGestureMask = 0;
+byte lastPitchBendWheelGestureMask = 0;
 
 static bool RAM_FUNC(menuShortcutButtonsEnabled)() {
   if (delegatedControl || stabilityBenchmarkIsActive()) {
@@ -89,6 +93,7 @@ static bool RAM_FUNC(handleMenuShortcutButton)(byte buttonIndex, bool pressed) {
   }
 
   if (pressed) {
+    dismissCommandWheelOverlay();
     dismissPlayedNotesOverlayForMenuInput();
     byte keyCode = menuShortcutMenuKey(buttonIndex == assignCmd[0]);
     if (virtualListMenuIsActive()) {
@@ -162,6 +167,58 @@ void RAM_FUNC(readHexes)() {
     }
   }
 }
+
+static void RAM_FUNC(notifyCommandWheelValue)(CommandWheelOverlayType type,
+                                              const wheelDef& wheel,
+                                              bool immediateRedraw) {
+  notifyCommandWheelOverlay(type,
+                            wheel.curValue,
+                            wheel.minValue,
+                            wheel.maxValue,
+                            wheel.defValue,
+                            immediateRedraw);
+}
+
+static byte RAM_FUNC(commandWheelGestureMask)(const wheelDef& wheel) {
+  if (*wheel.alternateMode && (*wheel.midBtn >> 1)) {
+    byte mask = 0;
+    if (*wheel.topBtn == BTN_STATE_NEWPRESS) {
+      mask |= 0b100;
+    }
+    if (*wheel.botBtn == BTN_STATE_NEWPRESS) {
+      mask |= 0b001;
+    }
+    return mask;
+  }
+
+  byte mask = 0;
+  if (*wheel.topBtn >> 1) {
+    mask |= 0b100;
+  }
+  if (*wheel.midBtn >> 1) {
+    mask |= 0b010;
+  }
+  if (*wheel.botBtn >> 1) {
+    mask |= 0b001;
+  }
+  return mask;
+}
+
+static void RAM_FUNC(notifyCommandWheelGesture)(CommandWheelOverlayType type,
+                                                const wheelDef& wheel,
+                                                int16_t previousTarget,
+                                                byte& lastGestureMask) {
+  byte gestureMask = commandWheelGestureMask(wheel);
+  bool targetChanged = wheel.targetValue != previousTarget;
+  bool newGesture = gestureMask != 0 && gestureMask != lastGestureMask;
+
+  if (targetChanged || newGesture) {
+    notifyCommandWheelValue(type, wheel, newGesture);
+  }
+
+  lastGestureMask = gestureMask;
+}
+
 void RAM_FUNC(updateWheels)() {
   if (delegatedControl) {
     return;
@@ -177,22 +234,58 @@ void RAM_FUNC(updateWheels)() {
     h[assignCmd[6]].btnState = BTN_STATE_OFF;
   }
 
+  int16_t previousVelocityTarget = velWheel.targetValue;
   velWheel.setTargetValue();
+  if (!menuShortcutButtonsActive) {
+    notifyCommandWheelGesture(CommandWheelOverlayType::Velocity,
+                              velWheel,
+                              previousVelocityTarget,
+                              lastVelocityWheelGestureMask);
+  } else {
+    lastVelocityWheelGestureMask = 0;
+  }
   bool upd = velWheel.updateValue(runTime);
   if (upd) {
     sendToLog("vel became " + std::to_string(velWheel.curValue));
+    if (!menuShortcutButtonsActive && commandWheelOverlayActive()) {
+      notifyCommandWheelValue(CommandWheelOverlayType::Velocity, velWheel, false);
+    }
   }
   if (toggleWheel) {
+    int16_t previousPitchBendTarget = pbWheel.targetValue;
     pbWheel.setTargetValue();
+    if (!menuShortcutButtonsActive) {
+      notifyCommandWheelGesture(CommandWheelOverlayType::PitchBend,
+                                pbWheel,
+                                previousPitchBendTarget,
+                                lastPitchBendWheelGestureMask);
+    } else {
+      lastPitchBendWheelGestureMask = 0;
+    }
     upd = pbWheel.updateValue(runTime);
     if (upd) {
+      if (!menuShortcutButtonsActive && commandWheelOverlayActive()) {
+        notifyCommandWheelValue(CommandWheelOverlayType::PitchBend, pbWheel, false);
+      }
       sendMIDIpitchBendToCh1();
       updateSynthWithNewFreqs();
     }
   } else {
+    int16_t previousModulationTarget = modWheel.targetValue;
     modWheel.setTargetValue();
+    if (!menuShortcutButtonsActive) {
+      notifyCommandWheelGesture(CommandWheelOverlayType::Modulation,
+                                modWheel,
+                                previousModulationTarget,
+                                lastModulationWheelGestureMask);
+    } else {
+      lastModulationWheelGestureMask = 0;
+    }
     upd = modWheel.updateValue(runTime);
     if (upd) {
+      if (!menuShortcutButtonsActive && commandWheelOverlayActive()) {
+        notifyCommandWheelValue(CommandWheelOverlayType::Modulation, modWheel, false);
+      }
       sendMIDImodulationToCh1();
     }
   }
@@ -313,6 +406,7 @@ void dealWithRotary() {
 
   if (virtualListMenuIsActive()) {
     if (justReleased && !rotaryPanicSuppressClick) {
+      dismissCommandWheelOverlay();
       dismissPlayedNotesOverlayForMenuInput();
       handleVirtualListMenuKey(GEM_KEY_OK);
       noteOverlayDirty = true;
@@ -320,6 +414,7 @@ void dealWithRotary() {
     }
     if (storeRotaryTurn != 0) {
       bool turnIsClockwise = (storeRotaryTurn == 8);
+      dismissCommandWheelOverlay();
       dismissPlayedNotesOverlayForMenuInput();
       byte keyCode = rotaryInvert
                        ? (turnIsClockwise ? GEM_KEY_DOWN : GEM_KEY_UP)
@@ -331,6 +426,7 @@ void dealWithRotary() {
     }
   } else if (menu.readyForKey()) {
     if (justReleased && !rotaryPanicSuppressClick) {
+      dismissCommandWheelOverlay();
       dismissPlayedNotesOverlayForMenuInput();
       if (!handleVirtualListLauncherKey(GEM_KEY_OK)) {
         menu.registerKeyPress(GEM_KEY_OK);
@@ -340,6 +436,7 @@ void dealWithRotary() {
     }
     if (storeRotaryTurn != 0) {
       bool turnIsClockwise = (storeRotaryTurn == 8);
+      dismissCommandWheelOverlay();
       dismissPlayedNotesOverlayForMenuInput();
       byte keyCode = rotaryInvert
                        ? (turnIsClockwise ? GEM_KEY_DOWN : GEM_KEY_UP)

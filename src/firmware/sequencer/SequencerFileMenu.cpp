@@ -10,6 +10,7 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../app/RuntimeDefaults.h"
 #include "../hardware/LedRender.h"
+#include "../menu/CommandWheelOverlay.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
 #include "../menu/VirtualListMenu.h"
@@ -678,6 +679,7 @@ void returnToSequencerMenu() {
   invalidateBrowserCache();
   if (g_sequencerPage != nullptr) {
     menu.setMenuPageCurrent(*g_sequencerPage);
+    dismissCommandWheelOverlay();
     menu.drawMenu();
   }
 }
@@ -1129,6 +1131,7 @@ void refreshUsbBackupMenu(bool redrawMenu) {
   usbBackupStatusTwoItem().setTitle(g_usbBackupStatusLineTwo);
 
   if (redrawMenu && g_usbBackupPage != nullptr && menu.getCurrentMenuPage() == g_usbBackupPage) {
+    dismissCommandWheelOverlay();
     menu.drawMenu();
   }
 }
@@ -1163,6 +1166,7 @@ void stopUsbBackupCallback() {
     return;
   }
   menu.setMenuPageCurrent(*g_usbBackupStopPage);
+  dismissCommandWheelOverlay();
   menu.drawMenu();
   g_lastMenuPage = g_usbBackupStopPage;
 }
@@ -1174,6 +1178,7 @@ void confirmUsbBackupExitCallback() {
   }
   if (g_sequencerPage != nullptr) {
     menu.setMenuPageCurrent(fileMenuPage(*g_sequencerPage));
+    dismissCommandWheelOverlay();
     menu.drawMenu();
     g_lastMenuPage = &fileMenuPage(*g_sequencerPage);
   }
@@ -1186,6 +1191,7 @@ void cancelUsbBackupExitCallback() {
   }
   menu.setMenuPageCurrent(*g_usbBackupPage);
   refreshUsbBackupMenu(false);
+  dismissCommandWheelOverlay();
   menu.drawMenu();
   showStatusToast("USB Backup", "Session active");
   g_lastMenuPage = g_usbBackupPage;
@@ -1198,6 +1204,7 @@ void confirmUsbBackupStopCallback() {
   }
   menu.setMenuPageCurrent(*g_usbBackupPage);
   refreshUsbBackupMenu(false);
+  dismissCommandWheelOverlay();
   menu.drawMenu();
   showStatusToast("USB Backup", "Session closed");
   g_lastMenuPage = g_usbBackupPage;
@@ -1209,6 +1216,7 @@ void cancelUsbBackupStopCallback() {
   }
   menu.setMenuPageCurrent(*g_usbBackupPage);
   refreshUsbBackupMenu(false);
+  dismissCommandWheelOverlay();
   menu.drawMenu();
   showStatusToast("USB Backup", "Session active");
   g_lastMenuPage = g_usbBackupPage;
@@ -1228,6 +1236,7 @@ void guardUsbBackupMenuExit() {
       currentPage != g_usbBackupStopPage &&
       isUsbBackupActive()) {
     menu.setMenuPageCurrent(*g_usbBackupExitPage);
+    dismissCommandWheelOverlay();
     menu.drawMenu();
     g_lastMenuPage = g_usbBackupExitPage;
     return;
@@ -1259,6 +1268,7 @@ void openActionPage() {
   g_fileUiActive = true;
   menu.setMenuPageCurrent(actionPage());
   actionPage().setCurrentMenuItemIndex(4);
+  dismissCommandWheelOverlay();
   menu.drawMenu();
 }
 
@@ -1306,6 +1316,7 @@ void actionDeleteCallback() {
   deletePage().setTitle(g_deleteTargetIsFolder ? "Delete Folder?" : "Delete File?");
   menu.setMenuPageCurrent(deletePage());
   deletePage().setCurrentMenuItemIndex(4);
+  dismissCommandWheelOverlay();
   menu.drawMenu();
 }
 
@@ -1665,6 +1676,7 @@ void drawFileMenuOverlay() {
     return;
   }
 
+  dismissCommandWheelOverlay();
   screenTime = 0;
   if (screenSaverOn) {
     screenSaverOn = false;

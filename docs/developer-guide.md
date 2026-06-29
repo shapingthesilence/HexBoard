@@ -103,6 +103,7 @@ button matrix -> readHexes()
               -> tryMIDInoteOn/Off() -> USB/serial MIDI
               -> trySynthNoteOn/Off() -> envelope commands -> audio block renderer -> DMA -> PWM audio
               -> LED state -> lightUpLEDs()
+              -> command-wheel value updates -> drawCommandWheelOverlay()
               -> played-note snapshot -> drawPlayedNotesOverlay()
 
 rotary encoder -> readKnob() on core 1 -> dealWithRotary() on core 0 -> GEM menu
@@ -129,6 +130,14 @@ note/wheel sends, synth voice allocation, rotary quadrature polling, compact LED
 frame helpers, and small synth lookup tables read by the renderer. Avoid moving
 OLED/GEM/U8g2 drawing wholesale; those paths are dominated by library calls and
 I2C transfer time.
+
+The command-wheel OLED readout follows that split: the RAM-resident wheel path
+only records lightweight overlay state when a velocity, modulation, or
+pitch-bend value changes or a command-wheel gesture requests feedback, while the
+normal display phase renders the full screen with throttled redraws. Other OLED
+renderers dismiss the command-wheel readout before drawing so menu, list,
+Sequencer, played-note, delegated-control, save, and transfer screens always own
+the display they update.
 
 ## Source Map
 

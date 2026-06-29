@@ -80,6 +80,14 @@ The wheel behavior depends on menu settings:
 - `Springy`: returns to its default value when released
 - `Sticky`: holds its last value
 
+When a command-wheel value changes, the OLED briefly shows a full-screen
+readout with the control name, the current value, and a simple meter. Velocity
+and modulation show raw `0`-`127` values. Pitch bend shows a centered percentage
+from `-100%` to `+100%`. The readout updates while a held wheel button moves the
+value, and clears after about `3 seconds`, or sooner if another menu, list,
+Sequencer, played-note, delegated-control, save, or transfer screen updates the
+display.
+
 When the OLED menu or a list browser is active, hold the bottom command button
 as a modifier and press the top two command buttons to navigate: top moves up,
 middle moves down. While editing a menu value, top increases the value and

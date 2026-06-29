@@ -15,6 +15,7 @@
 #include "SequencerTools.h"
 #include "SequencerTransport.h"
 #include "SequencerUsbBackup.h"
+#include "../menu/CommandWheelOverlay.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../synth/SynthAudio.h"
 
@@ -76,6 +77,7 @@ void refreshSequencerTitleRow(bool redrawIfVisible = false) {
     if (sequencerDisplayOverlayActive()) {
       sequencer::markOverlayDirty();
     } else {
+      dismissCommandWheelOverlay();
       menu.drawMenu();
     }
   }
@@ -121,6 +123,7 @@ void enterSequencerMode() {
   screenTime = 0;
   menu.setMenuPageCurrent(sequencerMenuPage());
   refreshSequencerTitleRow(false);
+  dismissCommandWheelOverlay();
   menu.drawMenu();
 #endif
 }

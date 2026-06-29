@@ -6,6 +6,7 @@
 #include "../hardware/GridState.h"
 #include "../hardware/LedAnimations.h"
 #include "../hardware/LedRender.h"
+#include "../menu/CommandWheelOverlay.h"
 #include "../menu/GeometryMenu.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
@@ -131,6 +132,7 @@ void hexboardLoop() {        // run on first core
   if (sequencerModeActive()) {
     drawSequencerModeDisplay();
   }
+  drawCommandWheelOverlay();
   drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_BENCHMARK);
   serviceStabilityBenchmark();
