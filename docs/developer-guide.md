@@ -318,7 +318,8 @@ When adding, removing, reordering, or reinterpreting a `SettingKey`:
 
 Other persistent stores:
 
-- `/synth_presets.dat`: named/foldered synth presets, magic `SYP`, version `10`, up to `128` presets. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume or the current loaded preset id.
+- `/synth_presets.dat`: named/foldered synth presets, magic `SYP`, version `10`, up to `128` presets. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume.
+- `/current_synth_preset.dat`: current loaded synth preset reference, magic `CSP`, version `1`. It stores either the loaded preset object ID or the special `Blank` state; the edited synth values still come from normal settings/profile storage.
 - `/synth_wavetables.dat`: named user wavetable catalog, magic `SYW`, version `1`, up to `32` entries. Sample files use shortened `/wt_<16 hex>.wtb` paths and can contain six fixed mip levels (`49,152` bytes) or legacy base-only data (`8,192` bytes).
 - `/profile_wavetables.dat`: per-profile wavetable folder/name snapshots, magic `PWT`, version `1`.
 - `/layouts.dat`: user geometry catalog, magic `LYT`, version `2`, up to `64` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`.

@@ -404,9 +404,11 @@ The top-level `Synth:<preset>` item and the `Preset:<preset>` item inside
 `Editor` -> `Synth` both open synth preset load lists. `Save Preset` and the
 preset load lists use synth-only preset libraries with room for up to `128`
 device presets. Presets are stored separately from the main settings file as
-named, foldered synth sounds and do not remember which preset was last loaded.
-On the device, presets appear in a virtual folder browser; `New Preset` saves
-into the currently open folder. Factory presets are copied into normal
+named, foldered synth sounds. The device remembers which synth preset or
+`Blank` state was last loaded, while the normal settings auto-save stores any
+unsaved edits so the preset label can still show as modified after restart. On
+the device, presets appear in a virtual folder browser; `New Preset` saves into
+the currently open folder. Factory presets are copied into normal
 editable root-folder preset slots
 when defaults are restored, so they can be changed or erased like any other
 preset and restored later by Reset Defaults or from the web editor's browser
