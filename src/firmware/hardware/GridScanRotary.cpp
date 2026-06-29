@@ -64,51 +64,6 @@ byte lastVelocityWheelGestureMask = 0;
 byte lastModulationWheelGestureMask = 0;
 byte lastPitchBendWheelGestureMask = 0;
 
-static bool RAM_FUNC(menuShortcutButtonsEnabled)() {
-  if (delegatedControl || stabilityBenchmarkIsActive()) {
-    return false;
-  }
-  byte modifierState = h[assignCmd[6]].btnState;
-  bool modifierHeld = (modifierState == BTN_STATE_NEWPRESS || modifierState == BTN_STATE_HELD);
-  bool shortcutButtonActive = h[assignCmd[0]].btnState != BTN_STATE_OFF ||
-                              h[assignCmd[1]].btnState != BTN_STATE_OFF;
-  return modifierHeld && shortcutButtonActive && (virtualListMenuIsActive() || menu.readyForKey());
-}
-
-static bool RAM_FUNC(menuShortcutUsesValueDirection)() {
-  return menu.isEditMode();
-}
-
-static byte RAM_FUNC(menuShortcutMenuKey)(bool isTopShortcutButton) {
-  if (menuShortcutUsesValueDirection()) {
-    return isTopShortcutButton ? GEM_KEY_DOWN : GEM_KEY_UP;
-  }
-  return isTopShortcutButton ? GEM_KEY_UP : GEM_KEY_DOWN;
-}
-
-static bool RAM_FUNC(handleMenuShortcutButton)(byte buttonIndex, bool pressed) {
-  if (buttonIndex != assignCmd[0] && buttonIndex != assignCmd[1]) {
-    return false;
-  }
-  if (!menuShortcutButtonsEnabled()) {
-    return false;
-  }
-
-  if (pressed) {
-    dismissCommandWheelOverlay();
-    dismissPlayedNotesOverlayForMenuInput();
-    byte keyCode = menuShortcutMenuKey(buttonIndex == assignCmd[0]);
-    if (virtualListMenuIsActive()) {
-      handleVirtualListMenuKey(keyCode);
-    } else {
-      menu.registerKeyPress(keyCode);
-    }
-    noteOverlayDirty = true;
-    screenTime = 0;
-  }
-  return true;
-}
-
 void RAM_FUNC(readHexes)() {
 
   // Optimized button reading using SIO registers - much faster!
@@ -133,9 +88,6 @@ void RAM_FUNC(readHexes)() {
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
-        if (handleMenuShortcutButton(i, true)) {
-          break;
-        }
         if (delegatedControl) {
           delegatedButtonEvent(i, true);
         } else if (h[i].isCmd) {
@@ -148,9 +100,6 @@ void RAM_FUNC(readHexes)() {
         }
         break;
       case BTN_STATE_RELEASED:  // just released
-        if (handleMenuShortcutButton(i, false)) {
-          break;
-        }
         if (delegatedControl) {
           delegatedButtonEvent(i, false);
         } else if (h[i].isCmd) {
@@ -226,47 +175,29 @@ void RAM_FUNC(updateWheels)() {
     return;
   }
 
-  bool menuShortcutButtonsActive = menuShortcutButtonsEnabled();
-  byte savedMenuShortcutTopState = h[assignCmd[0]].btnState;
-  byte savedMenuShortcutMidState = h[assignCmd[1]].btnState;
-  byte savedMenuShortcutModifierState = h[assignCmd[6]].btnState;
-  if (menuShortcutButtonsActive) {
-    h[assignCmd[0]].btnState = BTN_STATE_OFF;
-    h[assignCmd[1]].btnState = BTN_STATE_OFF;
-    h[assignCmd[6]].btnState = BTN_STATE_OFF;
-  }
-
   int16_t previousVelocityTarget = velWheel.targetValue;
   velWheel.setTargetValue();
-  if (!menuShortcutButtonsActive) {
-    notifyCommandWheelGesture(CommandWheelOverlayType::Velocity,
-                              velWheel,
-                              previousVelocityTarget,
-                              lastVelocityWheelGestureMask);
-  } else {
-    lastVelocityWheelGestureMask = 0;
-  }
+  notifyCommandWheelGesture(CommandWheelOverlayType::Velocity,
+                            velWheel,
+                            previousVelocityTarget,
+                            lastVelocityWheelGestureMask);
   bool upd = velWheel.updateValue(runTime);
   if (upd) {
     sendToLog("vel became " + std::to_string(velWheel.curValue));
-    if (!menuShortcutButtonsActive && commandWheelOverlayActive()) {
+    if (commandWheelOverlayActive()) {
       notifyCommandWheelValue(CommandWheelOverlayType::Velocity, velWheel, false);
     }
   }
   if (toggleWheel) {
     int16_t previousPitchBendTarget = pbWheel.targetValue;
     pbWheel.setTargetValue();
-    if (!menuShortcutButtonsActive) {
-      notifyCommandWheelGesture(CommandWheelOverlayType::PitchBend,
-                                pbWheel,
-                                previousPitchBendTarget,
-                                lastPitchBendWheelGestureMask);
-    } else {
-      lastPitchBendWheelGestureMask = 0;
-    }
+    notifyCommandWheelGesture(CommandWheelOverlayType::PitchBend,
+                              pbWheel,
+                              previousPitchBendTarget,
+                              lastPitchBendWheelGestureMask);
     upd = pbWheel.updateValue(runTime);
     if (upd) {
-      if (!menuShortcutButtonsActive && commandWheelOverlayActive()) {
+      if (commandWheelOverlayActive()) {
         notifyCommandWheelValue(CommandWheelOverlayType::PitchBend, pbWheel, false);
       }
       sendMIDIpitchBendToCh1();
@@ -275,27 +206,17 @@ void RAM_FUNC(updateWheels)() {
   } else {
     int16_t previousModulationTarget = modWheel.targetValue;
     modWheel.setTargetValue();
-    if (!menuShortcutButtonsActive) {
-      notifyCommandWheelGesture(CommandWheelOverlayType::Modulation,
-                                modWheel,
-                                previousModulationTarget,
-                                lastModulationWheelGestureMask);
-    } else {
-      lastModulationWheelGestureMask = 0;
-    }
+    notifyCommandWheelGesture(CommandWheelOverlayType::Modulation,
+                              modWheel,
+                              previousModulationTarget,
+                              lastModulationWheelGestureMask);
     upd = modWheel.updateValue(runTime);
     if (upd) {
-      if (!menuShortcutButtonsActive && commandWheelOverlayActive()) {
+      if (commandWheelOverlayActive()) {
         notifyCommandWheelValue(CommandWheelOverlayType::Modulation, modWheel, false);
       }
       sendMIDImodulationToCh1();
     }
-  }
-
-  if (menuShortcutButtonsActive) {
-    h[assignCmd[0]].btnState = savedMenuShortcutTopState;
-    h[assignCmd[1]].btnState = savedMenuShortcutMidState;
-    h[assignCmd[6]].btnState = savedMenuShortcutModifierState;
   }
 }
 void setupRotary() {

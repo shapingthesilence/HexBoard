@@ -178,11 +178,6 @@ Playback
 
 Menu Items
 
-- When a menu page is open, hold the bottom command button below the encoder to
-  temporarily make the top two command buttons act like one encoder step up or
-  down. Releasing that bottom button returns them to normal behavior.
-- While editing a value, the top shortcut button increases that value and the
-  lower shortcut button decreases it.
 - New: clears to a blank untitled sequence.
 - Save: saves to the current file, or opens folder selection and naming if the sequence is untitled.
 - Save New: saves as a new file in the selected folder.

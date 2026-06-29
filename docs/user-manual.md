@@ -88,11 +88,6 @@ value, and clears after about `3 seconds`, or sooner if another menu, list,
 Sequencer, played-note, delegated-control, save, or transfer screen updates the
 display.
 
-When the OLED menu or a list browser is active, hold the bottom command button
-as a modifier and press the top two command buttons to navigate: top moves up,
-middle moves down. While editing a menu value, top increases the value and
-middle decreases it.
-
 ### Rotary Encoder
 
 The encoder controls the OLED menu:

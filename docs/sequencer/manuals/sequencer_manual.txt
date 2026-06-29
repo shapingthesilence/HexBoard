@@ -494,13 +494,6 @@ entering edit mode for each step.
 
 12. Menu Structure
 
-When a menu page is open, hold the bottom command button below the encoder to
-temporarily make the top two command buttons act like one encoder step up or
-down. Releasing that bottom button returns them to their normal non-menu
-behavior.
-While editing a value, the top shortcut button increases that value and the
-lower shortcut button decreases it.
-
 Main Sequencer menu:
 
 - Keyboard
