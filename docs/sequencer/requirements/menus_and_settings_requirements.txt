@@ -89,17 +89,6 @@ Details:
   in the current sequence file.
 
 
-ID: SEQ-MENU-004
-Title: Firmware Update Access
-Status: Active
-Area: Menus
-Priority: Medium
-
-Requirement:
-Sequencer mode shall provide access to firmware update reboot from the
-Sequencer menu.
-
-
 ID: SEQ-MENU-005
 Title: Playback Settings Submenu
 Status: Active
