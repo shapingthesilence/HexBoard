@@ -108,11 +108,11 @@ The main menu includes:
 - `Lights & Colors`
 - `Transpose`
 - `Editor`
-- `Settings`
 - `Profiles`
+- `Settings`
 
 Developer builds compiled with `HEXBOARD_ENABLE_SEQUENCER=1` also show a main
-menu item named `Sequencer`. Default firmware builds may not include it. For
+menu item named `Sequencer` above `Settings`. Default firmware builds may not include it. For
 sequencer information, see the [Sequencer Manual](sequencer-manual.md).
 Sequencer-enabled builds also include `File Management` -> `USB Backup` for
 using the desktop HexBoard Backup GUI with saved `.hbseq` sequences.

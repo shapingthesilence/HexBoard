@@ -2982,7 +2982,6 @@ void setupMenu() {
   setupColorsMenuPage();
   setupTransposeMenuItem();
   setupEditorMenuPage();
-  setupOptionsMenuPage();
   setupMidiMenuPage();
   setupControlMenuPage();
   setupSerialDebugMenuPage();
@@ -2990,6 +2989,7 @@ void setupMenu() {
   setupProfileMenuPages();
   setupSynthMenuPage();
   setupSequencerMenu();
+  setupOptionsMenuPage();
 }
 void setupGFX() {
   u8g2.begin();                      // Menu and graphics setup
