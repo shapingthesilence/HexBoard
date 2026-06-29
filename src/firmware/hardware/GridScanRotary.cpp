@@ -70,7 +70,9 @@ static bool RAM_FUNC(menuShortcutButtonsEnabled)() {
   }
   byte modifierState = h[assignCmd[6]].btnState;
   bool modifierHeld = (modifierState == BTN_STATE_NEWPRESS || modifierState == BTN_STATE_HELD);
-  return modifierHeld && (virtualListMenuIsActive() || menu.readyForKey());
+  bool shortcutButtonActive = h[assignCmd[0]].btnState != BTN_STATE_OFF ||
+                              h[assignCmd[1]].btnState != BTN_STATE_OFF;
+  return modifierHeld && shortcutButtonActive && (virtualListMenuIsActive() || menu.readyForKey());
 }
 
 static bool RAM_FUNC(menuShortcutUsesValueDirection)() {
