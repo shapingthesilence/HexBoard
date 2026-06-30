@@ -57,6 +57,11 @@ note. The badge is composited into normal menu redraws so menu updates do not
 momentarily erase it. If the OLED screensaver is active, playing a note can wake
 a larger `Now Playing` display that shows up to `6` unique played notes from
 lowest to highest. Turning or pressing the encoder returns to the menu display.
+While the velocity, modulation, or pitch-bend readout is active, played notes
+stay in the compact badge instead of taking over the whole screen.
+If the OLED was asleep and notes are still held when that readout clears,
+HexBoard returns to the larger `Now Playing` display until the notes are
+released.
 Recognized chord names appear near the bottom of that larger display only for
 `12 EDO`. In Sequencer mode, the same display applies to lower-grid audition
 notes when no step is selected; if selected-step edit focus was closed and the
@@ -83,10 +88,11 @@ The wheel behavior depends on menu settings:
 When a command-wheel value changes, the OLED briefly shows a full-screen
 readout with the control name, the current value, and a simple meter. Velocity
 and modulation show raw `0`-`127` values. Pitch bend shows a centered percentage
-from `-100%` to `+100%`. The readout updates while a held wheel button moves the
-value, and clears after about `3 seconds`, or sooner if another menu, list,
-Sequencer, played-note, delegated-control, save, or transfer screen updates the
-display.
+from `-100%` to `+100%`. The readout updates smoothly while a held wheel button
+moves the value, and clears after about `3 seconds`, or sooner if another menu,
+list, Sequencer, delegated-control, save, or transfer screen updates the
+display. Command-wheel feedback does not reset the OLED menu screensaver timer;
+the menu still falls asleep about `30 seconds` after the last encoder action.
 
 ### Rotary Encoder
 

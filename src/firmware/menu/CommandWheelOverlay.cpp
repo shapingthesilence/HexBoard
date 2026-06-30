@@ -3,13 +3,14 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../sequencer/SequencerMode.h"
 #include "MenuAndDisplay.h"
+#include "PlayedNotesOverlay.h"
 
 extern bool screenSaverOn;
 
 namespace {
 
 constexpr uint64_t kOverlayHoldMicros = 3000000ULL;
-constexpr uint64_t kOverlayRedrawIntervalMicros = 100000ULL;
+constexpr uint64_t kOverlayRedrawIntervalMicros = 50000ULL;
 constexpr int kMeterX = 10;
 constexpr int kMeterY = 94;
 constexpr int kMeterWidth = 108;
@@ -21,6 +22,7 @@ constexpr int kMeterInnerHeight = kMeterHeight - 4;
 
 bool overlayActive = false;
 bool overlayVisible = false;
+bool overlayTemporaryWake = false;
 bool overlayDirty = false;
 bool overlayRedrawPending = false;
 CommandWheelOverlayType overlayType = CommandWheelOverlayType::Velocity;
@@ -133,9 +135,16 @@ void restoreUnderlyingDisplay() {
   }
 }
 
+void returnDisplayToScreenSaver() {
+  screenSaverOn = true;
+  u8g2.setContrast(CONTRAST_SCREENSAVER);
+  u8g2.clear();
+}
+
 void RAM_FUNC(clearOverlayState)() {
   overlayActive = false;
   overlayVisible = false;
+  overlayTemporaryWake = false;
   overlayDirty = false;
   overlayRedrawPending = false;
   overlayExpiresAt = 0;
@@ -146,6 +155,10 @@ void RAM_FUNC(clearOverlayState)() {
 
 bool commandWheelOverlayActive() {
   return overlayActive || overlayVisible;
+}
+
+bool commandWheelOverlayTemporaryWakeActive() {
+  return overlayActive && overlayTemporaryWake;
 }
 
 void RAM_FUNC(notifyCommandWheelOverlay)(CommandWheelOverlayType type,
@@ -159,6 +172,10 @@ void RAM_FUNC(notifyCommandWheelOverlay)(CommandWheelOverlayType type,
   overlayMinValue = minValue;
   overlayMaxValue = maxValue;
   overlayActive = true;
+  overlayTemporaryWake = overlayTemporaryWake
+                         || screenSaverOn
+                         || noteOverlayTemporaryWake
+                         || screenTime > screenSaverTimeout;
   if (immediateRedraw || newlyShown || runTime >= overlayNextRedrawAt) {
     overlayDirty = true;
     overlayRedrawPending = false;
@@ -167,11 +184,18 @@ void RAM_FUNC(notifyCommandWheelOverlay)(CommandWheelOverlayType type,
     overlayRedrawPending = true;
   }
   overlayExpiresAt = runTime + kOverlayHoldMicros;
-  screenTime = 0;
 }
 
 void RAM_FUNC(dismissCommandWheelOverlay)() {
   clearOverlayState();
+}
+
+void requestCommandWheelOverlayRedraw() {
+  if (!commandWheelOverlayActive()) {
+    return;
+  }
+  overlayDirty = true;
+  overlayRedrawPending = false;
 }
 
 void drawCommandWheelOverlay() {
@@ -181,9 +205,18 @@ void drawCommandWheelOverlay() {
 
   if (runTime > overlayExpiresAt) {
     bool wasVisible = overlayVisible;
+    bool shouldReturnToSleep = overlayTemporaryWake || screenTime > screenSaverTimeout;
+    bool handOffToPlayedNotes = shouldReturnToSleep && wakePlayedNotesOverlayForHeldNotes();
     clearOverlayState();
+    if (handOffToPlayedNotes) {
+      return;
+    }
     if (wasVisible) {
-      restoreUnderlyingDisplay();
+      if (shouldReturnToSleep) {
+        returnDisplayToScreenSaver();
+      } else {
+        restoreUnderlyingDisplay();
+      }
     }
     return;
   }
@@ -202,6 +235,7 @@ void drawCommandWheelOverlay() {
     screenSaverOn = false;
     u8g2.setContrast(CONTRAST_AWAKE);
   }
+  refreshPlayedNoteBadgeForCommandWheel();
 
   char valueLabel[10];
   formatValue(overlayType, overlayCurrentValue, valueLabel, sizeof(valueLabel));
@@ -236,5 +270,8 @@ void drawCommandWheelOverlay() {
   overlayVisible = true;
   overlayDirty = false;
   u8g2.setDrawColor(1);
+  if (noteBadgeVisible && noteBadgeText[0] != '\0') {
+    drawPlayedNoteBadgeOnMenuFrame();
+  }
   u8g2.sendBuffer();
 }

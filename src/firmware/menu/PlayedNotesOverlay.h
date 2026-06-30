@@ -34,6 +34,8 @@ byte normalizeNoteDisplayMode(byte mode);
 bool noteDisplayEnabled();
 bool setNoteOverlayTemporaryWake(bool enabled);
 void dismissPlayedNotesOverlayForMenuInput();
+bool wakePlayedNotesOverlayForHeldNotes();
+bool refreshPlayedNoteBadgeForCommandWheel();
 void drawPlayedNoteBadgeOnMenuFrame();
 void drawPlayedNotesOverlay();
 void onToggleDisplayPlayedNotes();

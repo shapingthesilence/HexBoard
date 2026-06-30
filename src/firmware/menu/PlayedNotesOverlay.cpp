@@ -97,6 +97,7 @@ void formatDisplayedPitch(int16_t displayedPitch, char* noteText, size_t noteTex
 void restorePlayedNotesUnderlyingDisplay();
 void drawCompactPlayedNoteBadgeFrame(const char* noteText);
 void drawCompactPlayedNoteBadge(PlayedNoteDisplaySource source);
+void clearPlayedNoteDisplayState();
 extern bool screenSaverOn;
 
 byte normalizeNoteDisplayMode(byte mode) {
@@ -152,6 +153,17 @@ void dismissPlayedNotesOverlayForMenuInput() {
   noteOverlayReleaseGraceUntil = 0;
   clearDisplayedNotes(displayedNotes);
   noteOverlayDirty = true;
+}
+
+void clearPlayedNoteDisplayState() {
+  noteOverlayTemporaryWake = false;
+  noteOverlayWokeDisplayFromSleep = false;
+  noteOverlayVisible = false;
+  noteBadgeVisible = false;
+  noteOverlayHoldUntil = 0;
+  noteOverlayReleaseGraceUntil = 0;
+  noteBadgeText[0] = '\0';
+  clearDisplayedNotes(displayedNotes);
 }
 
 void clearDisplayedNotes(int16_t* notes) {
@@ -426,7 +438,6 @@ void drawCompactPlayedNoteBadgeFrame(const char* noteText) {
     return;
   }
 
-  dismissCommandWheelOverlay();
   int badgeX = u8g2.getDisplayWidth() - PLAYED_NOTE_BADGE_WIDTH;
   if (badgeX < 0) {
     badgeX = 0;
@@ -469,14 +480,97 @@ void restorePlayedNotesUnderlyingDisplay() {
   }
 }
 
+void demoteFullScreenPlayedNotesForCommandWheel() {
+  if (!noteOverlayTemporaryWake && !noteOverlayVisible) {
+    return;
+  }
+
+  noteOverlayTemporaryWake = false;
+  noteOverlayWokeDisplayFromSleep = false;
+  noteOverlayVisible = false;
+  noteOverlayHoldUntil = 0;
+  noteOverlayReleaseGraceUntil = 0;
+  clearDisplayedNotes(displayedNotes);
+  noteOverlayDirty = true;
+}
+
+bool wakePlayedNotesOverlayForHeldNotes() {
+  PlayedNoteDisplaySource source = activePlayedNoteDisplaySource();
+  if (!noteDisplayEnabled() || source == PlayedNoteDisplaySource::None) {
+    return false;
+  }
+
+  int16_t displayedPitch = 0;
+  if (!newestHeldDisplayedPitchForSource(source, displayedPitch)) {
+    return false;
+  }
+
+  noteOverlayTemporaryWake = true;
+  noteOverlayWokeDisplayFromSleep = true;
+  noteOverlayVisible = false;
+  noteBadgeVisible = false;
+  noteBadgeText[0] = '\0';
+  noteOverlayHoldUntil = 0;
+  noteOverlayReleaseGraceUntil = 0;
+  clearDisplayedNotes(displayedNotes);
+  noteOverlayDirty = true;
+
+  if (screenSaverOn) {
+    screenSaverOn = false;
+    u8g2.setContrast(CONTRAST_AWAKE);
+  }
+  return true;
+}
+
+bool refreshPlayedNoteBadgeForCommandWheel() {
+  PlayedNoteDisplaySource source = activePlayedNoteDisplaySource();
+  if (!noteDisplayEnabled() || source == PlayedNoteDisplaySource::None) {
+    bool changed = noteBadgeVisible || noteOverlayVisible || noteOverlayTemporaryWake || noteBadgeText[0] != '\0';
+    clearPlayedNoteDisplayState();
+    noteOverlayDirty = false;
+    return changed;
+  }
+
+  bool changed = noteOverlayTemporaryWake || noteOverlayVisible;
+  demoteFullScreenPlayedNotesForCommandWheel();
+
+  int16_t displayedPitch = 0;
+  if (!newestHeldDisplayedPitchForSource(source, displayedPitch)) {
+    changed = changed || noteBadgeVisible || noteBadgeText[0] != '\0';
+    noteBadgeVisible = false;
+    noteBadgeText[0] = '\0';
+    noteOverlayDirty = false;
+    return changed;
+  }
+
+  char latestNoteText[sizeof(noteBadgeText)];
+  formatDisplayedPitch(displayedPitch, latestNoteText, sizeof(latestNoteText));
+  changed = changed
+            || !noteBadgeVisible
+            || noteOverlayDirty
+            || strcmp(noteBadgeText, latestNoteText) != 0;
+
+  strncpy(noteBadgeText, latestNoteText, sizeof(noteBadgeText));
+  noteBadgeText[sizeof(noteBadgeText) - 1] = '\0';
+  noteBadgeVisible = true;
+  noteOverlayVisible = false;
+  noteOverlayDirty = false;
+  return changed;
+}
+
 void drawCompactPlayedNoteBadge(PlayedNoteDisplaySource source) {
   int16_t displayedPitch = 0;
   if (!newestHeldDisplayedPitchForSource(source, displayedPitch)) {
     if (noteBadgeVisible) {
+      bool commandOverlayActive = commandWheelOverlayActive();
       noteBadgeVisible = false;
       noteBadgeText[0] = '\0';
       noteOverlayDirty = false;
-      restorePlayedNotesUnderlyingDisplay();
+      if (commandOverlayActive) {
+        requestCommandWheelOverlayRedraw();
+      } else {
+        restorePlayedNotesUnderlyingDisplay();
+      }
     } else {
       noteOverlayDirty = false;
     }
@@ -495,7 +589,6 @@ void drawCompactPlayedNoteBadge(PlayedNoteDisplaySource source) {
   noteOverlayVisible = false;
   noteOverlayDirty = false;
 
-  dismissCommandWheelOverlay();
   drawCompactPlayedNoteBadgeFrame(noteBadgeText);
   u8g2.sendBuffer();
 }
@@ -524,6 +617,13 @@ void drawPlayedNotesOverlay() {
   }
 
   PlayedNoteDisplaySource source = activePlayedNoteDisplaySource();
+
+  if (commandWheelOverlayActive()) {
+    if (refreshPlayedNoteBadgeForCommandWheel()) {
+      requestCommandWheelOverlayRedraw();
+    }
+    return;
+  }
 
   if (!noteDisplayEnabled() || source == PlayedNoteDisplaySource::None) {
     if (noteBadgeVisible || noteOverlayVisible || noteOverlayTemporaryWake) {

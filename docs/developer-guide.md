@@ -134,10 +134,24 @@ I2C transfer time.
 The command-wheel OLED readout follows that split: the RAM-resident wheel path
 only records lightweight overlay state when a velocity, modulation, or
 pitch-bend value changes or a command-wheel gesture requests feedback, while the
-normal display phase renders the full screen with throttled redraws. Other OLED
+normal display phase renders the full screen with throttled `20 Hz` redraws.
+Command-wheel feedback does not reset `screenTime`; encoder/menu input remains
+the source of the roughly `30` second OLED menu wake window. If a command-wheel
+readout is requested while the screensaver is already active, the readout uses a
+temporary wake and returns to the screensaver when it expires. Other OLED
 renderers dismiss the command-wheel readout before drawing so menu, list,
-Sequencer, played-note, delegated-control, save, and transfer screens always own
-the display they update.
+Sequencer, delegated-control, save, and transfer screens always own the display
+they update. Played-note feedback is the exception while the command-wheel
+readout is active: the note renderer only refreshes badge state and requests a
+wheel redraw, so notes are composited into the next command-wheel frame instead
+of sending a second OLED buffer or replacing the readout with the full-screen
+note overlay. Badge frame drawing is intentionally side-effect-free; screen
+owners decide when to dismiss another owner, restore underlying content, blank
+for the screensaver, or send the OLED buffer. When a temporary-wake
+command-wheel readout expires, or when the menu timer forces an active
+command-wheel readout into sleep, the command-wheel owner first asks the
+played-note owner to resume full-screen `Now Playing` if notes are still held.
+Only if that handoff is unavailable does it blank for the screensaver.
 
 ## Source Map
 

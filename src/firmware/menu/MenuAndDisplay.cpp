@@ -3019,7 +3019,11 @@ void setupGFX() {
   sendToLog("U8G2 graphics initialized.");
 }
 void screenSaver() {
-  if (noteOverlayTemporaryWake) {
+  bool temporaryDisplayWake = noteOverlayTemporaryWake || commandWheelOverlayTemporaryWakeActive();
+  if (temporaryDisplayWake) {
+    if (screenTime <= screenSaverTimeout) {
+      screenTime = screenTime + lapTime;
+    }
     if (screenSaverOn) {
       screenSaverOn = 0;
       u8g2.setContrast(CONTRAST_AWAKE);
@@ -3035,6 +3039,11 @@ void screenSaver() {
     }
   } else {
     if (!screenSaverOn) {
+      bool commandOverlayWasActive = commandWheelOverlayActive();
+      if (commandOverlayWasActive && wakePlayedNotesOverlayForHeldNotes()) {
+        dismissCommandWheelOverlay();
+        return;
+      }
       dismissCommandWheelOverlay();
       screenSaverOn = 1;
       u8g2.setContrast(CONTRAST_SCREENSAVER);
