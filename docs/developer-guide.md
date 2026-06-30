@@ -18,7 +18,7 @@ should include a documentation pass.
 
 - `README.md`: project overview, build target, feature highlights, repository layout, or top-level build/flash pointers
 - `docs/user-manual.md`: user-visible behavior, menu items, defaults, workflows, troubleshooting, hardware-facing usage, and firmware updates
-- `docs/sequencer-manual.md`: optional sequencer behavior, sequencer settings, sequence files, and USB Backup
+- `docs/sequencer/`: optional sequencer behavior, sequencer settings, sequence files, and USB Backup
 - `docs/developer-guide.md`: current firmware architecture, subsystem ownership, settings wiring, runtime flow, risk areas, edit recipes, and verification
 - `docs/delegated-control.md`: external delegated-control protocol, SysEx behavior, host integration, and delegated runtime gates
 - `docs/preset-sync-sysex.md`: preset-sync SysEx behavior, object schemas, host integration, and future tuning/layout/preset storage design
@@ -103,6 +103,7 @@ button matrix -> readHexes()
               -> tryMIDInoteOn/Off() -> USB/serial MIDI
               -> trySynthNoteOn/Off() -> envelope commands -> audio block renderer -> DMA -> PWM audio
               -> LED state -> lightUpLEDs()
+              -> command-wheel value updates -> drawCommandWheelOverlay()
               -> played-note snapshot -> drawPlayedNotesOverlay()
 
 rotary encoder -> readKnob() on core 1 -> dealWithRotary() on core 0 -> GEM menu
@@ -129,6 +130,14 @@ note/wheel sends, synth voice allocation, rotary quadrature polling, compact LED
 frame helpers, and small synth lookup tables read by the renderer. Avoid moving
 OLED/GEM/U8g2 drawing wholesale; those paths are dominated by library calls and
 I2C transfer time.
+
+The command-wheel OLED readout follows that split: the RAM-resident wheel path
+only records lightweight overlay state when a velocity, modulation, or
+pitch-bend value changes or a command-wheel gesture requests feedback, while the
+normal display phase renders the full screen with throttled redraws. Other OLED
+renderers dismiss the command-wheel readout before drawing so menu, list,
+Sequencer, played-note, delegated-control, save, and transfer screens always own
+the display they update.
 
 ## Source Map
 
@@ -483,7 +492,7 @@ Do not rescale packed resting LED values for sequencer step brightness.
 ## Sequencer Integration
 
 The sequencer is optional and default-off at compile time. Current behavior is
-documented in `docs/sequencer-manual.md`; keep user workflow details there.
+documented under `docs/sequencer/`; keep user workflow details there.
 
 Keep sequencer policy in `src/firmware/sequencer/`. Expected bridge points are
 narrow:

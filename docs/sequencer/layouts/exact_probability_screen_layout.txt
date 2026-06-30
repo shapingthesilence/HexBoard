@@ -1,0 +1,45 @@
+SEQUENCER EXACT PROBABILITY SCREEN
+
+This screen appears after choosing Prob from the step tools picker for a
+selected step.
+
+Purpose:
+
+- adjust a per-step playback chance quickly from the board without typing
+  digits
+
+Current OLED layout:
+
+  Prob #13
+  L 150% V 96 P 75%
+  C3 E3 G3
+  B3 D4 F4
+  75%
+
+  Turn +/-5%
+  Press encoder to save
+
+Controls:
+
+- turning the encoder moves through:
+  0, 5, 10, 15, ... 100
+- encoder press saves and returns to the tools picker
+- pressing the tools button returns to the tools picker without saving a
+  pending encoder change
+- tapping another step pad switches the probability screen to that step and
+  reloads that step's saved probability
+- lower note-entry keys do not edit notes while this screen is open
+- the note area stays on one line when the labels fit and wraps only when
+  needed
+- if the selected step is tied, the note area shows `T` instead of note labels
+
+LED behavior while the screen is open:
+
+- normal sequencer step rows stay visible
+- sequencer function LEDs stay visible
+- no dedicated probability-entry keys are lit because probability entry uses
+  the encoder
+
+Display behavior:
+
+- this overlay keeps the display awake while it is open

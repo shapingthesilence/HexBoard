@@ -4,6 +4,7 @@
 
 #if HEXBOARD_ENABLE_SEQUENCER
 #include "SequencerLightSettings.h"
+#include "../menu/CommandWheelOverlay.h"
 #include "../menu/MenuAndDisplay.h"
 
 namespace sequencer {
@@ -93,6 +94,7 @@ GEMItem& stepHueItem() {
 void refreshLightSettingsMenu(bool redrawMenu) {
   stepHueItem().hide(stepColorMode() != kStepColorRegular);
   if (redrawMenu && menu.getCurrentMenuPage() == &lightSettingsPage(menuPageMain)) {
+    dismissCommandWheelOverlay();
     menu.drawMenu();
   }
 }

@@ -14,7 +14,7 @@ You can [order a HexBoard](https://shapingthesilence.com/) if you are interested
 ## Documentation
 
 - [User Manual](docs/user-manual.md): playing, menu behavior, settings, firmware updates, and troubleshooting
-- [Sequencer Manual](docs/sequencer-manual.md): optional sequencer builds, playback, file management, and USB backup
+- [Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt): optional sequencer builds, playback, file management, and USB backup
 - [MPE Microtonal Setup Guide](docs/mpe-microtonal-setup.md): DAW, plugin, and synth setup for HexBoard's microtonal MIDI output
 - [Developer Guide](docs/developer-guide.md): current firmware architecture, edit patterns, settings wiring, risk areas, and verification
 - [Delegated Control Protocol](docs/delegated-control.md): external raw button/LED control SysEx behavior
@@ -56,7 +56,7 @@ The current code supports:
 - onboard synth waveform/wavetable banks, Serum/Vital and HexBoard wavetable import, mono portamento, AHDSR envelope, phase-warp/wavetable/LFO modulation, presets, and arpeggiator settings
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
-- an optional sequencer build, documented in the [Sequencer Manual](docs/sequencer-manual.md)
+- an optional sequencer build, documented in the [Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt)
 
 ## Team
 
@@ -134,7 +134,7 @@ build/HexBoard_Sequencer.uf2
 
 Use `make sequencer-builds` to compile both variants. See the
 [Developer Guide](docs/developer-guide.md) for implementation details and the
-[Sequencer Manual](docs/sequencer-manual.md) for current sequencer behavior.
+[Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt) for current sequencer behavior.
 
 ## Companion Web App
 
