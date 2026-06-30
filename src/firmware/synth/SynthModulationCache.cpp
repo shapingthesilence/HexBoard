@@ -9,6 +9,10 @@ uint32_t synthVibratoPhase = 0;
 uint32_t synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[SYNTH_VIBRATO_SPEED_DEFAULT];
 uint32_t synthLfoPhase = 0;
 uint32_t synthLfoPhaseIncrement = synthLfoPhaseIncrementOptions[SYNTH_LFO_SPEED_DEFAULT];
+uint32_t synthLfoNoiseState = 0x6D2B79F5u;
+uint8_t synthLfoNoiseSegment = 0xFF;
+int16_t synthLfoNoisePreviousSample = 0;
+int16_t synthLfoNoiseCurrentSample = 0;
 
 SynthModulationAmounts synthBaseModulationCache = {};
 std::array<SynthVoiceRenderCache, POLYPHONY_LIMIT> synthVoiceRenderCaches = {};
@@ -646,8 +650,31 @@ int16_t RAM_FUNC(combinedWavetablePositionAmount)(int16_t positionModAmount) {
   return amount;
 }
 
+int16_t RAM_FUNC(nextSynthLfoNoiseSample)() {
+  synthLfoNoiseState ^= synthLfoNoiseState << 13;
+  synthLfoNoiseState ^= synthLfoNoiseState >> 17;
+  synthLfoNoiseState ^= synthLfoNoiseState << 5;
+  return static_cast<int16_t>(static_cast<uint8_t>(synthLfoNoiseState >> 24)) - 128;
+}
+
+void RAM_FUNC(updateSynthLfoNoiseSegment)() {
+  uint8_t segment = synthLfoPhase >> 28;
+  if (segment == synthLfoNoiseSegment) {
+    return;
+  }
+  synthLfoNoiseSegment = segment;
+  synthLfoNoisePreviousSample = synthLfoNoiseCurrentSample;
+  synthLfoNoiseCurrentSample = nextSynthLfoNoiseSample();
+}
+
+int16_t RAM_FUNC(readSynthLfoSmoothNoiseSample)() {
+  updateSynthLfoNoiseSegment();
+  uint8_t frac = static_cast<uint8_t>(synthLfoPhase >> 20);
+  int16_t delta = static_cast<int16_t>(synthLfoNoiseCurrentSample - synthLfoNoisePreviousSample);
+  return static_cast<int16_t>(synthLfoNoisePreviousSample + ((static_cast<int32_t>(delta) * frac) >> 8));
+}
+
 int16_t RAM_FUNC(readSynthLfoSample)() {
-  uint16_t sinePhase = synthWaveSampleIndexFromPhase32(synthLfoPhase);
   uint8_t phase = synthLfoPhase >> 24;
   switch (synthLfoWave) {
     case SYNTH_LFO_WAVE_TRIANGLE:
@@ -665,9 +692,16 @@ int16_t RAM_FUNC(readSynthLfoSample)() {
       return static_cast<int16_t>(phase) - 128;
     case SYNTH_LFO_WAVE_SQUARE:
       return (phase < 128) ? 127 : -127;
+    case SYNTH_LFO_WAVE_NOISE:
+      updateSynthLfoNoiseSegment();
+      return synthLfoNoiseCurrentSample;
+    case SYNTH_LFO_WAVE_SMOOTH_NOISE:
+      return readSynthLfoSmoothNoiseSample();
     case SYNTH_LFO_WAVE_SINE:
-    default:
+    default: {
+      uint16_t sinePhase = synthWaveSampleIndexFromPhase32(synthLfoPhase);
       return static_cast<int16_t>(synthVibratoSine[sinePhase]) - 128;
+    }
   }
 }
 

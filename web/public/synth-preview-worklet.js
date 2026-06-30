@@ -21,6 +21,7 @@ const MODE_MONO_RETRIGGER = 1;
 const MODE_ARPEGGIO = 2;
 const MODE_POLY = 3;
 const MODE_MONO_LEGATO = 4;
+const LFO_NOISE_SEGMENTS = 16;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -49,6 +50,17 @@ function square(phase, duty = 0.5) {
 
 function sine(phase) {
   return Math.sin(phase * Math.PI * 2);
+}
+
+function nextNoiseState(state) {
+  state ^= state << 13;
+  state ^= state >>> 17;
+  state ^= state << 5;
+  return state >>> 0;
+}
+
+function noiseStateSample(state) {
+  return ((state >>> 24) / 127.5) - 1;
 }
 
 function smoothStep(value) {
@@ -425,6 +437,10 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     this.arpDirection = 1;
     this.arpSamplesUntilNext = 0;
     this.lfoPhase = 0;
+    this.lfoNoiseState = 0x6D2B79F5;
+    this.lfoNoiseSegment = -1;
+    this.lfoNoisePreviousSample = 0;
+    this.lfoNoiseCurrentSample = 0;
     this.vibratoPhase = 0;
     this.currentLfoSample = 0;
     this.currentVibratoSample = 0;
@@ -585,6 +601,23 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     return this.currentVibratoSample;
   }
 
+  updateLfoNoiseSegment() {
+    const segment = Math.floor(this.lfoPhase * LFO_NOISE_SEGMENTS);
+    if (segment === this.lfoNoiseSegment) {
+      return;
+    }
+    this.lfoNoiseSegment = segment;
+    this.lfoNoisePreviousSample = this.lfoNoiseCurrentSample;
+    this.lfoNoiseState = nextNoiseState(this.lfoNoiseState);
+    this.lfoNoiseCurrentSample = noiseStateSample(this.lfoNoiseState);
+  }
+
+  lfoSmoothNoiseSample() {
+    this.updateLfoNoiseSegment();
+    const segmentPhase = (this.lfoPhase * LFO_NOISE_SEGMENTS) % 1;
+    return blend(this.lfoNoisePreviousSample, this.lfoNoiseCurrentSample, segmentPhase);
+  }
+
   stepModulators() {
     const values = this.patch.values;
     const speed = LFO_SPEEDS_HZ[clamp(values.SynthLfoSpeed, 0, LFO_SPEEDS_HZ.length - 1)] ?? 1;
@@ -598,6 +631,13 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
         break;
       case 3:
         this.currentLfoSample = square(this.lfoPhase);
+        break;
+      case 4:
+        this.updateLfoNoiseSegment();
+        this.currentLfoSample = this.lfoNoiseCurrentSample;
+        break;
+      case 5:
+        this.currentLfoSample = this.lfoSmoothNoiseSample();
         break;
       case 0:
       default:

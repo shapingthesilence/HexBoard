@@ -144,7 +144,9 @@ constexpr byte SYNTH_LFO_WAVE_SINE = 0;
 constexpr byte SYNTH_LFO_WAVE_TRIANGLE = 1;
 constexpr byte SYNTH_LFO_WAVE_SAW = 2;
 constexpr byte SYNTH_LFO_WAVE_SQUARE = 3;
-constexpr byte SYNTH_LFO_WAVE_MAX = SYNTH_LFO_WAVE_SQUARE;
+constexpr byte SYNTH_LFO_WAVE_NOISE = 4;
+constexpr byte SYNTH_LFO_WAVE_SMOOTH_NOISE = 5;
+constexpr byte SYNTH_LFO_WAVE_MAX = SYNTH_LFO_WAVE_SMOOTH_NOISE;
 
 constexpr byte SYNTH_VIBRATO_SPEED_DEFAULT = 5;  // 6 Hz in the 1..12 Hz table.
 constexpr byte SYNTH_LFO_SPEED_DEFAULT = 6;      // 1 Hz in the granular LFO speed table.

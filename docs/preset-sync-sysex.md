@@ -1059,6 +1059,10 @@ and appending factory defaults for the five new keys; version `8` records are
 migrated by deriving the new wavetable dependency from the legacy `Waveform`
 value.
 
+`SynthLfoWave` values are `0` `Sine`, `1` `Triangle`, `2` `Saw`, `3` `Square`,
+`4` `Noise`, and `5` `Smooth noise`. The noise waves reuse the existing schema
+`7` value byte; no synth preset schema bump is required for the expanded enum.
+
 `PlaybackMode` value `5` was the temporary `PolyTbl` mode and is now normalized
 to `Poly` on import. `Waveform` remains in the value list for compatibility, but
 new preset objects use `SynthWavetableName` and `SynthWavetableFolderPath` as

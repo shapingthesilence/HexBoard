@@ -362,19 +362,21 @@ timing to keep the synth responsive under heavy polyphony.
 `Target`, `Amount`, `Attack`, `Hold`, `Decay`, `Sustain`, and `Release`.
 
 `LFO` opens the synth LFO page. `Target` uses the same targets as `Wheel FX`;
-`Amount` is bipolar from `-100%` through `Off` to `+100%`; `Wave` selects
-`Sine`, `Triangl`, `Saw`, or `Square`; and `Speed` ranges from `0.05 Hz` to
-`20 Hz`, with extra slow choices below `1 Hz` for gradual wavetable or phase-warp
-movement.
+`Amount` is bipolar from `-100%` through `Off` to `+100%`, with fine `1%`
+steps around `Off`; `Wave` selects `Sine`, `Triangl`, `Saw`, `Square`, `Noise`,
+or `Smooth`; and `Speed` ranges from `0.05 Hz` to `20 Hz`, with extra slow
+choices below `1 Hz` for gradual wavetable or phase-warp movement. `Noise` is
+stepped random modulation; `Smooth` glides between random levels.
 
 `Target` chooses `Vibrato`, `Pitch`, `WT Pos`, `FoldWrp`, `DutyWrp`, or
 `PolyWrp`. The wheel, both FX envelopes, and the LFO can choose the same target;
 their amounts add together and clamp at the maximum effect depth instead of
 replacing each other.
 
-`Amount` controls how strongly the envelope affects the target. Positive amounts
-push the target in one direction; negative amounts use the same AHDSR shape and
-push the target in the opposite direction. Pitch, phase warp, and wavetable position
+`Amount` controls how strongly the envelope affects the target, with the same
+fine low-depth choices as the LFO amount. Positive amounts push the target in
+one direction; negative amounts use the same AHDSR shape and push the target in
+the opposite direction. Pitch, phase warp, and wavetable position
 return smoothly to their base values as the FX envelope falls back to zero. Negative
 `Vibrato` is different: vibrato is the resting sound, and the envelope pulls it
 down as the envelope level rises. The default FX envelope times are `0 ms`, and

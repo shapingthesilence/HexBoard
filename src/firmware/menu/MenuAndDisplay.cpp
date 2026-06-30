@@ -1605,7 +1605,9 @@ SelectOptionByte optionByteSynthLfoWave[] = {
   { "Sine", SYNTH_LFO_WAVE_SINE },
   { "Triangl", SYNTH_LFO_WAVE_TRIANGLE },
   { "Saw", SYNTH_LFO_WAVE_SAW },
-  { "Square", SYNTH_LFO_WAVE_SQUARE }
+  { "Square", SYNTH_LFO_WAVE_SQUARE },
+  { "Noise", SYNTH_LFO_WAVE_NOISE },
+  { "Smooth", SYNTH_LFO_WAVE_SMOOTH_NOISE }
 };
 GEMSelect selectSynthLfoWave(sizeof(optionByteSynthLfoWave) / sizeof(SelectOptionByte), optionByteSynthLfoWave);
 
@@ -1869,7 +1871,15 @@ SelectOptionByte optionByteSynthFxAmount[] = {
   { "-17%", 106 },
   { "-10%", 114 },
   { "-5%", 121 },
+  { "-4%", 122 },
+  { "-3%", 123 },
+  { "-2%", 124 },
+  { "-1%", 126 },
   { "Off", SYNTH_FX_AMOUNT_OFF },
+  { "+1%", 128 },
+  { "+2%", 130 },
+  { "+3%", 131 },
+  { "+4%", 132 },
   { "+5%", 133 },
   { "+10%", 140 },
   { "+17%", 148 },

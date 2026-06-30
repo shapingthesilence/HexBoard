@@ -311,6 +311,7 @@ Important current settings facts:
 - `AudioDestination` behaves on hardware `V1.2` as a jack-default `Buzzer` toggle that switches synth output to piezo.
 - `HeadphoneVolumeCap` and `PiezoVolumeCap` are separate profile bytes; synth presets intentionally do not store output volume.
 - Dynamic JI stores its prime-limit table in `DynamicJIRatioTable`.
+- `SynthLfoWave` values `0..5` select `Sine`, `Triangle`, `Saw`, `Square`, stepped `Noise`, and interpolated `Smooth noise`; this is an enum expansion within the existing settings byte, not a settings-layout change.
 - Sequencer `Clock Source`, `Send Clock`, `Send Transport`, `Tap Preview`, `Monophonic`, and `Seq Lights` preferences are profile bytes, not sequence-file data.
 
 When adding, removing, reordering, or reinterpreting a `SettingKey`:

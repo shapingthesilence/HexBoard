@@ -301,7 +301,9 @@ const lfoWaveOptions = [
   { label: "Sine", value: 0 },
   { label: "Triangle", value: 1 },
   { label: "Saw", value: 2 },
-  { label: "Square", value: 3 }
+  { label: "Square", value: 3 },
+  { label: "Noise", value: 4 },
+  { label: "Smooth noise", value: 5 }
 ];
 
 const lfoSpeedOptions = [
@@ -383,7 +385,7 @@ const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]>
   SynthWavetablePosition: [0, 127],
   SynthLfoTarget: [0, 5],
   SynthLfoAmount: [0, 254],
-  SynthLfoWave: [0, 3],
+  SynthLfoWave: [0, 5],
   SynthLfoSpeed: [0, 19]
 };
 
