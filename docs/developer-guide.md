@@ -18,7 +18,7 @@ should include a documentation pass.
 
 - `README.md`: project overview, build target, feature highlights, repository layout, or top-level build/flash pointers
 - `docs/user-manual.md`: user-visible behavior, menu items, defaults, workflows, troubleshooting, hardware-facing usage, and firmware updates
-- `docs/sequencer-manual.md`: optional sequencer behavior, sequencer settings, sequence files, and USB Backup
+- `docs/sequencer/`: optional sequencer behavior, sequencer settings, sequence files, and USB Backup
 - `docs/developer-guide.md`: current firmware architecture, subsystem ownership, settings wiring, runtime flow, risk areas, edit recipes, and verification
 - `docs/delegated-control.md`: external delegated-control protocol, SysEx behavior, host integration, and delegated runtime gates
 - `docs/preset-sync-sysex.md`: preset-sync SysEx behavior, object schemas, host integration, and future tuning/layout/preset storage design
@@ -492,7 +492,7 @@ Do not rescale packed resting LED values for sequencer step brightness.
 ## Sequencer Integration
 
 The sequencer is optional and default-off at compile time. Current behavior is
-documented in `docs/sequencer-manual.md`; keep user workflow details there.
+documented under `docs/sequencer/`; keep user workflow details there.
 
 Keep sequencer policy in `src/firmware/sequencer/`. Expected bridge points are
 narrow:

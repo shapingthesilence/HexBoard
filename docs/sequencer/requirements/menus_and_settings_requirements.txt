@@ -1,0 +1,265 @@
+HEXBOARD SEQUENCER MENU AND SETTINGS REQUIREMENTS
+
+ID: SEQ-MENU-001
+Title: Main Sequencer Menu
+Status: Active
+Area: Menus
+Priority: High
+
+Requirement:
+The main Sequencer menu shall include the current top-level Sequencer actions
+and settings.
+
+Details:
+- Keyboard
+- File Management
+- Playback Settings
+- Seq Lights
+
+
+ID: SEQ-MENU-002
+Title: File Management Submenu
+Status: Active
+Area: Menus
+Priority: High
+
+Requirement:
+The File Management submenu shall include the current file-management actions.
+
+Details:
+- New
+- Save
+- Save New
+- Load
+- Revert
+- Create Folder
+- Rename or Delete
+- USB Backup
+
+
+ID: SEQ-MENU-017
+Title: Seq Lights Submenu
+Status: Active
+Area: Menus
+Priority: High
+
+Requirement:
+Sequencer mode shall provide a Seq Lights submenu for sequencer step-light
+preferences.
+
+Details:
+- The Seq Lights submenu shall include:
+  Accent Every, Step Color, and Step Hue.
+- Accent Every shall provide:
+  Off, 2, 3, 4, 5, 6, 7, 8.
+- Accent Every shall emphasize every Nth step, starting from step 1.
+- Accent Every shall use brightness changes only and shall not change step hue.
+- The default Accent Every value shall be 4.
+- Step Color shall provide:
+  Note and Regular.
+- The default Step Color value shall be Regular.
+- Sequencer step lights shall use this brightness ladder:
+  off, low, medium, high, highest.
+- The current step mapping shall be:
+  empty step without accent = off
+  empty step with accent = medium
+  step with note = medium
+  accented step with note = high
+  selected step with note = high
+  playing step with note = highest.
+- A tied step shall use the same programmed-step brightness behavior as a step
+  with a note.
+- During transport playback, the lower playable keyboard LEDs shall light the
+  notes that are currently sounding for their full held duration.
+- In Step Color = Note, programmed steps shall use note-based colors with that
+  brightness ladder.
+- In Step Color = Regular, programmed steps shall use the selected Step Hue
+  with that brightness ladder.
+- Empty unselected steps without accent shall stay off in both modes.
+- A selected or playing empty step shall light at the highest level so
+  selection and playback remain visible.
+- Step Hue shall be available only while Step Color = Regular.
+- Step Hue shall provide:
+  Red, Orange, Yellow, Lime, Green, Teal, Cyan, Lt Blue, Blue, Indigo,
+  Purple, Magenta, Pink.
+- The default Step Hue value shall be Indigo.
+- Step Hue shall preview live while its menu choices are scrolled before the
+  selection is confirmed.
+- Seq Lights settings shall be stored in the board profile settings rather than
+  in the current sequence file.
+
+
+ID: SEQ-MENU-005
+Title: Playback Settings Submenu
+Status: Active
+Area: Menus
+Priority: High
+
+Requirement:
+The Sequencer menu shall provide a Playback Settings submenu for playback
+configuration items.
+
+Details:
+- Steps
+- Direction
+- Tempo
+- Play Type
+- MIDI Sync
+- ----------
+- Monophonic
+
+
+ID: SEQ-MENU-006
+Title: Steps Setting
+Status: Active
+Area: Menus
+Priority: High
+
+Requirement:
+The Steps menu item shall set the active playback step count.
+
+
+ID: SEQ-MENU-007
+Title: Direction Setting
+Status: Active
+Area: Menus
+Priority: High
+
+Requirement:
+The Direction menu item shall set the current playback direction mode.
+
+
+ID: SEQ-MENU-008
+Title: Tempo Setting
+Status: Active
+Area: Menus
+Priority: High
+
+Requirement:
+The Tempo menu item shall set the current BPM used by the sequencer step clock.
+
+
+ID: SEQ-MENU-009
+Title: Tap Preview Setting
+Status: Active
+Area: Menus
+Priority: High
+
+Requirement:
+The Playback Settings > Tap Preview menu item shall control whether selecting a
+step also previews its stored notes.
+
+Details:
+- Tap Preview shall be stored in the board profile settings rather than in the
+  current sequence file.
+
+
+ID: SEQ-MENU-010
+Title: Play Type Setting
+Status: Active
+Area: Menus
+Priority: High
+
+Requirement:
+The Play Type menu item shall switch between MIDI playback and onboard synth
+playback.
+
+
+ID: SEQ-MENU-010A
+Title: Monophonic Setting
+Status: Active
+Area: Menus
+Priority: High
+
+Requirement:
+The Monophonic menu item shall control whether live selected-step note
+entry stores one note or allows chord entry.
+
+Details:
+- The Monophonic menu item shall be separated from the other Playback Settings
+  items by a non-interactive divider.
+- The Monophonic menu item shall appear last in the Playback Settings submenu.
+- Off shall preserve normal chord-entry behavior with up to 6 notes per step.
+- On shall remove the pressed note when the selected step already contains that
+  note.
+- On shall make a pressed note replace the selected step's current notes with
+  that one note when the selected step does not already contain it.
+- Monophonic shall be stored in the board profile settings rather than in the
+  current sequence file.
+
+
+ID: SEQ-MENU-012
+Title: MIDI Sync Submenu
+Status: Active
+Area: Menus
+Priority: High
+
+Requirement:
+The Playback Settings submenu shall provide a MIDI Sync submenu for clock and
+transport sync settings.
+
+
+ID: SEQ-MENU-013
+Title: Clock Source Setting
+Status: Active
+Area: Menus
+Priority: High
+
+Requirement:
+The MIDI Sync submenu shall provide a Clock Source setting with Internal and
+External MIDI choices.
+
+Details:
+- Clock Source shall be stored in the board profile settings rather than in the
+  current sequence file.
+- The default Clock Source shall be Internal.
+
+
+ID: SEQ-MENU-014
+Title: Send Clock Setting
+Status: Active
+Area: Menus
+Priority: Medium
+
+Requirement:
+The MIDI Sync submenu shall provide a Send Clock setting with Off and On
+choices.
+
+Details:
+- Send Clock shall be stored in the board profile settings rather than in the
+  current sequence file.
+- The default Send Clock state shall be Off.
+
+
+ID: SEQ-MENU-015
+Title: Send Transport Setting
+Status: Active
+Area: Menus
+Priority: Medium
+
+Requirement:
+The MIDI Sync submenu shall provide a Send Transport setting with Off and On
+choices.
+
+Details:
+- Send Transport shall be stored in the board profile settings rather than in
+  the current sequence file.
+- The default Send Transport state shall be Off.
+
+
+ID: SEQ-MENU-011
+Title: Shared Menu Navigation Buttons
+Status: Active
+Area: Menus
+Priority: Medium
+
+Requirement:
+When a menu page is active and the bottom command button below the encoder is
+held, the top two command buttons below the encoder shall act like one encoder
+step up and one encoder step down until that bottom button is released.
+
+Details:
+- During normal menu navigation, the top shortcut button shall navigate up and
+  the lower shortcut button shall navigate down.
+- While editing a value, the top shortcut button shall increase the value and
+  the lower shortcut button shall decrease the value.
