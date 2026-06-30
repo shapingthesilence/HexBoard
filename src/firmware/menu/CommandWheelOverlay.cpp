@@ -11,6 +11,7 @@ namespace {
 
 constexpr uint64_t kOverlayHoldMicros = 3000000ULL;
 constexpr uint64_t kOverlayRedrawIntervalMicros = 50000ULL;
+constexpr uint64_t kOverlayBadgeRedrawIntervalMicros = 100000ULL;
 constexpr int kMeterX = 10;
 constexpr int kMeterY = 94;
 constexpr int kMeterWidth = 108;
@@ -31,6 +32,12 @@ int16_t overlayMinValue = 0;
 int16_t overlayMaxValue = 127;
 uint64_t overlayExpiresAt = 0;
 uint64_t overlayNextRedrawAt = 0;
+
+uint64_t RAM_FUNC(overlayRedrawIntervalMicros)() {
+  return (noteBadgeVisible && noteBadgeText[0] != '\0')
+           ? kOverlayBadgeRedrawIntervalMicros
+           : kOverlayRedrawIntervalMicros;
+}
 
 const char* overlayTitle(CommandWheelOverlayType type) {
   switch (type) {
@@ -179,7 +186,7 @@ void RAM_FUNC(notifyCommandWheelOverlay)(CommandWheelOverlayType type,
   if (immediateRedraw || newlyShown || runTime >= overlayNextRedrawAt) {
     overlayDirty = true;
     overlayRedrawPending = false;
-    overlayNextRedrawAt = runTime + kOverlayRedrawIntervalMicros;
+    overlayNextRedrawAt = runTime + overlayRedrawIntervalMicros();
   } else {
     overlayRedrawPending = true;
   }
@@ -224,7 +231,7 @@ void drawCommandWheelOverlay() {
   if (!overlayDirty && overlayRedrawPending && runTime >= overlayNextRedrawAt) {
     overlayDirty = true;
     overlayRedrawPending = false;
-    overlayNextRedrawAt = runTime + kOverlayRedrawIntervalMicros;
+    overlayNextRedrawAt = runTime + overlayRedrawIntervalMicros();
   }
 
   if (!overlayDirty && overlayVisible) {

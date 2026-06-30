@@ -8,6 +8,7 @@ constexpr byte BTN_STATE_OFF = 0;
 constexpr byte BTN_STATE_NEWPRESS = 1;
 constexpr byte BTN_STATE_RELEASED = 2;
 constexpr byte BTN_STATE_HELD = 3;
+constexpr uint8_t WHEEL_MAX_CATCHUP_STEPS = 8;
 
 class buttonDef {
 public:
@@ -57,6 +58,7 @@ public:
   int16_t curValue;
   int16_t targetValue;
   uint64_t timeLastChanged;
+  bool wasMoving = false;
   int RAM_FUNC(effectiveStepValue)() const {
     return (*stepValue <= 0) ? 1 : *stepValue;
   }
@@ -100,22 +102,45 @@ public:
   }
   bool RAM_FUNC(updateValue)(uint64_t givenTime) {
     int16_t temp = targetValue - curValue;
-    if (temp != 0) {
-      int step = effectiveStepValue();
-      if ((givenTime - timeLastChanged) >= updateIntervalMicros()) {
-        timeLastChanged = givenTime;
-        if (abs(temp) < step) {
-          curValue = targetValue;
-        } else {
-          curValue = curValue + (step * (temp / abs(temp)));
-        }
-        return true;
-      } else {
-        return false;
-      }
-    } else {
+    if (temp == 0) {
+      wasMoving = false;
       return false;
     }
+
+    uint64_t interval = updateIntervalMicros();
+    uint8_t stepsToApply = 1;
+    if (wasMoving) {
+      uint64_t elapsed = givenTime - timeLastChanged;
+      uint64_t elapsedIntervals = elapsed / interval;
+      if (elapsedIntervals == 0) {
+        return false;
+      }
+      stepsToApply = static_cast<uint8_t>(
+        std::min<uint64_t>(elapsedIntervals, WHEEL_MAX_CATCHUP_STEPS)
+      );
+      timeLastChanged += elapsedIntervals * interval;
+    } else {
+      wasMoving = true;
+      timeLastChanged = givenTime;
+    }
+
+    int step = effectiveStepValue();
+    for (uint8_t i = 0; i < stepsToApply; ++i) {
+      temp = targetValue - curValue;
+      if (temp == 0) {
+        wasMoving = false;
+        break;
+      }
+      if (abs(temp) < step) {
+        curValue = targetValue;
+      } else {
+        curValue = curValue + (step * (temp / abs(temp)));
+      }
+    }
+    if (curValue == targetValue) {
+      wasMoving = false;
+    }
+    return true;
   }
 };
 

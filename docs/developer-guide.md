@@ -135,6 +135,8 @@ The command-wheel OLED readout follows that split: the RAM-resident wheel path
 only records lightweight overlay state when a velocity, modulation, or
 pitch-bend value changes or a command-wheel gesture requests feedback, while the
 normal display phase renders the full screen with throttled `20 Hz` redraws.
+When the compact played-note badge is present, the command-wheel readout drops
+to `10 Hz` because visual feedback is secondary to stable control movement.
 Command-wheel feedback does not reset `screenTime`; encoder/menu input remains
 the source of the roughly `30` second OLED menu wake window. If a command-wheel
 readout is requested while the screensaver is already active, the readout uses a
@@ -152,6 +154,12 @@ command-wheel readout expires, or when the menu timer forces an active
 command-wheel readout into sleep, the command-wheel owner first asks the
 played-note owner to resume full-screen `Now Playing` if notes are still held.
 Only if that handoff is unavailable does it blank for the screensaver.
+
+`wheelDef::updateValue()` is elapsed-time based rather than loop-count based:
+if display, LED, MIDI, or synth work delays the main loop, a wheel can apply a
+bounded number of missed update intervals on the next pass. That keeps command
+wheels moving at the configured speed even when OLED redraws are expensive,
+while still capping catch-up after a long unrelated stall.
 
 ## Source Map
 

@@ -93,6 +93,8 @@ moves the value, and clears after about `3 seconds`, or sooner if another menu,
 list, Sequencer, delegated-control, save, or transfer screen updates the
 display. Command-wheel feedback does not reset the OLED menu screensaver timer;
 the menu still falls asleep about `30 seconds` after the last encoder action.
+When a played-note badge is present, the readout refreshes less often so wheel
+movement stays steady while notes are held.
 
 ### Rotary Encoder
 
