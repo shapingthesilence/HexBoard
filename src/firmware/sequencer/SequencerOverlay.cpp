@@ -8,7 +8,6 @@
 #include "SequencerTools.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
-#include "../menu/CommandWheelOverlay.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../model/ScalePalettePreset.h"
 #include "../tuning/Tuning.h"
@@ -190,7 +189,6 @@ byte countOverviewStepsThatFit(byte firstStep) {
 }
 
 void keepOverlayDisplayAwake() {
-  dismissCommandWheelOverlay();
   screenTime = 0;
   if (::screenSaverOn) {
     ::screenSaverOn = false;
@@ -303,7 +301,6 @@ bool sequencerIdleDisplayBlanked() {
 }
 
 void redrawSequencerIdleBlankDisplay() {
-  dismissCommandWheelOverlay();
   overlayVisible = false;
   overlayVisibleWasStatus = false;
   overlayDirty = false;
@@ -380,7 +377,6 @@ void hideOverview() {
   overlayDirty = true;
   if (!hasSelectedStep() && toolMode() == SequencerToolMode::Normal) {
     idleDisplayBlanked = false;
-    dismissCommandWheelOverlay();
     menu.drawMenu();
   }
 }

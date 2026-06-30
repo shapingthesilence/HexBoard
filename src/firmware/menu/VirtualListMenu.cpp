@@ -1,5 +1,4 @@
 #include "../FirmwareModule.h"
-#include "CommandWheelOverlay.h"
 #include "MenuAndDisplay.h"
 #include "PlayedNotesOverlay.h"
 #include "VirtualListMenu.h"
@@ -303,7 +302,6 @@ void redrawVirtualListMenu() {
   if (!active) {
     return;
   }
-  dismissCommandWheelOverlay();
   uint16_t totalItems = virtualItemCount();
   if (totalItems > 0 && currentItemIndex >= totalItems) {
     currentItemIndex = static_cast<uint16_t>(totalItems - 1);

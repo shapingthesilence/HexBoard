@@ -1,6 +1,5 @@
 #include "../FirmwareModule.h"
 #include "PlayedNotesOverlay.h"
-#include "CommandWheelOverlay.h"
 #include "MenuAndDisplay.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
@@ -426,7 +425,6 @@ void drawCompactPlayedNoteBadgeFrame(const char* noteText) {
     return;
   }
 
-  dismissCommandWheelOverlay();
   int badgeX = u8g2.getDisplayWidth() - PLAYED_NOTE_BADGE_WIDTH;
   if (badgeX < 0) {
     badgeX = 0;
@@ -495,7 +493,6 @@ void drawCompactPlayedNoteBadge(PlayedNoteDisplaySource source) {
   noteOverlayVisible = false;
   noteOverlayDirty = false;
 
-  dismissCommandWheelOverlay();
   drawCompactPlayedNoteBadgeFrame(noteBadgeText);
   u8g2.sendBuffer();
 }
@@ -600,7 +597,6 @@ void drawPlayedNotesOverlay() {
   noteBadgeText[0] = '\0';
   noteOverlayDirty = false;
 
-  dismissCommandWheelOverlay();
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x13_tf);
   u8g2.drawStr(8, 16, "Now Playing");

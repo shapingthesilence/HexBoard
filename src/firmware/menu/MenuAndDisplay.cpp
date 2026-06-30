@@ -18,7 +18,6 @@
 #include "../sequencer/SequencerMode.h"
 #include "../sequencer/SequencerPlaybackSettings.h"
 #include "../synth/SynthAudio.h"
-#include "CommandWheelOverlay.h"
 #include "GeometryMenu.h"
 #include "MenuAndDisplay.h"
 #include "PlayedNotesOverlay.h"
@@ -101,7 +100,6 @@ void drawDelegatedControlScreen() {
     return;
   }
 
-  dismissCommandWheelOverlay();
   noteOverlayVisible = false;
   noteBadgeVisible = false;
   noteOverlayTemporaryWake = false;
@@ -120,7 +118,6 @@ void drawDelegatedControlScreen() {
 }
 
 void restoreInteractiveMenuDisplay() {
-  dismissCommandWheelOverlay();
   if (virtualListMenuIsActive()) {
     redrawVirtualListMenu();
   } else {
@@ -139,7 +136,6 @@ void restoreMenuAfterDelegatedControl() {
 }
 
 void drawPresetSyncTransferScreen() {
-  dismissCommandWheelOverlay();
   if (!presetSyncTransferScreenVisible) {
     presetSyncTransferScreenWokeDisplayFromSleep = screenSaverOn;
     presetSyncTransferSavedScreenTime = screenTime;
@@ -191,7 +187,6 @@ void closePresetSyncTransferScreen() {
 }
 
 void showFlashSaveScreen() {
-  dismissCommandWheelOverlay();
   if (!flashSaveScreenVisible) {
     flashSaveScreenWokeDisplayFromSleep = screenSaverOn;
     flashSaveSavedScreenTime = screenTime;
@@ -580,7 +575,6 @@ void serialDebugRuntimeChanged(GEMCallbackData /*callbackData*/) {
   }
   updateSerialDebugRuntime();
   updateSerialDebugMenuVisibility();
-  dismissCommandWheelOverlay();
   menu.drawMenu();
 }
 
@@ -2548,7 +2542,6 @@ void serviceVirtualListLauncherLabelScroll() {
       || delegatedControl
       || presetSyncTransferActive
       || flashSaveScreenVisible
-      || commandWheelOverlayActive()
       || noteBadgeVisible
       || noteOverlayVisible
       || screenSaverOn) {
@@ -2632,7 +2625,6 @@ void menuHome() {
   resetVirtualListLauncherScrollTracking(false);
   restoreVirtualListLauncherLabels();
   menu.setMenuPageCurrent(menuPageMain);
-  dismissCommandWheelOverlay();
   menu.drawMenu();
 }
 
@@ -2641,7 +2633,6 @@ void menuSynthOptionsHome() {
   resetVirtualListLauncherScrollTracking(false);
   restoreVirtualListLauncherLabels();
   menu.setMenuPageCurrent(menuPageSynth);
-  dismissCommandWheelOverlay();
   menu.drawMenu();
 }
 
@@ -2693,7 +2684,6 @@ void addPreviewMenuItem(GEMPage& page, GEMItem& item, void (*previewCallback)(GE
 
 void rebootToBootloader() {
   menu.setMenuPageCurrent(menuPageReboot);
-  dismissCommandWheelOverlay();
   menu.drawMenu();
   clearLEDs();
   rp2040.rebootToBootloader();
@@ -3024,7 +3014,6 @@ void screenSaver() {
     }
   } else {
     if (!screenSaverOn) {
-      dismissCommandWheelOverlay();
       screenSaverOn = 1;
       u8g2.setContrast(CONTRAST_SCREENSAVER);
       u8g2.clear();
