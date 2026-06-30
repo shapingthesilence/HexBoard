@@ -549,10 +549,14 @@ compatible boards are connected.
 
 In the tuning/layout editor, you can create EDO tunings, equal-step tunings,
 Scala `.scl` imports, vector layouts, scales, custom scale-degree colors, and
-per-button note/color overrides. `Live send` previews compatible edits on the
-connected HexBoard without saving them to flash. `Save to Computer` stores the
-bundle in browser storage, and `Save to HexBoard` writes it to the device so it
-appears in the on-device `Tuning`, `Layout`, and `Scales` browsers.
+per-button note/color overrides. The preview paintbrush can target either
+button color overrides or scale-degree palette colors while `Custom` color mode
+is active. Painting a scale degree clears matching button color overrides in
+the active layout so the palette color takes effect immediately. `Live send`
+previews compatible edits on the connected HexBoard without saving them to
+flash. `Save to Computer` stores the bundle in browser storage, and `Save to
+HexBoard` writes it to the device so it appears in the on-device `Tuning`,
+`Layout`, and `Scales` browsers.
 
 In the synth editor, you can manage synth presets and user wavetables. Presets
 can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,

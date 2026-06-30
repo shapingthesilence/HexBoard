@@ -79,11 +79,14 @@ and `TRANSFER_END` so firmware can pace object transfers.
   button maps, and named/foldered synth presets.
 - A tuning/layout bundle editor with a visual HexBoard preview, scale-degree
   palette editing, A-first note labels, selected-key pitch readouts and
-  overrides, and a paintbrush mode for applying per-button color overrides
-  directly on the preview, including a confirmed reset that returns all keys in
-  the active layout to scale-degree colors. Scala `.scl` import reads trailing
-  interval labels, exposes the 1/1 MIDI note and Hz reference, and enables
-  cents-table live send when the connected firmware advertises runtime support.
+  overrides, and a paintbrush mode for applying per-button color overrides or
+  scale-degree palette colors directly on the preview. Painting a scale degree
+  clears matching color overrides in the active layout so the palette color
+  takes effect immediately, and a confirmed reset returns all keys in the active
+  layout to scale-degree colors.
+  Scala `.scl` import reads trailing interval labels, exposes the 1/1 MIDI note
+  and Hz reference, and enables cents-table live send when the connected
+  firmware advertises runtime support.
 - A synth preset editor with name and folder selection, folder creation, main
   synth parameter controls, mono retrigger/legato, mono portamento,
   arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,

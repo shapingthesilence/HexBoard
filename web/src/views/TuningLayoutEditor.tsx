@@ -70,6 +70,7 @@ type GeometryEditorTab = "tuning" | "layouts" | "scales";
 type GeometrySidebarTab = "library" | "editor";
 type GeometryLibrarySpace = "computer" | "hexboard";
 type PaintTool = "brush" | "eyedropper";
+type PaintTarget = "button" | "degree";
 
 const colorModeOptions: Array<{ value: ColorModeValue; label: string }> = [
   { value: ColorMode.Rainbow, label: "Rainbow" },
@@ -441,6 +442,39 @@ function overrideHasColor(override: LayoutBundleButtonOverride): boolean {
   return override.hueTenthDegrees !== undefined || override.saturation !== undefined || override.value !== undefined;
 }
 
+export function paintScaleDegreeColor(
+  degreeColors: ScaleDegreeColor[],
+  cycleLength: number,
+  degree: number,
+  brushColor: ScaleDegreeColor
+): ScaleDegreeColor[] {
+  return normalizeScaleDegreeColors(degreeColors, cycleLength).map((color) =>
+    color.degree === degree
+      ? clampScaleDegreeColor({
+          ...color,
+          hueTenthDegrees: brushColor.hueTenthDegrees,
+          saturation: brushColor.saturation,
+          value: brushColor.value
+        })
+      : color
+  );
+}
+
+export function clearColorOverridesForScaleDegree(
+  overrides: LayoutBundleButtonOverride[],
+  degreeByButtonIndex: ReadonlyMap<number, number>,
+  degree: number
+): LayoutBundleButtonOverride[] {
+  return overrides.flatMap((override) => {
+    if (!overrideHasColor(override) || degreeByButtonIndex.get(override.buttonIndex) !== degree) {
+      return [override];
+    }
+    const withoutColor = removeOverrideColor(override);
+    const shouldRemove = isRoleDefault(override.buttonIndex, withoutColor.role) && withoutColor.stepsFromC === undefined;
+    return shouldRemove ? [] : [withoutColor];
+  });
+}
+
 export function resetOverridesToScaleDegreeColors(overrides: LayoutBundleButtonOverride[]): LayoutBundleButtonOverride[] {
   return overrides.flatMap((override) => {
     if (!overrideHasColor(override)) {
@@ -809,6 +843,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const [activeEditorTab, setActiveEditorTab] = useState<GeometryEditorTab>("tuning");
   const [paintbrushMode, setPaintbrushMode] = useState(false);
   const [paintTool, setPaintTool] = useState<PaintTool>("brush");
+  const [paintTarget, setPaintTarget] = useState<PaintTarget>("button");
   const [paintbrushColor, setPaintbrushColor] = useState<ScaleDegreeColor>(() => createDefaultDegreeColors(1)[0]);
   const [keyLabelsDraft, setKeyLabelsDraft] = useState("");
   const [keyLabelsError, setKeyLabelsError] = useState("");
@@ -822,7 +857,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const keyLabelsInputRef = useRef<HTMLInputElement>(null);
   const includedDegreesInputRef = useRef<HTMLInputElement>(null);
   const paintStrokeActiveRef = useRef(false);
-  const lastPaintedButtonRef = useRef<number | null>(null);
+  const lastPaintedTargetRef = useRef<string | null>(null);
   const skipNextLiveSendRef = useRef(true);
 
   const activeBundle = bundles.find((bundle) => bundle.objectIdHex === activeBundleId) ?? bundles[0] ?? createDefaultLayoutBundle();
@@ -1234,6 +1269,28 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     }));
   }
 
+  function paintDegreeColor(degree: number, color: ScaleDegreeColor) {
+    const degreeByButtonIndex = new Map(previewKeys.map((item) => [item.key.index, item.degree] as const));
+    updateActiveBundle((bundle) => ({
+      ...bundle,
+      palette: {
+        ...bundle.palette,
+        degreeColors: paintScaleDegreeColor(
+          bundle.palette.degreeColors,
+          tuningCycleLength(bundle.tuning),
+          degree,
+          color
+        )
+      },
+      layouts: bundle.layouts.map((layout) => layout.objectIdHex === bundle.activeLayoutIdHex
+        ? {
+            ...layout,
+            buttonOverrides: clearColorOverridesForScaleDegree(layout.buttonOverrides, degreeByButtonIndex, degree)
+          }
+        : layout)
+    }));
+  }
+
   function updateDefaultColorMode(defaultColorMode: ColorModeValue) {
     updateActiveBundle((bundle) => ({
       ...bundle,
@@ -1251,20 +1308,30 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     }));
   }
 
-  function paintButtonColorOverride(buttonIndex: number) {
+  function paintPreviewKey(buttonIndex: number) {
     if (!customColorModeActive) {
       return;
     }
-    if (lastPaintedButtonRef.current === buttonIndex) {
+    const preview = previewKeys.find((item) => item.key.index === buttonIndex);
+    if (!preview) {
       return;
     }
-    lastPaintedButtonRef.current = buttonIndex;
-    updateButtonOverride(buttonIndex, {
-      hueTenthDegrees: paintbrushColor.hueTenthDegrees,
-      saturation: paintbrushColor.saturation,
-      value: paintbrushColor.value
-    });
-    setStatus(`Painted button ${buttonIndex}`);
+    const paintKey = paintTarget === "degree" ? `degree:${preview.degree}` : `button:${buttonIndex}`;
+    if (lastPaintedTargetRef.current === paintKey) {
+      return;
+    }
+    lastPaintedTargetRef.current = paintKey;
+    if (paintTarget === "degree") {
+      paintDegreeColor(preview.degree, paintbrushColor);
+      setStatus(`Painted scale degree ${preview.degree}`);
+    } else {
+      updateButtonOverride(buttonIndex, {
+        hueTenthDegrees: paintbrushColor.hueTenthDegrees,
+        saturation: paintbrushColor.saturation,
+        value: paintbrushColor.value
+      });
+      setStatus(`Painted button ${buttonIndex}`);
+    }
   }
 
   function pickBrushColor(buttonIndex: number) {
@@ -1275,10 +1342,17 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     if (!preview) {
       return;
     }
-    setPaintbrushColor(preview.color);
+    if (paintTarget === "degree") {
+      const degreeColor = normalizeScaleDegreeColors(activeBundle.palette.degreeColors, tuningCycleLength(activeBundle.tuning))
+        .find((color) => color.degree === preview.degree) ?? preview.color;
+      setPaintbrushColor(degreeColor);
+      setStatus(`Picked scale degree ${preview.degree} color`);
+    } else {
+      setPaintbrushColor(preview.color);
+      setStatus(`Picked color from button ${buttonIndex}`);
+    }
     setSelectedButton(buttonIndex);
     setPaintTool("brush");
-    setStatus(`Picked color from button ${buttonIndex}`);
   }
 
   function previewButtonIndexFromPointer(event: PointerEvent<HTMLElement>): number | undefined {
@@ -1305,8 +1379,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       return;
     }
     paintStrokeActiveRef.current = true;
-    lastPaintedButtonRef.current = null;
-    paintButtonColorOverride(buttonIndex);
+    lastPaintedTargetRef.current = null;
+    paintPreviewKey(buttonIndex);
   }
 
   function continuePaintStroke(event: PointerEvent<HTMLDivElement>) {
@@ -1315,13 +1389,13 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     }
     const buttonIndex = previewButtonIndexFromPointer(event);
     if (buttonIndex !== undefined) {
-      paintButtonColorOverride(buttonIndex);
+      paintPreviewKey(buttonIndex);
     }
   }
 
   function endPaintStroke() {
     paintStrokeActiveRef.current = false;
-    lastPaintedButtonRef.current = null;
+    lastPaintedTargetRef.current = null;
   }
 
   function resetButtonOverride(buttonIndex: number) {
@@ -2181,6 +2255,20 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             >
               Paintbrush
             </button>
+            <label className="toolbarSelectField">
+              <span>Paint target</span>
+              <select
+                disabled={!customColorModeActive}
+                value={paintTarget}
+                onChange={(event) => {
+                  endPaintStroke();
+                  setPaintTarget(event.target.value as PaintTarget);
+                }}
+              >
+                <option value="button">Button overrides</option>
+                <option value="degree">Scale degrees</option>
+              </select>
+            </label>
             <button
               aria-pressed={customColorModeActive && paintbrushMode && paintTool === "eyedropper"}
               className={customColorModeActive && paintbrushMode && paintTool === "eyedropper" ? "primary" : ""}
@@ -2212,7 +2300,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 resetAllButtonColors();
               }}
             >
-              Reset Colors
+              Reset Overrides
             </button>
           </div>
           <div className="hexBoardScroll">
