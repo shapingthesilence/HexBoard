@@ -1,0 +1,364 @@
+HEXBOARD SEQUENCER MODE
+QUICK MANUAL
+
+Overview
+
+Sequencer mode is a separate mode from Keyboard mode. It is a single-track,
+32-step sequencer. Each step can hold up to 6 tuning-aware notes, its own note length,
+its own velocity, its own probability, and can play through MIDI or the
+onboard synth.
+
+Enter And Exit
+
+- From the main menu, choose Sequencer.
+- In the Sequencer menu, choose Keyboard to return to normal keyboard mode.
+
+Main Controls
+
+- Steps: the first 8 playable keys of the first 4 rows are steps 1-32.
+- Play/Stop: the top-right key starts and stops playback on a short press.
+- Play/Stop also deselects the current step if one is selected.
+- Performance monitor: hold the top-right Play/Stop key for 2 seconds to show
+  audio engine load, memory, storage, and MIDI receive stats; release it to
+  close the monitor.
+- Overview: the 9th key on the second row pages through an 8-step note view.
+- Overview stays lit white while idle and becomes brighter white while the
+  overview is open.
+- Blue action key: the far-right key on the second row does undo on short
+  press and restores the selected step to the state it had when selected,
+  including notes, length, velocity, probability, and Tie; it clears the
+  selected step on a 1-second hold.
+- Tools: the last button on the third row opens a step-tools picker for the
+  selected step.
+- Tools stays lit white while idle and becomes brighter white while the tools
+  picker is open.
+- Encoder:
+  - Turn while a step is selected to change that step's length quickly.
+  - Press during file or folder naming to save the name.
+
+Step Editing
+
+- Press a step once to select it.
+- Press the same step again to deselect it.
+- With a step selected, play note keys on the lower part of the board to add
+  or remove notes from that step.
+- The edit screen shows a compact info line for the selected step:
+  `L ...% V ... P ...%`, then the notes.
+- The note area stays on one line when the labels fit and only uses a second
+  line when needed.
+- Each step can hold up to 6 notes.
+- Monophonic in Playback Settings changes note entry so pressing a note already
+  in the selected step removes that note, while a different note replaces the
+  step's current notes with that one note.
+- Step notes are kept sorted from lowest to highest.
+- In 12 EDO, note labels use normal note names like `C3`.
+- In other tunings, note labels use `step.octave` style labels like `7.4`.
+- Tap Preview can make a tapped step audition its stored notes when selected.
+- Tied steps do not audition from Tap Preview.
+
+Step Tools Picker
+
+- Press the last button on the third row with a step selected to open tools.
+- The tools screen shows the selected step number, a compact
+  `L ...% V ... P ...%` line, and the current notes.
+- The current note area stays on one line when the labels fit and wraps only
+  when needed.
+- The tool buttons move to the lower part of the board so the 4 step rows stay
+  visible at the top while the picker is open.
+- Tool selection keys light blue at the sequencer medium light level.
+- While the picker is open, tapping another step pad switches the selected step
+  and keeps the picker open.
+- Current tool choices are:
+  Len, Vel, Oct+, Oct-, Prob, Tie, Copy
+- The tools screen also shows:
+  Cancel/Finished
+- Len opens exact length entry for the selected step.
+- Oct+ transposes the selected step up 1 tuning cycle and stays in the tools screen.
+- Oct- transposes the selected step down 1 tuning cycle and stays in the tools screen.
+- Oct+ and Oct- are limited to displayed octave range 0 through 9.
+- If Oct+ or Oct- hits that range limit, the range message closes back to tools.
+- While that range message is visible, repeated key presses only extend the
+  timeout and do not trigger normal keyboard actions.
+- Vel opens exact velocity entry for the selected step.
+- Prob opens exact probability entry for the selected step.
+- Tie toggles a per-step continuation flag and stays in the tools screen.
+- When a step is tied, note-oriented displays show `T` instead of note labels.
+- Tap Preview and manual step preview stay silent on tied steps.
+- Copy opens target-step selection and copies the source step's notes, length,
+  velocity, probability, and Tie state into the tapped destination step, then
+  keeps the tools picker open on that destination step.
+- Cancel/Finished closes the picker when you are done.
+
+Step Velocity
+
+- Velocity is stored per step.
+- Range is 0-127.
+- Default step velocity is 96.
+- Use Vel from the step tools picker to edit it.
+- Velocity entry uses the encoder.
+- Turn the encoder to move through:
+  0, 5, 10, 15, ... 125, 127
+- Press the encoder to save.
+- While Vel is open, the step pads and sequencer function lights stay visible.
+- Tap another step pad to switch Vel editing to that step; pending encoder
+  changes are not saved unless you press the encoder first.
+- Lower note-entry keys do not add or remove notes while Vel is open.
+- Playback, tap preview, save, and load all use the stored step velocity.
+
+Step Probability
+
+- Probability is stored per step.
+- Range is 0-100%.
+- Default step probability is 100%.
+- Use Prob from the step tools picker to edit it.
+- Probability entry uses the encoder.
+- Turn the encoder to move through:
+  0, 5, 10, 15, ... 100
+- Press the encoder to save.
+- While Prob is open, the step pads and sequencer function lights stay visible.
+- Tap another step pad to switch Prob editing to that step; pending encoder
+  changes are not saved unless you press the encoder first.
+- Lower note-entry keys do not add or remove notes while Prob is open.
+- Playback, save, and load all use the stored step probability.
+- Tap Preview ignores probability and still auditions the step.
+- Tied steps are the exception: Tap Preview stays silent on them.
+
+Note Length
+
+- With a step selected, turn the encoder for quick length changes.
+- Use Len from the step tools picker to open exact length entry.
+- Available lengths are:
+  0%, 25%, 50%, 75%, 100%, 150%, 200%, 250%, 300%, 350%, 400%, 500%, 600%, 700%, 800%, 900%, 1000%
+- 100% holds the note through its own step and releases it at the step
+  boundary before the next non-tied step starts.
+- Values above 100% let the note continue across later steps.
+
+Exact length screen:
+
+- press number keys to enter the value
+- the OLED shows separate `Current:` and `New:` values
+- digits fill `New:` without overwriting `Current:`
+- up to 4 digits are allowed
+- exact-length keypad keys light blue at the sequencer medium light level
+- <- deletes the previous digit and is on the eighth-row first key
+- CANCEL exits without saving and uses the same lower cancel area as the tools picker
+- press the encoder to save the `New:` value, or keep the current value if `New:` is blank
+
+Playback
+
+- Tempo is in Playback Settings and is the internal step clock.
+- Each step is a 16th note at the current tempo.
+- MIDI Sync is in Playback Settings.
+- Clock Source chooses:
+  Internal or External MIDI
+- With Clock Source set to External MIDI, incoming MIDI clock drives the step
+  timing and incoming MIDI Start/Stop controls transport.
+- Send Clock can send MIDI clock while the sequencer is playing in Internal mode.
+- Send Transport can send MIDI Start/Stop when local transport is used in
+  Internal mode.
+- Hold Play/Stop for 2 seconds to show the performance monitor while held.
+- Steps sets the active playback range from 1 to 32.
+- Step lights beyond the active Steps count stay off, even if those steps still
+  contain notes.
+- Direction choices are:
+  Forward, Backward, Ping-Pong, Random, Brownian, Drunk
+- Play Type chooses:
+  MIDI or OB Synth
+- Sequencer note entry, preview, and playback follow the current Keyboard
+  tuning and transpose.
+- During transport playback, the lower playable keyboard lights the notes that
+  are currently sounding for their full held duration.
+- A tied step does not retrigger a note during transport playback.
+- A tied step continues the nearest earlier eligible non-tied step from the
+  same pattern pass when that source note is still active.
+- Tie is the exception to the normal 100% boundary release, so the carried
+  source note stays active into the tied step instead of being released first.
+- If no valid earlier source is active, the tied step is silent.
+- Tie does not wrap from the end of the pattern back to step 1 in v1.
+
+Menu Items
+
+- When a menu page is open, hold the bottom command button below the encoder to
+  temporarily make the top two command buttons act like one encoder step up or
+  down. Releasing that bottom button returns them to normal behavior.
+- While editing a value, the top shortcut button increases that value and the
+  lower shortcut button decreases it.
+- New: clears to a blank untitled sequence.
+- Save: saves to the current file, or opens folder selection and naming if the sequence is untitled.
+- Save New: saves as a new file in the selected folder.
+- Load: loads a saved sequence.
+- Revert: reloads the last saved version of the current sequence.
+- Seq Lights:
+  Accent Every, Step Color, Step Hue
+- Playback Settings:
+  Steps, Direction, Tempo, Play Type, MIDI Sync, Tap Preview, ----------,
+  Monophonic
+- Playback Settings > MIDI Sync:
+  Clock Source, Send Clock, Send Transport
+- File Management:
+  Rename or Delete, Create Folder, USB Backup
+- Rename or Delete opens a combined browser where folders still open normally,
+  files open a Rename/Delete/Cancel chooser, and the current folder can be
+  targeted through `This Folder...`.
+- Choosing Delete from that action page opens a confirmation page that shows
+  the target and requires choosing `Yes, Delete` or `Cancel`.
+- Tap Preview: audition step contents when a step is tapped
+- Monophonic: when On, pressing a note already in the selected step removes
+  that note; pressing a different note replaces the step's current notes with
+  that one note
+
+Seq Lights
+
+- Accent Every emphasizes every Nth step, starting from step 1.
+- Choices are:
+  Off, 2, 3, 4, 5, 6, 7, 8
+- Accent Every uses brightness changes only and does not change hue.
+- Default Accent Every is 4.
+- Step Color choices are:
+  Note, Regular
+- Default Step Color is Regular.
+- Sequencer step lights use this brightness ladder:
+  off, low, medium, high, highest
+- The current step mapping is:
+  empty step without accent = off
+  empty step with accent = medium
+  step with note = medium
+  accented step with note = high
+  selected step with note = high
+  playing step with note = highest
+- A tied step uses the same programmed-step brightness behavior as a step with
+  a note.
+- During transport playback, the lower playable keyboard lights the currently
+  sounding notes, including ties that keep an earlier note held.
+- In Note mode, programmed steps use note-based colors with that brightness
+  ladder.
+- In Regular mode, programmed steps use the selected Step Hue with that
+  brightness ladder.
+- Empty unselected steps without accent stay off in both modes.
+- A selected or playing empty step lights at the highest level so selection and
+  playback are still visible.
+- Step Hue is available only in Regular mode.
+- Step Hue choices are:
+  Red, Orange, Yellow, Lime, Green, Teal, Cyan, Lt Blue, Blue, Indigo,
+  Purple, Magenta, Pink
+- Default Step Hue is Indigo.
+- Step Hue previews live while you scroll through its choices.
+
+Saving And Files
+
+- Sequences are stored under /Sequences in onboard flash.
+- Sequence files store note pitches as tuning-relative step values instead of
+  raw MIDI note numbers.
+- Sequence files also store:
+  Tempo, Steps, Play Type, Direction, per-step notes, per-step length,
+  per-step velocity, per-step probability, and per-step Tie.
+- Tap Preview is a general sequencer setting and is not stored per sequence
+  file. It is saved with the board profile and Auto-Save settings system.
+- Monophonic, Clock Source, Send Clock, and Send Transport are general
+  sequencer settings and are not stored per sequence file. They are saved with
+  the board profile and Auto-Save settings system.
+- Seq Lights settings are general sequencer settings and are not stored per
+  sequence file. They are saved with the board profile and Auto-Save settings
+  system.
+- Lights & Colors settings are shared with Keyboard mode and use the same board
+  profile and Auto-Save settings system.
+- In those shared settings, `Dim Bright` affects out-of-scale note LEDs only
+  when `Scale Lock` is Off.
+- On startup, the sequencer restores the last loaded sequence file when that
+  remembered path is still valid.
+- File Management > USB Backup starts a dedicated USB serial backup session for
+  the /Sequences tree.
+- If you back out of the USB Backup page while a session is active, the
+  sequencer warns that leaving the page closes USB Backup and asks whether you
+  want to continue.
+- If you choose Stop Session while a session is active, the sequencer warns
+  that stopping USB Backup ends any current transfer and asks whether you want
+  to continue.
+- While USB Backup is active, the hex buttons are temporarily disabled and
+  their LEDs are blanked so you do not accidentally trigger other sequencer
+  actions. The encoder still works for the menu.
+- The computer-side tools are:
+  `scripts/hexboard_backup.py` for the command line and
+  `scripts/hexboard_backup_gui.py` for a desktop GUI.
+- For skilled computer users, the simplest desktop setup is:
+  install Python 3, install `pyserial`, then launch the GUI.
+- The repo root also includes simple double-click launchers:
+  `Launch HexBoard Backup.command` for macOS and
+  `Launch HexBoard Backup.bat` for Windows.
+- The backup tools can work on the full /Sequences tree or on a selected file
+  or folder.
+- In the desktop GUI, you can multi-select remote items with Shift-click and
+  delete them together.
+- The desktop GUI now has four action rows overall:
+  one row beside the serial port dropdown for `Refresh Ports` and
+  `Refresh Remote`, then three rows below for the rest of the actions.
+- The rows below group:
+  full backup actions,
+  download and upload actions,
+  then rename and delete actions.
+- The GUI has separate `Rename File` and `Rename Folder` buttons.
+- GUI renaming only allows simple sequencer-style names:
+  letters, numbers, spaces, and `-`.
+- GUI renaming rejects periods and limits names to 20 characters.
+- If a rename is not allowed, the GUI shows the full rename rules, points out
+  the broken rule(s), and then returns to the rename prompt with your previous
+  entry still filled in.
+- GUI Upload Folder always merges into the target folder on the board. It does
+  not delete the existing remote folder first.
+- During GUI Upload Folder, any existing remote file conflict is shown one file
+  at a time so you can overwrite, skip that file, or cancel the folder upload.
+- GUI Upload File warns before replacing an existing remote file, whether that
+  file was selected directly or is already inside the selected target folder.
+- The warning also tells you to select a folder first if you want to copy the
+  file into that folder instead of replacing a selected file.
+- When multiple remote items are selected, single-target actions like Download,
+  Upload, and Rename are disabled until only one item is selected again.
+- The GUI remembers the last local folder used for Upload File and Upload
+  Folder, and it also remembers the last backup folder used for Restore
+  Backup. Those locations return after reopening the desktop tool.
+- The top GUI status line shows active operations, including Refresh Remote.
+- The `Size Bytes` column shows raw file sizes in bytes.
+- While that session is active, Save, Revert, and file-browser actions are
+  blocked until the session is stopped.
+- File browsers show up to 8 file/folder rows at a time.
+- `^ more ^` and `v more v` indicate earlier or later pages.
+- Scrolling past the first or last real file row pages automatically.
+- The menu title shows the current file name as:
+  Seq-FILENAME
+- If there are unsaved changes, it becomes:
+  Seq-*FILENAME
+- If no file is loaded, the title just says:
+  Sequencer
+
+Naming Mode
+
+When naming a file or folder, the board shows this entry layout:
+
+  A B C D E F G H
+  I J K L M N O P
+  Q R S T U V W X
+  Y Z SPC - 1 2 3 4 5
+  <- 6 7 8 9 0 CANCEL
+
+- Press keys to enter characters.
+- SPC adds a space.
+- <- deletes the previous character.
+- CANCEL exits naming without saving.
+- digits 0-9 are available directly on the bottom two rows.
+- Press the encoder to save the name.
+- the physical CANCEL key is placed lower on the board to reduce accidental exits
+- naming input keys light blue at the sequencer medium light level
+
+Status And Display
+
+- The selected step blinks.
+- The overview screen packs in as many steps as fit on screen.
+- Steps that fit on one line stay compact.
+- Large chords can wrap onto a second indented overview line for the same step.
+- Empty steps are dark when idle.
+- If `DisplayNotes` is enabled, the lower playable keyboard in Sequencer mode
+  can show `Now Playing` only when no step is selected.
+- The performance monitor shows:
+  AudioEng, Mem, FS, MIDI Q, Drop, and Late while the Play/Stop key is held.
+- Active sequencer overlays stay awake while you are using them.
+- The top title shows the loaded file name and unsaved state.

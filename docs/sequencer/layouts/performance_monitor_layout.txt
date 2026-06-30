@@ -1,0 +1,21 @@
+PERFORMANCE MONITOR LAYOUT
+
+Shown by holding the Sequencer Play/Stop key for about 2 seconds.
+It stays visible only while that key is held.
+
+Screen:
+
+  AudioEng 47%
+  Mem 32K/248K
+  FS  128K/1024K
+  MIDI Q 12
+  Drop 0 Late 1
+
+Notes:
+
+- AudioEng is shown as an approximate audio engine load percentage.
+- Mem shows heap used versus total heap.
+- FS shows LittleFS used versus total filesystem size.
+- MIDI Q shows current pending incoming MIDI bytes.
+- Drop and Late are receive-stress counters, not guaranteed exact hardware drop counts.
+- Releasing Play/Stop closes the overlay and returns to the previous sequencer view.

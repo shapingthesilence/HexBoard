@@ -1,0 +1,55 @@
+SEQUENCER MENU LAYOUT
+
+Title examples:
+
+- Seq-New
+- Seq-BLUE MONDAY
+- Seq-*BLUE MONDAY
+
+Menu order:
+
+  Keyboard
+  File Management
+  Playback Settings
+  Seq Lights
+
+File Management submenu:
+
+  New
+  Save
+  Save New
+  Load
+  Revert
+  Create Folder
+  Rename/Delete
+  USB Backup
+
+Playback Settings submenu:
+
+  Steps
+  Direction
+  Tempo
+  Play Type
+  MIDI Sync
+  Tap Preview
+  ----------
+  Monophonic
+
+MIDI Sync submenu:
+
+  Clock Source
+  Send Clock
+  Send Transport
+
+Seq Lights submenu:
+
+  Accent Every
+  Step Color
+  Step Hue (Regular only)
+
+Notes:
+
+- The title includes the loaded file name when one is active.
+- A leading * in the file part of the title means unsaved changes.
+- Keyboard exits Sequencer mode and returns to normal board behavior.
+- Seq Lights settings are general sequencer profile settings, not sequence data.
