@@ -1471,22 +1471,22 @@ void previewWaveform(GEMPreviewCallbackData previewData) {
 }
 
 SelectOptionByte optionByteWavetablePosition[] = {
-  { "1", 0 },
-  { "2", 8 },
-  { "3", 17 },
-  { "4", 25 },
-  { "5", 34 },
-  { "6", 42 },
-  { "7", 51 },
-  { "8", 59 },
-  { "9", 68 },
-  { "10", 76 },
-  { "11", 85 },
-  { "12", 93 },
-  { "13", 102 },
-  { "14", 110 },
-  { "15", 119 },
-  { "16", 127 }
+  { "1", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[0] },
+  { "2", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[1] },
+  { "3", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[2] },
+  { "4", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[3] },
+  { "5", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[4] },
+  { "6", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[5] },
+  { "7", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[6] },
+  { "8", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[7] },
+  { "9", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[8] },
+  { "10", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[9] },
+  { "11", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[10] },
+  { "12", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[11] },
+  { "13", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[12] },
+  { "14", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[13] },
+  { "15", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[14] },
+  { "16", SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[15] }
 };
 GEMSelect selectWavetablePosition(sizeof(optionByteWavetablePosition) / sizeof(SelectOptionByte), optionByteWavetablePosition);
 PersistentCallbackInfo callbackInfoSynthWavetablePosition = {
@@ -1585,7 +1585,8 @@ SelectOptionByte optionByteSynthVibratoSpeed[] = {
   { "9 Hz", 8 },
   { "10 Hz", 9 },
   { "11 Hz", 10 },
-  { "12 Hz", 11 }
+  { "12 Hz", 11 },
+  { "Noise", SYNTH_VIBRATO_SPEED_NOISE }
 };
 GEMSelect selectSynthVibratoSpeed(sizeof(optionByteSynthVibratoSpeed) / sizeof(SelectOptionByte), optionByteSynthVibratoSpeed);
 PersistentCallbackInfo callbackInfoSynthVibratoSpeed = {

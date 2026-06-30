@@ -19,6 +19,10 @@ volatile uint16_t audioOutputMuteGainQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
 volatile uint16_t audioOutputMuteTargetQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
 uint16_t synthPiezoAmplitude = 0;
 
+constexpr uint8_t SYNTH_DRIVE_LOOKUP_MODE_COUNT = SYNTH_DRIVE_DIRTY - SYNTH_DRIVE_WARM + 1;
+constexpr size_t SYNTH_DRIVE_LOOKUP_SAMPLE_COUNT = static_cast<size_t>(SHAPE_CLAMP + 1);
+static int16_t synthDriveLookup[SYNTH_DRIVE_LOOKUP_MODE_COUNT][SYNTH_DRIVE_LOOKUP_SAMPLE_COUNT] = {};
+
 void RAM_FUNC(idlePhysicalAudioOutputs)();
 void RAM_FUNC(preparePhysicalAudioOutput)(byte destination);
 byte RAM_FUNC(selectedAudioDmaDestination)();
@@ -129,23 +133,24 @@ int32_t RAM_FUNC(scalePiezoSample)(int32_t sample, uint16_t amplitude) {
   return (sample * static_cast<int32_t>(amplitude)) >> PIEZO_SCALE_SHIFT;
 }
 
-int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
-  uint16_t gainQ8 = 256;
-  switch (synthDrive) {
-    case SYNTH_DRIVE_WARM: gainQ8 = 256; break;
-    case SYNTH_DRIVE_EDGE: gainQ8 = 384; break;
-    case SYNTH_DRIVE_DIRTY: gainQ8 = 640; break;
+static uint16_t synthDriveGainQ8(byte driveMode) {
+  switch (driveMode) {
+    case SYNTH_DRIVE_WARM: return 256;
+    case SYNTH_DRIVE_EDGE: return 384;
+    case SYNTH_DRIVE_DIRTY: return 640;
     case SYNTH_DRIVE_OFF:
     default:
-      return sample;
+      return 256;
   }
+}
 
-  int32_t x = (sample * static_cast<int32_t>(gainQ8)) >> 8;
+static int16_t shapeSynthDriveMagnitude(int32_t magnitude, byte driveMode) {
+  uint16_t gainQ8 = synthDriveGainQ8(driveMode);
+
+  int32_t x = (magnitude * static_cast<int32_t>(gainQ8)) >> 8;
   if (x > SHAPE_CLAMP) x = SHAPE_CLAMP;
-  if (x < -SHAPE_CLAMP) x = -SHAPE_CLAMP;
 
-  const bool negative = x < 0;
-  const uint32_t mag = negative ? static_cast<uint32_t>(-x) : static_cast<uint32_t>(x);
+  const uint32_t mag = static_cast<uint32_t>(x);
 #if (PWM_BITS == 8)
   constexpr uint8_t DRIVE_CLAMP_SHIFT = 7;
 #elif (PWM_BITS == 9)
@@ -156,6 +161,28 @@ int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
   uint32_t cubeTerm = (((mag * mag) >> DRIVE_CLAMP_SHIFT) * mag) >> DRIVE_CLAMP_SHIFT;
   int32_t shaped = ((3 * static_cast<int32_t>(mag)) - static_cast<int32_t>(cubeTerm)) >> 1;
   if (shaped > SHAPE_CLAMP) shaped = SHAPE_CLAMP;
+  return static_cast<int16_t>(shaped);
+}
+
+void initializeSynthDriveLookup() {
+  for (byte driveMode = SYNTH_DRIVE_WARM; driveMode <= SYNTH_DRIVE_DIRTY; ++driveMode) {
+    int16_t* table = synthDriveLookup[driveMode - SYNTH_DRIVE_WARM];
+    for (int32_t magnitude = 0; magnitude <= SHAPE_CLAMP; ++magnitude) {
+      table[static_cast<size_t>(magnitude)] = shapeSynthDriveMagnitude(magnitude, driveMode);
+    }
+  }
+}
+
+int32_t RAM_FUNC(applySynthDrive)(int32_t sample) {
+  byte driveMode = synthDrive;
+  if (driveMode == SYNTH_DRIVE_OFF || driveMode > SYNTH_DRIVE_DIRTY) {
+    return sample;
+  }
+  if (sample > SHAPE_CLAMP) sample = SHAPE_CLAMP;
+  if (sample < -SHAPE_CLAMP) sample = -SHAPE_CLAMP;
+  bool negative = sample < 0;
+  uint16_t magnitude = static_cast<uint16_t>(negative ? -sample : sample);
+  int32_t shaped = synthDriveLookup[driveMode - SYNTH_DRIVE_WARM][magnitude];
   return negative ? -shaped : shaped;
 }
 

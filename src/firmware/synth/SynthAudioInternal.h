@@ -83,13 +83,14 @@ constexpr uint32_t audioPhaseIncrementFromHz(uint16_t hz) {
 constexpr uint32_t audioPhaseIncrementFromMilliHz(uint32_t milliHz) {
   return static_cast<uint32_t>((static_cast<uint64_t>(milliHz) * 4294967296ULL) / (static_cast<uint64_t>(AUDIO_SAMPLE_RATE_HZ) * 1000ULL));
 }
-constexpr std::array<uint32_t, 12> synthVibratoPhaseIncrementOptions = {
+constexpr std::array<uint32_t, SYNTH_VIBRATO_SPEED_MAX + 1> synthVibratoPhaseIncrementOptions = {
   audioPhaseIncrementFromHz(1), audioPhaseIncrementFromHz(2),
   audioPhaseIncrementFromHz(3), audioPhaseIncrementFromHz(4),
   audioPhaseIncrementFromHz(5), audioPhaseIncrementFromHz(6),
   audioPhaseIncrementFromHz(7), audioPhaseIncrementFromHz(8),
   audioPhaseIncrementFromHz(9), audioPhaseIncrementFromHz(10),
-  audioPhaseIncrementFromHz(11), audioPhaseIncrementFromHz(12)
+  audioPhaseIncrementFromHz(11), audioPhaseIncrementFromHz(12),
+  audioPhaseIncrementFromHz(12)
 };
 constexpr std::array<uint32_t, 20> synthLfoPhaseIncrementOptions = {
   audioPhaseIncrementFromMilliHz(50), audioPhaseIncrementFromMilliHz(100),
@@ -179,6 +180,10 @@ struct SynthVoiceRenderCache {
   uint32_t phaseIncrementTarget = 0;
   int32_t phaseIncrementStep = 0;
   uint8_t phaseIncrementSlewSamples = 0;
+  uint32_t ampEnvelopeLevelQ8 = 0;
+  uint32_t ampEnvelopeTargetQ8 = 0;
+  int32_t ampEnvelopeStepQ8 = 0;
+  uint8_t ampEnvelopeRampSamples = 0;
   int16_t foldWarpAmountQ4 = 0;
   int16_t foldWarpAmountTargetQ4 = 0;
   int16_t foldWarpAmountStepQ4 = 0;
@@ -289,6 +294,7 @@ bool RAM_FUNC(consumeVoiceFreed)(uint8_t channel);
 void RAM_FUNC(clearPendingVoiceFreed)(uint8_t channel);
 void RAM_FUNC(advanceEnvelopeFromAttackPeak)(const EnvelopeParams& params, EnvelopeState& env);
 void RAM_FUNC(updateEnvelopeHoldStage)(const EnvelopeParams& params, EnvelopeState& env);
+void RAM_FUNC(updateAmpEnvelopeState)(EnvelopeState& env, uint8_t elapsedTicks);
 void RAM_FUNC(resetCachedEffectEnvelopeModValue)(uint8_t envelopeIndex, uint8_t voiceIndex);
 void RAM_FUNC(startEffectEnvelopeAttack)(uint8_t envelopeIndex, EnvelopeState& env);
 void RAM_FUNC(startEffectEnvelopeRelease)(uint8_t envelopeIndex, EnvelopeState& env);
@@ -333,10 +339,16 @@ void RAM_FUNC(refreshSynthVoiceRenderCache)(uint8_t voiceIndex,
                                             bool& synthVibratoSampleReady,
                                             int16_t& synthVibratoSample);
 void RAM_FUNC(resetSynthVoiceRenderCache)(uint8_t voiceIndex);
+void RAM_FUNC(resetSynthVoiceRenderCachePreservingAmpEnvelope)(uint8_t voiceIndex);
 void RAM_FUNC(advanceSynthVoiceSlews)(SynthVoiceRenderCache& cache);
+void RAM_FUNC(retargetSynthAmpEnvelopeRenderCache)(SynthVoiceRenderCache& cache,
+                                                  uint32_t targetAudioLevel,
+                                                  uint8_t elapsedTicks,
+                                                  bool snap);
 uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(applySynthFoldPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4);
 uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(applySynthDutyPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4);
 uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(applySynthPolyPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4);
+void initializeSynthDriveLookup();
 void initializeSynthFxModScaleLookup();
 void initializeSynthPitchModLookup();
 

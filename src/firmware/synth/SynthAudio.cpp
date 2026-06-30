@@ -356,77 +356,81 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
   for (byte i = 0; i < voiceLimit; i++) {
     EnvelopeState& env = envelopeStates[i];
     bool forceVoiceRenderCacheRefresh = false;
+    bool snapAmpEnvelopeRenderCache = false;
 
-    EnvelopeCommand pendingCommand = consumeEnvelopeCommand(i);
-    switch (pendingCommand) {
-      case EnvelopeCommand::StartAttack: {
-        clearSynthStealFade(i);
-        startSynthVoiceAttackInRender(i, env, forceVoiceRenderCacheRefresh);
-        break;
-      }
-      case EnvelopeCommand::StartRelease: {
-        clearSynthStealFade(i);
-        resetSynthVoiceRenderCache(i);
-        forceVoiceRenderCacheRefresh = true;
-        releaseRetries[i] = 0;
-        releaseRetryCountdown[i] = 0;
-        if (envelopeParams.releaseTicks == 0 || env.level == 0) {
-          env.level = 0;
-          env.stage = EnvelopeStage::Idle;
+    if (synthControlTick) {
+      EnvelopeCommand pendingCommand = consumeEnvelopeCommand(i);
+      switch (pendingCommand) {
+        case EnvelopeCommand::StartAttack: {
+          clearSynthStealFade(i);
+          snapAmpEnvelopeRenderCache = envelopeParams.attackTicks == 0;
+          startSynthVoiceAttackInRender(i, env, forceVoiceRenderCacheRefresh);
+          break;
+        }
+        case EnvelopeCommand::StartRelease: {
+          clearSynthStealFade(i);
+          resetSynthVoiceRenderCachePreservingAmpEnvelope(i);
+          forceVoiceRenderCacheRefresh = true;
+          releaseRetries[i] = 0;
+          releaseRetryCountdown[i] = 0;
+          if (envelopeParams.releaseTicks == 0 || env.level == 0) {
+            env.level = 0;
+            env.stage = EnvelopeStage::Idle;
+            synth[i].increment = 0;
+            synth[i].targetIncrement = 0;
+            synth[i].counter = 0;
+            clearSynthPortamento(i);
+            resetSynthVoiceRenderCache(i);
+            publishVoiceFreed(i);
+          } else {
+            env.stage = EnvelopeStage::Release;
+            profileFlags |= ISR_PROFILE_FLAG_RELEASE_START;
+            if (isrProfilingEnabled) {
+              isrCycleReleaseStartCount++;
+            }
+            env.releaseIncrement = releaseIncrementForLevel(env.level);
+          }
+          for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
+            EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][i];
+            if (synthEffectEnvelopeActive[envelopeIndex]) {
+              startEffectEnvelopeRelease(envelopeIndex, effectEnv);
+              if (effectEnv.stage == EnvelopeStage::Idle) {
+                resetCachedEffectEnvelopeModValue(envelopeIndex, i);
+              }
+            } else {
+              resetEnvelopeState(effectEnv);
+              resetCachedEffectEnvelopeModValue(envelopeIndex, i);
+            }
+          }
+          break;
+        }
+        case EnvelopeCommand::StartStealFade:
+          releaseRetries[i] = 0;
+          releaseRetryCountdown[i] = 0;
+          synthStealFadeSamplesRemaining[i] = SYNTH_STEAL_FADE_SAMPLES;
+          break;
+        case EnvelopeCommand::Reset: {
+          clearSynthStealFade(i);
+          resetSynthVoiceRenderCache(i);
+          resetEnvelopeState(env);
+          for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
+            resetEnvelopeState(effectEnvelopeStates[envelopeIndex][i]);
+            resetCachedEffectEnvelopeModValue(envelopeIndex, i);
+          }
           synth[i].increment = 0;
           synth[i].targetIncrement = 0;
           synth[i].counter = 0;
           clearSynthPortamento(i);
-          resetSynthVoiceRenderCache(i);
-          publishVoiceFreed(i);
-        } else {
-          env.stage = EnvelopeStage::Release;
-          profileFlags |= ISR_PROFILE_FLAG_RELEASE_START;
-          if (isrProfilingEnabled) {
-            isrCycleReleaseStartCount++;
-          }
-          env.releaseIncrement = releaseIncrementForLevel(env.level);
+          channelInUse[i].store(false, std::memory_order_relaxed);
+          voiceGenerations[i].store(0, std::memory_order_relaxed);
+          synthVoiceStartTimes[i] = 0;
+          synthVoiceReleaseTimes[i] = 0;
+          break;
         }
-        for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
-          EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][i];
-          if (synthEffectEnvelopeActive[envelopeIndex]) {
-            startEffectEnvelopeRelease(envelopeIndex, effectEnv);
-            if (effectEnv.stage == EnvelopeStage::Idle) {
-              resetCachedEffectEnvelopeModValue(envelopeIndex, i);
-            }
-          } else {
-            resetEnvelopeState(effectEnv);
-            resetCachedEffectEnvelopeModValue(envelopeIndex, i);
-          }
-        }
-        break;
+        case EnvelopeCommand::None:
+        default:
+          break;
       }
-      case EnvelopeCommand::StartStealFade:
-        releaseRetries[i] = 0;
-        releaseRetryCountdown[i] = 0;
-        synthStealFadeSamplesRemaining[i] = SYNTH_STEAL_FADE_SAMPLES;
-        break;
-      case EnvelopeCommand::Reset: {
-        clearSynthStealFade(i);
-        resetSynthVoiceRenderCache(i);
-        resetEnvelopeState(env);
-        for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
-          resetEnvelopeState(effectEnvelopeStates[envelopeIndex][i]);
-          resetCachedEffectEnvelopeModValue(envelopeIndex, i);
-        }
-        synth[i].increment = 0;
-        synth[i].targetIncrement = 0;
-        synth[i].counter = 0;
-        clearSynthPortamento(i);
-        channelInUse[i].store(false, std::memory_order_relaxed);
-        voiceGenerations[i].store(0, std::memory_order_relaxed);
-        synthVoiceStartTimes[i] = 0;
-        synthVoiceReleaseTimes[i] = 0;
-        break;
-      }
-      case EnvelopeCommand::None:
-      default:
-        break;
     }
 
     if (!synth[i].targetIncrement && env.stage == EnvelopeStage::Idle) {
@@ -436,75 +440,35 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
       continue;
     }
 
-    switch (env.stage) {
-      case EnvelopeStage::Attack: {
-        uint32_t nextLevel = env.level + envelopeParams.attackIncrement;
-        if (env.level >= envelopeMaxLevel || nextLevel >= envelopeMaxLevel) {
-          advanceEnvelopeFromAttackPeak(envelopeParams, env);
-        } else {
-          env.level = nextLevel;
-        }
-        break;
-      }
-      case EnvelopeStage::Hold:
-        updateEnvelopeHoldStage(envelopeParams, env);
-        break;
-      case EnvelopeStage::Decay:
-        if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
-          env.stage = EnvelopeStage::Sustain;
-          env.level = envelopeParams.sustainLevel;
-        } else if (env.level > envelopeParams.sustainLevel) {
-          uint32_t nextLevel = (env.level > envelopeParams.decayIncrement) ? (env.level - envelopeParams.decayIncrement) : 0;
-          if (nextLevel <= envelopeParams.sustainLevel) {
-            env.level = envelopeParams.sustainLevel;
-            env.stage = EnvelopeStage::Sustain;
-          } else {
-            env.level = nextLevel;
-          }
-        } else {
-          env.level = envelopeParams.sustainLevel;
-          env.stage = EnvelopeStage::Sustain;
-        }
-        break;
-      case EnvelopeStage::Sustain:
-        env.level = envelopeParams.sustainLevel;
-        break;
-      case EnvelopeStage::Release:
-        if (envelopeParams.releaseTicks == 0 || env.releaseIncrement == 0 || env.level <= env.releaseIncrement) {
-          env.level = 0;
-          env.stage = EnvelopeStage::Idle;
-          synth[i].increment = 0;
-          synth[i].targetIncrement = 0;
-          synth[i].counter = 0;
-          clearSynthPortamento(i);
-          resetSynthVoiceRenderCache(i);
-          publishVoiceFreed(i);
-        } else {
-          env.level -= env.releaseIncrement;
-        }
-        break;
-      case EnvelopeStage::Idle:
-      default:
-        env.level = 0;
+    EnvelopeStage ampStageBeforeControlUpdate = env.stage;
+    if (synthControlTick) {
+      updateAmpEnvelopeState(env, SYNTH_CONTROL_RATE_SAMPLES);
+      if (ampStageBeforeControlUpdate == EnvelopeStage::Release && env.stage == EnvelopeStage::Idle) {
         synth[i].increment = 0;
         synth[i].targetIncrement = 0;
         synth[i].counter = 0;
         clearSynthPortamento(i);
         resetSynthVoiceRenderCache(i);
-        for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
-          resetEnvelopeState(effectEnvelopeStates[envelopeIndex][i]);
-          resetCachedEffectEnvelopeModValue(envelopeIndex, i);
-        }
-        continue;
+        publishVoiceFreed(i);
+      }
     }
 
     if (env.stage == EnvelopeStage::Idle || env.level == 0 || !synth[i].targetIncrement) {
       continue;
     }
 
-    if (synthControlTick || forceVoiceRenderCacheRefresh || !synthVoiceRenderCacheValid[i]) {
+    SynthVoiceRenderCache& voiceCache = synthVoiceRenderCaches[i];
+    bool voiceRenderCacheWasValid = synthVoiceRenderCacheValid[i];
+    if (synthControlTick || forceVoiceRenderCacheRefresh || !voiceRenderCacheWasValid) {
+      retargetSynthAmpEnvelopeRenderCache(voiceCache,
+                                          envelopeAudioLevel(env.level),
+                                          synthControlTick ? SYNTH_CONTROL_RATE_SAMPLES : 0,
+                                          snapAmpEnvelopeRenderCache);
+    }
+
+    if (synthControlTick || forceVoiceRenderCacheRefresh || !voiceRenderCacheWasValid) {
       bool refreshWavetableContext =
-        forceVoiceRenderCacheRefresh || !synthVoiceRenderCacheValid[i] || synthWavetableContextTick;
+        forceVoiceRenderCacheRefresh || !voiceRenderCacheWasValid || synthWavetableContextTick;
       if (refreshWavetableContext
           && activeWavetableHasFrames
           && !perVoiceWavetablePosition
@@ -523,7 +487,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
                                    synthVibratoSampleReady,
                                    synthVibratoSample);
     }
-    SynthVoiceRenderCache& voiceCache = synthVoiceRenderCaches[i];
+
     synth[i].counter += voiceCache.phaseIncrement;  // high 16 bits loop from 65535 -> 0
     p = static_cast<uint16_t>(synth[i].counter >> 16);
     if (voiceCache.phaseWarpActive) {
@@ -591,9 +555,26 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
     // eq is 0..8. Treat 8 as roughly "neutral" gain.
     s = (s * (int32_t)synth[i].eq) >> 3;
 
-    // Apply the audible envelope level (0..65535). The envelope state keeps
-    // fractional bits for long times, but the mix multiply stays 32-bit.
-    uint32_t envAudio = envelopeAudioLevel(env.level);
+    // Apply the cached amp envelope level. The envelope state advances at the
+    // synth control rate; this Q8 ramp keeps per-sample output smooth.
+    uint32_t envAudio = (voiceCache.ampEnvelopeLevelQ8 + 128u) >> 8;
+    if (voiceCache.ampEnvelopeRampSamples != 0) {
+      --voiceCache.ampEnvelopeRampSamples;
+      if (voiceCache.ampEnvelopeRampSamples == 0) {
+        voiceCache.ampEnvelopeLevelQ8 = voiceCache.ampEnvelopeTargetQ8;
+      } else if (voiceCache.ampEnvelopeStepQ8 > 0) {
+        uint32_t step = static_cast<uint32_t>(voiceCache.ampEnvelopeStepQ8);
+        uint32_t remaining = voiceCache.ampEnvelopeTargetQ8 - voiceCache.ampEnvelopeLevelQ8;
+        voiceCache.ampEnvelopeLevelQ8 += (step >= remaining) ? remaining : step;
+      } else if (voiceCache.ampEnvelopeStepQ8 < 0) {
+        uint32_t step = static_cast<uint32_t>(-voiceCache.ampEnvelopeStepQ8);
+        uint32_t remaining = voiceCache.ampEnvelopeLevelQ8 - voiceCache.ampEnvelopeTargetQ8;
+        voiceCache.ampEnvelopeLevelQ8 -= (step >= remaining) ? remaining : step;
+      } else {
+        voiceCache.ampEnvelopeLevelQ8 = voiceCache.ampEnvelopeTargetQ8;
+        voiceCache.ampEnvelopeRampSamples = 0;
+      }
+    }
     uint32_t audibleEnvAudio = envAudio;
     uint16_t stealFadeGain = synthStealFadeGainQ8(i);
     if (stealFadeGain < 256) {

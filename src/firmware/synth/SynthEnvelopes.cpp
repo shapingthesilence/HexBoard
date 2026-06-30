@@ -178,6 +178,74 @@ void RAM_FUNC(updateEnvelopeHoldStage)(const EnvelopeParams& params, EnvelopeSta
   }
 }
 
+void RAM_FUNC(updateAmpEnvelopeState)(EnvelopeState& env, uint8_t elapsedTicks) {
+  if (elapsedTicks == 0) {
+    return;
+  }
+
+  uint32_t tickScale = elapsedTicks;
+  switch (env.stage) {
+    case EnvelopeStage::Attack: {
+      uint32_t increment = envelopeParams.attackIncrement * tickScale;
+      uint32_t nextLevel = env.level + increment;
+      if (env.level >= envelopeMaxLevel || nextLevel >= envelopeMaxLevel) {
+        advanceEnvelopeFromAttackPeak(envelopeParams, env);
+      } else {
+        env.level = nextLevel;
+      }
+      break;
+    }
+    case EnvelopeStage::Hold:
+      env.level = envelopeMaxLevel;
+      if (env.holdTicksRemaining > tickScale) {
+        env.holdTicksRemaining -= tickScale;
+      } else {
+        env.holdTicksRemaining = 0;
+        if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
+          env.stage = EnvelopeStage::Sustain;
+          env.level = envelopeParams.sustainLevel;
+        } else {
+          env.stage = EnvelopeStage::Decay;
+        }
+      }
+      break;
+    case EnvelopeStage::Decay:
+      if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
+        env.stage = EnvelopeStage::Sustain;
+        env.level = envelopeParams.sustainLevel;
+      } else if (env.level > envelopeParams.sustainLevel) {
+        uint32_t decrement = envelopeParams.decayIncrement * tickScale;
+        uint32_t nextLevel = (env.level > decrement) ? (env.level - decrement) : 0;
+        if (nextLevel <= envelopeParams.sustainLevel) {
+          env.level = envelopeParams.sustainLevel;
+          env.stage = EnvelopeStage::Sustain;
+        } else {
+          env.level = nextLevel;
+        }
+      } else {
+        env.level = envelopeParams.sustainLevel;
+        env.stage = EnvelopeStage::Sustain;
+      }
+      break;
+    case EnvelopeStage::Sustain:
+      env.level = envelopeParams.sustainLevel;
+      break;
+    case EnvelopeStage::Release: {
+      uint32_t releaseDecrement = static_cast<uint32_t>(env.releaseIncrement) * tickScale;
+      if (envelopeParams.releaseTicks == 0 || env.releaseIncrement == 0 || env.level <= releaseDecrement) {
+        resetEnvelopeState(env);
+      } else {
+        env.level -= releaseDecrement;
+      }
+      break;
+    }
+    case EnvelopeStage::Idle:
+    default:
+      env.level = 0;
+      break;
+  }
+}
+
 void updateEffectEnvelopeParamsFromSettings(uint8_t envelopeIndex) {
   if (envelopeIndex >= SYNTH_FX_ENVELOPE_COUNT) {
     return;

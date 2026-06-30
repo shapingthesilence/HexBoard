@@ -1062,6 +1062,9 @@ value.
 `SynthLfoWave` values are `0` `Sine`, `1` `Triangle`, `2` `Saw`, `3` `Square`,
 `4` `Noise`, and `5` `Smooth noise`. The noise waves reuse the existing schema
 `7` value byte; no synth preset schema bump is required for the expanded enum.
+`SynthVibratoSpeed` values `0..11` remain `1 Hz` through `12 Hz` sine vibrato;
+value `12` selects `Noise`, a smooth-noise vibrato source running at the same
+`12 Hz` phase rate, without changing the synth value list.
 
 `PlaybackMode` value `5` was the temporary `PolyTbl` mode and is now normalized
 to `Poly` on import. `Waveform` remains in the value list for compatibility, but

@@ -286,6 +286,10 @@ void rebuildSynthWavetableFramePositionLookup(uint8_t frameCount) {
     synthWavetableFramePositionByAmount[amount] =
       lastFrame == 0 ? 0 : static_cast<uint16_t>((static_cast<uint32_t>(amount) * lastFrame * 256u) / 127u);
   }
+  for (uint8_t frameIndex = 0; frameIndex < boundedFrameCount; ++frameIndex) {
+    synthWavetableFramePositionByAmount[SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS[frameIndex]] =
+      static_cast<uint16_t>(frameIndex) << 8;
+  }
 }
 
 void initializeSynthFxModScaleLookup() {
@@ -311,6 +315,7 @@ void setActiveSynthWaveFrameCount(uint8_t frameCount) {
 
 void initializeSynthWaveTables() {
   memcpy(synthVibratoSine, waveSineSource, SYNTH_WAVE_SAMPLE_COUNT);
+  initializeSynthDriveLookup();
   initializeSynthFxModScaleLookup();
   initializeSynthPitchModLookup();
   setActiveSynthWaveFrameCount(1);

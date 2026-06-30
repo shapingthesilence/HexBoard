@@ -335,9 +335,10 @@ folder/name wavetable is added.
 
 `WT Pos` chooses the starting frame for wavetable waveforms. On device, the menu
 shows frames `1` through `16`; frame `1` is the first frame and frame `16` is
-the last frame. Modulation can add to or subtract from this base position, so
-setting `WT Pos` above frame `1` lets a negative envelope or LFO amount move
-backward through the wavetable.
+the last frame. These menu positions land directly on the named frame; modulation
+can still add to or subtract from this base position, so setting `WT Pos` above
+frame `1` lets a negative envelope or LFO amount move backward through the
+wavetable.
 
 `Drive` adds soft saturation after the voices are mixed:
 
@@ -349,8 +350,8 @@ backward through the wavetable.
 `Amp Env` opens the amp-envelope page. `Attack`, `Hold`, `Decay`, `Sustain`,
 and `Release` shape the loudness of each note. Envelope time choices run from
 `0 ms` to `4 s`, with extra points in the short and medium ranges for finer
-synth shaping. The longest envelope choices use slightly coarser internal
-timing to keep the synth responsive under heavy polyphony.
+synth shaping. Amp-envelope timing is smoothed across synth control ticks to keep
+the synth responsive under heavy polyphony while preserving smooth fades.
 
 - `Attack`: how quickly the sound fades in after pressing a note
 - `Hold`: how long the envelope stays at full level before decaying
@@ -393,7 +394,8 @@ default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 
 External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed` sets
 the onboard vibrato LFO speed from `1 Hz` to `12 Hz` for wheel or envelope
-vibrato. `Wheel Amt` scales how strongly the mod wheel affects its target.
+vibrato. The `Noise` speed after `12 Hz` uses smooth random vibrato at the same
+12 Hz rate. `Wheel Amt` scales how strongly the mod wheel affects its target.
 
 `Tempo` is shared by the arpeggiator and metronome. `Metronome` has four modes:
 

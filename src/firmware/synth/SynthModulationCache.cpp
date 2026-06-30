@@ -7,6 +7,10 @@ uint32_t synthPitchModNegativeQ16ByQ4[SYNTH_PITCH_MOD_RATIO_Q4_COUNT] = {};
 uint16_t synthModValueQ8 = 0;
 uint32_t synthVibratoPhase = 0;
 uint32_t synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[SYNTH_VIBRATO_SPEED_DEFAULT];
+uint32_t synthVibratoNoiseState = 0xB5297A4Du;
+uint8_t synthVibratoNoiseSegment = 0xFF;
+int16_t synthVibratoNoisePreviousSample = 0;
+int16_t synthVibratoNoiseCurrentSample = 0;
 uint32_t synthLfoPhase = 0;
 uint32_t synthLfoPhaseIncrement = synthLfoPhaseIncrementOptions[SYNTH_LFO_SPEED_DEFAULT];
 uint32_t synthLfoNoiseState = 0x6D2B79F5u;
@@ -48,7 +52,7 @@ void updateSynthModulationParams() {
       effectEnvelopeAmount[envelopeIndex] = SYNTH_FX_AMOUNT_FULL;
     }
   }
-  if (synthVibratoSpeed >= synthVibratoPhaseIncrementOptions.size()) {
+  if (synthVibratoSpeed > SYNTH_VIBRATO_SPEED_MAX) {
     synthVibratoSpeed = SYNTH_VIBRATO_SPEED_DEFAULT;
   }
   synthVibratoPhaseIncrement = synthVibratoPhaseIncrementOptions[synthVibratoSpeed];
@@ -308,6 +312,22 @@ void RAM_FUNC(resetSynthVoiceRenderCache)(uint8_t voiceIndex) {
   synthVoiceRenderCacheValid[voiceIndex] = false;
 }
 
+void RAM_FUNC(resetSynthVoiceRenderCachePreservingAmpEnvelope)(uint8_t voiceIndex) {
+  if (voiceIndex >= POLYPHONY_LIMIT) {
+    return;
+  }
+  uint32_t ampEnvelopeLevelQ8 = synthVoiceRenderCaches[voiceIndex].ampEnvelopeLevelQ8;
+  uint32_t ampEnvelopeTargetQ8 = synthVoiceRenderCaches[voiceIndex].ampEnvelopeTargetQ8;
+  int32_t ampEnvelopeStepQ8 = synthVoiceRenderCaches[voiceIndex].ampEnvelopeStepQ8;
+  uint8_t ampEnvelopeRampSamples = synthVoiceRenderCaches[voiceIndex].ampEnvelopeRampSamples;
+  synthVoiceRenderCaches[voiceIndex] = {};
+  synthVoiceRenderCaches[voiceIndex].ampEnvelopeLevelQ8 = ampEnvelopeLevelQ8;
+  synthVoiceRenderCaches[voiceIndex].ampEnvelopeTargetQ8 = ampEnvelopeTargetQ8;
+  synthVoiceRenderCaches[voiceIndex].ampEnvelopeStepQ8 = ampEnvelopeStepQ8;
+  synthVoiceRenderCaches[voiceIndex].ampEnvelopeRampSamples = ampEnvelopeRampSamples;
+  synthVoiceRenderCacheValid[voiceIndex] = false;
+}
+
 void RAM_FUNC(updateSynthVoiceRenderCacheFlags)(SynthVoiceRenderCache& cache) {
   cache.phaseWarpActive =
     (cache.foldWarpAmountQ4 != 0 || cache.dutyWarpAmountQ4 != 0 || cache.polyWarpAmountQ4 != 0) ? 1 : 0;
@@ -484,6 +504,37 @@ void RAM_FUNC(advanceSynthVoiceSlews)(SynthVoiceRenderCache& cache) {
   updateSynthVoiceRenderCacheFlags(cache);
 }
 
+void RAM_FUNC(retargetSynthAmpEnvelopeRenderCache)(SynthVoiceRenderCache& cache,
+                                                   uint32_t targetAudioLevel,
+                                                   uint8_t elapsedTicks,
+                                                   bool snap) {
+  if (targetAudioLevel > envelopeAudioMaxLevel) {
+    targetAudioLevel = envelopeAudioMaxLevel;
+  }
+  uint32_t targetQ8 = targetAudioLevel << 8;
+  cache.ampEnvelopeTargetQ8 = targetQ8;
+  if (snap || elapsedTicks == 0) {
+    cache.ampEnvelopeLevelQ8 = targetQ8;
+    cache.ampEnvelopeStepQ8 = 0;
+    cache.ampEnvelopeRampSamples = 0;
+    return;
+  }
+
+  int32_t delta = static_cast<int32_t>(targetQ8) - static_cast<int32_t>(cache.ampEnvelopeLevelQ8);
+  if (delta == 0) {
+    cache.ampEnvelopeStepQ8 = 0;
+    cache.ampEnvelopeRampSamples = 0;
+    return;
+  }
+
+  int32_t step = delta / static_cast<int32_t>(elapsedTicks);
+  if (step == 0) {
+    step = (delta > 0) ? 1 : -1;
+  }
+  cache.ampEnvelopeStepQ8 = step;
+  cache.ampEnvelopeRampSamples = elapsedTicks;
+}
+
 uint16_t RAM_FUNC(synthWavetableMipHarmonicLimit)(uint8_t level) {
   switch (level) {
     case 0: return SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_0;
@@ -650,21 +701,33 @@ int16_t RAM_FUNC(combinedWavetablePositionAmount)(int16_t positionModAmount) {
   return amount;
 }
 
-int16_t RAM_FUNC(nextSynthLfoNoiseSample)() {
-  synthLfoNoiseState ^= synthLfoNoiseState << 13;
-  synthLfoNoiseState ^= synthLfoNoiseState >> 17;
-  synthLfoNoiseState ^= synthLfoNoiseState << 5;
-  return static_cast<int16_t>(static_cast<uint8_t>(synthLfoNoiseState >> 24)) - 128;
+int16_t RAM_FUNC(nextSynthNoiseSample)(uint32_t& noiseState) {
+  noiseState ^= noiseState << 13;
+  noiseState ^= noiseState >> 17;
+  noiseState ^= noiseState << 5;
+  return static_cast<int16_t>(static_cast<uint8_t>(noiseState >> 24)) - 128;
+}
+
+void RAM_FUNC(updateSynthSmoothNoiseSegment)(uint32_t phase,
+                                             uint32_t& noiseState,
+                                             uint8_t& noiseSegment,
+                                             int16_t& previousSample,
+                                             int16_t& currentSample) {
+  uint8_t segment = phase >> 28;
+  if (segment == noiseSegment) {
+    return;
+  }
+  noiseSegment = segment;
+  previousSample = currentSample;
+  currentSample = nextSynthNoiseSample(noiseState);
 }
 
 void RAM_FUNC(updateSynthLfoNoiseSegment)() {
-  uint8_t segment = synthLfoPhase >> 28;
-  if (segment == synthLfoNoiseSegment) {
-    return;
-  }
-  synthLfoNoiseSegment = segment;
-  synthLfoNoisePreviousSample = synthLfoNoiseCurrentSample;
-  synthLfoNoiseCurrentSample = nextSynthLfoNoiseSample();
+  updateSynthSmoothNoiseSegment(synthLfoPhase,
+                                synthLfoNoiseState,
+                                synthLfoNoiseSegment,
+                                synthLfoNoisePreviousSample,
+                                synthLfoNoiseCurrentSample);
 }
 
 int16_t RAM_FUNC(readSynthLfoSmoothNoiseSample)() {
@@ -672,6 +735,17 @@ int16_t RAM_FUNC(readSynthLfoSmoothNoiseSample)() {
   uint8_t frac = static_cast<uint8_t>(synthLfoPhase >> 20);
   int16_t delta = static_cast<int16_t>(synthLfoNoiseCurrentSample - synthLfoNoisePreviousSample);
   return static_cast<int16_t>(synthLfoNoisePreviousSample + ((static_cast<int32_t>(delta) * frac) >> 8));
+}
+
+int16_t RAM_FUNC(readSynthVibratoSmoothNoiseSample)() {
+  updateSynthSmoothNoiseSegment(synthVibratoPhase,
+                                synthVibratoNoiseState,
+                                synthVibratoNoiseSegment,
+                                synthVibratoNoisePreviousSample,
+                                synthVibratoNoiseCurrentSample);
+  uint8_t frac = static_cast<uint8_t>(synthVibratoPhase >> 20);
+  int16_t delta = static_cast<int16_t>(synthVibratoNoiseCurrentSample - synthVibratoNoisePreviousSample);
+  return static_cast<int16_t>(synthVibratoNoisePreviousSample + ((static_cast<int32_t>(delta) * frac) >> 8));
 }
 
 int16_t RAM_FUNC(readSynthLfoSample)() {
@@ -967,8 +1041,9 @@ void RAM_FUNC(refreshSynthVoiceRenderCache)(uint8_t voiceIndex,
       if (elapsedTicks != 0) {
         synthVibratoPhase += synthVibratoPhaseIncrement * static_cast<uint32_t>(elapsedTicks);
       }
-      synthVibratoSample =
-        static_cast<int16_t>(synthVibratoSine[synthWaveSampleIndexFromPhase32(synthVibratoPhase)]) - 128;
+      synthVibratoSample = (synthVibratoSpeed == SYNTH_VIBRATO_SPEED_NOISE)
+        ? readSynthVibratoSmoothNoiseSample()
+        : static_cast<int16_t>(synthVibratoSine[synthWaveSampleIndexFromPhase32(synthVibratoPhase)]) - 128;
       synthVibratoSampleReady = true;
     }
     int16_t voiceVibratoAmount = synthVibratoSample * voiceModulation.vibrato;

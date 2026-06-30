@@ -95,6 +95,11 @@ const synthValueKeys = [
   "SynthLfoSpeed"
 ] as const satisfies readonly SynthSettingName[];
 
+const synthWavetableFramePositionAmounts = [
+  0, 8, 17, 25, 34, 42, 51, 59, 68, 76, 85, 93, 102, 110, 119, 127
+] as const;
+const synthVibratoSpeedNoise = 12;
+
 type EditableSynthValueKey = (typeof synthValueKeys)[number];
 type EditableSynthValues = Record<EditableSynthValueKey, number>;
 
@@ -358,7 +363,7 @@ const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]>
   SynthDrive: [0, 3],
   SynthModTarget: [0, 5],
   SynthModAmount: [0, 127],
-  SynthVibratoSpeed: [0, 11],
+  SynthVibratoSpeed: [0, synthVibratoSpeedNoise],
   ArpeggiatorDivision: [1, 32],
   SynthBPM: [1, 255],
   EnvelopeAttackIndex: [0, 19],
@@ -406,12 +411,16 @@ function clampSynthValue(key: EditableSynthValueKey, value: number): number {
 
 function wavetablePositionByteToFrame(value: number): number {
   const clamped = clampNumber(value, 0, 127);
+  const exactFrame = synthWavetableFramePositionAmounts.findIndex((amount) => amount === Math.round(clamped));
+  if (exactFrame >= 0) {
+    return exactFrame + 1;
+  }
   return clampNumber((clamped * (SYNTH_WAVETABLE_FRAME_COUNT - 1)) / 127, 0, SYNTH_WAVETABLE_FRAME_COUNT - 1) + 1;
 }
 
 function wavetableFrameToPositionByte(frame: number): number {
-  const zeroBasedFrame = clampNumber(frame, 1, SYNTH_WAVETABLE_FRAME_COUNT) - 1;
-  return clampNumber((zeroBasedFrame * 127) / (SYNTH_WAVETABLE_FRAME_COUNT - 1), 0, 127);
+  const zeroBasedFrame = Math.round(clampNumber(frame, 1, SYNTH_WAVETABLE_FRAME_COUNT)) - 1;
+  return synthWavetableFramePositionAmounts[zeroBasedFrame] ?? 0;
 }
 
 function clampEnvelopeTimeIndex(value: number): number {
@@ -424,6 +433,10 @@ function envelopeTimeLabel(index: number): string {
 
 function driveLabel(value: number): string {
   return driveOptions.find((option) => option.value === value)?.label ?? "Off";
+}
+
+function vibratoSpeedLabel(value: number): string {
+  return value === synthVibratoSpeedNoise ? "Noise" : `${clampNumber(value, 0, synthVibratoSpeedNoise - 1) + 1} Hz`;
 }
 
 function lfoSpeedLabel(value: number): string {
@@ -2569,7 +2582,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             <RangeField label="Drive" value={preset.values.SynthDrive} min={0} max={3} onChange={(value) => updateValue("SynthDrive", value)} suffix={` (${driveLabel(preset.values.SynthDrive)})`} />
             <SelectField label="Wheel FX" value={preset.values.SynthModTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthModTarget", value)} />
             <RangeField label="Wheel Amt" value={preset.values.SynthModAmount} min={0} max={127} onChange={(value) => updateValue("SynthModAmount", value)} suffix="/127" />
-            <RangeField label="Vib Speed" value={preset.values.SynthVibratoSpeed} min={0} max={11} onChange={(value) => updateValue("SynthVibratoSpeed", value)} suffix={` (${preset.values.SynthVibratoSpeed + 1} Hz)`} />
+            <RangeField label="Vib Speed" value={preset.values.SynthVibratoSpeed} min={0} max={synthVibratoSpeedNoise} onChange={(value) => updateValue("SynthVibratoSpeed", value)} suffix={` (${vibratoSpeedLabel(preset.values.SynthVibratoSpeed)})`} />
           </div>
         </section>
 

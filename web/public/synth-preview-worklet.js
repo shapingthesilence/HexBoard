@@ -22,6 +22,7 @@ const MODE_ARPEGGIO = 2;
 const MODE_POLY = 3;
 const MODE_MONO_LEGATO = 4;
 const LFO_NOISE_SEGMENTS = 16;
+const VIBRATO_SPEED_NOISE = 12;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -442,6 +443,10 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     this.lfoNoisePreviousSample = 0;
     this.lfoNoiseCurrentSample = 0;
     this.vibratoPhase = 0;
+    this.vibratoNoiseState = 0xB5297A4D;
+    this.vibratoNoiseSegment = -1;
+    this.vibratoNoisePreviousSample = 0;
+    this.vibratoNoiseCurrentSample = 0;
     this.currentLfoSample = 0;
     this.currentVibratoSample = 0;
     this.outputSmooth = 0;
@@ -618,6 +623,23 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     return blend(this.lfoNoisePreviousSample, this.lfoNoiseCurrentSample, segmentPhase);
   }
 
+  updateVibratoNoiseSegment() {
+    const segment = Math.floor(this.vibratoPhase * LFO_NOISE_SEGMENTS);
+    if (segment === this.vibratoNoiseSegment) {
+      return;
+    }
+    this.vibratoNoiseSegment = segment;
+    this.vibratoNoisePreviousSample = this.vibratoNoiseCurrentSample;
+    this.vibratoNoiseState = nextNoiseState(this.vibratoNoiseState);
+    this.vibratoNoiseCurrentSample = noiseStateSample(this.vibratoNoiseState);
+  }
+
+  vibratoSmoothNoiseSample() {
+    this.updateVibratoNoiseSegment();
+    const segmentPhase = (this.vibratoPhase * LFO_NOISE_SEGMENTS) % 1;
+    return blend(this.vibratoNoisePreviousSample, this.vibratoNoiseCurrentSample, segmentPhase);
+  }
+
   stepModulators() {
     const values = this.patch.values;
     const speed = LFO_SPEEDS_HZ[clamp(values.SynthLfoSpeed, 0, LFO_SPEEDS_HZ.length - 1)] ?? 1;
@@ -644,9 +666,13 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
         this.currentLfoSample = sine(this.lfoPhase);
         break;
     }
-    const vibratoSpeed = clamp((values.SynthVibratoSpeed ?? 5) + 1, 1, 12);
+    const rawVibratoSpeed = Math.round(values.SynthVibratoSpeed ?? 5);
+    const vibratoSpeedSetting =
+      rawVibratoSpeed < 0 || rawVibratoSpeed > VIBRATO_SPEED_NOISE ? 5 : rawVibratoSpeed;
+    const vibratoSpeed = vibratoSpeedSetting === VIBRATO_SPEED_NOISE ? 12 : vibratoSpeedSetting + 1;
     this.vibratoPhase = wrapPhase(this.vibratoPhase + vibratoSpeed / sampleRate);
-    this.currentVibratoSample = sine(this.vibratoPhase);
+    this.currentVibratoSample =
+      vibratoSpeedSetting === VIBRATO_SPEED_NOISE ? this.vibratoSmoothNoiseSample() : sine(this.vibratoPhase);
   }
 
   readWavetable(phase, position) {
