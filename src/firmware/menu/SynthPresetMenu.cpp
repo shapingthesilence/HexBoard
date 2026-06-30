@@ -1,5 +1,4 @@
 #include "../FirmwareModule.h"
-#include "CommandWheelOverlay.h"
 #include "MenuFolderUtils.h"
 #include "MenuAndDisplay.h"
 #include "SynthPresetMenu.h"
@@ -377,7 +376,6 @@ void serviceSynthPresetMenuRebuild() {
   synthPresetMenuRebuildPending = false;
   rebuildSynthPresetMenuItems();
   if (menu.getCurrentMenuPage() == &menuPageSynth) {
-    dismissCommandWheelOverlay();
     menu.drawMenu();
   }
 }

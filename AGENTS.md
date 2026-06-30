@@ -26,7 +26,6 @@ When code changes, check and update the relevant docs:
 
 - `README.md` for project overview, build target, feature highlights, repository layout, or build/flash instructions.
 - `docs/user-manual.md` for user-visible behavior, menu items, defaults, workflows, troubleshooting, or hardware-facing usage.
-- `docs/sequencer/` for Sequencer-specific behavior, menus/settings, step workflows, playback/timing, file persistence, USB Backup, OLED overlays/layouts, requirements, or technical limits. For Sequencer changes, update the relevant manual, requirement, and layout files together when applicable.
 - `docs/developer-guide.md` for current firmware architecture, subsystem ownership, settings wiring, runtime flow, risk areas, edit recipes, or verification checklist updates.
 - `docs/delegated-control.md` for external delegated-control protocol, SysEx behavior, host integration, or delegated runtime gates.
 - `docs/preset-sync-sysex.md` for preset-sync SysEx behavior, object schemas, host integration, or future tuning/layout/preset storage design.

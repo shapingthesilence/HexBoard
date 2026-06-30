@@ -1,5 +1,4 @@
 #include "../FirmwareModule.h"
-#include "CommandWheelOverlay.h"
 #include "GeometryMenu.h"
 #include "MenuFolderUtils.h"
 #include "MenuAndDisplay.h"
@@ -581,7 +580,6 @@ void serviceUserGeometryMenuRebuild() {
     rebuildUserGeometryVirtualList(userGeometryVirtualKind);
     redrawVirtualListMenu();
   } else if (menu.getCurrentMenuPage() == &menuPageMain) {
-    dismissCommandWheelOverlay();
     menu.drawMenu();
   }
 }
