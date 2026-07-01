@@ -338,8 +338,9 @@ older firmware is the separate firmware `1.3` synth preset catalog import.
 
 Important current settings facts:
 
-- `DisplayPlayedNotes` is `Off`/`Label`/`Number`; it defaults to `Label`.
-- `Serial Debug`, `LED Test`, and `Stability` are transient Advanced-menu states, not `SettingKey` entries.
+- `DisplayPlayedNotes` is `Off`/`Label`/`Number`/`MIDI`; it defaults to `Label`.
+- `Serial Debug` and `LED Test` are transient Advanced-menu states, not `SettingKey` entries.
+- Command-wheel speed settings default to the `Medium` menu choices.
 - `BootAnimationEnabled` is persisted and defaults to enabled.
 - `LedCurrentLimitMode` stores the user-visible current-limit mode; runtime budgets are hardware-calibrated for `V1.1` and `V1.2`.
 - `PlaybackMode` defaults to `Poly`; legacy transient `PolyTbl` values normalize to `Poly`.
@@ -410,9 +411,8 @@ are GEM link items visually, and `dealWithRotary()` routes their select key
 through `handleVirtualListLauncherKey()` before normal GEM dispatch. Current
 rows use a diamond in the left action-icon slot.
 
-Transient Advanced-menu items, such as `LED Test`, `Stability`, and `Serial
-Debug`, should stay out of `factoryDefaults` and should not trigger a settings
-version bump.
+Transient Advanced-menu items, such as `LED Test` and `Serial Debug`, should
+stay out of `factoryDefaults` and should not trigger a settings version bump.
 
 ## MIDI And Tuning Notes
 
@@ -641,7 +641,6 @@ Use `web/README.md` for web commands and deployment details.
 ## Debugging Tips
 
 - Turn on `Advanced` -> `Serial Debug` for runtime logs, heap sampling, or audio counters. The setting is not persisted.
-- Use `Advanced` -> `Stability` to run the integrated worst-case benchmark. It reports DMA underruns, audio render overruns, min free heap, max audio block time, voice steals, max main-loop duration, and last Core 0/Core 1 task labels.
 - Search by subsystem path and function name with `rg`.
 - When a change almost works, verify the refresh function before assuming the math is wrong.
 - For timing issues, compare behavior with USB MIDI connected to an active host, connected to a sleeping/non-polling host, and disconnected.
@@ -665,7 +664,7 @@ Run or manually verify the areas your change touches:
 - rotary menu input and panic stop
 - color modes, including `Custom` and `Diatonic`
 - `ANIMATE_MIDI_IN` if external MIDI display behavior changed
-- `DisplayNotes` `Off`/`Label`/`Number`, compact badge, screensaver overlay, 12-EDO chord labels, non-12 tunings, release grace, and screensaver wake
+- `DisplayNotes` `Off`/`Label`/`Number`/`MIDI`, compact badge, screensaver overlay, 12-EDO chord labels, non-12 tunings, release grace, and screensaver wake
 - delegated-control enter, LED update, note map, button event, encoder event, and exit SysEx
 - preset-sync list/read/write/delete/apply paths for affected objects
 - sequencer entry/playback/file/USB Backup paths when sequencer code or shared bridge points changed

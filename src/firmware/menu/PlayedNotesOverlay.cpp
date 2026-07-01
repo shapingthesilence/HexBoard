@@ -4,7 +4,9 @@
 #include "MenuAndDisplay.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
+#include "../app/RuntimeDefaults.h"
 #include "../hardware/GridState.h"
+#include "../midi/MidiRouting.h"
 #include "../sequencer/SequencerManagedNotes.h"
 #include "../sequencer/SequencerMode.h"
 #include "../sequencer/SequencerOverlay.h"
@@ -91,6 +93,9 @@ bool newestHeldDisplayedPitch(int16_t& displayedPitchOut);
 PlayedNoteDisplaySource activePlayedNoteDisplaySource();
 byte rebuildDisplayedNotesForSource(PlayedNoteDisplaySource source, int16_t* notes);
 bool newestHeldDisplayedPitchForSource(PlayedNoteDisplaySource source, int16_t& displayedPitchOut);
+int16_t midiDisplayValueForPitch(int16_t displayedPitch);
+int16_t displayValueForHex(byte hexIndex);
+int16_t displayValueForSequencerPitch(int16_t displayedPitch);
 void formatDisplayedPitchNumber(int16_t displayedPitch, char* noteText, size_t noteTextSize);
 void formatDisplayedPitchLabel(int16_t displayedPitch, char* noteText, size_t noteTextSize);
 void formatDisplayedPitch(int16_t displayedPitch, char* noteText, size_t noteTextSize);
@@ -105,6 +110,7 @@ byte normalizeNoteDisplayMode(byte mode) {
     case NOTE_DISPLAY_OFF:
     case NOTE_DISPLAY_LABEL:
     case NOTE_DISPLAY_NUMBER:
+    case NOTE_DISPLAY_MIDI:
       return mode;
     default:
       return NOTE_DISPLAY_LABEL;
@@ -208,8 +214,10 @@ byte rebuildDisplayedNotes(int16_t* notes) {
       continue;
     }
 
-    int16_t displayedPitch = h[i].stepsFromC + current.transpose;
-    out = insertDisplayedNoteSorted(notes, out, displayedPitch);
+    int16_t displayValue = displayValueForHex(i);
+    if (displayValue != DISPLAYED_NOTE_UNUSED) {
+      out = insertDisplayedNoteSorted(notes, out, displayValue);
+    }
   }
   return out;
 }
@@ -257,7 +265,17 @@ byte rebuildDisplayedNotesForSource(PlayedNoteDisplaySource source, int16_t* not
     case PlayedNoteDisplaySource::Keyboard:
       return rebuildDisplayedNotes(notes);
     case PlayedNoteDisplaySource::Sequencer:
-      return sequencer::rebuildSequencerPlayedNoteDisplay(notes, DISPLAYED_NOTES_MAX);
+      {
+        byte count = sequencer::rebuildSequencerPlayedNoteDisplay(notes, DISPLAYED_NOTES_MAX);
+        if (noteDisplayMode == NOTE_DISPLAY_MIDI) {
+          for (byte i = 0; i < count; ++i) {
+            if (notes[i] != DISPLAYED_NOTE_UNUSED) {
+              notes[i] = displayValueForSequencerPitch(notes[i]);
+            }
+          }
+        }
+        return count;
+      }
     case PlayedNoteDisplaySource::None:
     default:
       clearDisplayedNotes(notes);
@@ -268,9 +286,29 @@ byte rebuildDisplayedNotesForSource(PlayedNoteDisplaySource source, int16_t* not
 bool newestHeldDisplayedPitchForSource(PlayedNoteDisplaySource source, int16_t& displayedPitchOut) {
   switch (source) {
     case PlayedNoteDisplaySource::Keyboard:
-      return newestHeldDisplayedPitch(displayedPitchOut);
+      if (!newestHeldDisplayedPitch(displayedPitchOut)) {
+        return false;
+      }
+      if (noteDisplayMode == NOTE_DISPLAY_MIDI) {
+        for (byte i = 0; i < LED_COUNT; i++) {
+          if (h[i].isCmd || h[i].MIDIch == 0) {
+            continue;
+          }
+          if (h[i].stepsFromC + current.transpose == displayedPitchOut) {
+            displayedPitchOut = displayValueForHex(i);
+            break;
+          }
+        }
+      }
+      return true;
     case PlayedNoteDisplaySource::Sequencer:
-      return sequencer::newestSequencerPlayedNoteDisplayPitch(displayedPitchOut);
+      if (!sequencer::newestSequencerPlayedNoteDisplayPitch(displayedPitchOut)) {
+        return false;
+      }
+      if (noteDisplayMode == NOTE_DISPLAY_MIDI) {
+        displayedPitchOut = displayValueForSequencerPitch(displayedPitchOut);
+      }
+      return true;
     case PlayedNoteDisplaySource::None:
     default:
       return false;
@@ -386,6 +424,45 @@ bool newestHeldDisplayedPitch(int16_t& displayedPitchOut) {
   return found;
 }
 
+int16_t midiDisplayValueForPitch(int16_t displayedPitch) {
+  int32_t relativeSteps = currentPitchStepsFromReference(displayedPitch - current.transpose);
+  if (standardMidiMicrotonalActive) {
+    byte mappedNote = 0;
+    byte mappedChannel = 0;
+    mapExtendedMidiNote(static_cast<int32_t>(currentTuningReferenceMidiNote()) + relativeSteps,
+                        standardMidiBaseChannel,
+                        mappedNote,
+                        mappedChannel);
+    return mappedNote;
+  }
+
+  float midiPitch = stepsToMIDI(static_cast<int16_t>(relativeSteps));
+  if (midiPitch < 0.0f || midiPitch >= 128.0f) {
+    return DISPLAYED_NOTE_UNUSED;
+  }
+  return static_cast<int16_t>(std::clamp<int>(static_cast<int>(roundf(midiPitch)), 0, 127));
+}
+
+int16_t displayValueForHex(byte hexIndex) {
+  if (noteDisplayMode == NOTE_DISPLAY_MIDI) {
+    if (h[hexIndex].activeMidiNote < 128) {
+      return h[hexIndex].activeMidiNote;
+    }
+    if (h[hexIndex].note < 128) {
+      return h[hexIndex].note;
+    }
+    return midiDisplayValueForPitch(h[hexIndex].stepsFromC + current.transpose);
+  }
+  return h[hexIndex].stepsFromC + current.transpose;
+}
+
+int16_t displayValueForSequencerPitch(int16_t displayedPitch) {
+  if (noteDisplayMode == NOTE_DISPLAY_MIDI) {
+    return midiDisplayValueForPitch(displayedPitch);
+  }
+  return displayedPitch;
+}
+
 void formatDisplayedPitchNumber(int16_t displayedPitch, char* noteText, size_t noteTextSize) {
   int cycleLength = current.tuning().cycleLength;
   if (cycleLength <= 0) {
@@ -418,10 +495,21 @@ void formatDisplayedPitchLabel(int16_t displayedPitch, char* noteText, size_t no
 }
 
 void formatDisplayedPitch(int16_t displayedPitch, char* noteText, size_t noteTextSize) {
-  if (noteDisplayMode == NOTE_DISPLAY_NUMBER) {
-    formatDisplayedPitchNumber(displayedPitch, noteText, noteTextSize);
-  } else {
-    formatDisplayedPitchLabel(displayedPitch, noteText, noteTextSize);
+  switch (noteDisplayMode) {
+    case NOTE_DISPLAY_NUMBER:
+      formatDisplayedPitchNumber(displayedPitch, noteText, noteTextSize);
+      break;
+    case NOTE_DISPLAY_MIDI:
+      if (displayedPitch == DISPLAYED_NOTE_UNUSED) {
+        snprintf(noteText, noteTextSize, "?");
+      } else {
+        snprintf(noteText, noteTextSize, "%d", displayedPitch);
+      }
+      break;
+    case NOTE_DISPLAY_LABEL:
+    default:
+      formatDisplayedPitchLabel(displayedPitch, noteText, noteTextSize);
+      break;
   }
 }
 

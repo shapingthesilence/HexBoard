@@ -2,7 +2,6 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
-#include "../app/StabilityBenchmark.h"
 #include "../hardware/GridState.h"
 #include "../hardware/LedRender.h"
 #include "../midi/MidiInput.h"
@@ -623,11 +622,6 @@ void serialDebugRuntimeChanged(GEMCallbackData /*callbackData*/) {
   menu.drawMenu();
 }
 
-void startStabilityBenchmarkMenuCallback() {
-  startStabilityBenchmark();
-}
-GEMItem menuItemStabilityBenchmark("Stability", startStabilityBenchmarkMenuCallback);
-
 PersistentCallbackInfo callbackInfoDisplayPlayedNotes = {
   static_cast<uint8_t>(SettingKey::DisplayPlayedNotes),
   reinterpret_cast<void*>(&noteDisplayMode),
@@ -637,7 +631,8 @@ PersistentCallbackInfo callbackInfoDisplayPlayedNotes = {
 SelectOptionByte optionByteNoteDisplayMode[] = {
   { "Off", NOTE_DISPLAY_OFF },
   { "Label", NOTE_DISPLAY_LABEL },
-  { "Number", NOTE_DISPLAY_NUMBER }
+  { "Number", NOTE_DISPLAY_NUMBER },
+  { "MIDI", NOTE_DISPLAY_MIDI }
 };
 GEMSelect selectNoteDisplayMode(sizeof(optionByteNoteDisplayMode) / sizeof(SelectOptionByte), optionByteNoteDisplayMode);
 GEMItem menuItemDisplayPlayedNotes("DisplayNotes", noteDisplayMode, selectNoteDisplayMode, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoDisplayPlayedNotes));
@@ -3043,7 +3038,6 @@ void setupAdvancedMenuPage() {
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
   menuPageAdvanced.addMenuItem(menuGotoSerialDebug);
-  menuPageAdvanced.addMenuItem(menuItemStabilityBenchmark);
   addPreviewMenuItem(menuPageAdvanced, menuItemLedTest, previewLedTest);
 }
 

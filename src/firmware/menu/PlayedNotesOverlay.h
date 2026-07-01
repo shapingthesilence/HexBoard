@@ -17,6 +17,7 @@ constexpr byte PLAYED_NOTE_TEXT_MAX = 12;
 constexpr byte NOTE_DISPLAY_OFF = 0;
 constexpr byte NOTE_DISPLAY_LABEL = 1;
 constexpr byte NOTE_DISPLAY_NUMBER = 2;
+constexpr byte NOTE_DISPLAY_MIDI = 3;
 
 extern byte noteDisplayMode;
 extern bool noteOverlayVisible;

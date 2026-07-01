@@ -40,9 +40,9 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* WheelAltMode                 */ 0,
   /* PBSticky                     */ 0,
   /* ModSticky                    */ 0,
-  /* PBWheelSpeed (2^N)           */ 10,    // 2^10 == 1024
-  /* ModWheelSpeed                */ 8,
-  /* VelWheelSpeed                */ 8,
+  /* PBWheelSpeed (2^N)           */ 9,     // 2^9 == 512
+  /* ModWheelSpeed                */ 4,
+  /* VelWheelSpeed                */ 4,
   /* PlaybackMode                 */ SYNTH_POLY,
   /* Waveform                     */ WAVEFORM_BASIC_WAVETABLE,
   /* AudioDestination             */ 0,

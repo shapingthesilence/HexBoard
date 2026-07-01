@@ -46,11 +46,12 @@ If `Scale Lock` is off, every note button can play. If `Scale Lock` is on, only 
 ### Played Note Display
 
 The `DisplayNotes` option in `Advanced` controls the OLED played-note overlay.
-Set it to `Off`, `Label`, or `Number`. `Label` shows the active tuning's note
+Set it to `Off`, `Label`, `Number`, or `MIDI`. `Label` shows the active tuning's note
 labels with octave numbers, including labels provided by user geometry objects.
 Custom note labels are limited to `7` characters so they fit the on-device Key
 selector. The main-menu `Key` selector uses those same active tuning labels.
-`Number` shows scale step and octave values such as `7.4`.
+`Number` shows scale step and octave values such as `7.4`. `MIDI` shows the
+current MIDI note number, such as `60` for middle C in standard tuning.
 
 While the menu is visible, the top-right corner shows only the most recent held
 note. The badge is composited into normal menu redraws so menu updates do not
@@ -518,7 +519,8 @@ Options include:
 
 Wheel speed choices run from `TooSlow`, `Turtle`, `Slow`, `Medium`, `Fast`,
 `Cheetah`, and `VeryFast` to `Instant`. `Fast` is the previous `Medium` speed;
-`TooSlow` is a new slower option.
+`TooSlow` is a new slower option. Factory defaults use `Medium` for all three
+wheel speeds.
 
 The onboard synth smooths pitch-bend wheel changes, phase-warp depth, and
 vibrato depth internally so button-controlled bends and warp changes do not jump
@@ -618,12 +620,11 @@ This page contains maintenance and system settings:
 - Hardware revision
 - `Invert Encoder`
 - `ColorByKey`
-- `DisplayNotes`: `Off`, `Label`, or `Number`
+- `DisplayNotes`: `Off`, `Label`, `Number`, or `MIDI`
 - `Boot Anim`
 - `Reset Defaults`
 - `Update Firmware`
 - `Serial Debug`
-- `Stability`
 - `LED Test`
 
 `ColorByKey` makes compatible color modes follow the selected key.
@@ -637,15 +638,6 @@ prints current/minimum free heap while the system runs normally, and `Audio Stat
 prints audio CPU for the last reporting window, the worst CPU reading since
 Serial Debug was enabled, and audio underrun/overrun/max-block counters. These
 debug choices are not saved to profiles and reset on reboot.
-
-`Stability` launches a temporary benchmark and is not saved in profiles. It
-loads a worst-case runtime synth patch, starts eight high notes, forces regular
-voice steals, sweeps modulation and pitch bend, keeps LEDs/display/menu/sync
-services running, and shows live underrun, audio-overrun, minimum-free-heap, max
-audio-block time, and last Core 0/Core 1 task labels. Hold the encoder button
-for about `5` seconds to exit. If runtime `Serial Debug` was enabled when the
-benchmark started, normal debug category output is suppressed during the run and
-compact benchmark status/summary lines are sent instead.
 
 `LED Test` is temporary and is not saved in profiles. Enter it and scroll through `Red`, `Green`, `Blue`, or `White` to light every LED immediately. Leaving the selector snaps it back to `Off` and restores the normal LED display. This is useful for diagnosing LED health or for *very* harsh mood lighting.
 

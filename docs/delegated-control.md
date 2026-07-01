@@ -45,12 +45,6 @@ When `delegatedControl` is `true`:
 - the normal menu is disabled; encoder turns and button presses are forwarded
   to the host instead.
 
-The local `Advanced` -> `Stability` benchmark is an exception to the normal
-delegated display/menu gate. It can only be launched from the local menu, but if
-a host enters delegated mode during an active benchmark, the benchmark keeps its
-own synth, LED, display, and sync services running so the stress test remains
-self-contained.
-
 The OLED screensaver timer still runs in delegated mode. After the display
 times out, host LED/key activity and delegated SysEx do not wake it; only
 encoder activity wakes and redraws the delegated screen. Holding the encoder
