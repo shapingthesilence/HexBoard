@@ -369,7 +369,6 @@ GEMPage menuPageSerialDebug("Serial Debug", menuPageAdvanced);
 GEMItem menuGotoSerialDebug("Serial Debug", menuPageSerialDebug);
 GEMPage menuPageProfiles("Profiles", menuPageMain);
 GEMItem menuGotoProfiles("Profiles", menuPageProfiles);
-GEMPage menuPageReboot("Ready to flash firmware!");
 
 // --------------------------------------------------------
 // Helper: Persistent Callback Info
@@ -2742,10 +2741,53 @@ void addPreviewMenuItem(GEMPage& page, GEMItem& item, void (*previewCallback)(GE
   item.setPreviewCallback(previewCallback);
 }
 
+void drawCenteredBootloaderLine(uint8_t y, const char* text, bool bold) {
+  u8g2.setFont(bold ? u8g2_font_7x14B_tf : u8g2_font_6x13_tf);
+  int16_t x = static_cast<int16_t>((128 - u8g2.getStrWidth(text)) / 2);
+  u8g2.drawStr(x > 0 ? x : 0, y, text);
+}
+
+void drawBootloaderInstructionLine(uint8_t y,
+                                   const char* before,
+                                   const char* boldText,
+                                   const char* after) {
+  u8g2.setFont(u8g2_font_6x13_tf);
+  uint16_t beforeWidth = u8g2.getStrWidth(before);
+  uint16_t afterWidth = u8g2.getStrWidth(after);
+  u8g2.setFont(u8g2_font_6x13B_tf);
+  uint16_t boldWidth = u8g2.getStrWidth(boldText);
+  int16_t x = static_cast<int16_t>((128 - (beforeWidth + boldWidth + afterWidth)) / 2);
+  if (x < 0) {
+    x = 0;
+  }
+  u8g2.setFont(u8g2_font_6x13_tf);
+  u8g2.drawStr(x, y, before);
+  x += beforeWidth;
+  u8g2.setFont(u8g2_font_6x13B_tf);
+  u8g2.drawStr(x, y, boldText);
+  x += boldWidth;
+  u8g2.setFont(u8g2_font_6x13_tf);
+  u8g2.drawStr(x, y, after);
+}
+
+void drawBootloaderReadyScreen() {
+  wakeDisplayFromScreensaver();
+  noteOverlayVisible = false;
+  noteBadgeVisible = false;
+  noteOverlayTemporaryWake = false;
+  noteOverlayWokeDisplayFromSleep = false;
+
+  u8g2.clearBuffer();
+  drawCenteredBootloaderLine(22, "Ready to update!", true);
+  drawBootloaderInstructionLine(52, "Copy the ", ".uf2", " file");
+  drawBootloaderInstructionLine(76, "to the ", "RPI-RP2", " drive");
+  drawCenteredBootloaderLine(100, "on your computer.", false);
+  u8g2.sendBuffer();
+}
+
 void rebootToBootloader() {
-  menu.setMenuPageCurrent(menuPageReboot);
   dismissCommandWheelOverlay();
-  menu.drawMenu();
+  drawBootloaderReadyScreen();
   clearLEDs();
   rp2040.rebootToBootloader();
 }

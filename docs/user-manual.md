@@ -718,8 +718,8 @@ How to update:
 
 1. Plug your HexBoard into your computer.
 2. Navigate to `Advanced` -> `Update Firmware` in the menu.
-3. The HexBoard will show up as a USB drive.
-4. Drag the `.uf2` file onto the drive.
+3. The HexBoard shows `Ready to update! Copy the .uf2 file to the RPI-RP2 drive on your computer.`
+4. Drag the `.uf2` file onto the `RPI-RP2` drive.
 5. The HexBoard will automatically reboot with the new firmware.
 
 Need a backup method?
