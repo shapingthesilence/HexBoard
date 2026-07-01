@@ -71,12 +71,25 @@ uint16_t virtualListLauncherScrollOffset = 0;
 bool virtualListLauncherScrollApplied = false;
 char virtualListLauncherValueBuffer[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = {};
 
+void wakeDisplayFromScreensaver() {
+  if (!screenSaverOn) {
+    return;
+  }
+  screenSaverOn = false;
+  u8g2.setPowerSave(0);
+  u8g2.setContrast(CONTRAST_AWAKE);
+}
+
+void enterDisplayScreensaver() {
+  screenSaverOn = true;
+  u8g2.setContrast(CONTRAST_SCREENSAVER);
+  u8g2.clear();
+  u8g2.setPowerSave(1);
+}
+
 void wakeDelegatedControlScreenForInput() {
   screenTime = 0;
-  if (screenSaverOn) {
-    screenSaverOn = 0;
-    u8g2.setContrast(CONTRAST_AWAKE);
-  }
+  wakeDisplayFromScreensaver();
   delegatedDisplayDirty = true;
 }
 
@@ -144,10 +157,7 @@ void drawPresetSyncTransferScreen() {
     presetSyncTransferScreenWokeDisplayFromSleep = screenSaverOn;
     presetSyncTransferSavedScreenTime = screenTime;
   }
-  if (screenSaverOn) {
-    screenSaverOn = 0;
-    u8g2.setContrast(CONTRAST_AWAKE);
-  }
+  wakeDisplayFromScreensaver();
   noteOverlayVisible = false;
   noteBadgeVisible = false;
   noteOverlayTemporaryWake = false;
@@ -177,9 +187,7 @@ void closePresetSyncTransferScreen() {
   presetSyncTransferScreenVisible = false;
   screenTime = presetSyncTransferSavedScreenTime;
   if (presetSyncTransferScreenWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
-    screenSaverOn = 1;
-    u8g2.setContrast(CONTRAST_SCREENSAVER);
-    u8g2.clear();
+    enterDisplayScreensaver();
   } else if (delegatedControl) {
     delegatedDisplayDirty = true;
     drawDelegatedControlScreen();
@@ -196,10 +204,7 @@ void showFlashSaveScreen() {
     flashSaveScreenWokeDisplayFromSleep = screenSaverOn;
     flashSaveSavedScreenTime = screenTime;
   }
-  if (screenSaverOn) {
-    screenSaverOn = 0;
-    u8g2.setContrast(CONTRAST_AWAKE);
-  }
+  wakeDisplayFromScreensaver();
   noteOverlayVisible = false;
   noteBadgeVisible = false;
   noteOverlayTemporaryWake = false;
@@ -222,9 +227,7 @@ void closeFlashSaveScreen() {
   flashSaveScreenVisible = false;
   screenTime = flashSaveSavedScreenTime;
   if (flashSaveScreenWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
-    screenSaverOn = 1;
-    u8g2.setContrast(CONTRAST_SCREENSAVER);
-    u8g2.clear();
+    enterDisplayScreensaver();
   } else if (presetSyncTransferActive) {
     drawPresetSyncTransferScreen();
   } else if (delegatedControl) {
@@ -416,7 +419,7 @@ void rebootToBootloader();
     These GEMItems are read-only display items.
     They do not change any variable or run any procedure.
   */
-GEMItem menuItemVersion("Firmware 1.4 alpha");
+GEMItem menuItemVersion("Firmware 2.0 beta");
 SelectOptionByte optionByteHardware[] = {
   { "V1.1", HARDWARE_UNKNOWN }, { "V1.1", HARDWARE_V1_1 }, { "V1.2", HARDWARE_V1_2 }
 };
@@ -3015,6 +3018,7 @@ void setupMenu() {
 void setupGFX() {
   u8g2.begin();                      // Menu and graphics setup
   u8g2.setBusClock(1000000);         // Speed up display
+  u8g2.setPowerSave(0);
   u8g2.setContrast(CONTRAST_AWAKE);  // Set contrast
   sendToLog("U8G2 graphics initialized.");
 }
@@ -3024,19 +3028,13 @@ void screenSaver() {
     if (screenTime <= screenSaverTimeout) {
       screenTime = screenTime + lapTime;
     }
-    if (screenSaverOn) {
-      screenSaverOn = 0;
-      u8g2.setContrast(CONTRAST_AWAKE);
-    }
+    wakeDisplayFromScreensaver();
     return;
   }
 
   if (screenTime <= screenSaverTimeout) {
     screenTime = screenTime + lapTime;
-    if (screenSaverOn) {
-      screenSaverOn = 0;
-      u8g2.setContrast(CONTRAST_AWAKE);
-    }
+    wakeDisplayFromScreensaver();
   } else {
     if (!screenSaverOn) {
       bool commandOverlayWasActive = commandWheelOverlayActive();
@@ -3045,9 +3043,7 @@ void screenSaver() {
         return;
       }
       dismissCommandWheelOverlay();
-      screenSaverOn = 1;
-      u8g2.setContrast(CONTRAST_SCREENSAVER);
-      u8g2.clear();
+      enterDisplayScreensaver();
     }
   }
 }

@@ -143,9 +143,7 @@ void restoreUnderlyingDisplay() {
 }
 
 void returnDisplayToScreenSaver() {
-  screenSaverOn = true;
-  u8g2.setContrast(CONTRAST_SCREENSAVER);
-  u8g2.clear();
+  enterDisplayScreensaver();
 }
 
 void RAM_FUNC(clearOverlayState)() {
@@ -238,10 +236,7 @@ void drawCommandWheelOverlay() {
     return;
   }
 
-  if (screenSaverOn) {
-    screenSaverOn = false;
-    u8g2.setContrast(CONTRAST_AWAKE);
-  }
+  wakeDisplayFromScreensaver();
   refreshPlayedNoteBadgeForCommandWheel();
 
   char valueLabel[10];

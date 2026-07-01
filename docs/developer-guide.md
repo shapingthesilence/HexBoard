@@ -121,7 +121,9 @@ messages such as hello/list/delete and live synth parameter sets process inline.
 Flash writes on RP2040 disable interrupts on both cores. Firmware routes writes
 through `flashSafeSave()` / `beginFlashSafeWrite()` so the OLED explains the
 temporary mute, audio output fades toward idle before interrupts are blocked,
-and the prior display state is restored afterward.
+and the prior display state is restored afterward. Small current synth preset,
+current wavetable, and profile wavetable reference files compare the existing
+record before writing so ordinary saves do not rewrite unchanged references.
 
 Performance-sensitive code can use `RAM_FUNC(name)` to run from SRAM instead of
 external-flash XIP. Keep this selective. Current RAM placement favors the audio
@@ -153,7 +155,10 @@ for the screensaver, or send the OLED buffer. When a temporary-wake
 command-wheel readout expires, or when the menu timer forces an active
 command-wheel readout into sleep, the command-wheel owner first asks the
 played-note owner to resume full-screen `Now Playing` if notes are still held.
-Only if that handoff is unavailable does it blank for the screensaver.
+Only if that handoff is unavailable does it blank for the screensaver. Display
+sleep and wake must go through `enterDisplayScreensaver()` and
+`wakeDisplayFromScreensaver()` so the SH1107 controller enters and leaves
+U8g2 power-save mode consistently.
 
 `wheelDef::updateValue()` is elapsed-time based rather than loop-count based:
 if display, LED, MIDI, or synth work delays the main loop, a wheel can apply a
@@ -354,6 +359,7 @@ Other persistent stores:
 - `/synth_presets.dat`: named/foldered synth presets, magic `SYP`, version `10`, up to `128` presets. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume.
 - `/current_synth_preset.dat`: current loaded synth preset reference, magic `CSP`, version `1`. It stores either the loaded preset object ID or the special `Blank` state; the edited synth values still come from normal settings/profile storage.
 - `/synth_wavetables.dat`: named user wavetable catalog, magic `SYW`, version `1`, up to `32` entries. Sample files use shortened `/wt_<16 hex>.wtb` paths and can contain six fixed mip levels (`49,152` bytes) or legacy base-only data (`8,192` bytes).
+- `/current_wavetable.dat`: current wavetable folder/name reference, magic `CWT`, version `1`.
 - `/profile_wavetables.dat`: per-profile wavetable folder/name snapshots, magic `PWT`, version `1`.
 - `/layouts.dat`: user geometry catalog, magic `LYT`, version `2`, up to `64` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`.
 - `/Sequences`: optional sequencer `.hbseq` files plus `.current` remembered path when sequencer support is enabled.

@@ -1678,10 +1678,7 @@ void drawFileMenuOverlay() {
 
   dismissCommandWheelOverlay();
   screenTime = 0;
-  if (screenSaverOn) {
-    screenSaverOn = false;
-    u8g2.setContrast(CONTRAST_AWAKE);
-  }
+  wakeDisplayFromScreensaver();
 
   char nameLine[kSequenceNameLength + 2] = "";
   copyString(nameLine, sizeof(nameLine), g_namingBuffer);

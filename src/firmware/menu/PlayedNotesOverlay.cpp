@@ -119,18 +119,13 @@ bool setNoteOverlayTemporaryWake(bool enabled) {
   noteOverlayTemporaryWake = enabled;
   if (enabled) {
     noteOverlayWokeDisplayFromSleep = screenSaverOn;
-    if (screenSaverOn) {
-      screenSaverOn = 0;
-      u8g2.setContrast(CONTRAST_AWAKE);
-    }
+    wakeDisplayFromScreensaver();
     return false;
   }
 
   bool returnedToSleep = noteOverlayWokeDisplayFromSleep && screenTime > screenSaverTimeout;
   if (returnedToSleep && !screenSaverOn) {
-    screenSaverOn = 1;
-    u8g2.setContrast(CONTRAST_SCREENSAVER);
-    u8g2.clear();
+    enterDisplayScreensaver();
   }
   noteOverlayWokeDisplayFromSleep = false;
   return returnedToSleep;
@@ -142,10 +137,7 @@ void dismissPlayedNotesOverlayForMenuInput() {
   }
 
   screenTime = 0;
-  if (screenSaverOn) {
-    screenSaverOn = 0;
-    u8g2.setContrast(CONTRAST_AWAKE);
-  }
+  wakeDisplayFromScreensaver();
   noteOverlayTemporaryWake = false;
   noteOverlayWokeDisplayFromSleep = false;
   noteOverlayVisible = false;
@@ -515,10 +507,7 @@ bool wakePlayedNotesOverlayForHeldNotes() {
   clearDisplayedNotes(displayedNotes);
   noteOverlayDirty = true;
 
-  if (screenSaverOn) {
-    screenSaverOn = false;
-    u8g2.setContrast(CONTRAST_AWAKE);
-  }
+  wakeDisplayFromScreensaver();
   return true;
 }
 

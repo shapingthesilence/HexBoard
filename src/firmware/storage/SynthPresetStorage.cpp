@@ -56,6 +56,22 @@ uint32_t currentSynthPresetReferenceCrc(const CurrentSynthPresetReferenceFile& r
   return crc32(bytes, sizeof(bytes));
 }
 
+template <typename Record>
+bool persistedRecordMatches(const char* path, const Record& record) {
+  File f = LittleFS.open(path, "r");
+  if (!f) {
+    return false;
+  }
+
+  Record existing = {};
+  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&existing), sizeof(existing));
+  bool matches = bytesRead == sizeof(existing)
+                 && f.available() == 0
+                 && memcmp(&existing, &record, sizeof(record)) == 0;
+  f.close();
+  return matches;
+}
+
 const SynthPresetIndexEntry* trackedCurrentSynthPresetEntry() {
   if (objectIdIsEmpty(currentSynthPresetObjectId, sizeof(currentSynthPresetObjectId))) {
     return nullptr;
@@ -862,13 +878,19 @@ void saveCurrentSynthPresetReference() {
   } else {
     const SynthPresetIndexEntry* metadata = trackedCurrentSynthPresetEntry();
     if (!metadata) {
-      LittleFS.remove(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH);
+      if (LittleFS.exists(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH)) {
+        LittleFS.remove(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH);
+      }
       return;
     }
     reference.flags = CURRENT_SYNTH_PRESET_REFERENCE_LOADED_FLAG;
     memcpy(reference.objectId, metadata->objectId, sizeof(reference.objectId));
   }
   reference.crc32 = currentSynthPresetReferenceCrc(reference);
+
+  if (persistedRecordMatches(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH, reference)) {
+    return;
+  }
 
   File f = LittleFS.open(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH, "w");
   if (!f) {

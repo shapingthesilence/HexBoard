@@ -108,6 +108,12 @@ The panic stop sends note-off style cleanup and clears active output. It is the 
 
 ## OLED Menu Overview
 
+The OLED menu powers down after about `30 seconds` without encoder/menu
+activity. Turning or pressing the encoder wakes it. Temporary note,
+command-wheel, delegated-control, save, and transfer screens may wake the panel
+long enough to show feedback, then return it to sleep if the menu timer had
+already expired.
+
 The main menu includes:
 
 - `Tuning:<current>`
@@ -603,7 +609,7 @@ How it behaves:
 
 This page contains maintenance and system settings:
 
-- `Firmware 1.4 alpha` version label
+- `Firmware 2.0 beta` version label
 - Hardware revision
 - `Invert Encoder`
 - `ColorByKey`
@@ -650,6 +656,8 @@ What to expect:
 - Flash writes briefly show `Saving` / `Writing flash` / `Audio muted` on the
   OLED, fade audio down/up so the required flash-write mute is less abrupt, and
   return to the active menu or browser afterward
+- Current synth preset and wavetable reference files are only rewritten when
+  their stored value changes
 - If saved settings cannot be read, HexBoard restores factory defaults
 - This release also resets older settings-schema files to factory defaults
 - Saving may mute the onboard synth very briefly

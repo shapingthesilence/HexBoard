@@ -7,6 +7,7 @@ constexpr uint8_t CONTRAST_SCREENSAVER = 1;
 
 extern U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2;
 extern GEM_u8g2 menu;
+extern bool screenSaverOn;
 extern uint64_t screenTime;
 extern const uint64_t screenSaverTimeout;
 extern bool rotaryInvert;
@@ -20,6 +21,8 @@ void wakeDelegatedControlScreenForInput();
 void setupMenu();
 void setupGFX();
 void screenSaver();
+void wakeDisplayFromScreensaver();
+void enterDisplayScreensaver();
 void restoreInteractiveMenuDisplay();
 void drawDelegatedControlScreen();
 void restoreMenuAfterDelegatedControl();

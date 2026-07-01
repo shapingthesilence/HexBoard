@@ -375,10 +375,7 @@ void restoreRuntimeState() {
 }
 
 void drawBenchmarkScreen(bool stopped) {
-  if (screenSaverOn) {
-    screenSaverOn = false;
-    u8g2.setContrast(CONTRAST_AWAKE);
-  }
+  wakeDisplayFromScreensaver();
   screenTime = 0;
 
   uint64_t elapsedSeconds = (runTime > benchmarkStartMicros)

@@ -192,10 +192,7 @@ byte countOverviewStepsThatFit(byte firstStep) {
 void keepOverlayDisplayAwake() {
   dismissCommandWheelOverlay();
   screenTime = 0;
-  if (::screenSaverOn) {
-    ::screenSaverOn = false;
-    u8g2.setContrast(CONTRAST_AWAKE);
-  }
+  wakeDisplayFromScreensaver();
 }
 
 void drawPerformanceMonitorOverlay() {
