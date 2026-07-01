@@ -11,9 +11,9 @@ type ViewKey = "synth" | "profiles" | "layouts";
 type ThemeMode = "light" | "dark";
 
 const views: Array<{ key: ViewKey; label: string }> = [
-  { key: "synth", label: "Synth Presets" },
-  { key: "profiles", label: "Profiles" },
-  { key: "layouts", label: "Tunings & Layouts" }
+  { key: "layouts", label: "Tunings & Layouts" },
+  { key: "synth", label: "Synth Editor" },
+  { key: "profiles", label: "Profiles" }
 ];
 
 const themeStorageKey = "hexboard-sync-theme";
@@ -30,7 +30,7 @@ function loadStoredTheme(): ThemeMode {
 }
 
 export function App() {
-  const [activeView, setActiveView] = useState<ViewKey>("synth");
+  const [activeView, setActiveView] = useState<ViewKey>("layouts");
   const [transport, setTransport] = useState<MidiTransport>(() => new MockMidiTransport());
   const [deviceHello, setDeviceHello] = useState<HelloResponsePayload | null>(null);
   const [connectionLabel, setConnectionLabel] = useState("Mock device");

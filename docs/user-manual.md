@@ -545,7 +545,8 @@ The app requires a Web MIDI SysEx-capable browser, usually Chrome or Edge, from
 `localhost` or HTTPS. Use `Connect HexBoard` in the top bar. The app checks the
 connected device's preset-sync support and connects automatically when exactly
 one compatible HexBoard replies; a device selector appears when multiple
-compatible boards are connected.
+compatible boards are connected. The top tabs open `Tunings & Layouts` by
+default, followed by `Synth Editor` and `Profiles`.
 
 In the tuning/layout editor, you can create EDO tunings, equal-step tunings,
 Scala `.scl` imports, vector layouts, scales, custom scale-degree colors, and

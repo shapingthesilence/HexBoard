@@ -73,6 +73,8 @@ and `TRANSFER_END` so firmware can pace object transfers.
 
 ## Current Scope
 
+- Top-level tabs open `Tunings & Layouts` by default, then `Synth Editor`, then
+  `Profiles`.
 - Protocol helpers for the draft preset-sync SysEx frame.
 - CRC32 and 8-to-7 packing utilities matching the firmware draft.
 - TLV object encoding for user tunings, layouts, scale color maps, explicit
