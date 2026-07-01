@@ -713,8 +713,10 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
   presetSyncWriteTransfer.rawChunkSize = presetSyncDecodeU14(payload + 16);
   presetSyncWriteTransfer.writeFlags = writeFlags;
   presetSyncWriteTransfer.receivedCrc32 = 0xFFFFFFFFu;
-  beginFlashSafeWrite();
-  presetSyncWriteTransfer.flashSafeMuteActive = true;
+  if (writeFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH) {
+    beginFlashSafeWrite();
+    presetSyncWriteTransfer.flashSafeMuteActive = true;
+  }
   if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
     if (!presetSyncCreateWriteTempFile(presetSyncWriteTransfer)) {
       presetSyncCancelWriteTransfer();

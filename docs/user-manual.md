@@ -579,8 +579,9 @@ selected for the open preset.
 Single live synth-parameter edits do not show the `MIDI SysEx Transfer` screen,
 do not mute audio, and are saved by the normal debounced auto-save path. Larger
 object transfers, such as full preset saves or wavetable imports, show `MIDI
-SysEx Transfer` on the HexBoard, mute audio for the transfer window, and briefly
-pause normal menu/button/LED work while the transfer is serviced.
+SysEx Transfer` on the HexBoard. Transfers that save to flash mute audio for the
+transfer window and briefly pause normal menu/button/LED work while the transfer
+is serviced.
 
 ### Transpose
 
@@ -657,9 +658,10 @@ What to expect:
 - Changes become ready to save immediately
 - If `Auto-Save` is enabled, HexBoard saves after about `10 seconds` of inactivity
 - Manual profile saves write immediately
-- Flash writes briefly show `Saving` / `Writing flash` / `Audio muted` on the
-  OLED, fade audio down/up, hold the physical audio outputs idle while flash is
-  busy, and return to the active menu, browser, or sleeping OLED state afterward
+- Flash writes briefly show `Saving to flash.` / `Audio muted.` on the OLED,
+  fade audio down/up, hold the physical audio outputs idle while flash is busy,
+  keep the save message visible for up to about `700 ms`, and return to
+  the active menu, browser, or sleeping OLED state afterward
 - Current synth preset and wavetable reference files are only rewritten when
   their stored value changes
 - If saved settings cannot be read, HexBoard restores factory defaults

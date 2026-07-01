@@ -604,6 +604,9 @@ void drawPlayedNotesOverlay() {
   if (delegatedControl) {
     return;
   }
+  if (flashSaveScreenVisible) {
+    return;
+  }
 
   PlayedNoteDisplaySource source = activePlayedNoteDisplaySource();
 

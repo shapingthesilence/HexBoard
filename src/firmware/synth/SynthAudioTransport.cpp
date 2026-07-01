@@ -17,6 +17,7 @@ extern const uint32_t AUDIO_DMA_BUFFER_MICROS =
   (static_cast<uint64_t>(AUDIO_DMA_BUFFER_SAMPLE_COUNT) * 1000000ull) / AUDIO_SAMPLE_RATE_HZ;
 volatile uint16_t audioOutputMuteGainQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
 volatile uint16_t audioOutputMuteTargetQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
+volatile uint8_t audioOutputMuteRampSampleCounter = 0;
 uint16_t synthPiezoAmplitude = 0;
 
 constexpr uint8_t SYNTH_DRIVE_LOOKUP_MODE_COUNT = SYNTH_DRIVE_DIRTY - SYNTH_DRIVE_WARM + 1;
@@ -70,6 +71,15 @@ bool audioOutputMuteSettled(bool muted) {
 void RAM_FUNC(advanceAudioOutputMuteRamp)() {
   uint16_t target = audioOutputMuteTargetQ8;
   uint16_t gain = audioOutputMuteGainQ8;
+  if (gain == target) {
+    audioOutputMuteRampSampleCounter = 0;
+    return;
+  }
+  ++audioOutputMuteRampSampleCounter;
+  if (audioOutputMuteRampSampleCounter < AUDIO_OUTPUT_MUTE_RAMP_SAMPLE_DIVIDER) {
+    return;
+  }
+  audioOutputMuteRampSampleCounter = 0;
   if (gain < target) {
     uint16_t next = static_cast<uint16_t>(gain + AUDIO_OUTPUT_MUTE_RAMP_STEP_Q8);
     gain = next > target ? target : next;

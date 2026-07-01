@@ -123,9 +123,12 @@ through `flashSafeSave()` / `beginFlashSafeWrite()` so the OLED explains the
 temporary mute, audio output fades toward idle before interrupts are blocked,
 audio DMA is quiesced so the physical PWM outputs are held idle during the flash
 operation, DMA IRQ handling refuses to restart transfers while the flash-safe
-pause is active, and the prior display state is restored afterward. Full
-preset-sync object write transfers hold this same mute across the transfer and
-commit path; one-frame live synth parameter edits do not. Small current
+pause is active, and the prior display state is restored afterward. The save
+screen remains visible for up to about `700 ms` from when it was drawn unless
+menu input takes display ownership first. Preset-sync object write transfers
+with `SaveToFlash` set in `WRITE_BEGIN` hold this same mute across the transfer
+and commit path; one-frame live synth parameter edits and apply-only object
+transfers do not. Small current
 synth preset, current wavetable, and profile wavetable reference files compare
 the existing record before writing so ordinary saves do not rewrite unchanged
 references.

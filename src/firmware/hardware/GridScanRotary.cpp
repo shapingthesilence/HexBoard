@@ -304,6 +304,10 @@ void dealWithRotary() {
     }
   }
 
+  if ((storeRotaryTurn != 0) || (justReleased && !rotaryPanicSuppressClick)) {
+    dismissFlashSaveScreenForMenuInput();
+  }
+
   if (sequencerModeActive() && storeRotaryTurn != 0) {
     bool turnIsClockwise = (storeRotaryTurn == 8);
     int8_t direction = rotaryInvert

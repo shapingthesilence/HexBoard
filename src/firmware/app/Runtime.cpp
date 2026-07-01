@@ -128,11 +128,14 @@ void hexboardLoop() {        // run on first core
   serviceUserGeometryMenuRebuild();
   restoreMenuAfterDelegatedControl();
   serviceVirtualListLauncherLabelScroll();
+  serviceFlashSaveScreen();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
-  if (sequencerModeActive()) {
+  if (!flashSaveScreenVisible && sequencerModeActive()) {
     drawSequencerModeDisplay();
   }
-  drawCommandWheelOverlay();
+  if (!flashSaveScreenVisible) {
+    drawCommandWheelOverlay();
+  }
   drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_BENCHMARK);
   serviceStabilityBenchmark();

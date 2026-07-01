@@ -553,8 +553,9 @@ Live editor changes to individual synth parameters should use `SYNTH_PARAM_SET`
 instead of staging a full `SynthPreset` object. This keeps frequent slider and
 selector updates out of the modal transfer path; full preset opens/saves and
 wavetable imports still use the chunked object path. Current firmware mutes the
-onboard synth for the duration of a full host-to-device object write transfer,
-including commit and temporary-file cleanup, but not for `SYNTH_PARAM_SET`.
+onboard synth for the duration of a host-to-device object write transfer when
+`SaveToFlash` is set in `WRITE_BEGIN`, including commit and temporary-file
+cleanup, but not for `SYNTH_PARAM_SET` or apply-only object transfers.
 
 Example `WRITE_BEGIN` for a new `UserTuning` object, transaction `20`,
 transfer `5`, schema `1.0`, raw length `33`, CRC32 `0x6702FE2B`, raw chunk size
@@ -1297,7 +1298,7 @@ uses `SaveToFlash` for the full unpacked bundle object set.
 - Reject writes that reference missing dependencies unless the write is part of
   a validated bundle workflow.
 - Avoid long blocking writes during active performance. Flash writes currently
-  mute the synth because RP2040 flash operations pause interrupts; full
+  mute the synth because RP2040 flash operations pause interrupts; save-to-flash
   host-to-device object writes also mute across the transfer so chunked temp
   writes and commit cleanup stay covered.
 - If a change adds persisted user tuning/layout/scale/color/map storage, bump

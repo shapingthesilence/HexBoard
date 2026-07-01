@@ -57,7 +57,10 @@ uint64_t screenTime = 0;                         // GFX timer to count if screen
 const uint64_t screenSaverTimeout = (1u << 25);  // 2^25 microseconds ~ 33 seconds
 bool flashSaveScreenVisible = false;
 bool flashSaveScreenWokeDisplayFromSleep = false;
+bool flashSaveScreenClosePending = false;
 uint64_t flashSaveSavedScreenTime = 0;
+uint64_t flashSaveScreenVisibleUntil = 0;
+constexpr uint64_t FLASH_SAVE_SCREEN_MAX_VISIBLE_MICROS = 700000ULL;
 
 constexpr uint8_t VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS = 19;
 constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_START_DELAY_MICROS = 1500000ULL;
@@ -204,6 +207,8 @@ void showFlashSaveScreen() {
     flashSaveScreenWokeDisplayFromSleep = screenSaverOn;
     flashSaveSavedScreenTime = screenTime;
   }
+  flashSaveScreenVisibleUntil = readClock() + FLASH_SAVE_SCREEN_MAX_VISIBLE_MICROS;
+  flashSaveScreenClosePending = false;
   wakeDisplayFromScreensaver();
   noteOverlayVisible = false;
   noteBadgeVisible = false;
@@ -211,20 +216,23 @@ void showFlashSaveScreen() {
   noteOverlayWokeDisplayFromSleep = false;
 
   u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_6x13_tf);
-  u8g2.drawStr(8, 24, "Saving");
-  u8g2.drawStr(8, 48, "Writing flash");
-  u8g2.drawStr(8, 72, "Audio muted");
-  u8g2.drawStr(8, 112, "Please wait...");
+  u8g2.setFont(u8g2_font_7x14B_tf);
+  const char* saveLine = "Saving to flash.";
+  const char* muteLine = "Audio muted.";
+  int16_t saveX = static_cast<int16_t>((128 - u8g2.getStrWidth(saveLine)) / 2);
+  int16_t muteX = static_cast<int16_t>((128 - u8g2.getStrWidth(muteLine)) / 2);
+  u8g2.drawStr(saveX > 0 ? saveX : 0, 54, saveLine);
+  u8g2.drawStr(muteX > 0 ? muteX : 0, 82, muteLine);
   u8g2.sendBuffer();
   flashSaveScreenVisible = true;
 }
 
-void closeFlashSaveScreen() {
+static void closeFlashSaveScreenNow() {
   if (!flashSaveScreenVisible) {
     return;
   }
   flashSaveScreenVisible = false;
+  flashSaveScreenClosePending = false;
   screenTime = flashSaveSavedScreenTime;
   if (flashSaveScreenWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
     enterDisplayScreensaver();
@@ -238,6 +246,35 @@ void closeFlashSaveScreen() {
   }
   flashSaveScreenWokeDisplayFromSleep = false;
   flashSaveSavedScreenTime = 0;
+  flashSaveScreenVisibleUntil = 0;
+}
+
+void closeFlashSaveScreen() {
+  if (!flashSaveScreenVisible) {
+    return;
+  }
+  if (readClock() < flashSaveScreenVisibleUntil) {
+    flashSaveScreenClosePending = true;
+    return;
+  }
+  closeFlashSaveScreenNow();
+}
+
+void dismissFlashSaveScreenForMenuInput() {
+  if (!flashSaveScreenVisible) {
+    return;
+  }
+  flashSaveScreenVisible = false;
+  flashSaveScreenClosePending = false;
+  flashSaveScreenWokeDisplayFromSleep = false;
+  flashSaveSavedScreenTime = 0;
+  flashSaveScreenVisibleUntil = 0;
+}
+
+void serviceFlashSaveScreen() {
+  if (flashSaveScreenVisible && flashSaveScreenClosePending && readClock() >= flashSaveScreenVisibleUntil) {
+    closeFlashSaveScreenNow();
+  }
 }
 
 bool servicePresetSyncTransfer() {

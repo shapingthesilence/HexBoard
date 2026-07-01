@@ -1212,7 +1212,7 @@ void applySynthPresetToSettings(const SynthPresetSlot& preset) {
 }
 
 namespace {
-constexpr uint64_t FLASH_SAVE_AUDIO_MUTE_TIMEOUT_MICROS = 12000ULL;
+constexpr uint64_t FLASH_SAVE_AUDIO_MUTE_TIMEOUT_MICROS = 24000ULL;
 uint8_t flashSafeWriteDepth = 0;
 
 void waitForAudioOutputMute(bool muted) {
