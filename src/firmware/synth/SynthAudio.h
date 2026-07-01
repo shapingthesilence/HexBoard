@@ -32,6 +32,8 @@ void setupAudioDma();
 void serviceAudioDmaBuffers();
 void setAudioOutputMuteTarget(bool muted);
 bool audioOutputMuteSettled(bool muted);
+void quiesceAudioDmaForFlashWrite();
+void resumeAudioDmaAfterFlashWrite();
 void recomputePitchBendFactor();
 void RAM_FUNC(resetSynthRenderCaches)();
 void synthWaveformChanged();

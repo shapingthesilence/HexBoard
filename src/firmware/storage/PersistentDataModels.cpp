@@ -1,5 +1,4 @@
 #include "../FirmwareModule.h"
-#include "../model/ScalePalettePreset.h"
 #include "../synth/SynthDefaults.h"
 #include "PersistentDataModels.h"
 
@@ -60,38 +59,11 @@ inline bool isEnvelopeTimeSettingKey(SettingKey key) {
   }
 }
 
-void remapLegacyEnvelopeTimeSettings(uint8_t* profileSettings, uint8_t settingsPerProfile) {
-  for (uint8_t keyIndex = 0; keyIndex < settingsPerProfile; ++keyIndex) {
-    SettingKey key = static_cast<SettingKey>(keyIndex);
-    if (isEnvelopeTimeSettingKey(key)) {
-      profileSettings[keyIndex] = remapLegacyEnvelopeTimeIndex(profileSettings[keyIndex]);
-    }
-  }
-}
-
 inline uint8_t remapLegacySynthVibratoSpeedIndex(uint8_t legacyIndex) {
   if (legacyIndex >= legacySynthVibratoSpeedIndexToCurrent.size()) {
     return SYNTH_VIBRATO_SPEED_DEFAULT;
   }
   return legacySynthVibratoSpeedIndexToCurrent[legacyIndex];
-}
-
-void remapLegacySynthVibratoSpeedSetting(uint8_t* profileSettings, uint8_t settingsPerProfile) {
-  uint8_t keyIndex = static_cast<uint8_t>(SettingKey::SynthVibratoSpeed);
-  if (keyIndex < settingsPerProfile) {
-    profileSettings[keyIndex] = remapLegacySynthVibratoSpeedIndex(profileSettings[keyIndex]);
-  }
-}
-
-uint8_t remapLegacyDeviceRotationSetting(uint8_t oldDriverRotation) {
-  return displayRotationFromDeviceRotation(oldDriverRotation);
-}
-
-void remapLegacyDeviceRotationSetting(uint8_t* profileSettings, uint8_t settingsPerProfile) {
-  uint8_t keyIndex = static_cast<uint8_t>(SettingKey::DeviceRotation);
-  if (keyIndex < settingsPerProfile) {
-    profileSettings[keyIndex] = remapLegacyDeviceRotationSetting(profileSettings[keyIndex]);
-  }
 }
 
 // ==================================================

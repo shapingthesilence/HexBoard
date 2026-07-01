@@ -12,6 +12,10 @@ Sequence files shall be stored under /Sequences in onboard flash.
 Details:
 - General sequencer preferences such as Tap Preview, Monophonic, MIDI
   Sync settings, and Seq Lights settings shall not be stored in sequence files.
+- Sequence file writes, remembered current-path writes, file and folder
+  management mutations, and USB Backup restore mutations shall use the firmware
+  flash-safe write path so synth audio is muted and held idle while onboard
+  flash is busy.
 
 
 ID: SEQ-FILE-002
@@ -266,6 +270,8 @@ Details:
   menu navigation remains available.
 - While the session is active, Save, Revert, and browser-based file-management
   workflows shall be blocked until the session is stopped.
+- Host restore operations that write, rename, create, or delete files or
+  folders shall use the firmware flash-safe write path.
 
 
 ID: SEQ-FILE-019

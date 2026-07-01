@@ -713,6 +713,8 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
   presetSyncWriteTransfer.rawChunkSize = presetSyncDecodeU14(payload + 16);
   presetSyncWriteTransfer.writeFlags = writeFlags;
   presetSyncWriteTransfer.receivedCrc32 = 0xFFFFFFFFu;
+  beginFlashSafeWrite();
+  presetSyncWriteTransfer.flashSafeMuteActive = true;
   if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
     if (!presetSyncCreateWriteTempFile(presetSyncWriteTransfer)) {
       presetSyncCancelWriteTransfer();
@@ -1045,9 +1047,11 @@ void presetSyncHandleDelete(uint16_t transactionId, const uint8_t* payload, size
         && strncmp(currentSynthWavetableFolderPath,
                    synthWavetables[handle].folderPath,
                    sizeof(currentSynthWavetableFolderPath)) == 0;
+      beginFlashSafeWrite();
       removeSynthWavetableSampleFiles(synthWavetables[handle]);
       synthWavetables.erase(synthWavetables.begin() + handle);
-      flashSafeSaveSynthWavetables();
+      save_synth_wavetables();
+      endFlashSafeWrite();
       requestSynthWavetableMenuRebuild();
       if (deletedCurrent) {
         selectFallbackSynthWavetable();

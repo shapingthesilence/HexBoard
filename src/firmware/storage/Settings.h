@@ -13,7 +13,6 @@ void checkAndAutoSave();
 void copyCurrentSettingsToProfile(uint8_t profileIndex);
 void saveProfileToSlot(uint8_t profileIndex);
 void setActiveProfile(uint8_t profileIndex);
-bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t settingsPerProfile);
 
 extern bool settingsDirty;
 extern bool fileSystemExists;

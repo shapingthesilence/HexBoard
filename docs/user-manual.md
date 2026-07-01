@@ -435,6 +435,10 @@ when defaults are restored, so they can be changed or erased like any other
 preset and restored later by Reset Defaults or from the web editor's browser
 library. The web app still shows the foldered library and can create foldered
 presets.
+If HexBoard finds a valid firmware `1.3` synth preset file during upgrade, valid
+old slots whose values differ from the firmware `1.3` synth defaults are
+imported into a `1.3 Patches` preset folder alongside the current factory
+presets. Older settings files still reset to factory defaults.
 The load list also includes `Blank`. Loading from the top-level `Synth` item
 returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
@@ -572,11 +576,11 @@ folders. Wavetables can be imported from Serum/Vital `.wav` files or HexBoard
 `.hexwav` files, previewed, uploaded, downloaded, exported, renamed, moved, and
 selected for the open preset.
 
-Single live synth-parameter edits do not show the `MIDI SysEx Transfer` screen
-and are saved by the normal debounced auto-save path. Larger object transfers,
-such as full preset saves or wavetable imports, show `MIDI SysEx Transfer` on
-the HexBoard and briefly pause normal menu/button/LED work while the transfer is
-serviced.
+Single live synth-parameter edits do not show the `MIDI SysEx Transfer` screen,
+do not mute audio, and are saved by the normal debounced auto-save path. Larger
+object transfers, such as full preset saves or wavetable imports, show `MIDI
+SysEx Transfer` on the HexBoard, mute audio for the transfer window, and briefly
+pause normal menu/button/LED work while the transfer is serviced.
 
 ### Transpose
 
@@ -609,7 +613,7 @@ How it behaves:
 
 This page contains maintenance and system settings:
 
-- `Firmware 2.0 beta` version label
+- `Firmware 2.0 beta 1` version label
 - Hardware revision
 - `Invert Encoder`
 - `ColorByKey`
@@ -654,8 +658,8 @@ What to expect:
 - If `Auto-Save` is enabled, HexBoard saves after about `10 seconds` of inactivity
 - Manual profile saves write immediately
 - Flash writes briefly show `Saving` / `Writing flash` / `Audio muted` on the
-  OLED, fade audio down/up so the required flash-write mute is less abrupt, and
-  return to the active menu or browser afterward
+  OLED, fade audio down/up, hold the physical audio outputs idle while flash is
+  busy, and return to the active menu, browser, or sleeping OLED state afterward
 - Current synth preset and wavetable reference files are only rewritten when
   their stored value changes
 - If saved settings cannot be read, HexBoard restores factory defaults

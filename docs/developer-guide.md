@@ -121,9 +121,14 @@ messages such as hello/list/delete and live synth parameter sets process inline.
 Flash writes on RP2040 disable interrupts on both cores. Firmware routes writes
 through `flashSafeSave()` / `beginFlashSafeWrite()` so the OLED explains the
 temporary mute, audio output fades toward idle before interrupts are blocked,
-and the prior display state is restored afterward. Small current synth preset,
-current wavetable, and profile wavetable reference files compare the existing
-record before writing so ordinary saves do not rewrite unchanged references.
+audio DMA is quiesced so the physical PWM outputs are held idle during the flash
+operation, DMA IRQ handling refuses to restart transfers while the flash-safe
+pause is active, and the prior display state is restored afterward. Full
+preset-sync object write transfers hold this same mute across the transfer and
+commit path; one-frame live synth parameter edits do not. Small current
+synth preset, current wavetable, and profile wavetable reference files compare
+the existing record before writing so ordinary saves do not rewrite unchanged
+references.
 
 Performance-sensitive code can use `RAM_FUNC(name)` to run from SRAM instead of
 external-flash XIP. Keep this selective. Current RAM placement favors the audio
@@ -324,9 +329,9 @@ Settings are stored in LittleFS at `/settings.dat` with:
 - CRC32 of all profile bytes
 
 `CURRENT_SETTINGS_VERSION` is currently `23`, and `PROFILE_COUNT` is `9`.
-Version `20`, `21`, and `22` settings files migrate by copying previous profile
-bytes and filling newly appended settings from factory defaults. Other
-settings-schema mismatches restore factory defaults and rewrite `/settings.dat`.
+Any settings file with a non-current schema version resets to factory defaults
+and rewrites `/settings.dat`. The only release-specific migration retained for
+older firmware is the separate firmware `1.3` synth preset catalog import.
 
 Important current settings facts:
 
@@ -356,7 +361,7 @@ When adding, removing, reordering, or reinterpreting a `SettingKey`:
 
 Other persistent stores:
 
-- `/synth_presets.dat`: named/foldered synth presets, magic `SYP`, version `10`, up to `128` presets. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume.
+- `/synth_presets.dat`: named/foldered synth presets, magic `SYP`, version `10`, up to `128` presets. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume. Firmware `1.3` fixed-slot preset files, magic `SYP` version `3`, migrate valid slots whose values differ from the firmware `1.3` synth defaults into folder `1.3 Patches` before the current catalog is rewritten.
 - `/current_synth_preset.dat`: current loaded synth preset reference, magic `CSP`, version `1`. It stores either the loaded preset object ID or the special `Blank` state; the edited synth values still come from normal settings/profile storage.
 - `/synth_wavetables.dat`: named user wavetable catalog, magic `SYW`, version `1`, up to `32` entries. Sample files use shortened `/wt_<16 hex>.wtb` paths and can contain six fixed mip levels (`49,152` bytes) or legacy base-only data (`8,192` bytes).
 - `/current_wavetable.dat`: current wavetable folder/name reference, magic `CWT`, version `1`.
@@ -551,7 +556,11 @@ narrow:
 - `SequencerUsbBackup.*` owns the enabled-only HBK1 USB-serial backup session for `/Sequences`.
 
 Sequencer profile-backed settings belong in the main settings schema. Sequence
-file data belongs in `.hbseq` files, not profiles.
+file data belongs in `.hbseq` files, not profiles. Sequence saves, remembered
+path writes, browser delete/rename/create operations, and USB Backup restore
+writes must use `beginFlashSafeWrite()` / `endFlashSafeWrite()` because they
+touch LittleFS while the optional sequencer build may still have synth audio
+enabled.
 
 ## Web App Integration
 
@@ -619,7 +628,7 @@ Use `web/README.md` for web commands and deployment details.
 - ISR-adjacent synth/audio code and helpers called from it
 - button scan, command-wheel, and note dispatch paths
 - settings schema/version changes and defaults-only fallback behavior
-- flash writes, because they pause interrupt-driven audio even with fade/mute handling
+- flash writes, because they pause interrupt-driven audio even with fade, DMA quiesce, and mute handling
 - delegated-control SysEx parsing and LED/button latency
 - preset-sync chunked transfers and temporary LittleFS files
 - geometry apply paths that must keep pitch, labels, LEDs, and MIDI routing synchronized

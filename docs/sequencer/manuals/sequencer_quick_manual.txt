@@ -268,6 +268,8 @@ Saving And Files
   remembered path is still valid.
 - File Management > USB Backup starts a dedicated USB serial backup session for
   the /Sequences tree.
+- Sequence saves, file and folder changes, and USB Backup restore writes briefly
+  mute audio and hold the audio outputs idle while onboard flash is busy.
 - If you back out of the USB Backup page while a session is active, the
   sequencer warns that leaving the page closes USB Backup and asks whether you
   want to continue.

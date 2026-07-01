@@ -109,22 +109,6 @@ enum class SettingKey : uint8_t {
 };
 
 constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
-constexpr uint8_t NUM_SETTINGS_V2 = static_cast<uint8_t>(SettingKey::LedCurrentLimitMode);
-constexpr uint8_t NUM_SETTINGS_V3 = static_cast<uint8_t>(SettingKey::SynthDrive);
-constexpr uint8_t NUM_SETTINGS_V4 = static_cast<uint8_t>(SettingKey::SynthModTarget);
-constexpr uint8_t NUM_SETTINGS_V5 = static_cast<uint8_t>(SettingKey::MetronomeMode);
-constexpr uint8_t NUM_SETTINGS_V6 = static_cast<uint8_t>(SettingKey::EffectEnvelopeAttackIndex);
-constexpr uint8_t NUM_SETTINGS_V7 = static_cast<uint8_t>(SettingKey::EffectEnvelopeTarget);
-constexpr uint8_t NUM_SETTINGS_V8 = static_cast<uint8_t>(SettingKey::EnvelopeHoldIndex);
-constexpr uint8_t NUM_SETTINGS_BEFORE_HEADPHONE_CAP = static_cast<uint8_t>(SettingKey::HeadphoneVolumeCap);
-constexpr uint8_t NUM_SETTINGS_V11 = static_cast<uint8_t>(SettingKey::DeviceRotation);
-constexpr uint8_t NUM_SETTINGS_V12 = static_cast<uint8_t>(SettingKey::SynthPortamentoTimeIndex);
-constexpr uint8_t NUM_SETTINGS_V14 = static_cast<uint8_t>(SettingKey::SynthWavetablePosition);
-constexpr uint8_t NUM_SETTINGS_V15 = static_cast<uint8_t>(SettingKey::DynamicJIRatioTable);
-constexpr uint8_t NUM_SETTINGS_V17 = static_cast<uint8_t>(NUM_SETTINGS + 1);
-constexpr uint8_t NUM_SETTINGS_V20 = static_cast<uint8_t>(SettingKey::SequencerTapPreview);
-constexpr uint8_t NUM_SETTINGS_V21 = static_cast<uint8_t>(SettingKey::SequencerSendClock);
-constexpr uint8_t NUM_SETTINGS_V22 = static_cast<uint8_t>(SettingKey::PiezoVolumeCap);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
@@ -439,10 +423,6 @@ uint32_t crc32Update(uint32_t crc, const uint8_t* data, size_t length);
 uint32_t crc32Finish(uint32_t crc);
 uint32_t crc32(const uint8_t* data, size_t length);
 
-void remapLegacyEnvelopeTimeSettings(uint8_t* profileSettings, uint8_t settingsPerProfile);
-uint8_t remapLegacyDeviceRotationSetting(uint8_t oldDriverRotation);
-void remapLegacyDeviceRotationSetting(uint8_t* profileSettings, uint8_t settingsPerProfile);
-void remapLegacySynthVibratoSpeedSetting(uint8_t* profileSettings, uint8_t settingsPerProfile);
 void remapLegacySynthPresetEnvelopeTimes(SynthPresetSlot& preset);
 void remapLegacySynthPresetEnvelopeTimes(LegacySynthPresetSlot& preset);
 void remapLegacySynthPresetVibratoSpeed(SynthPresetSlot& preset);

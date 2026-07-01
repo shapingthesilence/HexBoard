@@ -1,6 +1,7 @@
 #include "../FirmwareModule.h"
 #include "../midi/MidiRouting.h"
 #include "PresetSync.h"
+#include "SynthPresetStorage.h"
 
 PresetSyncWriteTransfer presetSyncWriteTransfer;
 PresetSyncReadTransfer presetSyncReadTransfer;
@@ -130,11 +131,16 @@ void presetSyncCancelReadTransfer() {
 }
 
 void presetSyncCancelWriteTransfer() {
+  bool flashSafeMuteActive = presetSyncWriteTransfer.flashSafeMuteActive;
   presetSyncCloseWriteTempFile();
   if (presetSyncWriteTransfer.streamRawToFile && presetSyncWriteTransfer.streamRawPath[0]) {
     LittleFS.remove(presetSyncWriteTransfer.streamRawPath);
   }
   LittleFS.remove(PRESET_SYNC_WAVETABLE_SAMPLE_TEMP_FILE_PATH);
+  if (flashSafeMuteActive) {
+    presetSyncWriteTransfer.flashSafeMuteActive = false;
+    endFlashSafeWrite();
+  }
   presetSyncWriteTransfer = PresetSyncWriteTransfer{};
 }
 

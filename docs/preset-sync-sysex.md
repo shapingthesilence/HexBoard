@@ -552,7 +552,9 @@ are not used as the persistence confirmation path.
 Live editor changes to individual synth parameters should use `SYNTH_PARAM_SET`
 instead of staging a full `SynthPreset` object. This keeps frequent slider and
 selector updates out of the modal transfer path; full preset opens/saves and
-wavetable imports still use the chunked object path.
+wavetable imports still use the chunked object path. Current firmware mutes the
+onboard synth for the duration of a full host-to-device object write transfer,
+including commit and temporary-file cleanup, but not for `SYNTH_PARAM_SET`.
 
 Example `WRITE_BEGIN` for a new `UserTuning` object, transaction `20`,
 transfer `5`, schema `1.0`, raw length `33`, CRC32 `0x6702FE2B`, raw chunk size
@@ -664,7 +666,8 @@ Each record applies one synth preset `SettingKey` byte to the current runtime.
 or `1`. Firmware rejects non-synth setting keys and ACKs the frame after all
 records are applied. The message marks settings dirty for the normal debounced
 profile autosave path, but it does not synchronously save flash, does not stage
-a read/write transfer, and does not show the `MIDI SysEx Transfer` screen.
+a read/write transfer, does not mute audio, and does not show the `MIDI SysEx
+Transfer` screen.
 
 Hosts must keep these `SettingKey` ordinals tied to the current settings schema.
 In schema `19`, `Serial Debug` is no longer a persisted setting, so all synth
@@ -1294,7 +1297,9 @@ uses `SaveToFlash` for the full unpacked bundle object set.
 - Reject writes that reference missing dependencies unless the write is part of
   a validated bundle workflow.
 - Avoid long blocking writes during active performance. Flash writes currently
-  mute the synth because RP2040 flash operations pause interrupts.
+  mute the synth because RP2040 flash operations pause interrupts; full
+  host-to-device object writes also mute across the transfer so chunked temp
+  writes and commit cleanup stay covered.
 - If a change adds persisted user tuning/layout/scale/color/map storage, bump
   the relevant storage schema and document migration separately from the SysEx
   protocol version.

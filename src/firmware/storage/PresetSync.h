@@ -145,6 +145,7 @@ struct PresetSyncWriteTransfer {
   uint32_t expectedChunkIndex = 0;
   uint32_t receivedCrc32 = 0xFFFFFFFFu;
   bool streamRawToFile = false;
+  bool flashSafeMuteActive = false;
   char streamRawPath[PRESET_SYNC_TEMP_FILE_PATH_LENGTH] = {};
   std::vector<uint8_t> rawData;
 };

@@ -4,13 +4,13 @@
 
 #if HEXBOARD_ENABLE_SEQUENCER
 
-#include <atomic>
 #include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "../app/DiagnosticsTiming.h"
 #include "../storage/Settings.h"
+#include "../storage/SynthPresetStorage.h"
 #include "../synth/SynthAudio.h"
 #include "SequencerStorage.h"
 
@@ -33,6 +33,7 @@ enum class ReceiveState : uint8_t {
 bool g_active = false;
 bool g_serialDebugSuppressedForSession = false;
 bool g_uiRefreshRequested = false;
+bool g_flashSafeWriteActive = false;
 char g_statusLineOne[kUsbBackupStatusLineSize] = "USB Backup Off";
 char g_statusLineTwo[kUsbBackupStatusLineSize] = "Host tool idle";
 ReceiveState g_receiveState = ReceiveState::Command;
@@ -43,6 +44,30 @@ File g_incomingFile;
 char g_incomingFinalPath[kUsbBackupPathBufferSize] = {};
 char g_incomingTempPath[kUsbBackupTempPathBufferSize] = {};
 size_t g_incomingBytesRemaining = 0;
+
+void beginUsbBackupFlashSafeWrite() {
+  if (g_flashSafeWriteActive) {
+    return;
+  }
+  beginFlashSafeWrite();
+  g_flashSafeWriteActive = true;
+}
+
+void endUsbBackupFlashSafeWrite() {
+  if (!g_flashSafeWriteActive) {
+    return;
+  }
+  endFlashSafeWrite();
+  g_flashSafeWriteActive = false;
+}
+
+template <typename Operation>
+bool runFlashSafeUsbBackupWrite(Operation operation) {
+  beginUsbBackupFlashSafeWrite();
+  bool ok = operation();
+  endUsbBackupFlashSafeWrite();
+  return ok;
+}
 
 void setStatus(const char* lineOne, const char* lineTwo) {
   snprintf(g_statusLineOne, sizeof(g_statusLineOne), "%s", lineOne != nullptr ? lineOne : "");
@@ -307,17 +332,24 @@ void restoreSerialDebugAfterSession() {
 }
 
 void clearPendingIncomingState() {
+  bool flashSafeWasActive = g_flashSafeWriteActive;
   if (g_incomingFile) {
     g_incomingFile.close();
   }
   if (g_incomingTempPath[0] != '\0' && LittleFS.exists(g_incomingTempPath)) {
-    LittleFS.remove(g_incomingTempPath);
+    if (flashSafeWasActive) {
+      LittleFS.remove(g_incomingTempPath);
+    } else {
+      runFlashSafeUsbBackupWrite([&]() {
+        return LittleFS.remove(g_incomingTempPath);
+      });
+    }
   }
+  endUsbBackupFlashSafeWrite();
   g_incomingFinalPath[0] = '\0';
   g_incomingTempPath[0] = '\0';
   g_incomingBytesRemaining = 0;
   g_receiveState = ReceiveState::Command;
-  flashWriteInProgress.store(false, std::memory_order_relaxed);
 }
 
 void finishIncomingFileWrite() {
@@ -334,11 +366,13 @@ void finishIncomingFileWrite() {
     success = false;
   }
 
-  flashWriteInProgress.store(false, std::memory_order_relaxed);
+  endUsbBackupFlashSafeWrite();
 
   if (!success) {
     if (LittleFS.exists(g_incomingTempPath)) {
-      LittleFS.remove(g_incomingTempPath);
+      runFlashSafeUsbBackupWrite([&]() {
+        return LittleFS.remove(g_incomingTempPath);
+      });
     }
     sendErrorLine("WRITE_FAILED");
   } else {
@@ -524,14 +558,13 @@ void handlePutCommand(const char* encodedPath, const char* sizeToken) {
     return;
   }
 
+  beginUsbBackupFlashSafeWrite();
   if (LittleFS.exists(g_incomingTempPath)) {
     LittleFS.remove(g_incomingTempPath);
   }
-
-  flashWriteInProgress.store(true, std::memory_order_relaxed);
   g_incomingFile = LittleFS.open(g_incomingTempPath, "w");
   if (!g_incomingFile) {
-    flashWriteInProgress.store(false, std::memory_order_relaxed);
+    endUsbBackupFlashSafeWrite();
     g_incomingFinalPath[0] = '\0';
     g_incomingTempPath[0] = '\0';
     sendErrorLine("OPEN_FAILED");
@@ -567,7 +600,10 @@ void handleMkdirCommand(const char* encodedPath) {
     return;
   }
 
-  if (!LittleFS.mkdir(path)) {
+  bool created = runFlashSafeUsbBackupWrite([&]() {
+    return LittleFS.mkdir(path);
+  });
+  if (!created) {
     sendErrorLine("MKDIR_FAILED");
     return;
   }
@@ -584,7 +620,10 @@ void handleDeleteCommand(const char* encodedPath) {
     return;
   }
 
-  if (!LittleFS.remove(path)) {
+  bool deleted = runFlashSafeUsbBackupWrite([&]() {
+    return LittleFS.remove(path);
+  });
+  if (!deleted) {
     sendErrorLine("DELETE_FAILED");
     return;
   }
@@ -602,7 +641,10 @@ void handleRmdirCommand(const char* encodedPath) {
     return;
   }
 
-  if (!deleteDirectoryRecursive(path)) {
+  bool deleted = runFlashSafeUsbBackupWrite([&]() {
+    return deleteDirectoryRecursive(path);
+  });
+  if (!deleted) {
     sendErrorLine("RMDIR_FAILED");
     return;
   }
@@ -654,7 +696,10 @@ void handleRenameCommand(const char* encodedSourcePath, const char* encodedTarge
     return;
   }
 
-  if (!LittleFS.rename(sourcePath, targetPath)) {
+  bool renamed = runFlashSafeUsbBackupWrite([&]() {
+    return LittleFS.rename(sourcePath, targetPath);
+  });
+  if (!renamed) {
     sendErrorLine("RENAME_FAILED");
     return;
   }

@@ -15,6 +15,7 @@
 #include "../menu/PlayedNotesOverlay.h"
 #include "../menu/VirtualListMenu.h"
 #include "../storage/Settings.h"
+#include "../storage/SynthPresetStorage.h"
 #include "SequencerManagedNotes.h"
 #include "SequencerOverlay.h"
 #include "SequencerStorage.h"
@@ -159,6 +160,14 @@ char g_browserRowsPath[kSequencePathLength] = "";
 uint16_t g_browserRowsFirstIndex = kNoRowIndex;
 uint16_t g_browserRowsCount = 0;
 BrowserRow g_browserRows[kBrowserCacheRows];
+
+template <typename Operation>
+bool runFlashSafeFileMenuWrite(Operation operation) {
+  beginFlashSafeWrite();
+  bool ok = operation();
+  endFlashSafeWrite();
+  return ok;
+}
 
 void openBrowser(BrowserMode mode);
 void showBrowser();
@@ -1390,13 +1399,17 @@ void confirmDeleteCallback() {
   if (deletedFolder) {
     char parent[kSequencePathLength] = "";
     extractSequenceParentPath(deletedPath, parent, sizeof(parent));
-    deleted = deleteFolderRecursive(deletedPath);
+    deleted = runFlashSafeFileMenuWrite([&]() {
+      return deleteFolderRecursive(deletedPath);
+    });
     if (deleted) {
       clearCurrentPathIfDeleted(deletedPath, true);
       setBrowserPath(parent);
     }
   } else {
-    deleted = LittleFS.remove(deletedPath);
+    deleted = runFlashSafeFileMenuWrite([&]() {
+      return LittleFS.remove(deletedPath);
+    });
     if (deleted) {
       clearCurrentPathIfDeleted(deletedPath, false);
     }
@@ -1458,7 +1471,10 @@ bool commitNaming() {
         setNamingError("Name Exists", "Pick another");
         return true;
       }
-      if (LittleFS.rename(g_renameSourcePath, targetPath)) {
+      bool renamed = runFlashSafeFileMenuWrite([&]() {
+        return LittleFS.rename(g_renameSourcePath, targetPath);
+      });
+      if (renamed) {
         if (hasCurrentSequencePath() && strcmp(currentSequencePath(), g_renameSourcePath) == 0) {
           setCurrentSequencePath(targetPath);
         }
@@ -1497,7 +1513,10 @@ bool commitNaming() {
       setNamingError("Name Exists", "Pick another");
       return true;
     }
-    if (!LittleFS.rename(g_renameSourcePath, targetPath)) {
+    bool renamed = runFlashSafeFileMenuWrite([&]() {
+      return LittleFS.rename(g_renameSourcePath, targetPath);
+    });
+    if (!renamed) {
       setNamingError("Error Rename", "Folder failed");
       return true;
     }
@@ -1518,7 +1537,10 @@ bool commitNaming() {
     setNamingError("Name Exists", "Pick another");
     return true;
   }
-  if (!LittleFS.mkdir(targetPath)) {
+  bool created = runFlashSafeFileMenuWrite([&]() {
+    return LittleFS.mkdir(targetPath);
+  });
+  if (!created) {
     setNamingError("Error Folder", "Create failed");
     return true;
   }

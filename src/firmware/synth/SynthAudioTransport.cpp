@@ -28,6 +28,7 @@ void RAM_FUNC(preparePhysicalAudioOutput)(byte destination);
 byte RAM_FUNC(selectedAudioDmaDestination)();
 void RAM_FUNC(clearSynthPortamento)(uint8_t channelIndex);
 void RAM_FUNC(beginSynthPortamento)(uint8_t channelIndex, uint32_t targetIncrement);
+void startAudioDmaForDestination(byte destination);
 
 bool audioJackAvailable() {
   return Hardware_Version == HARDWARE_V1_2;
@@ -192,6 +193,7 @@ volatile bool audioDmaBufferReady[2] = { false, false };
 volatile bool audioDmaBufferFree[2] = { true, true };
 volatile uint8_t audioDmaActiveBuffer = 0;
 volatile uint32_t audioDmaUnderrunCount = 0;
+volatile bool audioDmaPausedForFlashWrite = false;
 int audioDmaChannel = -1;
 byte audioDmaActiveDestination = AUDIO_NONE;
 uint8_t audioDmaActiveSlice = AJACK_SLICE;
@@ -284,6 +286,9 @@ void RAM_FUNC(audioDmaIrqHandler)() {
     return;
   }
   dma_hw->ints0 = 1u << audioDmaChannel;
+  if (audioDmaPausedForFlashWrite) {
+    return;
+  }
 
   uint8_t finishedBuffer = audioDmaActiveBuffer;
   audioDmaBufferFree[finishedBuffer] = true;
@@ -328,12 +333,35 @@ void RAM_FUNC(fillAudioDmaBuffer)(uint8_t bufferIndex, byte destination) {
 void stopAudioDma() {
   if (audioDmaChannel >= 0) {
     dma_channel_abort(audioDmaChannel);
+    dma_hw->ints0 = 1u << audioDmaChannel;
   }
   audioDmaBufferReady[0] = false;
   audioDmaBufferReady[1] = false;
   audioDmaBufferFree[0] = true;
   audioDmaBufferFree[1] = true;
   idlePhysicalAudioOutputs();
+}
+
+void quiesceAudioDmaForFlashWrite() {
+  audioDmaPausedForFlashWrite = true;
+  __dmb();
+  if (audioDmaChannel >= 0) {
+    dma_channel_abort(audioDmaChannel);
+    dma_hw->ints0 = 1u << audioDmaChannel;
+  }
+  audioDmaBufferReady[0] = false;
+  audioDmaBufferReady[1] = false;
+  audioDmaBufferFree[0] = true;
+  audioDmaBufferFree[1] = true;
+  idlePhysicalAudioOutputs();
+}
+
+void resumeAudioDmaAfterFlashWrite() {
+  if (audioDmaChannel >= 0) {
+    startAudioDmaForDestination(selectedAudioDmaDestination());
+  }
+  __dmb();
+  audioDmaPausedForFlashWrite = false;
 }
 
 void startAudioDmaForDestination(byte destination) {
@@ -361,6 +389,9 @@ void startAudioDmaForDestination(byte destination) {
 
 void serviceAudioDmaBuffers() {
   if (audioDmaChannel < 0) {
+    return;
+  }
+  if (audioDmaPausedForFlashWrite) {
     return;
   }
 

@@ -15,6 +15,38 @@ constexpr char CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH[] = "/current_synth_pres
 constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_VERSION = 1;
 constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_LOADED_FLAG = 0x01;
 constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_BLANK_FLAG = 0x02;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION_1_3 = 3;
+constexpr char SYNTH_PRESET_MIGRATED_1_3_FOLDER[] = "1.3 Patches";
+constexpr size_t FACTORY_SYNTH_PRESET_COUNT = 2;
+constexpr uint8_t LEGACY_1_3_SYNTH_PRESET_DEFAULT_VALUES[SYNTH_PRESET_VALUE_COUNT_V6] = {
+  SYNTH_OFF,
+  WAVEFORM_HYBRID,
+  SYNTH_DRIVE_OFF,
+  0,  // Firmware 1.3 "Tone" modulation target.
+  SYNTH_MOD_AMOUNT_FULL,
+  SYNTH_VIBRATO_SPEED_DEFAULT,
+  32,
+  120,
+  2,
+  0,
+  4,
+  127,
+  4,
+  SYNTH_MOD_TARGET_VIBRATO,
+  SYNTH_FX_AMOUNT_FULL,
+  0,
+  0,
+  0,
+  0,
+  0,
+  SYNTH_MOD_TARGET_PITCH,
+  SYNTH_FX_AMOUNT_FULL,
+  0,
+  0,
+  0,
+  0,
+  0
+};
 
 struct CurrentSynthPresetReferenceFile {
   char magic[3];
@@ -35,6 +67,7 @@ SynthPresetSlot pendingSynthPresetSaveSlot = {};
 bool pendingSynthPresetSaveSlotValid = false;
 
 bool writeSynthPresetRecordsDirect(const SynthPresetSlot* presets, size_t presetCount, bool logResult);
+size_t buildFactorySynthPresetRecords(SynthPresetSlot* presets, size_t presetCapacity);
 
 bool objectIdIsEmpty(const uint8_t* objectId, size_t objectIdLength) {
   for (size_t i = 0; i < objectIdLength; ++i) {
@@ -180,16 +213,14 @@ bool appendSynthPresetMetadataFromSlot(const SynthPresetSlot& preset) {
   return synthPresets.push_back(metadata);
 }
 
-void appendFactorySynthPreset(SynthPresetSlot preset) {
-  normalizeSynthPresetValues(preset);
-  normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(synthPresets.size()));
-  appendSynthPresetMetadataFromSlot(preset);
-}
 }  // namespace
 
-void applyDefaultSynthPresets() {
-  synthPresets.clear();
+namespace {
 
+size_t buildFactorySynthPresetRecords(SynthPresetSlot* presets, size_t presetCapacity) {
+  if (!presets || presetCapacity < FACTORY_SYNTH_PRESET_COUNT) {
+    return 0;
+  }
   SynthPresetSlot softStringPad = makeFactorySynthPreset("Soft String Pad",
                                                          SYNTH_PRESET_ROOT_FOLDER,
                                                          "Classic",
@@ -219,7 +250,6 @@ void applyDefaultSynthPresets() {
   setFactorySynthPresetValue(softStringPad, SettingKey::SynthLfoAmount, 127);
   setFactorySynthPresetValue(softStringPad, SettingKey::SynthLfoWave, 0);
   setFactorySynthPresetValue(softStringPad, SettingKey::SynthLfoSpeed, 6);
-  appendFactorySynthPreset(softStringPad);
 
   SynthPresetSlot brightMonoLead = makeFactorySynthPreset("Bright Mono Lead",
                                                           SYNTH_PRESET_ROOT_FOLDER,
@@ -243,11 +273,27 @@ void applyDefaultSynthPresets() {
   setFactorySynthPresetValue(brightMonoLead, SettingKey::EffectEnvelopeAmount, 127);
   setFactorySynthPresetValue(brightMonoLead, SettingKey::EffectEnvelope2Target, SYNTH_MOD_TARGET_FOLD_WARP);
   setFactorySynthPresetValue(brightMonoLead, SettingKey::EffectEnvelope2Amount, 127);
-  appendFactorySynthPreset(brightMonoLead);
 
+  SynthPresetSlot factoryPresets[FACTORY_SYNTH_PRESET_COUNT] = { softStringPad, brightMonoLead };
+  for (size_t i = 0; i < FACTORY_SYNTH_PRESET_COUNT; ++i) {
+    normalizeSynthPresetValues(factoryPresets[i]);
+    normalizeSynthPresetMetadata(factoryPresets[i], static_cast<uint8_t>(i));
+    presets[i] = factoryPresets[i];
+  }
+  return FACTORY_SYNTH_PRESET_COUNT;
+}
+
+}  // namespace
+
+void applyDefaultSynthPresets() {
+  synthPresets.clear();
+  SynthPresetSlot defaults[FACTORY_SYNTH_PRESET_COUNT] = {};
+  size_t defaultCount = buildFactorySynthPresetRecords(defaults, FACTORY_SYNTH_PRESET_COUNT);
+  for (size_t i = 0; i < defaultCount; ++i) {
+    appendSynthPresetMetadataFromSlot(defaults[i]);
+  }
   if (fileSystemExists) {
-    SynthPresetSlot defaults[] = { softStringPad, brightMonoLead };
-    writeSynthPresetRecordsDirect(defaults, 2, false);
+    writeSynthPresetRecordsDirect(defaults, defaultCount, false);
   }
 }
 
@@ -417,6 +463,15 @@ void normalizeSynthPresetValues(SynthPresetSlot& preset) {
       return;
     }
   }
+}
+
+static bool legacy13SynthPresetDiffersFromDefault(const LegacySynthPresetSlot& legacyPreset) {
+  if (!legacyPreset.valid) {
+    return false;
+  }
+  return memcmp(legacyPreset.values,
+                LEGACY_1_3_SYNTH_PRESET_DEFAULT_VALUES,
+                sizeof(LEGACY_1_3_SYNTH_PRESET_DEFAULT_VALUES)) != 0;
 }
 
 void migrateLegacySynthPresetSlot(const LegacySynthPresetSlot& legacyPreset, uint8_t index) {
@@ -716,10 +771,24 @@ bool synthPresetMetadataMatchesSlot(const SynthPresetIndexEntry& metadata, const
          && memcmp(metadata.objectId, preset.objectId, sizeof(metadata.objectId)) == 0;
 }
 
-bool readSynthPresetFileHeader(File& f, SynthPresetFileHeader& header) {
+bool synthPresetHeaderBaseValid(const SynthPresetFileHeaderBase& header) {
+  return strncmp(header.magic, "SYP", 3) == 0
+         && header.version > 0
+         && header.version <= SYNTH_PRESET_FILE_VERSION;
+}
+
+bool readSynthPresetFileHeaderBase(File& f, SynthPresetFileHeaderBase& header) {
   return f.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)
-         && strncmp(header.base.magic, "SYP", 3) == 0
-         && header.base.version == SYNTH_PRESET_FILE_VERSION
+         && synthPresetHeaderBaseValid(header);
+}
+
+bool readSynthPresetFileHeader(File& f, SynthPresetFileHeader& header) {
+  if (!readSynthPresetFileHeaderBase(f, header.base)) {
+    return false;
+  }
+  return header.base.version == SYNTH_PRESET_FILE_VERSION
+         && f.read(reinterpret_cast<uint8_t*>(&header.count), sizeof(header.count)) == sizeof(header.count)
+         && f.read(reinterpret_cast<uint8_t*>(&header.reserved), sizeof(header.reserved)) == sizeof(header.reserved)
          && header.count <= SYNTH_PRESET_MAX_COUNT;
 }
 
@@ -857,6 +926,74 @@ bool writeSynthPresetRecordsDirect(const SynthPresetSlot* presets, size_t preset
   if (logResult) {
     sendToLog("Synth presets saved (" + std::to_string(presetCount) + ").");
   }
+  return true;
+}
+
+bool migrateFixedLegacySynthPresetCatalog(File& f, const SynthPresetFileHeaderBase& header) {
+  if (header.version > SYNTH_PRESET_FILE_VERSION_1_3) {
+    f.close();
+    return false;
+  }
+
+  LegacySynthPresetSlot legacyPresets[LEGACY_SYNTH_PRESET_COUNT] = {};
+  const size_t legacyDataSize = sizeof(LegacySynthPresetSlot) * LEGACY_SYNTH_PRESET_COUNT;
+  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(legacyPresets), legacyDataSize);
+  f.close();
+  if (bytesRead != legacyDataSize) {
+    sendToLog("Warning: Legacy synth preset data incomplete. Restoring factory preset file.");
+    return false;
+  }
+  uint32_t computed = crc32(reinterpret_cast<const uint8_t*>(legacyPresets), legacyDataSize);
+  if (computed != header.crc32) {
+    sendToLog("Legacy synth preset CRC32 mismatch. Restoring factory preset file.");
+    return false;
+  }
+
+  SynthPresetSlot migratedPresets[FACTORY_SYNTH_PRESET_COUNT + LEGACY_SYNTH_PRESET_COUNT] = {};
+  size_t presetCount = buildFactorySynthPresetRecords(migratedPresets, FACTORY_SYNTH_PRESET_COUNT);
+  uint8_t migratedCount = 0;
+  for (uint8_t i = 0; i < LEGACY_SYNTH_PRESET_COUNT && presetCount < SYNTH_PRESET_MAX_COUNT; ++i) {
+    LegacySynthPresetSlot legacyPreset = legacyPresets[i];
+    if (!legacyPreset.valid) {
+      continue;
+    }
+    if (!legacy13SynthPresetDiffersFromDefault(legacyPreset)) {
+      continue;
+    }
+    if (header.version < 2) {
+      remapLegacySynthPresetEnvelopeTimes(legacyPreset);
+    }
+    if (header.version < 3) {
+      remapLegacySynthPresetVibratoSpeed(legacyPreset);
+    }
+
+    SynthPresetSlot preset = {};
+    preset.valid = 1;
+    snprintf(preset.name, sizeof(preset.name), "Slot %u", static_cast<unsigned>(i + 1));
+    snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", SYNTH_PRESET_MIGRATED_1_3_FOLDER);
+    for (size_t valueIndex = 0; valueIndex < synthPresetKeys.size(); ++valueIndex) {
+      preset.values[valueIndex] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[valueIndex])];
+    }
+    memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
+    normalizeSynthPresetValues(preset);
+    normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(presetCount));
+    migratedPresets[presetCount++] = preset;
+    ++migratedCount;
+  }
+
+  if (migratedCount == 0) {
+    sendToLog("Legacy synth preset file had no saved slots. Restoring factory preset file.");
+    return false;
+  }
+  if (!writeSynthPresetRecordsDirect(migratedPresets, presetCount, false)) {
+    return false;
+  }
+
+  synthPresets.clear();
+  for (size_t i = 0; i < presetCount; ++i) {
+    appendSynthPresetMetadataFromSlot(migratedPresets[i]);
+  }
+  sendToLog("Migrated " + std::to_string(migratedCount) + " synth presets from firmware 1.3.");
   return true;
 }
 }  // namespace
@@ -1008,8 +1145,26 @@ void load_synth_presets() {
     applyDefaultSynthPresets();
     return;
   }
+  SynthPresetFileHeaderBase headerBase = {};
+  if (!readSynthPresetFileHeaderBase(f, headerBase)) {
+    sendToLog("Invalid synth preset file. Restoring factory preset file.");
+    f.close();
+    applyDefaultSynthPresets();
+    return;
+  }
+  if (headerBase.version != SYNTH_PRESET_FILE_VERSION) {
+    if (migrateFixedLegacySynthPresetCatalog(f, headerBase)) {
+      return;
+    }
+    applyDefaultSynthPresets();
+    return;
+  }
+
   SynthPresetFileHeader header = {};
-  if (!readSynthPresetFileHeader(f, header)) {
+  header.base = headerBase;
+  if (f.read(reinterpret_cast<uint8_t*>(&header.count), sizeof(header.count)) != sizeof(header.count)
+      || f.read(reinterpret_cast<uint8_t*>(&header.reserved), sizeof(header.reserved)) != sizeof(header.reserved)
+      || header.count > SYNTH_PRESET_MAX_COUNT) {
     sendToLog("Invalid synth preset file. Restoring factory preset file.");
     f.close();
     applyDefaultSynthPresets();
@@ -1058,6 +1213,7 @@ void applySynthPresetToSettings(const SynthPresetSlot& preset) {
 
 namespace {
 constexpr uint64_t FLASH_SAVE_AUDIO_MUTE_TIMEOUT_MICROS = 12000ULL;
+uint8_t flashSafeWriteDepth = 0;
 
 void waitForAudioOutputMute(bool muted) {
   uint64_t start = readClock();
@@ -1068,17 +1224,32 @@ void waitForAudioOutputMute(bool muted) {
 }  // namespace
 
 // On the RP2040 flash writes disable ALL interrupts on BOTH cores, which
-// starves buffer refills. Fade to silence first, then give the DMA path queued
-// idle samples before the flash write freezes interrupt handling.
+// starves buffer refills. Fade to silence first, drain queued audio, then hold
+// the physical outputs idle until the flash operation finishes.
 void beginFlashSafeWrite() {
+  if (flashSafeWriteDepth > 0) {
+    ++flashSafeWriteDepth;
+    return;
+  }
+  ++flashSafeWriteDepth;
   showFlashSaveScreen();
   setAudioOutputMuteTarget(true);
   waitForAudioOutputMute(true);
-  flashWriteInProgress.store(true, std::memory_order_release);
   delayMicroseconds(AUDIO_DMA_BUFFER_MICROS * 2);
+  flashWriteInProgress.store(true, std::memory_order_release);
+  quiesceAudioDmaForFlashWrite();
 }
 
 void endFlashSafeWrite() {
+  if (flashSafeWriteDepth == 0) {
+    return;
+  }
+  --flashSafeWriteDepth;
+  if (flashSafeWriteDepth > 0) {
+    return;
+  }
+  resumeAudioDmaAfterFlashWrite();
+  delayMicroseconds(AUDIO_DMA_BUFFER_MICROS * 2);
   flashWriteInProgress.store(false, std::memory_order_release);
   setAudioOutputMuteTarget(false);
   waitForAudioOutputMute(false);

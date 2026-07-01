@@ -157,73 +157,6 @@ void applyFactoryDefaultsToSettings() {
   settingsDirty = false;
 }
 
-bool migrateSettingsFromVersion(File& f, const SettingsHeader& header, uint8_t settingsPerProfile) {
-  size_t previousDataSize = static_cast<size_t>(PROFILE_COUNT) * settingsPerProfile;
-  std::array<uint8_t, static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS_V17> previousProfiles = { 0 };
-  if (previousDataSize > previousProfiles.size()) {
-    sendToLog("Warning: Settings migration source is too large. Restoring defaults.");
-    f.close();
-    applyFactoryDefaultsToSettings();
-    save_settings();
-    return false;
-  }
-
-  size_t bytesRead = f.read(previousProfiles.data(), previousDataSize);
-  f.close();
-  if (bytesRead != previousDataSize) {
-    sendToLog("Warning: Previous settings data incomplete. Restoring defaults.");
-    applyFactoryDefaultsToSettings();
-    save_settings();
-    return false;
-  }
-
-  uint32_t computed = crc32(previousProfiles.data(), previousDataSize);
-  if (computed != header.crc32) {
-    sendToLog("Previous settings CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
-    applyFactoryDefaultsToSettings();
-    save_settings();
-    return false;
-  }
-
-  applyFactoryDefaultsToSettings();
-  for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
-    uint8_t settingsToCopy = settingsPerProfile;
-    if (settingsToCopy > NUM_SETTINGS) {
-      settingsToCopy = NUM_SETTINGS;
-    }
-    memcpy(settingsProfiles[profile],
-           previousProfiles.data() + (static_cast<size_t>(profile) * settingsPerProfile),
-           settingsToCopy);
-    if (header.version < 10) {
-      remapLegacyEnvelopeTimeSettings(settingsProfiles[profile], settingsPerProfile);
-    }
-    if (header.version < 11) {
-      remapLegacySynthVibratoSpeedSetting(settingsProfiles[profile], settingsPerProfile);
-    }
-    if (header.version < 14) {
-      remapLegacyDeviceRotationSetting(settingsProfiles[profile], settingsPerProfile);
-    }
-    if (header.version < 8) {
-      uint8_t wheelTarget = settingsProfiles[profile][static_cast<uint8_t>(SettingKey::SynthModTarget)];
-      if (wheelTarget > SYNTH_MOD_TARGET_VIBRATO) {
-        wheelTarget = SYNTH_MOD_TARGET_FOLD_WARP;
-      }
-      settingsProfiles[profile][static_cast<uint8_t>(SettingKey::EffectEnvelopeTarget)] =
-        (wheelTarget == SYNTH_MOD_TARGET_VIBRATO) ? SYNTH_MOD_TARGET_FOLD_WARP : SYNTH_MOD_TARGET_VIBRATO;
-    }
-    if (settingsPerProfile > static_cast<uint8_t>(SettingKey::PlaybackMode)) {
-      settingsProfiles[profile][static_cast<uint8_t>(SettingKey::PlaybackMode)] =
-        normalizeSynthPlaybackMode(settingsProfiles[profile][static_cast<uint8_t>(SettingKey::PlaybackMode)]);
-    }
-  }
-  activeProfileIndex = defaultProfileIndex;
-  settings = settingsProfiles[activeProfileIndex];
-  settingsDirty = false;
-  sendToLog("Settings migrated from version " + std::to_string(header.version) + " to version " + std::to_string(CURRENT_SETTINGS_VERSION) + ".");
-  save_settings();
-  return true;
-}
-
 bool load_settings() {
   settingsFileMissingOnBoot = false;
   if (!fileSystemExists) {
@@ -255,20 +188,6 @@ bool load_settings() {
     return false;
   }
   if (header.version != CURRENT_SETTINGS_VERSION) {
-    if (header.version == 20 || header.version == 21 || header.version == 22) {
-      sendToLog("Settings version mismatch. Migrating version " + std::to_string(header.version) + " settings to version "
-                + std::to_string(CURRENT_SETTINGS_VERSION) + ".");
-      uint8_t settingsPerProfile = NUM_SETTINGS_V22;
-      if (header.version == 20) {
-        settingsPerProfile = NUM_SETTINGS_V20;
-      } else if (header.version == 21) {
-        settingsPerProfile = NUM_SETTINGS_V21;
-      }
-      return migrateSettingsFromVersion(
-        f,
-        header,
-        settingsPerProfile);
-    }
     sendToLog("Settings version mismatch. File version: " + std::to_string(header.version)
               + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION)
               + ". Restoring factory defaults for this release.");

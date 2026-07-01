@@ -639,6 +639,9 @@ Browser behavior:
 - USB Backup uses the same LittleFS storage, but transfers files through a
   dedicated USB serial session instead of mounting the board as a drive
 
+Sequence saves, file and folder changes, and USB Backup restore writes briefly
+mute audio and hold the audio outputs idle while onboard flash is busy.
+
 
 15. Renaming, Creating, And Deleting Files
 

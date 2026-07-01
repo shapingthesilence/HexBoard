@@ -10,6 +10,7 @@
 
 #include "../model/ScalePalettePreset.h"
 #include "../storage/Settings.h"
+#include "../storage/SynthPresetStorage.h"
 #include "SequencerInput.h"
 #include "SequencerManagedNotes.h"
 #include "SequencerOverlay.h"
@@ -37,6 +38,14 @@ char g_title[kSequenceTitleLength] = "Sequencer";
 bool g_dirty = false;
 bool g_initialized = false;
 uint32_t g_titleVersion = 1;
+
+template <typename Operation>
+bool runFlashSafeSequenceWrite(Operation operation) {
+  beginFlashSafeWrite();
+  bool ok = operation();
+  endFlashSafeWrite();
+  return ok;
+}
 
 void copyString(char* destination, size_t destinationLength, const char* source) {
   if (destinationLength == 0) {
@@ -110,8 +119,18 @@ void setDirtyState(bool dirty) {
   updateSequenceTitle();
 }
 
-bool writeRememberedCurrentPath() {
-  if (!ensureSequenceStorageRoot()) {
+bool ensureSequenceStorageRootDirect() {
+  if (!fileSystemExists) {
+    return false;
+  }
+  if (LittleFS.exists(kSequenceStorageRoot)) {
+    return true;
+  }
+  return LittleFS.mkdir(kSequenceStorageRoot);
+}
+
+bool writeRememberedCurrentPathDirect() {
+  if (!ensureSequenceStorageRootDirect()) {
     return false;
   }
 
@@ -129,6 +148,10 @@ bool writeRememberedCurrentPath() {
   file.println(g_currentPath);
   file.close();
   return true;
+}
+
+bool writeRememberedCurrentPath() {
+  return runFlashSafeSequenceWrite(writeRememberedCurrentPathDirect);
 }
 
 bool readRememberedCurrentPath(char* output, size_t outputLength) {
@@ -495,7 +518,7 @@ bool ensureSequenceStorageRoot() {
   if (LittleFS.exists(kSequenceStorageRoot)) {
     return true;
   }
-  return LittleFS.mkdir(kSequenceStorageRoot);
+  return runFlashSafeSequenceWrite(ensureSequenceStorageRootDirect);
 }
 
 void initializeSequenceStorage() {
@@ -532,27 +555,33 @@ bool saveSequenceToPath(const char* path) {
     return false;
   }
 
-  if (LittleFS.exists(tempPath)) {
-    LittleFS.remove(tempPath);
-  }
-
   SequenceDocument document;
   captureCurrentDocument(document);
 
-  File file = LittleFS.open(tempPath, "w");
-  if (!file) {
-    return false;
-  }
-  writeSequenceDocument(file, document);
-  file.flush();
-  file.close();
+  bool saved = runFlashSafeSequenceWrite([&]() {
+    if (LittleFS.exists(tempPath)) {
+      LittleFS.remove(tempPath);
+    }
 
-  if (LittleFS.exists(path) && !LittleFS.remove(path)) {
-    LittleFS.remove(tempPath);
-    return false;
-  }
-  if (!LittleFS.rename(tempPath, path)) {
-    LittleFS.remove(tempPath);
+    File file = LittleFS.open(tempPath, "w");
+    if (!file) {
+      return false;
+    }
+    writeSequenceDocument(file, document);
+    file.flush();
+    file.close();
+
+    if (LittleFS.exists(path) && !LittleFS.remove(path)) {
+      LittleFS.remove(tempPath);
+      return false;
+    }
+    if (!LittleFS.rename(tempPath, path)) {
+      LittleFS.remove(tempPath);
+      return false;
+    }
+    return true;
+  });
+  if (!saved) {
     return false;
   }
 
