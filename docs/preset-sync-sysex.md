@@ -1,0 +1,1325 @@
+# HexBoard Preset Sync SysEx Protocol Draft
+
+This is the design spec for HexBoard preset sync. The synth preset subset,
+named synth-wavetable write/read path, raw `/layouts.dat` user geometry catalog
+storage, and live Apply for generated EDO/equal-step plus Scala/cents-table
+geometry bundles are implemented in firmware. Factory tuning/layout/scale
+catalogs are exposed as generated read-only geometry objects. Profile, bundle,
+backup, and ratio-list tuning workflows remain draft design until their runtime
+models are implemented.
+
+The intent is to keep the device-side protocol small while allowing the web app
+to handle tedious editing work such as Scala import, individual button mapping,
+and larger preset organization. On-device editing should stay focused on compact
+musical controls such as generated x-EDO tunings, isomorphic layout vectors,
+profile selection, and simple scale/color choices.
+
+## Design Goals
+
+- Version every protocol frame and every transferred object schema.
+- Avoid raw LittleFS file sync. Transfer musical objects, not filesystem images.
+- Keep factory tunings/layouts read-only and allow user tunings/layouts in user
+  slots.
+- Let profiles reference tuning, layout, scale color, explicit button mapping,
+  and synth preset objects by identity instead of depending only on hard-coded
+  array positions.
+- Support small, ACKed chunks so USB MIDI and serial MIDI can share the same
+  protocol.
+- Validate every write with a whole-object CRC32 before applying it.
+- Make the simple path simple: generated EDO tuning plus vector layout should be
+  compact enough to create on-device.
+- Put advanced paths in the web app: Scala import, full cents/ratio lists,
+  individual button edits, and batch backup/restore.
+
+## Storage Direction
+
+This protocol maps to separate persistent catalogs:
+
+- `/settings.dat` remains the main profile/settings file.
+- `/layouts.dat` is the user musical-geometry catalog. Despite the short name,
+  it owns user-generated tunings, layouts, scales, scale color maps, and
+  explicit button maps because those objects need to reference each other.
+- `/synth_presets.dat` stores named synth presets with folder paths and
+  wavetable folder/name dependencies.
+- `/synth_wavetables.dat` stores the named user wavetable catalog. Each catalog
+  entry points to a sample file generated from the wavetable object id.
+
+Keeping user tunings and layouts together in `/layouts.dat` avoids fragile
+cross-file references such as a user layout pointing to a missing user tuning.
+The file can still expose separate object types through SysEx.
+
+File headers:
+
+| File | Magic | Version owner | Payload |
+| --- | --- | --- | --- |
+| `/settings.dat` | `STG` | Main settings schema | Main profile bytes and object references |
+| `/layouts.dat` | `LYT` | User mapping catalog schema | User tuning/layout/scale/color/map objects |
+| `/synth_presets.dat` | `SYP` | Synth preset catalog schema | Named synth preset objects, folders, and wavetable references |
+| `/synth_wavetables.dat` | `SYW` | Synth wavetable catalog schema | Named user wavetable objects and sample-file paths |
+
+The current firmware has `/settings.dat`, named/foldered `/synth_presets.dat`,
+named/foldered `/synth_wavetables.dat`, and `/layouts.dat`. The current
+`/layouts.dat` implementation stores and round-trips raw validated object
+bodies. It can also apply generated EDO/equal-step and Scala/cents-list
+`UserTuning` objects, isomorphic vector `UserLayout` objects, `UserScale`
+membership, `ScaleColorMap` degree colors, and format-1 `ExplicitButtonMap`
+note/color overrides to the live pitch and LED runtime. The on-device `Tuning`,
+`Layout`, and `Scales` browsers are backed by factory read-only geometry
+objects plus saved runtime-compatible user geometry objects. Factory entries
+are shown flat on-device even though their protocol folder remains `/Built In`.
+It does not yet apply profile references, bundle manifests, or ratio-list
+tunings.
+
+## Relationship To Current SysEx
+
+The current firmware already implements:
+
+- MIDI universal device identity inquiry and response.
+- Delegated-control SysEx under the development manufacturer ID `0x7D` with
+  command bytes `0x01`, `0x02`, and `0x03`.
+
+Preset sync should coexist with that protocol. This draft reserves a new command
+family byte:
+
+```text
+F0 7D 10 <protocol...> F7
+```
+
+`0x10` means "HexBoard preset sync". The existing delegated-control commands
+remain:
+
+```text
+F0 7D 01 F7
+F0 7D 02 F7
+F0 7D 03 <led-records...> F7
+```
+
+`0x7D` is the MIDI development/educational manufacturer ID. Replace it with an
+assigned manufacturer ID if the project gets one.
+
+## Device Inquiry
+
+Hosts should start with the standard MIDI device identity request:
+
+```text
+F0 7E <device-id> 06 01 F7
+```
+
+The current firmware response payload is:
+
+```text
+7E 00 06 02 7D 01 00 01 00 <hardware-version> 00 00 00
+```
+
+Example all-call request:
+
+```text
+F0 7E 7F 06 01 F7
+```
+
+Example response from hardware version `2`:
+
+```text
+F0 7E 00 06 02 7D 01 00 01 00 02 00 00 00 F7
+```
+
+After identity, the host sends a preset-sync hello request to negotiate protocol
+version, capabilities, and chunk size.
+
+## SysEx Frame
+
+All preset-sync messages use this frame:
+
+```text
+F0 7D 10 <major> <minor> <message> <transaction-ms7> <transaction-ls7> <payload...> F7
+```
+
+| Field | Meaning |
+| --- | --- |
+| `F0` | SysEx start |
+| `7D` | Development/educational manufacturer ID |
+| `10` | HexBoard preset-sync family |
+| `<major>` | Protocol major version |
+| `<minor>` | Protocol minor version |
+| `<message>` | Message type |
+| `<transaction-ms7> <transaction-ls7>` | Host-chosen `u14` transaction id |
+| `<payload...>` | Message-specific 7-bit-safe payload |
+| `F7` | SysEx end |
+
+Protocol `1.0` is the first version defined by this draft.
+
+Major versions are incompatible. If a device receives an unsupported major
+version, it should respond with `NACK` error `UnsupportedProtocol`.
+
+Minor versions are additive. A device may accept a lower host minor version and
+must ignore unknown optional flags. Required features must be negotiated through
+the hello capability flags before use.
+
+## 7-Bit Data Types
+
+All bytes inside a SysEx frame must be `0x00..0x7F`.
+
+| Type | Encoding |
+| --- | --- |
+| `u7` | One byte, `0..127` |
+| `u14` | Two 7-bit bytes, most-significant group first |
+| `u21` | Three 7-bit bytes, most-significant group first |
+| `u28` | Four 7-bit bytes, most-significant group first |
+| `u35` | Five 7-bit bytes, most-significant group first; top three bits zero for `u32` values |
+| `s14` | `u14` biased by `8192` |
+| `s21` | `u21` biased by `1048576` |
+| `bool` | `0x00` false, `0x01` true |
+
+Binary object data is carried inside chunks using 8-to-7 packing:
+
+1. Split raw bytes into groups of up to `7`.
+2. Emit one prefix byte. Bit `0` contains raw byte `0` bit `7`, bit `1`
+   contains raw byte `1` bit `7`, and so on.
+3. Emit the low `7` bits of each raw byte.
+4. The final group may contain fewer than `7` raw bytes.
+
+Example raw bytes:
+
+```text
+48 42 53 31
+```
+
+Packed SysEx data:
+
+```text
+00 48 42 53 31
+```
+
+Example raw bytes containing high bits:
+
+```text
+80 4F 12 00
+```
+
+Packed SysEx data:
+
+```text
+01 00 4F 12 00
+```
+
+## Checksums And CRC
+
+Each data chunk carries a lightweight checksum:
+
+```text
+chunkChecksum = sum(unpackedChunkBytes) mod 128
+```
+
+The complete transferred object also carries a CRC32:
+
+- Polynomial: `0xEDB88320`
+- Initial value: `0xFFFFFFFF`
+- Final XOR: `0xFFFFFFFF`
+- Byte order for the numeric CRC field: `u35`
+
+This matches the existing firmware `crc32()` implementation used for settings
+and synth preset files.
+
+Receivers should use chunk checksums to catch immediate chunk damage and the
+whole-object CRC32 to decide whether the object can be committed. Partial writes
+must not be applied.
+
+## Message Types
+
+| Type | Name | Direction | Meaning |
+| --- | --- | --- | --- |
+| `0x01` | `HELLO_REQ` | Host to device | Negotiate protocol and host limits |
+| `0x02` | `HELLO_RESP` | Device to host | Return device capabilities and limits |
+| `0x06` | `ACK` | Either | Acknowledge a message or chunk |
+| `0x07` | `NACK` | Either | Reject a message or chunk |
+| `0x20` | `OBJECT_LIST_REQ` | Host to device | List objects by type |
+| `0x21` | `OBJECT_LIST_RESP` | Device to host | Return one object-list page |
+| `0x22` | `READ_REQ` | Host to device | Request one object |
+| `0x23` | `READ_BEGIN` | Device to host | Start a device-to-host transfer |
+| `0x24` | `WRITE_BEGIN` | Host to device | Start a host-to-device transfer |
+| `0x25` | `DATA_CHUNK` | Either | Send one object chunk |
+| `0x26` | `TRANSFER_END` | Sender to receiver | Mark all chunks sent |
+| `0x27` | `WRITE_COMMIT` | Host to device | Validate and persist a received object |
+| `0x28` | `TRANSFER_ABORT` | Either | Cancel the active transfer |
+| `0x29` | `DELETE_REQ` | Host to device | Delete a user object |
+| `0x2A` | `SYNTH_PARAM_SET` | Host to device | Apply live synth setting bytes without an object transfer |
+
+Only one write transfer should be active at a time. A device may also allow only
+one total transfer at a time. If busy, it should send `NACK Busy`.
+
+## ACK And NACK
+
+`ACK` payload:
+
+```text
+<acked-message> <status> <next-chunk-index-u21> <detail>
+```
+
+| Field | Meaning |
+| --- | --- |
+| `<acked-message>` | Message type being acknowledged |
+| `<status>` | `0x00` OK, other values message-specific |
+| `<next-chunk-index-u21>` | Next expected chunk, or `0` when not chunk-related |
+| `<detail>` | Optional detail, normally `0` |
+
+`NACK` payload:
+
+```text
+<failed-message> <error-code> <expected-chunk-index-u21> <detail>
+```
+
+Common error codes:
+
+| Code | Name | Meaning |
+| --- | --- | --- |
+| `0x01` | `UnsupportedProtocol` | Major version or required feature unsupported |
+| `0x02` | `UnknownMessage` | Message type is unknown |
+| `0x03` | `BadLength` | Payload length is invalid |
+| `0x04` | `BadObjectType` | Object type is unknown or unsupported |
+| `0x05` | `BadChecksum` | Chunk checksum mismatch |
+| `0x06` | `BadCRC` | Whole-object CRC mismatch |
+| `0x07` | `UnexpectedChunk` | Chunk index or offset is not the next expected value |
+| `0x08` | `Busy` | Another transfer or flash write is active |
+| `0x09` | `StorageFull` | Not enough device storage |
+| `0x0A` | `WriteProtected` | Factory or read-only object cannot be changed |
+| `0x0B` | `ObjectMissing` | Requested object does not exist |
+| `0x0C` | `SchemaMismatch` | Object schema cannot be read by this firmware |
+| `0x0D` | `ValidationFailed` | Object parsed but contains invalid values |
+| `0x0E` | `Timeout` | Transfer expired |
+
+## Hello
+
+`HELLO_REQ` payload:
+
+```text
+<host-max-packed-chunk-u14> <required-cap-flags-u28>
+```
+
+`host-max-packed-chunk` is the largest packed chunk payload the host wants to
+receive in one `DATA_CHUNK`. A web app over USB MIDI can ask for larger chunks.
+A serial MIDI host should ask for smaller chunks.
+
+`required-cap-flags` lets a host fail early if a required operation is missing.
+Send `0` for discovery.
+
+The web app uses this exchange for connection discovery: it probes candidate Web
+MIDI input/output pairs, requires protocol major `1`, requires the synth preset
+capability bit, and checks the synth preset schema before treating a responder as
+a compatible HexBoard.
+
+`HELLO_RESP` payload:
+
+```text
+<negotiated-major> <negotiated-minor>
+<device-max-packed-chunk-u14>
+<cap-flags-u28>
+<max-raw-object-bytes-u28>
+<settings-schema-version>
+<synth-preset-schema-version>
+<profile-count>
+<synth-preset-count-u14>
+<user-tuning-slots>
+<user-layout-slots>
+<scale-color-map-slots>
+<explicit-button-map-slots>
+<hardware-version>
+```
+
+Protocol `1.0` does not carry a separate `UserScale` slot byte. Hosts should
+use the user-scale capability bit and `OBJECT_LIST_REQ` for `UserScale`; current
+firmware stores user scales in the same `/layouts.dat` catalog limit as the
+other user geometry object types.
+
+Capability flags:
+
+| Bit | Meaning |
+| --- | --- |
+| `0` | Profile read/write |
+| `1` | Synth preset read/write |
+| `2` | User tuning read/write |
+| `3` | User layout read/write |
+| `4` | User scale read/write |
+| `5` | Scale color map read/write |
+| `6` | Explicit button map read/write |
+| `7` | Active snapshot read |
+| `8` | Dry-run validation |
+| `9` | Delete user object |
+| `10` | Factory object listing |
+| `11` | Synth wavetable write |
+| `12` | Live synth parameter set |
+| `13` | Cents-table runtime tuning |
+
+Example hello request, transaction `1`, host max packed chunk `128`, no required
+flags:
+
+```text
+F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
+```
+
+Example response, transaction `1`, max packed chunk `128`, capabilities
+`0x3F7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
+delete user object, factory geometry listing, synth wavetable objects, live
+synth parameter set, and cents-table runtime tuning), max raw object bytes
+`66560`, settings schema `19`, synth
+preset schema `7`, `9` profiles, `128` synth preset entries, `64` slots for
+each advertised user geometry count, hardware version `2`:
+
+```text
+F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 7F 7E 00 04 08 00 13 07 09 01 00 40 40 40 40 02 F7
+```
+
+## Object Addressing
+
+Many messages use a field named `<slot-u14>` for compactness. Treat it as an
+object handle:
+
+- For fixed arrays, it is the actual slot index. Current examples include main
+  profiles `0..8`.
+- For catalog files such as `/layouts.dat` and the named/foldered
+  `/synth_presets.dat`, it is a compact handle returned by `OBJECT_LIST_RESP`.
+  The handle may change after create/delete/reorder operations.
+- Factory geometry handles start at `0x2000`, are generated on demand, and are
+  not stored in `/layouts.dat`.
+- Persistent identity comes from the object's `ObjectId` TLV, not from the
+  handle.
+- `0x3FFF` is reserved as `NEW_OBJECT` in write requests that create a new
+  catalog entry.
+
+Hosts should list a catalog before reading, updating, or deleting entries in
+that catalog. Profiles should store object references by `ObjectId`, not by
+handle.
+
+## Object Types
+
+| Type | Name | Handle meaning |
+| --- | --- | --- |
+| `0x01` | `DeviceProfile` | Main settings/profile slot, current firmware has `0..8` |
+| `0x02` | `ActiveSnapshot` | Read-only snapshot of the currently active runtime state |
+| `0x03` | `UserTuning` | `/layouts.dat` tuning handle or read-only factory handle |
+| `0x04` | `UserLayout` | `/layouts.dat` layout handle or read-only factory handle |
+| `0x05` | `ScaleColorMap` | `/layouts.dat` color-map handle |
+| `0x06` | `ExplicitButtonMap` | `/layouts.dat` button-map handle |
+| `0x07` | `SynthPreset` | Synth-only preset catalog entry; current firmware returns compact catalog handles up to `63` |
+| `0x08` | `Bundle` | Web-app backup containing multiple objects |
+| `0x09` | `Folder` | Optional virtual folder record for catalog navigation |
+| `0x0A` | `UserScale` | `/layouts.dat` scale handle or read-only factory handle |
+| `0x0B` | `SynthWavetable` | Synth-only wavetable catalog entry; current firmware returns compact catalog handles up to `63` |
+
+Factory tunings, factory layouts, and factory scales are listed when the device
+advertises factory object listing. They live in folder `/Built In`, use
+deterministic object ids, set record flag bit `1`, and are read-only.
+
+## Object List
+
+`OBJECT_LIST_REQ` payload:
+
+```text
+<object-type> <page-index-u14> <page-size> <folder-filter-len> <folder-filter-ascii...>
+```
+
+`object-type` may be `0` to list all supported object classes. `page-size`
+allows small responses on serial MIDI. `folder-filter` is optional; omit it by
+sending length `0`.
+
+`OBJECT_LIST_RESP` payload:
+
+```text
+<object-type> <page-index-u14> <page-count-u14> <record-count>
+<record>...
+```
+
+Each record:
+
+```text
+<object-type> <handle-u14> <flags> <schema-major> <schema-minor>
+<object-id-packed-len> <object-id-packed...>
+<folder-len> <folder-ascii...>
+<name-len> <name-ascii...>
+```
+
+Record flags:
+
+| Bit | Meaning |
+| --- | --- |
+| `0` | Valid object exists |
+| `1` | Read-only factory object |
+| `2` | Active object |
+| `3` | Object references another object |
+| `4` | Folder/container record |
+
+Names in list responses should be ASCII and short enough for menu display. Full
+UTF-8 names and folder paths can live inside the object body. For synth
+presets, hosts should treat folder plus name as display organization only and
+use object ids for stable references.
+
+`object-id-packed` is the common `ObjectId` TLV value encoded with the same
+8-to-7 packing used for chunk data.
+
+## Read Transfer
+
+Read request payload:
+
+```text
+<object-type> <handle-u14> <read-flags>
+```
+
+Read flags:
+
+| Bit | Meaning |
+| --- | --- |
+| `0` | Include dependencies if object type is `Bundle` |
+| `1` | Return compact device representation when available |
+| `2` | Return expanded web-app representation when available |
+
+Device response starts with `READ_BEGIN`.
+
+`READ_BEGIN` payload:
+
+```text
+<object-type> <handle-u14>
+<transfer-id-u14>
+<object-schema-major> <object-schema-minor>
+<raw-byte-length-u28>
+<object-crc32-u35>
+<raw-chunk-size-u14>
+<transfer-flags>
+```
+
+Then the device sends one or more `DATA_CHUNK` messages. The host ACKs each
+chunk. The device finishes with `TRANSFER_END`, and the host ACKs it.
+For `SynthWavetable` reads, current firmware sends the same object bytes but
+stages only the metadata prefix in RAM; the `WavetableSamples` TLV data is read
+from the per-table LittleFS sample file as each outgoing chunk is requested.
+New sample files are six-level `49,152`-byte fixed mip tables; `8,192`-byte
+base-only files are still streamed and reported as schema `1.0`.
+Host-to-device `SynthWavetable` writes are received through temporary LittleFS
+files for the raw object and concatenated sample TLVs, so fixed mip uploads do
+not require a contiguous object-sized heap buffer. Firmware keeps the raw-object
+temp file open across incoming data chunks and closes it before validating the
+commit, avoiding repeated append opens during large fixed-mip uploads.
+
+Example read profile slot `0`, transaction `2`:
+
+```text
+F0 7D 10 01 00 22 00 02 01 00 00 00 F7
+```
+
+Example ACK for that request:
+
+```text
+F0 7D 10 01 00 06 00 02 22 00 00 00 00 00 F7
+```
+
+## Write Transfer
+
+Write begin payload:
+
+```text
+<object-type> <handle-u14>
+<transfer-id-u14>
+<object-schema-major> <object-schema-minor>
+<raw-byte-length-u28>
+<object-crc32-u35>
+<raw-chunk-size-u14>
+<write-flags>
+```
+
+Write flags:
+
+| Bit | Meaning |
+| --- | --- |
+| `0` | Apply to active runtime after commit |
+| `1` | Save to flash after commit |
+| `2` | Overwrite existing object at handle |
+| `3` | Dry-run validation only; do not apply or save |
+
+For geometry object writes, firmware validates and applies the runtime object
+before saving when both `ApplyToRuntime` and `SaveToFlash` are set. Generated
+EDO/equal-step tunings and cents-list Scala imports are runtime-compatible when
+their cycle length fits the firmware table limit and their final cents-table
+entry matches `PeriodMilliCents`. Unsupported runtime objects, such as
+ratio-list tunings, are rejected for Apply and are not saved through that
+combined path; hosts can still save those objects with `SaveToFlash` only.
+
+The device ACKs `WRITE_BEGIN` if it can accept the transfer. The host then sends
+`DATA_CHUNK` messages in order. The device ACKs every accepted chunk with the
+next expected chunk index. After all chunks, the host sends `TRANSFER_END`.
+The web app uses this ACKed write path for real-device synth preset saves and
+named Serum/Vital or HexBoard wavetable imports, then waits for the `WRITE_COMMIT` ACK before
+treating the flash write as complete. Live preview sends remain apply-only and
+are not used as the persistence confirmation path.
+
+Live editor changes to individual synth parameters should use `SYNTH_PARAM_SET`
+instead of staging a full `SynthPreset` object. This keeps frequent slider and
+selector updates out of the modal transfer path; full preset opens/saves and
+wavetable imports still use the chunked object path. Current firmware mutes the
+onboard synth for the duration of a host-to-device object write transfer when
+`SaveToFlash` is set in `WRITE_BEGIN`, including commit and temporary-file
+cleanup, but not for `SYNTH_PARAM_SET` or apply-only object transfers.
+
+Example `WRITE_BEGIN` for a new `UserTuning` object, transaction `20`,
+transfer `5`, schema `1.0`, raw length `33`, CRC32 `0x6702FE2B`, raw chunk size
+`64`, save-to-flash flag set:
+
+```text
+F0 7D 10 01 00 24 00 14 03 7F 7F 00 05 01 00 00 00 00 21 06 38 0B 7C 2B 00 40 02 F7
+```
+
+`WRITE_COMMIT` payload:
+
+```text
+<transfer-id-u14>
+<raw-byte-length-u28>
+<object-crc32-u35>
+<commit-flags>
+```
+
+`commit-flags` repeats the meaningful write flags so a host can stage a transfer
+and decide whether to apply/save only at commit time. The device must recompute
+CRC32 from the staged raw object bytes before any runtime apply or flash write.
+
+Firmware should avoid applying profile, mapping, or synth changes while notes
+are held. A simple implementation can reject commit with `Busy` until active
+notes are clear, or perform panic cleanup before applying if that behavior is
+explicitly documented in the user-facing workflow.
+
+## Data Chunks
+
+`DATA_CHUNK` payload:
+
+```text
+<transfer-id-u14>
+<chunk-index-u21>
+<raw-offset-u28>
+<raw-length-u14>
+<chunk-checksum>
+<packed-data...>
+```
+
+`raw-length` is the number of unpacked bytes in this chunk. `packed-data` is the
+8-to-7 encoded representation of those raw bytes.
+
+Example chunk containing only raw bytes `48 42 53 31` (`"HBS1"`), transfer `5`,
+chunk `0`, offset `0`, checksum `0x0E`:
+
+```text
+F0 7D 10 01 00 25 00 13 00 05 00 00 00 00 00 00 00 00 04 0E 00 48 42 53 31 F7
+```
+
+Example `NACK` for bad checksum on the same chunk:
+
+```text
+F0 7D 10 01 00 07 00 13 25 05 00 00 00 02 F7
+```
+
+## Transfer End And Abort
+
+`TRANSFER_END` payload:
+
+```text
+<transfer-id-u14> <final-chunk-count-u21>
+```
+
+The receiver ACKs if all chunks were received in order and staged bytes match
+the declared length.
+
+`TRANSFER_ABORT` payload:
+
+```text
+<transfer-id-u14> <reason-code>
+```
+
+Both sides should free staged transfer memory after abort. Current firmware
+cancels either an active host-to-device write or device-to-host read with the
+matching transfer id. The web app sends `TRANSFER_ABORT` if a device-to-host
+object read stalls long enough to hit its inactivity timeout.
+
+## Delete User Object
+
+`DELETE_REQ` payload:
+
+```text
+<object-type> <handle-u14> <delete-flags>
+```
+
+Delete flags:
+
+| Bit | Meaning |
+| --- | --- |
+| `0` | Dry-run validation only |
+| `1` | Delete dependencies that are uniquely owned by this object |
+
+The device must reject deletion of factory/read-only objects. It should also
+reject deletion when another saved object references the target, unless the host
+uses a validated bundle workflow that updates or removes those references in the
+same operation.
+
+## Live Synth Parameter Set
+
+`SYNTH_PARAM_SET` payload:
+
+```text
+<record-count> <setting-key> <value-low7> <value-high1> ...
+```
+
+Each record applies one synth preset `SettingKey` byte to the current runtime.
+`value-low7` carries bits `0..6`; `value-high1` carries bit `7` and must be `0`
+or `1`. Firmware rejects non-synth setting keys and ACKs the frame after all
+records are applied. The message marks settings dirty for the normal debounced
+profile autosave path, but it does not synchronously save flash, does not stage
+a read/write transfer, does not mute audio, and does not show the `MIDI SysEx
+Transfer` screen.
+
+Hosts must keep these `SettingKey` ordinals tied to the current settings schema.
+In schema `19`, `Serial Debug` is no longer a persisted setting, so all synth
+setting ordinals are one lower than earlier in-development builds that still had
+the leading `Debug` byte.
+
+Firmware applies each key through the same targeted runtime update used by the
+matching on-device synth menu control. For example, `PlaybackMode` still resets
+current synth frequencies because the on-device control does, while envelope,
+LFO, wheel amount, drive, and wavetable-position edits update cached synth
+parameters without rebuilding layout or redrawing the menu.
+
+## Object Body Format
+
+Transferred objects are raw binary bytes before 8-to-7 packing. The common
+object body starts with:
+
+```text
+48 42 53 31 <object-type> <schema-major> <schema-minor> <object-flags> <tlv...>
+```
+
+`48 42 53 31` is ASCII `"HBS1"`.
+
+Each TLV record is:
+
+```text
+<tag-u8> <length-u16-little-endian> <value-bytes...>
+```
+
+Common TLV tags:
+
+| Tag | Name | Value |
+| --- | --- | --- |
+| `0x01` | `Name` | UTF-8, no NUL terminator |
+| `0x02` | `ObjectId` | 16-byte stable id generated by the web app or firmware |
+| `0x03` | `Source` | UTF-8 such as `device`, `web-app`, or `scala-import` |
+| `0x04` | `Comment` | Optional UTF-8 note |
+| `0x05` | `Dependency` | Repeated object reference records |
+| `0x06` | `FolderPath` | UTF-8 path; root is `/`; unescaped `/` separates nested folders; literal folder-name `/`, `\`, and `%` are encoded as `%2F`, `%5C`, and `%25` |
+| `0x07` | `SortName` | Optional UTF-8 normalized sort/display key |
+| `0x08` | `Tags` | UTF-8 comma-separated tags, optional |
+
+For geometry objects, firmware stores menu-facing `Name` and `FolderPath`
+metadata in fixed `20`-byte buffers, so hosts should cap each visible geometry
+name or single folder label at `19` characters.
+
+Object reference record:
+
+```text
+<object-type-u8> <handle-u16-le> <object-id-16-bytes>
+```
+
+Object ids prevent a profile from silently binding to the wrong user tuning,
+layout, or synth preset after records are rearranged. If a referenced object id
+is missing, the device should reject write commit with `ValidationFailed` or
+load the profile with a documented fallback.
+
+The handle in a saved reference is only a hint. Firmware should resolve by
+`ObjectId` first and may use the handle as a fast path when it still points to
+the same id.
+
+`FolderPath` is metadata, not identity. Moving a preset from `Bass/` to
+`Leads/` should not break profiles that reference its object id. Hosts that
+want a slash inside one folder label, such as `Pads/Warm`, must encode the
+device-facing folder path as `Pads%2FWarm`; firmware displays the decoded label
+but does not treat the escaped slash as a submenu separator.
+
+## Device Profile Object
+
+`DeviceProfile` represents a main HexBoard profile. It should not be a raw copy
+of one row of `settingsProfiles`, because that makes the protocol fragile when
+`SettingKey` changes.
+
+Recommended TLVs:
+
+| Tag | Name | Value |
+| --- | --- | --- |
+| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `23` |
+| `0x21` | `SettingValues` | Repeated `<setting-key-u8> <value-u8>` records |
+| `0x22` | `TuningRef` | Object reference |
+| `0x23` | `LayoutRef` | Object reference |
+| `0x24` | `ScaleColorMapRef` | Optional object reference |
+| `0x25` | `ExplicitButtonMapRef` | Optional object reference |
+| `0x26` | `SynthPresetRef` | Optional object reference |
+| `0x27` | `ScaleRef` | Optional object reference |
+
+`SettingValues` may use current `SettingKey` ordinals only when
+`SettingsSchemaVersion` exactly matches the firmware's current schema. Current
+firmware migrates `/settings.dat` versions `20` through `22`; older or unknown
+versions reset to factory defaults. For future-proof sync, keep user
+tunings/layouts/mappings in separate objects and store references here.
+
+## User Tuning Object
+
+`UserTuning` supports both on-device generated EDO and web-app imported tuning
+data.
+
+Recommended TLVs:
+
+| Tag | Name | Value |
+| --- | --- | --- |
+| `0x20` | `TuningKind` | `u8`: `1` EDO, `2` cents list, `3` ratio list, `4` equal step |
+| `0x21` | `EdoDivisions` | `u16-le`; EDO divisions for EDO, cycle length for equal-step/cents-table display metadata |
+| `0x22` | `PeriodMilliCents` | `u32-le`, default `1200000` for octave |
+| `0x23` | `StepMilliCents` | `u32-le`, cached EDO step or explicit equal-step size |
+| `0x24` | `ReferenceMidiNote` | `u8`, default `69` for A4 |
+| `0x25` | `ReferenceMilliHz` | `u32-le`, default `440000` |
+| `0x26` | `CentsTable` | Repeated `i32-le` mill cent offsets within period |
+| `0x27` | `RatioTable` | Repeated `<numerator-u32-le> <denominator-u32-le>` |
+| `0x28` | `KeyLabels` | Repeated length-prefixed labels, one per cycle degree; each label should be capped at `7` display characters |
+
+The device can create and edit an EDO object with only `Name`, `TuningKind`,
+`EdoDivisions`, and `PeriodMilliCents`. The web app can also create equal
+cents-per-step tunings with `TuningKind = 4`, `StepMilliCents`, and a cycle
+length in `EdoDivisions` for labels/colors; host tooling derives
+`PeriodMilliCents` from those two values so they cannot diverge. Generated EDO
+and equal-step tunings can include `KeyLabels`, `ReferenceMidiNote`, and
+`ReferenceMilliHz`; the web editor presents labels in A-first order, defaults
+to A-first pitch labels, and rotates them into the firmware's C-centered cycle
+order for `KeyLabels`. Scala imports default to a MIDI-note-60 1/1 reference
+when no existing Scala reference is being preserved. Scala
+`.scl` import is a host-side feature; the web app treats a one-token suffix
+after an interval value as a note label and can reuse the final period-row label
+for the implicit 1/1 root. Current firmware live Apply supports `TuningKind =
+1`, `TuningKind = 2`, and `TuningKind = 4`; it loads cycle length, nominal step
+size, key labels when present, `ReferenceMidiNote`, `ReferenceMilliHz`, and for
+cents-list tunings a RAM copy of `CentsTable`. Cents-list playback treats degree
+`0` as an implicit `0`-cent reference at `ReferenceMidiNote`/`ReferenceMilliHz`,
+uses table entry `1` as the first interval, and wraps all positive or negative
+step values by `PeriodMilliCents`. The web app parses Scala text, derives
+period/cycle metadata, and writes the cents table. Firmware does not parse
+Scala text.
+
+The tuning object must be complete enough for both the onboard synth and every
+MIDI output mode. For equal-step tunings, firmware can derive frequency,
+single-channel MIDI note numbers, and MPE bend offsets from `StepMilliCents`,
+`PeriodMilliCents`, `ReferenceMidiNote`, and `ReferenceMilliHz`. For imported
+or irregular cents-list tunings, firmware first maps `ReferenceMidiNote` to the
+tuning step that should act as the implicit 1/1 degree, then uses `CentsTable`
+to compute the exact frequency for each `stepsFromC` value. It decides whether
+standard MIDI, multi-channel non-MPE retuning, or MPE pitch bend is required
+from the same resolved cent offset. `RatioTable` remains reserved and is not
+currently runtime-compatible.
+
+Example raw TLV snippet for a generated `19 EDO` tuning:
+
+```text
+48 42 53 31 03 01 00 00
+01 06 00 31 39 20 45 44 4F
+20 01 00 01
+21 02 00 13 00
+22 04 00 80 4F 12 00
+```
+
+## User Layout Object
+
+`UserLayout` should represent compact isomorphic layouts first and only move to
+explicit per-button maps when needed.
+
+Recommended TLVs:
+
+| Tag | Name | Value |
+| --- | --- | --- |
+| `0x20` | `LayoutKind` | `u8`: `1` isomorphic vector, `2` explicit map reference |
+| `0x21` | `TuningRef` | Object reference |
+| `0x22` | `CenterButton` | `u16-le`, current defaults often use `64`, `65`, or `75` |
+| `0x23` | `AcrossSteps` | `i16-le` |
+| `0x24` | `DownLeftSteps` | `i16-le` |
+| `0x25` | `Portrait` | `u8 bool`; legacy compatibility metadata |
+| `0x26` | `ExplicitButtonMapRef` | Object reference |
+
+This matches the current firmware pitch-layout model closely enough for simple
+on-device editing: choose tuning, center button, across steps, and down-left
+steps. Display orientation is stored separately as the four-step physical
+`DeviceRotation` setting. Current factory layout selection still seeds that
+setting from legacy portrait/landscape metadata: portrait layouts use `0`, and
+landscape layouts use `90`.
+
+Current firmware live Apply supports `LayoutKind = 1` vector layouts. Applying
+a layout replaces the runtime layout name, center button, across vector, and
+down-left vector, clears previous explicit button overrides, then rebuilds
+scale membership, MIDI pitch assignment, and LED color caches.
+
+A web bundle may contain multiple `UserLayout` objects for the same tuning. A
+generated vector layout can still be edited on-device with the compact
+generator fields. When a layout is backed by an `ExplicitButtonMap`, firmware
+should treat it as manually authored: hide or disable the on-device layout
+generator controls for that loaded layout and expose only select/delete or
+replace actions unless a later firmware design adds safe manual editing.
+
+The web app and intended future firmware model use `AcrossSteps` plus
+`UpRightSteps` as the user-facing vector axes. Until the firmware/schema are
+updated, the web app writes the existing `DownLeftSteps` TLV as a compatibility
+translation:
+
+```text
+DownLeftSteps = -UpRightSteps
+UpRightSteps = -DownLeftSteps
+```
+
+The layout bundle also stores a four-step device orientation value
+(`0/90/180/270`) for preview and firmware display/device rotation behavior. That
+orientation is bundle-level metadata right now and is not encoded in the
+current `UserLayout` TLV.
+
+## User Scale Object
+
+`UserScale` stores named scale membership for a tuning. It replaces the need for
+a large fixed `scaleOptions[]` list for user-generated tunings while preserving
+the current runtime idea of scale membership plus a separate root/key setting.
+
+Recommended TLVs:
+
+| Tag | Name | Value |
+| --- | --- | --- |
+| `0x20` | `TuningRef` | Optional object reference |
+| `0x21` | `CycleLength` | `u16-le` |
+| `0x22` | `RootDegree` | `u16-le`, normally `0`; profile key/root shifts this at runtime |
+| `0x23` | `PatternSteps` | Repeated `u8` interval sizes; optional metadata, empty in the current web editor |
+| `0x24` | `IncludedDegrees` | Repeated `u16-le` scale degrees relative to root |
+
+`IncludedDegrees` is the authoritative membership table. The current web editor
+does not expose `PatternSteps` because maintaining both pattern intervals and
+explicit included degrees is redundant. Root/key changes shift generated scale
+membership at runtime, but they must not rewrite manual button records.
+Current firmware live Apply converts `IncludedDegrees` into the runtime interval
+pattern used by `applyScale()` and forces degree `0` to remain included.
+
+## Scale Color Map Object
+
+`ScaleColorMap` lets users customize scale-degree colors without requiring a
+full per-button map. Each web bundle has one custom scale-degree color set. Its
+object name is generic because the firmware color-mode menu exposes the palette
+as `Custom` rather than naming each palette.
+
+Recommended TLVs:
+
+| Tag | Name | Value |
+| --- | --- | --- |
+| `0x20` | `TuningRef` | Optional object reference |
+| `0x21` | `CycleLength` | `u16-le` |
+| `0x22` | `DefaultColorMode` | `u8`, firmware-defined color mode applied with this color map |
+| `0x23` | `DegreeColors` | Repeated `<degree-u16-le> <hue-u16-le> <sat-u8> <val-u8>` |
+
+Hue is `0..3599` tenths of a degree. Saturation and value are `0..255`.
+
+On-device editing can expose a small color chooser per scale degree or a few
+palette templates. The web app can offer batch editing and previews. Current
+firmware live Apply loads this object into a user runtime palette and sets
+`ColorMode` from `DefaultColorMode`. Value `1` is `Custom` and renders the
+stored scale-degree colors; other firmware-defined values render the generated
+color modes. Per-button color overrides take precedence only when `Custom` is
+active. The stored HSV value remains the active/play color target. Firmware caps only the resting
+hardware LED value at `VALUE_NORMAL` before applying `Rest Bright`, so custom
+colors keep the same animation headroom as generated color modes.
+
+## Explicit Button Map Object
+
+`ExplicitButtonMap` is the advanced escape hatch for individual button editing.
+The web app should own this path. The device may only display it as a named
+mapping and allow select/delete.
+
+Recommended TLVs:
+
+| Tag | Name | Value |
+| --- | --- | --- |
+| `0x20` | `TuningRef` | Object reference |
+| `0x21` | `LayoutRef` | Optional object reference |
+| `0x22` | `MapRecordFormat` | `u8`, start with `1` |
+| `0x23` | `ButtonRecords` | Repeated map records |
+
+Map record format `1`:
+
+```text
+<button-index-u16-le>
+<role-u8>
+<steps-from-c-i32-le>
+<midi-note-u8>
+<color-mode-u8>
+<hue-u16-le>
+<sat-u8>
+<val-u8>
+```
+
+Roles:
+
+| Value | Meaning |
+| --- | --- |
+| `0` | Unused |
+| `1` | Playable note |
+| `2` | Command button |
+| `3` | Reserved hardware/internal slot |
+
+For the visible HexBoard surface, button indices `0..139` are meaningful. Slots
+`140..159` are internal scan positions in the current firmware and should not be
+used for user note mapping.
+
+Manual button records are absolute within the selected tuning: `steps-from-c`
+is the stored note position for that physical button. Transposition changes
+sounded pitch after mapping, and root/key changes affect scale highlighting,
+but neither setting should regenerate or move a manual button record. A button
+record with a color override similarly takes precedence over the bundle palette.
+Color overrides are active only when the selected color mode is `Custom`.
+Current firmware live Apply supports format `1` records on visible button
+indices `0..139`. `Note` records can override `stepsFromC`; `Unused` records
+disable the button; `Command` records restore built-in command behavior only
+when the index is one of the firmware command buttons, and otherwise act as
+non-playing buttons.
+
+## Synth Preset Object
+
+The current synth setup is already cohesive, so v1 should transfer synth presets
+as synth-only objects, separate from tuning/layout/profile objects.
+
+Synth presets are named and organized by folder path. Current firmware stores a
+counted catalog capped at `128` entries. The 2.0 development file format uses
+fixed-size flash records and keeps only preset metadata plus the current loaded
+preset record in RAM; older on-device preset files are intentionally reset to
+factory defaults instead of migrated.
+
+The user-facing model is a foldered preset library rather than a numbered slot
+bank. The web app presents the foldered library, and the device uses
+`VirtualListMenu` as a folder browser without allocating per-preset `GEMItem`
+objects. Factory defaults copy the factory synth sounds into ordinary catalog
+entries, so hosts should treat restored factory presets like editable and
+erasable user presets.
+
+Recommended TLVs:
+
+| Tag | Name | Value |
+| --- | --- | --- |
+| `0x20` | `SynthPresetSchemaVersion` | `u8`, current firmware is `7` |
+| `0x21` | `SynthValues` | Repeated `<synth-key-u8> <value-u8>` records |
+| `0x22` | Reserved | Category was considered, but v1 organization is folder-only |
+| `0x23` | `Favorite` | `u8 bool` |
+| `0x24` | `LastModifiedUnixTime` | Optional `u32-le` timestamp from the web app |
+| `0x26` | `SynthWavetableName` | UTF-8 wavetable name dependency |
+| `0x27` | `SynthWavetableFolderPath` | UTF-8 wavetable folder dependency |
+
+The current synth preset key set is:
+
+```text
+PlaybackMode
+Waveform
+SynthDrive
+SynthModTarget
+SynthModAmount
+SynthVibratoSpeed
+ArpeggiatorDivision
+SynthBPM
+EnvelopeAttackIndex
+EnvelopeHoldIndex
+EnvelopeDecayIndex
+EnvelopeSustainLevel
+EnvelopeReleaseIndex
+EffectEnvelopeTarget
+EffectEnvelopeAmount
+EffectEnvelopeAttackIndex
+EffectEnvelopeHoldIndex
+EffectEnvelopeDecayIndex
+EffectEnvelopeSustainLevel
+EffectEnvelopeReleaseIndex
+EffectEnvelope2Target
+EffectEnvelope2Amount
+EffectEnvelope2AttackIndex
+EffectEnvelope2HoldIndex
+EffectEnvelope2DecayIndex
+EffectEnvelope2SustainLevel
+EffectEnvelope2ReleaseIndex
+SynthPortamentoTimeIndex
+ArpeggiatorDirection
+SynthWavetablePosition
+SynthLfoTarget
+SynthLfoAmount
+SynthLfoWave
+SynthLfoSpeed
+```
+
+These are sound-focused settings only. A synth preset should not imply the
+current profile slot, tuning, layout, MIDI channel, LED animation, or delegated
+control state.
+
+Schema `4` appends mono portamento and arpeggiator direction to the schema `3`
+value set. Schema `5` appends wavetable position and LFO target/amount/wave/
+speed. Schema `6` adds the separate wavetable folder/name dependency TLVs while
+leaving the synth value list intact. Schema `7` expands `SynthModTarget`,
+`EffectEnvelopeTarget`, `EffectEnvelope2Target`, and `SynthLfoTarget` to include
+`DutyWrp` value `4` and `PolyWrp` value `5`; value `0` is renamed from `Morph`
+to `FoldWrp` without changing stored bytes. Firmware migrates stored
+`/synth_presets.dat` version `7` records by keeping their existing value bytes
+and appending factory defaults for the five new keys; version `8` records are
+migrated by deriving the new wavetable dependency from the legacy `Waveform`
+value.
+
+`SynthLfoWave` values are `0` `Sine`, `1` `Triangle`, `2` `Saw`, `3` `Square`,
+`4` `Noise`, and `5` `Smooth noise`. The noise waves reuse the existing schema
+`7` value byte; no synth preset schema bump is required for the expanded enum.
+`SynthVibratoSpeed` values `0..11` remain `1 Hz` through `12 Hz` sine vibrato;
+value `12` selects `Noise`, a smooth-noise vibrato source running at the same
+`12 Hz` phase rate, without changing the synth value list.
+
+`PlaybackMode` value `5` was the temporary `PolyTbl` mode and is now normalized
+to `Poly` on import. `Waveform` remains in the value list for compatibility, but
+new preset objects use `SynthWavetableName` and `SynthWavetableFolderPath` as
+the actual source dependency. Old `Waveform` values map into the built-in
+compatibility tables and update `SynthWavetablePosition` to the matching anchor;
+`Hybrid` maps to `Basic Shapes` at position `0`, and missing named dependencies
+load `Basic Shapes` until the matching table is installed.
+Built-in wavetable dependencies use the reserved folder path `/Built In`
+unescaped. Firmware accepts the older escaped `%2FBuilt In` alias and the
+normalizer-stripped `Built In` alias for compatibility with earlier saves, but
+new web-app preset writes send `/Built In` directly.
+
+The common `Name` and `FolderPath` TLVs are required for named/foldered synth
+presets. Duplicate names are allowed in different folders. Within the same
+folder, firmware may reject duplicates or allow them as long as object ids stay
+unique.
+
+Example metadata for a named preset in the literal folder label `Pads/Warm`
+using escaped device storage:
+
+```text
+01 0B 00 53 6F 66 74 20 53 74 72 69 6E 67
+06 0B 00 50 61 64 73 25 32 46 57 61 72 6D
+```
+
+## Synth Wavetable Object
+
+`SynthWavetable` object type `0x0B` stores one named user wavetable catalog
+entry. Current firmware supports listing, reading, writing, and deleting
+entries. Presets reference wavetables by `SynthWavetableFolderPath` plus
+`SynthWavetableName`; they do not embed table sample data.
+
+New sample-bearing fixed-mip objects use schema `1.2`. Firmware still accepts
+schema `1.0` base-only wavetable objects for compatibility and older schema
+`1.1` objects only if their TLV payload matches a supported sample layout.
+The body uses the common
+`HBS1` object header and may include common metadata TLVs such as `Name`,
+`ObjectId`, `Source`, and `FolderPath`. Sample-bearing wavetable imports require
+these synth-wavetable TLVs:
+
+| Tag | Name | Value |
+| --- | --- | --- |
+| `0x30` | `WavetableFrameCount` | `u8`, must be `16` |
+| `0x31` | `WavetableSampleCount` | `u16-le`, must be `512` |
+| `0x32` | `WavetableSamples` | one or more TLVs containing `49,152` unsigned bytes total for schema `1.2`; base-only objects use `8,192` bytes total |
+| `0x33` | `WavetableMipLevels` | `u8`; `6` for the fixed mip table or `1` for base-only data |
+
+The mip payload is level-major and frame-major within each level: six levels,
+each with `16` frames and `512` samples per frame. Harmonic limits are `192`,
+`96`, `48`, `24`, `12`, and `6`. Hosts should include `WavetableMipLevels = 6` when
+sending the full fixed mip table; firmware rejects mismatched sample length and
+mip count pairs. The fixed-mip sample payload is split into repeated
+`WavetableSamples` TLVs of at most `32,768` bytes each because a single TLV
+length is 16-bit and the complete fixed-mip payload is `49,152` bytes.
+The web editor's factory wavetable bank is generated from the same sources as
+firmware's flash-resident factory tables: `Basic Shapes` and `Classic` use
+firmware anchor waves, and the other factory entries use default WAV sources.
+All are rendered to the same `16` base frames and processed through the same
+FFT-pruned mip builder as imported wavetables.
+
+The web app's Serum/Vital import path reads wavetable `.wav` files,
+interpolates the source frame axis down to `16` frames, resamples each frame to
+`512` samples, normalizes to unsigned byte samples centered on `128`, builds
+FFT-pruned fixed mip levels, and sends the result with `ApplyToRuntime |
+SaveToFlash`.
+The web app's HexBoard export path writes `.hexwav` files: 8-bit mono WAV
+containers whose data chunk is exactly the `49,152`-byte fixed mip table.
+HexBoard `.hexwav` imports skip the Serum/Vital crunching step; older
+`8,192`-byte `.hexwav` files are accepted and upgraded to a fixed mip table by
+the app before upload.
+Firmware validates the transfer CRC32, copies the sample TLVs into active
+wavetable RAM or a temporary sample file, selects the uploaded folder/name for
+the current runtime patch, writes or replaces the matching catalog entry in
+`/synth_wavetables.dat`, and stores the raw sample bytes in a per-table sample
+file whose short filename is derived from the first 8 bytes of the wavetable
+object id when the save flag is present. Firmware also attempts to
+read and remove the older full-object-id sample path for compatibility, but new
+imports avoid that overlong LittleFS filename. Catalog records with missing
+sample files are skipped/pruned so failed earlier imports do not consume
+wavetable slots. Device-to-host full wavetable reads stream sample bytes from
+that per-table file while sending `DATA_CHUNK` frames instead of building the
+complete object in heap memory. The legacy `/user_wavetable.dat` `UWT` file is
+still loadable through the compatibility reference `/User/UserTbl`, but new
+imports do not write that file.
+
+For metadata-only rename/move updates, hosts write a `SynthWavetable` object
+body containing common `Name`, `ObjectId`, and `FolderPath` TLVs without the
+sample TLVs, using the existing device handle plus `SaveToFlash |
+OverwriteExisting`. Firmware updates only catalog metadata, rejects object-id
+changes, and leaves the sample file untouched.
+
+## Bundle Object
+
+`Bundle` is for web-app backup and restore. It can contain multiple complete
+objects plus a manifest that preserves references between them.
+
+Recommended use:
+
+- Backup all user tunings, layouts, scales, color maps, explicit maps,
+  profiles, and synth presets.
+- For a user musical-geometry bundle, keep one tuning, one custom scale-degree
+  color set, one or more layouts, and one or more scales together in the
+  exported JSON. The web app may unpack these into individual `UserTuning`,
+  `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` writes
+  and preserve the bundle's folder path on each unpacked object until firmware
+  has a first-class editable bundle object.
+- Restore by dry-run validating all objects first.
+- Write dependencies before profiles that reference them.
+- Commit profiles last.
+- Preserve synth preset folder paths and names.
+
+The device does not need to create bundles on-device. It only needs to read or
+write the individual objects after the web app unpacks a bundle.
+
+## Preset Sync Workflows
+
+### Read A Profile
+
+1. Host sends device identity request.
+2. Host sends `HELLO_REQ`.
+3. Device sends `HELLO_RESP`.
+4. Host sends `READ_REQ` for `DeviceProfile` slot `0..8`.
+5. Device sends `READ_BEGIN`.
+6. Host ACKs.
+7. Device sends ordered `DATA_CHUNK` messages.
+8. Host ACKs each chunk.
+9. Device sends `TRANSFER_END`.
+10. Host verifies object CRC32 and ACKs.
+
+### Write A Generated EDO Tuning
+
+1. Host builds a `UserTuning` object with `TuningKind = EDO`.
+2. Host sends `WRITE_BEGIN` for a `/layouts.dat` user tuning handle, or
+   `NEW_OBJECT` to create one.
+3. Device validates handle availability and ACKs.
+4. Host sends chunks.
+5. Device validates chunk checksums and ACKs each chunk.
+6. Host sends `TRANSFER_END`.
+7. Host sends `WRITE_COMMIT` with dry-run first if desired.
+8. Device parses the TLV object, checks range limits, verifies CRC32, and then
+   applies/saves according to flags.
+
+### Write A Scala Import
+
+1. Web app imports `.scl`.
+2. Web app derives period/cycle metadata from the file and converts Scala data
+   into a `UserTuning` `CentsTable`.
+3. Web app writes the object through the same chunked transfer path.
+4. Device stores the converted tuning object. It does not parse Scala text; it
+   uses the converted cents table for synth frequency, MIDI note selection, and
+   MPE pitch bend when the object is applied.
+5. Hosts should require the cents-table runtime tuning capability bit before
+   using `ApplyToRuntime` with Scala/cents-table tunings.
+
+### Write Individual Button Edits
+
+1. Web app creates an `ExplicitButtonMap`.
+2. Web app optionally references an existing `UserTuning` and `UserLayout`.
+3. Device validates button indices, roles, and pitch ranges.
+4. Device stores the map as a named user object, and can apply it to the current
+   runtime layout when the write uses `ApplyToRuntime`.
+5. A profile or layout can reference that map.
+
+### Write A Musical Geometry Bundle
+
+1. Web app dry-run validates the tuning first because synth frequency and MIDI
+   retuning behavior depend on it.
+2. Web app writes the `UserTuning`.
+3. Web app writes each `UserLayout`, each `UserScale`, and the bundle's single
+   `ScaleColorMap`, all referencing the tuning object id.
+4. Web app writes any `ExplicitButtonMap` objects after their referenced layouts.
+5. The web app writes the same `FolderPath` common TLV on every unpacked object
+   in the bundle so device object lists can group related geometry records.
+6. Current firmware stores these records in `/layouts.dat` and can list, read,
+   overwrite, delete, or apply the active EDO/equal-step/Scala cents-list
+   tuning, active vector layout, active scale, color map, and matching explicit
+   button map by compact preset-sync handle.
+7. The device refreshes its virtual `Tuning`, `Layout`, and `Scales` browsers
+   after geometry saves/deletes. `UserTuning` objects are the loadable bundle
+   anchors; linked `UserLayout` and `UserScale` objects appear after that tuning
+   is selected. Future firmware work still needs to hide generated-layout controls
+   whenever the active layout is manual, formalize profile references, and apply
+   bundle switches only after active notes are clear or after an explicitly
+   documented panic cleanup.
+
+For web-editor live preview, the app sends only the active compatible runtime
+objects with `ApplyToRuntime` and without `SaveToFlash`. `Save to HexBoard`
+uses `SaveToFlash` for the full unpacked bundle object set.
+
+### Transfer A Synth Preset
+
+1. Host sends `READ_REQ` or `WRITE_BEGIN` with object type `SynthPreset`.
+2. Hosts should list the synth preset catalog first and use the returned handle
+   for read, overwrite, or delete operations. `NEW_OBJECT` creates or updates by
+   object id. For reads only, current firmware also accepts handle `0x3FFF` as a
+   synthetic current-runtime synth preset so hosts can initialize an editor
+   without changing the loaded sound.
+3. Device validates `SynthPresetSchemaVersion`, `Name`, `FolderPath`, and,
+   when present, the wavetable folder/name dependency TLVs.
+4. Commit with `apply` changes only the current synth runtime for auditioning
+   and marks settings dirty for the normal debounced profile autosave path.
+   Commit with `save` updates `/synth_presets.dat`.
+5. Commit with `save` writes the named preset catalog to `/synth_presets.dat`
+   through the existing flash-safe save path.
+6. The current web app requests one synth preset or wavetable record per
+   object-list page before reading each object body, keeping response frames
+   under conservative SysEx buffer limits.
+7. Current firmware treats chunked preset-sync object reads/writes as a modal
+   transfer window: the display shows `MIDI SysEx Transfer`, normal core-0
+   UI/LED work is paused, and MIDI input is pumped until the exchange goes idle
+   with no active object transfer, or until timeout clears the active transfer.
+   `SYNTH_PARAM_SET`, hello, list, delete, and other one-frame control messages
+   process without opening that modal window.
+8. Current firmware uses the Pico SDK USB stack through Arduino-Pico `MIDIUSB`
+   and a HexBoard-owned MIDI byte parser for SysEx receive.
+9. Current firmware paces device-to-host object reads by waiting for host ACKs
+   after `READ_BEGIN`, after each `DATA_CHUNK`, and after `TRANSFER_END`.
+
+## Implementation Notes For Future Firmware
+
+- Keep the preset-sync parser separate from delegated-control mode. Preset sync
+  is configuration transfer, not a live LED/input protocol.
+- Use bounds-checked parsing for every frame and every TLV.
+- Stage writes in RAM or a temporary file, verify CRC32, then commit.
+- Never overwrite factory objects.
+- Reject writes that reference missing dependencies unless the write is part of
+  a validated bundle workflow.
+- Avoid long blocking writes during active performance. Flash writes currently
+  mute the synth because RP2040 flash operations pause interrupts; save-to-flash
+  host-to-device object writes also mute across the transfer so chunked temp
+  writes and commit cleanup stay covered.
+- If a change adds persisted user tuning/layout/scale/color/map storage, bump
+  the relevant storage schema and document migration separately from the SysEx
+  protocol version.
+- Keep object schema migration separate from wire protocol negotiation. A device
+  may speak protocol `1.0` while supporting newer object schemas.
+
+## Open Design Questions
+
+- User slot counts: current raw `/layouts.dat` storage allows `64` geometry
+  objects total, and on-device associated layout/scale menus show up to `24`
+  user objects for the selected tuning.
+- Object id format: 16 random bytes are robust, but a shorter CRC-based id may
+  be easier on-device. The important rule is that profiles should not silently
+  bind to the wrong object after slot moves.
+- On-device color editing depth: per-degree scale colors are likely worthwhile;
+  per-button color editing is probably better left to the web app.
+- Profile fallback behavior: if a profile references a missing user tuning, the
+  safest behavior is validation failure during write and a clear fallback during
+  load, likely factory `12 EDO` plus first compatible layout.
+- Factory list exposure: the web app may benefit from reading factory tuning and
+  layout metadata, but the firmware can also ship that metadata in the app to
+  keep device responses smaller.

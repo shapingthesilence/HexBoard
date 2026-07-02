@@ -14,7 +14,7 @@ tasks:
   - build: |
       cd Hex*
       make
-      mv build/build.ino.uf2 ../hexboard.ino.uf2
+      mv build/HexBoard.ino.uf2 ../hexboard.ino.uf2
       sha256sum ../hexboard.ino.uf2
 artifacts:
   - hexboard.ino.uf2

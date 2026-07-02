@@ -1,0 +1,329 @@
+HEXBOARD SEQUENCER STORAGE AND FILE REQUIREMENTS
+
+ID: SEQ-FILE-001
+Title: Storage Root
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+Sequence files shall be stored under /Sequences in onboard flash.
+
+Details:
+- General sequencer preferences such as Tap Preview, Monophonic, MIDI
+  Sync settings, and Seq Lights settings shall not be stored in sequence files.
+- Sequence file writes, remembered current-path writes, file and folder
+  management mutations, and USB Backup restore mutations shall use the firmware
+  flash-safe write path so synth audio is muted and held idle while onboard
+  flash is busy.
+
+
+ID: SEQ-FILE-002
+Title: Current Path Memory
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+The system shall remember the current sequence file path so the last loaded
+sequence can return on startup.
+
+
+ID: SEQ-FILE-003
+Title: Sequence Extension
+Status: Active
+Area: Files
+Priority: Medium
+
+Requirement:
+Sequence files shall use the .hbseq extension.
+
+
+ID: SEQ-FILE-004
+Title: Visible File Name
+Status: Active
+Area: Files
+Priority: Medium
+
+Requirement:
+The visible sequence name shown in the UI shall be the file name without the
+extension.
+
+
+ID: SEQ-FILE-005
+Title: New Blank Sequence
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+New shall clear the sequencer to a blank untitled sequence.
+
+Details:
+- New shall clear the current loaded file path.
+- New shall leave the blank sequence in a clean non-dirty state.
+
+
+ID: SEQ-FILE-006
+Title: Save Current Sequence
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+Save shall write the current sequence back to the currently loaded file.
+
+Details:
+- If no current file exists, Save shall open folder selection first, then
+  sequence naming, and save after the user chooses a location and enters a
+  name.
+
+
+ID: SEQ-FILE-007
+Title: Save New Sequence
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+Save New shall let the user choose a folder, enter a new sequence name, and
+save a new sequence file there.
+
+
+ID: SEQ-FILE-008
+Title: Load Sequence
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+Load shall open the sequence browser and load a selected sequence file.
+
+
+ID: SEQ-FILE-009
+Title: Revert Sequence
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+Revert shall discard unsaved edits and reload the last saved version of the
+current sequence.
+
+Details:
+- If no current file exists, the system may fall back to the legacy sequence
+  file if present.
+- If no current or legacy file exists, the sequencer resets to a blank default
+  sequence state.
+- Revert shall restore saved Tie flags along with the other saved step data.
+
+
+ID: SEQ-FILE-010
+Title: File Browser Paging
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+The file browser shall show up to 8 file or folder rows at a time.
+
+Details:
+- ^ more ^ indicates earlier pages exist.
+- v more v indicates later pages exist.
+- Turning past the first or last real file row changes page.
+
+
+ID: SEQ-FILE-011
+Title: Startup Sequence Restore
+Status: Active
+Area: Files
+Priority: Medium
+
+Requirement:
+On startup, the sequencer shall attempt to restore the last remembered current
+sequence path before falling back to the legacy sequence file.
+
+
+ID: SEQ-FILE-012
+Title: File Management Actions
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+The system shall support Rename or Delete, Create Folder, and USB Backup
+actions through the file management workflow.
+
+Details:
+- The system shall provide a `Rename or Delete` browser mode that combines
+  file and folder targeting.
+- In Rename or Delete mode, selecting a folder shall enter that folder.
+- In Rename or Delete mode, the current folder shall be targetable through a
+  `This Folder...` action whenever the browser is not at `/Sequences`.
+- In Rename or Delete mode, selecting a file or `This Folder...` shall open an
+  action page with `Rename`, `Delete`, and `Cancel`.
+- Choosing `Rename` from that action page shall route into the existing file or
+  folder rename workflow for the selected target.
+- Choosing `Delete` from that action page shall route into the existing delete
+  confirmation workflow for the selected target.
+- The confirmation page shall show the target name and offer `Yes, Delete` and
+  `Cancel` choices.
+- No file or folder shall be deleted until `Yes, Delete` is selected.
+
+
+ID: SEQ-FILE-013
+Title: Recursive Folder Deletion
+Status: Active
+Area: Files
+Priority: Medium
+
+Requirement:
+Deleting a folder shall remove that folder and its contents recursively.
+
+
+ID: SEQ-FILE-014
+Title: Naming Mode Character Set
+Status: Active
+Area: Files
+Priority: Medium
+
+Requirement:
+Naming mode shall support uppercase letters plus SPC, hyphen, and the digits
+0 through 9.
+
+
+ID: SEQ-FILE-015
+Title: Naming Mode Save And Cancel
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+Naming mode shall save on encoder press and cancel without saving when the
+Cancel key is pressed.
+
+
+ID: SEQ-FILE-016
+Title: Dirty Title Indicator
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+The Sequencer title shall indicate unsaved changes with a leading asterisk in
+the file portion of the title.
+
+Details:
+- If no file is loaded, the title is Sequencer.
+- If a file is loaded, the title is Seq-FILENAME.
+- If a file is loaded and unsaved changes exist, the title is Seq-*FILENAME.
+- Save and Revert clear the dirty state.
+- Editing notes, length, velocity, probability, Tie, or sequencer settings sets
+  the dirty state.
+
+
+ID: SEQ-FILE-017
+Title: Sequence File Contents
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+A saved sequence file shall store the current tempo, active step count, play
+type, direction, tuning-relative pitch steps per step, gate or length per
+step, and velocity per step.
+
+Details:
+- Current files are written as version 3.
+- Current files declare noteFormat=stepsFromC.
+- Sequence files also store per-step probability.
+- Sequence files also store per-step Tie flags.
+- Older files that do not contain Tie fields shall load with all Tie flags off.
+- Tap Preview, Monophonic, Clock Source, Send Clock, and Send Transport
+  are general sequencer settings and are not stored per sequence file.
+- Those general sequencer settings shall be stored in the board profile
+  settings and follow the Auto-Save profile workflow.
+
+
+ID: SEQ-FILE-018
+Title: USB Serial Backup Session
+Status: Active
+Area: Files
+Priority: Medium
+
+Requirement:
+The system shall provide a USB Backup workflow that keeps sequence storage on
+LittleFS while exposing /Sequences to a host backup tool over USB serial.
+
+Details:
+- The USB Backup entry shall be available from File Management.
+- Starting the session shall prepare the board for host-side list, backup, and
+  restore commands.
+- Leaving the USB Backup page while a session is active shall warn that
+  leaving the page closes USB Backup and shall ask whether the user wants to
+  continue.
+- Choosing Stop Session while a session is active shall warn that stopping USB
+  Backup ends any current transfer and shall ask whether the user wants to
+  continue.
+- While the USB Backup session is active, sequencer hex-button presses shall be
+  ignored and the sequencer button LEDs shall be blanked, while encoder-driven
+  menu navigation remains available.
+- While the session is active, Save, Revert, and browser-based file-management
+  workflows shall be blocked until the session is stopped.
+- Host restore operations that write, rename, create, or delete files or
+  folders shall use the firmware flash-safe write path.
+
+
+ID: SEQ-FILE-019
+Title: Host Backup Tool Operations
+Status: Active
+Area: Files
+Priority: Medium
+
+Requirement:
+The host-side USB backup tools shall support whole-tree backup and restore as
+well as selected file or folder transfer actions for /Sequences.
+
+Details:
+- The command-line tool shall support listing the remote tree.
+- The command-line tool shall support full backup and restore of /Sequences.
+- The command-line tool shall support pulling, pushing, and deleting an
+  individual file or folder.
+- The command-line tool shall support renaming an individual file or folder.
+- A graphical desktop tool shall provide access to the same workflow without
+  requiring command-line use, including dedicated rename actions for a selected
+  file and a selected folder.
+- The graphical desktop tool shall validate renamed file and folder names
+  before sending them to the device, rejecting periods, unsupported
+  characters, and names longer than 20 characters, while allowing only
+  letters, numbers, spaces, and `-`.
+- When rename validation fails, the graphical desktop tool shall show the full
+  naming rules, identify the broken rule(s), and return the user to the rename
+  prompt with the previous attempted name preserved.
+- The graphical desktop tool shall merge folder uploads into an existing remote
+  folder instead of deleting that remote folder as part of the upload action.
+- The graphical desktop tool shall warn one file at a time when Upload Folder
+  would overwrite an existing remote file, and it shall let the user overwrite,
+  skip that file, or cancel the folder upload.
+- The graphical desktop tool shall warn before Upload File replaces an existing
+  remote file, including when that file is already inside the selected target
+  folder, and it shall direct the user to select a folder first when they want
+  to copy into that folder instead.
+- The graphical desktop tool shall allow multi-selection in the remote tree for
+  batch delete actions.
+- The graphical desktop tool shall disable single-target actions when multiple
+  remote items are selected and the target would otherwise be ambiguous.
+- The graphical desktop tool shall organize its main action buttons into clear
+  logical rows, with refresh actions beside the serial port selector and the
+  remaining actions grouped into rows below.
+- The graphical desktop tool shall remember the most recently used local upload
+  locations for file and folder uploads across app relaunches.
+- The graphical desktop tool shall remember the most recently used local
+  backup folder for Restore Backup across app relaunches.
+- The graphical desktop tool shall show active operation status, including
+  refresh actions, in the top status line.
+- The graphical desktop tool shall label the size column in bytes when showing
+  raw file sizes.
+- The desktop-tool workflow may include simple launcher files for macOS and
+  Windows so users with Python and `pyserial` already installed can start the
+  GUI by opening those launcher files directly.

@@ -30,6 +30,10 @@ For each playable button, the firmware:
 5. Sends the pitch bend on the note's MPE channel.
 6. Sends the note-on on the same channel.
 
+For Dynamic JI and JI BPM Sync, HexBoard applies the retune first, then chooses
+the closest MIDI note for that final pitch. The remaining MPE bend is normally
+within `+/-50` cents, even when the JI correction itself is larger.
+
 In MPE mode, channel `1` is the global/master channel. HexBoard uses the configured MPE note-channel range for individual notes. The factory range is channels `2-16`, which gives up to `15` simultaneous MPE note channels.
 
 The receiving instrument must use the same pitch-bend range as HexBoard. If HexBoard is set to `MPE Bend = 48`, the synth must treat full-scale per-note pitch bend as `+/-48` semitones. If the synth is set to a different range, notes will be out of tune even though MIDI is being received.
@@ -54,11 +58,11 @@ Use `48` first. It is the factory default and a common MPE default. Change it wh
 - The synth preset is already configured for another MPE pitch-bend range.
 - Recorded MPE clips were captured with another range and must play back the same way.
 - You are using dynamic just intonation and want finer bend resolution for small pitch corrections.
-- You need more bend headroom for wide pitch movement or retuning and the receiver supports a larger range.
+- You need more bend headroom for wide pitch movement and the receiver supports a larger range.
 
 The rule is simple: HexBoard and the receiving synth must match.
 
-Smaller bend ranges can be useful with dynamic just intonation because the subtle pitch shifts become audible through beating between held notes, and finer pitch-bend resolution can make those corrections cleaner. Do not set the range too low if you use JI BPM sync or wide retuning, because the required correction can run out of pitch-bend headroom. When that happens, the note can no longer reach the intended pitch even though MPE is enabled.
+Smaller bend ranges can be useful with dynamic just intonation because the subtle pitch shifts become audible through beating between held notes, and finer pitch-bend resolution can make those corrections cleaner. Dynamic JI and JI BPM Sync shift the transmitted MIDI note before bending, so their residual bend normally stays near the middle of the range. Wider ranges are mainly useful for broader pitch-wheel movement or external workflows that require them.
 
 ### MPE Low Ch And MPE High Ch
 
@@ -123,7 +127,7 @@ Live 12 can load built-in tunings, Scala `.scl` files, and Ableton `.ascl` tunin
 
 If Live is retuning a third-party plugin or external instrument through MPE, Live's documentation expects the receiving instrument to use a `+/-48` semitone per-note pitch-bend range. That is downstream from Live and separate from HexBoard's `MPE Bend`, because HexBoard's MPE retuning is disabled in this workflow.
 
-This works best when Live's loaded tuning uses the same note order and reference pitch as the selected HexBoard tuning. HexBoard computes pitches from A4 = `440 Hz`. If a Scala `.scl` file sounds offset in Live, adjust Live's reference pitch and save the result as an `.ascl` file. If Live uses a tuning that HexBoard does not have, HexBoard can still send note numbers, but its layout, labels, and LEDs may not correspond to Live's final pitches.
+This works best when Live's loaded tuning uses the same note order and reference pitch as the selected HexBoard tuning. Built-in HexBoard tunings default to A4 = `440 Hz`; imported Scala/cents-table geometry bundles use their editable 1/1 MIDI note and Hz reference. If a Scala `.scl` file sounds offset in Live, align Live's reference pitch with the HexBoard bundle or save the Live result as an `.ascl` file. If Live uses a tuning that HexBoard does not have, HexBoard can still send note numbers, but its layout, labels, and LEDs may not correspond to Live's final pitches.
 
 Tradeoffs:
 
@@ -295,7 +299,14 @@ The receiver is ignoring pitch bend, or `MPE Mode` is set to `Disable`. Enable M
 
 ### Dynamic JI or BPM sync sounds constrained
 
-The `MPE Bend` range may be too small for the required retuning. Smaller bend ranges can improve fine JI corrections, but JI BPM sync can need more pitch-bend headroom. Raise `MPE Bend` on both HexBoard and the receiver if notes stop reaching the expected pitch.
+HexBoard now shifts the transmitted MIDI note to keep Dynamic JI and BPM-sync
+retuning near the center of the pitch-bend range. If the external synth still
+sounds constrained, first confirm the receiver is honoring per-note pitch bend
+and that its pitch-bend range matches HexBoard's `MPE Bend`.
+
+For Dynamic JI, the `JI Table` setting also changes how far ratio matching can
+reach. Lower prime-limit tables such as `3Limit` and `5Limit` are intentionally
+more constrained; higher tables up to `41Limit` allow more candidate ratios.
 
 ### 12-EDO does not show MPE data
 

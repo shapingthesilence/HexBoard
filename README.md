@@ -1,34 +1,43 @@
 # HexBoard MIDI Controller
 
-HexBoard is a hexagonal MIDI controller and instrument built around the RP2040. The current firmware in this repository drives:
+HexBoard is a hexagonal MIDI controller and instrument built around the RP2040.
+The firmware in this repository drives:
 
 - a `140`-button illuminated hex grid
 - USB and serial MIDI output
 - microtonal and isomorphic layouts
-- an onboard synth with mono, polyphonic, and arpeggiated playback
+- an onboard synth with mono retrigger, mono legato, polyphonic, and arpeggiated playback
 - an OLED menu system for tuning, layout, color, MIDI, synth, and profile management
-
 
 You can [order a HexBoard](https://shapingthesilence.com/) if you are interested in the hardware.
 
 ## Documentation
 
-- [User Manual](docs/user-manual.md)
-- [MPE Microtonal Setup Guide](docs/mpe-microtonal-setup.md)
-- [Developer Guide](docs/developer-guide.md)
-- [Code Analysis](docs/code-analysis.md)
-- [Delegated Control Protocol](docs/delegated-control.md)
+- [User Manual](docs/user-manual.md): playing, menu behavior, settings, firmware updates, and troubleshooting
+- [Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt): optional sequencer builds, playback, file management, and USB backup
+- [MPE Microtonal Setup Guide](docs/mpe-microtonal-setup.md): DAW, plugin, and synth setup for HexBoard's microtonal MIDI output
+- [Developer Guide](docs/developer-guide.md): current firmware architecture, edit patterns, settings wiring, risk areas, and verification
+- [Delegated Control Protocol](docs/delegated-control.md): external raw button/LED control SysEx behavior
+- [Preset Sync SysEx Draft](docs/preset-sync-sysex.md): preset-sync frames, object schemas, and implemented/draft object workflows
+- [Web App README](web/README.md): companion web app development, deployment, and current scope
 
-The user manual is for players and owners of the device. The MPE setup guide is for configuring DAWs, plugins, and synths for HexBoard's microtonal MIDI output. The developer guide is for people editing the firmware in this repository.
+`docs/code-analysis.md` is kept only as a compatibility pointer to the developer
+guide. Current implementation facts should live in the docs above, not in a
+separate analysis document.
 
 ## Repository Layout
 
-- `AGENTS.md`: AI agent project instructions, including the documentation update requirement
-- `src/HexBoard.ino`: primary firmware source
-- `docs/`: documentation for users and contributors
+- `AGENTS.md`: AI agent and contributor instructions, including documentation update requirements
+- `HexBoard.ino`: root Arduino sketch with only lifecycle wrappers
+- `src/firmware/`: primary firmware implementation modules
+- `web/`: isolated Vite/React companion app for preset-sync workflows
+- `docs/`: user, developer, protocol, and workflow documentation
+- `scripts/`: host-side helper tools, including the HexBoard Backup GUI
 - `Makefile`: local build shortcut for `arduino-cli`
 
-The current firmware is intentionally maintained as a single large sketch file, but it is organized internally into subsystem sections such as tuning, layout, LEDs, MIDI, synth, persistence, menu, and main loop.
+Firmware implementation is grouped by owner under `src/firmware/`. The root
+sketch delegates to lifecycle functions there, and subsystem headers expose the
+cross-module APIs needed by other modules.
 
 ## Current Firmware Highlights
 
@@ -39,19 +48,22 @@ The current code supports:
 - scale filtering with optional scale lock
 - multiple LED color modes and animations
 - boot and Advanced-menu LED test modes for spotting failed pixels or color channels
+- an Advanced-menu stability benchmark for worst-case synth, LED, display, and sync stress testing
 - a USB-meter-calibrated LED current limiter to reduce brownouts in bright modes
-- an optional OLED note overlay that shows currently played notes
+- an optional OLED note overlay that shows currently played notes as labels or scale-step numbers
 - standard MIDI, extended multi-channel MIDI mapping, and MPE behavior
 - dynamic just intonation and BPM-linked retuning options
-- onboard synth waveform, AHDSR envelope, modulation, preset, and arpeggiator settings
+- onboard synth waveform/wavetable banks, Serum/Vital and HexBoard wavetable import, mono portamento, AHDSR envelope, phase-warp/wavetable/LFO modulation, presets, and arpeggiator settings
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
+- an optional sequencer build, documented in the [Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt)
 
 ## Team
 
 - Jared DeCook has been writing music, developing hardware, and performing as [Shaping The Silence](https://shapingthesilence.com/) for over a decade.
 - Zach DeCook has been listening to music, breaking hardware, and occasionally writing software since the former discovered his exploitable talents.
 - Nicholas Fox has been hexperimenting with the firmware since before receiving a HexBoard in the mail.
+- Robert Wierzbicki created the sequencer and a few random other changes.
 
 ## Related Firmware History
 
@@ -71,43 +83,23 @@ The current source targets:
 - Generic RP2040
 - `250 MHz`
 - `16 MB` flash with `8 MB` LittleFS
-- TinyUSB USB stack
+- Pico SDK USB stack
+- USB manufacturer/product descriptor `HexBoard`
 - Generic SPI `/4` boot2
 
-The source comments in `src/HexBoard.ino` and the `Makefile` are the most reliable build references for this repository.
+The `Makefile` and firmware headers under `src/firmware/` are the most reliable
+build references for this repository.
 
 ## Building The Firmware
-
-### Dependencies
 
 You need:
 
 - [arduino-cli](https://arduino.github.io/arduino-cli/latest/)
 - the Earle Philhower RP2040 core
-- the required Arduino libraries
-
-Install the board core and libraries with:
-
-```sh
-# Download the board index
-arduino-cli --additional-urls=https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json core update-index
-
-# Install the RP2040 core
-arduino-cli --additional-urls=https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json core download rp2040:rp2040
-arduino-cli --additional-urls=https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json core install rp2040:rp2040
-
-# Install libraries
-arduino-cli lib install "MIDI library"
-arduino-cli lib install "Adafruit NeoPixel"
-arduino-cli lib install "U8g2"
-arduino-cli lib install "Adafruit GFX Library"
-arduino-cli lib install "GEM"
-
-# Older GEM installs may need this compatibility tweak
-sed -i 's@#include "config/enable-glcd.h"@//\0@g' ~/Arduino/libraries/GEM/src/config.h
-```
-
-### Build With `make`
+- `Adafruit NeoPixel`
+- `U8g2`
+- `Adafruit GFX Library`
+- `GEM`
 
 The simplest local build is:
 
@@ -115,8 +107,8 @@ The simplest local build is:
 make
 ```
 
-The `Makefile` builds from `src/HexBoard.ino` using the board options for this project. During the build it stages a generated sketch at `build/build.ino`; do not edit or maintain that generated file.
-The local `250 MHz` build intentionally uses `Generic SPI /4` boot2 to keep the external flash clock stable while giving the synth ISR enough headroom for dense AHDSR and FX-envelope patches.
+The `Makefile` compiles the repository sketch directly with the project board
+options and writes flashable files under `build/`.
 
 To compare onboard synth PWM resolutions, pass `PWM_BITS` at build time:
 
@@ -126,51 +118,43 @@ make PWM_BITS=9
 
 Supported values are `8`, `9`, and `10`; the default is `10`.
 
-The expected output artifact is:
+The in-port sequencer is compiled out by default. To expose the `Sequencer`
+menu entry, build with:
 
-```text
-build/build.ino.uf2
+```sh
+make HEXBOARD_ENABLE_SEQUENCER=1
 ```
 
-### Build Notes
+Default and sequencer builds are renamed to:
 
-- Edit `src/HexBoard.ino`, not a root sketch copy or `build/build.ino`
-- If you change board parameters, keep the `Makefile` and source header comments in sync
-- The firmware currently depends on TinyUSB and the RP2040 dual-core runtime behavior
+```text
+build/HexBoard.uf2
+build/HexBoard_Sequencer.uf2
+```
+
+Use `make sequencer-builds` to compile both variants. See the
+[Developer Guide](docs/developer-guide.md) for implementation details and the
+[Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt) for current sequencer behavior.
+
+## Companion Web App
+
+The preset-sync companion app lives under `web/` as an isolated Vite, React, and
+TypeScript project. It uses Web MIDI SysEx for device access, supports mock
+transport work when no compatible device is attached, and covers tuning/layout,
+synth preset, and wavetable workflows.
+
+Use [web/README.md](web/README.md) for install, local development, tests,
+GitHub Pages deployment, and current app scope.
 
 ## Flashing The Firmware
 
-You can flash the board in either of these ways.
-
-### From The Device Menu
-
-How to update:
-
-1. Plug your HexBoard into your computer.
-2. Navigate to `Advanced` -> `Update Firmware` in the menu.
-3. The HexBoard will show up as a USB drive.
-4. Drag the `.uf2` file onto the drive.
-5. The HexBoard will automatically reboot with the new firmware.
-
-Need a backup method?
-
-Hold the bootloader button while plugging it in:
-
-- Hardware `1.1`: The button is next to the USB port.
-- Hardware `1.2`: The button is hidden on the bottom. Press it with a paperclip near the ports while plugging the board in.
-
-The board should appear as a removable USB drive. Drag the `.uf2` firmware file onto that drive, and the drive should eject when the board reboots into the new firmware.
+Firmware update and bootloader instructions live in the
+[User Manual](docs/user-manual.md#updating-firmware).
 
 ## Development Notes
 
-If you are jumping into the codebase, start with:
-
-- [Developer Guide](docs/developer-guide.md) for architecture, refresh paths, settings wiring, and risk areas
-- [Code Analysis](docs/code-analysis.md) for a deeper subsystem walkthrough
-- [Delegated Control Protocol](docs/delegated-control.md) for external host integration
-
-The most important source file is:
-
-- [`src/HexBoard.ino`](src/HexBoard.ino)
-
-That file includes section tags such as `@MIDI`, `@synth`, `@menu`, and `@mainLoop`, which make it much easier to navigate than raw line count suggests.
+Start with the [Developer Guide](docs/developer-guide.md) when editing firmware.
+It owns the current architecture map, settings recipes, refresh paths, risk
+areas, and verification checklist. Protocol-specific behavior stays in
+[Delegated Control Protocol](docs/delegated-control.md) and
+[Preset Sync SysEx Draft](docs/preset-sync-sysex.md).

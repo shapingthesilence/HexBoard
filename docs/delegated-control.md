@@ -11,16 +11,21 @@ The mode is intentionally external-only:
 
 ## Source Locations
 
-Primary implementation points in `src/HexBoard.ino`:
+Primary implementation points:
 
-- `delegatedControl`, `delegatedColors`, and `SYSEX_*` constants live near the grid/wheel globals.
-- `processIncomingSysEx()` handles external entry while the firmware is in normal mode.
-- `processIncomingMIDIDelegated()` handles delegated-mode SysEx on core 1.
-- `delegatedButtonEvent()` converts raw button events to MIDI notes.
-- `processLedSysEx()` converts host LED color records into cached NeoPixel colors.
-- `readHexes()`, `lightUpLEDs()`, `arpeggiate()`, `updateWheels()`, `animateLEDs()`, and `loop1()` contain runtime gates for delegated mode.
+- `delegatedControl`, `delegatedColors`, delegated note-map state, and `SYSEX_*` constants live in `src/firmware/hardware/GridState.cpp`.
+- `processIncomingSysEx()`, `delegatedButtonEvent()`, `processDelegatedNoteMapSysEx()`, and `processLedSysEx()` live in `src/firmware/midi/DelegatedControl.cpp`.
+- preset-sync message dispatch lives in `src/firmware/storage/PresetSync.cpp`, with protocol/object helpers in the neighboring `PresetSync*.cpp` files.
+- `processIncomingMIDIDelegated()` lives in `src/firmware/midi/MidiInput.cpp`.
+- `readHexes()` and `updateWheels()` live in `src/firmware/hardware/GridScanRotary.cpp`.
+- delegated encoder event handling and the 5-second force-exit path live in `src/firmware/hardware/GridScanRotary.cpp`.
+- delegated OLED drawing lives in `src/firmware/menu/MenuAndDisplay.cpp`.
+- `lightUpLEDs()` lives in `src/firmware/hardware/LedRender.cpp`.
+- `animateLEDs()` lives in `src/firmware/hardware/LedAnimations.cpp`.
+- `arpeggiate()` lives in `src/firmware/synth/SynthVoiceAllocation.cpp`.
+- `hexboardLoop1()` lives in `src/firmware/app/Runtime.cpp` and contains the delegated-mode core-1 MIDI polling gate.
 
-`src/HexBoard.ino` is the firmware source used by the `Makefile`. `build/build.ino` is generated during compilation and should not be edited as source.
+`HexBoard.ino` is the root Arduino sketch used by the `Makefile`; firmware implementation lives under `src/firmware/`. Generated files under `build/` should not be edited as source.
 
 ## Runtime Behavior
 
@@ -30,13 +35,20 @@ When `delegatedControl` is `true`:
 
 - `readHexes()` sends raw button press/release events instead of command buttons, MIDI notes, or synth notes.
 - `lightUpLEDs()` displays `delegatedColors[]` directly instead of computed palette, wheel, scale, or animation colors, except while the local Advanced-menu `LED Test` selector is actively previewing a solid diagnostic color.
-- `arpeggiate()` returns early.
+- `arpeggiate()` returns early, so the mono/arpeggiator held-note sequencer is not advanced while a host owns the surface.
 - `updateWheels()` returns early.
 - `animateLEDs()` returns early.
 - `processIncomingMIDI()` returns early on core 0.
 - `loop1()` calls `processIncomingMIDIDelegated()` so incoming delegated SysEx can be handled on core 1.
+- the OLED shows `Delegated Control Mode`, the optional host application name,
+  and a bottom prompt explaining the encoder hold-to-exit gesture while awake.
+- the normal menu is disabled; encoder turns and button presses are forwarded
+  to the host instead.
 
-The rotary menu is not explicitly disabled in delegated mode. There is no delegated-control menu item, so a user cannot toggle the mode from the device UI.
+The OLED screensaver timer still runs in delegated mode. After the display
+times out, host LED/key activity and delegated SysEx do not wake it; only
+encoder activity wakes and redraws the delegated screen. Holding the encoder
+button for about `5` seconds forces delegated mode to exit.
 
 ## SysEx Framing
 
@@ -48,6 +60,11 @@ All delegated-control SysEx messages use this outer form:
 F0 7D <command> <payload...> F7
 ```
 
+The preset-sync protocol is intentionally separate and uses the family form
+`F0 7D 10 <protocol...> F7`; see `docs/preset-sync-sysex.md`.
+Delegated-control command bytes `0x01` through `0x06` remain live-surface
+commands, not preset-sync messages.
+
 The command byte is one of:
 
 | Command | Name | Direction | Meaning |
@@ -55,6 +72,9 @@ The command byte is one of:
 | `0x01` | `SYSEX_DELEGATED_ENTER` | Host to device | Enter delegated mode |
 | `0x02` | `SYSEX_DELEGATED_EXIT` | Host to device | Exit delegated mode |
 | `0x03` | `SYSEX_LED` | Host to device | Update one or more LEDs |
+| `0x04` | `SYSEX_DELEGATED_NOTE_MAP` | Host to device | Assign delegated MIDI channel/note output for one or more visible keys |
+| `0x05` | `SYSEX_DELEGATED_NOTE_MAP_RESET` | Host to device | Restore delegated key output to the default button-index encoding |
+| `0x06` | `SYSEX_DELEGATED_ENCODER_EVENT` | Device to host | Report encoder navigation events |
 
 ## Entering And Exiting
 
@@ -64,13 +84,56 @@ Enter delegated mode:
 F0 7D 01 F7
 ```
 
+Enter delegated mode with an application name:
+
+```text
+F0 7D 01 <printable-ascii-app-name> F7
+```
+
 Exit delegated mode:
 
 ```text
 F0 7D 02 F7
 ```
 
-Entering delegated mode clears `delegatedColors[]` to black and calls `setupMIDI()` to reset MIDI parser state. The enter command is a no-op if received after delegated mode is already active.
+Entering delegated mode clears `delegatedColors[]` to black, clears delegated
+active-note tracking, wakes the OLED, and calls `setupMIDI()` to reset MIDI
+parser state. It does not reset the delegated note map. If the enter command is
+received while delegated mode is already active, active delegated notes are
+released first and the delegated control surface state is reset without clearing
+the note map.
+
+The optional application name payload is printable `7`-bit ASCII. Firmware keeps
+up to `20` visible characters and displays the name under `Delegated Control
+Mode`. If the host omits a valid name, the display uses `Host Application`.
+
+Exiting delegated mode sends note-off messages for active delegated notes and
+then returns to normal HexBoard behavior. It does not reset the delegated note
+map.
+
+## Encoder Event Output
+
+In delegated mode, the encoder does not drive the normal GEM menu. It sends
+device-to-host SysEx messages so a delegated app can use it for navigation:
+
+```text
+F0 7D 06 <event> F7
+```
+
+Events:
+
+| Event | Meaning |
+| --- | --- |
+| `0x01` | Encoder up |
+| `0x02` | Encoder down |
+| `0x03` | Encoder button press |
+| `0x04` | Encoder button release |
+
+Encoder up/down follows the saved `Invert Encoder` setting, matching normal menu
+navigation direction. Encoder press, release, and rotation wake the delegated
+OLED screen and reset its screensaver timer. Holding the encoder button for
+about `5` seconds sends a button-release event, exits delegated mode locally,
+and suppresses the release from opening the normal menu.
 
 ## Device Identity
 
@@ -88,13 +151,14 @@ Response payload:
 7E 00 06 02 7D 01 00 01 00 <hardware-version> 00 00 00
 ```
 
-The MIDI library adds the SysEx boundaries when sending. The manufacturer ID is currently `0x7D`; replace it if the project gets an assigned manufacturer ID.
+HexBoard's MIDI output wrapper adds the SysEx boundaries when sending. The manufacturer ID is currently `0x7D`; replace it if the project gets an assigned manufacturer ID.
 
 ## Button Event Output
 
-In delegated mode, every new press and release from the scan matrix is encoded as a MIDI note message.
+In delegated mode, every new press and release from the visible key surface is
+encoded as a MIDI note message.
 
-Encoding:
+Default encoding:
 
 - `channel = buttonIndex / 100 + 1`
 - `note = buttonIndex % 100`
@@ -109,7 +173,66 @@ Examples:
 | `60` | Note On, channel `1`, note `60`, velocity `127` |
 | `130` | Note On, channel `2`, note `30`, velocity `127` |
 
-Host applications should treat indices `0` through `139` as the visible HexBoard controls. The firmware scan matrix has `BTN_COUNT` logical slots, and slots above `LED_COUNT` are internal hardware-detection/bookkeeping positions.
+Host applications should treat indices `0` through `139` as the visible
+HexBoard controls. The firmware scan matrix has `BTN_COUNT` logical slots, and
+slots above `LED_COUNT` are internal hardware-detection/bookkeeping positions.
+Those internal slots are not assignable through the delegated note map.
+
+## MIDI Note Map Payload
+
+`SYSEX_DELEGATED_NOTE_MAP` accepts zero or more 4-byte records:
+
+```text
+F0 7D 04 <record> [<record> ...] F7
+```
+
+Each record:
+
+| Byte | Meaning | Range |
+| --- | --- | --- |
+| `0` | Button index high 7 bits | `0..127` |
+| `1` | Button index low 7 bits | `0..127` |
+| `2` | MIDI channel | `1..16` |
+| `3` | MIDI note | `0..127` |
+
+Button index is decoded as:
+
+```cpp
+button = (record[0] << 7) + record[1];
+```
+
+Duplicate button records are allowed; the last valid record wins. Records with
+button indices outside `0..139` or channels outside `1..16` are logged and
+ignored. Malformed trailing bytes are ignored because the parser only processes
+complete 4-byte records.
+
+Example: map button `60` to middle C on channel `1`:
+
+```text
+F0 7D 04 00 3C 01 3C F7
+```
+
+Example: map command button `120` to note `36` on channel `16`:
+
+```text
+F0 7D 04 00 78 10 24 F7
+```
+
+Reset the whole delegated note map to the default button-index encoding:
+
+```text
+F0 7D 05 F7
+```
+
+Mappings are RAM-resident runtime state. They are not saved to settings,
+profiles, or `/layouts.dat`. A host can send the note map once and keep using it
+across delegated LED updates and delegated enter/exit cycles. The map resets
+only on power cycle/boot or `SYSEX_DELEGATED_NOTE_MAP_RESET`.
+
+When a key is pressed, firmware stores the actual delegated channel and note
+sent for that press. The matching release uses the stored channel and note, even
+if the host remaps or resets that key while it is held. This prevents stuck
+notes during live remapping.
 
 ## LED Update Payload
 

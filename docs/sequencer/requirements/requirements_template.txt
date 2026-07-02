@@ -1,0 +1,46 @@
+REQUIREMENT TEMPLATE
+
+ID: SEQ-AREA-001
+Title: Short Requirement Name
+Status: Active
+Area: Example Area
+Priority: High
+
+Requirement:
+Write one clear statement describing what the system shall do.
+
+Details:
+- Add clarifying rules, limits, or edge cases here.
+- Keep details about current behavior, not implementation history.
+
+Notes:
+- Optional context or design notes.
+
+Related:
+- SEQ-AREA-002
+- SEQ-AREA-003
+
+
+EXAMPLE
+
+ID: SEQ-LEN-001
+Title: Quick Step Length Edit
+Status: Active
+Area: Step Editing
+Priority: High
+
+Requirement:
+A selected step shall allow quick note length changes by turning the encoder.
+
+Details:
+- This applies only when a step is selected.
+- The quick edit uses the predefined length values.
+- The selected step overlay shall update to reflect the new length.
+
+Notes:
+- Exact length entry is covered by a separate requirement.
+
+Related:
+- SEQ-CTRL-008
+- SEQ-PLAY-010
+- SEQ-UI-006

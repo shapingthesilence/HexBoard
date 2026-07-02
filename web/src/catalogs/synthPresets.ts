@@ -1,0 +1,130 @@
+import { ObjectType } from "../protocol/constants.ts";
+import {
+  createCommonRecords,
+  encodeObjectBody,
+  tlv,
+  tlvText,
+  tlvU8,
+  type TlvRecord
+} from "../protocol/tlv.ts";
+import type { EncodedCatalogObject, SynthPresetCatalog } from "./types.ts";
+
+export const SynthPresetTlv = {
+  SynthPresetSchemaVersion: 0x20,
+  SynthValues: 0x21,
+  Favorite: 0x23,
+  LastModifiedUnixTime: 0x24,
+  WavetableName: 0x26,
+  WavetableFolderPath: 0x27
+} as const;
+
+export const SynthSettingKey = {
+  PlaybackMode: 26,
+  Waveform: 27,
+  SynthDrive: 47,
+  SynthModTarget: 48,
+  SynthModAmount: 69,
+  SynthVibratoSpeed: 49,
+  ArpeggiatorDivision: 29,
+  SynthBPM: 30,
+  EnvelopeAttackIndex: 41,
+  EnvelopeHoldIndex: 66,
+  EnvelopeDecayIndex: 42,
+  EnvelopeSustainLevel: 43,
+  EnvelopeReleaseIndex: 44,
+  EffectEnvelopeTarget: 57,
+  EffectEnvelopeAmount: 58,
+  EffectEnvelopeAttackIndex: 52,
+  EffectEnvelopeHoldIndex: 67,
+  EffectEnvelopeDecayIndex: 53,
+  EffectEnvelopeSustainLevel: 54,
+  EffectEnvelopeReleaseIndex: 55,
+  EffectEnvelope2Target: 59,
+  EffectEnvelope2Amount: 60,
+  EffectEnvelope2AttackIndex: 61,
+  EffectEnvelope2HoldIndex: 68,
+  EffectEnvelope2DecayIndex: 62,
+  EffectEnvelope2SustainLevel: 63,
+  EffectEnvelope2ReleaseIndex: 64,
+  SynthPortamentoTimeIndex: 72,
+  ArpeggiatorDirection: 73,
+  SynthWavetablePosition: 74,
+  SynthLfoTarget: 75,
+  SynthLfoAmount: 76,
+  SynthLfoWave: 77,
+  SynthLfoSpeed: 78
+} as const;
+
+export type SynthSettingName = keyof typeof SynthSettingKey;
+export type SynthPresetValues = Partial<Record<SynthSettingName, number>>;
+
+export interface SynthPresetInput {
+  objectId: Uint8Array;
+  name: string;
+  folderPath: string;
+  wavetable?: {
+    name: string;
+    folderPath: string;
+  };
+  values: SynthPresetValues;
+  favorite?: boolean;
+  tags?: string[];
+}
+
+export function encodeSynthValues(values: SynthPresetValues): Uint8Array {
+  const bytes: number[] = [];
+  for (const [name, value] of Object.entries(values) as Array<[SynthSettingName, number]>) {
+    if (value < 0 || value > 255 || !Number.isInteger(value)) {
+      throw new RangeError(`${name} must be a byte`);
+    }
+    bytes.push(SynthSettingKey[name], value);
+  }
+  return new Uint8Array(bytes);
+}
+
+export function createSynthPresetObject(input: SynthPresetInput): EncodedCatalogObject {
+  const records: TlvRecord[] = [
+    ...createCommonRecords({
+      objectId: input.objectId,
+      name: input.name,
+      source: "web-app",
+      folderPath: input.folderPath,
+      tags: input.tags
+    }),
+    tlvU8(SynthPresetTlv.SynthPresetSchemaVersion, 7),
+    tlv(SynthPresetTlv.SynthValues, encodeSynthValues(input.values))
+  ];
+
+  if (input.wavetable) {
+    records.push(tlvText(SynthPresetTlv.WavetableFolderPath, input.wavetable.folderPath));
+    records.push(tlvText(SynthPresetTlv.WavetableName, input.wavetable.name));
+  }
+
+  if (input.favorite !== undefined) {
+    records.push(tlvU8(SynthPresetTlv.Favorite, input.favorite ? 1 : 0));
+  }
+
+  const body = encodeObjectBody({
+    objectType: ObjectType.SynthPreset,
+    schemaMajor: 1,
+    schemaMinor: 0,
+    objectFlags: 0,
+    records
+  });
+
+  return {
+    objectType: ObjectType.SynthPreset,
+    schemaMajor: 1,
+    schemaMinor: 0,
+    objectId: input.objectId,
+    name: input.name,
+    folderPath: input.folderPath,
+    records,
+    body
+  };
+}
+
+export function createSynthPresetCatalog(presets: EncodedCatalogObject[]): SynthPresetCatalog {
+  const folders = Array.from(new Set(presets.map((preset) => preset.folderPath ?? "").filter(Boolean))).sort();
+  return { presets, folders };
+}
