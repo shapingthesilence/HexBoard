@@ -217,6 +217,7 @@ const initialComputerPresets: EditableSynthPreset[] = [
 
 const rootFolderPath = "/";
 const defaultFolders = [rootFolderPath, "Pads/Warm", "Leads", "FX/Animated"];
+const defaultUserWavetableFolder = "User";
 
 const builtInWavetables = [
   { name: "Basic Shapes", folderPath: builtInWavetableFolder },
@@ -487,7 +488,10 @@ function cloneWavetable(wavetable: EditableSynthWavetable): EditableSynthWavetab
 }
 
 function folderLabel(folderPath: string): string {
-  return folderPath === rootFolderPath ? "Root" : folderPath;
+  if (folderPath === rootFolderPath) {
+    return "Root";
+  }
+  return folderPath.startsWith("/") ? folderPath.slice(1) : folderPath;
 }
 
 function wavetableOptionValue(folderPath: string, name: string): string {
@@ -501,7 +505,14 @@ function wavetableReferenceFromOptionValue(value: string): { folderPath: string;
 }
 
 function normalizeDisplayFolderPath(folderPath: string): string {
-  return clampUtf8Bytes(folderPath.trim() || rootFolderPath, deviceFolderMaxBytes);
+  const trimmed = folderPath.trim();
+  if (!trimmed || trimmed === rootFolderPath) {
+    return rootFolderPath;
+  }
+  if (trimmed === builtInWavetableFolder) {
+    return builtInWavetableFolder;
+  }
+  return clampUtf8Bytes(trimmed.replace(/^\/+/, ""), deviceFolderMaxBytes);
 }
 
 function normalizeWavetableReference(folderPath: string | undefined, name: string | undefined) {
@@ -888,7 +899,7 @@ function wavetableFromUnknown(value: unknown): EditableSynthWavetable {
     throw new Error("Wavetable file does not contain a synth wavetable object");
   }
   const name = normalizedWavetableName(typeof source.name === "string" && source.name.trim() ? source.name : "Imported Wavetable");
-  const folderPath = typeof source.folderPath === "string" && source.folderPath.trim() ? normalizeDisplayFolderPath(source.folderPath) : "Wavetables";
+  const folderPath = typeof source.folderPath === "string" && source.folderPath.trim() ? normalizeDisplayFolderPath(source.folderPath) : defaultUserWavetableFolder;
   let samples: Uint8Array | undefined;
   if (typeof source.samplesBase64 === "string" && source.samplesBase64) {
     samples = base64ToBytes(source.samplesBase64);
@@ -1105,11 +1116,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [preset, setPreset] = useState<EditableSynthPreset>(() => clonePreset(defaultPreset));
   const [openedSource, setOpenedSource] = useState<LibrarySpace>("computer");
   const [customFolders, setCustomFolders] = useState(defaultFolders);
-  const [customWavetableFolders, setCustomWavetableFolders] = useState([rootFolderPath, "Wavetables"]);
+  const [customWavetableFolders, setCustomWavetableFolders] = useState([rootFolderPath, defaultUserWavetableFolder]);
   const [newFolder, setNewFolder] = useState("");
   const [newWavetableFolder, setNewWavetableFolder] = useState("");
   const [wavetableImportName, setWavetableImportName] = useState("");
-  const [wavetableImportFolder, setWavetableImportFolder] = useState("Wavetables");
+  const [wavetableImportFolder, setWavetableImportFolder] = useState(defaultUserWavetableFolder);
   const [wavetableImportDialogOpen, setWavetableImportDialogOpen] = useState(false);
   const [wavetableImportFormat, setWavetableImportFormat] = useState<WavetableImportFormat>("serum-vital");
   const [wavetablePreviewFrame, setWavetablePreviewFrame] = useState(0);
@@ -1168,7 +1179,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       Array.from(
         new Set([
           rootFolderPath,
-          "Wavetables",
+          defaultUserWavetableFolder,
           ...builtInWavetables.map((wavetable) => wavetable.folderPath),
           ...customWavetableFolders,
           ...computerWavetables.map((candidate) => candidate.folderPath),
@@ -1594,7 +1605,39 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
   }
 
+  async function ensurePresetWavetableOnHexBoard(nextPreset: EditableSynthPreset): Promise<boolean> {
+    const reference = normalizeWavetableReference(nextPreset.wavetableFolderPath, nextPreset.wavetableName);
+    const referenceKey = wavetableSaveKey(reference);
+    if (builtInWavetables.some((wavetable) => wavetableSaveKey(wavetable) === referenceKey)
+        || hexboardWavetables.some((wavetable) => wavetableSaveKey(wavetable) === referenceKey)) {
+      return true;
+    }
+
+    const computerWavetable = computerWavetables.find((wavetable) => wavetableSaveKey(wavetable) === referenceKey);
+    if (!computerWavetable) {
+      setSyncStatus(`Cannot save ${nextPreset.name}: ${reference.name} is not in HexBoard Wavetables`);
+      return false;
+    }
+    if (!computerWavetable.samples) {
+      setSyncStatus(`Cannot upload ${computerWavetable.name}: sample data is not loaded`);
+      return false;
+    }
+
+    const shouldUpload = window.confirm(
+      `"${nextPreset.name}" uses "${computerWavetable.name}" from Computer Wavetables. Upload this wavetable to HexBoard before saving the preset?`
+    );
+    if (!shouldUpload) {
+      setSyncStatus("Save canceled");
+      return false;
+    }
+
+    return (await uploadWavetableToHexBoard(computerWavetable, "Uploaded")) !== null;
+  }
+
   async function uploadToHexBoard(nextPreset = preset, prefix = "Saved") {
+    if (!(await ensurePresetWavetableOnHexBoard(nextPreset))) {
+      return;
+    }
     const decision = preparePresetForLibrarySave(nextPreset, hexboardPresets, "HexBoard Library", true);
     if (!decision) {
       setSyncStatus("Save canceled");
@@ -1676,11 +1719,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     setSyncStatus(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in Computer Wavetables`);
   }
 
-  async function uploadWavetableToHexBoard(nextWavetable: EditableSynthWavetable, prefix = "Saved") {
+  async function uploadWavetableToHexBoard(nextWavetable: EditableSynthWavetable, prefix = "Saved"): Promise<EditableSynthWavetable | null> {
     const decision = prepareWavetableForLibrarySave(nextWavetable, hexboardWavetables, "HexBoard Wavetables", true);
     if (!decision) {
       setSyncStatus("Save canceled");
-      return;
+      return null;
     }
     const normalized = decision.wavetable;
     try {
@@ -1696,8 +1739,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       } else {
         await refreshHexBoardWavetables(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in HexBoard Wavetables with ${frames.length} frame${frames.length === 1 ? "" : "s"}`);
       }
+      return normalized;
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to save synth wavetable");
+      return null;
     }
   }
 
@@ -1950,7 +1995,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   async function finalizeWavetableImport(fileName: string, samples: Uint8Array) {
     const sampleCrc = crc32(samples);
     const wavetableName = normalizedWavetableName(wavetableImportName || fileName.replace(/\.[^.]+$/, ""));
-    const folderPath = normalizeDisplayFolderPath(wavetableImportFolder || "Wavetables");
+    const folderPath = normalizeDisplayFolderPath(wavetableImportFolder || defaultUserWavetableFolder);
     const wavetable: EditableSynthWavetable = {
       objectIdHex: objectIdToHex(deterministicObjectId(`synth-wavetable:${folderPath}:${wavetableName}:${sampleCrc.toString(16)}`)),
       name: wavetableName,

@@ -344,9 +344,10 @@ one of these tables and setting `WT Pos` to the matching anchor. The old
 `Hybrid` waveform now maps to `Basic Shapes` at `0%`.
 
 User-imported wavetables appear in the same `WT:...` browser after they are
-saved through the web app. If a preset references a wavetable that is not
-installed on the HexBoard, the synth loads `Basic Shapes` instead until a matching
-folder/name wavetable is added.
+saved through the web app. New imports default to the `User` folder and are
+uploaded to HexBoard so they can be heard on the hardware immediately. If a
+preset references a wavetable that is not installed on the HexBoard, the synth
+loads `Basic Shapes` instead until a matching folder/name wavetable is added.
 
 `WT Pos` chooses the starting frame for wavetable waveforms. On device, the menu
 shows frames `1` through `16`; frame `1` is the first frame and frame `16` is
@@ -575,8 +576,10 @@ In the synth editor, you can manage synth presets and user wavetables. Presets
 can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,
 exported/imported as JSON, opened for audition, erased, and organized into
 folders. Wavetables can be imported from Serum/Vital `.wav` files or HexBoard
-`.hexwav` files, previewed, uploaded, downloaded, exported, renamed, moved, and
-selected for the open preset.
+`.hexwav` files, uploaded, downloaded, exported, renamed, moved, and selected
+for the open preset. `HexBoard Wavetables` is refreshed from the connected
+device; if a preset references a computer-only wavetable, saving that preset to
+HexBoard offers to upload the wavetable first.
 
 Single live synth-parameter edits do not show the `MIDI SysEx Transfer` screen,
 do not mute audio, and are saved by the normal debounced auto-save path. Larger
@@ -616,7 +619,7 @@ How it behaves:
 
 This page contains maintenance and system settings:
 
-- `Firmware 2.0 beta 1` version label
+- `Firmware 2.0 beta 2` version label
 - Hardware revision
 - `Invert Encoder`
 - `ColorByKey`

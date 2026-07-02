@@ -106,6 +106,11 @@ and `TRANSFER_END` so firmware can pace object transfers.
   small one-record pages to stay within conservative MIDI SysEx buffer limits
   and refreshes automatically when the synth preset view opens with a real MIDI
   transport.
+- Synth wavetable library areas named `Computer Wavetables` and
+  `HexBoard Wavetables`. Imported wavetables default to folder `User`, upload to
+  HexBoard immediately for hardware audition, and refresh the device-authoritative
+  HexBoard wavetable list after the flash commit. Saving a preset that references
+  a computer-only wavetable offers to upload the wavetable first.
 - A mock MIDI transport for UI and protocol work before firmware support exists.
 - Basic React views for device connection, profile sync, tuning/layout editing,
   and synth preset organization.

@@ -409,7 +409,9 @@ Virtual browsers use `VirtualListMenu` instead of allocating one GEM page/item
 tree per file, preset, wavetable, tuning, layout, or scale entry. Launcher rows
 are GEM link items visually, and `dealWithRotary()` routes their select key
 through `handleVirtualListLauncherKey()` before normal GEM dispatch. Current
-rows use a diamond in the left action-icon slot.
+rows use a diamond in the left action-icon slot. Stored non-root folder paths
+do not use a leading slash; `MenuFolderUtils` keeps virtual folder rows in that
+same convention so opening a folder continues to match stored catalog entries.
 
 Transient Advanced-menu items, such as `LED Test` and `Serial Debug`, should
 stay out of `factoryDefaults` and should not trigger a settings version bump.

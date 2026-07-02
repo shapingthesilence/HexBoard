@@ -13,6 +13,14 @@ void copyRoot(char* output, size_t outputLength) {
 const char* nonNullPath(const char* folderPath) {
   return folderPath ? folderPath : "";
 }
+
+const char* nonRootPathWithoutLeadingSlash(const char* folderPath) {
+  const char* path = nonNullPath(folderPath);
+  while (path[0] == '/' && path[1] != '\0') {
+    ++path;
+  }
+  return path;
+}
 }  // namespace
 
 bool menuFolderIsRoot(const char* folderPath) {
@@ -25,7 +33,7 @@ bool menuFolderEquals(const char* left, const char* right) {
   if (leftRoot || rightRoot) {
     return leftRoot && rightRoot;
   }
-  return strcmp(left, right) == 0;
+  return strcmp(nonRootPathWithoutLeadingSlash(left), nonRootPathWithoutLeadingSlash(right)) == 0;
 }
 
 bool menuFolderEntryBelongsToCurrentFolder(const char* entryFolderPath, const char* currentFolderPath) {
@@ -52,17 +60,17 @@ bool menuFolderImmediateChildPath(const char* entryFolderPath,
     }
     const char* slash = strchr(segmentStart, '/');
     size_t segmentLength = slash ? static_cast<size_t>(slash - segmentStart) : strlen(segmentStart);
-    if (segmentLength == 0 || outputLength < 2) {
+    if (segmentLength == 0) {
       return false;
     }
-    size_t copyLength = std::min(segmentLength, outputLength - 2);
-    output[0] = '/';
-    memcpy(output + 1, segmentStart, copyLength);
-    output[copyLength + 1] = '\0';
+    size_t copyLength = std::min(segmentLength, outputLength - 1);
+    memcpy(output, segmentStart, copyLength);
+    output[copyLength] = '\0';
     return true;
   }
 
-  const char* current = nonNullPath(currentFolderPath);
+  const char* current = nonRootPathWithoutLeadingSlash(currentFolderPath);
+  entry = nonRootPathWithoutLeadingSlash(entry);
   size_t currentLength = strlen(current);
   if (strncmp(entry, current, currentLength) != 0 || entry[currentLength] != '/') {
     return false;
