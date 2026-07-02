@@ -106,6 +106,27 @@ function createFloatWav(samples: Float32Array): Uint8Array {
   return bytes;
 }
 
+function createPcm8Wav(samples: Uint8Array): Uint8Array {
+  const headerBytes = 44;
+  const bytes = new Uint8Array(headerBytes + samples.length);
+  const view = new DataView(bytes.buffer);
+  writeFourCc(bytes, 0, "RIFF");
+  view.setUint32(4, bytes.length - 8, true);
+  writeFourCc(bytes, 8, "WAVE");
+  writeFourCc(bytes, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 44100, true);
+  view.setUint32(28, 44100, true);
+  view.setUint16(32, 1, true);
+  view.setUint16(34, 8, true);
+  writeFourCc(bytes, 36, "data");
+  view.setUint32(40, samples.length, true);
+  bytes.set(samples, headerBytes);
+  return bytes;
+}
+
 function writeFourCc(bytes: Uint8Array, offset: number, value: string): void {
   for (let index = 0; index < value.length; index += 1) {
     bytes[offset + index] = value.charCodeAt(index);
@@ -351,6 +372,21 @@ Example scale
     expect(String.fromCharCode(...wav.slice(8, 12))).toBe("WAVE");
     expect(parsed).toHaveLength(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
     expect(parsed.slice(0, SYNTH_WAVETABLE_SAMPLE_BYTES)).toEqual(samples);
+  });
+
+  it("interpolates short HexBoard wavetable imports to sixteen frames", () => {
+    const samples = new Uint8Array(SYNTH_WAVETABLE_SAMPLE_COUNT * 4);
+    for (let frame = 0; frame < 4; frame += 1) {
+      samples.fill(frame * 80, frame * SYNTH_WAVETABLE_SAMPLE_COUNT, (frame + 1) * SYNTH_WAVETABLE_SAMPLE_COUNT);
+    }
+    const parsed = parseHexBoardWavetable(createPcm8Wav(samples));
+    const base = parsed.slice(0, SYNTH_WAVETABLE_SAMPLE_BYTES);
+
+    expect(parsed).toHaveLength(SYNTH_WAVETABLE_MIP_SAMPLE_BYTES);
+    expect(base.slice(0, SYNTH_WAVETABLE_SAMPLE_COUNT).every((sample) => sample === 0)).toBe(true);
+    expect(base.slice(15 * SYNTH_WAVETABLE_SAMPLE_COUNT, 16 * SYNTH_WAVETABLE_SAMPLE_COUNT).every((sample) => sample === 240)).toBe(true);
+    expect(base[SYNTH_WAVETABLE_SAMPLE_COUNT]).toBeGreaterThan(0);
+    expect(base[SYNTH_WAVETABLE_SAMPLE_COUNT]).toBeLessThan(80);
   });
 
   it("serializes and encodes a layout bundle", () => {

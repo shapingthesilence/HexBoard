@@ -2333,14 +2333,14 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                       </select>
                     </label>
                     <label className="field">
-                      <span>Frame reduction</span>
+                      <span>Frame mapping</span>
                       <select
                         disabled={wavetableImportControlsDisabled}
                         value={wavetableFrameReduction}
                         onChange={(event) => setWavetableFrameReduction(event.target.value as WavetableFrameReduction)}
                       >
-                        <option value="nearest">Nearest</option>
-                        <option value="interpolated">Interpolated</option>
+                        <option value="nearest">Nearest source frame</option>
+                        <option value="interpolated">Interpolate source frames</option>
                       </select>
                     </label>
                     <label className="field">

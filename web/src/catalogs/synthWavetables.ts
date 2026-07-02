@@ -244,10 +244,17 @@ export function parseHexBoardWavetable(bytes: ArrayBuffer | Uint8Array): Uint8Ar
   if (wav.format.audioFormat !== 1 || wav.format.channels !== 1 || wav.format.bitsPerSample !== 8) {
     throw new Error("HexBoard wavetable files must be 8-bit mono PCM WAV data");
   }
-  if (!isSynthWavetableSampleDataLength(wav.dataLength)) {
-    throw new Error(`HexBoard wavetable files must contain ${SYNTH_WAVETABLE_SAMPLE_BYTES} or ${SYNTH_WAVETABLE_MIP_SAMPLE_BYTES} samples`);
-  }
   const samples = new Uint8Array(wav.view.buffer, wav.view.byteOffset + wav.dataOffset, wav.dataLength).slice();
+  if (wav.dataLength > 0 && wav.dataLength < SYNTH_WAVETABLE_SAMPLE_BYTES && wav.dataLength % SYNTH_WAVETABLE_SAMPLE_COUNT === 0) {
+    const anchorFrames: Uint8Array[] = [];
+    for (let offset = 0; offset < samples.length; offset += SYNTH_WAVETABLE_SAMPLE_COUNT) {
+      anchorFrames.push(samples.slice(offset, offset + SYNTH_WAVETABLE_SAMPLE_COUNT));
+    }
+    return renderInterpolatedAnchorWavetable(anchorFrames);
+  }
+  if (!isSynthWavetableSampleDataLength(wav.dataLength)) {
+    throw new Error(`HexBoard wavetable files must contain 1 to ${SYNTH_WAVETABLE_FRAME_COUNT} frames of ${SYNTH_WAVETABLE_SAMPLE_COUNT} samples, or ${SYNTH_WAVETABLE_MIP_SAMPLE_BYTES} samples with mips`);
+  }
   return ensureSynthWavetableFixedMips(samples);
 }
 

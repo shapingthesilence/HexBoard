@@ -577,9 +577,11 @@ can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,
 exported/imported as JSON, opened for audition, erased, and organized into
 folders. Wavetables can be imported from Serum/Vital `.wav` files or HexBoard
 `.hexwav` files, uploaded, downloaded, exported, renamed, moved, and selected
-for the open preset. `HexBoard Wavetables` is refreshed from the connected
-device; if a preset references a computer-only wavetable, saving that preset to
-HexBoard offers to upload the wavetable first.
+for the open preset. Short HexBoard `.hexwav` files with fewer than 16
+512-sample frames are interpolated to the 16 frames the device uses.
+`HexBoard Wavetables` is refreshed from the connected device; if a preset
+references a computer-only wavetable, saving that preset to HexBoard offers to
+upload the wavetable first.
 
 Single live synth-parameter edits do not show the `MIDI SysEx Transfer` screen,
 do not mute audio, and are saved by the normal debounced auto-save path. Larger
