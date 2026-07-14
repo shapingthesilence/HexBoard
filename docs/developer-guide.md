@@ -46,15 +46,15 @@ The `Makefile` compiles the repository sketch directly with:
 - Board: `rp2040:rp2040:generic`
 - Flash: `16 MB`, split as `8 MB` sketch / `8 MB` LittleFS
 - CPU: `250 MHz`
+- `make overclocked` builds the same clock configuration with a `_250MHz`
+  filename suffix
 - Boot stage 2: `Generic SPI /4`
 - USB stack: `picosdk`
 - USB manufacturer/product build descriptors: `HexBoard`
 
-The `Generic SPI /4` boot2 selection is required for the local `250 MHz` build
-to avoid overdriving external flash; `Generic SPI /2` may compile but can crash
-the board at runtime. The higher CPU clock gives the synth block renderer enough
-headroom for dense AHDSR and FX-envelope patches that can otherwise report
-overruns.
+The build uses the `Generic SPI /4` boot2 selection and a `250 MHz` CPU target.
+Synth audio timing derives from `F_CPU`, so the sample rate follows the selected
+CPU clock and preserves roughly the same render cycles per sample.
 
 The onboard synth PWM resolution is selected at build time:
 
@@ -90,10 +90,10 @@ The firmware is split across the RP2040's two cores:
 
 | Runtime area | Responsibilities |
 | --- | --- |
-| Core 0 `hexboardSetup()` via `setup()` | USB/MIDI startup, LittleFS, hardware detection, settings load, LEDs, OLED, menu, runtime sync |
-| Core 0 `hexboardLoop()` via `loop()` | timing, button scan, note lifecycle, arpeggiator, wheels, MIDI input, animation, LED refresh, menu click handling, auto-save |
+| Core 0 `hexboardSetup()` via `setup()` | USB/MIDI startup, LittleFS, hardware detection, settings load, LEDs, OLED, rotary setup, menu, runtime sync |
+| Core 0 `hexboardLoop()` via `loop()` | timing, button scan, note lifecycle, arpeggiator, wheels, MIDI input, animation, LED refresh, encoder/menu handling, auto-save |
 | Core 1 `hexboardSetup1()` via `setup1()` | synth PWM and DMA audio setup |
-| Core 1 `hexboardLoop1()` via `loop1()` | audio buffer refill, rotary quadrature polling, and delegated MIDI polling while delegated mode is active |
+| Core 1 `hexboardLoop1()` via `loop1()` | audio buffer refill, rotary polling, and delegated MIDI polling while delegated mode is active |
 | PWM-paced DMA | writes rendered audio blocks to the active PWM compare register |
 
 High-level musical flow:
@@ -106,7 +106,7 @@ button matrix -> readHexes()
               -> command-wheel value updates -> drawCommandWheelOverlay()
               -> played-note snapshot -> drawPlayedNotesOverlay()
 
-rotary encoder -> readKnob() on core 1 -> dealWithRotary() on core 0 -> GEM menu
+rotary encoder -> readKnob() on Core 1 -> dealWithRotary() on Core 0 -> GEM menu
 
 external host SysEx -> delegated control or preset sync
 ```
@@ -133,13 +133,29 @@ synth preset, current wavetable, and profile wavetable reference files compare
 the existing record before writing so ordinary saves do not rewrite unchanged
 references.
 
+Synth preset catalogs that are missing, empty, invalid, or contain no saved
+slots use the two compiled factory preset records in memory without writing
+during boot.
+Preset reads fall back to those full built-in records by object ID, so loading
+or later saving a factory preset preserves its intended sound. An explicit
+preset save creates the normal catalog through the runtime flash-safe path.
+This keeps startup independent of flash erase/program success while preserving
+the existing preset schema; no settings or preset file-version bump is needed.
+
 Performance-sensitive code can use `RAM_FUNC(name)` to run from SRAM instead of
 external-flash XIP. Keep this selective. Current RAM placement favors the audio
 block renderer and DMA refill helpers, button scan, command-wheel update, MIDI
-note/wheel sends, synth voice allocation, rotary quadrature polling, compact LED
-frame helpers, and small synth lookup tables read by the renderer. Avoid moving
-OLED/GEM/U8g2 drawing wholesale; those paths are dominated by library calls and
-I2C transfer time.
+note/wheel sends, synth voice allocation, rotary quadrature polling,
+compact LED frame helpers, and small synth lookup tables read by the renderer.
+Avoid moving OLED/GEM/U8g2 drawing wholesale; those paths are dominated by
+library calls and I2C transfer time.
+
+### Rotary Input Timing
+
+`readKnob()` is the table-driven quadrature decoder and runs from SRAM. Core 1
+calls it once per outer loop after audio buffer service and delegated MIDI
+handling. The decoder reads phase B and phase A with `digitalRead()` and records
+a turn only after a complete valid state sequence.
 
 The command-wheel OLED readout follows that split: the RAM-resident wheel path
 only records lightweight overlay state when a velocity, modulation, or
@@ -257,19 +273,16 @@ Core 0 startup currently:
 
 1. sets USB manufacturer/product descriptors to `HexBoard`
 2. starts USB serial logging
-3. disables the synth alarm IRQ before setup is complete
-4. starts Pico SDK USB MIDI and serial MIDI interfaces
-5. waits briefly for USB MIDI enumeration before flash access
-6. mounts LittleFS
-7. configures I2C
-8. configures scan pins and grid state
-9. detects hardware revision
-10. loads settings
-11. starts LEDs, display, rotary input, and menu objects
-12. applies hardware-specific menu behavior
-13. syncs saved settings to runtime globals
-14. recomputes pitch bend factors
-15. runs the bounded boot LED self-check
+3. starts Pico SDK USB MIDI and serial MIDI interfaces
+4. waits briefly for USB MIDI enumeration before flash access
+5. mounts LittleFS
+6. configures I2C, scan pins, grid state, and hardware detection
+7. loads settings, synth presets, wavetable references, wavetables, and geometry objects
+8. starts LEDs, display, rotary input, and menu objects
+9. applies hardware-specific behavior and initializes synth lookup tables
+10. syncs saved settings to runtime globals and restores sequencer state
+11. releases Core 1 to start audio DMA
+12. runs the bounded boot LED self-check
 
 Place new initialization where its dependencies are already valid. Do not rely
 on loaded settings before `load_settings()` or menu objects before `setupMenu()`.
@@ -291,9 +304,10 @@ Core 0 loop is deliberately broad but should remain bounded:
 Core 1 loop stays narrow:
 
 - audio DMA buffer service
-- `readKnob()`
 - `processIncomingMIDIDelegated()` when delegated control is active
+- `readKnob()` polling
 
+The rotary decoder must remain in RAM, allocation-free, and non-blocking.
 Heavy work, blocking waits, large debug bursts, and new heap allocations in
 either loop can cause sluggish controls, LED jitter, or audio artifacts.
 
@@ -466,13 +480,13 @@ Playback modes are:
 - `Poly`
 
 The synth PWM defaults to `10` bits. At the project's `250 MHz` build target,
-the carrier is roughly `488 kHz` in `8`-bit mode, `244 kHz` in `9`-bit mode,
+the carrier is roughly `490 kHz` in `8`-bit mode, `244 kHz` in `9`-bit mode,
 and `122 kHz` in `10`-bit mode. `9`-bit and `8`-bit builds are useful fallback
 comparisons if high-register tones sound harsh on the jack path.
 
 Synth audio is rendered on Core 1 into two `64`-sample DMA buffers. A dedicated
 PWM timer slice with wrap `1023` and divider `/6` paces DMA writes at about
-`40.7 kHz`. Hardware `V1.2` outputs one synth destination at a time: jack by
+`40.7 kHz` at `250 MHz`. Hardware `V1.2` outputs one synth destination at a time: jack by
 default, or piezo when `Buzzer` is enabled. Hardware `V1.1` uses piezo.
 
 Named built-in and user wavetables load into a `16 x 512` active RAM base table
@@ -653,7 +667,7 @@ Run or manually verify the areas your change touches:
 
 - `git diff --check`
 - compile with the same board options as `Makefile`
-- keep `Generic SPI /4` boot2 for `250 MHz` builds
+- keep `Generic SPI /4` boot2 for high-clock builds
 - boot with no settings file
 - boot with an existing settings file
 - profile save/load and auto-save

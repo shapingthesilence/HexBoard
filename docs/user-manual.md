@@ -435,8 +435,11 @@ the currently open folder. Factory presets are copied into normal
 editable root-folder preset slots
 when defaults are restored, so they can be changed or erased like any other
 preset and restored later by Reset Defaults or from the web editor's browser
-library. The web app still shows the foldered library and can create foldered
-presets.
+library. If the device has no synth preset catalog yet, the factory presets are
+served directly from firmware; startup does not need to create a preset file.
+The first explicit preset save creates the normal editable catalog through the
+flash-safe save path. The web app still shows the foldered library and can
+create foldered presets.
 If HexBoard finds a valid firmware `1.3` synth preset file during upgrade, valid
 old slots whose values differ from the firmware `1.3` synth defaults are
 imported into a `1.3 Patches` preset folder alongside the current factory
@@ -563,14 +566,20 @@ default, followed by `Synth Editor` and `Profiles`.
 
 In the tuning/layout editor, you can create EDO tunings, equal-step tunings,
 Scala `.scl` imports, vector layouts, scales, custom scale-degree colors, and
-per-button note/color overrides. The preview paintbrush can target either
-button color overrides or scale-degree palette colors while `Custom` color mode
-is active. Painting a scale degree clears matching button color overrides in
-the active layout so the palette color takes effect immediately. `Live send`
-previews compatible edits on the connected HexBoard without saving them to
-flash. `Save to Computer` stores the bundle in browser storage, and `Save to
-HexBoard` writes it to the device so it appears in the on-device `Tuning`,
-`Layout`, and `Scales` browsers.
+per-button note/color overrides. Work through `Library`, `Tuning`, `Layout`, and
+`Scale & color` from left to right. `Library` provides the full-width computer
+and HexBoard file-management view; the three editing steps keep the board
+preview visible while their focused controls appear beside it. Sync and save
+actions remain at the top of the geometry studio. The preview's `Paint keys`
+tool can target either button color overrides or scale-degree palette colors
+while `Custom` color mode is active. Painting a scale degree clears matching
+button color overrides in the active layout so the palette color takes effect
+immediately. Expand `Key inspector` for per-button note, pitch, and color
+details; encoded object data is under the collapsed `Developer details` panel.
+`Live send` previews compatible edits on the connected HexBoard without saving
+them to flash. `Save to computer` stores the bundle in browser storage, and
+`Save to HexBoard` writes it to the device so it appears in the on-device
+`Tuning`, `Layout`, and `Scales` browsers.
 
 In the synth editor, you can manage synth presets and user wavetables. Presets
 can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,

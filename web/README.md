@@ -73,15 +73,20 @@ and `TRANSFER_END` so firmware can pace object transfers.
 
 ## Current Scope
 
-- Top-level tabs open `Tunings & Layouts` by default, then `Synth Editor`, then
-  `Profiles`.
+- A shared responsive header keeps device connection, light/dark appearance,
+  and the top-level `Tunings & Layouts`, `Synth Editor`, and `Profiles` views in
+  a consistent location. `Tunings & Layouts` opens by default.
 - Protocol helpers for the draft preset-sync SysEx frame.
 - CRC32 and 8-to-7 packing utilities matching the firmware draft.
 - TLV object encoding for user tunings, layouts, scale color maps, explicit
   button maps, and named/foldered synth presets.
-- A tuning/layout bundle editor with a visual HexBoard preview, scale-degree
-  palette editing, A-first note labels, selected-key pitch readouts and
-  overrides, and a paintbrush mode for applying per-button color overrides or
+- A tuning/layout bundle editor organized as a four-step `Library`, `Tuning`,
+  `Layout`, and `Scale & color` workflow. The library gets a full-width transfer
+  and folder-management view; editing keeps bundle sync actions and the visual
+  HexBoard preview in consistent locations. The selected-key inspector and raw
+  encoded-object details are collapsed until needed. The editor supports
+  scale-degree palette editing, A-first note labels, selected-key pitch readouts
+  and overrides, and a paint mode for applying per-button color overrides or
   scale-degree palette colors directly on the preview. Painting a scale degree
   clears matching color overrides in the active layout so the palette color
   takes effect immediately, and a confirmed reset returns all keys in the active

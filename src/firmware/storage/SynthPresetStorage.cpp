@@ -283,6 +283,28 @@ size_t buildFactorySynthPresetRecords(SynthPresetSlot* presets, size_t presetCap
   return FACTORY_SYNTH_PRESET_COUNT;
 }
 
+bool buildFactorySynthPresetRecordByObjectId(const uint8_t* objectId, SynthPresetSlot& preset) {
+  if (!objectId || objectIdIsEmpty(objectId, SYNTH_PRESET_OBJECT_ID_LENGTH)) {
+    return false;
+  }
+  SynthPresetSlot factoryPresets[FACTORY_SYNTH_PRESET_COUNT] = {};
+  size_t factoryCount = buildFactorySynthPresetRecords(factoryPresets, FACTORY_SYNTH_PRESET_COUNT);
+  for (size_t i = 0; i < factoryCount; ++i) {
+    if (memcmp(factoryPresets[i].objectId, objectId, SYNTH_PRESET_OBJECT_ID_LENGTH) == 0) {
+      preset = factoryPresets[i];
+      return true;
+    }
+  }
+  return false;
+}
+
+bool buildFactorySynthPresetRecordAt(uint16_t presetIndex, SynthPresetSlot& preset) {
+  if (presetIndex >= synthPresets.size() || !synthPresets[presetIndex].valid) {
+    return false;
+  }
+  return buildFactorySynthPresetRecordByObjectId(synthPresets[presetIndex].objectId, preset);
+}
+
 }  // namespace
 
 void applyDefaultSynthPresets() {
@@ -291,9 +313,6 @@ void applyDefaultSynthPresets() {
   size_t defaultCount = buildFactorySynthPresetRecords(defaults, FACTORY_SYNTH_PRESET_COUNT);
   for (size_t i = 0; i < defaultCount; ++i) {
     appendSynthPresetMetadataFromSlot(defaults[i]);
-  }
-  if (fileSystemExists) {
-    writeSynthPresetRecordsDirect(defaults, defaultCount, false);
   }
 }
 
@@ -794,26 +813,26 @@ bool readSynthPresetFileHeader(File& f, SynthPresetFileHeader& header) {
 
 bool readSynthPresetRecordAt(uint16_t presetIndex, SynthPresetSlot& preset) {
   if (!fileSystemExists) {
-    return false;
+    return buildFactorySynthPresetRecordAt(presetIndex, preset);
   }
   File f = LittleFS.open(SYNTH_PRESET_CATALOG_FILE_PATH, "r");
   if (!f) {
-    return false;
+    return buildFactorySynthPresetRecordAt(presetIndex, preset);
   }
   SynthPresetFileHeader header = {};
   if (!readSynthPresetFileHeader(f, header) || presetIndex >= header.count) {
     f.close();
-    return false;
+    return buildFactorySynthPresetRecordAt(presetIndex, preset);
   }
   uint32_t offset = sizeof(header) + static_cast<uint32_t>(presetIndex) * sizeof(SynthPresetSlot);
   if (!f.seek(offset)) {
     f.close();
-    return false;
+    return buildFactorySynthPresetRecordAt(presetIndex, preset);
   }
   size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset));
   f.close();
   if (bytesRead != sizeof(preset) || !preset.valid) {
-    return false;
+    return buildFactorySynthPresetRecordAt(presetIndex, preset);
   }
   normalizeSynthPresetValues(preset);
   normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(presetIndex));
@@ -821,22 +840,25 @@ bool readSynthPresetRecordAt(uint16_t presetIndex, SynthPresetSlot& preset) {
 }
 
 bool readSynthPresetRecordByObjectId(const uint8_t* objectId, SynthPresetSlot& preset) {
-  if (!fileSystemExists || !objectId) {
+  if (!objectId) {
     return false;
+  }
+  if (!fileSystemExists) {
+    return buildFactorySynthPresetRecordByObjectId(objectId, preset);
   }
   File f = LittleFS.open(SYNTH_PRESET_CATALOG_FILE_PATH, "r");
   if (!f) {
-    return false;
+    return buildFactorySynthPresetRecordByObjectId(objectId, preset);
   }
   SynthPresetFileHeader header = {};
   if (!readSynthPresetFileHeader(f, header)) {
     f.close();
-    return false;
+    return buildFactorySynthPresetRecordByObjectId(objectId, preset);
   }
   for (uint16_t i = 0; i < header.count; ++i) {
     if (f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) != sizeof(preset)) {
       f.close();
-      return false;
+      return buildFactorySynthPresetRecordByObjectId(objectId, preset);
     }
     if (preset.valid && memcmp(preset.objectId, objectId, sizeof(preset.objectId)) == 0) {
       f.close();
@@ -846,7 +868,7 @@ bool readSynthPresetRecordByObjectId(const uint8_t* objectId, SynthPresetSlot& p
     }
   }
   f.close();
-  return false;
+  return buildFactorySynthPresetRecordByObjectId(objectId, preset);
 }
 
 void synthPresetFallbackRecordFromMetadata(const SynthPresetIndexEntry& metadata,
@@ -940,12 +962,12 @@ bool migrateFixedLegacySynthPresetCatalog(File& f, const SynthPresetFileHeaderBa
   size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(legacyPresets), legacyDataSize);
   f.close();
   if (bytesRead != legacyDataSize) {
-    sendToLog("Warning: Legacy synth preset data incomplete. Restoring factory preset file.");
+    sendToLog("Warning: Legacy synth preset data incomplete. Using built-in factory presets.");
     return false;
   }
   uint32_t computed = crc32(reinterpret_cast<const uint8_t*>(legacyPresets), legacyDataSize);
   if (computed != header.crc32) {
-    sendToLog("Legacy synth preset CRC32 mismatch. Restoring factory preset file.");
+    sendToLog("Legacy synth preset CRC32 mismatch. Using built-in factory presets.");
     return false;
   }
 
@@ -982,7 +1004,7 @@ bool migrateFixedLegacySynthPresetCatalog(File& f, const SynthPresetFileHeaderBa
   }
 
   if (migratedCount == 0) {
-    sendToLog("Legacy synth preset file had no saved slots. Restoring factory preset file.");
+    sendToLog("Legacy synth preset file had no saved slots. Using built-in factory presets.");
     return false;
   }
   if (!writeSynthPresetRecordsDirect(migratedPresets, presetCount, false)) {
@@ -1141,13 +1163,13 @@ void load_synth_presets() {
   }
   File f = LittleFS.open(SYNTH_PRESET_CATALOG_FILE_PATH, "r");
   if (!f) {
-    sendToLog("Synth preset file not found. Restoring factory preset file.");
+    sendToLog("Synth preset file not found. Using built-in factory presets.");
     applyDefaultSynthPresets();
     return;
   }
   SynthPresetFileHeaderBase headerBase = {};
   if (!readSynthPresetFileHeaderBase(f, headerBase)) {
-    sendToLog("Invalid synth preset file. Restoring factory preset file.");
+    sendToLog("Invalid synth preset file. Using built-in factory presets.");
     f.close();
     applyDefaultSynthPresets();
     return;
@@ -1165,7 +1187,7 @@ void load_synth_presets() {
   if (f.read(reinterpret_cast<uint8_t*>(&header.count), sizeof(header.count)) != sizeof(header.count)
       || f.read(reinterpret_cast<uint8_t*>(&header.reserved), sizeof(header.reserved)) != sizeof(header.reserved)
       || header.count > SYNTH_PRESET_MAX_COUNT) {
-    sendToLog("Invalid synth preset file. Restoring factory preset file.");
+    sendToLog("Invalid synth preset file. Using built-in factory presets.");
     f.close();
     applyDefaultSynthPresets();
     return;
@@ -1174,7 +1196,7 @@ void load_synth_presets() {
   for (uint16_t i = 0; i < header.count; ++i) {
     SynthPresetSlot preset = {};
     if (f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) != sizeof(preset)) {
-      sendToLog("Warning: Synth preset data incomplete. Restoring factory preset file.");
+      sendToLog("Warning: Synth preset data incomplete. Using built-in factory presets.");
       f.close();
       applyDefaultSynthPresets();
       return;
@@ -1189,7 +1211,7 @@ void load_synth_presets() {
   }
   f.close();
   if (crc32Finish(crc) != header.base.crc32) {
-    sendToLog("Synth preset CRC32 mismatch. Restoring factory preset file.");
+    sendToLog("Synth preset CRC32 mismatch. Using built-in factory presets.");
     applyDefaultSynthPresets();
     return;
   }

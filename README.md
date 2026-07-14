@@ -65,17 +65,6 @@ The current code supports:
 - Nicholas Fox has been hexperimenting with the firmware since before receiving a HexBoard in the mail.
 - Robert Wierzbicki created the sequencer and a few random other changes.
 
-## Related Firmware History
-
-This repository contains the main Arduino-based HexBoard firmware.
-
-Older and related references:
-
-- [SourceHut project page](https://git.sr.ht/~earboxer/HexBoard)
-- [Tagged releases on SourceHut](https://git.sr.ht/~earboxer/HexBoard/refs)
-- Posterity builds sometimes mirrored at [zachdecook.com/HexBoard/firmware](https://zachdecook.com/HexBoard/firmware/)
-- Historical `hexperiment` branch and related work may appear at [GitHub](https://github.com/theHDM/hexperiment) or [SourceHut](https://git.sr.ht/~earboxer/HexBoard/tree/hexperiment)
-
 ## Hardware And Build Target
 
 The current source targets:
@@ -86,6 +75,10 @@ The current source targets:
 - Pico SDK USB stack
 - USB manufacturer/product descriptor `HexBoard`
 - Generic SPI `/4` boot2
+
+The default `make` target builds the current `250 MHz` firmware as
+`build/HexBoard.uf2`. `make overclocked` produces the same configuration with a
+`_250MHz` filename suffix.
 
 The `Makefile` and firmware headers under `src/firmware/` are the most reliable
 build references for this repository.

@@ -66,11 +66,36 @@ const defaultScalaReferenceMidiNote = 60;
 const defaultGeometryFolders = [rootFolderPath, "Tunings", "Layouts"];
 
 type LayoutGuideFocus = "center" | "across" | "upRight";
-type GeometryEditorTab = "tuning" | "layouts" | "scales";
-type GeometrySidebarTab = "library" | "editor";
+type GeometryWorkspaceTab = "library" | "tuning" | "layout" | "scale";
 type GeometryLibrarySpace = "computer" | "hexboard";
 type PaintTool = "brush" | "eyedropper";
 type PaintTarget = "button" | "degree";
+
+const geometryWorkspaceTabs: Array<{
+  key: GeometryWorkspaceTab;
+  label: string;
+  description: string;
+}> = [
+  { key: "library", label: "Library", description: "Choose a bundle" },
+  { key: "tuning", label: "Tuning", description: "Define the pitches" },
+  { key: "layout", label: "Layout", description: "Map the key grid" },
+  { key: "scale", label: "Scale & color", description: "Shape the palette" }
+];
+
+const geometryWorkspaceCopy: Record<Exclude<GeometryWorkspaceTab, "library">, { eyebrow: string; title: string }> = {
+  tuning: {
+    eyebrow: "Step 2 of 4",
+    title: "Tuning"
+  },
+  layout: {
+    eyebrow: "Step 3 of 4",
+    title: "Layout"
+  },
+  scale: {
+    eyebrow: "Step 4 of 4",
+    title: "Scale & color"
+  }
+};
 
 const colorModeOptions: Array<{ value: ColorModeValue; label: string }> = [
   { value: ColorMode.Rainbow, label: "Rainbow" },
@@ -837,10 +862,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     computer: null,
     hexboard: null
   });
-  const [activeSidebarTab, setActiveSidebarTab] = useState<GeometrySidebarTab>("library");
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<GeometryWorkspaceTab>("library");
   const [selectedButton, setSelectedButton] = useState(65);
   const [layoutGuideFocus, setLayoutGuideFocus] = useState<LayoutGuideFocus | null>(null);
-  const [activeEditorTab, setActiveEditorTab] = useState<GeometryEditorTab>("tuning");
   const [paintbrushMode, setPaintbrushMode] = useState(false);
   const [paintTool, setPaintTool] = useState<PaintTool>("brush");
   const [paintTarget, setPaintTarget] = useState<PaintTarget>("button");
@@ -930,6 +954,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     setBundlesAndPersist(nextBundles);
     setActiveBundleId(next.objectIdHex);
     setSelectedButton(next.layouts[0]?.centerButton ?? 65);
+    setActiveWorkspaceTab("tuning");
     setStatus("Created new geometry bundle");
   }
 
@@ -959,6 +984,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       bundle.layouts.find((layout) => layout.objectIdHex === bundle.activeLayoutIdHex)?.centerButton ?? bundle.layouts[0]?.centerButton ?? 65,
       65
     ));
+    setActiveWorkspaceTab("tuning");
     setStatus(`Opened ${bundle.name}`);
   }
 
@@ -1468,6 +1494,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       setBundlesAndPersist(nextBundles);
       setActiveBundleId(imported.objectIdHex);
       setSelectedButton(noteButtonIndexOrFallback(imported.layouts.find((layout) => layout.objectIdHex === imported.activeLayoutIdHex)?.centerButton ?? imported.layouts[0]?.centerButton ?? 65, 65));
+      setActiveWorkspaceTab("tuning");
       setStatus(`Imported ${imported.name}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to import layout bundle");
@@ -1748,6 +1775,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     try {
       const { bundle } = await readHexBoardGeometryBundle(entry);
       openDeviceBundleInEditor(bundle, `Opened ${bundle.name} from HexBoard`);
+      setActiveWorkspaceTab("tuning");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to open HexBoard geometry bundle");
     } finally {
@@ -1917,66 +1945,99 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   }
 
   return (
-    <section className="layoutEditorWorkspace" onPointerDownCapture={(event) => commitIncludedDegreesIfLeaving(event.target)}>
+    <section
+      className={`geometryStudio layoutEditorWorkspace ${activeWorkspaceTab === "library" ? "libraryMode" : "editorMode"}`}
+      onPointerDownCapture={(event) => commitIncludedDegreesIfLeaving(event.target)}
+    >
+      <header className="geometryStudioHeader">
+        <div className="geometryTitleBlock">
+          <span className="eyebrow">Geometry studio</span>
+          <div className="row">
+            <h2>{activeBundle.name}</h2>
+            <span className="metaBadge">{activeBundle.tuning.name}</span>
+          </div>
+        </div>
+        {activeWorkspaceTab === "library" ? (
+          <div className="geometryHeaderActions">
+            <button className="primary" type="button" onClick={() => setActiveWorkspaceTab("tuning")}>Edit this bundle</button>
+          </div>
+        ) : (
+          <div className="geometryHeaderActions">
+            <label className="checkField liveSendControl">
+              <input
+                checked={liveSend}
+                disabled={!runtimeSendSupported}
+                type="checkbox"
+                onChange={(event) => {
+                  skipNextLiveSendRef.current = true;
+                  setLiveSend(event.target.checked);
+                }}
+              />
+              <span>Live send</span>
+            </label>
+            <button disabled={syncBusy || !runtimeSendSupported} type="button" onClick={() => void sendActiveBundlePreview("Sent")}>Send preview</button>
+            <button type="button" onClick={() => saveActiveBundleToComputer()}>Save to computer</button>
+            <button className="primary" disabled={syncBusy} type="button" onClick={() => void saveActiveBundleToHexBoard()}>Save to HexBoard</button>
+          </div>
+        )}
+        <div className="geometryStatus" role="status">
+          <span aria-hidden="true" />
+          {status}
+        </div>
+      </header>
+
+      <nav className="workflowTabs" aria-label="Geometry editing workflow">
+        {geometryWorkspaceTabs.map((tab, index) => (
+          <button
+            aria-current={activeWorkspaceTab === tab.key ? "step" : undefined}
+            className={activeWorkspaceTab === tab.key ? "workflowTab active" : "workflowTab"}
+            key={tab.key}
+            onClick={() => setActiveWorkspaceTab(tab.key)}
+            type="button"
+          >
+            <span className="workflowStepNumber">{index + 1}</span>
+            <span>
+              <strong>{tab.label}</strong>
+              <small>{tab.description}</small>
+            </span>
+          </button>
+        ))}
+      </nav>
+
       <aside className="panel stack layoutEditorSidebar">
-        <div className="row between">
-          <h2>Geometry Bundles</h2>
-          <span className="countBadge">{bundles.length}</span>
-        </div>
-        <div className="sidebarTabs bundleManagerTabs" role="tablist" aria-label="Geometry bundle tools">
-          <button
-            aria-selected={activeSidebarTab === "library"}
-            className={activeSidebarTab === "library" ? "active" : ""}
-            onClick={() => setActiveSidebarTab("library")}
-            role="tab"
-            type="button"
-          >
-            File Manager
-          </button>
-          <button
-            aria-selected={activeSidebarTab === "editor"}
-            className={activeSidebarTab === "editor" ? "active" : ""}
-            onClick={() => setActiveSidebarTab("editor")}
-            role="tab"
-            type="button"
-          >
-            Editor
-          </button>
-        </div>
         <input ref={bundleInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" onChange={(event) => void importBundleFile(event)} />
         <input ref={scalaInputRef} className="hiddenFileInput" type="file" accept=".scl,text/plain" onChange={(event) => void importScalaFile(event)} />
 
-        {activeSidebarTab === "library" ? (
+        {activeWorkspaceTab === "library" ? (
           <>
-            <div className="row">
-              <button type="button" onClick={addNewBundle}>New</button>
-              <button type="button" onClick={() => downloadBundleFile(activeBundle)}>
-                Export
-              </button>
-              <button type="button" onClick={() => bundleInputRef.current?.click()}>Import</button>
-              <button disabled={syncBusy} type="button" onClick={() => void refreshHexBoardGeometryLibrary()}>
-                Refresh HexBoard
-              </button>
+            <div className="libraryToolbar">
+              <div>
+                <span className="eyebrow">Step 1 of 4</span>
+                <h2>Geometry library</h2>
+              </div>
+              <div className="row">
+                <button className="primary" type="button" onClick={addNewBundle}>New bundle</button>
+                <button type="button" onClick={() => bundleInputRef.current?.click()}>Import file</button>
+                <button type="button" onClick={() => downloadBundleFile(activeBundle)}>Export active</button>
+                <button disabled={syncBusy} type="button" onClick={() => void refreshHexBoardGeometryLibrary()}>Refresh HexBoard</button>
+              </div>
             </div>
-            <div className="row">
-              <input
-                aria-label="New geometry folder"
-                placeholder="New folder"
-                value={newFolder}
-                maxLength={GeometryMenuTextMaxLength}
-                onChange={(event) => setNewFolder(clampGeometryMenuText(event.target.value, ""))}
-              />
-              <button type="button" onClick={addFolder}>
-                Add
-              </button>
-            </div>
-            <div className="row">
-              <button disabled={syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>
-                Verify
-              </button>
+            <div className="libraryUtilityBar">
+              <div className="fieldControlRow newFolderControl">
+                <input
+                  aria-label="New geometry folder"
+                  placeholder="Name a new folder"
+                  value={newFolder}
+                  maxLength={GeometryMenuTextMaxLength}
+                  onChange={(event) => setNewFolder(clampGeometryMenuText(event.target.value, ""))}
+                />
+                <button type="button" onClick={addFolder}>Add folder</button>
+              </div>
+              <button disabled={syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>Verify active bundle</button>
+              <span className="muted">{bundles.length} on this computer</span>
             </div>
 
-            <div className="librarySpaces">
+            <div className="librarySpaces geometryLibrarySpaces">
               <GeometryLibrarySpacePanel
                 title="Computer Library"
                 subtitle="Browser-saved geometry bundles"
@@ -2005,82 +2066,32 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           </>
         ) : null}
 
-        {activeSidebarTab === "editor" ? (
+        {activeWorkspaceTab !== "library" ? (
           <>
-            <div className="row">
-              <label className="checkField">
-                <input
-                  checked={liveSend}
-                  disabled={!runtimeSendSupported}
-                  type="checkbox"
-                  onChange={(event) => {
-                    skipNextLiveSendRef.current = true;
-                    setLiveSend(event.target.checked);
-                  }}
-                />
-                <span>Live send</span>
-              </label>
-              <button className="primary" disabled={syncBusy || !runtimeSendSupported} type="button" onClick={() => void sendActiveBundlePreview("Sent")}>
-                Send Now
-              </button>
-              <button type="button" onClick={() => saveActiveBundleToComputer()}>
-                Save to Computer
-              </button>
-              <button disabled={syncBusy} type="button" onClick={() => void saveActiveBundleToHexBoard()}>
-                Save to HexBoard
-              </button>
+            <div className="inspectorHeading">
+              <span className="eyebrow">{geometryWorkspaceCopy[activeWorkspaceTab].eyebrow}</span>
+              <h2>{geometryWorkspaceCopy[activeWorkspaceTab].title}</h2>
             </div>
-            <label className="field">
-              <span>Bundle name</span>
-              <input maxLength={GeometryMenuTextMaxLength} value={activeBundle.name} onChange={(event) => updateBundleName(event.target.value)} />
-            </label>
-            <label className="field">
-              <span>Folder</span>
-              <select value={normalizeDisplayFolderPath(activeBundle.folderPath)} onChange={(event) => updateBundleFolder(event.target.value)}>
-                {allFolders.map((folder) => (
-                  <option key={folder} value={folder}>
-                    {folderLabel(folder)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button className="warning" type="button" onClick={deleteActiveBundle}>Delete Bundle</button>
-
-            <div className="sidebarTabs" role="tablist" aria-label="Geometry bundle sections">
-              <button
-                aria-selected={activeEditorTab === "tuning"}
-                className={activeEditorTab === "tuning" ? "active" : ""}
-                onClick={() => setActiveEditorTab("tuning")}
-                role="tab"
-                type="button"
-              >
-                Tuning
-              </button>
-              <button
-                aria-selected={activeEditorTab === "layouts"}
-                className={activeEditorTab === "layouts" ? "active" : ""}
-                onClick={() => setActiveEditorTab("layouts")}
-                role="tab"
-                type="button"
-              >
-                Layouts
-              </button>
-              <button
-                aria-selected={activeEditorTab === "scales"}
-                className={activeEditorTab === "scales" ? "active" : ""}
-                onClick={() => setActiveEditorTab("scales")}
-                role="tab"
-                type="button"
-              >
-                Scales
-              </button>
+            <div className="bundleIdentityFields">
+              <label className="field">
+                <span>Bundle name</span>
+                <input maxLength={GeometryMenuTextMaxLength} value={activeBundle.name} onChange={(event) => updateBundleName(event.target.value)} />
+              </label>
+              <label className="field">
+                <span>Folder</span>
+                <select value={normalizeDisplayFolderPath(activeBundle.folderPath)} onChange={(event) => updateBundleFolder(event.target.value)}>
+                  {allFolders.map((folder) => (
+                    <option key={folder} value={folder}>{folderLabel(folder)}</option>
+                  ))}
+                </select>
+              </label>
             </div>
           </>
         ) : null}
 
-        {activeSidebarTab === "editor" && activeEditorTab === "tuning" ? (
+        {activeWorkspaceTab === "tuning" ? (
           <section className="editorSection">
-            <h3>Tuning</h3>
+            <h3>Pitch system</h3>
             <label className="field">
               <span>Type</span>
               <select value={activeBundle.tuning.kind} onChange={(event) => setTuningKind(event.target.value as LayoutBundleTuning["kind"])}>
@@ -2108,9 +2119,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           </section>
         ) : null}
 
-        {activeSidebarTab === "editor" && activeEditorTab === "layouts" ? (
+        {activeWorkspaceTab === "layout" ? (
           <section className="editorSection">
-            <h3>Layouts</h3>
+            <h3>Key mapping</h3>
             <div className="fieldGrid">
               <label className="field">
                 <span>Active layout</span>
@@ -2121,8 +2132,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 </select>
               </label>
               <div className="row">
-                <button type="button" onClick={addNewLayout}>New Layout</button>
-                <button className="warning" type="button" onClick={deleteActiveLayout}>Delete Layout</button>
+                <button type="button" onClick={addNewLayout}>New layout</button>
+                <button className="warning" type="button" onClick={deleteActiveLayout}>Delete layout</button>
               </div>
               <label className="field">
                 <span>Layout name</span>
@@ -2139,7 +2150,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                     onChange={(event) => updateLayout({ centerButton: noteButtonIndexOrFallback(clampInteger(Number(event.target.value), 0, 139), activeLayout.centerButton) })}
                     {...layoutGuideProps("center")}
                   />
-                  <button type="button" onClick={() => updateLayout({ centerButton: selectedButton })}>Use Selected</button>
+                  <button type="button" onClick={() => updateLayout({ centerButton: selectedButton })}>Use selected</button>
                 </div>
               </label>
               <label className="field">
@@ -2173,9 +2184,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           </section>
         ) : null}
 
-        {activeSidebarTab === "editor" && activeEditorTab === "scales" ? (
+        {activeWorkspaceTab === "scale" ? (
           <section className="editorSection">
-            <h3>Scales</h3>
+            <h3>Scale degrees</h3>
             <div className="fieldGrid">
               <label className="field">
                 <span>Active scale</span>
@@ -2189,8 +2200,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 </select>
               </label>
               <div className="row">
-                <button type="button" onClick={addNewScale}>New Scale</button>
-                <button className="warning" disabled={activeScaleIsAllNotes} type="button" onClick={deleteActiveScale}>Delete Scale</button>
+                <button type="button" onClick={addNewScale}>New scale</button>
+                <button className="warning" disabled={activeScaleIsAllNotes} type="button" onClick={deleteActiveScale}>Delete scale</button>
               </div>
               <label className="field">
                 <span>Scale name</span>
@@ -2220,19 +2231,34 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             </div>
           </section>
         ) : null}
+
+        {activeWorkspaceTab !== "library" ? (
+          <div className="dangerZone">
+            <div>
+              <strong>Remove bundle</strong>
+              <span>Deletes the browser-saved copy from this computer.</span>
+            </div>
+            <button className="warning" type="button" onClick={deleteActiveBundle}>Delete</button>
+          </div>
+        ) : null}
       </aside>
 
-      <div className="layoutEditorMainColumn">
-        <main className="panel stack boardPanel">
-          <div className="row between">
+      {activeWorkspaceTab !== "library" ? (
+        <div className="layoutEditorMainColumn">
+        <section className="panel stack boardPanel">
+          <div className="boardPanelHeading">
             <div>
-              <h2>HexBoard Preview</h2>
-              <span className="muted">{status}</span>
+              <span className="eyebrow">Live preview</span>
+              <h2>HexBoard key map</h2>
+            </div>
+            <div className="previewContext">
+              <span>{activeLayout.name}</span>
+              <span>{activeScale.name}</span>
             </div>
           </div>
           <div className="brushToolbar">
             <label className="toolbarSelectField">
-              <span>Default color mode</span>
+              <span>Color mode</span>
               <select
                 value={activeBundle.palette.defaultColorMode}
                 onChange={(event) => updateDefaultColorMode(Number(event.target.value) as ColorModeValue)}
@@ -2253,7 +2279,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 setPaintTool("brush");
               }}
             >
-              Paintbrush
+              Paint keys
             </button>
             <label className="toolbarSelectField">
               <span>Paint target</span>
@@ -2280,7 +2306,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 setPaintTool((current) => current === "eyedropper" ? "brush" : "eyedropper");
               }}
             >
-              Eyedropper
+              Pick color
             </button>
             <label className="brushColorField">
               <span>Brush color</span>
@@ -2300,7 +2326,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 resetAllButtonColors();
               }}
             >
-              Reset Overrides
+              Reset colors
             </button>
           </div>
           <div className="hexBoardScroll">
@@ -2365,15 +2391,18 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               ))}
             </div>
           </div>
-        </main>
+        </section>
 
-        <aside className="panel stack selectedKeyPanel">
-          <div className="selectedKeyHeading">
-            <h2>Selected Key:</h2>
-            <span className="status">
-              Button {selectedPreview.key.index} · row {selectedPreview.key.row} · col {selectedPreview.key.column}
-            </span>
-          </div>
+        <details className="panel selectedKeyPanel">
+          <summary className="selectedKeyHeading">
+            <div>
+              <span className="eyebrow">Key inspector</span>
+              <strong>Button {selectedPreview.key.index}</strong>
+              <span>row {selectedPreview.key.row} · column {selectedPreview.key.column}</span>
+            </div>
+            <span className="metaBadge">{selectedPitchLabel} · {formatHertz(selectedFrequencyHz)}</span>
+          </summary>
+          <div className="selectedKeyContent stack">
           <div className="fieldGrid">
             <label className="field">
               <span>Role</span>
@@ -2457,13 +2486,18 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               </div>
             </section>
           )}
-        </aside>
+          </div>
+        </details>
       </div>
+      ) : null}
 
-      <section className="panel stack protocolDebugPanel">
-        <h2>Object Debug</h2>
+      <details className="panel protocolDebugPanel">
+        <summary>
+          <span>Developer details</span>
+          <small>Encoded object preview</small>
+        </summary>
         <pre className="dataPreview">{encodedPreview}</pre>
-      </section>
+      </details>
     </section>
   );
 }

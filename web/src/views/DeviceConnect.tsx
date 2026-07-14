@@ -187,9 +187,10 @@ export function DeviceConnect({
 
   const multipleDevices = devices.length > 1;
   const buttonLabel = multipleDevices && selectedDeviceKey ? "Connect Selected" : "Connect HexBoard";
+  const connectedToHexBoard = connectionLabel.startsWith("HexBoard:");
 
   return (
-    <div className="deviceMenu" aria-label="Device connection">
+    <div className="deviceMenu" data-connected={connectedToHexBoard} aria-label="Device connection">
       <div className="deviceStatus">
         <strong>{connectionLabel}</strong>
         <span>{status}</span>

@@ -11,9 +11,18 @@ type ViewKey = "synth" | "profiles" | "layouts";
 type ThemeMode = "light" | "dark";
 
 const views: Array<{ key: ViewKey; label: string }> = [
-  { key: "layouts", label: "Tunings & Layouts" },
-  { key: "synth", label: "Synth Editor" },
-  { key: "profiles", label: "Profiles" }
+  {
+    key: "layouts",
+    label: "Tunings & Layouts"
+  },
+  {
+    key: "synth",
+    label: "Synth Editor"
+  },
+  {
+    key: "profiles",
+    label: "Profiles"
+  }
 ];
 
 const themeStorageKey = "hexboard-sync-theme";
@@ -51,12 +60,15 @@ export function App() {
         return <SynthPresetLibrary transport={transport} />;
     }
   }, [activeView, deviceHello, transport]);
-
   return (
-    <main className="appShell">
+    <div className="appShell">
       <header className="topBar">
         <div className="brandBlock">
-          <h1>HexBoard Sync</h1>
+          <span aria-hidden="true" className="brandMark"><span /></span>
+          <div>
+            <span className="eyebrow">Companion app</span>
+            <h1>HexBoard Sync</h1>
+          </div>
         </div>
         <nav className="tabs" aria-label="Main views">
           {views.map((view) => (
@@ -70,23 +82,28 @@ export function App() {
             </button>
           ))}
         </nav>
-        <button
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          aria-pressed={theme === "dark"}
-          className="themeToggle"
-          type="button"
-          onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
-        >
-          <span aria-hidden="true" className="themeToggleIcon">{theme === "dark" ? "☾" : "☀"}</span>
-        </button>
-        <DeviceConnect
-          onTransportChange={setTransport}
-          onHelloChange={setDeviceHello}
-          connectionLabel={connectionLabel}
-          onConnectionLabelChange={setConnectionLabel}
-        />
+        <div className="topBarActions">
+          <button
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-pressed={theme === "dark"}
+            className="themeToggle"
+            title={`Use ${theme === "dark" ? "light" : "dark"} appearance`}
+            type="button"
+            onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+          >
+            <span aria-hidden="true" className="themeToggleIcon">{theme === "dark" ? "☾" : "☀"}</span>
+          </button>
+          <DeviceConnect
+            onTransportChange={setTransport}
+            onHelloChange={setDeviceHello}
+            connectionLabel={connectionLabel}
+            onConnectionLabelChange={setConnectionLabel}
+          />
+        </div>
       </header>
-      {content}
-    </main>
+      <main>
+        {content}
+      </main>
+    </div>
   );
 }

@@ -2,6 +2,12 @@
 
 #include "../FirmwareModule.h"
 
+#ifndef F_CPU
+#define F_CPU 200000000L
+#endif
+
+constexpr uint32_t HEXBOARD_SYSTEM_CLOCK_HZ = static_cast<uint32_t>(F_CPU);
+
 constexpr byte ARP_DIRECTION_UP = 0;
 constexpr byte ARP_DIRECTION_DOWN = 1;
 constexpr byte ARP_DIRECTION_ORDER_PLAYED = 2;
@@ -110,7 +116,7 @@ constexpr uint16_t SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_2 = 48;
 constexpr uint16_t SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_3 = 24;
 constexpr uint16_t SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_4 = 12;
 constexpr uint16_t SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_5 = 6;
-constexpr uint32_t SYNTH_WAVETABLE_MIP_SAMPLE_RATE_HZ = 250000000u / 1024u / 6u;
+constexpr uint32_t SYNTH_WAVETABLE_MIP_SAMPLE_RATE_HZ = HEXBOARD_SYSTEM_CLOCK_HZ / 1024u / 6u;
 constexpr uint32_t SYNTH_WAVETABLE_MIP_NYQUIST_HZ = SYNTH_WAVETABLE_MIP_SAMPLE_RATE_HZ / 2u;
 constexpr uint8_t SYNTH_WAVETABLE_MIP_BLEND_FRACTION_BITS = 8;
 constexpr uint8_t SYNTH_WAVETABLE_MIP_BLEND_MARGIN_SHIFT = 3;
