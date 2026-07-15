@@ -342,7 +342,7 @@ Example scale
       "RoundThe808",
       "GlassyBells"
     ]);
-    expect(factory.every((wavetable) => wavetable.folderPath === "Factory")).toBe(true);
+    expect(factory.every((wavetable) => wavetable.folderPath === "/")).toBe(true);
     expect(factory.every((wavetable) => wavetable.samples.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES)).toBe(true);
   });
 

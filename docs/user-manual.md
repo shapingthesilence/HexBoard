@@ -326,8 +326,9 @@ also follow `Played`, `RevPlay`, or `Random` order. `Played` means the order in
 which held notes were pressed, not the physical button numbers.
 
 `WT:...` shows the currently loaded wavetable and opens a virtual load list.
-Basic Shapes is the built-in rescue table. Factory and user-imported
-wavetables are ordinary editable files organized into folders. The active
+Basic Shapes is the built-in rescue table. Supplied factory wavetables appear
+in the root directory, while user-imported wavetables can be organized into
+folders. All are ordinary editable files. The active
 wavetable shows a diamond in the left action-icon slot when it appears in the
 list. The factory image includes:
 
@@ -692,7 +693,7 @@ Important factory defaults include:
 - Active synth preset: `Soft String Pad`
 - Synth: `Poly`
 - Synth output volume: `100%` for headphone and piezo
-- Wavetable: `Factory/Classic`
+- Wavetable: `/Classic`
 - WT Pos: frame `1`
 - Drive: `Off`
 - Wheel FX: `FoldWrp`

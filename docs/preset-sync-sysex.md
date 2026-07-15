@@ -1069,7 +1069,8 @@ compatibility table and update `SynthWavetablePosition` to the matching anchor.
 `Hybrid` and unavailable named dependencies load `Basic Shapes`. Basic Shapes
 is the rescue wavetable and uses the reserved folder path `/Built In`
 unescaped. Firmware also accepts `%2FBuilt In` and `Built In`. Editable factory
-wavetables use ordinary catalog folders such as `Factory`.
+wavetables use ordinary catalog paths; the supplied factory wavetables use the
+root folder `/`.
 
 The common `Name` and `FolderPath` TLVs are required for named/foldered synth
 presets. Duplicate names are allowed in different folders. Within the same

@@ -522,7 +522,7 @@ frame lookup snaps those selector values to exact frame offsets while preserving
 continuous interpolation for intermediate modulation amounts.
 `web/scripts/generate-factory-wavetables.mjs` compiles only Basic Shapes into
 firmware and writes the other factory tables as `.hexwav` source files under
-`factory-library/wavetables/Factory/`.
+`factory-library/wavetables/` so they appear in the root wavetable directory.
 
 The audio renderer consumes envelope commands and advances the amp-envelope
 state on the same `32`-sample control quantum. `SynthVoiceRenderCache` holds a

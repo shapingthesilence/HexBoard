@@ -13,7 +13,7 @@ const repoRoot = resolve(scriptDir, "../..");
 const sourcePath = resolve(repoRoot, "src/firmware/synth/BuiltinWavetables.cpp");
 const webOutputPath = resolve(repoRoot, "web/src/catalogs/factoryWavetables.ts");
 const firmwareOutputPath = resolve(repoRoot, "src/firmware/synth/BuiltinWavetableData.cpp");
-const libraryOutputPath = resolve(repoRoot, "factory-library/wavetables/Factory");
+const libraryOutputPath = resolve(repoRoot, "factory-library/wavetables");
 const sampleCount = SYNTH_WAVETABLE_SAMPLE_COUNT;
 
 const wavetableSources = [
@@ -262,7 +262,7 @@ function renderWebFactoryData(renderedWavetables) {
   output += `  folderPath: string;\n`;
   output += `  samples: Uint8Array;\n`;
   output += `}\n\n`;
-  output += `const factoryWavetableFolder = "Factory";\n\n`;
+  output += `const factoryWavetableFolder = "/";\n\n`;
   output += `const factoryWavetableDefinitions = [\n`;
   for (const wavetable of renderedWavetables) {
     const base64 = Buffer.from(wavetable.samples).toString("base64");

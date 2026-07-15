@@ -24,7 +24,7 @@ fixed-mip table. The relative directory and filename become the on-device
 folder and name.
 
 `web/scripts/generate-factory-wavetables.mjs` regenerates the supplied
-`wavetables/Factory/` files from the project WAV and anchor sources. Basic
+`wavetables/` files from the project WAV and anchor sources. Basic
 Shapes is intentionally excluded from LittleFS because it is the immutable
 rescue wavetable compiled into firmware.
 
