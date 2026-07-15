@@ -83,9 +83,11 @@ build/HexBoard_Sequencer_Update.uf2
 `.hexwav` wavetables from `factory-library/` into current device records.
 `scripts/build_factory_uf2.py` and `mklittlefs` create and extract-validate the
 `8 MiB` image, verify the firmware UF2 payload against the compiled binary,
-and append every filesystem block to the Factory UF2. The filesystem range is
-`0x107ff000` through `0x10fff000`; the final `4 KiB` EEPROM reservation is not
-included. The Update UF2 is verified to contain firmware addresses only.
+pad every touched firmware sector to its full `4 KiB` extent before appending
+another flash range, and append every filesystem block to the Factory UF2. The
+completed image is rejected if any written sector is partial. The filesystem
+range is `0x107ff000` through `0x10fff000`; the final `4 KiB` EEPROM reservation
+is not included. The Update UF2 is verified to contain firmware addresses only.
 
 The companion app is intentionally self-contained under `web/`. Keep Node
 package files there rather than adding root-level web tooling unless the repo is

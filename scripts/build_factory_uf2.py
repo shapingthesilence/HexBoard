@@ -16,6 +16,7 @@ UF2_MAGIC_START0 = 0x0A324655
 UF2_MAGIC_START1 = 0x9E5D5157
 UF2_MAGIC_END = 0x0AB16F30
 UF2_FLAG_FAMILY_ID_PRESENT = 0x00002000
+FLASH_SECTOR_SIZE = 4096
 LITTLEFS_START = 0x107FF000
 LITTLEFS_SIZE = 8 * 1024 * 1024
 LITTLEFS_END = LITTLEFS_START + LITTLEFS_SIZE
@@ -171,6 +172,29 @@ def make_uf2_block(payload: bytes, target: int, family_id: int) -> bytearray:
     return block
 
 
+def pad_firmware_sectors(blocks: list[bytearray], family_id: int) -> list[bytearray]:
+    """Fully represent every firmware sector before appending another flash range."""
+    pages: dict[int, bytearray] = {}
+    for block in blocks:
+        header = uf2_header(block)
+        target, payload_size = header[3], header[4]
+        if payload_size != UF2_PAYLOAD_SIZE or target % UF2_PAYLOAD_SIZE:
+            raise BuildError("firmware UF2 pages must be 256-byte aligned and complete")
+        if target in pages:
+            raise BuildError(f"firmware UF2 contains duplicate page 0x{target:08x}")
+        pages[target] = block
+
+    padded: list[bytearray] = []
+    sectors = sorted({target - target % FLASH_SECTOR_SIZE for target in pages})
+    for sector in sectors:
+        for target in range(sector, sector + FLASH_SECTOR_SIZE, UF2_PAYLOAD_SIZE):
+            block = pages.get(target)
+            if block is None:
+                block = make_uf2_block(bytes(UF2_PAYLOAD_SIZE), target, family_id)
+            padded.append(block)
+    return padded
+
+
 def merge_uf2(firmware_path: Path, firmware_binary_path: Path,
               filesystem_path: Path, output_path: Path) -> None:
     firmware_blocks = parse_uf2(firmware_path.read_bytes())
@@ -184,7 +208,10 @@ def merge_uf2(firmware_path: Path, firmware_binary_path: Path,
         make_uf2_block(filesystem[offset:offset + UF2_PAYLOAD_SIZE], LITTLEFS_START + offset, family_id)
         for offset in range(0, len(filesystem), UF2_PAYLOAD_SIZE)
     ]
-    combined = firmware_blocks + filesystem_blocks
+    # The standalone firmware may end in a partial sector because that sector is
+    # final in its UF2. Once LittleFS follows it, RP2040-E14 requires every page
+    # of each earlier touched sector to be present in the combined transfer.
+    combined = pad_firmware_sectors(firmware_blocks, family_id) + filesystem_blocks
     total_blocks = len(combined)
     for block_number, block in enumerate(combined):
         struct.pack_into("<II", block, 20, block_number, total_blocks)
@@ -209,10 +236,31 @@ def write_update_uf2(firmware_path: Path, firmware_binary_path: Path, output_pat
 def validate_combined_uf2(output_path: Path, firmware_blocks: list[bytearray]) -> None:
     combined = parse_uf2(output_path.read_bytes())
     total = len(combined)
+    blocks_by_address: dict[int, bytearray] = {}
     for expected_number, block in enumerate(combined):
         header = uf2_header(block)
         if header[5] != expected_number or header[6] != total:
             raise BuildError("combined UF2 block numbering is invalid")
+        target, payload_size = header[3], header[4]
+        if payload_size != UF2_PAYLOAD_SIZE or target % UF2_PAYLOAD_SIZE:
+            raise BuildError("combined UF2 pages must be 256-byte aligned and complete")
+        if target in blocks_by_address:
+            raise BuildError(f"combined UF2 contains duplicate page 0x{target:08x}")
+        blocks_by_address[target] = block
+
+    written_sectors = {
+        target - target % FLASH_SECTOR_SIZE for target in blocks_by_address
+    }
+    for sector in written_sectors:
+        missing = [
+            target
+            for target in range(sector, sector + FLASH_SECTOR_SIZE, UF2_PAYLOAD_SIZE)
+            if target not in blocks_by_address
+        ]
+        if missing:
+            raise BuildError(
+                f"combined UF2 partially represents flash sector 0x{sector:08x}"
+            )
     expected_fs_addresses = set(range(LITTLEFS_START, LITTLEFS_END, UF2_PAYLOAD_SIZE))
     actual_fs_addresses = {
         uf2_header(block)[3]
@@ -223,14 +271,23 @@ def validate_combined_uf2(output_path: Path, firmware_blocks: list[bytearray]) -
         raise BuildError("combined UF2 does not cover the complete LittleFS range")
     if any(uf2_header(block)[3] >= LITTLEFS_END for block in combined):
         raise BuildError("combined UF2 writes into the EEPROM reservation or beyond flash")
-    for original, merged in zip(firmware_blocks, combined):
+    original_addresses = {uf2_header(block)[3] for block in firmware_blocks}
+    for original in firmware_blocks:
         original_header = uf2_header(original)
+        merged = blocks_by_address.get(original_header[3])
+        if merged is None:
+            raise BuildError("combined UF2 is missing a firmware page")
         merged_header = uf2_header(merged)
         payload_size = original_header[4]
         if (original_header[2:5] != merged_header[2:5]
                 or original_header[7] != merged_header[7]
                 or original[32:32 + payload_size] != merged[32:32 + payload_size]):
             raise BuildError("firmware contents changed while merging the UF2")
+    zero_page = bytes(UF2_PAYLOAD_SIZE)
+    for target, block in blocks_by_address.items():
+        if target < LITTLEFS_START and target not in original_addresses:
+            if block[32:32 + UF2_PAYLOAD_SIZE] != zero_page:
+                raise BuildError("firmware sector padding is not zero-filled")
 
 
 def main() -> None:

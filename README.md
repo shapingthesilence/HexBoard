@@ -109,8 +109,9 @@ The build validates the `.json` presets and `.hexwav` wavetables under
 `mklittlefs` from the installed RP2040 Arduino core to create an `8 MiB`
 factory filesystem image. It extracts and compares that image before merging
 every filesystem block into the factory UF2. The firmware payload is checked
-against the compiled binary, the update UF2 is checked for filesystem
-addresses, and the final `4 KiB` EEPROM reservation is never written.
+against the compiled binary, every touched flash sector is represented in full,
+the update UF2 is checked for filesystem addresses, and the final `4 KiB`
+EEPROM reservation is never written.
 
 The `Makefile` compiles the repository sketch directly with the project board
 options and writes flashable files under `build/`.
