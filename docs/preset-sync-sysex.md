@@ -757,9 +757,9 @@ Recommended TLVs:
 
 `SettingValues` may use current `SettingKey` ordinals only when
 `SettingsSchemaVersion` exactly matches the firmware's current schema. Current
-firmware migrates `/settings.dat` versions `20` through `22`; older or unknown
-versions reset to factory defaults. For future-proof sync, keep user
-tunings/layouts/mappings in separate objects and store references here.
+firmware accepts only a complete current `/settings.dat` record during boot.
+For future-proof sync, keep user tunings/layouts/mappings in separate objects
+and store references here.
 
 ## User Tuning Object
 
@@ -984,17 +984,16 @@ The current synth setup is already cohesive, so v1 should transfer synth presets
 as synth-only objects, separate from tuning/layout/profile objects.
 
 Synth presets are named and organized by folder path. Current firmware stores a
-counted catalog capped at `128` entries. The 2.0 development file format uses
-fixed-size flash records and keeps only preset metadata plus the current loaded
-preset record in RAM; older on-device preset files are intentionally reset to
-factory defaults instead of migrated.
+counted catalog capped at `128` entries. It uses fixed-size flash records and
+keeps only preset metadata plus the current loaded preset record in RAM. Boot
+loads a valid current catalog read-only and uses an empty editable preset
+library if validation fails.
 
 The user-facing model is a foldered preset library rather than a numbered slot
 bank. The web app presents the foldered library, and the device uses
 `VirtualListMenu` as a folder browser without allocating per-preset `GEMItem`
-objects. Factory defaults copy the factory synth sounds into ordinary catalog
-entries, so hosts should treat restored factory presets like editable and
-erasable user presets.
+objects. The Factory UF2 installs its synth sounds as ordinary catalog entries,
+so hosts should treat factory presets like editable and erasable user presets.
 
 Recommended TLVs:
 
@@ -1051,17 +1050,9 @@ These are sound-focused settings only. A synth preset should not imply the
 current profile slot, tuning, layout, MIDI channel, LED animation, or delegated
 control state.
 
-Schema `4` appends mono portamento and arpeggiator direction to the schema `3`
-value set. Schema `5` appends wavetable position and LFO target/amount/wave/
-speed. Schema `6` adds the separate wavetable folder/name dependency TLVs while
-leaving the synth value list intact. Schema `7` expands `SynthModTarget`,
-`EffectEnvelopeTarget`, `EffectEnvelope2Target`, and `SynthLfoTarget` to include
-`DutyWrp` value `4` and `PolyWrp` value `5`; value `0` is renamed from `Morph`
-to `FoldWrp` without changing stored bytes. Firmware migrates stored
-`/synth_presets.dat` version `7` records by keeping their existing value bytes
-and appending factory defaults for the five new keys; version `8` records are
-migrated by deriving the new wavetable dependency from the legacy `Waveform`
-value.
+Schema `7` includes wavetable position and folder/name dependency fields, mono
+portamento, arpeggiator direction, LFO controls, and the `DutyWrp` and `PolyWrp`
+modulation targets. Target value `0` is `FoldWrp`.
 
 `SynthLfoWave` values are `0` `Sine`, `1` `Triangle`, `2` `Saw`, `3` `Square`,
 `4` `Noise`, and `5` `Smooth noise`. The noise waves reuse the existing schema
@@ -1073,14 +1064,12 @@ value `12` selects `Noise`, a smooth-noise vibrato source running at the same
 `PlaybackMode` value `5` was the temporary `PolyTbl` mode and is now normalized
 to `Poly` on import. `Waveform` remains in the value list for compatibility, but
 new preset objects use `SynthWavetableName` and `SynthWavetableFolderPath` as
-the actual source dependency. Old `Waveform` values map into the built-in
-compatibility tables and update `SynthWavetablePosition` to the matching anchor;
-`Hybrid` maps to `Basic Shapes` at position `0`, and missing named dependencies
-load `Basic Shapes` until the matching table is installed.
-Built-in wavetable dependencies use the reserved folder path `/Built In`
-unescaped. Firmware accepts the older escaped `%2FBuilt In` alias and the
-normalizer-stripped `Built In` alias for compatibility with earlier saves, but
-new web-app preset writes send `/Built In` directly.
+the actual source dependency. Old `Waveform` values map to the available
+compatibility table and update `SynthWavetablePosition` to the matching anchor.
+`Hybrid` and unavailable named dependencies load `Basic Shapes`. Basic Shapes
+is the rescue wavetable and uses the reserved folder path `/Built In`
+unescaped. Firmware also accepts `%2FBuilt In` and `Built In`. Editable factory
+wavetables use ordinary catalog folders such as `Factory`.
 
 The common `Name` and `FolderPath` TLVs are required for named/foldered synth
 presets. Duplicate names are allowed in different folders. Within the same
@@ -1124,11 +1113,11 @@ sending the full fixed mip table; firmware rejects mismatched sample length and
 mip count pairs. The fixed-mip sample payload is split into repeated
 `WavetableSamples` TLVs of at most `32,768` bytes each because a single TLV
 length is 16-bit and the complete fixed-mip payload is `49,152` bytes.
-The web editor's factory wavetable bank is generated from the same sources as
-firmware's flash-resident factory tables: `Basic Shapes` and `Classic` use
-firmware anchor waves, and the other factory entries use default WAV sources.
-All are rendered to the same `16` base frames and processed through the same
-FFT-pruned mip builder as imported wavetables.
+The web editor's factory wavetable bank and the factory `.hexwav` source files
+are generated together. `Basic Shapes` and `Classic` use firmware anchor waves,
+and the other entries use default WAV sources. Basic Shapes is compiled as the
+rescue table; the others are installed in LittleFS as editable records. All use
+the same `16` base frames and FFT-pruned mip builder as imported wavetables.
 
 The web app's Serum/Vital import path reads wavetable `.wav` files,
 interpolates the source frame axis down to `16` frames, resamples each frame to
@@ -1302,10 +1291,9 @@ uses `SaveToFlash` for the full unpacked bundle object set.
   host-to-device object writes also mute across the transfer so chunked temp
   writes and commit cleanup stay covered.
 - If a change adds persisted user tuning/layout/scale/color/map storage, bump
-  the relevant storage schema and document migration separately from the SysEx
-  protocol version.
-- Keep object schema migration separate from wire protocol negotiation. A device
-  may speak protocol `1.0` while supporting newer object schemas.
+  the relevant storage schema independently of the SysEx protocol version.
+- Keep object-schema compatibility separate from wire protocol negotiation. A
+  device may speak protocol `1.0` while supporting newer object schemas.
 
 ## Open Design Questions
 

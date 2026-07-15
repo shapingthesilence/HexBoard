@@ -247,6 +247,9 @@ Seq Lights
 Saving And Files
 
 - Sequences are stored under /Sequences in onboard flash.
+- The Sequencer Factory UF2 erases onboard storage and installs an empty
+  /Sequences tree.
+- The Sequencer Update UF2 preserves onboard storage.
 - Sequence files store note pitches as tuning-relative step values instead of
   raw MIDI note numbers.
 - Sequence files also store:

@@ -46,8 +46,6 @@ The `Makefile` compiles the repository sketch directly with:
 - Board: `rp2040:rp2040:generic`
 - Flash: `16 MB`, split as `8 MB` sketch / `8 MB` LittleFS
 - CPU: `250 MHz`
-- `make overclocked` builds the same clock configuration with a `_250MHz`
-  filename suffix
 - Boot stage 2: `Generic SPI /4`
 - USB stack: `picosdk`
 - USB manufacturer/product build descriptors: `HexBoard`
@@ -72,12 +70,22 @@ make HEXBOARD_ENABLE_SEQUENCER=1
 make sequencer-builds
 ```
 
-Default and sequencer builds are renamed to:
+Default and sequencer builds produce separate factory and update images:
 
 ```text
-build/HexBoard.uf2
-build/HexBoard_Sequencer.uf2
+build/HexBoard_Factory.uf2
+build/HexBoard_Update.uf2
+build/HexBoard_Sequencer_Factory.uf2
+build/HexBoard_Sequencer_Update.uf2
 ```
+
+`scripts/build_factory_library.py` compiles source `.json` presets and
+`.hexwav` wavetables from `factory-library/` into current device records.
+`scripts/build_factory_uf2.py` and `mklittlefs` create and extract-validate the
+`8 MiB` image, verify the firmware UF2 payload against the compiled binary,
+and append every filesystem block to the Factory UF2. The filesystem range is
+`0x107ff000` through `0x10fff000`; the final `4 KiB` EEPROM reservation is not
+included. The Update UF2 is verified to contain firmware addresses only.
 
 The companion app is intentionally self-contained under `web/`. Keep Node
 package files there rather than adding root-level web tooling unless the repo is
@@ -90,7 +98,7 @@ The firmware is split across the RP2040's two cores:
 
 | Runtime area | Responsibilities |
 | --- | --- |
-| Core 0 `hexboardSetup()` via `setup()` | USB/MIDI startup, LittleFS, hardware detection, settings load, LEDs, OLED, rotary setup, menu, runtime sync |
+| Core 0 `hexboardSetup()` via `setup()` | USB/MIDI startup, read-only LittleFS validation, hardware detection, settings load, LEDs, OLED, rotary setup, menu, runtime sync |
 | Core 0 `hexboardLoop()` via `loop()` | timing, button scan, note lifecycle, arpeggiator, wheels, MIDI input, animation, LED refresh, encoder/menu handling, auto-save |
 | Core 1 `hexboardSetup1()` via `setup1()` | synth PWM and DMA audio setup |
 | Core 1 `hexboardLoop1()` via `loop1()` | audio buffer refill, rotary polling, and delegated MIDI polling while delegated mode is active |
@@ -133,14 +141,22 @@ synth preset, current wavetable, and profile wavetable reference files compare
 the existing record before writing so ordinary saves do not rewrite unchanged
 references.
 
-Synth preset catalogs that are missing, empty, invalid, or contain no saved
-slots use the two compiled factory preset records in memory without writing
-during boot.
-Preset reads fall back to those full built-in records by object ID, so loading
-or later saving a factory preset preserves its intended sound. An explicit
-preset save creates the normal catalog through the runtime flash-safe path.
-This keeps startup independent of flash erase/program success while preserving
-the existing preset schema; no settings or preset file-version bump is needed.
+### Factory Storage
+
+The Factory UF2 contains the complete formatted filesystem: current settings,
+editable preset and wavetable catalogs, wavetable sample files, current-object
+references, an empty layout catalog, the storage-generation record, and an
+empty `/Sequences` directory. Basic Shapes and built-in 12 EDO remain compiled
+as the minimal rescue set; all other factory library objects are ordinary
+editable catalog records.
+
+Core 0 mounts LittleFS once with auto-format disabled. It validates every store
+and referenced wavetable sample without writing, prints exact failures over USB
+serial, and then lets each loader apply its own fallback. Bad settings use
+hardware-aware RAM defaults, bad catalogs become empty, bad geometry uses
+built-in 12 EDO, and bad wavetable data uses Basic Shapes. A mount failure
+disables saving. The OLED briefly shows the first failing file, but storage
+errors never hold either core outside normal operation.
 
 Performance-sensitive code can use `RAM_FUNC(name)` to run from SRAM instead of
 external-flash XIP. Keep this selective. Current RAM placement favors the audio
@@ -253,7 +269,7 @@ uint8_t* settings;
 
 There are `9` profiles. Slot `0` is the boot and auto-save slot. `NUM_SETTINGS`
 is derived from `SettingKey::NumSettings`, so adding settings requires updating
-the enum, defaults, runtime sync, menu wiring, migration behavior, and docs
+the enum, defaults, runtime sync, menu wiring, persisted schema version, and docs
 together.
 
 The code still uses dynamic containers in live or near-live paths:
@@ -274,15 +290,14 @@ Core 0 startup currently:
 1. sets USB manufacturer/product descriptors to `HexBoard`
 2. starts USB serial logging
 3. starts Pico SDK USB MIDI and serial MIDI interfaces
-4. waits briefly for USB MIDI enumeration before flash access
-5. mounts LittleFS
-6. configures I2C, scan pins, grid state, and hardware detection
-7. loads settings, synth presets, wavetable references, wavetables, and geometry objects
-8. starts LEDs, display, rotary input, and menu objects
-9. applies hardware-specific behavior and initializes synth lookup tables
-10. syncs saved settings to runtime globals and restores sequencer state
-11. releases Core 1 to start audio DMA
-12. runs the bounded boot LED self-check
+4. mounts LittleFS once with auto-format disabled and validates every store
+5. configures I2C, scan pins, grid state, and hardware detection
+6. reads settings, presets, wavetable references, wavetables, and geometry
+7. starts LEDs, display, rotary input, menu objects, and synth lookup tables
+8. syncs settings to runtime and releases Core 1 to start block-rendered audio DMA
+9. waits for `audioTransportReady`
+10. restores sequencer state and runs the bounded boot LED self-check
+11. briefly reports any storage warning and releases both cores into normal operation
 
 Place new initialization where its dependencies are already valid. Do not rely
 on loaded settings before `load_settings()` or menu objects before `setupMenu()`.
@@ -310,6 +325,9 @@ Core 1 loop stays narrow:
 The rotary decoder must remain in RAM, allocation-free, and non-blocking.
 Heavy work, blocking waits, large debug bursts, and new heap allocations in
 either loop can cause sluggish controls, LED jitter, or audio artifacts.
+`hardwareDefaultRotaryInvert()` selects the detected revision's base direction;
+the saved `RotaryInvert` byte is XORed with that default so one factory settings
+file works across hardware revisions.
 
 ## Pitch, Layout, And Refresh Paths
 
@@ -345,10 +363,12 @@ Settings are stored in LittleFS at `/settings.dat` with:
 - default profile index field
 - CRC32 of all profile bytes
 
-`CURRENT_SETTINGS_VERSION` is currently `23`, and `PROFILE_COUNT` is `9`.
-Any settings file with a non-current schema version resets to factory defaults
-and rewrites `/settings.dat`. The only release-specific migration retained for
-older firmware is the separate firmware `1.3` synth preset catalog import.
+`CURRENT_SETTINGS_VERSION` is currently `24`, and `PROFILE_COUNT` is `9`.
+Version `24` stores `RotaryInvert` as a user reversal relative to the detected
+hardware default. The Factory UF2 contains the current settings record; boot
+does not rewrite settings. Compatible 2.x settings can be decoded into the
+current RAM representation and are written in the current format only after a
+normal user-initiated or auto-save operation.
 
 Important current settings facts:
 
@@ -357,7 +377,7 @@ Important current settings facts:
 - Command-wheel speed settings default to the `Medium` menu choices.
 - `BootAnimationEnabled` is persisted and defaults to enabled.
 - `LedCurrentLimitMode` stores the user-visible current-limit mode; runtime budgets are hardware-calibrated for `V1.1` and `V1.2`.
-- `PlaybackMode` defaults to `Poly`; legacy transient `PolyTbl` values normalize to `Poly`.
+- `PlaybackMode` defaults to `Poly`.
 - `AudioDestination` behaves on hardware `V1.2` as a jack-default `Buzzer` toggle that switches synth output to piezo.
 - `HeadphoneVolumeCap` and `PiezoVolumeCap` are separate profile bytes; synth presets intentionally do not store output volume.
 - Dynamic JI stores its prime-limit table in `DynamicJIRatioTable`.
@@ -374,14 +394,14 @@ When adding, removing, reordering, or reinterpreting a `SettingKey`:
 5. Decide whether a preview callback is needed.
 6. Decide which post-change function keeps runtime state consistent.
 7. Bump `CURRENT_SETTINGS_VERSION` if persisted byte layout or interpretation changes.
-8. Add migration or document why defaults-only fallback is acceptable.
+8. Update `factory-library/config.json` and storage validation for the current schema.
 9. Update user/developer/protocol docs as appropriate.
 
 Other persistent stores:
 
-- `/synth_presets.dat`: named/foldered synth presets, magic `SYP`, version `10`, up to `128` presets. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume. Firmware `1.3` fixed-slot preset files, magic `SYP` version `3`, migrate valid slots whose values differ from the firmware `1.3` synth defaults into folder `1.3 Patches` before the current catalog is rewritten.
+- `/synth_presets.dat`: named/foldered synth presets, magic `SYP`, version `10`, up to `128` presets. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume. The Factory UF2 installs `Soft String Pad` and `Bright Mono Lead` as normal editable records.
 - `/current_synth_preset.dat`: current loaded synth preset reference, magic `CSP`, version `1`. It stores either the loaded preset object ID or the special `Blank` state; the edited synth values still come from normal settings/profile storage.
-- `/synth_wavetables.dat`: named user wavetable catalog, magic `SYW`, version `1`, up to `32` entries. Sample files use shortened `/wt_<16 hex>.wtb` paths and can contain six fixed mip levels (`49,152` bytes) or legacy base-only data (`8,192` bytes).
+- `/synth_wavetables.dat`: named user wavetable catalog, magic `SYW`, version `1`, up to `32` entries. Sample files use shortened `/wt_<16 hex>.wtb` paths and can contain six fixed mip levels (`49,152` bytes) or base-only data (`8,192` bytes).
 - `/current_wavetable.dat`: current wavetable folder/name reference, magic `CWT`, version `1`.
 - `/profile_wavetables.dat`: per-profile wavetable folder/name snapshots, magic `PWT`, version `1`.
 - `/layouts.dat`: user geometry catalog, magic `LYT`, version `2`, up to `64` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`.
@@ -489,7 +509,7 @@ PWM timer slice with wrap `1023` and divider `/6` paces DMA writes at about
 `40.7 kHz` at `250 MHz`. Hardware `V1.2` outputs one synth destination at a time: jack by
 default, or piezo when `Buzzer` is enabled. Hardware `V1.1` uses piezo.
 
-Named built-in and user wavetables load into a `16 x 512` active RAM base table
+Named rescue and filesystem wavetables load into a `16 x 512` active RAM base table
 plus fixed mip levels. The sampler uses `SynthWavetablePosition` plus signed
 `WT Pos` modulation, with modulation work cached on a `32`-sample control
 quantum. Wavetable read contexts refresh every other control tick by default
@@ -497,10 +517,10 @@ quantum. Wavetable read contexts refresh every other control tick by default
 normally runs every `64` samples. The on-device `WT Pos` frame selector uses the
 shared `SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS` byte values, and the wavetable
 frame lookup snaps those selector values to exact frame offsets while preserving
-continuous interpolation for intermediate modulation amounts. Built-in factory
-wavetables are generated by
-`web/scripts/generate-factory-wavetables.mjs`, which also writes the firmware
-factory wavetable data source.
+continuous interpolation for intermediate modulation amounts.
+`web/scripts/generate-factory-wavetables.mjs` compiles only Basic Shapes into
+firmware and writes the other factory tables as `.hexwav` source files under
+`factory-library/wavetables/Factory/`.
 
 The audio renderer consumes envelope commands and advances the amp-envelope
 state on the same `32`-sample control quantum. `SynthVoiceRenderCache` holds a
@@ -608,7 +628,7 @@ Use `web/README.md` for web commands and deployment details.
 6. Insert it in `setupMenu()`.
 7. Decide whether it needs a preview callback.
 8. Decide which post-change function keeps runtime state consistent.
-9. Decide whether the settings version needs a bump and migration.
+9. Decide whether the settings version needs a bump and update factory storage validation.
 10. Update user/developer docs.
 
 ### Add A New Tuning

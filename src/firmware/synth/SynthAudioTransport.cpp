@@ -210,6 +210,7 @@ uint8_t audioDmaActiveSlice = AJACK_SLICE;
 uintptr_t audioDmaWriteAddress = 0;
 dma_channel_config audioDmaConfig;
 std::atomic<bool> synthRuntimeReady = false;
+std::atomic<bool> audioTransportReady = false;
 
 byte RAM_FUNC(selectedAudioDmaDestination)() {
   byte destination = audioD;
@@ -439,5 +440,6 @@ void setupAudioDma() {
   irq_set_priority(DMA_IRQ_0, 0x00);
   irq_set_enabled(DMA_IRQ_0, true);
   startAudioDmaForDestination(selectedAudioDmaDestination());
+  audioTransportReady.store(true, std::memory_order_release);
 }
 // RUN ON CORE 1

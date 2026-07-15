@@ -10,12 +10,12 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 23;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 24;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
 enum class SettingKey : uint8_t {
-  RotaryInvert,
+  RotaryInvert,  // User reversal relative to the detected hardware direction.
   AutoSave,
   MPEpitchBend,
   MPEMode,
@@ -113,7 +113,6 @@ constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_S
 
 constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
 constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
-constexpr uint8_t LEGACY_SYNTH_PRESET_COUNT = 8;
 constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 10;
 constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 7;
 constexpr uint8_t SYNTH_WAVETABLE_FILE_VERSION = 1;
@@ -127,8 +126,6 @@ constexpr size_t GEOMETRY_OBJECT_NAME_LENGTH = GEOMETRY_MENU_TEXT_LENGTH;
 constexpr size_t GEOMETRY_OBJECT_FOLDER_LENGTH = GEOMETRY_MENU_TEXT_LENGTH;
 constexpr size_t GEOMETRY_OBJECT_ID_LENGTH = 16;
 constexpr size_t GEOMETRY_OBJECT_MAX_RAW_BYTES = 8192;
-constexpr size_t SYNTH_PRESET_VALUE_COUNT_V6 = 27;
-constexpr size_t SYNTH_PRESET_VALUE_COUNT_V7 = 29;
 constexpr size_t SYNTH_PRESET_NAME_LENGTH = 32;
 constexpr size_t SYNTH_PRESET_FOLDER_LENGTH = 48;
 constexpr size_t SYNTH_PRESET_MENU_LABEL_LENGTH = 64;
@@ -308,38 +305,6 @@ struct SynthPresetIndexEntry {
 
 using SynthPresetCatalog = FixedCatalog<SynthPresetIndexEntry, SYNTH_PRESET_MAX_COUNT>;
 
-struct SynthPresetSlotV8 {
-  uint8_t valid = 0;
-  uint8_t favorite = 0;
-  uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
-  char name[SYNTH_PRESET_NAME_LENGTH] = {};
-  char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
-  uint8_t values[SYNTH_PRESET_VALUE_COUNT] = {};
-};
-
-struct SynthPresetSlotV7 {
-  uint8_t valid = 0;
-  uint8_t favorite = 0;
-  uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
-  char name[SYNTH_PRESET_NAME_LENGTH] = {};
-  char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
-  uint8_t values[SYNTH_PRESET_VALUE_COUNT_V7] = {};
-};
-
-struct SynthPresetSlotV6 {
-  uint8_t valid = 0;
-  uint8_t favorite = 0;
-  uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
-  char name[SYNTH_PRESET_NAME_LENGTH] = {};
-  char folderPath[SYNTH_PRESET_FOLDER_LENGTH] = {};
-  uint8_t values[SYNTH_PRESET_VALUE_COUNT_V6] = {};
-};
-
-struct LegacySynthPresetSlot {
-  uint8_t valid = 0;
-  uint8_t values[SYNTH_PRESET_VALUE_COUNT_V6] = {};
-};
-
 struct SynthWavetableFileHeader {
   char magic[3];     // "SYW"
   uint8_t version;
@@ -376,6 +341,18 @@ struct SynthWavetableProfileReferenceFile {
   uint32_t crc32;
 };
 
+// The host-side factory-library compiler writes these records byte-for-byte.
+// Fail the firmware build if the RP2040 ABI ever changes their disk layout.
+static_assert(sizeof(SettingsHeader) == 12, "SettingsHeader disk layout changed");
+static_assert(sizeof(SynthPresetFileHeader) == 12, "SynthPresetFileHeader disk layout changed");
+static_assert(sizeof(SynthPresetSlot) == 212, "SynthPresetSlot disk layout changed");
+static_assert(sizeof(SynthWavetableFileHeader) == 12, "SynthWavetableFileHeader disk layout changed");
+static_assert(sizeof(SynthWavetableSlot) == 145, "SynthWavetableSlot disk layout changed");
+static_assert(sizeof(CurrentSynthWavetableReferenceFile) == 88,
+              "CurrentSynthWavetableReferenceFile disk layout changed");
+static_assert(sizeof(SynthWavetableProfileReferenceFile) == 728,
+              "SynthWavetableProfileReferenceFile disk layout changed");
+
 struct GeometryObjectFileHeader {
   char magic[3];     // "LYT"
   uint8_t version;
@@ -383,6 +360,8 @@ struct GeometryObjectFileHeader {
   uint16_t reserved;
   uint32_t crc32;
 };
+static_assert(sizeof(GeometryObjectFileHeader) == 12,
+              "GeometryObjectFileHeader disk layout changed");
 
 struct GeometryObjectSlot {
   uint8_t valid = 0;
@@ -422,11 +401,6 @@ uint32_t crc32Begin();
 uint32_t crc32Update(uint32_t crc, const uint8_t* data, size_t length);
 uint32_t crc32Finish(uint32_t crc);
 uint32_t crc32(const uint8_t* data, size_t length);
-
-void remapLegacySynthPresetEnvelopeTimes(SynthPresetSlot& preset);
-void remapLegacySynthPresetEnvelopeTimes(LegacySynthPresetSlot& preset);
-void remapLegacySynthPresetVibratoSpeed(SynthPresetSlot& preset);
-void remapLegacySynthPresetVibratoSpeed(LegacySynthPresetSlot& preset);
 
 inline uint8_t settingValue(SettingKey key) {
   return settings[static_cast<uint8_t>(key)];

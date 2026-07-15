@@ -31,11 +31,6 @@ constexpr uint16_t BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_MS = 35;
 constexpr uint16_t BOOT_LED_CHECK_FIRST_BOOT_WHITE_HOLD_MS = 2000;
 constexpr uint16_t BOOT_LED_CHECK_WAVE_MS = 30;
 constexpr uint16_t BOOT_LED_CHECK_NORMAL_FADE_MS = 25;
-#if HEXBOARD_BOOT_DIAGNOSTICS
-constexpr byte BOOT_DIAGNOSTIC_LED_COUNT = 12;
-constexpr byte BOOT_DIAGNOSTIC_VALUE = 24;
-constexpr uint16_t BOOT_DIAGNOSTIC_READY_HOLD_MS = 750;
-#endif
 constexpr byte USER_GEOMETRY_REST_COLOR_VALUE_MAX = VALUE_NORMAL;
 bool settingsFileMissingOnBoot = false;
 // Sequencer Note-colored steps reuse the keyboard palette before gamma/current
@@ -933,53 +928,6 @@ void setupLEDs() {
   strip.show();   // Turn OFF all pixels ASAP
   sendToLog("LEDs started...");
 }
-#if HEXBOARD_BOOT_DIAGNOSTICS
-void showBootDiagnosticStage(BootDiagnosticStage stage) {
-  uint32_t color = 0;
-  switch (stage) {
-    case BootDiagnosticStage::FileSystem:
-      color = strip.Color(BOOT_DIAGNOSTIC_VALUE, 0, 0);
-      break;
-    case BootDiagnosticStage::Hardware:
-      color = strip.Color(BOOT_DIAGNOSTIC_VALUE, BOOT_DIAGNOSTIC_VALUE / 4, 0);
-      break;
-    case BootDiagnosticStage::Settings:
-      color = strip.Color(BOOT_DIAGNOSTIC_VALUE, BOOT_DIAGNOSTIC_VALUE, 0);
-      break;
-    case BootDiagnosticStage::SynthPresets:
-      color = strip.Color(0, BOOT_DIAGNOSTIC_VALUE, 0);
-      break;
-    case BootDiagnosticStage::SynthPresetReference:
-      color = strip.Color(0, BOOT_DIAGNOSTIC_VALUE, BOOT_DIAGNOSTIC_VALUE / 4);
-      break;
-    case BootDiagnosticStage::SynthWavetables:
-      color = strip.Color(0, BOOT_DIAGNOSTIC_VALUE, BOOT_DIAGNOSTIC_VALUE);
-      break;
-    case BootDiagnosticStage::Geometry:
-      color = strip.Color(0, 0, BOOT_DIAGNOSTIC_VALUE);
-      break;
-    case BootDiagnosticStage::Interface:
-      color = strip.Color(BOOT_DIAGNOSTIC_VALUE, 0, BOOT_DIAGNOSTIC_VALUE);
-      break;
-    case BootDiagnosticStage::SynthRuntime:
-      color = strip.Color(BOOT_DIAGNOSTIC_VALUE / 2,
-                          BOOT_DIAGNOSTIC_VALUE / 2,
-                          BOOT_DIAGNOSTIC_VALUE / 2);
-      break;
-    case BootDiagnosticStage::Ready:
-      color = strip.Color(0, BOOT_DIAGNOSTIC_VALUE, 0);
-      break;
-  }
-  strip.clear();
-  for (byte i = 0; i < BOOT_DIAGNOSTIC_LED_COUNT && i < LED_COUNT; ++i) {
-    strip.setPixelColor(i, color);
-  }
-  strip.show();
-  if (stage == BootDiagnosticStage::Ready) {
-    delay(BOOT_DIAGNOSTIC_READY_HOLD_MS);
-  }
-}
-#endif
 void clearLEDs() {
   strip.clear();
   strip.show();

@@ -1,5 +1,23 @@
 HEXBOARD SEQUENCER STORAGE AND FILE REQUIREMENTS
 
+ID: SEQ-FILE-000
+Title: Release Storage Initialization
+Status: Active
+Area: Files
+Priority: High
+
+Requirement:
+The Sequencer build shall produce a Factory UF2 containing the complete
+LittleFS image and an Update UF2 containing firmware only. The Factory UF2
+shall erase the prior filesystem and contain an empty /Sequences directory.
+The Update UF2 shall preserve LittleFS.
+
+Details:
+- Boot shall mount and load storage without formatting, provisioning, migration,
+  or unsolicited writes.
+- Invalid sequence state shall fall back to a blank sequence without blocking
+  normal operation.
+
 ID: SEQ-FILE-001
 Title: Storage Root
 Status: Active
@@ -111,10 +129,8 @@ Revert shall discard unsaved edits and reload the last saved version of the
 current sequence.
 
 Details:
-- If no current file exists, the system may fall back to the legacy sequence
-  file if present.
-- If no current or legacy file exists, the sequencer resets to a blank default
-  sequence state.
+- If no current file exists, the sequencer resets to a blank default sequence
+  state.
 - Revert shall restore saved Tie flags along with the other saved step data.
 
 
@@ -141,7 +157,8 @@ Priority: Medium
 
 Requirement:
 On startup, the sequencer shall attempt to restore the last remembered current
-sequence path before falling back to the legacy sequence file.
+sequence path. If that path is missing or invalid, it shall start with a blank
+default sequence.
 
 
 ID: SEQ-FILE-012

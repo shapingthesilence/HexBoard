@@ -30,9 +30,10 @@ separate analysis document.
 - `AGENTS.md`: AI agent and contributor instructions, including documentation update requirements
 - `HexBoard.ino`: root Arduino sketch with only lifecycle wrappers
 - `src/firmware/`: primary firmware implementation modules
+- `factory-library/`: source presets, wavetables, and factory-image configuration
 - `web/`: isolated Vite/React companion app for preset-sync workflows
 - `docs/`: user, developer, protocol, and workflow documentation
-- `scripts/`: host-side helper tools, including the HexBoard Backup GUI
+- `scripts/`: factory-image builders and host-side helper tools
 - `Makefile`: local build shortcut for `arduino-cli`
 
 Firmware implementation is grouped by owner under `src/firmware/`. The root
@@ -76,9 +77,12 @@ The current source targets:
 - USB manufacturer/product descriptor `HexBoard`
 - Generic SPI `/4` boot2
 
-The default `make` target builds the current `250 MHz` firmware as
-`build/HexBoard.uf2`. `make overclocked` produces the same configuration with a
-`_250MHz` filename suffix.
+The default `make` target builds the current `250 MHz` firmware as two files:
+
+- `build/HexBoard_Factory.uf2` contains firmware and a complete factory
+  LittleFS image. Installing it erases the existing filesystem.
+- `build/HexBoard_Update.uf2` contains firmware only and preserves the
+  LittleFS filesystem when updating between compatible 2.x releases.
 
 The `Makefile` and firmware headers under `src/firmware/` are the most reliable
 build references for this repository.
@@ -100,6 +104,14 @@ The simplest local build is:
 make
 ```
 
+The build validates the `.json` presets and `.hexwav` wavetables under
+`factory-library/`, compiles them into device catalog files, and uses
+`mklittlefs` from the installed RP2040 Arduino core to create an `8 MiB`
+factory filesystem image. It extracts and compares that image before merging
+every filesystem block into the factory UF2. The firmware payload is checked
+against the compiled binary, the update UF2 is checked for filesystem
+addresses, and the final `4 KiB` EEPROM reservation is never written.
+
 The `Makefile` compiles the repository sketch directly with the project board
 options and writes flashable files under `build/`.
 
@@ -118,11 +130,13 @@ menu entry, build with:
 make HEXBOARD_ENABLE_SEQUENCER=1
 ```
 
-Default and sequencer builds are renamed to:
+Default and sequencer builds produce:
 
 ```text
-build/HexBoard.uf2
-build/HexBoard_Sequencer.uf2
+build/HexBoard_Factory.uf2
+build/HexBoard_Update.uf2
+build/HexBoard_Sequencer_Factory.uf2
+build/HexBoard_Sequencer_Update.uf2
 ```
 
 Use `make sequencer-builds` to compile both variants. See the

@@ -6,25 +6,7 @@
 
 extern bool settingsFileMissingOnBoot;
 
-#if HEXBOARD_BOOT_DIAGNOSTICS
-enum class BootDiagnosticStage : uint8_t {
-  FileSystem,
-  Hardware,
-  Settings,
-  SynthPresets,
-  SynthPresetReference,
-  SynthWavetables,
-  Geometry,
-  Interface,
-  SynthRuntime,
-  Ready,
-};
-#endif
-
 void setupLEDs();
-#if HEXBOARD_BOOT_DIAGNOSTICS
-void showBootDiagnosticStage(BootDiagnosticStage stage);
-#endif
 void clearLEDs();
 void runBootLedSelfCheck();
 void setLEDcolorCodes();

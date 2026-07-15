@@ -335,7 +335,6 @@ Example scale
 
     const factory = createFactorySynthWavetables();
     expect(factory.map((wavetable) => wavetable.name)).toEqual([
-      "Basic Shapes",
       "Classic",
       "Vowels",
       "HarshDigitalBois",
@@ -343,7 +342,7 @@ Example scale
       "RoundThe808",
       "GlassyBells"
     ]);
-    expect(factory.every((wavetable) => wavetable.folderPath === "/Built In")).toBe(true);
+    expect(factory.every((wavetable) => wavetable.folderPath === "Factory")).toBe(true);
     expect(factory.every((wavetable) => wavetable.samples.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES)).toBe(true);
   });
 

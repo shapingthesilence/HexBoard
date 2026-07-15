@@ -226,6 +226,24 @@ void showFlashSaveScreen() {
   flashSaveScreenVisible = true;
 }
 
+void showStorageWarningScreen(const char* detail, uint8_t issueCount) {
+  dismissCommandWheelOverlay();
+  dismissFlashSaveScreenForMenuInput();
+  screenSaverOn = false;
+  u8g2.setPowerSave(0);
+  u8g2.setContrast(CONTRAST_AWAKE);
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_7x14B_tf);
+  u8g2.drawStr(0, 36, "Storage warning");
+  u8g2.setFont(u8g2_font_6x12_tf);
+  u8g2.drawStr(0, 62, detail && detail[0] ? detail : "LittleFS");
+  char countText[24] = {};
+  snprintf(countText, sizeof(countText), "%u issue%s found", issueCount, issueCount == 1 ? "" : "s");
+  u8g2.drawStr(0, 84, countText);
+  u8g2.drawStr(0, 106, "Using safe defaults");
+  u8g2.sendBuffer();
+}
+
 static void closeFlashSaveScreenNow() {
   if (!flashSaveScreenVisible) {
     return;
@@ -586,18 +604,22 @@ PersistentCallbackInfo callbackInfoAutoSave = {
 // (The GEMItem constructor here accepts a linked value, callback, and our callback info.)
 GEMItem menuItemAutoSave("Auto-Save", autoSave, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoAutoSave));
 
-// For "Invert Encoder" which is a bool tick box.
-// We want to store its value persistently in the RotaryInvert setting.
-// Create a global variable that reflects its current state.
-bool rotaryInvert = settingEnabled(SettingKey::RotaryInvert);
-// Create a PersistentCallbackInfo instance for this setting.
+// The persisted option reverses the detected hardware's normal direction.
+// The decoder consumes the resulting effective direction.
+bool rotaryInvert = false;
+bool rotaryInvertPreference = settingEnabled(SettingKey::RotaryInvert);
+
+void updateEffectiveRotaryInvert() {
+  rotaryInvert = hardwareDefaultRotaryInvert() != rotaryInvertPreference;
+}
+
 PersistentCallbackInfo callbackInfoRotary = {
   static_cast<uint8_t>(SettingKey::RotaryInvert),
-  reinterpret_cast<void*>(&rotaryInvert),
+  reinterpret_cast<void*>(&rotaryInvertPreference),
   nullptr,
-  nullptr
+  updateEffectiveRotaryInvert
 };
-GEMItem menuItemRotary("Invert Encoder", rotaryInvert, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
+GEMItem menuItemRotary("Invert Encoder", rotaryInvertPreference, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
 
 GEMItem menuItemSerialDebugEnabled("Enabled", serialDebugEnabled, serialDebugRuntimeChanged, static_cast<void*>(nullptr));
 GEMItem menuItemSerialDebugGeneral("General Log", serialDebugGeneralMessages, serialDebugRuntimeChanged, static_cast<void*>(nullptr));
@@ -2352,7 +2374,8 @@ void syncSynthSettingsToRuntime() {
 }
 
 void syncSettingsToRuntime() {
-  rotaryInvert = settingEnabled(SettingKey::RotaryInvert);
+  rotaryInvertPreference = settingEnabled(SettingKey::RotaryInvert);
+  updateEffectiveRotaryInvert();
   autoSave = settingEnabled(SettingKey::AutoSave);
   MPEpitchBendSemis = settingValue(SettingKey::MPEpitchBend);
   mpeUserMode = settingValue(SettingKey::MPEMode);

@@ -134,6 +134,7 @@ const computerWavetableFactorySeedStorageKey = "hexboard.synthWavetableFactorySe
 const presetFileFormat = "hexboard.synthPreset.v1";
 const wavetableFileFormat = "hexboard.synthWavetable.v1";
 const builtInWavetableFolder = "/Built In";
+const factoryWavetableFolder = "Factory";
 const basicWavetableName = "Basic Shapes";
 const deviceNameMaxBytes = 31;
 const deviceFolderMaxBytes = 47;
@@ -141,9 +142,9 @@ const deviceFolderMaxBytes = 47;
 const defaultPreset: EditableSynthPreset = {
   objectIdHex: objectIdToHex(deterministicObjectId("Soft String Pad")),
   name: "Soft String Pad",
-  folderPath: "/",
+  folderPath: "Pads",
   wavetableName: "Classic",
-  wavetableFolderPath: builtInWavetableFolder,
+  wavetableFolderPath: factoryWavetableFolder,
   favorite: true,
   values: {
     PlaybackMode: 3,
@@ -188,7 +189,7 @@ const initialComputerPresets: EditableSynthPreset[] = [
   {
     objectIdHex: objectIdToHex(deterministicObjectId("Bright Mono Lead")),
     name: "Bright Mono Lead",
-    folderPath: "/",
+    folderPath: "Leads",
     wavetableName: basicWavetableName,
     wavetableFolderPath: builtInWavetableFolder,
     favorite: false,
@@ -220,13 +221,7 @@ const defaultFolders = [rootFolderPath, "Pads/Warm", "Leads", "FX/Animated"];
 const defaultUserWavetableFolder = "User";
 
 const builtInWavetables = [
-  { name: "Basic Shapes", folderPath: builtInWavetableFolder },
-  { name: "Classic", folderPath: builtInWavetableFolder },
-  { name: "Vowels", folderPath: builtInWavetableFolder },
-  { name: "HarshDigitalBois", folderPath: builtInWavetableFolder },
-  { name: "RustyBlade", folderPath: builtInWavetableFolder },
-  { name: "RoundThe808", folderPath: builtInWavetableFolder },
-  { name: "GlassyBells", folderPath: builtInWavetableFolder }
+  { name: "Basic Shapes", folderPath: builtInWavetableFolder }
 ] as const;
 
 const legacyWaveformCompatibility = new Map<number, { name: string; folderPath: string; position: number }>([
@@ -235,24 +230,24 @@ const legacyWaveformCompatibility = new Map<number, { name: string; folderPath: 
   [9, { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 85 }],
   [10, { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 42 }],
   [0, { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 0 }],
-  [1, { name: "Classic", folderPath: builtInWavetableFolder, position: 0 }],
-  [2, { name: "Classic", folderPath: builtInWavetableFolder, position: 127 }],
-  [11, { name: "HarshDigitalBois", folderPath: builtInWavetableFolder, position: 95 }],
-  [12, { name: "HarshDigitalBois", folderPath: builtInWavetableFolder, position: 0 }],
-  [13, { name: "RustyBlade", folderPath: builtInWavetableFolder, position: 0 }],
-  [14, { name: "GlassyBells", folderPath: builtInWavetableFolder, position: 0 }],
-  [15, { name: "RustyBlade", folderPath: builtInWavetableFolder, position: 42 }],
-  [16, { name: "HarshDigitalBois", folderPath: builtInWavetableFolder, position: 127 }],
-  [17, { name: "GlassyBells", folderPath: builtInWavetableFolder, position: 127 }],
-  [18, { name: "GlassyBells", folderPath: builtInWavetableFolder, position: 85 }],
-  [19, { name: "RoundThe808", folderPath: builtInWavetableFolder, position: 0 }],
-  [20, { name: "RoundThe808", folderPath: builtInWavetableFolder, position: 127 }],
-  [21, { name: "RustyBlade", folderPath: builtInWavetableFolder, position: 85 }],
-  [22, { name: "RoundThe808", folderPath: builtInWavetableFolder, position: 64 }],
-  [23, { name: "HarshDigitalBois", folderPath: builtInWavetableFolder, position: 64 }],
-  [24, { name: "HarshDigitalBois", folderPath: builtInWavetableFolder, position: 32 }],
-  [25, { name: "GlassyBells", folderPath: builtInWavetableFolder, position: 42 }],
-  [26, { name: "RustyBlade", folderPath: builtInWavetableFolder, position: 127 }],
+  [1, { name: "Classic", folderPath: factoryWavetableFolder, position: 0 }],
+  [2, { name: "Classic", folderPath: factoryWavetableFolder, position: 127 }],
+  [11, { name: "HarshDigitalBois", folderPath: factoryWavetableFolder, position: 95 }],
+  [12, { name: "HarshDigitalBois", folderPath: factoryWavetableFolder, position: 0 }],
+  [13, { name: "RustyBlade", folderPath: factoryWavetableFolder, position: 0 }],
+  [14, { name: "GlassyBells", folderPath: factoryWavetableFolder, position: 0 }],
+  [15, { name: "RustyBlade", folderPath: factoryWavetableFolder, position: 42 }],
+  [16, { name: "HarshDigitalBois", folderPath: factoryWavetableFolder, position: 127 }],
+  [17, { name: "GlassyBells", folderPath: factoryWavetableFolder, position: 127 }],
+  [18, { name: "GlassyBells", folderPath: factoryWavetableFolder, position: 85 }],
+  [19, { name: "RoundThe808", folderPath: factoryWavetableFolder, position: 0 }],
+  [20, { name: "RoundThe808", folderPath: factoryWavetableFolder, position: 127 }],
+  [21, { name: "RustyBlade", folderPath: factoryWavetableFolder, position: 85 }],
+  [22, { name: "RoundThe808", folderPath: factoryWavetableFolder, position: 64 }],
+  [23, { name: "HarshDigitalBois", folderPath: factoryWavetableFolder, position: 64 }],
+  [24, { name: "HarshDigitalBois", folderPath: factoryWavetableFolder, position: 32 }],
+  [25, { name: "GlassyBells", folderPath: factoryWavetableFolder, position: 42 }],
+  [26, { name: "RustyBlade", folderPath: factoryWavetableFolder, position: 127 }],
   [27, { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 0 }],
   [28, { name: "UserTbl", folderPath: "/User", position: 0 }]
 ]);

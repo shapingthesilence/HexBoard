@@ -178,3 +178,7 @@ void detectHardwareVersion() {
   Hardware_Version = flagPressed ? HARDWARE_V1_2 : HARDWARE_V1_1;
   sendToLog("Hardware detection: revision " + std::to_string(Hardware_Version));
 }
+
+bool hardwareDefaultRotaryInvert() {
+  return Hardware_Version == HARDWARE_V1_2;
+}

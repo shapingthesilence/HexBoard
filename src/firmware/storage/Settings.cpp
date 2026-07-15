@@ -2,6 +2,7 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
+#include "../hardware/GridState.h"
 #include "../hardware/LedRender.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
@@ -115,25 +116,11 @@ bool fileSystemExists = false;
 
 void setupFileSystem() {
   LittleFSConfig cfg;
-  cfg.setAutoFormat(true);  // Format automatically if LittleFS cannot be mounted.
+  cfg.setAutoFormat(false);
   LittleFS.setConfig(cfg);
   fileSystemExists = LittleFS.begin();
   if (!fileSystemExists) {
-    // Mount failed (first boot or corrupted FS). USB enumeration guard in
-    // setup() already waited up to 2 s, so only a short extra margin here.
-    sendToLog("LittleFS mount failed. Formatting after USB settles...");
-    delay(500);
-    if (LittleFS.format()) {
-      sendToLog("LittleFS format succeeded. Mounting...");
-      fileSystemExists = LittleFS.begin();
-      if (!fileSystemExists) {
-        sendToLog("Error: mount failed after format.");
-      } else {
-        sendToLog("LittleFS mounted successfully after format.");
-      }
-    } else {
-      sendToLog("Error: LittleFS format failed.");
-    }
+    sendToLog("Error: LittleFS mount failed. Using safe defaults with saving disabled.");
   } else {
     sendToLog("LittleFS mounted successfully.");
   }
@@ -146,14 +133,10 @@ void applyFactoryDefaultsToSettings() {
   defaultProfileIndex = DEFAULT_PROFILE_INDEX;  // profile 1 is the canonical boot target
   for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
     memcpy(settingsProfiles[profile], factoryDefaults, NUM_SETTINGS);
-    if (Hardware_Version == HARDWARE_V1_2) {
-      settingsProfiles[profile][static_cast<uint8_t>(SettingKey::RotaryInvert)] = 1;
-    }
   }
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
   selectFallbackSynthWavetable();
-  applyDefaultSynthWavetableProfileReferences();
   settingsDirty = false;
 }
 
@@ -167,33 +150,37 @@ bool load_settings() {
   File f = LittleFS.open("/settings.dat", "r");
   if (!f) {
     settingsFileMissingOnBoot = true;
-    sendToLog("Settings file not found. Creating new file with factory defaults.");
+    sendToLog("Settings file not found. Using factory defaults.");
     applyFactoryDefaultsToSettings();
-    save_settings();
-    return true;
+    return false;
+  }
+  if (f.size() != sizeof(SettingsHeader) + SETTINGS_DATA_SIZE) {
+    sendToLog("Invalid settings file size. Restoring defaults.");
+    f.close();
+    applyFactoryDefaultsToSettings();
+    return false;
   }
   SettingsHeader header;
   if (f.readBytes((char*)&header, sizeof(SettingsHeader)) != sizeof(SettingsHeader)) {
     sendToLog("Error: Failed to read settings header.");
     f.close();
     applyFactoryDefaultsToSettings();
-    save_settings();
     return false;
   }
   if (strncmp(header.magic, "STG", 3) != 0) {
     sendToLog("Invalid settings file (magic mismatch). Restoring defaults.");
     f.close();
     applyFactoryDefaultsToSettings();
-    save_settings();
     return false;
   }
-  if (header.version != CURRENT_SETTINGS_VERSION) {
+  constexpr uint8_t SETTINGS_VERSION_ABSOLUTE_ROTARY = 23;
+  bool usesAbsoluteRotary = header.version == SETTINGS_VERSION_ABSOLUTE_ROTARY;
+  if (header.version != CURRENT_SETTINGS_VERSION && !usesAbsoluteRotary) {
     sendToLog("Settings version mismatch. File version: " + std::to_string(header.version)
               + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION)
               + ". Restoring factory defaults for this release.");
     f.close();
     applyFactoryDefaultsToSettings();
-    save_settings();
     return false;
   }
   // Always boot from profile 1 even if an older file recorded a different default.
@@ -203,7 +190,6 @@ bool load_settings() {
   if (bytesRead != SETTINGS_DATA_SIZE) {
     sendToLog("Warning: Settings data incomplete. Restoring defaults.");
     applyFactoryDefaultsToSettings();
-    save_settings();
     return false;
   }
   // Verify CRC32 integrity of loaded profile data
@@ -211,8 +197,15 @@ bool load_settings() {
   if (computed != header.crc32) {
     sendToLog("CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
     applyFactoryDefaultsToSettings();
-    save_settings();
     return false;
+  }
+  if (usesAbsoluteRotary) {
+    bool hardwareInvert = hardwareDefaultRotaryInvert();
+    for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
+      bool storedAbsoluteInvert = settingsProfiles[profile][static_cast<uint8_t>(SettingKey::RotaryInvert)] != 0;
+      settingsProfiles[profile][static_cast<uint8_t>(SettingKey::RotaryInvert)] = storedAbsoluteInvert != hardwareInvert;
+    }
+    sendToLog("Compatible settings loaded with hardware-relative rotary direction.");
   }
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];

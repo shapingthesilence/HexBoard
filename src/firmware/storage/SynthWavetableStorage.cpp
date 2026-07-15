@@ -69,9 +69,11 @@ bool readSynthWavetableProfileReferenceFile(SynthWavetableProfileReferenceFile& 
   if (!f) {
     return false;
   }
+  size_t fileSize = f.size();
   size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&referenceFile), sizeof(referenceFile));
   f.close();
-  if (bytesRead != sizeof(referenceFile)
+  if (fileSize != sizeof(referenceFile)
+      || bytesRead != sizeof(referenceFile)
       || strncmp(referenceFile.magic, "PWT", 3) != 0
       || referenceFile.version != SYNTH_WAVETABLE_PROFILE_REFERENCES_VERSION
       || synthWavetableProfileReferencesCrc(referenceFile.profiles, PROFILE_COUNT) != referenceFile.crc32) {
@@ -148,9 +150,11 @@ bool loadCurrentSynthWavetableReference() {
     return false;
   }
   CurrentSynthWavetableReferenceFile reference = {};
+  size_t fileSize = f.size();
   size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&reference), sizeof(reference));
   f.close();
-  if (bytesRead != sizeof(reference)
+  if (fileSize != sizeof(reference)
+      || bytesRead != sizeof(reference)
       || strncmp(reference.magic, "CWT", 3) != 0
       || reference.version != CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION
       || currentSynthWavetableReferenceCrc(reference) != reference.crc32
@@ -579,7 +583,8 @@ void load_synth_wavetables() {
     return;
   }
   if (strncmp(header.magic, "SYW", 3) != 0 || header.version != SYNTH_WAVETABLE_FILE_VERSION
-      || header.count > SYNTH_WAVETABLE_MAX_COUNT) {
+      || header.count > SYNTH_WAVETABLE_MAX_COUNT
+      || f.size() != sizeof(header) + static_cast<size_t>(header.count) * sizeof(SynthWavetableSlot)) {
     sendToLog("Invalid synth wavetable catalog. Using built-in wavetables.");
     f.close();
     applyDefaultSynthWavetables();

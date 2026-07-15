@@ -1,5 +1,4 @@
 #include "../FirmwareModule.h"
-#include "../config/FeatureFlags.h"
 #include "DiagnosticsTiming.h"
 #include "PlatformCommon.h"
 #include "StabilityBenchmark.h"
@@ -19,6 +18,7 @@
 #include "../midi/MidiTransport.h"
 #include "../midi/MidiRouting.h"
 #include "../sequencer/SequencerMode.h"
+#include "../storage/FactoryStorage.h"
 #include "../storage/PresetSync.h"
 #include "../storage/Settings.h"
 #include "../storage/SynthPresetStorage.h"
@@ -43,81 +43,48 @@
     The outer loop refills audio buffers, services delegated
     MIDI when active, and polls the rotary decoder.
   */
+namespace {
+std::atomic<bool> normalRuntimeReady = false;
+}  // namespace
+
 void hexboardSetup() {
   setupUSBDescriptors();
   Serial.begin(115200);
   setupMIDI();
-  // Give the USB stack time to complete enumeration before any flash
-  // operations (which disable interrupts and starve the USB IRQ handler).
-  // Timeout after 2 s so the board still boots when no USB host is present.
-  {
-    unsigned long usbWaitStart = millis();
-    while (!MidiUSB.connected() && (millis() - usbWaitStart < 2000)) {
-      delay(1);
-    }
-  }
-#if HEXBOARD_BOOT_DIAGNOSTICS
-  // Initialize visible diagnostics before any filesystem access. The last
-  // color left on the strip identifies the startup stage that did not return.
-  setupLEDs();
-  showBootDiagnosticStage(BootDiagnosticStage::FileSystem);
-#endif
-#if HEXBOARD_BOOT_DIAGNOSTIC_SKIP_STORAGE
-  fileSystemExists = false;
-#else
   setupFileSystem();
-#endif
-#if HEXBOARD_BOOT_DIAGNOSTICS
-  showBootDiagnosticStage(BootDiagnosticStage::Hardware);
-#endif
+  FactoryStorageBootState storageState = inspectFactoryStorage();
   Wire.setSDA(SDAPIN);
   Wire.setSCL(SCLPIN);
   setupPins();
   setupGrid();
   detectHardwareVersion();
-#if HEXBOARD_BOOT_DIAGNOSTICS
-  showBootDiagnosticStage(BootDiagnosticStage::Settings);
-#endif
   load_settings();
-#if HEXBOARD_BOOT_DIAGNOSTICS
-  showBootDiagnosticStage(BootDiagnosticStage::SynthPresets);
-#endif
   load_synth_presets();
-#if HEXBOARD_BOOT_DIAGNOSTICS
-  showBootDiagnosticStage(BootDiagnosticStage::SynthPresetReference);
-#endif
   loadCurrentSynthPresetReference();
-#if HEXBOARD_BOOT_DIAGNOSTICS
-  showBootDiagnosticStage(BootDiagnosticStage::SynthWavetables);
-#endif
   load_synth_wavetables();
-#if HEXBOARD_BOOT_DIAGNOSTICS
-  showBootDiagnosticStage(BootDiagnosticStage::Geometry);
-#endif
   load_geometry_objects();
   loadCurrentSynthWavetableReference();
   restoreSynthWavetableReferenceForProfile(activeProfileIndex);
-#if !HEXBOARD_BOOT_DIAGNOSTICS
   setupLEDs();
-#else
-  showBootDiagnosticStage(BootDiagnosticStage::Interface);
-#endif
   setupGFX();
   setupRotary();
   setupMenu();
   setupHardware();
-#if HEXBOARD_BOOT_DIAGNOSTICS
-  showBootDiagnosticStage(BootDiagnosticStage::SynthRuntime);
-#endif
   initializeSynthWaveTables();
   syncSettingsToRuntime();
-  restoreSequencerAtStartup();
   recomputePitchBendFactor();
   synthRuntimeReady.store(true, std::memory_order_release);
-#if HEXBOARD_BOOT_DIAGNOSTICS
-  showBootDiagnosticStage(BootDiagnosticStage::Ready);
-#endif
+  while (!audioTransportReady.load(std::memory_order_acquire)) {
+    tight_loop_contents();
+  }
+  restoreSequencerAtStartup();
   runBootLedSelfCheck();
+  if (storageState != FactoryStorageBootState::Ready) {
+    showStorageWarningScreen(factoryStorageLastError(), factoryStorageIssueCount());
+    delay(2500);
+    menuHome();
+  }
+  normalRuntimeReady.store(true, std::memory_order_release);
 }
 void hexboardLoop() {        // run on first core
   timeTracker();     // Time tracking functions
@@ -190,6 +157,9 @@ void hexboardSetup1() {  // set up on second core
 void hexboardLoop1() {  // run on second core
   stabilityBenchmarkSetCore1Task(STABILITY_TASK_AUDIO_DMA);
   serviceAudioDmaBuffers();
+  if (!normalRuntimeReady.load(std::memory_order_acquire)) {
+    return;
+  }
   if (delegatedControl) {
     stabilityBenchmarkSetCore1Task(STABILITY_TASK_DELEGATED_MIDI);
     processIncomingMIDIDelegated();

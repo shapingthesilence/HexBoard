@@ -29,6 +29,7 @@ void drawDelegatedControlScreen();
 void restoreMenuAfterDelegatedControl();
 bool servicePresetSyncTransfer();
 void showFlashSaveScreen();
+void showStorageWarningScreen(const char* detail, uint8_t issueCount);
 void closeFlashSaveScreen();
 void dismissFlashSaveScreenForMenuInput();
 void serviceFlashSaveScreen();

@@ -209,5 +209,6 @@ constexpr uint64_t DELEGATED_EXIT_HOLD_MICROS = 5000000ULL;
 void setupPins();
 void setupGrid();
 void detectHardwareVersion();
+bool hardwareDefaultRotaryInvert();
 void resetDelegatedNoteMap();
 void clearDelegatedNoteActivity();

@@ -326,10 +326,10 @@ also follow `Played`, `RevPlay`, or `Random` order. `Played` means the order in
 which held notes were pressed, not the physical button numbers.
 
 `WT:...` shows the currently loaded wavetable and opens a virtual load list.
-Built-in tables appear at the root, and user-imported wavetables can be
-organized into folders. The active wavetable shows a diamond in the left
-action-icon slot when it appears in the list.
-Built-in compatibility tables include:
+Basic Shapes is the built-in rescue table. Factory and user-imported
+wavetables are ordinary editable files organized into folders. The active
+wavetable shows a diamond in the left action-icon slot when it appears in the
+list. The factory image includes:
 
 - `Basic Shapes`: sine, triangle, saw, and square anchors
 - `Classic`: strings and clarinet anchors
@@ -339,9 +339,8 @@ Built-in compatibility tables include:
 - `RoundThe808`: rounded and 808-like MP waves
 - `GlassyBells`: glassy and bell-like MP waves
 
-Old presets that used the previous `Waveform` selector are migrated by choosing
-one of these tables and setting `WT Pos` to the matching anchor. The old
-`Hybrid` waveform now maps to `Basic Shapes` at `0%`.
+Everything in this list except Basic Shapes can be edited or erased like an
+imported wavetable. Reinstall the Factory UF2 to restore the supplied library.
 
 User-imported wavetables appear in the same `WT:...` browser after they are
 saved through the web app. New imports default to the `User` folder and are
@@ -431,19 +430,10 @@ named, foldered synth sounds. The device remembers which synth preset or
 `Blank` state was last loaded, while the normal settings auto-save stores any
 unsaved edits so the preset label can still show as modified after restart. On
 the device, presets appear in a virtual folder browser; `New Preset` saves into
-the currently open folder. Factory presets are copied into normal
-editable root-folder preset slots
-when defaults are restored, so they can be changed or erased like any other
-preset and restored later by Reset Defaults or from the web editor's browser
-library. If the device has no synth preset catalog yet, the factory presets are
-served directly from firmware; startup does not need to create a preset file.
-The first explicit preset save creates the normal editable catalog through the
-flash-safe save path. The web app still shows the foldered library and can
-create foldered presets.
-If HexBoard finds a valid firmware `1.3` synth preset file during upgrade, valid
-old slots whose values differ from the firmware `1.3` synth defaults are
-imported into a `1.3 Patches` preset folder alongside the current factory
-presets. Older settings files still reset to factory defaults.
+the currently open folder. The factory image includes its preset library as
+ordinary editable records, including `Soft String Pad` under `Pads` and
+`Bright Mono Lead` under `Leads`. They can be changed or erased like any other
+preset. The web app shows the foldered library and can create foldered presets.
 The load list also includes `Blank`. Loading from the top-level `Synth` item
 returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
@@ -546,7 +536,8 @@ reset.
 When delegated mode starts, the OLED shows `Delegated Control Mode` and, when
 provided by the host, the controlling app name. The normal menu is disabled.
 Encoder turns and encoder button press/release events are sent to the host; the
-saved `Invert Encoder` setting still controls turn direction. The OLED
+saved `Invert Encoder` setting reverses the normal direction selected for the
+detected hardware revision. The OLED
 screensaver still blanks the display after inactivity and only encoder activity
 wakes it again. Hold the encoder button for about `5` seconds to force HexBoard
 out of delegated mode.
@@ -632,7 +623,7 @@ This page contains maintenance and system settings:
 
 - `Firmware 2.0 beta 2` version label
 - Hardware revision
-- `Invert Encoder`
+- `Invert Encoder`: reverse the detected hardware revision's normal direction
 - `ColorByKey`
 - `DisplayNotes`: `Off`, `Label`, `Number`, or `MIDI`
 - `Boot Anim`
@@ -670,8 +661,9 @@ What to expect:
   the active menu, browser, or sleeping OLED state afterward
 - Current synth preset and wavetable reference files are only rewritten when
   their stored value changes
-- If saved settings cannot be read, HexBoard restores factory defaults
-- This release also resets older settings-schema files to factory defaults
+- If a storage file is invalid, HexBoard briefly shows `Storage warning`, uses
+  the safe fallback for that store, and continues starting. If LittleFS cannot
+  mount, saving remains disabled for that boot
 - Saving may mute the onboard synth very briefly
 
 ## Microtonal And MPE Behavior
@@ -697,9 +689,10 @@ Important factory defaults include:
 - Scale: chromatic / none
 - MIDI channel: `1`
 - MPE mode: `Auto`
+- Active synth preset: `Soft String Pad`
 - Synth: `Poly`
 - Synth output volume: `100%` for headphone and piezo
-- Wavetable: `Basic Shapes`
+- Wavetable: `Factory/Classic`
 - WT Pos: frame `1`
 - Drive: `Off`
 - Wheel FX: `FoldWrp`
@@ -713,12 +706,23 @@ Important factory defaults include:
 - Metronome: `Off`
 - Time signature: `4/4`
 - LED brightness: `Dim`
-- LED limit: `Off`
+- LED limit: `1500 mA`
 - Animation: `Button`
 - Display notes: `Label`
 - Auto-save: `On`
 
 ## Updating Firmware
+
+Use `HexBoard_Factory.uf2` for a factory installation. It erases all saved
+settings, presets, wavetables, layouts, samples, and sequences, then installs a
+complete factory library. Use `HexBoard_Update.uf2` to update compatible 2.x
+firmware without changing LittleFS.
+
+Boot only mounts and reads LittleFS; it does not format, migrate, or create
+factory files. If a saved store is invalid, the OLED briefly identifies the
+affected file and the board continues with safe defaults. USB serial prints a
+more detailed validation reason. If LittleFS cannot mount, the board uses
+built-in 12 EDO and Basic Shapes and disables saving.
 
 How to update:
 
@@ -728,7 +732,7 @@ How to update:
 4. Drag the `.uf2` file onto the `RPI-RP2` drive.
 5. The HexBoard will automatically reboot with the new firmware.
 
-Need a backup method?
+Need bootloader recovery?
 
 Hold the bootloader button while plugging it in:
 

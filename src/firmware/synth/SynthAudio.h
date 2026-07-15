@@ -72,6 +72,7 @@ extern byte piezoVolumeCap;
 extern const uint32_t AUDIO_DMA_BUFFER_MICROS;
 extern std::atomic<bool> flashWriteInProgress;
 extern std::atomic<bool> synthRuntimeReady;
+extern std::atomic<bool> audioTransportReady;
 
 bool isSupportedSynthWavetableSampleLength(size_t sampleLength);
 void loadActiveSynthWavetableSamples(const uint8_t* samples, size_t sampleLength);

@@ -15,38 +15,6 @@ constexpr char CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH[] = "/current_synth_pres
 constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_VERSION = 1;
 constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_LOADED_FLAG = 0x01;
 constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_BLANK_FLAG = 0x02;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION_1_3 = 3;
-constexpr char SYNTH_PRESET_MIGRATED_1_3_FOLDER[] = "1.3 Patches";
-constexpr size_t FACTORY_SYNTH_PRESET_COUNT = 2;
-constexpr uint8_t LEGACY_1_3_SYNTH_PRESET_DEFAULT_VALUES[SYNTH_PRESET_VALUE_COUNT_V6] = {
-  SYNTH_OFF,
-  WAVEFORM_HYBRID,
-  SYNTH_DRIVE_OFF,
-  0,  // Firmware 1.3 "Tone" modulation target.
-  SYNTH_MOD_AMOUNT_FULL,
-  SYNTH_VIBRATO_SPEED_DEFAULT,
-  32,
-  120,
-  2,
-  0,
-  4,
-  127,
-  4,
-  SYNTH_MOD_TARGET_VIBRATO,
-  SYNTH_FX_AMOUNT_FULL,
-  0,
-  0,
-  0,
-  0,
-  0,
-  SYNTH_MOD_TARGET_PITCH,
-  SYNTH_FX_AMOUNT_FULL,
-  0,
-  0,
-  0,
-  0,
-  0
-};
 
 struct CurrentSynthPresetReferenceFile {
   char magic[3];
@@ -56,6 +24,8 @@ struct CurrentSynthPresetReferenceFile {
   uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH];
   uint32_t crc32;
 };
+static_assert(sizeof(CurrentSynthPresetReferenceFile) == 28,
+              "CurrentSynthPresetReferenceFile disk layout changed");
 
 uint16_t currentSynthPresetIndex = CURRENT_SYNTH_PRESET_NONE;
 uint8_t currentSynthPresetObjectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
@@ -67,7 +37,6 @@ SynthPresetSlot pendingSynthPresetSaveSlot = {};
 bool pendingSynthPresetSaveSlotValid = false;
 
 bool writeSynthPresetRecordsDirect(const SynthPresetSlot* presets, size_t presetCount, bool logResult);
-size_t buildFactorySynthPresetRecords(SynthPresetSlot* presets, size_t presetCapacity);
 
 bool objectIdIsEmpty(const uint8_t* objectId, size_t objectIdLength) {
   for (size_t i = 0; i < objectIdLength; ++i) {
@@ -180,33 +149,6 @@ bool trackCurrentSynthPresetObjectId(const uint8_t* objectId) {
   return false;
 }
 
-void setFactorySynthPresetValue(SynthPresetSlot& preset, SettingKey key, uint8_t value) {
-  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
-    if (synthPresetKeys[i] == key) {
-      preset.values[i] = value;
-      return;
-    }
-  }
-}
-
-SynthPresetSlot makeFactorySynthPreset(const char* name,
-                                       const char* folderPath,
-                                       const char* wavetableName,
-                                       const char* wavetableFolderPath,
-                                       bool favorite) {
-  SynthPresetSlot preset = {};
-  preset.valid = 1;
-  preset.favorite = favorite ? 1 : 0;
-  snprintf(preset.name, sizeof(preset.name), "%s", name);
-  snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", folderPath);
-  snprintf(preset.wavetableName, sizeof(preset.wavetableName), "%s", wavetableName);
-  snprintf(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), "%s", wavetableFolderPath);
-  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
-    preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
-  }
-  return preset;
-}
-
 bool appendSynthPresetMetadataFromSlot(const SynthPresetSlot& preset) {
   SynthPresetIndexEntry metadata = {};
   copySynthPresetMetadata(metadata, preset);
@@ -215,105 +157,8 @@ bool appendSynthPresetMetadataFromSlot(const SynthPresetSlot& preset) {
 
 }  // namespace
 
-namespace {
-
-size_t buildFactorySynthPresetRecords(SynthPresetSlot* presets, size_t presetCapacity) {
-  if (!presets || presetCapacity < FACTORY_SYNTH_PRESET_COUNT) {
-    return 0;
-  }
-  SynthPresetSlot softStringPad = makeFactorySynthPreset("Soft String Pad",
-                                                         SYNTH_PRESET_ROOT_FOLDER,
-                                                         "Classic",
-                                                         SYNTH_WAVETABLE_BUILTIN_FOLDER,
-                                                         true);
-  setFactorySynthPresetValue(softStringPad, SettingKey::PlaybackMode, SYNTH_POLY);
-  setFactorySynthPresetValue(softStringPad, SettingKey::Waveform, WAVEFORM_BASIC_WAVETABLE);
-  setFactorySynthPresetValue(softStringPad, SettingKey::SynthDrive, SYNTH_DRIVE_OFF);
-  setFactorySynthPresetValue(softStringPad, SettingKey::SynthModTarget, SYNTH_MOD_TARGET_FOLD_WARP);
-  setFactorySynthPresetValue(softStringPad, SettingKey::SynthModAmount, 127);
-  setFactorySynthPresetValue(softStringPad, SettingKey::SynthVibratoSpeed, 5);
-  setFactorySynthPresetValue(softStringPad, SettingKey::ArpeggiatorDivision, 32);
-  setFactorySynthPresetValue(softStringPad, SettingKey::SynthBPM, 120);
-  setFactorySynthPresetValue(softStringPad, SettingKey::EnvelopeAttackIndex, 12);
-  setFactorySynthPresetValue(softStringPad, SettingKey::EnvelopeHoldIndex, 0);
-  setFactorySynthPresetValue(softStringPad, SettingKey::EnvelopeDecayIndex, 14);
-  setFactorySynthPresetValue(softStringPad, SettingKey::EnvelopeSustainLevel, 100);
-  setFactorySynthPresetValue(softStringPad, SettingKey::EnvelopeReleaseIndex, 14);
-  setFactorySynthPresetValue(softStringPad, SettingKey::EffectEnvelopeTarget, SYNTH_MOD_TARGET_VIBRATO);
-  setFactorySynthPresetValue(softStringPad, SettingKey::EffectEnvelopeAmount, 254);
-  setFactorySynthPresetValue(softStringPad, SettingKey::EffectEnvelope2Target, SYNTH_MOD_TARGET_PITCH);
-  setFactorySynthPresetValue(softStringPad, SettingKey::EffectEnvelope2Amount, 254);
-  setFactorySynthPresetValue(softStringPad, SettingKey::SynthPortamentoTimeIndex, 0);
-  setFactorySynthPresetValue(softStringPad, SettingKey::ArpeggiatorDirection, 0);
-  setFactorySynthPresetValue(softStringPad, SettingKey::SynthWavetablePosition, 0);
-  setFactorySynthPresetValue(softStringPad, SettingKey::SynthLfoTarget, SYNTH_MOD_TARGET_FOLD_WARP);
-  setFactorySynthPresetValue(softStringPad, SettingKey::SynthLfoAmount, 127);
-  setFactorySynthPresetValue(softStringPad, SettingKey::SynthLfoWave, 0);
-  setFactorySynthPresetValue(softStringPad, SettingKey::SynthLfoSpeed, 6);
-
-  SynthPresetSlot brightMonoLead = makeFactorySynthPreset("Bright Mono Lead",
-                                                          SYNTH_PRESET_ROOT_FOLDER,
-                                                          SYNTH_WAVETABLE_BASIC_NAME,
-                                                          SYNTH_WAVETABLE_BUILTIN_FOLDER,
-                                                          false);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::PlaybackMode, SYNTH_MONO_RETRIGGER);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::Waveform, WAVEFORM_BASIC_WAVETABLE);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::SynthDrive, SYNTH_DRIVE_EDGE);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::SynthModTarget, SYNTH_MOD_TARGET_PITCH);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::SynthModAmount, 100);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::SynthVibratoSpeed, 4);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::SynthPortamentoTimeIndex, 6);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::SynthWavetablePosition, 85);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::EnvelopeAttackIndex, 0);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::EnvelopeHoldIndex, 0);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::EnvelopeDecayIndex, 4);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::EnvelopeSustainLevel, 110);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::EnvelopeReleaseIndex, 5);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::EffectEnvelopeTarget, SYNTH_MOD_TARGET_FOLD_WARP);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::EffectEnvelopeAmount, 127);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::EffectEnvelope2Target, SYNTH_MOD_TARGET_FOLD_WARP);
-  setFactorySynthPresetValue(brightMonoLead, SettingKey::EffectEnvelope2Amount, 127);
-
-  SynthPresetSlot factoryPresets[FACTORY_SYNTH_PRESET_COUNT] = { softStringPad, brightMonoLead };
-  for (size_t i = 0; i < FACTORY_SYNTH_PRESET_COUNT; ++i) {
-    normalizeSynthPresetValues(factoryPresets[i]);
-    normalizeSynthPresetMetadata(factoryPresets[i], static_cast<uint8_t>(i));
-    presets[i] = factoryPresets[i];
-  }
-  return FACTORY_SYNTH_PRESET_COUNT;
-}
-
-bool buildFactorySynthPresetRecordByObjectId(const uint8_t* objectId, SynthPresetSlot& preset) {
-  if (!objectId || objectIdIsEmpty(objectId, SYNTH_PRESET_OBJECT_ID_LENGTH)) {
-    return false;
-  }
-  SynthPresetSlot factoryPresets[FACTORY_SYNTH_PRESET_COUNT] = {};
-  size_t factoryCount = buildFactorySynthPresetRecords(factoryPresets, FACTORY_SYNTH_PRESET_COUNT);
-  for (size_t i = 0; i < factoryCount; ++i) {
-    if (memcmp(factoryPresets[i].objectId, objectId, SYNTH_PRESET_OBJECT_ID_LENGTH) == 0) {
-      preset = factoryPresets[i];
-      return true;
-    }
-  }
-  return false;
-}
-
-bool buildFactorySynthPresetRecordAt(uint16_t presetIndex, SynthPresetSlot& preset) {
-  if (presetIndex >= synthPresets.size() || !synthPresets[presetIndex].valid) {
-    return false;
-  }
-  return buildFactorySynthPresetRecordByObjectId(synthPresets[presetIndex].objectId, preset);
-}
-
-}  // namespace
-
 void applyDefaultSynthPresets() {
   synthPresets.clear();
-  SynthPresetSlot defaults[FACTORY_SYNTH_PRESET_COUNT] = {};
-  size_t defaultCount = buildFactorySynthPresetRecords(defaults, FACTORY_SYNTH_PRESET_COUNT);
-  for (size_t i = 0; i < defaultCount; ++i) {
-    appendSynthPresetMetadataFromSlot(defaults[i]);
-  }
 }
 
 void generateSynthPresetObjectId(SynthPresetSlot& preset, uint8_t fallbackIndex) {
@@ -482,86 +327,6 @@ void normalizeSynthPresetValues(SynthPresetSlot& preset) {
       return;
     }
   }
-}
-
-static bool legacy13SynthPresetDiffersFromDefault(const LegacySynthPresetSlot& legacyPreset) {
-  if (!legacyPreset.valid) {
-    return false;
-  }
-  return memcmp(legacyPreset.values,
-                LEGACY_1_3_SYNTH_PRESET_DEFAULT_VALUES,
-                sizeof(LEGACY_1_3_SYNTH_PRESET_DEFAULT_VALUES)) != 0;
-}
-
-void migrateLegacySynthPresetSlot(const LegacySynthPresetSlot& legacyPreset, uint8_t index) {
-  if (!legacyPreset.valid || synthPresets.size() >= SYNTH_PRESET_MAX_COUNT) {
-    return;
-  }
-  SynthPresetSlot preset = {};
-  preset.valid = legacyPreset.valid;
-  snprintf(preset.name, sizeof(preset.name), "Slot %u", static_cast<unsigned>(index + 1));
-  snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", SYNTH_PRESET_ROOT_FOLDER);
-  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
-    preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
-  }
-  memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
-  normalizeSynthPresetValues(preset);
-  normalizeSynthPresetMetadata(preset, index);
-  appendSynthPresetMetadataFromSlot(preset);
-}
-
-void migrateSynthPresetSlotV7(const SynthPresetSlotV7& legacyPreset, uint8_t index) {
-  if (!legacyPreset.valid || synthPresets.size() >= SYNTH_PRESET_MAX_COUNT) {
-    return;
-  }
-  SynthPresetSlot preset = {};
-  preset.valid = legacyPreset.valid;
-  preset.favorite = legacyPreset.favorite;
-  memcpy(preset.objectId, legacyPreset.objectId, sizeof(preset.objectId));
-  memcpy(preset.name, legacyPreset.name, sizeof(preset.name));
-  memcpy(preset.folderPath, legacyPreset.folderPath, sizeof(preset.folderPath));
-  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
-    preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
-  }
-  memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
-  normalizeSynthPresetValues(preset);
-  normalizeSynthPresetMetadata(preset, index);
-  appendSynthPresetMetadataFromSlot(preset);
-}
-
-void migrateSynthPresetSlotV8(const SynthPresetSlotV8& legacyPreset, uint8_t index) {
-  if (!legacyPreset.valid || synthPresets.size() >= SYNTH_PRESET_MAX_COUNT) {
-    return;
-  }
-  SynthPresetSlot preset = {};
-  preset.valid = legacyPreset.valid;
-  preset.favorite = legacyPreset.favorite;
-  memcpy(preset.objectId, legacyPreset.objectId, sizeof(preset.objectId));
-  memcpy(preset.name, legacyPreset.name, sizeof(preset.name));
-  memcpy(preset.folderPath, legacyPreset.folderPath, sizeof(preset.folderPath));
-  memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
-  normalizeSynthPresetValues(preset);
-  normalizeSynthPresetMetadata(preset, index);
-  appendSynthPresetMetadataFromSlot(preset);
-}
-
-void migrateSynthPresetSlotV6(const SynthPresetSlotV6& legacyPreset, uint8_t index) {
-  if (!legacyPreset.valid || synthPresets.size() >= SYNTH_PRESET_MAX_COUNT) {
-    return;
-  }
-  SynthPresetSlot preset = {};
-  preset.valid = legacyPreset.valid;
-  preset.favorite = legacyPreset.favorite;
-  memcpy(preset.objectId, legacyPreset.objectId, sizeof(preset.objectId));
-  memcpy(preset.name, legacyPreset.name, sizeof(preset.name));
-  memcpy(preset.folderPath, legacyPreset.folderPath, sizeof(preset.folderPath));
-  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
-    preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
-  }
-  memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
-  normalizeSynthPresetValues(preset);
-  normalizeSynthPresetMetadata(preset, index);
-  appendSynthPresetMetadataFromSlot(preset);
 }
 
 uint8_t currentSynthPresetValue(SettingKey key) {
@@ -813,26 +578,26 @@ bool readSynthPresetFileHeader(File& f, SynthPresetFileHeader& header) {
 
 bool readSynthPresetRecordAt(uint16_t presetIndex, SynthPresetSlot& preset) {
   if (!fileSystemExists) {
-    return buildFactorySynthPresetRecordAt(presetIndex, preset);
+    return false;
   }
   File f = LittleFS.open(SYNTH_PRESET_CATALOG_FILE_PATH, "r");
   if (!f) {
-    return buildFactorySynthPresetRecordAt(presetIndex, preset);
+    return false;
   }
   SynthPresetFileHeader header = {};
   if (!readSynthPresetFileHeader(f, header) || presetIndex >= header.count) {
     f.close();
-    return buildFactorySynthPresetRecordAt(presetIndex, preset);
+    return false;
   }
   uint32_t offset = sizeof(header) + static_cast<uint32_t>(presetIndex) * sizeof(SynthPresetSlot);
   if (!f.seek(offset)) {
     f.close();
-    return buildFactorySynthPresetRecordAt(presetIndex, preset);
+    return false;
   }
   size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset));
   f.close();
   if (bytesRead != sizeof(preset) || !preset.valid) {
-    return buildFactorySynthPresetRecordAt(presetIndex, preset);
+    return false;
   }
   normalizeSynthPresetValues(preset);
   normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(presetIndex));
@@ -844,21 +609,21 @@ bool readSynthPresetRecordByObjectId(const uint8_t* objectId, SynthPresetSlot& p
     return false;
   }
   if (!fileSystemExists) {
-    return buildFactorySynthPresetRecordByObjectId(objectId, preset);
+    return false;
   }
   File f = LittleFS.open(SYNTH_PRESET_CATALOG_FILE_PATH, "r");
   if (!f) {
-    return buildFactorySynthPresetRecordByObjectId(objectId, preset);
+    return false;
   }
   SynthPresetFileHeader header = {};
   if (!readSynthPresetFileHeader(f, header)) {
     f.close();
-    return buildFactorySynthPresetRecordByObjectId(objectId, preset);
+    return false;
   }
   for (uint16_t i = 0; i < header.count; ++i) {
     if (f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) != sizeof(preset)) {
       f.close();
-      return buildFactorySynthPresetRecordByObjectId(objectId, preset);
+      return false;
     }
     if (preset.valid && memcmp(preset.objectId, objectId, sizeof(preset.objectId)) == 0) {
       f.close();
@@ -868,7 +633,7 @@ bool readSynthPresetRecordByObjectId(const uint8_t* objectId, SynthPresetSlot& p
     }
   }
   f.close();
-  return buildFactorySynthPresetRecordByObjectId(objectId, preset);
+  return false;
 }
 
 void synthPresetFallbackRecordFromMetadata(const SynthPresetIndexEntry& metadata,
@@ -950,74 +715,6 @@ bool writeSynthPresetRecordsDirect(const SynthPresetSlot* presets, size_t preset
   }
   return true;
 }
-
-bool migrateFixedLegacySynthPresetCatalog(File& f, const SynthPresetFileHeaderBase& header) {
-  if (header.version > SYNTH_PRESET_FILE_VERSION_1_3) {
-    f.close();
-    return false;
-  }
-
-  LegacySynthPresetSlot legacyPresets[LEGACY_SYNTH_PRESET_COUNT] = {};
-  const size_t legacyDataSize = sizeof(LegacySynthPresetSlot) * LEGACY_SYNTH_PRESET_COUNT;
-  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(legacyPresets), legacyDataSize);
-  f.close();
-  if (bytesRead != legacyDataSize) {
-    sendToLog("Warning: Legacy synth preset data incomplete. Using built-in factory presets.");
-    return false;
-  }
-  uint32_t computed = crc32(reinterpret_cast<const uint8_t*>(legacyPresets), legacyDataSize);
-  if (computed != header.crc32) {
-    sendToLog("Legacy synth preset CRC32 mismatch. Using built-in factory presets.");
-    return false;
-  }
-
-  SynthPresetSlot migratedPresets[FACTORY_SYNTH_PRESET_COUNT + LEGACY_SYNTH_PRESET_COUNT] = {};
-  size_t presetCount = buildFactorySynthPresetRecords(migratedPresets, FACTORY_SYNTH_PRESET_COUNT);
-  uint8_t migratedCount = 0;
-  for (uint8_t i = 0; i < LEGACY_SYNTH_PRESET_COUNT && presetCount < SYNTH_PRESET_MAX_COUNT; ++i) {
-    LegacySynthPresetSlot legacyPreset = legacyPresets[i];
-    if (!legacyPreset.valid) {
-      continue;
-    }
-    if (!legacy13SynthPresetDiffersFromDefault(legacyPreset)) {
-      continue;
-    }
-    if (header.version < 2) {
-      remapLegacySynthPresetEnvelopeTimes(legacyPreset);
-    }
-    if (header.version < 3) {
-      remapLegacySynthPresetVibratoSpeed(legacyPreset);
-    }
-
-    SynthPresetSlot preset = {};
-    preset.valid = 1;
-    snprintf(preset.name, sizeof(preset.name), "Slot %u", static_cast<unsigned>(i + 1));
-    snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", SYNTH_PRESET_MIGRATED_1_3_FOLDER);
-    for (size_t valueIndex = 0; valueIndex < synthPresetKeys.size(); ++valueIndex) {
-      preset.values[valueIndex] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[valueIndex])];
-    }
-    memcpy(preset.values, legacyPreset.values, sizeof(legacyPreset.values));
-    normalizeSynthPresetValues(preset);
-    normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(presetCount));
-    migratedPresets[presetCount++] = preset;
-    ++migratedCount;
-  }
-
-  if (migratedCount == 0) {
-    sendToLog("Legacy synth preset file had no saved slots. Using built-in factory presets.");
-    return false;
-  }
-  if (!writeSynthPresetRecordsDirect(migratedPresets, presetCount, false)) {
-    return false;
-  }
-
-  synthPresets.clear();
-  for (size_t i = 0; i < presetCount; ++i) {
-    appendSynthPresetMetadataFromSlot(migratedPresets[i]);
-  }
-  sendToLog("Migrated " + std::to_string(migratedCount) + " synth presets from firmware 1.3.");
-  return true;
-}
 }  // namespace
 
 bool readSynthPresetFromCatalog(uint16_t presetIndex, SynthPresetSlot& preset) {
@@ -1072,13 +769,15 @@ bool loadCurrentSynthPresetReference() {
     return false;
   }
   CurrentSynthPresetReferenceFile reference = {};
+  size_t fileSize = f.size();
   size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&reference), sizeof(reference));
   f.close();
   uint8_t knownFlags = CURRENT_SYNTH_PRESET_REFERENCE_LOADED_FLAG
                        | CURRENT_SYNTH_PRESET_REFERENCE_BLANK_FLAG;
   bool hasLoadedFlag = (reference.flags & CURRENT_SYNTH_PRESET_REFERENCE_LOADED_FLAG) != 0;
   bool hasBlankFlag = (reference.flags & CURRENT_SYNTH_PRESET_REFERENCE_BLANK_FLAG) != 0;
-  if (bytesRead != sizeof(reference)
+  if (fileSize != sizeof(reference)
+      || bytesRead != sizeof(reference)
       || strncmp(reference.magic, "CSP", 3) != 0
       || reference.version != CURRENT_SYNTH_PRESET_REFERENCE_VERSION
       || (reference.flags & ~knownFlags) != 0
@@ -1157,27 +856,26 @@ void load_synth_presets() {
   synthPresets.clear();
   currentSynthPresetLoadedSlotValid = false;
   if (!fileSystemExists) {
-    sendToLog("File system not available. Using factory synth presets in memory.");
+    sendToLog("File system not available. Using an empty synth preset library.");
     applyDefaultSynthPresets();
     return;
   }
   File f = LittleFS.open(SYNTH_PRESET_CATALOG_FILE_PATH, "r");
   if (!f) {
-    sendToLog("Synth preset file not found. Using built-in factory presets.");
+    sendToLog("Synth preset file not found. Using an empty synth preset library.");
     applyDefaultSynthPresets();
     return;
   }
   SynthPresetFileHeaderBase headerBase = {};
   if (!readSynthPresetFileHeaderBase(f, headerBase)) {
-    sendToLog("Invalid synth preset file. Using built-in factory presets.");
+    sendToLog("Invalid synth preset file. Using an empty synth preset library.");
     f.close();
     applyDefaultSynthPresets();
     return;
   }
   if (headerBase.version != SYNTH_PRESET_FILE_VERSION) {
-    if (migrateFixedLegacySynthPresetCatalog(f, headerBase)) {
-      return;
-    }
+    f.close();
+    sendToLog("Unsupported synth preset catalog. Using an empty synth preset library.");
     applyDefaultSynthPresets();
     return;
   }
@@ -1186,8 +884,9 @@ void load_synth_presets() {
   header.base = headerBase;
   if (f.read(reinterpret_cast<uint8_t*>(&header.count), sizeof(header.count)) != sizeof(header.count)
       || f.read(reinterpret_cast<uint8_t*>(&header.reserved), sizeof(header.reserved)) != sizeof(header.reserved)
-      || header.count > SYNTH_PRESET_MAX_COUNT) {
-    sendToLog("Invalid synth preset file. Using built-in factory presets.");
+      || header.count > SYNTH_PRESET_MAX_COUNT
+      || f.size() != sizeof(header) + static_cast<size_t>(header.count) * sizeof(SynthPresetSlot)) {
+    sendToLog("Invalid synth preset file. Using an empty synth preset library.");
     f.close();
     applyDefaultSynthPresets();
     return;
@@ -1196,7 +895,7 @@ void load_synth_presets() {
   for (uint16_t i = 0; i < header.count; ++i) {
     SynthPresetSlot preset = {};
     if (f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) != sizeof(preset)) {
-      sendToLog("Warning: Synth preset data incomplete. Using built-in factory presets.");
+      sendToLog("Warning: Synth preset data incomplete. Using an empty synth preset library.");
       f.close();
       applyDefaultSynthPresets();
       return;
@@ -1211,11 +910,7 @@ void load_synth_presets() {
   }
   f.close();
   if (crc32Finish(crc) != header.base.crc32) {
-    sendToLog("Synth preset CRC32 mismatch. Using built-in factory presets.");
-    applyDefaultSynthPresets();
-    return;
-  }
-  if (synthPresets.empty()) {
+    sendToLog("Synth preset CRC32 mismatch. Using an empty synth preset library.");
     applyDefaultSynthPresets();
     return;
   }
