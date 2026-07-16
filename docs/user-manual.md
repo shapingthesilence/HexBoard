@@ -115,12 +115,12 @@ command-wheel, delegated-control, save, and transfer screens may wake the panel
 long enough to show feedback, then return it to sleep if the menu timer had
 already expired.
 
-Normal menu pages use a two-line header. The first line names the current page;
-the second shows its location, such as `/Editor/Synth/Amp Env` or
-`/Settings/Advanced`. Deep locations collapse complete leading levels as
-`.../Parent/Current`. The header text uses the larger `5x8` menu font. Expanding
-the header from `10` to `18` pixels consumes the eight pixels that were unused
-below the old list, so all `11` menu rows still fit on the `128x128` display.
+Normal menu pages use a single-line `6x12` title in an `18`-pixel header.
+Expanding the header from `10` to `18` pixels consumes the eight pixels that
+were unused below the old list, so all `11` menu rows still fit on the
+`128x128` display. The root page title is the compact `HexBoard` so it fits the
+larger font cleanly. Titles are centered, and the divider sits at row `15`,
+leaving two clear pixels before the first menu-row highlight begins.
 
 The main menu includes:
 
@@ -150,10 +150,9 @@ Rows that open virtual browsers, including tuning/layout/scale, synth preset,
 and wavetable browsers, use the same right-side arrow cue as folder/submenu
 rows. Inside those browsers, folders keep that right-side arrow and selectable
 actions or entries use the action arrow. The currently loaded row uses a
-diamond in the left action-icon slot. Folder-capable browsers use the same
-two-line header for the browser action and current folder path. Paths start at
-`/`; when a deep path is wider than the header, whole leading levels collapse
-to `...` so the nearest parent and current folder remain visible. When the selector rests on
+diamond in the left action-icon slot. Virtual browsers use the same single-line
+large header for the current browser action; folder paths are not shown in the
+header. When the selector rests on
 one of those launcher rows, long current names begin scrolling after `1.5`
 seconds and advance one character every `250` ms. The final scroll position
 pauses for `1` second before the name returns to the beginning and waits again.

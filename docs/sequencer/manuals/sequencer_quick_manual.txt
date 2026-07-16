@@ -178,9 +178,8 @@ Playback
 
 Menu Items
 
-- Standard menu headers show the current page on the first line and its
-  `/Sequencer/...` location on the second. Deep locations collapse complete
-  leading levels as `.../Parent/Current`.
+- Standard menu headers center the current page title on one large-font line,
+  with a small gap between the divider and first menu row.
 - When a menu page is open, hold the bottom command button below the encoder to
   temporarily make the top two command buttons act like one encoder step up or
   down. Releasing that bottom button returns them to normal behavior.
@@ -328,10 +327,8 @@ Saving And Files
 - The `Size Bytes` column shows raw file sizes in bytes.
 - While that session is active, Save, Revert, and file-browser actions are
   blocked until the session is stopped.
-- File browsers use a two-line header: the action is first and the current
-  folder path is second.
-- Deep paths collapse leading levels as `.../Parent/Current` so the current
-  folder stays visible.
+- File browsers use one large-font header line for the current action; the
+  folder path is not repeated there.
 - File browsers show 11 list rows at a time, including the back row, and turn
   through 11-row pages automatically.
 - The menu title shows the current file name as:

@@ -10,4 +10,3 @@ void openMainSynthPresetLoadMenu();
 void openSynthPresetLoadMenu();
 void openSynthPresetSaveMenu();
 void synthPresetFolderLabel(const char* folderPath, char* output, size_t outputLength);
-void synthPresetFolderBreadcrumb(const char* folderPath, char* output, size_t outputLength);

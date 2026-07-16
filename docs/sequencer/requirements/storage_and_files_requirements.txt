@@ -144,10 +144,9 @@ Requirement:
 The file browser shall show 11 list rows at a time, including its back row.
 
 Details:
-- The 18-pixel header shall use two readable text lines: browser action first,
-  current folder path second.
-- Deep paths shall collapse complete leading levels while preserving the
-  nearest parent and current folder whenever those levels fit.
+- The 18-pixel header shall center the browser action on one large-font line.
+- The divider shall leave two clear pixels before the first list-row highlight.
+- The current folder path shall not be repeated in the header.
 - Turning through the list advances between 11-row pages.
 
 

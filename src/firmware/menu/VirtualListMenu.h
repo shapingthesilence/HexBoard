@@ -10,7 +10,6 @@ enum class VirtualListMenuRowType : uint8_t {
 
 struct VirtualListMenuProvider {
   const char* title = "";
-  const char* breadcrumb = nullptr;
   void* context = nullptr;
   uint16_t (*getCount)(void* context) = nullptr;
   bool (*getLabel)(void* context, uint16_t index, char* output, size_t outputLength) = nullptr;

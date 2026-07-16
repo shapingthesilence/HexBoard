@@ -32,7 +32,6 @@ bool synthWavetableMenuRebuildPending = false;
 SynthWavetableMenuRow synthWavetableMenuRows[SYNTH_WAVETABLE_MENU_MAX_ROWS] = {};
 uint16_t synthWavetableMenuRowCount = 0;
 char synthWavetableMenuCurrentFolder[SYNTH_WAVETABLE_FOLDER_LENGTH] = "/";
-char synthWavetableMenuBreadcrumbBuffer[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = "/";
 
 uint16_t synthWavetableVirtualCount(void*) {
   return synthWavetableMenuRowCount;
@@ -140,12 +139,6 @@ void appendSynthWavetableMenuRow(SynthWavetableMenuRowKind kind, uint16_t index)
   synthWavetableMenuRows[synthWavetableMenuRowCount++] = { kind, index };
 }
 
-void updateSynthWavetableBrowserHeader() {
-  synthPresetFolderBreadcrumb(synthWavetableMenuCurrentFolder,
-                              synthWavetableMenuBreadcrumbBuffer,
-                              sizeof(synthWavetableMenuBreadcrumbBuffer));
-}
-
 void rebuildSynthWavetableVirtualList() {
   compactSynthWavetables();
   synthWavetableMenuRowCount = 0;
@@ -176,7 +169,6 @@ void rebuildSynthWavetableVirtualList() {
       appendSynthWavetableMenuRow(SynthWavetableMenuRowKind::User, static_cast<uint16_t>(i));
     }
   }
-  updateSynthWavetableBrowserHeader();
 }
 
 bool synthWavetableVirtualLabel(void*, uint16_t index, char* output, size_t outputLength) {
@@ -336,7 +328,6 @@ void openSynthWavetableLoadMenu() {
   updateCurrentSynthWavetableMenuLabel();
   VirtualListMenuProvider provider;
   provider.title = "Wavetables";
-  provider.breadcrumb = synthWavetableMenuBreadcrumbBuffer;
   provider.getCount = synthWavetableVirtualCount;
   provider.getLabel = synthWavetableVirtualLabel;
   provider.getRowType = synthWavetableVirtualRowType;

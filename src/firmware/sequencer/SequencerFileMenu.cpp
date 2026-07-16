@@ -694,7 +694,6 @@ void showBrowser() {
   updateBrowserTitle();
   VirtualListMenuProvider provider;
   provider.title = g_browserTitle;
-  provider.breadcrumb = g_browserPath;
   provider.getCount = browserRowCount;
   provider.getLabel = browserLabel;
   provider.getRowType = browserRowType;

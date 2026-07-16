@@ -38,7 +38,6 @@ UserGeometryMenuKind userGeometryVirtualKind = UserGeometryMenuKind::Tuning;
 bool userGeometryMenuRebuildPending = false;
 bool userGeometryMenuOverflowLogged = false;
 char userGeometryMenuCurrentFolder[GEOMETRY_OBJECT_FOLDER_LENGTH] = "/";
-char userGeometryMenuBreadcrumbBuffer[SYNTH_PRESET_MENU_LABEL_LENGTH] = "/";
 
 const char* userGeometryMenuTitle(UserGeometryMenuKind kind) {
   switch (kind) {
@@ -336,14 +335,6 @@ bool userGeometryFolderAlreadyListed(const char* childFolderPath) {
   return false;
 }
 
-void updateUserGeometryMenuHeader(UserGeometryMenuKind kind) {
-  if (kind == UserGeometryMenuKind::Tuning) {
-    synthPresetFolderBreadcrumb(userGeometryMenuCurrentFolder,
-                                userGeometryMenuBreadcrumbBuffer,
-                                sizeof(userGeometryMenuBreadcrumbBuffer));
-  }
-}
-
 void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
   userGeometryVirtualKind = kind;
   userGeometryVirtualCount = 0;
@@ -388,7 +379,6 @@ void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
       }
     }
   }
-  updateUserGeometryMenuHeader(kind);
 }
 
 uint16_t userGeometryVirtualCountProvider(void*) {
@@ -530,9 +520,6 @@ void openUserGeometryMenu(UserGeometryMenuKind kind) {
   rebuildUserGeometryVirtualList(kind);
   VirtualListMenuProvider provider;
   provider.title = userGeometryMenuTitle(kind);
-  provider.breadcrumb = kind == UserGeometryMenuKind::Tuning
-                          ? userGeometryMenuBreadcrumbBuffer
-                          : nullptr;
   provider.getCount = userGeometryVirtualCountProvider;
   provider.getLabel = userGeometryVirtualLabelProvider;
   provider.getRowType = userGeometryVirtualRowType;

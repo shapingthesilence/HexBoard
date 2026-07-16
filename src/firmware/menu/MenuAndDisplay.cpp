@@ -43,6 +43,7 @@
   */
 #define MENU_ITEM_HEIGHT 10
 #define MENU_PAGE_SCREEN_TOP_OFFSET 18
+#define MENU_HEADER_DIVIDER_Y (MENU_PAGE_SCREEN_TOP_OFFSET - 3)
 #define MENU_VALUES_LEFT_OFFSET 78
 // Create an instance of the U8g2 graphics library.
 U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2(U8G2_R2, /* reset=*/U8X8_PIN_NONE);
@@ -65,8 +66,6 @@ constexpr uint8_t VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS = 19;
 constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_START_DELAY_MICROS = 1500000ULL;
 constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_END_DELAY_MICROS = 1000000ULL;
 constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_INTERVAL_MICROS = 250000ULL;
-constexpr uint8_t MENU_HEADER_TEXT_X = 4;
-constexpr uint8_t MENU_HEADER_RIGHT_MARGIN = 4;
 
 GEMPage* virtualListLauncherFocusedPage = nullptr;
 GEMItem* virtualListLauncherFocusedItem = nullptr;
@@ -75,47 +74,14 @@ uint16_t virtualListLauncherScrollOffset = 0;
 bool virtualListLauncherScrollApplied = false;
 char virtualListLauncherValueBuffer[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = {};
 
-void drawFittedMenuHeaderText(const char* text, uint8_t y, bool preserveTail) {
-  if (!text || !text[0]) {
-    return;
+void drawCenteredMenuHeaderTitle(const char* title) {
+  if (!title) {
+    title = "";
   }
-
-  const int maxWidth = static_cast<int>(u8g2.getDisplayWidth())
-                       - MENU_HEADER_TEXT_X
-                       - MENU_HEADER_RIGHT_MARGIN;
-  if (u8g2.getStrWidth(text) <= maxWidth) {
-    u8g2.drawStr(MENU_HEADER_TEXT_X, y, text);
-    return;
-  }
-
-  if (!preserveTail) {
-    u8g2.setClipWindow(MENU_HEADER_TEXT_X,
-                      y,
-                      static_cast<uint8_t>(u8g2.getDisplayWidth() - MENU_HEADER_RIGHT_MARGIN),
-                      static_cast<uint8_t>(y + 8));
-    u8g2.drawStr(MENU_HEADER_TEXT_X, y, text);
-    u8g2.setMaxClipWindow();
-    return;
-  }
-
-  constexpr const char* ELLIPSIS = "...";
-  const int ellipsisWidth = u8g2.getStrWidth(ELLIPSIS);
-  const int tailWidth = maxWidth - ellipsisWidth;
-  const char* tail = nullptr;
-  for (const char* candidate = strchr(text + 1, '/'); candidate; candidate = strchr(candidate + 1, '/')) {
-    if (u8g2.getStrWidth(candidate) <= tailWidth) {
-      tail = candidate;
-      break;
-    }
-  }
-  if (!tail) {
-    tail = text;
-    while (tail[0] && u8g2.getStrWidth(tail) > tailWidth) {
-      ++tail;
-    }
-  }
-  u8g2.drawStr(MENU_HEADER_TEXT_X, y, ELLIPSIS);
-  u8g2.drawStr(MENU_HEADER_TEXT_X + ellipsisWidth, y, tail);
+  u8g2.setFont(GEM_FONT_BIG);
+  const int titleWidth = u8g2.getStrWidth(title);
+  const int centeredX = (static_cast<int>(u8g2.getDisplayWidth()) - titleWidth) / 2;
+  u8g2.drawStr(centeredX > 0 ? centeredX : 0, 0, title);
 }
 
 void wakeDisplayFromScreensaver() {
@@ -394,7 +360,7 @@ char mainScaleMenuLabel[40] = "Scale";
 char mainSynthPresetMenuLabel[48] = "Synth:Current";
 char synthPresetMenuLabel[48] = "Preset:Current";
 
-GEMPage menuPageMain("HexBoard MIDI Controller");
+GEMPage menuPageMain("HexBoard");
 GEMPage menuPageTuning("Tuning", menuPageMain);
 GEMItem menuGotoTuning(mainTuningMenuLabel, menuPageTuning);
 GEMPage menuPageLayout("Layout", menuPageMain);
@@ -431,44 +397,6 @@ GEMPage menuPageSerialDebug("Serial Debug", menuPageAdvanced);
 GEMItem menuGotoSerialDebug("Serial Debug", menuPageSerialDebug);
 GEMPage menuPageProfiles("Profiles", menuPageMain);
 GEMItem menuGotoProfiles("Profiles", menuPageProfiles);
-
-const char* standardMenuBreadcrumb(GEMPage* page) {
-  if (page == &menuPageMain) return "/";
-  if (page == &menuPageTuning) return "/Tuning";
-  if (page == &menuPageLayout) return "/Layout";
-  if (page == &menuPageScales) return "/Scales";
-  if (page == &menuPageColors) return "/Lights & Colors";
-  if (page == &menuPageEditor) return "/Editor";
-  if (page == &menuPageSynth) return "/Editor/Synth";
-  if (page == &menuPageSynthWavetableLoad) return "/Editor/Synth/Wavetables";
-  if (page == &menuPageSynthAmpEnv) return "/Editor/Synth/Amp Env";
-  if (page == &menuPageSynthLfo) return "/Editor/Synth/LFO";
-  if (page == &menuPageSynthFx1) return "/Editor/Synth/FX Env 1";
-  if (page == &menuPageSynthFx2) return "/Editor/Synth/FX Env 2";
-  if (page == &menuPageSynthPresetSave) return "/Editor/Synth/Save Preset";
-  if (page == &menuPageMainSynthPresetLoad) return "/Load Preset";
-  if (page == &menuPageSynthPresetLoad) return "/Editor/Synth/Load Preset";
-  if (page == &menuPageOptions) return "/Settings";
-  if (page == &menuPageAdvanced) return "/Settings/Advanced";
-  if (page == &menuPageSerialDebug) return "/Settings/Advanced/Serial Debug";
-  if (page == &menuPageProfiles) return "/Profiles";
-
-  if (!page || !sequencerModeActive()) {
-    return nullptr;
-  }
-  const char* title = page->getTitle();
-  if (!title || strcmp(title, "Sequencer") == 0) return nullptr;
-  if (strcmp(title, "File Management") == 0) return "/Sequencer/File Management";
-  if (strcmp(title, "USB Backup") == 0) return "/Sequencer/File Management/USB Backup";
-  if (strcmp(title, "Leave Backup?") == 0) return "/Sequencer/File Management/USB Backup/Leave Backup?";
-  if (strcmp(title, "Stop Session?") == 0) return "/Sequencer/File Management/USB Backup/Stop Session?";
-  if (strcmp(title, "File Action?") == 0) return "/Sequencer/File Management/File Action?";
-  if (strcmp(title, "Delete File?") == 0) return "/Sequencer/File Management/Delete File?";
-  if (strcmp(title, "Playback Settings") == 0) return "/Sequencer/Playback Settings";
-  if (strcmp(title, "MIDI Sync") == 0) return "/Sequencer/Playback Settings/MIDI Sync";
-  if (strcmp(title, "Seq Lights") == 0) return "/Sequencer/Seq Lights";
-  return "/Sequencer";
-}
 
 // --------------------------------------------------------
 // Helper: Persistent Callback Info
@@ -3160,13 +3088,14 @@ void setupTransposeMenuItem() {
 }
 
 void drawMenuFrameOverlays() {
-  GEMPage* currentPage = menu.getCurrentMenuPage();
-  const char* breadcrumb = standardMenuBreadcrumb(currentPage);
-  if (breadcrumb) {
+  GEMAppearance* appearance = menu.getCurrentAppearance();
+  if (appearance && appearance->menuPageScreenTopOffset == MENU_PAGE_SCREEN_TOP_OFFSET) {
+    GEMPage* currentPage = menu.getCurrentMenuPage();
+    u8g2.setDrawColor(0);
+    u8g2.drawBox(0, 0, u8g2.getDisplayWidth(), MENU_HEADER_DIVIDER_Y);
     u8g2.setDrawColor(1);
-    u8g2.setFont(u8g2_font_5x8_tf);
-    drawFittedMenuHeaderText(breadcrumb, 9, true);
-    u8g2.drawHLine(0, MENU_PAGE_SCREEN_TOP_OFFSET - 1, u8g2.getDisplayWidth());
+    drawCenteredMenuHeaderTitle(currentPage ? currentPage->getTitle() : "");
+    u8g2.drawHLine(0, MENU_HEADER_DIVIDER_Y, u8g2.getDisplayWidth());
   }
   drawSequencerMenuFilenameHeader();
   drawPlayedNoteBadgeOnMenuFrame();
@@ -3176,7 +3105,7 @@ void setupMenu() {
   initTransposeOptions();
   updateMainMenuDynamicLabels();
   menu.setSplashDelay(0);
-  menu.setFontSmall(u8g2_font_5x8_tf, 5, 8);
+  menu.setFontSmall(GEM_FONT_BIG, 6, 12);
   menu.init();
   menu.setDrawMenuCallback(drawMenuFrameOverlays);
   menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
