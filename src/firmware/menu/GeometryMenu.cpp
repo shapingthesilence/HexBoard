@@ -38,7 +38,7 @@ UserGeometryMenuKind userGeometryVirtualKind = UserGeometryMenuKind::Tuning;
 bool userGeometryMenuRebuildPending = false;
 bool userGeometryMenuOverflowLogged = false;
 char userGeometryMenuCurrentFolder[GEOMETRY_OBJECT_FOLDER_LENGTH] = "/";
-char userGeometryMenuTitleBuffer[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
+char userGeometryMenuBreadcrumbBuffer[SYNTH_PRESET_MENU_LABEL_LENGTH] = "/";
 
 const char* userGeometryMenuTitle(UserGeometryMenuKind kind) {
   switch (kind) {
@@ -336,17 +336,12 @@ bool userGeometryFolderAlreadyListed(const char* childFolderPath) {
   return false;
 }
 
-void updateUserGeometryMenuTitle(UserGeometryMenuKind kind) {
-  if (kind != UserGeometryMenuKind::Tuning || menuFolderIsRoot(userGeometryMenuCurrentFolder)) {
-    snprintf(userGeometryMenuTitleBuffer,
-             sizeof(userGeometryMenuTitleBuffer),
-             "%s",
-             userGeometryMenuTitle(kind));
-    return;
+void updateUserGeometryMenuHeader(UserGeometryMenuKind kind) {
+  if (kind == UserGeometryMenuKind::Tuning) {
+    synthPresetFolderBreadcrumb(userGeometryMenuCurrentFolder,
+                                userGeometryMenuBreadcrumbBuffer,
+                                sizeof(userGeometryMenuBreadcrumbBuffer));
   }
-  synthPresetFolderLabel(userGeometryMenuCurrentFolder,
-                         userGeometryMenuTitleBuffer,
-                         sizeof(userGeometryMenuTitleBuffer));
 }
 
 void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
@@ -393,7 +388,7 @@ void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
       }
     }
   }
-  updateUserGeometryMenuTitle(kind);
+  updateUserGeometryMenuHeader(kind);
 }
 
 uint16_t userGeometryVirtualCountProvider(void*) {
@@ -534,7 +529,10 @@ void openUserGeometryMenu(UserGeometryMenuKind kind) {
            SYNTH_PRESET_ROOT_FOLDER);
   rebuildUserGeometryVirtualList(kind);
   VirtualListMenuProvider provider;
-  provider.title = userGeometryMenuTitleBuffer;
+  provider.title = userGeometryMenuTitle(kind);
+  provider.breadcrumb = kind == UserGeometryMenuKind::Tuning
+                          ? userGeometryMenuBreadcrumbBuffer
+                          : nullptr;
   provider.getCount = userGeometryVirtualCountProvider;
   provider.getLabel = userGeometryVirtualLabelProvider;
   provider.getRowType = userGeometryVirtualRowType;

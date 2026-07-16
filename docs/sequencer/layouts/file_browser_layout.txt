@@ -1,20 +1,31 @@
 SEQUENCER FILE BROWSER LAYOUT
 
-The browser title changes with the current browser mode and folder.
+The browser uses a two-line header. The first line names the current action and
+the second line shows the current folder path.
 
 Examples:
 
-  Load:Sequences
-  Save:Basslines
-  Folder:Ideas
-  RenDel:Drums
+  Load Sequence
+  /Sequences
+
+  Save Sequence
+  /Sequences/Basslines
+
+  Create Folder
+  /Sequences/Ideas
+
+  Rename/Delete
+  .../Sessions/Drums
+
+When a path exceeds the 120-pixel header text area, complete leading folder
+levels collapse to `...`; the nearest parent and current folder remain visible.
+Only a current folder name that is itself too wide is cropped within the name.
 
 Common structure:
 
   [top action, if used by this mode]
   [secondary top action, if used by this mode]
   ..
-  ^ more ^    [only when earlier pages exist]
   entry 1
   entry 2
   entry 3
@@ -23,7 +34,8 @@ Common structure:
   entry 6
   entry 7
   entry 8
-  v more v    [only when later pages exist]
+  entry 9
+  entry 10
 
 Mode-specific top actions:
 
@@ -63,4 +75,6 @@ Notes:
 - Rename or Delete keeps folder navigation in the browser and only opens its
   action page for files or the current-folder target row.
 - The root folder is /Sequences.
-- Turning the encoder past the first or last real file row changes page.
+- The two-line, 18-pixel header leaves room for 11 list rows, including the
+  always-present back row. Turning through the list advances to the next or
+  previous 11-row page.

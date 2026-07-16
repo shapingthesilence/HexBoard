@@ -33,6 +33,7 @@ void showStorageWarningScreen(const char* detail, uint8_t issueCount);
 void closeFlashSaveScreen();
 void dismissFlashSaveScreenForMenuInput();
 void serviceFlashSaveScreen();
+void drawFittedMenuHeaderText(const char* text, uint8_t y, bool preserveTail);
 void menuHome();
 void menuSynthOptionsHome();
 bool handleVirtualListLauncherKey(byte keyCode);

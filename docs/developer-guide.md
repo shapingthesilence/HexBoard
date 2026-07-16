@@ -445,9 +445,21 @@ Virtual browsers use `VirtualListMenu` instead of allocating one GEM page/item
 tree per file, preset, wavetable, tuning, layout, or scale entry. Launcher rows
 are GEM link items visually, and `dealWithRotary()` routes their select key
 through `handleVirtualListLauncherKey()` before normal GEM dispatch. Current
-rows use a diamond in the left action-icon slot. Stored non-root folder paths
-do not use a leading slash; `MenuFolderUtils` keeps virtual folder rows in that
-same convention so opening a folder continues to match stored catalog entries.
+rows use a diamond in the left action-icon slot. Standard GEM pages and virtual
+lists share an `18`-pixel header layout: two `5x8` text lines plus a divider.
+`setupMenu()` installs the larger GEM small font, and `drawMenuFrameOverlays()`
+adds the standard-page hierarchy after GEM draws the page title. On the
+`128x128` display, the remaining `110` pixels still fit eleven `10`-pixel rows;
+this reclaims the eight pixels that were left below the former `10`-pixel
+header. Folder-capable providers supply a breadcrumb separately from the
+action title.
+Over-width breadcrumbs preserve the deepest complete path levels as
+`.../Parent/Current`, falling back to a tail crop only when the current folder
+name alone is too wide. Keep `standardMenuBreadcrumb()` synchronized with new
+GEM pages so nested menu locations remain accurate. Stored non-root folder
+paths do not use a leading slash; `MenuFolderUtils` keeps virtual folder rows
+in that same convention so opening a folder continues to match stored catalog
+entries.
 
 Transient Advanced-menu items, such as `LED Test` and `Serial Debug`, should
 stay out of `factoryDefaults` and should not trigger a settings version bump.

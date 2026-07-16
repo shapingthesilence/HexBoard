@@ -494,6 +494,11 @@ entering edit mode for each step.
 
 12. Menu Structure
 
+Standard Sequencer menu pages use a two-line OLED header. The first line names
+the current page and the second shows its menu location, such as
+`/Sequencer/Playback Settings/MIDI Sync`. If the full location is too wide,
+complete leading levels collapse as `.../Playback Settings/MIDI Sync`.
+
 When a menu page is open, hold the bottom command button below the encoder to
 temporarily make the top two command buttons act like one encoder step up or
 down. Releasing that bottom button returns them to their normal non-menu
@@ -635,10 +640,13 @@ The visible sequence name is the file name without the extension.
 
 Browser behavior:
 
-- the browser shows up to 8 file or folder rows at a time
-- `^ more ^` means there are earlier pages
-- `v more v` means there are later pages
-- turning the encoder past the first or last real file row changes page
+- the first header line names the browser action, such as `Load Sequence`
+- the second header line shows the current path, such as
+  `/Sequences/Sessions/Ideas`
+- if a deep path is too wide, leading folders collapse so the header reads like
+  `.../Sessions/Ideas` and keeps the current location recognizable
+- the browser shows 11 list rows at a time, including its back row
+- turning through the list advances between 11-row pages
 - USB Backup uses the same LittleFS storage, but transfers files through a
   dedicated USB serial session instead of mounting the board as a drive
 

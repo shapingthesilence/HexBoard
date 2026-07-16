@@ -36,7 +36,7 @@ SynthPresetMenuRow synthPresetMenuRows[SYNTH_PRESET_MENU_MAX_ROWS] = {};
 uint16_t synthPresetMenuRowCount = 0;
 bool synthPresetMenuRebuildPending = false;
 char synthPresetMenuCurrentFolder[SYNTH_PRESET_FOLDER_LENGTH] = "/";
-char synthPresetMenuTitleBuffer[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
+char synthPresetMenuBreadcrumbBuffer[SYNTH_PRESET_MENU_LABEL_LENGTH] = "/";
 
 const char* synthPresetMenuTitle() {
   return activeSynthPresetMenuMode == SynthPresetMenuMode::Save ? "Save Preset" : "Load Preset";
@@ -126,20 +126,10 @@ void appendSynthPresetMenuRow(SynthPresetMenuRowKind kind, uint16_t index) {
   synthPresetMenuRows[synthPresetMenuRowCount++] = { kind, index };
 }
 
-void updateSynthPresetMenuTitle() {
-  if (menuFolderIsRoot(synthPresetMenuCurrentFolder)) {
-    snprintf(synthPresetMenuTitleBuffer,
-             sizeof(synthPresetMenuTitleBuffer),
-             "%s",
-             synthPresetMenuTitle());
-    return;
-  }
-  char folderLabel[SYNTH_PRESET_MENU_LABEL_LENGTH] = {};
-  synthPresetFolderLabel(synthPresetMenuCurrentFolder, folderLabel, sizeof(folderLabel));
-  snprintf(synthPresetMenuTitleBuffer,
-           sizeof(synthPresetMenuTitleBuffer),
-           "%s",
-           folderLabel);
+void updateSynthPresetMenuHeader() {
+  synthPresetFolderBreadcrumb(synthPresetMenuCurrentFolder,
+                              synthPresetMenuBreadcrumbBuffer,
+                              sizeof(synthPresetMenuBreadcrumbBuffer));
 }
 
 void rebuildSynthPresetVirtualList() {
@@ -164,7 +154,7 @@ void rebuildSynthPresetVirtualList() {
       appendSynthPresetMenuRow(SynthPresetMenuRowKind::Preset, static_cast<uint16_t>(i));
     }
   }
-  updateSynthPresetMenuTitle();
+  updateSynthPresetMenuHeader();
 }
 
 bool synthPresetVirtualLabel(void*, uint16_t index, char* output, size_t outputLength) {
@@ -283,7 +273,8 @@ void openSynthPresetMenu(SynthPresetMenuMode mode, SynthPresetMenuReturn destina
   snprintf(synthPresetMenuCurrentFolder, sizeof(synthPresetMenuCurrentFolder), "%s", SYNTH_PRESET_ROOT_FOLDER);
   rebuildSynthPresetVirtualList();
   VirtualListMenuProvider provider;
-  provider.title = synthPresetMenuTitleBuffer;
+  provider.title = synthPresetMenuTitle();
+  provider.breadcrumb = synthPresetMenuBreadcrumbBuffer;
   provider.getCount = synthPresetVirtualCount;
   provider.getLabel = synthPresetVirtualLabel;
   provider.getRowType = synthPresetVirtualRowType;
@@ -345,6 +336,33 @@ void synthPresetFolderLabel(const char* folderPath, char* output, size_t outputL
     return;
   }
   decodeSynthPresetFolderComponent(labelStart, output, outputLength);
+}
+
+void synthPresetFolderBreadcrumb(const char* folderPath, char* output, size_t outputLength) {
+  if (outputLength == 0) {
+    return;
+  }
+  output[0] = '\0';
+  if (menuFolderIsRoot(folderPath)) {
+    snprintf(output, outputLength, "/");
+    return;
+  }
+
+  const char* path = folderPath;
+  while (path && path[0] == '/') {
+    ++path;
+  }
+  if (!path || !path[0]) {
+    snprintf(output, outputLength, "/");
+    return;
+  }
+
+  if (outputLength < 2) {
+    return;
+  }
+  output[0] = '/';
+  output[1] = '\0';
+  decodeSynthPresetFolderComponent(path, output + 1, outputLength - 1);
 }
 
 void openMainSynthPresetLoadMenu() {

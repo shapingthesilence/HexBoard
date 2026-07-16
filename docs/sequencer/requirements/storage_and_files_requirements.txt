@@ -141,12 +141,14 @@ Area: Files
 Priority: High
 
 Requirement:
-The file browser shall show up to 8 file or folder rows at a time.
+The file browser shall show 11 list rows at a time, including its back row.
 
 Details:
-- ^ more ^ indicates earlier pages exist.
-- v more v indicates later pages exist.
-- Turning past the first or last real file row changes page.
+- The 18-pixel header shall use two readable text lines: browser action first,
+  current folder path second.
+- Deep paths shall collapse complete leading levels while preserving the
+  nearest parent and current folder whenever those levels fit.
+- Turning through the list advances between 11-row pages.
 
 
 ID: SEQ-FILE-011
