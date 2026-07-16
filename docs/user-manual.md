@@ -578,6 +578,14 @@ them to flash. `Save to computer` stores the bundle in browser storage, and
 `Save to HexBoard` writes it to the device so it appears in the on-device
 `Tuning`, `Layout`, and `Scales` browsers.
 
+Library folder rows begin with the visually distinct system views `All` and
+`Root`, followed by user folders. New folders belong to the
+computer library and stay available between sessions. An empty computer folder
+can be deleted from the folder controls; move or erase its bundles first when it
+is not empty. HexBoard folders are derived from the saved items on the device,
+so a device folder disappears automatically after its last item is moved or
+erased.
+
 In the synth editor, you can manage synth presets and user wavetables. Presets
 can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,
 exported/imported as JSON, opened for audition, erased, and organized into
@@ -585,6 +593,13 @@ folders. Wavetables can be imported from Serum/Vital `.wav` files or HexBoard
 `.hexwav` files, uploaded, downloaded, exported, renamed, moved, and selected
 for the open preset. Short HexBoard `.hexwav` files with fewer than 16
 512-sample frames are interpolated to the 16 frames the device uses.
+Preset and wavetable libraries use the same `All` and `Root` system views.
+Empty computer folders have explicit create and delete controls and persist
+between browser sessions. The firmware-resident `Basic Shapes` fallback appears
+in `Root` like the other root-level wavetables; its internal storage path is not
+shown as a folder. New wavetable imports start in `Root` unless another folder
+is selected.
+
 `HexBoard Wavetables` is refreshed from the connected device; if a preset
 references a computer-only wavetable, saving that preset to HexBoard offers to
 upload the wavetable first.

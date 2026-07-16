@@ -82,8 +82,10 @@ and `TRANSFER_END` so firmware can pace object transfers.
   button maps, and named/foldered synth presets.
 - A tuning/layout bundle editor organized as a four-step `Library`, `Tuning`,
   `Layout`, and `Scale & color` workflow. The library gets a full-width transfer
-  and folder-management view; editing keeps bundle sync actions and the visual
-  HexBoard preview in consistent locations. The selected-key inspector separates
+  and folder-management view. Folder filters consistently begin with `All` and
+  `Root`; empty computer folders can be created and deleted, while device
+  folders appear only when a saved item uses them. Editing keeps bundle sync
+  actions and the visual HexBoard preview in consistent locations. The selected-key inspector separates
   key state, optional pitch overrides, inherited or per-key color, and advanced
   pitch details; color editing uses a compact visual picker. Read-only pitch and
   scale values are presented as facts rather than form fields, and all overrides
@@ -109,17 +111,22 @@ and `TRANSFER_END` so firmware can pace object transfers.
   refreshes device storage.
 - Synth preset library areas named `Computer Library` for browser-saved/imported
   presets and `HexBoard Library` for device-side presets loaded through SysEx,
-  including drag-and-drop folder moves, upload/download actions, device refresh,
-  JSON import, JSON export, open, and erase controls. Device preset listing uses
+  including persistent computer folders with explicit create/delete controls,
+  `All` and `Root` system filters, drag-and-drop folder moves, upload/download
+  actions, device refresh, JSON import, JSON export, open, and erase controls.
+  Device preset listing uses
   small one-record pages to stay within conservative MIDI SysEx buffer limits
   and refreshes automatically when the synth preset view opens with a real MIDI
   transport.
 - Synth wavetable library areas named `Computer Wavetables` and
-  `HexBoard Wavetables`. Imported wavetables default to folder `User`, upload to
-  HexBoard immediately for hardware audition, and refresh the device-authoritative
-  HexBoard wavetable list after the flash commit. Short HexBoard `.hexwav`
-  imports are interpolated to the device's 16-frame table. Saving a preset that
-  references a computer-only wavetable offers to upload the wavetable first.
+  `HexBoard Wavetables`, using the same folder controls as presets. Imported
+  wavetables default to `Root`. The firmware-resident Basic Shapes fallback is
+  also presented in `Root`; its special storage path is never shown as a folder.
+  Imports upload to HexBoard immediately for hardware audition and refresh the
+  device-authoritative HexBoard wavetable list after the flash commit. Short
+  HexBoard `.hexwav` imports are interpolated to the device's 16-frame table.
+  Saving a preset that references a computer-only wavetable offers to upload
+  the wavetable first.
 - A mock MIDI transport for UI and protocol work before firmware support exists.
 - Basic React views for device connection, profile sync, tuning/layout editing,
   and synth preset organization.

@@ -55,15 +55,17 @@ import type { MidiTransport } from "../midi/types.ts";
 import { crc32 } from "../protocol/crc32.ts";
 import { CapabilityFlag, ObjectListFlag, ObjectType, type HelloResponsePayload, type ObjectListRecord } from "../protocol/index.ts";
 import { CommonTlv, decodeObjectBody, textFromBytes, type TlvRecord } from "../protocol/tlv.ts";
+import { FolderControls } from "../components/FolderControls.tsx";
 import { formatByteLength } from "./format.ts";
 
 const layoutBundleStorageKey = "hexboard.layoutBundles.v1";
+const geometryFoldersStorageKey = "hexboard.geometryFolders.v1";
 const previewHexHalfStepX = 25;
 const previewHexRowStepY = 42;
 const previewHexInset = 25;
 const rootFolderPath = "/";
 const defaultScalaReferenceMidiNote = 60;
-const defaultGeometryFolders = [rootFolderPath, "Tunings", "Layouts"];
+const defaultGeometryFolders = [rootFolderPath];
 
 type LayoutGuideFocus = "center" | "across" | "upRight";
 type GeometryWorkspaceTab = "library" | "tuning" | "layout" | "scale";
@@ -195,6 +197,30 @@ function loadStoredBundles(): LayoutBundle[] {
 function persistBundles(bundles: LayoutBundle[]) {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(layoutBundleStorageKey, JSON.stringify(bundles.map(sanitizeEditorBundle)));
+  }
+}
+
+function loadStoredGeometryFolders(): string[] {
+  if (typeof window === "undefined") {
+    return defaultGeometryFolders;
+  }
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(geometryFoldersStorageKey) ?? "[]") as unknown;
+    if (Array.isArray(parsed)) {
+      return Array.from(new Set([
+        rootFolderPath,
+        ...parsed.filter((folder): folder is string => typeof folder === "string").map(normalizeDisplayFolderPath)
+      ]));
+    }
+  } catch {
+    window.localStorage.removeItem(geometryFoldersStorageKey);
+  }
+  return defaultGeometryFolders;
+}
+
+function persistGeometryFolders(folders: string[]) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(geometryFoldersStorageKey, JSON.stringify(folders.filter((folder) => folder !== rootFolderPath)));
   }
 }
 
@@ -384,6 +410,16 @@ function normalizeDisplayFolderPath(folderPath: string): string {
 
 function folderLabel(folderPath: string): string {
   return normalizeDisplayFolderPath(folderPath) === rootFolderPath ? "Root" : folderPath;
+}
+
+function compareFolderPaths(left: string, right: string): number {
+  if (left === rootFolderPath) {
+    return -1;
+  }
+  if (right === rootFolderPath) {
+    return 1;
+  }
+  return folderLabel(left).localeCompare(folderLabel(right));
 }
 
 function encodeDeviceFolderPath(folderPath: string): string {
@@ -856,7 +892,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const [bundles, setBundles] = useState<LayoutBundle[]>(() => loadStoredBundles());
   const [hexboardBundles, setHexboardBundles] = useState<HexBoardGeometryBundleEntry[]>([]);
   const [activeBundleId, setActiveBundleId] = useState("");
-  const [customFolders, setCustomFolders] = useState(defaultGeometryFolders);
+  const [customFolders, setCustomFolders] = useState(loadStoredGeometryFolders);
   const [newFolder, setNewFolder] = useState("");
   const [folderFilters, setFolderFilters] = useState<Record<GeometryLibrarySpace, string | null>>({
     computer: null,
@@ -912,7 +948,20 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     ...bundles.map((bundle) => normalizeDisplayFolderPath(bundle.folderPath)),
     ...hexboardBundles.map((bundle) => normalizeDisplayFolderPath(bundle.folderPath)),
     normalizeDisplayFolderPath(activeBundle.folderPath)
-  ])).sort((left, right) => folderLabel(left).localeCompare(folderLabel(right))), [activeBundle.folderPath, bundles, customFolders, hexboardBundles]);
+  ])).sort(compareFolderPaths), [activeBundle.folderPath, bundles, customFolders, hexboardBundles]);
+  const computerFolders = useMemo(() => Array.from(new Set([
+    rootFolderPath,
+    ...customFolders,
+    ...bundles.map((bundle) => normalizeDisplayFolderPath(bundle.folderPath))
+  ])).sort(compareFolderPaths), [bundles, customFolders]);
+  const hexboardFolders = useMemo(() => Array.from(new Set([
+    rootFolderPath,
+    ...hexboardBundles.map((bundle) => normalizeDisplayFolderPath(bundle.folderPath))
+  ])).sort(compareFolderPaths), [hexboardBundles]);
+
+  useEffect(() => {
+    persistGeometryFolders(customFolders);
+  }, [customFolders]);
 
   useEffect(() => {
     const cycleLength = tuningCycleLength(activeBundle.tuning);
@@ -1010,15 +1059,26 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       return;
     }
     setCustomFolders((current) => Array.from(new Set([...current, folder])).sort());
-    updateBundleFolder(folder);
     setNewFolder("");
-    setStatus(`Added folder ${folderLabel(folder)}`);
+    setStatus(`Created ${folderLabel(folder)} in Computer Library`);
   }
 
-  function toggleFolderFilter(space: GeometryLibrarySpace, folderPath: string) {
+  function deleteFolder(folderPath: string) {
+    const folder = normalizeDisplayFolderPath(folderPath);
+    const bundleCount = bundles.filter((bundle) => normalizeDisplayFolderPath(bundle.folderPath) === folder).length;
+    if (folder === rootFolderPath || bundleCount > 0) {
+      setStatus(bundleCount > 0 ? `Move or erase the ${bundleCount} bundle${bundleCount === 1 ? "" : "s"} in ${folderLabel(folder)} first` : "Root cannot be deleted");
+      return;
+    }
+    setCustomFolders((current) => current.filter((candidate) => candidate !== folder));
+    setFolderFilters((current) => ({ ...current, computer: current.computer === folder ? null : current.computer }));
+    setStatus(`Deleted ${folderLabel(folder)} from Computer Library`);
+  }
+
+  function selectFolderFilter(space: GeometryLibrarySpace, folderPath: string | null) {
     setFolderFilters((current) => ({
       ...current,
-      [space]: current[space] === folderPath ? null : folderPath
+      [space]: folderPath
     }));
   }
 
@@ -1852,7 +1912,6 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         .map(hexBoardGeometryEntryFromRecord)
         .sort((left, right) => `${left.folderPath}/${left.name}`.localeCompare(`${right.folderPath}/${right.name}`));
       setHexboardBundles(entries);
-      setCustomFolders((current) => Array.from(new Set([...current, ...entries.map((entry) => entry.folderPath)])).sort());
       setStatus(successStatus);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to refresh HexBoard Geometry Library");
@@ -1880,7 +1939,6 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         setStatus(`Saving ${object.name} (${index + 1}/${encoded.objects.length})`);
         await client.sendGeometryObjectSaveConfirmed(object);
       }
-      setCustomFolders((current) => Array.from(new Set([...current, sanitizedBundle.folderPath])).sort());
       await refreshHexBoardGeometryLibrary(`${prefix} ${sanitizedBundle.name} to HexBoard in ${folderLabel(sanitizedBundle.folderPath)}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to save geometry objects");
@@ -2037,16 +2095,17 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               </div>
             </div>
             <div className="libraryUtilityBar">
-              <div className="fieldControlRow newFolderControl">
-                <input
-                  aria-label="New geometry folder"
-                  placeholder="Name a new folder"
-                  value={newFolder}
-                  maxLength={GeometryMenuTextMaxLength}
-                  onChange={(event) => setNewFolder(clampGeometryMenuText(event.target.value, ""))}
-                />
-                <button type="button" onClick={addFolder}>Add folder</button>
-              </div>
+              <FolderControls
+                folderLabel={folderLabel}
+                folders={customFolders.filter((folder) => folder !== rootFolderPath)}
+                itemCount={(folder) => bundles.filter((bundle) => normalizeDisplayFolderPath(bundle.folderPath) === folder).length}
+                itemLabel="bundle"
+                maxLength={GeometryMenuTextMaxLength}
+                newFolder={newFolder}
+                onCreate={addFolder}
+                onDelete={deleteFolder}
+                onNewFolderChange={(value) => setNewFolder(clampGeometryMenuText(value, ""))}
+              />
               <button disabled={syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>Verify active bundle</button>
               <span className="muted">{bundles.length} on this computer</span>
             </div>
@@ -2057,10 +2116,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 subtitle="Browser-saved geometry bundles"
                 space="computer"
                 bundles={bundles}
-                folders={allFolders}
+                folders={computerFolders}
                 selectedFolder={folderFilters.computer}
                 activeBundleId={activeBundle.objectIdHex}
-                onFolderSelect={toggleFolderFilter}
+                onFolderSelect={selectFolderFilter}
                 onOpen={openBundle}
                 onUpload={(bundle) => void saveBundleToHexBoard(bundle)}
                 onExport={downloadBundleFile}
@@ -2068,9 +2127,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               />
               <HexBoardGeometryLibraryPanel
                 entries={hexboardBundles}
-                folders={allFolders}
+                folders={hexboardFolders}
                 selectedFolder={folderFilters.hexboard}
-                onFolderSelect={toggleFolderFilter}
+                onFolderSelect={selectFolderFilter}
                 onOpen={(entry) => void openHexBoardGeometryBundle(entry)}
                 onDownload={(entry) => void downloadHexBoardGeometryBundle(entry)}
                 onExport={(entry) => void exportHexBoardGeometryBundle(entry)}
@@ -2574,7 +2633,7 @@ interface GeometryLibrarySpacePanelProps {
   folders: string[];
   selectedFolder: string | null;
   activeBundleId: string;
-  onFolderSelect: (space: GeometryLibrarySpace, folderPath: string) => void;
+  onFolderSelect: (space: GeometryLibrarySpace, folderPath: string | null) => void;
   onOpen: (bundle: LayoutBundle) => void;
   onUpload: (bundle: LayoutBundle) => void;
   onExport: (bundle: LayoutBundle) => void;
@@ -2610,10 +2669,19 @@ function GeometryLibrarySpacePanel({
       </div>
 
       <div className="folderTargets">
+        <button
+          aria-pressed={selectedFolder === null}
+          className={selectedFolder === null ? "folderTarget systemFolderTarget active" : "folderTarget systemFolderTarget"}
+          onClick={() => onFolderSelect(space, null)}
+          type="button"
+        >
+          <span>All</span>
+          <span>{bundles.length}</span>
+        </button>
         {folders.map((folder) => (
           <button
             aria-pressed={folder === selectedFolder}
-            className={folder === selectedFolder ? "folderTarget active" : "folderTarget"}
+            className={`folderTarget${folder === rootFolderPath ? " systemFolderTarget" : ""}${folder === selectedFolder ? " active" : ""}`}
             key={`${space}-${folder}`}
             onClick={() => onFolderSelect(space, folder)}
             type="button"
@@ -2661,7 +2729,7 @@ interface HexBoardGeometryLibraryPanelProps {
   entries: HexBoardGeometryBundleEntry[];
   folders: string[];
   selectedFolder: string | null;
-  onFolderSelect: (space: GeometryLibrarySpace, folderPath: string) => void;
+  onFolderSelect: (space: GeometryLibrarySpace, folderPath: string | null) => void;
   onOpen: (entry: HexBoardGeometryBundleEntry) => void;
   onDownload: (entry: HexBoardGeometryBundleEntry) => void;
   onExport: (entry: HexBoardGeometryBundleEntry) => void;
@@ -2693,10 +2761,19 @@ function HexBoardGeometryLibraryPanel({
       </div>
 
       <div className="folderTargets">
+        <button
+          aria-pressed={selectedFolder === null}
+          className={selectedFolder === null ? "folderTarget systemFolderTarget active" : "folderTarget systemFolderTarget"}
+          onClick={() => onFolderSelect("hexboard", null)}
+          type="button"
+        >
+          <span>All</span>
+          <span>{entries.length}</span>
+        </button>
         {folders.map((folder) => (
           <button
             aria-pressed={folder === selectedFolder}
-            className={folder === selectedFolder ? "folderTarget active" : "folderTarget"}
+            className={`folderTarget${folder === rootFolderPath ? " systemFolderTarget" : ""}${folder === selectedFolder ? " active" : ""}`}
             key={`hexboard-${folder}`}
             onClick={() => onFolderSelect("hexboard", folder)}
             type="button"

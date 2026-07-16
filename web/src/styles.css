@@ -719,8 +719,27 @@ select {
   background: var(--surface-raised);
 }
 
-.newFolderControl {
-  width: min(100%, 390px);
+.folderControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: min(100%, 390px);
+}
+
+.folderCreateControl,
+.folderDeleteControl {
+  flex: 1 1 250px;
+}
+
+.folderControls input,
+.folderControls select {
+  min-width: 0;
+  flex: 1 1 150px;
+}
+
+.folderDeleteControl select {
+  color: var(--text-soft);
 }
 
 .geometryLibrarySpaces {
@@ -1530,11 +1549,26 @@ select {
   overflow-wrap: anywhere;
 }
 
+.folderTarget.systemFolderTarget {
+  border-style: dashed;
+}
+
+.folderTarget.systemFolderTarget span:first-child {
+  color: var(--text-soft);
+  font-size: 0.78rem;
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+
 .folderTarget.active {
   border-color: var(--brand);
   background: var(--brand-soft);
   color: var(--brand-strong);
   font-weight: 700;
+}
+
+.folderTarget.systemFolderTarget.active span:first-child {
+  color: var(--brand-strong);
 }
 
 .presetListItem {
@@ -1808,6 +1842,12 @@ select {
   .libraryUtilityBar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .folderControls,
+  .folderCreateControl,
+  .folderDeleteControl {
+    width: 100%;
   }
 
   .libraryToolbar .row,
