@@ -83,13 +83,16 @@ and `TRANSFER_END` so firmware can pace object transfers.
 - A tuning/layout bundle editor organized as a four-step `Library`, `Tuning`,
   `Layout`, and `Scale & color` workflow. The library gets a full-width transfer
   and folder-management view; editing keeps bundle sync actions and the visual
-  HexBoard preview in consistent locations. The selected-key inspector and raw
-  encoded-object details are collapsed until needed. The editor supports
-  scale-degree palette editing, A-first note labels, selected-key pitch readouts
-  and overrides, and a paint mode for applying per-button color overrides or
-  scale-degree palette colors directly on the preview. Painting a scale degree
-  clears matching color overrides in the active layout so the palette color
-  takes effect immediately, and a confirmed reset returns all keys in the active
+  HexBoard preview in consistent locations. The selected-key inspector separates
+  key state, optional pitch overrides, inherited or per-key color, and advanced
+  pitch details; color editing uses a compact visual picker. Read-only pitch and
+  scale values are presented as facts rather than form fields, and all overrides
+  can be reset together. Raw encoded-object details are collapsed until needed.
+  The editor also supports scale-degree palette editing, A-first note labels,
+  and a paint mode for applying per-button color overrides or scale-degree
+  palette colors directly on the preview. Painting a scale degree clears
+  matching color overrides in the active layout so the palette color takes
+  effect immediately, and a confirmed reset returns all keys in the active
   layout to scale-degree colors.
   Scala `.scl` import reads trailing interval labels, exposes the 1/1 MIDI note
   and Hz reference, and enables cents-table live send when the connected

@@ -1576,6 +1576,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const selectedPitchLabel = selectedKeyLabels[keyLabelIndexFromStepsFromC(selectedPreview.stepsFromC, activeCycleLength)] ?? selectedKeyLabels[0] ?? "A";
   const selectedDegreeColor = normalizeScaleDegreeColors(activeBundle.palette.degreeColors, tuningCycleLength(activeBundle.tuning))
     .find((color) => color.degree === selectedPreview.degree) ?? createDefaultDegreeColors(1)[0];
+  const selectedEditableColor = selectedPreview.colorSource === "button" ? selectedPreview.color : selectedDegreeColor;
+  const activeColorModeLabel = colorModeOptions.find((option) => option.value === activeBundle.palette.defaultColorMode)?.label ?? "Default";
   const axisLabels = layoutAxisLabels(activeLayout.rotationSteps);
   const centerGuideKey = hexBoardGeometry.find((key) => key.index === activeLayout.centerButton);
   const guideTargetIndex = (() => {
@@ -1637,6 +1639,18 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     updateButtonOverride(selectedPreview.key.index, {
       stepsFromC: selectedPreview.stepsFromC
     });
+  }
+  function updateSelectedColorFromHex(value: string) {
+    const nextColor = hexToScaleDegreeColor(value, selectedEditableColor);
+    if (selectedPreview.colorSource === "button") {
+      updateButtonOverride(selectedPreview.key.index, {
+        hueTenthDegrees: nextColor.hueTenthDegrees,
+        saturation: nextColor.saturation,
+        value: nextColor.value
+      });
+      return;
+    }
+    updateDegreeColor(selectedPreview.degree, nextColor);
   }
   const encodedBundle = useMemo(() => {
     return encodeLayoutBundle(bundleForDeviceEncoding(activeBundle));
@@ -2400,92 +2414,142 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               <strong>Button {selectedPreview.key.index}</strong>
               <span>row {selectedPreview.key.row} · column {selectedPreview.key.column}</span>
             </div>
-            <span className="metaBadge">{selectedPitchLabel} · {formatHertz(selectedFrequencyHz)}</span>
+            <div className="keySummaryBadges">
+              {selectedPreview.role === "note" ? (
+                <>
+                  <span className="metaBadge">{selectedPitchLabel} · {formatHertz(selectedFrequencyHz)}</span>
+                  <span className={selectedPreview.inScale ? "keyStateBadge inScale" : "keyStateBadge outOfScale"}>
+                    {selectedPreview.inScale ? "In scale" : "Out of scale"}
+                  </span>
+                </>
+              ) : (
+                <span className="keyStateBadge off">Off</span>
+              )}
+            </div>
           </summary>
           <div className="selectedKeyContent stack">
-          <div className="fieldGrid">
-            <label className="field">
-              <span>Role</span>
-              <select value={selectedPreview.role} onChange={(event) => updateButtonOverride(selectedPreview.key.index, { role: event.target.value as LayoutBundleButtonOverride["role"] })}>
-                <option value="note">Note</option>
-                <option value="unused">Unused</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Generated step</span>
-              <input readOnly value={selectedPreview.generatedStepsFromC} />
-            </label>
-            <label className="field">
-              <span>Note source</span>
-              <select value={selectedPreview.noteSource} onChange={(event) => setSelectedNoteSource(event.target.value as PreviewKey["noteSource"])}>
-                <option value="generated">Generated layout</option>
-                <option value="button">Button override</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Current step</span>
-              <input
-                readOnly={selectedPreview.noteSource === "generated"}
-                type="number"
-                value={selectedPreview.stepsFromC}
-                onChange={(event) => updateButtonOverride(selectedPreview.key.index, { stepsFromC: Number(event.target.value) })}
-              />
-            </label>
-            <label className="field">
-              <span>Scale degree</span>
-              <input readOnly value={selectedPreview.degree} />
-            </label>
-            <label className="field">
-              <span>Note label</span>
-              <input readOnly value={selectedPitchLabel} />
-            </label>
-            <label className="field">
-              <span>Steps from ref</span>
-              <input readOnly value={`${formatSignedInteger(selectedStepsFromReference)} (${formatCents(selectedPitchCents)})`} />
-            </label>
-            <label className="field">
-              <span>Frequency</span>
-              <input readOnly value={formatHertz(selectedFrequencyHz)} />
-            </label>
-            <label className="field">
-              <span>Scale membership</span>
-              <input readOnly value={selectedPreview.inScale ? "In scale" : "Out of scale"} />
-            </label>
-            <label className="field">
-              <span>Color source</span>
-              <select
-                disabled={!customColorModeActive}
-                value={selectedPreview.colorSource}
-                onChange={(event) => setSelectedColorSource(event.target.value as PreviewKey["colorSource"])}
-              >
-                <option value="degree">{activeBundle.palette.defaultColorMode === ColorMode.Custom ? "Custom palette" : "Default mode"}</option>
-                <option disabled={!customColorModeActive} value="button">Button override</option>
-              </select>
-            </label>
-          </div>
-
-          {selectedPreview.colorSource === "degree" ? (
-            <section className="editorSection">
-              <h3>{activeBundle.palette.defaultColorMode === ColorMode.Custom ? "Scale Degree Color" : "Custom Palette Color"}</h3>
-              <ColorFields
-                color={selectedDegreeColor}
-                onChange={(patch) => updateDegreeColor(selectedPreview.degree, patch)}
-              />
-            </section>
-          ) : (
-            <section className="editorSection">
-              <h3>Button Override</h3>
-              <ColorFields
-                color={selectedPreview.color}
-                onChange={(patch) => updateButtonOverride(selectedPreview.key.index, patch)}
-              />
-              <div className="row">
-                <button type="button" onClick={() => resetButtonOverride(selectedPreview.key.index)}>
-                  Reset Key
+            <section className="keyInspectorSection">
+              <h3>State</h3>
+              <div className="segmentedControl" role="group" aria-label="Key state">
+                <button
+                  aria-pressed={selectedPreview.role === "note"}
+                  className={selectedPreview.role === "note" ? "active" : ""}
+                  type="button"
+                  onClick={() => updateButtonOverride(selectedPreview.key.index, { role: "note" })}
+                >
+                  Note
+                </button>
+                <button
+                  aria-pressed={selectedPreview.role === "unused"}
+                  className={selectedPreview.role === "unused" ? "active" : ""}
+                  type="button"
+                  onClick={() => updateButtonOverride(selectedPreview.key.index, { role: "unused" })}
+                >
+                  Off
                 </button>
               </div>
             </section>
-          )}
+
+            {selectedPreview.role === "note" ? (
+              <section className="keyInspectorSection">
+                <h3>Pitch</h3>
+                <div className="keyFacts">
+                  <div>
+                    <span>Layout step</span>
+                    <strong>{selectedPreview.generatedStepsFromC}</strong>
+                  </div>
+                  <div>
+                    <span>Scale degree</span>
+                    <strong>{selectedPreview.degree}</strong>
+                  </div>
+                </div>
+                <label className="checkField keyOverrideToggle">
+                  <input
+                    checked={selectedPreview.noteSource === "button"}
+                    type="checkbox"
+                    onChange={(event) => setSelectedNoteSource(event.target.checked ? "button" : "generated")}
+                  />
+                  <span>Override pitch</span>
+                </label>
+                {selectedPreview.noteSource === "button" ? (
+                  <label className="field">
+                    <span>Step from C</span>
+                    <div className="fieldControlRow">
+                      <input
+                        type="number"
+                        value={selectedPreview.stepsFromC}
+                        onChange={(event) => updateButtonOverride(selectedPreview.key.index, { stepsFromC: Number(event.target.value) })}
+                      />
+                      <button type="button" onClick={() => setSelectedNoteSource("generated")}>Use layout</button>
+                    </div>
+                  </label>
+                ) : null}
+                <details className="keyAdvancedDetails">
+                  <summary>Advanced pitch details</summary>
+                  <div>
+                    <span>From reference</span>
+                    <strong>{formatSignedInteger(selectedStepsFromReference)} steps · {formatCents(selectedPitchCents)}</strong>
+                  </div>
+                </details>
+              </section>
+            ) : null}
+
+            <section className="keyInspectorSection">
+              <h3>Color</h3>
+              <div className="keyColorSummary">
+                <span
+                  aria-hidden="true"
+                  className="keyColorSwatch"
+                  style={{ backgroundColor: colorToCss(customColorModeActive ? selectedEditableColor : selectedPreview.color) }}
+                />
+                <div>
+                  <strong>{selectedPreview.colorSource === "button" ? "This key" : `Degree ${selectedPreview.degree}`}</strong>
+                  <span>{selectedPreview.colorSource === "button" ? "Key override" : `${activeColorModeLabel} color`}</span>
+                </div>
+              </div>
+              {customColorModeActive ? (
+                <>
+                  <div className="keyColorControls">
+                    <label className="keyColorPicker">
+                      <span>Color</span>
+                      <input
+                        aria-label="Selected key color"
+                        type="color"
+                        value={scaleDegreeColorToHex(selectedEditableColor)}
+                        onChange={(event) => updateSelectedColorFromHex(event.target.value)}
+                      />
+                    </label>
+                    {selectedPreview.colorSource === "button" ? (
+                      <button type="button" onClick={() => setSelectedColorSource("degree")}>Use degree color</button>
+                    ) : (
+                      <button type="button" onClick={() => setSelectedColorSource("button")}>Override this key</button>
+                    )}
+                  </div>
+                  <small className="muted">
+                    {selectedPreview.colorSource === "button"
+                      ? "This color applies only to the selected key."
+                      : `Changing this color updates every key using degree ${selectedPreview.degree}.`}
+                  </small>
+                </>
+              ) : (
+                <div className="keyColorInactive">
+                  <span>Colors currently follow {activeColorModeLabel} mode.</span>
+                  <button type="button" onClick={() => updateDefaultColorMode(ColorMode.Custom)}>Switch to Custom</button>
+                </div>
+              )}
+            </section>
+
+            <div className="keyResetRow">
+              <span>{selectedPreview.override ? "This key has custom settings." : "This key follows the layout defaults."}</span>
+              <button
+                className="warning"
+                disabled={!selectedPreview.override}
+                type="button"
+                onClick={() => resetButtonOverride(selectedPreview.key.index)}
+              >
+                Reset all key overrides
+              </button>
+            </div>
           </div>
         </details>
       </div>
@@ -2806,31 +2870,6 @@ function TuningControls({
           value={keyLabelsDraft}
         />
         {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
-      </label>
-    </div>
-  );
-}
-
-interface ColorFieldsProps {
-  color: ScaleDegreeColor;
-  onChange: (patch: Partial<ScaleDegreeColor>) => void;
-}
-
-function ColorFields({ color, onChange }: ColorFieldsProps) {
-  return (
-    <div className="colorEditor">
-      <div className="largeSwatch" style={{ backgroundColor: colorToCss(color) }} />
-      <label className="field rangeField">
-        <span>Hue {Math.round(color.hueTenthDegrees / 10)}°</span>
-        <input min={0} max={3599} type="range" value={color.hueTenthDegrees} onChange={(event) => onChange({ hueTenthDegrees: Number(event.target.value) })} />
-      </label>
-      <label className="field rangeField">
-        <span>Saturation {color.saturation}</span>
-        <input min={0} max={255} type="range" value={color.saturation} onChange={(event) => onChange({ saturation: Number(event.target.value) })} />
-      </label>
-      <label className="field rangeField">
-        <span>Value {color.value}</span>
-        <input min={0} max={255} type="range" value={color.value} onChange={(event) => onChange({ value: Number(event.target.value) })} />
       </label>
     </div>
   );

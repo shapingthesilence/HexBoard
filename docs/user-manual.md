@@ -566,8 +566,13 @@ actions remain at the top of the geometry studio. The preview's `Paint keys`
 tool can target either button color overrides or scale-degree palette colors
 while `Custom` color mode is active. Painting a scale degree clears matching
 button color overrides in the active layout so the palette color takes effect
-immediately. Expand `Key inspector` for per-button note, pitch, and color
-details; encoded object data is under the collapsed `Developer details` panel.
+immediately. Expand `Key inspector` to turn a key on or off, optionally override
+its generated pitch, or change between its scale-degree color and a per-key
+color. The inspector uses a visual color picker; derived layout step and scale
+degree values are read-only facts, and cents-from-reference information is under
+`Advanced pitch details`. `Reset all key overrides` restores the selected key to
+the active layout and palette. Encoded object data is under the collapsed
+`Developer details` panel.
 `Live send` previews compatible edits on the connected HexBoard without saving
 them to flash. `Save to computer` stores the bundle in browser storage, and
 `Save to HexBoard` writes it to the device so it appears in the on-device
