@@ -2751,6 +2751,18 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             >
               Reset colors
             </button>
+            <span className="selectionStatus" aria-live="polite">
+              <span className="selectionStatusItem">
+                <span aria-hidden="true" className="selectionStatusSwatch" />
+                {selectedButtons.length} selected
+              </span>
+              {selectedButtons.length > 1 ? (
+                <span className="selectionStatusItem">
+                  <span aria-hidden="true" className="selectionStatusSwatch primary" />
+                  Button {selectedButton} primary
+                </span>
+              ) : null}
+            </span>
             <button type="button" onClick={() => setSelectedButtons(previewKeys.map((item) => item.key.index))}>
               Select all keys
             </button>
@@ -2784,9 +2796,21 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   }}
                 />
               ))}
+              {previewKeys.filter((item) => selectedButtonSet.has(item.key.index)).map((item) => (
+                <div
+                  aria-hidden="true"
+                  className={`hexSelectionHalo ${item.key.index === selectedButton ? "primarySelectionHalo" : ""}`}
+                  key={`selection-${item.key.index}`}
+                  style={{
+                    left: `${previewHexInset + (item.key.coordCol * previewHexHalfStepX)}px`,
+                    top: `${previewHexInset + (item.key.row * previewHexRowStepY)}px`
+                  }}
+                />
+              ))}
               {previewKeys.map((item) => (
                 <button
                   aria-label={`Button ${item.key.index}, ${item.role}, step ${item.stepsFromC}`}
+                  aria-pressed={selectedButtonSet.has(item.key.index)}
                   className={[
                     "hexKey",
                     item.role === "unused" ? "unusedKey" : "",
@@ -2806,8 +2830,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                     }
                   }}
                   style={{
-                    left: `${previewHexInset + (item.key.coordCol * previewHexHalfStepX)}px`,
-                    top: `${previewHexInset + (item.key.row * previewHexRowStepY)}px`,
+                    left: `${previewHexInset + 2 + (item.key.coordCol * previewHexHalfStepX)}px`,
+                    top: `${previewHexInset + 2 + (item.key.row * previewHexRowStepY)}px`,
                     backgroundColor: colorToCss(item.color)
                   }}
                   type="button"

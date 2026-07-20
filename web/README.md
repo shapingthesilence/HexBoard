@@ -90,7 +90,9 @@ and `TRANSFER_END` so firmware can pace object transfers.
   mirroring. The selected-key inspector separates key state, optional pitch
   overrides, inherited or per-key color, and advanced pitch details; color
   editing uses a compact visual picker. Shift/Ctrl/Command selection enables
-  bulk transposition and reset. A collapsed advanced-output section supports
+  bulk transposition and reset. Green selection rings, a gold primary-key ring,
+  and a live selection count remain visible independently of key colors. A
+  collapsed advanced-output section supports
   fixed MIDI note/channel output and reusable four-tone chord shapes without
   adding controls to the ordinary tuned-note workflow. Read-only pitch and
   scale values are presented as facts rather than form fields, and all overrides

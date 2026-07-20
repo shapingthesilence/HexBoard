@@ -1052,6 +1052,38 @@ select {
   padding: 3px;
 }
 
+.selectionStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+  color: var(--text-soft);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.selectionStatusItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.selectionStatusSwatch {
+  width: 11px;
+  height: 11px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 1px var(--brand-strong);
+}
+
+.selectionStatusSwatch.primary {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--warning);
+}
+
 .selectedKeyPanel {
   min-width: 0;
   padding: 0;
@@ -1419,8 +1451,8 @@ select {
   position: absolute;
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 52px;
+  width: 42px;
+  height: 48px;
   min-height: 0;
   padding: 0;
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
@@ -1430,6 +1462,22 @@ select {
   font-size: 0.65rem;
   line-height: 1;
   z-index: 2;
+}
+
+.hexSelectionHalo {
+  position: absolute;
+  width: 46px;
+  height: 52px;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  background: var(--brand);
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--brand-strong) 72%, transparent));
+  pointer-events: none;
+  z-index: 2;
+}
+
+.hexSelectionHalo.primarySelectionHalo {
+  background: var(--accent);
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--warning) 76%, transparent));
 }
 
 .hexGuideHalo {
@@ -1495,10 +1543,7 @@ select {
 }
 
 .hexKey.selectedKey {
-  box-shadow:
-    0 0 0 4px #ffffff,
-    0 0 0 7px var(--brand);
-  z-index: 3;
+  z-index: 4;
 }
 
 .hexKey.centerKey {
@@ -1927,6 +1972,11 @@ select {
 
   .brushToolbar {
     margin-inline: 12px;
+  }
+
+  .selectionStatus {
+    width: 100%;
+    margin-left: 0;
   }
 
   .selectedKeyHeading {

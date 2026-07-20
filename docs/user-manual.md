@@ -582,7 +582,9 @@ immediately. Expand `Key inspector` to turn a key on or off, optionally override
 its generated pitch, or change between its scale-degree color and a per-key
 color. Shift-click selects a continuous range, while Control-click or
 Command-click toggles individual keys; the bulk controls transpose or reset the
-selection together. The collapsed `Advanced output` section keeps ordinary
+selection together. Selected keys use green rings around slightly smaller key
+faces, the primary key used by the inspector has a gold ring, and the toolbar
+reports the current selection count. The collapsed `Advanced output` section keeps ordinary
 tuned-note editing simple while allowing a key to send a fixed MIDI note and
 channel or a reusable chord shape of up to four tones. Chord intervals can use
 the current tuning's steps or ordinary MIDI semitones. The inspector uses a visual color picker; derived layout step and scale
