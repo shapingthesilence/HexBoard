@@ -1,6 +1,7 @@
 import { ObjectType, type ObjectTypeValue } from "./constants.ts";
 import {
   assertByte,
+  encodeFloat32LE,
   encodeInt16LE,
   encodeInt32LE,
   encodeU16LE,
@@ -88,6 +89,10 @@ export function tlvU32LE(tag: number, value: number): TlvRecord {
 
 export function tlvI32LE(tag: number, value: number): TlvRecord {
   return tlv(tag, bytesFromNumbers(encodeInt32LE(value)));
+}
+
+export function tlvFloat32LE(tag: number, value: number): TlvRecord {
+  return tlv(tag, bytesFromNumbers(encodeFloat32LE(value)));
 }
 
 export function encodeTlvRecord(record: TlvRecord): Uint8Array {
@@ -193,4 +198,3 @@ export function objectTypeName(objectType: ObjectTypeValue): string {
   const entry = Object.entries(ObjectType).find(([, value]) => value === objectType);
   return entry?.[0] ?? `Object ${objectType}`;
 }
-

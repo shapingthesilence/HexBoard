@@ -9,6 +9,17 @@ constexpr byte BTN_STATE_NEWPRESS = 1;
 constexpr byte BTN_STATE_RELEASED = 2;
 constexpr byte BTN_STATE_HELD = 3;
 constexpr uint8_t WHEEL_MAX_CATCHUP_STEPS = 8;
+constexpr uint8_t USER_GEOMETRY_MAX_CHORD_ACTIONS = 16;
+constexpr uint8_t USER_GEOMETRY_MAX_CHORD_TONES = 4;
+
+struct UserGeometryChordAction {
+  bool active = false;
+  uint8_t id = 0;
+  uint8_t pitchMode = 0;
+  uint8_t midiChannel = 0;
+  uint8_t toneCount = 0;
+  int16_t intervals[USER_GEOMETRY_MAX_CHORD_TONES] = {};
+};
 
 class buttonDef {
 public:
@@ -160,9 +171,12 @@ extern uint8_t userGeometryRuntimeTuningObjectId[16];
 extern uint8_t userGeometryRuntimeLayoutObjectId[16];
 extern uint8_t userGeometryRuntimeScaleObjectId[16];
 extern bool userGeometryRuntimeCentsTableActive;
+extern bool userGeometryRuntimeExactEdoActive;
+extern uint8_t userGeometryRuntimeTuningKind;
+extern uint16_t userGeometryRuntimeCycleLength;
 extern uint16_t userGeometryRuntimeCentsTableLength;
-extern int32_t userGeometryRuntimeCentsTableMilliCents[MAX_SCALE_DIVISIONS];
-extern int32_t userGeometryRuntimePeriodMilliCents;
+extern float userGeometryRuntimeCentsTable[MAX_SCALE_DIVISIONS];
+extern float userGeometryRuntimePeriodCents;
 extern uint8_t userGeometryRuntimeReferenceMidiNote;
 extern float userGeometryRuntimeReferenceHz;
 extern char userGeometryRuntimeKeyLabelStorage[MAX_SCALE_DIVISIONS][TUNING_KEY_LABEL_LENGTH];
@@ -177,6 +191,13 @@ extern bool userGeometryRuntimeButtonNoteOverride[LED_COUNT];
 extern bool userGeometryRuntimeButtonColorActive[LED_COUNT];
 extern int16_t userGeometryRuntimeButtonStepsFromC[LED_COUNT];
 extern colorDef userGeometryRuntimeButtonColor[LED_COUNT];
+extern uint8_t userGeometryRuntimeDeviceRotation;
+extern uint8_t userGeometryRuntimeButtonOutputMode[LED_COUNT];
+extern uint8_t userGeometryRuntimeButtonMidiNote[LED_COUNT];
+extern uint8_t userGeometryRuntimeButtonMidiChannel[LED_COUNT];
+extern uint8_t userGeometryRuntimeButtonChordActionId[LED_COUNT];
+extern uint8_t userGeometryRuntimeButtonChordRootMidiNote[LED_COUNT];
+extern UserGeometryChordAction userGeometryRuntimeChordActions[USER_GEOMETRY_MAX_CHORD_ACTIONS];
 
 extern wheelDef modWheel;
 extern wheelDef pbWheel;

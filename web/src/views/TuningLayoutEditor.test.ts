@@ -19,13 +19,15 @@ describe("tuning layout color rendering", () => {
       { buttonIndex: 10, role: "note", hueTenthDegrees: 2400, saturation: 255, value: 220 },
       { buttonIndex: 11, role: "note", stepsFromC: 7, hueTenthDegrees: 1200, saturation: 200, value: 190 },
       { buttonIndex: 12, role: "unused", hueTenthDegrees: 0, saturation: 255, value: 180 },
-      { buttonIndex: 13, role: "note", stepsFromC: 9 }
+      { buttonIndex: 13, role: "note", stepsFromC: 9 },
+      { buttonIndex: 14, role: "note", action: { kind: "direct-midi", midiNote: 48, midiChannel: 2 }, hueTenthDegrees: 3000, saturation: 255, value: 170 }
     ];
 
     expect(resetOverridesToScaleDegreeColors(overrides)).toEqual([
       { buttonIndex: 11, role: "note", stepsFromC: 7 },
       { buttonIndex: 12, role: "unused" },
-      { buttonIndex: 13, role: "note", stepsFromC: 9 }
+      { buttonIndex: 13, role: "note", stepsFromC: 9 },
+      { buttonIndex: 14, role: "note", action: { kind: "direct-midi", midiNote: 48, midiChannel: 2 } }
     ]);
   });
 

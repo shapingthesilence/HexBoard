@@ -1,5 +1,6 @@
 #include "SynthAudioInternal.h"
 #include "../sequencer/SequencerTransport.h"
+#include "../midi/NoteDispatch.h"
 
 std::queue<byte> synthChQueue;
 std::array<std::atomic<bool>, POLYPHONY_LIMIT> channelInUse = {};
@@ -34,7 +35,7 @@ uint32_t arpeggiatorRandomState = 0xA341316Cu;
 
 namespace {
 
-bool synthPreviewSlotIndex(int16_t slot, uint8_t& indexOut) {
+bool RAM_FUNC(synthPreviewSlotIndex)(int16_t slot, uint8_t& indexOut) {
   if (slot < SYNTH_PREVIEW_SLOT_START || slot >= BTN_COUNT) {
     return false;
   }
@@ -42,7 +43,7 @@ bool synthPreviewSlotIndex(int16_t slot, uint8_t& indexOut) {
   return indexOut < SYNTH_PREVIEW_SLOT_COUNT;
 }
 
-void clearSynthPreviewSlot(int16_t slot) {
+void RAM_FUNC(clearSynthPreviewSlot)(int16_t slot) {
   uint8_t slotIndex = 0;
   if (!synthPreviewSlotIndex(slot, slotIndex)) {
     return;
@@ -65,7 +66,7 @@ void clearSynthPreviewSlot(int16_t slot) {
   h[slot].jiFrequencyMultiplier = 1.0f;
 }
 
-int16_t allocateSynthPreviewSlot() {
+int16_t RAM_FUNC(allocateSynthPreviewSlot)() {
   for (uint8_t i = 0; i < SYNTH_PREVIEW_SLOT_COUNT; ++i) {
     if (!synthPreviewSlotActive[i]) {
       int16_t slot = static_cast<int16_t>(SYNTH_PREVIEW_SLOT_START + i);
@@ -420,11 +421,11 @@ void RAM_FUNC(resetSynthFreqs)() {
   }
 }
 
-bool startSynthPreviewNote(int16_t pitchSteps,
-                           float frequency,
-                           byte displayNote,
-                           byte velocity,
-                           SynthPreviewNoteHandle& handle) {
+bool RAM_FUNC(startSynthPreviewNote)(int16_t pitchSteps,
+                                    float frequency,
+                                    byte displayNote,
+                                    byte velocity,
+                                    SynthPreviewNoteHandle& handle) {
   handle = SynthPreviewNoteHandle{};
   if (playbackMode == SYNTH_OFF || frequency <= 0.0f) {
     return false;
@@ -461,7 +462,7 @@ bool startSynthPreviewNote(int16_t pitchSteps,
   return true;
 }
 
-void stopSynthPreviewNote(SynthPreviewNoteHandle& handle) {
+void RAM_FUNC(stopSynthPreviewNote)(SynthPreviewNoteHandle& handle) {
   if (!handle.active) {
     return;
   }
@@ -778,6 +779,7 @@ void RAM_FUNC(trySynthNoteOff)(byte x) {
 void panicStopOutput() {
   sendToLog("Panic: stopping all MIDI and synth output.");
   sequencer::releasePlaybackNotesForPanic();
+  releaseAllMappedButtonActions();
 
   for (byte channel = 1; channel <= 16; ++channel) {
     withMIDI([&](auto& M) {

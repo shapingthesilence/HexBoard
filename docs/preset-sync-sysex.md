@@ -62,8 +62,9 @@ named/foldered `/synth_wavetables.dat`, and `/layouts.dat`. The current
 `/layouts.dat` implementation stores and round-trips raw validated object
 bodies. It can also apply generated EDO/equal-step and Scala/cents-list
 `UserTuning` objects, isomorphic vector `UserLayout` objects, `UserScale`
-membership, `ScaleColorMap` degree colors, and format-1 `ExplicitButtonMap`
-note/color overrides to the live pitch and LED runtime. The on-device `Tuning`,
+membership, `ScaleColorMap` degree colors, and format-1/format-2
+`ExplicitButtonMap` pitch, color, direct-MIDI, and chord overrides to the live
+pitch, MIDI, synth, and LED runtime. The on-device `Tuning`,
 `Layout`, and `Scales` browsers are backed by factory read-only geometry
 objects plus saved runtime-compatible user geometry objects. Factory entries
 are shown flat on-device even though their protocol folder remains `/Built In`.
@@ -537,7 +538,8 @@ For geometry object writes, firmware validates and applies the runtime object
 before saving when both `ApplyToRuntime` and `SaveToFlash` are set. Generated
 EDO/equal-step tunings and cents-list Scala imports are runtime-compatible when
 their cycle length fits the firmware table limit and their final cents-table
-entry matches `PeriodMilliCents`. Unsupported runtime objects, such as
+entry matches the authoritative period field (`PeriodCentsFloat32` when
+present, otherwise `PeriodMilliCents`). Unsupported runtime objects, such as
 ratio-list tunings, are rejected for Apply and are not saved through that
 combined path; hosts can still save those objects with `SaveToFlash` only.
 
@@ -772,21 +774,34 @@ Recommended TLVs:
 | --- | --- | --- |
 | `0x20` | `TuningKind` | `u8`: `1` EDO, `2` cents list, `3` ratio list, `4` equal step |
 | `0x21` | `EdoDivisions` | `u16-le`; EDO divisions for EDO, cycle length for equal-step/cents-table display metadata |
-| `0x22` | `PeriodMilliCents` | `u32-le`, default `1200000` for octave |
-| `0x23` | `StepMilliCents` | `u32-le`, cached EDO step or explicit equal-step size |
+| `0x22` | `PeriodMilliCents` | Compatibility `u32-le`, default `1200000` for octave |
+| `0x23` | `StepMilliCents` | Compatibility `u32-le`, cached EDO step or explicit equal-step size |
 | `0x24` | `ReferenceMidiNote` | `u8`, default `69` for A4 |
-| `0x25` | `ReferenceMilliHz` | `u32-le`, default `440000` |
-| `0x26` | `CentsTable` | Repeated `i32-le` mill cent offsets within period |
+| `0x25` | `ReferenceMilliHz` | Compatibility `u32-le`, default `440000` |
+| `0x26` | `CentsTable` | Compatibility repeated `i32-le` milli-cent offsets within period |
 | `0x27` | `RatioTable` | Repeated `<numerator-u32-le> <denominator-u32-le>` |
 | `0x28` | `KeyLabels` | Repeated length-prefixed labels, one per cycle degree; each label should be capped at `7` display characters |
+| `0x29` | `PeriodCentsFloat32` | Optional authoritative positive finite IEEE-754 binary32 cents value, little-endian |
+| `0x2A` | `StepCentsFloat32` | Optional authoritative positive finite IEEE-754 binary32 cents value, little-endian |
+| `0x2B` | `ReferenceHzFloat32` | Optional authoritative positive finite IEEE-754 binary32 hertz value, little-endian |
+| `0x2C` | `CentsTableFloat32` | Optional authoritative repeated positive finite IEEE-754 binary32 cents offsets, little-endian |
+
+New hosts should write both representations. Current firmware prefers the
+binary32 fields, which carry the complete precision used by its tuning runtime;
+older firmware ignores the unknown tags and uses the milli-unit compatibility
+fields. Values in each representation describe the same tuning, but the
+binary32 value is authoritative when both are present. NaN and infinity are
+invalid. A binary32 cents table must contain exactly `EdoDivisions` strictly
+increasing entries and its final entry must equal `PeriodCentsFloat32`.
 
 The device can create and edit an EDO object with only `Name`, `TuningKind`,
-`EdoDivisions`, and `PeriodMilliCents`. The web app can also create equal
-cents-per-step tunings with `TuningKind = 4`, `StepMilliCents`, and a cycle
-length in `EdoDivisions` for labels/colors; host tooling derives
-`PeriodMilliCents` from those two values so they cannot diverge. Generated EDO
-and equal-step tunings can include `KeyLabels`, `ReferenceMidiNote`, and
-`ReferenceMilliHz`; the web editor presents labels in A-first order, defaults
+`EdoDivisions`, and either period field. The web app can also create equal
+cents-per-step tunings with `TuningKind = 4`, an explicit step field, and a
+cycle length in `EdoDivisions` for labels/colors; host tooling derives both
+period representations from those values so they cannot diverge. Generated EDO
+and equal-step tunings can include `KeyLabels`, `ReferenceMidiNote`, and either
+reference-frequency field; the web editor presents labels in A-first order,
+defaults
 to A-first pitch labels, and rotates them into the firmware's C-centered cycle
 order for `KeyLabels`. Scala imports default to a MIDI-note-60 1/1 reference
 when no existing Scala reference is being preserved. Scala
@@ -794,20 +809,31 @@ when no existing Scala reference is being preserved. Scala
 after an interval value as a note label and can reuse the final period-row label
 for the implicit 1/1 root. Current firmware live Apply supports `TuningKind =
 1`, `TuningKind = 2`, and `TuningKind = 4`; it loads cycle length, nominal step
-size, key labels when present, `ReferenceMidiNote`, `ReferenceMilliHz`, and for
-cents-list tunings a RAM copy of `CentsTable`. Cents-list playback treats degree
-`0` as an implicit `0`-cent reference at `ReferenceMidiNote`/`ReferenceMilliHz`,
+size, key labels when present, `ReferenceMidiNote`, the preferred
+reference-frequency field, and for cents-list tunings a RAM copy of the
+preferred cents table. Cents-list playback treats degree
+`0` as an implicit `0`-cent reference at the configured MIDI note and frequency,
 uses table entry `1` as the first interval, and wraps all positive or negative
-step values by `PeriodMilliCents`. The web app parses Scala text, derives
+step values by the preferred period field. The web app parses Scala text, derives
 period/cycle metadata, and writes the cents table. Firmware does not parse
 Scala text.
 
+For `TuningKind = 1`, `PeriodCentsFloat32 / EdoDivisions` is authoritative at
+runtime when present, otherwise firmware falls back to
+`PeriodMilliCents / EdoDivisions`. `StepCentsFloat32` and `StepMilliCents` are
+caches for display and compatibility; they
+must not be multiplied repeatedly to derive EDO pitches. For example, `72 EDO`
+uses the exact ratio `1/72` of a 1200-cent period, so octave boundaries do not
+accumulate the error from a displayed `16.667`-cent step.
+
 The tuning object must be complete enough for both the onboard synth and every
-MIDI output mode. For equal-step tunings, firmware can derive frequency,
-single-channel MIDI note numbers, and MPE bend offsets from `StepMilliCents`,
-`PeriodMilliCents`, `ReferenceMidiNote`, and `ReferenceMilliHz`. For imported
+MIDI output mode. For equal-step tunings, firmware derives frequency,
+single-channel MIDI note numbers, and MPE bend offsets from the authoritative
+binary32 fields when present, with the milli-unit fields as a backward-compatible
+fallback. For imported
 or irregular cents-list tunings, firmware first maps `ReferenceMidiNote` to the
-tuning step that should act as the implicit 1/1 degree, then uses `CentsTable`
+tuning step that should act as the implicit 1/1 degree, then uses
+`CentsTableFloat32` or its legacy `CentsTable` fallback
 to compute the exact frequency for each `stepsFromC` value. It decides whether
 standard MIDI, multi-channel non-MPE retuning, or MPE pitch bend is required
 from the same resolved cent offset. `RatioTable` remains reserved and is not
@@ -839,18 +865,23 @@ Recommended TLVs:
 | `0x24` | `DownLeftSteps` | `i16-le` |
 | `0x25` | `Portrait` | `u8 bool`; legacy compatibility metadata |
 | `0x26` | `ExplicitButtonMapRef` | Object reference |
+| `0x27` | `DeviceRotation` | `u8`, `0..3` for `0/90/180/270` degrees |
+| `0x28` | `LayoutRotation` | `u8`, `0..5` for musical 60-degree rotations |
+| `0x29` | `MirrorFlags` | `u8` bit 0 left/right, bit 1 up/down |
 
 This matches the current firmware pitch-layout model closely enough for simple
 on-device editing: choose tuning, center button, across steps, and down-left
-steps. Display orientation is stored separately as the four-step physical
-`DeviceRotation` setting. Current factory layout selection still seeds that
-setting from legacy portrait/landscape metadata: portrait layouts use `0`, and
-landscape layouts use `90`.
+steps. `DeviceRotation` is the four-step physical/display orientation and does
+not alter pitches. `LayoutRotation` and `MirrorFlags` transform the musical
+vectors. `Portrait` remains for older hosts; firmware uses it only when the
+full `DeviceRotation` TLV is absent. Current factory layouts encode all four
+transform fields, with zero musical rotation and no mirrors.
 
 Current firmware live Apply supports `LayoutKind = 1` vector layouts. Applying
-a layout replaces the runtime layout name, center button, across vector, and
-down-left vector, clears previous explicit button overrides, then rebuilds
-scale membership, MIDI pitch assignment, and LED color caches.
+a layout replaces the runtime layout name, center button, vectors, device
+rotation, musical rotation, and mirrors; clears previous explicit button
+overrides; then rebuilds scale membership, MIDI pitch assignment, display
+orientation, and LED color caches.
 
 A web bundle may contain multiple `UserLayout` objects for the same tuning. A
 generated vector layout can still be edited on-device with the compact
@@ -869,10 +900,8 @@ DownLeftSteps = -UpRightSteps
 UpRightSteps = -DownLeftSteps
 ```
 
-The layout bundle also stores a four-step device orientation value
-(`0/90/180/270`) for preview and firmware display/device rotation behavior. That
-orientation is bundle-level metadata right now and is not encoded in the
-current `UserLayout` TLV.
+Pitch, color, and action overrides stay attached to physical button indices
+when musical rotation or mirroring changes.
 
 ## User Scale Object
 
@@ -928,8 +957,7 @@ colors keep the same animation headroom as generated color modes.
 ## Explicit Button Map Object
 
 `ExplicitButtonMap` is the advanced escape hatch for individual button editing.
-The web app should own this path. The device may only display it as a named
-mapping and allow select/delete.
+The web app owns editing; firmware applies the selected map at runtime.
 
 Recommended TLVs:
 
@@ -937,8 +965,9 @@ Recommended TLVs:
 | --- | --- | --- |
 | `0x20` | `TuningRef` | Object reference |
 | `0x21` | `LayoutRef` | Optional object reference |
-| `0x22` | `MapRecordFormat` | `u8`, start with `1` |
+| `0x22` | `MapRecordFormat` | `u8`; `1` legacy fixed fields, `2` independent fields |
 | `0x23` | `ButtonRecords` | Repeated map records |
+| `0x24` | `Actions` | Format-2 reusable action definitions |
 
 Map record format `1`:
 
@@ -972,11 +1001,45 @@ sounded pitch after mapping, and root/key changes affect scale highlighting,
 but neither setting should regenerate or move a manual button record. A button
 record with a color override similarly takes precedence over the bundle palette.
 Color overrides are active only when the selected color mode is `Custom`.
-Current firmware live Apply supports format `1` records on visible button
-indices `0..139`. `Note` records can override `stepsFromC`; `Unused` records
-disable the button; `Command` records restore built-in command behavior only
-when the index is one of the firmware command buttons, and otherwise act as
-non-playing buttons.
+Current firmware keeps format `1` support for existing objects on visible
+button indices `0..139`. `Note` records can override `stepsFromC`; `Unused`
+records disable the button; `Command` records restore built-in command behavior
+only when the index is one of the firmware command buttons, and otherwise act
+as non-playing buttons.
+
+Map record format `2` is length-prefixed and makes role, pitch, color, and
+action independent so a color-only edit does not freeze a generated pitch:
+
+```text
+<record-length-u16-le>       # currently 17
+<button-index-u16-le>
+<field-mask-u16-le>          # bit 0 role, bit 1 pitch, bit 2 color, bit 3 action
+<role-u8>
+<steps-from-c-i32-le>
+<output-mode-u8>             # 0 tuned, 1 direct MIDI, 2 chord
+<midi-or-root-note-u8>
+<midi-channel-u8>
+<chord-action-id-u8>
+<hue-u16-le> <sat-u8> <val-u8>
+```
+
+Only fields named by `field-mask` are applied. Direct MIDI requires note
+`0..127` and channel `1..16` and bypasses normal tuning/MPE pitch generation.
+Chord actions are also length-prefixed:
+
+```text
+<action-length-u16-le>
+<id-u8> <kind-u8=1> <pitch-mode-u8> <midi-channel-u8>
+<tone-count-u8> <name-length-u8>
+<interval-i16-le>... <name-utf8>...
+```
+
+Pitch mode `0` interprets up to four intervals as current-tuning steps and
+uses normal tuning/MPE routing. Pitch mode `1` interprets them as MIDI
+semitones from each key's stored root note on the action's fixed channel. The
+onboard synth follows the same tones. A format-2 map with `LayoutRef` is applied
+only to that exact layout; firmware does not fall back to another map that
+merely shares its tuning.
 
 ## Synth Preset Object
 
@@ -1218,7 +1281,8 @@ write the individual objects after the web app unpacks a bundle.
 
 1. Web app creates an `ExplicitButtonMap`.
 2. Web app optionally references an existing `UserTuning` and `UserLayout`.
-3. Device validates button indices, roles, and pitch ranges.
+3. Device validates independent field masks, button indices, roles, direct-MIDI
+   ranges, and reusable chord definitions.
 4. Device stores the map as a named user object, and can apply it to the current
    runtime layout when the write uses `ApplyToRuntime`.
 5. A profile or layout can reference that map.
@@ -1235,8 +1299,8 @@ write the individual objects after the web app unpacks a bundle.
    in the bundle so device object lists can group related geometry records.
 6. Current firmware stores these records in `/layouts.dat` and can list, read,
    overwrite, delete, or apply the active EDO/equal-step/Scala cents-list
-   tuning, active vector layout, active scale, color map, and matching explicit
-   button map by compact preset-sync handle.
+   tuning, active vector layout, active scale, color map, and exact
+   layout-matching explicit button map by compact preset-sync handle.
 7. The device refreshes its virtual `Tuning`, `Layout`, and `Scales` browsers
    after geometry saves/deletes. `UserTuning` objects are the loadable bundle
    anchors; linked `UserLayout` and `UserScale` objects appear after that tuning

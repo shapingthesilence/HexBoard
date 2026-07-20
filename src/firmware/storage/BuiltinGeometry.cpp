@@ -87,6 +87,13 @@ void appendU32Tlv(std::vector<uint8_t>& body, uint8_t tag, uint32_t value) {
   presetSyncAppendTlv(body, tag, bytes, sizeof(bytes));
 }
 
+void appendFloat32Tlv(std::vector<uint8_t>& body, uint8_t tag, float value) {
+  static_assert(sizeof(float) == sizeof(uint32_t), "Preset sync float32 requires a 32-bit float");
+  uint32_t bits = 0;
+  memcpy(&bits, &value, sizeof(bits));
+  appendU32Tlv(body, tag, bits);
+}
+
 void appendObjectReferenceTlv(std::vector<uint8_t>& body,
                               uint8_t tag,
                               uint8_t objectType,
@@ -127,6 +134,13 @@ void appendBuiltinTuningBody(std::vector<uint8_t>& body, const BuiltinGeometryMe
   appendU32Tlv(body, PRESET_SYNC_TLV_TUNING_STEP_MILLI_CENTS, stepMilliCents);
   appendU8Tlv(body, PRESET_SYNC_TLV_TUNING_REFERENCE_MIDI_NOTE, 69);
   appendU32Tlv(body, PRESET_SYNC_TLV_TUNING_REFERENCE_MILLI_HZ, 440000);
+  appendFloat32Tlv(
+    body,
+    PRESET_SYNC_TLV_TUNING_PERIOD_CENTS_FLOAT32,
+    tuning.stepSize * static_cast<float>(tuning.cycleLength)
+  );
+  appendFloat32Tlv(body, PRESET_SYNC_TLV_TUNING_STEP_CENTS_FLOAT32, tuning.stepSize);
+  appendFloat32Tlv(body, PRESET_SYNC_TLV_TUNING_REFERENCE_HZ_FLOAT32, 440.0f);
 
   std::vector<uint8_t> labels;
   labels.reserve(static_cast<size_t>(tuning.cycleLength) * 5);
@@ -159,6 +173,11 @@ void appendBuiltinLayoutBody(std::vector<uint8_t>& body, const BuiltinGeometryMe
   appendI16Tlv(body, PRESET_SYNC_TLV_LAYOUT_ACROSS_STEPS, layout.acrossSteps);
   appendI16Tlv(body, PRESET_SYNC_TLV_LAYOUT_DOWN_LEFT_STEPS, layout.dnLeftSteps);
   appendU8Tlv(body, PRESET_SYNC_TLV_LAYOUT_PORTRAIT, layout.isPortrait ? 1 : 0);
+  appendU8Tlv(body,
+              PRESET_SYNC_TLV_LAYOUT_DEVICE_ROTATION,
+              defaultDeviceRotationForLayout(layout.isPortrait));
+  appendU8Tlv(body, PRESET_SYNC_TLV_LAYOUT_ROTATION, 0);
+  appendU8Tlv(body, PRESET_SYNC_TLV_LAYOUT_MIRROR_FLAGS, 0);
 }
 
 void appendPatternDegrees(std::vector<uint8_t>& output, const uint8_t* pattern, uint16_t cycleLength) {

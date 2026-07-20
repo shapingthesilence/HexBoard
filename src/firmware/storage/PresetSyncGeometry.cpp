@@ -5,6 +5,8 @@
 #include "../hardware/LedRender.h"
 #include "../model/PitchAssignment.h"
 #include "../model/ScalePalettePreset.h"
+#include "../midi/NoteDispatch.h"
+#include "../menu/MenuAndDisplay.h"
 #include "BuiltinGeometry.h"
 #include "PresetSync.h"
 #include "Settings.h"
@@ -598,41 +600,67 @@ bool presetSyncFindTlvU32LE(const std::vector<uint8_t>& body, uint8_t tag, uint3
   return true;
 }
 
+bool presetSyncFindTlvFloat32LE(const std::vector<uint8_t>& body, uint8_t tag, float& result) {
+  const uint8_t* value = nullptr;
+  uint16_t length = 0;
+  if (!presetSyncFindTlv(body, tag, value, length) || length != sizeof(float)) {
+    return false;
+  }
+  result = presetSyncReadFloat32LE(value);
+  return std::isfinite(result);
+}
+
 bool readRuntimeCentsTable(const GeometryObjectSlot& object,
                            uint16_t cycleLength,
-                           int32_t& periodMilliCents,
-                           int32_t* destination) {
+                           float& periodCents,
+                           float* destination) {
   if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
     return false;
   }
 
   const uint8_t* centsTable = nullptr;
   uint16_t centsTableLength = 0;
-  if (!presetSyncFindTlv(object.body, PRESET_SYNC_TLV_TUNING_CENTS_TABLE, centsTable, centsTableLength)
-      || centsTableLength != static_cast<uint16_t>(cycleLength * sizeof(int32_t))) {
+  bool floatTable = presetSyncFindTlv(
+    object.body,
+    PRESET_SYNC_TLV_TUNING_CENTS_TABLE_FLOAT32,
+    centsTable,
+    centsTableLength
+  );
+  if (!floatTable
+      && !presetSyncFindTlv(object.body, PRESET_SYNC_TLV_TUNING_CENTS_TABLE, centsTable, centsTableLength)) {
+    return false;
+  }
+  if (centsTableLength != static_cast<uint16_t>(cycleLength * sizeof(float))) {
     return false;
   }
 
   uint32_t periodFromTlv = 0;
-  bool sawPeriod = presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_PERIOD_MILLI_CENTS, periodFromTlv);
-  if (sawPeriod && periodFromTlv > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
-    return false;
-  }
+  bool sawLegacyPeriod = presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_PERIOD_MILLI_CENTS, periodFromTlv);
+  float precisePeriod = 0.0f;
+  bool sawPrecisePeriod = presetSyncFindTlvFloat32LE(
+    object.body,
+    PRESET_SYNC_TLV_TUNING_PERIOD_CENTS_FLOAT32,
+    precisePeriod
+  );
 
-  int32_t previousMilliCents = 0;
+  float previousCents = 0.0f;
   for (uint16_t degree = 0; degree < cycleLength; ++degree) {
-    int32_t milliCents = presetSyncReadI32LE(centsTable + (degree * sizeof(int32_t)));
-    if (milliCents <= previousMilliCents) {
+    float cents = floatTable
+      ? presetSyncReadFloat32LE(centsTable + (degree * sizeof(float)))
+      : static_cast<float>(presetSyncReadI32LE(centsTable + (degree * sizeof(int32_t)))) / 1000.0f;
+    if (!std::isfinite(cents) || cents <= previousCents) {
       return false;
     }
     if (destination) {
-      destination[degree] = milliCents;
+      destination[degree] = cents;
     }
-    previousMilliCents = milliCents;
+    previousCents = cents;
   }
 
-  periodMilliCents = sawPeriod ? static_cast<int32_t>(periodFromTlv) : previousMilliCents;
-  return periodMilliCents > 0 && previousMilliCents == periodMilliCents;
+  periodCents = sawPrecisePeriod
+    ? precisePeriod
+    : (sawLegacyPeriod ? static_cast<float>(periodFromTlv) / 1000.0f : previousCents);
+  return periodCents > 0.0f && previousCents == periodCents;
 }
 
 bool geometryObjectReferencesObjectId(const GeometryObjectSlot& object, uint8_t tag, uint8_t objectType, const uint8_t* objectId) {
@@ -661,8 +689,8 @@ bool geometryObjectRuntimeTuningSupported(const GeometryObjectSlot& object) {
     return true;
   }
   if (tuningKind == PRESET_SYNC_USER_TUNING_KIND_CENTS_LIST) {
-    int32_t periodMilliCents = 0;
-    return readRuntimeCentsTable(object, cycleLength, periodMilliCents, nullptr);
+    float periodCents = 0.0f;
+    return readRuntimeCentsTable(object, cycleLength, periodCents, nullptr);
   }
   return false;
 }
@@ -693,6 +721,7 @@ int findFirstGeometryObjectReferencing(uint8_t objectType, uint8_t referenceTag,
 }
 
 void clearUserGeometryButtonRuntimeOverrides() {
+  releaseAllMappedButtonActions();
   for (byte i = 0; i < LED_COUNT; ++i) {
     userGeometryRuntimeButtonDisabled[i] = false;
     userGeometryRuntimeButtonRole[i] = PRESET_SYNC_BUTTON_MAP_ROLE_NOTE;
@@ -701,7 +730,13 @@ void clearUserGeometryButtonRuntimeOverrides() {
     userGeometryRuntimeButtonColorActive[i] = false;
     userGeometryRuntimeButtonStepsFromC[i] = 0;
     userGeometryRuntimeButtonColor[i] = { HUE_NONE, SAT_BW, VALUE_BLACK };
+    userGeometryRuntimeButtonOutputMode[i] = PRESET_SYNC_BUTTON_OUTPUT_TUNED;
+    userGeometryRuntimeButtonMidiNote[i] = UNUSED_NOTE;
+    userGeometryRuntimeButtonMidiChannel[i] = 0;
+    userGeometryRuntimeButtonChordActionId[i] = 0;
+    userGeometryRuntimeButtonChordRootMidiNote[i] = UNUSED_NOTE;
   }
+  memset(userGeometryRuntimeChordActions, 0, sizeof(userGeometryRuntimeChordActions));
 }
 
 void clearUserGeometryRuntimeSelection() {
@@ -715,11 +750,15 @@ void clearUserGeometryRuntimeSelection() {
   memset(userGeometryRuntimeLayoutObjectId, 0, sizeof(userGeometryRuntimeLayoutObjectId));
   memset(userGeometryRuntimeScaleObjectId, 0, sizeof(userGeometryRuntimeScaleObjectId));
   userGeometryRuntimeCentsTableActive = false;
+  userGeometryRuntimeExactEdoActive = false;
+  userGeometryRuntimeTuningKind = 0;
+  userGeometryRuntimeCycleLength = 0;
   userGeometryRuntimeCentsTableLength = 0;
-  memset(userGeometryRuntimeCentsTableMilliCents, 0, sizeof(userGeometryRuntimeCentsTableMilliCents));
-  userGeometryRuntimePeriodMilliCents = 1200000;
+  memset(userGeometryRuntimeCentsTable, 0, sizeof(userGeometryRuntimeCentsTable));
+  userGeometryRuntimePeriodCents = 1200.0f;
   userGeometryRuntimeReferenceMidiNote = 69;
   userGeometryRuntimeReferenceHz = 440.0f;
+  userGeometryRuntimeDeviceRotation = DEVICE_ROTATION_PORTRAIT;
   clearUserGeometryButtonRuntimeOverrides();
 }
 
@@ -755,8 +794,11 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   uint16_t cycleLength = 0;
   uint32_t periodMilliCents = 1200000;
   uint32_t stepMilliCents = 0;
+  float periodCents = 1200.0f;
+  float stepCents = 0.0f;
   uint8_t referenceMidiNote = 69;
   uint32_t referenceMilliHz = 440000;
+  float referenceHz = 440.0f;
   if (!presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_TUNING_KIND, tuningKind)
       || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS, cycleLength)) {
     sendToLog("Geometry runtime tuning apply rejected: missing tuning kind or cycle length.");
@@ -776,32 +818,38 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_STEP_MILLI_CENTS, stepMilliCents);
   presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_MIDI_NOTE, referenceMidiNote);
   presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_MILLI_HZ, referenceMilliHz);
+  periodCents = static_cast<float>(periodMilliCents) / 1000.0f;
+  stepCents = static_cast<float>(stepMilliCents) / 1000.0f;
+  referenceHz = static_cast<float>(referenceMilliHz) / 1000.0f;
+  presetSyncFindTlvFloat32LE(object.body, PRESET_SYNC_TLV_TUNING_PERIOD_CENTS_FLOAT32, periodCents);
+  presetSyncFindTlvFloat32LE(object.body, PRESET_SYNC_TLV_TUNING_STEP_CENTS_FLOAT32, stepCents);
+  presetSyncFindTlvFloat32LE(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_HZ_FLOAT32, referenceHz);
   if (referenceMidiNote > 127) {
     sendToLog("Geometry runtime tuning apply rejected: reference MIDI note is invalid.");
     return false;
   }
-  if (referenceMilliHz == 0 || periodMilliCents == 0
-      || periodMilliCents > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+  if (!std::isfinite(referenceHz) || referenceHz <= 0.0f
+      || !std::isfinite(periodCents) || periodCents <= 0.0f) {
     sendToLog("Geometry runtime tuning apply rejected: period or reference Hz is invalid.");
     return false;
   }
 
   bool centsTableActive = false;
-  int32_t centsTablePeriod = static_cast<int32_t>(periodMilliCents);
-  int32_t parsedCentsTable[MAX_SCALE_DIVISIONS] = {};
+  float centsTablePeriod = periodCents;
+  float parsedCentsTable[MAX_SCALE_DIVISIONS] = {};
   if (tuningKind == PRESET_SYNC_USER_TUNING_KIND_CENTS_LIST) {
     if (!readRuntimeCentsTable(object, cycleLength, centsTablePeriod, parsedCentsTable)) {
       sendToLog("Geometry runtime tuning apply rejected: cents table is invalid.");
       return false;
     }
-    periodMilliCents = static_cast<uint32_t>(centsTablePeriod);
-    stepMilliCents = periodMilliCents / cycleLength;
+    periodCents = centsTablePeriod;
+    stepCents = periodCents / static_cast<float>(cycleLength);
     centsTableActive = true;
   } else {
-    if (stepMilliCents == 0) {
-      stepMilliCents = periodMilliCents / cycleLength;
+    if (stepCents <= 0.0f) {
+      stepCents = periodCents / static_cast<float>(cycleLength);
     }
-    if (stepMilliCents == 0) {
+    if (!std::isfinite(stepCents) || stepCents <= 0.0f) {
       sendToLog("Geometry runtime tuning apply rejected: step size is invalid.");
       return false;
     }
@@ -810,20 +858,23 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   copyRuntimeGeometryName(userGeometryRuntimeTuningNameStorage, sizeof(userGeometryRuntimeTuningNameStorage), object.name);
   userGeometryRuntimeTuning.name = userGeometryRuntimeTuningNameStorage;
   userGeometryRuntimeTuning.cycleLength = static_cast<byte>(cycleLength);
-  userGeometryRuntimeTuning.stepSize = static_cast<float>(stepMilliCents) / 1000.0f;
+  userGeometryRuntimeTuning.stepSize = stepCents;
   memcpy(userGeometryRuntimeTuningObjectId, object.objectId, sizeof(userGeometryRuntimeTuningObjectId));
   userGeometryRuntimeTuningObjectSelected = true;
   userGeometryRuntimeLayoutObjectSelected = false;
   userGeometryRuntimeScaleObjectSelected = false;
   userGeometryRuntimeCentsTableActive = centsTableActive;
+  userGeometryRuntimeExactEdoActive = tuningKind == PRESET_SYNC_USER_TUNING_KIND_EDO;
+  userGeometryRuntimeTuningKind = tuningKind;
+  userGeometryRuntimeCycleLength = cycleLength;
   userGeometryRuntimeCentsTableLength = centsTableActive ? cycleLength : 0;
-  memset(userGeometryRuntimeCentsTableMilliCents, 0, sizeof(userGeometryRuntimeCentsTableMilliCents));
+  memset(userGeometryRuntimeCentsTable, 0, sizeof(userGeometryRuntimeCentsTable));
   if (centsTableActive) {
-    memcpy(userGeometryRuntimeCentsTableMilliCents, parsedCentsTable, cycleLength * sizeof(parsedCentsTable[0]));
+    memcpy(userGeometryRuntimeCentsTable, parsedCentsTable, cycleLength * sizeof(parsedCentsTable[0]));
   }
-  userGeometryRuntimePeriodMilliCents = static_cast<int32_t>(periodMilliCents);
+  userGeometryRuntimePeriodCents = periodCents;
   userGeometryRuntimeReferenceMidiNote = referenceMidiNote;
-  userGeometryRuntimeReferenceHz = static_cast<float>(referenceMilliHz) / 1000.0f;
+  userGeometryRuntimeReferenceHz = referenceHz;
   setDefaultRuntimeKeyLabels(cycleLength);
 
   const uint8_t* keyLabels = nullptr;
@@ -849,6 +900,9 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
   int16_t acrossSteps = 0;
   int16_t downLeftSteps = 0;
   uint8_t portrait = 0;
+  uint8_t storedDeviceRotation = 0;
+  uint8_t storedLayoutRotation = 0;
+  uint8_t mirrorFlags = 0;
   if (!presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_KIND, layoutKind)
       || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_LAYOUT_CENTER_BUTTON, centerButton)
       || !presetSyncFindTlvI16LE(object.body, PRESET_SYNC_TLV_LAYOUT_ACROSS_STEPS, acrossSteps)
@@ -863,6 +917,14 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
     sendToLog("Geometry runtime layout apply rejected: vector layout field is out of range.");
     return false;
   }
+  storedDeviceRotation = portrait != 0 ? DEVICE_ROTATION_PORTRAIT : DEVICE_ROTATION_LANDSCAPE;
+  presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_DEVICE_ROTATION, storedDeviceRotation);
+  presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_ROTATION, storedLayoutRotation);
+  presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_MIRROR_FLAGS, mirrorFlags);
+  if (storedDeviceRotation > 3 || storedLayoutRotation > 5 || (mirrorFlags & ~0x03u) != 0) {
+    sendToLog("Geometry runtime layout apply rejected: rotation or mirror field is out of range.");
+    return false;
+  }
 
   copyRuntimeGeometryName(userGeometryRuntimeLayoutNameStorage, sizeof(userGeometryRuntimeLayoutNameStorage), object.name);
   userGeometryRuntimeLayout.name = userGeometryRuntimeLayoutNameStorage;
@@ -874,8 +936,18 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
   memcpy(userGeometryRuntimeLayoutObjectId, object.objectId, sizeof(userGeometryRuntimeLayoutObjectId));
   userGeometryRuntimeLayoutObjectSelected = true;
   userGeometryRuntimeActive = true;
+  userGeometryRuntimeDeviceRotation = storedDeviceRotation;
+  deviceRotation = storedDeviceRotation;
+  layoutRotation = storedLayoutRotation;
+  mirrorLeftRight = (mirrorFlags & 0x01u) != 0;
+  mirrorUpDown = (mirrorFlags & 0x02u) != 0;
+  settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = deviceRotation;
+  settings[static_cast<uint8_t>(SettingKey::LayoutRotation)] = layoutRotation;
+  settings[static_cast<uint8_t>(SettingKey::MirrorLeftRight)] = mirrorLeftRight;
+  settings[static_cast<uint8_t>(SettingKey::MirrorUpDown)] = mirrorUpDown;
   clearUserGeometryButtonRuntimeOverrides();
   applyLayout();
+  applyDeviceDisplayRotation();
   return true;
 }
 
@@ -986,38 +1058,185 @@ bool applyUserGeometryRuntimeExplicitButtonMap(const GeometryObjectSlot& object)
   uint16_t recordsLength = 0;
   if (!presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_BUTTON_MAP_RECORD_FORMAT, recordFormat)
       || !presetSyncFindTlv(object.body, PRESET_SYNC_TLV_BUTTON_MAP_RECORDS, records, recordsLength)
-      || recordFormat != 1
-      || (recordsLength % PRESET_SYNC_BUTTON_MAP_RECORD_SIZE) != 0) {
+      || (recordFormat != PRESET_SYNC_BUTTON_MAP_RECORD_FORMAT_LEGACY
+          && recordFormat != PRESET_SYNC_BUTTON_MAP_RECORD_FORMAT_FIELD_MASKED)
+      || (recordFormat == PRESET_SYNC_BUTTON_MAP_RECORD_FORMAT_LEGACY
+          && (recordsLength % PRESET_SYNC_BUTTON_MAP_RECORD_SIZE) != 0)) {
     sendToLog("Geometry runtime button map apply rejected: button records are invalid.");
     return false;
   }
 
   clearUserGeometryButtonRuntimeOverrides();
-  for (uint16_t offset = 0; offset < recordsLength; offset += PRESET_SYNC_BUTTON_MAP_RECORD_SIZE) {
-    uint16_t buttonIndex = presetSyncReadU16LE(records + offset);
-    if (buttonIndex >= LED_COUNT) {
-      continue;
+  const uint8_t* actionRecords = nullptr;
+  uint16_t actionRecordsLength = 0;
+  if (recordFormat == PRESET_SYNC_BUTTON_MAP_RECORD_FORMAT_FIELD_MASKED
+      && presetSyncFindTlv(object.body, PRESET_SYNC_TLV_BUTTON_MAP_ACTIONS, actionRecords, actionRecordsLength)) {
+    size_t cursor = 0;
+    uint8_t actionCount = 0;
+    while (cursor < actionRecordsLength) {
+      if (cursor + 2 > actionRecordsLength) {
+        sendToLog("Geometry runtime button map apply rejected: chord action length is truncated.");
+        clearUserGeometryButtonRuntimeOverrides();
+        return false;
+      }
+      uint16_t actionLength = presetSyncReadU16LE(actionRecords + cursor);
+      cursor += 2;
+      if (actionLength < 6 || cursor + actionLength > actionRecordsLength
+          || actionCount >= PRESET_SYNC_MAX_CHORD_ACTIONS) {
+        sendToLog("Geometry runtime button map apply rejected: chord action is invalid.");
+        clearUserGeometryButtonRuntimeOverrides();
+        return false;
+      }
+      const uint8_t* action = actionRecords + cursor;
+      uint8_t toneCount = action[4];
+      uint8_t nameLength = action[5];
+      if (action[0] == 0
+          || action[1] != PRESET_SYNC_BUTTON_ACTION_CHORD
+          || action[2] > PRESET_SYNC_CHORD_PITCH_MIDI_SEMITONES
+          || action[3] > MIDI_CHANNEL_MAX
+          || (action[2] == PRESET_SYNC_CHORD_PITCH_MIDI_SEMITONES && action[3] < MIDI_CHANNEL_MIN)
+          || toneCount == 0
+          || toneCount > PRESET_SYNC_MAX_CHORD_TONES
+          || actionLength != static_cast<uint16_t>(6 + (2 * toneCount) + nameLength)) {
+        sendToLog("Geometry runtime button map apply rejected: chord action fields are invalid.");
+        clearUserGeometryButtonRuntimeOverrides();
+        return false;
+      }
+      for (uint8_t existing = 0; existing < actionCount; ++existing) {
+        if (userGeometryRuntimeChordActions[existing].id == action[0]) {
+          sendToLog("Geometry runtime button map apply rejected: duplicate chord action id.");
+          clearUserGeometryButtonRuntimeOverrides();
+          return false;
+        }
+      }
+      UserGeometryChordAction& runtimeAction = userGeometryRuntimeChordActions[actionCount++];
+      runtimeAction.active = true;
+      runtimeAction.id = action[0];
+      runtimeAction.pitchMode = action[2];
+      runtimeAction.midiChannel = action[3];
+      runtimeAction.toneCount = toneCount;
+      for (uint8_t tone = 0; tone < toneCount; ++tone) {
+        runtimeAction.intervals[tone] = presetSyncReadI16LE(action + 6 + (tone * 2));
+      }
+      cursor += actionLength;
     }
-    uint8_t role = records[offset + 2];
-    if (role > PRESET_SYNC_BUTTON_MAP_ROLE_COMMAND) {
-      role = PRESET_SYNC_BUTTON_MAP_ROLE_UNUSED;
+  }
+
+  if (recordFormat == PRESET_SYNC_BUTTON_MAP_RECORD_FORMAT_LEGACY) {
+    for (uint16_t offset = 0; offset < recordsLength; offset += PRESET_SYNC_BUTTON_MAP_RECORD_SIZE) {
+      uint16_t buttonIndex = presetSyncReadU16LE(records + offset);
+      if (buttonIndex >= LED_COUNT) {
+        continue;
+      }
+      uint8_t role = records[offset + 2];
+      if (role > PRESET_SYNC_BUTTON_MAP_ROLE_COMMAND) {
+        role = PRESET_SYNC_BUTTON_MAP_ROLE_UNUSED;
+      }
+      userGeometryRuntimeButtonRoleOverride[buttonIndex] = true;
+      userGeometryRuntimeButtonRole[buttonIndex] = role;
+      userGeometryRuntimeButtonDisabled[buttonIndex] = role != PRESET_SYNC_BUTTON_MAP_ROLE_NOTE;
+      if (role == PRESET_SYNC_BUTTON_MAP_ROLE_NOTE) {
+        userGeometryRuntimeButtonNoteOverride[buttonIndex] = true;
+        userGeometryRuntimeButtonStepsFromC[buttonIndex] = static_cast<int16_t>(presetSyncReadI32LE(records + offset + 3));
+      }
+      uint8_t colorMode = records[offset + 8];
+      if (colorMode != PRESET_SYNC_BUTTON_MAP_COLOR_NONE) {
+        uint16_t hueTenthDegrees = presetSyncReadU16LE(records + offset + 9);
+        userGeometryRuntimeButtonColorActive[buttonIndex] = true;
+        userGeometryRuntimeButtonColor[buttonIndex] = {
+          static_cast<float>(hueTenthDegrees) / 10.0f,
+          records[offset + 11],
+          records[offset + 12]
+        };
+      }
     }
-    userGeometryRuntimeButtonRoleOverride[buttonIndex] = true;
-    userGeometryRuntimeButtonRole[buttonIndex] = role;
-    userGeometryRuntimeButtonDisabled[buttonIndex] = role != PRESET_SYNC_BUTTON_MAP_ROLE_NOTE;
-    if (role == PRESET_SYNC_BUTTON_MAP_ROLE_NOTE) {
-      userGeometryRuntimeButtonNoteOverride[buttonIndex] = true;
-      userGeometryRuntimeButtonStepsFromC[buttonIndex] = static_cast<int16_t>(presetSyncReadI32LE(records + offset + 3));
-    }
-    uint8_t colorMode = records[offset + 8];
-    if (colorMode != PRESET_SYNC_BUTTON_MAP_COLOR_NONE) {
-      uint16_t hueTenthDegrees = presetSyncReadU16LE(records + offset + 9);
-      userGeometryRuntimeButtonColorActive[buttonIndex] = true;
-      userGeometryRuntimeButtonColor[buttonIndex] = {
-        static_cast<float>(hueTenthDegrees) / 10.0f,
-        records[offset + 11],
-        records[offset + 12]
-      };
+  } else {
+    size_t cursor = 0;
+    while (cursor < recordsLength) {
+      if (cursor + 2 > recordsLength) {
+        sendToLog("Geometry runtime button map apply rejected: field-masked record length is truncated.");
+        clearUserGeometryButtonRuntimeOverrides();
+        return false;
+      }
+      uint16_t recordLength = presetSyncReadU16LE(records + cursor);
+      cursor += 2;
+      if (recordLength < PRESET_SYNC_BUTTON_MAP_FIELD_MASKED_RECORD_SIZE || cursor + recordLength > recordsLength) {
+        sendToLog("Geometry runtime button map apply rejected: field-masked record is invalid.");
+        clearUserGeometryButtonRuntimeOverrides();
+        return false;
+      }
+      const uint8_t* record = records + cursor;
+      uint16_t buttonIndex = presetSyncReadU16LE(record);
+      uint16_t fieldMask = presetSyncReadU16LE(record + 2);
+      if ((fieldMask & ~(PRESET_SYNC_BUTTON_MAP_FIELD_ROLE
+                         | PRESET_SYNC_BUTTON_MAP_FIELD_PITCH
+                         | PRESET_SYNC_BUTTON_MAP_FIELD_COLOR
+                         | PRESET_SYNC_BUTTON_MAP_FIELD_ACTION)) != 0) {
+        sendToLog("Geometry runtime button map apply rejected: unknown button field flag.");
+        clearUserGeometryButtonRuntimeOverrides();
+        return false;
+      }
+      if (buttonIndex < LED_COUNT) {
+        if ((fieldMask & PRESET_SYNC_BUTTON_MAP_FIELD_ROLE) != 0) {
+          uint8_t role = record[4];
+          if (role > PRESET_SYNC_BUTTON_MAP_ROLE_COMMAND) {
+            role = PRESET_SYNC_BUTTON_MAP_ROLE_UNUSED;
+          }
+          userGeometryRuntimeButtonRoleOverride[buttonIndex] = true;
+          userGeometryRuntimeButtonRole[buttonIndex] = role;
+          userGeometryRuntimeButtonDisabled[buttonIndex] = role != PRESET_SYNC_BUTTON_MAP_ROLE_NOTE;
+        }
+        if ((fieldMask & PRESET_SYNC_BUTTON_MAP_FIELD_PITCH) != 0) {
+          int32_t stepsFromC = presetSyncReadI32LE(record + 5);
+          userGeometryRuntimeButtonNoteOverride[buttonIndex] = true;
+          userGeometryRuntimeButtonStepsFromC[buttonIndex] = static_cast<int16_t>(
+            std::clamp<int32_t>(stepsFromC, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max())
+          );
+        }
+        if ((fieldMask & PRESET_SYNC_BUTTON_MAP_FIELD_COLOR) != 0) {
+          uint16_t hueTenthDegrees = presetSyncReadU16LE(record + 13);
+          userGeometryRuntimeButtonColorActive[buttonIndex] = true;
+          userGeometryRuntimeButtonColor[buttonIndex] = {
+            static_cast<float>(hueTenthDegrees) / 10.0f,
+            record[15],
+            record[16]
+          };
+        }
+        if ((fieldMask & PRESET_SYNC_BUTTON_MAP_FIELD_ACTION) != 0) {
+          uint8_t outputMode = record[9];
+          if (outputMode == PRESET_SYNC_BUTTON_OUTPUT_DIRECT_MIDI) {
+            if (record[10] > 127 || record[11] < MIDI_CHANNEL_MIN || record[11] > MIDI_CHANNEL_MAX) {
+              sendToLog("Geometry runtime button map apply rejected: direct MIDI action is invalid.");
+              clearUserGeometryButtonRuntimeOverrides();
+              return false;
+            }
+            userGeometryRuntimeButtonOutputMode[buttonIndex] = outputMode;
+            userGeometryRuntimeButtonMidiNote[buttonIndex] = record[10];
+            userGeometryRuntimeButtonMidiChannel[buttonIndex] = record[11];
+          } else if (outputMode == PRESET_SYNC_BUTTON_OUTPUT_CHORD) {
+            bool actionFound = false;
+            for (const UserGeometryChordAction& action : userGeometryRuntimeChordActions) {
+              if (action.active && action.id == record[12]) {
+                actionFound = true;
+                break;
+              }
+            }
+            if (!actionFound || record[10] > 127) {
+              sendToLog("Geometry runtime button map apply rejected: chord action reference is invalid.");
+              clearUserGeometryButtonRuntimeOverrides();
+              return false;
+            }
+            userGeometryRuntimeButtonOutputMode[buttonIndex] = outputMode;
+            userGeometryRuntimeButtonChordActionId[buttonIndex] = record[12];
+            userGeometryRuntimeButtonChordRootMidiNote[buttonIndex] = record[10];
+          } else {
+            sendToLog("Geometry runtime button map apply rejected: button output mode is invalid.");
+            clearUserGeometryButtonRuntimeOverrides();
+            return false;
+          }
+        }
+      }
+      cursor += recordLength;
     }
   }
 
@@ -1113,7 +1332,7 @@ bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
       layoutObject.objectId
     );
   }
-  if (buttonMapIndex < 0) {
+  if (buttonMapIndex < 0 && !sawLayoutObject) {
     buttonMapIndex = findFirstGeometryObjectReferencing(
       PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP,
       PRESET_SYNC_TLV_BUTTON_MAP_TUNING_REF,

@@ -13,7 +13,7 @@ bool mpeChannelQueueActive = false;
 
 namespace {
 
-int32_t floorDiv(int32_t numerator, int32_t denominator) {
+int32_t RAM_FUNC(floorDiv)(int32_t numerator, int32_t denominator) {
   if (denominator <= 0) {
     return 0;
   }
@@ -25,7 +25,7 @@ int32_t floorDiv(int32_t numerator, int32_t denominator) {
   return quotient;
 }
 
-uint16_t wrappedTableDegree(int32_t stepsFromA, uint16_t cycleLength) {
+uint16_t RAM_FUNC(wrappedTableDegree)(int32_t stepsFromA, uint16_t cycleLength) {
   if (cycleLength == 0) {
     return 0;
   }
@@ -36,7 +36,7 @@ uint16_t wrappedTableDegree(int32_t stepsFromA, uint16_t cycleLength) {
   return static_cast<uint16_t>(remainder);
 }
 
-int32_t roundedDiv(int32_t numerator, int32_t denominator) {
+int32_t RAM_FUNC(roundedDiv)(int32_t numerator, int32_t denominator) {
   if (denominator <= 0) {
     return 0;
   }
@@ -46,7 +46,7 @@ int32_t roundedDiv(int32_t numerator, int32_t denominator) {
   return -((-numerator + (denominator / 2)) / denominator);
 }
 
-int32_t referenceStepsFromC() {
+int32_t RAM_FUNC(referenceStepsFromC)() {
   if (!userGeometryRuntimeActive) {
     return -current.tuning().spanCtoA();
   }
@@ -57,11 +57,11 @@ int32_t referenceStepsFromC() {
 bool centsTableMatchesStandardSemitones() {
   if (!userGeometryRuntimeCentsTableActive
       || userGeometryRuntimeCentsTableLength == 0
-      || userGeometryRuntimePeriodMilliCents != static_cast<int32_t>(userGeometryRuntimeCentsTableLength * 100000)) {
+      || userGeometryRuntimePeriodCents != static_cast<float>(userGeometryRuntimeCentsTableLength * 100)) {
     return false;
   }
   for (uint16_t degree = 1; degree <= userGeometryRuntimeCentsTableLength; ++degree) {
-    if (userGeometryRuntimeCentsTableMilliCents[degree - 1] != static_cast<int32_t>(degree * 100000)) {
+    if (userGeometryRuntimeCentsTable[degree - 1] != static_cast<float>(degree * 100)) {
       return false;
     }
   }
@@ -74,7 +74,7 @@ bool referenceHzMatchesStandardMidiNote() {
 
 }  // namespace
 
-uint8_t mpePlayableChannelCount() {
+uint8_t RAM_FUNC(mpePlayableChannelCount)() {
   if (mpeHighestChannel < mpeLowestChannel) {
     return 0;
   }
@@ -108,63 +108,75 @@ void RAM_FUNC(releaseMPEChannel)(byte ch) {
   sendToLog("returned ch " + std::to_string(ch) + " to the MPE pool");
 }
 
-float freqToMIDI(float Hz) {  // formula to convert from Hz to MIDI note
+float RAM_FUNC(freqToMIDI)(float Hz) {  // formula to convert from Hz to MIDI note
   return CONCERT_A_MIDI_NOTE + 12.0f * log2f(Hz / CONCERT_A_HZ);
 }
-float MIDItoFreq(float midi) {  // formula to convert from MIDI note to Hz
+float RAM_FUNC(MIDItoFreq)(float midi) {  // formula to convert from MIDI note to Hz
   return CONCERT_A_HZ * exp2((midi - CONCERT_A_MIDI_NOTE) / 12.0f);
 }
 
-uint8_t currentTuningReferenceMidiNote() {
+uint8_t RAM_FUNC(currentTuningReferenceMidiNote)() {
   if (userGeometryRuntimeActive) {
     return userGeometryRuntimeReferenceMidiNote;
   }
   return static_cast<uint8_t>(CONCERT_A_MIDI_NOTE);
 }
 
-float currentTuningReferenceHz() {
+float RAM_FUNC(currentTuningReferenceHz)() {
   if (userGeometryRuntimeActive && userGeometryRuntimeReferenceHz > 0.0f) {
     return userGeometryRuntimeReferenceHz;
   }
   return CONCERT_A_HZ;
 }
 
-float currentTuningNominalStepSizeCents() {
+float RAM_FUNC(currentTuningNominalStepSizeCents)() {
+  if (userGeometryRuntimeActive
+      && userGeometryRuntimeExactEdoActive
+      && userGeometryRuntimeCycleLength > 0
+      && userGeometryRuntimePeriodCents > 0.0f) {
+    return userGeometryRuntimePeriodCents / static_cast<float>(userGeometryRuntimeCycleLength);
+  }
   if (userGeometryRuntimeActive
       && userGeometryRuntimeCentsTableActive
       && userGeometryRuntimeCentsTableLength > 0
-      && userGeometryRuntimePeriodMilliCents > 0) {
-    return (static_cast<float>(userGeometryRuntimePeriodMilliCents) / 1000.0f)
-           / static_cast<float>(userGeometryRuntimeCentsTableLength);
+      && userGeometryRuntimePeriodCents > 0.0f) {
+    return userGeometryRuntimePeriodCents / static_cast<float>(userGeometryRuntimeCentsTableLength);
   }
   return current.tuning().stepSize;
 }
 
-int32_t currentPitchStepsFromReference(int16_t stepsFromC) {
+int32_t RAM_FUNC(currentPitchStepsFromReference)(int16_t stepsFromC) {
   if (!userGeometryRuntimeActive) {
     return current.pitchRelToA4(stepsFromC);
   }
   return static_cast<int32_t>(stepsFromC) + current.transpose - referenceStepsFromC();
 }
 
-float stepsToCentsFromReference(int16_t stepsFromReference) {
+float RAM_FUNC(stepsToCentsFromReference)(int16_t stepsFromReference) {
+  if (userGeometryRuntimeActive
+      && userGeometryRuntimeExactEdoActive
+      && userGeometryRuntimeCycleLength > 0
+      && userGeometryRuntimePeriodCents > 0.0f) {
+    return (static_cast<float>(stepsFromReference) * userGeometryRuntimePeriodCents)
+           / static_cast<float>(userGeometryRuntimeCycleLength);
+  }
   if (userGeometryRuntimeActive
       && userGeometryRuntimeCentsTableActive
       && userGeometryRuntimeCentsTableLength > 0
-      && userGeometryRuntimePeriodMilliCents > 0) {
+      && userGeometryRuntimePeriodCents > 0.0f) {
     uint16_t cycleLength = userGeometryRuntimeCentsTableLength;
     int32_t periodOffset = floorDiv(stepsFromReference, cycleLength);
     uint16_t degree = wrappedTableDegree(stepsFromReference, cycleLength);
-    int64_t milliCents = static_cast<int64_t>(periodOffset) * userGeometryRuntimePeriodMilliCents;
+    float cents = static_cast<float>(periodOffset) * userGeometryRuntimePeriodCents;
     if (degree > 0) {
-      milliCents += userGeometryRuntimeCentsTableMilliCents[degree - 1];
+      cents += userGeometryRuntimeCentsTable[degree - 1];
     }
-    return static_cast<float>(milliCents) / 1000.0f;
+    return cents;
   }
   return static_cast<float>(stepsFromReference) * static_cast<float>(current.tuning().stepSize);
 }
 
-float stepsToFrequency(int16_t stepsFromReference) {
+float RAM_FUNC(stepsToFrequency)(int16_t stepsFromReference) {
   float referenceHz = currentTuningReferenceHz();
   if (referenceHz <= 0.0f) {
     return 0.0f;
@@ -172,7 +184,7 @@ float stepsToFrequency(int16_t stepsFromReference) {
   return referenceHz * exp2f(stepsToCentsFromReference(stepsFromReference) / 1200.0f);
 }
 
-float stepsToMIDI(int16_t stepsFromReference) {  // return the MIDI pitch associated
+float RAM_FUNC(stepsToMIDI)(int16_t stepsFromReference) {  // return the MIDI pitch associated
   float frequency = stepsToFrequency(stepsFromReference);
   return frequency > 0.0f ? freqToMIDI(frequency) : -1.0f;
 }
@@ -183,6 +195,9 @@ bool currentTuningIsStandardSemitone() {
   }
   if (userGeometryRuntimeActive && userGeometryRuntimeCentsTableActive) {
     return centsTableMatchesStandardSemitones();
+  }
+  if (userGeometryRuntimeActive && userGeometryRuntimeExactEdoActive) {
+    return userGeometryRuntimeCycleLength == 12 && userGeometryRuntimePeriodCents == 1200.0f;
   }
   return current.tuning().stepSize == 100.0f;
 }

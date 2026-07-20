@@ -1288,7 +1288,7 @@ PersistentCallbackInfo callbackInfoDeviceRotation = {
   nullptr,
   applyDeviceDisplayRotation
 };
-GEMItem menuItemSelectDeviceRotation("Display Rot", deviceRotation, selectDeviceRotation, universalSaveCallback,
+GEMItem menuItemSelectDeviceRotation("Device Rot", deviceRotation, selectDeviceRotation, universalSaveCallback,
                                      reinterpret_cast<void*>(&callbackInfoDeviceRotation));
 
 // Layout mirroring toggles
@@ -2849,7 +2849,9 @@ void updateLayoutAndRotate() {
 }
 
 void loadDeviceRotationFromCurrentLayout() {
-  deviceRotation = defaultDeviceRotationForLayout(current.layout().isPortrait);
+  deviceRotation = userGeometryRuntimeActive && userGeometryRuntimeLayoutObjectSelected
+    ? userGeometryRuntimeDeviceRotation % 4
+    : defaultDeviceRotationForLayout(current.layout().isPortrait);
   settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = deviceRotation;
 }
 

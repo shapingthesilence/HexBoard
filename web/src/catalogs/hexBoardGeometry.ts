@@ -18,6 +18,9 @@ export interface VectorLayoutModel {
   centerButton: number;
   acrossSteps: number;
   upRightSteps: number;
+  layoutRotationSteps?: number;
+  mirrorLeftRight?: boolean;
+  mirrorUpDown?: boolean;
 }
 
 const commandIndexSet = new Set<number>(HEXBOARD_COMMAND_INDICES);
@@ -62,8 +65,47 @@ export function vectorLayoutDistances(key: HexBoardKey, center: HexBoardKey): { 
 
 export function computeVectorLayoutSteps(key: HexBoardKey, layout: VectorLayoutModel, keys = hexBoardGeometry): number {
   const center = hexBoardKeyByIndex(layout.centerButton, keys);
-  const distances = vectorLayoutDistances(key, center);
-  return (distances.acrossDistance * layout.acrossSteps) + (distances.upRightDistance * layout.upRightSteps);
+  let acrossSteps = layout.acrossSteps;
+  let downLeftSteps = -layout.upRightSteps;
+  if (layout.mirrorUpDown) {
+    downLeftSteps = -(acrossSteps + downLeftSteps);
+  }
+  let unmirroredAcrossSteps = acrossSteps;
+  let unmirroredDownLeftSteps = downLeftSteps;
+  if (layout.mirrorLeftRight) {
+    downLeftSteps = acrossSteps + downLeftSteps;
+    acrossSteps = -acrossSteps;
+  }
+  const rotationCount = positiveModulo(layout.layoutRotationSteps ?? 0, 6);
+  for (let rotation = 0; rotation < rotationCount; rotation += 1) {
+    [acrossSteps, downLeftSteps] = rotateLayoutClockwise(acrossSteps, downLeftSteps);
+    [unmirroredAcrossSteps, unmirroredDownLeftSteps] = rotateLayoutClockwise(unmirroredAcrossSteps, unmirroredDownLeftSteps);
+  }
+  let mirrorOffset = 0;
+  if (layout.mirrorLeftRight) {
+    const physicalCenter = keys.find((candidate) => candidate.index === 65);
+    if (physicalCenter) {
+      const centerDistCol = physicalCenter.coordCol - center.coordCol;
+      const centerDistRow = physicalCenter.coordRow - center.coordRow;
+      mirrorOffset = layoutStepsForDelta(centerDistCol, centerDistRow, unmirroredAcrossSteps, unmirroredDownLeftSteps)
+        - layoutStepsForDelta(centerDistCol, centerDistRow, acrossSteps, downLeftSteps);
+    }
+  }
+  return layoutStepsForDelta(
+    key.coordCol - center.coordCol,
+    key.coordRow - center.coordRow,
+    acrossSteps,
+    downLeftSteps
+  ) + mirrorOffset;
+}
+
+function layoutStepsForDelta(distCol: number, distRow: number, acrossSteps: number, downLeftSteps: number): number {
+  return ((distCol * acrossSteps) + (distRow * (acrossSteps + (2 * downLeftSteps)))) / 2;
+}
+
+function rotateLayoutClockwise(acrossSteps: number, downLeftSteps: number): [number, number] {
+  const nextDownLeft = acrossSteps + downLeftSteps;
+  return [nextDownLeft, -acrossSteps];
 }
 
 export function positiveModulo(value: number, modulus: number): number {

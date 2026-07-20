@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import { ObjectType } from "../protocol/constants.ts";
 import { CommonTlv, decodeObjectBody, textFromBytes } from "../protocol/tlv.ts";
 import {
+  ButtonMapField,
+  ButtonMapRecordFormat,
   ColorMode,
   createExplicitButtonMap,
+  createCentsTableTuning,
   createDefaultLayoutBundle,
   createEqualStepTuning,
   createFactorySynthWavetables,
@@ -20,6 +23,7 @@ import {
   deterministicObjectId,
   encodeHexBoardWavetableWav,
   encodeLayoutBundle,
+  ExplicitButtonMapTlv,
   GenericScaleColorMapName,
   keyLabelsForTlvOrder,
   keyLabelsFromScalaIntervalLabels,
@@ -63,6 +67,10 @@ function u16LE(value: Uint8Array): number {
 
 function u32LE(value: Uint8Array): number {
   return value[0] | (value[1] << 8) | (value[2] << 16) | (value[3] << 24);
+}
+
+function float32LE(value: Uint8Array, offset = 0): number {
+  return new DataView(value.buffer, value.byteOffset + offset, 4).getFloat32(0, true);
 }
 
 function i16LE(value: Uint8Array): number {
@@ -198,6 +206,45 @@ describe("catalog object encoding", () => {
     });
     expect(u8(recordValue(tuning.body, TuningTlv.TuningKind))).toBe(UserTuningKind.EqualStep);
     expect(u16LE(recordValue(tuning.body, TuningTlv.EdoDivisions))).toBe(15);
+  });
+
+  it("preserves firmware-native tuning precision alongside legacy milli-unit fields", () => {
+    const periodCents = 1200.0001220703125;
+    const stepCents = 16.66666603088379;
+    const referenceHz = 440.00006103515625;
+    const edo = createGeneratedEdoTuning({
+      objectId: tuningId,
+      name: "Precise EDO",
+      edoDivisions: 72,
+      periodCents,
+      referenceHz
+    });
+    expect(u32LE(recordValue(edo.body, TuningTlv.PeriodMilliCents))).toBe(1_200_000);
+    expect(float32LE(recordValue(edo.body, TuningTlv.PeriodCentsFloat32))).toBe(Math.fround(periodCents));
+
+    const equalStep = createEqualStepTuning({
+      objectId: tuningId,
+      name: "Precise steps",
+      stepCents,
+      cycleLength: 72,
+      referenceHz
+    });
+
+    expect(u32LE(recordValue(equalStep.body, TuningTlv.StepMilliCents))).toBe(16_667);
+    expect(float32LE(recordValue(equalStep.body, TuningTlv.StepCentsFloat32))).toBe(Math.fround(stepCents));
+    expect(float32LE(recordValue(equalStep.body, TuningTlv.ReferenceHzFloat32))).toBe(Math.fround(referenceHz));
+
+    const cents = [100.00000762939453, 701.9550170898438, 1200];
+    const scala = createCentsTableTuning({
+      objectId: tuningId,
+      name: "Precise Scala",
+      cents,
+      referenceHz
+    });
+    const preciseTable = recordValue(scala.body, TuningTlv.CentsTableFloat32);
+    expect(float32LE(preciseTable, 0)).toBe(Math.fround(cents[0]));
+    expect(float32LE(preciseTable, 4)).toBe(Math.fround(cents[1]));
+    expect(float32LE(preciseTable, 4)).not.toBe(701.955);
   });
 
   it("parses Scala scl files with cents and ratios", () => {
@@ -463,14 +510,60 @@ Example scale
     expect(u32LE(recordValue(encoded.tuning.body, TuningTlv.PeriodMilliCents))).toBe(702_000);
   });
 
-  it("derives legacy portrait metadata from four-step bundle rotation", () => {
+  it("migrates legacy four-step rotation to full device rotation", () => {
+    const base = createDefaultLayoutBundle();
+    const serialized = JSON.parse(serializeLayoutBundle(base));
+    delete serialized.bundle.layouts[0].deviceRotationSteps;
+    delete serialized.bundle.layouts[0].layoutRotationSteps;
+    delete serialized.bundle.layouts[0].mirrorLeftRight;
+    delete serialized.bundle.layouts[0].mirrorUpDown;
+    serialized.bundle.layouts[0].rotationSteps = 1;
+    const parsed = parseLayoutBundleFile(serialized);
+    const encoded = encodeLayoutBundle(parsed);
+    expect(parsed.layouts[0].deviceRotationSteps).toBe(1);
+    expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.Portrait))).toBe(0);
+    expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.DeviceRotation))).toBe(1);
+  });
+
+  it("encodes device rotation separately from musical layout transforms", () => {
     const base = createDefaultLayoutBundle();
     const bundle = {
       ...base,
-      layouts: base.layouts.map((layout, index) => index === 0 ? { ...layout, rotationSteps: 1 } : layout)
+      layouts: base.layouts.map((layout, index) => index === 0 ? {
+        ...layout,
+        deviceRotationSteps: 2,
+        layoutRotationSteps: 3,
+        mirrorLeftRight: true,
+        mirrorUpDown: false
+      } : layout)
     };
     const encoded = encodeLayoutBundle(bundle);
-    expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.Portrait))).toBe(0);
+    expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.Portrait))).toBe(1);
+    expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.DeviceRotation))).toBe(2);
+    expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.LayoutRotation))).toBe(3);
+    expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.MirrorFlags))).toBe(1);
+  });
+
+  it("keeps pitch, color, and output actions independent in button-map format 2", () => {
+    const tuningId = deterministicObjectId("field-masked-map-tuning");
+    const map = createExplicitButtonMap({
+      objectId: deterministicObjectId("field-masked-map"),
+      name: "Independent fields",
+      tuningRef: { objectType: ObjectType.UserTuning, handle: 0, objectId: tuningId },
+      records: [
+        { buttonIndex: 10, role: 1, hueTenthDegrees: 1200, saturation: 200, value: 180 },
+        { buttonIndex: 11, role: 1, stepsFromC: 7 },
+        { buttonIndex: 12, role: 1, action: { kind: "direct-midi", midiNote: 48, midiChannel: 2 } },
+        { buttonIndex: 13, role: 1, action: { kind: "chord", chordActionId: 3, rootMidiNote: 60 } }
+      ],
+      actions: [{ id: 3, name: "Major triad", pitchMode: "midi-semitones", intervals: [0, 4, 7], midiChannel: 3 }]
+    });
+    const records = recordValue(map.body, ExplicitButtonMapTlv.ButtonRecords);
+    expect(u8(recordValue(map.body, ExplicitButtonMapTlv.MapRecordFormat))).toBe(ButtonMapRecordFormat.FieldMasked);
+    expect(u16LE(records.slice(4, 6))).toBe(ButtonMapField.Color);
+    expect(u16LE(records.slice(23, 25))).toBe(ButtonMapField.Pitch);
+    expect(u16LE(records.slice(42, 44))).toBe(ButtonMapField.Action);
+    expect(recordValue(map.body, ExplicitButtonMapTlv.Actions).length).toBeGreaterThan(0);
   });
 
   it("falls back to the default bundle for an empty layout library", () => {

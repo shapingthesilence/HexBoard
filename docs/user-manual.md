@@ -247,7 +247,7 @@ Options include:
 - `Layout Rot`
 - `Flip L/R`
 - `Flip U/D`
-- `Display Rot`
+- `Device Rot`
 
 `JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
 `3Limit`, `5Limit`, `7Limit`, and higher options through `41Limit`. Lower-limit
@@ -259,9 +259,11 @@ when `JI BPM Sync` is off.
 
 `Layout Rot` rotates the musical axes in 60-degree steps. `Flip L/R` mirrors
 the layout around the middle key, physical button `65`. `Flip U/D` mirrors the
-layout vertically across the grid. `Display Rot` changes the physical
-device/display orientation in 90-degree steps without changing the musical
-layout.
+layout vertically across the grid. `Device Rot` changes the physical
+device/display orientation through `0`, `90`, `180`, and `270` degrees without
+changing the musical layout. User layouts can provide defaults for all four
+fields; the menu keeps the names distinct because device rotation never changes
+which pitch a physical key plays.
 
 #### Synth
 
@@ -568,7 +570,7 @@ default, followed by `Synth Editor` and `Profiles`.
 
 In the tuning/layout editor, you can create EDO tunings, equal-step tunings,
 Scala `.scl` imports, vector layouts, scales, custom scale-degree colors, and
-per-button note/color overrides. Work through `Library`, `Tuning`, `Layout`, and
+per-button pitch, color, direct-MIDI, or chord overrides. Work through `Library`, `Tuning`, `Layout`, and
 `Scale & color` from left to right. `Library` provides the full-width computer
 and HexBoard file-management view; the three editing steps keep the board
 preview visible while their focused controls appear beside it. Sync and save
@@ -578,11 +580,25 @@ while `Custom` color mode is active. Painting a scale degree clears matching
 button color overrides in the active layout so the palette color takes effect
 immediately. Expand `Key inspector` to turn a key on or off, optionally override
 its generated pitch, or change between its scale-degree color and a per-key
-color. The inspector uses a visual color picker; derived layout step and scale
+color. Shift-click selects a continuous range, while Control-click or
+Command-click toggles individual keys; the bulk controls transpose or reset the
+selection together. The collapsed `Advanced output` section keeps ordinary
+tuned-note editing simple while allowing a key to send a fixed MIDI note and
+channel or a reusable chord shape of up to four tones. Chord intervals can use
+the current tuning's steps or ordinary MIDI semitones. The inspector uses a visual color picker; derived layout step and scale
 degree values are read-only facts, and cents-from-reference information is under
 `Advanced pitch details`. `Reset all key overrides` restores the selected key to
 the active layout and palette. Encoded object data is under the collapsed
 `Developer details` panel.
+Layout controls distinguish four-way `Device rotation` from six-way `Layout
+rotation` and the two mirror operations. Pitch and color overrides remain tied
+to physical button locations when the musical layout transform changes. EDO
+tunings are stored as an exact period divided by the selected division count;
+the displayed decimal step size is informational and does not accumulate
+rounding error across periods. Sync sends periods, fixed step sizes, Scala
+intervals, and reference frequency at the firmware's native 32-bit floating-
+point precision. Milli-cent and milli-hertz values remain in the object only
+for compatibility with older firmware.
 `Live send` previews compatible edits on the connected HexBoard without saving
 them to flash. `Save to computer` stores the bundle in browser storage, and
 `Save to HexBoard` writes it to the device so it appears in the on-device
@@ -716,7 +732,7 @@ Important factory defaults include:
 
 - Tuning: built-in `12 EDO`
 - Layout: first built-in 12-EDO layout
-- Display Rot: `0`
+- Device Rot: `0`
 - Scale: chromatic / none
 - MIDI channel: `1`
 - MPE mode: `Auto`

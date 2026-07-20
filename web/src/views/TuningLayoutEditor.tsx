@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from "react";
 import {
   clampScaleDegreeColor,
+  ButtonMapField,
+  ButtonMapRecordFormat,
+  ButtonOutputMode,
+  ButtonMapActionKind,
+  ChordPitchMode,
   computeVectorLayoutSteps,
   ColorMode,
   createAllNotesScale,
@@ -41,7 +46,9 @@ import {
   clampNoteLabelText,
   type HexBoardKey,
   type LayoutBundle,
+  type LayoutBundleButtonAction,
   type LayoutBundleButtonOverride,
+  type LayoutBundleChordAction,
   type LayoutBundleLayout,
   type LayoutBundleScale,
   type LayoutBundleTuning,
@@ -72,6 +79,14 @@ type GeometryWorkspaceTab = "library" | "tuning" | "layout" | "scale";
 type GeometryLibrarySpace = "computer" | "hexboard";
 type PaintTool = "brush" | "eyedropper";
 type PaintTarget = "button" | "degree";
+type KeyOutputMode = "tuned" | "direct-midi" | "chord";
+
+const defaultChordShape: Omit<LayoutBundleChordAction, "id"> = {
+  name: "Major triad",
+  pitchMode: "midi-semitones",
+  intervals: [0, 4, 7],
+  midiChannel: 1
+};
 
 const geometryWorkspaceTabs: Array<{
   key: GeometryWorkspaceTab;
@@ -237,26 +252,33 @@ function tuningCycleLength(tuning: LayoutBundleTuning): number {
 
 function tuningPeriodCents(tuning: LayoutBundleTuning): number {
   if (tuning.kind === "equal-step") {
-    return tuning.stepCents * tuningCycleLength(tuning);
+    return Math.fround(Math.fround(tuning.stepCents) * tuningCycleLength(tuning));
   }
-  return tuning.periodCents;
+  return Math.fround(tuning.periodCents);
 }
 
 function tuningStepCents(tuning: LayoutBundleTuning): number {
   if (tuning.kind === "equal-step") {
-    return tuning.stepCents;
+    return Math.fround(tuning.stepCents);
   }
-  return tuningPeriodCents(tuning) / tuningCycleLength(tuning);
+  return Math.fround(tuningPeriodCents(tuning) / tuningCycleLength(tuning));
 }
 
 function tuningStepsToCentsFromReference(tuning: LayoutBundleTuning, stepsFromReference: number): number {
-  if (tuning.kind !== "scala") {
-    return stepsFromReference * tuningStepCents(tuning);
+  if (tuning.kind === "edo") {
+    const scaledPeriod = Math.fround(Math.fround(stepsFromReference) * Math.fround(tuning.periodCents));
+    return Math.fround(scaledPeriod / tuningCycleLength(tuning));
+  }
+  if (tuning.kind === "equal-step") {
+    return Math.fround(Math.fround(stepsFromReference) * Math.fround(tuning.stepCents));
   }
   const cycleLength = tuningCycleLength(tuning);
   const periodOffset = Math.floor(stepsFromReference / cycleLength);
   const degree = ((stepsFromReference % cycleLength) + cycleLength) % cycleLength;
-  return (periodOffset * tuning.periodCents) + (degree > 0 ? tuning.cents[degree - 1] ?? 0 : 0);
+  const periodCents = Math.fround(Math.fround(periodOffset) * Math.fround(tuning.periodCents));
+  return degree > 0
+    ? Math.fround(periodCents + Math.fround(tuning.cents[degree - 1] ?? 0))
+    : periodCents;
 }
 
 function formatSignedInteger(value: number): string {
@@ -315,7 +337,8 @@ function withCycleColors(bundle: LayoutBundle, cycleLength: number): LayoutBundl
     },
     layouts: bundle.layouts.map((layout) => ({
       ...layout,
-      rotationSteps: clampInteger(layout.rotationSteps ?? 0, 0, 3)
+      deviceRotationSteps: clampInteger(layout.deviceRotationSteps ?? 0, 0, 3),
+      layoutRotationSteps: clampInteger(layout.layoutRotationSteps ?? 0, 0, 5)
     })),
   }, safeCycleLength);
 }
@@ -487,6 +510,9 @@ function upsertOverride(
     ...patch,
     role: (patch.role ?? existing?.role) === "unused" ? "unused" : "note"
   } satisfies LayoutBundleButtonOverride;
+  if (!overrideHasCustomBehavior(next)) {
+    return overrides.filter((override) => override.buttonIndex !== buttonIndex);
+  }
   return [...overrides.filter((override) => override.buttonIndex !== buttonIndex), next]
     .sort((left, right) => left.buttonIndex - right.buttonIndex);
 }
@@ -501,6 +527,13 @@ function removeOverrideColor(override: LayoutBundleButtonOverride): LayoutBundle
 
 function overrideHasColor(override: LayoutBundleButtonOverride): boolean {
   return override.hueTenthDegrees !== undefined || override.saturation !== undefined || override.value !== undefined;
+}
+
+function overrideHasCustomBehavior(override: LayoutBundleButtonOverride): boolean {
+  return !isRoleDefault(override.buttonIndex, override.role) ||
+    override.stepsFromC !== undefined ||
+    overrideHasColor(override) ||
+    override.action !== undefined;
 }
 
 export function paintScaleDegreeColor(
@@ -531,7 +564,7 @@ export function clearColorOverridesForScaleDegree(
       return [override];
     }
     const withoutColor = removeOverrideColor(override);
-    const shouldRemove = isRoleDefault(override.buttonIndex, withoutColor.role) && withoutColor.stepsFromC === undefined;
+    const shouldRemove = !overrideHasCustomBehavior(withoutColor);
     return shouldRemove ? [] : [withoutColor];
   });
 }
@@ -542,7 +575,7 @@ export function resetOverridesToScaleDegreeColors(overrides: LayoutBundleButtonO
       return [override];
     }
     const withoutColor = removeOverrideColor(override);
-    const shouldRemove = isRoleDefault(override.buttonIndex, withoutColor.role) && withoutColor.stepsFromC === undefined;
+    const shouldRemove = !overrideHasCustomBehavior(withoutColor);
     return shouldRemove ? [] : [withoutColor];
   });
 }
@@ -557,6 +590,16 @@ function hexBoardKeyAtCoord(coordRow: number, coordCol: number): HexBoardKey | u
 
 function isEditableButtonIndex(buttonIndex: number): boolean {
   return Number.isInteger(buttonIndex) && buttonIndex >= 0 && buttonIndex < 140 && !isHexBoardCommandIndex(buttonIndex);
+}
+
+function nextChordActionId(actions: LayoutBundleChordAction[]): number {
+  const used = new Set(actions.map((action) => action.id));
+  for (let id = 1; id <= 255; id += 1) {
+    if (!used.has(id)) {
+      return id;
+    }
+  }
+  return 1;
 }
 
 function noteButtonIndexOrFallback(buttonIndex: number, fallback: number): number {
@@ -581,12 +624,41 @@ function sanitizeEditorBundle(bundle: LayoutBundle): LayoutBundle {
       ...layout,
       name: clampGeometryMenuText(layout.name, "User Layout"),
       centerButton: noteButtonIndexOrFallback(layout.centerButton, 65),
+      deviceRotationSteps: clampInteger(layout.deviceRotationSteps, 0, 3),
+      layoutRotationSteps: clampInteger(layout.layoutRotationSteps, 0, 5),
+      mirrorLeftRight: Boolean(layout.mirrorLeftRight),
+      mirrorUpDown: Boolean(layout.mirrorUpDown),
       buttonOverrides: layout.buttonOverrides
         .filter((override) => isEditableButtonIndex(override.buttonIndex))
-        .map((override) => ({
+        .map((override): LayoutBundleButtonOverride => ({
           ...override,
-          role: override.role === "unused" ? "unused" : "note"
+          role: override.role === "unused" ? "unused" : "note",
+          action: override.action?.kind === "direct-midi"
+            ? {
+                kind: "direct-midi" as const,
+                midiNote: clampInteger(override.action.midiNote, 0, 127),
+                midiChannel: clampInteger(override.action.midiChannel, 1, 16)
+              }
+            : override.action?.kind === "chord"
+              ? {
+                  kind: "chord" as const,
+                  chordActionId: clampInteger(override.action.chordActionId, 1, 255),
+                  rootMidiNote: override.action.rootMidiNote === undefined
+                    ? undefined
+                    : clampInteger(override.action.rootMidiNote, 0, 127)
+                }
+              : undefined
         }))
+        .filter(overrideHasCustomBehavior),
+      chordActions: layout.chordActions.slice(0, 16).map((action, index) => ({
+        ...action,
+        id: clampInteger(action.id, 1, 255),
+        name: clampGeometryMenuText(action.name, `Chord ${index + 1}`),
+        intervals: action.intervals.length > 0
+          ? action.intervals.slice(0, 4).map((interval) => clampInteger(interval, -32768, 32767))
+          : [0],
+        midiChannel: clampInteger(action.midiChannel, action.pitchMode === "midi-semitones" ? 1 : 0, 16)
+      }))
     })),
     scales: bundle.scales.map((scale, index) => ({
       ...scale,
@@ -595,27 +667,8 @@ function sanitizeEditorBundle(bundle: LayoutBundle): LayoutBundle {
   }, cycleLength);
 }
 
-function bundleWithGeneratedOverrideSteps(bundle: LayoutBundle): LayoutBundle {
-  return {
-    ...bundle,
-    layouts: bundle.layouts.map((layout) => ({
-      ...layout,
-      buttonOverrides: layout.buttonOverrides.map((override) => {
-        if (override.stepsFromC !== undefined) {
-          return override;
-        }
-        const key = hexBoardGeometry.find((candidate) => candidate.index === override.buttonIndex);
-        return {
-          ...override,
-          stepsFromC: key ? Math.round(computeVectorLayoutSteps(key, layout)) : 0
-        };
-      })
-    }))
-  };
-}
-
 function bundleForDeviceEncoding(bundle: LayoutBundle): LayoutBundle {
-  const sanitized = bundleWithGeneratedOverrideSteps(sanitizeEditorBundle(bundle));
+  const sanitized = sanitizeEditorBundle(bundle);
   return {
     ...sanitized,
     folderPath: encodeDeviceFolderPath(sanitized.folderPath)
@@ -725,6 +778,19 @@ function i32LEFromBytes(value: Uint8Array, offset: number): number {
   return unsigned > 0x7fffffff ? unsigned - 0x100000000 : unsigned;
 }
 
+function float32LE(value: Uint8Array | undefined, fallback: number, offset = 0): number {
+  if (!value || offset < 0 || offset + 4 > value.length) {
+    return fallback;
+  }
+  const decoded = new DataView(value.buffer, value.byteOffset + offset, 4).getFloat32(0, true);
+  return Number.isFinite(decoded) ? decoded : fallback;
+}
+
+function i16LEFromBytes(value: Uint8Array, offset: number): number {
+  const unsigned = value[offset] | (value[offset + 1] << 8);
+  return unsigned > 0x7fff ? unsigned - 0x10000 : unsigned;
+}
+
 function decodeKeyLabels(value: Uint8Array | undefined, cycleLength: number): string[] {
   if (!value) {
     return defaultKeyLabels(cycleLength);
@@ -753,13 +819,19 @@ function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGe
   const cycleLength = clampInteger(u16LE(tlvValue(object.records, TuningTlv.EdoDivisions), 12), 1, 255);
   const name = tlvText(object.records, CommonTlv.Name, entry.name);
   const referenceMidiNote = clampInteger(u8(tlvValue(object.records, TuningTlv.ReferenceMidiNote), 69), 0, 127);
-  const referenceHz = u32LE(tlvValue(object.records, TuningTlv.ReferenceMilliHz), 440_000) / 1000;
+  const referenceHz = float32LE(
+    tlvValue(object.records, TuningTlv.ReferenceHzFloat32),
+    u32LE(tlvValue(object.records, TuningTlv.ReferenceMilliHz), 440_000) / 1000
+  );
 
   if (kind === UserTuningKind.EqualStep) {
     return {
       kind: "equal-step",
       name,
-      stepCents: u32LE(tlvValue(object.records, TuningTlv.StepMilliCents), Math.round(1_200_000 / cycleLength)) / 1000,
+      stepCents: float32LE(
+        tlvValue(object.records, TuningTlv.StepCentsFloat32),
+        u32LE(tlvValue(object.records, TuningTlv.StepMilliCents), Math.round(1_200_000 / cycleLength)) / 1000
+      ),
       cycleLength,
       referenceMidiNote,
       referenceHz,
@@ -768,20 +840,25 @@ function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGe
   }
 
   if (kind === UserTuningKind.CentsList) {
-    const centsBytes = tlvValue(object.records, TuningTlv.CentsTable);
+    const floatCentsBytes = tlvValue(object.records, TuningTlv.CentsTableFloat32);
+    const centsBytes = floatCentsBytes ?? tlvValue(object.records, TuningTlv.CentsTable);
     const cents: number[] = [];
     if (centsBytes) {
       for (let offset = 0; offset + 3 < centsBytes.length; offset += 4) {
-        cents.push(i32LEFromBytes(centsBytes, offset) / 1000);
+        cents.push(floatCentsBytes
+          ? float32LE(centsBytes, 0, offset)
+          : i32LEFromBytes(centsBytes, offset) / 1000);
       }
     }
-    const safeCents = cents.length > 0 ? cents : [u32LE(tlvValue(object.records, TuningTlv.PeriodMilliCents), 1_200_000) / 1000];
+    const fallbackPeriod = u32LE(tlvValue(object.records, TuningTlv.PeriodMilliCents), 1_200_000) / 1000;
+    const periodCents = float32LE(tlvValue(object.records, TuningTlv.PeriodCentsFloat32), fallbackPeriod);
+    const safeCents = cents.length > 0 ? cents : [periodCents];
     return {
       kind: "scala",
       name,
       description: name,
       cents: safeCents,
-      periodCents: safeCents[safeCents.length - 1] ?? 1200,
+      periodCents,
       cycleLength: clampInteger(safeCents.length, 1, 255),
       referenceMidiNote,
       referenceHz,
@@ -793,7 +870,10 @@ function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGe
     kind: "edo",
     name,
     edoDivisions: cycleLength,
-    periodCents: u32LE(tlvValue(object.records, TuningTlv.PeriodMilliCents), 1_200_000) / 1000,
+    periodCents: float32LE(
+      tlvValue(object.records, TuningTlv.PeriodCentsFloat32),
+      u32LE(tlvValue(object.records, TuningTlv.PeriodMilliCents), 1_200_000) / 1000
+    ),
     cycleLength,
     referenceMidiNote,
     referenceHz,
@@ -845,46 +925,130 @@ function decodeDeviceScale(object: DeviceGeometryObject, index: number, cycleLen
   };
 }
 
-function decodeDeviceButtonOverrides(map: DeviceGeometryObject | undefined): LayoutBundleButtonOverride[] {
+function decodeDeviceButtonMap(map: DeviceGeometryObject | undefined): {
+  overrides: LayoutBundleButtonOverride[];
+  chordActions: LayoutBundleChordAction[];
+} {
   const records = map ? tlvValue(map.records, ExplicitButtonMapTlv.ButtonRecords) : undefined;
   if (!records) {
-    return [];
+    return { overrides: [], chordActions: [] };
   }
+  const recordFormat = u8(tlvValue(map?.records ?? [], ExplicitButtonMapTlv.MapRecordFormat), ButtonMapRecordFormat.Legacy);
   const overrides: LayoutBundleButtonOverride[] = [];
-  for (let offset = 0; offset + 12 < records.length; offset += 13) {
-    const buttonIndex = records[offset] | (records[offset + 1] << 8);
-    if (!isEditableButtonIndex(buttonIndex)) {
-      continue;
+  if (recordFormat === ButtonMapRecordFormat.FieldMasked) {
+    for (let cursor = 0; cursor + 2 <= records.length;) {
+      const recordLength = records[cursor] | (records[cursor + 1] << 8);
+      cursor += 2;
+      if (recordLength < 17 || cursor + recordLength > records.length) {
+        break;
+      }
+      const buttonIndex = records[cursor] | (records[cursor + 1] << 8);
+      const fieldMask = records[cursor + 2] | (records[cursor + 3] << 8);
+      if (isEditableButtonIndex(buttonIndex)) {
+        const override: LayoutBundleButtonOverride = {
+          buttonIndex,
+          role: (fieldMask & ButtonMapField.Role) !== 0 && records[cursor + 4] === 0 ? "unused" : "note"
+        };
+        if ((fieldMask & ButtonMapField.Pitch) !== 0) {
+          override.stepsFromC = i32LEFromBytes(records, cursor + 5);
+        }
+        if ((fieldMask & ButtonMapField.Color) !== 0) {
+          override.hueTenthDegrees = records[cursor + 13] | (records[cursor + 14] << 8);
+          override.saturation = records[cursor + 15];
+          override.value = records[cursor + 16];
+        }
+        if ((fieldMask & ButtonMapField.Action) !== 0) {
+          const outputMode = records[cursor + 9];
+          if (outputMode === ButtonOutputMode.DirectMidi) {
+            override.action = {
+              kind: "direct-midi",
+              midiNote: records[cursor + 10],
+              midiChannel: records[cursor + 11]
+            };
+          } else if (outputMode === ButtonOutputMode.Chord) {
+            override.action = {
+              kind: "chord",
+              chordActionId: records[cursor + 12],
+              rootMidiNote: records[cursor + 10]
+            };
+          }
+        }
+        overrides.push(override);
+      }
+      cursor += recordLength;
     }
-    const role = records[offset + 2] === 0 ? "unused" : "note";
-    const override: LayoutBundleButtonOverride = {
-      buttonIndex,
-      role,
-      stepsFromC: i32LEFromBytes(records, offset + 3)
-    };
-    if (records[offset + 8] !== 0) {
-      override.hueTenthDegrees = records[offset + 9] | (records[offset + 10] << 8);
-      override.saturation = records[offset + 11];
-      override.value = records[offset + 12];
+  } else {
+    for (let offset = 0; offset + 12 < records.length; offset += 13) {
+      const buttonIndex = records[offset] | (records[offset + 1] << 8);
+      if (!isEditableButtonIndex(buttonIndex)) {
+        continue;
+      }
+      const override: LayoutBundleButtonOverride = {
+        buttonIndex,
+        role: records[offset + 2] === 0 ? "unused" : "note",
+        stepsFromC: i32LEFromBytes(records, offset + 3)
+      };
+      if (records[offset + 8] !== 0) {
+        override.hueTenthDegrees = records[offset + 9] | (records[offset + 10] << 8);
+        override.saturation = records[offset + 11];
+        override.value = records[offset + 12];
+      }
+      overrides.push(override);
     }
-    overrides.push(override);
   }
-  return overrides.sort((left, right) => left.buttonIndex - right.buttonIndex);
+  const actionBytes = map ? tlvValue(map.records, ExplicitButtonMapTlv.Actions) : undefined;
+  const chordActions: LayoutBundleChordAction[] = [];
+  if (actionBytes) {
+    for (let cursor = 0; cursor + 2 <= actionBytes.length;) {
+      const actionLength = actionBytes[cursor] | (actionBytes[cursor + 1] << 8);
+      cursor += 2;
+      if (actionLength < 6 || cursor + actionLength > actionBytes.length) {
+        break;
+      }
+      if (actionBytes[cursor + 1] === ButtonMapActionKind.Chord) {
+        const toneCount = Math.min(4, actionBytes[cursor + 4]);
+        const nameLength = actionBytes[cursor + 5];
+        const intervalStart = cursor + 6;
+        const nameStart = intervalStart + (toneCount * 2);
+        if (nameStart + nameLength <= cursor + actionLength) {
+          chordActions.push({
+            id: actionBytes[cursor],
+            name: textFromBytes(actionBytes.slice(nameStart, nameStart + nameLength)) || `Chord ${actionBytes[cursor]}`,
+            pitchMode: actionBytes[cursor + 2] === ChordPitchMode.MidiSemitones ? "midi-semitones" : "tuning-steps",
+            midiChannel: actionBytes[cursor + 3],
+            intervals: Array.from({ length: toneCount }, (_, index) => i16LEFromBytes(actionBytes, intervalStart + (index * 2)))
+          });
+        }
+      }
+      cursor += actionLength;
+    }
+  }
+  return {
+    overrides: overrides.sort((left, right) => left.buttonIndex - right.buttonIndex),
+    chordActions
+  };
 }
 
 function decodeDeviceLayout(object: DeviceGeometryObject, index: number, buttonMap: DeviceGeometryObject | undefined): LayoutBundleLayout {
-  const rotationSteps = u8(tlvValue(object.records, LayoutTlv.Portrait), 1) === 0 ? 1 : 0;
+  const legacyDeviceRotation = u8(tlvValue(object.records, LayoutTlv.Portrait), 1) === 0 ? 1 : 0;
+  const deviceRotationSteps = clampInteger(u8(tlvValue(object.records, LayoutTlv.DeviceRotation), legacyDeviceRotation), 0, 3);
+  const mirrorFlags = u8(tlvValue(object.records, LayoutTlv.MirrorFlags), 0);
   const acrossSteps = i16LE(tlvValue(object.records, LayoutTlv.AcrossSteps), 3);
   const downLeftSteps = i16LE(tlvValue(object.records, LayoutTlv.DownLeftSteps), -11);
+  const buttonMapData = decodeDeviceButtonMap(buttonMap);
   return {
     objectIdHex: objectIdToHex(object.record.objectId),
     name: tlvText(object.records, CommonTlv.Name, `Layout ${index + 1}`),
     centerButton: noteButtonIndexOrFallback(u16LE(tlvValue(object.records, LayoutTlv.CenterButton), 65), 65),
     acrossSteps,
     upRightSteps: currentFirmwareDownLeftToUpRight(acrossSteps, downLeftSteps),
-    rotationSteps,
-    portrait: rotationSteps % 2 === 0,
-    buttonOverrides: decodeDeviceButtonOverrides(buttonMap)
+    deviceRotationSteps,
+    layoutRotationSteps: clampInteger(u8(tlvValue(object.records, LayoutTlv.LayoutRotation), 0), 0, 5),
+    mirrorLeftRight: (mirrorFlags & 1) !== 0,
+    mirrorUpDown: (mirrorFlags & 2) !== 0,
+    portrait: deviceRotationSteps % 2 === 0,
+    buttonOverrides: buttonMapData.overrides,
+    chordActions: buttonMapData.chordActions
   };
 }
 
@@ -900,6 +1064,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   });
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<GeometryWorkspaceTab>("library");
   const [selectedButton, setSelectedButton] = useState(65);
+  const [selectedButtons, setSelectedButtons] = useState<number[]>([65]);
   const [layoutGuideFocus, setLayoutGuideFocus] = useState<LayoutGuideFocus | null>(null);
   const [paintbrushMode, setPaintbrushMode] = useState(false);
   const [paintTool, setPaintTool] = useState<PaintTool>("brush");
@@ -934,6 +1099,11 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   );
   const runtimeSendSupported = activeBundle.tuning.kind !== "scala" || centsTableRuntimeSupported;
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
+
+  function selectOnlyButton(buttonIndex: number) {
+    setSelectedButton(buttonIndex);
+    setSelectedButtons([buttonIndex]);
+  }
 
   useEffect(() => {
     if (!runtimeSendSupported && liveSend) {
@@ -992,8 +1162,14 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
 
   function updateActiveBundle(updater: (bundle: LayoutBundle) => LayoutBundle) {
     const targetId = activeBundle.objectIdHex;
-    const nextBundles = bundles.map((bundle) => bundle.objectIdHex === targetId ? updater(bundle) : bundle);
-    setBundlesAndPersist(nextBundles);
+    setBundles((currentBundles) => {
+      const nextBundles = currentBundles
+        .map((bundle) => bundle.objectIdHex === targetId ? updater(bundle) : bundle)
+        .map(sanitizeEditorBundle)
+        .sort(compareGeometryBundles);
+      persistBundles(nextBundles);
+      return nextBundles;
+    });
     setActiveBundleId(targetId);
   }
 
@@ -1002,7 +1178,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     const nextBundles = [...bundles, next];
     setBundlesAndPersist(nextBundles);
     setActiveBundleId(next.objectIdHex);
-    setSelectedButton(next.layouts[0]?.centerButton ?? 65);
+    selectOnlyButton(next.layouts[0]?.centerButton ?? 65);
     setActiveWorkspaceTab("tuning");
     setStatus("Created new geometry bundle");
   }
@@ -1023,13 +1199,13 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     const nextBundles = bundles.filter((bundle) => bundle.objectIdHex !== bundleToDelete.objectIdHex);
     setBundlesAndPersist(nextBundles);
     setActiveBundleId(nextBundles[0]?.objectIdHex ?? "");
-    setSelectedButton(nextBundles[0]?.layouts[0]?.centerButton ?? 65);
+    selectOnlyButton(nextBundles[0]?.layouts[0]?.centerButton ?? 65);
     setStatus(`Deleted ${bundleToDelete.name}`);
   }
 
   function openBundle(bundle: LayoutBundle) {
     setActiveBundleId(bundle.objectIdHex);
-    setSelectedButton(noteButtonIndexOrFallback(
+    selectOnlyButton(noteButtonIndexOrFallback(
       bundle.layouts.find((layout) => layout.objectIdHex === bundle.activeLayoutIdHex)?.centerButton ?? bundle.layouts[0]?.centerButton ?? 65,
       65
     ));
@@ -1116,7 +1292,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       layouts: [...bundle.layouts, layout],
       activeLayoutIdHex: layout.objectIdHex
     }));
-    setSelectedButton(layout.centerButton);
+    selectOnlyButton(layout.centerButton);
   }
 
   function deleteActiveLayout() {
@@ -1141,7 +1317,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       activeLayoutIdHex: layoutId
     }));
     if (layout) {
-      setSelectedButton(layout.centerButton);
+      selectOnlyButton(layout.centerButton);
     }
   }
 
@@ -1437,7 +1613,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       setPaintbrushColor(preview.color);
       setStatus(`Picked color from button ${buttonIndex}`);
     }
-    setSelectedButton(buttonIndex);
+    selectOnlyButton(buttonIndex);
     setPaintTool("brush");
   }
 
@@ -1498,7 +1674,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         return layout;
       }
       const withoutColor = removeOverrideColor(override);
-      const shouldRemove = isRoleDefault(buttonIndex, withoutColor.role) && withoutColor.stepsFromC === undefined;
+      const shouldRemove = !overrideHasCustomBehavior(withoutColor);
       return {
         ...layout,
         buttonOverrides: shouldRemove
@@ -1533,7 +1709,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       }
       const { stepsFromC, ...withoutNote } = override;
       void stepsFromC;
-      const shouldRemove = isRoleDefault(buttonIndex, withoutNote.role) && withoutNote.hueTenthDegrees === undefined;
+      const shouldRemove = !overrideHasCustomBehavior(withoutNote);
       return {
         ...layout,
         buttonOverrides: shouldRemove
@@ -1553,7 +1729,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       const nextBundles = [...bundles.filter((bundle) => bundle.objectIdHex !== imported.objectIdHex), imported];
       setBundlesAndPersist(nextBundles);
       setActiveBundleId(imported.objectIdHex);
-      setSelectedButton(noteButtonIndexOrFallback(imported.layouts.find((layout) => layout.objectIdHex === imported.activeLayoutIdHex)?.centerButton ?? imported.layouts[0]?.centerButton ?? 65, 65));
+      selectOnlyButton(noteButtonIndexOrFallback(imported.layouts.find((layout) => layout.objectIdHex === imported.activeLayoutIdHex)?.centerButton ?? imported.layouts[0]?.centerButton ?? 65, 65));
       setActiveWorkspaceTab("tuning");
       setStatus(`Imported ${imported.name}`);
     } catch (error) {
@@ -1627,18 +1803,81 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     });
   }, [activeBundle, activeLayout, activeScale]);
 
+  const selectedButtonSet = useMemo(() => new Set(selectedButtons), [selectedButtons]);
+
+  function selectPreviewButton(buttonIndex: number, event: MouseEvent<HTMLButtonElement>) {
+    if (event.shiftKey) {
+      const playableIndices = previewKeys.map((item) => item.key.index);
+      const start = playableIndices.indexOf(selectedButton);
+      const end = playableIndices.indexOf(buttonIndex);
+      if (start >= 0 && end >= 0) {
+        const [low, high] = start <= end ? [start, end] : [end, start];
+        setSelectedButtons(playableIndices.slice(low, high + 1));
+        setSelectedButton(buttonIndex);
+        return;
+      }
+    }
+    if (event.metaKey || event.ctrlKey) {
+      setSelectedButtons((current) => {
+        const next = new Set(current);
+        if (next.has(buttonIndex) && next.size > 1) {
+          next.delete(buttonIndex);
+        } else {
+          next.add(buttonIndex);
+        }
+        return [...next].sort((left, right) => left - right);
+      });
+      setSelectedButton(buttonIndex);
+      return;
+    }
+    selectOnlyButton(buttonIndex);
+  }
+
+  function transposeSelectedButtons(delta: number) {
+    if (!Number.isFinite(delta) || delta === 0) {
+      return;
+    }
+    const stepDelta = Math.round(delta);
+    const effectiveSteps = new Map(previewKeys.map((item) => [item.key.index, item.stepsFromC] as const));
+    updateActiveLayout((layout) => ({
+      ...layout,
+      buttonOverrides: selectedButtons.reduce((overrides, buttonIndex) => upsertOverride(overrides, buttonIndex, {
+        stepsFromC: (effectiveSteps.get(buttonIndex) ?? 0) + stepDelta
+      }), layout.buttonOverrides)
+    }));
+    setStatus(`Transposed ${selectedButtons.length} selected ${selectedButtons.length === 1 ? "key" : "keys"} by ${formatSignedInteger(stepDelta)} steps`);
+  }
+
+  function resetSelectedButtonOverrides() {
+    const selected = new Set(selectedButtons);
+    updateActiveLayout((layout) => ({
+      ...layout,
+      buttonOverrides: layout.buttonOverrides.filter((override) => !selected.has(override.buttonIndex))
+    }));
+    setStatus(`Reset overrides on ${selectedButtons.length} selected ${selectedButtons.length === 1 ? "key" : "keys"}`);
+  }
+
   const selectedPreview = previewKeys.find((item) => item.key.index === selectedButton) ?? previewKeys[0];
   const activeCycleLength = tuningCycleLength(activeBundle.tuning);
   const selectedStepsFromReference = selectedPreview.stepsFromC - referenceStepsFromC(activeCycleLength, activeBundle.tuning.referenceMidiNote);
   const selectedPitchCents = tuningStepsToCentsFromReference(activeBundle.tuning, selectedStepsFromReference);
-  const selectedFrequencyHz = activeBundle.tuning.referenceHz * (2 ** (selectedPitchCents / 1200));
+  const selectedFrequencyHz = Math.fround(
+    Math.fround(activeBundle.tuning.referenceHz)
+      * (2 ** Math.fround(selectedPitchCents / 1200))
+  );
   const selectedKeyLabels = normalizeKeyLabels(activeBundle.tuning.keyLabels, activeCycleLength);
   const selectedPitchLabel = selectedKeyLabels[keyLabelIndexFromStepsFromC(selectedPreview.stepsFromC, activeCycleLength)] ?? selectedKeyLabels[0] ?? "A";
   const selectedDegreeColor = normalizeScaleDegreeColors(activeBundle.palette.degreeColors, tuningCycleLength(activeBundle.tuning))
     .find((color) => color.degree === selectedPreview.degree) ?? createDefaultDegreeColors(1)[0];
   const selectedEditableColor = selectedPreview.colorSource === "button" ? selectedPreview.color : selectedDegreeColor;
+  const selectedAction = selectedPreview.override?.action;
+  const selectedOutputMode: KeyOutputMode = selectedAction?.kind ?? "tuned";
+  const selectedChordAction = selectedAction?.kind === "chord"
+    ? activeLayout.chordActions.find((action) => action.id === selectedAction.chordActionId)
+    : undefined;
+  const selectedNearestMidiNote = clampInteger(Math.round(69 + (12 * Math.log2(selectedFrequencyHz / 440))), 0, 127);
   const activeColorModeLabel = colorModeOptions.find((option) => option.value === activeBundle.palette.defaultColorMode)?.label ?? "Default";
-  const axisLabels = layoutAxisLabels(activeLayout.rotationSteps);
+  const axisLabels = layoutAxisLabels(activeLayout.deviceRotationSteps);
   const centerGuideKey = hexBoardGeometry.find((key) => key.index === activeLayout.centerButton);
   const guideTargetIndex = (() => {
     if (!layoutGuideFocus || !centerGuideKey) {
@@ -1699,6 +1938,96 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     updateButtonOverride(selectedPreview.key.index, {
       stepsFromC: selectedPreview.stepsFromC
     });
+  }
+  function setSelectedAction(action: LayoutBundleButtonAction | undefined) {
+    if (action) {
+      updateButtonOverride(selectedPreview.key.index, { action });
+      return;
+    }
+    updateActiveLayout((layout) => {
+      const override = layout.buttonOverrides.find((candidate) => candidate.buttonIndex === selectedPreview.key.index);
+      if (!override) {
+        return layout;
+      }
+      const { action: _removedAction, ...withoutAction } = override;
+      void _removedAction;
+      return {
+        ...layout,
+        buttonOverrides: overrideHasCustomBehavior(withoutAction)
+          ? layout.buttonOverrides.map((candidate) => candidate.buttonIndex === selectedPreview.key.index ? withoutAction : candidate)
+          : layout.buttonOverrides.filter((candidate) => candidate.buttonIndex !== selectedPreview.key.index)
+      };
+    });
+  }
+  function setSelectedOutputMode(outputMode: KeyOutputMode) {
+    if (outputMode === "tuned") {
+      setSelectedAction(undefined);
+      return;
+    }
+    if (outputMode === "direct-midi") {
+      setSelectedAction({
+        kind: "direct-midi",
+        midiNote: selectedAction?.kind === "direct-midi" ? selectedAction.midiNote : selectedNearestMidiNote,
+        midiChannel: selectedAction?.kind === "direct-midi" ? selectedAction.midiChannel : 1
+      });
+      return;
+    }
+    updateActiveLayout((layout) => {
+      const existingAction = layout.chordActions[0];
+      const chordAction = existingAction ?? { ...defaultChordShape, id: nextChordActionId(layout.chordActions) };
+      return {
+        ...layout,
+        chordActions: existingAction ? layout.chordActions : [...layout.chordActions, chordAction],
+        buttonOverrides: upsertOverride(layout.buttonOverrides, selectedPreview.key.index, {
+          action: {
+            kind: "chord",
+            chordActionId: chordAction.id,
+            rootMidiNote: chordAction.pitchMode === "midi-semitones" ? selectedNearestMidiNote : undefined
+          }
+        })
+      };
+    });
+  }
+  function assignSelectedChordAction(chordActionId: number) {
+    const chordAction = activeLayout.chordActions.find((action) => action.id === chordActionId);
+    if (!chordAction) {
+      return;
+    }
+    setSelectedAction({
+      kind: "chord",
+      chordActionId,
+      rootMidiNote: chordAction.pitchMode === "midi-semitones"
+        ? selectedAction?.kind === "chord" && selectedAction.rootMidiNote !== undefined
+          ? selectedAction.rootMidiNote
+          : selectedNearestMidiNote
+        : undefined
+    });
+  }
+  function createAndAssignChordAction() {
+    if (activeLayout.chordActions.length >= 16) {
+      setStatus("A layout can contain up to 16 chord shapes");
+      return;
+    }
+    updateActiveLayout((layout) => {
+      const id = nextChordActionId(layout.chordActions);
+      const chordAction = { ...defaultChordShape, id, name: `Chord ${layout.chordActions.length + 1}` };
+      return {
+        ...layout,
+        chordActions: [...layout.chordActions, chordAction],
+        buttonOverrides: upsertOverride(layout.buttonOverrides, selectedPreview.key.index, {
+          action: { kind: "chord", chordActionId: id, rootMidiNote: selectedNearestMidiNote }
+        })
+      };
+    });
+  }
+  function updateSelectedChordAction(patch: Partial<LayoutBundleChordAction>) {
+    if (!selectedChordAction) {
+      return;
+    }
+    updateActiveLayout((layout) => ({
+      ...layout,
+      chordActions: layout.chordActions.map((action) => action.id === selectedChordAction.id ? { ...action, ...patch } : action)
+    }));
   }
   function updateSelectedColorFromHex(value: string) {
     const nextColor = hexToScaleDegreeColor(value, selectedEditableColor);
@@ -1803,8 +2132,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     const layouts = linkedLayouts.length > 0
       ? linkedLayouts.map((layout, index) => {
           const layoutIdHex = objectIdToHex(layout.record.objectId);
-          const buttonMap = linkedButtonMaps.find((map) => objectReferences(map, ExplicitButtonMapTlv.LayoutRef, ObjectType.UserLayout, layoutIdHex))
-            ?? linkedButtonMaps.find((map) => objectReferences(map, ExplicitButtonMapTlv.TuningRef, ObjectType.UserTuning, tuningObjectIdHex));
+          const buttonMap = linkedButtonMaps.find((map) =>
+            objectReferences(map, ExplicitButtonMapTlv.LayoutRef, ObjectType.UserLayout, layoutIdHex)
+          );
           return decodeDeviceLayout(layout, index, buttonMap);
         })
       : [createDefaultLayout(cycleLength)];
@@ -1839,7 +2169,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     const nextBundles = [...bundles.filter((candidate) => candidate.objectIdHex !== bundle.objectIdHex), bundle];
     setBundlesAndPersist(nextBundles);
     setActiveBundleId(bundle.objectIdHex);
-    setSelectedButton(noteButtonIndexOrFallback(bundle.layouts.find((layout) => layout.objectIdHex === bundle.activeLayoutIdHex)?.centerButton ?? bundle.layouts[0]?.centerButton ?? 65, 65));
+    selectOnlyButton(noteButtonIndexOrFallback(bundle.layouts.find((layout) => layout.objectIdHex === bundle.activeLayoutIdHex)?.centerButton ?? bundle.layouts[0]?.centerButton ?? 65, 65));
     setCustomFolders((current) => Array.from(new Set([...current, bundle.folderPath])).sort());
     setStatus(statusText);
   }
@@ -2104,7 +2434,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 newFolder={newFolder}
                 onCreate={addFolder}
                 onDelete={deleteFolder}
-                onNewFolderChange={(value) => setNewFolder(clampGeometryMenuText(value, ""))}
+                onNewFolderChange={(value) => setNewFolder(value.slice(0, GeometryMenuTextMaxLength))}
               />
               <button disabled={syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>Verify active bundle</button>
               <span className="muted">{bundles.length} on this computer</span>
@@ -2148,7 +2478,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             <div className="bundleIdentityFields">
               <label className="field">
                 <span>Bundle name</span>
-                <input maxLength={GeometryMenuTextMaxLength} value={activeBundle.name} onChange={(event) => updateBundleName(event.target.value)} />
+                <NameInput value={activeBundle.name} onCommit={updateBundleName} />
               </label>
               <label className="field">
                 <span>Folder</span>
@@ -2168,8 +2498,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             <label className="field">
               <span>Type</span>
               <select value={activeBundle.tuning.kind} onChange={(event) => setTuningKind(event.target.value as LayoutBundleTuning["kind"])}>
-                <option value="edo">EDO</option>
-                <option value="equal-step">Cents per step</option>
+                <option value="edo">Equal divisions of a period (EDO)</option>
+                <option value="equal-step">Fixed cents per step</option>
                 <option value="scala">Scala .scl</option>
               </select>
             </label>
@@ -2210,7 +2540,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               </div>
               <label className="field">
                 <span>Layout name</span>
-                <input maxLength={GeometryMenuTextMaxLength} value={activeLayout.name} onChange={(event) => updateLayout({ name: event.target.value })} />
+                <NameInput value={activeLayout.name} onCommit={(name) => updateLayout({ name })} />
               </label>
               <label className="field">
                 <span>Center key</span>
@@ -2245,15 +2575,36 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 />
               </label>
               <label className="field">
-                <span>Rotation</span>
-                <select value={activeLayout.rotationSteps} onChange={(event) => updateLayout({ rotationSteps: Number(event.target.value) })}>
+                <span>Device rotation</span>
+                <select value={activeLayout.deviceRotationSteps} onChange={(event) => updateLayout({ deviceRotationSteps: Number(event.target.value) })}>
                   <option value={0}>0°</option>
                   <option value={1}>90°</option>
                   <option value={2}>180°</option>
                   <option value={3}>270°</option>
                 </select>
+                <small className="muted">Changes the physical/display orientation, not the musical axes.</small>
+              </label>
+              <label className="field">
+                <span>Layout rotation</span>
+                <select value={activeLayout.layoutRotationSteps} onChange={(event) => updateLayout({ layoutRotationSteps: Number(event.target.value) })}>
+                  <option value={0}>0°</option>
+                  <option value={1}>60°</option>
+                  <option value={2}>120°</option>
+                  <option value={3}>180°</option>
+                  <option value={4}>240°</option>
+                  <option value={5}>300°</option>
+                </select>
+              </label>
+              <label className="checkField">
+                <input checked={activeLayout.mirrorLeftRight} type="checkbox" onChange={(event) => updateLayout({ mirrorLeftRight: event.target.checked })} />
+                <span>Mirror layout left/right</span>
+              </label>
+              <label className="checkField">
+                <input checked={activeLayout.mirrorUpDown} type="checkbox" onChange={(event) => updateLayout({ mirrorUpDown: event.target.checked })} />
+                <span>Mirror layout up/down</span>
               </label>
             </div>
+            <p className="muted">Layout rotation and mirrors transform generated pitches. Existing per-key overrides stay attached to their physical keys.</p>
           </section>
         ) : null}
 
@@ -2278,11 +2629,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               </div>
               <label className="field">
                 <span>Scale name</span>
-                <input
+                <NameInput
                   disabled={activeScaleIsAllNotes}
                   value={activeScale.name}
-                  maxLength={GeometryMenuTextMaxLength}
-                  onChange={(event) => updateActiveScale((scale) => ({ ...scale, name: clampGeometryMenuText(event.target.value, "User Scale") }))}
+                  onCommit={(name) => updateActiveScale((scale) => ({ ...scale, name: clampGeometryMenuText(name, "User Scale") }))}
                 />
               </label>
               <label className={includedDegreesError ? "field invalidField" : "field"}>
@@ -2401,6 +2751,12 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             >
               Reset colors
             </button>
+            <button type="button" onClick={() => setSelectedButtons(previewKeys.map((item) => item.key.index))}>
+              Select all keys
+            </button>
+            {selectedButtons.length > 1 ? (
+              <button type="button" onClick={() => selectOnlyButton(selectedButton)}>Keep one selected</button>
+            ) : null}
           </div>
           <div className="hexBoardScroll">
             <div
@@ -2415,7 +2771,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               onPointerLeave={endPaintStroke}
               onPointerMove={continuePaintStroke}
               onPointerUp={endPaintStroke}
-              style={{ transform: `rotate(${activeLayout.rotationSteps * 90}deg)` }}
+              style={{ transform: `rotate(${activeLayout.deviceRotationSteps * 90}deg)` }}
             >
               {guideHalos.map((halo) => (
                 <div
@@ -2437,16 +2793,16 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                     !item.inScale ? "outOfScaleKey" : "",
                     item.colorSource === "button" ? "manualColorKey" : "",
                     item.noteSource === "button" ? "manualNoteKey" : "",
-                    item.key.index === selectedButton ? "selectedKey" : "",
+                    selectedButtonSet.has(item.key.index) ? "selectedKey" : "",
                     item.key.index === activeLayout.centerButton ? "centerKey" : "",
                     item.key.index === guideOriginIndex ? "guideOriginKey" : "",
                     item.key.index === guideTargetIndex ? "guideTargetKey" : ""
                   ].filter(Boolean).join(" ")}
                   data-preview-button-index={item.key.index}
                   key={item.key.index}
-                  onClick={() => {
+                  onClick={(event) => {
                     if (!paintbrushMode) {
-                      setSelectedButton(item.key.index);
+                      selectPreviewButton(item.key.index, event);
                     }
                   }}
                   style={{
@@ -2456,9 +2812,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   }}
                   type="button"
                 >
-                  <span className="hexKeyLabel" style={{ transform: `rotate(${-activeLayout.rotationSteps * 90}deg)` }}>
+                  <span className="hexKeyLabel" style={{ transform: `rotate(${-activeLayout.deviceRotationSteps * 90}deg)` }}>
                     <span>{item.key.index}</span>
-                    <small>{item.role === "note" ? item.degree : "off"}</small>
+                    <small>{item.role !== "note" ? "off" : item.override?.action?.kind === "direct-midi" ? `M${item.override.action.midiNote}` : item.override?.action?.kind === "chord" ? "chord" : item.degree}</small>
                   </span>
                 </button>
               ))}
@@ -2470,8 +2826,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           <summary className="selectedKeyHeading">
             <div>
               <span className="eyebrow">Key inspector</span>
-              <strong>Button {selectedPreview.key.index}</strong>
-              <span>row {selectedPreview.key.row} · column {selectedPreview.key.column}</span>
+              <strong>{selectedButtons.length > 1 ? `${selectedButtons.length} keys selected` : `Button ${selectedPreview.key.index}`}</strong>
+              <span>{selectedButtons.length > 1 ? `Primary button ${selectedPreview.key.index}` : `row ${selectedPreview.key.row} · column ${selectedPreview.key.column}`}</span>
             </div>
             <div className="keySummaryBadges">
               {selectedPreview.role === "note" ? (
@@ -2487,6 +2843,19 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             </div>
           </summary>
           <div className="selectedKeyContent stack">
+            {selectedButtons.length > 1 ? (
+              <section className="keyInspectorSection bulkKeySection">
+                <h3>Bulk pitch</h3>
+                <p className="muted">Shift-click selects a range. Ctrl-click or Command-click toggles individual keys.</p>
+                <div className="row">
+                  <button type="button" onClick={() => transposeSelectedButtons(-1)}>−1 step</button>
+                  <button type="button" onClick={() => transposeSelectedButtons(1)}>+1 step</button>
+                  <button type="button" onClick={() => transposeSelectedButtons(-activeCycleLength)}>−1 period</button>
+                  <button type="button" onClick={() => transposeSelectedButtons(activeCycleLength)}>+1 period</button>
+                  <button className="warning" type="button" onClick={resetSelectedButtonOverrides}>Reset selected</button>
+                </div>
+              </section>
+            ) : null}
             <section className="keyInspectorSection">
               <h3>State</h3>
               <div className="segmentedControl" role="group" aria-label="Key state">
@@ -2551,6 +2920,118 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   </div>
                 </details>
               </section>
+            ) : null}
+
+            {selectedPreview.role === "note" ? (
+              <details className="keyInspectorSection keyOutputDetails">
+                <summary>
+                  <span>Advanced output</span>
+                  <strong>{selectedOutputMode === "tuned" ? "Tuned note" : selectedOutputMode === "direct-midi" ? "Direct MIDI" : "Chord"}</strong>
+                </summary>
+                <div className="stack compactStack">
+                  <p className="muted">Most layouts should keep Tuned note. Direct MIDI and chords bypass the normal one-note tuning output for this key.</p>
+                  {selectedButtons.length > 1 ? <small className="muted">These settings apply to primary button {selectedPreview.key.index} only.</small> : null}
+                  <label className="field">
+                    <span>Key output</span>
+                    <select value={selectedOutputMode} onChange={(event) => setSelectedOutputMode(event.target.value as KeyOutputMode)}>
+                      <option value="tuned">Tuned note</option>
+                      <option value="direct-midi">Direct MIDI note</option>
+                      <option value="chord">Chord</option>
+                    </select>
+                  </label>
+
+                  {selectedAction?.kind === "direct-midi" ? (
+                    <div className="keyOutputGrid">
+                      <label className="field">
+                        <span>MIDI note</span>
+                        <input
+                          max={127}
+                          min={0}
+                          type="number"
+                          value={selectedAction.midiNote}
+                          onChange={(event) => setSelectedAction({ ...selectedAction, midiNote: clampInteger(Number(event.target.value), 0, 127) })}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>MIDI channel</span>
+                        <input
+                          max={16}
+                          min={1}
+                          type="number"
+                          value={selectedAction.midiChannel}
+                          onChange={(event) => setSelectedAction({ ...selectedAction, midiChannel: clampInteger(Number(event.target.value), 1, 16) })}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+
+                  {selectedAction?.kind === "chord" && selectedChordAction ? (
+                    <>
+                      <div className="fieldControlRow">
+                        <label className="field growField">
+                          <span>Chord shape</span>
+                          <select value={selectedChordAction.id} onChange={(event) => assignSelectedChordAction(Number(event.target.value))}>
+                            {activeLayout.chordActions.map((action) => <option key={action.id} value={action.id}>{action.name}</option>)}
+                          </select>
+                        </label>
+                        <button type="button" onClick={createAndAssignChordAction}>New shape</button>
+                      </div>
+                      <label className="field">
+                        <span>Shape name</span>
+                        <NameInput value={selectedChordAction.name} onCommit={(name) => updateSelectedChordAction({ name })} />
+                      </label>
+                      <label className="field">
+                        <span>Interval units</span>
+                        <select
+                          value={selectedChordAction.pitchMode}
+                          onChange={(event) => {
+                            const pitchMode = event.target.value as LayoutBundleChordAction["pitchMode"];
+                            updateSelectedChordAction({ pitchMode });
+                            setSelectedAction({
+                              ...selectedAction,
+                              rootMidiNote: pitchMode === "midi-semitones" ? selectedAction.rootMidiNote ?? selectedNearestMidiNote : undefined
+                            });
+                          }}
+                        >
+                          <option value="tuning-steps">Current tuning steps</option>
+                          <option value="midi-semitones">MIDI semitones</option>
+                        </select>
+                      </label>
+                      <label className="field">
+                        <span>{selectedChordAction.pitchMode === "tuning-steps" ? "Tuning-step intervals" : "Semitone intervals"}</span>
+                        <ChordIntervalsInput value={selectedChordAction.intervals} onCommit={(intervals) => updateSelectedChordAction({ intervals })} />
+                        <small>Up to four tones, relative to the key. Example: 0, 4, 7.</small>
+                      </label>
+                      {selectedChordAction.pitchMode === "midi-semitones" ? (
+                        <div className="keyOutputGrid">
+                          <label className="field">
+                            <span>Root MIDI note</span>
+                            <input
+                              max={127}
+                              min={0}
+                              type="number"
+                              value={selectedAction.rootMidiNote ?? selectedNearestMidiNote}
+                              onChange={(event) => setSelectedAction({ ...selectedAction, rootMidiNote: clampInteger(Number(event.target.value), 0, 127) })}
+                            />
+                          </label>
+                          <label className="field">
+                            <span>MIDI channel</span>
+                            <input
+                              max={16}
+                              min={1}
+                              type="number"
+                              value={selectedChordAction.midiChannel}
+                              onChange={(event) => updateSelectedChordAction({ midiChannel: clampInteger(Number(event.target.value), 1, 16) })}
+                            />
+                          </label>
+                        </div>
+                      ) : (
+                        <small className="muted">Tuning-step chords follow the active tuning and MIDI/MPE routing settings.</small>
+                      )}
+                    </>
+                  ) : null}
+                </div>
+              </details>
             ) : null}
 
             <section className="keyInspectorSection">
@@ -2817,6 +3298,70 @@ function HexBoardGeometryLibraryPanel({
   );
 }
 
+interface NameInputProps {
+  value: string;
+  onCommit: (value: string) => void;
+  disabled?: boolean;
+}
+
+function NameInput({ value, onCommit, disabled = false }: NameInputProps) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  function commit() {
+    onCommit(draft);
+  }
+  return (
+    <input
+      disabled={disabled}
+      maxLength={GeometryMenuTextMaxLength}
+      value={draft}
+      onBlur={commit}
+      onChange={(event) => setDraft(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          commit();
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+interface ChordIntervalsInputProps {
+  value: number[];
+  onCommit: (value: number[]) => void;
+}
+
+function ChordIntervalsInput({ value, onCommit }: ChordIntervalsInputProps) {
+  const formattedValue = value.join(", ");
+  const [draft, setDraft] = useState(formattedValue);
+  useEffect(() => setDraft(formattedValue), [formattedValue]);
+  function commit() {
+    const parts = draft.split(/[\s,]+/).filter(Boolean);
+    if (parts.length < 1 || parts.length > 4 || parts.some((part) => !/^-?\d+$/.test(part))) {
+      setDraft(formattedValue);
+      return;
+    }
+    onCommit(parts.map((part) => clampInteger(Number(part), -32768, 32767)));
+  }
+  return (
+    <input
+      aria-label="Chord intervals"
+      inputMode="numeric"
+      title="Enter one to four whole-number intervals separated by commas or spaces"
+      value={draft}
+      onBlur={commit}
+      onChange={(event) => setDraft(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          commit();
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
 interface TuningControlsProps {
   tuning: LayoutBundleTuning;
   onEdoChange: (patch: Partial<Extract<LayoutBundleTuning, { kind: "edo" }>>) => void;
@@ -2845,11 +3390,12 @@ function TuningControls({
   onKeyLabelsKeyDown
 }: TuningControlsProps) {
   if (tuning.kind === "edo") {
+    const stepCents = Math.fround(Math.fround(tuning.periodCents) / Math.max(1, tuning.edoDivisions));
     return (
       <div className="fieldGrid">
         <label className="field">
           <span>Name</span>
-          <input maxLength={GeometryMenuTextMaxLength} value={tuning.name} onChange={(event) => onEdoChange({ name: event.target.value })} />
+          <NameInput value={tuning.name} onCommit={(name) => onEdoChange({ name })} />
         </label>
         <label className="field">
           <span>Divisions</span>
@@ -2857,11 +3403,13 @@ function TuningControls({
         </label>
         <label className="field">
           <span>Period cents</span>
-          <input type="number" value={tuning.periodCents} onChange={(event) => onEdoChange({ periodCents: Number(event.target.value) })} />
+          <input step="any" type="number" value={tuning.periodCents} onChange={(event) => onEdoChange({ periodCents: Number(event.target.value) })} />
+          <small className="muted">Exact division: {tuning.periodCents} ÷ {tuning.edoDivisions} = {stepCents.toFixed(6)}… cents per step</small>
+          <small className="muted">Saved at firmware-native 32-bit precision.</small>
         </label>
         <label className="field">
           <span>A = x Hz</span>
-          <input min={0.01} step={0.01} type="number" value={tuning.referenceHz} onChange={(event) => onEdoChange({ referenceHz: Number(event.target.value) })} />
+          <input min={0.01} step="any" type="number" value={tuning.referenceHz} onChange={(event) => onEdoChange({ referenceHz: Number(event.target.value) })} />
         </label>
         <label className={keyLabelsError ? "field invalidField" : "field"}>
           <span>Note labels</span>
@@ -2880,23 +3428,29 @@ function TuningControls({
   }
 
   if (tuning.kind === "equal-step") {
+    const computedPeriod = Math.fround(Math.fround(tuning.stepCents) * tuning.cycleLength);
+    const octaveDelta = computedPeriod - 1200;
     return (
       <div className="fieldGrid">
         <label className="field">
           <span>Name</span>
-          <input maxLength={GeometryMenuTextMaxLength} value={tuning.name} onChange={(event) => onEqualStepChange({ name: event.target.value })} />
+          <NameInput value={tuning.name} onCommit={(name) => onEqualStepChange({ name })} />
         </label>
         <label className="field">
           <span>Step cents</span>
-          <input type="number" value={tuning.stepCents} onChange={(event) => onEqualStepChange({ stepCents: Number(event.target.value) })} />
+          <input step="any" type="number" value={tuning.stepCents} onChange={(event) => onEqualStepChange({ stepCents: Number(event.target.value) })} />
+          <small className="muted">Saved at firmware-native 32-bit precision.</small>
         </label>
         <label className="field">
           <span>Cycle length</span>
           <input min={1} max={255} type="number" value={tuning.cycleLength} onChange={(event) => onEqualStepChange({ cycleLength: Number(event.target.value) })} />
+          <small className={Math.abs(octaveDelta) > 0.0005 ? "fieldError" : "muted"}>
+            Cycle period: {computedPeriod.toFixed(3)} cents{Math.abs(octaveDelta) > 0.0005 ? ` (${octaveDelta > 0 ? "+" : ""}${octaveDelta.toFixed(3)} from an octave)` : ""}
+          </small>
         </label>
         <label className="field">
           <span>A = x Hz</span>
-          <input min={0.01} step={0.01} type="number" value={tuning.referenceHz} onChange={(event) => onEqualStepChange({ referenceHz: Number(event.target.value) })} />
+          <input min={0.01} step="any" type="number" value={tuning.referenceHz} onChange={(event) => onEqualStepChange({ referenceHz: Number(event.target.value) })} />
         </label>
         <label className={keyLabelsError ? "field invalidField" : "field"}>
           <span>Note labels</span>
@@ -2922,7 +3476,7 @@ function TuningControls({
       </div>
       <label className="field">
         <span>Name</span>
-        <input maxLength={GeometryMenuTextMaxLength} value={tuning.name} onChange={(event) => onScalaChange({ name: event.target.value })} />
+        <NameInput value={tuning.name} onCommit={(name) => onScalaChange({ name })} />
       </label>
       <label className="field">
         <span>Description</span>
@@ -2934,7 +3488,8 @@ function TuningControls({
       </label>
       <label className="field">
         <span>1/1 Hz</span>
-        <input min={0.01} step={0.01} type="number" value={tuning.referenceHz} onChange={(event) => onScalaChange({ referenceHz: Number(event.target.value) })} />
+        <input min={0.01} step="any" type="number" value={tuning.referenceHz} onChange={(event) => onScalaChange({ referenceHz: Number(event.target.value) })} />
+        <small className="muted">Intervals and reference frequency are saved at firmware-native 32-bit precision.</small>
       </label>
       <label className={keyLabelsError ? "field invalidField" : "field"}>
         <span>Note labels</span>

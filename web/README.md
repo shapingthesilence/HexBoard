@@ -85,9 +85,14 @@ and `TRANSFER_END` so firmware can pace object transfers.
   and folder-management view. Folder filters consistently begin with `All` and
   `Root`; empty computer folders can be created and deleted, while device
   folders appear only when a saved item uses them. Editing keeps bundle sync
-  actions and the visual HexBoard preview in consistent locations. The selected-key inspector separates
-  key state, optional pitch overrides, inherited or per-key color, and advanced
-  pitch details; color editing uses a compact visual picker. Read-only pitch and
+  actions and the visual HexBoard preview in consistent locations. Device
+  rotation is four-way and separate from six-way musical layout rotation and
+  mirroring. The selected-key inspector separates key state, optional pitch
+  overrides, inherited or per-key color, and advanced pitch details; color
+  editing uses a compact visual picker. Shift/Ctrl/Command selection enables
+  bulk transposition and reset. A collapsed advanced-output section supports
+  fixed MIDI note/channel output and reusable four-tone chord shapes without
+  adding controls to the ordinary tuned-note workflow. Read-only pitch and
   scale values are presented as facts rather than form fields, and all overrides
   can be reset together. Raw encoded-object details are collapsed until needed.
   The editor also supports scale-degree palette editing, A-first note labels,
@@ -96,7 +101,12 @@ and `TRANSFER_END` so firmware can pace object transfers.
   matching color overrides in the active layout so the palette color takes
   effect immediately, and a confirmed reset returns all keys in the active
   layout to scale-degree colors.
-  Scala `.scl` import reads trailing interval labels, exposes the 1/1 MIDI note
+  EDO pitch generation preserves the exact period/division ratio rather than
+  treating the rounded decimal step display as authoritative. Sync writes
+  firmware-native binary32 tuning values alongside milli-unit compatibility
+  fields, and the editor preview uses the same binary32 rounding as firmware.
+  Scala `.scl`
+  import reads trailing interval labels, exposes the 1/1 MIDI note
   and Hz reference, and enables cents-table live send when the connected
   firmware advertises runtime support.
 - A synth preset editor with name and folder selection, folder creation, main

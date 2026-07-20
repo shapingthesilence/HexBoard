@@ -255,12 +255,29 @@ globals are declared in `GridState.h`. Current board constants are:
 
 Visible buttons are indices `0` through `139`. Matrix slots `140` through `159`
 are internal flags and hardware-detection positions, not playable hexes. Slots
-`141..159` are also used by sequencer-managed synth preview notes; slot `140`
-remains reserved for hardware detection.
+`141..159` are shared hidden synth-preview slots used by sequencer playback and
+advanced mapped-button direct/chord output; slot `140` remains reserved for
+hardware detection.
 
 `presetDef current` owns the active tuning, layout, scale, key offset, and
 transpose offset. Pitch-related code should go through this object instead of
 duplicating tuning/layout math.
+
+User-geometry runtime arrays in `GridState` keep per-button role, pitch, color,
+and output-action state independent. `PresetSyncGeometry.cpp` clears these
+arrays before applying a different layout and resolves explicit maps by exact
+`LayoutRef`, preventing overrides from leaking between layouts that share a
+tuning. `NoteDispatch.cpp` owns the active direct/chord MIDI refcounts and
+hidden synth handles so every note started by an action can be released during
+key-up, panic, or geometry replacement.
+
+For an EDO user tuning, the runtime period and division count are authoritative.
+`MidiRouting.cpp` computes cents as `steps * period / divisions`. Preset sync
+prefers the optional IEEE-754 binary32 period, explicit-step, cents-table, and
+reference-frequency TLVs so the wire representation retains every bit the
+firmware runtime can consume. Legacy milli-cent/milli-hertz TLVs remain as
+fallback metadata for older objects and firmware. Equal-step tunings continue
+to use their explicit step size.
 
 Settings are stored in:
 
@@ -348,7 +365,7 @@ Common refresh functions:
 | --- | --- |
 | `applyScale()` | key, scale, scale-lock, or in-scale logic changes |
 | `assignPitches()` | transpose or pitch math changes without moving button positions |
-| `updateLayoutAndRotate()` | layout, mirror flags, layout rotation, or device/display rotation changes |
+| `updateLayoutAndRotate()` | layout vectors, mirror flags, or musical layout rotation changes |
 | `applyDeviceDisplayRotation()` | only the OLED/device orientation changed |
 | `refreshMidiRouting()` | MPE, MIDI channel, or tuning-dependent routing rules change |
 | `setLEDcolorCodes()` | palette, scale, color mode, brightness, or user color-map behavior changes |
@@ -412,9 +429,12 @@ Other persistent stores:
 Factory tuning/layout/scale catalogs are exposed as generated read-only geometry
 objects from `BuiltinGeometry.cpp`; they are not stored in `/layouts.dat`.
 Runtime Apply supports generated EDO/equal-step and Scala/cents-list user
-tunings, vector layouts, included-degree scales, scale color maps, and format-1
-explicit button maps. The active user geometry selection is RAM-only and is not
-yet persisted in profiles.
+tunings, vector layouts with independent device rotation and musical
+rotation/mirrors, included-degree scales, scale color maps, legacy format-1
+maps, and independent-field format-2 explicit button maps. Format 2 includes
+direct MIDI note/channel actions and reusable four-tone chord actions. The
+active user geometry selection is RAM-only and is not yet persisted in
+profiles.
 
 ## Menu Patterns
 
@@ -657,8 +677,10 @@ Use `web/README.md` for web commands and deployment details.
 1. Add or generate the layout definition.
 2. Ensure its tuning association is correct.
 3. Verify center, across, and diagonal step vectors.
-4. Re-test `applyLayout()` with rotation and mirror options.
-5. Verify explicit button maps are preserved or regenerated intentionally.
+4. Re-test `applyLayout()` with six-step musical rotation and mirror options.
+5. Verify four-step device rotation changes only the display/device orientation.
+6. Verify physical-button overrides stay fixed and only the exact layout's
+   explicit map is applied.
 
 ### Add A New Scale
 

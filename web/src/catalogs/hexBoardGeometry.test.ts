@@ -31,4 +31,15 @@ describe("HexBoard geometry", () => {
     expect(computeVectorLayoutSteps(hexBoardKeyByIndex(55), layout)).toBe(11);
     expect(computeVectorLayoutSteps(hexBoardKeyByIndex(54), layout)).toBe(8);
   });
+
+  it("applies musical rotation and mirroring while keeping the physical center anchored", () => {
+    const base = {
+      centerButton: 65,
+      acrossSteps: 3,
+      upRightSteps: 11
+    };
+    expect(computeVectorLayoutSteps(hexBoardKeyByIndex(66), { ...base, layoutRotationSteps: 3 })).toBe(-3);
+    expect(computeVectorLayoutSteps(hexBoardKeyByIndex(66), { ...base, mirrorLeftRight: true })).toBe(-3);
+    expect(computeVectorLayoutSteps(hexBoardKeyByIndex(65), { ...base, layoutRotationSteps: 3, mirrorLeftRight: true })).toBe(0);
+  });
 });

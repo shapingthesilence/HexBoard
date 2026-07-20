@@ -1237,6 +1237,63 @@ select {
   font-size: 0.82rem;
 }
 
+.keyOutputDetails {
+  grid-column: span 2;
+}
+
+.keyOutputDetails > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.keyOutputDetails > summary::-webkit-details-marker {
+  display: none;
+}
+
+.keyOutputDetails > summary::after {
+  color: var(--text-soft);
+  content: "+";
+  font-size: 1rem;
+}
+
+.keyOutputDetails[open] > summary::after {
+  content: "−";
+}
+
+.keyOutputDetails > summary strong {
+  margin-left: auto;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+}
+
+.compactStack {
+  gap: 10px;
+}
+
+.compactStack > p {
+  margin: 0;
+}
+
+.keyOutputGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.growField {
+  flex: 1 1 180px;
+}
+
+@media (max-width: 600px) {
+  .keyOutputDetails {
+    grid-column: span 1;
+  }
+}
+
 .keyColorSummary {
   display: flex;
   align-items: center;

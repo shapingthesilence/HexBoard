@@ -118,7 +118,7 @@ bool applyLinkedButtonMapForCurrentUserLayout() {
       userGeometryRuntimeLayoutObjectId
     );
   }
-  if (buttonMapIndex < 0) {
+  if (buttonMapIndex < 0 && !userGeometryRuntimeLayoutObjectSelected) {
     buttonMapIndex = findFirstUserGeometryObjectReferencing(
       PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP,
       PRESET_SYNC_TLV_BUTTON_MAP_TUNING_REF,

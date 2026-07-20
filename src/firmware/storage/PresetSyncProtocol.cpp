@@ -60,6 +60,14 @@ int32_t presetSyncReadI32LE(const uint8_t* bytes) {
   return static_cast<int32_t>(presetSyncReadU32LE(bytes));
 }
 
+float presetSyncReadFloat32LE(const uint8_t* bytes) {
+  static_assert(sizeof(float) == sizeof(uint32_t), "Preset sync float32 requires a 32-bit float");
+  uint32_t bits = presetSyncReadU32LE(bytes);
+  float value = 0.0f;
+  memcpy(&value, &bits, sizeof(value));
+  return value;
+}
+
 void presetSyncAppendU14(std::vector<uint8_t>& output, uint16_t value) {
   output.push_back((value >> 7) & 0x7F);
   output.push_back(value & 0x7F);
