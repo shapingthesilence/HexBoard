@@ -16,6 +16,7 @@ export interface HexBoardKey {
 
 export interface VectorLayoutModel {
   centerButton: number;
+  centerStepsFromC?: number;
   acrossSteps: number;
   upRightSteps: number;
   layoutRotationSteps?: number;
@@ -96,7 +97,95 @@ export function computeVectorLayoutSteps(key: HexBoardKey, layout: VectorLayoutM
     key.coordRow - center.coordRow,
     acrossSteps,
     downLeftSteps
-  ) + mirrorOffset;
+  ) + mirrorOffset + Math.round(layout.centerStepsFromC ?? 0);
+}
+
+export interface HexAxialCoordinate {
+  q: number;
+  r: number;
+}
+
+export type HexSpatialTransform = "rotate-clockwise" | "rotate-counterclockwise" | "mirror-left-right" | "mirror-up-down";
+
+export function hexKeyAxialCoordinate(key: Pick<HexBoardKey, "coordCol" | "coordRow">): HexAxialCoordinate {
+  return {
+    q: (key.coordCol + key.coordRow) / 2,
+    r: key.coordRow
+  };
+}
+
+export function hexAxialToCoordinate(coordinate: HexAxialCoordinate): { coordCol: number; coordRow: number } {
+  return {
+    coordCol: (2 * coordinate.q) - coordinate.r,
+    coordRow: coordinate.r
+  };
+}
+
+export function transformHexCoordinate(
+  coordinate: HexAxialCoordinate,
+  pivot: HexAxialCoordinate,
+  transform: HexSpatialTransform
+): HexAxialCoordinate {
+  const q = coordinate.q - pivot.q;
+  const r = coordinate.r - pivot.r;
+  const transformed = (() => {
+    switch (transform) {
+      case "rotate-clockwise": return { q: q - r, r: q };
+      case "rotate-counterclockwise": return { q: r, r: r - q };
+      case "mirror-left-right": return { q: r - q, r };
+      case "mirror-up-down": return { q: q - r, r: -r };
+    }
+  })();
+  return {
+    q: transformed.q + pivot.q,
+    r: transformed.r + pivot.r
+  };
+}
+
+export function inverseHexSpatialTransform(transform: HexSpatialTransform): HexSpatialTransform {
+  if (transform === "rotate-clockwise") return "rotate-counterclockwise";
+  if (transform === "rotate-counterclockwise") return "rotate-clockwise";
+  return transform;
+}
+
+export function virtualHexKeyAt(coordinate: HexAxialCoordinate): HexBoardKey {
+  const { coordCol, coordRow } = hexAxialToCoordinate(coordinate);
+  return {
+    index: -1,
+    row: coordRow,
+    column: 0,
+    coordRow,
+    coordCol,
+    role: "note"
+  };
+}
+
+export function transformGeneratedLayoutAroundKey<T extends VectorLayoutModel>(
+  layout: T,
+  pivotKey: HexBoardKey,
+  transform: HexSpatialTransform,
+  keys = hexBoardGeometry
+): T {
+  const pivot = hexKeyAxialCoordinate(pivotKey);
+  const inverse = inverseHexSpatialTransform(transform);
+  const pitchAtTarget = (target: HexAxialCoordinate) => computeVectorLayoutSteps(
+    virtualHexKeyAt(transformHexCoordinate(target, pivot, inverse)),
+    layout,
+    keys
+  );
+  const pivotPitch = pitchAtTarget(pivot);
+  const acrossPitch = pitchAtTarget({ q: pivot.q + 1, r: pivot.r });
+  const upRightPitch = pitchAtTarget({ q: pivot.q, r: pivot.r - 1 });
+  return {
+    ...layout,
+    centerButton: pivotKey.index,
+    centerStepsFromC: Math.round(pivotPitch),
+    acrossSteps: Math.round(acrossPitch - pivotPitch),
+    upRightSteps: Math.round(upRightPitch - pivotPitch),
+    layoutRotationSteps: 0,
+    mirrorLeftRight: false,
+    mirrorUpDown: false
+  };
 }
 
 function layoutStepsForDelta(distCol: number, distRow: number, acrossSteps: number, downLeftSteps: number): number {

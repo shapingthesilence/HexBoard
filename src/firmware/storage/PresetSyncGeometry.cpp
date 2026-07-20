@@ -590,6 +590,16 @@ bool presetSyncFindTlvI16LE(const std::vector<uint8_t>& body, uint8_t tag, int16
   return true;
 }
 
+bool presetSyncFindTlvI32LE(const std::vector<uint8_t>& body, uint8_t tag, int32_t& result) {
+  const uint8_t* value = nullptr;
+  uint16_t length = 0;
+  if (!presetSyncFindTlv(body, tag, value, length) || length != 4) {
+    return false;
+  }
+  result = presetSyncReadI32LE(value);
+  return true;
+}
+
 bool presetSyncFindTlvU32LE(const std::vector<uint8_t>& body, uint8_t tag, uint32_t& result) {
   const uint8_t* value = nullptr;
   uint16_t length = 0;
@@ -759,6 +769,7 @@ void clearUserGeometryRuntimeSelection() {
   userGeometryRuntimeReferenceMidiNote = 69;
   userGeometryRuntimeReferenceHz = 440.0f;
   userGeometryRuntimeDeviceRotation = DEVICE_ROTATION_PORTRAIT;
+  userGeometryRuntimeLayoutCenterStepsFromC = 0;
   clearUserGeometryButtonRuntimeOverrides();
 }
 
@@ -888,6 +899,7 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   userGeometryRuntimeActive = true;
   userGeometryRuntimeScaleActive = false;
   userGeometryRuntimePaletteActive = false;
+  userGeometryRuntimeLayoutCenterStepsFromC = 0;
   clearUserGeometryButtonRuntimeOverrides();
   current.keyStepsFromA = userGeometryRuntimeTuning.spanCtoA();
   applyLayout();
@@ -903,6 +915,7 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
   uint8_t storedDeviceRotation = 0;
   uint8_t storedLayoutRotation = 0;
   uint8_t mirrorFlags = 0;
+  int32_t centerStepsFromC = 0;
   if (!presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_KIND, layoutKind)
       || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_LAYOUT_CENTER_BUTTON, centerButton)
       || !presetSyncFindTlvI16LE(object.body, PRESET_SYNC_TLV_LAYOUT_ACROSS_STEPS, acrossSteps)
@@ -921,8 +934,14 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
   presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_DEVICE_ROTATION, storedDeviceRotation);
   presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_ROTATION, storedLayoutRotation);
   presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_MIRROR_FLAGS, mirrorFlags);
+  presetSyncFindTlvI32LE(object.body, PRESET_SYNC_TLV_LAYOUT_CENTER_STEPS_FROM_C, centerStepsFromC);
   if (storedDeviceRotation > 3 || storedLayoutRotation > 5 || (mirrorFlags & ~0x03u) != 0) {
     sendToLog("Geometry runtime layout apply rejected: rotation or mirror field is out of range.");
+    return false;
+  }
+  if (centerStepsFromC < std::numeric_limits<int16_t>::min()
+      || centerStepsFromC > std::numeric_limits<int16_t>::max()) {
+    sendToLog("Geometry runtime layout apply rejected: center step offset is out of range.");
     return false;
   }
 
@@ -937,6 +956,7 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
   userGeometryRuntimeLayoutObjectSelected = true;
   userGeometryRuntimeActive = true;
   userGeometryRuntimeDeviceRotation = storedDeviceRotation;
+  userGeometryRuntimeLayoutCenterStepsFromC = static_cast<int16_t>(centerStepsFromC);
   deviceRotation = storedDeviceRotation;
   layoutRotation = storedLayoutRotation;
   mirrorLeftRight = (mirrorFlags & 0x01u) != 0;

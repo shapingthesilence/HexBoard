@@ -9,6 +9,7 @@ import {
   tlv,
   tlvFloat32LE,
   tlvI16LE,
+  tlvI32LE,
   tlvU8,
   tlvU16LE,
   tlvU32LE,
@@ -18,8 +19,9 @@ import type { EncodedCatalogObject, LayoutsDatCatalog, ObjectReferenceInput } fr
 import { deterministicObjectId, objectIdFromHex, objectIdToHex } from "./objectId.ts";
 
 export const LegacyLayoutBundleFileFormat = "hexboard.layoutBundle.v1";
-export const PreviousLayoutBundleFileFormat = "hexboard.layoutBundle.v2";
-export const LayoutBundleFileFormat = "hexboard.layoutBundle.v3";
+export const IntermediateLayoutBundleFileFormat = "hexboard.layoutBundle.v2";
+export const PreviousLayoutBundleFileFormat = "hexboard.layoutBundle.v3";
+export const LayoutBundleFileFormat = "hexboard.layoutBundle.v4";
 export const GenericScaleColorMapName = "Custom Palette";
 export const GeometryMenuTextMaxLength = 19;
 export const NoteLabelTextMaxLength = 7;
@@ -91,7 +93,8 @@ export const LayoutTlv = {
   ExplicitButtonMapRef: 0x26,
   DeviceRotation: 0x27,
   LayoutRotation: 0x28,
-  MirrorFlags: 0x29
+  MirrorFlags: 0x29,
+  CenterStepsFromC: 0x2a
 } as const;
 
 export const ScaleColorMapTlv = {
@@ -199,6 +202,7 @@ export interface VectorLayoutInput {
   folderPath?: string;
   tuningRef: ObjectReferenceInput;
   centerButton: number;
+  centerStepsFromC?: number;
   acrossSteps: number;
   upRightSteps: number;
   portrait: boolean;
@@ -282,10 +286,16 @@ export interface LayoutBundleButtonOverride {
   action?: LayoutBundleButtonAction;
 }
 
+export interface LayoutBundleGridOverride extends Omit<LayoutBundleButtonOverride, "buttonIndex"> {
+  coordCol: number;
+  coordRow: number;
+}
+
 export interface LayoutBundleLayout {
   objectIdHex: string;
   name: string;
   centerButton: number;
+  centerStepsFromC: number;
   acrossSteps: number;
   upRightSteps: number;
   deviceRotationSteps: number;
@@ -294,6 +304,7 @@ export interface LayoutBundleLayout {
   mirrorUpDown: boolean;
   portrait: boolean;
   buttonOverrides: LayoutBundleButtonOverride[];
+  offGridOverrides: LayoutBundleGridOverride[];
   chordActions: LayoutBundleChordAction[];
 }
 
@@ -519,7 +530,8 @@ export function createVectorLayout(input: VectorLayoutInput): EncodedCatalogObje
       tlvU8(LayoutTlv.Portrait, deviceRotationSteps % 2 === 0 ? 1 : 0),
       tlvU8(LayoutTlv.DeviceRotation, deviceRotationSteps),
       tlvU8(LayoutTlv.LayoutRotation, layoutRotationSteps),
-      tlvU8(LayoutTlv.MirrorFlags, mirrorFlags)
+      tlvU8(LayoutTlv.MirrorFlags, mirrorFlags),
+      tlvI32LE(LayoutTlv.CenterStepsFromC, Math.round(input.centerStepsFromC ?? 0))
     ]
   });
 }
@@ -580,45 +592,49 @@ export function createUserScale(input: UserScaleInput): EncodedCatalogObject {
   });
 }
 
+function encodeFieldMaskedOverrideRecord(record: ExplicitButtonRecord, coordinatePrefix: number[]): Uint8Array {
+  const hasColor = record.hueTenthDegrees !== undefined
+    && record.saturation !== undefined
+    && record.value !== undefined;
+  const fieldMask = (record.role !== ButtonMapRole.Note ? ButtonMapField.Role : 0)
+    | (record.stepsFromC !== undefined ? ButtonMapField.Pitch : 0)
+    | (hasColor ? ButtonMapField.Color : 0)
+    | (record.action ? ButtonMapField.Action : 0);
+  const outputMode = record.action?.kind === "direct-midi"
+    ? ButtonOutputMode.DirectMidi
+    : record.action?.kind === "chord"
+      ? ButtonOutputMode.Chord
+      : ButtonOutputMode.Tuned;
+  const midiNote = record.action?.kind === "direct-midi"
+    ? record.action.midiNote
+    : record.action?.kind === "chord"
+      ? record.action.rootMidiNote ?? 60
+      : 60;
+  const midiChannel = record.action?.kind === "direct-midi" ? record.action.midiChannel : 0;
+  const actionId = record.action?.kind === "chord" ? record.action.chordActionId : 0;
+  const payload = [
+    ...coordinatePrefix,
+    fieldMask & 0xff,
+    (fieldMask >> 8) & 0xff,
+    record.role,
+    ...encodeInt32LE(record.stepsFromC ?? 0),
+    outputMode,
+    clampInteger(midiNote, 0, 127),
+    clampInteger(midiChannel, 0, 16),
+    clampInteger(actionId, 0, 255),
+    (record.hueTenthDegrees ?? 0) & 0xff,
+    ((record.hueTenthDegrees ?? 0) >> 8) & 0xff,
+    record.saturation ?? 0,
+    record.value ?? 0
+  ];
+  return bytesFromNumbers([payload.length & 0xff, (payload.length >> 8) & 0xff, ...payload]);
+}
+
 export function createExplicitButtonMap(input: ExplicitButtonMapInput): EncodedCatalogObject {
-  const mapRecords = input.records.map((record) => {
-    const hasColor = record.hueTenthDegrees !== undefined
-      && record.saturation !== undefined
-      && record.value !== undefined;
-    const fieldMask = (record.role !== ButtonMapRole.Note ? ButtonMapField.Role : 0)
-      | (record.stepsFromC !== undefined ? ButtonMapField.Pitch : 0)
-      | (hasColor ? ButtonMapField.Color : 0)
-      | (record.action ? ButtonMapField.Action : 0);
-    const outputMode = record.action?.kind === "direct-midi"
-      ? ButtonOutputMode.DirectMidi
-      : record.action?.kind === "chord"
-        ? ButtonOutputMode.Chord
-        : ButtonOutputMode.Tuned;
-    const midiNote = record.action?.kind === "direct-midi"
-      ? record.action.midiNote
-      : record.action?.kind === "chord"
-        ? record.action.rootMidiNote ?? 60
-        : 60;
-    const midiChannel = record.action?.kind === "direct-midi" ? record.action.midiChannel : 0;
-    const actionId = record.action?.kind === "chord" ? record.action.chordActionId : 0;
-    const payload = [
-      record.buttonIndex & 0xff,
-      (record.buttonIndex >> 8) & 0xff,
-      fieldMask & 0xff,
-      (fieldMask >> 8) & 0xff,
-      record.role,
-      ...encodeInt32LE(record.stepsFromC ?? 0),
-      outputMode,
-      clampInteger(midiNote, 0, 127),
-      clampInteger(midiChannel, 0, 16),
-      clampInteger(actionId, 0, 255),
-      (record.hueTenthDegrees ?? 0) & 0xff,
-      ((record.hueTenthDegrees ?? 0) >> 8) & 0xff,
-      record.saturation ?? 0,
-      record.value ?? 0
-    ];
-    return bytesFromNumbers([payload.length & 0xff, (payload.length >> 8) & 0xff, ...payload]);
-  });
+  const mapRecords = input.records.map((record) => encodeFieldMaskedOverrideRecord(record, [
+    record.buttonIndex & 0xff,
+    (record.buttonIndex >> 8) & 0xff
+  ]));
   const encoder = new TextEncoder();
   const actionRecords = (input.actions ?? []).map((action) => {
     const intervals = action.intervals.slice(0, 4).map((interval) => clampInteger(interval, -32768, 32767));
@@ -855,6 +871,7 @@ export function createDefaultLayout(cycleLength: number): LayoutBundleLayout {
     objectIdHex: objectIdToHex(deterministicObjectId(`layout:default:${cycleLength}`)),
     name: `${cycleLength} EDO Wicki`,
     centerButton: 65,
+    centerStepsFromC: 0,
     acrossSteps: 3,
     upRightSteps: currentFirmwareDownLeftToUpRight(3, -11),
     deviceRotationSteps: 0,
@@ -863,6 +880,7 @@ export function createDefaultLayout(cycleLength: number): LayoutBundleLayout {
     mirrorUpDown: false,
     portrait: true,
     buttonOverrides: [],
+    offGridOverrides: [],
     chordActions: []
   };
 }
@@ -1168,6 +1186,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     folderPath,
     tuningRef: tuningReference(tuning),
     centerButton: layout.centerButton,
+    centerStepsFromC: layout.centerStepsFromC,
     acrossSteps: layout.acrossSteps,
     upRightSteps: layout.upRightSteps,
     portrait: (layout.deviceRotationSteps % 2) === 0,
@@ -1251,6 +1270,7 @@ export function parseLayoutBundleFile(value: unknown): LayoutBundle {
   if (
     (record.format !== LayoutBundleFileFormat
       && record.format !== PreviousLayoutBundleFileFormat
+      && record.format !== IntermediateLayoutBundleFileFormat
       && record.format !== LegacyLayoutBundleFileFormat) ||
     typeof record.bundle !== "object" ||
     record.bundle === null
@@ -1384,6 +1404,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
           objectIdHex: objectIdToHex(deterministicObjectId(`${source.objectIdHex}:legacy-layout`)),
           name: clampGeometryMenuText(`${source.name} Layout`, "User Layout"),
           centerButton: legacyLayout.centerButton ?? 65,
+          centerStepsFromC: legacyLayout.centerStepsFromC ?? 0,
           acrossSteps: legacyLayout.acrossSteps ?? 3,
           upRightSteps: legacyLayout.upRightSteps ?? 11,
           deviceRotationSteps: legacyLayout.deviceRotationSteps ?? legacyLayout.rotationSteps ?? 0,
@@ -1392,6 +1413,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
           mirrorUpDown: legacyLayout.mirrorUpDown ?? false,
           portrait: typeof legacyLayout.portrait === "boolean" ? legacyLayout.portrait : ((legacyLayout.rotationSteps ?? 0) % 2) === 0,
           buttonOverrides: Array.isArray(source.buttonOverrides) ? source.buttonOverrides : [],
+          offGridOverrides: [],
           chordActions: []
         }]
       : [createDefaultLayout(cycleLength)];
@@ -1424,6 +1446,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
       objectIdHex,
       name: clampGeometryMenuText(typeof layout.name === "string" ? layout.name : "", `Layout ${index + 1}`),
       centerButton: clampInteger(layout.centerButton ?? 65, 0, 139),
+      centerStepsFromC: Math.round(numberOr(layout.centerStepsFromC, 0)),
       acrossSteps: Math.round(layout.acrossSteps ?? 3),
       upRightSteps: Math.round(layout.upRightSteps ?? 11),
       deviceRotationSteps,
@@ -1432,6 +1455,16 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
       mirrorUpDown: Boolean(layout.mirrorUpDown),
       portrait: deviceRotationSteps % 2 === 0,
       buttonOverrides: Array.isArray(layout.buttonOverrides) ? layout.buttonOverrides : [],
+      offGridOverrides: Array.isArray(layout.offGridOverrides)
+        ? layout.offGridOverrides
+          .filter((override) => Number.isFinite(override.coordCol) && Number.isFinite(override.coordRow))
+          .map((override): LayoutBundleGridOverride => ({
+            ...override,
+            coordCol: Math.round(override.coordCol),
+            coordRow: Math.round(override.coordRow),
+            role: override.role === "unused" || override.role === "command" ? override.role : "note"
+          }))
+        : [],
       chordActions
     };
   });

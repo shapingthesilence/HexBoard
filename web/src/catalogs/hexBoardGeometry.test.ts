@@ -3,7 +3,12 @@ import {
   HEXBOARD_COMMAND_INDICES,
   computeVectorLayoutSteps,
   hexBoardGeometry,
-  hexBoardKeyByIndex
+  hexBoardKeyByIndex,
+  hexKeyAxialCoordinate,
+  inverseHexSpatialTransform,
+  transformGeneratedLayoutAroundKey,
+  transformHexCoordinate,
+  virtualHexKeyAt
 } from "./index.ts";
 
 describe("HexBoard geometry", () => {
@@ -41,5 +46,47 @@ describe("HexBoard geometry", () => {
     expect(computeVectorLayoutSteps(hexBoardKeyByIndex(66), { ...base, layoutRotationSteps: 3 })).toBe(-3);
     expect(computeVectorLayoutSteps(hexBoardKeyByIndex(66), { ...base, mirrorLeftRight: true })).toBe(-3);
     expect(computeVectorLayoutSteps(hexBoardKeyByIndex(65), { ...base, layoutRotationSteps: 3, mirrorLeftRight: true })).toBe(0);
+  });
+
+  it("round trips axial rotation around an arbitrary primary key", () => {
+    const pivot = hexKeyAxialCoordinate(hexBoardKeyByIndex(65));
+    const source = hexKeyAxialCoordinate(hexBoardKeyByIndex(32));
+    const rotated = transformHexCoordinate(source, pivot, "rotate-clockwise");
+    expect(transformHexCoordinate(rotated, pivot, inverseHexSpatialTransform("rotate-clockwise"))).toEqual(source);
+    expect(transformHexCoordinate(
+      transformHexCoordinate(source, pivot, "mirror-left-right"),
+      pivot,
+      "mirror-left-right"
+    )).toEqual(source);
+  });
+
+  it("rewrites generated mapping vectors without changing the transformed pitches", () => {
+    const layout = {
+      centerButton: 65,
+      centerStepsFromC: 4,
+      acrossSteps: 3,
+      upRightSteps: 11,
+      layoutRotationSteps: 2,
+      mirrorLeftRight: true
+    };
+    const pivotKey = hexBoardKeyByIndex(66);
+    const pivot = hexKeyAxialCoordinate(pivotKey);
+    const transformed = transformGeneratedLayoutAroundKey(layout, pivotKey, "rotate-clockwise");
+    for (const targetKey of [hexBoardKeyByIndex(55), pivotKey, hexBoardKeyByIndex(67), hexBoardKeyByIndex(77)]) {
+      const source = transformHexCoordinate(
+        hexKeyAxialCoordinate(targetKey),
+        pivot,
+        "rotate-counterclockwise"
+      );
+      expect(computeVectorLayoutSteps(targetKey, transformed)).toBe(
+        computeVectorLayoutSteps(virtualHexKeyAt(source), layout)
+      );
+    }
+    expect(transformed).toMatchObject({
+      centerButton: 66,
+      layoutRotationSteps: 0,
+      mirrorLeftRight: false,
+      mirrorUpDown: false
+    });
   });
 });

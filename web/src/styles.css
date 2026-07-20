@@ -1022,6 +1022,72 @@ select {
   background: var(--surface-raised);
 }
 
+.layoutTransformToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: -2px 20px 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface-raised) 88%, var(--accent) 12%);
+}
+
+.layoutToolbarGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.layoutToolbarGroup button {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+
+.layoutToolbarIcon {
+  width: 21px;
+  height: 21px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.layoutToolbarTextIcon {
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.layoutToolbarDivider {
+  align-self: stretch;
+  width: 1px;
+  min-height: 28px;
+  background: var(--border);
+}
+
+.layoutSelectionStatus {
+  justify-content: flex-end;
+}
+
+.layoutTransformMode {
+  padding: 0.2rem 0.42rem;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  white-space: nowrap;
+}
+
+.layoutDeselectButton {
+  white-space: nowrap;
+}
+
 .toolbarSelectField {
   display: flex;
   align-items: center;
@@ -1759,6 +1825,7 @@ select {
 :root[data-theme="dark"] .listItem,
 :root[data-theme="dark"] .auditionPanel,
 :root[data-theme="dark"] .brushToolbar,
+:root[data-theme="dark"] .layoutTransformToolbar,
 :root[data-theme="dark"] .wavetablePreviewPanel {
   border-color: var(--border);
   background: var(--surface);
@@ -1971,6 +2038,10 @@ select {
   }
 
   .brushToolbar {
+    margin-inline: 12px;
+  }
+
+  .layoutTransformToolbar {
     margin-inline: 12px;
   }
 

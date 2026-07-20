@@ -81,6 +81,7 @@ bool userGeometryRuntimeButtonColorActive[LED_COUNT] = {};
 int16_t userGeometryRuntimeButtonStepsFromC[LED_COUNT] = {};
 colorDef userGeometryRuntimeButtonColor[LED_COUNT] = {};
 uint8_t userGeometryRuntimeDeviceRotation = DEVICE_ROTATION_PORTRAIT;
+int16_t userGeometryRuntimeLayoutCenterStepsFromC = 0;
 uint8_t userGeometryRuntimeButtonOutputMode[LED_COUNT] = {};
 uint8_t userGeometryRuntimeButtonMidiNote[LED_COUNT] = {};
 uint8_t userGeometryRuntimeButtonMidiChannel[LED_COUNT] = {};

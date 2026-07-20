@@ -868,6 +868,7 @@ Recommended TLVs:
 | `0x27` | `DeviceRotation` | `u8`, `0..3` for `0/90/180/270` degrees |
 | `0x28` | `LayoutRotation` | `u8`, `0..5` for musical 60-degree rotations |
 | `0x29` | `MirrorFlags` | `u8` bit 0 left/right, bit 1 up/down |
+| `0x2A` | `CenterStepsFromC` | Optional `i32-le`; generated pitch assigned to `CenterButton`, default `0` |
 
 This matches the current firmware pitch-layout model closely enough for simple
 on-device editing: choose tuning, center button, across steps, and down-left
@@ -876,12 +877,15 @@ not alter pitches. `LayoutRotation` and `MirrorFlags` transform the musical
 vectors. `Portrait` remains for older hosts; firmware uses it only when the
 full `DeviceRotation` TLV is absent. Current factory layouts encode all four
 transform fields, with zero musical rotation and no mirrors.
+`CenterStepsFromC` lets a host re-center or transpose the affine layout without
+changing pitches; current firmware accepts the range of its signed 16-bit step
+indices.
 
 Current firmware live Apply supports `LayoutKind = 1` vector layouts. Applying
-a layout replaces the runtime layout name, center button, vectors, device
-rotation, musical rotation, and mirrors; clears previous explicit button
-overrides; then rebuilds scale membership, MIDI pitch assignment, display
-orientation, and LED color caches.
+a layout replaces the runtime layout name, center button, center-step offset,
+vectors, device rotation, musical rotation, and mirrors; clears previous
+explicit button overrides; then rebuilds scale membership, MIDI pitch
+assignment, display orientation, and LED color caches.
 
 A web bundle may contain multiple `UserLayout` objects for the same tuning. A
 generated vector layout can still be edited on-device with the compact
@@ -900,8 +904,10 @@ DownLeftSteps = -UpRightSteps
 UpRightSteps = -DownLeftSteps
 ```
 
-Pitch, color, and action overrides stay attached to physical button indices
-when musical rotation or mirroring changes.
+Direct changes to `LayoutRotation` and `MirrorFlags` leave pitch, color, and
+action overrides attached to physical button indices. The web editor's spatial
+toolbar instead rewrites the vector layout and moves override coordinates
+together, centered on its primary selected key.
 
 ## User Scale Object
 
@@ -1040,6 +1046,10 @@ semitones from each key's stored root note on the action's fixed channel. The
 onboard synth follows the same tones. A format-2 map with `LayoutRef` is applied
 only to that exact layout; firmware does not fall back to another map that
 merely shares its tuning.
+
+The web editor may retain transformed overrides outside the physical key grid
+in its format-4 JSON bundle. Those web-only coordinates are never encoded into
+an `ExplicitButtonMap`; preset sync sends only visible physical button records.
 
 ## Synth Preset Object
 

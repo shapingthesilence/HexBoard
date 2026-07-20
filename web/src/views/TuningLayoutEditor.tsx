@@ -19,7 +19,9 @@ import {
   encodeLayoutBundle,
   ExplicitButtonMapTlv,
   GeometryMenuTextMaxLength,
+  hexAxialToCoordinate,
   hexBoardGeometry,
+  hexKeyAxialCoordinate,
   isHexBoardCommandIndex,
   LayoutTlv,
   normalizeScaleDegrees,
@@ -39,16 +41,20 @@ import {
   ScaleColorMapTlv,
   serializeLayoutBundle,
   TuningTlv,
+  transformGeneratedLayoutAroundKey,
+  transformHexCoordinate,
   UserScaleTlv,
   UserTuningKind,
   clampGeometryFolderPath,
   clampGeometryMenuText,
   clampNoteLabelText,
   type HexBoardKey,
+  type HexSpatialTransform,
   type LayoutBundle,
   type LayoutBundleButtonAction,
   type LayoutBundleButtonOverride,
   type LayoutBundleChordAction,
+  type LayoutBundleGridOverride,
   type LayoutBundleLayout,
   type LayoutBundleScale,
   type LayoutBundleTuning,
@@ -77,6 +83,93 @@ const defaultGeometryFolders = [rootFolderPath];
 type LayoutGuideFocus = "center" | "across" | "upRight";
 type GeometryWorkspaceTab = "library" | "tuning" | "layout" | "scale";
 type GeometryLibrarySpace = "computer" | "hexboard";
+
+interface LayoutHistoryEntry {
+  label: string;
+  bundleId: string;
+  before: LayoutBundle;
+  after: LayoutBundle;
+  selectedBefore: number[];
+  selectedAfter: number[];
+  primaryBefore: number;
+  primaryAfter: number;
+  offGridSelectedBefore: LayoutBundleGridOverride[];
+  offGridSelectedAfter: LayoutBundleGridOverride[];
+}
+
+interface PaintStrokeHistoryStart {
+  label: string;
+  bundleId: string;
+  before: LayoutBundle;
+  selectedButtons: number[];
+  primaryButton: number;
+  offGridSelected: LayoutBundleGridOverride[];
+}
+
+const editableHexKeyByCoordinate = new Map<string, HexBoardKey>(
+  hexBoardGeometry
+    .filter((key) => key.role === "note")
+    .map((key) => [`${key.coordCol}:${key.coordRow}`, key] as const)
+);
+
+function coordinateOverrideKey(override: Pick<LayoutBundleGridOverride, "coordCol" | "coordRow">): string {
+  return `${override.coordCol}:${override.coordRow}`;
+}
+
+function layoutCoordinateOverrides(layout: LayoutBundleLayout): LayoutBundleGridOverride[] {
+  const visible = layout.buttonOverrides.flatMap((override) => {
+    const key = hexBoardGeometry.find((candidate) => candidate.index === override.buttonIndex);
+    if (!key || key.role !== "note") {
+      return [];
+    }
+    const { buttonIndex, ...fields } = override;
+    void buttonIndex;
+    return [{ ...fields, coordCol: key.coordCol, coordRow: key.coordRow }];
+  });
+  return [...visible, ...layout.offGridOverrides];
+}
+
+function partitionCoordinateOverrides(overrides: LayoutBundleGridOverride[]): Pick<LayoutBundleLayout, "buttonOverrides" | "offGridOverrides"> {
+  const byCoordinate = new Map(overrides.map((override) => [coordinateOverrideKey(override), override]));
+  const buttonOverrides: LayoutBundleButtonOverride[] = [];
+  const offGridOverrides: LayoutBundleGridOverride[] = [];
+  for (const override of byCoordinate.values()) {
+    const key = editableHexKeyByCoordinate.get(coordinateOverrideKey(override));
+    if (key) {
+      const { coordCol, coordRow, ...fields } = override;
+      void coordCol;
+      void coordRow;
+      buttonOverrides.push({ ...fields, buttonIndex: key.index });
+    } else {
+      offGridOverrides.push(override);
+    }
+  }
+  return {
+    buttonOverrides: buttonOverrides.sort((left, right) => left.buttonIndex - right.buttonIndex),
+    offGridOverrides: offGridOverrides.sort((left, right) => left.coordRow - right.coordRow || left.coordCol - right.coordCol)
+  };
+}
+
+function transformCoordinateOverride(
+  override: LayoutBundleGridOverride,
+  pivot: ReturnType<typeof hexKeyAxialCoordinate>,
+  transform: HexSpatialTransform
+): LayoutBundleGridOverride {
+  const source = { q: (override.coordCol + override.coordRow) / 2, r: override.coordRow };
+  const target = hexAxialToCoordinate(transformHexCoordinate(source, pivot, transform));
+  return { ...override, ...target };
+}
+
+export function deviceRelativeMirrorTransform(
+  deviceRotationSteps: number,
+  direction: "horizontal" | "vertical"
+): HexSpatialTransform {
+  const deviceAxesAreSwapped = Math.abs(Math.round(deviceRotationSteps)) % 2 === 1;
+  if (direction === "horizontal") {
+    return deviceAxesAreSwapped ? "mirror-up-down" : "mirror-left-right";
+  }
+  return deviceAxesAreSwapped ? "mirror-left-right" : "mirror-up-down";
+}
 type PaintTool = "brush" | "eyedropper";
 type PaintTarget = "button" | "degree";
 type KeyOutputMode = "tuned" | "direct-midi" | "chord";
@@ -148,6 +241,39 @@ interface PreviewKey {
 interface GuideHalo {
   key: HexBoardKey;
   tone: "green" | "red";
+}
+
+type LayoutToolbarIconKind = "undo" | "redo" | "rotate-counterclockwise" | "rotate-clockwise" | "mirror-horizontal" | "mirror-vertical";
+
+function LayoutToolbarIcon({ kind }: { kind: LayoutToolbarIconKind }) {
+  if (kind === "mirror-horizontal") {
+    return (
+      <svg aria-hidden="true" className="layoutToolbarIcon" viewBox="0 0 24 24">
+        <path d="M12 3v18" strokeDasharray="2 2" />
+        <path d="M9 7 4 12l5 5M15 7l5 5-5 5" />
+      </svg>
+    );
+  }
+  if (kind === "mirror-vertical") {
+    return (
+      <svg aria-hidden="true" className="layoutToolbarIcon" viewBox="0 0 24 24">
+        <path d="M3 12h18" strokeDasharray="2 2" />
+        <path d="m7 9 5-5 5 5M7 15l5 5 5-5" />
+      </svg>
+    );
+  }
+  const isHistory = kind === "undo" || kind === "redo";
+  return (
+    <svg aria-hidden="true" className="layoutToolbarIcon" viewBox="0 0 24 24">
+      {isHistory ? (
+        <path d={kind === "undo" ? "M8 8h7a5 5 0 1 1 0 10h-2M8 8l3-3M8 8l3 3" : "M16 8H9a5 5 0 1 0 0 10h2M16 8l-3-3M16 8l-3 3"} />
+      ) : kind === "rotate-clockwise" ? (
+        <path d="M17 7a8 8 0 1 0 2 8M13.2 5.7 17 7l-.7-3.9" />
+      ) : (
+        <path d="M7 7a8 8 0 1 1-2 8M10.8 6.2 7 7l.7-4.2" />
+      )}
+    </svg>
+  );
 }
 
 interface TuningLayoutEditorProps {
@@ -525,7 +651,7 @@ function removeOverrideColor(override: LayoutBundleButtonOverride): LayoutBundle
   return rest;
 }
 
-function overrideHasColor(override: LayoutBundleButtonOverride): boolean {
+function overrideHasColor(override: Pick<LayoutBundleButtonOverride, "hueTenthDegrees" | "saturation" | "value">): boolean {
   return override.hueTenthDegrees !== undefined || override.saturation !== undefined || override.value !== undefined;
 }
 
@@ -534,6 +660,31 @@ function overrideHasCustomBehavior(override: LayoutBundleButtonOverride): boolea
     override.stepsFromC !== undefined ||
     overrideHasColor(override) ||
     override.action !== undefined;
+}
+
+function gridOverrideHasCustomBehavior(override: LayoutBundleGridOverride): boolean {
+  return override.role !== "note" ||
+    override.stepsFromC !== undefined ||
+    overrideHasColor(override) ||
+    override.action !== undefined;
+}
+
+function sanitizeButtonAction(action: LayoutBundleButtonAction | undefined): LayoutBundleButtonAction | undefined {
+  if (action?.kind === "direct-midi") {
+    return {
+      kind: "direct-midi",
+      midiNote: clampInteger(action.midiNote, 0, 127),
+      midiChannel: clampInteger(action.midiChannel, 1, 16)
+    };
+  }
+  if (action?.kind === "chord") {
+    return {
+      kind: "chord",
+      chordActionId: clampInteger(action.chordActionId, 1, 255),
+      rootMidiNote: action.rootMidiNote === undefined ? undefined : clampInteger(action.rootMidiNote, 0, 127)
+    };
+  }
+  return undefined;
 }
 
 export function paintScaleDegreeColor(
@@ -624,6 +775,7 @@ function sanitizeEditorBundle(bundle: LayoutBundle): LayoutBundle {
       ...layout,
       name: clampGeometryMenuText(layout.name, "User Layout"),
       centerButton: noteButtonIndexOrFallback(layout.centerButton, 65),
+      centerStepsFromC: Math.round(layout.centerStepsFromC),
       deviceRotationSteps: clampInteger(layout.deviceRotationSteps, 0, 3),
       layoutRotationSteps: clampInteger(layout.layoutRotationSteps, 0, 5),
       mirrorLeftRight: Boolean(layout.mirrorLeftRight),
@@ -633,23 +785,19 @@ function sanitizeEditorBundle(bundle: LayoutBundle): LayoutBundle {
         .map((override): LayoutBundleButtonOverride => ({
           ...override,
           role: override.role === "unused" ? "unused" : "note",
-          action: override.action?.kind === "direct-midi"
-            ? {
-                kind: "direct-midi" as const,
-                midiNote: clampInteger(override.action.midiNote, 0, 127),
-                midiChannel: clampInteger(override.action.midiChannel, 1, 16)
-              }
-            : override.action?.kind === "chord"
-              ? {
-                  kind: "chord" as const,
-                  chordActionId: clampInteger(override.action.chordActionId, 1, 255),
-                  rootMidiNote: override.action.rootMidiNote === undefined
-                    ? undefined
-                    : clampInteger(override.action.rootMidiNote, 0, 127)
-                }
-              : undefined
+          action: sanitizeButtonAction(override.action)
         }))
         .filter(overrideHasCustomBehavior),
+      offGridOverrides: layout.offGridOverrides
+        .filter((override) => Number.isFinite(override.coordCol) && Number.isFinite(override.coordRow))
+        .map((override): LayoutBundleGridOverride => ({
+          ...override,
+          coordCol: Math.round(override.coordCol),
+          coordRow: Math.round(override.coordRow),
+          role: override.role === "unused" || override.role === "command" ? override.role : "note",
+          action: sanitizeButtonAction(override.action)
+        }))
+        .filter(gridOverrideHasCustomBehavior),
       chordActions: layout.chordActions.slice(0, 16).map((action, index) => ({
         ...action,
         id: clampInteger(action.id, 1, 255),
@@ -927,11 +1075,12 @@ function decodeDeviceScale(object: DeviceGeometryObject, index: number, cycleLen
 
 function decodeDeviceButtonMap(map: DeviceGeometryObject | undefined): {
   overrides: LayoutBundleButtonOverride[];
+  offGridOverrides: LayoutBundleGridOverride[];
   chordActions: LayoutBundleChordAction[];
 } {
   const records = map ? tlvValue(map.records, ExplicitButtonMapTlv.ButtonRecords) : undefined;
   if (!records) {
-    return { overrides: [], chordActions: [] };
+    return { overrides: [], offGridOverrides: [], chordActions: [] };
   }
   const recordFormat = u8(tlvValue(map?.records ?? [], ExplicitButtonMapTlv.MapRecordFormat), ButtonMapRecordFormat.Legacy);
   const overrides: LayoutBundleButtonOverride[] = [];
@@ -1025,6 +1174,7 @@ function decodeDeviceButtonMap(map: DeviceGeometryObject | undefined): {
   }
   return {
     overrides: overrides.sort((left, right) => left.buttonIndex - right.buttonIndex),
+    offGridOverrides: [],
     chordActions
   };
 }
@@ -1040,6 +1190,7 @@ function decodeDeviceLayout(object: DeviceGeometryObject, index: number, buttonM
     objectIdHex: objectIdToHex(object.record.objectId),
     name: tlvText(object.records, CommonTlv.Name, `Layout ${index + 1}`),
     centerButton: noteButtonIndexOrFallback(u16LE(tlvValue(object.records, LayoutTlv.CenterButton), 65), 65),
+    centerStepsFromC: i32LEFromBytes(tlvValue(object.records, LayoutTlv.CenterStepsFromC) ?? new Uint8Array(4), 0),
     acrossSteps,
     upRightSteps: currentFirmwareDownLeftToUpRight(acrossSteps, downLeftSteps),
     deviceRotationSteps,
@@ -1048,6 +1199,7 @@ function decodeDeviceLayout(object: DeviceGeometryObject, index: number, buttonM
     mirrorUpDown: (mirrorFlags & 2) !== 0,
     portrait: deviceRotationSteps % 2 === 0,
     buttonOverrides: buttonMapData.overrides,
+    offGridOverrides: buttonMapData.offGridOverrides,
     chordActions: buttonMapData.chordActions
   };
 }
@@ -1065,6 +1217,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<GeometryWorkspaceTab>("library");
   const [selectedButton, setSelectedButton] = useState(65);
   const [selectedButtons, setSelectedButtons] = useState<number[]>([65]);
+  const [selectedOffGridCoordinates, setSelectedOffGridCoordinates] = useState<LayoutBundleGridOverride[]>([]);
   const [layoutGuideFocus, setLayoutGuideFocus] = useState<LayoutGuideFocus | null>(null);
   const [paintbrushMode, setPaintbrushMode] = useState(false);
   const [paintTool, setPaintTool] = useState<PaintTool>("brush");
@@ -1082,10 +1235,16 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const keyLabelsInputRef = useRef<HTMLInputElement>(null);
   const includedDegreesInputRef = useRef<HTMLInputElement>(null);
   const paintStrokeActiveRef = useRef(false);
+  const paintStrokeHistoryRef = useRef<PaintStrokeHistoryStart | null>(null);
   const lastPaintedTargetRef = useRef<string | null>(null);
   const skipNextLiveSendRef = useRef(true);
+  const undoLayoutHistoryRef = useRef<LayoutHistoryEntry[]>([]);
+  const redoLayoutHistoryRef = useRef<LayoutHistoryEntry[]>([]);
+  const [, setLayoutHistoryRevision] = useState(0);
 
   const activeBundle = bundles.find((bundle) => bundle.objectIdHex === activeBundleId) ?? bundles[0] ?? createDefaultLayoutBundle();
+  const activeBundleRef = useRef(activeBundle);
+  activeBundleRef.current = activeBundle;
   const activeLayout = activeBundle.layouts.find((layout) => layout.objectIdHex === activeBundle.activeLayoutIdHex) ??
     activeBundle.layouts[0] ??
     createDefaultLayout(tuningCycleLength(activeBundle.tuning));
@@ -1103,6 +1262,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   function selectOnlyButton(buttonIndex: number) {
     setSelectedButton(buttonIndex);
     setSelectedButtons([buttonIndex]);
+    setSelectedOffGridCoordinates([]);
   }
 
   useEffect(() => {
@@ -1154,13 +1314,27 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     }
   }, [customColorModeActive, paintbrushMode]);
 
+  function clearLayoutHistory() {
+    setSelectedOffGridCoordinates([]);
+    if (undoLayoutHistoryRef.current.length === 0 && redoLayoutHistoryRef.current.length === 0) {
+      return;
+    }
+    undoLayoutHistoryRef.current = [];
+    redoLayoutHistoryRef.current = [];
+    setLayoutHistoryRevision((current) => current + 1);
+  }
+
   function setBundlesAndPersist(nextBundles: LayoutBundle[]) {
+    clearLayoutHistory();
     const sanitized = nextBundles.map(sanitizeEditorBundle).sort(compareGeometryBundles);
     setBundles(sanitized);
     persistBundles(sanitized);
   }
 
-  function updateActiveBundle(updater: (bundle: LayoutBundle) => LayoutBundle) {
+  function updateActiveBundle(updater: (bundle: LayoutBundle) => LayoutBundle, preserveLayoutHistory = false) {
+    if (!preserveLayoutHistory) {
+      clearLayoutHistory();
+    }
     const targetId = activeBundle.objectIdHex;
     setBundles((currentBundles) => {
       const nextBundles = currentBundles
@@ -1171,6 +1345,68 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       return nextBundles;
     });
     setActiveBundleId(targetId);
+  }
+
+  function pushLayoutHistoryEntry(entry: LayoutHistoryEntry) {
+    undoLayoutHistoryRef.current = [...undoLayoutHistoryRef.current.slice(-99), entry];
+    redoLayoutHistoryRef.current = [];
+    setLayoutHistoryRevision((current) => current + 1);
+  }
+
+  function commitLayoutHistory(
+    label: string,
+    after: LayoutBundle,
+    selectedAfter = selectedButtons,
+    primaryAfter = selectedButton,
+    offGridSelectedAfter = selectedOffGridCoordinates
+  ) {
+    const entry: LayoutHistoryEntry = {
+      label,
+      bundleId: activeBundle.objectIdHex,
+      before: activeBundle,
+      after: sanitizeEditorBundle(after),
+      selectedBefore: selectedButtons,
+      selectedAfter,
+      primaryBefore: selectedButton,
+      primaryAfter,
+      offGridSelectedBefore: selectedOffGridCoordinates,
+      offGridSelectedAfter
+    };
+    pushLayoutHistoryEntry(entry);
+    updateActiveBundle(() => entry.after, true);
+    setSelectedButtons(selectedAfter);
+    setSelectedButton(primaryAfter);
+    setSelectedOffGridCoordinates(offGridSelectedAfter);
+  }
+
+  function undoLayoutEdit() {
+    const entry = undoLayoutHistoryRef.current.at(-1);
+    if (!entry || entry.bundleId !== activeBundle.objectIdHex) {
+      return;
+    }
+    undoLayoutHistoryRef.current = undoLayoutHistoryRef.current.slice(0, -1);
+    redoLayoutHistoryRef.current = [...redoLayoutHistoryRef.current, entry];
+    setLayoutHistoryRevision((current) => current + 1);
+    updateActiveBundle(() => entry.before, true);
+    setSelectedButtons(entry.selectedBefore);
+    setSelectedButton(entry.primaryBefore);
+    setSelectedOffGridCoordinates(entry.offGridSelectedBefore);
+    setStatus(`Undid ${entry.label}`);
+  }
+
+  function redoLayoutEdit() {
+    const entry = redoLayoutHistoryRef.current.at(-1);
+    if (!entry || entry.bundleId !== activeBundle.objectIdHex) {
+      return;
+    }
+    redoLayoutHistoryRef.current = redoLayoutHistoryRef.current.slice(0, -1);
+    undoLayoutHistoryRef.current = [...undoLayoutHistoryRef.current, entry];
+    setLayoutHistoryRevision((current) => current + 1);
+    updateActiveBundle(() => entry.after, true);
+    setSelectedButtons(entry.selectedAfter);
+    setSelectedButton(entry.primaryAfter);
+    setSelectedOffGridCoordinates(entry.offGridSelectedAfter);
+    setStatus(`Redid ${entry.label}`);
   }
 
   function addNewBundle() {
@@ -1550,7 +1786,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             buttonOverrides: clearColorOverridesForScaleDegree(layout.buttonOverrides, degreeByButtonIndex, degree)
           }
         : layout)
-    }));
+    }), true);
   }
 
   function updateDefaultColorMode(defaultColorMode: ColorModeValue) {
@@ -1563,11 +1799,20 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     }));
   }
 
-  function updateButtonOverride(buttonIndex: number, patch: Partial<LayoutBundleButtonOverride>) {
-    updateActiveLayout((layout) => ({
-      ...layout,
-      buttonOverrides: upsertOverride(layout.buttonOverrides, buttonIndex, patch)
-    }));
+  function updateButtonOverride(
+    buttonIndex: number,
+    patch: Partial<LayoutBundleButtonOverride>,
+    preserveLayoutHistory = false
+  ) {
+    updateActiveBundle((bundle) => ({
+      ...bundle,
+      layouts: bundle.layouts.map((layout) => layout.objectIdHex === bundle.activeLayoutIdHex
+        ? {
+            ...layout,
+            buttonOverrides: upsertOverride(layout.buttonOverrides, buttonIndex, patch)
+          }
+        : layout)
+    }), preserveLayoutHistory);
   }
 
   function paintPreviewKey(buttonIndex: number) {
@@ -1591,7 +1836,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         hueTenthDegrees: paintbrushColor.hueTenthDegrees,
         saturation: paintbrushColor.saturation,
         value: paintbrushColor.value
-      });
+      }, true);
       setStatus(`Painted button ${buttonIndex}`);
     }
   }
@@ -1640,6 +1885,14 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       pickBrushColor(buttonIndex);
       return;
     }
+    paintStrokeHistoryRef.current = {
+      label: paintTarget === "degree" ? "scale-degree color painting" : "button color painting",
+      bundleId: activeBundle.objectIdHex,
+      before: activeBundle,
+      selectedButtons: [...selectedButtons],
+      primaryButton: selectedButton,
+      offGridSelected: [...selectedOffGridCoordinates]
+    };
     paintStrokeActiveRef.current = true;
     lastPaintedTargetRef.current = null;
     paintPreviewKey(buttonIndex);
@@ -1656,8 +1909,29 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   }
 
   function endPaintStroke() {
+    const historyStart = paintStrokeHistoryRef.current;
+    paintStrokeHistoryRef.current = null;
     paintStrokeActiveRef.current = false;
     lastPaintedTargetRef.current = null;
+    if (!historyStart) {
+      return;
+    }
+    const after = activeBundleRef.current;
+    if (after.objectIdHex !== historyStart.bundleId || JSON.stringify(after) === JSON.stringify(historyStart.before)) {
+      return;
+    }
+    pushLayoutHistoryEntry({
+      label: historyStart.label,
+      bundleId: historyStart.bundleId,
+      before: historyStart.before,
+      after,
+      selectedBefore: historyStart.selectedButtons,
+      selectedAfter: historyStart.selectedButtons,
+      primaryBefore: historyStart.primaryButton,
+      primaryAfter: historyStart.primaryButton,
+      offGridSelectedBefore: historyStart.offGridSelected,
+      offGridSelectedAfter: historyStart.offGridSelected
+    });
   }
 
   function resetButtonOverride(buttonIndex: number) {
@@ -1693,10 +1967,11 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     if (typeof window !== "undefined" && !window.confirm("Reset all keys to scale degree colors? This clears per-button color overrides for the active layout.")) {
       return;
     }
-    updateActiveLayout((layout) => ({
-      ...layout,
-      buttonOverrides: resetOverridesToScaleDegreeColors(layout.buttonOverrides)
-    }));
+    const nextLayout = {
+      ...activeLayout,
+      buttonOverrides: resetOverridesToScaleDegreeColors(activeLayout.buttonOverrides)
+    };
+    commitLayoutHistory("button color reset", bundleWithActiveLayout(nextLayout));
     setPaintTool("brush");
     setStatus(`Reset ${colorOverrideCount} button color ${colorOverrideCount === 1 ? "override" : "overrides"}`);
   }
@@ -1804,6 +2079,14 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   }, [activeBundle, activeLayout, activeScale]);
 
   const selectedButtonSet = useMemo(() => new Set(selectedButtons), [selectedButtons]);
+  const selectedTransformCount = selectedButtons.length + selectedOffGridCoordinates.length;
+  const canTransformSelection = selectedTransformCount > 0;
+  const wholeLayoutSelection = selectedOffGridCoordinates.length === 0 &&
+    (selectedButtons.length === 1 || selectedButtons.length === previewKeys.length);
+  const canUndoLayoutEdit = undoLayoutHistoryRef.current.length > 0 &&
+    undoLayoutHistoryRef.current.at(-1)?.bundleId === activeBundle.objectIdHex;
+  const canRedoLayoutEdit = redoLayoutHistoryRef.current.length > 0 &&
+    redoLayoutHistoryRef.current.at(-1)?.bundleId === activeBundle.objectIdHex;
 
   function selectPreviewButton(buttonIndex: number, event: MouseEvent<HTMLButtonElement>) {
     if (event.shiftKey) {
@@ -1813,6 +2096,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       if (start >= 0 && end >= 0) {
         const [low, high] = start <= end ? [start, end] : [end, start];
         setSelectedButtons(playableIndices.slice(low, high + 1));
+        setSelectedOffGridCoordinates([]);
         setSelectedButton(buttonIndex);
         return;
       }
@@ -1855,6 +2139,119 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       buttonOverrides: layout.buttonOverrides.filter((override) => !selected.has(override.buttonIndex))
     }));
     setStatus(`Reset overrides on ${selectedButtons.length} selected ${selectedButtons.length === 1 ? "key" : "keys"}`);
+  }
+
+  function bundleWithActiveLayout(nextLayout: LayoutBundleLayout): LayoutBundle {
+    return {
+      ...activeBundle,
+      layouts: activeBundle.layouts.map((layout) => layout.objectIdHex === activeLayout.objectIdHex ? nextLayout : layout)
+    };
+  }
+
+  function transposeFromLayoutToolbar(delta: number) {
+    if (!canTransformSelection || !Number.isFinite(delta) || delta === 0) {
+      return;
+    }
+    const stepDelta = Math.round(delta);
+    const label = `${Math.abs(stepDelta)}-step transpose ${stepDelta < 0 ? "down" : "up"}`;
+    if (wholeLayoutSelection) {
+      const shiftPitch = <T extends LayoutBundleButtonOverride | LayoutBundleGridOverride>(override: T): T => ({
+        ...override,
+        stepsFromC: override.stepsFromC === undefined ? undefined : override.stepsFromC + stepDelta
+      });
+      const nextLayout = {
+        ...activeLayout,
+        centerStepsFromC: activeLayout.centerStepsFromC + stepDelta,
+        buttonOverrides: activeLayout.buttonOverrides.map(shiftPitch),
+        offGridOverrides: activeLayout.offGridOverrides.map(shiftPitch)
+      };
+      commitLayoutHistory(label, bundleWithActiveLayout(nextLayout));
+      setStatus(`Transposed the full layout by ${formatSignedInteger(stepDelta)} steps around button ${selectedButton}`);
+      return;
+    }
+    const effectiveSteps = new Map(previewKeys.map((item) => [item.key.index, item.stepsFromC] as const));
+    const selectedOffGridKeys = new Set(selectedOffGridCoordinates.map(coordinateOverrideKey));
+    const nextOffGridOverrides = activeLayout.offGridOverrides.map((override) => selectedOffGridKeys.has(coordinateOverrideKey(override))
+      ? { ...override, stepsFromC: (override.stepsFromC ?? 0) + stepDelta }
+      : override);
+    const nextLayout = {
+      ...activeLayout,
+      buttonOverrides: selectedButtons.reduce((overrides, buttonIndex) => upsertOverride(overrides, buttonIndex, {
+        stepsFromC: (effectiveSteps.get(buttonIndex) ?? 0) + stepDelta
+      }), activeLayout.buttonOverrides),
+      offGridOverrides: nextOffGridOverrides
+    };
+    const offGridSelectedAfter = nextOffGridOverrides.filter((override) => selectedOffGridKeys.has(coordinateOverrideKey(override)));
+    commitLayoutHistory(label, bundleWithActiveLayout(nextLayout), selectedButtons, selectedButton, offGridSelectedAfter);
+    setStatus(`Transposed ${selectedTransformCount} selected keys by ${formatSignedInteger(stepDelta)} steps as overrides`);
+  }
+
+  function applyLayoutSpatialTransform(transform: HexSpatialTransform, label: string) {
+    if (!canTransformSelection) {
+      return;
+    }
+    const pivotItem = previewKeys.find((item) => item.key.index === selectedButton) ?? previewKeys[0];
+    if (!pivotItem) {
+      return;
+    }
+    const pivot = hexKeyAxialCoordinate(pivotItem.key);
+    if (wholeLayoutSelection) {
+      const generatedLayout = transformGeneratedLayoutAroundKey(activeLayout, pivotItem.key, transform);
+      const transformedOverrides = layoutCoordinateOverrides(activeLayout)
+        .map((override) => transformCoordinateOverride(override, pivot, transform));
+      const nextLayout = {
+        ...generatedLayout,
+        ...partitionCoordinateOverrides(transformedOverrides)
+      };
+      commitLayoutHistory(label, bundleWithActiveLayout(nextLayout));
+      setStatus(`Applied ${label} to the full layout around button ${selectedButton}`);
+      return;
+    }
+
+    const selectedItems = previewKeys.filter((item) => selectedButtonSet.has(item.key.index));
+    const visibleMovingOverrides = selectedItems.map((item): LayoutBundleGridOverride => ({
+      coordCol: item.key.coordCol,
+      coordRow: item.key.coordRow,
+      role: item.role,
+      stepsFromC: item.stepsFromC,
+      hueTenthDegrees: item.override?.hueTenthDegrees,
+      saturation: item.override?.saturation,
+      value: item.override?.value,
+      action: item.override?.action
+    }));
+    const selectedOffGridKeys = new Set(selectedOffGridCoordinates.map(coordinateOverrideKey));
+    const offGridMovingOverrides = activeLayout.offGridOverrides
+      .filter((override) => selectedOffGridKeys.has(coordinateOverrideKey(override)));
+    const movingOverrides = [...visibleMovingOverrides, ...offGridMovingOverrides];
+    const transformedOverrides = movingOverrides.map((override) => transformCoordinateOverride(override, pivot, transform));
+    const replacedCoordinates = new Set([
+      ...movingOverrides.map(coordinateOverrideKey),
+      ...transformedOverrides.map(coordinateOverrideKey)
+    ]);
+    const retainedOverrides = layoutCoordinateOverrides(activeLayout)
+      .filter((override) => !replacedCoordinates.has(coordinateOverrideKey(override)));
+    const nextLayout = {
+      ...activeLayout,
+      ...partitionCoordinateOverrides([...retainedOverrides, ...transformedOverrides])
+    };
+    const selectedAfter = transformedOverrides.flatMap((override) => {
+      const key = editableHexKeyByCoordinate.get(coordinateOverrideKey(override));
+      return key ? [key.index] : [];
+    });
+    const uniqueSelectedAfter = [...new Set(selectedAfter)].sort((left, right) => left - right);
+    const offGridSelectedAfter = transformedOverrides.filter((override) => !editableHexKeyByCoordinate.has(coordinateOverrideKey(override)));
+    commitLayoutHistory(
+      label,
+      bundleWithActiveLayout(nextLayout),
+      uniqueSelectedAfter,
+      pivotItem.key.index,
+      offGridSelectedAfter
+    );
+    const outsideCount = offGridSelectedAfter.length;
+    setStatus(
+      `Applied ${label} to ${movingOverrides.length} keys as overrides` +
+      (outsideCount > 0 ? `; retained ${outsideCount} outside the visible board` : "")
+    );
   }
 
   const selectedPreview = previewKeys.find((item) => item.key.index === selectedButton) ?? previewKeys[0];
@@ -2584,27 +2981,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 </select>
                 <small className="muted">Changes the physical/display orientation, not the musical axes.</small>
               </label>
-              <label className="field">
-                <span>Layout rotation</span>
-                <select value={activeLayout.layoutRotationSteps} onChange={(event) => updateLayout({ layoutRotationSteps: Number(event.target.value) })}>
-                  <option value={0}>0°</option>
-                  <option value={1}>60°</option>
-                  <option value={2}>120°</option>
-                  <option value={3}>180°</option>
-                  <option value={4}>240°</option>
-                  <option value={5}>300°</option>
-                </select>
-              </label>
-              <label className="checkField">
-                <input checked={activeLayout.mirrorLeftRight} type="checkbox" onChange={(event) => updateLayout({ mirrorLeftRight: event.target.checked })} />
-                <span>Mirror layout left/right</span>
-              </label>
-              <label className="checkField">
-                <input checked={activeLayout.mirrorUpDown} type="checkbox" onChange={(event) => updateLayout({ mirrorUpDown: event.target.checked })} />
-                <span>Mirror layout up/down</span>
-              </label>
             </div>
-            <p className="muted">Layout rotation and mirrors transform generated pitches. Existing per-key overrides stay attached to their physical keys.</p>
           </section>
         ) : null}
 
@@ -2751,23 +3128,84 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             >
               Reset colors
             </button>
-            <span className="selectionStatus" aria-live="polite">
+          </div>
+          <div className="layoutTransformToolbar" role="toolbar" aria-label="Layout editing">
+            <div className="layoutToolbarGroup" aria-label="History">
+              <button
+                aria-label="Undo edit"
+                disabled={!canUndoLayoutEdit}
+                title={canUndoLayoutEdit ? `Undo ${undoLayoutHistoryRef.current.at(-1)?.label}` : "Nothing to undo"}
+                type="button"
+                onClick={undoLayoutEdit}
+              >
+                <LayoutToolbarIcon kind="undo" />
+              </button>
+              <button
+                aria-label="Redo edit"
+                disabled={!canRedoLayoutEdit}
+                title={canRedoLayoutEdit ? `Redo ${redoLayoutHistoryRef.current.at(-1)?.label}` : "Nothing to redo"}
+                type="button"
+                onClick={redoLayoutEdit}
+              >
+                <LayoutToolbarIcon kind="redo" />
+              </button>
+            </div>
+            <span aria-hidden="true" className="layoutToolbarDivider" />
+            <div className="layoutToolbarGroup" aria-label="Transpose">
+              <button aria-label="Transpose down one step" disabled={!canTransformSelection} title="Transpose down one tuning step" type="button" onClick={() => transposeFromLayoutToolbar(-1)}>
+                <span aria-hidden="true" className="layoutToolbarTextIcon">−1</span>
+              </button>
+              <button aria-label="Transpose up one step" disabled={!canTransformSelection} title="Transpose up one tuning step" type="button" onClick={() => transposeFromLayoutToolbar(1)}>
+                <span aria-hidden="true" className="layoutToolbarTextIcon">+1</span>
+              </button>
+            </div>
+            <span aria-hidden="true" className="layoutToolbarDivider" />
+            <div className="layoutToolbarGroup" aria-label="Rotate">
+              <button aria-label="Rotate counterclockwise" disabled={!canTransformSelection} title="Rotate 60° counterclockwise around the primary key" type="button" onClick={() => applyLayoutSpatialTransform("rotate-counterclockwise", "counterclockwise rotation")}>
+                <LayoutToolbarIcon kind="rotate-counterclockwise" />
+              </button>
+              <button aria-label="Rotate clockwise" disabled={!canTransformSelection} title="Rotate 60° clockwise around the primary key" type="button" onClick={() => applyLayoutSpatialTransform("rotate-clockwise", "clockwise rotation")}>
+                <LayoutToolbarIcon kind="rotate-clockwise" />
+              </button>
+            </div>
+            <span aria-hidden="true" className="layoutToolbarDivider" />
+            <div className="layoutToolbarGroup" aria-label="Mirror">
+              <button aria-label="Mirror horizontally" disabled={!canTransformSelection} title="Mirror left/right for the current device rotation" type="button" onClick={() => applyLayoutSpatialTransform(deviceRelativeMirrorTransform(activeLayout.deviceRotationSteps, "horizontal"), "horizontal mirror")}>
+                <LayoutToolbarIcon kind="mirror-horizontal" />
+              </button>
+              <button aria-label="Mirror vertically" disabled={!canTransformSelection} title="Mirror up/down for the current device rotation" type="button" onClick={() => applyLayoutSpatialTransform(deviceRelativeMirrorTransform(activeLayout.deviceRotationSteps, "vertical"), "vertical mirror")}>
+                <LayoutToolbarIcon kind="mirror-vertical" />
+              </button>
+            </div>
+            <span className="selectionStatus layoutSelectionStatus" aria-live="polite">
               <span className="selectionStatusItem">
-                <span aria-hidden="true" className="selectionStatusSwatch" />
-                {selectedButtons.length} selected
+                {selectedTransformCount > 0 ? <span aria-hidden="true" className="selectionStatusSwatch" /> : null}
+                {selectedTransformCount} selected
+                {selectedOffGridCoordinates.length > 0 ? ` · ${selectedOffGridCoordinates.length} outside board` : ""}
               </span>
-              {selectedButtons.length > 1 ? (
+              {selectedTransformCount > 0 ? (
                 <span className="selectionStatusItem">
                   <span aria-hidden="true" className="selectionStatusSwatch primary" />
                   Button {selectedButton} primary
                 </span>
               ) : null}
+              {selectedTransformCount > 0 ? (
+                <span className="layoutTransformMode">
+                  {wholeLayoutSelection ? "Full layout" : "Overrides"}
+                </span>
+              ) : null}
             </span>
-            <button type="button" onClick={() => setSelectedButtons(previewKeys.map((item) => item.key.index))}>
-              Select all keys
-            </button>
-            {selectedButtons.length > 1 ? (
-              <button type="button" onClick={() => selectOnlyButton(selectedButton)}>Keep one selected</button>
+            {selectedTransformCount > 0 ? (
+              <button
+                className="layoutDeselectButton"
+                type="button"
+                onClick={() => {
+                  setSelectedButtons([]);
+                  setSelectedOffGridCoordinates([]);
+                }}
+              >
+                Deselect All
+              </button>
             ) : null}
           </div>
           <div className="hexBoardScroll">

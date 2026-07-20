@@ -429,12 +429,20 @@ Other persistent stores:
 Factory tuning/layout/scale catalogs are exposed as generated read-only geometry
 objects from `BuiltinGeometry.cpp`; they are not stored in `/layouts.dat`.
 Runtime Apply supports generated EDO/equal-step and Scala/cents-list user
-tunings, vector layouts with independent device rotation and musical
-rotation/mirrors, included-degree scales, scale color maps, legacy format-1
+tunings, vector layouts with independent device rotation, musical
+rotation/mirrors, and an `int16_t` center-step offset, included-degree scales,
+scale color maps, legacy format-1
 maps, and independent-field format-2 explicit button maps. Format 2 includes
 direct MIDI note/channel actions and reusable four-tone chord actions. The
 active user geometry selection is RAM-only and is not yet persisted in
 profiles.
+
+The web layout editor normalizes whole-layout spatial transforms back into the
+center button, center-step offset, and two vector fields. It moves explicit
+override coordinates through the same axial transform. Format-4 web bundles
+may retain overrides outside the 133-key physical outline. These records stay
+in web JSON/browser storage only and are omitted from preset-sync objects;
+firmware receives only overrides currently mapped to physical buttons.
 
 ## Menu Patterns
 

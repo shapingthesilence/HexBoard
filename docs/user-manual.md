@@ -584,7 +584,9 @@ color. Shift-click selects a continuous range, while Control-click or
 Command-click toggles individual keys; the bulk controls transpose or reset the
 selection together. Selected keys use green rings around slightly smaller key
 faces, the primary key used by the inspector has a gold ring, and the toolbar
-reports the current selection count. The collapsed `Advanced output` section keeps ordinary
+reports the current selection count. Selection status and `Deselect All` live
+in the layout-transform toolbar; clearing the selection disables its transform
+buttons until another key is selected. The collapsed `Advanced output` section keeps ordinary
 tuned-note editing simple while allowing a key to send a fixed MIDI note and
 channel or a reusable chord shape of up to four tones. Chord intervals can use
 the current tuning's steps or ordinary MIDI semitones. The inspector uses a visual color picker; derived layout step and scale
@@ -592,9 +594,19 @@ degree values are read-only facts, and cents-from-reference information is under
 `Advanced pitch details`. `Reset all key overrides` restores the selected key to
 the active layout and palette. Encoded object data is under the collapsed
 `Developer details` panel.
-Layout controls distinguish four-way `Device rotation` from six-way `Layout
-rotation` and the two mirror operations. Pitch and color overrides remain tied
-to physical button locations when the musical layout transform changes. EDO
+The Layout sidebar contains the four-way `Device rotation` setting. Musical
+layout edits live in the toolbar directly below the color-paint toolbar: `−1`
+and `+1` transpose, counterclockwise/clockwise curved arrows, horizontal and
+vertical mirror icons, and undo/redo. The gold primary key is the transform
+center. With one key or all 133 playable keys selected, these controls rewrite
+the generated layout and move all pitch, color, role, and action overrides with
+it. With any smaller multi-selection, rotation, mirror, and transpose create or
+move per-key overrides instead. Overrides temporarily moved beyond the visible
+board are retained in the bundle and can return with undo or a later transform.
+Horizontal and vertical mirror icons follow the displayed device orientation,
+so their underlying grid axis changes at 90° and 270° device rotations. Undo
+and redo also cover color-paint operations; one continuous pointer drag is one
+history step. EDO
 tunings are stored as an exact period divided by the selected division count;
 the displayed decimal step size is informational and does not accumulate
 rounding error across periods. Sync sends periods, fixed step sizes, Scala

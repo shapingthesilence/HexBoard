@@ -192,6 +192,7 @@ extern bool userGeometryRuntimeButtonColorActive[LED_COUNT];
 extern int16_t userGeometryRuntimeButtonStepsFromC[LED_COUNT];
 extern colorDef userGeometryRuntimeButtonColor[LED_COUNT];
 extern uint8_t userGeometryRuntimeDeviceRotation;
+extern int16_t userGeometryRuntimeLayoutCenterStepsFromC;
 extern uint8_t userGeometryRuntimeButtonOutputMode[LED_COUNT];
 extern uint8_t userGeometryRuntimeButtonMidiNote[LED_COUNT];
 extern uint8_t userGeometryRuntimeButtonMidiChannel[LED_COUNT];

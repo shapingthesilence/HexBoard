@@ -69,6 +69,10 @@ function u32LE(value: Uint8Array): number {
   return value[0] | (value[1] << 8) | (value[2] << 16) | (value[3] << 24);
 }
 
+function i32LE(value: Uint8Array): number {
+  return new DataView(value.buffer, value.byteOffset, 4).getInt32(0, true);
+}
+
 function float32LE(value: Uint8Array, offset = 0): number {
   return new DataView(value.buffer, value.byteOffset + offset, 4).getFloat32(0, true);
 }
@@ -166,12 +170,14 @@ describe("catalog object encoding", () => {
       name: "Wicki 17",
       tuningRef: { objectType: ObjectType.UserTuning, handle: 0, objectId: tuningId },
       centerButton: 65,
+      centerStepsFromC: -19,
       acrossSteps: 3,
       upRightSteps: 7,
       portrait: true
     });
     expect(decodeObjectBody(layout.body).objectType).toBe(ObjectType.UserLayout);
     expect(i16LE(recordValue(layout.body, LayoutTlv.DownLeftSteps))).toBe(-7);
+    expect(i32LE(recordValue(layout.body, LayoutTlv.CenterStepsFromC))).toBe(-19);
     expect(currentFirmwareDownLeftToUpRight(3, -11)).toBe(11);
   });
 
@@ -564,6 +570,22 @@ Example scale
     expect(u16LE(records.slice(23, 25))).toBe(ButtonMapField.Pitch);
     expect(u16LE(records.slice(42, 44))).toBe(ButtonMapField.Action);
     expect(recordValue(map.body, ExplicitButtonMapTlv.Actions).length).toBeGreaterThan(0);
+  });
+
+  it("keeps off-board overrides in the web bundle without syncing them", () => {
+    const base = createDefaultLayoutBundle();
+    const bundle = {
+      ...base,
+      layouts: base.layouts.map((layout, index) => index === 0 ? {
+        ...layout,
+        offGridOverrides: [{ coordCol: -3, coordRow: 18, role: "note" as const, stepsFromC: 42 }]
+      } : layout)
+    };
+    const parsed = parseLayoutBundleFile(JSON.parse(serializeLayoutBundle(bundle)));
+    expect(parsed.layouts[0].offGridOverrides).toEqual([
+      { coordCol: -3, coordRow: 18, role: "note", stepsFromC: 42 }
+    ]);
+    expect(encodeLayoutBundle(parsed).explicitButtonMaps).toHaveLength(0);
   });
 
   it("falls back to the default bundle for an empty layout library", () => {

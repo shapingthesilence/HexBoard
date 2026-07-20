@@ -86,12 +86,21 @@ and `TRANSFER_END` so firmware can pace object transfers.
   `Root`; empty computer folders can be created and deleted, while device
   folders appear only when a saved item uses them. Editing keeps bundle sync
   actions and the visual HexBoard preview in consistent locations. Device
-  rotation is four-way and separate from six-way musical layout rotation and
-  mirroring. The selected-key inspector separates key state, optional pitch
-  overrides, inherited or per-key color, and advanced pitch details; color
-  editing uses a compact visual picker. Shift/Ctrl/Command selection enables
+  rotation is four-way and separate from musical layout transforms. A layout
+  toolbar directly below the color tools provides step transposition, two-way
+  60-degree rotation, device-relative horizontal/vertical mirrors, and
+  undo/redo. Layout transforms and each continuous color-paint stroke share
+  this history. One selected key or all selected keys transforms the generated
+  layout around the gold primary key; any other multi-selection creates
+  per-key overrides. Overrides that rotate beyond the physical board remain in
+  the saved bundle so later transforms can bring them back. The selected-key
+  inspector separates key state, optional pitch overrides, inherited or per-key
+  color, and advanced pitch details; color editing uses a compact visual
+  picker. Shift/Ctrl/Command selection enables
   bulk transposition and reset. Green selection rings, a gold primary-key ring,
-  and a live selection count remain visible independently of key colors. A
+  and a live selection count in the layout toolbar remain visible independently
+  of key colors. `Deselect All` clears the transform selection and disables
+  transform actions until another key is selected. A
   collapsed advanced-output section supports
   fixed MIDI note/channel output and reusable four-tone chord shapes without
   adding controls to the ordinary tuned-note workflow. Read-only pitch and

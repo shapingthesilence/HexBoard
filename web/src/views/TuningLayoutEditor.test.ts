@@ -3,6 +3,7 @@ import type { LayoutBundleButtonOverride } from "../catalogs/index.ts";
 import {
   clearColorOverridesForScaleDegree,
   colorToCss,
+  deviceRelativeMirrorTransform,
   paintScaleDegreeColor,
   resetOverridesToScaleDegreeColors
 } from "./TuningLayoutEditor.tsx";
@@ -66,5 +67,16 @@ describe("tuning layout color rendering", () => {
       { buttonIndex: 12, role: "unused" },
       { buttonIndex: 13, role: "note", stepsFromC: 4, hueTenthDegrees: 600, saturation: 255, value: 170 }
     ]);
+  });
+});
+
+describe("layout transform controls", () => {
+  it("keeps mirror directions relative to device rotation", () => {
+    expect(deviceRelativeMirrorTransform(0, "horizontal")).toBe("mirror-left-right");
+    expect(deviceRelativeMirrorTransform(0, "vertical")).toBe("mirror-up-down");
+    expect(deviceRelativeMirrorTransform(1, "horizontal")).toBe("mirror-up-down");
+    expect(deviceRelativeMirrorTransform(1, "vertical")).toBe("mirror-left-right");
+    expect(deviceRelativeMirrorTransform(2, "horizontal")).toBe("mirror-left-right");
+    expect(deviceRelativeMirrorTransform(3, "vertical")).toBe("mirror-left-right");
   });
 });
