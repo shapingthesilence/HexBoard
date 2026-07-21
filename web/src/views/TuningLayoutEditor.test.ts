@@ -4,9 +4,23 @@ import {
   clearColorOverridesForScaleDegree,
   colorToCss,
   deviceRelativeMirrorTransform,
+  normalizeCommittedNumber,
   paintScaleDegreeColor,
   resetOverridesToScaleDegreeColors
 } from "./TuningLayoutEditor.tsx";
+
+describe("deferred number fields", () => {
+  it("keeps the prior value when an empty or invalid draft is committed", () => {
+    expect(normalizeCommittedNumber("", 12, 1, 128, true)).toBe(12);
+    expect(normalizeCommittedNumber("not a number", 440, 0.01)).toBe(440);
+  });
+
+  it("clamps and rounds only when the edit is committed", () => {
+    expect(normalizeCommittedNumber("200", 12, 1, 128, true)).toBe(128);
+    expect(normalizeCommittedNumber("4.6", 12, 1, 128, true)).toBe(5);
+    expect(normalizeCommittedNumber("432.5", 440, 0.01)).toBe(432.5);
+  });
+});
 
 describe("tuning layout color rendering", () => {
   it("renders HSV preview colors without dimming or remapping value", () => {

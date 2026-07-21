@@ -21,7 +21,7 @@ enum class UserGeometryMenuKind : uint8_t {
 
 constexpr uint16_t USER_GEOMETRY_MENU_INVALID_HANDLE = 0xFFFFu;
 constexpr uint16_t USER_GEOMETRY_MENU_MAX_ENTRIES =
-  (GEOMETRY_BUNDLE_MAX_COUNT * 2u) + GEOMETRY_ASSOCIATED_MAX_COUNT + 8u;
+  (GEOMETRY_BUNDLE_MAX_COUNT * 2u) + GEOMETRY_LAYOUT_SCALE_MAX_COUNT + 8u;
 
 enum class UserGeometryMenuRowKind : uint8_t {
   Folder,
@@ -40,7 +40,7 @@ struct SelectedGeometryMenuEntry {
   char name[GEOMETRY_OBJECT_NAME_LENGTH] = {};
 };
 
-constexpr uint8_t SELECTED_GEOMETRY_MENU_CACHE_CAPACITY = GEOMETRY_ASSOCIATED_MAX_COUNT * 2u;
+constexpr uint8_t SELECTED_GEOMETRY_MENU_CACHE_CAPACITY = GEOMETRY_LAYOUT_SCALE_MAX_COUNT * 2u;
 
 UserGeometryMenuRow userGeometryVirtualRows[USER_GEOMETRY_MENU_MAX_ENTRIES] = {};
 uint16_t userGeometryVirtualCount = 0;
@@ -279,7 +279,7 @@ bool ensureSelectedGeometryMenuCache() {
     } else if (object.objectType == PRESET_SYNC_OBJECT_TYPE_USER_SCALE) {
       typeCount = &scaleCount;
     }
-    if (!typeCount || *typeCount >= GEOMETRY_ASSOCIATED_MAX_COUNT
+    if (!typeCount || *typeCount >= GEOMETRY_LAYOUT_SCALE_MAX_COUNT
         || selectedGeometryMenuCacheCount >= SELECTED_GEOMETRY_MENU_CACHE_CAPACITY) {
       continue;
     }

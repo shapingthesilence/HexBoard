@@ -444,7 +444,7 @@ former hard-coded tuning order. The loader validates each bundle independently
 and retains tuning ID, name, folder, record range, and order metadata for at
 most 64 bundles. Tuning folder navigation and row drawing therefore perform no
 LittleFS reads. Once a tuning is active, one scan of only that bundle caches up
-to 24 layout names and 24 scale names; layout/scale scrolling is storage-free.
+to 32 layout names and 32 scale names; layout/scale scrolling is storage-free.
 Preset-sync reads continue to stream record metadata and bodies when requested.
 Saving stages and atomically renames one complete bundle;
 deleting removes one bundle file. Other bundles are not rewritten. Object bodies
@@ -464,8 +464,8 @@ Each `.hgb` is limited to `255` records and `262,144` bytes; each contained
 object body is limited to `8,192` bytes. The 64-bundle limit therefore permits
 at most `16,320` compact handles, below the preset-sync `NEW_OBJECT` sentinel.
 These are validation/addressing ceilings rather than RAM allocations. The
-on-device associated layout/scale menu currently shows up to `24` linked child
-records for the selected tuning.
+on-device associated layout/scale menu shows up to `32` linked records of each
+type for the selected tuning. Bundle validation applies the same per-type limit.
 
 Runtime Apply supports generated EDO/equal-step and Scala/cents-list user
 tunings, vector layouts with independent device rotation, musical

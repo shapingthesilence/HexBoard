@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FocusEvent, type InputHTMLAttributes, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from "react";
 import {
   clampScaleDegreeColor,
   ButtonMapField,
@@ -19,6 +19,7 @@ import {
   encodeGeometryCatalogOrder,
   encodeLayoutBundle,
   ExplicitButtonMapTlv,
+  GeometryLayoutScaleMaxCount,
   GeometryMenuTextMaxLength,
   hexAxialToCoordinate,
   hexBoardGeometry,
@@ -376,6 +377,24 @@ function clampInteger(value: number, min: number, max: number): number {
     return min;
   }
   return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+export function normalizeCommittedNumber(
+  draft: string,
+  fallback: number,
+  min?: number,
+  max?: number,
+  integer = false
+): number {
+  if (draft.trim() === "") {
+    return fallback;
+  }
+  const parsed = Number(draft);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  const rounded = integer ? Math.round(parsed) : parsed;
+  return Math.max(min ?? -Infinity, Math.min(max ?? Infinity, rounded));
 }
 
 function tuningCycleLength(tuning: LayoutBundleTuning): number {
@@ -1613,6 +1632,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   }
 
   function addNewLayout() {
+    if (activeBundle.layouts.length >= GeometryLayoutScaleMaxCount) {
+      setStatus(`A tuning can contain at most ${GeometryLayoutScaleMaxCount} layouts`);
+      return;
+    }
     const layout = {
       ...activeLayout,
       objectIdHex: objectIdToHex(deterministicObjectId(`${activeBundle.objectIdHex}:layout:${Date.now()}`)),
@@ -1665,6 +1688,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   }
 
   function addNewScale() {
+    if (activeBundle.scales.length >= GeometryLayoutScaleMaxCount) {
+      setStatus(`A tuning can contain at most ${GeometryLayoutScaleMaxCount} scales`);
+      return;
+    }
     const scale = {
       ...createAllNotesScale(tuningCycleLength(activeBundle.tuning)),
       objectIdHex: objectIdToHex(deterministicObjectId(`${activeBundle.objectIdHex}:scale:${Date.now()}`)),
@@ -3033,7 +3060,12 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 </select>
               </label>
               <div className="row">
-                <button type="button" onClick={addNewLayout}>New layout</button>
+                <button
+                  disabled={activeBundle.layouts.length >= GeometryLayoutScaleMaxCount}
+                  title={`Up to ${GeometryLayoutScaleMaxCount} layouts per tuning`}
+                  type="button"
+                  onClick={addNewLayout}
+                >New layout</button>
                 <button className="warning" type="button" onClick={deleteActiveLayout}>Delete layout</button>
               </div>
               <label className="field">
@@ -3043,12 +3075,12 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               <label className="field">
                 <span>Center key</span>
                 <div className="fieldControlRow">
-                  <input
+                  <DeferredNumberInput
+                    integer
                     min={0}
                     max={139}
-                    type="number"
                     value={activeLayout.centerButton}
-                    onChange={(event) => updateLayout({ centerButton: noteButtonIndexOrFallback(clampInteger(Number(event.target.value), 0, 139), activeLayout.centerButton) })}
+                    onCommit={(value) => updateLayout({ centerButton: noteButtonIndexOrFallback(value, activeLayout.centerButton) })}
                     {...layoutGuideProps("center")}
                   />
                   <button type="button" onClick={() => updateLayout({ centerButton: selectedButton })}>Use selected</button>
@@ -3056,19 +3088,19 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               </label>
               <label className="field">
                 <span>{axisLabels.across}</span>
-                <input
-                  type="number"
+                <DeferredNumberInput
+                  integer
                   value={activeLayout.acrossSteps}
-                  onChange={(event) => updateLayout({ acrossSteps: Number(event.target.value) })}
+                  onCommit={(value) => updateLayout({ acrossSteps: value })}
                   {...layoutGuideProps("across")}
                 />
               </label>
               <label className="field">
                 <span>{axisLabels.upRight}</span>
-                <input
-                  type="number"
+                <DeferredNumberInput
+                  integer
                   value={activeLayout.upRightSteps}
-                  onChange={(event) => updateLayout({ upRightSteps: Number(event.target.value) })}
+                  onCommit={(value) => updateLayout({ upRightSteps: value })}
                   {...layoutGuideProps("upRight")}
                 />
               </label>
@@ -3102,7 +3134,12 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 </select>
               </label>
               <div className="row">
-                <button type="button" onClick={addNewScale}>New scale</button>
+                <button
+                  disabled={activeBundle.scales.length >= GeometryLayoutScaleMaxCount}
+                  title={`Up to ${GeometryLayoutScaleMaxCount} scales per tuning`}
+                  type="button"
+                  onClick={addNewScale}
+                >New scale</button>
                 <button className="warning" disabled={activeScaleIsAllNotes} type="button" onClick={deleteActiveScale}>Delete scale</button>
               </div>
               <label className="field">
@@ -3466,10 +3503,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   <label className="field">
                     <span>Step from C</span>
                     <div className="fieldControlRow">
-                      <input
-                        type="number"
+                      <DeferredNumberInput
+                        integer
                         value={selectedPreview.stepsFromC}
-                        onChange={(event) => updateButtonOverride(selectedPreview.key.index, { stepsFromC: Number(event.target.value) })}
+                        onCommit={(value) => updateButtonOverride(selectedPreview.key.index, { stepsFromC: value })}
                       />
                       <button type="button" onClick={() => setSelectedNoteSource("generated")}>Use layout</button>
                     </div>
@@ -3507,22 +3544,22 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                     <div className="keyOutputGrid">
                       <label className="field">
                         <span>MIDI note</span>
-                        <input
+                        <DeferredNumberInput
+                          integer
                           max={127}
                           min={0}
-                          type="number"
                           value={selectedAction.midiNote}
-                          onChange={(event) => setSelectedAction({ ...selectedAction, midiNote: clampInteger(Number(event.target.value), 0, 127) })}
+                          onCommit={(value) => setSelectedAction({ ...selectedAction, midiNote: value })}
                         />
                       </label>
                       <label className="field">
                         <span>MIDI channel</span>
-                        <input
+                        <DeferredNumberInput
+                          integer
                           max={16}
                           min={1}
-                          type="number"
                           value={selectedAction.midiChannel}
-                          onChange={(event) => setSelectedAction({ ...selectedAction, midiChannel: clampInteger(Number(event.target.value), 1, 16) })}
+                          onCommit={(value) => setSelectedAction({ ...selectedAction, midiChannel: value })}
                         />
                       </label>
                     </div>
@@ -3569,22 +3606,22 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                         <div className="keyOutputGrid">
                           <label className="field">
                             <span>Root MIDI note</span>
-                            <input
+                            <DeferredNumberInput
+                              integer
                               max={127}
                               min={0}
-                              type="number"
                               value={selectedAction.rootMidiNote ?? selectedNearestMidiNote}
-                              onChange={(event) => setSelectedAction({ ...selectedAction, rootMidiNote: clampInteger(Number(event.target.value), 0, 127) })}
+                              onCommit={(value) => setSelectedAction({ ...selectedAction, rootMidiNote: value })}
                             />
                           </label>
                           <label className="field">
                             <span>MIDI channel</span>
-                            <input
+                            <DeferredNumberInput
+                              integer
                               max={16}
                               min={1}
-                              type="number"
                               value={selectedChordAction.midiChannel}
-                              onChange={(event) => updateSelectedChordAction({ midiChannel: clampInteger(Number(event.target.value), 1, 16) })}
+                              onCommit={(value) => updateSelectedChordAction({ midiChannel: value })}
                             />
                           </label>
                         </div>
@@ -3941,6 +3978,59 @@ function NameInput({ value, onCommit, disabled = false }: NameInputProps) {
   );
 }
 
+interface DeferredNumberInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "max" | "min" | "onBlur" | "onChange" | "type" | "value"> {
+  integer?: boolean;
+  max?: number;
+  min?: number;
+  onBlur?: (event: FocusEvent<HTMLInputElement>) => void;
+  onCommit: (value: number) => void;
+  value: number;
+}
+
+function DeferredNumberInput({ integer = false, max, min, onBlur, onCommit, value, ...inputProps }: DeferredNumberInputProps) {
+  const formattedValue = String(value);
+  const [draft, setDraft] = useState(formattedValue);
+  const cancelCommitRef = useRef(false);
+  useEffect(() => setDraft(formattedValue), [formattedValue]);
+
+  function commit() {
+    const normalized = normalizeCommittedNumber(draft, value, min, max, integer);
+    setDraft(String(normalized));
+    onCommit(normalized);
+  }
+
+  return (
+    <input
+      {...inputProps}
+      max={max}
+      min={min}
+      type="number"
+      value={draft}
+      onBlur={(event) => {
+        if (cancelCommitRef.current) {
+          cancelCommitRef.current = false;
+          setDraft(formattedValue);
+        } else {
+          commit();
+        }
+        onBlur?.(event);
+      }}
+      onChange={(event) => setDraft(event.target.value)}
+      onKeyDown={(event) => {
+        inputProps.onKeyDown?.(event);
+        if (event.defaultPrevented) return;
+        if (event.key === "Enter") {
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          cancelCommitRef.current = true;
+          setDraft(formattedValue);
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
 interface ChordIntervalsInputProps {
   value: number[];
   onCommit: (value: number[]) => void;
@@ -4013,17 +4103,17 @@ function TuningControls({
         </label>
         <label className="field">
           <span>Divisions</span>
-          <input min={1} max={MaxTuningDivisions} type="number" value={tuning.edoDivisions} onChange={(event) => onEdoChange({ edoDivisions: Number(event.target.value) })} />
+          <DeferredNumberInput integer min={1} max={MaxTuningDivisions} value={tuning.edoDivisions} onCommit={(edoDivisions) => onEdoChange({ edoDivisions })} />
         </label>
         <label className="field">
           <span>Period cents</span>
-          <input step="any" type="number" value={tuning.periodCents} onChange={(event) => onEdoChange({ periodCents: Number(event.target.value) })} />
+          <DeferredNumberInput step="any" value={tuning.periodCents} onCommit={(periodCents) => onEdoChange({ periodCents })} />
           <small className="muted">Exact division: {tuning.periodCents} ÷ {tuning.edoDivisions} = {stepCents.toFixed(6)}… cents per step</small>
           <small className="muted">Saved at firmware-native 32-bit precision.</small>
         </label>
         <label className="field">
           <span>A = x Hz</span>
-          <input min={0.01} step="any" type="number" value={tuning.referenceHz} onChange={(event) => onEdoChange({ referenceHz: Number(event.target.value) })} />
+          <DeferredNumberInput min={0.01} step="any" value={tuning.referenceHz} onCommit={(referenceHz) => onEdoChange({ referenceHz })} />
         </label>
         <label className={keyLabelsError ? "field invalidField" : "field"}>
           <span>Note labels</span>
@@ -4052,19 +4142,19 @@ function TuningControls({
         </label>
         <label className="field">
           <span>Step cents</span>
-          <input step="any" type="number" value={tuning.stepCents} onChange={(event) => onEqualStepChange({ stepCents: Number(event.target.value) })} />
+          <DeferredNumberInput step="any" value={tuning.stepCents} onCommit={(stepCents) => onEqualStepChange({ stepCents })} />
           <small className="muted">Saved at firmware-native 32-bit precision.</small>
         </label>
         <label className="field">
           <span>Cycle length</span>
-          <input min={1} max={MaxTuningDivisions} type="number" value={tuning.cycleLength} onChange={(event) => onEqualStepChange({ cycleLength: Number(event.target.value) })} />
+          <DeferredNumberInput integer min={1} max={MaxTuningDivisions} value={tuning.cycleLength} onCommit={(cycleLength) => onEqualStepChange({ cycleLength })} />
           <small className={Math.abs(octaveDelta) > 0.0005 ? "fieldError" : "muted"}>
             Cycle period: {computedPeriod.toFixed(3)} cents{Math.abs(octaveDelta) > 0.0005 ? ` (${octaveDelta > 0 ? "+" : ""}${octaveDelta.toFixed(3)} from an octave)` : ""}
           </small>
         </label>
         <label className="field">
           <span>A = x Hz</span>
-          <input min={0.01} step="any" type="number" value={tuning.referenceHz} onChange={(event) => onEqualStepChange({ referenceHz: Number(event.target.value) })} />
+          <DeferredNumberInput min={0.01} step="any" value={tuning.referenceHz} onCommit={(referenceHz) => onEqualStepChange({ referenceHz })} />
         </label>
         <label className={keyLabelsError ? "field invalidField" : "field"}>
           <span>Note labels</span>
@@ -4094,15 +4184,15 @@ function TuningControls({
       </label>
       <label className="field">
         <span>Description</span>
-        <input value={tuning.description} onChange={(event) => onScalaChange({ description: event.target.value })} />
+        <NameInput value={tuning.description} onCommit={(description) => onScalaChange({ description })} />
       </label>
       <label className="field">
         <span>1/1 MIDI note</span>
-        <input min={0} max={127} type="number" value={tuning.referenceMidiNote} onChange={(event) => onScalaChange({ referenceMidiNote: Number(event.target.value) })} />
+        <DeferredNumberInput integer min={0} max={127} value={tuning.referenceMidiNote} onCommit={(referenceMidiNote) => onScalaChange({ referenceMidiNote })} />
       </label>
       <label className="field">
         <span>1/1 Hz</span>
-        <input min={0.01} step="any" type="number" value={tuning.referenceHz} onChange={(event) => onScalaChange({ referenceHz: Number(event.target.value) })} />
+        <DeferredNumberInput min={0.01} step="any" value={tuning.referenceHz} onCommit={(referenceHz) => onScalaChange({ referenceHz })} />
         <small className="muted">Intervals and reference frequency are saved at firmware-native 32-bit precision.</small>
       </label>
       <label className={keyLabelsError ? "field invalidField" : "field"}>

@@ -88,7 +88,8 @@ schema major, schema minor, one reserved zero byte, the raw 16-byte object ID,
 length-prefixed name and folder strings, body length (`u32-le`), and the normal
 `HBS1` TLV object body. The tuning root must be the first and only
 `UserTuning`; IDs must be unique and every child tuning reference must point to
-that root.
+that root. A bundle must contain from 1 through 32 `UserLayout` records and from
+1 through 32 `UserScale` records.
 
 An `HGO` transfer contains a 12-byte header (`HGO`, version `1`, object count,
 three reserved zero bytes, and body CRC32) followed by `count` raw 16-byte
@@ -1411,9 +1412,6 @@ preview matches the saved selection.
 
 ## Open Design Questions
 
-- On-device associated layout/scale menus show at most `24` linked records for
-  the selected tuning even though the 64-bundle storage limit counts tuning
-  roots rather than child records.
 - Object id format: 16 random bytes are robust, but a shorter CRC-based id may
   be easier on-device. The important rule is that profiles should not silently
   bind to the wrong object after slot moves.

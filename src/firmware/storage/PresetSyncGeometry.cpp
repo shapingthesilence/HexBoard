@@ -175,6 +175,8 @@ bool validateGeometryBundleFile(const char* path,
   }
   uint8_t tuningCount = 0;
   uint8_t colorMapCount = 0;
+  uint16_t layoutCount = 0;
+  uint16_t scaleCount = 0;
   uint8_t rootTuningObjectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
   std::vector<std::array<uint8_t, GEOMETRY_OBJECT_ID_LENGTH>> objectIds;
   objectIds.reserve(header.count);
@@ -220,9 +222,11 @@ bool validateGeometryBundleFile(const char* path,
     switch (metadata.objectType) {
       case PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT:
         tuningReferenceTag = PRESET_SYNC_TLV_LAYOUT_TUNING_REF;
+        ++layoutCount;
         break;
       case PRESET_SYNC_OBJECT_TYPE_USER_SCALE:
         tuningReferenceTag = PRESET_SYNC_TLV_USER_SCALE_TUNING_REF;
+        ++scaleCount;
         break;
       case PRESET_SYNC_OBJECT_TYPE_SCALE_COLOR_MAP:
         tuningReferenceTag = PRESET_SYNC_TLV_SCALE_COLOR_TUNING_REF;
@@ -244,7 +248,13 @@ bool validateGeometryBundleFile(const char* path,
       return false;
     }
   }
-  bool valid = tuningCount == 1 && colorMapCount <= 1 && file.position() == file.size();
+  bool valid = tuningCount == 1
+               && colorMapCount <= 1
+               && layoutCount >= 1
+               && layoutCount <= GEOMETRY_LAYOUT_SCALE_MAX_COUNT
+               && scaleCount >= 1
+               && scaleCount <= GEOMETRY_LAYOUT_SCALE_MAX_COUNT
+               && file.position() == file.size();
   file.close();
   if (!valid && logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": bundle structure.");
   if (valid) bundle.recordCount = header.count;

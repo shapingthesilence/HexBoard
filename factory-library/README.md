@@ -67,8 +67,9 @@ The build stops with a source path and validation stage for malformed JSON,
 bad `.hexwav` data, folder/name mismatches, missing values, duplicate object
 IDs or names, unresolved wavetable references, capacity overflow, or a schema
 version mismatch. Geometry validation also checks linked active layout/scale
-IDs and the 64-bundle limit. It also extracts the generated LittleFS image and compares
-every file before creating the Factory UF2.
+IDs, the 64-bundle limit, and the 32-layout and 32-scale per-tuning limits. It
+also extracts the generated LittleFS image and compares every file before
+creating the Factory UF2.
 
 The firmware-only Update UF2 contains no LittleFS blocks and therefore does not
 install anything from this directory.

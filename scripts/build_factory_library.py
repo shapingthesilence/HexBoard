@@ -19,6 +19,7 @@ SYNTH_PRESET_MAX_COUNT = 128
 SYNTH_WAVETABLE_MAX_COUNT = 32
 GEOMETRY_FACTORY_BUNDLE_MAX_COUNT = 64
 GEOMETRY_BUNDLE_RECORD_MAX_COUNT = 255
+GEOMETRY_LAYOUT_SCALE_MAX_COUNT = 32
 GEOMETRY_OBJECT_MAX_COUNT = GEOMETRY_FACTORY_BUNDLE_MAX_COUNT * GEOMETRY_BUNDLE_RECORD_MAX_COUNT
 SYNTH_PRESET_FILE_VERSION = 11
 SYNTH_WAVETABLE_FILE_VERSION = 1
@@ -477,6 +478,12 @@ def parse_geometry_bundle(path: Path, root: Path) -> list[tuple[int, bytes, str,
     layouts = bundle.get("layouts")
     if not isinstance(layouts, list) or not layouts:
         raise fail(path, "geometry layout", "bundle.layouts must contain at least one layout")
+    if len(layouts) > GEOMETRY_LAYOUT_SCALE_MAX_COUNT:
+        raise fail(
+            path,
+            "geometry layout",
+            f"bundle.layouts contains {len(layouts)} layouts; capacity is {GEOMETRY_LAYOUT_SCALE_MAX_COUNT}",
+        )
     layout_ids: set[bytes] = set()
     layout_objects: list[tuple[bytes, bytes, str]] = []
     for index, source in enumerate(layouts):
@@ -494,6 +501,12 @@ def parse_geometry_bundle(path: Path, root: Path) -> list[tuple[int, bytes, str,
     scales = bundle.get("scales")
     if not isinstance(scales, list) or not scales:
         raise fail(path, "geometry scale", "bundle.scales must contain at least one scale")
+    if len(scales) > GEOMETRY_LAYOUT_SCALE_MAX_COUNT:
+        raise fail(
+            path,
+            "geometry scale",
+            f"bundle.scales contains {len(scales)} scales; capacity is {GEOMETRY_LAYOUT_SCALE_MAX_COUNT}",
+        )
     scale_ids: set[bytes] = set()
     scale_objects: list[tuple[bytes, bytes, str]] = []
     for index, source in enumerate(scales):

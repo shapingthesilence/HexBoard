@@ -27,6 +27,7 @@ import {
   encodeLayoutBundle,
   ExplicitButtonMapTlv,
   GenericScaleColorMapName,
+  GeometryLayoutScaleMaxCount,
   keyLabelsForTlvOrder,
   keyLabelsFromScalaIntervalLabels,
   LayoutTlv,
@@ -490,6 +491,38 @@ Example scale
     expect(encoded[4]).toBe(2);
     expect(u32LE(encoded.slice(8, 12)) >>> 0).toBe(crc32(encoded.slice(12)) >>> 0);
     expect(encoded.slice(12)).toEqual(new Uint8Array([...ids[0], ...ids[1]]));
+  });
+
+  it("accepts up to 32 layouts and scales per tuning", () => {
+    const base = createDefaultLayoutBundle();
+    const layouts = Array.from({ length: GeometryLayoutScaleMaxCount }, (_, index) => ({
+      ...base.layouts[0],
+      objectIdHex: objectIdToHex(deterministicObjectId(`limit-layout-${index}`)),
+      name: `Layout ${index + 1}`
+    }));
+    const scales = Array.from({ length: GeometryLayoutScaleMaxCount }, (_, index) => ({
+      ...base.scales[0],
+      objectIdHex: objectIdToHex(deterministicObjectId(`limit-scale-${index}`)),
+      name: `Scale ${index + 1}`
+    }));
+    const atLimit = {
+      ...base,
+      layouts,
+      activeLayoutIdHex: layouts[0].objectIdHex,
+      scales,
+      activeScaleIdHex: scales[0].objectIdHex
+    };
+
+    expect(encodeLayoutBundle(atLimit).layouts).toHaveLength(GeometryLayoutScaleMaxCount);
+    expect(encodeLayoutBundle(atLimit).scales).toHaveLength(GeometryLayoutScaleMaxCount);
+    expect(() => encodeLayoutBundle({
+      ...atLimit,
+      layouts: [...layouts, { ...layouts[0], objectIdHex: objectIdToHex(deterministicObjectId("layout-over-limit")) }]
+    })).toThrow(/1 through 32 layouts/);
+    expect(() => encodeLayoutBundle({
+      ...atLimit,
+      scales: [...scales, { ...scales[0], objectIdHex: objectIdToHex(deterministicObjectId("scale-over-limit")) }]
+    })).toThrow(/1 through 32 scales/);
   });
 
   it("preserves device tuning and color object ids when re-saving a downloaded bundle", () => {

@@ -579,7 +579,9 @@ per-button pitch, color, direct-MIDI, or chord overrides. Work through `Library`
 `Scale & color` from left to right. `Library` provides the full-width computer
 and HexBoard file-management view; the three editing steps keep the board
 preview visible while their focused controls appear beside it. Sync and save
-actions remain at the top of the geometry studio. The preview's `Paint keys`
+actions remain at the top of the geometry studio. Editable numeric fields allow
+temporary empty or out-of-range text while typing, then restore or clamp the
+value when you leave the field. The preview's `Paint keys`
 tool can target either button color overrides or scale-degree palette colors
 while `Custom` color mode is active. Painting a scale degree clears matching
 button color overrides in the active layout so the palette color takes effect
@@ -627,6 +629,7 @@ browsers. HexBoard stores up to 64 complete geometry bundles; one tuning plus
 its palette and all linked layouts/scales counts as one bundle. Tuning division
 and scale-cycle lengths may be from 1 through 128. Saving or erasing a bundle
 changes only that bundle's file; the other geometry bundles are not rewritten.
+Each tuning bundle may contain up to 32 layouts and 32 scales.
 The editor's `Default color mode` selector is saved with each bundle and is
 applied when that tuning loads. The supplied `12 EDO (Normal)` bundle defaults
 to `Rainbow`.

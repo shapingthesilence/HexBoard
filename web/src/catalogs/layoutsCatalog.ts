@@ -31,6 +31,7 @@ export const GeometryObjectMaxRawBytes = 8_192;
 export const GeometryBundleMaxRawBytes = 262_144;
 export const GeometryBundleMaxRecords = 255;
 export const GeometryBundleMaxCount = 64;
+export const GeometryLayoutScaleMaxCount = 32;
 
 function requireTuningDivisionCount(value: number, label: string): void {
   if (!Number.isInteger(value) || value < 1 || value > MaxTuningDivisions) {
@@ -1214,6 +1215,12 @@ export function createDefaultLayoutBundle(): LayoutBundle {
 }
 
 export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
+  if (bundle.layouts.length < 1 || bundle.layouts.length > GeometryLayoutScaleMaxCount) {
+    throw new RangeError(`geometry bundle must contain 1 through ${GeometryLayoutScaleMaxCount} layouts`);
+  }
+  if (bundle.scales.length < 1 || bundle.scales.length > GeometryLayoutScaleMaxCount) {
+    throw new RangeError(`geometry bundle must contain 1 through ${GeometryLayoutScaleMaxCount} scales`);
+  }
   const tuningId = bundle.tuningObjectIdHex
     ? objectIdFromHex(bundle.tuningObjectIdHex)
     : bundleObjectId(bundle, "tuning");
@@ -1522,6 +1529,9 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
           chordActions: []
         }]
       : [createDefaultLayout(cycleLength)];
+  if (layouts.length > GeometryLayoutScaleMaxCount) {
+    throw new RangeError(`Layout bundle contains more than ${GeometryLayoutScaleMaxCount} layouts`);
+  }
   const normalizedLayouts = layouts.map((layout, index) => {
     const objectIdHex = typeof layout.objectIdHex === "string"
       ? layout.objectIdHex
@@ -1576,6 +1586,9 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
   const scales = Array.isArray(source.scales) && source.scales.length > 0
     ? source.scales
     : [createAllNotesScale(cycleLength)];
+  if (scales.length > GeometryLayoutScaleMaxCount) {
+    throw new RangeError(`Layout bundle contains more than ${GeometryLayoutScaleMaxCount} scales`);
+  }
   const normalizedScales = scales.map((scale, index) => {
     const objectIdHex = typeof scale.objectIdHex === "string"
       ? scale.objectIdHex
