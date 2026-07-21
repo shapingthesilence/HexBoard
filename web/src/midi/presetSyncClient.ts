@@ -393,6 +393,17 @@ export class PresetSyncClient {
     });
   }
 
+  async sendGeometryOrderSaveConfirmed(body: Uint8Array): Promise<number[][]> {
+    return this.sendObjectWriteConfirmed({
+      objectType: ObjectType.GeometryOrder,
+      body,
+      handle: NEW_OBJECT_HANDLE,
+      schemaMajor: 1,
+      schemaMinor: 0,
+      writeFlags: WriteFlag.SaveToFlash
+    });
+  }
+
   async sendGeometryObjectPreviewConfirmed(object: EncodedCatalogObject, handle = NEW_OBJECT_HANDLE): Promise<number[][]> {
     return this.sendGeometryObjectWriteConfirmed(object, WriteFlag.ApplyToRuntime, handle);
   }

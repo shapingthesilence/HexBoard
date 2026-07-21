@@ -57,6 +57,7 @@ File headers:
 | --- | --- | --- | --- |
 | `/settings.dat` | `STG` | Main settings schema | Main profile bytes and object references |
 | `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `2` | One tuning root and all linked layout/scale/color/map records |
+| `/geometry_order.dat` | `HGO` | Geometry order file schema `1` | Ordered tuning object IDs used by device and web library menus |
 | `/presets/*.hsp` | `HSP` | Synth preset file schema `11` | One named preset, folder, values, and wavetable reference |
 | `/synth_wavetables.dat` | `SYW` | Synth wavetable catalog schema | Named user wavetable objects and sample-file paths |
 
@@ -88,6 +89,14 @@ length-prefixed name and folder strings, body length (`u32-le`), and the normal
 `HBS1` TLV object body. The tuning root must be the first and only
 `UserTuning`; IDs must be unique and every child tuning reference must point to
 that root.
+
+An `HGO` transfer contains a 12-byte header (`HGO`, version `1`, object count,
+three reserved zero bytes, and body CRC32) followed by `count` raw 16-byte
+tuning object IDs. Object type `0x0D` (`GeometryOrder`) is write-only, uses the
+normal confirmed chunked write flow, and requires `SaveToFlash` without Apply or
+DryRun. Firmware validates that the submitted list contains every installed
+bundle exactly once, atomically replaces only `/geometry_order.dat`, skips an
+identical write, and rebuilds compact handles in the submitted order.
 
 ## Relationship To Current SysEx
 
@@ -425,6 +434,7 @@ handle.
 | `0x0A` | `UserScale` | Geometry-bundle scale handle or read-only rescue handle |
 | `0x0B` | `SynthWavetable` | Synth-only wavetable catalog entry; current firmware returns compact catalog handles up to `63` |
 | `0x0C` | `GeometryBundle` | Write-only complete `.hgb` file transfer; always uses `NEW_OBJECT` |
+| `0x0D` | `GeometryOrder` | Write-only complete `/geometry_order.dat` transfer; always uses `NEW_OBJECT` |
 
 Factory tunings, layouts, scales, and color maps live in `/geometry/*.hgb`, use
 stable object IDs, and are editable or erasable like other catalog records.

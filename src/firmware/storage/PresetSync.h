@@ -13,6 +13,8 @@ constexpr uint16_t PRESET_SYNC_RAW_CHUNK_SIZE = 64;
 constexpr size_t PRESET_SYNC_MAX_SYNTH_PRESET_BYTES = 2048;
 constexpr size_t PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES = SYNTH_WAVETABLE_MIP_SAMPLE_BYTES + 1024;
 constexpr size_t PRESET_SYNC_MAX_RAW_OBJECT_BYTES = GEOMETRY_BUNDLE_MAX_RAW_BYTES;
+constexpr size_t PRESET_SYNC_MAX_GEOMETRY_ORDER_BYTES =
+  sizeof(GeometryOrderFileHeader) + GEOMETRY_BUNDLE_MAX_COUNT * GEOMETRY_OBJECT_ID_LENGTH;
 constexpr size_t PRESET_SYNC_WAVETABLE_SAMPLE_TLV_CHUNK_BYTES = 32768;
 constexpr char PRESET_SYNC_WRITE_RAW_TEMP_FILE_PATH[] = "/ps_raw.tmp";
 constexpr char PRESET_SYNC_WAVETABLE_SAMPLE_TEMP_FILE_PATH[] = "/ps_wt.tmp";
@@ -43,6 +45,7 @@ constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET = 0x07;
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_USER_SCALE = 0x0A;
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE = 0x0B;
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE = 0x0C;
+constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_GEOMETRY_ORDER = 0x0D;
 
 constexpr uint8_t PRESET_SYNC_TLV_NAME = 0x01;
 constexpr uint8_t PRESET_SYNC_TLV_OBJECT_ID = 0x02;
@@ -262,6 +265,7 @@ bool applyGeometryObjectToRuntime(const GeometryObjectSlot& object);
 bool geometryObjectReferencesObjectId(const GeometryObjectSlot& object, uint8_t tag, uint8_t objectType, const uint8_t* objectId);
 bool geometryObjectRuntimeTuningSupported(const GeometryObjectSlot& object);
 bool installGeometryBundleFile(const char* stagedPath);
+bool saveGeometryCatalogOrder(const std::vector<uint8_t>& raw);
 bool geometryFallbackRequired();
 bool loadDefaultGeometryRuntime();
 bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex);

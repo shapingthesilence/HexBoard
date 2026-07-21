@@ -75,7 +75,8 @@ export const ObjectType = {
   Folder: 0x09,
   UserScale: 0x0a,
   SynthWavetable: 0x0b,
-  GeometryBundle: 0x0c
+  GeometryBundle: 0x0c,
+  GeometryOrder: 0x0d
 } as const;
 
 export type ObjectTypeValue = (typeof ObjectType)[keyof typeof ObjectType];

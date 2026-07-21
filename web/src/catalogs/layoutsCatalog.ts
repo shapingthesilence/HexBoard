@@ -30,6 +30,7 @@ export const MaxTuningDivisions = 128;
 export const GeometryObjectMaxRawBytes = 8_192;
 export const GeometryBundleMaxRawBytes = 262_144;
 export const GeometryBundleMaxRecords = 255;
+export const GeometryBundleMaxCount = 64;
 
 function requireTuningDivisionCount(value: number, label: string): void {
   if (!Number.isInteger(value) || value < 1 || value > MaxTuningDivisions) {
@@ -438,6 +439,23 @@ export function encodeGeometryBundleFile(objects: EncodedCatalogObject[], catalo
     throw new RangeError(`geometry bundle exceeds the ${GeometryBundleMaxRawBytes}-byte file limit`);
   }
   return file;
+}
+
+export function encodeGeometryCatalogOrder(objectIds: Uint8Array[]): Uint8Array {
+  if (objectIds.length > GeometryBundleMaxCount
+      || objectIds.some((objectId) => objectId.length !== 16)) {
+    throw new RangeError(`geometry order must contain at most ${GeometryBundleMaxCount} 16-byte object ids`);
+  }
+  const seen = new Set(objectIds.map(objectIdToHex));
+  if (seen.size !== objectIds.length) {
+    throw new RangeError("geometry order contains duplicate object ids");
+  }
+  const body = concatBytes(objectIds);
+  return concatBytes([
+    bytesFromNumbers(["H".charCodeAt(0), "G".charCodeAt(0), "O".charCodeAt(0), 1, objectIds.length, 0, 0, 0]),
+    u32LE(crc32(body)),
+    body
+  ]);
 }
 
 export interface ResolvedLayoutBundleColor {

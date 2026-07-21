@@ -268,6 +268,73 @@ bool geometryBundleIndexLess(const GeometryBundleIndexEntry& left,
                 GEOMETRY_OBJECT_ID_LENGTH) < 0;
 }
 
+void sortGeometryBundlesAndAssignHandles() {
+  std::sort(geometryBundles.begin(), geometryBundles.end(), geometryBundleIndexLess);
+  uint16_t firstHandle = 0;
+  for (GeometryBundleIndexEntry& bundle : geometryBundles) {
+    bundle.firstHandle = firstHandle;
+    firstHandle += bundle.recordCount;
+  }
+}
+
+bool applyGeometryOrderBytes(const uint8_t* data,
+                             size_t length,
+                             bool requireCompleteCatalog,
+                             bool applyOrder = true) {
+  if (!data || length < sizeof(GeometryOrderFileHeader)) return false;
+  GeometryOrderFileHeader header = {};
+  memcpy(&header, data, sizeof(header));
+  size_t bodyLength = static_cast<size_t>(header.count) * GEOMETRY_OBJECT_ID_LENGTH;
+  if (strncmp(header.magic, "HGO", 3) != 0
+      || header.version != GEOMETRY_ORDER_FILE_VERSION
+      || header.count > GEOMETRY_BUNDLE_MAX_COUNT
+      || length != sizeof(header) + bodyLength
+      || header.crc32 != crc32(data + sizeof(header), bodyLength)
+      || (requireCompleteCatalog && header.count != geometryBundles.size())) {
+    return false;
+  }
+
+  for (uint8_t left = 0; left < header.count; ++left) {
+    const uint8_t* leftId = data + sizeof(header) + left * GEOMETRY_OBJECT_ID_LENGTH;
+    for (uint8_t right = left + 1; right < header.count; ++right) {
+      const uint8_t* rightId = data + sizeof(header) + right * GEOMETRY_OBJECT_ID_LENGTH;
+      if (memcmp(leftId, rightId, GEOMETRY_OBJECT_ID_LENGTH) == 0) return false;
+    }
+    const GeometryBundleIndexEntry* bundle = nullptr;
+    if (requireCompleteCatalog && !geometryBundleForTuningObjectId(leftId, bundle)) return false;
+  }
+
+  if (!applyOrder) return true;
+
+  for (GeometryBundleIndexEntry& bundle : geometryBundles) {
+    bundle.catalogOrder = GEOMETRY_CATALOG_ORDER_UNSORTED;
+  }
+  for (uint8_t order = 0; order < header.count; ++order) {
+    const uint8_t* objectId = data + sizeof(header) + order * GEOMETRY_OBJECT_ID_LENGTH;
+    for (GeometryBundleIndexEntry& bundle : geometryBundles) {
+      if (memcmp(bundle.tuningObjectId, objectId, GEOMETRY_OBJECT_ID_LENGTH) == 0) {
+        bundle.catalogOrder = order;
+        break;
+      }
+    }
+  }
+  sortGeometryBundlesAndAssignHandles();
+  return true;
+}
+
+bool loadGeometryCatalogOrder() {
+  File file = LittleFS.open(GEOMETRY_ORDER_FILE_PATH, "r");
+  if (!file || file.size() < sizeof(GeometryOrderFileHeader)
+      || file.size() > PRESET_SYNC_MAX_GEOMETRY_ORDER_BYTES) {
+    if (file) file.close();
+    return false;
+  }
+  std::vector<uint8_t> raw(file.size(), 0);
+  bool read = file.read(raw.data(), raw.size()) == raw.size();
+  file.close();
+  return read && applyGeometryOrderBytes(raw.data(), raw.size(), false);
+}
+
 } // namespace
 
 bool isPresetSyncGeometryObjectType(uint8_t objectType) {
@@ -534,12 +601,7 @@ void load_geometry_objects() {
     geometryCatalogObjectCount += bundle.recordCount;
   }
   directory.close();
-  std::sort(geometryBundles.begin(), geometryBundles.end(), geometryBundleIndexLess);
-  uint16_t firstHandle = 0;
-  for (GeometryBundleIndexEntry& bundle : geometryBundles) {
-    bundle.firstHandle = firstHandle;
-    firstHandle += bundle.recordCount;
-  }
+  if (!loadGeometryCatalogOrder()) sortGeometryBundlesAndAssignHandles();
   sendToLog("Geometry bundles loaded successfully (" + std::to_string(geometryBundles.size()) + " bundles, "
             + std::to_string(geometryCatalogObjectCount) + " objects).");
 }
@@ -566,6 +628,34 @@ bool installGeometryBundleFile(const char* stagedPath) {
   load_geometry_objects();
   return findGeometryObjectByTypeAndObjectId(PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
                                              bundle.tuningObjectId) >= 0;
+}
+
+bool saveGeometryCatalogOrder(const std::vector<uint8_t>& raw) {
+  if (!fileSystemExists
+      || !applyGeometryOrderBytes(raw.data(), raw.size(), true, false)) {
+    return false;
+  }
+
+  File existing = LittleFS.open(GEOMETRY_ORDER_FILE_PATH, "r");
+  if (existing && existing.size() == raw.size()) {
+    std::vector<uint8_t> existingRaw(raw.size(), 0);
+    bool unchanged = existing.read(existingRaw.data(), existingRaw.size()) == existingRaw.size()
+                     && existingRaw == raw;
+    existing.close();
+    if (unchanged) return applyGeometryOrderBytes(raw.data(), raw.size(), true);
+  } else if (existing) {
+    existing.close();
+  }
+
+  LittleFS.remove(GEOMETRY_ORDER_TEMP_FILE_PATH);
+  File output = LittleFS.open(GEOMETRY_ORDER_TEMP_FILE_PATH, "w");
+  bool written = output && output.write(raw.data(), raw.size()) == raw.size();
+  if (output) output.close();
+  if (!written || !LittleFS.rename(GEOMETRY_ORDER_TEMP_FILE_PATH, GEOMETRY_ORDER_FILE_PATH)) {
+    LittleFS.remove(GEOMETRY_ORDER_TEMP_FILE_PATH);
+    return false;
+  }
+  return applyGeometryOrderBytes(raw.data(), raw.size(), true);
 }
 
 int findGeometryObjectByTypeAndObjectId(uint8_t objectType, const uint8_t* objectId) {

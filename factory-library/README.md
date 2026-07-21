@@ -51,6 +51,8 @@ Each source bundle becomes one independently checksummed
 `/default_geometry.dat`; filesystem directory order does not choose the factory
 default. `geometryOrder` must list every source bundle and defines their stable
 on-device order; the supplied list matches the former hard-coded tuning order.
+The generator writes that sequence to the compact `/geometry_order.dat` file as
+well as retaining order values in factory HGB headers as a fallback.
 
 ## Configuration And Validation
 

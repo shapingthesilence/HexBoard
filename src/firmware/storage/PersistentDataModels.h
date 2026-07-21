@@ -119,6 +119,9 @@ constexpr uint8_t SYNTH_WAVETABLE_SCHEMA_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_MAX_COUNT = 32;
 constexpr uint8_t GEOMETRY_OBJECT_FILE_VERSION = 2;
 constexpr uint16_t GEOMETRY_CATALOG_ORDER_UNSORTED = 0xFFFFu;
+constexpr uint8_t GEOMETRY_ORDER_FILE_VERSION = 1;
+constexpr char GEOMETRY_ORDER_FILE_PATH[] = "/geometry_order.dat";
+constexpr char GEOMETRY_ORDER_TEMP_FILE_PATH[] = "/geometry_order.tmp";
 // Geometry bundles are stored as linked tuning/layout/scale/color/map records.
 // The public limit counts tuning roots (complete bundles), while this internal
 // sanity ceiling only bounds malformed files. Only tuning menu metadata and
@@ -379,6 +382,16 @@ struct GeometryObjectFileHeader {
 };
 static_assert(sizeof(GeometryObjectFileHeader) == 12,
               "GeometryObjectFileHeader disk layout changed");
+
+struct GeometryOrderFileHeader {
+  char magic[3];     // "HGO"
+  uint8_t version;
+  uint8_t count;
+  uint8_t reserved[3];
+  uint32_t crc32;
+};
+static_assert(sizeof(GeometryOrderFileHeader) == 12,
+              "GeometryOrderFileHeader disk layout changed");
 
 struct GeometryObjectSlot {
   uint8_t valid = 0;

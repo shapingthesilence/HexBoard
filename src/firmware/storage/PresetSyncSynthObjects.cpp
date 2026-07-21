@@ -838,6 +838,8 @@ size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType) {
       return PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES;
     case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE:
       return GEOMETRY_BUNDLE_MAX_RAW_BYTES;
+    case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_ORDER:
+      return PRESET_SYNC_MAX_GEOMETRY_ORDER_BYTES;
     default:
       return 0;
   }

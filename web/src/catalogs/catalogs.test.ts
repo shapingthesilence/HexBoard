@@ -23,6 +23,7 @@ import {
   defaultKeyLabels,
   deterministicObjectId,
   encodeHexBoardWavetableWav,
+  encodeGeometryCatalogOrder,
   encodeLayoutBundle,
   ExplicitButtonMapTlv,
   GenericScaleColorMapName,
@@ -481,6 +482,16 @@ Example scale
     expect(u16LE(ordered.bundleFile.slice(6, 8))).toBe(7);
   });
 
+  it("encodes a compact checksummed geometry order file", () => {
+    const ids = [deterministicObjectId("first geometry"), deterministicObjectId("second geometry")];
+    const encoded = encodeGeometryCatalogOrder(ids);
+    expect(new TextDecoder().decode(encoded.slice(0, 3))).toBe("HGO");
+    expect(encoded[3]).toBe(1);
+    expect(encoded[4]).toBe(2);
+    expect(u32LE(encoded.slice(8, 12)) >>> 0).toBe(crc32(encoded.slice(12)) >>> 0);
+    expect(encoded.slice(12)).toEqual(new Uint8Array([...ids[0], ...ids[1]]));
+  });
+
   it("preserves device tuning and color object ids when re-saving a downloaded bundle", () => {
     const tuningObjectIdHex = "00112233445566778899aabbccddeeff";
     const colorObjectIdHex = "ffeeddccbbaa99887766554433221100";
@@ -493,6 +504,16 @@ Example scale
 
     expect(objectIdToHex(encoded.tuning.objectId)).toBe(tuningObjectIdHex);
     expect(objectIdToHex(encoded.scaleColorMap.objectId)).toBe(colorObjectIdHex);
+  });
+
+  it("persists and encodes a bundle's default color mode", () => {
+    const bundle = createDefaultLayoutBundle();
+    bundle.palette.defaultColorMode = ColorMode.Rainbow;
+    const parsed = parseLayoutBundleFile(JSON.parse(serializeLayoutBundle(bundle)));
+    const encoded = encodeLayoutBundle(parsed);
+
+    expect(parsed.palette.defaultColorMode).toBe(ColorMode.Rainbow);
+    expect(u8(recordValue(encoded.scaleColorMap.body, ScaleColorMapTlv.DefaultColorMode))).toBe(ColorMode.Rainbow);
   });
 
   it("derives equal-step period metadata from step cents and cycle length", () => {

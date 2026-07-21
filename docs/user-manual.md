@@ -627,6 +627,14 @@ browsers. HexBoard stores up to 64 complete geometry bundles; one tuning plus
 its palette and all linked layouts/scales counts as one bundle. Tuning division
 and scale-cycle lengths may be from 1 through 128. Saving or erasing a bundle
 changes only that bundle's file; the other geometry bundles are not rewritten.
+The editor's `Default color mode` selector is saved with each bundle and is
+applied when that tuning loads. The supplied `12 EDO (Normal)` bundle defaults
+to `Rainbow`.
+
+In the Library step, drag bundle rows to reorder them. Computer Library order is
+saved in the browser. Dragging HexBoard Library rows updates the device menu
+order after a 2 second quiet period, so several quick drops produce one small
+order-file flash write rather than rewriting geometry bundles.
 
 Library folder rows begin with the visually distinct system views `All` and
 `Root`, followed by user folders. New folders belong to the

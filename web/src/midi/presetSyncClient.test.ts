@@ -3,6 +3,7 @@ import { deterministicObjectId } from "../catalogs/objectId.ts";
 import {
   createDefaultLayoutBundle,
   createGeneratedEdoTuning,
+  encodeGeometryCatalogOrder,
   encodeLayoutBundle
 } from "../catalogs/layoutsCatalog.ts";
 import { createSynthPresetObject } from "../catalogs/synthPresets.ts";
@@ -170,6 +171,32 @@ describe("PresetSyncClient", () => {
     });
     expect(decodeWriteCommitPayload(decoded.at(-1)?.payload ?? [])).toMatchObject({
       commitFlags: 0x02
+    });
+  });
+
+  it("saves geometry order as one small flash transfer", async () => {
+    const transport = new MockMidiTransport();
+    const originalSend = transport.send.bind(transport);
+    transport.send = async (bytes) => {
+      await originalSend(bytes);
+      const frame = decodePresetSyncFrame(bytes);
+      const nextChunkIndex = frame.message === MessageType.DataChunk
+        ? decodeDataChunkPayload(frame.payload).chunkIndex + 1
+        : 0;
+      transport.emit(encodeAckFrame(frame.transactionId, frame.message, nextChunkIndex));
+    };
+    const client = new PresetSyncClient(transport);
+    const order = encodeGeometryCatalogOrder([
+      deterministicObjectId("first geometry"),
+      deterministicObjectId("second geometry")
+    ]);
+    const frames = await client.sendGeometryOrderSaveConfirmed(order);
+    const decoded = frames.map((frame) => decodePresetSyncFrame(frame));
+
+    expect(decodeWriteBeginPayload(decoded[0].payload)).toMatchObject({
+      objectType: ObjectType.GeometryOrder,
+      rawByteLength: order.length,
+      writeFlags: 0x02
     });
   });
 

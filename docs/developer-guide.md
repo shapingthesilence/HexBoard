@@ -430,6 +430,7 @@ does not prevent booting with safe fallbacks.
 - `/current_wavetable.dat`: current wavetable folder/name reference, magic `CWT`, version `1`.
 - `/profile_wavetables.dat`: per-profile wavetable folder/name snapshots, magic `PWT`, version `1`.
 - `/geometry/<tuning-object-id>.hgb`: one independently checksummed factory-or-user geometry bundle per file, magic `HGB`, version `2`. Capacity is 64 complete bundles counted by `UserTuning` roots. A bundle contains its tuning root and all linked `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` records and is atomically replaced as one unit. Its header also carries a stable catalog order; `0xFFFF` marks ordinary user bundles, which sort after explicitly ordered factory entries.
+- `/geometry_order.dat`: checksummed `HGO` version `1` order override containing up to 64 tuning object IDs. Reordering writes only this small file; saving, replacing, or deleting a bundle does not rewrite it. Missing IDs are ignored and newly installed bundles append after listed entries.
 - `/default_geometry.dat`: factory default tuning-object reference, magic `DGE`, version `1`. If that bundle is unavailable, boot selects the first usable bundle and ultimately the compiled 12 EDO rescue geometry.
 - `/Sequences`: optional sequencer `.hbseq` files plus `.current` remembered path when sequencer support is enabled.
 
@@ -452,6 +453,12 @@ are loaded only while reading, validating, or applying a selected record, so the
 wavetable browsers use their existing RAM metadata catalogs in the same way:
 folder navigation and labels do not read LittleFS, while selection loads the
 chosen preset body or wavetable samples.
+
+The web geometry library exposes drag ordering for both computer and HexBoard
+lists. Computer order is browser-local. HexBoard order changes are applied
+immediately in the UI, debounced for 2 seconds, then sent as one `GeometryOrder`
+object. Firmware skips the flash write when the bytes are unchanged and never
+rewrites HGB bundle files for ordering.
 
 Each `.hgb` is limited to `255` records and `262,144` bytes; each contained
 object body is limited to `8,192` bytes. The 64-bundle limit therefore permits

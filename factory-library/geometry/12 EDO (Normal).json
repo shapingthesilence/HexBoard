@@ -28,7 +28,7 @@
       "periodCents": 1200.0
     },
     "palette": {
-      "defaultColorMode": 1,
+      "defaultColorMode": 0,
       "degreeColors": [
         {
           "degree": 0,

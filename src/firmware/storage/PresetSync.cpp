@@ -713,7 +713,8 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
 
   uint16_t handle = presetSyncDecodeU14(payload + 1);
   uint8_t writeFlags = payload[18];
-  if (objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE
+  if ((objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE
+       || objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_ORDER)
       && (handle != PRESET_SYNC_NEW_OBJECT_HANDLE
           || !(writeFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH)
           || (writeFlags & (PRESET_SYNC_WRITE_APPLY_TO_RUNTIME | PRESET_SYNC_WRITE_DRY_RUN)))) {
@@ -954,6 +955,15 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
         }
       }
     }
+  } else if (presetSyncWriteTransfer.objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_ORDER) {
+    if ((commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME)
+        || !(commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH)
+        || !saveGeometryCatalogOrder(presetSyncWriteTransfer.rawData)) {
+      presetSyncCancelWriteTransfer();
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
+      return;
+    }
+    requestUserGeometryMenuRebuild();
   } else if (presetSyncWriteTransfer.objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
     if ((commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME)
         || !(commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH)

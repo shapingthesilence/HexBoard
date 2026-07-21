@@ -84,6 +84,11 @@ and `TRANSFER_END` so firmware can pace object transfers.
   one staged file, while live preview continues to send only the active
   tuning/layout/scale/color/map objects without writing flash. Tuning divisions
   and scale cycles are limited to the firmware's `1..128` range.
+- Bundle color-mode defaults are stored in the bundle; the supplied 12 EDO
+  bundle uses Rainbow. Computer and HexBoard library rows can be reordered by
+  dragging. Device reorders update the UI immediately, wait for a 2-second
+  quiet period, then write only the compact geometry-order file; unchanged
+  order bytes do not cause another flash write.
 - A tuning/layout bundle editor organized as a four-step `Library`, `Tuning`,
   `Layout`, and `Scale & color` workflow. The library gets a full-width transfer
   and folder-management view. Folder filters consistently begin with `All` and

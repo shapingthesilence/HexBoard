@@ -551,6 +551,7 @@ def build_geometry(root: Path, output: Path, config_path: Path, config: dict) ->
     seen_ids: set[bytes] = set()
     record_count = 0
     selected_tuning_id: bytes | None = None
+    ordered_tuning_ids: list[bytes] = []
     for catalog_order, path in enumerate(paths):
         try:
             objects = parse_geometry_bundle(path, root)
@@ -588,6 +589,7 @@ def build_geometry(root: Path, output: Path, config_path: Path, config: dict) ->
                 f"encoded file is {len(header) + len(bundle_body)} bytes; capacity is {GEOMETRY_BUNDLE_MAX_RAW_BYTES}",
             )
         tuning_id = objects[0][1]
+        ordered_tuning_ids.append(tuning_id)
         (geometry_output / f"{tuning_id.hex().upper()}.hgb").write_bytes(header + bundle_body)
         if path_keys[path] == selected_path:
             selected_tuning_id = tuning_id
@@ -596,6 +598,15 @@ def build_geometry(root: Path, output: Path, config_path: Path, config: dict) ->
         raise fail(root, "geometry", f"generated {record_count} objects; capacity is {GEOMETRY_OBJECT_MAX_COUNT}")
     if selected_tuning_id is None:
         raise fail(config_path, "selection", f"selectedGeometry {selected!r} did not produce a tuning root")
+    geometry_order_body = b"".join(ordered_tuning_ids)
+    geometry_order_header = struct.pack(
+        "<3sBB3xI",
+        b"HGO",
+        1,
+        len(ordered_tuning_ids),
+        crc32(geometry_order_body),
+    )
+    (output / "geometry_order.dat").write_bytes(geometry_order_header + geometry_order_body)
     default_geometry_reference = b"DGE" + b"\x01" + selected_tuning_id
     (output / "default_geometry.dat").write_bytes(
         default_geometry_reference + struct.pack("<I", crc32(selected_tuning_id))

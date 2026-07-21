@@ -16,6 +16,7 @@ import {
   currentFirmwareDownLeftToUpRight,
   defaultKeyLabels,
   deterministicObjectId,
+  encodeGeometryCatalogOrder,
   encodeLayoutBundle,
   ExplicitButtonMapTlv,
   GeometryMenuTextMaxLength,
@@ -34,6 +35,7 @@ import {
   normalizeKeyLabels,
   NoteLabelTextMaxLength,
   objectIdToHex,
+  objectIdFromHex,
   parseLayoutBundleFile,
   parseLayoutBundleLibrary,
   parseScalaScale,
@@ -73,6 +75,8 @@ import { FolderControls } from "../components/FolderControls.tsx";
 import { formatByteLength } from "./format.ts";
 
 const layoutBundleStorageKey = "hexboard.layoutBundles.v1";
+const geometryOrderWriteDebounceMs = 2000;
+const geometryOrderDragMime = "application/x-hexboard-geometry-order";
 const geometryFoldersStorageKey = "hexboard.geometryFolders.v1";
 const previewHexHalfStepX = 25;
 const previewHexRowStepY = 42;
@@ -323,23 +327,23 @@ function createUntitledBundle(): LayoutBundle {
 
 function loadStoredBundles(): LayoutBundle[] {
   if (typeof window === "undefined") {
-    return [createDefaultLayoutBundle()];
+    return orderedComputerBundles([createDefaultLayoutBundle()]);
   }
   try {
     const raw = window.localStorage.getItem(layoutBundleStorageKey);
     if (!raw) {
-      return [createDefaultLayoutBundle()];
+      return orderedComputerBundles([createDefaultLayoutBundle()]);
     }
     const parsed = JSON.parse(raw) as unknown;
-    return parseLayoutBundleLibrary(parsed).map(sanitizeEditorBundle);
+    return orderedComputerBundles(parseLayoutBundleLibrary(parsed));
   } catch {
-    return [createDefaultLayoutBundle()];
+    return orderedComputerBundles([createDefaultLayoutBundle()]);
   }
 }
 
 function persistBundles(bundles: LayoutBundle[]) {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(layoutBundleStorageKey, JSON.stringify(bundles.map(sanitizeEditorBundle)));
+    window.localStorage.setItem(layoutBundleStorageKey, JSON.stringify(orderedComputerBundles(bundles)));
   }
 }
 
@@ -603,12 +607,22 @@ function decodeDeviceFolderPath(folderPath: string): string {
   });
 }
 
-function geometryBundleSortKey(item: Pick<LayoutBundle, "folderPath" | "name">): string {
-  return `${normalizeDisplayFolderPath(item.folderPath).toLocaleLowerCase()}\u0000${item.name.toLocaleLowerCase()}`;
+function orderedComputerBundles(bundles: LayoutBundle[]): LayoutBundle[] {
+  return bundles.map((bundle, catalogOrder) => ({
+    ...sanitizeEditorBundle(bundle),
+    catalogOrder
+  }));
 }
 
-function compareGeometryBundles(left: LayoutBundle, right: LayoutBundle): number {
-  return geometryBundleSortKey(left).localeCompare(geometryBundleSortKey(right));
+function reorderByObjectId<T extends { objectIdHex: string }>(items: T[], draggedId: string, targetId: string): T[] {
+  if (draggedId === targetId) return items;
+  const fromIndex = items.findIndex((item) => item.objectIdHex === draggedId);
+  const targetIndex = items.findIndex((item) => item.objectIdHex === targetId);
+  if (fromIndex < 0 || targetIndex < 0) return items;
+  const next = [...items];
+  const [dragged] = next.splice(fromIndex, 1);
+  next.splice(targetIndex, 0, dragged);
+  return next;
 }
 
 function hexBoardGeometryEntryFromRecord(record: ObjectListRecord, catalogOrder: number): HexBoardGeometryBundleEntry {
@@ -1269,6 +1283,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const lastAutoSentGeometryKeyRef = useRef("");
   const undoLayoutHistoryRef = useRef<LayoutHistoryEntry[]>([]);
   const redoLayoutHistoryRef = useRef<LayoutHistoryEntry[]>([]);
+  const geometryOrderWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [, setLayoutHistoryRevision] = useState(0);
 
   const activeBundle = bundles.find((bundle) => bundle.objectIdHex === activeBundleId) ?? bundles[0] ?? createDefaultLayoutBundle();
@@ -1290,6 +1305,12 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   );
   const runtimeSendSupported = activeBundle.tuning.kind !== "scala" || centsTableRuntimeSupported;
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
+
+  useEffect(() => () => {
+    if (geometryOrderWriteTimerRef.current !== null) {
+      clearTimeout(geometryOrderWriteTimerRef.current);
+    }
+  }, [client]);
 
   function selectOnlyButton(buttonIndex: number) {
     setSelectedButton(buttonIndex);
@@ -1358,9 +1379,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
 
   function setBundlesAndPersist(nextBundles: LayoutBundle[]) {
     clearLayoutHistory();
-    const sanitized = nextBundles.map(sanitizeEditorBundle).sort(compareGeometryBundles);
-    setBundles(sanitized);
-    persistBundles(sanitized);
+    const ordered = orderedComputerBundles(nextBundles);
+    setBundles(ordered);
+    persistBundles(ordered);
   }
 
   function updateActiveBundle(updater: (bundle: LayoutBundle) => LayoutBundle, preserveLayoutHistory = false) {
@@ -1369,10 +1390,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     }
     const targetId = activeBundle.objectIdHex;
     setBundles((currentBundles) => {
-      const nextBundles = currentBundles
-        .map((bundle) => bundle.objectIdHex === targetId ? updater(bundle) : bundle)
-        .map(sanitizeEditorBundle)
-        .sort(compareGeometryBundles);
+      const nextBundles = orderedComputerBundles(
+        currentBundles.map((bundle) => bundle.objectIdHex === targetId ? updater(bundle) : bundle)
+      );
       persistBundles(nextBundles);
       return nextBundles;
     });
@@ -1449,6 +1469,50 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     selectOnlyButton(next.layouts[0]?.centerButton ?? 65);
     setActiveWorkspaceTab("tuning");
     setStatus("Created new geometry bundle");
+  }
+
+  function reorderComputerLibrary(draggedId: string, targetId: string) {
+    const next = reorderByObjectId(bundles, draggedId, targetId);
+    if (next === bundles) return;
+    setBundlesAndPersist(next);
+    setStatus("Reordered Computer Library");
+  }
+
+  function scheduleHexBoardOrderWrite(entries: HexBoardGeometryBundleEntry[]) {
+    if (geometryOrderWriteTimerRef.current !== null) {
+      clearTimeout(geometryOrderWriteTimerRef.current);
+    }
+    setStatus(`HexBoard order queued; saving in ${geometryOrderWriteDebounceMs} ms`);
+    geometryOrderWriteTimerRef.current = setTimeout(() => {
+      geometryOrderWriteTimerRef.current = null;
+      void saveHexBoardGeometryOrder(entries);
+    }, geometryOrderWriteDebounceMs);
+  }
+
+  async function saveHexBoardGeometryOrder(entries: HexBoardGeometryBundleEntry[]) {
+    if (transport instanceof MockMidiTransport || !geometryBundleFilesSupported) return;
+    setSyncBusy(true);
+    try {
+      const orderFile = encodeGeometryCatalogOrder(
+        entries.map((entry) => objectIdFromHex(entry.objectIdHex))
+      );
+      setStatus("Saving HexBoard geometry order");
+      await client.sendGeometryOrderSaveConfirmed(orderFile);
+      await refreshHexBoardGeometryLibrary("Saved HexBoard geometry order");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Failed to save HexBoard geometry order");
+    } finally {
+      setSyncBusy(false);
+    }
+  }
+
+  function reorderHexBoardLibrary(draggedId: string, targetId: string) {
+    if (syncBusy) return;
+    const reordered = reorderByObjectId(hexboardBundles, draggedId, targetId);
+    if (reordered === hexboardBundles) return;
+    const next = reordered.map((entry, catalogOrder) => ({ ...entry, catalogOrder }));
+    setHexboardBundles(next);
+    scheduleHexBoardOrderWrite(next);
   }
 
   function deleteActiveBundle() {
@@ -2874,7 +2938,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             <div className="librarySpaces geometryLibrarySpaces">
               <GeometryLibrarySpacePanel
                 title="Computer Library"
-                subtitle="Browser-saved geometry bundles"
+                subtitle="Browser-saved bundles; drag to reorder"
                 space="computer"
                 bundles={bundles}
                 folders={computerFolders}
@@ -2885,6 +2949,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 onUpload={(bundle) => void saveBundleToHexBoard(bundle)}
                 onExport={downloadBundleFile}
                 onErase={deleteBundle}
+                onReorder={reorderComputerLibrary}
               />
               <HexBoardGeometryLibraryPanel
                 entries={hexboardBundles}
@@ -2895,6 +2960,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 onDownload={(entry) => void downloadHexBoardGeometryBundle(entry)}
                 onExport={(entry) => void exportHexBoardGeometryBundle(entry)}
                 onErase={(entry) => void eraseHexBoardGeometryBundle(entry)}
+                onReorder={reorderHexBoardLibrary}
+                reorderDisabled={syncBusy}
               />
             </div>
           </>
@@ -3092,7 +3159,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           </div>
           <div className="brushToolbar">
             <label className="toolbarSelectField">
-              <span>Color mode</span>
+              <span>Default color mode</span>
               <select
                 value={activeBundle.palette.defaultColorMode}
                 onChange={(event) => updateDefaultColorMode(Number(event.target.value) as ColorModeValue)}
@@ -3615,6 +3682,7 @@ interface GeometryLibrarySpacePanelProps {
   onUpload: (bundle: LayoutBundle) => void;
   onExport: (bundle: LayoutBundle) => void;
   onErase: (bundle: LayoutBundle) => void;
+  onReorder: (draggedId: string, targetId: string) => void;
 }
 
 function GeometryLibrarySpacePanel({
@@ -3629,8 +3697,10 @@ function GeometryLibrarySpacePanel({
   onOpen,
   onUpload,
   onExport,
-  onErase
+  onErase,
+  onReorder
 }: GeometryLibrarySpacePanelProps) {
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const visibleBundles = selectedFolder
     ? bundles.filter((bundle) => normalizeDisplayFolderPath(bundle.folderPath) === selectedFolder)
     : bundles;
@@ -3674,11 +3744,32 @@ function GeometryLibrarySpacePanel({
           <li className="emptyListItem">{selectedFolder ? `No bundles in ${folderLabel(selectedFolder)}` : "No bundles"}</li>
         ) : (
           visibleBundles.map((bundle) => (
-            <li className={bundle.objectIdHex === activeBundleId ? "listItem presetListItem activeListItem" : "listItem presetListItem"} key={bundle.objectIdHex}>
+            <li
+              className={`${bundle.objectIdHex === activeBundleId ? "listItem presetListItem activeListItem" : "listItem presetListItem"}${dropTargetId === bundle.objectIdHex ? " reorderDropTarget" : ""}`}
+              draggable
+              key={bundle.objectIdHex}
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData(geometryOrderDragMime, `${space}:${bundle.objectIdHex}`);
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                setDropTargetId(bundle.objectIdHex);
+              }}
+              onDragLeave={() => setDropTargetId(null)}
+              onDrop={(event) => {
+                event.preventDefault();
+                setDropTargetId(null);
+                const [sourceSpace, draggedId] = event.dataTransfer.getData(geometryOrderDragMime).split(":");
+                if (sourceSpace === space && draggedId) onReorder(draggedId, bundle.objectIdHex);
+              }}
+            >
               <div className="presetMeta">
                 <strong>{bundle.name}</strong>
                 <span>{folderLabel(bundle.folderPath)}</span>
                 <span>{bundle.tuning.name}</span>
+                <span>{colorModeOptions.find((option) => option.value === bundle.palette.defaultColorMode)?.label ?? "Custom"} default</span>
               </div>
               <div className="presetActions">
                 <button type="button" onClick={() => onOpen(bundle)}>
@@ -3711,6 +3802,8 @@ interface HexBoardGeometryLibraryPanelProps {
   onDownload: (entry: HexBoardGeometryBundleEntry) => void;
   onExport: (entry: HexBoardGeometryBundleEntry) => void;
   onErase: (entry: HexBoardGeometryBundleEntry) => void;
+  onReorder: (draggedId: string, targetId: string) => void;
+  reorderDisabled: boolean;
 }
 
 function HexBoardGeometryLibraryPanel({
@@ -3721,8 +3814,11 @@ function HexBoardGeometryLibraryPanel({
   onOpen,
   onDownload,
   onExport,
-  onErase
+  onErase,
+  onReorder,
+  reorderDisabled
 }: HexBoardGeometryLibraryPanelProps) {
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const visibleEntries = selectedFolder
     ? entries.filter((entry) => normalizeDisplayFolderPath(entry.folderPath) === selectedFolder)
     : entries;
@@ -3732,7 +3828,7 @@ function HexBoardGeometryLibraryPanel({
       <div className="librarySpaceHeader">
         <div>
           <h3>HexBoard Library</h3>
-          <span className="muted">Saved user tuning entries by folder</span>
+          <span className="muted">Saved tuning entries; drag to reorder on HexBoard</span>
         </div>
         <span className="countBadge">{visibleEntries.length}</span>
       </div>
@@ -3766,7 +3862,29 @@ function HexBoardGeometryLibraryPanel({
           <li className="emptyListItem">{selectedFolder ? `No saved tunings in ${folderLabel(selectedFolder)}` : "Refresh HexBoard to list saved geometry"}</li>
         ) : (
           visibleEntries.map((entry) => (
-            <li className="listItem presetListItem" key={`${entry.deviceHandle}-${entry.objectIdHex}`}>
+            <li
+              className={`listItem presetListItem${dropTargetId === entry.objectIdHex ? " reorderDropTarget" : ""}`}
+              draggable={!reorderDisabled}
+              key={`${entry.deviceHandle}-${entry.objectIdHex}`}
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData(geometryOrderDragMime, `hexboard:${entry.objectIdHex}`);
+              }}
+              onDragOver={(event) => {
+                if (reorderDisabled) return;
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+                setDropTargetId(entry.objectIdHex);
+              }}
+              onDragLeave={() => setDropTargetId(null)}
+              onDrop={(event) => {
+                event.preventDefault();
+                setDropTargetId(null);
+                if (reorderDisabled) return;
+                const [sourceSpace, draggedId] = event.dataTransfer.getData(geometryOrderDragMime).split(":");
+                if (sourceSpace === "hexboard" && draggedId) onReorder(draggedId, entry.objectIdHex);
+              }}
+            >
               <div className="presetMeta">
                 <strong>{entry.name}</strong>
                 <span>{folderLabel(entry.folderPath)}</span>

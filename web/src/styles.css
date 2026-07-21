@@ -1747,6 +1747,11 @@ select {
   cursor: grab;
 }
 
+.presetListItem.reorderDropTarget {
+  border-color: var(--brand);
+  box-shadow: inset 4px 0 0 var(--brand);
+}
+
 .presetMeta {
   display: grid;
   gap: 3px;
