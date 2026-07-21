@@ -836,6 +836,8 @@ size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType) {
       return PRESET_SYNC_MAX_SYNTH_PRESET_BYTES;
     case PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE:
       return PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES;
+    case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE:
+      return GEOMETRY_BUNDLE_MAX_RAW_BYTES;
     default:
       return 0;
   }
@@ -852,7 +854,14 @@ int findSynthPresetByObjectId(const uint8_t* objectId) {
 
 int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset) {
   if (handle != PRESET_SYNC_NEW_OBJECT_HANDLE && handle < synthPresets.size()) {
-    return handle;
+    if (synthPresets[handle].valid
+        && memcmp(synthPresets[handle].objectId,
+                  preset.objectId,
+                  SYNTH_PRESET_OBJECT_ID_LENGTH) == 0) {
+      return handle;
+    }
+    sendToLog("Synth preset write handle does not match its object id.");
+    return -1;
   }
   int existing = findSynthPresetByObjectId(preset.objectId);
   if (existing >= 0) {

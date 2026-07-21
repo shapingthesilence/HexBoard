@@ -3,30 +3,9 @@
 #include "../FirmwareModule.h"
 
 constexpr byte TUNING_12EDO = 0;
-constexpr byte TUNING_12EDO_ZETA = 1;
-constexpr byte TUNING_17EDO = 2;
-constexpr byte TUNING_19EDO = 3;
-constexpr byte TUNING_22EDO = 4;
-constexpr byte TUNING_24EDO = 5;
-constexpr byte TUNING_31EDO = 6;
-constexpr byte TUNING_31EDO_ZETA = 7;
-constexpr byte TUNING_41EDO = 8;
-constexpr byte TUNING_43EDO = 9;
-constexpr byte TUNING_46EDO = 10;
-constexpr byte TUNING_53EDO = 11;
-constexpr byte TUNING_58EDO = 12;
-constexpr byte TUNING_58EDO_ZETA = 13;
-constexpr byte TUNING_72EDO = 14;
-constexpr byte TUNING_72EDO_ZETA = 15;
-constexpr byte TUNING_80EDO = 16;
-constexpr byte TUNING_87EDO = 17;
-constexpr byte TUNING_BP = 18;
-constexpr byte TUNING_ALPHA = 19;
-constexpr byte TUNING_BETA = 20;
-constexpr byte TUNING_GAMMA = 21;
-constexpr byte TUNINGCOUNT = 22;
+constexpr byte TUNINGCOUNT = 1;
 
-constexpr uint16_t MAX_SCALE_DIVISIONS = 87;
+constexpr uint16_t MAX_SCALE_DIVISIONS = 128;
 constexpr size_t TUNING_KEY_LABEL_LENGTH = 8;  // 7 visible chars plus NUL.
 constexpr byte ALL_TUNINGS = 255;
 constexpr byte CMDB = 192;

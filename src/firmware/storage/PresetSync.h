@@ -12,7 +12,7 @@ constexpr uint16_t PRESET_SYNC_CURRENT_SYNTH_PRESET_HANDLE = PRESET_SYNC_NEW_OBJ
 constexpr uint16_t PRESET_SYNC_RAW_CHUNK_SIZE = 64;
 constexpr size_t PRESET_SYNC_MAX_SYNTH_PRESET_BYTES = 2048;
 constexpr size_t PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES = SYNTH_WAVETABLE_MIP_SAMPLE_BYTES + 1024;
-constexpr size_t PRESET_SYNC_MAX_RAW_OBJECT_BYTES = PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES;
+constexpr size_t PRESET_SYNC_MAX_RAW_OBJECT_BYTES = GEOMETRY_BUNDLE_MAX_RAW_BYTES;
 constexpr size_t PRESET_SYNC_WAVETABLE_SAMPLE_TLV_CHUNK_BYTES = 32768;
 constexpr char PRESET_SYNC_WRITE_RAW_TEMP_FILE_PATH[] = "/ps_raw.tmp";
 constexpr char PRESET_SYNC_WAVETABLE_SAMPLE_TEMP_FILE_PATH[] = "/ps_wt.tmp";
@@ -42,6 +42,7 @@ constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP = 0x06;
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET = 0x07;
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_USER_SCALE = 0x0A;
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE = 0x0B;
+constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE = 0x0C;
 
 constexpr uint8_t PRESET_SYNC_TLV_NAME = 0x01;
 constexpr uint8_t PRESET_SYNC_TLV_OBJECT_ID = 0x02;
@@ -138,6 +139,7 @@ constexpr uint32_t PRESET_SYNC_CAP_FACTORY_GEOMETRY = 1u << 10;
 constexpr uint32_t PRESET_SYNC_CAP_SYNTH_WAVETABLE = 1u << 11;
 constexpr uint32_t PRESET_SYNC_CAP_LIVE_SYNTH_PARAM = 1u << 12;
 constexpr uint32_t PRESET_SYNC_CAP_CENTS_TABLE_RUNTIME_TUNING = 1u << 13;
+constexpr uint32_t PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES = 1u << 14;
 
 constexpr uint8_t PRESET_SYNC_ERROR_UNSUPPORTED_PROTOCOL = 0x01;
 constexpr uint8_t PRESET_SYNC_ERROR_UNKNOWN_MESSAGE = 0x02;
@@ -238,18 +240,26 @@ void presetSyncAppendTextTlv(std::vector<uint8_t>& body, uint8_t tag, const char
 void copyPresetSyncText(char* destination, size_t destinationLength, const uint8_t* source, size_t sourceLength);
 
 void load_geometry_objects();
-void save_geometry_objects();
-void flashSafeSaveGeometryObjects();
+bool beginGeometryCatalogRead(GeometryCatalogReader& reader);
+bool readNextGeometryObjectMetadata(GeometryCatalogReader& reader,
+                                    uint16_t& handle,
+                                    GeometryObjectIndexEntry& object);
+void endGeometryCatalogRead(GeometryCatalogReader& reader);
+bool geometryObjectMetadataForHandle(uint16_t handle, GeometryObjectIndexEntry& object);
+bool geometryObjectForMetadata(const GeometryObjectIndexEntry& metadata, GeometryObjectSlot& object);
+bool deleteGeometryObjectFromCatalog(uint16_t handle);
+size_t geometryBundleCount();
 bool isPresetSyncGeometryObjectType(uint8_t objectType);
 bool isPresetSyncSupportedObjectType(uint8_t objectType);
-bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlot& object, std::string& error);
-int chooseGeometryObjectWriteSlot(uint16_t handle, const GeometryObjectSlot& object);
-bool writeGeometryObjectToCatalogSlot(uint16_t slotIndex, const GeometryObjectSlot& object);
+bool parseGeometryObjectBody(std::vector<uint8_t> body, GeometryObjectSlot& object, std::string& error);
 bool geometryObjectForHandle(uint16_t handle, GeometryObjectSlot& object);
 void clearUserGeometryRuntimeSelection();
 bool applyGeometryObjectToRuntime(const GeometryObjectSlot& object);
 bool geometryObjectReferencesObjectId(const GeometryObjectSlot& object, uint8_t tag, uint8_t objectType, const uint8_t* objectId);
 bool geometryObjectRuntimeTuningSupported(const GeometryObjectSlot& object);
+bool installGeometryBundleFile(const char* stagedPath);
+bool geometryFallbackRequired();
+bool loadDefaultGeometryRuntime();
 bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex);
 std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset);
 bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlot& preset, std::string& error);

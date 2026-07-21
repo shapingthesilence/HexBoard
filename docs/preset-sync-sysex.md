@@ -1,10 +1,10 @@
 # HexBoard Preset Sync SysEx Protocol Draft
 
 This is the design spec for HexBoard preset sync. The synth preset subset,
-named synth-wavetable write/read path, raw `/layouts.dat` user geometry catalog
-storage, and live Apply for generated EDO/equal-step plus Scala/cents-table
-geometry bundles are implemented in firmware. Factory tuning/layout/scale
-catalogs are exposed as generated read-only geometry objects. Profile, bundle,
+named synth-wavetable write/read path, atomic geometry-bundle file storage,
+and live Apply for generated EDO/equal-step plus Scala/cents-table
+geometry bundles are implemented in firmware. Factory tuning/layout/scale/color
+bundles are ordinary editable catalog records. Profile, bundle,
 backup, and ratio-list tuning workflows remain draft design until their runtime
 models are implemented.
 
@@ -18,8 +18,9 @@ profile selection, and simple scale/color choices.
 
 - Version every protocol frame and every transferred object schema.
 - Avoid raw LittleFS file sync. Transfer musical objects, not filesystem images.
-- Keep factory tunings/layouts read-only and allow user tunings/layouts in user
-  slots.
+- Compile factory tunings/layouts/colors from the same web-compatible bundle
+  files used for host-created geometry, while retaining a minimal read-only
+  rescue bundle for an unavailable catalog.
 - Let profiles reference tuning, layout, scale color, explicit button mapping,
   and synth preset objects by identity instead of depending only on hard-coded
   array positions.
@@ -33,43 +34,57 @@ profile selection, and simple scale/color choices.
 
 ## Storage Direction
 
-This protocol maps to separate persistent catalogs:
+This protocol maps to independently replaceable persistent objects:
 
 - `/settings.dat` remains the main profile/settings file.
-- `/layouts.dat` is the user musical-geometry catalog. Despite the short name,
-  it owns user-generated tunings, layouts, scales, scale color maps, and
-  explicit button maps because those objects need to reference each other.
-- `/synth_presets.dat` stores named synth presets with folder paths and
-  wavetable folder/name dependencies.
+- `/geometry/<tuning-object-id>.hgb` stores one complete editable musical-
+  geometry bundle: its tuning root plus all layouts, scales, scale color map,
+  and explicit button maps that reference that tuning.
+- `/presets/<object-id>.hsp` stores one named synth preset with its folder path
+  and wavetable folder/name dependency.
 - `/synth_wavetables.dat` stores the named user wavetable catalog. Each catalog
   entry points to a sample file generated from the wavetable object id.
 
-Keeping user tunings and layouts together in `/layouts.dat` avoids fragile
-cross-file references such as a user layout pointing to a missing user tuning.
-The file can still expose separate object types through SysEx.
+Keeping a tuning and all of its linked records in one `.hgb` file avoids
+partial-bundle saves and cross-file geometry references. Firmware still exposes
+the contained records as separate object types for list, read, and runtime
+preview. Persistent geometry writes use the complete write-only
+`GeometryBundle` transfer type.
 
 File headers:
 
 | File | Magic | Version owner | Payload |
 | --- | --- | --- | --- |
 | `/settings.dat` | `STG` | Main settings schema | Main profile bytes and object references |
-| `/layouts.dat` | `LYT` | User mapping catalog schema | User tuning/layout/scale/color/map objects |
-| `/synth_presets.dat` | `SYP` | Synth preset catalog schema | Named synth preset objects, folders, and wavetable references |
+| `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `1` | One tuning root and all linked layout/scale/color/map records |
+| `/presets/*.hsp` | `HSP` | Synth preset file schema `11` | One named preset, folder, values, and wavetable reference |
 | `/synth_wavetables.dat` | `SYW` | Synth wavetable catalog schema | Named user wavetable objects and sample-file paths |
 
-The current firmware has `/settings.dat`, named/foldered `/synth_presets.dat`,
-named/foldered `/synth_wavetables.dat`, and `/layouts.dat`. The current
-`/layouts.dat` implementation stores and round-trips raw validated object
-bodies. It can also apply generated EDO/equal-step and Scala/cents-list
+The current firmware has `/settings.dat`, independent named/foldered synth
+preset files, `/synth_wavetables.dat`, and independent geometry bundle files.
+Geometry metadata is streamed from LittleFS for listing and menus; firmware
+keeps only aggregate counts and selected runtime objects instead of a RAM index
+of every geometry record. Synth preset bodies are also read from their files on
+demand, while their small name/folder/object-id metadata stays indexed for the
+device menu. Firmware can apply generated EDO/equal-step and Scala/cents-list
 `UserTuning` objects, isomorphic vector `UserLayout` objects, `UserScale`
 membership, `ScaleColorMap` degree colors, and format-1/format-2
 `ExplicitButtonMap` pitch, color, direct-MIDI, and chord overrides to the live
 pitch, MIDI, synth, and LED runtime. The on-device `Tuning`,
-`Layout`, and `Scales` browsers are backed by factory read-only geometry
-objects plus saved runtime-compatible user geometry objects. Factory entries
-are shown flat on-device even though their protocol folder remains `/Built In`.
+`Layout`, and `Scales` browsers are backed by the same editable catalog.
+Supplied entries live in `Built In`. If no usable bundle tuning exists, the
+firmware exposes its compiled 12 EDO rescue geometry instead.
 It does not yet apply profile references, bundle manifests, or ratio-list
 tunings.
+
+An `HGB` transfer is the exact staged file bytes. Its 12-byte header is `HGB`,
+file version `1`, record count (`u16-le`), reserved `u16-le` zero, and CRC32
+(`u32-le`) of all following record bytes. Each record contains object type,
+schema major, schema minor, one reserved zero byte, the raw 16-byte object ID,
+length-prefixed name and folder strings, body length (`u32-le`), and the normal
+`HBS1` TLV object body. The tuning root must be the first and only
+`UserTuning`; IDs must be unique and every child tuning reference must point to
+that root.
 
 ## Relationship To Current SysEx
 
@@ -327,9 +342,10 @@ a compatible HexBoard.
 ```
 
 Protocol `1.0` does not carry a separate `UserScale` slot byte. Hosts should
-use the user-scale capability bit and `OBJECT_LIST_REQ` for `UserScale`; current
-firmware stores user scales in the same `/layouts.dat` catalog limit as the
-other user geometry object types.
+use the user-scale capability bit and `OBJECT_LIST_REQ` for `UserScale`. The
+four legacy geometry count bytes all advertise the same 64-bundle capacity;
+they are not separate per-record quotas. One `UserTuning` root plus its linked
+layouts, scales, color map, and button maps counts as one bundle.
 
 Capability flags:
 
@@ -349,6 +365,7 @@ Capability flags:
 | `11` | Synth wavetable write |
 | `12` | Live synth parameter set |
 | `13` | Cents-table runtime tuning |
+| `14` | Atomic geometry-bundle file writes |
 
 Example hello request, transaction `1`, host max packed chunk `128`, no required
 flags:
@@ -358,16 +375,15 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 ```
 
 Example response, transaction `1`, max packed chunk `128`, capabilities
-`0x3F7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
+`0x7F7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
 delete user object, factory geometry listing, synth wavetable objects, live
-synth parameter set, and cents-table runtime tuning), max raw object bytes
-`66560`, settings schema `19`, synth
+synth parameter set, cents-table runtime tuning, and atomic geometry bundles),
+max raw object bytes `262144`, settings schema `24`, synth
 preset schema `7`, `9` profiles, `128` synth preset entries, `64` slots for
 each advertised user geometry count, hardware version `2`:
 
-```text
-F0 7D 10 01 00 02 00 01 01 00 01 00 00 00 7F 7E 00 04 08 00 13 07 09 01 00 40 40 40 40 02 F7
-```
+Hosts should decode these fields rather than compare a fixed response frame;
+settings schema and hardware version change independently of protocol `1.0`.
 
 ## Object Addressing
 
@@ -376,11 +392,11 @@ object handle:
 
 - For fixed arrays, it is the actual slot index. Current examples include main
   profiles `0..8`.
-- For catalog files such as `/layouts.dat` and the named/foldered
-  `/synth_presets.dat`, it is a compact handle returned by `OBJECT_LIST_RESP`.
+- For geometry records streamed from `/geometry/*.hgb` and synth presets indexed
+  from `/presets/*.hsp`, it is a compact handle returned by `OBJECT_LIST_RESP`.
   The handle may change after create/delete/reorder operations.
-- Factory geometry handles start at `0x2000`, are generated on demand, and are
-  not stored in `/layouts.dat`.
+- Rescue geometry handles start at `0x2000`, are generated on demand, and are
+  listed only when `/geometry` has no usable tuning root.
 - Persistent identity comes from the object's `ObjectId` TLV, not from the
   handle.
 - `0x3FFF` is reserved as `NEW_OBJECT` in write requests that create a new
@@ -396,19 +412,21 @@ handle.
 | --- | --- | --- |
 | `0x01` | `DeviceProfile` | Main settings/profile slot, current firmware has `0..8` |
 | `0x02` | `ActiveSnapshot` | Read-only snapshot of the currently active runtime state |
-| `0x03` | `UserTuning` | `/layouts.dat` tuning handle or read-only factory handle |
-| `0x04` | `UserLayout` | `/layouts.dat` layout handle or read-only factory handle |
-| `0x05` | `ScaleColorMap` | `/layouts.dat` color-map handle |
-| `0x06` | `ExplicitButtonMap` | `/layouts.dat` button-map handle |
+| `0x03` | `UserTuning` | Geometry-bundle tuning handle or read-only rescue handle |
+| `0x04` | `UserLayout` | Geometry-bundle layout handle or read-only rescue handle |
+| `0x05` | `ScaleColorMap` | Geometry-bundle color-map handle |
+| `0x06` | `ExplicitButtonMap` | Geometry-bundle button-map handle |
 | `0x07` | `SynthPreset` | Synth-only preset catalog entry; current firmware returns compact catalog handles up to `63` |
 | `0x08` | `Bundle` | Web-app backup containing multiple objects |
 | `0x09` | `Folder` | Optional virtual folder record for catalog navigation |
-| `0x0A` | `UserScale` | `/layouts.dat` scale handle or read-only factory handle |
+| `0x0A` | `UserScale` | Geometry-bundle scale handle or read-only rescue handle |
 | `0x0B` | `SynthWavetable` | Synth-only wavetable catalog entry; current firmware returns compact catalog handles up to `63` |
+| `0x0C` | `GeometryBundle` | Write-only complete `.hgb` file transfer; always uses `NEW_OBJECT` |
 
-Factory tunings, factory layouts, and factory scales are listed when the device
-advertises factory object listing. They live in folder `/Built In`, use
-deterministic object ids, set record flag bit `1`, and are read-only.
+Factory tunings, layouts, scales, and color maps live in `/geometry/*.hgb`, use
+stable object IDs, and are editable or erasable like other catalog records.
+The factory-geometry capability also covers the compiled rescue objects; only
+those generated fallback handles set the read-only record flag.
 
 ## Object List
 
@@ -443,7 +461,7 @@ Record flags:
 | Bit | Meaning |
 | --- | --- |
 | `0` | Valid object exists |
-| `1` | Read-only factory object |
+| `1` | Read-only generated rescue object |
 | `2` | Active object |
 | `3` | Object references another object |
 | `4` | Folder/container record |
@@ -534,14 +552,14 @@ Write flags:
 | `2` | Overwrite existing object at handle |
 | `3` | Dry-run validation only; do not apply or save |
 
-For geometry object writes, firmware validates and applies the runtime object
-before saving when both `ApplyToRuntime` and `SaveToFlash` are set. Generated
-EDO/equal-step tunings and cents-list Scala imports are runtime-compatible when
+Individual geometry object writes are apply-only and are never persistent.
+Generated EDO/equal-step tunings and cents-list Scala imports are runtime-compatible when
 their cycle length fits the firmware table limit and their final cents-table
 entry matches the authoritative period field (`PeriodCentsFloat32` when
 present, otherwise `PeriodMilliCents`). Unsupported runtime objects, such as
-ratio-list tunings, are rejected for Apply and are not saved through that
-combined path; hosts can still save those objects with `SaveToFlash` only.
+ratio-list tunings, are rejected for Apply. Persistent geometry uses a complete
+`GeometryBundle` write with `SaveToFlash`; that type does not accept
+`ApplyToRuntime` or dry-run flags.
 
 The device ACKs `WRITE_BEGIN` if it can accept the transfer. The host then sends
 `DATA_CHUNK` messages in order. The device ACKs every accepted chunk with the
@@ -559,13 +577,10 @@ onboard synth for the duration of a host-to-device object write transfer when
 `SaveToFlash` is set in `WRITE_BEGIN`, including commit and temporary-file
 cleanup, but not for `SYNTH_PARAM_SET` or apply-only object transfers.
 
-Example `WRITE_BEGIN` for a new `UserTuning` object, transaction `20`,
-transfer `5`, schema `1.0`, raw length `33`, CRC32 `0x6702FE2B`, raw chunk size
-`64`, save-to-flash flag set:
-
-```text
-F0 7D 10 01 00 24 00 14 03 7F 7F 00 05 01 00 00 00 00 21 06 38 0B 7C 2B 00 40 02 F7
-```
+For a persistent geometry save, `object-type` is `0x0C`, `handle` is
+`NEW_OBJECT`, schema is `1.0`, and the only required write flag is
+`SaveToFlash`. For a live `UserTuning` preview, `object-type` is `0x03` and the
+write flag is `ApplyToRuntime` without `SaveToFlash`.
 
 `WRITE_COMMIT` payload:
 
@@ -773,7 +788,7 @@ Recommended TLVs:
 | Tag | Name | Value |
 | --- | --- | --- |
 | `0x20` | `TuningKind` | `u8`: `1` EDO, `2` cents list, `3` ratio list, `4` equal step |
-| `0x21` | `EdoDivisions` | `u16-le`; EDO divisions for EDO, cycle length for equal-step/cents-table display metadata |
+| `0x21` | `EdoDivisions` | `u16-le`; EDO divisions for EDO, cycle length for equal-step/cents-table display metadata; current runtime accepts `1..128` |
 | `0x22` | `PeriodMilliCents` | Compatibility `u32-le`, default `1200000` for octave |
 | `0x23` | `StepMilliCents` | Compatibility `u32-le`, cached EDO step or explicit equal-step size |
 | `0x24` | `ReferenceMidiNote` | `u8`, default `69` for A4 |
@@ -1056,11 +1071,10 @@ an `ExplicitButtonMap`; preset sync sends only visible physical button records.
 The current synth setup is already cohesive, so v1 should transfer synth presets
 as synth-only objects, separate from tuning/layout/profile objects.
 
-Synth presets are named and organized by folder path. Current firmware stores a
-counted catalog capped at `128` entries. It uses fixed-size flash records and
-keeps only preset metadata plus the current loaded preset record in RAM. Boot
-loads a valid current catalog read-only and uses an empty editable preset
-library if validation fails.
+Synth presets are named and organized by folder path. Current firmware supports
+up to `128` independent fixed-size `.hsp` files and keeps only preset metadata
+plus the current loaded preset record in RAM. Boot validates files independently;
+one corrupt preset is skipped without invalidating the rest of the library.
 
 The user-facing model is a foldered preset library rather than a numbered slot
 bank. The web app presents the foldered library, and the device uses
@@ -1235,17 +1249,15 @@ Recommended use:
   profiles, and synth presets.
 - For a user musical-geometry bundle, keep one tuning, one custom scale-degree
   color set, one or more layouts, and one or more scales together in the
-  exported JSON. The web app may unpack these into individual `UserTuning`,
-  `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` writes
-  and preserve the bundle's folder path on each unpacked object until firmware
-  has a first-class editable bundle object.
+  exported JSON. Persistent restore encodes that set as one `GeometryBundle`;
+  individual contained objects remain available for read and runtime preview.
 - Restore by dry-run validating all objects first.
 - Write dependencies before profiles that reference them.
 - Commit profiles last.
 - Preserve synth preset folder paths and names.
 
-The device does not need to create bundles on-device. It only needs to read or
-write the individual objects after the web app unpacks a bundle.
+The device does not create or edit bundle structure on-device. The web app owns
+bundle composition and the device atomically validates and installs the result.
 
 ## Preset Sync Workflows
 
@@ -1262,28 +1274,29 @@ write the individual objects after the web app unpacks a bundle.
 9. Device sends `TRANSFER_END`.
 10. Host verifies object CRC32 and ACKs.
 
-### Write A Generated EDO Tuning
+### Preview A Generated EDO Tuning
 
 1. Host builds a `UserTuning` object with `TuningKind = EDO`.
-2. Host sends `WRITE_BEGIN` for a `/layouts.dat` user tuning handle, or
-   `NEW_OBJECT` to create one.
-3. Device validates handle availability and ACKs.
+2. Host sends `WRITE_BEGIN` for `UserTuning` with `NEW_OBJECT` and
+   `ApplyToRuntime`, without `SaveToFlash`.
+3. Device validates the transfer and ACKs.
 4. Host sends chunks.
 5. Device validates chunk checksums and ACKs each chunk.
 6. Host sends `TRANSFER_END`.
-7. Host sends `WRITE_COMMIT` with dry-run first if desired.
-8. Device parses the TLV object, checks range limits, verifies CRC32, and then
-   applies/saves according to flags.
+7. Host sends `WRITE_COMMIT`.
+8. Device parses the TLV object, checks range limits, verifies CRC32, and
+   applies it to runtime without writing flash. Individual geometry objects are
+   preview-only; persistent writes use `GeometryBundle`.
 
 ### Write A Scala Import
 
 1. Web app imports `.scl`.
 2. Web app derives period/cycle metadata from the file and converts Scala data
    into a `UserTuning` `CentsTable`.
-3. Web app writes the object through the same chunked transfer path.
-4. Device stores the converted tuning object. It does not parse Scala text; it
-   uses the converted cents table for synth frequency, MIDI note selection, and
-   MPE pitch bend when the object is applied.
+3. Web app previews the object through the same chunked transfer path or includes
+   it as the tuning root of a complete geometry-bundle save.
+4. Device does not parse Scala text; it uses the converted cents table for synth
+   frequency, MIDI note selection, and MPE pitch bend when the object is applied.
 5. Hosts should require the cents-table runtime tuning capability bit before
    using `ApplyToRuntime` with Scala/cents-table tunings.
 
@@ -1293,25 +1306,33 @@ write the individual objects after the web app unpacks a bundle.
 2. Web app optionally references an existing `UserTuning` and `UserLayout`.
 3. Device validates independent field masks, button indices, roles, direct-MIDI
    ranges, and reusable chord definitions.
-4. Device stores the map as a named user object, and can apply it to the current
-   runtime layout when the write uses `ApplyToRuntime`.
+4. Device can apply it to the current runtime layout when the write uses
+   `ApplyToRuntime`; saving includes the map in its tuning-root `.hgb` bundle.
 5. A profile or layout can reference that map.
 
 ### Write A Musical Geometry Bundle
 
-1. Web app dry-run validates the tuning first because synth frequency and MIDI
-   retuning behavior depend on it.
-2. Web app writes the `UserTuning`.
-3. Web app writes each `UserLayout`, each `UserScale`, and the bundle's single
-   `ScaleColorMap`, all referencing the tuning object id.
-4. Web app writes any `ExplicitButtonMap` objects after their referenced layouts.
-5. The web app writes the same `FolderPath` common TLV on every unpacked object
-   in the bundle so device object lists can group related geometry records.
-6. Current firmware stores these records in `/layouts.dat` and can list, read,
-   overwrite, delete, or apply the active EDO/equal-step/Scala cents-list
-   tuning, active vector layout, active scale, color map, and exact
-   layout-matching explicit button map by compact preset-sync handle.
-7. The device refreshes its virtual `Tuning`, `Layout`, and `Scales` browsers
+1. Web app encodes one `HGB` file containing the `UserTuning` root, each
+   `UserLayout`, each `UserScale`, the bundle's optional single
+   `ScaleColorMap`, and any `ExplicitButtonMap` records.
+2. Every child record references the root tuning object id, and every record
+   carries the bundle folder path for object-list grouping.
+3. Host sends write-only object type `GeometryBundle` with `NEW_OBJECT` and
+   `SaveToFlash`. `ApplyToRuntime` and individual-object flash saves are rejected.
+4. Firmware streams chunks directly to `/ps_raw.tmp`, verifies the transfer CRC,
+   validates the `HGB` header, file CRC, record envelopes, object bodies, unique
+   IDs, and tuning references, then atomically renames the staged file to
+   `/geometry/<tuning-object-id>.hgb`.
+5. Re-saving the same tuning object ID replaces exactly one file. Saving a new
+   tuning object ID creates one file, up to the 64-bundle limit. Other bundles
+   are not read or rewritten.
+   A file may contain up to `255` records and `262,144` bytes; each contained
+   object body may contain up to `8,192` bytes.
+6. Current firmware can list, read, delete, or apply the contained active
+   EDO/equal-step/Scala cents-list tuning, vector layout, scale, color map, and
+   exact layout-matching explicit button map by compact preset-sync handle.
+7. Deleting the `UserTuning` root deletes the complete bundle; deleting a child
+   record alone is rejected. The device refreshes its virtual `Tuning`, `Layout`, and `Scales` browsers
    after geometry saves/deletes. `UserTuning` objects are the loadable bundle
    anchors; linked `UserLayout` and `UserScale` objects appear after that tuning
    is selected. Future firmware work still needs to hide generated-layout controls
@@ -1321,7 +1342,9 @@ write the individual objects after the web app unpacks a bundle.
 
 For web-editor live preview, the app sends only the active compatible runtime
 objects with `ApplyToRuntime` and without `SaveToFlash`. `Save to HexBoard`
-uses `SaveToFlash` for the full unpacked bundle object set.
+writes the complete `.hgb` once, preserves IDs when re-saving a bundle read from
+the device, and then sends the active objects with `ApplyToRuntime` so the board
+preview matches the saved selection.
 
 ### Transfer A Synth Preset
 
@@ -1335,9 +1358,8 @@ uses `SaveToFlash` for the full unpacked bundle object set.
    when present, the wavetable folder/name dependency TLVs.
 4. Commit with `apply` changes only the current synth runtime for auditioning
    and marks settings dirty for the normal debounced profile autosave path.
-   Commit with `save` updates `/synth_presets.dat`.
-5. Commit with `save` writes the named preset catalog to `/synth_presets.dat`
-   through the existing flash-safe save path.
+   Commit with `save` atomically replaces one `/presets/<object-id>.hsp` file.
+5. Saving or deleting one synth preset does not rewrite other preset files.
 6. The current web app requests one synth preset or wavetable record per
    object-list page before reading each object body, keeping response frames
    under conservative SysEx buffer limits.
@@ -1358,7 +1380,8 @@ uses `SaveToFlash` for the full unpacked bundle object set.
   is configuration transfer, not a live LED/input protocol.
 - Use bounds-checked parsing for every frame and every TLV.
 - Stage writes in RAM or a temporary file, verify CRC32, then commit.
-- Never overwrite factory objects.
+- Never overwrite generated rescue objects. Filesystem factory objects are
+  intentionally normal editable records.
 - Reject writes that reference missing dependencies unless the write is part of
   a validated bundle workflow.
 - Avoid long blocking writes during active performance. Flash writes currently
@@ -1372,9 +1395,9 @@ uses `SaveToFlash` for the full unpacked bundle object set.
 
 ## Open Design Questions
 
-- User slot counts: current raw `/layouts.dat` storage allows `64` geometry
-  objects total, and on-device associated layout/scale menus show up to `24`
-  user objects for the selected tuning.
+- On-device associated layout/scale menus show at most `24` linked records for
+  the selected tuning even though the 64-bundle storage limit counts tuning
+  roots rather than child records.
 - Object id format: 16 random bytes are robust, but a shorter CRC-based id may
   be easier on-device. The important rule is that profiles should not silently
   bind to the wrong object after slot moves.
@@ -1383,6 +1406,3 @@ uses `SaveToFlash` for the full unpacked bundle object set.
 - Profile fallback behavior: if a profile references a missing user tuning, the
   safest behavior is validation failure during write and a clear fallback during
   load, likely factory `12 EDO` plus first compatible layout.
-- Factory list exposure: the web app may benefit from reading factory tuning and
-  layout metadata, but the firmware can also ship that metadata in the app to
-  keep device responses smaller.

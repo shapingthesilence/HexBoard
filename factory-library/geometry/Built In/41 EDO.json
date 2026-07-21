@@ -1,0 +1,666 @@
+{
+  "format": "hexboard.layoutBundle.v4",
+  "bundle": {
+    "objectIdHex": "40a3a0204f3469e3d33fd8d698fa27a2",
+    "name": "41 EDO",
+    "folderPath": "Built In",
+    "tuning": {
+      "kind": "edo",
+      "name": "41 EDO",
+      "cycleLength": 41,
+      "referenceMidiNote": 69,
+      "referenceHz": 440.0,
+      "keyLabels": [
+        "A",
+        "^A",
+        "A+",
+        "Bb",
+        "A#",
+        "Bd",
+        "vB",
+        "B",
+        "^B",
+        "vC",
+        "C",
+        "^C",
+        "C+",
+        "Db",
+        "C#",
+        "Dd",
+        "vD",
+        "D",
+        "^D",
+        "D+",
+        "Eb",
+        "D#",
+        "Ed",
+        "vE",
+        "E",
+        "^E",
+        "vF",
+        "F",
+        "^F",
+        "F+",
+        "Gb",
+        "F#",
+        "Gd",
+        "vG",
+        "G",
+        "^G",
+        "G+",
+        "Ab",
+        "G#",
+        "Ad",
+        "vA"
+      ],
+      "edoDivisions": 41,
+      "periodCents": 1200.0
+    },
+    "palette": {
+      "defaultColorMode": 1,
+      "degreeColors": [
+        {
+          "degree": 0,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 1,
+          "hueTenthDegrees": 0,
+          "saturation": 85,
+          "value": 180
+        },
+        {
+          "degree": 2,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 3,
+          "hueTenthDegrees": 1800,
+          "saturation": 85,
+          "value": 164
+        },
+        {
+          "degree": 4,
+          "hueTenthDegrees": 1440,
+          "saturation": 85,
+          "value": 164
+        },
+        {
+          "degree": 5,
+          "hueTenthDegrees": 3240,
+          "saturation": 85,
+          "value": 180
+        },
+        {
+          "degree": 6,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 7,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 8,
+          "hueTenthDegrees": 0,
+          "saturation": 85,
+          "value": 180
+        },
+        {
+          "degree": 9,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 10,
+          "hueTenthDegrees": 1800,
+          "saturation": 85,
+          "value": 164
+        },
+        {
+          "degree": 11,
+          "hueTenthDegrees": 1440,
+          "saturation": 85,
+          "value": 164
+        },
+        {
+          "degree": 12,
+          "hueTenthDegrees": 3240,
+          "saturation": 85,
+          "value": 180
+        },
+        {
+          "degree": 13,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 14,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 15,
+          "hueTenthDegrees": 0,
+          "saturation": 85,
+          "value": 180
+        },
+        {
+          "degree": 16,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 17,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 18,
+          "hueTenthDegrees": 0,
+          "saturation": 85,
+          "value": 180
+        },
+        {
+          "degree": 19,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 20,
+          "hueTenthDegrees": 1800,
+          "saturation": 85,
+          "value": 164
+        },
+        {
+          "degree": 21,
+          "hueTenthDegrees": 1440,
+          "saturation": 85,
+          "value": 164
+        },
+        {
+          "degree": 22,
+          "hueTenthDegrees": 3240,
+          "saturation": 85,
+          "value": 180
+        },
+        {
+          "degree": 23,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 24,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 25,
+          "hueTenthDegrees": 0,
+          "saturation": 85,
+          "value": 180
+        },
+        {
+          "degree": 26,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 27,
+          "hueTenthDegrees": 1800,
+          "saturation": 85,
+          "value": 164
+        },
+        {
+          "degree": 28,
+          "hueTenthDegrees": 1440,
+          "saturation": 85,
+          "value": 164
+        },
+        {
+          "degree": 29,
+          "hueTenthDegrees": 3240,
+          "saturation": 85,
+          "value": 180
+        },
+        {
+          "degree": 30,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 31,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 32,
+          "hueTenthDegrees": 0,
+          "saturation": 85,
+          "value": 180
+        },
+        {
+          "degree": 33,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 34,
+          "hueTenthDegrees": 1800,
+          "saturation": 85,
+          "value": 164
+        },
+        {
+          "degree": 35,
+          "hueTenthDegrees": 1440,
+          "saturation": 85,
+          "value": 164
+        },
+        {
+          "degree": 36,
+          "hueTenthDegrees": 3240,
+          "saturation": 85,
+          "value": 180
+        },
+        {
+          "degree": 37,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 38,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 39,
+          "hueTenthDegrees": 3240,
+          "saturation": 85,
+          "value": 180
+        },
+        {
+          "degree": 40,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        }
+      ]
+    },
+    "layouts": [
+      {
+        "objectIdHex": "f655579c2a4eeecf741715528fe21c72",
+        "name": "Compressed Janko",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -3,
+        "upRightSteps": 7,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "84912590c47786f1bff2fa6633dbec68",
+        "name": "Compr. Bosanquet",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": 3,
+        "upRightSteps": 10,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "6b086af92d5656c9dfa4f2cd9ea5c7a2",
+        "name": "Janko",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": 4,
+        "upRightSteps": 7,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "311cd7e9d810ad93c0bef04597244310",
+        "name": "Bosanquet-Wilson",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -4,
+        "upRightSteps": 3,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "04099f971cce3eeb0bbc0cf696c96d44",
+        "name": "Harmonic Table",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": -24,
+        "upRightSteps": -11,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "d1dea2b4a43a289958fa253cbb24407f",
+        "name": "Wicki-Hayden",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": 7,
+        "upRightSteps": 24,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": true,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "35513e0afdf477e0d04f74fbe51f0ae7",
+        "name": "Gerhard",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": 3,
+        "upRightSteps": 10,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "52f69997052ea1214ecf29a1bd377a2b",
+        "name": "Baldy",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -1,
+        "upRightSteps": 6,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "f0366baf2b8fdef4a9ada91053e0c7b2",
+        "name": "Rodan A",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -1,
+        "upRightSteps": 7,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": true,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "636e547152f06f50e9b62290a46188e0",
+        "name": "Full Gamut",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": 1,
+        "upRightSteps": 9,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": true,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      }
+    ],
+    "activeLayoutIdHex": "f655579c2a4eeecf741715528fe21c72",
+    "scales": [
+      {
+        "objectIdHex": "16637fcdb683aac8ba3d1431c6c375a7",
+        "name": "All Notes",
+        "includedDegrees": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40
+        ]
+      },
+      {
+        "objectIdHex": "d8c75371ae89e3dcbbf3f0f3cc5085d6",
+        "name": "Diatonic",
+        "includedDegrees": [
+          0,
+          7,
+          14,
+          17,
+          24,
+          31,
+          38
+        ]
+      },
+      {
+        "objectIdHex": "c85f25b08740fb1dcea0437f9a2f2ce8",
+        "name": "Pentatonic",
+        "includedDegrees": [
+          0,
+          7,
+          14,
+          24,
+          31
+        ]
+      },
+      {
+        "objectIdHex": "eb1072c54c5dff8477ba8307ccc178d5",
+        "name": "Pure Major",
+        "includedDegrees": [
+          0,
+          7,
+          13,
+          17,
+          24,
+          30,
+          37
+        ]
+      },
+      {
+        "objectIdHex": "e02810ed5e491b05e28d0f1c27e73aa6",
+        "name": "5-limit Chromatic",
+        "includedDegrees": [
+          0,
+          4,
+          7,
+          11,
+          13,
+          17,
+          20,
+          24,
+          28,
+          30,
+          34,
+          37
+        ]
+      },
+      {
+        "objectIdHex": "960aa7232348982abc8325d96b1d8018",
+        "name": "7-limit Chromatic",
+        "includedDegrees": [
+          0,
+          3,
+          7,
+          9,
+          13,
+          17,
+          20,
+          24,
+          26,
+          30,
+          33,
+          36,
+          40
+        ]
+      },
+      {
+        "objectIdHex": "a93cbe6c3176b30730f2128f1f0d7a23",
+        "name": "Harmonic",
+        "includedDegrees": [
+          0,
+          5,
+          9,
+          13,
+          17,
+          21,
+          24,
+          27,
+          30,
+          33,
+          36,
+          38
+        ]
+      },
+      {
+        "objectIdHex": "5e7f7323b4df62cb90b5c26e4cae0ca7",
+        "name": "Middle East-ish",
+        "includedDegrees": [
+          0,
+          7,
+          12,
+          19,
+          24,
+          29,
+          36
+        ]
+      },
+      {
+        "objectIdHex": "d23e8ce9699842396a790862a09e36ff",
+        "name": "Thai",
+        "includedDegrees": [
+          0,
+          6,
+          12,
+          18,
+          24,
+          30,
+          36
+        ]
+      },
+      {
+        "objectIdHex": "0b7c1653e7c22acd9b8931848203e772",
+        "name": "Slendro",
+        "includedDegrees": [
+          0,
+          8,
+          16,
+          24,
+          32
+        ]
+      },
+      {
+        "objectIdHex": "a4ff4c742ce256dad45f64b43a9c8174",
+        "name": "Pelog / Mavila",
+        "includedDegrees": [
+          0,
+          8,
+          13,
+          18,
+          26,
+          31,
+          36
+        ]
+      }
+    ],
+    "activeScaleIdHex": "16637fcdb683aac8ba3d1431c6c375a7"
+  }
+}

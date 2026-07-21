@@ -10,7 +10,6 @@
 
 namespace {
 constexpr uint16_t CURRENT_SYNTH_PRESET_NONE = 0xFFFFu;
-constexpr char SYNTH_PRESET_CATALOG_FILE_PATH[] = "/synth_presets.dat";
 constexpr char CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH[] = "/current_synth_preset.dat";
 constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_VERSION = 1;
 constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_LOADED_FLAG = 0x01;
@@ -35,8 +34,7 @@ SynthPresetSlot currentSynthPresetLoadedSlot = {};
 bool currentSynthPresetLoadedSlotValid = false;
 SynthPresetSlot pendingSynthPresetSaveSlot = {};
 bool pendingSynthPresetSaveSlotValid = false;
-
-bool writeSynthPresetRecordsDirect(const SynthPresetSlot* presets, size_t presetCount, bool logResult);
+bool lastSynthPresetSaveSucceeded = false;
 
 bool objectIdIsEmpty(const uint8_t* objectId, size_t objectIdLength) {
   for (size_t i = 0; i < objectIdLength; ++i) {
@@ -539,64 +537,49 @@ void compactSynthPresets() {
 }
 
 namespace {
-constexpr char SYNTH_PRESET_CATALOG_TEMP_FILE_PATH[] = "/synth_presets.tmp";
-
-void copySynthPresetMetadataToSlot(const SynthPresetIndexEntry& metadata, SynthPresetSlot& preset) {
-  preset.valid = metadata.valid;
-  preset.favorite = metadata.favorite;
-  memcpy(preset.objectId, metadata.objectId, sizeof(preset.objectId));
-  snprintf(preset.name, sizeof(preset.name), "%s", metadata.name);
-  snprintf(preset.folderPath, sizeof(preset.folderPath), "%s", metadata.folderPath);
-}
-
-bool synthPresetMetadataMatchesSlot(const SynthPresetIndexEntry& metadata, const SynthPresetSlot& preset) {
-  return metadata.valid
-         && preset.valid
-         && memcmp(metadata.objectId, preset.objectId, sizeof(metadata.objectId)) == 0;
-}
-
 bool synthPresetHeaderBaseValid(const SynthPresetFileHeaderBase& header) {
-  return strncmp(header.magic, "SYP", 3) == 0
-         && header.version > 0
-         && header.version <= SYNTH_PRESET_FILE_VERSION;
+  return strncmp(header.magic, "HSP", 3) == 0
+         && header.version == SYNTH_PRESET_FILE_VERSION;
 }
 
-bool readSynthPresetFileHeaderBase(File& f, SynthPresetFileHeaderBase& header) {
-  return f.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)
-         && synthPresetHeaderBaseValid(header);
-}
-
-bool readSynthPresetFileHeader(File& f, SynthPresetFileHeader& header) {
-  if (!readSynthPresetFileHeaderBase(f, header.base)) {
+bool pathHasSynthPresetExtension(const char* path) {
+  if (!path) {
     return false;
   }
-  return header.base.version == SYNTH_PRESET_FILE_VERSION
-         && f.read(reinterpret_cast<uint8_t*>(&header.count), sizeof(header.count)) == sizeof(header.count)
-         && f.read(reinterpret_cast<uint8_t*>(&header.reserved), sizeof(header.reserved)) == sizeof(header.reserved)
-         && header.count <= SYNTH_PRESET_MAX_COUNT;
+  size_t length = strlen(path);
+  size_t extensionLength = strlen(SYNTH_PRESET_FILE_EXTENSION);
+  return length >= extensionLength
+         && strcmp(path + length - extensionLength, SYNTH_PRESET_FILE_EXTENSION) == 0;
 }
 
-bool readSynthPresetRecordAt(uint16_t presetIndex, SynthPresetSlot& preset) {
-  if (!fileSystemExists) {
-    return false;
-  }
-  File f = LittleFS.open(SYNTH_PRESET_CATALOG_FILE_PATH, "r");
+bool readSynthPresetFile(const char* path, SynthPresetSlot& preset) {
+  File f = LittleFS.open(path, "r");
   if (!f) {
     return false;
   }
-  SynthPresetFileHeader header = {};
-  if (!readSynthPresetFileHeader(f, header) || presetIndex >= header.count) {
-    f.close();
-    return false;
-  }
-  uint32_t offset = sizeof(header) + static_cast<uint32_t>(presetIndex) * sizeof(SynthPresetSlot);
-  if (!f.seek(offset)) {
-    f.close();
-    return false;
-  }
-  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset));
+  SynthPresetFileHeaderBase header = {};
+  bool readOk = f.size() == sizeof(header) + sizeof(preset)
+                && f.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)
+                && f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) == sizeof(preset);
   f.close();
-  if (bytesRead != sizeof(preset) || !preset.valid) {
+  if (!readOk || !synthPresetHeaderBaseValid(header) || !preset.valid
+      || objectIdIsEmpty(preset.objectId, sizeof(preset.objectId))
+      || header.crc32 != crc32(reinterpret_cast<const uint8_t*>(&preset), sizeof(preset))) {
+    return false;
+  }
+  return true;
+}
+
+bool readSynthPresetRecordAt(uint16_t presetIndex, SynthPresetSlot& preset) {
+  if (!fileSystemExists || presetIndex >= synthPresets.size() || !synthPresets[presetIndex].valid) {
+    return false;
+  }
+  char path[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+  if (!synthPresetStoragePath(synthPresets[presetIndex].objectId, path, sizeof(path))
+      || !readSynthPresetFile(path, preset)) {
+    return false;
+  }
+  if (memcmp(preset.objectId, synthPresets[presetIndex].objectId, sizeof(preset.objectId)) != 0) {
     return false;
   }
   normalizeSynthPresetValues(preset);
@@ -605,113 +588,82 @@ bool readSynthPresetRecordAt(uint16_t presetIndex, SynthPresetSlot& preset) {
 }
 
 bool readSynthPresetRecordByObjectId(const uint8_t* objectId, SynthPresetSlot& preset) {
-  if (!objectId) {
+  if (!objectId || !fileSystemExists) {
     return false;
   }
-  if (!fileSystemExists) {
+  char path[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+  if (!synthPresetStoragePath(objectId, path, sizeof(path)) || !readSynthPresetFile(path, preset)) {
     return false;
   }
-  File f = LittleFS.open(SYNTH_PRESET_CATALOG_FILE_PATH, "r");
-  if (!f) {
+  if (memcmp(preset.objectId, objectId, sizeof(preset.objectId)) != 0) {
     return false;
   }
-  SynthPresetFileHeader header = {};
-  if (!readSynthPresetFileHeader(f, header)) {
-    f.close();
+  normalizeSynthPresetValues(preset);
+  normalizeSynthPresetMetadata(preset, 0);
+  return true;
+}
+}  // namespace
+
+bool synthPresetStoragePath(const uint8_t* objectId, char* output, size_t outputLength) {
+  if (!objectId || !output || outputLength < 47) {
     return false;
   }
-  for (uint16_t i = 0; i < header.count; ++i) {
-    if (f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) != sizeof(preset)) {
-      f.close();
+  size_t cursor = snprintf(output, outputLength, "%s/", SYNTH_PRESET_STORAGE_ROOT);
+  constexpr char HEX_DIGITS[] = "0123456789ABCDEF";
+  for (size_t i = 0; i < SYNTH_PRESET_OBJECT_ID_LENGTH; ++i) {
+    if (cursor + 2 >= outputLength) {
+      output[0] = '\0';
       return false;
     }
-    if (preset.valid && memcmp(preset.objectId, objectId, sizeof(preset.objectId)) == 0) {
-      f.close();
-      normalizeSynthPresetValues(preset);
-      normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(i));
-      return true;
-    }
+    output[cursor++] = HEX_DIGITS[objectId[i] >> 4];
+    output[cursor++] = HEX_DIGITS[objectId[i] & 0x0F];
   }
-  f.close();
-  return false;
-}
-
-void synthPresetFallbackRecordFromMetadata(const SynthPresetIndexEntry& metadata,
-                                           uint8_t fallbackIndex,
-                                           SynthPresetSlot& preset) {
-  preset = {};
-  copySynthPresetMetadataToSlot(metadata, preset);
-  for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
-    preset.values[i] = factoryDefaults[static_cast<uint8_t>(synthPresetKeys[i])];
-  }
-  snprintf(preset.wavetableName, sizeof(preset.wavetableName), "%s", SYNTH_WAVETABLE_BASIC_NAME);
-  snprintf(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), "%s", SYNTH_WAVETABLE_BUILTIN_FOLDER);
-  normalizeSynthPresetMetadata(preset, fallbackIndex);
-}
-
-bool writeSynthPresetRecord(File& f, const SynthPresetSlot& preset, uint32_t& crc) {
-  size_t written = f.write(reinterpret_cast<const uint8_t*>(&preset), sizeof(preset));
-  if (written != sizeof(preset)) {
-    return false;
-  }
-  crc = crc32Update(crc, reinterpret_cast<const uint8_t*>(&preset), sizeof(preset));
+  snprintf(output + cursor, outputLength - cursor, "%s", SYNTH_PRESET_FILE_EXTENSION);
   return true;
 }
 
-bool finishSynthPresetTempFile(File& f, SynthPresetFileHeader& header) {
-  if (!f.seek(0)) {
+namespace {
+bool writeSynthPresetFileAtomic(const SynthPresetSlot& preset) {
+  char path[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+  char tempPath[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+  if (!synthPresetStoragePath(preset.objectId, path, sizeof(path))) {
     return false;
   }
-  return f.write(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header);
-}
+  snprintf(tempPath, sizeof(tempPath), "%s.tmp", path);
+  SynthPresetFileHeaderBase header = {};
+  header.magic[0] = 'H'; header.magic[1] = 'S'; header.magic[2] = 'P';
+  header.version = SYNTH_PRESET_FILE_VERSION;
+  header.crc32 = crc32(reinterpret_cast<const uint8_t*>(&preset), sizeof(preset));
 
-bool replaceSynthPresetCatalogWithTemp() {
-  LittleFS.remove(SYNTH_PRESET_CATALOG_FILE_PATH);
-  return LittleFS.rename(SYNTH_PRESET_CATALOG_TEMP_FILE_PATH, SYNTH_PRESET_CATALOG_FILE_PATH);
-}
-
-bool writeSynthPresetRecordsDirect(const SynthPresetSlot* presets, size_t presetCount, bool logResult) {
-  if (!fileSystemExists) {
-    sendToLog("File system not available.");
-    return false;
-  }
-  if (presetCount > SYNTH_PRESET_MAX_COUNT) {
-    return false;
-  }
-  LittleFS.remove(SYNTH_PRESET_CATALOG_TEMP_FILE_PATH);
-  File f = LittleFS.open(SYNTH_PRESET_CATALOG_TEMP_FILE_PATH, "w");
-  if (!f) {
-    sendToLog("Error: Unable to open /synth_presets.tmp for writing.");
-    return false;
-  }
-  SynthPresetFileHeader header = {};
-  header.base.magic[0] = 'S'; header.base.magic[1] = 'Y'; header.base.magic[2] = 'P';
-  header.base.version = SYNTH_PRESET_FILE_VERSION;
-  header.count = static_cast<uint16_t>(presetCount);
-  header.reserved = 0;
-  f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SynthPresetFileHeader));
-  uint32_t crc = crc32Begin();
-  for (size_t i = 0; i < presetCount; ++i) {
-    SynthPresetSlot preset = presets[i];
-    normalizeSynthPresetValues(preset);
-    normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(i));
-    if (!writeSynthPresetRecord(f, preset, crc)) {
-      f.close();
-      LittleFS.remove(SYNTH_PRESET_CATALOG_TEMP_FILE_PATH);
-      sendToLog("Error: Incomplete synth preset write.");
-      return false;
+  File existing = LittleFS.open(path, "r");
+  if (existing && existing.size() == sizeof(header) + sizeof(preset)) {
+    SynthPresetFileHeaderBase existingHeader = {};
+    bool unchanged = existing.read(reinterpret_cast<uint8_t*>(&existingHeader), sizeof(existingHeader)) == sizeof(existingHeader)
+                     && existingHeader.crc32 == header.crc32;
+    existing.close();
+    if (unchanged) {
+      return true;
     }
+  } else if (existing) {
+    existing.close();
   }
-  header.base.crc32 = crc32Finish(crc);
-  bool ok = finishSynthPresetTempFile(f, header);
-  f.close();
-  if (!ok || !replaceSynthPresetCatalogWithTemp()) {
-    LittleFS.remove(SYNTH_PRESET_CATALOG_TEMP_FILE_PATH);
-    sendToLog("Error: Unable to replace /synth_presets.dat.");
+
+  if (!LittleFS.exists(SYNTH_PRESET_STORAGE_ROOT) && !LittleFS.mkdir(SYNTH_PRESET_STORAGE_ROOT)) {
+    sendToLog("Error: Unable to create /presets.");
     return false;
   }
-  if (logResult) {
-    sendToLog("Synth presets saved (" + std::to_string(presetCount) + ").");
+  LittleFS.remove(tempPath);
+  File output = LittleFS.open(tempPath, "w");
+  bool ok = output
+            && output.write(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)
+            && output.write(reinterpret_cast<const uint8_t*>(&preset), sizeof(preset)) == sizeof(preset);
+  if (output) {
+    output.close();
+  }
+  if (!ok || !LittleFS.rename(tempPath, path)) {
+    LittleFS.remove(tempPath);
+    sendToLog("Error: Unable to atomically save synth preset " + std::string(path) + ".");
+    return false;
   }
   return true;
 }
@@ -800,56 +752,20 @@ bool loadCurrentSynthPresetReference() {
 }
 
 void save_synth_presets() {
+  lastSynthPresetSaveSucceeded = false;
   if (!fileSystemExists) {
     sendToLog("File system not available.");
     return;
   }
-  compactSynthPresets();
-  LittleFS.remove(SYNTH_PRESET_CATALOG_TEMP_FILE_PATH);
-  File f = LittleFS.open(SYNTH_PRESET_CATALOG_TEMP_FILE_PATH, "w");
-  if (!f) {
-    sendToLog("Error: Unable to open /synth_presets.tmp for writing.");
+  if (!pendingSynthPresetSaveSlotValid) {
     return;
   }
-  SynthPresetFileHeader header = {};
-  header.base.magic[0] = 'S'; header.base.magic[1] = 'Y'; header.base.magic[2] = 'P';
-  header.base.version = SYNTH_PRESET_FILE_VERSION;
-  header.count = static_cast<uint16_t>(synthPresets.size());
-  f.write(reinterpret_cast<uint8_t*>(&header), sizeof(header));
-
-  uint32_t crc = crc32Begin();
-  for (size_t i = 0; i < synthPresets.size(); ++i) {
-    SynthPresetSlot preset = {};
-    bool usePending = pendingSynthPresetSaveSlotValid
-                      && synthPresetMetadataMatchesSlot(synthPresets[i], pendingSynthPresetSaveSlot);
-    if (usePending) {
-      preset = pendingSynthPresetSaveSlot;
-    } else if (!readSynthPresetRecordByObjectId(synthPresets[i].objectId, preset)) {
-      synthPresetFallbackRecordFromMetadata(synthPresets[i], static_cast<uint8_t>(i), preset);
-    }
-    copySynthPresetMetadataToSlot(synthPresets[i], preset);
-    normalizeSynthPresetValues(preset);
-    normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(i));
-    copySynthPresetMetadata(synthPresets[i], preset);
-    if (!writeSynthPresetRecord(f, preset, crc)) {
-      f.close();
-      LittleFS.remove(SYNTH_PRESET_CATALOG_TEMP_FILE_PATH);
-      pendingSynthPresetSaveSlotValid = false;
-      sendToLog("Error: Incomplete synth preset write.");
-      return;
-    }
-  }
-  header.base.crc32 = crc32Finish(crc);
-  bool ok = finishSynthPresetTempFile(f, header);
-  f.close();
+  bool ok = writeSynthPresetFileAtomic(pendingSynthPresetSaveSlot);
   pendingSynthPresetSaveSlotValid = false;
-  if (!ok || !replaceSynthPresetCatalogWithTemp()) {
-    LittleFS.remove(SYNTH_PRESET_CATALOG_TEMP_FILE_PATH);
-    sendToLog("Error: Unable to replace /synth_presets.dat.");
-    return;
+  if (ok) {
+    lastSynthPresetSaveSucceeded = true;
+    saveCurrentSynthPresetReference();
   }
-  saveCurrentSynthPresetReference();
-  sendToLog("Synth presets saved (" + std::to_string(synthPresets.size()) + ").");
 }
 
 void load_synth_presets() {
@@ -860,60 +776,55 @@ void load_synth_presets() {
     applyDefaultSynthPresets();
     return;
   }
-  File f = LittleFS.open(SYNTH_PRESET_CATALOG_FILE_PATH, "r");
-  if (!f) {
-    sendToLog("Synth preset file not found. Using an empty synth preset library.");
-    applyDefaultSynthPresets();
-    return;
-  }
-  SynthPresetFileHeaderBase headerBase = {};
-  if (!readSynthPresetFileHeaderBase(f, headerBase)) {
-    sendToLog("Invalid synth preset file. Using an empty synth preset library.");
-    f.close();
-    applyDefaultSynthPresets();
-    return;
-  }
-  if (headerBase.version != SYNTH_PRESET_FILE_VERSION) {
-    f.close();
-    sendToLog("Unsupported synth preset catalog. Using an empty synth preset library.");
-    applyDefaultSynthPresets();
-    return;
-  }
-
-  SynthPresetFileHeader header = {};
-  header.base = headerBase;
-  if (f.read(reinterpret_cast<uint8_t*>(&header.count), sizeof(header.count)) != sizeof(header.count)
-      || f.read(reinterpret_cast<uint8_t*>(&header.reserved), sizeof(header.reserved)) != sizeof(header.reserved)
-      || header.count > SYNTH_PRESET_MAX_COUNT
-      || f.size() != sizeof(header) + static_cast<size_t>(header.count) * sizeof(SynthPresetSlot)) {
-    sendToLog("Invalid synth preset file. Using an empty synth preset library.");
-    f.close();
-    applyDefaultSynthPresets();
-    return;
-  }
-  uint32_t crc = crc32Begin();
-  for (uint16_t i = 0; i < header.count; ++i) {
-    SynthPresetSlot preset = {};
-    if (f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) != sizeof(preset)) {
-      sendToLog("Warning: Synth preset data incomplete. Using an empty synth preset library.");
-      f.close();
-      applyDefaultSynthPresets();
-      return;
+  File directory = LittleFS.open(SYNTH_PRESET_STORAGE_ROOT, "r");
+  if (!directory || !directory.isDirectory()) {
+    if (directory) {
+      directory.close();
     }
-    crc = crc32Update(crc, reinterpret_cast<const uint8_t*>(&preset), sizeof(preset));
-    if (!preset.valid) {
+    sendToLog("Synth preset directory not found. Using an empty synth preset library.");
+    applyDefaultSynthPresets();
+    return;
+  }
+  File entry;
+  while ((entry = directory.openNextFile())) {
+    char path[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+    snprintf(path, sizeof(path), "%s", entry.fullName());
+    bool regularPreset = !entry.isDirectory() && pathHasSynthPresetExtension(path);
+    entry.close();
+    if (!regularPreset) {
+      continue;
+    }
+    if (synthPresets.size() >= SYNTH_PRESET_MAX_COUNT) {
+      sendToLog("Warning: Synth preset directory exceeds its 128-file limit.");
+      break;
+    }
+    SynthPresetSlot preset = {};
+    if (!readSynthPresetFile(path, preset)) {
+      sendToLog("Warning: Invalid synth preset file " + std::string(path) + ".");
+      continue;
+    }
+    char canonicalPath[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+    if (!synthPresetStoragePath(preset.objectId, canonicalPath, sizeof(canonicalPath))
+        || strcmp(path, canonicalPath) != 0) {
+      sendToLog("Warning: Synth preset filename does not match its object id: " + std::string(path));
+      continue;
+    }
+    bool duplicateObjectId = false;
+    for (const SynthPresetIndexEntry& existing : synthPresets) {
+      if (memcmp(existing.objectId, preset.objectId, sizeof(preset.objectId)) == 0) {
+        duplicateObjectId = true;
+        break;
+      }
+    }
+    if (duplicateObjectId) {
+      sendToLog("Warning: Duplicate synth preset object id in " + std::string(path) + ".");
       continue;
     }
     normalizeSynthPresetValues(preset);
     normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(synthPresets.size()));
     appendSynthPresetMetadataFromSlot(preset);
   }
-  f.close();
-  if (crc32Finish(crc) != header.base.crc32) {
-    sendToLog("Synth preset CRC32 mismatch. Using an empty synth preset library.");
-    applyDefaultSynthPresets();
-    return;
-  }
+  directory.close();
   sendToLog("Synth presets loaded successfully (" + std::to_string(synthPresets.size()) + ").");
 }
 
@@ -1014,7 +925,8 @@ void saveSynthPresetToSlot(uint16_t presetIndex) {
   }
   SynthPresetSlot preset = {};
   if (!readSynthPresetFromCatalog(presetIndex, preset)) {
-    synthPresetFallbackRecordFromMetadata(synthPresets[presetIndex], static_cast<uint8_t>(presetIndex), preset);
+    sendToLog("Synth preset file is missing or invalid.");
+    return;
   }
   captureCurrentSynthPreset(preset);
   normalizeSynthPresetMetadata(preset, static_cast<uint8_t>(presetIndex));
@@ -1060,17 +972,50 @@ bool writeSynthPresetToCatalogSlot(uint16_t presetIndex, const SynthPresetSlot& 
   normalizeSynthPresetMetadata(normalized, static_cast<uint8_t>(presetIndex));
   SynthPresetIndexEntry metadata = {};
   copySynthPresetMetadata(metadata, normalized);
-  if (presetIndex == synthPresets.size()) {
+  bool appended = presetIndex == synthPresets.size();
+  SynthPresetIndexEntry previousMetadata = {};
+  if (appended) {
     if (!synthPresets.push_back(metadata)) {
       sendToLog("Synth preset library is full.");
       return false;
     }
   } else {
+    previousMetadata = synthPresets[presetIndex];
     synthPresets[presetIndex] = metadata;
   }
   pendingSynthPresetSaveSlot = normalized;
   pendingSynthPresetSaveSlotValid = true;
   flashSafeSaveSynthPresets();
+  if (lastSynthPresetSaveSucceeded) {
+    return true;
+  }
+  if (appended) {
+    synthPresets.eraseAt(presetIndex);
+  } else {
+    synthPresets[presetIndex] = previousMetadata;
+  }
+  return false;
+}
+
+bool deleteSynthPresetFromCatalog(uint16_t presetIndex) {
+  if (!fileSystemExists || presetIndex >= synthPresets.size() || !synthPresets[presetIndex].valid) {
+    return false;
+  }
+  char path[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+  if (!synthPresetStoragePath(synthPresets[presetIndex].objectId, path, sizeof(path))) {
+    return false;
+  }
+  beginFlashSafeWrite();
+  bool removed = LittleFS.remove(path);
+  if (!removed) {
+    endFlashSafeWrite();
+    sendToLog("Error: Unable to delete synth preset " + std::string(path) + ".");
+    return false;
+  }
+  synthPresets.eraseAt(presetIndex);
+  trackedCurrentSynthPresetEntry();
+  saveCurrentSynthPresetReference();
+  endFlashSafeWrite();
   return true;
 }
 

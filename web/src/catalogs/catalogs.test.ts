@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ObjectType } from "../protocol/constants.ts";
 import { CommonTlv, decodeObjectBody, textFromBytes } from "../protocol/tlv.ts";
+import { crc32 } from "../protocol/crc32.ts";
 import {
   ButtonMapField,
   ButtonMapRecordFormat,
@@ -28,6 +29,7 @@ import {
   keyLabelsForTlvOrder,
   keyLabelsFromScalaIntervalLabels,
   LayoutTlv,
+  objectIdToHex,
   parseHexBoardWavetable,
   parseLayoutBundleLibrary,
   parseLayoutBundleFile,
@@ -271,6 +273,11 @@ Example scale
     expect(parsed.periodCents).toBeCloseTo(1200);
   });
 
+  it("rejects Scala tunings above the 128-division runtime limit", () => {
+    const intervals = Array.from({ length: 129 }, (_, index) => `${index + 1}.0`).join("\n");
+    expect(() => parseScalaScale(`Too large\n129\n${intervals}`)).toThrow(/128-division limit/);
+  });
+
   it("round trips scales, scale colors, and explicit button maps", () => {
     const scale = createUserScale({
       objectId: deterministicObjectId("scale"),
@@ -464,6 +471,24 @@ Example scale
     ]);
     expect(textFromBytes(recordValue(encoded.scaleColorMap.body, CommonTlv.Name))).toBe(GenericScaleColorMapName);
     expect(u8(recordValue(encoded.scaleColorMap.body, ScaleColorMapTlv.DefaultColorMode))).toBe(ColorMode.Custom);
+    expect(new TextDecoder().decode(encoded.bundleFile.slice(0, 3))).toBe("HGB");
+    expect(encoded.bundleFile[3]).toBe(1);
+    expect(u16LE(encoded.bundleFile.slice(4, 6))).toBe(encoded.objects.length);
+    expect(u32LE(encoded.bundleFile.slice(8, 12)) >>> 0).toBe(crc32(encoded.bundleFile.slice(12)) >>> 0);
+  });
+
+  it("preserves device tuning and color object ids when re-saving a downloaded bundle", () => {
+    const tuningObjectIdHex = "00112233445566778899aabbccddeeff";
+    const colorObjectIdHex = "ffeeddccbbaa99887766554433221100";
+    const parsed = parseLayoutBundleFile(JSON.parse(serializeLayoutBundle({
+      ...createDefaultLayoutBundle(),
+      tuningObjectIdHex,
+      colorObjectIdHex
+    })));
+    const encoded = encodeLayoutBundle(parsed);
+
+    expect(objectIdToHex(encoded.tuning.objectId)).toBe(tuningObjectIdHex);
+    expect(objectIdToHex(encoded.scaleColorMap.objectId)).toBe(colorObjectIdHex);
   });
 
   it("derives equal-step period metadata from step cents and cycle length", () => {

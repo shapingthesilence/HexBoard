@@ -14,66 +14,16 @@
 
 bool isPresetSyncGeometryObjectType(uint8_t objectType);
 void load_geometry_objects();
+int findGeometryObjectByTypeAndObjectId(uint8_t objectType, const uint8_t* objectId);
 
 namespace {
 
 char userGeometryRuntimeTuningNameStorage[GEOMETRY_OBJECT_NAME_LENGTH] = "User Tuning";
 char userGeometryRuntimeLayoutNameStorage[GEOMETRY_OBJECT_NAME_LENGTH] = "User Layout";
 char userGeometryRuntimeScaleNameStorage[GEOMETRY_OBJECT_NAME_LENGTH] = "User Scale";
-constexpr char GEOMETRY_OBJECT_CATALOG_FILE_PATH[] = "/layouts.dat";
-constexpr char GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH[] = "/layouts.tmp";
-GeometryObjectSlot pendingGeometrySaveObject;
-bool pendingGeometrySaveObjectValid = false;
 
 void copyRuntimeGeometryName(char* storage, size_t storageLength, const char* name) {
   snprintf(storage, storageLength, "%s", name && name[0] ? name : "Geometry");
-}
-
-void copyGeometryIndexEntryFromObject(GeometryObjectIndexEntry& entry,
-                                      const GeometryObjectSlot& object,
-                                      uint32_t storageOffset = 0,
-                                      uint32_t bodyLength = 0) {
-  entry.valid = object.valid;
-  entry.objectType = object.objectType;
-  entry.schemaMajor = object.schemaMajor;
-  entry.schemaMinor = object.schemaMinor;
-  memcpy(entry.objectId, object.objectId, sizeof(entry.objectId));
-  snprintf(entry.name, sizeof(entry.name), "%s", object.name);
-  snprintf(entry.folderPath, sizeof(entry.folderPath), "%s", object.folderPath);
-  entry.storageOffset = storageOffset;
-  entry.bodyLength = bodyLength;
-}
-
-bool geometryIndexEntryMatchesObject(const GeometryObjectIndexEntry& entry, const GeometryObjectSlot& object) {
-  return entry.valid
-         && object.valid
-         && entry.objectType == object.objectType
-         && memcmp(entry.objectId, object.objectId, sizeof(entry.objectId)) == 0;
-}
-
-bool writeGeometryBytes(File& f, const uint8_t* data, size_t length, uint32_t& crc) {
-  if (length == 0) {
-    return true;
-  }
-  if (f.write(data, length) != length) {
-    return false;
-  }
-  crc = crc32Update(crc, data, length);
-  return true;
-}
-
-bool writeGeometryByte(File& f, uint8_t value, uint32_t& crc) {
-  return writeGeometryBytes(f, &value, 1, crc);
-}
-
-bool writeGeometryU32(File& f, uint32_t value, uint32_t& crc) {
-  uint8_t bytes[4] = {
-    static_cast<uint8_t>(value & 0xFF),
-    static_cast<uint8_t>((value >> 8) & 0xFF),
-    static_cast<uint8_t>((value >> 16) & 0xFF),
-    static_cast<uint8_t>((value >> 24) & 0xFF)
-  };
-  return writeGeometryBytes(f, bytes, sizeof(bytes), crc);
 }
 
 bool readGeometryObjectBody(const GeometryObjectIndexEntry& entry, std::vector<uint8_t>& body) {
@@ -81,7 +31,7 @@ bool readGeometryObjectBody(const GeometryObjectIndexEntry& entry, std::vector<u
   if (!fileSystemExists || !entry.valid || entry.bodyLength == 0 || entry.bodyLength > GEOMETRY_OBJECT_MAX_RAW_BYTES) {
     return false;
   }
-  File f = LittleFS.open(GEOMETRY_OBJECT_CATALOG_FILE_PATH, "r");
+  File f = LittleFS.open(entry.storagePath, "r");
   if (!f || !f.seek(entry.storageOffset)) {
     if (f) {
       f.close();
@@ -98,23 +48,205 @@ bool readGeometryObjectBody(const GeometryObjectIndexEntry& entry, std::vector<u
   return true;
 }
 
-bool writeGeometryObjectRecord(File& f, const GeometryObjectSlot& object, uint32_t& crc) {
-  if (!object.valid || !isPresetSyncGeometryObjectType(object.objectType) || object.body.empty()) {
-    return true;
+bool readGeometryText(File& file,
+                      uint8_t storedLength,
+                      char* destination,
+                      size_t destinationLength) {
+  if (destinationLength == 0) {
+    return false;
   }
-  size_t nameLength = std::min<size_t>(boundedCStringLength(object.name, sizeof(object.name)), 255);
-  size_t folderLength = std::min<size_t>(boundedCStringLength(object.folderPath, sizeof(object.folderPath)), 255);
-  return writeGeometryByte(f, object.objectType, crc)
-         && writeGeometryByte(f, object.schemaMajor, crc)
-         && writeGeometryByte(f, object.schemaMinor, crc)
-         && writeGeometryByte(f, 0, crc)
-         && writeGeometryBytes(f, object.objectId, sizeof(object.objectId), crc)
-         && writeGeometryByte(f, static_cast<uint8_t>(nameLength), crc)
-         && writeGeometryBytes(f, reinterpret_cast<const uint8_t*>(object.name), nameLength, crc)
-         && writeGeometryByte(f, static_cast<uint8_t>(folderLength), crc)
-         && writeGeometryBytes(f, reinterpret_cast<const uint8_t*>(object.folderPath), folderLength, crc)
-         && writeGeometryU32(f, static_cast<uint32_t>(object.body.size()), crc)
-         && writeGeometryBytes(f, object.body.data(), object.body.size(), crc);
+  destination[0] = '\0';
+  size_t copyLength = std::min<size_t>(storedLength, destinationLength - 1);
+  if (copyLength > 0
+      && file.read(reinterpret_cast<uint8_t*>(destination), copyLength) != copyLength) {
+    return false;
+  }
+  destination[copyLength] = '\0';
+  size_t skippedLength = storedLength - copyLength;
+  return skippedLength == 0 || file.seek(file.position() + skippedLength);
+}
+
+void clearGeometryCatalogState() {
+  geometryBundles.clear();
+  geometryCatalogObjectCount = 0;
+}
+
+bool pathHasGeometryBundleExtension(const char* path) {
+  if (!path) return false;
+  size_t length = strlen(path);
+  size_t extensionLength = strlen(GEOMETRY_BUNDLE_FILE_EXTENSION);
+  return length >= extensionLength
+         && strcmp(path + length - extensionLength, GEOMETRY_BUNDLE_FILE_EXTENSION) == 0;
+}
+
+bool geometryObjectIdIsEmpty(const uint8_t* objectId) {
+  for (size_t i = 0; i < GEOMETRY_OBJECT_ID_LENGTH; ++i) {
+    if (objectId[i] != 0) return false;
+  }
+  return true;
+}
+
+bool geometryBundleStoragePath(const uint8_t* tuningObjectId, char* output, size_t outputLength) {
+  if (!tuningObjectId || !output || outputLength < 48) return false;
+  size_t cursor = snprintf(output, outputLength, "%s/", GEOMETRY_STORAGE_ROOT);
+  constexpr char HEX_DIGITS[] = "0123456789ABCDEF";
+  for (size_t i = 0; i < GEOMETRY_OBJECT_ID_LENGTH; ++i) {
+    output[cursor++] = HEX_DIGITS[tuningObjectId[i] >> 4];
+    output[cursor++] = HEX_DIGITS[tuningObjectId[i] & 0x0F];
+  }
+  snprintf(output + cursor, outputLength - cursor, "%s", GEOMETRY_BUNDLE_FILE_EXTENSION);
+  return true;
+}
+
+bool readGeometryRecordMetadata(File& file,
+                                const char* storagePath,
+                                GeometryObjectIndexEntry& object) {
+  object = {};
+  object.valid = 1;
+  object.recordOffset = file.position();
+  snprintf(object.storagePath, sizeof(object.storagePath), "%s", storagePath);
+  uint8_t fixedHeader[20] = {};
+  if (file.read(fixedHeader, sizeof(fixedHeader)) != sizeof(fixedHeader)) return false;
+  object.objectType = fixedHeader[0];
+  object.schemaMajor = fixedHeader[1];
+  object.schemaMinor = fixedHeader[2];
+  memcpy(object.objectId, fixedHeader + 4, sizeof(object.objectId));
+  if (!isPresetSyncGeometryObjectType(object.objectType)) return false;
+  uint8_t nameLength = 0;
+  uint8_t folderLength = 0;
+  if (file.read(&nameLength, 1) != 1
+      || !readGeometryText(file, nameLength, object.name, sizeof(object.name))
+      || file.read(&folderLength, 1) != 1
+      || !readGeometryText(file, folderLength, object.folderPath, sizeof(object.folderPath))) return false;
+  uint8_t lengthBytes[4] = {};
+  if (file.read(lengthBytes, sizeof(lengthBytes)) != sizeof(lengthBytes)) return false;
+  object.bodyLength = static_cast<uint32_t>(lengthBytes[0])
+                      | (static_cast<uint32_t>(lengthBytes[1]) << 8)
+                      | (static_cast<uint32_t>(lengthBytes[2]) << 16)
+                      | (static_cast<uint32_t>(lengthBytes[3]) << 24);
+  object.storageOffset = file.position();
+  if (object.bodyLength == 0 || object.bodyLength > GEOMETRY_OBJECT_MAX_RAW_BYTES
+      || object.storageOffset + object.bodyLength > file.size()
+      || !file.seek(object.storageOffset + object.bodyLength)) return false;
+  object.recordLength = file.position() - object.recordOffset;
+  return true;
+}
+
+bool geometryBundleHeaderValid(const GeometryObjectFileHeader& header) {
+  return strncmp(header.magic, "HGB", 3) == 0
+         && header.version == GEOMETRY_OBJECT_FILE_VERSION
+         && header.count > 0
+         && header.count <= GEOMETRY_BUNDLE_RECORD_MAX_COUNT;
+}
+
+bool validateGeometryBundleFile(const char* path,
+                                uint8_t* tuningObjectId,
+                                uint16_t& recordCount,
+                                bool logFailure) {
+  recordCount = 0;
+  File file = LittleFS.open(path, "r");
+  if (!file || file.size() < sizeof(GeometryObjectFileHeader)
+      || file.size() > GEOMETRY_BUNDLE_MAX_RAW_BYTES) {
+    if (file) file.close();
+    if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": size.");
+    return false;
+  }
+  GeometryObjectFileHeader header = {};
+  if (file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)
+      || !geometryBundleHeaderValid(header)) {
+    file.close();
+    if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": header.");
+    return false;
+  }
+  uint32_t crc = crc32Begin();
+  uint8_t buffer[128] = {};
+  while (file.available() > 0) {
+    size_t chunk = std::min<size_t>(sizeof(buffer), file.available());
+    if (file.read(buffer, chunk) != chunk) {
+      file.close();
+      return false;
+    }
+    crc = crc32Update(crc, buffer, chunk);
+  }
+  if (crc32Finish(crc) != header.crc32 || !file.seek(sizeof(header))) {
+    file.close();
+    if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": CRC.");
+    return false;
+  }
+  uint8_t tuningCount = 0;
+  uint8_t colorMapCount = 0;
+  uint8_t rootTuningObjectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
+  std::vector<std::array<uint8_t, GEOMETRY_OBJECT_ID_LENGTH>> objectIds;
+  objectIds.reserve(header.count);
+  for (uint16_t index = 0; index < header.count; ++index) {
+    GeometryObjectIndexEntry metadata;
+    if (!readGeometryRecordMetadata(file, path, metadata)
+        || geometryObjectIdIsEmpty(metadata.objectId)
+        || (index == 0 && metadata.objectType != PRESET_SYNC_OBJECT_TYPE_USER_TUNING)) {
+      file.close();
+      if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": record envelope.");
+      return false;
+    }
+    if (metadata.objectType == PRESET_SYNC_OBJECT_TYPE_USER_TUNING) {
+      ++tuningCount;
+      memcpy(rootTuningObjectId, metadata.objectId, GEOMETRY_OBJECT_ID_LENGTH);
+      if (tuningObjectId) memcpy(tuningObjectId, metadata.objectId, GEOMETRY_OBJECT_ID_LENGTH);
+    }
+    for (const auto& objectId : objectIds) {
+      if (memcmp(objectId.data(), metadata.objectId, GEOMETRY_OBJECT_ID_LENGTH) == 0) {
+        file.close();
+        if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": duplicate object id.");
+        return false;
+      }
+    }
+    std::array<uint8_t, GEOMETRY_OBJECT_ID_LENGTH> objectId = {};
+    memcpy(objectId.data(), metadata.objectId, GEOMETRY_OBJECT_ID_LENGTH);
+    objectIds.push_back(objectId);
+    GeometryObjectSlot parsed;
+    if (!geometryObjectForMetadata(metadata, parsed)) {
+      file.close();
+      if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": object body.");
+      return false;
+    }
+    if (metadata.objectType == PRESET_SYNC_OBJECT_TYPE_USER_TUNING
+        && !geometryObjectRuntimeTuningSupported(parsed)) {
+      file.close();
+      if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": unsupported tuning.");
+      return false;
+    }
+    uint8_t tuningReferenceTag = 0;
+    switch (metadata.objectType) {
+      case PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT:
+        tuningReferenceTag = PRESET_SYNC_TLV_LAYOUT_TUNING_REF;
+        break;
+      case PRESET_SYNC_OBJECT_TYPE_USER_SCALE:
+        tuningReferenceTag = PRESET_SYNC_TLV_USER_SCALE_TUNING_REF;
+        break;
+      case PRESET_SYNC_OBJECT_TYPE_SCALE_COLOR_MAP:
+        tuningReferenceTag = PRESET_SYNC_TLV_SCALE_COLOR_TUNING_REF;
+        ++colorMapCount;
+        break;
+      case PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP:
+        tuningReferenceTag = PRESET_SYNC_TLV_BUTTON_MAP_TUNING_REF;
+        break;
+      default:
+        break;
+    }
+    if (tuningReferenceTag != 0
+        && !geometryObjectReferencesObjectId(parsed,
+                                             tuningReferenceTag,
+                                             PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
+                                             rootTuningObjectId)) {
+      file.close();
+      if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": foreign tuning reference.");
+      return false;
+    }
+  }
+  bool valid = tuningCount == 1 && colorMapCount <= 1 && file.position() == file.size();
+  file.close();
+  if (!valid && logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": bundle structure.");
+  if (valid) recordCount = header.count;
+  return valid;
 }
 
 } // namespace
@@ -138,77 +270,83 @@ bool isPresetSyncSupportedObjectType(uint8_t objectType) {
          || isPresetSyncGeometryObjectType(objectType);
 }
 
-void save_geometry_objects() {
-  if (!fileSystemExists) {
-    sendToLog("File system not available.");
-    return;
+bool beginGeometryCatalogRead(GeometryCatalogReader& reader) {
+  endGeometryCatalogRead(reader);
+  if (!fileSystemExists || geometryCatalogObjectCount == 0) {
+    return false;
   }
-  GeometryObjectFileHeader header = {};
-  header.magic[0] = 'L'; header.magic[1] = 'Y'; header.magic[2] = 'T';
-  header.version = GEOMETRY_OBJECT_FILE_VERSION;
-  header.count = static_cast<uint16_t>(geometryObjects.size());
-
-  LittleFS.remove(GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH);
-  File f = LittleFS.open(GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH, "w");
-  if (!f) {
-    sendToLog("Error: Unable to open /layouts.tmp for writing.");
-    return;
-  }
-  f.write(reinterpret_cast<uint8_t*>(&header), sizeof(header));
-
-  uint32_t crc = crc32Begin();
-  for (size_t i = 0; i < geometryObjects.size(); ++i) {
-    GeometryObjectSlot object = {};
-    bool usePending = pendingGeometrySaveObjectValid
-                      && geometryIndexEntryMatchesObject(geometryObjects[i], pendingGeometrySaveObject);
-    if (usePending) {
-      object = pendingGeometrySaveObject;
-    } else {
-      object.valid = geometryObjects[i].valid;
-      object.objectType = geometryObjects[i].objectType;
-      object.schemaMajor = geometryObjects[i].schemaMajor;
-      object.schemaMinor = geometryObjects[i].schemaMinor;
-      memcpy(object.objectId, geometryObjects[i].objectId, sizeof(object.objectId));
-      snprintf(object.name, sizeof(object.name), "%s", geometryObjects[i].name);
-      snprintf(object.folderPath, sizeof(object.folderPath), "%s", geometryObjects[i].folderPath);
-      if (!readGeometryObjectBody(geometryObjects[i], object.body)) {
-        continue;
-      }
-    }
-    if (!writeGeometryObjectRecord(f, object, crc)) {
-      f.close();
-      pendingGeometrySaveObjectValid = false;
-      LittleFS.remove(GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH);
-      sendToLog("Error: Incomplete geometry catalog write.");
-      return;
-    }
-  }
-  header.crc32 = crc32Finish(crc);
-  if (!f.seek(0)
-      || f.write(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)) {
-    f.close();
-    pendingGeometrySaveObjectValid = false;
-    LittleFS.remove(GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH);
-    sendToLog("Error: Incomplete geometry catalog header write.");
-    return;
-  }
-  f.close();
-  pendingGeometrySaveObjectValid = false;
-  LittleFS.remove(GEOMETRY_OBJECT_CATALOG_FILE_PATH);
-  if (!LittleFS.rename(GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH, GEOMETRY_OBJECT_CATALOG_FILE_PATH)) {
-    LittleFS.remove(GEOMETRY_OBJECT_CATALOG_TEMP_FILE_PATH);
-    sendToLog("Error: Unable to replace /layouts.dat.");
-    return;
-  }
-  load_geometry_objects();
-  sendToLog("Geometry objects saved (" + std::to_string(geometryObjects.size()) + ").");
+  reader.count = geometryCatalogObjectCount;
+  reader.nextHandle = 0;
+  reader.nextBundleIndex = 0;
+  return true;
 }
 
-void flashSafeSaveGeometryObjects() {
-  flashSafeWrite(save_geometry_objects);
+bool readNextGeometryObjectMetadata(GeometryCatalogReader& reader,
+                                    uint16_t& handle,
+                                    GeometryObjectIndexEntry& object) {
+  if (reader.nextHandle >= reader.count) {
+    return false;
+  }
+  while (!reader.file || reader.bundleRecordsRemaining == 0) {
+    if (reader.file) reader.file.close();
+    if (reader.nextBundleIndex >= geometryBundles.size()) {
+      return false;
+    }
+    const GeometryBundleIndexEntry& bundle = geometryBundles[reader.nextBundleIndex++];
+    if (!geometryBundleStoragePath(bundle.tuningObjectId,
+                                   reader.storagePath,
+                                   sizeof(reader.storagePath))) {
+      return false;
+    }
+    reader.file = LittleFS.open(reader.storagePath, "r");
+    GeometryObjectFileHeader header = {};
+    if (!reader.file
+        || reader.file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)
+        || !geometryBundleHeaderValid(header)
+        || header.count != bundle.recordCount) {
+      if (reader.file) reader.file.close();
+      return false;
+    }
+    reader.bundleRecordsRemaining = bundle.recordCount;
+  }
+  if (!readGeometryRecordMetadata(reader.file, reader.storagePath, object)) return false;
+  --reader.bundleRecordsRemaining;
+  handle = reader.nextHandle++;
+  return true;
 }
 
-bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlot& object, std::string& error) {
+void endGeometryCatalogRead(GeometryCatalogReader& reader) {
+  if (reader.file) {
+    reader.file.close();
+  }
+  reader.nextHandle = 0;
+  reader.count = 0;
+  reader.bundleRecordsRemaining = 0;
+  reader.nextBundleIndex = 0;
+  reader.storagePath[0] = '\0';
+}
+
+bool geometryObjectMetadataForHandle(uint16_t wantedHandle, GeometryObjectIndexEntry& object) {
+  if (wantedHandle >= geometryCatalogObjectCount) {
+    return false;
+  }
+  GeometryCatalogReader reader;
+  if (!beginGeometryCatalogRead(reader)) {
+    return false;
+  }
+  uint16_t handle = 0;
+  bool found = false;
+  while (readNextGeometryObjectMetadata(reader, handle, object)) {
+    if (handle == wantedHandle) {
+      found = true;
+      break;
+    }
+  }
+  endGeometryCatalogRead(reader);
+  return found;
+}
+
+bool parseGeometryObjectBody(std::vector<uint8_t> body, GeometryObjectSlot& object, std::string& error) {
   if (body.size() < 8 || body[0] != 'H' || body[1] != 'B' || body[2] != 'S' || body[3] != '1') {
     error = "bad object magic";
     return false;
@@ -227,7 +365,6 @@ bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlo
   parsed.objectType = body[4];
   parsed.schemaMajor = body[5];
   parsed.schemaMinor = body[6];
-  parsed.body = body;
 
   bool sawName = false;
   bool sawObjectId = false;
@@ -271,252 +408,134 @@ bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlo
     error = "missing required geometry TLV";
     return false;
   }
-  object = parsed;
+  parsed.body = std::move(body);
+  object = std::move(parsed);
   return true;
 }
 
 void load_geometry_objects() {
-  geometryObjects.clear();
+  clearGeometryCatalogState();
   if (!fileSystemExists) {
     sendToLog("File system not available. Using empty geometry catalog.");
     return;
   }
-  File f = LittleFS.open(GEOMETRY_OBJECT_CATALOG_FILE_PATH, "r");
-  if (!f) {
-    sendToLog("Geometry catalog file not found. Starting with empty layout objects.");
+  File directory = LittleFS.open(GEOMETRY_STORAGE_ROOT, "r");
+  if (!directory || !directory.isDirectory()) {
+    if (directory) directory.close();
+    sendToLog("Geometry bundle directory not found. Starting with an empty geometry library.");
     return;
   }
-  GeometryObjectFileHeader header = {};
-  if (f.readBytes(reinterpret_cast<char*>(&header), sizeof(header)) != sizeof(header)) {
-    sendToLog("Error: Failed to read geometry catalog header.");
-    f.close();
-    return;
+  File entry;
+  while ((entry = directory.openNextFile())) {
+    char path[GEOMETRY_STORAGE_PATH_LENGTH] = {};
+    snprintf(path, sizeof(path), "%s", entry.fullName());
+    bool candidate = !entry.isDirectory() && pathHasGeometryBundleExtension(path);
+    entry.close();
+    if (!candidate) continue;
+    uint8_t tuningObjectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
+    uint16_t records = 0;
+    if (!validateGeometryBundleFile(path, tuningObjectId, records, true)) continue;
+    char canonicalPath[GEOMETRY_STORAGE_PATH_LENGTH] = {};
+    if (!geometryBundleStoragePath(tuningObjectId, canonicalPath, sizeof(canonicalPath))
+        || strcmp(path, canonicalPath) != 0) {
+      sendToLog("Warning: Geometry bundle filename does not match its tuning object id: " + std::string(path));
+      continue;
+    }
+    if (geometryBundles.size() >= GEOMETRY_BUNDLE_MAX_COUNT
+        || geometryCatalogObjectCount + records > GEOMETRY_OBJECT_MAX_COUNT) {
+      sendToLog("Warning: Geometry library exceeds its bundle or record limit.");
+      break;
+    }
+    GeometryBundleIndexEntry bundle = {};
+    memcpy(bundle.tuningObjectId, tuningObjectId, sizeof(bundle.tuningObjectId));
+    bundle.recordCount = records;
+    geometryBundles.push_back(bundle);
+    geometryCatalogObjectCount += records;
   }
-  if (strncmp(header.magic, "LYT", 3) != 0 || header.version != GEOMETRY_OBJECT_FILE_VERSION
-      || header.count > GEOMETRY_OBJECT_MAX_COUNT) {
-    sendToLog("Invalid geometry catalog file. Starting with empty layout objects.");
-    f.close();
-    return;
+  directory.close();
+  sendToLog("Geometry bundles loaded successfully (" + std::to_string(geometryBundles.size()) + " bundles, "
+            + std::to_string(geometryCatalogObjectCount) + " objects).");
+}
+
+bool installGeometryBundleFile(const char* stagedPath) {
+  if (!fileSystemExists || !stagedPath || !stagedPath[0]) return false;
+  uint8_t tuningObjectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
+  uint16_t recordCount = 0;
+  if (!validateGeometryBundleFile(stagedPath, tuningObjectId, recordCount, true)) return false;
+  char destination[GEOMETRY_STORAGE_PATH_LENGTH] = {};
+  if (!geometryBundleStoragePath(tuningObjectId, destination, sizeof(destination))) return false;
+  bool replacing = LittleFS.exists(destination);
+  if (!replacing && geometryBundleCount() >= GEOMETRY_BUNDLE_MAX_COUNT) {
+    sendToLog("Geometry bundle library is full.");
+    return false;
   }
-
-  size_t dataSize = f.size() > sizeof(header) ? f.size() - sizeof(header) : 0;
-  uint32_t crc = crc32Begin();
-  uint8_t crcBuffer[128] = {};
-  size_t remaining = dataSize;
-  while (remaining > 0) {
-    size_t chunkLength = std::min(sizeof(crcBuffer), remaining);
-    size_t bytesRead = f.read(crcBuffer, chunkLength);
-    if (bytesRead != chunkLength) {
-      sendToLog("Warning: Geometry catalog data incomplete. Starting with empty layout objects.");
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    crc = crc32Update(crc, crcBuffer, chunkLength);
-    remaining -= chunkLength;
+  if (!LittleFS.exists(GEOMETRY_STORAGE_ROOT) && !LittleFS.mkdir(GEOMETRY_STORAGE_ROOT)) {
+    sendToLog("Error: Unable to create /geometry.");
+    return false;
   }
-  if (crc32Finish(crc) != header.crc32) {
-    sendToLog("Geometry catalog CRC32 mismatch. Starting with empty layout objects.");
-    geometryObjects.clear();
-    f.close();
-    return;
+  if (!LittleFS.rename(stagedPath, destination)) {
+    sendToLog("Error: Unable to atomically install geometry bundle " + std::string(destination) + ".");
+    return false;
   }
-
-  if (!f.seek(sizeof(header))) {
-    f.close();
-    return;
-  }
-  size_t cursor = 0;
-  while (cursor < dataSize && geometryObjects.size() < GEOMETRY_OBJECT_MAX_COUNT) {
-    if (cursor + 20 > dataSize) {
-      sendToLog("Warning: Geometry catalog record truncated.");
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    GeometryObjectIndexEntry object = {};
-    object.valid = 1;
-    uint8_t fixedHeader[20] = {};
-    if (f.read(fixedHeader, sizeof(fixedHeader)) != sizeof(fixedHeader)) {
-      sendToLog("Warning: Geometry catalog record truncated.");
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    object.objectType = fixedHeader[0];
-    object.schemaMajor = fixedHeader[1];
-    object.schemaMinor = fixedHeader[2];
-    memcpy(object.objectId, fixedHeader + 4, sizeof(object.objectId));
-    cursor += sizeof(fixedHeader);
-
-    uint8_t nameLength = 0;
-    if (f.read(&nameLength, 1) != 1) {
-      sendToLog("Warning: Geometry catalog name truncated.");
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    ++cursor;
-    if (cursor + nameLength > dataSize) {
-      sendToLog("Warning: Geometry catalog name truncated.");
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    uint8_t textBuffer[GEOMETRY_OBJECT_NAME_LENGTH] = {};
-    size_t nameCopyLength = std::min<size_t>(nameLength, sizeof(textBuffer));
-    if (nameCopyLength > 0 && f.read(textBuffer, nameCopyLength) != nameCopyLength) {
-      sendToLog("Warning: Geometry catalog name truncated.");
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    copyPresetSyncText(object.name, sizeof(object.name), textBuffer, nameCopyLength);
-    if (nameLength > nameCopyLength && !f.seek(f.position() + (nameLength - nameCopyLength))) {
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    cursor += nameLength;
-
-    uint8_t folderLength = 0;
-    if (f.read(&folderLength, 1) != 1) {
-      sendToLog("Warning: Geometry catalog folder truncated.");
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    ++cursor;
-    if (cursor + folderLength > dataSize) {
-      sendToLog("Warning: Geometry catalog folder truncated.");
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    uint8_t folderBuffer[GEOMETRY_OBJECT_FOLDER_LENGTH] = {};
-    size_t folderCopyLength = std::min<size_t>(folderLength, sizeof(folderBuffer));
-    if (folderCopyLength > 0 && f.read(folderBuffer, folderCopyLength) != folderCopyLength) {
-      sendToLog("Warning: Geometry catalog folder truncated.");
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    copyPresetSyncText(object.folderPath, sizeof(object.folderPath), folderBuffer, folderCopyLength);
-    if (folderLength > folderCopyLength && !f.seek(f.position() + (folderLength - folderCopyLength))) {
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    cursor += folderLength;
-
-    uint8_t bodyLengthBytes[4] = {};
-    if (f.read(bodyLengthBytes, sizeof(bodyLengthBytes)) != sizeof(bodyLengthBytes)) {
-      sendToLog("Warning: Geometry catalog body truncated.");
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    object.bodyLength = static_cast<uint32_t>(bodyLengthBytes[0])
-                        | (static_cast<uint32_t>(bodyLengthBytes[1]) << 8)
-                        | (static_cast<uint32_t>(bodyLengthBytes[2]) << 16)
-                        | (static_cast<uint32_t>(bodyLengthBytes[3]) << 24);
-    cursor += sizeof(bodyLengthBytes);
-    if (object.bodyLength == 0
-        || object.bodyLength > GEOMETRY_OBJECT_MAX_RAW_BYTES
-        || cursor + object.bodyLength > dataSize) {
-      sendToLog("Warning: Geometry catalog body truncated.");
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    object.storageOffset = f.position();
-    if (!f.seek(object.storageOffset + object.bodyLength)) {
-      sendToLog("Warning: Geometry catalog body truncated.");
-      geometryObjects.clear();
-      f.close();
-      return;
-    }
-    cursor += object.bodyLength;
-
-    if (isPresetSyncGeometryObjectType(object.objectType)) {
-      geometryObjects.push_back(object);
-    }
-  }
-  f.close();
-  sendToLog("Geometry objects loaded successfully (" + std::to_string(geometryObjects.size()) + ").");
+  load_geometry_objects();
+  return findGeometryObjectByTypeAndObjectId(PRESET_SYNC_OBJECT_TYPE_USER_TUNING, tuningObjectId) >= 0;
 }
 
 int findGeometryObjectByTypeAndObjectId(uint8_t objectType, const uint8_t* objectId) {
-  for (size_t i = 0; i < geometryObjects.size(); ++i) {
-    if (geometryObjects[i].valid
-        && geometryObjects[i].objectType == objectType
-        && memcmp(geometryObjects[i].objectId, objectId, GEOMETRY_OBJECT_ID_LENGTH) == 0) {
-      return static_cast<int>(i);
-    }
-  }
-  return -1;
-}
-
-int chooseGeometryObjectWriteSlot(uint16_t handle, const GeometryObjectSlot& object) {
-  if (isBuiltinGeometryHandle(handle)) {
+  GeometryCatalogReader reader;
+  if (!beginGeometryCatalogRead(reader)) {
     return -1;
   }
-  if (handle != PRESET_SYNC_NEW_OBJECT_HANDLE
-      && handle < geometryObjects.size()
-      && geometryObjects[handle].objectType == object.objectType) {
-    return handle;
+  uint16_t handle = 0;
+  GeometryObjectIndexEntry object;
+  while (readNextGeometryObjectMetadata(reader, handle, object)) {
+    if (object.objectType == objectType
+        && memcmp(object.objectId, objectId, GEOMETRY_OBJECT_ID_LENGTH) == 0) {
+      endGeometryCatalogRead(reader);
+      return static_cast<int>(handle);
+    }
   }
-  int existing = findGeometryObjectByTypeAndObjectId(object.objectType, object.objectId);
-  if (existing >= 0) {
-    return existing;
-  }
-  if (geometryObjects.size() < GEOMETRY_OBJECT_MAX_COUNT) {
-    return static_cast<int>(geometryObjects.size());
-  }
+  endGeometryCatalogRead(reader);
   return -1;
 }
 
-bool writeGeometryObjectToCatalogSlot(uint16_t slotIndex, const GeometryObjectSlot& object) {
-  if (slotIndex > geometryObjects.size()
-      || (slotIndex == geometryObjects.size() && geometryObjects.size() >= GEOMETRY_OBJECT_MAX_COUNT)) {
-    sendToLog("Geometry object library is full.");
+size_t geometryBundleCount() {
+  return geometryBundles.size();
+}
+
+bool deleteGeometryObjectFromCatalog(uint16_t handle) {
+  GeometryObjectIndexEntry object;
+  if (!geometryObjectMetadataForHandle(handle, object)
+      || object.objectType != PRESET_SYNC_OBJECT_TYPE_USER_TUNING) {
+    sendToLog("Geometry delete rejected: delete the bundle tuning root.");
     return false;
   }
-  if (!object.valid || object.body.empty() || object.body.size() > GEOMETRY_OBJECT_MAX_RAW_BYTES) {
-    sendToLog("Geometry object write rejected: invalid object body.");
-    return false;
-  }
-  GeometryObjectIndexEntry metadata = {};
-  copyGeometryIndexEntryFromObject(metadata, object, 0, static_cast<uint32_t>(object.body.size()));
-  if (slotIndex == geometryObjects.size()) {
-    if (!geometryObjects.push_back(metadata)) {
-      sendToLog("Geometry object library is full.");
-      return false;
-    }
-  } else {
-    geometryObjects[slotIndex] = metadata;
-  }
-  pendingGeometrySaveObject = object;
-  pendingGeometrySaveObjectValid = true;
-  flashSafeSaveGeometryObjects();
-  return true;
+  beginFlashSafeWrite();
+  bool removed = LittleFS.remove(object.storagePath);
+  endFlashSafeWrite();
+  if (removed) load_geometry_objects();
+  return removed;
 }
 
 bool geometryObjectForHandle(uint16_t handle, GeometryObjectSlot& object) {
   if (isBuiltinGeometryHandle(handle)) {
     return buildBuiltinGeometryObject(handle, object);
   }
-  if (handle >= geometryObjects.size() || !geometryObjects[handle].valid) {
+  GeometryObjectIndexEntry entry;
+  if (!geometryObjectMetadataForHandle(handle, entry)) {
     return false;
   }
-  const GeometryObjectIndexEntry& entry = geometryObjects[handle];
+  return geometryObjectForMetadata(entry, object);
+}
+
+bool geometryObjectForMetadata(const GeometryObjectIndexEntry& entry, GeometryObjectSlot& object) {
   std::vector<uint8_t> body;
   if (!readGeometryObjectBody(entry, body)) {
     return false;
   }
   GeometryObjectSlot parsed;
   std::string parseError;
-  if (!parseGeometryObjectBody(body, parsed, parseError)
+  if (!parseGeometryObjectBody(std::move(body), parsed, parseError)
       || parsed.objectType != entry.objectType
       || parsed.schemaMajor != entry.schemaMajor
       || parsed.schemaMinor != entry.schemaMinor
@@ -524,7 +543,7 @@ bool geometryObjectForHandle(uint16_t handle, GeometryObjectSlot& object) {
     sendToLog("Geometry object read rejected: " + parseError);
     return false;
   }
-  object = parsed;
+  object = std::move(parsed);
   return true;
 }
 
@@ -705,27 +724,79 @@ bool geometryObjectRuntimeTuningSupported(const GeometryObjectSlot& object) {
   return false;
 }
 
+bool geometryFallbackRequired() {
+  return geometryBundleCount() == 0;
+}
+
+bool loadDefaultGeometryRuntime() {
+  if (fileSystemExists) {
+    File referenceFile = LittleFS.open(DEFAULT_GEOMETRY_REFERENCE_FILE_PATH, "r");
+    DefaultGeometryReferenceFile reference = {};
+    bool validReference = referenceFile
+                          && referenceFile.size() == sizeof(reference)
+                          && referenceFile.read(reinterpret_cast<uint8_t*>(&reference), sizeof(reference)) == sizeof(reference);
+    if (referenceFile) referenceFile.close();
+    validReference = validReference
+                     && strncmp(reference.magic, "DGE", 3) == 0
+                     && reference.version == DEFAULT_GEOMETRY_REFERENCE_VERSION
+                     && reference.crc32 == crc32(reference.tuningObjectId, sizeof(reference.tuningObjectId));
+    if (validReference) {
+      int handle = findGeometryObjectByTypeAndObjectId(PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
+                                                       reference.tuningObjectId);
+      if (handle >= 0 && loadUserGeometryBundleFromTuningSlot(static_cast<uint16_t>(handle))) {
+        return true;
+      }
+    }
+  }
+  GeometryCatalogReader reader;
+  if (beginGeometryCatalogRead(reader)) {
+    uint16_t handle = 0;
+    GeometryObjectIndexEntry object;
+    while (readNextGeometryObjectMetadata(reader, handle, object)) {
+      if (object.objectType != PRESET_SYNC_OBJECT_TYPE_USER_TUNING) {
+        continue;
+      }
+      if (loadUserGeometryBundleFromTuningSlot(handle)) {
+        endGeometryCatalogRead(reader);
+        return true;
+      }
+    }
+    endGeometryCatalogRead(reader);
+  }
+
+  uint16_t rescueHandle = 0;
+  return builtinGeometryHandleForLegacyTuning(TUNING_12EDO, rescueHandle)
+         && loadUserGeometryBundleFromTuningSlot(rescueHandle);
+}
+
 int findFirstGeometryObjectReferencing(uint8_t objectType, uint8_t referenceTag, uint8_t referenceObjectType, const uint8_t* referenceObjectId) {
-  for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
-    BuiltinGeometryMetadata metadata;
-    GeometryObjectSlot object;
-    if (builtinGeometryMetadataByOrdinal(i, metadata)
-        && metadata.objectType == objectType
-        && buildBuiltinGeometryObject(metadata.handle, object)
-        && geometryObjectReferencesObjectId(object, referenceTag, referenceObjectType, referenceObjectId)) {
-      return metadata.handle;
+  if (geometryFallbackRequired()) {
+    for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
+      BuiltinGeometryMetadata metadata;
+      GeometryObjectSlot object;
+      if (builtinGeometryMetadataByOrdinal(i, metadata)
+          && metadata.objectType == objectType
+          && buildBuiltinGeometryObject(metadata.handle, object)
+          && geometryObjectReferencesObjectId(object, referenceTag, referenceObjectType, referenceObjectId)) {
+        return metadata.handle;
+      }
     }
   }
 
-  for (size_t i = 0; i < geometryObjects.size(); ++i) {
-    const GeometryObjectIndexEntry& object = geometryObjects[i];
-    GeometryObjectSlot fullObject;
-    if (object.valid
-        && object.objectType == objectType
-        && geometryObjectForHandle(static_cast<uint16_t>(i), fullObject)
-        && geometryObjectReferencesObjectId(fullObject, referenceTag, referenceObjectType, referenceObjectId)) {
-      return static_cast<int>(i);
+  GeometryCatalogReader reader;
+  if (beginGeometryCatalogRead(reader)) {
+    uint16_t handle = 0;
+    GeometryObjectIndexEntry object;
+    while (readNextGeometryObjectMetadata(reader, handle, object)) {
+      GeometryObjectSlot fullObject;
+      if (object.objectType == objectType
+          && geometryObjectForMetadata(object, fullObject)
+          && geometryObjectReferencesObjectId(fullObject, referenceTag, referenceObjectType, referenceObjectId)) {
+        endGeometryCatalogRead(reader);
+        return static_cast<int>(handle);
+      }
     }
+    endGeometryCatalogRead(reader);
   }
   return -1;
 }
@@ -1299,27 +1370,34 @@ bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
   if (!applyUserGeometryRuntimeTuning(tuningObject)) {
     return false;
   }
+  uint8_t tuningObjectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
+  memcpy(tuningObjectId, tuningObject.objectId, sizeof(tuningObjectId));
+  char tuningName[GEOMETRY_OBJECT_NAME_LENGTH] = {};
+  snprintf(tuningName, sizeof(tuningName), "%s", tuningObject.name);
+  std::vector<uint8_t>().swap(tuningObject.body);
 
   int layoutIndex = findFirstGeometryObjectReferencing(
     PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT,
     PRESET_SYNC_TLV_LAYOUT_TUNING_REF,
     PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
-    tuningObject.objectId
+    tuningObjectId
   );
-  GeometryObjectSlot layoutObject;
   bool sawLayoutObject = false;
+  uint8_t layoutObjectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
   if (layoutIndex >= 0) {
+    GeometryObjectSlot layoutObject;
     sawLayoutObject = geometryObjectForHandle(static_cast<uint16_t>(layoutIndex), layoutObject);
     if (!sawLayoutObject || !applyUserGeometryRuntimeLayout(layoutObject)) {
       return false;
     }
+    memcpy(layoutObjectId, layoutObject.objectId, sizeof(layoutObjectId));
   }
 
   int scaleIndex = findFirstGeometryObjectReferencing(
     PRESET_SYNC_OBJECT_TYPE_USER_SCALE,
     PRESET_SYNC_TLV_USER_SCALE_TUNING_REF,
     PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
-    tuningObject.objectId
+    tuningObjectId
   );
   if (scaleIndex >= 0) {
     GeometryObjectSlot scaleObject;
@@ -1333,7 +1411,7 @@ bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
     PRESET_SYNC_OBJECT_TYPE_SCALE_COLOR_MAP,
     PRESET_SYNC_TLV_SCALE_COLOR_TUNING_REF,
     PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
-    tuningObject.objectId
+    tuningObjectId
   );
   if (colorMapIndex >= 0) {
     GeometryObjectSlot colorMapObject;
@@ -1349,7 +1427,7 @@ bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
       PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP,
       PRESET_SYNC_TLV_BUTTON_MAP_LAYOUT_REF,
       PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT,
-      layoutObject.objectId
+      layoutObjectId
     );
   }
   if (buttonMapIndex < 0 && !sawLayoutObject) {
@@ -1357,7 +1435,7 @@ bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
       PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP,
       PRESET_SYNC_TLV_BUTTON_MAP_TUNING_REF,
       PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
-      tuningObject.objectId
+      tuningObjectId
     );
   }
   if (buttonMapIndex >= 0) {
@@ -1368,6 +1446,6 @@ bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
     }
   }
 
-  sendToLog("Loaded user geometry " + std::string(tuningObject.name) + " from menu.");
+  sendToLog("Loaded user geometry " + std::string(tuningName) + " from menu.");
   return true;
 }

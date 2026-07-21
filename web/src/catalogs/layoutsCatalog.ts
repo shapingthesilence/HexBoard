@@ -17,6 +17,7 @@ import {
 } from "../protocol/tlv.ts";
 import type { EncodedCatalogObject, LayoutsDatCatalog, ObjectReferenceInput } from "./types.ts";
 import { deterministicObjectId, objectIdFromHex, objectIdToHex } from "./objectId.ts";
+import { crc32 } from "../protocol/crc32.ts";
 
 export const LegacyLayoutBundleFileFormat = "hexboard.layoutBundle.v1";
 export const IntermediateLayoutBundleFileFormat = "hexboard.layoutBundle.v2";
@@ -25,6 +26,16 @@ export const LayoutBundleFileFormat = "hexboard.layoutBundle.v4";
 export const GenericScaleColorMapName = "Custom Palette";
 export const GeometryMenuTextMaxLength = 19;
 export const NoteLabelTextMaxLength = 7;
+export const MaxTuningDivisions = 128;
+export const GeometryObjectMaxRawBytes = 8_192;
+export const GeometryBundleMaxRawBytes = 262_144;
+export const GeometryBundleMaxRecords = 255;
+
+function requireTuningDivisionCount(value: number, label: string): void {
+  if (!Number.isInteger(value) || value < 1 || value > MaxTuningDivisions) {
+    throw new RangeError(`${label} must be from 1 through ${MaxTuningDivisions}`);
+  }
+}
 
 export const ColorMode = {
   Rainbow: 0,
@@ -353,6 +364,8 @@ export type LayoutBundleTuning =
 
 export interface LayoutBundle {
   objectIdHex: string;
+  tuningObjectIdHex?: string;
+  colorObjectIdHex?: string;
   name: string;
   folderPath: string;
   tuning: LayoutBundleTuning;
@@ -370,6 +383,52 @@ export interface EncodedLayoutBundle {
   scaleColorMap: EncodedCatalogObject;
   explicitButtonMaps: EncodedCatalogObject[];
   objects: EncodedCatalogObject[];
+  bundleFile: Uint8Array;
+}
+
+function u32LE(value: number): Uint8Array {
+  return bytesFromNumbers([value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]);
+}
+
+export function encodeGeometryBundleFile(objects: EncodedCatalogObject[]): Uint8Array {
+  if (objects.length === 0
+      || objects.length > GeometryBundleMaxRecords
+      || objects[0].objectType !== ObjectType.UserTuning
+      || objects.filter((object) => object.objectType === ObjectType.UserTuning).length !== 1) {
+    throw new RangeError(`geometry bundle must contain one tuning root and at most ${GeometryBundleMaxRecords - 1} linked objects`);
+  }
+  const objectIds = new Set<string>();
+  const encoder = new TextEncoder();
+  const records = objects.map((object) => {
+    const objectIdHex = objectIdToHex(object.objectId);
+    if (objectIds.has(objectIdHex)) {
+      throw new RangeError(`geometry bundle contains duplicate object id ${objectIdHex}`);
+    }
+    objectIds.add(objectIdHex);
+    if (object.body.length > GeometryObjectMaxRawBytes) {
+      throw new RangeError(`${object.name} exceeds the ${GeometryObjectMaxRawBytes}-byte geometry object limit`);
+    }
+    const name = encoder.encode(clampGeometryMenuText(object.name, "Geometry"));
+    const folder = encoder.encode(clampGeometryFolderPath(object.folderPath ?? "/"));
+    return concatBytes([
+      bytesFromNumbers([object.objectType, object.schemaMajor, object.schemaMinor, 0]),
+      object.objectId,
+      bytesFromNumbers([name.length]), name,
+      bytesFromNumbers([folder.length]), folder,
+      u32LE(object.body.length), object.body
+    ]);
+  });
+  const body = concatBytes(records);
+  const file = concatBytes([
+    bytesFromNumbers(["H".charCodeAt(0), "G".charCodeAt(0), "B".charCodeAt(0), 1]),
+    bytesFromNumbers([objects.length & 0xff, (objects.length >> 8) & 0xff, 0, 0]),
+    u32LE(crc32(body)),
+    body
+  ]);
+  if (file.length > GeometryBundleMaxRawBytes) {
+    throw new RangeError(`geometry bundle exceeds the ${GeometryBundleMaxRawBytes}-byte file limit`);
+  }
+  return file;
 }
 
 export interface ResolvedLayoutBundleColor {
@@ -424,6 +483,7 @@ function buildCatalogObject(input: {
 }
 
 export function createGeneratedEdoTuning(input: GeneratedEdoTuningInput): EncodedCatalogObject {
+  requireTuningDivisionCount(input.edoDivisions, "EDO divisions");
   const periodCents = Math.fround(input.periodCents ?? (input.periodMilliCents ?? 1_200_000) / 1000);
   const periodMilliCents = Math.round(periodCents * 1000);
   const stepMilliCents = Math.round(periodMilliCents / input.edoDivisions);
@@ -450,6 +510,7 @@ export function createGeneratedEdoTuning(input: GeneratedEdoTuningInput): Encode
 }
 
 export function createEqualStepTuning(input: EqualStepTuningInput): EncodedCatalogObject {
+  requireTuningDivisionCount(input.cycleLength, "Equal-step cycle length");
   const stepCents = Math.fround(input.stepCents ?? (input.stepMilliCents ?? 100_000) / 1000);
   const periodCents = Math.fround(input.periodCents
     ?? (input.periodMilliCents !== undefined ? input.periodMilliCents / 1000 : stepCents * input.cycleLength));
@@ -475,6 +536,7 @@ export function createEqualStepTuning(input: EqualStepTuningInput): EncodedCatal
 }
 
 export function createCentsTableTuning(input: CentsTableTuningInput): EncodedCatalogObject {
+  requireTuningDivisionCount(input.cents.length, "Cents-table cycle length");
   const tableBytes = input.cents.map((cents) => bytesFromNumbers(encodeInt32LE(Math.round(cents * 1000))));
   const floatTableBytes = input.cents.map((cents) => bytesFromNumbers(encodeFloat32LE(cents)));
   const periodCents = Math.fround(input.periodCents
@@ -1125,8 +1187,12 @@ export function createDefaultLayoutBundle(): LayoutBundle {
 }
 
 export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
-  const tuningId = bundleObjectId(bundle, "tuning");
-  const colorId = bundleObjectId(bundle, "colors");
+  const tuningId = bundle.tuningObjectIdHex
+    ? objectIdFromHex(bundle.tuningObjectIdHex)
+    : bundleObjectId(bundle, "tuning");
+  const colorId = bundle.colorObjectIdHex
+    ? objectIdFromHex(bundle.colorObjectIdHex)
+    : bundleObjectId(bundle, "colors");
   const tuningName = clampGeometryMenuText(bundle.name || bundle.tuning.name, "User Tuning");
   const folderPath = clampGeometryFolderPath(bundle.folderPath);
   const tuning = (() => {
@@ -1254,7 +1320,8 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     scales,
     scaleColorMap,
     explicitButtonMaps,
-    objects
+    objects,
+    bundleFile: encodeGeometryBundleFile(objects)
   };
 }
 
@@ -1331,7 +1398,7 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
   const referenceHz = numberOr(tuning.referenceHz, 440);
 
   if (tuning.kind === "edo") {
-    const edoDivisions = clampInteger(numberOr(tuning.edoDivisions, numberOr(tuning.cycleLength, 12)), 1, 255);
+    const edoDivisions = clampInteger(numberOr(tuning.edoDivisions, numberOr(tuning.cycleLength, 12)), 1, MaxTuningDivisions);
     return {
       kind: "edo",
       name,
@@ -1345,7 +1412,7 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
   }
 
   if (tuning.kind === "equal-step") {
-    const cycleLength = clampInteger(numberOr(tuning.cycleLength, numberOr(tuning.edoDivisions, 12)), 1, 255);
+    const cycleLength = clampInteger(numberOr(tuning.cycleLength, numberOr(tuning.edoDivisions, 12)), 1, MaxTuningDivisions);
     return {
       kind: "equal-step",
       name,
@@ -1361,14 +1428,14 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
     const cents = Array.isArray(tuning.cents)
       ? tuning.cents.map((cents) => Number(cents)).filter((cents) => Number.isFinite(cents))
       : [1200];
-    const safeCents = cents.length > 0 ? cents : [1200];
+    const safeCents = (cents.length > 0 ? cents : [1200]).slice(0, MaxTuningDivisions);
     return {
       kind: "scala",
       name,
       description: stringOr(tuning.description, name),
       cents: safeCents,
       periodCents: safeCents[safeCents.length - 1] ?? 1200,
-      cycleLength: clampInteger(safeCents.length, 1, 255),
+      cycleLength: clampInteger(safeCents.length, 1, MaxTuningDivisions),
       referenceMidiNote,
       referenceHz,
       keyLabels: normalizeKeyLabels(migrateLegacyDegreeNumberKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, safeCents.length), safeCents.length)
@@ -1389,6 +1456,12 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
     throw new Error("Layout bundle is missing a name or object id");
   }
   objectIdFromHex(source.objectIdHex);
+  const tuningObjectIdHex = typeof source.tuningObjectIdHex === "string"
+    ? objectIdToHex(objectIdFromHex(source.tuningObjectIdHex))
+    : undefined;
+  const colorObjectIdHex = typeof source.colorObjectIdHex === "string"
+    ? objectIdToHex(objectIdFromHex(source.colorObjectIdHex))
+    : undefined;
   if (!source.tuning || !source.layout) {
     if (!source.tuning || !Array.isArray(source.layouts)) {
       throw new Error("Layout bundle is missing tuning or layout data");
@@ -1492,6 +1565,8 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
   const defaultColorMode = numberOr(palette.defaultColorMode, ColorMode.Custom);
   return {
     objectIdHex: source.objectIdHex,
+    ...(tuningObjectIdHex ? { tuningObjectIdHex } : {}),
+    ...(colorObjectIdHex ? { colorObjectIdHex } : {}),
     name: clampGeometryMenuText(source.name, "Geometry"),
     folderPath: clampGeometryFolderPath(stringOr(source.folderPath, "/")),
     tuning,
@@ -1573,6 +1648,9 @@ export function parseScalaScale(text: string): ParsedScalaScale {
   const count = Number.parseInt(dataLines[1], 10);
   if (!Number.isInteger(count) || count <= 0) {
     throw new Error("Scala .scl note count must be a positive integer");
+  }
+  if (count > MaxTuningDivisions) {
+    throw new Error(`Scala .scl note count exceeds HexBoard's ${MaxTuningDivisions}-division limit`);
   }
   const intervalLines = dataLines.slice(2, 2 + count);
   if (intervalLines.length !== count) {

@@ -1,8 +1,9 @@
 {
-  "filesystemGeneration": 2,
+  "filesystemGeneration": 3,
   "settingsVersion": 24,
   "selectedPreset": "Pads/Soft String Pad",
   "selectedWavetable": "/Classic",
+  "selectedGeometry": "Built In/12 EDO (Normal)",
   "settings": {
     "RotaryInvert": 0,
     "AutoSave": 1,

@@ -111,21 +111,33 @@ enum class SettingKey : uint8_t {
 constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
 constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
-constexpr uint8_t SYNTH_PRESET_LEGACY_NAMED_COUNT = 20;
 constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 10;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 11;
 constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 7;
 constexpr uint8_t SYNTH_WAVETABLE_FILE_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_SCHEMA_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_MAX_COUNT = 32;
-constexpr uint8_t GEOMETRY_OBJECT_FILE_VERSION = 2;
-constexpr uint8_t GEOMETRY_OBJECT_MAX_COUNT = 64;
+constexpr uint8_t GEOMETRY_OBJECT_FILE_VERSION = 1;
+// Geometry bundles are stored as linked tuning/layout/scale/color/map records.
+// The public limit counts tuning roots (complete bundles), while this internal
+// sanity ceiling only bounds malformed files. Geometry records are streamed
+// from LittleFS rather than retained in a RAM catalog.
+constexpr uint8_t GEOMETRY_BUNDLE_MAX_COUNT = 64;
+constexpr uint16_t GEOMETRY_BUNDLE_RECORD_MAX_COUNT = 255;
+constexpr uint16_t GEOMETRY_OBJECT_MAX_COUNT =
+  GEOMETRY_BUNDLE_MAX_COUNT * GEOMETRY_BUNDLE_RECORD_MAX_COUNT;
 constexpr uint8_t GEOMETRY_ASSOCIATED_MAX_COUNT = 24;
 constexpr size_t GEOMETRY_MENU_TEXT_LENGTH = 20;
 constexpr size_t GEOMETRY_OBJECT_NAME_LENGTH = GEOMETRY_MENU_TEXT_LENGTH;
 constexpr size_t GEOMETRY_OBJECT_FOLDER_LENGTH = GEOMETRY_MENU_TEXT_LENGTH;
 constexpr size_t GEOMETRY_OBJECT_ID_LENGTH = 16;
 constexpr size_t GEOMETRY_OBJECT_MAX_RAW_BYTES = 8192;
+constexpr size_t GEOMETRY_BUNDLE_MAX_RAW_BYTES = 262144;
+constexpr size_t GEOMETRY_STORAGE_PATH_LENGTH = 64;
+constexpr char GEOMETRY_STORAGE_ROOT[] = "/geometry";
+constexpr char GEOMETRY_BUNDLE_FILE_EXTENSION[] = ".hgb";
+constexpr char DEFAULT_GEOMETRY_REFERENCE_FILE_PATH[] = "/default_geometry.dat";
+constexpr uint8_t DEFAULT_GEOMETRY_REFERENCE_VERSION = 1;
 constexpr size_t SYNTH_PRESET_NAME_LENGTH = 32;
 constexpr size_t SYNTH_PRESET_FOLDER_LENGTH = 48;
 constexpr size_t SYNTH_PRESET_MENU_LABEL_LENGTH = 64;
@@ -182,16 +194,19 @@ constexpr std::array<SettingKey, 34> synthPresetKeys = {
 constexpr size_t SYNTH_PRESET_VALUE_COUNT = synthPresetKeys.size();
 
 struct SynthPresetFileHeaderBase {
-  char magic[3];     // "SYP"
+  char magic[3];     // "HSP"
   uint8_t version;
   uint32_t crc32;
 };
 
-struct SynthPresetFileHeader {
-  SynthPresetFileHeaderBase base;
-  uint16_t count;
-  uint16_t reserved;
+struct DefaultGeometryReferenceFile {
+  char magic[3];
+  uint8_t version;
+  uint8_t tuningObjectId[GEOMETRY_OBJECT_ID_LENGTH];
+  uint32_t crc32;
 };
+static_assert(sizeof(DefaultGeometryReferenceFile) == 24,
+              "DefaultGeometryReferenceFile disk layout changed");
 
 struct SynthPresetSlot {
   uint8_t valid = 0;
@@ -344,7 +359,7 @@ struct SynthWavetableProfileReferenceFile {
 // The host-side factory-library compiler writes these records byte-for-byte.
 // Fail the firmware build if the RP2040 ABI ever changes their disk layout.
 static_assert(sizeof(SettingsHeader) == 12, "SettingsHeader disk layout changed");
-static_assert(sizeof(SynthPresetFileHeader) == 12, "SynthPresetFileHeader disk layout changed");
+static_assert(sizeof(SynthPresetFileHeaderBase) == 8, "SynthPresetFileHeaderBase disk layout changed");
 static_assert(sizeof(SynthPresetSlot) == 212, "SynthPresetSlot disk layout changed");
 static_assert(sizeof(SynthWavetableFileHeader) == 12, "SynthWavetableFileHeader disk layout changed");
 static_assert(sizeof(SynthWavetableSlot) == 145, "SynthWavetableSlot disk layout changed");
@@ -354,7 +369,7 @@ static_assert(sizeof(SynthWavetableProfileReferenceFile) == 728,
               "SynthWavetableProfileReferenceFile disk layout changed");
 
 struct GeometryObjectFileHeader {
-  char magic[3];     // "LYT"
+  char magic[3];     // "HGB"
   uint8_t version;
   uint16_t count;
   uint16_t reserved;
@@ -382,12 +397,30 @@ struct GeometryObjectIndexEntry {
   uint8_t objectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
   char name[GEOMETRY_OBJECT_NAME_LENGTH] = {};
   char folderPath[GEOMETRY_OBJECT_FOLDER_LENGTH] = {};
+  uint32_t recordOffset = 0;
+  uint32_t recordLength = 0;
   uint32_t storageOffset = 0;
   uint32_t bodyLength = 0;
+  char storagePath[GEOMETRY_STORAGE_PATH_LENGTH] = {};
+};
+
+struct GeometryBundleIndexEntry {
+  uint8_t tuningObjectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
+  uint16_t recordCount = 0;
+};
+
+using GeometryBundleCatalog = FixedCatalog<GeometryBundleIndexEntry, GEOMETRY_BUNDLE_MAX_COUNT>;
+
+struct GeometryCatalogReader {
+  File file;
+  uint16_t nextHandle = 0;
+  uint16_t count = 0;
+  uint16_t bundleRecordsRemaining = 0;
+  uint8_t nextBundleIndex = 0;
+  char storagePath[GEOMETRY_STORAGE_PATH_LENGTH] = {};
 };
 
 using SynthWavetableCatalog = FixedCatalog<SynthWavetableSlot, SYNTH_WAVETABLE_MAX_COUNT>;
-using GeometryObjectCatalog = FixedCatalog<GeometryObjectIndexEntry, GEOMETRY_OBJECT_MAX_COUNT>;
 
 extern uint8_t settingsProfiles[PROFILE_COUNT][NUM_SETTINGS];
 extern uint8_t* settings;
@@ -395,7 +428,8 @@ extern uint8_t activeProfileIndex;
 extern uint8_t defaultProfileIndex;
 extern SynthPresetCatalog synthPresets;
 extern SynthWavetableCatalog synthWavetables;
-extern GeometryObjectCatalog geometryObjects;
+extern GeometryBundleCatalog geometryBundles;
+extern uint16_t geometryCatalogObjectCount;
 
 uint32_t crc32Begin();
 uint32_t crc32Update(uint32_t crc, const uint8_t* data, size_t length);

@@ -7,7 +7,7 @@
 
 namespace {
 
-constexpr const char* BUILTIN_GEOMETRY_SOURCE = "factory";
+constexpr const char* BUILTIN_GEOMETRY_SOURCE = "rescue";
 
 size_t builtinScaleObjectCount() {
   return static_cast<size_t>(TUNINGCOUNT) + (scaleCount > 0 ? static_cast<size_t>(scaleCount - 1) : 0);
@@ -44,7 +44,7 @@ void fillBuiltinObjectId(uint8_t objectType,
   uint32_t seeds[4] = { 2166136261u, 2166136261u ^ 0x9E3779B9u, 2166136261u ^ 0x85EBCA6Bu, 2166136261u ^ 0xC2B2AE35u };
   for (uint8_t part = 0; part < 4; ++part) {
     uint32_t hash = seeds[part];
-    hash = fnv1aUpdateString(hash, "HexBoard factory geometry v1");
+    hash = fnv1aUpdateString(hash, "HexBoard rescue geometry v1");
     hash = fnv1aUpdate(hash, objectType);
     hash = fnv1aUpdate(hash, tuningIndex);
     hash = fnv1aUpdate(hash, optionIndex & 0xFF);

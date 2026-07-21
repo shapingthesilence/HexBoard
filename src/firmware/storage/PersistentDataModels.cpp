@@ -35,4 +35,5 @@ uint8_t defaultProfileIndex = DEFAULT_PROFILE_INDEX;
 
 SynthPresetCatalog synthPresets;
 SynthWavetableCatalog synthWavetables;
-GeometryObjectCatalog geometryObjects;
+GeometryBundleCatalog geometryBundles;
+uint16_t geometryCatalogObjectCount = 0;

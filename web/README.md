@@ -80,6 +80,10 @@ and `TRANSFER_END` so firmware can pace object transfers.
 - CRC32 and 8-to-7 packing utilities matching the firmware draft.
 - TLV object encoding for user tunings, layouts, scale color maps, explicit
   button maps, and named/foldered synth presets.
+- Atomic `HGB` encoding for complete tuning bundles. Saving a bundle transfers
+  one staged file, while live preview continues to send only the active
+  tuning/layout/scale/color/map objects without writing flash. Tuning divisions
+  and scale cycles are limited to the firmware's `1..128` range.
 - A tuning/layout bundle editor organized as a four-step `Library`, `Tuning`,
   `Layout`, and `Scale & color` workflow. The library gets a full-width transfer
   and folder-management view. Folder filters consistently begin with `All` and
@@ -119,7 +123,10 @@ and `TRANSFER_END` so firmware can pace object transfers.
   Scala `.scl`
   import reads trailing interval labels, exposes the 1/1 MIDI note
   and Hz reference, and enables cents-table live send when the connected
-  firmware advertises runtime support.
+  firmware advertises runtime support. Live send serializes only the active
+  runtime records. `Save to HexBoard` writes the whole bundle, preserves tuning
+  and color object IDs for bundles opened from the device, then reapplies the
+  active records so the hardware preview and on-device menus agree.
 - A synth preset editor with name and folder selection, folder creation, main
   synth parameter controls, mono retrigger/legato, mono portamento,
   arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,

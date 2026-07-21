@@ -74,7 +74,8 @@ export const ObjectType = {
   Bundle: 0x08,
   Folder: 0x09,
   UserScale: 0x0a,
-  SynthWavetable: 0x0b
+  SynthWavetable: 0x0b,
+  GeometryBundle: 0x0c
 } as const;
 
 export type ObjectTypeValue = (typeof ObjectType)[keyof typeof ObjectType];
@@ -112,7 +113,8 @@ export const CapabilityFlag = {
   FactoryGeometry: 1 << 10,
   SynthWavetable: 1 << 11,
   LiveSynthParam: 1 << 12,
-  CentsTableRuntimeTuning: 1 << 13
+  CentsTableRuntimeTuning: 1 << 13,
+  GeometryBundleFiles: 1 << 14
 } as const;
 
 export type CapabilityFlagValue = (typeof CapabilityFlag)[keyof typeof CapabilityFlag];

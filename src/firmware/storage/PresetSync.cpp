@@ -37,16 +37,17 @@ void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_
                       | PRESET_SYNC_CAP_FACTORY_GEOMETRY
                       | PRESET_SYNC_CAP_SYNTH_WAVETABLE
                       | PRESET_SYNC_CAP_LIVE_SYNTH_PARAM
-                      | PRESET_SYNC_CAP_CENTS_TABLE_RUNTIME_TUNING);
+                      | PRESET_SYNC_CAP_CENTS_TABLE_RUNTIME_TUNING
+                      | PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES);
   presetSyncAppendU28(response, PRESET_SYNC_MAX_RAW_OBJECT_BYTES);
   response.push_back(CURRENT_SETTINGS_VERSION);
   response.push_back(SYNTH_PRESET_SCHEMA_VERSION);
   response.push_back(PROFILE_COUNT);
   presetSyncAppendU14(response, SYNTH_PRESET_MAX_COUNT);
-  response.push_back(GEOMETRY_OBJECT_MAX_COUNT);
-  response.push_back(GEOMETRY_OBJECT_MAX_COUNT);
-  response.push_back(GEOMETRY_OBJECT_MAX_COUNT);
-  response.push_back(GEOMETRY_OBJECT_MAX_COUNT);
+  response.push_back(GEOMETRY_BUNDLE_MAX_COUNT);
+  response.push_back(GEOMETRY_BUNDLE_MAX_COUNT);
+  response.push_back(GEOMETRY_BUNDLE_MAX_COUNT);
+  response.push_back(GEOMETRY_BUNDLE_MAX_COUNT);
   response.push_back(Hardware_Version & 0x7F);
   presetSyncSendFrame(PRESET_SYNC_MSG_HELLO_RESP, transactionId, response);
 }
@@ -88,7 +89,17 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
     uint16_t handle;
   };
 
-  std::vector<PresetSyncListHandle> handles;
+  uint8_t pageSize = requestedPageSize == 0 ? 4 : std::min<uint8_t>(requestedPageSize, 4);
+  size_t start = static_cast<size_t>(pageIndex) * pageSize;
+  PresetSyncListHandle pageHandles[4] = {};
+  uint8_t pageHandleCount = 0;
+  size_t matchedCount = 0;
+  auto includeHandle = [&](uint8_t matchedObjectType, uint16_t handle) {
+    if (matchedCount >= start && pageHandleCount < pageSize) {
+      pageHandles[pageHandleCount++] = { matchedObjectType, handle };
+    }
+    ++matchedCount;
+  };
   auto includeSynthPreset = [&]() {
     char normalizedFolderFilter[SYNTH_PRESET_FOLDER_LENGTH] = {};
     if (folderFilter[0]) {
@@ -103,7 +114,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
           && strncmp(synthPresets[i].folderPath, normalizedFolderFilter, sizeof(synthPresets[i].folderPath)) != 0) {
         continue;
       }
-      handles.push_back({ PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, static_cast<uint16_t>(i) });
+      includeHandle(PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET, static_cast<uint16_t>(i));
     }
   };
   auto includeSynthWavetable = [&]() {
@@ -120,30 +131,38 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
           && strncmp(synthWavetables[i].folderPath, normalizedFolderFilter, sizeof(synthWavetables[i].folderPath)) != 0) {
         continue;
       }
-      handles.push_back({ PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE, static_cast<uint16_t>(i) });
+      includeHandle(PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE, static_cast<uint16_t>(i));
     }
   };
   auto includeGeometryObjects = [&](uint8_t geometryType) {
-    for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
-      BuiltinGeometryMetadata metadata;
-      if (!builtinGeometryMetadataByOrdinal(i, metadata) || metadata.objectType != geometryType) {
-        continue;
+    if (geometryFallbackRequired()) {
+      for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
+        BuiltinGeometryMetadata metadata;
+        if (!builtinGeometryMetadataByOrdinal(i, metadata) || metadata.objectType != geometryType) {
+          continue;
+        }
+        if (folderFilter[0]
+            && strncmp(metadata.folderPath, folderFilter, GEOMETRY_OBJECT_FOLDER_LENGTH) != 0) {
+          continue;
+        }
+        includeHandle(geometryType, metadata.handle);
       }
-      if (folderFilter[0]
-          && strncmp(metadata.folderPath, folderFilter, GEOMETRY_OBJECT_FOLDER_LENGTH) != 0) {
-        continue;
-      }
-      handles.push_back({ geometryType, metadata.handle });
     }
-    for (size_t i = 0; i < geometryObjects.size(); ++i) {
-      if (!geometryObjects[i].valid || geometryObjects[i].objectType != geometryType) {
-        continue;
+    GeometryCatalogReader reader;
+    if (beginGeometryCatalogRead(reader)) {
+      uint16_t handle = 0;
+      GeometryObjectIndexEntry object;
+      while (readNextGeometryObjectMetadata(reader, handle, object)) {
+        if (object.objectType != geometryType) {
+          continue;
+        }
+        if (folderFilter[0]
+            && strncmp(object.folderPath, folderFilter, sizeof(object.folderPath)) != 0) {
+          continue;
+        }
+        includeHandle(geometryType, handle);
       }
-      if (folderFilter[0]
-          && strncmp(geometryObjects[i].folderPath, folderFilter, sizeof(geometryObjects[i].folderPath)) != 0) {
-        continue;
-      }
-      handles.push_back({ geometryType, static_cast<uint16_t>(i) });
+      endGeometryCatalogRead(reader);
     }
   };
 
@@ -169,16 +188,13 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
     includeSynthWavetable();
   }
 
-  uint8_t pageSize = requestedPageSize == 0 ? 4 : std::min<uint8_t>(requestedPageSize, 4);
-  uint16_t pageCount = std::max<uint16_t>(1, (handles.size() + pageSize - 1) / pageSize);
-  size_t start = static_cast<size_t>(pageIndex) * pageSize;
-  size_t end = std::min(handles.size(), start + pageSize);
+  uint16_t pageCount = std::max<uint16_t>(1, (matchedCount + pageSize - 1) / pageSize);
 
   std::vector<uint8_t> response;
   response.push_back(objectType);
   presetSyncAppendU14(response, pageIndex);
   presetSyncAppendU14(response, pageCount);
-  response.push_back((start < handles.size()) ? static_cast<uint8_t>(end - start) : 0);
+  response.push_back(pageHandleCount);
   auto appendRecord = [&](uint8_t recordObjectType,
                           uint16_t handle,
                           uint8_t flags,
@@ -202,9 +218,9 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
     presetSyncAppendAscii(response, folderPath, folderPathLength);
     presetSyncAppendAscii(response, name, nameLength);
   };
-  if (start < handles.size()) {
-    for (size_t listIndex = start; listIndex < end; ++listIndex) {
-      PresetSyncListHandle listHandle = handles[listIndex];
+  if (pageHandleCount > 0) {
+    for (uint8_t listIndex = 0; listIndex < pageHandleCount; ++listIndex) {
+      PresetSyncListHandle listHandle = pageHandles[listIndex];
       uint16_t handle = listHandle.handle;
       if (listHandle.objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
         SynthPresetIndexEntry& preset = synthPresets[handle];
@@ -248,8 +264,11 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
                        metadata.name,
                        GEOMETRY_OBJECT_NAME_LENGTH);
         }
-      } else if (handle < geometryObjects.size() && geometryObjects[handle].valid) {
-        GeometryObjectIndexEntry& object = geometryObjects[handle];
+      } else {
+        GeometryObjectIndexEntry object;
+        if (!geometryObjectMetadataForHandle(handle, object)) {
+          continue;
+        }
         appendRecord(object.objectType,
                      handle,
                      PRESET_SYNC_RECORD_VALID,
@@ -694,13 +713,23 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
 
   uint16_t handle = presetSyncDecodeU14(payload + 1);
   uint8_t writeFlags = payload[18];
+  if (objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE
+      && (handle != PRESET_SYNC_NEW_OBJECT_HANDLE
+          || !(writeFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH)
+          || (writeFlags & (PRESET_SYNC_WRITE_APPLY_TO_RUNTIME | PRESET_SYNC_WRITE_DRY_RUN)))) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_VALIDATION_FAILED);
+    return;
+  }
   if (isPresetSyncGeometryObjectType(objectType)
-      && isBuiltinGeometryHandle(handle)
       && (writeFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH)) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_WRITE_PROTECTED);
     return;
   }
-
+  if (isPresetSyncGeometryObjectType(objectType)
+      && !(writeFlags & (PRESET_SYNC_WRITE_APPLY_TO_RUNTIME | PRESET_SYNC_WRITE_DRY_RUN))) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_VALIDATION_FAILED);
+    return;
+  }
   presetSyncWriteTransfer = PresetSyncWriteTransfer{};
   presetSyncWriteTransfer.active = true;
   presetSyncWriteTransfer.objectType = objectType;
@@ -717,7 +746,8 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
     beginFlashSafeWrite();
     presetSyncWriteTransfer.flashSafeMuteActive = true;
   }
-  if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
+  if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE
+      || objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
     if (!presetSyncCreateWriteTempFile(presetSyncWriteTransfer)) {
       presetSyncCancelWriteTransfer();
       presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_STORAGE_FULL);
@@ -816,7 +846,8 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
   uint8_t commitFlags = payload[11];
   if (transferId != presetSyncWriteTransfer.transferId
       || rawByteLength != presetSyncWriteTransfer.rawByteLength
-      || objectCrc32 != presetSyncWriteTransfer.objectCrc32) {
+      || objectCrc32 != presetSyncWriteTransfer.objectCrc32
+      || commitFlags != presetSyncWriteTransfer.writeFlags) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_UNEXPECTED_CHUNK);
     return;
   }
@@ -923,9 +954,19 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
         }
       }
     }
+  } else if (presetSyncWriteTransfer.objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
+    if ((commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME)
+        || !(commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH)
+        || !presetSyncWriteTransfer.streamRawToFile
+        || !installGeometryBundleFile(presetSyncWriteTransfer.streamRawPath)) {
+      presetSyncCancelWriteTransfer();
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
+      return;
+    }
+    requestUserGeometryMenuRebuild();
   } else if (isPresetSyncGeometryObjectType(presetSyncWriteTransfer.objectType)) {
     GeometryObjectSlot parsedObject;
-    if (!parseGeometryObjectBody(presetSyncWriteTransfer.rawData, parsedObject, parseError)
+    if (!parseGeometryObjectBody(std::move(presetSyncWriteTransfer.rawData), parsedObject, parseError)
         || parsedObject.objectType != presetSyncWriteTransfer.objectType) {
       sendToLog("Preset sync rejected geometry object: " + parseError);
       presetSyncCancelWriteTransfer();
@@ -943,26 +984,6 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
       refreshMenuChoicesForCurrentTuning();
     }
 
-    if (!(commitFlags & PRESET_SYNC_WRITE_DRY_RUN)
-        && (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH)) {
-      if (isBuiltinGeometryHandle(presetSyncWriteTransfer.handle)) {
-        presetSyncCancelWriteTransfer();
-        presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_WRITE_PROTECTED);
-        return;
-      }
-      int slotIndex = chooseGeometryObjectWriteSlot(presetSyncWriteTransfer.handle, parsedObject);
-      if (slotIndex < 0) {
-        presetSyncCancelWriteTransfer();
-        presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
-        return;
-      }
-      if (!writeGeometryObjectToCatalogSlot(static_cast<uint16_t>(slotIndex), parsedObject)) {
-        presetSyncCancelWriteTransfer();
-        presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_STORAGE_FULL);
-        return;
-      }
-      requestUserGeometryMenuRebuild();
-    }
   } else {
     presetSyncCancelWriteTransfer();
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
@@ -1013,8 +1034,10 @@ void presetSyncHandleDelete(uint16_t transactionId, const uint8_t* payload, size
       return;
     }
     if (!(deleteFlags & 0x01)) {
-      synthPresets.erase(synthPresets.begin() + handle);
-      flashSafeSaveSynthPresets();
+      if (!deleteSynthPresetFromCatalog(handle)) {
+        presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_STORAGE_FULL);
+        return;
+      }
       requestSynthPresetMenuRebuild();
     }
   } else if (isPresetSyncGeometryObjectType(objectType)) {
@@ -1027,15 +1050,16 @@ void presetSyncHandleDelete(uint16_t transactionId, const uint8_t* payload, size
       }
       return;
     }
-    if (handle >= geometryObjects.size()
-        || !geometryObjects[handle].valid
-        || geometryObjects[handle].objectType != objectType) {
+    GeometryObjectIndexEntry object;
+    if (!geometryObjectMetadataForHandle(handle, object) || object.objectType != objectType) {
       presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
       return;
     }
     if (!(deleteFlags & 0x01)) {
-      geometryObjects.erase(geometryObjects.begin() + handle);
-      flashSafeSaveGeometryObjects();
+      if (!deleteGeometryObjectFromCatalog(handle)) {
+        presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DELETE_REQ, PRESET_SYNC_ERROR_STORAGE_FULL);
+        return;
+      }
       requestUserGeometryMenuRebuild();
     }
   } else {

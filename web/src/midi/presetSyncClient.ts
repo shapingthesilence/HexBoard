@@ -382,12 +382,15 @@ export class PresetSyncClient {
     });
   }
 
-  async sendGeometryObjectSaveConfirmed(object: EncodedCatalogObject, handle = NEW_OBJECT_HANDLE): Promise<number[][]> {
-    return this.sendGeometryObjectWriteConfirmed(object, WriteFlag.SaveToFlash, handle);
-  }
-
-  async sendGeometryObjectApplyConfirmed(object: EncodedCatalogObject, handle = NEW_OBJECT_HANDLE): Promise<number[][]> {
-    return this.sendGeometryObjectWriteConfirmed(object, WriteFlag.ApplyToRuntime | WriteFlag.SaveToFlash, handle);
+  async sendGeometryBundleSaveConfirmed(body: Uint8Array): Promise<number[][]> {
+    return this.sendObjectWriteConfirmed({
+      objectType: ObjectType.GeometryBundle,
+      body,
+      handle: NEW_OBJECT_HANDLE,
+      schemaMajor: 1,
+      schemaMinor: 0,
+      writeFlags: WriteFlag.SaveToFlash
+    });
   }
 
   async sendGeometryObjectPreviewConfirmed(object: EncodedCatalogObject, handle = NEW_OBJECT_HANDLE): Promise<number[][]> {

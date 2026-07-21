@@ -4,17 +4,16 @@
 #include "../synth/SynthAudio.h"
 #include "PersistentDataModels.h"
 #include "Settings.h"
+#include "SynthPresetStorage.h"
 
 namespace {
 constexpr char STORAGE_READY_PATH[] = "/storage_ready.dat";
 constexpr char SETTINGS_PATH[] = "/settings.dat";
-constexpr char SYNTH_PRESETS_PATH[] = "/synth_presets.dat";
 constexpr char SYNTH_WAVETABLES_PATH[] = "/synth_wavetables.dat";
-constexpr char GEOMETRY_PATH[] = "/layouts.dat";
 constexpr char CURRENT_SYNTH_PRESET_PATH[] = "/current_synth_preset.dat";
 constexpr char CURRENT_SYNTH_WAVETABLE_PATH[] = "/current_wavetable.dat";
 constexpr char PROFILE_SYNTH_WAVETABLES_PATH[] = "/profile_wavetables.dat";
-constexpr uint8_t STORAGE_READY_VERSION = 2;
+constexpr uint8_t STORAGE_READY_VERSION = 3;
 constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_VERSION = 1;
 constexpr uint8_t CURRENT_SYNTH_PRESET_LOADED_FLAG = 0x01;
 constexpr uint8_t CURRENT_SYNTH_PRESET_BLANK_FLAG = 0x02;
@@ -90,7 +89,7 @@ bool storageReadyRecordValid() {
     reportStorageIssue(STORAGE_READY_PATH, "magic mismatch");
     return false;
   }
-  if (record.version == 0 || record.version > STORAGE_READY_VERSION) {
+  if (record.version != STORAGE_READY_VERSION) {
     reportStorageIssue(STORAGE_READY_PATH, "filesystem generation mismatch");
     return false;
   }
@@ -154,30 +153,26 @@ bool wavetableReferenceExists(const char* folder, const char* name) {
 }
 
 bool synthPresetObjectExists(const uint8_t* objectId) {
-  File file = LittleFS.open(SYNTH_PRESETS_PATH, "r");
-  if (!file) {
+  char path[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+  if (!synthPresetStoragePath(objectId, path, sizeof(path))) {
     return false;
   }
-  SynthPresetFileHeader header = {};
-  if (file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)
-      || strncmp(header.base.magic, "SYP", 3) != 0
-      || header.base.version != SYNTH_PRESET_FILE_VERSION
-      || header.count > SYNTH_PRESET_MAX_COUNT) {
-    file.close();
+  File file = LittleFS.open(path, "r");
+  if (!file || file.size() != sizeof(SynthPresetFileHeaderBase) + sizeof(SynthPresetSlot)) {
+    if (file) file.close();
     return false;
   }
-  for (uint16_t index = 0; index < header.count; ++index) {
-    SynthPresetSlot preset = {};
-    if (file.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) != sizeof(preset)) {
-      break;
-    }
-    if (preset.valid && memcmp(preset.objectId, objectId, sizeof(preset.objectId)) == 0) {
-      file.close();
-      return true;
-    }
-  }
+  SynthPresetFileHeaderBase header = {};
+  SynthPresetSlot preset = {};
+  bool valid = file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)
+               && file.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) == sizeof(preset)
+               && strncmp(header.magic, "HSP", 3) == 0
+               && header.version == SYNTH_PRESET_FILE_VERSION
+               && preset.valid
+               && memcmp(preset.objectId, objectId, sizeof(preset.objectId)) == 0
+               && header.crc32 == crc32(reinterpret_cast<const uint8_t*>(&preset), sizeof(preset));
   file.close();
-  return false;
+  return valid;
 }
 
 bool settingsFileValid() {
@@ -222,55 +217,51 @@ bool settingsFileValid() {
 }
 
 bool synthPresetCatalogValid() {
-  File file = LittleFS.open(SYNTH_PRESETS_PATH, "r");
-  if (!file) {
-    reportStorageIssue(SYNTH_PRESETS_PATH, "missing; using an empty preset library");
+  File directory = LittleFS.open(SYNTH_PRESET_STORAGE_ROOT, "r");
+  if (!directory || !directory.isDirectory()) {
+    if (directory) directory.close();
+    reportStorageIssue(SYNTH_PRESET_STORAGE_ROOT, "missing; using an empty preset library");
     return false;
   }
-  SynthPresetFileHeader header = {};
-  if (file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)) {
-    file.close();
-    reportStorageIssue(SYNTH_PRESETS_PATH, "short header; using an empty preset library");
-    return false;
-  }
-  size_t expectedSize = sizeof(header) + static_cast<size_t>(header.count) * sizeof(SynthPresetSlot);
-  if (strncmp(header.base.magic, "SYP", 3) != 0
-      || header.base.version != SYNTH_PRESET_FILE_VERSION
-      || header.count > SYNTH_PRESET_MAX_COUNT
-      || file.size() != expectedSize) {
-    file.close();
-    reportStorageIssue(SYNTH_PRESETS_PATH, "invalid header or size; using an empty preset library");
-    return false;
-  }
-  uint32_t crc = crc32Begin();
-  SynthPresetSlot preset = {};
-  for (uint16_t index = 0; index < header.count; ++index) {
-    if (file.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) != sizeof(preset)) {
-      file.close();
-      reportStorageIssue(SYNTH_PRESETS_PATH, "short record; using an empty preset library");
+  uint16_t count = 0;
+  File entry;
+  while ((entry = directory.openNextFile())) {
+    char path[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
+    snprintf(path, sizeof(path), "%s", entry.fullName());
+    bool regular = !entry.isDirectory();
+    entry.close();
+    size_t length = strlen(path);
+    if (!regular || length < 4 || strcmp(path + length - 4, SYNTH_PRESET_FILE_EXTENSION) != 0) {
+      continue;
+    }
+    if (++count > SYNTH_PRESET_MAX_COUNT) {
+      reportStorageIssue(SYNTH_PRESET_STORAGE_ROOT, "contains more than 128 presets");
+      directory.close();
       return false;
     }
-    crc = crc32Update(crc, reinterpret_cast<const uint8_t*>(&preset), sizeof(preset));
-    if (preset.valid) {
-      preset.wavetableName[sizeof(preset.wavetableName) - 1] = '\0';
-      preset.wavetableFolderPath[sizeof(preset.wavetableFolderPath) - 1] = '\0';
-      if (!wavetableReferenceExists(preset.wavetableFolderPath, preset.wavetableName)) {
-        char reason[80] = {};
-        snprintf(reason,
-                 sizeof(reason),
-                 "preset %u references missing wavetable %s/%s",
-                 static_cast<unsigned>(index),
-                 preset.wavetableFolderPath,
-                 preset.wavetableName);
-        reportStorageIssue(SYNTH_PRESETS_PATH, reason);
-      }
+    File file = LittleFS.open(path, "r");
+    SynthPresetFileHeaderBase header = {};
+    SynthPresetSlot preset = {};
+    bool valid = file
+                 && file.size() == sizeof(header) + sizeof(preset)
+                 && file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)
+                 && file.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) == sizeof(preset)
+                 && strncmp(header.magic, "HSP", 3) == 0
+                 && header.version == SYNTH_PRESET_FILE_VERSION
+                 && preset.valid
+                 && header.crc32 == crc32(reinterpret_cast<const uint8_t*>(&preset), sizeof(preset));
+    if (file) file.close();
+    if (!valid) {
+      reportStorageIssue(path, "invalid synth preset file");
+      continue;
+    }
+    preset.wavetableName[sizeof(preset.wavetableName) - 1] = '\0';
+    preset.wavetableFolderPath[sizeof(preset.wavetableFolderPath) - 1] = '\0';
+    if (!wavetableReferenceExists(preset.wavetableFolderPath, preset.wavetableName)) {
+      reportStorageIssue(path, "references a missing wavetable");
     }
   }
-  file.close();
-  if (crc32Finish(crc) != header.base.crc32) {
-    reportStorageIssue(SYNTH_PRESETS_PATH, "CRC mismatch; using an empty preset library");
-    return false;
-  }
+  directory.close();
   return true;
 }
 
@@ -342,41 +333,84 @@ bool synthWavetableCatalogValid() {
 }
 
 bool geometryCatalogValid() {
-  File file = LittleFS.open(GEOMETRY_PATH, "r");
-  if (!file) {
-    reportStorageIssue(GEOMETRY_PATH, "missing; using built-in 12 EDO");
+  File directory = LittleFS.open(GEOMETRY_STORAGE_ROOT, "r");
+  if (!directory || !directory.isDirectory()) {
+    if (directory) directory.close();
+    reportStorageIssue(GEOMETRY_STORAGE_ROOT, "missing; using built-in 12 EDO");
     return false;
   }
-  GeometryObjectFileHeader header = {};
-  if (file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)) {
-    file.close();
-    reportStorageIssue(GEOMETRY_PATH, "short header; using built-in 12 EDO");
-    return false;
-  }
-  if (strncmp(header.magic, "LYT", 3) != 0
-      || header.version != GEOMETRY_OBJECT_FILE_VERSION
-      || header.count > GEOMETRY_OBJECT_MAX_COUNT) {
-    file.close();
-    reportStorageIssue(GEOMETRY_PATH, "invalid header; using built-in 12 EDO");
-    return false;
-  }
-  uint32_t crc = crc32Begin();
-  uint8_t buffer[128] = {};
-  while (file.available() > 0) {
-    size_t count = file.read(buffer, std::min(static_cast<size_t>(file.available()), sizeof(buffer)));
-    if (count == 0) {
-      file.close();
-      reportStorageIssue(GEOMETRY_PATH, "short read; using built-in 12 EDO");
-      return false;
+  uint8_t bundleCount = 0;
+  uint16_t recordCount = 0;
+  File entry;
+  while ((entry = directory.openNextFile())) {
+    char path[GEOMETRY_STORAGE_PATH_LENGTH] = {};
+    snprintf(path, sizeof(path), "%s", entry.fullName());
+    bool regular = !entry.isDirectory();
+    entry.close();
+    size_t pathLength = strlen(path);
+    size_t extensionLength = strlen(GEOMETRY_BUNDLE_FILE_EXTENSION);
+    if (!regular || pathLength < extensionLength
+        || strcmp(path + pathLength - extensionLength, GEOMETRY_BUNDLE_FILE_EXTENSION) != 0) continue;
+    File file = LittleFS.open(path, "r");
+    GeometryObjectFileHeader header = {};
+    if (!file || file.size() < sizeof(header)
+        || file.size() > GEOMETRY_BUNDLE_MAX_RAW_BYTES
+        || file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)
+        || strncmp(header.magic, "HGB", 3) != 0
+        || header.version != GEOMETRY_OBJECT_FILE_VERSION
+        || header.count == 0
+        || header.count > GEOMETRY_BUNDLE_RECORD_MAX_COUNT) {
+      if (file) file.close();
+      reportStorageIssue(path, "invalid geometry bundle header");
+      continue;
     }
-    crc = crc32Update(crc, buffer, count);
+    uint32_t crc = crc32Begin();
+    uint8_t buffer[128] = {};
+    while (file.available() > 0) {
+      size_t count = file.read(buffer, std::min(static_cast<size_t>(file.available()), sizeof(buffer)));
+      if (count == 0) break;
+      crc = crc32Update(crc, buffer, count);
+    }
+    file.close();
+    if (crc32Finish(crc) != header.crc32) {
+      reportStorageIssue(path, "geometry bundle CRC mismatch");
+      continue;
+    }
+    ++bundleCount;
+    recordCount += header.count;
   }
-  file.close();
-  if (crc32Finish(crc) != header.crc32) {
-    reportStorageIssue(GEOMETRY_PATH, "CRC mismatch; using built-in 12 EDO");
+  directory.close();
+  if (bundleCount > GEOMETRY_BUNDLE_MAX_COUNT || recordCount > GEOMETRY_OBJECT_MAX_COUNT) {
+    reportStorageIssue(GEOMETRY_STORAGE_ROOT, "geometry library exceeds capacity");
     return false;
   }
-  return true;
+  return bundleCount > 0;
+}
+
+bool defaultGeometryReferenceValid() {
+  DefaultGeometryReferenceFile reference = {};
+  if (!readExactFile(DEFAULT_GEOMETRY_REFERENCE_FILE_PATH, &reference, sizeof(reference))) {
+    return false;
+  }
+  if (strncmp(reference.magic, "DGE", 3) != 0
+      || reference.version != DEFAULT_GEOMETRY_REFERENCE_VERSION
+      || reference.crc32 != crc32(reference.tuningObjectId, sizeof(reference.tuningObjectId))) {
+    reportStorageIssue(DEFAULT_GEOMETRY_REFERENCE_FILE_PATH, "invalid; using the first usable geometry bundle");
+    return false;
+  }
+  char path[GEOMETRY_STORAGE_PATH_LENGTH] = {};
+  size_t cursor = snprintf(path, sizeof(path), "%s/", GEOMETRY_STORAGE_ROOT);
+  constexpr char HEX_DIGITS[] = "0123456789ABCDEF";
+  for (uint8_t byteValue : reference.tuningObjectId) {
+    path[cursor++] = HEX_DIGITS[byteValue >> 4];
+    path[cursor++] = HEX_DIGITS[byteValue & 0x0F];
+  }
+  snprintf(path + cursor, sizeof(path) - cursor, "%s", GEOMETRY_BUNDLE_FILE_EXTENSION);
+  if (LittleFS.exists(path)) {
+    return true;
+  }
+  reportStorageIssue(DEFAULT_GEOMETRY_REFERENCE_FILE_PATH, "selected tuning is unavailable; using the first usable bundle");
+  return false;
 }
 
 bool currentPresetReferenceValid() {
@@ -469,6 +503,7 @@ FactoryStorageBootState inspectFactoryStorage() {
   synthPresetCatalogValid();
   synthWavetableCatalogValid();
   geometryCatalogValid();
+  defaultGeometryReferenceValid();
   currentPresetReferenceValid();
   currentWavetableReferenceValid();
   profileWavetableReferencesValid();

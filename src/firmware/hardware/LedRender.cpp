@@ -523,103 +523,88 @@ void setLEDcolorCodes() {
             float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
             float fifthSize = ((ratioToCents(3.0 / 2.0)) / stepSize);
             float reverseFifth = fifthSize;
-            switch (current.tuningIndex) {
-              case TUNING_17EDO:
+            switch (current.tuning().cycleLength) {
+              case 17:
                 {
                   reverseFifth = 12;
                 }
                 break;  // reverse hash of (10*x)%17=x where 10 steps is a 17EDO fifth
-              case TUNING_19EDO:
+              case 19:
                 {
                   reverseFifth = 7;
                 }
                 break;  // reverse hash of (11*x)%19=x where 11 steps is a 19EDO fifth
-              case TUNING_22EDO:
+              case 22:
                 {
                   reverseFifth = 17;
                 }
                 break;  // reverse hash of (13*x)%22=x where 13 steps is a 22EDO fifth
-              case TUNING_24EDO:
+              case 24:
                 {
                   reverseFifth = 11;
                 }
                 break;  // hand-picked best-fit value. This tuning is very unruly
-              case TUNING_31EDO:
+              case 31:
                 {
                   reverseFifth = 19;
                 }
                 break;  // reverse hash of (18*x)%31=x where 18 steps is a 31EDO fifth
-              case TUNING_31EDO_ZETA:
-                {
-                  reverseFifth = 19;
-                }
-                break;
-              case TUNING_41EDO:
+              case 41:
                 {
                   reverseFifth = 12;
                 }
                 break;  // reverse hash of (24*x)%41=x where 24 steps is a 41EDO fifth
-              case TUNING_43EDO:
+              case 43:
                 {
                   reverseFifth = 31;
                 }
                 break;  // reverse hash of (25*x)%43=x where 25 steps is a 43EDO fifth
-              case TUNING_46EDO:
+              case 46:
                 {
                   reverseFifth = 29;
                 }
                 break;  // reverse hash of (27*x)%46=x where 27 steps is a 46EDO fifth
-              case TUNING_53EDO:
+              case 53:
                 {
                   reverseFifth = 12;
                 }
                 break;  // reverse hash of (31*x)%53=x where 31 steps is a 53EDO fifth
-              case TUNING_58EDO:
+              case 58:
                 {
                   reverseFifth = 12;
                 }
                 break;  // reverse hash for 29EDO (2 chains of 29 EDO fifths in 58 EDO)
-              case TUNING_58EDO_ZETA:
-                {
-                  reverseFifth = 12;
-                }
-                break;
-              case TUNING_72EDO:
+              case 72:
                 {
                   reverseFifth = 7;
                 }
                 break;  // reverse hash for 12EDO (6 chains of 12 EDO fifths in 72 EDO)
-              case TUNING_72EDO_ZETA:
-                {
-                  reverseFifth = 7;
-                }
-                break;
-              case TUNING_80EDO:
+              case 80:
                 {
                   reverseFifth = 63;
                 }
                 break;  // reverse hash of (47*x)%80=x where 47 steps is an 80EDO fifth
-              case TUNING_87EDO:
+              case 87:
                 {
                   reverseFifth = 41;
                 }
                 break;  // A hand-picked value, seems to work. 46 also works
-              case TUNING_BP:
+              case 13:
                 {
                   reverseFifth = 5;
                 }
                 break;  // A hand-picked value; 23 and 64 also work
-              case TUNING_ALPHA:
+              case 9:
                 {
                   reverseFifth = 5;
                 }
                 break;  // A hand-picked value
-              case TUNING_BETA:
+              case 11:
                 {
                   reverseFifth = 7;
                 }
                 break;  // reverse hash of (11*x)%19=x where 11 steps is a 19EDO equivalent fifth
-              case TUNING_GAMMA:
+              case 20:
                 {
                   reverseFifth = 12;
                 }

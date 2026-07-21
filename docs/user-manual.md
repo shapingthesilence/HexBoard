@@ -162,9 +162,9 @@ is shown.
 ### Tuning
 
 Use this section to choose the tuning or geometry bundle the whole board runs
-on. The page is a GEM-style virtual list backed by geometry objects: factory
-tunings appear at the root, and saved user tunings can be organized into
-folders. Scrolling follows normal GEM list behavior, including page jumps at
+on. The page is a GEM-style virtual list backed by the editable geometry
+catalog: supplied factory tunings are in `Built In`, and additional saved
+tunings can be organized into folders. Scrolling follows normal GEM list behavior, including page jumps at
 the 11 visible-row boundary. The active tuning shows a diamond in the left
 action-icon slot when it appears in the list. Selecting a tuning also loads the
 first linked layout, scale, color map, and matching explicit button map so the
@@ -615,8 +615,13 @@ point precision. Milli-cent and milli-hertz values remain in the object only
 for compatibility with older firmware.
 `Live send` previews compatible edits on the connected HexBoard without saving
 them to flash. `Save to computer` stores the bundle in browser storage, and
-`Save to HexBoard` writes it to the device so it appears in the on-device
-`Tuning`, `Layout`, and `Scales` browsers.
+`Save to HexBoard` writes the complete bundle, then applies its active tuning,
+layout, scale, colors, and button map so the preview and device menu agree. The
+saved bundle appears in the on-device `Tuning`, `Layout`, and `Scales`
+browsers. HexBoard stores up to 64 complete geometry bundles; one tuning plus
+its palette and all linked layouts/scales counts as one bundle. Tuning division
+and scale-cycle lengths may be from 1 through 128. Saving or erasing a bundle
+changes only that bundle's file; the other geometry bundles are not rewritten.
 
 Library folder rows begin with the visually distinct system views `All` and
 `Root`, followed by user folders. New folders belong to the
@@ -744,8 +749,8 @@ and channel-zone examples, see the [MPE Microtonal Setup Guide](mpe-microtonal-s
 
 Important factory defaults include:
 
-- Tuning: built-in `12 EDO`
-- Layout: first built-in 12-EDO layout
+- Tuning: factory-library `12 EDO (Normal)`
+- Layout: its `Wicki-Hayden` layout
 - Device Rot: `0`
 - Scale: chromatic / none
 - MIDI channel: `1`
@@ -782,8 +787,12 @@ firmware without changing LittleFS.
 Boot only mounts and reads LittleFS; it does not format, migrate, or create
 factory files. If a saved store is invalid, the OLED briefly identifies the
 affected file and the board continues with safe defaults. USB serial prints a
-more detailed validation reason. If LittleFS cannot mount, the board uses
-built-in 12 EDO and Basic Shapes and disables saving.
+more detailed validation reason. If LittleFS cannot mount, the board uses its
+minimal compiled 12 EDO geometry rescue bundle and Basic Shapes, and disables
+saving. Normal factory geometry is read from independent `/geometry/*.hgb`
+bundle files; only selected records are decoded into runtime RAM. Named synth
+presets are also stored as independent `/presets/*.hsp` files, so saving one
+preset does not rewrite the rest of the preset library.
 
 How to update:
 

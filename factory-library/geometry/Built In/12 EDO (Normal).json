@@ -1,0 +1,525 @@
+{
+  "format": "hexboard.layoutBundle.v4",
+  "bundle": {
+    "objectIdHex": "54abfbb530fec693d794445ad6eb3393",
+    "name": "12 EDO (Normal)",
+    "folderPath": "Built In",
+    "tuning": {
+      "kind": "edo",
+      "name": "12 EDO (Normal)",
+      "cycleLength": 12,
+      "referenceMidiNote": 69,
+      "referenceHz": 440.0,
+      "keyLabels": [
+        "A",
+        "Bb",
+        "B",
+        "C",
+        "C#",
+        "D",
+        "Eb",
+        "E",
+        "F",
+        "F#",
+        "G",
+        "G#"
+      ],
+      "edoDivisions": 12,
+      "periodCents": 1200.0
+    },
+    "palette": {
+      "defaultColorMode": 1,
+      "degreeColors": [
+        {
+          "degree": 0,
+          "hueTenthDegrees": 2700,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 1,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 64
+        },
+        {
+          "degree": 2,
+          "hueTenthDegrees": 2000,
+          "saturation": 60,
+          "value": 164
+        },
+        {
+          "degree": 3,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 64
+        },
+        {
+          "degree": 4,
+          "hueTenthDegrees": 2000,
+          "saturation": 60,
+          "value": 164
+        },
+        {
+          "degree": 5,
+          "hueTenthDegrees": 2000,
+          "saturation": 60,
+          "value": 164
+        },
+        {
+          "degree": 6,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 64
+        },
+        {
+          "degree": 7,
+          "hueTenthDegrees": 2300,
+          "saturation": 240,
+          "value": 180
+        },
+        {
+          "degree": 8,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 64
+        },
+        {
+          "degree": 9,
+          "hueTenthDegrees": 2000,
+          "saturation": 60,
+          "value": 164
+        },
+        {
+          "degree": 10,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 64
+        },
+        {
+          "degree": 11,
+          "hueTenthDegrees": 2000,
+          "saturation": 60,
+          "value": 164
+        }
+      ]
+    },
+    "layouts": [
+      {
+        "objectIdHex": "0b61bc31ceaec4bf2da95b63ee0f872c",
+        "name": "Wicki-Hayden",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": 2,
+        "upRightSteps": 7,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": true,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "aa269abb80933bb52dbcc6c6b3b21498",
+        "name": "Harmonic Table",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": -7,
+        "upRightSteps": -3,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "168459373500d68af86aeafd399c39ad",
+        "name": "Gerhard",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -1,
+        "upRightSteps": 3,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "a0a7f07cf16796305245e147e462fd85",
+        "name": "Janko",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": 1,
+        "upRightSteps": 2,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "b37b12390e394448fce9e5755a255817",
+        "name": "Bosanquet-Wilson",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -1,
+        "upRightSteps": 1,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "dbde726d4229213596126a8421f5560a",
+        "name": "Compressed Janko",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -1,
+        "upRightSteps": 2,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "f6579cdf5534552880bfdcce777d449d",
+        "name": "Compr. Bosanquet",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": 1,
+        "upRightSteps": 3,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "b497d7da146856de9fec03f5048aa164",
+        "name": "Accordion C-sys.",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": 2,
+        "upRightSteps": 3,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": true,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "d215c04a244f8c78fc848404733fa7ee",
+        "name": "Accordion B-sys.",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": 1,
+        "upRightSteps": 3,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": true,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "75b4b108ade28ed96663a5a1b0937da8",
+        "name": "Chromatic",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": 12,
+        "upRightSteps": 1,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "338a5f5f5a9e117d2a50f2852ac56628",
+        "name": "Full Gamut",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": 1,
+        "upRightSteps": 9,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "portrait": true,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      }
+    ],
+    "activeLayoutIdHex": "0b61bc31ceaec4bf2da95b63ee0f872c",
+    "scales": [
+      {
+        "objectIdHex": "55e0983cffdfc7047f2a0c1bd8561438",
+        "name": "All Notes",
+        "includedDegrees": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ]
+      },
+      {
+        "objectIdHex": "b13f8f668c67974867e282b91c9ec9d4",
+        "name": "Major",
+        "includedDegrees": [
+          0,
+          2,
+          4,
+          5,
+          7,
+          9,
+          11
+        ]
+      },
+      {
+        "objectIdHex": "4ea5d41b48b4df6287384a584ed31d2e",
+        "name": "Minor, Natural",
+        "includedDegrees": [
+          0,
+          2,
+          3,
+          5,
+          7,
+          8,
+          10
+        ]
+      },
+      {
+        "objectIdHex": "f8740c409cfc4f31c69f1bb49e2392a5",
+        "name": "Minor, Melodic",
+        "includedDegrees": [
+          0,
+          2,
+          3,
+          5,
+          7,
+          9,
+          11
+        ]
+      },
+      {
+        "objectIdHex": "5632ac2053aa8fa6d5a958a10bf3c719",
+        "name": "Minor, Harmonic",
+        "includedDegrees": [
+          0,
+          2,
+          3,
+          5,
+          7,
+          8,
+          11
+        ]
+      },
+      {
+        "objectIdHex": "ab7f91eefb12c67eaaadcf08ce0b8a75",
+        "name": "Pentatonic, Major",
+        "includedDegrees": [
+          0,
+          2,
+          4,
+          7,
+          9
+        ]
+      },
+      {
+        "objectIdHex": "2d1f9345bafcf02bfbbf54512e82a47e",
+        "name": "Pentatonic, Minor",
+        "includedDegrees": [
+          0,
+          3,
+          5,
+          7,
+          10
+        ]
+      },
+      {
+        "objectIdHex": "de4d2beea80fce3981f2b464bcdf0f75",
+        "name": "Blues",
+        "includedDegrees": [
+          0,
+          3,
+          4,
+          5,
+          6,
+          7,
+          10
+        ]
+      },
+      {
+        "objectIdHex": "a522853cb52d1ac4d0d4a1afa69414d0",
+        "name": "Double Harmonic",
+        "includedDegrees": [
+          0,
+          1,
+          4,
+          5,
+          7,
+          8,
+          11
+        ]
+      },
+      {
+        "objectIdHex": "e0e43d33c923e6e29e5877fd8d74c279",
+        "name": "Phrygian",
+        "includedDegrees": [
+          0,
+          1,
+          3,
+          5,
+          7,
+          8,
+          10
+        ]
+      },
+      {
+        "objectIdHex": "34054dad38a5afe8b28aa3aeaf7252c2",
+        "name": "Phrygian Dominant",
+        "includedDegrees": [
+          0,
+          1,
+          4,
+          5,
+          7,
+          8,
+          10
+        ]
+      },
+      {
+        "objectIdHex": "5aed3db166c1b9153d147abc3b24bd1b",
+        "name": "Dorian",
+        "includedDegrees": [
+          0,
+          2,
+          3,
+          5,
+          7,
+          9,
+          10
+        ]
+      },
+      {
+        "objectIdHex": "5536310b1ea62a48759f572ea61158dd",
+        "name": "Lydian",
+        "includedDegrees": [
+          0,
+          2,
+          4,
+          6,
+          7,
+          9,
+          11
+        ]
+      },
+      {
+        "objectIdHex": "1f179c5adc765faa4e48b0d65d071773",
+        "name": "Lydian Dominant",
+        "includedDegrees": [
+          0,
+          2,
+          4,
+          6,
+          7,
+          9,
+          10
+        ]
+      },
+      {
+        "objectIdHex": "c136421e5b1f4c13c44e236e52ff0481",
+        "name": "Mixolydian",
+        "includedDegrees": [
+          0,
+          2,
+          4,
+          5,
+          7,
+          9,
+          10
+        ]
+      },
+      {
+        "objectIdHex": "a3b9b48d0a06d6d472a39595d6a31480",
+        "name": "Locrian",
+        "includedDegrees": [
+          0,
+          1,
+          3,
+          5,
+          6,
+          8,
+          10
+        ]
+      },
+      {
+        "objectIdHex": "ec72613858ce45fec1c6de7cb81130d5",
+        "name": "Whole Tone",
+        "includedDegrees": [
+          0,
+          2,
+          4,
+          6,
+          8,
+          10
+        ]
+      },
+      {
+        "objectIdHex": "85e3b34288f6c15efba732cc8a2c3131",
+        "name": "Octatonic",
+        "includedDegrees": [
+          0,
+          2,
+          3,
+          5,
+          6,
+          8,
+          9,
+          11
+        ]
+      }
+    ],
+    "activeScaleIdHex": "55e0983cffdfc7047f2a0c1bd8561438"
+  }
+}

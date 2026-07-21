@@ -24,6 +24,7 @@ import {
   hexKeyAxialCoordinate,
   isHexBoardCommandIndex,
   LayoutTlv,
+  MaxTuningDivisions,
   normalizeScaleDegrees,
   normalizeScaleDegreeColors,
   keyLabelIndexFromStepsFromC,
@@ -823,6 +824,31 @@ function bundleForDeviceEncoding(bundle: LayoutBundle): LayoutBundle {
   };
 }
 
+function activeEncodedGeometryObjects(
+  encoded: ReturnType<typeof encodeLayoutBundle>,
+  bundle: LayoutBundle
+): EncodedCatalogObject[] {
+  const activeLayoutObject = encoded.layouts.find((object) =>
+    objectIdToHex(object.objectId) === bundle.activeLayoutIdHex
+  );
+  const activeScaleObject = encoded.scales.find((object) =>
+    objectIdToHex(object.objectId) === bundle.activeScaleIdHex
+  );
+  const explicitMaps = encoded.explicitButtonMaps.filter((object) =>
+    object.records.some((record) =>
+      record.tag === ExplicitButtonMapTlv.LayoutRef
+      && objectReferenceIdHex(record.value) === bundle.activeLayoutIdHex
+    )
+  );
+  return [
+    encoded.tuning,
+    activeLayoutObject,
+    activeScaleObject,
+    encoded.scaleColorMap,
+    ...explicitMaps
+  ].filter((object): object is EncodedCatalogObject => Boolean(object));
+}
+
 function formatIntegerList(values: number[]): string {
   return values.join(", ");
 }
@@ -964,7 +990,7 @@ function objectReferences(object: DeviceGeometryObject, tag: number, objectType:
 
 function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGeometryObject): LayoutBundleTuning {
   const kind = u8(tlvValue(object.records, TuningTlv.TuningKind), UserTuningKind.Edo);
-  const cycleLength = clampInteger(u16LE(tlvValue(object.records, TuningTlv.EdoDivisions), 12), 1, 255);
+  const cycleLength = clampInteger(u16LE(tlvValue(object.records, TuningTlv.EdoDivisions), 12), 1, MaxTuningDivisions);
   const name = tlvText(object.records, CommonTlv.Name, entry.name);
   const referenceMidiNote = clampInteger(u8(tlvValue(object.records, TuningTlv.ReferenceMidiNote), 69), 0, 127);
   const referenceHz = float32LE(
@@ -1000,14 +1026,14 @@ function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGe
     }
     const fallbackPeriod = u32LE(tlvValue(object.records, TuningTlv.PeriodMilliCents), 1_200_000) / 1000;
     const periodCents = float32LE(tlvValue(object.records, TuningTlv.PeriodCentsFloat32), fallbackPeriod);
-    const safeCents = cents.length > 0 ? cents : [periodCents];
+    const safeCents = (cents.length > 0 ? cents : [periodCents]).slice(0, MaxTuningDivisions);
     return {
       kind: "scala",
       name,
       description: name,
       cents: safeCents,
       periodCents,
-      cycleLength: clampInteger(safeCents.length, 1, 255),
+      cycleLength: clampInteger(safeCents.length, 1, MaxTuningDivisions),
       referenceMidiNote,
       referenceHz,
       keyLabels: decodeKeyLabels(tlvValue(object.records, TuningTlv.KeyLabels), safeCents.length)
@@ -1238,6 +1264,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const paintStrokeHistoryRef = useRef<PaintStrokeHistoryStart | null>(null);
   const lastPaintedTargetRef = useRef<string | null>(null);
   const skipNextLiveSendRef = useRef(true);
+  const lastAutoSentGeometryKeyRef = useRef("");
   const undoLayoutHistoryRef = useRef<LayoutHistoryEntry[]>([]);
   const redoLayoutHistoryRef = useRef<LayoutHistoryEntry[]>([]);
   const [, setLayoutHistoryRevision] = useState(0);
@@ -1255,6 +1282,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const customColorModeActive = activeBundle.palette.defaultColorMode === ColorMode.Custom;
   const centsTableRuntimeSupported = Boolean(
     deviceHello?.capabilityFlags && (deviceHello.capabilityFlags & CapabilityFlag.CentsTableRuntimeTuning)
+  );
+  const geometryBundleFilesSupported = Boolean(
+    deviceHello?.capabilityFlags && (deviceHello.capabilityFlags & CapabilityFlag.GeometryBundleFiles)
   );
   const runtimeSendSupported = activeBundle.tuning.kind !== "scala" || centsTableRuntimeSupported;
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
@@ -1682,7 +1712,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         ...patch
       };
       tuning.name = clampGeometryMenuText(tuning.name, "User Tuning");
-      tuning.edoDivisions = clampInteger(tuning.edoDivisions, 1, 255);
+      tuning.edoDivisions = clampInteger(tuning.edoDivisions, 1, MaxTuningDivisions);
       tuning.cycleLength = tuning.edoDivisions;
       tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
       tuning.referenceMidiNote = clampInteger(tuning.referenceMidiNote, 0, 127);
@@ -1709,7 +1739,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         ...patch
       };
       tuning.name = clampGeometryMenuText(tuning.name, "User Tuning");
-      tuning.cycleLength = clampInteger(tuning.cycleLength, 1, 255);
+      tuning.cycleLength = clampInteger(tuning.cycleLength, 1, MaxTuningDivisions);
       tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
       tuning.referenceMidiNote = clampInteger(tuning.referenceMidiNote, 0, 127);
       tuning.referenceHz = Number.isFinite(tuning.referenceHz) && tuning.referenceHz > 0 ? tuning.referenceHz : 440;
@@ -1737,7 +1767,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       tuning.name = clampGeometryMenuText(tuning.name, "User Tuning");
       tuning.description = clampGeometryMenuText(tuning.description, tuning.name);
       tuning.periodCents = tuning.cents[tuning.cents.length - 1] ?? 1200;
-      tuning.cycleLength = clampInteger(tuning.cents.length, 1, 255);
+      tuning.cycleLength = clampInteger(tuning.cents.length, 1, MaxTuningDivisions);
       tuning.referenceMidiNote = clampInteger(tuning.referenceMidiNote, 0, 127);
       tuning.referenceHz = Number.isFinite(tuning.referenceHz) && tuning.referenceHz > 0 ? tuning.referenceHz : midiNoteToFrequency(tuning.referenceMidiNote);
       tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
@@ -2442,22 +2472,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     return encodeLayoutBundle(bundleForDeviceEncoding(activeBundle));
   }, [activeBundle]);
   const activeApplyObjects = useMemo(() => {
-    const activeLayoutObject = encodedBundle.layouts.find((object) => objectIdToHex(object.objectId) === activeLayout.objectIdHex);
-    const activeScaleObject = encodedBundle.scales.find((object) => objectIdToHex(object.objectId) === activeScale.objectIdHex);
-    const explicitMaps = encodedBundle.explicitButtonMaps.filter((object) =>
-      object.records.some((record) =>
-        record.tag === ExplicitButtonMapTlv.LayoutRef
-        && objectReferenceIdHex(record.value) === activeLayout.objectIdHex
-      )
-    );
-    return [
-      encodedBundle.tuning,
-      activeLayoutObject,
-      activeScaleObject,
-      encodedBundle.scaleColorMap,
-      ...explicitMaps
-    ].filter((object): object is EncodedCatalogObject => Boolean(object));
-  }, [activeLayout.objectIdHex, activeScale.objectIdHex, encodedBundle]);
+    return activeEncodedGeometryObjects(encodedBundle, activeBundle);
+  }, [activeBundle, encodedBundle]);
   const liveSendKey = useMemo(() => activeApplyObjects
     .map((object) => `${object.objectType}:${objectIdToHex(object.objectId)}:${crc32(object.body).toString(16)}`)
     .join("|"), [activeApplyObjects]);
@@ -2538,6 +2554,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     const scales = linkedScales.map((scale, index) => decodeDeviceScale(scale, index, cycleLength));
     const bundle = sanitizeEditorBundle({
       objectIdHex: objectIdToHex(deterministicObjectId(`device-geometry:${tuningObjectIdHex}`)),
+      tuningObjectIdHex,
+      ...(linkedColorMap ? { colorObjectIdHex: objectIdToHex(linkedColorMap.record.objectId) } : {}),
       name: entry.name,
       folderPath: entry.folderPath,
       tuning,
@@ -2612,12 +2630,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   async function eraseHexBoardGeometryBundle(entry: HexBoardGeometryBundleEntry) {
     setSyncBusy(true);
     try {
-      const { bundle, objects } = await readHexBoardGeometryBundle(entry);
-      const uniqueObjects = [...new Map(objects.map((object) => [`${object.record.objectType}:${object.record.handle}`, object])).values()]
-        .sort((left, right) => right.record.handle - left.record.handle);
-      for (const object of uniqueObjects) {
-        await client.deleteGeometryObject(object.record.objectType, object.record.handle);
-      }
+      const { bundle } = await readHexBoardGeometryBundle(entry);
+      await client.deleteGeometryObject(ObjectType.UserTuning, entry.deviceHandle);
       await refreshHexBoardGeometryLibrary(`Erased ${bundle.name} from HexBoard`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to erase HexBoard geometry bundle");
@@ -2652,6 +2666,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       setStatus("Connect HexBoard before saving geometry objects.");
       return;
     }
+    if (!geometryBundleFilesSupported) {
+      setStatus("Update HexBoard firmware before saving geometry bundles.");
+      return;
+    }
     const sanitizedBundle = sanitizeEditorBundle(bundle);
     if (sanitizedBundle.objectIdHex !== activeBundle.objectIdHex) {
       setActiveBundleId(sanitizedBundle.objectIdHex);
@@ -2659,12 +2677,21 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     const encoded = sanitizedBundle.objectIdHex === activeBundle.objectIdHex
       ? encodedBundle
       : encodeLayoutBundle(bundleForDeviceEncoding(sanitizedBundle));
+    const applyObjects = activeEncodedGeometryObjects(encoded, sanitizedBundle);
+    const applySupported = sanitizedBundle.tuning.kind !== "scala" || centsTableRuntimeSupported;
     setSyncBusy(true);
     try {
-      for (let index = 0; index < encoded.objects.length; index += 1) {
-        const object = encoded.objects[index];
-        setStatus(`Saving ${object.name} (${index + 1}/${encoded.objects.length})`);
-        await client.sendGeometryObjectSaveConfirmed(object);
+      setStatus(`Saving ${sanitizedBundle.name}`);
+      await client.sendGeometryBundleSaveConfirmed(encoded.bundleFile);
+      if (applySupported) {
+        for (let index = 0; index < applyObjects.length; index += 1) {
+          const object = applyObjects[index];
+          setStatus(`Applying ${object.name} (${index + 1}/${applyObjects.length})`);
+          await client.sendGeometryObjectPreviewConfirmed(object);
+        }
+        if (sanitizedBundle.objectIdHex === activeBundle.objectIdHex) {
+          lastAutoSentGeometryKeyRef.current = liveSendKey;
+        }
       }
       await refreshHexBoardGeometryLibrary(`${prefix} ${sanitizedBundle.name} to HexBoard in ${folderLabel(sanitizedBundle.folderPath)}`);
     } catch (error) {
@@ -2687,6 +2714,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       setStatus("Connected firmware does not advertise cents-table runtime tuning.");
       return;
     }
+    lastAutoSentGeometryKeyRef.current = liveSendKey;
     setSyncBusy(true);
     try {
       for (let index = 0; index < activeApplyObjects.length; index += 1) {
@@ -2706,11 +2734,16 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     if (!liveSend || syncBusy || transport instanceof MockMidiTransport || !runtimeSendSupported) {
       return;
     }
+    if (lastAutoSentGeometryKeyRef.current === liveSendKey) {
+      return;
+    }
     if (skipNextLiveSendRef.current) {
       skipNextLiveSendRef.current = false;
+      lastAutoSentGeometryKeyRef.current = liveSendKey;
       return;
     }
     const timeout = window.setTimeout(() => {
+      lastAutoSentGeometryKeyRef.current = liveSendKey;
       void sendActiveBundlePreview("Auto-sent");
     }, 450);
     return () => window.clearTimeout(timeout);
@@ -3861,7 +3894,7 @@ function TuningControls({
         </label>
         <label className="field">
           <span>Divisions</span>
-          <input min={1} max={255} type="number" value={tuning.edoDivisions} onChange={(event) => onEdoChange({ edoDivisions: Number(event.target.value) })} />
+          <input min={1} max={MaxTuningDivisions} type="number" value={tuning.edoDivisions} onChange={(event) => onEdoChange({ edoDivisions: Number(event.target.value) })} />
         </label>
         <label className="field">
           <span>Period cents</span>
@@ -3905,7 +3938,7 @@ function TuningControls({
         </label>
         <label className="field">
           <span>Cycle length</span>
-          <input min={1} max={255} type="number" value={tuning.cycleLength} onChange={(event) => onEqualStepChange({ cycleLength: Number(event.target.value) })} />
+          <input min={1} max={MaxTuningDivisions} type="number" value={tuning.cycleLength} onChange={(event) => onEqualStepChange({ cycleLength: Number(event.target.value) })} />
           <small className={Math.abs(octaveDelta) > 0.0005 ? "fieldError" : "muted"}>
             Cycle period: {computedPeriod.toFixed(3)} cents{Math.abs(octaveDelta) > 0.0005 ? ` (${octaveDelta > 0 ? "+" : ""}${octaveDelta.toFixed(3)} from an octave)` : ""}
           </small>

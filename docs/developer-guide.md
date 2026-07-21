@@ -79,8 +79,9 @@ build/HexBoard_Sequencer_Factory.uf2
 build/HexBoard_Sequencer_Update.uf2
 ```
 
-`scripts/build_factory_library.py` compiles source `.json` presets and
-`.hexwav` wavetables from `factory-library/` into current device records.
+`scripts/build_factory_library.py` compiles source synth-preset and geometry-
+bundle `.json` files plus `.hexwav` wavetables from `factory-library/` into
+current device records.
 `scripts/build_factory_uf2.py` and `mklittlefs` create and extract-validate the
 `8 MiB` image, verify the firmware UF2 payload against the compiled binary,
 pad every touched firmware sector to its full `4 KiB` extent before appending
@@ -146,11 +147,11 @@ references.
 ### Factory Storage
 
 The Factory UF2 contains the complete formatted filesystem: current settings,
-editable preset and wavetable catalogs, wavetable sample files, current-object
-references, an empty layout catalog, the storage-generation record, and an
-empty `/Sequences` directory. Basic Shapes and built-in 12 EDO remain compiled
-as the minimal rescue set; all other factory library objects are ordinary
-editable catalog records.
+editable preset, wavetable, and geometry catalogs, wavetable sample files,
+current-object references, the storage-generation record, and an empty
+`/Sequences` directory. Basic Shapes and the minimal 12 EDO geometry bundle
+remain compiled as the rescue set; all other factory library objects are
+ordinary editable catalog records.
 
 Core 0 mounts LittleFS once with auto-format disabled. It validates every store
 and referenced wavetable sample without writing, prints exact failures over USB
@@ -277,7 +278,8 @@ prefers the optional IEEE-754 binary32 period, explicit-step, cents-table, and
 reference-frequency TLVs so the wire representation retains every bit the
 firmware runtime can consume. Legacy milli-cent/milli-hertz TLVs remain as
 fallback metadata for older objects and firmware. Equal-step tunings continue
-to use their explicit step size.
+to use their explicit step size. Division and scale-cycle lengths may be from
+`1` through `128`.
 
 Settings are stored in:
 
@@ -418,16 +420,38 @@ When adding, removing, reordering, or reinterpreting a `SettingKey`:
 
 Other persistent stores:
 
-- `/synth_presets.dat`: named/foldered synth presets, magic `SYP`, version `10`, up to `128` presets. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume. The Factory UF2 installs `Soft String Pad` and `Bright Mono Lead` as normal editable records.
+The factory filesystem generation is `3`. `/storage_ready.dat` must match that
+generation; individual stores are still validated independently so a mismatch
+does not prevent booting with safe fallbacks.
+
+- `/presets/<object-id>.hsp`: one independently checksummed synth preset per file, magic `HSP`, version `11`, up to `128` files. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume. Only preset metadata is indexed in RAM for menus; a preset body is read when it is transferred, loaded, or overwritten. The Factory UF2 installs `Soft String Pad` and `Bright Mono Lead` as normal editable files.
 - `/current_synth_preset.dat`: current loaded synth preset reference, magic `CSP`, version `1`. It stores either the loaded preset object ID or the special `Blank` state; the edited synth values still come from normal settings/profile storage.
 - `/synth_wavetables.dat`: named user wavetable catalog, magic `SYW`, version `1`, up to `32` entries. Sample files use shortened `/wt_<16 hex>.wtb` paths and can contain six fixed mip levels (`49,152` bytes) or base-only data (`8,192` bytes).
 - `/current_wavetable.dat`: current wavetable folder/name reference, magic `CWT`, version `1`.
 - `/profile_wavetables.dat`: per-profile wavetable folder/name snapshots, magic `PWT`, version `1`.
-- `/layouts.dat`: user geometry catalog, magic `LYT`, version `2`, up to `64` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`.
+- `/geometry/<tuning-object-id>.hgb`: one independently checksummed factory-or-user geometry bundle per file, magic `HGB`, version `1`. Capacity is 64 complete bundles counted by `UserTuning` roots. A bundle contains its tuning root and all linked `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` records and is atomically replaced as one unit.
+- `/default_geometry.dat`: factory default tuning-object reference, magic `DGE`, version `1`. If that bundle is unavailable, boot selects the first usable bundle and ultimately the compiled 12 EDO rescue geometry.
 - `/Sequences`: optional sequencer `.hbseq` files plus `.current` remembered path when sequencer support is enabled.
 
-Factory tuning/layout/scale catalogs are exposed as generated read-only geometry
-objects from `BuiltinGeometry.cpp`; they are not stored in `/layouts.dat`.
+Factory tuning/layout/scale/color objects are compiled from
+`factory-library/geometry/` into ordinary `/geometry/*.hgb` files; they use the
+same format as host-created bundles. `BuiltinGeometry.cpp` generates only the
+read-only rescue tuning, layout, and scale when no usable catalog tuning exists.
+`factory-library/config.json` selects the object ID written to
+`/default_geometry.dat` for factory boot. The loader validates each bundle
+independently, retains only one tuning-object-id/count index entry per valid bundle, and streams metadata from LittleFS for
+menus and preset sync. Saving stages and atomically renames one complete bundle;
+deleting removes one bundle file. Other bundles are not rewritten. Object bodies
+are loaded only while reading, validating, or applying a selected record, so the
+332 factory records do not become a permanent RAM index.
+
+Each `.hgb` is limited to `255` records and `262,144` bytes; each contained
+object body is limited to `8,192` bytes. The 64-bundle limit therefore permits
+at most `16,320` compact handles, below the preset-sync `NEW_OBJECT` sentinel.
+These are validation/addressing ceilings rather than RAM allocations. The
+on-device associated layout/scale menu currently shows up to `24` linked child
+records for the selected tuning.
+
 Runtime Apply supports generated EDO/equal-step and Scala/cents-list user
 tunings, vector layouts with independent device rotation, musical
 rotation/mirrors, and an `int16_t` center-step offset, included-degree scales,
@@ -673,17 +697,17 @@ Use `web/README.md` for web commands and deployment details.
 
 ### Add A New Tuning
 
-1. Extend the tuning definitions or geometry object generation.
-2. Add or generate compatible layouts.
-3. Add compatible scales if needed.
+1. Add or edit a web-compatible bundle JSON under `factory-library/geometry/`.
+2. Include all compatible layouts, scales, and palette colors in that bundle.
+3. Run the factory-library generator and verify its linked active IDs.
 4. Verify key labels and key selector behavior.
 5. Verify the virtual geometry browsers filter linked layouts/scales correctly.
 6. Test MIDI, MPE, synth frequency, and LED color behavior.
 
 ### Add A New Layout
 
-1. Add or generate the layout definition.
-2. Ensure its tuning association is correct.
+1. Add the layout to its source bundle JSON under `factory-library/geometry/`.
+2. Ensure its tuning association and active-layout ID are correct.
 3. Verify center, across, and diagonal step vectors.
 4. Re-test `applyLayout()` with six-step musical rotation and mirror options.
 5. Verify four-step device rotation changes only the display/device orientation.
@@ -692,8 +716,8 @@ Use `web/README.md` for web commands and deployment details.
 
 ### Add A New Scale
 
-1. Add or generate the scale definition.
-2. Bind it to the right tuning or `ALL_TUNINGS`.
+1. Add the scale to its source bundle JSON under `factory-library/geometry/`.
+2. Bind it to the bundle tuning and update the active-scale ID when appropriate.
 3. Verify the interval pattern covers one cycle.
 4. Re-test `applyScale()` and `setLEDcolorCodes()`.
 

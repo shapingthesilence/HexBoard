@@ -24,7 +24,9 @@ BUILD_PROPERTIES = --build-property compiler.cpp.extra_flags="-DPWM_BITS=$(PWM_B
 	--build-property build.usb_manufacturer="$(USB_MANUFACTURER)" \
 	--build-property build.usb_product="$(USB_PRODUCT)"
 
-FIRMWARE_SOURCES := HexBoard.ino $(shell find src/firmware -type f) $(FACTORY_LIBRARY_BUILDER) $(FACTORY_UF2_BUILDER) $(FACTORY_LIBRARY_DIR)/config.json
+FACTORY_LIBRARY_SOURCES_RAW := $(shell find $(FACTORY_LIBRARY_DIR) -type f | sed 's/ /__HEXBOARD_SPACE__/g')
+FACTORY_LIBRARY_SOURCES := $(subst __HEXBOARD_SPACE__,\ ,$(FACTORY_LIBRARY_SOURCES_RAW))
+FIRMWARE_SOURCES := HexBoard.ino $(shell find src/firmware -type f) $(FACTORY_LIBRARY_BUILDER) $(FACTORY_UF2_BUILDER) $(FACTORY_LIBRARY_SOURCES)
 
 .PHONY: all firmware sequencer-disabled sequencer-enabled sequencer-builds install
 

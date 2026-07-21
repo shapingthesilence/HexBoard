@@ -2277,45 +2277,11 @@ byte normalizeDynamicJIRatioTable(byte value) {
   }
 }
 
-bool selectionFitsCurrentTuning(uint16_t layoutIndex, uint16_t scaleIndex) {
-  return layoutIndex < layoutCount
-         && layoutOptions[layoutIndex].tuning == current.tuningIndex
-         && scaleIndex < scaleCount
-         && (scaleIndex == 0 || scaleOptions[scaleIndex].tuning == current.tuningIndex);
-}
-
-void applyBuiltinGeometryRuntimeFromSettings() {
-  if (current.tuningIndex >= TUNINGCOUNT) {
-    current.tuningIndex = TUNING_12EDO;
-    settings[static_cast<uint8_t>(SettingKey::CurrentTuning)] = current.tuningIndex;
-  }
-
-  if (!selectionFitsCurrentTuning(current.layoutIndex, current.scaleIndex)) {
-    current.layoutIndex = current.layoutsBegin();
-    current.scaleIndex = 0;
-    settings[static_cast<uint8_t>(SettingKey::CurrentLayout)] = current.layoutIndex;
-    settings[static_cast<uint8_t>(SettingKey::CurrentScale)] = current.scaleIndex;
-  }
-
+void applyGeometryRuntimeFromStorage() {
   int savedKeyStepsFromA = current.keyStepsFromA;
-  uint16_t tuningHandle = 0;
-  if (!builtinGeometryHandleForLegacyTuning(current.tuningIndex, tuningHandle)
-      || !loadUserGeometryBundleFromTuningSlot(tuningHandle)) {
+  if (!loadDefaultGeometryRuntime()) {
     clearUserGeometryRuntimeSelection();
     return;
-  }
-
-  uint16_t layoutHandle = 0;
-  GeometryObjectSlot object;
-  if (builtinGeometryHandleForLegacyLayout(current.layoutIndex, layoutHandle)
-      && geometryObjectForHandle(layoutHandle, object)) {
-    applyGeometryObjectToRuntime(object);
-  }
-
-  uint16_t scaleHandle = 0;
-  if (builtinGeometryHandleForLegacyScale(current.tuningIndex, current.scaleIndex, scaleHandle)
-      && geometryObjectForHandle(scaleHandle, object)) {
-    applyGeometryObjectToRuntime(object);
   }
   current.keyStepsFromA = savedKeyStepsFromA;
   applyScale();
@@ -2406,6 +2372,15 @@ void syncSettingsToRuntime() {
   current.tuningIndex = settingValue(SettingKey::CurrentTuning);
   current.layoutIndex = settingValue(SettingKey::CurrentLayout);
   current.scaleIndex = settingValue(SettingKey::CurrentScale);
+  if (current.tuningIndex >= TUNINGCOUNT) {
+    current.tuningIndex = TUNING_12EDO;
+  }
+  if (current.layoutIndex >= layoutCount) {
+    current.layoutIndex = 0;
+  }
+  if (current.scaleIndex >= scaleCount) {
+    current.scaleIndex = 0;
+  }
   transposeSteps = decodeBiasedSetting(SettingKey::CurrentTransposeSteps);
   current.transpose = transposeSteps;
   current.keyStepsFromA = decodeBiasedSetting(SettingKey::CurrentKeyStepsFromA);
@@ -2463,7 +2438,7 @@ void syncSettingsToRuntime() {
   sequencer::applyPlaybackPreferencesFromProfile();
 
   // Now *apply* them to the engine/UI:
-  applyBuiltinGeometryRuntimeFromSettings();
+  applyGeometryRuntimeFromStorage();
   refreshMenuChoicesForCurrentTuning();
   rebuildUserGeometryMenuItems();
   rebuildRuntimeStateFromCurrentSelection();

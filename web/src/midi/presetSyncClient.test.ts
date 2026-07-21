@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { deterministicObjectId } from "../catalogs/objectId.ts";
-import { createGeneratedEdoTuning } from "../catalogs/layoutsCatalog.ts";
+import {
+  createDefaultLayoutBundle,
+  createGeneratedEdoTuning,
+  encodeLayoutBundle
+} from "../catalogs/layoutsCatalog.ts";
 import { createSynthPresetObject } from "../catalogs/synthPresets.ts";
 import { createSynthWavetableObject, SYNTH_WAVETABLE_SAMPLE_BYTES } from "../catalogs/synthWavetables.ts";
 import {
@@ -143,7 +147,7 @@ describe("PresetSyncClient", () => {
     });
   });
 
-  it("sends geometry objects with save-to-flash only", async () => {
+  it("saves a complete geometry bundle as one file transfer", async () => {
     const transport = new MockMidiTransport();
     const originalSend = transport.send.bind(transport);
     transport.send = async (bytes) => {
@@ -155,53 +159,17 @@ describe("PresetSyncClient", () => {
       transport.emit(encodeAckFrame(frame.transactionId, frame.message, nextChunkIndex));
     };
     const client = new PresetSyncClient(transport);
-    const tuning = createGeneratedEdoTuning({
-      objectId: deterministicObjectId("geometry tuning"),
-      name: "Geometry Tuning",
-      edoDivisions: 19
-    });
-
-    const frames = await client.sendGeometryObjectSaveConfirmed(tuning);
+    const bundle = encodeLayoutBundle(createDefaultLayoutBundle());
+    const frames = await client.sendGeometryBundleSaveConfirmed(bundle.bundleFile);
     const decoded = frames.map((frame) => decodePresetSyncFrame(frame));
 
     expect(decodeWriteBeginPayload(decoded[0].payload)).toMatchObject({
-      objectType: ObjectType.UserTuning,
-      rawByteLength: tuning.body.length,
+      objectType: ObjectType.GeometryBundle,
+      rawByteLength: bundle.bundleFile.length,
       writeFlags: 0x02
     });
     expect(decodeWriteCommitPayload(decoded.at(-1)?.payload ?? [])).toMatchObject({
       commitFlags: 0x02
-    });
-  });
-
-  it("sends geometry objects with apply-to-runtime and save-to-flash", async () => {
-    const transport = new MockMidiTransport();
-    const originalSend = transport.send.bind(transport);
-    transport.send = async (bytes) => {
-      await originalSend(bytes);
-      const frame = decodePresetSyncFrame(bytes);
-      const nextChunkIndex = frame.message === MessageType.DataChunk
-        ? decodeDataChunkPayload(frame.payload).chunkIndex + 1
-        : 0;
-      transport.emit(encodeAckFrame(frame.transactionId, frame.message, nextChunkIndex));
-    };
-    const client = new PresetSyncClient(transport);
-    const tuning = createGeneratedEdoTuning({
-      objectId: deterministicObjectId("runtime geometry tuning"),
-      name: "Runtime Geometry Tuning",
-      edoDivisions: 19
-    });
-
-    const frames = await client.sendGeometryObjectApplyConfirmed(tuning);
-    const decoded = frames.map((frame) => decodePresetSyncFrame(frame));
-
-    expect(decodeWriteBeginPayload(decoded[0].payload)).toMatchObject({
-      objectType: ObjectType.UserTuning,
-      rawByteLength: tuning.body.length,
-      writeFlags: 0x03
-    });
-    expect(decodeWriteCommitPayload(decoded.at(-1)?.payload ?? [])).toMatchObject({
-      commitFlags: 0x03
     });
   });
 
