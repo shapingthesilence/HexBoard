@@ -74,6 +74,11 @@ uint16_t virtualListLauncherScrollOffset = 0;
 bool virtualListLauncherScrollApplied = false;
 char virtualListLauncherValueBuffer[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = {};
 
+constexpr uint8_t PRESET_SYNC_PROGRESS_REDRAW_STEP = 2;
+uint8_t presetSyncDisplayedObjectType = 0xFF;
+uint8_t presetSyncDisplayedDirection = 0;
+uint8_t presetSyncDisplayedProgress = 0xFF;
+
 void drawCenteredMenuHeaderTitle(const char* title) {
   if (!title) {
     title = "";
@@ -164,7 +169,38 @@ void restoreMenuAfterDelegatedControl() {
   }
 }
 
-void drawPresetSyncTransferScreen() {
+const char* presetSyncTransferObjectLabel(uint8_t objectType) {
+  switch (objectType) {
+    case PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET:
+      return "Synth preset";
+    case PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE:
+      return "Wavetable";
+    case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE:
+      return "Geometry";
+    case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_ORDER:
+      return "Geometry order";
+    case PRESET_SYNC_OBJECT_TYPE_USER_TUNING:
+      return "Tuning";
+    case PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT:
+      return "Layout";
+    case PRESET_SYNC_OBJECT_TYPE_USER_SCALE:
+      return "Scale";
+    case PRESET_SYNC_OBJECT_TYPE_SCALE_COLOR_MAP:
+      return "Color map";
+    case PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP:
+      return "Button map";
+    default:
+      return "Object";
+  }
+}
+
+void resetPresetSyncTransferDisplayState() {
+  presetSyncDisplayedObjectType = 0xFF;
+  presetSyncDisplayedDirection = 0;
+  presetSyncDisplayedProgress = 0xFF;
+}
+
+void drawPresetSyncTransferScreen(bool forceRedraw = false) {
   dismissCommandWheelOverlay();
   if (!presetSyncTransferScreenVisible) {
     presetSyncTransferScreenWokeDisplayFromSleep = screenSaverOn;
@@ -175,6 +211,100 @@ void drawPresetSyncTransferScreen() {
   noteBadgeVisible = false;
   noteOverlayTemporaryWake = false;
   noteOverlayWokeDisplayFromSleep = false;
+
+  uint8_t objectType = 0;
+  uint8_t direction = 0;
+  uint32_t completedBytes = 0;
+  uint32_t totalBytes = 0;
+  if (presetSyncWriteTransfer.active) {
+    objectType = presetSyncWriteTransfer.objectType;
+    direction = 1;
+    completedBytes = presetSyncWriteTransfer.receivedBytes;
+    totalBytes = presetSyncWriteTransfer.rawByteLength;
+  } else if (presetSyncReadTransfer.active) {
+    objectType = presetSyncReadTransfer.objectType;
+    direction = 2;
+    completedBytes = presetSyncReadTransfer.sentBytes;
+    totalBytes = presetSyncReadTransfer.rawByteLength;
+  }
+
+  if (direction != 0 && totalBytes > 0) {
+    uint8_t progress = static_cast<uint8_t>(std::min<uint64_t>(
+      100,
+      (static_cast<uint64_t>(completedBytes) * 100) / totalBytes));
+    uint8_t displayedProgress = progress == 100
+      ? 100
+      : (progress / PRESET_SYNC_PROGRESS_REDRAW_STEP) * PRESET_SYNC_PROGRESS_REDRAW_STEP;
+    if (!forceRedraw
+        && presetSyncTransferScreenVisible
+        && objectType == presetSyncDisplayedObjectType
+        && direction == presetSyncDisplayedDirection
+        && displayedProgress == presetSyncDisplayedProgress) {
+      return;
+    }
+
+    presetSyncDisplayedObjectType = objectType;
+    presetSyncDisplayedDirection = direction;
+    presetSyncDisplayedProgress = displayedProgress;
+
+    char titleText[28] = {};
+    char progressText[8] = {};
+    char byteText[28] = {};
+    snprintf(titleText,
+             sizeof(titleText),
+             "%s %s",
+             presetSyncTransferObjectLabel(objectType),
+             direction == 1 ? "upload" : "download");
+    snprintf(progressText, sizeof(progressText), "%u%%", progress);
+    if (totalBytes >= 1024) {
+      snprintf(byteText,
+               sizeof(byteText),
+               "%lu / %lu KB",
+               static_cast<unsigned long>(completedBytes / 1024),
+               static_cast<unsigned long>((totalBytes + 1023) / 1024));
+    } else {
+      snprintf(byteText,
+               sizeof(byteText),
+               "%lu / %lu bytes",
+               static_cast<unsigned long>(completedBytes),
+               static_cast<unsigned long>(totalBytes));
+    }
+
+    constexpr uint8_t barX = 8;
+    constexpr uint8_t barY = 47;
+    constexpr uint8_t barWidth = 112;
+    constexpr uint8_t barHeight = 14;
+    constexpr uint8_t barInnerWidth = barWidth - 4;
+    uint8_t fillWidth = static_cast<uint8_t>(
+      (static_cast<uint16_t>(barInnerWidth) * progress) / 100);
+
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_6x13_tf);
+    drawCenteredDelegatedText("MIDI SysEx", 16);
+    drawCenteredDelegatedText(titleText, 34);
+    u8g2.drawFrame(barX, barY, barWidth, barHeight);
+    if (fillWidth > 0) {
+      u8g2.drawBox(barX + 2, barY + 2, fillWidth, barHeight - 4);
+    }
+    drawCenteredDelegatedText(progressText, 79);
+    drawCenteredDelegatedText(byteText, 98);
+    drawCenteredDelegatedText("Please wait...", 119);
+    u8g2.sendBuffer();
+    presetSyncTransferScreenVisible = true;
+    return;
+  }
+
+  if (!forceRedraw && presetSyncTransferScreenVisible && presetSyncDisplayedDirection != 0) {
+    return;
+  }
+  if (!forceRedraw
+      && presetSyncTransferScreenVisible
+      && presetSyncDisplayedDirection == 0
+      && presetSyncDisplayedProgress == 0) {
+    return;
+  }
+  presetSyncDisplayedDirection = 0;
+  presetSyncDisplayedProgress = 0;
 
   char frameText[28];
   char messageText[18];
@@ -198,6 +328,7 @@ void closePresetSyncTransferScreen() {
     return;
   }
   presetSyncTransferScreenVisible = false;
+  resetPresetSyncTransferDisplayState();
   screenTime = presetSyncTransferSavedScreenTime;
   if (presetSyncTransferScreenWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
     enterDisplayScreensaver();
@@ -265,7 +396,7 @@ static void closeFlashSaveScreenNow() {
   if (flashSaveScreenWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
     enterDisplayScreensaver();
   } else if (presetSyncTransferActive) {
-    drawPresetSyncTransferScreen();
+    drawPresetSyncTransferScreen(true);
   } else if (delegatedControl) {
     delegatedDisplayDirty = true;
     drawDelegatedControlScreen();
@@ -315,6 +446,9 @@ bool servicePresetSyncTransfer() {
   while (presetSyncTransferActive) {
     pausedMainLoop = true;
     bool processed = processIncomingMIDI();
+    if (processed) {
+      drawPresetSyncTransferScreen();
+    }
     uint64_t now = readClock();
     if (now >= presetSyncTransferDeadline) {
       sendToLog("Preset-sync SysEx transfer window timed out.");

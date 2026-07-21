@@ -662,12 +662,14 @@ is selected.
 references a computer-only wavetable, saving that preset to HexBoard offers to
 upload the wavetable first.
 
-Single live synth-parameter edits do not show the `MIDI SysEx Transfer` screen,
+Single live synth-parameter edits do not show the `MIDI SysEx` transfer screen,
 do not mute audio, and are saved by the normal debounced auto-save path. Larger
 object transfers, such as full preset saves or wavetable imports, show `MIDI
-SysEx Transfer` on the HexBoard. Transfers that save to flash mute audio for the
-transfer window and briefly pause normal menu/button/LED work while the transfer
-is serviced.
+SysEx` on the HexBoard with the object type, upload/download direction, byte
+count, percentage, and a progress bar. This includes large wavetable transfers
+and complete geometry-bundle saves. Transfers that save to flash mute audio for
+the transfer window and briefly pause normal menu/button/LED work while the
+transfer is serviced.
 
 ### Transpose
 

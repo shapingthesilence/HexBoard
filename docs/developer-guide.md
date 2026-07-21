@@ -526,6 +526,14 @@ folder paths are intentionally omitted. Stored non-root folder paths do not
 use a leading slash; `MenuFolderUtils` keeps virtual folder rows in that same
 convention so opening a folder continues to match stored catalog entries.
 
+Chunked preset-sync reads and writes own a modal OLED screen while normal core-0
+UI work is paused. `MenuAndDisplay` reads the active transfer's object type,
+direction, completed byte count, and total byte count directly from
+`PresetSyncReadTransfer` or `PresetSyncWriteTransfer`. Progress redraws are
+quantized to two-percent steps so large wavetable and geometry-bundle transfers
+remain visibly responsive without sending a full OLED buffer for every 64-byte
+SysEx chunk.
+
 Transient Advanced-menu items, such as `LED Test` and `Serial Debug`, should
 stay out of `factoryDefaults` and should not trigger a settings version bump.
 

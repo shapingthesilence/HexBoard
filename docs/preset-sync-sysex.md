@@ -1377,9 +1377,12 @@ preview matches the saved selection.
    object-list page before reading each object body, keeping response frames
    under conservative SysEx buffer limits.
 7. Current firmware treats chunked preset-sync object reads/writes as a modal
-   transfer window: the display shows `MIDI SysEx Transfer`, normal core-0
-   UI/LED work is paused, and MIDI input is pumped until the exchange goes idle
-   with no active object transfer, or until timeout clears the active transfer.
+   transfer window: the display shows the object type, upload/download
+   direction, completed and total bytes, percentage, and a progress bar under
+   `MIDI SysEx`. Normal core-0 UI/LED work is paused, and MIDI input is pumped
+   until the exchange goes idle with no active object transfer, or until
+   timeout clears the active transfer. OLED redraws are quantized rather than
+   performed for every 64-byte chunk.
    `SYNTH_PARAM_SET`, hello, list, delete, and other one-frame control messages
    process without opening that modal window.
 8. Current firmware uses the Pico SDK USB stack through Arduino-Pico `MIDIUSB`
