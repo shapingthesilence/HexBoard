@@ -1,12 +1,12 @@
 {
   "format": "hexboard.layoutBundle.v4",
   "bundle": {
-    "objectIdHex": "a8005d79da2d285c9105fea5487f6199",
-    "name": "31 TET 127 ZPI",
-    "folderPath": "Built In",
+    "objectIdHex": "e3248bb9b410e9dd96c287aedd687b3e",
+    "name": "31 EDO",
+    "folderPath": "/",
     "tuning": {
-      "kind": "equal-step",
-      "name": "31 TET 127 ZPI",
+      "kind": "edo",
+      "name": "31 EDO",
       "cycleLength": 31,
       "referenceMidiNote": 69,
       "referenceHz": 440.0,
@@ -43,7 +43,8 @@
         "Ab",
         "Ad"
       ],
-      "stepCents": 38.73669109444469
+      "edoDivisions": 31,
+      "periodCents": 1200.0
     },
     "palette": {
       "defaultColorMode": 1,
@@ -238,7 +239,7 @@
     },
     "layouts": [
       {
-        "objectIdHex": "98b10a717b3b998fc23eb9b0bb9d673a",
+        "objectIdHex": "38ac6d5cd229936e9b612ef1ff178dec",
         "name": "Compressed Janko",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -254,7 +255,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "534e909da0854c2d11f95fcf166610f9",
+        "objectIdHex": "f64db47c22351a7c232cdcdcddd9a800",
         "name": "Compr. Bosanquet",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -270,7 +271,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "056c51215d8e9d66da634c363b1fce89",
+        "objectIdHex": "97de466043eba3169245ad291f3eb8ee",
         "name": "Janko",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -286,7 +287,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "5bc19d5f6f840a8ac66ff2daedff1e8a",
+        "objectIdHex": "7e6d52cc4eef0694d84268b0173fa26b",
         "name": "Bosanquet-Wilson",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -302,7 +303,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "e8e644b3a4267f3590fe0c84ac4ebf13",
+        "objectIdHex": "34643aa3593cb55d9b00b8437231b402",
         "name": "Wicki-Hayden",
         "centerButton": 64,
         "centerStepsFromC": 0,
@@ -318,7 +319,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "4464f08795db32ea9c9deb3174bf1fda",
+        "objectIdHex": "0fe25da46ded9fc4853a3d400d253512",
         "name": "5X -13Y",
         "centerButton": 64,
         "centerStepsFromC": 0,
@@ -334,7 +335,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "147e73a01ef1945fa5eea2e5e145c7ac",
+        "objectIdHex": "8ea43a34b5de4b0cb6c394d10f6f3a2f",
         "name": "Harmonic Table",
         "centerButton": 75,
         "centerStepsFromC": 0,
@@ -350,7 +351,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "596720cd122b0573d4954dae43033c1d",
+        "objectIdHex": "7e5257ff9d5a03314ef6e734424b1a58",
         "name": "Double Bosanquet",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -366,7 +367,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "f2874c2bcbc1eda57047fb44e569185a",
+        "objectIdHex": "ea2519d4b0a8402a0ba62777d06ed6af",
         "name": "Anti-Double Bos.",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -382,7 +383,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "e05286728f8020087b11c2a9df9e7902",
+        "objectIdHex": "699efbdcea525267c0ad7a6890de1502",
         "name": "Full Gamut",
         "centerButton": 75,
         "centerStepsFromC": 0,
@@ -398,10 +399,10 @@
         "chordActions": []
       }
     ],
-    "activeLayoutIdHex": "98b10a717b3b998fc23eb9b0bb9d673a",
+    "activeLayoutIdHex": "38ac6d5cd229936e9b612ef1ff178dec",
     "scales": [
       {
-        "objectIdHex": "745b82f9d239a1c4d56934cbfab401a7",
+        "objectIdHex": "e1e579639a53f429630fcc0b8ea994b4",
         "name": "All Notes",
         "includedDegrees": [
           0,
@@ -438,7 +439,7 @@
         ]
       },
       {
-        "objectIdHex": "2b138fb49d5ddcf679c32666f8d0940a",
+        "objectIdHex": "99f0257fb8886a7774cdac23ef48056f",
         "name": "Diatonic",
         "includedDegrees": [
           0,
@@ -451,7 +452,7 @@
         ]
       },
       {
-        "objectIdHex": "5d956b8823f50d96332e6a0e204d1d33",
+        "objectIdHex": "421eacea983cf0fa27cdc849ba8cb433",
         "name": "Chromatic",
         "includedDegrees": [
           0,
@@ -469,7 +470,7 @@
         ]
       },
       {
-        "objectIdHex": "1b618d50c32e20be62ecee2430cb8535",
+        "objectIdHex": "ba98f1d4244a915fdbb24a0c08842550",
         "name": "Pentatonic",
         "includedDegrees": [
           0,
@@ -480,7 +481,7 @@
         ]
       },
       {
-        "objectIdHex": "bde8c74d65678387a8bd8e0ecd6eda03",
+        "objectIdHex": "9615a027a5f0e305279aafe8940677be",
         "name": "Harmonic",
         "includedDegrees": [
           0,
@@ -494,7 +495,7 @@
         ]
       },
       {
-        "objectIdHex": "d39d2b71a0c4d58d0fbe874b4d5b5897",
+        "objectIdHex": "64dab656dbbdf3dd36eb09a639d66fc6",
         "name": "Mavila",
         "includedDegrees": [
           0,
@@ -509,7 +510,7 @@
         ]
       },
       {
-        "objectIdHex": "11ea69a776714f0f8b1fcb775f852f34",
+        "objectIdHex": "b52288e370c9eb5897b47cb067b7aac4",
         "name": "Quartal",
         "includedDegrees": [
           0,
@@ -523,7 +524,7 @@
         ]
       },
       {
-        "objectIdHex": "3443082071b1175f55db88c1f2e9e3df",
+        "objectIdHex": "2926e8ce7293c121ca7bbc7b128ac251",
         "name": "Orwell",
         "includedDegrees": [
           0,
@@ -538,7 +539,7 @@
         ]
       },
       {
-        "objectIdHex": "b5968cdf7c87c9b14ff333634e4115b3",
+        "objectIdHex": "2b9bdb8c23351d5a6bce2830a18a0578",
         "name": "Neutral",
         "includedDegrees": [
           0,
@@ -552,7 +553,7 @@
         ]
       },
       {
-        "objectIdHex": "d669c0d3573a639e3db209a969a8f9e4",
+        "objectIdHex": "7674f8aea051b4c69af7ffb514c1bc0a",
         "name": "Miracle",
         "includedDegrees": [
           0,
@@ -568,6 +569,6 @@
         ]
       }
     ],
-    "activeScaleIdHex": "745b82f9d239a1c4d56934cbfab401a7"
+    "activeScaleIdHex": "e1e579639a53f429630fcc0b8ea994b4"
   }
 }

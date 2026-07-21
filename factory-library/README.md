@@ -39,7 +39,7 @@ its layouts and scales. As with synth presets, the relative source directory is
 the on-device folder, while the bundle name must match the filename and its
 `folderPath` must match that source directory.
 
-The supplied `geometry/Built In/` files compile into 22 editable factory
+The supplied root-level `geometry/` files compile into 22 editable factory
 bundles containing 332 linked records. The record count is an encoding detail;
 device capacity is 64 complete bundles, counted by tuning roots. Only the
 minimal 12 EDO rescue tuning, Wicki-Hayden layout, All Notes scale, and rescue
@@ -49,7 +49,8 @@ filesystem geometry catalog cannot be used.
 Each source bundle becomes one independently checksummed
 `/geometry/<tuning-object-id>.hgb` file. `selectedGeometry` is written to
 `/default_geometry.dat`; filesystem directory order does not choose the factory
-default.
+default. `geometryOrder` must list every source bundle and defines their stable
+on-device order; the supplied list matches the former hard-coded tuning order.
 
 ## Configuration And Validation
 

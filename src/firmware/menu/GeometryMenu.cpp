@@ -33,12 +33,25 @@ struct UserGeometryMenuRow {
   uint16_t handle = USER_GEOMETRY_MENU_INVALID_HANDLE;
 };
 
+struct SelectedGeometryMenuEntry {
+  uint8_t objectType = 0;
+  uint8_t objectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
+  uint16_t handle = USER_GEOMETRY_MENU_INVALID_HANDLE;
+  char name[GEOMETRY_OBJECT_NAME_LENGTH] = {};
+};
+
+constexpr uint8_t SELECTED_GEOMETRY_MENU_CACHE_CAPACITY = GEOMETRY_ASSOCIATED_MAX_COUNT * 2u;
+
 UserGeometryMenuRow userGeometryVirtualRows[USER_GEOMETRY_MENU_MAX_ENTRIES] = {};
 uint16_t userGeometryVirtualCount = 0;
 UserGeometryMenuKind userGeometryVirtualKind = UserGeometryMenuKind::Tuning;
 bool userGeometryMenuRebuildPending = false;
 bool userGeometryMenuOverflowLogged = false;
 char userGeometryMenuCurrentFolder[GEOMETRY_OBJECT_FOLDER_LENGTH] = "/";
+SelectedGeometryMenuEntry selectedGeometryMenuCache[SELECTED_GEOMETRY_MENU_CACHE_CAPACITY] = {};
+uint8_t selectedGeometryMenuCacheCount = 0;
+uint8_t selectedGeometryMenuCacheTuningId[GEOMETRY_OBJECT_ID_LENGTH] = {};
+bool selectedGeometryMenuCacheValid = false;
 
 const char* userGeometryMenuTitle(UserGeometryMenuKind kind) {
   switch (kind) {
@@ -92,8 +105,13 @@ int findFirstUserGeometryObjectReferencing(uint8_t objectType,
                                            uint8_t referenceTag,
                                            uint8_t referenceObjectType,
                                            const uint8_t* referenceObjectId) {
+  const GeometryBundleIndexEntry* bundle = nullptr;
+  if (!userGeometryRuntimeTuningObjectSelected
+      || !geometryBundleForTuningObjectId(userGeometryRuntimeTuningObjectId, bundle)) {
+    return -1;
+  }
   GeometryCatalogReader reader;
-  if (!beginGeometryCatalogRead(reader)) {
+  if (!beginGeometryBundleRead(*bundle, reader)) {
     return -1;
   }
   uint16_t handle = 0;
@@ -214,39 +232,70 @@ void persistBuiltinGeometrySelection(uint16_t handle) {
   markSettingsDirty();
 }
 
-bool userGeometryObjectBelongsToCurrentTuning(const GeometryObjectIndexEntry& metadata, uint8_t referenceTag) {
-  if (!userGeometryRuntimeTuningObjectSelected) {
-    return false;
-  }
-  GeometryObjectSlot object;
-  return geometryObjectForMetadata(metadata, object)
-         && geometryObjectReferencesObjectId(
-              object,
-              referenceTag,
-              PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
-              userGeometryRuntimeTuningObjectId
-            );
+void invalidateSelectedGeometryMenuCache() {
+  selectedGeometryMenuCacheCount = 0;
+  selectedGeometryMenuCacheValid = false;
+  memset(selectedGeometryMenuCacheTuningId, 0, sizeof(selectedGeometryMenuCacheTuningId));
 }
 
-bool includeGeometryObjectInMenu(UserGeometryMenuKind kind, const GeometryObjectIndexEntry& object) {
-  switch (kind) {
-    case UserGeometryMenuKind::Tuning:
-      {
-        if (object.objectType != PRESET_SYNC_OBJECT_TYPE_USER_TUNING) {
-          return false;
-        }
-        GeometryObjectSlot fullObject;
-        return geometryObjectForMetadata(object, fullObject)
-               && geometryObjectRuntimeTuningSupported(fullObject);
-      }
-    case UserGeometryMenuKind::Layout:
-      return object.objectType == PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT
-             && userGeometryObjectBelongsToCurrentTuning(object, PRESET_SYNC_TLV_LAYOUT_TUNING_REF);
-    case UserGeometryMenuKind::Scale:
-      return object.objectType == PRESET_SYNC_OBJECT_TYPE_USER_SCALE
-             && userGeometryObjectBelongsToCurrentTuning(object, PRESET_SYNC_TLV_USER_SCALE_TUNING_REF);
+const SelectedGeometryMenuEntry* selectedGeometryMenuEntryForHandle(uint16_t handle) {
+  for (uint8_t index = 0; index < selectedGeometryMenuCacheCount; ++index) {
+    if (selectedGeometryMenuCache[index].handle == handle) {
+      return &selectedGeometryMenuCache[index];
+    }
   }
-  return false;
+  return nullptr;
+}
+
+bool ensureSelectedGeometryMenuCache() {
+  if (!userGeometryRuntimeTuningObjectSelected) {
+    invalidateSelectedGeometryMenuCache();
+    return false;
+  }
+  if (selectedGeometryMenuCacheValid
+      && memcmp(selectedGeometryMenuCacheTuningId,
+                userGeometryRuntimeTuningObjectId,
+                GEOMETRY_OBJECT_ID_LENGTH) == 0) {
+    return true;
+  }
+
+  invalidateSelectedGeometryMenuCache();
+  const GeometryBundleIndexEntry* bundle = nullptr;
+  if (!geometryBundleForTuningObjectId(userGeometryRuntimeTuningObjectId, bundle)) {
+    return false;
+  }
+  GeometryCatalogReader reader;
+  if (!beginGeometryBundleRead(*bundle, reader)) {
+    return false;
+  }
+  uint8_t layoutCount = 0;
+  uint8_t scaleCount = 0;
+  uint16_t handle = 0;
+  GeometryObjectIndexEntry object;
+  while (readNextGeometryObjectMetadata(reader, handle, object)) {
+    uint8_t* typeCount = nullptr;
+    if (object.objectType == PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT) {
+      typeCount = &layoutCount;
+    } else if (object.objectType == PRESET_SYNC_OBJECT_TYPE_USER_SCALE) {
+      typeCount = &scaleCount;
+    }
+    if (!typeCount || *typeCount >= GEOMETRY_ASSOCIATED_MAX_COUNT
+        || selectedGeometryMenuCacheCount >= SELECTED_GEOMETRY_MENU_CACHE_CAPACITY) {
+      continue;
+    }
+    SelectedGeometryMenuEntry& cached = selectedGeometryMenuCache[selectedGeometryMenuCacheCount++];
+    cached.objectType = object.objectType;
+    cached.handle = handle;
+    memcpy(cached.objectId, object.objectId, sizeof(cached.objectId));
+    snprintf(cached.name, sizeof(cached.name), "%s", object.name);
+    ++(*typeCount);
+  }
+  endGeometryCatalogRead(reader);
+  memcpy(selectedGeometryMenuCacheTuningId,
+         userGeometryRuntimeTuningObjectId,
+         sizeof(selectedGeometryMenuCacheTuningId));
+  selectedGeometryMenuCacheValid = true;
+  return true;
 }
 
 bool builtinTuningMatchesCurrentRuntime(uint8_t legacyTuningIndex) {
@@ -282,9 +331,13 @@ bool geometryHandleMatchesObjectId(uint16_t handle, const uint8_t* objectId) {
     return builtinGeometryMetadataByHandle(handle, metadata)
            && memcmp(metadata.objectId, objectId, GEOMETRY_OBJECT_ID_LENGTH) == 0;
   }
-  GeometryObjectIndexEntry object;
-  return geometryObjectMetadataForHandle(handle, object)
-         && memcmp(object.objectId, objectId, GEOMETRY_OBJECT_ID_LENGTH) == 0;
+  const GeometryBundleIndexEntry* bundle = nullptr;
+  if (geometryBundleForTuningHandle(handle, bundle)) {
+    return memcmp(bundle->tuningObjectId, objectId, GEOMETRY_OBJECT_ID_LENGTH) == 0;
+  }
+  const SelectedGeometryMenuEntry* cached = selectedGeometryMenuEntryForHandle(handle);
+  return cached
+         && memcmp(cached->objectId, objectId, GEOMETRY_OBJECT_ID_LENGTH) == 0;
 }
 
 bool userGeometryHandleIsCurrent(UserGeometryMenuKind kind, uint16_t handle) {
@@ -317,14 +370,10 @@ bool findCurrentUserGeometryRow(uint16_t& index) {
   return false;
 }
 
-bool userGeometryObjectForRow(const UserGeometryMenuRow& row, GeometryObjectIndexEntry& object) {
-  return geometryObjectMetadataForHandle(row.handle, object);
-}
-
 bool userGeometryFolderRowPath(const UserGeometryMenuRow& row, char* output, size_t outputLength) {
-  GeometryObjectIndexEntry object;
-  return userGeometryObjectForRow(row, object)
-         && menuFolderImmediateChildPath(object.folderPath,
+  const GeometryBundleIndexEntry* bundle = nullptr;
+  return geometryBundleForTuningHandle(row.handle, bundle)
+         && menuFolderImmediateChildPath(bundle->folderPath,
                                          userGeometryMenuCurrentFolder,
                                          output,
                                          outputLength);
@@ -346,7 +395,6 @@ void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
   userGeometryVirtualKind = kind;
   userGeometryVirtualCount = 0;
   userGeometryMenuOverflowLogged = false;
-  uint8_t associatedObjectCount = 0;
 
   if (geometryFallbackRequired()
       && (kind != UserGeometryMenuKind::Tuning || menuFolderIsRoot(userGeometryMenuCurrentFolder))) {
@@ -361,41 +409,34 @@ void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
 
   if (kind == UserGeometryMenuKind::Tuning) {
     char childFolder[GEOMETRY_OBJECT_FOLDER_LENGTH] = {};
-    GeometryCatalogReader reader;
-    if (beginGeometryCatalogRead(reader)) {
-      uint16_t handle = 0;
-      GeometryObjectIndexEntry object;
-      while (readNextGeometryObjectMetadata(reader, handle, object)) {
-        if (object.objectType == PRESET_SYNC_OBJECT_TYPE_USER_TUNING
-            && menuFolderImmediateChildPath(object.folderPath,
-                                            userGeometryMenuCurrentFolder,
-                                            childFolder,
-                                            sizeof(childFolder))
-            && !userGeometryFolderAlreadyListed(childFolder)
-            && includeGeometryObjectInMenu(kind, object)) {
-          appendUserGeometryFolder(handle);
-        }
+    for (const GeometryBundleIndexEntry& bundle : geometryBundles) {
+      if (menuFolderImmediateChildPath(bundle.folderPath,
+                                       userGeometryMenuCurrentFolder,
+                                       childFolder,
+                                       sizeof(childFolder))
+          && !userGeometryFolderAlreadyListed(childFolder)) {
+        appendUserGeometryFolder(bundle.firstHandle);
       }
-      endGeometryCatalogRead(reader);
     }
+    for (const GeometryBundleIndexEntry& bundle : geometryBundles) {
+      if (menuFolderEntryBelongsToCurrentFolder(bundle.folderPath,
+                                                userGeometryMenuCurrentFolder)) {
+        appendUserGeometryHandle(bundle.firstHandle);
+      }
+    }
+    return;
   }
 
-  GeometryCatalogReader reader;
-  if (beginGeometryCatalogRead(reader)) {
-    uint16_t handle = 0;
-    GeometryObjectIndexEntry object;
-    while (readNextGeometryObjectMetadata(reader, handle, object)) {
-      bool inActiveFolder = kind != UserGeometryMenuKind::Tuning
-                            || menuFolderEntryBelongsToCurrentFolder(object.folderPath, userGeometryMenuCurrentFolder);
-      if (inActiveFolder && includeGeometryObjectInMenu(kind, object)) {
-        appendUserGeometryHandle(handle);
-        if (kind != UserGeometryMenuKind::Tuning
-            && ++associatedObjectCount >= GEOMETRY_ASSOCIATED_MAX_COUNT) {
-          break;
-        }
-      }
+  if (!ensureSelectedGeometryMenuCache()) {
+    return;
+  }
+  uint8_t wantedType = kind == UserGeometryMenuKind::Layout
+                         ? PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT
+                         : PRESET_SYNC_OBJECT_TYPE_USER_SCALE;
+  for (uint8_t index = 0; index < selectedGeometryMenuCacheCount; ++index) {
+    if (selectedGeometryMenuCache[index].objectType == wantedType) {
+      appendUserGeometryHandle(selectedGeometryMenuCache[index].handle);
     }
-    endGeometryCatalogRead(reader);
   }
 }
 
@@ -432,11 +473,14 @@ bool userGeometryVirtualLabelProvider(void*, uint16_t index, char* output, size_
     return true;
   }
 
-  GeometryObjectIndexEntry object;
-  if (!geometryObjectMetadataForHandle(handle, object)) {
-    return false;
+  const GeometryBundleIndexEntry* bundle = nullptr;
+  if (geometryBundleForTuningHandle(handle, bundle)) {
+    snprintf(output, outputLength, "%s", bundle->tuningName);
+    return true;
   }
-  snprintf(output, outputLength, "%s", object.name);
+  const SelectedGeometryMenuEntry* cached = selectedGeometryMenuEntryForHandle(handle);
+  if (!cached) return false;
+  snprintf(output, outputLength, "%s", cached->name);
   return true;
 }
 
@@ -476,6 +520,9 @@ void loadUserGeometryHandle(UserGeometryMenuKind kind, uint16_t handle) {
     case UserGeometryMenuKind::Tuning:
       loaded = loadUserGeometryBundleFromTuningSlot(handle);
       requestUserGeometryMenuRebuild();
+      if (loaded) {
+        ensureSelectedGeometryMenuCache();
+      }
       break;
     case UserGeometryMenuKind::Layout:
       loaded = loadUserGeometryLayoutFromSlot(handle);
@@ -566,6 +613,7 @@ void openUserGeometryScaleMenu() {
 }
 
 void requestUserGeometryMenuRebuild() {
+  invalidateSelectedGeometryMenuCache();
   userGeometryMenuRebuildPending = true;
 }
 

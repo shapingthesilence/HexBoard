@@ -1,27 +1,38 @@
 {
   "format": "hexboard.layoutBundle.v4",
   "bundle": {
-    "objectIdHex": "ef50acaeab50875e200982296090b698",
-    "name": "Carlos Alpha",
-    "folderPath": "Built In",
+    "objectIdHex": "836823b01247e603d6e06121fd38e942",
+    "name": "Carlos Gamma",
+    "folderPath": "/",
     "tuning": {
       "kind": "equal-step",
-      "name": "Carlos Alpha",
-      "cycleLength": 9,
+      "name": "Carlos Gamma",
+      "cycleLength": 20,
       "referenceMidiNote": 69,
       "referenceHz": 440.0,
       "keyLabels": [
-        "IV+",
+        "^IV",
         "Ib",
+        "^Ib",
+        "IV#",
+        "^IV#",
         "I",
+        "^I",
+        "IIb",
+        "^IIb",
         "I#",
-        "II-",
-        "II+",
+        "^I#",
+        "II",
+        "^II",
         "III",
+        "^III",
+        "IVb",
+        "^IVb",
         "III#",
-        "IV-"
+        "^III#",
+        "IV"
       ],
-      "stepCents": 77.96499
+      "stepCents": 35.0985422804
     },
     "palette": {
       "defaultColorMode": 1,
@@ -40,43 +51,109 @@
         },
         {
           "degree": 2,
-          "hueTenthDegrees": 2520,
+          "hueTenthDegrees": 0,
           "saturation": 255,
           "value": 180
         },
         {
           "degree": 3,
-          "hueTenthDegrees": 1080,
+          "hueTenthDegrees": 2880,
           "saturation": 255,
           "value": 180
         },
         {
           "degree": 4,
-          "hueTenthDegrees": 0,
-          "saturation": 0,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
           "value": 180
         },
         {
           "degree": 5,
-          "hueTenthDegrees": 720,
+          "hueTenthDegrees": 1440,
           "saturation": 255,
           "value": 180
         },
         {
           "degree": 6,
-          "hueTenthDegrees": 2520,
-          "saturation": 255,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
           "value": 180
         },
         {
           "degree": 7,
-          "hueTenthDegrees": 0,
+          "hueTenthDegrees": 720,
           "saturation": 255,
           "value": 180
         },
         {
           "degree": 8,
-          "hueTenthDegrees": 1800,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 9,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 10,
+          "hueTenthDegrees": 0,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 11,
+          "hueTenthDegrees": 2880,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 12,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 13,
+          "hueTenthDegrees": 1440,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 14,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 15,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 16,
+          "hueTenthDegrees": 0,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 17,
+          "hueTenthDegrees": 2880,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 18,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 19,
+          "hueTenthDegrees": 1440,
           "saturation": 255,
           "value": 180
         }
@@ -84,12 +161,12 @@
     },
     "layouts": [
       {
-        "objectIdHex": "69e5df17921045c621e28e074ca40ded",
+        "objectIdHex": "b5fb0048d3372d3941ab51904fe1e50c",
         "name": "Harmonic Table",
         "centerButton": 75,
         "centerStepsFromC": 0,
-        "acrossSteps": -9,
-        "upRightSteps": -5,
+        "acrossSteps": -20,
+        "upRightSteps": -9,
         "deviceRotationSteps": 1,
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
@@ -100,7 +177,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "231afdb410a0db6fa05d2ed352176b79",
+        "objectIdHex": "953d3771f007eaebcbfebb13beae40c1",
         "name": "Compressed",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -116,7 +193,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "e1f43001546af0145e7a3df9afacb59c",
+        "objectIdHex": "47e3469e12d5143913530fe88acd3165",
         "name": "Full Gamut",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -132,10 +209,10 @@
         "chordActions": []
       }
     ],
-    "activeLayoutIdHex": "69e5df17921045c621e28e074ca40ded",
+    "activeLayoutIdHex": "b5fb0048d3372d3941ab51904fe1e50c",
     "scales": [
       {
-        "objectIdHex": "452ed94a9c17c5c4778563dcfb06b440",
+        "objectIdHex": "62c1d96d137f6c02299bce3ebedcf36d",
         "name": "All Notes",
         "includedDegrees": [
           0,
@@ -146,20 +223,31 @@
           5,
           6,
           7,
-          8
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19
         ]
       },
       {
-        "objectIdHex": "d2a67698d386189dadb8856614cf3077",
+        "objectIdHex": "884e791ccd8b68ecf59fb987977a2ce2",
         "name": "Super Meta Lydian",
         "includedDegrees": [
           0,
-          3,
-          5,
-          7
+          6,
+          11,
+          16
         ]
       }
     ],
-    "activeScaleIdHex": "452ed94a9c17c5c4778563dcfb06b440"
+    "activeScaleIdHex": "62c1d96d137f6c02299bce3ebedcf36d"
   }
 }

@@ -56,15 +56,16 @@ File headers:
 | File | Magic | Version owner | Payload |
 | --- | --- | --- | --- |
 | `/settings.dat` | `STG` | Main settings schema | Main profile bytes and object references |
-| `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `1` | One tuning root and all linked layout/scale/color/map records |
+| `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `2` | One tuning root and all linked layout/scale/color/map records |
 | `/presets/*.hsp` | `HSP` | Synth preset file schema `11` | One named preset, folder, values, and wavetable reference |
 | `/synth_wavetables.dat` | `SYW` | Synth wavetable catalog schema | Named user wavetable objects and sample-file paths |
 
 The current firmware has `/settings.dat`, independent named/foldered synth
 preset files, `/synth_wavetables.dat`, and independent geometry bundle files.
-Geometry metadata is streamed from LittleFS for listing and menus; firmware
-keeps only aggregate counts and selected runtime objects instead of a RAM index
-of every geometry record. Synth preset bodies are also read from their files on
+Geometry object metadata is streamed from LittleFS for preset-sync listing.
+Menus retain compact tuning ID/name/folder/range metadata for every bundle and
+layout/scale names only for the active tuning, rather than a RAM index of every
+geometry record. Synth preset bodies are also read from their files on
 demand, while their small name/folder/object-id metadata stays indexed for the
 device menu. Firmware can apply generated EDO/equal-step and Scala/cents-list
 `UserTuning` objects, isomorphic vector `UserLayout` objects, `UserScale`
@@ -72,14 +73,16 @@ membership, `ScaleColorMap` degree colors, and format-1/format-2
 `ExplicitButtonMap` pitch, color, direct-MIDI, and chord overrides to the live
 pitch, MIDI, synth, and LED runtime. The on-device `Tuning`,
 `Layout`, and `Scales` browsers are backed by the same editable catalog.
-Supplied entries live in `Built In`. If no usable bundle tuning exists, the
+Supplied entries live at the tuning root in their former hard-coded order. If no usable bundle tuning exists, the
 firmware exposes its compiled 12 EDO rescue geometry instead.
 It does not yet apply profile references, bundle manifests, or ratio-list
 tunings.
 
 An `HGB` transfer is the exact staged file bytes. Its 12-byte header is `HGB`,
-file version `1`, record count (`u16-le`), reserved `u16-le` zero, and CRC32
-(`u32-le`) of all following record bytes. Each record contains object type,
+file version `2`, record count (`u16-le`), catalog order (`u16-le`), and CRC32
+(`u32-le`) of all following record bytes. Factory bundles use explicit order
+values; new host-created bundles use `0xFFFF` and sort after factory entries.
+The web app retains a downloaded bundle's device order when saving it back. Each record contains object type,
 schema major, schema minor, one reserved zero byte, the raw 16-byte object ID,
 length-prefixed name and folder strings, body length (`u32-le`), and the normal
 `HBS1` TLV object body. The tuning root must be the first and only

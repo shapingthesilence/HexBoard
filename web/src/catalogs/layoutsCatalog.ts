@@ -366,6 +366,7 @@ export interface LayoutBundle {
   objectIdHex: string;
   tuningObjectIdHex?: string;
   colorObjectIdHex?: string;
+  catalogOrder?: number;
   name: string;
   folderPath: string;
   tuning: LayoutBundleTuning;
@@ -390,7 +391,7 @@ function u32LE(value: number): Uint8Array {
   return bytesFromNumbers([value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]);
 }
 
-export function encodeGeometryBundleFile(objects: EncodedCatalogObject[]): Uint8Array {
+export function encodeGeometryBundleFile(objects: EncodedCatalogObject[], catalogOrder = 0xffff): Uint8Array {
   if (objects.length === 0
       || objects.length > GeometryBundleMaxRecords
       || objects[0].objectType !== ObjectType.UserTuning
@@ -419,9 +420,17 @@ export function encodeGeometryBundleFile(objects: EncodedCatalogObject[]): Uint8
     ]);
   });
   const body = concatBytes(records);
+  const normalizedCatalogOrder = Number.isInteger(catalogOrder) && catalogOrder >= 0 && catalogOrder <= 0xffff
+    ? catalogOrder
+    : 0xffff;
   const file = concatBytes([
-    bytesFromNumbers(["H".charCodeAt(0), "G".charCodeAt(0), "B".charCodeAt(0), 1]),
-    bytesFromNumbers([objects.length & 0xff, (objects.length >> 8) & 0xff, 0, 0]),
+    bytesFromNumbers(["H".charCodeAt(0), "G".charCodeAt(0), "B".charCodeAt(0), 2]),
+    bytesFromNumbers([
+      objects.length & 0xff,
+      (objects.length >> 8) & 0xff,
+      normalizedCatalogOrder & 0xff,
+      (normalizedCatalogOrder >> 8) & 0xff
+    ]),
     u32LE(crc32(body)),
     body
   ]);
@@ -1321,7 +1330,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     scaleColorMap,
     explicitButtonMaps,
     objects,
-    bundleFile: encodeGeometryBundleFile(objects)
+    bundleFile: encodeGeometryBundleFile(objects, bundle.catalogOrder)
   };
 }
 
@@ -1462,6 +1471,11 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
   const colorObjectIdHex = typeof source.colorObjectIdHex === "string"
     ? objectIdToHex(objectIdFromHex(source.colorObjectIdHex))
     : undefined;
+  const catalogOrder = Number.isInteger(source.catalogOrder)
+    && Number(source.catalogOrder) >= 0
+    && Number(source.catalogOrder) <= 0xffff
+    ? Number(source.catalogOrder)
+    : undefined;
   if (!source.tuning || !source.layout) {
     if (!source.tuning || !Array.isArray(source.layouts)) {
       throw new Error("Layout bundle is missing tuning or layout data");
@@ -1567,6 +1581,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
     objectIdHex: source.objectIdHex,
     ...(tuningObjectIdHex ? { tuningObjectIdHex } : {}),
     ...(colorObjectIdHex ? { colorObjectIdHex } : {}),
+    ...(catalogOrder !== undefined ? { catalogOrder } : {}),
     name: clampGeometryMenuText(source.name, "Geometry"),
     folderPath: clampGeometryFolderPath(stringOr(source.folderPath, "/")),
     tuning,

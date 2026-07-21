@@ -241,11 +241,15 @@ void copyPresetSyncText(char* destination, size_t destinationLength, const uint8
 
 void load_geometry_objects();
 bool beginGeometryCatalogRead(GeometryCatalogReader& reader);
+bool beginGeometryBundleRead(const GeometryBundleIndexEntry& bundle, GeometryCatalogReader& reader);
 bool readNextGeometryObjectMetadata(GeometryCatalogReader& reader,
                                     uint16_t& handle,
                                     GeometryObjectIndexEntry& object);
 void endGeometryCatalogRead(GeometryCatalogReader& reader);
 bool geometryObjectMetadataForHandle(uint16_t handle, GeometryObjectIndexEntry& object);
+bool geometryBundleForTuningHandle(uint16_t tuningHandle, const GeometryBundleIndexEntry*& bundle);
+bool geometryBundleForTuningObjectId(const uint8_t* tuningObjectId,
+                                     const GeometryBundleIndexEntry*& bundle);
 bool geometryObjectForMetadata(const GeometryObjectIndexEntry& metadata, GeometryObjectSlot& object);
 bool deleteGeometryObjectFromCatalog(uint16_t handle);
 size_t geometryBundleCount();

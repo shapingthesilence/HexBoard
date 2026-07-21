@@ -1,16 +1,17 @@
 {
   "format": "hexboard.layoutBundle.v4",
   "bundle": {
-    "objectIdHex": "5f0e2103ede9a7691dd5784043bfaa0b",
-    "name": "58 EDO",
-    "folderPath": "Built In",
+    "objectIdHex": "c6c4c4df03f6e1b94edd26a5b6fc8603",
+    "name": "80 EDO",
+    "folderPath": "/",
     "tuning": {
       "kind": "edo",
-      "name": "58 EDO",
-      "cycleLength": 58,
+      "name": "80 EDO",
+      "cycleLength": 80,
       "referenceMidiNote": 69,
       "referenceHz": 440.0,
       "keyLabels": [
+        "G+14",
         "A",
         "A+1",
         "A+2",
@@ -21,10 +22,15 @@
         "A+7",
         "A+8",
         "A+9",
+        "A+10",
+        "A+11",
+        "A+12",
+        "A+13",
         "B",
         "B+1",
         "B+2",
-        "57",
+        "B+3",
+        "B+4",
         "C",
         "C+1",
         "C+2",
@@ -34,7 +40,11 @@
         "C+6",
         "C+7",
         "C+8",
-        "C+8",
+        "C+9",
+        "C+10",
+        "C+11",
+        "C+12",
+        "C+13",
         "D",
         "D+1",
         "D+2",
@@ -44,11 +54,16 @@
         "D+6",
         "D+7",
         "D+8",
-        "D+8",
+        "D+9",
+        "D+11",
+        "D+12",
+        "D+13",
+        "D+14",
         "E",
         "E+1",
         "E+2",
         "E+3",
+        "E+4",
         "F",
         "F+1",
         "F+2",
@@ -59,6 +74,10 @@
         "F+7",
         "F+8",
         "F+9",
+        "F+11",
+        "F+12",
+        "F+13",
+        "F+14",
         "G",
         "G+1",
         "G+2",
@@ -68,9 +87,12 @@
         "G+6",
         "G+7",
         "G+8",
-        "G+9"
+        "G+9",
+        "G+11",
+        "G+12",
+        "G+13"
       ],
-      "edoDivisions": 58,
+      "edoDivisions": 80,
       "periodCents": 1200.0
     },
     "palette": {
@@ -84,343 +106,475 @@
         },
         {
           "degree": 1,
-          "hueTenthDegrees": 62,
+          "hueTenthDegrees": 45,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 2,
-          "hueTenthDegrees": 124,
+          "hueTenthDegrees": 90,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 3,
-          "hueTenthDegrees": 186,
+          "hueTenthDegrees": 135,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 4,
-          "hueTenthDegrees": 248,
+          "hueTenthDegrees": 180,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 5,
-          "hueTenthDegrees": 310,
+          "hueTenthDegrees": 225,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 6,
-          "hueTenthDegrees": 372,
+          "hueTenthDegrees": 270,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 7,
-          "hueTenthDegrees": 434,
+          "hueTenthDegrees": 315,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 8,
-          "hueTenthDegrees": 497,
+          "hueTenthDegrees": 360,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 9,
-          "hueTenthDegrees": 559,
+          "hueTenthDegrees": 405,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 10,
-          "hueTenthDegrees": 621,
+          "hueTenthDegrees": 450,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 11,
-          "hueTenthDegrees": 683,
+          "hueTenthDegrees": 495,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 12,
-          "hueTenthDegrees": 745,
+          "hueTenthDegrees": 540,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 13,
-          "hueTenthDegrees": 807,
+          "hueTenthDegrees": 585,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 14,
-          "hueTenthDegrees": 869,
+          "hueTenthDegrees": 630,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 15,
-          "hueTenthDegrees": 931,
+          "hueTenthDegrees": 675,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 16,
-          "hueTenthDegrees": 993,
+          "hueTenthDegrees": 720,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 17,
-          "hueTenthDegrees": 1055,
+          "hueTenthDegrees": 765,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 18,
-          "hueTenthDegrees": 1117,
+          "hueTenthDegrees": 810,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 19,
-          "hueTenthDegrees": 1179,
+          "hueTenthDegrees": 855,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 20,
-          "hueTenthDegrees": 1241,
+          "hueTenthDegrees": 900,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 21,
-          "hueTenthDegrees": 1303,
+          "hueTenthDegrees": 945,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 22,
-          "hueTenthDegrees": 1366,
+          "hueTenthDegrees": 990,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 23,
-          "hueTenthDegrees": 1428,
+          "hueTenthDegrees": 1035,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 24,
-          "hueTenthDegrees": 1490,
+          "hueTenthDegrees": 1080,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 25,
-          "hueTenthDegrees": 1552,
+          "hueTenthDegrees": 1125,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 26,
-          "hueTenthDegrees": 1614,
+          "hueTenthDegrees": 1170,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 27,
-          "hueTenthDegrees": 1676,
+          "hueTenthDegrees": 1215,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 28,
-          "hueTenthDegrees": 1738,
+          "hueTenthDegrees": 1260,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 29,
-          "hueTenthDegrees": 1800,
+          "hueTenthDegrees": 1305,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 30,
-          "hueTenthDegrees": 1862,
+          "hueTenthDegrees": 1350,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 31,
-          "hueTenthDegrees": 1924,
+          "hueTenthDegrees": 1395,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 32,
-          "hueTenthDegrees": 1986,
+          "hueTenthDegrees": 1440,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 33,
-          "hueTenthDegrees": 2048,
+          "hueTenthDegrees": 1485,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 34,
-          "hueTenthDegrees": 2110,
+          "hueTenthDegrees": 1530,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 35,
-          "hueTenthDegrees": 2172,
+          "hueTenthDegrees": 1575,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 36,
-          "hueTenthDegrees": 2234,
+          "hueTenthDegrees": 1620,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 37,
-          "hueTenthDegrees": 2297,
+          "hueTenthDegrees": 1665,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 38,
-          "hueTenthDegrees": 2359,
+          "hueTenthDegrees": 1710,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 39,
-          "hueTenthDegrees": 2421,
+          "hueTenthDegrees": 1755,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 40,
-          "hueTenthDegrees": 2483,
+          "hueTenthDegrees": 1800,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 41,
-          "hueTenthDegrees": 2545,
+          "hueTenthDegrees": 1845,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 42,
-          "hueTenthDegrees": 2607,
+          "hueTenthDegrees": 1890,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 43,
-          "hueTenthDegrees": 2669,
+          "hueTenthDegrees": 1935,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 44,
-          "hueTenthDegrees": 2731,
+          "hueTenthDegrees": 1980,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 45,
-          "hueTenthDegrees": 2793,
+          "hueTenthDegrees": 2025,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 46,
-          "hueTenthDegrees": 2855,
+          "hueTenthDegrees": 2070,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 47,
-          "hueTenthDegrees": 2917,
+          "hueTenthDegrees": 2115,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 48,
-          "hueTenthDegrees": 2979,
+          "hueTenthDegrees": 2160,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 49,
-          "hueTenthDegrees": 3041,
+          "hueTenthDegrees": 2205,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 50,
-          "hueTenthDegrees": 3103,
+          "hueTenthDegrees": 2250,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 51,
-          "hueTenthDegrees": 3166,
+          "hueTenthDegrees": 2295,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 52,
-          "hueTenthDegrees": 3228,
+          "hueTenthDegrees": 2340,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 53,
-          "hueTenthDegrees": 3290,
+          "hueTenthDegrees": 2385,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 54,
-          "hueTenthDegrees": 3352,
+          "hueTenthDegrees": 2430,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 55,
-          "hueTenthDegrees": 3414,
+          "hueTenthDegrees": 2475,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 56,
-          "hueTenthDegrees": 3476,
+          "hueTenthDegrees": 2520,
           "saturation": 255,
           "value": 164
         },
         {
           "degree": 57,
-          "hueTenthDegrees": 3538,
+          "hueTenthDegrees": 2565,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 58,
+          "hueTenthDegrees": 2610,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 59,
+          "hueTenthDegrees": 2655,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 60,
+          "hueTenthDegrees": 2700,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 61,
+          "hueTenthDegrees": 2745,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 62,
+          "hueTenthDegrees": 2790,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 63,
+          "hueTenthDegrees": 2835,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 64,
+          "hueTenthDegrees": 2880,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 65,
+          "hueTenthDegrees": 2925,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 66,
+          "hueTenthDegrees": 2970,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 67,
+          "hueTenthDegrees": 3015,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 68,
+          "hueTenthDegrees": 3060,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 69,
+          "hueTenthDegrees": 3105,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 70,
+          "hueTenthDegrees": 3150,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 71,
+          "hueTenthDegrees": 3195,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 72,
+          "hueTenthDegrees": 3240,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 73,
+          "hueTenthDegrees": 3285,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 74,
+          "hueTenthDegrees": 3330,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 75,
+          "hueTenthDegrees": 3375,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 76,
+          "hueTenthDegrees": 3420,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 77,
+          "hueTenthDegrees": 3465,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 78,
+          "hueTenthDegrees": 3510,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 79,
+          "hueTenthDegrees": 3555,
           "saturation": 255,
           "value": 164
         }
@@ -428,12 +582,12 @@
     },
     "layouts": [
       {
-        "objectIdHex": "c90a45883d6a7633e3d75f0d0f64799e",
+        "objectIdHex": "5a45def6d285ab61ec0c46a2104f15d3",
         "name": "Janko",
-        "centerButton": 64,
+        "centerButton": 65,
         "centerStepsFromC": 0,
-        "acrossSteps": 3,
-        "upRightSteps": 10,
+        "acrossSteps": 9,
+        "upRightSteps": 14,
         "deviceRotationSteps": 1,
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
@@ -444,59 +598,11 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "e4c2a4effa31618ca8134306cb8eba5a",
+        "objectIdHex": "14ceb22874572bbf255bdae258ce1414",
         "name": "Bosanquet-Wilson",
-        "centerButton": 64,
+        "centerButton": 65,
         "centerStepsFromC": 0,
-        "acrossSteps": 3,
-        "upRightSteps": -7,
-        "deviceRotationSteps": 1,
-        "layoutRotationSteps": 0,
-        "mirrorLeftRight": false,
-        "mirrorUpDown": false,
-        "portrait": false,
-        "buttonOverrides": [],
-        "offGridOverrides": [],
-        "chordActions": []
-      },
-      {
-        "objectIdHex": "ee7d614f97a59f3ac6553b7224c70e46",
-        "name": "Hemififths A",
-        "centerButton": 64,
-        "centerStepsFromC": 0,
-        "acrossSteps": 4,
-        "upRightSteps": 7,
-        "deviceRotationSteps": 1,
-        "layoutRotationSteps": 0,
-        "mirrorLeftRight": false,
-        "mirrorUpDown": false,
-        "portrait": false,
-        "buttonOverrides": [],
-        "offGridOverrides": [],
-        "chordActions": []
-      },
-      {
-        "objectIdHex": "607eb85306913316ad35772843010e30",
-        "name": "Hemififths B",
-        "centerButton": 64,
-        "centerStepsFromC": 0,
-        "acrossSteps": -4,
-        "upRightSteps": 3,
-        "deviceRotationSteps": 1,
-        "layoutRotationSteps": 0,
-        "mirrorLeftRight": false,
-        "mirrorUpDown": false,
-        "portrait": false,
-        "buttonOverrides": [],
-        "offGridOverrides": [],
-        "chordActions": []
-      },
-      {
-        "objectIdHex": "b0940de9f39a2398ef3e5dec5bcc1738",
-        "name": "Chromatic",
-        "centerButton": 64,
-        "centerStepsFromC": 0,
-        "acrossSteps": -7,
+        "acrossSteps": -9,
         "upRightSteps": 5,
         "deviceRotationSteps": 1,
         "layoutRotationSteps": 0,
@@ -508,108 +614,12 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "5847bab883d63a57c0269a1f53160203",
-        "name": "Harmonic Table",
-        "centerButton": 75,
-        "centerStepsFromC": 0,
-        "acrossSteps": -34,
-        "upRightSteps": -15,
-        "deviceRotationSteps": 1,
-        "layoutRotationSteps": 0,
-        "mirrorLeftRight": false,
-        "mirrorUpDown": false,
-        "portrait": false,
-        "buttonOverrides": [],
-        "offGridOverrides": [],
-        "chordActions": []
-      },
-      {
-        "objectIdHex": "7fff7aecf59a133679bde9b1a3fccfab",
-        "name": "Septimal H.T.",
-        "centerButton": 75,
-        "centerStepsFromC": 0,
-        "acrossSteps": -34,
-        "upRightSteps": -13,
-        "deviceRotationSteps": 1,
-        "layoutRotationSteps": 0,
-        "mirrorLeftRight": false,
-        "mirrorUpDown": false,
-        "portrait": false,
-        "buttonOverrides": [],
-        "offGridOverrides": [],
-        "chordActions": []
-      },
-      {
-        "objectIdHex": "c3b4dc878a4a208c6494cbc220686ac7",
-        "name": "Diaschismic",
-        "centerButton": 64,
-        "centerStepsFromC": 0,
-        "acrossSteps": 4,
-        "upRightSteps": 9,
-        "deviceRotationSteps": 1,
-        "layoutRotationSteps": 0,
-        "mirrorLeftRight": false,
-        "mirrorUpDown": false,
-        "portrait": false,
-        "buttonOverrides": [],
-        "offGridOverrides": [],
-        "chordActions": []
-      },
-      {
-        "objectIdHex": "30a780a26ab6ac3d4948c464f012056b",
-        "name": "4X -19Y",
-        "centerButton": 64,
-        "centerStepsFromC": 0,
-        "acrossSteps": 4,
-        "upRightSteps": 19,
-        "deviceRotationSteps": 1,
-        "layoutRotationSteps": 0,
-        "mirrorLeftRight": false,
-        "mirrorUpDown": false,
-        "portrait": false,
-        "buttonOverrides": [],
-        "offGridOverrides": [],
-        "chordActions": []
-      },
-      {
-        "objectIdHex": "db2a3fcac0431bd465ec425670273a40",
-        "name": "-27X 10Y",
-        "centerButton": 64,
-        "centerStepsFromC": 0,
-        "acrossSteps": -27,
-        "upRightSteps": -10,
-        "deviceRotationSteps": 0,
-        "layoutRotationSteps": 0,
-        "mirrorLeftRight": false,
-        "mirrorUpDown": false,
-        "portrait": true,
-        "buttonOverrides": [],
-        "offGridOverrides": [],
-        "chordActions": []
-      },
-      {
-        "objectIdHex": "e694c1069ed565149e4e79013d91c83b",
-        "name": "Wicki-Hayd.(29EDO)",
-        "centerButton": 64,
-        "centerStepsFromC": 0,
-        "acrossSteps": 10,
-        "upRightSteps": 34,
-        "deviceRotationSteps": 0,
-        "layoutRotationSteps": 0,
-        "mirrorLeftRight": false,
-        "mirrorUpDown": false,
-        "portrait": true,
-        "buttonOverrides": [],
-        "offGridOverrides": [],
-        "chordActions": []
-      },
-      {
-        "objectIdHex": "60619cf3add6003d69a2a6b15af27db3",
-        "name": "Bos.Wilson (29EDO)",
+        "objectIdHex": "2be5a42c3efeca25d3717801f74927df",
+        "name": "Compressed Janko",
         "centerButton": 65,
         "centerStepsFromC": 0,
-        "acrossSteps": -6,
-        "upRightSteps": 4,
+        "acrossSteps": -5,
+        "upRightSteps": 14,
         "deviceRotationSteps": 1,
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
@@ -620,39 +630,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "14ba2a819f480e2c94d6b048f8893bd6",
-        "name": "Janko      (29EDO)",
-        "centerButton": 65,
-        "centerStepsFromC": 0,
-        "acrossSteps": 6,
-        "upRightSteps": 10,
-        "deviceRotationSteps": 1,
-        "layoutRotationSteps": 0,
-        "mirrorLeftRight": false,
-        "mirrorUpDown": false,
-        "portrait": false,
-        "buttonOverrides": [],
-        "offGridOverrides": [],
-        "chordActions": []
-      },
-      {
-        "objectIdHex": "1b2289968598bfe80603da515586dc60",
-        "name": "Tridec.H.T.(29EDO)",
-        "centerButton": 75,
-        "centerStepsFromC": 0,
-        "acrossSteps": -34,
-        "upRightSteps": -14,
-        "deviceRotationSteps": 1,
-        "layoutRotationSteps": 0,
-        "mirrorLeftRight": false,
-        "mirrorUpDown": false,
-        "portrait": false,
-        "buttonOverrides": [],
-        "offGridOverrides": [],
-        "chordActions": []
-      },
-      {
-        "objectIdHex": "41a51f6836608a2879cf6a763589167e",
+        "objectIdHex": "774c945c5d86a4fc4a9dc9daf177ea9f",
         "name": "Full Gamut",
         "centerButton": 75,
         "centerStepsFromC": 0,
@@ -668,10 +646,10 @@
         "chordActions": []
       }
     ],
-    "activeLayoutIdHex": "c90a45883d6a7633e3d75f0d0f64799e",
+    "activeLayoutIdHex": "5a45def6d285ab61ec0c46a2104f15d3",
     "scales": [
       {
-        "objectIdHex": "4f8978c2cc8be680f121878a8c4bcd5a",
+        "objectIdHex": "1d22e1349e2d51c05ed35da5e924d557",
         "name": "All Notes",
         "includedDegrees": [
           0,
@@ -731,10 +709,32 @@
           54,
           55,
           56,
-          57
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64,
+          65,
+          66,
+          67,
+          68,
+          69,
+          70,
+          71,
+          72,
+          73,
+          74,
+          75,
+          76,
+          77,
+          78,
+          79
         ]
       }
     ],
-    "activeScaleIdHex": "4f8978c2cc8be680f121878a8c4bcd5a"
+    "activeScaleIdHex": "1d22e1349e2d51c05ed35da5e924d557"
   }
 }

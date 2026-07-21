@@ -140,10 +140,9 @@ bool geometryBundleHeaderValid(const GeometryObjectFileHeader& header) {
 }
 
 bool validateGeometryBundleFile(const char* path,
-                                uint8_t* tuningObjectId,
-                                uint16_t& recordCount,
+                                GeometryBundleIndexEntry& bundle,
                                 bool logFailure) {
-  recordCount = 0;
+  bundle = {};
   File file = LittleFS.open(path, "r");
   if (!file || file.size() < sizeof(GeometryObjectFileHeader)
       || file.size() > GEOMETRY_BUNDLE_MAX_RAW_BYTES) {
@@ -158,6 +157,7 @@ bool validateGeometryBundleFile(const char* path,
     if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": header.");
     return false;
   }
+  bundle.catalogOrder = header.catalogOrder;
   uint32_t crc = crc32Begin();
   uint8_t buffer[128] = {};
   while (file.available() > 0) {
@@ -190,7 +190,9 @@ bool validateGeometryBundleFile(const char* path,
     if (metadata.objectType == PRESET_SYNC_OBJECT_TYPE_USER_TUNING) {
       ++tuningCount;
       memcpy(rootTuningObjectId, metadata.objectId, GEOMETRY_OBJECT_ID_LENGTH);
-      if (tuningObjectId) memcpy(tuningObjectId, metadata.objectId, GEOMETRY_OBJECT_ID_LENGTH);
+      memcpy(bundle.tuningObjectId, metadata.objectId, GEOMETRY_OBJECT_ID_LENGTH);
+      snprintf(bundle.tuningName, sizeof(bundle.tuningName), "%s", metadata.name);
+      snprintf(bundle.folderPath, sizeof(bundle.folderPath), "%s", metadata.folderPath);
     }
     for (const auto& objectId : objectIds) {
       if (memcmp(objectId.data(), metadata.objectId, GEOMETRY_OBJECT_ID_LENGTH) == 0) {
@@ -245,8 +247,25 @@ bool validateGeometryBundleFile(const char* path,
   bool valid = tuningCount == 1 && colorMapCount <= 1 && file.position() == file.size();
   file.close();
   if (!valid && logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": bundle structure.");
-  if (valid) recordCount = header.count;
+  if (valid) bundle.recordCount = header.count;
   return valid;
+}
+
+bool geometryBundleIndexLess(const GeometryBundleIndexEntry& left,
+                             const GeometryBundleIndexEntry& right) {
+  const bool leftOrdered = left.catalogOrder != GEOMETRY_CATALOG_ORDER_UNSORTED;
+  const bool rightOrdered = right.catalogOrder != GEOMETRY_CATALOG_ORDER_UNSORTED;
+  if (leftOrdered != rightOrdered) return leftOrdered;
+  if (leftOrdered && left.catalogOrder != right.catalogOrder) {
+    return left.catalogOrder < right.catalogOrder;
+  }
+  int folderComparison = strcasecmp(left.folderPath, right.folderPath);
+  if (folderComparison != 0) return folderComparison < 0;
+  int nameComparison = strcasecmp(left.tuningName, right.tuningName);
+  if (nameComparison != 0) return nameComparison < 0;
+  return memcmp(left.tuningObjectId,
+                right.tuningObjectId,
+                GEOMETRY_OBJECT_ID_LENGTH) < 0;
 }
 
 } // namespace
@@ -278,6 +297,31 @@ bool beginGeometryCatalogRead(GeometryCatalogReader& reader) {
   reader.count = geometryCatalogObjectCount;
   reader.nextHandle = 0;
   reader.nextBundleIndex = 0;
+  return true;
+}
+
+bool beginGeometryBundleRead(const GeometryBundleIndexEntry& bundle,
+                             GeometryCatalogReader& reader) {
+  endGeometryCatalogRead(reader);
+  if (!fileSystemExists || bundle.recordCount == 0
+      || !geometryBundleStoragePath(bundle.tuningObjectId,
+                                    reader.storagePath,
+                                    sizeof(reader.storagePath))) {
+    return false;
+  }
+  reader.file = LittleFS.open(reader.storagePath, "r");
+  GeometryObjectFileHeader header = {};
+  if (!reader.file
+      || reader.file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)
+      || !geometryBundleHeaderValid(header)
+      || header.count != bundle.recordCount) {
+    endGeometryCatalogRead(reader);
+    return false;
+  }
+  reader.nextHandle = bundle.firstHandle;
+  reader.count = bundle.firstHandle + bundle.recordCount;
+  reader.bundleRecordsRemaining = bundle.recordCount;
+  reader.nextBundleIndex = geometryBundles.size();
   return true;
 }
 
@@ -330,20 +374,61 @@ bool geometryObjectMetadataForHandle(uint16_t wantedHandle, GeometryObjectIndexE
   if (wantedHandle >= geometryCatalogObjectCount) {
     return false;
   }
-  GeometryCatalogReader reader;
-  if (!beginGeometryCatalogRead(reader)) {
-    return false;
+  for (const GeometryBundleIndexEntry& bundle : geometryBundles) {
+    uint32_t bundleEnd = static_cast<uint32_t>(bundle.firstHandle) + bundle.recordCount;
+    if (wantedHandle < bundle.firstHandle || wantedHandle >= bundleEnd) {
+      continue;
+    }
+    char path[GEOMETRY_STORAGE_PATH_LENGTH] = {};
+    if (!geometryBundleStoragePath(bundle.tuningObjectId, path, sizeof(path))) return false;
+    File file = LittleFS.open(path, "r");
+    GeometryObjectFileHeader header = {};
+    if (!file
+        || file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)
+        || !geometryBundleHeaderValid(header)
+        || header.count != bundle.recordCount) {
+      if (file) file.close();
+      return false;
+    }
+    uint16_t localHandle = wantedHandle - bundle.firstHandle;
+    for (uint16_t index = 0; index <= localHandle; ++index) {
+      if (!readGeometryRecordMetadata(file, path, object)) {
+        file.close();
+        return false;
+      }
+    }
+    file.close();
+    return true;
   }
-  uint16_t handle = 0;
-  bool found = false;
-  while (readNextGeometryObjectMetadata(reader, handle, object)) {
-    if (handle == wantedHandle) {
-      found = true;
-      break;
+  return false;
+}
+
+bool geometryBundleForTuningHandle(uint16_t tuningHandle,
+                                   const GeometryBundleIndexEntry*& bundle) {
+  for (const GeometryBundleIndexEntry& candidate : geometryBundles) {
+    if (candidate.firstHandle == tuningHandle) {
+      bundle = &candidate;
+      return true;
     }
   }
-  endGeometryCatalogRead(reader);
-  return found;
+  bundle = nullptr;
+  return false;
+}
+
+bool geometryBundleForTuningObjectId(const uint8_t* tuningObjectId,
+                                     const GeometryBundleIndexEntry*& bundle) {
+  if (tuningObjectId) {
+    for (const GeometryBundleIndexEntry& candidate : geometryBundles) {
+      if (memcmp(candidate.tuningObjectId,
+                 tuningObjectId,
+                 GEOMETRY_OBJECT_ID_LENGTH) == 0) {
+        bundle = &candidate;
+        return true;
+      }
+    }
+  }
+  bundle = nullptr;
+  return false;
 }
 
 bool parseGeometryObjectBody(std::vector<uint8_t> body, GeometryObjectSlot& object, std::string& error) {
@@ -432,38 +517,39 @@ void load_geometry_objects() {
     bool candidate = !entry.isDirectory() && pathHasGeometryBundleExtension(path);
     entry.close();
     if (!candidate) continue;
-    uint8_t tuningObjectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
-    uint16_t records = 0;
-    if (!validateGeometryBundleFile(path, tuningObjectId, records, true)) continue;
+    GeometryBundleIndexEntry bundle = {};
+    if (!validateGeometryBundleFile(path, bundle, true)) continue;
     char canonicalPath[GEOMETRY_STORAGE_PATH_LENGTH] = {};
-    if (!geometryBundleStoragePath(tuningObjectId, canonicalPath, sizeof(canonicalPath))
+    if (!geometryBundleStoragePath(bundle.tuningObjectId, canonicalPath, sizeof(canonicalPath))
         || strcmp(path, canonicalPath) != 0) {
       sendToLog("Warning: Geometry bundle filename does not match its tuning object id: " + std::string(path));
       continue;
     }
     if (geometryBundles.size() >= GEOMETRY_BUNDLE_MAX_COUNT
-        || geometryCatalogObjectCount + records > GEOMETRY_OBJECT_MAX_COUNT) {
+        || geometryCatalogObjectCount + bundle.recordCount > GEOMETRY_OBJECT_MAX_COUNT) {
       sendToLog("Warning: Geometry library exceeds its bundle or record limit.");
       break;
     }
-    GeometryBundleIndexEntry bundle = {};
-    memcpy(bundle.tuningObjectId, tuningObjectId, sizeof(bundle.tuningObjectId));
-    bundle.recordCount = records;
     geometryBundles.push_back(bundle);
-    geometryCatalogObjectCount += records;
+    geometryCatalogObjectCount += bundle.recordCount;
   }
   directory.close();
+  std::sort(geometryBundles.begin(), geometryBundles.end(), geometryBundleIndexLess);
+  uint16_t firstHandle = 0;
+  for (GeometryBundleIndexEntry& bundle : geometryBundles) {
+    bundle.firstHandle = firstHandle;
+    firstHandle += bundle.recordCount;
+  }
   sendToLog("Geometry bundles loaded successfully (" + std::to_string(geometryBundles.size()) + " bundles, "
             + std::to_string(geometryCatalogObjectCount) + " objects).");
 }
 
 bool installGeometryBundleFile(const char* stagedPath) {
   if (!fileSystemExists || !stagedPath || !stagedPath[0]) return false;
-  uint8_t tuningObjectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
-  uint16_t recordCount = 0;
-  if (!validateGeometryBundleFile(stagedPath, tuningObjectId, recordCount, true)) return false;
+  GeometryBundleIndexEntry bundle = {};
+  if (!validateGeometryBundleFile(stagedPath, bundle, true)) return false;
   char destination[GEOMETRY_STORAGE_PATH_LENGTH] = {};
-  if (!geometryBundleStoragePath(tuningObjectId, destination, sizeof(destination))) return false;
+  if (!geometryBundleStoragePath(bundle.tuningObjectId, destination, sizeof(destination))) return false;
   bool replacing = LittleFS.exists(destination);
   if (!replacing && geometryBundleCount() >= GEOMETRY_BUNDLE_MAX_COUNT) {
     sendToLog("Geometry bundle library is full.");
@@ -478,7 +564,8 @@ bool installGeometryBundleFile(const char* stagedPath) {
     return false;
   }
   load_geometry_objects();
-  return findGeometryObjectByTypeAndObjectId(PRESET_SYNC_OBJECT_TYPE_USER_TUNING, tuningObjectId) >= 0;
+  return findGeometryObjectByTypeAndObjectId(PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
+                                             bundle.tuningObjectId) >= 0;
 }
 
 int findGeometryObjectByTypeAndObjectId(uint8_t objectType, const uint8_t* objectId) {
@@ -781,6 +868,33 @@ int findFirstGeometryObjectReferencing(uint8_t objectType, uint8_t referenceTag,
         return metadata.handle;
       }
     }
+  }
+
+  const GeometryBundleIndexEntry* bundle = nullptr;
+  if (referenceObjectType == PRESET_SYNC_OBJECT_TYPE_USER_TUNING) {
+    geometryBundleForTuningObjectId(referenceObjectId, bundle);
+  } else if (userGeometryRuntimeTuningObjectSelected) {
+    geometryBundleForTuningObjectId(userGeometryRuntimeTuningObjectId, bundle);
+  }
+  if (bundle) {
+    GeometryCatalogReader reader;
+    if (!beginGeometryBundleRead(*bundle, reader)) return -1;
+    uint16_t handle = 0;
+    GeometryObjectIndexEntry object;
+    while (readNextGeometryObjectMetadata(reader, handle, object)) {
+      GeometryObjectSlot fullObject;
+      if (object.objectType == objectType
+          && geometryObjectForMetadata(object, fullObject)
+          && geometryObjectReferencesObjectId(fullObject,
+                                              referenceTag,
+                                              referenceObjectType,
+                                              referenceObjectId)) {
+        endGeometryCatalogRead(reader);
+        return static_cast<int>(handle);
+      }
+    }
+    endGeometryCatalogRead(reader);
+    return -1;
   }
 
   GeometryCatalogReader reader;

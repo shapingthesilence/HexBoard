@@ -420,7 +420,7 @@ When adding, removing, reordering, or reinterpreting a `SettingKey`:
 
 Other persistent stores:
 
-The factory filesystem generation is `3`. `/storage_ready.dat` must match that
+The factory filesystem generation is `4`. `/storage_ready.dat` must match that
 generation; individual stores are still validated independently so a mismatch
 does not prevent booting with safe fallbacks.
 
@@ -429,7 +429,7 @@ does not prevent booting with safe fallbacks.
 - `/synth_wavetables.dat`: named user wavetable catalog, magic `SYW`, version `1`, up to `32` entries. Sample files use shortened `/wt_<16 hex>.wtb` paths and can contain six fixed mip levels (`49,152` bytes) or base-only data (`8,192` bytes).
 - `/current_wavetable.dat`: current wavetable folder/name reference, magic `CWT`, version `1`.
 - `/profile_wavetables.dat`: per-profile wavetable folder/name snapshots, magic `PWT`, version `1`.
-- `/geometry/<tuning-object-id>.hgb`: one independently checksummed factory-or-user geometry bundle per file, magic `HGB`, version `1`. Capacity is 64 complete bundles counted by `UserTuning` roots. A bundle contains its tuning root and all linked `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` records and is atomically replaced as one unit.
+- `/geometry/<tuning-object-id>.hgb`: one independently checksummed factory-or-user geometry bundle per file, magic `HGB`, version `2`. Capacity is 64 complete bundles counted by `UserTuning` roots. A bundle contains its tuning root and all linked `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` records and is atomically replaced as one unit. Its header also carries a stable catalog order; `0xFFFF` marks ordinary user bundles, which sort after explicitly ordered factory entries.
 - `/default_geometry.dat`: factory default tuning-object reference, magic `DGE`, version `1`. If that bundle is unavailable, boot selects the first usable bundle and ultimately the compiled 12 EDO rescue geometry.
 - `/Sequences`: optional sequencer `.hbseq` files plus `.current` remembered path when sequencer support is enabled.
 
@@ -438,12 +438,20 @@ Factory tuning/layout/scale/color objects are compiled from
 same format as host-created bundles. `BuiltinGeometry.cpp` generates only the
 read-only rescue tuning, layout, and scale when no usable catalog tuning exists.
 `factory-library/config.json` selects the object ID written to
-`/default_geometry.dat` for factory boot. The loader validates each bundle
-independently, retains only one tuning-object-id/count index entry per valid bundle, and streams metadata from LittleFS for
-menus and preset sync. Saving stages and atomically renames one complete bundle;
+`/default_geometry.dat` for factory boot and `geometryOrder` preserves the
+former hard-coded tuning order. The loader validates each bundle independently
+and retains tuning ID, name, folder, record range, and order metadata for at
+most 64 bundles. Tuning folder navigation and row drawing therefore perform no
+LittleFS reads. Once a tuning is active, one scan of only that bundle caches up
+to 24 layout names and 24 scale names; layout/scale scrolling is storage-free.
+Preset-sync reads continue to stream record metadata and bodies when requested.
+Saving stages and atomically renames one complete bundle;
 deleting removes one bundle file. Other bundles are not rewritten. Object bodies
 are loaded only while reading, validating, or applying a selected record, so the
-332 factory records do not become a permanent RAM index.
+332 factory records do not become a permanent RAM index. Synth preset and
+wavetable browsers use their existing RAM metadata catalogs in the same way:
+folder navigation and labels do not read LittleFS, while selection loads the
+chosen preset body or wavetable samples.
 
 Each `.hgb` is limited to `255` records and `262,144` bytes; each contained
 object body is limited to `8,192` bytes. The 64-bundle limit therefore permits

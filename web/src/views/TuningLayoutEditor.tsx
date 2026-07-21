@@ -290,6 +290,7 @@ interface HexBoardGeometryBundleEntry {
   schemaMajor: number;
   schemaMinor: number;
   readOnly: boolean;
+  catalogOrder: number;
 }
 
 interface DeviceGeometryObject {
@@ -610,7 +611,7 @@ function compareGeometryBundles(left: LayoutBundle, right: LayoutBundle): number
   return geometryBundleSortKey(left).localeCompare(geometryBundleSortKey(right));
 }
 
-function hexBoardGeometryEntryFromRecord(record: ObjectListRecord): HexBoardGeometryBundleEntry {
+function hexBoardGeometryEntryFromRecord(record: ObjectListRecord, catalogOrder: number): HexBoardGeometryBundleEntry {
   return {
     objectIdHex: objectIdToHex(record.objectId),
     deviceHandle: record.handle,
@@ -618,7 +619,8 @@ function hexBoardGeometryEntryFromRecord(record: ObjectListRecord): HexBoardGeom
     folderPath: decodeDeviceFolderPath(record.folderPath || rootFolderPath),
     schemaMajor: record.schemaMajor,
     schemaMinor: record.schemaMinor,
-    readOnly: (record.flags & ObjectListFlag.ReadOnly) !== 0
+    readOnly: (record.flags & ObjectListFlag.ReadOnly) !== 0,
+    catalogOrder
   };
 }
 
@@ -2555,6 +2557,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     const bundle = sanitizeEditorBundle({
       objectIdHex: objectIdToHex(deterministicObjectId(`device-geometry:${tuningObjectIdHex}`)),
       tuningObjectIdHex,
+      catalogOrder: entry.catalogOrder,
       ...(linkedColorMap ? { colorObjectIdHex: objectIdToHex(linkedColorMap.record.objectId) } : {}),
       name: entry.name,
       folderPath: entry.folderPath,
@@ -2649,9 +2652,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     try {
       setStatus("Requesting HexBoard Geometry Library...");
       const records = await client.listGeometryObjects(ObjectType.UserTuning, 8);
-      const entries = records
-        .map(hexBoardGeometryEntryFromRecord)
-        .sort((left, right) => `${left.folderPath}/${left.name}`.localeCompare(`${right.folderPath}/${right.name}`));
+      const entries = records.map((record, index) => hexBoardGeometryEntryFromRecord(record, index));
       setHexboardBundles(entries);
       setStatus(successStatus);
     } catch (error) {

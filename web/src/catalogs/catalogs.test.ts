@@ -472,9 +472,13 @@ Example scale
     expect(textFromBytes(recordValue(encoded.scaleColorMap.body, CommonTlv.Name))).toBe(GenericScaleColorMapName);
     expect(u8(recordValue(encoded.scaleColorMap.body, ScaleColorMapTlv.DefaultColorMode))).toBe(ColorMode.Custom);
     expect(new TextDecoder().decode(encoded.bundleFile.slice(0, 3))).toBe("HGB");
-    expect(encoded.bundleFile[3]).toBe(1);
+    expect(encoded.bundleFile[3]).toBe(2);
     expect(u16LE(encoded.bundleFile.slice(4, 6))).toBe(encoded.objects.length);
+    expect(u16LE(encoded.bundleFile.slice(6, 8))).toBe(0xffff);
     expect(u32LE(encoded.bundleFile.slice(8, 12)) >>> 0).toBe(crc32(encoded.bundleFile.slice(12)) >>> 0);
+
+    const ordered = encodeLayoutBundle({ ...parsed, catalogOrder: 7 });
+    expect(u16LE(ordered.bundleFile.slice(6, 8))).toBe(7);
   });
 
   it("preserves device tuning and color object ids when re-saving a downloaded bundle", () => {

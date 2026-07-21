@@ -1,12 +1,12 @@
 {
   "format": "hexboard.layoutBundle.v4",
   "bundle": {
-    "objectIdHex": "354a4915637e09c5ad7647d222fb8149",
-    "name": "72 EDO 380 ZPI",
-    "folderPath": "Built In",
+    "objectIdHex": "d9ff0e8b055d5d2fb6c8bec858f9d9f1",
+    "name": "72 EDO",
+    "folderPath": "/",
     "tuning": {
-      "kind": "equal-step",
-      "name": "72 EDO 380 ZPI",
+      "kind": "edo",
+      "name": "72 EDO",
       "cycleLength": 72,
       "referenceMidiNote": 69,
       "referenceHz": 440.0,
@@ -84,7 +84,8 @@
         "<A",
         "vA"
       ],
-      "stepCents": 16.678108173314047
+      "edoDivisions": 72,
+      "periodCents": 1200.0
     },
     "palette": {
       "defaultColorMode": 1,
@@ -525,7 +526,7 @@
     },
     "layouts": [
       {
-        "objectIdHex": "01fc64883fc04aa619da8e3966d15c6f",
+        "objectIdHex": "1e9ee55d706c4cb4ed316ca1305acc29",
         "name": "Harmonic Table",
         "centerButton": 75,
         "centerStepsFromC": 0,
@@ -541,7 +542,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "6c6ecc39c4864cd63088279816fa6d4d",
+        "objectIdHex": "9b07f94a4d2257772c03eeda04ad5f0b",
         "name": "-30X 19Y",
         "centerButton": 75,
         "centerStepsFromC": 0,
@@ -557,7 +558,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "6d5be9da0a7764b6b516ca468c042fce",
+        "objectIdHex": "26915cd93f99d30c68a8e84b9d5d1e3e",
         "name": "Miracle Mapping",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -573,7 +574,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "0cec28b7765db22f5391d7fcb4256ecb",
+        "objectIdHex": "4fc4d57414200032b0075b6905e79556",
         "name": "Sept.H.T.(36EDO)",
         "centerButton": 75,
         "centerStepsFromC": 0,
@@ -589,7 +590,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "2dfa7c7ea6b4c345ebfe7e0072a4129d",
+        "objectIdHex": "af571b1a8167a903822058aba997cc3f",
         "name": "Expanded Janko",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -605,7 +606,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "ffea2d46db9e26095c6d1b022cb4fbbe",
+        "objectIdHex": "bd3ab231037077da817cbcc22c1370fe",
         "name": "Full Gamut",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -621,10 +622,10 @@
         "chordActions": []
       }
     ],
-    "activeLayoutIdHex": "01fc64883fc04aa619da8e3966d15c6f",
+    "activeLayoutIdHex": "1e9ee55d706c4cb4ed316ca1305acc29",
     "scales": [
       {
-        "objectIdHex": "983d60ee75db7ef730a664a3a3808e79",
+        "objectIdHex": "0c6a48296169003ced39b8ca96a859ef",
         "name": "All Notes",
         "includedDegrees": [
           0,
@@ -700,8 +701,156 @@
           70,
           71
         ]
+      },
+      {
+        "objectIdHex": "7dd20e59e021a69f92d4c00a969152dc",
+        "name": "Diatonic",
+        "includedDegrees": [
+          0,
+          12,
+          24,
+          30,
+          42,
+          54,
+          66
+        ]
+      },
+      {
+        "objectIdHex": "ec440012bd52cf91cda2b16b13e2dd20",
+        "name": "Pentatonic",
+        "includedDegrees": [
+          0,
+          12,
+          24,
+          42,
+          54
+        ]
+      },
+      {
+        "objectIdHex": "c057c11d331bed3caf7f49fdf1b8b0fa",
+        "name": "Ben Johnston",
+        "includedDegrees": [
+          0,
+          6,
+          12,
+          18,
+          23,
+          28,
+          33,
+          42,
+          50,
+          54,
+          58,
+          65
+        ]
+      },
+      {
+        "objectIdHex": "0b73985b83d12431f9343329031654ea",
+        "name": "18-EDO",
+        "includedDegrees": [
+          0,
+          4,
+          8,
+          12,
+          16,
+          20,
+          24,
+          28,
+          32,
+          36,
+          40,
+          44,
+          48,
+          52,
+          56,
+          60,
+          64,
+          68
+        ]
+      },
+      {
+        "objectIdHex": "c18421b35c30faa792fbccf3d0508882",
+        "name": "Miracle",
+        "includedDegrees": [
+          0,
+          5,
+          7,
+          12,
+          14,
+          19,
+          21,
+          23,
+          28,
+          30,
+          35,
+          37,
+          42,
+          44,
+          49,
+          51,
+          56,
+          58,
+          63,
+          65,
+          70
+        ]
+      },
+      {
+        "objectIdHex": "4214494be4066a21282db584aa4dea8d",
+        "name": "Marvolo",
+        "includedDegrees": [
+          0,
+          5,
+          10,
+          15,
+          20,
+          25,
+          30,
+          35,
+          37,
+          42,
+          47,
+          52,
+          57,
+          62,
+          67
+        ]
+      },
+      {
+        "objectIdHex": "94e0e68ea9d851c0c0c679a39abcc44a",
+        "name": "Catakleismic",
+        "includedDegrees": [
+          0,
+          4,
+          11,
+          15,
+          19,
+          23,
+          30,
+          34,
+          38,
+          42,
+          49,
+          53,
+          57,
+          61,
+          68
+        ]
+      },
+      {
+        "objectIdHex": "1296a5185a8b377866fdad23a599a932",
+        "name": "Palace",
+        "includedDegrees": [
+          0,
+          10,
+          19,
+          30,
+          42,
+          52,
+          61
+        ]
       }
     ],
-    "activeScaleIdHex": "983d60ee75db7ef730a664a3a3808e79"
+    "activeScaleIdHex": "0c6a48296169003ced39b8ca96a859ef"
   }
 }

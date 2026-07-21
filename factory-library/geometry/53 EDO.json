@@ -3,7 +3,7 @@
   "bundle": {
     "objectIdHex": "4fb9c92e2e25ff50c647a91a087c9cc5",
     "name": "53 EDO",
-    "folderPath": "Built In",
+    "folderPath": "/",
     "tuning": {
       "kind": "edo",
       "name": "53 EDO",

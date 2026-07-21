@@ -14,7 +14,7 @@ import zlib
 
 PROFILE_COUNT = 9
 CURRENT_SETTINGS_VERSION = 24
-CURRENT_FILESYSTEM_GENERATION = 3
+CURRENT_FILESYSTEM_GENERATION = 4
 SYNTH_PRESET_MAX_COUNT = 128
 SYNTH_WAVETABLE_MAX_COUNT = 32
 GEOMETRY_FACTORY_BUNDLE_MAX_COUNT = 64
@@ -22,7 +22,7 @@ GEOMETRY_BUNDLE_RECORD_MAX_COUNT = 255
 GEOMETRY_OBJECT_MAX_COUNT = GEOMETRY_FACTORY_BUNDLE_MAX_COUNT * GEOMETRY_BUNDLE_RECORD_MAX_COUNT
 SYNTH_PRESET_FILE_VERSION = 11
 SYNTH_WAVETABLE_FILE_VERSION = 1
-GEOMETRY_OBJECT_FILE_VERSION = 1
+GEOMETRY_OBJECT_FILE_VERSION = 2
 SYNTH_WAVETABLE_SAMPLE_BYTES = 16 * 512
 SYNTH_WAVETABLE_MIP_SAMPLE_BYTES = SYNTH_WAVETABLE_SAMPLE_BYTES * 6
 GEOMETRY_MENU_TEXT_LENGTH = 20
@@ -488,7 +488,7 @@ def parse_geometry_bundle(path: Path, root: Path) -> list[tuple[int, bytes, str,
     active_layout_id = geometry_object_id(bundle.get("activeLayoutIdHex"), path, "bundle.activeLayoutIdHex")
     if active_layout_id not in layout_ids:
         raise fail(path, "geometry layout", "activeLayoutIdHex does not identify a bundle layout")
-    for object_id, body, name in sorted(layout_objects, key=lambda item: item[0] != active_layout_id):
+    for object_id, body, name in layout_objects:
         output.append((OBJECT_TYPE_USER_LAYOUT, object_id, name, folder, body))
 
     scales = bundle.get("scales")
@@ -505,7 +505,7 @@ def parse_geometry_bundle(path: Path, root: Path) -> list[tuple[int, bytes, str,
     active_scale_id = geometry_object_id(bundle.get("activeScaleIdHex"), path, "bundle.activeScaleIdHex")
     if active_scale_id not in scale_ids:
         raise fail(path, "geometry scale", "activeScaleIdHex does not identify a bundle scale")
-    for object_id, body, name in sorted(scale_objects, key=lambda item: item[0] != active_scale_id):
+    for object_id, body, name in scale_objects:
         output.append((OBJECT_TYPE_USER_SCALE, object_id, name, folder, body))
 
     color_body, color_name = parse_geometry_color_map(
@@ -533,13 +533,25 @@ def build_geometry(root: Path, output: Path, config_path: Path, config: dict) ->
     }
     if selected_path not in path_keys.values():
         raise fail(config_path, "selection", f"selectedGeometry {selected!r} was not found")
-    paths.sort(key=lambda path: (path_keys[path] != selected_path, path_keys[path]))
+    configured_order = config.get("geometryOrder")
+    if not isinstance(configured_order, list) or not all(isinstance(value, str) for value in configured_order):
+        raise fail(config_path, "geometry order", "geometryOrder must list every geometry folder/name path")
+    normalized_order = [value.strip("/") for value in configured_order]
+    if len(normalized_order) != len(set(normalized_order)):
+        raise fail(config_path, "geometry order", "geometryOrder contains duplicate paths")
+    available_paths = set(path_keys.values())
+    if set(normalized_order) != available_paths:
+        missing = sorted(available_paths - set(normalized_order))
+        extra = sorted(set(normalized_order) - available_paths)
+        raise fail(config_path, "geometry order", f"geometryOrder mismatch; missing={missing}, extra={extra}")
+    order_by_path = {value: index for index, value in enumerate(normalized_order)}
+    paths.sort(key=lambda path: order_by_path[path_keys[path]])
     geometry_output = output / "geometry"
     geometry_output.mkdir()
     seen_ids: set[bytes] = set()
     record_count = 0
     selected_tuning_id: bytes | None = None
-    for path in paths:
+    for catalog_order, path in enumerate(paths):
         try:
             objects = parse_geometry_bundle(path, root)
         except ValueError as error:
@@ -561,7 +573,14 @@ def build_geometry(root: Path, output: Path, config_path: Path, config: dict) ->
             seen_ids.add(object_id)
             bundle_records.append(geometry_catalog_record(object_type, object_id, name, folder, body))
         bundle_body = b"".join(bundle_records)
-        header = struct.pack("<3sBHHI", b"HGB", GEOMETRY_OBJECT_FILE_VERSION, len(bundle_records), 0, crc32(bundle_body))
+        header = struct.pack(
+            "<3sBHHI",
+            b"HGB",
+            GEOMETRY_OBJECT_FILE_VERSION,
+            len(bundle_records),
+            catalog_order,
+            crc32(bundle_body),
+        )
         if len(header) + len(bundle_body) > GEOMETRY_BUNDLE_MAX_RAW_BYTES:
             raise fail(
                 path,

@@ -163,8 +163,10 @@ is shown.
 
 Use this section to choose the tuning or geometry bundle the whole board runs
 on. The page is a GEM-style virtual list backed by the editable geometry
-catalog: supplied factory tunings are in `Built In`, and additional saved
-tunings can be organized into folders. Scrolling follows normal GEM list behavior, including page jumps at
+catalog: supplied factory tunings appear at the tuning root in their original
+factory order, and additional saved tunings can be organized into folders.
+Tuning names and folders are kept in a small menu index, so scrolling does not
+read the filesystem. Scrolling follows normal GEM list behavior, including page jumps at
 the 11 visible-row boundary. The active tuning shows a diamond in the left
 action-icon slot when it appears in the list. Selecting a tuning also loads the
 first linked layout, scale, color map, and matching explicit button map so the
@@ -198,6 +200,9 @@ the left action-icon slot when it appears in the list.
 Choosing a layout remaps button pitches, loads that layout's matching explicit
 button map when one exists, and reloads that layout's default device
 orientation: portrait layouts use `0`, and landscape layouts use `90`.
+Only the active tuning's layout and scale names are cached. Changing tunings may
+briefly pause while that bundle is loaded; subsequent layout/scale browsing does
+not read the filesystem.
 
 Layout rotation, flip, and display rotation controls live under `Editor`.
 

@@ -1,12 +1,12 @@
 {
   "format": "hexboard.layoutBundle.v4",
   "bundle": {
-    "objectIdHex": "9a2dfb7bc74fc78df18a8173621d5379",
-    "name": "58 EDO 289 ZPI",
-    "folderPath": "Built In",
+    "objectIdHex": "5f0e2103ede9a7691dd5784043bfaa0b",
+    "name": "58 EDO",
+    "folderPath": "/",
     "tuning": {
-      "kind": "equal-step",
-      "name": "58 EDO 289 ZPI",
+      "kind": "edo",
+      "name": "58 EDO",
       "cycleLength": 58,
       "referenceMidiNote": 69,
       "referenceHz": 440.0,
@@ -70,7 +70,8 @@
         "G+8",
         "G+9"
       ],
-      "stepCents": 20.665882796496927
+      "edoDivisions": 58,
+      "periodCents": 1200.0
     },
     "palette": {
       "defaultColorMode": 1,
@@ -427,7 +428,7 @@
     },
     "layouts": [
       {
-        "objectIdHex": "3955af6569f1bb34aa16952beb905a86",
+        "objectIdHex": "c90a45883d6a7633e3d75f0d0f64799e",
         "name": "Janko",
         "centerButton": 64,
         "centerStepsFromC": 0,
@@ -443,7 +444,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "061f12033450bb85cca69755d47d5a62",
+        "objectIdHex": "e4c2a4effa31618ca8134306cb8eba5a",
         "name": "Bosanquet-Wilson",
         "centerButton": 64,
         "centerStepsFromC": 0,
@@ -459,7 +460,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "f5dbac6852c59608305162b36dd88fef",
+        "objectIdHex": "ee7d614f97a59f3ac6553b7224c70e46",
         "name": "Hemififths A",
         "centerButton": 64,
         "centerStepsFromC": 0,
@@ -475,7 +476,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "2b28fd99080c7caf5e8daea471ef206e",
+        "objectIdHex": "607eb85306913316ad35772843010e30",
         "name": "Hemififths B",
         "centerButton": 64,
         "centerStepsFromC": 0,
@@ -491,7 +492,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "bafcbefdb841a2a0e623060068593116",
+        "objectIdHex": "b0940de9f39a2398ef3e5dec5bcc1738",
         "name": "Chromatic",
         "centerButton": 64,
         "centerStepsFromC": 0,
@@ -507,7 +508,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "c7f32b846d101394f9d7e7038878d327",
+        "objectIdHex": "5847bab883d63a57c0269a1f53160203",
         "name": "Harmonic Table",
         "centerButton": 75,
         "centerStepsFromC": 0,
@@ -523,7 +524,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "9e4fd3f9631bd4a5fbb68a0599f6d287",
+        "objectIdHex": "7fff7aecf59a133679bde9b1a3fccfab",
         "name": "Septimal H.T.",
         "centerButton": 75,
         "centerStepsFromC": 0,
@@ -539,7 +540,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "a98c28e68218ca96760fbc63227c7437",
+        "objectIdHex": "c3b4dc878a4a208c6494cbc220686ac7",
         "name": "Diaschismic",
         "centerButton": 64,
         "centerStepsFromC": 0,
@@ -555,7 +556,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "5200012c7700b39b0f6b9b0a509afd00",
+        "objectIdHex": "30a780a26ab6ac3d4948c464f012056b",
         "name": "4X -19Y",
         "centerButton": 64,
         "centerStepsFromC": 0,
@@ -571,7 +572,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "e6c142ba2767e0802b77d3fc41006f7e",
+        "objectIdHex": "db2a3fcac0431bd465ec425670273a40",
         "name": "-27X 10Y",
         "centerButton": 64,
         "centerStepsFromC": 0,
@@ -587,7 +588,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "22aa8135eae24f3029d7d293b9d43843",
+        "objectIdHex": "e694c1069ed565149e4e79013d91c83b",
         "name": "Wicki-Hayd.(29EDO)",
         "centerButton": 64,
         "centerStepsFromC": 0,
@@ -603,7 +604,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "65149918422e905b1c6824f11e091877",
+        "objectIdHex": "60619cf3add6003d69a2a6b15af27db3",
         "name": "Bos.Wilson (29EDO)",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -619,7 +620,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "a2f567d7e96f2aaa71596fe47091e3d9",
+        "objectIdHex": "14ba2a819f480e2c94d6b048f8893bd6",
         "name": "Janko      (29EDO)",
         "centerButton": 65,
         "centerStepsFromC": 0,
@@ -635,7 +636,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "298ca5fa6bf22f00c413215e5efd28e4",
+        "objectIdHex": "1b2289968598bfe80603da515586dc60",
         "name": "Tridec.H.T.(29EDO)",
         "centerButton": 75,
         "centerStepsFromC": 0,
@@ -651,7 +652,7 @@
         "chordActions": []
       },
       {
-        "objectIdHex": "872b9a403c2920cbbe1ca5169f812b1c",
+        "objectIdHex": "41a51f6836608a2879cf6a763589167e",
         "name": "Full Gamut",
         "centerButton": 75,
         "centerStepsFromC": 0,
@@ -667,10 +668,10 @@
         "chordActions": []
       }
     ],
-    "activeLayoutIdHex": "3955af6569f1bb34aa16952beb905a86",
+    "activeLayoutIdHex": "c90a45883d6a7633e3d75f0d0f64799e",
     "scales": [
       {
-        "objectIdHex": "b40e1045f7544e2ac54bf4646814ab8b",
+        "objectIdHex": "4f8978c2cc8be680f121878a8c4bcd5a",
         "name": "All Notes",
         "includedDegrees": [
           0,
@@ -734,6 +735,6 @@
         ]
       }
     ],
-    "activeScaleIdHex": "b40e1045f7544e2ac54bf4646814ab8b"
+    "activeScaleIdHex": "4f8978c2cc8be680f121878a8c4bcd5a"
   }
 }
