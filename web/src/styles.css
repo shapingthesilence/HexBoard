@@ -1013,7 +1013,7 @@ select {
 .brushToolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   margin: 0 20px;
   padding: 9px 10px;
@@ -1101,6 +1101,33 @@ select {
   min-width: 128px;
 }
 
+.paintToolGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.paintToolGroup button {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+
+.paintToolbarIcon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .brushColorField {
   display: flex;
   align-items: center;
@@ -1116,6 +1143,10 @@ select {
   height: 34px;
   min-height: 34px;
   padding: 3px;
+}
+
+.brushToolbar > button:last-child {
+  white-space: nowrap;
 }
 
 .selectionStatus {
@@ -1262,26 +1293,6 @@ select {
   letter-spacing: -0.01em;
 }
 
-.segmentedControl {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface-muted);
-}
-
-.segmentedControl button {
-  min-width: 0;
-  border-color: transparent;
-  background: transparent;
-}
-
-.segmentedControl button.active {
-  box-shadow: var(--shadow-sm);
-}
-
 .keyFacts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1335,37 +1346,8 @@ select {
   font-size: 0.82rem;
 }
 
-.keyOutputDetails {
+.keyOutputSection {
   grid-column: span 2;
-}
-
-.keyOutputDetails > summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  list-style: none;
-  cursor: pointer;
-}
-
-.keyOutputDetails > summary::-webkit-details-marker {
-  display: none;
-}
-
-.keyOutputDetails > summary::after {
-  color: var(--text-soft);
-  content: "+";
-  font-size: 1rem;
-}
-
-.keyOutputDetails[open] > summary::after {
-  content: "−";
-}
-
-.keyOutputDetails > summary strong {
-  margin-left: auto;
-  color: var(--text-soft);
-  font-size: 0.78rem;
 }
 
 .compactStack {
@@ -1387,7 +1369,7 @@ select {
 }
 
 @media (max-width: 600px) {
-  .keyOutputDetails {
+  .keyOutputSection {
     grid-column: span 1;
   }
 }

@@ -4,10 +4,23 @@ import {
   clearColorOverridesForScaleDegree,
   colorToCss,
   deviceRelativeMirrorTransform,
+  keyOutputMode,
   normalizeCommittedNumber,
   paintScaleDegreeColor,
   resetOverridesToScaleDegreeColors
 } from "./TuningLayoutEditor.tsx";
+
+describe("key output mode", () => {
+  it("represents an unused key as Off even when it retains an action", () => {
+    expect(keyOutputMode("unused", { kind: "direct-midi", midiNote: 60, midiChannel: 1 })).toBe("off");
+  });
+
+  it("maps active keys to their tuned or explicit output", () => {
+    expect(keyOutputMode("note", undefined)).toBe("tuned");
+    expect(keyOutputMode("note", { kind: "direct-midi", midiNote: 60, midiChannel: 1 })).toBe("direct-midi");
+    expect(keyOutputMode("note", { kind: "chord", chordActionId: 1 })).toBe("chord");
+  });
+});
 
 describe("deferred number fields", () => {
   it("keeps the prior value when an empty or invalid draft is committed", () => {

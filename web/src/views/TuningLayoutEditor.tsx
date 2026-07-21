@@ -178,7 +178,17 @@ export function deviceRelativeMirrorTransform(
 }
 type PaintTool = "brush" | "eyedropper";
 type PaintTarget = "button" | "degree";
-type KeyOutputMode = "tuned" | "direct-midi" | "chord";
+type KeyOutputMode = "tuned" | "direct-midi" | "chord" | "off";
+
+export function keyOutputMode(
+  role: LayoutBundleButtonOverride["role"],
+  action: LayoutBundleButtonAction | undefined
+): KeyOutputMode {
+  if (role === "unused") {
+    return "off";
+  }
+  return action?.kind ?? "tuned";
+}
 
 const defaultChordShape: Omit<LayoutBundleChordAction, "id"> = {
   name: "Major triad",
@@ -250,6 +260,27 @@ interface GuideHalo {
 }
 
 type LayoutToolbarIconKind = "undo" | "redo" | "rotate-counterclockwise" | "rotate-clockwise" | "mirror-horizontal" | "mirror-vertical";
+type PaintToolbarIconKind = "brush" | "eyedropper";
+
+// Dependency-free Lucide Brush and Pipette icons (ISC): https://lucide.dev/icons/
+function PaintToolbarIcon({ kind }: { kind: PaintToolbarIconKind }) {
+  return (
+    <svg aria-hidden="true" className="paintToolbarIcon" viewBox="0 0 24 24">
+      {kind === "brush" ? (
+        <>
+          <path d="m9.06 11.9 8.07-8.06a2.85 2.85 0 1 1 4.03 4.03l-8.06 8.08" />
+          <path d="M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02Z" />
+        </>
+      ) : (
+        <>
+          <path d="m2 22 1-1h3l9-9" />
+          <path d="M3 21v-3l9-9" />
+          <path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z" />
+        </>
+      )}
+    </svg>
+  );
+}
 
 function LayoutToolbarIcon({ kind }: { kind: LayoutToolbarIconKind }) {
   if (kind === "mirror-horizontal") {
@@ -2391,7 +2422,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     .find((color) => color.degree === selectedPreview.degree) ?? createDefaultDegreeColors(1)[0];
   const selectedEditableColor = selectedPreview.colorSource === "button" ? selectedPreview.color : selectedDegreeColor;
   const selectedAction = selectedPreview.override?.action;
-  const selectedOutputMode: KeyOutputMode = selectedAction?.kind ?? "tuned";
+  const selectedOutputMode = keyOutputMode(selectedPreview.role, selectedAction);
   const selectedChordAction = selectedAction?.kind === "chord"
     ? activeLayout.chordActions.find((action) => action.id === selectedAction.chordActionId)
     : undefined;
@@ -2459,50 +2490,44 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       stepsFromC: selectedPreview.stepsFromC
     });
   }
-  function setSelectedAction(action: LayoutBundleButtonAction | undefined) {
-    if (action) {
-      updateButtonOverride(selectedPreview.key.index, { action });
-      return;
-    }
-    updateActiveLayout((layout) => {
-      const override = layout.buttonOverrides.find((candidate) => candidate.buttonIndex === selectedPreview.key.index);
-      if (!override) {
-        return layout;
-      }
-      const { action: _removedAction, ...withoutAction } = override;
-      void _removedAction;
-      return {
-        ...layout,
-        buttonOverrides: overrideHasCustomBehavior(withoutAction)
-          ? layout.buttonOverrides.map((candidate) => candidate.buttonIndex === selectedPreview.key.index ? withoutAction : candidate)
-          : layout.buttonOverrides.filter((candidate) => candidate.buttonIndex !== selectedPreview.key.index)
-      };
-    });
+  function setSelectedAction(action: LayoutBundleButtonAction) {
+    updateButtonOverride(selectedPreview.key.index, { action });
   }
   function setSelectedOutputMode(outputMode: KeyOutputMode) {
+    if (outputMode === "off") {
+      updateButtonOverride(selectedPreview.key.index, { role: "unused" });
+      return;
+    }
     if (outputMode === "tuned") {
-      setSelectedAction(undefined);
+      updateButtonOverride(selectedPreview.key.index, { role: "note", action: undefined });
       return;
     }
     if (outputMode === "direct-midi") {
-      setSelectedAction({
+      updateButtonOverride(selectedPreview.key.index, { role: "note", action: {
         kind: "direct-midi",
         midiNote: selectedAction?.kind === "direct-midi" ? selectedAction.midiNote : selectedNearestMidiNote,
         midiChannel: selectedAction?.kind === "direct-midi" ? selectedAction.midiChannel : 1
-      });
+      } });
       return;
     }
     updateActiveLayout((layout) => {
-      const existingAction = layout.chordActions[0];
+      const retainedAction = selectedAction?.kind === "chord"
+        ? layout.chordActions.find((action) => action.id === selectedAction.chordActionId)
+        : undefined;
+      const existingAction = retainedAction ?? layout.chordActions[0];
       const chordAction = existingAction ?? { ...defaultChordShape, id: nextChordActionId(layout.chordActions) };
+      const rootMidiNote = chordAction.pitchMode === "midi-semitones"
+        ? selectedAction?.kind === "chord" ? selectedAction.rootMidiNote ?? selectedNearestMidiNote : selectedNearestMidiNote
+        : undefined;
       return {
         ...layout,
         chordActions: existingAction ? layout.chordActions : [...layout.chordActions, chordAction],
         buttonOverrides: upsertOverride(layout.buttonOverrides, selectedPreview.key.index, {
+          role: "note",
           action: {
             kind: "chord",
             chordActionId: chordAction.id,
-            rootMidiNote: chordAction.pitchMode === "midi-semitones" ? selectedNearestMidiNote : undefined
+            rootMidiNote
           }
         })
       };
@@ -3003,7 +3028,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             <div className="bundleIdentityFields">
               <label className="field">
                 <span>Bundle name</span>
-                <NameInput value={activeBundle.name} onCommit={updateBundleName} />
+                <NameInput fallback="Untitled Bundle" value={activeBundle.name} onCommit={updateBundleName} />
               </label>
               <label className="field">
                 <span>Folder</span>
@@ -3070,7 +3095,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               </div>
               <label className="field">
                 <span>Layout name</span>
-                <NameInput value={activeLayout.name} onCommit={(name) => updateLayout({ name })} />
+                <NameInput fallback="User Layout" value={activeLayout.name} onCommit={(name) => updateLayout({ name })} />
               </label>
               <label className="field">
                 <span>Center key</span>
@@ -3146,6 +3171,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 <span>Scale name</span>
                 <NameInput
                   disabled={activeScaleIsAllNotes}
+                  fallback="User Scale"
                   value={activeScale.name}
                   onCommit={(name) => updateActiveScale((scale) => ({ ...scale, name: clampGeometryMenuText(name, "User Scale") }))}
                 />
@@ -3196,7 +3222,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           </div>
           <div className="brushToolbar">
             <label className="toolbarSelectField">
-              <span>Default color mode</span>
+              <span>Color mode</span>
               <select
                 value={activeBundle.palette.defaultColorMode}
                 onChange={(event) => updateDefaultColorMode(Number(event.target.value) as ColorModeValue)}
@@ -3206,21 +3232,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 ))}
               </select>
             </label>
-            <button
-              aria-pressed={customColorModeActive && paintbrushMode}
-              className={customColorModeActive && paintbrushMode ? "primary" : ""}
-              disabled={!customColorModeActive}
-              type="button"
-              onClick={() => {
-                endPaintStroke();
-                setPaintbrushMode((current) => !current);
-                setPaintTool("brush");
-              }}
-            >
-              Paint keys
-            </button>
             <label className="toolbarSelectField">
-              <span>Paint target</span>
+              <span>Target</span>
               <select
                 disabled={!customColorModeActive}
                 value={paintTarget}
@@ -3233,21 +3246,42 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 <option value="degree">Scale degrees</option>
               </select>
             </label>
-            <button
-              aria-pressed={customColorModeActive && paintbrushMode && paintTool === "eyedropper"}
-              className={customColorModeActive && paintbrushMode && paintTool === "eyedropper" ? "primary" : ""}
-              disabled={!customColorModeActive}
-              type="button"
-              onClick={() => {
-                endPaintStroke();
-                setPaintbrushMode(true);
-                setPaintTool((current) => current === "eyedropper" ? "brush" : "eyedropper");
-              }}
-            >
-              Pick color
-            </button>
+            <div className="paintToolGroup" role="group" aria-label="Paint tools">
+              <button
+                aria-label="Paint keys"
+                aria-pressed={customColorModeActive && paintbrushMode && paintTool === "brush"}
+                className={customColorModeActive && paintbrushMode && paintTool === "brush" ? "primary" : ""}
+                disabled={!customColorModeActive}
+                title="Paint keys"
+                type="button"
+                onClick={() => {
+                  const isActive = paintbrushMode && paintTool === "brush";
+                  endPaintStroke();
+                  setPaintbrushMode(!isActive);
+                  setPaintTool("brush");
+                }}
+              >
+                <PaintToolbarIcon kind="brush" />
+              </button>
+              <button
+                aria-label="Pick color"
+                aria-pressed={customColorModeActive && paintbrushMode && paintTool === "eyedropper"}
+                className={customColorModeActive && paintbrushMode && paintTool === "eyedropper" ? "primary" : ""}
+                disabled={!customColorModeActive}
+                title="Pick color from key"
+                type="button"
+                onClick={() => {
+                  const isActive = paintbrushMode && paintTool === "eyedropper";
+                  endPaintStroke();
+                  setPaintbrushMode(!isActive);
+                  setPaintTool("eyedropper");
+                }}
+              >
+                <PaintToolbarIcon kind="eyedropper" />
+              </button>
+            </div>
             <label className="brushColorField">
-              <span>Brush color</span>
+              <span>Color</span>
               <input
                 aria-label="Brush color"
                 disabled={!customColorModeActive}
@@ -3456,28 +3490,6 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 </div>
               </section>
             ) : null}
-            <section className="keyInspectorSection">
-              <h3>State</h3>
-              <div className="segmentedControl" role="group" aria-label="Key state">
-                <button
-                  aria-pressed={selectedPreview.role === "note"}
-                  className={selectedPreview.role === "note" ? "active" : ""}
-                  type="button"
-                  onClick={() => updateButtonOverride(selectedPreview.key.index, { role: "note" })}
-                >
-                  Note
-                </button>
-                <button
-                  aria-pressed={selectedPreview.role === "unused"}
-                  className={selectedPreview.role === "unused" ? "active" : ""}
-                  type="button"
-                  onClick={() => updateButtonOverride(selectedPreview.key.index, { role: "unused" })}
-                >
-                  Off
-                </button>
-              </div>
-            </section>
-
             {selectedPreview.role === "note" ? (
               <section className="keyInspectorSection">
                 <h3>Pitch</h3>
@@ -3522,14 +3534,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               </section>
             ) : null}
 
-            {selectedPreview.role === "note" ? (
-              <details className="keyInspectorSection keyOutputDetails">
-                <summary>
-                  <span>Advanced output</span>
-                  <strong>{selectedOutputMode === "tuned" ? "Tuned note" : selectedOutputMode === "direct-midi" ? "Direct MIDI" : "Chord"}</strong>
-                </summary>
-                <div className="stack compactStack">
-                  <p className="muted">Most layouts should keep Tuned note. Direct MIDI and chords bypass the normal one-note tuning output for this key.</p>
+            <section className="keyInspectorSection keyOutputSection">
+              <h3>Output</h3>
+              <div className="stack compactStack">
+                  <p className="muted">Choose the normal tuned note, a fixed MIDI note, a chord, or turn this key off.</p>
                   {selectedButtons.length > 1 ? <small className="muted">These settings apply to primary button {selectedPreview.key.index} only.</small> : null}
                   <label className="field">
                     <span>Key output</span>
@@ -3537,10 +3545,11 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                       <option value="tuned">Tuned note</option>
                       <option value="direct-midi">Direct MIDI note</option>
                       <option value="chord">Chord</option>
+                      <option value="off">Off</option>
                     </select>
                   </label>
 
-                  {selectedAction?.kind === "direct-midi" ? (
+                  {selectedOutputMode === "direct-midi" && selectedAction?.kind === "direct-midi" ? (
                     <div className="keyOutputGrid">
                       <label className="field">
                         <span>MIDI note</span>
@@ -3565,7 +3574,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                     </div>
                   ) : null}
 
-                  {selectedAction?.kind === "chord" && selectedChordAction ? (
+                  {selectedOutputMode === "chord" && selectedAction?.kind === "chord" && selectedChordAction ? (
                     <>
                       <div className="fieldControlRow">
                         <label className="field growField">
@@ -3578,7 +3587,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                       </div>
                       <label className="field">
                         <span>Shape name</span>
-                        <NameInput value={selectedChordAction.name} onCommit={(name) => updateSelectedChordAction({ name })} />
+                        <NameInput fallback={`Chord ${selectedChordAction.id}`} value={selectedChordAction.name} onCommit={(name) => updateSelectedChordAction({ name })} />
                       </label>
                       <label className="field">
                         <span>Interval units</span>
@@ -3630,9 +3639,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                       )}
                     </>
                   ) : null}
-                </div>
-              </details>
-            ) : null}
+              </div>
+            </section>
 
             <section className="keyInspectorSection">
               <h3>Color</h3>
@@ -3950,16 +3958,19 @@ function HexBoardGeometryLibraryPanel({
 }
 
 interface NameInputProps {
+  fallback: string;
   value: string;
   onCommit: (value: string) => void;
   disabled?: boolean;
 }
 
-function NameInput({ value, onCommit, disabled = false }: NameInputProps) {
+function NameInput({ fallback, value, onCommit, disabled = false }: NameInputProps) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   function commit() {
-    onCommit(draft);
+    const normalized = clampGeometryMenuText(draft, fallback);
+    setDraft(normalized);
+    onCommit(normalized);
   }
   return (
     <input
@@ -4099,7 +4110,7 @@ function TuningControls({
       <div className="fieldGrid">
         <label className="field">
           <span>Name</span>
-          <NameInput value={tuning.name} onCommit={(name) => onEdoChange({ name })} />
+          <NameInput fallback="User Tuning" value={tuning.name} onCommit={(name) => onEdoChange({ name })} />
         </label>
         <label className="field">
           <span>Divisions</span>
@@ -4138,7 +4149,7 @@ function TuningControls({
       <div className="fieldGrid">
         <label className="field">
           <span>Name</span>
-          <NameInput value={tuning.name} onCommit={(name) => onEqualStepChange({ name })} />
+          <NameInput fallback="User Tuning" value={tuning.name} onCommit={(name) => onEqualStepChange({ name })} />
         </label>
         <label className="field">
           <span>Step cents</span>
@@ -4180,11 +4191,11 @@ function TuningControls({
       </div>
       <label className="field">
         <span>Name</span>
-        <NameInput value={tuning.name} onCommit={(name) => onScalaChange({ name })} />
+        <NameInput fallback="User Tuning" value={tuning.name} onCommit={(name) => onScalaChange({ name })} />
       </label>
       <label className="field">
         <span>Description</span>
-        <NameInput value={tuning.description} onCommit={(description) => onScalaChange({ description })} />
+        <NameInput fallback={tuning.name} value={tuning.description} onCommit={(description) => onScalaChange({ description })} />
       </label>
       <label className="field">
         <span>1/1 MIDI note</span>

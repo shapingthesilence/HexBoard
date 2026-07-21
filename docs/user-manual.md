@@ -581,21 +581,23 @@ and HexBoard file-management view; the three editing steps keep the board
 preview visible while their focused controls appear beside it. Sync and save
 actions remain at the top of the geometry studio. Editable numeric fields allow
 temporary empty or out-of-range text while typing, then restore or clamp the
-value when you leave the field. The preview's `Paint keys`
-tool can target either button color overrides or scale-degree palette colors
-while `Custom` color mode is active. Painting a scale degree clears matching
+value when you leave the field. Names and descriptions likewise apply their
+length and fallback rules only after you leave the field. The preview's adjacent
+brush and eyedropper buttons paint keys or pick an existing key color. The brush
+can target either button color overrides or scale-degree palette colors while
+`Custom` color mode is active. Painting a scale degree clears matching
 button color overrides in the active layout so the palette color takes effect
-immediately. Expand `Key inspector` to turn a key on or off, optionally override
-its generated pitch, or change between its scale-degree color and a per-key
-color. Shift-click selects a continuous range, while Control-click or
+immediately. Expand `Key inspector` to choose a tuned note, direct MIDI note,
+chord, or `Off` output, optionally override its generated pitch, or change
+between its scale-degree color and a per-key color. Shift-click selects a continuous range, while Control-click or
 Command-click toggles individual keys; the bulk controls transpose or reset the
 selection together. Selected keys use green rings around slightly smaller key
 faces, the primary key used by the inspector has a gold ring, and the toolbar
 reports the current selection count. Selection status and `Deselect All` live
 in the layout-transform toolbar; clearing the selection disables its transform
-buttons until another key is selected. The collapsed `Advanced output` section keeps ordinary
-tuned-note editing simple while allowing a key to send a fixed MIDI note and
-channel or a reusable chord shape of up to four tones. Chord intervals can use
+buttons until another key is selected. The always-visible `Output` section allows
+a key to send a tuned note, fixed MIDI note and channel, reusable chord shape of
+up to four tones, or no output. Chord intervals can use
 the current tuning's steps or ordinary MIDI semitones. The inspector uses a visual color picker; derived layout step and scale
 degree values are read-only facts, and cents-from-reference information is under
 `Advanced pitch details`. `Reset all key overrides` restores the selected key to
