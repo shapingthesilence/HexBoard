@@ -7,7 +7,8 @@ import {
   keyOutputMode,
   normalizeCommittedNumber,
   paintScaleDegreeColor,
-  resetOverridesToScaleDegreeColors
+  resetOverridesToScaleDegreeColors,
+  validLiveNumber
 } from "./TuningLayoutEditor.tsx";
 
 describe("key output mode", () => {
@@ -23,6 +24,14 @@ describe("key output mode", () => {
 });
 
 describe("deferred number fields", () => {
+  it("emits only complete, in-range live values", () => {
+    expect(validLiveNumber("", 1, 128, true)).toBeUndefined();
+    expect(validLiveNumber("200", 1, 128, true)).toBeUndefined();
+    expect(validLiveNumber("4.6", 1, 128, true)).toBeUndefined();
+    expect(validLiveNumber("48", 1, 128, true)).toBe(48);
+    expect(validLiveNumber("432.5", 0.01)).toBe(432.5);
+  });
+
   it("keeps the prior value when an empty or invalid draft is committed", () => {
     expect(normalizeCommittedNumber("", 12, 1, 128, true)).toBe(12);
     expect(normalizeCommittedNumber("not a number", 440, 0.01)).toBe(440);

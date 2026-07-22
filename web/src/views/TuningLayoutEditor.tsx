@@ -428,6 +428,25 @@ export function normalizeCommittedNumber(
   return Math.max(min ?? -Infinity, Math.min(max ?? Infinity, rounded));
 }
 
+export function validLiveNumber(
+  draft: string,
+  min?: number,
+  max?: number,
+  integer = false
+): number | undefined {
+  if (draft.trim() === "") {
+    return undefined;
+  }
+  const parsed = Number(draft);
+  if (!Number.isFinite(parsed) || (integer && !Number.isInteger(parsed))) {
+    return undefined;
+  }
+  if (parsed < (min ?? -Infinity) || parsed > (max ?? Infinity)) {
+    return undefined;
+  }
+  return parsed;
+}
+
 function tuningCycleLength(tuning: LayoutBundleTuning): number {
   return Math.max(1, Math.round(tuning.cycleLength));
 }
@@ -3105,7 +3124,11 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                     min={0}
                     max={139}
                     value={activeLayout.centerButton}
-                    onCommit={(value) => updateLayout({ centerButton: noteButtonIndexOrFallback(value, activeLayout.centerButton) })}
+                    onCommit={(value) => {
+                      const centerButton = noteButtonIndexOrFallback(value, activeLayout.centerButton);
+                      updateLayout({ centerButton });
+                      return centerButton;
+                    }}
                     {...layoutGuideProps("center")}
                   />
                   <button type="button" onClick={() => updateLayout({ centerButton: selectedButton })}>Use selected</button>
@@ -3994,7 +4017,7 @@ interface DeferredNumberInputProps extends Omit<InputHTMLAttributes<HTMLInputEle
   max?: number;
   min?: number;
   onBlur?: (event: FocusEvent<HTMLInputElement>) => void;
-  onCommit: (value: number) => void;
+  onCommit: (value: number) => number | void;
   value: number;
 }
 
@@ -4002,12 +4025,22 @@ function DeferredNumberInput({ integer = false, max, min, onBlur, onCommit, valu
   const formattedValue = String(value);
   const [draft, setDraft] = useState(formattedValue);
   const cancelCommitRef = useRef(false);
-  useEffect(() => setDraft(formattedValue), [formattedValue]);
+  const focusedRef = useRef(false);
+  const focusStartValueRef = useRef(value);
+  const lastValidValueRef = useRef(value);
+  useEffect(() => {
+    if (!focusedRef.current) {
+      lastValidValueRef.current = value;
+      setDraft(formattedValue);
+    }
+  }, [formattedValue, value]);
 
   function commit() {
-    const normalized = normalizeCommittedNumber(draft, value, min, max, integer);
-    setDraft(String(normalized));
-    onCommit(normalized);
+    const normalized = normalizeCommittedNumber(draft, lastValidValueRef.current, min, max, integer);
+    const committedValue = onCommit(normalized);
+    const displayedValue = typeof committedValue === "number" ? committedValue : normalized;
+    lastValidValueRef.current = displayedValue;
+    setDraft(String(displayedValue));
   }
 
   return (
@@ -4018,15 +4051,30 @@ function DeferredNumberInput({ integer = false, max, min, onBlur, onCommit, valu
       type="number"
       value={draft}
       onBlur={(event) => {
+        focusedRef.current = false;
         if (cancelCommitRef.current) {
           cancelCommitRef.current = false;
-          setDraft(formattedValue);
+          setDraft(String(focusStartValueRef.current));
         } else {
           commit();
         }
         onBlur?.(event);
       }}
-      onChange={(event) => setDraft(event.target.value)}
+      onChange={(event) => {
+        const nextDraft = event.target.value;
+        setDraft(nextDraft);
+        const liveValue = validLiveNumber(nextDraft, min, max, integer);
+        if (liveValue !== undefined) {
+          const committedValue = onCommit(liveValue);
+          lastValidValueRef.current = typeof committedValue === "number" ? committedValue : liveValue;
+        }
+      }}
+      onFocus={(event) => {
+        focusedRef.current = true;
+        focusStartValueRef.current = value;
+        lastValidValueRef.current = value;
+        inputProps.onFocus?.(event);
+      }}
       onKeyDown={(event) => {
         inputProps.onKeyDown?.(event);
         if (event.defaultPrevented) return;
@@ -4034,7 +4082,9 @@ function DeferredNumberInput({ integer = false, max, min, onBlur, onCommit, valu
           event.currentTarget.blur();
         } else if (event.key === "Escape") {
           cancelCommitRef.current = true;
-          setDraft(formattedValue);
+          lastValidValueRef.current = focusStartValueRef.current;
+          setDraft(String(focusStartValueRef.current));
+          onCommit(focusStartValueRef.current);
           event.currentTarget.blur();
         }
       }}

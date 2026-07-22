@@ -585,9 +585,10 @@ per-button pitch, color, direct-MIDI, or chord overrides. Work through `Library`
 `Scale & color` from left to right. `Library` provides the full-width computer
 and HexBoard file-management view; the three editing steps keep the board
 preview visible while their focused controls appear beside it. Sync and save
-actions remain at the top of the geometry studio. Editable numeric fields allow
-temporary empty or out-of-range text while typing, then restore or clamp the
-value when you leave the field. Names and descriptions likewise apply their
+actions remain at the top of the geometry studio. Valid, in-range numeric edits
+update the preview as you type. Empty, incomplete, or out-of-range drafts remain
+editable without changing the preview, then restore or clamp when you leave the
+field. Names and descriptions likewise apply their
 length and fallback rules only after you leave the field. The preview's adjacent
 brush and eyedropper buttons paint keys or pick an existing key color. The brush
 can target either button color overrides or scale-degree palette colors while
