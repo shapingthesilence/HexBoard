@@ -873,7 +873,14 @@ void RAM_FUNC(renderMetronomeSideButtonFlash)() {
 uint32_t RAM_FUNC(applyNotePixelColor)(byte x) {
   if (h[x].animate) {
     return h[x].LEDcodeAnim;
-  } else if ((animationType != ANIMATE_NONE)
+  }
+  bool hasDirectColorOverride = userGeometryRuntimeActive
+                                && colorMode == CUSTOM_COLOR_MODE
+                                && userGeometryRuntimeButtonColorActive[x];
+  if (h[x].note == UNUSED_NOTE && !hasDirectColorOverride) {
+    return h[x].LEDcodeOff;
+  }
+  if ((animationType != ANIMATE_NONE)
           && (animationType != ANIMATE_MIDI_IN)
           && h[x].MIDIch) {
     return h[x].LEDcodePlay;

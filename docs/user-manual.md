@@ -234,6 +234,12 @@ Options include:
 
 Available color modes are `Rainbow`, `Diatonic`, `Alt`, `Fifths`, `Piano`, `Alt Piano`, `Filament`, and `Custom`. `Custom` shows a scale-degree color scheme loaded from the web editor. The animation list includes button, octave, by-note, star, splash, orbit, beams, reversed variants, and MIDI-in highlighting.
 
+Buttons whose tuned notes fall outside the playable MIDI range remain unlit so
+they are not mistaken for playable keys, and pressing them produces no MIDI or
+synth response or animation. LED animations started by other playable keys can
+still light them. An active per-button color override in `Custom` mode takes
+precedence and keeps its assigned resting color.
+
 `LED Limit` helps prevent power problems by lowering LED output when a bright setting would draw too much current. This matters most in bright modes such as `Filament` and `Diatonic`. `Off` leaves the LEDs uncapped and can cause resets at extreme brightness. The numbered limits use hardware-specific calibration tables for `V1.1` and `V1.2` boards. The factory default is `1.5 A`, calibrated to provide a similar actual USB-side draw on both hardware revisions and stable behavior on most power supplies.
 
 ### Editor

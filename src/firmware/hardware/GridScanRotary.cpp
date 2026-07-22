@@ -96,7 +96,7 @@ void RAM_FUNC(readHexes)() {
           handleSequencerButtonEvent(i, true);
         } else if (mappedButtonHasAdvancedAction(i)) {
           tryMappedButtonActionOn(i);
-        } else if (h[i].inScale || (!scaleLock)) {
+        } else if (h[i].note != UNUSED_NOTE && (h[i].inScale || !scaleLock)) {
           tryMIDInoteOn(i);
           trySynthNoteOn(i);
         }
