@@ -8,21 +8,7 @@
 
 namespace {
 
-template <typename Record>
-bool persistedRecordMatches(const char* path, const Record& record) {
-  File f = LittleFS.open(path, "r");
-  if (!f) {
-    return false;
-  }
-
-  Record existing = {};
-  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&existing), sizeof(existing));
-  bool matches = bytesRead == sizeof(existing)
-                 && f.available() == 0
-                 && memcmp(&existing, &record, sizeof(record)) == 0;
-  f.close();
-  return matches;
-}
+bool legacyProfileWavetableReferencesLoaded = false;
 
 }  // namespace
 
@@ -51,21 +37,13 @@ uint32_t synthWavetableProfileReferencesCrc(const SynthWavetableProfileReference
   return crc32(reinterpret_cast<const uint8_t*>(references), sizeof(SynthWavetableProfileReference) * referenceCount);
 }
 
-void initializeSynthWavetableProfileReferenceFile(SynthWavetableProfileReferenceFile& referenceFile) {
-  memset(&referenceFile, 0, sizeof(referenceFile));
-  referenceFile.magic[0] = 'P'; referenceFile.magic[1] = 'W'; referenceFile.magic[2] = 'T';
-  referenceFile.version = SYNTH_WAVETABLE_PROFILE_REFERENCES_VERSION;
-  for (SynthWavetableProfileReference& reference : referenceFile.profiles) {
-    writeCurrentSynthWavetableReference(reference);
-  }
-  referenceFile.crc32 = synthWavetableProfileReferencesCrc(referenceFile.profiles, PROFILE_COUNT);
-}
-
-bool readSynthWavetableProfileReferenceFile(SynthWavetableProfileReferenceFile& referenceFile) {
+bool readLegacySynthWavetableProfileReferenceFile(
+  LegacySynthWavetableProfileReferenceFile& referenceFile
+) {
   if (!fileSystemExists) {
     return false;
   }
-  File f = LittleFS.open(SYNTH_WAVETABLE_PROFILE_REFERENCES_FILE_PATH, "r");
+  File f = LittleFS.open(LEGACY_SYNTH_WAVETABLE_PROFILE_REFERENCES_FILE_PATH, "r");
   if (!f) {
     return false;
   }
@@ -75,7 +53,7 @@ bool readSynthWavetableProfileReferenceFile(SynthWavetableProfileReferenceFile& 
   if (fileSize != sizeof(referenceFile)
       || bytesRead != sizeof(referenceFile)
       || strncmp(referenceFile.magic, "PWT", 3) != 0
-      || referenceFile.version != SYNTH_WAVETABLE_PROFILE_REFERENCES_VERSION
+      || referenceFile.version != LEGACY_SYNTH_WAVETABLE_PROFILE_REFERENCES_VERSION
       || synthWavetableProfileReferencesCrc(referenceFile.profiles, PROFILE_COUNT) != referenceFile.crc32) {
     sendToLog("Invalid profile wavetable references. Using current wavetable for all profiles.");
     return false;
@@ -86,77 +64,31 @@ bool readSynthWavetableProfileReferenceFile(SynthWavetableProfileReferenceFile& 
   return true;
 }
 
-void writeSynthWavetableProfileReferenceFile(SynthWavetableProfileReferenceFile& referenceFile) {
-  if (!fileSystemExists) {
-    return;
-  }
-  referenceFile.crc32 = synthWavetableProfileReferencesCrc(referenceFile.profiles, PROFILE_COUNT);
-  if (persistedRecordMatches(SYNTH_WAVETABLE_PROFILE_REFERENCES_FILE_PATH, referenceFile)) {
-    return;
-  }
-  File f = LittleFS.open(SYNTH_WAVETABLE_PROFILE_REFERENCES_FILE_PATH, "w");
-  if (!f) {
-    sendToLog("Error: Unable to open /profile_wavetables.dat for writing.");
-    return;
-  }
-  size_t written = f.write(reinterpret_cast<uint8_t*>(&referenceFile), sizeof(referenceFile));
-  f.close();
-  if (written != sizeof(referenceFile)) {
-    sendToLog("Error: Incomplete profile wavetable reference write.");
-  }
-}
-
-uint32_t currentSynthWavetableReferenceCrc(const CurrentSynthWavetableReferenceFile& reference) {
+uint32_t currentSynthWavetableReferenceCrc(
+  const LegacyCurrentSynthWavetableReferenceFile& reference
+) {
   uint8_t bytes[sizeof(reference.name) + sizeof(reference.folderPath)] = {};
   memcpy(bytes, reference.name, sizeof(reference.name));
   memcpy(bytes + sizeof(reference.name), reference.folderPath, sizeof(reference.folderPath));
   return crc32(bytes, sizeof(bytes));
 }
 
-void saveCurrentSynthWavetableReference() {
-  if (!fileSystemExists || !currentSynthWavetableReferenceValid) {
-    return;
-  }
-  CurrentSynthWavetableReferenceFile reference = {};
-  reference.magic[0] = 'C'; reference.magic[1] = 'W'; reference.magic[2] = 'T';
-  reference.version = CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION;
-  snprintf(reference.name, sizeof(reference.name), "%s", currentSynthWavetableName);
-  snprintf(reference.folderPath, sizeof(reference.folderPath), "%s", currentSynthWavetableFolderPath);
-  normalizeSynthWavetableFolderPath(reference.folderPath, sizeof(reference.folderPath));
-  reference.crc32 = currentSynthWavetableReferenceCrc(reference);
-
-  if (persistedRecordMatches(CURRENT_SYNTH_WAVETABLE_REFERENCE_FILE_PATH, reference)) {
-    return;
-  }
-
-  File f = LittleFS.open(CURRENT_SYNTH_WAVETABLE_REFERENCE_FILE_PATH, "w");
-  if (!f) {
-    sendToLog("Error: Unable to open /current_wavetable.dat for writing.");
-    return;
-  }
-  size_t written = f.write(reinterpret_cast<uint8_t*>(&reference), sizeof(reference));
-  f.close();
-  if (written != sizeof(reference)) {
-    sendToLog("Error: Incomplete current wavetable reference write.");
-  }
-}
-
-bool loadCurrentSynthWavetableReference() {
+bool loadLegacyCurrentSynthWavetableReference() {
   if (!fileSystemExists) {
     return false;
   }
-  File f = LittleFS.open(CURRENT_SYNTH_WAVETABLE_REFERENCE_FILE_PATH, "r");
+  File f = LittleFS.open(LEGACY_CURRENT_SYNTH_WAVETABLE_REFERENCE_FILE_PATH, "r");
   if (!f) {
     return false;
   }
-  CurrentSynthWavetableReferenceFile reference = {};
+  LegacyCurrentSynthWavetableReferenceFile reference = {};
   size_t fileSize = f.size();
   size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&reference), sizeof(reference));
   f.close();
   if (fileSize != sizeof(reference)
       || bytesRead != sizeof(reference)
       || strncmp(reference.magic, "CWT", 3) != 0
-      || reference.version != CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION
+      || reference.version != LEGACY_CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION
       || currentSynthWavetableReferenceCrc(reference) != reference.crc32
       || !reference.name[0]) {
     sendToLog("Invalid current wavetable reference. Using settings fallback.");
@@ -171,42 +103,29 @@ bool loadCurrentSynthWavetableReference() {
   return true;
 }
 
-void applyDefaultSynthWavetableProfileReferences() {
-  SynthWavetableProfileReferenceFile referenceFile = {};
-  initializeSynthWavetableProfileReferenceFile(referenceFile);
-  writeSynthWavetableProfileReferenceFile(referenceFile);
-}
-
 void rememberCurrentSynthWavetableReferenceForProfile(uint8_t profileIndex) {
   if (profileIndex >= PROFILE_COUNT) {
     return;
   }
-  SynthWavetableProfileReferenceFile referenceFile = {};
-  bool loadedReferences = readSynthWavetableProfileReferenceFile(referenceFile);
-  if (!loadedReferences) {
-    initializeSynthWavetableProfileReferenceFile(referenceFile);
-  }
-  SynthWavetableProfileReference currentReference = {};
-  writeCurrentSynthWavetableReference(currentReference);
-  if (loadedReferences
-      && memcmp(&referenceFile.profiles[profileIndex],
-                &currentReference,
-                sizeof(currentReference)) == 0) {
-    return;
-  }
-  referenceFile.profiles[profileIndex] = currentReference;
-  writeSynthWavetableProfileReferenceFile(referenceFile);
+  writeCurrentSynthWavetableReference(synthWavetableProfileReferences[profileIndex]);
 }
 
 bool restoreSynthWavetableReferenceForProfile(uint8_t profileIndex) {
   if (profileIndex >= PROFILE_COUNT) {
     return false;
   }
-  SynthWavetableProfileReferenceFile referenceFile = {};
-  if (!readSynthWavetableProfileReferenceFile(referenceFile)) {
-    return false;
+  if (!synthWavetableProfileReferences[profileIndex].name[0]
+      && !legacyProfileWavetableReferencesLoaded) {
+    legacyProfileWavetableReferencesLoaded = true;
+    LegacySynthWavetableProfileReferenceFile legacyReferences = {};
+    if (readLegacySynthWavetableProfileReferenceFile(legacyReferences)) {
+      memcpy(synthWavetableProfileReferences,
+             legacyReferences.profiles,
+             sizeof(synthWavetableProfileReferences));
+    }
   }
-  SynthWavetableProfileReference& reference = referenceFile.profiles[profileIndex];
+  SynthWavetableProfileReference& reference =
+    synthWavetableProfileReferences[profileIndex];
   if (!reference.name[0]) {
     return false;
   }
@@ -282,28 +201,6 @@ bool loadUserSynthWavetableFromFile() {
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
   userSynthWavetableAvailable = true;
   return true;
-}
-
-void save_user_wavetable() {
-  if (!fileSystemExists) {
-    sendToLog("File system not available.");
-    return;
-  }
-  File f = LittleFS.open(USER_SYNTH_WAVETABLE_FILE_PATH, "w");
-  if (!f) {
-    sendToLog("Error: Unable to open /user_wavetable.dat for writing.");
-    return;
-  }
-  UserSynthWavetableFileHeader header;
-  header.magic[0] = 'U'; header.magic[1] = 'W'; header.magic[2] = 'T';
-  header.version = USER_SYNTH_WAVETABLE_FILE_VERSION;
-  header.frameCount = SYNTH_WAVETABLE_FRAME_COUNT;
-  header.sampleCount = SYNTH_WAVE_SAMPLE_COUNT;
-  header.crc32 = crc32(&activeSynthWaveTable[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
-  f.write(reinterpret_cast<uint8_t*>(&header), sizeof(UserSynthWavetableFileHeader));
-  f.write(&activeSynthWaveTable[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
-  f.close();
-  sendToLog("User wavetable saved.");
 }
 
 constexpr char SYNTH_WAVETABLE_CATALOG_FILE_PATH[] = "/synth_wavetables.dat";
@@ -545,17 +442,34 @@ void save_synth_wavetables() {
     return;
   }
   compactSynthWavetables();
-  File f = LittleFS.open(SYNTH_WAVETABLE_CATALOG_FILE_PATH, "w");
-  if (!f) {
-    sendToLog("Error: Unable to open /synth_wavetables.dat for writing.");
-    return;
-  }
   SynthWavetableFileHeader header;
   header.magic[0] = 'S'; header.magic[1] = 'Y'; header.magic[2] = 'W';
   header.version = SYNTH_WAVETABLE_FILE_VERSION;
   header.count = static_cast<uint16_t>(synthWavetables.size());
   header.reserved = 0;
   header.crc32 = synthWavetableCatalogCrc(synthWavetables.data(), synthWavetables.size());
+  File existing = LittleFS.open(SYNTH_WAVETABLE_CATALOG_FILE_PATH, "r");
+  if (existing
+      && existing.size()
+           == sizeof(header) + sizeof(SynthWavetableSlot) * synthWavetables.size()) {
+    SynthWavetableFileHeader existingHeader = {};
+    bool unchanged =
+      existing.read(reinterpret_cast<uint8_t*>(&existingHeader), sizeof(existingHeader))
+        == sizeof(existingHeader)
+      && memcmp(&existingHeader, &header, sizeof(header)) == 0;
+    existing.close();
+    if (unchanged) {
+      sendToLog("Synth wavetable catalog unchanged; flash write skipped.");
+      return;
+    }
+  } else if (existing) {
+    existing.close();
+  }
+  File f = LittleFS.open(SYNTH_WAVETABLE_CATALOG_FILE_PATH, "w");
+  if (!f) {
+    sendToLog("Error: Unable to open /synth_wavetables.dat for writing.");
+    return;
+  }
   f.write(reinterpret_cast<uint8_t*>(&header), sizeof(header));
   if (!synthWavetables.empty()) {
     f.write(reinterpret_cast<uint8_t*>(synthWavetables.data()), sizeof(SynthWavetableSlot) * synthWavetables.size());

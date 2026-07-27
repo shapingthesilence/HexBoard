@@ -63,7 +63,7 @@ void hexboardSetup() {
   loadCurrentSynthPresetReference();
   load_synth_wavetables();
   load_geometry_objects();
-  loadCurrentSynthWavetableReference();
+  loadLegacyCurrentSynthWavetableReference();
   restoreSynthWavetableReferenceForProfile(activeProfileIndex);
   setupLEDs();
   setupGFX();

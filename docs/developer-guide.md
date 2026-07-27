@@ -139,10 +139,9 @@ screen remains visible for up to about `700 ms` from when it was drawn unless
 menu input takes display ownership first. Preset-sync object write transfers
 with `SaveToFlash` set in `WRITE_BEGIN` hold this same mute across the transfer
 and commit path; one-frame live synth parameter edits and apply-only object
-transfers do not. Small current
-synth preset, current wavetable, and profile wavetable reference files compare
-the existing record before writing so ordinary saves do not rewrite unchanged
-references.
+transfers do not. Settings, the current synth-preset reference, synth preset
+files, the wavetable catalog, and geometry order compare the existing record or
+checksum before writing.
 
 ### Factory Storage
 
@@ -382,14 +381,18 @@ Settings are stored in LittleFS at `/settings.dat` with:
 - magic bytes `STG`
 - settings file version
 - default profile index field
-- CRC32 of all profile bytes
+- nine profile setting-byte arrays
+- stable tuning/layout/scale object IDs for each profile
+- wavetable folder/name reference for each profile
+- CRC32 of the complete payload
 
-`CURRENT_SETTINGS_VERSION` is currently `24`, and `PROFILE_COUNT` is `9`.
-Version `24` stores `RotaryInvert` as a user reversal relative to the detected
-hardware default. The Factory UF2 contains the current settings record; boot
-does not rewrite settings. Compatible 2.x settings can be decoded into the
-current RAM representation and are written in the current format only after a
-normal user-initiated or auto-save operation.
+`CURRENT_SETTINGS_VERSION` is currently `25`, and `PROFILE_COUNT` is `9`.
+Version `25` adds stable geometry references and folds per-profile wavetable
+references into the settings record. Version `24` introduced hardware-relative
+`RotaryInvert`; versions `23` and `24` remain read-compatible and acquire
+fallback object references in RAM. The Factory UF2 contains the current
+settings record; boot does not rewrite settings. A legacy record is written as
+version `25` only after a normal user-initiated or auto-save operation.
 
 Important current settings facts:
 
@@ -427,8 +430,6 @@ does not prevent booting with safe fallbacks.
 - `/presets/<object-id>.hsp`: one independently checksummed synth preset per file, magic `HSP`, version `11`, up to `128` files. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume. Only preset metadata is indexed in RAM for menus; a preset body is read when it is transferred, loaded, or overwritten. The Factory UF2 installs `Soft String Pad` and `Bright Mono Lead` as normal editable files.
 - `/current_synth_preset.dat`: current loaded synth preset reference, magic `CSP`, version `1`. It stores either the loaded preset object ID or the special `Blank` state; the edited synth values still come from normal settings/profile storage.
 - `/synth_wavetables.dat`: named user wavetable catalog, magic `SYW`, version `1`, up to `32` entries. Sample files use shortened `/wt_<16 hex>.wtb` paths and can contain six fixed mip levels (`49,152` bytes) or base-only data (`8,192` bytes).
-- `/current_wavetable.dat`: current wavetable folder/name reference, magic `CWT`, version `1`.
-- `/profile_wavetables.dat`: per-profile wavetable folder/name snapshots, magic `PWT`, version `1`.
 - `/geometry/<tuning-object-id>.hgb`: one independently checksummed factory-or-user geometry bundle per file, magic `HGB`, version `2`. Capacity is 64 complete bundles counted by `UserTuning` roots. A bundle contains its tuning root and all linked `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` records and is atomically replaced as one unit. Its header also carries a stable catalog order; `0xFFFF` marks ordinary user bundles, which sort after explicitly ordered factory entries.
 - `/geometry_order.dat`: checksummed `HGO` version `1` order override containing up to 64 tuning object IDs. Reordering writes only this small file; saving, replacing, or deleting a bundle does not rewrite it. Missing IDs are ignored and newly installed bundles append after listed entries.
 - `/default_geometry.dat`: factory default tuning-object reference, magic `DGE`, version `1`. If that bundle is unavailable, boot selects the first usable bundle and ultimately the compiled 12 EDO rescue geometry.
@@ -454,6 +455,34 @@ wavetable browsers use their existing RAM metadata catalogs in the same way:
 folder navigation and labels do not read LittleFS, while selection loads the
 chosen preset body or wavetable samples.
 
+Settings are loaded before the geometry catalog at startup, but geometry is not
+applied until both are available. Profile restore first loads the referenced
+bundle and then its referenced layout and scale. A bundle color map supplies
+the `Custom` palette; its default color mode is used when the bundle is selected
+interactively, but it must not replace the color mode already restored from a
+profile.
+
+### Flash Write Ownership And Frequency
+
+| Store | Owner | Normal write trigger | Wear control |
+| --- | --- | --- | --- |
+| `/settings.dat` | `Settings.cpp` | Dirty settings after 10 seconds, manual profile save, or reset | One combined settings/geometry/wavetable-profile write; identical CRC/header skips the write |
+| `/current_synth_preset.dat` | `SynthPresetStorage.cpp` | Current preset identity changes | Exact-record comparison skips unchanged writes |
+| `/presets/*.hsp` | `SynthPresetStorage.cpp` | Explicit preset save/upload | Per-object atomic replacement; matching CRC skips the write |
+| `/synth_wavetables.dat`, `/wt_*.wtb` | `SynthWavetableStorage.cpp` | Explicit wavetable upload/edit/delete | Catalog header/CRC skips unchanged catalog writes; samples change only through explicit object operations |
+| `/geometry/*.hgb` | `PresetSyncGeometry.cpp` | Explicit complete-bundle upload/delete | One atomic bundle replacement; profiles never rewrite bundles |
+| `/geometry_order.dat` | `PresetSyncGeometry.cpp` | Debounced host reorder | Byte comparison skips unchanged order writes |
+| `/Sequences/*.hbseq`, `/Sequences/.current` | `SequencerStorage.cpp` | Explicit sequence save or current-path change | Sequence saves are explicit; unchanged current paths are skipped |
+
+`/default_geometry.dat`, `/storage_ready.dat`, and factory catalog/sample files
+are factory-image inputs, not normal runtime write targets. Temporary transfer
+and atomic-save files are short-lived implementation details and never represent
+a second owner for persistent state. Firmware reads `/profile_wavetables.dat`,
+`/current_wavetable.dat`, and `/user_wavetable.dat` only for compatibility.
+Current builds never create or write these legacy files.
+Firmware-only updates preserve LittleFS, so pre-existing copies can remain as
+read-only compatibility inputs; Factory images omit them.
+
 The web geometry library exposes drag ordering for both computer and HexBoard
 lists. Computer order is browser-local. HexBoard order changes are applied
 immediately in the UI, debounced for 2 seconds, then sent as one `GeometryOrder`
@@ -473,8 +502,10 @@ rotation/mirrors, and an `int16_t` center-step offset, included-degree scales,
 scale color maps, legacy format-1
 maps, and independent-field format-2 explicit button maps. Format 2 includes
 direct MIDI note/channel actions and reusable four-tone chord actions. The
-active user geometry selection is RAM-only and is not yet persisted in
-profiles.
+active tuning, layout, and scale are persisted as stable object IDs in each
+profile. If a referenced child object is missing, restore uses the selected
+bundle's default child; if the tuning is missing, it uses the factory geometry
+selection.
 
 The web layout editor normalizes whole-layout spatial transforms back into the
 center button, center-step offset, and two vector fields. It moves explicit

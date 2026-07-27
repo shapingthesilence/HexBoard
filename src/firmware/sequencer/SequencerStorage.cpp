@@ -679,16 +679,20 @@ void setCurrentSequencePath(const char* path) {
   if (!sequencePathIsSafeStoragePath(path) || !sequencePathIsFile(path)) {
     return;
   }
+  if (strcmp(g_currentPath, path) == 0) {
+    return;
+  }
   copyString(g_currentPath, sizeof(g_currentPath), path);
   writeRememberedCurrentPath();
   updateSequenceTitle();
 }
 
 void clearCurrentSequencePath() {
-  if (g_currentPath[0] != '\0') {
-    g_currentPath[0] = '\0';
-    updateSequenceTitle();
+  if (g_currentPath[0] == '\0' && !LittleFS.exists(kSequenceCurrentPathFile)) {
+    return;
   }
+  g_currentPath[0] = '\0';
+  updateSequenceTitle();
   writeRememberedCurrentPath();
 }
 

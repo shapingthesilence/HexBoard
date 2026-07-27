@@ -268,6 +268,8 @@ bool installGeometryBundleFile(const char* stagedPath);
 bool saveGeometryCatalogOrder(const std::vector<uint8_t>& raw);
 bool geometryFallbackRequired();
 bool loadDefaultGeometryRuntime();
+bool loadGeometryRuntimeForProfile(uint8_t profileIndex);
+void rememberCurrentGeometryReferenceForProfile(uint8_t profileIndex);
 bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex);
 std::vector<uint8_t> buildSynthPresetObjectBody(const SynthPresetSlot& preset);
 bool parseSynthPresetObjectBody(const std::vector<uint8_t>& body, SynthPresetSlot& preset, std::string& error);

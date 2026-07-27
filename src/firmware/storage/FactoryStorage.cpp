@@ -11,8 +11,6 @@ constexpr char STORAGE_READY_PATH[] = "/storage_ready.dat";
 constexpr char SETTINGS_PATH[] = "/settings.dat";
 constexpr char SYNTH_WAVETABLES_PATH[] = "/synth_wavetables.dat";
 constexpr char CURRENT_SYNTH_PRESET_PATH[] = "/current_synth_preset.dat";
-constexpr char CURRENT_SYNTH_WAVETABLE_PATH[] = "/current_wavetable.dat";
-constexpr char PROFILE_SYNTH_WAVETABLES_PATH[] = "/profile_wavetables.dat";
 constexpr uint8_t STORAGE_READY_VERSION = 4;
 constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_VERSION = 1;
 constexpr uint8_t CURRENT_SYNTH_PRESET_LOADED_FLAG = 0x01;
@@ -181,15 +179,20 @@ bool settingsFileValid() {
     reportStorageIssue(SETTINGS_PATH, "missing; using hardware-aware defaults");
     return false;
   }
-  if (file.size() != sizeof(SettingsHeader) + SETTINGS_DATA_SIZE) {
-    file.close();
-    reportStorageIssue(SETTINGS_PATH, "wrong file size; using defaults");
-    return false;
-  }
   SettingsHeader header = {};
   uint8_t data[SETTINGS_DATA_SIZE] = {};
-  bool readOk = file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)
-                && file.read(data, sizeof(data)) == sizeof(data);
+  bool headerRead =
+    file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header);
+  constexpr uint8_t SETTINGS_VERSION_ABSOLUTE_ROTARY = 23;
+  constexpr uint8_t SETTINGS_VERSION_WITHOUT_GEOMETRY_REFERENCES = 24;
+  bool legacyPayload =
+    header.version == SETTINGS_VERSION_ABSOLUTE_ROTARY
+    || header.version == SETTINGS_VERSION_WITHOUT_GEOMETRY_REFERENCES;
+  size_t expectedDataSize = legacyPayload ? SETTINGS_VALUES_DATA_SIZE : SETTINGS_DATA_SIZE;
+  bool readOk =
+    headerRead
+    && file.size() == sizeof(SettingsHeader) + expectedDataSize
+    && file.read(data, expectedDataSize) == expectedDataSize;
   file.close();
   if (!readOk) {
     reportStorageIssue(SETTINGS_PATH, "short read; using defaults");
@@ -199,9 +202,8 @@ bool settingsFileValid() {
     reportStorageIssue(SETTINGS_PATH, "magic mismatch; using defaults");
     return false;
   }
-  constexpr uint8_t SETTINGS_VERSION_ABSOLUTE_ROTARY = 23;
   if (header.version != CURRENT_SETTINGS_VERSION
-      && header.version != SETTINGS_VERSION_ABSOLUTE_ROTARY) {
+      && !legacyPayload) {
     reportStorageIssue(SETTINGS_PATH, "settings version mismatch; using defaults");
     return false;
   }
@@ -209,9 +211,32 @@ bool settingsFileValid() {
     reportStorageIssue(SETTINGS_PATH, "profile index is out of range; using defaults");
     return false;
   }
-  if (header.crc32 != crc32(data, sizeof(data))) {
+  if (header.crc32 != crc32(data, expectedDataSize)) {
     reportStorageIssue(SETTINGS_PATH, "CRC mismatch; using defaults");
     return false;
+  }
+  if (!legacyPayload) {
+    size_t wavetableOffset = SETTINGS_VALUES_DATA_SIZE + SETTINGS_GEOMETRY_DATA_SIZE;
+    for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
+      SynthWavetableProfileReference reference = {};
+      memcpy(&reference,
+             data + wavetableOffset + profile * sizeof(reference),
+             sizeof(reference));
+      reference.name[sizeof(reference.name) - 1] = '\0';
+      reference.folderPath[sizeof(reference.folderPath) - 1] = '\0';
+      if (!reference.name[0]) {
+        continue;
+      }
+      if (!wavetableReferenceExists(reference.folderPath, reference.name)) {
+        char reason[80] = {};
+        snprintf(reason,
+                 sizeof(reason),
+                 "profile %u wavetable is unavailable; using Basic Shapes",
+                 static_cast<unsigned>(profile + 1));
+        reportStorageIssue(SETTINGS_PATH, reason);
+        return false;
+      }
+    }
   }
   return true;
 }
@@ -438,57 +463,6 @@ bool currentPresetReferenceValid() {
   return true;
 }
 
-bool currentWavetableReferenceValid() {
-  CurrentSynthWavetableReferenceFile reference = {};
-  if (!readExactFile(CURRENT_SYNTH_WAVETABLE_PATH, &reference, sizeof(reference))) {
-    return false;
-  }
-  uint8_t data[sizeof(reference.name) + sizeof(reference.folderPath)] = {};
-  memcpy(data, reference.name, sizeof(reference.name));
-  memcpy(data + sizeof(reference.name), reference.folderPath, sizeof(reference.folderPath));
-  if (strncmp(reference.magic, "CWT", 3) != 0
-      || reference.version != CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION
-      || !reference.name[0]
-      || reference.crc32 != crc32(data, sizeof(data))) {
-    reportStorageIssue(CURRENT_SYNTH_WAVETABLE_PATH, "invalid; using Basic Shapes");
-    return false;
-  }
-  reference.name[sizeof(reference.name) - 1] = '\0';
-  reference.folderPath[sizeof(reference.folderPath) - 1] = '\0';
-  if (!wavetableReferenceExists(reference.folderPath, reference.name)) {
-    reportStorageIssue(CURRENT_SYNTH_WAVETABLE_PATH, "selected wavetable is unavailable; using Basic Shapes");
-    return false;
-  }
-  return true;
-}
-
-bool profileWavetableReferencesValid() {
-  SynthWavetableProfileReferenceFile references = {};
-  if (!readExactFile(PROFILE_SYNTH_WAVETABLES_PATH, &references, sizeof(references))) {
-    return false;
-  }
-  if (strncmp(references.magic, "PWT", 3) != 0
-      || references.version != SYNTH_WAVETABLE_PROFILE_REFERENCES_VERSION
-      || references.crc32 != crc32(reinterpret_cast<const uint8_t*>(references.profiles), sizeof(references.profiles))) {
-    reportStorageIssue(PROFILE_SYNTH_WAVETABLES_PATH, "invalid; using Basic Shapes for every profile");
-    return false;
-  }
-  for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
-    SynthWavetableProfileReference& reference = references.profiles[profile];
-    reference.name[sizeof(reference.name) - 1] = '\0';
-    reference.folderPath[sizeof(reference.folderPath) - 1] = '\0';
-    if (!wavetableReferenceExists(reference.folderPath, reference.name)) {
-      char reason[72] = {};
-      snprintf(reason,
-               sizeof(reason),
-               "profile %u wavetable is unavailable; using Basic Shapes",
-               static_cast<unsigned>(profile + 1));
-      reportStorageIssue(PROFILE_SYNTH_WAVETABLES_PATH, reason);
-      return false;
-    }
-  }
-  return true;
-}
 }  // namespace
 
 FactoryStorageBootState inspectFactoryStorage() {
@@ -505,8 +479,6 @@ FactoryStorageBootState inspectFactoryStorage() {
   geometryCatalogValid();
   defaultGeometryReferenceValid();
   currentPresetReferenceValid();
-  currentWavetableReferenceValid();
-  profileWavetableReferencesValid();
 #if HEXBOARD_ENABLE_SEQUENCER
   if (!LittleFS.exists(sequencer::kSequenceStorageRoot)) {
     reportStorageIssue(sequencer::kSequenceStorageRoot, "missing; sequence library starts empty");

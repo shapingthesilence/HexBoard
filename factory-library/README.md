@@ -58,10 +58,11 @@ well as retaining order values in factory HGB headers as a fallback.
 
 `config.json` defines the filesystem generation, settings schema, factory
 settings, and selected objects. `selectedGeometry` chooses the bundle referenced
-at factory boot. The selected wavetable must match
-the selected preset's dependency so the factory state does not start out
-modified. Setting names must exactly match the firmware `SettingKey` order and
-values.
+at factory boot and initializes every profile's stable tuning/layout/scale
+references inside `/settings.dat`. `selectedWavetable` initializes each
+profile's wavetable reference and must match the selected preset's dependency
+so the factory state does not start out modified. Setting names must exactly
+match the firmware `SettingKey` order and values.
 
 The build stops with a source path and validation stage for malformed JSON,
 bad `.hexwav` data, folder/name mismatches, missing values, duplicate object

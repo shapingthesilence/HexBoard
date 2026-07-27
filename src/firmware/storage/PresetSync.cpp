@@ -888,9 +888,6 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
           return;
         }
         requestSynthPresetMenuRebuild();
-        if (commitFlags & PRESET_SYNC_WRITE_APPLY_TO_RUNTIME) {
-          flashSafeSaveCurrentSynthWavetableReference();
-        }
       }
     }
   } else if (presetSyncWriteTransfer.objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
@@ -950,9 +947,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
           presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
           return;
         }
-        if (commitFlags & PRESET_SYNC_WRITE_SAVE_TO_FLASH) {
-          flashSafeSaveCurrentSynthWavetableReference();
-        }
+        markSettingsDirty();
       }
     }
   } else if (presetSyncWriteTransfer.objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_ORDER) {

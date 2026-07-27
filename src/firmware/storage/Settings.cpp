@@ -12,6 +12,7 @@
 #include "../synth/SynthDefaults.h"
 #include "../synth/SynthAudio.h"
 #include "Settings.h"
+#include "PresetSync.h"
 #include "SynthPresetStorage.h"
 #include "SynthWavetableStorage.h"
 
@@ -134,6 +135,8 @@ void applyFactoryDefaultsToSettings() {
   for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
     memcpy(settingsProfiles[profile], factoryDefaults, NUM_SETTINGS);
   }
+  memset(geometryProfileReferences, 0, sizeof(geometryProfileReferences));
+  memset(synthWavetableProfileReferences, 0, sizeof(synthWavetableProfileReferences));
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
   selectFallbackSynthWavetable();
@@ -154,13 +157,13 @@ bool load_settings() {
     applyFactoryDefaultsToSettings();
     return false;
   }
-  if (f.size() != sizeof(SettingsHeader) + SETTINGS_DATA_SIZE) {
+  if (f.size() < sizeof(SettingsHeader)) {
     sendToLog("Invalid settings file size. Restoring defaults.");
     f.close();
     applyFactoryDefaultsToSettings();
     return false;
   }
-  SettingsHeader header;
+  SettingsHeader header = {};
   if (f.readBytes((char*)&header, sizeof(SettingsHeader)) != sizeof(SettingsHeader)) {
     sendToLog("Error: Failed to read settings header.");
     f.close();
@@ -174,8 +177,11 @@ bool load_settings() {
     return false;
   }
   constexpr uint8_t SETTINGS_VERSION_ABSOLUTE_ROTARY = 23;
+  constexpr uint8_t SETTINGS_VERSION_WITHOUT_GEOMETRY_REFERENCES = 24;
   bool usesAbsoluteRotary = header.version == SETTINGS_VERSION_ABSOLUTE_ROTARY;
-  if (header.version != CURRENT_SETTINGS_VERSION && !usesAbsoluteRotary) {
+  bool usesLegacyPayload =
+    usesAbsoluteRotary || header.version == SETTINGS_VERSION_WITHOUT_GEOMETRY_REFERENCES;
+  if (header.version != CURRENT_SETTINGS_VERSION && !usesLegacyPayload) {
     sendToLog("Settings version mismatch. File version: " + std::to_string(header.version)
               + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION)
               + ". Restoring factory defaults for this release.");
@@ -183,17 +189,54 @@ bool load_settings() {
     applyFactoryDefaultsToSettings();
     return false;
   }
+  size_t expectedDataSize =
+    usesLegacyPayload ? SETTINGS_VALUES_DATA_SIZE : SETTINGS_DATA_SIZE;
+  if (f.size() != sizeof(SettingsHeader) + expectedDataSize) {
+    sendToLog("Invalid settings file size. Restoring defaults.");
+    f.close();
+    applyFactoryDefaultsToSettings();
+    return false;
+  }
   // Always boot from profile 1 even if an older file recorded a different default.
   defaultProfileIndex = DEFAULT_PROFILE_INDEX;
-  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
+  size_t settingsBytesRead =
+    f.read(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_VALUES_DATA_SIZE);
+  size_t geometryBytesRead = 0;
+  size_t wavetableBytesRead = 0;
+  if (!usesLegacyPayload) {
+    geometryBytesRead =
+      f.read(reinterpret_cast<uint8_t*>(geometryProfileReferences),
+             SETTINGS_GEOMETRY_DATA_SIZE);
+    wavetableBytesRead =
+      f.read(reinterpret_cast<uint8_t*>(synthWavetableProfileReferences),
+             SETTINGS_WAVETABLE_DATA_SIZE);
+  } else {
+    memset(geometryProfileReferences, 0, sizeof(geometryProfileReferences));
+    memset(synthWavetableProfileReferences, 0, sizeof(synthWavetableProfileReferences));
+  }
   f.close();
-  if (bytesRead != SETTINGS_DATA_SIZE) {
+  if (settingsBytesRead != SETTINGS_VALUES_DATA_SIZE
+      || (!usesLegacyPayload
+          && (geometryBytesRead != SETTINGS_GEOMETRY_DATA_SIZE
+              || wavetableBytesRead != SETTINGS_WAVETABLE_DATA_SIZE))) {
     sendToLog("Warning: Settings data incomplete. Restoring defaults.");
     applyFactoryDefaultsToSettings();
     return false;
   }
   // Verify CRC32 integrity of loaded profile data
-  uint32_t computed = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
+  uint32_t computed = crc32Begin();
+  computed = crc32Update(computed,
+                         reinterpret_cast<uint8_t*>(settingsProfiles),
+                         SETTINGS_VALUES_DATA_SIZE);
+  if (!usesLegacyPayload) {
+    computed = crc32Update(computed,
+                           reinterpret_cast<uint8_t*>(geometryProfileReferences),
+                           SETTINGS_GEOMETRY_DATA_SIZE);
+    computed = crc32Update(computed,
+                           reinterpret_cast<uint8_t*>(synthWavetableProfileReferences),
+                           SETTINGS_WAVETABLE_DATA_SIZE);
+  }
+  computed = crc32Finish(computed);
   if (computed != header.crc32) {
     sendToLog("CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
     applyFactoryDefaultsToSettings();
@@ -220,20 +263,58 @@ void save_settings() {
     return;
   }
   rememberCurrentSynthWavetableReferenceForProfile(activeProfileIndex);
+  rememberCurrentGeometryReferenceForProfile(activeProfileIndex);
+  SettingsHeader header = {};
+  header.magic[0] = 'S'; header.magic[1] = 'T'; header.magic[2] = 'G';
+  header.version = CURRENT_SETTINGS_VERSION;
+  header.defaultProfileIndex = defaultProfileIndex;
+  uint32_t settingsCrc = crc32Begin();
+  settingsCrc = crc32Update(settingsCrc,
+                            reinterpret_cast<uint8_t*>(settingsProfiles),
+                            SETTINGS_VALUES_DATA_SIZE);
+  settingsCrc = crc32Update(settingsCrc,
+                            reinterpret_cast<uint8_t*>(geometryProfileReferences),
+                            SETTINGS_GEOMETRY_DATA_SIZE);
+  settingsCrc = crc32Update(settingsCrc,
+                            reinterpret_cast<uint8_t*>(synthWavetableProfileReferences),
+                            SETTINGS_WAVETABLE_DATA_SIZE);
+  header.crc32 = crc32Finish(settingsCrc);
+  File existing = LittleFS.open("/settings.dat", "r");
+  if (existing && existing.size() == sizeof(SettingsHeader) + SETTINGS_DATA_SIZE) {
+    SettingsHeader existingHeader = {};
+    bool unchanged =
+      existing.read(reinterpret_cast<uint8_t*>(&existingHeader), sizeof(existingHeader))
+        == sizeof(existingHeader)
+      && memcmp(&existingHeader, &header, sizeof(header)) == 0;
+    existing.close();
+    if (unchanged) {
+      saveCurrentSynthPresetReference();
+      sendToLog("Settings unchanged; flash write skipped.");
+      return;
+    }
+  } else if (existing) {
+    existing.close();
+  }
+
   File f = LittleFS.open("/settings.dat", "w");
   if (!f) {
     sendToLog("Error: Unable to open /settings.dat for writing.");
     return;
   }
-  SettingsHeader header;
-  header.magic[0] = 'S'; header.magic[1] = 'T'; header.magic[2] = 'G';
-  header.version = CURRENT_SETTINGS_VERSION;
-  header.defaultProfileIndex = defaultProfileIndex;
-  header.crc32 = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
-  f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SettingsHeader));
-  f.write(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
+  bool written =
+    f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SettingsHeader))
+      == sizeof(SettingsHeader)
+    && f.write(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_VALUES_DATA_SIZE)
+      == SETTINGS_VALUES_DATA_SIZE
+    && f.write(reinterpret_cast<uint8_t*>(geometryProfileReferences),
+               SETTINGS_GEOMETRY_DATA_SIZE) == SETTINGS_GEOMETRY_DATA_SIZE
+    && f.write(reinterpret_cast<uint8_t*>(synthWavetableProfileReferences),
+               SETTINGS_WAVETABLE_DATA_SIZE) == SETTINGS_WAVETABLE_DATA_SIZE;
   f.close();
-  saveCurrentSynthWavetableReference();
+  if (!written) {
+    sendToLog("Error: Incomplete /settings.dat write.");
+    return;
+  }
   saveCurrentSynthPresetReference();
   sendToLog("Settings saved.");
 }
@@ -285,6 +366,7 @@ void copyCurrentSettingsToProfile(uint8_t profileIndex) {
     memcpy(settingsProfiles[profileIndex], settings, NUM_SETTINGS);
   }
   rememberCurrentSynthWavetableReferenceForProfile(profileIndex);
+  rememberCurrentGeometryReferenceForProfile(profileIndex);
 }
 
 void saveProfileToSlot(uint8_t profileIndex) {

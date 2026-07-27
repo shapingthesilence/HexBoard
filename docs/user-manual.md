@@ -45,7 +45,7 @@ If `Scale Lock` is off, every note button can play. If `Scale Lock` is on, only 
 
 ### Played Note Display
 
-The `DisplayNotes` option in `Advanced` controls the OLED played-note overlay.
+The `DisplayNotes` option in `Settings` controls the OLED played-note overlay.
 Set it to `Off`, `Label`, `Number`, or `MIDI`. `Label` shows the active tuning's note
 labels with octave numbers, including labels provided by user geometry objects.
 Custom note labels are limited to `7` characters so they fit the on-device Key
@@ -707,8 +707,19 @@ How it behaves:
 - Load rows appear next: `Load Boot/Auto-Save`, `Load Slot 1`, and so on
 - Save rows appear below the load rows: `Save Boot/Auto-Save`, `Save Slot 1`, and so on
 - Auto-save always snapshots the current setup back into the `Boot/Auto-Save` profile
-- Loading a slot immediately replaces the current setup, including the selected wavetable
-- Saving stores the current setup, including the selected wavetable, in the chosen slot
+- Loading a slot immediately replaces the current setup, including its tuning,
+  layout, scale, color mode, MIDI settings, and selected wavetable
+- Saving stores the current setup, including those geometry and wavetable
+  selections, in the chosen slot
+
+#### Settings
+
+The `Settings` page includes:
+
+- `ColorByKey`: makes compatible color modes follow the selected key
+- `DisplayNotes`: `Off`, `Label`, `Number`, or `MIDI`
+- MIDI and performance-control settings
+- The `Advanced` submenu
 
 #### Advanced
 
@@ -717,15 +728,11 @@ This page contains maintenance and system settings:
 - `Firmware 2.0 beta 2` version label
 - Hardware revision
 - `Invert Encoder`: reverse the detected hardware revision's normal direction
-- `ColorByKey`
-- `DisplayNotes`: `Off`, `Label`, `Number`, or `MIDI`
 - `Boot Anim`
 - `Reset Defaults`
 - `Update Firmware`
 - `Serial Debug`
 - `LED Test`
-
-`ColorByKey` makes compatible color modes follow the selected key.
 
 `Boot Anim` controls the startup LED animation. Turn it off for the fastest,
 quietest visual boot.
@@ -752,8 +759,9 @@ What to expect:
   fade audio down/up, hold the physical audio outputs idle while flash is busy,
   keep the save message visible for up to about `700 ms`, and return to
   the active menu, browser, or sleeping OLED state afterward
-- Current synth preset and wavetable reference files are only rewritten when
-  their stored value changes
+- The current synth-preset identity file is only rewritten when its value changes
+- Unchanged profile/settings data is not rewritten; related profile references
+  are batched into the same save window
 - If a storage file is invalid, HexBoard briefly shows `Storage warning`, uses
   the safe fallback for that store, and continues starting. If LittleFS cannot
   mount, saving remains disabled for that boot
@@ -767,7 +775,12 @@ HexBoard supports standard `12 EDO` and many non-12-EDO tunings. Depending on th
 - Use multiple MIDI channels for wider note ranges
 - Use MPE for microtonal pitch bends
 
-In `Auto` mode, standard `12 EDO` generally stays in normal MIDI mode, while microtonal setups may switch to MPE automatically.
+In `Auto` mode, standard `12 EDO` generally stays in normal MIDI mode, while
+microtonal setups may switch to MPE automatically. The `MIDI Channel` row is the
+note channel for single-channel mode. In MPE mode, channel `1` is the zone
+master and notes begin at `MPE Low Ch` (channel `2` by default), so a saved and
+displayed `MIDI Channel` of `1` does not mean MPE notes will be sent on channel
+`1`.
 
 For DAW, plugin, and hardware synth setup, including pitch-bend range matching
 and channel-zone examples, see the [MPE Microtonal Setup Guide](mpe-microtonal-setup.md).

@@ -819,7 +819,7 @@ bool updateSynthWavetableMetadata(uint16_t handle, const ParsedSynthWavetableObj
 
   if (updatesCurrent) {
     setCurrentSynthWavetableReference(updated.folderPath, updated.name);
-    saveCurrentSynthWavetableReference();
+    markSettingsDirty();
   }
   return true;
 }

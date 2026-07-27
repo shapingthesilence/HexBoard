@@ -260,7 +260,6 @@ void selectSynthWavetableByVirtualIndex(uint16_t index) {
     settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_BASIC_WAVETABLE;
     loadSelectedSynthWavetable();
     updateCurrentSynthWavetableMenuLabel();
-    flashSafeSaveCurrentSynthWavetableReference();
     markSettingsDirty();
   }
 }

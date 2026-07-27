@@ -2413,7 +2413,7 @@ byte normalizeDynamicJIRatioTable(byte value) {
 
 void applyGeometryRuntimeFromStorage() {
   int savedKeyStepsFromA = current.keyStepsFromA;
-  if (!loadDefaultGeometryRuntime()) {
+  if (!loadGeometryRuntimeForProfile(activeProfileIndex)) {
     clearUserGeometryRuntimeSelection();
     return;
   }
@@ -3172,12 +3172,12 @@ void setupSerialDebugMenuPage() {
 }
 
 void setupAdvancedMenuPage() {
+  menuPageOptions.addMenuItem(menuItemShiftColor);
+  menuPageOptions.addMenuItem(menuItemDisplayPlayedNotes);
   menuPageOptions.addMenuItem(menuGotoAdvanced);
   menuPageAdvanced.addMenuItem(menuItemVersion);
   menuPageAdvanced.addMenuItem(menuItemHardware);
   menuPageAdvanced.addMenuItem(menuItemRotary);
-  menuPageAdvanced.addMenuItem(menuItemShiftColor);
-  menuPageAdvanced.addMenuItem(menuItemDisplayPlayedNotes);
   menuPageAdvanced.addMenuItem(menuItemBootAnimation);
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);

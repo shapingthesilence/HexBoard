@@ -15,12 +15,20 @@
 bool isPresetSyncGeometryObjectType(uint8_t objectType);
 void load_geometry_objects();
 int findGeometryObjectByTypeAndObjectId(uint8_t objectType, const uint8_t* objectId);
+int findFirstGeometryObjectReferencing(uint8_t objectType,
+                                       uint8_t referenceTag,
+                                       uint8_t referenceObjectType,
+                                       const uint8_t* referenceObjectId);
+bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object);
+bool applyUserGeometryRuntimeScale(const GeometryObjectSlot& object);
+bool applyUserGeometryRuntimeExplicitButtonMap(const GeometryObjectSlot& object);
 
 namespace {
 
 char userGeometryRuntimeTuningNameStorage[GEOMETRY_OBJECT_NAME_LENGTH] = "User Tuning";
 char userGeometryRuntimeLayoutNameStorage[GEOMETRY_OBJECT_NAME_LENGTH] = "User Layout";
 char userGeometryRuntimeScaleNameStorage[GEOMETRY_OBJECT_NAME_LENGTH] = "User Scale";
+bool applyGeometryBundleDefaultColorMode = true;
 
 void copyRuntimeGeometryName(char* storage, size_t storageLength, const char* name) {
   snprintf(storage, storageLength, "%s", name && name[0] ? name : "Geometry");
@@ -956,6 +964,114 @@ bool loadDefaultGeometryRuntime() {
          && loadUserGeometryBundleFromTuningSlot(rescueHandle);
 }
 
+void writeCurrentGeometryReference(GeometryProfileReference& reference) {
+  memset(&reference, 0, sizeof(reference));
+  if (!userGeometryRuntimeTuningObjectSelected) {
+    return;
+  }
+  reference.flags |= GEOMETRY_PROFILE_HAS_TUNING;
+  memcpy(reference.tuningObjectId,
+         userGeometryRuntimeTuningObjectId,
+         sizeof(reference.tuningObjectId));
+  if (userGeometryRuntimeLayoutObjectSelected) {
+    reference.flags |= GEOMETRY_PROFILE_HAS_LAYOUT;
+    memcpy(reference.layoutObjectId,
+           userGeometryRuntimeLayoutObjectId,
+           sizeof(reference.layoutObjectId));
+  }
+  if (userGeometryRuntimeScaleObjectSelected) {
+    reference.flags |= GEOMETRY_PROFILE_HAS_SCALE;
+    memcpy(reference.scaleObjectId,
+           userGeometryRuntimeScaleObjectId,
+           sizeof(reference.scaleObjectId));
+  }
+}
+
+void rememberCurrentGeometryReferenceForProfile(uint8_t profileIndex) {
+  if (profileIndex >= PROFILE_COUNT || !userGeometryRuntimeTuningObjectSelected) {
+    return;
+  }
+  writeCurrentGeometryReference(geometryProfileReferences[profileIndex]);
+}
+
+bool restoreGeometryReferenceForProfile(uint8_t profileIndex) {
+  if (profileIndex >= PROFILE_COUNT) {
+    return false;
+  }
+  const GeometryProfileReference& reference = geometryProfileReferences[profileIndex];
+  if ((reference.flags & GEOMETRY_PROFILE_HAS_TUNING) == 0) {
+    return false;
+  }
+  int tuningHandle = findGeometryObjectByTypeAndObjectId(
+    PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
+    reference.tuningObjectId
+  );
+  bool tuningLoaded =
+    tuningHandle >= 0
+    && loadUserGeometryBundleFromTuningSlot(static_cast<uint16_t>(tuningHandle));
+  if (!tuningLoaded) {
+    sendToLog("Profile geometry tuning is unavailable. Using the factory geometry selection.");
+    return false;
+  }
+
+  if ((reference.flags & GEOMETRY_PROFILE_HAS_LAYOUT) != 0) {
+    int layoutHandle = findGeometryObjectByTypeAndObjectId(
+      PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT,
+      reference.layoutObjectId
+    );
+    GeometryObjectSlot layoutObject;
+    if (layoutHandle < 0
+        || !geometryObjectForHandle(static_cast<uint16_t>(layoutHandle), layoutObject)
+        || !geometryObjectReferencesObjectId(layoutObject,
+                                             PRESET_SYNC_TLV_LAYOUT_TUNING_REF,
+                                             PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
+                                             reference.tuningObjectId)
+        || !applyUserGeometryRuntimeLayout(layoutObject)) {
+      sendToLog("Profile geometry layout is unavailable. Using the bundle default.");
+    } else {
+      int buttonMapHandle = findFirstGeometryObjectReferencing(
+        PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP,
+        PRESET_SYNC_TLV_BUTTON_MAP_LAYOUT_REF,
+        PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT,
+        reference.layoutObjectId
+      );
+      if (buttonMapHandle >= 0) {
+        GeometryObjectSlot buttonMapObject;
+        if (geometryObjectForHandle(static_cast<uint16_t>(buttonMapHandle), buttonMapObject)) {
+          applyUserGeometryRuntimeExplicitButtonMap(buttonMapObject);
+        }
+      }
+    }
+  }
+
+  if ((reference.flags & GEOMETRY_PROFILE_HAS_SCALE) != 0) {
+    int scaleHandle = findGeometryObjectByTypeAndObjectId(
+      PRESET_SYNC_OBJECT_TYPE_USER_SCALE,
+      reference.scaleObjectId
+    );
+    GeometryObjectSlot scaleObject;
+    if (scaleHandle < 0
+        || !geometryObjectForHandle(static_cast<uint16_t>(scaleHandle), scaleObject)
+        || !geometryObjectReferencesObjectId(scaleObject,
+                                             PRESET_SYNC_TLV_USER_SCALE_TUNING_REF,
+                                             PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
+                                             reference.tuningObjectId)
+        || !applyUserGeometryRuntimeScale(scaleObject)) {
+      sendToLog("Profile geometry scale is unavailable. Using the bundle default.");
+    }
+  }
+  return true;
+}
+
+bool loadGeometryRuntimeForProfile(uint8_t profileIndex) {
+  bool previousApplyDefaultColorMode = applyGeometryBundleDefaultColorMode;
+  applyGeometryBundleDefaultColorMode = false;
+  bool loaded =
+    restoreGeometryReferenceForProfile(profileIndex) || loadDefaultGeometryRuntime();
+  applyGeometryBundleDefaultColorMode = previousApplyDefaultColorMode;
+  return loaded;
+}
+
 int findFirstGeometryObjectReferencing(uint8_t objectType, uint8_t referenceTag, uint8_t referenceObjectType, const uint8_t* referenceObjectId) {
   if (geometryFallbackRequired()) {
     for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
@@ -1322,11 +1438,12 @@ bool applyUserGeometryRuntimeColorMap(const GeometryObjectSlot& object) {
     sendToLog("Geometry runtime color map apply rejected: cycle length is out of range.");
     return false;
   }
-  presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_SCALE_COLOR_DEFAULT_COLOR_MODE, defaultColorMode);
+  presetSyncFindTlvU8(object.body,
+                      PRESET_SYNC_TLV_SCALE_COLOR_DEFAULT_COLOR_MODE,
+                      defaultColorMode);
   if (defaultColorMode > DIATONIC_COLOR_MODE) {
     defaultColorMode = CUSTOM_COLOR_MODE;
   }
-
   for (uint16_t degree = 0; degree < MAX_SCALE_DIVISIONS; ++degree) {
     userGeometryRuntimePalette.swatch[degree] = {
       360.0f * (static_cast<float>(degree % cycleLength) / static_cast<float>(cycleLength)),
@@ -1351,9 +1468,11 @@ bool applyUserGeometryRuntimeColorMap(const GeometryObjectSlot& object) {
 
   userGeometryRuntimePaletteActive = true;
   userGeometryRuntimeActive = true;
-  colorMode = defaultColorMode;
-  settings[static_cast<uint8_t>(SettingKey::ColorMode)] = colorMode;
-  setLEDcolorCodes();
+  if (applyGeometryBundleDefaultColorMode) {
+    colorMode = defaultColorMode;
+    settings[static_cast<uint8_t>(SettingKey::ColorMode)] = colorMode;
+    setLEDcolorCodes();
+  }
   return true;
 }
 

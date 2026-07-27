@@ -55,7 +55,7 @@ File headers:
 
 | File | Magic | Version owner | Payload |
 | --- | --- | --- | --- |
-| `/settings.dat` | `STG` | Main settings schema | Main profile bytes and object references |
+| `/settings.dat` | `STG` | Main settings schema | Profile settings, tuning/layout/scale IDs, and wavetable references |
 | `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `2` | One tuning root and all linked layout/scale/color/map records |
 | `/geometry_order.dat` | `HGO` | Geometry order file schema `1` | Ordered tuning object IDs used by device and web library menus |
 | `/presets/*.hsp` | `HSP` | Synth preset file schema `11` | One named preset, folder, values, and wavetable reference |
@@ -76,8 +76,8 @@ pitch, MIDI, synth, and LED runtime. The on-device `Tuning`,
 `Layout`, and `Scales` browsers are backed by the same editable catalog.
 Supplied entries live at the tuning root in their former hard-coded order. If no usable bundle tuning exists, the
 firmware exposes its compiled 12 EDO rescue geometry instead.
-It does not yet apply profile references, bundle manifests, or ratio-list
-tunings.
+It applies on-device profile tuning/layout/scale references after catalog load.
+Bundle manifests and ratio-list tunings remain unsupported.
 
 An `HGB` transfer is the exact staged file bytes. Its 12-byte header is `HGB`,
 file version `2`, record count (`u16-le`), catalog order (`u16-le`), and CRC32
@@ -391,7 +391,7 @@ Example response, transaction `1`, max packed chunk `128`, capabilities
 `0x7F7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
 delete user object, factory geometry listing, synth wavetable objects, live
 synth parameter set, cents-table runtime tuning, and atomic geometry bundles),
-max raw object bytes `262144`, settings schema `24`, synth
+max raw object bytes `262144`, settings schema `25`, synth
 preset schema `7`, `9` profiles, `128` synth preset entries, `64` slots for
 each advertised user geometry count, hardware version `2`:
 
@@ -777,7 +777,7 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `23` |
+| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `25` |
 | `0x21` | `SettingValues` | Repeated `<setting-key-u8> <value-u8>` records |
 | `0x22` | `TuningRef` | Object reference |
 | `0x23` | `LayoutRef` | Object reference |
@@ -787,10 +787,11 @@ Recommended TLVs:
 | `0x27` | `ScaleRef` | Optional object reference |
 
 `SettingValues` may use current `SettingKey` ordinals only when
-`SettingsSchemaVersion` exactly matches the firmware's current schema. Current
-firmware accepts only a complete current `/settings.dat` record during boot.
-For future-proof sync, keep user tunings/layouts/mappings in separate objects
-and store references here.
+`SettingsSchemaVersion` exactly matches the firmware's current schema. Boot
+also reads complete version-23 and version-24 settings records for local
+upgrade compatibility; preset-sync hosts should use only the advertised
+current schema. Keep user tunings/layouts/mappings in separate objects and
+store references here.
 
 ## User Tuning Object
 

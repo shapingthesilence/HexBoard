@@ -15,7 +15,7 @@ void flashSafeWrite(void (*writeOperation)());
 void beginFlashSafeWrite();
 void endFlashSafeWrite();
 void flashSafeSave();
-void flashSafeSaveCurrentSynthReferences();
+void flashSafeSaveCurrentSynthPresetReference();
 void flashSafeSaveSynthPresets();
 void saveSynthPresetToSlot(uint16_t presetIndex);
 void saveSynthPresetAsNew(const char* folderPath);

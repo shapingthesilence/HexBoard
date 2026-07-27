@@ -502,7 +502,7 @@ void loadBlankSynthPreset() {
   markSettingsDirty();
   trackBlankSynthPreset();
   syncSynthSettingsToRuntime();
-  flashSafeSaveCurrentSynthReferences();
+  flashSafeSaveCurrentSynthPresetReference();
   sendToLog("Loaded blank synth preset.");
 }
 
@@ -894,13 +894,12 @@ void flashSafeSave() {
   flashSafeWrite(save_settings);
 }
 
-void saveCurrentSynthReferences() {
-  saveCurrentSynthWavetableReference();
+void saveCurrentSynthReference() {
   saveCurrentSynthPresetReference();
 }
 
-void flashSafeSaveCurrentSynthReferences() {
-  flashSafeWrite(saveCurrentSynthReferences);
+void flashSafeSaveCurrentSynthPresetReference() {
+  flashSafeWrite(saveCurrentSynthReference);
 }
 
 void flashSafeSaveSynthPresets() {
@@ -909,14 +908,6 @@ void flashSafeSaveSynthPresets() {
 
 void flashSafeSaveSynthWavetables() {
   flashSafeWrite(save_synth_wavetables);
-}
-
-void flashSafeSaveCurrentSynthWavetableReference() {
-  flashSafeWrite(saveCurrentSynthWavetableReference);
-}
-
-void flashSafeSaveUserSynthWavetable() {
-  flashSafeWrite(save_user_wavetable);
 }
 
 void saveSynthPresetToSlot(uint16_t presetIndex) {
@@ -1033,6 +1024,6 @@ void loadSynthPresetFromSlot(uint16_t presetIndex) {
   markSettingsDirty();
   trackCurrentSynthPresetSlot(presetIndex, &preset);
   syncSynthSettingsToRuntime();
-  flashSafeSaveCurrentSynthReferences();
+  flashSafeSaveCurrentSynthPresetReference();
   sendToLog("Loaded synth preset " + std::string(synthPresets[presetIndex].name));
 }

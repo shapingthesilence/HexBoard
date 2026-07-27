@@ -10,7 +10,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 24;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 25;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -109,7 +109,7 @@ enum class SettingKey : uint8_t {
 };
 
 constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
-constexpr size_t SETTINGS_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
+constexpr size_t SETTINGS_VALUES_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
 constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 11;
@@ -155,10 +155,12 @@ constexpr size_t SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH = 48;
 constexpr const char* SYNTH_WAVETABLE_ROOT_FOLDER = "/";
 constexpr const char* SYNTH_WAVETABLE_BUILTIN_FOLDER = "/Built In";
 constexpr const char* SYNTH_WAVETABLE_BASIC_NAME = "Basic Shapes";
-constexpr uint8_t CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION = 1;
-constexpr char CURRENT_SYNTH_WAVETABLE_REFERENCE_FILE_PATH[] = "/current_wavetable.dat";
-constexpr uint8_t SYNTH_WAVETABLE_PROFILE_REFERENCES_VERSION = 1;
-constexpr char SYNTH_WAVETABLE_PROFILE_REFERENCES_FILE_PATH[] = "/profile_wavetables.dat";
+constexpr uint8_t LEGACY_CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION = 1;
+constexpr char LEGACY_CURRENT_SYNTH_WAVETABLE_REFERENCE_FILE_PATH[] =
+  "/current_wavetable.dat";
+constexpr uint8_t LEGACY_SYNTH_WAVETABLE_PROFILE_REFERENCES_VERSION = 1;
+constexpr char LEGACY_SYNTH_WAVETABLE_PROFILE_REFERENCES_FILE_PATH[] =
+  "/profile_wavetables.dat";
 
 constexpr std::array<SettingKey, 34> synthPresetKeys = {
   SettingKey::PlaybackMode,
@@ -212,6 +214,22 @@ struct DefaultGeometryReferenceFile {
 };
 static_assert(sizeof(DefaultGeometryReferenceFile) == 24,
               "DefaultGeometryReferenceFile disk layout changed");
+
+enum GeometryProfileReferenceFlags : uint8_t {
+  GEOMETRY_PROFILE_HAS_TUNING = 1u << 0,
+  GEOMETRY_PROFILE_HAS_LAYOUT = 1u << 1,
+  GEOMETRY_PROFILE_HAS_SCALE = 1u << 2
+};
+
+struct GeometryProfileReference {
+  uint8_t flags = 0;
+  uint8_t tuningObjectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
+  uint8_t layoutObjectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
+  uint8_t scaleObjectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
+};
+
+static_assert(sizeof(GeometryProfileReference) == 49,
+              "GeometryProfileReference disk layout changed");
 
 struct SynthPresetSlot {
   uint8_t valid = 0;
@@ -341,7 +359,7 @@ struct SynthWavetableSlot {
   char samplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
 };
 
-struct CurrentSynthWavetableReferenceFile {
+struct LegacyCurrentSynthWavetableReferenceFile {
   char magic[3];     // "CWT"
   uint8_t version;
   char name[SYNTH_WAVETABLE_NAME_LENGTH] = {};
@@ -354,24 +372,37 @@ struct SynthWavetableProfileReference {
   char folderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
 };
 
-struct SynthWavetableProfileReferenceFile {
+struct LegacySynthWavetableProfileReferenceFile {
   char magic[3];     // "PWT"
   uint8_t version;
   SynthWavetableProfileReference profiles[PROFILE_COUNT] = {};
   uint32_t crc32;
 };
 
+constexpr size_t SETTINGS_GEOMETRY_DATA_SIZE =
+  sizeof(GeometryProfileReference) * PROFILE_COUNT;
+constexpr size_t SETTINGS_WAVETABLE_DATA_SIZE =
+  sizeof(SynthWavetableProfileReference) * PROFILE_COUNT;
+constexpr size_t SETTINGS_DATA_SIZE =
+  SETTINGS_VALUES_DATA_SIZE
+  + SETTINGS_GEOMETRY_DATA_SIZE
+  + SETTINGS_WAVETABLE_DATA_SIZE;
+
 // The host-side factory-library compiler writes these records byte-for-byte.
 // Fail the firmware build if the RP2040 ABI ever changes their disk layout.
 static_assert(sizeof(SettingsHeader) == 12, "SettingsHeader disk layout changed");
+static_assert(SETTINGS_VALUES_DATA_SIZE == 801,
+              "Settings value payload changed; update the factory-library builder");
+static_assert(SETTINGS_DATA_SIZE == 1962,
+              "Settings payload changed; update the factory-library builder");
 static_assert(sizeof(SynthPresetFileHeaderBase) == 8, "SynthPresetFileHeaderBase disk layout changed");
 static_assert(sizeof(SynthPresetSlot) == 212, "SynthPresetSlot disk layout changed");
 static_assert(sizeof(SynthWavetableFileHeader) == 12, "SynthWavetableFileHeader disk layout changed");
 static_assert(sizeof(SynthWavetableSlot) == 145, "SynthWavetableSlot disk layout changed");
-static_assert(sizeof(CurrentSynthWavetableReferenceFile) == 88,
-              "CurrentSynthWavetableReferenceFile disk layout changed");
-static_assert(sizeof(SynthWavetableProfileReferenceFile) == 728,
-              "SynthWavetableProfileReferenceFile disk layout changed");
+static_assert(sizeof(LegacyCurrentSynthWavetableReferenceFile) == 88,
+              "LegacyCurrentSynthWavetableReferenceFile disk layout changed");
+static_assert(sizeof(LegacySynthWavetableProfileReferenceFile) == 728,
+              "LegacySynthWavetableProfileReferenceFile disk layout changed");
 
 struct GeometryObjectFileHeader {
   char magic[3];     // "HGB"
@@ -442,6 +473,8 @@ struct GeometryCatalogReader {
 using SynthWavetableCatalog = FixedCatalog<SynthWavetableSlot, SYNTH_WAVETABLE_MAX_COUNT>;
 
 extern uint8_t settingsProfiles[PROFILE_COUNT][NUM_SETTINGS];
+extern GeometryProfileReference geometryProfileReferences[PROFILE_COUNT];
+extern SynthWavetableProfileReference synthWavetableProfileReferences[PROFILE_COUNT];
 extern uint8_t* settings;
 extern uint8_t activeProfileIndex;
 extern uint8_t defaultProfileIndex;

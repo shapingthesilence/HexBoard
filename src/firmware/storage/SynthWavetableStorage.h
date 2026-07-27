@@ -3,15 +3,10 @@
 #include "../FirmwareModule.h"
 #include "PersistentDataModels.h"
 
-void saveCurrentSynthWavetableReference();
-bool loadCurrentSynthWavetableReference();
-void applyDefaultSynthWavetableProfileReferences();
+bool loadLegacyCurrentSynthWavetableReference();
 void rememberCurrentSynthWavetableReferenceForProfile(uint8_t profileIndex);
 bool restoreSynthWavetableReferenceForProfile(uint8_t profileIndex);
-void flashSafeSaveCurrentSynthWavetableReference();
 bool loadUserSynthWavetableFromFile();
-void save_user_wavetable();
-void flashSafeSaveUserSynthWavetable();
 void applyUploadedSynthWavetableSamples(const uint8_t* samples, size_t sampleLength = SYNTH_WAVETABLE_SAMPLE_BYTES);
 void load_synth_wavetables();
 void save_synth_wavetables();

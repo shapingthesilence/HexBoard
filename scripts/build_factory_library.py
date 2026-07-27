@@ -13,7 +13,7 @@ import wave
 import zlib
 
 PROFILE_COUNT = 9
-CURRENT_SETTINGS_VERSION = 24
+CURRENT_SETTINGS_VERSION = 25
 CURRENT_FILESYSTEM_GENERATION = 4
 SYNTH_PRESET_MAX_COUNT = 128
 SYNTH_WAVETABLE_MAX_COUNT = 32
@@ -528,7 +528,9 @@ def parse_geometry_bundle(path: Path, root: Path) -> list[tuple[int, bytes, str,
     return output
 
 
-def build_geometry(root: Path, output: Path, config_path: Path, config: dict) -> int:
+def build_geometry(
+    root: Path, output: Path, config_path: Path, config: dict
+) -> tuple[int, bytes, bytes, bytes]:
     paths = sorted(root.rglob("*.json"))
     if len(paths) > GEOMETRY_FACTORY_BUNDLE_MAX_COUNT:
         raise fail(
@@ -564,6 +566,8 @@ def build_geometry(root: Path, output: Path, config_path: Path, config: dict) ->
     seen_ids: set[bytes] = set()
     record_count = 0
     selected_tuning_id: bytes | None = None
+    selected_layout_id: bytes | None = None
+    selected_scale_id: bytes | None = None
     ordered_tuning_ids: list[bytes] = []
     for catalog_order, path in enumerate(paths):
         try:
@@ -606,10 +610,18 @@ def build_geometry(root: Path, output: Path, config_path: Path, config: dict) ->
         (geometry_output / f"{tuning_id.hex().upper()}.hgb").write_bytes(header + bundle_body)
         if path_keys[path] == selected_path:
             selected_tuning_id = tuning_id
+            selected_layout_id = next(
+                object_id for object_type, object_id, *_ in objects
+                if object_type == OBJECT_TYPE_USER_LAYOUT
+            )
+            selected_scale_id = next(
+                object_id for object_type, object_id, *_ in objects
+                if object_type == OBJECT_TYPE_USER_SCALE
+            )
         record_count += len(bundle_records)
     if record_count > GEOMETRY_OBJECT_MAX_COUNT:
         raise fail(root, "geometry", f"generated {record_count} objects; capacity is {GEOMETRY_OBJECT_MAX_COUNT}")
-    if selected_tuning_id is None:
+    if selected_tuning_id is None or selected_layout_id is None or selected_scale_id is None:
         raise fail(config_path, "selection", f"selectedGeometry {selected!r} did not produce a tuning root")
     geometry_order_body = b"".join(ordered_tuning_ids)
     geometry_order_header = struct.pack(
@@ -624,7 +636,7 @@ def build_geometry(root: Path, output: Path, config_path: Path, config: dict) ->
     (output / "default_geometry.dat").write_bytes(
         default_geometry_reference + struct.pack("<I", crc32(selected_tuning_id))
     )
-    return record_count
+    return record_count, selected_tuning_id, selected_layout_id, selected_scale_id
 
 
 def parse_hexwav(path: Path) -> bytes:
@@ -782,7 +794,9 @@ def build_presets(root: Path, output: Path, config: dict,
 
 
 def build_settings(config_path: Path, output: Path, config: dict,
-                   selected_preset_values: dict[str, int]) -> None:
+                   selected_preset_values: dict[str, int],
+                   selected_geometry: tuple[bytes, bytes, bytes],
+                   selected_wavetable: tuple[str, str]) -> None:
     settings_source = config.get("settings")
     if not isinstance(settings_source, dict):
         raise fail(config_path, "settings", "settings must be an object")
@@ -802,6 +816,15 @@ def build_settings(config_path: Path, output: Path, config: dict,
     for key, value in selected_preset_values.items():
         profiles[0][SETTING_KEYS.index(key)] = value
     profile_data = b"".join(profiles)
+    tuning_id, layout_id, scale_id = selected_geometry
+    geometry_reference = bytes([0x07]) + tuning_id + layout_id + scale_id
+    geometry_profile_data = geometry_reference * PROFILE_COUNT
+    wavetable_folder, wavetable_name = selected_wavetable
+    wavetable_reference = (
+        encoded_text(wavetable_name, config_path, "wavetable name", 32)
+        + encoded_text(wavetable_folder, config_path, "wavetable folder", 48)
+    )
+    wavetable_profile_data = wavetable_reference * PROFILE_COUNT
     version = checked_byte(config.get("settingsVersion"), config_path, "settingsVersion")
     if version != CURRENT_SETTINGS_VERSION:
         raise fail(
@@ -809,13 +832,14 @@ def build_settings(config_path: Path, output: Path, config: dict,
             "settings",
             f"settingsVersion is {version}; builder expects {CURRENT_SETTINGS_VERSION}",
         )
-    header = struct.pack("<3sBB3xI", b"STG", version, 0, crc32(profile_data))
-    (output / "settings.dat").write_bytes(header + profile_data)
+    settings_data = profile_data + geometry_profile_data + wavetable_profile_data
+    header = struct.pack("<3sBB3xI", b"STG", version, 0, crc32(settings_data))
+    (output / "settings.dat").write_bytes(header + settings_data)
 
 
-def build_wavetable_references(config_path: Path, output: Path, config: dict,
-                               references: set[tuple[str, str]],
-                               selected_preset_wavetable: tuple[str, str]) -> None:
+def validate_selected_wavetable(config_path: Path, config: dict,
+                                references: set[tuple[str, str]],
+                                selected_preset_wavetable: tuple[str, str]) -> None:
     selected = config.get("selectedWavetable")
     if not isinstance(selected, str) or not selected.strip("/"):
         raise fail(config_path, "selection", "selectedWavetable must be a folder/name path")
@@ -835,14 +859,6 @@ def build_wavetable_references(config_path: Path, output: Path, config: dict,
             f"selectedWavetable {selected!r} does not match the selected preset dependency "
             f"{preset_folder}/{preset_name}",
         )
-    name = encoded_text(selected_name, config_path, "wavetable name", 32)
-    folder = encoded_text(selected_folder, config_path, "wavetable folder", 48)
-    reference_data = name + folder
-    current = b"CWT" + b"\x01" + reference_data + struct.pack("<I", crc32(reference_data))
-    (output / "current_wavetable.dat").write_bytes(current)
-    profiles = reference_data * PROFILE_COUNT
-    profile_file = b"PWT" + b"\x01" + profiles + struct.pack("<I", crc32(profiles))
-    (output / "profile_wavetables.dat").write_bytes(profile_file)
 
 
 def build_miscellaneous(config_path: Path, output: Path, config: dict) -> None:
@@ -875,11 +891,20 @@ def build_library(library: Path, output: Path) -> None:
     _, selected_values, selected_preset_wavetable = build_presets(
         preset_root, output, config, wavetable_references
     )
-    build_settings(config_path, output, config, selected_values)
-    build_wavetable_references(
-        config_path, output, config, wavetable_references, selected_preset_wavetable
+    geometry_object_count, selected_tuning_id, selected_layout_id, selected_scale_id = (
+        build_geometry(geometry_root, output, config_path, config)
     )
-    geometry_object_count = build_geometry(geometry_root, output, config_path, config)
+    build_settings(
+        config_path,
+        output,
+        config,
+        selected_values,
+        (selected_tuning_id, selected_layout_id, selected_scale_id),
+        selected_preset_wavetable,
+    )
+    validate_selected_wavetable(
+        config_path, config, wavetable_references, selected_preset_wavetable
+    )
     build_miscellaneous(config_path, output, config)
     print(
         f"Factory library: {len(list(preset_root.rglob('*.json')))} presets, "
