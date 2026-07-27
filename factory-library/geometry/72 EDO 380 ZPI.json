@@ -1,5 +1,5 @@
 {
-  "format": "hexboard.layoutBundle.v4",
+  "format": "hexboard.layoutBundle.v5",
   "bundle": {
     "objectIdHex": "354a4915637e09c5ad7647d222fb8149",
     "name": "72 EDO 380 ZPI",
@@ -535,7 +535,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -551,7 +550,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -567,7 +565,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -583,7 +580,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -599,7 +595,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -615,7 +610,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": true,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []

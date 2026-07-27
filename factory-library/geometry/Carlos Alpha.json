@@ -1,5 +1,5 @@
 {
-  "format": "hexboard.layoutBundle.v4",
+  "format": "hexboard.layoutBundle.v5",
   "bundle": {
     "objectIdHex": "ef50acaeab50875e200982296090b698",
     "name": "Carlos Alpha",
@@ -94,7 +94,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -110,7 +109,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -126,7 +124,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": true,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []

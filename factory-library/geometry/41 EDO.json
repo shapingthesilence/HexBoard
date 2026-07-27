@@ -1,5 +1,5 @@
 {
-  "format": "hexboard.layoutBundle.v4",
+  "format": "hexboard.layoutBundle.v5",
   "bundle": {
     "objectIdHex": "40a3a0204f3469e3d33fd8d698fa27a2",
     "name": "41 EDO",
@@ -319,7 +319,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -335,7 +334,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -351,7 +349,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -367,7 +364,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -383,7 +379,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -399,7 +394,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": true,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -415,7 +409,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -431,7 +424,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -447,7 +439,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": true,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -463,7 +454,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": true,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []

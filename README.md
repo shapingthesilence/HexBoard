@@ -57,6 +57,7 @@ The current code supports:
 - onboard synth waveform/wavetable banks, Serum/Vital and HexBoard wavetable import, mono portamento, AHDSR envelope, phase-warp/wavetable/LFO modulation, presets, and arpeggiator settings
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
+- cached storage health available under `Advanced` without an extra boot scan
 - independently replaceable LittleFS files for up to `64` geometry bundles and
   `128` synth presets, with geometry divisions up to `128`
 - an optional sequencer build, documented in the [Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt)
@@ -84,7 +85,8 @@ The default `make` target builds the current `250 MHz` firmware as two files:
 - `build/HexBoard_Factory.uf2` contains firmware and a complete factory
   LittleFS image. Installing it erases the existing filesystem.
 - `build/HexBoard_Update.uf2` contains firmware only and preserves the
-  LittleFS filesystem when updating between compatible 2.x releases.
+  LittleFS filesystem. Settings whose schema differs from the running firmware
+  use defaults; current-format libraries remain available.
 
 The `Makefile` and firmware headers under `src/firmware/` are the most reliable
 build references for this repository.

@@ -101,7 +101,7 @@ The firmware is split across the RP2040's two cores:
 
 | Runtime area | Responsibilities |
 | --- | --- |
-| Core 0 `hexboardSetup()` via `setup()` | USB/MIDI startup, read-only LittleFS validation, hardware detection, settings load, LEDs, OLED, rotary setup, menu, runtime sync |
+| Core 0 `hexboardSetup()` via `setup()` | USB/MIDI startup, one-pass LittleFS loading, hardware detection, LEDs, OLED, rotary setup, menu, runtime sync |
 | Core 0 `hexboardLoop()` via `loop()` | timing, button scan, note lifecycle, arpeggiator, wheels, MIDI input, animation, LED refresh, encoder/menu handling, auto-save |
 | Core 1 `hexboardSetup1()` via `setup1()` | synth PWM and DMA audio setup |
 | Core 1 `hexboardLoop1()` via `loop1()` | audio buffer refill, rotary polling, and delegated MIDI polling while delegated mode is active |
@@ -147,18 +147,23 @@ checksum before writing.
 
 The Factory UF2 contains the complete formatted filesystem: current settings,
 editable preset, wavetable, and geometry catalogs, wavetable sample files,
-current-object references, the storage-generation record, and an empty
-`/Sequences` directory. Basic Shapes and the minimal 12 EDO geometry bundle
-remain compiled as the rescue set; all other factory library objects are
-ordinary editable catalog records.
+and current-object references. Basic Shapes and the minimal 12 EDO geometry
+bundle remain compiled as the rescue set; all other factory library objects are
+ordinary editable catalog records. `/Sequences` is created only when the user
+first opens sequence storage, saves a sequence, or starts USB Backup; boot does
+not provision it.
 
-Core 0 mounts LittleFS once with auto-format disabled. It validates every store
-and referenced wavetable sample without writing, prints exact failures over USB
-serial, and then lets each loader apply its own fallback. Bad settings use
+Core 0 mounts LittleFS once with auto-format disabled. Each store validates its
+records while loading them; there is no separate preflight scan. Geometry boot
+indexing checks each bundle CRC and record envelope in one pass instead of
+reopening every contained object. Factory generation and bundle installation do
+full body/schema/reference validation, and selected records are parsed again
+when applied. The first eight distinct failing paths and reasons are recorded
+in RAM for `Advanced` -> `Storage Status`. Bad settings use
 hardware-aware RAM defaults, bad catalogs become empty, bad geometry uses
 built-in 12 EDO, and bad wavetable data uses Basic Shapes. A mount failure
-disables saving. The OLED briefly shows the first failing file, but storage
-errors never hold either core outside normal operation.
+disables saving. Storage errors never add a warning delay or prevent normal
+operation.
 
 Performance-sensitive code can use `RAM_FUNC(name)` to run from SRAM instead of
 external-flash XIP. Keep this selective. Current RAM placement favors the audio
@@ -275,8 +280,8 @@ For an EDO user tuning, the runtime period and division count are authoritative.
 `MidiRouting.cpp` computes cents as `steps * period / divisions`. Preset sync
 prefers the optional IEEE-754 binary32 period, explicit-step, cents-table, and
 reference-frequency TLVs so the wire representation retains every bit the
-firmware runtime can consume. Legacy milli-cent/milli-hertz TLVs remain as
-fallback metadata for older objects and firmware. Equal-step tunings continue
+firmware runtime can consume. Fixed-point milli-cent/milli-hertz TLVs remain
+supported metadata for compact objects. Equal-step tunings continue
 to use their explicit step size. Division and scale-cycle lengths may be from
 `1` through `128`.
 
@@ -310,14 +315,14 @@ Core 0 startup currently:
 1. sets USB manufacturer/product descriptors to `HexBoard`
 2. starts USB serial logging
 3. starts Pico SDK USB MIDI and serial MIDI interfaces
-4. mounts LittleFS once with auto-format disabled and validates every store
+4. mounts LittleFS once with auto-format disabled
 5. configures I2C, scan pins, grid state, and hardware detection
-6. reads settings, presets, wavetable references, wavetables, and geometry
+6. reads and validates settings, presets, wavetable references, wavetables, and geometry once
 7. starts LEDs, display, rotary input, menu objects, and synth lookup tables
 8. syncs settings to runtime and releases Core 1 to start block-rendered audio DMA
 9. waits for `audioTransportReady`
 10. restores sequencer state and runs the bounded boot LED self-check
-11. briefly reports any storage warning and releases both cores into normal operation
+11. releases both cores into normal operation
 
 Place new initialization where its dependencies are already valid. Do not rely
 on loaded settings before `load_settings()` or menu objects before `setupMenu()`.
@@ -386,13 +391,11 @@ Settings are stored in LittleFS at `/settings.dat` with:
 - wavetable folder/name reference for each profile
 - CRC32 of the complete payload
 
-`CURRENT_SETTINGS_VERSION` is currently `25`, and `PROFILE_COUNT` is `9`.
-Version `25` adds stable geometry references and folds per-profile wavetable
-references into the settings record. Version `24` introduced hardware-relative
-`RotaryInvert`; versions `23` and `24` remain read-compatible and acquire
-fallback object references in RAM. The Factory UF2 contains the current
-settings record; boot does not rewrite settings. A legacy record is written as
-version `25` only after a normal user-initiated or auto-save operation.
+`CURRENT_SETTINGS_VERSION` is currently `26`, and `PROFILE_COUNT` is `9`.
+Only the current settings version and exact payload size are accepted. Any
+other version uses hardware-aware defaults in RAM and is replaced only after a
+normal user-initiated or auto-save operation. The Factory UF2 contains the
+current settings record; boot does not rewrite settings.
 
 Important current settings facts:
 
@@ -423,17 +426,13 @@ When adding, removing, reordering, or reinterpreting a `SettingKey`:
 
 Other persistent stores:
 
-The factory filesystem generation is `4`. `/storage_ready.dat` must match that
-generation; individual stores are still validated independently so a mismatch
-does not prevent booting with safe fallbacks.
-
 - `/presets/<object-id>.hsp`: one independently checksummed synth preset per file, magic `HSP`, version `11`, up to `128` files. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume. Only preset metadata is indexed in RAM for menus; a preset body is read when it is transferred, loaded, or overwritten. The Factory UF2 installs `Soft String Pad` and `Bright Mono Lead` as normal editable files.
 - `/current_synth_preset.dat`: current loaded synth preset reference, magic `CSP`, version `1`. It stores either the loaded preset object ID or the special `Blank` state; the edited synth values still come from normal settings/profile storage.
 - `/synth_wavetables.dat`: named user wavetable catalog, magic `SYW`, version `1`, up to `32` entries. Sample files use shortened `/wt_<16 hex>.wtb` paths and can contain six fixed mip levels (`49,152` bytes) or base-only data (`8,192` bytes).
-- `/geometry/<tuning-object-id>.hgb`: one independently checksummed factory-or-user geometry bundle per file, magic `HGB`, version `2`. Capacity is 64 complete bundles counted by `UserTuning` roots. A bundle contains its tuning root and all linked `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` records and is atomically replaced as one unit. Its header also carries a stable catalog order; `0xFFFF` marks ordinary user bundles, which sort after explicitly ordered factory entries.
+- `/geometry/<tuning-object-id>.hgb`: one independently checksummed factory-or-user geometry bundle per file, magic `HGB`, file version `3`, geometry object schema `2`. Capacity is 64 complete bundles counted by `UserTuning` roots. A bundle contains its tuning root and all linked `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` records and is atomically replaced as one unit. Its header also carries a stable catalog order; `0xFFFF` marks ordinary user bundles, which sort after explicitly ordered factory entries.
 - `/geometry_order.dat`: checksummed `HGO` version `1` order override containing up to 64 tuning object IDs. Reordering writes only this small file; saving, replacing, or deleting a bundle does not rewrite it. Missing IDs are ignored and newly installed bundles append after listed entries.
 - `/default_geometry.dat`: factory default tuning-object reference, magic `DGE`, version `1`. If that bundle is unavailable, boot selects the first usable bundle and ultimately the compiled 12 EDO rescue geometry.
-- `/Sequences`: optional sequencer `.hbseq` files plus `.current` remembered path when sequencer support is enabled.
+- `/Sequences`: optional sequencer `.hbseq` files plus `.current` remembered path when sequencer support is enabled; absent until the first sequence-storage action.
 
 Factory tuning/layout/scale/color objects are compiled from
 `factory-library/geometry/` into ordinary `/geometry/*.hgb` files; they use the
@@ -474,14 +473,16 @@ profile.
 | `/geometry_order.dat` | `PresetSyncGeometry.cpp` | Debounced host reorder | Byte comparison skips unchanged order writes |
 | `/Sequences/*.hbseq`, `/Sequences/.current` | `SequencerStorage.cpp` | Explicit sequence save or current-path change | Sequence saves are explicit; unchanged current paths are skipped |
 
-`/default_geometry.dat`, `/storage_ready.dat`, and factory catalog/sample files
+`/default_geometry.dat` and factory catalog/sample files
 are factory-image inputs, not normal runtime write targets. Temporary transfer
 and atomic-save files are short-lived implementation details and never represent
-a second owner for persistent state. Firmware reads `/profile_wavetables.dat`,
-`/current_wavetable.dat`, and `/user_wavetable.dat` only for compatibility.
-Current builds never create or write these legacy files.
-Firmware-only updates preserve LittleFS, so pre-existing copies can remain as
-read-only compatibility inputs; Factory images omit them.
+a second owner for persistent state. Firmware-only updates preserve LittleFS;
+the runtime reads only the current files listed above and ignores unrelated
+files left on the filesystem.
+
+Sequencer startup reads `.current` without rewriting or deleting it. A missing
+target falls back to a blank sequence in RAM and appears in `Storage Status`;
+the file changes only after a user sequence-storage action.
 
 The web geometry library exposes drag ordering for both computer and HexBoard
 lists. Computer order is browser-local. HexBoard order changes are applied
@@ -499,9 +500,12 @@ type for the selected tuning. Bundle validation applies the same per-type limit.
 Runtime Apply supports generated EDO/equal-step and Scala/cents-list user
 tunings, vector layouts with independent device rotation, musical
 rotation/mirrors, and an `int16_t` center-step offset, included-degree scales,
-scale color maps, legacy format-1
+scale color maps, fixed-field format-1
 maps, and independent-field format-2 explicit button maps. Format 2 includes
 direct MIDI note/channel actions and reusable four-tone chord actions. The
+current tuning schema stores only native binary32 values: EDO period,
+equal-step size, reference frequency, and cents-list table. Derivable values
+and lower-precision duplicates are not written.
 active tuning, layout, and scale are persisted as stable object IDs in each
 profile. If a referenced child object is missing, restore uses the selected
 bundle's default child; if the tuning is missing, it uses the factory geometry

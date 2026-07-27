@@ -21,25 +21,25 @@ const wavetableSources = [
     name: "Basic Shapes",
     kind: "anchors",
     waveforms: ["WAVEFORM_SINE", "WAVEFORM_TRIANGLE", "WAVEFORM_SAW", "WAVEFORM_SQUARE"],
-    compatibilityWaveforms: ["WAVEFORM_SINE", "WAVEFORM_TRIANGLE", "WAVEFORM_SAW", "WAVEFORM_SQUARE"]
+    menuWaveforms: ["WAVEFORM_SINE", "WAVEFORM_TRIANGLE", "WAVEFORM_SAW", "WAVEFORM_SQUARE"]
   },
   {
     name: "Classic",
     kind: "anchors",
     waveforms: ["WAVEFORM_STRINGS", "WAVEFORM_CLARINET"],
-    compatibilityWaveforms: ["WAVEFORM_STRINGS", "WAVEFORM_CLARINET"]
+    menuWaveforms: ["WAVEFORM_STRINGS", "WAVEFORM_CLARINET"]
   },
   {
     name: "Vowels",
     kind: "wav",
     path: "src/Default Wavetables/Vowels.wav",
-    compatibilityWaveforms: []
+    menuWaveforms: []
   },
   {
     name: "HarshDigitalBois",
     kind: "wav",
     path: "src/Default Wavetables/Matthew Parker Wavetables/HarshDigitalBois/MP HarshDigitalBois.wav",
-    compatibilityWaveforms: [
+    menuWaveforms: [
       "WAVEFORM_MP_BOX_SAW",
       "WAVEFORM_MP_SYNC_THE_TITANIC",
       "WAVEFORM_MP_STARDEW",
@@ -51,7 +51,7 @@ const wavetableSources = [
     name: "RustyBlade",
     kind: "wav",
     path: "src/Default Wavetables/Matthew Parker Wavetables/RustyBlade/RustyBlade.wav",
-    compatibilityWaveforms: [
+    menuWaveforms: [
       "WAVEFORM_MP_FRIENDLY_SQUARE",
       "WAVEFORM_MP_KOOLAID",
       "WAVEFORM_MP_RICH_REPEATER",
@@ -62,7 +62,7 @@ const wavetableSources = [
     name: "RoundThe808",
     kind: "wav",
     path: "src/Default Wavetables/Matthew Parker Wavetables/RoundThe808/MP RoundThe808.wav",
-    compatibilityWaveforms: [
+    menuWaveforms: [
       "WAVEFORM_MP_PRETTY_SHAPE",
       "WAVEFORM_MP_ROUNDED_TRIANGLE",
       "WAVEFORM_MP_QUICK_808"
@@ -72,7 +72,7 @@ const wavetableSources = [
     name: "GlassyBells",
     kind: "wav",
     path: "src/Default Wavetables/Matthew Parker Wavetables/GlassyBells/MP GlassyBells.wav",
-    compatibilityWaveforms: [
+    menuWaveforms: [
       "WAVEFORM_MP_GLASSY",
       "WAVEFORM_MP_WEIRD_WIZARD",
       "WAVEFORM_MP_OVAL",
@@ -150,7 +150,7 @@ function buildWaveformSourceMap() {
     for (const waveform of definition.waveforms ?? []) {
       allWaveforms.add(waveform);
     }
-    for (const waveform of definition.compatibilityWaveforms ?? []) {
+    for (const waveform of definition.menuWaveforms ?? []) {
       allWaveforms.add(waveform);
     }
   }
@@ -222,9 +222,9 @@ function renderFirmwareData(renderedWavetables) {
   output += `}  // namespace\n\n`;
   output += `const BuiltinSynthWavetableDefinition builtinSynthWavetables[] = {\n`;
   for (const wavetable of renderedWavetables) {
-    const compatibility = wavetable.compatibilityWaveforms ?? [];
-    const compatibilityInitializer = compatibility.length > 0 ? `{ ${compatibility.join(", ")} }` : "{ 0 }";
-    output += `  { ${JSON.stringify(wavetable.name)}, SYNTH_WAVETABLE_BUILTIN_FOLDER, ${wavetable.cName}, SYNTH_WAVETABLE_MIP_SAMPLE_BYTES, ${compatibilityInitializer}, ${compatibility.length} },\n`;
+    const menuWaveforms = wavetable.menuWaveforms ?? [];
+    const menuWaveformInitializer = menuWaveforms.length > 0 ? `{ ${menuWaveforms.join(", ")} }` : "{ 0 }";
+    output += `  { ${JSON.stringify(wavetable.name)}, SYNTH_WAVETABLE_BUILTIN_FOLDER, ${wavetable.cName}, SYNTH_WAVETABLE_MIP_SAMPLE_BYTES, ${menuWaveformInitializer}, ${menuWaveforms.length} },\n`;
   }
   output += `};\n\n`;
   output += `extern const size_t SYNTH_BUILTIN_WAVETABLE_COUNT =\n`;

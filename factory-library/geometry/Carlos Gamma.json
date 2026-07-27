@@ -1,5 +1,5 @@
 {
-  "format": "hexboard.layoutBundle.v4",
+  "format": "hexboard.layoutBundle.v5",
   "bundle": {
     "objectIdHex": "836823b01247e603d6e06121fd38e942",
     "name": "Carlos Gamma",
@@ -171,7 +171,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -187,7 +186,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -203,7 +201,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": true,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []

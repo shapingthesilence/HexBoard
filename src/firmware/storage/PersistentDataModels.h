@@ -10,7 +10,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 25;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 26;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -117,7 +117,8 @@ constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 7;
 constexpr uint8_t SYNTH_WAVETABLE_FILE_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_SCHEMA_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_MAX_COUNT = 32;
-constexpr uint8_t GEOMETRY_OBJECT_FILE_VERSION = 2;
+constexpr uint8_t GEOMETRY_OBJECT_FILE_VERSION = 3;
+constexpr uint8_t GEOMETRY_OBJECT_SCHEMA_VERSION = 2;
 constexpr uint16_t GEOMETRY_CATALOG_ORDER_UNSORTED = 0xFFFFu;
 constexpr uint8_t GEOMETRY_ORDER_FILE_VERSION = 1;
 constexpr char GEOMETRY_ORDER_FILE_PATH[] = "/geometry_order.dat";
@@ -155,12 +156,6 @@ constexpr size_t SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH = 48;
 constexpr const char* SYNTH_WAVETABLE_ROOT_FOLDER = "/";
 constexpr const char* SYNTH_WAVETABLE_BUILTIN_FOLDER = "/Built In";
 constexpr const char* SYNTH_WAVETABLE_BASIC_NAME = "Basic Shapes";
-constexpr uint8_t LEGACY_CURRENT_SYNTH_WAVETABLE_REFERENCE_VERSION = 1;
-constexpr char LEGACY_CURRENT_SYNTH_WAVETABLE_REFERENCE_FILE_PATH[] =
-  "/current_wavetable.dat";
-constexpr uint8_t LEGACY_SYNTH_WAVETABLE_PROFILE_REFERENCES_VERSION = 1;
-constexpr char LEGACY_SYNTH_WAVETABLE_PROFILE_REFERENCES_FILE_PATH[] =
-  "/profile_wavetables.dat";
 
 constexpr std::array<SettingKey, 34> synthPresetKeys = {
   SettingKey::PlaybackMode,
@@ -359,24 +354,9 @@ struct SynthWavetableSlot {
   char samplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
 };
 
-struct LegacyCurrentSynthWavetableReferenceFile {
-  char magic[3];     // "CWT"
-  uint8_t version;
-  char name[SYNTH_WAVETABLE_NAME_LENGTH] = {};
-  char folderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
-  uint32_t crc32;
-};
-
 struct SynthWavetableProfileReference {
   char name[SYNTH_WAVETABLE_NAME_LENGTH] = {};
   char folderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
-};
-
-struct LegacySynthWavetableProfileReferenceFile {
-  char magic[3];     // "PWT"
-  uint8_t version;
-  SynthWavetableProfileReference profiles[PROFILE_COUNT] = {};
-  uint32_t crc32;
 };
 
 constexpr size_t SETTINGS_GEOMETRY_DATA_SIZE =
@@ -399,10 +379,6 @@ static_assert(sizeof(SynthPresetFileHeaderBase) == 8, "SynthPresetFileHeaderBase
 static_assert(sizeof(SynthPresetSlot) == 212, "SynthPresetSlot disk layout changed");
 static_assert(sizeof(SynthWavetableFileHeader) == 12, "SynthWavetableFileHeader disk layout changed");
 static_assert(sizeof(SynthWavetableSlot) == 145, "SynthWavetableSlot disk layout changed");
-static_assert(sizeof(LegacyCurrentSynthWavetableReferenceFile) == 88,
-              "LegacyCurrentSynthWavetableReferenceFile disk layout changed");
-static_assert(sizeof(LegacySynthWavetableProfileReferenceFile) == 728,
-              "LegacySynthWavetableProfileReferenceFile disk layout changed");
 
 struct GeometryObjectFileHeader {
   char magic[3];     // "HGB"
@@ -427,7 +403,7 @@ static_assert(sizeof(GeometryOrderFileHeader) == 12,
 struct GeometryObjectSlot {
   uint8_t valid = 0;
   uint8_t objectType = 0;
-  uint8_t schemaMajor = 1;
+  uint8_t schemaMajor = GEOMETRY_OBJECT_SCHEMA_VERSION;
   uint8_t schemaMinor = 0;
   uint8_t objectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
   char name[GEOMETRY_OBJECT_NAME_LENGTH] = {};
@@ -438,7 +414,7 @@ struct GeometryObjectSlot {
 struct GeometryObjectIndexEntry {
   uint8_t valid = 0;
   uint8_t objectType = 0;
-  uint8_t schemaMajor = 1;
+  uint8_t schemaMajor = GEOMETRY_OBJECT_SCHEMA_VERSION;
   uint8_t schemaMinor = 0;
   uint8_t objectId[GEOMETRY_OBJECT_ID_LENGTH] = {};
   char name[GEOMETRY_OBJECT_NAME_LENGTH] = {};

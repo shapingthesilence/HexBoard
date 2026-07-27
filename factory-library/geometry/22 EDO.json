@@ -1,5 +1,5 @@
 {
-  "format": "hexboard.layoutBundle.v4",
+  "format": "hexboard.layoutBundle.v5",
   "bundle": {
     "objectIdHex": "11df91007982ffcb511688313e37e8c5",
     "name": "22 EDO",
@@ -186,7 +186,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -202,7 +201,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -218,7 +216,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -234,7 +231,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -250,7 +246,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": true,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -266,7 +261,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": false,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []
@@ -282,7 +276,6 @@
         "layoutRotationSteps": 0,
         "mirrorLeftRight": false,
         "mirrorUpDown": false,
-        "portrait": true,
         "buttonOverrides": [],
         "offGridOverrides": [],
         "chordActions": []

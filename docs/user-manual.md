@@ -199,7 +199,7 @@ the left action-icon slot when it appears in the list.
 
 Choosing a layout remaps button pitches, loads that layout's matching explicit
 button map when one exists, and reloads that layout's default device
-orientation: portrait layouts use `0`, and landscape layouts use `90`.
+rotation in 90-degree steps.
 Only the active tuning's layout and scale names are cached. Changing tunings may
 briefly pause while that bundle is loaded; subsequent layout/scale browsing does
 not read the filesystem.
@@ -262,7 +262,7 @@ Options include:
 
 `JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
 `3Limit`, `5Limit`, `7Limit`, and higher options through `41Limit`. Lower-limit
-tables use simpler ratios; higher-limit tables preserve the broader legacy
+tables use simpler ratios; higher-limit tables preserve the broader
 candidate set.
 
 `Beat BPM` and `BPM Mult.` control the BPM-synced retuning grid and are hidden
@@ -627,8 +627,8 @@ tunings are stored as an exact period divided by the selected division count;
 the displayed decimal step size is informational and does not accumulate
 rounding error across periods. Sync sends periods, fixed step sizes, Scala
 intervals, and reference frequency at the firmware's native 32-bit floating-
-point precision. Milli-cent and milli-hertz values remain in the object only
-for compatibility with older firmware.
+point precision. Each value is stored once; EDO step size, equal-step period,
+and Scala period are derived from their authoritative values.
 `Live send` previews compatible edits on the connected HexBoard without saving
 them to flash. `Save to computer` stores the bundle in browser storage, and
 `Save to HexBoard` writes the complete bundle, then applies its active tuning,
@@ -725,10 +725,12 @@ The `Settings` page includes:
 
 This page contains maintenance and system settings:
 
-- `Firmware 2.0 beta 2` version label
+- `Firmware 2.0 beta 3` version label
 - Hardware revision
 - `Invert Encoder`: reverse the detected hardware revision's normal direction
 - `Boot Anim`
+- `Storage Status`: shows up to the first eight path-specific storage issues
+  found during the normal load pass, or `Storage OK`
 - `Reset Defaults`
 - `Update Firmware`
 - `Serial Debug`
@@ -762,9 +764,9 @@ What to expect:
 - The current synth-preset identity file is only rewritten when its value changes
 - Unchanged profile/settings data is not rewritten; related profile references
   are batched into the same save window
-- If a storage file is invalid, HexBoard briefly shows `Storage warning`, uses
-  the safe fallback for that store, and continues starting. If LittleFS cannot
-  mount, saving remains disabled for that boot
+- If a storage file is invalid, HexBoard uses the safe fallback for that store
+  and records the path under `Advanced` -> `Storage Status`. It does not pause
+  startup. If LittleFS cannot mount, saving remains disabled for that boot
 - Saving may mute the onboard synth very briefly
 
 ## Microtonal And MPE Behavior
@@ -821,15 +823,17 @@ Important factory defaults include:
 
 Use `HexBoard_Factory.uf2` for a factory installation. It erases all saved
 settings, presets, wavetables, layouts, samples, and sequences, then installs a
-complete factory library. Use `HexBoard_Update.uf2` to update compatible 2.x
-firmware without changing LittleFS.
+complete factory library. Use `HexBoard_Update.uf2` to update firmware without
+changing LittleFS. Beta 3 accepts only settings schema `26`;
+settings from another beta start at defaults, while current-format preset,
+wavetable, geometry, and sequence files remain available.
 
-Boot only mounts and reads LittleFS; it does not format, migrate, or create
-factory files. If a saved store is invalid, the OLED briefly identifies the
-affected file and the board continues with safe defaults. USB serial prints a
-more detailed validation reason. If LittleFS cannot mount, the board uses its
-minimal compiled 12 EDO geometry rescue bundle and Basic Shapes, and disables
-saving. Normal factory geometry is read from independent `/geometry/*.hgb`
+Boot mounts LittleFS and loads each store once without formatting or creating
+factory files. If a saved store is invalid, the board continues with safe
+defaults and records the affected path and reason under `Advanced` -> `Storage
+Status`. If LittleFS cannot mount, the board uses its minimal compiled 12 EDO
+geometry rescue bundle and Basic Shapes, and disables saving. Normal factory
+geometry is read from independent `/geometry/*.hgb`
 bundle files; only selected records are decoded into runtime RAM. Named synth
 presets are also stored as independent `/presets/*.hsp` files, so saving one
 preset does not rewrite the rest of the preset library.

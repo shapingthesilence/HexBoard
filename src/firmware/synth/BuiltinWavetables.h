@@ -20,4 +20,4 @@ const byte* synthWaveformSource(byte waveform);
 size_t synthBuiltinWavetableCount();
 const BuiltinSynthWavetableDefinition* synthBuiltinWavetableAt(size_t index);
 int findBuiltinSynthWavetable(const char* folderPath, const char* name);
-uint8_t compatibilityWavetablePositionForAnchor(uint8_t anchorIndex, uint8_t anchorCount);
+uint8_t wavetablePositionForAnchor(uint8_t anchorIndex, uint8_t anchorCount);

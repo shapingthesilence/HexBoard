@@ -227,34 +227,6 @@ const builtInWavetables = [
   { name: "Basic Shapes", folderPath: builtInWavetableFolder }
 ] as const;
 
-const legacyWaveformCompatibility = new Map<number, { name: string; folderPath: string; position: number }>([
-  [7, { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 0 }],
-  [8, { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 127 }],
-  [9, { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 85 }],
-  [10, { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 42 }],
-  [0, { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 0 }],
-  [1, { name: "Classic", folderPath: factoryWavetableFolder, position: 0 }],
-  [2, { name: "Classic", folderPath: factoryWavetableFolder, position: 127 }],
-  [11, { name: "HarshDigitalBois", folderPath: factoryWavetableFolder, position: 95 }],
-  [12, { name: "HarshDigitalBois", folderPath: factoryWavetableFolder, position: 0 }],
-  [13, { name: "RustyBlade", folderPath: factoryWavetableFolder, position: 0 }],
-  [14, { name: "GlassyBells", folderPath: factoryWavetableFolder, position: 0 }],
-  [15, { name: "RustyBlade", folderPath: factoryWavetableFolder, position: 42 }],
-  [16, { name: "HarshDigitalBois", folderPath: factoryWavetableFolder, position: 127 }],
-  [17, { name: "GlassyBells", folderPath: factoryWavetableFolder, position: 127 }],
-  [18, { name: "GlassyBells", folderPath: factoryWavetableFolder, position: 85 }],
-  [19, { name: "RoundThe808", folderPath: factoryWavetableFolder, position: 0 }],
-  [20, { name: "RoundThe808", folderPath: factoryWavetableFolder, position: 127 }],
-  [21, { name: "RustyBlade", folderPath: factoryWavetableFolder, position: 85 }],
-  [22, { name: "RoundThe808", folderPath: factoryWavetableFolder, position: 64 }],
-  [23, { name: "HarshDigitalBois", folderPath: factoryWavetableFolder, position: 64 }],
-  [24, { name: "HarshDigitalBois", folderPath: factoryWavetableFolder, position: 32 }],
-  [25, { name: "GlassyBells", folderPath: factoryWavetableFolder, position: 42 }],
-  [26, { name: "RustyBlade", folderPath: factoryWavetableFolder, position: 127 }],
-  [27, { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 0 }],
-  [28, { name: "UserTbl", folderPath: "/User", position: 0 }]
-]);
-
 const playbackOptions = [
   { label: "Off", value: 0 },
   { label: "MonoRtg", value: 1 },
@@ -738,17 +710,7 @@ function wavetableReferenceFromUnknown(source: Record<string, unknown>): { name:
       return normalizeWavetableReference(folderPath, name);
     }
   }
-  const name = typeof source.wavetableName === "string" ? source.wavetableName : "";
-  const folderPath = typeof source.wavetableFolderPath === "string" ? source.wavetableFolderPath : "";
-  if (name.trim()) {
-    return normalizeWavetableReference(folderPath, name);
-  }
   return null;
-}
-
-function legacyWavetableReference(values: EditableSynthValues): { name: string; folderPath: string; position: number } {
-  return legacyWaveformCompatibility.get(values.Waveform)
-    ?? { name: basicWavetableName, folderPath: builtInWavetableFolder, position: 0 };
 }
 
 function presetFromUnknown(value: unknown): EditableSynthPreset {
@@ -768,12 +730,8 @@ function presetFromUnknown(value: unknown): EditableSynthPreset {
       values[key] = clampSynthValue(key, rawValue);
     }
   }
-  const explicitWavetable = wavetableReferenceFromUnknown(source);
-  const legacyWavetable = legacyWavetableReference(values);
-  const wavetable = explicitWavetable ?? legacyWavetable;
-  if (!explicitWavetable) {
-    values.SynthWavetablePosition = legacyWavetable.position;
-  }
+  const wavetable = wavetableReferenceFromUnknown(source)
+    ?? { name: basicWavetableName, folderPath: builtInWavetableFolder };
   values.Waveform = 27;
 
   return {
@@ -819,12 +777,7 @@ function presetFromObjectBody(body: Uint8Array, deviceHandle?: number): Editable
       }
     }
   }
-  let wavetable = normalizeWavetableReference(wavetableFolderPath, wavetableName);
-  if (!wavetableName.trim()) {
-    const legacyWavetable = legacyWavetableReference(values);
-    wavetable = legacyWavetable;
-    values.SynthWavetablePosition = legacyWavetable.position;
-  }
+  const wavetable = normalizeWavetableReference(wavetableFolderPath, wavetableName);
   values.Waveform = 27;
 
   return {

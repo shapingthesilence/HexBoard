@@ -10,6 +10,7 @@
 #include "BuiltinGeometry.h"
 #include "PresetSync.h"
 #include "Settings.h"
+#include "StorageHealth.h"
 #include "SynthPresetStorage.h"
 
 bool isPresetSyncGeometryObjectType(uint8_t objectType);
@@ -149,7 +150,8 @@ bool geometryBundleHeaderValid(const GeometryObjectFileHeader& header) {
 
 bool validateGeometryBundleFile(const char* path,
                                 GeometryBundleIndexEntry& bundle,
-                                bool logFailure) {
+                                bool logFailure,
+                                bool validateObjectBodies) {
   bundle = {};
   File file = LittleFS.open(path, "r");
   if (!file || file.size() < sizeof(GeometryObjectFileHeader)
@@ -214,18 +216,6 @@ bool validateGeometryBundleFile(const char* path,
     std::array<uint8_t, GEOMETRY_OBJECT_ID_LENGTH> objectId = {};
     memcpy(objectId.data(), metadata.objectId, GEOMETRY_OBJECT_ID_LENGTH);
     objectIds.push_back(objectId);
-    GeometryObjectSlot parsed;
-    if (!geometryObjectForMetadata(metadata, parsed)) {
-      file.close();
-      if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": object body.");
-      return false;
-    }
-    if (metadata.objectType == PRESET_SYNC_OBJECT_TYPE_USER_TUNING
-        && !geometryObjectRuntimeTuningSupported(parsed)) {
-      file.close();
-      if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": unsupported tuning.");
-      return false;
-    }
     uint8_t tuningReferenceTag = 0;
     switch (metadata.objectType) {
       case PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT:
@@ -246,14 +236,28 @@ bool validateGeometryBundleFile(const char* path,
       default:
         break;
     }
-    if (tuningReferenceTag != 0
-        && !geometryObjectReferencesObjectId(parsed,
-                                             tuningReferenceTag,
-                                             PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
-                                             rootTuningObjectId)) {
-      file.close();
-      if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": foreign tuning reference.");
-      return false;
+    if (validateObjectBodies) {
+      GeometryObjectSlot parsed;
+      if (!geometryObjectForMetadata(metadata, parsed)) {
+        file.close();
+        if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": object body.");
+        return false;
+      }
+      if (metadata.objectType == PRESET_SYNC_OBJECT_TYPE_USER_TUNING
+          && !geometryObjectRuntimeTuningSupported(parsed)) {
+        file.close();
+        if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": unsupported tuning.");
+        return false;
+      }
+      if (tuningReferenceTag != 0
+          && !geometryObjectReferencesObjectId(parsed,
+                                               tuningReferenceTag,
+                                               PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
+                                               rootTuningObjectId)) {
+        file.close();
+        if (logFailure) sendToLog("Invalid geometry bundle file " + std::string(path) + ": foreign tuning reference.");
+        return false;
+      }
     }
   }
   bool valid = tuningCount == 1
@@ -525,7 +529,7 @@ bool parseGeometryObjectBody(std::vector<uint8_t> body, GeometryObjectSlot& obje
     error = "not geometry object";
     return false;
   }
-  if (body[5] != 1) {
+  if (body[5] != GEOMETRY_OBJECT_SCHEMA_VERSION) {
     error = "unsupported geometry object schema";
     return false;
   }
@@ -586,12 +590,14 @@ bool parseGeometryObjectBody(std::vector<uint8_t> body, GeometryObjectSlot& obje
 void load_geometry_objects() {
   clearGeometryCatalogState();
   if (!fileSystemExists) {
+    reportStorageHealthIssue(GEOMETRY_STORAGE_ROOT, "filesystem unavailable");
     sendToLog("File system not available. Using empty geometry catalog.");
     return;
   }
   File directory = LittleFS.open(GEOMETRY_STORAGE_ROOT, "r");
   if (!directory || !directory.isDirectory()) {
     if (directory) directory.close();
+    reportStorageHealthIssue(GEOMETRY_STORAGE_ROOT, "missing");
     sendToLog("Geometry bundle directory not found. Starting with an empty geometry library.");
     return;
   }
@@ -603,15 +609,20 @@ void load_geometry_objects() {
     entry.close();
     if (!candidate) continue;
     GeometryBundleIndexEntry bundle = {};
-    if (!validateGeometryBundleFile(path, bundle, true)) continue;
+    if (!validateGeometryBundleFile(path, bundle, true, false)) {
+      reportStorageHealthIssue(path, "invalid bundle");
+      continue;
+    }
     char canonicalPath[GEOMETRY_STORAGE_PATH_LENGTH] = {};
     if (!geometryBundleStoragePath(bundle.tuningObjectId, canonicalPath, sizeof(canonicalPath))
         || strcmp(path, canonicalPath) != 0) {
+      reportStorageHealthIssue(path, "filename mismatch");
       sendToLog("Warning: Geometry bundle filename does not match its tuning object id: " + std::string(path));
       continue;
     }
     if (geometryBundles.size() >= GEOMETRY_BUNDLE_MAX_COUNT
         || geometryCatalogObjectCount + bundle.recordCount > GEOMETRY_OBJECT_MAX_COUNT) {
+      reportStorageHealthIssue(GEOMETRY_STORAGE_ROOT, "capacity exceeded");
       sendToLog("Warning: Geometry library exceeds its bundle or record limit.");
       break;
     }
@@ -627,7 +638,7 @@ void load_geometry_objects() {
 bool installGeometryBundleFile(const char* stagedPath) {
   if (!fileSystemExists || !stagedPath || !stagedPath[0]) return false;
   GeometryBundleIndexEntry bundle = {};
-  if (!validateGeometryBundleFile(stagedPath, bundle, true)) return false;
+  if (!validateGeometryBundleFile(stagedPath, bundle, true, true)) return false;
   char destination[GEOMETRY_STORAGE_PATH_LENGTH] = {};
   if (!geometryBundleStoragePath(bundle.tuningObjectId, destination, sizeof(destination))) return false;
   bool replacing = LittleFS.exists(destination);
@@ -735,6 +746,7 @@ bool geometryObjectForMetadata(const GeometryObjectIndexEntry& entry, GeometryOb
       || parsed.schemaMajor != entry.schemaMajor
       || parsed.schemaMinor != entry.schemaMinor
       || memcmp(parsed.objectId, entry.objectId, sizeof(entry.objectId)) != 0) {
+    reportStorageHealthIssue(entry.storagePath, "invalid object body");
     sendToLog("Geometry object read rejected: " + parseError);
     return false;
   }
@@ -814,16 +826,6 @@ bool presetSyncFindTlvI32LE(const std::vector<uint8_t>& body, uint8_t tag, int32
   return true;
 }
 
-bool presetSyncFindTlvU32LE(const std::vector<uint8_t>& body, uint8_t tag, uint32_t& result) {
-  const uint8_t* value = nullptr;
-  uint16_t length = 0;
-  if (!presetSyncFindTlv(body, tag, value, length) || length != 4) {
-    return false;
-  }
-  result = presetSyncReadU32LE(value);
-  return true;
-}
-
 bool presetSyncFindTlvFloat32LE(const std::vector<uint8_t>& body, uint8_t tag, float& result) {
   const uint8_t* value = nullptr;
   uint16_t length = 0;
@@ -844,34 +846,19 @@ bool readRuntimeCentsTable(const GeometryObjectSlot& object,
 
   const uint8_t* centsTable = nullptr;
   uint16_t centsTableLength = 0;
-  bool floatTable = presetSyncFindTlv(
-    object.body,
-    PRESET_SYNC_TLV_TUNING_CENTS_TABLE_FLOAT32,
-    centsTable,
-    centsTableLength
-  );
-  if (!floatTable
-      && !presetSyncFindTlv(object.body, PRESET_SYNC_TLV_TUNING_CENTS_TABLE, centsTable, centsTableLength)) {
+  if (!presetSyncFindTlv(object.body,
+                         PRESET_SYNC_TLV_TUNING_CENTS_TABLE_FLOAT32,
+                         centsTable,
+                         centsTableLength)) {
     return false;
   }
   if (centsTableLength != static_cast<uint16_t>(cycleLength * sizeof(float))) {
     return false;
   }
 
-  uint32_t periodFromTlv = 0;
-  bool sawLegacyPeriod = presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_PERIOD_MILLI_CENTS, periodFromTlv);
-  float precisePeriod = 0.0f;
-  bool sawPrecisePeriod = presetSyncFindTlvFloat32LE(
-    object.body,
-    PRESET_SYNC_TLV_TUNING_PERIOD_CENTS_FLOAT32,
-    precisePeriod
-  );
-
   float previousCents = 0.0f;
   for (uint16_t degree = 0; degree < cycleLength; ++degree) {
-    float cents = floatTable
-      ? presetSyncReadFloat32LE(centsTable + (degree * sizeof(float)))
-      : static_cast<float>(presetSyncReadI32LE(centsTable + (degree * sizeof(int32_t)))) / 1000.0f;
+    float cents = presetSyncReadFloat32LE(centsTable + (degree * sizeof(float)));
     if (!std::isfinite(cents) || cents <= previousCents) {
       return false;
     }
@@ -881,10 +868,8 @@ bool readRuntimeCentsTable(const GeometryObjectSlot& object,
     previousCents = cents;
   }
 
-  periodCents = sawPrecisePeriod
-    ? precisePeriod
-    : (sawLegacyPeriod ? static_cast<float>(periodFromTlv) / 1000.0f : previousCents);
-  return periodCents > 0.0f && previousCents == periodCents;
+  periodCents = previousCents;
+  return periodCents > 0.0f;
 }
 
 bool geometryObjectReferencesObjectId(const GeometryObjectSlot& object, uint8_t tag, uint8_t objectType, const uint8_t* objectId) {
@@ -899,18 +884,32 @@ bool geometryObjectReferencesObjectId(const GeometryObjectSlot& object, uint8_t 
 bool geometryObjectRuntimeTuningSupported(const GeometryObjectSlot& object) {
   uint8_t tuningKind = 0;
   uint16_t cycleLength = 0;
+  uint8_t referenceMidiNote = 0;
+  float referenceHz = 0.0f;
   if (!object.valid
       || object.objectType != PRESET_SYNC_OBJECT_TYPE_USER_TUNING
       || !presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_TUNING_KIND, tuningKind)
-      || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS, cycleLength)) {
+      || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS, cycleLength)
+      || !presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_MIDI_NOTE, referenceMidiNote)
+      || !presetSyncFindTlvFloat32LE(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_HZ_FLOAT32, referenceHz)) {
     return false;
   }
-  if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
+  if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS
+      || referenceMidiNote > 127 || referenceHz <= 0.0f) {
     return false;
   }
-  if (tuningKind == PRESET_SYNC_USER_TUNING_KIND_EDO
-      || tuningKind == PRESET_SYNC_USER_TUNING_KIND_EQUAL_STEP) {
-    return true;
+  float scalarCents = 0.0f;
+  if (tuningKind == PRESET_SYNC_USER_TUNING_KIND_EDO) {
+    return presetSyncFindTlvFloat32LE(object.body,
+                                      PRESET_SYNC_TLV_TUNING_PERIOD_CENTS_FLOAT32,
+                                      scalarCents)
+           && scalarCents > 0.0f;
+  }
+  if (tuningKind == PRESET_SYNC_USER_TUNING_KIND_EQUAL_STEP) {
+    return presetSyncFindTlvFloat32LE(object.body,
+                                      PRESET_SYNC_TLV_TUNING_STEP_CENTS_FLOAT32,
+                                      scalarCents)
+           && scalarCents > 0.0f;
   }
   if (tuningKind == PRESET_SYNC_USER_TUNING_KIND_CENTS_LIST) {
     float periodCents = 0.0f;
@@ -941,6 +940,9 @@ bool loadDefaultGeometryRuntime() {
       if (handle >= 0 && loadUserGeometryBundleFromTuningSlot(static_cast<uint16_t>(handle))) {
         return true;
       }
+      reportStorageHealthIssue(DEFAULT_GEOMETRY_REFERENCE_FILE_PATH, "target unavailable");
+    } else {
+      reportStorageHealthIssue(DEFAULT_GEOMETRY_REFERENCE_FILE_PATH, "invalid reference");
     }
   }
   GeometryCatalogReader reader;
@@ -960,7 +962,7 @@ bool loadDefaultGeometryRuntime() {
   }
 
   uint16_t rescueHandle = 0;
-  return builtinGeometryHandleForLegacyTuning(TUNING_12EDO, rescueHandle)
+  return builtinGeometryHandleForTuning(TUNING_12EDO, rescueHandle)
          && loadUserGeometryBundleFromTuningSlot(rescueHandle);
 }
 
@@ -1169,7 +1171,7 @@ void clearUserGeometryRuntimeSelection() {
   userGeometryRuntimePeriodCents = 1200.0f;
   userGeometryRuntimeReferenceMidiNote = 69;
   userGeometryRuntimeReferenceHz = 440.0f;
-  userGeometryRuntimeDeviceRotation = DEVICE_ROTATION_PORTRAIT;
+  userGeometryRuntimeDeviceRotation = DEVICE_ROTATION_0;
   userGeometryRuntimeLayoutCenterStepsFromC = 0;
   clearUserGeometryButtonRuntimeOverrides();
 }
@@ -1204,16 +1206,17 @@ bool applyRuntimeKeyLabels(const uint8_t* value, uint16_t length, uint16_t cycle
 bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   uint8_t tuningKind = 0;
   uint16_t cycleLength = 0;
-  uint32_t periodMilliCents = 1200000;
-  uint32_t stepMilliCents = 0;
-  float periodCents = 1200.0f;
+  float periodCents = 0.0f;
   float stepCents = 0.0f;
-  uint8_t referenceMidiNote = 69;
-  uint32_t referenceMilliHz = 440000;
-  float referenceHz = 440.0f;
+  uint8_t referenceMidiNote = 0;
+  float referenceHz = 0.0f;
   if (!presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_TUNING_KIND, tuningKind)
-      || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS, cycleLength)) {
-    sendToLog("Geometry runtime tuning apply rejected: missing tuning kind or cycle length.");
+      || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS, cycleLength)
+      || !presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_MIDI_NOTE, referenceMidiNote)
+      || !presetSyncFindTlvFloat32LE(object.body,
+                                     PRESET_SYNC_TLV_TUNING_REFERENCE_HZ_FLOAT32,
+                                     referenceHz)) {
+    sendToLog("Geometry runtime tuning apply rejected: missing required tuning fields.");
     return false;
   }
   if (tuningKind != PRESET_SYNC_USER_TUNING_KIND_EDO
@@ -1226,23 +1229,12 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
     sendToLog("Geometry runtime tuning apply rejected: cycle length is out of range.");
     return false;
   }
-  presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_PERIOD_MILLI_CENTS, periodMilliCents);
-  presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_STEP_MILLI_CENTS, stepMilliCents);
-  presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_MIDI_NOTE, referenceMidiNote);
-  presetSyncFindTlvU32LE(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_MILLI_HZ, referenceMilliHz);
-  periodCents = static_cast<float>(periodMilliCents) / 1000.0f;
-  stepCents = static_cast<float>(stepMilliCents) / 1000.0f;
-  referenceHz = static_cast<float>(referenceMilliHz) / 1000.0f;
-  presetSyncFindTlvFloat32LE(object.body, PRESET_SYNC_TLV_TUNING_PERIOD_CENTS_FLOAT32, periodCents);
-  presetSyncFindTlvFloat32LE(object.body, PRESET_SYNC_TLV_TUNING_STEP_CENTS_FLOAT32, stepCents);
-  presetSyncFindTlvFloat32LE(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_HZ_FLOAT32, referenceHz);
   if (referenceMidiNote > 127) {
     sendToLog("Geometry runtime tuning apply rejected: reference MIDI note is invalid.");
     return false;
   }
-  if (!std::isfinite(referenceHz) || referenceHz <= 0.0f
-      || !std::isfinite(periodCents) || periodCents <= 0.0f) {
-    sendToLog("Geometry runtime tuning apply rejected: period or reference Hz is invalid.");
+  if (!std::isfinite(referenceHz) || referenceHz <= 0.0f) {
+    sendToLog("Geometry runtime tuning apply rejected: reference Hz is invalid.");
     return false;
   }
 
@@ -1257,14 +1249,27 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
     periodCents = centsTablePeriod;
     stepCents = periodCents / static_cast<float>(cycleLength);
     centsTableActive = true;
-  } else {
-    if (stepCents <= 0.0f) {
-      stepCents = periodCents / static_cast<float>(cycleLength);
-    }
-    if (!std::isfinite(stepCents) || stepCents <= 0.0f) {
-      sendToLog("Geometry runtime tuning apply rejected: step size is invalid.");
+  } else if (tuningKind == PRESET_SYNC_USER_TUNING_KIND_EDO) {
+    if (!presetSyncFindTlvFloat32LE(object.body,
+                                    PRESET_SYNC_TLV_TUNING_PERIOD_CENTS_FLOAT32,
+                                    periodCents)) {
+      sendToLog("Geometry runtime tuning apply rejected: period is missing.");
       return false;
     }
+    stepCents = periodCents / static_cast<float>(cycleLength);
+  } else {
+    if (!presetSyncFindTlvFloat32LE(object.body,
+                                    PRESET_SYNC_TLV_TUNING_STEP_CENTS_FLOAT32,
+                                    stepCents)) {
+      sendToLog("Geometry runtime tuning apply rejected: step size is missing.");
+      return false;
+    }
+    periodCents = stepCents * static_cast<float>(cycleLength);
+  }
+  if (!std::isfinite(periodCents) || periodCents <= 0.0f
+      || !std::isfinite(stepCents) || stepCents <= 0.0f) {
+    sendToLog("Geometry runtime tuning apply rejected: period or step size is invalid.");
+    return false;
   }
 
   copyRuntimeGeometryName(userGeometryRuntimeTuningNameStorage, sizeof(userGeometryRuntimeTuningNameStorage), object.name);
@@ -1312,7 +1317,6 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
   uint16_t centerButton = 0;
   int16_t acrossSteps = 0;
   int16_t downLeftSteps = 0;
-  uint8_t portrait = 0;
   uint8_t storedDeviceRotation = 0;
   uint8_t storedLayoutRotation = 0;
   uint8_t mirrorFlags = 0;
@@ -1321,7 +1325,7 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
       || !presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_LAYOUT_CENTER_BUTTON, centerButton)
       || !presetSyncFindTlvI16LE(object.body, PRESET_SYNC_TLV_LAYOUT_ACROSS_STEPS, acrossSteps)
       || !presetSyncFindTlvI16LE(object.body, PRESET_SYNC_TLV_LAYOUT_DOWN_LEFT_STEPS, downLeftSteps)
-      || !presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_PORTRAIT, portrait)) {
+      || !presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_DEVICE_ROTATION, storedDeviceRotation)) {
     sendToLog("Geometry runtime layout apply rejected: missing vector layout fields.");
     return false;
   }
@@ -1331,8 +1335,6 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
     sendToLog("Geometry runtime layout apply rejected: vector layout field is out of range.");
     return false;
   }
-  storedDeviceRotation = portrait != 0 ? DEVICE_ROTATION_PORTRAIT : DEVICE_ROTATION_LANDSCAPE;
-  presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_DEVICE_ROTATION, storedDeviceRotation);
   presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_ROTATION, storedLayoutRotation);
   presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_LAYOUT_MIRROR_FLAGS, mirrorFlags);
   presetSyncFindTlvI32LE(object.body, PRESET_SYNC_TLV_LAYOUT_CENTER_STEPS_FROM_C, centerStepsFromC);
@@ -1348,7 +1350,7 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
 
   copyRuntimeGeometryName(userGeometryRuntimeLayoutNameStorage, sizeof(userGeometryRuntimeLayoutNameStorage), object.name);
   userGeometryRuntimeLayout.name = userGeometryRuntimeLayoutNameStorage;
-  userGeometryRuntimeLayout.isPortrait = portrait != 0;
+  userGeometryRuntimeLayout.deviceRotation = storedDeviceRotation;
   userGeometryRuntimeLayout.hexMiddleC = static_cast<byte>(centerButton);
   userGeometryRuntimeLayout.acrossSteps = static_cast<int8_t>(acrossSteps);
   userGeometryRuntimeLayout.dnLeftSteps = static_cast<int8_t>(downLeftSteps);
@@ -1482,9 +1484,9 @@ bool applyUserGeometryRuntimeExplicitButtonMap(const GeometryObjectSlot& object)
   uint16_t recordsLength = 0;
   if (!presetSyncFindTlvU8(object.body, PRESET_SYNC_TLV_BUTTON_MAP_RECORD_FORMAT, recordFormat)
       || !presetSyncFindTlv(object.body, PRESET_SYNC_TLV_BUTTON_MAP_RECORDS, records, recordsLength)
-      || (recordFormat != PRESET_SYNC_BUTTON_MAP_RECORD_FORMAT_LEGACY
+      || (recordFormat != PRESET_SYNC_BUTTON_MAP_RECORD_FORMAT_FIXED
           && recordFormat != PRESET_SYNC_BUTTON_MAP_RECORD_FORMAT_FIELD_MASKED)
-      || (recordFormat == PRESET_SYNC_BUTTON_MAP_RECORD_FORMAT_LEGACY
+      || (recordFormat == PRESET_SYNC_BUTTON_MAP_RECORD_FORMAT_FIXED
           && (recordsLength % PRESET_SYNC_BUTTON_MAP_RECORD_SIZE) != 0)) {
     sendToLog("Geometry runtime button map apply rejected: button records are invalid.");
     return false;
@@ -1546,7 +1548,7 @@ bool applyUserGeometryRuntimeExplicitButtonMap(const GeometryObjectSlot& object)
     }
   }
 
-  if (recordFormat == PRESET_SYNC_BUTTON_MAP_RECORD_FORMAT_LEGACY) {
+  if (recordFormat == PRESET_SYNC_BUTTON_MAP_RECORD_FORMAT_FIXED) {
     for (uint16_t offset = 0; offset < recordsLength; offset += PRESET_SYNC_BUTTON_MAP_RECORD_SIZE) {
       uint16_t buttonIndex = presetSyncReadU16LE(records + offset);
       if (buttonIndex >= LED_COUNT) {

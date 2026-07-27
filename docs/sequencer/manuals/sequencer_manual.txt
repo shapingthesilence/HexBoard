@@ -627,8 +627,9 @@ Sequences are stored in LittleFS under:
   /Sequences
 
 Installing the Sequencer Factory UF2 erases the complete LittleFS filesystem,
-including all sequences, and installs an empty /Sequences folder. Installing
-the Sequencer Update UF2 preserves the existing LittleFS filesystem.
+including all sequences. The /Sequences folder is created when sequence
+storage is first opened or used. Installing the Sequencer Update UF2 preserves
+the existing LittleFS filesystem.
 
 The current file path is remembered, so the last loaded sequence can come
 back on startup.

@@ -33,8 +33,6 @@ constexpr byte SYNTH_MONO_RETRIGGER = 1;
 constexpr byte SYNTH_ARPEGGIO = 2;
 constexpr byte SYNTH_POLY = 3;
 constexpr byte SYNTH_MONO_LEGATO = 4;
-constexpr byte SYNTH_POLYTBL_LEGACY = 5;
-constexpr byte SYNTH_MONO = SYNTH_MONO_RETRIGGER;  // Legacy stored mono value.
 
 // Audio polyphony is deliberately lower than the MIDI/MPE channel count:
 // higher values reduce PWM resolution and make the ISR harder to keep bounded.
@@ -63,9 +61,6 @@ inline uint8_t RAM_FUNC(synthPlaybackVoiceLimit)(byte mode) {
 }
 
 inline byte RAM_FUNC(normalizeSynthPlaybackMode)(byte mode) {
-  if (mode == SYNTH_POLYTBL_LEGACY) {
-    return SYNTH_POLY;
-  }
   return isValidPlaybackMode(mode) ? mode : SYNTH_POLY;
 }
 
@@ -93,7 +88,6 @@ constexpr byte WAVEFORM_MP_SYNC_THE_TITANIC = 24;
 constexpr byte WAVEFORM_MP_WEIRD_WIZARD = 25;
 constexpr byte WAVEFORM_MP_WOO = 26;
 constexpr byte WAVEFORM_BASIC_WAVETABLE = 27;
-constexpr byte WAVEFORM_USER_WAVETABLE = 28;
 
 constexpr uint16_t SYNTH_WAVE_SAMPLE_COUNT = 512;
 constexpr uint8_t SYNTH_WAVE_SAMPLE_BITS = 9;

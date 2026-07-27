@@ -11,6 +11,7 @@
 #include "../storage/BuiltinGeometry.h"
 #include "../storage/PresetSync.h"
 #include "../storage/Settings.h"
+#include "../storage/StorageHealth.h"
 #include "../storage/SynthPresetStorage.h"
 #include "../storage/SynthWavetableStorage.h"
 #include "../sequencer/SequencerLightSettings.h"
@@ -368,24 +369,6 @@ void showFlashSaveScreen() {
   flashSaveScreenVisible = true;
 }
 
-void showStorageWarningScreen(const char* detail, uint8_t issueCount) {
-  dismissCommandWheelOverlay();
-  dismissFlashSaveScreenForMenuInput();
-  screenSaverOn = false;
-  u8g2.setPowerSave(0);
-  u8g2.setContrast(CONTRAST_AWAKE);
-  u8g2.clearBuffer();
-  u8g2.setFont(u8g2_font_7x14B_tf);
-  u8g2.drawStr(0, 36, "Storage warning");
-  u8g2.setFont(u8g2_font_6x12_tf);
-  u8g2.drawStr(0, 62, detail && detail[0] ? detail : "LittleFS");
-  char countText[24] = {};
-  snprintf(countText, sizeof(countText), "%u issue%s found", issueCount, issueCount == 1 ? "" : "s");
-  u8g2.drawStr(0, 84, countText);
-  u8g2.drawStr(0, 106, "Using safe defaults");
-  u8g2.sendBuffer();
-}
-
 static void closeFlashSaveScreenNow() {
   if (!flashSaveScreenVisible) {
     return;
@@ -527,6 +510,8 @@ GEMPage menuPageOptions("Settings", menuPageMain);
 GEMItem menuGotoOptions("Settings", menuPageOptions);
 GEMPage menuPageAdvanced("Advanced", menuPageOptions);
 GEMItem menuGotoAdvanced("Advanced", menuPageAdvanced);
+GEMPage menuPageStorageStatus("Storage Status", menuPageAdvanced);
+GEMItem menuGotoStorageStatus("Storage Status", menuPageStorageStatus);
 GEMPage menuPageSerialDebug("Serial Debug", menuPageAdvanced);
 GEMItem menuGotoSerialDebug("Serial Debug", menuPageSerialDebug);
 GEMPage menuPageProfiles("Profiles", menuPageMain);
@@ -617,7 +602,7 @@ void rebootToBootloader();
     These GEMItems are read-only display items.
     They do not change any variable or run any procedure.
   */
-GEMItem menuItemVersion("Firmware 2.0 beta 2");
+GEMItem menuItemVersion("Firmware 2.0 beta 3");
 SelectOptionByte optionByteHardware[] = {
   { "V1.1", HARDWARE_UNKNOWN }, { "V1.1", HARDWARE_V1_1 }, { "V1.2", HARDWARE_V1_2 }
 };
@@ -673,6 +658,11 @@ RuntimeKeySelect selectCurrentKey(MAX_SCALE_DIVISIONS, currentKeyChoices);
 GEMItem menuItemMainKey("Key", current.keyStepsFromA, selectCurrentKey, changeKey);
 GEMItem* menuItemSaveProfile[PROFILE_COUNT];
 GEMItem* menuItemLoadProfile[PROFILE_COUNT];
+GEMItem* menuItemStorageSummary = nullptr;
+GEMItem* menuItemStorageIssuePath[STORAGE_HEALTH_MAX_ISSUES] = {};
+GEMItem* menuItemStorageIssueReason[STORAGE_HEALTH_MAX_ISSUES] = {};
+char storageStatusPathLabels[STORAGE_HEALTH_MAX_ISSUES][20] = {};
+char storageStatusReasonLabels[STORAGE_HEALTH_MAX_ISSUES][20] = {};
 char saveProfileLabels[PROFILE_COUNT][24];
 char loadProfileLabels[PROFILE_COUNT][24];
 
@@ -1654,8 +1644,7 @@ SelectOptionByte optionByteWaveform[] = {
   { "SyncTtn", WAVEFORM_MP_SYNC_THE_TITANIC },
   { "WrdWiz", WAVEFORM_MP_WEIRD_WIZARD },
   { "Woo", WAVEFORM_MP_WOO },
-  { "BasicTb", WAVEFORM_BASIC_WAVETABLE },
-  { "UserTbl", WAVEFORM_USER_WAVETABLE }
+  { "BasicTb", WAVEFORM_BASIC_WAVETABLE }
 };
 GEMSelect selectWaveform(sizeof(optionByteWaveform) / sizeof(SelectOptionByte), optionByteWaveform);
 PersistentCallbackInfo callbackInfoWaveform = {
@@ -2430,7 +2419,7 @@ void syncSynthSettingsToRuntime() {
   currWave = settingValue(SettingKey::Waveform);
   synthWavetablePosition = settingValue(SettingKey::SynthWavetablePosition);
   if (!currentSynthWavetableReferenceValid) {
-    selectCompatibilitySynthWavetableForLegacyWaveform(currWave, true);
+    selectSynthWavetableForWaveform(currWave, true);
     settings[static_cast<uint8_t>(SettingKey::SynthWavetablePosition)] = synthWavetablePosition;
   }
   loadSelectedSynthWavetable();
@@ -2960,7 +2949,7 @@ void updateLayoutAndRotate() {
 void loadDeviceRotationFromCurrentLayout() {
   deviceRotation = userGeometryRuntimeActive && userGeometryRuntimeLayoutObjectSelected
     ? userGeometryRuntimeDeviceRotation % 4
-    : defaultDeviceRotationForLayout(current.layout().isPortrait);
+    : current.layout().deviceRotation % 4;
   settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = deviceRotation;
 }
 
@@ -3171,6 +3160,49 @@ void setupSerialDebugMenuPage() {
   updateSerialDebugMenuVisibility();
 }
 
+void formatStorageStatusPath(uint8_t issueIndex) {
+  const char* path = storageHealthIssuePath(issueIndex);
+  size_t length = strlen(path);
+  if (length < sizeof(storageStatusPathLabels[issueIndex])) {
+    snprintf(storageStatusPathLabels[issueIndex],
+             sizeof(storageStatusPathLabels[issueIndex]),
+             "%s",
+             path);
+    return;
+  }
+  const char* basename = strrchr(path, '/');
+  basename = basename && basename[1] ? basename + 1 : path;
+  size_t basenameLength = strlen(basename);
+  if (basenameLength < sizeof(storageStatusPathLabels[issueIndex])) {
+    snprintf(storageStatusPathLabels[issueIndex],
+             sizeof(storageStatusPathLabels[issueIndex]),
+             "%s",
+             basename);
+    return;
+  }
+  snprintf(storageStatusPathLabels[issueIndex],
+           sizeof(storageStatusPathLabels[issueIndex]),
+           "%.8s...%s",
+           basename,
+           basename + basenameLength - 8);
+}
+
+void populateStorageStatusMenuPage() {
+  menuItemStorageSummary = new GEMItem(storageHealthSummaryLabel());
+  menuPageStorageStatus.addMenuItem(*menuItemStorageSummary);
+  for (uint8_t index = 0; index < storageHealthIssueCount(); ++index) {
+    formatStorageStatusPath(index);
+    snprintf(storageStatusReasonLabels[index],
+             sizeof(storageStatusReasonLabels[index]),
+             "  %s",
+             storageHealthIssueReason(index));
+    menuItemStorageIssuePath[index] = new GEMItem(storageStatusPathLabels[index]);
+    menuItemStorageIssueReason[index] = new GEMItem(storageStatusReasonLabels[index]);
+    menuPageStorageStatus.addMenuItem(*menuItemStorageIssuePath[index]);
+    menuPageStorageStatus.addMenuItem(*menuItemStorageIssueReason[index]);
+  }
+}
+
 void setupAdvancedMenuPage() {
   menuPageOptions.addMenuItem(menuItemShiftColor);
   menuPageOptions.addMenuItem(menuItemDisplayPlayedNotes);
@@ -3179,6 +3211,7 @@ void setupAdvancedMenuPage() {
   menuPageAdvanced.addMenuItem(menuItemHardware);
   menuPageAdvanced.addMenuItem(menuItemRotary);
   menuPageAdvanced.addMenuItem(menuItemBootAnimation);
+  menuPageAdvanced.addMenuItem(menuGotoStorageStatus);
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);

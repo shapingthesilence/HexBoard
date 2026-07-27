@@ -13,8 +13,7 @@ import wave
 import zlib
 
 PROFILE_COUNT = 9
-CURRENT_SETTINGS_VERSION = 25
-CURRENT_FILESYSTEM_GENERATION = 4
+CURRENT_SETTINGS_VERSION = 26
 SYNTH_PRESET_MAX_COUNT = 128
 SYNTH_WAVETABLE_MAX_COUNT = 32
 GEOMETRY_FACTORY_BUNDLE_MAX_COUNT = 64
@@ -23,7 +22,8 @@ GEOMETRY_LAYOUT_SCALE_MAX_COUNT = 32
 GEOMETRY_OBJECT_MAX_COUNT = GEOMETRY_FACTORY_BUNDLE_MAX_COUNT * GEOMETRY_BUNDLE_RECORD_MAX_COUNT
 SYNTH_PRESET_FILE_VERSION = 11
 SYNTH_WAVETABLE_FILE_VERSION = 1
-GEOMETRY_OBJECT_FILE_VERSION = 2
+GEOMETRY_OBJECT_FILE_VERSION = 3
+GEOMETRY_OBJECT_SCHEMA_VERSION = 2
 SYNTH_WAVETABLE_SAMPLE_BYTES = 16 * 512
 SYNTH_WAVETABLE_MIP_SAMPLE_BYTES = SYNTH_WAVETABLE_SAMPLE_BYTES * 6
 GEOMETRY_MENU_TEXT_LENGTH = 20
@@ -45,10 +45,7 @@ COMMON_TLV_FOLDER_PATH = 0x06
 
 TUNING_TLV_KIND = 0x20
 TUNING_TLV_DIVISIONS = 0x21
-TUNING_TLV_PERIOD_MILLI_CENTS = 0x22
-TUNING_TLV_STEP_MILLI_CENTS = 0x23
 TUNING_TLV_REFERENCE_MIDI_NOTE = 0x24
-TUNING_TLV_REFERENCE_MILLI_HZ = 0x25
 TUNING_TLV_KEY_LABELS = 0x28
 TUNING_TLV_PERIOD_CENTS_FLOAT32 = 0x29
 TUNING_TLV_STEP_CENTS_FLOAT32 = 0x2A
@@ -59,7 +56,6 @@ LAYOUT_TLV_TUNING_REF = 0x21
 LAYOUT_TLV_CENTER_BUTTON = 0x22
 LAYOUT_TLV_ACROSS_STEPS = 0x23
 LAYOUT_TLV_DOWN_LEFT_STEPS = 0x24
-LAYOUT_TLV_PORTRAIT = 0x25
 LAYOUT_TLV_DEVICE_ROTATION = 0x27
 LAYOUT_TLV_ROTATION = 0x28
 LAYOUT_TLV_MIRROR_FLAGS = 0x29
@@ -76,7 +72,7 @@ USER_SCALE_TLV_ROOT_DEGREE = 0x22
 USER_SCALE_TLV_PATTERN_STEPS = 0x23
 USER_SCALE_TLV_INCLUDED_DEGREES = 0x24
 
-LAYOUT_BUNDLE_FORMAT = "hexboard.layoutBundle.v4"
+LAYOUT_BUNDLE_FORMAT = "hexboard.layoutBundle.v5"
 
 SETTING_KEYS = (
     "RotaryInvert", "AutoSave", "MPEpitchBend", "MPEMode", "ExtraMPE",
@@ -259,7 +255,7 @@ def build_geometry_object_body(
         geometry_text_tlv(COMMON_TLV_SOURCE, "factory-library"),
         geometry_text_tlv(COMMON_TLV_FOLDER_PATH, folder),
     ]
-    return b"HBS1" + bytes([object_type, 1, 0, 0]) + b"".join(common + records)
+    return b"HBS1" + bytes([object_type, GEOMETRY_OBJECT_SCHEMA_VERSION, 0, 0]) + b"".join(common + records)
 
 
 def geometry_catalog_record(
@@ -274,7 +270,7 @@ def geometry_catalog_record(
     name_bytes = name.encode("utf-8")
     folder_bytes = folder.encode("utf-8")
     return (
-        bytes([object_type, 1, 0, 0])
+        bytes([object_type, GEOMETRY_OBJECT_SCHEMA_VERSION, 0, 0])
         + object_id
         + bytes([len(name_bytes)])
         + name_bytes
@@ -337,15 +333,16 @@ def parse_geometry_tuning(
     records = [
         geometry_tlv(TUNING_TLV_KIND, bytes([tuning_kind])),
         geometry_tlv(TUNING_TLV_DIVISIONS, struct.pack("<H", cycle_length)),
-        geometry_tlv(TUNING_TLV_PERIOD_MILLI_CENTS, struct.pack("<I", round(period_cents * 1000))),
-        geometry_tlv(TUNING_TLV_STEP_MILLI_CENTS, struct.pack("<I", round(step_cents * 1000))),
         geometry_tlv(TUNING_TLV_REFERENCE_MIDI_NOTE, bytes([reference_midi_note])),
-        geometry_tlv(TUNING_TLV_REFERENCE_MILLI_HZ, struct.pack("<I", round(reference_hz * 1000))),
-        geometry_tlv(TUNING_TLV_PERIOD_CENTS_FLOAT32, struct.pack("<f", period_cents)),
-        geometry_tlv(TUNING_TLV_STEP_CENTS_FLOAT32, struct.pack("<f", step_cents)),
         geometry_tlv(TUNING_TLV_REFERENCE_HZ_FLOAT32, struct.pack("<f", reference_hz)),
         geometry_tlv(TUNING_TLV_KEY_LABELS, encode_key_labels(key_labels_for_tlv(labels, cycle_length))),
     ]
+    records.append(
+        geometry_tlv(
+            TUNING_TLV_PERIOD_CENTS_FLOAT32 if kind == "edo" else TUNING_TLV_STEP_CENTS_FLOAT32,
+            struct.pack("<f", period_cents if kind == "edo" else step_cents),
+        )
+    )
     return build_geometry_object_body(OBJECT_TYPE_USER_TUNING, tuning_object_id, name, folder, records), name
 
 
@@ -373,7 +370,6 @@ def parse_geometry_layout(
         geometry_tlv(LAYOUT_TLV_CENTER_BUTTON, struct.pack("<H", center_button)),
         geometry_tlv(LAYOUT_TLV_ACROSS_STEPS, struct.pack("<h", across_steps)),
         geometry_tlv(LAYOUT_TLV_DOWN_LEFT_STEPS, struct.pack("<h", -up_right_steps)),
-        geometry_tlv(LAYOUT_TLV_PORTRAIT, bytes([1 if device_rotation % 2 == 0 else 0])),
         geometry_tlv(LAYOUT_TLV_DEVICE_ROTATION, bytes([device_rotation])),
         geometry_tlv(LAYOUT_TLV_ROTATION, bytes([layout_rotation])),
         geometry_tlv(LAYOUT_TLV_MIRROR_FLAGS, bytes([mirror_flags])),
@@ -861,21 +857,6 @@ def validate_selected_wavetable(config_path: Path, config: dict,
         )
 
 
-def build_miscellaneous(config_path: Path, output: Path, config: dict) -> None:
-    generation = checked_byte(config.get("filesystemGeneration"), config_path, "filesystemGeneration")
-    if generation != CURRENT_FILESYSTEM_GENERATION:
-        raise fail(
-            config_path,
-            "filesystem",
-            f"filesystemGeneration is {generation}; builder expects {CURRENT_FILESYSTEM_GENERATION}",
-        )
-    ready_prefix = b"HFS" + bytes([generation])
-    (output / "storage_ready.dat").write_bytes(ready_prefix + struct.pack("<I", crc32(ready_prefix)))
-    sequence_root = output / "Sequences"
-    sequence_root.mkdir()
-    (sequence_root / ".keep").write_bytes(b"")
-
-
 def build_library(library: Path, output: Path) -> None:
     config_path = library / "config.json"
     config = read_json(config_path, "config")
@@ -905,7 +886,6 @@ def build_library(library: Path, output: Path) -> None:
     validate_selected_wavetable(
         config_path, config, wavetable_references, selected_preset_wavetable
     )
-    build_miscellaneous(config_path, output, config)
     print(
         f"Factory library: {len(list(preset_root.rglob('*.json')))} presets, "
         f"{len(wavetable_records)} editable wavetables, "

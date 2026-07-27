@@ -298,13 +298,13 @@ bool ensureSelectedGeometryMenuCache() {
   return true;
 }
 
-bool builtinTuningMatchesCurrentRuntime(uint8_t legacyTuningIndex) {
+bool builtinTuningMatchesCurrentRuntime(uint8_t tuningIndex) {
   if (!userGeometryRuntimeTuningObjectSelected) {
     return false;
   }
   uint16_t tuningHandle = 0;
   BuiltinGeometryMetadata tuningMetadata;
-  return builtinGeometryHandleForLegacyTuning(legacyTuningIndex, tuningHandle)
+  return builtinGeometryHandleForTuning(tuningIndex, tuningHandle)
          && builtinGeometryMetadataByHandle(tuningHandle, tuningMetadata)
          && memcmp(tuningMetadata.objectId,
                    userGeometryRuntimeTuningObjectId,
@@ -317,10 +317,10 @@ bool includeBuiltinGeometryMetadataInMenu(UserGeometryMenuKind kind, const Built
       return metadata.objectType == PRESET_SYNC_OBJECT_TYPE_USER_TUNING;
     case UserGeometryMenuKind::Layout:
       return metadata.objectType == PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT
-             && builtinTuningMatchesCurrentRuntime(metadata.legacyTuningIndex);
+             && builtinTuningMatchesCurrentRuntime(metadata.sourceTuningIndex);
     case UserGeometryMenuKind::Scale:
       return metadata.objectType == PRESET_SYNC_OBJECT_TYPE_USER_SCALE
-             && builtinTuningMatchesCurrentRuntime(metadata.legacyTuningIndex);
+             && builtinTuningMatchesCurrentRuntime(metadata.sourceTuningIndex);
   }
   return false;
 }

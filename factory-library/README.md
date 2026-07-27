@@ -33,7 +33,7 @@ rescue wavetable compiled into firmware.
 
 ## Geometry Bundles
 
-Place web-app-compatible `hexboard.layoutBundle.v4` JSON files under
+Place web-app-compatible `hexboard.layoutBundle.v5` JSON files under
 `geometry/`. Each file is one bundle: one tuning and custom palette plus all of
 its layouts and scales. As with synth presets, the relative source directory is
 the on-device folder, while the bundle name must match the filename and its
@@ -51,8 +51,8 @@ Each source bundle becomes one independently checksummed
 `/default_geometry.dat`; filesystem directory order does not choose the factory
 default. `geometryOrder` must list every source bundle and defines their stable
 on-device order; the supplied list matches the former hard-coded tuning order.
-The generator writes that sequence to the compact `/geometry_order.dat` file as
-well as retaining order values in factory HGB headers as a fallback.
+The generator writes that sequence to the compact `/geometry_order.dat` file
+and records each bundle's factory order in its HGB header.
 
 ## Configuration And Validation
 

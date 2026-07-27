@@ -177,7 +177,7 @@ describe("catalog object encoding", () => {
       centerStepsFromC: -19,
       acrossSteps: 3,
       upRightSteps: 7,
-      portrait: true
+      deviceRotationSteps: 0
     });
     expect(decodeObjectBody(layout.body).objectType).toBe(ObjectType.UserLayout);
     expect(i16LE(recordValue(layout.body, LayoutTlv.DownLeftSteps))).toBe(-7);
@@ -185,40 +185,18 @@ describe("catalog object encoding", () => {
     expect(currentFirmwareDownLeftToUpRight(3, -11)).toBe(11);
   });
 
-  it("migrates legacy degree-number key labels to A-first defaults", () => {
-    const serialized = JSON.parse(serializeLayoutBundle({
-      ...createDefaultLayoutBundle(),
-      tuning: {
-        kind: "edo",
-        name: "12 EDO",
-        edoDivisions: 12,
-        periodCents: 1200,
-        cycleLength: 12,
-        referenceMidiNote: 69,
-        referenceHz: 440,
-        keyLabels: Array.from({ length: 12 }, (_, degree) => String(degree))
-      }
-    }));
-
-    const parsed = parseLayoutBundleFile(serialized);
-
-    expect(parsed.tuning.kind).toBe("edo");
-    expect("keyLabels" in parsed.tuning ? parsed.tuning.keyLabels.slice(0, 4) : []).toEqual(["A", "Bb", "B", "C"]);
-  });
-
   it("round trips an equal-step tuning", () => {
     const tuning = createEqualStepTuning({
       objectId: tuningId,
       name: "80 cent steps",
-      stepMilliCents: 80_000,
-      periodMilliCents: 1_200_000,
+      stepCents: 80,
       cycleLength: 15
     });
     expect(u8(recordValue(tuning.body, TuningTlv.TuningKind))).toBe(UserTuningKind.EqualStep);
     expect(u16LE(recordValue(tuning.body, TuningTlv.EdoDivisions))).toBe(15);
   });
 
-  it("preserves firmware-native tuning precision alongside legacy milli-unit fields", () => {
+  it("preserves firmware-native tuning precision without duplicate fixed-point fields", () => {
     const periodCents = 1200.0001220703125;
     const stepCents = 16.66666603088379;
     const referenceHz = 440.00006103515625;
@@ -229,7 +207,6 @@ describe("catalog object encoding", () => {
       periodCents,
       referenceHz
     });
-    expect(u32LE(recordValue(edo.body, TuningTlv.PeriodMilliCents))).toBe(1_200_000);
     expect(float32LE(recordValue(edo.body, TuningTlv.PeriodCentsFloat32))).toBe(Math.fround(periodCents));
 
     const equalStep = createEqualStepTuning({
@@ -240,7 +217,6 @@ describe("catalog object encoding", () => {
       referenceHz
     });
 
-    expect(u32LE(recordValue(equalStep.body, TuningTlv.StepMilliCents))).toBe(16_667);
     expect(float32LE(recordValue(equalStep.body, TuningTlv.StepCentsFloat32))).toBe(Math.fround(stepCents));
     expect(float32LE(recordValue(equalStep.body, TuningTlv.ReferenceHzFloat32))).toBe(Math.fround(referenceHz));
 
@@ -474,7 +450,7 @@ Example scale
     expect(textFromBytes(recordValue(encoded.scaleColorMap.body, CommonTlv.Name))).toBe(GenericScaleColorMapName);
     expect(u8(recordValue(encoded.scaleColorMap.body, ScaleColorMapTlv.DefaultColorMode))).toBe(ColorMode.Custom);
     expect(new TextDecoder().decode(encoded.bundleFile.slice(0, 3))).toBe("HGB");
-    expect(encoded.bundleFile[3]).toBe(2);
+    expect(encoded.bundleFile[3]).toBe(3);
     expect(u16LE(encoded.bundleFile.slice(4, 6))).toBe(encoded.objects.length);
     expect(u16LE(encoded.bundleFile.slice(6, 8))).toBe(0xffff);
     expect(u32LE(encoded.bundleFile.slice(8, 12)) >>> 0).toBe(crc32(encoded.bundleFile.slice(12)) >>> 0);
@@ -567,7 +543,7 @@ Example scale
     const encoded = encodeLayoutBundle(parsed);
 
     expect("periodCents" in parsed.tuning).toBe(false);
-    expect(u32LE(recordValue(encoded.tuning.body, TuningTlv.PeriodMilliCents))).toBe(1_200_000);
+    expect(float32LE(recordValue(encoded.tuning.body, TuningTlv.StepCentsFloat32))).toBe(80);
   });
 
   it("derives Scala period and cycle metadata from the cents table", () => {
@@ -596,22 +572,7 @@ Example scale
       cycleLength: 3
     });
     expect(u16LE(recordValue(encoded.tuning.body, TuningTlv.EdoDivisions))).toBe(3);
-    expect(u32LE(recordValue(encoded.tuning.body, TuningTlv.PeriodMilliCents))).toBe(702_000);
-  });
-
-  it("migrates legacy four-step rotation to full device rotation", () => {
-    const base = createDefaultLayoutBundle();
-    const serialized = JSON.parse(serializeLayoutBundle(base));
-    delete serialized.bundle.layouts[0].deviceRotationSteps;
-    delete serialized.bundle.layouts[0].layoutRotationSteps;
-    delete serialized.bundle.layouts[0].mirrorLeftRight;
-    delete serialized.bundle.layouts[0].mirrorUpDown;
-    serialized.bundle.layouts[0].rotationSteps = 1;
-    const parsed = parseLayoutBundleFile(serialized);
-    const encoded = encodeLayoutBundle(parsed);
-    expect(parsed.layouts[0].deviceRotationSteps).toBe(1);
-    expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.Portrait))).toBe(0);
-    expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.DeviceRotation))).toBe(1);
+    expect(float32LE(recordValue(encoded.tuning.body, TuningTlv.CentsTableFloat32), 8)).toBe(702);
   });
 
   it("encodes device rotation separately from musical layout transforms", () => {
@@ -627,7 +588,6 @@ Example scale
       } : layout)
     };
     const encoded = encodeLayoutBundle(bundle);
-    expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.Portrait))).toBe(1);
     expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.DeviceRotation))).toBe(2);
     expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.LayoutRotation))).toBe(3);
     expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.MirrorFlags))).toBe(1);

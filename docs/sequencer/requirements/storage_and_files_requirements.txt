@@ -9,12 +9,15 @@ Priority: High
 Requirement:
 The Sequencer build shall produce a Factory UF2 containing the complete
 LittleFS image and an Update UF2 containing firmware only. The Factory UF2
-shall erase the prior filesystem and contain an empty /Sequences directory.
-The Update UF2 shall preserve LittleFS.
+shall erase the prior filesystem. The Update UF2 shall preserve LittleFS.
 
 Details:
-- Boot shall mount and load storage without formatting, provisioning, migration,
-  or unsolicited writes.
+- Boot shall mount and load storage without formatting, provisioning, or
+  unsolicited writes.
+- `/Sequences` shall be created only when the user first opens sequence
+  storage, saves a sequence, or starts USB Backup.
+- Startup shall not rewrite or delete `.current`; an invalid remembered target
+  shall fall back to a blank sequence and be reported through Storage Status.
 - Invalid sequence state shall fall back to a blank sequence without blocking
   normal operation.
 

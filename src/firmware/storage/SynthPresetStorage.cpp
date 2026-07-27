@@ -5,6 +5,7 @@
 #include "../synth/SynthAudio.h"
 #include "../synth/SynthDefaults.h"
 #include "Settings.h"
+#include "StorageHealth.h"
 #include "SynthPresetStorage.h"
 #include "SynthWavetableStorage.h"
 
@@ -257,41 +258,26 @@ void setSynthPresetValueForKey(SynthPresetSlot& preset, SettingKey key, uint8_t 
   }
 }
 
-void normalizeSynthWavetableFolderPath(char* folderPath, size_t folderPathLength) {
-  normalizeSynthPresetFolderPath(folderPath, folderPathLength);
-}
-
-void normalizeSynthWavetableBuiltInFolderAlias(char* folderPath, size_t folderPathLength) {
-  if (folderPathLength == 0) {
-    return;
-  }
-  if (strcmp(folderPath, "Built In") == 0
-      || strcmp(folderPath, "%2FBuilt In") == 0
-      || strcmp(folderPath, "%2fBuilt In") == 0) {
-    snprintf(folderPath, folderPathLength, "%s", SYNTH_WAVETABLE_BUILTIN_FOLDER);
-  }
-}
-
 void normalizeSynthPresetWavetableReference(SynthPresetSlot& preset) {
   preset.wavetableName[sizeof(preset.wavetableName) - 1] = '\0';
   preset.wavetableFolderPath[sizeof(preset.wavetableFolderPath) - 1] = '\0';
   if (!preset.wavetableName[0]) {
-    byte waveform = synthPresetValueForKey(preset, SettingKey::Waveform, WAVEFORM_BASIC_WAVETABLE);
-    const char* folderPath = SYNTH_WAVETABLE_BUILTIN_FOLDER;
-    const char* name = SYNTH_WAVETABLE_BASIC_NAME;
-    uint8_t position = synthPresetValueForKey(preset,
-                                              SettingKey::SynthWavetablePosition,
-                                              SYNTH_WAVETABLE_POSITION_DEFAULT);
-    legacyWaveformCompatibilityReference(waveform, folderPath, name, position);
-    snprintf(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), "%s", folderPath);
-    snprintf(preset.wavetableName, sizeof(preset.wavetableName), "%s", name);
-    setSynthPresetValueForKey(preset, SettingKey::SynthWavetablePosition, position);
+    snprintf(preset.wavetableFolderPath,
+             sizeof(preset.wavetableFolderPath),
+             "%s",
+             SYNTH_WAVETABLE_BUILTIN_FOLDER);
+    snprintf(preset.wavetableName,
+             sizeof(preset.wavetableName),
+             "%s",
+             SYNTH_WAVETABLE_BASIC_NAME);
+    setSynthPresetValueForKey(preset,
+                              SettingKey::SynthWavetablePosition,
+                              SYNTH_WAVETABLE_POSITION_DEFAULT);
   }
   if (!preset.wavetableFolderPath[0]) {
     snprintf(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath), "%s", SYNTH_WAVETABLE_BUILTIN_FOLDER);
   }
   normalizeSynthWavetableFolderPath(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath));
-  normalizeSynthWavetableBuiltInFolderAlias(preset.wavetableFolderPath, sizeof(preset.wavetableFolderPath));
 }
 
 void normalizeSynthPresetMetadata(SynthPresetSlot& preset, uint8_t fallbackIndex) {
@@ -735,6 +721,7 @@ bool loadCurrentSynthPresetReference() {
       || (reference.flags & ~knownFlags) != 0
       || hasLoadedFlag == hasBlankFlag
       || currentSynthPresetReferenceCrc(reference) != reference.crc32) {
+    reportStorageHealthIssue(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH, "invalid reference");
     sendToLog("Invalid current synth preset reference. Using Current.");
     return false;
   }
@@ -748,12 +735,14 @@ bool loadCurrentSynthPresetReference() {
     return true;
   }
   sendToLog("Current synth preset reference not found in catalog. Using Current.");
+  reportStorageHealthIssue(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH, "target unavailable");
   return false;
 }
 
 void save_synth_presets() {
   lastSynthPresetSaveSucceeded = false;
   if (!fileSystemExists) {
+    reportStorageHealthIssue(SYNTH_PRESET_STORAGE_ROOT, "filesystem unavailable");
     sendToLog("File system not available.");
     return;
   }
@@ -772,6 +761,7 @@ void load_synth_presets() {
   synthPresets.clear();
   currentSynthPresetLoadedSlotValid = false;
   if (!fileSystemExists) {
+    reportStorageHealthIssue(SYNTH_PRESET_STORAGE_ROOT, "filesystem unavailable");
     sendToLog("File system not available. Using an empty synth preset library.");
     applyDefaultSynthPresets();
     return;
@@ -781,6 +771,7 @@ void load_synth_presets() {
     if (directory) {
       directory.close();
     }
+    reportStorageHealthIssue(SYNTH_PRESET_STORAGE_ROOT, "missing");
     sendToLog("Synth preset directory not found. Using an empty synth preset library.");
     applyDefaultSynthPresets();
     return;
@@ -795,17 +786,20 @@ void load_synth_presets() {
       continue;
     }
     if (synthPresets.size() >= SYNTH_PRESET_MAX_COUNT) {
+      reportStorageHealthIssue(SYNTH_PRESET_STORAGE_ROOT, "too many files");
       sendToLog("Warning: Synth preset directory exceeds its 128-file limit.");
       break;
     }
     SynthPresetSlot preset = {};
     if (!readSynthPresetFile(path, preset)) {
+      reportStorageHealthIssue(path, "invalid preset");
       sendToLog("Warning: Invalid synth preset file " + std::string(path) + ".");
       continue;
     }
     char canonicalPath[SYNTH_PRESET_STORAGE_PATH_LENGTH] = {};
     if (!synthPresetStoragePath(preset.objectId, canonicalPath, sizeof(canonicalPath))
         || strcmp(path, canonicalPath) != 0) {
+      reportStorageHealthIssue(path, "filename mismatch");
       sendToLog("Warning: Synth preset filename does not match its object id: " + std::string(path));
       continue;
     }
@@ -817,6 +811,7 @@ void load_synth_presets() {
       }
     }
     if (duplicateObjectId) {
+      reportStorageHealthIssue(path, "duplicate object id");
       sendToLog("Warning: Duplicate synth preset object id in " + std::string(path) + ".");
       continue;
     }

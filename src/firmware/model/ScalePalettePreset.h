@@ -134,9 +134,6 @@ public:
 
 extern presetDef current;
 
-constexpr byte DEVICE_ROTATION_PORTRAIT = 0;
-constexpr byte DEVICE_ROTATION_LANDSCAPE = 1;
 constexpr byte DEVICE_DISPLAY_UPRIGHT_OFFSET = 2;
 
 byte displayRotationFromDeviceRotation(byte rotation);
-byte defaultDeviceRotationForLayout(bool isPortrait);

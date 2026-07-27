@@ -40,7 +40,3 @@ presetDef current = {
 byte displayRotationFromDeviceRotation(byte rotation) {
   return (DEVICE_DISPLAY_UPRIGHT_OFFSET + 4 - (rotation % 4)) % 4;
 }
-
-byte defaultDeviceRotationForLayout(bool isPortrait) {
-  return isPortrait ? DEVICE_ROTATION_PORTRAIT : DEVICE_ROTATION_LANDSCAPE;
-}

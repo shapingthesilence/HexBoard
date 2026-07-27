@@ -18,9 +18,9 @@
 #include "../midi/MidiTransport.h"
 #include "../midi/MidiRouting.h"
 #include "../sequencer/SequencerMode.h"
-#include "../storage/FactoryStorage.h"
 #include "../storage/PresetSync.h"
 #include "../storage/Settings.h"
+#include "../storage/StorageHealth.h"
 #include "../storage/SynthPresetStorage.h"
 #include "../storage/SynthWavetableStorage.h"
 #include "../synth/SynthAudio.h"
@@ -51,8 +51,8 @@ void hexboardSetup() {
   setupUSBDescriptors();
   Serial.begin(115200);
   setupMIDI();
+  resetStorageHealth();
   setupFileSystem();
-  FactoryStorageBootState storageState = inspectFactoryStorage();
   Wire.setSDA(SDAPIN);
   Wire.setSCL(SCLPIN);
   setupPins();
@@ -63,7 +63,6 @@ void hexboardSetup() {
   loadCurrentSynthPresetReference();
   load_synth_wavetables();
   load_geometry_objects();
-  loadLegacyCurrentSynthWavetableReference();
   restoreSynthWavetableReferenceForProfile(activeProfileIndex);
   setupLEDs();
   setupGFX();
@@ -78,12 +77,8 @@ void hexboardSetup() {
     tight_loop_contents();
   }
   restoreSequencerAtStartup();
+  populateStorageStatusMenuPage();
   runBootLedSelfCheck();
-  if (storageState != FactoryStorageBootState::Ready) {
-    showStorageWarningScreen(factoryStorageLastError(), factoryStorageIssueCount());
-    delay(2500);
-    menuHome();
-  }
   normalRuntimeReady.store(true, std::memory_order_release);
 }
 void hexboardLoop() {        // run on first core

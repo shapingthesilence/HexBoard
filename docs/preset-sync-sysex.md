@@ -56,7 +56,7 @@ File headers:
 | File | Magic | Version owner | Payload |
 | --- | --- | --- | --- |
 | `/settings.dat` | `STG` | Main settings schema | Profile settings, tuning/layout/scale IDs, and wavetable references |
-| `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `2` | One tuning root and all linked layout/scale/color/map records |
+| `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `3`; object schema `2` | One tuning root and all linked layout/scale/color/map records |
 | `/geometry_order.dat` | `HGO` | Geometry order file schema `1` | Ordered tuning object IDs used by device and web library menus |
 | `/presets/*.hsp` | `HSP` | Synth preset file schema `11` | One named preset, folder, values, and wavetable reference |
 | `/synth_wavetables.dat` | `SYW` | Synth wavetable catalog schema | Named user wavetable objects and sample-file paths |
@@ -80,7 +80,7 @@ It applies on-device profile tuning/layout/scale references after catalog load.
 Bundle manifests and ratio-list tunings remain unsupported.
 
 An `HGB` transfer is the exact staged file bytes. Its 12-byte header is `HGB`,
-file version `2`, record count (`u16-le`), catalog order (`u16-le`), and CRC32
+file version `3`, record count (`u16-le`), catalog order (`u16-le`), and CRC32
 (`u32-le`) of all following record bytes. Factory bundles use explicit order
 values; new host-created bundles use `0xFFFF` and sort after factory entries.
 The web app retains a downloaded bundle's device order when saving it back. Each record contains object type,
@@ -356,7 +356,7 @@ a compatible HexBoard.
 
 Protocol `1.0` does not carry a separate `UserScale` slot byte. Hosts should
 use the user-scale capability bit and `OBJECT_LIST_REQ` for `UserScale`. The
-four legacy geometry count bytes all advertise the same 64-bundle capacity;
+four geometry count bytes all advertise the same 64-bundle capacity;
 they are not separate per-record quotas. One `UserTuning` root plus its linked
 layouts, scales, color map, and button maps counts as one bundle.
 
@@ -391,7 +391,7 @@ Example response, transaction `1`, max packed chunk `128`, capabilities
 `0x7F7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
 delete user object, factory geometry listing, synth wavetable objects, live
 synth parameter set, cents-table runtime tuning, and atomic geometry bundles),
-max raw object bytes `262144`, settings schema `25`, synth
+max raw object bytes `262144`, settings schema `26`, synth
 preset schema `7`, `9` profiles, `128` synth preset entries, `64` slots for
 each advertised user geometry count, hardware version `2`:
 
@@ -568,10 +568,9 @@ Write flags:
 
 Individual geometry object writes are apply-only and are never persistent.
 Generated EDO/equal-step tunings and cents-list Scala imports are runtime-compatible when
-their cycle length fits the firmware table limit and their final cents-table
-entry matches the authoritative period field (`PeriodCentsFloat32` when
-present, otherwise `PeriodMilliCents`). Unsupported runtime objects, such as
-ratio-list tunings, are rejected for Apply. Persistent geometry uses a complete
+their cycle length fits the firmware table limit and all required schema-2
+fields are present. Unsupported runtime objects, such as ratio-list tunings,
+are rejected for Apply. Persistent geometry uses a complete
 `GeometryBundle` write with `SaveToFlash`; that type does not accept
 `ApplyToRuntime` or dry-run flags.
 
@@ -788,49 +787,38 @@ Recommended TLVs:
 
 `SettingValues` may use current `SettingKey` ordinals only when
 `SettingsSchemaVersion` exactly matches the firmware's current schema. Boot
-also reads complete version-23 and version-24 settings records for local
-upgrade compatibility; preset-sync hosts should use only the advertised
-current schema. Keep user tunings/layouts/mappings in separate objects and
-store references here.
+accepts only that version and the exact current payload size; preset-sync hosts
+must use the advertised schema. Keep user tunings/layouts/mappings in separate
+objects and store references here.
 
 ## User Tuning Object
 
 `UserTuning` supports both on-device generated EDO and web-app imported tuning
 data.
 
-Recommended TLVs:
+Geometry object schema `2` uses one binary32 source of truth for each tuning
+quantity. Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
 | `0x20` | `TuningKind` | `u8`: `1` EDO, `2` cents list, `3` ratio list, `4` equal step |
-| `0x21` | `EdoDivisions` | `u16-le`; EDO divisions for EDO, cycle length for equal-step/cents-table display metadata; current runtime accepts `1..128` |
-| `0x22` | `PeriodMilliCents` | Compatibility `u32-le`, default `1200000` for octave |
-| `0x23` | `StepMilliCents` | Compatibility `u32-le`, cached EDO step or explicit equal-step size |
-| `0x24` | `ReferenceMidiNote` | `u8`, default `69` for A4 |
-| `0x25` | `ReferenceMilliHz` | Compatibility `u32-le`, default `440000` |
-| `0x26` | `CentsTable` | Compatibility repeated `i32-le` milli-cent offsets within period |
+| `0x21` | `EdoDivisions` | Required `u16-le`; EDO divisions or equal-step/cents-list cycle length, `1..128` |
+| `0x24` | `ReferenceMidiNote` | Required `u8`, `0..127`; A4 is `69` |
 | `0x27` | `RatioTable` | Repeated `<numerator-u32-le> <denominator-u32-le>` |
 | `0x28` | `KeyLabels` | Repeated length-prefixed labels, one per cycle degree; each label should be capped at `7` display characters |
-| `0x29` | `PeriodCentsFloat32` | Optional authoritative positive finite IEEE-754 binary32 cents value, little-endian |
-| `0x2A` | `StepCentsFloat32` | Optional authoritative positive finite IEEE-754 binary32 cents value, little-endian |
-| `0x2B` | `ReferenceHzFloat32` | Optional authoritative positive finite IEEE-754 binary32 hertz value, little-endian |
-| `0x2C` | `CentsTableFloat32` | Optional authoritative repeated positive finite IEEE-754 binary32 cents offsets, little-endian |
+| `0x29` | `PeriodCentsFloat32` | Required positive finite IEEE-754 binary32 cents value for EDO |
+| `0x2A` | `StepCentsFloat32` | Required positive finite IEEE-754 binary32 cents value for equal step |
+| `0x2B` | `ReferenceHzFloat32` | Required positive finite IEEE-754 binary32 hertz value |
+| `0x2C` | `CentsTableFloat32` | Required for cents lists: exactly `EdoDivisions` strictly increasing positive finite binary32 offsets |
 
-New hosts should write both representations. Current firmware prefers the
-binary32 fields, which carry the complete precision used by its tuning runtime;
-older firmware ignores the unknown tags and uses the milli-unit compatibility
-fields. Values in each representation describe the same tuning, but the
-binary32 value is authoritative when both are present. NaN and infinity are
-invalid. A binary32 cents table must contain exactly `EdoDivisions` strictly
-increasing entries and its final entry must equal `PeriodCentsFloat32`.
+NaN and infinity are invalid. EDO pitch derives from
+`PeriodCentsFloat32 / EdoDivisions`; no step cache is stored. Equal-step period
+derives from `StepCentsFloat32 * EdoDivisions`; no period cache is stored. A
+cents list's final table entry is its period, so no separate period field is
+stored.
 
-The device can create and edit an EDO object with only `Name`, `TuningKind`,
-`EdoDivisions`, and either period field. The web app can also create equal
-cents-per-step tunings with `TuningKind = 4`, an explicit step field, and a
-cycle length in `EdoDivisions` for labels/colors; host tooling derives both
-period representations from those values so they cannot diverge. Generated EDO
-and equal-step tunings can include `KeyLabels`, `ReferenceMidiNote`, and either
-reference-frequency field; the web editor presents labels in A-first order,
+Generated tunings include `KeyLabels`, `ReferenceMidiNote`, and
+`ReferenceHzFloat32`; the web editor presents labels in A-first order,
 defaults
 to A-first pitch labels, and rotates them into the firmware's C-centered cycle
 order for `KeyLabels`. Scala imports default to a MIDI-note-60 1/1 reference
@@ -838,33 +826,28 @@ when no existing Scala reference is being preserved. Scala
 `.scl` import is a host-side feature; the web app treats a one-token suffix
 after an interval value as a note label and can reuse the final period-row label
 for the implicit 1/1 root. Current firmware live Apply supports `TuningKind =
-1`, `TuningKind = 2`, and `TuningKind = 4`; it loads cycle length, nominal step
-size, key labels when present, `ReferenceMidiNote`, the preferred
-reference-frequency field, and for cents-list tunings a RAM copy of the
-preferred cents table. Cents-list playback treats degree
+1`, `TuningKind = 2`, and `TuningKind = 4`; it loads cycle length, key labels,
+`ReferenceMidiNote`, `ReferenceHzFloat32`, and for cents-list tunings a RAM copy
+of `CentsTableFloat32`. Cents-list playback treats degree
 `0` as an implicit `0`-cent reference at the configured MIDI note and frequency,
 uses table entry `1` as the first interval, and wraps all positive or negative
-step values by the preferred period field. The web app parses Scala text, derives
+step values by the table's final period entry. The web app parses Scala text, derives
 period/cycle metadata, and writes the cents table. Firmware does not parse
 Scala text.
 
-For `TuningKind = 1`, `PeriodCentsFloat32 / EdoDivisions` is authoritative at
-runtime when present, otherwise firmware falls back to
-`PeriodMilliCents / EdoDivisions`. `StepCentsFloat32` and `StepMilliCents` are
-caches for display and compatibility; they
-must not be multiplied repeatedly to derive EDO pitches. For example, `72 EDO`
+For `TuningKind = 1`, firmware must not multiply a rounded display step to
+derive pitches. For example, `72 EDO`
 uses the exact ratio `1/72` of a 1200-cent period, so octave boundaries do not
 accumulate the error from a displayed `16.667`-cent step.
 
 The tuning object must be complete enough for both the onboard synth and every
 MIDI output mode. For equal-step tunings, firmware derives frequency,
-single-channel MIDI note numbers, and MPE bend offsets from the authoritative
-binary32 fields when present, with the milli-unit fields as a backward-compatible
-fallback. For imported
+single-channel MIDI note numbers, and MPE bend offsets from
+`StepCentsFloat32`. For imported
 or irregular cents-list tunings, firmware first maps `ReferenceMidiNote` to the
 tuning step that should act as the implicit 1/1 degree, then uses
-`CentsTableFloat32` or its legacy `CentsTable` fallback
-to compute the exact frequency for each `stepsFromC` value. It decides whether
+`CentsTableFloat32` to compute the exact frequency for each `stepsFromC` value.
+It decides whether
 standard MIDI, multi-channel non-MPE retuning, or MPE pitch bend is required
 from the same resolved cent offset. `RatioTable` remains reserved and is not
 currently runtime-compatible.
@@ -872,11 +855,13 @@ currently runtime-compatible.
 Example raw TLV snippet for a generated `19 EDO` tuning:
 
 ```text
-48 42 53 31 03 01 00 00
+48 42 53 31 03 02 00 00
 01 06 00 31 39 20 45 44 4F
 20 01 00 01
 21 02 00 13 00
-22 04 00 80 4F 12 00
+24 01 00 45
+29 04 00 00 00 96 44
+2B 04 00 00 00 DC 43
 ```
 
 ## User Layout Object
@@ -893,9 +878,8 @@ Recommended TLVs:
 | `0x22` | `CenterButton` | `u16-le`, current defaults often use `64`, `65`, or `75` |
 | `0x23` | `AcrossSteps` | `i16-le` |
 | `0x24` | `DownLeftSteps` | `i16-le` |
-| `0x25` | `Portrait` | `u8 bool`; legacy compatibility metadata |
 | `0x26` | `ExplicitButtonMapRef` | Object reference |
-| `0x27` | `DeviceRotation` | `u8`, `0..3` for `0/90/180/270` degrees |
+| `0x27` | `DeviceRotation` | Required `u8`, `0..3` for `0/90/180/270` degrees |
 | `0x28` | `LayoutRotation` | `u8`, `0..5` for musical 60-degree rotations |
 | `0x29` | `MirrorFlags` | `u8` bit 0 left/right, bit 1 up/down |
 | `0x2A` | `CenterStepsFromC` | Optional `i32-le`; generated pitch assigned to `CenterButton`, default `0` |
@@ -904,8 +888,7 @@ This matches the current firmware pitch-layout model closely enough for simple
 on-device editing: choose tuning, center button, across steps, and down-left
 steps. `DeviceRotation` is the four-step physical/display orientation and does
 not alter pitches. `LayoutRotation` and `MirrorFlags` transform the musical
-vectors. `Portrait` remains for older hosts; firmware uses it only when the
-full `DeviceRotation` TLV is absent. Current factory layouts encode all four
+vectors. Current factory layouts encode `DeviceRotation` plus the musical
 transform fields, with zero musical rotation and no mirrors.
 `CenterStepsFromC` lets a host re-center or transpose the affine layout without
 changing pitches; current firmware accepts the range of its signed 16-bit step
@@ -1001,7 +984,7 @@ Recommended TLVs:
 | --- | --- | --- |
 | `0x20` | `TuningRef` | Object reference |
 | `0x21` | `LayoutRef` | Optional object reference |
-| `0x22` | `MapRecordFormat` | `u8`; `1` legacy fixed fields, `2` independent fields |
+| `0x22` | `MapRecordFormat` | `u8`; `1` fixed fields, `2` independent fields |
 | `0x23` | `ButtonRecords` | Repeated map records |
 | `0x24` | `Actions` | Format-2 reusable action definitions |
 
@@ -1163,14 +1146,11 @@ modulation targets. Target value `0` is `FoldWrp`.
 value `12` selects `Noise`, a smooth-noise vibrato source running at the same
 `12 Hz` phase rate, without changing the synth value list.
 
-`PlaybackMode` value `5` was the temporary `PolyTbl` mode and is now normalized
-to `Poly` on import. `Waveform` remains in the value list for compatibility, but
-new preset objects use `SynthWavetableName` and `SynthWavetableFolderPath` as
-the actual source dependency. Old `Waveform` values map to the available
-compatibility table and update `SynthWavetablePosition` to the matching anchor.
-`Hybrid` and unavailable named dependencies load `Basic Shapes`. Basic Shapes
-is the rescue wavetable and uses the reserved folder path `/Built In`
-unescaped. Firmware also accepts `%2FBuilt In` and `Built In`. Editable factory
+`SynthWavetableName` and `SynthWavetableFolderPath` identify the source
+dependency. `Waveform` records the current Wave-menu anchor within that source,
+while `SynthWavetablePosition` stores the continuous position. Unavailable
+named dependencies load `Basic Shapes`. Basic Shapes is the rescue wavetable
+and uses the canonical reserved folder path `/Built In`. Editable factory
 wavetables use ordinary catalog paths; the supplied factory wavetables use the
 root folder `/`.
 
@@ -1194,9 +1174,9 @@ entry. Current firmware supports listing, reading, writing, and deleting
 entries. Presets reference wavetables by `SynthWavetableFolderPath` plus
 `SynthWavetableName`; they do not embed table sample data.
 
-New sample-bearing fixed-mip objects use schema `1.2`. Firmware still accepts
-schema `1.0` base-only wavetable objects for compatibility and older schema
-`1.1` objects only if their TLV payload matches a supported sample layout.
+Fixed-mip objects use schema `1.2`. Firmware also accepts schema `1.0`
+base-only wavetable objects and schema `1.1` objects whose TLV payload matches a
+supported sample layout.
 The body uses the common
 `HBS1` object header and may include common metadata TLVs such as `Name`,
 `ObjectId`, `Source`, and `FolderPath`. Sample-bearing wavetable imports require
@@ -1229,23 +1209,19 @@ FFT-pruned fixed mip levels, and sends the result with `ApplyToRuntime |
 SaveToFlash`.
 The web app's HexBoard export path writes `.hexwav` files: 8-bit mono WAV
 containers whose data chunk is exactly the `49,152`-byte fixed mip table.
-HexBoard `.hexwav` imports skip the Serum/Vital crunching step; older
-`8,192`-byte `.hexwav` files are accepted and upgraded to a fixed mip table by
-the app before upload.
+HexBoard `.hexwav` imports skip the Serum/Vital crunching step. Base-only
+`8,192`-byte `.hexwav` inputs are expanded to a fixed mip table by the app
+before upload.
 Firmware validates the transfer CRC32, copies the sample TLVs into active
 wavetable RAM or a temporary sample file, selects the uploaded folder/name for
 the current runtime patch, writes or replaces the matching catalog entry in
 `/synth_wavetables.dat`, and stores the raw sample bytes in a per-table sample
 file whose short filename is derived from the first 8 bytes of the wavetable
-object id when the save flag is present. Firmware also attempts to
-read and remove the older full-object-id sample path for compatibility, but new
-imports avoid that overlong LittleFS filename. Catalog records with missing
+object id when the save flag is present. Catalog records with missing
 sample files are skipped/pruned so failed earlier imports do not consume
 wavetable slots. Device-to-host full wavetable reads stream sample bytes from
 that per-table file while sending `DATA_CHUNK` frames instead of building the
-complete object in heap memory. The legacy `/user_wavetable.dat` `UWT` file is
-still loadable through the compatibility reference `/User/UserTbl`, but new
-imports do not write that file.
+complete object in heap memory.
 
 For metadata-only rename/move updates, hosts write a `SynthWavetable` object
 body containing common `Name`, `ObjectId`, and `FolderPath` TLVs without the

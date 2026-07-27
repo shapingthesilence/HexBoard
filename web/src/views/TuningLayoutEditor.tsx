@@ -1026,12 +1026,6 @@ function i16LE(value: Uint8Array | undefined, fallback = 0): number {
   return unsigned & 0x8000 ? unsigned - 0x10000 : unsigned;
 }
 
-function u32LE(value: Uint8Array | undefined, fallback = 0): number {
-  return value && value.length >= 4
-    ? ((value[0] | (value[1] << 8) | (value[2] << 16) | (value[3] << 24)) >>> 0)
-    : fallback;
-}
-
 function i32LEFromBytes(value: Uint8Array, offset: number): number {
   const unsigned = (value[offset] | (value[offset + 1] << 8) | (value[offset + 2] << 16) | (value[offset + 3] << 24)) >>> 0;
   return unsigned > 0x7fffffff ? unsigned - 0x100000000 : unsigned;
@@ -1078,19 +1072,13 @@ function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGe
   const cycleLength = clampInteger(u16LE(tlvValue(object.records, TuningTlv.EdoDivisions), 12), 1, MaxTuningDivisions);
   const name = tlvText(object.records, CommonTlv.Name, entry.name);
   const referenceMidiNote = clampInteger(u8(tlvValue(object.records, TuningTlv.ReferenceMidiNote), 69), 0, 127);
-  const referenceHz = float32LE(
-    tlvValue(object.records, TuningTlv.ReferenceHzFloat32),
-    u32LE(tlvValue(object.records, TuningTlv.ReferenceMilliHz), 440_000) / 1000
-  );
+  const referenceHz = float32LE(tlvValue(object.records, TuningTlv.ReferenceHzFloat32), 440);
 
   if (kind === UserTuningKind.EqualStep) {
     return {
       kind: "equal-step",
       name,
-      stepCents: float32LE(
-        tlvValue(object.records, TuningTlv.StepCentsFloat32),
-        u32LE(tlvValue(object.records, TuningTlv.StepMilliCents), Math.round(1_200_000 / cycleLength)) / 1000
-      ),
+      stepCents: float32LE(tlvValue(object.records, TuningTlv.StepCentsFloat32), 1200 / cycleLength),
       cycleLength,
       referenceMidiNote,
       referenceHz,
@@ -1099,18 +1087,14 @@ function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGe
   }
 
   if (kind === UserTuningKind.CentsList) {
-    const floatCentsBytes = tlvValue(object.records, TuningTlv.CentsTableFloat32);
-    const centsBytes = floatCentsBytes ?? tlvValue(object.records, TuningTlv.CentsTable);
+    const centsBytes = tlvValue(object.records, TuningTlv.CentsTableFloat32);
     const cents: number[] = [];
     if (centsBytes) {
       for (let offset = 0; offset + 3 < centsBytes.length; offset += 4) {
-        cents.push(floatCentsBytes
-          ? float32LE(centsBytes, 0, offset)
-          : i32LEFromBytes(centsBytes, offset) / 1000);
+        cents.push(float32LE(centsBytes, 0, offset));
       }
     }
-    const fallbackPeriod = u32LE(tlvValue(object.records, TuningTlv.PeriodMilliCents), 1_200_000) / 1000;
-    const periodCents = float32LE(tlvValue(object.records, TuningTlv.PeriodCentsFloat32), fallbackPeriod);
+    const periodCents = cents[cents.length - 1] ?? 1200;
     const safeCents = (cents.length > 0 ? cents : [periodCents]).slice(0, MaxTuningDivisions);
     return {
       kind: "scala",
@@ -1131,7 +1115,7 @@ function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGe
     edoDivisions: cycleLength,
     periodCents: float32LE(
       tlvValue(object.records, TuningTlv.PeriodCentsFloat32),
-      u32LE(tlvValue(object.records, TuningTlv.PeriodMilliCents), 1_200_000) / 1000
+      1200
     ),
     cycleLength,
     referenceMidiNote,
@@ -1193,7 +1177,7 @@ function decodeDeviceButtonMap(map: DeviceGeometryObject | undefined): {
   if (!records) {
     return { overrides: [], offGridOverrides: [], chordActions: [] };
   }
-  const recordFormat = u8(tlvValue(map?.records ?? [], ExplicitButtonMapTlv.MapRecordFormat), ButtonMapRecordFormat.Legacy);
+  const recordFormat = u8(tlvValue(map?.records ?? [], ExplicitButtonMapTlv.MapRecordFormat), ButtonMapRecordFormat.Fixed);
   const overrides: LayoutBundleButtonOverride[] = [];
   if (recordFormat === ButtonMapRecordFormat.FieldMasked) {
     for (let cursor = 0; cursor + 2 <= records.length;) {
@@ -1291,8 +1275,7 @@ function decodeDeviceButtonMap(map: DeviceGeometryObject | undefined): {
 }
 
 function decodeDeviceLayout(object: DeviceGeometryObject, index: number, buttonMap: DeviceGeometryObject | undefined): LayoutBundleLayout {
-  const legacyDeviceRotation = u8(tlvValue(object.records, LayoutTlv.Portrait), 1) === 0 ? 1 : 0;
-  const deviceRotationSteps = clampInteger(u8(tlvValue(object.records, LayoutTlv.DeviceRotation), legacyDeviceRotation), 0, 3);
+  const deviceRotationSteps = clampInteger(u8(tlvValue(object.records, LayoutTlv.DeviceRotation), 0), 0, 3);
   const mirrorFlags = u8(tlvValue(object.records, LayoutTlv.MirrorFlags), 0);
   const acrossSteps = i16LE(tlvValue(object.records, LayoutTlv.AcrossSteps), 3);
   const downLeftSteps = i16LE(tlvValue(object.records, LayoutTlv.DownLeftSteps), -11);
@@ -1308,7 +1291,6 @@ function decodeDeviceLayout(object: DeviceGeometryObject, index: number, buttonM
     layoutRotationSteps: clampInteger(u8(tlvValue(object.records, LayoutTlv.LayoutRotation), 0), 0, 5),
     mirrorLeftRight: (mirrorFlags & 1) !== 0,
     mirrorUpDown: (mirrorFlags & 2) !== 0,
-    portrait: deviceRotationSteps % 2 === 0,
     buttonOverrides: buttonMapData.overrides,
     offGridOverrides: buttonMapData.offGridOverrides,
     chordActions: buttonMapData.chordActions

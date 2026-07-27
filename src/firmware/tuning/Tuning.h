@@ -28,9 +28,6 @@ constexpr std::array<uint32_t, 20> envelopeTimeMicrosOptions = {
   200000, 300000, 500000, 750000, 1000000, 1500000, 2000000, 2500000,
   3000000, 4000000
 };
-constexpr std::array<uint8_t, 10> legacyEnvelopeTimeIndexToCurrent = {
-  0, 1, 2, 4, 6, 8, 10, 12, 14, 16
-};
 constexpr uint8_t ENVELOPE_LEVEL_SCALE_SHIFT = 7;
 constexpr uint32_t envelopeAudioMaxLevel = 65535;
 constexpr uint32_t envelopeMaxLevel = envelopeAudioMaxLevel << ENVELOPE_LEVEL_SCALE_SHIFT;

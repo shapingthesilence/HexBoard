@@ -12,17 +12,15 @@ import {
   tlvI32LE,
   tlvU8,
   tlvU16LE,
-  tlvU32LE,
   type TlvRecord
 } from "../protocol/tlv.ts";
 import type { EncodedCatalogObject, LayoutsDatCatalog, ObjectReferenceInput } from "./types.ts";
 import { deterministicObjectId, objectIdFromHex, objectIdToHex } from "./objectId.ts";
 import { crc32 } from "../protocol/crc32.ts";
 
-export const LegacyLayoutBundleFileFormat = "hexboard.layoutBundle.v1";
-export const IntermediateLayoutBundleFileFormat = "hexboard.layoutBundle.v2";
-export const PreviousLayoutBundleFileFormat = "hexboard.layoutBundle.v3";
-export const LayoutBundleFileFormat = "hexboard.layoutBundle.v4";
+export const LayoutBundleFileFormat = "hexboard.layoutBundle.v5";
+export const GeometryBundleFileVersion = 3;
+export const GeometryObjectSchemaVersion = 2;
 export const GenericScaleColorMapName = "Custom Palette";
 export const GeometryMenuTextMaxLength = 19;
 export const NoteLabelTextMaxLength = 7;
@@ -83,11 +81,7 @@ export type ButtonMapRoleName = "unused" | "note" | "command";
 export const TuningTlv = {
   TuningKind: 0x20,
   EdoDivisions: 0x21,
-  PeriodMilliCents: 0x22,
-  StepMilliCents: 0x23,
   ReferenceMidiNote: 0x24,
-  ReferenceMilliHz: 0x25,
-  CentsTable: 0x26,
   RatioTable: 0x27,
   KeyLabels: 0x28,
   PeriodCentsFloat32: 0x29,
@@ -102,7 +96,6 @@ export const LayoutTlv = {
   CenterButton: 0x22,
   AcrossSteps: 0x23,
   DownLeftSteps: 0x24,
-  Portrait: 0x25,
   ExplicitButtonMapRef: 0x26,
   DeviceRotation: 0x27,
   LayoutRotation: 0x28,
@@ -134,7 +127,7 @@ export const ExplicitButtonMapTlv = {
 } as const;
 
 export const ButtonMapRecordFormat = {
-  Legacy: 1,
+  Fixed: 1,
   FieldMasked: 2
 } as const;
 
@@ -174,9 +167,7 @@ export interface GeneratedEdoTuningInput {
   folderPath?: string;
   edoDivisions: number;
   periodCents?: number;
-  periodMilliCents?: number;
   referenceMidiNote?: number;
-  referenceMilliHz?: number;
   referenceHz?: number;
   keyLabels?: string[];
 }
@@ -185,13 +176,9 @@ export interface EqualStepTuningInput {
   objectId: Uint8Array;
   name: string;
   folderPath?: string;
-  stepMilliCents?: number;
   stepCents?: number;
-  periodCents?: number;
-  periodMilliCents?: number;
   cycleLength: number;
   referenceMidiNote?: number;
-  referenceMilliHz?: number;
   referenceHz?: number;
   keyLabels?: string[];
 }
@@ -201,10 +188,7 @@ export interface CentsTableTuningInput {
   name: string;
   folderPath?: string;
   cents: number[];
-  periodCents?: number;
-  periodMilliCents?: number;
   referenceMidiNote?: number;
-  referenceMilliHz?: number;
   referenceHz?: number;
   keyLabels?: string[];
 }
@@ -218,8 +202,7 @@ export interface VectorLayoutInput {
   centerStepsFromC?: number;
   acrossSteps: number;
   upRightSteps: number;
-  portrait: boolean;
-  deviceRotationSteps?: number;
+  deviceRotationSteps: number;
   layoutRotationSteps?: number;
   mirrorLeftRight?: boolean;
   mirrorUpDown?: boolean;
@@ -277,11 +260,11 @@ export interface ExplicitButtonRecord {
   buttonIndex: number;
   role: number;
   stepsFromC?: number;
-  /** Legacy format-1 compatibility. Use `action` for direct MIDI output. */
+  /** Format-1 field. Use `action` for direct MIDI output in new maps. */
   midiNote?: number;
-  /** Legacy format-1 compatibility. Use `action` for direct MIDI output. */
+  /** Format-1 field. Use `action` for direct MIDI output in new maps. */
   midiChannel?: number;
-  /** Legacy format-1 compatibility. Presence of HSV fields controls color in format 2. */
+  /** Format-1 field. Presence of HSV fields controls color in format 2. */
   colorMode?: number;
   hueTenthDegrees?: number;
   saturation?: number;
@@ -315,7 +298,6 @@ export interface LayoutBundleLayout {
   layoutRotationSteps: number;
   mirrorLeftRight: boolean;
   mirrorUpDown: boolean;
-  portrait: boolean;
   buttonOverrides: LayoutBundleButtonOverride[];
   offGridOverrides: LayoutBundleGridOverride[];
   chordActions: LayoutBundleChordAction[];
@@ -426,7 +408,12 @@ export function encodeGeometryBundleFile(objects: EncodedCatalogObject[], catalo
     ? catalogOrder
     : 0xffff;
   const file = concatBytes([
-    bytesFromNumbers(["H".charCodeAt(0), "G".charCodeAt(0), "B".charCodeAt(0), 2]),
+    bytesFromNumbers([
+      "H".charCodeAt(0),
+      "G".charCodeAt(0),
+      "B".charCodeAt(0),
+      GeometryBundleFileVersion
+    ]),
     bytesFromNumbers([
       objects.length & 0xff,
       (objects.length >> 8) & 0xff,
@@ -493,14 +480,14 @@ function buildCatalogObject(input: {
   ];
   const body = encodeObjectBody({
     objectType: input.objectType,
-    schemaMajor: 1,
+    schemaMajor: GeometryObjectSchemaVersion,
     schemaMinor: 0,
     objectFlags: 0,
     records: allRecords
   });
   return {
     objectType: input.objectType,
-    schemaMajor: 1,
+    schemaMajor: GeometryObjectSchemaVersion,
     schemaMinor: 0,
     objectId: input.objectId,
     name: input.name,
@@ -512,10 +499,8 @@ function buildCatalogObject(input: {
 
 export function createGeneratedEdoTuning(input: GeneratedEdoTuningInput): EncodedCatalogObject {
   requireTuningDivisionCount(input.edoDivisions, "EDO divisions");
-  const periodCents = Math.fround(input.periodCents ?? (input.periodMilliCents ?? 1_200_000) / 1000);
-  const periodMilliCents = Math.round(periodCents * 1000);
-  const stepMilliCents = Math.round(periodMilliCents / input.edoDivisions);
-  const referenceHz = Math.fround(input.referenceHz ?? (input.referenceMilliHz ?? 440_000) / 1000);
+  const periodCents = Math.fround(input.periodCents ?? 1200);
+  const referenceHz = Math.fround(input.referenceHz ?? 440);
 
   return buildCatalogObject({
     objectType: ObjectType.UserTuning,
@@ -525,12 +510,8 @@ export function createGeneratedEdoTuning(input: GeneratedEdoTuningInput): Encode
     records: [
       tlvU8(TuningTlv.TuningKind, UserTuningKind.Edo),
       tlvU16LE(TuningTlv.EdoDivisions, input.edoDivisions),
-      tlvU32LE(TuningTlv.PeriodMilliCents, periodMilliCents),
-      tlvU32LE(TuningTlv.StepMilliCents, stepMilliCents),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
-      tlvU32LE(TuningTlv.ReferenceMilliHz, Math.round(referenceHz * 1000)),
       tlvFloat32LE(TuningTlv.PeriodCentsFloat32, periodCents),
-      tlvFloat32LE(TuningTlv.StepCentsFloat32, Math.fround(periodCents / input.edoDivisions)),
       tlvFloat32LE(TuningTlv.ReferenceHzFloat32, referenceHz),
       tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(input.keyLabels ?? defaultKeyLabels(input.edoDivisions), input.edoDivisions)))
     ]
@@ -539,10 +520,8 @@ export function createGeneratedEdoTuning(input: GeneratedEdoTuningInput): Encode
 
 export function createEqualStepTuning(input: EqualStepTuningInput): EncodedCatalogObject {
   requireTuningDivisionCount(input.cycleLength, "Equal-step cycle length");
-  const stepCents = Math.fround(input.stepCents ?? (input.stepMilliCents ?? 100_000) / 1000);
-  const periodCents = Math.fround(input.periodCents
-    ?? (input.periodMilliCents !== undefined ? input.periodMilliCents / 1000 : stepCents * input.cycleLength));
-  const referenceHz = Math.fround(input.referenceHz ?? (input.referenceMilliHz ?? 440_000) / 1000);
+  const stepCents = Math.fround(input.stepCents ?? 100);
+  const referenceHz = Math.fround(input.referenceHz ?? 440);
   return buildCatalogObject({
     objectType: ObjectType.UserTuning,
     objectId: input.objectId,
@@ -551,11 +530,7 @@ export function createEqualStepTuning(input: EqualStepTuningInput): EncodedCatal
     records: [
       tlvU8(TuningTlv.TuningKind, UserTuningKind.EqualStep),
       tlvU16LE(TuningTlv.EdoDivisions, input.cycleLength),
-      tlvU32LE(TuningTlv.PeriodMilliCents, Math.round(periodCents * 1000)),
-      tlvU32LE(TuningTlv.StepMilliCents, Math.round(stepCents * 1000)),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
-      tlvU32LE(TuningTlv.ReferenceMilliHz, Math.round(referenceHz * 1000)),
-      tlvFloat32LE(TuningTlv.PeriodCentsFloat32, periodCents),
       tlvFloat32LE(TuningTlv.StepCentsFloat32, stepCents),
       tlvFloat32LE(TuningTlv.ReferenceHzFloat32, referenceHz),
       tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(input.keyLabels ?? defaultKeyLabels(input.cycleLength), input.cycleLength)))
@@ -565,12 +540,8 @@ export function createEqualStepTuning(input: EqualStepTuningInput): EncodedCatal
 
 export function createCentsTableTuning(input: CentsTableTuningInput): EncodedCatalogObject {
   requireTuningDivisionCount(input.cents.length, "Cents-table cycle length");
-  const tableBytes = input.cents.map((cents) => bytesFromNumbers(encodeInt32LE(Math.round(cents * 1000))));
   const floatTableBytes = input.cents.map((cents) => bytesFromNumbers(encodeFloat32LE(cents)));
-  const periodCents = Math.fround(input.periodCents
-    ?? (input.periodMilliCents !== undefined ? input.periodMilliCents / 1000 : input.cents[input.cents.length - 1] ?? 1200));
-  const periodMilliCents = Math.round(periodCents * 1000);
-  const referenceHz = Math.fround(input.referenceHz ?? (input.referenceMilliHz ?? 440_000) / 1000);
+  const referenceHz = Math.fround(input.referenceHz ?? 440);
   const cycleLength = Math.max(1, input.cents.length);
 
   return buildCatalogObject({
@@ -581,13 +552,9 @@ export function createCentsTableTuning(input: CentsTableTuningInput): EncodedCat
     records: [
       tlvU8(TuningTlv.TuningKind, UserTuningKind.CentsList),
       tlvU16LE(TuningTlv.EdoDivisions, input.cents.length),
-      tlvU32LE(TuningTlv.PeriodMilliCents, periodMilliCents),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
-      tlvU32LE(TuningTlv.ReferenceMilliHz, Math.round(referenceHz * 1000)),
-      tlvFloat32LE(TuningTlv.PeriodCentsFloat32, periodCents),
       tlvFloat32LE(TuningTlv.ReferenceHzFloat32, referenceHz),
       tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(input.keyLabels ?? defaultKeyLabels(cycleLength), cycleLength))),
-      tlv(TuningTlv.CentsTable, concatBytes(tableBytes)),
       tlv(TuningTlv.CentsTableFloat32, concatBytes(floatTableBytes))
     ]
   });
@@ -603,7 +570,7 @@ export function upRightToCurrentFirmwareDownLeft(_acrossSteps: number, upRightSt
 
 export function createVectorLayout(input: VectorLayoutInput): EncodedCatalogObject {
   const downLeftSteps = upRightToCurrentFirmwareDownLeft(input.acrossSteps, input.upRightSteps);
-  const deviceRotationSteps = clampInteger(input.deviceRotationSteps ?? (input.portrait ? 0 : 1), 0, 3);
+  const deviceRotationSteps = clampInteger(input.deviceRotationSteps, 0, 3);
   const layoutRotationSteps = clampInteger(input.layoutRotationSteps ?? 0, 0, 5);
   const mirrorFlags = (input.mirrorLeftRight ? 1 : 0) | (input.mirrorUpDown ? 2 : 0);
   return buildCatalogObject({
@@ -617,7 +584,6 @@ export function createVectorLayout(input: VectorLayoutInput): EncodedCatalogObje
       tlvU16LE(LayoutTlv.CenterButton, input.centerButton),
       tlvI16LE(LayoutTlv.AcrossSteps, input.acrossSteps),
       tlvI16LE(LayoutTlv.DownLeftSteps, downLeftSteps),
-      tlvU8(LayoutTlv.Portrait, deviceRotationSteps % 2 === 0 ? 1 : 0),
       tlvU8(LayoutTlv.DeviceRotation, deviceRotationSteps),
       tlvU8(LayoutTlv.LayoutRotation, layoutRotationSteps),
       tlvU8(LayoutTlv.MirrorFlags, mirrorFlags),
@@ -783,10 +749,6 @@ function roleNameToByte(role: ButtonMapRoleName): number {
   }
 }
 
-function centsToMilliCents(cents: number): number {
-  return Math.round(cents * 1000);
-}
-
 export function defaultSpanCtoA(cycleLength: number): number {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
   return -Math.floor(((safeCycleLength * 9) + 6) / 12);
@@ -845,14 +807,6 @@ export function keyLabelsFromScalaIntervalLabels(cycleLength: number, intervalLa
   return normalizeKeyLabels(labels, safeCycleLength);
 }
 
-function migrateLegacyDegreeNumberKeyLabels(labels: string[] | undefined, cycleLength: number): string[] | undefined {
-  const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  if (labels?.length === safeCycleLength && labels.every((label, index) => label.trim() === String(index))) {
-    return undefined;
-  }
-  return labels;
-}
-
 export function keyLabelsForTlvOrder(labels: string[], cycleLength: number): string[] {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
   const normalized = normalizeKeyLabels(labels, safeCycleLength);
@@ -880,10 +834,6 @@ function encodeKeyLabels(labels: string[]): Uint8Array {
 
 function equalStepPeriodCents(tuning: Extract<LayoutBundleTuning, { kind: "equal-step" }>): number {
   return tuning.stepCents * tuning.cycleLength;
-}
-
-function hertzToMilliHertz(hertz: number): number {
-  return Math.round(hertz * 1000);
 }
 
 function bundleObjectId(bundle: LayoutBundle, suffix: string): Uint8Array {
@@ -968,7 +918,6 @@ export function createDefaultLayout(cycleLength: number): LayoutBundleLayout {
     layoutRotationSteps: 0,
     mirrorLeftRight: false,
     mirrorUpDown: false,
-    portrait: true,
     buttonOverrides: [],
     offGridOverrides: [],
     chordActions: []
@@ -1238,10 +1187,8 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
           folderPath,
           edoDivisions: bundle.tuning.edoDivisions,
           periodCents: bundle.tuning.periodCents,
-          periodMilliCents: centsToMilliCents(bundle.tuning.periodCents),
           referenceMidiNote: bundle.tuning.referenceMidiNote,
           referenceHz: bundle.tuning.referenceHz,
-          referenceMilliHz: hertzToMilliHertz(bundle.tuning.referenceHz),
           keyLabels: bundle.tuning.keyLabels
         });
       case "equal-step":
@@ -1250,13 +1197,9 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
           name: tuningName,
           folderPath,
           stepCents: bundle.tuning.stepCents,
-          stepMilliCents: centsToMilliCents(bundle.tuning.stepCents),
-          periodCents: equalStepPeriodCents(bundle.tuning),
-          periodMilliCents: centsToMilliCents(equalStepPeriodCents(bundle.tuning)),
           cycleLength: bundle.tuning.cycleLength,
           referenceMidiNote: bundle.tuning.referenceMidiNote,
           referenceHz: bundle.tuning.referenceHz,
-          referenceMilliHz: hertzToMilliHertz(bundle.tuning.referenceHz),
           keyLabels: bundle.tuning.keyLabels
         });
       case "scala":
@@ -1265,11 +1208,8 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
           name: tuningName,
           folderPath,
           cents: bundle.tuning.cents,
-          periodCents: bundle.tuning.periodCents,
-          periodMilliCents: centsToMilliCents(bundle.tuning.periodCents),
           referenceMidiNote: bundle.tuning.referenceMidiNote,
           referenceHz: bundle.tuning.referenceHz,
-          referenceMilliHz: hertzToMilliHertz(bundle.tuning.referenceHz),
           keyLabels: bundle.tuning.keyLabels
         });
     }
@@ -1289,7 +1229,6 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     centerStepsFromC: layout.centerStepsFromC,
     acrossSteps: layout.acrossSteps,
     upRightSteps: layout.upRightSteps,
-    portrait: (layout.deviceRotationSteps % 2) === 0,
     deviceRotationSteps: layout.deviceRotationSteps,
     layoutRotationSteps: layout.layoutRotationSteps,
     mirrorLeftRight: layout.mirrorLeftRight,
@@ -1369,10 +1308,7 @@ export function parseLayoutBundleFile(value: unknown): LayoutBundle {
   }
   const record = value as Record<string, unknown>;
   if (
-    (record.format !== LayoutBundleFileFormat
-      && record.format !== PreviousLayoutBundleFileFormat
-      && record.format !== IntermediateLayoutBundleFileFormat
-      && record.format !== LegacyLayoutBundleFileFormat) ||
+    record.format !== LayoutBundleFileFormat ||
     typeof record.bundle !== "object" ||
     record.bundle === null
   ) {
@@ -1441,7 +1377,7 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
       cycleLength: edoDivisions,
       referenceMidiNote,
       referenceHz,
-      keyLabels: normalizeKeyLabels(migrateLegacyDegreeNumberKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, edoDivisions), edoDivisions)
+      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, edoDivisions)
     };
   }
 
@@ -1454,7 +1390,7 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
       cycleLength,
       referenceMidiNote,
       referenceHz,
-      keyLabels: normalizeKeyLabels(migrateLegacyDegreeNumberKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, cycleLength), cycleLength)
+      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, cycleLength)
     };
   }
 
@@ -1472,7 +1408,7 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
       cycleLength: clampInteger(safeCents.length, 1, MaxTuningDivisions),
       referenceMidiNote,
       referenceHz,
-      keyLabels: normalizeKeyLabels(migrateLegacyDegreeNumberKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, safeCents.length), safeCents.length)
+      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, safeCents.length)
     };
   }
 
@@ -1481,8 +1417,7 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
 
 function normalizeLayoutBundle(value: unknown): LayoutBundle {
   const source = value as Partial<LayoutBundle> & {
-    layout?: Partial<LayoutBundleLayout> & { rotationSteps?: number };
-    layouts?: Array<Partial<LayoutBundleLayout> & { rotationSteps?: number }>;
+    layouts?: Array<Partial<LayoutBundleLayout>>;
     degreeColors?: ScaleDegreeColor[];
     buttonOverrides?: LayoutBundleButtonOverride[];
   };
@@ -1501,34 +1436,12 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
     && Number(source.catalogOrder) <= 0xffff
     ? Number(source.catalogOrder)
     : undefined;
-  if (!source.tuning || !source.layout) {
-    if (!source.tuning || !Array.isArray(source.layouts)) {
-      throw new Error("Layout bundle is missing tuning or layout data");
-    }
+  if (!source.tuning || !Array.isArray(source.layouts) || source.layouts.length === 0) {
+    throw new Error("Layout bundle is missing tuning or layout data");
   }
   const tuning = normalizeLayoutBundleTuning(source.tuning);
   const cycleLength = Math.max(1, Math.round(tuning.cycleLength));
-  const legacyLayout = source.layout;
-  const layouts = Array.isArray(source.layouts) && source.layouts.length > 0
-    ? source.layouts
-    : legacyLayout
-      ? [{
-          objectIdHex: objectIdToHex(deterministicObjectId(`${source.objectIdHex}:legacy-layout`)),
-          name: clampGeometryMenuText(`${source.name} Layout`, "User Layout"),
-          centerButton: legacyLayout.centerButton ?? 65,
-          centerStepsFromC: legacyLayout.centerStepsFromC ?? 0,
-          acrossSteps: legacyLayout.acrossSteps ?? 3,
-          upRightSteps: legacyLayout.upRightSteps ?? 11,
-          deviceRotationSteps: legacyLayout.deviceRotationSteps ?? legacyLayout.rotationSteps ?? 0,
-          layoutRotationSteps: legacyLayout.layoutRotationSteps ?? 0,
-          mirrorLeftRight: legacyLayout.mirrorLeftRight ?? false,
-          mirrorUpDown: legacyLayout.mirrorUpDown ?? false,
-          portrait: typeof legacyLayout.portrait === "boolean" ? legacyLayout.portrait : ((legacyLayout.rotationSteps ?? 0) % 2) === 0,
-          buttonOverrides: Array.isArray(source.buttonOverrides) ? source.buttonOverrides : [],
-          offGridOverrides: [],
-          chordActions: []
-        }]
-      : [createDefaultLayout(cycleLength)];
+  const layouts = source.layouts;
   if (layouts.length > GeometryLayoutScaleMaxCount) {
     throw new RangeError(`Layout bundle contains more than ${GeometryLayoutScaleMaxCount} layouts`);
   }
@@ -1537,8 +1450,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
       ? layout.objectIdHex
       : objectIdToHex(deterministicObjectId(`${source.objectIdHex}:layout:${index}`));
     objectIdFromHex(objectIdHex);
-    const legacyRotationSteps = (layout as Partial<LayoutBundleLayout> & { rotationSteps?: number }).rotationSteps;
-    const deviceRotationSteps = clampInteger(layout.deviceRotationSteps ?? legacyRotationSteps ?? 0, 0, 3);
+    const deviceRotationSteps = clampInteger(layout.deviceRotationSteps ?? 0, 0, 3);
     const chordActions = Array.isArray(layout.chordActions)
       ? layout.chordActions.slice(0, 16).map((action, actionIndex) => {
           const pitchMode = action.pitchMode === "midi-semitones" ? "midi-semitones" as const : "tuning-steps" as const;
@@ -1568,7 +1480,6 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
       layoutRotationSteps: clampInteger(layout.layoutRotationSteps ?? 0, 0, 5),
       mirrorLeftRight: Boolean(layout.mirrorLeftRight),
       mirrorUpDown: Boolean(layout.mirrorUpDown),
-      portrait: deviceRotationSteps % 2 === 0,
       buttonOverrides: Array.isArray(layout.buttonOverrides) ? layout.buttonOverrides : [],
       offGridOverrides: Array.isArray(layout.offGridOverrides)
         ? layout.offGridOverrides

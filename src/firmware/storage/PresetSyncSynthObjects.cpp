@@ -610,7 +610,6 @@ void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, con
   synthWaveTableLoadInProgress = true;
   loadActiveSynthWavetableSamples(samples, sampleLength);
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
-  userSynthWavetableAvailable = true;
   setCurrentSynthWavetableReference(wavetable.folderPath, wavetable.name);
   currWave = WAVEFORM_BASIC_WAVETABLE;
   settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_BASIC_WAVETABLE;
@@ -656,7 +655,6 @@ bool applyParsedSynthWavetableFileToRuntime(const SynthWavetableSlot& wavetable,
     return false;
   }
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
-  userSynthWavetableAvailable = true;
   setCurrentSynthWavetableReference(wavetable.folderPath, wavetable.name);
   currWave = WAVEFORM_BASIC_WAVETABLE;
   settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_BASIC_WAVETABLE;
