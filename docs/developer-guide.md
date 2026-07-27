@@ -688,11 +688,11 @@ user color maps.
 
 `setLEDcolorCodes()` computes one color-coordinate origin for every
 palette-derived mode. With `ColorByKey` enabled, the origin is offset by
-`current.keyStepsFromC()`; with it disabled, the origin remains at C. Piano,
-Alt Piano, Filament, and Fifths must consume that shared coordinate rather than
-reconstructing a key offset or reading raw `stepsFromC` independently. Piano
-white/black classification is owned by the named pitch-class table in
-`LedRender.cpp`, not by mode-specific numeric comparisons.
+`current.keyStepsFromC()`; with it disabled, the origin remains at C. Every
+palette-derived renderer consumes that shared coordinate rather than
+reconstructing a key offset or reading raw `stepsFromC` independently.
+Mode-specific classification uses named semantic helpers and tables rather than
+repeated numeric comparisons.
 
 `lightUpLEDs()` writes the final frame into the NeoPixel buffer and then calls
 `applyLedCurrentLimitToFrame()` before `strip.show()`. The current limiter works

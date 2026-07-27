@@ -27,7 +27,7 @@ These instructions apply to the entire repository. This guide is for future AI a
 ## Product Direction
 
 - Persist rotary inversion as a user reversal relative to the detected hardware default; keep the effective decoder direction separate from the saved preference.
-- Keep documentation focused on current behavior. Do not add investigation history, migration narratives, or public hardware errata.
+- Treat documentation as a description of the current product, not as a historical record. State present behavior, durable architecture, ownership, and constraints without noting that something was fixed, previously broken, newly added, or formerly affected. Do not add investigation history, before/after narratives, migration stories, or public hardware errata unless the user explicitly requests release notes or a changelog.
 - Do not add diagnostic firmware variants to the normal build. Create a temporary diagnostic build only when the user is actively investigating a boot failure.
 
 ## Engineering Preference
@@ -38,6 +38,12 @@ These instructions apply to the entire repository. This guide is for future AI a
 ## Documentation Requirement
 
 Every behavior, setting, protocol, menu, build, hardware, or architecture change must include a documentation pass before the task is considered complete.
+
+Integrate documentation changes by replacing stale descriptions with concise
+current-state text. Do not append bug history or name the cases that motivated a
+general rule. Keep root-cause analysis, implementation history, and verification
+results in the task report, issue, commit, or dedicated release notes rather
+than product manuals and developer architecture guides.
 
 When code changes, check and update the relevant docs:
 
@@ -54,7 +60,7 @@ If a code change does not require documentation updates, explicitly say why in t
 
 - When adding, removing, or reordering `SettingKey` entries, update `factoryDefaults`, `syncSettingsToRuntime()`, menu wiring if needed, and documentation.
 - Bump `CURRENT_SETTINGS_VERSION` when persisted settings layout changes.
-- Document settings-version changes in `docs/developer-guide.md`.
+- Keep the current settings version and schema contract accurate in `docs/developer-guide.md`; do not append a settings-version history.
 - When a setting byte changes meaning, bump `CURRENT_SETTINGS_VERSION` even if its position and size are unchanged.
 
 ## Verification

@@ -235,8 +235,7 @@ Options include:
 Available color modes are `Rainbow`, `Diatonic`, `Alt`, `Fifths`, `Piano`, `Alt Piano`, `Filament`, and `Custom`. `Custom` shows a scale-degree color scheme loaded from the web editor. The animation list includes button, octave, by-note, star, splash, orbit, beams, reversed variants, and MIDI-in highlighting.
 
 `Settings` -> `ColorByKey` moves the palette origin with the selected musical
-key. This applies consistently to the Piano, Alt Piano, and Filament patterns
-as well as the other palette-derived modes. When it is off, those colors remain
+key for every palette-derived color mode. When it is off, those colors remain
 anchored to C. Direct per-button colors in `Custom` mode remain attached to
 their assigned buttons.
 
