@@ -32,6 +32,45 @@ constexpr uint16_t BOOT_LED_CHECK_FIRST_BOOT_WHITE_HOLD_MS = 2000;
 constexpr uint16_t BOOT_LED_CHECK_WAVE_MS = 30;
 constexpr uint16_t BOOT_LED_CHECK_NORMAL_FADE_MS = 25;
 constexpr byte USER_GEOMETRY_REST_COLOR_VALUE_MAX = VALUE_NORMAL;
+
+namespace {
+
+constexpr float HUE_CIRCLE_DEGREES = 360.0f;
+constexpr float OCTAVE_CENTS = 1200.0f;
+constexpr int PIANO_PITCH_CLASS_COUNT = 12;
+constexpr bool PIANO_BLACK_PITCH_CLASSES[PIANO_PITCH_CLASS_COUNT] = {
+  false, true, false, true, false, false,
+  true, false, true, false, true, false
+};
+constexpr float ALT_PIANO_WHITE_HUE = 30.0f;
+constexpr float ALT_PIANO_OPPOSITE_HUE_OFFSET = HUE_CIRCLE_DEGREES / 2.0f;
+constexpr float ALT_PIANO_DEVIATION_HUE_RANGE = HUE_CIRCLE_DEGREES / 2.0f;
+
+float positiveFloatMod(float value, float modulus) {
+  float result = fmodf(value, modulus);
+  return result < 0.0f ? result + modulus : result;
+}
+
+int colorOriginStepOffset() {
+  return paletteBeginsAtKeyCenter ? current.keyStepsFromC() : 0;
+}
+
+float pianoPitchClassForColorSteps(int colorStepsFromOrigin, float tuningStepCents) {
+  float stepsPerOctave = OCTAVE_CENTS / tuningStepCents;
+  float stepsWithinOctave = positiveFloatMod(static_cast<float>(colorStepsFromOrigin), stepsPerOctave);
+  return PIANO_PITCH_CLASS_COUNT * stepsWithinOctave / stepsPerOctave;
+}
+
+int nearestPianoPitchClass(float pianoPitchClass) {
+  return positiveMod(static_cast<int>(roundf(pianoPitchClass)), PIANO_PITCH_CLASS_COUNT);
+}
+
+bool pianoPitchClassIsBlack(int pianoPitchClass) {
+  return PIANO_BLACK_PITCH_CLASSES[positiveMod(pianoPitchClass, PIANO_PITCH_CLASS_COUNT)];
+}
+
+}  // namespace
+
 bool settingsFileMissingOnBoot = false;
 // Sequencer Note-colored steps reuse the keyboard palette before gamma/current
 // limiting, so cache the base hue/saturation where the palette is calculated.
@@ -146,20 +185,16 @@ constexpr float lambda_b = 460e-9;
 constexpr float C1 = 3.74183e-16;  // W*m^2
 constexpr float C2 = 1.4388e-2;    // m*K
 
-float maxTemperature = 2400;
-float brightnessCoefficient = 745000000.0f;
+constexpr float MIN_TEMPERATURE_KELVIN = 800.0f;
+constexpr float MAX_TEMPERATURE_KELVIN = 2400.0f;
 
 float planckRadiation(float lambda, float temp) {
   return (C1 / (pow(lambda, 5))) / (exp(C2 / (lambda * temp)) - 1);
 }
 
-float getCoefficient(float lambda, float maxTemperature) {
-  float radiation = planckRadiation(lambda, maxTemperature);
+float getCoefficient(float lambda, float referenceTemperature) {
+  float radiation = planckRadiation(lambda, referenceTemperature);
   return radiation / 256.0f;
-}
-
-float getTemperatureFromV(float value) {
-  return value;
 }
 
 colorDef getColor(int32_t temp) {
@@ -177,13 +212,13 @@ colorDef getColor(int32_t temp) {
     s = delta / maxVal;
     if (maxVal == r) {
       h = 60.0 * fmodf(((g - b) / delta), 6.0);
-      v = r / getCoefficient(lambda_r, maxTemperature);
+      v = r / getCoefficient(lambda_r, MAX_TEMPERATURE_KELVIN);
     } else if (maxVal == g) {
       h = 60.0 * (((g - b) / delta) + 2.0);
-      v = g / getCoefficient(lambda_g, maxTemperature);
+      v = g / getCoefficient(lambda_g, MAX_TEMPERATURE_KELVIN);
     } else {
       h = 60.0 * (((g - b) / delta) + 4.0);
-      v = b / getCoefficient(lambda_b, maxTemperature);
+      v = b / getCoefficient(lambda_b, MAX_TEMPERATURE_KELVIN);
     }
     v = min(max(v, 0), 255);
   }
@@ -493,15 +528,14 @@ void setLEDcolorCodes() {
   }
   // ---- End diatonic MOS precomputation ----
 
+  const int keyCenteredColorOffset = colorOriginStepOffset();
   for (byte i = 0; i < LED_COUNT; i++) {
     baseLedColorCacheValid[i] = false;
     if (!(h[i].isCmd)) {
       colorDef setColor = { HUE_NONE, SAT_BW, VALUE_BLACK };
       bool userGeometryColorApplied = false;
-      byte paletteIndex = positiveMod(h[i].stepsFromC, cycleLength);
-      if (paletteBeginsAtKeyCenter) {
-        paletteIndex = current.keyDegree(paletteIndex);
-      }
+      const int colorStepsFromOrigin = h[i].stepsFromC + keyCenteredColorOffset;
+      byte paletteIndex = positiveMod(colorStepsFromOrigin, cycleLength);
       if (userGeometryRuntimeActive && userGeometryRuntimePaletteActive && colorMode == CUSTOM_COLOR_MODE) {
         setColor = userGeometryRuntimePalette.getColor(paletteIndex);
         userGeometryColorApplied = true;
@@ -518,9 +552,8 @@ void setLEDcolorCodes() {
           case RAINBOW_OF_FIFTHS_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
             {
             float stepSize = current.tuning().stepSize;
-              float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-              float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
+            float octaveCycleLength = OCTAVE_CENTS / stepSize;  // Prevent non-octave coloring artifacts.
+            float octaveDegree = positiveFloatMod(static_cast<float>(colorStepsFromOrigin), octaveCycleLength);
             float fifthSize = ((ratioToCents(3.0 / 2.0)) / stepSize);
             float reverseFifth = fifthSize;
             switch (current.tuning().cycleLength) {
@@ -615,65 +648,62 @@ void setLEDcolorCodes() {
                 }  // either the tuning has no fifths or scrambling colors using fifths works
             }
 
-            float paletteIndexOfFifths = fmodf((keyDegree * reverseFifth), octaveCycleLength);
-            setColor = { 360.0f * (paletteIndexOfFifths / (1200.0f / stepSize)), SAT_VIVID, VALUE_NORMAL };
+            float paletteIndexOfFifths = positiveFloatMod(octaveDegree * reverseFifth, octaveCycleLength);
+            setColor = {
+              HUE_CIRCLE_DEGREES * (paletteIndexOfFifths / octaveCycleLength),
+              SAT_VIVID,
+              VALUE_NORMAL
+            };
           }
           break;
         case PIANO_ALT_COLOR_MODE:
           {
-            float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-            float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = (12.0f / octaveCycleLength) * semipaletteIndex;
-            if ((int)round(keyDegree) % 12 == 1 || (int)round(keyDegree) % 12 == 3 || (int)round(keyDegree) % 12 == 6 || (int)round(keyDegree) % 12 == 8 || (int)round(keyDegree) % 12 == 10) {
-              float deviationFromDiatonic = (float)((int)round(keyDegree) - keyDegree) * 180.0;  // range from 180 to 360
-              // +360 for proper fmodf; 180 is the opposite tint of 0; 30 is midway between yellow and red;
-              setColor = { fmodf(360.0 + 180.0 + 30.0 + deviationFromDiatonic, 360.0f), SAT_VIVID, VALUE_NORMAL };
-            } else  // White key
-            {
-              float deviationFromDiatonic = (((float)((int)round(keyDegree))) - (keyDegree)) * 180.0;  // from -60 to 120
-              setColor = { fmodf(360.0 + 0.0 + 30.0 + deviationFromDiatonic, 360.0f), SAT_VIVID, VALUE_NORMAL };
-            }
+            float pianoPitchClass =
+              pianoPitchClassForColorSteps(colorStepsFromOrigin, current.tuning().stepSize);
+            float roundedPitchClass = roundf(pianoPitchClass);
+            int pitchClass = nearestPianoPitchClass(pianoPitchClass);
+            float deviationHue =
+              (roundedPitchClass - pianoPitchClass) * ALT_PIANO_DEVIATION_HUE_RANGE;
+            float baseHue = ALT_PIANO_WHITE_HUE
+                            + (pianoPitchClassIsBlack(pitchClass)
+                                 ? ALT_PIANO_OPPOSITE_HUE_OFFSET
+                                 : 0.0f);
+            setColor = {
+              positiveFloatMod(baseHue + deviationHue, HUE_CIRCLE_DEGREES),
+              SAT_VIVID,
+              VALUE_NORMAL
+            };
           }
           break;
         case PIANO_COLOR_MODE:
           {
-            float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-            float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = (12.0f / octaveCycleLength) * semipaletteIndex;
-            if ((int)round(keyDegree) % 12 == 1 || (int)round(keyDegree) % 12 == 3 || (int)round(keyDegree) % 12 == 6 || (int)round(keyDegree) % 12 == 8 || (int)round(keyDegree) % 12 == 10) {
-              float deviationFromDiatonic = ((float)((int)round(keyDegree) - keyDegree) * 3072.0f) / 12.0;
-              uint8_t tint = (uint8_t)(abs(round(deviationFromDiatonic)));
-              tint = strip.gamma8(tint);
-              setColor = { 360 * (fmodf(round(keyDegree), 12.0f) / 12.0f), SAT_TINT, VALUE_BLACK };
-            } else  // White key
-            {
-              float deviationFromDiatonic = ((((float)((int)round(keyDegree))) - (keyDegree)) * 3072.0f) / 12.0;
-              uint8_t tint = 255 - (uint8_t)(abs(round(deviationFromDiatonic)));
-              tint = strip.gamma8(tint);
-              setColor = { 360 * (fmodf(round(keyDegree), 12.0f) / 12.0f), SAT_TINT, VALUE_NORMAL };
-            }
+            float pianoPitchClass =
+              pianoPitchClassForColorSteps(colorStepsFromOrigin, current.tuning().stepSize);
+            int pitchClass = nearestPianoPitchClass(pianoPitchClass);
+            setColor = {
+              HUE_CIRCLE_DEGREES * pitchClass / PIANO_PITCH_CLASS_COUNT,
+              SAT_TINT,
+              pianoPitchClassIsBlack(pitchClass) ? VALUE_BLACK : VALUE_NORMAL
+            };
           }
           break;
         case PIANO_INCANDESCENT_COLOR_MODE:
           {
-            float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-            float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = (12.0f / octaveCycleLength) * semipaletteIndex;
-            float tint, deviationFromDiatonic;
-            if ((int)round(keyDegree) % 12 == 1 || (int)round(keyDegree) % 12 == 3 || (int)round(keyDegree) % 12 == 6 || (int)round(keyDegree) % 12 == 8 || (int)round(keyDegree) % 12 == 10) {
-              deviationFromDiatonic = (round(keyDegree) - keyDegree);
-              deviationFromDiatonic = (abs(deviationFromDiatonic));  // from 0 to 0.5
-            } else                                                   // White key
-            {
-              deviationFromDiatonic = (round(keyDegree) - keyDegree);
-              deviationFromDiatonic = 1.0 - abs(deviationFromDiatonic);  // from 1 to 0.5
-            }
-            auto baseTemperature = 800;
-            tint = ((sqrt(deviationFromDiatonic))) * (incandescence::maxTemperature - baseTemperature) + baseTemperature;
-
-              setColor = incandescence::getColor(tint);
-            }
-            break;
+            float pianoPitchClass =
+              pianoPitchClassForColorSteps(colorStepsFromOrigin, current.tuning().stepSize);
+            float roundedPitchClass = roundf(pianoPitchClass);
+            int pitchClass = nearestPianoPitchClass(pianoPitchClass);
+            float distanceFromPianoKey = fabsf(roundedPitchClass - pianoPitchClass);
+            float heat = pianoPitchClassIsBlack(pitchClass)
+                           ? distanceFromPianoKey
+                           : 1.0f - distanceFromPianoKey;
+            float temperature = sqrtf(heat)
+                                * (incandescence::MAX_TEMPERATURE_KELVIN
+                                   - incandescence::MIN_TEMPERATURE_KELVIN)
+                                + incandescence::MIN_TEMPERATURE_KELVIN;
+            setColor = incandescence::getColor(static_cast<int32_t>(roundf(temperature)));
+          }
+          break;
           case ALTERNATE_COLOR_MODE:
             {
             // This mode assigns each note a color based on the interval it forms with the root note.

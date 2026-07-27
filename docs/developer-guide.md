@@ -686,6 +686,14 @@ Call `setLEDcolorCodes()` after changes that affect palette, scale, tuning
 relationships, key-centered color placement, brightness, color mode, or loaded
 user color maps.
 
+`setLEDcolorCodes()` computes one color-coordinate origin for every
+palette-derived mode. With `ColorByKey` enabled, the origin is offset by
+`current.keyStepsFromC()`; with it disabled, the origin remains at C. Piano,
+Alt Piano, Filament, and Fifths must consume that shared coordinate rather than
+reconstructing a key offset or reading raw `stepsFromC` independently. Piano
+white/black classification is owned by the named pitch-class table in
+`LedRender.cpp`, not by mode-specific numeric comparisons.
+
 `lightUpLEDs()` writes the final frame into the NeoPixel buffer and then calls
 `applyLedCurrentLimitToFrame()` before `strip.show()`. The current limiter works
 on final RGB bytes, so it applies to normal playback, animations,
