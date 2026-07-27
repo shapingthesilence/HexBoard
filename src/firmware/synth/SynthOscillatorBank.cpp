@@ -10,7 +10,6 @@ char loadedSynthWavetableFolderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
 volatile uint8_t activeSynthWaveFrameCount = 1;
 volatile uint8_t activeSynthWavetableMipLevelCount = 1;
 uint16_t synthWavetableFramePositionByAmount[128] = {};
-bool userSynthWavetableAvailable = false;
 
 oscillator synth[POLYPHONY_LIMIT];
 byte attenuation[] = { 64, 24, 17, 14, 12, 11, 10, 9, 8 };
@@ -161,11 +160,6 @@ void loadBuiltinSynthWavetableSamples(const BuiltinSynthWavetableDefinition& tab
 
 void setCurrentSynthWavetableReference(const char* folderPath, const char* name) {
   const char* normalizedFolderPath = folderPath && folderPath[0] ? folderPath : SYNTH_WAVETABLE_ROOT_FOLDER;
-  if (strcmp(normalizedFolderPath, "Built In") == 0
-      || strcmp(normalizedFolderPath, "%2FBuilt In") == 0
-      || strcmp(normalizedFolderPath, "%2fBuilt In") == 0) {
-    normalizedFolderPath = SYNTH_WAVETABLE_BUILTIN_FOLDER;
-  }
   snprintf(currentSynthWavetableFolderPath,
            sizeof(currentSynthWavetableFolderPath),
            "%s",
@@ -177,10 +171,10 @@ void setCurrentSynthWavetableReference(const char* folderPath, const char* name)
   currentSynthWavetableReferenceValid = true;
 }
 
-bool legacyWaveformCompatibilityReference(byte waveform,
-                                          const char*& folderPath,
-                                          const char*& name,
-                                          uint8_t& position) {
+bool synthWavetableReferenceForWaveform(byte waveform,
+                                       const char*& folderPath,
+                                       const char*& name,
+                                       uint8_t& position) {
   for (size_t i = 0; i < synthBuiltinWavetableCount(); ++i) {
     const BuiltinSynthWavetableDefinition* table = synthBuiltinWavetableAt(i);
     if (!table) {
@@ -190,7 +184,7 @@ bool legacyWaveformCompatibilityReference(byte waveform,
       if (table->waveforms[anchorIndex] == waveform) {
         folderPath = table->folderPath;
         name = table->name;
-        position = compatibilityWavetablePositionForAnchor(anchorIndex, table->waveformCount);
+        position = wavetablePositionForAnchor(anchorIndex, table->waveformCount);
         return true;
       }
     }
@@ -202,24 +196,17 @@ bool legacyWaveformCompatibilityReference(byte waveform,
     position = synthWavetablePosition;
     return true;
   }
-  if (waveform == WAVEFORM_USER_WAVETABLE) {
-    folderPath = "/User";
-    name = "UserTbl";
-    position = synthWavetablePosition;
-    return true;
-  }
-
   folderPath = SYNTH_WAVETABLE_BUILTIN_FOLDER;
   name = SYNTH_WAVETABLE_BASIC_NAME;
   position = 0;
   return false;
 }
 
-void selectCompatibilitySynthWavetableForLegacyWaveform(byte waveform, bool updatePosition) {
+void selectSynthWavetableForWaveform(byte waveform, bool updatePosition) {
   const char* folderPath = SYNTH_WAVETABLE_BUILTIN_FOLDER;
   const char* name = SYNTH_WAVETABLE_BASIC_NAME;
   uint8_t position = synthWavetablePosition;
-  legacyWaveformCompatibilityReference(waveform, folderPath, name, position);
+  synthWavetableReferenceForWaveform(waveform, folderPath, name, position);
   setCurrentSynthWavetableReference(folderPath, name);
   if (updatePosition) {
     synthWavetablePosition = position;
@@ -328,7 +315,7 @@ void initializeSynthWaveTables() {
 
 void loadSelectedSynthWavetable() {
   if (!currentSynthWavetableReferenceValid) {
-    selectCompatibilitySynthWavetableForLegacyWaveform(currWave, false);
+    selectSynthWavetableForWaveform(currWave, false);
   }
   if (strncmp(loadedSynthWavetableName, currentSynthWavetableName, sizeof(loadedSynthWavetableName)) == 0
       && strncmp(loadedSynthWavetableFolderPath, currentSynthWavetableFolderPath, sizeof(loadedSynthWavetableFolderPath)) == 0) {
@@ -344,10 +331,6 @@ void loadSelectedSynthWavetable() {
     loadBuiltinSynthWavetableSamples(*builtinTable);
     loaded = true;
   } else if (loadSynthWavetableFromCatalog(currentSynthWavetableFolderPath, currentSynthWavetableName)) {
-    loaded = true;
-  } else if (strcmp(currentSynthWavetableFolderPath, "/User") == 0
-             && strcmp(currentSynthWavetableName, "UserTbl") == 0
-             && loadUserSynthWavetableFromFile()) {
     loaded = true;
   } else {
     selectFallbackSynthWavetable();
@@ -372,7 +355,7 @@ void loadSelectedSynthWavetable() {
 
 void loadSelectedSynthWaveform() {
   currentSynthWavetableReferenceValid = false;
-  selectCompatibilitySynthWavetableForLegacyWaveform(currWave, true);
+  selectSynthWavetableForWaveform(currWave, true);
   loadSelectedSynthWavetable();
 }
 

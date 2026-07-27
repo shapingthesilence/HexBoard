@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -13,6 +13,7 @@ const repoRoot = resolve(scriptDir, "../..");
 const sourcePath = resolve(repoRoot, "src/firmware/synth/BuiltinWavetables.cpp");
 const webOutputPath = resolve(repoRoot, "web/src/catalogs/factoryWavetables.ts");
 const firmwareOutputPath = resolve(repoRoot, "src/firmware/synth/BuiltinWavetableData.cpp");
+const libraryOutputPath = resolve(repoRoot, "factory-library/wavetables");
 const sampleCount = SYNTH_WAVETABLE_SAMPLE_COUNT;
 
 const wavetableSources = [
@@ -20,25 +21,25 @@ const wavetableSources = [
     name: "Basic Shapes",
     kind: "anchors",
     waveforms: ["WAVEFORM_SINE", "WAVEFORM_TRIANGLE", "WAVEFORM_SAW", "WAVEFORM_SQUARE"],
-    compatibilityWaveforms: ["WAVEFORM_SINE", "WAVEFORM_TRIANGLE", "WAVEFORM_SAW", "WAVEFORM_SQUARE"]
+    menuWaveforms: ["WAVEFORM_SINE", "WAVEFORM_TRIANGLE", "WAVEFORM_SAW", "WAVEFORM_SQUARE"]
   },
   {
     name: "Classic",
     kind: "anchors",
     waveforms: ["WAVEFORM_STRINGS", "WAVEFORM_CLARINET"],
-    compatibilityWaveforms: ["WAVEFORM_STRINGS", "WAVEFORM_CLARINET"]
+    menuWaveforms: ["WAVEFORM_STRINGS", "WAVEFORM_CLARINET"]
   },
   {
     name: "Vowels",
     kind: "wav",
     path: "src/Default Wavetables/Vowels.wav",
-    compatibilityWaveforms: []
+    menuWaveforms: []
   },
   {
     name: "HarshDigitalBois",
     kind: "wav",
     path: "src/Default Wavetables/Matthew Parker Wavetables/HarshDigitalBois/MP HarshDigitalBois.wav",
-    compatibilityWaveforms: [
+    menuWaveforms: [
       "WAVEFORM_MP_BOX_SAW",
       "WAVEFORM_MP_SYNC_THE_TITANIC",
       "WAVEFORM_MP_STARDEW",
@@ -50,7 +51,7 @@ const wavetableSources = [
     name: "RustyBlade",
     kind: "wav",
     path: "src/Default Wavetables/Matthew Parker Wavetables/RustyBlade/RustyBlade.wav",
-    compatibilityWaveforms: [
+    menuWaveforms: [
       "WAVEFORM_MP_FRIENDLY_SQUARE",
       "WAVEFORM_MP_KOOLAID",
       "WAVEFORM_MP_RICH_REPEATER",
@@ -61,7 +62,7 @@ const wavetableSources = [
     name: "RoundThe808",
     kind: "wav",
     path: "src/Default Wavetables/Matthew Parker Wavetables/RoundThe808/MP RoundThe808.wav",
-    compatibilityWaveforms: [
+    menuWaveforms: [
       "WAVEFORM_MP_PRETTY_SHAPE",
       "WAVEFORM_MP_ROUNDED_TRIANGLE",
       "WAVEFORM_MP_QUICK_808"
@@ -71,7 +72,7 @@ const wavetableSources = [
     name: "GlassyBells",
     kind: "wav",
     path: "src/Default Wavetables/Matthew Parker Wavetables/GlassyBells/MP GlassyBells.wav",
-    compatibilityWaveforms: [
+    menuWaveforms: [
       "WAVEFORM_MP_GLASSY",
       "WAVEFORM_MP_WEIRD_WIZARD",
       "WAVEFORM_MP_OVAL",
@@ -149,7 +150,7 @@ function buildWaveformSourceMap() {
     for (const waveform of definition.waveforms ?? []) {
       allWaveforms.add(waveform);
     }
-    for (const waveform of definition.compatibilityWaveforms ?? []) {
+    for (const waveform of definition.menuWaveforms ?? []) {
       allWaveforms.add(waveform);
     }
   }
@@ -221,14 +222,34 @@ function renderFirmwareData(renderedWavetables) {
   output += `}  // namespace\n\n`;
   output += `const BuiltinSynthWavetableDefinition builtinSynthWavetables[] = {\n`;
   for (const wavetable of renderedWavetables) {
-    const compatibility = wavetable.compatibilityWaveforms ?? [];
-    const compatibilityInitializer = compatibility.length > 0 ? `{ ${compatibility.join(", ")} }` : "{ 0 }";
-    output += `  { ${JSON.stringify(wavetable.name)}, SYNTH_WAVETABLE_BUILTIN_FOLDER, ${wavetable.cName}, SYNTH_WAVETABLE_MIP_SAMPLE_BYTES, ${compatibilityInitializer}, ${compatibility.length} },\n`;
+    const menuWaveforms = wavetable.menuWaveforms ?? [];
+    const menuWaveformInitializer = menuWaveforms.length > 0 ? `{ ${menuWaveforms.join(", ")} }` : "{ 0 }";
+    output += `  { ${JSON.stringify(wavetable.name)}, SYNTH_WAVETABLE_BUILTIN_FOLDER, ${wavetable.cName}, SYNTH_WAVETABLE_MIP_SAMPLE_BYTES, ${menuWaveformInitializer}, ${menuWaveforms.length} },\n`;
   }
   output += `};\n\n`;
   output += `extern const size_t SYNTH_BUILTIN_WAVETABLE_COUNT =\n`;
   output += `  sizeof(builtinSynthWavetables) / sizeof(builtinSynthWavetables[0]);\n`;
   return output;
+}
+
+function encodeHexWav(samples) {
+  const headerBytes = 44;
+  const bytes = Buffer.alloc(headerBytes + samples.length);
+  bytes.write("RIFF", 0, "ascii");
+  bytes.writeUInt32LE(bytes.length - 8, 4);
+  bytes.write("WAVE", 8, "ascii");
+  bytes.write("fmt ", 12, "ascii");
+  bytes.writeUInt32LE(16, 16);
+  bytes.writeUInt16LE(1, 20);
+  bytes.writeUInt16LE(1, 22);
+  bytes.writeUInt32LE(samples.length, 24);
+  bytes.writeUInt32LE(samples.length, 28);
+  bytes.writeUInt16LE(1, 32);
+  bytes.writeUInt16LE(8, 34);
+  bytes.write("data", 36, "ascii");
+  bytes.writeUInt32LE(samples.length, 40);
+  Buffer.from(samples).copy(bytes, headerBytes);
+  return bytes;
 }
 
 function renderWebFactoryData(renderedWavetables) {
@@ -241,7 +262,7 @@ function renderWebFactoryData(renderedWavetables) {
   output += `  folderPath: string;\n`;
   output += `  samples: Uint8Array;\n`;
   output += `}\n\n`;
-  output += `const factoryWavetableFolder = "/Built In";\n\n`;
+  output += `const factoryWavetableFolder = "/";\n\n`;
   output += `const factoryWavetableDefinitions = [\n`;
   for (const wavetable of renderedWavetables) {
     const base64 = Buffer.from(wavetable.samples).toString("base64");
@@ -258,7 +279,7 @@ function renderWebFactoryData(renderedWavetables) {
   output += `}\n\n`;
   output += `export function createFactorySynthWavetables(): FactorySynthWavetable[] {\n`;
   output += `  return factoryWavetableDefinitions.map((definition) => ({\n`;
-  output += `    objectIdHex: objectIdToHex(deterministicObjectId(\`factory-wavetable:\${definition.name}\`)),\n`;
+  output += `    objectIdHex: objectIdToHex(deterministicObjectId(\`factory-wavetable:\${factoryWavetableFolder}:\${definition.name}\`)),\n`;
   output += `    name: definition.name,\n`;
   output += `    folderPath: factoryWavetableFolder,\n`;
   output += `    samples: decodeBase64Bytes(definition.samplesBase64)\n`;
@@ -273,8 +294,20 @@ for (const definition of wavetableSources) {
   renderedWavetables.push(await renderBuiltinWavetable(definition, waveformSamples));
 }
 
-await writeFile(firmwareOutputPath, renderFirmwareData(renderedWavetables), "utf8");
-await writeFile(webOutputPath, renderWebFactoryData(renderedWavetables), "utf8");
+// Basic Shapes is the immutable rescue wavetable. Everything else ships in
+// LittleFS so it can be renamed, edited, or erased like user-created content.
+await writeFile(firmwareOutputPath, renderFirmwareData(renderedWavetables.slice(0, 1)), "utf8");
+await writeFile(webOutputPath, renderWebFactoryData(renderedWavetables.slice(1)), "utf8");
+await mkdir(libraryOutputPath, { recursive: true });
+for (const entry of await readdir(libraryOutputPath, { withFileTypes: true })) {
+  if (entry.isFile() && entry.name.toLowerCase().endsWith(".hexwav")) {
+    await unlink(resolve(libraryOutputPath, entry.name));
+  }
+}
+for (const wavetable of renderedWavetables.slice(1)) {
+  await writeFile(resolve(libraryOutputPath, `${wavetable.name}.hexwav`), encodeHexWav(wavetable.samples));
+}
 
-console.log(`Generated ${firmwareOutputPath} (${renderedWavetables.length} fixed-mip wavetables)`);
-console.log(`Generated ${webOutputPath} (${renderedWavetables.length} fixed-mip wavetables)`);
+console.log(`Generated ${firmwareOutputPath} (Basic Shapes rescue wavetable)`);
+console.log(`Generated ${webOutputPath} (${renderedWavetables.length - 1} editable factory wavetables)`);
+console.log(`Generated ${libraryOutputPath} (${renderedWavetables.length - 1} editable factory wavetables)`);

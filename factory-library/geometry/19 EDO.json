@@ -1,0 +1,428 @@
+{
+  "format": "hexboard.layoutBundle.v5",
+  "bundle": {
+    "objectIdHex": "bd4baeff1d65fe91823356055a7e55e6",
+    "name": "19 EDO",
+    "folderPath": "/",
+    "tuning": {
+      "kind": "edo",
+      "name": "19 EDO",
+      "cycleLength": 19,
+      "referenceMidiNote": 69,
+      "referenceHz": 440.0,
+      "keyLabels": [
+        "A",
+        "A#",
+        "Bb",
+        "B",
+        "Cb",
+        "C",
+        "C#",
+        "Db",
+        "D",
+        "D#",
+        "Eb",
+        "E",
+        "E#",
+        "F",
+        "F#",
+        "Gb",
+        "G",
+        "G#",
+        "Ab"
+      ],
+      "edoDivisions": 19,
+      "periodCents": 1200.0
+    },
+    "palette": {
+      "defaultColorMode": 1,
+      "degreeColors": [
+        {
+          "degree": 0,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 1,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 2,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 3,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 4,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 5,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 6,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 7,
+          "hueTenthDegrees": 3240,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 8,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 9,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 10,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 11,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 12,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 13,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 14,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 15,
+          "hueTenthDegrees": 720,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 16,
+          "hueTenthDegrees": 2160,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 17,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 18,
+          "hueTenthDegrees": 3240,
+          "saturation": 255,
+          "value": 180
+        }
+      ]
+    },
+    "layouts": [
+      {
+        "objectIdHex": "47d0fb0d392918c64c586dbcd46b8131",
+        "name": "Wicki-Hayden",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": 3,
+        "upRightSteps": 11,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "3f901802bd1bc135fff4923c66a3f7e3",
+        "name": "Compressed Janko",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -2,
+        "upRightSteps": 3,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "d0a643a0816cd5bd0d09454374d9466e",
+        "name": "Compr. Bosanquet",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": 2,
+        "upRightSteps": 5,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "aba924ae5167ab2ef4ea5c0375ba2eb7",
+        "name": "Janko",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": 1,
+        "upRightSteps": 3,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "ead071c73e6f3b9586bbc91df61f9646",
+        "name": "Bosanquet-Wilson",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -1,
+        "upRightSteps": 2,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "3a72abdd6bb16aad41d18a446ec92e87",
+        "name": "Harmonic Table",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": -11,
+        "upRightSteps": -5,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "3c0f7dff384420e295c88c8b33cbdc7a",
+        "name": "Kleismic",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -1,
+        "upRightSteps": 4,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "fee82e1aa3b835fe05edef072bfd92b1",
+        "name": "Full Gamut",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": 1,
+        "upRightSteps": 9,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      }
+    ],
+    "activeLayoutIdHex": "47d0fb0d392918c64c586dbcd46b8131",
+    "scales": [
+      {
+        "objectIdHex": "870b33b4211c6ec60fe6ba75b021cd06",
+        "name": "All Notes",
+        "includedDegrees": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18
+        ]
+      },
+      {
+        "objectIdHex": "681cf8f564df2546a6ee49c6e699cecc",
+        "name": "Diatonic",
+        "includedDegrees": [
+          0,
+          3,
+          6,
+          8,
+          11,
+          14,
+          17
+        ]
+      },
+      {
+        "objectIdHex": "c95ea8a512d5501dc0d064851648223d",
+        "name": "Pentatonic",
+        "includedDegrees": [
+          0,
+          3,
+          6,
+          11,
+          14
+        ]
+      },
+      {
+        "objectIdHex": "4002b170334cd1f0c6c231fd3fe50066",
+        "name": "Semaphore",
+        "includedDegrees": [
+          0,
+          3,
+          4,
+          7,
+          8,
+          11,
+          14,
+          15,
+          18
+        ]
+      },
+      {
+        "objectIdHex": "5448cd5c07199f63e86443ffe541270d",
+        "name": "Negri",
+        "includedDegrees": [
+          0,
+          2,
+          4,
+          6,
+          8,
+          10,
+          11,
+          13,
+          15,
+          17
+        ]
+      },
+      {
+        "objectIdHex": "11898d6e07dcce9e876a0c969bf9f0d4",
+        "name": "Sensi",
+        "includedDegrees": [
+          0,
+          2,
+          4,
+          5,
+          7,
+          9,
+          11,
+          12,
+          14,
+          16,
+          18
+        ]
+      },
+      {
+        "objectIdHex": "3780cbb23d32f0172b6dcf90659c99d7",
+        "name": "Kleismic",
+        "includedDegrees": [
+          0,
+          1,
+          4,
+          5,
+          6,
+          9,
+          10,
+          11,
+          14,
+          15,
+          18
+        ]
+      },
+      {
+        "objectIdHex": "3e0e9c31cb8cf9fc39fc1d6ede695673",
+        "name": "Magic",
+        "includedDegrees": [
+          0,
+          3,
+          4,
+          5,
+          6,
+          9,
+          10,
+          11,
+          12,
+          15,
+          16,
+          17,
+          18
+        ]
+      },
+      {
+        "objectIdHex": "e858caba773af44ae391a1f001282375",
+        "name": "Kind-of Blues",
+        "includedDegrees": [
+          0,
+          4,
+          8,
+          9,
+          11,
+          15
+        ]
+      }
+    ],
+    "activeScaleIdHex": "870b33b4211c6ec60fe6ba75b021cd06"
+  }
+}

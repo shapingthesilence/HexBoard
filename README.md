@@ -30,9 +30,10 @@ separate analysis document.
 - `AGENTS.md`: AI agent and contributor instructions, including documentation update requirements
 - `HexBoard.ino`: root Arduino sketch with only lifecycle wrappers
 - `src/firmware/`: primary firmware implementation modules
+- `factory-library/`: source synth presets, wavetables, geometry bundles, and factory-image configuration
 - `web/`: isolated Vite/React companion app for preset-sync workflows
 - `docs/`: user, developer, protocol, and workflow documentation
-- `scripts/`: host-side helper tools, including the HexBoard Backup GUI
+- `scripts/`: factory-image builders and host-side helper tools
 - `Makefile`: local build shortcut for `arduino-cli`
 
 Firmware implementation is grouped by owner under `src/firmware/`. The root
@@ -56,6 +57,9 @@ The current code supports:
 - onboard synth waveform/wavetable banks, Serum/Vital and HexBoard wavetable import, mono portamento, AHDSR envelope, phase-warp/wavetable/LFO modulation, presets, and arpeggiator settings
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
+- cached storage health available under `Advanced` without an extra boot scan
+- independently replaceable LittleFS files for up to `64` geometry bundles and
+  `128` synth presets, with geometry divisions up to `128`
 - an optional sequencer build, documented in the [Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt)
 
 ## Team
@@ -64,17 +68,6 @@ The current code supports:
 - Zach DeCook has been listening to music, breaking hardware, and occasionally writing software since the former discovered his exploitable talents.
 - Nicholas Fox has been hexperimenting with the firmware since before receiving a HexBoard in the mail.
 - Robert Wierzbicki created the sequencer and a few random other changes.
-
-## Related Firmware History
-
-This repository contains the main Arduino-based HexBoard firmware.
-
-Older and related references:
-
-- [SourceHut project page](https://git.sr.ht/~earboxer/HexBoard)
-- [Tagged releases on SourceHut](https://git.sr.ht/~earboxer/HexBoard/refs)
-- Posterity builds sometimes mirrored at [zachdecook.com/HexBoard/firmware](https://zachdecook.com/HexBoard/firmware/)
-- Historical `hexperiment` branch and related work may appear at [GitHub](https://github.com/theHDM/hexperiment) or [SourceHut](https://git.sr.ht/~earboxer/HexBoard/tree/hexperiment)
 
 ## Hardware And Build Target
 
@@ -86,6 +79,14 @@ The current source targets:
 - Pico SDK USB stack
 - USB manufacturer/product descriptor `HexBoard`
 - Generic SPI `/4` boot2
+
+The default `make` target builds the current `250 MHz` firmware as two files:
+
+- `build/HexBoard_Factory.uf2` contains firmware and a complete factory
+  LittleFS image. Installing it erases the existing filesystem.
+- `build/HexBoard_Update.uf2` contains firmware only and preserves the
+  LittleFS filesystem. Settings whose schema differs from the running firmware
+  use defaults; current-format libraries remain available.
 
 The `Makefile` and firmware headers under `src/firmware/` are the most reliable
 build references for this repository.
@@ -107,6 +108,16 @@ The simplest local build is:
 make
 ```
 
+The build validates the synth-preset and tuning/layout-bundle `.json` files plus
+the `.hexwav` wavetables under `factory-library/`, compiles them into device
+catalog files, and uses
+`mklittlefs` from the installed RP2040 Arduino core to create an `8 MiB`
+factory filesystem image. It extracts and compares that image before merging
+every filesystem block into the factory UF2. The firmware payload is checked
+against the compiled binary, every touched flash sector is represented in full,
+the update UF2 is checked for filesystem addresses, and the final `4 KiB`
+EEPROM reservation is never written.
+
 The `Makefile` compiles the repository sketch directly with the project board
 options and writes flashable files under `build/`.
 
@@ -125,11 +136,13 @@ menu entry, build with:
 make HEXBOARD_ENABLE_SEQUENCER=1
 ```
 
-Default and sequencer builds are renamed to:
+Default and sequencer builds produce:
 
 ```text
-build/HexBoard.uf2
-build/HexBoard_Sequencer.uf2
+build/HexBoard_Factory.uf2
+build/HexBoard_Update.uf2
+build/HexBoard_Sequencer_Factory.uf2
+build/HexBoard_Sequencer_Update.uf2
 ```
 
 Use `make sequencer-builds` to compile both variants. See the

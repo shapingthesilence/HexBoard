@@ -100,6 +100,25 @@ export function encodeInt32LE(value: number): number[] {
   return [unsigned & 0xff, (unsigned >>> 8) & 0xff, (unsigned >>> 16) & 0xff, (unsigned >>> 24) & 0xff];
 }
 
+export function encodeFloat32LE(value: number): number[] {
+  const rounded = Math.fround(value);
+  if (!Number.isFinite(rounded)) {
+    throw new RangeError("float32 must be finite");
+  }
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setFloat32(0, rounded, true);
+  return Array.from(bytes);
+}
+
+export function decodeFloat32LE(bytes: ArrayLike<number>, offset = 0): number {
+  const encoded = new Uint8Array(4);
+  for (let index = 0; index < encoded.length; index += 1) {
+    assertByte(bytes[offset + index], `float32[${index}]`);
+    encoded[index] = bytes[offset + index];
+  }
+  return new DataView(encoded.buffer).getFloat32(0, true);
+}
+
 export function encodeU16LE(value: number): number[] {
   assertIntegerRange(value, 0, 0xffff, "u16");
   return [value & 0xff, (value >> 8) & 0xff];
@@ -109,4 +128,3 @@ export function encodeU32LE(value: number): number[] {
   assertIntegerRange(value, 0, 0xffffffff, "u32");
   return [value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff];
 }
-

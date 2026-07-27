@@ -2,6 +2,12 @@
 
 #include "../FirmwareModule.h"
 
+#ifndef F_CPU
+#define F_CPU 200000000L
+#endif
+
+constexpr uint32_t HEXBOARD_SYSTEM_CLOCK_HZ = static_cast<uint32_t>(F_CPU);
+
 constexpr byte ARP_DIRECTION_UP = 0;
 constexpr byte ARP_DIRECTION_DOWN = 1;
 constexpr byte ARP_DIRECTION_ORDER_PLAYED = 2;
@@ -27,8 +33,6 @@ constexpr byte SYNTH_MONO_RETRIGGER = 1;
 constexpr byte SYNTH_ARPEGGIO = 2;
 constexpr byte SYNTH_POLY = 3;
 constexpr byte SYNTH_MONO_LEGATO = 4;
-constexpr byte SYNTH_POLYTBL_LEGACY = 5;
-constexpr byte SYNTH_MONO = SYNTH_MONO_RETRIGGER;  // Legacy stored mono value.
 
 // Audio polyphony is deliberately lower than the MIDI/MPE channel count:
 // higher values reduce PWM resolution and make the ISR harder to keep bounded.
@@ -57,9 +61,6 @@ inline uint8_t RAM_FUNC(synthPlaybackVoiceLimit)(byte mode) {
 }
 
 inline byte RAM_FUNC(normalizeSynthPlaybackMode)(byte mode) {
-  if (mode == SYNTH_POLYTBL_LEGACY) {
-    return SYNTH_POLY;
-  }
   return isValidPlaybackMode(mode) ? mode : SYNTH_POLY;
 }
 
@@ -87,7 +88,6 @@ constexpr byte WAVEFORM_MP_SYNC_THE_TITANIC = 24;
 constexpr byte WAVEFORM_MP_WEIRD_WIZARD = 25;
 constexpr byte WAVEFORM_MP_WOO = 26;
 constexpr byte WAVEFORM_BASIC_WAVETABLE = 27;
-constexpr byte WAVEFORM_USER_WAVETABLE = 28;
 
 constexpr uint16_t SYNTH_WAVE_SAMPLE_COUNT = 512;
 constexpr uint8_t SYNTH_WAVE_SAMPLE_BITS = 9;
@@ -110,7 +110,7 @@ constexpr uint16_t SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_2 = 48;
 constexpr uint16_t SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_3 = 24;
 constexpr uint16_t SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_4 = 12;
 constexpr uint16_t SYNTH_WAVETABLE_MIP_HARMONIC_LIMIT_5 = 6;
-constexpr uint32_t SYNTH_WAVETABLE_MIP_SAMPLE_RATE_HZ = 250000000u / 1024u / 6u;
+constexpr uint32_t SYNTH_WAVETABLE_MIP_SAMPLE_RATE_HZ = HEXBOARD_SYSTEM_CLOCK_HZ / 1024u / 6u;
 constexpr uint32_t SYNTH_WAVETABLE_MIP_NYQUIST_HZ = SYNTH_WAVETABLE_MIP_SAMPLE_RATE_HZ / 2u;
 constexpr uint8_t SYNTH_WAVETABLE_MIP_BLEND_FRACTION_BITS = 8;
 constexpr uint8_t SYNTH_WAVETABLE_MIP_BLEND_MARGIN_SHIFT = 3;

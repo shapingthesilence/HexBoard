@@ -222,11 +222,16 @@ void applyLayout() {  // call this function when the layout changes
     mirrorLeftRightOffset = layoutStepsForDelta(centerDistCol, centerDistRow, unmirroredAcrossSteps, unmirroredDnLeftSteps)
                             - layoutStepsForDelta(centerDistCol, centerDistRow, acrossSteps, dnLeftSteps);
   }
+  const int16_t centerStepsFromC = userGeometryRuntimeActive
+    ? userGeometryRuntimeLayoutCenterStepsFromC
+    : 0;
   for (byte i = 0; i < LED_COUNT; i++) {
     if (!(h[i].isCmd)) {
       int8_t distCol = h[i].coordCol - h[current.layout().hexMiddleC].coordCol;
       int8_t distRow = h[i].coordRow - h[current.layout().hexMiddleC].coordRow;
-      h[i].stepsFromC = layoutStepsForDelta(distCol, distRow, acrossSteps, dnLeftSteps) + mirrorLeftRightOffset;
+      h[i].stepsFromC = layoutStepsForDelta(distCol, distRow, acrossSteps, dnLeftSteps)
+                          + mirrorLeftRightOffset
+                          + centerStepsFromC;
       sendToLog(
         "hex #" + std::to_string(i) + ", " + "steps from C4=" + std::to_string(h[i].stepsFromC) + ".");
     }

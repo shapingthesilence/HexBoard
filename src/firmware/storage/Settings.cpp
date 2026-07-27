@@ -2,6 +2,7 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
+#include "../hardware/GridState.h"
 #include "../hardware/LedRender.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
@@ -11,6 +12,8 @@
 #include "../synth/SynthDefaults.h"
 #include "../synth/SynthAudio.h"
 #include "Settings.h"
+#include "PresetSync.h"
+#include "StorageHealth.h"
 #include "SynthPresetStorage.h"
 #include "SynthWavetableStorage.h"
 
@@ -88,7 +91,7 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
   /* EffectEnvelope2HoldIndex     */ 0,
   /* SynthModAmount               */ SYNTH_MOD_AMOUNT_FULL,
   /* HeadphoneVolumeCap           */ HEADPHONE_VOLUME_CAP_FULL,
-  /* DeviceRotation               */ DEVICE_ROTATION_PORTRAIT,
+  /* DeviceRotation               */ DEVICE_ROTATION_0,
   /* SynthPortamentoTimeIndex     */ 0,
   /* ArpeggiatorDirection         */ ARP_DIRECTION_UP,
   /* SynthWavetablePosition       */ SYNTH_WAVETABLE_POSITION_DEFAULT,
@@ -112,28 +115,16 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
 // File System Handling: LittleFS Setup
 // ==================================================
 bool fileSystemExists = false;
+constexpr char SETTINGS_FILE_PATH[] = "/settings.dat";
 
 void setupFileSystem() {
   LittleFSConfig cfg;
-  cfg.setAutoFormat(true);  // Format automatically if LittleFS cannot be mounted.
+  cfg.setAutoFormat(false);
   LittleFS.setConfig(cfg);
   fileSystemExists = LittleFS.begin();
   if (!fileSystemExists) {
-    // Mount failed (first boot or corrupted FS). USB enumeration guard in
-    // setup() already waited up to 2 s, so only a short extra margin here.
-    sendToLog("LittleFS mount failed. Formatting after USB settles...");
-    delay(500);
-    if (LittleFS.format()) {
-      sendToLog("LittleFS format succeeded. Mounting...");
-      fileSystemExists = LittleFS.begin();
-      if (!fileSystemExists) {
-        sendToLog("Error: mount failed after format.");
-      } else {
-        sendToLog("LittleFS mounted successfully after format.");
-      }
-    } else {
-      sendToLog("Error: LittleFS format failed.");
-    }
+    reportStorageHealthIssue("LittleFS", "mount failed");
+    sendToLog("Error: LittleFS mount failed. Using safe defaults with saving disabled.");
   } else {
     sendToLog("LittleFS mounted successfully.");
   }
@@ -146,72 +137,96 @@ void applyFactoryDefaultsToSettings() {
   defaultProfileIndex = DEFAULT_PROFILE_INDEX;  // profile 1 is the canonical boot target
   for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
     memcpy(settingsProfiles[profile], factoryDefaults, NUM_SETTINGS);
-    if (Hardware_Version == HARDWARE_V1_2) {
-      settingsProfiles[profile][static_cast<uint8_t>(SettingKey::RotaryInvert)] = 1;
-    }
   }
+  memset(geometryProfileReferences, 0, sizeof(geometryProfileReferences));
+  memset(synthWavetableProfileReferences, 0, sizeof(synthWavetableProfileReferences));
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
   selectFallbackSynthWavetable();
-  applyDefaultSynthWavetableProfileReferences();
   settingsDirty = false;
 }
 
 bool load_settings() {
   settingsFileMissingOnBoot = false;
   if (!fileSystemExists) {
-    sendToLog("File system not available. Using factory defaults.");
+    reportStorageHealthIssue("/settings.dat", "filesystem unavailable");
+    sendToLog("LittleFS: unavailable while loading /settings.dat; using factory defaults.");
     applyFactoryDefaultsToSettings();
     return false;
   }
-  File f = LittleFS.open("/settings.dat", "r");
+  File f = LittleFS.open(SETTINGS_FILE_PATH, "r");
   if (!f) {
     settingsFileMissingOnBoot = true;
-    sendToLog("Settings file not found. Creating new file with factory defaults.");
+    reportStorageHealthIssue("/settings.dat", "missing");
+    sendToLog("/settings.dat: missing or cannot open; using factory defaults.");
     applyFactoryDefaultsToSettings();
-    save_settings();
-    return true;
+    return false;
   }
-  SettingsHeader header;
-  if (f.readBytes((char*)&header, sizeof(SettingsHeader)) != sizeof(SettingsHeader)) {
-    sendToLog("Error: Failed to read settings header.");
+  if (f.size() != sizeof(SettingsHeader) + SETTINGS_DATA_SIZE) {
+    reportStorageHealthIssue("/settings.dat", "wrong size");
+    sendToLog("/settings.dat: wrong file size; using factory defaults.");
     f.close();
     applyFactoryDefaultsToSettings();
-    save_settings();
+    return false;
+  }
+  SettingsHeader header = {};
+  if (f.readBytes((char*)&header, sizeof(SettingsHeader)) != sizeof(SettingsHeader)) {
+    reportStorageHealthIssue("/settings.dat", "short header");
+    sendToLog("/settings.dat: short header read; using factory defaults.");
+    f.close();
+    applyFactoryDefaultsToSettings();
     return false;
   }
   if (strncmp(header.magic, "STG", 3) != 0) {
-    sendToLog("Invalid settings file (magic mismatch). Restoring defaults.");
+    reportStorageHealthIssue("/settings.dat", "magic mismatch");
+    sendToLog("/settings.dat: magic mismatch; using factory defaults.");
     f.close();
     applyFactoryDefaultsToSettings();
-    save_settings();
     return false;
   }
   if (header.version != CURRENT_SETTINGS_VERSION) {
-    sendToLog("Settings version mismatch. File version: " + std::to_string(header.version)
-              + "; Expected version: " + std::to_string(CURRENT_SETTINGS_VERSION)
-              + ". Restoring factory defaults for this release.");
+    reportStorageHealthIssue("/settings.dat", "version mismatch");
+    sendToLog("/settings.dat: version " + std::to_string(header.version)
+              + " does not match " + std::to_string(CURRENT_SETTINGS_VERSION)
+              + "; using factory defaults.");
     f.close();
     applyFactoryDefaultsToSettings();
-    save_settings();
     return false;
   }
-  // Always boot from profile 1 even if an older file recorded a different default.
+  // Profile 1 is the canonical boot target.
   defaultProfileIndex = DEFAULT_PROFILE_INDEX;
-  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
+  size_t settingsBytesRead =
+    f.read(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_VALUES_DATA_SIZE);
+  size_t geometryBytesRead =
+    f.read(reinterpret_cast<uint8_t*>(geometryProfileReferences),
+           SETTINGS_GEOMETRY_DATA_SIZE);
+  size_t wavetableBytesRead =
+    f.read(reinterpret_cast<uint8_t*>(synthWavetableProfileReferences),
+           SETTINGS_WAVETABLE_DATA_SIZE);
   f.close();
-  if (bytesRead != SETTINGS_DATA_SIZE) {
-    sendToLog("Warning: Settings data incomplete. Restoring defaults.");
+  if (settingsBytesRead != SETTINGS_VALUES_DATA_SIZE
+      || geometryBytesRead != SETTINGS_GEOMETRY_DATA_SIZE
+      || wavetableBytesRead != SETTINGS_WAVETABLE_DATA_SIZE) {
+    reportStorageHealthIssue("/settings.dat", "short payload");
+    sendToLog("/settings.dat: short payload read; using factory defaults.");
     applyFactoryDefaultsToSettings();
-    save_settings();
     return false;
   }
-  // Verify CRC32 integrity of loaded profile data
-  uint32_t computed = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
+  uint32_t computed = crc32Begin();
+  computed = crc32Update(computed,
+                         reinterpret_cast<uint8_t*>(settingsProfiles),
+                         SETTINGS_VALUES_DATA_SIZE);
+  computed = crc32Update(computed,
+                         reinterpret_cast<uint8_t*>(geometryProfileReferences),
+                         SETTINGS_GEOMETRY_DATA_SIZE);
+  computed = crc32Update(computed,
+                         reinterpret_cast<uint8_t*>(synthWavetableProfileReferences),
+                         SETTINGS_WAVETABLE_DATA_SIZE);
+  computed = crc32Finish(computed);
   if (computed != header.crc32) {
-    sendToLog("CRC32 mismatch (stored=" + std::to_string(header.crc32) + ", computed=" + std::to_string(computed) + "). Restoring defaults.");
+    reportStorageHealthIssue("/settings.dat", "CRC mismatch");
+    sendToLog("/settings.dat: CRC mismatch; using factory defaults.");
     applyFactoryDefaultsToSettings();
-    save_settings();
     return false;
   }
   activeProfileIndex = defaultProfileIndex;
@@ -223,24 +238,62 @@ bool load_settings() {
 
 void save_settings() {
   if (!fileSystemExists) {
-    sendToLog("File system not available.");
+    sendToLog("LittleFS: unavailable while saving /settings.dat.");
     return;
   }
   rememberCurrentSynthWavetableReferenceForProfile(activeProfileIndex);
-  File f = LittleFS.open("/settings.dat", "w");
+  rememberCurrentGeometryReferenceForProfile(activeProfileIndex);
+  SettingsHeader header = {};
+  header.magic[0] = 'S'; header.magic[1] = 'T'; header.magic[2] = 'G';
+  header.version = CURRENT_SETTINGS_VERSION;
+  header.defaultProfileIndex = defaultProfileIndex;
+  uint32_t settingsCrc = crc32Begin();
+  settingsCrc = crc32Update(settingsCrc,
+                            reinterpret_cast<uint8_t*>(settingsProfiles),
+                            SETTINGS_VALUES_DATA_SIZE);
+  settingsCrc = crc32Update(settingsCrc,
+                            reinterpret_cast<uint8_t*>(geometryProfileReferences),
+                            SETTINGS_GEOMETRY_DATA_SIZE);
+  settingsCrc = crc32Update(settingsCrc,
+                            reinterpret_cast<uint8_t*>(synthWavetableProfileReferences),
+                            SETTINGS_WAVETABLE_DATA_SIZE);
+  header.crc32 = crc32Finish(settingsCrc);
+  File existing = LittleFS.open(SETTINGS_FILE_PATH, "r");
+  if (existing && existing.size() == sizeof(SettingsHeader) + SETTINGS_DATA_SIZE) {
+    SettingsHeader existingHeader = {};
+    bool unchanged =
+      existing.read(reinterpret_cast<uint8_t*>(&existingHeader), sizeof(existingHeader))
+        == sizeof(existingHeader)
+      && memcmp(&existingHeader, &header, sizeof(header)) == 0;
+    existing.close();
+    if (unchanged) {
+      saveCurrentSynthPresetReference();
+      sendToLog("Settings unchanged; flash write skipped.");
+      return;
+    }
+  } else if (existing) {
+    existing.close();
+  }
+
+  File f = LittleFS.open(SETTINGS_FILE_PATH, "w");
   if (!f) {
     sendToLog("Error: Unable to open /settings.dat for writing.");
     return;
   }
-  SettingsHeader header;
-  header.magic[0] = 'S'; header.magic[1] = 'T'; header.magic[2] = 'G';
-  header.version = CURRENT_SETTINGS_VERSION;
-  header.defaultProfileIndex = defaultProfileIndex;
-  header.crc32 = crc32(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
-  f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SettingsHeader));
-  f.write(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_DATA_SIZE);
+  bool written =
+    f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SettingsHeader))
+      == sizeof(SettingsHeader)
+    && f.write(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_VALUES_DATA_SIZE)
+      == SETTINGS_VALUES_DATA_SIZE
+    && f.write(reinterpret_cast<uint8_t*>(geometryProfileReferences),
+               SETTINGS_GEOMETRY_DATA_SIZE) == SETTINGS_GEOMETRY_DATA_SIZE
+    && f.write(reinterpret_cast<uint8_t*>(synthWavetableProfileReferences),
+               SETTINGS_WAVETABLE_DATA_SIZE) == SETTINGS_WAVETABLE_DATA_SIZE;
   f.close();
-  saveCurrentSynthWavetableReference();
+  if (!written) {
+    sendToLog("Error: Incomplete /settings.dat write.");
+    return;
+  }
   saveCurrentSynthPresetReference();
   sendToLog("Settings saved.");
 }
@@ -292,6 +345,7 @@ void copyCurrentSettingsToProfile(uint8_t profileIndex) {
     memcpy(settingsProfiles[profileIndex], settings, NUM_SETTINGS);
   }
   rememberCurrentSynthWavetableReferenceForProfile(profileIndex);
+  rememberCurrentGeometryReferenceForProfile(profileIndex);
 }
 
 void saveProfileToSlot(uint8_t profileIndex) {

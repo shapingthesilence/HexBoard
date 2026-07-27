@@ -540,7 +540,6 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
         case WAVEFORM_MP_SYNC_THE_TITANIC:
         case WAVEFORM_MP_WEIRD_WIZARD:
         case WAVEFORM_MP_WOO:
-        case WAVEFORM_USER_WAVETABLE:
           p = readLoadedWaveFrameSample(p);
           break;
         default: break;

@@ -44,7 +44,7 @@
 // Software-detected hardware revision.
 byte Hardware_Version = HARDWARE_UNKNOWN;
 
-bool isValidMidiChannel(byte channel) {
+bool RAM_FUNC(isValidMidiChannel)(byte channel) {
   return (channel >= MIDI_CHANNEL_MIN) && (channel <= MIDI_CHANNEL_MAX);
 }
 
@@ -83,7 +83,7 @@ byte byteLerp(byte xOne, byte xTwo, float yOne, float yTwo, float y) {
     value within one MIDI channel and move the overflow
     into a channel offset instead.
   */
-void splitExtendedMidiNote(int32_t midiIndex, int32_t& channelOffsetOut, byte& noteOut) {
+void RAM_FUNC(splitExtendedMidiNote)(int32_t midiIndex, int32_t& channelOffsetOut, byte& noteOut) {
   channelOffsetOut = midiIndex / MIDI_NOTES_PER_CHANNEL;
   int32_t remainder = midiIndex % MIDI_NOTES_PER_CHANNEL;
   if (remainder < 0) {
@@ -93,7 +93,7 @@ void splitExtendedMidiNote(int32_t midiIndex, int32_t& channelOffsetOut, byte& n
   noteOut = static_cast<byte>(remainder);
 }
 
-byte wrapMidiChannel(byte baseChannel, int32_t offset) {
+byte RAM_FUNC(wrapMidiChannel)(byte baseChannel, int32_t offset) {
   if (!isValidMidiChannel(baseChannel)) {
     baseChannel = MIDI_CHANNEL_MIN;
   }
@@ -105,7 +105,7 @@ byte wrapMidiChannel(byte baseChannel, int32_t offset) {
   return static_cast<byte>(index + MIDI_CHANNEL_MIN);
 }
 
-void mapExtendedMidiNote(int32_t midiIndex, byte baseChannel, byte& noteOut, byte& channelOut) {
+void RAM_FUNC(mapExtendedMidiNote)(int32_t midiIndex, byte baseChannel, byte& noteOut, byte& channelOut) {
   int32_t channelOffset = 0;
   splitExtendedMidiNote(midiIndex, channelOffset, noteOut);
   channelOut = wrapMidiChannel(baseChannel, channelOffset);

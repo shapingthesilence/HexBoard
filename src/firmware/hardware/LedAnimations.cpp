@@ -57,8 +57,10 @@ bool isValidHexCoordinate(int8_t row, int8_t col) {
            || ((col + row) & 1));
 }
 
-bool hexAllowsScaleAnimations(byte hexIndex) {
-  return !h[hexIndex].isCmd && (h[hexIndex].inScale || !scaleLock);
+bool hexCanOriginateAnimation(byte hexIndex) {
+  return !h[hexIndex].isCmd
+         && h[hexIndex].note != UNUSED_NOTE
+         && (h[hexIndex].inScale || !scaleLock);
 }
 
 void flagToAnimate(int8_t row, int8_t col) {
@@ -89,7 +91,7 @@ void animateMirror() {
     }
 
     for (byte i = 0; i < LED_COUNT; ++i) {
-      if (!h[i].isCmd && h[i].MIDIch) {
+      if (hexCanOriginateAnimation(i) && h[i].MIDIch) {
         heldPitchClass[positiveMod(h[i].stepsFromC, cycleLength)] = true;
       }
     }
@@ -104,7 +106,7 @@ void animateMirror() {
   std::array<int16_t, LED_COUNT> heldSteps = {};
   uint8_t heldStepCount = 0;
   for (byte i = 0; i < LED_COUNT; ++i) {
-    if (h[i].isCmd || !h[i].MIDIch) {
+    if (!hexCanOriginateAnimation(i) || !h[i].MIDIch) {
       continue;
     }
     bool alreadyTracked = false;
@@ -135,7 +137,7 @@ void animateOrbit() {
   const byte SLOW_FACTOR = 1;   // Slowdown factor for animation
 
   for (byte i = 0; i < LED_COUNT; ++i) {   // Check every hex
-    if (!hexAllowsScaleAnimations(i) || !h[i].MIDIch) {
+    if (!hexCanOriginateAnimation(i) || !h[i].MIDIch) {
       continue;
     }
 
@@ -159,7 +161,7 @@ void animateStaticBeams() {
   static byte lastDirection[LED_COUNT] = { 255 };  // Track the last direction for each button (255 = uninitialized)
 
   for (byte i = 0; i < LED_COUNT; ++i) {  // Check every hex
-    if (!hexAllowsScaleAnimations(i)) {
+    if (!hexCanOriginateAnimation(i)) {
       continue;
     }
 
@@ -200,7 +202,7 @@ void animateStaticBeams() {
 
 void animateRadial() {
   for (byte i = 0; i < LED_COUNT; ++i) {                  // check every hex
-    if (!hexAllowsScaleAnimations(i)) {
+    if (!hexCanOriginateAnimation(i)) {
       continue;
     }
 
@@ -214,7 +216,7 @@ void animateRadial() {
 
 void animateRadialReverse() {  //inverted splash/star
   for (byte i = 0; i < LED_COUNT; ++i) {                                          // Check every hex
-    if (!hexAllowsScaleAnimations(i)) {
+    if (!hexCanOriginateAnimation(i)) {
       continue;
     }
 

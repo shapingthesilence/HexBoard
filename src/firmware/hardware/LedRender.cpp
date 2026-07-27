@@ -32,6 +32,45 @@ constexpr uint16_t BOOT_LED_CHECK_FIRST_BOOT_WHITE_HOLD_MS = 2000;
 constexpr uint16_t BOOT_LED_CHECK_WAVE_MS = 30;
 constexpr uint16_t BOOT_LED_CHECK_NORMAL_FADE_MS = 25;
 constexpr byte USER_GEOMETRY_REST_COLOR_VALUE_MAX = VALUE_NORMAL;
+
+namespace {
+
+constexpr float HUE_CIRCLE_DEGREES = 360.0f;
+constexpr float OCTAVE_CENTS = 1200.0f;
+constexpr int PIANO_PITCH_CLASS_COUNT = 12;
+constexpr bool PIANO_BLACK_PITCH_CLASSES[PIANO_PITCH_CLASS_COUNT] = {
+  false, true, false, true, false, false,
+  true, false, true, false, true, false
+};
+constexpr float ALT_PIANO_WHITE_HUE = 30.0f;
+constexpr float ALT_PIANO_OPPOSITE_HUE_OFFSET = HUE_CIRCLE_DEGREES / 2.0f;
+constexpr float ALT_PIANO_DEVIATION_HUE_RANGE = HUE_CIRCLE_DEGREES / 2.0f;
+
+float positiveFloatMod(float value, float modulus) {
+  float result = fmodf(value, modulus);
+  return result < 0.0f ? result + modulus : result;
+}
+
+int colorOriginStepOffset() {
+  return paletteBeginsAtKeyCenter ? current.keyStepsFromC() : 0;
+}
+
+float pianoPitchClassForColorSteps(int colorStepsFromOrigin, float tuningStepCents) {
+  float stepsPerOctave = OCTAVE_CENTS / tuningStepCents;
+  float stepsWithinOctave = positiveFloatMod(static_cast<float>(colorStepsFromOrigin), stepsPerOctave);
+  return PIANO_PITCH_CLASS_COUNT * stepsWithinOctave / stepsPerOctave;
+}
+
+int nearestPianoPitchClass(float pianoPitchClass) {
+  return positiveMod(static_cast<int>(roundf(pianoPitchClass)), PIANO_PITCH_CLASS_COUNT);
+}
+
+bool pianoPitchClassIsBlack(int pianoPitchClass) {
+  return PIANO_BLACK_PITCH_CLASSES[positiveMod(pianoPitchClass, PIANO_PITCH_CLASS_COUNT)];
+}
+
+}  // namespace
+
 bool settingsFileMissingOnBoot = false;
 // Sequencer Note-colored steps reuse the keyboard palette before gamma/current
 // limiting, so cache the base hue/saturation where the palette is calculated.
@@ -146,20 +185,16 @@ constexpr float lambda_b = 460e-9;
 constexpr float C1 = 3.74183e-16;  // W*m^2
 constexpr float C2 = 1.4388e-2;    // m*K
 
-float maxTemperature = 2400;
-float brightnessCoefficient = 745000000.0f;
+constexpr float MIN_TEMPERATURE_KELVIN = 800.0f;
+constexpr float MAX_TEMPERATURE_KELVIN = 2400.0f;
 
 float planckRadiation(float lambda, float temp) {
   return (C1 / (pow(lambda, 5))) / (exp(C2 / (lambda * temp)) - 1);
 }
 
-float getCoefficient(float lambda, float maxTemperature) {
-  float radiation = planckRadiation(lambda, maxTemperature);
+float getCoefficient(float lambda, float referenceTemperature) {
+  float radiation = planckRadiation(lambda, referenceTemperature);
   return radiation / 256.0f;
-}
-
-float getTemperatureFromV(float value) {
-  return value;
 }
 
 colorDef getColor(int32_t temp) {
@@ -177,13 +212,13 @@ colorDef getColor(int32_t temp) {
     s = delta / maxVal;
     if (maxVal == r) {
       h = 60.0 * fmodf(((g - b) / delta), 6.0);
-      v = r / getCoefficient(lambda_r, maxTemperature);
+      v = r / getCoefficient(lambda_r, MAX_TEMPERATURE_KELVIN);
     } else if (maxVal == g) {
       h = 60.0 * (((g - b) / delta) + 2.0);
-      v = g / getCoefficient(lambda_g, maxTemperature);
+      v = g / getCoefficient(lambda_g, MAX_TEMPERATURE_KELVIN);
     } else {
       h = 60.0 * (((g - b) / delta) + 4.0);
-      v = b / getCoefficient(lambda_b, maxTemperature);
+      v = b / getCoefficient(lambda_b, MAX_TEMPERATURE_KELVIN);
     }
     v = min(max(v, 0), 255);
   }
@@ -493,15 +528,14 @@ void setLEDcolorCodes() {
   }
   // ---- End diatonic MOS precomputation ----
 
+  const int keyCenteredColorOffset = colorOriginStepOffset();
   for (byte i = 0; i < LED_COUNT; i++) {
     baseLedColorCacheValid[i] = false;
     if (!(h[i].isCmd)) {
       colorDef setColor = { HUE_NONE, SAT_BW, VALUE_BLACK };
       bool userGeometryColorApplied = false;
-      byte paletteIndex = positiveMod(h[i].stepsFromC, cycleLength);
-      if (paletteBeginsAtKeyCenter) {
-        paletteIndex = current.keyDegree(paletteIndex);
-      }
+      const int colorStepsFromOrigin = h[i].stepsFromC + keyCenteredColorOffset;
+      byte paletteIndex = positiveMod(colorStepsFromOrigin, cycleLength);
       if (userGeometryRuntimeActive && userGeometryRuntimePaletteActive && colorMode == CUSTOM_COLOR_MODE) {
         setColor = userGeometryRuntimePalette.getColor(paletteIndex);
         userGeometryColorApplied = true;
@@ -518,108 +552,92 @@ void setLEDcolorCodes() {
           case RAINBOW_OF_FIFTHS_MODE:  // This mode assigns the root note as red, and the rest as saturated spectrum colors across the rainbow.
             {
             float stepSize = current.tuning().stepSize;
-              float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-              float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = fmodf(semipaletteIndex + (current.tuning().spanCtoA() - current.keyStepsFromA), octaveCycleLength);
+            float octaveCycleLength = OCTAVE_CENTS / stepSize;  // Prevent non-octave coloring artifacts.
+            float octaveDegree = positiveFloatMod(static_cast<float>(colorStepsFromOrigin), octaveCycleLength);
             float fifthSize = ((ratioToCents(3.0 / 2.0)) / stepSize);
             float reverseFifth = fifthSize;
-            switch (current.tuningIndex) {
-              case TUNING_17EDO:
+            switch (current.tuning().cycleLength) {
+              case 17:
                 {
                   reverseFifth = 12;
                 }
                 break;  // reverse hash of (10*x)%17=x where 10 steps is a 17EDO fifth
-              case TUNING_19EDO:
+              case 19:
                 {
                   reverseFifth = 7;
                 }
                 break;  // reverse hash of (11*x)%19=x where 11 steps is a 19EDO fifth
-              case TUNING_22EDO:
+              case 22:
                 {
                   reverseFifth = 17;
                 }
                 break;  // reverse hash of (13*x)%22=x where 13 steps is a 22EDO fifth
-              case TUNING_24EDO:
+              case 24:
                 {
                   reverseFifth = 11;
                 }
                 break;  // hand-picked best-fit value. This tuning is very unruly
-              case TUNING_31EDO:
+              case 31:
                 {
                   reverseFifth = 19;
                 }
                 break;  // reverse hash of (18*x)%31=x where 18 steps is a 31EDO fifth
-              case TUNING_31EDO_ZETA:
-                {
-                  reverseFifth = 19;
-                }
-                break;
-              case TUNING_41EDO:
+              case 41:
                 {
                   reverseFifth = 12;
                 }
                 break;  // reverse hash of (24*x)%41=x where 24 steps is a 41EDO fifth
-              case TUNING_43EDO:
+              case 43:
                 {
                   reverseFifth = 31;
                 }
                 break;  // reverse hash of (25*x)%43=x where 25 steps is a 43EDO fifth
-              case TUNING_46EDO:
+              case 46:
                 {
                   reverseFifth = 29;
                 }
                 break;  // reverse hash of (27*x)%46=x where 27 steps is a 46EDO fifth
-              case TUNING_53EDO:
+              case 53:
                 {
                   reverseFifth = 12;
                 }
                 break;  // reverse hash of (31*x)%53=x where 31 steps is a 53EDO fifth
-              case TUNING_58EDO:
+              case 58:
                 {
                   reverseFifth = 12;
                 }
                 break;  // reverse hash for 29EDO (2 chains of 29 EDO fifths in 58 EDO)
-              case TUNING_58EDO_ZETA:
-                {
-                  reverseFifth = 12;
-                }
-                break;
-              case TUNING_72EDO:
+              case 72:
                 {
                   reverseFifth = 7;
                 }
                 break;  // reverse hash for 12EDO (6 chains of 12 EDO fifths in 72 EDO)
-              case TUNING_72EDO_ZETA:
-                {
-                  reverseFifth = 7;
-                }
-                break;
-              case TUNING_80EDO:
+              case 80:
                 {
                   reverseFifth = 63;
                 }
                 break;  // reverse hash of (47*x)%80=x where 47 steps is an 80EDO fifth
-              case TUNING_87EDO:
+              case 87:
                 {
                   reverseFifth = 41;
                 }
                 break;  // A hand-picked value, seems to work. 46 also works
-              case TUNING_BP:
+              case 13:
                 {
                   reverseFifth = 5;
                 }
                 break;  // A hand-picked value; 23 and 64 also work
-              case TUNING_ALPHA:
+              case 9:
                 {
                   reverseFifth = 5;
                 }
                 break;  // A hand-picked value
-              case TUNING_BETA:
+              case 11:
                 {
                   reverseFifth = 7;
                 }
                 break;  // reverse hash of (11*x)%19=x where 11 steps is a 19EDO equivalent fifth
-              case TUNING_GAMMA:
+              case 20:
                 {
                   reverseFifth = 12;
                 }
@@ -630,65 +648,62 @@ void setLEDcolorCodes() {
                 }  // either the tuning has no fifths or scrambling colors using fifths works
             }
 
-            float paletteIndexOfFifths = fmodf((keyDegree * reverseFifth), octaveCycleLength);
-            setColor = { 360.0f * (paletteIndexOfFifths / (1200.0f / stepSize)), SAT_VIVID, VALUE_NORMAL };
+            float paletteIndexOfFifths = positiveFloatMod(octaveDegree * reverseFifth, octaveCycleLength);
+            setColor = {
+              HUE_CIRCLE_DEGREES * (paletteIndexOfFifths / octaveCycleLength),
+              SAT_VIVID,
+              VALUE_NORMAL
+            };
           }
           break;
         case PIANO_ALT_COLOR_MODE:
           {
-            float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-            float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = (12.0f / octaveCycleLength) * semipaletteIndex;
-            if ((int)round(keyDegree) % 12 == 1 || (int)round(keyDegree) % 12 == 3 || (int)round(keyDegree) % 12 == 6 || (int)round(keyDegree) % 12 == 8 || (int)round(keyDegree) % 12 == 10) {
-              float deviationFromDiatonic = (float)((int)round(keyDegree) - keyDegree) * 180.0;  // range from 180 to 360
-              // +360 for proper fmodf; 180 is the opposite tint of 0; 30 is midway between yellow and red;
-              setColor = { fmodf(360.0 + 180.0 + 30.0 + deviationFromDiatonic, 360.0f), SAT_VIVID, VALUE_NORMAL };
-            } else  // White key
-            {
-              float deviationFromDiatonic = (((float)((int)round(keyDegree))) - (keyDegree)) * 180.0;  // from -60 to 120
-              setColor = { fmodf(360.0 + 0.0 + 30.0 + deviationFromDiatonic, 360.0f), SAT_VIVID, VALUE_NORMAL };
-            }
+            float pianoPitchClass =
+              pianoPitchClassForColorSteps(colorStepsFromOrigin, current.tuning().stepSize);
+            float roundedPitchClass = roundf(pianoPitchClass);
+            int pitchClass = nearestPianoPitchClass(pianoPitchClass);
+            float deviationHue =
+              (roundedPitchClass - pianoPitchClass) * ALT_PIANO_DEVIATION_HUE_RANGE;
+            float baseHue = ALT_PIANO_WHITE_HUE
+                            + (pianoPitchClassIsBlack(pitchClass)
+                                 ? ALT_PIANO_OPPOSITE_HUE_OFFSET
+                                 : 0.0f);
+            setColor = {
+              positiveFloatMod(baseHue + deviationHue, HUE_CIRCLE_DEGREES),
+              SAT_VIVID,
+              VALUE_NORMAL
+            };
           }
           break;
         case PIANO_COLOR_MODE:
           {
-            float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-            float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = (12.0f / octaveCycleLength) * semipaletteIndex;
-            if ((int)round(keyDegree) % 12 == 1 || (int)round(keyDegree) % 12 == 3 || (int)round(keyDegree) % 12 == 6 || (int)round(keyDegree) % 12 == 8 || (int)round(keyDegree) % 12 == 10) {
-              float deviationFromDiatonic = ((float)((int)round(keyDegree) - keyDegree) * 3072.0f) / 12.0;
-              uint8_t tint = (uint8_t)(abs(round(deviationFromDiatonic)));
-              tint = strip.gamma8(tint);
-              setColor = { 360 * (fmodf(round(keyDegree), 12.0f) / 12.0f), SAT_TINT, VALUE_BLACK };
-            } else  // White key
-            {
-              float deviationFromDiatonic = ((((float)((int)round(keyDegree))) - (keyDegree)) * 3072.0f) / 12.0;
-              uint8_t tint = 255 - (uint8_t)(abs(round(deviationFromDiatonic)));
-              tint = strip.gamma8(tint);
-              setColor = { 360 * (fmodf(round(keyDegree), 12.0f) / 12.0f), SAT_TINT, VALUE_NORMAL };
-            }
+            float pianoPitchClass =
+              pianoPitchClassForColorSteps(colorStepsFromOrigin, current.tuning().stepSize);
+            int pitchClass = nearestPianoPitchClass(pianoPitchClass);
+            setColor = {
+              HUE_CIRCLE_DEGREES * pitchClass / PIANO_PITCH_CLASS_COUNT,
+              SAT_TINT,
+              pianoPitchClassIsBlack(pitchClass) ? VALUE_BLACK : VALUE_NORMAL
+            };
           }
           break;
         case PIANO_INCANDESCENT_COLOR_MODE:
           {
-            float octaveCycleLength = 1200.0 / current.tuning().stepSize;  // This is to prevent non-octave colouring weirdness
-            float semipaletteIndex = fmodf(h[i].stepsFromC + (octaveCycleLength * 256.0), octaveCycleLength);
-            float keyDegree = (12.0f / octaveCycleLength) * semipaletteIndex;
-            float tint, deviationFromDiatonic;
-            if ((int)round(keyDegree) % 12 == 1 || (int)round(keyDegree) % 12 == 3 || (int)round(keyDegree) % 12 == 6 || (int)round(keyDegree) % 12 == 8 || (int)round(keyDegree) % 12 == 10) {
-              deviationFromDiatonic = (round(keyDegree) - keyDegree);
-              deviationFromDiatonic = (abs(deviationFromDiatonic));  // from 0 to 0.5
-            } else                                                   // White key
-            {
-              deviationFromDiatonic = (round(keyDegree) - keyDegree);
-              deviationFromDiatonic = 1.0 - abs(deviationFromDiatonic);  // from 1 to 0.5
-            }
-            auto baseTemperature = 800;
-            tint = ((sqrt(deviationFromDiatonic))) * (incandescence::maxTemperature - baseTemperature) + baseTemperature;
-
-              setColor = incandescence::getColor(tint);
-            }
-            break;
+            float pianoPitchClass =
+              pianoPitchClassForColorSteps(colorStepsFromOrigin, current.tuning().stepSize);
+            float roundedPitchClass = roundf(pianoPitchClass);
+            int pitchClass = nearestPianoPitchClass(pianoPitchClass);
+            float distanceFromPianoKey = fabsf(roundedPitchClass - pianoPitchClass);
+            float heat = pianoPitchClassIsBlack(pitchClass)
+                           ? distanceFromPianoKey
+                           : 1.0f - distanceFromPianoKey;
+            float temperature = sqrtf(heat)
+                                * (incandescence::MAX_TEMPERATURE_KELVIN
+                                   - incandescence::MIN_TEMPERATURE_KELVIN)
+                                + incandescence::MIN_TEMPERATURE_KELVIN;
+            setColor = incandescence::getColor(static_cast<int32_t>(roundf(temperature)));
+          }
+          break;
           case ALTERNATE_COLOR_MODE:
             {
             // This mode assigns each note a color based on the interval it forms with the root note.
@@ -888,7 +903,14 @@ void RAM_FUNC(renderMetronomeSideButtonFlash)() {
 uint32_t RAM_FUNC(applyNotePixelColor)(byte x) {
   if (h[x].animate) {
     return h[x].LEDcodeAnim;
-  } else if ((animationType != ANIMATE_NONE)
+  }
+  bool hasDirectColorOverride = userGeometryRuntimeActive
+                                && colorMode == CUSTOM_COLOR_MODE
+                                && userGeometryRuntimeButtonColorActive[x];
+  if (h[x].note == UNUSED_NOTE && !hasDirectColorOverride) {
+    return h[x].LEDcodeOff;
+  }
+  if ((animationType != ANIMATE_NONE)
           && (animationType != ANIMATE_MIDI_IN)
           && h[x].MIDIch) {
     return h[x].LEDcodePlay;

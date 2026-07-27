@@ -7,7 +7,7 @@
 
 namespace {
 
-constexpr const char* BUILTIN_GEOMETRY_SOURCE = "factory";
+constexpr const char* BUILTIN_GEOMETRY_SOURCE = "rescue";
 
 size_t builtinScaleObjectCount() {
   return static_cast<size_t>(TUNINGCOUNT) + (scaleCount > 0 ? static_cast<size_t>(scaleCount - 1) : 0);
@@ -44,7 +44,7 @@ void fillBuiltinObjectId(uint8_t objectType,
   uint32_t seeds[4] = { 2166136261u, 2166136261u ^ 0x9E3779B9u, 2166136261u ^ 0x85EBCA6Bu, 2166136261u ^ 0xC2B2AE35u };
   for (uint8_t part = 0; part < 4; ++part) {
     uint32_t hash = seeds[part];
-    hash = fnv1aUpdateString(hash, "HexBoard factory geometry v1");
+    hash = fnv1aUpdateString(hash, "HexBoard rescue geometry v1");
     hash = fnv1aUpdate(hash, objectType);
     hash = fnv1aUpdate(hash, tuningIndex);
     hash = fnv1aUpdate(hash, optionIndex & 0xFF);
@@ -87,6 +87,13 @@ void appendU32Tlv(std::vector<uint8_t>& body, uint8_t tag, uint32_t value) {
   presetSyncAppendTlv(body, tag, bytes, sizeof(bytes));
 }
 
+void appendFloat32Tlv(std::vector<uint8_t>& body, uint8_t tag, float value) {
+  static_assert(sizeof(float) == sizeof(uint32_t), "Preset sync float32 requires a 32-bit float");
+  uint32_t bits = 0;
+  memcpy(&bits, &value, sizeof(bits));
+  appendU32Tlv(body, tag, bits);
+}
+
 void appendObjectReferenceTlv(std::vector<uint8_t>& body,
                               uint8_t tag,
                               uint8_t objectType,
@@ -108,7 +115,7 @@ void appendCommonGeometryHeader(std::vector<uint8_t>& body,
   body.push_back('S');
   body.push_back('1');
   body.push_back(metadata.objectType);
-  body.push_back(1);
+  body.push_back(GEOMETRY_OBJECT_SCHEMA_VERSION);
   body.push_back(0);
   body.push_back(0);
   appendTextTlv(body, PRESET_SYNC_TLV_NAME, metadata.name);
@@ -118,15 +125,13 @@ void appendCommonGeometryHeader(std::vector<uint8_t>& body,
 }
 
 void appendBuiltinTuningBody(std::vector<uint8_t>& body, const BuiltinGeometryMetadata& metadata) {
-  const tuningDef& tuning = tuningOptions[metadata.legacyTuningIndex];
+  const tuningDef& tuning = tuningOptions[metadata.sourceTuningIndex];
   appendCommonGeometryHeader(body, metadata);
   appendU8Tlv(body, PRESET_SYNC_TLV_TUNING_KIND, PRESET_SYNC_USER_TUNING_KIND_EQUAL_STEP);
   appendU16Tlv(body, PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS, tuning.cycleLength);
-  uint32_t stepMilliCents = static_cast<uint32_t>(std::lround(tuning.stepSize * 1000.0f));
-  appendU32Tlv(body, PRESET_SYNC_TLV_TUNING_PERIOD_MILLI_CENTS, stepMilliCents * tuning.cycleLength);
-  appendU32Tlv(body, PRESET_SYNC_TLV_TUNING_STEP_MILLI_CENTS, stepMilliCents);
   appendU8Tlv(body, PRESET_SYNC_TLV_TUNING_REFERENCE_MIDI_NOTE, 69);
-  appendU32Tlv(body, PRESET_SYNC_TLV_TUNING_REFERENCE_MILLI_HZ, 440000);
+  appendFloat32Tlv(body, PRESET_SYNC_TLV_TUNING_STEP_CENTS_FLOAT32, tuning.stepSize);
+  appendFloat32Tlv(body, PRESET_SYNC_TLV_TUNING_REFERENCE_HZ_FLOAT32, 440.0f);
 
   std::vector<uint8_t> labels;
   labels.reserve(static_cast<size_t>(tuning.cycleLength) * 5);
@@ -142,10 +147,10 @@ void appendBuiltinTuningBody(std::vector<uint8_t>& body, const BuiltinGeometryMe
 }
 
 void appendBuiltinLayoutBody(std::vector<uint8_t>& body, const BuiltinGeometryMetadata& metadata) {
-  const layoutDef& layout = layoutOptions[metadata.legacyOptionIndex];
+  const layoutDef& layout = layoutOptions[metadata.sourceOptionIndex];
   BuiltinGeometryMetadata tuningMetadata;
   uint16_t tuningHandle = 0;
-  builtinGeometryHandleForLegacyTuning(layout.tuning, tuningHandle);
+  builtinGeometryHandleForTuning(layout.tuning, tuningHandle);
   builtinGeometryMetadataByHandle(tuningHandle, tuningMetadata);
 
   appendCommonGeometryHeader(body, metadata);
@@ -158,7 +163,9 @@ void appendBuiltinLayoutBody(std::vector<uint8_t>& body, const BuiltinGeometryMe
   appendU16Tlv(body, PRESET_SYNC_TLV_LAYOUT_CENTER_BUTTON, layout.hexMiddleC);
   appendI16Tlv(body, PRESET_SYNC_TLV_LAYOUT_ACROSS_STEPS, layout.acrossSteps);
   appendI16Tlv(body, PRESET_SYNC_TLV_LAYOUT_DOWN_LEFT_STEPS, layout.dnLeftSteps);
-  appendU8Tlv(body, PRESET_SYNC_TLV_LAYOUT_PORTRAIT, layout.isPortrait ? 1 : 0);
+  appendU8Tlv(body, PRESET_SYNC_TLV_LAYOUT_DEVICE_ROTATION, layout.deviceRotation);
+  appendU8Tlv(body, PRESET_SYNC_TLV_LAYOUT_ROTATION, 0);
+  appendU8Tlv(body, PRESET_SYNC_TLV_LAYOUT_MIRROR_FLAGS, 0);
 }
 
 void appendPatternDegrees(std::vector<uint8_t>& output, const uint8_t* pattern, uint16_t cycleLength) {
@@ -185,9 +192,9 @@ void appendAllDegrees(std::vector<uint8_t>& output, uint16_t cycleLength) {
 void appendBuiltinScaleBody(std::vector<uint8_t>& body, const BuiltinGeometryMetadata& metadata) {
   BuiltinGeometryMetadata tuningMetadata;
   uint16_t tuningHandle = 0;
-  builtinGeometryHandleForLegacyTuning(metadata.legacyTuningIndex, tuningHandle);
+  builtinGeometryHandleForTuning(metadata.sourceTuningIndex, tuningHandle);
   builtinGeometryMetadataByHandle(tuningHandle, tuningMetadata);
-  uint16_t cycleLength = tuningOptions[metadata.legacyTuningIndex].cycleLength;
+  uint16_t cycleLength = tuningOptions[metadata.sourceTuningIndex].cycleLength;
 
   appendCommonGeometryHeader(body, metadata);
   appendObjectReferenceTlv(body,
@@ -200,10 +207,10 @@ void appendBuiltinScaleBody(std::vector<uint8_t>& body, const BuiltinGeometryMet
 
   std::vector<uint8_t> includedDegrees;
   includedDegrees.reserve(static_cast<size_t>(cycleLength) * 2);
-  if (metadata.legacyOptionIndex == 0) {
+  if (metadata.sourceOptionIndex == 0) {
     appendAllDegrees(includedDegrees, cycleLength);
   } else {
-    appendPatternDegrees(includedDegrees, scaleOptions[metadata.legacyOptionIndex].pattern, cycleLength);
+    appendPatternDegrees(includedDegrees, scaleOptions[metadata.sourceOptionIndex].pattern, cycleLength);
   }
   presetSyncAppendTlv(body,
                       PRESET_SYNC_TLV_USER_SCALE_INCLUDED_DEGREES,
@@ -214,8 +221,8 @@ void appendBuiltinScaleBody(std::vector<uint8_t>& body, const BuiltinGeometryMet
 bool metadataForScaleOrdinal(size_t scaleOrdinal, BuiltinGeometryMetadata& metadata) {
   if (scaleOrdinal < TUNINGCOUNT) {
     metadata.objectType = PRESET_SYNC_OBJECT_TYPE_USER_SCALE;
-    metadata.legacyTuningIndex = static_cast<uint8_t>(scaleOrdinal);
-    metadata.legacyOptionIndex = 0;
+    metadata.sourceTuningIndex = static_cast<uint8_t>(scaleOrdinal);
+    metadata.sourceOptionIndex = 0;
     metadata.name = scaleOptions[0].name;
     return true;
   }
@@ -225,10 +232,10 @@ bool metadataForScaleOrdinal(size_t scaleOrdinal, BuiltinGeometryMetadata& metad
     return false;
   }
   metadata.objectType = PRESET_SYNC_OBJECT_TYPE_USER_SCALE;
-  metadata.legacyTuningIndex = scaleOptions[scaleIndex].tuning;
-  metadata.legacyOptionIndex = static_cast<uint16_t>(scaleIndex);
+  metadata.sourceTuningIndex = scaleOptions[scaleIndex].tuning;
+  metadata.sourceOptionIndex = static_cast<uint16_t>(scaleIndex);
   metadata.name = scaleOptions[scaleIndex].name;
-  return metadata.legacyTuningIndex < TUNINGCOUNT;
+  return metadata.sourceTuningIndex < TUNINGCOUNT;
 }
 
 } // namespace
@@ -252,22 +259,22 @@ bool builtinGeometryMetadataByOrdinal(size_t ordinal, BuiltinGeometryMetadata& m
 
   if (ordinal < TUNINGCOUNT) {
     metadata.objectType = PRESET_SYNC_OBJECT_TYPE_USER_TUNING;
-    metadata.legacyTuningIndex = static_cast<uint8_t>(ordinal);
-    metadata.legacyOptionIndex = static_cast<uint16_t>(ordinal);
+    metadata.sourceTuningIndex = static_cast<uint8_t>(ordinal);
+    metadata.sourceOptionIndex = static_cast<uint16_t>(ordinal);
     metadata.name = tuningOptions[ordinal].name;
   } else if (ordinal < scaleOrdinalBase()) {
     size_t layoutIndex = ordinal - layoutOrdinalBase();
     metadata.objectType = PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT;
-    metadata.legacyTuningIndex = layoutOptions[layoutIndex].tuning;
-    metadata.legacyOptionIndex = static_cast<uint16_t>(layoutIndex);
+    metadata.sourceTuningIndex = layoutOptions[layoutIndex].tuning;
+    metadata.sourceOptionIndex = static_cast<uint16_t>(layoutIndex);
     metadata.name = layoutOptions[layoutIndex].name;
   } else if (!metadataForScaleOrdinal(ordinal - scaleOrdinalBase(), metadata)) {
     return false;
   }
 
   fillBuiltinObjectId(metadata.objectType,
-                      metadata.legacyTuningIndex,
-                      metadata.legacyOptionIndex,
+                      metadata.sourceTuningIndex,
+                      metadata.sourceOptionIndex,
                       metadata.name,
                       metadata.objectId);
   return true;
@@ -304,7 +311,7 @@ bool buildBuiltinGeometryObject(uint16_t handle, GeometryObjectSlot& object) {
   object = GeometryObjectSlot{};
   object.valid = 1;
   object.objectType = metadata.objectType;
-  object.schemaMajor = 1;
+  object.schemaMajor = GEOMETRY_OBJECT_SCHEMA_VERSION;
   object.schemaMinor = 0;
   memcpy(object.objectId, metadata.objectId, sizeof(object.objectId));
   snprintf(object.name, sizeof(object.name), "%s", metadata.name);
@@ -313,7 +320,7 @@ bool buildBuiltinGeometryObject(uint16_t handle, GeometryObjectSlot& object) {
   return true;
 }
 
-bool builtinGeometryHandleForLegacyTuning(uint8_t tuningIndex, uint16_t& handle) {
+bool builtinGeometryHandleForTuning(uint8_t tuningIndex, uint16_t& handle) {
   if (tuningIndex >= TUNINGCOUNT) {
     return false;
   }
@@ -321,7 +328,7 @@ bool builtinGeometryHandleForLegacyTuning(uint8_t tuningIndex, uint16_t& handle)
   return true;
 }
 
-bool builtinGeometryHandleForLegacyLayout(uint16_t layoutIndex, uint16_t& handle) {
+bool builtinGeometryHandleForLayout(uint16_t layoutIndex, uint16_t& handle) {
   if (layoutIndex >= layoutCount) {
     return false;
   }
@@ -329,7 +336,7 @@ bool builtinGeometryHandleForLegacyLayout(uint16_t layoutIndex, uint16_t& handle
   return true;
 }
 
-bool builtinGeometryHandleForLegacyScale(uint8_t tuningIndex, uint16_t scaleIndex, uint16_t& handle) {
+bool builtinGeometryHandleForScale(uint8_t tuningIndex, uint16_t scaleIndex, uint16_t& handle) {
   if (tuningIndex >= TUNINGCOUNT || scaleIndex >= scaleCount) {
     return false;
   }
@@ -353,7 +360,7 @@ bool builtinGeometrySelectionForHandle(uint16_t handle,
     return false;
   }
   objectType = metadata.objectType;
-  tuningIndex = metadata.legacyTuningIndex;
-  optionIndex = metadata.legacyOptionIndex;
+  tuningIndex = metadata.sourceTuningIndex;
+  optionIndex = metadata.sourceOptionIndex;
   return true;
 }

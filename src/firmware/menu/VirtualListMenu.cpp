@@ -7,13 +7,14 @@
 
 namespace {
 constexpr uint8_t VIRTUAL_LIST_ITEM_HEIGHT = 10;
-constexpr uint8_t VIRTUAL_LIST_SCREEN_TOP_OFFSET = 10;
+constexpr uint8_t VIRTUAL_LIST_SCREEN_TOP_OFFSET = 18;
 constexpr uint8_t VIRTUAL_LIST_VALUES_LEFT_OFFSET = 78;
 constexpr uint8_t VIRTUAL_LIST_FONT_WIDTH = 6;
 constexpr uint8_t VIRTUAL_LIST_FONT_HEIGHT = 8;
 constexpr uint8_t VIRTUAL_LIST_SPRITE_WIDTH = 6;
 constexpr uint8_t VIRTUAL_LIST_SPRITE_HEIGHT = 8;
 constexpr uint8_t VIRTUAL_LIST_BACK_INDEX = 0;
+constexpr uint8_t VIRTUAL_LIST_HEADER_DIVIDER_Y = VIRTUAL_LIST_SCREEN_TOP_OFFSET - 3;
 
 static const unsigned char arrowLeftBits[] U8X8_PROGMEM = {
   0xc0, 0xc4, 0xc6, 0xc7, 0xc6, 0xc4, 0xc0, 0xc0
@@ -76,10 +77,8 @@ void printMenuString(const char* text, uint8_t maxChars) {
 }
 
 void drawTitleBar() {
-  u8g2.setFont(GEM_FONT_SMALL);
-  u8g2.setCursor(5, 0);
-  u8g2.print(activeProvider.title ? activeProvider.title : "");
-  u8g2.setFont(GEM_FONT_BIG);
+  drawCenteredMenuHeaderTitle(activeProvider.title);
+  u8g2.drawHLine(0, VIRTUAL_LIST_HEADER_DIVIDER_Y, u8g2.getDisplayWidth());
 }
 
 void rowLabel(uint16_t itemIndex, char* output, size_t outputLength) {

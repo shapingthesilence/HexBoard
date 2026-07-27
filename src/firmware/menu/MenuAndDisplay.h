@@ -20,6 +20,7 @@ extern GEMPage menuPageSynth;
 
 void wakeDelegatedControlScreenForInput();
 void setupMenu();
+void populateStorageStatusMenuPage();
 void setupGFX();
 void screenSaver();
 void wakeDisplayFromScreensaver();
@@ -32,6 +33,7 @@ void showFlashSaveScreen();
 void closeFlashSaveScreen();
 void dismissFlashSaveScreenForMenuInput();
 void serviceFlashSaveScreen();
+void drawCenteredMenuHeaderTitle(const char* title);
 void menuHome();
 void menuSynthOptionsHome();
 bool handleVirtualListLauncherKey(byte keyCode);

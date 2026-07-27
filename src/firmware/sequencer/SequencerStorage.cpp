@@ -10,6 +10,7 @@
 
 #include "../model/ScalePalettePreset.h"
 #include "../storage/Settings.h"
+#include "../storage/StorageHealth.h"
 #include "../storage/SynthPresetStorage.h"
 #include "SequencerInput.h"
 #include "SequencerManagedNotes.h"
@@ -24,6 +25,8 @@ namespace {
 
 constexpr byte kSequenceFileVersion = 3;
 constexpr size_t kLineLength = 128;
+
+bool readRememberedCurrentPath(char* output, size_t outputLength);
 
 struct SequenceDocument {
   SequencerStepSnapshot steps[kStepCount];
@@ -138,6 +141,12 @@ bool writeRememberedCurrentPathDirect() {
     if (LittleFS.exists(kSequenceCurrentPathFile)) {
       LittleFS.remove(kSequenceCurrentPathFile);
     }
+    return true;
+  }
+
+  char persistedPath[kSequencePathLength] = "";
+  if (readRememberedCurrentPath(persistedPath, sizeof(persistedPath))
+      && strcmp(persistedPath, g_currentPath) == 0) {
     return true;
   }
 
@@ -525,7 +534,6 @@ void initializeSequenceStorage() {
   if (g_initialized) {
     return;
   }
-  ensureSequenceStorageRoot();
   updateSequenceTitle();
   g_initialized = true;
 }
@@ -534,11 +542,24 @@ void restoreRememberedSequenceAtStartup() {
   initializeSequenceStorage();
 
   char rememberedPath[kSequencePathLength] = "";
-  if (!readRememberedCurrentPath(rememberedPath, sizeof(rememberedPath)) ||
-      !sequencePathIsSafeStoragePath(rememberedPath) || !sequencePathIsFile(rememberedPath) ||
-      !LittleFS.exists(rememberedPath) || !loadSequenceFromPath(rememberedPath, true)) {
+  bool hasRememberedPath = LittleFS.exists(kSequenceCurrentPathFile);
+  bool restored =
+    hasRememberedPath
+    && readRememberedCurrentPath(rememberedPath, sizeof(rememberedPath))
+    && sequencePathIsSafeStoragePath(rememberedPath)
+    && sequencePathIsFile(rememberedPath)
+    && LittleFS.exists(rememberedPath)
+    && loadSequenceFromPath(rememberedPath, false);
+  if (restored) {
+    copyString(g_currentPath, sizeof(g_currentPath), rememberedPath);
+    updateSequenceTitle();
+  } else {
     resetSequenceOwnedDataToDefaults();
-    clearCurrentSequencePath();
+    g_currentPath[0] = '\0';
+    updateSequenceTitle();
+    if (hasRememberedPath) {
+      reportStorageHealthIssue(kSequenceCurrentPathFile, "invalid reference");
+    }
     clearSequenceDirty();
   }
 }
@@ -679,16 +700,20 @@ void setCurrentSequencePath(const char* path) {
   if (!sequencePathIsSafeStoragePath(path) || !sequencePathIsFile(path)) {
     return;
   }
+  if (strcmp(g_currentPath, path) == 0) {
+    return;
+  }
   copyString(g_currentPath, sizeof(g_currentPath), path);
   writeRememberedCurrentPath();
   updateSequenceTitle();
 }
 
 void clearCurrentSequencePath() {
-  if (g_currentPath[0] != '\0') {
-    g_currentPath[0] = '\0';
-    updateSequenceTitle();
+  if (g_currentPath[0] == '\0' && !LittleFS.exists(kSequenceCurrentPathFile)) {
+    return;
   }
+  g_currentPath[0] = '\0';
+  updateSequenceTitle();
   writeRememberedCurrentPath();
 }
 

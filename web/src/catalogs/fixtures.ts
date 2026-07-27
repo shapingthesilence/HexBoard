@@ -31,7 +31,7 @@ export const sampleLayout = createVectorLayout({
   centerButton: 65,
   acrossSteps: 3,
   upRightSteps: 11,
-  portrait: true
+  deviceRotationSteps: 0
 });
 
 export const sampleScaleColorMap = createScaleColorMap({

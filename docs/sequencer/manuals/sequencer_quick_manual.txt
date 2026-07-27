@@ -178,6 +178,8 @@ Playback
 
 Menu Items
 
+- Standard menu headers center the current page title on one large-font line,
+  with a small gap between the divider and first menu row.
 - When a menu page is open, hold the bottom command button below the encoder to
   temporarily make the top two command buttons act like one encoder step up or
   down. Releasing that bottom button returns them to normal behavior.
@@ -247,6 +249,9 @@ Seq Lights
 Saving And Files
 
 - Sequences are stored under /Sequences in onboard flash.
+- The Sequencer Factory UF2 erases onboard storage and installs an empty
+  /Sequences tree.
+- The Sequencer Update UF2 preserves onboard storage.
 - Sequence files store note pitches as tuning-relative step values instead of
   raw MIDI note numbers.
 - Sequence files also store:
@@ -322,9 +327,10 @@ Saving And Files
 - The `Size Bytes` column shows raw file sizes in bytes.
 - While that session is active, Save, Revert, and file-browser actions are
   blocked until the session is stopped.
-- File browsers show up to 8 file/folder rows at a time.
-- `^ more ^` and `v more v` indicate earlier or later pages.
-- Scrolling past the first or last real file row pages automatically.
+- File browsers use one large-font header line for the current action; the
+  folder path is not repeated there.
+- File browsers show 11 list rows at a time, including the back row, and turn
+  through 11-row pages automatically.
 - The menu title shows the current file name as:
   Seq-FILENAME
 - If there are unsaved changes, it becomes:

@@ -629,26 +629,23 @@ VirtualListMenuRowType browserRowType(void*, uint16_t index) {
 }
 
 void updateBrowserTitle() {
-  char folderName[kBrowserLabelLength] = "";
-  folderDisplayName(g_browserPath, folderName, sizeof(folderName));
-
   switch (g_browserMode) {
     case BrowserMode::SaveNew:
-      snprintf(g_browserTitle, sizeof(g_browserTitle), "Save:%s", folderName);
+      snprintf(g_browserTitle, sizeof(g_browserTitle), "Save Sequence");
       copyString(g_emptyLabel, sizeof(g_emptyLabel), "No Folders");
       break;
     case BrowserMode::CreateFolder:
-      snprintf(g_browserTitle, sizeof(g_browserTitle), "Folder:%s", folderName);
+      snprintf(g_browserTitle, sizeof(g_browserTitle), "Create Folder");
       copyString(g_emptyLabel, sizeof(g_emptyLabel), "No Folders");
       break;
     case BrowserMode::Manage:
-      snprintf(g_browserTitle, sizeof(g_browserTitle), "RenDel:%s", folderName);
+      snprintf(g_browserTitle, sizeof(g_browserTitle), "Rename/Delete");
       copyString(g_emptyLabel, sizeof(g_emptyLabel), "No Files");
       break;
     case BrowserMode::Load:
     case BrowserMode::None:
     default:
-      snprintf(g_browserTitle, sizeof(g_browserTitle), "Load:%s", folderName);
+      snprintf(g_browserTitle, sizeof(g_browserTitle), "Load Sequence");
       copyString(g_emptyLabel, sizeof(g_emptyLabel), "No Sequences");
       break;
   }

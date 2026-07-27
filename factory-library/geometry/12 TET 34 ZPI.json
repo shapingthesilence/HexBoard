@@ -1,0 +1,296 @@
+{
+  "format": "hexboard.layoutBundle.v5",
+  "bundle": {
+    "objectIdHex": "c96905e180ff8b864800b400f267ff4e",
+    "name": "12 TET 34 ZPI",
+    "folderPath": "/",
+    "tuning": {
+      "kind": "equal-step",
+      "name": "12 TET 34 ZPI",
+      "cycleLength": 12,
+      "referenceMidiNote": 69,
+      "referenceHz": 440.0,
+      "keyLabels": [
+        "A",
+        "Bb",
+        "B",
+        "C",
+        "C#",
+        "D",
+        "Eb",
+        "E",
+        "F",
+        "F#",
+        "G",
+        "G#"
+      ],
+      "stepCents": 99.8071807833375
+    },
+    "palette": {
+      "defaultColorMode": 1,
+      "degreeColors": [
+        {
+          "degree": 0,
+          "hueTenthDegrees": 2700,
+          "saturation": 255,
+          "value": 180
+        },
+        {
+          "degree": 1,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 64
+        },
+        {
+          "degree": 2,
+          "hueTenthDegrees": 2000,
+          "saturation": 60,
+          "value": 164
+        },
+        {
+          "degree": 3,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 64
+        },
+        {
+          "degree": 4,
+          "hueTenthDegrees": 2000,
+          "saturation": 60,
+          "value": 164
+        },
+        {
+          "degree": 5,
+          "hueTenthDegrees": 2000,
+          "saturation": 60,
+          "value": 164
+        },
+        {
+          "degree": 6,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 64
+        },
+        {
+          "degree": 7,
+          "hueTenthDegrees": 2300,
+          "saturation": 240,
+          "value": 180
+        },
+        {
+          "degree": 8,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 64
+        },
+        {
+          "degree": 9,
+          "hueTenthDegrees": 2000,
+          "saturation": 60,
+          "value": 164
+        },
+        {
+          "degree": 10,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 64
+        },
+        {
+          "degree": 11,
+          "hueTenthDegrees": 2000,
+          "saturation": 60,
+          "value": 164
+        }
+      ]
+    },
+    "layouts": [
+      {
+        "objectIdHex": "ecd41419fd408371e9772c10a27a8af6",
+        "name": "Wicki-Hayden",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": 2,
+        "upRightSteps": 7,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "b18f1784a1f2fc908c949fc5176c3ef1",
+        "name": "Harmonic Table",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": -7,
+        "upRightSteps": -3,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "c5cbe9136d4abc5657395a1bfd7aae01",
+        "name": "Janko",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": 1,
+        "upRightSteps": 2,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "f399a28e703e6795608140c98fe3d4b5",
+        "name": "Bosanquet-Wilson",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -1,
+        "upRightSteps": 1,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "fc83822d456cc07c0031caf9a3a76c80",
+        "name": "Compressed Janko",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -1,
+        "upRightSteps": 2,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "1773bc846a41a55c7774ac309fcac0ce",
+        "name": "Compr. Bosanquet",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": 1,
+        "upRightSteps": 3,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "4aa8dd8e77d05da4bfdb51a3f3520d5a",
+        "name": "Gerhard",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -1,
+        "upRightSteps": 3,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "378a33eb2962c3de532b898e8280b689",
+        "name": "Accordion C-sys.",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": 2,
+        "upRightSteps": 3,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "65966e0d690a5688cd513ac8b232930f",
+        "name": "Accordion B-sys.",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": 1,
+        "upRightSteps": 3,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "80513cea8d9dedf086e8247da9169e79",
+        "name": "Chromatic",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": 12,
+        "upRightSteps": 1,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "d57008198252a9a5b2d779c19f1addff",
+        "name": "Full Gamut",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": 1,
+        "upRightSteps": 9,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      }
+    ],
+    "activeLayoutIdHex": "ecd41419fd408371e9772c10a27a8af6",
+    "scales": [
+      {
+        "objectIdHex": "f641b4fcdbcd17339ef65183da73ea5d",
+        "name": "All Notes",
+        "includedDegrees": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ]
+      }
+    ],
+    "activeScaleIdHex": "f641b4fcdbcd17339ef65183da73ea5d"
+  }
+}

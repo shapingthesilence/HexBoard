@@ -700,29 +700,17 @@ const BuiltinSynthWavetableDefinition* synthBuiltinWavetableAt(size_t index) {
   return &builtinSynthWavetables[index];
 }
 
-static bool synthWavetableFolderMatches(const char* candidateFolderPath, const char* tableFolderPath) {
-  if (strcmp(candidateFolderPath, tableFolderPath) == 0) {
-    return true;
-  }
-  if (strcmp(tableFolderPath, SYNTH_WAVETABLE_BUILTIN_FOLDER) != 0) {
-    return false;
-  }
-  return strcmp(candidateFolderPath, "Built In") == 0
-         || strcmp(candidateFolderPath, "%2FBuilt In") == 0
-         || strcmp(candidateFolderPath, "%2fBuilt In") == 0;
-}
-
 int findBuiltinSynthWavetable(const char* folderPath, const char* name) {
   for (size_t i = 0; i < SYNTH_BUILTIN_WAVETABLE_COUNT; ++i) {
     const BuiltinSynthWavetableDefinition& table = builtinSynthWavetables[i];
-    if (synthWavetableFolderMatches(folderPath, table.folderPath) && strcmp(table.name, name) == 0) {
+    if (strcmp(folderPath, table.folderPath) == 0 && strcmp(table.name, name) == 0) {
       return static_cast<int>(i);
     }
   }
   return -1;
 }
 
-uint8_t compatibilityWavetablePositionForAnchor(uint8_t anchorIndex, uint8_t anchorCount) {
+uint8_t wavetablePositionForAnchor(uint8_t anchorIndex, uint8_t anchorCount) {
   if (anchorCount <= 1) {
     return 0;
   }

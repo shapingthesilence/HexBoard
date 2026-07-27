@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../FirmwareModule.h"
+#include "../config/FeatureFlags.h"
 #include "../model/ScalePalettePreset.h"
 
 extern bool settingsFileMissingOnBoot;

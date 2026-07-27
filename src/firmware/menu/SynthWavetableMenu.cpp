@@ -32,7 +32,6 @@ bool synthWavetableMenuRebuildPending = false;
 SynthWavetableMenuRow synthWavetableMenuRows[SYNTH_WAVETABLE_MENU_MAX_ROWS] = {};
 uint16_t synthWavetableMenuRowCount = 0;
 char synthWavetableMenuCurrentFolder[SYNTH_WAVETABLE_FOLDER_LENGTH] = "/";
-char synthWavetableMenuTitleBuffer[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = "Wavetables";
 
 uint16_t synthWavetableVirtualCount(void*) {
   return synthWavetableMenuRowCount;
@@ -140,16 +139,6 @@ void appendSynthWavetableMenuRow(SynthWavetableMenuRowKind kind, uint16_t index)
   synthWavetableMenuRows[synthWavetableMenuRowCount++] = { kind, index };
 }
 
-void updateSynthWavetableBrowserTitle() {
-  if (menuFolderIsRoot(synthWavetableMenuCurrentFolder)) {
-    snprintf(synthWavetableMenuTitleBuffer, sizeof(synthWavetableMenuTitleBuffer), "Wavetables");
-    return;
-  }
-  synthPresetFolderLabel(synthWavetableMenuCurrentFolder,
-                         synthWavetableMenuTitleBuffer,
-                         sizeof(synthWavetableMenuTitleBuffer));
-}
-
 void rebuildSynthWavetableVirtualList() {
   compactSynthWavetables();
   synthWavetableMenuRowCount = 0;
@@ -180,7 +169,6 @@ void rebuildSynthWavetableVirtualList() {
       appendSynthWavetableMenuRow(SynthWavetableMenuRowKind::User, static_cast<uint16_t>(i));
     }
   }
-  updateSynthWavetableBrowserTitle();
 }
 
 bool synthWavetableVirtualLabel(void*, uint16_t index, char* output, size_t outputLength) {
@@ -272,7 +260,6 @@ void selectSynthWavetableByVirtualIndex(uint16_t index) {
     settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_BASIC_WAVETABLE;
     loadSelectedSynthWavetable();
     updateCurrentSynthWavetableMenuLabel();
-    flashSafeSaveCurrentSynthWavetableReference();
     markSettingsDirty();
   }
 }
@@ -339,7 +326,7 @@ void openSynthWavetableLoadMenu() {
   rebuildSynthWavetableVirtualList();
   updateCurrentSynthWavetableMenuLabel();
   VirtualListMenuProvider provider;
-  provider.title = synthWavetableMenuTitleBuffer;
+  provider.title = "Wavetables";
   provider.getCount = synthWavetableVirtualCount;
   provider.getLabel = synthWavetableVirtualLabel;
   provider.getRowType = synthWavetableVirtualRowType;

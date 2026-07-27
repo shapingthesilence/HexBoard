@@ -494,6 +494,10 @@ entering edit mode for each step.
 
 12. Menu Structure
 
+Standard Sequencer menu pages use a single-line, large-font OLED title. Menu
+hierarchy is not repeated in the header. The title is centered, and a small gap
+separates the header divider from the first menu row.
+
 When a menu page is open, hold the bottom command button below the encoder to
 temporarily make the top two command buttons act like one encoder step up or
 down. Releasing that bottom button returns them to their normal non-menu
@@ -613,8 +617,7 @@ current file.
 
 If no current file exists:
 
-- it may fall back to the old legacy file if present
-- otherwise it resets to a blank/default sequence
+- it resets to a blank/default sequence
 
 
 14. File And Folder Organization
@@ -622,6 +625,11 @@ If no current file exists:
 Sequences are stored in LittleFS under:
 
   /Sequences
+
+Installing the Sequencer Factory UF2 erases the complete LittleFS filesystem,
+including all sequences. The /Sequences folder is created when sequence
+storage is first opened or used. Installing the Sequencer Update UF2 preserves
+the existing LittleFS filesystem.
 
 The current file path is remembered, so the last loaded sequence can come
 back on startup.
@@ -632,10 +640,10 @@ The visible sequence name is the file name without the extension.
 
 Browser behavior:
 
-- the browser shows up to 8 file or folder rows at a time
-- `^ more ^` means there are earlier pages
-- `v more v` means there are later pages
-- turning the encoder past the first or last real file row changes page
+- the header names the browser action, such as `Load Sequence`
+- the current folder path is not repeated in the header
+- the browser shows 11 list rows at a time, including its back row
+- turning through the list advances between 11-row pages
 - USB Backup uses the same LittleFS storage, but transfers files through a
   dedicated USB serial session instead of mounting the board as a drive
 

@@ -13,6 +13,23 @@ These instructions apply to the entire repository. This guide is for future AI a
 - Keep audio ISR code, synth helper code called from the ISR, button/knob scan paths, and other latency-sensitive runtime helpers in RAM with `RAM_FUNC` or RAM-resident data. Do not move hot audio/control tables into flash.
 - When firmware behavior, settings, menus, synth preset schema, or preset-sync protocol changes affect companion-app behavior, update the web app in `web/` in the same change.
 
+## Factory Library And Release Images
+
+- Treat `factory-library/` as source. Add editable factory synth presets as web-compatible `.json` files under `factory-library/presets/` and editable factory wavetables as HexBoard `.hexwav` files under `factory-library/wavetables/`. Source subdirectories define the on-device folder paths.
+- Keep only the minimal rescue content compiled into firmware: built-in 12 EDO data and the Basic Shapes wavetable. Factory-library objects beyond that rescue core must remain ordinary catalog records that users can edit or erase.
+- `factory-library/config.json` owns the factory settings bytes, filesystem generation, and selected factory objects. Keep its settings keys synchronized with `SettingKey`, `factoryDefaults`, and `CURRENT_SETTINGS_VERSION`.
+- A normal build must produce both a destructive `*_Factory.uf2` containing the complete LittleFS range and a firmware-only `*_Update.uf2` containing no LittleFS addresses. Never silently substitute one artifact for the other.
+- Keep every flash sector touched by a non-contiguous Factory UF2 fully represented in 256-byte pages. Validate this at build time so appended filesystem data cannot expose a partial non-final firmware sector.
+- Factory images must be assembled completely on the host. Do not add formatting, catalog creation, persistent migration, or repair writes to boot. Startup mounts once with auto-format disabled and loads each store independently; compatible records may be decoded into current RAM state without rewriting them.
+- Storage corruption must not prevent the board from reaching normal operation. Use hardware-aware settings defaults, an empty editable catalog, built-in 12 EDO, and Basic Shapes as the fallback set. Keep saving disabled when LittleFS cannot mount.
+- Build-time library errors and runtime storage warnings must identify the exact source path or device file and the failed validation stage.
+
+## Product Direction
+
+- Persist rotary inversion as a user reversal relative to the detected hardware default; keep the effective decoder direction separate from the saved preference.
+- Treat documentation as a description of the current product, not as a historical record. State present behavior, durable architecture, ownership, and constraints without noting that something was fixed, previously broken, newly added, or formerly affected. Do not add investigation history, before/after narratives, migration stories, or public hardware errata unless the user explicitly requests release notes or a changelog.
+- Do not add diagnostic firmware variants to the normal build. Create a temporary diagnostic build only when the user is actively investigating a boot failure.
+
 ## Engineering Preference
 
 - Prefer code changes designed for cleanliness, clear ownership, and long-term maintainability over the quickest implementation. Avoid stacking narrow patches on top of earlier patches when a small, coherent redesign would leave the subsystem easier to understand and maintain.
@@ -21,6 +38,12 @@ These instructions apply to the entire repository. This guide is for future AI a
 ## Documentation Requirement
 
 Every behavior, setting, protocol, menu, build, hardware, or architecture change must include a documentation pass before the task is considered complete.
+
+Integrate documentation changes by replacing stale descriptions with concise
+current-state text. Do not append bug history or name the cases that motivated a
+general rule. Keep root-cause analysis, implementation history, and verification
+results in the task report, issue, commit, or dedicated release notes rather
+than product manuals and developer architecture guides.
 
 When code changes, check and update the relevant docs:
 
@@ -37,11 +60,13 @@ If a code change does not require documentation updates, explicitly say why in t
 
 - When adding, removing, or reordering `SettingKey` entries, update `factoryDefaults`, `syncSettingsToRuntime()`, menu wiring if needed, and documentation.
 - Bump `CURRENT_SETTINGS_VERSION` when persisted settings layout changes.
-- Document settings-version changes in `docs/developer-guide.md`.
+- Keep the current settings version and schema contract accurate in `docs/developer-guide.md`; do not append a settings-version history.
+- When a setting byte changes meaning, bump `CURRENT_SETTINGS_VERSION` even if its position and size are unchanged.
 
 ## Verification
 
 - Run `git diff --check` for changed code and docs.
 - For firmware changes, run `make` when possible.
+- When factory-library or companion-app data changes, run the factory-library generator and the relevant web tests/build.
 - If `make` fails because Arduino needs to access caches outside the workspace, rerun with the required escalation instead of skipping compile verification.
 - Include verification results in the final response.

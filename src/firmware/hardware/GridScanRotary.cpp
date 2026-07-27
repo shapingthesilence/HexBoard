@@ -94,7 +94,9 @@ void RAM_FUNC(readHexes)() {
           cmdOn(i);
         } else if (sequencerModeActive()) {
           handleSequencerButtonEvent(i, true);
-        } else if (h[i].inScale || (!scaleLock)) {
+        } else if (mappedButtonHasAdvancedAction(i)) {
+          tryMappedButtonActionOn(i);
+        } else if (h[i].note != UNUSED_NOTE && (h[i].inScale || !scaleLock)) {
           tryMIDInoteOn(i);
           trySynthNoteOn(i);
         }
@@ -106,6 +108,8 @@ void RAM_FUNC(readHexes)() {
           cmdOff(i);
         } else if (sequencerModeActive()) {
           handleSequencerButtonEvent(i, false);
+        } else if (mappedButtonHasAdvancedAction(i)) {
+          tryMappedButtonActionOff(i);
         } else if (h[i].inScale || (!scaleLock)) {
           tryMIDInoteOff(i);
           trySynthNoteOff(i);

@@ -1,0 +1,725 @@
+{
+  "format": "hexboard.layoutBundle.v5",
+  "bundle": {
+    "objectIdHex": "5f0e2103ede9a7691dd5784043bfaa0b",
+    "name": "58 EDO",
+    "folderPath": "/",
+    "tuning": {
+      "kind": "edo",
+      "name": "58 EDO",
+      "cycleLength": 58,
+      "referenceMidiNote": 69,
+      "referenceHz": 440.0,
+      "keyLabels": [
+        "A",
+        "A+1",
+        "A+2",
+        "A+3",
+        "A+4",
+        "A+5",
+        "A+6",
+        "A+7",
+        "A+8",
+        "A+9",
+        "B",
+        "B+1",
+        "B+2",
+        "57",
+        "C",
+        "C+1",
+        "C+2",
+        "C+3",
+        "C+4",
+        "C+5",
+        "C+6",
+        "C+7",
+        "C+8",
+        "C+8",
+        "D",
+        "D+1",
+        "D+2",
+        "D+3",
+        "D+4",
+        "D+5",
+        "D+6",
+        "D+7",
+        "D+8",
+        "D+8",
+        "E",
+        "E+1",
+        "E+2",
+        "E+3",
+        "F",
+        "F+1",
+        "F+2",
+        "F+3",
+        "F+4",
+        "F+5",
+        "F+6",
+        "F+7",
+        "F+8",
+        "F+9",
+        "G",
+        "G+1",
+        "G+2",
+        "G+3",
+        "G+4",
+        "G+5",
+        "G+6",
+        "G+7",
+        "G+8",
+        "G+9"
+      ],
+      "edoDivisions": 58,
+      "periodCents": 1200.0
+    },
+    "palette": {
+      "defaultColorMode": 1,
+      "degreeColors": [
+        {
+          "degree": 0,
+          "hueTenthDegrees": 0,
+          "saturation": 0,
+          "value": 180
+        },
+        {
+          "degree": 1,
+          "hueTenthDegrees": 62,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 2,
+          "hueTenthDegrees": 124,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 3,
+          "hueTenthDegrees": 186,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 4,
+          "hueTenthDegrees": 248,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 5,
+          "hueTenthDegrees": 310,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 6,
+          "hueTenthDegrees": 372,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 7,
+          "hueTenthDegrees": 434,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 8,
+          "hueTenthDegrees": 497,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 9,
+          "hueTenthDegrees": 559,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 10,
+          "hueTenthDegrees": 621,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 11,
+          "hueTenthDegrees": 683,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 12,
+          "hueTenthDegrees": 745,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 13,
+          "hueTenthDegrees": 807,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 14,
+          "hueTenthDegrees": 869,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 15,
+          "hueTenthDegrees": 931,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 16,
+          "hueTenthDegrees": 993,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 17,
+          "hueTenthDegrees": 1055,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 18,
+          "hueTenthDegrees": 1117,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 19,
+          "hueTenthDegrees": 1179,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 20,
+          "hueTenthDegrees": 1241,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 21,
+          "hueTenthDegrees": 1303,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 22,
+          "hueTenthDegrees": 1366,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 23,
+          "hueTenthDegrees": 1428,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 24,
+          "hueTenthDegrees": 1490,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 25,
+          "hueTenthDegrees": 1552,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 26,
+          "hueTenthDegrees": 1614,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 27,
+          "hueTenthDegrees": 1676,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 28,
+          "hueTenthDegrees": 1738,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 29,
+          "hueTenthDegrees": 1800,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 30,
+          "hueTenthDegrees": 1862,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 31,
+          "hueTenthDegrees": 1924,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 32,
+          "hueTenthDegrees": 1986,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 33,
+          "hueTenthDegrees": 2048,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 34,
+          "hueTenthDegrees": 2110,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 35,
+          "hueTenthDegrees": 2172,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 36,
+          "hueTenthDegrees": 2234,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 37,
+          "hueTenthDegrees": 2297,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 38,
+          "hueTenthDegrees": 2359,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 39,
+          "hueTenthDegrees": 2421,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 40,
+          "hueTenthDegrees": 2483,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 41,
+          "hueTenthDegrees": 2545,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 42,
+          "hueTenthDegrees": 2607,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 43,
+          "hueTenthDegrees": 2669,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 44,
+          "hueTenthDegrees": 2731,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 45,
+          "hueTenthDegrees": 2793,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 46,
+          "hueTenthDegrees": 2855,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 47,
+          "hueTenthDegrees": 2917,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 48,
+          "hueTenthDegrees": 2979,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 49,
+          "hueTenthDegrees": 3041,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 50,
+          "hueTenthDegrees": 3103,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 51,
+          "hueTenthDegrees": 3166,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 52,
+          "hueTenthDegrees": 3228,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 53,
+          "hueTenthDegrees": 3290,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 54,
+          "hueTenthDegrees": 3352,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 55,
+          "hueTenthDegrees": 3414,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 56,
+          "hueTenthDegrees": 3476,
+          "saturation": 255,
+          "value": 164
+        },
+        {
+          "degree": 57,
+          "hueTenthDegrees": 3538,
+          "saturation": 255,
+          "value": 164
+        }
+      ]
+    },
+    "layouts": [
+      {
+        "objectIdHex": "c90a45883d6a7633e3d75f0d0f64799e",
+        "name": "Janko",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": 3,
+        "upRightSteps": 10,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "e4c2a4effa31618ca8134306cb8eba5a",
+        "name": "Bosanquet-Wilson",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": 3,
+        "upRightSteps": -7,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "ee7d614f97a59f3ac6553b7224c70e46",
+        "name": "Hemififths A",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": 4,
+        "upRightSteps": 7,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "607eb85306913316ad35772843010e30",
+        "name": "Hemififths B",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": -4,
+        "upRightSteps": 3,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "b0940de9f39a2398ef3e5dec5bcc1738",
+        "name": "Chromatic",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": -7,
+        "upRightSteps": 5,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "5847bab883d63a57c0269a1f53160203",
+        "name": "Harmonic Table",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": -34,
+        "upRightSteps": -15,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "7fff7aecf59a133679bde9b1a3fccfab",
+        "name": "Septimal H.T.",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": -34,
+        "upRightSteps": -13,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "c3b4dc878a4a208c6494cbc220686ac7",
+        "name": "Diaschismic",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": 4,
+        "upRightSteps": 9,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "30a780a26ab6ac3d4948c464f012056b",
+        "name": "4X -19Y",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": 4,
+        "upRightSteps": 19,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "db2a3fcac0431bd465ec425670273a40",
+        "name": "-27X 10Y",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": -27,
+        "upRightSteps": -10,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "e694c1069ed565149e4e79013d91c83b",
+        "name": "Wicki-Hayd.(29EDO)",
+        "centerButton": 64,
+        "centerStepsFromC": 0,
+        "acrossSteps": 10,
+        "upRightSteps": 34,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "60619cf3add6003d69a2a6b15af27db3",
+        "name": "Bos.Wilson (29EDO)",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": -6,
+        "upRightSteps": 4,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "14ba2a819f480e2c94d6b048f8893bd6",
+        "name": "Janko      (29EDO)",
+        "centerButton": 65,
+        "centerStepsFromC": 0,
+        "acrossSteps": 6,
+        "upRightSteps": 10,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "1b2289968598bfe80603da515586dc60",
+        "name": "Tridec.H.T.(29EDO)",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": -34,
+        "upRightSteps": -14,
+        "deviceRotationSteps": 1,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      },
+      {
+        "objectIdHex": "41a51f6836608a2879cf6a763589167e",
+        "name": "Full Gamut",
+        "centerButton": 75,
+        "centerStepsFromC": 0,
+        "acrossSteps": 1,
+        "upRightSteps": 9,
+        "deviceRotationSteps": 0,
+        "layoutRotationSteps": 0,
+        "mirrorLeftRight": false,
+        "mirrorUpDown": false,
+        "buttonOverrides": [],
+        "offGridOverrides": [],
+        "chordActions": []
+      }
+    ],
+    "activeLayoutIdHex": "c90a45883d6a7633e3d75f0d0f64799e",
+    "scales": [
+      {
+        "objectIdHex": "4f8978c2cc8be680f121878a8c4bcd5a",
+        "name": "All Notes",
+        "includedDegrees": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54,
+          55,
+          56,
+          57
+        ]
+      }
+    ],
+    "activeScaleIdHex": "4f8978c2cc8be680f121878a8c4bcd5a"
+  }
+}

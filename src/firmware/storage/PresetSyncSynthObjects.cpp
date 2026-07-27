@@ -610,7 +610,6 @@ void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, con
   synthWaveTableLoadInProgress = true;
   loadActiveSynthWavetableSamples(samples, sampleLength);
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
-  userSynthWavetableAvailable = true;
   setCurrentSynthWavetableReference(wavetable.folderPath, wavetable.name);
   currWave = WAVEFORM_BASIC_WAVETABLE;
   settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_BASIC_WAVETABLE;
@@ -656,7 +655,6 @@ bool applyParsedSynthWavetableFileToRuntime(const SynthWavetableSlot& wavetable,
     return false;
   }
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
-  userSynthWavetableAvailable = true;
   setCurrentSynthWavetableReference(wavetable.folderPath, wavetable.name);
   currWave = WAVEFORM_BASIC_WAVETABLE;
   settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_BASIC_WAVETABLE;
@@ -819,7 +817,7 @@ bool updateSynthWavetableMetadata(uint16_t handle, const ParsedSynthWavetableObj
 
   if (updatesCurrent) {
     setCurrentSynthWavetableReference(updated.folderPath, updated.name);
-    saveCurrentSynthWavetableReference();
+    markSettingsDirty();
   }
   return true;
 }
@@ -836,6 +834,10 @@ size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType) {
       return PRESET_SYNC_MAX_SYNTH_PRESET_BYTES;
     case PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE:
       return PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES;
+    case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE:
+      return GEOMETRY_BUNDLE_MAX_RAW_BYTES;
+    case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_ORDER:
+      return PRESET_SYNC_MAX_GEOMETRY_ORDER_BYTES;
     default:
       return 0;
   }
@@ -852,7 +854,14 @@ int findSynthPresetByObjectId(const uint8_t* objectId) {
 
 int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset) {
   if (handle != PRESET_SYNC_NEW_OBJECT_HANDLE && handle < synthPresets.size()) {
-    return handle;
+    if (synthPresets[handle].valid
+        && memcmp(synthPresets[handle].objectId,
+                  preset.objectId,
+                  SYNTH_PRESET_OBJECT_ID_LENGTH) == 0) {
+      return handle;
+    }
+    sendToLog("Synth preset write handle does not match its object id.");
+    return -1;
   }
   int existing = findSynthPresetByObjectId(preset.objectId);
   if (existing >= 0) {

@@ -50,11 +50,9 @@ The `Makefile` compiles the repository sketch directly with:
 - USB stack: `picosdk`
 - USB manufacturer/product build descriptors: `HexBoard`
 
-The `Generic SPI /4` boot2 selection is required for the local `250 MHz` build
-to avoid overdriving external flash; `Generic SPI /2` may compile but can crash
-the board at runtime. The higher CPU clock gives the synth block renderer enough
-headroom for dense AHDSR and FX-envelope patches that can otherwise report
-overruns.
+The build uses the `Generic SPI /4` boot2 selection and a `250 MHz` CPU target.
+Synth audio timing derives from `F_CPU`, so the sample rate follows the selected
+CPU clock and preserves roughly the same render cycles per sample.
 
 The onboard synth PWM resolution is selected at build time:
 
@@ -72,12 +70,25 @@ make HEXBOARD_ENABLE_SEQUENCER=1
 make sequencer-builds
 ```
 
-Default and sequencer builds are renamed to:
+Default and sequencer builds produce separate factory and update images:
 
 ```text
-build/HexBoard.uf2
-build/HexBoard_Sequencer.uf2
+build/HexBoard_Factory.uf2
+build/HexBoard_Update.uf2
+build/HexBoard_Sequencer_Factory.uf2
+build/HexBoard_Sequencer_Update.uf2
 ```
+
+`scripts/build_factory_library.py` compiles source synth-preset and geometry-
+bundle `.json` files plus `.hexwav` wavetables from `factory-library/` into
+current device records.
+`scripts/build_factory_uf2.py` and `mklittlefs` create and extract-validate the
+`8 MiB` image, verify the firmware UF2 payload against the compiled binary,
+pad every touched firmware sector to its full `4 KiB` extent before appending
+another flash range, and append every filesystem block to the Factory UF2. The
+completed image is rejected if any written sector is partial. The filesystem
+range is `0x107ff000` through `0x10fff000`; the final `4 KiB` EEPROM reservation
+is not included. The Update UF2 is verified to contain firmware addresses only.
 
 The companion app is intentionally self-contained under `web/`. Keep Node
 package files there rather than adding root-level web tooling unless the repo is
@@ -90,10 +101,10 @@ The firmware is split across the RP2040's two cores:
 
 | Runtime area | Responsibilities |
 | --- | --- |
-| Core 0 `hexboardSetup()` via `setup()` | USB/MIDI startup, LittleFS, hardware detection, settings load, LEDs, OLED, menu, runtime sync |
-| Core 0 `hexboardLoop()` via `loop()` | timing, button scan, note lifecycle, arpeggiator, wheels, MIDI input, animation, LED refresh, menu click handling, auto-save |
+| Core 0 `hexboardSetup()` via `setup()` | USB/MIDI startup, one-pass LittleFS loading, hardware detection, LEDs, OLED, rotary setup, menu, runtime sync |
+| Core 0 `hexboardLoop()` via `loop()` | timing, button scan, note lifecycle, arpeggiator, wheels, MIDI input, animation, LED refresh, encoder/menu handling, auto-save |
 | Core 1 `hexboardSetup1()` via `setup1()` | synth PWM and DMA audio setup |
-| Core 1 `hexboardLoop1()` via `loop1()` | audio buffer refill, rotary quadrature polling, and delegated MIDI polling while delegated mode is active |
+| Core 1 `hexboardLoop1()` via `loop1()` | audio buffer refill, rotary polling, and delegated MIDI polling while delegated mode is active |
 | PWM-paced DMA | writes rendered audio blocks to the active PWM compare register |
 
 High-level musical flow:
@@ -106,7 +117,7 @@ button matrix -> readHexes()
               -> command-wheel value updates -> drawCommandWheelOverlay()
               -> played-note snapshot -> drawPlayedNotesOverlay()
 
-rotary encoder -> readKnob() on core 1 -> dealWithRotary() on core 0 -> GEM menu
+rotary encoder -> readKnob() on Core 1 -> dealWithRotary() on Core 0 -> GEM menu
 
 external host SysEx -> delegated control or preset sync
 ```
@@ -128,18 +139,46 @@ screen remains visible for up to about `700 ms` from when it was drawn unless
 menu input takes display ownership first. Preset-sync object write transfers
 with `SaveToFlash` set in `WRITE_BEGIN` hold this same mute across the transfer
 and commit path; one-frame live synth parameter edits and apply-only object
-transfers do not. Small current
-synth preset, current wavetable, and profile wavetable reference files compare
-the existing record before writing so ordinary saves do not rewrite unchanged
-references.
+transfers do not. Settings, the current synth-preset reference, synth preset
+files, the wavetable catalog, and geometry order compare the existing record or
+checksum before writing.
+
+### Factory Storage
+
+The Factory UF2 contains the complete formatted filesystem: current settings,
+editable preset, wavetable, and geometry catalogs, wavetable sample files,
+and current-object references. Basic Shapes and the minimal 12 EDO geometry
+bundle remain compiled as the rescue set; all other factory library objects are
+ordinary editable catalog records. `/Sequences` is created only when the user
+first opens sequence storage, saves a sequence, or starts USB Backup; boot does
+not provision it.
+
+Core 0 mounts LittleFS once with auto-format disabled. Each store validates its
+records while loading them; there is no separate preflight scan. Geometry boot
+indexing checks each bundle CRC and record envelope in one pass instead of
+reopening every contained object. Factory generation and bundle installation do
+full body/schema/reference validation, and selected records are parsed again
+when applied. The first eight distinct failing paths and reasons are recorded
+in RAM for `Advanced` -> `Storage Status`. Bad settings use
+hardware-aware RAM defaults, bad catalogs become empty, bad geometry uses
+built-in 12 EDO, and bad wavetable data uses Basic Shapes. A mount failure
+disables saving. Storage errors never add a warning delay or prevent normal
+operation.
 
 Performance-sensitive code can use `RAM_FUNC(name)` to run from SRAM instead of
 external-flash XIP. Keep this selective. Current RAM placement favors the audio
 block renderer and DMA refill helpers, button scan, command-wheel update, MIDI
-note/wheel sends, synth voice allocation, rotary quadrature polling, compact LED
-frame helpers, and small synth lookup tables read by the renderer. Avoid moving
-OLED/GEM/U8g2 drawing wholesale; those paths are dominated by library calls and
-I2C transfer time.
+note/wheel sends, synth voice allocation, rotary quadrature polling,
+compact LED frame helpers, and small synth lookup tables read by the renderer.
+Avoid moving OLED/GEM/U8g2 drawing wholesale; those paths are dominated by
+library calls and I2C transfer time.
+
+### Rotary Input Timing
+
+`readKnob()` is the table-driven quadrature decoder and runs from SRAM. Core 1
+calls it once per outer loop after audio buffer service and delegated MIDI
+handling. The decoder reads phase B and phase A with `digitalRead()` and records
+a turn only after a complete valid state sequence.
 
 The command-wheel OLED readout follows that split: the RAM-resident wheel path
 only records lightweight overlay state when a velocity, modulation, or
@@ -221,12 +260,30 @@ globals are declared in `GridState.h`. Current board constants are:
 
 Visible buttons are indices `0` through `139`. Matrix slots `140` through `159`
 are internal flags and hardware-detection positions, not playable hexes. Slots
-`141..159` are also used by sequencer-managed synth preview notes; slot `140`
-remains reserved for hardware detection.
+`141..159` are shared hidden synth-preview slots used by sequencer playback and
+advanced mapped-button direct/chord output; slot `140` remains reserved for
+hardware detection.
 
 `presetDef current` owns the active tuning, layout, scale, key offset, and
 transpose offset. Pitch-related code should go through this object instead of
 duplicating tuning/layout math.
+
+User-geometry runtime arrays in `GridState` keep per-button role, pitch, color,
+and output-action state independent. `PresetSyncGeometry.cpp` clears these
+arrays before applying a different layout and resolves explicit maps by exact
+`LayoutRef`, preventing overrides from leaking between layouts that share a
+tuning. `NoteDispatch.cpp` owns the active direct/chord MIDI refcounts and
+hidden synth handles so every note started by an action can be released during
+key-up, panic, or geometry replacement.
+
+For an EDO user tuning, the runtime period and division count are authoritative.
+`MidiRouting.cpp` computes cents as `steps * period / divisions`. Preset sync
+prefers the optional IEEE-754 binary32 period, explicit-step, cents-table, and
+reference-frequency TLVs so the wire representation retains every bit the
+firmware runtime can consume. Fixed-point milli-cent/milli-hertz TLVs remain
+supported metadata for compact objects. Equal-step tunings continue
+to use their explicit step size. Division and scale-cycle lengths may be from
+`1` through `128`.
 
 Settings are stored in:
 
@@ -237,7 +294,7 @@ uint8_t* settings;
 
 There are `9` profiles. Slot `0` is the boot and auto-save slot. `NUM_SETTINGS`
 is derived from `SettingKey::NumSettings`, so adding settings requires updating
-the enum, defaults, runtime sync, menu wiring, migration behavior, and docs
+the enum, defaults, runtime sync, menu wiring, persisted schema version, and docs
 together.
 
 The code still uses dynamic containers in live or near-live paths:
@@ -257,19 +314,15 @@ Core 0 startup currently:
 
 1. sets USB manufacturer/product descriptors to `HexBoard`
 2. starts USB serial logging
-3. disables the synth alarm IRQ before setup is complete
-4. starts Pico SDK USB MIDI and serial MIDI interfaces
-5. waits briefly for USB MIDI enumeration before flash access
-6. mounts LittleFS
-7. configures I2C
-8. configures scan pins and grid state
-9. detects hardware revision
-10. loads settings
-11. starts LEDs, display, rotary input, and menu objects
-12. applies hardware-specific menu behavior
-13. syncs saved settings to runtime globals
-14. recomputes pitch bend factors
-15. runs the bounded boot LED self-check
+3. starts Pico SDK USB MIDI and serial MIDI interfaces
+4. mounts LittleFS once with auto-format disabled
+5. configures I2C, scan pins, grid state, and hardware detection
+6. reads and validates settings, presets, wavetable references, wavetables, and geometry once
+7. starts LEDs, display, rotary input, menu objects, and synth lookup tables
+8. syncs settings to runtime and releases Core 1 to start block-rendered audio DMA
+9. waits for `audioTransportReady`
+10. restores sequencer state and runs the bounded boot LED self-check
+11. releases both cores into normal operation
 
 Place new initialization where its dependencies are already valid. Do not rely
 on loaded settings before `load_settings()` or menu objects before `setupMenu()`.
@@ -291,11 +344,15 @@ Core 0 loop is deliberately broad but should remain bounded:
 Core 1 loop stays narrow:
 
 - audio DMA buffer service
-- `readKnob()`
 - `processIncomingMIDIDelegated()` when delegated control is active
+- `readKnob()` polling
 
+The rotary decoder must remain in RAM, allocation-free, and non-blocking.
 Heavy work, blocking waits, large debug bursts, and new heap allocations in
 either loop can cause sluggish controls, LED jitter, or audio artifacts.
+`hardwareDefaultRotaryInvert()` selects the detected revision's base direction;
+the saved `RotaryInvert` byte is XORed with that default so one factory settings
+file works across hardware revisions.
 
 ## Pitch, Layout, And Refresh Paths
 
@@ -314,7 +371,7 @@ Common refresh functions:
 | --- | --- |
 | `applyScale()` | key, scale, scale-lock, or in-scale logic changes |
 | `assignPitches()` | transpose or pitch math changes without moving button positions |
-| `updateLayoutAndRotate()` | layout, mirror flags, layout rotation, or device/display rotation changes |
+| `updateLayoutAndRotate()` | layout vectors, mirror flags, or musical layout rotation changes |
 | `applyDeviceDisplayRotation()` | only the OLED/device orientation changed |
 | `refreshMidiRouting()` | MPE, MIDI channel, or tuning-dependent routing rules change |
 | `setLEDcolorCodes()` | palette, scale, color mode, brightness, or user color-map behavior changes |
@@ -329,12 +386,16 @@ Settings are stored in LittleFS at `/settings.dat` with:
 - magic bytes `STG`
 - settings file version
 - default profile index field
-- CRC32 of all profile bytes
+- nine profile setting-byte arrays
+- stable tuning/layout/scale object IDs for each profile
+- wavetable folder/name reference for each profile
+- CRC32 of the complete payload
 
-`CURRENT_SETTINGS_VERSION` is currently `23`, and `PROFILE_COUNT` is `9`.
-Any settings file with a non-current schema version resets to factory defaults
-and rewrites `/settings.dat`. The only release-specific migration retained for
-older firmware is the separate firmware `1.3` synth preset catalog import.
+`CURRENT_SETTINGS_VERSION` is currently `26`, and `PROFILE_COUNT` is `9`.
+Only the current settings version and exact payload size are accepted. Any
+other version uses hardware-aware defaults in RAM and is replaced only after a
+normal user-initiated or auto-save operation. The Factory UF2 contains the
+current settings record; boot does not rewrite settings.
 
 Important current settings facts:
 
@@ -343,7 +404,7 @@ Important current settings facts:
 - Command-wheel speed settings default to the `Medium` menu choices.
 - `BootAnimationEnabled` is persisted and defaults to enabled.
 - `LedCurrentLimitMode` stores the user-visible current-limit mode; runtime budgets are hardware-calibrated for `V1.1` and `V1.2`.
-- `PlaybackMode` defaults to `Poly`; legacy transient `PolyTbl` values normalize to `Poly`.
+- `PlaybackMode` defaults to `Poly`.
 - `AudioDestination` behaves on hardware `V1.2` as a jack-default `Buzzer` toggle that switches synth output to piezo.
 - `HeadphoneVolumeCap` and `PiezoVolumeCap` are separate profile bytes; synth presets intentionally do not store output volume.
 - Dynamic JI stores its prime-limit table in `DynamicJIRatioTable`.
@@ -360,25 +421,102 @@ When adding, removing, reordering, or reinterpreting a `SettingKey`:
 5. Decide whether a preview callback is needed.
 6. Decide which post-change function keeps runtime state consistent.
 7. Bump `CURRENT_SETTINGS_VERSION` if persisted byte layout or interpretation changes.
-8. Add migration or document why defaults-only fallback is acceptable.
+8. Update `factory-library/config.json` and storage validation for the current schema.
 9. Update user/developer/protocol docs as appropriate.
 
 Other persistent stores:
 
-- `/synth_presets.dat`: named/foldered synth presets, magic `SYP`, version `10`, up to `128` presets. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume. Firmware `1.3` fixed-slot preset files, magic `SYP` version `3`, migrate valid slots whose values differ from the firmware `1.3` synth defaults into folder `1.3 Patches` before the current catalog is rewritten.
+- `/presets/<object-id>.hsp`: one independently checksummed synth preset per file, magic `HSP`, version `11`, up to `128` files. Presets store sound-focused synth settings plus a wavetable folder/name dependency, but not active output volume. Only preset metadata is indexed in RAM for menus; a preset body is read when it is transferred, loaded, or overwritten. The Factory UF2 installs `Soft String Pad` and `Bright Mono Lead` as normal editable files.
 - `/current_synth_preset.dat`: current loaded synth preset reference, magic `CSP`, version `1`. It stores either the loaded preset object ID or the special `Blank` state; the edited synth values still come from normal settings/profile storage.
-- `/synth_wavetables.dat`: named user wavetable catalog, magic `SYW`, version `1`, up to `32` entries. Sample files use shortened `/wt_<16 hex>.wtb` paths and can contain six fixed mip levels (`49,152` bytes) or legacy base-only data (`8,192` bytes).
-- `/current_wavetable.dat`: current wavetable folder/name reference, magic `CWT`, version `1`.
-- `/profile_wavetables.dat`: per-profile wavetable folder/name snapshots, magic `PWT`, version `1`.
-- `/layouts.dat`: user geometry catalog, magic `LYT`, version `2`, up to `64` raw object bodies across `UserTuning`, `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap`.
-- `/Sequences`: optional sequencer `.hbseq` files plus `.current` remembered path when sequencer support is enabled.
+- `/synth_wavetables.dat`: named user wavetable catalog, magic `SYW`, version `1`, up to `32` entries. Sample files use shortened `/wt_<16 hex>.wtb` paths and can contain six fixed mip levels (`49,152` bytes) or base-only data (`8,192` bytes).
+- `/geometry/<tuning-object-id>.hgb`: one independently checksummed factory-or-user geometry bundle per file, magic `HGB`, file version `3`, geometry object schema `2`. Capacity is 64 complete bundles counted by `UserTuning` roots. A bundle contains its tuning root and all linked `UserLayout`, `UserScale`, `ScaleColorMap`, and `ExplicitButtonMap` records and is atomically replaced as one unit. Its header also carries a stable catalog order; `0xFFFF` marks ordinary user bundles, which sort after explicitly ordered factory entries.
+- `/geometry_order.dat`: checksummed `HGO` version `1` order override containing up to 64 tuning object IDs. Reordering writes only this small file; saving, replacing, or deleting a bundle does not rewrite it. Missing IDs are ignored and newly installed bundles append after listed entries.
+- `/default_geometry.dat`: factory default tuning-object reference, magic `DGE`, version `1`. If that bundle is unavailable, boot selects the first usable bundle and ultimately the compiled 12 EDO rescue geometry.
+- `/Sequences`: optional sequencer `.hbseq` files plus `.current` remembered path when sequencer support is enabled; absent until the first sequence-storage action.
 
-Factory tuning/layout/scale catalogs are exposed as generated read-only geometry
-objects from `BuiltinGeometry.cpp`; they are not stored in `/layouts.dat`.
+Factory tuning/layout/scale/color objects are compiled from
+`factory-library/geometry/` into ordinary `/geometry/*.hgb` files; they use the
+same format as host-created bundles. `BuiltinGeometry.cpp` generates only the
+read-only rescue tuning, layout, and scale when no usable catalog tuning exists.
+`factory-library/config.json` selects the object ID written to
+`/default_geometry.dat` for factory boot and `geometryOrder` preserves the
+former hard-coded tuning order. The loader validates each bundle independently
+and retains tuning ID, name, folder, record range, and order metadata for at
+most 64 bundles. Tuning folder navigation and row drawing therefore perform no
+LittleFS reads. Once a tuning is active, one scan of only that bundle caches up
+to 32 layout names and 32 scale names; layout/scale scrolling is storage-free.
+Preset-sync reads continue to stream record metadata and bodies when requested.
+Saving stages and atomically renames one complete bundle;
+deleting removes one bundle file. Other bundles are not rewritten. Object bodies
+are loaded only while reading, validating, or applying a selected record, so the
+332 factory records do not become a permanent RAM index. Synth preset and
+wavetable browsers use their existing RAM metadata catalogs in the same way:
+folder navigation and labels do not read LittleFS, while selection loads the
+chosen preset body or wavetable samples.
+
+Settings are loaded before the geometry catalog at startup, but geometry is not
+applied until both are available. Profile restore first loads the referenced
+bundle and then its referenced layout and scale. A bundle color map supplies
+the `Custom` palette; its default color mode is used when the bundle is selected
+interactively, but it must not replace the color mode already restored from a
+profile.
+
+### Flash Write Ownership And Frequency
+
+| Store | Owner | Normal write trigger | Wear control |
+| --- | --- | --- | --- |
+| `/settings.dat` | `Settings.cpp` | Dirty settings after 10 seconds, manual profile save, or reset | One combined settings/geometry/wavetable-profile write; identical CRC/header skips the write |
+| `/current_synth_preset.dat` | `SynthPresetStorage.cpp` | Current preset identity changes | Exact-record comparison skips unchanged writes |
+| `/presets/*.hsp` | `SynthPresetStorage.cpp` | Explicit preset save/upload | Per-object atomic replacement; matching CRC skips the write |
+| `/synth_wavetables.dat`, `/wt_*.wtb` | `SynthWavetableStorage.cpp` | Explicit wavetable upload/edit/delete | Catalog header/CRC skips unchanged catalog writes; samples change only through explicit object operations |
+| `/geometry/*.hgb` | `PresetSyncGeometry.cpp` | Explicit complete-bundle upload/delete | One atomic bundle replacement; profiles never rewrite bundles |
+| `/geometry_order.dat` | `PresetSyncGeometry.cpp` | Debounced host reorder | Byte comparison skips unchanged order writes |
+| `/Sequences/*.hbseq`, `/Sequences/.current` | `SequencerStorage.cpp` | Explicit sequence save or current-path change | Sequence saves are explicit; unchanged current paths are skipped |
+
+`/default_geometry.dat` and factory catalog/sample files
+are factory-image inputs, not normal runtime write targets. Temporary transfer
+and atomic-save files are short-lived implementation details and never represent
+a second owner for persistent state. Firmware-only updates preserve LittleFS;
+the runtime reads only the current files listed above and ignores unrelated
+files left on the filesystem.
+
+Sequencer startup reads `.current` without rewriting or deleting it. A missing
+target falls back to a blank sequence in RAM and appears in `Storage Status`;
+the file changes only after a user sequence-storage action.
+
+The web geometry library exposes drag ordering for both computer and HexBoard
+lists. Computer order is browser-local. HexBoard order changes are applied
+immediately in the UI, debounced for 2 seconds, then sent as one `GeometryOrder`
+object. Firmware skips the flash write when the bytes are unchanged and never
+rewrites HGB bundle files for ordering.
+
+Each `.hgb` is limited to `255` records and `262,144` bytes; each contained
+object body is limited to `8,192` bytes. The 64-bundle limit therefore permits
+at most `16,320` compact handles, below the preset-sync `NEW_OBJECT` sentinel.
+These are validation/addressing ceilings rather than RAM allocations. The
+on-device associated layout/scale menu shows up to `32` linked records of each
+type for the selected tuning. Bundle validation applies the same per-type limit.
+
 Runtime Apply supports generated EDO/equal-step and Scala/cents-list user
-tunings, vector layouts, included-degree scales, scale color maps, and format-1
-explicit button maps. The active user geometry selection is RAM-only and is not
-yet persisted in profiles.
+tunings, vector layouts with independent device rotation, musical
+rotation/mirrors, and an `int16_t` center-step offset, included-degree scales,
+scale color maps, fixed-field format-1
+maps, and independent-field format-2 explicit button maps. Format 2 includes
+direct MIDI note/channel actions and reusable four-tone chord actions. The
+current tuning schema stores only native binary32 values: EDO period,
+equal-step size, reference frequency, and cents-list table. Derivable values
+and lower-precision duplicates are not written.
+active tuning, layout, and scale are persisted as stable object IDs in each
+profile. If a referenced child object is missing, restore uses the selected
+bundle's default child; if the tuning is missing, it uses the factory geometry
+selection.
+
+The web layout editor normalizes whole-layout spatial transforms back into the
+center button, center-step offset, and two vector fields. It moves explicit
+override coordinates through the same axial transform. Format-4 web bundles
+may retain overrides outside the 133-key physical outline. These records stay
+in web JSON/browser storage only and are omitted from preset-sync objects;
+firmware receives only overrides currently mapped to physical buttons.
 
 ## Menu Patterns
 
@@ -409,9 +547,27 @@ Virtual browsers use `VirtualListMenu` instead of allocating one GEM page/item
 tree per file, preset, wavetable, tuning, layout, or scale entry. Launcher rows
 are GEM link items visually, and `dealWithRotary()` routes their select key
 through `handleVirtualListLauncherKey()` before normal GEM dispatch. Current
-rows use a diamond in the left action-icon slot. Stored non-root folder paths
-do not use a leading slash; `MenuFolderUtils` keeps virtual folder rows in that
-same convention so opening a folder continues to match stored catalog entries.
+rows use a diamond in the left action-icon slot. Standard GEM pages and virtual
+lists share an `18`-pixel, single-line header using the normal `6x12` menu font
+plus a divider at y=`15`. `setupMenu()` installs `GEM_FONT_BIG` as GEM's title
+font. GEM draws its title first; `drawMenuFrameOverlays()` clears only the
+header text area and redraws the title centered through
+`drawCenteredMenuHeaderTitle()`. Virtual lists call the same helper directly.
+The first row begins at y=`18`, leaving two blank pixels after the divider. On
+the `128x128` display, the remaining `110` pixels still fit eleven `10`-pixel
+rows; this reclaims the eight pixels that were left below the former
+`10`-pixel header. Virtual-list providers supply only the browser action title;
+folder paths are intentionally omitted. Stored non-root folder paths do not
+use a leading slash; `MenuFolderUtils` keeps virtual folder rows in that same
+convention so opening a folder continues to match stored catalog entries.
+
+Chunked preset-sync reads and writes own a modal OLED screen while normal core-0
+UI work is paused. `MenuAndDisplay` reads the active transfer's object type,
+direction, completed byte count, and total byte count directly from
+`PresetSyncReadTransfer` or `PresetSyncWriteTransfer`. Progress redraws are
+quantized to two-percent steps so large wavetable and geometry-bundle transfers
+remain visibly responsive without sending a full OLED buffer for every 64-byte
+SysEx chunk.
 
 Transient Advanced-menu items, such as `LED Test` and `Serial Debug`, should
 stay out of `factoryDefaults` and should not trigger a settings version bump.
@@ -466,16 +622,16 @@ Playback modes are:
 - `Poly`
 
 The synth PWM defaults to `10` bits. At the project's `250 MHz` build target,
-the carrier is roughly `488 kHz` in `8`-bit mode, `244 kHz` in `9`-bit mode,
+the carrier is roughly `490 kHz` in `8`-bit mode, `244 kHz` in `9`-bit mode,
 and `122 kHz` in `10`-bit mode. `9`-bit and `8`-bit builds are useful fallback
 comparisons if high-register tones sound harsh on the jack path.
 
 Synth audio is rendered on Core 1 into two `64`-sample DMA buffers. A dedicated
 PWM timer slice with wrap `1023` and divider `/6` paces DMA writes at about
-`40.7 kHz`. Hardware `V1.2` outputs one synth destination at a time: jack by
+`40.7 kHz` at `250 MHz`. Hardware `V1.2` outputs one synth destination at a time: jack by
 default, or piezo when `Buzzer` is enabled. Hardware `V1.1` uses piezo.
 
-Named built-in and user wavetables load into a `16 x 512` active RAM base table
+Named rescue and filesystem wavetables load into a `16 x 512` active RAM base table
 plus fixed mip levels. The sampler uses `SynthWavetablePosition` plus signed
 `WT Pos` modulation, with modulation work cached on a `32`-sample control
 quantum. Wavetable read contexts refresh every other control tick by default
@@ -483,10 +639,10 @@ quantum. Wavetable read contexts refresh every other control tick by default
 normally runs every `64` samples. The on-device `WT Pos` frame selector uses the
 shared `SYNTH_WAVETABLE_FRAME_POSITION_AMOUNTS` byte values, and the wavetable
 frame lookup snaps those selector values to exact frame offsets while preserving
-continuous interpolation for intermediate modulation amounts. Built-in factory
-wavetables are generated by
-`web/scripts/generate-factory-wavetables.mjs`, which also writes the firmware
-factory wavetable data source.
+continuous interpolation for intermediate modulation amounts.
+`web/scripts/generate-factory-wavetables.mjs` compiles only Basic Shapes into
+firmware and writes the other factory tables as `.hexwav` source files under
+`factory-library/wavetables/` so they appear in the root wavetable directory.
 
 The audio renderer consumes envelope commands and advances the amp-envelope
 state on the same `32`-sample control quantum. `SynthVoiceRenderCache` holds a
@@ -529,6 +685,14 @@ The LED state is cached per button in fields such as:
 Call `setLEDcolorCodes()` after changes that affect palette, scale, tuning
 relationships, key-centered color placement, brightness, color mode, or loaded
 user color maps.
+
+`setLEDcolorCodes()` computes one color-coordinate origin for every
+palette-derived mode. With `ColorByKey` enabled, the origin is offset by
+`current.keyStepsFromC()`; with it disabled, the origin remains at C. Every
+palette-derived renderer consumes that shared coordinate rather than
+reconstructing a key offset or reading raw `stepsFromC` independently.
+Mode-specific classification uses named semantic helpers and tables rather than
+repeated numeric comparisons.
 
 `lightUpLEDs()` writes the final frame into the NeoPixel buffer and then calls
 `applyLedCurrentLimitToFrame()` before `strip.show()`. The current limiter works
@@ -594,30 +758,32 @@ Use `web/README.md` for web commands and deployment details.
 6. Insert it in `setupMenu()`.
 7. Decide whether it needs a preview callback.
 8. Decide which post-change function keeps runtime state consistent.
-9. Decide whether the settings version needs a bump and migration.
+9. Decide whether the settings version needs a bump and update factory storage validation.
 10. Update user/developer docs.
 
 ### Add A New Tuning
 
-1. Extend the tuning definitions or geometry object generation.
-2. Add or generate compatible layouts.
-3. Add compatible scales if needed.
+1. Add or edit a web-compatible bundle JSON under `factory-library/geometry/`.
+2. Include all compatible layouts, scales, and palette colors in that bundle.
+3. Run the factory-library generator and verify its linked active IDs.
 4. Verify key labels and key selector behavior.
 5. Verify the virtual geometry browsers filter linked layouts/scales correctly.
 6. Test MIDI, MPE, synth frequency, and LED color behavior.
 
 ### Add A New Layout
 
-1. Add or generate the layout definition.
-2. Ensure its tuning association is correct.
+1. Add the layout to its source bundle JSON under `factory-library/geometry/`.
+2. Ensure its tuning association and active-layout ID are correct.
 3. Verify center, across, and diagonal step vectors.
-4. Re-test `applyLayout()` with rotation and mirror options.
-5. Verify explicit button maps are preserved or regenerated intentionally.
+4. Re-test `applyLayout()` with six-step musical rotation and mirror options.
+5. Verify four-step device rotation changes only the display/device orientation.
+6. Verify physical-button overrides stay fixed and only the exact layout's
+   explicit map is applied.
 
 ### Add A New Scale
 
-1. Add or generate the scale definition.
-2. Bind it to the right tuning or `ALL_TUNINGS`.
+1. Add the scale to its source bundle JSON under `factory-library/geometry/`.
+2. Bind it to the bundle tuning and update the active-scale ID when appropriate.
 3. Verify the interval pattern covers one cycle.
 4. Re-test `applyScale()` and `setLEDcolorCodes()`.
 
@@ -653,7 +819,7 @@ Run or manually verify the areas your change touches:
 
 - `git diff --check`
 - compile with the same board options as `Makefile`
-- keep `Generic SPI /4` boot2 for `250 MHz` builds
+- keep `Generic SPI /4` boot2 for high-clock builds
 - boot with no settings file
 - boot with an existing settings file
 - profile save/load and auto-save

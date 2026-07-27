@@ -225,7 +225,7 @@ F0 7D 05 F7
 ```
 
 Mappings are RAM-resident runtime state. They are not saved to settings,
-profiles, or `/layouts.dat`. A host can send the note map once and keep using it
+profiles, or `/geometry/*.hgb`. A host can send the note map once and keep using it
 across delegated LED updates and delegated enter/exit cycles. The map resets
 only on power cycle/boot or `SYSEX_DELEGATED_NOTE_MAP_RESET`.
 
@@ -288,6 +288,6 @@ Keep delegated control separate from user settings unless there is a clear produ
 - `factoryDefaults`
 - `syncSettingsToRuntime()`
 - menu callback wiring, if any
-- settings version/migration behavior
+- settings-version compatibility behavior
 
 Avoid adding heavy work to delegated-mode button or LED paths. The value of this mode is low-latency host control, and large logs, heap allocation, or blocking operations will make external LED animation and raw input feel sluggish.

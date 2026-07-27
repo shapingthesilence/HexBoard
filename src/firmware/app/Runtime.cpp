@@ -20,6 +20,7 @@
 #include "../sequencer/SequencerMode.h"
 #include "../storage/PresetSync.h"
 #include "../storage/Settings.h"
+#include "../storage/StorageHealth.h"
 #include "../storage/SynthPresetStorage.h"
 #include "../storage/SynthWavetableStorage.h"
 #include "../synth/SynthAudio.h"
@@ -37,25 +38,20 @@
     Anything called from setup1() and loop1()
     runs on the second core.
 
-    On the HexBoard, the second core is
-    dedicated to two timing-critical tasks:
-    running the synth emulator, and tracking
-    the rotary knob inputs.
-    Everything else runs on the first core.
+    On the HexBoard, the second core is dedicated to
+    the timing-critical synth renderer and rotary input.
+    The outer loop refills audio buffers, services delegated
+    MIDI when active, and polls the rotary decoder.
   */
+namespace {
+std::atomic<bool> normalRuntimeReady = false;
+}  // namespace
+
 void hexboardSetup() {
   setupUSBDescriptors();
   Serial.begin(115200);
   setupMIDI();
-  // Give the USB stack time to complete enumeration before any flash
-  // operations (which disable interrupts and starve the USB IRQ handler).
-  // Timeout after 2 s so the board still boots when no USB host is present.
-  {
-    unsigned long usbWaitStart = millis();
-    while (!MidiUSB.connected() && (millis() - usbWaitStart < 2000)) {
-      delay(1);
-    }
-  }
+  resetStorageHealth();
   setupFileSystem();
   Wire.setSDA(SDAPIN);
   Wire.setSCL(SCLPIN);
@@ -67,7 +63,6 @@ void hexboardSetup() {
   loadCurrentSynthPresetReference();
   load_synth_wavetables();
   load_geometry_objects();
-  loadCurrentSynthWavetableReference();
   restoreSynthWavetableReferenceForProfile(activeProfileIndex);
   setupLEDs();
   setupGFX();
@@ -76,10 +71,15 @@ void hexboardSetup() {
   setupHardware();
   initializeSynthWaveTables();
   syncSettingsToRuntime();
-  restoreSequencerAtStartup();
   recomputePitchBendFactor();
   synthRuntimeReady.store(true, std::memory_order_release);
+  while (!audioTransportReady.load(std::memory_order_acquire)) {
+    tight_loop_contents();
+  }
+  restoreSequencerAtStartup();
+  populateStorageStatusMenuPage();
   runBootLedSelfCheck();
+  normalRuntimeReady.store(true, std::memory_order_release);
 }
 void hexboardLoop() {        // run on first core
   timeTracker();     // Time tracking functions
@@ -152,6 +152,9 @@ void hexboardSetup1() {  // set up on second core
 void hexboardLoop1() {  // run on second core
   stabilityBenchmarkSetCore1Task(STABILITY_TASK_AUDIO_DMA);
   serviceAudioDmaBuffers();
+  if (!normalRuntimeReady.load(std::memory_order_acquire)) {
+    return;
+  }
   if (delegatedControl) {
     stabilityBenchmarkSetCore1Task(STABILITY_TASK_DELEGATED_MIDI);
     processIncomingMIDIDelegated();

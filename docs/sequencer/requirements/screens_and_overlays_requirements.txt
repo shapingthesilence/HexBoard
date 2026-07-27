@@ -239,3 +239,20 @@ Details:
 - Step editing shall not drive the Now Playing overlay.
 - Sequencer playback notes shall not drive the Now Playing overlay.
 - The sequencer shall use the same note naming style as the keyboard overlay.
+
+
+ID: SEQ-UI-014
+Title: Menu Header
+Status: Active
+Area: UI
+Priority: Medium
+
+Requirement:
+Standard Sequencer menu pages shall show the current page title on one
+centered, large-font header line without reducing the 11-row list.
+
+Details:
+- Menu hierarchy shall not be repeated in the header.
+- The divider shall leave a small clear gap before the first menu row.
+- The Sequencer performance page may use its second header line for the current
+  sequence filename.

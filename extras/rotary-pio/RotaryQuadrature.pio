@@ -1,0 +1,65 @@
+;
+; Copyright (c) 2023 Raspberry Pi (Trading) Ltd.
+;
+; SPDX-License-Identifier: BSD-3-Clause
+;
+; Quadrature transition decoder adapted for HexBoard rotary input. The program
+; must start at address zero because the previous and current two-bit phase
+; states form a computed-jump address.
+
+.pio_version 0
+.program hexboard_rotary_quadrature
+.origin 0
+
+    JMP update       ; 00 -> 00
+    JMP decrement    ; 00 -> 01
+    JMP increment    ; 00 -> 10
+    JMP update       ; 00 -> 11
+
+    JMP increment    ; 01 -> 00
+    JMP update       ; 01 -> 01
+    JMP update       ; 01 -> 10
+    JMP decrement    ; 01 -> 11
+
+    JMP decrement    ; 10 -> 00
+    JMP update       ; 10 -> 01
+    JMP update       ; 10 -> 10
+    JMP increment    ; 10 -> 11
+
+    JMP update       ; 11 -> 00
+    JMP increment    ; 11 -> 01
+decrement:
+    JMP Y--, update  ; 11 -> 10
+
+.wrap_target
+update:
+    MOV ISR, Y       ; 11 -> 11
+    PUSH noblock
+    OUT ISR, 2
+    IN PINS, 2
+    MOV OSR, ISR
+    MOV PC, ISR
+
+increment:
+    MOV Y, ~Y
+    JMP Y--, increment_cont
+increment_cont:
+    MOV Y, ~Y
+.wrap
+
+; Independent raw phase-change trace. This program uses a second state machine
+; and reports only changes, so the CPU does not need to consume redundant
+; samples. It fits in the eight instruction slots left by the decoder above.
+.program hexboard_rotary_trace
+.wrap_target
+sample:
+    MOV ISR, NULL
+    IN PINS, 2
+    MOV Y, ISR
+    JMP X!=Y, changed
+    JMP sample
+changed:
+    MOV X, Y
+    MOV ISR, Y
+    PUSH noblock
+.wrap

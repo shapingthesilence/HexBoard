@@ -3,6 +3,10 @@
 #include "../FirmwareModule.h"
 #include "PersistentDataModels.h"
 
+constexpr char SYNTH_PRESET_STORAGE_ROOT[] = "/presets";
+constexpr char SYNTH_PRESET_FILE_EXTENSION[] = ".hsp";
+constexpr size_t SYNTH_PRESET_STORAGE_PATH_LENGTH = 64;
+
 void load_synth_presets();
 void save_synth_presets();
 bool loadCurrentSynthPresetReference();
@@ -11,11 +15,13 @@ void flashSafeWrite(void (*writeOperation)());
 void beginFlashSafeWrite();
 void endFlashSafeWrite();
 void flashSafeSave();
-void flashSafeSaveCurrentSynthReferences();
+void flashSafeSaveCurrentSynthPresetReference();
 void flashSafeSaveSynthPresets();
 void saveSynthPresetToSlot(uint16_t presetIndex);
 void saveSynthPresetAsNew(const char* folderPath);
 bool writeSynthPresetToCatalogSlot(uint16_t presetIndex, const SynthPresetSlot& preset);
+bool deleteSynthPresetFromCatalog(uint16_t presetIndex);
+bool synthPresetStoragePath(const uint8_t* objectId, char* output, size_t outputLength);
 void loadSynthPresetFromSlot(uint16_t presetIndex);
 void loadBlankSynthPreset();
 bool readSynthPresetFromCatalog(uint16_t presetIndex, SynthPresetSlot& preset);

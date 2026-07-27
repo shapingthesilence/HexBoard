@@ -11,6 +11,7 @@
 #include "../storage/BuiltinGeometry.h"
 #include "../storage/PresetSync.h"
 #include "../storage/Settings.h"
+#include "../storage/StorageHealth.h"
 #include "../storage/SynthPresetStorage.h"
 #include "../storage/SynthWavetableStorage.h"
 #include "../sequencer/SequencerLightSettings.h"
@@ -42,7 +43,8 @@
     of the menu display, as below.
   */
 #define MENU_ITEM_HEIGHT 10
-#define MENU_PAGE_SCREEN_TOP_OFFSET 10
+#define MENU_PAGE_SCREEN_TOP_OFFSET 18
+#define MENU_HEADER_DIVIDER_Y (MENU_PAGE_SCREEN_TOP_OFFSET - 3)
 #define MENU_VALUES_LEFT_OFFSET 78
 // Create an instance of the U8g2 graphics library.
 U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2(U8G2_R2, /* reset=*/U8X8_PIN_NONE);
@@ -72,6 +74,21 @@ uint64_t virtualListLauncherFocusStartMicros = 0;
 uint16_t virtualListLauncherScrollOffset = 0;
 bool virtualListLauncherScrollApplied = false;
 char virtualListLauncherValueBuffer[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = {};
+
+constexpr uint8_t PRESET_SYNC_PROGRESS_REDRAW_STEP = 2;
+uint8_t presetSyncDisplayedObjectType = 0xFF;
+uint8_t presetSyncDisplayedDirection = 0;
+uint8_t presetSyncDisplayedProgress = 0xFF;
+
+void drawCenteredMenuHeaderTitle(const char* title) {
+  if (!title) {
+    title = "";
+  }
+  u8g2.setFont(GEM_FONT_BIG);
+  const int titleWidth = u8g2.getStrWidth(title);
+  const int centeredX = (static_cast<int>(u8g2.getDisplayWidth()) - titleWidth) / 2;
+  u8g2.drawStr(centeredX > 0 ? centeredX : 0, 0, title);
+}
 
 void wakeDisplayFromScreensaver() {
   if (!screenSaverOn) {
@@ -153,7 +170,38 @@ void restoreMenuAfterDelegatedControl() {
   }
 }
 
-void drawPresetSyncTransferScreen() {
+const char* presetSyncTransferObjectLabel(uint8_t objectType) {
+  switch (objectType) {
+    case PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET:
+      return "Synth preset";
+    case PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE:
+      return "Wavetable";
+    case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE:
+      return "Geometry";
+    case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_ORDER:
+      return "Geometry order";
+    case PRESET_SYNC_OBJECT_TYPE_USER_TUNING:
+      return "Tuning";
+    case PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT:
+      return "Layout";
+    case PRESET_SYNC_OBJECT_TYPE_USER_SCALE:
+      return "Scale";
+    case PRESET_SYNC_OBJECT_TYPE_SCALE_COLOR_MAP:
+      return "Color map";
+    case PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP:
+      return "Button map";
+    default:
+      return "Object";
+  }
+}
+
+void resetPresetSyncTransferDisplayState() {
+  presetSyncDisplayedObjectType = 0xFF;
+  presetSyncDisplayedDirection = 0;
+  presetSyncDisplayedProgress = 0xFF;
+}
+
+void drawPresetSyncTransferScreen(bool forceRedraw = false) {
   dismissCommandWheelOverlay();
   if (!presetSyncTransferScreenVisible) {
     presetSyncTransferScreenWokeDisplayFromSleep = screenSaverOn;
@@ -164,6 +212,100 @@ void drawPresetSyncTransferScreen() {
   noteBadgeVisible = false;
   noteOverlayTemporaryWake = false;
   noteOverlayWokeDisplayFromSleep = false;
+
+  uint8_t objectType = 0;
+  uint8_t direction = 0;
+  uint32_t completedBytes = 0;
+  uint32_t totalBytes = 0;
+  if (presetSyncWriteTransfer.active) {
+    objectType = presetSyncWriteTransfer.objectType;
+    direction = 1;
+    completedBytes = presetSyncWriteTransfer.receivedBytes;
+    totalBytes = presetSyncWriteTransfer.rawByteLength;
+  } else if (presetSyncReadTransfer.active) {
+    objectType = presetSyncReadTransfer.objectType;
+    direction = 2;
+    completedBytes = presetSyncReadTransfer.sentBytes;
+    totalBytes = presetSyncReadTransfer.rawByteLength;
+  }
+
+  if (direction != 0 && totalBytes > 0) {
+    uint8_t progress = static_cast<uint8_t>(std::min<uint64_t>(
+      100,
+      (static_cast<uint64_t>(completedBytes) * 100) / totalBytes));
+    uint8_t displayedProgress = progress == 100
+      ? 100
+      : (progress / PRESET_SYNC_PROGRESS_REDRAW_STEP) * PRESET_SYNC_PROGRESS_REDRAW_STEP;
+    if (!forceRedraw
+        && presetSyncTransferScreenVisible
+        && objectType == presetSyncDisplayedObjectType
+        && direction == presetSyncDisplayedDirection
+        && displayedProgress == presetSyncDisplayedProgress) {
+      return;
+    }
+
+    presetSyncDisplayedObjectType = objectType;
+    presetSyncDisplayedDirection = direction;
+    presetSyncDisplayedProgress = displayedProgress;
+
+    char titleText[28] = {};
+    char progressText[8] = {};
+    char byteText[28] = {};
+    snprintf(titleText,
+             sizeof(titleText),
+             "%s %s",
+             presetSyncTransferObjectLabel(objectType),
+             direction == 1 ? "upload" : "download");
+    snprintf(progressText, sizeof(progressText), "%u%%", progress);
+    if (totalBytes >= 1024) {
+      snprintf(byteText,
+               sizeof(byteText),
+               "%lu / %lu KB",
+               static_cast<unsigned long>(completedBytes / 1024),
+               static_cast<unsigned long>((totalBytes + 1023) / 1024));
+    } else {
+      snprintf(byteText,
+               sizeof(byteText),
+               "%lu / %lu bytes",
+               static_cast<unsigned long>(completedBytes),
+               static_cast<unsigned long>(totalBytes));
+    }
+
+    constexpr uint8_t barX = 8;
+    constexpr uint8_t barY = 47;
+    constexpr uint8_t barWidth = 112;
+    constexpr uint8_t barHeight = 14;
+    constexpr uint8_t barInnerWidth = barWidth - 4;
+    uint8_t fillWidth = static_cast<uint8_t>(
+      (static_cast<uint16_t>(barInnerWidth) * progress) / 100);
+
+    u8g2.clearBuffer();
+    u8g2.setFont(u8g2_font_6x13_tf);
+    drawCenteredDelegatedText("MIDI SysEx", 16);
+    drawCenteredDelegatedText(titleText, 34);
+    u8g2.drawFrame(barX, barY, barWidth, barHeight);
+    if (fillWidth > 0) {
+      u8g2.drawBox(barX + 2, barY + 2, fillWidth, barHeight - 4);
+    }
+    drawCenteredDelegatedText(progressText, 79);
+    drawCenteredDelegatedText(byteText, 98);
+    drawCenteredDelegatedText("Please wait...", 119);
+    u8g2.sendBuffer();
+    presetSyncTransferScreenVisible = true;
+    return;
+  }
+
+  if (!forceRedraw && presetSyncTransferScreenVisible && presetSyncDisplayedDirection != 0) {
+    return;
+  }
+  if (!forceRedraw
+      && presetSyncTransferScreenVisible
+      && presetSyncDisplayedDirection == 0
+      && presetSyncDisplayedProgress == 0) {
+    return;
+  }
+  presetSyncDisplayedDirection = 0;
+  presetSyncDisplayedProgress = 0;
 
   char frameText[28];
   char messageText[18];
@@ -187,6 +329,7 @@ void closePresetSyncTransferScreen() {
     return;
   }
   presetSyncTransferScreenVisible = false;
+  resetPresetSyncTransferDisplayState();
   screenTime = presetSyncTransferSavedScreenTime;
   if (presetSyncTransferScreenWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
     enterDisplayScreensaver();
@@ -236,7 +379,7 @@ static void closeFlashSaveScreenNow() {
   if (flashSaveScreenWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
     enterDisplayScreensaver();
   } else if (presetSyncTransferActive) {
-    drawPresetSyncTransferScreen();
+    drawPresetSyncTransferScreen(true);
   } else if (delegatedControl) {
     delegatedDisplayDirty = true;
     drawDelegatedControlScreen();
@@ -286,6 +429,9 @@ bool servicePresetSyncTransfer() {
   while (presetSyncTransferActive) {
     pausedMainLoop = true;
     bool processed = processIncomingMIDI();
+    if (processed) {
+      drawPresetSyncTransferScreen();
+    }
     uint64_t now = readClock();
     if (now >= presetSyncTransferDeadline) {
       sendToLog("Preset-sync SysEx transfer window timed out.");
@@ -331,7 +477,7 @@ char mainScaleMenuLabel[40] = "Scale";
 char mainSynthPresetMenuLabel[48] = "Synth:Current";
 char synthPresetMenuLabel[48] = "Preset:Current";
 
-GEMPage menuPageMain("HexBoard MIDI Controller");
+GEMPage menuPageMain("HexBoard");
 GEMPage menuPageTuning("Tuning", menuPageMain);
 GEMItem menuGotoTuning(mainTuningMenuLabel, menuPageTuning);
 GEMPage menuPageLayout("Layout", menuPageMain);
@@ -364,6 +510,8 @@ GEMPage menuPageOptions("Settings", menuPageMain);
 GEMItem menuGotoOptions("Settings", menuPageOptions);
 GEMPage menuPageAdvanced("Advanced", menuPageOptions);
 GEMItem menuGotoAdvanced("Advanced", menuPageAdvanced);
+GEMPage menuPageStorageStatus("Storage Status", menuPageAdvanced);
+GEMItem menuGotoStorageStatus("Storage Status", menuPageStorageStatus);
 GEMPage menuPageSerialDebug("Serial Debug", menuPageAdvanced);
 GEMItem menuGotoSerialDebug("Serial Debug", menuPageSerialDebug);
 GEMPage menuPageProfiles("Profiles", menuPageMain);
@@ -454,7 +602,7 @@ void rebootToBootloader();
     These GEMItems are read-only display items.
     They do not change any variable or run any procedure.
   */
-GEMItem menuItemVersion("Firmware 2.0 beta 2");
+GEMItem menuItemVersion("Firmware 2.0 beta 3");
 SelectOptionByte optionByteHardware[] = {
   { "V1.1", HARDWARE_UNKNOWN }, { "V1.1", HARDWARE_V1_1 }, { "V1.2", HARDWARE_V1_2 }
 };
@@ -510,6 +658,11 @@ RuntimeKeySelect selectCurrentKey(MAX_SCALE_DIVISIONS, currentKeyChoices);
 GEMItem menuItemMainKey("Key", current.keyStepsFromA, selectCurrentKey, changeKey);
 GEMItem* menuItemSaveProfile[PROFILE_COUNT];
 GEMItem* menuItemLoadProfile[PROFILE_COUNT];
+GEMItem* menuItemStorageSummary = nullptr;
+GEMItem* menuItemStorageIssuePath[STORAGE_HEALTH_MAX_ISSUES] = {};
+GEMItem* menuItemStorageIssueReason[STORAGE_HEALTH_MAX_ISSUES] = {};
+char storageStatusPathLabels[STORAGE_HEALTH_MAX_ISSUES][20] = {};
+char storageStatusReasonLabels[STORAGE_HEALTH_MAX_ISSUES][20] = {};
 char saveProfileLabels[PROFILE_COUNT][24];
 char loadProfileLabels[PROFILE_COUNT][24];
 
@@ -586,18 +739,22 @@ PersistentCallbackInfo callbackInfoAutoSave = {
 // (The GEMItem constructor here accepts a linked value, callback, and our callback info.)
 GEMItem menuItemAutoSave("Auto-Save", autoSave, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoAutoSave));
 
-// For "Invert Encoder" which is a bool tick box.
-// We want to store its value persistently in the RotaryInvert setting.
-// Create a global variable that reflects its current state.
-bool rotaryInvert = settingEnabled(SettingKey::RotaryInvert);
-// Create a PersistentCallbackInfo instance for this setting.
+// The persisted option reverses the detected hardware's normal direction.
+// The decoder consumes the resulting effective direction.
+bool rotaryInvert = false;
+bool rotaryInvertPreference = settingEnabled(SettingKey::RotaryInvert);
+
+void updateEffectiveRotaryInvert() {
+  rotaryInvert = hardwareDefaultRotaryInvert() != rotaryInvertPreference;
+}
+
 PersistentCallbackInfo callbackInfoRotary = {
   static_cast<uint8_t>(SettingKey::RotaryInvert),
-  reinterpret_cast<void*>(&rotaryInvert),
+  reinterpret_cast<void*>(&rotaryInvertPreference),
   nullptr,
-  nullptr
+  updateEffectiveRotaryInvert
 };
-GEMItem menuItemRotary("Invert Encoder", rotaryInvert, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
+GEMItem menuItemRotary("Invert Encoder", rotaryInvertPreference, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
 
 GEMItem menuItemSerialDebugEnabled("Enabled", serialDebugEnabled, serialDebugRuntimeChanged, static_cast<void*>(nullptr));
 GEMItem menuItemSerialDebugGeneral("General Log", serialDebugGeneralMessages, serialDebugRuntimeChanged, static_cast<void*>(nullptr));
@@ -1255,7 +1412,7 @@ PersistentCallbackInfo callbackInfoDeviceRotation = {
   nullptr,
   applyDeviceDisplayRotation
 };
-GEMItem menuItemSelectDeviceRotation("Display Rot", deviceRotation, selectDeviceRotation, universalSaveCallback,
+GEMItem menuItemSelectDeviceRotation("Device Rot", deviceRotation, selectDeviceRotation, universalSaveCallback,
                                      reinterpret_cast<void*>(&callbackInfoDeviceRotation));
 
 // Layout mirroring toggles
@@ -1487,8 +1644,7 @@ SelectOptionByte optionByteWaveform[] = {
   { "SyncTtn", WAVEFORM_MP_SYNC_THE_TITANIC },
   { "WrdWiz", WAVEFORM_MP_WEIRD_WIZARD },
   { "Woo", WAVEFORM_MP_WOO },
-  { "BasicTb", WAVEFORM_BASIC_WAVETABLE },
-  { "UserTbl", WAVEFORM_USER_WAVETABLE }
+  { "BasicTb", WAVEFORM_BASIC_WAVETABLE }
 };
 GEMSelect selectWaveform(sizeof(optionByteWaveform) / sizeof(SelectOptionByte), optionByteWaveform);
 PersistentCallbackInfo callbackInfoWaveform = {
@@ -2244,45 +2400,11 @@ byte normalizeDynamicJIRatioTable(byte value) {
   }
 }
 
-bool selectionFitsCurrentTuning(uint16_t layoutIndex, uint16_t scaleIndex) {
-  return layoutIndex < layoutCount
-         && layoutOptions[layoutIndex].tuning == current.tuningIndex
-         && scaleIndex < scaleCount
-         && (scaleIndex == 0 || scaleOptions[scaleIndex].tuning == current.tuningIndex);
-}
-
-void applyBuiltinGeometryRuntimeFromSettings() {
-  if (current.tuningIndex >= TUNINGCOUNT) {
-    current.tuningIndex = TUNING_12EDO;
-    settings[static_cast<uint8_t>(SettingKey::CurrentTuning)] = current.tuningIndex;
-  }
-
-  if (!selectionFitsCurrentTuning(current.layoutIndex, current.scaleIndex)) {
-    current.layoutIndex = current.layoutsBegin();
-    current.scaleIndex = 0;
-    settings[static_cast<uint8_t>(SettingKey::CurrentLayout)] = current.layoutIndex;
-    settings[static_cast<uint8_t>(SettingKey::CurrentScale)] = current.scaleIndex;
-  }
-
+void applyGeometryRuntimeFromStorage() {
   int savedKeyStepsFromA = current.keyStepsFromA;
-  uint16_t tuningHandle = 0;
-  if (!builtinGeometryHandleForLegacyTuning(current.tuningIndex, tuningHandle)
-      || !loadUserGeometryBundleFromTuningSlot(tuningHandle)) {
+  if (!loadGeometryRuntimeForProfile(activeProfileIndex)) {
     clearUserGeometryRuntimeSelection();
     return;
-  }
-
-  uint16_t layoutHandle = 0;
-  GeometryObjectSlot object;
-  if (builtinGeometryHandleForLegacyLayout(current.layoutIndex, layoutHandle)
-      && geometryObjectForHandle(layoutHandle, object)) {
-    applyGeometryObjectToRuntime(object);
-  }
-
-  uint16_t scaleHandle = 0;
-  if (builtinGeometryHandleForLegacyScale(current.tuningIndex, current.scaleIndex, scaleHandle)
-      && geometryObjectForHandle(scaleHandle, object)) {
-    applyGeometryObjectToRuntime(object);
   }
   current.keyStepsFromA = savedKeyStepsFromA;
   applyScale();
@@ -2297,7 +2419,7 @@ void syncSynthSettingsToRuntime() {
   currWave = settingValue(SettingKey::Waveform);
   synthWavetablePosition = settingValue(SettingKey::SynthWavetablePosition);
   if (!currentSynthWavetableReferenceValid) {
-    selectCompatibilitySynthWavetableForLegacyWaveform(currWave, true);
+    selectSynthWavetableForWaveform(currWave, true);
     settings[static_cast<uint8_t>(SettingKey::SynthWavetablePosition)] = synthWavetablePosition;
   }
   loadSelectedSynthWavetable();
@@ -2352,7 +2474,8 @@ void syncSynthSettingsToRuntime() {
 }
 
 void syncSettingsToRuntime() {
-  rotaryInvert = settingEnabled(SettingKey::RotaryInvert);
+  rotaryInvertPreference = settingEnabled(SettingKey::RotaryInvert);
+  updateEffectiveRotaryInvert();
   autoSave = settingEnabled(SettingKey::AutoSave);
   MPEpitchBendSemis = settingValue(SettingKey::MPEpitchBend);
   mpeUserMode = settingValue(SettingKey::MPEMode);
@@ -2372,6 +2495,15 @@ void syncSettingsToRuntime() {
   current.tuningIndex = settingValue(SettingKey::CurrentTuning);
   current.layoutIndex = settingValue(SettingKey::CurrentLayout);
   current.scaleIndex = settingValue(SettingKey::CurrentScale);
+  if (current.tuningIndex >= TUNINGCOUNT) {
+    current.tuningIndex = TUNING_12EDO;
+  }
+  if (current.layoutIndex >= layoutCount) {
+    current.layoutIndex = 0;
+  }
+  if (current.scaleIndex >= scaleCount) {
+    current.scaleIndex = 0;
+  }
   transposeSteps = decodeBiasedSetting(SettingKey::CurrentTransposeSteps);
   current.transpose = transposeSteps;
   current.keyStepsFromA = decodeBiasedSetting(SettingKey::CurrentKeyStepsFromA);
@@ -2429,7 +2561,7 @@ void syncSettingsToRuntime() {
   sequencer::applyPlaybackPreferencesFromProfile();
 
   // Now *apply* them to the engine/UI:
-  applyBuiltinGeometryRuntimeFromSettings();
+  applyGeometryRuntimeFromStorage();
   refreshMenuChoicesForCurrentTuning();
   rebuildUserGeometryMenuItems();
   rebuildRuntimeStateFromCurrentSelection();
@@ -2815,7 +2947,9 @@ void updateLayoutAndRotate() {
 }
 
 void loadDeviceRotationFromCurrentLayout() {
-  deviceRotation = defaultDeviceRotationForLayout(current.layout().isPortrait);
+  deviceRotation = userGeometryRuntimeActive && userGeometryRuntimeLayoutObjectSelected
+    ? userGeometryRuntimeDeviceRotation % 4
+    : current.layout().deviceRotation % 4;
   settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = deviceRotation;
 }
 
@@ -3026,14 +3160,58 @@ void setupSerialDebugMenuPage() {
   updateSerialDebugMenuVisibility();
 }
 
+void formatStorageStatusPath(uint8_t issueIndex) {
+  const char* path = storageHealthIssuePath(issueIndex);
+  size_t length = strlen(path);
+  if (length < sizeof(storageStatusPathLabels[issueIndex])) {
+    snprintf(storageStatusPathLabels[issueIndex],
+             sizeof(storageStatusPathLabels[issueIndex]),
+             "%s",
+             path);
+    return;
+  }
+  const char* basename = strrchr(path, '/');
+  basename = basename && basename[1] ? basename + 1 : path;
+  size_t basenameLength = strlen(basename);
+  if (basenameLength < sizeof(storageStatusPathLabels[issueIndex])) {
+    snprintf(storageStatusPathLabels[issueIndex],
+             sizeof(storageStatusPathLabels[issueIndex]),
+             "%s",
+             basename);
+    return;
+  }
+  snprintf(storageStatusPathLabels[issueIndex],
+           sizeof(storageStatusPathLabels[issueIndex]),
+           "%.8s...%s",
+           basename,
+           basename + basenameLength - 8);
+}
+
+void populateStorageStatusMenuPage() {
+  menuItemStorageSummary = new GEMItem(storageHealthSummaryLabel());
+  menuPageStorageStatus.addMenuItem(*menuItemStorageSummary);
+  for (uint8_t index = 0; index < storageHealthIssueCount(); ++index) {
+    formatStorageStatusPath(index);
+    snprintf(storageStatusReasonLabels[index],
+             sizeof(storageStatusReasonLabels[index]),
+             "  %s",
+             storageHealthIssueReason(index));
+    menuItemStorageIssuePath[index] = new GEMItem(storageStatusPathLabels[index]);
+    menuItemStorageIssueReason[index] = new GEMItem(storageStatusReasonLabels[index]);
+    menuPageStorageStatus.addMenuItem(*menuItemStorageIssuePath[index]);
+    menuPageStorageStatus.addMenuItem(*menuItemStorageIssueReason[index]);
+  }
+}
+
 void setupAdvancedMenuPage() {
+  menuPageOptions.addMenuItem(menuItemShiftColor);
+  menuPageOptions.addMenuItem(menuItemDisplayPlayedNotes);
   menuPageOptions.addMenuItem(menuGotoAdvanced);
   menuPageAdvanced.addMenuItem(menuItemVersion);
   menuPageAdvanced.addMenuItem(menuItemHardware);
   menuPageAdvanced.addMenuItem(menuItemRotary);
-  menuPageAdvanced.addMenuItem(menuItemShiftColor);
-  menuPageAdvanced.addMenuItem(menuItemDisplayPlayedNotes);
   menuPageAdvanced.addMenuItem(menuItemBootAnimation);
+  menuPageAdvanced.addMenuItem(menuGotoStorageStatus);
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now
   menuPageAdvanced.addMenuItem(menuItemResetDefaults);
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
@@ -3054,6 +3232,15 @@ void setupTransposeMenuItem() {
 }
 
 void drawMenuFrameOverlays() {
+  GEMAppearance* appearance = menu.getCurrentAppearance();
+  if (appearance && appearance->menuPageScreenTopOffset == MENU_PAGE_SCREEN_TOP_OFFSET) {
+    GEMPage* currentPage = menu.getCurrentMenuPage();
+    u8g2.setDrawColor(0);
+    u8g2.drawBox(0, 0, u8g2.getDisplayWidth(), MENU_HEADER_DIVIDER_Y);
+    u8g2.setDrawColor(1);
+    drawCenteredMenuHeaderTitle(currentPage ? currentPage->getTitle() : "");
+    u8g2.drawHLine(0, MENU_HEADER_DIVIDER_Y, u8g2.getDisplayWidth());
+  }
   drawSequencerMenuFilenameHeader();
   drawPlayedNoteBadgeOnMenuFrame();
 }
@@ -3062,6 +3249,7 @@ void setupMenu() {
   initTransposeOptions();
   updateMainMenuDynamicLabels();
   menu.setSplashDelay(0);
+  menu.setFontSmall(GEM_FONT_BIG, 6, 12);
   menu.init();
   menu.setDrawMenuCallback(drawMenuFrameOverlays);
   menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value

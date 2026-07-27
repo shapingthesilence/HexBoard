@@ -45,7 +45,7 @@ If `Scale Lock` is off, every note button can play. If `Scale Lock` is on, only 
 
 ### Played Note Display
 
-The `DisplayNotes` option in `Advanced` controls the OLED played-note overlay.
+The `DisplayNotes` option in `Settings` controls the OLED played-note overlay.
 Set it to `Off`, `Label`, `Number`, or `MIDI`. `Label` shows the active tuning's note
 labels with octave numbers, including labels provided by user geometry objects.
 Custom note labels are limited to `7` characters so they fit the on-device Key
@@ -115,6 +115,13 @@ command-wheel, delegated-control, save, and transfer screens may wake the panel
 long enough to show feedback, then return it to sleep if the menu timer had
 already expired.
 
+Normal menu pages use a single-line `6x12` title in an `18`-pixel header.
+Expanding the header from `10` to `18` pixels consumes the eight pixels that
+were unused below the old list, so all `11` menu rows still fit on the
+`128x128` display. The root page title is the compact `HexBoard` so it fits the
+larger font cleanly. Titles are centered, and the divider sits at row `15`,
+leaving two clear pixels before the first menu-row highlight begins.
+
 The main menu includes:
 
 - `Tuning:<current>`
@@ -143,18 +150,23 @@ Rows that open virtual browsers, including tuning/layout/scale, synth preset,
 and wavetable browsers, use the same right-side arrow cue as folder/submenu
 rows. Inside those browsers, folders keep that right-side arrow and selectable
 actions or entries use the action arrow. The currently loaded row uses a
-diamond in the left action-icon slot. When the selector rests on one of those
-launcher rows, long current names begin scrolling after `1.5` seconds and
-advance one character every `250` ms. The final scroll position pauses for
-`1` second before the name returns to the beginning and waits again. Scrolling
-pauses while the played-note badge or full-screen played-note overlay is shown.
+diamond in the left action-icon slot. Virtual browsers use the same single-line
+large header for the current browser action; folder paths are not shown in the
+header. When the selector rests on
+one of those launcher rows, long current names begin scrolling after `1.5`
+seconds and advance one character every `250` ms. The final scroll position
+pauses for `1` second before the name returns to the beginning and waits again.
+Scrolling pauses while the played-note badge or full-screen played-note overlay
+is shown.
 
 ### Tuning
 
 Use this section to choose the tuning or geometry bundle the whole board runs
-on. The page is a GEM-style virtual list backed by geometry objects: factory
-tunings appear at the root, and saved user tunings can be organized into
-folders. Scrolling follows normal GEM list behavior, including page jumps at
+on. The page is a GEM-style virtual list backed by the editable geometry
+catalog: supplied factory tunings appear at the tuning root in their original
+factory order, and additional saved tunings can be organized into folders.
+Tuning names and folders are kept in a small menu index, so scrolling does not
+read the filesystem. Scrolling follows normal GEM list behavior, including page jumps at
 the 11 visible-row boundary. The active tuning shows a diamond in the left
 action-icon slot when it appears in the list. Selecting a tuning also loads the
 first linked layout, scale, color map, and matching explicit button map so the
@@ -187,7 +199,10 @@ the left action-icon slot when it appears in the list.
 
 Choosing a layout remaps button pitches, loads that layout's matching explicit
 button map when one exists, and reloads that layout's default device
-orientation: portrait layouts use `0`, and landscape layouts use `90`.
+rotation in 90-degree steps.
+Only the active tuning's layout and scale names are cached. Changing tunings may
+briefly pause while that bundle is loaded; subsequent layout/scale browsing does
+not read the filesystem.
 
 Layout rotation, flip, and display rotation controls live under `Editor`.
 
@@ -219,6 +234,17 @@ Options include:
 
 Available color modes are `Rainbow`, `Diatonic`, `Alt`, `Fifths`, `Piano`, `Alt Piano`, `Filament`, and `Custom`. `Custom` shows a scale-degree color scheme loaded from the web editor. The animation list includes button, octave, by-note, star, splash, orbit, beams, reversed variants, and MIDI-in highlighting.
 
+`Settings` -> `ColorByKey` moves the palette origin with the selected musical
+key for every palette-derived color mode. When it is off, those colors remain
+anchored to C. Direct per-button colors in `Custom` mode remain attached to
+their assigned buttons.
+
+Buttons whose tuned notes fall outside the playable MIDI range remain unlit so
+they are not mistaken for playable keys, and pressing them produces no MIDI or
+synth response or animation. LED animations started by other playable keys can
+still light them. An active per-button color override in `Custom` mode takes
+precedence and keeps its assigned resting color.
+
 `LED Limit` helps prevent power problems by lowering LED output when a bright setting would draw too much current. This matters most in bright modes such as `Filament` and `Diatonic`. `Off` leaves the LEDs uncapped and can cause resets at extreme brightness. The numbered limits use hardware-specific calibration tables for `V1.1` and `V1.2` boards. The factory default is `1.5 A`, calibrated to provide a similar actual USB-side draw on both hardware revisions and stable behavior on most power supplies.
 
 ### Editor
@@ -237,11 +263,11 @@ Options include:
 - `Layout Rot`
 - `Flip L/R`
 - `Flip U/D`
-- `Display Rot`
+- `Device Rot`
 
 `JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
 `3Limit`, `5Limit`, `7Limit`, and higher options through `41Limit`. Lower-limit
-tables use simpler ratios; higher-limit tables preserve the broader legacy
+tables use simpler ratios; higher-limit tables preserve the broader
 candidate set.
 
 `Beat BPM` and `BPM Mult.` control the BPM-synced retuning grid and are hidden
@@ -249,9 +275,11 @@ when `JI BPM Sync` is off.
 
 `Layout Rot` rotates the musical axes in 60-degree steps. `Flip L/R` mirrors
 the layout around the middle key, physical button `65`. `Flip U/D` mirrors the
-layout vertically across the grid. `Display Rot` changes the physical
-device/display orientation in 90-degree steps without changing the musical
-layout.
+layout vertically across the grid. `Device Rot` changes the physical
+device/display orientation through `0`, `90`, `180`, and `270` degrees without
+changing the musical layout. User layouts can provide defaults for all four
+fields; the menu keeps the names distinct because device rotation never changes
+which pitch a physical key plays.
 
 #### Synth
 
@@ -326,10 +354,11 @@ also follow `Played`, `RevPlay`, or `Random` order. `Played` means the order in
 which held notes were pressed, not the physical button numbers.
 
 `WT:...` shows the currently loaded wavetable and opens a virtual load list.
-Built-in tables appear at the root, and user-imported wavetables can be
-organized into folders. The active wavetable shows a diamond in the left
-action-icon slot when it appears in the list.
-Built-in compatibility tables include:
+Basic Shapes is the built-in rescue table. Supplied factory wavetables appear
+in the root directory, while user-imported wavetables can be organized into
+folders. All are ordinary editable files. The active
+wavetable shows a diamond in the left action-icon slot when it appears in the
+list. The factory image includes:
 
 - `Basic Shapes`: sine, triangle, saw, and square anchors
 - `Classic`: strings and clarinet anchors
@@ -339,9 +368,8 @@ Built-in compatibility tables include:
 - `RoundThe808`: rounded and 808-like MP waves
 - `GlassyBells`: glassy and bell-like MP waves
 
-Old presets that used the previous `Waveform` selector are migrated by choosing
-one of these tables and setting `WT Pos` to the matching anchor. The old
-`Hybrid` waveform now maps to `Basic Shapes` at `0%`.
+Everything in this list except Basic Shapes can be edited or erased like an
+imported wavetable. Reinstall the Factory UF2 to restore the supplied library.
 
 User-imported wavetables appear in the same `WT:...` browser after they are
 saved through the web app. New imports default to the `User` folder and are
@@ -431,16 +459,10 @@ named, foldered synth sounds. The device remembers which synth preset or
 `Blank` state was last loaded, while the normal settings auto-save stores any
 unsaved edits so the preset label can still show as modified after restart. On
 the device, presets appear in a virtual folder browser; `New Preset` saves into
-the currently open folder. Factory presets are copied into normal
-editable root-folder preset slots
-when defaults are restored, so they can be changed or erased like any other
-preset and restored later by Reset Defaults or from the web editor's browser
-library. The web app still shows the foldered library and can create foldered
-presets.
-If HexBoard finds a valid firmware `1.3` synth preset file during upgrade, valid
-old slots whose values differ from the firmware `1.3` synth defaults are
-imported into a `1.3 Patches` preset folder alongside the current factory
-presets. Older settings files still reset to factory defaults.
+the currently open folder. The factory image includes its preset library as
+ordinary editable records, including `Soft String Pad` under `Pads` and
+`Bright Mono Lead` under `Leads`. They can be changed or erased like any other
+preset. The web app shows the foldered library and can create foldered presets.
 The load list also includes `Blank`. Loading from the top-level `Synth` item
 returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
@@ -543,7 +565,8 @@ reset.
 When delegated mode starts, the OLED shows `Delegated Control Mode` and, when
 provided by the host, the controlling app name. The normal menu is disabled.
 Encoder turns and encoder button press/release events are sent to the host; the
-saved `Invert Encoder` setting still controls turn direction. The OLED
+saved `Invert Encoder` setting reverses the normal direction selected for the
+detected hardware revision. The OLED
 screensaver still blanks the display after inactivity and only encoder activity
 wakes it again. Hold the encoder button for about `5` seconds to force HexBoard
 out of delegated mode.
@@ -563,14 +586,80 @@ default, followed by `Synth Editor` and `Profiles`.
 
 In the tuning/layout editor, you can create EDO tunings, equal-step tunings,
 Scala `.scl` imports, vector layouts, scales, custom scale-degree colors, and
-per-button note/color overrides. The preview paintbrush can target either
-button color overrides or scale-degree palette colors while `Custom` color mode
-is active. Painting a scale degree clears matching button color overrides in
-the active layout so the palette color takes effect immediately. `Live send`
-previews compatible edits on the connected HexBoard without saving them to
-flash. `Save to Computer` stores the bundle in browser storage, and `Save to
-HexBoard` writes it to the device so it appears in the on-device `Tuning`,
-`Layout`, and `Scales` browsers.
+per-button pitch, color, direct-MIDI, or chord overrides. Work through `Library`, `Tuning`, `Layout`, and
+`Scale & color` from left to right. `Library` provides the full-width computer
+and HexBoard file-management view; the three editing steps keep the board
+preview visible while their focused controls appear beside it. Sync and save
+actions remain at the top of the geometry studio. Valid, in-range numeric edits
+update the preview as you type. Empty, incomplete, or out-of-range drafts remain
+editable without changing the preview, then restore or clamp when you leave the
+field. Names and descriptions likewise apply their
+length and fallback rules only after you leave the field. The preview's adjacent
+brush and eyedropper buttons paint keys or pick an existing key color. The brush
+can target either button color overrides or scale-degree palette colors while
+`Custom` color mode is active. Painting a scale degree clears matching
+button color overrides in the active layout so the palette color takes effect
+immediately. Expand `Key inspector` to choose a tuned note, direct MIDI note,
+chord, or `Off` output, optionally override its generated pitch, or change
+between its scale-degree color and a per-key color. Shift-click selects a continuous range, while Control-click or
+Command-click toggles individual keys; the bulk controls transpose or reset the
+selection together. Selected keys use green rings around slightly smaller key
+faces, the primary key used by the inspector has a gold ring, and the toolbar
+reports the current selection count. Selection status and `Deselect All` live
+in the layout-transform toolbar; clearing the selection disables its transform
+buttons until another key is selected. The always-visible `Output` section allows
+a key to send a tuned note, fixed MIDI note and channel, reusable chord shape of
+up to four tones, or no output. Chord intervals can use
+the current tuning's steps or ordinary MIDI semitones. The inspector uses a visual color picker; derived layout step and scale
+degree values are read-only facts, and cents-from-reference information is under
+`Advanced pitch details`. `Reset all key overrides` restores the selected key to
+the active layout and palette. Encoded object data is under the collapsed
+`Developer details` panel.
+The Layout sidebar contains the four-way `Device rotation` setting. Musical
+layout edits live in the toolbar directly below the color-paint toolbar: `−1`
+and `+1` transpose, counterclockwise/clockwise curved arrows, horizontal and
+vertical mirror icons, and undo/redo. The gold primary key is the transform
+center. With one key or all 133 playable keys selected, these controls rewrite
+the generated layout and move all pitch, color, role, and action overrides with
+it. With any smaller multi-selection, rotation, mirror, and transpose create or
+move per-key overrides instead. Overrides temporarily moved beyond the visible
+board are retained in the bundle and can return with undo or a later transform.
+Horizontal and vertical mirror icons follow the displayed device orientation,
+so their underlying grid axis changes at 90° and 270° device rotations. Undo
+and redo also cover color-paint operations; one continuous pointer drag is one
+history step. EDO
+tunings are stored as an exact period divided by the selected division count;
+the displayed decimal step size is informational and does not accumulate
+rounding error across periods. Sync sends periods, fixed step sizes, Scala
+intervals, and reference frequency at the firmware's native 32-bit floating-
+point precision. Each value is stored once; EDO step size, equal-step period,
+and Scala period are derived from their authoritative values.
+`Live send` previews compatible edits on the connected HexBoard without saving
+them to flash. `Save to computer` stores the bundle in browser storage, and
+`Save to HexBoard` writes the complete bundle, then applies its active tuning,
+layout, scale, colors, and button map so the preview and device menu agree. The
+saved bundle appears in the on-device `Tuning`, `Layout`, and `Scales`
+browsers. HexBoard stores up to 64 complete geometry bundles; one tuning plus
+its palette and all linked layouts/scales counts as one bundle. Tuning division
+and scale-cycle lengths may be from 1 through 128. Saving or erasing a bundle
+changes only that bundle's file; the other geometry bundles are not rewritten.
+Each tuning bundle may contain up to 32 layouts and 32 scales.
+The editor's `Default color mode` selector is saved with each bundle and is
+applied when that tuning loads. The supplied `12 EDO (Normal)` bundle defaults
+to `Rainbow`.
+
+In the Library step, drag bundle rows to reorder them. Computer Library order is
+saved in the browser. Dragging HexBoard Library rows updates the device menu
+order after a 2 second quiet period, so several quick drops produce one small
+order-file flash write rather than rewriting geometry bundles.
+
+Library folder rows begin with the visually distinct system views `All` and
+`Root`, followed by user folders. New folders belong to the
+computer library and stay available between sessions. An empty computer folder
+can be deleted from the folder controls; move or erase its bundles first when it
+is not empty. HexBoard folders are derived from the saved items on the device,
+so a device folder disappears automatically after its last item is moved or
+erased.
 
 In the synth editor, you can manage synth presets and user wavetables. Presets
 can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,
@@ -579,16 +668,25 @@ folders. Wavetables can be imported from Serum/Vital `.wav` files or HexBoard
 `.hexwav` files, uploaded, downloaded, exported, renamed, moved, and selected
 for the open preset. Short HexBoard `.hexwav` files with fewer than 16
 512-sample frames are interpolated to the 16 frames the device uses.
+Preset and wavetable libraries use the same `All` and `Root` system views.
+Empty computer folders have explicit create and delete controls and persist
+between browser sessions. The firmware-resident `Basic Shapes` fallback appears
+in `Root` like the other root-level wavetables; its internal storage path is not
+shown as a folder. New wavetable imports start in `Root` unless another folder
+is selected.
+
 `HexBoard Wavetables` is refreshed from the connected device; if a preset
 references a computer-only wavetable, saving that preset to HexBoard offers to
 upload the wavetable first.
 
-Single live synth-parameter edits do not show the `MIDI SysEx Transfer` screen,
+Single live synth-parameter edits do not show the `MIDI SysEx` transfer screen,
 do not mute audio, and are saved by the normal debounced auto-save path. Larger
 object transfers, such as full preset saves or wavetable imports, show `MIDI
-SysEx Transfer` on the HexBoard. Transfers that save to flash mute audio for the
-transfer window and briefly pause normal menu/button/LED work while the transfer
-is serviced.
+SysEx` on the HexBoard with the object type, upload/download direction, byte
+count, percentage, and a progress bar. This includes large wavetable transfers
+and complete geometry-bundle saves. Transfers that save to flash mute audio for
+the transfer window and briefly pause normal menu/button/LED work while the
+transfer is serviced.
 
 ### Transpose
 
@@ -614,25 +712,35 @@ How it behaves:
 - Load rows appear next: `Load Boot/Auto-Save`, `Load Slot 1`, and so on
 - Save rows appear below the load rows: `Save Boot/Auto-Save`, `Save Slot 1`, and so on
 - Auto-save always snapshots the current setup back into the `Boot/Auto-Save` profile
-- Loading a slot immediately replaces the current setup, including the selected wavetable
-- Saving stores the current setup, including the selected wavetable, in the chosen slot
+- Loading a slot immediately replaces the current setup, including its tuning,
+  layout, scale, color mode, MIDI settings, and selected wavetable
+- Saving stores the current setup, including those geometry and wavetable
+  selections, in the chosen slot
+
+#### Settings
+
+The `Settings` page includes:
+
+- `ColorByKey`: makes palette-derived color modes follow the selected key;
+  disabling it anchors their color origin to C
+- `DisplayNotes`: `Off`, `Label`, `Number`, or `MIDI`
+- MIDI and performance-control settings
+- The `Advanced` submenu
 
 #### Advanced
 
 This page contains maintenance and system settings:
 
-- `Firmware 2.0 beta 2` version label
+- `Firmware 2.0 beta 3` version label
 - Hardware revision
-- `Invert Encoder`
-- `ColorByKey`
-- `DisplayNotes`: `Off`, `Label`, `Number`, or `MIDI`
+- `Invert Encoder`: reverse the detected hardware revision's normal direction
 - `Boot Anim`
+- `Storage Status`: shows up to the first eight path-specific storage issues
+  found during the normal load pass, or `Storage OK`
 - `Reset Defaults`
 - `Update Firmware`
 - `Serial Debug`
 - `LED Test`
-
-`ColorByKey` makes compatible color modes follow the selected key.
 
 `Boot Anim` controls the startup LED animation. Turn it off for the fastest,
 quietest visual boot.
@@ -659,10 +767,12 @@ What to expect:
   fade audio down/up, hold the physical audio outputs idle while flash is busy,
   keep the save message visible for up to about `700 ms`, and return to
   the active menu, browser, or sleeping OLED state afterward
-- Current synth preset and wavetable reference files are only rewritten when
-  their stored value changes
-- If saved settings cannot be read, HexBoard restores factory defaults
-- This release also resets older settings-schema files to factory defaults
+- The current synth-preset identity file is only rewritten when its value changes
+- Unchanged profile/settings data is not rewritten; related profile references
+  are batched into the same save window
+- If a storage file is invalid, HexBoard uses the safe fallback for that store
+  and records the path under `Advanced` -> `Storage Status`. It does not pause
+  startup. If LittleFS cannot mount, saving remains disabled for that boot
 - Saving may mute the onboard synth very briefly
 
 ## Microtonal And MPE Behavior
@@ -673,7 +783,12 @@ HexBoard supports standard `12 EDO` and many non-12-EDO tunings. Depending on th
 - Use multiple MIDI channels for wider note ranges
 - Use MPE for microtonal pitch bends
 
-In `Auto` mode, standard `12 EDO` generally stays in normal MIDI mode, while microtonal setups may switch to MPE automatically.
+In `Auto` mode, standard `12 EDO` generally stays in normal MIDI mode, while
+microtonal setups may switch to MPE automatically. The `MIDI Channel` row is the
+note channel for single-channel mode. In MPE mode, channel `1` is the zone
+master and notes begin at `MPE Low Ch` (channel `2` by default), so a saved and
+displayed `MIDI Channel` of `1` does not mean MPE notes will be sent on channel
+`1`.
 
 For DAW, plugin, and hardware synth setup, including pitch-bend range matching
 and channel-zone examples, see the [MPE Microtonal Setup Guide](mpe-microtonal-setup.md).
@@ -682,15 +797,16 @@ and channel-zone examples, see the [MPE Microtonal Setup Guide](mpe-microtonal-s
 
 Important factory defaults include:
 
-- Tuning: built-in `12 EDO`
-- Layout: first built-in 12-EDO layout
-- Display Rot: `0`
+- Tuning: factory-library `12 EDO (Normal)`
+- Layout: its `Wicki-Hayden` layout
+- Device Rot: `0`
 - Scale: chromatic / none
 - MIDI channel: `1`
 - MPE mode: `Auto`
+- Active synth preset: `Soft String Pad`
 - Synth: `Poly`
 - Synth output volume: `100%` for headphone and piezo
-- Wavetable: `Basic Shapes`
+- Wavetable: `/Classic`
 - WT Pos: frame `1`
 - Drive: `Off`
 - Wheel FX: `FoldWrp`
@@ -704,12 +820,29 @@ Important factory defaults include:
 - Metronome: `Off`
 - Time signature: `4/4`
 - LED brightness: `Dim`
-- LED limit: `Off`
+- LED limit: `1500 mA`
 - Animation: `Button`
 - Display notes: `Label`
 - Auto-save: `On`
 
 ## Updating Firmware
+
+Use `HexBoard_Factory.uf2` for a factory installation. It erases all saved
+settings, presets, wavetables, layouts, samples, and sequences, then installs a
+complete factory library. Use `HexBoard_Update.uf2` to update firmware without
+changing LittleFS. Beta 3 accepts only settings schema `26`;
+settings from another beta start at defaults, while current-format preset,
+wavetable, geometry, and sequence files remain available.
+
+Boot mounts LittleFS and loads each store once without formatting or creating
+factory files. If a saved store is invalid, the board continues with safe
+defaults and records the affected path and reason under `Advanced` -> `Storage
+Status`. If LittleFS cannot mount, the board uses its minimal compiled 12 EDO
+geometry rescue bundle and Basic Shapes, and disables saving. Normal factory
+geometry is read from independent `/geometry/*.hgb`
+bundle files; only selected records are decoded into runtime RAM. Named synth
+presets are also stored as independent `/presets/*.hsp` files, so saving one
+preset does not rewrite the rest of the preset library.
 
 How to update:
 
@@ -719,7 +852,7 @@ How to update:
 4. Drag the `.uf2` file onto the `RPI-RP2` drive.
 5. The HexBoard will automatically reboot with the new firmware.
 
-Need a backup method?
+Need bootloader recovery?
 
 Hold the bootloader button while plugging it in:
 
