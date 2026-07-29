@@ -12,6 +12,7 @@ import { createSynthWavetableObject, SYNTH_WAVETABLE_SAMPLE_BYTES } from "../cat
 import {
   MessageType,
   ObjectType,
+  SynthWavetableSelector,
   decodePresetSyncFrame,
   decodeAckPayload,
   decodeDataChunkPayload,
@@ -68,6 +69,18 @@ describe("PresetSyncClient", () => {
 
     expect(decoded.message).toBe(MessageType.SynthParamSet);
     expect(decoded.payload).toEqual([1, 59, 63, 1]);
+    expect(Array.from(transport.sentMessages[0])).toEqual(frame);
+  });
+
+  it("sends a compact live wavetable selection frame", async () => {
+    const transport = new MockMidiTransport();
+    const client = new PresetSyncClient(transport);
+
+    const frame = await client.sendSynthWavetableSelect(SynthWavetableSelector.Catalog, 63);
+    const decoded = decodePresetSyncFrame(frame);
+
+    expect(decoded.message).toBe(MessageType.SynthWavetableSelect);
+    expect(decoded.payload).toEqual([SynthWavetableSelector.Catalog, 63, 0]);
     expect(Array.from(transport.sentMessages[0])).toEqual(frame);
   });
 

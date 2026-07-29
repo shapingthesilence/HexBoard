@@ -41,10 +41,16 @@ export const MessageType = {
   WriteCommit: 0x27,
   TransferAbort: 0x28,
   DeleteRequest: 0x29,
-  SynthParamSet: 0x2a
+  SynthParamSet: 0x2a,
+  SynthWavetableSelect: 0x2b
 } as const;
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];
+
+export const SynthWavetableSelector = {
+  Catalog: 0x00,
+  BuiltIn: 0x01
+} as const;
 
 export const ErrorCode = {
   UnsupportedProtocol: 0x01,
@@ -115,7 +121,8 @@ export const CapabilityFlag = {
   SynthWavetable: 1 << 11,
   LiveSynthParam: 1 << 12,
   CentsTableRuntimeTuning: 1 << 13,
-  GeometryBundleFiles: 1 << 14
+  GeometryBundleFiles: 1 << 14,
+  LiveSynthWavetableSelect: 1 << 15
 } as const;
 
 export type CapabilityFlagValue = (typeof CapabilityFlag)[keyof typeof CapabilityFlag];

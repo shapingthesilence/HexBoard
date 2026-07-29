@@ -38,7 +38,8 @@ void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_
                       | PRESET_SYNC_CAP_SYNTH_WAVETABLE
                       | PRESET_SYNC_CAP_LIVE_SYNTH_PARAM
                       | PRESET_SYNC_CAP_CENTS_TABLE_RUNTIME_TUNING
-                      | PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES);
+                      | PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES
+                      | PRESET_SYNC_CAP_LIVE_SYNTH_WAVETABLE_SELECT);
   presetSyncAppendU28(response, PRESET_SYNC_MAX_RAW_OBJECT_BYTES);
   response.push_back(CURRENT_SETTINGS_VERSION);
   response.push_back(SYNTH_PRESET_SCHEMA_VERSION);
@@ -1156,6 +1157,9 @@ bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len) {
       break;
     case PRESET_SYNC_MSG_SYNTH_PARAM_SET:
       presetSyncHandleSynthParamSet(transactionId, payload, payloadLength);
+      break;
+    case PRESET_SYNC_MSG_SYNTH_WAVETABLE_SELECT:
+      presetSyncHandleSynthWavetableSelect(transactionId, payload, payloadLength);
       break;
     case PRESET_SYNC_MSG_ACK:
       if (presetSyncReadTransfer.active || presetSyncWriteTransfer.active) {

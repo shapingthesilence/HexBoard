@@ -35,6 +35,10 @@ constexpr uint8_t PRESET_SYNC_MSG_WRITE_COMMIT = 0x27;
 constexpr uint8_t PRESET_SYNC_MSG_TRANSFER_ABORT = 0x28;
 constexpr uint8_t PRESET_SYNC_MSG_DELETE_REQ = 0x29;
 constexpr uint8_t PRESET_SYNC_MSG_SYNTH_PARAM_SET = 0x2A;
+constexpr uint8_t PRESET_SYNC_MSG_SYNTH_WAVETABLE_SELECT = 0x2B;
+
+constexpr uint8_t PRESET_SYNC_SYNTH_WAVETABLE_SELECTOR_CATALOG = 0x00;
+constexpr uint8_t PRESET_SYNC_SYNTH_WAVETABLE_SELECTOR_BUILTIN = 0x01;
 
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_ALL = 0x00;
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_USER_TUNING = 0x03;
@@ -138,6 +142,7 @@ constexpr uint32_t PRESET_SYNC_CAP_SYNTH_WAVETABLE = 1u << 11;
 constexpr uint32_t PRESET_SYNC_CAP_LIVE_SYNTH_PARAM = 1u << 12;
 constexpr uint32_t PRESET_SYNC_CAP_CENTS_TABLE_RUNTIME_TUNING = 1u << 13;
 constexpr uint32_t PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES = 1u << 14;
+constexpr uint32_t PRESET_SYNC_CAP_LIVE_SYNTH_WAVETABLE_SELECT = 1u << 15;
 
 constexpr uint8_t PRESET_SYNC_ERROR_UNSUPPORTED_PROTOCOL = 0x01;
 constexpr uint8_t PRESET_SYNC_ERROR_UNKNOWN_MESSAGE = 0x02;
@@ -305,4 +310,5 @@ size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType);
 int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset);
 void applySynthPresetRuntimeOnly(const SynthPresetSlot& preset);
 void presetSyncHandleSynthParamSet(uint16_t transactionId, const uint8_t* payload, size_t payloadLength);
+void presetSyncHandleSynthWavetableSelect(uint16_t transactionId, const uint8_t* payload, size_t payloadLength);
 bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len);

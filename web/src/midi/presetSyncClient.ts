@@ -6,6 +6,7 @@ import {
   ObjectType,
   PRESET_SYNC_FAMILY,
   SYSEX_START,
+  SynthWavetableSelector,
   WriteFlag,
   crc32,
   decodeDataChunkPayload,
@@ -325,6 +326,16 @@ export class PresetSyncClient {
       throw new RangeError("value must be a byte");
     }
     return this.send(MessageType.SynthParamSet, [1, settingKey, value & 0x7f, (value >> 7) & 0x01]);
+  }
+
+  async sendSynthWavetableSelect(selector: number, index: number): Promise<number[]> {
+    if (selector !== SynthWavetableSelector.Catalog && selector !== SynthWavetableSelector.BuiltIn) {
+      throw new RangeError("selector must identify a catalog or built-in wavetable");
+    }
+    if (!Number.isInteger(index) || index < 0 || index >= NEW_OBJECT_HANDLE) {
+      throw new RangeError("index must be a valid 14-bit wavetable index");
+    }
+    return this.send(MessageType.SynthWavetableSelect, [selector, index & 0x7f, (index >> 7) & 0x7f]);
   }
 
   async sendSynthPresetSave(preset: EncodedCatalogObject): Promise<number[][]> {

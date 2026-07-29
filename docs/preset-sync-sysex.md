@@ -272,6 +272,7 @@ must not be applied.
 | `0x28` | `TRANSFER_ABORT` | Either | Cancel the active transfer |
 | `0x29` | `DELETE_REQ` | Host to device | Delete a user object |
 | `0x2A` | `SYNTH_PARAM_SET` | Host to device | Apply live synth setting bytes without an object transfer |
+| `0x2B` | `SYNTH_WAVETABLE_SELECT` | Host to device | Select an existing synth wavetable at runtime |
 
 Only one write transfer should be active at a time. A device may also allow only
 one total transfer at a time. If busy, it should send `NACK Busy`.
@@ -379,6 +380,7 @@ Capability flags:
 | `12` | Live synth parameter set |
 | `13` | Cents-table runtime tuning |
 | `14` | Atomic geometry-bundle file writes |
+| `15` | Live synth wavetable selection |
 
 Example hello request, transaction `1`, host max packed chunk `128`, no required
 flags:
@@ -388,9 +390,10 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 ```
 
 Example response, transaction `1`, max packed chunk `128`, capabilities
-`0x7F7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
+`0xFF7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
 delete user object, factory geometry listing, synth wavetable objects, live
-synth parameter set, cents-table runtime tuning, and atomic geometry bundles),
+synth parameter and wavetable selection, cents-table runtime tuning, and atomic
+geometry bundles),
 max raw object bytes `262144`, settings schema `26`, synth
 preset schema `7`, `9` profiles, `128` synth preset entries, `64` slots for
 each advertised user geometry count, hardware version `2`:
@@ -582,13 +585,14 @@ named Serum/Vital or HexBoard wavetable imports, then waits for the `WRITE_COMMI
 treating the flash write as complete. Live preview sends remain apply-only and
 are not used as the persistence confirmation path.
 
-Live editor changes to individual synth parameters should use `SYNTH_PARAM_SET`
-instead of staging a full `SynthPreset` object. This keeps frequent slider and
-selector updates out of the modal transfer path; full preset opens/saves and
-wavetable imports still use the chunked object path. Current firmware mutes the
+Live editor changes to individual synth parameters should use `SYNTH_PARAM_SET`,
+and existing wavetable choices should use `SYNTH_WAVETABLE_SELECT`, instead of
+staging a full `SynthPreset` object. This keeps frequent slider and selector
+updates out of the modal transfer path; full preset opens/saves and wavetable
+imports still use the chunked object path. Current firmware mutes the
 onboard synth for the duration of a host-to-device object write transfer when
 `SaveToFlash` is set in `WRITE_BEGIN`, including commit and temporary-file
-cleanup, but not for `SYNTH_PARAM_SET` or apply-only object transfers.
+cleanup, but not for either live control message or apply-only object transfers.
 
 For a persistent geometry save, `object-type` is `0x0C`, `handle` is
 `NEW_OBJECT`, schema is `1.0`, and the only required write flag is
@@ -710,6 +714,21 @@ matching on-device synth menu control. For example, `PlaybackMode` still resets
 current synth frequencies because the on-device control does, while envelope,
 LFO, wheel amount, drive, and wavetable-position edits update cached synth
 parameters without rebuilding layout or redrawing the menu.
+
+## Live Synth Wavetable Selection
+
+`SYNTH_WAVETABLE_SELECT` payload:
+
+```text
+<selector> <index-u14>
+```
+
+Selector `0` addresses a synth wavetable catalog handle returned by
+`OBJECT_LIST_RESP`; selector `1` addresses a compiled built-in wavetable
+ordinal. The device validates the index, selects and loads that existing
+wavetable, switches the synth waveform to wavetable mode, updates the on-device
+wavetable label, and ACKs. This one-frame command does not stage an object
+transfer or show the transfer screen.
 
 ## Object Body Format
 
@@ -1360,8 +1379,8 @@ preview matches the saved selection.
    button-scan, and encoder-panic handling. The window closes when the exchange
    goes idle without an active object transfer or reaches its timeout. OLED
    redraws are quantized rather than performed for every 64-byte chunk.
-   `SYNTH_PARAM_SET`, hello, list, delete, and other one-frame control messages
-   process without opening that modal window.
+   `SYNTH_PARAM_SET`, `SYNTH_WAVETABLE_SELECT`, hello, list, delete, and other
+   one-frame control messages process without opening that modal window.
 8. Current firmware uses the Pico SDK USB stack through Arduino-Pico `MIDIUSB`
    and a HexBoard-owned MIDI byte parser for SysEx receive.
 9. Current firmware paces device-to-host object reads by waiting for host ACKs

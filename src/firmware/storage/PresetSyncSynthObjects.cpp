@@ -4,6 +4,7 @@
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/SynthPresetMenu.h"
 #include "../menu/SynthWavetableMenu.h"
+#include "../synth/BuiltinWavetables.h"
 #include "../synth/SynthAudio.h"
 #include "../synth/SynthDefaults.h"
 #include "PresetSync.h"
@@ -1063,4 +1064,43 @@ void presetSyncHandleSynthParamSet(uint16_t transactionId, const uint8_t* payloa
   }
   markSettingsDirty();
   presetSyncSendAck(transactionId, PRESET_SYNC_MSG_SYNTH_PARAM_SET);
+}
+
+void presetSyncHandleSynthWavetableSelect(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
+  if (payloadLength != 3) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_SYNTH_WAVETABLE_SELECT, PRESET_SYNC_ERROR_BAD_LENGTH);
+    return;
+  }
+
+  uint8_t selector = payload[0];
+  uint16_t index = presetSyncDecodeU14(payload + 1);
+  const char* folderPath = nullptr;
+  const char* name = nullptr;
+  if (selector == PRESET_SYNC_SYNTH_WAVETABLE_SELECTOR_CATALOG) {
+    if (index >= synthWavetables.size() || !synthWavetables[index].valid) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_SYNTH_WAVETABLE_SELECT, PRESET_SYNC_ERROR_OBJECT_MISSING);
+      return;
+    }
+    folderPath = synthWavetables[index].folderPath;
+    name = synthWavetables[index].name;
+  } else if (selector == PRESET_SYNC_SYNTH_WAVETABLE_SELECTOR_BUILTIN) {
+    const BuiltinSynthWavetableDefinition* wavetable = synthBuiltinWavetableAt(index);
+    if (!wavetable) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_SYNTH_WAVETABLE_SELECT, PRESET_SYNC_ERROR_OBJECT_MISSING);
+      return;
+    }
+    folderPath = wavetable->folderPath;
+    name = wavetable->name;
+  } else {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_SYNTH_WAVETABLE_SELECT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
+    return;
+  }
+
+  setCurrentSynthWavetableReference(folderPath, name);
+  currWave = WAVEFORM_BASIC_WAVETABLE;
+  settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_BASIC_WAVETABLE;
+  loadSelectedSynthWavetable();
+  updateCurrentSynthWavetableMenuLabel();
+  markSettingsDirty();
+  presetSyncSendAck(transactionId, PRESET_SYNC_MSG_SYNTH_WAVETABLE_SELECT);
 }

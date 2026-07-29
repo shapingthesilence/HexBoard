@@ -33,7 +33,7 @@ import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
 import { WebMidiTransport } from "../midi/webMidi.ts";
 import { crc32 } from "../protocol/crc32.ts";
-import type { ObjectListRecord } from "../protocol/index.ts";
+import { SynthWavetableSelector, type ObjectListRecord } from "../protocol/index.ts";
 import { CommonTlv, decodeObjectBody, textFromBytes } from "../protocol/tlv.ts";
 import { FolderControls } from "../components/FolderControls.tsx";
 import { formatByteLength, formatHex } from "./format.ts";
@@ -1530,7 +1530,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   function applyPresetWavetable(wavetable: { name: string; folderPath: string }) {
-    skipNextAutoSend.current = false;
+    skipNextAutoSend.current = true;
     pendingLiveSynthParam.current = null;
     setEditorHydrated(true);
     setPreset((current) => ({
@@ -1544,6 +1544,28 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }));
   }
 
+  async function sendLiveWavetableSelection(wavetable: { name: string; folderPath: string }) {
+    if (!autoSend) {
+      return;
+    }
+    const referenceKey = wavetableSaveKey(wavetable);
+    const builtInIndex = builtInWavetables.findIndex((candidate) => wavetableSaveKey(candidate) === referenceKey);
+    const deviceWavetable = hexboardWavetables.find((candidate) => wavetableSaveKey(candidate) === referenceKey);
+    const selector = builtInIndex >= 0 ? SynthWavetableSelector.BuiltIn : SynthWavetableSelector.Catalog;
+    const index = builtInIndex >= 0 ? builtInIndex : deviceWavetable?.deviceHandle;
+    if (index === undefined) {
+      setSyncStatus(`Cannot live-select ${wavetable.name}: its HexBoard handle is unavailable`);
+      return;
+    }
+    try {
+      await client.sendSynthWavetableSelect(selector, index);
+      setLastFrameCount(1);
+      setSyncStatus(`Selected ${wavetable.name} on ${transport.label} with 1 frame`);
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Failed to select synth wavetable");
+    }
+  }
+
   async function selectPresetWavetable(value: string) {
     const wavetable = wavetableReferenceFromOptionValue(value);
     const referenceKey = wavetableSaveKey(wavetable);
@@ -1551,6 +1573,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       || hexboardWavetables.some((candidate) => wavetableSaveKey(candidate) === referenceKey);
     if (isOnDevice) {
       applyPresetWavetable(wavetable);
+      await sendLiveWavetableSelection(wavetable);
       return;
     }
 
@@ -1850,19 +1873,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   function useWavetableAsPresetSource(nextWavetable: EditableSynthWavetable) {
-    skipNextAutoSend.current = false;
-    pendingLiveSynthParam.current = null;
-    setEditorHydrated(true);
-    setPreset((current) => ({
-      ...current,
-      wavetableName: nextWavetable.name,
-      wavetableFolderPath: nextWavetable.folderPath,
-      values: {
-        ...current.values,
-        Waveform: 27
-      }
-    }));
-    setSyncStatus(`Selected ${nextWavetable.name} for the open preset`);
+    void selectPresetWavetable(wavetableOptionValue(nextWavetable.folderPath, nextWavetable.name));
   }
 
   function eraseWavetable(space: LibrarySpace, erasedWavetable: EditableSynthWavetable) {
