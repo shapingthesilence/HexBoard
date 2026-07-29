@@ -1196,23 +1196,35 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   ])).filter((folder) => folder !== builtInWavetableFolder)
     .sort(compareFolderPaths), [hexboardWavetables]);
   const wavetableOptions = useMemo(() => {
-    const refs = [
-      ...builtInWavetables,
-      ...computerWavetables,
-      ...hexboardWavetables,
-      normalizeWavetableReference(preset.wavetableFolderPath, preset.wavetableName)
-    ];
-    const unique = new Map<string, { name: string; folderPath: string }>();
-    for (const ref of refs) {
+    const optionFromReference = (ref: { name: string; folderPath: string }) => ({
+      value: wavetableOptionValue(ref.folderPath, ref.name),
+      label: `${folderLabel(ref.folderPath)} / ${ref.name}`
+    });
+    const sortReferences = (refs: Array<{ name: string; folderPath: string }>) =>
+      refs.sort((left, right) => `${folderLabel(left.folderPath)}/${left.name}`.localeCompare(`${folderLabel(right.folderPath)}/${right.name}`));
+    const uniqueDevice = new Map<string, { name: string; folderPath: string }>();
+    for (const ref of [...builtInWavetables, ...hexboardWavetables]) {
       const normalized = normalizeWavetableReference(ref.folderPath, ref.name);
-      unique.set(wavetableSaveKey(normalized), normalized);
+      uniqueDevice.set(wavetableSaveKey(normalized), normalized);
     }
-    return Array.from(unique.values())
-      .sort((left, right) => `${folderLabel(left.folderPath)}/${left.name}`.localeCompare(`${folderLabel(right.folderPath)}/${right.name}`))
-      .map((ref) => ({
-        value: wavetableOptionValue(ref.folderPath, ref.name),
-        label: `${folderLabel(ref.folderPath)} / ${ref.name}`
-      }));
+    const uniqueComputer = new Map<string, { name: string; folderPath: string }>();
+    for (const ref of computerWavetables) {
+      const normalized = normalizeWavetableReference(ref.folderPath, ref.name);
+      const key = wavetableSaveKey(normalized);
+      if (!uniqueDevice.has(key)) {
+        uniqueComputer.set(key, normalized);
+      }
+    }
+    const selected = normalizeWavetableReference(preset.wavetableFolderPath, preset.wavetableName);
+    const selectedKey = wavetableSaveKey(selected);
+    const unavailable = !uniqueDevice.has(selectedKey) && !uniqueComputer.has(selectedKey)
+      ? [optionFromReference(selected)]
+      : [];
+    return {
+      device: sortReferences(Array.from(uniqueDevice.values())).map(optionFromReference),
+      computer: sortReferences(Array.from(uniqueComputer.values())).map(optionFromReference),
+      unavailable
+    };
   }, [computerWavetables, hexboardWavetables, preset.wavetableFolderPath, preset.wavetableName]);
   const selectedPreviewWavetable = useMemo(() => {
     const selectedKey = wavetableSaveKey(normalizeWavetableReference(preset.wavetableFolderPath, preset.wavetableName));
@@ -1517,8 +1529,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     setSyncStatus(`Deleted ${folderLabel(folderPath)} from Computer Wavetables`);
   }
 
-  function selectPresetWavetable(value: string) {
-    const wavetable = wavetableReferenceFromOptionValue(value);
+  function applyPresetWavetable(wavetable: { name: string; folderPath: string }) {
     skipNextAutoSend.current = false;
     pendingLiveSynthParam.current = null;
     setEditorHydrated(true);
@@ -1531,6 +1542,38 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         Waveform: 27
       }
     }));
+  }
+
+  async function selectPresetWavetable(value: string) {
+    const wavetable = wavetableReferenceFromOptionValue(value);
+    const referenceKey = wavetableSaveKey(wavetable);
+    const isOnDevice = builtInWavetables.some((candidate) => wavetableSaveKey(candidate) === referenceKey)
+      || hexboardWavetables.some((candidate) => wavetableSaveKey(candidate) === referenceKey);
+    if (isOnDevice) {
+      applyPresetWavetable(wavetable);
+      return;
+    }
+
+    const computerWavetable = computerWavetables.find((candidate) => wavetableSaveKey(candidate) === referenceKey);
+    if (!computerWavetable) {
+      setSyncStatus(`${wavetable.name} is not available on HexBoard`);
+      return;
+    }
+    if (!computerWavetable.samples) {
+      setSyncStatus(`Cannot upload ${computerWavetable.name}: sample data is not loaded`);
+      return;
+    }
+    if (!window.confirm(
+      `"${computerWavetable.name}" is only in Computer Wavetables. Upload it to HexBoard and use it for this preset?`
+    )) {
+      setSyncStatus("Wavetable selection canceled");
+      return;
+    }
+
+    const uploaded = await uploadWavetableToHexBoard(computerWavetable, "Uploaded");
+    if (uploaded) {
+      applyPresetWavetable(uploaded);
+    }
   }
 
   function openPreset(source: LibrarySpace, nextPreset: EditableSynthPreset) {
@@ -2642,13 +2685,33 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
               <span>Wavetable</span>
               <select
                 value={wavetableOptionValue(preset.wavetableFolderPath, preset.wavetableName)}
-                onChange={(event) => selectPresetWavetable(event.target.value)}
+                onChange={(event) => void selectPresetWavetable(event.target.value)}
               >
-                {wavetableOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
+                <optgroup label="On HexBoard">
+                  {wavetableOptions.device.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </optgroup>
+                {wavetableOptions.computer.length > 0 ? (
+                  <optgroup label="Computer only — upload required">
+                    {wavetableOptions.computer.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+                {wavetableOptions.unavailable.length > 0 ? (
+                  <optgroup label="Unavailable">
+                    {wavetableOptions.unavailable.map((option) => (
+                      <option disabled key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
               </select>
             </label>
             <RangeField label="WT Pos" value={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition)} min={1} max={SYNTH_WAVETABLE_FRAME_COUNT} onChange={(value) => updateValue("SynthWavetablePosition", wavetableFrameToPositionByte(value))} suffix={`/${SYNTH_WAVETABLE_FRAME_COUNT}`} />

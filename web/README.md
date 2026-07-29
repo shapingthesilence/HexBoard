@@ -161,8 +161,9 @@ and `TRANSFER_END` so firmware can pace object transfers.
   Imports upload to HexBoard immediately for hardware audition and refresh the
   device-authoritative HexBoard wavetable list after the flash commit. Short
   HexBoard `.hexwav` imports are interpolated to the device's 16-frame table.
-  Saving a preset that references a computer-only wavetable offers to upload
-  the wavetable first.
+  The preset editor separates on-device and computer-only wavetables. Selecting
+  a computer-only wavetable offers to upload it before applying the selection;
+  preset saves repeat the availability check as a safety net.
 - A mock MIDI transport for UI and protocol work before firmware support exists.
 - Basic React views for device connection, profile sync, tuning/layout editing,
   and synth preset organization.
