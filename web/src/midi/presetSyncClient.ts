@@ -24,6 +24,7 @@ import {
   encodeHelloRequestPayload,
   encodeObjectListRequestPayload,
   encodeReadRequestPayload,
+  encodeU14,
   encodeTransferAbortPayload,
   encodeTransferEndPayload,
   encodeWriteBeginPayload,
@@ -335,7 +336,7 @@ export class PresetSyncClient {
     if (!Number.isInteger(index) || index < 0 || index >= NEW_OBJECT_HANDLE) {
       throw new RangeError("index must be a valid 14-bit wavetable index");
     }
-    return this.send(MessageType.SynthWavetableSelect, [selector, index & 0x7f, (index >> 7) & 0x7f]);
+    return this.send(MessageType.SynthWavetableSelect, [selector, ...encodeU14(index)]);
   }
 
   async sendSynthPresetSave(preset: EncodedCatalogObject): Promise<number[][]> {

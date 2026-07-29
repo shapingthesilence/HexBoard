@@ -76,11 +76,11 @@ describe("PresetSyncClient", () => {
     const transport = new MockMidiTransport();
     const client = new PresetSyncClient(transport);
 
-    const frame = await client.sendSynthWavetableSelect(SynthWavetableSelector.Catalog, 63);
+    const frame = await client.sendSynthWavetableSelect(SynthWavetableSelector.Catalog, 0x0123);
     const decoded = decodePresetSyncFrame(frame);
 
     expect(decoded.message).toBe(MessageType.SynthWavetableSelect);
-    expect(decoded.payload).toEqual([SynthWavetableSelector.Catalog, 63, 0]);
+    expect(decoded.payload).toEqual([SynthWavetableSelector.Catalog, 0x02, 0x23]);
     expect(Array.from(transport.sentMessages[0])).toEqual(frame);
   });
 
