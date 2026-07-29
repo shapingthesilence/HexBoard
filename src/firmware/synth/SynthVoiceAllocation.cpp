@@ -2,7 +2,7 @@
 #include "../sequencer/SequencerTransport.h"
 #include "../midi/NoteDispatch.h"
 
-std::queue<byte> synthChQueue;
+SynthChannelQueue synthChQueue;
 std::array<std::atomic<bool>, POLYPHONY_LIMIT> channelInUse = {};
 std::array<std::atomic<uint32_t>, POLYPHONY_LIMIT> voiceGenerations;
 std::array<std::atomic<int16_t>, POLYPHONY_LIMIT> synthChannelOwners;
@@ -387,9 +387,7 @@ void RAM_FUNC(replaceMonoSynthWith)(byte x, bool retriggerEnvelope = true, bool 
 }
 
 void RAM_FUNC(resetSynthFreqs)() {
-  while (!synthChQueue.empty()) {
-    synthChQueue.pop();
-  }
+  synthChQueue.clear();
   nextVoiceGeneration.store(1, std::memory_order_relaxed);
   for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
     synth[i].increment = 0;
@@ -806,7 +804,7 @@ void panicStopOutput() {
 }
 
 void RAM_FUNC(arpeggiate)() {
-  if (delegatedControl) {
+  if (delegatedControlState.active) {
     return;
   }
   if (playbackMode == SYNTH_ARPEGGIO) {

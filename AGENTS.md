@@ -1,79 +1,85 @@
 # HexBoard Agent Instructions
 
-These instructions apply to the entire repository. This guide is for future AI agents and engineers modifying the HexBoard Firmware. If these instructions and the code disagree, trust the code first.
+These rules apply repository-wide. Treat code as the final source of truth and
+update stale documentation with the code.
 
-## Source Of Truth
+## Source Ownership
 
-- Edit the root `HexBoard.ino` only for Arduino lifecycle wrappers.
-- Edit firmware implementation under `src/firmware/` as the primary firmware source.
-- Keep firmware `.cpp` files independently compilable with direct headers; do not include `.cpp` files from other `.cpp` files.
-- For synth/audio work, keep `src/firmware/synth/SynthAudio.h` as the public cross-subsystem API and `src/firmware/synth/SynthAudioInternal.h` as synth-private glue between synth modules.
-- Put shared firmware types, constants, and cross-module function declarations in the nearest owning subsystem header under `src/firmware/`; keep implementation-private globals in the owning `.cpp` where practical.
-- Do not edit generated files under `build/` as source.
-- Keep audio ISR code, synth helper code called from the ISR, button/knob scan paths, and other latency-sensitive runtime helpers in RAM with `RAM_FUNC` or RAM-resident data. Do not move hot audio/control tables into flash.
-- When firmware behavior, settings, menus, synth preset schema, or preset-sync protocol changes affect companion-app behavior, update the web app in `web/` in the same change.
+- Keep `HexBoard.ino` limited to Arduino lifecycle wrappers; firmware lives in
+  `src/firmware/`.
+- Give every `.cpp` direct headers and independent compilation. Put shared
+  declarations in the nearest owning subsystem header; keep private state in its
+  `.cpp`.
+- Use `synth/SynthAudio.h` as the public synth API and
+  `synth/SynthAudioInternal.h` only between synth modules.
+- Do not edit generated `build/` files as source.
+- Keep ISR code and latency-sensitive audio, scan, rotary, MIDI, and control
+  helpers and data in RAM with `RAM_FUNC` where measurement justifies it. Do not
+  move hot tables to flash.
+- Update `web/` when firmware behavior, schemas, protocol, or capabilities alter
+  what the companion app sends, receives, displays, or validates.
 
-## Factory Library And Release Images
+## Factory Images And Storage
 
-- Treat `factory-library/` as source. Add editable factory synth presets as web-compatible `.json` files under `factory-library/presets/` and editable factory wavetables as HexBoard `.hexwav` files under `factory-library/wavetables/`. Source subdirectories define the on-device folder paths.
-- Keep only the minimal rescue content compiled into firmware: built-in 12 EDO data and the Basic Shapes wavetable. Factory-library objects beyond that rescue core must remain ordinary catalog records that users can edit or erase.
-- `factory-library/config.json` owns the factory settings bytes, filesystem generation, and selected factory objects. Keep its settings keys synchronized with `SettingKey`, `factoryDefaults`, and `CURRENT_SETTINGS_VERSION`.
-- A normal build must produce both a destructive `*_Factory.uf2` containing the complete LittleFS range and a firmware-only `*_Update.uf2` containing no LittleFS addresses. Never silently substitute one artifact for the other.
-- Keep every flash sector touched by a non-contiguous Factory UF2 fully represented in 256-byte pages. Validate this at build time so appended filesystem data cannot expose a partial non-final firmware sector.
-- Factory images must be assembled completely on the host. Do not add formatting, catalog creation, persistent migration, or repair writes to boot. Startup mounts once with auto-format disabled and loads each store independently; compatible records may be decoded into current RAM state without rewriting them.
-- Storage corruption must not prevent the board from reaching normal operation. Use hardware-aware settings defaults, an empty editable catalog, built-in 12 EDO, and Basic Shapes as the fallback set. Keep saving disabled when LittleFS cannot mount.
-- Build-time library errors and runtime storage warnings must identify the exact source path or device file and the failed validation stage.
+- Treat `factory-library/` as source. Presets are web-compatible JSON under
+  `presets/`; wavetables are `.hexwav` files under `wavetables/`; source
+  subdirectories become device folders.
+- Compile only 12 EDO and Basic Shapes as rescue content. Other factory objects
+  remain editable catalog records.
+- `factory-library/config.json` owns factory settings and selected objects.
+  Keep it aligned with `SettingKeys.inc.h`, `factoryDefaults`, and
+  `CURRENT_SETTINGS_VERSION`.
+- Normal builds must produce a complete, destructive `*_Factory.uf2` and a
+  firmware-only `*_Update.uf2`. Validate complete 256-byte pages for every
+  touched factory-image sector.
+- Assemble factory filesystems on the host. Boot mounts LittleFS once without
+  auto-format and never formats, provisions, migrates, repairs, or rewrites
+  compatible records.
+- Storage failures must still reach normal operation using hardware-aware
+  settings, an empty editable catalog, 12 EDO, and Basic Shapes. Disable saving
+  after mount failure and identify exact failing paths and validation stages.
 
-## Product Direction
+## Product And Engineering Constraints
 
-- Persist rotary inversion as a user reversal relative to the detected hardware default; keep the effective decoder direction separate from the saved preference.
-- Treat documentation as a description of the current product, not as a historical record. State present behavior, durable architecture, ownership, and constraints without noting that something was fixed, previously broken, newly added, or formerly affected. Do not add investigation history, before/after narratives, migration stories, or public hardware errata unless the user explicitly requests release notes or a changelog.
-- Do not add diagnostic firmware variants to the normal build. Create a temporary diagnostic build only when the user is actively investigating a boot failure.
+- Persist rotary inversion as the user's reversal of the detected hardware
+  default; keep the saved preference separate from effective direction.
+- Do not add diagnostic variants to normal builds. Use temporary diagnostics
+  only for an active boot investigation.
+- Prefer coherent ownership and maintainable subsystem design over stacked
+  narrow fixes unless the user requests a temporary workaround.
 
-## Engineering Preference
+## Documentation
 
-- Prefer code changes designed for cleanliness, clear ownership, and long-term maintainability over the quickest implementation. Avoid stacking narrow patches on top of earlier patches when a small, coherent redesign would leave the subsystem easier to understand and maintain.
-- When a quick fix and a cleaner design differ materially, choose the cleaner design unless the user explicitly asks for a temporary workaround or urgent minimal patch.
+Every behavior, setting, protocol, menu, build, hardware, or architecture change
+requires a documentation relevance check. Corrective changes that restore
+already-documented behavior need no doc edit. Document UI layout only when
+information, interaction, workflow, or a durable constraint changes.
 
-## Documentation Requirement
+Replace stale text with concise current-state descriptions. Keep investigation
+history, root cause, and verification in task reports, issues, commits, or
+release notes—not product or architecture guides.
 
-Every behavior, setting, protocol, menu, build, hardware, or architecture change must include a documentation pass before the task is considered complete.
+- `README.md`: overview, features, repository layout, build, and flashing
+- `docs/user-manual.md`: user-visible behavior, defaults, workflows, and hardware
+- `docs/sequencer/`: sequencer behavior, persistence, USB Backup, and layouts
+- `docs/developer-guide.md`: architecture, ownership, runtime, risks, and recipes
+- `docs/delegated-control.md`: delegated-control protocol and runtime gates
+- `docs/preset-sync-sysex.md`: preset-sync protocol and object schemas
+- `web/README.md`: companion-app development, deployment, and scope
 
-The documentation pass is a relevance check, not a requirement to modify files
-for every code change. Do not update product or developer documentation for
-layout, spacing, rendering, typo, or other corrective changes that only restore
-the already-documented intended behavior. Document an interface-layout change
-only when it changes the information shown, interaction model, workflow, or a
-durable layout constraint that maintainers need to preserve.
+If no documentation changes are relevant, state why in the final report.
 
-Integrate documentation changes by replacing stale descriptions with concise
-current-state text. Do not append bug history or name the cases that motivated a
-general rule. Keep root-cause analysis, implementation history, and verification
-results in the task report, issue, commit, or dedicated release notes rather
-than product manuals and developer architecture guides.
+## Settings
 
-When code changes, check and update the relevant docs:
-
-- `README.md` for project overview, build target, feature highlights, repository layout, or build/flash instructions.
-- `docs/user-manual.md` for user-visible behavior, menu items, defaults, workflows, troubleshooting, or hardware-facing usage.
-- `docs/sequencer/` for Sequencer-specific behavior, menus/settings, step workflows, playback/timing, file persistence, USB Backup, OLED overlays/layouts, requirements, or technical limits. For Sequencer changes, update the relevant manual, requirement, and layout files together when applicable.
-- `docs/developer-guide.md` for current firmware architecture, subsystem ownership, settings wiring, runtime flow, risk areas, edit recipes, or verification checklist updates.
-- `docs/delegated-control.md` for external delegated-control protocol, SysEx behavior, host integration, or delegated runtime gates.
-- `docs/preset-sync-sysex.md` for preset-sync SysEx behavior, object schemas, host integration, or future tuning/layout/preset storage design.
-
-If a code change does not require documentation updates, explicitly say why in the final response.
-
-## Settings And Persistence
-
-- When adding, removing, or reordering `SettingKey` entries, update `factoryDefaults`, `syncSettingsToRuntime()`, menu wiring if needed, and documentation.
-- Bump `CURRENT_SETTINGS_VERSION` when persisted settings layout changes.
-- Keep the current settings version and schema contract accurate in `docs/developer-guide.md`; do not append a settings-version history.
-- When a setting byte changes meaning, bump `CURRENT_SETTINGS_VERSION` even if its position and size are unchanged.
+- Add, remove, or reorder keys only through `SettingKeys.inc.h`; update runtime
+  sync, menu wiring, factory config, validation, and relevant docs.
+- Bump `CURRENT_SETTINGS_VERSION` whenever persisted layout or byte meaning
+  changes. Keep only the current schema contract in the developer guide.
 
 ## Verification
 
-- Run `git diff --check` for changed code and docs.
-- For firmware changes, run `make` when possible.
-- When factory-library or companion-app data changes, run the factory-library generator and the relevant web tests/build.
-- If `make` fails because Arduino needs to access caches outside the workspace, rerun with the required escalation instead of skipping compile verification.
-- Include verification results in the final response.
+- Run `git diff --check`.
+- Run `make` for firmware changes; if Arduino cache access is blocked, request
+  escalation and retry.
+- For factory-library or web changes, run the generator and relevant web
+  tests/build. Report all verification results.

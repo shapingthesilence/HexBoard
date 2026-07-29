@@ -536,10 +536,10 @@ void setLEDcolorCodes() {
       bool userGeometryColorApplied = false;
       const int colorStepsFromOrigin = h[i].stepsFromC + keyCenteredColorOffset;
       byte paletteIndex = positiveMod(colorStepsFromOrigin, cycleLength);
-      if (userGeometryRuntimeActive && userGeometryRuntimePaletteActive && colorMode == CUSTOM_COLOR_MODE) {
-        setColor = userGeometryRuntimePalette.getColor(paletteIndex);
+      if (userGeometryRuntime.active && userGeometryRuntime.paletteActive && colorMode == CUSTOM_COLOR_MODE) {
+        setColor = userGeometryRuntime.palette.getColor(paletteIndex);
         userGeometryColorApplied = true;
-      } else if (userGeometryRuntimeActive && colorMode == CUSTOM_COLOR_MODE) {
+      } else if (userGeometryRuntime.active && colorMode == CUSTOM_COLOR_MODE) {
         setColor = { 360 * ((float)paletteIndex / (float)current.tuning().cycleLength), SAT_VIVID, VALUE_NORMAL };
       } else {
         switch (colorMode) {
@@ -772,8 +772,8 @@ void setLEDcolorCodes() {
             break;
         }
       }
-      if (userGeometryRuntimeActive && userGeometryRuntimeButtonColorActive[i] && colorMode == CUSTOM_COLOR_MODE) {
-        setColor = userGeometryRuntimeButtonColor[i];
+      if (userGeometryRuntime.active && userGeometryRuntime.buttonColorActive[i] && colorMode == CUSTOM_COLOR_MODE) {
+        setColor = userGeometryRuntime.buttonColor[i];
         userGeometryColorApplied = true;
       }
       baseLedColorCache[i] = setColor;
@@ -904,9 +904,9 @@ uint32_t RAM_FUNC(applyNotePixelColor)(byte x) {
   if (h[x].animate) {
     return h[x].LEDcodeAnim;
   }
-  bool hasDirectColorOverride = userGeometryRuntimeActive
+  bool hasDirectColorOverride = userGeometryRuntime.active
                                 && colorMode == CUSTOM_COLOR_MODE
-                                && userGeometryRuntimeButtonColorActive[x];
+                                && userGeometryRuntime.buttonColorActive[x];
   if (h[x].note == UNUSED_NOTE && !hasDirectColorOverride) {
     return h[x].LEDcodeOff;
   }
@@ -959,9 +959,9 @@ void RAM_FUNC(lightUpLEDs)() {
     renderLedTestFrame();
     return;
   }
-  if (delegatedControl) {
+  if (delegatedControlState.active) {
     for (byte i = 0; i < LED_COUNT; i++) {
-      strip.setPixelColor(i, delegatedColors[i]);
+      strip.setPixelColor(i, delegatedControlState.colors[i]);
     }
   } else {
     for (byte i = 0; i < LED_COUNT; i++) {

@@ -1,6 +1,7 @@
 #include "../FirmwareModule.h"
 #include "DiagnosticsTiming.h"
 #include "PlatformCommon.h"
+#include "RuntimeDefaults.h"
 #include "StabilityBenchmark.h"
 #include "../hardware/GridScanRotary.h"
 #include "../hardware/GridState.h"
@@ -45,6 +46,18 @@
   */
 namespace {
 std::atomic<bool> normalRuntimeReady = false;
+constexpr uint64_t AUDIO_STARTUP_TIMEOUT_MICROS = 3000000ULL;
+
+bool waitForAudioTransport() {
+  const uint64_t deadline = readClock() + AUDIO_STARTUP_TIMEOUT_MICROS;
+  while (!audioTransportReady.load(std::memory_order_acquire)) {
+    if (readClock() >= deadline) {
+      return false;
+    }
+    tight_loop_contents();
+  }
+  return true;
+}
 }  // namespace
 
 void hexboardSetup() {
@@ -73,8 +86,9 @@ void hexboardSetup() {
   syncSettingsToRuntime();
   recomputePitchBendFactor();
   synthRuntimeReady.store(true, std::memory_order_release);
-  while (!audioTransportReady.load(std::memory_order_acquire)) {
-    tight_loop_contents();
+  if (!waitForAudioTransport()) {
+    playbackMode = SYNTH_OFF;
+    sendToLog("Audio transport startup timed out; continuing with onboard synth disabled.");
   }
   restoreSequencerAtStartup();
   populateStorageStatusMenuPage();
@@ -85,15 +99,20 @@ void hexboardLoop() {        // run on first core
   timeTracker();     // Time tracking functions
   serviceSerialDebugMessages();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_PRESET_TRANSFER);
-  if (servicePresetSyncTransfer()) {
-    return;
-  }
+  bool presetSyncOwnsUi = servicePresetSyncTransfer();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_ENVELOPE_RELEASE);
   processEnvelopeReleases();
   retryPendingReleases();
-  screenSaver();     // Reduces wear-and-tear on OLED panel
+  if (!presetSyncOwnsUi) {
+    screenSaver();     // Reduces wear-and-tear on OLED panel
+  }
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_BUTTON_SCAN);
   readHexes();       // Read and store the digital button states of the scanning matrix
+  if (presetSyncOwnsUi) {
+    stabilityBenchmarkSetCore0Task(STABILITY_TASK_ROTARY_MENU);
+    dealWithRotary();
+    return;
+  }
   serviceSequencerMode();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_ARPEGGIATOR);
   arpeggiate();      // arpeggiate if synth mode allows it
@@ -115,7 +134,7 @@ void hexboardLoop() {        // run on first core
   }
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_ROTARY_MENU);
   dealWithRotary();  // deal with menu
-  if (delegatedControl && !stabilityBenchmarkIsActive()) {
+  if (delegatedControlState.active && !stabilityBenchmarkIsActive()) {
     stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
     drawDelegatedControlScreen();
     stabilityBenchmarkSetCore0Task(STABILITY_TASK_AUTOSAVE);
@@ -155,7 +174,7 @@ void hexboardLoop1() {  // run on second core
   if (!normalRuntimeReady.load(std::memory_order_acquire)) {
     return;
   }
-  if (delegatedControl) {
+  if (delegatedControlState.active) {
     stabilityBenchmarkSetCore1Task(STABILITY_TASK_DELEGATED_MIDI);
     processIncomingMIDIDelegated();
   }

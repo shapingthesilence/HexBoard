@@ -226,7 +226,7 @@ bool processIncomingMIDIDelegated() {
 }
 
 bool RAM_FUNC(processIncomingMIDI)() {
-  if (delegatedControl) {
+  if (delegatedControlState.active) {
     return false;
   }
   sampleMidiInputMonitorStats();

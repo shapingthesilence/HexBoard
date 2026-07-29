@@ -689,7 +689,7 @@ void onToggleDisplayPlayedNotes() {
 }
 
 void drawPlayedNotesOverlay() {
-  if (delegatedControl) {
+  if (delegatedControlState.active) {
     return;
   }
   if (flashSaveScreenVisible) {

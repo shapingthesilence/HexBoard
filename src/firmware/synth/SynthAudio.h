@@ -11,6 +11,7 @@ struct SynthPreviewNoteHandle {
 };
 
 void updateEnvelopeParamsFromSettings();
+void syncSynthSettingsToRuntime();
 void updateEffectEnvelopeParamsFromSettings();
 void updateEffectEnvelopeParamsFromSettings(uint8_t envelopeIndex);
 void updateArpeggiatorTiming();

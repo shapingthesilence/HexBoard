@@ -251,7 +251,7 @@ void RAM_FUNC(triggerMetronomeBeat)(bool accent) {
 }
 
 void RAM_FUNC(runMetronome)() {
-  if (!metronomeEnabled() || delegatedControl) {
+  if (!metronomeEnabled() || delegatedControlState.active) {
     return;
   }
 

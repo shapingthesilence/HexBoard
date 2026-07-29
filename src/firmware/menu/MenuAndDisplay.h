@@ -44,7 +44,6 @@ void applyDeviceDisplayRotation();
 void loadDeviceRotationFromCurrentLayout();
 void updateLayoutAndRotate();
 void syncSettingsToRuntime();
-void syncSynthSettingsToRuntime();
 void updateSynthMenuVisibility();
 void updateEditorMenuVisibility();
 void installHardwareSpecificMenuItems();

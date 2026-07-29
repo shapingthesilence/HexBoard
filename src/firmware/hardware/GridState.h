@@ -9,17 +9,6 @@ constexpr byte BTN_STATE_NEWPRESS = 1;
 constexpr byte BTN_STATE_RELEASED = 2;
 constexpr byte BTN_STATE_HELD = 3;
 constexpr uint8_t WHEEL_MAX_CATCHUP_STEPS = 8;
-constexpr uint8_t USER_GEOMETRY_MAX_CHORD_ACTIONS = 16;
-constexpr uint8_t USER_GEOMETRY_MAX_CHORD_TONES = 4;
-
-struct UserGeometryChordAction {
-  bool active = false;
-  uint8_t id = 0;
-  uint8_t pitchMode = 0;
-  uint8_t midiChannel = 0;
-  uint8_t toneCount = 0;
-  int16_t intervals[USER_GEOMETRY_MAX_CHORD_TONES] = {};
-};
 
 class buttonDef {
 public:
@@ -161,61 +150,26 @@ extern uint32_t rowSelectMask[ROWCOUNT];
 extern uint32_t columnMasks[COLCOUNT];
 extern buttonDef h[BTN_COUNT];
 
-extern bool userGeometryRuntimeActive;
-extern bool userGeometryRuntimeScaleActive;
-extern bool userGeometryRuntimePaletteActive;
-extern bool userGeometryRuntimeTuningObjectSelected;
-extern bool userGeometryRuntimeLayoutObjectSelected;
-extern bool userGeometryRuntimeScaleObjectSelected;
-extern uint8_t userGeometryRuntimeTuningObjectId[16];
-extern uint8_t userGeometryRuntimeLayoutObjectId[16];
-extern uint8_t userGeometryRuntimeScaleObjectId[16];
-extern bool userGeometryRuntimeCentsTableActive;
-extern bool userGeometryRuntimeExactEdoActive;
-extern uint8_t userGeometryRuntimeTuningKind;
-extern uint16_t userGeometryRuntimeCycleLength;
-extern uint16_t userGeometryRuntimeCentsTableLength;
-extern float userGeometryRuntimeCentsTable[MAX_SCALE_DIVISIONS];
-extern float userGeometryRuntimePeriodCents;
-extern uint8_t userGeometryRuntimeReferenceMidiNote;
-extern float userGeometryRuntimeReferenceHz;
-extern char userGeometryRuntimeKeyLabelStorage[MAX_SCALE_DIVISIONS][TUNING_KEY_LABEL_LENGTH];
-extern tuningDef userGeometryRuntimeTuning;
-extern layoutDef userGeometryRuntimeLayout;
-extern scaleDef userGeometryRuntimeScale;
-extern paletteDef userGeometryRuntimePalette;
-extern bool userGeometryRuntimeButtonDisabled[LED_COUNT];
-extern uint8_t userGeometryRuntimeButtonRole[LED_COUNT];
-extern bool userGeometryRuntimeButtonRoleOverride[LED_COUNT];
-extern bool userGeometryRuntimeButtonNoteOverride[LED_COUNT];
-extern bool userGeometryRuntimeButtonColorActive[LED_COUNT];
-extern int16_t userGeometryRuntimeButtonStepsFromC[LED_COUNT];
-extern colorDef userGeometryRuntimeButtonColor[LED_COUNT];
-extern uint8_t userGeometryRuntimeDeviceRotation;
-extern int16_t userGeometryRuntimeLayoutCenterStepsFromC;
-extern uint8_t userGeometryRuntimeButtonOutputMode[LED_COUNT];
-extern uint8_t userGeometryRuntimeButtonMidiNote[LED_COUNT];
-extern uint8_t userGeometryRuntimeButtonMidiChannel[LED_COUNT];
-extern uint8_t userGeometryRuntimeButtonChordActionId[LED_COUNT];
-extern uint8_t userGeometryRuntimeButtonChordRootMidiNote[LED_COUNT];
-extern UserGeometryChordAction userGeometryRuntimeChordActions[USER_GEOMETRY_MAX_CHORD_ACTIONS];
-
 extern wheelDef modWheel;
 extern wheelDef pbWheel;
 extern wheelDef velWheel;
 extern bool toggleWheel;
 
-extern bool delegatedControl;
-extern uint32_t delegatedColors[LED_COUNT];
 constexpr byte DELEGATED_APP_NAME_MAX = 20;
-extern char delegatedAppName[DELEGATED_APP_NAME_MAX + 1];
-extern bool delegatedDisplayDirty;
-extern bool delegatedDisplayWakeRequested;
-extern bool delegatedReturnToMenuRequested;
-extern byte delegatedNoteMapChannel[LED_COUNT];
-extern byte delegatedNoteMapNote[LED_COUNT];
-extern byte delegatedActiveChannel[LED_COUNT];
-extern byte delegatedActiveNote[LED_COUNT];
+struct DelegatedControlState {
+  std::atomic<bool> active{false};
+  std::array<std::atomic<uint32_t>, LED_COUNT> colors = {};
+  std::array<std::atomic<char>, DELEGATED_APP_NAME_MAX + 1> appName = {};
+  std::atomic<bool> displayDirty{false};
+  std::atomic<bool> displayWakeRequested{false};
+  std::atomic<bool> returnToMenuRequested{false};
+  std::array<std::atomic<byte>, LED_COUNT> noteMapChannel = {};
+  std::array<std::atomic<byte>, LED_COUNT> noteMapNote = {};
+  std::array<std::atomic<byte>, LED_COUNT> activeChannel = {};
+  std::array<std::atomic<byte>, LED_COUNT> activeNote = {};
+};
+
+extern DelegatedControlState delegatedControlState;
 constexpr byte SYSEX_DELEGATED_ENTER = 1;
 constexpr byte SYSEX_DELEGATED_EXIT = 2;
 constexpr byte SYSEX_LED = 3;

@@ -88,7 +88,9 @@ void RAM_FUNC(readHexes)() {
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
-        if (delegatedControl) {
+        if (presetSyncTransferActive) {
+          break;
+        } else if (delegatedControlState.active) {
           delegatedButtonEvent(i, true);
         } else if (h[i].isCmd) {
           cmdOn(i);
@@ -102,7 +104,7 @@ void RAM_FUNC(readHexes)() {
         }
         break;
       case BTN_STATE_RELEASED:  // just released
-        if (delegatedControl) {
+        if (delegatedControlState.active) {
           delegatedButtonEvent(i, false);
         } else if (h[i].isCmd) {
           cmdOff(i);
@@ -174,7 +176,7 @@ static void RAM_FUNC(notifyCommandWheelGesture)(CommandWheelOverlayType type,
 }
 
 void RAM_FUNC(updateWheels)() {
-  if (delegatedControl) {
+  if (delegatedControlState.active) {
     return;
   }
 
@@ -254,7 +256,7 @@ void dealWithRotary() {
     return;
   }
 
-  if (delegatedControl) {
+  if (delegatedControlState.active) {
     if (justPressed) {
       rotaryPressStart = runTime;
       rotaryPanicLatched = false;
@@ -271,7 +273,7 @@ void dealWithRotary() {
       }
     }
 
-    if (delegatedControl && storeRotaryTurn != 0) {
+    if (delegatedControlState.active && storeRotaryTurn != 0) {
       bool turnIsClockwise = (storeRotaryTurn == 8);
       byte event = rotaryInvert
                      ? (turnIsClockwise ? DELEGATED_ENCODER_DOWN : DELEGATED_ENCODER_UP)
@@ -281,7 +283,7 @@ void dealWithRotary() {
       storeRotaryTurn = 0;
     }
 
-    if (delegatedControl && justReleased && !rotaryPanicSuppressClick) {
+    if (delegatedControlState.active && justReleased && !rotaryPanicSuppressClick) {
       wakeDelegatedControlScreenForInput();
       sendDelegatedEncoderEvent(DELEGATED_ENCODER_BUTTON_RELEASE);
     }
@@ -306,6 +308,19 @@ void dealWithRotary() {
       rotaryPanicLatched = true;
       rotaryPanicSuppressClick = true;
     }
+  }
+
+  if (presetSyncTransferActive) {
+    storeRotaryTurn = 0;
+    if (justReleased || !buttonPressed) {
+      rotaryPressStart = 0;
+      rotaryPanicLatched = false;
+    }
+    if (rotaryPanicSuppressClick && !buttonPressed && !rotaryButtonPressed) {
+      rotaryPanicSuppressClick = false;
+    }
+    rotaryButtonPressed = buttonPressed;
+    return;
   }
 
   if ((storeRotaryTurn != 0) || (justReleased && !rotaryPanicSuppressClick)) {

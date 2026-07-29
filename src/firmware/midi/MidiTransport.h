@@ -13,7 +13,9 @@ constexpr byte MIDID_USB = 1;
 constexpr byte MIDID_SER = 2;
 constexpr byte MIDID_BOTH = 3;
 constexpr uint16_t MIDI_INPUT_DRAIN_BYTE_LIMIT = 512;
-constexpr size_t MIDI_SYSEX_BUFFER_MAX = 4096;
+// Object bodies use chunked transfer frames; 1 KiB covers control and delegated
+// frames without reserving multi-kilobyte heap buffers in the live MIDI parser.
+constexpr size_t MIDI_SYSEX_BUFFER_MAX = 1024;
 
 extern byte MPEpitchBendSemis;
 extern byte midiD;
@@ -37,7 +39,36 @@ struct MidiInputParser {
   uint8_t data[2] = { 0, 0 };
   uint8_t dataCount = 0;
   uint8_t dataNeeded = 0;
-  std::vector<uint8_t> sysex;
+  struct SysExBuffer {
+    std::array<uint8_t, MIDI_SYSEX_BUFFER_MAX> bytes = {};
+    size_t length = 0;
+
+    void clear() {
+      length = 0;
+    }
+
+    bool push_back(uint8_t value) {
+      if (length >= bytes.size()) {
+        return false;
+      }
+      bytes[length++] = value;
+      return true;
+    }
+
+    uint8_t* data() {
+      return bytes.data();
+    }
+
+    const uint8_t* data() const {
+      return bytes.data();
+    }
+
+    size_t size() const {
+      return length;
+    }
+  };
+
+  SysExBuffer sysex;
 };
 
 enum class MidiOutputTransport : uint8_t {

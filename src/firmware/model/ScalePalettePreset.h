@@ -78,11 +78,60 @@ extern const scaleDef scaleOptions[];
 extern const byte scaleCount;
 extern paletteDef palette[];
 
-extern bool userGeometryRuntimeActive;
-extern bool userGeometryRuntimeScaleActive;
-extern tuningDef userGeometryRuntimeTuning;
-extern layoutDef userGeometryRuntimeLayout;
-extern scaleDef userGeometryRuntimeScale;
+constexpr uint8_t USER_GEOMETRY_MAX_CHORD_ACTIONS = 16;
+constexpr uint8_t USER_GEOMETRY_MAX_CHORD_TONES = 4;
+
+struct UserGeometryChordAction {
+  bool active = false;
+  uint8_t id = 0;
+  uint8_t pitchMode = 0;
+  uint8_t midiChannel = 0;
+  uint8_t toneCount = 0;
+  int16_t intervals[USER_GEOMETRY_MAX_CHORD_TONES] = {};
+};
+
+struct UserGeometryRuntimeState {
+  bool active = false;
+  bool scaleActive = false;
+  bool paletteActive = false;
+  bool tuningObjectSelected = false;
+  bool layoutObjectSelected = false;
+  bool scaleObjectSelected = false;
+  uint8_t tuningObjectId[16] = {};
+  uint8_t layoutObjectId[16] = {};
+  uint8_t scaleObjectId[16] = {};
+  bool centsTableActive = false;
+  bool exactEdoActive = false;
+  uint8_t tuningKind = 0;
+  uint16_t cycleLength = 0;
+  uint16_t centsTableLength = 0;
+  float centsTable[MAX_SCALE_DIVISIONS] = {};
+  float periodCents = 1200.0f;
+  uint8_t referenceMidiNote = 69;
+  float referenceHz = 440.0f;
+  char keyLabelStorage[MAX_SCALE_DIVISIONS][TUNING_KEY_LABEL_LENGTH] = {};
+  tuningDef tuning = { "User Tuning", 12, 100.0f, { { "0", -9 } } };
+  layoutDef layout = { "User Layout", false, 65, 1, -2, TUNING_12EDO };
+  scaleDef scale = { "User Scale", TUNING_12EDO, { 0 } };
+  paletteDef palette = {};
+  bool buttonDisabled[LED_COUNT] = {};
+  uint8_t buttonRole[LED_COUNT] = {};
+  bool buttonRoleOverride[LED_COUNT] = {};
+  bool buttonNoteOverride[LED_COUNT] = {};
+  bool buttonColorActive[LED_COUNT] = {};
+  int16_t buttonStepsFromC[LED_COUNT] = {};
+  colorDef buttonColor[LED_COUNT] = {};
+  uint8_t deviceRotation = DEVICE_ROTATION_0;
+  int16_t layoutCenterStepsFromC = 0;
+  uint8_t buttonOutputMode[LED_COUNT] = {};
+  uint8_t buttonMidiNote[LED_COUNT] = {};
+  uint8_t buttonMidiChannel[LED_COUNT] = {};
+  uint8_t buttonChordActionId[LED_COUNT] = {};
+  uint8_t buttonChordRootMidiNote[LED_COUNT] = {};
+  UserGeometryChordAction chordActions[USER_GEOMETRY_MAX_CHORD_ACTIONS] = {};
+};
+
+extern UserGeometryRuntimeState userGeometryRuntime;
 
 class presetDef {
 public:
@@ -93,20 +142,20 @@ public:
   int keyStepsFromA;  // what key the scale is in, where zero equals A.
   int transpose;
   const tuningDef& tuning() const {
-    if (userGeometryRuntimeActive) {
-      return userGeometryRuntimeTuning;
+    if (userGeometryRuntime.active) {
+      return userGeometryRuntime.tuning;
     }
     return tuningOptions[tuningIndex];
   }
   const layoutDef& layout() const {
-    if (userGeometryRuntimeActive) {
-      return userGeometryRuntimeLayout;
+    if (userGeometryRuntime.active) {
+      return userGeometryRuntime.layout;
     }
     return layoutOptions[layoutIndex];
   }
   const scaleDef& scale() const {
-    if (userGeometryRuntimeActive && userGeometryRuntimeScaleActive) {
-      return userGeometryRuntimeScale;
+    if (userGeometryRuntime.active && userGeometryRuntime.scaleActive) {
+      return userGeometryRuntime.scale;
     }
     return scaleOptions[scaleIndex];
   }

@@ -236,6 +236,25 @@ bool presetSyncUnpack8To7(const uint8_t* packed, size_t packedLength, size_t raw
 void presetSyncAppendTlv(std::vector<uint8_t>& body, uint8_t tag, const uint8_t* value, uint16_t length);
 void presetSyncAppendTextTlv(std::vector<uint8_t>& body, uint8_t tag, const char* text, size_t maxLength);
 void copyPresetSyncText(char* destination, size_t destinationLength, const uint8_t* source, size_t sourceLength);
+bool presetSyncFindTlv(const std::vector<uint8_t>& body,
+                       uint8_t wantedTag,
+                       const uint8_t*& value,
+                       uint16_t& length);
+bool presetSyncFindTlvU8(const std::vector<uint8_t>& body,
+                         uint8_t tag,
+                         uint8_t& result);
+bool presetSyncFindTlvU16LE(const std::vector<uint8_t>& body,
+                            uint8_t tag,
+                            uint16_t& result);
+bool presetSyncFindTlvI16LE(const std::vector<uint8_t>& body,
+                            uint8_t tag,
+                            int16_t& result);
+bool presetSyncFindTlvI32LE(const std::vector<uint8_t>& body,
+                            uint8_t tag,
+                            int32_t& result);
+bool presetSyncFindTlvFloat32LE(const std::vector<uint8_t>& body,
+                                uint8_t tag,
+                                float& result);
 
 void load_geometry_objects();
 bool beginGeometryCatalogRead(GeometryCatalogReader& reader);
@@ -253,7 +272,7 @@ bool deleteGeometryObjectFromCatalog(uint16_t handle);
 size_t geometryBundleCount();
 bool isPresetSyncGeometryObjectType(uint8_t objectType);
 bool isPresetSyncSupportedObjectType(uint8_t objectType);
-bool parseGeometryObjectBody(std::vector<uint8_t> body, GeometryObjectSlot& object, std::string& error);
+bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlot& object, std::string& error);
 bool geometryObjectForHandle(uint16_t handle, GeometryObjectSlot& object);
 void clearUserGeometryRuntimeSelection();
 bool applyGeometryObjectToRuntime(const GeometryObjectSlot& object);

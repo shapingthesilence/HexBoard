@@ -70,9 +70,9 @@ const char* emptyUserGeometryLabel(UserGeometryMenuKind kind) {
     case UserGeometryMenuKind::Tuning:
       return "No Tunings";
     case UserGeometryMenuKind::Layout:
-      return userGeometryRuntimeTuningObjectSelected ? "No Layouts" : "Select Tuning";
+      return userGeometryRuntime.tuningObjectSelected ? "No Layouts" : "Select Tuning";
     case UserGeometryMenuKind::Scale:
-      return userGeometryRuntimeTuningObjectSelected ? "No Scales" : "Select Tuning";
+      return userGeometryRuntime.tuningObjectSelected ? "No Scales" : "Select Tuning";
   }
   return "No Geometry";
 }
@@ -106,8 +106,8 @@ int findFirstUserGeometryObjectReferencing(uint8_t objectType,
                                            uint8_t referenceObjectType,
                                            const uint8_t* referenceObjectId) {
   const GeometryBundleIndexEntry* bundle = nullptr;
-  if (!userGeometryRuntimeTuningObjectSelected
-      || !geometryBundleForTuningObjectId(userGeometryRuntimeTuningObjectId, bundle)) {
+  if (!userGeometryRuntime.tuningObjectSelected
+      || !geometryBundleForTuningObjectId(userGeometryRuntime.tuningObjectId, bundle)) {
     return -1;
   }
   GeometryCatalogReader reader;
@@ -130,25 +130,25 @@ int findFirstUserGeometryObjectReferencing(uint8_t objectType,
 }
 
 bool applyLinkedButtonMapForCurrentUserLayout() {
-  if (!userGeometryRuntimeTuningObjectSelected) {
+  if (!userGeometryRuntime.tuningObjectSelected) {
     return true;
   }
 
   int buttonMapIndex = -1;
-  if (userGeometryRuntimeLayoutObjectSelected) {
+  if (userGeometryRuntime.layoutObjectSelected) {
     buttonMapIndex = findFirstUserGeometryObjectReferencing(
       PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP,
       PRESET_SYNC_TLV_BUTTON_MAP_LAYOUT_REF,
       PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT,
-      userGeometryRuntimeLayoutObjectId
+      userGeometryRuntime.layoutObjectId
     );
   }
-  if (buttonMapIndex < 0 && !userGeometryRuntimeLayoutObjectSelected) {
+  if (buttonMapIndex < 0 && !userGeometryRuntime.layoutObjectSelected) {
     buttonMapIndex = findFirstUserGeometryObjectReferencing(
       PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP,
       PRESET_SYNC_TLV_BUTTON_MAP_TUNING_REF,
       PRESET_SYNC_OBJECT_TYPE_USER_TUNING,
-      userGeometryRuntimeTuningObjectId
+      userGeometryRuntime.tuningObjectId
     );
   }
   if (buttonMapIndex < 0) {
@@ -248,20 +248,20 @@ const SelectedGeometryMenuEntry* selectedGeometryMenuEntryForHandle(uint16_t han
 }
 
 bool ensureSelectedGeometryMenuCache() {
-  if (!userGeometryRuntimeTuningObjectSelected) {
+  if (!userGeometryRuntime.tuningObjectSelected) {
     invalidateSelectedGeometryMenuCache();
     return false;
   }
   if (selectedGeometryMenuCacheValid
       && memcmp(selectedGeometryMenuCacheTuningId,
-                userGeometryRuntimeTuningObjectId,
+                userGeometryRuntime.tuningObjectId,
                 GEOMETRY_OBJECT_ID_LENGTH) == 0) {
     return true;
   }
 
   invalidateSelectedGeometryMenuCache();
   const GeometryBundleIndexEntry* bundle = nullptr;
-  if (!geometryBundleForTuningObjectId(userGeometryRuntimeTuningObjectId, bundle)) {
+  if (!geometryBundleForTuningObjectId(userGeometryRuntime.tuningObjectId, bundle)) {
     return false;
   }
   GeometryCatalogReader reader;
@@ -292,14 +292,14 @@ bool ensureSelectedGeometryMenuCache() {
   }
   endGeometryCatalogRead(reader);
   memcpy(selectedGeometryMenuCacheTuningId,
-         userGeometryRuntimeTuningObjectId,
+         userGeometryRuntime.tuningObjectId,
          sizeof(selectedGeometryMenuCacheTuningId));
   selectedGeometryMenuCacheValid = true;
   return true;
 }
 
 bool builtinTuningMatchesCurrentRuntime(uint8_t tuningIndex) {
-  if (!userGeometryRuntimeTuningObjectSelected) {
+  if (!userGeometryRuntime.tuningObjectSelected) {
     return false;
   }
   uint16_t tuningHandle = 0;
@@ -307,7 +307,7 @@ bool builtinTuningMatchesCurrentRuntime(uint8_t tuningIndex) {
   return builtinGeometryHandleForTuning(tuningIndex, tuningHandle)
          && builtinGeometryMetadataByHandle(tuningHandle, tuningMetadata)
          && memcmp(tuningMetadata.objectId,
-                   userGeometryRuntimeTuningObjectId,
+                   userGeometryRuntime.tuningObjectId,
                    GEOMETRY_OBJECT_ID_LENGTH) == 0;
 }
 
@@ -346,14 +346,14 @@ bool userGeometryHandleIsCurrent(UserGeometryMenuKind kind, uint16_t handle) {
   }
   switch (kind) {
     case UserGeometryMenuKind::Tuning:
-      return userGeometryRuntimeTuningObjectSelected
-             && geometryHandleMatchesObjectId(handle, userGeometryRuntimeTuningObjectId);
+      return userGeometryRuntime.tuningObjectSelected
+             && geometryHandleMatchesObjectId(handle, userGeometryRuntime.tuningObjectId);
     case UserGeometryMenuKind::Layout:
-      return userGeometryRuntimeLayoutObjectSelected
-             && geometryHandleMatchesObjectId(handle, userGeometryRuntimeLayoutObjectId);
+      return userGeometryRuntime.layoutObjectSelected
+             && geometryHandleMatchesObjectId(handle, userGeometryRuntime.layoutObjectId);
     case UserGeometryMenuKind::Scale:
-      return userGeometryRuntimeScaleObjectSelected
-             && geometryHandleMatchesObjectId(handle, userGeometryRuntimeScaleObjectId);
+      return userGeometryRuntime.scaleObjectSelected
+             && geometryHandleMatchesObjectId(handle, userGeometryRuntime.scaleObjectId);
   }
   return false;
 }

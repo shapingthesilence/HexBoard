@@ -11,8 +11,9 @@
 #include <cstring>
 #include <limits>
 #include <numeric>
-#include <queue>
+#include <new>
 #include <string>
+#include <utility>
 #include <vector>
 
 #if defined(ARDUINO_ARCH_RP2040)

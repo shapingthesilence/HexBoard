@@ -242,7 +242,57 @@ extern std::array<uint8_t, POLYPHONY_LIMIT> releaseRetries;
 extern std::array<uint8_t, POLYPHONY_LIMIT> releaseRetryCountdown;
 
 extern oscillator synth[POLYPHONY_LIMIT];
-extern std::queue<byte> synthChQueue;
+
+class SynthChannelQueue {
+public:
+  bool empty() const {
+    return count_ == 0;
+  }
+
+  void clear() {
+    head_ = 0;
+    count_ = 0;
+    queued_.fill(false);
+  }
+
+  bool push(byte channel) {
+    if (channel == 0 || channel > channels_.size()) {
+      return false;
+    }
+    const size_t channelIndex = channel - 1;
+    if (queued_[channelIndex]) {
+      return true;
+    }
+    if (count_ >= channels_.size()) {
+      return false;
+    }
+    channels_[(head_ + count_) % channels_.size()] = channel;
+    queued_[channelIndex] = true;
+    ++count_;
+    return true;
+  }
+
+  byte front() const {
+    return count_ == 0 ? 0 : channels_[head_];
+  }
+
+  void pop() {
+    if (count_ == 0) {
+      return;
+    }
+    queued_[channels_[head_] - 1] = false;
+    head_ = (head_ + 1) % channels_.size();
+    --count_;
+  }
+
+private:
+  std::array<byte, POLYPHONY_LIMIT> channels_ = {};
+  std::array<bool, POLYPHONY_LIMIT> queued_ = {};
+  uint8_t head_ = 0;
+  uint8_t count_ = 0;
+};
+
+extern SynthChannelQueue synthChQueue;
 extern byte attenuation[];
 extern uint16_t synthModValueQ8;
 extern uint32_t synthVibratoPhase;

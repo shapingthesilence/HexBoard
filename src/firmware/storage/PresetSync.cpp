@@ -971,7 +971,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     requestUserGeometryMenuRebuild();
   } else if (isPresetSyncGeometryObjectType(presetSyncWriteTransfer.objectType)) {
     GeometryObjectSlot parsedObject;
-    if (!parseGeometryObjectBody(std::move(presetSyncWriteTransfer.rawData), parsedObject, parseError)
+    if (!parseGeometryObjectBody(presetSyncWriteTransfer.rawData, parsedObject, parseError)
         || parsedObject.objectType != presetSyncWriteTransfer.objectType) {
       sendToLog("Preset sync rejected geometry object: " + parseError);
       presetSyncCancelWriteTransfer();

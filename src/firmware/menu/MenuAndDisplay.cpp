@@ -110,7 +110,7 @@ void enterDisplayScreensaver() {
 void wakeDelegatedControlScreenForInput() {
   screenTime = 0;
   wakeDisplayFromScreensaver();
-  delegatedDisplayDirty = true;
+  delegatedControlState.displayDirty = true;
 }
 
 void drawCenteredDelegatedText(const char* text, int y) {
@@ -123,14 +123,14 @@ void drawCenteredDelegatedText(const char* text, int y) {
 }
 
 void drawDelegatedControlScreen() {
-  if (!delegatedControl) {
+  if (!delegatedControlState.active) {
     return;
   }
-  if (delegatedDisplayWakeRequested) {
+  if (delegatedControlState.displayWakeRequested) {
     wakeDelegatedControlScreenForInput();
-    delegatedDisplayWakeRequested = false;
+    delegatedControlState.displayWakeRequested = false;
   }
-  if (screenSaverOn || !delegatedDisplayDirty) {
+  if (screenSaverOn || !delegatedControlState.displayDirty) {
     return;
   }
 
@@ -143,13 +143,21 @@ void drawDelegatedControlScreen() {
 
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x13_tf);
+  char delegatedAppName[DELEGATED_APP_NAME_MAX + 1] = {};
+  for (size_t i = 0; i < sizeof(delegatedAppName); ++i) {
+    delegatedAppName[i] = delegatedControlState.appName[i].load(std::memory_order_relaxed);
+    if (delegatedAppName[i] == '\0') {
+      break;
+    }
+  }
+  delegatedAppName[DELEGATED_APP_NAME_MAX] = '\0';
   drawCenteredDelegatedText("Delegated", 20);
   drawCenteredDelegatedText("Control Mode", 36);
   drawCenteredDelegatedText(delegatedAppName, 62);
   drawCenteredDelegatedText("Hold encoder", 94);
   drawCenteredDelegatedText("5 sec to exit", MODAL_SCREEN_FOOTER_BASELINE);
   u8g2.sendBuffer();
-  delegatedDisplayDirty = false;
+  delegatedControlState.displayDirty = false;
 }
 
 void restoreInteractiveMenuDisplay() {
@@ -162,10 +170,10 @@ void restoreInteractiveMenuDisplay() {
 }
 
 void restoreMenuAfterDelegatedControl() {
-  if (!delegatedReturnToMenuRequested) {
+  if (!delegatedControlState.returnToMenuRequested) {
     return;
   }
-  delegatedReturnToMenuRequested = false;
+  delegatedControlState.returnToMenuRequested = false;
   if (!screenSaverOn) {
     restoreInteractiveMenuDisplay();
   }
@@ -334,8 +342,8 @@ void closePresetSyncTransferScreen() {
   screenTime = presetSyncTransferSavedScreenTime;
   if (presetSyncTransferScreenWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
     enterDisplayScreensaver();
-  } else if (delegatedControl) {
-    delegatedDisplayDirty = true;
+  } else if (delegatedControlState.active) {
+    delegatedControlState.displayDirty = true;
     drawDelegatedControlScreen();
   } else {
     restoreInteractiveMenuDisplay();
@@ -381,8 +389,8 @@ static void closeFlashSaveScreenNow() {
     enterDisplayScreensaver();
   } else if (presetSyncTransferActive) {
     drawPresetSyncTransferScreen(true);
-  } else if (delegatedControl) {
-    delegatedDisplayDirty = true;
+  } else if (delegatedControlState.active) {
+    delegatedControlState.displayDirty = true;
     drawDelegatedControlScreen();
   } else {
     restoreInteractiveMenuDisplay();
@@ -426,39 +434,25 @@ bool servicePresetSyncTransfer() {
   }
 
   drawPresetSyncTransferScreen();
-  bool pausedMainLoop = false;
-  while (presetSyncTransferActive) {
-    pausedMainLoop = true;
-    bool processed = processIncomingMIDI();
-    if (processed) {
-      drawPresetSyncTransferScreen();
-    }
-    uint64_t now = readClock();
-    if (now >= presetSyncTransferDeadline) {
-      sendToLog("Preset-sync SysEx transfer window timed out.");
-      presetSyncCancelReadTransfer();
-      presetSyncCancelWriteTransfer();
-      presetSyncTransferActive = false;
-      break;
-    }
-    if ((now - presetSyncTransferLastActivity) >= PRESET_SYNC_TRANSFER_IDLE_MICROS) {
-      if (presetSyncReadTransfer.active || presetSyncWriteTransfer.active) {
-        delayMicroseconds(100);
-        continue;
-      } else {
-        presetSyncTransferActive = false;
-        break;
-      }
-    }
-    if (!processed) {
-      delayMicroseconds(100);
-    }
+  if (processIncomingMIDI()) {
+    drawPresetSyncTransferScreen();
   }
 
+  uint64_t now = readClock();
+  if (now >= presetSyncTransferDeadline) {
+    sendToLog("Preset-sync SysEx transfer window timed out.");
+    presetSyncCancelReadTransfer();
+    presetSyncCancelWriteTransfer();
+    presetSyncTransferActive = false;
+  } else if ((now - presetSyncTransferLastActivity) >= PRESET_SYNC_TRANSFER_IDLE_MICROS
+             && !presetSyncReadTransfer.active
+             && !presetSyncWriteTransfer.active) {
+    presetSyncTransferActive = false;
+  }
   if (!presetSyncTransferActive) {
     closePresetSyncTransferScreen();
   }
-  return pausedMainLoop;
+  return presetSyncTransferActive;
 }
 
 /*
@@ -616,7 +610,6 @@ GEMItem menuItemHardware("Hardware", Hardware_Version, selectHardware, GEM_READO
 GEMItem menuItemUSBBootloader("Update Firmware", rebootToBootloader);
 
 void syncSettingsToRuntime();
-void syncSynthSettingsToRuntime();
 void refreshMenuChoicesForCurrentTuning();
 void rebuildRuntimeStateFromCurrentSelection();
 void updateEditorMenuVisibility();
@@ -657,6 +650,24 @@ public:
 SelectOptionInt currentKeyChoices[MAX_SCALE_DIVISIONS] = {};
 RuntimeKeySelect selectCurrentKey(MAX_SCALE_DIVISIONS, currentKeyChoices);
 GEMItem menuItemMainKey("Key", current.keyStepsFromA, selectCurrentKey, changeKey);
+
+template <typename T, size_t Capacity>
+class StaticObjectPool {
+public:
+  template <typename... Args>
+  T& construct(size_t index, Args&&... args) {
+    return *new (&storage_[index]) T(std::forward<Args>(args)...);
+  }
+
+private:
+  alignas(T) unsigned char storage_[Capacity][sizeof(T)] = {};
+};
+
+StaticObjectPool<GEMItem, PROFILE_COUNT> loadProfileItemPool;
+StaticObjectPool<GEMItem, PROFILE_COUNT> saveProfileItemPool;
+StaticObjectPool<GEMItem, 1> storageSummaryItemPool;
+StaticObjectPool<GEMItem, STORAGE_HEALTH_MAX_ISSUES> storagePathItemPool;
+StaticObjectPool<GEMItem, STORAGE_HEALTH_MAX_ISSUES> storageReasonItemPool;
 GEMItem* menuItemSaveProfile[PROFILE_COUNT];
 GEMItem* menuItemLoadProfile[PROFILE_COUNT];
 GEMItem* menuItemStorageSummary = nullptr;
@@ -667,30 +678,7 @@ char storageStatusReasonLabels[STORAGE_HEALTH_MAX_ISSUES][20] = {};
 char saveProfileLabels[PROFILE_COUNT][24];
 char loadProfileLabels[PROFILE_COUNT][24];
 
-/*
-    We are now creating some GEMItems that let you
-    1) select a value from a list of options,
-    2) update a given variable based on what was chosen,
-    3) if necessary, run a procedure as well once the value's chosen.
-
-    The list of options is in the form of a 2-d array.
-    There are A arrays, one for each option.
-    Each is 2 entries long. First entry is the label
-    for that choice, second entry is the value associated.
-
-    These arrays go into a typedef that depends on the type of the variable
-    being selected (i.e. Byte for small positive integers; Int for
-    sign-dependent and large integers).
-
-    Then that typeDef goes into a GEMSelect object, with parameters
-    equal to the number of entries in the array, and the storage size of one element
-    in the array. The GEMSelect object is basically just a pointer to the
-    array of choices. The GEMItem then takes the GEMSelect pointer as a parameter.
-
-    The fact that GEM expects pointers and references makes it tricky
-    to work with if you are new to C++.
-  */
-// SETTINGS STEP 4 - Now add the menu item starting with a callback as below.
+// Persistent menu items bind a runtime value, choices, and save callback.
 PersistentCallbackInfo callbackInfoMPE = {
   static_cast<uint8_t>(SettingKey::MPEpitchBend),
   reinterpret_cast<void*>(&MPEpitchBendSemis),
@@ -2411,69 +2399,6 @@ void applyGeometryRuntimeFromStorage() {
   applyScale();
 }
 
-// --------------------------------------------------------
-// SETTINGS STEP 3 - Callback to sync settings variables on power-up
-// --------------------------------------------------------
-void syncSynthSettingsToRuntime() {
-  playbackMode = normalizeSynthPlaybackMode(settingValue(SettingKey::PlaybackMode));
-  settings[static_cast<uint8_t>(SettingKey::PlaybackMode)] = playbackMode;
-  currWave = settingValue(SettingKey::Waveform);
-  synthWavetablePosition = settingValue(SettingKey::SynthWavetablePosition);
-  if (!currentSynthWavetableReferenceValid) {
-    selectSynthWavetableForWaveform(currWave, true);
-    settings[static_cast<uint8_t>(SettingKey::SynthWavetablePosition)] = synthWavetablePosition;
-  }
-  loadSelectedSynthWavetable();
-  updateCurrentSynthWavetableMenuLabel();
-  synthDrive = settingValue(SettingKey::SynthDrive);
-  if (synthDrive > SYNTH_DRIVE_DIRTY) {
-    synthDrive = SYNTH_DRIVE_OFF;
-  }
-  synthModTarget = settingValue(SettingKey::SynthModTarget);
-  synthModAmount = settingValue(SettingKey::SynthModAmount);
-  synthVibratoSpeed = settingValue(SettingKey::SynthVibratoSpeed);
-  synthLfoTarget = settingValue(SettingKey::SynthLfoTarget);
-  synthLfoAmount = settingValue(SettingKey::SynthLfoAmount);
-  synthLfoWave = settingValue(SettingKey::SynthLfoWave);
-  synthLfoSpeed = settingValue(SettingKey::SynthLfoSpeed);
-  arpeggiatorDivision = settingValue(SettingKey::ArpeggiatorDivision);
-  if (arpeggiatorDivision == 0) {
-    arpeggiatorDivision = 1;
-  }
-  arpeggiatorDirection = settingValue(SettingKey::ArpeggiatorDirection);
-  updateArpeggiatorDirection();
-  synthBPM = settingValue(SettingKey::SynthBPM);
-  if (synthBPM == 0) {
-    synthBPM = 1;
-  }
-  synthPortamentoTimeIndex = settingValue(SettingKey::SynthPortamentoTimeIndex);
-  updateSynthPortamentoSettings();
-  envelopeAttackIndex = settingValue(SettingKey::EnvelopeAttackIndex);
-  envelopeHoldIndex = settingValue(SettingKey::EnvelopeHoldIndex);
-  envelopeDecayIndex = settingValue(SettingKey::EnvelopeDecayIndex);
-  envelopeSustainLevel = settingValue(SettingKey::EnvelopeSustainLevel);
-  envelopeReleaseIndex = settingValue(SettingKey::EnvelopeReleaseIndex);
-  effectEnvelopeAttackIndex[0] = settingValue(SettingKey::EffectEnvelopeAttackIndex);
-  effectEnvelopeHoldIndex[0] = settingValue(SettingKey::EffectEnvelopeHoldIndex);
-  effectEnvelopeDecayIndex[0] = settingValue(SettingKey::EffectEnvelopeDecayIndex);
-  effectEnvelopeSustainLevel[0] = settingValue(SettingKey::EffectEnvelopeSustainLevel);
-  effectEnvelopeReleaseIndex[0] = settingValue(SettingKey::EffectEnvelopeReleaseIndex);
-  effectEnvelopeTarget[0] = settingValue(SettingKey::EffectEnvelopeTarget);
-  effectEnvelopeAmount[0] = settingValue(SettingKey::EffectEnvelopeAmount);
-  effectEnvelopeTarget[1] = settingValue(SettingKey::EffectEnvelope2Target);
-  effectEnvelopeAmount[1] = settingValue(SettingKey::EffectEnvelope2Amount);
-  effectEnvelopeAttackIndex[1] = settingValue(SettingKey::EffectEnvelope2AttackIndex);
-  effectEnvelopeHoldIndex[1] = settingValue(SettingKey::EffectEnvelope2HoldIndex);
-  effectEnvelopeDecayIndex[1] = settingValue(SettingKey::EffectEnvelope2DecayIndex);
-  effectEnvelopeSustainLevel[1] = settingValue(SettingKey::EffectEnvelope2SustainLevel);
-  effectEnvelopeReleaseIndex[1] = settingValue(SettingKey::EffectEnvelope2ReleaseIndex);
-  updateSynthModulationParams();
-  updateEnvelopeParamsFromSettings();
-  updateEffectEnvelopeParamsFromSettings();
-  updateArpeggiatorTiming();
-  updateSynthMenuVisibility();
-}
-
 void syncSettingsToRuntime() {
   rotaryInvertPreference = settingEnabled(SettingKey::RotaryInvert);
   updateEffectiveRotaryInvert();
@@ -2723,7 +2648,7 @@ void redrawMenuAfterVirtualListLauncherScroll() {
 
 void serviceVirtualListLauncherLabelScroll() {
   if (virtualListMenuIsActive()
-      || delegatedControl
+      || delegatedControlState.active
       || presetSyncTransferActive
       || flashSaveScreenVisible
       || commandWheelOverlayActive()
@@ -2948,8 +2873,8 @@ void updateLayoutAndRotate() {
 }
 
 void loadDeviceRotationFromCurrentLayout() {
-  deviceRotation = userGeometryRuntimeActive && userGeometryRuntimeLayoutObjectSelected
-    ? userGeometryRuntimeDeviceRotation % 4
+  deviceRotation = userGeometryRuntime.active && userGeometryRuntime.layoutObjectSelected
+    ? userGeometryRuntime.deviceRotation % 4
     : current.layout().deviceRotation % 4;
   settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = deviceRotation;
 }
@@ -3023,7 +2948,8 @@ void createProfileMenuItems() {
     } else {
       snprintf(loadProfileLabels[i], sizeof(loadProfileLabels[i]), "Load Slot %u", static_cast<unsigned>(i));
     }
-    menuItemLoadProfile[i] = new GEMItem(loadProfileLabels[i], loadProfileMenu, i);
+    menuItemLoadProfile[i] = &loadProfileItemPool.construct(
+      i, loadProfileLabels[i], loadProfileMenu, i);
     menuPageProfiles.addMenuItem(*menuItemLoadProfile[i]);
   }
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
@@ -3032,7 +2958,8 @@ void createProfileMenuItems() {
     } else {
       snprintf(saveProfileLabels[i], sizeof(saveProfileLabels[i]), "Save Slot %u", static_cast<unsigned>(i));
     }
-    menuItemSaveProfile[i] = new GEMItem(saveProfileLabels[i], saveProfileMenu, i);
+    menuItemSaveProfile[i] = &saveProfileItemPool.construct(
+      i, saveProfileLabels[i], saveProfileMenu, i);
     menuPageProfiles.addMenuItem(*menuItemSaveProfile[i]);
   }
 }
@@ -3189,7 +3116,7 @@ void formatStorageStatusPath(uint8_t issueIndex) {
 }
 
 void populateStorageStatusMenuPage() {
-  menuItemStorageSummary = new GEMItem(storageHealthSummaryLabel());
+  menuItemStorageSummary = &storageSummaryItemPool.construct(0, storageHealthSummaryLabel());
   menuPageStorageStatus.addMenuItem(*menuItemStorageSummary);
   for (uint8_t index = 0; index < storageHealthIssueCount(); ++index) {
     formatStorageStatusPath(index);
@@ -3197,8 +3124,10 @@ void populateStorageStatusMenuPage() {
              sizeof(storageStatusReasonLabels[index]),
              "  %s",
              storageHealthIssueReason(index));
-    menuItemStorageIssuePath[index] = new GEMItem(storageStatusPathLabels[index]);
-    menuItemStorageIssueReason[index] = new GEMItem(storageStatusReasonLabels[index]);
+    menuItemStorageIssuePath[index] = &storagePathItemPool.construct(
+      index, storageStatusPathLabels[index]);
+    menuItemStorageIssueReason[index] = &storageReasonItemPool.construct(
+      index, storageStatusReasonLabels[index]);
     menuPageStorageStatus.addMenuItem(*menuItemStorageIssuePath[index]);
     menuPageStorageStatus.addMenuItem(*menuItemStorageIssueReason[index]);
   }

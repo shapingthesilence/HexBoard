@@ -41,14 +41,17 @@ void setDelegatedAppName(const uint8_t* data, const unsigned int len) {
   for (unsigned int i = 0; i < len && out < DELEGATED_APP_NAME_MAX; ++i) {
     uint8_t value = data[i] & 0x7F;
     if (value >= 32 && value <= 126) {
-      delegatedAppName[out++] = static_cast<char>(value);
+      delegatedControlState.appName[out++].store(static_cast<char>(value), std::memory_order_relaxed);
     }
   }
   if (out == 0) {
-    strncpy(delegatedAppName, "Host Application", DELEGATED_APP_NAME_MAX + 1);
-  } else {
-    delegatedAppName[out] = '\0';
+    constexpr char defaultName[] = "Host Application";
+    for (char value : defaultName) {
+      delegatedControlState.appName[out++].store(value, std::memory_order_relaxed);
+    }
+    return;
   }
+  delegatedControlState.appName[out].store('\0', std::memory_order_relaxed);
 }
 
 void sendDelegatedEncoderEvent(byte event) {
@@ -58,41 +61,42 @@ void sendDelegatedEncoderEvent(byte event) {
 
 void releaseActiveDelegatedNotes() {
   for (byte i = 0; i < LED_COUNT; ++i) {
-    if (delegatedActiveChannel[i] == 0 || delegatedActiveNote[i] >= 128) {
+    if (delegatedControlState.activeChannel[i] == 0 || delegatedControlState.activeNote[i] >= 128) {
       continue;
     }
-    byte note = delegatedActiveNote[i];
-    byte channel = delegatedActiveChannel[i];
+    byte note = delegatedControlState.activeNote[i];
+    byte channel = delegatedControlState.activeChannel[i];
     withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel); });
   }
   clearDelegatedNoteActivity();
 }
 
 void enterDelegatedControl(const uint8_t* appNameData = nullptr, const unsigned int appNameLen = 0) {
-  if (delegatedControl) {
+  if (delegatedControlState.active) {
     releaseActiveDelegatedNotes();
   }
   setDelegatedAppName(appNameData, appNameLen);
-  delegatedControl = true;
-  memset(delegatedColors, 0, sizeof(delegatedColors));
+  for (auto& color : delegatedControlState.colors) {
+    color.store(0, std::memory_order_relaxed);
+  }
   clearDelegatedNoteActivity();
-  delegatedDisplayDirty = true;
-  delegatedDisplayWakeRequested = true;
-  delegatedReturnToMenuRequested = false;
+  delegatedControlState.displayDirty = true;
+  delegatedControlState.displayWakeRequested = true;
+  delegatedControlState.returnToMenuRequested = false;
   // Reset parser state when entering delegated mode.
   setupMIDI();
+  delegatedControlState.active.store(true, std::memory_order_release);
   sendToLog("delegated = 1");
 }
 
 void exitDelegatedControl() {
-  if (!delegatedControl) {
+  if (!delegatedControlState.active.exchange(false, std::memory_order_acq_rel)) {
     return;
   }
   releaseActiveDelegatedNotes();
-  delegatedControl = false;
-  delegatedDisplayDirty = false;
-  delegatedDisplayWakeRequested = false;
-  delegatedReturnToMenuRequested = true;
+  delegatedControlState.displayDirty = false;
+  delegatedControlState.displayWakeRequested = false;
+  delegatedControlState.returnToMenuRequested = true;
   sendToLog("delegated = 0");
 }
 
@@ -109,24 +113,24 @@ void RAM_FUNC(delegatedButtonEvent)(byte x, bool press) {
   }
 
   if (press) {
-    if (delegatedActiveChannel[x] != 0 && delegatedActiveNote[x] < 128) {
-      byte activeNote = delegatedActiveNote[x];
-      byte activeChannel = delegatedActiveChannel[x];
+    if (delegatedControlState.activeChannel[x] != 0 && delegatedControlState.activeNote[x] < 128) {
+      byte activeNote = delegatedControlState.activeNote[x];
+      byte activeChannel = delegatedControlState.activeChannel[x];
       withMIDI([&](auto& M) { M.sendNoteOff(activeNote, 0, activeChannel); });
     }
-    byte channel = delegatedNoteMapChannel[x];
-    byte note = delegatedNoteMapNote[x];
-    delegatedActiveChannel[x] = channel;
-    delegatedActiveNote[x] = note;
+    byte channel = delegatedControlState.noteMapChannel[x];
+    byte note = delegatedControlState.noteMapNote[x];
+    delegatedControlState.activeChannel[x] = channel;
+    delegatedControlState.activeNote[x] = note;
     withMIDI([&](auto& M) { M.sendNoteOn(note, 127, channel); });
   } else {
-    if (delegatedActiveChannel[x] == 0 || delegatedActiveNote[x] >= 128) {
+    if (delegatedControlState.activeChannel[x] == 0 || delegatedControlState.activeNote[x] >= 128) {
       return;
     }
-    byte channel = delegatedActiveChannel[x];
-    byte note = delegatedActiveNote[x];
-    delegatedActiveChannel[x] = 0;
-    delegatedActiveNote[x] = UNUSED_NOTE;
+    byte channel = delegatedControlState.activeChannel[x];
+    byte note = delegatedControlState.activeNote[x];
+    delegatedControlState.activeChannel[x] = 0;
+    delegatedControlState.activeNote[x] = UNUSED_NOTE;
     withMIDI([&](auto& M) { M.sendNoteOff(note, 0, channel); });
   }
 }
@@ -147,8 +151,8 @@ void processDelegatedNoteMapSysEx(const uint8_t* data, const unsigned int len) {
       sendToLog("delegated note map: channel " + std::to_string(channel) + " is out of range; ignoring");
       continue;
     }
-    delegatedNoteMapChannel[button] = channel;
-    delegatedNoteMapNote[button] = note;
+    delegatedControlState.noteMapChannel[button] = channel;
+    delegatedControlState.noteMapNote[button] = note;
   }
 }
 
@@ -168,7 +172,7 @@ void processLedSysEx(const uint8_t* data, const unsigned int len) {
       static_cast<byte>(2 * satData + (satData > 63 ? 1 : 0)),
       static_cast<byte>(2 * valData + (valData > 63 ? 1 : 0))
     };
-    delegatedColors[led] = getLEDcode(c);
+    delegatedControlState.colors[led] = getLEDcode(c);
   }
 }
 

@@ -1,5 +1,7 @@
 #include "ScalePalettePreset.h"
 
+UserGeometryRuntimeState userGeometryRuntime = {};
+
 // Immutable rescue scale and color palette. Editable factory scales and
 // per-degree colors are generated into /geometry/*.hgb.
 const scaleDef scaleOptions[] = {

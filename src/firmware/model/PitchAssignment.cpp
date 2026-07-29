@@ -165,12 +165,12 @@ void restoreDefaultVisibleButtonRoles() {
 }
 
 void applyUserGeometryButtonOverrides() {
-  if (!userGeometryRuntimeActive) {
+  if (!userGeometryRuntime.active) {
     return;
   }
   for (byte i = 0; i < LED_COUNT; ++i) {
-    if (userGeometryRuntimeButtonRoleOverride[i]) {
-      if (userGeometryRuntimeButtonRole[i] == 2) {
+    if (userGeometryRuntime.buttonRoleOverride[i]) {
+      if (userGeometryRuntime.buttonRole[i] == 2) {
         h[i].isCmd = true;
         h[i].note = UNUSED_NOTE;
         for (byte c = 0; c < CMDCOUNT; ++c) {
@@ -179,7 +179,7 @@ void applyUserGeometryButtonOverrides() {
             break;
           }
         }
-      } else if (userGeometryRuntimeButtonRole[i] == 1 && !userGeometryRuntimeButtonDisabled[i]) {
+      } else if (userGeometryRuntime.buttonRole[i] == 1 && !userGeometryRuntime.buttonDisabled[i]) {
         h[i].isCmd = false;
         h[i].note = UNUSED_NOTE;
       } else {
@@ -187,15 +187,15 @@ void applyUserGeometryButtonOverrides() {
         h[i].note = UNUSED_NOTE;
       }
     }
-    if (!h[i].isCmd && userGeometryRuntimeButtonNoteOverride[i]) {
-      h[i].stepsFromC = userGeometryRuntimeButtonStepsFromC[i];
+    if (!h[i].isCmd && userGeometryRuntime.buttonNoteOverride[i]) {
+      h[i].stepsFromC = userGeometryRuntime.buttonStepsFromC[i];
     }
   }
 }
 
 void applyLayout() {  // call this function when the layout changes
   sendToLog("buildLayout was called:");
-  if (userGeometryRuntimeActive) {
+  if (userGeometryRuntime.active) {
     restoreDefaultVisibleButtonRoles();
   }
   ///////////////////////////////////////////////////////////////////////////////////////
@@ -222,8 +222,8 @@ void applyLayout() {  // call this function when the layout changes
     mirrorLeftRightOffset = layoutStepsForDelta(centerDistCol, centerDistRow, unmirroredAcrossSteps, unmirroredDnLeftSteps)
                             - layoutStepsForDelta(centerDistCol, centerDistRow, acrossSteps, dnLeftSteps);
   }
-  const int16_t centerStepsFromC = userGeometryRuntimeActive
-    ? userGeometryRuntimeLayoutCenterStepsFromC
+  const int16_t centerStepsFromC = userGeometryRuntime.active
+    ? userGeometryRuntime.layoutCenterStepsFromC
     : 0;
   for (byte i = 0; i < LED_COUNT; i++) {
     if (!(h[i].isCmd)) {

@@ -7,13 +7,43 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import struct
 import wave
 import zlib
 
-PROFILE_COUNT = 9
-CURRENT_SETTINGS_VERSION = 26
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+PERSISTENT_MODELS_HEADER = REPOSITORY_ROOT / "src/firmware/storage/PersistentDataModels.h"
+SETTING_KEYS_DEFINITION = REPOSITORY_ROOT / "src/firmware/storage/SettingKeys.inc.h"
+
+
+def source_integer_constant(name: str) -> int:
+    source = PERSISTENT_MODELS_HEADER.read_text(encoding="utf-8")
+    match = re.search(
+        rf"constexpr\s+\w+\s+{re.escape(name)}\s*=\s*(\d+)\s*;",
+        source,
+    )
+    if match is None:
+        raise RuntimeError(f"{PERSISTENT_MODELS_HEADER}: missing integer constant {name}")
+    return int(match.group(1))
+
+
+def source_setting_keys() -> tuple[str, ...]:
+    keys = re.findall(
+        r"^HEXBOARD_SETTING\((\w+),",
+        SETTING_KEYS_DEFINITION.read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    )
+    if not keys:
+        raise RuntimeError(f"{SETTING_KEYS_DEFINITION}: no settings found")
+    if len(keys) != len(set(keys)):
+        raise RuntimeError(f"{SETTING_KEYS_DEFINITION}: duplicate setting name")
+    return tuple(keys)
+
+
+PROFILE_COUNT = source_integer_constant("PROFILE_COUNT")
+CURRENT_SETTINGS_VERSION = source_integer_constant("CURRENT_SETTINGS_VERSION")
 SYNTH_PRESET_MAX_COUNT = 128
 SYNTH_WAVETABLE_MAX_COUNT = 32
 GEOMETRY_FACTORY_BUNDLE_MAX_COUNT = 64
@@ -74,35 +104,7 @@ USER_SCALE_TLV_INCLUDED_DEGREES = 0x24
 
 LAYOUT_BUNDLE_FORMAT = "hexboard.layoutBundle.v5"
 
-SETTING_KEYS = (
-    "RotaryInvert", "AutoSave", "MPEpitchBend", "MPEMode", "ExtraMPE",
-    "MPELowestChannel", "MPEHighestChannel", "MPELowPriority",
-    "DefaultMIDIChannel", "CC74Value", "CurrentTuning", "CurrentLayout",
-    "CurrentScale", "CurrentKeyStepsFromA", "CurrentTransposeSteps",
-    "LayoutRotation", "MirrorLeftRight", "MirrorUpDown", "ScaleLock",
-    "PaletteCenterOnKey", "WheelAltMode", "PBSticky", "ModSticky",
-    "PBWheelSpeed", "ModWheelSpeed", "VelWheelSpeed", "PlaybackMode",
-    "Waveform", "AudioDestination", "ArpeggiatorDivision", "SynthBPM",
-    "ColorMode", "RestLedBrightness", "DimLedBrightness", "GlobalBrightness",
-    "AnimationType", "ProgramChange", "JustIntonationBPMSync", "BeatBPM",
-    "BPMMultiplier", "DynamicJI", "EnvelopeAttackIndex", "EnvelopeDecayIndex",
-    "EnvelopeSustainLevel", "EnvelopeReleaseIndex", "DisplayPlayedNotes",
-    "LedCurrentLimitMode", "SynthDrive", "SynthModTarget", "SynthVibratoSpeed",
-    "MetronomeMode", "MetronomeSignature", "EffectEnvelopeAttackIndex",
-    "EffectEnvelopeDecayIndex", "EffectEnvelopeSustainLevel",
-    "EffectEnvelopeReleaseIndex", "BootAnimationEnabled", "EffectEnvelopeTarget",
-    "EffectEnvelopeAmount", "EffectEnvelope2Target", "EffectEnvelope2Amount",
-    "EffectEnvelope2AttackIndex", "EffectEnvelope2DecayIndex",
-    "EffectEnvelope2SustainLevel", "EffectEnvelope2ReleaseIndex",
-    "SynthAttackEffect", "EnvelopeHoldIndex", "EffectEnvelopeHoldIndex",
-    "EffectEnvelope2HoldIndex", "SynthModAmount", "HeadphoneVolumeCap",
-    "DeviceRotation", "SynthPortamentoTimeIndex", "ArpeggiatorDirection",
-    "SynthWavetablePosition", "SynthLfoTarget", "SynthLfoAmount", "SynthLfoWave",
-    "SynthLfoSpeed", "DynamicJIRatioTable", "SequencerStepAccentEvery",
-    "SequencerStepColorMode", "SequencerStepHue", "SequencerMonophonicMode",
-    "SequencerTapPreview", "SequencerClockSource", "SequencerSendClock",
-    "SequencerSendTransport", "PiezoVolumeCap",
-)
+SETTING_KEYS = source_setting_keys()
 
 SYNTH_PRESET_KEYS = (
     "PlaybackMode", "Waveform", "SynthDrive", "SynthModTarget", "SynthModAmount",

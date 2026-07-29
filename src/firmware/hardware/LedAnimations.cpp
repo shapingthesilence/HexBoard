@@ -231,7 +231,7 @@ void animateRadialReverse() {  //inverted splash/star
 
 
 void animateLEDs() {
-  if (delegatedControl) {
+  if (delegatedControlState.active) {
     return;
   }
   for (byte i = 0; i < LED_COUNT; ++i) {
