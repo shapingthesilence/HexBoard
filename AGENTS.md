@@ -39,6 +39,13 @@ These instructions apply to the entire repository. This guide is for future AI a
 
 Every behavior, setting, protocol, menu, build, hardware, or architecture change must include a documentation pass before the task is considered complete.
 
+The documentation pass is a relevance check, not a requirement to modify files
+for every code change. Do not update product or developer documentation for
+layout, spacing, rendering, typo, or other corrective changes that only restore
+the already-documented intended behavior. Document an interface-layout change
+only when it changes the information shown, interaction model, workflow, or a
+durable layout constraint that maintainers need to preserve.
+
 Integrate documentation changes by replacing stale descriptions with concise
 current-state text. Do not append bug history or name the cases that motivated a
 general rule. Keep root-cause analysis, implementation history, and verification

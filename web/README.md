@@ -124,8 +124,10 @@ and `TRANSFER_END` so firmware can pace object transfers.
   layout to scale-degree colors.
   EDO pitch generation preserves the exact period/division ratio rather than
   treating the rounded decimal step display as authoritative. Sync writes
-  firmware-native binary32 tuning values alongside milli-unit compatibility
-  fields, and the editor preview uses the same binary32 rounding as firmware.
+  each authoritative tuning value once as firmware-native binary32, and the
+  editor preview uses the same binary32 rounding as firmware. EDO step size,
+  equal-step period, and cents-list period are derived rather than stored as
+  duplicate values.
   Scala `.scl`
   import reads trailing interval labels, exposes the 1/1 MIDI note
   and Hz reference, and enables cents-table live send when the connected

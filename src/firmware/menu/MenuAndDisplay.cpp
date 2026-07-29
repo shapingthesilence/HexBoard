@@ -76,6 +76,7 @@ bool virtualListLauncherScrollApplied = false;
 char virtualListLauncherValueBuffer[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = {};
 
 constexpr uint8_t PRESET_SYNC_PROGRESS_REDRAW_STEP = 2;
+constexpr uint8_t MODAL_SCREEN_FOOTER_BASELINE = 112;
 uint8_t presetSyncDisplayedObjectType = 0xFF;
 uint8_t presetSyncDisplayedDirection = 0;
 uint8_t presetSyncDisplayedProgress = 0xFF;
@@ -142,11 +143,11 @@ void drawDelegatedControlScreen() {
 
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x13_tf);
-  drawCenteredDelegatedText("Delegated", 24);
-  drawCenteredDelegatedText("Control Mode", 40);
-  drawCenteredDelegatedText(delegatedAppName, 66);
-  drawCenteredDelegatedText("Hold encoder", 106);
-  drawCenteredDelegatedText("5 sec to exit", 122);
+  drawCenteredDelegatedText("Delegated", 20);
+  drawCenteredDelegatedText("Control Mode", 36);
+  drawCenteredDelegatedText(delegatedAppName, 62);
+  drawCenteredDelegatedText("Hold encoder", 94);
+  drawCenteredDelegatedText("5 sec to exit", MODAL_SCREEN_FOOTER_BASELINE);
   u8g2.sendBuffer();
   delegatedDisplayDirty = false;
 }
@@ -272,7 +273,7 @@ void drawPresetSyncTransferScreen(bool forceRedraw = false) {
     }
 
     constexpr uint8_t barX = 8;
-    constexpr uint8_t barY = 47;
+    constexpr uint8_t barY = 43;
     constexpr uint8_t barWidth = 112;
     constexpr uint8_t barHeight = 14;
     constexpr uint8_t barInnerWidth = barWidth - 4;
@@ -281,15 +282,15 @@ void drawPresetSyncTransferScreen(bool forceRedraw = false) {
 
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_6x13_tf);
-    drawCenteredDelegatedText("MIDI SysEx", 16);
-    drawCenteredDelegatedText(titleText, 34);
+    drawCenteredDelegatedText("MIDI SysEx", 15);
+    drawCenteredDelegatedText(titleText, 31);
     u8g2.drawFrame(barX, barY, barWidth, barHeight);
     if (fillWidth > 0) {
       u8g2.drawBox(barX + 2, barY + 2, fillWidth, barHeight - 4);
     }
-    drawCenteredDelegatedText(progressText, 79);
-    drawCenteredDelegatedText(byteText, 98);
-    drawCenteredDelegatedText("Please wait...", 119);
+    drawCenteredDelegatedText(progressText, 73);
+    drawCenteredDelegatedText(byteText, 91);
+    drawCenteredDelegatedText("Please wait...", MODAL_SCREEN_FOOTER_BASELINE);
     u8g2.sendBuffer();
     presetSyncTransferScreenVisible = true;
     return;
@@ -314,12 +315,12 @@ void drawPresetSyncTransferScreen(bool forceRedraw = false) {
 
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x13_tf);
-  u8g2.drawStr(8, 18, "MIDI SysEx");
-  u8g2.drawStr(8, 34, "Transfer");
-  u8g2.drawStr(8, 58, "Preset sync active");
-  u8g2.drawStr(8, 76, frameText);
-  u8g2.drawStr(8, 94, messageText);
-  u8g2.drawStr(8, 116, "Please wait...");
+  u8g2.drawStr(8, 16, "MIDI SysEx");
+  u8g2.drawStr(8, 32, "Transfer");
+  u8g2.drawStr(8, 54, "Preset sync active");
+  u8g2.drawStr(8, 72, frameText);
+  u8g2.drawStr(8, 90, messageText);
+  u8g2.drawStr(8, MODAL_SCREEN_FOOTER_BASELINE, "Please wait...");
   u8g2.sendBuffer();
   presetSyncTransferScreenVisible = true;
 }
