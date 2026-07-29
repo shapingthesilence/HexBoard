@@ -593,7 +593,7 @@ cleanup, but not for `SYNTH_PARAM_SET` or apply-only object transfers.
 For a persistent geometry save, `object-type` is `0x0C`, `handle` is
 `NEW_OBJECT`, schema is `1.0`, and the only required write flag is
 `SaveToFlash`. For a live `UserTuning` preview, `object-type` is `0x03` and the
-write flag is `ApplyToRuntime` without `SaveToFlash`.
+schema is `2.0`; the write flag is `ApplyToRuntime` without `SaveToFlash`.
 
 `WRITE_COMMIT` payload:
 

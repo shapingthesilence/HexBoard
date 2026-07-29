@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { deterministicObjectId } from "../catalogs/objectId.ts";
 import {
+  GeometryObjectSchemaVersion,
   createDefaultLayoutBundle,
   createGeneratedEdoTuning,
   encodeGeometryCatalogOrder,
@@ -223,6 +224,8 @@ describe("PresetSyncClient", () => {
 
     expect(decodeWriteBeginPayload(decoded[0].payload)).toMatchObject({
       objectType: ObjectType.UserTuning,
+      schemaMajor: GeometryObjectSchemaVersion,
+      schemaMinor: 0,
       rawByteLength: tuning.body.length,
       writeFlags: 0x01
     });

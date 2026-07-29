@@ -685,6 +685,13 @@ void presetSyncHandleNack(uint16_t transactionId, const uint8_t* payload, size_t
   }
 }
 
+static uint8_t presetSyncExpectedWriteSchemaMajor(uint8_t objectType) {
+  if (isPresetSyncGeometryObjectType(objectType)) {
+    return GEOMETRY_OBJECT_SCHEMA_VERSION;
+  }
+  return 1;
+}
+
 void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
   if (payloadLength != 19) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_BAD_LENGTH);
@@ -706,7 +713,7 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_BAD_LENGTH);
     return;
   }
-  if (payload[5] != 1) {
+  if (payload[5] != presetSyncExpectedWriteSchemaMajor(objectType)) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_SCHEMA_MISMATCH);
     return;
   }
