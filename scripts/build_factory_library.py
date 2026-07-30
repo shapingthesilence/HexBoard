@@ -669,8 +669,8 @@ def build_wavetables(root: Path, output: Path) -> tuple[list[bytes], set[tuple[s
         folder = source_folder(path, root)
         name = path.stem
         key = (folder, name)
-        if key in references:
-            raise fail(path, "wavetables", f"duplicate device name {folder}/{name}")
+        if any(existing_name == name for _, existing_name in references):
+            raise fail(path, "wavetables", f"duplicate device wavetable name {name}")
         samples = parse_hexwav(path)
         object_id = web_deterministic_object_id(f"factory-wavetable:{folder}:{name}")
         sample_path = f"/wt_{object_id[:8].hex().upper()}.wtb"
@@ -717,8 +717,8 @@ def parse_preset(path: Path, root: Path,
         raise fail(path, "preset", "wavetable reference is required")
     wavetable_name = str(wavetable.get("name", "")).strip()
     wavetable_folder = normalized_folder(str(wavetable.get("folderPath", "")))
-    if (wavetable_folder, wavetable_name) not in wavetable_references:
-        raise fail(path, "preset", f"wavetable {wavetable_folder}/{wavetable_name} is not in the factory library")
+    if not any(existing_name == wavetable_name for _, existing_name in wavetable_references):
+        raise fail(path, "preset", f"wavetable {wavetable_name} is not in the factory library")
     values_source = source.get("values")
     if not isinstance(values_source, dict):
         raise fail(path, "preset", "values must be an object")
@@ -849,7 +849,7 @@ def validate_selected_wavetable(config_path: Path, config: dict,
     selected_folder = normalized_folder(selected_folder)
     if (selected_folder, selected_name) not in references:
         raise fail(config_path, "selection", f"selectedWavetable {selected!r} was not found")
-    if (selected_folder, selected_name) != selected_preset_wavetable:
+    if selected_name != selected_preset_wavetable[1]:
         preset_folder, preset_name = selected_preset_wavetable
         raise fail(
             config_path,

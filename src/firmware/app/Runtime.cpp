@@ -100,10 +100,12 @@ void hexboardLoop() {        // run on first core
   serviceSerialDebugMessages();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_PRESET_TRANSFER);
   bool presetSyncOwnsUi = servicePresetSyncTransfer();
+  bool missingWavetableNoticeOwnsUi =
+    !presetSyncOwnsUi && serviceMissingWavetableNotice();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_ENVELOPE_RELEASE);
   processEnvelopeReleases();
   retryPendingReleases();
-  if (!presetSyncOwnsUi) {
+  if (!presetSyncOwnsUi && !missingWavetableNoticeOwnsUi) {
     screenSaver();     // Reduces wear-and-tear on OLED panel
   }
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_BUTTON_SCAN);
@@ -133,7 +135,9 @@ void hexboardLoop() {        // run on first core
     lightUpLEDs();   // refresh LEDs
   }
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_ROTARY_MENU);
-  dealWithRotary();  // deal with menu
+  if (!missingWavetableNoticeOwnsUi) {
+    dealWithRotary();  // deal with menu
+  }
   if (delegatedControlState.active && !stabilityBenchmarkIsActive()) {
     stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
     drawDelegatedControlScreen();
@@ -148,14 +152,17 @@ void hexboardLoop() {        // run on first core
   restoreMenuAfterDelegatedControl();
   serviceVirtualListLauncherLabelScroll();
   serviceFlashSaveScreen();
+  missingWavetableNoticeOwnsUi = serviceMissingWavetableNotice();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
-  if (!flashSaveScreenVisible && sequencerModeActive()) {
+  if (!flashSaveScreenVisible && !missingWavetableNoticeOwnsUi && sequencerModeActive()) {
     drawSequencerModeDisplay();
   }
-  if (!flashSaveScreenVisible) {
+  if (!flashSaveScreenVisible && !missingWavetableNoticeOwnsUi) {
     drawCommandWheelOverlay();
   }
-  drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
+  if (!missingWavetableNoticeOwnsUi) {
+    drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
+  }
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_BENCHMARK);
   serviceStabilityBenchmark();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_AUTOSAVE);

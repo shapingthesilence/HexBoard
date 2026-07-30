@@ -1015,10 +1015,18 @@ void loadSynthPresetFromSlot(uint16_t presetIndex) {
     sendToLog("Synth preset record is missing.");
     return;
   }
+  bool missingWavetable = !synthWavetableNameIsAvailable(preset.wavetableName);
+  char missingWavetableName[SYNTH_WAVETABLE_NAME_LENGTH] = {};
+  if (missingWavetable) {
+    snprintf(missingWavetableName, sizeof(missingWavetableName), "%s", preset.wavetableName);
+  }
   applySynthPresetToSettings(preset);
   markSettingsDirty();
   trackCurrentSynthPresetSlot(presetIndex, &preset);
   syncSynthSettingsToRuntime();
   flashSafeSaveCurrentSynthPresetReference();
+  if (missingWavetable) {
+    showMissingWavetableNotice(missingWavetableName);
+  }
   sendToLog("Loaded synth preset " + std::string(synthPresets[presetIndex].name));
 }

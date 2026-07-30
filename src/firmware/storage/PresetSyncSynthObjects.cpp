@@ -700,6 +700,19 @@ bool copySynthWavetableSampleFile(const char* sourcePath, const char* destinatio
   return ok;
 }
 
+bool synthWavetableNameCanUseSlot(const SynthWavetableSlot& wavetable, int slotIndex) {
+  if (findBuiltinSynthWavetableByName(wavetable.name) >= 0) {
+    sendToLog("Synth wavetable name is reserved by a built-in wavetable.");
+    return false;
+  }
+  int duplicate = findSynthWavetableByName(wavetable.name);
+  if (duplicate >= 0 && duplicate != slotIndex) {
+    sendToLog("Synth wavetable name already exists.");
+    return false;
+  }
+  return true;
+}
+
 bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& parsed) {
   if (!fileSystemExists) {
     sendToLog("File system not available.");
@@ -715,9 +728,16 @@ bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& parsed) {
   normalizeSynthWavetableMetadata(wavetable, parsed.samples, parsed.sampleLength);
   pruneMissingSynthWavetables();
 
+  if (findBuiltinSynthWavetableByName(wavetable.name) >= 0) {
+    sendToLog("Synth wavetable name is reserved by a built-in wavetable.");
+    return false;
+  }
   int slotIndex = chooseSynthWavetableWriteSlot(wavetable);
   if (slotIndex < 0) {
     sendToLog("Synth wavetable library is full.");
+    return false;
+  }
+  if (!synthWavetableNameCanUseSlot(wavetable, slotIndex)) {
     return false;
   }
 
@@ -757,9 +777,16 @@ bool saveParsedSynthWavetableSampleFile(const ParsedSynthWavetableObject& parsed
   normalizeSynthWavetableMetadata(wavetable, nullptr, parsed.sampleLength);
   pruneMissingSynthWavetables();
 
+  if (findBuiltinSynthWavetableByName(wavetable.name) >= 0) {
+    sendToLog("Synth wavetable name is reserved by a built-in wavetable.");
+    return false;
+  }
   int slotIndex = chooseSynthWavetableWriteSlot(wavetable);
   if (slotIndex < 0) {
     sendToLog("Synth wavetable library is full.");
+    return false;
+  }
+  if (!synthWavetableNameCanUseSlot(wavetable, slotIndex)) {
     return false;
   }
 
@@ -800,7 +827,11 @@ bool updateSynthWavetableMetadata(uint16_t handle, const ParsedSynthWavetableObj
   snprintf(updated.folderPath, sizeof(updated.folderPath), "%s", parsed.folderPath);
   normalizeSynthWavetableMetadata(updated);
 
-  int duplicate = findSynthWavetableByFolderAndName(updated.folderPath, updated.name);
+  if (findBuiltinSynthWavetableByName(updated.name) >= 0) {
+    sendToLog("Synth wavetable metadata update uses a reserved built-in name.");
+    return false;
+  }
+  int duplicate = findSynthWavetableByName(updated.name);
   if (duplicate >= 0 && duplicate != static_cast<int>(handle)) {
     sendToLog("Synth wavetable metadata update duplicate name.");
     return false;

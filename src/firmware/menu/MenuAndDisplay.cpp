@@ -62,6 +62,11 @@ bool flashSaveScreenClosePending = false;
 uint64_t flashSaveSavedScreenTime = 0;
 uint64_t flashSaveScreenVisibleUntil = 0;
 constexpr uint64_t FLASH_SAVE_SCREEN_MAX_VISIBLE_MICROS = 700000ULL;
+bool missingWavetableNoticeVisible = false;
+bool missingWavetableNoticeWokeDisplayFromSleep = false;
+uint64_t missingWavetableNoticeSavedScreenTime = 0;
+uint64_t missingWavetableNoticeVisibleUntil = 0;
+constexpr uint64_t MISSING_WAVETABLE_NOTICE_MICROS = 2000000ULL;
 
 constexpr uint8_t VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS = 19;
 constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_START_DELAY_MICROS = 1500000ULL;
@@ -426,6 +431,66 @@ void serviceFlashSaveScreen() {
   if (flashSaveScreenVisible && flashSaveScreenClosePending && readClock() >= flashSaveScreenVisibleUntil) {
     closeFlashSaveScreenNow();
   }
+}
+
+void showMissingWavetableNotice(const char* wavetableName) {
+  dismissFlashSaveScreenForMenuInput();
+  dismissCommandWheelOverlay();
+  missingWavetableNoticeWokeDisplayFromSleep = screenSaverOn;
+  missingWavetableNoticeSavedScreenTime = screenTime;
+  missingWavetableNoticeVisibleUntil = readClock() + MISSING_WAVETABLE_NOTICE_MICROS;
+  wakeDisplayFromScreensaver();
+  noteOverlayVisible = false;
+  noteBadgeVisible = false;
+  noteOverlayTemporaryWake = false;
+  noteOverlayWokeDisplayFromSleep = false;
+
+  const char* name = wavetableName && wavetableName[0] ? wavetableName : "Unknown";
+  size_t nameLength = strnlen(name, SYNTH_WAVETABLE_NAME_LENGTH - 1);
+  char firstNameLine[22] = {};
+  char secondNameLine[18] = {};
+  if (nameLength <= 18) {
+    snprintf(firstNameLine, sizeof(firstNameLine), "\"%s\"", name);
+  } else {
+    snprintf(firstNameLine, sizeof(firstNameLine), "\"%.*s", 18, name);
+    snprintf(secondNameLine, sizeof(secondNameLine), "%.*s\"", 13, name + 18);
+  }
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x13_tf);
+  drawCenteredDelegatedText("Upload wavetable", 17);
+  drawCenteredDelegatedText(firstNameLine, secondNameLine[0] ? 39 : 46);
+  if (secondNameLine[0]) {
+    drawCenteredDelegatedText(secondNameLine, 56);
+  }
+  drawCenteredDelegatedText("with HexBoard Sync", 80);
+  drawCenteredDelegatedText("Using Basic Shapes", 104);
+  u8g2.sendBuffer();
+  missingWavetableNoticeVisible = true;
+}
+
+bool serviceMissingWavetableNotice() {
+  if (!missingWavetableNoticeVisible) {
+    return false;
+  }
+  if (readClock() < missingWavetableNoticeVisibleUntil) {
+    return true;
+  }
+
+  missingWavetableNoticeVisible = false;
+  missingWavetableNoticeVisibleUntil = 0;
+  screenTime = missingWavetableNoticeSavedScreenTime;
+  if (missingWavetableNoticeWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
+    enterDisplayScreensaver();
+  } else if (delegatedControlState.active) {
+    delegatedControlState.displayDirty = true;
+    drawDelegatedControlScreen();
+  } else {
+    restoreInteractiveMenuDisplay();
+  }
+  missingWavetableNoticeWokeDisplayFromSleep = false;
+  missingWavetableNoticeSavedScreenTime = 0;
+  return false;
 }
 
 bool servicePresetSyncTransfer() {

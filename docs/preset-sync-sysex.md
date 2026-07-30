@@ -41,7 +41,8 @@ This protocol maps to independently replaceable persistent objects:
   geometry bundle: its tuning root plus all layouts, scales, scale color map,
   and explicit button maps that reference that tuning.
 - `/presets/<object-id>.hsp` stores one named synth preset with its folder path
-  and wavetable folder/name dependency.
+  and a wavetable name dependency. The wavetable folder is retained as metadata
+  for compatibility but is not part of dependency matching.
 - `/synth_wavetables.dat` stores the named user wavetable catalog. Each catalog
   entry points to a sample file generated from the wavetable object id.
 
@@ -1109,7 +1110,7 @@ Recommended TLVs:
 | `0x23` | `Favorite` | `u8 bool` |
 | `0x24` | `LastModifiedUnixTime` | Optional `u32-le` timestamp from the web app |
 | `0x26` | `SynthWavetableName` | UTF-8 wavetable name dependency |
-| `0x27` | `SynthWavetableFolderPath` | UTF-8 wavetable folder dependency |
+| `0x27` | `SynthWavetableFolderPath` | UTF-8 compatibility/display metadata; not used for dependency lookup |
 
 The current synth preset key set is:
 
@@ -1154,7 +1155,7 @@ These are sound-focused settings only. A synth preset should not imply the
 current profile slot, tuning, layout, MIDI channel, LED animation, or delegated
 control state.
 
-Schema `7` includes wavetable position and folder/name dependency fields, mono
+Schema `7` includes wavetable position and name plus compatibility-folder fields, mono
 portamento, arpeggiator direction, LFO controls, and the `DutyWrp` and `PolyWrp`
 modulation targets. Target value `0` is `FoldWrp`.
 
@@ -1165,18 +1166,21 @@ modulation targets. Target value `0` is `FoldWrp`.
 value `12` selects `Noise`, a smooth-noise vibrato source running at the same
 `12 Hz` phase rate, without changing the synth value list.
 
-`SynthWavetableName` and `SynthWavetableFolderPath` identify the source
-dependency. `Waveform` records the current Wave-menu anchor within that source,
-while `SynthWavetablePosition` stores the continuous position. Unavailable
-named dependencies load `Basic Shapes`. Basic Shapes is the rescue wavetable
-and uses the canonical reserved folder path `/Built In`. Editable factory
-wavetables use ordinary catalog paths; the supplied factory wavetables use the
-root folder `/`.
+`SynthWavetableName` identifies the source dependency.
+`SynthWavetableFolderPath` remains compatible organization metadata and does
+not participate in lookup. `Waveform` records the current Wave-menu anchor
+within that source, while `SynthWavetablePosition` stores the continuous
+position. Unavailable named dependencies load `Basic Shapes`; an interactive
+physical preset load also shows the missing name and HexBoard Sync upload
+instruction for two seconds. Basic Shapes is the rescue wavetable and uses the
+canonical reserved folder path `/Built In`. Editable factory wavetables use
+ordinary catalog paths; the supplied factory wavetables use the root folder
+`/`.
 
 The common `Name` and `FolderPath` TLVs are required for named/foldered synth
-presets. Duplicate names are allowed in different folders. Within the same
-folder, firmware may reject duplicates or allow them as long as object ids stay
-unique.
+presets. Synth wavetable names are globally unique across built-in and editable
+catalog entries; folders organize wavetables but do not create separate naming
+scopes.
 
 Example metadata for a named preset in the literal folder label `Pads/Warm`
 using escaped device storage:
@@ -1190,8 +1194,9 @@ using escaped device storage:
 
 `SynthWavetable` object type `0x0B` stores one named user wavetable catalog
 entry. Current firmware supports listing, reading, writing, and deleting
-entries. Presets reference wavetables by `SynthWavetableFolderPath` plus
-`SynthWavetableName`; they do not embed table sample data.
+entries. Presets reference wavetables by `SynthWavetableName`; they do not
+embed table sample data. Firmware rejects an import or rename that duplicates
+any built-in or editable wavetable name.
 
 Fixed-mip objects use schema `1.2`. Firmware also accepts schema `1.0`
 base-only wavetable objects and schema `1.1` objects whose TLV payload matches a
@@ -1365,7 +1370,7 @@ preview matches the saved selection.
    synthetic current-runtime synth preset so hosts can initialize an editor
    without changing the loaded sound.
 3. Device validates `SynthPresetSchemaVersion`, `Name`, `FolderPath`, and,
-   when present, the wavetable folder/name dependency TLVs.
+   when present, the wavetable name and compatibility folder metadata TLVs.
 4. Commit with `apply` changes only the current synth runtime for auditioning
    and marks settings dirty for the normal debounced profile autosave path.
    Commit with `save` atomically replaces one `/presets/<object-id>.hsp` file.

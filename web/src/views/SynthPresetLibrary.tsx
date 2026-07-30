@@ -129,6 +129,18 @@ interface DraggedPreset {
   objectIdHex: string;
 }
 
+type WavetableResolutionChoice =
+  | { kind: "upload" }
+  | { kind: "alternate"; wavetable: { name: string; folderPath: string } }
+  | null;
+
+interface WavetableResolutionRequest {
+  presetName: string;
+  requiredName: string;
+  matchingComputerWavetable?: EditableSynthWavetable;
+  resolve: (choice: WavetableResolutionChoice) => void;
+}
+
 const computerLibraryStorageKey = "hexboard.synthPresetComputerLibrary.v1";
 const computerWavetableStorageKey = "hexboard.synthWavetableComputerLibrary.v1";
 const computerWavetableFactorySeedStorageKey = "hexboard.synthWavetableFactorySeed.v1";
@@ -533,7 +545,7 @@ function presetSaveKey(preset: EditableSynthPreset): string {
 }
 
 function wavetableSaveKey(wavetable: Pick<EditableSynthWavetable, "folderPath" | "name">): string {
-  return `${normalizeDisplayFolderPath(wavetable.folderPath).toLocaleLowerCase()}\u0000${normalizedWavetableName(wavetable.name).toLocaleLowerCase()}`;
+  return normalizedWavetableName(wavetable.name);
 }
 
 function findPresetByFolderAndName(presets: EditableSynthPreset[], preset: EditableSynthPreset): EditableSynthPreset | undefined {
@@ -634,10 +646,21 @@ function factoryComputerWavetables(): EditableSynthWavetable[] {
   return factoryWavetableSources().map(cloneWavetable);
 }
 
+function uniqueWavetablesByName(wavetables: EditableSynthWavetable[]): EditableSynthWavetable[] {
+  const unique = new Map<string, EditableSynthWavetable>();
+  for (const wavetable of wavetables) {
+    const key = wavetableSaveKey(wavetable);
+    if (!unique.has(key)) {
+      unique.set(key, cloneWavetable(wavetable));
+    }
+  }
+  return Array.from(unique.values()).sort(compareWavetables);
+}
+
 function mergeMissingFactoryWavetables(wavetables: EditableSynthWavetable[]): EditableSynthWavetable[] {
   const existingKeys = new Set(wavetables.map((wavetable) => wavetableSaveKey(wavetable)));
   const additions = factoryComputerWavetables().filter((wavetable) => !existingKeys.has(wavetableSaveKey(wavetable)));
-  return [...wavetables.map(cloneWavetable), ...additions].sort(compareWavetables);
+  return uniqueWavetablesByName([...wavetables, ...additions]);
 }
 
 function upsertPreset(presets: EditableSynthPreset[], preset: EditableSynthPreset): EditableSynthPreset[] {
@@ -969,7 +992,7 @@ function loadComputerWavetables(): EditableSynthWavetable[] {
         window.localStorage.setItem(computerWavetableFactorySeedStorageKey, "1");
         return mergeMissingFactoryWavetables(wavetables);
       }
-      return wavetables.sort(compareWavetables);
+      return uniqueWavetablesByName(wavetables);
     }
   } catch {
     window.localStorage.removeItem(computerWavetableStorageKey);
@@ -1126,6 +1149,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [heldPreviewNotes, setHeldPreviewNotes] = useState<number[]>([]);
   const [lastFrameCount, setLastFrameCount] = useState(0);
   const [draggedPreset, setDraggedPreset] = useState<DraggedPreset | null>(null);
+  const [wavetableResolutionRequest, setWavetableResolutionRequest] =
+    useState<WavetableResolutionRequest | null>(null);
+  const [wavetableResolutionAlternate, setWavetableResolutionAlternate] =
+    useState(basicWavetableName);
   const [folderFilters, setFolderFilters] = useState<Record<LibrarySpace, string | null>>({
     computer: null,
     hexboard: null
@@ -1707,40 +1734,72 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
   }
 
-  async function ensurePresetWavetableOnHexBoard(nextPreset: EditableSynthPreset): Promise<boolean> {
+  function requestWavetableResolution(
+    nextPreset: EditableSynthPreset,
+    matchingComputerWavetable?: EditableSynthWavetable
+  ): Promise<WavetableResolutionChoice> {
+    setWavetableResolutionAlternate(basicWavetableName);
+    return new Promise((resolve) => {
+      setWavetableResolutionRequest({
+        presetName: nextPreset.name,
+        requiredName: nextPreset.wavetableName,
+        matchingComputerWavetable,
+        resolve
+      });
+    });
+  }
+
+  function closeWavetableResolution(choice: WavetableResolutionChoice) {
+    wavetableResolutionRequest?.resolve(choice);
+    setWavetableResolutionRequest(null);
+  }
+
+  async function ensurePresetWavetableOnHexBoard(nextPreset: EditableSynthPreset): Promise<EditableSynthPreset | null> {
     const reference = normalizeWavetableReference(nextPreset.wavetableFolderPath, nextPreset.wavetableName);
     const referenceKey = wavetableSaveKey(reference);
-    if (builtInWavetables.some((wavetable) => wavetableSaveKey(wavetable) === referenceKey)
-        || hexboardWavetables.some((wavetable) => wavetableSaveKey(wavetable) === referenceKey)) {
-      return true;
+    const deviceWavetable = [...builtInWavetables, ...hexboardWavetables]
+      .find((wavetable) => wavetableSaveKey(wavetable) === referenceKey);
+    if (deviceWavetable) {
+      return {
+        ...clonePreset(nextPreset),
+        wavetableName: deviceWavetable.name,
+        wavetableFolderPath: deviceWavetable.folderPath
+      };
     }
 
     const computerWavetable = computerWavetables.find((wavetable) => wavetableSaveKey(wavetable) === referenceKey);
-    if (!computerWavetable) {
-      setSyncStatus(`Cannot save ${nextPreset.name}: ${reference.name} is not in HexBoard Wavetables`);
-      return false;
-    }
-    if (!computerWavetable.samples) {
-      setSyncStatus(`Cannot upload ${computerWavetable.name}: sample data is not loaded`);
-      return false;
-    }
-
-    const shouldUpload = window.confirm(
-      `"${nextPreset.name}" uses "${computerWavetable.name}" from Computer Wavetables. Upload this wavetable to HexBoard before saving the preset?`
-    );
-    if (!shouldUpload) {
+    const choice = await requestWavetableResolution(nextPreset, computerWavetable);
+    if (!choice) {
       setSyncStatus("Save canceled");
-      return false;
+      return null;
     }
-
-    return (await uploadWavetableToHexBoard(computerWavetable, "Uploaded")) !== null;
+    if (choice.kind === "alternate") {
+      return {
+        ...clonePreset(nextPreset),
+        wavetableName: choice.wavetable.name,
+        wavetableFolderPath: choice.wavetable.folderPath
+      };
+    }
+    if (!computerWavetable?.samples) {
+      setSyncStatus(`Cannot upload ${reference.name}: matching sample data is not loaded`);
+      return null;
+    }
+    const uploaded = await uploadWavetableToHexBoard(computerWavetable, "Uploaded");
+    return uploaded
+      ? {
+          ...clonePreset(nextPreset),
+          wavetableName: uploaded.name,
+          wavetableFolderPath: uploaded.folderPath
+        }
+      : null;
   }
 
   async function uploadToHexBoard(nextPreset = preset, prefix = "Saved") {
-    if (!(await ensurePresetWavetableOnHexBoard(nextPreset))) {
+    const resolvedPreset = await ensurePresetWavetableOnHexBoard(nextPreset);
+    if (!resolvedPreset) {
       return;
     }
-    const decision = preparePresetForLibrarySave(nextPreset, hexboardPresets, "HexBoard Library", true);
+    const decision = preparePresetForLibrarySave(resolvedPreset, hexboardPresets, "HexBoard Library", true);
     if (!decision) {
       setSyncStatus("Save canceled");
       return;
@@ -1821,6 +1880,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   async function uploadWavetableToHexBoard(nextWavetable: EditableSynthWavetable, prefix = "Saved"): Promise<EditableSynthWavetable | null> {
+    if (builtInWavetables.some((wavetable) => wavetableSaveKey(wavetable) === wavetableSaveKey(nextWavetable))) {
+      setSyncStatus(`Cannot upload ${nextWavetable.name}: that name is reserved by a built-in wavetable`);
+      return null;
+    }
     const decision = prepareWavetableForLibrarySave(nextWavetable, hexboardWavetables, "HexBoard Wavetables", true);
     if (!decision) {
       setSyncStatus("Save canceled");
@@ -1938,7 +2001,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       candidate.objectIdHex !== renamed.objectIdHex && wavetableSaveKey(candidate) === wavetableSaveKey(renamed)
     );
     if (duplicate) {
-      setSyncStatus(`Cannot rename: ${renamed.name} already exists in ${folderLabel(renamed.folderPath)} on HexBoard`);
+      setSyncStatus(`Cannot rename: ${renamed.name} already exists on HexBoard`);
       return;
     }
 
@@ -2277,6 +2340,65 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         </div>
         <input ref={fileInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" onChange={(event) => void importPresetFile(event)} />
         <input ref={wavetableFileInputRef} className="hiddenFileInput" type="file" accept="audio/wav,audio/wave,.wav,.hexwav" onChange={(event) => void importWavetableFile(event)} />
+
+        {wavetableResolutionRequest ? (
+          <div className="modalOverlay" role="presentation" onMouseDown={() => closeWavetableResolution(null)}>
+            <div
+              className="modalPanel stack"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="wavetableResolutionTitle"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <h3 id="wavetableResolutionTitle">Missing Wavetable</h3>
+              <p>
+                “{wavetableResolutionRequest.presetName}” requires “{wavetableResolutionRequest.requiredName}”,
+                which is not currently on this HexBoard.
+              </p>
+              <button
+                className="primary"
+                disabled={!wavetableResolutionRequest.matchingComputerWavetable?.samples}
+                type="button"
+                onClick={() => closeWavetableResolution({ kind: "upload" })}
+              >
+                Upload “{wavetableResolutionRequest.requiredName}”
+              </button>
+              {!wavetableResolutionRequest.matchingComputerWavetable?.samples ? (
+                <span className="muted">No matching wavetable with loaded sample data is available in Computer Wavetables.</span>
+              ) : null}
+              <label className="field">
+                <span>Use an alternate wavetable</span>
+                <select
+                  value={wavetableResolutionAlternate}
+                  onChange={(event) => setWavetableResolutionAlternate(event.target.value)}
+                >
+                  {[...builtInWavetables, ...hexboardWavetables].map((wavetable) => (
+                    <option key={`${wavetable.folderPath}-${wavetable.name}`} value={wavetable.name}>
+                      {wavetable.name} — {folderLabel(wavetable.folderPath)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="row">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const alternate = [...builtInWavetables, ...hexboardWavetables]
+                      .find((wavetable) => wavetable.name === wavetableResolutionAlternate);
+                    if (alternate) {
+                      closeWavetableResolution({ kind: "alternate", wavetable: alternate });
+                    }
+                  }}
+                >
+                  Use Alternate
+                </button>
+                <button type="button" onClick={() => closeWavetableResolution(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {libraryKind === "presets" ? (
           <>

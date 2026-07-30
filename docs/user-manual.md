@@ -374,8 +374,11 @@ imported wavetable. Reinstall the Factory UF2 to restore the supplied library.
 User-imported wavetables appear in the same `WT:...` browser after they are
 saved through the web app. New imports default to the `User` folder and are
 uploaded to HexBoard so they can be heard on the hardware immediately. If a
-preset references a wavetable that is not installed on the HexBoard, the synth
-loads `Basic Shapes` instead until a matching folder/name wavetable is added.
+preset references a wavetable name that is not installed on the HexBoard, the
+synth loads `Basic Shapes` and shows the required name for two seconds with an
+instruction to upload it using HexBoard Sync. Wavetable names are unique across
+the whole device; folders organize the library but do not affect preset
+matching.
 
 `WT Pos` chooses the starting frame for wavetable waveforms. On device, the menu
 shows frames `1` through `16`; frame `1` is the first frame and frame `16` is
@@ -676,8 +679,10 @@ shown as a folder. New wavetable imports start in `Root` unless another folder
 is selected.
 
 `HexBoard Wavetables` is refreshed from the connected device; if a preset
-references a computer-only wavetable, saving that preset to HexBoard offers to
-upload the wavetable first.
+references a computer-only wavetable, saving that preset to HexBoard requires
+uploading the same-name wavetable or selecting an alternate first. Wavetable
+names are unique across folders, and `Basic Shapes` is reserved for the
+firmware-resident rescue table.
 
 Single live synth-parameter edits do not show the `MIDI SysEx` transfer screen,
 do not mute audio, and are saved by the normal debounced auto-save path. Larger

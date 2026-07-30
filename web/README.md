@@ -163,9 +163,12 @@ and `TRANSFER_END` so firmware can pace object transfers.
   HexBoard `.hexwav` imports are interpolated to the device's 16-frame table.
   The preset editor separates on-device and computer-only wavetables. Selecting
   a computer-only wavetable offers to upload it before applying the selection;
-  preset saves repeat the availability check as a safety net. With Live send
-  enabled, selecting an existing device wavetable uses a single runtime-select
-  control frame rather than transferring the open synth preset.
+  preset saves repeat the availability check as a safety net and require either
+  uploading the same-name dependency or choosing an alternate. Wavetable names
+  are globally unique; folders are organization only and preset dependencies
+  match by name. With Live send enabled, selecting an existing device wavetable
+  uses a single runtime-select control frame rather than transferring the open
+  synth preset.
 - A mock MIDI transport for UI and protocol work before firmware support exists.
 - Basic React views for device connection, profile sync, tuning/layout editing,
   and synth preset organization.
