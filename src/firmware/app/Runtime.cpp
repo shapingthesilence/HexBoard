@@ -97,6 +97,8 @@ void hexboardSetup() {
 }
 void hexboardLoop() {        // run on first core
   timeTracker();     // Time tracking functions
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
+  u8g2.serviceTransfer();
   serviceSerialDebugMessages();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_PRESET_TRANSFER);
   bool presetSyncOwnsUi = servicePresetSyncTransfer();
@@ -110,6 +112,8 @@ void hexboardLoop() {        // run on first core
   }
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_BUTTON_SCAN);
   readHexes();       // Read and store the digital button states of the scanning matrix
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
+  u8g2.serviceTransfer();
   if (presetSyncOwnsUi) {
     stabilityBenchmarkSetCore0Task(STABILITY_TASK_ROTARY_MENU);
     dealWithRotary();
@@ -124,6 +128,8 @@ void hexboardLoop() {        // run on first core
   updateWheels();    // deal with the pitch/mod wheel
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_MIDI_IN);
   processIncomingMIDI();  // respond to external MIDI input
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
+  u8g2.serviceTransfer();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_PRESET_TRANSFER);
   if (servicePresetSyncTransfer()) {
     return;
@@ -134,6 +140,8 @@ void hexboardLoop() {        // run on first core
     stabilityBenchmarkSetCore0Task(STABILITY_TASK_LED_RENDER);
     lightUpLEDs();   // refresh LEDs
   }
+  stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
+  u8g2.serviceTransfer();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_ROTARY_MENU);
   if (!missingWavetableNoticeOwnsUi) {
     dealWithRotary();  // deal with menu
@@ -141,6 +149,7 @@ void hexboardLoop() {        // run on first core
   if (delegatedControlState.active && !stabilityBenchmarkIsActive()) {
     stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
     drawDelegatedControlScreen();
+    u8g2.serviceTransfer();
     stabilityBenchmarkSetCore0Task(STABILITY_TASK_AUTOSAVE);
     checkAndAutoSave();  // save settings
     return;
@@ -163,6 +172,7 @@ void hexboardLoop() {        // run on first core
   if (!missingWavetableNoticeOwnsUi) {
     drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
   }
+  u8g2.serviceTransfer();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_BENCHMARK);
   serviceStabilityBenchmark();
   stabilityBenchmarkSetCore0Task(STABILITY_TASK_AUTOSAVE);

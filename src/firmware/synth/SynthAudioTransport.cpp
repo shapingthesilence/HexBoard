@@ -296,7 +296,7 @@ void RAM_FUNC(audioDmaIrqHandler)() {
   if (audioDmaChannel < 0) {
     return;
   }
-  dma_hw->ints0 = 1u << audioDmaChannel;
+  dma_hw->ints1 = 1u << audioDmaChannel;
   if (audioDmaPausedForFlashWrite) {
     return;
   }
@@ -344,7 +344,7 @@ void RAM_FUNC(fillAudioDmaBuffer)(uint8_t bufferIndex, byte destination) {
 void stopAudioDma() {
   if (audioDmaChannel >= 0) {
     dma_channel_abort(audioDmaChannel);
-    dma_hw->ints0 = 1u << audioDmaChannel;
+    dma_hw->ints1 = 1u << audioDmaChannel;
   }
   audioDmaBufferReady[0] = false;
   audioDmaBufferReady[1] = false;
@@ -358,7 +358,7 @@ void quiesceAudioDmaForFlashWrite() {
   __dmb();
   if (audioDmaChannel >= 0) {
     dma_channel_abort(audioDmaChannel);
-    dma_hw->ints0 = 1u << audioDmaChannel;
+    dma_hw->ints1 = 1u << audioDmaChannel;
   }
   audioDmaBufferReady[0] = false;
   audioDmaBufferReady[1] = false;
@@ -435,10 +435,10 @@ void setupAudioDma() {
   channel_config_set_read_increment(&audioDmaConfig, true);
   channel_config_set_write_increment(&audioDmaConfig, false);
   channel_config_set_dreq(&audioDmaConfig, pwm_get_dreq(AUDIO_DMA_TIMER_SLICE));
-  dma_channel_set_irq0_enabled(audioDmaChannel, true);
-  irq_set_exclusive_handler(DMA_IRQ_0, audioDmaIrqHandler);
-  irq_set_priority(DMA_IRQ_0, 0x00);
-  irq_set_enabled(DMA_IRQ_0, true);
+  dma_channel_set_irq1_enabled(audioDmaChannel, true);
+  irq_set_exclusive_handler(DMA_IRQ_1, audioDmaIrqHandler);
+  irq_set_priority(DMA_IRQ_1, 0x00);
+  irq_set_enabled(DMA_IRQ_1, true);
   startAudioDmaForDestination(selectedAudioDmaDestination());
   audioTransportReady.store(true, std::memory_order_release);
 }

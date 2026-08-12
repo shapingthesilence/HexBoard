@@ -62,6 +62,9 @@ MIDI and synth response remain the priority. If the OLED screensaver is active,
 playing a note can wake a larger `Now Playing` display that shows up to `6`
 unique played notes from lowest to highest. Turning or pressing the encoder
 returns to the menu display.
+OLED frame transfers continue in the background, and a newer redraw replaces
+any queued intermediate redraw instead of holding up note scanning or MIDI
+output.
 While the velocity, modulation, or pitch-bend readout is active, played notes
 stay in the compact badge instead of taking over the whole screen.
 If the OLED was asleep and notes are still held when that readout clears,
@@ -554,8 +557,10 @@ wheel speeds.
 
 The onboard synth smooths pitch-bend wheel changes, phase-warp depth, and
 vibrato depth internally so button-controlled bends and warp changes do not jump
-as hard between command-wheel updates. External MIDI still receives the normal
-pitch-bend and modulation messages.
+as hard between command-wheel updates. While the pitch-bend wheel is moving,
+external MIDI receives evenly paced updates at up to `100` messages per second;
+the wheel-speed choices still control approximately the same total bend time.
+Modulation continues to use normal MIDI control-change messages.
 
 ### External Delegated Control
 

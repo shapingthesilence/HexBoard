@@ -64,6 +64,21 @@ byte lastVelocityWheelGestureMask = 0;
 byte lastModulationWheelGestureMask = 0;
 byte lastPitchBendWheelGestureMask = 0;
 
+constexpr uint64_t PITCH_BEND_OUTPUT_INTERVAL_MICROS = 10000ULL;
+
+int RAM_FUNC(pitchBendOutputStep)() {
+  const int configuredStep = pbWheel.effectiveStepValue();
+  const int fullRange = static_cast<int>(pbWheel.maxValue) - static_cast<int>(pbWheel.minValue) + 1;
+  if (configuredStep >= fullRange) {
+    return fullRange;
+  }
+  const int64_t scaled =
+    (static_cast<int64_t>(configuredStep) * PITCH_BEND_OUTPUT_INTERVAL_MICROS
+     + (CC_MSG_COOLDOWN_MICROSECONDS / 2))
+    / CC_MSG_COOLDOWN_MICROSECONDS;
+  return static_cast<int>(std::max<int64_t>(scaled, 1));
+}
+
 void RAM_FUNC(readHexes)() {
 
   // Optimized button reading using SIO registers - much faster!
@@ -200,7 +215,9 @@ void RAM_FUNC(updateWheels)() {
                               pbWheel,
                               previousPitchBendTarget,
                               lastPitchBendWheelGestureMask);
-    upd = pbWheel.updateValue(runTime);
+    upd = pbWheel.updateValueAtSteadyRate(runTime,
+                                          PITCH_BEND_OUTPUT_INTERVAL_MICROS,
+                                          pitchBendOutputStep());
     if (upd) {
       if (commandWheelOverlayActive()) {
         notifyCommandWheelValue(CommandWheelOverlayType::PitchBend, pbWheel, false);
@@ -323,17 +340,21 @@ void dealWithRotary() {
     return;
   }
 
-  if ((storeRotaryTurn != 0) || (justReleased && !rotaryPanicSuppressClick)) {
+  bool navigationTurnReady =
+    (storeRotaryTurn != 0) && u8g2.readyForNavigationInput();
+
+  if (navigationTurnReady || (justReleased && !rotaryPanicSuppressClick)) {
     dismissFlashSaveScreenForMenuInput();
   }
 
-  if (sequencerModeActive() && storeRotaryTurn != 0) {
+  if (sequencerModeActive() && navigationTurnReady) {
     bool turnIsClockwise = (storeRotaryTurn == 8);
     int8_t direction = rotaryInvert
                          ? (turnIsClockwise ? 1 : -1)
                          : (turnIsClockwise ? -1 : 1);
     if (handleSequencerRotaryTurn(direction)) {
       storeRotaryTurn = 0;
+      navigationTurnReady = false;
       screenTime = 0;
     }
   }
@@ -357,7 +378,7 @@ void dealWithRotary() {
       noteOverlayDirty = true;
       screenTime = 0;
     }
-    if (storeRotaryTurn != 0) {
+    if (navigationTurnReady) {
       bool turnIsClockwise = (storeRotaryTurn == 8);
       dismissCommandWheelOverlay();
       dismissPlayedNotesOverlayForMenuInput();
@@ -379,7 +400,7 @@ void dealWithRotary() {
       noteOverlayDirty = true;
       screenTime = 0;
     }
-    if (storeRotaryTurn != 0) {
+    if (navigationTurnReady) {
       bool turnIsClockwise = (storeRotaryTurn == 8);
       dismissCommandWheelOverlay();
       dismissPlayedNotesOverlayForMenuInput();

@@ -142,6 +142,32 @@ public:
     }
     return true;
   }
+
+  bool RAM_FUNC(updateValueAtSteadyRate)(uint64_t givenTime,
+                                         uint64_t intervalMicros,
+                                         int requestedStep) {
+    int16_t remaining = targetValue - curValue;
+    if (remaining == 0) {
+      wasMoving = false;
+      return false;
+    }
+    if (wasMoving && (givenTime - timeLastChanged) < intervalMicros) {
+      return false;
+    }
+
+    wasMoving = true;
+    timeLastChanged = givenTime;
+    int step = std::max(requestedStep, 1);
+    if (abs(remaining) < step) {
+      curValue = targetValue;
+    } else {
+      curValue = static_cast<int16_t>(curValue + (step * (remaining / abs(remaining))));
+    }
+    if (curValue == targetValue) {
+      wasMoving = false;
+    }
+    return true;
+  }
 };
 
 extern const byte assignCmd[CMDCOUNT];

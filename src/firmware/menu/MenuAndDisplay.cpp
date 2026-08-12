@@ -46,8 +46,9 @@
 #define MENU_PAGE_SCREEN_TOP_OFFSET 18
 #define MENU_HEADER_DIVIDER_Y (MENU_PAGE_SCREEN_TOP_OFFSET - 3)
 #define MENU_VALUES_LEFT_OFFSET 78
-// Create an instance of the U8g2 graphics library.
-U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2(U8G2_R2, /* reset=*/U8X8_PIN_NONE);
+// Create an instance of the U8g2 graphics library with a coalescing DMA-backed
+// framebuffer transport.
+HexBoardDisplay u8g2(U8G2_R2, /* reset=*/U8X8_PIN_NONE);
 // Create menu object of class GEM_u8g2. Supply its constructor with reference to u8g2 object we created earlier
 GEM_u8g2 menu(
   u8g2, GEM_POINTER_ROW, GEM_ITEMS_COUNT_AUTO,
@@ -108,7 +109,7 @@ void wakeDisplayFromScreensaver() {
 void enterDisplayScreensaver() {
   screenSaverOn = true;
   u8g2.setContrast(CONTRAST_SCREENSAVER);
-  u8g2.clear();
+  u8g2.clearBuffer();
   u8g2.setPowerSave(1);
 }
 
@@ -2900,7 +2901,9 @@ void drawBootloaderReadyScreen() {
   drawBootloaderInstructionLine(52, "Copy the ", ".uf2", " file");
   drawBootloaderInstructionLine(76, "to the ", "RPI-RP2", " drive");
   drawCenteredBootloaderLine(100, "on your computer.", false);
-  u8g2.sendBuffer();
+  // This is the one transition where the framebuffer must reach the panel
+  // before control leaves the firmware permanently.
+  u8g2.sendBufferAndWait();
 }
 
 void rebootToBootloader() {
@@ -3246,6 +3249,7 @@ void setupMenu() {
   menu.setSplashDelay(0);
   menu.setFontSmall(GEM_FONT_BIG, 6, 12);
   menu.init();
+  u8g2.enableAsyncTransfers();
   menu.setDrawMenuCallback(drawMenuFrameOverlays);
   menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
   /*

@@ -285,9 +285,33 @@ transfer, flash save, command wheel, and played notes—must restore or dismiss
 the previous owner explicitly. Screensaver transitions go through
 `enterDisplayScreensaver()` and `wakeDisplayFromScreensaver()`.
 
+`HexBoardDisplay` snapshots each completed 128x128 framebuffer and sends it with
+Core 0 I2C DMA. A newer redraw is coalesced while the active snapshot is in
+flight, and the next snapshot is taken only between main-loop drawing passes.
+Only byte spans that differ from the image already sent to the OLED are
+transferred. Each affected SH1107 page combines its address commands and the
+smallest enclosing changed-column span into one I2C transaction. Core 0 polls
+DMA completion and performs all frame-state and subsequent Wire operations at
+safe main-loop boundaries; the transport installs no application callback in
+`DMA_IRQ_0`.
+The async path explicitly reapplies the configured 1 MHz I2C clock. Terminal
+transitions such as rebooting into the USB bootloader drain the queued frame
+before leaving firmware control.
+Runtime contrast and power-save commands use the same asynchronous queue. Wire
+owns `DMA_IRQ_0` on Core 0; audio owns `DMA_IRQ_1` on Core 1, so neither core
+services the other subsystem's DMA completion line.
+
+Rotary turns that navigate the GEM menu, virtual lists, or Sequencer UI are
+accepted only when the preceding display frame has completed. The Core 1 rotary
+decoder retains one pending direction while a frame is in flight, matching the
+former blocking display behavior without blocking note, MIDI, or audio work.
+
 Command-wheel values are elapsed-time based and cap catch-up work. Their overlay
 redraws at 20 Hz, or 10 Hz with the compact note badge, without extending the
-menu wake timer.
+menu wake timer. Pitch-bend output is the exception to catch-up: it advances one
+scaled step every 10 ms while moving, never compresses missed samples into a
+larger jump, and preserves approximately the same travel time for each saved
+wheel-speed choice.
 
 ## MIDI And Tuning
 
@@ -296,6 +320,10 @@ optional MPE extras, serial MIDI, incoming-note LEDs, and program changes.
 
 Live USB packets use a short bounded retry and backoff when the host stops
 polling. SysEx streaming uses the longer transfer timeout.
+
+The global pitch-bend wheel sends at up to 100 messages per second. A serial
+pitch-bend message occupies 30 bits including UART framing, so this rate uses
+about 9.6% of the 31.25 kbaud DIN MIDI link before other traffic.
 
 `mpeChannelBitmap` tracks available MPE channels. Dynamic JI keeps synth and
 external MIDI retuning separate: synth uses the frequency multiplier; external
