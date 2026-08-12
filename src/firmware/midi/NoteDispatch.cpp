@@ -246,11 +246,6 @@ void RAM_FUNC(releaseAllMappedButtonActions)() {
 }
 
 void RAM_FUNC(tryMIDInoteOn)(byte x) {
-  if (noteDisplayEnabled() && screenSaverOn) {
-    setNoteOverlayTemporaryWake(true);
-    noteOverlayDirty = true;
-  }
-
   // This gets called on any non-command hex that is not scale-locked.
   if (h[x].note >= 128) {
     return;
@@ -298,7 +293,9 @@ void RAM_FUNC(tryMIDInoteOn)(byte x) {
       // Then, send the note-on message
       withMIDI([&](auto& M) { M.sendNoteOn(h[x].activeMidiNote, velWheel.curValue, h[x].MIDIch); });  // ch 1-16
       noteOverlayReleaseGraceUntil = 0;
-      noteOverlayDirty = true;
+      if (noteDisplayEnabled()) {
+        schedulePlayedNotesOverlayUpdate(screenSaverOn);
+      }
 
       sendToLog(
         "Sent MIDI pitch bend: " + std::to_string(pitchBendValue) + " to ch " + std::to_string(h[x].MIDIch));
@@ -332,7 +329,9 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
       releaseMPEChannel(h[x].MIDIch);
     }
     noteOverlayReleaseGraceUntil = runTime + DISPLAYED_NOTES_RELEASE_GRACE_MICROS;
-    noteOverlayDirty = true;
     h[x].MIDIch = 0;
+    if (noteDisplayEnabled()) {
+      schedulePlayedNotesOverlayUpdate(false);
+    }
   }
 }

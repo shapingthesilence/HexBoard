@@ -178,6 +178,10 @@ disabled instead of hanging boot. Do not use loaded settings before
 Core 0 work must remain bounded. Its loop covers transfer service, synth-release
 cleanup, screensaver, matrix scan, sequencer, arpeggiator, metronome, command
 wheels, MIDI input, LED work, rotary/menu input, overlays, and auto-save.
+The U8g2 hardware-I2C backend still performs synchronous `Wire` transfers, so
+played-note events only mark pending display state. Their OLED wake and redraw
+are coalesced until `30 ms` of input quiet and limited to one refresh per `50 ms`;
+menu and modal redraws are not subject to that performance-input policy.
 
 Core 1 stays limited to audio DMA service, delegated MIDI when active, and the
 RAM-resident allocation-free rotary decoder.

@@ -55,9 +55,13 @@ current MIDI note number, such as `60` for middle C in standard tuning.
 
 While the menu is visible, the top-right corner shows only the most recent held
 note. The badge is composited into normal menu redraws so menu updates do not
-momentarily erase it. If the OLED screensaver is active, playing a note can wake
-a larger `Now Playing` display that shows up to `6` unique played notes from
-lowest to highest. Turning or pressing the encoder returns to the menu display.
+momentarily erase it. Played-note redraws are coalesced until input has been
+quiet briefly and are limited to about `20` updates per second, so rapid playing
+can leave the displayed note slightly behind until there is a short pause while
+MIDI and synth response remain the priority. If the OLED screensaver is active,
+playing a note can wake a larger `Now Playing` display that shows up to `6`
+unique played notes from lowest to highest. Turning or pressing the encoder
+returns to the menu display.
 While the velocity, modulation, or pitch-bend readout is active, played notes
 stay in the compact badge instead of taking over the whole screen.
 If the OLED was asleep and notes are still held when that readout clears,
