@@ -83,8 +83,11 @@ and `TRANSFER_END` so firmware can pace object transfers.
 - Atomic `HGB` encoding for complete tuning bundles. Saving a tuning transfers
   one staged file, while live preview continues to send only the active
   tuning/layout/scale/color/map objects without writing flash. Tuning divisions
-  and scale cycles are limited to the firmware's `1..128` range; each tuning
+  and scale cycles are limited to the firmware's `1..1024` range; each tuning
   can contain up to 32 layouts and 32 scales.
+- Generated note labels and default degree colors are omitted from encoded
+  objects. Custom labels and color overrides remain packed records, so large
+  tunings do not pay a per-division transfer or runtime cost for defaults.
 - Color-mode defaults are stored with each tuning; the supplied 12 EDO tuning
   uses Rainbow. Computer and HexBoard library rows can be reordered by
   dragging. Device reorders update the UI immediately, wait for a 2-second

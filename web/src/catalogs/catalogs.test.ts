@@ -166,6 +166,23 @@ describe("catalog object encoding", () => {
     expect(keyLabels(recordValue(tuning.body, TuningTlv.KeyLabels))).toEqual([
       "C", "Db", "C#", "D", "Eb", "D#", "E", "F", "Gb", "F#", "G", "Ab", "G#", "A", "Bb", "A#", "B"
     ]);
+    const customLabels = defaultKeyLabels(17);
+    customLabels[0] = "Root";
+    const custom = createGeneratedEdoTuning({
+      objectId: tuningId,
+      name: "17 EDO",
+      edoDivisions: 17,
+      keyLabels: customLabels
+    });
+    expect(keyLabels(recordValue(custom.body, TuningTlv.KeyLabels))).toEqual([
+      "C", "Db", "C#", "D", "Eb", "D#", "E", "F", "Gb", "F#", "G", "Ab", "G#", "A", "Bb", "A#", "B"
+    ].map((label) => label === "A" ? "Root" : label));
+    const generatedLabels = createGeneratedEdoTuning({
+      objectId: tuningId,
+      name: "23 EDO",
+      edoDivisions: 23
+    });
+    expect(decodeObjectBody(generatedLabels.body).records.some((record) => record.tag === TuningTlv.KeyLabels)).toBe(false);
   });
 
   it("round trips a vector layout", () => {
@@ -251,9 +268,19 @@ Example scale
     expect(parsed.periodCents).toBeCloseTo(1200);
   });
 
-  it("rejects Scala tunings above the 128-division runtime limit", () => {
-    const intervals = Array.from({ length: 129 }, (_, index) => `${index + 1}.0`).join("\n");
-    expect(() => parseScalaScale(`Too large\n129\n${intervals}`)).toThrow(/128-division limit/);
+  it("accepts the 1024-division runtime limit and rejects larger Scala tunings", () => {
+    const supportedIntervals = Array.from({ length: 1024 }, (_, index) => `${index + 1}.0`).join("\n");
+    const parsed = parseScalaScale(`Supported\n1024\n${supportedIntervals}`);
+    expect(parsed.count).toBe(1024);
+    const encoded = createCentsTableTuning({
+      objectId: deterministicObjectId("1024 divisions"),
+      name: "1024 divisions",
+      cents: parsed.cents,
+      keyLabels: Array.from({ length: 1024 }, (_, index) => `D${index}`)
+    });
+    expect(encoded.body.length).toBeLessThanOrEqual(16_384);
+    const intervals = Array.from({ length: 1025 }, (_, index) => `${index + 1}.0`).join("\n");
+    expect(() => parseScalaScale(`Too large\n1025\n${intervals}`)).toThrow(/1024-division limit/);
   });
 
   it("round trips scales, scale colors, and explicit button maps", () => {

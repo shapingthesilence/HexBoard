@@ -395,7 +395,7 @@ Example response, transaction `1`, max packed chunk `128`, capabilities
 delete user object, factory geometry listing, synth wavetable objects, live
 synth parameter and wavetable selection, cents-table runtime tuning, and atomic
 geometry bundles),
-max raw object bytes `262144`, settings schema `26`, synth
+max raw object bytes `262144`, settings schema `27`, synth
 preset schema `7`, `9` profiles, `128` synth preset entries, `64` slots for
 each advertised user geometry count, hardware version `2`:
 
@@ -822,10 +822,10 @@ quantity. Recommended TLVs:
 | Tag | Name | Value |
 | --- | --- | --- |
 | `0x20` | `TuningKind` | `u8`: `1` EDO, `2` cents list, `3` ratio list, `4` equal step |
-| `0x21` | `EdoDivisions` | Required `u16-le`; EDO divisions or equal-step/cents-list cycle length, `1..128` |
+| `0x21` | `EdoDivisions` | Required `u16-le`; EDO divisions or equal-step/cents-list cycle length, `1..1024` |
 | `0x24` | `ReferenceMidiNote` | Required `u8`, `0..127`; A4 is `69` |
 | `0x27` | `RatioTable` | Repeated `<numerator-u32-le> <denominator-u32-le>` |
-| `0x28` | `KeyLabels` | Repeated length-prefixed labels, one per cycle degree; each label should be capped at `7` display characters |
+| `0x28` | `KeyLabels` | Optional repeated length-prefixed labels, one per cycle degree; omitted labels use generated numeric/default labels, and each supplied label should be capped at `7` display characters |
 | `0x29` | `PeriodCentsFloat32` | Required positive finite IEEE-754 binary32 cents value for EDO |
 | `0x2A` | `StepCentsFloat32` | Required positive finite IEEE-754 binary32 cents value for equal step |
 | `0x2B` | `ReferenceHzFloat32` | Required positive finite IEEE-754 binary32 hertz value |
@@ -837,10 +837,9 @@ derives from `StepCentsFloat32 * EdoDivisions`; no period cache is stored. A
 cents list's final table entry is its period, so no separate period field is
 stored.
 
-Generated tunings include `KeyLabels`, `ReferenceMidiNote`, and
-`ReferenceHzFloat32`; the web editor presents labels in A-first order,
-defaults
-to A-first pitch labels, and rotates them into the firmware's C-centered cycle
+Generated tunings include `ReferenceMidiNote` and
+`ReferenceHzFloat32`; the web editor presents labels in A-first order, defaults
+to A-first pitch labels, and rotates custom labels into the firmware's C-centered cycle
 order for `KeyLabels`. Scala imports default to a MIDI-note-60 1/1 reference
 when no existing Scala reference is being preserved. Scala
 `.scl` import is a host-side feature; the web app treats a one-token suffix
@@ -979,13 +978,14 @@ Recommended TLVs:
 | `0x20` | `TuningRef` | Optional object reference |
 | `0x21` | `CycleLength` | `u16-le` |
 | `0x22` | `DefaultColorMode` | `u8`, firmware-defined color mode applied with this color map |
-| `0x23` | `DegreeColors` | Repeated `<degree-u16-le> <hue-u16-le> <sat-u8> <val-u8>` |
+| `0x23` | `DegreeColors` | Optional sparse repeated `<degree-u16-le> <hue-u16-le> <sat-u8> <val-u8>` overrides |
 
 Hue is `0..3599` tenths of a degree. Saturation and value are `0..255`.
+Degrees without records use the generated cycle palette.
 
 On-device editing can expose a small color chooser per scale degree or a few
 palette templates. The web app can offer batch editing and previews. Current
-firmware live Apply loads this object into a user runtime palette and sets
+firmware live Apply retains the packed overrides and sets
 `ColorMode` from `DefaultColorMode`. Value `1` is `Custom` and renders the
 stored scale-degree colors; other firmware-defined values render the generated
 color modes. Per-button color overrides take precedence only when `Custom` is
@@ -1344,7 +1344,7 @@ bundle composition and the device atomically validates and installs the result.
    tuning object ID creates one file, up to the 64-bundle limit. Other bundles
    are not read or rewritten.
    A file may contain up to `255` records and `262,144` bytes; each contained
-   object body may contain up to `8,192` bytes.
+   object body may contain up to `16,384` bytes.
 6. Current firmware can list, read, delete, or apply the contained active
    EDO/equal-step/Scala cents-list tuning, vector layout, scale, color map, and
    exact layout-matching explicit button map by compact preset-sync handle.

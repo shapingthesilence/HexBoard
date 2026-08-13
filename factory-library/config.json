@@ -1,5 +1,5 @@
 {
-  "settingsVersion": 26,
+  "settingsVersion": 27,
   "selectedPreset": "Pads/Soft String Pad",
   "selectedWavetable": "/Classic",
   "selectedGeometry": "12 EDO (Normal)",
@@ -41,7 +41,7 @@
     "CurrentTuning": 0,
     "CurrentLayout": 0,
     "CurrentScale": 0,
-    "CurrentKeyStepsFromA": 119,
+    "CurrentKeyStepsFromA": 247,
     "CurrentTransposeSteps": 128,
     "LayoutRotation": 0,
     "MirrorLeftRight": 0,
@@ -116,6 +116,7 @@
     "SequencerClockSource": 0,
     "SequencerSendClock": 0,
     "SequencerSendTransport": 0,
-    "PiezoVolumeCap": 127
+    "PiezoVolumeCap": 127,
+    "CurrentKeyStepsFromAHigh": 255
   }
 }

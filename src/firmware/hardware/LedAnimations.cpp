@@ -84,19 +84,22 @@ void animateRing(byte centerIndex, byte radius, byte stepsPerSide) {
 
 void animateMirror() {
   if (animationType == ANIMATE_OCTAVE) {
-    bool heldPitchClass[MAX_SCALE_DIVISIONS] = {};
-    uint8_t cycleLength = current.tuning().cycleLength;
+    uint8_t heldPitchClass[SCALE_MEMBERSHIP_BYTES] = {};
+    uint16_t cycleLength = current.tuning().cycleLength;
     if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
       return;
     }
 
     for (byte i = 0; i < LED_COUNT; ++i) {
       if (hexCanOriginateAnimation(i) && h[i].MIDIch) {
-        heldPitchClass[positiveMod(h[i].stepsFromC, cycleLength)] = true;
+        uint16_t degree = positiveMod(h[i].stepsFromC, cycleLength);
+        heldPitchClass[degree >> 3] |= static_cast<uint8_t>(1u << (degree & 7));
       }
     }
     for (byte j = 0; j < LED_COUNT; ++j) {
-      if (!h[j].isCmd && !h[j].MIDIch && heldPitchClass[positiveMod(h[j].stepsFromC, cycleLength)]) {
+      uint16_t degree = positiveMod(h[j].stepsFromC, cycleLength);
+      if (!h[j].isCmd && !h[j].MIDIch
+          && (heldPitchClass[degree >> 3] & (1u << (degree & 7))) != 0) {
         h[j].animate = true;
       }
     }

@@ -59,7 +59,7 @@ The current code supports:
 - persistent settings with `9` profile slots stored in LittleFS
 - cached storage health available under `Advanced` without an extra boot scan
 - independently replaceable LittleFS files for up to `64` tuning bundles and
-  `128` synth presets, with geometry divisions up to `128`
+  `128` synth presets, with geometry divisions up to `1024`
 - an optional sequencer build, documented in the [Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt)
 
 ## Team

@@ -48,8 +48,9 @@ If `Scale Lock` is off, every note button can play. If `Scale Lock` is on, only 
 The `DisplayNotes` option in `Settings` controls the OLED played-note overlay.
 Set it to `Off`, `Label`, `Number`, or `MIDI`. `Label` shows the active tuning's note
 labels with octave numbers, including labels provided by user geometry objects.
-Custom note labels are limited to `7` characters so they fit the on-device Key
-selector. The main-menu `Key` selector uses those same active tuning labels.
+Custom note labels are limited to `7` characters. The main-menu `Key` selector
+uses those labels for tunings through 255 divisions; larger tunings use numeric
+root steps so every division remains selectable.
 `Number` shows scale step and octave values such as `7.4`. `MIDI` shows the
 current MIDI note number, such as `60` for middle C in standard tuning.
 
@@ -653,7 +654,7 @@ active tuning, layout, scale, colors, and button map so the preview and device
 menu agree. The saved tuning appears in the on-device `Tuning`, `Layout`, and
 `Scales` browsers. HexBoard stores up to 64 complete tuning bundles; one tuning
 plus its palette and all linked layouts/scales counts as one bundle. Tuning
-division and scale-cycle lengths may be from 1 through 128. Saving or deleting a
+division and scale-cycle lengths may be from 1 through 1024. Saving or deleting a
 tuning bundle changes only that bundle's file; the others are not rewritten.
 Each tuning bundle may contain up to 32 layouts and 32 scales.
 The editor's `Color mode` selector is saved with each tuning bundle and is
@@ -846,7 +847,7 @@ Important factory defaults include:
 Use `HexBoard_Factory.uf2` for a factory installation. It erases all saved
 settings, presets, wavetables, layouts, samples, and sequences, then installs a
 complete factory library. Use `HexBoard_Update.uf2` to update firmware without
-changing LittleFS. Beta 3 accepts only settings schema `26`;
+changing LittleFS. Beta 3 accepts only settings schema `27`;
 settings from another beta start at defaults, while current-format preset,
 wavetable, geometry, and sequence files remain available.
 

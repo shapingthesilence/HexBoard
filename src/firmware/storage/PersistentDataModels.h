@@ -10,7 +10,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 26;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 27;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -50,7 +50,7 @@ constexpr size_t GEOMETRY_MENU_TEXT_LENGTH = 20;
 constexpr size_t GEOMETRY_OBJECT_NAME_LENGTH = GEOMETRY_MENU_TEXT_LENGTH;
 constexpr size_t GEOMETRY_OBJECT_FOLDER_LENGTH = GEOMETRY_MENU_TEXT_LENGTH;
 constexpr size_t GEOMETRY_OBJECT_ID_LENGTH = 16;
-constexpr size_t GEOMETRY_OBJECT_MAX_RAW_BYTES = 8192;
+constexpr size_t GEOMETRY_OBJECT_MAX_RAW_BYTES = 16384;
 constexpr size_t GEOMETRY_BUNDLE_MAX_RAW_BYTES = 262144;
 constexpr size_t GEOMETRY_STORAGE_PATH_LENGTH = 64;
 constexpr char GEOMETRY_STORAGE_ROOT[] = "/geometry";
@@ -284,9 +284,9 @@ constexpr size_t SETTINGS_DATA_SIZE =
 // The host-side factory-library compiler writes these records byte-for-byte.
 // Fail the firmware build if the RP2040 ABI ever changes their disk layout.
 static_assert(sizeof(SettingsHeader) == 12, "SettingsHeader disk layout changed");
-static_assert(SETTINGS_VALUES_DATA_SIZE == 801,
+static_assert(SETTINGS_VALUES_DATA_SIZE == 810,
               "Settings value payload changed; update the factory-library builder");
-static_assert(SETTINGS_DATA_SIZE == 1962,
+static_assert(SETTINGS_DATA_SIZE == 1971,
               "Settings payload changed; update the factory-library builder");
 static_assert(sizeof(SynthPresetFileHeaderBase) == 8, "SynthPresetFileHeaderBase disk layout changed");
 static_assert(sizeof(SynthPresetSlot) == 212, "SynthPresetSlot disk layout changed");

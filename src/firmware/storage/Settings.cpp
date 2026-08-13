@@ -29,6 +29,18 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
 bool fileSystemExists = false;
 constexpr char SETTINGS_FILE_PATH[] = "/settings.dat";
 
+int loadCurrentKeyStepsFromSettings() {
+  uint16_t encoded = static_cast<uint16_t>(settingValue(SettingKey::CurrentKeyStepsFromA))
+                     | (static_cast<uint16_t>(settingValue(SettingKey::CurrentKeyStepsFromAHigh)) << 8);
+  return static_cast<int16_t>(encoded);
+}
+
+void storeCurrentKeyStepsInSettings(int stepsFromA) {
+  uint16_t encoded = static_cast<uint16_t>(static_cast<int16_t>(stepsFromA));
+  settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = encoded & 0xFF;
+  settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromAHigh)] = encoded >> 8;
+}
+
 void setupFileSystem() {
   LittleFSConfig cfg;
   cfg.setAutoFormat(false);

@@ -13,7 +13,7 @@ HEXBOARD_SETTING(CC74Value, 0)
 HEXBOARD_SETTING(CurrentTuning, TUNING_12EDO)
 HEXBOARD_SETTING(CurrentLayout, 0)
 HEXBOARD_SETTING(CurrentScale, 0)
-HEXBOARD_SETTING(CurrentKeyStepsFromA, 119)  // -9 biased by 128
+HEXBOARD_SETTING(CurrentKeyStepsFromA, 247)  // low byte of signed -9
 HEXBOARD_SETTING(CurrentTransposeSteps, 128)  // 0 biased by 128
 HEXBOARD_SETTING(LayoutRotation, 0)
 HEXBOARD_SETTING(MirrorLeftRight, 0)
@@ -89,3 +89,4 @@ HEXBOARD_SETTING(SequencerClockSource, sequencer::kClockSourceDefault)
 HEXBOARD_SETTING(SequencerSendClock, sequencer::kSendClockDefault)
 HEXBOARD_SETTING(SequencerSendTransport, sequencer::kSendTransportDefault)
 HEXBOARD_SETTING(PiezoVolumeCap, HEADPHONE_VOLUME_CAP_FULL)
+HEXBOARD_SETTING(CurrentKeyStepsFromAHigh, 255)  // high byte of signed -9

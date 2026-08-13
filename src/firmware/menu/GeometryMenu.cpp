@@ -218,7 +218,7 @@ void persistBuiltinGeometrySelection(uint16_t handle) {
       settings[static_cast<uint8_t>(SettingKey::CurrentTuning)] = current.tuningIndex;
       settings[static_cast<uint8_t>(SettingKey::CurrentLayout)] = current.layoutIndex;
       settings[static_cast<uint8_t>(SettingKey::CurrentScale)] = current.scaleIndex;
-      settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
+      storeCurrentKeyStepsInSettings(current.keyStepsFromA);
       break;
     case PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT:
       settings[static_cast<uint8_t>(SettingKey::CurrentLayout)] = current.layoutIndex;

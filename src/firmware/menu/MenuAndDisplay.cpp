@@ -719,19 +719,34 @@ void loadProfileMenu(GEMCallbackData callbackData) {
   menuHome();
 }
 
-class RuntimeKeySelect : public GEMSelect {
+class RuntimeKeySpinner : public GEMSpinner {
 public:
-  RuntimeKeySelect(byte length, SelectOptionInt* options)
-    : GEMSelect(length, options) {}
+  RuntimeKeySpinner()
+    : GEMSpinner(GEMSpinnerBoundariesInt{ 1, -9, 2 }, GEM_LOOP) {}
 
-  void setLength(byte length) {
-    _length = length;
+  void setRange(int minimum, int maximum) {
+    _boundaries.boundariesInt = { 1, minimum, maximum };
+    _length = maximum - minimum + 1;
   }
 };
 
-SelectOptionInt currentKeyChoices[MAX_SCALE_DIVISIONS] = {};
-RuntimeKeySelect selectCurrentKey(MAX_SCALE_DIVISIONS, currentKeyChoices);
+class RuntimeKeySelect : public GEMSelect {
+public:
+  RuntimeKeySelect()
+    : GEMSelect(1, static_cast<SelectOptionInt*>(nullptr)) {}
+
+  void setOptions(byte length, SelectOptionInt* options) {
+    _length = length;
+    _options = options;
+  }
+};
+
+RuntimeKeySpinner spinnerCurrentKey;
+RuntimeKeySelect selectCurrentKey;
+std::vector<SelectOptionInt> currentKeyChoices;
+std::vector<std::array<char, TUNING_KEY_LABEL_LENGTH>> currentKeyChoiceLabels;
 GEMItem menuItemMainKey("Key", current.keyStepsFromA, selectCurrentKey, changeKey);
+GEMItem menuItemMainKeyNumeric("Key", current.keyStepsFromA, spinnerCurrentKey, changeKey);
 
 template <typename T, size_t Capacity>
 class StaticObjectPool {
@@ -2514,7 +2529,7 @@ void syncSettingsToRuntime() {
   }
   transposeSteps = decodeBiasedSetting(SettingKey::CurrentTransposeSteps);
   current.transpose = transposeSteps;
-  current.keyStepsFromA = decodeBiasedSetting(SettingKey::CurrentKeyStepsFromA);
+  current.keyStepsFromA = loadCurrentKeyStepsFromSettings();
   layoutRotation = settingValue(SettingKey::LayoutRotation) % 6;
   deviceRotation = settingValue(SettingKey::DeviceRotation) % 4;
   mirrorLeftRight = settingEnabled(SettingKey::MirrorLeftRight);
@@ -2938,16 +2953,40 @@ void rebootToBootloader() {
   */
 void showOnlyValidKeyChoices() {
   const tuningDef& tuning = current.tuning();
-  byte cycleLength = tuning.cycleLength;
+  uint16_t cycleLength = tuning.cycleLength;
   if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
     cycleLength = 1;
   }
-  for (byte i = 0; i < cycleLength; ++i) {
-    currentKeyChoices[i].name = tuning.keyChoices[i].name ? tuning.keyChoices[i].name : "";
-    currentKeyChoices[i].val_int = tuning.keyChoices[i].val_int;
+  int minimum = tuning.spanCtoA();
+  int maximum = minimum + cycleLength - 1;
+  while (current.keyStepsFromA < minimum) {
+    current.keyStepsFromA += cycleLength;
   }
-  selectCurrentKey.setLength(cycleLength);
-  menuItemMainKey.hide(false);
+  while (current.keyStepsFromA > maximum) {
+    current.keyStepsFromA -= cycleLength;
+  }
+  spinnerCurrentKey.setRange(minimum, maximum);
+  bool useLabelSelector = cycleLength <= UINT8_MAX;
+  if (useLabelSelector) {
+    currentKeyChoices.resize(cycleLength);
+    currentKeyChoiceLabels.resize(cycleLength);
+    for (uint16_t degree = 0; degree < cycleLength; ++degree) {
+      formatTuningDegreeLabel(tuning,
+                              degree,
+                              currentKeyChoiceLabels[degree].data(),
+                              currentKeyChoiceLabels[degree].size());
+      currentKeyChoices[degree] = {
+        currentKeyChoiceLabels[degree].data(),
+        minimum + static_cast<int>(degree)
+      };
+    }
+    selectCurrentKey.setOptions(static_cast<byte>(cycleLength), currentKeyChoices.data());
+  } else {
+    std::vector<SelectOptionInt>().swap(currentKeyChoices);
+    std::vector<std::array<char, TUNING_KEY_LABEL_LENGTH>>().swap(currentKeyChoiceLabels);
+  }
+  menuItemMainKey.hide(!useLabelSelector);
+  menuItemMainKeyNumeric.hide(useLabelSelector);
   sendToLog("menu: Key choices were updated.");
 }
 
@@ -2989,8 +3028,8 @@ void applyDeviceDisplayRotation() {
     on the scale/key screen.
   */
 void changeKey() {  // when you change the key via the menu
-  // 1) Save to flash (biased by +128):
-  settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
+  // 1) Save the signed 16-bit tuning-relative key offset:
+  storeCurrentKeyStepsInSettings(current.keyStepsFromA);
   markSettingsDirty();
   // 2) Apply it:
   applyScale();
@@ -3017,7 +3056,9 @@ void changeTranspose() {  // when you change the transpose via the menu
 void previewKey(GEMPreviewCallbackData previewData);
 void createKeyMenuItems() {
   menuItemMainKey.setPreviewCallback(previewKey);
+  menuItemMainKeyNumeric.setPreviewCallback(previewKey);
   menuPageMain.addMenuItem(menuItemMainKey);
+  menuPageMain.addMenuItem(menuItemMainKeyNumeric);
   showOnlyValidKeyChoices();
 }
 void previewKey(GEMPreviewCallbackData previewData) {

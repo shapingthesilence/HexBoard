@@ -218,9 +218,12 @@ Mapping order:
 profiles, stable tuning/layout/scale references, per-profile wavetable
 references, and payload CRC32.
 
-`CURRENT_SETTINGS_VERSION` is 26. Firmware accepts only that version and exact
+`CURRENT_SETTINGS_VERSION` is 27. Firmware accepts only that version and exact
 payload size. Invalid or missing settings use hardware-aware RAM defaults and
 are written only by normal save behavior.
+
+The selected key offset is a signed 16-bit value stored in the
+`CurrentKeyStepsFromA` low byte and `CurrentKeyStepsFromAHigh` high byte.
 
 `SettingKeys.inc.h` is the ordered source for `SettingKey` and
 `factoryDefaults`. The factory generator reads the same key order plus
@@ -254,9 +257,16 @@ Persistent stores:
 | `/Sequences` | `SequencerStorage.cpp` | optional `.hbseq` files and `.current` |
 
 Geometry bundles contain a tuning root and linked layouts, scales, color maps,
-and explicit maps. Limits are 255 records and 262,144 bytes per bundle, 8,192
+and explicit maps. Limits are 255 records and 262,144 bytes per bundle, 16,384
 bytes per object, and 32 linked layout/scale menu entries. Menus retain metadata
 only; bodies stream when validated, transferred, or applied.
+
+Runtime tuning capacity is 1,024 divisions. Scale membership is a 1,024-bit
+bitset; EDO and equal-step tunings keep no per-division pitch table. Cents-list
+values, custom labels, and custom degree colors allocate packed storage only
+for the active tuning. Default labels are generated on demand, and default
+colors are generated while refreshing the 140 physical-key caches rather than
+retained as maximum-sized arrays.
 
 Factory UF2 content includes the formatted filesystem. Only 12 EDO and Basic
 Shapes remain compiled as rescue data. Boot mounts once, validates stores

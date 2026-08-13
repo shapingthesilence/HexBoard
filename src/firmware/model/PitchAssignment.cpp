@@ -126,14 +126,17 @@ bool hexIsInCurrentScale(byte hexIndex) {
     return true;
   }
 
-  byte degree = current.keyDegree(h[hexIndex].stepsFromC);
+  uint16_t degree = current.keyDegree(h[hexIndex].stepsFromC);
+  if (userGeometryRuntime.active && userGeometryRuntime.scaleActive) {
+    return userGeometryScaleIncludes(degree);
+  }
   if (degree == 0) {
     return true;  // The root is always in the scale.
   }
 
-  byte accumulatedSteps = 0;
-  byte patternIndex = 0;
-  while (degree > accumulatedSteps) {
+  uint16_t accumulatedSteps = 0;
+  uint16_t patternIndex = 0;
+  while (degree > accumulatedSteps && current.scale().pattern) {
     accumulatedSteps += current.scale().pattern[patternIndex];
     ++patternIndex;
   }

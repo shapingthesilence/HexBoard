@@ -8,8 +8,10 @@
 struct scaleDef {
   const char* name;
   byte tuning;
-  byte pattern[MAX_SCALE_DIVISIONS];
+  const byte* pattern;
 };
+
+constexpr size_t SCALE_MEMBERSHIP_BYTES = (MAX_SCALE_DIVISIONS + 7) / 8;
 
 constexpr byte VALUE_BLACK = 0;
 constexpr byte VALUE_LOW = 80;
@@ -58,18 +60,20 @@ public:
 
 class paletteDef {
 public:
-  colorDef swatch[MAX_SCALE_DIVISIONS];  // the different colors used in this palette
-  byte colorNum[MAX_SCALE_DIVISIONS];    // map key (c,d...) to swatches
-  colorDef getColor(byte givenStepFromC) {
+  const colorDef* swatch;
+  const byte* colorNum;
+  uint16_t cycleLength;
+  colorDef getColor(uint16_t givenStepFromC) const {
+    givenStepFromC %= cycleLength;
     return swatch[colorNum[givenStepFromC] - 1];
   }
-  float getHue(byte givenStepFromC) {
+  float getHue(uint16_t givenStepFromC) const {
     return getColor(givenStepFromC).hue;
   }
-  byte getSat(byte givenStepFromC) {
+  byte getSat(uint16_t givenStepFromC) const {
     return getColor(givenStepFromC).sat;
   }
-  byte getVal(byte givenStepFromC) {
+  byte getVal(uint16_t givenStepFromC) const {
     return getColor(givenStepFromC).val;
   }
 };
@@ -105,15 +109,16 @@ struct UserGeometryRuntimeState {
   uint8_t tuningKind = 0;
   uint16_t cycleLength = 0;
   uint16_t centsTableLength = 0;
-  float centsTable[MAX_SCALE_DIVISIONS] = {};
+  std::vector<float> centsTable;
   float periodCents = 1200.0f;
   uint8_t referenceMidiNote = 69;
   float referenceHz = 440.0f;
-  char keyLabelStorage[MAX_SCALE_DIVISIONS][TUNING_KEY_LABEL_LENGTH] = {};
-  tuningDef tuning = { "User Tuning", 12, 100.0f, { { "0", -9 } } };
+  std::vector<uint8_t> keyLabels;
+  tuningDef tuning = { "User Tuning", 12, 100.0f, -9 };
   layoutDef layout = { "User Layout", false, 65, 1, -2, TUNING_12EDO };
-  scaleDef scale = { "User Scale", TUNING_12EDO, { 0 } };
-  paletteDef palette = {};
+  scaleDef scale = { "User Scale", TUNING_12EDO, nullptr };
+  uint8_t scaleIncluded[SCALE_MEMBERSHIP_BYTES] = {};
+  std::vector<uint8_t> degreeColors;
   bool buttonDisabled[LED_COUNT] = {};
   uint8_t buttonRole[LED_COUNT] = {};
   bool buttonRoleOverride[LED_COUNT] = {};
@@ -132,6 +137,10 @@ struct UserGeometryRuntimeState {
 };
 
 extern UserGeometryRuntimeState userGeometryRuntime;
+
+bool userGeometryScaleIncludes(uint16_t degree);
+colorDef userGeometryDegreeColor(uint16_t degree, uint16_t cycleLength);
+void formatTuningDegreeLabel(const tuningDef& tuning, uint16_t degree, char* output, size_t outputLength);
 
 class presetDef {
 public:

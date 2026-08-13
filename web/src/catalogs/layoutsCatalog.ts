@@ -25,8 +25,8 @@ export const GeometryObjectSchemaVersion = 2;
 export const GenericScaleColorMapName = "Custom Palette";
 export const GeometryMenuTextMaxLength = 19;
 export const NoteLabelTextMaxLength = 7;
-export const MaxTuningDivisions = 128;
-export const GeometryObjectMaxRawBytes = 8_192;
+export const MaxTuningDivisions = 1024;
+export const GeometryObjectMaxRawBytes = 16_384;
 export const GeometryBundleMaxRawBytes = 262_144;
 export const GeometryBundleMaxRecords = 255;
 export const GeometryBundleMaxCount = 64;
@@ -513,7 +513,7 @@ export function createGeneratedEdoTuning(input: GeneratedEdoTuningInput): Encode
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
       tlvFloat32LE(TuningTlv.PeriodCentsFloat32, periodCents),
       tlvFloat32LE(TuningTlv.ReferenceHzFloat32, referenceHz),
-      tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(input.keyLabels ?? defaultKeyLabels(input.edoDivisions), input.edoDivisions)))
+      ...optionalKeyLabelRecord(input.keyLabels, input.edoDivisions)
     ]
   });
 }
@@ -533,7 +533,7 @@ export function createEqualStepTuning(input: EqualStepTuningInput): EncodedCatal
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
       tlvFloat32LE(TuningTlv.StepCentsFloat32, stepCents),
       tlvFloat32LE(TuningTlv.ReferenceHzFloat32, referenceHz),
-      tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(input.keyLabels ?? defaultKeyLabels(input.cycleLength), input.cycleLength)))
+      ...optionalKeyLabelRecord(input.keyLabels, input.cycleLength)
     ]
   });
 }
@@ -554,7 +554,7 @@ export function createCentsTableTuning(input: CentsTableTuningInput): EncodedCat
       tlvU16LE(TuningTlv.EdoDivisions, input.cents.length),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
       tlvFloat32LE(TuningTlv.ReferenceHzFloat32, referenceHz),
-      tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(input.keyLabels ?? defaultKeyLabels(cycleLength), cycleLength))),
+      ...optionalKeyLabelRecord(input.keyLabels, cycleLength),
       tlv(TuningTlv.CentsTableFloat32, concatBytes(floatTableBytes))
     ]
   });
@@ -593,7 +593,14 @@ export function createVectorLayout(input: VectorLayoutInput): EncodedCatalogObje
 }
 
 export function createScaleColorMap(input: ScaleColorMapInput): EncodedCatalogObject {
-  const degreeColorBytes = input.degreeColors.map((color) =>
+  const defaults = createDefaultDegreeColors(input.cycleLength);
+  const degreeColorBytes = input.degreeColors.filter((color) => {
+    const fallback = defaults[color.degree];
+    return !fallback
+      || color.hueTenthDegrees !== fallback.hueTenthDegrees
+      || color.saturation !== fallback.saturation
+      || color.value !== fallback.value;
+  }).map((color) =>
     bytesFromNumbers([
       color.degree & 0xff,
       (color.degree >> 8) & 0xff,
@@ -830,6 +837,16 @@ function encodeKeyLabels(labels: string[]): Uint8Array {
     return bytesFromNumbers([Math.min(bytes.length, 255), ...bytes.slice(0, 255)]);
   });
   return concatBytes(labelBytes);
+}
+
+function optionalKeyLabelRecord(labels: string[] | undefined, cycleLength: number): TlvRecord[] {
+  const defaults = defaultKeyLabels(cycleLength);
+  const normalized = normalizeKeyLabels(labels, cycleLength);
+  if (!cOrderedDefaultKeyLabels[cycleLength]
+      && normalized.every((label, index) => label === defaults[index])) {
+    return [];
+  }
+  return [tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(normalized, cycleLength)))];
 }
 
 function equalStepPeriodCents(tuning: Extract<TuningBundleTuning, { kind: "equal-step" }>): number {

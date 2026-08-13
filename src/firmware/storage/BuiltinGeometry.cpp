@@ -135,8 +135,10 @@ void appendBuiltinTuningBody(std::vector<uint8_t>& body, const BuiltinGeometryMe
 
   std::vector<uint8_t> labels;
   labels.reserve(static_cast<size_t>(tuning.cycleLength) * 5);
-  for (uint8_t i = 0; i < tuning.cycleLength; ++i) {
-    const char* label = tuning.keyChoices[i].name ? tuning.keyChoices[i].name : "";
+  for (uint16_t i = 0; i < tuning.cycleLength; ++i) {
+    char labelStorage[TUNING_KEY_LABEL_LENGTH] = {};
+    formatTuningDegreeLabel(tuning, i, labelStorage, sizeof(labelStorage));
+    const char* label = labelStorage;
     size_t length = std::min<size_t>(strlen(label), 255);
     labels.push_back(static_cast<uint8_t>(length));
     labels.insert(labels.end(), label, label + length);
@@ -172,7 +174,7 @@ void appendPatternDegrees(std::vector<uint8_t>& output, const uint8_t* pattern, 
   uint16_t degree = 0;
   output.push_back(0);
   output.push_back(0);
-  for (uint16_t i = 0; i < MAX_SCALE_DIVISIONS && pattern[i] != 0; ++i) {
+  for (uint16_t i = 0; i < cycleLength && pattern && pattern[i] != 0; ++i) {
     degree = static_cast<uint16_t>(degree + pattern[i]);
     if (degree >= cycleLength) {
       break;

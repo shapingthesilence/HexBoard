@@ -1089,7 +1089,10 @@ void clearUserGeometryRuntimeSelection() {
   userGeometryRuntime.tuningKind = 0;
   userGeometryRuntime.cycleLength = 0;
   userGeometryRuntime.centsTableLength = 0;
-  memset(userGeometryRuntime.centsTable, 0, sizeof(userGeometryRuntime.centsTable));
+  std::vector<float>().swap(userGeometryRuntime.centsTable);
+  std::vector<uint8_t>().swap(userGeometryRuntime.keyLabels);
+  std::vector<uint8_t>().swap(userGeometryRuntime.degreeColors);
+  memset(userGeometryRuntime.scaleIncluded, 0, sizeof(userGeometryRuntime.scaleIncluded));
   userGeometryRuntime.periodCents = 1200.0f;
   userGeometryRuntime.referenceMidiNote = 69;
   userGeometryRuntime.referenceHz = 440.0f;
@@ -1098,16 +1101,7 @@ void clearUserGeometryRuntimeSelection() {
   clearUserGeometryButtonRuntimeOverrides();
 }
 
-void setDefaultRuntimeKeyLabels(uint16_t cycleLength) {
-  int spanCtoA = userGeometryDefaultSpanCtoA(cycleLength);
-  for (uint16_t i = 0; i < MAX_SCALE_DIVISIONS; ++i) {
-    snprintf(userGeometryRuntime.keyLabelStorage[i], sizeof(userGeometryRuntime.keyLabelStorage[i]), "%u", i);
-    userGeometryRuntime.tuning.keyChoices[i].name = userGeometryRuntime.keyLabelStorage[i];
-    userGeometryRuntime.tuning.keyChoices[i].val_int = spanCtoA + static_cast<int>(i);
-  }
-}
-
-bool applyRuntimeKeyLabels(const uint8_t* value, uint16_t length, uint16_t cycleLength) {
+bool runtimeKeyLabelsValid(const uint8_t* value, uint16_t length, uint16_t cycleLength) {
   size_t cursor = 0;
   uint16_t degree = 0;
   while (cursor < length && degree < cycleLength) {
@@ -1115,10 +1109,6 @@ bool applyRuntimeKeyLabels(const uint8_t* value, uint16_t length, uint16_t cycle
     if (cursor + labelLength > length) {
       return false;
     }
-    copyPresetSyncText(userGeometryRuntime.keyLabelStorage[degree],
-                       sizeof(userGeometryRuntime.keyLabelStorage[degree]),
-                       value + cursor,
-                       labelLength);
     cursor += labelLength;
     ++degree;
   }
@@ -1162,9 +1152,10 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
 
   bool centsTableActive = false;
   float centsTablePeriod = periodCents;
-  float parsedCentsTable[MAX_SCALE_DIVISIONS] = {};
+  std::vector<float> parsedCentsTable;
   if (tuningKind == PRESET_SYNC_USER_TUNING_KIND_CENTS_LIST) {
-    if (!readRuntimeCentsTable(object, cycleLength, centsTablePeriod, parsedCentsTable)) {
+    parsedCentsTable.assign(cycleLength, 0.0f);
+    if (!readRuntimeCentsTable(object, cycleLength, centsTablePeriod, parsedCentsTable.data())) {
       sendToLog("Geometry runtime tuning apply rejected: cents table is invalid.");
       return false;
     }
@@ -1196,8 +1187,9 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
 
   copyRuntimeGeometryName(userGeometryRuntimeTuningNameStorage, sizeof(userGeometryRuntimeTuningNameStorage), object.name);
   userGeometryRuntime.tuning.name = userGeometryRuntimeTuningNameStorage;
-  userGeometryRuntime.tuning.cycleLength = static_cast<byte>(cycleLength);
+  userGeometryRuntime.tuning.cycleLength = cycleLength;
   userGeometryRuntime.tuning.stepSize = stepCents;
+  userGeometryRuntime.tuning.spanCtoAValue = static_cast<int16_t>(userGeometryDefaultSpanCtoA(cycleLength));
   memcpy(userGeometryRuntime.tuningObjectId, object.objectId, sizeof(userGeometryRuntime.tuningObjectId));
   userGeometryRuntime.tuningObjectSelected = true;
   userGeometryRuntime.layoutObjectSelected = false;
@@ -1207,22 +1199,28 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   userGeometryRuntime.tuningKind = tuningKind;
   userGeometryRuntime.cycleLength = cycleLength;
   userGeometryRuntime.centsTableLength = centsTableActive ? cycleLength : 0;
-  memset(userGeometryRuntime.centsTable, 0, sizeof(userGeometryRuntime.centsTable));
   if (centsTableActive) {
-    memcpy(userGeometryRuntime.centsTable, parsedCentsTable, cycleLength * sizeof(parsedCentsTable[0]));
+    userGeometryRuntime.centsTable = std::move(parsedCentsTable);
+  } else {
+    std::vector<float>().swap(userGeometryRuntime.centsTable);
   }
   userGeometryRuntime.periodCents = periodCents;
   userGeometryRuntime.referenceMidiNote = referenceMidiNote;
   userGeometryRuntime.referenceHz = referenceHz;
-  setDefaultRuntimeKeyLabels(cycleLength);
-
   const uint8_t* keyLabels = nullptr;
   uint16_t keyLabelsLength = 0;
   if (presetSyncFindTlv(object.body, PRESET_SYNC_TLV_TUNING_KEY_LABELS, keyLabels, keyLabelsLength)
-      && !applyRuntimeKeyLabels(keyLabels, keyLabelsLength, cycleLength)) {
+      && !runtimeKeyLabelsValid(keyLabels, keyLabelsLength, cycleLength)) {
     sendToLog("Geometry runtime tuning apply rejected: key labels are truncated.");
     return false;
   }
+  if (keyLabels && keyLabelsLength > 0) {
+    userGeometryRuntime.keyLabels.assign(keyLabels, keyLabels + keyLabelsLength);
+  } else {
+    std::vector<uint8_t>().swap(userGeometryRuntime.keyLabels);
+  }
+  std::vector<uint8_t>().swap(userGeometryRuntime.degreeColors);
+  memset(userGeometryRuntime.scaleIncluded, 0, sizeof(userGeometryRuntime.scaleIncluded));
 
   userGeometryRuntime.active = true;
   userGeometryRuntime.scaleActive = false;
@@ -1311,23 +1309,12 @@ bool applyUserGeometryRuntimeScale(const GeometryObjectSlot& object) {
     return false;
   }
 
-  bool included[MAX_SCALE_DIVISIONS] = {};
-  included[0] = true;
+  memset(userGeometryRuntime.scaleIncluded, 0, sizeof(userGeometryRuntime.scaleIncluded));
+  userGeometryRuntime.scaleIncluded[0] = 1;
   for (uint16_t offset = 0; offset < includedLength; offset += 2) {
     uint16_t degree = presetSyncReadU16LE(includedDegrees + offset);
-    included[degree % cycleLength] = true;
-  }
-
-  uint8_t degrees[MAX_SCALE_DIVISIONS] = {};
-  uint8_t degreeCount = 0;
-  for (uint16_t degree = 0; degree < cycleLength; ++degree) {
-    if (included[degree]) {
-      degrees[degreeCount++] = static_cast<uint8_t>(degree);
-    }
-  }
-  if (degreeCount == 0) {
-    sendToLog("Geometry runtime scale apply rejected: no degrees were included.");
-    return false;
+    degree %= cycleLength;
+    userGeometryRuntime.scaleIncluded[degree >> 3] |= static_cast<uint8_t>(1u << (degree & 7));
   }
 
   copyRuntimeGeometryName(userGeometryRuntimeScaleNameStorage, sizeof(userGeometryRuntimeScaleNameStorage), object.name);
@@ -1335,12 +1322,6 @@ bool applyUserGeometryRuntimeScale(const GeometryObjectSlot& object) {
   userGeometryRuntime.scale.tuning = current.tuningIndex;
   memcpy(userGeometryRuntime.scaleObjectId, object.objectId, sizeof(userGeometryRuntime.scaleObjectId));
   userGeometryRuntime.scaleObjectSelected = true;
-  memset(userGeometryRuntime.scale.pattern, 0, sizeof(userGeometryRuntime.scale.pattern));
-  for (uint8_t i = 0; i < degreeCount; ++i) {
-    uint8_t currentDegree = degrees[i];
-    uint8_t nextDegree = (i + 1 < degreeCount) ? degrees[i + 1] : static_cast<uint8_t>(degrees[0] + cycleLength);
-    userGeometryRuntime.scale.pattern[i] = nextDegree - currentDegree;
-  }
   userGeometryRuntime.scaleActive = true;
   userGeometryRuntime.active = true;
   applyScale();
@@ -1368,26 +1349,10 @@ bool applyUserGeometryRuntimeColorMap(const GeometryObjectSlot& object) {
   if (defaultColorMode > DIATONIC_COLOR_MODE) {
     defaultColorMode = CUSTOM_COLOR_MODE;
   }
-  for (uint16_t degree = 0; degree < MAX_SCALE_DIVISIONS; ++degree) {
-    userGeometryRuntime.palette.swatch[degree] = {
-      360.0f * (static_cast<float>(degree % cycleLength) / static_cast<float>(cycleLength)),
-      static_cast<byte>(degree == 0 ? SAT_BW : SAT_VIVID),
-      static_cast<byte>(degree == 0 ? VALUE_NORMAL : VALUE_SHADE)
-    };
-    userGeometryRuntime.palette.colorNum[degree] = degree < cycleLength ? static_cast<byte>(degree + 1) : 1;
-  }
-  for (uint16_t offset = 0; offset < degreeColorLength; offset += 6) {
-    uint16_t degree = presetSyncReadU16LE(degreeColors + offset);
-    if (degree >= cycleLength) {
-      continue;
-    }
-    uint16_t hueTenthDegrees = presetSyncReadU16LE(degreeColors + offset + 2);
-    userGeometryRuntime.palette.swatch[degree] = {
-      static_cast<float>(hueTenthDegrees) / 10.0f,
-      degreeColors[offset + 4],
-      degreeColors[offset + 5]
-    };
-    userGeometryRuntime.palette.colorNum[degree] = static_cast<byte>(degree + 1);
+  if (degreeColorLength > 0) {
+    userGeometryRuntime.degreeColors.assign(degreeColors, degreeColors + degreeColorLength);
+  } else {
+    std::vector<uint8_t>().swap(userGeometryRuntime.degreeColors);
   }
 
   userGeometryRuntime.paletteActive = true;

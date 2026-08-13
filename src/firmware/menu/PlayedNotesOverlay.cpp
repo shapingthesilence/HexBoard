@@ -517,7 +517,9 @@ void formatDisplayedPitchLabel(int16_t displayedPitch, char* noteText, size_t no
   }
 
   int step = positiveMod(displayedPitch, cycleLength);
-  const char* label = current.tuning().keyChoices[step].name;
+  char labelStorage[TUNING_KEY_LABEL_LENGTH] = {};
+  formatTuningDegreeLabel(current.tuning(), step, labelStorage, sizeof(labelStorage));
+  const char* label = labelStorage;
   while (label && *label == ' ') {
     ++label;
   }
