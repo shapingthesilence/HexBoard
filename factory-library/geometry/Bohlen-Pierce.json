@@ -1,8 +1,7 @@
 {
-  "format": "hexboard.layoutBundle.v5",
-  "bundle": {
+  "format": "hexboard.tuningBundle.v1",
+  "tuningBundle": {
     "objectIdHex": "916a9e3a00d8821bef62f189c2c55258",
-    "name": "Bohlen-Pierce",
     "folderPath": "/",
     "tuning": {
       "kind": "equal-step",

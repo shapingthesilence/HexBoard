@@ -1081,8 +1081,10 @@ only to that exact layout; firmware does not fall back to another map that
 merely shares its tuning.
 
 The web editor may retain transformed overrides outside the physical key grid
-in its format-4 JSON bundle. Those web-only coordinates are never encoded into
-an `ExplicitButtonMap`; preset sync sends only visible physical button records.
+in its `hexboard.tuningBundle.v1` JSON tuning bundle. Those web-only coordinates
+are never encoded into an `ExplicitButtonMap`; preset sync sends only visible
+physical button records. A tuning bundle has one user-facing name, stored on
+its tuning root.
 
 ## Synth Preset Object
 
@@ -1262,7 +1264,7 @@ Recommended use:
 
 - Backup all user tunings, layouts, scales, color maps, explicit maps,
   profiles, and synth presets.
-- For a user musical-geometry bundle, keep one tuning, one custom scale-degree
+- For a user tuning bundle, keep one tuning, one custom scale-degree
   color set, one or more layouts, and one or more scales together in the
   exported JSON. Persistent restore encodes that set as one `GeometryBundle`;
   individual contained objects remain available for read and runtime preview.

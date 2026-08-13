@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { deterministicObjectId } from "../catalogs/objectId.ts";
 import {
   GeometryObjectSchemaVersion,
-  createDefaultLayoutBundle,
+  createDefaultTuningBundle,
   createGeneratedEdoTuning,
   encodeGeometryCatalogOrder,
-  encodeLayoutBundle
+  encodeTuningBundle
 } from "../catalogs/layoutsCatalog.ts";
 import { createSynthPresetObject } from "../catalogs/synthPresets.ts";
 import { createSynthWavetableObject, SYNTH_WAVETABLE_SAMPLE_BYTES } from "../catalogs/synthWavetables.ts";
@@ -174,7 +174,7 @@ describe("PresetSyncClient", () => {
       transport.emit(encodeAckFrame(frame.transactionId, frame.message, nextChunkIndex));
     };
     const client = new PresetSyncClient(transport);
-    const bundle = encodeLayoutBundle(createDefaultLayoutBundle());
+    const bundle = encodeTuningBundle(createDefaultTuningBundle());
     const frames = await client.sendGeometryBundleSaveConfirmed(bundle.bundleFile);
     const decoded = frames.map((frame) => decodePresetSyncFrame(frame));
 

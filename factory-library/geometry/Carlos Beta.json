@@ -1,8 +1,7 @@
 {
-  "format": "hexboard.layoutBundle.v5",
-  "bundle": {
+  "format": "hexboard.tuningBundle.v1",
+  "tuningBundle": {
     "objectIdHex": "320ad39d714d32ed62bf354d0d1ced3a",
-    "name": "Carlos Beta",
     "folderPath": "/",
     "tuning": {
       "kind": "equal-step",

@@ -1,8 +1,7 @@
 {
-  "format": "hexboard.layoutBundle.v5",
-  "bundle": {
+  "format": "hexboard.tuningBundle.v1",
+  "tuningBundle": {
     "objectIdHex": "9a2dfb7bc74fc78df18a8173621d5379",
-    "name": "58 EDO 289 ZPI",
     "folderPath": "/",
     "tuning": {
       "kind": "equal-step",

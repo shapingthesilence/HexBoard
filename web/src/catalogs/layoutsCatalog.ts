@@ -18,7 +18,8 @@ import type { EncodedCatalogObject, LayoutsDatCatalog, ObjectReferenceInput } fr
 import { deterministicObjectId, objectIdFromHex, objectIdToHex } from "./objectId.ts";
 import { crc32 } from "../protocol/crc32.ts";
 
-export const LayoutBundleFileFormat = "hexboard.layoutBundle.v5";
+export const TuningBundleFileFormat = "hexboard.tuningBundle.v1";
+export const LegacyLayoutBundleFileFormat = "hexboard.layoutBundle.v5";
 export const GeometryBundleFileVersion = 3;
 export const GeometryObjectSchemaVersion = 2;
 export const GenericScaleColorMapName = "Custom Palette";
@@ -236,7 +237,7 @@ export interface UserScaleInput {
   includedDegrees: number[];
 }
 
-export type LayoutBundleButtonAction =
+export type TuningBundleButtonAction =
   | {
       kind: "direct-midi";
       midiNote: number;
@@ -248,7 +249,7 @@ export type LayoutBundleButtonAction =
       rootMidiNote?: number;
     };
 
-export interface LayoutBundleChordAction {
+export interface TuningBundleChordAction {
   id: number;
   name: string;
   pitchMode: "tuning-steps" | "midi-semitones";
@@ -269,25 +270,25 @@ export interface ExplicitButtonRecord {
   hueTenthDegrees?: number;
   saturation?: number;
   value?: number;
-  action?: LayoutBundleButtonAction;
+  action?: TuningBundleButtonAction;
 }
 
-export interface LayoutBundleButtonOverride {
+export interface TuningBundleButtonOverride {
   buttonIndex: number;
   role: ButtonMapRoleName;
   hueTenthDegrees?: number;
   saturation?: number;
   value?: number;
   stepsFromC?: number;
-  action?: LayoutBundleButtonAction;
+  action?: TuningBundleButtonAction;
 }
 
-export interface LayoutBundleGridOverride extends Omit<LayoutBundleButtonOverride, "buttonIndex"> {
+export interface TuningBundleGridOverride extends Omit<TuningBundleButtonOverride, "buttonIndex"> {
   coordCol: number;
   coordRow: number;
 }
 
-export interface LayoutBundleLayout {
+export interface TuningBundleLayout {
   objectIdHex: string;
   name: string;
   centerButton: number;
@@ -298,23 +299,23 @@ export interface LayoutBundleLayout {
   layoutRotationSteps: number;
   mirrorLeftRight: boolean;
   mirrorUpDown: boolean;
-  buttonOverrides: LayoutBundleButtonOverride[];
-  offGridOverrides: LayoutBundleGridOverride[];
-  chordActions: LayoutBundleChordAction[];
+  buttonOverrides: TuningBundleButtonOverride[];
+  offGridOverrides: TuningBundleGridOverride[];
+  chordActions: TuningBundleChordAction[];
 }
 
-export interface LayoutBundleScale {
+export interface TuningBundleScale {
   objectIdHex: string;
   name: string;
   includedDegrees: number[];
 }
 
-export interface LayoutBundlePalette {
+export interface TuningBundlePalette {
   defaultColorMode: ColorModeValue;
   degreeColors: ScaleDegreeColor[];
 }
 
-export type LayoutBundleTuning =
+export type TuningBundleTuning =
   | {
       kind: "edo";
       name: string;
@@ -346,22 +347,21 @@ export type LayoutBundleTuning =
       keyLabels: string[];
     };
 
-export interface LayoutBundle {
+export interface TuningBundle {
   objectIdHex: string;
   tuningObjectIdHex?: string;
   colorObjectIdHex?: string;
   catalogOrder?: number;
-  name: string;
   folderPath: string;
-  tuning: LayoutBundleTuning;
-  palette: LayoutBundlePalette;
-  layouts: LayoutBundleLayout[];
+  tuning: TuningBundleTuning;
+  palette: TuningBundlePalette;
+  layouts: TuningBundleLayout[];
   activeLayoutIdHex: string;
-  scales: LayoutBundleScale[];
+  scales: TuningBundleScale[];
   activeScaleIdHex: string;
 }
 
-export interface EncodedLayoutBundle {
+export interface EncodedTuningBundle {
   tuning: EncodedCatalogObject;
   layouts: EncodedCatalogObject[];
   scales: EncodedCatalogObject[];
@@ -446,7 +446,7 @@ export function encodeGeometryCatalogOrder(objectIds: Uint8Array[]): Uint8Array 
   ]);
 }
 
-export interface ResolvedLayoutBundleColor {
+export interface ResolvedTuningBundleColor {
   degree: number;
   color: ScaleDegreeColor;
   colorSource: "button" | "degree";
@@ -459,7 +459,7 @@ export interface ExplicitButtonMapInput {
   tuningRef: ObjectReferenceInput;
   layoutRef?: ObjectReferenceInput;
   records: ExplicitButtonRecord[];
-  actions?: LayoutBundleChordAction[];
+  actions?: TuningBundleChordAction[];
 }
 
 function buildCatalogObject(input: {
@@ -832,11 +832,11 @@ function encodeKeyLabels(labels: string[]): Uint8Array {
   return concatBytes(labelBytes);
 }
 
-function equalStepPeriodCents(tuning: Extract<LayoutBundleTuning, { kind: "equal-step" }>): number {
+function equalStepPeriodCents(tuning: Extract<TuningBundleTuning, { kind: "equal-step" }>): number {
   return tuning.stepCents * tuning.cycleLength;
 }
 
-function bundleObjectId(bundle: LayoutBundle, suffix: string): Uint8Array {
+function bundleObjectId(bundle: TuningBundle, suffix: string): Uint8Array {
   return deterministicObjectId(`${bundle.objectIdHex}:${suffix}`);
 }
 
@@ -897,7 +897,7 @@ export function normalizeScaleDegrees(degrees: number[], cycleLength: number): n
   return [...normalized].sort((left, right) => left - right);
 }
 
-export function createAllNotesScale(cycleLength: number): LayoutBundleScale {
+export function createAllNotesScale(cycleLength: number): TuningBundleScale {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
   return {
     objectIdHex: objectIdToHex(deterministicObjectId(`scale:all-notes:${safeCycleLength}`)),
@@ -906,7 +906,7 @@ export function createAllNotesScale(cycleLength: number): LayoutBundleScale {
   };
 }
 
-export function createDefaultLayout(cycleLength: number): LayoutBundleLayout {
+export function createDefaultLayout(cycleLength: number): TuningBundleLayout {
   return {
     objectIdHex: objectIdToHex(deterministicObjectId(`layout:default:${cycleLength}`)),
     name: `${cycleLength} EDO Wicki`,
@@ -1091,14 +1091,14 @@ function colorForDefaultMode(input: {
   }
 }
 
-export function resolveLayoutBundleButtonColor(input: {
+export function resolveTuningBundleButtonColor(input: {
   degreeColors: ScaleDegreeColor[];
   cycleLength: number;
   stepsFromC: number;
   defaultColorMode?: number;
   periodCents?: number;
-  override?: LayoutBundleButtonOverride;
-}): ResolvedLayoutBundleColor {
+  override?: TuningBundleButtonOverride;
+}): ResolvedTuningBundleColor {
   const degree = positiveModulo(input.stepsFromC, input.cycleLength);
   const mode = input.defaultColorMode ?? ColorMode.Custom;
   if (
@@ -1134,17 +1134,16 @@ export function resolveLayoutBundleButtonColor(input: {
   };
 }
 
-export function createDefaultLayoutBundle(): LayoutBundle {
+export function createDefaultTuningBundle(): TuningBundle {
   const objectId = deterministicObjectId("layout-bundle:19 EDO Wicki");
   const layout = createDefaultLayout(19);
   const scale = createAllNotesScale(19);
   return {
     objectIdHex: objectIdToHex(objectId),
-    name: "19 EDO Wicki",
     folderPath: "/",
     tuning: {
       kind: "edo",
-      name: "19 EDO",
+      name: "19 EDO Wicki",
       edoDivisions: 19,
       periodCents: 1200,
       cycleLength: 19,
@@ -1163,12 +1162,12 @@ export function createDefaultLayoutBundle(): LayoutBundle {
   };
 }
 
-export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
+export function encodeTuningBundle(bundle: TuningBundle): EncodedTuningBundle {
   if (bundle.layouts.length < 1 || bundle.layouts.length > GeometryLayoutScaleMaxCount) {
-    throw new RangeError(`geometry bundle must contain 1 through ${GeometryLayoutScaleMaxCount} layouts`);
+    throw new RangeError(`tuning bundle must contain 1 through ${GeometryLayoutScaleMaxCount} layouts`);
   }
   if (bundle.scales.length < 1 || bundle.scales.length > GeometryLayoutScaleMaxCount) {
-    throw new RangeError(`geometry bundle must contain 1 through ${GeometryLayoutScaleMaxCount} scales`);
+    throw new RangeError(`tuning bundle must contain 1 through ${GeometryLayoutScaleMaxCount} scales`);
   }
   const tuningId = bundle.tuningObjectIdHex
     ? objectIdFromHex(bundle.tuningObjectIdHex)
@@ -1176,7 +1175,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   const colorId = bundle.colorObjectIdHex
     ? objectIdFromHex(bundle.colorObjectIdHex)
     : bundleObjectId(bundle, "colors");
-  const tuningName = clampGeometryMenuText(bundle.name || bundle.tuning.name, "User Tuning");
+  const tuningName = clampGeometryMenuText(bundle.tuning.name, "User Tuning");
   const folderPath = clampGeometryFolderPath(bundle.folderPath);
   const tuning = (() => {
     switch (bundle.tuning.kind) {
@@ -1222,7 +1221,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   });
   const layouts = orderedLayouts.map((layout) => createVectorLayout({
     objectId: objectIdFromHex(layout.objectIdHex),
-    name: clampGeometryMenuText(layout.name || `${bundle.name} Layout`, "User Layout"),
+    name: clampGeometryMenuText(layout.name || `${tuningName} Layout`, "User Layout"),
     folderPath,
     tuningRef: tuningReference(tuning),
     centerButton: layout.centerButton,
@@ -1250,7 +1249,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   });
   const scales = orderedScales.map((scale) => createUserScale({
     objectId: objectIdFromHex(scale.objectIdHex),
-    name: clampGeometryMenuText(scale.name || `${bundle.name} Scale`, "User Scale"),
+    name: clampGeometryMenuText(scale.name || `${tuningName} Scale`, "User Scale"),
     folderPath,
     tuningRef: tuningReference(tuning),
     cycleLength: bundle.tuning.cycleLength,
@@ -1271,7 +1270,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     }
     return [createExplicitButtonMap({
       objectId: deterministicObjectId(`${bundle.objectIdHex}:button-map:${layout.objectIdHex}`),
-      name: clampGeometryMenuText(`${layout.name || bundle.name} Button Map`, "Button Map"),
+      name: clampGeometryMenuText(`${layout.name || tuningName} Button Map`, "Button Map"),
       folderPath,
       tuningRef: tuningReference(tuning),
       layoutRef: layoutReference(layouts[layoutIndex]),
@@ -1298,31 +1297,30 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   };
 }
 
-export function serializeLayoutBundle(bundle: LayoutBundle): string {
-  return JSON.stringify({ format: LayoutBundleFileFormat, bundle }, null, 2);
+export function serializeTuningBundle(bundle: TuningBundle): string {
+  return JSON.stringify({ format: TuningBundleFileFormat, tuningBundle: bundle }, null, 2);
 }
 
-export function parseLayoutBundleFile(value: unknown): LayoutBundle {
+export function parseTuningBundleFile(value: unknown): TuningBundle {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Layout bundle file must contain an object");
+    throw new Error("Tuning bundle file must contain an object");
   }
   const record = value as Record<string, unknown>;
-  if (
-    record.format !== LayoutBundleFileFormat ||
-    typeof record.bundle !== "object" ||
-    record.bundle === null
-  ) {
-    throw new Error("Unsupported layout bundle file");
+  if (record.format === TuningBundleFileFormat && typeof record.tuningBundle === "object" && record.tuningBundle !== null) {
+    return normalizeTuningBundle(record.tuningBundle);
   }
-  return normalizeLayoutBundle(record.bundle);
+  if (record.format === LegacyLayoutBundleFileFormat && typeof record.bundle === "object" && record.bundle !== null) {
+    return normalizeTuningBundle(record.bundle);
+  }
+  throw new Error("Unsupported tuning bundle file");
 }
 
-export function parseLayoutBundleLibrary(value: unknown): LayoutBundle[] {
+export function parseTuningBundleLibrary(value: unknown): TuningBundle[] {
   if (!Array.isArray(value)) {
-    return [createDefaultLayoutBundle()];
+    return [createDefaultTuningBundle()];
   }
-  const bundles = value.map((bundle) => normalizeLayoutBundle(bundle));
-  return bundles.length > 0 ? bundles : [createDefaultLayoutBundle()];
+  const bundles = value.map((bundle) => normalizeTuningBundle(bundle));
+  return bundles.length > 0 ? bundles : [createDefaultTuningBundle()];
 }
 
 function numberOr(value: unknown, fallback: number): number {
@@ -1352,8 +1350,8 @@ export function clampGeometryFolderPath(value: string | undefined): string {
   return firstComponent ? clampGeometryMenuText(firstComponent, "Geometry") : "/";
 }
 
-function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
-  const tuning = value as Partial<LayoutBundleTuning> & {
+function normalizeTuningBundleTuning(value: unknown, legacyBundleName?: string): TuningBundleTuning {
+  const tuning = value as Partial<TuningBundleTuning> & {
     edoDivisions?: unknown;
     stepCents?: unknown;
     periodCents?: unknown;
@@ -1363,7 +1361,7 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
     referenceHz?: unknown;
     keyLabels?: unknown;
   };
-  const name = clampGeometryMenuText(stringOr(tuning.name, "User Tuning"), "User Tuning");
+  const name = clampGeometryMenuText(legacyBundleName ?? stringOr(tuning.name, "User Tuning"), "User Tuning");
   const referenceMidiNote = clampInteger(numberOr(tuning.referenceMidiNote, 69), 0, 127);
   const referenceHz = numberOr(tuning.referenceHz, 440);
 
@@ -1412,17 +1410,18 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
     };
   }
 
-  throw new Error("Layout bundle has an unsupported tuning type");
+  throw new Error("Tuning bundle has an unsupported tuning type");
 }
 
-function normalizeLayoutBundle(value: unknown): LayoutBundle {
-  const source = value as Partial<LayoutBundle> & {
-    layouts?: Array<Partial<LayoutBundleLayout>>;
+function normalizeTuningBundle(value: unknown): TuningBundle {
+  const source = value as Partial<TuningBundle> & {
+    name?: unknown;
+    layouts?: Array<Partial<TuningBundleLayout>>;
     degreeColors?: ScaleDegreeColor[];
-    buttonOverrides?: LayoutBundleButtonOverride[];
+    buttonOverrides?: TuningBundleButtonOverride[];
   };
-  if (typeof source.name !== "string" || typeof source.objectIdHex !== "string") {
-    throw new Error("Layout bundle is missing a name or object id");
+  if (typeof source.objectIdHex !== "string") {
+    throw new Error("Tuning bundle is missing an object id");
   }
   objectIdFromHex(source.objectIdHex);
   const tuningObjectIdHex = typeof source.tuningObjectIdHex === "string"
@@ -1437,13 +1436,16 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
     ? Number(source.catalogOrder)
     : undefined;
   if (!source.tuning || !Array.isArray(source.layouts) || source.layouts.length === 0) {
-    throw new Error("Layout bundle is missing tuning or layout data");
+    throw new Error("Tuning bundle is missing tuning or layout data");
   }
-  const tuning = normalizeLayoutBundleTuning(source.tuning);
+  const tuning = normalizeTuningBundleTuning(
+    source.tuning,
+    typeof source.name === "string" ? clampGeometryMenuText(source.name, "User Tuning") : undefined
+  );
   const cycleLength = Math.max(1, Math.round(tuning.cycleLength));
   const layouts = source.layouts;
   if (layouts.length > GeometryLayoutScaleMaxCount) {
-    throw new RangeError(`Layout bundle contains more than ${GeometryLayoutScaleMaxCount} layouts`);
+    throw new RangeError(`Tuning bundle contains more than ${GeometryLayoutScaleMaxCount} layouts`);
   }
   const normalizedLayouts = layouts.map((layout, index) => {
     const objectIdHex = typeof layout.objectIdHex === "string"
@@ -1484,7 +1486,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
       offGridOverrides: Array.isArray(layout.offGridOverrides)
         ? layout.offGridOverrides
           .filter((override) => Number.isFinite(override.coordCol) && Number.isFinite(override.coordRow))
-          .map((override): LayoutBundleGridOverride => ({
+          .map((override): TuningBundleGridOverride => ({
             ...override,
             coordCol: Math.round(override.coordCol),
             coordRow: Math.round(override.coordRow),
@@ -1498,7 +1500,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
     ? source.scales
     : [createAllNotesScale(cycleLength)];
   if (scales.length > GeometryLayoutScaleMaxCount) {
-    throw new RangeError(`Layout bundle contains more than ${GeometryLayoutScaleMaxCount} scales`);
+    throw new RangeError(`Tuning bundle contains more than ${GeometryLayoutScaleMaxCount} scales`);
   }
   const normalizedScales = scales.map((scale, index) => {
     const objectIdHex = typeof scale.objectIdHex === "string"
@@ -1524,7 +1526,6 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
     ...(tuningObjectIdHex ? { tuningObjectIdHex } : {}),
     ...(colorObjectIdHex ? { colorObjectIdHex } : {}),
     ...(catalogOrder !== undefined ? { catalogOrder } : {}),
-    name: clampGeometryMenuText(source.name, "Geometry"),
     folderPath: clampGeometryFolderPath(stringOr(source.folderPath, "/")),
     tuning,
     palette: {

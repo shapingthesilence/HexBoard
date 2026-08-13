@@ -102,7 +102,7 @@ USER_SCALE_TLV_ROOT_DEGREE = 0x22
 USER_SCALE_TLV_PATTERN_STEPS = 0x23
 USER_SCALE_TLV_INCLUDED_DEGREES = 0x24
 
-LAYOUT_BUNDLE_FORMAT = "hexboard.layoutBundle.v5"
+TUNING_BUNDLE_FORMAT = "hexboard.tuningBundle.v1"
 
 SETTING_KEYS = source_setting_keys()
 
@@ -307,10 +307,10 @@ def parse_geometry_tuning(
     source = bundle.get("tuning")
     if not isinstance(source, dict):
         raise fail(path, "geometry tuning", "bundle.tuning must be an object")
-    name = geometry_text(bundle.get("name"), path, "bundle.name")
     kind = source.get("kind")
     if kind not in ("edo", "equal-step"):
         raise fail(path, "geometry tuning", "factory tunings must use kind 'edo' or 'equal-step'")
+    name = geometry_text(source.get("name"), path, "tuning.name")
     reference_midi_note = geometry_int(source.get("referenceMidiNote", 69), path, "referenceMidiNote", 0, 127)
     reference_hz = f32(geometry_number(source.get("referenceHz", 440.0), path, "referenceHz", 0.000001))
     labels_source = source.get("keyLabels")
@@ -450,23 +450,23 @@ def parse_geometry_color_map(
 
 def parse_geometry_bundle(path: Path, root: Path) -> list[tuple[int, bytes, str, str, bytes]]:
     document = read_json(path, "geometry bundle")
-    if document.get("format") != LAYOUT_BUNDLE_FORMAT or not isinstance(document.get("bundle"), dict):
-        raise fail(path, "geometry bundle", f"expected format {LAYOUT_BUNDLE_FORMAT!r} and a bundle object")
-    bundle = document["bundle"]
+    if document.get("format") != TUNING_BUNDLE_FORMAT or not isinstance(document.get("tuningBundle"), dict):
+        raise fail(path, "tuning bundle", f"expected format {TUNING_BUNDLE_FORMAT!r} and a tuningBundle object")
+    bundle = document["tuningBundle"]
     folder = source_folder(path, root)
     declared_folder = normalized_folder(str(bundle.get("folderPath", "/")))
     if declared_folder != folder:
         raise fail(path, "geometry bundle", f"folderPath {declared_folder!r} does not match source folder {folder!r}")
     folder = geometry_text(folder, path, "folderPath") if folder != "/" else "/"
-    bundle_name = geometry_text(bundle.get("name"), path, "bundle.name")
-    if bundle_name != path.stem:
-        raise fail(path, "geometry bundle", f"bundle name {bundle_name!r} does not match filename {path.stem!r}")
     bundle_id = geometry_object_id(bundle.get("objectIdHex"), path, "bundle.objectIdHex")
     tuning_object_id = web_deterministic_object_id(f"{bundle_id.hex()}:tuning")
     color_object_id = web_deterministic_object_id(f"{bundle_id.hex()}:colors")
     tuning_source = bundle.get("tuning")
     if not isinstance(tuning_source, dict):
         raise fail(path, "geometry tuning", "bundle.tuning must be an object")
+    tuning_name = geometry_text(tuning_source.get("name"), path, "tuning.name")
+    if tuning_name != path.stem:
+        raise fail(path, "tuning bundle", f"tuning name {tuning_name!r} does not match filename {path.stem!r}")
     cycle_length = geometry_int(tuning_source.get("cycleLength"), path, "tuning.cycleLength", 1, MAX_SCALE_DIVISIONS)
 
     output: list[tuple[int, bytes, str, str, bytes]] = []
@@ -891,7 +891,7 @@ def build_library(library: Path, output: Path) -> None:
     print(
         f"Factory library: {len(list(preset_root.rglob('*.json')))} presets, "
         f"{len(wavetable_records)} editable wavetables, "
-        f"{len(list(geometry_root.rglob('*.json')))} geometry bundles "
+        f"{len(list(geometry_root.rglob('*.json')))} tuning bundles "
         f"({geometry_object_count} objects), 12 EDO and Basic Shapes rescue core"
     )
     for path in sorted(output.rglob("*")):

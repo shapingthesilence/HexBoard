@@ -1,8 +1,7 @@
 {
-  "format": "hexboard.layoutBundle.v5",
-  "bundle": {
+  "format": "hexboard.tuningBundle.v1",
+  "tuningBundle": {
     "objectIdHex": "836823b01247e603d6e06121fd38e942",
-    "name": "Carlos Gamma",
     "folderPath": "/",
     "tuning": {
       "kind": "equal-step",

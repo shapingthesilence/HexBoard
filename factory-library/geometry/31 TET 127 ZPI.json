@@ -1,8 +1,7 @@
 {
-  "format": "hexboard.layoutBundle.v5",
-  "bundle": {
+  "format": "hexboard.tuningBundle.v1",
+  "tuningBundle": {
     "objectIdHex": "a8005d79da2d285c9105fea5487f6199",
-    "name": "31 TET 127 ZPI",
     "folderPath": "/",
     "tuning": {
       "kind": "equal-step",

@@ -31,28 +31,28 @@ folder and name.
 Shapes is intentionally excluded from LittleFS because it is the immutable
 rescue wavetable compiled into firmware.
 
-## Geometry Bundles
+## Tuning Bundles
 
-Place web-app-compatible `hexboard.layoutBundle.v5` JSON files under
-`geometry/`. Each file is one bundle: one tuning and custom palette plus all of
-its layouts and scales. As with synth presets, the relative source directory is
-the on-device folder, while the bundle name must match the filename and its
-`folderPath` must match that source directory.
+Place web-app-compatible `hexboard.tuningBundle.v1` JSON files under
+`geometry/`. Each file is one tuning bundle: one tuning and custom palette plus
+all of its layouts and scales. As with synth presets, the relative source
+directory is the on-device folder, while the tuning name must match the filename
+and its `folderPath` must match that source directory.
 
 The supplied root-level `geometry/` files compile into 22 editable factory
-bundles containing 332 linked records. The record count is an encoding detail;
-device capacity is 64 complete bundles, counted by tuning roots. Only the
+tuning bundles containing 332 linked records. The record count is an encoding
+detail; device capacity is 64 complete tuning bundles, counted by tuning roots. Only the
 minimal 12 EDO rescue tuning, Wicki-Hayden layout, All Notes scale, and rescue
 palette remain compiled into firmware, and they are exposed only if the
 filesystem geometry catalog cannot be used.
 
-Each source bundle becomes one independently checksummed
+Each source tuning bundle becomes one independently checksummed
 `/geometry/<tuning-object-id>.hgb` file. `selectedGeometry` is written to
 `/default_geometry.dat`; filesystem directory order does not choose the factory
-default. `geometryOrder` must list every source bundle and defines their stable
-on-device order; the supplied list matches the former hard-coded tuning order.
+default. `geometryOrder` must list every source tuning bundle and defines their
+stable on-device order; the supplied list matches the former hard-coded tuning order.
 The generator writes that sequence to the compact `/geometry_order.dat` file
-and records each bundle's factory order in its HGB header.
+and records each tuning bundle's factory order in its HGB header.
 
 ## Configuration And Validation
 

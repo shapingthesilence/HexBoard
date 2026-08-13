@@ -1,8 +1,7 @@
 {
-  "format": "hexboard.layoutBundle.v5",
-  "bundle": {
+  "format": "hexboard.tuningBundle.v1",
+  "tuningBundle": {
     "objectIdHex": "11df91007982ffcb511688313e37e8c5",
-    "name": "22 EDO",
     "folderPath": "/",
     "tuning": {
       "kind": "edo",

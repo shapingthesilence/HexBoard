@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LayoutBundleButtonOverride } from "../catalogs/index.ts";
+import type { TuningBundleButtonOverride } from "../catalogs/index.ts";
 import {
   clearColorOverridesForScaleDegree,
   colorToCss,
@@ -52,7 +52,7 @@ describe("tuning layout color rendering", () => {
   });
 
   it("resets button colors back to scale degree colors without dropping note overrides", () => {
-    const overrides: LayoutBundleButtonOverride[] = [
+    const overrides: TuningBundleButtonOverride[] = [
       { buttonIndex: 10, role: "note", hueTenthDegrees: 2400, saturation: 255, value: 220 },
       { buttonIndex: 11, role: "note", stepsFromC: 7, hueTenthDegrees: 1200, saturation: 200, value: 190 },
       { buttonIndex: 12, role: "unused", hueTenthDegrees: 0, saturation: 255, value: 180 },
@@ -86,7 +86,7 @@ describe("tuning layout color rendering", () => {
   });
 
   it("clears color overrides for buttons on a painted scale degree", () => {
-    const overrides: LayoutBundleButtonOverride[] = [
+    const overrides: TuningBundleButtonOverride[] = [
       { buttonIndex: 10, role: "note", hueTenthDegrees: 1200, saturation: 255, value: 180 },
       { buttonIndex: 11, role: "note", stepsFromC: 8, hueTenthDegrees: 2400, saturation: 255, value: 200 },
       { buttonIndex: 12, role: "unused", hueTenthDegrees: 0, saturation: 255, value: 160 },

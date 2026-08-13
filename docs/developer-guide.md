@@ -396,7 +396,8 @@ catalog, and MIDI helpers live under `web/src/protocol/`,
 
 ## Edit Recipes
 
-Factory tuning, layout, and scale changes start in a web-compatible bundle under
+Factory tuning, layout, and scale changes start in a web-compatible
+`hexboard.tuningBundle.v1` tuning bundle under
 `factory-library/geometry/`. Run the generator, validate linked IDs and virtual
 browser filtering, then test pitch, MPE, synth, labels, mirrors/rotation, and LED
 behavior as applicable.

@@ -80,21 +80,21 @@ and `TRANSFER_END` so firmware can pace object transfers.
 - CRC32 and 8-to-7 packing utilities matching the firmware draft.
 - TLV object encoding for user tunings, layouts, scale color maps, explicit
   button maps, and named/foldered synth presets.
-- Atomic `HGB` encoding for complete tuning bundles. Saving a bundle transfers
+- Atomic `HGB` encoding for complete tuning bundles. Saving a tuning transfers
   one staged file, while live preview continues to send only the active
   tuning/layout/scale/color/map objects without writing flash. Tuning divisions
   and scale cycles are limited to the firmware's `1..128` range; each tuning
   can contain up to 32 layouts and 32 scales.
-- Bundle color-mode defaults are stored in the bundle; the supplied 12 EDO
-  bundle uses Rainbow. Computer and HexBoard library rows can be reordered by
+- Color-mode defaults are stored with each tuning; the supplied 12 EDO tuning
+  uses Rainbow. Computer and HexBoard library rows can be reordered by
   dragging. Device reorders update the UI immediately, wait for a 2-second
   quiet period, then write only the compact geometry-order file; unchanged
   order bytes do not cause another flash write.
-- A tuning/layout bundle editor organized as a four-step `Library`, `Tuning`,
+- A tuning editor organized as a four-step `Library`, `Tuning`,
   `Layout`, and `Scale & color` workflow. The library gets a full-width transfer
   and folder-management view. Folder filters consistently begin with `All` and
   `Root`; empty computer folders can be created and deleted, while device
-  folders appear only when a saved item uses them. Editing keeps bundle sync
+  folders appear only when a saved item uses them. Editing keeps tuning sync
   actions and the visual HexBoard preview in consistent locations. Device
   rotation is four-way and separate from musical layout transforms. A layout
   toolbar directly below the color tools provides step transposition, two-way
@@ -103,7 +103,7 @@ and `TRANSFER_END` so firmware can pace object transfers.
   this history. One selected key or all selected keys transforms the generated
   layout around the gold primary key; any other multi-selection creates
   per-key overrides. Overrides that rotate beyond the physical board remain in
-  the saved bundle so later transforms can bring them back. The selected-key
+  the saved tuning bundle so later transforms can bring them back. The selected-key
   inspector separates key state, optional pitch overrides, inherited or per-key
   color, and advanced pitch details; color editing uses a compact visual
   picker. Shift/Ctrl/Command selection enables
@@ -132,9 +132,14 @@ and `TRANSFER_END` so firmware can pace object transfers.
   import reads trailing interval labels, exposes the 1/1 MIDI note
   and Hz reference, and enables cents-table live send when the connected
   firmware advertises runtime support. Live send serializes only the active
-  runtime records. `Save to HexBoard` writes the whole bundle, preserves tuning
-  and color object IDs for bundles opened from the device, then reapplies the
+  runtime records. `Save to HexBoard` writes the whole tuning bundle, preserves
+  tuning and color object IDs for tunings opened from the device, then reapplies the
   active records so the hardware preview and on-device menus agree.
+  Computer Library edits are saved automatically. `Copy to HexBoard` and
+  `Copy to Computer` copy between libraries; `Download file` writes a portable
+  `hexboard.tuningBundle.v1` JSON file. Legacy `hexboard.layoutBundle.v5` files
+  remain importable and use their former device-facing bundle name as the
+  tuning name.
 - A synth preset editor with name and folder selection, folder creation, main
   synth parameter controls, mono retrigger/legato, mono portamento,
   arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,
