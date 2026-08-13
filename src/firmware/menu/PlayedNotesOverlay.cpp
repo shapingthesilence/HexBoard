@@ -39,8 +39,7 @@ bool playedNoteDisplayUpdateDeferred() {
   if ((runTime - noteOverlayLastPerformanceEventAt) < DISPLAYED_NOTES_INPUT_QUIET_MICROS) {
     return true;
   }
-  return noteOverlayLastRefreshAt != 0
-         && (runTime - noteOverlayLastRefreshAt) < DISPLAYED_NOTES_REFRESH_INTERVAL_MICROS;
+  return !displayRefreshDue(runTime, noteOverlayLastRefreshAt);
 }
 
 void markPlayedNoteDisplayRefresh() {

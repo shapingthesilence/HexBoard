@@ -19,6 +19,7 @@
 #include "../sequencer/SequencerPlaybackSettings.h"
 #include "../synth/SynthAudio.h"
 #include "CommandWheelOverlay.h"
+#include "DisplayRefreshPolicy.h"
 #include "GeometryMenu.h"
 #include "MenuAndDisplay.h"
 #include "PlayedNotesOverlay.h"
@@ -81,11 +82,13 @@ uint16_t virtualListLauncherScrollOffset = 0;
 bool virtualListLauncherScrollApplied = false;
 char virtualListLauncherValueBuffer[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = {};
 
-constexpr uint8_t PRESET_SYNC_PROGRESS_REDRAW_STEP = 2;
 constexpr uint8_t MODAL_SCREEN_FOOTER_BASELINE = 112;
 uint8_t presetSyncDisplayedObjectType = 0xFF;
 uint8_t presetSyncDisplayedDirection = 0;
 uint8_t presetSyncDisplayedProgress = 0xFF;
+uint16_t presetSyncDisplayedTransferId = 0;
+uint32_t presetSyncDisplayedCompletedBytes = UINT32_MAX;
+uint64_t presetSyncDisplayLastRefreshAt = 0;
 
 void drawCenteredMenuHeaderTitle(const char* title) {
   if (!title) {
@@ -214,6 +217,9 @@ void resetPresetSyncTransferDisplayState() {
   presetSyncDisplayedObjectType = 0xFF;
   presetSyncDisplayedDirection = 0;
   presetSyncDisplayedProgress = 0xFF;
+  presetSyncDisplayedTransferId = 0;
+  presetSyncDisplayedCompletedBytes = UINT32_MAX;
+  presetSyncDisplayLastRefreshAt = 0;
 }
 
 void drawPresetSyncTransferScreen(bool forceRedraw = false) {
@@ -230,38 +236,48 @@ void drawPresetSyncTransferScreen(bool forceRedraw = false) {
 
   uint8_t objectType = 0;
   uint8_t direction = 0;
+  uint16_t transferId = 0;
   uint32_t completedBytes = 0;
   uint32_t totalBytes = 0;
   if (presetSyncWriteTransfer.active) {
     objectType = presetSyncWriteTransfer.objectType;
     direction = 1;
+    transferId = presetSyncWriteTransfer.transferId;
     completedBytes = presetSyncWriteTransfer.receivedBytes;
     totalBytes = presetSyncWriteTransfer.rawByteLength;
   } else if (presetSyncReadTransfer.active) {
     objectType = presetSyncReadTransfer.objectType;
     direction = 2;
+    transferId = presetSyncReadTransfer.transferId;
     completedBytes = presetSyncReadTransfer.sentBytes;
     totalBytes = presetSyncReadTransfer.rawByteLength;
   }
 
   if (direction != 0 && totalBytes > 0) {
+    const uint64_t now = readClock();
     uint8_t progress = static_cast<uint8_t>(std::min<uint64_t>(
       100,
       (static_cast<uint64_t>(completedBytes) * 100) / totalBytes));
-    uint8_t displayedProgress = progress == 100
-      ? 100
-      : (progress / PRESET_SYNC_PROGRESS_REDRAW_STEP) * PRESET_SYNC_PROGRESS_REDRAW_STEP;
+    bool sameTransfer = presetSyncTransferScreenVisible
+                        && objectType == presetSyncDisplayedObjectType
+                        && direction == presetSyncDisplayedDirection
+                        && transferId == presetSyncDisplayedTransferId;
+    bool stateChanged = progress != presetSyncDisplayedProgress
+                        || completedBytes != presetSyncDisplayedCompletedBytes;
     if (!forceRedraw
-        && presetSyncTransferScreenVisible
-        && objectType == presetSyncDisplayedObjectType
-        && direction == presetSyncDisplayedDirection
-        && displayedProgress == presetSyncDisplayedProgress) {
+        && sameTransfer
+        && (!stateChanged
+            || (progress < 100
+                && !displayRefreshDue(now, presetSyncDisplayLastRefreshAt)))) {
       return;
     }
 
     presetSyncDisplayedObjectType = objectType;
     presetSyncDisplayedDirection = direction;
-    presetSyncDisplayedProgress = displayedProgress;
+    presetSyncDisplayedProgress = progress;
+    presetSyncDisplayedTransferId = transferId;
+    presetSyncDisplayedCompletedBytes = completedBytes;
+    presetSyncDisplayLastRefreshAt = now;
 
     char titleText[28] = {};
     char progressText[8] = {};

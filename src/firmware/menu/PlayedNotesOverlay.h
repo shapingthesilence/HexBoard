@@ -1,13 +1,13 @@
 #pragma once
 
 #include "../FirmwareModule.h"
+#include "DisplayRefreshPolicy.h"
 
 constexpr byte DISPLAYED_NOTES_MAX = 6;
 constexpr int16_t DISPLAYED_NOTE_UNUSED = INT16_MIN;
 constexpr uint64_t DISPLAYED_NOTES_HOLD_MICROS = 2000000ULL;
 constexpr uint64_t DISPLAYED_NOTES_RELEASE_GRACE_MICROS = 80000ULL;
 constexpr uint64_t DISPLAYED_NOTES_INPUT_QUIET_MICROS = 30000ULL;
-constexpr uint64_t DISPLAYED_NOTES_REFRESH_INTERVAL_MICROS = 50000ULL;
 constexpr int PLAYED_NOTE_COLUMN_X[3] = { 0, 44, 88 };
 constexpr int PLAYED_CHORD_Y = 92;
 constexpr int PLAYED_NOTE_BADGE_WIDTH = 42;

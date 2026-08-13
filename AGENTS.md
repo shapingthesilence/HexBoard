@@ -55,12 +55,30 @@ requires a documentation relevance check. Corrective changes that restore
 already-documented behavior need no doc edit. Document UI layout only when
 information, interaction, workflow, or a durable constraint changes.
 
-Replace stale text with concise current-state descriptions. Keep investigation
-history, root cause, and verification in task reports, issues, commits, or
-release notes—not product or architecture guides.
+Replace stale text with concise current-state descriptions. Do not preserve
+investigation history, root cause narratives, implementation chronology, or
+verification history in repository documentation; Git history is the record of
+engineering changes.
+
+Do not document a change merely because code changed. Documentation describes
+the product as it currently works, not what was recently implemented, fixed,
+optimized, or restored. Never accumulate chronological commentary, migration
+narrative, prior behavior, implementation rationale, task outcomes, or
+engineering history in documentation. Release notes are written only when
+explicitly requested and should describe user-facing release impact rather than
+serve as an engineering log.
+
+Keep `docs/user-manual.md` strictly user focused. Include only information a
+user needs to understand the product, choose settings, operate it, or recover
+from a problem. Describe observable behavior in product language. Exclude
+internal scheduling, refresh policies, transfer mechanisms, performance
+implementation, architecture, source ownership, and developer verification.
+Do not add text when a code change preserves the manual's existing user-facing
+contract.
 
 - `README.md`: overview, features, repository layout, build, and flashing
-- `docs/user-manual.md`: user-visible behavior, defaults, workflows, and hardware
+- `docs/user-manual.md`: user-visible behavior, defaults, workflows, hardware,
+  and troubleshooting; no implementation details or engineering history
 - `docs/sequencer/`: sequencer behavior, persistence, USB Backup, and layouts
 - `docs/developer-guide.md`: architecture, ownership, runtime, risks, and recipes
 - `docs/delegated-control.md`: delegated-control protocol and runtime gates

@@ -64,20 +64,7 @@ byte lastVelocityWheelGestureMask = 0;
 byte lastModulationWheelGestureMask = 0;
 byte lastPitchBendWheelGestureMask = 0;
 
-constexpr uint64_t PITCH_BEND_OUTPUT_INTERVAL_MICROS = 10000ULL;
-
-int RAM_FUNC(pitchBendOutputStep)() {
-  const int configuredStep = pbWheel.effectiveStepValue();
-  const int fullRange = static_cast<int>(pbWheel.maxValue) - static_cast<int>(pbWheel.minValue) + 1;
-  if (configuredStep >= fullRange) {
-    return fullRange;
-  }
-  const int64_t scaled =
-    (static_cast<int64_t>(configuredStep) * PITCH_BEND_OUTPUT_INTERVAL_MICROS
-     + (CC_MSG_COOLDOWN_MICROSECONDS / 2))
-    / CC_MSG_COOLDOWN_MICROSECONDS;
-  return static_cast<int>(std::max<int64_t>(scaled, 1));
-}
+constexpr uint64_t COMMAND_WHEEL_UPDATE_INTERVAL_MICROS = 10000ULL;
 
 void RAM_FUNC(readHexes)() {
 
@@ -141,13 +128,11 @@ void RAM_FUNC(readHexes)() {
 }
 
 static void RAM_FUNC(notifyCommandWheelValue)(CommandWheelOverlayType type,
-                                              const wheelDef& wheel,
-                                              bool immediateRedraw) {
+                                              const wheelDef& wheel) {
   notifyCommandWheelOverlay(type,
                             wheel.curValue,
                             wheel.minValue,
-                            wheel.maxValue,
-                            immediateRedraw);
+                            wheel.maxValue);
 }
 
 static byte RAM_FUNC(commandWheelGestureMask)(const wheelDef& wheel) {
@@ -184,7 +169,7 @@ static void RAM_FUNC(notifyCommandWheelGesture)(CommandWheelOverlayType type,
   bool newGesture = gestureMask != 0 && gestureMask != lastGestureMask;
 
   if (targetChanged || newGesture) {
-    notifyCommandWheelValue(type, wheel, newGesture);
+    notifyCommandWheelValue(type, wheel);
   }
 
   lastGestureMask = gestureMask;
@@ -201,11 +186,11 @@ void RAM_FUNC(updateWheels)() {
                             velWheel,
                             previousVelocityTarget,
                             lastVelocityWheelGestureMask);
-  bool upd = velWheel.updateValue(runTime);
+  bool upd = velWheel.updateValue(runTime, COMMAND_WHEEL_UPDATE_INTERVAL_MICROS);
   if (upd) {
     sendToLog("vel became " + std::to_string(velWheel.curValue));
     if (commandWheelOverlayActive()) {
-      notifyCommandWheelValue(CommandWheelOverlayType::Velocity, velWheel, false);
+      notifyCommandWheelValue(CommandWheelOverlayType::Velocity, velWheel);
     }
   }
   if (toggleWheel) {
@@ -215,12 +200,10 @@ void RAM_FUNC(updateWheels)() {
                               pbWheel,
                               previousPitchBendTarget,
                               lastPitchBendWheelGestureMask);
-    upd = pbWheel.updateValueAtSteadyRate(runTime,
-                                          PITCH_BEND_OUTPUT_INTERVAL_MICROS,
-                                          pitchBendOutputStep());
+    upd = pbWheel.updateValue(runTime, COMMAND_WHEEL_UPDATE_INTERVAL_MICROS);
     if (upd) {
       if (commandWheelOverlayActive()) {
-        notifyCommandWheelValue(CommandWheelOverlayType::PitchBend, pbWheel, false);
+        notifyCommandWheelValue(CommandWheelOverlayType::PitchBend, pbWheel);
       }
       sendMIDIpitchBendToCh1();
       updateSynthWithNewFreqs();
@@ -232,10 +215,10 @@ void RAM_FUNC(updateWheels)() {
                               modWheel,
                               previousModulationTarget,
                               lastModulationWheelGestureMask);
-    upd = modWheel.updateValue(runTime);
+    upd = modWheel.updateValue(runTime, COMMAND_WHEEL_UPDATE_INTERVAL_MICROS);
     if (upd) {
       if (commandWheelOverlayActive()) {
-        notifyCommandWheelValue(CommandWheelOverlayType::Modulation, modWheel, false);
+        notifyCommandWheelValue(CommandWheelOverlayType::Modulation, modWheel);
       }
       sendMIDImodulationToCh1();
     }

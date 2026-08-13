@@ -8,7 +8,6 @@ constexpr byte BTN_STATE_OFF = 0;
 constexpr byte BTN_STATE_NEWPRESS = 1;
 constexpr byte BTN_STATE_RELEASED = 2;
 constexpr byte BTN_STATE_HELD = 3;
-constexpr uint8_t WHEEL_MAX_CATCHUP_STEPS = 8;
 
 class buttonDef {
 public:
@@ -59,6 +58,7 @@ public:
   int16_t targetValue;
   uint64_t timeLastChanged;
   bool wasMoving = false;
+  uint32_t stepRemainder = 0;
   int RAM_FUNC(effectiveStepValue)() const {
     return (*stepValue <= 0) ? 1 : *stepValue;
   }
@@ -100,64 +100,43 @@ public:
       }
     }
   }
-  bool RAM_FUNC(updateValue)(uint64_t givenTime) {
-    int16_t temp = targetValue - curValue;
-    if (temp == 0) {
-      wasMoving = false;
-      return false;
-    }
-
-    uint64_t interval = updateIntervalMicros();
-    uint8_t stepsToApply = 1;
-    if (wasMoving) {
-      uint64_t elapsed = givenTime - timeLastChanged;
-      uint64_t elapsedIntervals = elapsed / interval;
-      if (elapsedIntervals == 0) {
-        return false;
-      }
-      stepsToApply = static_cast<uint8_t>(
-        std::min<uint64_t>(elapsedIntervals, WHEEL_MAX_CATCHUP_STEPS)
-      );
-      timeLastChanged += elapsedIntervals * interval;
-    } else {
-      wasMoving = true;
-      timeLastChanged = givenTime;
-    }
-
-    int step = effectiveStepValue();
-    for (uint8_t i = 0; i < stepsToApply; ++i) {
-      temp = targetValue - curValue;
-      if (temp == 0) {
-        wasMoving = false;
-        break;
-      }
-      if (abs(temp) < step) {
-        curValue = targetValue;
-      } else {
-        curValue = curValue + (step * (temp / abs(temp)));
-      }
-    }
-    if (curValue == targetValue) {
-      wasMoving = false;
-    }
-    return true;
-  }
-
-  bool RAM_FUNC(updateValueAtSteadyRate)(uint64_t givenTime,
-                                         uint64_t intervalMicros,
-                                         int requestedStep) {
+  bool RAM_FUNC(updateValue)(uint64_t givenTime,
+                             uint64_t outputIntervalMicros) {
     int16_t remaining = targetValue - curValue;
     if (remaining == 0) {
       wasMoving = false;
+      stepRemainder = 0;
       return false;
     }
-    if (wasMoving && (givenTime - timeLastChanged) < intervalMicros) {
+    if (wasMoving && (givenTime - timeLastChanged) < outputIntervalMicros) {
       return false;
     }
 
-    wasMoving = true;
+    if (!wasMoving) {
+      stepRemainder = 0;
+    }
     timeLastChanged = givenTime;
-    int step = std::max(requestedStep, 1);
+    wasMoving = true;
+
+    const int configuredStep = effectiveStepValue();
+    const int fullSpan = static_cast<int>(maxValue) - static_cast<int>(minValue);
+    if (configuredStep >= fullSpan) {
+      curValue = targetValue;
+      wasMoving = false;
+      stepRemainder = 0;
+      return true;
+    }
+
+    const uint64_t configuredInterval = updateIntervalMicros();
+    const uint64_t scaledStep =
+      static_cast<uint64_t>(configuredStep) * outputIntervalMicros
+      + stepRemainder;
+    const int step = static_cast<int>(scaledStep / configuredInterval);
+    stepRemainder = static_cast<uint32_t>(scaledStep % configuredInterval);
+    if (step == 0) {
+      return false;
+    }
+
     if (abs(remaining) < step) {
       curValue = targetValue;
     } else {
@@ -165,6 +144,7 @@ public:
     }
     if (curValue == targetValue) {
       wasMoving = false;
+      stepRemainder = 0;
     }
     return true;
   }

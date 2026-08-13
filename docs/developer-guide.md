@@ -306,12 +306,15 @@ accepted only when the preceding display frame has completed. The Core 1 rotary
 decoder retains one pending direction while a frame is in flight, matching the
 former blocking display behavior without blocking note, MIDI, or audio work.
 
-Command-wheel values are elapsed-time based and cap catch-up work. Their overlay
-redraws at 20 Hz, or 10 Hz with the compact note badge, without extending the
-menu wake timer. Pitch-bend output is the exception to catch-up: it advances one
-scaled step every 10 ms while moving, never compresses missed samples into a
-larger jump, and preserves approximately the same travel time for each saved
-wheel-speed choice.
+Dynamic display content—including played notes, command-wheel overlays, and
+preset-sync progress—shares a 20 Hz maximum presentation cadence. Each producer
+retains its latest state between frames; initial screens and transfer completion
+remain immediate. Command-wheel values are elapsed-time based and cap catch-up
+work without extending the menu wake timer. Velocity, modulation, and pitch
+bend share one steady 10 ms motion scheduler. A fractional step accumulator
+preserves approximately the same travel time for each saved speed choice,
+including sub-step rates, without compressing missed updates into catch-up
+jumps.
 
 ## MIDI And Tuning
 
