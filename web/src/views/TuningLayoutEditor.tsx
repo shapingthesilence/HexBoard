@@ -1343,7 +1343,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const [bundleItemOrderDialog, setBundleItemOrderDialog] = useState<BundleItemOrderDialogState | null>(null);
   const bundleInputRef = useRef<HTMLInputElement>(null);
   const scalaInputRef = useRef<HTMLInputElement>(null);
-  const keyLabelsInputRef = useRef<HTMLInputElement>(null);
+  const keyLabelsInputRef = useRef<HTMLTextAreaElement>(null);
   const includedDegreesInputRef = useRef<HTMLInputElement>(null);
   const paintStrokeActiveRef = useRef(false);
   const paintStrokeHistoryRef = useRef<PaintStrokeHistoryStart | null>(null);
@@ -1868,12 +1868,6 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       return;
     }
     commitIncludedDegrees(input.value);
-  }
-
-  function commitKeyLabelsOnKey(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter" || event.key === "Tab") {
-      commitKeyLabels(event.currentTarget.value);
-    }
   }
 
   function commitIncludedDegreesOnKey(event: KeyboardEvent<HTMLInputElement>) {
@@ -3128,7 +3122,6 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 setKeyLabelsDraft(text);
                 setKeyLabelsError("");
               }}
-              onKeyLabelsKeyDown={commitKeyLabelsOnKey}
             />
           </section>
         ) : null}
@@ -4238,10 +4231,9 @@ interface TuningControlsProps {
   onImportScala: () => void;
   keyLabelsDraft: string;
   keyLabelsError: string;
-  keyLabelsInputRef: RefObject<HTMLInputElement | null>;
+  keyLabelsInputRef: RefObject<HTMLTextAreaElement | null>;
   onKeyLabelsBlur: (text: string) => void;
   onKeyLabelsChange: (text: string) => void;
-  onKeyLabelsKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
 }
 
 function TuningControls({
@@ -4254,8 +4246,7 @@ function TuningControls({
   keyLabelsError,
   keyLabelsInputRef,
   onKeyLabelsBlur,
-  onKeyLabelsChange,
-  onKeyLabelsKeyDown
+  onKeyLabelsChange
 }: TuningControlsProps) {
   if (tuning.kind === "edo") {
     const stepCents = Math.fround(Math.fround(tuning.periodCents) / Math.max(1, tuning.edoDivisions));
@@ -4277,14 +4268,15 @@ function TuningControls({
         </label>
         <label className={keyLabelsError ? "field invalidField" : "field"}>
           <span>Note labels</span>
-          <input
+          <textarea
             aria-invalid={keyLabelsError ? "true" : "false"}
             onBlurCapture={(event) => onKeyLabelsBlur(event.target.value)}
             onChange={(event) => onKeyLabelsChange(event.target.value)}
-            onKeyDown={onKeyLabelsKeyDown}
             ref={keyLabelsInputRef}
+            rows={5}
             value={keyLabelsDraft}
           />
+          <small className="muted">Separate labels with commas, spaces, or line breaks. Invalid labels use their note numbers.</small>
           {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
         </label>
       </div>
@@ -4314,14 +4306,15 @@ function TuningControls({
         </label>
         <label className={keyLabelsError ? "field invalidField" : "field"}>
           <span>Note labels</span>
-          <input
+          <textarea
             aria-invalid={keyLabelsError ? "true" : "false"}
             onBlurCapture={(event) => onKeyLabelsBlur(event.target.value)}
             onChange={(event) => onKeyLabelsChange(event.target.value)}
-            onKeyDown={onKeyLabelsKeyDown}
             ref={keyLabelsInputRef}
+            rows={5}
             value={keyLabelsDraft}
           />
+          <small className="muted">Separate labels with commas, spaces, or line breaks. Invalid labels use their note numbers.</small>
           {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
         </label>
       </div>
@@ -4349,14 +4342,15 @@ function TuningControls({
       </label>
       <label className={keyLabelsError ? "field invalidField" : "field"}>
         <span>Note labels</span>
-        <input
+        <textarea
           aria-invalid={keyLabelsError ? "true" : "false"}
           onBlurCapture={(event) => onKeyLabelsBlur(event.target.value)}
           onChange={(event) => onKeyLabelsChange(event.target.value)}
-          onKeyDown={onKeyLabelsKeyDown}
           ref={keyLabelsInputRef}
+          rows={5}
           value={keyLabelsDraft}
         />
+        <small className="muted">Separate labels with commas, spaces, or line breaks. Invalid labels use their note numbers.</small>
         {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
       </label>
     </div>
