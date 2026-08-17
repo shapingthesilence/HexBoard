@@ -2963,10 +2963,12 @@ function LibrarySpacePanel({
   onExport,
   onErase
 }: LibrarySpacePanelProps) {
+  const [expanded, setExpanded] = useState(true);
   const isDropTarget = draggedPreset !== null;
   const visiblePresets = selectedFolder
     ? presets.filter((preset) => preset.folderPath === selectedFolder)
     : presets;
+  const contentId = `preset-library-${space}-content`;
 
   return (
     <section
@@ -2982,79 +2984,96 @@ function LibrarySpacePanel({
           <h3>{title}</h3>
           <span className="muted">{subtitle}</span>
         </div>
-        <span className="countBadge">{visiblePresets.length}</span>
-      </div>
-
-      <div className="folderTargets">
-        <button
-          className={selectedFolder === null ? "folderTarget systemFolderTarget active" : "folderTarget systemFolderTarget"}
-          type="button"
-          aria-pressed={selectedFolder === null}
-          onClick={() => onFolderSelect(space, null)}
-        >
-          <span>All</span>
-          <span>{presets.length}</span>
-        </button>
-        {folders.map((folder) => (
+        <div className="librarySpaceHeaderActions">
+          <span className="countBadge">{visiblePresets.length}</span>
           <button
-            className={`folderTarget${folder === rootFolderPath ? " systemFolderTarget" : ""}${folder === selectedFolder ? " active" : ""}`}
-            key={`${space}-${folder}`}
+            aria-controls={contentId}
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${title}`}
+            className="iconButton librarySpaceToggle"
+            title={`${expanded ? "Collapse" : "Expand"} ${title}`}
             type="button"
-            aria-pressed={folder === selectedFolder}
-            onClick={() => onFolderSelect(space, folder)}
-            onDragOver={onAllowDrop}
-            onDrop={(event) => {
-              event.preventDefault();
-              onDrop(space, folder);
-            }}
+            onClick={() => setExpanded((current) => !current)}
           >
-            <span>{folderLabel(folder)}</span>
-            <span>{presets.filter((preset) => preset.folderPath === folder).length}</span>
+            {expanded ? "−" : "+"}
           </button>
-        ))}
+        </div>
       </div>
 
-      <ul className="list">
-        {visiblePresets.length === 0 ? (
-          <li className="emptyListItem">{selectedFolder ? `No presets in ${folderLabel(selectedFolder)}` : "No presets"}</li>
-        ) : (
-          visiblePresets.map((item) => (
-            <li
-              className="listItem presetListItem"
-              draggable
-              key={`${space}-${item.objectIdHex}`}
-              onDragStart={(event) => onDragStart(space, item.objectIdHex, event)}
-              onDragEnd={onDragEnd}
+      {expanded ? (
+        <div className="librarySpaceContent" id={contentId}>
+          <div className="folderTargets">
+            <button
+              className={selectedFolder === null ? "folderTarget systemFolderTarget active" : "folderTarget systemFolderTarget"}
+              type="button"
+              aria-pressed={selectedFolder === null}
+              onClick={() => onFolderSelect(space, null)}
             >
-              <div className="presetMeta">
-                <strong>{item.name}</strong>
-                <span>{folderLabel(item.folderPath)}</span>
-                <span>{item.objectIdHex.slice(0, 8).toUpperCase()}</span>
-              </div>
-              <div className="presetActions">
-                <button type="button" onClick={() => onOpen(space, item)}>
-                  Open
-                </button>
-                {space === "computer" ? (
-                  <button type="button" title="Copy preset to HexBoard" aria-label="Copy preset to HexBoard" onClick={() => onUpload(item)}>
-                    → HexBoard
-                  </button>
-                ) : (
-                  <button type="button" title="Copy preset to Browser Library" aria-label="Copy preset to Browser Library" onClick={() => onDownload(item)}>
-                    → Browser
-                  </button>
-                )}
-                <button type="button" onClick={() => onExport(item)}>
-                  Export
-                </button>
-                <button className="warning" type="button" onClick={() => onErase(space, item)}>
-                  Erase
-                </button>
-              </div>
-            </li>
-          ))
-        )}
-      </ul>
+              <span>All</span>
+              <span>{presets.length}</span>
+            </button>
+            {folders.map((folder) => (
+              <button
+                className={`folderTarget${folder === rootFolderPath ? " systemFolderTarget" : ""}${folder === selectedFolder ? " active" : ""}`}
+                key={`${space}-${folder}`}
+                type="button"
+                aria-pressed={folder === selectedFolder}
+                onClick={() => onFolderSelect(space, folder)}
+                onDragOver={onAllowDrop}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  onDrop(space, folder);
+                }}
+              >
+                <span>{folderLabel(folder)}</span>
+                <span>{presets.filter((preset) => preset.folderPath === folder).length}</span>
+              </button>
+            ))}
+          </div>
+
+          <ul className="list">
+            {visiblePresets.length === 0 ? (
+              <li className="emptyListItem">{selectedFolder ? `No presets in ${folderLabel(selectedFolder)}` : "No presets"}</li>
+            ) : (
+              visiblePresets.map((item) => (
+                <li
+                  className="listItem presetListItem"
+                  draggable
+                  key={`${space}-${item.objectIdHex}`}
+                  onDragStart={(event) => onDragStart(space, item.objectIdHex, event)}
+                  onDragEnd={onDragEnd}
+                >
+                  <div className="presetMeta">
+                    <strong>{item.name}</strong>
+                    <span>{folderLabel(item.folderPath)}</span>
+                    <span>{item.objectIdHex.slice(0, 8).toUpperCase()}</span>
+                  </div>
+                  <div className="presetActions">
+                    <button type="button" onClick={() => onOpen(space, item)}>
+                      Open
+                    </button>
+                    {space === "computer" ? (
+                      <button type="button" title="Copy preset to HexBoard" aria-label="Copy preset to HexBoard" onClick={() => onUpload(item)}>
+                        → HexBoard
+                      </button>
+                    ) : (
+                      <button type="button" title="Copy preset to Browser Library" aria-label="Copy preset to Browser Library" onClick={() => onDownload(item)}>
+                        → Browser
+                      </button>
+                    )}
+                    <button type="button" onClick={() => onExport(item)}>
+                      Export
+                    </button>
+                    <button className="warning" type="button" onClick={() => onErase(space, item)}>
+                      Erase
+                    </button>
+                  </div>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      ) : null}
     </section>
   );
 }

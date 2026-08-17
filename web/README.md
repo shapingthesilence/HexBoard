@@ -160,7 +160,8 @@ and `TRANSFER_END` so firmware can pace object transfers.
   refreshes device storage.
 - Synth preset library areas named `Browser Library` for browser-saved/imported
   presets and `HexBoard Library` for device-side presets loaded through SysEx,
-  including persistent computer folders with explicit create/delete controls,
+  with independently collapsible library panels,
+  including persistent browser folders with explicit create/delete controls,
   `All` and `Root` system filters, drag-and-drop folder moves, library copy
   actions, device refresh, JSON import, JSON export, open, and erase controls.
   Device preset listing uses

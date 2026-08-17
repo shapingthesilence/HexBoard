@@ -1772,6 +1772,22 @@ textarea {
   margin: 0 0 2px;
 }
 
+.librarySpaceHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.librarySpaceToggle {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.librarySpaceContent {
+  display: grid;
+  gap: 10px;
+}
+
 .countBadge {
   display: inline-grid;
   place-items: center;
