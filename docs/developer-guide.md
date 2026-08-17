@@ -219,12 +219,15 @@ non-synth setting bytes, stable tuning/layout/scale references, compact synth
 preset-or-draft references, and payload CRC32. Synth values and wavetable
 references come from the referenced named preset or hidden profile draft.
 
-`CURRENT_SETTINGS_VERSION` is 28. Firmware accepts only that version and exact
+`CURRENT_SETTINGS_VERSION` is 29. Firmware accepts only that version and exact
 payload size. Invalid or missing settings use hardware-aware RAM defaults and
 are written only by normal save behavior.
 
 The selected key offset is a signed 16-bit value stored in the
-`CurrentKeyStepsFromA` low byte and `CurrentKeyStepsFromAHigh` high byte.
+`CurrentKeyStepsFromA` low byte and `CurrentKeyStepsFromAHigh` high byte. For
+compiled legacy tunings the signed value retains its historical steps-from-A
+meaning; for user geometry the same signed storage holds the direct selected
+key degree.
 
 `SettingKeys.inc.h` is the ordered source for `SettingKey` and
 `factoryDefaults`. The factory generator reads the same key order plus
@@ -408,7 +411,7 @@ catalog, and MIDI helpers live under `web/src/protocol/`,
 ## Edit Recipes
 
 Factory tuning, layout, and scale changes start in a web-compatible
-`hexboard.tuningBundle.v1` tuning bundle under
+`hexboard.tuningBundle.v2` tuning bundle under
 `factory-library/geometry/`. Run the generator, validate linked IDs and virtual
 browser filtering, then test pitch, MPE, synth, labels, mirrors/rotation, and LED
 behavior as applicable.
@@ -416,6 +419,13 @@ behavior as applicable.
 Preset-sync object changes require synchronized firmware validation and
 capabilities, `docs/preset-sync-sysex.md`, web protocol/catalog/mock transport,
 and real-device list/read/write/apply/delete/abort testing.
+
+User tunings store labels in direct tuning-degree order. `ReferenceDegree`
+identifies the degree assigned the reference MIDI note and frequency, while
+`DefaultKeyDegree` identifies the initial scale key. User-geometry pitch,
+label, scale, and key selection use those explicit degrees without deriving an
+A/C offset from cycle length. Version 1 bundle import and tuning objects without
+`ReferenceDegree` use the former mapping only as a compatibility conversion.
 
 ## Verification
 

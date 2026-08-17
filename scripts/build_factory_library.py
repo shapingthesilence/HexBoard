@@ -75,6 +75,8 @@ COMMON_TLV_FOLDER_PATH = 0x06
 
 TUNING_TLV_KIND = 0x20
 TUNING_TLV_DIVISIONS = 0x21
+TUNING_TLV_REFERENCE_DEGREE = 0x22
+TUNING_TLV_DEFAULT_KEY_DEGREE = 0x23
 TUNING_TLV_REFERENCE_MIDI_NOTE = 0x24
 TUNING_TLV_KEY_LABELS = 0x28
 TUNING_TLV_PERIOD_CENTS_FLOAT32 = 0x29
@@ -102,7 +104,7 @@ USER_SCALE_TLV_ROOT_DEGREE = 0x22
 USER_SCALE_TLV_PATTERN_STEPS = 0x23
 USER_SCALE_TLV_INCLUDED_DEGREES = 0x24
 
-TUNING_BUNDLE_FORMAT = "hexboard.tuningBundle.v1"
+TUNING_BUNDLE_FORMAT = "hexboard.tuningBundle.v2"
 
 SETTING_KEYS = source_setting_keys()
 
@@ -283,11 +285,6 @@ def geometry_catalog_record(
     )
 
 
-def key_labels_for_tlv(labels: list[str], cycle_length: int) -> list[str]:
-    span_c_to_a = -((cycle_length * 9 + 6) // 12)
-    return [labels[(span_c_to_a + c_index) % cycle_length] for c_index in range(cycle_length)]
-
-
 def encode_key_labels(labels: list[str]) -> bytes:
     output = bytearray()
     for label in labels:
@@ -311,6 +308,8 @@ def parse_geometry_tuning(
     if kind not in ("edo", "equal-step"):
         raise fail(path, "geometry tuning", "factory tunings must use kind 'edo' or 'equal-step'")
     name = geometry_text(source.get("name"), path, "tuning.name")
+    reference_degree = geometry_int(source.get("referenceDegree"), path, "referenceDegree", 0, cycle_length - 1)
+    default_key_degree = geometry_int(source.get("defaultKeyDegree", 0), path, "defaultKeyDegree", 0, cycle_length - 1)
     reference_midi_note = geometry_int(source.get("referenceMidiNote", 69), path, "referenceMidiNote", 0, 127)
     reference_hz = f32(geometry_number(source.get("referenceHz", 440.0), path, "referenceHz", 0.000001))
     labels_source = source.get("keyLabels")
@@ -335,9 +334,11 @@ def parse_geometry_tuning(
     records = [
         geometry_tlv(TUNING_TLV_KIND, bytes([tuning_kind])),
         geometry_tlv(TUNING_TLV_DIVISIONS, struct.pack("<H", cycle_length)),
+        geometry_tlv(TUNING_TLV_REFERENCE_DEGREE, struct.pack("<H", reference_degree)),
+        geometry_tlv(TUNING_TLV_DEFAULT_KEY_DEGREE, struct.pack("<H", default_key_degree)),
         geometry_tlv(TUNING_TLV_REFERENCE_MIDI_NOTE, bytes([reference_midi_note])),
         geometry_tlv(TUNING_TLV_REFERENCE_HZ_FLOAT32, struct.pack("<f", reference_hz)),
-        geometry_tlv(TUNING_TLV_KEY_LABELS, encode_key_labels(key_labels_for_tlv(labels, cycle_length))),
+        geometry_tlv(TUNING_TLV_KEY_LABELS, encode_key_labels(labels)),
     ]
     records.append(
         geometry_tlv(

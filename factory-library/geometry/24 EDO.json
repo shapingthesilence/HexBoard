@@ -1,5 +1,5 @@
 {
-  "format": "hexboard.tuningBundle.v1",
+  "format": "hexboard.tuningBundle.v2",
   "tuningBundle": {
     "objectIdHex": "a78e4e6615fbd7648a9cbb27e9ab2411",
     "folderPath": "/",
@@ -8,14 +8,8 @@
       "name": "24 EDO",
       "cycleLength": 24,
       "referenceMidiNote": 69,
-      "referenceHz": 440.0,
+      "referenceHz": 440,
       "keyLabels": [
-        "A",
-        "A+",
-        "Bb",
-        "Bd",
-        "B",
-        "Cd",
         "C",
         "C+",
         "C#",
@@ -33,10 +27,18 @@
         "G",
         "G+",
         "G#",
-        "Ad"
+        "Ad",
+        "A",
+        "A+",
+        "Bb",
+        "Bd",
+        "B",
+        "Cd"
       ],
       "edoDivisions": 24,
-      "periodCents": 1200.0
+      "periodCents": 1200,
+      "referenceDegree": 18,
+      "defaultKeyDegree": 0
     },
     "palette": {
       "defaultColorMode": 1,

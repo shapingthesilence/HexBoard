@@ -18,7 +18,8 @@ import type { EncodedCatalogObject, LayoutsDatCatalog, ObjectReferenceInput } fr
 import { deterministicObjectId, objectIdFromHex, objectIdToHex } from "./objectId.ts";
 import { crc32 } from "../protocol/crc32.ts";
 
-export const TuningBundleFileFormat = "hexboard.tuningBundle.v1";
+export const TuningBundleFileFormat = "hexboard.tuningBundle.v2";
+export const LegacyTuningBundleFileFormat = "hexboard.tuningBundle.v1";
 export const LegacyLayoutBundleFileFormat = "hexboard.layoutBundle.v5";
 export const GeometryBundleFileVersion = 3;
 export const GeometryObjectSchemaVersion = 2;
@@ -82,6 +83,8 @@ export type ButtonMapRoleName = "unused" | "note" | "command";
 export const TuningTlv = {
   TuningKind: 0x20,
   EdoDivisions: 0x21,
+  ReferenceDegree: 0x22,
+  DefaultKeyDegree: 0x23,
   ReferenceMidiNote: 0x24,
   RatioTable: 0x27,
   KeyLabels: 0x28,
@@ -154,20 +157,14 @@ export const ChordPitchMode = {
   MidiSemitones: 1
 } as const;
 
-const cOrderedDefaultKeyLabels: Partial<Record<number, string[]>> = {
-  12: ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"],
-  17: ["C", "Db", "C#", "D", "Eb", "D#", "E", "F", "Gb", "F#", "G", "Ab", "G#", "A", "Bb", "A#", "B"],
-  19: ["C", "C#", "Db", "D", "D#", "Eb", "E", "E#", "F", "F#", "Gb", "G", "G#", "Ab", "A", "A#", "Bb", "B", "Cb"],
-  24: ["C", "C+", "C#", "Dd", "D", "D+", "Eb", "Ed", "E", "E+", "F", "F+", "F#", "Gd", "G", "G+", "G#", "Ad", "A", "A+", "Bb", "Bd", "B", "Cd"],
-  31: ["C", "C+", "C#", "Db", "Dd", "D", "D+", "D#", "Eb", "Ed", "E", "E+", "Fd", "F", "F+", "F#", "Gb", "Gd", "G", "G+", "G#", "Ab", "Ad", "A", "A+", "A#", "Bb", "Bd", "B", "B+", "Cd"]
-};
-
 export interface GeneratedEdoTuningInput {
   objectId: Uint8Array;
   name: string;
   folderPath?: string;
   edoDivisions: number;
   periodCents?: number;
+  referenceDegree?: number;
+  defaultKeyDegree?: number;
   referenceMidiNote?: number;
   referenceHz?: number;
   keyLabels?: string[];
@@ -179,6 +176,8 @@ export interface EqualStepTuningInput {
   folderPath?: string;
   stepCents?: number;
   cycleLength: number;
+  referenceDegree?: number;
+  defaultKeyDegree?: number;
   referenceMidiNote?: number;
   referenceHz?: number;
   keyLabels?: string[];
@@ -189,6 +188,8 @@ export interface CentsTableTuningInput {
   name: string;
   folderPath?: string;
   cents: number[];
+  referenceDegree?: number;
+  defaultKeyDegree?: number;
   referenceMidiNote?: number;
   referenceHz?: number;
   keyLabels?: string[];
@@ -322,6 +323,8 @@ export type TuningBundleTuning =
       edoDivisions: number;
       periodCents: number;
       cycleLength: number;
+      referenceDegree: number;
+      defaultKeyDegree: number;
       referenceMidiNote: number;
       referenceHz: number;
       keyLabels: string[];
@@ -331,6 +334,8 @@ export type TuningBundleTuning =
       name: string;
       stepCents: number;
       cycleLength: number;
+      referenceDegree: number;
+      defaultKeyDegree: number;
       referenceMidiNote: number;
       referenceHz: number;
       keyLabels: string[];
@@ -342,6 +347,8 @@ export type TuningBundleTuning =
       cents: number[];
       periodCents: number;
       cycleLength: number;
+      referenceDegree: number;
+      defaultKeyDegree: number;
       referenceMidiNote: number;
       referenceHz: number;
       keyLabels: string[];
@@ -510,6 +517,8 @@ export function createGeneratedEdoTuning(input: GeneratedEdoTuningInput): Encode
     records: [
       tlvU8(TuningTlv.TuningKind, UserTuningKind.Edo),
       tlvU16LE(TuningTlv.EdoDivisions, input.edoDivisions),
+      tlvU16LE(TuningTlv.ReferenceDegree, clampInteger(input.referenceDegree ?? 0, 0, input.edoDivisions - 1)),
+      tlvU16LE(TuningTlv.DefaultKeyDegree, clampInteger(input.defaultKeyDegree ?? 0, 0, input.edoDivisions - 1)),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
       tlvFloat32LE(TuningTlv.PeriodCentsFloat32, periodCents),
       tlvFloat32LE(TuningTlv.ReferenceHzFloat32, referenceHz),
@@ -530,6 +539,8 @@ export function createEqualStepTuning(input: EqualStepTuningInput): EncodedCatal
     records: [
       tlvU8(TuningTlv.TuningKind, UserTuningKind.EqualStep),
       tlvU16LE(TuningTlv.EdoDivisions, input.cycleLength),
+      tlvU16LE(TuningTlv.ReferenceDegree, clampInteger(input.referenceDegree ?? 0, 0, input.cycleLength - 1)),
+      tlvU16LE(TuningTlv.DefaultKeyDegree, clampInteger(input.defaultKeyDegree ?? 0, 0, input.cycleLength - 1)),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
       tlvFloat32LE(TuningTlv.StepCentsFloat32, stepCents),
       tlvFloat32LE(TuningTlv.ReferenceHzFloat32, referenceHz),
@@ -552,6 +563,8 @@ export function createCentsTableTuning(input: CentsTableTuningInput): EncodedCat
     records: [
       tlvU8(TuningTlv.TuningKind, UserTuningKind.CentsList),
       tlvU16LE(TuningTlv.EdoDivisions, input.cents.length),
+      tlvU16LE(TuningTlv.ReferenceDegree, clampInteger(input.referenceDegree ?? 0, 0, cycleLength - 1)),
+      tlvU16LE(TuningTlv.DefaultKeyDegree, clampInteger(input.defaultKeyDegree ?? 0, 0, cycleLength - 1)),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
       tlvFloat32LE(TuningTlv.ReferenceHzFloat32, referenceHz),
       ...optionalKeyLabelRecord(input.keyLabels, cycleLength),
@@ -756,21 +769,6 @@ function roleNameToByte(role: ButtonMapRoleName): number {
   }
 }
 
-export function defaultSpanCtoA(cycleLength: number): number {
-  const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  return -Math.floor(((safeCycleLength * 9) + 6) / 12);
-}
-
-export function keyLabelIndexFromStepsFromC(stepsFromC: number, cycleLength: number): number {
-  return positiveModulo(stepsFromC + defaultSpanCtoA(cycleLength), cycleLength);
-}
-
-export function referenceStepsFromC(cycleLength: number, referenceMidiNote: number): number {
-  const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  const safeReferenceMidiNote = clampInteger(referenceMidiNote, 0, 127);
-  return Math.round((safeCycleLength * (safeReferenceMidiNote - 60)) / 12);
-}
-
 export function midiNoteToFrequency(midiNote: number): number {
   const safeMidiNote = clampInteger(midiNote, 0, 127);
   return 440 * (2 ** ((safeMidiNote - 69) / 12));
@@ -778,11 +776,7 @@ export function midiNoteToFrequency(midiNote: number): number {
 
 export function defaultKeyLabels(cycleLength: number): string[] {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  const cOrderedLabels = cOrderedDefaultKeyLabels[safeCycleLength];
-  if (!cOrderedLabels) {
-    return Array.from({ length: safeCycleLength }, (_, degree) => degree === 0 ? "A" : `A+${degree}`);
-  }
-  return keyLabelsFromTlvOrder(cOrderedLabels, safeCycleLength);
+  return Array.from({ length: safeCycleLength }, (_, degree) => String(degree));
 }
 
 export function normalizeKeyLabels(labels: string[] | undefined, cycleLength: number): string[] {
@@ -793,7 +787,7 @@ export function normalizeKeyLabels(labels: string[] | undefined, cycleLength: nu
   });
 }
 
-export function keyLabelsFromScalaIntervalLabels(cycleLength: number, intervalLabels: Array<string | undefined>, referenceMidiNote = 60): string[] {
+export function keyLabelsFromScalaIntervalLabels(cycleLength: number, intervalLabels: Array<string | undefined>, referenceDegree = 0): string[] {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
   const defaults = defaultKeyLabels(safeCycleLength);
   if (!intervalLabels.some((label) => label?.trim())) {
@@ -801,33 +795,17 @@ export function keyLabelsFromScalaIntervalLabels(cycleLength: number, intervalLa
   }
 
   const labels = [...defaults];
-  const referenceStep = referenceStepsFromC(safeCycleLength, referenceMidiNote);
+  const safeReferenceDegree = clampInteger(referenceDegree, 0, safeCycleLength - 1);
   const rootLabel = intervalLabels[safeCycleLength - 1]?.trim() || "1/1";
   for (let degree = 0; degree < safeCycleLength; degree += 1) {
     const sourceLabel = degree === 0 ? rootLabel : intervalLabels[degree - 1]?.trim();
     if (!sourceLabel) {
       continue;
     }
-    const labelIndex = keyLabelIndexFromStepsFromC(referenceStep + degree, safeCycleLength);
+    const labelIndex = positiveModulo(safeReferenceDegree + degree, safeCycleLength);
     labels[labelIndex] = clampNoteLabelText(sourceLabel, defaults[labelIndex]);
   }
   return normalizeKeyLabels(labels, safeCycleLength);
-}
-
-export function keyLabelsForTlvOrder(labels: string[], cycleLength: number): string[] {
-  const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  const normalized = normalizeKeyLabels(labels, safeCycleLength);
-  const spanCtoA = defaultSpanCtoA(safeCycleLength);
-  return Array.from({ length: safeCycleLength }, (_, cIndex) => normalized[positiveModulo(spanCtoA + cIndex, safeCycleLength)]);
-}
-
-export function keyLabelsFromTlvOrder(labels: string[], cycleLength: number): string[] {
-  const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  const spanCtoA = defaultSpanCtoA(safeCycleLength);
-  return Array.from({ length: safeCycleLength }, (_, aIndex) => {
-    const cIndex = positiveModulo(aIndex - spanCtoA, safeCycleLength);
-    return labels[cIndex]?.trim() || (aIndex === 0 ? "A" : `A+${aIndex}`);
-  }).map((label, index) => clampNoteLabelText(label, index === 0 ? "A" : `A+${index}`));
 }
 
 function encodeKeyLabels(labels: string[]): Uint8Array {
@@ -842,11 +820,10 @@ function encodeKeyLabels(labels: string[]): Uint8Array {
 function optionalKeyLabelRecord(labels: string[] | undefined, cycleLength: number): TlvRecord[] {
   const defaults = defaultKeyLabels(cycleLength);
   const normalized = normalizeKeyLabels(labels, cycleLength);
-  if (!cOrderedDefaultKeyLabels[cycleLength]
-      && normalized.every((label, index) => label === defaults[index])) {
+  if (normalized.every((label, index) => label === defaults[index])) {
     return [];
   }
-  return [tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(normalized, cycleLength)))];
+  return [tlv(TuningTlv.KeyLabels, encodeKeyLabels(normalized))];
 }
 
 function equalStepPeriodCents(tuning: Extract<TuningBundleTuning, { kind: "equal-step" }>): number {
@@ -1112,11 +1089,13 @@ export function resolveTuningBundleButtonColor(input: {
   degreeColors: ScaleDegreeColor[];
   cycleLength: number;
   stepsFromC: number;
+  keyDegree?: number;
   defaultColorMode?: number;
   periodCents?: number;
   override?: TuningBundleButtonOverride;
 }): ResolvedTuningBundleColor {
-  const degree = positiveModulo(input.stepsFromC, input.cycleLength);
+  const colorStepsFromKey = input.stepsFromC - (input.keyDegree ?? 0);
+  const degree = positiveModulo(colorStepsFromKey, input.cycleLength);
   const mode = input.defaultColorMode ?? ColorMode.Custom;
   if (
     mode === ColorMode.Custom &&
@@ -1145,7 +1124,7 @@ export function resolveTuningBundleButtonColor(input: {
       cycleLength: input.cycleLength,
       degree,
       periodCents: input.periodCents,
-      stepsFromC: input.stepsFromC
+      stepsFromC: colorStepsFromKey
     }),
     colorSource: "degree"
   };
@@ -1164,6 +1143,8 @@ export function createDefaultTuningBundle(): TuningBundle {
       edoDivisions: 19,
       periodCents: 1200,
       cycleLength: 19,
+      referenceDegree: 14,
+      defaultKeyDegree: 0,
       referenceMidiNote: 69,
       referenceHz: 440,
       keyLabels: defaultKeyLabels(19)
@@ -1203,6 +1184,8 @@ export function encodeTuningBundle(bundle: TuningBundle): EncodedTuningBundle {
           folderPath,
           edoDivisions: bundle.tuning.edoDivisions,
           periodCents: bundle.tuning.periodCents,
+          referenceDegree: bundle.tuning.referenceDegree,
+          defaultKeyDegree: bundle.tuning.defaultKeyDegree,
           referenceMidiNote: bundle.tuning.referenceMidiNote,
           referenceHz: bundle.tuning.referenceHz,
           keyLabels: bundle.tuning.keyLabels
@@ -1214,6 +1197,8 @@ export function encodeTuningBundle(bundle: TuningBundle): EncodedTuningBundle {
           folderPath,
           stepCents: bundle.tuning.stepCents,
           cycleLength: bundle.tuning.cycleLength,
+          referenceDegree: bundle.tuning.referenceDegree,
+          defaultKeyDegree: bundle.tuning.defaultKeyDegree,
           referenceMidiNote: bundle.tuning.referenceMidiNote,
           referenceHz: bundle.tuning.referenceHz,
           keyLabels: bundle.tuning.keyLabels
@@ -1224,6 +1209,8 @@ export function encodeTuningBundle(bundle: TuningBundle): EncodedTuningBundle {
           name: tuningName,
           folderPath,
           cents: bundle.tuning.cents,
+          referenceDegree: bundle.tuning.referenceDegree,
+          defaultKeyDegree: bundle.tuning.defaultKeyDegree,
           referenceMidiNote: bundle.tuning.referenceMidiNote,
           referenceHz: bundle.tuning.referenceHz,
           keyLabels: bundle.tuning.keyLabels
@@ -1318,8 +1305,11 @@ export function parseTuningBundleFile(value: unknown): TuningBundle {
   if (record.format === TuningBundleFileFormat && typeof record.tuningBundle === "object" && record.tuningBundle !== null) {
     return normalizeTuningBundle(record.tuningBundle);
   }
+  if (record.format === LegacyTuningBundleFileFormat && typeof record.tuningBundle === "object" && record.tuningBundle !== null) {
+    return normalizeTuningBundle(record.tuningBundle, true);
+  }
   if (record.format === LegacyLayoutBundleFileFormat && typeof record.bundle === "object" && record.bundle !== null) {
-    return normalizeTuningBundle(record.bundle);
+    return normalizeTuningBundle(record.bundle, true);
   }
   throw new Error("Unsupported tuning bundle file");
 }
@@ -1328,7 +1318,12 @@ export function parseTuningBundleLibrary(value: unknown): TuningBundle[] {
   if (!Array.isArray(value)) {
     return [createDefaultTuningBundle()];
   }
-  const bundles = value.map((bundle) => normalizeTuningBundle(bundle));
+  const bundles = value.map((bundle) => {
+    const tuning = typeof bundle === "object" && bundle !== null
+      ? (bundle as { tuning?: { referenceDegree?: unknown } }).tuning
+      : undefined;
+    return normalizeTuningBundle(bundle, typeof tuning?.referenceDegree !== "number");
+  });
   return bundles.length > 0 ? bundles : [createDefaultTuningBundle()];
 }
 
@@ -1359,13 +1354,25 @@ export function clampGeometryFolderPath(value: string | undefined): string {
   return firstComponent ? clampGeometryMenuText(firstComponent, "Geometry") : "/";
 }
 
-function normalizeTuningBundleTuning(value: unknown, legacyBundleName?: string): TuningBundleTuning {
+function legacyAFirstLabelsToDegreeOrder(labels: string[] | undefined, cycleLength: number): string[] | undefined {
+  if (!labels) return undefined;
+  const spanCtoA = -Math.floor(((cycleLength * 9) + 6) / 12);
+  return Array.from({ length: cycleLength }, (_, degree) => labels[positiveModulo(spanCtoA + degree, cycleLength)]);
+}
+
+function legacyReferenceDegree(cycleLength: number, referenceMidiNote: number): number {
+  return positiveModulo(Math.round((cycleLength * (referenceMidiNote - 60)) / 12), cycleLength);
+}
+
+function normalizeTuningBundleTuning(value: unknown, legacyBundleName?: string, legacyAFirst = false): TuningBundleTuning {
   const tuning = value as Partial<TuningBundleTuning> & {
     edoDivisions?: unknown;
     stepCents?: unknown;
     periodCents?: unknown;
     cents?: unknown;
     description?: unknown;
+    referenceDegree?: unknown;
+    defaultKeyDegree?: unknown;
     referenceMidiNote?: unknown;
     referenceHz?: unknown;
     keyLabels?: unknown;
@@ -1376,28 +1383,34 @@ function normalizeTuningBundleTuning(value: unknown, legacyBundleName?: string):
 
   if (tuning.kind === "edo") {
     const edoDivisions = clampInteger(numberOr(tuning.edoDivisions, numberOr(tuning.cycleLength, 12)), 1, MaxTuningDivisions);
+    const sourceLabels = Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined;
     return {
       kind: "edo",
       name,
       edoDivisions,
       periodCents: numberOr(tuning.periodCents, 1200),
       cycleLength: edoDivisions,
+      referenceDegree: clampInteger(numberOr(tuning.referenceDegree, legacyAFirst ? legacyReferenceDegree(edoDivisions, referenceMidiNote) : 0), 0, edoDivisions - 1),
+      defaultKeyDegree: clampInteger(numberOr(tuning.defaultKeyDegree, 0), 0, edoDivisions - 1),
       referenceMidiNote,
       referenceHz,
-      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, edoDivisions)
+      keyLabels: normalizeKeyLabels(legacyAFirst ? legacyAFirstLabelsToDegreeOrder(sourceLabels, edoDivisions) : sourceLabels, edoDivisions)
     };
   }
 
   if (tuning.kind === "equal-step") {
     const cycleLength = clampInteger(numberOr(tuning.cycleLength, numberOr(tuning.edoDivisions, 12)), 1, MaxTuningDivisions);
+    const sourceLabels = Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined;
     return {
       kind: "equal-step",
       name,
       stepCents: numberOr(tuning.stepCents, numberOr(tuning.periodCents, 1200) / cycleLength),
       cycleLength,
+      referenceDegree: clampInteger(numberOr(tuning.referenceDegree, legacyAFirst ? legacyReferenceDegree(cycleLength, referenceMidiNote) : 0), 0, cycleLength - 1),
+      defaultKeyDegree: clampInteger(numberOr(tuning.defaultKeyDegree, 0), 0, cycleLength - 1),
       referenceMidiNote,
       referenceHz,
-      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, cycleLength)
+      keyLabels: normalizeKeyLabels(legacyAFirst ? legacyAFirstLabelsToDegreeOrder(sourceLabels, cycleLength) : sourceLabels, cycleLength)
     };
   }
 
@@ -1406,6 +1419,7 @@ function normalizeTuningBundleTuning(value: unknown, legacyBundleName?: string):
       ? tuning.cents.map((cents) => Number(cents)).filter((cents) => Number.isFinite(cents))
       : [1200];
     const safeCents = (cents.length > 0 ? cents : [1200]).slice(0, MaxTuningDivisions);
+    const sourceLabels = Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined;
     return {
       kind: "scala",
       name,
@@ -1413,16 +1427,18 @@ function normalizeTuningBundleTuning(value: unknown, legacyBundleName?: string):
       cents: safeCents,
       periodCents: safeCents[safeCents.length - 1] ?? 1200,
       cycleLength: clampInteger(safeCents.length, 1, MaxTuningDivisions),
+      referenceDegree: clampInteger(numberOr(tuning.referenceDegree, legacyAFirst ? legacyReferenceDegree(safeCents.length, referenceMidiNote) : 0), 0, safeCents.length - 1),
+      defaultKeyDegree: clampInteger(numberOr(tuning.defaultKeyDegree, 0), 0, safeCents.length - 1),
       referenceMidiNote,
       referenceHz,
-      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, safeCents.length)
+      keyLabels: normalizeKeyLabels(legacyAFirst ? legacyAFirstLabelsToDegreeOrder(sourceLabels, safeCents.length) : sourceLabels, safeCents.length)
     };
   }
 
   throw new Error("Tuning bundle has an unsupported tuning type");
 }
 
-function normalizeTuningBundle(value: unknown): TuningBundle {
+function normalizeTuningBundle(value: unknown, legacyAFirst = false): TuningBundle {
   const source = value as Partial<TuningBundle> & {
     name?: unknown;
     layouts?: Array<Partial<TuningBundleLayout>>;
@@ -1449,7 +1465,8 @@ function normalizeTuningBundle(value: unknown): TuningBundle {
   }
   const tuning = normalizeTuningBundleTuning(
     source.tuning,
-    typeof source.name === "string" ? clampGeometryMenuText(source.name, "User Tuning") : undefined
+    typeof source.name === "string" ? clampGeometryMenuText(source.name, "User Tuning") : undefined,
+    legacyAFirst
   );
   const cycleLength = Math.max(1, Math.round(tuning.cycleLength));
   const layouts = source.layouts;

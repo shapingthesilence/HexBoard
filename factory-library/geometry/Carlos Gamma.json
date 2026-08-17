@@ -1,5 +1,5 @@
 {
-  "format": "hexboard.tuningBundle.v1",
+  "format": "hexboard.tuningBundle.v2",
   "tuningBundle": {
     "objectIdHex": "836823b01247e603d6e06121fd38e942",
     "folderPath": "/",
@@ -8,13 +8,8 @@
       "name": "Carlos Gamma",
       "cycleLength": 20,
       "referenceMidiNote": 69,
-      "referenceHz": 440.0,
+      "referenceHz": 440,
       "keyLabels": [
-        "^IV",
-        "Ib",
-        "^Ib",
-        "IV#",
-        "^IV#",
         "I",
         "^I",
         "IIb",
@@ -29,9 +24,16 @@
         "^IVb",
         "III#",
         "^III#",
-        "IV"
+        "IV",
+        "^IV",
+        "Ib",
+        "^Ib",
+        "IV#",
+        "^IV#"
       ],
-      "stepCents": 35.0985422804
+      "stepCents": 35.0985422804,
+      "referenceDegree": 0,
+      "defaultKeyDegree": 0
     },
     "palette": {
       "defaultColorMode": 1,

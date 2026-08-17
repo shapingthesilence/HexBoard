@@ -12,7 +12,6 @@ import {
   createDefaultDegreeColors,
   createDefaultLayout,
   createDefaultTuningBundle,
-  defaultSpanCtoA,
   currentFirmwareDownLeftToUpRight,
   defaultKeyLabels,
   deterministicObjectId,
@@ -29,8 +28,6 @@ import {
   MaxTuningDivisions,
   normalizeScaleDegrees,
   normalizeScaleDegreeColors,
-  keyLabelIndexFromStepsFromC,
-  keyLabelsFromTlvOrder,
   keyLabelsFromScalaIntervalLabels,
   midiNoteToFrequency,
   normalizeKeyLabels,
@@ -40,7 +37,6 @@ import {
   parseTuningBundleFile,
   parseTuningBundleLibrary,
   parseScalaScale,
-  referenceStepsFromC,
   resolveTuningBundleButtonColor,
   ScaleColorMapTlv,
   serializeTuningBundle,
@@ -872,6 +868,8 @@ function sanitizeEditorBundle(bundle: TuningBundle): TuningBundle {
     tuning: {
       ...bundle.tuning,
       name: clampGeometryMenuText(bundle.tuning.name, "User Tuning"),
+      referenceDegree: clampInteger(bundle.tuning.referenceDegree, 0, cycleLength - 1),
+      defaultKeyDegree: clampInteger(bundle.tuning.defaultKeyDegree, 0, cycleLength - 1),
       keyLabels: normalizeKeyLabels(bundle.tuning.keyLabels, cycleLength)
     } as TuningBundleTuning,
     layouts: bundle.layouts.map((layout) => ({
@@ -958,6 +956,18 @@ function formatIntegerList(values: number[]): string {
 function formatLabelList(labels: string[]): string {
   return labels.join(", ");
 }
+
+const midiNoteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"] as const;
+
+export function midiNoteName(midiNote: number): string {
+  const safeMidiNote = clampInteger(midiNote, 0, 127);
+  return `${midiNoteNames[safeMidiNote % 12]}${Math.floor(safeMidiNote / 12) - 1}`;
+}
+
+const midiNoteOptions = Array.from({ length: 128 }, (_, midiNote) => ({
+  midiNote,
+  label: `${midiNoteName(midiNote)} (MIDI ${midiNote})`
+}));
 
 function parseLabelList(text: string): string[] {
   return text
@@ -1076,7 +1086,12 @@ function decodeKeyLabels(value: Uint8Array | undefined, cycleLength: number): st
     labels.push(textFromBytes(value.slice(cursor, cursor + length)));
     cursor += length;
   }
-  return normalizeKeyLabels(keyLabelsFromTlvOrder(labels, cycleLength), cycleLength);
+  return normalizeKeyLabels(labels, cycleLength);
+}
+
+function legacyReferenceDegree(cycleLength: number, referenceMidiNote: number): number {
+  const degree = Math.round((cycleLength * (referenceMidiNote - 60)) / 12);
+  return ((degree % cycleLength) + cycleLength) % cycleLength;
 }
 
 function objectReferences(object: DeviceGeometryObject, tag: number, objectType: number, objectIdHex: string): boolean {
@@ -1088,7 +1103,13 @@ function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGe
   const kind = u8(tlvValue(object.records, TuningTlv.TuningKind), UserTuningKind.Edo);
   const cycleLength = clampInteger(u16LE(tlvValue(object.records, TuningTlv.EdoDivisions), 12), 1, MaxTuningDivisions);
   const name = tlvText(object.records, CommonTlv.Name, entry.name);
+  const defaultKeyDegree = clampInteger(u16LE(tlvValue(object.records, TuningTlv.DefaultKeyDegree), 0), 0, cycleLength - 1);
   const referenceMidiNote = clampInteger(u8(tlvValue(object.records, TuningTlv.ReferenceMidiNote), 69), 0, 127);
+  const referenceDegree = clampInteger(
+    u16LE(tlvValue(object.records, TuningTlv.ReferenceDegree), legacyReferenceDegree(cycleLength, referenceMidiNote)),
+    0,
+    cycleLength - 1
+  );
   const referenceHz = float32LE(tlvValue(object.records, TuningTlv.ReferenceHzFloat32), 440);
 
   if (kind === UserTuningKind.EqualStep) {
@@ -1097,6 +1118,8 @@ function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGe
       name,
       stepCents: float32LE(tlvValue(object.records, TuningTlv.StepCentsFloat32), 1200 / cycleLength),
       cycleLength,
+      referenceDegree,
+      defaultKeyDegree,
       referenceMidiNote,
       referenceHz,
       keyLabels: decodeKeyLabels(tlvValue(object.records, TuningTlv.KeyLabels), cycleLength)
@@ -1120,6 +1143,8 @@ function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGe
       cents: safeCents,
       periodCents,
       cycleLength: clampInteger(safeCents.length, 1, MaxTuningDivisions),
+      referenceDegree: clampInteger(referenceDegree, 0, safeCents.length - 1),
+      defaultKeyDegree: clampInteger(defaultKeyDegree, 0, safeCents.length - 1),
       referenceMidiNote,
       referenceHz,
       keyLabels: decodeKeyLabels(tlvValue(object.records, TuningTlv.KeyLabels), safeCents.length)
@@ -1135,6 +1160,8 @@ function decodeDeviceTuning(entry: HexBoardGeometryBundleEntry, object: DeviceGe
       1200
     ),
     cycleLength,
+    referenceDegree,
+    defaultKeyDegree,
     referenceMidiNote,
     referenceHz,
     keyLabels: decodeKeyLabels(tlvValue(object.records, TuningTlv.KeyLabels), cycleLength)
@@ -1884,6 +1911,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         edoDivisions: tuningCycleLength(bundle.tuning),
         periodCents: tuningPeriodCents(bundle.tuning),
         cycleLength: tuningCycleLength(bundle.tuning),
+        referenceDegree: bundle.tuning.referenceDegree,
+        defaultKeyDegree: bundle.tuning.defaultKeyDegree,
         referenceMidiNote: bundle.tuning.referenceMidiNote,
         referenceHz: bundle.tuning.referenceHz,
         keyLabels: bundle.tuning.keyLabels
@@ -1895,6 +1924,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       tuning.name = clampGeometryMenuText(tuning.name, "User Tuning");
       tuning.edoDivisions = clampInteger(tuning.edoDivisions, 1, MaxTuningDivisions);
       tuning.cycleLength = tuning.edoDivisions;
+      tuning.referenceDegree = clampInteger(tuning.referenceDegree, 0, tuning.cycleLength - 1);
+      tuning.defaultKeyDegree = clampInteger(tuning.defaultKeyDegree, 0, tuning.cycleLength - 1);
       tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
       tuning.referenceMidiNote = clampInteger(tuning.referenceMidiNote, 0, 127);
       tuning.referenceHz = Number.isFinite(tuning.referenceHz) && tuning.referenceHz > 0 ? tuning.referenceHz : 440;
@@ -1911,6 +1942,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           ? bundle.tuning.periodCents / bundle.tuning.edoDivisions
           : tuningPeriodCents(bundle.tuning) / tuningCycleLength(bundle.tuning),
         cycleLength: tuningCycleLength(bundle.tuning),
+        referenceDegree: bundle.tuning.referenceDegree,
+        defaultKeyDegree: bundle.tuning.defaultKeyDegree,
         referenceMidiNote: bundle.tuning.referenceMidiNote,
         referenceHz: bundle.tuning.referenceHz,
         keyLabels: bundle.tuning.keyLabels
@@ -1921,6 +1954,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       };
       tuning.name = clampGeometryMenuText(tuning.name, "User Tuning");
       tuning.cycleLength = clampInteger(tuning.cycleLength, 1, MaxTuningDivisions);
+      tuning.referenceDegree = clampInteger(tuning.referenceDegree, 0, tuning.cycleLength - 1);
+      tuning.defaultKeyDegree = clampInteger(tuning.defaultKeyDegree, 0, tuning.cycleLength - 1);
       tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
       tuning.referenceMidiNote = clampInteger(tuning.referenceMidiNote, 0, 127);
       tuning.referenceHz = Number.isFinite(tuning.referenceHz) && tuning.referenceHz > 0 ? tuning.referenceHz : 440;
@@ -1937,6 +1972,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         cents: [1200],
         periodCents: 1200,
         cycleLength: 1,
+        referenceDegree: 0,
+        defaultKeyDegree: 0,
         referenceMidiNote: bundle.tuning.referenceMidiNote,
         referenceHz: bundle.tuning.referenceHz,
         keyLabels: defaultKeyLabels(1)
@@ -1949,6 +1986,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       tuning.description = clampGeometryMenuText(tuning.description, tuning.name);
       tuning.periodCents = tuning.cents[tuning.cents.length - 1] ?? 1200;
       tuning.cycleLength = clampInteger(tuning.cents.length, 1, MaxTuningDivisions);
+      tuning.referenceDegree = clampInteger(tuning.referenceDegree, 0, tuning.cycleLength - 1);
+      tuning.defaultKeyDegree = clampInteger(tuning.defaultKeyDegree, 0, tuning.cycleLength - 1);
       tuning.referenceMidiNote = clampInteger(tuning.referenceMidiNote, 0, 127);
       tuning.referenceHz = Number.isFinite(tuning.referenceHz) && tuning.referenceHz > 0 ? tuning.referenceHz : midiNoteToFrequency(tuning.referenceMidiNote);
       tuning.keyLabels = normalizeKeyLabels(tuning.keyLabels, tuning.cycleLength);
@@ -2233,9 +2272,11 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     try {
       const parsed = parseScalaScale(await file.text());
       const currentScalaReference = activeBundle.tuning.kind === "scala";
+      const referenceDegree = currentScalaReference ? activeBundle.tuning.referenceDegree : 0;
+      const defaultKeyDegree = currentScalaReference ? activeBundle.tuning.defaultKeyDegree : 0;
       const referenceMidiNote = currentScalaReference ? activeBundle.tuning.referenceMidiNote : defaultScalaReferenceMidiNote;
       const referenceHz = currentScalaReference ? activeBundle.tuning.referenceHz : midiNoteToFrequency(referenceMidiNote);
-      const importedLabels = keyLabelsFromScalaIntervalLabels(parsed.count, parsed.intervalLabels, referenceMidiNote);
+      const importedLabels = keyLabelsFromScalaIntervalLabels(parsed.count, parsed.intervalLabels, referenceDegree);
       updateActiveBundle((bundle) => withCycleColors({
         ...bundle,
         tuning: {
@@ -2245,6 +2286,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           cents: parsed.cents,
           periodCents: parsed.periodCents,
           cycleLength: parsed.count,
+          referenceDegree: clampInteger(referenceDegree, 0, parsed.count - 1),
+          defaultKeyDegree: clampInteger(defaultKeyDegree, 0, parsed.count - 1),
           referenceMidiNote,
           referenceHz,
           keyLabels: importedLabels
@@ -2272,6 +2315,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         cycleLength,
         periodCents: tuningPeriodCents(activeBundle.tuning),
         stepsFromC,
+        keyDegree: activeBundle.tuning.defaultKeyDegree,
         override
       });
       return {
@@ -2467,14 +2511,14 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
 
   const selectedPreview = previewKeys.find((item) => item.key.index === selectedButton) ?? previewKeys[0];
   const activeCycleLength = tuningCycleLength(activeBundle.tuning);
-  const selectedStepsFromReference = selectedPreview.stepsFromC - referenceStepsFromC(activeCycleLength, activeBundle.tuning.referenceMidiNote);
+  const selectedStepsFromReference = selectedPreview.stepsFromC - activeBundle.tuning.referenceDegree;
   const selectedPitchCents = tuningStepsToCentsFromReference(activeBundle.tuning, selectedStepsFromReference);
   const selectedFrequencyHz = Math.fround(
     Math.fround(activeBundle.tuning.referenceHz)
       * (2 ** Math.fround(selectedPitchCents / 1200))
   );
   const selectedKeyLabels = normalizeKeyLabels(activeBundle.tuning.keyLabels, activeCycleLength);
-  const selectedPitchLabel = selectedKeyLabels[keyLabelIndexFromStepsFromC(selectedPreview.stepsFromC, activeCycleLength)] ?? selectedKeyLabels[0] ?? "A";
+  const selectedPitchLabel = selectedKeyLabels[((selectedPreview.stepsFromC % activeCycleLength) + activeCycleLength) % activeCycleLength] ?? selectedKeyLabels[0] ?? "0";
   const selectedDegreeColor = normalizeScaleDegreeColors(activeBundle.palette.degreeColors, tuningCycleLength(activeBundle.tuning))
     .find((color) => color.degree === selectedPreview.degree) ?? createDefaultDegreeColors(1)[0];
   const selectedEditableColor = selectedPreview.colorSource === "button" ? selectedPreview.color : selectedDegreeColor;
@@ -4248,6 +4292,13 @@ function TuningControls({
   onKeyLabelsBlur,
   onKeyLabelsChange
 }: TuningControlsProps) {
+  const cycleLength = tuningCycleLength(tuning);
+  const normalizedLabels = normalizeKeyLabels(tuning.keyLabels, cycleLength);
+  const defaultKeyOptions = Array.from({ length: cycleLength }, (_, degree) => ({
+    degree,
+    label: normalizedLabels[degree] ?? String(degree)
+  }));
+
   if (tuning.kind === "edo") {
     const stepCents = Math.fround(Math.fround(tuning.periodCents) / Math.max(1, tuning.edoDivisions));
     return (
@@ -4263,8 +4314,28 @@ function TuningControls({
           <small className="muted">Saved at firmware-native 32-bit precision.</small>
         </label>
         <label className="field">
-          <span>A = x Hz</span>
+          <span>Reference MIDI key</span>
+          <select value={tuning.referenceMidiNote} onChange={(event) => onEdoChange({ referenceMidiNote: Number(event.target.value) })}>
+            {midiNoteOptions.map((option) => <option key={option.midiNote} value={option.midiNote}>{option.label}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Reference degree</span>
+          <select value={tuning.referenceDegree} onChange={(event) => onEdoChange({ referenceDegree: Number(event.target.value) })}>
+            {defaultKeyOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} (degree {option.degree})</option>)}
+          </select>
+          <small className="muted">This tuning degree has the reference MIDI key and frequency.</small>
+        </label>
+        <label className="field">
+          <span>{midiNoteName(tuning.referenceMidiNote)} = x Hz</span>
           <DeferredNumberInput min={0.01} step="any" value={tuning.referenceHz} onCommit={(referenceHz) => onEdoChange({ referenceHz })} />
+        </label>
+        <label className="field">
+          <span>Default key</span>
+          <select value={tuning.defaultKeyDegree} onChange={(event) => onEdoChange({ defaultKeyDegree: Number(event.target.value) })}>
+            {defaultKeyOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} (degree {option.degree})</option>)}
+          </select>
+          <small className="muted">Selected when this tuning is first loaded.</small>
         </label>
         <label className={keyLabelsError ? "field invalidField" : "field"}>
           <span>Note labels</span>
@@ -4276,7 +4347,7 @@ function TuningControls({
             rows={5}
             value={keyLabelsDraft}
           />
-          <small className="muted">Separate labels with commas, spaces, or line breaks. Invalid labels use their note numbers.</small>
+          <small className="muted">Degree 0 is {normalizedLabels[0] ?? "0"}; remaining entries follow tuning-degree order. Separate labels with commas, spaces, or line breaks. Invalid labels use their degree numbers.</small>
           {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
         </label>
       </div>
@@ -4301,8 +4372,28 @@ function TuningControls({
           </small>
         </label>
         <label className="field">
-          <span>A = x Hz</span>
+          <span>Reference MIDI key</span>
+          <select value={tuning.referenceMidiNote} onChange={(event) => onEqualStepChange({ referenceMidiNote: Number(event.target.value) })}>
+            {midiNoteOptions.map((option) => <option key={option.midiNote} value={option.midiNote}>{option.label}</option>)}
+          </select>
+        </label>
+        <label className="field">
+          <span>Reference degree</span>
+          <select value={tuning.referenceDegree} onChange={(event) => onEqualStepChange({ referenceDegree: Number(event.target.value) })}>
+            {defaultKeyOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} (degree {option.degree})</option>)}
+          </select>
+          <small className="muted">This tuning degree has the reference MIDI key and frequency.</small>
+        </label>
+        <label className="field">
+          <span>{midiNoteName(tuning.referenceMidiNote)} = x Hz</span>
           <DeferredNumberInput min={0.01} step="any" value={tuning.referenceHz} onCommit={(referenceHz) => onEqualStepChange({ referenceHz })} />
+        </label>
+        <label className="field">
+          <span>Default key</span>
+          <select value={tuning.defaultKeyDegree} onChange={(event) => onEqualStepChange({ defaultKeyDegree: Number(event.target.value) })}>
+            {defaultKeyOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} (degree {option.degree})</option>)}
+          </select>
+          <small className="muted">Selected when this tuning is first loaded.</small>
         </label>
         <label className={keyLabelsError ? "field invalidField" : "field"}>
           <span>Note labels</span>
@@ -4314,7 +4405,7 @@ function TuningControls({
             rows={5}
             value={keyLabelsDraft}
           />
-          <small className="muted">Separate labels with commas, spaces, or line breaks. Invalid labels use their note numbers.</small>
+          <small className="muted">Degree 0 is {normalizedLabels[0] ?? "0"}; remaining entries follow tuning-degree order. Separate labels with commas, spaces, or line breaks. Invalid labels use their degree numbers.</small>
           {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
         </label>
       </div>
@@ -4332,13 +4423,29 @@ function TuningControls({
         <NameInput fallback={tuning.name} value={tuning.description} onCommit={(description) => onScalaChange({ description })} />
       </label>
       <label className="field">
-        <span>1/1 MIDI note</span>
-        <DeferredNumberInput integer min={0} max={127} value={tuning.referenceMidiNote} onCommit={(referenceMidiNote) => onScalaChange({ referenceMidiNote })} />
+        <span>1/1 reference MIDI key</span>
+        <select value={tuning.referenceMidiNote} onChange={(event) => onScalaChange({ referenceMidiNote: Number(event.target.value) })}>
+          {midiNoteOptions.map((option) => <option key={option.midiNote} value={option.midiNote}>{option.label}</option>)}
+        </select>
       </label>
       <label className="field">
-        <span>1/1 Hz</span>
+        <span>1/1 reference degree</span>
+        <select value={tuning.referenceDegree} onChange={(event) => onScalaChange({ referenceDegree: Number(event.target.value) })}>
+          {defaultKeyOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} (degree {option.degree})</option>)}
+        </select>
+        <small className="muted">This tuning degree is the 1/1 reference.</small>
+      </label>
+      <label className="field">
+        <span>{midiNoteName(tuning.referenceMidiNote)} (1/1) = x Hz</span>
         <DeferredNumberInput min={0.01} step="any" value={tuning.referenceHz} onCommit={(referenceHz) => onScalaChange({ referenceHz })} />
         <small className="muted">Intervals and reference frequency are saved at firmware-native 32-bit precision.</small>
+      </label>
+      <label className="field">
+        <span>Default key</span>
+        <select value={tuning.defaultKeyDegree} onChange={(event) => onScalaChange({ defaultKeyDegree: Number(event.target.value) })}>
+          {defaultKeyOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} (degree {option.degree})</option>)}
+        </select>
+        <small className="muted">Selected when this tuning is first loaded.</small>
       </label>
       <label className={keyLabelsError ? "field invalidField" : "field"}>
         <span>Note labels</span>
@@ -4350,7 +4457,7 @@ function TuningControls({
           rows={5}
           value={keyLabelsDraft}
         />
-        <small className="muted">Separate labels with commas, spaces, or line breaks. Invalid labels use their note numbers.</small>
+        <small className="muted">Degree 0 is {normalizedLabels[0] ?? "0"}; remaining entries follow tuning-degree order. Separate labels with commas, spaces, or line breaks. Invalid labels use their degree numbers.</small>
         {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
       </label>
     </div>

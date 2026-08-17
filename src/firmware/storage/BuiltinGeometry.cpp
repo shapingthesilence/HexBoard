@@ -129,6 +129,10 @@ void appendBuiltinTuningBody(std::vector<uint8_t>& body, const BuiltinGeometryMe
   appendCommonGeometryHeader(body, metadata);
   appendU8Tlv(body, PRESET_SYNC_TLV_TUNING_KIND, PRESET_SYNC_USER_TUNING_KIND_EQUAL_STEP);
   appendU16Tlv(body, PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS, tuning.cycleLength);
+  appendU16Tlv(body,
+               PRESET_SYNC_TLV_TUNING_REFERENCE_DEGREE,
+               static_cast<uint16_t>(positiveMod(-tuning.spanCtoA(), tuning.cycleLength)));
+  appendU16Tlv(body, PRESET_SYNC_TLV_TUNING_DEFAULT_KEY_DEGREE, 0);
   appendU8Tlv(body, PRESET_SYNC_TLV_TUNING_REFERENCE_MIDI_NOTE, 69);
   appendFloat32Tlv(body, PRESET_SYNC_TLV_TUNING_STEP_CENTS_FLOAT32, tuning.stepSize);
   appendFloat32Tlv(body, PRESET_SYNC_TLV_TUNING_REFERENCE_HZ_FLOAT32, 440.0f);

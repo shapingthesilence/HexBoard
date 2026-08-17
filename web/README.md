@@ -122,8 +122,9 @@ and `TRANSFER_END` so firmware can pace object transfers.
   adding controls to the ordinary tuned-note workflow. Read-only pitch and
   scale values are presented as facts rather than form fields, and all overrides
   can be reset together. Raw encoded-object details are collapsed until needed.
-  The editor also supports scale-degree palette editing, A-first note labels,
-  and a paint mode for applying per-button color overrides or scale-degree
+  The editor also supports scale-degree palette editing, direct degree-order
+  note labels, explicit reference-degree and reference-key selection, and a
+  default-key degree that is applied when a tuning first loads. A paint mode applies per-button color overrides or scale-degree
   palette colors directly on the preview. Painting a scale degree clears
   matching color overrides in the active layout so the palette color takes
   effect immediately, and a confirmed reset returns all keys in the active
@@ -135,7 +136,7 @@ and `TRANSFER_END` so firmware can pace object transfers.
   equal-step period, and cents-list period are derived rather than stored as
   duplicate values.
   Scala `.scl`
-  import reads trailing interval labels, exposes the 1/1 MIDI note
+  import reads trailing interval labels, exposes the 1/1 reference key
   and Hz reference, and enables cents-table live send when the connected
   firmware advertises runtime support. Live send serializes only the active
   runtime records. `Save to HexBoard` writes the whole tuning bundle, preserves
@@ -143,9 +144,9 @@ and `TRANSFER_END` so firmware can pace object transfers.
   active records so the hardware preview and on-device menus agree.
   Computer Library edits are saved automatically. `Copy to HexBoard` and
   `Copy to Computer` copy between libraries; `Download file` writes a portable
-  `hexboard.tuningBundle.v1` JSON file. Legacy `hexboard.layoutBundle.v5` files
-  remain importable and use their former device-facing bundle name as the
-  tuning name.
+  `hexboard.tuningBundle.v2` JSON file. Version 1 tuning bundles and legacy
+  `hexboard.layoutBundle.v5` files remain importable; legacy layout bundles use
+  their former device-facing bundle name as the tuning name.
 - A synth preset editor with name and folder selection, folder creation, main
   synth parameter controls, mono retrigger/legato, mono portamento,
   arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,

@@ -1,5 +1,5 @@
 {
-  "format": "hexboard.tuningBundle.v1",
+  "format": "hexboard.tuningBundle.v2",
   "tuningBundle": {
     "objectIdHex": "c96905e180ff8b864800b400f267ff4e",
     "folderPath": "/",
@@ -8,11 +8,8 @@
       "name": "12 TET 34 ZPI",
       "cycleLength": 12,
       "referenceMidiNote": 69,
-      "referenceHz": 440.0,
+      "referenceHz": 440,
       "keyLabels": [
-        "A",
-        "Bb",
-        "B",
         "C",
         "C#",
         "D",
@@ -21,9 +18,14 @@
         "F",
         "F#",
         "G",
-        "G#"
+        "G#",
+        "A",
+        "Bb",
+        "B"
       ],
-      "stepCents": 99.8071807833375
+      "stepCents": 99.8071807833375,
+      "referenceDegree": 9,
+      "defaultKeyDegree": 0
     },
     "palette": {
       "defaultColorMode": 1,

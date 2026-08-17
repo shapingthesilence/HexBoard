@@ -754,10 +754,6 @@ bool geometryObjectForMetadata(const GeometryObjectIndexEntry& entry, GeometryOb
   return true;
 }
 
-int userGeometryDefaultSpanCtoA(uint16_t cycleLength) {
-  return -static_cast<int>((static_cast<uint32_t>(cycleLength) * 9u + 6u) / 12u);
-}
-
 bool readRuntimeCentsTable(const GeometryObjectSlot& object,
                            uint16_t cycleLength,
                            float& periodCents,
@@ -794,6 +790,12 @@ bool readRuntimeCentsTable(const GeometryObjectSlot& object,
   return periodCents > 0.0f;
 }
 
+uint16_t legacyUserGeometryReferenceDegree(uint16_t cycleLength, uint8_t referenceMidiNote) {
+  int32_t scaled = static_cast<int32_t>(cycleLength) * (static_cast<int32_t>(referenceMidiNote) - 60);
+  int32_t rounded = scaled >= 0 ? (scaled + 6) / 12 : -((-scaled + 6) / 12);
+  return static_cast<uint16_t>(positiveMod(rounded, cycleLength));
+}
+
 bool geometryObjectReferencesObjectId(const GeometryObjectSlot& object, uint8_t tag, uint8_t objectType, const uint8_t* objectId) {
   const uint8_t* value = nullptr;
   uint16_t length = 0;
@@ -806,6 +808,8 @@ bool geometryObjectReferencesObjectId(const GeometryObjectSlot& object, uint8_t 
 bool geometryObjectRuntimeTuningSupported(const GeometryObjectSlot& object) {
   uint8_t tuningKind = 0;
   uint16_t cycleLength = 0;
+  uint16_t referenceDegree = 0;
+  uint16_t defaultKeyDegree = 0;
   uint8_t referenceMidiNote = 0;
   float referenceHz = 0.0f;
   if (!object.valid
@@ -818,6 +822,16 @@ bool geometryObjectRuntimeTuningSupported(const GeometryObjectSlot& object) {
   }
   if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS
       || referenceMidiNote > 127 || referenceHz <= 0.0f) {
+    return false;
+  }
+  if (!presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_DEGREE, referenceDegree)) {
+    referenceDegree = legacyUserGeometryReferenceDegree(cycleLength, referenceMidiNote);
+  }
+  if (referenceDegree >= cycleLength) {
+    return false;
+  }
+  presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_DEFAULT_KEY_DEGREE, defaultKeyDegree);
+  if (defaultKeyDegree >= cycleLength) {
     return false;
   }
   float scalarCents = 0.0f;
@@ -1094,6 +1108,8 @@ void clearUserGeometryRuntimeSelection() {
   std::vector<uint8_t>().swap(userGeometryRuntime.degreeColors);
   memset(userGeometryRuntime.scaleIncluded, 0, sizeof(userGeometryRuntime.scaleIncluded));
   userGeometryRuntime.periodCents = 1200.0f;
+  userGeometryRuntime.referenceDegree = 0;
+  userGeometryRuntime.defaultKeyDegree = 0;
   userGeometryRuntime.referenceMidiNote = 69;
   userGeometryRuntime.referenceHz = 440.0f;
   userGeometryRuntime.deviceRotation = DEVICE_ROTATION_0;
@@ -1118,6 +1134,8 @@ bool runtimeKeyLabelsValid(const uint8_t* value, uint16_t length, uint16_t cycle
 bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   uint8_t tuningKind = 0;
   uint16_t cycleLength = 0;
+  uint16_t referenceDegree = 0;
+  uint16_t defaultKeyDegree = 0;
   float periodCents = 0.0f;
   float stepCents = 0.0f;
   uint8_t referenceMidiNote = 0;
@@ -1139,6 +1157,18 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   }
   if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
     sendToLog("Geometry runtime tuning apply rejected: cycle length is out of range.");
+    return false;
+  }
+  if (!presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_DEGREE, referenceDegree)) {
+    referenceDegree = legacyUserGeometryReferenceDegree(cycleLength, referenceMidiNote);
+  }
+  if (referenceDegree >= cycleLength) {
+    sendToLog("Geometry runtime tuning apply rejected: reference degree is out of range.");
+    return false;
+  }
+  presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_DEFAULT_KEY_DEGREE, defaultKeyDegree);
+  if (defaultKeyDegree >= cycleLength) {
+    sendToLog("Geometry runtime tuning apply rejected: default key degree is out of range.");
     return false;
   }
   if (referenceMidiNote > 127) {
@@ -1189,7 +1219,7 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   userGeometryRuntime.tuning.name = userGeometryRuntimeTuningNameStorage;
   userGeometryRuntime.tuning.cycleLength = cycleLength;
   userGeometryRuntime.tuning.stepSize = stepCents;
-  userGeometryRuntime.tuning.spanCtoAValue = static_cast<int16_t>(userGeometryDefaultSpanCtoA(cycleLength));
+  userGeometryRuntime.tuning.spanCtoAValue = 0;
   memcpy(userGeometryRuntime.tuningObjectId, object.objectId, sizeof(userGeometryRuntime.tuningObjectId));
   userGeometryRuntime.tuningObjectSelected = true;
   userGeometryRuntime.layoutObjectSelected = false;
@@ -1205,6 +1235,8 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
     std::vector<float>().swap(userGeometryRuntime.centsTable);
   }
   userGeometryRuntime.periodCents = periodCents;
+  userGeometryRuntime.referenceDegree = referenceDegree;
+  userGeometryRuntime.defaultKeyDegree = defaultKeyDegree;
   userGeometryRuntime.referenceMidiNote = referenceMidiNote;
   userGeometryRuntime.referenceHz = referenceHz;
   const uint8_t* keyLabels = nullptr;
@@ -1227,7 +1259,7 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   userGeometryRuntime.paletteActive = false;
   userGeometryRuntime.layoutCenterStepsFromC = 0;
   clearUserGeometryButtonRuntimeOverrides();
-  current.keyStepsFromA = userGeometryRuntime.tuning.spanCtoA();
+  current.keyStepsFromA = static_cast<int>(defaultKeyDegree);
   applyLayout();
   return true;
 }

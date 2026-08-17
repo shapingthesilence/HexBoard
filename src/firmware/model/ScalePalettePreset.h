@@ -111,6 +111,8 @@ struct UserGeometryRuntimeState {
   uint16_t centsTableLength = 0;
   std::vector<float> centsTable;
   float periodCents = 1200.0f;
+  uint16_t referenceDegree = 0;
+  uint16_t defaultKeyDegree = 0;
   uint8_t referenceMidiNote = 69;
   float referenceHz = 440.0f;
   std::vector<uint8_t> keyLabels;
@@ -148,7 +150,7 @@ public:
   int tuningIndex;  // instead of using pointers, i chose to store index value of each option, to be saved to a .pref or .ini or something
   int layoutIndex;
   int scaleIndex;
-  int keyStepsFromA;  // what key the scale is in, where zero equals A.
+  int keyStepsFromA;  // Legacy tunings: steps from A. User geometry: direct key degree.
   int transpose;
   const tuningDef& tuning() const {
     if (userGeometryRuntime.active) {
@@ -180,6 +182,9 @@ public:
     }
   }
   int keyStepsFromC() {
+    if (userGeometryRuntime.active) {
+      return -keyStepsFromA;
+    }
     return tuning().spanCtoA() - keyStepsFromA;
   }
   int pitchRelToA4(int givenStepsFromC) {

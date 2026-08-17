@@ -36,22 +36,11 @@ uint16_t RAM_FUNC(wrappedTableDegree)(int32_t stepsFromA, uint16_t cycleLength) 
   return static_cast<uint16_t>(remainder);
 }
 
-int32_t RAM_FUNC(roundedDiv)(int32_t numerator, int32_t denominator) {
-  if (denominator <= 0) {
-    return 0;
-  }
-  if (numerator >= 0) {
-    return (numerator + (denominator / 2)) / denominator;
-  }
-  return -((-numerator + (denominator / 2)) / denominator);
-}
-
 int32_t RAM_FUNC(referenceStepsFromC)() {
   if (!userGeometryRuntime.active) {
     return -current.tuning().spanCtoA();
   }
-  int32_t semitonesFromC4 = static_cast<int32_t>(currentTuningReferenceMidiNote()) - 60;
-  return roundedDiv(static_cast<int32_t>(current.tuning().cycleLength) * semitonesFromC4, 12);
+  return static_cast<int32_t>(userGeometryRuntime.referenceDegree);
 }
 
 bool centsTableMatchesStandardSemitones() {

@@ -2960,7 +2960,7 @@ void showOnlyValidKeyChoices() {
   if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
     cycleLength = 1;
   }
-  int minimum = tuning.spanCtoA();
+  int minimum = userGeometryRuntime.active ? 0 : tuning.spanCtoA();
   int maximum = minimum + cycleLength - 1;
   while (current.keyStepsFromA < minimum) {
     current.keyStepsFromA += cycleLength;
@@ -2980,7 +2980,7 @@ void showOnlyValidKeyChoices() {
                               currentKeyChoiceLabels[degree].size());
       currentKeyChoices[degree] = {
         currentKeyChoiceLabels[degree].data(),
-        minimum + static_cast<int>(degree)
+        userGeometryRuntime.active ? static_cast<int>(degree) : minimum + static_cast<int>(degree)
       };
     }
     selectCurrentKey.setOptions(static_cast<byte>(cycleLength), currentKeyChoices.data());

@@ -33,11 +33,15 @@ rescue wavetable compiled into firmware.
 
 ## Tuning Bundles
 
-Place web-app-compatible `hexboard.tuningBundle.v1` JSON files under
+Place web-app-compatible `hexboard.tuningBundle.v2` JSON files under
 `geometry/`. Each file is one tuning bundle: one tuning and custom palette plus
 all of its layouts and scales. As with synth presets, the relative source
 directory is the on-device folder, while the tuning name must match the filename
-and its `folderPath` must match that source directory.
+and its `folderPath` must match that source directory. Tuning
+`keyLabels` use direct tuning-degree order. `referenceDegree` is required and
+identifies the degree assigned the tuning's reference MIDI note and frequency.
+`defaultKeyDegree` is optional, defaults to degree `0`, and selects the key used
+when the tuning first loads. Both degrees must be less than the cycle length.
 
 The supplied root-level `geometry/` files compile into 22 editable factory
 tuning bundles containing 332 linked records. The record count is an encoding

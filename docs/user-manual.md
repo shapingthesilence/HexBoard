@@ -608,7 +608,13 @@ actions remain at the top of the tuning studio. Valid, in-range numeric edits
 update the preview as you type. Empty, incomplete, or out-of-range drafts remain
 editable without changing the preview, then restore or clamp when you leave the
 field. Names and descriptions likewise apply their
-length and fallback rules only after you leave the field. The preview's adjacent
+length and fallback rules only after you leave the field. Note labels are
+entered in tuning-degree order. `Reference degree` explicitly chooses which
+label receives the selected reference MIDI key and frequency, shown in
+scientific pitch notation such as `A4 = x Hz`. `Default key` chooses the scale
+key selected when the tuning is first loaded. The app does not infer note names
+or reference positions from the tuning size.
+The preview's adjacent
 brush and eyedropper buttons paint keys or pick an existing key color. The brush
 can target either button color overrides or scale-degree palette colors while
 `Custom` color mode is active. Painting a scale degree clears matching
@@ -667,7 +673,8 @@ saved in the browser. Dragging HexBoard Library rows updates the device menu
 order after a 2 second quiet period, so several quick drops produce one small
 order-file flash write rather than rewriting tuning bundles. `Copy to HexBoard`
 and `Copy to Computer` move a tuning between libraries. `Download file` saves a
-portable `hexboard.tuningBundle.v1` JSON file to the computer.
+portable `hexboard.tuningBundle.v2` JSON file to the computer. Version 1 tuning
+bundles remain importable and are converted to explicit degree order.
 
 Library folder rows begin with the visually distinct system views `All` and
 `Root`, followed by user folders. New folders belong to the

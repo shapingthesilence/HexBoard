@@ -80,6 +80,10 @@ void formatTuningDegreeLabel(const tuningDef& tuning, uint16_t degree, char* out
     snprintf(output, outputLength, "%s", rescueKeyLabels[degree]);
     return;
   }
+  if (&tuning == &userGeometryRuntime.tuning) {
+    snprintf(output, outputLength, "%u", degree);
+    return;
+  }
   uint16_t aDegree = positiveMod(static_cast<int>(degree) + tuning.spanCtoA(), tuning.cycleLength);
   if (aDegree == 0) {
     snprintf(output, outputLength, "A");

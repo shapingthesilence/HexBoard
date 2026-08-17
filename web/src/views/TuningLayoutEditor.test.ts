@@ -5,6 +5,7 @@ import {
   colorToCss,
   deviceRelativeMirrorTransform,
   keyOutputMode,
+  midiNoteName,
   normalizeCommittedNumber,
   paintScaleDegreeColor,
   reorderByObjectId,
@@ -66,6 +67,14 @@ describe("deferred number fields", () => {
     expect(normalizeCommittedNumber("200", 12, 1, 128, true)).toBe(128);
     expect(normalizeCommittedNumber("4.6", 12, 1, 128, true)).toBe(5);
     expect(normalizeCommittedNumber("432.5", 440, 0.01)).toBe(432.5);
+  });
+});
+
+describe("reference-key labels", () => {
+  it("uses scientific pitch notation", () => {
+    expect(midiNoteName(60)).toBe("C4");
+    expect(midiNoteName(69)).toBe("A4");
+    expect(midiNoteName(127)).toBe("G9");
   });
 });
 

@@ -1,5 +1,5 @@
 {
-  "format": "hexboard.tuningBundle.v1",
+  "format": "hexboard.tuningBundle.v2",
   "tuningBundle": {
     "objectIdHex": "320ad39d714d32ed62bf354d0d1ced3a",
     "folderPath": "/",
@@ -8,11 +8,8 @@
       "name": "Carlos Beta",
       "cycleLength": 11,
       "referenceMidiNote": 69,
-      "referenceHz": 440.0,
+      "referenceHz": 440,
       "keyLabels": [
-        "IV",
-        "IV#",
-        "Ib",
         "I",
         "I#",
         "IIb",
@@ -20,9 +17,14 @@
         "II#",
         "III",
         "III#",
-        "IVb"
+        "IVb",
+        "IV",
+        "IV#",
+        "Ib"
       ],
-      "stepCents": 63.832933
+      "stepCents": 63.832933,
+      "referenceDegree": 0,
+      "defaultKeyDegree": 0
     },
     "palette": {
       "defaultColorMode": 1,

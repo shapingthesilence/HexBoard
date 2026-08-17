@@ -797,7 +797,7 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `28` |
+| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `29` |
 | `0x21` | `SettingValues` | Repeated `<setting-key-u8> <value-u8>` records |
 | `0x22` | `TuningRef` | Object reference |
 | `0x23` | `LayoutRef` | Object reference |
@@ -824,6 +824,8 @@ quantity. Recommended TLVs:
 | --- | --- | --- |
 | `0x20` | `TuningKind` | `u8`: `1` EDO, `2` cents list, `3` ratio list, `4` equal step |
 | `0x21` | `EdoDivisions` | Required `u16-le`; EDO divisions or equal-step/cents-list cycle length, `1..1024` |
+| `0x22` | `ReferenceDegree` | Required `u16-le`; tuning degree assigned `ReferenceMidiNote` and `ReferenceHzFloat32`, `0..EdoDivisions-1` |
+| `0x23` | `DefaultKeyDegree` | Optional `u16-le`; scale-key degree selected when the tuning first loads, `0..EdoDivisions-1`; defaults to `0` |
 | `0x24` | `ReferenceMidiNote` | Required `u8`, `0..127`; A4 is `69` |
 | `0x27` | `RatioTable` | Repeated `<numerator-u32-le> <denominator-u32-le>` |
 | `0x28` | `KeyLabels` | Optional repeated length-prefixed labels, one per cycle degree; omitted labels use generated numeric/default labels, and each supplied label should be capped at `7` display characters |
@@ -838,16 +840,19 @@ derives from `StepCentsFloat32 * EdoDivisions`; no period cache is stored. A
 cents list's final table entry is its period, so no separate period field is
 stored.
 
-Generated tunings include `ReferenceMidiNote` and
-`ReferenceHzFloat32`; the web editor presents labels in A-first order, defaults
-to A-first pitch labels, and rotates custom labels into the firmware's C-centered cycle
-order for `KeyLabels`. Scala imports default to a MIDI-note-60 1/1 reference
+Generated tunings include `ReferenceDegree`, `DefaultKeyDegree`,
+`ReferenceMidiNote`, and `ReferenceHzFloat32`. `KeyLabels` are stored directly
+in tuning-degree order, so label index, reference degree, default key degree,
+scale degree, and device TLV degree use the same coordinate system. No pitch
+name or equal-temperament fraction is inferred. Scala imports default to degree
+`0` as the MIDI-note-60 1/1 reference
 when no existing Scala reference is being preserved. Scala
 `.scl` import is a host-side feature; the web app treats a one-token suffix
 after an interval value as a note label and can reuse the final period-row label
 for the implicit 1/1 root. Current firmware live Apply supports `TuningKind =
 1`, `TuningKind = 2`, and `TuningKind = 4`; it loads cycle length, key labels,
-`ReferenceMidiNote`, `ReferenceHzFloat32`, and for cents-list tunings a RAM copy
+`ReferenceDegree`, `DefaultKeyDegree`, `ReferenceMidiNote`,
+`ReferenceHzFloat32`, and for cents-list tunings a RAM copy
 of `CentsTableFloat32`. Cents-list playback treats degree
 `0` as an implicit `0`-cent reference at the configured MIDI note and frequency,
 uses table entry `1` as the first interval, and wraps all positive or negative
@@ -1082,7 +1087,7 @@ only to that exact layout; firmware does not fall back to another map that
 merely shares its tuning.
 
 The web editor may retain transformed overrides outside the physical key grid
-in its `hexboard.tuningBundle.v1` JSON tuning bundle. Those web-only coordinates
+in its `hexboard.tuningBundle.v2` JSON tuning bundle. Those web-only coordinates
 are never encoded into an `ExplicitButtonMap`; preset sync sends only visible
 physical button records. A tuning bundle has one user-facing name, stored on
 its tuning root.

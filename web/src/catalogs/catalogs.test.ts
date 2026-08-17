@@ -28,7 +28,6 @@ import {
   ExplicitButtonMapTlv,
   GenericScaleColorMapName,
   GeometryLayoutScaleMaxCount,
-  keyLabelsForTlvOrder,
   keyLabelsFromScalaIntervalLabels,
   LayoutTlv,
   objectIdToHex,
@@ -162,10 +161,8 @@ describe("catalog object encoding", () => {
     const decoded = decodeObjectBody(tuning.body);
     expect(decoded.objectType).toBe(ObjectType.UserTuning);
     expect(textFromBytes(decoded.records.find((record) => record.tag === CommonTlv.Name)?.value ?? new Uint8Array())).toBe("17 EDO");
-    expect(defaultKeyLabels(17).slice(0, 4)).toEqual(["A", "Bb", "A#", "B"]);
-    expect(keyLabels(recordValue(tuning.body, TuningTlv.KeyLabels))).toEqual([
-      "C", "Db", "C#", "D", "Eb", "D#", "E", "F", "Gb", "F#", "G", "Ab", "G#", "A", "Bb", "A#", "B"
-    ]);
+    expect(defaultKeyLabels(17).slice(0, 4)).toEqual(["0", "1", "2", "3"]);
+    expect(recordValue(tuning.body, TuningTlv.KeyLabels)).toHaveLength(0);
     const customLabels = defaultKeyLabels(17);
     customLabels[0] = "Root";
     const custom = createGeneratedEdoTuning({
@@ -174,9 +171,7 @@ describe("catalog object encoding", () => {
       edoDivisions: 17,
       keyLabels: customLabels
     });
-    expect(keyLabels(recordValue(custom.body, TuningTlv.KeyLabels))).toEqual([
-      "C", "Db", "C#", "D", "Eb", "D#", "E", "F", "Gb", "F#", "G", "Ab", "G#", "A", "Bb", "A#", "B"
-    ].map((label) => label === "A" ? "Root" : label));
+    expect(keyLabels(recordValue(custom.body, TuningTlv.KeyLabels))).toEqual(customLabels);
     const generatedLabels = createGeneratedEdoTuning({
       objectId: tuningId,
       name: "23 EDO",
@@ -264,7 +259,7 @@ Example scale
     expect(parsed.cents[0]).toBeCloseTo(100);
     expect(parsed.cents[1]).toBeCloseTo(701.955, 3);
     expect(parsed.intervalLabels).toEqual(["C#", "G", "C"]);
-    expect(keyLabelsForTlvOrder(keyLabelsFromScalaIntervalLabels(parsed.count, parsed.intervalLabels, 60), parsed.count)).toEqual(["C", "C#", "G"]);
+    expect(keyLabelsFromScalaIntervalLabels(parsed.count, parsed.intervalLabels, 0)).toEqual(["C", "C#", "G"]);
     expect(parsed.periodCents).toBeCloseTo(1200);
   });
 
@@ -460,7 +455,7 @@ Example scale
     };
     const serialized = JSON.parse(serializeTuningBundle(bundle));
     expect(serialized).toMatchObject({
-      format: "hexboard.tuningBundle.v1",
+      format: "hexboard.tuningBundle.v2",
       tuningBundle: { tuning: { name: bundle.tuning.name } }
     });
     expect("name" in serialized.tuningBundle).toBe(false);
@@ -493,6 +488,27 @@ Example scale
     expect(u16LE(ordered.bundleFile.slice(6, 8))).toBe(7);
   });
 
+  it("preserves 12 EDO note-label order across file and device round trips", () => {
+    const original = createDefaultTuningBundle();
+    if (original.tuning.kind !== "edo") throw new Error("default test tuning must be EDO");
+    original.tuning = {
+      ...original.tuning,
+      edoDivisions: 12,
+      cycleLength: 12,
+      referenceDegree: 9,
+      defaultKeyDegree: 9,
+      keyLabels: ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"]
+    };
+    const fileRoundTrip = parseTuningBundleFile(JSON.parse(serializeTuningBundle(original)));
+    const encoded = encodeTuningBundle(fileRoundTrip);
+    const deviceLabels = keyLabels(recordValue(encoded.tuning.body, TuningTlv.KeyLabels));
+
+    expect(fileRoundTrip.tuning.keyLabels).toEqual(original.tuning.keyLabels);
+    expect(deviceLabels).toEqual(original.tuning.keyLabels);
+    expect(u16LE(recordValue(encoded.tuning.body, TuningTlv.ReferenceDegree))).toBe(9);
+    expect(u16LE(recordValue(encoded.tuning.body, TuningTlv.DefaultKeyDegree))).toBe(9);
+  });
+
   it("imports a legacy layout bundle using its device-facing bundle name", () => {
     const bundle = createDefaultTuningBundle();
     const parsed = parseTuningBundleFile({
@@ -506,6 +522,29 @@ Example scale
 
     expect(parsed.tuning.name).toBe("Legacy Device Name");
     expect("name" in parsed).toBe(false);
+  });
+
+  it("converts version 1 A-first labels to explicit degree order", () => {
+    const base = createDefaultTuningBundle();
+    const parsed = parseTuningBundleFile({
+      format: "hexboard.tuningBundle.v1",
+      tuningBundle: {
+        ...base,
+        tuning: {
+          kind: "edo",
+          name: "Legacy 12 EDO",
+          edoDivisions: 12,
+          cycleLength: 12,
+          periodCents: 1200,
+          referenceMidiNote: 69,
+          referenceHz: 440,
+          keyLabels: ["A", "Bb", "B", "C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#"]
+        }
+      }
+    });
+
+    expect(parsed.tuning.referenceDegree).toBe(9);
+    expect(parsed.tuning.keyLabels).toEqual(["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"]);
   });
 
   it("encodes a compact checksummed geometry order file", () => {
@@ -601,6 +640,8 @@ Example scale
         name: "80 cent steps",
         stepCents: 80,
         cycleLength: 15,
+        referenceDegree: 0,
+        defaultKeyDegree: 0,
         referenceMidiNote: 69,
         referenceHz: 440,
         keyLabels: Array.from({ length: 15 }, (_, degree) => String(degree))
@@ -624,6 +665,8 @@ Example scale
         cents: [100, 300, 702],
         periodCents: 702,
         cycleLength: 3,
+        referenceDegree: 0,
+        defaultKeyDegree: 0,
         referenceMidiNote: 69,
         referenceHz: 440,
         keyLabels: ["A", "A+1", "A+2"]
@@ -718,6 +761,17 @@ Example scale
       degree: 1,
       colorSource: "degree",
       color: degreeColors[1]
+    });
+    expect(resolveTuningBundleButtonColor({
+      degreeColors,
+      cycleLength: 2,
+      stepsFromC: 1,
+      keyDegree: 1,
+      defaultColorMode: ColorMode.Custom
+    })).toMatchObject({
+      degree: 0,
+      colorSource: "degree",
+      color: degreeColors[0]
     });
     expect(resolveTuningBundleButtonColor({
       degreeColors,

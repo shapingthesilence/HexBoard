@@ -1,5 +1,5 @@
 {
-  "format": "hexboard.tuningBundle.v1",
+  "format": "hexboard.tuningBundle.v2",
   "tuningBundle": {
     "objectIdHex": "4fb9c92e2e25ff50c647a91a087c9cc5",
     "folderPath": "/",
@@ -8,21 +8,8 @@
       "name": "53 EDO",
       "cycleLength": 53,
       "referenceMidiNote": 69,
-      "referenceHz": 440.0,
+      "referenceHz": 440,
       "keyLabels": [
-        "A",
-        "^A",
-        ">A",
-        "vBb",
-        "Bb",
-        "A#",
-        "^A#",
-        "<B",
-        "vB",
-        "B",
-        "^B",
-        "<C",
-        "vC",
         "C",
         "^C",
         ">C",
@@ -62,10 +49,25 @@
         "G#",
         "^G#",
         "<A",
-        "vA"
+        "vA",
+        "A",
+        "^A",
+        ">A",
+        "vBb",
+        "Bb",
+        "A#",
+        "^A#",
+        "<B",
+        "vB",
+        "B",
+        "^B",
+        "<C",
+        "vC"
       ],
       "edoDivisions": 53,
-      "periodCents": 1200.0
+      "periodCents": 1200,
+      "referenceDegree": 40,
+      "defaultKeyDegree": 0
     },
     "palette": {
       "defaultColorMode": 1,

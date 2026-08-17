@@ -1,5 +1,5 @@
 {
-  "format": "hexboard.tuningBundle.v1",
+  "format": "hexboard.tuningBundle.v2",
   "tuningBundle": {
     "objectIdHex": "916a9e3a00d8821bef62f189c2c55258",
     "folderPath": "/",
@@ -8,11 +8,8 @@
       "name": "Bohlen-Pierce",
       "cycleLength": 13,
       "referenceMidiNote": 69,
-      "referenceHz": 440.0,
+      "referenceHz": 440,
       "keyLabels": [
-        "A",
-        "Bb",
-        "B",
         "C",
         "Db",
         "D",
@@ -22,9 +19,14 @@
         "G",
         "H",
         "Jb",
-        "J"
+        "J",
+        "A",
+        "Bb",
+        "B"
       ],
-      "stepCents": 146.30423083579905
+      "stepCents": 146.30423083579905,
+      "referenceDegree": 10,
+      "defaultKeyDegree": 0
     },
     "palette": {
       "defaultColorMode": 1,
