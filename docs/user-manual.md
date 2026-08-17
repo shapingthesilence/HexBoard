@@ -609,11 +609,13 @@ update the preview as you type. Empty, incomplete, or out-of-range drafts remain
 editable without changing the preview, then restore or clamp when you leave the
 field. Names and descriptions likewise apply their
 length and fallback rules only after you leave the field. Note labels are
-entered in tuning-degree order. `Reference degree` explicitly chooses which
-label receives the selected reference MIDI key and frequency, shown in
-scientific pitch notation such as `A4 = x Hz`. `Default key` chooses the scale
-key selected when the tuning is first loaded. The app does not infer note names
-or reference positions from the tuning size.
+entered in tuning-degree order. The `Pitch anchor` statement groups the anchored
+tuning degree, frequency, and scientific-pitch MIDI key, for example
+`A (degree 9) = 440 Hz as A4 (MIDI 69)`. Changing the anchored degree retunes
+the labeled notes without renaming or rotating them. `Default key` appears
+separately under `Scale defaults` and chooses the scale key selected when the
+tuning is first loaded. The app does not infer note names or reference positions
+from the tuning size.
 The preview's adjacent
 brush and eyedropper buttons paint keys or pick an existing key color. The brush
 can target either button color overrides or scale-degree palette colors while

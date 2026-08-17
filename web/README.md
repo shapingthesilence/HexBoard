@@ -123,8 +123,9 @@ and `TRANSFER_END` so firmware can pace object transfers.
   scale values are presented as facts rather than form fields, and all overrides
   can be reset together. Raw encoded-object details are collapsed until needed.
   The editor also supports scale-degree palette editing, direct degree-order
-  note labels, explicit reference-degree and reference-key selection, and a
-  default-key degree that is applied when a tuning first loads. A paint mode applies per-button color overrides or scale-degree
+  note labels, a grouped pitch anchor with explicit degree, frequency, and MIDI
+  key selection, and a separate default-key degree that is applied when a tuning
+  first loads. A paint mode applies per-button color overrides or scale-degree
   palette colors directly on the preview. Painting a scale degree clears
   matching color overrides in the active layout so the palette color takes
   effect immediately, and a confirmed reset returns all keys in the active

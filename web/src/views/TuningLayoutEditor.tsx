@@ -4280,6 +4280,79 @@ interface TuningControlsProps {
   onKeyLabelsChange: (text: string) => void;
 }
 
+interface TuningDegreeOption {
+  degree: number;
+  label: string;
+}
+
+interface PitchAnchorPatch {
+  referenceDegree?: number;
+  referenceMidiNote?: number;
+  referenceHz?: number;
+}
+
+function PitchAnchorControls({
+  tuning,
+  degreeOptions,
+  onChange
+}: {
+  tuning: TuningBundleTuning;
+  degreeOptions: TuningDegreeOption[];
+  onChange: (patch: PitchAnchorPatch) => void;
+}) {
+  const anchoredLabel = degreeOptions[tuning.referenceDegree]?.label ?? `degree ${tuning.referenceDegree}`;
+  return (
+    <fieldset className="tuningControlGroup">
+      <legend>Pitch anchor</legend>
+      <div className="pitchAnchorSummary">
+        {anchoredLabel} (degree {tuning.referenceDegree}) = {tuning.referenceHz} Hz as {midiNoteName(tuning.referenceMidiNote)} (MIDI {tuning.referenceMidiNote})
+      </div>
+      <div className="pitchAnchorStatement">
+        <label className="field">
+          <span>Anchored tuning degree</span>
+          <select value={tuning.referenceDegree} onChange={(event) => onChange({ referenceDegree: Number(event.target.value) })}>
+            {degreeOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} — degree {option.degree}</option>)}
+          </select>
+        </label>
+        <label className="field pitchAnchorFrequency">
+          <span>Frequency</span>
+          <DeferredNumberInput min={0.01} step="any" value={tuning.referenceHz} onCommit={(referenceHz) => onChange({ referenceHz })} />
+        </label>
+        <label className="field">
+          <span>MIDI key</span>
+          <select value={tuning.referenceMidiNote} onChange={(event) => onChange({ referenceMidiNote: Number(event.target.value) })}>
+            {midiNoteOptions.map((option) => <option key={option.midiNote} value={option.midiNote}>{option.label}</option>)}
+          </select>
+        </label>
+      </div>
+      <small className="muted">Changing the anchored degree retunes the labeled notes; it does not rename or rotate them.</small>
+    </fieldset>
+  );
+}
+
+function ScaleDefaultsControls({
+  tuning,
+  degreeOptions,
+  onChange
+}: {
+  tuning: TuningBundleTuning;
+  degreeOptions: TuningDegreeOption[];
+  onChange: (defaultKeyDegree: number) => void;
+}) {
+  return (
+    <fieldset className="tuningControlGroup">
+      <legend>Scale defaults</legend>
+      <label className="field">
+        <span>Default key</span>
+        <select value={tuning.defaultKeyDegree} onChange={(event) => onChange(Number(event.target.value))}>
+          {degreeOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} — degree {option.degree}</option>)}
+        </select>
+        <small className="muted">Selected when this tuning is first loaded. It does not change the pitch anchor.</small>
+      </label>
+    </fieldset>
+  );
+}
+
 function TuningControls({
   tuning,
   onEdoChange,
@@ -4313,30 +4386,8 @@ function TuningControls({
           <small className="muted">Exact division: {tuning.periodCents} ÷ {tuning.edoDivisions} = {stepCents.toFixed(6)}… cents per step</small>
           <small className="muted">Saved at firmware-native 32-bit precision.</small>
         </label>
-        <label className="field">
-          <span>Reference MIDI key</span>
-          <select value={tuning.referenceMidiNote} onChange={(event) => onEdoChange({ referenceMidiNote: Number(event.target.value) })}>
-            {midiNoteOptions.map((option) => <option key={option.midiNote} value={option.midiNote}>{option.label}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <span>Reference degree</span>
-          <select value={tuning.referenceDegree} onChange={(event) => onEdoChange({ referenceDegree: Number(event.target.value) })}>
-            {defaultKeyOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} (degree {option.degree})</option>)}
-          </select>
-          <small className="muted">This tuning degree has the reference MIDI key and frequency.</small>
-        </label>
-        <label className="field">
-          <span>{midiNoteName(tuning.referenceMidiNote)} = x Hz</span>
-          <DeferredNumberInput min={0.01} step="any" value={tuning.referenceHz} onCommit={(referenceHz) => onEdoChange({ referenceHz })} />
-        </label>
-        <label className="field">
-          <span>Default key</span>
-          <select value={tuning.defaultKeyDegree} onChange={(event) => onEdoChange({ defaultKeyDegree: Number(event.target.value) })}>
-            {defaultKeyOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} (degree {option.degree})</option>)}
-          </select>
-          <small className="muted">Selected when this tuning is first loaded.</small>
-        </label>
+        <PitchAnchorControls tuning={tuning} degreeOptions={defaultKeyOptions} onChange={onEdoChange} />
+        <ScaleDefaultsControls tuning={tuning} degreeOptions={defaultKeyOptions} onChange={(defaultKeyDegree) => onEdoChange({ defaultKeyDegree })} />
         <label className={keyLabelsError ? "field invalidField" : "field"}>
           <span>Note labels</span>
           <textarea
@@ -4371,30 +4422,8 @@ function TuningControls({
             Cycle period: {computedPeriod.toFixed(3)} cents{Math.abs(octaveDelta) > 0.0005 ? ` (${octaveDelta > 0 ? "+" : ""}${octaveDelta.toFixed(3)} from an octave)` : ""}
           </small>
         </label>
-        <label className="field">
-          <span>Reference MIDI key</span>
-          <select value={tuning.referenceMidiNote} onChange={(event) => onEqualStepChange({ referenceMidiNote: Number(event.target.value) })}>
-            {midiNoteOptions.map((option) => <option key={option.midiNote} value={option.midiNote}>{option.label}</option>)}
-          </select>
-        </label>
-        <label className="field">
-          <span>Reference degree</span>
-          <select value={tuning.referenceDegree} onChange={(event) => onEqualStepChange({ referenceDegree: Number(event.target.value) })}>
-            {defaultKeyOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} (degree {option.degree})</option>)}
-          </select>
-          <small className="muted">This tuning degree has the reference MIDI key and frequency.</small>
-        </label>
-        <label className="field">
-          <span>{midiNoteName(tuning.referenceMidiNote)} = x Hz</span>
-          <DeferredNumberInput min={0.01} step="any" value={tuning.referenceHz} onCommit={(referenceHz) => onEqualStepChange({ referenceHz })} />
-        </label>
-        <label className="field">
-          <span>Default key</span>
-          <select value={tuning.defaultKeyDegree} onChange={(event) => onEqualStepChange({ defaultKeyDegree: Number(event.target.value) })}>
-            {defaultKeyOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} (degree {option.degree})</option>)}
-          </select>
-          <small className="muted">Selected when this tuning is first loaded.</small>
-        </label>
+        <PitchAnchorControls tuning={tuning} degreeOptions={defaultKeyOptions} onChange={onEqualStepChange} />
+        <ScaleDefaultsControls tuning={tuning} degreeOptions={defaultKeyOptions} onChange={(defaultKeyDegree) => onEqualStepChange({ defaultKeyDegree })} />
         <label className={keyLabelsError ? "field invalidField" : "field"}>
           <span>Note labels</span>
           <textarea
@@ -4422,31 +4451,8 @@ function TuningControls({
         <span>Description</span>
         <NameInput fallback={tuning.name} value={tuning.description} onCommit={(description) => onScalaChange({ description })} />
       </label>
-      <label className="field">
-        <span>1/1 reference MIDI key</span>
-        <select value={tuning.referenceMidiNote} onChange={(event) => onScalaChange({ referenceMidiNote: Number(event.target.value) })}>
-          {midiNoteOptions.map((option) => <option key={option.midiNote} value={option.midiNote}>{option.label}</option>)}
-        </select>
-      </label>
-      <label className="field">
-        <span>1/1 reference degree</span>
-        <select value={tuning.referenceDegree} onChange={(event) => onScalaChange({ referenceDegree: Number(event.target.value) })}>
-          {defaultKeyOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} (degree {option.degree})</option>)}
-        </select>
-        <small className="muted">This tuning degree is the 1/1 reference.</small>
-      </label>
-      <label className="field">
-        <span>{midiNoteName(tuning.referenceMidiNote)} (1/1) = x Hz</span>
-        <DeferredNumberInput min={0.01} step="any" value={tuning.referenceHz} onCommit={(referenceHz) => onScalaChange({ referenceHz })} />
-        <small className="muted">Intervals and reference frequency are saved at firmware-native 32-bit precision.</small>
-      </label>
-      <label className="field">
-        <span>Default key</span>
-        <select value={tuning.defaultKeyDegree} onChange={(event) => onScalaChange({ defaultKeyDegree: Number(event.target.value) })}>
-          {defaultKeyOptions.map((option) => <option key={option.degree} value={option.degree}>{option.label} (degree {option.degree})</option>)}
-        </select>
-        <small className="muted">Selected when this tuning is first loaded.</small>
-      </label>
+      <PitchAnchorControls tuning={tuning} degreeOptions={defaultKeyOptions} onChange={onScalaChange} />
+      <ScaleDefaultsControls tuning={tuning} degreeOptions={defaultKeyOptions} onChange={(defaultKeyDegree) => onScalaChange({ defaultKeyDegree })} />
       <label className={keyLabelsError ? "field invalidField" : "field"}>
         <span>Note labels</span>
         <textarea
