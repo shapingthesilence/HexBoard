@@ -1571,7 +1571,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     const next = reorderByObjectId(bundles, draggedId, targetId);
     if (next === bundles) return;
     setBundlesAndPersist(next);
-    setStatus("Reordered Computer Library");
+    setStatus("Reordered Browser Library");
   }
 
   function scheduleHexBoardOrderWrite(entries: HexBoardGeometryBundleEntry[]) {
@@ -1624,7 +1624,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       setStatus("Keep at least one tuning in the library");
       return;
     }
-    if (!window.confirm(`Delete “${bundleToDelete.tuning.name}” from the Computer Library?`)) {
+    if (!window.confirm(`Delete “${bundleToDelete.tuning.name}” from the Browser Library?`)) {
       return;
     }
     const nextBundles = bundles.filter((bundle) => bundle.objectIdHex !== bundleToDelete.objectIdHex);
@@ -1673,7 +1673,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     }
     setCustomFolders((current) => Array.from(new Set([...current, folder])).sort());
     setNewFolder("");
-    setStatus(`Created ${folderLabel(folder)} in Computer Library`);
+    setStatus(`Created ${folderLabel(folder)} in Browser Library`);
   }
 
   function deleteFolder(folderPath: string) {
@@ -1685,7 +1685,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     }
     setCustomFolders((current) => current.filter((candidate) => candidate !== folder));
     setFolderFilters((current) => ({ ...current, computer: current.computer === folder ? null : current.computer }));
-    setStatus(`Deleted ${folderLabel(folder)} from Computer Library`);
+    setStatus(`Deleted ${folderLabel(folder)} from Browser Library`);
   }
 
   function selectFolderFilter(space: GeometryLibrarySpace, folderPath: string | null) {
@@ -2825,7 +2825,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     setSyncBusy(true);
     try {
       const { bundle } = await readHexBoardGeometryBundle(entry);
-      openDeviceBundleInEditor(bundle, `Copied ${bundle.tuning.name} to Computer Library`);
+      openDeviceBundleInEditor(bundle, `Copied ${bundle.tuning.name} to Browser Library`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to copy HexBoard tuning bundle");
     } finally {
@@ -2838,9 +2838,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     try {
       const { bundle } = await readHexBoardGeometryBundle(entry);
       downloadBundleFile(bundle);
-      setStatus(`Downloaded ${bundle.tuning.name} file`);
+      setStatus(`Exported ${bundle.tuning.name} file`);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to download tuning file");
+      setStatus(error instanceof Error ? error.message : "Failed to export tuning file");
     } finally {
       setSyncBusy(false);
     }
@@ -3065,8 +3065,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               </div>
               <div className="row">
                 <button className="primary" type="button" onClick={addNewBundle}>New tuning</button>
-                <button type="button" onClick={() => bundleInputRef.current?.click()}>Import file</button>
-                <button type="button" onClick={() => downloadBundleFile(activeBundle)}>Download file</button>
+                <button type="button" onClick={() => bundleInputRef.current?.click()}>Import File</button>
+                <button type="button" onClick={() => downloadBundleFile(activeBundle)}>Export File</button>
                 <button disabled={syncBusy} type="button" onClick={() => void refreshHexBoardGeometryLibrary()}>Refresh HexBoard</button>
               </div>
             </div>
@@ -3088,7 +3088,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
 
             <div className="librarySpaces geometryLibrarySpaces">
               <GeometryLibrarySpacePanel
-                title="Computer Library"
+                title="Browser Library"
                 subtitle="Saved tunings; drag to reorder"
                 space="computer"
                 bundles={bundles}
@@ -3304,7 +3304,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           <div className="dangerZone">
             <div>
               <strong>Remove tuning</strong>
-              <span>Deletes this tuning from the Computer Library.</span>
+              <span>Deletes this tuning from the Browser Library.</span>
             </div>
             <button className="warning" type="button" onClick={deleteActiveBundle}>Delete</button>
           </div>
@@ -3987,7 +3987,7 @@ function GeometryLibrarySpacePanel({
                   Copy to HexBoard
                 </button>
                 <button type="button" onClick={() => onExport(bundle)}>
-                  Download file
+                  Export File
                 </button>
                 <button className="warning" type="button" onClick={() => onErase(bundle)}>
                   Delete
@@ -4103,10 +4103,10 @@ function HexBoardGeometryLibraryPanel({
                   Edit
                 </button>
                 <button type="button" onClick={() => onDownload(entry)}>
-                  Copy to Computer
+                  Copy to Browser
                 </button>
                 <button type="button" onClick={() => onExport(entry)}>
-                  Download file
+                  Export File
                 </button>
                 <button className="warning" disabled={entry.readOnly} type="button" onClick={() => onErase(entry)}>
                   Delete
