@@ -10,7 +10,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 27;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 28;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -22,7 +22,6 @@ enum class SettingKey : uint8_t {
 };
 
 constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
-constexpr size_t SETTINGS_VALUES_DATA_SIZE = static_cast<size_t>(PROFILE_COUNT) * NUM_SETTINGS;
 
 constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
 constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 11;
@@ -107,6 +106,20 @@ constexpr std::array<SettingKey, 34> synthPresetKeys = {
   SettingKey::SynthLfoSpeed
 };
 constexpr size_t SYNTH_PRESET_VALUE_COUNT = synthPresetKeys.size();
+constexpr size_t PROFILE_PERSISTED_SETTING_COUNT = NUM_SETTINGS - SYNTH_PRESET_VALUE_COUNT;
+
+enum SynthProfileReferenceFlags : uint8_t {
+  SYNTH_PROFILE_REFERENCE_DRAFT = 0x01,
+  SYNTH_PROFILE_REFERENCE_CATALOG = 0x02,
+  SYNTH_PROFILE_REFERENCE_BLANK = 0x04,
+};
+
+struct SynthProfileReference {
+  uint8_t flags = SYNTH_PROFILE_REFERENCE_BLANK;
+  uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
+};
+static_assert(sizeof(SynthProfileReference) == 17,
+              "SynthProfileReference disk layout changed");
 
 struct SynthPresetFileHeaderBase {
   char magic[3];     // "HSP"
@@ -267,26 +280,23 @@ struct SynthWavetableSlot {
   char samplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
 };
 
-struct SynthWavetableProfileReference {
-  char name[SYNTH_WAVETABLE_NAME_LENGTH] = {};
-  char folderPath[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
-};
-
 constexpr size_t SETTINGS_GEOMETRY_DATA_SIZE =
   sizeof(GeometryProfileReference) * PROFILE_COUNT;
-constexpr size_t SETTINGS_WAVETABLE_DATA_SIZE =
-  sizeof(SynthWavetableProfileReference) * PROFILE_COUNT;
+constexpr size_t SETTINGS_PROFILE_VALUES_DATA_SIZE =
+  static_cast<size_t>(PROFILE_COUNT) * PROFILE_PERSISTED_SETTING_COUNT;
+constexpr size_t SETTINGS_SYNTH_REFERENCE_DATA_SIZE =
+  sizeof(SynthProfileReference) * PROFILE_COUNT;
 constexpr size_t SETTINGS_DATA_SIZE =
-  SETTINGS_VALUES_DATA_SIZE
+  SETTINGS_PROFILE_VALUES_DATA_SIZE
   + SETTINGS_GEOMETRY_DATA_SIZE
-  + SETTINGS_WAVETABLE_DATA_SIZE;
+  + SETTINGS_SYNTH_REFERENCE_DATA_SIZE;
 
 // The host-side factory-library compiler writes these records byte-for-byte.
 // Fail the firmware build if the RP2040 ABI ever changes their disk layout.
 static_assert(sizeof(SettingsHeader) == 12, "SettingsHeader disk layout changed");
-static_assert(SETTINGS_VALUES_DATA_SIZE == 810,
-              "Settings value payload changed; update the factory-library builder");
-static_assert(SETTINGS_DATA_SIZE == 1971,
+static_assert(SETTINGS_PROFILE_VALUES_DATA_SIZE == 504,
+              "Persisted settings payload changed; update the factory-library builder");
+static_assert(SETTINGS_DATA_SIZE == 1098,
               "Settings payload changed; update the factory-library builder");
 static_assert(sizeof(SynthPresetFileHeaderBase) == 8, "SynthPresetFileHeaderBase disk layout changed");
 static_assert(sizeof(SynthPresetSlot) == 212, "SynthPresetSlot disk layout changed");
@@ -363,7 +373,7 @@ using SynthWavetableCatalog = FixedCatalog<SynthWavetableSlot, SYNTH_WAVETABLE_M
 
 extern uint8_t settingsProfiles[PROFILE_COUNT][NUM_SETTINGS];
 extern GeometryProfileReference geometryProfileReferences[PROFILE_COUNT];
-extern SynthWavetableProfileReference synthWavetableProfileReferences[PROFILE_COUNT];
+extern SynthProfileReference synthProfileReferences[PROFILE_COUNT];
 extern uint8_t* settings;
 extern uint8_t activeProfileIndex;
 extern uint8_t defaultProfileIndex;

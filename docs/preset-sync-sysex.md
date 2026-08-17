@@ -56,7 +56,8 @@ File headers:
 
 | File | Magic | Version owner | Payload |
 | --- | --- | --- | --- |
-| `/settings.dat` | `STG` | Main settings schema | Profile settings, tuning/layout/scale IDs, and wavetable references |
+| `/settings.dat` | `STG` | Main settings schema | Non-synth profile settings, tuning/layout/scale IDs, and synth preset-or-draft references |
+| `/.synth_profile_<0..8>.hsp` | `HSP` | Synth preset file schema `11` | Hidden full synth patch for a modified profile |
 | `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `3`; object schema `2` | One tuning root and all linked layout/scale/color/map records |
 | `/geometry_order.dat` | `HGO` | Geometry order file schema `1` | Ordered tuning object IDs used by device and web library menus |
 | `/presets/*.hsp` | `HSP` | Synth preset file schema `11` | One named preset, folder, values, and wavetable reference |
@@ -395,7 +396,7 @@ Example response, transaction `1`, max packed chunk `128`, capabilities
 delete user object, factory geometry listing, synth wavetable objects, live
 synth parameter and wavetable selection, cents-table runtime tuning, and atomic
 geometry bundles),
-max raw object bytes `262144`, settings schema `27`, synth
+max raw object bytes `262144`, settings schema `28`, synth
 preset schema `7`, `9` profiles, `128` synth preset entries, `64` slots for
 each advertised user geometry count, hardware version `2`:
 
@@ -796,7 +797,7 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `25` |
+| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `28` |
 | `0x21` | `SettingValues` | Repeated `<setting-key-u8> <value-u8>` records |
 | `0x22` | `TuningRef` | Object reference |
 | `0x23` | `LayoutRef` | Object reference |
@@ -1385,7 +1386,8 @@ preview matches the saved selection.
    Core 0 services transfers cooperatively while retaining note-release,
    button-scan, and encoder-panic handling. The window closes when the exchange
    goes idle without an active object transfer or reaches its timeout. OLED
-   redraws are quantized rather than performed for every 64-byte chunk.
+   redraws are quantized rather than performed for every 64-byte chunk, and each
+   selected progress frame is drained before transfer processing resumes.
    `SYNTH_PARAM_SET`, `SYNTH_WAVETABLE_SELECT`, hello, list, delete, and other
    one-frame control messages process without opening that modal window.
 8. Current firmware uses the Pico SDK USB stack through Arduino-Pico `MIDIUSB`

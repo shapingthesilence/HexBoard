@@ -11,21 +11,6 @@
 
 namespace {
 constexpr uint16_t CURRENT_SYNTH_PRESET_NONE = 0xFFFFu;
-constexpr char CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH[] = "/current_synth_preset.dat";
-constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_VERSION = 1;
-constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_LOADED_FLAG = 0x01;
-constexpr uint8_t CURRENT_SYNTH_PRESET_REFERENCE_BLANK_FLAG = 0x02;
-
-struct CurrentSynthPresetReferenceFile {
-  char magic[3];
-  uint8_t version;
-  uint8_t flags;
-  uint8_t reserved[3];
-  uint8_t objectId[SYNTH_PRESET_OBJECT_ID_LENGTH];
-  uint32_t crc32;
-};
-static_assert(sizeof(CurrentSynthPresetReferenceFile) == 28,
-              "CurrentSynthPresetReferenceFile disk layout changed");
 
 uint16_t currentSynthPresetIndex = CURRENT_SYNTH_PRESET_NONE;
 uint8_t currentSynthPresetObjectId[SYNTH_PRESET_OBJECT_ID_LENGTH] = {};
@@ -36,6 +21,10 @@ bool currentSynthPresetLoadedSlotValid = false;
 SynthPresetSlot pendingSynthPresetSaveSlot = {};
 bool pendingSynthPresetSaveSlotValid = false;
 bool lastSynthPresetSaveSucceeded = false;
+SynthPresetSlot pendingSynthProfileDraft = {};
+SynthProfileReference pendingSynthProfileReference = {};
+uint8_t pendingSynthProfileIndex = DEFAULT_PROFILE_INDEX;
+bool pendingSynthProfileStateValid = false;
 
 bool objectIdIsEmpty(const uint8_t* objectId, size_t objectIdLength) {
   for (size_t i = 0; i < objectIdLength; ++i) {
@@ -48,29 +37,6 @@ bool objectIdIsEmpty(const uint8_t* objectId, size_t objectIdLength) {
 
 void clearCurrentSynthPresetObjectId() {
   memset(currentSynthPresetObjectId, 0, sizeof(currentSynthPresetObjectId));
-}
-
-uint32_t currentSynthPresetReferenceCrc(const CurrentSynthPresetReferenceFile& reference) {
-  uint8_t bytes[1 + sizeof(reference.objectId)] = {};
-  bytes[0] = reference.flags;
-  memcpy(bytes + 1, reference.objectId, sizeof(reference.objectId));
-  return crc32(bytes, sizeof(bytes));
-}
-
-template <typename Record>
-bool persistedRecordMatches(const char* path, const Record& record) {
-  File f = LittleFS.open(path, "r");
-  if (!f) {
-    return false;
-  }
-
-  Record existing = {};
-  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&existing), sizeof(existing));
-  bool matches = bytesRead == sizeof(existing)
-                 && f.available() == 0
-                 && memcmp(&existing, &record, sizeof(record)) == 0;
-  f.close();
-  return matches;
 }
 
 const SynthPresetIndexEntry* trackedCurrentSynthPresetEntry() {
@@ -488,7 +454,6 @@ void loadBlankSynthPreset() {
   markSettingsDirty();
   trackBlankSynthPreset();
   syncSynthSettingsToRuntime();
-  flashSafeSaveCurrentSynthPresetReference();
   sendToLog("Loaded blank synth preset.");
 }
 
@@ -588,7 +553,182 @@ bool readSynthPresetRecordByObjectId(const uint8_t* objectId, SynthPresetSlot& p
   normalizeSynthPresetMetadata(preset, 0);
   return true;
 }
+
+void synthProfileDraftPath(uint8_t profileIndex, char* output, size_t outputLength) {
+  snprintf(output, outputLength, "/.synth_profile_%u.hsp", static_cast<unsigned>(profileIndex));
+}
+
+bool readSynthProfileDraft(uint8_t profileIndex, SynthPresetSlot& preset) {
+  char path[32] = {};
+  synthProfileDraftPath(profileIndex, path, sizeof(path));
+  File f = LittleFS.open(path, "r");
+  if (!f) {
+    return false;
+  }
+  SynthPresetFileHeaderBase header = {};
+  bool ok = f.size() == sizeof(header) + sizeof(preset)
+            && f.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)
+            && f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) == sizeof(preset);
+  f.close();
+  return ok
+         && synthPresetHeaderBaseValid(header)
+         && preset.valid
+         && header.crc32 == crc32(reinterpret_cast<const uint8_t*>(&preset), sizeof(preset));
+}
+
+bool writeSynthProfileDraftAtomic(uint8_t profileIndex, const SynthPresetSlot& preset) {
+  char path[32] = {};
+  char tempPath[36] = {};
+  synthProfileDraftPath(profileIndex, path, sizeof(path));
+  snprintf(tempPath, sizeof(tempPath), "%s.tmp", path);
+  SynthPresetFileHeaderBase header = {};
+  header.magic[0] = 'H'; header.magic[1] = 'S'; header.magic[2] = 'P';
+  header.version = SYNTH_PRESET_FILE_VERSION;
+  header.crc32 = crc32(reinterpret_cast<const uint8_t*>(&preset), sizeof(preset));
+
+  File existing = LittleFS.open(path, "r");
+  if (existing && existing.size() == sizeof(header) + sizeof(preset)) {
+    SynthPresetFileHeaderBase existingHeader = {};
+    SynthPresetSlot existingPreset = {};
+    bool unchanged =
+      existing.read(reinterpret_cast<uint8_t*>(&existingHeader), sizeof(existingHeader)) == sizeof(existingHeader)
+      && existing.read(reinterpret_cast<uint8_t*>(&existingPreset), sizeof(existingPreset)) == sizeof(existingPreset)
+      && synthPresetHeaderBaseValid(existingHeader)
+      && existingHeader.crc32 == header.crc32
+      && crc32(reinterpret_cast<const uint8_t*>(&existingPreset), sizeof(existingPreset)) == existingHeader.crc32
+      && memcmp(&existingPreset, &preset, sizeof(preset)) == 0;
+    existing.close();
+    if (unchanged) {
+      return true;
+    }
+  } else if (existing) {
+    existing.close();
+  }
+
+  LittleFS.remove(tempPath);
+  File output = LittleFS.open(tempPath, "w");
+  bool ok = output
+            && output.write(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)
+            && output.write(reinterpret_cast<const uint8_t*>(&preset), sizeof(preset)) == sizeof(preset);
+  if (output) {
+    output.close();
+  }
+  if (!ok || !LittleFS.rename(tempPath, path)) {
+    LittleFS.remove(tempPath);
+    sendToLog("Error: Unable to atomically save synth profile draft " + std::string(path) + ".");
+    return false;
+  }
+  return true;
+}
 }  // namespace
+
+void queueCurrentSynthStateForProfile(uint8_t profileIndex) {
+  if (profileIndex >= PROFILE_COUNT) {
+    return;
+  }
+  SynthProfileReference reference = {};
+  bool modified = currentSynthPresetRuntimeModified();
+  const SynthPresetIndexEntry* metadata = currentSynthPresetIsBlank
+    ? nullptr
+    : trackedCurrentSynthPresetEntry();
+
+  if (!modified && currentSynthPresetIsBlank) {
+    reference.flags = SYNTH_PROFILE_REFERENCE_BLANK;
+  } else if (!modified && metadata) {
+    reference.flags = SYNTH_PROFILE_REFERENCE_CATALOG;
+    memcpy(reference.objectId, metadata->objectId, sizeof(reference.objectId));
+  } else {
+    reference.flags = SYNTH_PROFILE_REFERENCE_DRAFT;
+    if (currentSynthPresetIsBlank) {
+      reference.flags |= SYNTH_PROFILE_REFERENCE_BLANK;
+    } else if (metadata) {
+      reference.flags |= SYNTH_PROFILE_REFERENCE_CATALOG;
+      memcpy(reference.objectId, metadata->objectId, sizeof(reference.objectId));
+    }
+    pendingSynthProfileDraft = SynthPresetSlot{};
+    captureCurrentSynthPreset(pendingSynthProfileDraft);
+    snprintf(pendingSynthProfileDraft.name,
+             sizeof(pendingSynthProfileDraft.name),
+             "Profile %u Draft",
+             static_cast<unsigned>(profileIndex + 1));
+    snprintf(pendingSynthProfileDraft.folderPath, sizeof(pendingSynthProfileDraft.folderPath), "/");
+  }
+  pendingSynthProfileReference = reference;
+  pendingSynthProfileIndex = profileIndex;
+  pendingSynthProfileStateValid = true;
+}
+
+bool persistPendingSynthProfileDrafts() {
+  if (!pendingSynthProfileStateValid) {
+    return true;
+  }
+  if ((pendingSynthProfileReference.flags & SYNTH_PROFILE_REFERENCE_DRAFT) != 0
+      && !writeSynthProfileDraftAtomic(pendingSynthProfileIndex, pendingSynthProfileDraft)) {
+    return false;
+  }
+  synthProfileReferences[pendingSynthProfileIndex] = pendingSynthProfileReference;
+  pendingSynthProfileStateValid = false;
+  return true;
+}
+
+bool restoreSynthStateForProfile(uint8_t profileIndex) {
+  if (profileIndex >= PROFILE_COUNT) {
+    return false;
+  }
+  const SynthProfileReference& reference = synthProfileReferences[profileIndex];
+  const bool draft = (reference.flags & SYNTH_PROFILE_REFERENCE_DRAFT) != 0;
+  const bool catalog = (reference.flags & SYNTH_PROFILE_REFERENCE_CATALOG) != 0;
+  const bool blank = (reference.flags & SYNTH_PROFILE_REFERENCE_BLANK) != 0;
+  if (catalog && blank) {
+    sendToLog("Invalid synth profile reference. Using Blank.");
+    applyBlankSynthPresetToSettings();
+    trackBlankSynthPreset();
+    return false;
+  }
+
+  if (draft) {
+    SynthPresetSlot preset = {};
+    if (!readSynthProfileDraft(profileIndex, preset)) {
+      char path[32] = {};
+      synthProfileDraftPath(profileIndex, path, sizeof(path));
+      reportStorageHealthIssue(path, "missing or invalid draft");
+      sendToLog("Synth profile draft is missing or invalid. Using Blank.");
+      applyBlankSynthPresetToSettings();
+      trackBlankSynthPreset();
+      return false;
+    }
+    normalizeSynthPresetValues(preset);
+    applySynthPresetToSettings(preset);
+    if (catalog && trackCurrentSynthPresetObjectId(reference.objectId)) {
+      return true;
+    }
+    if (blank) {
+      trackBlankSynthPreset();
+    } else {
+      trackCurrentSynthPresetSlot(CURRENT_SYNTH_PRESET_NONE);
+    }
+    return true;
+  }
+
+  if (catalog) {
+    for (uint16_t presetIndex = 0; presetIndex < synthPresets.size(); ++presetIndex) {
+      if (memcmp(synthPresets[presetIndex].objectId, reference.objectId, sizeof(reference.objectId)) != 0) {
+        continue;
+      }
+      SynthPresetSlot preset = {};
+      if (readSynthPresetFromCatalog(presetIndex, preset)) {
+        applySynthPresetToSettings(preset);
+        trackCurrentSynthPresetSlot(presetIndex, &preset);
+        return true;
+      }
+      break;
+    }
+    sendToLog("Synth profile preset is unavailable. Using Blank.");
+  }
+  applyBlankSynthPresetToSettings();
+  trackBlankSynthPreset();
+  return blank;
+}
 
 bool synthPresetStoragePath(const uint8_t* objectId, char* output, size_t outputLength) {
   if (!objectId || !output || outputLength < 47) {
@@ -659,86 +799,6 @@ bool readSynthPresetFromCatalog(uint16_t presetIndex, SynthPresetSlot& preset) {
   return readSynthPresetRecordAt(presetIndex, preset);
 }
 
-void saveCurrentSynthPresetReference() {
-  if (!fileSystemExists) {
-    return;
-  }
-
-  CurrentSynthPresetReferenceFile reference = {};
-  reference.magic[0] = 'C'; reference.magic[1] = 'S'; reference.magic[2] = 'P';
-  reference.version = CURRENT_SYNTH_PRESET_REFERENCE_VERSION;
-  if (currentSynthPresetIsBlank) {
-    reference.flags = CURRENT_SYNTH_PRESET_REFERENCE_BLANK_FLAG;
-  } else {
-    const SynthPresetIndexEntry* metadata = trackedCurrentSynthPresetEntry();
-    if (!metadata) {
-      if (LittleFS.exists(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH)) {
-        LittleFS.remove(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH);
-      }
-      return;
-    }
-    reference.flags = CURRENT_SYNTH_PRESET_REFERENCE_LOADED_FLAG;
-    memcpy(reference.objectId, metadata->objectId, sizeof(reference.objectId));
-  }
-  reference.crc32 = currentSynthPresetReferenceCrc(reference);
-
-  if (persistedRecordMatches(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH, reference)) {
-    return;
-  }
-
-  File f = LittleFS.open(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH, "w");
-  if (!f) {
-    sendToLog("Error: Unable to open /current_synth_preset.dat for writing.");
-    return;
-  }
-  size_t written = f.write(reinterpret_cast<uint8_t*>(&reference), sizeof(reference));
-  f.close();
-  if (written != sizeof(reference)) {
-    sendToLog("Error: Incomplete current synth preset reference write.");
-  }
-}
-
-bool loadCurrentSynthPresetReference() {
-  if (!fileSystemExists) {
-    return false;
-  }
-  File f = LittleFS.open(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH, "r");
-  if (!f) {
-    return false;
-  }
-  CurrentSynthPresetReferenceFile reference = {};
-  size_t fileSize = f.size();
-  size_t bytesRead = f.read(reinterpret_cast<uint8_t*>(&reference), sizeof(reference));
-  f.close();
-  uint8_t knownFlags = CURRENT_SYNTH_PRESET_REFERENCE_LOADED_FLAG
-                       | CURRENT_SYNTH_PRESET_REFERENCE_BLANK_FLAG;
-  bool hasLoadedFlag = (reference.flags & CURRENT_SYNTH_PRESET_REFERENCE_LOADED_FLAG) != 0;
-  bool hasBlankFlag = (reference.flags & CURRENT_SYNTH_PRESET_REFERENCE_BLANK_FLAG) != 0;
-  if (fileSize != sizeof(reference)
-      || bytesRead != sizeof(reference)
-      || strncmp(reference.magic, "CSP", 3) != 0
-      || reference.version != CURRENT_SYNTH_PRESET_REFERENCE_VERSION
-      || (reference.flags & ~knownFlags) != 0
-      || hasLoadedFlag == hasBlankFlag
-      || currentSynthPresetReferenceCrc(reference) != reference.crc32) {
-    reportStorageHealthIssue(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH, "invalid reference");
-    sendToLog("Invalid current synth preset reference. Using Current.");
-    return false;
-  }
-  if (hasBlankFlag) {
-    trackBlankSynthPreset();
-    sendToLog("Current synth preset reference loaded: Blank.");
-    return true;
-  }
-  if (trackCurrentSynthPresetObjectId(reference.objectId)) {
-    sendToLog("Current synth preset reference loaded: " + std::string(currentSynthPresetDisplayName()) + ".");
-    return true;
-  }
-  sendToLog("Current synth preset reference not found in catalog. Using Current.");
-  reportStorageHealthIssue(CURRENT_SYNTH_PRESET_REFERENCE_FILE_PATH, "target unavailable");
-  return false;
-}
-
 void save_synth_presets() {
   lastSynthPresetSaveSucceeded = false;
   if (!fileSystemExists) {
@@ -753,7 +813,6 @@ void save_synth_presets() {
   pendingSynthPresetSaveSlotValid = false;
   if (ok) {
     lastSynthPresetSaveSucceeded = true;
-    saveCurrentSynthPresetReference();
   }
 }
 
@@ -889,14 +948,6 @@ void flashSafeSave() {
   flashSafeWrite(save_settings);
 }
 
-void saveCurrentSynthReference() {
-  saveCurrentSynthPresetReference();
-}
-
-void flashSafeSaveCurrentSynthPresetReference() {
-  flashSafeWrite(saveCurrentSynthReference);
-}
-
 void flashSafeSaveSynthPresets() {
   flashSafeWrite(save_synth_presets);
 }
@@ -1000,7 +1051,6 @@ bool deleteSynthPresetFromCatalog(uint16_t presetIndex) {
   }
   synthPresets.eraseAt(presetIndex);
   trackedCurrentSynthPresetEntry();
-  saveCurrentSynthPresetReference();
   endFlashSafeWrite();
   return true;
 }
@@ -1024,7 +1074,6 @@ void loadSynthPresetFromSlot(uint16_t presetIndex) {
   markSettingsDirty();
   trackCurrentSynthPresetSlot(presetIndex, &preset);
   syncSynthSettingsToRuntime();
-  flashSafeSaveCurrentSynthPresetReference();
   if (missingWavetable) {
     showMissingWavetableNotice(missingWavetableName);
   }

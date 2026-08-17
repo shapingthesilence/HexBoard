@@ -466,9 +466,10 @@ The top-level `Synth:<preset>` item and the `Preset:<preset>` item inside
 `Editor` -> `Synth` both open synth preset load lists. `Save Preset` and the
 preset load lists use synth-only preset libraries with room for up to `128`
 device presets. Presets are stored separately from the main settings file as
-named, foldered synth sounds. The device remembers which synth preset or
-`Blank` state was last loaded, while the normal settings auto-save stores any
-unsaved edits so the preset label can still show as modified after restart. On
+named, foldered synth sounds. Each settings profile remembers its selected
+synth preset or `Blank` state. Auto-save and manual profile saves also preserve
+unsaved synth edits without overwriting the named preset, so the preset label
+can still show as modified after restart. On
 the device, presets appear in a virtual folder browser; `New Preset` saves into
 the currently open folder. The factory image includes its preset library as
 ordinary editable records, including `Soft String Pad` under `Pads` and
@@ -477,8 +478,8 @@ preset. The web app shows the foldered library and can create foldered presets.
 The load list also includes `Blank`. Loading from the top-level `Synth` item
 returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
-wavetable reference, which can still be auto-saved by the normal settings
-system. The currently loaded catalog preset shows a diamond in the left
+wavetable reference, which can still be preserved by profile auto-save. The
+currently loaded catalog preset shows a diamond in the left
 action-icon slot when it appears in the load list; `Blank`, `New Preset`, and
 the unselected `Current` state are not marked.
 
@@ -847,7 +848,7 @@ Important factory defaults include:
 Use `HexBoard_Factory.uf2` for a factory installation. It erases all saved
 settings, presets, wavetables, layouts, samples, and sequences, then installs a
 complete factory library. Use `HexBoard_Update.uf2` to update firmware without
-changing LittleFS. Beta 3 accepts only settings schema `27`;
+changing LittleFS. Beta 3 accepts only settings schema `28`;
 settings from another beta start at defaults, while current-format preset,
 wavetable, geometry, and sequence files remain available.
 

@@ -214,11 +214,12 @@ Mapping order:
 
 ## Settings And Persistence
 
-`/settings.dat` contains `STG`, version, default profile, nine setting-byte
-profiles, stable tuning/layout/scale references, per-profile wavetable
-references, and payload CRC32.
+`/settings.dat` contains `STG`, version, default profile, nine profiles of
+non-synth setting bytes, stable tuning/layout/scale references, compact synth
+preset-or-draft references, and payload CRC32. Synth values and wavetable
+references come from the referenced named preset or hidden profile draft.
 
-`CURRENT_SETTINGS_VERSION` is 27. Firmware accepts only that version and exact
+`CURRENT_SETTINGS_VERSION` is 28. Firmware accepts only that version and exact
 payload size. Invalid or missing settings use hardware-aware RAM defaults and
 are written only by normal save behavior.
 
@@ -247,8 +248,8 @@ Persistent stores:
 
 | Store | Owner | Limits and behavior |
 | --- | --- | --- |
-| `/settings.dat` | `Settings.cpp` | 9 profiles; 10-second dirty save; identical data skipped |
-| `/current_synth_preset.dat` | `SynthPresetStorage.cpp` | current preset ID or Blank |
+| `/settings.dat` | `Settings.cpp` | 9 non-synth profiles plus synth references; 10-second dirty save; identical data skipped |
+| `/.synth_profile_<0..8>.hsp` | `SynthPresetStorage.cpp` | hidden copy-on-write profile drafts; identical patch CRCs skipped |
 | `/presets/*.hsp` | `SynthPresetStorage.cpp` | HSP v11; up to 128 atomic files |
 | `/synth_wavetables.dat`, `/wt_*.wtb` | `SynthWavetableStorage.cpp` | up to 32 entries; base or six mip levels |
 | `/geometry/*.hgb` | `PresetSyncGeometry.cpp` | HGB v3/schema 2; up to 64 atomic bundles |
@@ -313,18 +314,18 @@ services the other subsystem's DMA completion line.
 
 Rotary turns that navigate the GEM menu, virtual lists, or Sequencer UI are
 accepted only when the preceding display frame has completed. The Core 1 rotary
-decoder retains one pending direction while a frame is in flight, matching the
-former blocking display behavior without blocking note, MIDI, or audio work.
+decoder retains one pending direction while a frame is in flight. Note, MIDI,
+and audio work continue while the display transfer runs.
 
-Dynamic display content—including played notes, command-wheel overlays, and
-preset-sync progress—shares a 20 Hz maximum presentation cadence. Each producer
-retains its latest state between frames; initial screens and transfer completion
-remain immediate. Command-wheel values are elapsed-time based and cap catch-up
-work without extending the menu wake timer. Velocity, modulation, and pitch
-bend share one steady 10 ms motion scheduler. A fractional step accumulator
-preserves approximately the same travel time for each saved speed choice,
-including sub-step rates, without compressing missed updates into catch-up
-jumps.
+Played notes, command-wheel overlays, and preset-sync progress share a 20 Hz
+maximum presentation cadence and retain their latest state between frames.
+Preset-sync drains each selected progress frame before resuming transfer work;
+the interactive overlays remain asynchronous. Command-wheel values are
+elapsed-time based and cap catch-up work without extending the menu wake timer.
+Velocity, modulation, and pitch bend share one steady 10 ms motion scheduler. A
+fractional step accumulator preserves approximately the same travel time for
+each saved speed choice, including sub-step rates, without compressing missed
+updates into catch-up jumps.
 
 ## MIDI And Tuning
 

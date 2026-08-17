@@ -785,16 +785,12 @@ def build_presets(root: Path, output: Path, config: dict,
         seen_names.add(key)
     if selected_id is None or selected_values is None or selected_wavetable is None:
         raise fail(root, "selection", f"selectedPreset {selected_name!r} was not found")
-    reference_body = b"\x01" + selected_id
-    current_reference = b"CSP" + b"\x01" + b"\x01" + bytes(3) + selected_id + struct.pack("<I", crc32(reference_body))
-    (output / "current_synth_preset.dat").write_bytes(current_reference)
     return selected_id, selected_values, selected_wavetable
 
 
 def build_settings(config_path: Path, output: Path, config: dict,
-                   selected_preset_values: dict[str, int],
-                   selected_geometry: tuple[bytes, bytes, bytes],
-                   selected_wavetable: tuple[str, str]) -> None:
+                   selected_preset_id: bytes,
+                   selected_geometry: tuple[bytes, bytes, bytes]) -> None:
     settings_source = config.get("settings")
     if not isinstance(settings_source, dict):
         raise fail(config_path, "settings", "settings must be an object")
@@ -810,19 +806,14 @@ def build_settings(config_path: Path, output: Path, config: dict,
     settings = {key: checked_byte(settings_source[key], config_path, key) for key in SETTING_KEYS}
     if settings["RotaryInvert"] != 0:
         raise fail(config_path, "settings", "RotaryInvert factory value must be 0 (relative to hardware default)")
-    profiles = [bytearray(settings[key] for key in SETTING_KEYS) for _ in range(PROFILE_COUNT)]
-    for key, value in selected_preset_values.items():
-        profiles[0][SETTING_KEYS.index(key)] = value
+    persisted_setting_keys = tuple(key for key in SETTING_KEYS if key not in SYNTH_PRESET_KEYS)
+    profiles = [bytearray(settings[key] for key in persisted_setting_keys) for _ in range(PROFILE_COUNT)]
     profile_data = b"".join(profiles)
     tuning_id, layout_id, scale_id = selected_geometry
     geometry_reference = bytes([0x07]) + tuning_id + layout_id + scale_id
     geometry_profile_data = geometry_reference * PROFILE_COUNT
-    wavetable_folder, wavetable_name = selected_wavetable
-    wavetable_reference = (
-        encoded_text(wavetable_name, config_path, "wavetable name", 32)
-        + encoded_text(wavetable_folder, config_path, "wavetable folder", 48)
-    )
-    wavetable_profile_data = wavetable_reference * PROFILE_COUNT
+    synth_reference = bytes([0x02]) + selected_preset_id
+    synth_profile_data = synth_reference * PROFILE_COUNT
     version = checked_byte(config.get("settingsVersion"), config_path, "settingsVersion")
     if version != CURRENT_SETTINGS_VERSION:
         raise fail(
@@ -830,7 +821,7 @@ def build_settings(config_path: Path, output: Path, config: dict,
             "settings",
             f"settingsVersion is {version}; builder expects {CURRENT_SETTINGS_VERSION}",
         )
-    settings_data = profile_data + geometry_profile_data + wavetable_profile_data
+    settings_data = profile_data + geometry_profile_data + synth_profile_data
     header = struct.pack("<3sBB3xI", b"STG", version, 0, crc32(settings_data))
     (output / "settings.dat").write_bytes(header + settings_data)
 
@@ -871,7 +862,7 @@ def build_library(library: Path, output: Path) -> None:
     if not wavetable_root.is_dir() or not preset_root.is_dir() or not geometry_root.is_dir():
         raise fail(library, "layout", "expected geometry/, presets/, and wavetables/ directories")
     wavetable_records, wavetable_references = build_wavetables(wavetable_root, output)
-    _, selected_values, selected_preset_wavetable = build_presets(
+    selected_preset_id, _, selected_preset_wavetable = build_presets(
         preset_root, output, config, wavetable_references
     )
     geometry_object_count, selected_tuning_id, selected_layout_id, selected_scale_id = (
@@ -881,9 +872,8 @@ def build_library(library: Path, output: Path) -> None:
         config_path,
         output,
         config,
-        selected_values,
+        selected_preset_id,
         (selected_tuning_id, selected_layout_id, selected_scale_id),
-        selected_preset_wavetable,
     )
     validate_selected_wavetable(
         config_path, config, wavetable_references, selected_preset_wavetable

@@ -30,7 +30,7 @@ uint32_t crc32(const uint8_t* data, size_t length) {
 
 uint8_t settingsProfiles[PROFILE_COUNT][NUM_SETTINGS] = { { 0 } };
 GeometryProfileReference geometryProfileReferences[PROFILE_COUNT] = {};
-SynthWavetableProfileReference synthWavetableProfileReferences[PROFILE_COUNT] = {};
+SynthProfileReference synthProfileReferences[PROFILE_COUNT] = {};
 uint8_t* settings = settingsProfiles[DEFAULT_PROFILE_INDEX];
 uint8_t activeProfileIndex = DEFAULT_PROFILE_INDEX;
 uint8_t defaultProfileIndex = DEFAULT_PROFILE_INDEX;

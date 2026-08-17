@@ -321,7 +321,10 @@ void drawPresetSyncTransferScreen(bool forceRedraw = false) {
     drawCenteredDelegatedText(progressText, 73);
     drawCenteredDelegatedText(byteText, 91);
     drawCenteredDelegatedText("Please wait...", MODAL_SCREEN_FOOTER_BASELINE);
-    u8g2.sendBuffer();
+    // Preset-sync owns the UI while active, so drain the selected snapshot as
+    // one bounded presentation instead of exposing it page-by-page over many
+    // transfer-service iterations.
+    u8g2.sendBufferAndWait();
     presetSyncTransferScreenVisible = true;
     return;
   }
@@ -351,7 +354,7 @@ void drawPresetSyncTransferScreen(bool forceRedraw = false) {
   u8g2.drawStr(8, 72, frameText);
   u8g2.drawStr(8, 90, messageText);
   u8g2.drawStr(8, MODAL_SCREEN_FOOTER_BASELINE, "Please wait...");
-  u8g2.sendBuffer();
+  u8g2.sendBufferAndWait();
   presetSyncTransferScreenVisible = true;
 }
 

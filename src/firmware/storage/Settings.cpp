@@ -27,7 +27,43 @@ extern const uint8_t factoryDefaults[NUM_SETTINGS] = {
 // File System Handling: LittleFS Setup
 // ==================================================
 bool fileSystemExists = false;
+bool lastSettingsSaveSucceeded = false;
 constexpr char SETTINGS_FILE_PATH[] = "/settings.dat";
+
+namespace {
+bool isSynthProfileSetting(SettingKey key) {
+  for (SettingKey synthKey : synthPresetKeys) {
+    if (synthKey == key) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void packPersistedProfileSettings(uint8_t* output) {
+  size_t cursor = 0;
+  for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
+    for (uint8_t keyIndex = 0; keyIndex < NUM_SETTINGS; ++keyIndex) {
+      SettingKey key = static_cast<SettingKey>(keyIndex);
+      if (!isSynthProfileSetting(key)) {
+        output[cursor++] = settingsProfiles[profile][keyIndex];
+      }
+    }
+  }
+}
+
+void unpackPersistedProfileSettings(const uint8_t* input) {
+  size_t cursor = 0;
+  for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
+    for (uint8_t keyIndex = 0; keyIndex < NUM_SETTINGS; ++keyIndex) {
+      SettingKey key = static_cast<SettingKey>(keyIndex);
+      if (!isSynthProfileSetting(key)) {
+        settingsProfiles[profile][keyIndex] = input[cursor++];
+      }
+    }
+  }
+}
+}  // namespace
 
 int loadCurrentKeyStepsFromSettings() {
   uint16_t encoded = static_cast<uint16_t>(settingValue(SettingKey::CurrentKeyStepsFromA))
@@ -63,7 +99,9 @@ void applyFactoryDefaultsToSettings() {
     memcpy(settingsProfiles[profile], factoryDefaults, NUM_SETTINGS);
   }
   memset(geometryProfileReferences, 0, sizeof(geometryProfileReferences));
-  memset(synthWavetableProfileReferences, 0, sizeof(synthWavetableProfileReferences));
+  for (SynthProfileReference& reference : synthProfileReferences) {
+    reference = SynthProfileReference{};
+  }
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
   selectFallbackSynthWavetable();
@@ -119,18 +157,19 @@ bool load_settings() {
   }
   // Profile 1 is the canonical boot target.
   defaultProfileIndex = DEFAULT_PROFILE_INDEX;
+  uint8_t persistedProfileSettings[SETTINGS_PROFILE_VALUES_DATA_SIZE] = {};
   size_t settingsBytesRead =
-    f.read(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_VALUES_DATA_SIZE);
+    f.read(persistedProfileSettings, sizeof(persistedProfileSettings));
   size_t geometryBytesRead =
     f.read(reinterpret_cast<uint8_t*>(geometryProfileReferences),
            SETTINGS_GEOMETRY_DATA_SIZE);
-  size_t wavetableBytesRead =
-    f.read(reinterpret_cast<uint8_t*>(synthWavetableProfileReferences),
-           SETTINGS_WAVETABLE_DATA_SIZE);
+  size_t synthReferenceBytesRead =
+    f.read(reinterpret_cast<uint8_t*>(synthProfileReferences),
+           SETTINGS_SYNTH_REFERENCE_DATA_SIZE);
   f.close();
-  if (settingsBytesRead != SETTINGS_VALUES_DATA_SIZE
+  if (settingsBytesRead != SETTINGS_PROFILE_VALUES_DATA_SIZE
       || geometryBytesRead != SETTINGS_GEOMETRY_DATA_SIZE
-      || wavetableBytesRead != SETTINGS_WAVETABLE_DATA_SIZE) {
+      || synthReferenceBytesRead != SETTINGS_SYNTH_REFERENCE_DATA_SIZE) {
     reportStorageHealthIssue("/settings.dat", "short payload");
     sendToLog("/settings.dat: short payload read; using factory defaults.");
     applyFactoryDefaultsToSettings();
@@ -138,14 +177,14 @@ bool load_settings() {
   }
   uint32_t computed = crc32Begin();
   computed = crc32Update(computed,
-                         reinterpret_cast<uint8_t*>(settingsProfiles),
-                         SETTINGS_VALUES_DATA_SIZE);
+                         persistedProfileSettings,
+                         sizeof(persistedProfileSettings));
   computed = crc32Update(computed,
                          reinterpret_cast<uint8_t*>(geometryProfileReferences),
                          SETTINGS_GEOMETRY_DATA_SIZE);
   computed = crc32Update(computed,
-                         reinterpret_cast<uint8_t*>(synthWavetableProfileReferences),
-                         SETTINGS_WAVETABLE_DATA_SIZE);
+                         reinterpret_cast<uint8_t*>(synthProfileReferences),
+                         SETTINGS_SYNTH_REFERENCE_DATA_SIZE);
   computed = crc32Finish(computed);
   if (computed != header.crc32) {
     reportStorageHealthIssue("/settings.dat", "CRC mismatch");
@@ -153,6 +192,10 @@ bool load_settings() {
     applyFactoryDefaultsToSettings();
     return false;
   }
+  for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
+    memcpy(settingsProfiles[profile], factoryDefaults, NUM_SETTINGS);
+  }
+  unpackPersistedProfileSettings(persistedProfileSettings);
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
   settingsDirty = false;
@@ -161,26 +204,32 @@ bool load_settings() {
 }
 
 void save_settings() {
+  lastSettingsSaveSucceeded = false;
   if (!fileSystemExists) {
     sendToLog("LittleFS: unavailable while saving /settings.dat.");
     return;
   }
-  rememberCurrentSynthWavetableReferenceForProfile(activeProfileIndex);
   rememberCurrentGeometryReferenceForProfile(activeProfileIndex);
+  if (!persistPendingSynthProfileDrafts()) {
+    sendToLog("Error: Unable to save pending synth profile draft.");
+    return;
+  }
+  uint8_t persistedProfileSettings[SETTINGS_PROFILE_VALUES_DATA_SIZE] = {};
+  packPersistedProfileSettings(persistedProfileSettings);
   SettingsHeader header = {};
   header.magic[0] = 'S'; header.magic[1] = 'T'; header.magic[2] = 'G';
   header.version = CURRENT_SETTINGS_VERSION;
   header.defaultProfileIndex = defaultProfileIndex;
   uint32_t settingsCrc = crc32Begin();
   settingsCrc = crc32Update(settingsCrc,
-                            reinterpret_cast<uint8_t*>(settingsProfiles),
-                            SETTINGS_VALUES_DATA_SIZE);
+                            persistedProfileSettings,
+                            sizeof(persistedProfileSettings));
   settingsCrc = crc32Update(settingsCrc,
                             reinterpret_cast<uint8_t*>(geometryProfileReferences),
                             SETTINGS_GEOMETRY_DATA_SIZE);
   settingsCrc = crc32Update(settingsCrc,
-                            reinterpret_cast<uint8_t*>(synthWavetableProfileReferences),
-                            SETTINGS_WAVETABLE_DATA_SIZE);
+                            reinterpret_cast<uint8_t*>(synthProfileReferences),
+                            SETTINGS_SYNTH_REFERENCE_DATA_SIZE);
   header.crc32 = crc32Finish(settingsCrc);
   File existing = LittleFS.open(SETTINGS_FILE_PATH, "r");
   if (existing && existing.size() == sizeof(SettingsHeader) + SETTINGS_DATA_SIZE) {
@@ -191,7 +240,7 @@ void save_settings() {
       && memcmp(&existingHeader, &header, sizeof(header)) == 0;
     existing.close();
     if (unchanged) {
-      saveCurrentSynthPresetReference();
+      lastSettingsSaveSucceeded = true;
       sendToLog("Settings unchanged; flash write skipped.");
       return;
     }
@@ -207,18 +256,18 @@ void save_settings() {
   bool written =
     f.write(reinterpret_cast<uint8_t*>(&header), sizeof(SettingsHeader))
       == sizeof(SettingsHeader)
-    && f.write(reinterpret_cast<uint8_t*>(settingsProfiles), SETTINGS_VALUES_DATA_SIZE)
-      == SETTINGS_VALUES_DATA_SIZE
+    && f.write(persistedProfileSettings, sizeof(persistedProfileSettings))
+      == sizeof(persistedProfileSettings)
     && f.write(reinterpret_cast<uint8_t*>(geometryProfileReferences),
                SETTINGS_GEOMETRY_DATA_SIZE) == SETTINGS_GEOMETRY_DATA_SIZE
-    && f.write(reinterpret_cast<uint8_t*>(synthWavetableProfileReferences),
-               SETTINGS_WAVETABLE_DATA_SIZE) == SETTINGS_WAVETABLE_DATA_SIZE;
+    && f.write(reinterpret_cast<uint8_t*>(synthProfileReferences),
+               SETTINGS_SYNTH_REFERENCE_DATA_SIZE) == SETTINGS_SYNTH_REFERENCE_DATA_SIZE;
   f.close();
   if (!written) {
     sendToLog("Error: Incomplete /settings.dat write.");
     return;
   }
-  saveCurrentSynthPresetReference();
+  lastSettingsSaveSucceeded = true;
   sendToLog("Settings saved.");
 }
 
@@ -257,7 +306,11 @@ void checkAndAutoSave() {
   // Auto-save always snapshots the current settings into profile 1 before writing to disk.
   copyCurrentSettingsToProfile(DEFAULT_PROFILE_INDEX);
   flashSafeSave();
-  settingsDirty = false;
+  if (lastSettingsSaveSucceeded) {
+    settingsDirty = false;
+  } else {
+    lastSettingsChangeTime = millis();
+  }
 }
 
 void copyCurrentSettingsToProfile(uint8_t profileIndex) {
@@ -268,8 +321,8 @@ void copyCurrentSettingsToProfile(uint8_t profileIndex) {
   if (profileIndex != activeProfileIndex) {
     memcpy(settingsProfiles[profileIndex], settings, NUM_SETTINGS);
   }
-  rememberCurrentSynthWavetableReferenceForProfile(profileIndex);
   rememberCurrentGeometryReferenceForProfile(profileIndex);
+  queueCurrentSynthStateForProfile(profileIndex);
 }
 
 void saveProfileToSlot(uint8_t profileIndex) {
@@ -278,10 +331,11 @@ void saveProfileToSlot(uint8_t profileIndex) {
   }
   copyCurrentSettingsToProfile(profileIndex);
   flashSafeSave();
-  if (profileIndex == activeProfileIndex) {
+  if (lastSettingsSaveSucceeded && profileIndex == activeProfileIndex) {
     settingsDirty = false;
   }
-  sendToLog("Saved profile " + std::to_string(profileIndex + 1));
+  sendToLog(std::string(lastSettingsSaveSucceeded ? "Saved profile " : "Failed to save profile ")
+            + std::to_string(profileIndex + 1));
 }
 
 void setActiveProfile(uint8_t profileIndex) {
@@ -296,7 +350,7 @@ void setActiveProfile(uint8_t profileIndex) {
   activeProfileIndex = profileIndex;
   settings = settingsProfiles[activeProfileIndex];
   settingsDirty = false;
-  restoreSynthWavetableReferenceForProfile(activeProfileIndex);
+  restoreSynthStateForProfile(activeProfileIndex);
   syncSettingsToRuntime();
   sendToLog("Loaded profile " + std::to_string(profileIndex + 1));
 }

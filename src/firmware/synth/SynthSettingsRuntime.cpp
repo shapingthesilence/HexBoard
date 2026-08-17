@@ -6,8 +6,12 @@
 #include "../storage/Settings.h"
 
 void syncSynthSettingsToRuntime() {
+  byte previousPlaybackMode = playbackMode;
   playbackMode = normalizeSynthPlaybackMode(settingValue(SettingKey::PlaybackMode));
   settings[static_cast<uint8_t>(SettingKey::PlaybackMode)] = playbackMode;
+  if (playbackMode != previousPlaybackMode) {
+    resetSynthFreqs();
+  }
   currWave = settingValue(SettingKey::Waveform);
   synthWavetablePosition = settingValue(SettingKey::SynthWavetablePosition);
   if (!currentSynthWavetableReferenceValid) {

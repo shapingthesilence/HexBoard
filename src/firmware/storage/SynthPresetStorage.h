@@ -9,14 +9,14 @@ constexpr size_t SYNTH_PRESET_STORAGE_PATH_LENGTH = 64;
 
 void load_synth_presets();
 void save_synth_presets();
-bool loadCurrentSynthPresetReference();
-void saveCurrentSynthPresetReference();
 void flashSafeWrite(void (*writeOperation)());
 void beginFlashSafeWrite();
 void endFlashSafeWrite();
 void flashSafeSave();
-void flashSafeSaveCurrentSynthPresetReference();
 void flashSafeSaveSynthPresets();
+void queueCurrentSynthStateForProfile(uint8_t profileIndex);
+bool persistPendingSynthProfileDrafts();
+bool restoreSynthStateForProfile(uint8_t profileIndex);
 void saveSynthPresetToSlot(uint16_t presetIndex);
 void saveSynthPresetAsNew(const char* folderPath);
 bool writeSynthPresetToCatalogSlot(uint16_t presetIndex, const SynthPresetSlot& preset);

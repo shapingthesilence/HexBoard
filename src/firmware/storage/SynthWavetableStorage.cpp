@@ -13,46 +13,6 @@ void normalizeSynthWavetableFolderPath(char* folderPath, size_t folderPathLength
   normalizeSynthPresetFolderPath(folderPath, folderPathLength);
 }
 
-void writeSynthWavetableReference(SynthWavetableProfileReference& reference, const char* folderPath, const char* name) {
-  snprintf(reference.folderPath,
-           sizeof(reference.folderPath),
-           "%s",
-           folderPath && folderPath[0] ? folderPath : SYNTH_WAVETABLE_BUILTIN_FOLDER);
-  snprintf(reference.name,
-           sizeof(reference.name),
-           "%s",
-           name && name[0] ? name : SYNTH_WAVETABLE_BASIC_NAME);
-  normalizeSynthWavetableFolderPath(reference.folderPath, sizeof(reference.folderPath));
-}
-
-void writeCurrentSynthWavetableReference(SynthWavetableProfileReference& reference) {
-  if (currentSynthWavetableReferenceValid) {
-    writeSynthWavetableReference(reference, currentSynthWavetableFolderPath, currentSynthWavetableName);
-  } else {
-    writeSynthWavetableReference(reference, SYNTH_WAVETABLE_BUILTIN_FOLDER, SYNTH_WAVETABLE_BASIC_NAME);
-  }
-}
-
-void rememberCurrentSynthWavetableReferenceForProfile(uint8_t profileIndex) {
-  if (profileIndex >= PROFILE_COUNT) {
-    return;
-  }
-  writeCurrentSynthWavetableReference(synthWavetableProfileReferences[profileIndex]);
-}
-
-bool restoreSynthWavetableReferenceForProfile(uint8_t profileIndex) {
-  if (profileIndex >= PROFILE_COUNT) {
-    return false;
-  }
-  SynthWavetableProfileReference& reference =
-    synthWavetableProfileReferences[profileIndex];
-  if (!reference.name[0]) {
-    return false;
-  }
-  setCurrentSynthWavetableReference(reference.folderPath, reference.name);
-  return true;
-}
-
 constexpr char SYNTH_WAVETABLE_CATALOG_FILE_PATH[] = "/synth_wavetables.dat";
 
 void applyDefaultSynthWavetables() {

@@ -3,8 +3,6 @@
 #include "../FirmwareModule.h"
 #include "PersistentDataModels.h"
 
-void rememberCurrentSynthWavetableReferenceForProfile(uint8_t profileIndex);
-bool restoreSynthWavetableReferenceForProfile(uint8_t profileIndex);
 void load_synth_wavetables();
 void save_synth_wavetables();
 void flashSafeSaveSynthWavetables();

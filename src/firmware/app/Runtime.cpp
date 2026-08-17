@@ -73,10 +73,9 @@ void hexboardSetup() {
   detectHardwareVersion();
   load_settings();
   load_synth_presets();
-  loadCurrentSynthPresetReference();
   load_synth_wavetables();
   load_geometry_objects();
-  restoreSynthWavetableReferenceForProfile(activeProfileIndex);
+  restoreSynthStateForProfile(activeProfileIndex);
   setupLEDs();
   setupGFX();
   setupRotary();
