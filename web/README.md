@@ -84,7 +84,10 @@ and `TRANSFER_END` so firmware can pace object transfers.
   one staged file, while live preview continues to send only the active
   tuning/layout/scale/color/map objects without writing flash. Tuning divisions
   and scale cycles are limited to the firmware's `1..1024` range; each tuning
-  can contain up to 32 layouts and 32 scales.
+  can contain up to 32 layouts and 32 scales. Layouts and scales can be reordered
+  in a drag-and-drop dialog; the first item is the device-menu default when the
+  tuning is loaded. All Notes remains protected from editing and deletion but
+  can be reordered with the other scales.
 - Generated note labels and default degree colors are omitted from encoded
   objects. Custom labels and color overrides remain packed records, so large
   tunings do not pay a per-division transfer or runtime cost for defaults.

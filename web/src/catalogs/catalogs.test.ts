@@ -550,6 +550,24 @@ Example scale
     })).toThrow(/1 through 32 scales/);
   });
 
+  it("encodes layouts and scales in their explicit bundle order", () => {
+    const base = createDefaultTuningBundle();
+    const firstLayout = { ...base.layouts[0], objectIdHex: objectIdToHex(deterministicObjectId("ordered-layout-first")), name: "First layout" };
+    const secondLayout = { ...base.layouts[0], objectIdHex: objectIdToHex(deterministicObjectId("ordered-layout-second")), name: "Second layout" };
+    const firstScale = { ...base.scales[0], objectIdHex: objectIdToHex(deterministicObjectId("ordered-scale-first")), name: "First scale" };
+    const secondScale = { ...base.scales[0], objectIdHex: objectIdToHex(deterministicObjectId("ordered-scale-second")), name: "Second scale" };
+    const encoded = encodeTuningBundle({
+      ...base,
+      layouts: [firstLayout, secondLayout],
+      activeLayoutIdHex: secondLayout.objectIdHex,
+      scales: [firstScale, secondScale],
+      activeScaleIdHex: secondScale.objectIdHex
+    });
+
+    expect(encoded.layouts.map((layout) => layout.name)).toEqual(["First layout", "Second layout"]);
+    expect(encoded.scales.map((scale) => scale.name)).toEqual(["First scale", "Second scale"]);
+  });
+
   it("preserves device tuning and color object ids when re-saving a downloaded bundle", () => {
     const tuningObjectIdHex = "00112233445566778899aabbccddeeff";
     const colorObjectIdHex = "ffeeddccbbaa99887766554433221100";

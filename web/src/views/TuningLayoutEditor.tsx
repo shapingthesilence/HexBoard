@@ -79,6 +79,7 @@ const tuningBundleStorageKey = "hexboard.tuningBundles.v1";
 const legacyLayoutBundleStorageKey = "hexboard.layoutBundles.v1";
 const geometryOrderWriteDebounceMs = 2000;
 const geometryOrderDragMime = "application/x-hexboard-geometry-order";
+const bundleItemOrderDragMime = "application/x-hexboard-bundle-item-order";
 const geometryFoldersStorageKey = "hexboard.geometryFolders.v1";
 const previewHexHalfStepX = 25;
 const previewHexRowStepY = 42;
@@ -90,6 +91,12 @@ const defaultGeometryFolders = [rootFolderPath];
 type LayoutGuideFocus = "center" | "across" | "upRight";
 type GeometryWorkspaceTab = "library" | "tuning" | "layout" | "scale";
 type GeometryLibrarySpace = "computer" | "hexboard";
+type BundleItemOrderKind = "layout" | "scale";
+
+interface BundleItemOrderDialogState {
+  kind: BundleItemOrderKind;
+  objectIds: string[];
+}
 
 interface LayoutHistoryEntry {
   label: string;
@@ -507,8 +514,9 @@ function isAllNotesScale(scale: Pick<TuningBundleScale, "name">): boolean {
   return scale.name.trim().toLocaleLowerCase() === "all notes";
 }
 
-function withProtectedAllNotesScale(bundle: TuningBundle, cycleLength = tuningCycleLength(bundle.tuning)): TuningBundle {
+export function withProtectedAllNotesScale(bundle: TuningBundle, cycleLength = tuningCycleLength(bundle.tuning)): TuningBundle {
   const protectedScale = createAllNotesScale(cycleLength);
+  const previousAllNotesIndex = bundle.scales.findIndex(isAllNotesScale);
   const previousAllNotes = bundle.scales.find(isAllNotesScale);
   const activeWasAllNotes = previousAllNotes?.objectIdHex === bundle.activeScaleIdHex;
   const userScales = bundle.scales
@@ -517,7 +525,11 @@ function withProtectedAllNotesScale(bundle: TuningBundle, cycleLength = tuningCy
       ...scale,
       includedDegrees: normalizeScaleDegrees(scale.includedDegrees, cycleLength)
     }));
-  const scales = [protectedScale, ...userScales];
+  const protectedScaleIndex = previousAllNotesIndex < 0
+    ? 0
+    : Math.min(previousAllNotesIndex, userScales.length);
+  const scales = [...userScales];
+  scales.splice(protectedScaleIndex, 0, protectedScale);
   const activeScaleIdHex = activeWasAllNotes
     ? protectedScale.objectIdHex
     : scales.find((scale) => scale.objectIdHex === bundle.activeScaleIdHex)?.objectIdHex ?? protectedScale.objectIdHex;
@@ -689,7 +701,7 @@ function orderedComputerBundles(bundles: TuningBundle[]): TuningBundle[] {
   }));
 }
 
-function reorderByObjectId<T extends { objectIdHex: string }>(items: T[], draggedId: string, targetId: string): T[] {
+export function reorderByObjectId<T extends { objectIdHex: string }>(items: T[], draggedId: string, targetId: string): T[] {
   if (draggedId === targetId) return items;
   const fromIndex = items.findIndex((item) => item.objectIdHex === draggedId);
   const targetIndex = items.findIndex((item) => item.objectIdHex === targetId);
@@ -1328,6 +1340,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const [status, setStatus] = useState("Ready");
   const [syncBusy, setSyncBusy] = useState(false);
   const [liveSend, setLiveSend] = useState(false);
+  const [bundleItemOrderDialog, setBundleItemOrderDialog] = useState<BundleItemOrderDialogState | null>(null);
   const bundleInputRef = useRef<HTMLInputElement>(null);
   const scalaInputRef = useRef<HTMLInputElement>(null);
   const keyLabelsInputRef = useRef<HTMLInputElement>(null);
@@ -1713,6 +1726,48 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     if (layout) {
       selectOnlyButton(layout.centerButton);
     }
+  }
+
+  function openBundleItemOrderDialog(kind: BundleItemOrderKind) {
+    const items = kind === "layout" ? activeBundle.layouts : activeBundle.scales;
+    setBundleItemOrderDialog({ kind, objectIds: items.map((item) => item.objectIdHex) });
+  }
+
+  function reorderBundleItemDraft(draggedId: string, targetId: string) {
+    setBundleItemOrderDialog((current) => {
+      if (!current) return current;
+      const items = current.objectIds.map((objectIdHex) => ({ objectIdHex }));
+      const reordered = reorderByObjectId(items, draggedId, targetId);
+      return { ...current, objectIds: reordered.map((item) => item.objectIdHex) };
+    });
+  }
+
+  function moveBundleItemDraft(objectIdHex: string, offset: -1 | 1) {
+    setBundleItemOrderDialog((current) => {
+      if (!current) return current;
+      const fromIndex = current.objectIds.indexOf(objectIdHex);
+      const targetIndex = fromIndex + offset;
+      if (fromIndex < 0 || targetIndex < 0 || targetIndex >= current.objectIds.length) return current;
+      const objectIds = [...current.objectIds];
+      [objectIds[fromIndex], objectIds[targetIndex]] = [objectIds[targetIndex], objectIds[fromIndex]];
+      return { ...current, objectIds };
+    });
+  }
+
+  function saveBundleItemOrder() {
+    if (!bundleItemOrderDialog) return;
+    const { kind, objectIds } = bundleItemOrderDialog;
+    updateActiveBundle((bundle) => {
+      const source = kind === "layout" ? bundle.layouts : bundle.scales;
+      const byId = new Map(source.map((item) => [item.objectIdHex, item]));
+      const ordered = objectIds.flatMap((objectIdHex) => {
+        const item = byId.get(objectIdHex);
+        return item ? [item] : [];
+      });
+      return kind === "layout" ? { ...bundle, layouts: ordered as TuningBundleLayout[] } : { ...bundle, scales: ordered as TuningBundleScale[] };
+    });
+    setBundleItemOrderDialog(null);
+    setStatus(`Reordered ${kind}s`);
   }
 
   function updateActiveScale(updater: (scale: TuningBundleScale) => TuningBundleScale) {
@@ -3097,6 +3152,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   type="button"
                   onClick={addNewLayout}
                 >New layout</button>
+                <button type="button" onClick={() => openBundleItemOrderDialog("layout")}>Reorder</button>
                 <button className="warning" type="button" onClick={deleteActiveLayout}>Delete layout</button>
               </div>
               <label className="field">
@@ -3175,6 +3231,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   type="button"
                   onClick={addNewScale}
                 >New scale</button>
+                <button type="button" onClick={() => openBundleItemOrderDialog("scale")}>Reorder</button>
                 <button className="warning" disabled={activeScaleIsAllNotes} type="button" onClick={deleteActiveScale}>Delete scale</button>
               </div>
               <label className="field">
@@ -3720,6 +3777,65 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         </summary>
         <pre className="dataPreview">{encodedPreview}</pre>
       </details>
+
+      {bundleItemOrderDialog ? (
+        <div className="modalOverlay" role="presentation" onMouseDown={() => setBundleItemOrderDialog(null)}>
+          <div
+            aria-labelledby="bundleItemOrderTitle"
+            aria-modal="true"
+            className="modalPanel stack bundleItemOrderDialog"
+            role="dialog"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div>
+              <span className="eyebrow">Menu order</span>
+              <h3 id="bundleItemOrderTitle">Reorder {bundleItemOrderDialog.kind}s</h3>
+              <p className="muted">
+                Drag items into place. The first item becomes the default when this tuning is loaded.
+              </p>
+            </div>
+            <ol className="bundleItemOrderList">
+              {bundleItemOrderDialog.objectIds.map((objectIdHex, index) => {
+                const source = bundleItemOrderDialog.kind === "layout" ? activeBundle.layouts : activeBundle.scales;
+                const item = source.find((candidate) => candidate.objectIdHex === objectIdHex);
+                if (!item) return null;
+                return (
+                  <li
+                    className="bundleItemOrderRow"
+                    draggable
+                    key={objectIdHex}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                    }}
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData(bundleItemOrderDragMime, objectIdHex);
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const draggedId = event.dataTransfer.getData(bundleItemOrderDragMime);
+                      if (draggedId) reorderBundleItemDraft(draggedId, objectIdHex);
+                    }}
+                  >
+                    <span aria-hidden="true" className="bundleItemDragHandle">⋮⋮</span>
+                    <span className="bundleItemOrderPosition">{index + 1}</span>
+                    <strong>{item.name}</strong>
+                    <span className="bundleItemOrderButtons">
+                      <button aria-label={`Move ${item.name} up`} disabled={index === 0} type="button" onClick={() => moveBundleItemDraft(objectIdHex, -1)}>↑</button>
+                      <button aria-label={`Move ${item.name} down`} disabled={index === bundleItemOrderDialog.objectIds.length - 1} type="button" onClick={() => moveBundleItemDraft(objectIdHex, 1)}>↓</button>
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+            <div className="row bundleItemOrderActions">
+              <button type="button" onClick={() => setBundleItemOrderDialog(null)}>Cancel</button>
+              <button className="primary" type="button" onClick={saveBundleItemOrder}>Save order</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -950,6 +950,64 @@ select {
   margin: 0;
 }
 
+.bundleItemOrderDialog {
+  width: min(560px, 100%);
+}
+
+.bundleItemOrderDialog p {
+  margin: 6px 0 0;
+}
+
+.bundleItemOrderList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bundleItemOrderRow {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: var(--surface-raised);
+  cursor: grab;
+}
+
+.bundleItemOrderRow:active {
+  cursor: grabbing;
+}
+
+.bundleItemDragHandle,
+.bundleItemOrderPosition {
+  color: var(--text-soft);
+}
+
+.bundleItemOrderPosition {
+  min-width: 1.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.bundleItemOrderButtons {
+  display: flex;
+  gap: 4px;
+}
+
+.bundleItemOrderButtons button {
+  min-width: 34px;
+  padding: 5px 8px;
+}
+
+.bundleItemOrderActions {
+  justify-content: flex-end;
+}
+
 .wavetablePreviewPanel {
   border: 1px solid var(--border);
   border-radius: 10px;

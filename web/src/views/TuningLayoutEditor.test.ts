@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TuningBundleButtonOverride } from "../catalogs/index.ts";
+import { createDefaultTuningBundle, type TuningBundleButtonOverride } from "../catalogs/index.ts";
 import {
   clearColorOverridesForScaleDegree,
   colorToCss,
@@ -7,9 +7,34 @@ import {
   keyOutputMode,
   normalizeCommittedNumber,
   paintScaleDegreeColor,
+  reorderByObjectId,
   resetOverridesToScaleDegreeColors,
-  validLiveNumber
+  validLiveNumber,
+  withProtectedAllNotesScale
 } from "./TuningLayoutEditor.tsx";
+
+describe("bundle item ordering", () => {
+  it("moves a dragged item to the target position without mutating the source", () => {
+    const items = [
+      { objectIdHex: "a", name: "First" },
+      { objectIdHex: "b", name: "Second" },
+      { objectIdHex: "c", name: "Third" }
+    ];
+
+    expect(reorderByObjectId(items, "c", "a").map((item) => item.objectIdHex)).toEqual(["c", "a", "b"]);
+    expect(items.map((item) => item.objectIdHex)).toEqual(["a", "b", "c"]);
+  });
+
+  it("allows All Notes to move and preserves its reordered position during normalization", () => {
+    const bundle = createDefaultTuningBundle();
+    const majorScale = { ...bundle.scales[0], objectIdHex: "major", name: "Major" };
+    const reordered = reorderByObjectId([...bundle.scales, majorScale], bundle.scales[0].objectIdHex, majorScale.objectIdHex);
+    const normalized = withProtectedAllNotesScale({ ...bundle, scales: reordered });
+
+    expect(normalized.scales.map((scale) => scale.name)).toEqual(["Major", "All Notes"]);
+  });
+
+});
 
 describe("key output mode", () => {
   it("represents an unused key as Off even when it retains an action", () => {

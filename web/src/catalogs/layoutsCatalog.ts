@@ -1231,11 +1231,7 @@ export function encodeTuningBundle(bundle: TuningBundle): EncodedTuningBundle {
     }
   })();
 
-  const orderedLayouts = [...bundle.layouts].sort((left, right) => {
-    if (left.objectIdHex === bundle.activeLayoutIdHex) return -1;
-    if (right.objectIdHex === bundle.activeLayoutIdHex) return 1;
-    return 0;
-  });
+  const orderedLayouts = bundle.layouts;
   const layouts = orderedLayouts.map((layout) => createVectorLayout({
     objectId: objectIdFromHex(layout.objectIdHex),
     name: clampGeometryMenuText(layout.name || `${tuningName} Layout`, "User Layout"),
@@ -1259,11 +1255,7 @@ export function encodeTuningBundle(bundle: TuningBundle): EncodedTuningBundle {
     defaultColorMode: bundle.palette.defaultColorMode,
     degreeColors: bundle.palette.degreeColors
   });
-  const orderedScales = [...bundle.scales].sort((left, right) => {
-    if (left.objectIdHex === bundle.activeScaleIdHex) return -1;
-    if (right.objectIdHex === bundle.activeScaleIdHex) return 1;
-    return 0;
-  });
+  const orderedScales = bundle.scales;
   const scales = orderedScales.map((scale) => createUserScale({
     objectId: objectIdFromHex(scale.objectIdHex),
     name: clampGeometryMenuText(scale.name || `${tuningName} Scale`, "User Scale"),
