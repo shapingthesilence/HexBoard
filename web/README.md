@@ -74,7 +74,7 @@ and `TRANSFER_END` so firmware can pace object transfers.
 ## Current Scope
 
 - A shared responsive header keeps device connection, light/dark appearance,
-  and the top-level `Tunings & Layouts`, `Synth Editor`, and `Profiles` views in
+  and the top-level `Tunings & Layouts` and `Synth Editor` views in
   a consistent location. `Tunings & Layouts` opens by default.
 - Protocol helpers for the draft preset-sync SysEx frame.
 - CRC32 and 8-to-7 packing utilities matching the firmware draft.
@@ -188,8 +188,8 @@ and `TRANSFER_END` so firmware can pace object transfers.
   uses a single runtime-select control frame rather than transferring the open
   synth preset.
 - A mock MIDI transport for UI and protocol work before firmware support exists.
-- Basic React views for device connection, profile sync, tuning/layout editing,
-  and synth preset organization.
+- Basic React views for device connection, tuning/layout editing, and synth
+  preset organization.
 
 Firmware currently implements synth preset, wavetable, and geometry preset-sync
 paths used by the app. Mock mode still covers UI work when no compatible device
