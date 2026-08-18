@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultTuningBundle, type TuningBundleButtonOverride } from "../catalogs/index.ts";
+import { ObjectListFlag, ObjectType, type ObjectListRecord } from "../protocol/index.ts";
 import {
   clearColorOverridesForScaleDegree,
   colorToCss,
@@ -7,12 +8,38 @@ import {
   keyOutputMode,
   midiNoteName,
   normalizeCommittedNumber,
+  partitionHexBoardGeometryRecords,
   paintScaleDegreeColor,
   reorderByObjectId,
   resetOverridesToScaleDegreeColors,
   validLiveNumber,
   withProtectedAllNotesScale
 } from "./TuningLayoutEditor.tsx";
+
+function geometryRecord(name: string, flags: number, handle: number): ObjectListRecord {
+  return {
+    objectType: ObjectType.UserTuning,
+    handle,
+    flags,
+    schemaMajor: 2,
+    schemaMinor: 0,
+    objectId: new Uint8Array(16).fill(handle),
+    folderPath: "/",
+    name
+  };
+}
+
+describe("HexBoard rescue geometry", () => {
+  it("reports the rescue state without exposing it as an editable library entry", () => {
+    const result = partitionHexBoardGeometryRecords([
+      geometryRecord("Stored", ObjectListFlag.Valid, 0),
+      geometryRecord("Rescue", ObjectListFlag.Valid | ObjectListFlag.ReadOnly, 0x2000)
+    ]);
+
+    expect(result.rescueActive).toBe(true);
+    expect(result.entries.map((entry) => entry.name)).toEqual(["Stored"]);
+  });
+});
 
 describe("bundle item ordering", () => {
   it("moves a dragged item to the target position without mutating the source", () => {

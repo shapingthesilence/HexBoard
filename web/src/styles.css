@@ -605,6 +605,32 @@ textarea {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
 }
 
+.geometryStatus > .geometryStatusText {
+  width: auto;
+  height: auto;
+  flex: 1 1 auto;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.geometryStatus > .geometryTransferProgress {
+  display: flex;
+  width: min(320px, 45vw);
+  height: auto;
+  align-items: center;
+  gap: 8px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.geometryTransferProgress progress {
+  width: 100%;
+  accent-color: var(--brand);
+}
+
 .metaBadge {
   display: inline-flex;
   align-items: center;
@@ -811,6 +837,16 @@ textarea {
 .geometryLibrarySpaces .librarySpace:first-child {
   padding-top: 16px;
   border-top: 1px solid var(--border);
+}
+
+.libraryFallbackNotice {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand-soft) 60%, var(--surface));
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
 .sidebarTabs {

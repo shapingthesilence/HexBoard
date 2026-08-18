@@ -4,6 +4,7 @@ import {
   bytesFromNumbers,
   concatBytes,
   createCommonRecords,
+  decodeObjectBody,
   encodeObjectBody,
   encodeObjectReference,
   tlv,
@@ -378,6 +379,11 @@ export interface EncodedTuningBundle {
   bundleFile: Uint8Array;
 }
 
+export interface DecodedGeometryBundleFile {
+  catalogOrder: number;
+  objects: EncodedCatalogObject[];
+}
+
 function u32LE(value: number): Uint8Array {
   return bytesFromNumbers([value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]);
 }
@@ -434,6 +440,85 @@ export function encodeGeometryBundleFile(objects: EncodedCatalogObject[], catalo
     throw new RangeError(`geometry bundle exceeds the ${GeometryBundleMaxRawBytes}-byte file limit`);
   }
   return file;
+}
+
+export function decodeGeometryBundleFile(file: Uint8Array): DecodedGeometryBundleFile {
+  if (file.length < 12 || file.length > GeometryBundleMaxRawBytes) {
+    throw new Error("Geometry bundle file has an invalid size");
+  }
+  if (file[0] !== "H".charCodeAt(0)
+      || file[1] !== "G".charCodeAt(0)
+      || file[2] !== "B".charCodeAt(0)
+      || file[3] !== GeometryBundleFileVersion) {
+    throw new Error("Geometry bundle file has an unsupported header");
+  }
+  const view = new DataView(file.buffer, file.byteOffset, file.byteLength);
+  const recordCount = view.getUint16(4, true);
+  const catalogOrder = view.getUint16(6, true);
+  if (recordCount < 1 || recordCount > GeometryBundleMaxRecords) {
+    throw new Error("Geometry bundle file has an invalid record count");
+  }
+  if ((crc32(file.slice(12)) >>> 0) !== view.getUint32(8, true)) {
+    throw new Error("Geometry bundle file failed its CRC check");
+  }
+
+  const decoder = new TextDecoder();
+  const objects: EncodedCatalogObject[] = [];
+  let cursor = 12;
+  const requireBytes = (length: number) => {
+    if (length < 0 || cursor + length > file.length) {
+      throw new Error("Geometry bundle file contains a truncated record");
+    }
+  };
+  for (let index = 0; index < recordCount; index += 1) {
+    requireBytes(20);
+    const objectType = file[cursor++] as ObjectTypeValue;
+    const schemaMajor = file[cursor++];
+    const schemaMinor = file[cursor++];
+    const reserved = file[cursor++];
+    if (reserved !== 0) {
+      throw new Error("Geometry bundle record has unsupported flags");
+    }
+    const objectId = file.slice(cursor, cursor + 16);
+    cursor += 16;
+
+    requireBytes(1);
+    const nameLength = file[cursor++];
+    requireBytes(nameLength + 1);
+    const name = decoder.decode(file.slice(cursor, cursor + nameLength));
+    cursor += nameLength;
+    const folderLength = file[cursor++];
+    requireBytes(folderLength + 4);
+    const folderPath = decoder.decode(file.slice(cursor, cursor + folderLength));
+    cursor += folderLength;
+    const bodyLength = view.getUint32(cursor, true);
+    cursor += 4;
+    requireBytes(bodyLength);
+    const body = file.slice(cursor, cursor + bodyLength);
+    cursor += bodyLength;
+    const decodedBody = decodeObjectBody(body);
+    if (decodedBody.objectType !== objectType
+        || decodedBody.schemaMajor !== schemaMajor
+        || decodedBody.schemaMinor !== schemaMinor) {
+      throw new Error("Geometry bundle record metadata does not match its object body");
+    }
+    objects.push({
+      objectType,
+      schemaMajor,
+      schemaMinor,
+      objectId,
+      name,
+      folderPath,
+      records: decodedBody.records,
+      body
+    });
+  }
+  if (cursor !== file.length
+      || objects[0]?.objectType !== ObjectType.UserTuning
+      || objects.filter((object) => object.objectType === ObjectType.UserTuning).length !== 1) {
+    throw new Error("Geometry bundle file has an invalid structure");
+  }
+  return { catalogOrder, objects };
 }
 
 export function encodeGeometryCatalogOrder(objectIds: Uint8Array[]): Uint8Array {

@@ -520,6 +520,40 @@ bool geometryBundleForTuningObjectId(const uint8_t* tuningObjectId,
   return false;
 }
 
+bool geometryBundleFileInfoForTuningHandle(uint16_t tuningHandle,
+                                           char* path,
+                                           size_t pathLength,
+                                           uint32_t& fileLength,
+                                           uint32_t& fileCrc32) {
+  const GeometryBundleIndexEntry* bundle = nullptr;
+  if (!path || pathLength == 0
+      || !geometryBundleForTuningHandle(tuningHandle, bundle)
+      || !geometryBundleStoragePath(bundle->tuningObjectId, path, pathLength)) {
+    return false;
+  }
+
+  File file = LittleFS.open(path, "r");
+  if (!file || file.size() < sizeof(GeometryObjectFileHeader)
+      || file.size() > GEOMETRY_BUNDLE_MAX_RAW_BYTES) {
+    if (file) file.close();
+    return false;
+  }
+  fileLength = file.size();
+  uint32_t crc = crc32Begin();
+  uint8_t buffer[128] = {};
+  while (file.available() > 0) {
+    size_t length = std::min<size_t>(sizeof(buffer), file.available());
+    if (file.read(buffer, length) != length) {
+      file.close();
+      return false;
+    }
+    crc = crc32Update(crc, buffer, length);
+  }
+  file.close();
+  fileCrc32 = crc32Finish(crc);
+  return true;
+}
+
 bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlot& object, std::string& error) {
   if (body.size() < 8 || body[0] != 'H' || body[1] != 'B' || body[2] != 'S' || body[3] != '1') {
     error = "bad object magic";

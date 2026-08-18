@@ -185,6 +185,7 @@ struct PresetSyncReadTransfer {
   bool active = false;
   bool endSent = false;
   bool streamSynthWavetableSamples = false;
+  bool streamRawFile = false;
   uint8_t objectType = 0;
   uint16_t handle = PRESET_SYNC_NEW_OBJECT_HANDLE;
   uint16_t transactionId = 0;
@@ -236,6 +237,7 @@ void presetSyncSendAck(uint16_t transactionId, uint8_t ackedMessage, uint32_t ne
 void presetSyncSendNack(uint16_t transactionId, uint8_t failedMessage, uint8_t errorCode, uint32_t expectedChunkIndex = 0, uint8_t detail = 0);
 void presetSyncCancelReadTransfer();
 void presetSyncCancelWriteTransfer();
+void presetSyncCloseReadFile();
 void presetSyncCloseWriteTempFile();
 uint8_t presetSyncChunkChecksum(const uint8_t* data, size_t length);
 void presetSyncPack8To7(const uint8_t* raw, size_t rawLength, std::vector<uint8_t>& packed);
@@ -274,6 +276,11 @@ bool geometryObjectMetadataForHandle(uint16_t handle, GeometryObjectIndexEntry& 
 bool geometryBundleForTuningHandle(uint16_t tuningHandle, const GeometryBundleIndexEntry*& bundle);
 bool geometryBundleForTuningObjectId(const uint8_t* tuningObjectId,
                                      const GeometryBundleIndexEntry*& bundle);
+bool geometryBundleFileInfoForTuningHandle(uint16_t tuningHandle,
+                                           char* path,
+                                           size_t pathLength,
+                                           uint32_t& fileLength,
+                                           uint32_t& fileCrc32);
 bool geometryObjectForMetadata(const GeometryObjectIndexEntry& metadata, GeometryObjectSlot& object);
 bool deleteGeometryObjectFromCatalog(uint16_t handle);
 size_t geometryBundleCount();

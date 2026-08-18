@@ -49,8 +49,8 @@ This protocol maps to independently replaceable persistent objects:
 Keeping a tuning and all of its linked records in one `.hgb` file avoids
 partial-bundle saves and cross-file geometry references. Firmware still exposes
 the contained records as separate object types for list, read, and runtime
-preview. Persistent geometry writes use the complete write-only
-`GeometryBundle` transfer type.
+preview. Complete stored files are read and written with the `GeometryBundle`
+transfer type; persistent writes remain bundle-only.
 
 File headers:
 
@@ -439,7 +439,7 @@ handle.
 | `0x09` | `Folder` | Optional virtual folder record for catalog navigation |
 | `0x0A` | `UserScale` | Geometry-bundle scale handle or read-only rescue handle |
 | `0x0B` | `SynthWavetable` | Synth-only wavetable catalog entry; current firmware returns compact catalog handles up to `63` |
-| `0x0C` | `GeometryBundle` | Write-only complete `.hgb` file transfer; always uses `NEW_OBJECT` |
+| `0x0C` | `GeometryBundle` | Complete `.hgb` file transfer; writes use `NEW_OBJECT`, reads use the tuning-root handle |
 | `0x0D` | `GeometryOrder` | Write-only complete `/geometry_order.dat` transfer; always uses `NEW_OBJECT` |
 
 Factory tunings, layouts, scales, and color maps live in `/geometry/*.hgb`, use
@@ -1340,7 +1340,7 @@ bundle composition and the device atomically validates and installs the result.
    `ScaleColorMap`, and any `ExplicitButtonMap` records.
 2. Every child record references the root tuning object id, and every record
    carries the bundle folder path for object-list grouping.
-3. Host sends write-only object type `GeometryBundle` with `NEW_OBJECT` and
+3. Host sends object type `GeometryBundle` with `NEW_OBJECT` and
    `SaveToFlash`. `ApplyToRuntime` and individual-object flash saves are rejected.
 4. Firmware streams chunks directly to `/ps_raw.tmp`, verifies the transfer CRC,
    validates the `HGB` header, file CRC, record envelopes, object bodies, unique
@@ -1351,7 +1351,9 @@ bundle composition and the device atomically validates and installs the result.
    are not read or rewritten.
    A file may contain up to `255` records and `262,144` bytes; each contained
    object body may contain up to `16,384` bytes.
-6. Current firmware can list, read, delete, or apply the contained active
+6. Reading `GeometryBundle` with a listed `UserTuning` root handle streams that
+   bundle's complete `.hgb` file as one transfer. Current firmware can also
+   list, read, delete, or apply the contained active
    EDO/equal-step/Scala cents-list tuning, vector layout, scale, color map, and
    exact layout-matching explicit button map by compact preset-sync handle.
 7. Deleting the `UserTuning` root deletes the complete bundle; deleting a child
@@ -1367,7 +1369,11 @@ For web-editor live preview, the app sends only the active compatible runtime
 objects with `ApplyToRuntime` and without `SaveToFlash`. `Save to HexBoard`
 writes the complete `.hgb` once, preserves IDs when re-saving a bundle read from
 the device, and then sends the active objects with `ApplyToRuntime` so the board
-preview matches the saved selection.
+preview matches the saved selection. Opening, copying, or exporting a stored
+bundle reads that `.hgb` once; the compiled rescue geometry remains available
+through its individual read-only object handles because it has no stored file.
+The web library uses those handles to identify fallback mode but does not
+present the rescue tuning as an editable catalog item.
 
 ### Transfer A Synth Preset
 

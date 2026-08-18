@@ -676,7 +676,11 @@ order after a 2 second quiet period, so several quick drops produce one small
 order-file flash write rather than rewriting tuning bundles. `Copy to HexBoard`
 and `Copy to Computer` move a tuning between libraries. `Download file` saves a
 portable `hexboard.tuningBundle.v2` JSON file to the computer. Version 1 tuning
-bundles remain importable and are converted to explicit degree order.
+bundles remain importable and are converted to explicit degree order. Tuning
+bundle uploads and downloads show byte progress in the app while the transfer
+is active. If HexBoard has no usable stored tuning bundles, the app shows a
+built-in rescue-tuning notice instead of presenting that read-only rescue as an
+editable library item.
 
 Library folder rows begin with the visually distinct system views `All` and
 `Root`, followed by user folders. New folders belong to the
@@ -711,7 +715,7 @@ do not mute audio, and are saved by the normal debounced auto-save path. Larger
 object transfers, such as full preset saves or wavetable imports, show `MIDI
 SysEx` on the HexBoard with the object type, upload/download direction, byte
 count, percentage, and a progress bar. This includes large wavetable transfers
-and complete tuning-bundle saves. Transfers that save to flash mute audio for
+and complete tuning-bundle uploads and downloads. Transfers that save to flash mute audio for
 the transfer window and briefly pause normal menu/button/LED work while the
 transfer is serviced.
 

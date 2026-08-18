@@ -135,6 +135,7 @@ void presetSyncSendNack(uint16_t transactionId, uint8_t failedMessage, uint8_t e
 }
 
 void presetSyncCancelReadTransfer() {
+  presetSyncCloseReadFile();
   presetSyncReadTransfer = PresetSyncReadTransfer{};
 }
 

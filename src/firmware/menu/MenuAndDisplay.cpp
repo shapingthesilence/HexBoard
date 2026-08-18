@@ -195,7 +195,7 @@ const char* presetSyncTransferObjectLabel(uint8_t objectType) {
     case PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE:
       return "Wavetable";
     case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE:
-      return "Geometry";
+      return "Tuning bundle";
     case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_ORDER:
       return "Geometry order";
     case PRESET_SYNC_OBJECT_TYPE_USER_TUNING:
@@ -288,19 +288,11 @@ void drawPresetSyncTransferScreen(bool forceRedraw = false) {
              presetSyncTransferObjectLabel(objectType),
              direction == 1 ? "upload" : "download");
     snprintf(progressText, sizeof(progressText), "%u%%", progress);
-    if (totalBytes >= 1024) {
-      snprintf(byteText,
-               sizeof(byteText),
-               "%lu / %lu KB",
-               static_cast<unsigned long>(completedBytes / 1024),
-               static_cast<unsigned long>((totalBytes + 1023) / 1024));
-    } else {
-      snprintf(byteText,
-               sizeof(byteText),
-               "%lu / %lu bytes",
-               static_cast<unsigned long>(completedBytes),
-               static_cast<unsigned long>(totalBytes));
-    }
+    snprintf(byteText,
+             sizeof(byteText),
+             "%lu / %lu bytes",
+             static_cast<unsigned long>(completedBytes),
+             static_cast<unsigned long>(totalBytes));
 
     constexpr uint8_t barX = 8;
     constexpr uint8_t barY = 43;

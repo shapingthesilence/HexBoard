@@ -14,6 +14,7 @@ import {
   createDefaultTuningBundle,
   currentFirmwareDownLeftToUpRight,
   defaultKeyLabels,
+  decodeGeometryBundleFile,
   deterministicObjectId,
   encodeGeometryCatalogOrder,
   encodeTuningBundle,
@@ -63,7 +64,7 @@ import {
   type EncodedCatalogObject
 } from "../catalogs/index.ts";
 import { MockMidiTransport } from "../midi/mockTransport.ts";
-import { PresetSyncClient } from "../midi/presetSyncClient.ts";
+import { PresetSyncClient, type TransferProgress } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
 import { crc32 } from "../protocol/crc32.ts";
 import { CapabilityFlag, ObjectListFlag, ObjectType, type HelloResponsePayload, type ObjectListRecord } from "../protocol/index.ts";
@@ -329,7 +330,6 @@ interface HexBoardGeometryBundleEntry {
   folderPath: string;
   schemaMajor: number;
   schemaMinor: number;
-  readOnly: boolean;
   catalogOrder: number;
 }
 
@@ -716,8 +716,18 @@ function hexBoardGeometryEntryFromRecord(record: ObjectListRecord, catalogOrder:
     folderPath: decodeDeviceFolderPath(record.folderPath || rootFolderPath),
     schemaMajor: record.schemaMajor,
     schemaMinor: record.schemaMinor,
-    readOnly: (record.flags & ObjectListFlag.ReadOnly) !== 0,
     catalogOrder
+  };
+}
+
+export function partitionHexBoardGeometryRecords(records: ObjectListRecord[]): {
+  entries: HexBoardGeometryBundleEntry[];
+  rescueActive: boolean;
+} {
+  const editableRecords = records.filter((record) => (record.flags & ObjectListFlag.ReadOnly) === 0);
+  return {
+    entries: editableRecords.map((record, catalogOrder) => hexBoardGeometryEntryFromRecord(record, catalogOrder)),
+    rescueActive: records.some((record) => (record.flags & ObjectListFlag.ReadOnly) !== 0)
   };
 }
 
@@ -1344,6 +1354,7 @@ function decodeDeviceLayout(object: DeviceGeometryObject, index: number, buttonM
 export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayoutEditorProps) {
   const [bundles, setBundles] = useState<TuningBundle[]>(() => loadStoredBundles());
   const [hexboardBundles, setHexboardBundles] = useState<HexBoardGeometryBundleEntry[]>([]);
+  const [hexboardRescueActive, setHexboardRescueActive] = useState(false);
   const [activeBundleId, setActiveBundleId] = useState("");
   const [customFolders, setCustomFolders] = useState(loadStoredGeometryFolders);
   const [newFolder, setNewFolder] = useState("");
@@ -1366,6 +1377,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const [includedDegreesError, setIncludedDegreesError] = useState("");
   const [status, setStatus] = useState("Ready");
   const [syncBusy, setSyncBusy] = useState(false);
+  const [transferProgress, setTransferProgress] = useState<TransferProgress | null>(null);
   const [liveSend, setLiveSend] = useState(false);
   const [bundleItemOrderDialog, setBundleItemOrderDialog] = useState<BundleItemOrderDialogState | null>(null);
   const bundleInputRef = useRef<HTMLInputElement>(null);
@@ -2706,51 +2718,36 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     return records.find((record) => objectIdToHex(record.objectId) === objectIdHex);
   }
 
-  async function readDeviceGeometryObject(record: ObjectListRecord): Promise<DeviceGeometryObject> {
-    const body = await client.readGeometryObject(record.objectType, record.handle);
-    const decoded = decodeObjectBody(body);
-    const bodyObjectId = tlvValue(decoded.records, CommonTlv.ObjectId);
-    return {
-      record: {
-        ...record,
-        objectId: bodyObjectId?.length === 16 ? bodyObjectId : record.objectId,
-        name: tlvText(decoded.records, CommonTlv.Name, record.name),
-        folderPath: decodeDeviceFolderPath(tlvText(decoded.records, CommonTlv.FolderPath, record.folderPath || rootFolderPath))
-      },
-      body,
-      records: decoded.records
-    };
-  }
-
-  async function readDeviceGeometryObjects(objectType: number): Promise<DeviceGeometryObject[]> {
-    const records = await client.listGeometryObjects(objectType, 8);
-    const objects: DeviceGeometryObject[] = [];
-    for (const record of records) {
-      objects.push(await readDeviceGeometryObject(record));
-    }
-    return objects;
-  }
-
   async function readHexBoardGeometryBundle(entry: HexBoardGeometryBundleEntry): Promise<{
     bundle: TuningBundle;
     objects: DeviceGeometryObject[];
   }> {
-    const tuningRecord: ObjectListRecord = {
-      objectType: ObjectType.UserTuning,
-      handle: entry.deviceHandle,
-      flags: entry.readOnly ? ObjectListFlag.ReadOnly : 0,
-      schemaMajor: entry.schemaMajor,
-      schemaMinor: entry.schemaMinor,
-      objectId: new Uint8Array(),
-      name: entry.name,
-      folderPath: entry.folderPath
-    };
-    const tuningObject = await readDeviceGeometryObject(tuningRecord);
+    const catalogOrder = entry.catalogOrder;
+    const bundleFile = await client.readGeometryBundle(entry.deviceHandle, setTransferProgress);
+    const decodedBundle = decodeGeometryBundleFile(bundleFile);
+    const bundleObjects: DeviceGeometryObject[] = decodedBundle.objects.map((object, index) => ({
+      record: {
+        objectType: object.objectType,
+        handle: entry.deviceHandle + index,
+        flags: ObjectListFlag.Valid,
+        schemaMajor: object.schemaMajor,
+        schemaMinor: object.schemaMinor,
+        objectId: object.objectId,
+        name: object.name,
+        folderPath: object.folderPath ?? rootFolderPath
+      },
+      body: object.body,
+      records: object.records
+    }));
+    const tuningObject = bundleObjects[0];
+    if (!tuningObject || tuningObject.record.objectType !== ObjectType.UserTuning) {
+      throw new Error("HexBoard tuning bundle is missing its tuning root");
+    }
+    const layoutObjects = bundleObjects.filter((object) => object.record.objectType === ObjectType.UserLayout);
+    const scaleObjects = bundleObjects.filter((object) => object.record.objectType === ObjectType.UserScale);
+    const colorMapObjects = bundleObjects.filter((object) => object.record.objectType === ObjectType.ScaleColorMap);
+    const buttonMapObjects = bundleObjects.filter((object) => object.record.objectType === ObjectType.ExplicitButtonMap);
     const tuningObjectIdHex = objectIdToHex(tuningObject.record.objectId);
-    const layoutObjects = await readDeviceGeometryObjects(ObjectType.UserLayout);
-    const scaleObjects = await readDeviceGeometryObjects(ObjectType.UserScale);
-    const colorMapObjects = await readDeviceGeometryObjects(ObjectType.ScaleColorMap);
-    const buttonMapObjects = await readDeviceGeometryObjects(ObjectType.ExplicitButtonMap);
     const linkedLayouts = layoutObjects.filter((object) => objectReferences(object, LayoutTlv.TuningRef, ObjectType.UserTuning, tuningObjectIdHex));
     const linkedScales = scaleObjects.filter((object) => objectReferences(object, UserScaleTlv.TuningRef, ObjectType.UserTuning, tuningObjectIdHex));
     const linkedColorMap = colorMapObjects.find((object) => objectReferences(object, ScaleColorMapTlv.TuningRef, ObjectType.UserTuning, tuningObjectIdHex));
@@ -2774,7 +2771,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     const bundle = sanitizeEditorBundle({
       objectIdHex: objectIdToHex(deterministicObjectId(`device-geometry:${tuningObjectIdHex}`)),
       tuningObjectIdHex,
-      catalogOrder: entry.catalogOrder,
+      catalogOrder,
       ...(linkedColorMap ? { colorObjectIdHex: objectIdToHex(linkedColorMap.record.objectId) } : {}),
       folderPath: entry.folderPath,
       tuning,
@@ -2810,6 +2807,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
 
   async function openHexBoardGeometryBundle(entry: HexBoardGeometryBundleEntry) {
     setSyncBusy(true);
+    setTransferProgress(null);
     try {
       const { bundle } = await readHexBoardGeometryBundle(entry);
       openDeviceBundleInEditor(bundle, `Opened ${bundle.tuning.name} from HexBoard`);
@@ -2817,24 +2815,28 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to open HexBoard tuning bundle");
     } finally {
+      setTransferProgress(null);
       setSyncBusy(false);
     }
   }
 
   async function downloadHexBoardGeometryBundle(entry: HexBoardGeometryBundleEntry) {
     setSyncBusy(true);
+    setTransferProgress(null);
     try {
       const { bundle } = await readHexBoardGeometryBundle(entry);
       openDeviceBundleInEditor(bundle, `Copied ${bundle.tuning.name} to Browser Library`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to copy HexBoard tuning bundle");
     } finally {
+      setTransferProgress(null);
       setSyncBusy(false);
     }
   }
 
   async function exportHexBoardGeometryBundle(entry: HexBoardGeometryBundleEntry) {
     setSyncBusy(true);
+    setTransferProgress(null);
     try {
       const { bundle } = await readHexBoardGeometryBundle(entry);
       downloadBundleFile(bundle);
@@ -2842,6 +2844,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to export tuning file");
     } finally {
+      setTransferProgress(null);
       setSyncBusy(false);
     }
   }
@@ -2849,12 +2852,11 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   async function eraseHexBoardGeometryBundle(entry: HexBoardGeometryBundleEntry) {
     setSyncBusy(true);
     try {
-      const { bundle } = await readHexBoardGeometryBundle(entry);
-      if (!window.confirm(`Delete “${bundle.tuning.name}” from HexBoard?`)) {
+      if (!window.confirm(`Delete “${entry.name}” from HexBoard?`)) {
         return;
       }
       await client.deleteGeometryObject(ObjectType.UserTuning, entry.deviceHandle);
-      await refreshHexBoardGeometryLibrary(`Deleted ${bundle.tuning.name} from HexBoard`);
+      await refreshHexBoardGeometryLibrary(`Deleted ${entry.name} from HexBoard`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to delete HexBoard tuning bundle");
     } finally {
@@ -2871,8 +2873,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     try {
       setStatus("Requesting HexBoard Tuning Library...");
       const records = await client.listGeometryObjects(ObjectType.UserTuning, 8);
-      const entries = records.map((record, index) => hexBoardGeometryEntryFromRecord(record, index));
+      const { entries, rescueActive } = partitionHexBoardGeometryRecords(records);
       setHexboardBundles(entries);
+      setHexboardRescueActive(rescueActive);
       setStatus(successStatus);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to refresh HexBoard Tuning Library");
@@ -2900,9 +2903,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     const applyObjects = activeEncodedGeometryObjects(encoded, sanitizedBundle);
     const applySupported = sanitizedBundle.tuning.kind !== "scala" || centsTableRuntimeSupported;
     setSyncBusy(true);
+    setTransferProgress(null);
     try {
       setStatus(`Saving ${sanitizedBundle.tuning.name}`);
-      await client.sendGeometryBundleSaveConfirmed(encoded.bundleFile);
+      await client.sendGeometryBundleSaveConfirmed(encoded.bundleFile, setTransferProgress);
       if (applySupported) {
         for (let index = 0; index < applyObjects.length; index += 1) {
           const object = applyObjects[index];
@@ -2917,6 +2921,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to save tuning bundle");
     } finally {
+      setTransferProgress(null);
       setSyncBusy(false);
     }
   }
@@ -3030,7 +3035,17 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         )}
         <div className="geometryStatus" role="status">
           <span aria-hidden="true" />
-          {status}
+          <span className="geometryStatusText">{status}</span>
+          {transferProgress ? (
+            <span className="geometryTransferProgress">
+              <progress
+                aria-label={`${transferProgress.direction === "upload" ? "Uploading" : "Downloading"} tuning bundle`}
+                max={transferProgress.totalBytes}
+                value={transferProgress.transferredBytes}
+              />
+              <span>{Math.floor((transferProgress.transferredBytes * 100) / Math.max(1, transferProgress.totalBytes))}%</span>
+            </span>
+          ) : null}
         </div>
       </header>
 
@@ -3104,6 +3119,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               />
               <HexBoardGeometryLibraryPanel
                 entries={hexboardBundles}
+                rescueActive={hexboardRescueActive}
                 folders={hexboardFolders}
                 selectedFolder={folderFilters.hexboard}
                 onFolderSelect={selectFolderFilter}
@@ -4003,6 +4019,7 @@ function GeometryLibrarySpacePanel({
 
 interface HexBoardGeometryLibraryPanelProps {
   entries: HexBoardGeometryBundleEntry[];
+  rescueActive: boolean;
   folders: string[];
   selectedFolder: string | null;
   onFolderSelect: (space: GeometryLibrarySpace, folderPath: string | null) => void;
@@ -4016,6 +4033,7 @@ interface HexBoardGeometryLibraryPanelProps {
 
 function HexBoardGeometryLibraryPanel({
   entries,
+  rescueActive,
   folders,
   selectedFolder,
   onFolderSelect,
@@ -4040,6 +4058,12 @@ function HexBoardGeometryLibraryPanel({
         </div>
         <span className="countBadge">{visibleEntries.length}</span>
       </div>
+
+      {rescueActive ? (
+        <div className="libraryFallbackNotice" role="status">
+          HexBoard is using its built-in rescue tuning because no stored tuning bundles are available.
+        </div>
+      ) : null}
 
       <div className="folderTargets">
         <button
@@ -4067,7 +4091,7 @@ function HexBoardGeometryLibraryPanel({
 
       <ul className="list">
         {visibleEntries.length === 0 ? (
-          <li className="emptyListItem">{selectedFolder ? `No saved tunings in ${folderLabel(selectedFolder)}` : "Refresh HexBoard to list saved tunings"}</li>
+          <li className="emptyListItem">{selectedFolder ? `No saved tunings in ${folderLabel(selectedFolder)}` : rescueActive ? "No saved tunings on HexBoard" : "Refresh HexBoard to list saved tunings"}</li>
         ) : (
           visibleEntries.map((entry) => (
             <li
@@ -4096,7 +4120,7 @@ function HexBoardGeometryLibraryPanel({
               <div className="presetMeta">
                 <strong>{entry.name}</strong>
                 <span>{folderLabel(entry.folderPath)}</span>
-                <span>{entry.readOnly ? "Factory" : entry.objectIdHex.slice(0, 8).toUpperCase()}</span>
+                <span>{entry.objectIdHex.slice(0, 8).toUpperCase()}</span>
               </div>
               <div className="presetActions">
                 <button type="button" onClick={() => onOpen(entry)}>
@@ -4108,7 +4132,7 @@ function HexBoardGeometryLibraryPanel({
                 <button type="button" onClick={() => onExport(entry)}>
                   Export File
                 </button>
-                <button className="warning" disabled={entry.readOnly} type="button" onClick={() => onErase(entry)}>
+                <button className="warning" type="button" onClick={() => onErase(entry)}>
                   Delete
                 </button>
               </div>

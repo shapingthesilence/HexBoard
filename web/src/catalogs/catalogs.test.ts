@@ -21,6 +21,7 @@ import {
   crunchSerumWavetable,
   currentFirmwareDownLeftToUpRight,
   defaultKeyLabels,
+  decodeGeometryBundleFile,
   deterministicObjectId,
   encodeHexBoardWavetableWav,
   encodeGeometryCatalogOrder,
@@ -483,6 +484,22 @@ Example scale
     expect(u16LE(encoded.bundleFile.slice(4, 6))).toBe(encoded.objects.length);
     expect(u16LE(encoded.bundleFile.slice(6, 8))).toBe(0xffff);
     expect(u32LE(encoded.bundleFile.slice(8, 12)) >>> 0).toBe(crc32(encoded.bundleFile.slice(12)) >>> 0);
+
+    const decodedBundle = decodeGeometryBundleFile(encoded.bundleFile);
+    expect(decodedBundle.catalogOrder).toBe(0xffff);
+    expect(decodedBundle.objects.map((object) => ({
+      type: object.objectType,
+      id: objectIdToHex(object.objectId),
+      name: object.name,
+      folderPath: object.folderPath,
+      body: object.body
+    }))).toEqual(encoded.objects.map((object) => ({
+      type: object.objectType,
+      id: objectIdToHex(object.objectId),
+      name: object.name,
+      folderPath: object.folderPath,
+      body: object.body
+    })));
 
     const ordered = encodeTuningBundle({ ...parsed, catalogOrder: 7 });
     expect(u16LE(ordered.bundleFile.slice(6, 8))).toBe(7);

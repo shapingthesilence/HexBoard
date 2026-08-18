@@ -143,6 +143,10 @@ and `TRANSFER_END` so firmware can pace object transfers.
   runtime records. `Save to HexBoard` writes the whole tuning bundle, preserves
   tuning and color object IDs for tunings opened from the device, then reapplies the
   active records so the hardware preview and on-device menus agree.
+  Opening, copying, or exporting a HexBoard tuning streams its complete stored
+  `.hgb` bundle once and shows byte progress in the app. The compiled rescue
+  tuning is not presented as an editable library item; the library shows a
+  fallback notice when the device reports that rescue state.
   Browser Library edits are saved automatically. `Copy to HexBoard` and
   `Copy to Browser` copy between libraries; `Export File` writes a portable
   `hexboard.tuningBundle.v2` JSON file. Version 1 tuning bundles and legacy
