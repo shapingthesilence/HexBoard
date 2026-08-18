@@ -188,6 +188,7 @@ void RAM_FUNC(updateWheels)() {
                             lastVelocityWheelGestureMask);
   bool upd = velWheel.updateValue(runTime, COMMAND_WHEEL_UPDATE_INTERVAL_MICROS);
   if (upd) {
+    setSynthMasterVolumeControl(static_cast<byte>(velWheel.curValue));
     sendToLog("vel became " + std::to_string(velWheel.curValue));
     if (commandWheelOverlayActive()) {
       notifyCommandWheelValue(CommandWheelOverlayType::Velocity, velWheel);

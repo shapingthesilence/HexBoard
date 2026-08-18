@@ -16,7 +16,7 @@ std::array<int16_t, POLYPHONY_LIMIT> pendingSynthStealOwners = [] {
 }();
 // Sequencer OB Synth output uses these hidden slots to enter the normal synth
 // voice lifecycle without pretending a visible key is physically held.
-std::array<byte, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewVelocityForSlot = {};
+std::array<byte, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewGainForSlot = {};
 std::array<bool, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewSlotActive = {};
 std::atomic<uint32_t> nextVoiceGeneration = 1;
 std::atomic<bool> flashWriteInProgress = false;
@@ -49,7 +49,7 @@ void RAM_FUNC(clearSynthPreviewSlot)(int16_t slot) {
     return;
   }
   synthPreviewSlotActive[slotIndex] = false;
-  synthPreviewVelocityForSlot[slotIndex] = 127;
+  synthPreviewGainForSlot[slotIndex] = 127;
   h[slot].note = UNUSED_NOTE;
   h[slot].MIDIch = 0;
   h[slot].activeMidiNote = UNUSED_NOTE;
@@ -71,7 +71,7 @@ int16_t RAM_FUNC(allocateSynthPreviewSlot)() {
     if (!synthPreviewSlotActive[i]) {
       int16_t slot = static_cast<int16_t>(SYNTH_PREVIEW_SLOT_START + i);
       synthPreviewSlotActive[i] = true;
-      synthPreviewVelocityForSlot[i] = 127;
+      synthPreviewGainForSlot[i] = 127;
       return slot;
     }
   }
@@ -436,7 +436,7 @@ bool RAM_FUNC(startSynthPreviewNote)(int16_t pitchSteps,
 
   uint8_t slotIndex = static_cast<uint8_t>(slot - SYNTH_PREVIEW_SLOT_START);
   byte safeVelocity = velocity == 0 ? 1 : velocity;
-  synthPreviewVelocityForSlot[slotIndex] = safeVelocity;
+  synthPreviewGainForSlot[slotIndex] = perceptualAudioGain7(safeVelocity);
   h[slot].stepsFromC = pitchSteps;
   h[slot].note = displayNote < 128 ? displayNote : 127;
   h[slot].frequency = frequency;

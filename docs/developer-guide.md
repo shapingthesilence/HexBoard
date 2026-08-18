@@ -363,6 +363,15 @@ Active wavetables use a `16 × 512` base table and fixed mip levels. Modulation
 and envelopes update on a 32-sample control quantum. Per-sample rendering uses
 cached ramps and RAM-resident drive lookup tables.
 
+User-facing amplitude controls use a blend of 25% linear and 75% square law
+while their stored and MIDI-facing values remain linear. The factored
+fixed-point mapping uses one multiply and preserves more low-level resolution
+than a full square-law curve. The jack caches tapered envelope, wheel, velocity,
+and output-cap gains before their per-sample multiplications. The piezo keeps
+raw envelope and wheel factors because its moving-midpoint driver already
+applies each one twice; adding the software taper there would make its response
+unnecessarily steep.
+
 Voice stealing protects the lowest held voice, then prefers duplicate, released,
 and remaining held voices by age. Replacement waits for renderer-side handoff
 fade. Review timer setup, ISR cost, command publication, ownership, release

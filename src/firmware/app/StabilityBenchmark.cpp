@@ -301,6 +301,7 @@ void applyBenchmarkPatch() {
   pbWheel.targetValue = 0;
   velWheel.curValue = 127;
   velWheel.targetValue = 127;
+  setSynthMasterVolumeControl(127);
 
   updateSynthModulationParams();
   updateSynthPortamentoSettings();
@@ -359,6 +360,7 @@ void restoreRuntimeState() {
   pbWheel.targetValue = savedRuntime.pbWheelTarget;
   velWheel.curValue = savedRuntime.velWheelCur;
   velWheel.targetValue = savedRuntime.velWheelTarget;
+  setSynthMasterVolumeControl(static_cast<byte>(savedRuntime.velWheelCur));
 
   updateSynthModulationParams();
   updateSynthPortamentoSettings();
@@ -504,6 +506,7 @@ void runModulationSweepStep() {
   modWheel.targetValue = modWheel.curValue;
   velWheel.curValue = 127;
   velWheel.targetValue = 127;
+  setSynthMasterVolumeControl(127);
   ++benchmarkModSweepCount;
 }
 

@@ -933,9 +933,9 @@ void applyActiveSynthOutputVolume(byte value) {
   value = normalizeSynthOutputVolumeCap(value);
   activeSynthOutputVolumeCap = value;
   if (activeSynthOutputVolumeSettingKey() == SettingKey::PiezoVolumeCap) {
-    piezoVolumeCap = value;
+    setPiezoVolumeCap(value);
   } else {
-    headphoneVolumeCap = value;
+    setHeadphoneVolumeCap(value);
   }
 }
 
@@ -2558,8 +2558,8 @@ void syncSettingsToRuntime() {
   syncSynthSettingsToRuntime();
   synthBuzzerEnabled = decodeStoredBuzzerEnabled(settingValue(SettingKey::AudioDestination));
   syncAudioDestinationToRuntime();
-  headphoneVolumeCap = normalizeSynthOutputVolumeCap(settingValue(SettingKey::HeadphoneVolumeCap));
-  piezoVolumeCap = normalizeSynthOutputVolumeCap(settingValue(SettingKey::PiezoVolumeCap));
+  setHeadphoneVolumeCap(normalizeSynthOutputVolumeCap(settingValue(SettingKey::HeadphoneVolumeCap)));
+  setPiezoVolumeCap(normalizeSynthOutputVolumeCap(settingValue(SettingKey::PiezoVolumeCap)));
   settings[static_cast<uint8_t>(SettingKey::HeadphoneVolumeCap)] = headphoneVolumeCap;
   settings[static_cast<uint8_t>(SettingKey::PiezoVolumeCap)] = piezoVolumeCap;
   syncActiveSynthOutputVolumeMenuValue();
