@@ -1265,6 +1265,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     wavetableSamples: selectedPreviewWavetable?.samples ? synthWavetableBaseSamples(selectedPreviewWavetable.samples) : undefined,
     values: preset.values
   }), [preset.values, preset.wavetableFolderPath, preset.wavetableName, selectedPreviewWavetable?.samples]);
+  const liveSendPatch = useMemo(() => ({
+    values: preset.values,
+    wavetableName: preset.wavetableName,
+    wavetableFolderPath: preset.wavetableFolderPath
+  }), [preset.values, preset.wavetableFolderPath, preset.wavetableName]);
   const draftPreset = useMemo(() => encodeEditablePreset(preset), [preset]);
   const monoModeSelected = preset.values.PlaybackMode === 1 || preset.values.PlaybackMode === 4;
   const arpModeSelected = preset.values.PlaybackMode === 2;
@@ -1429,7 +1434,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }, 120);
 
     return () => window.clearTimeout(timeout);
-  }, [autoSend, draftPreset, editorHydrated]);
+  }, [autoSend, editorHydrated, liveSendPatch]);
 
   function updateValue(key: EditableSynthValueKey, value: number) {
     const clampedValue = clampSynthValue(key, value);
@@ -1450,6 +1455,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     pendingLiveSynthParam.current = null;
     setEditorHydrated(true);
     setPreset(update);
+  }
+
+  function updatePresetName(name: string) {
+    setPreset((current) => ({ ...current, name }));
   }
 
   function previewController(): SynthPreviewController {
@@ -2773,7 +2782,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         <div className="fieldGrid">
           <label className="field">
             <span>Name</span>
-            <input value={preset.name} onChange={(event) => updatePresetMetadata((current) => ({ ...current, name: event.target.value }))} />
+            <input value={preset.name} onChange={(event) => updatePresetName(event.target.value)} />
           </label>
           <label className="field">
             <span>Folder</span>
