@@ -811,6 +811,22 @@ export function mergePresetBatch(
   };
 }
 
+export function filterLibraryPresets(
+  presets: EditableSynthPreset[],
+  selectedFolder: string | null,
+  searchQuery: string
+): EditableSynthPreset[] {
+  const query = searchQuery.trim().toLocaleLowerCase();
+  return presets.filter((preset) => {
+    if (selectedFolder !== null && preset.folderPath !== selectedFolder) {
+      return false;
+    }
+    return query.length === 0
+      || preset.name.toLocaleLowerCase().includes(query)
+      || folderLabel(preset.folderPath).toLocaleLowerCase().includes(query);
+  });
+}
+
 function presetFromObjectBody(body: Uint8Array, deviceHandle?: number): EditableSynthPreset {
   const decoded = decodeObjectBody(body);
   const values = { ...defaultPreset.values };
@@ -3353,10 +3369,9 @@ function LibrarySpacePanel({
   onErase
 }: LibrarySpacePanelProps) {
   const [expanded, setExpanded] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
   const isDropTarget = draggedPreset !== null;
-  const visiblePresets = selectedFolder
-    ? presets.filter((preset) => preset.folderPath === selectedFolder)
-    : presets;
+  const visiblePresets = filterLibraryPresets(presets, selectedFolder, searchQuery);
   const presetIdSet = new Set(presets.map((preset) => preset.objectIdHex));
   const validSelectedIds = selectedIds.filter((objectIdHex) => presetIdSet.has(objectIdHex));
   const selectedIdSet = new Set(validSelectedIds);
@@ -3396,99 +3411,125 @@ function LibrarySpacePanel({
 
       {expanded ? (
         <div className="librarySpaceContent" id={contentId}>
-          <div className="folderTargets">
-            <button
-              className={selectedFolder === null ? "folderTarget systemFolderTarget active" : "folderTarget systemFolderTarget"}
-              type="button"
-              aria-pressed={selectedFolder === null}
-              onClick={() => onFolderSelect(space, null)}
-            >
-              <span>All</span>
-              <span>{presets.length}</span>
-            </button>
-            {folders.map((folder) => (
+          <label className="presetLibrarySearch">
+            <input
+              aria-label={`Search ${title}`}
+              type="search"
+              value={searchQuery}
+              placeholder="Search presets"
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+          </label>
+
+          <div className="presetLibraryBrowser">
+            <nav className="folderTargets presetFolderSidebar" aria-label={`${title} folders`}>
               <button
-                className={`folderTarget${folder === rootFolderPath ? " systemFolderTarget" : ""}${folder === selectedFolder ? " active" : ""}`}
-                key={`${space}-${folder}`}
+                className={selectedFolder === null ? "folderTarget systemFolderTarget active" : "folderTarget systemFolderTarget"}
                 type="button"
-                aria-pressed={folder === selectedFolder}
-                onClick={() => onFolderSelect(space, folder)}
-                onDragOver={onAllowDrop}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  onDrop(space, folder);
-                }}
+                aria-pressed={selectedFolder === null}
+                onClick={() => onFolderSelect(space, null)}
               >
-                <span>{folderLabel(folder)}</span>
-                <span>{presets.filter((preset) => preset.folderPath === folder).length}</span>
+                <span>All presets</span>
+                <span>{presets.length}</span>
               </button>
-            ))}
-          </div>
-
-          <LibraryBulkActions
-            selectedCount={validSelectedIds.length}
-            visibleCount={visibleIds.length}
-            allVisibleSelected={allVisibleSelected}
-            transferLabel={space === "computer" ? "Copy selected to HexBoard" : "Copy selected to Browser"}
-            busy={bulkBusy}
-            onSelectVisible={(selected) => onSelectVisible(space, visibleIds, selected)}
-            onClear={() => onClearSelection(space)}
-            onTransfer={() => onBulkTransfer(space)}
-            onExport={() => onBulkExport(space)}
-          />
-
-          <ul className="list">
-            {visiblePresets.length === 0 ? (
-              <li className="emptyListItem">{selectedFolder ? `No presets in ${folderLabel(selectedFolder)}` : "No presets"}</li>
-            ) : (
-              visiblePresets.map((item) => (
-                <li
-                  className="listItem presetListItem"
-                  draggable
-                  key={`${space}-${item.objectIdHex}`}
-                  onDragStart={(event) => onDragStart(space, item.objectIdHex, event)}
-                  onDragEnd={onDragEnd}
+              {folders.map((folder) => (
+                <button
+                  className={`folderTarget${folder === rootFolderPath ? " systemFolderTarget" : ""}${folder === selectedFolder ? " active" : ""}`}
+                  key={`${space}-${folder}`}
+                  type="button"
+                  aria-pressed={folder === selectedFolder}
+                  onClick={() => onFolderSelect(space, folder)}
+                  onDragOver={onAllowDrop}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    onDrop(space, folder);
+                  }}
                 >
-                  <label className="libraryItemSelection" title={`Select ${item.name}`}>
-                    <input
-                      aria-label={`Select ${item.name}`}
-                      checked={selectedIdSet.has(item.objectIdHex)}
-                      type="checkbox"
-                      onChange={(event) => onSelectionChange(space, item.objectIdHex, event.target.checked)}
-                    />
-                  </label>
-                  <div className="presetMeta">
-                    <strong>{item.name}</strong>
-                    <span>{folderLabel(item.folderPath)}</span>
-                    <span>{item.objectIdHex.slice(0, 8).toUpperCase()}</span>
-                  </div>
-                  <div className="presetActions">
-                    <button type="button" onClick={() => onOpen(space, item)}>
-                      Open
-                    </button>
-                    <button type="button" onClick={() => onOrganize(space, item)}>
-                      Rename / Move
-                    </button>
-                    {space === "computer" ? (
-                      <button type="button" title="Copy preset to HexBoard" aria-label="Copy preset to HexBoard" onClick={() => onUpload(item)}>
-                        → HexBoard
+                  <span>{folderLabel(folder)}</span>
+                  <span>{presets.filter((preset) => preset.folderPath === folder).length}</span>
+                </button>
+              ))}
+            </nav>
+
+            <div className="presetLibraryResults">
+              <div className="presetLibraryListToolbar">
+                <label className="checkField" title="Select every preset in these results">
+                  <input
+                    aria-label="Select all shown presets"
+                    checked={allVisibleSelected}
+                    disabled={bulkBusy || visibleIds.length === 0}
+                    type="checkbox"
+                    onChange={(event) => onSelectVisible(space, visibleIds, event.target.checked)}
+                  />
+                  <span>Select shown</span>
+                </label>
+                <span className="muted">{visiblePresets.length} shown</span>
+              </div>
+
+              {validSelectedIds.length > 0 ? (
+                <LibraryBulkActions
+                  selectedCount={validSelectedIds.length}
+                  visibleCount={visibleIds.length}
+                  allVisibleSelected={allVisibleSelected}
+                  transferLabel={space === "computer" ? "Copy to HexBoard" : "Copy to Browser"}
+                  busy={bulkBusy}
+                  showSelectVisible={false}
+                  onSelectVisible={(selected) => onSelectVisible(space, visibleIds, selected)}
+                  onClear={() => onClearSelection(space)}
+                  onTransfer={() => onBulkTransfer(space)}
+                  onExport={() => onBulkExport(space)}
+                />
+              ) : null}
+
+              <ul className="list presetCompactList">
+                {visiblePresets.length === 0 ? (
+                  <li className="emptyListItem">
+                    {searchQuery.trim()
+                      ? `No presets match “${searchQuery.trim()}”`
+                      : selectedFolder ? `No presets in ${folderLabel(selectedFolder)}` : "No presets"}
+                  </li>
+                ) : (
+                  visiblePresets.map((item) => (
+                    <li
+                      className="listItem presetListItem compactPresetRow"
+                      draggable
+                      key={`${space}-${item.objectIdHex}`}
+                      onDoubleClick={() => onOpen(space, item)}
+                      onDragStart={(event) => onDragStart(space, item.objectIdHex, event)}
+                      onDragEnd={onDragEnd}
+                    >
+                      <label className="libraryItemSelection" title={`Select ${item.name}`}>
+                        <input
+                          aria-label={`Select ${item.name}`}
+                          checked={selectedIdSet.has(item.objectIdHex)}
+                          type="checkbox"
+                          onChange={(event) => onSelectionChange(space, item.objectIdHex, event.target.checked)}
+                        />
+                      </label>
+                      <button className="presetNameButton" type="button" title={`Open ${item.name}`} onClick={() => onOpen(space, item)}>
+                        <strong>{item.favorite ? "★ " : ""}{item.name}</strong>
+                        <span>{folderLabel(item.folderPath)}</span>
                       </button>
-                    ) : (
-                      <button type="button" title="Copy preset to Browser Library" aria-label="Copy preset to Browser Library" onClick={() => onDownload(item)}>
-                        → Browser
-                      </button>
-                    )}
-                    <button type="button" onClick={() => onExport(item)}>
-                      Export
-                    </button>
-                    <button className="warning" type="button" onClick={() => onErase(space, item)}>
-                      Delete
-                    </button>
-                  </div>
-                </li>
-              ))
-            )}
-          </ul>
+                      <details className="presetOverflowMenu">
+                        <summary aria-label={`More actions for ${item.name}`} title="More actions">•••</summary>
+                        <div className="presetOverflowActions">
+                          <button type="button" onClick={() => onOpen(space, item)}>Open</button>
+                          <button type="button" onClick={() => onOrganize(space, item)}>Rename / Move</button>
+                          {space === "computer" ? (
+                            <button type="button" onClick={() => onUpload(item)}>Copy to HexBoard</button>
+                          ) : (
+                            <button type="button" onClick={() => onDownload(item)}>Copy to Browser</button>
+                          )}
+                          <button type="button" onClick={() => onExport(item)}>Export</button>
+                          <button className="warning" type="button" onClick={() => onErase(space, item)}>Delete</button>
+                        </div>
+                      </details>
+                    </li>
+                  ))
+                )}
+              </ul>
+            </div>
+          </div>
         </div>
       ) : null}
     </section>

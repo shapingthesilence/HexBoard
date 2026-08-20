@@ -172,9 +172,11 @@ and `TRANSFER_END` so firmware can pace object transfers.
   presets and `HexBoard Library` for device-side presets loaded through SysEx,
   with independently collapsible library panels,
   including persistent browser folders with explicit create/delete controls,
-  `All` and `Root` system filters, identity-preserving `Rename / Move`,
-  drag-and-drop folder moves, library copy actions, device refresh, JSON import,
-  JSON export, open, and confirmed delete controls. Multi-select can copy a
+  an `All presets` filter, searchable compact preset rows, per-row overflow
+  actions, identity-preserving `Rename / Move`, drag-and-drop folder moves,
+  library copy actions, device refresh, JSON import, JSON export, open, and
+  confirmed delete controls. The batch toolbar appears after a selection.
+  Multi-select can copy a
   batch between libraries or export one `hexboard.synthPresetLibrary.v1` JSON
   file, and multi-file import accepts individual and library files together.
   Device preset listing uses

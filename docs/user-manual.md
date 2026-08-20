@@ -474,14 +474,18 @@ the device, presets appear in a virtual folder browser; `New Preset` saves into
 the currently open folder. The factory image includes its preset library as
 ordinary editable records, including `Soft String Pad` under `Pads` and
 `Bright Mono Lead` under `Leads`. They can be changed or erased like any other
-preset. The web app shows the foldered library and can create foldered presets.
+preset. The web app shows each folder in a two-row strip with its preset count. Search
+narrows the compact preset list within the selected folder. Open a preset from
+its name or use its more-actions menu for rename, move, copy, export, and
+delete. The app can also create foldered presets.
 `Rename / Move` changes a saved Browser or HexBoard preset in place, so changing
 its name or folder does not require making a copy and deleting the old record.
 If the destination already contains a preset with the same name, the app shows
 which preset will be replaced and requires confirmation. `Delete` also requires
 confirmation and states that it cannot be undone.
 
-Use the selection boxes in either preset library for batch work. `Select shown`
+Use the selection boxes in either preset library for batch work. The batch
+toolbar appears after at least one preset is selected. `Select shown`
 selects the presets visible under the current folder filter. The selected
 presets can be copied together to the other library or exported as one JSON
 library file. `Import Preset Files` accepts several individual preset files, a

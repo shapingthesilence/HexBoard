@@ -4,6 +4,7 @@ interface LibraryBulkActionsProps {
   allVisibleSelected: boolean;
   transferLabel: string;
   busy?: boolean;
+  showSelectVisible?: boolean;
   onSelectVisible: (selected: boolean) => void;
   onClear: () => void;
   onTransfer: () => void;
@@ -16,6 +17,7 @@ export function LibraryBulkActions({
   allVisibleSelected,
   transferLabel,
   busy = false,
+  showSelectVisible = true,
   onSelectVisible,
   onClear,
   onTransfer,
@@ -23,15 +25,17 @@ export function LibraryBulkActions({
 }: LibraryBulkActionsProps) {
   return (
     <div className="libraryBulkActions">
-      <label className="checkField">
-        <input
-          checked={visibleCount > 0 && allVisibleSelected}
-          disabled={busy || visibleCount === 0}
-          type="checkbox"
-          onChange={(event) => onSelectVisible(event.target.checked)}
-        />
-        <span>Select shown</span>
-      </label>
+      {showSelectVisible ? (
+        <label className="checkField">
+          <input
+            checked={visibleCount > 0 && allVisibleSelected}
+            disabled={busy || visibleCount === 0}
+            type="checkbox"
+            onChange={(event) => onSelectVisible(event.target.checked)}
+          />
+          <span>Select shown</span>
+        </label>
+      ) : null}
       <span className="muted">{selectedCount} selected</span>
       <div className="row">
         <button disabled={busy || selectedCount === 0} type="button" onClick={onTransfer}>{transferLabel}</button>

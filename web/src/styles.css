@@ -1865,6 +1865,37 @@ textarea {
   gap: 10px;
 }
 
+.presetLibrarySearch input {
+  width: 100%;
+  min-height: 2.35rem;
+}
+
+.presetLibraryBrowser {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.presetLibraryResults {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.presetLibraryListToolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 1.7rem;
+}
+
+.presetLibraryListToolbar .checkField,
+.presetLibraryListToolbar .muted {
+  font-size: 0.75rem;
+}
+
 .countBadge {
   display: inline-grid;
   place-items: center;
@@ -1883,6 +1914,32 @@ textarea {
   overflow-x: auto;
   padding: 1px 1px 6px;
   scrollbar-width: thin;
+}
+
+.presetFolderSidebar {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, auto));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(92px, 1fr);
+  gap: 5px;
+  overflow-x: auto;
+  padding: 0 0 5px;
+  scrollbar-width: thin;
+}
+
+.presetFolderSidebar .folderTarget {
+  width: 100%;
+  max-width: none;
+  min-height: 1.9rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 7px;
+  font-size: 0.72rem;
+}
+
+.presetFolderSidebar .folderTarget span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .folderTarget {
@@ -1928,6 +1985,129 @@ textarea {
 
 .presetListItem {
   align-items: flex-start;
+}
+
+.presetCompactList {
+  gap: 4px;
+}
+
+.compactPresetRow {
+  position: relative;
+  align-items: center;
+  gap: 7px;
+  min-height: 2.55rem;
+  padding: 5px 6px;
+  border-radius: 7px;
+}
+
+.compactPresetRow .libraryItemSelection {
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  min-height: 1.8rem;
+}
+
+.presetNameButton {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  gap: 1px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.presetNameButton:hover {
+  border-color: transparent;
+  background: transparent;
+}
+
+.presetNameButton strong,
+.presetNameButton span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presetNameButton strong {
+  font-size: 0.82rem;
+}
+
+.presetNameButton span {
+  font-size: 0.7rem;
+}
+
+.presetOverflowMenu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.presetOverflowMenu summary {
+  display: grid;
+  place-items: center;
+  width: 1.8rem;
+  min-height: 1.8rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  list-style: none;
+}
+
+.presetOverflowMenu summary::-webkit-details-marker {
+  display: none;
+}
+
+.presetOverflowMenu summary:hover,
+.presetOverflowMenu[open] summary {
+  border-color: var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.presetOverflowActions {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 3px);
+  right: 0;
+  display: grid;
+  width: max-content;
+  min-width: 145px;
+  gap: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 5px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-md);
+}
+
+.presetOverflowActions button {
+  min-height: 1.9rem;
+  padding: 0.3rem 0.55rem;
+  text-align: left;
+  font-size: 0.76rem;
+}
+
+.presetLibraryResults .libraryBulkActions {
+  align-items: center;
+  padding: 6px 0;
+}
+
+.presetLibraryResults .libraryBulkActions > .row {
+  width: 100%;
+  margin-left: 0;
+  gap: 5px;
+}
+
+.presetLibraryResults .libraryBulkActions button {
+  min-height: 1.9rem;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.7rem;
 }
 
 .presetListItem[draggable="true"] {
@@ -2259,5 +2439,11 @@ textarea {
 
   .hexBoardScroll {
     min-height: 460px;
+  }
+}
+
+@media (max-width: 480px) {
+  .presetFolderSidebar {
+    grid-auto-columns: minmax(105px, 46%);
   }
 }
