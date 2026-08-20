@@ -60,7 +60,7 @@ void formatSynthPresetMenuLabel(uint16_t presetIndex, char* output, size_t outpu
 
   const SynthPresetIndexEntry& preset = synthPresets[presetIndex];
   if (menuFolderEntryBelongsToCurrentFolder(preset.folderPath, synthPresetMenuCurrentFolder)) {
-    snprintf(output, outputLength, "%u %s", static_cast<unsigned>(presetIndex + 1), preset.name);
+    snprintf(output, outputLength, "%s", preset.name);
     return;
   }
 
@@ -68,8 +68,7 @@ void formatSynthPresetMenuLabel(uint16_t presetIndex, char* output, size_t outpu
   synthPresetFolderLabel(preset.folderPath, folderLabel, sizeof(folderLabel));
   snprintf(output,
            outputLength,
-           "%u %s/%s",
-           static_cast<unsigned>(presetIndex + 1),
+           "%s/%s",
            folderLabel,
            preset.name);
 }
