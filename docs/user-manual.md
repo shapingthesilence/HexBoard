@@ -475,6 +475,20 @@ the currently open folder. The factory image includes its preset library as
 ordinary editable records, including `Soft String Pad` under `Pads` and
 `Bright Mono Lead` under `Leads`. They can be changed or erased like any other
 preset. The web app shows the foldered library and can create foldered presets.
+`Rename / Move` changes a saved Browser or HexBoard preset in place, so changing
+its name or folder does not require making a copy and deleting the old record.
+If the destination already contains a preset with the same name, the app shows
+which preset will be replaced and requires confirmation. `Delete` also requires
+confirmation and states that it cannot be undone.
+
+Use the selection boxes in either preset library for batch work. `Select shown`
+selects the presets visible under the current folder filter. The selected
+presets can be copied together to the other library or exported as one JSON
+library file. `Import Preset Files` accepts several individual preset files, a
+bulk library file, or both in one file selection. Before a batch import or copy,
+the app lists how many existing destination presets will be replaced and waits
+for confirmation.
+
 The load list also includes `Blank`. Loading from the top-level `Synth` item
 returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
@@ -674,13 +688,26 @@ In the Library step, drag tuning rows to reorder them. Computer Library order is
 saved in the browser. Dragging HexBoard Library rows updates the device menu
 order after a 2 second quiet period, so several quick drops produce one small
 order-file flash write rather than rewriting tuning bundles. `Copy to HexBoard`
-and `Copy to Computer` move a tuning between libraries. `Download file` saves a
+and `Copy to Browser` copy a tuning between libraries. `Export File` saves a
 portable `hexboard.tuningBundle.v2` JSON file to the computer. Version 1 tuning
 bundles remain importable and are converted to explicit degree order. Tuning
 bundle uploads and downloads show byte progress in the app while the transfer
 is active. If HexBoard has no usable stored tuning bundles, the app shows a
 built-in rescue-tuning notice instead of presenting that read-only rescue as an
 editable library item.
+
+`Rename / Move` updates a tuning bundle in place in either library. The app
+shows the final folder and name before saving. If that destination is occupied,
+it identifies the bundle that will be replaced and requires confirmation;
+deletion happens only after the renamed bundle has saved. Direct `Delete`
+actions also require confirmation.
+
+Selection boxes provide the same batch workflow as the synth preset library.
+Select the tunings shown by the current folder filter, then copy them together
+to the other library or export them as one JSON tuning-library file. `Import
+Files` accepts several individual tuning files and bulk tuning-library files in
+one selection. A single warning summarizes any destination bundles that a batch
+copy or import will replace.
 
 Library folder rows begin with the visually distinct system views `All` and
 `Root`, followed by user folders. New folders belong to the

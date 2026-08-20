@@ -390,6 +390,17 @@ export class PresetSyncClient {
     });
   }
 
+  async sendSynthPresetUpdateConfirmed(preset: EncodedCatalogObject, handle: number): Promise<number[][]> {
+    return this.sendObjectWriteConfirmed({
+      objectType: ObjectType.SynthPreset,
+      body: preset.body,
+      handle,
+      schemaMajor: preset.schemaMajor,
+      schemaMinor: preset.schemaMinor,
+      writeFlags: WriteFlag.SaveToFlash | WriteFlag.OverwriteExisting
+    });
+  }
+
   async sendSynthWavetableImport(wavetable: EncodedCatalogObject): Promise<number[][]> {
     return this.sendObjectWrite({
       objectType: ObjectType.SynthWavetable,

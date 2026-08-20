@@ -36,6 +36,8 @@ import { crc32 } from "../protocol/crc32.ts";
 import { SynthWavetableSelector, type ObjectListRecord } from "../protocol/index.ts";
 import { CommonTlv, decodeObjectBody, textFromBytes } from "../protocol/tlv.ts";
 import { FolderControls } from "../components/FolderControls.tsx";
+import { LibraryBulkActions } from "../components/LibraryBulkActions.tsx";
+import { OrganizeLibraryItemDialog, type LibraryOrganizationConflict } from "../components/OrganizeLibraryItemDialog.tsx";
 import { formatByteLength, formatHex } from "./format.ts";
 
 interface SynthPresetLibraryProps {
@@ -129,6 +131,12 @@ interface DraggedPreset {
   objectIdHex: string;
 }
 
+interface PresetOrganizationRequest {
+  space: LibrarySpace;
+  preset: EditableSynthPreset;
+  initialFolderPath?: string;
+}
+
 type WavetableResolutionChoice =
   | { kind: "upload" }
   | { kind: "alternate"; wavetable: { name: string; folderPath: string } }
@@ -147,6 +155,7 @@ const computerWavetableFactorySeedStorageKey = "hexboard.synthWavetableFactorySe
 const synthPresetFoldersStorageKey = "hexboard.synthPresetFolders.v1";
 const synthWavetableFoldersStorageKey = "hexboard.synthWavetableFolders.v1";
 const presetFileFormat = "hexboard.synthPreset.v1";
+const presetLibraryFileFormat = "hexboard.synthPresetLibrary.v1";
 const wavetableFileFormat = "hexboard.synthWavetable.v1";
 const builtInWavetableFolder = "/Built In";
 const factoryWavetableFolder = "/";
@@ -548,11 +557,6 @@ function wavetableSaveKey(wavetable: Pick<EditableSynthWavetable, "folderPath" |
   return normalizedWavetableName(wavetable.name);
 }
 
-function findPresetByFolderAndName(presets: EditableSynthPreset[], preset: EditableSynthPreset): EditableSynthPreset | undefined {
-  const saveKey = presetSaveKey(preset);
-  return presets.find((candidate) => presetSaveKey(candidate) === saveKey);
-}
-
 function findWavetableByFolderAndName(wavetables: EditableSynthWavetable[], wavetable: EditableSynthWavetable): EditableSynthWavetable | undefined {
   const saveKey = wavetableSaveKey(wavetable);
   return wavetables.find((candidate) => wavetableSaveKey(candidate) === saveKey);
@@ -765,6 +769,45 @@ function presetFromUnknown(value: unknown): EditableSynthPreset {
     wavetableFolderPath: wavetable.folderPath,
     favorite: source.favorite === true,
     values
+  };
+}
+
+export function presetsFromUnknown(value: unknown): EditableSynthPreset[] {
+  if (isRecord(value) && value.format === presetLibraryFileFormat && Array.isArray(value.presets)) {
+    if (value.presets.length === 0) {
+      throw new Error("Preset library file does not contain any presets");
+    }
+    return value.presets.map(presetFromUnknown);
+  }
+  return [presetFromUnknown(value)];
+}
+
+export function mergePresetBatch(
+  target: EditableSynthPreset[],
+  incoming: EditableSynthPreset[]
+): { presets: EditableSynthPreset[]; conflicts: EditableSynthPreset[] } {
+  let presets = target.map(clonePreset);
+  const conflicts: EditableSynthPreset[] = [];
+  for (const source of incoming) {
+    const normalized = normalizedPresetForSave(source);
+    const sameObject = presets.find((candidate) => candidate.objectIdHex === normalized.objectIdHex);
+    const sameDestination = presets.find((candidate) =>
+      candidate.objectIdHex !== normalized.objectIdHex && presetSaveKey(candidate) === presetSaveKey(normalized)
+    );
+    if (sameDestination) conflicts.push(sameDestination);
+    const merged = {
+      ...normalized,
+      objectIdHex: sameObject?.objectIdHex ?? sameDestination?.objectIdHex ?? normalized.objectIdHex,
+      deviceHandle: undefined
+    };
+    presets = upsertPreset(
+      sameDestination ? removePreset(presets, sameDestination.objectIdHex) : presets,
+      merged
+    );
+  }
+  return {
+    presets,
+    conflicts: Array.from(new Map(conflicts.map((preset) => [preset.objectIdHex, preset])).values())
   };
 }
 
@@ -1149,6 +1192,12 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [heldPreviewNotes, setHeldPreviewNotes] = useState<number[]>([]);
   const [lastFrameCount, setLastFrameCount] = useState(0);
   const [draggedPreset, setDraggedPreset] = useState<DraggedPreset | null>(null);
+  const [presetOrganizationRequest, setPresetOrganizationRequest] = useState<PresetOrganizationRequest | null>(null);
+  const [selectedPresetIds, setSelectedPresetIds] = useState<Record<LibrarySpace, string[]>>({
+    computer: [],
+    hexboard: []
+  });
+  const [bulkPresetBusy, setBulkPresetBusy] = useState(false);
   const [wavetableResolutionRequest, setWavetableResolutionRequest] =
     useState<WavetableResolutionRequest | null>(null);
   const [wavetableResolutionAlternate, setWavetableResolutionAlternate] =
@@ -1664,22 +1713,42 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }));
   }
 
-  function confirmPresetOverwrite(targetLabel: string, existing: EditableSynthPreset): boolean {
-    return window.confirm(`Overwrite "${existing.name}" in ${folderLabel(existing.folderPath)} on ${targetLabel}?`);
+  function confirmPresetOverwrite(targetLabel: string, existing: EditableSynthPreset, deletesExisting: boolean): boolean {
+    const deletionWarning = deletesExisting
+      ? " The existing preset will be permanently deleted after the replacement is saved."
+      : " This permanently replaces the existing destination preset.";
+    return window.confirm(
+      `Overwrite “${existing.name}” in ${folderLabel(existing.folderPath)} on ${targetLabel}?${deletionWarning}`
+    );
   }
 
   function preparePresetForLibrarySave(
     nextPreset: EditableSynthPreset,
     targetPresets: EditableSynthPreset[],
     targetLabel: string,
-    keepDeviceHandle: boolean
-  ): { preset: EditableSynthPreset; overwritten: boolean } | null {
+    keepDeviceHandle: boolean,
+    confirmOverwrite = true
+  ): { preset: EditableSynthPreset; overwritten: boolean; replacedPreset?: EditableSynthPreset } | null {
     const normalized = normalizedPresetForSave(nextPreset);
-    const existing = findPresetByFolderAndName(targetPresets, normalized);
+    const current = targetPresets.find((candidate) => candidate.objectIdHex === normalized.objectIdHex);
+    const existing = targetPresets.find((candidate) =>
+      candidate.objectIdHex !== normalized.objectIdHex && presetSaveKey(candidate) === presetSaveKey(normalized)
+    );
+    if (existing && confirmOverwrite && !confirmPresetOverwrite(targetLabel, existing, current !== undefined)) {
+      return null;
+    }
+    if (current) {
+      return {
+        preset: {
+          ...normalized,
+          objectIdHex: current.objectIdHex,
+          deviceHandle: keepDeviceHandle ? current.deviceHandle : undefined
+        },
+        overwritten: existing !== undefined,
+        ...(existing ? { replacedPreset: existing } : {})
+      };
+    }
     if (existing) {
-      if (!confirmPresetOverwrite(targetLabel, existing)) {
-        return null;
-      }
       return {
         preset: {
           ...normalized,
@@ -1700,6 +1769,90 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     };
   }
 
+  function organizationConflict(
+    space: LibrarySpace,
+    source: EditableSynthPreset,
+    name: string,
+    folderPath: string
+  ): EditableSynthPreset | undefined {
+    const candidates = space === "computer" ? computerPresets : hexboardPresets;
+    const destinationKey = presetSaveKey({ ...source, name, folderPath });
+    return candidates.find((candidate) =>
+      candidate.objectIdHex !== source.objectIdHex && presetSaveKey(candidate) === destinationKey
+    );
+  }
+
+  function organizationConflictSummary(
+    space: LibrarySpace,
+    source: EditableSynthPreset,
+    name: string,
+    folderPath: string
+  ): LibraryOrganizationConflict | null {
+    const conflict = organizationConflict(space, source, name, folderPath);
+    return conflict ? { name: conflict.name, folderPath: conflict.folderPath } : null;
+  }
+
+  async function organizePresetInPlace(
+    request: PresetOrganizationRequest,
+    name: string,
+    folderPath: string
+  ): Promise<boolean> {
+    const nextPreset = normalizedPresetForSave({ ...clonePreset(request.preset), name, folderPath });
+    const conflict = organizationConflict(request.space, request.preset, nextPreset.name, nextPreset.folderPath);
+    if (request.space === "computer") {
+      setComputerPresets((current) => {
+        const withoutConflict = conflict ? removePreset(current, conflict.objectIdHex) : current;
+        return upsertPreset(withoutConflict, { ...nextPreset, deviceHandle: undefined });
+      });
+      setCustomFolders((current) => Array.from(new Set([...current, nextPreset.folderPath])).sort(compareFolderPaths));
+      if (openedSource === "computer" && preset.objectIdHex === request.preset.objectIdHex) {
+        skipNextAutoSend.current = true;
+        setPreset(clonePreset({ ...nextPreset, deviceHandle: undefined }));
+      }
+      setSyncStatus(
+        `${conflict ? "Replaced existing preset and updated" : "Updated"} ${nextPreset.name} in Browser Library`
+      );
+      return true;
+    }
+
+    if (transport instanceof MockMidiTransport || request.preset.deviceHandle === undefined) {
+      setHexboardPresets((current) => {
+        const withoutConflict = conflict ? removePreset(current, conflict.objectIdHex) : current;
+        return upsertPreset(withoutConflict, { ...nextPreset, deviceHandle: request.preset.deviceHandle });
+      });
+      setSyncStatus(
+        `${conflict ? "Replaced existing preset and updated" : "Updated"} ${nextPreset.name} in HexBoard Library`
+      );
+      return true;
+    }
+
+    try {
+      setSyncStatus(`Updating ${request.preset.name} in HexBoard Library...`);
+      const frames = await client.sendSynthPresetUpdateConfirmed(
+        encodeEditablePreset(nextPreset),
+        request.preset.deviceHandle
+      );
+      if (conflict) {
+        if (conflict.deviceHandle === undefined) {
+          throw new Error(`Cannot replace ${conflict.name}: its HexBoard handle is unavailable`);
+        }
+        await client.deleteSynthPreset(conflict.deviceHandle);
+      }
+      setLastFrameCount(frames.length);
+      await refreshHexBoardLibrary(
+        `${conflict ? "Replaced existing preset and updated" : "Updated"} ${nextPreset.name} in HexBoard Library`
+      );
+      if (openedSource === "hexboard" && preset.objectIdHex === request.preset.objectIdHex) {
+        skipNextAutoSend.current = true;
+        setPreset(clonePreset(nextPreset));
+      }
+      return true;
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Failed to update HexBoard preset");
+      return false;
+    }
+  }
+
   function saveToComputer(nextPreset = preset, prefix = "Saved") {
     const decision = preparePresetForLibrarySave(nextPreset, computerPresets, "Browser Library", false);
     if (!decision) {
@@ -1710,8 +1863,13 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       ...decision.preset,
       deviceHandle: undefined
     };
-    setComputerPresets((current) => upsertPreset(current, normalized));
-    setCustomFolders((current) => Array.from(new Set([...current, normalized.folderPath])).sort());
+    setComputerPresets((current) => {
+      const withoutReplaced = decision.replacedPreset
+        ? removePreset(current, decision.replacedPreset.objectIdHex)
+        : current;
+      return upsertPreset(withoutReplaced, normalized);
+    });
+    setCustomFolders((current) => Array.from(new Set([...current, normalized.folderPath])).sort(compareFolderPaths));
     skipNextAutoSend.current = true;
     setPreset(clonePreset(normalized));
     setOpenedSource("computer");
@@ -1803,15 +1961,25 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       : null;
   }
 
-  async function uploadToHexBoard(nextPreset = preset, prefix = "Saved") {
+  async function uploadToHexBoard(
+    nextPreset = preset,
+    prefix = "Saved",
+    options: { confirmOverwrite?: boolean; refresh?: boolean; updateEditor?: boolean } = {}
+  ): Promise<boolean> {
     const resolvedPreset = await ensurePresetWavetableOnHexBoard(nextPreset);
     if (!resolvedPreset) {
-      return;
+      return false;
     }
-    const decision = preparePresetForLibrarySave(resolvedPreset, hexboardPresets, "HexBoard Library", true);
+    const decision = preparePresetForLibrarySave(
+      resolvedPreset,
+      hexboardPresets,
+      "HexBoard Library",
+      true,
+      options.confirmOverwrite ?? true
+    );
     if (!decision) {
       setSyncStatus("Save canceled");
-      return;
+      return false;
     }
     const normalized = decision.preset;
     try {
@@ -1819,18 +1987,33 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       const frames = transport instanceof MockMidiTransport
         ? await client.sendSynthPresetSave(encodedPreset)
         : await client.sendSynthPresetSaveConfirmed(encodedPreset);
+      if (decision.replacedPreset && !(transport instanceof MockMidiTransport)) {
+        if (decision.replacedPreset.deviceHandle === undefined) {
+          throw new Error(`Cannot replace ${decision.replacedPreset.name}: its HexBoard handle is unavailable`);
+        }
+        await client.deleteSynthPreset(decision.replacedPreset.deviceHandle);
+      }
       setLastFrameCount(frames.length);
-      skipNextAutoSend.current = true;
-      setPreset(clonePreset(normalized));
-      setOpenedSource("hexboard");
+      if (options.updateEditor ?? true) {
+        skipNextAutoSend.current = true;
+        setPreset(clonePreset(normalized));
+        setOpenedSource("hexboard");
+      }
       if (transport instanceof MockMidiTransport) {
-        setHexboardPresets((current) => upsertPreset(current, normalized));
+        setHexboardPresets((current) => {
+          const withoutReplaced = decision.replacedPreset
+            ? removePreset(current, decision.replacedPreset.objectIdHex)
+            : current;
+          return upsertPreset(withoutReplaced, normalized);
+        });
         setSyncStatus(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in HexBoard Library with ${frames.length} frame${frames.length === 1 ? "" : "s"}`);
-      } else {
+      } else if (options.refresh ?? true) {
         await refreshHexBoardLibrary(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in HexBoard Library with ${frames.length} frame${frames.length === 1 ? "" : "s"}`);
       }
+      return true;
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to save synth preset");
+      return false;
     }
   }
 
@@ -2028,21 +2211,28 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   function erasePreset(space: LibrarySpace, erasedPreset: EditableSynthPreset) {
+    const libraryLabel = space === "computer" ? "Browser Library" : "HexBoard Library";
+    if (!window.confirm(
+      `Delete “${erasedPreset.name}” from ${folderLabel(erasedPreset.folderPath)} in ${libraryLabel}? This cannot be undone.`
+    )) {
+      setSyncStatus("Delete canceled");
+      return;
+    }
     if (space === "computer") {
       setComputerPresets((current) => removePreset(current, erasedPreset.objectIdHex));
-      setSyncStatus(`Erased ${erasedPreset.name} from Browser Library`);
+      setSyncStatus(`Deleted ${erasedPreset.name} from Browser Library`);
       return;
     }
 
     if (transport instanceof MockMidiTransport || erasedPreset.deviceHandle === undefined) {
       setHexboardPresets((current) => removePreset(current, erasedPreset.objectIdHex));
-      setSyncStatus(`Erased ${erasedPreset.name} from HexBoard Library`);
+      setSyncStatus(`Deleted ${erasedPreset.name} from HexBoard Library`);
       return;
     }
 
     void client.deleteSynthPreset(erasedPreset.deviceHandle)
-      .then(() => refreshHexBoardLibrary(`Erased ${erasedPreset.name} from HexBoard Library`))
-      .catch((error) => setSyncStatus(error instanceof Error ? error.message : "Failed to erase HexBoard preset"));
+      .then(() => refreshHexBoardLibrary(`Deleted ${erasedPreset.name} from HexBoard Library`))
+      .catch((error) => setSyncStatus(error instanceof Error ? error.message : "Failed to delete HexBoard preset"));
   }
 
   function downloadPresetFile(nextPreset: EditableSynthPreset) {
@@ -2066,6 +2256,122 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     link.click();
     URL.revokeObjectURL(url);
     setSyncStatus(`Exported ${nextPreset.name} as a preset file`);
+  }
+
+  function downloadPresetLibraryFile(presetsToExport: EditableSynthPreset[]) {
+    const blob = new Blob(
+      [JSON.stringify({
+        format: presetLibraryFileFormat,
+        presets: presetsToExport.map(exportPreset)
+      }, null, 2)],
+      { type: "application/json" }
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `hexboard-presets-${presetsToExport.length}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setSyncStatus(`Exported ${presetsToExport.length} presets as one library file`);
+  }
+
+  function selectedPresets(space: LibrarySpace): EditableSynthPreset[] {
+    const selected = new Set(selectedPresetIds[space]);
+    const source = space === "computer" ? computerPresets : hexboardPresets;
+    return source.filter((candidate) => selected.has(candidate.objectIdHex));
+  }
+
+  function setPresetSelected(space: LibrarySpace, objectIdHex: string, selected: boolean) {
+    setSelectedPresetIds((current) => {
+      const ids = new Set(current[space]);
+      if (selected) ids.add(objectIdHex);
+      else ids.delete(objectIdHex);
+      return { ...current, [space]: [...ids] };
+    });
+  }
+
+  function selectVisiblePresets(space: LibrarySpace, objectIds: string[], selected: boolean) {
+    setSelectedPresetIds((current) => {
+      const ids = new Set(current[space]);
+      for (const objectIdHex of objectIds) {
+        if (selected) ids.add(objectIdHex);
+        else ids.delete(objectIdHex);
+      }
+      return { ...current, [space]: [...ids] };
+    });
+  }
+
+  function clearPresetSelection(space: LibrarySpace) {
+    setSelectedPresetIds((current) => ({ ...current, [space]: [] }));
+  }
+
+  function confirmPresetBatchConflicts(action: string, conflicts: EditableSynthPreset[]): boolean {
+    if (conflicts.length === 0) return true;
+    const preview = conflicts.slice(0, 6)
+      .map((conflict) => `• ${folderLabel(conflict.folderPath)} / ${conflict.name}`)
+      .join("\n");
+    const remainder = conflicts.length > 6 ? `\n• …and ${conflicts.length - 6} more` : "";
+    return window.confirm(
+      `${action} will overwrite ${conflicts.length} existing preset${conflicts.length === 1 ? "" : "s"}:\n\n${preview}${remainder}`
+      + "\n\nExisting destination presets are permanently deleted only after their replacements save successfully. Continue?"
+    );
+  }
+
+  async function transferSelectedPresets(space: LibrarySpace) {
+    const sources = selectedPresets(space);
+    if (sources.length === 0) return;
+    if (space === "hexboard") {
+      const merged = mergePresetBatch(computerPresets, sources);
+      if (!confirmPresetBatchConflicts("Copying these presets to Browser Library", merged.conflicts)) {
+        setSyncStatus("Bulk copy canceled");
+        return;
+      }
+      setComputerPresets(merged.presets);
+      setCustomFolders((current) => Array.from(new Set([
+        ...current,
+        ...sources.map((source) => source.folderPath)
+      ])).sort(compareFolderPaths));
+      clearPresetSelection(space);
+      setSyncStatus(`Copied ${sources.length} presets to Browser Library`);
+      return;
+    }
+
+    const conflicts = Array.from(new Map(sources.flatMap((source) => {
+      const conflict = hexboardPresets.find((candidate) =>
+        candidate.objectIdHex !== source.objectIdHex && presetSaveKey(candidate) === presetSaveKey(source)
+      );
+      return conflict ? [[conflict.objectIdHex, conflict] as const] : [];
+    })).values());
+    if (!confirmPresetBatchConflicts("Copying these presets to HexBoard", conflicts)) {
+      setSyncStatus("Bulk copy canceled");
+      return;
+    }
+
+    setBulkPresetBusy(true);
+    let completed = 0;
+    try {
+      for (const source of sources) {
+        setSyncStatus(`Copying preset ${completed + 1}/${sources.length}: ${source.name}`);
+        const saved = await uploadToHexBoard(source, "Copied", {
+          confirmOverwrite: false,
+          refresh: false,
+          updateEditor: false
+        });
+        if (!saved) break;
+        completed += 1;
+      }
+      if (!(transport instanceof MockMidiTransport)) {
+        await refreshHexBoardLibrary(`Copied ${completed}/${sources.length} selected presets to HexBoard`);
+      }
+      if (completed === sources.length) clearPresetSelection(space);
+    } finally {
+      setBulkPresetBusy(false);
+    }
+  }
+
+  function exportSelectedPresets(space: LibrarySpace) {
+    const sources = selectedPresets(space);
+    if (sources.length > 0) downloadPresetLibraryFile(sources);
   }
 
   async function downloadWavetableFile(nextWavetable: EditableSynthWavetable) {
@@ -2094,19 +2400,29 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   async function importPresetFile(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) {
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0) {
       return;
     }
 
     try {
-      const imported = presetFromUnknown(JSON.parse(await file.text()));
-      setComputerPresets((current) => upsertPreset(current, imported));
-      setCustomFolders((current) => Array.from(new Set([...current, imported.folderPath])).sort());
+      const imported = (await Promise.all(files.map(async (file) =>
+        presetsFromUnknown(JSON.parse(await file.text()))
+      ))).flat();
+      const merged = mergePresetBatch(computerPresets, imported);
+      if (!confirmPresetBatchConflicts("Importing these files", merged.conflicts)) {
+        setSyncStatus("Import canceled");
+        return;
+      }
+      setComputerPresets(merged.presets);
+      setCustomFolders((current) => Array.from(new Set([
+        ...current,
+        ...imported.map((item) => item.folderPath)
+      ])).sort(compareFolderPaths));
       skipNextAutoSend.current = true;
-      setPreset(clonePreset(imported));
+      setPreset(clonePreset(imported.at(-1) ?? defaultPreset));
       setOpenedSource("computer");
-      setSyncStatus(`Imported ${imported.name} into Browser Library`);
+      setSyncStatus(`Imported ${imported.length} preset${imported.length === 1 ? "" : "s"} into Browser Library`);
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to import preset file");
     } finally {
@@ -2321,16 +2637,24 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       folderPath: folderPath ?? sourcePreset.folderPath
     };
 
-    if (targetSpace === "computer") {
-      setComputerPresets((current) => upsertPreset(current, nextPreset));
-      skipNextAutoSend.current = true;
-      setPreset(clonePreset(nextPreset));
-      setOpenedSource("computer");
-      setSyncStatus(`${draggedPreset.space === "hexboard" ? "Copied" : "Moved"} ${nextPreset.name} to ${folderLabel(nextPreset.folderPath)}`);
+    if (targetSpace === draggedPreset.space) {
+      if (normalizeDisplayFolderPath(nextPreset.folderPath) === normalizeDisplayFolderPath(sourcePreset.folderPath)) {
+        return;
+      }
+      setPresetOrganizationRequest({
+        space: targetSpace,
+        preset: clonePreset(sourcePreset),
+        initialFolderPath: nextPreset.folderPath
+      });
       return;
     }
 
-    void uploadToHexBoard(nextPreset, draggedPreset.space === "computer" ? "Copied" : "Moved");
+    if (targetSpace === "computer") {
+      saveToComputer(nextPreset, "Copied");
+      return;
+    }
+
+    void uploadToHexBoard(nextPreset, "Copied");
   }
 
   return (
@@ -2347,8 +2671,32 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             </button>
           </div>
         </div>
-        <input ref={fileInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" onChange={(event) => void importPresetFile(event)} />
+        <input ref={fileInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" multiple onChange={(event) => void importPresetFile(event)} />
         <input ref={wavetableFileInputRef} className="hiddenFileInput" type="file" accept="audio/wav,audio/wave,.wav,.hexwav" onChange={(event) => void importWavetableFile(event)} />
+
+        {presetOrganizationRequest ? (
+          <OrganizeLibraryItemDialog
+            itemLabel="preset"
+            libraryLabel={presetOrganizationRequest.space === "computer" ? "Browser Library" : "HexBoard Library"}
+            name={presetOrganizationRequest.preset.name}
+            folderPath={presetOrganizationRequest.preset.folderPath}
+            initialFolderPath={presetOrganizationRequest.initialFolderPath}
+            folders={presetOrganizationRequest.space === "computer" ? computerPresetFolders : hexboardPresetFolders}
+            maxNameLength={deviceNameMaxBytes}
+            maxFolderLength={deviceFolderMaxBytes}
+            normalizeName={normalizedPresetName}
+            normalizeFolderPath={normalizeDisplayFolderPath}
+            folderLabel={folderLabel}
+            findConflict={(name, folderPath) => organizationConflictSummary(
+              presetOrganizationRequest.space,
+              presetOrganizationRequest.preset,
+              name,
+              folderPath
+            )}
+            onCancel={() => setPresetOrganizationRequest(null)}
+            onSave={(name, folderPath) => organizePresetInPlace(presetOrganizationRequest, name, folderPath)}
+          />
+        ) : null}
 
         {wavetableResolutionRequest ? (
           <div className="modalOverlay" role="presentation" onMouseDown={() => closeWavetableResolution(null)}>
@@ -2416,7 +2764,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 Refresh HexBoard
               </button>
               <button type="button" onClick={() => fileInputRef.current?.click()}>
-                Import Preset
+                Import Preset Files
               </button>
             </div>
 
@@ -2439,6 +2787,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 presets={computerPresets}
                 folders={computerPresetFolders}
                 selectedFolder={folderFilters.computer}
+                selectedIds={selectedPresetIds.computer}
+                bulkBusy={bulkPresetBusy}
                 draggedPreset={draggedPreset}
                 onAllowDrop={allowDrop}
                 onDrop={dropPreset}
@@ -2446,6 +2796,12 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 onDragStart={startDrag}
                 onDragEnd={() => setDraggedPreset(null)}
                 onOpen={openPreset}
+                onOrganize={(space, item) => setPresetOrganizationRequest({ space, preset: clonePreset(item) })}
+                onSelectionChange={setPresetSelected}
+                onSelectVisible={selectVisiblePresets}
+                onClearSelection={clearPresetSelection}
+                onBulkTransfer={(space) => void transferSelectedPresets(space)}
+                onBulkExport={exportSelectedPresets}
                 onUpload={(item) => void uploadToHexBoard(item)}
                 onDownload={downloadFromHexBoard}
                 onExport={downloadPresetFile}
@@ -2458,6 +2814,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 presets={hexboardPresets}
                 folders={hexboardPresetFolders}
                 selectedFolder={folderFilters.hexboard}
+                selectedIds={selectedPresetIds.hexboard}
+                bulkBusy={bulkPresetBusy}
                 draggedPreset={draggedPreset}
                 onAllowDrop={allowDrop}
                 onDrop={dropPreset}
@@ -2465,6 +2823,12 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 onDragStart={startDrag}
                 onDragEnd={() => setDraggedPreset(null)}
                 onOpen={openPreset}
+                onOrganize={(space, item) => setPresetOrganizationRequest({ space, preset: clonePreset(item) })}
+                onSelectionChange={setPresetSelected}
+                onSelectVisible={selectVisiblePresets}
+                onClearSelection={clearPresetSelection}
+                onBulkTransfer={(space) => void transferSelectedPresets(space)}
+                onBulkExport={exportSelectedPresets}
                 onUpload={(item) => void uploadToHexBoard(item)}
                 onDownload={downloadFromHexBoard}
                 onExport={downloadPresetFile}
@@ -2940,6 +3304,8 @@ interface LibrarySpacePanelProps {
   presets: EditableSynthPreset[];
   folders: string[];
   selectedFolder: string | null;
+  selectedIds: string[];
+  bulkBusy: boolean;
   draggedPreset: DraggedPreset | null;
   onAllowDrop: (event: DragEvent<HTMLElement>) => void;
   onDrop: (space: LibrarySpace, folderPath?: string) => void;
@@ -2947,6 +3313,12 @@ interface LibrarySpacePanelProps {
   onDragStart: (space: LibrarySpace, objectIdHex: string, event: DragEvent<HTMLLIElement>) => void;
   onDragEnd: () => void;
   onOpen: (space: LibrarySpace, preset: EditableSynthPreset) => void;
+  onOrganize: (space: LibrarySpace, preset: EditableSynthPreset) => void;
+  onSelectionChange: (space: LibrarySpace, objectIdHex: string, selected: boolean) => void;
+  onSelectVisible: (space: LibrarySpace, objectIds: string[], selected: boolean) => void;
+  onClearSelection: (space: LibrarySpace) => void;
+  onBulkTransfer: (space: LibrarySpace) => void;
+  onBulkExport: (space: LibrarySpace) => void;
   onUpload: (preset: EditableSynthPreset) => void;
   onDownload: (preset: EditableSynthPreset) => void;
   onExport: (preset: EditableSynthPreset) => void;
@@ -2960,6 +3332,8 @@ function LibrarySpacePanel({
   presets,
   folders,
   selectedFolder,
+  selectedIds,
+  bulkBusy,
   draggedPreset,
   onAllowDrop,
   onDrop,
@@ -2967,6 +3341,12 @@ function LibrarySpacePanel({
   onDragStart,
   onDragEnd,
   onOpen,
+  onOrganize,
+  onSelectionChange,
+  onSelectVisible,
+  onClearSelection,
+  onBulkTransfer,
+  onBulkExport,
   onUpload,
   onDownload,
   onExport,
@@ -2977,6 +3357,11 @@ function LibrarySpacePanel({
   const visiblePresets = selectedFolder
     ? presets.filter((preset) => preset.folderPath === selectedFolder)
     : presets;
+  const presetIdSet = new Set(presets.map((preset) => preset.objectIdHex));
+  const validSelectedIds = selectedIds.filter((objectIdHex) => presetIdSet.has(objectIdHex));
+  const selectedIdSet = new Set(validSelectedIds);
+  const visibleIds = visiblePresets.map((preset) => preset.objectIdHex);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((objectIdHex) => selectedIdSet.has(objectIdHex));
   const contentId = `preset-library-${space}-content`;
 
   return (
@@ -3040,6 +3425,18 @@ function LibrarySpacePanel({
             ))}
           </div>
 
+          <LibraryBulkActions
+            selectedCount={validSelectedIds.length}
+            visibleCount={visibleIds.length}
+            allVisibleSelected={allVisibleSelected}
+            transferLabel={space === "computer" ? "Copy selected to HexBoard" : "Copy selected to Browser"}
+            busy={bulkBusy}
+            onSelectVisible={(selected) => onSelectVisible(space, visibleIds, selected)}
+            onClear={() => onClearSelection(space)}
+            onTransfer={() => onBulkTransfer(space)}
+            onExport={() => onBulkExport(space)}
+          />
+
           <ul className="list">
             {visiblePresets.length === 0 ? (
               <li className="emptyListItem">{selectedFolder ? `No presets in ${folderLabel(selectedFolder)}` : "No presets"}</li>
@@ -3052,6 +3449,14 @@ function LibrarySpacePanel({
                   onDragStart={(event) => onDragStart(space, item.objectIdHex, event)}
                   onDragEnd={onDragEnd}
                 >
+                  <label className="libraryItemSelection" title={`Select ${item.name}`}>
+                    <input
+                      aria-label={`Select ${item.name}`}
+                      checked={selectedIdSet.has(item.objectIdHex)}
+                      type="checkbox"
+                      onChange={(event) => onSelectionChange(space, item.objectIdHex, event.target.checked)}
+                    />
+                  </label>
                   <div className="presetMeta">
                     <strong>{item.name}</strong>
                     <span>{folderLabel(item.folderPath)}</span>
@@ -3060,6 +3465,9 @@ function LibrarySpacePanel({
                   <div className="presetActions">
                     <button type="button" onClick={() => onOpen(space, item)}>
                       Open
+                    </button>
+                    <button type="button" onClick={() => onOrganize(space, item)}>
+                      Rename / Move
                     </button>
                     {space === "computer" ? (
                       <button type="button" title="Copy preset to HexBoard" aria-label="Copy preset to HexBoard" onClick={() => onUpload(item)}>
@@ -3074,7 +3482,7 @@ function LibrarySpacePanel({
                       Export
                     </button>
                     <button className="warning" type="button" onClick={() => onErase(space, item)}>
-                      Erase
+                      Delete
                     </button>
                   </div>
                 </li>

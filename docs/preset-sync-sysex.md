@@ -1349,6 +1349,10 @@ bundle composition and the device atomically validates and installs the result.
 5. Re-saving the same tuning object ID replaces exactly one file. Saving a new
    tuning object ID creates one file, up to the 64-bundle limit. Other bundles
    are not read or rewritten.
+   Rename and folder-move saves preserve that tuning object ID. If another
+   bundle occupies the destination folder/name, the host confirms the
+   replacement, saves the moved bundle first, and deletes the occupied tuning
+   root only after the save is acknowledged.
    A file may contain up to `255` records and `262,144` bytes; each contained
    object body may contain up to `16,384` bytes.
 6. Reading `GeometryBundle` with a listed `UserTuning` root handle streams that
@@ -1389,6 +1393,11 @@ present the rescue tuning as an editable catalog item.
    and marks settings dirty for the normal debounced profile autosave path.
    Commit with `save` atomically replaces one `/presets/<object-id>.hsp` file.
 5. Saving or deleting one synth preset does not rewrite other preset files.
+   Rename and folder-move updates write the same object id to its existing
+   handle with `SaveToFlash | OverwriteExisting` and do not apply the preset to
+   the current synth runtime. When a destination folder/name is occupied, the
+   host confirms the replacement, saves the moved object first, and deletes the
+   occupied object only after the save is acknowledged.
 6. The current web app requests one synth preset or wavetable record per
    object-list page before reading each object body, keeping response frames
    under conservative SysEx buffer limits.

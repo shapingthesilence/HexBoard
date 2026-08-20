@@ -1040,6 +1040,47 @@ textarea {
   margin: 0;
 }
 
+.organizeLibraryItemDialog p {
+  margin: 6px 0 0;
+}
+
+.organizationPreview,
+.organizationConflict {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface-raised);
+}
+
+.organizationConflict {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.organizeLibraryItemActions {
+  justify-content: flex-end;
+}
+
+.libraryBulkActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  border-block: 1px solid var(--border);
+  padding: 8px 0;
+}
+
+.libraryBulkActions > .row {
+  margin-left: auto;
+}
+
+.libraryItemSelection {
+  align-self: center;
+}
+
 .bundleItemOrderDialog {
   width: min(560px, 100%);
 }

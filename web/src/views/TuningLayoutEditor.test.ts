@@ -12,9 +12,28 @@ import {
   paintScaleDegreeColor,
   reorderByObjectId,
   resetOverridesToScaleDegreeColors,
+  tuningBundlesFromUnknown,
   validLiveNumber,
   withProtectedAllNotesScale
 } from "./TuningLayoutEditor.tsx";
+
+describe("tuning bundle batch files", () => {
+  it("imports multiple bundles from one library file", () => {
+    const first = createDefaultTuningBundle();
+    const second = {
+      ...createDefaultTuningBundle(),
+      objectIdHex: "00112233445566778899aabbccddeeff",
+      tuning: { ...createDefaultTuningBundle().tuning, name: "Second Tuning" }
+    };
+
+    const bundles = tuningBundlesFromUnknown({
+      format: "hexboard.tuningBundleLibrary.v1",
+      tuningBundles: [first, second]
+    });
+
+    expect(bundles.map((bundle) => bundle.tuning.name)).toEqual(["19 EDO Wicki", "Second Tuning"]);
+  });
+});
 
 function geometryRecord(name: string, flags: number, handle: number): ObjectListRecord {
   return {

@@ -151,23 +151,32 @@ and `TRANSFER_END` so firmware can pace object transfers.
   `Copy to Browser` copy between libraries; `Export File` writes a portable
   `hexboard.tuningBundle.v2` JSON file. Version 1 tuning bundles and legacy
   `hexboard.layoutBundle.v5` files remain importable; legacy layout bundles use
-  their former device-facing bundle name as the tuning name.
+  their former device-facing bundle name as the tuning name. `Rename / Move`
+  updates the selected browser or device bundle without creating a duplicate
+  and gives an explicit replacement warning when the destination is occupied.
+  Multi-select actions copy several bundles between libraries or export one
+  `hexboard.tuningBundleLibrary.v1` JSON file; multi-file import accepts those
+  library files alongside individual tuning-bundle files.
 - A synth preset editor with name and folder selection, folder creation, main
   synth parameter controls, mono retrigger/legato, mono portamento,
   arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,
   and an explicit save sync action over the active MIDI transport. A dormant
   browser AudioWorklet audition implementation remains in the source behind a
   disabled visibility gate for later offline preset design work. Opened presets
-  are temporary editor drafts; saving creates a new folder/name when
-  unique and asks before overwriting an existing folder/name. Saves to real
+  are temporary editor drafts; saving an existing library preset preserves its
+  object identity while updating its name, folder, and sound. Saving a new
+  destination asks before replacing an occupied folder/name. Saves to real
   devices wait for ACK/NACK responses through the flash commit before the app
   refreshes device storage.
 - Synth preset library areas named `Browser Library` for browser-saved/imported
   presets and `HexBoard Library` for device-side presets loaded through SysEx,
   with independently collapsible library panels,
   including persistent browser folders with explicit create/delete controls,
-  `All` and `Root` system filters, drag-and-drop folder moves, library copy
-  actions, device refresh, JSON import, JSON export, open, and erase controls.
+  `All` and `Root` system filters, identity-preserving `Rename / Move`,
+  drag-and-drop folder moves, library copy actions, device refresh, JSON import,
+  JSON export, open, and confirmed delete controls. Multi-select can copy a
+  batch between libraries or export one `hexboard.synthPresetLibrary.v1` JSON
+  file, and multi-file import accepts individual and library files together.
   Device preset listing uses
   small one-record pages to stay within conservative MIDI SysEx buffer limits
   and refreshes automatically when the synth preset view opens with a real MIDI

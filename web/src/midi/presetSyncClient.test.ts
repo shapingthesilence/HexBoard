@@ -164,6 +164,38 @@ describe("PresetSyncClient", () => {
     });
   });
 
+  it("updates preset organization in place without applying it to runtime", async () => {
+    const transport = new MockMidiTransport();
+    const originalSend = transport.send.bind(transport);
+    transport.send = async (bytes) => {
+      await originalSend(bytes);
+      const frame = decodePresetSyncFrame(bytes);
+      const nextChunkIndex = frame.message === MessageType.DataChunk
+        ? decodeDataChunkPayload(frame.payload).chunkIndex + 1
+        : 0;
+      transport.emit(encodeAckFrame(frame.transactionId, frame.message, nextChunkIndex));
+    };
+    const client = new PresetSyncClient(transport);
+    const preset = createSynthPresetObject({
+      objectId: deterministicObjectId("organized preset"),
+      name: "Renamed",
+      folderPath: "Moved",
+      values: { PlaybackMode: 0, Waveform: 1 }
+    });
+
+    const frames = await client.sendSynthPresetUpdateConfirmed(preset, 23);
+    const decoded = frames.map((frame) => decodePresetSyncFrame(frame));
+
+    expect(decodeWriteBeginPayload(decoded[0].payload)).toMatchObject({
+      objectType: ObjectType.SynthPreset,
+      handle: 23,
+      writeFlags: 0x06
+    });
+    expect(decodeWriteCommitPayload(decoded.at(-1)?.payload ?? [])).toMatchObject({
+      commitFlags: 0x06
+    });
+  });
+
   it("saves a complete geometry bundle as one file transfer", async () => {
     const transport = new MockMidiTransport();
     const originalSend = transport.send.bind(transport);
