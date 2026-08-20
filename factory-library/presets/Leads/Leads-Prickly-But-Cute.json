@@ -1,0 +1,49 @@
+{
+  "format": "hexboard.synthPreset.v1",
+  "preset": {
+    "objectId": "46cd69648c8e1f7d9a018857afe81b56",
+    "name": "Prickly, But Cute",
+    "folderPath": "Leads",
+    "wavetable": {
+      "name": "Classic",
+      "folderPath": "/"
+    },
+    "favorite": false,
+    "values": {
+      "PlaybackMode": 3,
+      "Waveform": 27,
+      "SynthDrive": 0,
+      "SynthModTarget": 0,
+      "SynthModAmount": 127,
+      "SynthVibratoSpeed": 5,
+      "ArpeggiatorDivision": 32,
+      "SynthBPM": 120,
+      "EnvelopeAttackIndex": 0,
+      "EnvelopeHoldIndex": 0,
+      "EnvelopeDecayIndex": 10,
+      "EnvelopeSustainLevel": 96,
+      "EnvelopeReleaseIndex": 9,
+      "EffectEnvelopeTarget": 1,
+      "EffectEnvelopeAmount": 64,
+      "EffectEnvelopeAttackIndex": 0,
+      "EffectEnvelopeHoldIndex": 14,
+      "EffectEnvelopeDecayIndex": 18,
+      "EffectEnvelopeSustainLevel": 0,
+      "EffectEnvelopeReleaseIndex": 9,
+      "EffectEnvelope2Target": 0,
+      "EffectEnvelope2Amount": 233,
+      "EffectEnvelope2AttackIndex": 0,
+      "EffectEnvelope2HoldIndex": 0,
+      "EffectEnvelope2DecayIndex": 14,
+      "EffectEnvelope2SustainLevel": 0,
+      "EffectEnvelope2ReleaseIndex": 14,
+      "SynthPortamentoTimeIndex": 0,
+      "ArpeggiatorDirection": 0,
+      "SynthWavetablePosition": 85,
+      "SynthLfoTarget": 0,
+      "SynthLfoAmount": 127,
+      "SynthLfoWave": 0,
+      "SynthLfoSpeed": 6
+    }
+  }
+}

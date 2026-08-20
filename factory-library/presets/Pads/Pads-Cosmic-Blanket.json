@@ -1,0 +1,49 @@
+{
+  "format": "hexboard.synthPreset.v1",
+  "preset": {
+    "objectId": "cdd026a7a5ed2095c30be55cbf1af9fc",
+    "name": "Cosmic Blanket",
+    "folderPath": "Pads",
+    "wavetable": {
+      "name": "GlassyBells",
+      "folderPath": "/"
+    },
+    "favorite": false,
+    "values": {
+      "PlaybackMode": 3,
+      "Waveform": 27,
+      "SynthDrive": 1,
+      "SynthModTarget": 1,
+      "SynthModAmount": 127,
+      "SynthVibratoSpeed": 5,
+      "ArpeggiatorDivision": 32,
+      "SynthBPM": 120,
+      "EnvelopeAttackIndex": 17,
+      "EnvelopeHoldIndex": 0,
+      "EnvelopeDecayIndex": 10,
+      "EnvelopeSustainLevel": 96,
+      "EnvelopeReleaseIndex": 15,
+      "EffectEnvelopeTarget": 0,
+      "EffectEnvelopeAmount": 254,
+      "EffectEnvelopeAttackIndex": 8,
+      "EffectEnvelopeHoldIndex": 0,
+      "EffectEnvelopeDecayIndex": 19,
+      "EffectEnvelopeSustainLevel": 13,
+      "EffectEnvelopeReleaseIndex": 17,
+      "EffectEnvelope2Target": 2,
+      "EffectEnvelope2Amount": 95,
+      "EffectEnvelope2AttackIndex": 0,
+      "EffectEnvelope2HoldIndex": 0,
+      "EffectEnvelope2DecayIndex": 11,
+      "EffectEnvelope2SustainLevel": 0,
+      "EffectEnvelope2ReleaseIndex": 11,
+      "SynthPortamentoTimeIndex": 0,
+      "ArpeggiatorDirection": 0,
+      "SynthWavetablePosition": 110,
+      "SynthLfoTarget": 0,
+      "SynthLfoAmount": 127,
+      "SynthLfoWave": 0,
+      "SynthLfoSpeed": 6
+    }
+  }
+}
