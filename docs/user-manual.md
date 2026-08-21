@@ -25,7 +25,7 @@ The seven command buttons are for live controls such as velocity, modulation, an
 
 ## Power-Up And Normal Operation
 
-When you power on HexBoard, it loads your saved setup, starts the OLED menu, runs a smooth rainbow splash, and fades into the normal resting LED state.
+When you power on HexBoard, it loads your saved setup while running a smooth rainbow splash, then fades into the normal resting LED state. The OLED menu appears when startup is complete and its controls are ready to use.
 
 If saved settings are missing or unreadable, HexBoard restores factory defaults and saves a fresh default setup.
 

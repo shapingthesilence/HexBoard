@@ -47,7 +47,7 @@ void showOnlyValidKeyChoices();
 void applyDeviceDisplayRotation();
 void loadDeviceRotationFromCurrentLayout();
 void updateLayoutAndRotate();
-void syncSettingsToRuntime();
+void syncSettingsToRuntime(bool redrawMenu = true);
 void updateSynthMenuVisibility();
 void updateEditorMenuVisibility();
 void installHardwareSpecificMenuItems();

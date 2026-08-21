@@ -8,7 +8,8 @@ extern bool settingsFileMissingOnBoot;
 
 void setupLEDs();
 void clearLEDs();
-void runBootLedSelfCheck();
+void runBootLedSelfCheckSplash();
+void finishBootLedSelfCheck();
 void setLEDcolorCodes();
 uint32_t RAM_FUNC(getLEDcode)(colorDef c);
 uint32_t RAM_FUNC(getLEDcodeLinear)(colorDef c);

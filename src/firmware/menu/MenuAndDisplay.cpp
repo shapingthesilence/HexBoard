@@ -686,7 +686,7 @@ GEMItem menuItemHardware("Hardware", Hardware_Version, selectHardware, GEM_READO
   */
 GEMItem menuItemUSBBootloader("Update Firmware", rebootToBootloader);
 
-void syncSettingsToRuntime();
+void syncSettingsToRuntime(bool redrawMenu);
 void refreshMenuChoicesForCurrentTuning();
 void rebuildRuntimeStateFromCurrentSelection();
 void updateEditorMenuVisibility();
@@ -2491,7 +2491,7 @@ void applyGeometryRuntimeFromStorage() {
   applyScale();
 }
 
-void syncSettingsToRuntime() {
+void syncSettingsToRuntime(bool redrawMenu) {
   rotaryInvertPreference = settingEnabled(SettingKey::RotaryInvert);
   updateEffectiveRotaryInvert();
   autoSave = settingEnabled(SettingKey::AutoSave);
@@ -2586,7 +2586,9 @@ void syncSettingsToRuntime() {
   if (programChange > 0) {
     sendProgramChange();
   }
-  menuHome();                    // Refresh main screen to match rotation
+  if (redrawMenu) {
+    menuHome();                  // Refresh main screen to match rotation
+  }
 }
 
 void updateMainMenuDynamicLabels() {

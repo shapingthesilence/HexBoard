@@ -45,6 +45,10 @@
   */
 namespace {
 std::atomic<bool> normalRuntimeReady = false;
+std::atomic<bool> bootLedAnimationReady = false;
+std::atomic<bool> bootLedSplashComplete = false;
+std::atomic<bool> normalLedFrameReady = false;
+std::atomic<bool> bootLedAnimationComplete = false;
 constexpr uint64_t AUDIO_STARTUP_TIMEOUT_MICROS = 3000000ULL;
 
 bool waitForAudioTransport() {
@@ -56,6 +60,18 @@ bool waitForAudioTransport() {
     tight_loop_contents();
   }
   return true;
+}
+
+void waitForBootLedAnimation() {
+  while (!bootLedAnimationComplete.load(std::memory_order_acquire)) {
+    tight_loop_contents();
+  }
+}
+
+void waitForBootLedSplash() {
+  while (!bootLedSplashComplete.load(std::memory_order_acquire)) {
+    tight_loop_contents();
+  }
 }
 }  // namespace
 
@@ -71,26 +87,40 @@ void hexboardSetup() {
   setupGrid();
   detectHardwareVersion();
   load_settings();
+  // The splash only needs the saved LED limits and initialized strip. Core 1
+  // can render it while core 0 loads the remaining libraries and subsystems.
+  bootAnimationEnabled = settingEnabled(SettingKey::BootAnimationEnabled);
+  ledRestBrightness = settingValue(SettingKey::RestLedBrightness);
+  globalBrightness = settingValue(SettingKey::GlobalBrightness);
+  ledCurrentLimitMode = settingValue(SettingKey::LedCurrentLimitMode);
+  syncLedCurrentLimit();
+  setupLEDs();
+  bootLedAnimationReady.store(true, std::memory_order_release);
   load_synth_presets();
   load_synth_wavetables();
   load_geometry_objects();
   restoreSynthStateForProfile(activeProfileIndex);
-  setupLEDs();
   setupGFX();
   setupRotary();
   setupMenu();
   setupHardware();
   initializeSynthWaveTables();
-  syncSettingsToRuntime();
+  // Keep the OLED blank until every startup task has completed and the menu
+  // can accept input. Core 1 may animate the LEDs once their runtime colors
+  // and current limit are final.
+  waitForBootLedSplash();
+  syncSettingsToRuntime(false);
   recomputePitchBendFactor();
   synthRuntimeReady.store(true, std::memory_order_release);
+  normalLedFrameReady.store(true, std::memory_order_release);
+  restoreSequencerAtStartup();
+  populateStorageStatusMenuPage();
+  waitForBootLedAnimation();
   if (!waitForAudioTransport()) {
     playbackMode = SYNTH_OFF;
     sendToLog("Audio transport startup timed out; continuing with onboard synth disabled.");
   }
-  restoreSequencerAtStartup();
-  populateStorageStatusMenuPage();
-  runBootLedSelfCheck();
+  menuHome();
   normalRuntimeReady.store(true, std::memory_order_release);
 }
 void hexboardLoop() {        // run on first core
@@ -155,6 +185,16 @@ void hexboardLoop() {        // run on first core
 }
 void hexboardSetup1() {  // set up on second core
   setupSynthOutputs();
+  while (!bootLedAnimationReady.load(std::memory_order_acquire)) {
+    tight_loop_contents();
+  }
+  runBootLedSelfCheckSplash();
+  bootLedSplashComplete.store(true, std::memory_order_release);
+  while (!normalLedFrameReady.load(std::memory_order_acquire)) {
+    tight_loop_contents();
+  }
+  finishBootLedSelfCheck();
+  bootLedAnimationComplete.store(true, std::memory_order_release);
   while (!synthRuntimeReady.load(std::memory_order_acquire)) {
     tight_loop_contents();
   }

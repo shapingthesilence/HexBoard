@@ -25,7 +25,8 @@ constexpr byte BOOT_LED_CHECK_WAVE_VALUE = VALUE_NORMAL;
 constexpr byte BOOT_LED_CHECK_TRAIL_VALUE = VALUE_LOW;
 constexpr byte BOOT_LED_CHECK_COMMAND_VALUE = VALUE_NORMAL;
 constexpr byte BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_FRAMES = 8;
-constexpr byte BOOT_LED_CHECK_WAVE_FRAMES = 14;
+constexpr byte BOOT_LED_CHECK_WAVE_FRAMES = 26;
+constexpr byte BOOT_LED_CHECK_COMMAND_FADE_FRAMES = 8;
 constexpr byte BOOT_LED_CHECK_NORMAL_FADE_FRAMES = 8;
 constexpr uint16_t BOOT_LED_CHECK_FIRST_BOOT_WHITE_FADE_MS = 35;
 constexpr uint16_t BOOT_LED_CHECK_FIRST_BOOT_WHITE_HOLD_MS = 2000;
@@ -311,20 +312,23 @@ uint32_t blendPackedColor(uint32_t startColor, uint32_t endColor, uint16_t amoun
                      blendByte(static_cast<byte>(startColor), static_cast<byte>(endColor), amount255));
 }
 
-void setBootCommandButtonFade(uint16_t frameIndex) {
+void setBootCommandButtonFade(uint16_t frameIndex, uint16_t fadeAmount255) {
   for (byte cmd = 0; cmd < CMDCOUNT; ++cmd) {
     uint16_t shiftedFrame = (frameIndex + (cmd * 2)) % BOOT_LED_CHECK_WAVE_FRAMES;
     byte value = pulseBootLedValue(static_cast<byte>(shiftedFrame),
                                    BOOT_LED_CHECK_WAVE_FRAMES,
                                    VALUE_BLACK,
                                    BOOT_LED_CHECK_COMMAND_VALUE);
+    value = static_cast<byte>((static_cast<uint16_t>(value) * fadeAmount255 + 127u) / 255u);
     float hue = (frameIndex * 12.0f) + (cmd * 24.0f) + HUE_ORANGE;
     strip.setPixelColor(assignCmd[cmd], getBootLedCheckColor(hue, SAT_MODERATE, value));
   }
 }
 
-void showBootLedCheckFrame(uint16_t holdMilliseconds, uint16_t frameIndex) {
-  setBootCommandButtonFade(frameIndex);
+void showBootLedCheckFrame(uint16_t holdMilliseconds,
+                           uint16_t frameIndex,
+                           uint16_t commandFadeAmount255) {
+  setBootCommandButtonFade(frameIndex, commandFadeAmount255);
   applyLedCurrentLimitToFrame();
   strip.show();
   delay(holdMilliseconds);
@@ -379,10 +383,14 @@ void showBootLedCheckSplash(uint16_t& frameIndex) {
     maxDistance = max(maxDistance, hexDistance(centerIndex, i));
   }
 
+  // Carry the wave beyond the outermost pixels so its trailing edge leaves the
+  // entire board dark instead of appearing to pause at the perimeter.
+  constexpr float waveExitDistance = 2.0f;
+  float finalWaveRadius = static_cast<float>(maxDistance) + waveExitDistance;
   for (byte frame = 0; frame < BOOT_LED_CHECK_WAVE_FRAMES; ++frame) {
     float waveRadius = (BOOT_LED_CHECK_WAVE_FRAMES > 1)
-                         ? ((frame * static_cast<float>(maxDistance)) / (BOOT_LED_CHECK_WAVE_FRAMES - 1))
-                         : maxDistance;
+                         ? ((frame * finalWaveRadius) / (BOOT_LED_CHECK_WAVE_FRAMES - 1))
+                         : finalWaveRadius;
     for (byte i = 0; i < LED_COUNT; ++i) {
       if (h[i].isCmd) {
         continue;
@@ -402,8 +410,18 @@ void showBootLedCheckSplash(uint16_t& frameIndex) {
       float hue = (frame * 22.0f) + (distance * 24.0f);
       strip.setPixelColor(i, getBootLedCheckColor(hue, SAT_VIVID, value));
     }
-    showBootLedCheckFrame(BOOT_LED_CHECK_WAVE_MS, frameIndex++);
+    constexpr byte commandFadeStartFrame =
+      BOOT_LED_CHECK_WAVE_FRAMES - BOOT_LED_CHECK_COMMAND_FADE_FRAMES;
+    uint16_t commandFadeAmount255 = 255;
+    if (frame >= commandFadeStartFrame) {
+      commandFadeAmount255 =
+        (static_cast<uint16_t>(BOOT_LED_CHECK_WAVE_FRAMES - 1 - frame) * 255u)
+        / (BOOT_LED_CHECK_COMMAND_FADE_FRAMES - 1);
+    }
+    showBootLedCheckFrame(BOOT_LED_CHECK_WAVE_MS, frameIndex++, commandFadeAmount255);
   }
+  strip.clear();
+  strip.show();
 }
 
 void captureBootLedFrame(uint32_t* frame) {
@@ -441,7 +459,7 @@ void fadeToNormalLedFrame() {
   }
 }
 
-void runBootLedSelfCheck() {
+void runBootLedSelfCheckSplash() {
   if (!bootAnimationEnabled) {
     return;
   }
@@ -452,6 +470,13 @@ void runBootLedSelfCheck() {
 
   uint16_t frameIndex = 0;
   showBootLedCheckSplash(frameIndex);
+}
+
+void finishBootLedSelfCheck() {
+  if (!bootAnimationEnabled) {
+    return;
+  }
+
   fadeToNormalLedFrame();
 }
 /*
