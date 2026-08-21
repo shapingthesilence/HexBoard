@@ -472,9 +472,9 @@ unsaved synth edits without overwriting the named preset, so the preset label
 can still show as modified after restart. On
 the device, presets appear in a virtual folder browser; `New Preset` saves into
 the currently open folder. The factory image includes its preset library as
-ordinary editable records, including `Soft String Pad` under `Pads` and
-`Bright Mono Lead` under `Leads`. They can be changed or erased like any other
-preset. The web app shows each folder in a two-row strip with its preset count. Search
+ordinary editable records organized into `Basses`, `Leads`, `Pads`, and
+`Plucks`. They can be changed or erased like any other preset. The web app
+shows each folder in a two-row strip with its preset count. Search
 narrows the compact preset list within the selected folder. Open a preset from
 its name or use its more-actions menu for rename, move, copy, export, and
 delete. The app can also create foldered presets.
@@ -865,7 +865,7 @@ Important factory defaults include:
 - Scale: chromatic / none
 - MIDI channel: `1`
 - MPE mode: `Auto`
-- Active synth preset: `Soft String Pad`
+- Active synth preset: `Lo-Fi Synth Strings`
 - Synth: `Poly`
 - Synth output volume: `100%` for headphone and piezo
 - Wavetable: `/Classic`
@@ -877,7 +877,7 @@ Important factory defaults include:
 - Amp Env Hold: `0 ms`
 - FX Env 1: `Vibrato`, `+100%`, `0 ms` attack, `0 ms` hold, `0 ms` decay, `0%` sustain, `0 ms` release
 - FX Env 2: `Pitch`, `+100%`, `0 ms` attack, `0 ms` hold, `0 ms` decay, `0%` sustain, `0 ms` release
-- Synth presets: `Soft String Pad` and `Bright Mono Lead` restored as editable slots
+- Synth presets: `16` editable factory presets organized by sound category
 - Boot animation: `On`
 - Metronome: `Off`
 - Time signature: `4/4`
