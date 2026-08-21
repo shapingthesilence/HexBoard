@@ -99,7 +99,7 @@ remains in flash because I2C and library calls dominate it.
 
 ## Source Map
 
-- `app/`: lifecycle, platform helpers, defaults, diagnostics, and benchmarks
+- `app/`: lifecycle, platform helpers, defaults, and diagnostics
 - `config/`: compile-time feature flags
 - `hardware/`: board constants, matrix state, buttons, rotary, LEDs, animations
 - `midi/`: transport, parser, routing, dispatch, MPE, delegated control

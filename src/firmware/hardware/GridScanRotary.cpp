@@ -5,7 +5,6 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
-#include "../app/StabilityBenchmark.h"
 #include "../midi/MidiRouting.h"
 #include "../midi/MidiTransport.h"
 #include "../midi/DelegatedControl.h"
@@ -241,21 +240,6 @@ void dealWithRotary() {
   bool buttonPressed = (digitalRead(ROT_PIN_C) == LOW);
   bool justPressed = (!rotaryButtonPressed && buttonPressed);
   bool justReleased = (rotaryButtonPressed && !buttonPressed);
-
-  if (stabilityBenchmarkIsActive()) {
-    handleStabilityBenchmarkEncoder(buttonPressed, justPressed, justReleased, runTime);
-    if (buttonPressed) {
-      rotaryPanicSuppressClick = true;
-    }
-    storeRotaryTurn = 0;
-    rotaryPressStart = 0;
-    rotaryPanicLatched = false;
-    if (rotaryPanicSuppressClick && !buttonPressed && !rotaryButtonPressed) {
-      rotaryPanicSuppressClick = false;
-    }
-    rotaryButtonPressed = buttonPressed;
-    return;
-  }
 
   if (delegatedControlState.active) {
     if (justPressed) {
