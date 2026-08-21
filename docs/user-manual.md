@@ -793,7 +793,7 @@ The `Settings` page includes:
 
 This page contains maintenance and system settings:
 
-- `Firmware 2.0 beta 3` version label
+- `Firmware 2.0 beta 4` version label
 - Hardware revision
 - `Invert Encoder`: reverse the detected hardware revision's normal direction
 - `Boot Anim`
@@ -892,7 +892,7 @@ Important factory defaults include:
 Use `HexBoard_Factory.uf2` for a factory installation. It erases all saved
 settings, presets, wavetables, layouts, samples, and sequences, then installs a
 complete factory library. Use `HexBoard_Update.uf2` to update firmware without
-changing LittleFS. Beta 3 accepts only settings schema `28`;
+changing LittleFS. Beta 4 accepts only settings schema `29`;
 settings from another beta start at defaults, while current-format preset,
 wavetable, geometry, and sequence files remain available.
 
