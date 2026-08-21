@@ -1,7 +1,7 @@
 #include "../FirmwareModule.h"
 #include "DiagnosticsTiming.h"
 #include "PlatformCommon.h"
-#include "StabilityBenchmark.h"
+#include "RuntimeDefaults.h"
 #include "../hardware/GridScanRotary.h"
 #include "../hardware/GridState.h"
 #include "../hardware/LedAnimations.h"
@@ -45,6 +45,34 @@
   */
 namespace {
 std::atomic<bool> normalRuntimeReady = false;
+std::atomic<bool> bootLedAnimationReady = false;
+std::atomic<bool> bootLedSplashComplete = false;
+std::atomic<bool> normalLedFrameReady = false;
+std::atomic<bool> bootLedAnimationComplete = false;
+constexpr uint64_t AUDIO_STARTUP_TIMEOUT_MICROS = 3000000ULL;
+
+bool waitForAudioTransport() {
+  const uint64_t deadline = readClock() + AUDIO_STARTUP_TIMEOUT_MICROS;
+  while (!audioTransportReady.load(std::memory_order_acquire)) {
+    if (readClock() >= deadline) {
+      return false;
+    }
+    tight_loop_contents();
+  }
+  return true;
+}
+
+void waitForBootLedAnimation() {
+  while (!bootLedAnimationComplete.load(std::memory_order_acquire)) {
+    tight_loop_contents();
+  }
+}
+
+void waitForBootLedSplash() {
+  while (!bootLedSplashComplete.load(std::memory_order_acquire)) {
+    tight_loop_contents();
+  }
+}
 }  // namespace
 
 void hexboardSetup() {
@@ -59,106 +87,126 @@ void hexboardSetup() {
   setupGrid();
   detectHardwareVersion();
   load_settings();
+  // The splash only needs the saved LED limits and initialized strip. Core 1
+  // can render it while core 0 loads the remaining libraries and subsystems.
+  bootAnimationEnabled = settingEnabled(SettingKey::BootAnimationEnabled);
+  ledRestBrightness = settingValue(SettingKey::RestLedBrightness);
+  globalBrightness = settingValue(SettingKey::GlobalBrightness);
+  ledCurrentLimitMode = settingValue(SettingKey::LedCurrentLimitMode);
+  syncLedCurrentLimit();
+  setupLEDs();
+  bootLedAnimationReady.store(true, std::memory_order_release);
   load_synth_presets();
-  loadCurrentSynthPresetReference();
   load_synth_wavetables();
   load_geometry_objects();
-  restoreSynthWavetableReferenceForProfile(activeProfileIndex);
-  setupLEDs();
+  restoreSynthStateForProfile(activeProfileIndex);
   setupGFX();
   setupRotary();
   setupMenu();
   setupHardware();
   initializeSynthWaveTables();
-  syncSettingsToRuntime();
+  // Keep the OLED blank until every startup task has completed and the menu
+  // can accept input. Core 1 may animate the LEDs once their runtime colors
+  // and current limit are final.
+  waitForBootLedSplash();
+  syncSettingsToRuntime(false);
   recomputePitchBendFactor();
   synthRuntimeReady.store(true, std::memory_order_release);
-  while (!audioTransportReady.load(std::memory_order_acquire)) {
-    tight_loop_contents();
-  }
+  normalLedFrameReady.store(true, std::memory_order_release);
   restoreSequencerAtStartup();
   populateStorageStatusMenuPage();
-  runBootLedSelfCheck();
+  waitForBootLedAnimation();
+  if (!waitForAudioTransport()) {
+    playbackMode = SYNTH_OFF;
+    sendToLog("Audio transport startup timed out; continuing with onboard synth disabled.");
+  }
+  menuHome();
   normalRuntimeReady.store(true, std::memory_order_release);
 }
 void hexboardLoop() {        // run on first core
   timeTracker();     // Time tracking functions
+  u8g2.serviceTransfer();
   serviceSerialDebugMessages();
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_PRESET_TRANSFER);
-  if (servicePresetSyncTransfer()) {
-    return;
-  }
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_ENVELOPE_RELEASE);
+  bool presetSyncOwnsUi = servicePresetSyncTransfer();
+  bool missingWavetableNoticeOwnsUi =
+    !presetSyncOwnsUi && serviceMissingWavetableNotice();
   processEnvelopeReleases();
   retryPendingReleases();
-  screenSaver();     // Reduces wear-and-tear on OLED panel
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_BUTTON_SCAN);
+  if (!presetSyncOwnsUi && !missingWavetableNoticeOwnsUi) {
+    screenSaver();     // Reduces wear-and-tear on OLED panel
+  }
   readHexes();       // Read and store the digital button states of the scanning matrix
+  u8g2.serviceTransfer();
+  if (presetSyncOwnsUi) {
+    dealWithRotary();
+    return;
+  }
   serviceSequencerMode();
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_ARPEGGIATOR);
   arpeggiate();      // arpeggiate if synth mode allows it
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_METRONOME);
   runMetronome();    // metronome beep/flash modes share the synth tempo
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_WHEELS);
   updateWheels();    // deal with the pitch/mod wheel
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_MIDI_IN);
   processIncomingMIDI();  // respond to external MIDI input
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_PRESET_TRANSFER);
+  u8g2.serviceTransfer();
   if (servicePresetSyncTransfer()) {
     return;
   }
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_LED_ANIMATE);
   animateLEDs();     // deal with animations
   if (!shouldDeferMidiInLedRefresh()) {
-    stabilityBenchmarkSetCore0Task(STABILITY_TASK_LED_RENDER);
     lightUpLEDs();   // refresh LEDs
   }
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_ROTARY_MENU);
-  dealWithRotary();  // deal with menu
-  if (delegatedControl && !stabilityBenchmarkIsActive()) {
-    stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
+  u8g2.serviceTransfer();
+  if (!missingWavetableNoticeOwnsUi) {
+    dealWithRotary();  // deal with menu
+  }
+  if (delegatedControlState.active) {
     drawDelegatedControlScreen();
-    stabilityBenchmarkSetCore0Task(STABILITY_TASK_AUTOSAVE);
+    u8g2.serviceTransfer();
     checkAndAutoSave();  // save settings
     return;
   }
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_MENU_REBUILD);
   serviceSynthPresetMenuRebuild();
   serviceSynthWavetableMenuRebuild();
   serviceUserGeometryMenuRebuild();
   restoreMenuAfterDelegatedControl();
   serviceVirtualListLauncherLabelScroll();
   serviceFlashSaveScreen();
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_DISPLAY);
-  if (!flashSaveScreenVisible && sequencerModeActive()) {
+  missingWavetableNoticeOwnsUi = serviceMissingWavetableNotice();
+  if (!flashSaveScreenVisible && !missingWavetableNoticeOwnsUi && sequencerModeActive()) {
     drawSequencerModeDisplay();
   }
-  if (!flashSaveScreenVisible) {
+  if (!flashSaveScreenVisible && !missingWavetableNoticeOwnsUi) {
     drawCommandWheelOverlay();
   }
-  drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_BENCHMARK);
-  serviceStabilityBenchmark();
-  stabilityBenchmarkSetCore0Task(STABILITY_TASK_AUTOSAVE);
+  if (!missingWavetableNoticeOwnsUi) {
+    drawPlayedNotesOverlay(); // shows the notes of keys pressed on the screen
+  }
+  u8g2.serviceTransfer();
   checkAndAutoSave();  // save settings
 }
 void hexboardSetup1() {  // set up on second core
   setupSynthOutputs();
+  while (!bootLedAnimationReady.load(std::memory_order_acquire)) {
+    tight_loop_contents();
+  }
+  runBootLedSelfCheckSplash();
+  bootLedSplashComplete.store(true, std::memory_order_release);
+  while (!normalLedFrameReady.load(std::memory_order_acquire)) {
+    tight_loop_contents();
+  }
+  finishBootLedSelfCheck();
+  bootLedAnimationComplete.store(true, std::memory_order_release);
   while (!synthRuntimeReady.load(std::memory_order_acquire)) {
     tight_loop_contents();
   }
   setupAudioDma();
 }
 void hexboardLoop1() {  // run on second core
-  stabilityBenchmarkSetCore1Task(STABILITY_TASK_AUDIO_DMA);
   serviceAudioDmaBuffers();
   if (!normalRuntimeReady.load(std::memory_order_acquire)) {
     return;
   }
-  if (delegatedControl) {
-    stabilityBenchmarkSetCore1Task(STABILITY_TASK_DELEGATED_MIDI);
+  if (delegatedControlState.active) {
     processIncomingMIDIDelegated();
   }
-  stabilityBenchmarkSetCore1Task(STABILITY_TASK_ENCODER_SCAN);
   readKnob();
 }

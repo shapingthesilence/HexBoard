@@ -2,7 +2,7 @@
 #include "../sequencer/SequencerTransport.h"
 #include "../midi/NoteDispatch.h"
 
-std::queue<byte> synthChQueue;
+SynthChannelQueue synthChQueue;
 std::array<std::atomic<bool>, POLYPHONY_LIMIT> channelInUse = {};
 std::array<std::atomic<uint32_t>, POLYPHONY_LIMIT> voiceGenerations;
 std::array<std::atomic<int16_t>, POLYPHONY_LIMIT> synthChannelOwners;
@@ -16,7 +16,7 @@ std::array<int16_t, POLYPHONY_LIMIT> pendingSynthStealOwners = [] {
 }();
 // Sequencer OB Synth output uses these hidden slots to enter the normal synth
 // voice lifecycle without pretending a visible key is physically held.
-std::array<byte, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewVelocityForSlot = {};
+std::array<byte, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewGainForSlot = {};
 std::array<bool, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewSlotActive = {};
 std::atomic<uint32_t> nextVoiceGeneration = 1;
 std::atomic<bool> flashWriteInProgress = false;
@@ -49,7 +49,7 @@ void RAM_FUNC(clearSynthPreviewSlot)(int16_t slot) {
     return;
   }
   synthPreviewSlotActive[slotIndex] = false;
-  synthPreviewVelocityForSlot[slotIndex] = 127;
+  synthPreviewGainForSlot[slotIndex] = 127;
   h[slot].note = UNUSED_NOTE;
   h[slot].MIDIch = 0;
   h[slot].activeMidiNote = UNUSED_NOTE;
@@ -71,7 +71,7 @@ int16_t RAM_FUNC(allocateSynthPreviewSlot)() {
     if (!synthPreviewSlotActive[i]) {
       int16_t slot = static_cast<int16_t>(SYNTH_PREVIEW_SLOT_START + i);
       synthPreviewSlotActive[i] = true;
-      synthPreviewVelocityForSlot[i] = 127;
+      synthPreviewGainForSlot[i] = 127;
       return slot;
     }
   }
@@ -387,9 +387,7 @@ void RAM_FUNC(replaceMonoSynthWith)(byte x, bool retriggerEnvelope = true, bool 
 }
 
 void RAM_FUNC(resetSynthFreqs)() {
-  while (!synthChQueue.empty()) {
-    synthChQueue.pop();
-  }
+  synthChQueue.clear();
   nextVoiceGeneration.store(1, std::memory_order_relaxed);
   for (byte i = 0; i < POLYPHONY_LIMIT; i++) {
     synth[i].increment = 0;
@@ -438,7 +436,7 @@ bool RAM_FUNC(startSynthPreviewNote)(int16_t pitchSteps,
 
   uint8_t slotIndex = static_cast<uint8_t>(slot - SYNTH_PREVIEW_SLOT_START);
   byte safeVelocity = velocity == 0 ? 1 : velocity;
-  synthPreviewVelocityForSlot[slotIndex] = safeVelocity;
+  synthPreviewGainForSlot[slotIndex] = perceptualAudioGain7(safeVelocity);
   h[slot].stepsFromC = pitchSteps;
   h[slot].note = displayNote < 128 ? displayNote : 127;
   h[slot].frequency = frequency;
@@ -806,7 +804,7 @@ void panicStopOutput() {
 }
 
 void RAM_FUNC(arpeggiate)() {
-  if (delegatedControl) {
+  if (delegatedControlState.active) {
     return;
   }
   if (playbackMode == SYNTH_ARPEGGIO) {

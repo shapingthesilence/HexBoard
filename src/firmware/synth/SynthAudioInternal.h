@@ -211,6 +211,8 @@ extern byte audioD;
 extern volatile uint16_t audioOutputMuteGainQ8;
 extern volatile uint16_t audioOutputMuteTargetQ8;
 extern uint16_t synthPiezoAmplitude;
+extern volatile byte headphoneVolumeGain;
+extern volatile byte piezoVolumeGain;
 
 extern byte synthVibratoSine[SYNTH_WAVE_SAMPLE_COUNT];
 extern volatile uint8_t activeSynthWaveFrameCount;
@@ -235,14 +237,64 @@ extern std::array<uint64_t, POLYPHONY_LIMIT> synthVoiceStartTimes;
 extern std::array<uint64_t, POLYPHONY_LIMIT> synthVoiceReleaseTimes;
 extern std::array<uint16_t, POLYPHONY_LIMIT> synthStealFadeSamplesRemaining;
 extern std::array<int16_t, POLYPHONY_LIMIT> pendingSynthStealOwners;
-extern std::array<byte, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewVelocityForSlot;
+extern std::array<byte, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewGainForSlot;
 extern std::atomic<uint32_t> nextVoiceGeneration;
 extern float pitchBendFactor;
 extern std::array<uint8_t, POLYPHONY_LIMIT> releaseRetries;
 extern std::array<uint8_t, POLYPHONY_LIMIT> releaseRetryCountdown;
 
 extern oscillator synth[POLYPHONY_LIMIT];
-extern std::queue<byte> synthChQueue;
+
+class SynthChannelQueue {
+public:
+  bool empty() const {
+    return count_ == 0;
+  }
+
+  void clear() {
+    head_ = 0;
+    count_ = 0;
+    queued_.fill(false);
+  }
+
+  bool push(byte channel) {
+    if (channel == 0 || channel > channels_.size()) {
+      return false;
+    }
+    const size_t channelIndex = channel - 1;
+    if (queued_[channelIndex]) {
+      return true;
+    }
+    if (count_ >= channels_.size()) {
+      return false;
+    }
+    channels_[(head_ + count_) % channels_.size()] = channel;
+    queued_[channelIndex] = true;
+    ++count_;
+    return true;
+  }
+
+  byte front() const {
+    return count_ == 0 ? 0 : channels_[head_];
+  }
+
+  void pop() {
+    if (count_ == 0) {
+      return;
+    }
+    queued_[channels_[head_] - 1] = false;
+    head_ = (head_ + 1) % channels_.size();
+    --count_;
+  }
+
+private:
+  std::array<byte, POLYPHONY_LIMIT> channels_ = {};
+  std::array<bool, POLYPHONY_LIMIT> queued_ = {};
+  uint8_t head_ = 0;
+  uint8_t count_ = 0;
+};
+
+extern SynthChannelQueue synthChQueue;
 extern byte attenuation[];
 extern uint16_t synthModValueQ8;
 extern uint32_t synthVibratoPhase;
@@ -275,6 +327,8 @@ void RAM_FUNC(writeAudioOutputLevels)(uint16_t piezoLevel, uint16_t jackLevel);
 void RAM_FUNC(applyAudioOutputMute)(AudioOutputLevels& output, byte destination);
 int32_t RAM_FUNC(scalePiezoSample)(int32_t sample, uint16_t amplitude);
 int32_t RAM_FUNC(applySynthDrive)(int32_t sample);
+uint8_t RAM_FUNC(perceptualAudioGain7)(uint8_t value);
+uint16_t RAM_FUNC(perceptualAudioGain16)(uint16_t value);
 void RAM_FUNC(recordAudioBufferProfileSample)(uint32_t startTime, uint8_t voices, uint8_t flags);
 
 uint8_t RAM_FUNC(currentSynthVoiceLimit)();
@@ -343,9 +397,10 @@ void RAM_FUNC(resetSynthVoiceRenderCache)(uint8_t voiceIndex);
 void RAM_FUNC(resetSynthVoiceRenderCachePreservingAmpEnvelope)(uint8_t voiceIndex);
 void RAM_FUNC(advanceSynthVoiceSlews)(SynthVoiceRenderCache& cache);
 void RAM_FUNC(retargetSynthAmpEnvelopeRenderCache)(SynthVoiceRenderCache& cache,
-                                                  uint32_t targetAudioLevel,
-                                                  uint8_t elapsedTicks,
-                                                  bool snap);
+                                                    uint32_t targetAudioLevel,
+                                                    uint8_t elapsedTicks,
+                                                    bool snap,
+                                                    bool applyPerceptualTaper);
 uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(applySynthFoldPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4);
 uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(applySynthDutyPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4);
 uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(applySynthPolyPhaseWarpQ4)(uint16_t phase, int16_t warpAmountQ4);

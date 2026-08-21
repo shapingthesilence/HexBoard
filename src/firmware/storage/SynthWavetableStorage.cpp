@@ -2,6 +2,7 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../app/RuntimeDefaults.h"
 #include "../synth/SynthAudio.h"
+#include "../synth/BuiltinWavetables.h"
 #include "../synth/SynthDefaults.h"
 #include "Settings.h"
 #include "StorageHealth.h"
@@ -10,46 +11,6 @@
 
 void normalizeSynthWavetableFolderPath(char* folderPath, size_t folderPathLength) {
   normalizeSynthPresetFolderPath(folderPath, folderPathLength);
-}
-
-void writeSynthWavetableReference(SynthWavetableProfileReference& reference, const char* folderPath, const char* name) {
-  snprintf(reference.folderPath,
-           sizeof(reference.folderPath),
-           "%s",
-           folderPath && folderPath[0] ? folderPath : SYNTH_WAVETABLE_BUILTIN_FOLDER);
-  snprintf(reference.name,
-           sizeof(reference.name),
-           "%s",
-           name && name[0] ? name : SYNTH_WAVETABLE_BASIC_NAME);
-  normalizeSynthWavetableFolderPath(reference.folderPath, sizeof(reference.folderPath));
-}
-
-void writeCurrentSynthWavetableReference(SynthWavetableProfileReference& reference) {
-  if (currentSynthWavetableReferenceValid) {
-    writeSynthWavetableReference(reference, currentSynthWavetableFolderPath, currentSynthWavetableName);
-  } else {
-    writeSynthWavetableReference(reference, SYNTH_WAVETABLE_BUILTIN_FOLDER, SYNTH_WAVETABLE_BASIC_NAME);
-  }
-}
-
-void rememberCurrentSynthWavetableReferenceForProfile(uint8_t profileIndex) {
-  if (profileIndex >= PROFILE_COUNT) {
-    return;
-  }
-  writeCurrentSynthWavetableReference(synthWavetableProfileReferences[profileIndex]);
-}
-
-bool restoreSynthWavetableReferenceForProfile(uint8_t profileIndex) {
-  if (profileIndex >= PROFILE_COUNT) {
-    return false;
-  }
-  SynthWavetableProfileReference& reference =
-    synthWavetableProfileReferences[profileIndex];
-  if (!reference.name[0]) {
-    return false;
-  }
-  setCurrentSynthWavetableReference(reference.folderPath, reference.name);
-  return true;
 }
 
 constexpr char SYNTH_WAVETABLE_CATALOG_FILE_PATH[] = "/synth_wavetables.dat";
@@ -334,6 +295,12 @@ void load_synth_wavetables() {
       continue;
     }
     normalizeSynthWavetableMetadata(loaded);
+    if (findBuiltinSynthWavetableByName(loaded.name) >= 0
+        || findSynthWavetableByName(loaded.name) >= 0) {
+      reportStorageHealthIssue(SYNTH_WAVETABLE_CATALOG_FILE_PATH, "duplicate wavetable name");
+      sendToLog("Skipping duplicate synth wavetable name: " + std::string(loaded.name));
+      continue;
+    }
     if (!synthWavetableSampleFileExists(loaded)) {
       reportStorageHealthIssue(loaded.samplePath, "missing sample");
       sendToLog("Skipping wavetable with missing sample file: " + std::string(loaded.name));
@@ -365,13 +332,12 @@ int findSynthWavetableByObjectId(const uint8_t* objectId) {
   return -1;
 }
 
-int findSynthWavetableByFolderAndName(const char* folderPath, const char* name) {
-  char normalizedFolder[SYNTH_WAVETABLE_FOLDER_LENGTH] = {};
-  snprintf(normalizedFolder, sizeof(normalizedFolder), "%s", folderPath && folderPath[0] ? folderPath : SYNTH_WAVETABLE_ROOT_FOLDER);
-  normalizeSynthWavetableFolderPath(normalizedFolder, sizeof(normalizedFolder));
+int findSynthWavetableByName(const char* name) {
+  if (!name || !name[0]) {
+    return -1;
+  }
   for (size_t i = 0; i < synthWavetables.size(); ++i) {
     if (synthWavetables[i].valid
-        && strcmp(synthWavetables[i].folderPath, normalizedFolder) == 0
         && strcmp(synthWavetables[i].name, name) == 0) {
       return static_cast<int>(i);
     }
@@ -379,12 +345,20 @@ int findSynthWavetableByFolderAndName(const char* folderPath, const char* name) 
   return -1;
 }
 
+bool synthWavetableNameIsAvailable(const char* name) {
+  if (findBuiltinSynthWavetableByName(name) >= 0) {
+    return true;
+  }
+  int index = findSynthWavetableByName(name);
+  return index >= 0 && synthWavetableSampleFileExists(synthWavetables[static_cast<size_t>(index)]);
+}
+
 int chooseSynthWavetableWriteSlot(const SynthWavetableSlot& wavetable) {
   int existing = findSynthWavetableByObjectId(wavetable.objectId);
   if (existing >= 0) {
     return existing;
   }
-  existing = findSynthWavetableByFolderAndName(wavetable.folderPath, wavetable.name);
+  existing = findSynthWavetableByName(wavetable.name);
   if (existing >= 0) {
     return existing;
   }
@@ -413,8 +387,8 @@ bool writeSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, const ui
   return true;
 }
 
-bool loadSynthWavetableFromCatalog(const char* folderPath, const char* name) {
-  int index = findSynthWavetableByFolderAndName(folderPath, name);
+bool loadSynthWavetableFromCatalog(const char* name) {
+  int index = findSynthWavetableByName(name);
   if (index < 0) {
     return false;
   }

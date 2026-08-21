@@ -1,15 +1,87 @@
 import { describe, expect, it } from "vitest";
-import type { LayoutBundleButtonOverride } from "../catalogs/index.ts";
+import { createDefaultTuningBundle, type TuningBundleButtonOverride } from "../catalogs/index.ts";
+import { ObjectListFlag, ObjectType, type ObjectListRecord } from "../protocol/index.ts";
 import {
   clearColorOverridesForScaleDegree,
   colorToCss,
   deviceRelativeMirrorTransform,
   keyOutputMode,
+  midiNoteName,
   normalizeCommittedNumber,
+  partitionHexBoardGeometryRecords,
   paintScaleDegreeColor,
+  reorderByObjectId,
   resetOverridesToScaleDegreeColors,
-  validLiveNumber
+  tuningBundlesFromUnknown,
+  validLiveNumber,
+  withProtectedAllNotesScale
 } from "./TuningLayoutEditor.tsx";
+
+describe("tuning bundle batch files", () => {
+  it("imports multiple bundles from one library file", () => {
+    const first = createDefaultTuningBundle();
+    const second = {
+      ...createDefaultTuningBundle(),
+      objectIdHex: "00112233445566778899aabbccddeeff",
+      tuning: { ...createDefaultTuningBundle().tuning, name: "Second Tuning" }
+    };
+
+    const bundles = tuningBundlesFromUnknown({
+      format: "hexboard.tuningBundleLibrary.v1",
+      tuningBundles: [first, second]
+    });
+
+    expect(bundles.map((bundle) => bundle.tuning.name)).toEqual(["19 EDO Wicki", "Second Tuning"]);
+  });
+});
+
+function geometryRecord(name: string, flags: number, handle: number): ObjectListRecord {
+  return {
+    objectType: ObjectType.UserTuning,
+    handle,
+    flags,
+    schemaMajor: 2,
+    schemaMinor: 0,
+    objectId: new Uint8Array(16).fill(handle),
+    folderPath: "/",
+    name
+  };
+}
+
+describe("HexBoard rescue geometry", () => {
+  it("reports the rescue state without exposing it as an editable library entry", () => {
+    const result = partitionHexBoardGeometryRecords([
+      geometryRecord("Stored", ObjectListFlag.Valid, 0),
+      geometryRecord("Rescue", ObjectListFlag.Valid | ObjectListFlag.ReadOnly, 0x2000)
+    ]);
+
+    expect(result.rescueActive).toBe(true);
+    expect(result.entries.map((entry) => entry.name)).toEqual(["Stored"]);
+  });
+});
+
+describe("bundle item ordering", () => {
+  it("moves a dragged item to the target position without mutating the source", () => {
+    const items = [
+      { objectIdHex: "a", name: "First" },
+      { objectIdHex: "b", name: "Second" },
+      { objectIdHex: "c", name: "Third" }
+    ];
+
+    expect(reorderByObjectId(items, "c", "a").map((item) => item.objectIdHex)).toEqual(["c", "a", "b"]);
+    expect(items.map((item) => item.objectIdHex)).toEqual(["a", "b", "c"]);
+  });
+
+  it("allows All Notes to move and preserves its reordered position during normalization", () => {
+    const bundle = createDefaultTuningBundle();
+    const majorScale = { ...bundle.scales[0], objectIdHex: "major", name: "Major" };
+    const reordered = reorderByObjectId([...bundle.scales, majorScale], bundle.scales[0].objectIdHex, majorScale.objectIdHex);
+    const normalized = withProtectedAllNotesScale({ ...bundle, scales: reordered });
+
+    expect(normalized.scales.map((scale) => scale.name)).toEqual(["Major", "All Notes"]);
+  });
+
+});
 
 describe("key output mode", () => {
   it("represents an unused key as Off even when it retains an action", () => {
@@ -44,6 +116,14 @@ describe("deferred number fields", () => {
   });
 });
 
+describe("reference-key labels", () => {
+  it("uses scientific pitch notation", () => {
+    expect(midiNoteName(60)).toBe("C4");
+    expect(midiNoteName(69)).toBe("A4");
+    expect(midiNoteName(127)).toBe("G9");
+  });
+});
+
 describe("tuning layout color rendering", () => {
   it("renders HSV preview colors without dimming or remapping value", () => {
     expect(colorToCss({ degree: 0, hueTenthDegrees: 0, saturation: 0, value: 255 })).toBe("#ffffff");
@@ -52,7 +132,7 @@ describe("tuning layout color rendering", () => {
   });
 
   it("resets button colors back to scale degree colors without dropping note overrides", () => {
-    const overrides: LayoutBundleButtonOverride[] = [
+    const overrides: TuningBundleButtonOverride[] = [
       { buttonIndex: 10, role: "note", hueTenthDegrees: 2400, saturation: 255, value: 220 },
       { buttonIndex: 11, role: "note", stepsFromC: 7, hueTenthDegrees: 1200, saturation: 200, value: 190 },
       { buttonIndex: 12, role: "unused", hueTenthDegrees: 0, saturation: 255, value: 180 },
@@ -86,7 +166,7 @@ describe("tuning layout color rendering", () => {
   });
 
   it("clears color overrides for buttons on a painted scale degree", () => {
-    const overrides: LayoutBundleButtonOverride[] = [
+    const overrides: TuningBundleButtonOverride[] = [
       { buttonIndex: 10, role: "note", hueTenthDegrees: 1200, saturation: 255, value: 180 },
       { buttonIndex: 11, role: "note", stepsFromC: 8, hueTenthDegrees: 2400, saturation: 255, value: 200 },
       { buttonIndex: 12, role: "unused", hueTenthDegrees: 0, saturation: 255, value: 160 },

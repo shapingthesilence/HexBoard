@@ -7,13 +7,43 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import struct
 import wave
 import zlib
 
-PROFILE_COUNT = 9
-CURRENT_SETTINGS_VERSION = 26
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+PERSISTENT_MODELS_HEADER = REPOSITORY_ROOT / "src/firmware/storage/PersistentDataModels.h"
+SETTING_KEYS_DEFINITION = REPOSITORY_ROOT / "src/firmware/storage/SettingKeys.inc.h"
+
+
+def source_integer_constant(name: str) -> int:
+    source = PERSISTENT_MODELS_HEADER.read_text(encoding="utf-8")
+    match = re.search(
+        rf"constexpr\s+\w+\s+{re.escape(name)}\s*=\s*(\d+)\s*;",
+        source,
+    )
+    if match is None:
+        raise RuntimeError(f"{PERSISTENT_MODELS_HEADER}: missing integer constant {name}")
+    return int(match.group(1))
+
+
+def source_setting_keys() -> tuple[str, ...]:
+    keys = re.findall(
+        r"^HEXBOARD_SETTING\((\w+),",
+        SETTING_KEYS_DEFINITION.read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    )
+    if not keys:
+        raise RuntimeError(f"{SETTING_KEYS_DEFINITION}: no settings found")
+    if len(keys) != len(set(keys)):
+        raise RuntimeError(f"{SETTING_KEYS_DEFINITION}: duplicate setting name")
+    return tuple(keys)
+
+
+PROFILE_COUNT = source_integer_constant("PROFILE_COUNT")
+CURRENT_SETTINGS_VERSION = source_integer_constant("CURRENT_SETTINGS_VERSION")
 SYNTH_PRESET_MAX_COUNT = 128
 SYNTH_WAVETABLE_MAX_COUNT = 32
 GEOMETRY_FACTORY_BUNDLE_MAX_COUNT = 64
@@ -27,10 +57,10 @@ GEOMETRY_OBJECT_SCHEMA_VERSION = 2
 SYNTH_WAVETABLE_SAMPLE_BYTES = 16 * 512
 SYNTH_WAVETABLE_MIP_SAMPLE_BYTES = SYNTH_WAVETABLE_SAMPLE_BYTES * 6
 GEOMETRY_MENU_TEXT_LENGTH = 20
-GEOMETRY_OBJECT_MAX_RAW_BYTES = 8192
+GEOMETRY_OBJECT_MAX_RAW_BYTES = 16384
 GEOMETRY_BUNDLE_MAX_RAW_BYTES = 262144
 GEOMETRY_OBJECT_ID_LENGTH = 16
-MAX_SCALE_DIVISIONS = 128
+MAX_SCALE_DIVISIONS = 1024
 
 OBJECT_TYPE_USER_TUNING = 0x03
 OBJECT_TYPE_USER_LAYOUT = 0x04
@@ -45,6 +75,8 @@ COMMON_TLV_FOLDER_PATH = 0x06
 
 TUNING_TLV_KIND = 0x20
 TUNING_TLV_DIVISIONS = 0x21
+TUNING_TLV_REFERENCE_DEGREE = 0x22
+TUNING_TLV_DEFAULT_KEY_DEGREE = 0x23
 TUNING_TLV_REFERENCE_MIDI_NOTE = 0x24
 TUNING_TLV_KEY_LABELS = 0x28
 TUNING_TLV_PERIOD_CENTS_FLOAT32 = 0x29
@@ -72,37 +104,9 @@ USER_SCALE_TLV_ROOT_DEGREE = 0x22
 USER_SCALE_TLV_PATTERN_STEPS = 0x23
 USER_SCALE_TLV_INCLUDED_DEGREES = 0x24
 
-LAYOUT_BUNDLE_FORMAT = "hexboard.layoutBundle.v5"
+TUNING_BUNDLE_FORMAT = "hexboard.tuningBundle.v2"
 
-SETTING_KEYS = (
-    "RotaryInvert", "AutoSave", "MPEpitchBend", "MPEMode", "ExtraMPE",
-    "MPELowestChannel", "MPEHighestChannel", "MPELowPriority",
-    "DefaultMIDIChannel", "CC74Value", "CurrentTuning", "CurrentLayout",
-    "CurrentScale", "CurrentKeyStepsFromA", "CurrentTransposeSteps",
-    "LayoutRotation", "MirrorLeftRight", "MirrorUpDown", "ScaleLock",
-    "PaletteCenterOnKey", "WheelAltMode", "PBSticky", "ModSticky",
-    "PBWheelSpeed", "ModWheelSpeed", "VelWheelSpeed", "PlaybackMode",
-    "Waveform", "AudioDestination", "ArpeggiatorDivision", "SynthBPM",
-    "ColorMode", "RestLedBrightness", "DimLedBrightness", "GlobalBrightness",
-    "AnimationType", "ProgramChange", "JustIntonationBPMSync", "BeatBPM",
-    "BPMMultiplier", "DynamicJI", "EnvelopeAttackIndex", "EnvelopeDecayIndex",
-    "EnvelopeSustainLevel", "EnvelopeReleaseIndex", "DisplayPlayedNotes",
-    "LedCurrentLimitMode", "SynthDrive", "SynthModTarget", "SynthVibratoSpeed",
-    "MetronomeMode", "MetronomeSignature", "EffectEnvelopeAttackIndex",
-    "EffectEnvelopeDecayIndex", "EffectEnvelopeSustainLevel",
-    "EffectEnvelopeReleaseIndex", "BootAnimationEnabled", "EffectEnvelopeTarget",
-    "EffectEnvelopeAmount", "EffectEnvelope2Target", "EffectEnvelope2Amount",
-    "EffectEnvelope2AttackIndex", "EffectEnvelope2DecayIndex",
-    "EffectEnvelope2SustainLevel", "EffectEnvelope2ReleaseIndex",
-    "SynthAttackEffect", "EnvelopeHoldIndex", "EffectEnvelopeHoldIndex",
-    "EffectEnvelope2HoldIndex", "SynthModAmount", "HeadphoneVolumeCap",
-    "DeviceRotation", "SynthPortamentoTimeIndex", "ArpeggiatorDirection",
-    "SynthWavetablePosition", "SynthLfoTarget", "SynthLfoAmount", "SynthLfoWave",
-    "SynthLfoSpeed", "DynamicJIRatioTable", "SequencerStepAccentEvery",
-    "SequencerStepColorMode", "SequencerStepHue", "SequencerMonophonicMode",
-    "SequencerTapPreview", "SequencerClockSource", "SequencerSendClock",
-    "SequencerSendTransport", "PiezoVolumeCap",
-)
+SETTING_KEYS = source_setting_keys()
 
 SYNTH_PRESET_KEYS = (
     "PlaybackMode", "Waveform", "SynthDrive", "SynthModTarget", "SynthModAmount",
@@ -281,11 +285,6 @@ def geometry_catalog_record(
     )
 
 
-def key_labels_for_tlv(labels: list[str], cycle_length: int) -> list[str]:
-    span_c_to_a = -((cycle_length * 9 + 6) // 12)
-    return [labels[(span_c_to_a + c_index) % cycle_length] for c_index in range(cycle_length)]
-
-
 def encode_key_labels(labels: list[str]) -> bytes:
     output = bytearray()
     for label in labels:
@@ -305,10 +304,12 @@ def parse_geometry_tuning(
     source = bundle.get("tuning")
     if not isinstance(source, dict):
         raise fail(path, "geometry tuning", "bundle.tuning must be an object")
-    name = geometry_text(bundle.get("name"), path, "bundle.name")
     kind = source.get("kind")
     if kind not in ("edo", "equal-step"):
         raise fail(path, "geometry tuning", "factory tunings must use kind 'edo' or 'equal-step'")
+    name = geometry_text(source.get("name"), path, "tuning.name")
+    reference_degree = geometry_int(source.get("referenceDegree"), path, "referenceDegree", 0, cycle_length - 1)
+    default_key_degree = geometry_int(source.get("defaultKeyDegree", 0), path, "defaultKeyDegree", 0, cycle_length - 1)
     reference_midi_note = geometry_int(source.get("referenceMidiNote", 69), path, "referenceMidiNote", 0, 127)
     reference_hz = f32(geometry_number(source.get("referenceHz", 440.0), path, "referenceHz", 0.000001))
     labels_source = source.get("keyLabels")
@@ -333,9 +334,11 @@ def parse_geometry_tuning(
     records = [
         geometry_tlv(TUNING_TLV_KIND, bytes([tuning_kind])),
         geometry_tlv(TUNING_TLV_DIVISIONS, struct.pack("<H", cycle_length)),
+        geometry_tlv(TUNING_TLV_REFERENCE_DEGREE, struct.pack("<H", reference_degree)),
+        geometry_tlv(TUNING_TLV_DEFAULT_KEY_DEGREE, struct.pack("<H", default_key_degree)),
         geometry_tlv(TUNING_TLV_REFERENCE_MIDI_NOTE, bytes([reference_midi_note])),
         geometry_tlv(TUNING_TLV_REFERENCE_HZ_FLOAT32, struct.pack("<f", reference_hz)),
-        geometry_tlv(TUNING_TLV_KEY_LABELS, encode_key_labels(key_labels_for_tlv(labels, cycle_length))),
+        geometry_tlv(TUNING_TLV_KEY_LABELS, encode_key_labels(labels)),
     ]
     records.append(
         geometry_tlv(
@@ -448,23 +451,23 @@ def parse_geometry_color_map(
 
 def parse_geometry_bundle(path: Path, root: Path) -> list[tuple[int, bytes, str, str, bytes]]:
     document = read_json(path, "geometry bundle")
-    if document.get("format") != LAYOUT_BUNDLE_FORMAT or not isinstance(document.get("bundle"), dict):
-        raise fail(path, "geometry bundle", f"expected format {LAYOUT_BUNDLE_FORMAT!r} and a bundle object")
-    bundle = document["bundle"]
+    if document.get("format") != TUNING_BUNDLE_FORMAT or not isinstance(document.get("tuningBundle"), dict):
+        raise fail(path, "tuning bundle", f"expected format {TUNING_BUNDLE_FORMAT!r} and a tuningBundle object")
+    bundle = document["tuningBundle"]
     folder = source_folder(path, root)
     declared_folder = normalized_folder(str(bundle.get("folderPath", "/")))
     if declared_folder != folder:
         raise fail(path, "geometry bundle", f"folderPath {declared_folder!r} does not match source folder {folder!r}")
     folder = geometry_text(folder, path, "folderPath") if folder != "/" else "/"
-    bundle_name = geometry_text(bundle.get("name"), path, "bundle.name")
-    if bundle_name != path.stem:
-        raise fail(path, "geometry bundle", f"bundle name {bundle_name!r} does not match filename {path.stem!r}")
     bundle_id = geometry_object_id(bundle.get("objectIdHex"), path, "bundle.objectIdHex")
     tuning_object_id = web_deterministic_object_id(f"{bundle_id.hex()}:tuning")
     color_object_id = web_deterministic_object_id(f"{bundle_id.hex()}:colors")
     tuning_source = bundle.get("tuning")
     if not isinstance(tuning_source, dict):
         raise fail(path, "geometry tuning", "bundle.tuning must be an object")
+    tuning_name = geometry_text(tuning_source.get("name"), path, "tuning.name")
+    if tuning_name != path.stem:
+        raise fail(path, "tuning bundle", f"tuning name {tuning_name!r} does not match filename {path.stem!r}")
     cycle_length = geometry_int(tuning_source.get("cycleLength"), path, "tuning.cycleLength", 1, MAX_SCALE_DIVISIONS)
 
     output: list[tuple[int, bytes, str, str, bytes]] = []
@@ -667,8 +670,8 @@ def build_wavetables(root: Path, output: Path) -> tuple[list[bytes], set[tuple[s
         folder = source_folder(path, root)
         name = path.stem
         key = (folder, name)
-        if key in references:
-            raise fail(path, "wavetables", f"duplicate device name {folder}/{name}")
+        if any(existing_name == name for _, existing_name in references):
+            raise fail(path, "wavetables", f"duplicate device wavetable name {name}")
         samples = parse_hexwav(path)
         object_id = web_deterministic_object_id(f"factory-wavetable:{folder}:{name}")
         sample_path = f"/wt_{object_id[:8].hex().upper()}.wtb"
@@ -715,8 +718,8 @@ def parse_preset(path: Path, root: Path,
         raise fail(path, "preset", "wavetable reference is required")
     wavetable_name = str(wavetable.get("name", "")).strip()
     wavetable_folder = normalized_folder(str(wavetable.get("folderPath", "")))
-    if (wavetable_folder, wavetable_name) not in wavetable_references:
-        raise fail(path, "preset", f"wavetable {wavetable_folder}/{wavetable_name} is not in the factory library")
+    if not any(existing_name == wavetable_name for _, existing_name in wavetable_references):
+        raise fail(path, "preset", f"wavetable {wavetable_name} is not in the factory library")
     values_source = source.get("values")
     if not isinstance(values_source, dict):
         raise fail(path, "preset", "values must be an object")
@@ -783,16 +786,12 @@ def build_presets(root: Path, output: Path, config: dict,
         seen_names.add(key)
     if selected_id is None or selected_values is None or selected_wavetable is None:
         raise fail(root, "selection", f"selectedPreset {selected_name!r} was not found")
-    reference_body = b"\x01" + selected_id
-    current_reference = b"CSP" + b"\x01" + b"\x01" + bytes(3) + selected_id + struct.pack("<I", crc32(reference_body))
-    (output / "current_synth_preset.dat").write_bytes(current_reference)
     return selected_id, selected_values, selected_wavetable
 
 
 def build_settings(config_path: Path, output: Path, config: dict,
-                   selected_preset_values: dict[str, int],
-                   selected_geometry: tuple[bytes, bytes, bytes],
-                   selected_wavetable: tuple[str, str]) -> None:
+                   selected_preset_id: bytes,
+                   selected_geometry: tuple[bytes, bytes, bytes]) -> None:
     settings_source = config.get("settings")
     if not isinstance(settings_source, dict):
         raise fail(config_path, "settings", "settings must be an object")
@@ -808,19 +807,14 @@ def build_settings(config_path: Path, output: Path, config: dict,
     settings = {key: checked_byte(settings_source[key], config_path, key) for key in SETTING_KEYS}
     if settings["RotaryInvert"] != 0:
         raise fail(config_path, "settings", "RotaryInvert factory value must be 0 (relative to hardware default)")
-    profiles = [bytearray(settings[key] for key in SETTING_KEYS) for _ in range(PROFILE_COUNT)]
-    for key, value in selected_preset_values.items():
-        profiles[0][SETTING_KEYS.index(key)] = value
+    persisted_setting_keys = tuple(key for key in SETTING_KEYS if key not in SYNTH_PRESET_KEYS)
+    profiles = [bytearray(settings[key] for key in persisted_setting_keys) for _ in range(PROFILE_COUNT)]
     profile_data = b"".join(profiles)
     tuning_id, layout_id, scale_id = selected_geometry
     geometry_reference = bytes([0x07]) + tuning_id + layout_id + scale_id
     geometry_profile_data = geometry_reference * PROFILE_COUNT
-    wavetable_folder, wavetable_name = selected_wavetable
-    wavetable_reference = (
-        encoded_text(wavetable_name, config_path, "wavetable name", 32)
-        + encoded_text(wavetable_folder, config_path, "wavetable folder", 48)
-    )
-    wavetable_profile_data = wavetable_reference * PROFILE_COUNT
+    synth_reference = bytes([0x02]) + selected_preset_id
+    synth_profile_data = synth_reference * PROFILE_COUNT
     version = checked_byte(config.get("settingsVersion"), config_path, "settingsVersion")
     if version != CURRENT_SETTINGS_VERSION:
         raise fail(
@@ -828,7 +822,7 @@ def build_settings(config_path: Path, output: Path, config: dict,
             "settings",
             f"settingsVersion is {version}; builder expects {CURRENT_SETTINGS_VERSION}",
         )
-    settings_data = profile_data + geometry_profile_data + wavetable_profile_data
+    settings_data = profile_data + geometry_profile_data + synth_profile_data
     header = struct.pack("<3sBB3xI", b"STG", version, 0, crc32(settings_data))
     (output / "settings.dat").write_bytes(header + settings_data)
 
@@ -847,7 +841,7 @@ def validate_selected_wavetable(config_path: Path, config: dict,
     selected_folder = normalized_folder(selected_folder)
     if (selected_folder, selected_name) not in references:
         raise fail(config_path, "selection", f"selectedWavetable {selected!r} was not found")
-    if (selected_folder, selected_name) != selected_preset_wavetable:
+    if selected_name != selected_preset_wavetable[1]:
         preset_folder, preset_name = selected_preset_wavetable
         raise fail(
             config_path,
@@ -869,7 +863,7 @@ def build_library(library: Path, output: Path) -> None:
     if not wavetable_root.is_dir() or not preset_root.is_dir() or not geometry_root.is_dir():
         raise fail(library, "layout", "expected geometry/, presets/, and wavetables/ directories")
     wavetable_records, wavetable_references = build_wavetables(wavetable_root, output)
-    _, selected_values, selected_preset_wavetable = build_presets(
+    selected_preset_id, _, selected_preset_wavetable = build_presets(
         preset_root, output, config, wavetable_references
     )
     geometry_object_count, selected_tuning_id, selected_layout_id, selected_scale_id = (
@@ -879,9 +873,8 @@ def build_library(library: Path, output: Path) -> None:
         config_path,
         output,
         config,
-        selected_values,
+        selected_preset_id,
         (selected_tuning_id, selected_layout_id, selected_scale_id),
-        selected_preset_wavetable,
     )
     validate_selected_wavetable(
         config_path, config, wavetable_references, selected_preset_wavetable
@@ -889,7 +882,7 @@ def build_library(library: Path, output: Path) -> None:
     print(
         f"Factory library: {len(list(preset_root.rglob('*.json')))} presets, "
         f"{len(wavetable_records)} editable wavetables, "
-        f"{len(list(geometry_root.rglob('*.json')))} geometry bundles "
+        f"{len(list(geometry_root.rglob('*.json')))} tuning bundles "
         f"({geometry_object_count} objects), 12 EDO and Basic Shapes rescue core"
     )
     for path in sorted(output.rglob("*")):

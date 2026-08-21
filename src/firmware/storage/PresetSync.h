@@ -35,6 +35,10 @@ constexpr uint8_t PRESET_SYNC_MSG_WRITE_COMMIT = 0x27;
 constexpr uint8_t PRESET_SYNC_MSG_TRANSFER_ABORT = 0x28;
 constexpr uint8_t PRESET_SYNC_MSG_DELETE_REQ = 0x29;
 constexpr uint8_t PRESET_SYNC_MSG_SYNTH_PARAM_SET = 0x2A;
+constexpr uint8_t PRESET_SYNC_MSG_SYNTH_WAVETABLE_SELECT = 0x2B;
+
+constexpr uint8_t PRESET_SYNC_SYNTH_WAVETABLE_SELECTOR_CATALOG = 0x00;
+constexpr uint8_t PRESET_SYNC_SYNTH_WAVETABLE_SELECTOR_BUILTIN = 0x01;
 
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_ALL = 0x00;
 constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_USER_TUNING = 0x03;
@@ -62,6 +66,8 @@ constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_SAMPLES = 0x32;
 constexpr uint8_t PRESET_SYNC_TLV_WAVETABLE_MIP_LEVELS = 0x33;
 constexpr uint8_t PRESET_SYNC_TLV_TUNING_KIND = 0x20;
 constexpr uint8_t PRESET_SYNC_TLV_TUNING_EDO_DIVISIONS = 0x21;
+constexpr uint8_t PRESET_SYNC_TLV_TUNING_REFERENCE_DEGREE = 0x22;
+constexpr uint8_t PRESET_SYNC_TLV_TUNING_DEFAULT_KEY_DEGREE = 0x23;
 constexpr uint8_t PRESET_SYNC_TLV_TUNING_REFERENCE_MIDI_NOTE = 0x24;
 constexpr uint8_t PRESET_SYNC_TLV_TUNING_RATIO_TABLE = 0x27;
 constexpr uint8_t PRESET_SYNC_TLV_TUNING_KEY_LABELS = 0x28;
@@ -138,6 +144,7 @@ constexpr uint32_t PRESET_SYNC_CAP_SYNTH_WAVETABLE = 1u << 11;
 constexpr uint32_t PRESET_SYNC_CAP_LIVE_SYNTH_PARAM = 1u << 12;
 constexpr uint32_t PRESET_SYNC_CAP_CENTS_TABLE_RUNTIME_TUNING = 1u << 13;
 constexpr uint32_t PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES = 1u << 14;
+constexpr uint32_t PRESET_SYNC_CAP_LIVE_SYNTH_WAVETABLE_SELECT = 1u << 15;
 
 constexpr uint8_t PRESET_SYNC_ERROR_UNSUPPORTED_PROTOCOL = 0x01;
 constexpr uint8_t PRESET_SYNC_ERROR_UNKNOWN_MESSAGE = 0x02;
@@ -178,6 +185,7 @@ struct PresetSyncReadTransfer {
   bool active = false;
   bool endSent = false;
   bool streamSynthWavetableSamples = false;
+  bool streamRawFile = false;
   uint8_t objectType = 0;
   uint16_t handle = PRESET_SYNC_NEW_OBJECT_HANDLE;
   uint16_t transactionId = 0;
@@ -229,6 +237,7 @@ void presetSyncSendAck(uint16_t transactionId, uint8_t ackedMessage, uint32_t ne
 void presetSyncSendNack(uint16_t transactionId, uint8_t failedMessage, uint8_t errorCode, uint32_t expectedChunkIndex = 0, uint8_t detail = 0);
 void presetSyncCancelReadTransfer();
 void presetSyncCancelWriteTransfer();
+void presetSyncCloseReadFile();
 void presetSyncCloseWriteTempFile();
 uint8_t presetSyncChunkChecksum(const uint8_t* data, size_t length);
 void presetSyncPack8To7(const uint8_t* raw, size_t rawLength, std::vector<uint8_t>& packed);
@@ -236,6 +245,25 @@ bool presetSyncUnpack8To7(const uint8_t* packed, size_t packedLength, size_t raw
 void presetSyncAppendTlv(std::vector<uint8_t>& body, uint8_t tag, const uint8_t* value, uint16_t length);
 void presetSyncAppendTextTlv(std::vector<uint8_t>& body, uint8_t tag, const char* text, size_t maxLength);
 void copyPresetSyncText(char* destination, size_t destinationLength, const uint8_t* source, size_t sourceLength);
+bool presetSyncFindTlv(const std::vector<uint8_t>& body,
+                       uint8_t wantedTag,
+                       const uint8_t*& value,
+                       uint16_t& length);
+bool presetSyncFindTlvU8(const std::vector<uint8_t>& body,
+                         uint8_t tag,
+                         uint8_t& result);
+bool presetSyncFindTlvU16LE(const std::vector<uint8_t>& body,
+                            uint8_t tag,
+                            uint16_t& result);
+bool presetSyncFindTlvI16LE(const std::vector<uint8_t>& body,
+                            uint8_t tag,
+                            int16_t& result);
+bool presetSyncFindTlvI32LE(const std::vector<uint8_t>& body,
+                            uint8_t tag,
+                            int32_t& result);
+bool presetSyncFindTlvFloat32LE(const std::vector<uint8_t>& body,
+                                uint8_t tag,
+                                float& result);
 
 void load_geometry_objects();
 bool beginGeometryCatalogRead(GeometryCatalogReader& reader);
@@ -248,12 +276,17 @@ bool geometryObjectMetadataForHandle(uint16_t handle, GeometryObjectIndexEntry& 
 bool geometryBundleForTuningHandle(uint16_t tuningHandle, const GeometryBundleIndexEntry*& bundle);
 bool geometryBundleForTuningObjectId(const uint8_t* tuningObjectId,
                                      const GeometryBundleIndexEntry*& bundle);
+bool geometryBundleFileInfoForTuningHandle(uint16_t tuningHandle,
+                                           char* path,
+                                           size_t pathLength,
+                                           uint32_t& fileLength,
+                                           uint32_t& fileCrc32);
 bool geometryObjectForMetadata(const GeometryObjectIndexEntry& metadata, GeometryObjectSlot& object);
 bool deleteGeometryObjectFromCatalog(uint16_t handle);
 size_t geometryBundleCount();
 bool isPresetSyncGeometryObjectType(uint8_t objectType);
 bool isPresetSyncSupportedObjectType(uint8_t objectType);
-bool parseGeometryObjectBody(std::vector<uint8_t> body, GeometryObjectSlot& object, std::string& error);
+bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlot& object, std::string& error);
 bool geometryObjectForHandle(uint16_t handle, GeometryObjectSlot& object);
 void clearUserGeometryRuntimeSelection();
 bool applyGeometryObjectToRuntime(const GeometryObjectSlot& object);
@@ -286,4 +319,5 @@ size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType);
 int chooseSynthPresetWriteSlot(uint16_t handle, const SynthPresetSlot& preset);
 void applySynthPresetRuntimeOnly(const SynthPresetSlot& preset);
 void presetSyncHandleSynthParamSet(uint16_t transactionId, const uint8_t* payload, size_t payloadLength);
+void presetSyncHandleSynthWavetableSelect(uint16_t transactionId, const uint8_t* payload, size_t payloadLength);
 bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len);

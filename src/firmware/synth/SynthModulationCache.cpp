@@ -507,9 +507,13 @@ void RAM_FUNC(advanceSynthVoiceSlews)(SynthVoiceRenderCache& cache) {
 void RAM_FUNC(retargetSynthAmpEnvelopeRenderCache)(SynthVoiceRenderCache& cache,
                                                    uint32_t targetAudioLevel,
                                                    uint8_t elapsedTicks,
-                                                   bool snap) {
+                                                   bool snap,
+                                                   bool applyPerceptualTaper) {
   if (targetAudioLevel > envelopeAudioMaxLevel) {
     targetAudioLevel = envelopeAudioMaxLevel;
+  }
+  if (applyPerceptualTaper) {
+    targetAudioLevel = perceptualAudioGain16(static_cast<uint16_t>(targetAudioLevel));
   }
   uint32_t targetQ8 = targetAudioLevel << 8;
   cache.ampEnvelopeTargetQ8 = targetQ8;

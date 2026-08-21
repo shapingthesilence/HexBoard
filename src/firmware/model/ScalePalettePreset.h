@@ -8,8 +8,10 @@
 struct scaleDef {
   const char* name;
   byte tuning;
-  byte pattern[MAX_SCALE_DIVISIONS];
+  const byte* pattern;
 };
+
+constexpr size_t SCALE_MEMBERSHIP_BYTES = (MAX_SCALE_DIVISIONS + 7) / 8;
 
 constexpr byte VALUE_BLACK = 0;
 constexpr byte VALUE_LOW = 80;
@@ -58,18 +60,20 @@ public:
 
 class paletteDef {
 public:
-  colorDef swatch[MAX_SCALE_DIVISIONS];  // the different colors used in this palette
-  byte colorNum[MAX_SCALE_DIVISIONS];    // map key (c,d...) to swatches
-  colorDef getColor(byte givenStepFromC) {
+  const colorDef* swatch;
+  const byte* colorNum;
+  uint16_t cycleLength;
+  colorDef getColor(uint16_t givenStepFromC) const {
+    givenStepFromC %= cycleLength;
     return swatch[colorNum[givenStepFromC] - 1];
   }
-  float getHue(byte givenStepFromC) {
+  float getHue(uint16_t givenStepFromC) const {
     return getColor(givenStepFromC).hue;
   }
-  byte getSat(byte givenStepFromC) {
+  byte getSat(uint16_t givenStepFromC) const {
     return getColor(givenStepFromC).sat;
   }
-  byte getVal(byte givenStepFromC) {
+  byte getVal(uint16_t givenStepFromC) const {
     return getColor(givenStepFromC).val;
   }
 };
@@ -78,11 +82,67 @@ extern const scaleDef scaleOptions[];
 extern const byte scaleCount;
 extern paletteDef palette[];
 
-extern bool userGeometryRuntimeActive;
-extern bool userGeometryRuntimeScaleActive;
-extern tuningDef userGeometryRuntimeTuning;
-extern layoutDef userGeometryRuntimeLayout;
-extern scaleDef userGeometryRuntimeScale;
+constexpr uint8_t USER_GEOMETRY_MAX_CHORD_ACTIONS = 16;
+constexpr uint8_t USER_GEOMETRY_MAX_CHORD_TONES = 4;
+
+struct UserGeometryChordAction {
+  bool active = false;
+  uint8_t id = 0;
+  uint8_t pitchMode = 0;
+  uint8_t midiChannel = 0;
+  uint8_t toneCount = 0;
+  int16_t intervals[USER_GEOMETRY_MAX_CHORD_TONES] = {};
+};
+
+struct UserGeometryRuntimeState {
+  bool active = false;
+  bool scaleActive = false;
+  bool paletteActive = false;
+  bool tuningObjectSelected = false;
+  bool layoutObjectSelected = false;
+  bool scaleObjectSelected = false;
+  uint8_t tuningObjectId[16] = {};
+  uint8_t layoutObjectId[16] = {};
+  uint8_t scaleObjectId[16] = {};
+  bool centsTableActive = false;
+  bool exactEdoActive = false;
+  uint8_t tuningKind = 0;
+  uint16_t cycleLength = 0;
+  uint16_t centsTableLength = 0;
+  std::vector<float> centsTable;
+  float periodCents = 1200.0f;
+  uint16_t referenceDegree = 0;
+  uint16_t defaultKeyDegree = 0;
+  uint8_t referenceMidiNote = 69;
+  float referenceHz = 440.0f;
+  std::vector<uint8_t> keyLabels;
+  tuningDef tuning = { "User Tuning", 12, 100.0f, -9 };
+  layoutDef layout = { "User Layout", false, 65, 1, -2, TUNING_12EDO };
+  scaleDef scale = { "User Scale", TUNING_12EDO, nullptr };
+  uint8_t scaleIncluded[SCALE_MEMBERSHIP_BYTES] = {};
+  std::vector<uint8_t> degreeColors;
+  bool buttonDisabled[LED_COUNT] = {};
+  uint8_t buttonRole[LED_COUNT] = {};
+  bool buttonRoleOverride[LED_COUNT] = {};
+  bool buttonNoteOverride[LED_COUNT] = {};
+  bool buttonColorActive[LED_COUNT] = {};
+  int16_t buttonStepsFromC[LED_COUNT] = {};
+  colorDef buttonColor[LED_COUNT] = {};
+  uint8_t deviceRotation = DEVICE_ROTATION_0;
+  int16_t layoutCenterStepsFromC = 0;
+  uint8_t buttonOutputMode[LED_COUNT] = {};
+  uint8_t buttonMidiNote[LED_COUNT] = {};
+  uint8_t buttonMidiChannel[LED_COUNT] = {};
+  uint8_t buttonChordActionId[LED_COUNT] = {};
+  uint8_t buttonChordRootMidiNote[LED_COUNT] = {};
+  UserGeometryChordAction chordActions[USER_GEOMETRY_MAX_CHORD_ACTIONS] = {};
+};
+
+extern UserGeometryRuntimeState userGeometryRuntime;
+
+bool userGeometryScaleIncludes(uint16_t degree);
+colorDef userGeometryDegreeColor(uint16_t degree, uint16_t cycleLength);
+void formatTuningDegreeLabel(const tuningDef& tuning, uint16_t degree, char* output, size_t outputLength);
 
 class presetDef {
 public:
@@ -90,23 +150,23 @@ public:
   int tuningIndex;  // instead of using pointers, i chose to store index value of each option, to be saved to a .pref or .ini or something
   int layoutIndex;
   int scaleIndex;
-  int keyStepsFromA;  // what key the scale is in, where zero equals A.
+  int keyStepsFromA;  // Legacy tunings: steps from A. User geometry: direct key degree.
   int transpose;
   const tuningDef& tuning() const {
-    if (userGeometryRuntimeActive) {
-      return userGeometryRuntimeTuning;
+    if (userGeometryRuntime.active) {
+      return userGeometryRuntime.tuning;
     }
     return tuningOptions[tuningIndex];
   }
   const layoutDef& layout() const {
-    if (userGeometryRuntimeActive) {
-      return userGeometryRuntimeLayout;
+    if (userGeometryRuntime.active) {
+      return userGeometryRuntime.layout;
     }
     return layoutOptions[layoutIndex];
   }
   const scaleDef& scale() const {
-    if (userGeometryRuntimeActive && userGeometryRuntimeScaleActive) {
-      return userGeometryRuntimeScale;
+    if (userGeometryRuntime.active && userGeometryRuntime.scaleActive) {
+      return userGeometryRuntime.scale;
     }
     return scaleOptions[scaleIndex];
   }
@@ -122,6 +182,9 @@ public:
     }
   }
   int keyStepsFromC() {
+    if (userGeometryRuntime.active) {
+      return -keyStepsFromA;
+    }
     return tuning().spanCtoA() - keyStepsFromA;
   }
   int pitchRelToA4(int givenStepsFromC) {

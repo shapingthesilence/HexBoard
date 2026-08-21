@@ -120,11 +120,10 @@ void notifyAuditionDisplayStart() {
     return;
   }
 
-  if (noteDisplayEnabled() && (screenSaverOn || sequencerIdleDisplayBlanked())) {
-    setNoteOverlayTemporaryWake(true);
+  if (noteDisplayEnabled()) {
+    schedulePlayedNotesOverlayUpdate(screenSaverOn || sequencerIdleDisplayBlanked());
   }
   noteOverlayReleaseGraceUntil = 0;
-  noteOverlayDirty = true;
 }
 
 void notifyAuditionDisplayStop() {
@@ -133,7 +132,9 @@ void notifyAuditionDisplayStop() {
   }
 
   noteOverlayReleaseGraceUntil = runTime + DISPLAYED_NOTES_RELEASE_GRACE_MICROS;
-  noteOverlayDirty = true;
+  if (noteDisplayEnabled()) {
+    schedulePlayedNotesOverlayUpdate(false);
+  }
 }
 
 }  // namespace

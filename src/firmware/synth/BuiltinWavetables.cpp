@@ -700,10 +700,13 @@ const BuiltinSynthWavetableDefinition* synthBuiltinWavetableAt(size_t index) {
   return &builtinSynthWavetables[index];
 }
 
-int findBuiltinSynthWavetable(const char* folderPath, const char* name) {
+int findBuiltinSynthWavetableByName(const char* name) {
+  if (!name || !name[0]) {
+    return -1;
+  }
   for (size_t i = 0; i < SYNTH_BUILTIN_WAVETABLE_COUNT; ++i) {
     const BuiltinSynthWavetableDefinition& table = builtinSynthWavetables[i];
-    if (strcmp(folderPath, table.folderPath) == 0 && strcmp(table.name, name) == 0) {
+    if (strcmp(table.name, name) == 0) {
       return static_cast<int>(i);
     }
   }

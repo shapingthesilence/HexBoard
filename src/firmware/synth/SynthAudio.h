@@ -11,6 +11,7 @@ struct SynthPreviewNoteHandle {
 };
 
 void updateEnvelopeParamsFromSettings();
+void syncSynthSettingsToRuntime();
 void updateEffectEnvelopeParamsFromSettings();
 void updateEffectEnvelopeParamsFromSettings(uint8_t envelopeIndex);
 void updateArpeggiatorTiming();
@@ -26,6 +27,9 @@ bool synthWavetableReferenceForWaveform(byte waveform, const char*& folderPath, 
 bool decodeStoredBuzzerEnabled(uint8_t storedValue);
 byte runtimeAudioDestination(bool buzzerEnabled);
 void syncAudioDestinationToRuntime();
+void RAM_FUNC(setSynthMasterVolumeControl)(byte value);
+void setHeadphoneVolumeCap(byte value);
+void setPiezoVolumeCap(byte value);
 void setCurrentSynthWavetableReference(const char* folderPath, const char* name);
 void setActiveSynthWaveFrameCount(uint8_t frameCount);
 void setupAudioDma();

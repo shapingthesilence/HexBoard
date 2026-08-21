@@ -1,0 +1,49 @@
+{
+  "format": "hexboard.synthPreset.v1",
+  "preset": {
+    "objectId": "d500f73ea8b6c3677eff095287cde61b",
+    "name": "Oowaah Vox",
+    "folderPath": "Pads",
+    "wavetable": {
+      "name": "Vowels",
+      "folderPath": "/"
+    },
+    "favorite": false,
+    "values": {
+      "PlaybackMode": 3,
+      "Waveform": 27,
+      "SynthDrive": 0,
+      "SynthModTarget": 5,
+      "SynthModAmount": 127,
+      "SynthVibratoSpeed": 4,
+      "ArpeggiatorDivision": 32,
+      "SynthBPM": 120,
+      "EnvelopeAttackIndex": 2,
+      "EnvelopeHoldIndex": 0,
+      "EnvelopeDecayIndex": 13,
+      "EnvelopeSustainLevel": 96,
+      "EnvelopeReleaseIndex": 13,
+      "EffectEnvelopeTarget": 3,
+      "EffectEnvelopeAmount": 148,
+      "EffectEnvelopeAttackIndex": 0,
+      "EffectEnvelopeHoldIndex": 0,
+      "EffectEnvelopeDecayIndex": 11,
+      "EffectEnvelopeSustainLevel": 0,
+      "EffectEnvelopeReleaseIndex": 5,
+      "EffectEnvelope2Target": 1,
+      "EffectEnvelope2Amount": 106,
+      "EffectEnvelope2AttackIndex": 0,
+      "EffectEnvelope2HoldIndex": 14,
+      "EffectEnvelope2DecayIndex": 13,
+      "EffectEnvelope2SustainLevel": 13,
+      "EffectEnvelope2ReleaseIndex": 11,
+      "SynthPortamentoTimeIndex": 0,
+      "ArpeggiatorDirection": 0,
+      "SynthWavetablePosition": 93,
+      "SynthLfoTarget": 5,
+      "SynthLfoAmount": 140,
+      "SynthLfoWave": 5,
+      "SynthLfoSpeed": 1
+    }
+  }
+}

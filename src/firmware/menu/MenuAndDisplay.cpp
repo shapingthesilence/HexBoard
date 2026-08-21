@@ -19,6 +19,7 @@
 #include "../sequencer/SequencerPlaybackSettings.h"
 #include "../synth/SynthAudio.h"
 #include "CommandWheelOverlay.h"
+#include "DisplayRefreshPolicy.h"
 #include "GeometryMenu.h"
 #include "MenuAndDisplay.h"
 #include "PlayedNotesOverlay.h"
@@ -46,8 +47,9 @@
 #define MENU_PAGE_SCREEN_TOP_OFFSET 18
 #define MENU_HEADER_DIVIDER_Y (MENU_PAGE_SCREEN_TOP_OFFSET - 3)
 #define MENU_VALUES_LEFT_OFFSET 78
-// Create an instance of the U8g2 graphics library.
-U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2(U8G2_R2, /* reset=*/U8X8_PIN_NONE);
+// Create an instance of the U8g2 graphics library with a coalescing DMA-backed
+// framebuffer transport.
+HexBoardDisplay u8g2(U8G2_R2, /* reset=*/U8X8_PIN_NONE);
 // Create menu object of class GEM_u8g2. Supply its constructor with reference to u8g2 object we created earlier
 GEM_u8g2 menu(
   u8g2, GEM_POINTER_ROW, GEM_ITEMS_COUNT_AUTO,
@@ -62,6 +64,11 @@ bool flashSaveScreenClosePending = false;
 uint64_t flashSaveSavedScreenTime = 0;
 uint64_t flashSaveScreenVisibleUntil = 0;
 constexpr uint64_t FLASH_SAVE_SCREEN_MAX_VISIBLE_MICROS = 700000ULL;
+bool missingWavetableNoticeVisible = false;
+bool missingWavetableNoticeWokeDisplayFromSleep = false;
+uint64_t missingWavetableNoticeSavedScreenTime = 0;
+uint64_t missingWavetableNoticeVisibleUntil = 0;
+constexpr uint64_t MISSING_WAVETABLE_NOTICE_MICROS = 2000000ULL;
 
 constexpr uint8_t VIRTUAL_LIST_LAUNCHER_VISIBLE_CHARS = 19;
 constexpr uint64_t VIRTUAL_LIST_LAUNCHER_SCROLL_START_DELAY_MICROS = 1500000ULL;
@@ -75,10 +82,13 @@ uint16_t virtualListLauncherScrollOffset = 0;
 bool virtualListLauncherScrollApplied = false;
 char virtualListLauncherValueBuffer[SYNTH_WAVETABLE_MENU_LABEL_LENGTH] = {};
 
-constexpr uint8_t PRESET_SYNC_PROGRESS_REDRAW_STEP = 2;
+constexpr uint8_t MODAL_SCREEN_FOOTER_BASELINE = 112;
 uint8_t presetSyncDisplayedObjectType = 0xFF;
 uint8_t presetSyncDisplayedDirection = 0;
 uint8_t presetSyncDisplayedProgress = 0xFF;
+uint16_t presetSyncDisplayedTransferId = 0;
+uint32_t presetSyncDisplayedCompletedBytes = UINT32_MAX;
+uint64_t presetSyncDisplayLastRefreshAt = 0;
 
 void drawCenteredMenuHeaderTitle(const char* title) {
   if (!title) {
@@ -102,14 +112,14 @@ void wakeDisplayFromScreensaver() {
 void enterDisplayScreensaver() {
   screenSaverOn = true;
   u8g2.setContrast(CONTRAST_SCREENSAVER);
-  u8g2.clear();
+  u8g2.clearBuffer();
   u8g2.setPowerSave(1);
 }
 
 void wakeDelegatedControlScreenForInput() {
   screenTime = 0;
   wakeDisplayFromScreensaver();
-  delegatedDisplayDirty = true;
+  delegatedControlState.displayDirty = true;
 }
 
 void drawCenteredDelegatedText(const char* text, int y) {
@@ -122,14 +132,14 @@ void drawCenteredDelegatedText(const char* text, int y) {
 }
 
 void drawDelegatedControlScreen() {
-  if (!delegatedControl) {
+  if (!delegatedControlState.active) {
     return;
   }
-  if (delegatedDisplayWakeRequested) {
+  if (delegatedControlState.displayWakeRequested) {
     wakeDelegatedControlScreenForInput();
-    delegatedDisplayWakeRequested = false;
+    delegatedControlState.displayWakeRequested = false;
   }
-  if (screenSaverOn || !delegatedDisplayDirty) {
+  if (screenSaverOn || !delegatedControlState.displayDirty) {
     return;
   }
 
@@ -142,13 +152,21 @@ void drawDelegatedControlScreen() {
 
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x13_tf);
-  drawCenteredDelegatedText("Delegated", 24);
-  drawCenteredDelegatedText("Control Mode", 40);
-  drawCenteredDelegatedText(delegatedAppName, 66);
-  drawCenteredDelegatedText("Hold encoder", 106);
-  drawCenteredDelegatedText("5 sec to exit", 122);
+  char delegatedAppName[DELEGATED_APP_NAME_MAX + 1] = {};
+  for (size_t i = 0; i < sizeof(delegatedAppName); ++i) {
+    delegatedAppName[i] = delegatedControlState.appName[i].load(std::memory_order_relaxed);
+    if (delegatedAppName[i] == '\0') {
+      break;
+    }
+  }
+  delegatedAppName[DELEGATED_APP_NAME_MAX] = '\0';
+  drawCenteredDelegatedText("Delegated", 20);
+  drawCenteredDelegatedText("Control Mode", 36);
+  drawCenteredDelegatedText(delegatedAppName, 62);
+  drawCenteredDelegatedText("Hold encoder", 94);
+  drawCenteredDelegatedText("5 sec to exit", MODAL_SCREEN_FOOTER_BASELINE);
   u8g2.sendBuffer();
-  delegatedDisplayDirty = false;
+  delegatedControlState.displayDirty = false;
 }
 
 void restoreInteractiveMenuDisplay() {
@@ -161,10 +179,10 @@ void restoreInteractiveMenuDisplay() {
 }
 
 void restoreMenuAfterDelegatedControl() {
-  if (!delegatedReturnToMenuRequested) {
+  if (!delegatedControlState.returnToMenuRequested) {
     return;
   }
-  delegatedReturnToMenuRequested = false;
+  delegatedControlState.returnToMenuRequested = false;
   if (!screenSaverOn) {
     restoreInteractiveMenuDisplay();
   }
@@ -177,7 +195,7 @@ const char* presetSyncTransferObjectLabel(uint8_t objectType) {
     case PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE:
       return "Wavetable";
     case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE:
-      return "Geometry";
+      return "Tuning bundle";
     case PRESET_SYNC_OBJECT_TYPE_GEOMETRY_ORDER:
       return "Geometry order";
     case PRESET_SYNC_OBJECT_TYPE_USER_TUNING:
@@ -199,6 +217,9 @@ void resetPresetSyncTransferDisplayState() {
   presetSyncDisplayedObjectType = 0xFF;
   presetSyncDisplayedDirection = 0;
   presetSyncDisplayedProgress = 0xFF;
+  presetSyncDisplayedTransferId = 0;
+  presetSyncDisplayedCompletedBytes = UINT32_MAX;
+  presetSyncDisplayLastRefreshAt = 0;
 }
 
 void drawPresetSyncTransferScreen(bool forceRedraw = false) {
@@ -215,38 +236,48 @@ void drawPresetSyncTransferScreen(bool forceRedraw = false) {
 
   uint8_t objectType = 0;
   uint8_t direction = 0;
+  uint16_t transferId = 0;
   uint32_t completedBytes = 0;
   uint32_t totalBytes = 0;
   if (presetSyncWriteTransfer.active) {
     objectType = presetSyncWriteTransfer.objectType;
     direction = 1;
+    transferId = presetSyncWriteTransfer.transferId;
     completedBytes = presetSyncWriteTransfer.receivedBytes;
     totalBytes = presetSyncWriteTransfer.rawByteLength;
   } else if (presetSyncReadTransfer.active) {
     objectType = presetSyncReadTransfer.objectType;
     direction = 2;
+    transferId = presetSyncReadTransfer.transferId;
     completedBytes = presetSyncReadTransfer.sentBytes;
     totalBytes = presetSyncReadTransfer.rawByteLength;
   }
 
   if (direction != 0 && totalBytes > 0) {
+    const uint64_t now = readClock();
     uint8_t progress = static_cast<uint8_t>(std::min<uint64_t>(
       100,
       (static_cast<uint64_t>(completedBytes) * 100) / totalBytes));
-    uint8_t displayedProgress = progress == 100
-      ? 100
-      : (progress / PRESET_SYNC_PROGRESS_REDRAW_STEP) * PRESET_SYNC_PROGRESS_REDRAW_STEP;
+    bool sameTransfer = presetSyncTransferScreenVisible
+                        && objectType == presetSyncDisplayedObjectType
+                        && direction == presetSyncDisplayedDirection
+                        && transferId == presetSyncDisplayedTransferId;
+    bool stateChanged = progress != presetSyncDisplayedProgress
+                        || completedBytes != presetSyncDisplayedCompletedBytes;
     if (!forceRedraw
-        && presetSyncTransferScreenVisible
-        && objectType == presetSyncDisplayedObjectType
-        && direction == presetSyncDisplayedDirection
-        && displayedProgress == presetSyncDisplayedProgress) {
+        && sameTransfer
+        && (!stateChanged
+            || (progress < 100
+                && !displayRefreshDue(now, presetSyncDisplayLastRefreshAt)))) {
       return;
     }
 
     presetSyncDisplayedObjectType = objectType;
     presetSyncDisplayedDirection = direction;
-    presetSyncDisplayedProgress = displayedProgress;
+    presetSyncDisplayedProgress = progress;
+    presetSyncDisplayedTransferId = transferId;
+    presetSyncDisplayedCompletedBytes = completedBytes;
+    presetSyncDisplayLastRefreshAt = now;
 
     char titleText[28] = {};
     char progressText[8] = {};
@@ -257,22 +288,14 @@ void drawPresetSyncTransferScreen(bool forceRedraw = false) {
              presetSyncTransferObjectLabel(objectType),
              direction == 1 ? "upload" : "download");
     snprintf(progressText, sizeof(progressText), "%u%%", progress);
-    if (totalBytes >= 1024) {
-      snprintf(byteText,
-               sizeof(byteText),
-               "%lu / %lu KB",
-               static_cast<unsigned long>(completedBytes / 1024),
-               static_cast<unsigned long>((totalBytes + 1023) / 1024));
-    } else {
-      snprintf(byteText,
-               sizeof(byteText),
-               "%lu / %lu bytes",
-               static_cast<unsigned long>(completedBytes),
-               static_cast<unsigned long>(totalBytes));
-    }
+    snprintf(byteText,
+             sizeof(byteText),
+             "%lu / %lu bytes",
+             static_cast<unsigned long>(completedBytes),
+             static_cast<unsigned long>(totalBytes));
 
     constexpr uint8_t barX = 8;
-    constexpr uint8_t barY = 47;
+    constexpr uint8_t barY = 43;
     constexpr uint8_t barWidth = 112;
     constexpr uint8_t barHeight = 14;
     constexpr uint8_t barInnerWidth = barWidth - 4;
@@ -281,16 +304,19 @@ void drawPresetSyncTransferScreen(bool forceRedraw = false) {
 
     u8g2.clearBuffer();
     u8g2.setFont(u8g2_font_6x13_tf);
-    drawCenteredDelegatedText("MIDI SysEx", 16);
-    drawCenteredDelegatedText(titleText, 34);
+    drawCenteredDelegatedText("MIDI SysEx", 15);
+    drawCenteredDelegatedText(titleText, 31);
     u8g2.drawFrame(barX, barY, barWidth, barHeight);
     if (fillWidth > 0) {
       u8g2.drawBox(barX + 2, barY + 2, fillWidth, barHeight - 4);
     }
-    drawCenteredDelegatedText(progressText, 79);
-    drawCenteredDelegatedText(byteText, 98);
-    drawCenteredDelegatedText("Please wait...", 119);
-    u8g2.sendBuffer();
+    drawCenteredDelegatedText(progressText, 73);
+    drawCenteredDelegatedText(byteText, 91);
+    drawCenteredDelegatedText("Please wait...", MODAL_SCREEN_FOOTER_BASELINE);
+    // Preset-sync owns the UI while active, so drain the selected snapshot as
+    // one bounded presentation instead of exposing it page-by-page over many
+    // transfer-service iterations.
+    u8g2.sendBufferAndWait();
     presetSyncTransferScreenVisible = true;
     return;
   }
@@ -314,13 +340,13 @@ void drawPresetSyncTransferScreen(bool forceRedraw = false) {
 
   u8g2.clearBuffer();
   u8g2.setFont(u8g2_font_6x13_tf);
-  u8g2.drawStr(8, 18, "MIDI SysEx");
-  u8g2.drawStr(8, 34, "Transfer");
-  u8g2.drawStr(8, 58, "Preset sync active");
-  u8g2.drawStr(8, 76, frameText);
-  u8g2.drawStr(8, 94, messageText);
-  u8g2.drawStr(8, 116, "Please wait...");
-  u8g2.sendBuffer();
+  u8g2.drawStr(8, 16, "MIDI SysEx");
+  u8g2.drawStr(8, 32, "Transfer");
+  u8g2.drawStr(8, 54, "Preset sync active");
+  u8g2.drawStr(8, 72, frameText);
+  u8g2.drawStr(8, 90, messageText);
+  u8g2.drawStr(8, MODAL_SCREEN_FOOTER_BASELINE, "Please wait...");
+  u8g2.sendBufferAndWait();
   presetSyncTransferScreenVisible = true;
 }
 
@@ -333,8 +359,8 @@ void closePresetSyncTransferScreen() {
   screenTime = presetSyncTransferSavedScreenTime;
   if (presetSyncTransferScreenWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
     enterDisplayScreensaver();
-  } else if (delegatedControl) {
-    delegatedDisplayDirty = true;
+  } else if (delegatedControlState.active) {
+    delegatedControlState.displayDirty = true;
     drawDelegatedControlScreen();
   } else {
     restoreInteractiveMenuDisplay();
@@ -380,8 +406,8 @@ static void closeFlashSaveScreenNow() {
     enterDisplayScreensaver();
   } else if (presetSyncTransferActive) {
     drawPresetSyncTransferScreen(true);
-  } else if (delegatedControl) {
-    delegatedDisplayDirty = true;
+  } else if (delegatedControlState.active) {
+    delegatedControlState.displayDirty = true;
     drawDelegatedControlScreen();
   } else {
     restoreInteractiveMenuDisplay();
@@ -419,45 +445,91 @@ void serviceFlashSaveScreen() {
   }
 }
 
+void showMissingWavetableNotice(const char* wavetableName) {
+  dismissFlashSaveScreenForMenuInput();
+  dismissCommandWheelOverlay();
+  missingWavetableNoticeWokeDisplayFromSleep = screenSaverOn;
+  missingWavetableNoticeSavedScreenTime = screenTime;
+  missingWavetableNoticeVisibleUntil = readClock() + MISSING_WAVETABLE_NOTICE_MICROS;
+  wakeDisplayFromScreensaver();
+  noteOverlayVisible = false;
+  noteBadgeVisible = false;
+  noteOverlayTemporaryWake = false;
+  noteOverlayWokeDisplayFromSleep = false;
+
+  const char* name = wavetableName && wavetableName[0] ? wavetableName : "Unknown";
+  size_t nameLength = strnlen(name, SYNTH_WAVETABLE_NAME_LENGTH - 1);
+  char firstNameLine[22] = {};
+  char secondNameLine[18] = {};
+  if (nameLength <= 18) {
+    snprintf(firstNameLine, sizeof(firstNameLine), "\"%s\"", name);
+  } else {
+    snprintf(firstNameLine, sizeof(firstNameLine), "\"%.*s", 18, name);
+    snprintf(secondNameLine, sizeof(secondNameLine), "%.*s\"", 13, name + 18);
+  }
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_6x13_tf);
+  drawCenteredDelegatedText("Upload wavetable", 17);
+  drawCenteredDelegatedText(firstNameLine, secondNameLine[0] ? 39 : 46);
+  if (secondNameLine[0]) {
+    drawCenteredDelegatedText(secondNameLine, 56);
+  }
+  drawCenteredDelegatedText("with HexBoard Sync", 80);
+  drawCenteredDelegatedText("Using Basic Shapes", 104);
+  u8g2.sendBuffer();
+  missingWavetableNoticeVisible = true;
+}
+
+bool serviceMissingWavetableNotice() {
+  if (!missingWavetableNoticeVisible) {
+    return false;
+  }
+  if (readClock() < missingWavetableNoticeVisibleUntil) {
+    return true;
+  }
+
+  missingWavetableNoticeVisible = false;
+  missingWavetableNoticeVisibleUntil = 0;
+  screenTime = missingWavetableNoticeSavedScreenTime;
+  if (missingWavetableNoticeWokeDisplayFromSleep || screenTime > screenSaverTimeout) {
+    enterDisplayScreensaver();
+  } else if (delegatedControlState.active) {
+    delegatedControlState.displayDirty = true;
+    drawDelegatedControlScreen();
+  } else {
+    restoreInteractiveMenuDisplay();
+  }
+  missingWavetableNoticeWokeDisplayFromSleep = false;
+  missingWavetableNoticeSavedScreenTime = 0;
+  return false;
+}
+
 bool servicePresetSyncTransfer() {
   if (!presetSyncTransferActive) {
     return false;
   }
 
   drawPresetSyncTransferScreen();
-  bool pausedMainLoop = false;
-  while (presetSyncTransferActive) {
-    pausedMainLoop = true;
-    bool processed = processIncomingMIDI();
-    if (processed) {
-      drawPresetSyncTransferScreen();
-    }
-    uint64_t now = readClock();
-    if (now >= presetSyncTransferDeadline) {
-      sendToLog("Preset-sync SysEx transfer window timed out.");
-      presetSyncCancelReadTransfer();
-      presetSyncCancelWriteTransfer();
-      presetSyncTransferActive = false;
-      break;
-    }
-    if ((now - presetSyncTransferLastActivity) >= PRESET_SYNC_TRANSFER_IDLE_MICROS) {
-      if (presetSyncReadTransfer.active || presetSyncWriteTransfer.active) {
-        delayMicroseconds(100);
-        continue;
-      } else {
-        presetSyncTransferActive = false;
-        break;
-      }
-    }
-    if (!processed) {
-      delayMicroseconds(100);
-    }
+  if (processIncomingMIDI()) {
+    drawPresetSyncTransferScreen();
   }
 
+  uint64_t now = readClock();
+  if (now >= presetSyncTransferDeadline) {
+    sendToLog("Preset-sync SysEx transfer window timed out.");
+    presetSyncCancelReadTransfer();
+    presetSyncCancelWriteTransfer();
+    presetSyncTransferActive = false;
+  } else if ((now - presetSyncTransferLastActivity) >= PRESET_SYNC_TRANSFER_IDLE_MICROS
+             && !presetSyncReadTransfer.active
+             && !presetSyncWriteTransfer.active) {
+    presetSyncTransferActive = false;
+  }
   if (!presetSyncTransferActive) {
     closePresetSyncTransferScreen();
   }
-  return pausedMainLoop;
+  return presetSyncTransferActive;
 }
 
 /*
@@ -602,7 +674,7 @@ void rebootToBootloader();
     These GEMItems are read-only display items.
     They do not change any variable or run any procedure.
   */
-GEMItem menuItemVersion("Firmware 2.0 beta 3");
+GEMItem menuItemVersion("Firmware 2.0 beta 4");
 SelectOptionByte optionByteHardware[] = {
   { "V1.1", HARDWARE_UNKNOWN }, { "V1.1", HARDWARE_V1_1 }, { "V1.2", HARDWARE_V1_2 }
 };
@@ -614,8 +686,7 @@ GEMItem menuItemHardware("Hardware", Hardware_Version, selectHardware, GEM_READO
   */
 GEMItem menuItemUSBBootloader("Update Firmware", rebootToBootloader);
 
-void syncSettingsToRuntime();
-void syncSynthSettingsToRuntime();
+void syncSettingsToRuntime(bool redrawMenu);
 void refreshMenuChoicesForCurrentTuning();
 void rebuildRuntimeStateFromCurrentSelection();
 void updateEditorMenuVisibility();
@@ -643,19 +714,52 @@ void loadProfileMenu(GEMCallbackData callbackData) {
   menuHome();
 }
 
-class RuntimeKeySelect : public GEMSelect {
+class RuntimeKeySpinner : public GEMSpinner {
 public:
-  RuntimeKeySelect(byte length, SelectOptionInt* options)
-    : GEMSelect(length, options) {}
+  RuntimeKeySpinner()
+    : GEMSpinner(GEMSpinnerBoundariesInt{ 1, -9, 2 }, GEM_LOOP) {}
 
-  void setLength(byte length) {
-    _length = length;
+  void setRange(int minimum, int maximum) {
+    _boundaries.boundariesInt = { 1, minimum, maximum };
+    _length = maximum - minimum + 1;
   }
 };
 
-SelectOptionInt currentKeyChoices[MAX_SCALE_DIVISIONS] = {};
-RuntimeKeySelect selectCurrentKey(MAX_SCALE_DIVISIONS, currentKeyChoices);
+class RuntimeKeySelect : public GEMSelect {
+public:
+  RuntimeKeySelect()
+    : GEMSelect(1, static_cast<SelectOptionInt*>(nullptr)) {}
+
+  void setOptions(byte length, SelectOptionInt* options) {
+    _length = length;
+    _options = options;
+  }
+};
+
+RuntimeKeySpinner spinnerCurrentKey;
+RuntimeKeySelect selectCurrentKey;
+std::vector<SelectOptionInt> currentKeyChoices;
+std::vector<std::array<char, TUNING_KEY_LABEL_LENGTH>> currentKeyChoiceLabels;
 GEMItem menuItemMainKey("Key", current.keyStepsFromA, selectCurrentKey, changeKey);
+GEMItem menuItemMainKeyNumeric("Key", current.keyStepsFromA, spinnerCurrentKey, changeKey);
+
+template <typename T, size_t Capacity>
+class StaticObjectPool {
+public:
+  template <typename... Args>
+  T& construct(size_t index, Args&&... args) {
+    return *new (&storage_[index]) T(std::forward<Args>(args)...);
+  }
+
+private:
+  alignas(T) unsigned char storage_[Capacity][sizeof(T)] = {};
+};
+
+StaticObjectPool<GEMItem, PROFILE_COUNT> loadProfileItemPool;
+StaticObjectPool<GEMItem, PROFILE_COUNT> saveProfileItemPool;
+StaticObjectPool<GEMItem, 1> storageSummaryItemPool;
+StaticObjectPool<GEMItem, STORAGE_HEALTH_MAX_ISSUES> storagePathItemPool;
+StaticObjectPool<GEMItem, STORAGE_HEALTH_MAX_ISSUES> storageReasonItemPool;
 GEMItem* menuItemSaveProfile[PROFILE_COUNT];
 GEMItem* menuItemLoadProfile[PROFILE_COUNT];
 GEMItem* menuItemStorageSummary = nullptr;
@@ -666,30 +770,7 @@ char storageStatusReasonLabels[STORAGE_HEALTH_MAX_ISSUES][20] = {};
 char saveProfileLabels[PROFILE_COUNT][24];
 char loadProfileLabels[PROFILE_COUNT][24];
 
-/*
-    We are now creating some GEMItems that let you
-    1) select a value from a list of options,
-    2) update a given variable based on what was chosen,
-    3) if necessary, run a procedure as well once the value's chosen.
-
-    The list of options is in the form of a 2-d array.
-    There are A arrays, one for each option.
-    Each is 2 entries long. First entry is the label
-    for that choice, second entry is the value associated.
-
-    These arrays go into a typedef that depends on the type of the variable
-    being selected (i.e. Byte for small positive integers; Int for
-    sign-dependent and large integers).
-
-    Then that typeDef goes into a GEMSelect object, with parameters
-    equal to the number of entries in the array, and the storage size of one element
-    in the array. The GEMSelect object is basically just a pointer to the
-    array of choices. The GEMItem then takes the GEMSelect pointer as a parameter.
-
-    The fact that GEM expects pointers and references makes it tricky
-    to work with if you are new to C++.
-  */
-// SETTINGS STEP 4 - Now add the menu item starting with a callback as below.
+// Persistent menu items bind a runtime value, choices, and save callback.
 PersistentCallbackInfo callbackInfoMPE = {
   static_cast<uint8_t>(SettingKey::MPEpitchBend),
   reinterpret_cast<void*>(&MPEpitchBendSemis),
@@ -844,9 +925,9 @@ void applyActiveSynthOutputVolume(byte value) {
   value = normalizeSynthOutputVolumeCap(value);
   activeSynthOutputVolumeCap = value;
   if (activeSynthOutputVolumeSettingKey() == SettingKey::PiezoVolumeCap) {
-    piezoVolumeCap = value;
+    setPiezoVolumeCap(value);
   } else {
-    headphoneVolumeCap = value;
+    setHeadphoneVolumeCap(value);
   }
 }
 
@@ -2410,70 +2491,7 @@ void applyGeometryRuntimeFromStorage() {
   applyScale();
 }
 
-// --------------------------------------------------------
-// SETTINGS STEP 3 - Callback to sync settings variables on power-up
-// --------------------------------------------------------
-void syncSynthSettingsToRuntime() {
-  playbackMode = normalizeSynthPlaybackMode(settingValue(SettingKey::PlaybackMode));
-  settings[static_cast<uint8_t>(SettingKey::PlaybackMode)] = playbackMode;
-  currWave = settingValue(SettingKey::Waveform);
-  synthWavetablePosition = settingValue(SettingKey::SynthWavetablePosition);
-  if (!currentSynthWavetableReferenceValid) {
-    selectSynthWavetableForWaveform(currWave, true);
-    settings[static_cast<uint8_t>(SettingKey::SynthWavetablePosition)] = synthWavetablePosition;
-  }
-  loadSelectedSynthWavetable();
-  updateCurrentSynthWavetableMenuLabel();
-  synthDrive = settingValue(SettingKey::SynthDrive);
-  if (synthDrive > SYNTH_DRIVE_DIRTY) {
-    synthDrive = SYNTH_DRIVE_OFF;
-  }
-  synthModTarget = settingValue(SettingKey::SynthModTarget);
-  synthModAmount = settingValue(SettingKey::SynthModAmount);
-  synthVibratoSpeed = settingValue(SettingKey::SynthVibratoSpeed);
-  synthLfoTarget = settingValue(SettingKey::SynthLfoTarget);
-  synthLfoAmount = settingValue(SettingKey::SynthLfoAmount);
-  synthLfoWave = settingValue(SettingKey::SynthLfoWave);
-  synthLfoSpeed = settingValue(SettingKey::SynthLfoSpeed);
-  arpeggiatorDivision = settingValue(SettingKey::ArpeggiatorDivision);
-  if (arpeggiatorDivision == 0) {
-    arpeggiatorDivision = 1;
-  }
-  arpeggiatorDirection = settingValue(SettingKey::ArpeggiatorDirection);
-  updateArpeggiatorDirection();
-  synthBPM = settingValue(SettingKey::SynthBPM);
-  if (synthBPM == 0) {
-    synthBPM = 1;
-  }
-  synthPortamentoTimeIndex = settingValue(SettingKey::SynthPortamentoTimeIndex);
-  updateSynthPortamentoSettings();
-  envelopeAttackIndex = settingValue(SettingKey::EnvelopeAttackIndex);
-  envelopeHoldIndex = settingValue(SettingKey::EnvelopeHoldIndex);
-  envelopeDecayIndex = settingValue(SettingKey::EnvelopeDecayIndex);
-  envelopeSustainLevel = settingValue(SettingKey::EnvelopeSustainLevel);
-  envelopeReleaseIndex = settingValue(SettingKey::EnvelopeReleaseIndex);
-  effectEnvelopeAttackIndex[0] = settingValue(SettingKey::EffectEnvelopeAttackIndex);
-  effectEnvelopeHoldIndex[0] = settingValue(SettingKey::EffectEnvelopeHoldIndex);
-  effectEnvelopeDecayIndex[0] = settingValue(SettingKey::EffectEnvelopeDecayIndex);
-  effectEnvelopeSustainLevel[0] = settingValue(SettingKey::EffectEnvelopeSustainLevel);
-  effectEnvelopeReleaseIndex[0] = settingValue(SettingKey::EffectEnvelopeReleaseIndex);
-  effectEnvelopeTarget[0] = settingValue(SettingKey::EffectEnvelopeTarget);
-  effectEnvelopeAmount[0] = settingValue(SettingKey::EffectEnvelopeAmount);
-  effectEnvelopeTarget[1] = settingValue(SettingKey::EffectEnvelope2Target);
-  effectEnvelopeAmount[1] = settingValue(SettingKey::EffectEnvelope2Amount);
-  effectEnvelopeAttackIndex[1] = settingValue(SettingKey::EffectEnvelope2AttackIndex);
-  effectEnvelopeHoldIndex[1] = settingValue(SettingKey::EffectEnvelope2HoldIndex);
-  effectEnvelopeDecayIndex[1] = settingValue(SettingKey::EffectEnvelope2DecayIndex);
-  effectEnvelopeSustainLevel[1] = settingValue(SettingKey::EffectEnvelope2SustainLevel);
-  effectEnvelopeReleaseIndex[1] = settingValue(SettingKey::EffectEnvelope2ReleaseIndex);
-  updateSynthModulationParams();
-  updateEnvelopeParamsFromSettings();
-  updateEffectEnvelopeParamsFromSettings();
-  updateArpeggiatorTiming();
-  updateSynthMenuVisibility();
-}
-
-void syncSettingsToRuntime() {
+void syncSettingsToRuntime(bool redrawMenu) {
   rotaryInvertPreference = settingEnabled(SettingKey::RotaryInvert);
   updateEffectiveRotaryInvert();
   autoSave = settingEnabled(SettingKey::AutoSave);
@@ -2506,7 +2524,7 @@ void syncSettingsToRuntime() {
   }
   transposeSteps = decodeBiasedSetting(SettingKey::CurrentTransposeSteps);
   current.transpose = transposeSteps;
-  current.keyStepsFromA = decodeBiasedSetting(SettingKey::CurrentKeyStepsFromA);
+  current.keyStepsFromA = loadCurrentKeyStepsFromSettings();
   layoutRotation = settingValue(SettingKey::LayoutRotation) % 6;
   deviceRotation = settingValue(SettingKey::DeviceRotation) % 4;
   mirrorLeftRight = settingEnabled(SettingKey::MirrorLeftRight);
@@ -2532,8 +2550,8 @@ void syncSettingsToRuntime() {
   syncSynthSettingsToRuntime();
   synthBuzzerEnabled = decodeStoredBuzzerEnabled(settingValue(SettingKey::AudioDestination));
   syncAudioDestinationToRuntime();
-  headphoneVolumeCap = normalizeSynthOutputVolumeCap(settingValue(SettingKey::HeadphoneVolumeCap));
-  piezoVolumeCap = normalizeSynthOutputVolumeCap(settingValue(SettingKey::PiezoVolumeCap));
+  setHeadphoneVolumeCap(normalizeSynthOutputVolumeCap(settingValue(SettingKey::HeadphoneVolumeCap)));
+  setPiezoVolumeCap(normalizeSynthOutputVolumeCap(settingValue(SettingKey::PiezoVolumeCap)));
   settings[static_cast<uint8_t>(SettingKey::HeadphoneVolumeCap)] = headphoneVolumeCap;
   settings[static_cast<uint8_t>(SettingKey::PiezoVolumeCap)] = piezoVolumeCap;
   syncActiveSynthOutputVolumeMenuValue();
@@ -2568,7 +2586,9 @@ void syncSettingsToRuntime() {
   if (programChange > 0) {
     sendProgramChange();
   }
-  menuHome();                    // Refresh main screen to match rotation
+  if (redrawMenu) {
+    menuHome();                  // Refresh main screen to match rotation
+  }
 }
 
 void updateMainMenuDynamicLabels() {
@@ -2722,7 +2742,7 @@ void redrawMenuAfterVirtualListLauncherScroll() {
 
 void serviceVirtualListLauncherLabelScroll() {
   if (virtualListMenuIsActive()
-      || delegatedControl
+      || delegatedControlState.active
       || presetSyncTransferActive
       || flashSaveScreenVisible
       || commandWheelOverlayActive()
@@ -2909,7 +2929,9 @@ void drawBootloaderReadyScreen() {
   drawBootloaderInstructionLine(52, "Copy the ", ".uf2", " file");
   drawBootloaderInstructionLine(76, "to the ", "RPI-RP2", " drive");
   drawCenteredBootloaderLine(100, "on your computer.", false);
-  u8g2.sendBuffer();
+  // This is the one transition where the framebuffer must reach the panel
+  // before control leaves the firmware permanently.
+  u8g2.sendBufferAndWait();
 }
 
 void rebootToBootloader() {
@@ -2928,16 +2950,40 @@ void rebootToBootloader() {
   */
 void showOnlyValidKeyChoices() {
   const tuningDef& tuning = current.tuning();
-  byte cycleLength = tuning.cycleLength;
+  uint16_t cycleLength = tuning.cycleLength;
   if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS) {
     cycleLength = 1;
   }
-  for (byte i = 0; i < cycleLength; ++i) {
-    currentKeyChoices[i].name = tuning.keyChoices[i].name ? tuning.keyChoices[i].name : "";
-    currentKeyChoices[i].val_int = tuning.keyChoices[i].val_int;
+  int minimum = userGeometryRuntime.active ? 0 : tuning.spanCtoA();
+  int maximum = minimum + cycleLength - 1;
+  while (current.keyStepsFromA < minimum) {
+    current.keyStepsFromA += cycleLength;
   }
-  selectCurrentKey.setLength(cycleLength);
-  menuItemMainKey.hide(false);
+  while (current.keyStepsFromA > maximum) {
+    current.keyStepsFromA -= cycleLength;
+  }
+  spinnerCurrentKey.setRange(minimum, maximum);
+  bool useLabelSelector = cycleLength <= UINT8_MAX;
+  if (useLabelSelector) {
+    currentKeyChoices.resize(cycleLength);
+    currentKeyChoiceLabels.resize(cycleLength);
+    for (uint16_t degree = 0; degree < cycleLength; ++degree) {
+      formatTuningDegreeLabel(tuning,
+                              degree,
+                              currentKeyChoiceLabels[degree].data(),
+                              currentKeyChoiceLabels[degree].size());
+      currentKeyChoices[degree] = {
+        currentKeyChoiceLabels[degree].data(),
+        userGeometryRuntime.active ? static_cast<int>(degree) : minimum + static_cast<int>(degree)
+      };
+    }
+    selectCurrentKey.setOptions(static_cast<byte>(cycleLength), currentKeyChoices.data());
+  } else {
+    std::vector<SelectOptionInt>().swap(currentKeyChoices);
+    std::vector<std::array<char, TUNING_KEY_LABEL_LENGTH>>().swap(currentKeyChoiceLabels);
+  }
+  menuItemMainKey.hide(!useLabelSelector);
+  menuItemMainKeyNumeric.hide(useLabelSelector);
   sendToLog("menu: Key choices were updated.");
 }
 
@@ -2947,8 +2993,8 @@ void updateLayoutAndRotate() {
 }
 
 void loadDeviceRotationFromCurrentLayout() {
-  deviceRotation = userGeometryRuntimeActive && userGeometryRuntimeLayoutObjectSelected
-    ? userGeometryRuntimeDeviceRotation % 4
+  deviceRotation = userGeometryRuntime.active && userGeometryRuntime.layoutObjectSelected
+    ? userGeometryRuntime.deviceRotation % 4
     : current.layout().deviceRotation % 4;
   settings[static_cast<uint8_t>(SettingKey::DeviceRotation)] = deviceRotation;
 }
@@ -2979,8 +3025,8 @@ void applyDeviceDisplayRotation() {
     on the scale/key screen.
   */
 void changeKey() {  // when you change the key via the menu
-  // 1) Save to flash (biased by +128):
-  settings[static_cast<uint8_t>(SettingKey::CurrentKeyStepsFromA)] = uint8_t(current.keyStepsFromA + 128);
+  // 1) Save the signed 16-bit tuning-relative key offset:
+  storeCurrentKeyStepsInSettings(current.keyStepsFromA);
   markSettingsDirty();
   // 2) Apply it:
   applyScale();
@@ -3007,7 +3053,9 @@ void changeTranspose() {  // when you change the transpose via the menu
 void previewKey(GEMPreviewCallbackData previewData);
 void createKeyMenuItems() {
   menuItemMainKey.setPreviewCallback(previewKey);
+  menuItemMainKeyNumeric.setPreviewCallback(previewKey);
   menuPageMain.addMenuItem(menuItemMainKey);
+  menuPageMain.addMenuItem(menuItemMainKeyNumeric);
   showOnlyValidKeyChoices();
 }
 void previewKey(GEMPreviewCallbackData previewData) {
@@ -3022,7 +3070,8 @@ void createProfileMenuItems() {
     } else {
       snprintf(loadProfileLabels[i], sizeof(loadProfileLabels[i]), "Load Slot %u", static_cast<unsigned>(i));
     }
-    menuItemLoadProfile[i] = new GEMItem(loadProfileLabels[i], loadProfileMenu, i);
+    menuItemLoadProfile[i] = &loadProfileItemPool.construct(
+      i, loadProfileLabels[i], loadProfileMenu, i);
     menuPageProfiles.addMenuItem(*menuItemLoadProfile[i]);
   }
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
@@ -3031,7 +3080,8 @@ void createProfileMenuItems() {
     } else {
       snprintf(saveProfileLabels[i], sizeof(saveProfileLabels[i]), "Save Slot %u", static_cast<unsigned>(i));
     }
-    menuItemSaveProfile[i] = new GEMItem(saveProfileLabels[i], saveProfileMenu, i);
+    menuItemSaveProfile[i] = &saveProfileItemPool.construct(
+      i, saveProfileLabels[i], saveProfileMenu, i);
     menuPageProfiles.addMenuItem(*menuItemSaveProfile[i]);
   }
 }
@@ -3188,7 +3238,7 @@ void formatStorageStatusPath(uint8_t issueIndex) {
 }
 
 void populateStorageStatusMenuPage() {
-  menuItemStorageSummary = new GEMItem(storageHealthSummaryLabel());
+  menuItemStorageSummary = &storageSummaryItemPool.construct(0, storageHealthSummaryLabel());
   menuPageStorageStatus.addMenuItem(*menuItemStorageSummary);
   for (uint8_t index = 0; index < storageHealthIssueCount(); ++index) {
     formatStorageStatusPath(index);
@@ -3196,8 +3246,10 @@ void populateStorageStatusMenuPage() {
              sizeof(storageStatusReasonLabels[index]),
              "  %s",
              storageHealthIssueReason(index));
-    menuItemStorageIssuePath[index] = new GEMItem(storageStatusPathLabels[index]);
-    menuItemStorageIssueReason[index] = new GEMItem(storageStatusReasonLabels[index]);
+    menuItemStorageIssuePath[index] = &storagePathItemPool.construct(
+      index, storageStatusPathLabels[index]);
+    menuItemStorageIssueReason[index] = &storageReasonItemPool.construct(
+      index, storageStatusReasonLabels[index]);
     menuPageStorageStatus.addMenuItem(*menuItemStorageIssuePath[index]);
     menuPageStorageStatus.addMenuItem(*menuItemStorageIssueReason[index]);
   }
@@ -3251,6 +3303,7 @@ void setupMenu() {
   menu.setSplashDelay(0);
   menu.setFontSmall(GEM_FONT_BIG, 6, 12);
   menu.init();
+  u8g2.enableAsyncTransfers();
   menu.setDrawMenuCallback(drawMenuFrameOverlays);
   menu.invertKeysDuringEdit(true);  // Invert rotary direction when editing a value
   /*

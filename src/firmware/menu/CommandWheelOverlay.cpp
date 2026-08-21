@@ -2,6 +2,7 @@
 
 #include "../app/DiagnosticsTiming.h"
 #include "../sequencer/SequencerMode.h"
+#include "DisplayRefreshPolicy.h"
 #include "MenuAndDisplay.h"
 #include "PlayedNotesOverlay.h"
 
@@ -10,8 +11,6 @@ extern bool screenSaverOn;
 namespace {
 
 constexpr uint64_t kOverlayHoldMicros = 3000000ULL;
-constexpr uint64_t kOverlayRedrawIntervalMicros = 50000ULL;
-constexpr uint64_t kOverlayBadgeRedrawIntervalMicros = 100000ULL;
 constexpr int kMeterX = 10;
 constexpr int kMeterY = 94;
 constexpr int kMeterWidth = 108;
@@ -31,13 +30,7 @@ int16_t overlayCurrentValue = 0;
 int16_t overlayMinValue = 0;
 int16_t overlayMaxValue = 127;
 uint64_t overlayExpiresAt = 0;
-uint64_t overlayNextRedrawAt = 0;
-
-uint64_t RAM_FUNC(overlayRedrawIntervalMicros)() {
-  return (noteBadgeVisible && noteBadgeText[0] != '\0')
-           ? kOverlayBadgeRedrawIntervalMicros
-           : kOverlayRedrawIntervalMicros;
-}
+uint64_t overlayLastRefreshAt = 0;
 
 const char* overlayTitle(CommandWheelOverlayType type) {
   switch (type) {
@@ -153,7 +146,7 @@ void RAM_FUNC(clearOverlayState)() {
   overlayDirty = false;
   overlayRedrawPending = false;
   overlayExpiresAt = 0;
-  overlayNextRedrawAt = 0;
+  overlayLastRefreshAt = 0;
 }
 
 }  // namespace
@@ -169,8 +162,7 @@ bool commandWheelOverlayTemporaryWakeActive() {
 void RAM_FUNC(notifyCommandWheelOverlay)(CommandWheelOverlayType type,
                                          int16_t currentValue,
                                          int16_t minValue,
-                                         int16_t maxValue,
-                                         bool immediateRedraw) {
+                                         int16_t maxValue) {
   bool newlyShown = !overlayActive || overlayType != type;
   overlayCurrentValue = currentValue;
   overlayType = type;
@@ -181,10 +173,9 @@ void RAM_FUNC(notifyCommandWheelOverlay)(CommandWheelOverlayType type,
                          || screenSaverOn
                          || noteOverlayTemporaryWake
                          || screenTime > screenSaverTimeout;
-  if (immediateRedraw || newlyShown || runTime >= overlayNextRedrawAt) {
+  if (newlyShown || displayRefreshDue(runTime, overlayLastRefreshAt)) {
     overlayDirty = true;
     overlayRedrawPending = false;
-    overlayNextRedrawAt = runTime + overlayRedrawIntervalMicros();
   } else {
     overlayRedrawPending = true;
   }
@@ -199,8 +190,12 @@ void requestCommandWheelOverlayRedraw() {
   if (!commandWheelOverlayActive()) {
     return;
   }
-  overlayDirty = true;
-  overlayRedrawPending = false;
+  if (displayRefreshDue(runTime, overlayLastRefreshAt)) {
+    overlayDirty = true;
+    overlayRedrawPending = false;
+  } else {
+    overlayRedrawPending = true;
+  }
 }
 
 void drawCommandWheelOverlay() {
@@ -226,10 +221,11 @@ void drawCommandWheelOverlay() {
     return;
   }
 
-  if (!overlayDirty && overlayRedrawPending && runTime >= overlayNextRedrawAt) {
+  if (!overlayDirty
+      && overlayRedrawPending
+      && displayRefreshDue(runTime, overlayLastRefreshAt)) {
     overlayDirty = true;
     overlayRedrawPending = false;
-    overlayNextRedrawAt = runTime + overlayRedrawIntervalMicros();
   }
 
   if (!overlayDirty && overlayVisible) {
@@ -276,4 +272,5 @@ void drawCommandWheelOverlay() {
     drawPlayedNoteBadgeOnMenuFrame();
   }
   u8g2.sendBuffer();
+  overlayLastRefreshAt = runTime;
 }

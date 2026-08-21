@@ -1,0 +1,49 @@
+{
+  "format": "hexboard.synthPreset.v1",
+  "preset": {
+    "objectId": "a7a316d7aab6387a83f54d1e98c7cb2d",
+    "name": "Alien Voices",
+    "folderPath": "Leads",
+    "wavetable": {
+      "name": "GlassyBells",
+      "folderPath": "/"
+    },
+    "favorite": false,
+    "values": {
+      "PlaybackMode": 3,
+      "Waveform": 27,
+      "SynthDrive": 0,
+      "SynthModTarget": 0,
+      "SynthModAmount": 127,
+      "SynthVibratoSpeed": 5,
+      "ArpeggiatorDivision": 32,
+      "SynthBPM": 120,
+      "EnvelopeAttackIndex": 1,
+      "EnvelopeHoldIndex": 0,
+      "EnvelopeDecayIndex": 10,
+      "EnvelopeSustainLevel": 64,
+      "EnvelopeReleaseIndex": 12,
+      "EffectEnvelopeTarget": 1,
+      "EffectEnvelopeAmount": 95,
+      "EffectEnvelopeAttackIndex": 0,
+      "EffectEnvelopeHoldIndex": 13,
+      "EffectEnvelopeDecayIndex": 15,
+      "EffectEnvelopeSustainLevel": 32,
+      "EffectEnvelopeReleaseIndex": 10,
+      "EffectEnvelope2Target": 0,
+      "EffectEnvelope2Amount": 201,
+      "EffectEnvelope2AttackIndex": 0,
+      "EffectEnvelope2HoldIndex": 0,
+      "EffectEnvelope2DecayIndex": 14,
+      "EffectEnvelope2SustainLevel": 32,
+      "EffectEnvelope2ReleaseIndex": 13,
+      "SynthPortamentoTimeIndex": 0,
+      "ArpeggiatorDirection": 0,
+      "SynthWavetablePosition": 0,
+      "SynthLfoTarget": 0,
+      "SynthLfoAmount": 127,
+      "SynthLfoWave": 0,
+      "SynthLfoSpeed": 6
+    }
+  }
+}

@@ -36,32 +36,21 @@ uint16_t RAM_FUNC(wrappedTableDegree)(int32_t stepsFromA, uint16_t cycleLength) 
   return static_cast<uint16_t>(remainder);
 }
 
-int32_t RAM_FUNC(roundedDiv)(int32_t numerator, int32_t denominator) {
-  if (denominator <= 0) {
-    return 0;
-  }
-  if (numerator >= 0) {
-    return (numerator + (denominator / 2)) / denominator;
-  }
-  return -((-numerator + (denominator / 2)) / denominator);
-}
-
 int32_t RAM_FUNC(referenceStepsFromC)() {
-  if (!userGeometryRuntimeActive) {
+  if (!userGeometryRuntime.active) {
     return -current.tuning().spanCtoA();
   }
-  int32_t semitonesFromC4 = static_cast<int32_t>(currentTuningReferenceMidiNote()) - 60;
-  return roundedDiv(static_cast<int32_t>(current.tuning().cycleLength) * semitonesFromC4, 12);
+  return static_cast<int32_t>(userGeometryRuntime.referenceDegree);
 }
 
 bool centsTableMatchesStandardSemitones() {
-  if (!userGeometryRuntimeCentsTableActive
-      || userGeometryRuntimeCentsTableLength == 0
-      || userGeometryRuntimePeriodCents != static_cast<float>(userGeometryRuntimeCentsTableLength * 100)) {
+  if (!userGeometryRuntime.centsTableActive
+      || userGeometryRuntime.centsTableLength == 0
+      || userGeometryRuntime.periodCents != static_cast<float>(userGeometryRuntime.centsTableLength * 100)) {
     return false;
   }
-  for (uint16_t degree = 1; degree <= userGeometryRuntimeCentsTableLength; ++degree) {
-    if (userGeometryRuntimeCentsTable[degree - 1] != static_cast<float>(degree * 100)) {
+  for (uint16_t degree = 1; degree <= userGeometryRuntime.centsTableLength; ++degree) {
+    if (userGeometryRuntime.centsTable[degree - 1] != static_cast<float>(degree * 100)) {
       return false;
     }
   }
@@ -116,60 +105,60 @@ float RAM_FUNC(MIDItoFreq)(float midi) {  // formula to convert from MIDI note t
 }
 
 uint8_t RAM_FUNC(currentTuningReferenceMidiNote)() {
-  if (userGeometryRuntimeActive) {
-    return userGeometryRuntimeReferenceMidiNote;
+  if (userGeometryRuntime.active) {
+    return userGeometryRuntime.referenceMidiNote;
   }
   return static_cast<uint8_t>(CONCERT_A_MIDI_NOTE);
 }
 
 float RAM_FUNC(currentTuningReferenceHz)() {
-  if (userGeometryRuntimeActive && userGeometryRuntimeReferenceHz > 0.0f) {
-    return userGeometryRuntimeReferenceHz;
+  if (userGeometryRuntime.active && userGeometryRuntime.referenceHz > 0.0f) {
+    return userGeometryRuntime.referenceHz;
   }
   return CONCERT_A_HZ;
 }
 
 float RAM_FUNC(currentTuningNominalStepSizeCents)() {
-  if (userGeometryRuntimeActive
-      && userGeometryRuntimeExactEdoActive
-      && userGeometryRuntimeCycleLength > 0
-      && userGeometryRuntimePeriodCents > 0.0f) {
-    return userGeometryRuntimePeriodCents / static_cast<float>(userGeometryRuntimeCycleLength);
+  if (userGeometryRuntime.active
+      && userGeometryRuntime.exactEdoActive
+      && userGeometryRuntime.cycleLength > 0
+      && userGeometryRuntime.periodCents > 0.0f) {
+    return userGeometryRuntime.periodCents / static_cast<float>(userGeometryRuntime.cycleLength);
   }
-  if (userGeometryRuntimeActive
-      && userGeometryRuntimeCentsTableActive
-      && userGeometryRuntimeCentsTableLength > 0
-      && userGeometryRuntimePeriodCents > 0.0f) {
-    return userGeometryRuntimePeriodCents / static_cast<float>(userGeometryRuntimeCentsTableLength);
+  if (userGeometryRuntime.active
+      && userGeometryRuntime.centsTableActive
+      && userGeometryRuntime.centsTableLength > 0
+      && userGeometryRuntime.periodCents > 0.0f) {
+    return userGeometryRuntime.periodCents / static_cast<float>(userGeometryRuntime.centsTableLength);
   }
   return current.tuning().stepSize;
 }
 
 int32_t RAM_FUNC(currentPitchStepsFromReference)(int16_t stepsFromC) {
-  if (!userGeometryRuntimeActive) {
+  if (!userGeometryRuntime.active) {
     return current.pitchRelToA4(stepsFromC);
   }
   return static_cast<int32_t>(stepsFromC) + current.transpose - referenceStepsFromC();
 }
 
 float RAM_FUNC(stepsToCentsFromReference)(int16_t stepsFromReference) {
-  if (userGeometryRuntimeActive
-      && userGeometryRuntimeExactEdoActive
-      && userGeometryRuntimeCycleLength > 0
-      && userGeometryRuntimePeriodCents > 0.0f) {
-    return (static_cast<float>(stepsFromReference) * userGeometryRuntimePeriodCents)
-           / static_cast<float>(userGeometryRuntimeCycleLength);
+  if (userGeometryRuntime.active
+      && userGeometryRuntime.exactEdoActive
+      && userGeometryRuntime.cycleLength > 0
+      && userGeometryRuntime.periodCents > 0.0f) {
+    return (static_cast<float>(stepsFromReference) * userGeometryRuntime.periodCents)
+           / static_cast<float>(userGeometryRuntime.cycleLength);
   }
-  if (userGeometryRuntimeActive
-      && userGeometryRuntimeCentsTableActive
-      && userGeometryRuntimeCentsTableLength > 0
-      && userGeometryRuntimePeriodCents > 0.0f) {
-    uint16_t cycleLength = userGeometryRuntimeCentsTableLength;
+  if (userGeometryRuntime.active
+      && userGeometryRuntime.centsTableActive
+      && userGeometryRuntime.centsTableLength > 0
+      && userGeometryRuntime.periodCents > 0.0f) {
+    uint16_t cycleLength = userGeometryRuntime.centsTableLength;
     int32_t periodOffset = floorDiv(stepsFromReference, cycleLength);
     uint16_t degree = wrappedTableDegree(stepsFromReference, cycleLength);
-    float cents = static_cast<float>(periodOffset) * userGeometryRuntimePeriodCents;
+    float cents = static_cast<float>(periodOffset) * userGeometryRuntime.periodCents;
     if (degree > 0) {
-      cents += userGeometryRuntimeCentsTable[degree - 1];
+      cents += userGeometryRuntime.centsTable[degree - 1];
     }
     return cents;
   }
@@ -193,11 +182,11 @@ bool currentTuningIsStandardSemitone() {
   if (!referenceHzMatchesStandardMidiNote()) {
     return false;
   }
-  if (userGeometryRuntimeActive && userGeometryRuntimeCentsTableActive) {
+  if (userGeometryRuntime.active && userGeometryRuntime.centsTableActive) {
     return centsTableMatchesStandardSemitones();
   }
-  if (userGeometryRuntimeActive && userGeometryRuntimeExactEdoActive) {
-    return userGeometryRuntimeCycleLength == 12 && userGeometryRuntimePeriodCents == 1200.0f;
+  if (userGeometryRuntime.active && userGeometryRuntime.exactEdoActive) {
+    return userGeometryRuntime.cycleLength == 12 && userGeometryRuntime.periodCents == 1200.0f;
   }
   return current.tuning().stepSize == 100.0f;
 }

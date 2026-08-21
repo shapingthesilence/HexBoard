@@ -127,8 +127,6 @@ void setupMIDI() {
   MidiUSB.setName("HexBoard MIDI");
   MidiUSB.begin();
   Serial1.begin(SERIAL_MIDI_BAUD);
-  usbMidiInput.sysex.reserve(512);
-  serialMidiInput.sysex.reserve(512);
   resetMidiInputParser(usbMidiInput);
   resetMidiInputParser(serialMidiInput);
   sendToLog("setupMIDI okay");

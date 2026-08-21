@@ -6,6 +6,7 @@ import {
   ObjectType,
   PRESET_SYNC_FAMILY,
   SYSEX_START,
+  SynthWavetableSelector,
   WriteFlag,
   crc32,
   decodeDataChunkPayload,
@@ -23,6 +24,7 @@ import {
   encodeHelloRequestPayload,
   encodeObjectListRequestPayload,
   encodeReadRequestPayload,
+  encodeU14,
   encodeTransferAbortPayload,
   encodeTransferEndPayload,
   encodeWriteBeginPayload,
@@ -40,6 +42,15 @@ const READ_OBJECT_INACTIVITY_TIMEOUT_MS = 15000;
 const FLASH_WRITE_RESPONSE_TIMEOUT_MS = 15000;
 const TRANSFER_ABORT_REASON_TIMEOUT = 0x01;
 const TRANSFER_ABORT_REASON_CLIENT_ERROR = 0x02;
+
+export interface TransferProgress {
+  direction: "upload" | "download";
+  objectType: number;
+  transferredBytes: number;
+  totalBytes: number;
+}
+
+export type TransferProgressCallback = (progress: TransferProgress) => void;
 
 const presetSyncErrorNames = new Map<number, string>(
   Object.entries(ErrorCode).map(([name, value]) => [value, name])
@@ -137,11 +148,15 @@ export class PresetSyncClient {
     return this.readObject(ObjectType.SynthWavetable, handle);
   }
 
-  async readGeometryObject(objectType: number, handle: number): Promise<Uint8Array> {
+  async readGeometryObject(objectType: number, handle: number, onProgress?: TransferProgressCallback): Promise<Uint8Array> {
     if (!this.isGeometryObjectType(objectType)) {
       throw new Error("Unsupported geometry object type");
     }
-    return this.readObject(objectType, handle);
+    return this.readObject(objectType, handle, READ_OBJECT_INACTIVITY_TIMEOUT_MS, onProgress);
+  }
+
+  async readGeometryBundle(handle: number, onProgress?: TransferProgressCallback): Promise<Uint8Array> {
+    return this.readObject(ObjectType.GeometryBundle, handle, READ_OBJECT_INACTIVITY_TIMEOUT_MS, onProgress);
   }
 
   async readCurrentSynthPreset(): Promise<Uint8Array> {
@@ -184,6 +199,7 @@ export class PresetSyncClient {
     schemaMinor?: number;
     writeFlags?: number;
     rawChunkSize?: number;
+    onProgress?: TransferProgressCallback;
   }): Promise<number[][]> {
     const handle = input.handle ?? NEW_OBJECT_HANDLE;
     const schemaMajor = input.schemaMajor ?? 1;
@@ -193,6 +209,7 @@ export class PresetSyncClient {
     const objectCrc32 = crc32(input.body);
     const transferId = this.nextTransfer();
     const frames: number[][] = [];
+    input.onProgress?.({ direction: "upload", objectType: input.objectType, transferredBytes: 0, totalBytes: input.body.length });
 
     frames.push(await this.send(
       MessageType.WriteBegin,
@@ -221,6 +238,12 @@ export class PresetSyncClient {
           rawData
         })
       ));
+      input.onProgress?.({
+        direction: "upload",
+        objectType: input.objectType,
+        transferredBytes: offset + rawData.length,
+        totalBytes: input.body.length
+      });
       chunkIndex += 1;
     }
 
@@ -246,6 +269,7 @@ export class PresetSyncClient {
     schemaMinor?: number;
     writeFlags?: number;
     rawChunkSize?: number;
+    onProgress?: TransferProgressCallback;
   }): Promise<number[][]> {
     const handle = input.handle ?? NEW_OBJECT_HANDLE;
     const schemaMajor = input.schemaMajor ?? 1;
@@ -255,6 +279,7 @@ export class PresetSyncClient {
     const objectCrc32 = crc32(input.body);
     const transferId = this.nextTransfer();
     const frames: number[][] = [];
+    input.onProgress?.({ direction: "upload", objectType: input.objectType, transferredBytes: 0, totalBytes: input.body.length });
 
     frames.push(await this.sendAndWaitForAck(
       MessageType.WriteBegin,
@@ -284,6 +309,12 @@ export class PresetSyncClient {
         }),
         (ack) => ack.nextChunkIndex === chunkIndex + 1
       ));
+      input.onProgress?.({
+        direction: "upload",
+        objectType: input.objectType,
+        transferredBytes: offset + rawData.length,
+        totalBytes: input.body.length
+      });
       chunkIndex += 1;
     }
 
@@ -327,6 +358,16 @@ export class PresetSyncClient {
     return this.send(MessageType.SynthParamSet, [1, settingKey, value & 0x7f, (value >> 7) & 0x01]);
   }
 
+  async sendSynthWavetableSelect(selector: number, index: number): Promise<number[]> {
+    if (selector !== SynthWavetableSelector.Catalog && selector !== SynthWavetableSelector.BuiltIn) {
+      throw new RangeError("selector must identify a catalog or built-in wavetable");
+    }
+    if (!Number.isInteger(index) || index < 0 || index >= NEW_OBJECT_HANDLE) {
+      throw new RangeError("index must be a valid 14-bit wavetable index");
+    }
+    return this.send(MessageType.SynthWavetableSelect, [selector, ...encodeU14(index)]);
+  }
+
   async sendSynthPresetSave(preset: EncodedCatalogObject): Promise<number[][]> {
     return this.sendObjectWrite({
       objectType: ObjectType.SynthPreset,
@@ -346,6 +387,17 @@ export class PresetSyncClient {
       schemaMajor: preset.schemaMajor,
       schemaMinor: preset.schemaMinor,
       writeFlags: WriteFlag.ApplyToRuntime | WriteFlag.SaveToFlash
+    });
+  }
+
+  async sendSynthPresetUpdateConfirmed(preset: EncodedCatalogObject, handle: number): Promise<number[][]> {
+    return this.sendObjectWriteConfirmed({
+      objectType: ObjectType.SynthPreset,
+      body: preset.body,
+      handle,
+      schemaMajor: preset.schemaMajor,
+      schemaMinor: preset.schemaMinor,
+      writeFlags: WriteFlag.SaveToFlash | WriteFlag.OverwriteExisting
     });
   }
 
@@ -382,14 +434,15 @@ export class PresetSyncClient {
     });
   }
 
-  async sendGeometryBundleSaveConfirmed(body: Uint8Array): Promise<number[][]> {
+  async sendGeometryBundleSaveConfirmed(body: Uint8Array, onProgress?: TransferProgressCallback): Promise<number[][]> {
     return this.sendObjectWriteConfirmed({
       objectType: ObjectType.GeometryBundle,
       body,
       handle: NEW_OBJECT_HANDLE,
       schemaMajor: 1,
       schemaMinor: 0,
-      writeFlags: WriteFlag.SaveToFlash
+      writeFlags: WriteFlag.SaveToFlash,
+      onProgress
     });
   }
 
@@ -547,12 +600,18 @@ export class PresetSyncClient {
     });
   }
 
-  private async readObject(objectType: number, handle: number, timeoutMs = READ_OBJECT_INACTIVITY_TIMEOUT_MS): Promise<Uint8Array> {
+  private async readObject(
+    objectType: number,
+    handle: number,
+    timeoutMs = READ_OBJECT_INACTIVITY_TIMEOUT_MS,
+    onProgress?: TransferProgressCallback
+  ): Promise<Uint8Array> {
     const transaction = this.nextTransaction();
 
     return new Promise((resolve, reject) => {
       let expectedTransferId: number | null = null;
       let expectedLength = 0;
+      let expectedCrc32 = 0;
       let receivedBytes = 0;
       let expectedChunkIndex = 0;
       let output = new Uint8Array();
@@ -636,9 +695,11 @@ export class PresetSyncClient {
             }
             expectedTransferId = begin.transferId;
             expectedLength = begin.rawByteLength;
+            expectedCrc32 = begin.objectCrc32;
             receivedBytes = 0;
             expectedChunkIndex = 0;
             output = new Uint8Array(expectedLength);
+            onProgress?.({ direction: "download", objectType, transferredBytes: 0, totalBytes: expectedLength });
             void this.transport.send(encodeAckFrame(transaction, MessageType.ReadBegin)).catch(fail);
             return;
           }
@@ -656,6 +717,7 @@ export class PresetSyncClient {
             output.set(chunk.rawData, chunk.rawOffset);
             receivedBytes += chunk.rawLength;
             expectedChunkIndex += 1;
+            onProgress?.({ direction: "download", objectType, transferredBytes: receivedBytes, totalBytes: expectedLength });
             void this.transport.send(encodeAckFrame(transaction, MessageType.DataChunk, expectedChunkIndex)).catch(fail);
             return;
           }
@@ -669,6 +731,9 @@ export class PresetSyncClient {
             }
             if (receivedBytes !== expectedLength) {
               throw new Error("Incomplete object read from HexBoard");
+            }
+            if ((crc32(output) >>> 0) !== (expectedCrc32 >>> 0)) {
+              throw new Error("HexBoard object read failed its CRC check");
             }
             void this.transport.send(encodeAckFrame(transaction, MessageType.TransferEnd, expectedChunkIndex))
               .then(() => finish(output))

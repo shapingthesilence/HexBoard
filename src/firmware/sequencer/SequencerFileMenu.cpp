@@ -19,6 +19,7 @@
 #include "SequencerManagedNotes.h"
 #include "SequencerOverlay.h"
 #include "SequencerStorage.h"
+#include "SequencerStringUtils.h"
 #include "SequencerTools.h"
 #include "SequencerTransport.h"
 #include "SequencerUsbBackup.h"
@@ -188,28 +189,6 @@ void cancelUsbBackupExitCallback();
 void confirmUsbBackupStopCallback();
 void cancelUsbBackupStopCallback();
 
-void copyString(char* destination, size_t destinationLength, const char* source) {
-  if (destinationLength == 0) {
-    return;
-  }
-  if (source == nullptr) {
-    destination[0] = '\0';
-    return;
-  }
-  strncpy(destination, source, destinationLength - 1);
-  destination[destinationLength - 1] = '\0';
-}
-
-bool appendString(char* destination, size_t destinationLength, const char* suffix) {
-  const size_t used = strlen(destination);
-  const size_t suffixLength = strlen(suffix);
-  if (used + suffixLength >= destinationLength) {
-    return false;
-  }
-  memcpy(destination + used, suffix, suffixLength + 1);
-  return true;
-}
-
 bool safeBrowserPath(const char* path) {
   return path != nullptr && sequencePathIsSafeStoragePath(path) && !sequencePathIsFile(path);
 }
@@ -221,21 +200,21 @@ bool entryNameIsHidden(const char* name) {
 void formatEntryLabel(const char* path, bool isFolder, char* output, size_t outputLength) {
   extractSequenceDisplayName(path, output, outputLength);
   if (output[0] == '\0') {
-    copyString(output, outputLength, isFolder ? "Folder" : "Sequence");
+    copyBoundedString(output, outputLength, isFolder ? "Folder" : "Sequence");
   }
   if (isFolder) {
-    appendString(output, outputLength, "/");
+    appendBoundedString(output, outputLength, "/");
   }
 }
 
 void folderDisplayName(const char* path, char* output, size_t outputLength) {
   if (sequencePathIsRoot(path)) {
-    copyString(output, outputLength, "Sequences");
+    copyBoundedString(output, outputLength, "Sequences");
     return;
   }
   extractSequenceDisplayName(path, output, outputLength);
   if (output[0] == '\0') {
-    copyString(output, outputLength, "Folder");
+    copyBoundedString(output, outputLength, "Folder");
   }
 }
 
@@ -254,19 +233,19 @@ void suggestNewSequenceName(char* output, size_t outputLength) {
     char leaf[32] = "";
     char path[kSequencePathLength] = "";
     if (number == 0) {
-      copyString(candidate, sizeof(candidate), "New");
+      copyBoundedString(candidate, sizeof(candidate), "New");
     } else {
       snprintf(candidate, sizeof(candidate), "New %03u", number);
     }
     snprintf(leaf, sizeof(leaf), "%s%s", candidate, kSequenceFileExtension);
     joinSequencePath(g_browserPath, leaf, path, sizeof(path));
     if (!LittleFS.exists(path)) {
-      copyString(output, outputLength, candidate);
+      copyBoundedString(output, outputLength, candidate);
       return;
     }
   }
 
-  copyString(output, outputLength, "New");
+  copyBoundedString(output, outputLength, "New");
 }
 
 uint16_t browserActionRowCount() {
@@ -319,28 +298,28 @@ bool actionRow(uint16_t index, BrowserRow& row) {
   if (g_browserMode == BrowserMode::SaveNew) {
     if (index == 0) {
       row.kind = RowKind::SaveHere;
-      copyString(row.label, sizeof(row.label), "Save Here");
+      copyBoundedString(row.label, sizeof(row.label), "Save Here");
       return true;
     }
     if (index == 1) {
       row.kind = RowKind::NewFolder;
       row.isFolder = true;
-      copyString(row.label, sizeof(row.label), "New Folder");
+      copyBoundedString(row.label, sizeof(row.label), "New Folder");
       return true;
     }
   } else if (g_browserMode == BrowserMode::CreateFolder) {
     if (index == 0) {
       row.kind = RowKind::CreateHere;
       row.isFolder = true;
-      copyString(row.label, sizeof(row.label), "Create Here");
+      copyBoundedString(row.label, sizeof(row.label), "Create Here");
       return true;
     }
   } else if (g_browserMode == BrowserMode::Manage && !sequencePathIsRoot(g_browserPath)) {
     if (index == 0) {
       row.kind = RowKind::ThisFolder;
       row.isFolder = true;
-      copyString(row.path, sizeof(row.path), g_browserPath);
-      copyString(row.label, sizeof(row.label), "This Folder...");
+      copyBoundedString(row.path, sizeof(row.path), g_browserPath);
+      copyBoundedString(row.label, sizeof(row.label), "This Folder...");
       return true;
     }
   }
@@ -374,8 +353,8 @@ bool scanDirectoryEntry(bool wantFolder, Dir& dir, char* path, size_t pathLength
   if (!scanDirectoryEntry(dir, row) || row.isFolder != wantFolder) {
     return false;
   }
-  copyString(path, pathLength, row.path);
-  copyString(label, labelLength, row.label);
+  copyBoundedString(path, pathLength, row.path);
+  copyBoundedString(label, labelLength, row.label);
   return true;
 }
 
@@ -393,7 +372,7 @@ void ensureBrowserCounts() {
   if (!fileSystemExists || !safeBrowserPath(g_browserPath)) {
     g_browserCountsValid = true;
     g_browserCountsMode = g_browserMode;
-    copyString(g_browserCountsPath, sizeof(g_browserCountsPath), g_browserPath);
+    copyBoundedString(g_browserCountsPath, sizeof(g_browserCountsPath), g_browserPath);
     return;
   }
 
@@ -415,7 +394,7 @@ void ensureBrowserCounts() {
     static_cast<uint16_t>(g_cachedActionCount + g_cachedFolderCount + g_cachedFileCount);
   g_browserCountsValid = true;
   g_browserCountsMode = g_browserMode;
-  copyString(g_browserCountsPath, sizeof(g_browserCountsPath), g_browserPath);
+  copyBoundedString(g_browserCountsPath, sizeof(g_browserCountsPath), g_browserPath);
 }
 
 int compareEntryKey(const char* label, const char* path, const char* otherLabel, const char* otherPath) {
@@ -453,8 +432,8 @@ bool findSortedEntry(bool wantFolder, uint16_t rank, BrowserRow& row) {
         continue;
       }
       if (!found || compareEntryKey(candidateLabel, candidatePath, bestLabel, bestPath) < 0) {
-        copyString(bestLabel, sizeof(bestLabel), candidateLabel);
-        copyString(bestPath, sizeof(bestPath), candidatePath);
+        copyBoundedString(bestLabel, sizeof(bestLabel), candidateLabel);
+        copyBoundedString(bestPath, sizeof(bestPath), candidatePath);
         found = true;
       }
     }
@@ -463,15 +442,15 @@ bool findSortedEntry(bool wantFolder, uint16_t rank, BrowserRow& row) {
       return false;
     }
 
-    copyString(previousLabel, sizeof(previousLabel), bestLabel);
-    copyString(previousPath, sizeof(previousPath), bestPath);
+    copyBoundedString(previousLabel, sizeof(previousLabel), bestLabel);
+    copyBoundedString(previousPath, sizeof(previousPath), bestPath);
     havePrevious = true;
   }
 
   row.kind = wantFolder ? RowKind::Folder : RowKind::File;
   row.isFolder = wantFolder;
-  copyString(row.path, sizeof(row.path), previousPath);
-  copyString(row.label, sizeof(row.label), previousLabel);
+  copyBoundedString(row.path, sizeof(row.path), previousPath);
+  copyBoundedString(row.label, sizeof(row.label), previousLabel);
   return true;
 }
 
@@ -537,7 +516,7 @@ void populateBrowserRowsCache(uint16_t startIndex) {
 
   g_browserRowsValid = true;
   g_browserRowsMode = g_browserMode;
-  copyString(g_browserRowsPath, sizeof(g_browserRowsPath), g_browserPath);
+  copyBoundedString(g_browserRowsPath, sizeof(g_browserRowsPath), g_browserPath);
   g_browserRowsFirstIndex = startIndex;
 
   if (startIndex >= g_cachedTotalCount) {
@@ -616,7 +595,7 @@ bool browserLabel(void*, uint16_t index, char* output, size_t outputLength) {
   if (!rowForIndex(index, row)) {
     return false;
   }
-  copyString(output, outputLength, row.label);
+  copyBoundedString(output, outputLength, row.label);
   return output[0] != '\0';
 }
 
@@ -632,30 +611,30 @@ void updateBrowserTitle() {
   switch (g_browserMode) {
     case BrowserMode::SaveNew:
       snprintf(g_browserTitle, sizeof(g_browserTitle), "Save Sequence");
-      copyString(g_emptyLabel, sizeof(g_emptyLabel), "No Folders");
+      copyBoundedString(g_emptyLabel, sizeof(g_emptyLabel), "No Folders");
       break;
     case BrowserMode::CreateFolder:
       snprintf(g_browserTitle, sizeof(g_browserTitle), "Create Folder");
-      copyString(g_emptyLabel, sizeof(g_emptyLabel), "No Folders");
+      copyBoundedString(g_emptyLabel, sizeof(g_emptyLabel), "No Folders");
       break;
     case BrowserMode::Manage:
       snprintf(g_browserTitle, sizeof(g_browserTitle), "Rename/Delete");
-      copyString(g_emptyLabel, sizeof(g_emptyLabel), "No Files");
+      copyBoundedString(g_emptyLabel, sizeof(g_emptyLabel), "No Files");
       break;
     case BrowserMode::Load:
     case BrowserMode::None:
     default:
       snprintf(g_browserTitle, sizeof(g_browserTitle), "Load Sequence");
-      copyString(g_emptyLabel, sizeof(g_emptyLabel), "No Sequences");
+      copyBoundedString(g_emptyLabel, sizeof(g_emptyLabel), "No Sequences");
       break;
   }
 }
 
 void setBrowserPath(const char* path) {
   if (path != nullptr && safeBrowserPath(path) && LittleFS.exists(path)) {
-    copyString(g_browserPath, sizeof(g_browserPath), path);
+    copyBoundedString(g_browserPath, sizeof(g_browserPath), path);
   } else {
-    copyString(g_browserPath, sizeof(g_browserPath), kSequenceStorageRoot);
+    copyBoundedString(g_browserPath, sizeof(g_browserPath), kSequenceStorageRoot);
   }
   invalidateBrowserCache();
 }
@@ -707,7 +686,7 @@ void showBrowser() {
       char suggestedName[kSequenceNameLength + 1] = "";
       suggestNewSequenceName(suggestedName, sizeof(suggestedName));
       g_namingTarget = NamingTarget::Sequence;
-      copyString(g_namingBuffer, sizeof(g_namingBuffer), suggestedName);
+      copyBoundedString(g_namingBuffer, sizeof(g_namingBuffer), suggestedName);
       g_namingLength = static_cast<byte>(strlen(g_namingBuffer));
       g_renameSourcePath[0] = '\0';
       g_namingErrorOne[0] = '\0';
@@ -729,10 +708,10 @@ void showBrowser() {
         }
       }
       if (suggestedName[0] == '\0') {
-        copyString(suggestedName, sizeof(suggestedName), "FOLDER");
+        copyBoundedString(suggestedName, sizeof(suggestedName), "FOLDER");
       }
       g_namingTarget = NamingTarget::Folder;
-      copyString(g_namingBuffer, sizeof(g_namingBuffer), suggestedName);
+      copyBoundedString(g_namingBuffer, sizeof(g_namingBuffer), suggestedName);
       g_namingLength = static_cast<byte>(strlen(g_namingBuffer));
       g_renameSourcePath[0] = '\0';
       g_namingErrorOne[0] = '\0';
@@ -742,7 +721,7 @@ void showBrowser() {
     }
 
     if (row.kind == RowKind::ThisFolder) {
-      copyString(g_actionTargetPath, sizeof(g_actionTargetPath), row.path);
+      copyBoundedString(g_actionTargetPath, sizeof(g_actionTargetPath), row.path);
       g_actionTargetIsFolder = true;
       deactivateVirtualListMenu();
       openActionPage();
@@ -767,7 +746,7 @@ void showBrowser() {
     }
 
     if (row.kind == RowKind::File && g_browserMode == BrowserMode::Manage) {
-      copyString(g_actionTargetPath, sizeof(g_actionTargetPath), row.path);
+      copyBoundedString(g_actionTargetPath, sizeof(g_actionTargetPath), row.path);
       g_actionTargetIsFolder = false;
       deactivateVirtualListMenu();
       openActionPage();
@@ -812,7 +791,7 @@ void openBrowser(BrowserMode mode) {
   if (hasCurrentSequencePath()) {
     extractSequenceParentPath(currentSequencePath(), startPath, sizeof(startPath));
   } else {
-    copyString(startPath, sizeof(startPath), kSequenceStorageRoot);
+    copyBoundedString(startPath, sizeof(startPath), kSequenceStorageRoot);
   }
   setBrowserPath(startPath);
   showBrowser();
@@ -865,7 +844,7 @@ void revertCallback() {
   const bool hadPath = hasCurrentSequencePath();
   char path[kSequencePathLength] = "";
   if (hadPath) {
-    copyString(path, sizeof(path), currentSequencePath());
+    copyBoundedString(path, sizeof(path), currentSequencePath());
   }
   if (revertSequence()) {
     returnToSequencerMenu();
@@ -1122,13 +1101,13 @@ void refreshUsbBackupMenu(bool redrawMenu) {
     char statusLineTwo[kBrowserLabelLength];
     getUsbBackupStatusLines(statusLineOne, sizeof(statusLineOne),
                             statusLineTwo, sizeof(statusLineTwo));
-    copyString(g_usbBackupStatusLineOne, sizeof(g_usbBackupStatusLineOne), statusLineOne);
-    copyString(g_usbBackupStatusLineTwo, sizeof(g_usbBackupStatusLineTwo), statusLineTwo);
+    copyBoundedString(g_usbBackupStatusLineOne, sizeof(g_usbBackupStatusLineOne), statusLineOne);
+    copyBoundedString(g_usbBackupStatusLineTwo, sizeof(g_usbBackupStatusLineTwo), statusLineTwo);
     usbBackupStartItem().hide();
     usbBackupStopItem().show();
   } else {
-    copyString(g_usbBackupStatusLineOne, sizeof(g_usbBackupStatusLineOne), "USB Backup Off");
-    copyString(g_usbBackupStatusLineTwo, sizeof(g_usbBackupStatusLineTwo), "Host tool idle");
+    copyBoundedString(g_usbBackupStatusLineOne, sizeof(g_usbBackupStatusLineOne), "USB Backup Off");
+    copyBoundedString(g_usbBackupStatusLineTwo, sizeof(g_usbBackupStatusLineTwo), "Host tool idle");
     usbBackupStartItem().show();
     usbBackupStopItem().hide();
   }
@@ -1254,13 +1233,13 @@ void refreshActionPage() {
   char displayName[kBrowserLabelLength] = "";
   extractSequenceDisplayName(g_actionTargetPath, displayName, sizeof(displayName));
   if (displayName[0] == '\0') {
-    copyString(displayName, sizeof(displayName), g_actionTargetIsFolder ? "Folder" : "File");
+    copyBoundedString(displayName, sizeof(displayName), g_actionTargetIsFolder ? "Folder" : "File");
   }
 
-  copyString(g_promptLineOne, sizeof(g_promptLineOne), g_actionTargetIsFolder ? "Folder:" : "File:");
-  copyString(g_promptLineTwo, sizeof(g_promptLineTwo), displayName);
-  copyString(g_promptLineThree, sizeof(g_promptLineThree), "");
-  copyString(g_promptLineFour, sizeof(g_promptLineFour), "Choose action.");
+  copyBoundedString(g_promptLineOne, sizeof(g_promptLineOne), g_actionTargetIsFolder ? "Folder:" : "File:");
+  copyBoundedString(g_promptLineTwo, sizeof(g_promptLineTwo), displayName);
+  copyBoundedString(g_promptLineThree, sizeof(g_promptLineThree), "");
+  copyBoundedString(g_promptLineFour, sizeof(g_promptLineFour), "Choose action.");
 
   actionPromptOneItem().setTitle(g_promptLineOne);
   actionPromptTwoItem().setTitle(g_promptLineTwo);
@@ -1286,7 +1265,7 @@ void actionRenameCallback() {
 
   extractSequenceDisplayName(g_actionTargetPath, g_namingBuffer, sizeof(g_namingBuffer));
   g_namingLength = static_cast<byte>(strlen(g_namingBuffer));
-  copyString(g_renameSourcePath, sizeof(g_renameSourcePath), g_actionTargetPath);
+  copyBoundedString(g_renameSourcePath, sizeof(g_renameSourcePath), g_actionTargetPath);
   g_namingTarget = g_actionTargetIsFolder ? NamingTarget::RenameFolder : NamingTarget::RenameSequence;
   g_actionTargetPath[0] = '\0';
   g_namingErrorOne[0] = '\0';
@@ -1300,20 +1279,20 @@ void actionDeleteCallback() {
     return;
   }
 
-  copyString(g_deleteTargetPath, sizeof(g_deleteTargetPath), g_actionTargetPath);
+  copyBoundedString(g_deleteTargetPath, sizeof(g_deleteTargetPath), g_actionTargetPath);
   g_deleteTargetIsFolder = g_actionTargetIsFolder;
   g_actionTargetPath[0] = '\0';
 
   char displayName[kBrowserLabelLength] = "";
   extractSequenceDisplayName(g_deleteTargetPath, displayName, sizeof(displayName));
   if (displayName[0] == '\0') {
-    copyString(displayName, sizeof(displayName), g_deleteTargetIsFolder ? "Folder" : "File");
+    copyBoundedString(displayName, sizeof(displayName), g_deleteTargetIsFolder ? "Folder" : "File");
   }
 
-  copyString(g_promptLineOne, sizeof(g_promptLineOne), g_deleteTargetIsFolder ? "Delete folder:" : "Delete file:");
-  copyString(g_promptLineTwo, sizeof(g_promptLineTwo), displayName);
-  copyString(g_promptLineThree, sizeof(g_promptLineThree), "This cannot be");
-  copyString(g_promptLineFour, sizeof(g_promptLineFour), "undone.");
+  copyBoundedString(g_promptLineOne, sizeof(g_promptLineOne), g_deleteTargetIsFolder ? "Delete folder:" : "Delete file:");
+  copyBoundedString(g_promptLineTwo, sizeof(g_promptLineTwo), displayName);
+  copyBoundedString(g_promptLineThree, sizeof(g_promptLineThree), "This cannot be");
+  copyBoundedString(g_promptLineFour, sizeof(g_promptLineFour), "undone.");
 
   deletePromptOneItem().setTitle(g_promptLineOne);
   deletePromptTwoItem().setTitle(g_promptLineTwo);
@@ -1387,7 +1366,7 @@ void confirmDeleteCallback() {
   }
 
   char deletedPath[kSequencePathLength] = "";
-  copyString(deletedPath, sizeof(deletedPath), g_deleteTargetPath);
+  copyBoundedString(deletedPath, sizeof(deletedPath), g_deleteTargetPath);
   const bool deletedFolder = g_deleteTargetIsFolder;
   g_deleteTargetPath[0] = '\0';
   g_deleteTargetIsFolder = false;
@@ -1427,8 +1406,8 @@ void cancelDeleteCallback() {
 }
 
 void setNamingError(const char* lineOne, const char* lineTwo) {
-  copyString(g_namingErrorOne, sizeof(g_namingErrorOne), lineOne);
-  copyString(g_namingErrorTwo, sizeof(g_namingErrorTwo), lineTwo);
+  copyBoundedString(g_namingErrorOne, sizeof(g_namingErrorOne), lineOne);
+  copyBoundedString(g_namingErrorTwo, sizeof(g_namingErrorTwo), lineTwo);
 }
 
 void finishNamingToBrowser() {
@@ -1519,8 +1498,8 @@ bool commitNaming() {
     }
     if (hasCurrentSequencePath() && sequencePathIsWithinFolder(currentSequencePath(), g_renameSourcePath)) {
       char repaired[kSequencePathLength] = "";
-      copyString(repaired, sizeof(repaired), targetPath);
-      if (appendString(repaired, sizeof(repaired), currentSequencePath() + strlen(g_renameSourcePath))) {
+      copyBoundedString(repaired, sizeof(repaired), targetPath);
+      if (appendBoundedString(repaired, sizeof(repaired), currentSequencePath() + strlen(g_renameSourcePath))) {
         setCurrentSequencePath(repaired);
       }
     }
@@ -1700,7 +1679,7 @@ void drawFileMenuOverlay() {
   wakeDisplayFromScreensaver();
 
   char nameLine[kSequenceNameLength + 2] = "";
-  copyString(nameLine, sizeof(nameLine), g_namingBuffer);
+  copyBoundedString(nameLine, sizeof(nameLine), g_namingBuffer);
   const bool showCursor = ((runTime / 400000ULL) % 2ULL) == 0ULL;
   if (showCursor && g_namingLength < kSequenceNameLength) {
     nameLine[g_namingLength] = '_';

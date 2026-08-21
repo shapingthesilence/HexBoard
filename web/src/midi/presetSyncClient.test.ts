@@ -1,16 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import { deterministicObjectId } from "../catalogs/objectId.ts";
 import {
-  createDefaultLayoutBundle,
+  GeometryObjectSchemaVersion,
+  createDefaultTuningBundle,
   createGeneratedEdoTuning,
   encodeGeometryCatalogOrder,
-  encodeLayoutBundle
+  encodeTuningBundle
 } from "../catalogs/layoutsCatalog.ts";
 import { createSynthPresetObject } from "../catalogs/synthPresets.ts";
 import { createSynthWavetableObject, SYNTH_WAVETABLE_SAMPLE_BYTES } from "../catalogs/synthWavetables.ts";
+import { crc32 } from "../protocol/crc32.ts";
 import {
   MessageType,
   ObjectType,
+  SynthWavetableSelector,
   decodePresetSyncFrame,
   decodeAckPayload,
   decodeDataChunkPayload,
@@ -19,7 +22,8 @@ import {
   encodeAckFrame,
   encodeDataChunkPayload,
   encodeDefaultPresetSyncFrame,
-  encodeTransferEndPayload
+  encodeTransferEndPayload,
+  encodeWriteBeginPayload
 } from "../protocol/index.ts";
 import { MockMidiTransport } from "./mockTransport.ts";
 import { PresetSyncClient } from "./presetSyncClient.ts";
@@ -67,6 +71,18 @@ describe("PresetSyncClient", () => {
 
     expect(decoded.message).toBe(MessageType.SynthParamSet);
     expect(decoded.payload).toEqual([1, 59, 63, 1]);
+    expect(Array.from(transport.sentMessages[0])).toEqual(frame);
+  });
+
+  it("sends a compact live wavetable selection frame", async () => {
+    const transport = new MockMidiTransport();
+    const client = new PresetSyncClient(transport);
+
+    const frame = await client.sendSynthWavetableSelect(SynthWavetableSelector.Catalog, 0x0123);
+    const decoded = decodePresetSyncFrame(frame);
+
+    expect(decoded.message).toBe(MessageType.SynthWavetableSelect);
+    expect(decoded.payload).toEqual([SynthWavetableSelector.Catalog, 0x02, 0x23]);
     expect(Array.from(transport.sentMessages[0])).toEqual(frame);
   });
 
@@ -148,6 +164,38 @@ describe("PresetSyncClient", () => {
     });
   });
 
+  it("updates preset organization in place without applying it to runtime", async () => {
+    const transport = new MockMidiTransport();
+    const originalSend = transport.send.bind(transport);
+    transport.send = async (bytes) => {
+      await originalSend(bytes);
+      const frame = decodePresetSyncFrame(bytes);
+      const nextChunkIndex = frame.message === MessageType.DataChunk
+        ? decodeDataChunkPayload(frame.payload).chunkIndex + 1
+        : 0;
+      transport.emit(encodeAckFrame(frame.transactionId, frame.message, nextChunkIndex));
+    };
+    const client = new PresetSyncClient(transport);
+    const preset = createSynthPresetObject({
+      objectId: deterministicObjectId("organized preset"),
+      name: "Renamed",
+      folderPath: "Moved",
+      values: { PlaybackMode: 0, Waveform: 1 }
+    });
+
+    const frames = await client.sendSynthPresetUpdateConfirmed(preset, 23);
+    const decoded = frames.map((frame) => decodePresetSyncFrame(frame));
+
+    expect(decodeWriteBeginPayload(decoded[0].payload)).toMatchObject({
+      objectType: ObjectType.SynthPreset,
+      handle: 23,
+      writeFlags: 0x06
+    });
+    expect(decodeWriteCommitPayload(decoded.at(-1)?.payload ?? [])).toMatchObject({
+      commitFlags: 0x06
+    });
+  });
+
   it("saves a complete geometry bundle as one file transfer", async () => {
     const transport = new MockMidiTransport();
     const originalSend = transport.send.bind(transport);
@@ -160,7 +208,7 @@ describe("PresetSyncClient", () => {
       transport.emit(encodeAckFrame(frame.transactionId, frame.message, nextChunkIndex));
     };
     const client = new PresetSyncClient(transport);
-    const bundle = encodeLayoutBundle(createDefaultLayoutBundle());
+    const bundle = encodeTuningBundle(createDefaultTuningBundle());
     const frames = await client.sendGeometryBundleSaveConfirmed(bundle.bundleFile);
     const decoded = frames.map((frame) => decodePresetSyncFrame(frame));
 
@@ -223,6 +271,8 @@ describe("PresetSyncClient", () => {
 
     expect(decodeWriteBeginPayload(decoded[0].payload)).toMatchObject({
       objectType: ObjectType.UserTuning,
+      schemaMajor: GeometryObjectSchemaVersion,
+      schemaMinor: 0,
       rawByteLength: tuning.body.length,
       writeFlags: 0x01
     });
@@ -250,35 +300,26 @@ describe("PresetSyncClient", () => {
     await expect(request).resolves.toEqual([]);
   });
 
-  it("ACKs device-to-host read chunks before completing a synth preset read", async () => {
+  it("reads a complete geometry bundle with byte progress", async () => {
     const transport = new MockMidiTransport();
     const client = new PresetSyncClient(transport);
-    const request = client.readSynthPreset(0);
+    const rawData = encodeTuningBundle(createDefaultTuningBundle()).bundleFile;
+    const onProgress = vi.fn();
+    const request = client.readGeometryBundle(0, onProgress);
     const transaction = decodePresetSyncFrame(transport.sentMessages[0]).transactionId;
     const transferId = 7;
-    const rawData = new Uint8Array([0x48, 0x42, 0x53]);
 
-    transport.emit(encodeDefaultPresetSyncFrame(MessageType.ReadBegin, transaction, [
-      ObjectType.SynthPreset,
-      0x00,
-      0x00,
-      0x00,
+    transport.emit(encodeDefaultPresetSyncFrame(MessageType.ReadBegin, transaction, encodeWriteBeginPayload({
+      objectType: ObjectType.GeometryBundle,
+      handle: 0,
       transferId,
-      0x01,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      rawData.length,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x00,
-      0x40,
-      0x00
-    ]));
+      schemaMajor: 1,
+      schemaMinor: 0,
+      rawByteLength: rawData.length,
+      objectCrc32: crc32(rawData),
+      rawChunkSize: 64,
+      writeFlags: 0
+    })));
     let ack = decodePresetSyncFrame(transport.sentMessages.at(-1) ?? []);
     expect(ack.message).toBe(MessageType.Ack);
     expect(decodeAckPayload(ack.payload)).toMatchObject({
@@ -309,6 +350,18 @@ describe("PresetSyncClient", () => {
     ));
 
     await expect(request).resolves.toEqual(rawData);
+    expect(onProgress).toHaveBeenNthCalledWith(1, {
+      direction: "download",
+      objectType: ObjectType.GeometryBundle,
+      transferredBytes: 0,
+      totalBytes: rawData.length
+    });
+    expect(onProgress).toHaveBeenLastCalledWith({
+      direction: "download",
+      objectType: ObjectType.GeometryBundle,
+      transferredBytes: rawData.length,
+      totalBytes: rawData.length
+    });
     ack = decodePresetSyncFrame(transport.sentMessages.at(-1) ?? []);
     expect(decodeAckPayload(ack.payload)).toMatchObject({
       message: MessageType.TransferEnd,

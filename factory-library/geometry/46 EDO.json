@@ -1,27 +1,15 @@
 {
-  "format": "hexboard.layoutBundle.v5",
-  "bundle": {
+  "format": "hexboard.tuningBundle.v2",
+  "tuningBundle": {
     "objectIdHex": "e1e208382b509b955289771adde18fc9",
-    "name": "46 EDO",
     "folderPath": "/",
     "tuning": {
       "kind": "edo",
       "name": "46 EDO",
       "cycleLength": 46,
       "referenceMidiNote": 69,
-      "referenceHz": 440.0,
+      "referenceHz": 440,
       "keyLabels": [
-        "A",
-        "A+1",
-        "A+2",
-        "A+3",
-        "A+4",
-        "A+5",
-        "A+6",
-        "A+7",
-        "B",
-        "B+1",
-        "B+2",
         "C",
         "C+1",
         "C+2",
@@ -56,10 +44,23 @@
         "G+4",
         "G+5",
         "G+6",
-        "G+7"
+        "G+7",
+        "A",
+        "A+1",
+        "A+2",
+        "A+3",
+        "A+4",
+        "A+5",
+        "A+6",
+        "A+7",
+        "B",
+        "B+1",
+        "B+2"
       ],
       "edoDivisions": 46,
-      "periodCents": 1200.0
+      "periodCents": 1200,
+      "referenceDegree": 35,
+      "defaultKeyDegree": 0
     },
     "palette": {
       "defaultColorMode": 1,

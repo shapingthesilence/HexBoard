@@ -8,7 +8,7 @@ import {
   ColorMode,
   createExplicitButtonMap,
   createCentsTableTuning,
-  createDefaultLayoutBundle,
+  createDefaultTuningBundle,
   createEqualStepTuning,
   createFactorySynthWavetables,
   createGeneratedEdoTuning,
@@ -21,25 +21,25 @@ import {
   crunchSerumWavetable,
   currentFirmwareDownLeftToUpRight,
   defaultKeyLabels,
+  decodeGeometryBundleFile,
   deterministicObjectId,
   encodeHexBoardWavetableWav,
   encodeGeometryCatalogOrder,
-  encodeLayoutBundle,
+  encodeTuningBundle,
   ExplicitButtonMapTlv,
   GenericScaleColorMapName,
   GeometryLayoutScaleMaxCount,
-  keyLabelsForTlvOrder,
   keyLabelsFromScalaIntervalLabels,
   LayoutTlv,
   objectIdToHex,
   parseHexBoardWavetable,
-  parseLayoutBundleLibrary,
-  parseLayoutBundleFile,
+  parseTuningBundleLibrary,
+  parseTuningBundleFile,
   parseScalaScale,
   renderInterpolatedAnchorWavetable,
-  resolveLayoutBundleButtonColor,
+  resolveTuningBundleButtonColor,
   ScaleColorMapTlv,
-  serializeLayoutBundle,
+  serializeTuningBundle,
   SYNTH_WAVETABLE_FRAME_COUNT,
   SYNTH_WAVETABLE_MIP_LEVEL_COUNT,
   SYNTH_WAVETABLE_MIP_SAMPLE_BYTES,
@@ -162,10 +162,23 @@ describe("catalog object encoding", () => {
     const decoded = decodeObjectBody(tuning.body);
     expect(decoded.objectType).toBe(ObjectType.UserTuning);
     expect(textFromBytes(decoded.records.find((record) => record.tag === CommonTlv.Name)?.value ?? new Uint8Array())).toBe("17 EDO");
-    expect(defaultKeyLabels(17).slice(0, 4)).toEqual(["A", "Bb", "A#", "B"]);
-    expect(keyLabels(recordValue(tuning.body, TuningTlv.KeyLabels))).toEqual([
-      "C", "Db", "C#", "D", "Eb", "D#", "E", "F", "Gb", "F#", "G", "Ab", "G#", "A", "Bb", "A#", "B"
-    ]);
+    expect(defaultKeyLabels(17).slice(0, 4)).toEqual(["0", "1", "2", "3"]);
+    expect(recordValue(tuning.body, TuningTlv.KeyLabels)).toHaveLength(0);
+    const customLabels = defaultKeyLabels(17);
+    customLabels[0] = "Root";
+    const custom = createGeneratedEdoTuning({
+      objectId: tuningId,
+      name: "17 EDO",
+      edoDivisions: 17,
+      keyLabels: customLabels
+    });
+    expect(keyLabels(recordValue(custom.body, TuningTlv.KeyLabels))).toEqual(customLabels);
+    const generatedLabels = createGeneratedEdoTuning({
+      objectId: tuningId,
+      name: "23 EDO",
+      edoDivisions: 23
+    });
+    expect(decodeObjectBody(generatedLabels.body).records.some((record) => record.tag === TuningTlv.KeyLabels)).toBe(false);
   });
 
   it("round trips a vector layout", () => {
@@ -247,13 +260,23 @@ Example scale
     expect(parsed.cents[0]).toBeCloseTo(100);
     expect(parsed.cents[1]).toBeCloseTo(701.955, 3);
     expect(parsed.intervalLabels).toEqual(["C#", "G", "C"]);
-    expect(keyLabelsForTlvOrder(keyLabelsFromScalaIntervalLabels(parsed.count, parsed.intervalLabels, 60), parsed.count)).toEqual(["C", "C#", "G"]);
+    expect(keyLabelsFromScalaIntervalLabels(parsed.count, parsed.intervalLabels, 0)).toEqual(["C", "C#", "G"]);
     expect(parsed.periodCents).toBeCloseTo(1200);
   });
 
-  it("rejects Scala tunings above the 128-division runtime limit", () => {
-    const intervals = Array.from({ length: 129 }, (_, index) => `${index + 1}.0`).join("\n");
-    expect(() => parseScalaScale(`Too large\n129\n${intervals}`)).toThrow(/128-division limit/);
+  it("accepts the 1024-division runtime limit and rejects larger Scala tunings", () => {
+    const supportedIntervals = Array.from({ length: 1024 }, (_, index) => `${index + 1}.0`).join("\n");
+    const parsed = parseScalaScale(`Supported\n1024\n${supportedIntervals}`);
+    expect(parsed.count).toBe(1024);
+    const encoded = createCentsTableTuning({
+      objectId: deterministicObjectId("1024 divisions"),
+      name: "1024 divisions",
+      cents: parsed.cents,
+      keyLabels: Array.from({ length: 1024 }, (_, index) => `D${index}`)
+    });
+    expect(encoded.body.length).toBeLessThanOrEqual(16_384);
+    const intervals = Array.from({ length: 1025 }, (_, index) => `${index + 1}.0`).join("\n");
+    expect(() => parseScalaScale(`Too large\n1025\n${intervals}`)).toThrow(/1024-division limit/);
   });
 
   it("round trips scales, scale colors, and explicit button maps", () => {
@@ -426,14 +449,20 @@ Example scale
     expect(base[SYNTH_WAVETABLE_SAMPLE_COUNT]).toBeLessThan(80);
   });
 
-  it("serializes and encodes a layout bundle", () => {
+  it("serializes and encodes a tuning bundle", () => {
     const bundle = {
-      ...createDefaultLayoutBundle(),
+      ...createDefaultTuningBundle(),
       folderPath: "Microtonal"
     };
-    const parsed = parseLayoutBundleFile(JSON.parse(serializeLayoutBundle(bundle)));
-    const encoded = encodeLayoutBundle(parsed);
-    expect(parsed.name).toBe(bundle.name);
+    const serialized = JSON.parse(serializeTuningBundle(bundle));
+    expect(serialized).toMatchObject({
+      format: "hexboard.tuningBundle.v2",
+      tuningBundle: { tuning: { name: bundle.tuning.name } }
+    });
+    expect("name" in serialized.tuningBundle).toBe(false);
+    const parsed = parseTuningBundleFile(serialized);
+    const encoded = encodeTuningBundle(parsed);
+    expect(parsed.tuning.name).toBe(bundle.tuning.name);
     expect(parsed.folderPath).toBe("Microtonal");
     expect(encoded.objects.map((object) => object.objectType)).toEqual([
       ObjectType.UserTuning,
@@ -448,6 +477,7 @@ Example scale
       "Microtonal"
     ]);
     expect(textFromBytes(recordValue(encoded.scaleColorMap.body, CommonTlv.Name))).toBe(GenericScaleColorMapName);
+    expect(textFromBytes(recordValue(encoded.tuning.body, CommonTlv.Name))).toBe(bundle.tuning.name);
     expect(u8(recordValue(encoded.scaleColorMap.body, ScaleColorMapTlv.DefaultColorMode))).toBe(ColorMode.Custom);
     expect(new TextDecoder().decode(encoded.bundleFile.slice(0, 3))).toBe("HGB");
     expect(encoded.bundleFile[3]).toBe(3);
@@ -455,8 +485,83 @@ Example scale
     expect(u16LE(encoded.bundleFile.slice(6, 8))).toBe(0xffff);
     expect(u32LE(encoded.bundleFile.slice(8, 12)) >>> 0).toBe(crc32(encoded.bundleFile.slice(12)) >>> 0);
 
-    const ordered = encodeLayoutBundle({ ...parsed, catalogOrder: 7 });
+    const decodedBundle = decodeGeometryBundleFile(encoded.bundleFile);
+    expect(decodedBundle.catalogOrder).toBe(0xffff);
+    expect(decodedBundle.objects.map((object) => ({
+      type: object.objectType,
+      id: objectIdToHex(object.objectId),
+      name: object.name,
+      folderPath: object.folderPath,
+      body: object.body
+    }))).toEqual(encoded.objects.map((object) => ({
+      type: object.objectType,
+      id: objectIdToHex(object.objectId),
+      name: object.name,
+      folderPath: object.folderPath,
+      body: object.body
+    })));
+
+    const ordered = encodeTuningBundle({ ...parsed, catalogOrder: 7 });
     expect(u16LE(ordered.bundleFile.slice(6, 8))).toBe(7);
+  });
+
+  it("preserves 12 EDO note-label order across file and device round trips", () => {
+    const original = createDefaultTuningBundle();
+    if (original.tuning.kind !== "edo") throw new Error("default test tuning must be EDO");
+    original.tuning = {
+      ...original.tuning,
+      edoDivisions: 12,
+      cycleLength: 12,
+      referenceDegree: 9,
+      defaultKeyDegree: 9,
+      keyLabels: ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"]
+    };
+    const fileRoundTrip = parseTuningBundleFile(JSON.parse(serializeTuningBundle(original)));
+    const encoded = encodeTuningBundle(fileRoundTrip);
+    const deviceLabels = keyLabels(recordValue(encoded.tuning.body, TuningTlv.KeyLabels));
+
+    expect(fileRoundTrip.tuning.keyLabels).toEqual(original.tuning.keyLabels);
+    expect(deviceLabels).toEqual(original.tuning.keyLabels);
+    expect(u16LE(recordValue(encoded.tuning.body, TuningTlv.ReferenceDegree))).toBe(9);
+    expect(u16LE(recordValue(encoded.tuning.body, TuningTlv.DefaultKeyDegree))).toBe(9);
+  });
+
+  it("imports a legacy layout bundle using its device-facing bundle name", () => {
+    const bundle = createDefaultTuningBundle();
+    const parsed = parseTuningBundleFile({
+      format: "hexboard.layoutBundle.v5",
+      bundle: {
+        ...bundle,
+        name: "Legacy Device Name",
+        tuning: { ...bundle.tuning, name: "Legacy Tuning Name" }
+      }
+    });
+
+    expect(parsed.tuning.name).toBe("Legacy Device Name");
+    expect("name" in parsed).toBe(false);
+  });
+
+  it("converts version 1 A-first labels to explicit degree order", () => {
+    const base = createDefaultTuningBundle();
+    const parsed = parseTuningBundleFile({
+      format: "hexboard.tuningBundle.v1",
+      tuningBundle: {
+        ...base,
+        tuning: {
+          kind: "edo",
+          name: "Legacy 12 EDO",
+          edoDivisions: 12,
+          cycleLength: 12,
+          periodCents: 1200,
+          referenceMidiNote: 69,
+          referenceHz: 440,
+          keyLabels: ["A", "Bb", "B", "C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#"]
+        }
+      }
+    });
+
+    expect(parsed.tuning.referenceDegree).toBe(9);
+    expect(parsed.tuning.keyLabels).toEqual(["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"]);
   });
 
   it("encodes a compact checksummed geometry order file", () => {
@@ -470,7 +575,7 @@ Example scale
   });
 
   it("accepts up to 32 layouts and scales per tuning", () => {
-    const base = createDefaultLayoutBundle();
+    const base = createDefaultTuningBundle();
     const layouts = Array.from({ length: GeometryLayoutScaleMaxCount }, (_, index) => ({
       ...base.layouts[0],
       objectIdHex: objectIdToHex(deterministicObjectId(`limit-layout-${index}`)),
@@ -489,66 +594,86 @@ Example scale
       activeScaleIdHex: scales[0].objectIdHex
     };
 
-    expect(encodeLayoutBundle(atLimit).layouts).toHaveLength(GeometryLayoutScaleMaxCount);
-    expect(encodeLayoutBundle(atLimit).scales).toHaveLength(GeometryLayoutScaleMaxCount);
-    expect(() => encodeLayoutBundle({
+    expect(encodeTuningBundle(atLimit).layouts).toHaveLength(GeometryLayoutScaleMaxCount);
+    expect(encodeTuningBundle(atLimit).scales).toHaveLength(GeometryLayoutScaleMaxCount);
+    expect(() => encodeTuningBundle({
       ...atLimit,
       layouts: [...layouts, { ...layouts[0], objectIdHex: objectIdToHex(deterministicObjectId("layout-over-limit")) }]
     })).toThrow(/1 through 32 layouts/);
-    expect(() => encodeLayoutBundle({
+    expect(() => encodeTuningBundle({
       ...atLimit,
       scales: [...scales, { ...scales[0], objectIdHex: objectIdToHex(deterministicObjectId("scale-over-limit")) }]
     })).toThrow(/1 through 32 scales/);
   });
 
+  it("encodes layouts and scales in their explicit bundle order", () => {
+    const base = createDefaultTuningBundle();
+    const firstLayout = { ...base.layouts[0], objectIdHex: objectIdToHex(deterministicObjectId("ordered-layout-first")), name: "First layout" };
+    const secondLayout = { ...base.layouts[0], objectIdHex: objectIdToHex(deterministicObjectId("ordered-layout-second")), name: "Second layout" };
+    const firstScale = { ...base.scales[0], objectIdHex: objectIdToHex(deterministicObjectId("ordered-scale-first")), name: "First scale" };
+    const secondScale = { ...base.scales[0], objectIdHex: objectIdToHex(deterministicObjectId("ordered-scale-second")), name: "Second scale" };
+    const encoded = encodeTuningBundle({
+      ...base,
+      layouts: [firstLayout, secondLayout],
+      activeLayoutIdHex: secondLayout.objectIdHex,
+      scales: [firstScale, secondScale],
+      activeScaleIdHex: secondScale.objectIdHex
+    });
+
+    expect(encoded.layouts.map((layout) => layout.name)).toEqual(["First layout", "Second layout"]);
+    expect(encoded.scales.map((scale) => scale.name)).toEqual(["First scale", "Second scale"]);
+  });
+
   it("preserves device tuning and color object ids when re-saving a downloaded bundle", () => {
     const tuningObjectIdHex = "00112233445566778899aabbccddeeff";
     const colorObjectIdHex = "ffeeddccbbaa99887766554433221100";
-    const parsed = parseLayoutBundleFile(JSON.parse(serializeLayoutBundle({
-      ...createDefaultLayoutBundle(),
+    const parsed = parseTuningBundleFile(JSON.parse(serializeTuningBundle({
+      ...createDefaultTuningBundle(),
       tuningObjectIdHex,
       colorObjectIdHex
     })));
-    const encoded = encodeLayoutBundle(parsed);
+    const encoded = encodeTuningBundle(parsed);
 
     expect(objectIdToHex(encoded.tuning.objectId)).toBe(tuningObjectIdHex);
     expect(objectIdToHex(encoded.scaleColorMap.objectId)).toBe(colorObjectIdHex);
   });
 
   it("persists and encodes a bundle's default color mode", () => {
-    const bundle = createDefaultLayoutBundle();
+    const bundle = createDefaultTuningBundle();
     bundle.palette.defaultColorMode = ColorMode.Rainbow;
-    const parsed = parseLayoutBundleFile(JSON.parse(serializeLayoutBundle(bundle)));
-    const encoded = encodeLayoutBundle(parsed);
+    const parsed = parseTuningBundleFile(JSON.parse(serializeTuningBundle(bundle)));
+    const encoded = encodeTuningBundle(parsed);
 
     expect(parsed.palette.defaultColorMode).toBe(ColorMode.Rainbow);
     expect(u8(recordValue(encoded.scaleColorMap.body, ScaleColorMapTlv.DefaultColorMode))).toBe(ColorMode.Rainbow);
   });
 
   it("derives equal-step period metadata from step cents and cycle length", () => {
-    const base = createDefaultLayoutBundle();
-    const serialized = JSON.parse(serializeLayoutBundle({
+    const base = createDefaultTuningBundle();
+    const serialized = JSON.parse(serializeTuningBundle({
       ...base,
       tuning: {
         kind: "equal-step",
         name: "80 cent steps",
         stepCents: 80,
         cycleLength: 15,
+        referenceDegree: 0,
+        defaultKeyDegree: 0,
         referenceMidiNote: 69,
         referenceHz: 440,
         keyLabels: Array.from({ length: 15 }, (_, degree) => String(degree))
       }
     }));
-    const parsed = parseLayoutBundleFile(serialized);
-    const encoded = encodeLayoutBundle(parsed);
+    const parsed = parseTuningBundleFile(serialized);
+    const encoded = encodeTuningBundle(parsed);
 
     expect("periodCents" in parsed.tuning).toBe(false);
     expect(float32LE(recordValue(encoded.tuning.body, TuningTlv.StepCentsFloat32))).toBe(80);
   });
 
   it("derives Scala period and cycle metadata from the cents table", () => {
-    const base = createDefaultLayoutBundle();
-    const serialized = JSON.parse(serializeLayoutBundle({
+    const base = createDefaultTuningBundle();
+    const serialized = JSON.parse(serializeTuningBundle({
       ...base,
       tuning: {
         kind: "scala",
@@ -557,14 +682,16 @@ Example scale
         cents: [100, 300, 702],
         periodCents: 702,
         cycleLength: 3,
+        referenceDegree: 0,
+        defaultKeyDegree: 0,
         referenceMidiNote: 69,
         referenceHz: 440,
         keyLabels: ["A", "A+1", "A+2"]
       }
     }));
 
-    const parsed = parseLayoutBundleFile(serialized);
-    const encoded = encodeLayoutBundle(parsed);
+    const parsed = parseTuningBundleFile(serialized);
+    const encoded = encodeTuningBundle(parsed);
 
     expect(parsed.tuning).toMatchObject({
       kind: "scala",
@@ -576,7 +703,7 @@ Example scale
   });
 
   it("encodes device rotation separately from musical layout transforms", () => {
-    const base = createDefaultLayoutBundle();
+    const base = createDefaultTuningBundle();
     const bundle = {
       ...base,
       layouts: base.layouts.map((layout, index) => index === 0 ? {
@@ -587,7 +714,7 @@ Example scale
         mirrorUpDown: false
       } : layout)
     };
-    const encoded = encodeLayoutBundle(bundle);
+    const encoded = encodeTuningBundle(bundle);
     expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.DeviceRotation))).toBe(2);
     expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.LayoutRotation))).toBe(3);
     expect(u8(recordValue(encoded.layouts[0].body, LayoutTlv.MirrorFlags))).toBe(1);
@@ -616,7 +743,7 @@ Example scale
   });
 
   it("keeps off-board overrides in the web bundle without syncing them", () => {
-    const base = createDefaultLayoutBundle();
+    const base = createDefaultTuningBundle();
     const bundle = {
       ...base,
       layouts: base.layouts.map((layout, index) => index === 0 ? {
@@ -624,17 +751,17 @@ Example scale
         offGridOverrides: [{ coordCol: -3, coordRow: 18, role: "note" as const, stepsFromC: 42 }]
       } : layout)
     };
-    const parsed = parseLayoutBundleFile(JSON.parse(serializeLayoutBundle(bundle)));
+    const parsed = parseTuningBundleFile(JSON.parse(serializeTuningBundle(bundle)));
     expect(parsed.layouts[0].offGridOverrides).toEqual([
       { coordCol: -3, coordRow: 18, role: "note", stepsFromC: 42 }
     ]);
-    expect(encodeLayoutBundle(parsed).explicitButtonMaps).toHaveLength(0);
+    expect(encodeTuningBundle(parsed).explicitButtonMaps).toHaveLength(0);
   });
 
   it("falls back to the default bundle for an empty layout library", () => {
-    const library = parseLayoutBundleLibrary([]);
+    const library = parseTuningBundleLibrary([]);
     expect(library).toHaveLength(1);
-    expect(library[0].name).toBe("19 EDO Wicki");
+    expect(library[0].tuning.name).toBe("19 EDO Wicki");
   });
 
   it("resolves scale degree color before per-button overrides", () => {
@@ -642,7 +769,7 @@ Example scale
       { degree: 0, hueTenthDegrees: 0, saturation: 0, value: 180 },
       { degree: 1, hueTenthDegrees: 1200, saturation: 200, value: 190 }
     ];
-    expect(resolveLayoutBundleButtonColor({
+    expect(resolveTuningBundleButtonColor({
       degreeColors,
       cycleLength: 2,
       stepsFromC: 1,
@@ -652,7 +779,18 @@ Example scale
       colorSource: "degree",
       color: degreeColors[1]
     });
-    expect(resolveLayoutBundleButtonColor({
+    expect(resolveTuningBundleButtonColor({
+      degreeColors,
+      cycleLength: 2,
+      stepsFromC: 1,
+      keyDegree: 1,
+      defaultColorMode: ColorMode.Custom
+    })).toMatchObject({
+      degree: 0,
+      colorSource: "degree",
+      color: degreeColors[0]
+    });
+    expect(resolveTuningBundleButtonColor({
       degreeColors,
       cycleLength: 2,
       stepsFromC: 1,
@@ -667,7 +805,7 @@ Example scale
         value: 255
       }
     });
-    expect(resolveLayoutBundleButtonColor({
+    expect(resolveTuningBundleButtonColor({
       degreeColors,
       cycleLength: 2,
       stepsFromC: 1,
@@ -689,7 +827,7 @@ Example scale
         value: 255
       }
     });
-    expect(resolveLayoutBundleButtonColor({
+    expect(resolveTuningBundleButtonColor({
       degreeColors,
       cycleLength: 2,
       stepsFromC: 1,

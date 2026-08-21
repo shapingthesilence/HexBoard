@@ -74,27 +74,33 @@ and `TRANSFER_END` so firmware can pace object transfers.
 ## Current Scope
 
 - A shared responsive header keeps device connection, light/dark appearance,
-  and the top-level `Tunings & Layouts`, `Synth Editor`, and `Profiles` views in
+  and the top-level `Tunings & Layouts` and `Synth Editor` views in
   a consistent location. `Tunings & Layouts` opens by default.
 - Protocol helpers for the draft preset-sync SysEx frame.
 - CRC32 and 8-to-7 packing utilities matching the firmware draft.
 - TLV object encoding for user tunings, layouts, scale color maps, explicit
   button maps, and named/foldered synth presets.
-- Atomic `HGB` encoding for complete tuning bundles. Saving a bundle transfers
+- Atomic `HGB` encoding for complete tuning bundles. Saving a tuning transfers
   one staged file, while live preview continues to send only the active
   tuning/layout/scale/color/map objects without writing flash. Tuning divisions
-  and scale cycles are limited to the firmware's `1..128` range; each tuning
-  can contain up to 32 layouts and 32 scales.
-- Bundle color-mode defaults are stored in the bundle; the supplied 12 EDO
-  bundle uses Rainbow. Computer and HexBoard library rows can be reordered by
+  and scale cycles are limited to the firmware's `1..1024` range; each tuning
+  can contain up to 32 layouts and 32 scales. Layouts and scales can be reordered
+  in a drag-and-drop dialog; the first item is the device-menu default when the
+  tuning is loaded. All Notes remains protected from editing and deletion but
+  can be reordered with the other scales.
+- Generated note labels and default degree colors are omitted from encoded
+  objects. Custom labels and color overrides remain packed records, so large
+  tunings do not pay a per-division transfer or runtime cost for defaults.
+- Color-mode defaults are stored with each tuning; the supplied 12 EDO tuning
+  uses Rainbow. Computer and HexBoard library rows can be reordered by
   dragging. Device reorders update the UI immediately, wait for a 2-second
   quiet period, then write only the compact geometry-order file; unchanged
   order bytes do not cause another flash write.
-- A tuning/layout bundle editor organized as a four-step `Library`, `Tuning`,
+- A tuning editor organized as a four-step `Library`, `Tuning`,
   `Layout`, and `Scale & color` workflow. The library gets a full-width transfer
   and folder-management view. Folder filters consistently begin with `All` and
   `Root`; empty computer folders can be created and deleted, while device
-  folders appear only when a saved item uses them. Editing keeps bundle sync
+  folders appear only when a saved item uses them. Editing keeps tuning sync
   actions and the visual HexBoard preview in consistent locations. Device
   rotation is four-way and separate from musical layout transforms. A layout
   toolbar directly below the color tools provides step transposition, two-way
@@ -103,7 +109,7 @@ and `TRANSFER_END` so firmware can pace object transfers.
   this history. One selected key or all selected keys transforms the generated
   layout around the gold primary key; any other multi-selection creates
   per-key overrides. Overrides that rotate beyond the physical board remain in
-  the saved bundle so later transforms can bring them back. The selected-key
+  the saved tuning bundle so later transforms can bring them back. The selected-key
   inspector separates key state, optional pitch overrides, inherited or per-key
   color, and advanced pitch details; color editing uses a compact visual
   picker. Shift/Ctrl/Command selection enables
@@ -116,54 +122,85 @@ and `TRANSFER_END` so firmware can pace object transfers.
   adding controls to the ordinary tuned-note workflow. Read-only pitch and
   scale values are presented as facts rather than form fields, and all overrides
   can be reset together. Raw encoded-object details are collapsed until needed.
-  The editor also supports scale-degree palette editing, A-first note labels,
-  and a paint mode for applying per-button color overrides or scale-degree
+  The editor also supports scale-degree palette editing, direct degree-order
+  note labels, a grouped pitch anchor with explicit degree, frequency, and MIDI
+  key selection, and a separate default-key degree that is applied when a tuning
+  first loads. A paint mode applies per-button color overrides or scale-degree
   palette colors directly on the preview. Painting a scale degree clears
   matching color overrides in the active layout so the palette color takes
   effect immediately, and a confirmed reset returns all keys in the active
   layout to scale-degree colors.
   EDO pitch generation preserves the exact period/division ratio rather than
   treating the rounded decimal step display as authoritative. Sync writes
-  firmware-native binary32 tuning values alongside milli-unit compatibility
-  fields, and the editor preview uses the same binary32 rounding as firmware.
+  each authoritative tuning value once as firmware-native binary32, and the
+  editor preview uses the same binary32 rounding as firmware. EDO step size,
+  equal-step period, and cents-list period are derived rather than stored as
+  duplicate values.
   Scala `.scl`
-  import reads trailing interval labels, exposes the 1/1 MIDI note
+  import reads trailing interval labels, exposes the 1/1 reference key
   and Hz reference, and enables cents-table live send when the connected
   firmware advertises runtime support. Live send serializes only the active
-  runtime records. `Save to HexBoard` writes the whole bundle, preserves tuning
-  and color object IDs for bundles opened from the device, then reapplies the
+  runtime records. `Save to HexBoard` writes the whole tuning bundle, preserves
+  tuning and color object IDs for tunings opened from the device, then reapplies the
   active records so the hardware preview and on-device menus agree.
+  Opening, copying, or exporting a HexBoard tuning streams its complete stored
+  `.hgb` bundle once and shows byte progress in the app. The compiled rescue
+  tuning is not presented as an editable library item; the library shows a
+  fallback notice when the device reports that rescue state.
+  Browser Library edits are saved automatically. `Copy to HexBoard` and
+  `Copy to Browser` copy between libraries; `Export File` writes a portable
+  `hexboard.tuningBundle.v2` JSON file. Version 1 tuning bundles and legacy
+  `hexboard.layoutBundle.v5` files remain importable; legacy layout bundles use
+  their former device-facing bundle name as the tuning name. `Rename / Move`
+  updates the selected browser or device bundle without creating a duplicate
+  and gives an explicit replacement warning when the destination is occupied.
+  Multi-select actions copy several bundles between libraries or export one
+  `hexboard.tuningBundleLibrary.v1` JSON file; multi-file import accepts those
+  library files alongside individual tuning-bundle files.
 - A synth preset editor with name and folder selection, folder creation, main
   synth parameter controls, mono retrigger/legato, mono portamento,
   arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,
   and an explicit save sync action over the active MIDI transport. A dormant
   browser AudioWorklet audition implementation remains in the source behind a
   disabled visibility gate for later offline preset design work. Opened presets
-  are temporary editor drafts; saving creates a new folder/name when
-  unique and asks before overwriting an existing folder/name. Saves to real
+  are temporary editor drafts; saving an existing library preset preserves its
+  object identity while updating its name, folder, and sound. Saving a new
+  destination asks before replacing an occupied folder/name. Saves to real
   devices wait for ACK/NACK responses through the flash commit before the app
   refreshes device storage.
-- Synth preset library areas named `Computer Library` for browser-saved/imported
+- Synth preset library areas named `Browser Library` for browser-saved/imported
   presets and `HexBoard Library` for device-side presets loaded through SysEx,
-  including persistent computer folders with explicit create/delete controls,
-  `All` and `Root` system filters, drag-and-drop folder moves, upload/download
-  actions, device refresh, JSON import, JSON export, open, and erase controls.
+  with independently collapsible library panels,
+  including persistent browser folders with explicit create/delete controls,
+  an `All presets` filter, searchable compact preset rows, per-row overflow
+  actions, identity-preserving `Rename / Move`, drag-and-drop folder moves,
+  library copy actions, device refresh, JSON import, JSON export, open, and
+  confirmed delete controls. The batch toolbar appears after a selection.
+  Multi-select can copy a
+  batch between libraries or export one `hexboard.synthPresetLibrary.v1` JSON
+  file, and multi-file import accepts individual and library files together.
   Device preset listing uses
   small one-record pages to stay within conservative MIDI SysEx buffer limits
   and refreshes automatically when the synth preset view opens with a real MIDI
   transport.
-- Synth wavetable library areas named `Computer Wavetables` and
+- Synth wavetable library areas named `Browser Wavetables` and
   `HexBoard Wavetables`, using the same folder controls as presets. Imported
   wavetables default to `Root`. The firmware-resident Basic Shapes fallback is
   also presented in `Root`; its special storage path is never shown as a folder.
   Imports upload to HexBoard immediately for hardware audition and refresh the
   device-authoritative HexBoard wavetable list after the flash commit. Short
   HexBoard `.hexwav` imports are interpolated to the device's 16-frame table.
-  Saving a preset that references a computer-only wavetable offers to upload
-  the wavetable first.
+  The preset editor separates on-device and computer-only wavetables. Selecting
+  a computer-only wavetable offers to upload it before applying the selection;
+  preset saves repeat the availability check as a safety net and require either
+  uploading the same-name dependency or choosing an alternate. Wavetable names
+  are globally unique; folders are organization only and preset dependencies
+  match by name. With Live send enabled, selecting an existing device wavetable
+  uses a single runtime-select control frame rather than transferring the open
+  synth preset.
 - A mock MIDI transport for UI and protocol work before firmware support exists.
-- Basic React views for device connection, profile sync, tuning/layout editing,
-  and synth preset organization.
+- Basic React views for device connection, tuning/layout editing, and synth
+  preset organization.
 
 Firmware currently implements synth preset, wavetable, and geometry preset-sync
 paths used by the app. Mock mode still covers UI work when no compatible device

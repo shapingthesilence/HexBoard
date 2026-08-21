@@ -17,6 +17,7 @@
 #include "SequencerOverlay.h"
 #include "SequencerPlaybackSettings.h"
 #include "SequencerState.h"
+#include "SequencerStringUtils.h"
 #include "SequencerTools.h"
 #include "SequencerTransport.h"
 
@@ -50,30 +51,6 @@ bool runFlashSafeSequenceWrite(Operation operation) {
   return ok;
 }
 
-void copyString(char* destination, size_t destinationLength, const char* source) {
-  if (destinationLength == 0) {
-    return;
-  }
-
-  if (source == nullptr) {
-    destination[0] = '\0';
-    return;
-  }
-
-  strncpy(destination, source, destinationLength - 1);
-  destination[destinationLength - 1] = '\0';
-}
-
-bool appendToPath(char* path, size_t pathLength, const char* suffix) {
-  const size_t used = strlen(path);
-  const size_t suffixLength = strlen(suffix);
-  if (used + suffixLength >= pathLength) {
-    return false;
-  }
-  memcpy(path + used, suffix, suffixLength + 1);
-  return true;
-}
-
 bool startsWith(const char* value, const char* prefix) {
   return strncmp(value, prefix, strlen(prefix)) == 0;
 }
@@ -103,13 +80,13 @@ void updateSequenceTitle() {
     char name[kSequenceNameLength + 1] = "";
     extractSequenceDisplayName(g_currentPath, name, sizeof(name));
     if (name[0] == '\0') {
-      copyString(name, sizeof(name), "Untitled");
+      copyBoundedString(name, sizeof(name), "Untitled");
     }
     snprintf(nextTitle, sizeof(nextTitle), "Seq-%s%s", g_dirty ? "*" : "", name);
   }
 
   if (strcmp(g_title, nextTitle) != 0) {
-    copyString(g_title, sizeof(g_title), nextTitle);
+    copyBoundedString(g_title, sizeof(g_title), nextTitle);
     ++g_titleVersion;
   }
 }
@@ -551,7 +528,7 @@ void restoreRememberedSequenceAtStartup() {
     && LittleFS.exists(rememberedPath)
     && loadSequenceFromPath(rememberedPath, false);
   if (restored) {
-    copyString(g_currentPath, sizeof(g_currentPath), rememberedPath);
+    copyBoundedString(g_currentPath, sizeof(g_currentPath), rememberedPath);
     updateSequenceTitle();
   } else {
     resetSequenceOwnedDataToDefaults();
@@ -571,8 +548,8 @@ bool saveSequenceToPath(const char* path) {
   }
 
   char tempPath[kSequencePathLength] = "";
-  copyString(tempPath, sizeof(tempPath), path);
-  if (!appendToPath(tempPath, sizeof(tempPath), ".tmp")) {
+  copyBoundedString(tempPath, sizeof(tempPath), path);
+  if (!appendBoundedString(tempPath, sizeof(tempPath), ".tmp")) {
     return false;
   }
 
@@ -703,7 +680,7 @@ void setCurrentSequencePath(const char* path) {
   if (strcmp(g_currentPath, path) == 0) {
     return;
   }
-  copyString(g_currentPath, sizeof(g_currentPath), path);
+  copyBoundedString(g_currentPath, sizeof(g_currentPath), path);
   writeRememberedCurrentPath();
   updateSequenceTitle();
 }
@@ -728,7 +705,7 @@ void extractSequenceLeafName(const char* path, char* output, size_t outputLength
 
   const char* leaf = strrchr(path, '/');
   leaf = leaf == nullptr ? path : leaf + 1;
-  copyString(output, outputLength, leaf);
+  copyBoundedString(output, outputLength, leaf);
 }
 
 void extractSequenceDisplayName(const char* path, char* output, size_t outputLength) {
@@ -749,10 +726,10 @@ void extractSequenceParentPath(const char* path, char* output, size_t outputLeng
     return;
   }
 
-  copyString(output, outputLength, path);
+  copyBoundedString(output, outputLength, path);
   char* slash = strrchr(output, '/');
   if (slash == nullptr || slash == output) {
-    copyString(output, outputLength, kSequenceStorageRoot);
+    copyBoundedString(output, outputLength, kSequenceStorageRoot);
     return;
   }
   *slash = '\0';
@@ -768,11 +745,11 @@ void joinSequencePath(const char* directoryPath, const char* leafName, char* out
     return;
   }
 
-  copyString(output, outputLength, directoryPath);
+  copyBoundedString(output, outputLength, directoryPath);
   if (output[0] != '\0' && output[strlen(output) - 1] != '/') {
-    appendToPath(output, outputLength, "/");
+    appendBoundedString(output, outputLength, "/");
   }
-  appendToPath(output, outputLength, leafName);
+  appendBoundedString(output, outputLength, leafName);
 }
 
 bool sequencePathIsRoot(const char* path) {

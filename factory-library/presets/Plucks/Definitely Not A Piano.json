@@ -1,0 +1,49 @@
+{
+  "format": "hexboard.synthPreset.v1",
+  "preset": {
+    "objectId": "84f10981d2b2257c92f7a57f56dd0407",
+    "name": "Definitely Not A Piano",
+    "folderPath": "Plucks",
+    "wavetable": {
+      "name": "NotPiano",
+      "folderPath": "/"
+    },
+    "favorite": false,
+    "values": {
+      "PlaybackMode": 3,
+      "Waveform": 27,
+      "SynthDrive": 0,
+      "SynthModTarget": 0,
+      "SynthModAmount": 127,
+      "SynthVibratoSpeed": 1,
+      "ArpeggiatorDivision": 32,
+      "SynthBPM": 120,
+      "EnvelopeAttackIndex": 1,
+      "EnvelopeHoldIndex": 12,
+      "EnvelopeDecayIndex": 16,
+      "EnvelopeSustainLevel": 64,
+      "EnvelopeReleaseIndex": 11,
+      "EffectEnvelopeTarget": 3,
+      "EffectEnvelopeAmount": 0,
+      "EffectEnvelopeAttackIndex": 0,
+      "EffectEnvelopeHoldIndex": 0,
+      "EffectEnvelopeDecayIndex": 12,
+      "EffectEnvelopeSustainLevel": 0,
+      "EffectEnvelopeReleaseIndex": 12,
+      "EffectEnvelope2Target": 1,
+      "EffectEnvelope2Amount": 124,
+      "EffectEnvelope2AttackIndex": 0,
+      "EffectEnvelope2HoldIndex": 11,
+      "EffectEnvelope2DecayIndex": 12,
+      "EffectEnvelope2SustainLevel": 0,
+      "EffectEnvelope2ReleaseIndex": 11,
+      "SynthPortamentoTimeIndex": 0,
+      "ArpeggiatorDirection": 0,
+      "SynthWavetablePosition": 127,
+      "SynthLfoTarget": 5,
+      "SynthLfoAmount": 142,
+      "SynthLfoWave": 1,
+      "SynthLfoSpeed": 5
+    }
+  }
+}

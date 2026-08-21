@@ -30,7 +30,7 @@ separate analysis document.
 - `AGENTS.md`: AI agent and contributor instructions, including documentation update requirements
 - `HexBoard.ino`: root Arduino sketch with only lifecycle wrappers
 - `src/firmware/`: primary firmware implementation modules
-- `factory-library/`: source synth presets, wavetables, geometry bundles, and factory-image configuration
+- `factory-library/`: source synth presets, wavetables, tuning bundles, and factory-image configuration
 - `web/`: isolated Vite/React companion app for preset-sync workflows
 - `docs/`: user, developer, protocol, and workflow documentation
 - `scripts/`: factory-image builders and host-side helper tools
@@ -49,7 +49,6 @@ The current code supports:
 - scale filtering with optional scale lock
 - multiple LED color modes and animations
 - boot and Advanced-menu LED test modes for spotting failed pixels or color channels
-- an Advanced-menu stability benchmark for worst-case synth, LED, display, and sync stress testing
 - a USB-meter-calibrated LED current limiter to reduce brownouts in bright modes
 - an optional OLED note overlay that shows currently played notes as labels or scale-step numbers
 - standard MIDI, extended multi-channel MIDI mapping, and MPE behavior
@@ -58,8 +57,8 @@ The current code supports:
 - an external-only delegated-control mode for host-driven buttons and LEDs
 - persistent settings with `9` profile slots stored in LittleFS
 - cached storage health available under `Advanced` without an extra boot scan
-- independently replaceable LittleFS files for up to `64` geometry bundles and
-  `128` synth presets, with geometry divisions up to `128`
+- independently replaceable LittleFS files for up to `64` tuning bundles and
+  `128` synth presets, with geometry divisions up to `1024`
 - an optional sequencer build, documented in the [Sequencer Manual](docs/sequencer/manuals/sequencer_manual.txt)
 
 ## Team
@@ -108,7 +107,7 @@ The simplest local build is:
 make
 ```
 
-The build validates the synth-preset and tuning/layout-bundle `.json` files plus
+The build validates the synth-preset and tuning-bundle `.json` files plus
 the `.hexwav` wavetables under `factory-library/`, compiles them into device
 catalog files, and uses
 `mklittlefs` from the installed RP2040 Arduino core to create an `8 MiB`

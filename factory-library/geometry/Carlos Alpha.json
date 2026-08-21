@@ -1,27 +1,28 @@
 {
-  "format": "hexboard.layoutBundle.v5",
-  "bundle": {
+  "format": "hexboard.tuningBundle.v2",
+  "tuningBundle": {
     "objectIdHex": "ef50acaeab50875e200982296090b698",
-    "name": "Carlos Alpha",
     "folderPath": "/",
     "tuning": {
       "kind": "equal-step",
       "name": "Carlos Alpha",
       "cycleLength": 9,
       "referenceMidiNote": 69,
-      "referenceHz": 440.0,
+      "referenceHz": 440,
       "keyLabels": [
-        "IV+",
-        "Ib",
         "I",
         "I#",
         "II-",
         "II+",
         "III",
         "III#",
-        "IV-"
+        "IV-",
+        "IV+",
+        "Ib"
       ],
-      "stepCents": 77.96499
+      "stepCents": 77.96499,
+      "referenceDegree": 0,
+      "defaultKeyDegree": 0
     },
     "palette": {
       "defaultColorMode": 1,

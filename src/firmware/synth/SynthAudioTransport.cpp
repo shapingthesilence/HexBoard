@@ -13,6 +13,8 @@ byte audioD = AUDIO_AJACK;
 bool synthBuzzerEnabled = false;
 byte headphoneVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
 byte piezoVolumeCap = HEADPHONE_VOLUME_CAP_FULL;
+volatile byte headphoneVolumeGain = HEADPHONE_VOLUME_CAP_FULL;
+volatile byte piezoVolumeGain = HEADPHONE_VOLUME_CAP_FULL;
 extern const uint32_t AUDIO_DMA_BUFFER_MICROS =
   (static_cast<uint64_t>(AUDIO_DMA_BUFFER_SAMPLE_COUNT) * 1000000ull) / AUDIO_SAMPLE_RATE_HZ;
 volatile uint16_t audioOutputMuteGainQ8 = AUDIO_OUTPUT_MUTE_GAIN_FULL_Q8;
@@ -52,6 +54,22 @@ byte runtimeAudioDestination(bool buzzerEnabled) {
 void syncAudioDestinationToRuntime() {
   audioD = runtimeAudioDestination(synthBuzzerEnabled);
   preparePhysicalAudioOutput(audioD);
+}
+
+void setHeadphoneVolumeCap(byte value) {
+  if (value > HEADPHONE_VOLUME_CAP_FULL) {
+    value = HEADPHONE_VOLUME_CAP_FULL;
+  }
+  headphoneVolumeCap = value;
+  headphoneVolumeGain = perceptualAudioGain7(value);
+}
+
+void setPiezoVolumeCap(byte value) {
+  if (value > HEADPHONE_VOLUME_CAP_FULL) {
+    value = HEADPHONE_VOLUME_CAP_FULL;
+  }
+  piezoVolumeCap = value;
+  piezoVolumeGain = perceptualAudioGain7(value);
 }
 
 uint8_t RAM_FUNC(currentSynthVoiceLimit)() {
@@ -296,7 +314,7 @@ void RAM_FUNC(audioDmaIrqHandler)() {
   if (audioDmaChannel < 0) {
     return;
   }
-  dma_hw->ints0 = 1u << audioDmaChannel;
+  dma_hw->ints1 = 1u << audioDmaChannel;
   if (audioDmaPausedForFlashWrite) {
     return;
   }
@@ -344,7 +362,7 @@ void RAM_FUNC(fillAudioDmaBuffer)(uint8_t bufferIndex, byte destination) {
 void stopAudioDma() {
   if (audioDmaChannel >= 0) {
     dma_channel_abort(audioDmaChannel);
-    dma_hw->ints0 = 1u << audioDmaChannel;
+    dma_hw->ints1 = 1u << audioDmaChannel;
   }
   audioDmaBufferReady[0] = false;
   audioDmaBufferReady[1] = false;
@@ -358,7 +376,7 @@ void quiesceAudioDmaForFlashWrite() {
   __dmb();
   if (audioDmaChannel >= 0) {
     dma_channel_abort(audioDmaChannel);
-    dma_hw->ints0 = 1u << audioDmaChannel;
+    dma_hw->ints1 = 1u << audioDmaChannel;
   }
   audioDmaBufferReady[0] = false;
   audioDmaBufferReady[1] = false;
@@ -435,10 +453,10 @@ void setupAudioDma() {
   channel_config_set_read_increment(&audioDmaConfig, true);
   channel_config_set_write_increment(&audioDmaConfig, false);
   channel_config_set_dreq(&audioDmaConfig, pwm_get_dreq(AUDIO_DMA_TIMER_SLICE));
-  dma_channel_set_irq0_enabled(audioDmaChannel, true);
-  irq_set_exclusive_handler(DMA_IRQ_0, audioDmaIrqHandler);
-  irq_set_priority(DMA_IRQ_0, 0x00);
-  irq_set_enabled(DMA_IRQ_0, true);
+  dma_channel_set_irq1_enabled(audioDmaChannel, true);
+  irq_set_exclusive_handler(DMA_IRQ_1, audioDmaIrqHandler);
+  irq_set_priority(DMA_IRQ_1, 0x00);
+  irq_set_enabled(DMA_IRQ_1, true);
   startAudioDmaForDestination(selectedAudioDmaDestination());
   audioTransportReady.store(true, std::memory_order_release);
 }

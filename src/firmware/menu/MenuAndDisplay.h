@@ -1,16 +1,18 @@
 #pragma once
 
 #include "../FirmwareModule.h"
+#include "DisplayTransport.h"
 
 constexpr uint8_t CONTRAST_AWAKE = 63;
 constexpr uint8_t CONTRAST_SCREENSAVER = 1;
 
-extern U8G2_SH1107_SEEED_128X128_F_HW_I2C u8g2;
+extern HexBoardDisplay u8g2;
 extern GEM_u8g2 menu;
 extern bool screenSaverOn;
 extern uint64_t screenTime;
 extern const uint64_t screenSaverTimeout;
 extern bool flashSaveScreenVisible;
+extern bool missingWavetableNoticeVisible;
 extern bool rotaryInvert;
 extern GEMPage menuPageMain;
 extern GEMPage menuPageTuning;
@@ -33,6 +35,8 @@ void showFlashSaveScreen();
 void closeFlashSaveScreen();
 void dismissFlashSaveScreenForMenuInput();
 void serviceFlashSaveScreen();
+void showMissingWavetableNotice(const char* wavetableName);
+bool serviceMissingWavetableNotice();
 void drawCenteredMenuHeaderTitle(const char* title);
 void menuHome();
 void menuSynthOptionsHome();
@@ -43,8 +47,7 @@ void showOnlyValidKeyChoices();
 void applyDeviceDisplayRotation();
 void loadDeviceRotationFromCurrentLayout();
 void updateLayoutAndRotate();
-void syncSettingsToRuntime();
-void syncSynthSettingsToRuntime();
+void syncSettingsToRuntime(bool redrawMenu = true);
 void updateSynthMenuVisibility();
 void updateEditorMenuVisibility();
 void installHardwareSpecificMenuItems();

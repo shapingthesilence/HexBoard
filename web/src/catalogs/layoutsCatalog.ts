@@ -4,6 +4,7 @@ import {
   bytesFromNumbers,
   concatBytes,
   createCommonRecords,
+  decodeObjectBody,
   encodeObjectBody,
   encodeObjectReference,
   tlv,
@@ -18,14 +19,16 @@ import type { EncodedCatalogObject, LayoutsDatCatalog, ObjectReferenceInput } fr
 import { deterministicObjectId, objectIdFromHex, objectIdToHex } from "./objectId.ts";
 import { crc32 } from "../protocol/crc32.ts";
 
-export const LayoutBundleFileFormat = "hexboard.layoutBundle.v5";
+export const TuningBundleFileFormat = "hexboard.tuningBundle.v2";
+export const LegacyTuningBundleFileFormat = "hexboard.tuningBundle.v1";
+export const LegacyLayoutBundleFileFormat = "hexboard.layoutBundle.v5";
 export const GeometryBundleFileVersion = 3;
 export const GeometryObjectSchemaVersion = 2;
 export const GenericScaleColorMapName = "Custom Palette";
 export const GeometryMenuTextMaxLength = 19;
 export const NoteLabelTextMaxLength = 7;
-export const MaxTuningDivisions = 128;
-export const GeometryObjectMaxRawBytes = 8_192;
+export const MaxTuningDivisions = 1024;
+export const GeometryObjectMaxRawBytes = 16_384;
 export const GeometryBundleMaxRawBytes = 262_144;
 export const GeometryBundleMaxRecords = 255;
 export const GeometryBundleMaxCount = 64;
@@ -81,6 +84,8 @@ export type ButtonMapRoleName = "unused" | "note" | "command";
 export const TuningTlv = {
   TuningKind: 0x20,
   EdoDivisions: 0x21,
+  ReferenceDegree: 0x22,
+  DefaultKeyDegree: 0x23,
   ReferenceMidiNote: 0x24,
   RatioTable: 0x27,
   KeyLabels: 0x28,
@@ -153,20 +158,14 @@ export const ChordPitchMode = {
   MidiSemitones: 1
 } as const;
 
-const cOrderedDefaultKeyLabels: Partial<Record<number, string[]>> = {
-  12: ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"],
-  17: ["C", "Db", "C#", "D", "Eb", "D#", "E", "F", "Gb", "F#", "G", "Ab", "G#", "A", "Bb", "A#", "B"],
-  19: ["C", "C#", "Db", "D", "D#", "Eb", "E", "E#", "F", "F#", "Gb", "G", "G#", "Ab", "A", "A#", "Bb", "B", "Cb"],
-  24: ["C", "C+", "C#", "Dd", "D", "D+", "Eb", "Ed", "E", "E+", "F", "F+", "F#", "Gd", "G", "G+", "G#", "Ad", "A", "A+", "Bb", "Bd", "B", "Cd"],
-  31: ["C", "C+", "C#", "Db", "Dd", "D", "D+", "D#", "Eb", "Ed", "E", "E+", "Fd", "F", "F+", "F#", "Gb", "Gd", "G", "G+", "G#", "Ab", "Ad", "A", "A+", "A#", "Bb", "Bd", "B", "B+", "Cd"]
-};
-
 export interface GeneratedEdoTuningInput {
   objectId: Uint8Array;
   name: string;
   folderPath?: string;
   edoDivisions: number;
   periodCents?: number;
+  referenceDegree?: number;
+  defaultKeyDegree?: number;
   referenceMidiNote?: number;
   referenceHz?: number;
   keyLabels?: string[];
@@ -178,6 +177,8 @@ export interface EqualStepTuningInput {
   folderPath?: string;
   stepCents?: number;
   cycleLength: number;
+  referenceDegree?: number;
+  defaultKeyDegree?: number;
   referenceMidiNote?: number;
   referenceHz?: number;
   keyLabels?: string[];
@@ -188,6 +189,8 @@ export interface CentsTableTuningInput {
   name: string;
   folderPath?: string;
   cents: number[];
+  referenceDegree?: number;
+  defaultKeyDegree?: number;
   referenceMidiNote?: number;
   referenceHz?: number;
   keyLabels?: string[];
@@ -236,7 +239,7 @@ export interface UserScaleInput {
   includedDegrees: number[];
 }
 
-export type LayoutBundleButtonAction =
+export type TuningBundleButtonAction =
   | {
       kind: "direct-midi";
       midiNote: number;
@@ -248,7 +251,7 @@ export type LayoutBundleButtonAction =
       rootMidiNote?: number;
     };
 
-export interface LayoutBundleChordAction {
+export interface TuningBundleChordAction {
   id: number;
   name: string;
   pitchMode: "tuning-steps" | "midi-semitones";
@@ -269,25 +272,25 @@ export interface ExplicitButtonRecord {
   hueTenthDegrees?: number;
   saturation?: number;
   value?: number;
-  action?: LayoutBundleButtonAction;
+  action?: TuningBundleButtonAction;
 }
 
-export interface LayoutBundleButtonOverride {
+export interface TuningBundleButtonOverride {
   buttonIndex: number;
   role: ButtonMapRoleName;
   hueTenthDegrees?: number;
   saturation?: number;
   value?: number;
   stepsFromC?: number;
-  action?: LayoutBundleButtonAction;
+  action?: TuningBundleButtonAction;
 }
 
-export interface LayoutBundleGridOverride extends Omit<LayoutBundleButtonOverride, "buttonIndex"> {
+export interface TuningBundleGridOverride extends Omit<TuningBundleButtonOverride, "buttonIndex"> {
   coordCol: number;
   coordRow: number;
 }
 
-export interface LayoutBundleLayout {
+export interface TuningBundleLayout {
   objectIdHex: string;
   name: string;
   centerButton: number;
@@ -298,29 +301,31 @@ export interface LayoutBundleLayout {
   layoutRotationSteps: number;
   mirrorLeftRight: boolean;
   mirrorUpDown: boolean;
-  buttonOverrides: LayoutBundleButtonOverride[];
-  offGridOverrides: LayoutBundleGridOverride[];
-  chordActions: LayoutBundleChordAction[];
+  buttonOverrides: TuningBundleButtonOverride[];
+  offGridOverrides: TuningBundleGridOverride[];
+  chordActions: TuningBundleChordAction[];
 }
 
-export interface LayoutBundleScale {
+export interface TuningBundleScale {
   objectIdHex: string;
   name: string;
   includedDegrees: number[];
 }
 
-export interface LayoutBundlePalette {
+export interface TuningBundlePalette {
   defaultColorMode: ColorModeValue;
   degreeColors: ScaleDegreeColor[];
 }
 
-export type LayoutBundleTuning =
+export type TuningBundleTuning =
   | {
       kind: "edo";
       name: string;
       edoDivisions: number;
       periodCents: number;
       cycleLength: number;
+      referenceDegree: number;
+      defaultKeyDegree: number;
       referenceMidiNote: number;
       referenceHz: number;
       keyLabels: string[];
@@ -330,6 +335,8 @@ export type LayoutBundleTuning =
       name: string;
       stepCents: number;
       cycleLength: number;
+      referenceDegree: number;
+      defaultKeyDegree: number;
       referenceMidiNote: number;
       referenceHz: number;
       keyLabels: string[];
@@ -341,27 +348,28 @@ export type LayoutBundleTuning =
       cents: number[];
       periodCents: number;
       cycleLength: number;
+      referenceDegree: number;
+      defaultKeyDegree: number;
       referenceMidiNote: number;
       referenceHz: number;
       keyLabels: string[];
     };
 
-export interface LayoutBundle {
+export interface TuningBundle {
   objectIdHex: string;
   tuningObjectIdHex?: string;
   colorObjectIdHex?: string;
   catalogOrder?: number;
-  name: string;
   folderPath: string;
-  tuning: LayoutBundleTuning;
-  palette: LayoutBundlePalette;
-  layouts: LayoutBundleLayout[];
+  tuning: TuningBundleTuning;
+  palette: TuningBundlePalette;
+  layouts: TuningBundleLayout[];
   activeLayoutIdHex: string;
-  scales: LayoutBundleScale[];
+  scales: TuningBundleScale[];
   activeScaleIdHex: string;
 }
 
-export interface EncodedLayoutBundle {
+export interface EncodedTuningBundle {
   tuning: EncodedCatalogObject;
   layouts: EncodedCatalogObject[];
   scales: EncodedCatalogObject[];
@@ -369,6 +377,11 @@ export interface EncodedLayoutBundle {
   explicitButtonMaps: EncodedCatalogObject[];
   objects: EncodedCatalogObject[];
   bundleFile: Uint8Array;
+}
+
+export interface DecodedGeometryBundleFile {
+  catalogOrder: number;
+  objects: EncodedCatalogObject[];
 }
 
 function u32LE(value: number): Uint8Array {
@@ -429,6 +442,85 @@ export function encodeGeometryBundleFile(objects: EncodedCatalogObject[], catalo
   return file;
 }
 
+export function decodeGeometryBundleFile(file: Uint8Array): DecodedGeometryBundleFile {
+  if (file.length < 12 || file.length > GeometryBundleMaxRawBytes) {
+    throw new Error("Geometry bundle file has an invalid size");
+  }
+  if (file[0] !== "H".charCodeAt(0)
+      || file[1] !== "G".charCodeAt(0)
+      || file[2] !== "B".charCodeAt(0)
+      || file[3] !== GeometryBundleFileVersion) {
+    throw new Error("Geometry bundle file has an unsupported header");
+  }
+  const view = new DataView(file.buffer, file.byteOffset, file.byteLength);
+  const recordCount = view.getUint16(4, true);
+  const catalogOrder = view.getUint16(6, true);
+  if (recordCount < 1 || recordCount > GeometryBundleMaxRecords) {
+    throw new Error("Geometry bundle file has an invalid record count");
+  }
+  if ((crc32(file.slice(12)) >>> 0) !== view.getUint32(8, true)) {
+    throw new Error("Geometry bundle file failed its CRC check");
+  }
+
+  const decoder = new TextDecoder();
+  const objects: EncodedCatalogObject[] = [];
+  let cursor = 12;
+  const requireBytes = (length: number) => {
+    if (length < 0 || cursor + length > file.length) {
+      throw new Error("Geometry bundle file contains a truncated record");
+    }
+  };
+  for (let index = 0; index < recordCount; index += 1) {
+    requireBytes(20);
+    const objectType = file[cursor++] as ObjectTypeValue;
+    const schemaMajor = file[cursor++];
+    const schemaMinor = file[cursor++];
+    const reserved = file[cursor++];
+    if (reserved !== 0) {
+      throw new Error("Geometry bundle record has unsupported flags");
+    }
+    const objectId = file.slice(cursor, cursor + 16);
+    cursor += 16;
+
+    requireBytes(1);
+    const nameLength = file[cursor++];
+    requireBytes(nameLength + 1);
+    const name = decoder.decode(file.slice(cursor, cursor + nameLength));
+    cursor += nameLength;
+    const folderLength = file[cursor++];
+    requireBytes(folderLength + 4);
+    const folderPath = decoder.decode(file.slice(cursor, cursor + folderLength));
+    cursor += folderLength;
+    const bodyLength = view.getUint32(cursor, true);
+    cursor += 4;
+    requireBytes(bodyLength);
+    const body = file.slice(cursor, cursor + bodyLength);
+    cursor += bodyLength;
+    const decodedBody = decodeObjectBody(body);
+    if (decodedBody.objectType !== objectType
+        || decodedBody.schemaMajor !== schemaMajor
+        || decodedBody.schemaMinor !== schemaMinor) {
+      throw new Error("Geometry bundle record metadata does not match its object body");
+    }
+    objects.push({
+      objectType,
+      schemaMajor,
+      schemaMinor,
+      objectId,
+      name,
+      folderPath,
+      records: decodedBody.records,
+      body
+    });
+  }
+  if (cursor !== file.length
+      || objects[0]?.objectType !== ObjectType.UserTuning
+      || objects.filter((object) => object.objectType === ObjectType.UserTuning).length !== 1) {
+    throw new Error("Geometry bundle file has an invalid structure");
+  }
+  return { catalogOrder, objects };
+}
+
 export function encodeGeometryCatalogOrder(objectIds: Uint8Array[]): Uint8Array {
   if (objectIds.length > GeometryBundleMaxCount
       || objectIds.some((objectId) => objectId.length !== 16)) {
@@ -446,7 +538,7 @@ export function encodeGeometryCatalogOrder(objectIds: Uint8Array[]): Uint8Array 
   ]);
 }
 
-export interface ResolvedLayoutBundleColor {
+export interface ResolvedTuningBundleColor {
   degree: number;
   color: ScaleDegreeColor;
   colorSource: "button" | "degree";
@@ -459,7 +551,7 @@ export interface ExplicitButtonMapInput {
   tuningRef: ObjectReferenceInput;
   layoutRef?: ObjectReferenceInput;
   records: ExplicitButtonRecord[];
-  actions?: LayoutBundleChordAction[];
+  actions?: TuningBundleChordAction[];
 }
 
 function buildCatalogObject(input: {
@@ -510,10 +602,12 @@ export function createGeneratedEdoTuning(input: GeneratedEdoTuningInput): Encode
     records: [
       tlvU8(TuningTlv.TuningKind, UserTuningKind.Edo),
       tlvU16LE(TuningTlv.EdoDivisions, input.edoDivisions),
+      tlvU16LE(TuningTlv.ReferenceDegree, clampInteger(input.referenceDegree ?? 0, 0, input.edoDivisions - 1)),
+      tlvU16LE(TuningTlv.DefaultKeyDegree, clampInteger(input.defaultKeyDegree ?? 0, 0, input.edoDivisions - 1)),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
       tlvFloat32LE(TuningTlv.PeriodCentsFloat32, periodCents),
       tlvFloat32LE(TuningTlv.ReferenceHzFloat32, referenceHz),
-      tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(input.keyLabels ?? defaultKeyLabels(input.edoDivisions), input.edoDivisions)))
+      ...optionalKeyLabelRecord(input.keyLabels, input.edoDivisions)
     ]
   });
 }
@@ -530,10 +624,12 @@ export function createEqualStepTuning(input: EqualStepTuningInput): EncodedCatal
     records: [
       tlvU8(TuningTlv.TuningKind, UserTuningKind.EqualStep),
       tlvU16LE(TuningTlv.EdoDivisions, input.cycleLength),
+      tlvU16LE(TuningTlv.ReferenceDegree, clampInteger(input.referenceDegree ?? 0, 0, input.cycleLength - 1)),
+      tlvU16LE(TuningTlv.DefaultKeyDegree, clampInteger(input.defaultKeyDegree ?? 0, 0, input.cycleLength - 1)),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
       tlvFloat32LE(TuningTlv.StepCentsFloat32, stepCents),
       tlvFloat32LE(TuningTlv.ReferenceHzFloat32, referenceHz),
-      tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(input.keyLabels ?? defaultKeyLabels(input.cycleLength), input.cycleLength)))
+      ...optionalKeyLabelRecord(input.keyLabels, input.cycleLength)
     ]
   });
 }
@@ -552,9 +648,11 @@ export function createCentsTableTuning(input: CentsTableTuningInput): EncodedCat
     records: [
       tlvU8(TuningTlv.TuningKind, UserTuningKind.CentsList),
       tlvU16LE(TuningTlv.EdoDivisions, input.cents.length),
+      tlvU16LE(TuningTlv.ReferenceDegree, clampInteger(input.referenceDegree ?? 0, 0, cycleLength - 1)),
+      tlvU16LE(TuningTlv.DefaultKeyDegree, clampInteger(input.defaultKeyDegree ?? 0, 0, cycleLength - 1)),
       tlvU8(TuningTlv.ReferenceMidiNote, input.referenceMidiNote ?? 69),
       tlvFloat32LE(TuningTlv.ReferenceHzFloat32, referenceHz),
-      tlv(TuningTlv.KeyLabels, encodeKeyLabels(keyLabelsForTlvOrder(input.keyLabels ?? defaultKeyLabels(cycleLength), cycleLength))),
+      ...optionalKeyLabelRecord(input.keyLabels, cycleLength),
       tlv(TuningTlv.CentsTableFloat32, concatBytes(floatTableBytes))
     ]
   });
@@ -593,7 +691,14 @@ export function createVectorLayout(input: VectorLayoutInput): EncodedCatalogObje
 }
 
 export function createScaleColorMap(input: ScaleColorMapInput): EncodedCatalogObject {
-  const degreeColorBytes = input.degreeColors.map((color) =>
+  const defaults = createDefaultDegreeColors(input.cycleLength);
+  const degreeColorBytes = input.degreeColors.filter((color) => {
+    const fallback = defaults[color.degree];
+    return !fallback
+      || color.hueTenthDegrees !== fallback.hueTenthDegrees
+      || color.saturation !== fallback.saturation
+      || color.value !== fallback.value;
+  }).map((color) =>
     bytesFromNumbers([
       color.degree & 0xff,
       (color.degree >> 8) & 0xff,
@@ -749,21 +854,6 @@ function roleNameToByte(role: ButtonMapRoleName): number {
   }
 }
 
-export function defaultSpanCtoA(cycleLength: number): number {
-  const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  return -Math.floor(((safeCycleLength * 9) + 6) / 12);
-}
-
-export function keyLabelIndexFromStepsFromC(stepsFromC: number, cycleLength: number): number {
-  return positiveModulo(stepsFromC + defaultSpanCtoA(cycleLength), cycleLength);
-}
-
-export function referenceStepsFromC(cycleLength: number, referenceMidiNote: number): number {
-  const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  const safeReferenceMidiNote = clampInteger(referenceMidiNote, 0, 127);
-  return Math.round((safeCycleLength * (safeReferenceMidiNote - 60)) / 12);
-}
-
 export function midiNoteToFrequency(midiNote: number): number {
   const safeMidiNote = clampInteger(midiNote, 0, 127);
   return 440 * (2 ** ((safeMidiNote - 69) / 12));
@@ -771,11 +861,7 @@ export function midiNoteToFrequency(midiNote: number): number {
 
 export function defaultKeyLabels(cycleLength: number): string[] {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  const cOrderedLabels = cOrderedDefaultKeyLabels[safeCycleLength];
-  if (!cOrderedLabels) {
-    return Array.from({ length: safeCycleLength }, (_, degree) => degree === 0 ? "A" : `A+${degree}`);
-  }
-  return keyLabelsFromTlvOrder(cOrderedLabels, safeCycleLength);
+  return Array.from({ length: safeCycleLength }, (_, degree) => String(degree));
 }
 
 export function normalizeKeyLabels(labels: string[] | undefined, cycleLength: number): string[] {
@@ -786,7 +872,7 @@ export function normalizeKeyLabels(labels: string[] | undefined, cycleLength: nu
   });
 }
 
-export function keyLabelsFromScalaIntervalLabels(cycleLength: number, intervalLabels: Array<string | undefined>, referenceMidiNote = 60): string[] {
+export function keyLabelsFromScalaIntervalLabels(cycleLength: number, intervalLabels: Array<string | undefined>, referenceDegree = 0): string[] {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
   const defaults = defaultKeyLabels(safeCycleLength);
   if (!intervalLabels.some((label) => label?.trim())) {
@@ -794,33 +880,17 @@ export function keyLabelsFromScalaIntervalLabels(cycleLength: number, intervalLa
   }
 
   const labels = [...defaults];
-  const referenceStep = referenceStepsFromC(safeCycleLength, referenceMidiNote);
+  const safeReferenceDegree = clampInteger(referenceDegree, 0, safeCycleLength - 1);
   const rootLabel = intervalLabels[safeCycleLength - 1]?.trim() || "1/1";
   for (let degree = 0; degree < safeCycleLength; degree += 1) {
     const sourceLabel = degree === 0 ? rootLabel : intervalLabels[degree - 1]?.trim();
     if (!sourceLabel) {
       continue;
     }
-    const labelIndex = keyLabelIndexFromStepsFromC(referenceStep + degree, safeCycleLength);
+    const labelIndex = positiveModulo(safeReferenceDegree + degree, safeCycleLength);
     labels[labelIndex] = clampNoteLabelText(sourceLabel, defaults[labelIndex]);
   }
   return normalizeKeyLabels(labels, safeCycleLength);
-}
-
-export function keyLabelsForTlvOrder(labels: string[], cycleLength: number): string[] {
-  const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  const normalized = normalizeKeyLabels(labels, safeCycleLength);
-  const spanCtoA = defaultSpanCtoA(safeCycleLength);
-  return Array.from({ length: safeCycleLength }, (_, cIndex) => normalized[positiveModulo(spanCtoA + cIndex, safeCycleLength)]);
-}
-
-export function keyLabelsFromTlvOrder(labels: string[], cycleLength: number): string[] {
-  const safeCycleLength = Math.max(1, Math.round(cycleLength));
-  const spanCtoA = defaultSpanCtoA(safeCycleLength);
-  return Array.from({ length: safeCycleLength }, (_, aIndex) => {
-    const cIndex = positiveModulo(aIndex - spanCtoA, safeCycleLength);
-    return labels[cIndex]?.trim() || (aIndex === 0 ? "A" : `A+${aIndex}`);
-  }).map((label, index) => clampNoteLabelText(label, index === 0 ? "A" : `A+${index}`));
 }
 
 function encodeKeyLabels(labels: string[]): Uint8Array {
@@ -832,11 +902,20 @@ function encodeKeyLabels(labels: string[]): Uint8Array {
   return concatBytes(labelBytes);
 }
 
-function equalStepPeriodCents(tuning: Extract<LayoutBundleTuning, { kind: "equal-step" }>): number {
+function optionalKeyLabelRecord(labels: string[] | undefined, cycleLength: number): TlvRecord[] {
+  const defaults = defaultKeyLabels(cycleLength);
+  const normalized = normalizeKeyLabels(labels, cycleLength);
+  if (normalized.every((label, index) => label === defaults[index])) {
+    return [];
+  }
+  return [tlv(TuningTlv.KeyLabels, encodeKeyLabels(normalized))];
+}
+
+function equalStepPeriodCents(tuning: Extract<TuningBundleTuning, { kind: "equal-step" }>): number {
   return tuning.stepCents * tuning.cycleLength;
 }
 
-function bundleObjectId(bundle: LayoutBundle, suffix: string): Uint8Array {
+function bundleObjectId(bundle: TuningBundle, suffix: string): Uint8Array {
   return deterministicObjectId(`${bundle.objectIdHex}:${suffix}`);
 }
 
@@ -897,7 +976,7 @@ export function normalizeScaleDegrees(degrees: number[], cycleLength: number): n
   return [...normalized].sort((left, right) => left - right);
 }
 
-export function createAllNotesScale(cycleLength: number): LayoutBundleScale {
+export function createAllNotesScale(cycleLength: number): TuningBundleScale {
   const safeCycleLength = Math.max(1, Math.round(cycleLength));
   return {
     objectIdHex: objectIdToHex(deterministicObjectId(`scale:all-notes:${safeCycleLength}`)),
@@ -906,7 +985,7 @@ export function createAllNotesScale(cycleLength: number): LayoutBundleScale {
   };
 }
 
-export function createDefaultLayout(cycleLength: number): LayoutBundleLayout {
+export function createDefaultLayout(cycleLength: number): TuningBundleLayout {
   return {
     objectIdHex: objectIdToHex(deterministicObjectId(`layout:default:${cycleLength}`)),
     name: `${cycleLength} EDO Wicki`,
@@ -1091,15 +1170,17 @@ function colorForDefaultMode(input: {
   }
 }
 
-export function resolveLayoutBundleButtonColor(input: {
+export function resolveTuningBundleButtonColor(input: {
   degreeColors: ScaleDegreeColor[];
   cycleLength: number;
   stepsFromC: number;
+  keyDegree?: number;
   defaultColorMode?: number;
   periodCents?: number;
-  override?: LayoutBundleButtonOverride;
-}): ResolvedLayoutBundleColor {
-  const degree = positiveModulo(input.stepsFromC, input.cycleLength);
+  override?: TuningBundleButtonOverride;
+}): ResolvedTuningBundleColor {
+  const colorStepsFromKey = input.stepsFromC - (input.keyDegree ?? 0);
+  const degree = positiveModulo(colorStepsFromKey, input.cycleLength);
   const mode = input.defaultColorMode ?? ColorMode.Custom;
   if (
     mode === ColorMode.Custom &&
@@ -1128,26 +1209,27 @@ export function resolveLayoutBundleButtonColor(input: {
       cycleLength: input.cycleLength,
       degree,
       periodCents: input.periodCents,
-      stepsFromC: input.stepsFromC
+      stepsFromC: colorStepsFromKey
     }),
     colorSource: "degree"
   };
 }
 
-export function createDefaultLayoutBundle(): LayoutBundle {
+export function createDefaultTuningBundle(): TuningBundle {
   const objectId = deterministicObjectId("layout-bundle:19 EDO Wicki");
   const layout = createDefaultLayout(19);
   const scale = createAllNotesScale(19);
   return {
     objectIdHex: objectIdToHex(objectId),
-    name: "19 EDO Wicki",
     folderPath: "/",
     tuning: {
       kind: "edo",
-      name: "19 EDO",
+      name: "19 EDO Wicki",
       edoDivisions: 19,
       periodCents: 1200,
       cycleLength: 19,
+      referenceDegree: 14,
+      defaultKeyDegree: 0,
       referenceMidiNote: 69,
       referenceHz: 440,
       keyLabels: defaultKeyLabels(19)
@@ -1163,12 +1245,12 @@ export function createDefaultLayoutBundle(): LayoutBundle {
   };
 }
 
-export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
+export function encodeTuningBundle(bundle: TuningBundle): EncodedTuningBundle {
   if (bundle.layouts.length < 1 || bundle.layouts.length > GeometryLayoutScaleMaxCount) {
-    throw new RangeError(`geometry bundle must contain 1 through ${GeometryLayoutScaleMaxCount} layouts`);
+    throw new RangeError(`tuning bundle must contain 1 through ${GeometryLayoutScaleMaxCount} layouts`);
   }
   if (bundle.scales.length < 1 || bundle.scales.length > GeometryLayoutScaleMaxCount) {
-    throw new RangeError(`geometry bundle must contain 1 through ${GeometryLayoutScaleMaxCount} scales`);
+    throw new RangeError(`tuning bundle must contain 1 through ${GeometryLayoutScaleMaxCount} scales`);
   }
   const tuningId = bundle.tuningObjectIdHex
     ? objectIdFromHex(bundle.tuningObjectIdHex)
@@ -1176,7 +1258,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   const colorId = bundle.colorObjectIdHex
     ? objectIdFromHex(bundle.colorObjectIdHex)
     : bundleObjectId(bundle, "colors");
-  const tuningName = clampGeometryMenuText(bundle.name || bundle.tuning.name, "User Tuning");
+  const tuningName = clampGeometryMenuText(bundle.tuning.name, "User Tuning");
   const folderPath = clampGeometryFolderPath(bundle.folderPath);
   const tuning = (() => {
     switch (bundle.tuning.kind) {
@@ -1187,6 +1269,8 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
           folderPath,
           edoDivisions: bundle.tuning.edoDivisions,
           periodCents: bundle.tuning.periodCents,
+          referenceDegree: bundle.tuning.referenceDegree,
+          defaultKeyDegree: bundle.tuning.defaultKeyDegree,
           referenceMidiNote: bundle.tuning.referenceMidiNote,
           referenceHz: bundle.tuning.referenceHz,
           keyLabels: bundle.tuning.keyLabels
@@ -1198,6 +1282,8 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
           folderPath,
           stepCents: bundle.tuning.stepCents,
           cycleLength: bundle.tuning.cycleLength,
+          referenceDegree: bundle.tuning.referenceDegree,
+          defaultKeyDegree: bundle.tuning.defaultKeyDegree,
           referenceMidiNote: bundle.tuning.referenceMidiNote,
           referenceHz: bundle.tuning.referenceHz,
           keyLabels: bundle.tuning.keyLabels
@@ -1208,6 +1294,8 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
           name: tuningName,
           folderPath,
           cents: bundle.tuning.cents,
+          referenceDegree: bundle.tuning.referenceDegree,
+          defaultKeyDegree: bundle.tuning.defaultKeyDegree,
           referenceMidiNote: bundle.tuning.referenceMidiNote,
           referenceHz: bundle.tuning.referenceHz,
           keyLabels: bundle.tuning.keyLabels
@@ -1215,14 +1303,10 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     }
   })();
 
-  const orderedLayouts = [...bundle.layouts].sort((left, right) => {
-    if (left.objectIdHex === bundle.activeLayoutIdHex) return -1;
-    if (right.objectIdHex === bundle.activeLayoutIdHex) return 1;
-    return 0;
-  });
+  const orderedLayouts = bundle.layouts;
   const layouts = orderedLayouts.map((layout) => createVectorLayout({
     objectId: objectIdFromHex(layout.objectIdHex),
-    name: clampGeometryMenuText(layout.name || `${bundle.name} Layout`, "User Layout"),
+    name: clampGeometryMenuText(layout.name || `${tuningName} Layout`, "User Layout"),
     folderPath,
     tuningRef: tuningReference(tuning),
     centerButton: layout.centerButton,
@@ -1243,14 +1327,10 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     defaultColorMode: bundle.palette.defaultColorMode,
     degreeColors: bundle.palette.degreeColors
   });
-  const orderedScales = [...bundle.scales].sort((left, right) => {
-    if (left.objectIdHex === bundle.activeScaleIdHex) return -1;
-    if (right.objectIdHex === bundle.activeScaleIdHex) return 1;
-    return 0;
-  });
+  const orderedScales = bundle.scales;
   const scales = orderedScales.map((scale) => createUserScale({
     objectId: objectIdFromHex(scale.objectIdHex),
-    name: clampGeometryMenuText(scale.name || `${bundle.name} Scale`, "User Scale"),
+    name: clampGeometryMenuText(scale.name || `${tuningName} Scale`, "User Scale"),
     folderPath,
     tuningRef: tuningReference(tuning),
     cycleLength: bundle.tuning.cycleLength,
@@ -1271,7 +1351,7 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
     }
     return [createExplicitButtonMap({
       objectId: deterministicObjectId(`${bundle.objectIdHex}:button-map:${layout.objectIdHex}`),
-      name: clampGeometryMenuText(`${layout.name || bundle.name} Button Map`, "Button Map"),
+      name: clampGeometryMenuText(`${layout.name || tuningName} Button Map`, "Button Map"),
       folderPath,
       tuningRef: tuningReference(tuning),
       layoutRef: layoutReference(layouts[layoutIndex]),
@@ -1298,31 +1378,38 @@ export function encodeLayoutBundle(bundle: LayoutBundle): EncodedLayoutBundle {
   };
 }
 
-export function serializeLayoutBundle(bundle: LayoutBundle): string {
-  return JSON.stringify({ format: LayoutBundleFileFormat, bundle }, null, 2);
+export function serializeTuningBundle(bundle: TuningBundle): string {
+  return JSON.stringify({ format: TuningBundleFileFormat, tuningBundle: bundle }, null, 2);
 }
 
-export function parseLayoutBundleFile(value: unknown): LayoutBundle {
+export function parseTuningBundleFile(value: unknown): TuningBundle {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("Layout bundle file must contain an object");
+    throw new Error("Tuning bundle file must contain an object");
   }
   const record = value as Record<string, unknown>;
-  if (
-    record.format !== LayoutBundleFileFormat ||
-    typeof record.bundle !== "object" ||
-    record.bundle === null
-  ) {
-    throw new Error("Unsupported layout bundle file");
+  if (record.format === TuningBundleFileFormat && typeof record.tuningBundle === "object" && record.tuningBundle !== null) {
+    return normalizeTuningBundle(record.tuningBundle);
   }
-  return normalizeLayoutBundle(record.bundle);
+  if (record.format === LegacyTuningBundleFileFormat && typeof record.tuningBundle === "object" && record.tuningBundle !== null) {
+    return normalizeTuningBundle(record.tuningBundle, true);
+  }
+  if (record.format === LegacyLayoutBundleFileFormat && typeof record.bundle === "object" && record.bundle !== null) {
+    return normalizeTuningBundle(record.bundle, true);
+  }
+  throw new Error("Unsupported tuning bundle file");
 }
 
-export function parseLayoutBundleLibrary(value: unknown): LayoutBundle[] {
+export function parseTuningBundleLibrary(value: unknown): TuningBundle[] {
   if (!Array.isArray(value)) {
-    return [createDefaultLayoutBundle()];
+    return [createDefaultTuningBundle()];
   }
-  const bundles = value.map((bundle) => normalizeLayoutBundle(bundle));
-  return bundles.length > 0 ? bundles : [createDefaultLayoutBundle()];
+  const bundles = value.map((bundle) => {
+    const tuning = typeof bundle === "object" && bundle !== null
+      ? (bundle as { tuning?: { referenceDegree?: unknown } }).tuning
+      : undefined;
+    return normalizeTuningBundle(bundle, typeof tuning?.referenceDegree !== "number");
+  });
+  return bundles.length > 0 ? bundles : [createDefaultTuningBundle()];
 }
 
 function numberOr(value: unknown, fallback: number): number {
@@ -1352,45 +1439,63 @@ export function clampGeometryFolderPath(value: string | undefined): string {
   return firstComponent ? clampGeometryMenuText(firstComponent, "Geometry") : "/";
 }
 
-function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
-  const tuning = value as Partial<LayoutBundleTuning> & {
+function legacyAFirstLabelsToDegreeOrder(labels: string[] | undefined, cycleLength: number): string[] | undefined {
+  if (!labels) return undefined;
+  const spanCtoA = -Math.floor(((cycleLength * 9) + 6) / 12);
+  return Array.from({ length: cycleLength }, (_, degree) => labels[positiveModulo(spanCtoA + degree, cycleLength)]);
+}
+
+function legacyReferenceDegree(cycleLength: number, referenceMidiNote: number): number {
+  return positiveModulo(Math.round((cycleLength * (referenceMidiNote - 60)) / 12), cycleLength);
+}
+
+function normalizeTuningBundleTuning(value: unknown, legacyBundleName?: string, legacyAFirst = false): TuningBundleTuning {
+  const tuning = value as Partial<TuningBundleTuning> & {
     edoDivisions?: unknown;
     stepCents?: unknown;
     periodCents?: unknown;
     cents?: unknown;
     description?: unknown;
+    referenceDegree?: unknown;
+    defaultKeyDegree?: unknown;
     referenceMidiNote?: unknown;
     referenceHz?: unknown;
     keyLabels?: unknown;
   };
-  const name = clampGeometryMenuText(stringOr(tuning.name, "User Tuning"), "User Tuning");
+  const name = clampGeometryMenuText(legacyBundleName ?? stringOr(tuning.name, "User Tuning"), "User Tuning");
   const referenceMidiNote = clampInteger(numberOr(tuning.referenceMidiNote, 69), 0, 127);
   const referenceHz = numberOr(tuning.referenceHz, 440);
 
   if (tuning.kind === "edo") {
     const edoDivisions = clampInteger(numberOr(tuning.edoDivisions, numberOr(tuning.cycleLength, 12)), 1, MaxTuningDivisions);
+    const sourceLabels = Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined;
     return {
       kind: "edo",
       name,
       edoDivisions,
       periodCents: numberOr(tuning.periodCents, 1200),
       cycleLength: edoDivisions,
+      referenceDegree: clampInteger(numberOr(tuning.referenceDegree, legacyAFirst ? legacyReferenceDegree(edoDivisions, referenceMidiNote) : 0), 0, edoDivisions - 1),
+      defaultKeyDegree: clampInteger(numberOr(tuning.defaultKeyDegree, 0), 0, edoDivisions - 1),
       referenceMidiNote,
       referenceHz,
-      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, edoDivisions)
+      keyLabels: normalizeKeyLabels(legacyAFirst ? legacyAFirstLabelsToDegreeOrder(sourceLabels, edoDivisions) : sourceLabels, edoDivisions)
     };
   }
 
   if (tuning.kind === "equal-step") {
     const cycleLength = clampInteger(numberOr(tuning.cycleLength, numberOr(tuning.edoDivisions, 12)), 1, MaxTuningDivisions);
+    const sourceLabels = Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined;
     return {
       kind: "equal-step",
       name,
       stepCents: numberOr(tuning.stepCents, numberOr(tuning.periodCents, 1200) / cycleLength),
       cycleLength,
+      referenceDegree: clampInteger(numberOr(tuning.referenceDegree, legacyAFirst ? legacyReferenceDegree(cycleLength, referenceMidiNote) : 0), 0, cycleLength - 1),
+      defaultKeyDegree: clampInteger(numberOr(tuning.defaultKeyDegree, 0), 0, cycleLength - 1),
       referenceMidiNote,
       referenceHz,
-      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, cycleLength)
+      keyLabels: normalizeKeyLabels(legacyAFirst ? legacyAFirstLabelsToDegreeOrder(sourceLabels, cycleLength) : sourceLabels, cycleLength)
     };
   }
 
@@ -1399,6 +1504,7 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
       ? tuning.cents.map((cents) => Number(cents)).filter((cents) => Number.isFinite(cents))
       : [1200];
     const safeCents = (cents.length > 0 ? cents : [1200]).slice(0, MaxTuningDivisions);
+    const sourceLabels = Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined;
     return {
       kind: "scala",
       name,
@@ -1406,23 +1512,26 @@ function normalizeLayoutBundleTuning(value: unknown): LayoutBundleTuning {
       cents: safeCents,
       periodCents: safeCents[safeCents.length - 1] ?? 1200,
       cycleLength: clampInteger(safeCents.length, 1, MaxTuningDivisions),
+      referenceDegree: clampInteger(numberOr(tuning.referenceDegree, legacyAFirst ? legacyReferenceDegree(safeCents.length, referenceMidiNote) : 0), 0, safeCents.length - 1),
+      defaultKeyDegree: clampInteger(numberOr(tuning.defaultKeyDegree, 0), 0, safeCents.length - 1),
       referenceMidiNote,
       referenceHz,
-      keyLabels: normalizeKeyLabels(Array.isArray(tuning.keyLabels) ? tuning.keyLabels.map(String) : undefined, safeCents.length)
+      keyLabels: normalizeKeyLabels(legacyAFirst ? legacyAFirstLabelsToDegreeOrder(sourceLabels, safeCents.length) : sourceLabels, safeCents.length)
     };
   }
 
-  throw new Error("Layout bundle has an unsupported tuning type");
+  throw new Error("Tuning bundle has an unsupported tuning type");
 }
 
-function normalizeLayoutBundle(value: unknown): LayoutBundle {
-  const source = value as Partial<LayoutBundle> & {
-    layouts?: Array<Partial<LayoutBundleLayout>>;
+function normalizeTuningBundle(value: unknown, legacyAFirst = false): TuningBundle {
+  const source = value as Partial<TuningBundle> & {
+    name?: unknown;
+    layouts?: Array<Partial<TuningBundleLayout>>;
     degreeColors?: ScaleDegreeColor[];
-    buttonOverrides?: LayoutBundleButtonOverride[];
+    buttonOverrides?: TuningBundleButtonOverride[];
   };
-  if (typeof source.name !== "string" || typeof source.objectIdHex !== "string") {
-    throw new Error("Layout bundle is missing a name or object id");
+  if (typeof source.objectIdHex !== "string") {
+    throw new Error("Tuning bundle is missing an object id");
   }
   objectIdFromHex(source.objectIdHex);
   const tuningObjectIdHex = typeof source.tuningObjectIdHex === "string"
@@ -1437,13 +1546,17 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
     ? Number(source.catalogOrder)
     : undefined;
   if (!source.tuning || !Array.isArray(source.layouts) || source.layouts.length === 0) {
-    throw new Error("Layout bundle is missing tuning or layout data");
+    throw new Error("Tuning bundle is missing tuning or layout data");
   }
-  const tuning = normalizeLayoutBundleTuning(source.tuning);
+  const tuning = normalizeTuningBundleTuning(
+    source.tuning,
+    typeof source.name === "string" ? clampGeometryMenuText(source.name, "User Tuning") : undefined,
+    legacyAFirst
+  );
   const cycleLength = Math.max(1, Math.round(tuning.cycleLength));
   const layouts = source.layouts;
   if (layouts.length > GeometryLayoutScaleMaxCount) {
-    throw new RangeError(`Layout bundle contains more than ${GeometryLayoutScaleMaxCount} layouts`);
+    throw new RangeError(`Tuning bundle contains more than ${GeometryLayoutScaleMaxCount} layouts`);
   }
   const normalizedLayouts = layouts.map((layout, index) => {
     const objectIdHex = typeof layout.objectIdHex === "string"
@@ -1484,7 +1597,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
       offGridOverrides: Array.isArray(layout.offGridOverrides)
         ? layout.offGridOverrides
           .filter((override) => Number.isFinite(override.coordCol) && Number.isFinite(override.coordRow))
-          .map((override): LayoutBundleGridOverride => ({
+          .map((override): TuningBundleGridOverride => ({
             ...override,
             coordCol: Math.round(override.coordCol),
             coordRow: Math.round(override.coordRow),
@@ -1498,7 +1611,7 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
     ? source.scales
     : [createAllNotesScale(cycleLength)];
   if (scales.length > GeometryLayoutScaleMaxCount) {
-    throw new RangeError(`Layout bundle contains more than ${GeometryLayoutScaleMaxCount} scales`);
+    throw new RangeError(`Tuning bundle contains more than ${GeometryLayoutScaleMaxCount} scales`);
   }
   const normalizedScales = scales.map((scale, index) => {
     const objectIdHex = typeof scale.objectIdHex === "string"
@@ -1524,7 +1637,6 @@ function normalizeLayoutBundle(value: unknown): LayoutBundle {
     ...(tuningObjectIdHex ? { tuningObjectIdHex } : {}),
     ...(colorObjectIdHex ? { colorObjectIdHex } : {}),
     ...(catalogOrder !== undefined ? { catalogOrder } : {}),
-    name: clampGeometryMenuText(source.name, "Geometry"),
     folderPath: clampGeometryFolderPath(stringOr(source.folderPath, "/")),
     tuning,
     palette: {

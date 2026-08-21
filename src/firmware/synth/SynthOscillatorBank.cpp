@@ -317,30 +317,36 @@ void loadSelectedSynthWavetable() {
   if (!currentSynthWavetableReferenceValid) {
     selectSynthWavetableForWaveform(currWave, false);
   }
-  if (strncmp(loadedSynthWavetableName, currentSynthWavetableName, sizeof(loadedSynthWavetableName)) == 0
-      && strncmp(loadedSynthWavetableFolderPath, currentSynthWavetableFolderPath, sizeof(loadedSynthWavetableFolderPath)) == 0) {
+  if (strncmp(loadedSynthWavetableName, currentSynthWavetableName, sizeof(loadedSynthWavetableName)) == 0) {
+    setCurrentSynthWavetableReference(loadedSynthWavetableFolderPath, loadedSynthWavetableName);
     return;
   }
 
   synthWaveTableLoadInProgress = true;
   bool loaded = false;
-  int builtinIndex = findBuiltinSynthWavetable(currentSynthWavetableFolderPath, currentSynthWavetableName);
+  int builtinIndex = findBuiltinSynthWavetableByName(currentSynthWavetableName);
   const BuiltinSynthWavetableDefinition* builtinTable =
     builtinIndex >= 0 ? synthBuiltinWavetableAt(static_cast<size_t>(builtinIndex)) : nullptr;
   if (builtinTable) {
     loadBuiltinSynthWavetableSamples(*builtinTable);
-    loaded = true;
-  } else if (loadSynthWavetableFromCatalog(currentSynthWavetableFolderPath, currentSynthWavetableName)) {
+    setCurrentSynthWavetableReference(builtinTable->folderPath, builtinTable->name);
     loaded = true;
   } else {
-    selectFallbackSynthWavetable();
-    const BuiltinSynthWavetableDefinition* fallbackTable = synthBuiltinWavetableAt(0);
-    if (fallbackTable) {
-      loadBuiltinSynthWavetableSamples(*fallbackTable);
+    int catalogIndex = findSynthWavetableByName(currentSynthWavetableName);
+    if (catalogIndex >= 0 && loadSynthWavetableFromCatalog(currentSynthWavetableName)) {
+      const SynthWavetableSlot& wavetable = synthWavetables[static_cast<size_t>(catalogIndex)];
+      setCurrentSynthWavetableReference(wavetable.folderPath, wavetable.name);
+      loaded = true;
     } else {
-      generateBasicSynthWavetable();
+      selectFallbackSynthWavetable();
+      const BuiltinSynthWavetableDefinition* fallbackTable = synthBuiltinWavetableAt(0);
+      if (fallbackTable) {
+        loadBuiltinSynthWavetableSamples(*fallbackTable);
+      } else {
+        generateBasicSynthWavetable();
+      }
+      loaded = true;
     }
-    loaded = true;
   }
 
   if (loaded) {

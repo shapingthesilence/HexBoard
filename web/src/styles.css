@@ -72,6 +72,7 @@ body {
 
 button,
 input,
+textarea,
 select {
   font: inherit;
 }
@@ -109,6 +110,7 @@ button.active:hover {
 
 button:focus-visible,
 input:focus-visible,
+textarea:focus-visible,
 select:focus-visible,
 summary:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--brand) 28%, transparent);
@@ -126,6 +128,7 @@ button.warning {
 }
 
 input,
+textarea,
 select {
   min-height: 2.25rem;
   border: 1px solid var(--border-strong);
@@ -134,6 +137,12 @@ select {
   color: var(--text);
   padding: 0.4rem 0.55rem;
   transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+textarea {
+  min-height: 7rem;
+  line-height: 1.4;
+  resize: vertical;
 }
 
 .appShell {
@@ -360,6 +369,50 @@ select {
   grid-template-columns: 1fr;
 }
 
+.tuningControlGroup {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 9px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+
+.tuningControlGroup legend {
+  padding: 0 5px;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.pitchAnchorStatement {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.pitchAnchorSummary {
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.pitchAnchorFrequency {
+  min-width: 88px;
+}
+
+.layoutEditorSidebar .pitchAnchorStatement {
+  grid-template-columns: 1fr;
+}
+
 .field {
   display: grid;
   gap: 5px;
@@ -378,7 +431,8 @@ select {
   letter-spacing: 0.01em;
 }
 
-.invalidField input {
+.invalidField input,
+.invalidField textarea {
   border-color: #b42318;
   box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.14);
 }
@@ -549,6 +603,32 @@ select {
   border-radius: 50%;
   background: var(--brand);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+}
+
+.geometryStatus > .geometryStatusText {
+  width: auto;
+  height: auto;
+  flex: 1 1 auto;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.geometryStatus > .geometryTransferProgress {
+  display: flex;
+  width: min(320px, 45vw);
+  height: auto;
+  align-items: center;
+  gap: 8px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.geometryTransferProgress progress {
+  width: 100%;
+  accent-color: var(--brand);
 }
 
 .metaBadge {
@@ -759,6 +839,16 @@ select {
   border-top: 1px solid var(--border);
 }
 
+.libraryFallbackNotice {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand-soft) 60%, var(--surface));
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
 .sidebarTabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -948,6 +1038,105 @@ select {
 
 .modalPanel h3 {
   margin: 0;
+}
+
+.organizeLibraryItemDialog p {
+  margin: 6px 0 0;
+}
+
+.organizationPreview,
+.organizationConflict {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface-raised);
+}
+
+.organizationConflict {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--border));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.organizeLibraryItemActions {
+  justify-content: flex-end;
+}
+
+.libraryBulkActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  border-block: 1px solid var(--border);
+  padding: 8px 0;
+}
+
+.libraryBulkActions > .row {
+  margin-left: auto;
+}
+
+.libraryItemSelection {
+  align-self: center;
+}
+
+.bundleItemOrderDialog {
+  width: min(560px, 100%);
+}
+
+.bundleItemOrderDialog p {
+  margin: 6px 0 0;
+}
+
+.bundleItemOrderList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bundleItemOrderRow {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: var(--surface-raised);
+  cursor: grab;
+}
+
+.bundleItemOrderRow:active {
+  cursor: grabbing;
+}
+
+.bundleItemDragHandle,
+.bundleItemOrderPosition {
+  color: var(--text-soft);
+}
+
+.bundleItemOrderPosition {
+  min-width: 1.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.bundleItemOrderButtons {
+  display: flex;
+  gap: 4px;
+}
+
+.bundleItemOrderButtons button {
+  min-width: 34px;
+  padding: 5px 8px;
+}
+
+.bundleItemOrderActions {
+  justify-content: flex-end;
 }
 
 .wavetablePreviewPanel {
@@ -1660,6 +1849,53 @@ select {
   margin: 0 0 2px;
 }
 
+.librarySpaceHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.librarySpaceToggle {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.librarySpaceContent {
+  display: grid;
+  gap: 10px;
+}
+
+.presetLibrarySearch input {
+  width: 100%;
+  min-height: 2.35rem;
+}
+
+.presetLibraryBrowser {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.presetLibraryResults {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.presetLibraryListToolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 1.7rem;
+}
+
+.presetLibraryListToolbar .checkField,
+.presetLibraryListToolbar .muted {
+  font-size: 0.75rem;
+}
+
 .countBadge {
   display: inline-grid;
   place-items: center;
@@ -1678,6 +1914,32 @@ select {
   overflow-x: auto;
   padding: 1px 1px 6px;
   scrollbar-width: thin;
+}
+
+.presetFolderSidebar {
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, auto));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(92px, 1fr);
+  gap: 5px;
+  overflow-x: auto;
+  padding: 0 0 5px;
+  scrollbar-width: thin;
+}
+
+.presetFolderSidebar .folderTarget {
+  width: 100%;
+  max-width: none;
+  min-height: 1.9rem;
+  padding: 0.3rem 0.45rem;
+  border-radius: 7px;
+  font-size: 0.72rem;
+}
+
+.presetFolderSidebar .folderTarget span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .folderTarget {
@@ -1725,6 +1987,129 @@ select {
   align-items: flex-start;
 }
 
+.presetCompactList {
+  gap: 4px;
+}
+
+.compactPresetRow {
+  position: relative;
+  align-items: center;
+  gap: 7px;
+  min-height: 2.55rem;
+  padding: 5px 6px;
+  border-radius: 7px;
+}
+
+.compactPresetRow .libraryItemSelection {
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  min-height: 1.8rem;
+}
+
+.presetNameButton {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  gap: 1px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.presetNameButton:hover {
+  border-color: transparent;
+  background: transparent;
+}
+
+.presetNameButton strong,
+.presetNameButton span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presetNameButton strong {
+  font-size: 0.82rem;
+}
+
+.presetNameButton span {
+  font-size: 0.7rem;
+}
+
+.presetOverflowMenu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.presetOverflowMenu summary {
+  display: grid;
+  place-items: center;
+  width: 1.8rem;
+  min-height: 1.8rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  list-style: none;
+}
+
+.presetOverflowMenu summary::-webkit-details-marker {
+  display: none;
+}
+
+.presetOverflowMenu summary:hover,
+.presetOverflowMenu[open] summary {
+  border-color: var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.presetOverflowActions {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 3px);
+  right: 0;
+  display: grid;
+  width: max-content;
+  min-width: 145px;
+  gap: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 5px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-md);
+}
+
+.presetOverflowActions button {
+  min-height: 1.9rem;
+  padding: 0.3rem 0.55rem;
+  text-align: left;
+  font-size: 0.76rem;
+}
+
+.presetLibraryResults .libraryBulkActions {
+  align-items: center;
+  padding: 6px 0;
+}
+
+.presetLibraryResults .libraryBulkActions > .row {
+  width: 100%;
+  margin-left: 0;
+  gap: 5px;
+}
+
+.presetLibraryResults .libraryBulkActions button {
+  min-height: 1.9rem;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.7rem;
+}
+
 .presetListItem[draggable="true"] {
   cursor: grab;
 }
@@ -1759,6 +2144,7 @@ select {
 
 :root[data-theme="dark"] button,
 :root[data-theme="dark"] input,
+:root[data-theme="dark"] textarea,
 :root[data-theme="dark"] select {
   border-color: var(--border-strong);
   background: var(--surface-raised);
@@ -2053,5 +2439,11 @@ select {
 
   .hexBoardScroll {
     min-height: 460px;
+  }
+}
+
+@media (max-width: 480px) {
+  .presetFolderSidebar {
+    grid-auto-columns: minmax(105px, 46%);
   }
 }

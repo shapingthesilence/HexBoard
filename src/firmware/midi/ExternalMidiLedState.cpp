@@ -46,16 +46,25 @@ void RAM_FUNC(applyExternalMidiToHex)(byte midiNote, bool noteOn) {
   }
   auto& targets = midiNoteToHexIndices[midiNote];
   bool changed = false;
-  for (uint8_t index : targets) {
-    buttonDef& hex = h[index];
-    if (noteOn) {
-      if (hex.externalNoteDepth < 255) {
-        hex.externalNoteDepth++;
+  for (size_t byteIndex = 0; byteIndex < targets.bits.size(); ++byteIndex) {
+    uint8_t pending = targets.bits[byteIndex];
+    while (pending != 0) {
+      uint8_t bit = static_cast<uint8_t>(__builtin_ctz(pending));
+      uint8_t index = static_cast<uint8_t>(byteIndex * 8 + bit);
+      pending &= static_cast<uint8_t>(pending - 1);
+      if (index >= LED_COUNT) {
+        continue;
+      }
+      buttonDef& hex = h[index];
+      if (noteOn) {
+        if (hex.externalNoteDepth < 255) {
+          hex.externalNoteDepth++;
+          changed = true;
+        }
+      } else if (hex.externalNoteDepth > 0) {
+        hex.externalNoteDepth--;
         changed = true;
       }
-    } else if (hex.externalNoteDepth > 0) {
-      hex.externalNoteDepth--;
-      changed = true;
     }
   }
   if (changed) {

@@ -3,6 +3,31 @@
 volatile uint16_t metronomeBeepSamplesRemaining = 0;
 volatile uint32_t metronomeBeepPhaseIncrement = METRONOME_BEEP_NORMAL_INCREMENT;
 uint32_t metronomeBeepPhase = 0;
+static volatile byte synthMasterVolumeGain = HEADPHONE_VOLUME_CAP_FULL;
+static volatile byte synthMasterVolumeControl = HEADPHONE_VOLUME_CAP_FULL;
+
+uint8_t RAM_FUNC(perceptualAudioGain7)(uint8_t value) {
+  if (value > 127) {
+    value = 127;
+  }
+  // Blend 25% linear with 75% square law. Factoring the blend keeps this to
+  // one multiply while preserving both endpoints.
+  uint16_t blendFactorQ7 = static_cast<uint16_t>(value - (value >> 2) + 32u);
+  return static_cast<uint8_t>((static_cast<uint16_t>(value) * blendFactorQ7) >> 7);
+}
+
+uint16_t RAM_FUNC(perceptualAudioGain16)(uint16_t value) {
+  uint32_t blendFactorQ16 = static_cast<uint32_t>(value) - (value >> 2) + 16384u;
+  return static_cast<uint16_t>((static_cast<uint32_t>(value) * blendFactorQ16) >> 16);
+}
+
+void RAM_FUNC(setSynthMasterVolumeControl)(byte value) {
+  if (value > 127) {
+    value = 127;
+  }
+  synthMasterVolumeControl = value;
+  synthMasterVolumeGain = perceptualAudioGain7(value);
+}
 
 void RAM_FUNC(recordAudioBufferProfileSample)(uint32_t startTime, uint8_t voices, uint8_t flags) {
   uint32_t dt = timer_hw->timerawl - startTime;
@@ -182,7 +207,7 @@ int32_t RAM_FUNC(readMetronomeBeepSample)() {
   metronomeBeepSamplesRemaining = remaining - 1;
   metronomeBeepPhase += metronomeBeepPhaseIncrement;
   int32_t sample = (metronomeBeepPhase & 0x80000000u) ? METRONOME_BEEP_LEVEL : -METRONOME_BEEP_LEVEL;
-  return (sample * static_cast<int32_t>(velWheel.curValue)) >> 7;
+  return (sample * static_cast<int32_t>(synthMasterVolumeGain)) >> 7;
 }
 
 bool RAM_FUNC(metronomeBrightnessSelected)() {
@@ -251,7 +276,7 @@ void RAM_FUNC(triggerMetronomeBeat)(bool accent) {
 }
 
 void RAM_FUNC(runMetronome)() {
-  if (!metronomeEnabled() || delegatedControl) {
+  if (!metronomeEnabled() || delegatedControlState.active) {
     return;
   }
 
@@ -463,7 +488,8 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
       retargetSynthAmpEnvelopeRenderCache(voiceCache,
                                           envelopeAudioLevel(env.level),
                                           synthControlTick ? SYNTH_CONTROL_RATE_SAMPLES : 0,
-                                          snapAmpEnvelopeRenderCache);
+                                          snapAmpEnvelopeRenderCache,
+                                          destination == AUDIO_AJACK);
     }
 
     if (synthControlTick || forceVoiceRenderCacheRefresh || !voiceRenderCacheWasValid) {
@@ -586,7 +612,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
       uint8_t slotIndex = static_cast<uint8_t>(owner - SYNTH_PREVIEW_SLOT_START);
       if (slotIndex < SYNTH_PREVIEW_SLOT_COUNT) {
         // Sequencer preview slots carry per-step velocity into the shared synth mix.
-        s = (s * static_cast<int32_t>(synthPreviewVelocityForSlot[slotIndex])) >> 7;
+        s = (s * static_cast<int32_t>(synthPreviewGainForSlot[slotIndex])) >> 7;
       }
     }
 
@@ -636,8 +662,13 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
   int32_t scaled = mix;
   scaled = (scaled * (int32_t)attenFinal) >> 6;     // divide by 64
 
-  // Apply master volume where 127 ~= unity (use >>7 as approx /128)
-  scaled = (scaled * (int32_t)velWheel.curValue) >> 7;
+  // The piezo driver already curves this control by applying it again through
+  // its moving amplitude, so do not stack the software taper onto that path.
+  // MIDI continues to use the untouched raw value.
+  byte destinationMasterGain = destination == AUDIO_PIEZO
+                                 ? synthMasterVolumeControl
+                                 : synthMasterVolumeGain;
+  scaled = (scaled * static_cast<int32_t>(destinationMasterGain)) >> 7;
 
   // ============================================================
   // OUTPUT STAGE (JACK + PIEZO)
@@ -662,7 +693,7 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
   // "scaled" already includes:
   //   - mix of all voices (signed)
   //   - smooth poly attenuation (attenFinal)
-  //   - master volume (velWheel)
+  //   - perceptually tapered master volume
   //
   // We still need to convert it to a small signed number suitable for PWM.
   //
@@ -696,8 +727,8 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
     synthPiezoAmplitude = 0;
     // ----- JACK: fixed midpoint with V1.2 headphone-only output cap -----
     int32_t jackSample = sample;
-    if (headphoneVolumeCap < HEADPHONE_VOLUME_CAP_FULL) {
-      jackSample = (jackSample * static_cast<int32_t>(headphoneVolumeCap)) >> 7;
+    if (headphoneVolumeGain < HEADPHONE_VOLUME_CAP_FULL) {
+      jackSample = (jackSample * static_cast<int32_t>(headphoneVolumeGain)) >> 7;
     }
     int32_t jack = PWM_MID + jackSample;
     if (jack < 0) jack = 0;
@@ -721,15 +752,15 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
   uint32_t A_target = (envSum + (1u << (ENV_TO_A_SHIFT - 1))) >> ENV_TO_A_SHIFT;
   if (A_target > (uint32_t)PWM_MID) A_target = PWM_MID;
 
-  // Apply master volume (0..127, where 127 is full). Keep it consistent with jack scaling.
-  A_target = (A_target * (uint32_t)velWheel.curValue) >> 7;
+  // This second raw factor supplies the piezo path's native taper.
+  A_target = (A_target * static_cast<uint32_t>(synthMasterVolumeControl)) >> 7;
   if (metronomeAudible && A_target < static_cast<uint32_t>(PWM_MID)) {
     // The beep sample is already volume-scaled. Give it full piezo headroom so
     // the moving-midpoint drive does not attenuate it a second time.
     A_target = PWM_MID;
   }
-  if (piezoVolumeCap < HEADPHONE_VOLUME_CAP_FULL) {
-    A_target = (A_target * static_cast<uint32_t>(piezoVolumeCap)) >> 7;
+  if (piezoVolumeGain < HEADPHONE_VOLUME_CAP_FULL) {
+    A_target = (A_target * static_cast<uint32_t>(piezoVolumeGain)) >> 7;
   }
 
   // Smooth A so the piezo hiss doesn't abruptly stop (and to avoid end-click).
@@ -775,6 +806,7 @@ static void setupSynth(byte pin, byte slice) {
 }
 
 void setupSynthOutputs() {
+  setSynthMasterVolumeControl(static_cast<byte>(velWheel.curValue));
   setupSynth(PIEZO_PIN, PIEZO_SLICE);
   setupSynth(AJACK_PIN, AJACK_SLICE);
 }

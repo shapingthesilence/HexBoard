@@ -520,7 +520,41 @@ bool geometryBundleForTuningObjectId(const uint8_t* tuningObjectId,
   return false;
 }
 
-bool parseGeometryObjectBody(std::vector<uint8_t> body, GeometryObjectSlot& object, std::string& error) {
+bool geometryBundleFileInfoForTuningHandle(uint16_t tuningHandle,
+                                           char* path,
+                                           size_t pathLength,
+                                           uint32_t& fileLength,
+                                           uint32_t& fileCrc32) {
+  const GeometryBundleIndexEntry* bundle = nullptr;
+  if (!path || pathLength == 0
+      || !geometryBundleForTuningHandle(tuningHandle, bundle)
+      || !geometryBundleStoragePath(bundle->tuningObjectId, path, pathLength)) {
+    return false;
+  }
+
+  File file = LittleFS.open(path, "r");
+  if (!file || file.size() < sizeof(GeometryObjectFileHeader)
+      || file.size() > GEOMETRY_BUNDLE_MAX_RAW_BYTES) {
+    if (file) file.close();
+    return false;
+  }
+  fileLength = file.size();
+  uint32_t crc = crc32Begin();
+  uint8_t buffer[128] = {};
+  while (file.available() > 0) {
+    size_t length = std::min<size_t>(sizeof(buffer), file.available());
+    if (file.read(buffer, length) != length) {
+      file.close();
+      return false;
+    }
+    crc = crc32Update(crc, buffer, length);
+  }
+  file.close();
+  fileCrc32 = crc32Finish(crc);
+  return true;
+}
+
+bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlot& object, std::string& error) {
   if (body.size() < 8 || body[0] != 'H' || body[1] != 'B' || body[2] != 'S' || body[3] != '1') {
     error = "bad object magic";
     return false;
@@ -741,7 +775,7 @@ bool geometryObjectForMetadata(const GeometryObjectIndexEntry& entry, GeometryOb
   }
   GeometryObjectSlot parsed;
   std::string parseError;
-  if (!parseGeometryObjectBody(std::move(body), parsed, parseError)
+  if (!parseGeometryObjectBody(body, parsed, parseError)
       || parsed.objectType != entry.objectType
       || parsed.schemaMajor != entry.schemaMajor
       || parsed.schemaMinor != entry.schemaMinor
@@ -752,88 +786,6 @@ bool geometryObjectForMetadata(const GeometryObjectIndexEntry& entry, GeometryOb
   }
   object = std::move(parsed);
   return true;
-}
-
-int userGeometryDefaultSpanCtoA(uint16_t cycleLength) {
-  return -static_cast<int>((static_cast<uint32_t>(cycleLength) * 9u + 6u) / 12u);
-}
-
-bool presetSyncFindTlv(const std::vector<uint8_t>& body,
-                       uint8_t wantedTag,
-                       const uint8_t*& value,
-                       uint16_t& length) {
-  if (body.size() < 8) {
-    return false;
-  }
-  size_t cursor = 8;
-  while (cursor < body.size()) {
-    if (cursor + 3 > body.size()) {
-      return false;
-    }
-    uint8_t tag = body[cursor++];
-    uint16_t tlvLength = presetSyncReadU16LE(body.data() + cursor);
-    cursor += 2;
-    if (cursor + tlvLength > body.size()) {
-      return false;
-    }
-    if (tag == wantedTag) {
-      value = body.data() + cursor;
-      length = tlvLength;
-      return true;
-    }
-    cursor += tlvLength;
-  }
-  return false;
-}
-
-bool presetSyncFindTlvU8(const std::vector<uint8_t>& body, uint8_t tag, uint8_t& result) {
-  const uint8_t* value = nullptr;
-  uint16_t length = 0;
-  if (!presetSyncFindTlv(body, tag, value, length) || length != 1) {
-    return false;
-  }
-  result = value[0];
-  return true;
-}
-
-bool presetSyncFindTlvU16LE(const std::vector<uint8_t>& body, uint8_t tag, uint16_t& result) {
-  const uint8_t* value = nullptr;
-  uint16_t length = 0;
-  if (!presetSyncFindTlv(body, tag, value, length) || length != 2) {
-    return false;
-  }
-  result = presetSyncReadU16LE(value);
-  return true;
-}
-
-bool presetSyncFindTlvI16LE(const std::vector<uint8_t>& body, uint8_t tag, int16_t& result) {
-  const uint8_t* value = nullptr;
-  uint16_t length = 0;
-  if (!presetSyncFindTlv(body, tag, value, length) || length != 2) {
-    return false;
-  }
-  result = presetSyncReadI16LE(value);
-  return true;
-}
-
-bool presetSyncFindTlvI32LE(const std::vector<uint8_t>& body, uint8_t tag, int32_t& result) {
-  const uint8_t* value = nullptr;
-  uint16_t length = 0;
-  if (!presetSyncFindTlv(body, tag, value, length) || length != 4) {
-    return false;
-  }
-  result = presetSyncReadI32LE(value);
-  return true;
-}
-
-bool presetSyncFindTlvFloat32LE(const std::vector<uint8_t>& body, uint8_t tag, float& result) {
-  const uint8_t* value = nullptr;
-  uint16_t length = 0;
-  if (!presetSyncFindTlv(body, tag, value, length) || length != sizeof(float)) {
-    return false;
-  }
-  result = presetSyncReadFloat32LE(value);
-  return std::isfinite(result);
 }
 
 bool readRuntimeCentsTable(const GeometryObjectSlot& object,
@@ -872,6 +824,12 @@ bool readRuntimeCentsTable(const GeometryObjectSlot& object,
   return periodCents > 0.0f;
 }
 
+uint16_t legacyUserGeometryReferenceDegree(uint16_t cycleLength, uint8_t referenceMidiNote) {
+  int32_t scaled = static_cast<int32_t>(cycleLength) * (static_cast<int32_t>(referenceMidiNote) - 60);
+  int32_t rounded = scaled >= 0 ? (scaled + 6) / 12 : -((-scaled + 6) / 12);
+  return static_cast<uint16_t>(positiveMod(rounded, cycleLength));
+}
+
 bool geometryObjectReferencesObjectId(const GeometryObjectSlot& object, uint8_t tag, uint8_t objectType, const uint8_t* objectId) {
   const uint8_t* value = nullptr;
   uint16_t length = 0;
@@ -884,6 +842,8 @@ bool geometryObjectReferencesObjectId(const GeometryObjectSlot& object, uint8_t 
 bool geometryObjectRuntimeTuningSupported(const GeometryObjectSlot& object) {
   uint8_t tuningKind = 0;
   uint16_t cycleLength = 0;
+  uint16_t referenceDegree = 0;
+  uint16_t defaultKeyDegree = 0;
   uint8_t referenceMidiNote = 0;
   float referenceHz = 0.0f;
   if (!object.valid
@@ -896,6 +856,16 @@ bool geometryObjectRuntimeTuningSupported(const GeometryObjectSlot& object) {
   }
   if (cycleLength == 0 || cycleLength > MAX_SCALE_DIVISIONS
       || referenceMidiNote > 127 || referenceHz <= 0.0f) {
+    return false;
+  }
+  if (!presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_DEGREE, referenceDegree)) {
+    referenceDegree = legacyUserGeometryReferenceDegree(cycleLength, referenceMidiNote);
+  }
+  if (referenceDegree >= cycleLength) {
+    return false;
+  }
+  presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_DEFAULT_KEY_DEGREE, defaultKeyDegree);
+  if (defaultKeyDegree >= cycleLength) {
     return false;
   }
   float scalarCents = 0.0f;
@@ -968,29 +938,29 @@ bool loadDefaultGeometryRuntime() {
 
 void writeCurrentGeometryReference(GeometryProfileReference& reference) {
   memset(&reference, 0, sizeof(reference));
-  if (!userGeometryRuntimeTuningObjectSelected) {
+  if (!userGeometryRuntime.tuningObjectSelected) {
     return;
   }
   reference.flags |= GEOMETRY_PROFILE_HAS_TUNING;
   memcpy(reference.tuningObjectId,
-         userGeometryRuntimeTuningObjectId,
+         userGeometryRuntime.tuningObjectId,
          sizeof(reference.tuningObjectId));
-  if (userGeometryRuntimeLayoutObjectSelected) {
+  if (userGeometryRuntime.layoutObjectSelected) {
     reference.flags |= GEOMETRY_PROFILE_HAS_LAYOUT;
     memcpy(reference.layoutObjectId,
-           userGeometryRuntimeLayoutObjectId,
+           userGeometryRuntime.layoutObjectId,
            sizeof(reference.layoutObjectId));
   }
-  if (userGeometryRuntimeScaleObjectSelected) {
+  if (userGeometryRuntime.scaleObjectSelected) {
     reference.flags |= GEOMETRY_PROFILE_HAS_SCALE;
     memcpy(reference.scaleObjectId,
-           userGeometryRuntimeScaleObjectId,
+           userGeometryRuntime.scaleObjectId,
            sizeof(reference.scaleObjectId));
   }
 }
 
 void rememberCurrentGeometryReferenceForProfile(uint8_t profileIndex) {
-  if (profileIndex >= PROFILE_COUNT || !userGeometryRuntimeTuningObjectSelected) {
+  if (profileIndex >= PROFILE_COUNT || !userGeometryRuntime.tuningObjectSelected) {
     return;
   }
   writeCurrentGeometryReference(geometryProfileReferences[profileIndex]);
@@ -1091,8 +1061,8 @@ int findFirstGeometryObjectReferencing(uint8_t objectType, uint8_t referenceTag,
   const GeometryBundleIndexEntry* bundle = nullptr;
   if (referenceObjectType == PRESET_SYNC_OBJECT_TYPE_USER_TUNING) {
     geometryBundleForTuningObjectId(referenceObjectId, bundle);
-  } else if (userGeometryRuntimeTuningObjectSelected) {
-    geometryBundleForTuningObjectId(userGeometryRuntimeTuningObjectId, bundle);
+  } else if (userGeometryRuntime.tuningObjectSelected) {
+    geometryBundleForTuningObjectId(userGeometryRuntime.tuningObjectId, bundle);
   }
   if (bundle) {
     GeometryCatalogReader reader;
@@ -1136,56 +1106,52 @@ int findFirstGeometryObjectReferencing(uint8_t objectType, uint8_t referenceTag,
 void clearUserGeometryButtonRuntimeOverrides() {
   releaseAllMappedButtonActions();
   for (byte i = 0; i < LED_COUNT; ++i) {
-    userGeometryRuntimeButtonDisabled[i] = false;
-    userGeometryRuntimeButtonRole[i] = PRESET_SYNC_BUTTON_MAP_ROLE_NOTE;
-    userGeometryRuntimeButtonRoleOverride[i] = false;
-    userGeometryRuntimeButtonNoteOverride[i] = false;
-    userGeometryRuntimeButtonColorActive[i] = false;
-    userGeometryRuntimeButtonStepsFromC[i] = 0;
-    userGeometryRuntimeButtonColor[i] = { HUE_NONE, SAT_BW, VALUE_BLACK };
-    userGeometryRuntimeButtonOutputMode[i] = PRESET_SYNC_BUTTON_OUTPUT_TUNED;
-    userGeometryRuntimeButtonMidiNote[i] = UNUSED_NOTE;
-    userGeometryRuntimeButtonMidiChannel[i] = 0;
-    userGeometryRuntimeButtonChordActionId[i] = 0;
-    userGeometryRuntimeButtonChordRootMidiNote[i] = UNUSED_NOTE;
+    userGeometryRuntime.buttonDisabled[i] = false;
+    userGeometryRuntime.buttonRole[i] = PRESET_SYNC_BUTTON_MAP_ROLE_NOTE;
+    userGeometryRuntime.buttonRoleOverride[i] = false;
+    userGeometryRuntime.buttonNoteOverride[i] = false;
+    userGeometryRuntime.buttonColorActive[i] = false;
+    userGeometryRuntime.buttonStepsFromC[i] = 0;
+    userGeometryRuntime.buttonColor[i] = { HUE_NONE, SAT_BW, VALUE_BLACK };
+    userGeometryRuntime.buttonOutputMode[i] = PRESET_SYNC_BUTTON_OUTPUT_TUNED;
+    userGeometryRuntime.buttonMidiNote[i] = UNUSED_NOTE;
+    userGeometryRuntime.buttonMidiChannel[i] = 0;
+    userGeometryRuntime.buttonChordActionId[i] = 0;
+    userGeometryRuntime.buttonChordRootMidiNote[i] = UNUSED_NOTE;
   }
-  memset(userGeometryRuntimeChordActions, 0, sizeof(userGeometryRuntimeChordActions));
+  memset(userGeometryRuntime.chordActions, 0, sizeof(userGeometryRuntime.chordActions));
 }
 
 void clearUserGeometryRuntimeSelection() {
-  userGeometryRuntimeActive = false;
-  userGeometryRuntimeScaleActive = false;
-  userGeometryRuntimePaletteActive = false;
-  userGeometryRuntimeTuningObjectSelected = false;
-  userGeometryRuntimeLayoutObjectSelected = false;
-  userGeometryRuntimeScaleObjectSelected = false;
-  memset(userGeometryRuntimeTuningObjectId, 0, sizeof(userGeometryRuntimeTuningObjectId));
-  memset(userGeometryRuntimeLayoutObjectId, 0, sizeof(userGeometryRuntimeLayoutObjectId));
-  memset(userGeometryRuntimeScaleObjectId, 0, sizeof(userGeometryRuntimeScaleObjectId));
-  userGeometryRuntimeCentsTableActive = false;
-  userGeometryRuntimeExactEdoActive = false;
-  userGeometryRuntimeTuningKind = 0;
-  userGeometryRuntimeCycleLength = 0;
-  userGeometryRuntimeCentsTableLength = 0;
-  memset(userGeometryRuntimeCentsTable, 0, sizeof(userGeometryRuntimeCentsTable));
-  userGeometryRuntimePeriodCents = 1200.0f;
-  userGeometryRuntimeReferenceMidiNote = 69;
-  userGeometryRuntimeReferenceHz = 440.0f;
-  userGeometryRuntimeDeviceRotation = DEVICE_ROTATION_0;
-  userGeometryRuntimeLayoutCenterStepsFromC = 0;
+  userGeometryRuntime.active = false;
+  userGeometryRuntime.scaleActive = false;
+  userGeometryRuntime.paletteActive = false;
+  userGeometryRuntime.tuningObjectSelected = false;
+  userGeometryRuntime.layoutObjectSelected = false;
+  userGeometryRuntime.scaleObjectSelected = false;
+  memset(userGeometryRuntime.tuningObjectId, 0, sizeof(userGeometryRuntime.tuningObjectId));
+  memset(userGeometryRuntime.layoutObjectId, 0, sizeof(userGeometryRuntime.layoutObjectId));
+  memset(userGeometryRuntime.scaleObjectId, 0, sizeof(userGeometryRuntime.scaleObjectId));
+  userGeometryRuntime.centsTableActive = false;
+  userGeometryRuntime.exactEdoActive = false;
+  userGeometryRuntime.tuningKind = 0;
+  userGeometryRuntime.cycleLength = 0;
+  userGeometryRuntime.centsTableLength = 0;
+  std::vector<float>().swap(userGeometryRuntime.centsTable);
+  std::vector<uint8_t>().swap(userGeometryRuntime.keyLabels);
+  std::vector<uint8_t>().swap(userGeometryRuntime.degreeColors);
+  memset(userGeometryRuntime.scaleIncluded, 0, sizeof(userGeometryRuntime.scaleIncluded));
+  userGeometryRuntime.periodCents = 1200.0f;
+  userGeometryRuntime.referenceDegree = 0;
+  userGeometryRuntime.defaultKeyDegree = 0;
+  userGeometryRuntime.referenceMidiNote = 69;
+  userGeometryRuntime.referenceHz = 440.0f;
+  userGeometryRuntime.deviceRotation = DEVICE_ROTATION_0;
+  userGeometryRuntime.layoutCenterStepsFromC = 0;
   clearUserGeometryButtonRuntimeOverrides();
 }
 
-void setDefaultRuntimeKeyLabels(uint16_t cycleLength) {
-  int spanCtoA = userGeometryDefaultSpanCtoA(cycleLength);
-  for (uint16_t i = 0; i < MAX_SCALE_DIVISIONS; ++i) {
-    snprintf(userGeometryRuntimeKeyLabelStorage[i], sizeof(userGeometryRuntimeKeyLabelStorage[i]), "%u", i);
-    userGeometryRuntimeTuning.keyChoices[i].name = userGeometryRuntimeKeyLabelStorage[i];
-    userGeometryRuntimeTuning.keyChoices[i].val_int = spanCtoA + static_cast<int>(i);
-  }
-}
-
-bool applyRuntimeKeyLabels(const uint8_t* value, uint16_t length, uint16_t cycleLength) {
+bool runtimeKeyLabelsValid(const uint8_t* value, uint16_t length, uint16_t cycleLength) {
   size_t cursor = 0;
   uint16_t degree = 0;
   while (cursor < length && degree < cycleLength) {
@@ -1193,10 +1159,6 @@ bool applyRuntimeKeyLabels(const uint8_t* value, uint16_t length, uint16_t cycle
     if (cursor + labelLength > length) {
       return false;
     }
-    copyPresetSyncText(userGeometryRuntimeKeyLabelStorage[degree],
-                       sizeof(userGeometryRuntimeKeyLabelStorage[degree]),
-                       value + cursor,
-                       labelLength);
     cursor += labelLength;
     ++degree;
   }
@@ -1206,6 +1168,8 @@ bool applyRuntimeKeyLabels(const uint8_t* value, uint16_t length, uint16_t cycle
 bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   uint8_t tuningKind = 0;
   uint16_t cycleLength = 0;
+  uint16_t referenceDegree = 0;
+  uint16_t defaultKeyDegree = 0;
   float periodCents = 0.0f;
   float stepCents = 0.0f;
   uint8_t referenceMidiNote = 0;
@@ -1229,6 +1193,18 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
     sendToLog("Geometry runtime tuning apply rejected: cycle length is out of range.");
     return false;
   }
+  if (!presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_REFERENCE_DEGREE, referenceDegree)) {
+    referenceDegree = legacyUserGeometryReferenceDegree(cycleLength, referenceMidiNote);
+  }
+  if (referenceDegree >= cycleLength) {
+    sendToLog("Geometry runtime tuning apply rejected: reference degree is out of range.");
+    return false;
+  }
+  presetSyncFindTlvU16LE(object.body, PRESET_SYNC_TLV_TUNING_DEFAULT_KEY_DEGREE, defaultKeyDegree);
+  if (defaultKeyDegree >= cycleLength) {
+    sendToLog("Geometry runtime tuning apply rejected: default key degree is out of range.");
+    return false;
+  }
   if (referenceMidiNote > 127) {
     sendToLog("Geometry runtime tuning apply rejected: reference MIDI note is invalid.");
     return false;
@@ -1240,9 +1216,10 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
 
   bool centsTableActive = false;
   float centsTablePeriod = periodCents;
-  float parsedCentsTable[MAX_SCALE_DIVISIONS] = {};
+  std::vector<float> parsedCentsTable;
   if (tuningKind == PRESET_SYNC_USER_TUNING_KIND_CENTS_LIST) {
-    if (!readRuntimeCentsTable(object, cycleLength, centsTablePeriod, parsedCentsTable)) {
+    parsedCentsTable.assign(cycleLength, 0.0f);
+    if (!readRuntimeCentsTable(object, cycleLength, centsTablePeriod, parsedCentsTable.data())) {
       sendToLog("Geometry runtime tuning apply rejected: cents table is invalid.");
       return false;
     }
@@ -1273,41 +1250,50 @@ bool applyUserGeometryRuntimeTuning(const GeometryObjectSlot& object) {
   }
 
   copyRuntimeGeometryName(userGeometryRuntimeTuningNameStorage, sizeof(userGeometryRuntimeTuningNameStorage), object.name);
-  userGeometryRuntimeTuning.name = userGeometryRuntimeTuningNameStorage;
-  userGeometryRuntimeTuning.cycleLength = static_cast<byte>(cycleLength);
-  userGeometryRuntimeTuning.stepSize = stepCents;
-  memcpy(userGeometryRuntimeTuningObjectId, object.objectId, sizeof(userGeometryRuntimeTuningObjectId));
-  userGeometryRuntimeTuningObjectSelected = true;
-  userGeometryRuntimeLayoutObjectSelected = false;
-  userGeometryRuntimeScaleObjectSelected = false;
-  userGeometryRuntimeCentsTableActive = centsTableActive;
-  userGeometryRuntimeExactEdoActive = tuningKind == PRESET_SYNC_USER_TUNING_KIND_EDO;
-  userGeometryRuntimeTuningKind = tuningKind;
-  userGeometryRuntimeCycleLength = cycleLength;
-  userGeometryRuntimeCentsTableLength = centsTableActive ? cycleLength : 0;
-  memset(userGeometryRuntimeCentsTable, 0, sizeof(userGeometryRuntimeCentsTable));
+  userGeometryRuntime.tuning.name = userGeometryRuntimeTuningNameStorage;
+  userGeometryRuntime.tuning.cycleLength = cycleLength;
+  userGeometryRuntime.tuning.stepSize = stepCents;
+  userGeometryRuntime.tuning.spanCtoAValue = 0;
+  memcpy(userGeometryRuntime.tuningObjectId, object.objectId, sizeof(userGeometryRuntime.tuningObjectId));
+  userGeometryRuntime.tuningObjectSelected = true;
+  userGeometryRuntime.layoutObjectSelected = false;
+  userGeometryRuntime.scaleObjectSelected = false;
+  userGeometryRuntime.centsTableActive = centsTableActive;
+  userGeometryRuntime.exactEdoActive = tuningKind == PRESET_SYNC_USER_TUNING_KIND_EDO;
+  userGeometryRuntime.tuningKind = tuningKind;
+  userGeometryRuntime.cycleLength = cycleLength;
+  userGeometryRuntime.centsTableLength = centsTableActive ? cycleLength : 0;
   if (centsTableActive) {
-    memcpy(userGeometryRuntimeCentsTable, parsedCentsTable, cycleLength * sizeof(parsedCentsTable[0]));
+    userGeometryRuntime.centsTable = std::move(parsedCentsTable);
+  } else {
+    std::vector<float>().swap(userGeometryRuntime.centsTable);
   }
-  userGeometryRuntimePeriodCents = periodCents;
-  userGeometryRuntimeReferenceMidiNote = referenceMidiNote;
-  userGeometryRuntimeReferenceHz = referenceHz;
-  setDefaultRuntimeKeyLabels(cycleLength);
-
+  userGeometryRuntime.periodCents = periodCents;
+  userGeometryRuntime.referenceDegree = referenceDegree;
+  userGeometryRuntime.defaultKeyDegree = defaultKeyDegree;
+  userGeometryRuntime.referenceMidiNote = referenceMidiNote;
+  userGeometryRuntime.referenceHz = referenceHz;
   const uint8_t* keyLabels = nullptr;
   uint16_t keyLabelsLength = 0;
   if (presetSyncFindTlv(object.body, PRESET_SYNC_TLV_TUNING_KEY_LABELS, keyLabels, keyLabelsLength)
-      && !applyRuntimeKeyLabels(keyLabels, keyLabelsLength, cycleLength)) {
+      && !runtimeKeyLabelsValid(keyLabels, keyLabelsLength, cycleLength)) {
     sendToLog("Geometry runtime tuning apply rejected: key labels are truncated.");
     return false;
   }
+  if (keyLabels && keyLabelsLength > 0) {
+    userGeometryRuntime.keyLabels.assign(keyLabels, keyLabels + keyLabelsLength);
+  } else {
+    std::vector<uint8_t>().swap(userGeometryRuntime.keyLabels);
+  }
+  std::vector<uint8_t>().swap(userGeometryRuntime.degreeColors);
+  memset(userGeometryRuntime.scaleIncluded, 0, sizeof(userGeometryRuntime.scaleIncluded));
 
-  userGeometryRuntimeActive = true;
-  userGeometryRuntimeScaleActive = false;
-  userGeometryRuntimePaletteActive = false;
-  userGeometryRuntimeLayoutCenterStepsFromC = 0;
+  userGeometryRuntime.active = true;
+  userGeometryRuntime.scaleActive = false;
+  userGeometryRuntime.paletteActive = false;
+  userGeometryRuntime.layoutCenterStepsFromC = 0;
   clearUserGeometryButtonRuntimeOverrides();
-  current.keyStepsFromA = userGeometryRuntimeTuning.spanCtoA();
+  current.keyStepsFromA = static_cast<int>(defaultKeyDegree);
   applyLayout();
   return true;
 }
@@ -1349,17 +1335,17 @@ bool applyUserGeometryRuntimeLayout(const GeometryObjectSlot& object) {
   }
 
   copyRuntimeGeometryName(userGeometryRuntimeLayoutNameStorage, sizeof(userGeometryRuntimeLayoutNameStorage), object.name);
-  userGeometryRuntimeLayout.name = userGeometryRuntimeLayoutNameStorage;
-  userGeometryRuntimeLayout.deviceRotation = storedDeviceRotation;
-  userGeometryRuntimeLayout.hexMiddleC = static_cast<byte>(centerButton);
-  userGeometryRuntimeLayout.acrossSteps = static_cast<int8_t>(acrossSteps);
-  userGeometryRuntimeLayout.dnLeftSteps = static_cast<int8_t>(downLeftSteps);
-  userGeometryRuntimeLayout.tuning = current.tuningIndex;
-  memcpy(userGeometryRuntimeLayoutObjectId, object.objectId, sizeof(userGeometryRuntimeLayoutObjectId));
-  userGeometryRuntimeLayoutObjectSelected = true;
-  userGeometryRuntimeActive = true;
-  userGeometryRuntimeDeviceRotation = storedDeviceRotation;
-  userGeometryRuntimeLayoutCenterStepsFromC = static_cast<int16_t>(centerStepsFromC);
+  userGeometryRuntime.layout.name = userGeometryRuntimeLayoutNameStorage;
+  userGeometryRuntime.layout.deviceRotation = storedDeviceRotation;
+  userGeometryRuntime.layout.hexMiddleC = static_cast<byte>(centerButton);
+  userGeometryRuntime.layout.acrossSteps = static_cast<int8_t>(acrossSteps);
+  userGeometryRuntime.layout.dnLeftSteps = static_cast<int8_t>(downLeftSteps);
+  userGeometryRuntime.layout.tuning = current.tuningIndex;
+  memcpy(userGeometryRuntime.layoutObjectId, object.objectId, sizeof(userGeometryRuntime.layoutObjectId));
+  userGeometryRuntime.layoutObjectSelected = true;
+  userGeometryRuntime.active = true;
+  userGeometryRuntime.deviceRotation = storedDeviceRotation;
+  userGeometryRuntime.layoutCenterStepsFromC = static_cast<int16_t>(centerStepsFromC);
   deviceRotation = storedDeviceRotation;
   layoutRotation = storedLayoutRotation;
   mirrorLeftRight = (mirrorFlags & 0x01u) != 0;
@@ -1389,38 +1375,21 @@ bool applyUserGeometryRuntimeScale(const GeometryObjectSlot& object) {
     return false;
   }
 
-  bool included[MAX_SCALE_DIVISIONS] = {};
-  included[0] = true;
+  memset(userGeometryRuntime.scaleIncluded, 0, sizeof(userGeometryRuntime.scaleIncluded));
+  userGeometryRuntime.scaleIncluded[0] = 1;
   for (uint16_t offset = 0; offset < includedLength; offset += 2) {
     uint16_t degree = presetSyncReadU16LE(includedDegrees + offset);
-    included[degree % cycleLength] = true;
-  }
-
-  uint8_t degrees[MAX_SCALE_DIVISIONS] = {};
-  uint8_t degreeCount = 0;
-  for (uint16_t degree = 0; degree < cycleLength; ++degree) {
-    if (included[degree]) {
-      degrees[degreeCount++] = static_cast<uint8_t>(degree);
-    }
-  }
-  if (degreeCount == 0) {
-    sendToLog("Geometry runtime scale apply rejected: no degrees were included.");
-    return false;
+    degree %= cycleLength;
+    userGeometryRuntime.scaleIncluded[degree >> 3] |= static_cast<uint8_t>(1u << (degree & 7));
   }
 
   copyRuntimeGeometryName(userGeometryRuntimeScaleNameStorage, sizeof(userGeometryRuntimeScaleNameStorage), object.name);
-  userGeometryRuntimeScale.name = userGeometryRuntimeScaleNameStorage;
-  userGeometryRuntimeScale.tuning = current.tuningIndex;
-  memcpy(userGeometryRuntimeScaleObjectId, object.objectId, sizeof(userGeometryRuntimeScaleObjectId));
-  userGeometryRuntimeScaleObjectSelected = true;
-  memset(userGeometryRuntimeScale.pattern, 0, sizeof(userGeometryRuntimeScale.pattern));
-  for (uint8_t i = 0; i < degreeCount; ++i) {
-    uint8_t currentDegree = degrees[i];
-    uint8_t nextDegree = (i + 1 < degreeCount) ? degrees[i + 1] : static_cast<uint8_t>(degrees[0] + cycleLength);
-    userGeometryRuntimeScale.pattern[i] = nextDegree - currentDegree;
-  }
-  userGeometryRuntimeScaleActive = true;
-  userGeometryRuntimeActive = true;
+  userGeometryRuntime.scale.name = userGeometryRuntimeScaleNameStorage;
+  userGeometryRuntime.scale.tuning = current.tuningIndex;
+  memcpy(userGeometryRuntime.scaleObjectId, object.objectId, sizeof(userGeometryRuntime.scaleObjectId));
+  userGeometryRuntime.scaleObjectSelected = true;
+  userGeometryRuntime.scaleActive = true;
+  userGeometryRuntime.active = true;
   applyScale();
   return true;
 }
@@ -1446,30 +1415,14 @@ bool applyUserGeometryRuntimeColorMap(const GeometryObjectSlot& object) {
   if (defaultColorMode > DIATONIC_COLOR_MODE) {
     defaultColorMode = CUSTOM_COLOR_MODE;
   }
-  for (uint16_t degree = 0; degree < MAX_SCALE_DIVISIONS; ++degree) {
-    userGeometryRuntimePalette.swatch[degree] = {
-      360.0f * (static_cast<float>(degree % cycleLength) / static_cast<float>(cycleLength)),
-      static_cast<byte>(degree == 0 ? SAT_BW : SAT_VIVID),
-      static_cast<byte>(degree == 0 ? VALUE_NORMAL : VALUE_SHADE)
-    };
-    userGeometryRuntimePalette.colorNum[degree] = degree < cycleLength ? static_cast<byte>(degree + 1) : 1;
-  }
-  for (uint16_t offset = 0; offset < degreeColorLength; offset += 6) {
-    uint16_t degree = presetSyncReadU16LE(degreeColors + offset);
-    if (degree >= cycleLength) {
-      continue;
-    }
-    uint16_t hueTenthDegrees = presetSyncReadU16LE(degreeColors + offset + 2);
-    userGeometryRuntimePalette.swatch[degree] = {
-      static_cast<float>(hueTenthDegrees) / 10.0f,
-      degreeColors[offset + 4],
-      degreeColors[offset + 5]
-    };
-    userGeometryRuntimePalette.colorNum[degree] = static_cast<byte>(degree + 1);
+  if (degreeColorLength > 0) {
+    userGeometryRuntime.degreeColors.assign(degreeColors, degreeColors + degreeColorLength);
+  } else {
+    std::vector<uint8_t>().swap(userGeometryRuntime.degreeColors);
   }
 
-  userGeometryRuntimePaletteActive = true;
-  userGeometryRuntimeActive = true;
+  userGeometryRuntime.paletteActive = true;
+  userGeometryRuntime.active = true;
   if (applyGeometryBundleDefaultColorMode) {
     colorMode = defaultColorMode;
     settings[static_cast<uint8_t>(SettingKey::ColorMode)] = colorMode;
@@ -1529,13 +1482,13 @@ bool applyUserGeometryRuntimeExplicitButtonMap(const GeometryObjectSlot& object)
         return false;
       }
       for (uint8_t existing = 0; existing < actionCount; ++existing) {
-        if (userGeometryRuntimeChordActions[existing].id == action[0]) {
+        if (userGeometryRuntime.chordActions[existing].id == action[0]) {
           sendToLog("Geometry runtime button map apply rejected: duplicate chord action id.");
           clearUserGeometryButtonRuntimeOverrides();
           return false;
         }
       }
-      UserGeometryChordAction& runtimeAction = userGeometryRuntimeChordActions[actionCount++];
+      UserGeometryChordAction& runtimeAction = userGeometryRuntime.chordActions[actionCount++];
       runtimeAction.active = true;
       runtimeAction.id = action[0];
       runtimeAction.pitchMode = action[2];
@@ -1558,18 +1511,18 @@ bool applyUserGeometryRuntimeExplicitButtonMap(const GeometryObjectSlot& object)
       if (role > PRESET_SYNC_BUTTON_MAP_ROLE_COMMAND) {
         role = PRESET_SYNC_BUTTON_MAP_ROLE_UNUSED;
       }
-      userGeometryRuntimeButtonRoleOverride[buttonIndex] = true;
-      userGeometryRuntimeButtonRole[buttonIndex] = role;
-      userGeometryRuntimeButtonDisabled[buttonIndex] = role != PRESET_SYNC_BUTTON_MAP_ROLE_NOTE;
+      userGeometryRuntime.buttonRoleOverride[buttonIndex] = true;
+      userGeometryRuntime.buttonRole[buttonIndex] = role;
+      userGeometryRuntime.buttonDisabled[buttonIndex] = role != PRESET_SYNC_BUTTON_MAP_ROLE_NOTE;
       if (role == PRESET_SYNC_BUTTON_MAP_ROLE_NOTE) {
-        userGeometryRuntimeButtonNoteOverride[buttonIndex] = true;
-        userGeometryRuntimeButtonStepsFromC[buttonIndex] = static_cast<int16_t>(presetSyncReadI32LE(records + offset + 3));
+        userGeometryRuntime.buttonNoteOverride[buttonIndex] = true;
+        userGeometryRuntime.buttonStepsFromC[buttonIndex] = static_cast<int16_t>(presetSyncReadI32LE(records + offset + 3));
       }
       uint8_t colorMode = records[offset + 8];
       if (colorMode != PRESET_SYNC_BUTTON_MAP_COLOR_NONE) {
         uint16_t hueTenthDegrees = presetSyncReadU16LE(records + offset + 9);
-        userGeometryRuntimeButtonColorActive[buttonIndex] = true;
-        userGeometryRuntimeButtonColor[buttonIndex] = {
+        userGeometryRuntime.buttonColorActive[buttonIndex] = true;
+        userGeometryRuntime.buttonColor[buttonIndex] = {
           static_cast<float>(hueTenthDegrees) / 10.0f,
           records[offset + 11],
           records[offset + 12]
@@ -1608,21 +1561,21 @@ bool applyUserGeometryRuntimeExplicitButtonMap(const GeometryObjectSlot& object)
           if (role > PRESET_SYNC_BUTTON_MAP_ROLE_COMMAND) {
             role = PRESET_SYNC_BUTTON_MAP_ROLE_UNUSED;
           }
-          userGeometryRuntimeButtonRoleOverride[buttonIndex] = true;
-          userGeometryRuntimeButtonRole[buttonIndex] = role;
-          userGeometryRuntimeButtonDisabled[buttonIndex] = role != PRESET_SYNC_BUTTON_MAP_ROLE_NOTE;
+          userGeometryRuntime.buttonRoleOverride[buttonIndex] = true;
+          userGeometryRuntime.buttonRole[buttonIndex] = role;
+          userGeometryRuntime.buttonDisabled[buttonIndex] = role != PRESET_SYNC_BUTTON_MAP_ROLE_NOTE;
         }
         if ((fieldMask & PRESET_SYNC_BUTTON_MAP_FIELD_PITCH) != 0) {
           int32_t stepsFromC = presetSyncReadI32LE(record + 5);
-          userGeometryRuntimeButtonNoteOverride[buttonIndex] = true;
-          userGeometryRuntimeButtonStepsFromC[buttonIndex] = static_cast<int16_t>(
+          userGeometryRuntime.buttonNoteOverride[buttonIndex] = true;
+          userGeometryRuntime.buttonStepsFromC[buttonIndex] = static_cast<int16_t>(
             std::clamp<int32_t>(stepsFromC, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max())
           );
         }
         if ((fieldMask & PRESET_SYNC_BUTTON_MAP_FIELD_COLOR) != 0) {
           uint16_t hueTenthDegrees = presetSyncReadU16LE(record + 13);
-          userGeometryRuntimeButtonColorActive[buttonIndex] = true;
-          userGeometryRuntimeButtonColor[buttonIndex] = {
+          userGeometryRuntime.buttonColorActive[buttonIndex] = true;
+          userGeometryRuntime.buttonColor[buttonIndex] = {
             static_cast<float>(hueTenthDegrees) / 10.0f,
             record[15],
             record[16]
@@ -1636,12 +1589,12 @@ bool applyUserGeometryRuntimeExplicitButtonMap(const GeometryObjectSlot& object)
               clearUserGeometryButtonRuntimeOverrides();
               return false;
             }
-            userGeometryRuntimeButtonOutputMode[buttonIndex] = outputMode;
-            userGeometryRuntimeButtonMidiNote[buttonIndex] = record[10];
-            userGeometryRuntimeButtonMidiChannel[buttonIndex] = record[11];
+            userGeometryRuntime.buttonOutputMode[buttonIndex] = outputMode;
+            userGeometryRuntime.buttonMidiNote[buttonIndex] = record[10];
+            userGeometryRuntime.buttonMidiChannel[buttonIndex] = record[11];
           } else if (outputMode == PRESET_SYNC_BUTTON_OUTPUT_CHORD) {
             bool actionFound = false;
-            for (const UserGeometryChordAction& action : userGeometryRuntimeChordActions) {
+            for (const UserGeometryChordAction& action : userGeometryRuntime.chordActions) {
               if (action.active && action.id == record[12]) {
                 actionFound = true;
                 break;
@@ -1652,9 +1605,9 @@ bool applyUserGeometryRuntimeExplicitButtonMap(const GeometryObjectSlot& object)
               clearUserGeometryButtonRuntimeOverrides();
               return false;
             }
-            userGeometryRuntimeButtonOutputMode[buttonIndex] = outputMode;
-            userGeometryRuntimeButtonChordActionId[buttonIndex] = record[12];
-            userGeometryRuntimeButtonChordRootMidiNote[buttonIndex] = record[10];
+            userGeometryRuntime.buttonOutputMode[buttonIndex] = outputMode;
+            userGeometryRuntime.buttonChordActionId[buttonIndex] = record[12];
+            userGeometryRuntime.buttonChordRootMidiNote[buttonIndex] = record[10];
           } else {
             sendToLog("Geometry runtime button map apply rejected: button output mode is invalid.");
             clearUserGeometryButtonRuntimeOverrides();
@@ -1666,7 +1619,7 @@ bool applyUserGeometryRuntimeExplicitButtonMap(const GeometryObjectSlot& object)
     }
   }
 
-  userGeometryRuntimeActive = true;
+  userGeometryRuntime.active = true;
   applyLayout();
   return true;
 }
@@ -1700,8 +1653,8 @@ bool loadUserGeometryBundleFromTuningSlot(uint16_t tuningIndex) {
   }
 
   clearUserGeometryRuntimeSelection();
-  userGeometryRuntimeLayout = { "User Layout", false, 65, 1, -2, TUNING_12EDO };
-  userGeometryRuntimeScale = { "User Scale", TUNING_12EDO, { 0 } };
+  userGeometryRuntime.layout = { "User Layout", false, 65, 1, -2, TUNING_12EDO };
+  userGeometryRuntime.scale = { "User Scale", TUNING_12EDO, { 0 } };
   if (!applyUserGeometryRuntimeTuning(tuningObject)) {
     return false;
   }

@@ -5,7 +5,7 @@
 constexpr byte TUNING_12EDO = 0;
 constexpr byte TUNINGCOUNT = 1;
 
-constexpr uint16_t MAX_SCALE_DIVISIONS = 128;
+constexpr uint16_t MAX_SCALE_DIVISIONS = 1024;
 constexpr size_t TUNING_KEY_LABEL_LENGTH = 8;  // 7 visible chars plus NUL.
 constexpr byte ALL_TUNINGS = 255;
 constexpr byte CMDB = 192;
@@ -14,11 +14,11 @@ constexpr uint32_t CC_MSG_COOLDOWN_MICROSECONDS = 16667;
 
 struct tuningDef {
   const char* name;  // limit is 17 characters for GEM menu
-  byte cycleLength;  // steps before period/cycle/octave repeats
+  uint16_t cycleLength;  // steps before period/cycle/octave repeats
   float stepSize;    // in cents, 100 = "normal" semitone.
-  SelectOptionInt keyChoices[MAX_SCALE_DIVISIONS];
+  int16_t spanCtoAValue;
   int spanCtoA() const {
-    return keyChoices[0].val_int;
+    return spanCtoAValue;
   }
 };
 

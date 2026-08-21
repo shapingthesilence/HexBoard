@@ -1,19 +1,15 @@
 {
-  "format": "hexboard.layoutBundle.v5",
-  "bundle": {
+  "format": "hexboard.tuningBundle.v2",
+  "tuningBundle": {
     "objectIdHex": "54abfbb530fec693d794445ad6eb3393",
-    "name": "12 EDO (Normal)",
     "folderPath": "/",
     "tuning": {
       "kind": "edo",
       "name": "12 EDO (Normal)",
       "cycleLength": 12,
       "referenceMidiNote": 69,
-      "referenceHz": 440.0,
+      "referenceHz": 440,
       "keyLabels": [
-        "A",
-        "Bb",
-        "B",
         "C",
         "C#",
         "D",
@@ -22,10 +18,15 @@
         "F",
         "F#",
         "G",
-        "G#"
+        "G#",
+        "A",
+        "Bb",
+        "B"
       ],
       "edoDivisions": 12,
-      "periodCents": 1200.0
+      "periodCents": 1200,
+      "referenceDegree": 9,
+      "defaultKeyDegree": 0
     },
     "palette": {
       "defaultColorMode": 0,

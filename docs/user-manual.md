@@ -25,7 +25,7 @@ The seven command buttons are for live controls such as velocity, modulation, an
 
 ## Power-Up And Normal Operation
 
-When you power on HexBoard, it loads your saved setup, starts the OLED menu, runs a smooth rainbow splash, and fades into the normal resting LED state.
+When you power on HexBoard, it loads your saved setup while running a smooth rainbow splash, then fades into the normal resting LED state. The OLED menu appears when startup is complete and its controls are ready to use.
 
 If saved settings are missing or unreadable, HexBoard restores factory defaults and saves a fresh default setup.
 
@@ -48,16 +48,24 @@ If `Scale Lock` is off, every note button can play. If `Scale Lock` is on, only 
 The `DisplayNotes` option in `Settings` controls the OLED played-note overlay.
 Set it to `Off`, `Label`, `Number`, or `MIDI`. `Label` shows the active tuning's note
 labels with octave numbers, including labels provided by user geometry objects.
-Custom note labels are limited to `7` characters so they fit the on-device Key
-selector. The main-menu `Key` selector uses those same active tuning labels.
+Custom note labels are limited to `7` characters. The main-menu `Key` selector
+uses those labels for tunings through 255 divisions; larger tunings use numeric
+root steps so every division remains selectable.
 `Number` shows scale step and octave values such as `7.4`. `MIDI` shows the
 current MIDI note number, such as `60` for middle C in standard tuning.
 
 While the menu is visible, the top-right corner shows only the most recent held
 note. The badge is composited into normal menu redraws so menu updates do not
-momentarily erase it. If the OLED screensaver is active, playing a note can wake
-a larger `Now Playing` display that shows up to `6` unique played notes from
-lowest to highest. Turning or pressing the encoder returns to the menu display.
+momentarily erase it. Played-note redraws are coalesced until input has been
+quiet briefly and are limited to about `20` updates per second, so rapid playing
+can leave the displayed note slightly behind until there is a short pause while
+MIDI and synth response remain the priority. If the OLED screensaver is active,
+playing a note can wake a larger `Now Playing` display that shows up to `6`
+unique played notes from lowest to highest. Turning or pressing the encoder
+returns to the menu display.
+OLED frame transfers continue in the background, and a newer redraw replaces
+any queued intermediate redraw instead of holding up note scanning or MIDI
+output.
 While the velocity, modulation, or pitch-bend readout is active, played notes
 stay in the compact badge instead of taking over the whole screen.
 If the OLED was asleep and notes are still held when that readout clears,
@@ -161,8 +169,8 @@ is shown.
 
 ### Tuning
 
-Use this section to choose the tuning or geometry bundle the whole board runs
-on. The page is a GEM-style virtual list backed by the editable geometry
+Use this section to choose the tuning bundle the whole board runs on. The page
+is a GEM-style virtual list backed by the editable tuning
 catalog: supplied factory tunings appear at the tuning root in their original
 factory order, and additional saved tunings can be organized into folders.
 Tuning names and folders are kept in a small menu index, so scrolling does not
@@ -374,8 +382,11 @@ imported wavetable. Reinstall the Factory UF2 to restore the supplied library.
 User-imported wavetables appear in the same `WT:...` browser after they are
 saved through the web app. New imports default to the `User` folder and are
 uploaded to HexBoard so they can be heard on the hardware immediately. If a
-preset references a wavetable that is not installed on the HexBoard, the synth
-loads `Basic Shapes` instead until a matching folder/name wavetable is added.
+preset references a wavetable name that is not installed on the HexBoard, the
+synth loads `Basic Shapes` and shows the required name for two seconds with an
+instruction to upload it using HexBoard Sync. Wavetable names are unique across
+the whole device; folders organize the library but do not affect preset
+matching.
 
 `WT Pos` chooses the starting frame for wavetable waveforms. On device, the menu
 shows frames `1` through `16`; frame `1` is the first frame and frame `16` is
@@ -455,19 +466,38 @@ The top-level `Synth:<preset>` item and the `Preset:<preset>` item inside
 `Editor` -> `Synth` both open synth preset load lists. `Save Preset` and the
 preset load lists use synth-only preset libraries with room for up to `128`
 device presets. Presets are stored separately from the main settings file as
-named, foldered synth sounds. The device remembers which synth preset or
-`Blank` state was last loaded, while the normal settings auto-save stores any
-unsaved edits so the preset label can still show as modified after restart. On
+named, foldered synth sounds. Each settings profile remembers its selected
+synth preset or `Blank` state. Auto-save and manual profile saves also preserve
+unsaved synth edits without overwriting the named preset, so the preset label
+can still show as modified after restart. On
 the device, presets appear in a virtual folder browser; `New Preset` saves into
 the currently open folder. The factory image includes its preset library as
-ordinary editable records, including `Soft String Pad` under `Pads` and
-`Bright Mono Lead` under `Leads`. They can be changed or erased like any other
-preset. The web app shows the foldered library and can create foldered presets.
+ordinary editable records organized into `Basses`, `Leads`, `Pads`, and
+`Plucks`. They can be changed or erased like any other preset. The web app
+shows each folder in a two-row strip with its preset count. Search
+narrows the compact preset list within the selected folder. Open a preset from
+its name or use its more-actions menu for rename, move, copy, export, and
+delete. The app can also create foldered presets.
+`Rename / Move` changes a saved Browser or HexBoard preset in place, so changing
+its name or folder does not require making a copy and deleting the old record.
+If the destination already contains a preset with the same name, the app shows
+which preset will be replaced and requires confirmation. `Delete` also requires
+confirmation and states that it cannot be undone.
+
+Use the selection boxes in either preset library for batch work. The batch
+toolbar appears after at least one preset is selected. `Select shown`
+selects the presets visible under the current folder filter. The selected
+presets can be copied together to the other library or exported as one JSON
+library file. `Import Preset Files` accepts several individual preset files, a
+bulk library file, or both in one file selection. Before a batch import or copy,
+the app lists how many existing destination presets will be replaced and waits
+for confirmation.
+
 The load list also includes `Blank`. Loading from the top-level `Synth` item
 returns to the main menu; loading or saving from `Editor` -> `Synth` returns to
 `Synth`. Loading a preset changes only the current synth parameters and
-wavetable reference, which can still be auto-saved by the normal settings
-system. The currently loaded catalog preset shows a diamond in the left
+wavetable reference, which can still be preserved by profile auto-save. The
+currently loaded catalog preset shows a diamond in the left
 action-icon slot when it appears in the load list; `Blank`, `New Preset`, and
 the unselected `Current` state are not marked.
 
@@ -547,8 +577,10 @@ wheel speeds.
 
 The onboard synth smooths pitch-bend wheel changes, phase-warp depth, and
 vibrato depth internally so button-controlled bends and warp changes do not jump
-as hard between command-wheel updates. External MIDI still receives the normal
-pitch-bend and modulation messages.
+as hard between command-wheel updates. While the pitch-bend wheel is moving,
+external MIDI receives evenly paced updates at up to `100` messages per second;
+the wheel-speed choices still control approximately the same total bend time.
+Modulation continues to use normal MIDI control-change messages.
 
 ### External Delegated Control
 
@@ -582,7 +614,7 @@ The app requires a Web MIDI SysEx-capable browser, usually Chrome or Edge, from
 connected device's preset-sync support and connects automatically when exactly
 one compatible HexBoard replies; a device selector appears when multiple
 compatible boards are connected. The top tabs open `Tunings & Layouts` by
-default, followed by `Synth Editor` and `Profiles`.
+default, followed by `Synth Editor`.
 
 In the tuning/layout editor, you can create EDO tunings, equal-step tunings,
 Scala `.scl` imports, vector layouts, scales, custom scale-degree colors, and
@@ -590,11 +622,19 @@ per-button pitch, color, direct-MIDI, or chord overrides. Work through `Library`
 `Scale & color` from left to right. `Library` provides the full-width computer
 and HexBoard file-management view; the three editing steps keep the board
 preview visible while their focused controls appear beside it. Sync and save
-actions remain at the top of the geometry studio. Valid, in-range numeric edits
+actions remain at the top of the tuning studio. Valid, in-range numeric edits
 update the preview as you type. Empty, incomplete, or out-of-range drafts remain
 editable without changing the preview, then restore or clamp when you leave the
 field. Names and descriptions likewise apply their
-length and fallback rules only after you leave the field. The preview's adjacent
+length and fallback rules only after you leave the field. Note labels are
+entered in tuning-degree order. The `Pitch anchor` statement groups the anchored
+tuning degree, frequency, and scientific-pitch MIDI key, for example
+`A (degree 9) = 440 Hz as A4 (MIDI 69)`. Changing the anchored degree retunes
+the labeled notes without renaming or rotating them. `Default key` appears
+separately under `Scale defaults` and chooses the scale key selected when the
+tuning is first loaded. The app does not infer note names or reference positions
+from the tuning size.
+The preview's adjacent
 brush and eyedropper buttons paint keys or pick an existing key color. The brush
 can target either button color overrides or scale-degree palette colors while
 `Custom` color mode is active. Painting a scale degree clears matching
@@ -623,7 +663,7 @@ center. With one key or all 133 playable keys selected, these controls rewrite
 the generated layout and move all pitch, color, role, and action overrides with
 it. With any smaller multi-selection, rotation, mirror, and transpose create or
 move per-key overrides instead. Overrides temporarily moved beyond the visible
-board are retained in the bundle and can return with undo or a later transform.
+board are retained in the tuning bundle and can return with undo or a later transform.
 Horizontal and vertical mirror icons follow the displayed device orientation,
 so their underlying grid axis changes at 90° and 270° device rotations. Undo
 and redo also cover color-paint operations; one continuous pointer drag is one
@@ -635,31 +675,51 @@ intervals, and reference frequency at the firmware's native 32-bit floating-
 point precision. Each value is stored once; EDO step size, equal-step period,
 and Scala period are derived from their authoritative values.
 `Live send` previews compatible edits on the connected HexBoard without saving
-them to flash. `Save to computer` stores the bundle in browser storage, and
-`Save to HexBoard` writes the complete bundle, then applies its active tuning,
-layout, scale, colors, and button map so the preview and device menu agree. The
-saved bundle appears in the on-device `Tuning`, `Layout`, and `Scales`
-browsers. HexBoard stores up to 64 complete geometry bundles; one tuning plus
-its palette and all linked layouts/scales counts as one bundle. Tuning division
-and scale-cycle lengths may be from 1 through 128. Saving or erasing a bundle
-changes only that bundle's file; the other geometry bundles are not rewritten.
+them to flash. Edits in the Computer Library are saved automatically in browser
+storage. `Save to HexBoard` writes the complete tuning bundle, then applies its
+active tuning, layout, scale, colors, and button map so the preview and device
+menu agree. The saved tuning appears in the on-device `Tuning`, `Layout`, and
+`Scales` browsers. HexBoard stores up to 64 complete tuning bundles; one tuning
+plus its palette and all linked layouts/scales counts as one bundle. Tuning
+division and scale-cycle lengths may be from 1 through 1024. Saving or deleting a
+tuning bundle changes only that bundle's file; the others are not rewritten.
 Each tuning bundle may contain up to 32 layouts and 32 scales.
-The editor's `Default color mode` selector is saved with each bundle and is
-applied when that tuning loads. The supplied `12 EDO (Normal)` bundle defaults
+The editor's `Color mode` selector is saved with each tuning bundle and is
+applied when that tuning loads. The supplied `12 EDO (Normal)` tuning defaults
 to `Rainbow`.
 
-In the Library step, drag bundle rows to reorder them. Computer Library order is
+In the Library step, drag tuning rows to reorder them. Computer Library order is
 saved in the browser. Dragging HexBoard Library rows updates the device menu
 order after a 2 second quiet period, so several quick drops produce one small
-order-file flash write rather than rewriting geometry bundles.
+order-file flash write rather than rewriting tuning bundles. `Copy to HexBoard`
+and `Copy to Browser` copy a tuning between libraries. `Export File` saves a
+portable `hexboard.tuningBundle.v2` JSON file to the computer. Version 1 tuning
+bundles remain importable and are converted to explicit degree order. Tuning
+bundle uploads and downloads show byte progress in the app while the transfer
+is active. If HexBoard has no usable stored tuning bundles, the app shows a
+built-in rescue-tuning notice instead of presenting that read-only rescue as an
+editable library item.
+
+`Rename / Move` updates a tuning bundle in place in either library. The app
+shows the final folder and name before saving. If that destination is occupied,
+it identifies the bundle that will be replaced and requires confirmation;
+deletion happens only after the renamed bundle has saved. Direct `Delete`
+actions also require confirmation.
+
+Selection boxes provide the same batch workflow as the synth preset library.
+Select the tunings shown by the current folder filter, then copy them together
+to the other library or export them as one JSON tuning-library file. `Import
+Files` accepts several individual tuning files and bulk tuning-library files in
+one selection. A single warning summarizes any destination bundles that a batch
+copy or import will replace.
 
 Library folder rows begin with the visually distinct system views `All` and
 `Root`, followed by user folders. New folders belong to the
 computer library and stay available between sessions. An empty computer folder
-can be deleted from the folder controls; move or erase its bundles first when it
+can be deleted from the folder controls; move or delete its tunings first when it
 is not empty. HexBoard folders are derived from the saved items on the device,
 so a device folder disappears automatically after its last item is moved or
-erased.
+deleted.
 
 In the synth editor, you can manage synth presets and user wavetables. Presets
 can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,
@@ -676,15 +736,17 @@ shown as a folder. New wavetable imports start in `Root` unless another folder
 is selected.
 
 `HexBoard Wavetables` is refreshed from the connected device; if a preset
-references a computer-only wavetable, saving that preset to HexBoard offers to
-upload the wavetable first.
+references a computer-only wavetable, saving that preset to HexBoard requires
+uploading the same-name wavetable or selecting an alternate first. Wavetable
+names are unique across folders, and `Basic Shapes` is reserved for the
+firmware-resident rescue table.
 
 Single live synth-parameter edits do not show the `MIDI SysEx` transfer screen,
 do not mute audio, and are saved by the normal debounced auto-save path. Larger
 object transfers, such as full preset saves or wavetable imports, show `MIDI
 SysEx` on the HexBoard with the object type, upload/download direction, byte
 count, percentage, and a progress bar. This includes large wavetable transfers
-and complete geometry-bundle saves. Transfers that save to flash mute audio for
+and complete tuning-bundle uploads and downloads. Transfers that save to flash mute audio for
 the transfer window and briefly pause normal menu/button/LED work while the
 transfer is serviced.
 
@@ -731,7 +793,7 @@ The `Settings` page includes:
 
 This page contains maintenance and system settings:
 
-- `Firmware 2.0 beta 3` version label
+- `Firmware 2.0 beta 4` version label
 - Hardware revision
 - `Invert Encoder`: reverse the detected hardware revision's normal direction
 - `Boot Anim`
@@ -803,7 +865,7 @@ Important factory defaults include:
 - Scale: chromatic / none
 - MIDI channel: `1`
 - MPE mode: `Auto`
-- Active synth preset: `Soft String Pad`
+- Active synth preset: `Lo-Fi Synth Strings`
 - Synth: `Poly`
 - Synth output volume: `100%` for headphone and piezo
 - Wavetable: `/Classic`
@@ -815,7 +877,7 @@ Important factory defaults include:
 - Amp Env Hold: `0 ms`
 - FX Env 1: `Vibrato`, `+100%`, `0 ms` attack, `0 ms` hold, `0 ms` decay, `0%` sustain, `0 ms` release
 - FX Env 2: `Pitch`, `+100%`, `0 ms` attack, `0 ms` hold, `0 ms` decay, `0%` sustain, `0 ms` release
-- Synth presets: `Soft String Pad` and `Bright Mono Lead` restored as editable slots
+- Synth presets: `16` editable factory presets organized by sound category
 - Boot animation: `On`
 - Metronome: `Off`
 - Time signature: `4/4`
@@ -830,7 +892,7 @@ Important factory defaults include:
 Use `HexBoard_Factory.uf2` for a factory installation. It erases all saved
 settings, presets, wavetables, layouts, samples, and sequences, then installs a
 complete factory library. Use `HexBoard_Update.uf2` to update firmware without
-changing LittleFS. Beta 3 accepts only settings schema `26`;
+changing LittleFS. Beta 4 accepts only settings schema `29`;
 settings from another beta start at defaults, while current-format preset,
 wavetable, geometry, and sequence files remain available.
 

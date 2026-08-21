@@ -85,21 +85,13 @@ const char* currentSynthWavetableMenuReferenceName() {
   return loadedSynthWavetableName[0] ? loadedSynthWavetableName : currentSynthWavetableName;
 }
 
-const char* currentSynthWavetableMenuReferenceFolder() {
-  return loadedSynthWavetableFolderPath[0] ? loadedSynthWavetableFolderPath : currentSynthWavetableFolderPath;
-}
-
 bool synthWavetableRowMatchesReference(const char* folderPath, const char* name) {
+  (void)folderPath;
   const char* currentName = currentSynthWavetableMenuReferenceName();
-  const char* currentFolder = currentSynthWavetableMenuReferenceFolder();
   if (!currentName || !currentName[0]) {
     currentName = SYNTH_WAVETABLE_BASIC_NAME;
   }
-  if (!currentFolder || !currentFolder[0]) {
-    currentFolder = SYNTH_WAVETABLE_BUILTIN_FOLDER;
-  }
-  return strncmp(name, currentName, SYNTH_WAVETABLE_NAME_LENGTH) == 0
-         && strncmp(folderPath, currentFolder, SYNTH_WAVETABLE_FOLDER_LENGTH) == 0;
+  return strncmp(name, currentName, SYNTH_WAVETABLE_NAME_LENGTH) == 0;
 }
 
 bool synthWavetableRowIsCurrent(const SynthWavetableMenuRow& row) {

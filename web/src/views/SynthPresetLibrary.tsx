@@ -33,9 +33,11 @@ import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
 import { WebMidiTransport } from "../midi/webMidi.ts";
 import { crc32 } from "../protocol/crc32.ts";
-import type { ObjectListRecord } from "../protocol/index.ts";
+import { SynthWavetableSelector, type ObjectListRecord } from "../protocol/index.ts";
 import { CommonTlv, decodeObjectBody, textFromBytes } from "../protocol/tlv.ts";
 import { FolderControls } from "../components/FolderControls.tsx";
+import { LibraryBulkActions } from "../components/LibraryBulkActions.tsx";
+import { OrganizeLibraryItemDialog, type LibraryOrganizationConflict } from "../components/OrganizeLibraryItemDialog.tsx";
 import { formatByteLength, formatHex } from "./format.ts";
 
 interface SynthPresetLibraryProps {
@@ -129,12 +131,31 @@ interface DraggedPreset {
   objectIdHex: string;
 }
 
+interface PresetOrganizationRequest {
+  space: LibrarySpace;
+  preset: EditableSynthPreset;
+  initialFolderPath?: string;
+}
+
+type WavetableResolutionChoice =
+  | { kind: "upload" }
+  | { kind: "alternate"; wavetable: { name: string; folderPath: string } }
+  | null;
+
+interface WavetableResolutionRequest {
+  presetName: string;
+  requiredName: string;
+  matchingComputerWavetable?: EditableSynthWavetable;
+  resolve: (choice: WavetableResolutionChoice) => void;
+}
+
 const computerLibraryStorageKey = "hexboard.synthPresetComputerLibrary.v1";
 const computerWavetableStorageKey = "hexboard.synthWavetableComputerLibrary.v1";
 const computerWavetableFactorySeedStorageKey = "hexboard.synthWavetableFactorySeed.v1";
 const synthPresetFoldersStorageKey = "hexboard.synthPresetFolders.v1";
 const synthWavetableFoldersStorageKey = "hexboard.synthWavetableFolders.v1";
 const presetFileFormat = "hexboard.synthPreset.v1";
+const presetLibraryFileFormat = "hexboard.synthPresetLibrary.v1";
 const wavetableFileFormat = "hexboard.synthWavetable.v1";
 const builtInWavetableFolder = "/Built In";
 const factoryWavetableFolder = "/";
@@ -533,12 +554,7 @@ function presetSaveKey(preset: EditableSynthPreset): string {
 }
 
 function wavetableSaveKey(wavetable: Pick<EditableSynthWavetable, "folderPath" | "name">): string {
-  return `${normalizeDisplayFolderPath(wavetable.folderPath).toLocaleLowerCase()}\u0000${normalizedWavetableName(wavetable.name).toLocaleLowerCase()}`;
-}
-
-function findPresetByFolderAndName(presets: EditableSynthPreset[], preset: EditableSynthPreset): EditableSynthPreset | undefined {
-  const saveKey = presetSaveKey(preset);
-  return presets.find((candidate) => presetSaveKey(candidate) === saveKey);
+  return normalizedWavetableName(wavetable.name);
 }
 
 function findWavetableByFolderAndName(wavetables: EditableSynthWavetable[], wavetable: EditableSynthWavetable): EditableSynthWavetable | undefined {
@@ -634,10 +650,21 @@ function factoryComputerWavetables(): EditableSynthWavetable[] {
   return factoryWavetableSources().map(cloneWavetable);
 }
 
+function uniqueWavetablesByName(wavetables: EditableSynthWavetable[]): EditableSynthWavetable[] {
+  const unique = new Map<string, EditableSynthWavetable>();
+  for (const wavetable of wavetables) {
+    const key = wavetableSaveKey(wavetable);
+    if (!unique.has(key)) {
+      unique.set(key, cloneWavetable(wavetable));
+    }
+  }
+  return Array.from(unique.values()).sort(compareWavetables);
+}
+
 function mergeMissingFactoryWavetables(wavetables: EditableSynthWavetable[]): EditableSynthWavetable[] {
   const existingKeys = new Set(wavetables.map((wavetable) => wavetableSaveKey(wavetable)));
   const additions = factoryComputerWavetables().filter((wavetable) => !existingKeys.has(wavetableSaveKey(wavetable)));
-  return [...wavetables.map(cloneWavetable), ...additions].sort(compareWavetables);
+  return uniqueWavetablesByName([...wavetables, ...additions]);
 }
 
 function upsertPreset(presets: EditableSynthPreset[], preset: EditableSynthPreset): EditableSynthPreset[] {
@@ -743,6 +770,61 @@ function presetFromUnknown(value: unknown): EditableSynthPreset {
     favorite: source.favorite === true,
     values
   };
+}
+
+export function presetsFromUnknown(value: unknown): EditableSynthPreset[] {
+  if (isRecord(value) && value.format === presetLibraryFileFormat && Array.isArray(value.presets)) {
+    if (value.presets.length === 0) {
+      throw new Error("Preset library file does not contain any presets");
+    }
+    return value.presets.map(presetFromUnknown);
+  }
+  return [presetFromUnknown(value)];
+}
+
+export function mergePresetBatch(
+  target: EditableSynthPreset[],
+  incoming: EditableSynthPreset[]
+): { presets: EditableSynthPreset[]; conflicts: EditableSynthPreset[] } {
+  let presets = target.map(clonePreset);
+  const conflicts: EditableSynthPreset[] = [];
+  for (const source of incoming) {
+    const normalized = normalizedPresetForSave(source);
+    const sameObject = presets.find((candidate) => candidate.objectIdHex === normalized.objectIdHex);
+    const sameDestination = presets.find((candidate) =>
+      candidate.objectIdHex !== normalized.objectIdHex && presetSaveKey(candidate) === presetSaveKey(normalized)
+    );
+    if (sameDestination) conflicts.push(sameDestination);
+    const merged = {
+      ...normalized,
+      objectIdHex: sameObject?.objectIdHex ?? sameDestination?.objectIdHex ?? normalized.objectIdHex,
+      deviceHandle: undefined
+    };
+    presets = upsertPreset(
+      sameDestination ? removePreset(presets, sameDestination.objectIdHex) : presets,
+      merged
+    );
+  }
+  return {
+    presets,
+    conflicts: Array.from(new Map(conflicts.map((preset) => [preset.objectIdHex, preset])).values())
+  };
+}
+
+export function filterLibraryPresets(
+  presets: EditableSynthPreset[],
+  selectedFolder: string | null,
+  searchQuery: string
+): EditableSynthPreset[] {
+  const query = searchQuery.trim().toLocaleLowerCase();
+  return presets.filter((preset) => {
+    if (selectedFolder !== null && preset.folderPath !== selectedFolder) {
+      return false;
+    }
+    return query.length === 0
+      || preset.name.toLocaleLowerCase().includes(query)
+      || folderLabel(preset.folderPath).toLocaleLowerCase().includes(query);
+  });
 }
 
 function presetFromObjectBody(body: Uint8Array, deviceHandle?: number): EditableSynthPreset {
@@ -969,7 +1051,7 @@ function loadComputerWavetables(): EditableSynthWavetable[] {
         window.localStorage.setItem(computerWavetableFactorySeedStorageKey, "1");
         return mergeMissingFactoryWavetables(wavetables);
       }
-      return wavetables.sort(compareWavetables);
+      return uniqueWavetablesByName(wavetables);
     }
   } catch {
     window.localStorage.removeItem(computerWavetableStorageKey);
@@ -1016,7 +1098,7 @@ function safeFileName(value: string): string {
 }
 
 function librarySpaceLabel(space: LibrarySpace): string {
-  return space === "computer" ? "Computer Library" : "HexBoard Library";
+  return space === "computer" ? "Browser Library" : "HexBoard Library";
 }
 
 function renderWavetableImportSource(source: WavetableImportSource, options: SerumWavetableCrunchOptions): Uint8Array {
@@ -1126,6 +1208,16 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [heldPreviewNotes, setHeldPreviewNotes] = useState<number[]>([]);
   const [lastFrameCount, setLastFrameCount] = useState(0);
   const [draggedPreset, setDraggedPreset] = useState<DraggedPreset | null>(null);
+  const [presetOrganizationRequest, setPresetOrganizationRequest] = useState<PresetOrganizationRequest | null>(null);
+  const [selectedPresetIds, setSelectedPresetIds] = useState<Record<LibrarySpace, string[]>>({
+    computer: [],
+    hexboard: []
+  });
+  const [bulkPresetBusy, setBulkPresetBusy] = useState(false);
+  const [wavetableResolutionRequest, setWavetableResolutionRequest] =
+    useState<WavetableResolutionRequest | null>(null);
+  const [wavetableResolutionAlternate, setWavetableResolutionAlternate] =
+    useState(basicWavetableName);
   const [folderFilters, setFolderFilters] = useState<Record<LibrarySpace, string | null>>({
     computer: null,
     hexboard: null
@@ -1196,23 +1288,35 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   ])).filter((folder) => folder !== builtInWavetableFolder)
     .sort(compareFolderPaths), [hexboardWavetables]);
   const wavetableOptions = useMemo(() => {
-    const refs = [
-      ...builtInWavetables,
-      ...computerWavetables,
-      ...hexboardWavetables,
-      normalizeWavetableReference(preset.wavetableFolderPath, preset.wavetableName)
-    ];
-    const unique = new Map<string, { name: string; folderPath: string }>();
-    for (const ref of refs) {
+    const optionFromReference = (ref: { name: string; folderPath: string }) => ({
+      value: wavetableOptionValue(ref.folderPath, ref.name),
+      label: `${folderLabel(ref.folderPath)} / ${ref.name}`
+    });
+    const sortReferences = (refs: Array<{ name: string; folderPath: string }>) =>
+      refs.sort((left, right) => `${folderLabel(left.folderPath)}/${left.name}`.localeCompare(`${folderLabel(right.folderPath)}/${right.name}`));
+    const uniqueDevice = new Map<string, { name: string; folderPath: string }>();
+    for (const ref of [...builtInWavetables, ...hexboardWavetables]) {
       const normalized = normalizeWavetableReference(ref.folderPath, ref.name);
-      unique.set(wavetableSaveKey(normalized), normalized);
+      uniqueDevice.set(wavetableSaveKey(normalized), normalized);
     }
-    return Array.from(unique.values())
-      .sort((left, right) => `${folderLabel(left.folderPath)}/${left.name}`.localeCompare(`${folderLabel(right.folderPath)}/${right.name}`))
-      .map((ref) => ({
-        value: wavetableOptionValue(ref.folderPath, ref.name),
-        label: `${folderLabel(ref.folderPath)} / ${ref.name}`
-      }));
+    const uniqueComputer = new Map<string, { name: string; folderPath: string }>();
+    for (const ref of computerWavetables) {
+      const normalized = normalizeWavetableReference(ref.folderPath, ref.name);
+      const key = wavetableSaveKey(normalized);
+      if (!uniqueDevice.has(key)) {
+        uniqueComputer.set(key, normalized);
+      }
+    }
+    const selected = normalizeWavetableReference(preset.wavetableFolderPath, preset.wavetableName);
+    const selectedKey = wavetableSaveKey(selected);
+    const unavailable = !uniqueDevice.has(selectedKey) && !uniqueComputer.has(selectedKey)
+      ? [optionFromReference(selected)]
+      : [];
+    return {
+      device: sortReferences(Array.from(uniqueDevice.values())).map(optionFromReference),
+      computer: sortReferences(Array.from(uniqueComputer.values())).map(optionFromReference),
+      unavailable
+    };
   }, [computerWavetables, hexboardWavetables, preset.wavetableFolderPath, preset.wavetableName]);
   const selectedPreviewWavetable = useMemo(() => {
     const selectedKey = wavetableSaveKey(normalizeWavetableReference(preset.wavetableFolderPath, preset.wavetableName));
@@ -1226,6 +1330,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     wavetableSamples: selectedPreviewWavetable?.samples ? synthWavetableBaseSamples(selectedPreviewWavetable.samples) : undefined,
     values: preset.values
   }), [preset.values, preset.wavetableFolderPath, preset.wavetableName, selectedPreviewWavetable?.samples]);
+  const liveSendPatch = useMemo(() => ({
+    values: preset.values,
+    wavetableName: preset.wavetableName,
+    wavetableFolderPath: preset.wavetableFolderPath
+  }), [preset.values, preset.wavetableFolderPath, preset.wavetableName]);
   const draftPreset = useMemo(() => encodeEditablePreset(preset), [preset]);
   const monoModeSelected = preset.values.PlaybackMode === 1 || preset.values.PlaybackMode === 4;
   const arpModeSelected = preset.values.PlaybackMode === 2;
@@ -1390,7 +1499,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }, 120);
 
     return () => window.clearTimeout(timeout);
-  }, [autoSend, draftPreset, editorHydrated]);
+  }, [autoSend, editorHydrated, liveSendPatch]);
 
   function updateValue(key: EditableSynthValueKey, value: number) {
     const clampedValue = clampSynthValue(key, value);
@@ -1411,6 +1520,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     pendingLiveSynthParam.current = null;
     setEditorHydrated(true);
     setPreset(update);
+  }
+
+  function updatePresetName(name: string) {
+    setPreset((current) => ({ ...current, name }));
   }
 
   function previewController(): SynthPreviewController {
@@ -1479,7 +1592,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
     setCustomFolders((current) => Array.from(new Set([...current, folder])).sort());
     setNewFolder("");
-    setSyncStatus(`Created ${folderLabel(folder)} in Computer Library`);
+    setSyncStatus(`Created ${folderLabel(folder)} in Browser Library`);
   }
 
   function addWavetableFolder() {
@@ -1490,7 +1603,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
     setCustomWavetableFolders((current) => Array.from(new Set([...current, folder])).sort());
     setNewWavetableFolder("");
-    setSyncStatus(`Created ${folderLabel(folder)} in Computer Wavetables`);
+    setSyncStatus(`Created ${folderLabel(folder)} in Browser Wavetables`);
   }
 
   function deletePresetFolder(folderPath: string) {
@@ -1502,7 +1615,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     setCustomFolders((current) => current.filter((folder) => folder !== folderPath));
     setFolderFilters((current) => ({ ...current, computer: current.computer === folderPath ? null : current.computer }));
     setPreset((current) => current.folderPath === folderPath ? { ...current, folderPath: rootFolderPath } : current);
-    setSyncStatus(`Deleted ${folderLabel(folderPath)} from Computer Library`);
+    setSyncStatus(`Deleted ${folderLabel(folderPath)} from Browser Library`);
   }
 
   function deleteWavetableFolder(folderPath: string) {
@@ -1514,12 +1627,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     setCustomWavetableFolders((current) => current.filter((folder) => folder !== folderPath));
     setWavetableFolderFilters((current) => ({ ...current, computer: current.computer === folderPath ? null : current.computer }));
     setWavetableImportFolder((current) => current === folderPath ? rootFolderPath : current);
-    setSyncStatus(`Deleted ${folderLabel(folderPath)} from Computer Wavetables`);
+    setSyncStatus(`Deleted ${folderLabel(folderPath)} from Browser Wavetables`);
   }
 
-  function selectPresetWavetable(value: string) {
-    const wavetable = wavetableReferenceFromOptionValue(value);
-    skipNextAutoSend.current = false;
+  function applyPresetWavetable(wavetable: { name: string; folderPath: string }) {
+    skipNextAutoSend.current = true;
     pendingLiveSynthParam.current = null;
     setEditorHydrated(true);
     setPreset((current) => ({
@@ -1531,6 +1643,61 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         Waveform: 27
       }
     }));
+  }
+
+  async function sendLiveWavetableSelection(wavetable: { name: string; folderPath: string }) {
+    if (!autoSend) {
+      return;
+    }
+    const referenceKey = wavetableSaveKey(wavetable);
+    const builtInIndex = builtInWavetables.findIndex((candidate) => wavetableSaveKey(candidate) === referenceKey);
+    const deviceWavetable = hexboardWavetables.find((candidate) => wavetableSaveKey(candidate) === referenceKey);
+    const selector = builtInIndex >= 0 ? SynthWavetableSelector.BuiltIn : SynthWavetableSelector.Catalog;
+    const index = builtInIndex >= 0 ? builtInIndex : deviceWavetable?.deviceHandle;
+    if (index === undefined) {
+      setSyncStatus(`Cannot live-select ${wavetable.name}: its HexBoard handle is unavailable`);
+      return;
+    }
+    try {
+      await client.sendSynthWavetableSelect(selector, index);
+      setLastFrameCount(1);
+      setSyncStatus(`Selected ${wavetable.name} on ${transport.label} with 1 frame`);
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Failed to select synth wavetable");
+    }
+  }
+
+  async function selectPresetWavetable(value: string) {
+    const wavetable = wavetableReferenceFromOptionValue(value);
+    const referenceKey = wavetableSaveKey(wavetable);
+    const isOnDevice = builtInWavetables.some((candidate) => wavetableSaveKey(candidate) === referenceKey)
+      || hexboardWavetables.some((candidate) => wavetableSaveKey(candidate) === referenceKey);
+    if (isOnDevice) {
+      applyPresetWavetable(wavetable);
+      await sendLiveWavetableSelection(wavetable);
+      return;
+    }
+
+    const computerWavetable = computerWavetables.find((candidate) => wavetableSaveKey(candidate) === referenceKey);
+    if (!computerWavetable) {
+      setSyncStatus(`${wavetable.name} is not available on HexBoard`);
+      return;
+    }
+    if (!computerWavetable.samples) {
+      setSyncStatus(`Cannot copy ${computerWavetable.name} to HexBoard: sample data is not loaded`);
+      return;
+    }
+    if (!window.confirm(
+      `"${computerWavetable.name}" is only in Browser Wavetables. Copy it to HexBoard and use it for this preset?`
+    )) {
+      setSyncStatus("Wavetable selection canceled");
+      return;
+    }
+
+    const uploaded = await uploadWavetableToHexBoard(computerWavetable, "Copied");
+    if (uploaded) {
+      applyPresetWavetable(uploaded);
+    }
   }
 
   function openPreset(source: LibrarySpace, nextPreset: EditableSynthPreset) {
@@ -1562,22 +1729,42 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }));
   }
 
-  function confirmPresetOverwrite(targetLabel: string, existing: EditableSynthPreset): boolean {
-    return window.confirm(`Overwrite "${existing.name}" in ${folderLabel(existing.folderPath)} on ${targetLabel}?`);
+  function confirmPresetOverwrite(targetLabel: string, existing: EditableSynthPreset, deletesExisting: boolean): boolean {
+    const deletionWarning = deletesExisting
+      ? " The existing preset will be permanently deleted after the replacement is saved."
+      : " This permanently replaces the existing destination preset.";
+    return window.confirm(
+      `Overwrite “${existing.name}” in ${folderLabel(existing.folderPath)} on ${targetLabel}?${deletionWarning}`
+    );
   }
 
   function preparePresetForLibrarySave(
     nextPreset: EditableSynthPreset,
     targetPresets: EditableSynthPreset[],
     targetLabel: string,
-    keepDeviceHandle: boolean
-  ): { preset: EditableSynthPreset; overwritten: boolean } | null {
+    keepDeviceHandle: boolean,
+    confirmOverwrite = true
+  ): { preset: EditableSynthPreset; overwritten: boolean; replacedPreset?: EditableSynthPreset } | null {
     const normalized = normalizedPresetForSave(nextPreset);
-    const existing = findPresetByFolderAndName(targetPresets, normalized);
+    const current = targetPresets.find((candidate) => candidate.objectIdHex === normalized.objectIdHex);
+    const existing = targetPresets.find((candidate) =>
+      candidate.objectIdHex !== normalized.objectIdHex && presetSaveKey(candidate) === presetSaveKey(normalized)
+    );
+    if (existing && confirmOverwrite && !confirmPresetOverwrite(targetLabel, existing, current !== undefined)) {
+      return null;
+    }
+    if (current) {
+      return {
+        preset: {
+          ...normalized,
+          objectIdHex: current.objectIdHex,
+          deviceHandle: keepDeviceHandle ? current.deviceHandle : undefined
+        },
+        overwritten: existing !== undefined,
+        ...(existing ? { replacedPreset: existing } : {})
+      };
+    }
     if (existing) {
-      if (!confirmPresetOverwrite(targetLabel, existing)) {
-        return null;
-      }
       return {
         preset: {
           ...normalized,
@@ -1598,8 +1785,92 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     };
   }
 
+  function organizationConflict(
+    space: LibrarySpace,
+    source: EditableSynthPreset,
+    name: string,
+    folderPath: string
+  ): EditableSynthPreset | undefined {
+    const candidates = space === "computer" ? computerPresets : hexboardPresets;
+    const destinationKey = presetSaveKey({ ...source, name, folderPath });
+    return candidates.find((candidate) =>
+      candidate.objectIdHex !== source.objectIdHex && presetSaveKey(candidate) === destinationKey
+    );
+  }
+
+  function organizationConflictSummary(
+    space: LibrarySpace,
+    source: EditableSynthPreset,
+    name: string,
+    folderPath: string
+  ): LibraryOrganizationConflict | null {
+    const conflict = organizationConflict(space, source, name, folderPath);
+    return conflict ? { name: conflict.name, folderPath: conflict.folderPath } : null;
+  }
+
+  async function organizePresetInPlace(
+    request: PresetOrganizationRequest,
+    name: string,
+    folderPath: string
+  ): Promise<boolean> {
+    const nextPreset = normalizedPresetForSave({ ...clonePreset(request.preset), name, folderPath });
+    const conflict = organizationConflict(request.space, request.preset, nextPreset.name, nextPreset.folderPath);
+    if (request.space === "computer") {
+      setComputerPresets((current) => {
+        const withoutConflict = conflict ? removePreset(current, conflict.objectIdHex) : current;
+        return upsertPreset(withoutConflict, { ...nextPreset, deviceHandle: undefined });
+      });
+      setCustomFolders((current) => Array.from(new Set([...current, nextPreset.folderPath])).sort(compareFolderPaths));
+      if (openedSource === "computer" && preset.objectIdHex === request.preset.objectIdHex) {
+        skipNextAutoSend.current = true;
+        setPreset(clonePreset({ ...nextPreset, deviceHandle: undefined }));
+      }
+      setSyncStatus(
+        `${conflict ? "Replaced existing preset and updated" : "Updated"} ${nextPreset.name} in Browser Library`
+      );
+      return true;
+    }
+
+    if (transport instanceof MockMidiTransport || request.preset.deviceHandle === undefined) {
+      setHexboardPresets((current) => {
+        const withoutConflict = conflict ? removePreset(current, conflict.objectIdHex) : current;
+        return upsertPreset(withoutConflict, { ...nextPreset, deviceHandle: request.preset.deviceHandle });
+      });
+      setSyncStatus(
+        `${conflict ? "Replaced existing preset and updated" : "Updated"} ${nextPreset.name} in HexBoard Library`
+      );
+      return true;
+    }
+
+    try {
+      setSyncStatus(`Updating ${request.preset.name} in HexBoard Library...`);
+      const frames = await client.sendSynthPresetUpdateConfirmed(
+        encodeEditablePreset(nextPreset),
+        request.preset.deviceHandle
+      );
+      if (conflict) {
+        if (conflict.deviceHandle === undefined) {
+          throw new Error(`Cannot replace ${conflict.name}: its HexBoard handle is unavailable`);
+        }
+        await client.deleteSynthPreset(conflict.deviceHandle);
+      }
+      setLastFrameCount(frames.length);
+      await refreshHexBoardLibrary(
+        `${conflict ? "Replaced existing preset and updated" : "Updated"} ${nextPreset.name} in HexBoard Library`
+      );
+      if (openedSource === "hexboard" && preset.objectIdHex === request.preset.objectIdHex) {
+        skipNextAutoSend.current = true;
+        setPreset(clonePreset(nextPreset));
+      }
+      return true;
+    } catch (error) {
+      setSyncStatus(error instanceof Error ? error.message : "Failed to update HexBoard preset");
+      return false;
+    }
+  }
+
   function saveToComputer(nextPreset = preset, prefix = "Saved") {
-    const decision = preparePresetForLibrarySave(nextPreset, computerPresets, "Computer Library", false);
+    const decision = preparePresetForLibrarySave(nextPreset, computerPresets, "Browser Library", false);
     if (!decision) {
       setSyncStatus("Save canceled");
       return;
@@ -1608,12 +1879,17 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       ...decision.preset,
       deviceHandle: undefined
     };
-    setComputerPresets((current) => upsertPreset(current, normalized));
-    setCustomFolders((current) => Array.from(new Set([...current, normalized.folderPath])).sort());
+    setComputerPresets((current) => {
+      const withoutReplaced = decision.replacedPreset
+        ? removePreset(current, decision.replacedPreset.objectIdHex)
+        : current;
+      return upsertPreset(withoutReplaced, normalized);
+    });
+    setCustomFolders((current) => Array.from(new Set([...current, normalized.folderPath])).sort(compareFolderPaths));
     skipNextAutoSend.current = true;
     setPreset(clonePreset(normalized));
     setOpenedSource("computer");
-    setSyncStatus(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in Computer Library`);
+    setSyncStatus(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in Browser Library`);
   }
 
   async function sendPresetPreview(nextPreset: EditableSynthPreset, prefix = "Sent") {
@@ -1641,43 +1917,85 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }
   }
 
-  async function ensurePresetWavetableOnHexBoard(nextPreset: EditableSynthPreset): Promise<boolean> {
+  function requestWavetableResolution(
+    nextPreset: EditableSynthPreset,
+    matchingComputerWavetable?: EditableSynthWavetable
+  ): Promise<WavetableResolutionChoice> {
+    setWavetableResolutionAlternate(basicWavetableName);
+    return new Promise((resolve) => {
+      setWavetableResolutionRequest({
+        presetName: nextPreset.name,
+        requiredName: nextPreset.wavetableName,
+        matchingComputerWavetable,
+        resolve
+      });
+    });
+  }
+
+  function closeWavetableResolution(choice: WavetableResolutionChoice) {
+    wavetableResolutionRequest?.resolve(choice);
+    setWavetableResolutionRequest(null);
+  }
+
+  async function ensurePresetWavetableOnHexBoard(nextPreset: EditableSynthPreset): Promise<EditableSynthPreset | null> {
     const reference = normalizeWavetableReference(nextPreset.wavetableFolderPath, nextPreset.wavetableName);
     const referenceKey = wavetableSaveKey(reference);
-    if (builtInWavetables.some((wavetable) => wavetableSaveKey(wavetable) === referenceKey)
-        || hexboardWavetables.some((wavetable) => wavetableSaveKey(wavetable) === referenceKey)) {
-      return true;
+    const deviceWavetable = [...builtInWavetables, ...hexboardWavetables]
+      .find((wavetable) => wavetableSaveKey(wavetable) === referenceKey);
+    if (deviceWavetable) {
+      return {
+        ...clonePreset(nextPreset),
+        wavetableName: deviceWavetable.name,
+        wavetableFolderPath: deviceWavetable.folderPath
+      };
     }
 
     const computerWavetable = computerWavetables.find((wavetable) => wavetableSaveKey(wavetable) === referenceKey);
-    if (!computerWavetable) {
-      setSyncStatus(`Cannot save ${nextPreset.name}: ${reference.name} is not in HexBoard Wavetables`);
-      return false;
-    }
-    if (!computerWavetable.samples) {
-      setSyncStatus(`Cannot upload ${computerWavetable.name}: sample data is not loaded`);
-      return false;
-    }
-
-    const shouldUpload = window.confirm(
-      `"${nextPreset.name}" uses "${computerWavetable.name}" from Computer Wavetables. Upload this wavetable to HexBoard before saving the preset?`
-    );
-    if (!shouldUpload) {
+    const choice = await requestWavetableResolution(nextPreset, computerWavetable);
+    if (!choice) {
       setSyncStatus("Save canceled");
-      return false;
+      return null;
     }
-
-    return (await uploadWavetableToHexBoard(computerWavetable, "Uploaded")) !== null;
+    if (choice.kind === "alternate") {
+      return {
+        ...clonePreset(nextPreset),
+        wavetableName: choice.wavetable.name,
+        wavetableFolderPath: choice.wavetable.folderPath
+      };
+    }
+    if (!computerWavetable?.samples) {
+      setSyncStatus(`Cannot copy ${reference.name} to HexBoard: matching sample data is not loaded`);
+      return null;
+    }
+    const uploaded = await uploadWavetableToHexBoard(computerWavetable, "Copied");
+    return uploaded
+      ? {
+          ...clonePreset(nextPreset),
+          wavetableName: uploaded.name,
+          wavetableFolderPath: uploaded.folderPath
+        }
+      : null;
   }
 
-  async function uploadToHexBoard(nextPreset = preset, prefix = "Saved") {
-    if (!(await ensurePresetWavetableOnHexBoard(nextPreset))) {
-      return;
+  async function uploadToHexBoard(
+    nextPreset = preset,
+    prefix = "Saved",
+    options: { confirmOverwrite?: boolean; refresh?: boolean; updateEditor?: boolean } = {}
+  ): Promise<boolean> {
+    const resolvedPreset = await ensurePresetWavetableOnHexBoard(nextPreset);
+    if (!resolvedPreset) {
+      return false;
     }
-    const decision = preparePresetForLibrarySave(nextPreset, hexboardPresets, "HexBoard Library", true);
+    const decision = preparePresetForLibrarySave(
+      resolvedPreset,
+      hexboardPresets,
+      "HexBoard Library",
+      true,
+      options.confirmOverwrite ?? true
+    );
     if (!decision) {
       setSyncStatus("Save canceled");
-      return;
+      return false;
     }
     const normalized = decision.preset;
     try {
@@ -1685,18 +2003,33 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       const frames = transport instanceof MockMidiTransport
         ? await client.sendSynthPresetSave(encodedPreset)
         : await client.sendSynthPresetSaveConfirmed(encodedPreset);
+      if (decision.replacedPreset && !(transport instanceof MockMidiTransport)) {
+        if (decision.replacedPreset.deviceHandle === undefined) {
+          throw new Error(`Cannot replace ${decision.replacedPreset.name}: its HexBoard handle is unavailable`);
+        }
+        await client.deleteSynthPreset(decision.replacedPreset.deviceHandle);
+      }
       setLastFrameCount(frames.length);
-      skipNextAutoSend.current = true;
-      setPreset(clonePreset(normalized));
-      setOpenedSource("hexboard");
+      if (options.updateEditor ?? true) {
+        skipNextAutoSend.current = true;
+        setPreset(clonePreset(normalized));
+        setOpenedSource("hexboard");
+      }
       if (transport instanceof MockMidiTransport) {
-        setHexboardPresets((current) => upsertPreset(current, normalized));
+        setHexboardPresets((current) => {
+          const withoutReplaced = decision.replacedPreset
+            ? removePreset(current, decision.replacedPreset.objectIdHex)
+            : current;
+          return upsertPreset(withoutReplaced, normalized);
+        });
         setSyncStatus(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in HexBoard Library with ${frames.length} frame${frames.length === 1 ? "" : "s"}`);
-      } else {
+      } else if (options.refresh ?? true) {
         await refreshHexBoardLibrary(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in HexBoard Library with ${frames.length} frame${frames.length === 1 ? "" : "s"}`);
       }
+      return true;
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to save synth preset");
+      return false;
     }
   }
 
@@ -1740,7 +2073,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   function saveWavetableToComputer(nextWavetable: EditableSynthWavetable, prefix = "Saved") {
-    const decision = prepareWavetableForLibrarySave(nextWavetable, computerWavetables, "Computer Wavetables", false);
+    const decision = prepareWavetableForLibrarySave(nextWavetable, computerWavetables, "Browser Wavetables", false);
     if (!decision) {
       setSyncStatus("Save canceled");
       return;
@@ -1751,10 +2084,14 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     };
     setComputerWavetables((current) => upsertWavetable(current, normalized));
     setCustomWavetableFolders((current) => Array.from(new Set([...current, normalized.folderPath])).sort());
-    setSyncStatus(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in Computer Wavetables`);
+    setSyncStatus(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in Browser Wavetables`);
   }
 
   async function uploadWavetableToHexBoard(nextWavetable: EditableSynthWavetable, prefix = "Saved"): Promise<EditableSynthWavetable | null> {
+    if (builtInWavetables.some((wavetable) => wavetableSaveKey(wavetable) === wavetableSaveKey(nextWavetable))) {
+      setSyncStatus(`Cannot copy ${nextWavetable.name} to HexBoard: that name is reserved by a built-in wavetable`);
+      return null;
+    }
     const decision = prepareWavetableForLibrarySave(nextWavetable, hexboardWavetables, "HexBoard Wavetables", true);
     if (!decision) {
       setSyncStatus("Save canceled");
@@ -1797,35 +2134,23 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     try {
       const loaded = await loadHexBoardWavetableSamples(nextWavetable);
       if (!loaded.samples) {
-        setSyncStatus(`${loaded.name} does not have sample data loaded for download`);
+        setSyncStatus(`${loaded.name} does not have sample data loaded to copy`);
         return;
       }
-      saveWavetableToComputer(loaded, "Downloaded");
+      saveWavetableToComputer(loaded, "Copied");
     } catch (error) {
-      setSyncStatus(error instanceof Error ? error.message : "Failed to download HexBoard wavetable");
+      setSyncStatus(error instanceof Error ? error.message : "Failed to copy HexBoard wavetable to Browser Library");
     }
   }
 
   function useWavetableAsPresetSource(nextWavetable: EditableSynthWavetable) {
-    skipNextAutoSend.current = false;
-    pendingLiveSynthParam.current = null;
-    setEditorHydrated(true);
-    setPreset((current) => ({
-      ...current,
-      wavetableName: nextWavetable.name,
-      wavetableFolderPath: nextWavetable.folderPath,
-      values: {
-        ...current.values,
-        Waveform: 27
-      }
-    }));
-    setSyncStatus(`Selected ${nextWavetable.name} for the open preset`);
+    void selectPresetWavetable(wavetableOptionValue(nextWavetable.folderPath, nextWavetable.name));
   }
 
   function eraseWavetable(space: LibrarySpace, erasedWavetable: EditableSynthWavetable) {
     if (space === "computer") {
       setComputerWavetables((current) => removeWavetable(current, erasedWavetable.objectIdHex));
-      setSyncStatus(`Erased ${erasedWavetable.name} from Computer Wavetables`);
+      setSyncStatus(`Erased ${erasedWavetable.name} from Browser Wavetables`);
       return;
     }
 
@@ -1861,7 +2186,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       const duplicate = computerWavetables.find((candidate) =>
         candidate.objectIdHex !== renamed.objectIdHex && wavetableSaveKey(candidate) === wavetableSaveKey(renamed)
       );
-      if (duplicate && !confirmWavetableOverwrite("Computer Wavetables", duplicate)) {
+      if (duplicate && !confirmWavetableOverwrite("Browser Wavetables", duplicate)) {
         setSyncStatus("Edit canceled");
         return;
       }
@@ -1870,7 +2195,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         return upsertWavetable(withoutDuplicate, renamed);
       });
       setCustomWavetableFolders((current) => Array.from(new Set([...current, renamed.folderPath])).sort());
-      setSyncStatus(`Updated ${renamed.name} in Computer Wavetables`);
+      setSyncStatus(`Updated ${renamed.name} in Browser Wavetables`);
       return;
     }
 
@@ -1884,7 +2209,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       candidate.objectIdHex !== renamed.objectIdHex && wavetableSaveKey(candidate) === wavetableSaveKey(renamed)
     );
     if (duplicate) {
-      setSyncStatus(`Cannot rename: ${renamed.name} already exists in ${folderLabel(renamed.folderPath)} on HexBoard`);
+      setSyncStatus(`Cannot rename: ${renamed.name} already exists on HexBoard`);
       return;
     }
 
@@ -1898,25 +2223,32 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   function downloadFromHexBoard(nextPreset: EditableSynthPreset) {
-    saveToComputer(nextPreset, "Downloaded");
+    saveToComputer(nextPreset, "Copied");
   }
 
   function erasePreset(space: LibrarySpace, erasedPreset: EditableSynthPreset) {
+    const libraryLabel = space === "computer" ? "Browser Library" : "HexBoard Library";
+    if (!window.confirm(
+      `Delete “${erasedPreset.name}” from ${folderLabel(erasedPreset.folderPath)} in ${libraryLabel}? This cannot be undone.`
+    )) {
+      setSyncStatus("Delete canceled");
+      return;
+    }
     if (space === "computer") {
       setComputerPresets((current) => removePreset(current, erasedPreset.objectIdHex));
-      setSyncStatus(`Erased ${erasedPreset.name} from Computer Library`);
+      setSyncStatus(`Deleted ${erasedPreset.name} from Browser Library`);
       return;
     }
 
     if (transport instanceof MockMidiTransport || erasedPreset.deviceHandle === undefined) {
       setHexboardPresets((current) => removePreset(current, erasedPreset.objectIdHex));
-      setSyncStatus(`Erased ${erasedPreset.name} from HexBoard Library`);
+      setSyncStatus(`Deleted ${erasedPreset.name} from HexBoard Library`);
       return;
     }
 
     void client.deleteSynthPreset(erasedPreset.deviceHandle)
-      .then(() => refreshHexBoardLibrary(`Erased ${erasedPreset.name} from HexBoard Library`))
-      .catch((error) => setSyncStatus(error instanceof Error ? error.message : "Failed to erase HexBoard preset"));
+      .then(() => refreshHexBoardLibrary(`Deleted ${erasedPreset.name} from HexBoard Library`))
+      .catch((error) => setSyncStatus(error instanceof Error ? error.message : "Failed to delete HexBoard preset"));
   }
 
   function downloadPresetFile(nextPreset: EditableSynthPreset) {
@@ -1940,6 +2272,122 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     link.click();
     URL.revokeObjectURL(url);
     setSyncStatus(`Exported ${nextPreset.name} as a preset file`);
+  }
+
+  function downloadPresetLibraryFile(presetsToExport: EditableSynthPreset[]) {
+    const blob = new Blob(
+      [JSON.stringify({
+        format: presetLibraryFileFormat,
+        presets: presetsToExport.map(exportPreset)
+      }, null, 2)],
+      { type: "application/json" }
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `hexboard-presets-${presetsToExport.length}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setSyncStatus(`Exported ${presetsToExport.length} presets as one library file`);
+  }
+
+  function selectedPresets(space: LibrarySpace): EditableSynthPreset[] {
+    const selected = new Set(selectedPresetIds[space]);
+    const source = space === "computer" ? computerPresets : hexboardPresets;
+    return source.filter((candidate) => selected.has(candidate.objectIdHex));
+  }
+
+  function setPresetSelected(space: LibrarySpace, objectIdHex: string, selected: boolean) {
+    setSelectedPresetIds((current) => {
+      const ids = new Set(current[space]);
+      if (selected) ids.add(objectIdHex);
+      else ids.delete(objectIdHex);
+      return { ...current, [space]: [...ids] };
+    });
+  }
+
+  function selectVisiblePresets(space: LibrarySpace, objectIds: string[], selected: boolean) {
+    setSelectedPresetIds((current) => {
+      const ids = new Set(current[space]);
+      for (const objectIdHex of objectIds) {
+        if (selected) ids.add(objectIdHex);
+        else ids.delete(objectIdHex);
+      }
+      return { ...current, [space]: [...ids] };
+    });
+  }
+
+  function clearPresetSelection(space: LibrarySpace) {
+    setSelectedPresetIds((current) => ({ ...current, [space]: [] }));
+  }
+
+  function confirmPresetBatchConflicts(action: string, conflicts: EditableSynthPreset[]): boolean {
+    if (conflicts.length === 0) return true;
+    const preview = conflicts.slice(0, 6)
+      .map((conflict) => `• ${folderLabel(conflict.folderPath)} / ${conflict.name}`)
+      .join("\n");
+    const remainder = conflicts.length > 6 ? `\n• …and ${conflicts.length - 6} more` : "";
+    return window.confirm(
+      `${action} will overwrite ${conflicts.length} existing preset${conflicts.length === 1 ? "" : "s"}:\n\n${preview}${remainder}`
+      + "\n\nExisting destination presets are permanently deleted only after their replacements save successfully. Continue?"
+    );
+  }
+
+  async function transferSelectedPresets(space: LibrarySpace) {
+    const sources = selectedPresets(space);
+    if (sources.length === 0) return;
+    if (space === "hexboard") {
+      const merged = mergePresetBatch(computerPresets, sources);
+      if (!confirmPresetBatchConflicts("Copying these presets to Browser Library", merged.conflicts)) {
+        setSyncStatus("Bulk copy canceled");
+        return;
+      }
+      setComputerPresets(merged.presets);
+      setCustomFolders((current) => Array.from(new Set([
+        ...current,
+        ...sources.map((source) => source.folderPath)
+      ])).sort(compareFolderPaths));
+      clearPresetSelection(space);
+      setSyncStatus(`Copied ${sources.length} presets to Browser Library`);
+      return;
+    }
+
+    const conflicts = Array.from(new Map(sources.flatMap((source) => {
+      const conflict = hexboardPresets.find((candidate) =>
+        candidate.objectIdHex !== source.objectIdHex && presetSaveKey(candidate) === presetSaveKey(source)
+      );
+      return conflict ? [[conflict.objectIdHex, conflict] as const] : [];
+    })).values());
+    if (!confirmPresetBatchConflicts("Copying these presets to HexBoard", conflicts)) {
+      setSyncStatus("Bulk copy canceled");
+      return;
+    }
+
+    setBulkPresetBusy(true);
+    let completed = 0;
+    try {
+      for (const source of sources) {
+        setSyncStatus(`Copying preset ${completed + 1}/${sources.length}: ${source.name}`);
+        const saved = await uploadToHexBoard(source, "Copied", {
+          confirmOverwrite: false,
+          refresh: false,
+          updateEditor: false
+        });
+        if (!saved) break;
+        completed += 1;
+      }
+      if (!(transport instanceof MockMidiTransport)) {
+        await refreshHexBoardLibrary(`Copied ${completed}/${sources.length} selected presets to HexBoard`);
+      }
+      if (completed === sources.length) clearPresetSelection(space);
+    } finally {
+      setBulkPresetBusy(false);
+    }
+  }
+
+  function exportSelectedPresets(space: LibrarySpace) {
+    const sources = selectedPresets(space);
+    if (sources.length > 0) downloadPresetLibraryFile(sources);
   }
 
   async function downloadWavetableFile(nextWavetable: EditableSynthWavetable) {
@@ -1968,19 +2416,29 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   async function importPresetFile(event: ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) {
+    const files = Array.from(input.files ?? []);
+    if (files.length === 0) {
       return;
     }
 
     try {
-      const imported = presetFromUnknown(JSON.parse(await file.text()));
-      setComputerPresets((current) => upsertPreset(current, imported));
-      setCustomFolders((current) => Array.from(new Set([...current, imported.folderPath])).sort());
+      const imported = (await Promise.all(files.map(async (file) =>
+        presetsFromUnknown(JSON.parse(await file.text()))
+      ))).flat();
+      const merged = mergePresetBatch(computerPresets, imported);
+      if (!confirmPresetBatchConflicts("Importing these files", merged.conflicts)) {
+        setSyncStatus("Import canceled");
+        return;
+      }
+      setComputerPresets(merged.presets);
+      setCustomFolders((current) => Array.from(new Set([
+        ...current,
+        ...imported.map((item) => item.folderPath)
+      ])).sort(compareFolderPaths));
       skipNextAutoSend.current = true;
-      setPreset(clonePreset(imported));
+      setPreset(clonePreset(imported.at(-1) ?? defaultPreset));
       setOpenedSource("computer");
-      setSyncStatus(`Imported ${imported.name} into Computer Library`);
+      setSyncStatus(`Imported ${imported.length} preset${imported.length === 1 ? "" : "s"} into Browser Library`);
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to import preset file");
     } finally {
@@ -2036,7 +2494,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       samples,
       sampleCrc
     };
-    const computerDecision = prepareWavetableForLibrarySave(wavetable, computerWavetables, "Computer Wavetables", false);
+    const computerDecision = prepareWavetableForLibrarySave(wavetable, computerWavetables, "Browser Wavetables", false);
     if (!computerDecision) {
       setSyncStatus("Import canceled");
       return;
@@ -2154,7 +2612,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       const records = await client.listSynthWavetables();
       const wavetables = records.map(wavetableFromObjectListRecord);
       setHexboardWavetables(wavetables.sort(compareWavetables));
-      setSyncStatus(`${successStatus}: ${wavetables.length} wavetable${wavetables.length === 1 ? "" : "s"} listed; sample data will transfer only on Download or Export`);
+      setSyncStatus(`${successStatus}: ${wavetables.length} wavetable${wavetables.length === 1 ? "" : "s"} listed; sample data will transfer only on Copy to Browser or Export`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to refresh HexBoard Wavetables";
       setSyncStatus(
@@ -2195,16 +2653,24 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       folderPath: folderPath ?? sourcePreset.folderPath
     };
 
-    if (targetSpace === "computer") {
-      setComputerPresets((current) => upsertPreset(current, nextPreset));
-      skipNextAutoSend.current = true;
-      setPreset(clonePreset(nextPreset));
-      setOpenedSource("computer");
-      setSyncStatus(`${draggedPreset.space === "hexboard" ? "Downloaded" : "Moved"} ${nextPreset.name} to ${folderLabel(nextPreset.folderPath)}`);
+    if (targetSpace === draggedPreset.space) {
+      if (normalizeDisplayFolderPath(nextPreset.folderPath) === normalizeDisplayFolderPath(sourcePreset.folderPath)) {
+        return;
+      }
+      setPresetOrganizationRequest({
+        space: targetSpace,
+        preset: clonePreset(sourcePreset),
+        initialFolderPath: nextPreset.folderPath
+      });
       return;
     }
 
-    void uploadToHexBoard(nextPreset, draggedPreset.space === "computer" ? "Uploaded" : "Moved");
+    if (targetSpace === "computer") {
+      saveToComputer(nextPreset, "Copied");
+      return;
+    }
+
+    void uploadToHexBoard(nextPreset, "Copied");
   }
 
   return (
@@ -2221,8 +2687,91 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             </button>
           </div>
         </div>
-        <input ref={fileInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" onChange={(event) => void importPresetFile(event)} />
+        <input ref={fileInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" multiple onChange={(event) => void importPresetFile(event)} />
         <input ref={wavetableFileInputRef} className="hiddenFileInput" type="file" accept="audio/wav,audio/wave,.wav,.hexwav" onChange={(event) => void importWavetableFile(event)} />
+
+        {presetOrganizationRequest ? (
+          <OrganizeLibraryItemDialog
+            itemLabel="preset"
+            libraryLabel={presetOrganizationRequest.space === "computer" ? "Browser Library" : "HexBoard Library"}
+            name={presetOrganizationRequest.preset.name}
+            folderPath={presetOrganizationRequest.preset.folderPath}
+            initialFolderPath={presetOrganizationRequest.initialFolderPath}
+            folders={presetOrganizationRequest.space === "computer" ? computerPresetFolders : hexboardPresetFolders}
+            maxNameLength={deviceNameMaxBytes}
+            maxFolderLength={deviceFolderMaxBytes}
+            normalizeName={normalizedPresetName}
+            normalizeFolderPath={normalizeDisplayFolderPath}
+            folderLabel={folderLabel}
+            findConflict={(name, folderPath) => organizationConflictSummary(
+              presetOrganizationRequest.space,
+              presetOrganizationRequest.preset,
+              name,
+              folderPath
+            )}
+            onCancel={() => setPresetOrganizationRequest(null)}
+            onSave={(name, folderPath) => organizePresetInPlace(presetOrganizationRequest, name, folderPath)}
+          />
+        ) : null}
+
+        {wavetableResolutionRequest ? (
+          <div className="modalOverlay" role="presentation" onMouseDown={() => closeWavetableResolution(null)}>
+            <div
+              className="modalPanel stack"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="wavetableResolutionTitle"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <h3 id="wavetableResolutionTitle">Missing Wavetable</h3>
+              <p>
+                “{wavetableResolutionRequest.presetName}” requires “{wavetableResolutionRequest.requiredName}”,
+                which is not currently on this HexBoard.
+              </p>
+              <button
+                className="primary"
+                disabled={!wavetableResolutionRequest.matchingComputerWavetable?.samples}
+                type="button"
+                onClick={() => closeWavetableResolution({ kind: "upload" })}
+              >
+                Copy “{wavetableResolutionRequest.requiredName}” to HexBoard
+              </button>
+              {!wavetableResolutionRequest.matchingComputerWavetable?.samples ? (
+                <span className="muted">No matching wavetable with loaded sample data is available in Browser Wavetables.</span>
+              ) : null}
+              <label className="field">
+                <span>Use an alternate wavetable</span>
+                <select
+                  value={wavetableResolutionAlternate}
+                  onChange={(event) => setWavetableResolutionAlternate(event.target.value)}
+                >
+                  {[...builtInWavetables, ...hexboardWavetables].map((wavetable) => (
+                    <option key={`${wavetable.folderPath}-${wavetable.name}`} value={wavetable.name}>
+                      {wavetable.name} — {folderLabel(wavetable.folderPath)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="row">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const alternate = [...builtInWavetables, ...hexboardWavetables]
+                      .find((wavetable) => wavetable.name === wavetableResolutionAlternate);
+                    if (alternate) {
+                      closeWavetableResolution({ kind: "alternate", wavetable: alternate });
+                    }
+                  }}
+                >
+                  Use Alternate
+                </button>
+                <button type="button" onClick={() => closeWavetableResolution(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {libraryKind === "presets" ? (
           <>
@@ -2231,7 +2780,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 Refresh HexBoard
               </button>
               <button type="button" onClick={() => fileInputRef.current?.click()}>
-                Import Preset
+                Import Preset Files
               </button>
             </div>
 
@@ -2248,12 +2797,14 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
             <div className="librarySpaces">
               <LibrarySpacePanel
-                title="Computer Library"
-                subtitle="Browser-saved presets and imported files"
+                title="Browser Library"
+                subtitle="Saved in this browser"
                 space="computer"
                 presets={computerPresets}
                 folders={computerPresetFolders}
                 selectedFolder={folderFilters.computer}
+                selectedIds={selectedPresetIds.computer}
+                bulkBusy={bulkPresetBusy}
                 draggedPreset={draggedPreset}
                 onAllowDrop={allowDrop}
                 onDrop={dropPreset}
@@ -2261,6 +2812,12 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 onDragStart={startDrag}
                 onDragEnd={() => setDraggedPreset(null)}
                 onOpen={openPreset}
+                onOrganize={(space, item) => setPresetOrganizationRequest({ space, preset: clonePreset(item) })}
+                onSelectionChange={setPresetSelected}
+                onSelectVisible={selectVisiblePresets}
+                onClearSelection={clearPresetSelection}
+                onBulkTransfer={(space) => void transferSelectedPresets(space)}
+                onBulkExport={exportSelectedPresets}
                 onUpload={(item) => void uploadToHexBoard(item)}
                 onDownload={downloadFromHexBoard}
                 onExport={downloadPresetFile}
@@ -2273,6 +2830,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 presets={hexboardPresets}
                 folders={hexboardPresetFolders}
                 selectedFolder={folderFilters.hexboard}
+                selectedIds={selectedPresetIds.hexboard}
+                bulkBusy={bulkPresetBusy}
                 draggedPreset={draggedPreset}
                 onAllowDrop={allowDrop}
                 onDrop={dropPreset}
@@ -2280,6 +2839,12 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 onDragStart={startDrag}
                 onDragEnd={() => setDraggedPreset(null)}
                 onOpen={openPreset}
+                onOrganize={(space, item) => setPresetOrganizationRequest({ space, preset: clonePreset(item) })}
+                onSelectionChange={setPresetSelected}
+                onSelectVisible={selectVisiblePresets}
+                onClearSelection={clearPresetSelection}
+                onBulkTransfer={(space) => void transferSelectedPresets(space)}
+                onBulkExport={exportSelectedPresets}
                 onUpload={(item) => void uploadToHexBoard(item)}
                 onDownload={downloadFromHexBoard}
                 onExport={downloadPresetFile}
@@ -2320,7 +2885,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                   </div>
                   <div className="stack">
                     <button className="primary" type="button" onClick={() => wavetableFileInputRef.current?.click()}>
-                      Upload File
+                      Choose File
                     </button>
                     <span className="muted">Files ending in .hexwav are parsed as HexBoard wavetables automatically.</span>
                   </div>
@@ -2453,8 +3018,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
             <div className="librarySpaces">
               <WavetableLibraryPanel
-                title="Computer Wavetables"
-                subtitle="Browser-saved imported wavetables"
+                title="Browser Wavetables"
+                subtitle="Saved in this browser"
                 space="computer"
                 wavetables={computerWavetables}
                 folders={computerWavetableFolders}
@@ -2502,13 +3067,13 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
               Send Now
             </button>
             <button type="button" onClick={() => saveToComputer()}>
-              Save to Computer
+              Save to Browser
             </button>
             <button type="button" onClick={() => void uploadToHexBoard(preset, "Saved")}>
               Save to HexBoard
             </button>
             <button type="button" onClick={() => downloadPresetFile(preset)}>
-              Export
+              Export File
             </button>
           </div>
         </div>
@@ -2597,7 +3162,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         <div className="fieldGrid">
           <label className="field">
             <span>Name</span>
-            <input value={preset.name} onChange={(event) => updatePresetMetadata((current) => ({ ...current, name: event.target.value }))} />
+            <input value={preset.name} onChange={(event) => updatePresetName(event.target.value)} />
           </label>
           <label className="field">
             <span>Folder</span>
@@ -2642,13 +3207,33 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
               <span>Wavetable</span>
               <select
                 value={wavetableOptionValue(preset.wavetableFolderPath, preset.wavetableName)}
-                onChange={(event) => selectPresetWavetable(event.target.value)}
+                onChange={(event) => void selectPresetWavetable(event.target.value)}
               >
-                {wavetableOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
+                <optgroup label="On HexBoard">
+                  {wavetableOptions.device.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </optgroup>
+                {wavetableOptions.computer.length > 0 ? (
+                  <optgroup label="Browser only — copy to HexBoard required">
+                    {wavetableOptions.computer.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+                {wavetableOptions.unavailable.length > 0 ? (
+                  <optgroup label="Unavailable">
+                    {wavetableOptions.unavailable.map((option) => (
+                      <option disabled key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
               </select>
             </label>
             <RangeField label="WT Pos" value={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition)} min={1} max={SYNTH_WAVETABLE_FRAME_COUNT} onChange={(value) => updateValue("SynthWavetablePosition", wavetableFrameToPositionByte(value))} suffix={`/${SYNTH_WAVETABLE_FRAME_COUNT}`} />
@@ -2735,6 +3320,8 @@ interface LibrarySpacePanelProps {
   presets: EditableSynthPreset[];
   folders: string[];
   selectedFolder: string | null;
+  selectedIds: string[];
+  bulkBusy: boolean;
   draggedPreset: DraggedPreset | null;
   onAllowDrop: (event: DragEvent<HTMLElement>) => void;
   onDrop: (space: LibrarySpace, folderPath?: string) => void;
@@ -2742,6 +3329,12 @@ interface LibrarySpacePanelProps {
   onDragStart: (space: LibrarySpace, objectIdHex: string, event: DragEvent<HTMLLIElement>) => void;
   onDragEnd: () => void;
   onOpen: (space: LibrarySpace, preset: EditableSynthPreset) => void;
+  onOrganize: (space: LibrarySpace, preset: EditableSynthPreset) => void;
+  onSelectionChange: (space: LibrarySpace, objectIdHex: string, selected: boolean) => void;
+  onSelectVisible: (space: LibrarySpace, objectIds: string[], selected: boolean) => void;
+  onClearSelection: (space: LibrarySpace) => void;
+  onBulkTransfer: (space: LibrarySpace) => void;
+  onBulkExport: (space: LibrarySpace) => void;
   onUpload: (preset: EditableSynthPreset) => void;
   onDownload: (preset: EditableSynthPreset) => void;
   onExport: (preset: EditableSynthPreset) => void;
@@ -2755,6 +3348,8 @@ function LibrarySpacePanel({
   presets,
   folders,
   selectedFolder,
+  selectedIds,
+  bulkBusy,
   draggedPreset,
   onAllowDrop,
   onDrop,
@@ -2762,15 +3357,27 @@ function LibrarySpacePanel({
   onDragStart,
   onDragEnd,
   onOpen,
+  onOrganize,
+  onSelectionChange,
+  onSelectVisible,
+  onClearSelection,
+  onBulkTransfer,
+  onBulkExport,
   onUpload,
   onDownload,
   onExport,
   onErase
 }: LibrarySpacePanelProps) {
+  const [expanded, setExpanded] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
   const isDropTarget = draggedPreset !== null;
-  const visiblePresets = selectedFolder
-    ? presets.filter((preset) => preset.folderPath === selectedFolder)
-    : presets;
+  const visiblePresets = filterLibraryPresets(presets, selectedFolder, searchQuery);
+  const presetIdSet = new Set(presets.map((preset) => preset.objectIdHex));
+  const validSelectedIds = selectedIds.filter((objectIdHex) => presetIdSet.has(objectIdHex));
+  const selectedIdSet = new Set(validSelectedIds);
+  const visibleIds = visiblePresets.map((preset) => preset.objectIdHex);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((objectIdHex) => selectedIdSet.has(objectIdHex));
+  const contentId = `preset-library-${space}-content`;
 
   return (
     <section
@@ -2786,79 +3393,145 @@ function LibrarySpacePanel({
           <h3>{title}</h3>
           <span className="muted">{subtitle}</span>
         </div>
-        <span className="countBadge">{visiblePresets.length}</span>
-      </div>
-
-      <div className="folderTargets">
-        <button
-          className={selectedFolder === null ? "folderTarget systemFolderTarget active" : "folderTarget systemFolderTarget"}
-          type="button"
-          aria-pressed={selectedFolder === null}
-          onClick={() => onFolderSelect(space, null)}
-        >
-          <span>All</span>
-          <span>{presets.length}</span>
-        </button>
-        {folders.map((folder) => (
+        <div className="librarySpaceHeaderActions">
+          <span className="countBadge">{visiblePresets.length}</span>
           <button
-            className={`folderTarget${folder === rootFolderPath ? " systemFolderTarget" : ""}${folder === selectedFolder ? " active" : ""}`}
-            key={`${space}-${folder}`}
+            aria-controls={contentId}
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${title}`}
+            className="iconButton librarySpaceToggle"
+            title={`${expanded ? "Collapse" : "Expand"} ${title}`}
             type="button"
-            aria-pressed={folder === selectedFolder}
-            onClick={() => onFolderSelect(space, folder)}
-            onDragOver={onAllowDrop}
-            onDrop={(event) => {
-              event.preventDefault();
-              onDrop(space, folder);
-            }}
+            onClick={() => setExpanded((current) => !current)}
           >
-            <span>{folderLabel(folder)}</span>
-            <span>{presets.filter((preset) => preset.folderPath === folder).length}</span>
+            {expanded ? "−" : "+"}
           </button>
-        ))}
+        </div>
       </div>
 
-      <ul className="list">
-        {visiblePresets.length === 0 ? (
-          <li className="emptyListItem">{selectedFolder ? `No presets in ${folderLabel(selectedFolder)}` : "No presets"}</li>
-        ) : (
-          visiblePresets.map((item) => (
-            <li
-              className="listItem presetListItem"
-              draggable
-              key={`${space}-${item.objectIdHex}`}
-              onDragStart={(event) => onDragStart(space, item.objectIdHex, event)}
-              onDragEnd={onDragEnd}
-            >
-              <div className="presetMeta">
-                <strong>{item.name}</strong>
-                <span>{folderLabel(item.folderPath)}</span>
-                <span>{item.objectIdHex.slice(0, 8).toUpperCase()}</span>
-              </div>
-              <div className="presetActions">
-                <button type="button" onClick={() => onOpen(space, item)}>
-                  Open
+      {expanded ? (
+        <div className="librarySpaceContent" id={contentId}>
+          <label className="presetLibrarySearch">
+            <input
+              aria-label={`Search ${title}`}
+              type="search"
+              value={searchQuery}
+              placeholder="Search presets"
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+          </label>
+
+          <div className="presetLibraryBrowser">
+            <nav className="folderTargets presetFolderSidebar" aria-label={`${title} folders`}>
+              <button
+                className={selectedFolder === null ? "folderTarget systemFolderTarget active" : "folderTarget systemFolderTarget"}
+                type="button"
+                aria-pressed={selectedFolder === null}
+                onClick={() => onFolderSelect(space, null)}
+              >
+                <span>All presets</span>
+                <span>{presets.length}</span>
+              </button>
+              {folders.map((folder) => (
+                <button
+                  className={`folderTarget${folder === rootFolderPath ? " systemFolderTarget" : ""}${folder === selectedFolder ? " active" : ""}`}
+                  key={`${space}-${folder}`}
+                  type="button"
+                  aria-pressed={folder === selectedFolder}
+                  onClick={() => onFolderSelect(space, folder)}
+                  onDragOver={onAllowDrop}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    onDrop(space, folder);
+                  }}
+                >
+                  <span>{folderLabel(folder)}</span>
+                  <span>{presets.filter((preset) => preset.folderPath === folder).length}</span>
                 </button>
-                {space === "computer" ? (
-                  <button type="button" onClick={() => onUpload(item)}>
-                    Upload
-                  </button>
+              ))}
+            </nav>
+
+            <div className="presetLibraryResults">
+              <div className="presetLibraryListToolbar">
+                <label className="checkField" title="Select every preset in these results">
+                  <input
+                    aria-label="Select all shown presets"
+                    checked={allVisibleSelected}
+                    disabled={bulkBusy || visibleIds.length === 0}
+                    type="checkbox"
+                    onChange={(event) => onSelectVisible(space, visibleIds, event.target.checked)}
+                  />
+                  <span>Select shown</span>
+                </label>
+                <span className="muted">{visiblePresets.length} shown</span>
+              </div>
+
+              {validSelectedIds.length > 0 ? (
+                <LibraryBulkActions
+                  selectedCount={validSelectedIds.length}
+                  visibleCount={visibleIds.length}
+                  allVisibleSelected={allVisibleSelected}
+                  transferLabel={space === "computer" ? "Copy to HexBoard" : "Copy to Browser"}
+                  busy={bulkBusy}
+                  showSelectVisible={false}
+                  onSelectVisible={(selected) => onSelectVisible(space, visibleIds, selected)}
+                  onClear={() => onClearSelection(space)}
+                  onTransfer={() => onBulkTransfer(space)}
+                  onExport={() => onBulkExport(space)}
+                />
+              ) : null}
+
+              <ul className="list presetCompactList">
+                {visiblePresets.length === 0 ? (
+                  <li className="emptyListItem">
+                    {searchQuery.trim()
+                      ? `No presets match “${searchQuery.trim()}”`
+                      : selectedFolder ? `No presets in ${folderLabel(selectedFolder)}` : "No presets"}
+                  </li>
                 ) : (
-                  <button type="button" onClick={() => onDownload(item)}>
-                    Download
-                  </button>
+                  visiblePresets.map((item) => (
+                    <li
+                      className="listItem presetListItem compactPresetRow"
+                      draggable
+                      key={`${space}-${item.objectIdHex}`}
+                      onDoubleClick={() => onOpen(space, item)}
+                      onDragStart={(event) => onDragStart(space, item.objectIdHex, event)}
+                      onDragEnd={onDragEnd}
+                    >
+                      <label className="libraryItemSelection" title={`Select ${item.name}`}>
+                        <input
+                          aria-label={`Select ${item.name}`}
+                          checked={selectedIdSet.has(item.objectIdHex)}
+                          type="checkbox"
+                          onChange={(event) => onSelectionChange(space, item.objectIdHex, event.target.checked)}
+                        />
+                      </label>
+                      <button className="presetNameButton" type="button" title={`Open ${item.name}`} onClick={() => onOpen(space, item)}>
+                        <strong>{item.favorite ? "★ " : ""}{item.name}</strong>
+                        <span>{folderLabel(item.folderPath)}</span>
+                      </button>
+                      <details className="presetOverflowMenu">
+                        <summary aria-label={`More actions for ${item.name}`} title="More actions">•••</summary>
+                        <div className="presetOverflowActions">
+                          <button type="button" onClick={() => onOpen(space, item)}>Open</button>
+                          <button type="button" onClick={() => onOrganize(space, item)}>Rename / Move</button>
+                          {space === "computer" ? (
+                            <button type="button" onClick={() => onUpload(item)}>Copy to HexBoard</button>
+                          ) : (
+                            <button type="button" onClick={() => onDownload(item)}>Copy to Browser</button>
+                          )}
+                          <button type="button" onClick={() => onExport(item)}>Export</button>
+                          <button className="warning" type="button" onClick={() => onErase(space, item)}>Delete</button>
+                        </div>
+                      </details>
+                    </li>
+                  ))
                 )}
-                <button type="button" onClick={() => onExport(item)}>
-                  Export
-                </button>
-                <button className="warning" type="button" onClick={() => onErase(space, item)}>
-                  Erase
-                </button>
-              </div>
-            </li>
-          ))
-        )}
-      </ul>
+              </ul>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -2951,12 +3624,12 @@ function WavetableLibraryPanel({
                   Edit
                 </button>
                 {space === "computer" ? (
-                  <button type="button" onClick={() => onUpload(item)}>
-                    Upload
+                  <button type="button" title="Copy wavetable to HexBoard" aria-label="Copy wavetable to HexBoard" onClick={() => onUpload(item)}>
+                    → HexBoard
                   </button>
                 ) : (
-                  <button type="button" onClick={() => onDownload(item)}>
-                    Download
+                  <button type="button" title="Copy wavetable to Browser Library" aria-label="Copy wavetable to Browser Library" onClick={() => onDownload(item)}>
+                    → Browser
                   </button>
                 )}
                 <button type="button" onClick={() => onExport(item)}>

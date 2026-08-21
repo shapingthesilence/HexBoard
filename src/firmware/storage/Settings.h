@@ -13,6 +13,8 @@ void checkAndAutoSave();
 void copyCurrentSettingsToProfile(uint8_t profileIndex);
 void saveProfileToSlot(uint8_t profileIndex);
 void setActiveProfile(uint8_t profileIndex);
+int loadCurrentKeyStepsFromSettings();
+void storeCurrentKeyStepsInSettings(int stepsFromA);
 
 extern bool settingsDirty;
 extern bool fileSystemExists;

@@ -15,6 +15,14 @@
 #include "SynthWavetableStorage.h"
 
 static File presetSyncWriteRawTempFile;
+static File presetSyncReadRawFile;
+
+void presetSyncCloseReadFile() {
+  if (presetSyncReadRawFile) {
+    presetSyncReadRawFile.close();
+    presetSyncReadRawFile = File();
+  }
+}
 
 void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
   if (payloadLength != 6) {
@@ -38,7 +46,8 @@ void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_
                       | PRESET_SYNC_CAP_SYNTH_WAVETABLE
                       | PRESET_SYNC_CAP_LIVE_SYNTH_PARAM
                       | PRESET_SYNC_CAP_CENTS_TABLE_RUNTIME_TUNING
-                      | PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES);
+                      | PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES
+                      | PRESET_SYNC_CAP_LIVE_SYNTH_WAVETABLE_SELECT);
   presetSyncAppendU28(response, PRESET_SYNC_MAX_RAW_OBJECT_BYTES);
   response.push_back(CURRENT_SETTINGS_VERSION);
   response.push_back(SYNTH_PRESET_SCHEMA_VERSION);
@@ -412,6 +421,13 @@ bool presetSyncReadTransferBytes(uint32_t offset, uint8_t* output, size_t length
   if (output == nullptr || offset + length > presetSyncReadTransfer.rawByteLength) {
     return false;
   }
+  if (presetSyncReadTransfer.streamRawFile) {
+    if (!presetSyncReadRawFile
+        || (presetSyncReadRawFile.position() != offset && !presetSyncReadRawFile.seek(offset))) {
+      return false;
+    }
+    return presetSyncReadRawFile.read(output, length) == length;
+  }
   if (!presetSyncReadTransfer.streamSynthWavetableSamples) {
     if (offset + length > presetSyncReadTransfer.rawData.size()) {
       return false;
@@ -506,7 +522,7 @@ void presetSyncSendNextReadChunk() {
   uint8_t rawChunk[PRESET_SYNC_RAW_CHUNK_SIZE] = {};
   if (!presetSyncReadTransferBytes(offset, rawChunk, chunkLength)) {
     uint16_t transactionId = presetSyncReadTransfer.transactionId;
-    sendToLog("Preset-sync read failed while streaming wavetable samples.");
+    sendToLog("Preset-sync read failed while streaming object data.");
     presetSyncCancelReadTransfer();
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_DATA_CHUNK, PRESET_SYNC_ERROR_OBJECT_MISSING);
     return;
@@ -526,6 +542,7 @@ void presetSyncSendNextReadChunk() {
 }
 
 void presetSyncSendRawObject(uint16_t transactionId, uint8_t objectType, uint16_t handle, uint8_t schemaMajor, uint8_t schemaMinor, const std::vector<uint8_t>& raw) {
+  presetSyncCloseReadFile();
   presetSyncReadTransfer = PresetSyncReadTransfer{};
   presetSyncReadTransfer.active = true;
   presetSyncReadTransfer.objectType = objectType;
@@ -538,6 +555,37 @@ void presetSyncSendRawObject(uint16_t transactionId, uint8_t objectType, uint16_
   presetSyncReadTransfer.objectCrc32 = crc32(raw.data(), raw.size());
   presetSyncReadTransfer.rawData = raw;
   presetSyncSendReadBegin();
+}
+
+bool presetSyncSendGeometryBundleFile(uint16_t transactionId, uint16_t tuningHandle) {
+  char path[GEOMETRY_STORAGE_PATH_LENGTH] = {};
+  uint32_t fileLength = 0;
+  uint32_t fileCrc32 = 0;
+  if (!geometryBundleFileInfoForTuningHandle(tuningHandle,
+                                             path,
+                                             sizeof(path),
+                                             fileLength,
+                                             fileCrc32)) {
+    return false;
+  }
+  presetSyncCloseReadFile();
+  presetSyncReadRawFile = LittleFS.open(path, "r");
+  if (!presetSyncReadRawFile) {
+    return false;
+  }
+  presetSyncReadTransfer = PresetSyncReadTransfer{};
+  presetSyncReadTransfer.active = true;
+  presetSyncReadTransfer.streamRawFile = true;
+  presetSyncReadTransfer.objectType = PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE;
+  presetSyncReadTransfer.handle = tuningHandle;
+  presetSyncReadTransfer.transactionId = transactionId;
+  presetSyncReadTransfer.transferId = presetSyncAllocateTransferId();
+  presetSyncReadTransfer.schemaMajor = 1;
+  presetSyncReadTransfer.schemaMinor = 0;
+  presetSyncReadTransfer.rawByteLength = fileLength;
+  presetSyncReadTransfer.objectCrc32 = fileCrc32;
+  presetSyncSendReadBegin();
+  return true;
 }
 
 void presetSyncSendStreamedSynthWavetableObject(uint16_t transactionId,
@@ -570,6 +618,7 @@ void presetSyncSendStreamedSynthWavetableObject(uint16_t transactionId,
     return;
   }
 
+  presetSyncCloseReadFile();
   presetSyncReadTransfer = PresetSyncReadTransfer{};
   presetSyncReadTransfer.active = true;
   presetSyncReadTransfer.streamSynthWavetableSamples = true;
@@ -600,11 +649,18 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
     return;
   }
   uint8_t objectType = payload[0];
-  if (!isPresetSyncSupportedObjectType(objectType)) {
+  if (!isPresetSyncSupportedObjectType(objectType)
+      && objectType != PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
     return;
   }
   uint16_t handle = presetSyncDecodeU14(payload + 1);
+  if (objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
+    if (!presetSyncSendGeometryBundleFile(transactionId, handle)) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
+    }
+    return;
+  }
   if (isPresetSyncGeometryObjectType(objectType)) {
     GeometryObjectSlot object;
     if (!geometryObjectForHandle(handle, object) || object.objectType != objectType) {
@@ -685,6 +741,13 @@ void presetSyncHandleNack(uint16_t transactionId, const uint8_t* payload, size_t
   }
 }
 
+static uint8_t presetSyncExpectedWriteSchemaMajor(uint8_t objectType) {
+  if (isPresetSyncGeometryObjectType(objectType)) {
+    return GEOMETRY_OBJECT_SCHEMA_VERSION;
+  }
+  return 1;
+}
+
 void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, size_t payloadLength) {
   if (payloadLength != 19) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_BAD_LENGTH);
@@ -706,7 +769,7 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_BAD_LENGTH);
     return;
   }
-  if (payload[5] != 1) {
+  if (payload[5] != presetSyncExpectedWriteSchemaMajor(objectType)) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_SCHEMA_MISMATCH);
     return;
   }
@@ -971,7 +1034,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     requestUserGeometryMenuRebuild();
   } else if (isPresetSyncGeometryObjectType(presetSyncWriteTransfer.objectType)) {
     GeometryObjectSlot parsedObject;
-    if (!parseGeometryObjectBody(std::move(presetSyncWriteTransfer.rawData), parsedObject, parseError)
+    if (!parseGeometryObjectBody(presetSyncWriteTransfer.rawData, parsedObject, parseError)
         || parsedObject.objectType != presetSyncWriteTransfer.objectType) {
       sendToLog("Preset sync rejected geometry object: " + parseError);
       presetSyncCancelWriteTransfer();
@@ -1011,7 +1074,7 @@ void presetSyncHandleTransferAbort(uint16_t transactionId, const uint8_t* payloa
     matched = true;
   }
   if (presetSyncReadTransfer.active && presetSyncReadTransfer.transferId == transferId) {
-    presetSyncReadTransfer = PresetSyncReadTransfer{};
+    presetSyncCancelReadTransfer();
     matched = true;
   }
   if (!matched) {
@@ -1149,6 +1212,9 @@ bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len) {
       break;
     case PRESET_SYNC_MSG_SYNTH_PARAM_SET:
       presetSyncHandleSynthParamSet(transactionId, payload, payloadLength);
+      break;
+    case PRESET_SYNC_MSG_SYNTH_WAVETABLE_SELECT:
+      presetSyncHandleSynthWavetableSelect(transactionId, payload, payloadLength);
       break;
     case PRESET_SYNC_MSG_ACK:
       if (presetSyncReadTransfer.active || presetSyncWriteTransfer.active) {

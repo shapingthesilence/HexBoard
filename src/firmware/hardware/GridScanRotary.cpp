@@ -5,7 +5,6 @@
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
-#include "../app/StabilityBenchmark.h"
 #include "../midi/MidiRouting.h"
 #include "../midi/MidiTransport.h"
 #include "../midi/DelegatedControl.h"
@@ -64,6 +63,8 @@ byte lastVelocityWheelGestureMask = 0;
 byte lastModulationWheelGestureMask = 0;
 byte lastPitchBendWheelGestureMask = 0;
 
+constexpr uint64_t COMMAND_WHEEL_UPDATE_INTERVAL_MICROS = 10000ULL;
+
 void RAM_FUNC(readHexes)() {
 
   // Optimized button reading using SIO registers - much faster!
@@ -88,7 +89,9 @@ void RAM_FUNC(readHexes)() {
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
-        if (delegatedControl) {
+        if (presetSyncTransferActive) {
+          break;
+        } else if (delegatedControlState.active) {
           delegatedButtonEvent(i, true);
         } else if (h[i].isCmd) {
           cmdOn(i);
@@ -102,7 +105,7 @@ void RAM_FUNC(readHexes)() {
         }
         break;
       case BTN_STATE_RELEASED:  // just released
-        if (delegatedControl) {
+        if (delegatedControlState.active) {
           delegatedButtonEvent(i, false);
         } else if (h[i].isCmd) {
           cmdOff(i);
@@ -124,13 +127,11 @@ void RAM_FUNC(readHexes)() {
 }
 
 static void RAM_FUNC(notifyCommandWheelValue)(CommandWheelOverlayType type,
-                                              const wheelDef& wheel,
-                                              bool immediateRedraw) {
+                                              const wheelDef& wheel) {
   notifyCommandWheelOverlay(type,
                             wheel.curValue,
                             wheel.minValue,
-                            wheel.maxValue,
-                            immediateRedraw);
+                            wheel.maxValue);
 }
 
 static byte RAM_FUNC(commandWheelGestureMask)(const wheelDef& wheel) {
@@ -167,14 +168,14 @@ static void RAM_FUNC(notifyCommandWheelGesture)(CommandWheelOverlayType type,
   bool newGesture = gestureMask != 0 && gestureMask != lastGestureMask;
 
   if (targetChanged || newGesture) {
-    notifyCommandWheelValue(type, wheel, newGesture);
+    notifyCommandWheelValue(type, wheel);
   }
 
   lastGestureMask = gestureMask;
 }
 
 void RAM_FUNC(updateWheels)() {
-  if (delegatedControl) {
+  if (delegatedControlState.active) {
     return;
   }
 
@@ -184,11 +185,12 @@ void RAM_FUNC(updateWheels)() {
                             velWheel,
                             previousVelocityTarget,
                             lastVelocityWheelGestureMask);
-  bool upd = velWheel.updateValue(runTime);
+  bool upd = velWheel.updateValue(runTime, COMMAND_WHEEL_UPDATE_INTERVAL_MICROS);
   if (upd) {
+    setSynthMasterVolumeControl(static_cast<byte>(velWheel.curValue));
     sendToLog("vel became " + std::to_string(velWheel.curValue));
     if (commandWheelOverlayActive()) {
-      notifyCommandWheelValue(CommandWheelOverlayType::Velocity, velWheel, false);
+      notifyCommandWheelValue(CommandWheelOverlayType::Velocity, velWheel);
     }
   }
   if (toggleWheel) {
@@ -198,10 +200,10 @@ void RAM_FUNC(updateWheels)() {
                               pbWheel,
                               previousPitchBendTarget,
                               lastPitchBendWheelGestureMask);
-    upd = pbWheel.updateValue(runTime);
+    upd = pbWheel.updateValue(runTime, COMMAND_WHEEL_UPDATE_INTERVAL_MICROS);
     if (upd) {
       if (commandWheelOverlayActive()) {
-        notifyCommandWheelValue(CommandWheelOverlayType::PitchBend, pbWheel, false);
+        notifyCommandWheelValue(CommandWheelOverlayType::PitchBend, pbWheel);
       }
       sendMIDIpitchBendToCh1();
       updateSynthWithNewFreqs();
@@ -213,10 +215,10 @@ void RAM_FUNC(updateWheels)() {
                               modWheel,
                               previousModulationTarget,
                               lastModulationWheelGestureMask);
-    upd = modWheel.updateValue(runTime);
+    upd = modWheel.updateValue(runTime, COMMAND_WHEEL_UPDATE_INTERVAL_MICROS);
     if (upd) {
       if (commandWheelOverlayActive()) {
-        notifyCommandWheelValue(CommandWheelOverlayType::Modulation, modWheel, false);
+        notifyCommandWheelValue(CommandWheelOverlayType::Modulation, modWheel);
       }
       sendMIDImodulationToCh1();
     }
@@ -239,22 +241,7 @@ void dealWithRotary() {
   bool justPressed = (!rotaryButtonPressed && buttonPressed);
   bool justReleased = (rotaryButtonPressed && !buttonPressed);
 
-  if (stabilityBenchmarkIsActive()) {
-    handleStabilityBenchmarkEncoder(buttonPressed, justPressed, justReleased, runTime);
-    if (buttonPressed) {
-      rotaryPanicSuppressClick = true;
-    }
-    storeRotaryTurn = 0;
-    rotaryPressStart = 0;
-    rotaryPanicLatched = false;
-    if (rotaryPanicSuppressClick && !buttonPressed && !rotaryButtonPressed) {
-      rotaryPanicSuppressClick = false;
-    }
-    rotaryButtonPressed = buttonPressed;
-    return;
-  }
-
-  if (delegatedControl) {
+  if (delegatedControlState.active) {
     if (justPressed) {
       rotaryPressStart = runTime;
       rotaryPanicLatched = false;
@@ -271,7 +258,7 @@ void dealWithRotary() {
       }
     }
 
-    if (delegatedControl && storeRotaryTurn != 0) {
+    if (delegatedControlState.active && storeRotaryTurn != 0) {
       bool turnIsClockwise = (storeRotaryTurn == 8);
       byte event = rotaryInvert
                      ? (turnIsClockwise ? DELEGATED_ENCODER_DOWN : DELEGATED_ENCODER_UP)
@@ -281,7 +268,7 @@ void dealWithRotary() {
       storeRotaryTurn = 0;
     }
 
-    if (delegatedControl && justReleased && !rotaryPanicSuppressClick) {
+    if (delegatedControlState.active && justReleased && !rotaryPanicSuppressClick) {
       wakeDelegatedControlScreenForInput();
       sendDelegatedEncoderEvent(DELEGATED_ENCODER_BUTTON_RELEASE);
     }
@@ -308,17 +295,34 @@ void dealWithRotary() {
     }
   }
 
-  if ((storeRotaryTurn != 0) || (justReleased && !rotaryPanicSuppressClick)) {
+  if (presetSyncTransferActive) {
+    storeRotaryTurn = 0;
+    if (justReleased || !buttonPressed) {
+      rotaryPressStart = 0;
+      rotaryPanicLatched = false;
+    }
+    if (rotaryPanicSuppressClick && !buttonPressed && !rotaryButtonPressed) {
+      rotaryPanicSuppressClick = false;
+    }
+    rotaryButtonPressed = buttonPressed;
+    return;
+  }
+
+  bool navigationTurnReady =
+    (storeRotaryTurn != 0) && u8g2.readyForNavigationInput();
+
+  if (navigationTurnReady || (justReleased && !rotaryPanicSuppressClick)) {
     dismissFlashSaveScreenForMenuInput();
   }
 
-  if (sequencerModeActive() && storeRotaryTurn != 0) {
+  if (sequencerModeActive() && navigationTurnReady) {
     bool turnIsClockwise = (storeRotaryTurn == 8);
     int8_t direction = rotaryInvert
                          ? (turnIsClockwise ? 1 : -1)
                          : (turnIsClockwise ? -1 : 1);
     if (handleSequencerRotaryTurn(direction)) {
       storeRotaryTurn = 0;
+      navigationTurnReady = false;
       screenTime = 0;
     }
   }
@@ -342,7 +346,7 @@ void dealWithRotary() {
       noteOverlayDirty = true;
       screenTime = 0;
     }
-    if (storeRotaryTurn != 0) {
+    if (navigationTurnReady) {
       bool turnIsClockwise = (storeRotaryTurn == 8);
       dismissCommandWheelOverlay();
       dismissPlayedNotesOverlayForMenuInput();
@@ -364,7 +368,7 @@ void dealWithRotary() {
       noteOverlayDirty = true;
       screenTime = 0;
     }
-    if (storeRotaryTurn != 0) {
+    if (navigationTurnReady) {
       bool turnIsClockwise = (storeRotaryTurn == 8);
       dismissCommandWheelOverlay();
       dismissPlayedNotesOverlayForMenuInput();

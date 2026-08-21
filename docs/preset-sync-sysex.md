@@ -41,21 +41,23 @@ This protocol maps to independently replaceable persistent objects:
   geometry bundle: its tuning root plus all layouts, scales, scale color map,
   and explicit button maps that reference that tuning.
 - `/presets/<object-id>.hsp` stores one named synth preset with its folder path
-  and wavetable folder/name dependency.
+  and a wavetable name dependency. The wavetable folder is retained as metadata
+  for compatibility but is not part of dependency matching.
 - `/synth_wavetables.dat` stores the named user wavetable catalog. Each catalog
   entry points to a sample file generated from the wavetable object id.
 
 Keeping a tuning and all of its linked records in one `.hgb` file avoids
 partial-bundle saves and cross-file geometry references. Firmware still exposes
 the contained records as separate object types for list, read, and runtime
-preview. Persistent geometry writes use the complete write-only
-`GeometryBundle` transfer type.
+preview. Complete stored files are read and written with the `GeometryBundle`
+transfer type; persistent writes remain bundle-only.
 
 File headers:
 
 | File | Magic | Version owner | Payload |
 | --- | --- | --- | --- |
-| `/settings.dat` | `STG` | Main settings schema | Profile settings, tuning/layout/scale IDs, and wavetable references |
+| `/settings.dat` | `STG` | Main settings schema | Non-synth profile settings, tuning/layout/scale IDs, and synth preset-or-draft references |
+| `/.synth_profile_<0..8>.hsp` | `HSP` | Synth preset file schema `11` | Hidden full synth patch for a modified profile |
 | `/geometry/*.hgb` | `HGB` | Geometry bundle file schema `3`; object schema `2` | One tuning root and all linked layout/scale/color/map records |
 | `/geometry_order.dat` | `HGO` | Geometry order file schema `1` | Ordered tuning object IDs used by device and web library menus |
 | `/presets/*.hsp` | `HSP` | Synth preset file schema `11` | One named preset, folder, values, and wavetable reference |
@@ -272,6 +274,7 @@ must not be applied.
 | `0x28` | `TRANSFER_ABORT` | Either | Cancel the active transfer |
 | `0x29` | `DELETE_REQ` | Host to device | Delete a user object |
 | `0x2A` | `SYNTH_PARAM_SET` | Host to device | Apply live synth setting bytes without an object transfer |
+| `0x2B` | `SYNTH_WAVETABLE_SELECT` | Host to device | Select an existing synth wavetable at runtime |
 
 Only one write transfer should be active at a time. A device may also allow only
 one total transfer at a time. If busy, it should send `NACK Busy`.
@@ -379,6 +382,7 @@ Capability flags:
 | `12` | Live synth parameter set |
 | `13` | Cents-table runtime tuning |
 | `14` | Atomic geometry-bundle file writes |
+| `15` | Live synth wavetable selection |
 
 Example hello request, transaction `1`, host max packed chunk `128`, no required
 flags:
@@ -388,10 +392,11 @@ F0 7D 10 01 00 01 00 01 01 00 00 00 00 00 F7
 ```
 
 Example response, transaction `1`, max packed chunk `128`, capabilities
-`0x7F7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
+`0xFF7E` (synth preset, user tuning/layout/scale/color/map, dry-run validation,
 delete user object, factory geometry listing, synth wavetable objects, live
-synth parameter set, cents-table runtime tuning, and atomic geometry bundles),
-max raw object bytes `262144`, settings schema `26`, synth
+synth parameter and wavetable selection, cents-table runtime tuning, and atomic
+geometry bundles),
+max raw object bytes `262144`, settings schema `28`, synth
 preset schema `7`, `9` profiles, `128` synth preset entries, `64` slots for
 each advertised user geometry count, hardware version `2`:
 
@@ -434,7 +439,7 @@ handle.
 | `0x09` | `Folder` | Optional virtual folder record for catalog navigation |
 | `0x0A` | `UserScale` | Geometry-bundle scale handle or read-only rescue handle |
 | `0x0B` | `SynthWavetable` | Synth-only wavetable catalog entry; current firmware returns compact catalog handles up to `63` |
-| `0x0C` | `GeometryBundle` | Write-only complete `.hgb` file transfer; always uses `NEW_OBJECT` |
+| `0x0C` | `GeometryBundle` | Complete `.hgb` file transfer; writes use `NEW_OBJECT`, reads use the tuning-root handle |
 | `0x0D` | `GeometryOrder` | Write-only complete `/geometry_order.dat` transfer; always uses `NEW_OBJECT` |
 
 Factory tunings, layouts, scales, and color maps live in `/geometry/*.hgb`, use
@@ -582,18 +587,19 @@ named Serum/Vital or HexBoard wavetable imports, then waits for the `WRITE_COMMI
 treating the flash write as complete. Live preview sends remain apply-only and
 are not used as the persistence confirmation path.
 
-Live editor changes to individual synth parameters should use `SYNTH_PARAM_SET`
-instead of staging a full `SynthPreset` object. This keeps frequent slider and
-selector updates out of the modal transfer path; full preset opens/saves and
-wavetable imports still use the chunked object path. Current firmware mutes the
+Live editor changes to individual synth parameters should use `SYNTH_PARAM_SET`,
+and existing wavetable choices should use `SYNTH_WAVETABLE_SELECT`, instead of
+staging a full `SynthPreset` object. This keeps frequent slider and selector
+updates out of the modal transfer path; full preset opens/saves and wavetable
+imports still use the chunked object path. Current firmware mutes the
 onboard synth for the duration of a host-to-device object write transfer when
 `SaveToFlash` is set in `WRITE_BEGIN`, including commit and temporary-file
-cleanup, but not for `SYNTH_PARAM_SET` or apply-only object transfers.
+cleanup, but not for either live control message or apply-only object transfers.
 
 For a persistent geometry save, `object-type` is `0x0C`, `handle` is
 `NEW_OBJECT`, schema is `1.0`, and the only required write flag is
 `SaveToFlash`. For a live `UserTuning` preview, `object-type` is `0x03` and the
-write flag is `ApplyToRuntime` without `SaveToFlash`.
+schema is `2.0`; the write flag is `ApplyToRuntime` without `SaveToFlash`.
 
 `WRITE_COMMIT` payload:
 
@@ -711,6 +717,21 @@ current synth frequencies because the on-device control does, while envelope,
 LFO, wheel amount, drive, and wavetable-position edits update cached synth
 parameters without rebuilding layout or redrawing the menu.
 
+## Live Synth Wavetable Selection
+
+`SYNTH_WAVETABLE_SELECT` payload:
+
+```text
+<selector> <index-u14>
+```
+
+Selector `0` addresses a synth wavetable catalog handle returned by
+`OBJECT_LIST_RESP`; selector `1` addresses a compiled built-in wavetable
+ordinal. The device validates the index, selects and loads that existing
+wavetable, switches the synth waveform to wavetable mode, updates the on-device
+wavetable label, and ACKs. This one-frame command does not stage an object
+transfer or show the transfer screen.
+
 ## Object Body Format
 
 Transferred objects are raw binary bytes before 8-to-7 packing. The common
@@ -776,7 +797,7 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `25` |
+| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `29` |
 | `0x21` | `SettingValues` | Repeated `<setting-key-u8> <value-u8>` records |
 | `0x22` | `TuningRef` | Object reference |
 | `0x23` | `LayoutRef` | Object reference |
@@ -802,10 +823,12 @@ quantity. Recommended TLVs:
 | Tag | Name | Value |
 | --- | --- | --- |
 | `0x20` | `TuningKind` | `u8`: `1` EDO, `2` cents list, `3` ratio list, `4` equal step |
-| `0x21` | `EdoDivisions` | Required `u16-le`; EDO divisions or equal-step/cents-list cycle length, `1..128` |
+| `0x21` | `EdoDivisions` | Required `u16-le`; EDO divisions or equal-step/cents-list cycle length, `1..1024` |
+| `0x22` | `ReferenceDegree` | Required `u16-le`; tuning degree assigned `ReferenceMidiNote` and `ReferenceHzFloat32`, `0..EdoDivisions-1` |
+| `0x23` | `DefaultKeyDegree` | Optional `u16-le`; scale-key degree selected when the tuning first loads, `0..EdoDivisions-1`; defaults to `0` |
 | `0x24` | `ReferenceMidiNote` | Required `u8`, `0..127`; A4 is `69` |
 | `0x27` | `RatioTable` | Repeated `<numerator-u32-le> <denominator-u32-le>` |
-| `0x28` | `KeyLabels` | Repeated length-prefixed labels, one per cycle degree; each label should be capped at `7` display characters |
+| `0x28` | `KeyLabels` | Optional repeated length-prefixed labels, one per cycle degree; omitted labels use generated numeric/default labels, and each supplied label should be capped at `7` display characters |
 | `0x29` | `PeriodCentsFloat32` | Required positive finite IEEE-754 binary32 cents value for EDO |
 | `0x2A` | `StepCentsFloat32` | Required positive finite IEEE-754 binary32 cents value for equal step |
 | `0x2B` | `ReferenceHzFloat32` | Required positive finite IEEE-754 binary32 hertz value |
@@ -817,17 +840,19 @@ derives from `StepCentsFloat32 * EdoDivisions`; no period cache is stored. A
 cents list's final table entry is its period, so no separate period field is
 stored.
 
-Generated tunings include `KeyLabels`, `ReferenceMidiNote`, and
-`ReferenceHzFloat32`; the web editor presents labels in A-first order,
-defaults
-to A-first pitch labels, and rotates them into the firmware's C-centered cycle
-order for `KeyLabels`. Scala imports default to a MIDI-note-60 1/1 reference
+Generated tunings include `ReferenceDegree`, `DefaultKeyDegree`,
+`ReferenceMidiNote`, and `ReferenceHzFloat32`. `KeyLabels` are stored directly
+in tuning-degree order, so label index, reference degree, default key degree,
+scale degree, and device TLV degree use the same coordinate system. No pitch
+name or equal-temperament fraction is inferred. Scala imports default to degree
+`0` as the MIDI-note-60 1/1 reference
 when no existing Scala reference is being preserved. Scala
 `.scl` import is a host-side feature; the web app treats a one-token suffix
 after an interval value as a note label and can reuse the final period-row label
 for the implicit 1/1 root. Current firmware live Apply supports `TuningKind =
 1`, `TuningKind = 2`, and `TuningKind = 4`; it loads cycle length, key labels,
-`ReferenceMidiNote`, `ReferenceHzFloat32`, and for cents-list tunings a RAM copy
+`ReferenceDegree`, `DefaultKeyDegree`, `ReferenceMidiNote`,
+`ReferenceHzFloat32`, and for cents-list tunings a RAM copy
 of `CentsTableFloat32`. Cents-list playback treats degree
 `0` as an implicit `0`-cent reference at the configured MIDI note and frequency,
 uses table entry `1` as the first interval, and wraps all positive or negative
@@ -959,13 +984,14 @@ Recommended TLVs:
 | `0x20` | `TuningRef` | Optional object reference |
 | `0x21` | `CycleLength` | `u16-le` |
 | `0x22` | `DefaultColorMode` | `u8`, firmware-defined color mode applied with this color map |
-| `0x23` | `DegreeColors` | Repeated `<degree-u16-le> <hue-u16-le> <sat-u8> <val-u8>` |
+| `0x23` | `DegreeColors` | Optional sparse repeated `<degree-u16-le> <hue-u16-le> <sat-u8> <val-u8>` overrides |
 
 Hue is `0..3599` tenths of a degree. Saturation and value are `0..255`.
+Degrees without records use the generated cycle palette.
 
 On-device editing can expose a small color chooser per scale degree or a few
 palette templates. The web app can offer batch editing and previews. Current
-firmware live Apply loads this object into a user runtime palette and sets
+firmware live Apply retains the packed overrides and sets
 `ColorMode` from `DefaultColorMode`. Value `1` is `Custom` and renders the
 stored scale-degree colors; other firmware-defined values render the generated
 color modes. Per-button color overrides take precedence only when `Custom` is
@@ -1061,8 +1087,10 @@ only to that exact layout; firmware does not fall back to another map that
 merely shares its tuning.
 
 The web editor may retain transformed overrides outside the physical key grid
-in its format-4 JSON bundle. Those web-only coordinates are never encoded into
-an `ExplicitButtonMap`; preset sync sends only visible physical button records.
+in its `hexboard.tuningBundle.v2` JSON tuning bundle. Those web-only coordinates
+are never encoded into an `ExplicitButtonMap`; preset sync sends only visible
+physical button records. A tuning bundle has one user-facing name, stored on
+its tuning root.
 
 ## Synth Preset Object
 
@@ -1090,7 +1118,7 @@ Recommended TLVs:
 | `0x23` | `Favorite` | `u8 bool` |
 | `0x24` | `LastModifiedUnixTime` | Optional `u32-le` timestamp from the web app |
 | `0x26` | `SynthWavetableName` | UTF-8 wavetable name dependency |
-| `0x27` | `SynthWavetableFolderPath` | UTF-8 wavetable folder dependency |
+| `0x27` | `SynthWavetableFolderPath` | UTF-8 compatibility/display metadata; not used for dependency lookup |
 
 The current synth preset key set is:
 
@@ -1135,7 +1163,7 @@ These are sound-focused settings only. A synth preset should not imply the
 current profile slot, tuning, layout, MIDI channel, LED animation, or delegated
 control state.
 
-Schema `7` includes wavetable position and folder/name dependency fields, mono
+Schema `7` includes wavetable position and name plus compatibility-folder fields, mono
 portamento, arpeggiator direction, LFO controls, and the `DutyWrp` and `PolyWrp`
 modulation targets. Target value `0` is `FoldWrp`.
 
@@ -1146,18 +1174,21 @@ modulation targets. Target value `0` is `FoldWrp`.
 value `12` selects `Noise`, a smooth-noise vibrato source running at the same
 `12 Hz` phase rate, without changing the synth value list.
 
-`SynthWavetableName` and `SynthWavetableFolderPath` identify the source
-dependency. `Waveform` records the current Wave-menu anchor within that source,
-while `SynthWavetablePosition` stores the continuous position. Unavailable
-named dependencies load `Basic Shapes`. Basic Shapes is the rescue wavetable
-and uses the canonical reserved folder path `/Built In`. Editable factory
-wavetables use ordinary catalog paths; the supplied factory wavetables use the
-root folder `/`.
+`SynthWavetableName` identifies the source dependency.
+`SynthWavetableFolderPath` remains compatible organization metadata and does
+not participate in lookup. `Waveform` records the current Wave-menu anchor
+within that source, while `SynthWavetablePosition` stores the continuous
+position. Unavailable named dependencies load `Basic Shapes`; an interactive
+physical preset load also shows the missing name and HexBoard Sync upload
+instruction for two seconds. Basic Shapes is the rescue wavetable and uses the
+canonical reserved folder path `/Built In`. Editable factory wavetables use
+ordinary catalog paths; the supplied factory wavetables use the root folder
+`/`.
 
 The common `Name` and `FolderPath` TLVs are required for named/foldered synth
-presets. Duplicate names are allowed in different folders. Within the same
-folder, firmware may reject duplicates or allow them as long as object ids stay
-unique.
+presets. Synth wavetable names are globally unique across built-in and editable
+catalog entries; folders organize wavetables but do not create separate naming
+scopes.
 
 Example metadata for a named preset in the literal folder label `Pads/Warm`
 using escaped device storage:
@@ -1171,8 +1202,9 @@ using escaped device storage:
 
 `SynthWavetable` object type `0x0B` stores one named user wavetable catalog
 entry. Current firmware supports listing, reading, writing, and deleting
-entries. Presets reference wavetables by `SynthWavetableFolderPath` plus
-`SynthWavetableName`; they do not embed table sample data.
+entries. Presets reference wavetables by `SynthWavetableName`; they do not
+embed table sample data. Firmware rejects an import or rename that duplicates
+any built-in or editable wavetable name.
 
 Fixed-mip objects use schema `1.2`. Firmware also accepts schema `1.0`
 base-only wavetable objects and schema `1.1` objects whose TLV payload matches a
@@ -1238,7 +1270,7 @@ Recommended use:
 
 - Backup all user tunings, layouts, scales, color maps, explicit maps,
   profiles, and synth presets.
-- For a user musical-geometry bundle, keep one tuning, one custom scale-degree
+- For a user tuning bundle, keep one tuning, one custom scale-degree
   color set, one or more layouts, and one or more scales together in the
   exported JSON. Persistent restore encodes that set as one `GeometryBundle`;
   individual contained objects remain available for read and runtime preview.
@@ -1308,7 +1340,7 @@ bundle composition and the device atomically validates and installs the result.
    `ScaleColorMap`, and any `ExplicitButtonMap` records.
 2. Every child record references the root tuning object id, and every record
    carries the bundle folder path for object-list grouping.
-3. Host sends write-only object type `GeometryBundle` with `NEW_OBJECT` and
+3. Host sends object type `GeometryBundle` with `NEW_OBJECT` and
    `SaveToFlash`. `ApplyToRuntime` and individual-object flash saves are rejected.
 4. Firmware streams chunks directly to `/ps_raw.tmp`, verifies the transfer CRC,
    validates the `HGB` header, file CRC, record envelopes, object bodies, unique
@@ -1317,9 +1349,15 @@ bundle composition and the device atomically validates and installs the result.
 5. Re-saving the same tuning object ID replaces exactly one file. Saving a new
    tuning object ID creates one file, up to the 64-bundle limit. Other bundles
    are not read or rewritten.
+   Rename and folder-move saves preserve that tuning object ID. If another
+   bundle occupies the destination folder/name, the host confirms the
+   replacement, saves the moved bundle first, and deletes the occupied tuning
+   root only after the save is acknowledged.
    A file may contain up to `255` records and `262,144` bytes; each contained
-   object body may contain up to `8,192` bytes.
-6. Current firmware can list, read, delete, or apply the contained active
+   object body may contain up to `16,384` bytes.
+6. Reading `GeometryBundle` with a listed `UserTuning` root handle streams that
+   bundle's complete `.hgb` file as one transfer. Current firmware can also
+   list, read, delete, or apply the contained active
    EDO/equal-step/Scala cents-list tuning, vector layout, scale, color map, and
    exact layout-matching explicit button map by compact preset-sync handle.
 7. Deleting the `UserTuning` root deletes the complete bundle; deleting a child
@@ -1335,7 +1373,11 @@ For web-editor live preview, the app sends only the active compatible runtime
 objects with `ApplyToRuntime` and without `SaveToFlash`. `Save to HexBoard`
 writes the complete `.hgb` once, preserves IDs when re-saving a bundle read from
 the device, and then sends the active objects with `ApplyToRuntime` so the board
-preview matches the saved selection.
+preview matches the saved selection. Opening, copying, or exporting a stored
+bundle reads that `.hgb` once; the compiled rescue geometry remains available
+through its individual read-only object handles because it has no stored file.
+The web library uses those handles to identify fallback mode but does not
+present the rescue tuning as an editable catalog item.
 
 ### Transfer A Synth Preset
 
@@ -1346,23 +1388,28 @@ preview matches the saved selection.
    synthetic current-runtime synth preset so hosts can initialize an editor
    without changing the loaded sound.
 3. Device validates `SynthPresetSchemaVersion`, `Name`, `FolderPath`, and,
-   when present, the wavetable folder/name dependency TLVs.
+   when present, the wavetable name and compatibility folder metadata TLVs.
 4. Commit with `apply` changes only the current synth runtime for auditioning
    and marks settings dirty for the normal debounced profile autosave path.
    Commit with `save` atomically replaces one `/presets/<object-id>.hsp` file.
 5. Saving or deleting one synth preset does not rewrite other preset files.
+   Rename and folder-move updates write the same object id to its existing
+   handle with `SaveToFlash | OverwriteExisting` and do not apply the preset to
+   the current synth runtime. When a destination folder/name is occupied, the
+   host confirms the replacement, saves the moved object first, and deletes the
+   occupied object only after the save is acknowledged.
 6. The current web app requests one synth preset or wavetable record per
    object-list page before reading each object body, keeping response frames
    under conservative SysEx buffer limits.
-7. Current firmware treats chunked preset-sync object reads/writes as a modal
-   transfer window: the display shows the object type, upload/download
-   direction, completed and total bytes, percentage, and a progress bar under
-   `MIDI SysEx`. Normal core-0 UI/LED work is paused, and MIDI input is pumped
-   until the exchange goes idle with no active object transfer, or until
-   timeout clears the active transfer. OLED redraws are quantized rather than
-   performed for every 64-byte chunk.
-   `SYNTH_PARAM_SET`, hello, list, delete, and other one-frame control messages
-   process without opening that modal window.
+7. Chunked reads and writes reserve the menu/OLED surface for a transfer screen
+   showing object type, direction, byte counts, percentage, and progress.
+   Core 0 services transfers cooperatively while retaining note-release,
+   button-scan, and encoder-panic handling. The window closes when the exchange
+   goes idle without an active object transfer or reaches its timeout. OLED
+   redraws are quantized rather than performed for every 64-byte chunk, and each
+   selected progress frame is drained before transfer processing resumes.
+   `SYNTH_PARAM_SET`, `SYNTH_WAVETABLE_SELECT`, hello, list, delete, and other
+   one-frame control messages process without opening that modal window.
 8. Current firmware uses the Pico SDK USB stack through Arduino-Pico `MIDIUSB`
    and a HexBoard-owned MIDI byte parser for SysEx receive.
 9. Current firmware paces device-to-host object reads by waiting for host ACKs

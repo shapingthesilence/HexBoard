@@ -50,45 +50,6 @@ uint32_t columnMasks[COLCOUNT] = { 0 };
   */
 buttonDef h[BTN_COUNT];
 
-char userGeometryRuntimeKeyLabelStorage[MAX_SCALE_DIVISIONS][TUNING_KEY_LABEL_LENGTH] = {};
-bool userGeometryRuntimeActive = false;
-bool userGeometryRuntimeScaleActive = false;
-bool userGeometryRuntimePaletteActive = false;
-bool userGeometryRuntimeTuningObjectSelected = false;
-bool userGeometryRuntimeLayoutObjectSelected = false;
-bool userGeometryRuntimeScaleObjectSelected = false;
-uint8_t userGeometryRuntimeTuningObjectId[16] = {};
-uint8_t userGeometryRuntimeLayoutObjectId[16] = {};
-uint8_t userGeometryRuntimeScaleObjectId[16] = {};
-bool userGeometryRuntimeCentsTableActive = false;
-bool userGeometryRuntimeExactEdoActive = false;
-uint8_t userGeometryRuntimeTuningKind = 0;
-uint16_t userGeometryRuntimeCycleLength = 0;
-uint16_t userGeometryRuntimeCentsTableLength = 0;
-float userGeometryRuntimeCentsTable[MAX_SCALE_DIVISIONS] = {};
-float userGeometryRuntimePeriodCents = 1200.0f;
-uint8_t userGeometryRuntimeReferenceMidiNote = 69;
-float userGeometryRuntimeReferenceHz = 440.0f;
-tuningDef userGeometryRuntimeTuning = { "User Tuning", 12, 100.0f, { { "0", -9 } } };
-layoutDef userGeometryRuntimeLayout = { "User Layout", false, 65, 1, -2, TUNING_12EDO };
-scaleDef userGeometryRuntimeScale = { "User Scale", TUNING_12EDO, { 0 } };
-paletteDef userGeometryRuntimePalette = {};
-bool userGeometryRuntimeButtonDisabled[LED_COUNT] = {};
-uint8_t userGeometryRuntimeButtonRole[LED_COUNT] = {};
-bool userGeometryRuntimeButtonRoleOverride[LED_COUNT] = {};
-bool userGeometryRuntimeButtonNoteOverride[LED_COUNT] = {};
-bool userGeometryRuntimeButtonColorActive[LED_COUNT] = {};
-int16_t userGeometryRuntimeButtonStepsFromC[LED_COUNT] = {};
-colorDef userGeometryRuntimeButtonColor[LED_COUNT] = {};
-uint8_t userGeometryRuntimeDeviceRotation = DEVICE_ROTATION_0;
-int16_t userGeometryRuntimeLayoutCenterStepsFromC = 0;
-uint8_t userGeometryRuntimeButtonOutputMode[LED_COUNT] = {};
-uint8_t userGeometryRuntimeButtonMidiNote[LED_COUNT] = {};
-uint8_t userGeometryRuntimeButtonMidiChannel[LED_COUNT] = {};
-uint8_t userGeometryRuntimeButtonChordActionId[LED_COUNT] = {};
-uint8_t userGeometryRuntimeButtonChordRootMidiNote[LED_COUNT] = {};
-UserGeometryChordAction userGeometryRuntimeChordActions[USER_GEOMETRY_MAX_CHORD_ACTIONS] = {};
-
 wheelDef modWheel = { &wheelMode, &modSticky,
                       &h[assignCmd[4]].btnState, &h[assignCmd[5]].btnState, &h[assignCmd[6]].btnState,
                       0, 127, &modWheelSpeed, 0, 0, 0, 0 };
@@ -103,27 +64,18 @@ bool toggleWheel = false;  // false = mod wheel, true = pitch bend wheel
 
 // Delegate control is intentionally external-only. It has no menu item and is
 // not persisted; a host must enter/exit it via SysEx.
-bool delegatedControl = false;
-uint32_t delegatedColors[LED_COUNT];
-char delegatedAppName[DELEGATED_APP_NAME_MAX + 1] = "Host Application";
-bool delegatedDisplayDirty = false;
-bool delegatedDisplayWakeRequested = false;
-bool delegatedReturnToMenuRequested = false;
-byte delegatedNoteMapChannel[LED_COUNT];
-byte delegatedNoteMapNote[LED_COUNT];
-byte delegatedActiveChannel[LED_COUNT];
-byte delegatedActiveNote[LED_COUNT];
+DelegatedControlState delegatedControlState;
 void resetDelegatedNoteMap() {
   for (byte i = 0; i < LED_COUNT; ++i) {
-    delegatedNoteMapChannel[i] = static_cast<byte>((i / 100) + 1);
-    delegatedNoteMapNote[i] = i % 100;
+    delegatedControlState.noteMapChannel[i] = static_cast<byte>((i / 100) + 1);
+    delegatedControlState.noteMapNote[i] = i % 100;
   }
 }
 
 void clearDelegatedNoteActivity() {
   for (byte i = 0; i < LED_COUNT; ++i) {
-    delegatedActiveChannel[i] = 0;
-    delegatedActiveNote[i] = UNUSED_NOTE;
+    delegatedControlState.activeChannel[i] = 0;
+    delegatedControlState.activeNote[i] = UNUSED_NOTE;
   }
 }
 

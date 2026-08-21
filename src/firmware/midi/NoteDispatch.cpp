@@ -24,7 +24,7 @@ MappedButtonActiveTone mappedButtonActiveTones[LED_COUNT][USER_GEOMETRY_MAX_CHOR
 uint8_t mappedButtonMidiNoteDepth[MIDI_CHANNEL_COUNT][MIDI_NOTES_PER_CHANNEL] = {};
 
 const UserGeometryChordAction* RAM_FUNC(findMappedChordAction)(uint8_t id) {
-  for (const UserGeometryChordAction& action : userGeometryRuntimeChordActions) {
+  for (const UserGeometryChordAction& action : userGeometryRuntime.chordActions) {
     if (action.active && action.id == id) {
       return &action;
     }
@@ -183,8 +183,8 @@ void RAM_FUNC(startMappedSynthTone)(MappedButtonActiveTone& active,
 
 bool RAM_FUNC(mappedButtonHasAdvancedAction)(byte x) {
   return x < LED_COUNT
-         && userGeometryRuntimeActive
-         && userGeometryRuntimeButtonOutputMode[x] != PRESET_SYNC_BUTTON_OUTPUT_TUNED;
+         && userGeometryRuntime.active
+         && userGeometryRuntime.buttonOutputMode[x] != PRESET_SYNC_BUTTON_OUTPUT_TUNED;
 }
 
 void RAM_FUNC(tryMappedButtonActionOn)(byte x) {
@@ -193,17 +193,17 @@ void RAM_FUNC(tryMappedButtonActionOn)(byte x) {
   }
   tryMappedButtonActionOff(x);
 
-  uint8_t outputMode = userGeometryRuntimeButtonOutputMode[x];
+  uint8_t outputMode = userGeometryRuntime.buttonOutputMode[x];
   if (outputMode == PRESET_SYNC_BUTTON_OUTPUT_DIRECT_MIDI) {
     MappedButtonActiveTone& active = mappedButtonActiveTones[x][0];
-    byte note = userGeometryRuntimeButtonMidiNote[x];
-    byte channel = userGeometryRuntimeButtonMidiChannel[x];
+    byte note = userGeometryRuntime.buttonMidiNote[x];
+    byte channel = userGeometryRuntime.buttonMidiChannel[x];
     startMappedMidiTone(active, false, h[x].stepsFromC, note, channel);
     startMappedSynthTone(active, h[x].stepsFromC, false, note);
     return;
   }
 
-  const UserGeometryChordAction* action = findMappedChordAction(userGeometryRuntimeButtonChordActionId[x]);
+  const UserGeometryChordAction* action = findMappedChordAction(userGeometryRuntime.buttonChordActionId[x]);
   if (!action) {
     return;
   }
@@ -219,7 +219,7 @@ void RAM_FUNC(tryMappedButtonActionOn)(byte x) {
       startMappedMidiTone(active, true, pitchSteps, 0, 0);
       startMappedSynthTone(active, pitchSteps, true, 0);
     } else {
-      int16_t midiNote = static_cast<int16_t>(userGeometryRuntimeButtonChordRootMidiNote[x]) + action->intervals[tone];
+      int16_t midiNote = static_cast<int16_t>(userGeometryRuntime.buttonChordRootMidiNote[x]) + action->intervals[tone];
       if (midiNote < 0 || midiNote > 127 || !isValidMidiChannel(action->midiChannel)) {
         continue;
       }
@@ -246,11 +246,6 @@ void RAM_FUNC(releaseAllMappedButtonActions)() {
 }
 
 void RAM_FUNC(tryMIDInoteOn)(byte x) {
-  if (noteDisplayEnabled() && screenSaverOn) {
-    setNoteOverlayTemporaryWake(true);
-    noteOverlayDirty = true;
-  }
-
   // This gets called on any non-command hex that is not scale-locked.
   if (h[x].note >= 128) {
     return;
@@ -298,7 +293,9 @@ void RAM_FUNC(tryMIDInoteOn)(byte x) {
       // Then, send the note-on message
       withMIDI([&](auto& M) { M.sendNoteOn(h[x].activeMidiNote, velWheel.curValue, h[x].MIDIch); });  // ch 1-16
       noteOverlayReleaseGraceUntil = 0;
-      noteOverlayDirty = true;
+      if (noteDisplayEnabled()) {
+        schedulePlayedNotesOverlayUpdate(screenSaverOn);
+      }
 
       sendToLog(
         "Sent MIDI pitch bend: " + std::to_string(pitchBendValue) + " to ch " + std::to_string(h[x].MIDIch));
@@ -332,7 +329,9 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
       releaseMPEChannel(h[x].MIDIch);
     }
     noteOverlayReleaseGraceUntil = runTime + DISPLAYED_NOTES_RELEASE_GRACE_MICROS;
-    noteOverlayDirty = true;
     h[x].MIDIch = 0;
+    if (noteDisplayEnabled()) {
+      schedulePlayedNotesOverlayUpdate(false);
+    }
   }
 }
