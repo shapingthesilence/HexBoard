@@ -33,7 +33,9 @@ export function FolderControls({
   }, [folderToDelete, folders]);
 
   return (
-    <div className="folderControls" aria-label={`${itemLabel} folder controls`}>
+    <details className="folderMenu">
+      <summary>Folders</summary>
+      <div className="folderControls" aria-label={`${itemLabel} folder controls`}>
       <form
         className="fieldControlRow folderCreateControl"
         onSubmit={(event) => {
@@ -80,6 +82,7 @@ export function FolderControls({
           Delete
         </button>
       </div>
-    </div>
+      </div>
+    </details>
   );
 }

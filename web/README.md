@@ -64,11 +64,10 @@ https://<your-github-username>.github.io/HexBoard/development/
 
 Web MIDI SysEx requires a browser that supports Web MIDI, usually Chrome or
 Edge, and a secure context such as `localhost` or HTTPS.
-Choose both the HexBoard output and input ports on the Device page. Live
-parameter sends only need the output port, but device library reads need the
-input port that receives HexBoard SysEx responses. The app explicitly opens the
-selected ports when connecting and warns before a device-library refresh if no
-input port is attached. Device preset reads ACK `READ_BEGIN`, each `DATA_CHUNK`,
+Use `Connect HexBoard` in the header. Discovery pairs compatible input and
+output ports; if several boards are found, choose one from the device selector.
+The app opens both selected ports and keeps device actions unavailable offline.
+Device preset reads ACK `READ_BEGIN`, each `DATA_CHUNK`,
 and `TRANSFER_END` so firmware can pace object transfers.
 
 ## Current Scope
@@ -96,8 +95,8 @@ and `TRANSFER_END` so firmware can pace object transfers.
   dragging. Device reorders update the UI immediately, wait for a 2-second
   quiet period, then write only the compact geometry-order file; unchanged
   order bytes do not cause another flash write.
-- A tuning editor organized as a four-step `Library`, `Tuning`,
-  `Layout`, and `Scale & color` workflow. The library gets a full-width transfer
+- A tuning library with independently accessible `Tuning`, `Layout`, and
+  `Scale & color` editing tabs. The library gets a full-width transfer
   and folder-management view. Folder filters consistently begin with `All` and
   `Root`; empty computer folders can be created and deleted, while device
   folders appear only when a saved item uses them. Editing keeps tuning sync
@@ -106,9 +105,9 @@ and `TRANSFER_END` so firmware can pace object transfers.
   toolbar directly below the color tools provides step transposition, two-way
   60-degree rotation, device-relative horizontal/vertical mirrors, and
   undo/redo. Layout transforms and each continuous color-paint stroke share
-  this history. One selected key or all selected keys transforms the generated
-  layout around the gold primary key; any other multi-selection creates
-  per-key overrides. Overrides that rotate beyond the physical board remain in
+  this history. An explicit `Transform` selector chooses whole-layout transforms
+  around the gold pivot key or overrides on selected keys, independently of
+  selection count. Overrides that rotate beyond the physical board remain in
   the saved tuning bundle so later transforms can bring them back. The selected-key
   inspector separates key state, optional pitch overrides, inherited or per-key
   color, and advanced pitch details; color editing uses a compact visual
@@ -122,8 +121,8 @@ and `TRANSFER_END` so firmware can pace object transfers.
   adding controls to the ordinary tuned-note workflow. Read-only pitch and
   scale values are presented as facts rather than form fields, and all overrides
   can be reset together. Raw encoded-object details are collapsed until needed.
-  The editor also supports scale-degree palette editing, direct degree-order
-  note labels, a grouped pitch anchor with explicit degree, frequency, and MIDI
+  The editor also supports clickable scale-degree chips, scale-degree palette
+  editing, individual note-label fields with optional bulk text editing, a grouped pitch anchor with explicit degree, frequency, and MIDI
   key selection, and a separate default-key degree that is applied when a tuning
   first loads. A paint mode applies per-button color overrides or scale-degree
   palette colors directly on the preview. Painting a scale degree clears
@@ -139,7 +138,7 @@ and `TRANSFER_END` so firmware can pace object transfers.
   Scala `.scl`
   import reads trailing interval labels, exposes the 1/1 reference key
   and Hz reference, and enables cents-table live send when the connected
-  firmware advertises runtime support. Live send serializes only the active
+  firmware advertises runtime support. Live preview serializes only the active
   runtime records. `Save to HexBoard` writes the whole tuning bundle, preserves
   tuning and color object IDs for tunings opened from the device, then reapplies the
   active records so the hardware preview and on-device menus agree.
@@ -147,7 +146,10 @@ and `TRANSFER_END` so firmware can pace object transfers.
   `.hgb` bundle once and shows byte progress in the app. The compiled rescue
   tuning is not presented as an editable library item; the library shows a
   fallback notice when the device reports that rescue state.
-  Browser Library edits are saved automatically. `Copy to HexBoard` and
+  Editor drafts are preserved separately from Browser Library records.
+  `Save to Browser` commits the current draft, and `Discard draft` restores
+  its baseline. Drafts survive item changes, navigation between editors, and
+  reloads. Library copy/export actions use saved records. `Copy to HexBoard` and
   `Copy to Browser` copy between libraries; `Export File` writes a portable
   `hexboard.tuningBundle.v2` JSON file. Version 1 tuning bundles and legacy
   `hexboard.layoutBundle.v5` files remain importable; legacy layout bundles use
@@ -160,10 +162,12 @@ and `TRANSFER_END` so firmware can pace object transfers.
 - A synth preset editor with name and folder selection, folder creation, main
   synth parameter controls, mono retrigger/legato, mono portamento,
   arpeggiator speed/direction/tempo, Drive/AHDSR sliders, apply-only live sends,
-  and an explicit save sync action over the active MIDI transport. A dormant
+  waveform and envelope graphs, collapsible modulation controls, and explicit
+  browser/device saves. Preview and save feedback are separate; offline
+  operation never reports a mock device save. A dormant
   browser AudioWorklet audition implementation remains in the source behind a
   disabled visibility gate for later offline preset design work. Opened presets
-  are temporary editor drafts; saving an existing library preset preserves its
+  are automatically preserved browser drafts; saving an existing library preset preserves its
   object identity while updating its name, folder, and sound. Saving a new
   destination asks before replacing an occupied folder/name. Saves to real
   devices wait for ACK/NACK responses through the flash commit before the app
@@ -187,7 +191,7 @@ and `TRANSFER_END` so firmware can pace object transfers.
   `HexBoard Wavetables`, using the same folder controls as presets. Imported
   wavetables default to `Root`. The firmware-resident Basic Shapes fallback is
   also presented in `Root`; its special storage path is never shown as a folder.
-  Imports upload to HexBoard immediately for hardware audition and refresh the
+  Imports save in the browser and, when connected, upload to HexBoard for hardware audition and refresh the
   device-authoritative HexBoard wavetable list after the flash commit. Short
   HexBoard `.hexwav` imports are interpolated to the device's 16-frame table.
   The preset editor separates on-device and computer-only wavetables. Selecting
@@ -195,13 +199,13 @@ and `TRANSFER_END` so firmware can pace object transfers.
   preset saves repeat the availability check as a safety net and require either
   uploading the same-name dependency or choosing an alternate. Wavetable names
   are globally unique; folders are organization only and preset dependencies
-  match by name. With Live send enabled, selecting an existing device wavetable
+  match by name. With Live preview enabled, selecting an existing device wavetable
   uses a single runtime-select control frame rather than transferring the open
   synth preset.
-- A mock MIDI transport for UI and protocol work before firmware support exists.
+- A mock MIDI transport used internally for offline operation and protocol tests;
+  device preview and write actions are gated on a real connection.
 - Basic React views for device connection, tuning/layout editing, and synth
   preset organization.
 
 Firmware currently implements synth preset, wavetable, and geometry preset-sync
-paths used by the app. Mock mode still covers UI work when no compatible device
-is connected.
+paths used by the app. Offline editing remains available without a compatible device.

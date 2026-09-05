@@ -4,6 +4,7 @@ interface LibraryBulkActionsProps {
   allVisibleSelected: boolean;
   transferLabel: string;
   busy?: boolean;
+  transferDisabled?: boolean;
   showSelectVisible?: boolean;
   onSelectVisible: (selected: boolean) => void;
   onClear: () => void;
@@ -17,6 +18,7 @@ export function LibraryBulkActions({
   allVisibleSelected,
   transferLabel,
   busy = false,
+  transferDisabled = false,
   showSelectVisible = true,
   onSelectVisible,
   onClear,
@@ -36,12 +38,14 @@ export function LibraryBulkActions({
           <span>Select shown</span>
         </label>
       ) : null}
-      <span className="muted">{selectedCount} selected</span>
+      <span className="muted">{selectedCount > 0 ? `${selectedCount} selected` : `${visibleCount} shown`}</span>
+      {selectedCount > 0 ? (
       <div className="row">
-        <button disabled={busy || selectedCount === 0} type="button" onClick={onTransfer}>{transferLabel}</button>
+        <button disabled={busy || transferDisabled || selectedCount === 0} type="button" onClick={onTransfer}>{transferLabel}</button>
         <button disabled={busy || selectedCount === 0} type="button" onClick={onExport}>Export selected</button>
         <button disabled={busy || selectedCount === 0} type="button" onClick={onClear}>Clear</button>
       </div>
+      ) : null}
     </div>
   );
 }

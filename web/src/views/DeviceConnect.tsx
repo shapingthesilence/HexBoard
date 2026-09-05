@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { MockMidiTransport } from "../midi/mockTransport.ts";
+import { useEffect, useState } from "react";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type {
   MidiTransport,
@@ -75,10 +76,6 @@ function isCompatibleHello(hello: HelloResponsePayload): boolean {
     && hello.synthPresetSchemaVersion >= 3;
 }
 
-function firmwareLabel(hello: HelloResponsePayload): string {
-  return `preset-sync ${hello.negotiatedMajor}.${hello.negotiatedMinor}, synth schema ${hello.synthPresetSchemaVersion}`;
-}
-
 export function DeviceConnect({
   onTransportChange,
   onHelloChange,
@@ -88,8 +85,28 @@ export function DeviceConnect({
   const [access, setAccess] = useState<WebMidiAccess | null>(null);
   const [devices, setDevices] = useState<DiscoveredHexBoard[]>([]);
   const [selectedDeviceKey, setSelectedDeviceKey] = useState("");
-  const [status, setStatus] = useState("Mock transport active");
+  const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!access) return;
+    const previous = access.onstatechange;
+    const handleStateChange = (event: unknown) => {
+      previous?.(event);
+      const selected = devices.find(device => device.key === selectedDeviceKey);
+      if (connectionLabel.startsWith("HexBoard:") && selected &&
+          (selected.input.state === "disconnected" || selected.output.state === "disconnected")) {
+        onTransportChange(new MockMidiTransport());
+        onHelloChange(null);
+        onConnectionLabelChange("Not connected");
+        setDevices([]);
+        setSelectedDeviceKey("");
+        setStatus("USB disconnected");
+      }
+    };
+    access.onstatechange = handleStateChange;
+    return () => { if (access.onstatechange === handleStateChange) access.onstatechange = previous; };
+  }, [access, devices, selectedDeviceKey, connectionLabel, onTransportChange, onHelloChange, onConnectionLabelChange]);
 
   async function probeDevice(output: WebMidiOutput, input: WebMidiInput): Promise<DiscoveredHexBoard | null> {
     await output.open?.();
@@ -143,12 +160,12 @@ export function DeviceConnect({
     onHelloChange(device.hello);
     onConnectionLabelChange(`HexBoard: ${device.label}`);
     setSelectedDeviceKey(device.key);
-    setStatus(`Connected ${device.label} (${firmwareLabel(device.hello)})`);
+    setStatus("Connected");
   }
 
   async function connectHexBoard() {
     if (!isWebMidiSupported()) {
-      setStatus("Web MIDI is unavailable in this browser");
+      setStatus("Use Chrome or Edge to connect HexBoard");
       return;
     }
 
@@ -167,7 +184,7 @@ export function DeviceConnect({
       setDevices(discovered);
 
       if (discovered.length === 0) {
-        setStatus("No compatible HexBoard found. Connect one HexBoard input and output, then try again.");
+        setStatus("No HexBoard found. Check the USB cable, then try again.");
         return;
       }
 
@@ -193,7 +210,7 @@ export function DeviceConnect({
     <div className="deviceMenu" data-connected={connectedToHexBoard} aria-label="Device connection">
       <div className="deviceStatus">
         <strong>{connectionLabel}</strong>
-        <span>{status}</span>
+        {status ? <span role="status">{status}</span> : null}
       </div>
       {multipleDevices ? (
         <select

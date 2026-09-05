@@ -37,7 +37,7 @@ export function App() {
   const [activeView, setActiveView] = useState<ViewKey>("layouts");
   const [transport, setTransport] = useState<MidiTransport>(() => new MockMidiTransport());
   const [deviceHello, setDeviceHello] = useState<HelloResponsePayload | null>(null);
-  const [connectionLabel, setConnectionLabel] = useState("Mock device");
+  const [connectionLabel, setConnectionLabel] = useState("Not connected");
   const [theme, setTheme] = useState<ThemeMode>(() => loadStoredTheme());
 
   useEffect(() => {

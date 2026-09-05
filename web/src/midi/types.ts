@@ -43,6 +43,7 @@ export interface WebMidiPortMap<T> {
 }
 
 export interface WebMidiAccess {
+  onstatechange?: ((event: unknown) => void) | null;
   inputs: WebMidiPortMap<WebMidiInput>;
   outputs: WebMidiPortMap<WebMidiOutput>;
 }

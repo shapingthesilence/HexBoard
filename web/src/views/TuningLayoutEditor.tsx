@@ -1,3 +1,4 @@
+import { sameContent, useEditorDrafts } from "../editor/drafts.ts";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FocusEvent, type InputHTMLAttributes, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from "react";
 import {
   clampScaleDegreeColor,
@@ -218,15 +219,15 @@ const geometryWorkspaceTabs: Array<{
 
 const geometryWorkspaceCopy: Record<Exclude<GeometryWorkspaceTab, "library">, { eyebrow: string; title: string }> = {
   tuning: {
-    eyebrow: "Step 2 of 4",
+    eyebrow: "",
     title: "Tuning"
   },
   layout: {
-    eyebrow: "Step 3 of 4",
+    eyebrow: "",
     title: "Layout"
   },
   scale: {
-    eyebrow: "Step 4 of 4",
+    eyebrow: "",
     title: "Scale & color"
   }
 };
@@ -1372,10 +1373,18 @@ function decodeDeviceLayout(object: DeviceGeometryObject, index: number, buttonM
 }
 
 export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayoutEditorProps) {
+  const connected = !(transport instanceof MockMidiTransport);
+  const drafts = useEditorDrafts<TuningBundle>("hexboard-tuning-drafts-v1", (value): value is TuningBundle => {
+    if (!value || typeof value !== "object" || !("objectIdHex" in value) || typeof value.objectIdHex !== "string") return false;
+    try { parseTuningBundleLibrary([value]); return true; } catch { return false; }
+  });
+  const [savedDeviceContent, setSavedDeviceContent] = useState<Record<string, string>>({});
+  const [transformScope, setTransformScope] = useState<"layout" | "keys">("layout");
+  const [showButtonNumbers, setShowButtonNumbers] = useState(false);
   const [bundles, setBundles] = useState<TuningBundle[]>(() => loadStoredBundles());
   const [hexboardBundles, setHexboardBundles] = useState<HexBoardGeometryBundleEntry[]>([]);
   const [hexboardRescueActive, setHexboardRescueActive] = useState(false);
-  const [activeBundleId, setActiveBundleId] = useState("");
+  const [activeBundleId, setActiveBundleId] = useState(drafts.active);
   const [customFolders, setCustomFolders] = useState(loadStoredGeometryFolders);
   const [newFolder, setNewFolder] = useState("");
   const [folderFilters, setFolderFilters] = useState<Record<GeometryLibrarySpace, string | null>>({
@@ -1419,7 +1428,11 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const geometryOrderWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [, setLayoutHistoryRevision] = useState(0);
 
-  const activeBundle = bundles.find((bundle) => bundle.objectIdHex === activeBundleId) ?? bundles[0] ?? createDefaultTuningBundle();
+  const savedBundle = bundles.find((bundle) => bundle.objectIdHex === activeBundleId) ?? bundles[0] ?? createDefaultTuningBundle();
+  const activeBundle = drafts.entries[savedBundle.objectIdHex]?.value ?? savedBundle;
+  const hasDraft = !sameContent(activeBundle, savedBundle);
+  const deviceSaved = connected && savedDeviceContent[activeBundle.objectIdHex] === JSON.stringify(activeBundle);
+  useEffect(() => { setSavedDeviceContent({}); setLiveSend(false); }, [transport]);
   const activeBundleRef = useRef(activeBundle);
   activeBundleRef.current = activeBundle;
   const activeLayout = activeBundle.layouts.find((layout) => layout.objectIdHex === activeBundle.activeLayoutIdHex) ??
@@ -1438,6 +1451,11 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   );
   const runtimeSendSupported = activeBundle.tuning.kind !== "scala" || centsTableRuntimeSupported;
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
+
+  useEffect(() => {
+    if (connected) void refreshHexBoardGeometryLibrary();
+    else { setHexboardBundles([]); setHexboardRescueActive(false); }
+  }, [client, connected]);
 
   useEffect(() => () => {
     if (geometryOrderWriteTimerRef.current !== null) {
@@ -1513,23 +1531,34 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   function setBundlesAndPersist(nextBundles: TuningBundle[]) {
     clearLayoutHistory();
     const ordered = orderedComputerBundles(nextBundles);
-    setBundles(ordered);
     persistBundles(ordered);
+    setBundles(ordered);
   }
 
   function updateActiveBundle(updater: (bundle: TuningBundle) => TuningBundle, preserveLayoutHistory = false) {
     if (!preserveLayoutHistory) {
       clearLayoutHistory();
     }
+    if (!syncBusy) setStatus("Ready");
     const targetId = activeBundle.objectIdHex;
-    setBundles((currentBundles) => {
-      const nextBundles = orderedComputerBundles(
-        currentBundles.map((bundle) => bundle.objectIdHex === targetId ? updater(bundle) : bundle)
-      );
-      persistBundles(nextBundles);
-      return nextBundles;
-    });
+    drafts.remember(targetId, updater(activeBundle), savedBundle);
     setActiveBundleId(targetId);
+  }
+
+  function saveBrowserTuning() {
+    const conflict = bundles.find(bundle => bundle.objectIdHex !== activeBundle.objectIdHex && geometrySaveKey(bundle.tuning.name, bundle.folderPath) === geometrySaveKey(activeBundle.tuning.name, activeBundle.folderPath));
+    if (conflict && !window.confirm(`Replace “${conflict.tuning.name}” in Browser Library?`)) return;
+    const next = bundles.filter(bundle => bundle.objectIdHex !== activeBundle.objectIdHex && bundle.objectIdHex !== conflict?.objectIdHex);
+    try { setBundlesAndPersist([...next, activeBundle]); }
+    catch { setStatus("Browser save failed. Export a file to keep your work."); return; }
+    drafts.forget(activeBundle.objectIdHex);
+    if (conflict) drafts.forget(conflict.objectIdHex);
+    setStatus("Saved in browser");
+  }
+  function discardTuningDraft() {
+    drafts.forget(activeBundle.objectIdHex);
+    clearLayoutHistory();
+    setStatus("Draft discarded");
   }
 
   function pushLayoutHistoryEntry(entry: LayoutHistoryEntry) {
@@ -1666,6 +1695,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     )) {
       return;
     }
+    drafts.forget(bundleToDelete.objectIdHex);
     const nextBundles = bundles.filter((bundle) => bundle.objectIdHex !== bundleToDelete.objectIdHex);
     setBundlesAndPersist(nextBundles);
     setActiveBundleId(nextBundles[0]?.objectIdHex ?? "");
@@ -1674,6 +1704,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   }
 
   function openBundle(bundle: TuningBundle) {
+    drafts.remember(bundle.objectIdHex, drafts.entries[bundle.objectIdHex]?.value ?? bundle, bundle);
     setActiveBundleId(bundle.objectIdHex);
     selectOnlyButton(noteButtonIndexOrFallback(
       bundle.layouts.find((layout) => layout.objectIdHex === bundle.activeLayoutIdHex)?.centerButton ?? bundle.layouts[0]?.centerButton ?? 65,
@@ -2666,8 +2697,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const selectedButtonSet = useMemo(() => new Set(selectedButtons), [selectedButtons]);
   const selectedTransformCount = selectedButtons.length + selectedOffGridCoordinates.length;
   const canTransformSelection = selectedTransformCount > 0;
-  const wholeLayoutSelection = selectedOffGridCoordinates.length === 0 &&
-    (selectedButtons.length === 1 || selectedButtons.length === previewKeys.length);
+  const wholeLayoutSelection = transformScope === "layout";
   const canUndoLayoutEdit = undoLayoutHistoryRef.current.length > 0 &&
     undoLayoutHistoryRef.current.at(-1)?.bundleId === activeBundle.objectIdHex;
   const canRedoLayoutEdit = redoLayoutHistoryRef.current.length > 0 &&
@@ -3115,6 +3145,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   }
 
   function openDeviceBundleInEditor(bundle: TuningBundle, statusText: string) {
+    setSavedDeviceContent(current => ({ ...current, [bundle.objectIdHex]: JSON.stringify(bundle) }));
     const nextBundles = [...bundles.filter((candidate) => candidate.objectIdHex !== bundle.objectIdHex), bundle];
     setBundlesAndPersist(nextBundles);
     setActiveBundleId(bundle.objectIdHex);
@@ -3267,6 +3298,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       if (options.refresh ?? true) {
         await refreshHexBoardGeometryLibrary(`${prefix} ${sanitizedBundle.tuning.name} to HexBoard in ${folderLabel(sanitizedBundle.folderPath)}`);
       }
+      setSavedDeviceContent(current => ({ ...current, [bundle.objectIdHex]: JSON.stringify(bundle) }));
       return true;
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to save tuning bundle");
@@ -3298,7 +3330,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         setStatus(`${prefix} ${object.name} (${index + 1}/${activeApplyObjects.length})`);
         await client.sendGeometryObjectPreviewConfirmed(object);
       }
-      setStatus(`${prefix} ${activeBundle.tuning.name} to HexBoard runtime`);
+      setStatus("Previewing on HexBoard · not saved");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to send tuning preview");
     } finally {
@@ -3368,25 +3400,33 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           </div>
         ) : (
           <div className="geometryHeaderActions">
+            {connected ? <>
             <label className="checkField liveSendControl">
               <input
                 checked={liveSend}
-                disabled={!runtimeSendSupported}
+                disabled={!connected || !runtimeSendSupported}
                 type="checkbox"
                 onChange={(event) => {
                   skipNextLiveSendRef.current = true;
                   setLiveSend(event.target.checked);
                 }}
               />
-              <span>Live send</span>
+              <span>Live preview</span>
             </label>
-            <button disabled={syncBusy || !runtimeSendSupported} type="button" onClick={() => void sendActiveBundlePreview("Sent")}>Send preview</button>
-            <button className="primary" disabled={syncBusy} type="button" onClick={() => void saveActiveBundleToHexBoard()}>Save to HexBoard</button>
+            <button disabled={!connected || syncBusy || !runtimeSendSupported} type="button" onClick={() => void sendActiveBundlePreview("Sent")}>Preview on HexBoard</button>
+            </> : null}
+            <button disabled={!hasDraft} type="button" onClick={saveBrowserTuning}>Save to Browser</button>
+            <button className="primary" disabled={!connected || syncBusy} type="button" onClick={() => void saveActiveBundleToHexBoard()}>Save to HexBoard</button>
+            <details className="presetOverflowMenu"><summary aria-label="Tuning actions">•••</summary><div className="presetOverflowActions">
+              <button type="button" onClick={() => downloadBundleFile(activeBundle)}>Export file</button>
+              <button disabled={!hasDraft} type="button" onClick={discardTuningDraft}>Discard draft</button>
+            </div></details>
           </div>
         )}
         <div className="geometryStatus" role="status">
           <span aria-hidden="true" />
-          <span className="geometryStatusText">{status}</span>
+          <span className="geometryStatusText">{drafts.error || (activeWorkspaceTab === "library" ? (status === "Ready" ? "Choose a tuning to start" : status) : `${hasDraft ? "Draft kept in browser" : "Saved in browser"} · ${connected ? deviceSaved ? "Saved on HexBoard" : "Changes not saved to HexBoard" : "Offline"}`)}</span>
+          {activeWorkspaceTab !== "library" && status !== "Ready" ? <span className="muted">{status}</span> : null}
           {transferProgress ? (
             <span className="geometryTransferProgress">
               <progress
@@ -3401,18 +3441,17 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       </header>
 
       <nav className="workflowTabs" aria-label="Tuning editing workflow">
-        {geometryWorkspaceTabs.map((tab, index) => (
+        {geometryWorkspaceTabs.map((tab) => (
           <button
-            aria-current={activeWorkspaceTab === tab.key ? "step" : undefined}
-            className={activeWorkspaceTab === tab.key ? "workflowTab active" : "workflowTab"}
+            aria-current={activeWorkspaceTab === tab.key ? "page" : undefined}
+            className={`workflowTab${activeWorkspaceTab === tab.key ? " active" : ""}${tab.key === "library" ? " libraryTab" : ""}`}
             key={tab.key}
             onClick={() => setActiveWorkspaceTab(tab.key)}
             type="button"
           >
-            <span className="workflowStepNumber">{index + 1}</span>
             <span>
               <strong>{tab.label}</strong>
-              <small>{tab.description}</small>
+
             </span>
           </button>
         ))}
@@ -3452,14 +3491,12 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           <>
             <div className="libraryToolbar">
               <div>
-                <span className="eyebrow">Step 1 of 4</span>
                 <h2>Tuning library</h2>
               </div>
               <div className="row">
                 <button className="primary" type="button" onClick={addNewBundle}>New tuning</button>
                 <button type="button" onClick={() => bundleInputRef.current?.click()}>Import Files</button>
-                <button type="button" onClick={() => downloadBundleFile(activeBundle)}>Export File</button>
-                <button disabled={syncBusy} type="button" onClick={() => void refreshHexBoardGeometryLibrary()}>Refresh HexBoard</button>
+                <button disabled={!connected || syncBusy} type="button" onClick={() => void refreshHexBoardGeometryLibrary()}>Refresh HexBoard</button>
               </div>
             </div>
             <div className="libraryUtilityBar">
@@ -3474,20 +3511,22 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 onDelete={deleteFolder}
                 onNewFolderChange={(value) => setNewFolder(value.slice(0, GeometryMenuTextMaxLength))}
               />
-              <button disabled={syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>Verify tuning</button>
+
               <span className="muted">{bundles.length} on this computer</span>
             </div>
 
             <div className="librarySpaces geometryLibrarySpaces">
               <GeometryLibrarySpacePanel
                 title="Browser Library"
-                subtitle="Saved tunings; drag to reorder"
+                subtitle="Saved in this browser"
                 space="computer"
                 bundles={bundles}
                 folders={computerFolders}
                 selectedFolder={folderFilters.computer}
                 selectedIds={selectedGeometryIds.computer}
                 bulkBusy={syncBusy}
+                connected={connected}
+                draftIds={Object.keys(drafts.entries).filter(id => !sameContent(drafts.entries[id].value, drafts.entries[id].base))}
                 activeBundleId={activeBundle.objectIdHex}
                 onFolderSelect={selectFolderFilter}
                 onOpen={openBundle}
@@ -3503,6 +3542,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 onReorder={reorderComputerLibrary}
               />
               <HexBoardGeometryLibraryPanel
+                connected={connected}
                 entries={hexboardBundles}
                 rescueActive={hexboardRescueActive}
                 folders={hexboardFolders}
@@ -3688,6 +3728,19 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   onCommit={(name) => updateActiveScale((scale) => ({ ...scale, name: clampGeometryMenuText(name, "User Scale") }))}
                 />
               </label>
+              <div className="degreePicker" role="group" aria-label="Scale notes">
+                {Array.from({ length: tuningCycleLength(activeBundle.tuning) }, (_, degree) => {
+                  const included = activeScaleIsAllNotes || activeScale.includedDegrees.includes(degree);
+                  return <button key={degree} type="button" aria-label={`Include ${activeBundle.tuning.keyLabels[degree] ?? degree}, degree ${degree}`} aria-pressed={included}
+                    disabled={activeScaleIsAllNotes || (included && activeScale.includedDegrees.length === 1)}
+                    style={{ borderBottomColor: colorToCss(activeBundle.palette.degreeColors[degree] ?? createDefaultDegreeColors(tuningCycleLength(activeBundle.tuning))[degree]) }}
+                    onClick={() => updateActiveScale(scale => ({ ...scale, includedDegrees: included ? scale.includedDegrees.filter(value => value !== degree) : [...scale.includedDegrees, degree].sort((a,b) => a-b) }))}>
+                    {activeBundle.tuning.keyLabels[degree] ?? degree}
+                  </button>;
+                })}
+              </div>
+              {activeScaleIsAllNotes ? <small className="muted">All Notes includes every degree. Create a scale to choose notes.</small> : null}
+              <details className="compactDisclosure"><summary>Edit degrees as text</summary>
               <label className={includedDegreesError ? "field invalidField" : "field"}>
                 <span>Included degrees</span>
                 <input
@@ -3704,19 +3757,11 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 />
                 {includedDegreesError ? <small className="fieldError">{includedDegreesError}</small> : null}
               </label>
+              </details>
             </div>
           </section>
         ) : null}
 
-        {activeWorkspaceTab !== "library" ? (
-          <div className="dangerZone">
-            <div>
-              <strong>Remove tuning</strong>
-              <span>Deletes this tuning from the Browser Library.</span>
-            </div>
-            <button className="warning" type="button" onClick={deleteActiveBundle}>Delete</button>
-          </div>
-        ) : null}
       </aside>
 
       {activeWorkspaceTab !== "library" ? (
@@ -3733,6 +3778,11 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             </div>
           </div>
           <div className="brushToolbar">
+            <div className="paintToolGroup" role="group" aria-label="Board tools">
+              <button type="button" aria-pressed={!paintbrushMode} onClick={() => { endPaintStroke(); setPaintbrushMode(false); }}>Select</button>
+              <button type="button" aria-pressed={paintbrushMode && paintTool === "brush"} onClick={() => { endPaintStroke(); if (!customColorModeActive) updateDefaultColorMode(ColorMode.Custom); setPaintbrushMode(true); setPaintTool("brush"); }}>Paint</button>
+              <button type="button" aria-pressed={paintbrushMode && paintTool === "eyedropper"} onClick={() => { endPaintStroke(); if (!customColorModeActive) updateDefaultColorMode(ColorMode.Custom); setPaintbrushMode(true); setPaintTool("eyedropper"); }}>Pick color</button>
+            </div>
             <label className="toolbarSelectField">
               <span>Color mode</span>
               <select
@@ -3744,6 +3794,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 ))}
               </select>
             </label>
+            {paintbrushMode ? <>
             <label className="toolbarSelectField">
               <span>Target</span>
               <select
@@ -3758,40 +3809,6 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 <option value="degree">Scale degrees</option>
               </select>
             </label>
-            <div className="paintToolGroup" role="group" aria-label="Paint tools">
-              <button
-                aria-label="Paint keys"
-                aria-pressed={customColorModeActive && paintbrushMode && paintTool === "brush"}
-                className={customColorModeActive && paintbrushMode && paintTool === "brush" ? "primary" : ""}
-                disabled={!customColorModeActive}
-                title="Paint keys"
-                type="button"
-                onClick={() => {
-                  const isActive = paintbrushMode && paintTool === "brush";
-                  endPaintStroke();
-                  setPaintbrushMode(!isActive);
-                  setPaintTool("brush");
-                }}
-              >
-                <PaintToolbarIcon kind="brush" />
-              </button>
-              <button
-                aria-label="Pick color"
-                aria-pressed={customColorModeActive && paintbrushMode && paintTool === "eyedropper"}
-                className={customColorModeActive && paintbrushMode && paintTool === "eyedropper" ? "primary" : ""}
-                disabled={!customColorModeActive}
-                title="Pick color from key"
-                type="button"
-                onClick={() => {
-                  const isActive = paintbrushMode && paintTool === "eyedropper";
-                  endPaintStroke();
-                  setPaintbrushMode(!isActive);
-                  setPaintTool("eyedropper");
-                }}
-              >
-                <PaintToolbarIcon kind="eyedropper" />
-              </button>
-            </div>
             <label className="brushColorField">
               <span>Color</span>
               <input
@@ -3812,8 +3829,11 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             >
               Reset colors
             </button>
+            </> : null}
+            <label className="checkField"><input type="checkbox" checked={showButtonNumbers} onChange={event => setShowButtonNumbers(event.target.checked)} />Key numbers</label>
           </div>
           <div className="layoutTransformToolbar" role="toolbar" aria-label="Layout editing">
+            <label className="toolbarSelectField"><span>Transform</span><select aria-label="Transform scope" value={transformScope} onChange={event => setTransformScope(event.target.value as "layout" | "keys")}><option value="layout">Whole layout</option><option value="keys">Selected keys</option></select></label>
             <div className="layoutToolbarGroup" aria-label="History">
               <button
                 aria-label="Undo edit"
@@ -3870,12 +3890,12 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               {selectedTransformCount > 0 ? (
                 <span className="selectionStatusItem">
                   <span aria-hidden="true" className="selectionStatusSwatch primary" />
-                  Button {selectedButton} primary
+                  Pivot: key {selectedButton}
                 </span>
               ) : null}
               {selectedTransformCount > 0 ? (
                 <span className="layoutTransformMode">
-                  {wholeLayoutSelection ? "Full layout" : "Overrides"}
+                  {wholeLayoutSelection ? "" : "Key overrides"}
                 </span>
               ) : null}
             </span>
@@ -3935,6 +3955,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   aria-pressed={selectedButtonSet.has(item.key.index)}
                   className={[
                     "hexKey",
+                    selectedTransformCount > 0 && item.key.index === selectedButton ? "pivotKey" : "",
                     item.role === "unused" ? "unusedKey" : "",
                     !item.inScale ? "outOfScaleKey" : "",
                     item.colorSource === "button" ? "manualColorKey" : "",
@@ -3959,8 +3980,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   type="button"
                 >
                   <span className="hexKeyLabel" style={{ transform: `rotate(${-activeLayout.deviceRotationSteps * 90}deg)` }}>
-                    <span>{item.key.index}</span>
-                    <small>{item.role !== "note" ? "off" : item.override?.action?.kind === "direct-midi" ? `M${item.override.action.midiNote}` : item.override?.action?.kind === "chord" ? "chord" : item.degree}</small>
+                    <span>{item.role !== "note" ? "off" : item.override?.action?.kind === "direct-midi" ? `M${item.override.action.midiNote}` : item.override?.action?.kind === "chord" ? "chord" : activeBundle.tuning.keyLabels[item.degree] ?? item.degree}</span>
+                    {showButtonNumbers ? <small>{item.key.index}</small> : null}
                   </span>
                 </button>
               ))}
@@ -4212,16 +4233,27 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             </div>
           </div>
         </details>
+        <details className="panel protocolDebugPanel editorProtocolDebugPanel">
+          <summary>
+            <span>Developer details</span>
+            <small>Encoded object preview</small>
+          </summary>
+          <button disabled={!connected || syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>Verify tuning</button>
+          <p className="muted">Values are saved at firmware-native 32-bit precision.</p>
+          <pre className="dataPreview">{encodedPreview}</pre>
+        </details>
       </div>
       ) : null}
 
-      <details className="panel protocolDebugPanel">
+      {activeWorkspaceTab === "library" ? <details className="panel protocolDebugPanel">
         <summary>
           <span>Developer details</span>
           <small>Encoded object preview</small>
         </summary>
+        <button disabled={!connected || syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>Verify tuning</button>
+        <p className="muted">Values are saved at firmware-native 32-bit precision.</p>
         <pre className="dataPreview">{encodedPreview}</pre>
-      </details>
+      </details> : null}
 
       {bundleItemOrderDialog ? (
         <div className="modalOverlay" role="presentation" onMouseDown={() => setBundleItemOrderDialog(null)}>
@@ -4286,6 +4318,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
 }
 
 interface GeometryLibrarySpacePanelProps {
+  connected: boolean;
+  draftIds: string[];
   title: string;
   subtitle: string;
   space: GeometryLibrarySpace;
@@ -4310,6 +4344,8 @@ interface GeometryLibrarySpacePanelProps {
 }
 
 function GeometryLibrarySpacePanel({
+  connected,
+  draftIds,
   title,
   subtitle,
   space,
@@ -4333,9 +4369,8 @@ function GeometryLibrarySpacePanel({
   onReorder
 }: GeometryLibrarySpacePanelProps) {
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const visibleBundles = selectedFolder
-    ? bundles.filter((bundle) => normalizeDisplayFolderPath(bundle.folderPath) === selectedFolder)
-    : bundles;
+  const [search, setSearch] = useState("");
+  const visibleBundles = bundles.filter(bundle => (!selectedFolder || normalizeDisplayFolderPath(bundle.folderPath) === selectedFolder) && bundle.tuning.name.toLowerCase().includes(search.toLowerCase()));
   const bundleIdSet = new Set(bundles.map((bundle) => bundle.objectIdHex));
   const validSelectedIds = selectedIds.filter((objectIdHex) => bundleIdSet.has(objectIdHex));
   const selectedIdSet = new Set(validSelectedIds);
@@ -4352,6 +4387,7 @@ function GeometryLibrarySpacePanel({
         <span className="countBadge">{visibleBundles.length}</span>
       </div>
 
+      <input type="search" aria-label="Search tunings" placeholder="Search tunings" value={search} onChange={event => setSearch(event.target.value)} />
       <div className="folderTargets">
         <button
           aria-pressed={selectedFolder === null}
@@ -4381,6 +4417,7 @@ function GeometryLibrarySpacePanel({
         visibleCount={visibleIds.length}
         allVisibleSelected={allVisibleSelected}
         transferLabel="Copy selected to HexBoard"
+        transferDisabled={!connected}
         busy={bulkBusy}
         onSelectVisible={(selected) => onSelectVisible(space, visibleIds, selected)}
         onClear={() => onClearSelection(space)}
@@ -4422,20 +4459,18 @@ function GeometryLibrarySpacePanel({
                   onChange={(event) => onSelectionChange(space, bundle.objectIdHex, event.target.checked)}
                 />
               </label>
-              <div className="presetMeta">
+              <button className="presetNameButton" type="button" onClick={() => onOpen(bundle)}>
                 <strong>{bundle.tuning.name}</strong>
                 <span>{folderLabel(bundle.folderPath)}</span>
                 <span>{bundle.layouts.length} layout{bundle.layouts.length === 1 ? "" : "s"} · {bundle.scales.length} scale{bundle.scales.length === 1 ? "" : "s"}</span>
-                <span>{colorModeOptions.find((option) => option.value === bundle.palette.defaultColorMode)?.label ?? "Custom"} default</span>
-              </div>
-              <div className="presetActions">
-                <button type="button" onClick={() => onOpen(bundle)}>
-                  Edit
-                </button>
+                {draftIds.includes(bundle.objectIdHex) ? <span className="draftBadge">Draft</span> : null}
+</button>
+<details className="presetOverflowMenu"><summary aria-label={`More actions for ${bundle.tuning.name}`}>•••</summary><div className="presetOverflowActions">
+
                 <button type="button" onClick={() => onOrganize(bundle)}>
                   Rename / Move
                 </button>
-                <button type="button" onClick={() => onUpload(bundle)}>
+                <button disabled={!connected} type="button" onClick={() => onUpload(bundle)}>
                   Copy to HexBoard
                 </button>
                 <button type="button" onClick={() => onExport(bundle)}>
@@ -4444,7 +4479,7 @@ function GeometryLibrarySpacePanel({
                 <button className="warning" type="button" onClick={() => onErase(bundle)}>
                   Delete
                 </button>
-              </div>
+</div></details>
             </li>
           ))
         )}
@@ -4454,6 +4489,7 @@ function GeometryLibrarySpacePanel({
 }
 
 interface HexBoardGeometryLibraryPanelProps {
+  connected: boolean;
   entries: HexBoardGeometryBundleEntry[];
   rescueActive: boolean;
   folders: string[];
@@ -4475,6 +4511,7 @@ interface HexBoardGeometryLibraryPanelProps {
 }
 
 function HexBoardGeometryLibraryPanel({
+  connected,
   entries,
   rescueActive,
   folders,
@@ -4503,6 +4540,8 @@ function HexBoardGeometryLibraryPanel({
   const selectedIdSet = new Set(validSelectedIds);
   const visibleIds = visibleEntries.map((entry) => entry.objectIdHex);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((objectIdHex) => selectedIdSet.has(objectIdHex));
+
+  if (!connected) return <section className="librarySpace"><h3>HexBoard Library</h3><p className="emptyListItem">Connect to see your saved tunings</p></section>;
 
   return (
     <section className="librarySpace">
@@ -4558,7 +4597,7 @@ function HexBoardGeometryLibraryPanel({
 
       <ul className="list">
         {visibleEntries.length === 0 ? (
-          <li className="emptyListItem">{selectedFolder ? `No saved tunings in ${folderLabel(selectedFolder)}` : rescueActive ? "No saved tunings on HexBoard" : "Refresh HexBoard to list saved tunings"}</li>
+          <li className="emptyListItem">{selectedFolder ? `No saved tunings in ${folderLabel(selectedFolder)}` : rescueActive ? "No saved tunings on HexBoard" : connected ? "No saved tunings on HexBoard" : "Connect to see your saved tunings"}</li>
         ) : (
           visibleEntries.map((entry) => (
             <li
@@ -4592,15 +4631,12 @@ function HexBoardGeometryLibraryPanel({
                   onChange={(event) => onSelectionChange("hexboard", entry.objectIdHex, event.target.checked)}
                 />
               </label>
-              <div className="presetMeta">
+              <button className="presetNameButton" type="button" onClick={() => onOpen(entry)}>
                 <strong>{entry.name}</strong>
                 <span>{folderLabel(entry.folderPath)}</span>
-                <span>{entry.objectIdHex.slice(0, 8).toUpperCase()}</span>
-              </div>
-              <div className="presetActions">
-                <button type="button" onClick={() => onOpen(entry)}>
-                  Edit
-                </button>
+</button>
+<details className="presetOverflowMenu"><summary aria-label={`More actions for ${entry.name}`}>•••</summary><div className="presetOverflowActions">
+
                 <button type="button" onClick={() => onOrganize(entry)}>
                   Rename / Move
                 </button>
@@ -4613,7 +4649,7 @@ function HexBoardGeometryLibraryPanel({
                 <button className="warning" type="button" onClick={() => onErase(entry)}>
                   Delete
                 </button>
-              </div>
+</div></details>
             </li>
           ))
         )}
@@ -4807,7 +4843,7 @@ function PitchAnchorControls({
     <fieldset className="tuningControlGroup">
       <legend>Pitch anchor</legend>
       <div className="pitchAnchorSummary">
-        {anchoredLabel} (degree {tuning.referenceDegree}) = {tuning.referenceHz} Hz as {midiNoteName(tuning.referenceMidiNote)} (MIDI {tuning.referenceMidiNote})
+        {midiNoteName(tuning.referenceMidiNote)} = {tuning.referenceHz} Hz · {anchoredLabel} (degree {tuning.referenceDegree})
       </div>
       <div className="pitchAnchorStatement">
         <label className="field">
@@ -4827,7 +4863,7 @@ function PitchAnchorControls({
           </select>
         </label>
       </div>
-      <small className="muted">Changing the anchored degree retunes the labeled notes; it does not rename or rotate them.</small>
+
     </fieldset>
   );
 }
@@ -4885,24 +4921,11 @@ function TuningControls({
         <label className="field">
           <span>Period cents</span>
           <DeferredNumberInput step="any" value={tuning.periodCents} onCommit={(periodCents) => onEdoChange({ periodCents })} />
-          <small className="muted">Exact division: {tuning.periodCents} ÷ {tuning.edoDivisions} = {stepCents.toFixed(6)}… cents per step</small>
-          <small className="muted">Saved at firmware-native 32-bit precision.</small>
+          <small className="muted">{Number(stepCents.toFixed(3))} cents per step</small>
         </label>
         <PitchAnchorControls tuning={tuning} degreeOptions={defaultKeyOptions} onChange={onEdoChange} />
         <ScaleDefaultsControls tuning={tuning} degreeOptions={defaultKeyOptions} onChange={(defaultKeyDegree) => onEdoChange({ defaultKeyDegree })} />
-        <label className={keyLabelsError ? "field invalidField" : "field"}>
-          <span>Note labels</span>
-          <textarea
-            aria-invalid={keyLabelsError ? "true" : "false"}
-            onBlurCapture={(event) => onKeyLabelsBlur(event.target.value)}
-            onChange={(event) => onKeyLabelsChange(event.target.value)}
-            ref={keyLabelsInputRef}
-            rows={5}
-            value={keyLabelsDraft}
-          />
-          <small className="muted">Degree 0 is {normalizedLabels[0] ?? "0"}; remaining entries follow tuning-degree order. Separate labels with commas, spaces, or line breaks. Invalid labels use their degree numbers.</small>
-          {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
-        </label>
+        <NoteLabelEditor labels={normalizedLabels} error={keyLabelsError} draft={keyLabelsDraft} inputRef={keyLabelsInputRef} onDraft={onKeyLabelsChange} onCommit={onKeyLabelsBlur} />
       </div>
     );
   }
@@ -4915,7 +4938,6 @@ function TuningControls({
         <label className="field">
           <span>Step cents</span>
           <DeferredNumberInput step="any" value={tuning.stepCents} onCommit={(stepCents) => onEqualStepChange({ stepCents })} />
-          <small className="muted">Saved at firmware-native 32-bit precision.</small>
         </label>
         <label className="field">
           <span>Cycle length</span>
@@ -4926,19 +4948,7 @@ function TuningControls({
         </label>
         <PitchAnchorControls tuning={tuning} degreeOptions={defaultKeyOptions} onChange={onEqualStepChange} />
         <ScaleDefaultsControls tuning={tuning} degreeOptions={defaultKeyOptions} onChange={(defaultKeyDegree) => onEqualStepChange({ defaultKeyDegree })} />
-        <label className={keyLabelsError ? "field invalidField" : "field"}>
-          <span>Note labels</span>
-          <textarea
-            aria-invalid={keyLabelsError ? "true" : "false"}
-            onBlurCapture={(event) => onKeyLabelsBlur(event.target.value)}
-            onChange={(event) => onKeyLabelsChange(event.target.value)}
-            ref={keyLabelsInputRef}
-            rows={5}
-            value={keyLabelsDraft}
-          />
-          <small className="muted">Degree 0 is {normalizedLabels[0] ?? "0"}; remaining entries follow tuning-degree order. Separate labels with commas, spaces, or line breaks. Invalid labels use their degree numbers.</small>
-          {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
-        </label>
+        <NoteLabelEditor labels={normalizedLabels} error={keyLabelsError} draft={keyLabelsDraft} inputRef={keyLabelsInputRef} onDraft={onKeyLabelsChange} onCommit={onKeyLabelsBlur} />
       </div>
     );
   }
@@ -4955,19 +4965,23 @@ function TuningControls({
       </label>
       <PitchAnchorControls tuning={tuning} degreeOptions={defaultKeyOptions} onChange={onScalaChange} />
       <ScaleDefaultsControls tuning={tuning} degreeOptions={defaultKeyOptions} onChange={(defaultKeyDegree) => onScalaChange({ defaultKeyDegree })} />
-      <label className={keyLabelsError ? "field invalidField" : "field"}>
-        <span>Note labels</span>
-        <textarea
-          aria-invalid={keyLabelsError ? "true" : "false"}
-          onBlurCapture={(event) => onKeyLabelsBlur(event.target.value)}
-          onChange={(event) => onKeyLabelsChange(event.target.value)}
-          ref={keyLabelsInputRef}
-          rows={5}
-          value={keyLabelsDraft}
-        />
-        <small className="muted">Degree 0 is {normalizedLabels[0] ?? "0"}; remaining entries follow tuning-degree order. Separate labels with commas, spaces, or line breaks. Invalid labels use their degree numbers.</small>
-        {keyLabelsError ? <small className="fieldError">{keyLabelsError}</small> : null}
-      </label>
+      <NoteLabelEditor labels={normalizedLabels} error={keyLabelsError} draft={keyLabelsDraft} inputRef={keyLabelsInputRef} onDraft={onKeyLabelsChange} onCommit={onKeyLabelsBlur} />
     </div>
   );
+}
+
+function NoteLabelEditor({ labels, error, draft, inputRef, onDraft, onCommit }: {
+  labels: string[]; error: string; draft: string; inputRef: RefObject<HTMLTextAreaElement | null>;
+  onDraft: (text: string) => void; onCommit: (text: string) => void;
+}) {
+  return <section className="noteLabelEditor">
+    <h3>Note labels</h3>
+    <div className="degreePicker noteLabelGrid">
+      {labels.map((label, degree) => <label key={degree}><span>{degree}</span><NameInput fallback={String(degree)} value={label} onCommit={value => onCommit(formatLabelList(labels.map((current, index) => index === degree ? value : current)))} /></label>)}
+    </div>
+    <details className="compactDisclosure"><summary>Edit labels as text</summary>
+      <label className="field"><span>Labels in degree order</span><textarea ref={inputRef} value={draft} aria-invalid={!!error} onChange={event => onDraft(event.target.value)} onBlur={event => onCommit(event.target.value)} /></label>
+    </details>
+    {error ? <small className="fieldError" role="alert">{error}</small> : null}
+  </section>;
 }

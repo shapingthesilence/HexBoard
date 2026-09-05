@@ -1,3 +1,4 @@
+import { sameContent, useEditorDrafts } from "../editor/drafts.ts";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import {
   createSynthPresetObject,
@@ -250,10 +251,10 @@ const builtInWavetables = [
 
 const playbackOptions = [
   { label: "Off", value: 0 },
-  { label: "MonoRtg", value: 1 },
-  { label: "MonoLeg", value: 4 },
-  { label: "Arp'gio", value: 2 },
-  { label: "Poly", value: 3 }
+  { label: "Mono · retrigger", value: 1 },
+  { label: "Mono · legato", value: 4 },
+  { label: "Arpeggiator", value: 2 },
+  { label: "Polyphonic", value: 3 }
 ];
 
 const arpDivisionOptions = [
@@ -288,10 +289,10 @@ const driveOptions = [
 const modTargetOptions = [
   { label: "Vibrato", value: 1 },
   { label: "Pitch", value: 2 },
-  { label: "WT Pos", value: 3 },
-  { label: "FoldWrp", value: 0 },
-  { label: "DutyWrp", value: 4 },
-  { label: "PolyWrp", value: 5 }
+  { label: "Wavetable position", value: 3 },
+  { label: "Wave folding", value: 0 },
+  { label: "Pulse width", value: 4 },
+  { label: "Poly warp", value: 5 }
 ];
 
 const lfoWaveOptions = [
@@ -1175,13 +1176,21 @@ function eventTargetAcceptsText(event: KeyboardEvent): boolean {
 }
 
 export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
+  const connected = !(transport instanceof MockMidiTransport);
+  const drafts = useEditorDrafts<EditableSynthPreset>("hexboard-synth-drafts-v1", (value): value is EditableSynthPreset => {
+    if (!isRecord(value) || typeof value.objectIdHex !== "string" || !/^[a-f0-9]{32}$/i.test(value.objectIdHex) || typeof value.name !== "string" || typeof value.folderPath !== "string" || typeof value.wavetableName !== "string" || typeof value.wavetableFolderPath !== "string" || !isRecord(value.values)) return false;
+    return synthValueKeys.every(key => typeof (value.values as Record<string, unknown>)[key] === "number" && Number.isFinite((value.values as Record<string, unknown>)[key]));
+  });
+  const restoredDraft = drafts.entries[drafts.active];
+  const [draftBase, setDraftBase] = useState(() => restoredDraft?.base ?? clonePreset(defaultPreset));
+  const [savedDeviceContent, setSavedDeviceContent] = useState<Record<string, string>>({});
   const [libraryKind, setLibraryKind] = useState<SynthLibraryKind>("presets");
   const [computerPresets, setComputerPresets] = useState(loadComputerPresets);
   const [hexboardPresets, setHexboardPresets] = useState<EditableSynthPreset[]>([]);
   const [computerWavetables, setComputerWavetables] = useState(loadComputerWavetables);
   const [hexboardWavetables, setHexboardWavetables] = useState<EditableSynthWavetable[]>([]);
-  const [preset, setPreset] = useState<EditableSynthPreset>(() => clonePreset(defaultPreset));
-  const [openedSource, setOpenedSource] = useState<LibrarySpace>("computer");
+  const [preset, setPreset] = useState<EditableSynthPreset>(() => restoredDraft?.value ?? clonePreset(defaultPreset));
+  const [openedSource, setOpenedSource] = useState<LibrarySpace>(drafts.active.startsWith("hexboard:") ? "hexboard" : "computer");
   const [customFolders, setCustomFolders] = useState(() => loadStoredFolders(synthPresetFoldersStorageKey));
   const [customWavetableFolders, setCustomWavetableFolders] = useState(() => loadStoredFolders(synthWavetableFoldersStorageKey));
   const [newFolder, setNewFolder] = useState("");
@@ -1197,8 +1206,9 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [wavetableSmooth, setWavetableSmooth] = useState(false);
   const [wavetableDither, setWavetableDither] = useState(false);
   const [wavetableImportSource, setWavetableImportSource] = useState<WavetableImportSource | null>(null);
-  const [autoSend, setAutoSend] = useState(true);
+  const [autoSend, setAutoSend] = useState(false);
   const [editorHydrated, setEditorHydrated] = useState(() => transport instanceof MockMidiTransport);
+  const [libraryStorageError, setLibraryStorageError] = useState("");
   const [syncStatus, setSyncStatus] = useState("Ready");
   const [auditionOpen, setAuditionOpen] = useState(false);
   const [previewOctave, setPreviewOctave] = useState(4);
@@ -1235,8 +1245,30 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const latestPreviewVolume = useRef(previewVolume);
   const latestPreviewMod = useRef(previewMod);
   const skipNextAutoSend = useRef(true);
+  const lastPreviewIdentity = useRef("");
   const pendingLiveSynthParam = useRef<{ key: EditableSynthValueKey; value: number } | null>(null);
 
+  const draftKey = `${openedSource}:${preset.objectIdHex}`;
+  const hasDraft = !sameContent(preset, draftBase);
+  const browserSaved = computerPresets.some(item => sameContent(exportPreset(item), exportPreset(preset)));
+  const deviceSaved = connected && savedDeviceContent[preset.objectIdHex] === JSON.stringify(exportPreset(preset));
+  const latestPreset = useRef(preset);
+  latestPreset.current = preset;
+  useEffect(() => { drafts.remember(draftKey, preset, draftBase); }, [draftKey, preset, draftBase]);
+  useEffect(() => { setSavedDeviceContent({}); lastPreviewIdentity.current = ""; setAutoSend(false); }, [transport]);
+  function discardPresetDraft() {
+    skipNextAutoSend.current = true;
+    setPreset(clonePreset(draftBase));
+    setSyncStatus("Draft discarded");
+  }
+  function newPreset() {
+    const next = { ...clonePreset(defaultPreset), objectIdHex: objectIdToHex(deterministicObjectId(`draft:${Date.now()}`)), name: "Untitled sound" };
+    setDraftBase(next);
+    setPreset(next);
+    setOpenedSource("computer");
+    skipNextAutoSend.current = true;
+    setSyncStatus("New sound");
+  }
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
   const allFolders = useMemo(
     () =>
@@ -1380,11 +1412,13 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const wavetableImportControlsDisabled = wavetableImportFormat === "hexboard" || renderedWavetableImport?.source.format === "hexboard";
 
   useEffect(() => {
-    saveComputerPresets(computerPresets);
+    try { saveComputerPresets(computerPresets); setLibraryStorageError(""); }
+    catch { setLibraryStorageError("Browser save failed. Export a file to keep your work."); }
   }, [computerPresets]);
 
   useEffect(() => {
-    saveComputerWavetables(computerWavetables);
+    try { saveComputerWavetables(computerWavetables); }
+    catch { setSyncStatus("Wavetable could not be saved in this browser. Export a file to keep it."); }
   }, [computerWavetables]);
 
   useEffect(() => {
@@ -1457,6 +1491,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   useEffect(() => {
     if (transport instanceof MockMidiTransport) {
+      setHexboardPresets([]);
+      setHexboardWavetables([]);
       setEditorHydrated(true);
       return;
     }
@@ -1466,7 +1502,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     skipNextAutoSend.current = true;
 
     const hydrateTimer = window.setTimeout(() => void (async () => {
-      await loadCurrentHexBoardPatch(() => cancelled);
+      setEditorHydrated(true);
       if (!cancelled) {
         await refreshHexBoardLibrary("Loaded HexBoard Library");
         await refreshHexBoardWavetables("Loaded HexBoard Wavetables");
@@ -1480,7 +1516,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }, [client, transport]);
 
   useEffect(() => {
-    if (!autoSend || !editorHydrated) {
+    if (!connected || !autoSend || !editorHydrated) {
       return;
     }
     if (skipNextAutoSend.current) {
@@ -1491,7 +1527,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     const timeout = window.setTimeout(() => {
       const liveParam = pendingLiveSynthParam.current;
       pendingLiveSynthParam.current = null;
-      if (liveParam) {
+      if (liveParam && lastPreviewIdentity.current === preset.objectIdHex) {
         void sendLiveParameterPreview(liveParam, "Auto-sent");
       } else {
         void sendPreview("Auto-sent");
@@ -1499,9 +1535,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }, 120);
 
     return () => window.clearTimeout(timeout);
-  }, [autoSend, editorHydrated, liveSendPatch]);
+  }, [connected, autoSend, editorHydrated, liveSendPatch]);
 
   function updateValue(key: EditableSynthValueKey, value: number) {
+    setSyncStatus("Ready");
     const clampedValue = clampSynthValue(key, value);
     skipNextAutoSend.current = false;
     pendingLiveSynthParam.current = { key, value: clampedValue };
@@ -1523,6 +1560,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   function updatePresetName(name: string) {
+    setSyncStatus("Ready");
     setPreset((current) => ({ ...current, name }));
   }
 
@@ -1646,7 +1684,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   async function sendLiveWavetableSelection(wavetable: { name: string; folderPath: string }) {
-    if (!autoSend) {
+    if (!connected || !autoSend) {
       return;
     }
     const referenceKey = wavetableSaveKey(wavetable);
@@ -1661,7 +1699,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     try {
       await client.sendSynthWavetableSelect(selector, index);
       setLastFrameCount(1);
-      setSyncStatus(`Selected ${wavetable.name} on ${transport.label} with 1 frame`);
+      setSyncStatus(`Previewing ${wavetable.name} on HexBoard`);
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to select synth wavetable");
     }
@@ -1669,6 +1707,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   async function selectPresetWavetable(value: string) {
     const wavetable = wavetableReferenceFromOptionValue(value);
+    if (!connected || !autoSend) { applyPresetWavetable(wavetable); return; }
     const referenceKey = wavetableSaveKey(wavetable);
     const isOnDevice = builtInWavetables.some((candidate) => wavetableSaveKey(candidate) === referenceKey)
       || hexboardWavetables.some((candidate) => wavetableSaveKey(candidate) === referenceKey);
@@ -1701,13 +1740,18 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   function openPreset(source: LibrarySpace, nextPreset: EditableSynthPreset) {
-    const selectedPreset = clonePreset(nextPreset);
+    if (source === "hexboard") setSavedDeviceContent(current => ({ ...current, [nextPreset.objectIdHex]: JSON.stringify(exportPreset(nextPreset)) }));
+    const entry = drafts.entries[`${source}:${nextPreset.objectIdHex}`];
+    const selectedPreset = clonePreset(entry?.value ?? nextPreset);
+    setDraftBase(entry?.base ?? clonePreset(nextPreset));
     stopAllPreviewNotes("Loaded preset");
     skipNextAutoSend.current = true;
+    lastPreviewIdentity.current = "";
     setEditorHydrated(true);
     setPreset(selectedPreset);
     setOpenedSource(source);
-    void sendPresetPreview(selectedPreset, "Opened for audition");
+    setSyncStatus(entry && !sameContent(entry.value, entry.base) ? "Resumed draft" : "Opened sound");
+    if (connected && autoSend) void sendPresetPreview(selectedPreset, "Previewing");
   }
 
   function findPreset(dragged: DraggedPreset): EditableSynthPreset | undefined {
@@ -1887,17 +1931,23 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     });
     setCustomFolders((current) => Array.from(new Set([...current, normalized.folderPath])).sort(compareFolderPaths));
     skipNextAutoSend.current = true;
+    drafts.forget(draftKey);
+    setDraftBase(clonePreset(normalized));
     setPreset(clonePreset(normalized));
     setOpenedSource("computer");
     setSyncStatus(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in Browser Library`);
   }
 
   async function sendPresetPreview(nextPreset: EditableSynthPreset, prefix = "Sent") {
+    if (!connected) return;
     pendingLiveSynthParam.current = null;
     try {
-      const frames = await client.sendSynthPresetPreview(encodeEditablePreset(nextPreset));
+      const resolved = await ensurePresetWavetableOnHexBoard(nextPreset);
+      if (!resolved) return;
+      const frames = await client.sendSynthPresetPreview(encodeEditablePreset(resolved));
+      lastPreviewIdentity.current = nextPreset.objectIdHex;
       setLastFrameCount(frames.length);
-      setSyncStatus(`${prefix} ${frames.length} frame${frames.length === 1 ? "" : "s"} to ${transport.label}`);
+      setSyncStatus("Previewing on HexBoard · not saved");
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to send synth preset");
     }
@@ -1908,10 +1958,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   async function sendLiveParameterPreview(param: { key: EditableSynthValueKey; value: number }, prefix = "Sent") {
+    if (!connected) return;
     try {
       await client.sendSynthParameterPreview(SynthSettingKey[param.key], param.value);
       setLastFrameCount(1);
-      setSyncStatus(`${prefix} ${param.key} to ${transport.label}`);
+      setSyncStatus("Previewing on HexBoard · not saved");
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to send synth parameter");
     }
@@ -1982,6 +2033,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     prefix = "Saved",
     options: { confirmOverwrite?: boolean; refresh?: boolean; updateEditor?: boolean } = {}
   ): Promise<boolean> {
+    if (!connected) { setSyncStatus("Connect HexBoard to save this sound"); return false; }
     const resolvedPreset = await ensurePresetWavetableOnHexBoard(nextPreset);
     if (!resolvedPreset) {
       return false;
@@ -2010,10 +2062,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         await client.deleteSynthPreset(decision.replacedPreset.deviceHandle);
       }
       setLastFrameCount(frames.length);
-      if (options.updateEditor ?? true) {
+      setSavedDeviceContent(current => ({ ...current, [normalized.objectIdHex]: JSON.stringify(exportPreset(normalized)) }));
+      if ((options.updateEditor ?? true) && sameContent(latestPreset.current, nextPreset)) {
         skipNextAutoSend.current = true;
         setPreset(clonePreset(normalized));
-        setOpenedSource("hexboard");
       }
       if (transport instanceof MockMidiTransport) {
         setHexboardPresets((current) => {
@@ -2022,9 +2074,9 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             : current;
           return upsertPreset(withoutReplaced, normalized);
         });
-        setSyncStatus(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in HexBoard Library with ${frames.length} frame${frames.length === 1 ? "" : "s"}`);
+        setSyncStatus(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} on HexBoard`);
       } else if (options.refresh ?? true) {
-        await refreshHexBoardLibrary(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} in HexBoard Library with ${frames.length} frame${frames.length === 1 ? "" : "s"}`);
+        await refreshHexBoardLibrary(`${decision.overwritten ? "Overwrote" : prefix} ${normalized.name} on HexBoard`);
       }
       return true;
     } catch (error) {
@@ -2088,6 +2140,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   async function uploadWavetableToHexBoard(nextWavetable: EditableSynthWavetable, prefix = "Saved"): Promise<EditableSynthWavetable | null> {
+    if (!connected) { setSyncStatus("Wavetable saved in browser"); return null; }
     if (builtInWavetables.some((wavetable) => wavetableSaveKey(wavetable) === wavetableSaveKey(nextWavetable))) {
       setSyncStatus(`Cannot copy ${nextWavetable.name} to HexBoard: that name is reserved by a built-in wavetable`);
       return null;
@@ -2540,10 +2593,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         ...presetFromObjectBody(await client.readCurrentSynthPreset()),
         deviceHandle: undefined
       };
-      if (isCancelled()) {
+      if (isCancelled() || !sameContent(latestPreset.current, preset)) {
         return false;
       }
       skipNextAutoSend.current = true;
+      setDraftBase(clonePreset(currentPreset));
       setPreset(clonePreset(currentPreset));
       setOpenedSource("hexboard");
       setEditorHydrated(true);
@@ -2559,7 +2613,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   async function refreshHexBoardLibrary(successStatus = "Refreshed HexBoard Library") {
     if (transport instanceof MockMidiTransport) {
-      setSyncStatus("Mock transport does not have device storage to refresh");
+      setSyncStatus("Connect to see your saved sounds");
       return;
     }
     if (transport instanceof WebMidiTransport && !transport.hasInput) {
@@ -2599,7 +2653,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   async function refreshHexBoardWavetables(successStatus = "Refreshed HexBoard Wavetables") {
     if (transport instanceof MockMidiTransport) {
-      setSyncStatus("Mock transport does not have device wavetable storage to refresh");
+      setSyncStatus("Connect to see your wavetables");
       return;
     }
     if (transport instanceof WebMidiTransport && !transport.hasInput) {
@@ -2675,7 +2729,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   return (
     <section className="workspace synthEditor">
-      <aside className="panel stack">
+      <aside className="panel stack synthLibraryPanel">
         <div className="row between">
           <h2>Synth Library</h2>
           <div className="row">
@@ -2776,7 +2830,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         {libraryKind === "presets" ? (
           <>
             <div className="row">
-              <button type="button" onClick={() => void refreshHexBoardLibrary()}>
+              <button className="primary" type="button" onClick={newPreset}>New sound</button>
+              <button disabled={!connected} type="button" onClick={() => void refreshHexBoardLibrary()}>
                 Refresh HexBoard
               </button>
               <button type="button" onClick={() => fileInputRef.current?.click()}>
@@ -2797,6 +2852,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
             <div className="librarySpaces">
               <LibrarySpacePanel
+                connected={connected}
+                draftIds={Object.entries(drafts.entries).filter(([,entry]) => !sameContent(entry.value, entry.base)).map(([key]) => key)}
                 title="Browser Library"
                 subtitle="Saved in this browser"
                 space="computer"
@@ -2824,8 +2881,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 onErase={erasePreset}
               />
               <LibrarySpacePanel
+                connected={connected}
+                draftIds={Object.entries(drafts.entries).filter(([,entry]) => !sameContent(entry.value, entry.base)).map(([key]) => key)}
                 title="HexBoard Library"
-                subtitle="Device presets loaded through SysEx"
+                subtitle="Saved on your instrument"
                 space="hexboard"
                 presets={hexboardPresets}
                 folders={hexboardPresetFolders}
@@ -2855,7 +2914,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         ) : (
           <>
             <div className="row">
-              <button type="button" onClick={() => void refreshHexBoardWavetables()}>
+              <button disabled={!connected} type="button" onClick={() => void refreshHexBoardWavetables()}>
                 Refresh HexBoard
               </button>
               <button type="button" onClick={() => setWavetableImportDialogOpen(true)}>
@@ -3018,6 +3077,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
             <div className="librarySpaces">
               <WavetableLibraryPanel
+                connected={connected}
                 title="Browser Wavetables"
                 subtitle="Saved in this browser"
                 space="computer"
@@ -3033,6 +3093,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 onErase={eraseWavetable}
               />
               <WavetableLibraryPanel
+                connected={connected}
                 title="HexBoard Wavetables"
                 subtitle="Device wavetables loaded through SysEx"
                 space="hexboard"
@@ -3052,36 +3113,43 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         )}
       </aside>
 
-      <div className="panel stack">
-        <div className="row between">
+      <div className="panel stack synthMainPanel">
+        <div className="row between editorActionBar">
           <div>
-            <h2>Synth Preset Editor</h2>
-            <span className="muted">Opened from {librarySpaceLabel(openedSource)}</span>
+            <h2>{preset.name}</h2>
+            <span className="muted">{hasDraft ? "Draft" : "Sound"}</span>
           </div>
           <div className="row">
+            {connected ? <>
             <label className="checkField">
-              <input checked={autoSend} type="checkbox" onChange={(event) => setAutoSend(event.target.checked)} />
-              <span>Live send</span>
+              <input disabled={!connected} checked={autoSend} type="checkbox" onChange={(event) => { setAutoSend(event.target.checked); if (event.target.checked) void sendPreview(); }} />
+              <span>Live preview</span>
             </label>
-            <button className="primary" type="button" onClick={() => void sendPreview("Sent")}>
-              Send Now
+            <button disabled={!connected} type="button" onClick={() => void sendPreview("Sent")}>
+              Preview on HexBoard
             </button>
-            <button type="button" onClick={() => saveToComputer()}>
+            </> : null}
+            <button disabled={browserSaved} type="button" onClick={() => saveToComputer()}>
               Save to Browser
             </button>
-            <button type="button" onClick={() => void uploadToHexBoard(preset, "Saved")}>
+            <button className="primary" disabled={!connected} type="button" onClick={() => void uploadToHexBoard(preset, "Saved")}>
               Save to HexBoard
             </button>
-            <button type="button" onClick={() => downloadPresetFile(preset)}>
-              Export File
-            </button>
+            <details className="presetOverflowMenu"><summary aria-label="Sound actions">•••</summary><div className="presetOverflowActions">
+              <button type="button" onClick={() => downloadPresetFile(preset)}>Export file</button>
+              <button disabled={!connected} type="button" onClick={() => void loadCurrentHexBoardPatch()}>Load current HexBoard sound</button>
+              <button disabled={!hasDraft} type="button" onClick={discardPresetDraft}>Discard draft</button>
+            </div></details>
           </div>
         </div>
 
-        <div className={transport instanceof MockMidiTransport ? "status warn" : "status"}>
-          {syncStatus}
-          {transport instanceof MockMidiTransport ? " (mock transport)" : ""}
+        <div className="saveStatus" role="status">
+          <span>{drafts.error || libraryStorageError || (browserSaved ? "Saved in browser" : "Draft kept in browser")}</span>
+          <span>{connected ? deviceSaved ? "Saved on HexBoard" : "Changes not saved to HexBoard" : "Offline"}</span>
         </div>
+        {syncStatus !== "Ready" ? <div className="operationStatus" role="status">{syncStatus}</div> : null}
+        {Object.entries(drafts.entries).some(([key, entry]) => key !== draftKey && !sameContent(entry.value, entry.base)) ?
+          <details className="compactDisclosure"><summary>Other drafts</summary><div className="row">{Object.entries(drafts.entries).filter(([key, entry]) => key !== draftKey && !sameContent(entry.value, entry.base)).map(([key, entry]) => <button type="button" key={key} onClick={() => openPreset(key.startsWith("hexboard:") ? "hexboard" : "computer", entry.value)}>{entry.value.name}</button>)}</div></details> : null}
 
         {auditionFeatureVisible ? (
         <section className={auditionOpen ? "auditionPanel" : "auditionPanel collapsed"}>
@@ -3191,12 +3259,13 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
         <section className="editorSection">
           <h3>Voice</h3>
+          <WaveformPreview samples={previewPatch.wavetableSamples} frame={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition) - 1} name={preset.wavetableName} />
           <div className="editorGrid">
             <SelectField label="Synth Mode" value={preset.values.PlaybackMode} options={playbackOptions} onChange={(value) => updateValue("PlaybackMode", value)} />
             {arpModeSelected ? (
               <>
-                <SelectField label="Arp Speed" value={preset.values.ArpeggiatorDivision} options={arpDivisionOptions} onChange={(value) => updateValue("ArpeggiatorDivision", value)} />
-                <SelectField label="Arp Direction" value={preset.values.ArpeggiatorDirection} options={arpDirectionOptions} onChange={(value) => updateValue("ArpeggiatorDirection", value)} />
+                <SelectField label="Arpeggiator rate" value={preset.values.ArpeggiatorDivision} options={arpDivisionOptions} onChange={(value) => updateValue("ArpeggiatorDivision", value)} />
+                <SelectField label="Arpeggiator direction" value={preset.values.ArpeggiatorDirection} options={arpDirectionOptions} onChange={(value) => updateValue("ArpeggiatorDirection", value)} />
                 <RangeField label="Tempo" value={preset.values.SynthBPM} min={1} max={255} onChange={(value) => updateValue("SynthBPM", value)} suffix=" BPM" />
               </>
             ) : null}
@@ -3209,7 +3278,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 value={wavetableOptionValue(preset.wavetableFolderPath, preset.wavetableName)}
                 onChange={(event) => void selectPresetWavetable(event.target.value)}
               >
-                <optgroup label="On HexBoard">
+                <optgroup label={connected ? "On HexBoard" : "Built-in"}>
                   {wavetableOptions.device.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -3217,7 +3286,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                   ))}
                 </optgroup>
                 {wavetableOptions.computer.length > 0 ? (
-                  <optgroup label="Browser only — copy to HexBoard required">
+                  <optgroup label="Browser wavetables">
                     {wavetableOptions.computer.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
@@ -3236,16 +3305,17 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 ) : null}
               </select>
             </label>
-            <RangeField label="WT Pos" value={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition)} min={1} max={SYNTH_WAVETABLE_FRAME_COUNT} onChange={(value) => updateValue("SynthWavetablePosition", wavetableFrameToPositionByte(value))} suffix={`/${SYNTH_WAVETABLE_FRAME_COUNT}`} />
+            <RangeField label="Wavetable position" value={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition)} min={1} max={SYNTH_WAVETABLE_FRAME_COUNT} onChange={(value) => updateValue("SynthWavetablePosition", wavetableFrameToPositionByte(value))} suffix={`/${SYNTH_WAVETABLE_FRAME_COUNT}`} />
             <RangeField label="Drive" value={preset.values.SynthDrive} min={0} max={3} onChange={(value) => updateValue("SynthDrive", value)} suffix={` (${driveLabel(preset.values.SynthDrive)})`} />
-            <SelectField label="Wheel FX" value={preset.values.SynthModTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthModTarget", value)} />
-            <RangeField label="Wheel Amt" value={preset.values.SynthModAmount} min={0} max={127} onChange={(value) => updateValue("SynthModAmount", value)} suffix="/127" />
-            <RangeField label="Vib Speed" value={preset.values.SynthVibratoSpeed} min={0} max={synthVibratoSpeedNoise} onChange={(value) => updateValue("SynthVibratoSpeed", value)} suffix={` (${vibratoSpeedLabel(preset.values.SynthVibratoSpeed)})`} />
+            <SelectField label="Mod wheel target" value={preset.values.SynthModTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthModTarget", value)} />
+            <RangeField label="Mod wheel amount" value={preset.values.SynthModAmount} min={0} max={127} onChange={(value) => updateValue("SynthModAmount", value)} suffix="/127" />
+            <RangeField label="Vibrato speed" value={preset.values.SynthVibratoSpeed} min={0} max={synthVibratoSpeedNoise} onChange={(value) => updateValue("SynthVibratoSpeed", value)} suffix={` (${vibratoSpeedLabel(preset.values.SynthVibratoSpeed)})`} />
           </div>
         </section>
 
         <section className="editorSection">
-          <h3>Amp AHDSR</h3>
+          <h3>Volume envelope</h3>
+          <EnvelopePreview attack={preset.values.EnvelopeAttackIndex} hold={preset.values.EnvelopeHoldIndex} decay={preset.values.EnvelopeDecayIndex} sustain={preset.values.EnvelopeSustainLevel} release={preset.values.EnvelopeReleaseIndex} />
           <div className="editorGrid">
             <RangeField label="Attack" value={preset.values.EnvelopeAttackIndex} min={0} max={19} onChange={(value) => updateValue("EnvelopeAttackIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.EnvelopeAttackIndex)})`} />
             <RangeField label="Hold" value={preset.values.EnvelopeHoldIndex} min={0} max={19} onChange={(value) => updateValue("EnvelopeHoldIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.EnvelopeHoldIndex)})`} />
@@ -3256,7 +3326,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         </section>
 
         <FxEnvelopeEditor
-          title="FX Env 1 AHDSR"
+          title="Modulation envelope 1"
           targetValue={preset.values.EffectEnvelopeTarget}
           amountValue={preset.values.EffectEnvelopeAmount}
           attackValue={preset.values.EffectEnvelopeAttackIndex}
@@ -3274,7 +3344,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         />
 
         <FxEnvelopeEditor
-          title="FX Env 2 AHDSR"
+          title="Modulation envelope 2"
           targetValue={preset.values.EffectEnvelope2Target}
           amountValue={preset.values.EffectEnvelope2Amount}
           attackValue={preset.values.EffectEnvelope2AttackIndex}
@@ -3291,29 +3361,31 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           onReleaseChange={(value) => updateValue("EffectEnvelope2ReleaseIndex", value)}
         />
 
-        <section className="editorSection">
-          <h3>LFO</h3>
+        <details className="editorSection modulationSection">
+          <summary><strong>LFO</strong><span>{modTargetOptions.find(option => option.value === preset.values.SynthLfoTarget)?.label} · {fxAmountByteToPercent(preset.values.SynthLfoAmount)}% · {lfoSpeedLabel(preset.values.SynthLfoSpeed)}</span></summary>
           <div className="editorGrid">
             <SelectField label="Target" value={preset.values.SynthLfoTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthLfoTarget", value)} />
             <RangeField label="Amount" value={fxAmountByteToPercent(preset.values.SynthLfoAmount)} min={-100} max={100} onChange={(value) => updateValue("SynthLfoAmount", fxAmountPercentToByte(value))} suffix="%" />
             <SelectField label="Wave" value={preset.values.SynthLfoWave} options={lfoWaveOptions} onChange={(value) => updateValue("SynthLfoWave", value)} />
             <RangeField label="Speed" value={preset.values.SynthLfoSpeed} min={0} max={19} onChange={(value) => updateValue("SynthLfoSpeed", value)} suffix={` (${lfoSpeedLabel(preset.values.SynthLfoSpeed)})`} />
           </div>
-        </section>
+        </details>
 
-        <pre className="dataPreview">
+        <details className="compactDisclosure"><summary>Developer details</summary><pre className="dataPreview">
 {`Frames on last send: ${lastFrameCount}
 Preset body: ${formatByteLength(draftPreset.body)}
 CRC: ${crc32(draftPreset.body).toString(16).toUpperCase()}
 
 ${formatHex(draftPreset.body)}`}
-        </pre>
+        </pre></details>
       </div>
     </section>
   );
 }
 
 interface LibrarySpacePanelProps {
+  connected: boolean;
+  draftIds: string[];
   title: string;
   subtitle: string;
   space: LibrarySpace;
@@ -3342,6 +3414,8 @@ interface LibrarySpacePanelProps {
 }
 
 function LibrarySpacePanel({
+  connected,
+  draftIds,
   title,
   subtitle,
   space,
@@ -3378,6 +3452,8 @@ function LibrarySpacePanel({
   const visibleIds = visiblePresets.map((preset) => preset.objectIdHex);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((objectIdHex) => selectedIdSet.has(objectIdHex));
   const contentId = `preset-library-${space}-content`;
+
+  if (space === "hexboard" && !connected) return <section className="librarySpace"><h3>{title}</h3><p className="emptyListItem">Connect to see your saved sounds</p></section>;
 
   return (
     <section
@@ -3472,6 +3548,7 @@ function LibrarySpacePanel({
                   visibleCount={visibleIds.length}
                   allVisibleSelected={allVisibleSelected}
                   transferLabel={space === "computer" ? "Copy to HexBoard" : "Copy to Browser"}
+                  transferDisabled={space === "computer" && !connected}
                   busy={bulkBusy}
                   showSelectVisible={false}
                   onSelectVisible={(selected) => onSelectVisible(space, visibleIds, selected)}
@@ -3486,7 +3563,7 @@ function LibrarySpacePanel({
                   <li className="emptyListItem">
                     {searchQuery.trim()
                       ? `No presets match “${searchQuery.trim()}”`
-                      : selectedFolder ? `No presets in ${folderLabel(selectedFolder)}` : "No presets"}
+                      : selectedFolder ? `No presets in ${folderLabel(selectedFolder)}` : space === "hexboard" && !connected ? "Connect to see your saved sounds" : "No presets"}
                   </li>
                 ) : (
                   visiblePresets.map((item) => (
@@ -3508,7 +3585,7 @@ function LibrarySpacePanel({
                       </label>
                       <button className="presetNameButton" type="button" title={`Open ${item.name}`} onClick={() => onOpen(space, item)}>
                         <strong>{item.favorite ? "★ " : ""}{item.name}</strong>
-                        <span>{folderLabel(item.folderPath)}</span>
+                        <span>{folderLabel(item.folderPath)}{draftIds.includes(`${space}:${item.objectIdHex}`) ? " · Draft" : ""}</span>
                       </button>
                       <details className="presetOverflowMenu">
                         <summary aria-label={`More actions for ${item.name}`} title="More actions">•••</summary>
@@ -3516,7 +3593,7 @@ function LibrarySpacePanel({
                           <button type="button" onClick={() => onOpen(space, item)}>Open</button>
                           <button type="button" onClick={() => onOrganize(space, item)}>Rename / Move</button>
                           {space === "computer" ? (
-                            <button type="button" onClick={() => onUpload(item)}>Copy to HexBoard</button>
+                            <button disabled={!connected} type="button" onClick={() => onUpload(item)}>Copy to HexBoard</button>
                           ) : (
                             <button type="button" onClick={() => onDownload(item)}>Copy to Browser</button>
                           )}
@@ -3537,6 +3614,7 @@ function LibrarySpacePanel({
 }
 
 interface WavetableLibraryPanelProps {
+  connected: boolean;
   title: string;
   subtitle: string;
   space: LibrarySpace;
@@ -3553,6 +3631,7 @@ interface WavetableLibraryPanelProps {
 }
 
 function WavetableLibraryPanel({
+  connected,
   title,
   subtitle,
   space,
@@ -3570,6 +3649,8 @@ function WavetableLibraryPanel({
   const visibleWavetables = selectedFolder
     ? wavetables.filter((wavetable) => wavetable.folderPath === selectedFolder)
     : wavetables;
+
+  if (space === "hexboard" && !connected) return <section className="librarySpace"><h3>{title}</h3><p className="emptyListItem">Connect to see your wavetables</p></section>;
 
   return (
     <section className="librarySpace">
@@ -3607,7 +3688,7 @@ function WavetableLibraryPanel({
 
       <ul className="list">
         {visibleWavetables.length === 0 ? (
-          <li className="emptyListItem">{selectedFolder ? `No wavetables in ${folderLabel(selectedFolder)}` : "No wavetables"}</li>
+          <li className="emptyListItem">{selectedFolder ? `No wavetables in ${folderLabel(selectedFolder)}` : space === "hexboard" && !connected ? "Connect to see your wavetables" : "No wavetables"}</li>
         ) : (
           visibleWavetables.map((item) => (
             <li className="listItem presetListItem" key={`${space}-wavetable-${item.objectIdHex}`}>
@@ -3624,7 +3705,7 @@ function WavetableLibraryPanel({
                   Edit
                 </button>
                 {space === "computer" ? (
-                  <button type="button" title="Copy wavetable to HexBoard" aria-label="Copy wavetable to HexBoard" onClick={() => onUpload(item)}>
+                  <button disabled={!connected} type="button" title="Copy wavetable to HexBoard" aria-label="Copy wavetable to HexBoard" onClick={() => onUpload(item)}>
                     → HexBoard
                   </button>
                 ) : (
@@ -3682,9 +3763,9 @@ function RangeField({ label, value, min, max, suffix = "", onChange }: RangeFiel
   return (
     <label className="field rangeField">
       <span>
-        {label}: {value}{suffix}
+        {label} · {suffix.startsWith(" (") ? suffix.slice(2, -1) : suffix === "/127" ? `${Math.round(value / 127 * 100)}%` : `${value}${suffix}`}
       </span>
-      <input min={min} max={max} type="range" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input aria-valuetext={suffix.startsWith(" (") ? suffix.slice(2, -1) : suffix === "/127" ? `${Math.round(value / 127 * 100)}%` : `${value}${suffix}`} min={min} max={max} type="range" value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </label>
   );
 }
@@ -3727,8 +3808,9 @@ function FxEnvelopeEditor({
   const amountPercent = fxAmountByteToPercent(amountValue);
 
   return (
-    <section className="editorSection">
-      <h3>{title}</h3>
+    <details className="editorSection modulationSection">
+      <summary><strong>{title}</strong><span>{modTargetOptions.find(option => option.value === targetValue)?.label} · {amountPercent}%</span></summary>
+      <EnvelopePreview attack={attackValue} hold={holdValue} decay={decayValue} sustain={sustainValue} release={releaseValue} />
       <div className="editorGrid">
         <SelectField label="Target" value={targetValue} options={modTargetOptions} onChange={onTargetChange} />
         <RangeField label="Amount" value={amountPercent} min={-100} max={100} onChange={(value) => onAmountChange(fxAmountPercentToByte(value))} suffix="%" />
@@ -3738,6 +3820,28 @@ function FxEnvelopeEditor({
         <RangeField label="Sustain" value={sustainValue} min={0} max={127} onChange={onSustainChange} suffix="/127" />
         <RangeField label="Release" value={releaseValue} min={0} max={19} onChange={onReleaseChange} suffix={` (${envelopeTimeLabel(releaseValue)})`} />
       </div>
-    </section>
+    </details>
   );
+}
+
+function WaveformPreview({ samples, frame, name }: { samples?: Uint8Array; frame: number; name: string }) {
+  const points = samples ? Array.from({ length: 256 }, (_, index) => {
+    const sample = samples[Math.min(samples.length - 1, frame * (samples.length / SYNTH_WAVETABLE_FRAME_COUNT) + Math.round(index * ((samples.length / SYNTH_WAVETABLE_FRAME_COUNT) - 1) / 255))];
+    return `${index * 400 / 255},${44 - (sample - 128) / 128 * 36}`;
+  }).join(" ") : "";
+  return <figure className="soundVisual"><figcaption>{name} · frame {frame + 1}</figcaption>{samples ?
+    <svg viewBox="0 0 400 88" role="img" aria-label={`${name}, wavetable frame ${frame + 1}`}><path className="graphAxis" d="M0 44H400" /><polyline points={points} /></svg> : <p className="muted">Waveform preview unavailable</p>}</figure>;
+}
+function EnvelopePreview({ attack, hold, decay, sustain, release }: { attack: number; hold: number; decay: number; sustain: number; release: number }) {
+  // Time segments use a compressed scale so short stages remain legible beside long ones.
+  const times = [attack, hold, decay, release].map(index => {
+    const label = envelopeTimeLabel(index);
+    return parseFloat(label) * (label.endsWith("ms") ? 1 : 1000);
+  });
+  const weights = times.map(ms => ms === 0 ? 0 : 12 + Math.log1p(ms) * 8);
+  const width = weights.reduce((a,b) => a+b, 0) + 60;
+  const x = (n: number) => 12 + n / width * 376;
+  const level = 70 - sustain / 127 * 58;
+  const a = weights[0], h = a + weights[1], d = h + weights[2];
+  return <figure className="soundVisual envelopeVisual"><svg viewBox="0 0 400 90" role="img" aria-label={`Envelope: attack ${envelopeTimeLabel(attack)}, hold ${envelopeTimeLabel(hold)}, decay ${envelopeTimeLabel(decay)}, sustain ${Math.round(sustain / 127 * 100)}%, release ${envelopeTimeLabel(release)}. Time spacing is compressed.`}><path className="graphAxis" d="M12 70H388" /><polyline points={`12,70 ${x(a)},12 ${x(h)},12 ${x(d)},${level} ${x(d+60)},${level} 388,70`} /><text x="12" y="86">Key down</text><text x={x(d+60)} y="86" textAnchor="end">Key up</text></svg></figure>;
 }

@@ -403,7 +403,13 @@ User behavior and requirements live under `docs/sequencer/`.
 Update `web/` whenever firmware schemas, protocol, capabilities, or behavior
 change what the app sends, receives, lists, previews, or validates. Protocol,
 catalog, and MIDI helpers live under `web/src/protocol/`,
-`web/src/catalogs/`, and `web/src/midi/`.
+`web/src/catalogs/`, and `web/src/midi/`. `web/src/editor/drafts.ts` owns browser
+editor draft persistence, separate from saved library records. Draft entries
+retain an editable value and a discard baseline; synth keys include their
+source library. Browser saves commit explicitly, and device-save fingerprints
+are tracked only after confirmed writes or device reads within a connection.
+Connecting refreshes libraries without replacing the open synth draft. Offline
+transport is internal; device preview/write controls require a real connection.
 
 ## Risk Areas
 

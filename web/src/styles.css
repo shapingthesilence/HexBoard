@@ -536,6 +536,12 @@ textarea {
   grid-column: 1 / -1;
 }
 
+/* In editor views this disclosure belongs to the board/inspector column. */
+.editorProtocolDebugPanel {
+  grid-column: auto;
+  width: 100%;
+}
+
 .geometryStudioHeader {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -725,6 +731,11 @@ textarea {
 .editorMode .layoutEditorSidebar {
   position: sticky;
   top: 18px;
+  /* Keep the sticky editor controls inside the viewport so the full-width
+     developer disclosure below the grid can never pass underneath them. */
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .inspectorHeading {
@@ -1626,6 +1637,9 @@ textarea {
 
 .protocolDebugPanel {
   grid-column: 1 / -1;
+  grid-row: auto;
+  position: relative;
+  z-index: 0;
   padding: 0;
   overflow: hidden;
 }
@@ -2142,35 +2156,14 @@ textarea {
   font-size: 0.77rem;
 }
 
-:root[data-theme="dark"] button,
-:root[data-theme="dark"] input,
-:root[data-theme="dark"] textarea,
-:root[data-theme="dark"] select {
-  border-color: var(--border-strong);
-  background: var(--surface-raised);
-  color: var(--text);
-}
-
 :root[data-theme="dark"] button:hover {
   border-color: var(--brand);
 }
 
 :root[data-theme="dark"] button.primary,
-:root[data-theme="dark"] button.active,
-:root[data-theme="dark"] .tabs button.active {
+:root[data-theme="dark"] button.active {
   background: var(--brand);
   border-color: var(--brand);
-  color: #07110e;
-}
-
-:root[data-theme="dark"] .workflowTab.active {
-  border-color: var(--border);
-  background: var(--surface-raised);
-  color: var(--text);
-}
-
-:root[data-theme="dark"] .workflowTab.active .workflowStepNumber {
-  background: var(--brand);
   color: #07110e;
 }
 
@@ -2312,6 +2305,8 @@ textarea {
 
   .editorMode .layoutEditorSidebar {
     position: static;
+    max-height: none;
+    overflow: visible;
   }
 
   .geometryLibrarySpaces {
@@ -2446,4 +2441,138 @@ textarea {
   .presetFolderSidebar {
     grid-auto-columns: minmax(105px, 46%);
   }
+}
+
+/* Editing surfaces: quiet chrome, explicit actions, and room for the instrument. */
+body { background: var(--page); }
+button { font-weight: 550; box-shadow: none; }
+input[type="range"], input[type="checkbox"] { accent-color: var(--brand); }
+button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+.topBar, .panel, .geometryStudioHeader { box-shadow: none; background: var(--surface); border-radius: 12px; }
+.topBar { gap: 12px; }
+.topBar .eyebrow, .geometryTitleBlock .eyebrow, .boardPanelHeading .eyebrow, .inspectorHeading .eyebrow { display: none; }
+.tabs button.active, .workflowTab.active, .folderTarget.active, .paintToolGroup button[aria-pressed="true"] { background: var(--brand-soft); color: var(--text); border-color: transparent; box-shadow: none; }
+.tabs button { border-color: transparent; }
+.appShell { padding-top: 12px; }
+.layoutEditorWorkspace { gap: 12px 18px; margin-top: 14px; grid-template-columns: minmax(260px, 300px) minmax(0, 1fr); }
+.geometryStudioHeader { padding: 12px 16px; gap: 8px 12px; overflow: visible; }
+.geometryTitleBlock h2 { font-size: 1.15rem; }
+.geometryHeaderActions { gap: 6px; }
+.geometryHeaderActions button { font-size: .82rem; }
+.geometryStatus { padding: 0; border: 0; flex-wrap: wrap; }
+.geometryStatus > span:not([aria-hidden="true"]):not(.geometryTransferProgress) { width: auto; height: auto; border-radius: 0; background: none; box-shadow: none; }
+.workflowTabs { display: flex; gap: 4px; padding: 0; background: none; border: 0; flex-wrap: wrap; }
+.workflowTab { display: block; min-height: 38px; padding: 8px 16px; border-radius: 6px; }
+.workflowTab.active { border-bottom: 2px solid var(--brand); }
+.workflowTab.libraryTab { margin-right: 16px; border-right: 1px solid var(--border); }
+.workflowTab strong { font-weight: 550; }
+.libraryMode .geometryStudioHeader { display: none; }
+.libraryToolbar, .librarySpaceHeader { gap: 10px; }
+.libraryUtilityBar { background: none; border: 0; padding: 0; }
+.bundleIdentityFields { border: 0; background: none; padding: 0; }
+.librarySpace { border: 0; border-radius: 0; background: none; padding: 8px; }
+.geometryLibrarySpaces > .librarySpace + .librarySpace { border-left: 1px solid var(--border); padding-left: 18px; }
+.folderTarget.systemFolderTarget { font-style: normal; border-style: solid; }
+.folderTarget { background: none; font-weight: 500; }
+.folderMenu { position: relative; }
+.folderMenu > summary, .compactDisclosure > summary { cursor: pointer; padding: 8px 0; color: var(--text-soft); font-size: .85rem; }
+.folderMenu[open] { flex: 1 1 100%; }
+.folderControls { padding: 12px 0; }
+.libraryBulkActions { border: 0; padding: 6px 0; font-size: .8rem; }
+.geometryLibrarySpaces .presetListItem { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.presetNameButton { font-weight: 500; }
+.presetNameButton strong { font-weight: 600; }
+.presetNameButton .draftBadge { color: var(--warning); }
+.emptyListItem { padding: 24px 12px; text-align: center; }
+.brushToolbar { border: 0; background: none; padding: 0; gap: 8px; }
+.paintToolGroup button { display: inline-flex; align-items: center; gap: 6px; width: auto; }
+.layoutTransformToolbar { padding: 8px 0; border: 0; border-top: 1px solid var(--border); border-radius: 0; background: none; }
+.layoutTransformToolbar .toolbarSelectField select { max-width: 145px; }
+.layoutSelectionStatus { font-size: .75rem; }
+.boardPanel { padding: 14px; gap: 10px; }
+.boardPanelHeading h2 { font-size: 1rem; }
+.hexBoardScroll { border-radius: 8px; background-image: none; }
+.hexKeyLabel > span { font-size: 13px; line-height: 1.1; }
+.hexKeyLabel > small { font-size: 8px; opacity: .85; }
+.hexKey.pivotKey::after { content: "◆"; position: absolute; bottom: 2px; font-size: 8px; color: #ffe49b; text-shadow: 0 1px 2px #000; }
+.degreePicker { display: flex; flex-wrap: wrap; gap: 6px; max-height: 260px; overflow: auto; padding: 4px; }
+.degreePicker button { min-width: 40px; min-height: 40px; border-bottom-width: 4px; opacity: .55; }
+.degreePicker button[aria-pressed="true"] { opacity: 1; background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
+.degreePicker button[aria-pressed="true"]::before { content: "✓ "; }
+.noteLabelGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); }
+.noteLabelGrid label { min-width: 0; display: grid; gap: 3px; text-align: center; }
+.noteLabelGrid label > span { font-size: .7rem; color: var(--text-soft); }
+.noteLabelGrid input { width: 100%; min-width: 0; text-align: center; padding: 4px; }
+.noteLabelEditor h3 { margin-bottom: 8px; }
+.pitchAnchorSummary { background: var(--brand-soft); border: 0; font-size: .9rem; padding: 10px; border-radius: 6px; }
+.tuningControlGroup { border: 0; border-top: 1px solid var(--border); border-radius: 0; padding: 12px 0 0; }
+.synthEditor { grid-template-columns: minmax(260px, 310px) minmax(0, 1fr); gap: 18px; }
+.synthMainPanel, .synthLibraryPanel { min-width: 0; }
+.editorActionBar { gap: 10px; align-items: flex-start; }
+.editorActionBar h2 { font-size: 1.15rem; }
+.editorActionBar button { font-size: .82rem; }
+.editorActionBar > .row { gap: 6px; }
+.saveStatus { display: flex; gap: 6px 14px; flex-wrap: wrap; color: var(--text-soft); font-size: .8rem; }
+.saveStatus span + span::before { content: "·"; margin-right: 14px; }
+.operationStatus { color: var(--text-soft); font-size: .8rem; overflow-wrap: anywhere; }
+.soundVisual { margin: 0; min-width: 0; border-radius: 8px; padding: 8px 12px; background: var(--surface-muted); }
+.soundVisual figcaption { font-size: .75rem; color: var(--text-soft); }
+.soundVisual svg { display: block; width: 100%; height: 90px; overflow: visible; }
+.soundVisual polyline { fill: none; stroke: var(--brand); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.soundVisual .graphAxis { fill: none; stroke: var(--border-strong); stroke-dasharray: 3 4; }
+.soundVisual text { fill: var(--text-soft); font-size: 9px; }
+.modulationSection { display: block; border-top: 1px solid var(--border); padding-top: 10px; }
+.modulationSection > summary { cursor: pointer; padding: 4px 0; }
+.modulationSection > summary > span { margin-left: 12px; color: var(--text-soft); font-size: .8rem; }
+.modulationSection[open] > .editorGrid { margin-top: 12px; }
+.modulationSection[open] > .soundVisual { margin-top: 10px; }
+.protocolDebugPanel { padding: 8px 14px; background: transparent; border: 0; }
+.presetOverflowActions button { text-align: left; }
+@media (max-width: 1180px) and (min-width: 761px) {
+  .topBar { display: flex; flex-wrap: wrap; }
+  .topBarActions { margin-left: auto; padding: 0; border: 0; }
+}
+@media (max-width: 960px) {
+  .layoutEditorWorkspace { grid-template-columns: minmax(240px, 280px) minmax(0, 1fr); }
+  .geometryStudioHeader, .workflowTabs, .protocolDebugPanel, .libraryMode .layoutEditorSidebar { grid-column: 1 / -1; }
+  .geometryLibrarySpaces > .librarySpace + .librarySpace { border-left: 0; border-top: 1px solid var(--border); padding: 18px 8px 8px; }
+  .geometryStudioHeader { grid-template-columns: 1fr; }
+  .geometryHeaderActions { justify-content: flex-start; }
+  .synthEditor { grid-template-columns: 250px minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .layoutEditorWorkspace, .synthEditor { grid-template-columns: minmax(0, 1fr); }
+  .topBar { gap: 10px; padding: 12px; }
+  .topBarActions { padding-top: 0; border-top: 0; }
+  .topBarActions .deviceMenu { flex: 1; }
+  .deviceStatus { text-align: left; }
+  .deviceMenu button { margin-left: auto; }
+  .brandBlock h1 { font-size: 1.05rem; }
+  .editorMode .layoutEditorMainColumn { grid-row: 3; }
+  .editorMode .layoutEditorSidebar { grid-row: 4; }
+  .workflowTab { padding: 8px 10px; }
+  .workflowTab.libraryTab { margin-right: 4px; }
+  .synthMainPanel { grid-row: 1; }
+  .synthLibraryPanel { grid-row: 2; }
+  .editorActionBar > .row, .geometryHeaderActions { flex-wrap: wrap; }
+  .modulationSection > summary > span { display: block; margin: 4px 0 0; }
+  .libraryToolbar { align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+:root .tabs button.active, :root .workflowTab.active { background: var(--brand-soft); color: var(--text); border-color: transparent; border-bottom-color: var(--brand); }
+:root .workflowTab, :root .tabs button { background: transparent; color: var(--text-soft); border-color: transparent; }
+:root .workflowTab.active, :root .tabs button.active { color: var(--text); background: var(--brand-soft); border-bottom: 2px solid var(--brand); }
+:root .paintToolGroup button[aria-pressed="true"] { background: var(--brand-soft); color: var(--text); border-color: var(--brand); }
+.paintToolGroup button { padding: 0 10px; }
+.boardPanelHeading { padding: 0; }
+.brushToolbar, .layoutTransformToolbar { margin: 0; }
+:root .hexBoardScroll { background: var(--surface-muted); }
+.previewContext span { font-weight: 500; }
+.librarySpace .emptyListItem { border: 0; background: var(--surface-muted); border-radius: 8px; }
+@media (max-width: 760px) {
+  .deviceMenu { flex-direction: row; align-items: center; }
+  .topBarActions { flex-direction: row; align-items: center; }
+  .deviceMenu button { font-size: .8rem; padding-inline: 8px; }
+  .deviceStatus strong { font-size: .8rem; }
+  .geometryStudioHeader { padding: 12px; }
 }
