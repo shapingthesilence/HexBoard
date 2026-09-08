@@ -14,6 +14,7 @@ extern const uint64_t screenSaverTimeout;
 extern bool flashSaveScreenVisible;
 extern bool missingWavetableNoticeVisible;
 extern bool rotaryInvert;
+extern bool commandEncoder;
 extern GEMPage menuPageMain;
 extern GEMPage menuPageTuning;
 extern GEMPage menuPageLayout;

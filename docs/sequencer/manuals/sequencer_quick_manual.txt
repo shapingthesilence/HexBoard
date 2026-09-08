@@ -174,12 +174,10 @@ Playback
 - Tie is the exception to the normal 100% boundary release, so the carried
   source note stays active into the tied step instead of being released first.
 - If no valid earlier source is active, the tied step is silent.
-- Tie does not wrap from the end of the pattern back to step 1 in v1.
+- Tie does not wrap from the end of the pattern back to step 1.
 
 Menu Items
 
-- Standard menu headers center the current page title on one large-font line,
-  with a small gap between the divider and first menu row.
 - When a menu page is open, hold the bottom command button below the encoder to
   temporarily make the top two command buttons act like one encoder step up or
   down. Releasing that bottom button returns them to normal behavior.
@@ -296,7 +294,7 @@ Saving And Files
   or folder.
 - In the desktop GUI, you can multi-select remote items with Shift-click and
   delete them together.
-- The desktop GUI now has four action rows overall:
+- The desktop GUI has four action rows overall:
   one row beside the serial port dropdown for `Refresh Ports` and
   `Refresh Remote`, then three rows below for the rest of the actions.
 - The rows below group:

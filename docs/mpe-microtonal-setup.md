@@ -1,12 +1,12 @@
 # MPE Microtonal Setup Guide
 
-This guide explains how HexBoard sends microtonal pitches over MIDI, how to set up common DAWs and synths to receive them, and when to change the `MIDI` menu's MPE settings.
+This guide explains how HexBoard sends microtonal pitches over MIDI, how to set up common DAWs and synths to receive them, and when to change the `Settings` menu's MPE options.
 
 ## Quick Setup
 
 For most MPE-capable software instruments:
 
-1. On HexBoard, leave `MIDI` -> `MPE Mode` set to `Auto`.
+1. On HexBoard, leave `Settings` -> `MPE Mode` set to `Auto`.
 2. Leave `MPE Bend` at `48` unless your synth uses a different MPE pitch-bend range.
 3. Leave `MPE Low Ch` at `2` and `MPE High Ch` at `16` unless the receiver has fewer voices or channels.
 4. In the DAW or synth, enable MPE.
@@ -21,14 +21,10 @@ Do not also load the same microtonal scale into the receiving synth unless you a
 
 MIDI notes are normally chromatic 12-EDO note numbers. That is not enough to represent HexBoard tunings such as `17 EDO`, `31 EDO`, `Bohlen-Pierce`, or dynamic just intonation. HexBoard handles this by sending each played note on its own MIDI channel and applying pitch bend only to that note.
 
-For each playable button, the firmware:
-
-1. Computes the intended pitch from the active tuning, layout, key, and transpose.
-2. Converts that pitch to a fractional MIDI note value relative to A4 = `440 Hz`.
-3. Rounds to the nearest standard MIDI note number.
-4. Computes the pitch bend needed to move that rounded note to the exact target pitch.
-5. Sends the pitch bend on the note's MPE channel.
-6. Sends the note-on on the same channel.
+HexBoard sends the closest standard MIDI note and bends it to the tuned pitch.
+Each MPE note uses its own channel so one note's bend does not retune the rest
+of a chord. The onboard synth follows HexBoard's tuning directly and does not
+need MPE configuration.
 
 For Dynamic JI and JI BPM Sync, HexBoard applies the retune first, then chooses
 the closest MIDI note for that final pitch. The remaining MPE bend is normally
@@ -118,7 +114,7 @@ Use this workflow when HexBoard's firmware tuning, dynamic just intonation, or J
 
 Live 12 can load built-in tunings, Scala `.scl` files, and Ableton `.ascl` tuning files. In this workflow, Live owns the retuning, so HexBoard should send note numbers without MPE pitch-bend retuning.
 
-1. On HexBoard, set `MIDI` -> `MPE Mode` to `Disable`.
+1. On HexBoard, set `Settings` -> `MPE Mode` to `Disable`.
 2. On HexBoard, choose the same tuning/layout you want to play so the grid, scale behavior, note indices, and LEDs still match your musical intent.
 3. In Live, load the matching Tuning System from the browser's `Tunings` label, or drag a compatible `.scl` or `.ascl` file into the Tuning section.
 4. Leave Live's MPE input setup for HexBoard off unless another track specifically needs it.

@@ -823,6 +823,7 @@ GEMItem menuItemAutoSave("Auto-Save", autoSave, universalSaveCallback, reinterpr
 // The persisted option reverses the detected hardware's normal direction.
 // The decoder consumes the resulting effective direction.
 bool rotaryInvert = false;
+bool commandEncoder = settingEnabled(SettingKey::CommandEncoder);
 bool rotaryInvertPreference = settingEnabled(SettingKey::RotaryInvert);
 
 void updateEffectiveRotaryInvert() {
@@ -836,6 +837,14 @@ PersistentCallbackInfo callbackInfoRotary = {
   updateEffectiveRotaryInvert
 };
 GEMItem menuItemRotary("Invert Encoder", rotaryInvertPreference, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoRotary));
+
+PersistentCallbackInfo callbackInfoCommandEncoder = {
+  static_cast<uint8_t>(SettingKey::CommandEncoder),
+  reinterpret_cast<void*>(&commandEncoder),
+  nullptr,
+  nullptr
+};
+GEMItem menuItemCommandEncoder("Button Encoder", commandEncoder, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoCommandEncoder));
 
 GEMItem menuItemSerialDebugEnabled("Enabled", serialDebugEnabled, serialDebugRuntimeChanged, static_cast<void*>(nullptr));
 GEMItem menuItemSerialDebugGeneral("General Log", serialDebugGeneralMessages, serialDebugRuntimeChanged, static_cast<void*>(nullptr));
@@ -2492,6 +2501,7 @@ void applyGeometryRuntimeFromStorage() {
 }
 
 void syncSettingsToRuntime(bool redrawMenu) {
+  commandEncoder = settingEnabled(SettingKey::CommandEncoder);
   rotaryInvertPreference = settingEnabled(SettingKey::RotaryInvert);
   updateEffectiveRotaryInvert();
   autoSave = settingEnabled(SettingKey::AutoSave);
@@ -3262,6 +3272,7 @@ void setupAdvancedMenuPage() {
   menuPageAdvanced.addMenuItem(menuItemVersion);
   menuPageAdvanced.addMenuItem(menuItemHardware);
   menuPageAdvanced.addMenuItem(menuItemRotary);
+  menuPageAdvanced.addMenuItem(menuItemCommandEncoder);
   menuPageAdvanced.addMenuItem(menuItemBootAnimation);
   menuPageAdvanced.addMenuItem(menuGotoStorageStatus);
   // menuPageAdvanced.addMenuItem(menuItemWheelAlt); // not sure why we have this, so I'm hiding it for now

@@ -63,6 +63,11 @@ byte lastVelocityWheelGestureMask = 0;
 byte lastModulationWheelGestureMask = 0;
 byte lastPitchBendWheelGestureMask = 0;
 
+namespace {
+bool encoderCommandConsumed[3] = {}; // command buttons 0, 1, and 6
+byte simulatedRotaryTurn = 0;
+}
+
 constexpr uint64_t COMMAND_WHEEL_UPDATE_INTERVAL_MICROS = 10000ULL;
 
 void RAM_FUNC(readHexes)() {
@@ -86,7 +91,27 @@ void RAM_FUNC(readHexes)() {
     }
   }
 
+  // Reserve the modifier from its wheel action; latch chord keys until release.
+  const bool shortcutEnabled = commandEncoder && !delegatedControlState.active
+    && !presetSyncTransferActive;
+  const bool modifierHeld = shortcutEnabled && (h[assignCmd[6]].btnState & 1);
+  const byte shortcutCommands[3] = {0, 1, 6};
+  for (byte slot = 0; slot < 3; ++slot) {
+    const byte state = h[assignCmd[shortcutCommands[slot]]].btnState;
+    if (state == BTN_STATE_OFF) encoderCommandConsumed[slot] = false;
+    if (modifierHeld && (slot == 2 || state == BTN_STATE_NEWPRESS)) {
+      encoderCommandConsumed[slot] = true;
+      if (slot < 2) {
+        const bool down = slot == 1;
+        simulatedRotaryTurn = (down == rotaryInvert) ? 8 : 16;
+      }
+    }
+  }
+
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
+    if ((i == assignCmd[0] && encoderCommandConsumed[0])
+        || (i == assignCmd[1] && encoderCommandConsumed[1])
+        || (i == assignCmd[6] && encoderCommandConsumed[2])) continue;
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
         if (presetSyncTransferActive) {
@@ -179,6 +204,12 @@ void RAM_FUNC(updateWheels)() {
     return;
   }
 
+  const byte shortcutCommands[3] = {0, 1, 6};
+  byte savedStates[3];
+  for (byte slot = 0; slot < 3; ++slot) {
+    savedStates[slot] = h[assignCmd[shortcutCommands[slot]]].btnState;
+    if (encoderCommandConsumed[slot]) h[assignCmd[shortcutCommands[slot]]].btnState = BTN_STATE_OFF;
+  }
   int16_t previousVelocityTarget = velWheel.targetValue;
   velWheel.setTargetValue();
   notifyCommandWheelGesture(CommandWheelOverlayType::Velocity,
@@ -223,6 +254,9 @@ void RAM_FUNC(updateWheels)() {
       sendMIDImodulationToCh1();
     }
   }
+  for (byte slot = 0; slot < 3; ++slot) {
+    h[assignCmd[shortcutCommands[slot]]].btnState = savedStates[slot];
+  }
 }
 void setupRotary() {
   pinMode(ROT_PIN_A, INPUT_PULLUP);
@@ -237,6 +271,8 @@ void RAM_FUNC(readKnob)() {
   }
 }
 void dealWithRotary() {
+  if (delegatedControlState.active || presetSyncTransferActive || !commandEncoder) simulatedRotaryTurn = 0;
+  byte& turn = simulatedRotaryTurn != 0 ? simulatedRotaryTurn : storeRotaryTurn;
   bool buttonPressed = (digitalRead(ROT_PIN_C) == LOW);
   bool justPressed = (!rotaryButtonPressed && buttonPressed);
   bool justReleased = (rotaryButtonPressed && !buttonPressed);
@@ -254,18 +290,18 @@ void dealWithRotary() {
         exitDelegatedControl();
         rotaryPanicLatched = true;
         rotaryPanicSuppressClick = true;
-        storeRotaryTurn = 0;
+        turn = 0;
       }
     }
 
-    if (delegatedControlState.active && storeRotaryTurn != 0) {
-      bool turnIsClockwise = (storeRotaryTurn == 8);
+    if (delegatedControlState.active && turn != 0) {
+      bool turnIsClockwise = (turn == 8);
       byte event = rotaryInvert
                      ? (turnIsClockwise ? DELEGATED_ENCODER_DOWN : DELEGATED_ENCODER_UP)
                      : (turnIsClockwise ? DELEGATED_ENCODER_UP : DELEGATED_ENCODER_DOWN);
       wakeDelegatedControlScreenForInput();
       sendDelegatedEncoderEvent(event);
-      storeRotaryTurn = 0;
+      turn = 0;
     }
 
     if (delegatedControlState.active && justReleased && !rotaryPanicSuppressClick) {
@@ -296,7 +332,7 @@ void dealWithRotary() {
   }
 
   if (presetSyncTransferActive) {
-    storeRotaryTurn = 0;
+    turn = 0;
     if (justReleased || !buttonPressed) {
       rotaryPressStart = 0;
       rotaryPanicLatched = false;
@@ -309,19 +345,19 @@ void dealWithRotary() {
   }
 
   bool navigationTurnReady =
-    (storeRotaryTurn != 0) && u8g2.readyForNavigationInput();
+    (turn != 0) && u8g2.readyForNavigationInput();
 
   if (navigationTurnReady || (justReleased && !rotaryPanicSuppressClick)) {
     dismissFlashSaveScreenForMenuInput();
   }
 
   if (sequencerModeActive() && navigationTurnReady) {
-    bool turnIsClockwise = (storeRotaryTurn == 8);
+    bool turnIsClockwise = (turn == 8);
     int8_t direction = rotaryInvert
                          ? (turnIsClockwise ? 1 : -1)
                          : (turnIsClockwise ? -1 : 1);
     if (handleSequencerRotaryTurn(direction)) {
-      storeRotaryTurn = 0;
+      turn = 0;
       navigationTurnReady = false;
       screenTime = 0;
     }
@@ -347,7 +383,7 @@ void dealWithRotary() {
       screenTime = 0;
     }
     if (navigationTurnReady) {
-      bool turnIsClockwise = (storeRotaryTurn == 8);
+      bool turnIsClockwise = (turn == 8);
       dismissCommandWheelOverlay();
       dismissPlayedNotesOverlayForMenuInput();
       byte keyCode = rotaryInvert
@@ -355,7 +391,7 @@ void dealWithRotary() {
                        : (turnIsClockwise ? GEM_KEY_UP : GEM_KEY_DOWN);
       handleVirtualListMenuKey(keyCode);
       noteOverlayDirty = true;
-      storeRotaryTurn = 0;
+      turn = 0;
       screenTime = 0;
     }
   } else if (menu.readyForKey()) {
@@ -369,7 +405,7 @@ void dealWithRotary() {
       screenTime = 0;
     }
     if (navigationTurnReady) {
-      bool turnIsClockwise = (storeRotaryTurn == 8);
+      bool turnIsClockwise = (turn == 8);
       dismissCommandWheelOverlay();
       dismissPlayedNotesOverlayForMenuInput();
       byte keyCode = rotaryInvert
@@ -377,7 +413,7 @@ void dealWithRotary() {
                        : (turnIsClockwise ? GEM_KEY_UP : GEM_KEY_DOWN);
       menu.registerKeyPress(keyCode);
       noteOverlayDirty = true;
-      storeRotaryTurn = 0;
+      turn = 0;
       screenTime = 0;
     }
   }

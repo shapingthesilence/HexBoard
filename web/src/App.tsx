@@ -17,7 +17,7 @@ const views: Array<{ key: ViewKey; label: string }> = [
   {
     key: "synth",
     label: "Synth Editor"
-  }
+  },
 ];
 
 const themeStorageKey = "hexboard-sync-theme";

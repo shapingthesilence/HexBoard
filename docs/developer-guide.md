@@ -6,7 +6,10 @@ This is the implementation map for HexBoard firmware. `HexBoard.ino` contains
 only Arduino lifecycle wrappers; implementation lives under `src/firmware/`.
 Code is authoritative when this guide is stale.
 
-Repository-wide engineering and documentation rules are in `AGENTS.md`.
+Repository-wide rules are in [AGENTS.md](../AGENTS.md).
+Use the [documentation index](README.md) for audience boundaries and related
+references. [Architecture proposals](architecture-proposals.md) are separate
+from the implemented architecture described here.
 
 ## Build And Tooling
 
@@ -159,17 +162,20 @@ paths.
 
 ## Startup And Loops
 
-Core 0 initializes in dependency order:
+Startup coordinates both cores:
 
-1. USB descriptors, logging, USB MIDI, and serial MIDI
-2. LittleFS without auto-format
-3. pins, grid, and hardware revision
-4. settings and storage catalogs
-5. LEDs, OLED, rotary, menu, and synth tables
-6. runtime settings and pitch-bend state
-7. Core 1 audio release and bounded readiness wait
-8. sequencer restore, storage status, and boot LED check
-9. normal two-core runtime
+1. Core 0 initializes USB/MIDI, mounts LittleFS, detects hardware, and loads settings.
+2. Core 0 initializes LEDs and releases Core 1 to run the optional LED self-check
+   and splash while Core 0 loads catalogs, synth state, OLED, rotary, and menus.
+3. Core 0 waits for the splash, synchronizes runtime settings, and publishes
+   synth readiness and the normal LED frame.
+4. Core 1 completes the LED fade and initializes audio DMA. Core 0 restores the
+   sequencer and builds the storage-status menu, then waits for LED completion
+   and performs the bounded audio-readiness wait.
+5. Core 0 opens the menu and releases normal runtime.
+
+The LED readiness/completion waits have no timeout; the audio transport wait is
+bounded to three seconds. The startup barriers are owned by `app/Runtime.cpp`.
 
 If audio readiness times out, Core 0 continues with onboard synth playback
 disabled instead of hanging boot. Do not use loaded settings before
@@ -178,10 +184,9 @@ disabled instead of hanging boot. Do not use loaded settings before
 Core 0 work must remain bounded. Its loop covers transfer service, synth-release
 cleanup, screensaver, matrix scan, sequencer, arpeggiator, metronome, command
 wheels, MIDI input, LED work, rotary/menu input, overlays, and auto-save.
-The U8g2 hardware-I2C backend still performs synchronous `Wire` transfers, so
-played-note events only mark pending display state. Their OLED wake and redraw
-are coalesced until `30 ms` of input quiet and limited to one refresh per `50 ms`;
-menu and modal redraws are not subject to that performance-input policy.
+Display events retain pending state; Core 0 services the asynchronous OLED
+transport between drawing passes. See [Menu and display](#menu-and-display)
+for ownership, presentation cadence, and navigation gating.
 
 Core 1 stays limited to audio DMA service, delegated MIDI when active, and the
 RAM-resident allocation-free rotary decoder.
@@ -219,7 +224,7 @@ non-synth setting bytes, stable tuning/layout/scale references, compact synth
 preset-or-draft references, and payload CRC32. Synth values and wavetable
 references come from the referenced named preset or hidden profile draft.
 
-`CURRENT_SETTINGS_VERSION` is 29. Firmware accepts only that version and exact
+`CURRENT_SETTINGS_VERSION` is 30. Firmware accepts only that version and exact
 payload size. Invalid or missing settings use hardware-aware RAM defaults and
 are written only by normal save behavior.
 
@@ -400,16 +405,9 @@ Profile preferences belong in the settings schema; sequence data belongs in
 `.hbseq` files. Every sequencer filesystem write uses the flash-safe write API.
 User behavior and requirements live under `docs/sequencer/`.
 
-Update `web/` whenever firmware schemas, protocol, capabilities, or behavior
-change what the app sends, receives, lists, previews, or validates. Protocol,
-catalog, and MIDI helpers live under `web/src/protocol/`,
-`web/src/catalogs/`, and `web/src/midi/`. `web/src/editor/drafts.ts` owns browser
-editor draft persistence, separate from saved library records. Draft entries
-retain an editable value and a discard baseline; synth keys include their
-source library. Browser saves commit explicitly, and device-save fingerprints
-are tracked only after confirmed writes or device reads within a connection.
-Connecting refreshes libraries without replacing the open synth draft. Offline
-transport is internal; device preview/write controls require a real connection.
+The companion app shares the preset-sync contract. Its source ownership, draft
+persistence, and device-operation rules live in the [web README](../web/README.md).
+User workflows live in the [HexBoard Sync guide](web-app-guide.md).
 
 ## Risk Areas
 

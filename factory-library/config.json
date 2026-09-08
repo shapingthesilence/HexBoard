@@ -1,5 +1,5 @@
 {
-  "settingsVersion": 29,
+  "settingsVersion": 32,
   "selectedPreset": "Pads/Lo-Fi Synth Strings",
   "selectedWavetable": "/Classic",
   "selectedGeometry": "12 EDO (Normal)",
@@ -29,6 +29,7 @@
   ],
   "settings": {
     "RotaryInvert": 0,
+    "CommandEncoder": 0,
     "AutoSave": 1,
     "MPEpitchBend": 48,
     "MPEMode": 0,

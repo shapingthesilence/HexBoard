@@ -5,6 +5,8 @@
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
 #include "../tuning/Tuning.h"
+static byte activeAnimation() { return animationType; }
+static bool animationKeyHeld(byte index) { return h[index].MIDIch != 0; }
 
 // @animate
 /*
@@ -140,7 +142,7 @@ void animateOrbit() {
   const byte SLOW_FACTOR = 1;   // Slowdown factor for animation
 
   for (byte i = 0; i < LED_COUNT; ++i) {   // Check every hex
-    if (!hexCanOriginateAnimation(i) || !h[i].MIDIch) {
+    if (!hexCanOriginateAnimation(i) || !animationKeyHeld(i)) {
       continue;
     }
 
@@ -172,11 +174,7 @@ void animateStaticBeams() {
       uint64_t clockValue = readClock();        // Get system clock
 
       // Choose a new random direction, excluding the last one
-      byte newDirection;
-      do {
-        newDirection = clockValue % 3;             // Randomly pick 0, 1, or 2
-        clockValue /= 3;                           // Update clockValue for a new seed
-      } while (newDirection == lastDirection[i]);  // Exclude last direction
+      byte newDirection = (lastDirection[i] % 3 + 1 + (clockValue % 2)) % 3;
 
       lastDirection[i] = newDirection;  // Store new direction
     }
@@ -211,7 +209,7 @@ void animateRadial() {
 
     uint64_t radius = animFrame(i);
     if ((radius > 0) && (radius < ROWCOUNT)) {                           // played in the last 16 frames
-      byte steps = ((animationType == ANIMATE_SPLASH) ? radius : 1);     // star = 1 step to next corner; ring = 1 step per hex
+      byte steps = ((activeAnimation() == ANIMATE_SPLASH) ? radius : 1);
       animateRing(i, static_cast<byte>(radius), steps);
     }
   }
@@ -226,7 +224,7 @@ void animateRadialReverse() {  //inverted splash/star
     uint64_t frame = animFrame(i);                                                // Current animation frame
     if ((frame > 0) && (frame < MAX_ANIMATION_RADIUS)) {                          // Played in the last X frames
       byte reverseRadius = static_cast<byte>(MAX_ANIMATION_RADIUS - frame);       // Calculate reverse radius
-      byte steps = ((animationType == ANIMATE_SPLASH_REVERSE) ? reverseRadius : 1);
+      byte steps = ((activeAnimation() == ANIMATE_SPLASH_REVERSE) ? reverseRadius : 1);
       animateRing(i, reverseRadius, steps);
     }
   }
@@ -240,7 +238,7 @@ void animateLEDs() {
   for (byte i = 0; i < LED_COUNT; ++i) {
     h[i].animate = false;
   }
-  switch (animationType) {
+  switch (activeAnimation()) {
     case ANIMATE_BUTTON:
     case ANIMATE_NONE:
       break;

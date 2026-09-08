@@ -807,6 +807,8 @@ def build_settings(config_path: Path, output: Path, config: dict,
     settings = {key: checked_byte(settings_source[key], config_path, key) for key in SETTING_KEYS}
     if settings["RotaryInvert"] != 0:
         raise fail(config_path, "settings", "RotaryInvert factory value must be 0 (relative to hardware default)")
+    if settings["CommandEncoder"] not in (0, 1):
+        raise fail(config_path, "settings", "CommandEncoder must be 0 or 1")
     persisted_setting_keys = tuple(key for key in SETTING_KEYS if key not in SYNTH_PRESET_KEYS)
     profiles = [bytearray(settings[key] for key in persisted_setting_keys) for _ in range(PROFILE_COUNT)]
     profile_data = b"".join(profiles)

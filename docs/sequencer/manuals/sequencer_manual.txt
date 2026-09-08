@@ -212,9 +212,9 @@ the key is released.
 
 The performance monitor shows:
 
-- CPU load as an approximate percentage based on the audio poll interrupt load
+- approximate audio engine load percentage
 - heap memory used versus total
-- LittleFS storage used versus total
+- onboard storage used versus total
 
 8.2 Tempo
 
@@ -460,7 +460,7 @@ Tie behavior:
   values during transport playback
 - if no valid earlier source note is active when the tied step is reached, the
   tied step is silent
-- Tie does not wrap from the end of the pattern back to step 1 in v1
+- Tie does not wrap from the end of the pattern back to step 1
 
 Display behavior:
 
@@ -493,10 +493,6 @@ entering edit mode for each step.
 
 
 12. Menu Structure
-
-Standard Sequencer menu pages use a single-line, large-font OLED title. Menu
-hierarchy is not repeated in the header. The title is centered, and a small gap
-separates the header divider from the first menu row.
 
 When a menu page is open, hold the bottom command button below the encoder to
 temporarily make the top two command buttons act like one encoder step up or
@@ -622,19 +618,15 @@ If no current file exists:
 
 14. File And Folder Organization
 
-Sequences are stored in LittleFS under:
+Sequence files appear under /Sequences in USB Backup.
 
-  /Sequences
-
-Installing the Sequencer Factory UF2 erases the complete LittleFS filesystem,
-including all sequences. The /Sequences folder is created when sequence
-storage is first opened or used. Installing the Sequencer Update UF2 preserves
-the existing LittleFS filesystem.
+Installing the Sequencer Factory UF2 erases the complete onboard storage,
+including all sequences. Installing the Sequencer Update UF2 preserves existing saved files.
 
 The current file path is remembered, so the last loaded sequence can come
 back on startup.
 
-Files use the .hbseq extension internally.
+Sequence files use the .hbseq extension.
 
 The visible sequence name is the file name without the extension.
 
@@ -644,11 +636,11 @@ Browser behavior:
 - the current folder path is not repeated in the header
 - the browser shows 11 list rows at a time, including its back row
 - turning through the list advances between 11-row pages
-- USB Backup uses the same LittleFS storage, but transfers files through a
-  dedicated USB serial session instead of mounting the board as a drive
+- use the desktop HexBoard Backup GUI to browse and back up these files;
+  USB Backup does not present HexBoard as a removable drive
 
 Sequence saves, file and folder changes, and USB Backup restore writes briefly
-mute audio and hold the audio outputs idle while onboard flash is busy.
+mute audio while the board saves changes.
 
 
 15. Renaming, Creating, And Deleting Files
@@ -820,7 +812,7 @@ What it shows:
 
 - AudioEng: approximate audio engine load percentage
 - Mem: heap used versus total heap
-- FS: LittleFS storage used versus total storage
+- FS: onboard storage used versus total storage
 - MIDI Q: current incoming MIDI backlog in pending bytes
 - Drop: backlog episodes that hit the receive soft limit
 - Late: backlog episodes that stayed pending long enough to count as delayed

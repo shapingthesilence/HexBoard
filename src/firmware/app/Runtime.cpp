@@ -143,7 +143,7 @@ void hexboardLoop() {        // run on first core
   }
   serviceSequencerMode();
   arpeggiate();      // arpeggiate if synth mode allows it
-  runMetronome();    // metronome beep/flash modes share the synth tempo
+  runMetronome();
   updateWheels();    // deal with the pitch/mod wheel
   processIncomingMIDI();  // respond to external MIDI input
   u8g2.serviceTransfer();

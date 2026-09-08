@@ -13,7 +13,9 @@ The mode is intentionally external-only:
 
 Primary implementation points:
 
-- `delegatedControl`, `delegatedColors`, delegated note-map state, and `SYSEX_*` constants live in `src/firmware/hardware/GridState.cpp`.
+- `DelegatedControlState` and `SYSEX_*` constants are declared in
+  `src/firmware/hardware/GridState.h`; `GridState.cpp` owns
+  `delegatedControlState` and note-map initialization.
 - `processIncomingSysEx()`, `delegatedButtonEvent()`, `processDelegatedNoteMapSysEx()`, and `processLedSysEx()` live in `src/firmware/midi/DelegatedControl.cpp`.
 - preset-sync message dispatch lives in `src/firmware/storage/PresetSync.cpp`, with protocol/object helpers in the neighboring `PresetSync*.cpp` files.
 - `processIncomingMIDIDelegated()` lives in `src/firmware/midi/MidiInput.cpp`.
@@ -25,16 +27,14 @@ Primary implementation points:
 - `arpeggiate()` lives in `src/firmware/synth/SynthVoiceAllocation.cpp`.
 - `hexboardLoop1()` lives in `src/firmware/app/Runtime.cpp` and contains the delegated-mode core-1 MIDI polling gate.
 
-`HexBoard.ino` is the root Arduino sketch used by the `Makefile`; firmware implementation lives under `src/firmware/`. Generated files under `build/` should not be edited as source.
-
 ## Runtime Behavior
 
-When `delegatedControl` is `false`, the firmware behaves normally.
+When `delegatedControlState.active` is `false`, the firmware behaves normally.
 
-When `delegatedControl` is `true`:
+When `delegatedControlState.active` is `true`:
 
 - `readHexes()` sends raw button press/release events instead of command buttons, MIDI notes, or synth notes.
-- `lightUpLEDs()` displays `delegatedColors[]` directly instead of computed palette, wheel, scale, or animation colors, except while the local Advanced-menu `LED Test` selector is actively previewing a solid diagnostic color.
+- `lightUpLEDs()` displays `delegatedControlState.colors[]` directly instead of computed palette, wheel, scale, or animation colors, except while the local Advanced-menu `LED Test` selector is actively previewing a solid diagnostic color.
 - `arpeggiate()` returns early, so the mono/arpeggiator held-note sequencer is not advanced while a host owns the surface.
 - `updateWheels()` returns early.
 - `animateLEDs()` returns early.
@@ -96,7 +96,7 @@ Exit delegated mode:
 F0 7D 02 F7
 ```
 
-Entering delegated mode clears `delegatedColors[]` to black, clears delegated
+Entering delegated mode clears `delegatedControlState.colors[]` to black, clears delegated
 active-note tracking, wakes the OLED, and calls `setupMIDI()` to reset MIDI
 parser state. It does not reset the delegated note map. If the enter command is
 received while delegated mode is already active, active delegated notes are
@@ -282,12 +282,8 @@ Malformed trailing bytes are ignored because `processLedSysEx()` only processes 
 
 ## Development Notes
 
-Keep delegated control separate from user settings unless there is a clear product reason to persist it. If a future change persists delegated mode, update all of these places deliberately:
-
-- `SettingKey`
-- `factoryDefaults`
-- `syncSettingsToRuntime()`
-- menu callback wiring, if any
-- settings-version compatibility behavior
+Delegated mode is transient host state. Keep it separate from profile settings
+and preset-sync transfers. See the [developer guide](developer-guide.md) for
+cross-core ownership and [AGENTS.md](../AGENTS.md) for engineering constraints.
 
 Avoid adding heavy work to delegated-mode button or LED paths. The value of this mode is low-latency host control, and large logs, heap allocation, or blocking operations will make external LED animation and raw input feel sluggish.

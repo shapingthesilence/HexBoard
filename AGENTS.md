@@ -1,103 +1,65 @@
 # HexBoard Agent Instructions
 
-These rules apply repository-wide. Treat code as the final source of truth and
-update stale documentation with the code.
+Applies repository-wide. Code is authoritative; correct stale docs when relevant.
 
-## Source Ownership
+## Ownership And Runtime
 
-- Keep `HexBoard.ino` limited to Arduino lifecycle wrappers; firmware lives in
-  `src/firmware/`.
-- Give every `.cpp` direct headers and independent compilation. Put shared
-  declarations in the nearest owning subsystem header; keep private state in its
-  `.cpp`.
-- Use `synth/SynthAudio.h` as the public synth API and
-  `synth/SynthAudioInternal.h` only between synth modules.
-- Do not edit generated `build/` files as source.
-- Keep ISR code and latency-sensitive audio, scan, rotary, MIDI, and control
-  helpers and data in RAM with `RAM_FUNC` where measurement justifies it. Do not
-  move hot tables to flash.
-- Update `web/` when firmware behavior, schemas, protocol, or capabilities alter
-  what the companion app sends, receives, displays, or validates.
+- Keep `HexBoard.ino` to Arduino lifecycle wrappers; firmware belongs in
+  `src/firmware/`. Never edit generated `build/` files as source.
+- Each `.cpp` must include its direct dependencies and compile independently.
+  Shared declarations belong in the owning subsystem header; private state in
+  its `.cpp`. Use `synth/SynthAudio.h` across subsystems and keep
+  `SynthAudioInternal.h` synth-private.
+- Prefer coherent subsystem ownership over stacked narrow fixes unless a
+  temporary workaround is requested.
+- Keep latency-sensitive ISR, audio, scan, rotary, MIDI, and control work bounded
+  and allocation-free. Use `RAM_FUNC` where measurement justifies it; keep hot
+  helpers and tables in RAM.
+- Persist rotary inversion as user reversal of the detected hardware default,
+  separate from effective direction.
+- Normal builds have no diagnostic variants; temporary diagnostics are only for
+  an active boot investigation.
+- Update `web/` when firmware changes affect what it sends, receives, displays,
+  or validates.
 
-## Factory Images And Storage
+## Settings, Factory Images, And Storage
 
-- Treat `factory-library/` as source. Presets are web-compatible JSON under
-  `presets/`; wavetables are `.hexwav` files under `wavetables/`; source
-  subdirectories become device folders.
-- Compile only 12 EDO and Basic Shapes as rescue content. Other factory objects
-  remain editable catalog records.
-- `factory-library/config.json` owns factory settings and selected objects.
-  Keep it aligned with `SettingKeys.inc.h`, `factoryDefaults`, and
-  `CURRENT_SETTINGS_VERSION`.
+- Change setting keys only through `SettingKeys.inc.h`; update runtime sync,
+  menu wiring, factory config, and validation. Bump `CURRENT_SETTINGS_VERSION`
+  when persisted layout or byte meaning changes.
+- `factory-library/` is source: web-compatible preset JSON, tuning bundles, and
+  `.hexwav` wavetables. Source subdirectories become device folders.
+  `config.json` owns factory settings and selections; keep it aligned with
+  setting keys, `factoryDefaults`, and the current settings version.
+- Compile only 12 EDO and Basic Shapes as rescue content; other factory objects
+  are editable catalog records.
 - Normal builds must produce a complete, destructive `*_Factory.uf2` and a
-  firmware-only `*_Update.uf2`. Validate complete 256-byte pages for every
-  touched factory-image sector.
-- Assemble factory filesystems on the host. Boot mounts LittleFS once without
-  auto-format and never formats, provisions, migrates, repairs, or rewrites
-  compatible records.
-- Storage failures must still reach normal operation using hardware-aware
-  settings, an empty editable catalog, 12 EDO, and Basic Shapes. Disable saving
-  after mount failure and identify exact failing paths and validation stages.
-
-## Product And Engineering Constraints
-
-- Persist rotary inversion as the user's reversal of the detected hardware
-  default; keep the saved preference separate from effective direction.
-- Do not add diagnostic variants to normal builds. Use temporary diagnostics
-  only for an active boot investigation.
-- Prefer coherent ownership and maintainable subsystem design over stacked
-  narrow fixes unless the user requests a temporary workaround.
+  firmware-only `*_Update.uf2`. Assemble LittleFS on the host and validate all
+  256-byte pages in every touched factory-image sector.
+- Boot mounts LittleFS once without auto-format. Never format, provision,
+  migrate, repair, or rewrite compatible records during boot.
+- Storage failures must reach normal operation with hardware-aware defaults,
+  an empty editable catalog when unavailable, 12 EDO, and Basic Shapes. Mount
+  failure disables saving. Report exact failing paths and validation stages.
 
 ## Documentation
 
-Every behavior, setting, protocol, menu, build, hardware, or architecture change
-requires a documentation relevance check. Corrective changes that restore
-already-documented behavior need no doc edit. Document UI layout only when
-information, interaction, workflow, or a durable constraint changes.
-
-Replace stale text with concise current-state descriptions. Do not preserve
-investigation history, root cause narratives, implementation chronology, or
-verification history in repository documentation; Git history is the record of
-engineering changes.
-
-Do not document a change merely because code changed. Documentation describes
-the product as it currently works, not what was recently implemented, fixed,
-optimized, or restored. Never accumulate chronological commentary, migration
-narrative, prior behavior, implementation rationale, task outcomes, or
-engineering history in documentation. Release notes are written only when
-explicitly requested and should describe user-facing release impact rather than
-serve as an engineering log.
-
-Keep `docs/user-manual.md` strictly user focused. Include only information a
-user needs to understand the product, choose settings, operate it, or recover
-from a problem. Describe observable behavior in product language. Exclude
-internal scheduling, refresh policies, transfer mechanisms, performance
-implementation, architecture, source ownership, and developer verification.
-Do not add text when a code change preserves the manual's existing user-facing
-contract.
-
-- `README.md`: overview, features, repository layout, build, and flashing
-- `docs/user-manual.md`: user-visible behavior, defaults, workflows, hardware,
-  and troubleshooting; no implementation details or engineering history
-- `docs/sequencer/`: sequencer behavior, persistence, USB Backup, and layouts
-- `docs/developer-guide.md`: architecture, ownership, runtime, risks, and recipes
-- `docs/delegated-control.md`: delegated-control protocol and runtime gates
-- `docs/preset-sync-sysex.md`: preset-sync protocol and object schemas
-- `web/README.md`: companion-app development, deployment, and scope
-
-If no documentation changes are relevant, state why in the final report.
-
-## Settings
-
-- Add, remove, or reorder keys only through `SettingKeys.inc.h`; update runtime
-  sync, menu wiring, factory config, validation, and relevant docs.
-- Bump `CURRENT_SETTINGS_VERSION` whenever persisted layout or byte meaning
-  changes. Keep only the current schema contract in the developer guide.
+- Check relevance for behavior, settings, protocol, menu, build, hardware, and
+  architecture changes. Restoring an already documented contract needs no edit;
+  UI layout matters only when interaction, information, workflow, or a durable
+  constraint changes. If no docs change is needed, explain why in the final report.
+- Follow the audience and ownership map in [docs/README.md](docs/README.md).
+  User guides cover operation, choices, and recovery; developer references cover
+  implementation, runtime, schemas, and verification. Link instead of duplicating.
+- Replace stale text with current behavior. Keep investigation, root-cause,
+  migration, implementation, and verification history in Git. Write release
+  notes or proposals only when requested; separate proposals from current
+  contracts and label unimplemented features explicitly.
 
 ## Verification
 
-- Run `git diff --check`.
-- Run `make` for firmware changes; if Arduino cache access is blocked, request
-  escalation and retry.
-- For factory-library or web changes, run the generator and relevant web
-  tests/build. Report all verification results.
+- Run `git diff --check` and report verification results.
+- Firmware changes: run `make`; escalate and retry blocked Arduino cache access.
+- Factory content or web code/assets: run the factory generator and relevant
+  web tests/build. Documentation-only changes need no firmware or web build;
+  check affected links and validate technical claims against source.
