@@ -64,7 +64,7 @@ byte lastModulationWheelGestureMask = 0;
 byte lastPitchBendWheelGestureMask = 0;
 
 namespace {
-bool encoderCommandConsumed[3] = {}; // command buttons 0, 1, and 6
+bool encoderCommandConsumed[2] = {}; // the top two command buttons
 byte simulatedRotaryTurn = 0;
 }
 
@@ -91,27 +91,25 @@ void RAM_FUNC(readHexes)() {
     }
   }
 
-  // Reserve the modifier from its wheel action; latch chord keys until release.
+  // Keep the bottom button's normal wheel action while latching top-button
+  // chord presses as menu navigation until release.
   const bool shortcutEnabled = commandEncoder && !delegatedControlState.active
     && !presetSyncTransferActive;
   const bool modifierHeld = shortcutEnabled && (h[assignCmd[6]].btnState & 1);
-  const byte shortcutCommands[3] = {0, 1, 6};
-  for (byte slot = 0; slot < 3; ++slot) {
+  const byte shortcutCommands[2] = {0, 1};
+  for (byte slot = 0; slot < 2; ++slot) {
     const byte state = h[assignCmd[shortcutCommands[slot]]].btnState;
     if (state == BTN_STATE_OFF) encoderCommandConsumed[slot] = false;
-    if (modifierHeld && (slot == 2 || state == BTN_STATE_NEWPRESS)) {
+    if (modifierHeld && state == BTN_STATE_NEWPRESS) {
       encoderCommandConsumed[slot] = true;
-      if (slot < 2) {
-        const bool down = slot == 1;
-        simulatedRotaryTurn = (down == rotaryInvert) ? 8 : 16;
-      }
+      const bool down = slot == 1;
+      simulatedRotaryTurn = (down == rotaryInvert) ? 8 : 16;
     }
   }
 
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     if ((i == assignCmd[0] && encoderCommandConsumed[0])
-        || (i == assignCmd[1] && encoderCommandConsumed[1])
-        || (i == assignCmd[6] && encoderCommandConsumed[2])) continue;
+        || (i == assignCmd[1] && encoderCommandConsumed[1])) continue;
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
         if (presetSyncTransferActive) {
@@ -204,9 +202,9 @@ void RAM_FUNC(updateWheels)() {
     return;
   }
 
-  const byte shortcutCommands[3] = {0, 1, 6};
-  byte savedStates[3];
-  for (byte slot = 0; slot < 3; ++slot) {
+  const byte shortcutCommands[2] = {0, 1};
+  byte savedStates[2];
+  for (byte slot = 0; slot < 2; ++slot) {
     savedStates[slot] = h[assignCmd[shortcutCommands[slot]]].btnState;
     if (encoderCommandConsumed[slot]) h[assignCmd[shortcutCommands[slot]]].btnState = BTN_STATE_OFF;
   }
@@ -254,7 +252,7 @@ void RAM_FUNC(updateWheels)() {
       sendMIDImodulationToCh1();
     }
   }
-  for (byte slot = 0; slot < 3; ++slot) {
+  for (byte slot = 0; slot < 2; ++slot) {
     h[assignCmd[shortcutCommands[slot]]].btnState = savedStates[slot];
   }
 }

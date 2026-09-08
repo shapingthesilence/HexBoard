@@ -579,13 +579,15 @@ Select `Advanced` for these maintenance and system rows:
 - `LED Test`
 
 `Invert Encoder` reverses the normal encoder direction for your hardware.
-`Button Encoder` enables command-button rotation (off by default). Hold command
-button 6 and press 0 for counterclockwise/menu up or 1 for clockwise/menu down.
-Each press moves one step, independent of `Invert Encoder`. While enabled,
-button 6 is reserved as the modifier; chord presses do not change the command
-wheels. Release button 6 to use buttons 0 and 1 normally. This shortcut is
-available in music and sequencer modes, outside transfers; delegated control retains
-its own button handling.
+`Button Encoder` enables command-button rotation (off by default). Hold the
+bottom command button and press the top command button for counterclockwise/
+menu up, or the second command button from the top for clockwise/menu down.
+Each press moves one step, independent of `Invert Encoder`. While enabled, the
+bottom command button remains usable for its normal command-wheel function as
+well as acting as the modifier; the top two command buttons are used only for
+menu navigation while it is held. Release the bottom command button to use all
+three normally. This shortcut is available in music and sequencer modes,
+outside transfers; delegated control retains its own button handling.
 
 `Boot Anim` controls the startup LED animation; turn it off for the fastest,
 quietest visual boot. `Storage Status` shows `Storage OK` or the storage issues
