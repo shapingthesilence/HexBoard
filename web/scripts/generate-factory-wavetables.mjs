@@ -252,7 +252,7 @@ function encodeHexWav(samples) {
   return bytes;
 }
 
-function renderWebFactoryData(renderedWavetables) {
+function renderWebFactoryData(renderedWavetables, basicShapes) {
   let output = `// Generated from web/scripts/generate-factory-wavetables.mjs.\n`;
   output += `// Do not edit by hand; run npm run generate:factory-wavetables after changing built-in wavetable sources.\n\n`;
   output += `import { deterministicObjectId, objectIdToHex } from "./objectId.ts";\n\n`;
@@ -277,6 +277,7 @@ function renderWebFactoryData(renderedWavetables) {
   output += `  }\n`;
   output += `  return output;\n`;
   output += `}\n\n`;
+  output += `export function createBasicShapesSamples(): Uint8Array {\n  return decodeBase64Bytes(${JSON.stringify(Buffer.from(basicShapes.samples).toString("base64"))});\n}\n\n`;
   output += `export function createFactorySynthWavetables(): FactorySynthWavetable[] {\n`;
   output += `  return factoryWavetableDefinitions.map((definition) => ({\n`;
   output += `    objectIdHex: objectIdToHex(deterministicObjectId(\`factory-wavetable:\${factoryWavetableFolder}:\${definition.name}\`)),\n`;
@@ -297,7 +298,7 @@ for (const definition of wavetableSources) {
 // Basic Shapes is the immutable rescue wavetable. Everything else ships in
 // LittleFS so it can be renamed, edited, or erased like user-created content.
 await writeFile(firmwareOutputPath, renderFirmwareData(renderedWavetables.slice(0, 1)), "utf8");
-await writeFile(webOutputPath, renderWebFactoryData(renderedWavetables.slice(1)), "utf8");
+await writeFile(webOutputPath, renderWebFactoryData(renderedWavetables.slice(1), renderedWavetables[0]), "utf8");
 await mkdir(libraryOutputPath, { recursive: true });
 for (const entry of await readdir(libraryOutputPath, { withFileTypes: true })) {
   if (entry.isFile() && entry.name.toLowerCase().endsWith(".hexwav")) {

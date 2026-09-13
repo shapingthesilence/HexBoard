@@ -20,6 +20,7 @@ export class SynthPreviewController {
   private modValue = 0;
   private pendingNotes: PendingNote[] = [];
   private loading: Promise<void> | null = null;
+  private generation = 0;
 
   get active(): boolean {
     return this.context !== null && this.context.state !== "closed";
@@ -45,9 +46,17 @@ export class SynthPreviewController {
   }
 
   async noteOn(note: number, velocity = 0.9): Promise<void> {
+    if (!this.patch?.wavetableSamples) {
+      throw new Error("Download this wavetable from HexBoard to hear it in the browser");
+    }
     this.pendingNotes.push({ note, velocity });
-    await this.ensureStarted();
-    this.flushPendingNotes();
+    try {
+      await this.ensureStarted();
+      this.flushPendingNotes();
+    } catch (error) {
+      this.pendingNotes = [];
+      throw error;
+    }
   }
 
   noteOff(note: number): void {
@@ -61,6 +70,7 @@ export class SynthPreviewController {
   }
 
   async close(): Promise<void> {
+    this.generation++;
     this.allNotesOff();
     this.node?.disconnect();
     this.node = null;
@@ -80,7 +90,9 @@ export class SynthPreviewController {
     }
 
     if (!this.loading) {
-      this.loading = this.createAudioGraph();
+      const loading = this.createAudioGraph();
+      this.loading = loading;
+      void loading.finally(() => { if (this.loading === loading) this.loading = null; }).catch(() => {});
     }
     await this.loading;
   }
@@ -90,21 +102,31 @@ export class SynthPreviewController {
     if (!AudioContextCtor) {
       throw new Error("Browser audio preview is not available in this browser");
     }
+    const generation = this.generation;
     const context = new AudioContextCtor();
-    await context.audioWorklet.addModule(`${import.meta.env.BASE_URL}synth-preview-worklet.js`);
-    const node = new AudioWorkletNode(context, "hexboard-synth-preview", {
-      numberOfInputs: 0,
-      numberOfOutputs: 1,
-      outputChannelCount: [2]
-    });
-    node.connect(context.destination);
     this.context = context;
-    this.node = node;
-    this.node.port.postMessage({ type: "setVolume", volume: this.volume });
-    this.node.port.postMessage({ type: "setMod", value: this.modValue });
-    this.postPatch();
-    if (context.state === "suspended") {
-      await context.resume();
+    try {
+      // Resume during the user's gesture, before module loading yields.
+      const resumed = context.resume();
+      await Promise.all([
+        resumed,
+        context.audioWorklet.addModule(`${import.meta.env.BASE_URL}synth-preview-worklet.js`)
+      ]);
+      if (generation !== this.generation) return;
+      const node = new AudioWorkletNode(context, "hexboard-synth-preview", {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [2]
+      });
+      node.connect(context.destination);
+      this.node = node;
+      node.port.postMessage({ type: "setVolume", volume: this.volume });
+      node.port.postMessage({ type: "setMod", value: this.modValue });
+      this.postPatch();
+    } catch (error) {
+      if (context.state !== "closed") await context.close();
+      if (this.context === context) this.context = null;
+      throw error;
     }
   }
 

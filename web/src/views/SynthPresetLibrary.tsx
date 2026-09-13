@@ -28,6 +28,7 @@ import {
   type WavetableFrameReduction,
   type WavetableNormalization
 } from "../catalogs/index.ts";
+import { createBasicShapesSamples } from "../catalogs/factoryWavetables.ts";
 import { SynthPreviewController, type SynthPreviewPatch } from "../audio/synthPreview.ts";
 import { MockMidiTransport } from "../midi/mockTransport.ts";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
@@ -1144,11 +1145,8 @@ const auditionKeyMap = [
   { key: "'", offset: 17 }
 ] as const;
 
-const auditionKeyRows = [
-  auditionKeyMap.slice(0, 12),
-  auditionKeyMap.slice(12)
-] as const;
-const auditionFeatureVisible = false;
+const auditionKeyRows = [auditionKeyMap.slice(0, 13)] as const;
+const basicShapesSamples = createBasicShapesSamples();
 
 function midiNoteLabel(note: number): string {
   const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -1240,6 +1238,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const wavetableFileInputRef = useRef<HTMLInputElement>(null);
   const previewControllerRef = useRef<SynthPreviewController | null>(null);
   const previewChordTimerRef = useRef<number | null>(null);
+  const previewStopGeneration = useRef(0);
   const pressedPreviewKeys = useRef(new Map<string, number>());
   const latestPreviewPatch = useRef<SynthPreviewPatch | null>(null);
   const latestPreviewVolume = useRef(previewVolume);
@@ -1351,6 +1350,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     };
   }, [computerWavetables, hexboardWavetables, preset.wavetableFolderPath, preset.wavetableName]);
   const selectedPreviewWavetable = useMemo(() => {
+    if (preset.wavetableName === basicWavetableName) return { samples: basicShapesSamples };
     const selectedKey = wavetableSaveKey(normalizeWavetableReference(preset.wavetableFolderPath, preset.wavetableName));
     return [...computerWavetables, ...hexboardWavetables, ...factoryWavetableSources()].find((wavetable) =>
       wavetable.samples && wavetableSaveKey(wavetable) === selectedKey
@@ -1359,7 +1359,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const previewPatch = useMemo<SynthPreviewPatch>(() => ({
     wavetableName: preset.wavetableName,
     wavetableFolderPath: preset.wavetableFolderPath,
-    wavetableSamples: selectedPreviewWavetable?.samples ? synthWavetableBaseSamples(selectedPreviewWavetable.samples) : undefined,
+    wavetableSamples: selectedPreviewWavetable?.samples,
     values: preset.values
   }), [preset.values, preset.wavetableFolderPath, preset.wavetableName, selectedPreviewWavetable?.samples]);
   const liveSendPatch = useMemo(() => ({
@@ -1473,9 +1473,15 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       stopPreviewNote(note);
     }
 
+    const releaseOnBlur = () => stopAllPreviewNotes();
+    const releaseWhenHidden = () => { if (document.hidden) stopAllPreviewNotes(); };
+    window.addEventListener("blur", releaseOnBlur);
+    document.addEventListener("visibilitychange", releaseWhenHidden);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     return () => {
+      window.removeEventListener("blur", releaseOnBlur);
+      document.removeEventListener("visibilitychange", releaseWhenHidden);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       pressedPreviewKeys.current.clear();
@@ -1567,19 +1573,20 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   function previewController(): SynthPreviewController {
     if (!previewControllerRef.current) {
       previewControllerRef.current = new SynthPreviewController();
+      previewControllerRef.current.setPatch(latestPreviewPatch.current ?? previewPatch);
+      previewControllerRef.current.setVolume(latestPreviewVolume.current);
+      previewControllerRef.current.setMod(latestPreviewMod.current);
     }
-    previewControllerRef.current.setPatch(latestPreviewPatch.current ?? previewPatch);
-    previewControllerRef.current.setVolume(latestPreviewVolume.current);
-    previewControllerRef.current.setMod(latestPreviewMod.current);
     return previewControllerRef.current;
   }
 
   async function startPreviewNote(note: number) {
     try {
-      await previewController().noteOn(note);
       setHeldPreviewNotes((current) => current.includes(note) ? current : [...current, note]);
       setPreviewStatus(`Playing ${midiNoteLabel(note)}`);
+      await previewController().noteOn(note);
     } catch (error) {
+      stopPreviewNote(note);
       setPreviewStatus(error instanceof Error ? error.message : "Failed to start browser audio");
     }
   }
@@ -1590,6 +1597,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   function stopAllPreviewNotes(status = "Stopped") {
+    previewStopGeneration.current++;
     if (previewChordTimerRef.current !== null) {
       window.clearTimeout(previewChordTimerRef.current);
       previewChordTimerRef.current = null;
@@ -1614,9 +1622,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   async function playPreviewChord() {
     stopAllPreviewNotes("Starting chord");
+    const generation = previewStopGeneration.current;
     const root = (previewOctave + 1) * 12;
     const notes = [root, root + 7, root + 12, root + 16, root + 19];
     await Promise.all(notes.map((note) => startPreviewNote(note)));
+    if (generation !== previewStopGeneration.current) return;
     previewChordTimerRef.current = window.setTimeout(() => {
       stopAllPreviewNotes("Chord played");
     }, 1400);
@@ -3151,11 +3161,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         {Object.entries(drafts.entries).some(([key, entry]) => key !== draftKey && !sameContent(entry.value, entry.base)) ?
           <details className="compactDisclosure"><summary>Other drafts</summary><div className="row">{Object.entries(drafts.entries).filter(([key, entry]) => key !== draftKey && !sameContent(entry.value, entry.base)).map(([key, entry]) => <button type="button" key={key} onClick={() => openPreset(key.startsWith("hexboard:") ? "hexboard" : "computer", entry.value)}>{entry.value.name}</button>)}</div></details> : null}
 
-        {auditionFeatureVisible ? (
         <section className={auditionOpen ? "auditionPanel" : "auditionPanel collapsed"}>
           <div className="row between">
             <div>
-              <h3>Audition</h3>
+              <h3>Test keyboard</h3>
               <span className="muted">{auditionOpen ? previewStatus : "Hidden"}</span>
             </div>
             <button
@@ -3171,7 +3180,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
           {auditionOpen ? (
             <>
-              <div className="auditionKeyRows" onPointerLeave={() => stopAllPreviewNotes("Stopped")}>
+              <p className="muted">Browser sound preview · use the keys below or your typing keyboard. Notes use 12 EDO.</p>
+              <div className="auditionKeyRows">
                 {auditionKeyRows.map((row, rowIndex) => (
                   <div className="auditionKeys" key={`audition-row-${rowIndex}`}>
                     {row.map((mapping) => {
@@ -3191,6 +3201,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                             stopPreviewNote(note);
                           }}
                           onPointerCancel={() => stopPreviewNote(note)}
+                          onLostPointerCapture={() => stopPreviewNote(note)}
+                          aria-label={`Play ${midiNoteLabel(note)}`}
                         >
                           <strong>{mapping.key}</strong>
                           <span>{midiNoteLabel(note)}</span>
@@ -3225,7 +3237,6 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             </>
           ) : null}
         </section>
-        ) : null}
 
         <div className="fieldGrid">
           <label className="field">
@@ -3825,6 +3836,7 @@ function FxEnvelopeEditor({
 }
 
 function WaveformPreview({ samples, frame, name }: { samples?: Uint8Array; frame: number; name: string }) {
+  samples = samples ? synthWavetableBaseSamples(samples) : undefined;
   const points = samples ? Array.from({ length: 256 }, (_, index) => {
     const sample = samples[Math.min(samples.length - 1, frame * (samples.length / SYNTH_WAVETABLE_FRAME_COUNT) + Math.round(index * ((samples.length / SYNTH_WAVETABLE_FRAME_COUNT) - 1) / 255))];
     return `${index * 400 / 255},${44 - (sample - 128) / 128 * 36}`;

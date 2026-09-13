@@ -4,11 +4,14 @@ const ENVELOPE_TIMES_SECONDS = [
 ];
 
 const LFO_SPEEDS_HZ = [
-  0.05, 0.1, 0.2, 0.33, 0.5, 0.75, 1, 1.25, 1.5, 2,
+  0.05, 0.1, 0.2, 0.333, 0.5, 0.75, 1, 1.25, 1.5, 2,
   2.5, 3, 4, 5, 6, 8, 10, 12, 16, 20
 ];
 
-const FRAME_COUNT = 32;
+const FRAME_COUNT = 16;
+const MIP_LIMITS = [192, 96, 48, 24, 12, 6];
+const DEVICE_SAMPLE_RATE = 200000000 / 1024 / 6;
+const ATTENUATION = [64, 24, 17, 14, 12, 11, 10, 9, 8];
 const SAMPLE_COUNT = 512;
 const MAX_VOICES = 8;
 const TARGET_FOLD_WARP = 0;
@@ -64,95 +67,27 @@ function noiseStateSample(state) {
   return ((state >>> 24) / 127.5) - 1;
 }
 
-function smoothStep(value) {
-  return value * value * (3 - 2 * value);
-}
-
 function blend(a, b, amount) {
   return a + (b - a) * amount;
 }
 
-function normalizeSample(value) {
-  return clamp(value, -1, 1);
-}
-
-function generatedTableSample(name, frame, phase) {
-  const frameT = FRAME_COUNT <= 1 ? 0 : frame / (FRAME_COUNT - 1);
-  const harmonic = (multiplier, gain) => sine(wrapPhase(phase * multiplier)) * gain;
-
-  switch (name) {
-    case "Classic":
-      return normalizeSample(
-        harmonic(1, 0.78)
-        + harmonic(2, blend(0.05, 0.2, frameT))
-        + harmonic(3, blend(0.1, 0.28, frameT))
-        + harmonic(5, blend(0.03, 0.12, frameT))
-      );
-    case "Edge":
-      return normalizeSample(
-        blend(saw(phase), square(phase, blend(0.42, 0.58, frameT)), 0.35)
-        + harmonic(7, 0.12)
-        - harmonic(11, 0.06)
-      );
-    case "Glass":
-      return normalizeSample(
-        harmonic(1, 0.52)
-        + harmonic(blend(2.01, 2.8, frameT), 0.38)
-        + harmonic(blend(4.7, 6.2, frameT), 0.2)
-        + harmonic(9.1, 0.08)
-      );
-    case "Digital":
-      return normalizeSample(
-        Math.tanh(
-          blend(saw(phase), square(wrapPhase(phase * 2), 0.5), frameT) * 1.5
-          + harmonic(8, 0.28)
-        )
-      );
-    case "Motion":
-      return normalizeSample(
-        blend(sine(phase), triangle(phase), smoothStep(frameT)) * 0.8
-        + harmonic(blend(2, 5, frameT), 0.18)
-        + harmonic(blend(5, 2, frameT), 0.12)
-      );
-    case "Basic":
-    default: {
-      if (frameT < 1 / 3) {
-        return blend(sine(phase), triangle(phase), frameT * 3);
-      }
-      if (frameT < 2 / 3) {
-        return blend(triangle(phase), saw(phase), (frameT - 1 / 3) * 3);
-      }
-      return blend(saw(phase), square(phase, 0.5), (frameT - 2 / 3) * 3);
-    }
-  }
-}
-
-function createGeneratedWavetable(name) {
-  const frames = [];
-  for (let frame = 0; frame < FRAME_COUNT; frame += 1) {
-    const samples = new Float32Array(SAMPLE_COUNT);
-    for (let index = 0; index < SAMPLE_COUNT; index += 1) {
-      samples[index] = generatedTableSample(name, frame, index / SAMPLE_COUNT);
-    }
-    frames.push(samples);
-  }
-  return frames;
-}
-
+// Use the same 16 x 512 byte frames and optional six mip levels as firmware.
+// Missing tables stay silent instead of impersonating the selected instrument.
 function wavetableFromBytes(bytes) {
-  if (!bytes || bytes.length !== FRAME_COUNT * SAMPLE_COUNT) {
-    return null;
-  }
-  const frames = [];
-  for (let frame = 0; frame < FRAME_COUNT; frame += 1) {
-    const samples = new Float32Array(SAMPLE_COUNT);
-    const offset = frame * SAMPLE_COUNT;
-    for (let index = 0; index < SAMPLE_COUNT; index += 1) {
-      samples[index] = clamp((bytes[offset + index] - 128) / 128, -1, 1);
-    }
-    frames.push(samples);
-  }
-  return frames;
+  const stride = FRAME_COUNT * SAMPLE_COUNT;
+  if (!bytes || (bytes.length !== stride && bytes.length !== stride * MIP_LIMITS.length)) return null;
+  return Array.from({ length: bytes.length / stride }, (_, level) =>
+    Array.from({ length: FRAME_COUNT }, (_, frame) =>
+      Float32Array.from(bytes.subarray(level * stride + frame * SAMPLE_COUNT,
+        level * stride + (frame + 1) * SAMPLE_COUNT), value => (value - 128) / 128)));
+}
+
+// Floating point equivalents of SynthModulationCache.cpp's Q4 phase warps.
+function warpPhase(phase, fold, duty, poly) {
+  phase = wrapPhase(phase + Math.min(phase, 1 - phase) * fold * 5 / 256);
+  phase = wrapPhase(phase + (phase < 0.5 ? 1 : -1) * duty / 512);
+  const triangle = Math.min(phase, 1 - phase);
+  return wrapPhase(phase + triangle * (0.5 - triangle) * poly / 32);
 }
 
 class Envelope {
@@ -268,6 +203,8 @@ class Voice {
     this.phase = 0;
     this.frequency = 0;
     this.targetFrequency = 0;
+    this.glideRemaining = 0;
+    this.glideStep = 0;
     this.note = -1;
     this.velocity = 1;
     this.active = false;
@@ -278,6 +215,12 @@ class Voice {
 
   configure(patch) {
     const values = patch.values;
+    this.fxSettings = ["EffectEnvelope", "EffectEnvelope2"].map(prefix => ({
+      target: values[`${prefix}Target`],
+      depth: values[`${prefix}Amount`] - 127,
+      enabled: ["AttackIndex", "HoldIndex", "DecayIndex", "SustainLevel", "ReleaseIndex"]
+        .some(key => values[`${prefix}${key}`] !== 0)
+    }));
     this.env.configure(
       values.EnvelopeAttackIndex,
       values.EnvelopeHoldIndex,
@@ -308,8 +251,11 @@ class Voice {
     this.configure(patch);
     this.note = note;
     this.targetFrequency = midiToFrequency(note);
+    const glide = ENVELOPE_TIMES_SECONDS[patch.values.SynthPortamentoTimeIndex] ?? 0;
+    this.glideRemaining = this.active && glide > 0 ? Math.round(glide * sampleRate) : 0;
+    this.glideStep = this.glideRemaining ? (this.targetFrequency - this.frequency) / this.glideRemaining : 0;
+    if (!this.glideRemaining) this.frequency = this.targetFrequency;
     if (!this.active || retrigger) {
-      this.frequency = this.targetFrequency;
       this.phase = 0;
       this.env.attack();
       this.fxEnvs.forEach((env) => env.attack());
@@ -341,12 +287,9 @@ class Voice {
       return { sample: 0, envelope: 0 };
     }
 
-    const glideSeconds = ENVELOPE_TIMES_SECONDS[clamp(values.SynthPortamentoTimeIndex, 0, ENVELOPE_TIMES_SECONDS.length - 1)] ?? 0;
-    if (glideSeconds > 0 && this.frequency > 0) {
-      const glideStep = 1 / Math.max(1, glideSeconds * sampleRate);
-      this.frequency += (this.targetFrequency - this.frequency) * glideStep;
-    } else {
-      this.frequency = this.targetFrequency;
+    if (this.glideRemaining > 0) {
+      this.frequency += this.glideStep;
+      if (--this.glideRemaining === 0) this.frequency = this.targetFrequency;
     }
 
     let foldWarp = 0;
@@ -385,9 +328,12 @@ class Voice {
     };
 
     addTarget(values.SynthModTarget, processor.modValue * (values.SynthModAmount / 127));
-    addTarget(values.SynthLfoTarget, processor.lfoSample() * ((values.SynthLfoAmount - 127) / 127));
-    addTarget(values.EffectEnvelopeTarget, fxLevels[0] * (values.EffectEnvelopeAmount - 127));
-    addTarget(values.EffectEnvelope2Target, fxLevels[1] * (values.EffectEnvelope2Amount - 127));
+    addTarget(values.SynthLfoTarget, processor.lfoSample() * (values.SynthLfoAmount - 127));
+    for (let i = 0; i < 2; i++) {
+      const { target, depth, enabled } = this.fxSettings[i];
+      if (enabled) addTarget(target, target === TARGET_VIBRATO && depth < 0
+        ? -depth * (1 - fxLevels[i]) : fxLevels[i] * depth);
+    }
 
     pitch = clamp(pitch, -127, 127);
     vibrato = clamp(vibrato, -127, 127);
@@ -396,28 +342,14 @@ class Voice {
     polyWarp = clamp(polyWarp, -127, 127);
     wavetablePosition = clamp(wavetablePosition, -127, 127);
 
-    const vibratoSemitones = (vibrato / 127) * 0.8 * processor.vibratoSample();
     const pitchSemitones = (pitch / 127) * 24;
-    const frequency = this.frequency * 2 ** ((pitchSemitones + vibratoSemitones) / 12);
+    const frequency = this.frequency * 2 ** (pitchSemitones / 12)
+      * (1 + vibrato * 127 * processor.vibratoSample() / 262144);
     this.phase = wrapPhase(this.phase + frequency / sampleRate);
-
-    let phase = this.phase;
-    if (foldWarp !== 0) {
-      const amount = foldWarp / 127;
-      phase = wrapPhase(phase + triangle(phase) * amount * 0.18);
-    }
-    if (dutyWarp !== 0) {
-      const amount = dutyWarp / 127;
-      const bend = phase < 0.5 ? phase * 2 : (1 - phase) * 2;
-      phase = wrapPhase(phase + bend * amount * 0.14);
-    }
-    if (polyWarp !== 0) {
-      const amount = polyWarp / 127;
-      phase = wrapPhase(phase + sine(wrapPhase(phase * 3)) * amount * 0.08);
-    }
+    const phase = warpPhase(this.phase, foldWarp, dutyWarp, polyWarp);
 
     const position = clamp(values.SynthWavetablePosition + wavetablePosition, 0, 127);
-    const sample = processor.readWavetable(phase, position);
+    const sample = processor.readWavetable(phase, position, frequency);
     return {
       sample: sample * envLevel * this.velocity,
       envelope: envLevel
@@ -435,7 +367,6 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     this.heldNotes = [];
     this.heldOrder = [];
     this.arpCursor = 0;
-    this.arpDirection = 1;
     this.arpSamplesUntilNext = 0;
     this.lfoPhase = 0;
     this.lfoNoiseState = 0x6D2B79F5;
@@ -449,9 +380,8 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     this.vibratoNoiseCurrentSample = 0;
     this.currentLfoSample = 0;
     this.currentVibratoSample = 0;
-    this.outputSmooth = 0;
-    this.generatedWavetables = new Map();
-    this.activeWavetable = createGeneratedWavetable("Basic");
+    this.activeWavetable = null;
+    this.voiceAge = 0;
 
     this.port.onmessage = (event) => {
       const message = event.data;
@@ -522,6 +452,7 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
   }
 
   setPatch(patch) {
+    const previousMode = this.patch.values.PlaybackMode;
     this.patch = {
       ...this.defaultPatch(),
       ...patch,
@@ -531,16 +462,9 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       }
     };
     const sampleBytes = patch?.wavetableSamples ? new Uint8Array(patch.wavetableSamples) : null;
-    this.activeWavetable = wavetableFromBytes(sampleBytes) ?? this.generatedWavetable(this.patch.wavetableName);
+    this.activeWavetable = wavetableFromBytes(sampleBytes);
+    if (previousMode !== this.patch.values.PlaybackMode) this.allNotesOff();
     this.voices.forEach((voice) => voice.configure(this.patch));
-  }
-
-  generatedWavetable(name) {
-    const tableName = name || "Basic";
-    if (!this.generatedWavetables.has(tableName)) {
-      this.generatedWavetables.set(tableName, createGeneratedWavetable(tableName));
-    }
-    return this.generatedWavetables.get(tableName);
   }
 
   noteOn(note, velocity) {
@@ -548,6 +472,7 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     if (mode === 0) {
       return;
     }
+    if (this.heldNotes.includes(note)) return;
     if (!this.heldNotes.includes(note)) {
       this.heldNotes.push(note);
       this.heldOrder.push(note);
@@ -568,6 +493,7 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       voice = this.voices.reduce((oldest, candidate) => candidate.age < oldest.age ? candidate : oldest, this.voices[0]);
     }
     voice.trigger(note, velocity, this.patch, true);
+    voice.age = ++this.voiceAge;
   }
 
   noteOff(note) {
@@ -581,6 +507,7 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       return;
     }
     if (mode === MODE_MONO_RETRIGGER || mode === MODE_MONO_LEGATO) {
+      if (this.voices[0].note !== note) return;
       if (this.heldNotes.length > 0) {
         const nextNote = this.heldNotes[this.heldNotes.length - 1];
         this.voices[0].trigger(nextNote, 0.9, this.patch, mode === MODE_MONO_RETRIGGER);
@@ -595,7 +522,8 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
   allNotesOff() {
     this.heldNotes = [];
     this.heldOrder = [];
-    this.voices.forEach((voice) => voice.release());
+    this.arpCursor = 0;
+    this.voices.forEach((voice) => { voice.active = false; voice.env.stage = "idle"; voice.env.level = 0; });
   }
 
   lfoSample() {
@@ -675,8 +603,16 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       vibratoSpeedSetting === VIBRATO_SPEED_NOISE ? this.vibratoSmoothNoiseSample() : sine(this.vibratoPhase);
   }
 
-  readWavetable(phase, position) {
-    const framePosition = (position / 127) * (FRAME_COUNT - 1);
+  readWavetable(phase, position, frequency = 440) {
+    if (!this.activeWavetable) return 0;
+    const safeHarmonics = Math.min(sampleRate, DEVICE_SAMPLE_RATE) / (2 * frequency);
+    let level = 0;
+    while (level < this.activeWavetable.length - 1 && MIP_LIMITS[level] > safeHarmonics) level++;
+    const table = this.activeWavetable[level];
+    let framePosition = (position / 127) * (FRAME_COUNT - 1);
+    // Firmware snaps the 16 UI frame positions to exact frames.
+    const nearest = Math.round(framePosition);
+    if (position === Math.round(nearest * 127 / (FRAME_COUNT - 1))) framePosition = nearest;
     const frameA = Math.floor(framePosition);
     const frameB = Math.min(FRAME_COUNT - 1, frameA + 1);
     const frameFrac = framePosition - frameA;
@@ -684,8 +620,8 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     const sampleA = Math.floor(samplePosition) % SAMPLE_COUNT;
     const sampleB = (sampleA + 1) % SAMPLE_COUNT;
     const sampleFrac = samplePosition - Math.floor(samplePosition);
-    const tableA = this.activeWavetable[frameA] ?? this.activeWavetable[0];
-    const tableB = this.activeWavetable[frameB] ?? tableA;
+    const tableA = table[frameA] ?? table[0];
+    const tableB = table[frameB] ?? tableA;
     const valueA = blend(tableA[sampleA], tableA[sampleB], sampleFrac);
     const valueB = blend(tableB[sampleA], tableB[sampleB], sampleFrac);
     return blend(valueA, valueB, frameFrac);
@@ -742,17 +678,10 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
   }
 
   applyDrive(sample) {
-    switch (this.patch.values.SynthDrive) {
-      case 1:
-        return Math.tanh(sample * 1.15) / Math.tanh(1.15);
-      case 2:
-        return Math.tanh(sample * 1.8) / Math.tanh(1.8);
-      case 3:
-        return Math.tanh(sample * 2.8) / Math.tanh(2.8);
-      case 0:
-      default:
-        return sample;
-    }
+    const gain = [0, 1, 1.5, 2.5][this.patch.values.SynthDrive] ?? 0;
+    if (!gain) return sample;
+    const x = clamp(sample * gain, -1, 1);
+    return (3 * x - x * x * x) / 2;
   }
 
   process(_inputs, outputs) {
@@ -765,25 +694,20 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       this.stepModulators();
       let mix = 0;
       let envelopeSum = 0;
-      let activeCount = 0;
       for (const voice of this.voices) {
         const rendered = voice.render(this);
         mix += rendered.sample;
         envelopeSum += rendered.envelope;
-        if (rendered.envelope > 0) {
-          activeCount += 1;
-        }
       }
 
-      if (activeCount > 1) {
-        mix /= Math.sqrt(activeCount);
+      if (this.patch.values.PlaybackMode === MODE_POLY) {
+        const count = clamp(envelopeSum, 0, MAX_VOICES);
+        const whole = Math.floor(count);
+        mix *= blend(ATTENUATION[whole], ATTENUATION[Math.min(8, whole + 1)], count - whole) / 64;
       }
-      const dynamicLevel = activeCount > 0 ? clamp(envelopeSum / activeCount, 0.25, 1) : 0;
-      let sample = this.applyDrive(mix * dynamicLevel) * this.volume;
-      sample = clamp(sample, -0.95, 0.95);
-      this.outputSmooth += (sample - this.outputSmooth) * 0.45;
-      left[index] = this.outputSmooth;
-      right[index] = this.outputSmooth;
+      const sample = clamp(this.applyDrive(mix) * this.volume, -1, 1);
+      left[index] = sample;
+      right[index] = sample;
     }
     return true;
   }

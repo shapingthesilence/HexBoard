@@ -84,7 +84,7 @@ and `TRANSFER_END` so firmware can pace object transfers.
 | `midi/mockTransport.ts` | Internal offline transport and protocol test support |
 | `protocol/` | Constants, SysEx framing, TLV, CRC32, and 8-to-7 packing |
 | `components/` | Shared library actions, folders, and organization dialogs |
-| `audio/` | Browser audition implementation behind a disabled visibility gate |
+| `audio/` | Browser synth audition worklet and audio lifecycle |
 
 ## Integration Contracts
 
@@ -128,3 +128,19 @@ ACK/NACK failures, disconnects, dependency checks, and draft preservation on rea
 hardware as relevant. Mock transport coverage does not establish hardware timing
 or flash behavior. See [architecture proposals](../docs/architecture-proposals.md)
 for proposed editor and operation-service boundaries.
+
+### Browser synth audition
+
+The preset editor's Test keyboard starts collapsed. `audio/synthPreview.ts`
+loads `public/synth-preview-worklet.js` on the first note. The worklet follows
+firmware's 16-frame wavetable format, AHDSR timing, signed modulation targets,
+phase warps, linear portamento, drive curve, and envelope-weighted polyphonic
+attenuation. Actual sample bytes (including available mip levels) come from the
+selected library record; generated Basic Shapes samples share the firmware's
+factory generator. Unavailable wavetable data cannot be auditioned.
+
+This is a sound approximation: browser sample rate, floating point processing,
+mip selection, and voice transitions differ from firmware. It does not model
+the piezo, analog output, hardware tuning layout, or control scheduling.
+Worklet tests render samples without an audio device and check pitch, modulation,
+envelopes, table loading, and note lifecycle.

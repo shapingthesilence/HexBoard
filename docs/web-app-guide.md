@@ -141,6 +141,18 @@ uploading the same-name wavetable or selecting an alternate first. Wavetable
 names are unique across folders, and `Basic Shapes` is reserved for the
 built-in fallback.
 
+Expand **Test keyboard** in the preset editor to hear the current patch through
+your browser. It starts hidden. Hold the onscreen keys or their labeled typing
+keys; use Octave, Mod, Preview Vol, or Chord to test the sound. Stop, hiding the
+keyboard, and leaving the browser window stop playback. Editing text does not
+trigger notes. Notes use 12 EDO independently of the device's tuning layout.
+
+The preview uses the selected wavetable and synth settings to approximate the
+instrument's sound, including envelopes, modulation, drive, and playback mode.
+Your speakers and HexBoard's piezo will sound different. No connection is needed
+for Basic Shapes or wavetables available on the computer; download device-only
+wavetables before auditioning them. The keyboard does not send notes to HexBoard.
+
 ## Transfer Feedback
 
 Large transfers, such as full preset saves or wavetable imports, show their

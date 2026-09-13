@@ -945,6 +945,10 @@ textarea {
   background: var(--surface-raised);
 }
 
+.auditionPanel p {
+  margin: 0;
+}
+
 .auditionPanel.collapsed {
   padding: 8px 12px;
 }
@@ -965,8 +969,9 @@ textarea {
 
 .auditionKeys {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(42px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(13, minmax(38px, 1fr));
+  overflow-x: auto;
+  gap: 4px;
 }
 
 .auditionKey {
