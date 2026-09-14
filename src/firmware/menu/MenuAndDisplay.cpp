@@ -972,6 +972,14 @@ void previewLedTest(GEMPreviewCallbackData previewData) {
   lightUpLEDs();
 }
 
+SelectOptionByte optionByteLedDither[] = {{"8 bit", 8}, {"9 bit", 9}, {"10 bit", 10}};
+GEMSelect selectLedDither(sizeof(optionByteLedDither) / sizeof(SelectOptionByte), optionByteLedDither);
+GEMItem menuItemLedDither("LED Dither", ledDitherBits, selectLedDither);
+void previewLedDither(GEMPreviewCallbackData previewData) {
+  ledDitherBits = previewData.previewValByte;
+  lightUpLEDs();
+}
+
 SelectOptionByte optionByteWheelType[] = { { "Springy", 0 }, { "Sticky", 1 } };
 GEMSelect selectWheelType(sizeof(optionByteWheelType) / sizeof(SelectOptionByte), optionByteWheelType);
 PersistentCallbackInfo callbackInfoPBSticky = {
@@ -1670,7 +1678,7 @@ void previewDimLedLevel(GEMPreviewCallbackData previewData) {
   setLEDcolorCodes();
 }
 
-SelectOptionByte optionByteBright[] = { { "Off", BRIGHT_OFF }, { "Dimmer", BRIGHT_DIMMER }, { "Dim", BRIGHT_DIM }, { "Low", BRIGHT_LOW }, { "Normal", BRIGHT_MID }, { "High", BRIGHT_HIGH }, { "THE SUN", BRIGHT_MAX } };
+SelectOptionByte optionByteBright[] = { { "Off", BRIGHT_OFF }, { "Faint", BRIGHT_FAINTER }, { "Extra Dim", BRIGHT_EXTRA_DIM }, { "Dimmer", BRIGHT_DIMMER }, { "Dim", BRIGHT_DIM }, { "Low", BRIGHT_LOW }, { "Normal", BRIGHT_MID }, { "High", BRIGHT_HIGH }, { "THE SUN", BRIGHT_MAX } };
 GEMSelect selectBright(sizeof(optionByteBright) / sizeof(SelectOptionByte), optionByteBright);
 PersistentCallbackInfo callbackInfoBrightness = {
   static_cast<uint8_t>(SettingKey::GlobalBrightness),
@@ -2947,7 +2955,7 @@ void drawBootloaderReadyScreen() {
 void rebootToBootloader() {
   dismissCommandWheelOverlay();
   drawBootloaderReadyScreen();
-  clearLEDs();
+  clearLEDsAndWait();
   rp2040.rebootToBootloader();
 }
 /*
@@ -3280,6 +3288,7 @@ void setupAdvancedMenuPage() {
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
   menuPageAdvanced.addMenuItem(menuGotoSerialDebug);
   addPreviewMenuItem(menuPageAdvanced, menuItemLedTest, previewLedTest);
+  addPreviewMenuItem(menuPageAdvanced, menuItemLedDither, previewLedDither);
 }
 
 void setupMainSynthPresetLoadMenuItem() {

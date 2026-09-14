@@ -94,7 +94,6 @@ You need:
 
 - [arduino-cli](https://arduino.github.io/arduino-cli/latest/)
 - the Earle Philhower RP2040 core
-- `Adafruit NeoPixel`
 - `U8g2`
 - `Adafruit GFX Library`
 - `GEM`

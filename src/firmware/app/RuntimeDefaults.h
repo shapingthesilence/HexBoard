@@ -46,11 +46,12 @@ constexpr byte BRIGHT_HIGH = 210;
 constexpr byte BRIGHT_MID = 180;
 constexpr byte BRIGHT_LOW = 150;
 constexpr byte BRIGHT_DIM = 110;
+constexpr byte BRIGHT_EXTRA_DIM = 40;
 constexpr byte BRIGHT_DIMMER = 70;
 constexpr byte BRIGHT_DARK = 50;     // BRIGHT_DIMMEST
 constexpr byte BRIGHT_DARKER = 34;   // Lowest brightness before backlight shuts down
 constexpr byte BRIGHT_FAINT = 33;    // Highest brightness before backlight turns on
-constexpr byte BRIGHT_FAINTER = 24;  // Lowest brightness before any highlighted button is lit in all color modes
+constexpr byte BRIGHT_FAINTER = 24;  // Extra-low palette brightness
 constexpr byte BRIGHT_OFF = 0;
 
 constexpr byte LED_CURRENT_LIMIT_OFF = 0;
@@ -159,6 +160,7 @@ extern byte colorMode;
 extern bool bootAnimationEnabled;
 extern byte animationType;
 extern byte ledTestMode;
+extern byte ledDitherBits;  // Temporary comparison control; defaults to 9 at boot.
 extern byte globalBrightness;
 extern byte ledCurrentLimitMode;
 extern uint16_t ledCurrentLimitMilliamps;

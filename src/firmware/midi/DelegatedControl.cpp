@@ -76,7 +76,7 @@ void enterDelegatedControl(const uint8_t* appNameData = nullptr, const unsigned 
     releaseActiveDelegatedNotes();
   }
   setDelegatedAppName(appNameData, appNameLen);
-  for (auto& color : delegatedControlState.colors) {
+  for (auto& color : delegatedControlState.ledHsv) {
     color.store(0, std::memory_order_relaxed);
   }
   clearDelegatedNoteActivity();
@@ -167,12 +167,9 @@ void processLedSysEx(const uint8_t* data, const unsigned int len) {
     byte hueData = data[idx + 2] & 0x7F;
     byte satData = data[idx + 3] & 0x7F;
     byte valData = data[idx + 4] & 0x7F;
-    colorDef c = {
-      static_cast<float>(hueData) * 360.0f / 127.0f,
-      static_cast<byte>(2 * satData + (satData > 63 ? 1 : 0)),
-      static_cast<byte>(2 * valData + (valData > 63 ? 1 : 0))
-    };
-    delegatedControlState.colors[led] = getLEDcode(c);
+    delegatedControlState.ledHsv[led].store(
+      (static_cast<uint32_t>(hueData) << 16) | (static_cast<uint32_t>(satData) << 8) | valData,
+      std::memory_order_relaxed);
   }
 }
 

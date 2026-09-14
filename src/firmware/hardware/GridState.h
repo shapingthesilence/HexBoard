@@ -2,6 +2,7 @@
 
 #include "../FirmwareModule.h"
 #include "HardwareConfig.h"
+#include "LedColor.h"
 #include "../model/ScalePalettePreset.h"
 
 constexpr byte BTN_STATE_OFF = 0;
@@ -18,11 +19,11 @@ public:
   int8_t coordRow = 0;       // hex coordinates
   int8_t coordCol = 0;       // hex coordinates
   uint64_t timePressed = 0;  // timecode of last press
-  uint32_t LEDcodeAnim = 0;  // calculate it once and store value, to make LED playback snappier
-  uint32_t LEDcodePlay = 0;  // calculate it once and store value, to make LED playback snappier
-  uint32_t LEDcodeRest = 0;  // calculate it once and store value, to make LED playback snappier
-  uint32_t LEDcodeOff = 0;   // calculate it once and store value, to make LED playback snappier
-  uint32_t LEDcodeDim = 0;   // calculate it once and store value, to make LED playback snappier
+  LedColor LEDcodeAnim = 0;  // calculate it once and store value, to make LED playback snappier
+  LedColor LEDcodePlay = 0;  // calculate it once and store value, to make LED playback snappier
+  LedColor LEDcodeRest = 0;  // calculate it once and store value, to make LED playback snappier
+  LedColor LEDcodeOff = 0;   // calculate it once and store value, to make LED playback snappier
+  LedColor LEDcodeDim = 0;   // calculate it once and store value, to make LED playback snappier
   bool animate = false;      // true when this hex participates in the current animation frame
   int16_t stepsFromC = 0;    // number of steps from C4 (semitones in 12EDO; microtones if >12EDO)
   bool isCmd = false;        // true if this slot acts as a command instead of a playable note
@@ -164,7 +165,8 @@ extern bool toggleWheel;
 constexpr byte DELEGATED_APP_NAME_MAX = 20;
 struct DelegatedControlState {
   std::atomic<bool> active{false};
-  std::array<std::atomic<uint32_t>, LED_COUNT> colors = {};
+  // Core 1 publishes packed 7-bit HSV inputs; core 0 expands them to RGB16.
+  std::array<std::atomic<uint32_t>, LED_COUNT> ledHsv = {};
   std::array<std::atomic<char>, DELEGATED_APP_NAME_MAX + 1> appName = {};
   std::atomic<bool> displayDirty{false};
   std::atomic<bool> displayWakeRequested{false};

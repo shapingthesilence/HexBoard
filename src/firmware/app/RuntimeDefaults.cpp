@@ -129,6 +129,7 @@ bool bootAnimationEnabled = true;
 byte animationType = ANIMATE_BUTTON;
 
 byte ledTestMode = LED_TEST_OFF;
+byte ledDitherBits = 9;
 
 byte globalBrightness = BRIGHT_DIM;
 

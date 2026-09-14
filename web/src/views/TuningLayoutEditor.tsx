@@ -3771,6 +3771,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             <div>
               <span className="eyebrow">Live preview</span>
               <h2>HexBoard key map</h2>
+              <small className="muted">Palette preview. Compare low-brightness colors on your HexBoard using Brightness and LED Dither.</small>
             </div>
             <div className="previewContext">
               <span>{activeLayout.name}</span>

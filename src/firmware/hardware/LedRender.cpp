@@ -15,11 +15,9 @@
     color data to the LED pixels underneath
     the hex buttons.
   */
-#include <Adafruit_NeoPixel.h>  // library of code to interact with the LED array
-Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+#include "LedTransport.h"
+#include "LedColorMath.h"
 int32_t rainbowDegreeTime = 65'536;  // microseconds to go through 1/360 of rainbow
-constexpr uint16_t WS2812_IDLE_CURRENT_MA = 1;
-constexpr uint16_t WS2812_CHANNEL_MAX_CURRENT_MA = 20;
 constexpr byte BOOT_LED_CHECK_FIRST_BOOT_WHITE_VALUE = 120;
 constexpr byte BOOT_LED_CHECK_WAVE_VALUE = VALUE_NORMAL;
 constexpr byte BOOT_LED_CHECK_TRAIL_VALUE = VALUE_LOW;
@@ -75,55 +73,9 @@ bool pianoPitchClassIsBlack(int pianoPitchClass) {
 bool settingsFileMissingOnBoot = false;
 // Sequencer Note-colored steps reuse the keyboard palette before gamma/current
 // limiting, so cache the base hue/saturation where the palette is calculated.
-colorDef baseLedColorCache[LED_COUNT] = {};
+LedHsv baseLedColorCache[LED_COUNT] = {};
 bool baseLedColorCacheValid[LED_COUNT] = {};
 
-byte scaleLedChannel(byte channel, uint16_t scale65535) {
-  return static_cast<byte>((static_cast<uint32_t>(channel) * scale65535 + 32767u) / 65535u);
-}
-
-uint32_t estimateDynamicLedCurrentMilliamps(uint32_t packedColor) {
-  uint8_t red = static_cast<uint8_t>(packedColor >> 16);
-  uint8_t green = static_cast<uint8_t>(packedColor >> 8);
-  uint8_t blue = static_cast<uint8_t>(packedColor);
-  uint32_t channelSum = static_cast<uint32_t>(red) + green + blue;
-  return (channelSum * WS2812_CHANNEL_MAX_CURRENT_MA + 127u) / 255u;
-}
-
-void RAM_FUNC(applyLedCurrentLimitToFrame)() {
-  if (ledCurrentLimitMilliamps == 0) {
-    return;
-  }
-
-  constexpr uint32_t stripIdleCurrentMilliamps = static_cast<uint32_t>(LED_COUNT) * WS2812_IDLE_CURRENT_MA;
-  uint32_t dynamicCurrentMilliamps = 0;
-  for (byte i = 0; i < LED_COUNT; ++i) {
-    dynamicCurrentMilliamps += estimateDynamicLedCurrentMilliamps(strip.getPixelColor(i));
-  }
-
-  if (dynamicCurrentMilliamps == 0) {
-    return;
-  }
-
-  if (ledCurrentLimitMilliamps <= stripIdleCurrentMilliamps) {
-    strip.clear();
-    return;
-  }
-
-  uint32_t allowedDynamicMilliamps = static_cast<uint32_t>(ledCurrentLimitMilliamps) - stripIdleCurrentMilliamps;
-  if (dynamicCurrentMilliamps <= allowedDynamicMilliamps) {
-    return;
-  }
-
-  uint16_t scale65535 = static_cast<uint16_t>((allowedDynamicMilliamps * 65535u) / dynamicCurrentMilliamps);
-  for (byte i = 0; i < LED_COUNT; ++i) {
-    uint32_t packedColor = strip.getPixelColor(i);
-    uint8_t red = scaleLedChannel(static_cast<uint8_t>(packedColor >> 16), scale65535);
-    uint8_t green = scaleLedChannel(static_cast<uint8_t>(packedColor >> 8), scale65535);
-    uint8_t blue = scaleLedChannel(static_cast<uint8_t>(packedColor), scale65535);
-    strip.setPixelColor(i, strip.Color(red, green, blue));
-  }
-}
 /*
     This is actually a hacked together approximation
     of the color space OKLAB. A true conversion would
@@ -138,22 +90,15 @@ void RAM_FUNC(applyLedCurrentLimitToFrame)() {
     simple linear interpolation I created by hand comparing
     my HexBoard outputs to a Munsell color chip book.
   */
-int16_t transformHue(float h) {
-  float D = fmod(h, 360);
-  if (!perceptual) {
-    return 65536 * D / 360;
-  } else {
-    //                red            yellow             green        cyan         blue
-    int hueIn[] = { 0, 9, 18, 102, 117, 135, 142, 155, 203, 240, 252, 261, 306, 333, 360 };
-    //              #ff0000          #ffff00           #00ff00      #00ffff     #0000ff     #ff00ff
-    int hueOut[] = { 0, 3640, 5861, 10922, 12743, 16384, 21845, 27306, 32768, 38229, 43690, 49152, 54613, 58254, 65535 };
-    byte B = 0;
-    while (D - hueIn[B] > 0) {
-      B++;
-    }
-    float T = (D - hueIn[B - 1]) / (float)(hueIn[B] - hueIn[B - 1]);
-    return (hueOut[B - 1] * (1 - T)) + (hueOut[B] * T);
-  }
+uint16_t transformHue(float hue) {
+  float degrees = positiveFloatMod(hue, 360.0f);
+  if (!perceptual) return static_cast<uint16_t>(degrees * (65536.0f / 360.0f));
+  static uint16_t hueIn[] = {0,9,18,102,117,135,142,155,203,240,252,261,306,333,360};
+  static uint16_t hueOut[] = {0,3640,5861,10922,12743,16384,21845,27306,32768,38229,43690,49152,54613,58254,65535};
+  unsigned upper = 1;
+  while (upper < 14 && degrees > hueIn[upper]) ++upper;
+  float fraction = (degrees - hueIn[upper - 1]) / (hueIn[upper] - hueIn[upper - 1]);
+  return hueOut[upper - 1] + fraction * (hueOut[upper] - hueOut[upper - 1]);
 }
 
 namespace incandescence {
@@ -198,7 +143,7 @@ float getCoefficient(float lambda, float referenceTemperature) {
   return radiation / 256.0f;
 }
 
-colorDef getColor(int32_t temp) {
+LedHsv getColor(int32_t temp) {
   float r = planckRadiation(lambda_r, temp);
   float g = planckRadiation(lambda_g, temp);
   float b = planckRadiation(lambda_b, temp);
@@ -225,29 +170,37 @@ colorDef getColor(int32_t temp) {
   }
 
   if (h < 0.0) h += 360.0;
-  return colorDef{ h, (byte)(s * 255), (byte)(v) };
+  return LedHsv{ h, s * 255, v };
 }
 }
 
-/*
-    Saturation and Brightness are taken as is (already in a 0-255 range).
-    The global brightness / 255 attenuates the resulting color for the
-    user's brightness selection. Then the resulting RGB (HSV) color is
-    "un-gamma'd" to be converted to the LED strip color.
-  */
-uint32_t RAM_FUNC(getLEDcode)(colorDef c) {
-  return strip.gamma32(strip.ColorHSV(transformHue(c.hue), c.sat, c.val * globalBrightness / 255));
+namespace {
+// Boot handshakes transfer composition from core 1 to core 0.
+// The transport copies into an exclusively owned bank.
+class LedFrame {
+  LedColor pixels[LED_COUNT] = {};
+public:
+  void setPixelColor(byte i, LedColor color) { pixels[i] = color; }
+  LedColor getPixelColor(byte i) const { return pixels[i]; }
+  static LedColor Color(uint16_t r, uint16_t g, uint16_t b) { return {r,g,b}; }
+  void clear() { for (auto& pixel : pixels) pixel = 0; }
+  void show() { submitLedFrame(pixels, ledDitherBits, ledCurrentLimitMilliamps); }
+};
+LedFrame strip;
+} // namespace
+
+LedColor RAM_FUNC(getLEDcode)(LedHsv c) {
+  return gammaColor16(getLedPerceptualRgb16(c));
 }
 
-uint32_t RAM_FUNC(getLEDcodeLinear)(colorDef c) {
-  return strip.ColorHSV(transformHue(c.hue), c.sat, c.val * globalBrightness / 255);
+// Perceptual RGB before gamma, retained for sequencer pre-gamma level scaling.
+LedColor RAM_FUNC(getLedPerceptualRgb16)(LedHsv c) {
+  return hsvColor16(transformHue(c.hue), c.sat, c.val * globalBrightness / 255.0f);
 }
 
-uint32_t RAM_FUNC(gammaLEDcode)(uint32_t color) {
-  return strip.gamma32(color);
-}
+LedColor RAM_FUNC(applyLedGamma16)(LedColor color) { return gammaColor16(color); }
 
-bool RAM_FUNC(getBaseLedColorForPitchSteps)(int16_t pitchSteps, colorDef& colorOut) {
+bool RAM_FUNC(getBaseLedColorForPitchSteps)(int16_t pitchSteps, LedHsv& colorOut) {
   for (byte i = 0; i < LED_COUNT; ++i) {
     if (h[i].isCmd || !baseLedColorCacheValid[i] || h[i].stepsFromC != pitchSteps) {
       continue;
@@ -258,18 +211,13 @@ bool RAM_FUNC(getBaseLedColorForPitchSteps)(int16_t pitchSteps, colorDef& colorO
   return false;
 }
 
-byte applyBootLedCheckLevels(byte value) {
-  value = applyLEDLevel(value, ledRestBrightness);
-  return static_cast<byte>((static_cast<uint16_t>(value) * globalBrightness + 127) / 255);
+float applyBootLedCheckLevels(float value) {
+  value = scaleLedLevel(value, ledRestBrightness);
+  return value * globalBrightness / 255.0f;
 }
 
 byte interpolateByte(byte lowValue, byte highValue, uint16_t amount255) {
   return static_cast<byte>(lowValue + (((static_cast<uint16_t>(highValue - lowValue) * amount255) + 127) / 255));
-}
-
-byte blendByte(byte startValue, byte endValue, uint16_t amount255) {
-  int32_t delta = static_cast<int32_t>(endValue) - startValue;
-  return static_cast<byte>(startValue + ((delta * amount255 + (delta >= 0 ? 127 : -127)) / 255));
 }
 
 byte pulseBootLedValue(byte frame, byte frameCount, byte lowValue, byte highValue) {
@@ -291,25 +239,20 @@ float safeBootLedHue(float hue) {
   return hue;
 }
 
-uint32_t getBootLedCheckColor(float hue, byte sat, byte val) {
+LedColor getBootLedCheckColor(float hue, byte sat, byte val) {
   if (val == VALUE_BLACK) {
     return 0;
   }
-  return strip.gamma32(strip.ColorHSV(transformHue(safeBootLedHue(hue)),
+  return gammaColor16(hsvColor16(transformHue(safeBootLedHue(hue)),
                                       sat,
                                       applyBootLedCheckLevels(val)));
 }
 
-uint32_t getBootLedCheckRgb(byte red, byte green, byte blue) {
-  return strip.gamma32(strip.Color(applyBootLedCheckLevels(red),
-                                   applyBootLedCheckLevels(green),
-                                   applyBootLedCheckLevels(blue)));
-}
-
-uint32_t blendPackedColor(uint32_t startColor, uint32_t endColor, uint16_t amount255) {
-  return strip.Color(blendByte(static_cast<byte>(startColor >> 16), static_cast<byte>(endColor >> 16), amount255),
-                     blendByte(static_cast<byte>(startColor >> 8), static_cast<byte>(endColor >> 8), amount255),
-                     blendByte(static_cast<byte>(startColor), static_cast<byte>(endColor), amount255));
+LedColor blendLedColor16(LedColor start, LedColor end, uint16_t amount255) {
+  auto blend = [amount255](uint16_t a, uint16_t b) -> uint16_t {
+    return (static_cast<uint32_t>(a) * (255 - amount255) + static_cast<uint32_t>(b) * amount255 + 127) / 255;
+  };
+  return {blend(start.r, end.r), blend(start.g, end.g), blend(start.b, end.b)};
 }
 
 void setBootCommandButtonFade(uint16_t frameIndex, uint16_t fadeAmount255) {
@@ -329,24 +272,22 @@ void showBootLedCheckFrame(uint16_t holdMilliseconds,
                            uint16_t frameIndex,
                            uint16_t commandFadeAmount255) {
   setBootCommandButtonFade(frameIndex, commandFadeAmount255);
-  applyLedCurrentLimitToFrame();
   strip.show();
   delay(holdMilliseconds);
 }
 
 void showBootLedCheckRawFrame(uint16_t holdMilliseconds) {
-  applyLedCurrentLimitToFrame();
   strip.show();
   delay(holdMilliseconds);
 }
 
-void fillBootLedCheckFrame(uint32_t color) {
+void fillBootLedCheckFrame(LedColor color) {
   for (byte i = 0; i < LED_COUNT; ++i) {
     strip.setPixelColor(i, color);
   }
 }
 
-void fillBootLedCheckNoteFrame(uint32_t color) {
+void fillBootLedCheckNoteFrame(LedColor color) {
   for (byte i = 0; i < LED_COUNT; ++i) {
     if (!h[i].isCmd) {
       strip.setPixelColor(i, color);
@@ -424,7 +365,7 @@ void showBootLedCheckSplash(uint16_t& frameIndex) {
   strip.show();
 }
 
-void captureBootLedFrame(uint32_t* frame) {
+void captureBootLedFrame(LedColor* frame) {
   for (byte i = 0; i < LED_COUNT; ++i) {
     frame[i] = strip.getPixelColor(i);
   }
@@ -441,18 +382,17 @@ void writeNormalLedFrameToStrip() {
 }
 
 void fadeToNormalLedFrame() {
-  uint32_t startFrame[LED_COUNT];
-  uint32_t targetFrame[LED_COUNT];
+  LedColor startFrame[LED_COUNT];
+  LedColor targetFrame[LED_COUNT];
 
   captureBootLedFrame(startFrame);
   writeNormalLedFrameToStrip();
-  applyLedCurrentLimitToFrame();
   captureBootLedFrame(targetFrame);
 
   for (byte frame = 1; frame <= BOOT_LED_CHECK_NORMAL_FADE_FRAMES; ++frame) {
     uint16_t amount255 = (static_cast<uint16_t>(frame) * 255u) / BOOT_LED_CHECK_NORMAL_FADE_FRAMES;
     for (byte i = 0; i < LED_COUNT; ++i) {
-      strip.setPixelColor(i, blendPackedColor(startFrame[i], targetFrame[i], amount255));
+      strip.setPixelColor(i, blendLedColor16(startFrame[i], targetFrame[i], amount255));
     }
     strip.show();
     delay(BOOT_LED_CHECK_NORMAL_FADE_MS);
@@ -523,7 +463,7 @@ void setLEDcolorCodes() {
   for (byte i = 0; i < LED_COUNT; i++) {
     baseLedColorCacheValid[i] = false;
     if (!(h[i].isCmd)) {
-      colorDef setColor = { HUE_NONE, SAT_BW, VALUE_BLACK };
+      LedHsv setColor = { HUE_NONE, SAT_BW, VALUE_BLACK };
       bool userGeometryColorApplied = false;
       const int colorStepsFromOrigin = h[i].stepsFromC + keyCenteredColorOffset;
       uint16_t paletteIndex = positiveMod(colorStepsFromOrigin, cycleLength);
@@ -781,16 +721,16 @@ void setLEDcolorCodes() {
       }
       baseLedColorCache[i] = setColor;
       baseLedColorCacheValid[i] = true;
-      colorDef restColor = setColor;
+      LedHsv restColor = setColor;
       if (userGeometryColorApplied && restColor.val > USER_GEOMETRY_REST_COLOR_VALUE_MAX) {
         restColor.val = USER_GEOMETRY_REST_COLOR_VALUE_MAX;
       }
-      restColor.val = applyLEDLevel(restColor.val, ledRestBrightness);
+      restColor.val = scaleLedLevel(restColor.val, ledRestBrightness);
       h[i].LEDcodeRest = getLEDcode(restColor);
-      colorDef playColor = setColor.tint();
+      LedHsv playColor = setColor.tint();
       h[i].LEDcodePlay = getLEDcode(playColor);
-      colorDef dimColor = setColor.shade();
-      dimColor.val = applyLEDLevel(dimColor.val, ledDimBrightness);
+      LedHsv dimColor = setColor.shade();
+      dimColor.val = scaleLedLevel(dimColor.val, ledDimBrightness);
       h[i].LEDcodeDim = getLEDcode(dimColor);
       setColor = { HUE_NONE, SAT_BW, VALUE_BLACK };
       h[i].LEDcodeOff = getLEDcode(setColor);  // turn off entirely
@@ -802,24 +742,24 @@ void setLEDcolorCodes() {
 
 void RAM_FUNC(resetVelocityLEDs)() {
   byte topValue = byteLerp(0, 255, 85, 127, velWheel.curValue);
-  colorDef tempColor = {
+  LedHsv tempColor = {
     (runTime % (rainbowDegreeTime * 360)) / (float)rainbowDegreeTime,
     SAT_MODERATE,
-    applyLEDLevel(topValue, ledRestBrightness)
+    scaleLedLevel(topValue, ledRestBrightness)
   };
   strip.setPixelColor(assignCmd[0], getLEDcode(tempColor));
 
-  tempColor.val = applyLEDLevel(byteLerp(0, 255, 42, 85, velWheel.curValue), ledRestBrightness);
+  tempColor.val = scaleLedLevel(byteLerp(0, 255, 42, 85, velWheel.curValue), ledRestBrightness);
   strip.setPixelColor(assignCmd[1], getLEDcode(tempColor));
 
-  tempColor.val = applyLEDLevel(byteLerp(0, 255, 0, 42, velWheel.curValue), ledRestBrightness);
+  tempColor.val = scaleLedLevel(byteLerp(0, 255, 0, 42, velWheel.curValue), ledRestBrightness);
   strip.setPixelColor(assignCmd[2], getLEDcode(tempColor));
 }
 void RAM_FUNC(resetWheelLEDs)() {
   // middle button
   byte tempSat = SAT_BW;
   byte baseValue = static_cast<byte>(toggleWheel ? VALUE_SHADE : VALUE_LOW);
-  colorDef tempColor = { HUE_NONE, tempSat, applyLEDLevel(baseValue, ledRestBrightness) };
+  LedHsv tempColor = { HUE_NONE, tempSat, scaleLedLevel(baseValue, ledRestBrightness) };
   strip.setPixelColor(assignCmd[3], getLEDcode(tempColor));
   if (toggleWheel) {
     // pb red / green
@@ -827,14 +767,14 @@ void RAM_FUNC(resetWheelLEDs)() {
     tempColor = {
       (float)((pbWheel.curValue > 0) ? HUE_RED : HUE_CYAN),
       tempSat,
-      applyLEDLevel(VALUE_FULL, ledRestBrightness)
+      scaleLedLevel(VALUE_FULL, ledRestBrightness)
     };
     strip.setPixelColor(assignCmd[5], getLEDcode(tempColor));
 
-    tempColor.val = applyLEDLevel(static_cast<byte>(tempSat * (pbWheel.curValue > 0)), ledRestBrightness);
+    tempColor.val = scaleLedLevel(static_cast<byte>(tempSat * (pbWheel.curValue > 0)), ledRestBrightness);
     strip.setPixelColor(assignCmd[4], getLEDcode(tempColor));
 
-    tempColor.val = applyLEDLevel(static_cast<byte>(tempSat * (pbWheel.curValue < 0)), ledRestBrightness);
+    tempColor.val = scaleLedLevel(static_cast<byte>(tempSat * (pbWheel.curValue < 0)), ledRestBrightness);
     strip.setPixelColor(assignCmd[6], getLEDcode(tempColor));
   } else {
     // mod blue / yellow
@@ -843,32 +783,25 @@ void RAM_FUNC(resetWheelLEDs)() {
     tempColor = {
       (float)((modWheel.curValue > 63) ? HUE_YELLOW : HUE_INDIGO),
       tempSat,
-      applyLEDLevel(brightValue, ledRestBrightness)
+      scaleLedLevel(brightValue, ledRestBrightness)
     };
     strip.setPixelColor(assignCmd[6], getLEDcode(tempColor));
 
     if (modWheel.curValue <= 63) {
       brightValue = static_cast<byte>(127 - (tempSat / 2));
-      tempColor.val = applyLEDLevel(brightValue, ledRestBrightness);
+      tempColor.val = scaleLedLevel(brightValue, ledRestBrightness);
     }
     // when modWheel.curValue > 63, tempColor already holds the proper value
     strip.setPixelColor(assignCmd[5], getLEDcode(tempColor));
 
-    tempColor.val = applyLEDLevel(static_cast<byte>(tempSat * (modWheel.curValue > 63)), ledRestBrightness);
+    tempColor.val = scaleLedLevel(static_cast<byte>(tempSat * (modWheel.curValue > 63)), ledRestBrightness);
     strip.setPixelColor(assignCmd[4], getLEDcode(tempColor));
   }
 }
 
-inline uint8_t RAM_FUNC(scalePackedChannelQ8)(uint8_t component, uint16_t scaleQ8) {
-  uint32_t scaled = static_cast<uint32_t>(component) * scaleQ8;
-  scaled >>= 8;
-  return static_cast<uint8_t>(scaled > 255 ? 255 : scaled);
-}
-
-inline uint32_t RAM_FUNC(scalePackedColorQ8)(uint32_t color, uint16_t scaleQ8) {
-  return strip.Color(scalePackedChannelQ8(static_cast<uint8_t>(color >> 16), scaleQ8),
-                     scalePackedChannelQ8(static_cast<uint8_t>(color >> 8), scaleQ8),
-                     scalePackedChannelQ8(static_cast<uint8_t>(color), scaleQ8));
+inline LedColor RAM_FUNC(scaleLedColorQ8)(LedColor color, uint16_t scaleQ8) {
+  auto scale = [scaleQ8](uint16_t c) -> uint16_t { return (static_cast<uint32_t>(c) * scaleQ8 + 128) / 256; };
+  return {scale(color.r), scale(color.g), scale(color.b)};
 }
 
 void RAM_FUNC(applyMetronomeBrightnessFlash)() {
@@ -882,7 +815,7 @@ void RAM_FUNC(applyMetronomeBrightnessFlash)() {
                        ? (metronomeAccent ? METRONOME_BRIGHTNESS_ACCENT_SCALE_Q8 : METRONOME_BRIGHTNESS_BEAT_SCALE_Q8)
                        : METRONOME_BRIGHTNESS_REST_SCALE_Q8;
   for (byte i = 0; i < LED_COUNT; ++i) {
-    strip.setPixelColor(i, scalePackedColorQ8(strip.getPixelColor(i), scaleQ8));
+    strip.setPixelColor(i, scaleLedColorQ8(strip.getPixelColor(i), scaleQ8));
   }
 }
 
@@ -892,18 +825,18 @@ void RAM_FUNC(renderMetronomeSideButtonFlash)() {
   }
   byte value = metronomeAccent ? VALUE_FULL : VALUE_SHADE;
   float hue = metronomeAccent ? HUE_GREEN : HUE_RED;
-  colorDef flashColor = {
+  LedHsv flashColor = {
     hue,
     SAT_VIVID,
-    applyLEDLevel(value, ledRestBrightness)
+    scaleLedLevel(value, ledRestBrightness)
   };
-  uint32_t flashCode = getLEDcode(flashColor);
+  LedColor flashCode = getLEDcode(flashColor);
   for (byte cmd = 0; cmd < CMDCOUNT; ++cmd) {
     strip.setPixelColor(assignCmd[cmd], flashCode);
   }
 }
 
-uint32_t RAM_FUNC(applyNotePixelColor)(byte x) {
+LedColor RAM_FUNC(applyNotePixelColor)(byte x) {
   if (h[x].animate) {
     return h[x].LEDcodeAnim;
   }
@@ -925,8 +858,8 @@ uint32_t RAM_FUNC(applyNotePixelColor)(byte x) {
     return h[x].LEDcodeDim;
   }
 }
-uint32_t ledTestColorCode() {
-  byte value = globalBrightness;
+LedColor ledTestColorCode() {
+  uint16_t value = globalBrightness * 257u;
   switch (ledTestMode) {
     case LED_TEST_RED:
       return strip.Color(value, 0, 0);
@@ -941,15 +874,17 @@ uint32_t ledTestColorCode() {
   }
 }
 void renderLedTestFrame() {
-  uint32_t color = ledTestColorCode();
+  LedColor color = ledTestColorCode();
   for (byte i = 0; i < LED_COUNT; ++i) {
     strip.setPixelColor(i, color);
   }
-  applyLedCurrentLimitToFrame();
   strip.show();
 }
 void setupLEDs() {
-  strip.begin();  // INITIALIZE NeoPixel strip object
+  if (!setupLedTransport()) {
+    sendToLog("LED transport unavailable: PIO, DMA or spinlock resources exhausted.");
+    return;
+  }
   strip.show();   // Turn OFF all pixels ASAP
   sendToLog("LEDs started...");
 }
@@ -957,14 +892,47 @@ void clearLEDs() {
   strip.clear();
   strip.show();
 }
+
+void clearLEDsAndWait() {
+  // Maintenance-only barrier before reboot. Allow queued banks to drain and
+  // the black frame to latch; ordinary musical all-notes-off stays nonblocking.
+  strip.clear();
+  for (unsigned i = 0; i < 60; ++i) {
+    strip.show();
+    delay(1);
+  }
+}
+namespace {
+LedColor delegatedLedColor(byte pixel) {
+  static uint32_t cachedHsv[LED_COUNT] = {};
+  static byte cachedBrightness[LED_COUNT] = {};
+  static LedColor cachedColors[LED_COUNT] = {};
+  uint32_t hsv = delegatedControlState.ledHsv[pixel].load(std::memory_order_relaxed);
+  if (hsv != cachedHsv[pixel] || globalBrightness != cachedBrightness[pixel]) {
+    cachedHsv[pixel] = hsv;
+    cachedBrightness[pixel] = globalBrightness;
+    cachedColors[pixel] = getLEDcode({
+      static_cast<float>((hsv >> 16) & 127) * 360.0f / 127.0f,
+      static_cast<float>((hsv >> 8) & 127) * 255.0f / 127.0f,
+      static_cast<float>(hsv & 127) * 255.0f / 127.0f});
+  }
+  return cachedColors[pixel];
+}
+} // namespace
+
 void RAM_FUNC(lightUpLEDs)() {
+  // Removing blocking show() must not turn color composition into a busy loop.
+  static uint32_t lastRenderMicros = 0;
+  uint32_t now = micros();
+  if (static_cast<uint32_t>(now - lastRenderMicros) < 4300) return;
+  lastRenderMicros = now;
   if (ledTestMode != LED_TEST_OFF) {
     renderLedTestFrame();
     return;
   }
   if (delegatedControlState.active) {
     for (byte i = 0; i < LED_COUNT; i++) {
-      strip.setPixelColor(i, delegatedControlState.colors[i]);
+      strip.setPixelColor(i, delegatedLedColor(i));
     }
   } else {
     for (byte i = 0; i < LED_COUNT; i++) {
@@ -980,11 +948,10 @@ void RAM_FUNC(lightUpLEDs)() {
       // Sequencer owns its mode-specific LED policy; this renderer only applies
       // those overrides after the normal keyboard/metronome frame is built.
       sequencer::renderLedOverrides(
-        [](byte buttonIndex, uint32_t color) {
+        [](byte buttonIndex, LedColor color) {
           strip.setPixelColor(buttonIndex, color);
         });
     }
   }
-  applyLedCurrentLimitToFrame();
   strip.show();
 }

@@ -25,7 +25,7 @@ The `Makefile` targets Earle Philhower's RP2040 core with:
 - 16 MiB flash split into 8 MiB sketch and 8 MiB LittleFS
 - 250 MHz CPU and `Generic SPI /4` boot2
 - Pico SDK USB with the core `MIDIUSB` wrapper
-- `Adafruit NeoPixel`, `U8g2`, `Adafruit GFX Library`, and `GEM`
+- `U8g2`, `Adafruit GFX Library`, and `GEM`
 
 Audio timing derives from `F_CPU`. Select the 8-, 9-, or 10-bit synth PWM build
 with `PWM_BITS`; 10 is the default:
@@ -387,13 +387,59 @@ retries, flash muting, and hardware-specific output for every synth change.
 `setLEDcolorCodes()` updates cached rest, dim, off, play, and animation colors.
 All palette-derived modes share one key-aware color origin.
 
-`lightUpLEDs()` builds the final RGB frame, applies the current limiter, then
-calls `strip.show()`. The limiter therefore covers normal, animation, delegated,
-and sequencer frames.
+`LedColor` retains 16-bit RGB channels through cached colors, gamma, fades,
+metronome scaling, and current limiting. Transient HSV retains fractional
+brightness; persisted palettes and the global-brightness byte are unchanged.
+The gamma response remains 2.6, using a 257-entry 16-bit table with interpolation.
+Sequencer step brightness is applied to perceptual RGB before gamma.
 
-Incoming MIDI depth can coalesce dense LED changes. Sequencer note colors use
-the base palette hue/saturation cache and apply step brightness before final
-gamma and current limiting.
+`lightUpLEDs()` composes at most once per 4.3 ms. `LedTransport` compares the
+requested frame, dithering depth, and current limit with its last accepted
+submission and converts only changes. It packs 140 GRB pixels into 105 words
+plus a bit-count header per physical phase. Every DMA bank contains four phases:
+identical frames for 8 bits, A/B/A/B for 9, or A/B/C/D for 10. Black and full
+scale remain exact. Whole-pixel phase rotation distributes modulation without
+splitting equal RGB channels across phases.
+
+Three SRAM banks occupy 5,088 bytes. One PIO state machine (10 instructions),
+two dynamically claimed DMA channels, and one hardware spinlock own replay.
+PIO sends nominal 800 kbit/s with at least 128 microseconds of latch-low time;
+a physical frame takes about 4.33 ms. Two-phase modulation repeats near 116 Hz,
+four-phase modulation near 58 Hz. The DMA control channel retriggers the data
+channel from an aligned SRAM replay pointer. No frame conversion occurs in its
+IRQ, and replay continues while flash operations mask interrupts.
+
+The shared DMA IRQ 0 handler acknowledges which bank DMA selected, then publishes
+any pending bank for the next cycle. Delayed IRQs near the end of a DMA cycle
+leave replay unchanged and retry on the next IRQ, avoiding a race with restart. A bank is writable only when it is neither
+current nor selected for replay and no submission is pending. A spinlock guards
+this state against the IRQ on core 0 and the boot producer on core 1. Boot
+handshakes transfer single-producer ownership to core 0 for normal operation.
+Publication can take two four-phase cycles; newer frames are retried without
+blocking input. Core 1 publishes delegated MIDI HSV in one atomic 32-bit word;
+core 0 caches its RGB16 conversion, including brightness changes.
+
+The current limiter retains the conservative 1 mA idle per pixel and 20 mA per
+full-scale channel model behind the calibrated menu limits. It checks every
+encoded phase and uses one common RGB16 scale found by a bounded search when
+needed. Limits below idle consumption send black; software cannot remove the
+LEDs' idle draw. Normal, boot, delegated, test, and sequencer output all use this
+path. Firmware-update entry waits for black to latch before rebooting.
+
+`Advanced` -> `LED Dither` temporarily selects 8, 9, or 10 bits and resets to 9
+on boot. It is not a persisted setting or a diagnostic build variant. There is
+no automatic 10-bit threshold: low-light flicker must first be evaluated on
+hardware. `Faint` (24) and `Extra Dim` (40) extend the existing brightness menu
+below `Dimmer` (70) without changing settings layout or byte meaning.
+
+Host checks live in `tests/led_color_test.cpp` and cover the gamma curve,
+quantization, GRB packing, phase averages, current bounds, and bank handoff. Run them with
+`c++ -std=c++17 -O2 tests/led_color_test.cpp -o /tmp/hexboard-led-test` followed by
+`/tmp/hexboard-led-test`. On macOS installations without default C++ header
+search paths, add `-isystem "$(xcrun --show-sdk-path)/usr/include/c++/v1"`.
+Electrical timing, optical flicker, and audio/MIDI behavior under concurrent
+LED updates require board measurements; a successful build cannot establish
+those properties.
 
 ## Sequencer And Web Integration
 

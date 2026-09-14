@@ -206,6 +206,9 @@ Options include:
 - `Rest Bright`
 - `Dim Bright`
 
+`Brightness` includes `Faint` and `Extra Dim` below `Dimmer` for low-light
+use and comparison. At these levels, some palette colors may become very dark.
+
 Available color modes are `Rainbow`, `Diatonic`, `Alt`, `Fifths`, `Piano`, `Alt Piano`, `Filament`, and `Custom`. `Custom` shows a scale-degree color scheme loaded from the web editor. The animation list includes button, octave, by-note, star, splash, orbit, beams, reversed variants, and MIDI-in highlighting.
 
 `Settings` -> `ColorByKey` moves the palette origin with the selected musical
@@ -577,6 +580,7 @@ Select `Advanced` for these maintenance and system rows:
 - `Update Firmware`
 - `Serial Debug`
 - `LED Test`
+- `LED Dither`
 
 `Invert Encoder` reverses the normal encoder direction for your hardware.
 `Button Encoder` enables command-button rotation (off by default). Hold the
@@ -601,6 +605,16 @@ it. The page initially shows `Enabled`; turning it on reveals `General Log`,
 `LED Test` is temporary and is not saved in profiles. Enter it and scroll
 through `Red`, `Green`, `Blue`, or `White` to light every LED immediately.
 Leaving the selector resets it to `Off` and restores the normal LED display.
+
+`LED Dither` selects `8 bit`, `9 bit`, or `10 bit` for the current session.
+`9 bit` is the startup default. Higher settings alternate neighboring LED
+levels to show intermediate brightness. `10 bit` provides finer steps but can
+show more flicker, especially at very low brightness or while moving your eyes.
+It is not saved in profiles. For comparison, choose `Faint` or `Extra Dim` in
+`Lights & Colors`, then switch `LED Dither` while viewing the normal palette.
+`LED Test` uses direct RGB brightness, so its full-board colors are brighter
+than gamma-corrected palette colors at the same brightness setting.
+
 
 ### External Delegated Control
 
