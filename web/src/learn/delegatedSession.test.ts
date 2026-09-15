@@ -9,13 +9,13 @@ class Transport implements MidiTransport {
   sent: number[][] = [];
   send = vi.fn(async (bytes: ArrayLike<number>) => { this.sent.push(Array.from(bytes)); });
   subscribe(listener: MidiMessageListener) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
-  emit(bytes: number[]) { this.listeners.forEach((listener) => listener(Uint8Array.from(bytes))); }
-  ack(state = 1, token = this.sent.find((bytes) => bytes[2] === 7)!.slice(4, 8)) { this.emit([0xf0, 0x7d, 9, 1, ...token, state, 0xf7]); }
+  emit(bytes: number[], receivedAt = 1234) { this.listeners.forEach((listener) => listener(Uint8Array.from(bytes), receivedAt)); }
+  ack(state = 1, token = this.sent.find((bytes) => bytes[2] === 7)!.slice(4, 8)) { this.emit([0xf0, 0x7d, 9, 2, ...token, state, 0xf7]); }
 }
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
-describe("leased learning sessions", () => {
+describe("acknowledged learning sessions", () => {
   it("ignores notes and foreign acknowledgements until entry succeeds", async () => {
     const transport = new Transport(), onKey = vi.fn(), stopped = vi.fn();
     const session = new DelegatedSession(transport, onKey, stopped);
@@ -25,9 +25,9 @@ describe("leased learning sessions", () => {
     expect(onKey).not.toHaveBeenCalled();
     transport.ack(); await start;
     transport.emit([0x91, 30, 127]); transport.emit([0x91, 30, 0]);
-    expect(onKey.mock.calls).toEqual([[130, true], [130, false]]);
+    expect(onKey.mock.calls).toEqual([[130, true, 1234], [130, false, 1234]]);
     await vi.advanceTimersByTimeAsync(1000);
-    expect(transport.sent.at(-1)![2]).toBe(8);
+    expect(transport.sent.map((bytes) => bytes[2])).toEqual([7]);
     transport.ack();
     session.stop();
     expect(transport.sent.at(-1)!.slice(3, 7)).toEqual(transport.sent[0].slice(4, 8));
@@ -37,22 +37,38 @@ describe("leased learning sessions", () => {
     const transport = new Transport(), stopped = vi.fn();
     const session = new DelegatedSession(transport, vi.fn(), stopped);
     const start = session.start();
-    const result = expect(start).rejects.toThrow("Install firmware");
+    const result = expect(start).rejects.toThrow("Install the current firmware");
     await vi.advanceTimersByTimeAsync(3000); await result;
     expect(transport.sent.map((bytes) => bytes[2])).toEqual([7, 10]);
     expect(stopped).toHaveBeenCalledOnce();
     expect(transport.listeners.size).toBe(0);
   });
-  it("stops after connection loss and cannot revive from a late acknowledgement", async () => {
-    const transport = new Transport(), stopped = vi.fn();
-    const session = new DelegatedSession(transport, vi.fn(), stopped);
+  it("stays active without heartbeat traffic until manual exit, then reconnects", async () => {
+    const transport = new Transport(), stopped = vi.fn(), onKey = vi.fn();
+    const session = new DelegatedSession(transport, onKey, stopped);
     const start = session.start(); transport.ack(); await start;
-    await vi.advanceTimersByTimeAsync(3000);
-    transport.ack();
-    const count = transport.sent.length;
-    await vi.advanceTimersByTimeAsync(10000);
-    expect(transport.sent).toHaveLength(count);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(transport.sent.map((bytes) => bytes[2])).toEqual([7]);
+    expect(stopped).not.toHaveBeenCalled();
+    const oldToken = transport.sent[0].slice(4, 8);
+    transport.ack(0);
     expect(stopped).toHaveBeenCalledOnce();
+    const next = new DelegatedSession(transport, onKey, stopped);
+    const ready = next.start();
+    const token = transport.sent.at(-1)!.slice(4, 8);
+    transport.ack(1, token); await ready;
+    transport.ack(0, oldToken);
+    transport.emit([0x90, 60, 127], 6789);
+    expect(onKey).toHaveBeenLastCalledWith(60, true, 6789);
+    expect(stopped).toHaveBeenCalledOnce();
+    next.stop();
+  });
+  it("does not accept the retired heartbeat protocol", async () => {
+    const transport = new Transport();
+    const session = new DelegatedSession(transport, vi.fn(), vi.fn());
+    const result = expect(session.start()).rejects.toThrow("Install the current firmware");
+    transport.emit([0xf0, 0x7d, 9, 1, ...transport.sent[0].slice(4, 8), 1, 0xf7]);
+    await vi.advanceTimersByTimeAsync(2500); await result;
   });
   it("handles busy and manual device exits", async () => {
     const transport = new Transport(), stopped = vi.fn();

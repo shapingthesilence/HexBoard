@@ -2632,3 +2632,20 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
   .deviceStatus strong { font-size: .8rem; }
   .geometryStudioHeader { padding: 12px; }
 }
+
+.learnRunStats {
+  padding: 12px 16px;
+  margin: 12px 0;
+  background: var(--surface-muted);
+  border-radius: 10px;
+}
+.learnRunStats p { margin: 6px 0 0; }
+.learnRunStats strong { font-variant-numeric: tabular-nums; }
+.learnScaleSteps { grid-template-columns: repeat(auto-fit, minmax(48px, 1fr)); }
+.learnField input[type="range"] { width: 100%; }
+
+.learnBeatClock { display: flex; gap: 10px; align-items: center; font-variant-numeric: tabular-nums; }
+.learnBeatClock > span { color: var(--brand); opacity: .2; }
+.learnBeatClock > span.pulse { opacity: 1; }
+
+.learnScaleSteps .missed { border-color: var(--warning); border-style: dashed; }

@@ -5,10 +5,13 @@
 Milestone 1 is implemented as a prototype: one C-major scale lesson,
 Wicki-Hayden, Harmonic Table, and Janko layouts, compatible tuning-bundle import, browser sound,
 demonstration, on-screen and physical-key practice, LED hints, and repetition
-without hints. Firmware adds an acknowledged, expiring delegated session.
+without hints, adjustable board brightness, repeated scale patterns, run timing,
+and graded beat practice. Firmware uses acknowledged sessions with manual
+encoder recovery and no heartbeat.
 Real hardware acceptance remains required before a validated device release.
 
-Milestones 2–5 are proposals, not supported features. Current operation belongs
+Milestones 2–5 remain proposals; scale rhythm practice has been brought into
+the prototype. Current operation belongs
 in the [web guide](web-app-guide.md#learning-your-first-scale); the implemented
 wire contract belongs in [delegated control](delegated-control.md).
 
@@ -89,9 +92,11 @@ improvement and review over speed-based rankings or punitive streaks. Feedback
 should name the next useful action, such as practicing the transition into F.
 Local progress with export/import precedes any account system.
 
-The prototype checks one clean note attack at a time, requires releases,
+The prototype checks new note attacks in order, allows overlapping notes,
 accepts every key producing the exact requested pitch, and counts extra attempts.
-It does not grade timing, persist mastery, or infer learning from a single run.
+It now supports ascending, descending, round-trip, and thirds patterns, repeated
+run timing, and fixed-tempo beat grades. It does not persist mastery or infer
+learning from a single run.
 
 ## MIDI song trainer (proposed)
 
@@ -110,54 +115,56 @@ labels and fingerings are editable suggestions. Follow the
   and hint states.
 - `web/src/catalogs/layoutKey.ts`: shared generated/manual pitch precedence
   for learning and editing; transforms remain in `hexBoardGeometry.ts`.
-- `web/src/learn/delegatedSession.ts`: acknowledgement, heartbeats, input
+- `web/src/learn/delegatedSession.ts`: acknowledgement, scoped exit, input
   decoding, bounded LED batches, and cleanup.
 - `web/src/views/Learn.tsx`: lesson flow and audio/screen lifecycle.
 - `web/src/audio/synthPreview.ts`: shared browser audio engine.
-- Firmware `midi/DelegatedControl.cpp`: protocol/runtime lease ownership;
-  `DelegatedLease.h`: allocation-free clock/token state.
+- `web/src/learn/scalePractice.ts`: patterns and fixed-grid beat evaluation.
+- `web/src/learn/practiceMetronome.ts`: scheduled clicks and audio clock mapping.
+- Firmware `midi/DelegatedControl.cpp`: protocol/runtime session ownership.
 
 Extract a general target/evaluation model as additional exercise requirements
-become concrete. Rhythm scoring needs receive timestamps preserved through
+become concrete. Rhythm scoring uses receive timestamps preserved through
 the MIDI transport. Content and progress storage should remain separate from
 musical layouts and editor drafts.
 
 ## Session recovery
 
-Device lessons request a versioned session and wait for a matching
-acknowledgement. A heartbeat every second keeps the session alive. Five seconds
-without a valid heartbeat makes firmware release delegated notes and restore
-normal control. A per-session token prevents delayed heartbeats/exits from
-controlling a newer session. Matching repeated entry is idempotent; another
-owner or held keys produces a busy response.
+Device lessons request a version-2 session and wait for a matching
+acknowledgement. A per-session token prevents delayed exits from controlling a
+newer session. Matching repeated entry is idempotent; another owner or held
+keys produces a busy response. Core 0 owns MIDI input and all session
+transitions in both modes.
 
 The browser ends sessions on Stop, view change, hidden tab, page exit,
-disconnect, failed writes, or missing acknowledgements. Browser cleanup is
-best effort; firmware expiry covers crashes and frozen event loops. Encoder
-hold remains available. Legacy entry stays unleased. Old firmware ignores the
-new entry command, so the app fails to start instead of taking over without
-recovery. No settings layout or flash writes are introduced.
+disconnect, or failed writes. Startup requires an ACK within 2.5 seconds.
+There is no heartbeat or firmware expiry. If browser cleanup is not delivered,
+hold the encoder for five seconds to restore instrument control, then restart
+the lesson. Legacy entry remains supported. The retired version-1 heartbeat
+protocol is rejected, so update the web app and firmware together. No settings
+layout or flash writes are introduced.
 
 ## Milestones and acceptance
 
 | Milestone | Scope | Acceptance |
 | --- | --- | --- |
-| 1: working prototype | One guided scale, browser audio, LEDs, safe session ownership | Complete the same lesson on all three default layouts; prove lost-host recovery on hardware |
+| 1: working prototype | One guided scale, repeated patterns, beat grading, browser audio, LEDs, session ownership | Complete the same lesson on all three default layouts; prove encoder exit and re-entry on hardware |
 | 2: beginner release | About 12–15 lessons, triads, one progression, local progress | Beginner completes a short musical exercise with hints removed |
-| 3: practice expansion | Normal instrument mode, rhythm scoring, inversions, review | Feedback remains useful across layouts and tempos |
+| 3: practice expansion | Normal instrument mode, broader rhythm exercises, inversions, review | Feedback remains useful across layouts and tempos |
 | 4: song trainer | Curated pieces, MIDI import, part selection, passage looping | Supported imports yield playable, correctly timed exercises |
 | 5: other tunings | Tuning-specific intervals and scales | Targets use degrees/pitch relationships without assuming 12 notes |
 
 ## Verification
 
 Automated coverage includes baseline layouts, transformed ranges, duplicate
-pitches, overrides, unsupported actions, missing notes, clean attacks,
+pitches, overrides, unsupported actions, missing notes, overlapping attacks,
 releases, hints, acknowledgement gating, foreign tokens, missing firmware
-support, connection loss, manual exit status, LED batches, and clock wraparound.
+support, manual exit/re-entry status, LED batches, pattern timing, beat windows,
+missed notes, extra attempts, and metronome scheduling/cleanup.
 Run web tests/build, factory generator, firmware `make`, and `git diff --check`.
 
-Hardware acceptance must check both layouts with real key/LED identities,
+Hardware acceptance must check all three layouts with real key/LED identities,
 browser audio latency, held-key releases, encoder force-exit, lost USB, abrupt
-browser termination, frozen heartbeats, re-entry, old firmware, and normal
-playing after recovery. Key/LED activity must not renew the lease. Automated
+browser termination followed by encoder hold, re-entry, version mismatch,
+brightness adjustment, audible beat timing, and normal playing after exit. Automated
 transports cannot establish USB, cross-core, or audio timing.

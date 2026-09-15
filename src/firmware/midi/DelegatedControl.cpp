@@ -1,6 +1,5 @@
 #include "../FirmwareModule.h"
 #include "DelegatedControl.h"
-#include "DelegatedLease.h"
 #include "MidiTransport.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
@@ -10,22 +9,17 @@
 #include "../synth/SynthAudio.h"
 
 namespace {
-DelegatedLease lease;
-// Exit is applied by core 0 before scanning keys, so releases cannot race a
-// new delegated key press. Scoped requests are checked again when consumed.
-std::atomic<uint32_t> requestedExit{0};
-constexpr uint32_t legacyExitRequest = UINT32_MAX;
-constexpr byte leaseProtocolVersion = 1;
+// All MIDI input and session transitions belong to core 0.
+uint32_t sessionToken = 0;
+constexpr byte sessionProtocolVersion = 2;
 
-uint32_t leaseClockMs() { return static_cast<uint32_t>(readClock() / 1000); }
-
-uint32_t decodeLeaseToken(const uint8_t* bytes) {
+uint32_t decodeSessionToken(const uint8_t* bytes) {
   return (static_cast<uint32_t>(bytes[0]) << 21) | (static_cast<uint32_t>(bytes[1]) << 14)
     | (static_cast<uint32_t>(bytes[2]) << 7) | bytes[3];
 }
 
-void sendLeaseStatus(uint32_t token, byte status) {
-  byte message[] = {0x7D, SYSEX_DELEGATED_LEASE_STATUS, leaseProtocolVersion,
+void sendSessionStatus(uint32_t token, byte status) {
+  byte message[] = {0x7D, SYSEX_DELEGATED_SESSION_STATUS, sessionProtocolVersion,
     static_cast<byte>((token >> 21) & 127), static_cast<byte>((token >> 14) & 127),
     static_cast<byte>((token >> 7) & 127), static_cast<byte>(token & 127), status};
   withMIDI([&](auto& midi) { midi.sendSysEx(sizeof(message), message); });
@@ -97,9 +91,9 @@ void releaseActiveDelegatedNotes() {
 }
 
 void enterDelegatedControl(const uint8_t* appNameData = nullptr, const unsigned int appNameLen = 0) {
-  requestedExit.store(0, std::memory_order_relaxed);
-  const uint32_t previousToken = lease.end();
-  if (previousToken != 0) sendLeaseStatus(previousToken, 0);
+  const uint32_t previousToken = sessionToken;
+  sessionToken = 0;
+  if (previousToken != 0) sendSessionStatus(previousToken, 0);
   if (delegatedControlState.active) {
     releaseActiveDelegatedNotes();
   }
@@ -121,50 +115,43 @@ void enterDelegatedControl(const uint8_t* appNameData = nullptr, const unsigned 
 }
 
 void exitDelegatedControl() {
-  requestedExit.store(0, std::memory_order_relaxed);
   if (!delegatedControlState.active.exchange(false, std::memory_order_acq_rel)) {
     return;
   }
   releaseActiveDelegatedNotes();
-  const uint32_t previousToken = lease.end();
+  const uint32_t previousToken = sessionToken;
+  sessionToken = 0;
+  resetMidiInputParser(usbMidiInput);
+  resetMidiInputParser(serialMidiInput);
   delegatedControlState.displayRotation = 0xff;
-  if (previousToken != 0) sendLeaseStatus(previousToken, 0);
+  if (previousToken != 0) sendSessionStatus(previousToken, 0);
   delegatedControlState.displayDirty = false;
   delegatedControlState.displayWakeRequested = false;
   delegatedControlState.returnToMenuRequested = true;
   sendToLog("delegated = 0");
 }
 
-void serviceDelegatedControlLease() {
-  const uint32_t request = requestedExit.exchange(0, std::memory_order_acq_rel);
-  if (delegatedControlState.active && (request == legacyExitRequest
-      || (request != 0 && request == lease.token()) || lease.expired(leaseClockMs()))) {
-    exitDelegatedControl();
-  }
-}
-
-void processLeaseEnter(const uint8_t* data, unsigned int len, bool allowNewSession) {
-  if (len < 5 || data[0] != leaseProtocolVersion) return;
-  const uint32_t token = decodeLeaseToken(data + 1);
+void processSessionEnter(const uint8_t* data, unsigned int len) {
+  if (len < 5 || data[0] != sessionProtocolVersion) return;
+  const uint32_t token = decodeSessionToken(data + 1);
   if (token == 0) return;
   if (delegatedControlState.active) {
-    if (lease.renew(token, leaseClockMs())) sendLeaseStatus(token, 1);
-    else sendLeaseStatus(token, 2);  // Busy: another host owns the surface.
+    if (sessionToken == token) sendSessionStatus(token, 1);
+    else sendSessionStatus(token, 2);  // Busy: another host owns the surface.
     return;
   }
-  if (!allowNewSession) return;  // Ownership may have ended during this MIDI drain.
   for (byte i = 0; i < LED_COUNT; ++i) {
     if (h[i].btnState & 1) {
-      sendLeaseStatus(token, 2);  // Release held controls before changing owners.
+      sendSessionStatus(token, 2);  // Release held controls before changing owners.
       return;
     }
   }
-  // A fresh leased entry is processed in normal mode on core 0.
+  // A fresh session entry is processed in normal mode on core 0.
   panicStopOutput();
   resetDelegatedNoteMap();
   enterDelegatedControl(data + 5, len - 5);
-  lease.begin(token, leaseClockMs());
-  sendLeaseStatus(token, 1);
+  sessionToken = token;
+  sendSessionStatus(token, 1);
 }
 
 void RAM_FUNC(delegatedButtonEvent)(byte x, bool press) {
@@ -246,29 +233,24 @@ void processDelegatedSysEx(const uint8_t* data, const unsigned int len) {
   }
   switch (data[0]) {
     case SYSEX_DELEGATED_DISPLAY_ROTATION:
-      if (len == 6 && data[5] < 4 && lease.token() != 0 && decodeLeaseToken(data + 1) == lease.token()) {
+      if (len == 6 && data[5] < 4 && sessionToken != 0 && decodeSessionToken(data + 1) == sessionToken) {
         delegatedControlState.displayRotation.store(data[5], std::memory_order_relaxed);
         delegatedControlState.displayDirty.store(true, std::memory_order_release);
       }
       break;
-    case SYSEX_DELEGATED_LEASE_ENTER:
-      processLeaseEnter(data + 1, len - 1, false);
+    case SYSEX_DELEGATED_SESSION_ENTER:
+      processSessionEnter(data + 1, len - 1);
       break;
-    case SYSEX_DELEGATED_HEARTBEAT:
-      if (len == 5 && lease.renew(decodeLeaseToken(data + 1), leaseClockMs())) {
-        sendLeaseStatus(lease.token(), 1);
-      }
-      break;
-    case SYSEX_DELEGATED_LEASE_EXIT:
-      if (len == 5 && lease.token() != 0 && decodeLeaseToken(data + 1) == lease.token()) {
-        requestedExit.store(lease.token(), std::memory_order_release);
+    case SYSEX_DELEGATED_SESSION_EXIT:
+      if (len == 5 && sessionToken != 0 && decodeSessionToken(data + 1) == sessionToken) {
+        exitDelegatedControl();
       }
       break;
     case SYSEX_DELEGATED_ENTER:
       enterDelegatedControl(&data[1], len - 1);
       break;
     case SYSEX_DELEGATED_EXIT:
-      requestedExit.store(legacyExitRequest, std::memory_order_release);
+      exitDelegatedControl();
       break;
     case SYSEX_LED:
       processLedSysEx(&data[1], len - 1);
@@ -292,8 +274,8 @@ bool processIncomingSysEx(const uint8_t* data, const unsigned int len) {
   if (processPresetSyncSysEx(data, len)) {
     return true;
   }
-  if (len >= 9 && data[0] == 0xF0 && data[len - 1] == 0xF7 && data[1] == 0x7D && data[2] == SYSEX_DELEGATED_LEASE_ENTER) {
-    processLeaseEnter(data + 3, len - 4, true);
+  if (len >= 9 && data[0] == 0xF0 && data[len - 1] == 0xF7 && data[1] == 0x7D && data[2] == SYSEX_DELEGATED_SESSION_ENTER) {
+    processSessionEnter(data + 3, len - 4);
     return true;
   }
   if ((len >= 4) && (data[0] == 0xF0) && (data[len - 1] == 0xF7) && (data[1] == 0x7D) && (data[2] == SYSEX_DELEGATED_ENTER)) {

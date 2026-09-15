@@ -91,7 +91,7 @@ and `TRANSFER_END` so firmware can pace object transfers.
 | `protocol/` | Constants, SysEx framing, TLV, CRC32, and 8-to-7 packing |
 | `components/` | Shared library actions, folders, and organization dialogs |
 | `audio/` | Browser synth audition worklet and audio lifecycle |
-| `views/Learn.tsx`, `learn/` | Guided scale lesson, evaluation, expiring delegated sessions, and LED hints |
+| `views/Learn.tsx`, `learn/` | Guided scale lesson, evaluation, acknowledged delegated sessions, and LED hints |
 | `catalogs/layoutKey.ts` | Shared generated/manual layout pitch resolution |
 
 ## Learning Prototype
@@ -99,7 +99,7 @@ and `TRANSFER_END` so firmware can pace object transfers.
 The Learn tab offers a C-major scale on three factory 12-EDO layouts, compatible
 bundle import, on-screen practice, browser sound, and guided hardware LEDs.
 See [operation](../docs/web-app-guide.md#learning-your-first-scale),
-[session protocol](../docs/delegated-control.md#leased-sessions-and-abandoned-hosts),
+[session protocol](../docs/delegated-control.md#acknowledged-sessions-and-manual-recovery),
 and [the staged plan](../docs/learning-program-plan.md). Session teardown must
 stop browser audio, discard held input, cancel timers, and send token-scoped exit.
 No lesson action writes persistent device settings or catalog objects.
@@ -109,9 +109,19 @@ with 10 ms between batches. Function keys stay in hardware indexing but are
 omitted from the lesson SVG. A scoped display command temporarily matches the
 OLED orientation to the selected layout.
 
-Host-only lease clock tests can be built with
-`c++ -std=c++17 tests/delegated_lease_test.cpp -o /tmp/delegated-lease-test`
-from the repository root, then run `/tmp/delegated-lease-test`.
+`learn/scalePractice.ts` owns scale patterns and fixed-grid beat grading;
+`learn/practiceMetronome.ts` schedules Web Audio clicks. Web MIDI receive
+timestamps reach the evaluator in the performance clock domain. A note gets
+credit only within its assigned half-beat window. Timing credit decreases
+linearly from 1 at the beat to 0 at the window edge. The score is
+`round(100 × total credit / (target count + extra attempts))`; missed notes
+contribute zero. Grade bands are 90/75/50 (Excellent/Steady/Building), then
+Keep practicing. Count-in attacks are ungraded. Overlapping notes are accepted; holding a key
+does not count as another attack. Sounding keys carry across automatic runs.
+
+Run `npm test` for patterns, pitch/overlap rules, timing boundaries, scoring,
+session entry/exit/re-entry, and LED batching. Version-2 sessions have no
+heartbeat or timeout after entry; abandoned browsers require encoder hold.
 
 ## Integration Contracts
 

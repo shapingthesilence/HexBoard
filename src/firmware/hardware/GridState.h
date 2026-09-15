@@ -185,10 +185,10 @@ constexpr byte SYSEX_DELEGATED_EXIT = 2;
 constexpr byte SYSEX_LED = 3;
 constexpr byte SYSEX_DELEGATED_NOTE_MAP = 4;
 constexpr byte SYSEX_DELEGATED_NOTE_MAP_RESET = 5;
-constexpr byte SYSEX_DELEGATED_LEASE_ENTER = 7;
-constexpr byte SYSEX_DELEGATED_HEARTBEAT = 8;
-constexpr byte SYSEX_DELEGATED_LEASE_STATUS = 9;
-constexpr byte SYSEX_DELEGATED_LEASE_EXIT = 10;
+constexpr byte SYSEX_DELEGATED_SESSION_ENTER = 7;
+// Command 8 is retired; sessions do not use heartbeats.
+constexpr byte SYSEX_DELEGATED_SESSION_STATUS = 9;
+constexpr byte SYSEX_DELEGATED_SESSION_EXIT = 10;
 constexpr byte SYSEX_DELEGATED_DISPLAY_ROTATION = 11;
 constexpr byte SYSEX_DELEGATED_ENCODER_EVENT = 6;
 constexpr byte DELEGATED_ENCODER_UP = 1;

@@ -2,19 +2,12 @@
 #include "DelegatedControl.h"
 #include "ExternalMidiLedState.h"
 #include "MidiInput.h"
-#include <atomic>
 #include "MidiTransport.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../hardware/GridState.h"
 #include "../sequencer/SequencerMode.h"
 
 namespace {
-
-std::atomic<bool> inputPolling{false};
-struct MidiInputPollGuard {
-  bool acquired = !inputPolling.exchange(true, std::memory_order_acquire);
-  ~MidiInputPollGuard() { if (acquired) inputPolling.store(false, std::memory_order_release); }
-};
 
 constexpr uint64_t kMidiMonitorLateThresholdMicros = 5000ULL;
 constexpr uint32_t kMidiMonitorUsbRxSoftLimit = 64;
@@ -222,33 +215,17 @@ bool processIncomingSerialMidi(bool delegatedMode) {
   return processed || drainedBytes > 0;
 }
 
-bool processIncomingMIDIDelegated() {
-  MidiInputPollGuard guard;
-  if (!guard.acquired || !delegatedControlState.active) return false;
-  sampleMidiInputMonitorStats();
-  bool processed = false;
-  if (midiD & MIDID_USB) {
-    processed = processIncomingUsbMidi(true) || processed;
-  }
-  if (midiD & MIDID_SER) {
-    processed = processIncomingSerialMidi(true) || processed;
-  }
-  return processed;
-}
-
+// Core 0 is the sole reader in both modes. Entry/exit never hand live USB,
+// UART, or parser state to the audio core.
 bool RAM_FUNC(processIncomingMIDI)() {
-  MidiInputPollGuard guard;
-  if (!guard.acquired) return false;
-  if (delegatedControlState.active) {
-    return false;
-  }
   sampleMidiInputMonitorStats();
+  const bool delegated = delegatedControlState.active.load(std::memory_order_acquire);
   bool processed = false;
   if (midiD & MIDID_USB) {
-    processed = processIncomingUsbMidi(false) || processed;
+    processed = processIncomingUsbMidi(delegated) || processed;
   }
   if (midiD & MIDID_SER) {
-    processed = processIncomingSerialMidi(false) || processed;
+    processed = processIncomingSerialMidi(delegated) || processed;
   }
   return processed;
 }

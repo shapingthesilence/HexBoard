@@ -125,7 +125,6 @@ void hexboardSetup() {
 }
 void hexboardLoop() {        // run on first core
   timeTracker();     // Time tracking functions
-  serviceDelegatedControlLease();
   u8g2.serviceTransfer();
   serviceSerialDebugMessages();
   bool presetSyncOwnsUi = servicePresetSyncTransfer();
@@ -205,9 +204,6 @@ void hexboardLoop1() {  // run on second core
   serviceAudioDmaBuffers();
   if (!normalRuntimeReady.load(std::memory_order_acquire)) {
     return;
-  }
-  if (delegatedControlState.active) {
-    processIncomingMIDIDelegated();
   }
   readKnob();
 }

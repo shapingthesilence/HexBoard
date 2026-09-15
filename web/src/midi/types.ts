@@ -1,4 +1,4 @@
-export type MidiMessageListener = (bytes: Uint8Array) => void;
+export type MidiMessageListener = (bytes: Uint8Array, receivedAt?: number) => void;
 
 export interface MidiTransport {
   readonly label: string;
@@ -16,6 +16,7 @@ export interface MidiPortSummary {
 
 export interface WebMidiMessageEvent {
   data: Uint8Array;
+  timeStamp?: number;
 }
 
 export interface WebMidiInput {

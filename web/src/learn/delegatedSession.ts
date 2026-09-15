@@ -1,8 +1,8 @@
 import type { MidiTransport } from "../midi/types.ts";
 import type { LessonLedColor } from "./lessonColors.ts";
 
-const version = 1;
-const enter = 7, heartbeat = 8, status = 9, exit = 10;
+const version = 2;
+const enter = 7, status = 9, exit = 10;
 const ackTimeoutMs = 2500;
 function tokenBytes(token: number) { return [token >>> 21 & 127, token >>> 14 & 127, token >>> 7 & 127, token & 127]; }
 const frame = (command: number, ...payload: number[]) => [0xf0, 0x7d, command, ...payload, 0xf7];
@@ -21,8 +21,7 @@ export class DelegatedSession {
   private readonly token = (crypto.getRandomValues(new Uint32Array(1))[0] & 0x0fffffff) || 1;
   private phase: "idle" | "starting" | "active" | "closed" = "idle";
   private unsubscribe?: () => void;
-  private timer?: ReturnType<typeof setInterval>;
-  private lastAck = 0;
+  private timer?: ReturnType<typeof setTimeout>;
   private resolveStart?: () => void;
   private rejectStart?: (error: Error) => void;
   private desiredLights: LessonLedColor[] = [];
@@ -30,33 +29,26 @@ export class DelegatedSession {
   private painting = false;
 
   constructor(private readonly transport: MidiTransport,
-    private readonly onKey: (index: number, pressed: boolean) => void,
+    private readonly onKey: (index: number, pressed: boolean, receivedAt: number) => void,
     private readonly onStopped: (reason: string) => void) {}
 
   start(): Promise<void> {
     if (this.phase !== "idle") return Promise.reject(new Error("Start a new lesson session."));
     this.phase = "starting";
-    this.lastAck = performance.now();
     const ready = new Promise<void>((resolve, reject) => { this.resolveStart = resolve; this.rejectStart = reject; });
-    this.unsubscribe = this.transport.subscribe((bytes) => this.receive(bytes));
-    this.timer = setInterval(() => {
-      if (performance.now() - this.lastAck >= ackTimeoutMs) {
-        this.stop(this.phase === "starting"
-          ? "HexBoard did not confirm a safe learning session. Install firmware with learning-session recovery, then try again."
-          : "The connection stopped responding. Lesson paused; HexBoard returns to normal within five seconds.");
-      } else if (this.phase === "active") {
-        void this.transport.send(frame(heartbeat, ...tokenBytes(this.token))).catch(() => this.stop("HexBoard disconnected. Lesson stopped."));
-      }
-    }, 1000);
+    this.unsubscribe = this.transport.subscribe((bytes, receivedAt) => this.receive(bytes, receivedAt));
+    this.timer = setTimeout(() => this.stop(
+      "HexBoard did not confirm the learning session. Install the current firmware, release all keys, then try again. If the board is still in learning mode, hold the encoder for five seconds."
+    ), ackTimeoutMs);
     void this.transport.send(frame(enter, version, ...tokenBytes(this.token), ...Array.from("HexBoard Learn", (c) => c.charCodeAt(0))))
       .catch(() => this.stop("Could not start the HexBoard learning session."));
     return ready;
   }
 
-  stop(reason = "Lesson stopped. HexBoard will return to normal within five seconds.") {
+  stop(reason = "Lesson stopped. Hold the encoder for five seconds if the board is still in learning mode.") {
     if (this.phase === "closed") return;
     this.phase = "closed";
-    clearInterval(this.timer);
+    clearTimeout(this.timer);
     this.unsubscribe?.();
     this.rejectStart?.(new Error(reason));
     this.resolveStart = undefined;
@@ -77,19 +69,19 @@ export class DelegatedSession {
     if (!this.painting && this.phase === "active") void this.paint();
   }
 
-  private receive(bytes: Uint8Array) {
+  private receive(bytes: Uint8Array, receivedAt = performance.now()) {
     if (bytes.length === 10 && bytes[0] === 0xf0 && bytes[1] === 0x7d && bytes[2] === status
       && bytes[3] === version && bytes[9] === 0xf7
       && tokenBytes(this.token).every((value, i) => value === bytes[i + 4])) {
       if (bytes[8] === 1) {
         if (this.phase !== "active" && this.phase !== "starting") return;
-        this.lastAck = performance.now();
+        clearTimeout(this.timer);
         this.phase = "active";
         this.resolveStart?.();
         this.resolveStart = undefined;
         this.rejectStart = undefined;
       } else if (bytes[8] === 2) {
-        this.stop("Release all keys and close other apps controlling HexBoard, then try again.");
+        this.stop("Release all keys and close other apps controlling HexBoard, then try again. Hold the encoder for five seconds to exit an abandoned lesson.");
       } else if (bytes[8] === 0) {
         this.stop("HexBoard ended the learning session. Start again when ready.");
       }
@@ -97,7 +89,7 @@ export class DelegatedSession {
     }
     if (this.phase !== "active") return;
     const event = decodeDelegatedKey(bytes);
-    if (event) this.onKey(event.index, event.pressed);
+    if (event) this.onKey(event.index, event.pressed, receivedAt);
   }
 
   private async paint() {

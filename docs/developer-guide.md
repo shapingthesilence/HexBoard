@@ -57,7 +57,7 @@ Keep Node tooling inside `web/`; use `web/README.md` for app commands.
 | Core 0 setup | USB/MIDI, LittleFS loading, hardware detection, LEDs, OLED, menu, settings sync |
 | Core 0 loop | controls, notes, MIDI input, LEDs, display, menu, and auto-save |
 | Core 1 setup | PWM and DMA audio transport |
-| Core 1 loop | audio refill, rotary polling, and delegated MIDI polling |
+| Core 1 loop | audio refill and rotary polling |
 | PWM-paced DMA | rendered audio blocks to the active PWM compare register |
 
 Primary flow:
@@ -141,16 +141,16 @@ It is owned by the model subsystem. `NoteDispatch.cpp` owns direct/chord MIDI
 reference counts and hidden synth handles.
 
 `DelegatedControlState delegatedControlState` groups delegated colors, note
-maps, display requests, and active notes. Fields shared by Core 1 MIDI handling
-and Core 0 controls/rendering are atomic; the app name is published before the
-atomic active-state transition.
+maps, display requests, and active notes. Core 0 owns MIDI input, session
+transitions, note output, and rendering in both modes. Core 1 services audio
+and scans the encoder; it never polls MIDI. Drains are bounded and stop when
+the active mode changes. Mode transitions reset parser state without reopening
+USB or UART endpoints.
 
-`DelegatedControl.cpp` owns an optional RAM-only host lease. Core 1 renews
-matching heartbeats; Core 0 checks expiry and consumes host exit requests
-before scanning keys, keeping note release on the control owner. Normal and
-delegated MIDI polling use a non-waiting atomic guard and stop draining on mode
-changes. The [delegated-control reference](delegated-control.md#leased-sessions-and-abandoned-hosts)
-owns token, acknowledgement, timeout, and legacy compatibility rules.
+`DelegatedControl.cpp` owns a RAM-only session token. Sessions end explicitly
+through host exit or encoder hold; no heartbeat or expiry is used. The
+[delegated-control reference](delegated-control.md#acknowledged-sessions-and-manual-recovery)
+owns token, acknowledgement, and compatibility rules.
 
 `midiNoteToHexIndices` uses fixed bitsets, avoiding per-note heap allocation
 while preserving fast incoming-MIDI LED lookup.
@@ -195,8 +195,8 @@ Display events retain pending state; Core 0 services the asynchronous OLED
 transport between drawing passes. See [Menu and display](#menu-and-display)
 for ownership, presentation cadence, and navigation gating.
 
-Core 1 stays limited to audio DMA service, delegated MIDI when active, and the
-RAM-resident allocation-free rotary decoder.
+Core 1 stays limited to audio DMA service and the RAM-resident allocation-free
+rotary decoder.
 
 Rotary inversion is:
 
@@ -428,8 +428,8 @@ current nor selected for replay and no submission is pending. A spinlock guards
 this state against the IRQ on core 0 and the boot producer on core 1. Boot
 handshakes transfer single-producer ownership to core 0 for normal operation.
 Publication can take two four-phase cycles; newer frames are retried without
-blocking input. Core 1 publishes delegated MIDI HSV in one atomic 32-bit word;
-core 0 caches its RGB16 conversion, including brightness changes.
+blocking input. Core 0 records delegated MIDI HSV in one atomic 32-bit word
+and caches its RGB16 conversion, including brightness changes.
 
 The current limiter retains the conservative 1 mA idle per pixel and 20 mA per
 full-scale channel model behind the calibrated menu limits. It checks every

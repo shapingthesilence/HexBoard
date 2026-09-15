@@ -52,31 +52,32 @@ export class MajorScaleRun {
   readonly held = new Map<number, number>();
   step = 0;
   mistakes = 0;
-  feedback = "Find C4 to begin. Play one note at a time.";
+  feedback: string;
+  startedAt?: number;
+  finishedAt?: number;
+  constructor(readonly notes: readonly number[] = majorScale) {
+    this.feedback = `Find ${noteName(notes[0])} to begin. Play the notes in order; overlapping notes are welcome.`;
+  }
+  get elapsedMs() { return this.startedAt === undefined || this.finishedAt === undefined ? undefined : this.finishedAt - this.startedAt; }
 
-  get complete() { return this.step === majorScale.length && this.held.size === 0; }
-  press(index: number, note: number) {
+  get complete() { return this.step === this.notes.length; }
+  press(index: number, note: number, receivedAt = performance.now()) {
     if (this.held.has(index) || this.complete) return false;
-    const cleanAttack = this.held.size === 0;
     this.held.set(index, note);
-    if (this.step === majorScale.length) {
-      this.mistakes++;
-      this.feedback = "Release all held keys to finish the scale.";
-      return true;
-    }
-    if (cleanAttack && note === majorScale[this.step]) {
+    if (note === this.notes[this.step]) {
+      this.startedAt ??= receivedAt;
       this.step++;
-      this.feedback = this.step === majorScale.length ? "Release the last note to finish." : `Good. Release, then find ${scaleNames[this.step]}.`;
+      if (this.step === this.notes.length) this.finishedAt = receivedAt;
+      this.feedback = this.step === this.notes.length ? "You played a complete C-major pattern." : `Good. Next: ${noteName(this.notes[this.step])}.`;
     } else {
       this.mistakes++;
-      this.feedback = cleanAttack ? `You played ${noteName(note)}. Look for ${scaleNames[this.step]}.` : "Release the held keys, then try the next note.";
+      this.feedback = `You played ${noteName(note)}. Look for ${noteName(this.notes[this.step])}.`;
     }
     return true;
   }
   release(index: number) {
     const note = this.held.get(index);
     this.held.delete(index);
-    if (this.complete) this.feedback = "You played a complete C-major scale.";
     return note;
   }
 }

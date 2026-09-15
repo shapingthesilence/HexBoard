@@ -60,7 +60,7 @@ export class WebMidiTransport implements MidiTransport {
     if (this.input) {
       this.input.onmidimessage = (event) => {
         for (const listener of this.listeners) {
-          listener(event.data);
+          listener(event.data, event.timeStamp);
         }
       };
     }

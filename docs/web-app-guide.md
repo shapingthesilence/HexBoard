@@ -5,17 +5,40 @@
 Open **Learn** for a guided C-major scale from C4 to C5. Choose Wicki-Hayden,
 Harmonic Table, or Janko, then **Start on HexBoard**, or use **Try on screen** without a board.
 Release all hardware keys before starting. Board lessons require firmware with
-learning-session recovery; the app explains when an update is needed.
+version-2 learning sessions; the app explains when an update is needed.
 
 Sound comes from the browser during the lesson. **Hear & watch the scale**
-demonstrates the pattern. Play one note at a time, releasing it before the next.
+demonstrates the pattern. Play notes in order; you can hold one while pressing the next.
 Every playable note keeps its Rainbow-mode color across octaves, with C as red.
 The next pitch becomes much brighter with a solid outline; any matching key
 counts. Held keys brighten in their own note color and have a dashed outline
-on screen. Function keys are hidden from the lesson map. The app waits for
-correct answers and counts extra attempts without a
-timer. Finish by releasing C5, then repeat with hints, repeat without hints, or
-try the same scale on another layout. Progress is only for the current run.
+on screen. Function keys are hidden from the lesson map. Adjust **Board
+brightness** at any time, including during a run. This scales the lesson's LED
+values within the saved board brightness and current limit; it does not change
+saved settings or dim the web map.
+
+Choose a **Scale pattern**: ascending, descending, up and down, down and up,
+or thirds. Round trips play the turning note once. All patterns stay within
+C4–C5 and work on any supported layout.
+
+- **At your own pace · timed runs** waits for correct answers and counts extra
+  attempts. Timing starts with the first correct attack and stops at the last
+  correct attack, excluding the final held note. The final correct attack completes the run. The last run's time and extra attempts remain visible.
+- **Play to a beat · graded runs** offers 40–180 BPM and four high count-in
+  clicks before every run. Play one note per click; targets advance even if
+  you miss. Each run shows a score out of 100, a grade, notes hit, misses,
+  extra attempts, and average distance from the beat in milliseconds. A
+  complete pattern also shows its first-to-last attack time. The score rewards
+  correct notes close to their assigned beat and penalizes misses and extras.
+  Use speakers or wired headphones for consistent timing; device/browser
+  latency still affects the result.
+
+**Repeat runs automatically** starts another free run on your next first note,
+or another beat run after the next count-in. Turn it off before starting for
+single runs with repeat buttons. Stop to change the pattern, mode, tempo, or
+layout. Hints and board brightness remain adjustable during practice.
+Demonstrations are available in at-your-own-pace mode. Results last only for
+this visit; no mastery or practice history is saved.
 
 Under **Use your own layout**, import a tuning-bundle JSON exported from the
 editor. This prototype supports standard concert-pitch 12-EDO bundles with the
@@ -28,11 +51,12 @@ The lesson uses its selected layout; saved device settings are not replaced.
 The web map rotates with the layout, and current firmware temporarily rotates
 the board's OLED to match. The saved OLED orientation returns on exit.
 Normal instrument playing and controls return after **Stop lesson**. Switching
-views or hiding the browser tab ends the session. If the browser crashes or
-disconnects, firmware returns control within five seconds of its last
-heartbeat. Holding the encoder for about five seconds also exits on the board.
-This recovery applies to Learn's sessions; older delegated-control apps may
-use sessions without a timeout.
+views or hiding the browser tab ends the session. Sessions have no heartbeat
+or automatic timeout. If the browser crashes or disconnects before exit is
+delivered, hold the encoder for about five seconds. Release the encoder and
+all keys, then start another lesson; restarting the board is not part of the
+normal recovery workflow. Update the app and firmware together for version-2
+sessions.
 
 ## Connecting and Editing
 
