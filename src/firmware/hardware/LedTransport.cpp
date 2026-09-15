@@ -31,6 +31,10 @@ unsigned ledSm;
 LedColor lastFrame[LED_COUNT];
 uint8_t lastBits = 0;
 uint16_t lastLimit = 0;
+// Last published bank (initially the boot black bank). Until another bank is
+// published it remains protected as pending, replay, or current; it cannot be
+// returned by available(). Single-producer ownership also covers this index.
+unsigned lastPublishedBank = 0;
 
 // Control completion means its read-address trigger has selected the next bank.
 // Replay remains autonomous even while IRQs are masked for a flash write.
@@ -158,9 +162,14 @@ bool submitLedFrame(const LedColor* frame, uint8_t bits, uint16_t currentLimitMi
   memcpy(lastFrame, frame, sizeof(lastFrame));
   lastBits = bits;
   lastLimit = currentLimitMilliamps;
+  // RGB16 changes can disappear during quantization/current limiting. Compare
+  // the complete ordered phase stream, not just average RGB, before publishing.
+  // Keep the input cache above even for a no-op, so repeats skip conversion too.
+  if (memcmp(banks[bank], banks[lastPublishedBank], sizeof(banks[bank])) == 0) return true;
   __dmb();
   irqState = spin_lock_blocking(bankLock);
   bankState.pending = bank;
+  lastPublishedBank = bank;
   spin_unlock(bankLock, irqState);
   return true;
 }

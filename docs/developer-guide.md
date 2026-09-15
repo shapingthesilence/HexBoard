@@ -395,7 +395,12 @@ Sequencer step brightness is applied to perceptual RGB before gamma.
 
 `lightUpLEDs()` composes at most once per 4.3 ms. `LedTransport` compares the
 requested frame, dithering depth, and current limit with its last accepted
-submission and converts only changes. It packs 140 GRB pixels into 105 words
+submission and converts only changes. After quantization and current limiting,
+it compares the complete ordered phase stream with the last published bank.
+Identical output updates the input cache without queuing a bank swap; unchanged
+pixels retain their phase sequence when other pixels change, unless the shared
+current limiter changes their output. DMA continues replaying the existing bank.
+It packs 140 GRB pixels into 105 words
 plus a bit-count header per physical phase. Every DMA bank contains four phases:
 identical frames for 8 bits, A/B/A/B for 9, or A/B/C/D for 10. Black and full
 scale remain exact. Whole-pixel phase rotation distributes modulation without

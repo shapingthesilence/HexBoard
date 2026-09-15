@@ -11,7 +11,7 @@ int main() {
   // A reserved bank must never be selected while the producer is writing it.
   for (unsigned scenario = 1; scenario <= 128; ++scenario) {
     LedBankState state;
-    int dmaBank = 0, reserved = -1;
+    int dmaBank = 0, reserved = -1, lastPublished = 0;
     bool irqPending = false;
     uint32_t random = scenario;
     for (unsigned step = 0; step < 10000; ++step) {
@@ -21,7 +21,11 @@ int main() {
           if (reserved < 0) reserved = state.available();
           break;
         case 1:
-          if (reserved >= 0) { state.pending = reserved; reserved = -1; }
+          if (reserved >= 0) {
+            state.pending = reserved;
+            lastPublished = reserved;
+            reserved = -1;
+          }
           break;
         case 2:
           dmaBank = state.replay;
@@ -31,7 +35,7 @@ int main() {
           if (irqPending) { state.acknowledge(dmaBank); irqPending = false; }
           break;
       }
-      assert(reserved < 0 || (reserved != dmaBank && reserved != state.replay));
+      assert(reserved < 0 || (reserved != dmaBank && reserved != state.replay && reserved != lastPublished));
     }
   }
   uint16_t previousGamma = 0;
@@ -74,6 +78,29 @@ int main() {
   auto byteAt = [&](unsigned phase, unsigned index) {
     return (words[phase * phaseWords + 1 + index / 4] >> (24 - 8 * (index % 4))) & 255;
   };
+  // Orange inputs with a sub-step change encode identically at every depth.
+  // A real green-channel change must still publish; changing a different pixel
+  // must preserve the unchanged pixel's complete ordered phase sequence.
+  uint32_t reference[4 * phaseWords];
+  for (unsigned phases : {1u, 2u, 4u}) {
+    for (auto& pixel : frame) pixel = LedColor(1028, 514, 0);
+    encodeLimitedLedBank(reference, frame, count, phases, 0);
+    frame[0].r += 1;
+    encodeLimitedLedBank(words, frame, count, phases, 0);
+    assert(memcmp(words, reference, sizeof(words)) == 0);
+    frame[1].g += 257;
+    encodeLimitedLedBank(words, frame, count, phases, 0);
+    assert(memcmp(words, reference, sizeof(words)) != 0);
+    for (unsigned phase = 0; phase < 4; ++phase) {
+      assert((words[phase * phaseWords + 1] & 0xffffff00u) ==
+             (reference[phase * phaseWords + 1] & 0xffffff00u));
+    }
+    // Changes hidden by a below-idle current limit also produce the same bank.
+    encodeLimitedLedBank(reference, frame, count, phases, 140);
+    frame[0] = LedColor(65535, 65535, 0);
+    encodeLimitedLedBank(words, frame, count, phases, 140);
+    assert(memcmp(words, reference, sizeof(words)) == 0);
+  }
   uint32_t seed = 123;
   for (unsigned trial = 0; trial < 32; ++trial) {
     for (auto& pixel : frame) {
