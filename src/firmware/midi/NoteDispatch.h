@@ -8,3 +8,4 @@ bool RAM_FUNC(mappedButtonHasAdvancedAction)(byte x);
 void RAM_FUNC(tryMappedButtonActionOn)(byte x);
 void RAM_FUNC(tryMappedButtonActionOff)(byte x);
 void RAM_FUNC(releaseAllMappedButtonActions)();
+void releaseActiveMidiNotesForRoutingReset();

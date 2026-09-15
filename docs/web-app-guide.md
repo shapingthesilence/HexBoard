@@ -2,24 +2,42 @@
 
 ## Learning Your First Scale
 
-Open **Learn** for a guided C-major scale from C4 to C5. Choose Wicki-Hayden,
-Harmonic Table, or Janko, then **Start on HexBoard**, or use **Try on screen** without a board.
-Release all hardware keys before starting. Board lessons require firmware with
-version-2 learning sessions; the app explains when an update is needed.
+Open **Learn** to practice scales. It starts with the bundled **12 EDO (Normal)**
+tuning and major scale. Wicki-Hayden, Harmonic Table, and Janko are available
+without downloading anything. Choose **Start on HexBoard**, or **Try on screen**
+without a board. Release all hardware keys before starting.
+
+### Loading from HexBoard
+
+Connecting loads only the tuning names. Choose a tuning under **On HexBoard**
+to read its definition, palette, and layout/scale names. Choose a layout to read
+that layout and its key assignments; choose a scale to read its degrees. Learn
+never downloads the full library or a complete tuning bundle from the device.
+Previously read items are cached for this connection, including across visits
+to Learn. **Refresh tuning names** clears that cache and returns to 12-EDO; use
+it after changing the device library. Disconnected or failed reads are reported
+and can be retried. Selections load before practice begins.
+
+Device loading requires firmware advertising scoped geometry lists. Older
+firmware can still use bundled/imported tunings with supported learning
+sessions; the app explains when an update is needed. Learn reads stored
+content and does not change device presets, scales, or settings.
 
 Sound comes from the browser during the lesson. **Hear & watch the scale**
 demonstrates the pattern. Play notes in order; you can hold one while pressing the next.
-Every playable note keeps its Rainbow-mode color across octaves, with C as red.
+**Color mode** can change during practice: Rainbow, Custom, Alt, Fifths, Piano,
+Alt Piano, Filament, or Diatonic. Colors use the selected tuning and root.
+Custom uses its stored degree palette and selected layout's per-key colors.
 The next pitch becomes much brighter with a solid outline; any matching key
-counts. Held keys brighten in their own note color and have a dashed outline
-on screen. Function keys are hidden from the lesson map. Adjust **Board
-brightness** at any time, including during a run. This scales the lesson's LED
-values within the saved board brightness and current limit; it does not change
-saved settings or dim the web map.
+counts. Held keys brighten and have a dashed outline on screen. Piano or custom
+colors may intentionally be black at rest; target/held states brighten them.
+Function keys are hidden. **Board brightness** scales the lesson's LED values
+within saved brightness/current limits without changing saved settings or
+reducing web-map brightness.
 
 Choose a **Scale pattern**: ascending, descending, up and down, down and up,
-or thirds. Round trips play the turning note once. All patterns stay within
-C4–C5 and work on any supported layout.
+or **Skip one scale tone** (thirds in a seven-tone scale). Round trips play the
+turning note once. Runs cover one period of the chosen scale.
 
 - **At your own pace · timed runs** waits for correct answers and counts extra
   attempts. Timing starts with the first correct attack and stops at the last
@@ -40,12 +58,21 @@ layout. Hints and board brightness remain adjustable during practice.
 Demonstrations are available in at-your-own-pace mode. Results last only for
 this visit; no mastery or practice history is saved.
 
-Under **Use your own layout**, import a tuning-bundle JSON exported from the
-editor. This prototype supports standard concert-pitch 12-EDO bundles with the
-factory C-based reference anchor. It honors rotation, mirroring, disabled keys,
-pitch overrides, and direct MIDI assignments. Command and one-button chord keys
-are unavailable. A layout missing a required pitch is blocked before starting.
-Imported layouts last for this visit to Learn.
+Under **Import a tuning bundle**, open JSON exported from the editor. EDO,
+equal-step, and Scala cents-table tunings are supported, including non-octave
+periods. Audio plays the actual fractional pitches without rounding to MIDI
+semitones. Choose a **Root degree** and **Register (periods)**. For microtonal
+labels, `[0]` means the register around the tuning's degree zero, `[-1]` the
+period below it, and `[1]` the period above; the stored reference sets frequency.
+This register number need not be a Western octave number.
+
+Layouts honor rotation, mirroring, disabled keys, pitch overrides, and direct
+MIDI assignments. Command and one-button chord keys are unavailable for scale
+answers. Missing pitches block starting; change the register, scale, root, or
+layout to fit the board. Pitches outside the browser lesson's MIDI-equivalent
+0–127 range are unavailable. Live device transpose and dynamic just-intonation
+retuning are not imported; practice uses the stored static tuning definition.
+Imported bundles last for this visit to Learn.
 
 The lesson uses its selected layout; saved device settings are not replaced.
 The web map rotates with the layout, and current firmware temporarily rotates

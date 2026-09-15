@@ -110,6 +110,13 @@ void RAM_FUNC(readHexes)() {
   for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
     if ((i == assignCmd[0] && encoderCommandConsumed[0])
         || (i == assignCmd[1] && encoderCommandConsumed[1])) continue;
+    // Release state is authoritative: recover a normal note if its one-shot
+    // release edge was consumed while another input mode owned this button.
+    if (i < LED_COUNT && h[i].btnState == BTN_STATE_OFF
+        && (h[i].MIDIch || h[i].synthCh)) {
+      tryMIDInoteOff(i);
+      trySynthNoteOff(i);
+    }
     switch (h[i].btnState) {
       case BTN_STATE_NEWPRESS:  // just pressed
         if (presetSyncTransferActive) {
@@ -136,7 +143,7 @@ void RAM_FUNC(readHexes)() {
           handleSequencerButtonEvent(i, false);
         } else if (mappedButtonHasAdvancedAction(i)) {
           tryMappedButtonActionOff(i);
-        } else if (h[i].inScale || (!scaleLock)) {
+        } else {
           tryMIDInoteOff(i);
           trySynthNoteOff(i);
         }

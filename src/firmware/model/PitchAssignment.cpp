@@ -95,8 +95,10 @@ void assignPitches() {
       }
       h[i].jiRetune = 0;
       h[i].jiRetuneCents = 0.0f;
-      h[i].activePitchBend = 0;
-      h[i].activeMidiNote = UNUSED_NOTE;
+      if (h[i].MIDIch == 0) {
+        h[i].activePitchBend = 0;
+        h[i].activeMidiNote = UNUSED_NOTE;
+      }
       h[i].jiFrequencyMultiplier = 1.0f;
       if (h[i].note < 128) {
         midiNoteToHexIndices[h[i].note].push_back(i);

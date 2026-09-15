@@ -347,17 +347,25 @@ updates into catch-up jumps.
 Output supports single-channel MIDI, extended channel folding, MPE pitch bend,
 optional MPE extras, serial MIDI, incoming-note LEDs, and program changes.
 
-Live USB packets use a short bounded retry and backoff when the host stops
-polling. SysEx streaming uses the longer transfer timeout.
+Ordinary live USB packets retry for 2 ms, then use a 100 ms backoff when the
+host stops polling, keeping the main loop responsive with a closed laptop.
+MPE per-note bends and note lifecycle packets enter a bounded FIFO when that
+backoff is active and drain in order, so a full TX FIFO cannot strand or
+retune a receiving voice. SysEx streaming uses the longer transfer timeout.
 
 The global pitch-bend wheel sends at up to 100 messages per second. A serial
 pitch-bend message occupies 30 bits including UART framing, so this rate uses
 about 9.6% of the 31.25 kbaud DIN MIDI link before other traffic.
 
-`mpeChannelBitmap` tracks available MPE channels. Dynamic JI keeps synth and
-external MIDI retuning separate: synth uses the frequency multiplier; external
-MPE chooses the nearest note and sends residual bend. Note-off uses
-`activeMidiNote`.
+`mpeChannelBitmap` and a fixed-size order buffer track available MPE channels.
+Normal allocation is FIFO-style so a released member channel is not reused
+immediately; `MPE Low Priority` explicitly selects the lowest available
+channel. Dynamic JI keeps synth and external MIDI retuning separate: synth uses
+the frequency multiplier; external MPE chooses the nearest note and sends
+residual bend. Note-off uses `activeMidiNote`.
+Routing changes first release active external notes with their sent note and
+channel, then rebuild the channel pool, so changing tuning or MPE settings
+while a key is held cannot orphan the old receiver-side note.
 
 Protocol details live in `docs/delegated-control.md` and
 `docs/preset-sync-sysex.md`.

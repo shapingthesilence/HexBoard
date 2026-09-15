@@ -1,6 +1,7 @@
 #include "../FirmwareModule.h"
 #include "MidiRouting.h"
 #include "MidiTransport.h"
+#include "NoteDispatch.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
@@ -12,6 +13,12 @@ byte MPEpitchBendsNeeded;
 bool mpeChannelQueueActive = false;
 
 namespace {
+
+// Keep the normal allocator's FIFO behavior without bringing heap-backed
+// containers into the live note path. Low-priority mode selects from the same
+// pool by channel number instead.
+std::array<byte, MIDI_CHANNEL_COUNT> mpeAvailableChannelOrder = {};
+uint8_t mpeAvailableChannelOrderCount = 0;
 
 int32_t RAM_FUNC(floorDiv)(int32_t numerator, int32_t denominator) {
   if (denominator <= 0) {
@@ -72,19 +79,39 @@ uint8_t RAM_FUNC(mpePlayableChannelCount)() {
 
 void resetMPEChannelPool() {
   mpeChannelBitmap = 0;
+  mpeAvailableChannelOrderCount = 0;
   for (byte ch = mpeLowestChannel; ch <= mpeHighestChannel; ++ch) {
     mpeChannelBitmap |= (1u << (ch - 1));
+    mpeAvailableChannelOrder[mpeAvailableChannelOrderCount++] = ch;
     sendToLog("added ch " + std::to_string(ch) + " to the MPE pool");
   }
 }
 
 byte RAM_FUNC(takeMPEChannel)() {
-  if (mpeChannelBitmap == 0) {
+  if (mpeChannelBitmap == 0 || mpeAvailableChannelOrderCount == 0) {
     return 0;
   }
-  // Always take lowest available channel (equivalent to sorted front() for low-priority,
-  // and a reasonable FIFO-like behavior otherwise)
-  byte ch = static_cast<byte>(__builtin_ctz(mpeChannelBitmap) + 1);
+
+  uint8_t orderIndex = 0;
+  byte ch = mpeAvailableChannelOrder[0];
+  if (mpeLowPriorityMode) {
+    // Low-priority mode deliberately reuses the lowest available member
+    // channel. Normal mode retains released channels at the back of the
+    // order, allowing their receiver-side release tails to decay first.
+    ch = static_cast<byte>(__builtin_ctz(mpeChannelBitmap) + 1);
+    while (orderIndex < mpeAvailableChannelOrderCount
+           && mpeAvailableChannelOrder[orderIndex] != ch) {
+      ++orderIndex;
+    }
+    if (orderIndex >= mpeAvailableChannelOrderCount) {
+      return 0;
+    }
+  }
+
+  for (uint8_t i = orderIndex + 1; i < mpeAvailableChannelOrderCount; ++i) {
+    mpeAvailableChannelOrder[i - 1] = mpeAvailableChannelOrder[i];
+  }
+  --mpeAvailableChannelOrderCount;
   mpeChannelBitmap &= ~(1u << (ch - 1));
   return ch;
 }
@@ -93,7 +120,13 @@ void RAM_FUNC(releaseMPEChannel)(byte ch) {
   if (ch < mpeLowestChannel || ch > mpeHighestChannel) {
     return;
   }
-  mpeChannelBitmap |= (1u << (ch - 1));
+  uint16_t channelBit = static_cast<uint16_t>(1u << (ch - 1));
+  if (mpeChannelBitmap & channelBit
+      || mpeAvailableChannelOrderCount >= mpeAvailableChannelOrder.size()) {
+    return;
+  }
+  mpeAvailableChannelOrder[mpeAvailableChannelOrderCount++] = ch;
+  mpeChannelBitmap |= channelBit;
   sendToLog("returned ch " + std::to_string(ch) + " to the MPE pool");
 }
 
@@ -235,6 +268,11 @@ void resetTuningMIDI() {
       disabled, or in a tuning with steps that are exact
       multiples of 100 cents, then MPE is not necessary.
     */
+  // A routing reset changes note numbers, channels, or bend semantics. End
+  // every active external note using the state that was actually sent before
+  // rebuilding the routing pool; otherwise a later key release can address a
+  // newly assigned note and leave the old receiver-side voice stuck.
+  releaseActiveMidiNotesForRoutingReset();
   standardMidiMicrotonalActive = false;
   bool tuningIsStandardSemitone = currentTuningIsStandardSemitone();
   bool forceMPE = (mpeUserMode == MPE_MODE_FORCE);
@@ -274,6 +312,7 @@ void resetTuningMIDI() {
 
   mpeChannelQueueActive = false;
   mpeChannelBitmap = 0;
+  mpeAvailableChannelOrderCount = 0;
 
   if (mpeEnabled) {
     bool needsQueue = (MPEpitchBendsNeeded > playableChannels) || mpeLowPriorityMode;

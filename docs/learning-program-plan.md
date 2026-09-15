@@ -2,16 +2,18 @@
 
 ## Status and scope
 
-Milestone 1 is implemented as a prototype: one C-major scale lesson,
+Milestone 1 is implemented as a prototype: scale practice defaulting to C major,
 Wicki-Hayden, Harmonic Table, and Janko layouts, compatible tuning-bundle import, browser sound,
 demonstration, on-screen and physical-key practice, LED hints, and repetition
 without hints, adjustable board brightness, repeated scale patterns, run timing,
-and graded beat practice. Firmware uses acknowledged sessions with manual
+graded beat practice, selectable color modes, and lazy device library loading.
+EDO, equal-step, and cents-table tunings can use the same practice engine.
+Firmware uses acknowledged sessions with manual
 encoder recovery and no heartbeat.
 Real hardware acceptance remains required before a validated device release.
 
-Milestones 2–5 remain proposals; scale rhythm practice has been brought into
-the prototype. Current operation belongs
+Milestones 2–5 remain proposals; scale rhythm practice and static microtonal
+scale practice have been brought into the prototype. Current operation belongs
 in the [web guide](web-app-guide.md#learning-your-first-scale); the implemented
 wire contract belongs in [delegated control](delegated-control.md).
 
@@ -61,14 +63,15 @@ or passage in later milestones; never silently fold missing notes into another
 octave. One-button chords can count in accompaniment tasks but cannot satisfy
 tasks about constructing chords or individually playing scale tones.
 
-The prototype uses C4 through C5 at standard concert pitch. Compatible imported
-bundles use 12-EDO with an octave period and the same C-based reference anchor
-as the factory tuning. Imports last for the current Learn view. Device live
+The default is C4 through C5 in 12-EDO. Selected scales use their tuning degrees,
+reference frequency, root, and period; periods need not be octaves. Imported
+bundles and device definitions use the same resolver. Imports last for the
+current Learn view. Device live
 settings are not read or changed to select a lesson layout: raw key IDs are
 interpreted using the layout selected in Learn. Command and chord keys are
 unavailable for scale practice. Side function keys are omitted from the web
-map. Playable notes retain their Rainbow-mode hue across octaves; lesson
-feedback changes brightness and outlines. The OLED temporarily follows the
+map. Color modes use the selected tuning and palette; lesson feedback changes
+brightness and outlines. The OLED temporarily follows the
 selected layout orientation and restores its saved orientation on exit.
 
 ## Playing modes
@@ -111,7 +114,10 @@ labels and fingerings are editable suggestions. Follow the
 
 ## Technical ownership
 
-- `web/src/learn/majorScale.ts`: musical targets, layout adapter, evaluation,
+- `web/src/learn/deviceLibrary.ts`: lazy names/definitions and connection cache.
+- `web/src/catalogs/deviceGeometry.ts`: shared device object decoder.
+- `web/src/learn/tuningPractice.ts`: reference-relative pitches, scale degrees, and labels.
+- `web/src/learn/majorScale.ts`: layout adapter, evaluation,
   and hint states.
 - `web/src/catalogs/layoutKey.ts`: shared generated/manual pitch precedence
   for learning and editing; transforms remain in `hexBoardGeometry.ts`.
@@ -152,7 +158,7 @@ layout or flash writes are introduced.
 | 2: beginner release | About 12–15 lessons, triads, one progression, local progress | Beginner completes a short musical exercise with hints removed |
 | 3: practice expansion | Normal instrument mode, broader rhythm exercises, inversions, review | Feedback remains useful across layouts and tempos |
 | 4: song trainer | Curated pieces, MIDI import, part selection, passage looping | Supported imports yield playable, correctly timed exercises |
-| 5: other tunings | Tuning-specific intervals and scales | Targets use degrees/pitch relationships without assuming 12 notes |
+| 5: tuning-specific teaching | Authored explanations and exercises for other tunings | Build on the implemented tuning-aware scale practice |
 
 ## Verification
 

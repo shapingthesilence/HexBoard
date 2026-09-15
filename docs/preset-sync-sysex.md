@@ -363,6 +363,7 @@ Capability flags:
 | `13` | Cents-table runtime tuning |
 | `14` | Atomic geometry-bundle file writes |
 | `15` | Live synth wavetable selection |
+| `16` | Scoped geometry object lists |
 
 Example hello request, transaction `1`, host max packed chunk `128`, no required
 flags:
@@ -438,6 +439,24 @@ those generated fallback handles set the read-only record flag.
 `object-type` may be `0` to list all supported object classes. `page-size`
 allows small responses on serial MIDI. `folder-filter` is optional; omit it by
 sending length `0`.
+
+With capability bit `16`, a geometry list request may append a tuning handle
+after the folder filter, or a tuning handle and layout handle:
+
+```text
+<object-type> <page-index-u14> <page-size> <folder-filter-len> <folder-filter-ascii...> <tuning-handle-u14>
+<object-type> <page-index-u14> <page-size> <folder-filter-len> <folder-filter-ascii...> <tuning-handle-u14> <layout-handle-u14>
+```
+
+The tuning scope lists metadata only from that stored bundle (or the generated
+rescue tuning). It is valid only for geometry object types, not `All` or synth
+objects. The optional layout scope is valid only for `ExplicitButtonMap` and
+returns maps referencing that layout; the layout must reference the scoped
+tuning. Invalid lengths or scopes are rejected. Pagination and folder filtering
+apply within the scope; response encoding is unchanged. Ordinary requests
+retain their existing behavior. Hosts must check capability bit `16` before
+sending the extension. Reading a selected definition still uses its ordinary
+object type and handle; no bundle transfer is needed.
 
 `OBJECT_LIST_RESP` payload:
 

@@ -77,18 +77,19 @@ enum class MidiOutputTransport : uint8_t {
 };
 
 size_t writeUsbMidiStream(const uint8_t* data, size_t length);
-bool writeUsbMidiPacket(const uint8_t packet[4]);
+bool writeUsbMidiPacket(const uint8_t packet[4], bool reliable = false);
+void serviceUsbMidiOutput();
 
 class HexBoardMidiOut {
 public:
   explicit HexBoardMidiOut(MidiOutputTransport transport) : transport_(transport) {}
 
   void sendNoteOn(byte note, byte velocity, byte channel) {
-    sendChannel3(0x90, 0x09, note, velocity, channel);
+    sendChannel3(0x90, 0x09, note, velocity, channel, true);
   }
 
   void sendNoteOff(byte note, byte velocity, byte channel) {
-    sendChannel3(0x80, 0x08, note, velocity, channel);
+    sendChannel3(0x80, 0x08, note, velocity, channel, true);
   }
 
   void sendControlChange(byte control, byte value, byte channel) {
@@ -104,11 +105,19 @@ public:
   }
 
   void sendPitchBend(int value, byte channel) {
+    sendPitchBend(value, channel, false);
+  }
+
+  void sendPerNotePitchBend(int value, byte channel) {
+    sendPitchBend(value, channel, true);
+  }
+
+  void sendPitchBend(int value, byte channel, bool reliable) {
     if (!isValidMidiChannel(channel)) {
       return;
     }
     int bend = std::clamp(value, -8192, 8191) + 8192;
-    sendChannel3(0xE0, 0x0E, bend & 0x7F, (bend >> 7) & 0x7F, channel);
+    sendChannel3(0xE0, 0x0E, bend & 0x7F, (bend >> 7) & 0x7F, channel, reliable);
   }
 
   void beginRpn(uint16_t parameter, byte channel) {
@@ -155,21 +164,23 @@ public:
 private:
   MidiOutputTransport transport_;
 
-  void sendChannel2(uint8_t statusBase, uint8_t cin, uint8_t data1, byte channel) {
+  void sendChannel2(uint8_t statusBase, uint8_t cin, uint8_t data1, byte channel,
+                    bool reliable = false) {
     if (!isValidMidiChannel(channel)) {
       return;
     }
     uint8_t status = statusBase | ((channel - 1) & 0x0F);
     if (transport_ == MidiOutputTransport::Usb) {
       uint8_t packet[4] = { cin, status, static_cast<uint8_t>(data1 & 0x7F), 0 };
-      writeUsbMidiPacket(packet);
+      writeUsbMidiPacket(packet, reliable);
     } else {
       Serial1.write(status);
       Serial1.write(data1 & 0x7F);
     }
   }
 
-  void sendChannel3(uint8_t statusBase, uint8_t cin, uint8_t data1, uint8_t data2, byte channel) {
+  void sendChannel3(uint8_t statusBase, uint8_t cin, uint8_t data1, uint8_t data2, byte channel,
+                    bool reliable = false) {
     if (!isValidMidiChannel(channel)) {
       return;
     }
@@ -178,7 +189,7 @@ private:
     data2 &= 0x7F;
     if (transport_ == MidiOutputTransport::Usb) {
       uint8_t packet[4] = { cin, status, data1, data2 };
-      writeUsbMidiPacket(packet);
+      writeUsbMidiPacket(packet, reliable);
     } else {
       Serial1.write(status);
       Serial1.write(data1);

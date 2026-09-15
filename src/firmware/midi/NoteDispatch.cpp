@@ -113,7 +113,7 @@ void RAM_FUNC(startMappedMidiTone)(MappedButtonActiveTone& active,
   }
 
   if (tuned && MPEpitchBendsNeeded != 1) {
-    withMIDI([&](auto& M) { M.sendPitchBend(pitchBend, midiChannel); });
+    withMIDI([&](auto& M) { M.sendPerNotePitchBend(pitchBend, midiChannel); });
     if (extraMPE) {
       withMIDI([&](auto& M) {
         M.sendAfterTouch(velWheel.curValue, midiChannel);
@@ -245,6 +245,14 @@ void RAM_FUNC(releaseAllMappedButtonActions)() {
   memset(mappedButtonMidiNoteDepth, 0, sizeof(mappedButtonMidiNoteDepth));
 }
 
+void releaseActiveMidiNotesForRoutingReset() {
+  releaseAllMappedButtonActions();
+  for (byte i = 0; i < LED_COUNT; ++i) {
+    tryMIDInoteOff(i);
+  }
+  pressedKeyIDs.clear();
+}
+
 void RAM_FUNC(tryMIDInoteOn)(byte x) {
   // This gets called on any non-command hex that is not scale-locked.
   if (h[x].note >= 128) {
@@ -282,7 +290,7 @@ void RAM_FUNC(tryMIDInoteOn)(byte x) {
       // First, send the pitch bend (if applicable)
       if (MPEpitchBendsNeeded != 1) {
         pitchBendValue = h[x].activePitchBend;
-        withMIDI([&](auto& M) { M.sendPitchBend(pitchBendValue, h[x].MIDIch); });  // ch 1-16
+        withMIDI([&](auto& M) { M.sendPerNotePitchBend(pitchBendValue, h[x].MIDIch); });  // ch 1-16
         if (extraMPE) { // if the extra MPE messages are enabled
           withMIDI([&](auto& M) {
             M.sendAfterTouch(velWheel.curValue, h[x].MIDIch);  // Channel Pressure

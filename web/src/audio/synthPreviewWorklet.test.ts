@@ -109,3 +109,13 @@ describe("firmware synth audition", () => {
     expect(rms(render(synth, 256))).toBe(0);
   });
 });
+
+it("plays fractional pitches without quantizing microtonal intervals", () => {
+  const processor = engine();
+  const pitch = 60 + 12 / 19;
+  processor.noteOn(pitch, 1);
+  expect(processor.voices.find((voice: any) => voice.active).targetFrequency).toBeCloseTo(440 * 2 ** ((pitch - 69) / 12), 8);
+  expect(rms(render(processor, 1024))).toBeGreaterThan(0);
+  processor.noteOff(pitch);
+  expect(processor.heldNotes).toHaveLength(0);
+});

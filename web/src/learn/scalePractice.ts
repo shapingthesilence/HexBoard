@@ -2,16 +2,16 @@ import { majorScale, noteName } from "./majorScale.ts";
 
 export const scalePatterns = {
   ascending: "Ascending", descending: "Descending", upDown: "Up and down",
-  downUp: "Down and up", thirds: "Thirds (C–E, D–F…)"
+  downUp: "Down and up", thirds: "Skip one scale tone"
 } as const;
 export type ScalePattern = keyof typeof scalePatterns;
-export function scalePatternNotes(pattern: ScalePattern): number[] {
-  const up = [...majorScale], down = [...up].reverse();
+export function scalePatternNotes(pattern: ScalePattern, scale: readonly number[] = majorScale): number[] {
+  const up = [...scale], down = [...up].reverse();
   switch (pattern) {
     case "descending": return down;
     case "upDown": return [...up, ...down.slice(1)];
     case "downUp": return [...down, ...up.slice(1)];
-    case "thirds": return [...up.slice(0, -2).flatMap((note, i) => [note, up[i + 2]]), up[6], up[7]];
+    case "thirds": return [...up.slice(0, -2).flatMap((note, i) => [note, up[i + 2]]), ...up.slice(-2)];
     default: return up;
   }
 }
@@ -37,7 +37,7 @@ export class BeatScaleRun {
   private now: number;
   private firstHit?: number;
   private lastHit?: number;
-  constructor(readonly notes: readonly number[], readonly startAt: number, bpm: number) {
+  constructor(readonly notes: readonly number[], readonly startAt: number, bpm: number, readonly label: (note: number) => string = noteName) {
     this.periodMs = 60000 / bpm;
     this.now = startAt - 4 * this.periodMs;
     this.errors = Array(notes.length).fill(undefined);
@@ -61,7 +61,7 @@ export class BeatScaleRun {
     if (slot >= this.notes.length) return true;
     if (note !== this.notes[slot] || this.errors[slot] !== undefined) {
       this.mistakes++;
-      this.feedback = `Extra attempt. Keep the beat moving; the target is ${noteName(this.notes[slot])}.`;
+      this.feedback = `Extra attempt. Keep the beat moving; the target is ${this.label(this.notes[slot])}.`;
     } else {
       const error = receivedAt - (this.startAt + slot * this.periodMs);
       this.errors[slot] = error;

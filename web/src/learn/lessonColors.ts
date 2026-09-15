@@ -1,4 +1,6 @@
 import { ColorMode, resolveTuningBundleButtonColor } from "../catalogs/layoutsCatalog.ts";
+import type { TuningBundle, ColorModeValue } from "../catalogs/layoutsCatalog.ts";
+import { tuningPeriod } from "./tuningPractice.ts";
 import type { KeyLight } from "./majorScale.ts";
 
 export interface LessonLedColor { hue: number; saturation: number; value: number }
@@ -6,16 +8,17 @@ export interface LessonLedColor { hue: number; saturation: number; value: number
 // Pitch class owns hue, lesson state only changes brightness. These 7-bit
 // values go directly to delegated LEDs; hardware applies its normal hue/gamma
 // calibration and current limit. The screen shows nominal rainbow hues.
-export function lessonLedColor(note: number | null, state: KeyLight): LessonLedColor {
+export function lessonLedColor(note: number | null, state: KeyLight, context?: { bundle: TuningBundle; steps: number; root: number; mode: ColorModeValue; index: number }): LessonLedColor {
   if (note === null || state === "off") return { hue: 0, saturation: 0, value: 0 };
   const { color } = resolveTuningBundleButtonColor({
-    degreeColors: [], cycleLength: 12, stepsFromC: note - 60,
-    keyDegree: 0, defaultColorMode: ColorMode.Rainbow, periodCents: 1200
+    degreeColors: context?.bundle.palette.degreeColors ?? [], cycleLength: context?.bundle.tuning.cycleLength ?? 12, stepsFromC: context?.steps ?? note - 60,
+    keyDegree: context?.root ?? 0, defaultColorMode: context?.mode ?? ColorMode.Rainbow, periodCents: context ? tuningPeriod(context.bundle.tuning) : 1200,
+    override: context?.bundle.layouts.find(layout => layout.objectIdHex === context.bundle.activeLayoutIdHex)?.buttonOverrides.find(key => key.buttonIndex === context.index)
   });
   return {
     hue: Math.round(color.hueTenthDegrees * 127 / 3600),
     saturation: Math.round(color.saturation * 127 / 255),
-    value: state === "target" ? 127 : state === "held" ? 110 : 42
+    value: state === "target" ? 127 : state === "held" ? 110 : Math.round(42 * color.value / 255)
   };
 }
 

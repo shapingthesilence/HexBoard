@@ -80,7 +80,11 @@ For example, `2-16` is `15` note channels. `2-9` is `8` note channels.
 
 ### MPE Low Priority
 
-This changes MPE channel allocation behavior. Leave it off unless you are deliberately testing channel behavior with a limited channel range.
+When off, HexBoard allocates member channels in FIFO order, allowing a
+recently released note's tail to decay before that channel is reused. When on,
+HexBoard always chooses the lowest available member channel. This can make a
+recently released note's tail change pitch when the channel is reused, so leave
+it off unless you specifically need lowest-channel allocation.
 
 If held notes are being dropped, increase the channel range if the receiver supports it. If the receiver cannot support more channels, reduce the number of simultaneous notes or use a less dense voicing.
 

@@ -122,7 +122,8 @@ export const CapabilityFlag = {
   LiveSynthParam: 1 << 12,
   CentsTableRuntimeTuning: 1 << 13,
   GeometryBundleFiles: 1 << 14,
-  LiveSynthWavetableSelect: 1 << 15
+  LiveSynthWavetableSelect: 1 << 15,
+  ScopedGeometryList: 1 << 16
 } as const;
 
 export type CapabilityFlagValue = (typeof CapabilityFlag)[keyof typeof CapabilityFlag];

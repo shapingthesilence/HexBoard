@@ -1,3 +1,4 @@
+import { tuningPitch } from "./tuningPractice.ts";
 import { hexBoardGeometry, type HexBoardKey } from "../catalogs/hexBoardGeometry.ts";
 import { resolveLayoutKey } from "../catalogs/layoutKey.ts";
 import { parseTuningBundleFile, type TuningBundle, type TuningBundleLayout } from "../catalogs/layoutsCatalog.ts";
@@ -5,7 +6,7 @@ import factoryTuning from "../../../factory-library/geometry/12 EDO (Normal).jso
 
 export const majorScale = [60, 62, 64, 65, 67, 69, 71, 72] as const;
 export const scaleNames = ["C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5"];
-export interface LessonKey { key: HexBoardKey; note: number | null }
+export interface LessonKey { key: HexBoardKey; note: number | null; steps?: number; label?: string }
 export interface LessonLayout { id: string; label: string; bundle: TuningBundle; layout: TuningBundleLayout }
 
 export function isLessonTuning(bundle: TuningBundle): boolean {
@@ -16,7 +17,6 @@ export function isLessonTuning(bundle: TuningBundle): boolean {
 }
 
 export function lessonLayouts(bundle: TuningBundle): LessonLayout[] {
-  if (!isLessonTuning(bundle)) throw new Error("This lesson uses 12-EDO with standard concert pitch and C-based note names.");
   return bundle.layouts.map((layout) => ({
     id: `${bundle.objectIdHex}:${layout.objectIdHex}`,
     label: `${layout.name} · ${bundle.tuning.name}`,
@@ -30,18 +30,17 @@ export function starterLayouts(): LessonLayout[] {
 }
 
 export function resolveLessonKeys({ bundle, layout }: LessonLayout): LessonKey[] {
-  if (!isLessonTuning(bundle)) throw new Error("Choose a supported 12-EDO tuning.");
   return hexBoardGeometry.map((key) => {
     const { override, stepsFromC } = resolveLayoutKey(key, layout);
     // Command keys, disabled keys and one-button chords are not scale answers.
-    if (key.role !== "note" || override?.role === "unused" || override?.action?.kind === "chord") return { key, note: null };
-    const note = override?.action?.kind === "direct-midi" ? override.action.midiNote : 60 + stepsFromC;
-    return { key, note: Number.isInteger(note) && note >= 0 && note <= 127 ? note : null };
+    if (key.role !== "note" || (override && override.role !== "note") || override?.action?.kind === "chord") return { key, note: null };
+    const note = override?.action?.kind === "direct-midi" ? override.action.midiNote : tuningPitch(bundle.tuning, stepsFromC);
+    return { key, steps: stepsFromC, label: override?.action?.kind === "direct-midi" ? noteName(note) : undefined, note: Number.isFinite(note) && note >= 0 && note <= 127 ? note : null };
   });
 }
 
-export function unavailableScaleNotes(keys: LessonKey[]): string[] {
-  return majorScale.flatMap((note, index) => keys.some((key) => key.note === note) ? [] : [scaleNames[index]]);
+export function unavailableScaleNotes(keys: LessonKey[], notes: readonly number[] = majorScale, label: (note: number) => string = noteName): string[] {
+  return notes.flatMap((note) => keys.some((key) => key.note === note) ? [] : [label(note)]);
 }
 
 export function noteName(note: number): string {
@@ -55,12 +54,12 @@ export class MajorScaleRun {
   feedback: string;
   startedAt?: number;
   finishedAt?: number;
-  constructor(readonly notes: readonly number[] = majorScale) {
-    this.feedback = `Find ${noteName(notes[0])} to begin. Play the notes in order; overlapping notes are welcome.`;
+  constructor(readonly notes: readonly number[] = majorScale, readonly label: (note: number) => string = noteName) {
+    this.feedback = notes.length ? `Find ${label(notes[0])} to begin. Play the notes in order; overlapping notes are welcome.` : "Choose a scale to begin.";
   }
   get elapsedMs() { return this.startedAt === undefined || this.finishedAt === undefined ? undefined : this.finishedAt - this.startedAt; }
 
-  get complete() { return this.step === this.notes.length; }
+  get complete() { return this.notes.length > 0 && this.step === this.notes.length; }
   press(index: number, note: number, receivedAt = performance.now()) {
     if (this.held.has(index) || this.complete) return false;
     this.held.set(index, note);
@@ -68,10 +67,10 @@ export class MajorScaleRun {
       this.startedAt ??= receivedAt;
       this.step++;
       if (this.step === this.notes.length) this.finishedAt = receivedAt;
-      this.feedback = this.step === this.notes.length ? "You played a complete C-major pattern." : `Good. Next: ${noteName(this.notes[this.step])}.`;
+      this.feedback = this.step === this.notes.length ? "You played a complete scale pattern." : `Good. Next: ${this.label(this.notes[this.step])}.`;
     } else {
       this.mistakes++;
-      this.feedback = `You played ${noteName(note)}. Look for ${noteName(this.notes[this.step])}.`;
+      this.feedback = `You played ${this.label(note)}. Look for ${this.label(this.notes[this.step])}.`;
     }
     return true;
   }

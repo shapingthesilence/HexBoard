@@ -330,7 +330,8 @@ export function encodeObjectListRequestPayload(
   objectType: number,
   pageIndex: number,
   pageSize: number,
-  folderFilter = ""
+  folderFilter = "",
+  scope?: { tuningHandle: number; layoutHandle?: number }
 ): number[] {
   assertSevenBitByte(objectType, "objectType");
   assertSevenBitByte(pageSize, "pageSize");
@@ -339,7 +340,9 @@ export function encodeObjectListRequestPayload(
     throw new RangeError("folder filter is too long");
   }
   assertSevenBitBytes(folderBytes, "folderFilter");
-  return [objectType, ...encodeU14(pageIndex), pageSize, folderBytes.length, ...folderBytes];
+  return [objectType, ...encodeU14(pageIndex), pageSize, folderBytes.length, ...folderBytes,
+    ...(scope ? encodeU14(scope.tuningHandle) : []),
+    ...(scope?.layoutHandle !== undefined ? encodeU14(scope.layoutHandle) : [])];
 }
 
 export function encodeWriteBeginPayload(payload: WriteBeginPayload): number[] {

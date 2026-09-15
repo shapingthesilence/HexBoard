@@ -125,6 +125,7 @@ void hexboardSetup() {
 }
 void hexboardLoop() {        // run on first core
   timeTracker();     // Time tracking functions
+  serviceUsbMidiOutput();
   u8g2.serviceTransfer();
   serviceSerialDebugMessages();
   bool presetSyncOwnsUi = servicePresetSyncTransfer();

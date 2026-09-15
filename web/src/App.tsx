@@ -50,7 +50,7 @@ export function App() {
   const content = useMemo(() => {
     switch (activeView) {
       case "learn":
-        return <Learn transport={transport} connected={deviceHello !== null && !(transport instanceof MockMidiTransport)} />;
+        return <Learn transport={transport} deviceHello={deviceHello} connected={deviceHello !== null && !(transport instanceof MockMidiTransport)} />;
       case "layouts":
         return <TuningLayoutEditor transport={transport} deviceHello={deviceHello} />;
       case "synth":

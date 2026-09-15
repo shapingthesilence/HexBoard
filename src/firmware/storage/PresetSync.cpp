@@ -46,6 +46,7 @@ void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_
                       | PRESET_SYNC_CAP_SYNTH_WAVETABLE
                       | PRESET_SYNC_CAP_LIVE_SYNTH_PARAM
                       | PRESET_SYNC_CAP_CENTS_TABLE_RUNTIME_TUNING
+                      | PRESET_SYNC_CAP_SCOPED_GEOMETRY_LIST
                       | PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES
                       | PRESET_SYNC_CAP_LIVE_SYNTH_WAVETABLE_SELECT);
   presetSyncAppendU28(response, PRESET_SYNC_MAX_RAW_OBJECT_BYTES);
@@ -83,10 +84,41 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
   uint16_t pageIndex = presetSyncDecodeU14(payload + 1);
   uint8_t requestedPageSize = payload[3];
   uint8_t folderLength = payload[4];
-  if (payloadLength != static_cast<size_t>(5 + folderLength)) {
+  const size_t baseLength = 5 + folderLength;
+  const bool scoped = payloadLength == baseLength + 2 || payloadLength == baseLength + 4;
+  const bool layoutScoped = payloadLength == baseLength + 4;
+  if (payloadLength != baseLength && !scoped) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_OBJECT_LIST_REQ, PRESET_SYNC_ERROR_BAD_LENGTH);
     return;
   }
+
+  const GeometryBundleIndexEntry* scopedBundle = nullptr;
+  GeometryObjectSlot scopeTuning, scopeLayout;
+  if (scoped) {
+    const uint16_t tuningHandle = presetSyncDecodeU14(payload + baseLength);
+    if (!isPresetSyncGeometryObjectType(objectType)
+        || !geometryObjectForHandle(tuningHandle, scopeTuning)
+        || scopeTuning.objectType != PRESET_SYNC_OBJECT_TYPE_USER_TUNING
+        || (!isBuiltinGeometryHandle(tuningHandle) && !geometryBundleForTuningHandle(tuningHandle, scopedBundle))) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_OBJECT_LIST_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
+      return;
+    }
+    if (layoutScoped && (objectType != PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP
+        || !geometryObjectForHandle(presetSyncDecodeU14(payload + baseLength + 2), scopeLayout)
+        || scopeLayout.objectType != PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT
+        || !geometryObjectReferencesObjectId(scopeLayout, PRESET_SYNC_TLV_LAYOUT_TUNING_REF,
+             PRESET_SYNC_OBJECT_TYPE_USER_TUNING, scopeTuning.objectId))) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_OBJECT_LIST_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
+      return;
+    }
+  }
+  auto matchesLayout = [&](uint16_t handle) {
+    if (!layoutScoped) return true;
+    GeometryObjectSlot map;
+    return geometryObjectForHandle(handle, map)
+      && geometryObjectReferencesObjectId(map, PRESET_SYNC_TLV_BUTTON_MAP_LAYOUT_REF,
+           PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT, scopeLayout.objectId);
+  };
 
   char folderFilter[SYNTH_PRESET_FOLDER_LENGTH] = {};
   if (folderLength > 0) {
@@ -144,7 +176,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
     }
   };
   auto includeGeometryObjects = [&](uint8_t geometryType) {
-    if (geometryFallbackRequired()) {
+    if (geometryFallbackRequired() && (!scoped || !scopedBundle)) {
       for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
         BuiltinGeometryMetadata metadata;
         if (!builtinGeometryMetadataByOrdinal(i, metadata) || metadata.objectType != geometryType) {
@@ -154,11 +186,11 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
             && strncmp(metadata.folderPath, folderFilter, GEOMETRY_OBJECT_FOLDER_LENGTH) != 0) {
           continue;
         }
-        includeHandle(geometryType, metadata.handle);
+        if (matchesLayout(metadata.handle)) includeHandle(geometryType, metadata.handle);
       }
     }
     GeometryCatalogReader reader;
-    if (beginGeometryCatalogRead(reader)) {
+    if (scoped ? (scopedBundle && beginGeometryBundleRead(*scopedBundle, reader)) : beginGeometryCatalogRead(reader)) {
       uint16_t handle = 0;
       GeometryObjectIndexEntry object;
       while (readNextGeometryObjectMetadata(reader, handle, object)) {
@@ -169,7 +201,7 @@ void presetSyncHandleObjectList(uint16_t transactionId, const uint8_t* payload, 
             && strncmp(object.folderPath, folderFilter, sizeof(object.folderPath)) != 0) {
           continue;
         }
-        includeHandle(geometryType, handle);
+        if (matchesLayout(handle)) includeHandle(geometryType, handle);
       }
       endGeometryCatalogRead(reader);
     }

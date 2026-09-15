@@ -91,20 +91,21 @@ and `TRANSFER_END` so firmware can pace object transfers.
 | `protocol/` | Constants, SysEx framing, TLV, CRC32, and 8-to-7 packing |
 | `components/` | Shared library actions, folders, and organization dialogs |
 | `audio/` | Browser synth audition worklet and audio lifecycle |
-| `views/Learn.tsx`, `learn/` | Guided scale lesson, evaluation, acknowledged delegated sessions, and LED hints |
+| `views/Learn.tsx`, `learn/` | Tuning-aware scale practice, lazy device library, beat grading, delegated sessions, and LED hints |
 | `catalogs/layoutKey.ts` | Shared generated/manual layout pitch resolution |
 
 ## Learning Prototype
 
-The Learn tab offers a C-major scale on three factory 12-EDO layouts, compatible
-bundle import, on-screen practice, browser sound, and guided hardware LEDs.
+The Learn tab defaults to a major scale on factory 12-EDO, with three starter
+layouts. It also supports device tuning/layout/scale selection and JSON import
+for EDO, equal-step, and cents-table tunings.
 See [operation](../docs/web-app-guide.md#learning-your-first-scale),
 [session protocol](../docs/delegated-control.md#acknowledged-sessions-and-manual-recovery),
 and [the staged plan](../docs/learning-program-plan.md). Session teardown must
 stop browser audio, discard held input, cancel timers, and send token-scoped exit.
 No lesson action writes persistent device settings or catalog objects.
-`learn/lessonColors.ts` assigns Rainbow-mode pitch colors with brighter target
-and held states for screen and device. LED writes use batches of up to 16 keys
+`learn/lessonColors.ts` uses the selected color mode, tuning period, root, and
+custom palette with brighter target and held states for screen and device. LED writes use batches of up to 16 keys
 with 10 ms between batches. Function keys stay in hardware indexing but are
 omitted from the lesson SVG. A scoped display command temporarily matches the
 OLED orientation to the selected layout.
@@ -118,6 +119,20 @@ linearly from 1 at the beat to 0 at the window edge. The score is
 contribute zero. Grade bands are 90/75/50 (Excellent/Steady/Building), then
 Keep practicing. Count-in attacks are ungraded. Overlapping notes are accepted; holding a key
 does not count as another attack. Sounding keys carry across automatic runs.
+
+`learn/deviceLibrary.ts` caches and serializes individual reads per transport.
+Opening Learn lists tuning names only. Tuning selection reads its definition,
+palette, and scoped layout/scale metadata. Layout selection reads its definition
+and matching explicit map; scale selection reads its definition. There are no
+`GeometryBundle` reads. Refresh replaces the cache. Generation guards discard
+results after unmount, disconnect, or a newer selection.
+
+`catalogs/deviceGeometry.ts` owns the decoder shared with the tuning editor.
+`learn/tuningPractice.ts` maps degrees through the firmware reference-relative
+pitch formula. Canonical fractional MIDI pitches (1e-8 semitone precision)
+identify equivalent answers and feed the existing non-quantizing audio worklet.
+Targets cover one selected scale period; imported MIDI assignments keep their
+explicit semitone pitch. Live transpose and dynamic JI are outside this mode.
 
 Run `npm test` for patterns, pitch/overlap rules, timing boundaries, scoring,
 session entry/exit/re-entry, and LED batching. Version-2 sessions have no

@@ -113,14 +113,14 @@ export class PresetSyncClient {
     return this.listObjects(ObjectType.SynthWavetable, pageSize);
   }
 
-  async listGeometryObjects(objectType: number, pageSize = 1): Promise<ObjectListRecord[]> {
+  async listGeometryObjects(objectType: number, pageSize = 1, scope?: { tuningHandle: number; layoutHandle?: number }): Promise<ObjectListRecord[]> {
     if (!this.isGeometryObjectType(objectType)) {
       throw new Error("Unsupported geometry object type");
     }
-    return this.listObjects(objectType, pageSize);
+    return this.listObjects(objectType, pageSize, scope);
   }
 
-  private async listObjects(objectType: number, pageSize = 1): Promise<ObjectListRecord[]> {
+  private async listObjects(objectType: number, pageSize = 1, scope?: { tuningHandle: number; layoutHandle?: number }): Promise<ObjectListRecord[]> {
     const records: ObjectListRecord[] = [];
     let pageIndex = 0;
     let pageCount = 1;
@@ -128,7 +128,7 @@ export class PresetSyncClient {
     do {
       const frame = await this.requestFrame(
         MessageType.ObjectListRequest,
-        encodeObjectListRequestPayload(objectType, pageIndex, pageSize),
+        encodeObjectListRequestPayload(objectType, pageIndex, pageSize, "", scope),
         (candidate) => candidate.message === MessageType.ObjectListResponse
       );
       const page = decodeObjectListResponsePayload(frame.payload);
