@@ -2,12 +2,19 @@
 #include "DelegatedControl.h"
 #include "ExternalMidiLedState.h"
 #include "MidiInput.h"
+#include <atomic>
 #include "MidiTransport.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../hardware/GridState.h"
 #include "../sequencer/SequencerMode.h"
 
 namespace {
+
+std::atomic<bool> inputPolling{false};
+struct MidiInputPollGuard {
+  bool acquired = !inputPolling.exchange(true, std::memory_order_acquire);
+  ~MidiInputPollGuard() { if (acquired) inputPolling.store(false, std::memory_order_release); }
+};
 
 constexpr uint64_t kMidiMonitorLateThresholdMicros = 5000ULL;
 constexpr uint32_t kMidiMonitorUsbRxSoftLimit = 64;
@@ -188,7 +195,8 @@ bool processIncomingMidiByte(MidiInputParser& parser, uint8_t value, bool delega
 bool processIncomingUsbMidi(bool delegatedMode) {
   bool processed = false;
   uint16_t drainedBytes = 0;
-  while (MidiUSB.available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
+  while (delegatedControlState.active.load(std::memory_order_acquire) == delegatedMode
+         && MidiUSB.available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
     int value = MidiUSB.read();
     if (value < 0) {
       break;
@@ -202,7 +210,8 @@ bool processIncomingUsbMidi(bool delegatedMode) {
 bool processIncomingSerialMidi(bool delegatedMode) {
   bool processed = false;
   uint16_t drainedBytes = 0;
-  while (Serial1.available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
+  while (delegatedControlState.active.load(std::memory_order_acquire) == delegatedMode
+         && Serial1.available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
     int value = Serial1.read();
     if (value < 0) {
       break;
@@ -214,6 +223,8 @@ bool processIncomingSerialMidi(bool delegatedMode) {
 }
 
 bool processIncomingMIDIDelegated() {
+  MidiInputPollGuard guard;
+  if (!guard.acquired || !delegatedControlState.active) return false;
   sampleMidiInputMonitorStats();
   bool processed = false;
   if (midiD & MIDID_USB) {
@@ -226,6 +237,8 @@ bool processIncomingMIDIDelegated() {
 }
 
 bool RAM_FUNC(processIncomingMIDI)() {
+  MidiInputPollGuard guard;
+  if (!guard.acquired) return false;
   if (delegatedControlState.active) {
     return false;
   }

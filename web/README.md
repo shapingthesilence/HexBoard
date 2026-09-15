@@ -91,6 +91,27 @@ and `TRANSFER_END` so firmware can pace object transfers.
 | `protocol/` | Constants, SysEx framing, TLV, CRC32, and 8-to-7 packing |
 | `components/` | Shared library actions, folders, and organization dialogs |
 | `audio/` | Browser synth audition worklet and audio lifecycle |
+| `views/Learn.tsx`, `learn/` | Guided scale lesson, evaluation, expiring delegated sessions, and LED hints |
+| `catalogs/layoutKey.ts` | Shared generated/manual layout pitch resolution |
+
+## Learning Prototype
+
+The Learn tab offers a C-major scale on three factory 12-EDO layouts, compatible
+bundle import, on-screen practice, browser sound, and guided hardware LEDs.
+See [operation](../docs/web-app-guide.md#learning-your-first-scale),
+[session protocol](../docs/delegated-control.md#leased-sessions-and-abandoned-hosts),
+and [the staged plan](../docs/learning-program-plan.md). Session teardown must
+stop browser audio, discard held input, cancel timers, and send token-scoped exit.
+No lesson action writes persistent device settings or catalog objects.
+`learn/lessonColors.ts` assigns Rainbow-mode pitch colors with brighter target
+and held states for screen and device. LED writes use batches of up to 16 keys
+with 10 ms between batches. Function keys stay in hardware indexing but are
+omitted from the lesson SVG. A scoped display command temporarily matches the
+OLED orientation to the selected layout.
+
+Host-only lease clock tests can be built with
+`c++ -std=c++17 tests/delegated_lease_test.cpp -o /tmp/delegated-lease-test`
+from the repository root, then run `/tmp/delegated-lease-test`.
 
 ## Integration Contracts
 

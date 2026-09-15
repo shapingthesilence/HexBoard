@@ -145,6 +145,13 @@ maps, display requests, and active notes. Fields shared by Core 1 MIDI handling
 and Core 0 controls/rendering are atomic; the app name is published before the
 atomic active-state transition.
 
+`DelegatedControl.cpp` owns an optional RAM-only host lease. Core 1 renews
+matching heartbeats; Core 0 checks expiry and consumes host exit requests
+before scanning keys, keeping note release on the control owner. Normal and
+delegated MIDI polling use a non-waiting atomic guard and stop draining on mode
+changes. The [delegated-control reference](delegated-control.md#leased-sessions-and-abandoned-hosts)
+owns token, acknowledgement, timeout, and legacy compatibility rules.
+
 `midiNoteToHexIndices` uses fixed bitsets, avoiding per-note heap allocation
 while preserving fast incoming-MIDI LED lookup.
 

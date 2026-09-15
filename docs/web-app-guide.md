@@ -1,9 +1,45 @@
 # HexBoard Sync User Guide
 
+## Learning Your First Scale
+
+Open **Learn** for a guided C-major scale from C4 to C5. Choose Wicki-Hayden,
+Harmonic Table, or Janko, then **Start on HexBoard**, or use **Try on screen** without a board.
+Release all hardware keys before starting. Board lessons require firmware with
+learning-session recovery; the app explains when an update is needed.
+
+Sound comes from the browser during the lesson. **Hear & watch the scale**
+demonstrates the pattern. Play one note at a time, releasing it before the next.
+Every playable note keeps its Rainbow-mode color across octaves, with C as red.
+The next pitch becomes much brighter with a solid outline; any matching key
+counts. Held keys brighten in their own note color and have a dashed outline
+on screen. Function keys are hidden from the lesson map. The app waits for
+correct answers and counts extra attempts without a
+timer. Finish by releasing C5, then repeat with hints, repeat without hints, or
+try the same scale on another layout. Progress is only for the current run.
+
+Under **Use your own layout**, import a tuning-bundle JSON exported from the
+editor. This prototype supports standard concert-pitch 12-EDO bundles with the
+factory C-based reference anchor. It honors rotation, mirroring, disabled keys,
+pitch overrides, and direct MIDI assignments. Command and one-button chord keys
+are unavailable. A layout missing a required pitch is blocked before starting.
+Imported layouts last for this visit to Learn.
+
+The lesson uses its selected layout; saved device settings are not replaced.
+The web map rotates with the layout, and current firmware temporarily rotates
+the board's OLED to match. The saved OLED orientation returns on exit.
+Normal instrument playing and controls return after **Stop lesson**. Switching
+views or hiding the browser tab ends the session. If the browser crashes or
+disconnects, firmware returns control within five seconds of its last
+heartbeat. Holding the encoder for about five seconds also exits on the board.
+This recovery applies to Learn's sessions; older delegated-control apps may
+use sessions without a timeout.
+
+## Connecting and Editing
+
 A browser-based HexBoard Sync app lets you edit and sync tunings, layouts,
 colors, custom key assignments, synth presets, and user wavetables.
 
-The app requires a Web MIDI-capable browser, usually Chrome or Edge, and must be
+Device connection requires a Web MIDI-capable browser, usually Chrome or Edge, and must be
 opened from `localhost` or a secure HTTPS address. Connect HexBoard by USB and
 select `Connect HexBoard` in the top bar. While not connected, you can edit
 and save browser drafts and import or export files. If several compatible boards are

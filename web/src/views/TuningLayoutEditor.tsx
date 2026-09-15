@@ -1,4 +1,5 @@
 import { sameContent, useEditorDrafts } from "../editor/drafts.ts";
+import { resolveLayoutKey } from "../catalogs/layoutKey.ts";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FocusEvent, type InputHTMLAttributes, type KeyboardEvent, type MouseEvent, type PointerEvent, type RefObject } from "react";
 import {
   clampScaleDegreeColor,
@@ -7,7 +8,6 @@ import {
   ButtonOutputMode,
   ButtonMapActionKind,
   ChordPitchMode,
-  computeVectorLayoutSteps,
   ColorMode,
   createAllNotesScale,
   createDefaultDegreeColors,
@@ -2666,10 +2666,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     const cycleLength = tuningCycleLength(activeBundle.tuning);
     const scaleDegrees = new Set(normalizeScaleDegrees(activeScale.includedDegrees, cycleLength));
     return hexBoardGeometry.filter((key) => key.role === "note").map((key) => {
-      const override = activeLayout.buttonOverrides.find((candidate) => candidate.buttonIndex === key.index);
+      const { override, generatedStepsFromC, stepsFromC } = resolveLayoutKey(key, activeLayout);
       const role = override?.role === "unused" ? "unused" : "note";
-      const generatedStepsFromC = Math.round(computeVectorLayoutSteps(key, activeLayout));
-      const stepsFromC = override?.stepsFromC ?? generatedStepsFromC;
       const resolvedColor = resolveTuningBundleButtonColor({
         degreeColors: activeBundle.palette.degreeColors,
         defaultColorMode: activeBundle.palette.defaultColorMode,

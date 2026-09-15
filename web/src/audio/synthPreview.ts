@@ -26,6 +26,11 @@ export class SynthPreviewController {
     return this.context !== null && this.context.state !== "closed";
   }
 
+  // Lessons unlock audio from their Start button before hardware MIDI arrives.
+  async start(): Promise<void> {
+    await this.ensureStarted();
+  }
+
   setPatch(patch: SynthPreviewPatch): void {
     this.patch = {
       ...patch,

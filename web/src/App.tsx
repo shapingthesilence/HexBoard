@@ -2,14 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { DeviceConnect } from "./views/DeviceConnect.tsx";
 import { SynthPresetLibrary } from "./views/SynthPresetLibrary.tsx";
 import { TuningLayoutEditor } from "./views/TuningLayoutEditor.tsx";
+import { Learn } from "./views/Learn.tsx";
 import { MockMidiTransport } from "./midi/mockTransport.ts";
 import type { MidiTransport } from "./midi/types.ts";
 import type { HelloResponsePayload } from "./protocol/index.ts";
 
-type ViewKey = "synth" | "layouts";
+type ViewKey = "synth" | "layouts" | "learn";
 type ThemeMode = "light" | "dark";
 
 const views: Array<{ key: ViewKey; label: string }> = [
+  { key: "learn", label: "Learn" },
   {
     key: "layouts",
     label: "Tunings & Layouts"
@@ -47,6 +49,8 @@ export function App() {
 
   const content = useMemo(() => {
     switch (activeView) {
+      case "learn":
+        return <Learn transport={transport} connected={deviceHello !== null && !(transport instanceof MockMidiTransport)} />;
       case "layouts":
         return <TuningLayoutEditor transport={transport} deviceHello={deviceHello} />;
       case "synth":

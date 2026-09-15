@@ -62,7 +62,7 @@ F0 7D <command> <payload...> F7
 
 The preset-sync protocol is intentionally separate and uses the family form
 `F0 7D 10 <protocol...> F7`; see `docs/preset-sync-sysex.md`.
-Delegated-control command bytes `0x01` through `0x06` remain live-surface
+Delegated-control command bytes `0x01` through `0x0B` remain live-surface
 commands, not preset-sync messages.
 
 The command byte is one of:
@@ -75,6 +75,79 @@ The command byte is one of:
 | `0x04` | `SYSEX_DELEGATED_NOTE_MAP` | Host to device | Assign delegated MIDI channel/note output for one or more visible keys |
 | `0x05` | `SYSEX_DELEGATED_NOTE_MAP_RESET` | Host to device | Restore delegated key output to the default button-index encoding |
 | `0x06` | `SYSEX_DELEGATED_ENCODER_EVENT` | Device to host | Report encoder navigation events |
+| `0x07` | `SYSEX_DELEGATED_LEASE_ENTER` | Host to device | Request an acknowledged session with expiry |
+| `0x08` | `SYSEX_DELEGATED_HEARTBEAT` | Host to device | Renew a matching leased session |
+| `0x09` | `SYSEX_DELEGATED_LEASE_STATUS` | Device to host | Report active, busy, or ended session |
+| `0x0A` | `SYSEX_DELEGATED_LEASE_EXIT` | Host to device | End only the matching leased session |
+| `0x0B` | `SYSEX_DELEGATED_DISPLAY_ROTATION` | Host to device | Set transient OLED orientation for a matching lease |
+
+## Leased Sessions and Abandoned Hosts
+
+Learn uses protocol version `1` and a nonzero 28-bit token, encoded as four
+7-bit bytes, most significant first (`t3 t2 t1 t0`). Frames:
+
+```text
+F0 7D 07 01 t3 t2 t1 t0 <optional printable app name> F7
+F0 7D 08 t3 t2 t1 t0 F7
+F0 7D 09 01 t3 t2 t1 t0 <status> F7
+F0 7D 0A t3 t2 t1 t0 F7
+```
+
+Status `1` acknowledges an active lease, `0` reports its end, and `2` reports
+busy. Fresh entry is rejected while any visible key is held or another host
+owns the surface, including a legacy host. A repeated entry with the same
+active token renews the lease without resetting notes or LEDs. Fresh entry
+stops existing MIDI/synth output and resets the raw button map before ACK.
+
+The timeout is **5,000 milliseconds** from entry or the last matching heartbeat.
+Core 0 checks expiry before key scanning and applies queued host exit requests.
+Matching heartbeats and
+idempotent matching entry renew the lease; button, encoder, LED, identity, and
+preset-sync activity do not. Expiry releases delegated notes and restores
+instrument control using the normal exit path. Encoder exit and legacy exit
+also report status `0` for the ended token.
+
+Heartbeat and scoped exit require exactly four token bytes. Unknown versions,
+zero entry tokens, malformed requests, and mismatched heartbeat/exit tokens
+have no effect. Late heartbeats cannot enter delegated mode. Lease state is
+RAM-only, using atomic 32-bit token/millisecond values and wrap-safe elapsed
+time; no persisted setting or boot action is involved.
+
+The elapsed-time comparison treats a heartbeat published just after the
+checking core sampled its clock as a future timestamp, not an expired session.
+It also handles the 32-bit millisecond clock wrapping.
+
+Hosts must wait for matching status `1` before interpreting keys or driving
+LEDs. Learn sends heartbeats every second and stops after at least 2.5 seconds
+without an ACK, checked on its one-second timer. It sends scoped exit on stop,
+view change, hidden tab, page exit, or connection failure. Unload delivery is
+not guaranteed; firmware expiry is the fallback. An old token's delayed exit
+cannot end a newer session.
+
+Legacy `0x01` entry stays unleased with no automatic timeout. It ends any
+previous lease and retains legacy note-map behavior. Older firmware ignores
+`0x07`; hosts must not fall back to legacy entry when promising recovery.
+
+Normal and delegated MIDI polling share a non-waiting atomic guard so a mode
+handoff cannot use the parsers from both cores simultaneously. Each drain stops
+when its mode no longer matches the active mode. Matching heartbeats arriving
+after expiry cannot revive the session before core 0 services the timeout.
+
+## Temporary Display Orientation
+
+After lease acknowledgement, a host can send:
+
+```text
+F0 7D 0B t3 t2 t1 t0 <device-rotation> F7
+```
+
+The payload must contain exactly four matching token bytes and a rotation
+`0..3`, using the same device-rotation convention as layout objects. Firmware
+applies its hardware display offset on core 0 when redrawing the delegated
+screen. Wrong tokens and invalid rotations are ignored. This command does not
+renew the lease or write settings. Entry clears the override; exit restores
+the saved display orientation, including while the OLED is asleep. Firmware
+without `0x0B` support ignores the command and retains the saved orientation.
 
 ## Entering And Exiting
 
@@ -96,9 +169,10 @@ Exit delegated mode:
 F0 7D 02 F7
 ```
 
-Entering delegated mode clears `delegatedControlState.colors[]` to black, clears delegated
-active-note tracking, wakes the OLED, and calls `setupMIDI()` to reset MIDI
-parser state. It does not reset the delegated note map. If the enter command is
+Entering delegated mode clears `delegatedControlState.ledHsv[]` to black, clears delegated
+active-note tracking, wakes the OLED, and resets the MIDI parsers without
+reinitializing USB or serial endpoints. `setupMIDI()` is boot-only. Legacy entry
+does not reset the delegated note map. If the enter command is
 received while delegated mode is already active, active delegated notes are
 released first and the delegated control surface state is reset without clearing
 the note map.

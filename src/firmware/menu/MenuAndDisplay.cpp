@@ -139,10 +139,11 @@ void drawDelegatedControlScreen() {
     wakeDelegatedControlScreenForInput();
     delegatedControlState.displayWakeRequested = false;
   }
-  if (screenSaverOn || !delegatedControlState.displayDirty) {
+  if (screenSaverOn || !delegatedControlState.displayDirty.exchange(false, std::memory_order_acq_rel)) {
     return;
   }
 
+  applyDeviceDisplayRotation();
   dismissCommandWheelOverlay();
   noteOverlayVisible = false;
   noteBadgeVisible = false;
@@ -166,7 +167,6 @@ void drawDelegatedControlScreen() {
   drawCenteredDelegatedText("Hold encoder", 94);
   drawCenteredDelegatedText("5 sec to exit", MODAL_SCREEN_FOOTER_BASELINE);
   u8g2.sendBuffer();
-  delegatedControlState.displayDirty = false;
 }
 
 void restoreInteractiveMenuDisplay() {
@@ -183,6 +183,7 @@ void restoreMenuAfterDelegatedControl() {
     return;
   }
   delegatedControlState.returnToMenuRequested = false;
+  applyDeviceDisplayRotation();
   if (!screenSaverOn) {
     restoreInteractiveMenuDisplay();
   }
@@ -3018,7 +3019,9 @@ void loadDeviceRotationFromCurrentLayout() {
 }
 
 void applyDeviceDisplayRotation() {
-  switch (displayRotationFromDeviceRotation(deviceRotation)) {
+  const byte hostRotation = delegatedControlState.displayRotation.load(std::memory_order_relaxed);
+  const byte effectiveRotation = delegatedControlState.active && hostRotation < 4 ? hostRotation : deviceRotation;
+  switch (displayRotationFromDeviceRotation(effectiveRotation)) {
     case 0:
       u8g2.setDisplayRotation(U8G2_R0);
       break;

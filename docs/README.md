@@ -35,6 +35,9 @@ schema reference, without a migration narrative.
 
 ## Proposed Designs
 
+[Learning program](learning-program-plan.md) records the staged learning plan,
+the prototype's scope, and the proposed curriculum and song trainer.
+
 [Architecture proposals](architecture-proposals.md) describe unimplemented
 refactors for review. [Preset-sync extensions](preset-sync-proposals.md) contain
 unimplemented protocol designs. Neither is a supported product contract.
