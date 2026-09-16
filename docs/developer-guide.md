@@ -352,6 +352,9 @@ host stops polling, keeping the main loop responsive with a closed laptop.
 MPE per-note bends and note lifecycle packets enter a bounded FIFO when that
 backoff is active and drain in order, so a full TX FIFO cannot strand or
 retune a receiving voice. SysEx streaming uses the longer transfer timeout.
+Queue-managed MPE notes shorter than 12 ms defer their zero-velocity Note Off
+until the 12 ms boundary, keeping the member channel reserved in the meantime.
+This avoids same-buffer taps that some receivers acknowledge but do not release.
 
 The global pitch-bend wheel sends at up to 100 messages per second. A serial
 pitch-bend message occupies 30 bits including UART framing, so this rate uses

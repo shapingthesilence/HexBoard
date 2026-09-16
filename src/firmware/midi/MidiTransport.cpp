@@ -187,6 +187,16 @@ bool writeUsbMidiPacket(const uint8_t packet[4], bool reliable) {
 HexBoardMidiOut UMIDI(MidiOutputTransport::Usb);
 HexBoardMidiOut SMIDI(MidiOutputTransport::Serial);
 
+bool sendNoteOffToConfiguredMidiOutputs(byte note, byte velocity, byte channel) {
+  if ((midiD & MIDID_USB) && !UMIDI.sendNoteOff(note, velocity, channel)) {
+    return false;
+  }
+  if (midiD & MIDID_SER) {
+    SMIDI.sendNoteOff(note, velocity, channel);
+  }
+  return true;
+}
+
 // What program change number we last sent (General MIDI/Roland MT-32)
 byte programChange = 0;
 

@@ -88,8 +88,8 @@ public:
     sendChannel3(0x90, 0x09, note, velocity, channel, true);
   }
 
-  void sendNoteOff(byte note, byte velocity, byte channel) {
-    sendChannel3(0x80, 0x08, note, velocity, channel, true);
+  bool sendNoteOff(byte note, byte velocity, byte channel) {
+    return sendChannel3(0x80, 0x08, note, velocity, channel, true);
   }
 
   void sendControlChange(byte control, byte value, byte channel) {
@@ -179,21 +179,22 @@ private:
     }
   }
 
-  void sendChannel3(uint8_t statusBase, uint8_t cin, uint8_t data1, uint8_t data2, byte channel,
+  bool sendChannel3(uint8_t statusBase, uint8_t cin, uint8_t data1, uint8_t data2, byte channel,
                     bool reliable = false) {
     if (!isValidMidiChannel(channel)) {
-      return;
+      return false;
     }
     uint8_t status = statusBase | ((channel - 1) & 0x0F);
     data1 &= 0x7F;
     data2 &= 0x7F;
     if (transport_ == MidiOutputTransport::Usb) {
       uint8_t packet[4] = { cin, status, data1, data2 };
-      writeUsbMidiPacket(packet, reliable);
+      return writeUsbMidiPacket(packet, reliable);
     } else {
       Serial1.write(status);
       Serial1.write(data1);
       Serial1.write(data2);
+      return true;
     }
   }
 };
@@ -202,6 +203,7 @@ extern MidiInputParser usbMidiInput;
 extern MidiInputParser serialMidiInput;
 extern HexBoardMidiOut UMIDI;
 extern HexBoardMidiOut SMIDI;
+bool sendNoteOffToConfiguredMidiOutputs(byte note, byte velocity, byte channel);
 
 template <class F>
 inline void withMIDI(F&& f) {

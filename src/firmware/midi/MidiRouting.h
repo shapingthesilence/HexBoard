@@ -9,6 +9,8 @@ extern bool mpeChannelQueueActive;
 uint8_t RAM_FUNC(mpePlayableChannelCount)();
 byte RAM_FUNC(takeMPEChannel)();
 void RAM_FUNC(releaseMPEChannel)(byte ch);
+bool finishMPEChannelRelease(byte ch, byte note, uint64_t noteOnMicros);
+void servicePendingMPEChannelReleases();
 void resetTuningMIDI();
 byte primaryMIDIChannel();
 void RAM_FUNC(sendMIDImodulationToCh1)();

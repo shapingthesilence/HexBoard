@@ -318,7 +318,14 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
   // that is not scale-locked.
   if (h[x].MIDIch) {  // but just in case, check
     byte noteOff = (h[x].activeMidiNote < 128) ? h[x].activeMidiNote : h[x].note;
-    withMIDI([&](auto& M) { M.sendNoteOff(noteOff, velWheel.curValue, h[x].MIDIch); });
+    byte channel = h[x].MIDIch;
+    bool pooledMPEChannel = mpeChannelQueueActive
+        && channel >= mpeLowestChannel && channel <= mpeHighestChannel;
+    if (pooledMPEChannel
+          ? !finishMPEChannelRelease(channel, noteOff, h[x].timePressed)
+          : !sendNoteOffToConfiguredMidiOutputs(noteOff, 0, channel)) {
+      return;
+    }
     pressedKeyIDs.remove(x);  // Dynamic JI pressed key tracking
     h[x].jiRetune = 0;
     h[x].jiRetuneCents = 0.0f;
@@ -326,15 +333,14 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
     h[x].activeMidiNote = UNUSED_NOTE;
     h[x].activePitchBend = 0;
     sendToLog(
-      "sent note off: " + std::to_string(noteOff) + " vel " + std::to_string(velWheel.curValue) + " ch " + std::to_string(h[x].MIDIch));
-    if (mpeChannelQueueActive && h[x].MIDIch >= mpeLowestChannel && h[x].MIDIch <= mpeHighestChannel) {
+      "sent note off: " + std::to_string(noteOff) + " vel 0 ch " + std::to_string(channel));
+    if (pooledMPEChannel) {
       if (extraMPE) { //if the extra MPE messages are enabled
         withMIDI([&](auto& M) {
-          M.sendAfterTouch(0, h[x].MIDIch);                 // Channel Pressure
-          M.sendControlChange(74, CC74value, h[x].MIDIch);  // CC74 (Timbre)
+          M.sendAfterTouch(0, channel);                 // Channel Pressure
+          M.sendControlChange(74, CC74value, channel);  // CC74 (Timbre)
         });
       }
-      releaseMPEChannel(h[x].MIDIch);
     }
     noteOverlayReleaseGraceUntil = runTime + DISPLAYED_NOTES_RELEASE_GRACE_MICROS;
     h[x].MIDIch = 0;

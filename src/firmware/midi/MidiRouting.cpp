@@ -19,6 +19,10 @@ namespace {
 // pool by channel number instead.
 std::array<byte, MIDI_CHANNEL_COUNT> mpeAvailableChannelOrder = {};
 uint8_t mpeAvailableChannelOrderCount = 0;
+constexpr uint32_t MPE_MIN_NOTE_DURATION_MICROS = 12000;
+std::array<uint32_t, MIDI_CHANNEL_COUNT> mpeReleaseDueMicros = {};
+std::array<byte, MIDI_CHANNEL_COUNT> mpeReleaseNotes = {};
+uint16_t mpePendingReleaseMask = 0;
 
 int32_t RAM_FUNC(floorDiv)(int32_t numerator, int32_t denominator) {
   if (denominator <= 0) {
@@ -80,6 +84,7 @@ uint8_t RAM_FUNC(mpePlayableChannelCount)() {
 void resetMPEChannelPool() {
   mpeChannelBitmap = 0;
   mpeAvailableChannelOrderCount = 0;
+  mpePendingReleaseMask = 0;
   for (byte ch = mpeLowestChannel; ch <= mpeHighestChannel; ++ch) {
     mpeChannelBitmap |= (1u << (ch - 1));
     mpeAvailableChannelOrder[mpeAvailableChannelOrderCount++] = ch;
@@ -128,6 +133,50 @@ void RAM_FUNC(releaseMPEChannel)(byte ch) {
   mpeAvailableChannelOrder[mpeAvailableChannelOrderCount++] = ch;
   mpeChannelBitmap |= channelBit;
   sendToLog("returned ch " + std::to_string(ch) + " to the MPE pool");
+}
+
+bool finishMPEChannelRelease(byte ch, byte note, uint64_t noteOnMicros) {
+  if (ch < MIDI_CHANNEL_MIN || ch > MIDI_CHANNEL_MAX) {
+    return false;
+  }
+  uint64_t due = noteOnMicros + MPE_MIN_NOTE_DURATION_MICROS;
+  uint64_t now = readClock();
+  if (note >= 128) {
+    releaseMPEChannel(ch);
+    return true;
+  }
+  if (now >= due) {
+    if (!sendNoteOffToConfiguredMidiOutputs(note, 0, ch)) {
+      return false;
+    }
+    releaseMPEChannel(ch);
+    return true;
+  }
+  uint8_t index = ch - 1;
+  mpeReleaseNotes[index] = note;
+  mpeReleaseDueMicros[index] = static_cast<uint32_t>(due);
+  mpePendingReleaseMask |= static_cast<uint16_t>(1u << index);
+  return true;
+}
+
+void servicePendingMPEChannelReleases() {
+  if (mpePendingReleaseMask == 0) {
+    return;
+  }
+  uint32_t now = static_cast<uint32_t>(readClock());
+  for (uint8_t index = 0; index < MIDI_CHANNEL_COUNT; ++index) {
+    uint16_t bit = static_cast<uint16_t>(1u << index);
+    if (!(mpePendingReleaseMask & bit)
+        || static_cast<int32_t>(now - mpeReleaseDueMicros[index]) < 0) {
+      continue;
+    }
+    byte channel = static_cast<byte>(index + 1);
+    if (!sendNoteOffToConfiguredMidiOutputs(mpeReleaseNotes[index], 0, channel)) {
+      continue;
+    }
+    mpePendingReleaseMask &= ~bit;
+    releaseMPEChannel(channel);
+  }
 }
 
 float RAM_FUNC(freqToMIDI)(float Hz) {  // formula to convert from Hz to MIDI note
