@@ -25,6 +25,12 @@ export interface BeatResult {
   biasMs: number | null;
 }
 
+export interface BeatTargets {
+  targets: readonly (readonly number[])[];
+  beats: readonly number[];
+  accepts?: (step: number, index: number, note: number) => boolean;
+}
+
 // Each attack belongs to one fixed beat window. An octave-correct note a
 // whole beat late cannot satisfy the previous target or slide the time grid.
 export class BeatScaleRun {
@@ -35,45 +41,82 @@ export class BeatScaleRun {
   mistakes = 0;
   feedback = "Listen to four count-in clicks, then play one note per click.";
   private now: number;
+  readonly offsets: number[];
+  readonly totalBeats: number;
+  private attacks = new Map<number, { slot: number; at: number }>();
   private firstHit?: number;
   private lastHit?: number;
-  constructor(readonly notes: readonly number[], readonly startAt: number, bpm: number, readonly label: (note: number) => string = noteName) {
+  constructor(readonly notes: readonly number[], readonly startAt: number, bpm: number, readonly label: (note: number) => string = noteName, readonly exercise?: BeatTargets) {
+    if (exercise) this.feedback = "Listen to four count-in clicks, then follow the phrase.";
     this.periodMs = 60000 / bpm;
     this.now = startAt - 4 * this.periodMs;
     this.errors = Array(notes.length).fill(undefined);
+    let offset = 0;
+    this.offsets = notes.map((_, index) => { const at = offset; offset += exercise?.beats[index] ?? 1; return at; });
+    this.totalBeats = offset;
   }
-  get endAt() { return this.startAt + (this.notes.length - 0.5) * this.periodMs; }
+  get endAt() { return this.startAt + (this.totalBeats - Math.min(0.5, (this.exercise?.beats.at(-1) ?? 1) / 2)) * this.periodMs; }
   get complete() { return this.now >= this.endAt; }
   get countIn() { return this.now < this.startAt - this.periodMs / 2; }
   get elapsedMs() {
     return this.errors.every((error) => error !== undefined) && this.firstHit !== undefined && this.lastHit !== undefined
       ? this.lastHit - this.firstHit : undefined;
   }
+  private target(slot: number) { return this.exercise?.targets[slot] ?? [this.notes[slot]]; }
+  private earlyWindow(slot: number) { return slot === 0 ? 0.5 : Math.min(0.5, (this.offsets[slot] - this.offsets[slot - 1]) / 2); }
+  private lateWindow(slot: number) { return Math.min(0.5, (this.exercise?.beats[slot] ?? 1) / 2); }
+  private slotAt(time: number) {
+    const beat = (time - this.startAt) / this.periodMs;
+    return this.offsets.findIndex((offset, slot) => beat >= offset - this.earlyWindow(slot) && beat < offset + this.lateWindow(slot));
+  }
   tick(now: number) {
     this.now = Math.max(this.now, now);
-    this.step = Math.min(this.notes.length, Math.max(this.step, Math.floor((this.now - this.startAt) / this.periodMs + 0.5)));
+    let next = 0;
+    while (next < this.notes.length && this.now >= this.startAt + (this.offsets[next] + (this.target(next).length ? this.lateWindow(next) : (this.exercise?.beats[next] ?? 1) - this.lateWindow(next))) * this.periodMs) {
+      if (!this.target(next).length && this.errors[next] === undefined) this.errors[next] = 0;
+      next++;
+    }
+    this.step = Math.max(this.step, next);
   }
   press(index: number, note: number, receivedAt = performance.now()) {
     if (this.held.has(index)) return false;
     this.held.set(index, note);
-    const slot = Math.floor((receivedAt - this.startAt) / this.periodMs + 0.5);
-    if (slot < 0) { this.feedback = "Count-in: wait for the first scale beat."; return true; }
-    if (slot >= this.notes.length) return true;
-    if (note !== this.notes[slot] || this.errors[slot] !== undefined) {
+    const slot = this.slotAt(receivedAt);
+    if (receivedAt < this.startAt - this.periodMs / 2) { this.feedback = "Wait for the first beat."; return true; }
+    if (receivedAt >= this.endAt) return true;
+    if (slot < 0 || !this.target(slot).includes(note) || this.errors[slot] !== undefined || this.exercise?.accepts?.(slot, index, note) === false) {
       this.mistakes++;
-      this.feedback = `Extra attempt. Keep the beat moving; the target is ${this.label(this.notes[slot])}.`;
+      this.feedback = "Extra attempt. Follow the beat.";
     } else {
-      const error = receivedAt - (this.startAt + slot * this.periodMs);
-      this.errors[slot] = error;
-      // Preview the next answer immediately, without shifting its beat window.
-      this.step = Math.max(this.step, slot + 1);
-      this.firstHit ??= receivedAt;
-      this.lastHit = receivedAt;
-      this.feedback = Math.abs(error) < 15 ? "On the beat." : `${Math.round(Math.abs(error))} ms ${error < 0 ? "early" : "late"}.`;
+      this.attacks.set(index, { slot, at: receivedAt });
+      this.evaluate(slot, receivedAt);
     }
     return true;
   }
-  release(index: number) { const note = this.held.get(index); this.held.delete(index); return note; }
+  private evaluate(slot: number, receivedAt: number) {
+    if (slot < 0 || this.errors[slot] !== undefined) return;
+    const target = this.target(slot);
+    const entries = [...this.held];
+    if (!target.length || !target.every(note => entries.some(([index, pitch]) => pitch === note && this.exercise?.accepts?.(slot, index, pitch) !== false))) return;
+    if (target.length > 1 && entries.some(([, note]) => !target.includes(note))) return;
+    const attacks = entries.flatMap(([index]) => { const attack = this.attacks.get(index); return attack?.slot === slot ? [attack.at] : []; });
+    if (!attacks.length) return; // Held notes alone cannot satisfy another beat.
+    const due = this.startAt + this.offsets[slot] * this.periodMs;
+    // Chords are graded by the furthest attack (or final cleanup release), so
+    // early and late chord tones cannot cancel each other's timing errors.
+    const deviations = [...attacks, receivedAt].map(at => at - due);
+    const error = deviations.reduce((worst, value) => Math.abs(value) > Math.abs(worst) ? value : worst, 0);
+    this.errors[slot] = error;
+    this.step = Math.max(this.step, slot + 1);
+    this.firstHit ??= Math.min(...attacks);
+    this.lastHit = receivedAt;
+    this.feedback = Math.abs(error) < 15 ? "On the beat." : `${Math.round(Math.abs(error))} ms ${error < 0 ? "early" : "late"}.`;
+  }
+  release(index: number, receivedAt = performance.now()) {
+    const note = this.held.get(index); this.held.delete(index); this.attacks.delete(index);
+    this.evaluate(this.slotAt(receivedAt), receivedAt);
+    return note;
+  }
   result(): BeatResult {
     const errors = this.errors.filter((error): error is number => error !== undefined);
     const credit = errors.reduce((sum, error) => sum + Math.max(0, 1 - Math.abs(error) / (this.periodMs / 2)), 0);

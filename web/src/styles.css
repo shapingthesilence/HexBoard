@@ -2652,3 +2652,28 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .learnBeatClock > span.pulse { opacity: 1; }
 
 .learnScaleSteps .missed { border-color: var(--warning); border-style: dashed; }
+
+/* Authoring stays behind Manage courses; the learning view keeps its compact map. */
+.courseEditor { margin-top: 12px; }
+.courseEditor h2 { margin: 0; font-size: 1.3rem; }
+.courseEditorBody { border: 0; padding: 0; margin: 0; min-width: 0; }
+.courseEditorFields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.courseEditorWorkspace { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 24px; }
+.courseEditor input, .courseEditor textarea { width: 100%; min-width: 0; }
+.courseEditor textarea { resize: vertical; }
+.courseEditor .learnScaleSteps button { flex-shrink: 0; font-size: .8rem; }
+.courseEditor .learnScaleSteps button[aria-pressed=true] { background: var(--surface-accent); border-color: var(--brand); }
+.courseNoteRow { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.courseNoteRow .learnField { flex: 1; min-width: 65px; }
+.courseNoteRow .checkField { max-width: 140px; font-size: .75rem; }
+.courseNoteRow input[type=checkbox] { width: auto; }
+.courseRecording { margin: 16px 0; padding: 12px; background: var(--surface-muted); border-radius: var(--radius-md); }
+.courseRecording .learnMuted { flex: 1; min-width: 200px; }
+.courseEditorBoard { height: 340px; }
+.learnFingering { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0; font-size: .85rem; }
+.learnFingering span { border-radius: 6px; padding: 4px 8px; background: var(--surface-accent); }
+.learnKey.alternate polygon { stroke-width: 1; }
+@media (max-width: 800px) {
+  .courseEditorFields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .courseEditorWorkspace { grid-template-columns: 1fr; }
+}

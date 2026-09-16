@@ -7,7 +7,7 @@ tuning and major scale. Wicki-Hayden, Harmonic Table, and Gerhard are available
 without downloading anything. Choose **Start on HexBoard**, or **Try on screen**
 without a board. Release all hardware keys before starting.
 
-Use **Scale practice**, **Beginner course**, and **Progress** to navigate.
+Use **Scale practice**, **Courses**, and **Progress** to navigate.
 Start/Stop and Hints sit above the key map. Choose a scale to preview its exact
 exercise pitches immediately, including every duplicate key in the selected
 register. Other notes stay dimly colored. **Colors & brightness** and
@@ -94,12 +94,13 @@ sessions.
 
 ### Beginner Course and Progress
 
-The **Beginner course** has 15 short 12-EDO lessons: notes and octaves, intervals,
+Under **Courses**, the **Beginner course** has 15 short 12-EDO lessons: notes and octaves, intervals,
 major and minor scales, an arpeggio, major/minor triads, and a I–IV–V–I progression.
 Choose any lesson from the selector, or use **Next lesson** after finishing.
 Each lesson explains the musical idea, why it is useful, and what to play.
 **Hear example** demonstrates its notes or chords.
-The course requires standard 12-EDO; other tunings remain available in Scale practice.
+The bundled course requires standard 12-EDO. User-authored courses and Scale
+practice can use other tunings.
 All three starter layouts support every lesson. Equivalent-pitch keys count.
 
 Single-note lessons allow overlapping notes. Chord lessons require all listed
@@ -114,6 +115,60 @@ browser. An **Independent** star means a complete run with zero mistakes and no
 hints or demonstration during that run; it is not a claim of lasting mastery.
 **Export progress** creates a backup; **Restore progress** merges a backup
 without removing newer achievements. No account or device writes are required.
+
+### Creating and Sharing Courses
+
+Open **Courses → Manage courses** for **Create course**, **Make a copy**,
+**Edit course**, **Export course**, and **Import shared course**. Authoring
+controls stay outside the normal lesson view. Courses are saved in this browser;
+export a backup or share the `.hexcourse.json` file with another player.
+
+Pick the tuning and optionally require a layout. To use a device tuning, load
+its tuning and the desired layouts in Learn before opening the course editor.
+Imported tuning bundles work too. The exported course includes its tuning,
+palette, and layouts, including custom key assignments. Recipients can play
+immediately, even if that content is absent from their HexBoard. Installing it
+on the board is unnecessary for Learn and importing never replaces board data.
+An unrestricted course lets the learner choose a compatible included or loaded
+layout; a required layout keeps the authored fingering geometry fixed.
+
+**Record phrase** turns your HexBoard into the authoring input. Release all
+keys before starting. Choose **Melody** to capture every note press (overlap is
+fine), or **Chords** to group notes until you release the whole chord. Choose
+**Metronome** timing and a tempo first to hear clicks and capture beat lengths.
+Timing rounds to quarter-beat increments from ¼ to 8 beats. **Finish recording**
+replaces the current lesson's steps with the captured phrase. The actual keys
+become preferred keys, with duplicates initially accepted. Add pauses as rest
+steps and adjust beat lengths afterward. Encoder hold, hiding the tab, or a
+lost connection stops recording and keeps captured notes in the open draft.
+Use **Save course** to retain that draft.
+
+For small songs or segments, add one lesson per manageable phrase. Each step
+can contain a note, a chord, or a timed rest. The visual map and note pickers
+edit those steps. In standard 12-EDO, **Quick phrase entry** can replace them
+in one action. For example:
+
+```text
+C4 D4:0.5 E4:0.5 G4:2 -:1 [C4 E4 G4]:2
+```
+
+This plays C, two shorter notes, G for two beats, a one-beat rest, and a C major
+chord. A missing length means one beat. **Hear example** in the player auditions
+the phrase at its authored timing.
+
+Choose a **Fingering layout** to assign left/right hand, finger 1–5 (thumb to
+little finger), and an optional preferred button for each note. The preferred
+button lights brightly; duplicates are dimmer. Leave **Accept duplicates** on
+for a suggestion, or turn it off to require that button. Hand and finger cues
+are guidance, not something the board can detect. Assignments for one layout
+do not constrain another layout.
+
+Timed lessons include a four-click count-in and a timing grade. Complete every
+step with a score of at least 75 to record completion; hints-off, mistake-free
+runs can also earn Independent. Note lengths set when the next step begins;
+release duration is not graded. Editing a saved course starts progress for a
+new revision. Exported courses contain lessons and instrument definitions;
+learner progress is backed up separately in **Progress**.
 
 ## Connecting and Editing
 

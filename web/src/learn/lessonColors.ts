@@ -18,7 +18,7 @@ export function lessonLedColor(note: number | null, state: KeyLight, context?: {
   return {
     hue: Math.round(color.hueTenthDegrees * 127 / 3600),
     saturation: Math.round(color.saturation * 127 / 255),
-    value: state === "target" ? 127 : state === "held" ? 110 : Math.round(42 * color.value / 255)
+    value: state === "target" ? 127 : state === "held" ? 110 : state === "alternate" ? 65 : Math.round(42 * color.value / 255)
   };
 }
 

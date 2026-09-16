@@ -1,11 +1,15 @@
+import { cueAccepts, lessonCues } from "./courseFiles.ts";
 import { MajorScaleRun, majorScale, noteName } from "./majorScale.ts";
 
+export interface KeyCue { note: number; button?: number; hand?: "left" | "right"; finger?: number; acceptDuplicates?: boolean }
 export interface CourseLesson {
   id: string;
   title: string;
   section: string;
   instruction: string;
   targets: readonly (readonly number[])[];
+  timing?: { bpm: number; beats: number[] };
+  fingerings?: { layoutId: string; steps: KeyCue[][] }[];
 }
 const melody = (notes: readonly number[]) => notes.map(note => [note]);
 export const beginnerLessons: readonly CourseLesson[] = [
@@ -31,8 +35,8 @@ export const beginnerLessons: readonly CourseLesson[] = [
 export class CourseRun extends MajorScaleRun {
   private attacked = false;
   private lastEventAt = 0;
-  constructor(readonly lesson: CourseLesson) {
-    super(lesson.targets.map(target => target[0]));
+  constructor(readonly lesson: CourseLesson, readonly layoutId = "", label: (note: number) => string = noteName) {
+    super(lesson.targets.map(target => target[0]), label);
     this.feedback = "Play the highlighted notes.";
   }
   get target() { return this.lesson.targets[this.step] ?? []; }
@@ -40,9 +44,9 @@ export class CourseRun extends MajorScaleRun {
     if (this.complete || this.held.has(index)) return false;
     this.held.set(index, note);
     this.lastEventAt = receivedAt;
-    if (!this.target.includes(note)) {
+    if (!this.target.includes(note) || !cueAccepts(lessonCues(this.lesson, this.layoutId, this.step), index, note)) {
       this.mistakes++;
-      this.feedback = `Try ${this.target.map(noteName).join(" + ")}.`;
+      this.feedback = `Try ${this.target.map(this.label).join(" + ")}.`;
     } else {
       this.startedAt ??= receivedAt;
       this.attacked = true;
@@ -58,7 +62,7 @@ export class CourseRun extends MajorScaleRun {
   private evaluate(receivedAt: number) {
     if (!this.attacked) return;
     const held = [...this.held.values()];
-    if (!this.target.every(note => held.includes(note))) return;
+    if (!this.target.every(note => [...this.held].some(([index, pitch]) => pitch === note && cueAccepts(lessonCues(this.lesson, this.layoutId, this.step), index, note)))) return;
     if (this.target.length > 1 && held.some(note => !this.target.includes(note))) {
       this.feedback = "Release the other notes.";
       return;
@@ -68,7 +72,7 @@ export class CourseRun extends MajorScaleRun {
     if (this.complete) {
       this.finishedAt = receivedAt;
       this.feedback = "Lesson complete.";
-    } else this.feedback = `Next: ${this.target.map(noteName).join(" + ")}.`;
+    } else this.feedback = `Next: ${this.target.map(this.label).join(" + ")}.`;
   }
 }
 
@@ -80,8 +84,9 @@ export function parseCourseProgress(raw: string | null): CourseProgress {
     const data = JSON.parse(raw ?? "{}");
     const result: CourseProgress = {};
     if (!data || typeof data !== "object" || Array.isArray(data)) return result;
-    for (const lesson of beginnerLessons) {
-      const entries = data[lesson.id];
+    for (const lessonId of Object.keys(data)) {
+      if (!beginnerLessons.some(lesson => lesson.id === lessonId) && !/^user:[a-zA-Z0-9_-]{1,80}:[1-9][0-9]*:[a-zA-Z0-9_-]{1,80}$/.test(lessonId)) continue;
+      const entries = data[lessonId];
       if (!entries || typeof entries !== "object" || Array.isArray(entries)) continue;
       const layouts: Record<string, LessonProgress> = {};
       for (const [layout, value] of Object.entries(entries)) {
@@ -90,7 +95,7 @@ export function parseCourseProgress(raw: string | null): CourseProgress {
         if (!p || typeof p !== "object" || !Number.isSafeInteger(p.attempts) || p.attempts < 1 || !Number.isSafeInteger(p.bestMistakes) || p.bestMistakes < 0 || typeof p.independent !== "boolean" || typeof p.lastPlayed !== "string" || !Number.isFinite(Date.parse(p.lastPlayed))) continue;
         Object.defineProperty(layouts, layout, { value: { attempts: p.attempts, bestMistakes: p.bestMistakes, independent: p.independent, lastPlayed: p.lastPlayed }, enumerable: true, configurable: true, writable: true });
       }
-      if (Object.keys(layouts).length) result[lesson.id] = layouts;
+      if (Object.keys(layouts).length) result[lessonId] = layouts;
     }
     return result;
   } catch { return {}; }

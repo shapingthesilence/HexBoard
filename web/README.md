@@ -94,7 +94,13 @@ and `TRANSFER_END` so firmware can pace object transfers.
 | `views/Learn.tsx`, `learn/` | Tuning-aware scale practice, lazy device library, beat grading, delegated sessions, and LED hints |
 | `catalogs/layoutKey.ts` | Shared generated/manual layout pitch resolution |
 
-## Learning Prototype
+## Learning and Course Authoring
+
+User courses have a separate browser library and self-contained JSON export.
+The editor is under Manage courses, with live HexBoard phrase recording,
+per-layout key/hand/finger cues, and timed melody/chord/rest steps. The
+[course format reference](../docs/course-format.md) owns the schema, matching,
+scoring, storage, and recording contracts. No device library writes are needed.
 
 The Learn tab defaults to a major scale on factory 12-EDO, with three starter
 layouts. It also supports device tuning/layout/scale selection and JSON import

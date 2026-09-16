@@ -17,8 +17,13 @@ lessons, simultaneous triads, a I–IV–V–I progression, and local progress w
 export/import. Automated coverage checks every lesson on all three starter
 layouts; beginner usability and physical hardware acceptance remain pending.
 
-Milestones 3–5 remain proposals; scale rhythm practice and static microtonal
-scale practice have been brought into the prototype. Current operation belongs
+User-authored courses are also implemented: self-contained course files,
+optional required layouts, hand/finger cues, preferred physical keys, timed
+melodies/chords/rests, and direct HexBoard phrase recording. Short song segments
+can be recorded or entered as phrases. See the [course contract](course-format.md).
+
+Milestones 3–5 remain proposals beyond these pieces; scale rhythm practice,
+static microtonal practice, and authored song segments have been brought forward. Current operation belongs
 in the [web guide](web-app-guide.md#learning-your-first-scale); the implemented
 wire contract belongs in [delegated control](delegated-control.md).
 
@@ -30,7 +35,7 @@ targets; the app translates those targets into the selected layout. Musical
 understanding carries across layouts; physical fluency is tracked separately
 for each layout.
 
-The implemented sections are Scale practice, Beginner course, and Progress.
+The implemented sections are Scale practice, Courses, and Progress.
 Songs remains a later milestone.
 A typical lesson takes about five minutes:
 
@@ -122,6 +127,7 @@ labels and fingerings are editable suggestions. Follow the
 
 ## Technical ownership
 
+- `web/src/learn/courseFiles.ts`, `CourseEditor.tsx`, `phraseRecorder.ts`: portable course authoring and recording; see the course contract.
 - `web/src/learn/beginnerCourse.ts`: authored targets, chord evaluation, and local progress schema.
 - `web/src/learn/deviceLibrary.ts`: lazy names/definitions and connection cache.
 - `web/src/catalogs/deviceGeometry.ts`: shared device object decoder.

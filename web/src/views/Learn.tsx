@@ -13,14 +13,22 @@ import { lessonDeviceLibrary } from "../learn/deviceLibrary.ts";
 import { scaleSteps, tuningPitch, tuningStepLabel } from "../learn/tuningPractice.ts";
 import { PracticeMetronome } from "../learn/practiceMetronome.ts";
 
+import { CourseEditor } from "../learn/CourseEditor.tsx";
+import { courseFormat, courseLibraryKey, courseProgressId, courseKeyLight, cueAccepts, cueLabel, lessonCues, maxCourseBytes, readCourseFile, readCourseLibrary, type UserCourse } from "../learn/courseFiles.ts";
 import { beginnerLessons, CourseRun, courseProgressKey, parseCourseProgress, recordCourseRun, mergeCourseProgress, type CourseProgress } from "../learn/beginnerCourse.ts";
 
 type Stage = "ready" | "starting" | "practice" | "demo" | "complete";
 
 export function Learn({ transport, connected, deviceHello }: { transport: MidiTransport; connected: boolean; deviceHello?: HelloResponsePayload | null }) {
   const [page, setPage] = useState<"practice" | "course" | "progress">("practice");
+  const [userCourses, setUserCourses] = useState<UserCourse[]>(() => { try { return readCourseLibrary(localStorage.getItem(courseLibraryKey)); } catch { return []; } });
+  const [courseId, setCourseId] = useState("builtin");
+  const selectedCourse = userCourses.find(course => course.id === courseId);
+  const lessons = selectedCourse?.lessons ?? beginnerLessons;
+  const [editingCourse, setEditingCourse] = useState<UserCourse>();
+  const [courseMessage, setCourseMessage] = useState("");
   const [lessonIndex, setLessonIndex] = useState(0);
-  const lesson = beginnerLessons[lessonIndex];
+  const lesson = lessons[lessonIndex] ?? lessons[0];
   const course = page === "course";
   const [progress, setProgress] = useState<CourseProgress>(() => {
     try { return parseCourseProgress(localStorage.getItem(courseProgressKey)); } catch { return {}; }
@@ -28,7 +36,16 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
   const [progressMessage, setProgressMessage] = useState("");
   const [layouts, setLayouts] = useState<LessonLayout[]>(starterLayouts);
   const [layoutId, setLayoutId] = useState(() => layouts[0].id);
-  const selection = layouts.find((layout) => layout.id === layoutId) ?? layouts[0];
+  const customCourse = course ? selectedCourse : undefined;
+  const courseLayouts = useMemo(() => {
+    if (!customCourse) return [];
+    const compatible = layouts.filter(item => JSON.stringify(item.bundle.tuning) === JSON.stringify(customCourse.bundle.tuning));
+    const choices = [...new Map([...compatible.map(item => item.layout), ...customCourse.bundle.layouts].map(layout => [layout.objectIdHex, layout])).values()];
+    return lessonLayouts({ ...customCourse.bundle, layouts: choices });
+  }, [customCourse, layouts]);
+  const selection = customCourse
+    ? courseLayouts.find(item => item.layout.objectIdHex === (customCourse.layoutId ?? layoutId)) ?? courseLayouts.find(item => item.layout.objectIdHex === customCourse.bundle.activeLayoutIdHex) ?? courseLayouts[0]
+    : layouts.find((layout) => layout.id === layoutId) ?? layouts[0];
   const keys = useMemo(() => resolveLessonKeys(selection), [selection]);
   const [tuningChoice, setTuningChoice] = useState(layouts[0].bundle.objectIdHex);
   const [tuningNames, setTuningNames] = useState<ObjectListRecord[]>([]);
@@ -45,8 +62,8 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
   const [libraryMessage, setLibraryMessage] = useState("");
   const libraryGeneration = useRef(0);
   const library = useRef(lessonDeviceLibrary(transport));
-  const fromDevice = tuningChoice.startsWith("device:");
-  const bundle = fromDevice && deviceTuning ? deviceTuning : selection.bundle;
+  const fromDevice = !customCourse && tuningChoice.startsWith("device:");
+  const bundle = customCourse?.bundle ?? (fromDevice && deviceTuning ? deviceTuning : selection.bundle);
   const selectedScale = fromDevice ? loadedScale : bundle.scales.find(scale => scale.objectIdHex === scaleChoice) ?? bundle.scales[0];
   const baseSteps = useMemo(() => selectedScale ? scaleSteps(bundle, selectedScale, root, register) : [], [bundle, selectedScale, root, register]);
   const baseNotes = useMemo(() => baseSteps.map(step => tuningPitch(bundle.tuning, step)), [bundle, baseSteps]);
@@ -57,13 +74,15 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
   const localBundles = [...new Map(layouts.filter(layout => !layout.id.startsWith("device:")).map(layout => [layout.bundle.objectIdHex, layout.bundle])).values()];
   const [stage, setStage] = useState<Stage>("ready");
   const [pattern, setPattern] = useState<ScalePattern>("ascending");
-  const notes = useMemo(() => course ? lesson.targets.map(target => target[0]) : scalePatternNotes(pattern, baseNotes), [course, lesson, pattern, baseNotes]);
+  const notes = useMemo(() => course ? lesson.targets.map(target => target[0] ?? -1) : scalePatternNotes(pattern, baseNotes), [course, lesson, pattern, baseNotes]);
   const targets = course ? lesson.targets : notes.map(note => [note]);
   const previewNotes = course ? [...new Set(lesson.targets.flat())] : baseNotes;
   const missing = unavailableScaleNotes(keys, previewNotes, labelNote);
-  const readyToPlay = !libraryBusy && previewNotes.length > 0 && missing.length === 0 && (!fromDevice || !!deviceLayoutChoice) && (!course || isLessonTuning(bundle));
+  const readyToPlay = !libraryBusy && previewNotes.length > 0 && missing.length === 0 && (!fromDevice || !!deviceLayoutChoice) && (!course || !!customCourse || isLessonTuning(bundle));
   const [beatMode, setBeatMode] = useState(false);
   const [bpm, setBpm] = useState(80);
+  const activeBeatMode = course ? !!lesson.timing : beatMode;
+  const activeBpm = course ? lesson.timing?.bpm ?? 80 : bpm;
   const [continuous, setContinuous] = useState(true);
   const [brightness, setBrightness] = useState(65);
   const [lastRun, setLastRun] = useState<{ number: number; elapsedMs?: number; mistakes: number; beat?: BeatResult }>();
@@ -71,6 +90,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
   const metronome = useRef<PracticeMetronome | null>(null);
   const [onBoard, setOnBoard] = useState(false);
   const [hints, setHints] = useState(true);
+  const [demoStep, setDemoStep] = useState(0);
   const [demoNote, setDemoNote] = useState<readonly number[]>();
   const [message, setMessage] = useState("");
   const [, redraw] = useState(0);
@@ -83,7 +103,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
   const generation = useRef(0);
   const handleKeyRef = useRef<(index: number, pressed: boolean, receivedAt?: number) => void>(() => {});
   const engaged = stage !== "ready";
-  useEffect(() => { setLastRun(undefined); }, [pattern, layoutId, scaleChoice, root, register, beatMode, bpm, page, lessonIndex]);
+  useEffect(() => { setLastRun(undefined); }, [pattern, layoutId, scaleChoice, root, register, beatMode, bpm, page, lessonIndex, courseId]);
 
   async function refreshDeviceNames(refresh = false) {
     if (!connected) return;
@@ -208,7 +228,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
     const oldAudio = audio.current;
     audio.current = null;
     void oldAudio?.close().catch(() => {});
-    run.current = course ? new CourseRun(lesson) : new MajorScaleRun(notes, labelNote);
+    run.current = course ? new CourseRun(lesson, selection.layout.objectIdHex, labelNote) : new MajorScaleRun(notes, labelNote);
   }
   function stop(reason = "") {
     dispose();
@@ -242,7 +262,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
     audio.current = controller;
     controller.setPatch({ wavetableName: "Basic Shapes", wavetableFolderPath: "/Built In", wavetableSamples: createBasicShapesSamples(),
       values: { EnvelopeAttackIndex: 1, EnvelopeSustainLevel: 100, EnvelopeReleaseIndex: 5 } });
-    run.current = course ? new CourseRun(lesson) : new MajorScaleRun(notes, labelNote);
+    run.current = course ? new CourseRun(lesson, selection.layout.objectIdHex, labelNote) : new MajorScaleRun(notes, labelNote);
     setLastRun(undefined);
     setOnBoard(useBoard);
     setStage("starting");
@@ -273,13 +293,16 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
     const currentGeneration = generation.current;
     metronome.current?.stop();
     metronome.current = null;
-    run.current = course ? new CourseRun(lesson) : new MajorScaleRun(notes, labelNote);
-    if (beatMode && !course) {
+    run.current = course ? new CourseRun(lesson, selection.layout.objectIdHex, labelNote) : new MajorScaleRun(notes, labelNote);
+    if (activeBeatMode) {
       const clock = new PracticeMetronome();
       metronome.current = clock;
-      const startAt = await clock.start(bpm, notes.length);
+      const startAt = await clock.start(activeBpm, course && lesson.timing ? lesson.timing.beats.reduce((sum, beats) => sum + beats, 0) : notes.length);
       if (generation.current !== currentGeneration) { clock.stop(); return; }
-      run.current = new BeatScaleRun(notes, startAt, bpm, labelNote);
+      run.current = new BeatScaleRun(notes, startAt, activeBpm, labelNote, course && lesson.timing ? {
+        targets: lesson.targets, beats: lesson.timing.beats,
+        accepts: (step, index, note) => cueAccepts(lessonCues(lesson, selection.layout.objectIdHex, step), index, note)
+      } : undefined);
     }
   }
 
@@ -289,8 +312,8 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
     finalized.current = finished;
     const beat = finished instanceof BeatScaleRun ? finished.result() : undefined;
     setLastRun((last) => ({ number: (last?.number ?? 0) + 1, elapsedMs: finished.elapsedMs, mistakes: finished.mistakes, beat }));
-    if (finished instanceof CourseRun) {
-      const nextProgress = recordCourseRun(progress, finished.lesson.id, `${bundle.objectIdHex}:${selection.layout.objectIdHex}`, finished.mistakes, usedHints.current);
+    if (course && (finished instanceof CourseRun || (beat && beat.missed === 0 && beat.score >= 75))) {
+      const nextProgress = recordCourseRun(progress, courseProgressId(selectedCourse, lesson.id), `${bundle.objectIdHex}:${selection.layout.objectIdHex}`, finished.mistakes, usedHints.current);
       setProgress(nextProgress);
       try { localStorage.setItem(courseProgressKey, JSON.stringify(nextProgress)); setProgressMessage(""); }
       catch { setProgressMessage("Progress could not be saved in this browser."); }
@@ -320,7 +343,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
       setNow(time);
     }, 25);
     return () => clearInterval(timer);
-  }, [stage, continuous, notes, bpm]);
+  }, [stage, continuous, notes, activeBpm, hints, progress]);
 
   function handleKey(index: number, pressed: boolean, receivedAt = performance.now()) {
     if (pressed && stage !== "practice") return;
@@ -334,7 +357,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
       }
       if (attacked && run.current instanceof MajorScaleRun && run.current.complete) finishRun();
     } else {
-      const released = run.current instanceof CourseRun ? run.current.release(index, receivedAt) : run.current.release(index);
+      const released = run.current instanceof CourseRun || run.current instanceof BeatScaleRun ? run.current.release(index, receivedAt) : run.current.release(index);
       if (released !== undefined && ![...run.current.held.values()].includes(released)) audio.current?.noteOff(released);
     }
     if (!pressed && run.current instanceof CourseRun && run.current.complete) finishRun();
@@ -372,21 +395,28 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
     usedHints.current = true;
     clearTimers();
     audio.current?.allNotesOff();
-    run.current = course ? new CourseRun(lesson) : new MajorScaleRun(notes, labelNote);
+    run.current = course ? new CourseRun(lesson, selection.layout.objectIdHex, labelNote) : new MajorScaleRun(notes, labelNote);
+    metronome.current?.stop(); metronome.current = null;
+    setDemoStep(0);
     setStage("demo");
     setMessage("");
+    const durations = targets.map((_, index) => course && lesson.timing ? lesson.timing.beats[index] * 60000 / lesson.timing.bpm : 650);
+    let offset = 0;
     targets.forEach((chord, index) => {
+      const at = offset; offset += durations[index];
       timers.current.push(setTimeout(() => {
+        setDemoStep(index);
         setDemoNote(chord);
         chord.forEach(note => { void audio.current?.noteOn(note).catch(() => stop("Browser audio stopped. Start again when ready.")); });
-      }, index * 650));
-      timers.current.push(setTimeout(() => chord.forEach(note => audio.current?.noteOff(note)), index * 650 + 450));
+      }, at));
+      timers.current.push(setTimeout(() => chord.forEach(note => audio.current?.noteOff(note)), at + durations[index] * 0.8));
     });
+    const demoGeneration = generation.current;
     timers.current.push(setTimeout(() => {
       setDemoNote(undefined);
-      setStage("practice");
-      setMessage("");
-    }, notes.length * 650));
+      setStage("starting");
+      void prepareRun(hints).then(() => { if (generation.current === demoGeneration) { usedHints.current = true; setStage("practice"); setMessage(""); } }).catch(() => { if (generation.current === demoGeneration) stop("Could not restart practice."); });
+    }, offset));
   }
 
   async function importLayout(event: ChangeEvent<HTMLInputElement>) {
@@ -406,8 +436,9 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
   }
 
   const targetNotes = stage === "demo" ? demoNote ?? [] : targets[run.current.step] ?? [];
-  const lights = keys.map((key) => keyLight(key, key.note !== null && (stage === "ready" ? previewNotes : targetNotes).includes(key.note) ? key.note : undefined, run.current.held, stage === "ready" || stage === "demo" || (hints && stage === "practice")));
-  const targetLabel = targetNotes.map(labelNote).join(" + ");
+  const cues = course && stage !== "ready" ? lessonCues(lesson, selection.layout.objectIdHex, stage === "demo" ? demoStep : run.current.step) : [];
+  const lights = keys.map((key) => courseKeyLight(key, cues, keyLight(key, key.note !== null && (stage === "ready" ? previewNotes : targetNotes).includes(key.note) ? key.note : undefined, run.current.held, stage === "ready" || stage === "demo" || (hints && stage === "practice"))));
+  const targetLabel = targetNotes.map(labelNote).join(" + ") || (run.current.step < targets.length ? "Rest" : "");
   const lightStates = lights.join();
   const ledColors = useMemo(() => keys.map(({ note, steps }, index) => lessonLedColor(note, lights[index], {
     bundle: { ...bundle, layouts: [selection.layout], activeLayoutIdHex: selection.layout.objectIdHex },
@@ -436,9 +467,9 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
     setPage(next);
     if (next === "course") setRoot(0);
     setMessage("");
-    if (next === "course" && !isLessonTuning(bundle)) chooseLocalTuning(localBundles[0], layouts.find(item => item.bundle === localBundles[0])!.id);
+    if (next === "course" && !selectedCourse && !isLessonTuning(bundle)) chooseLocalTuning(localBundles[0], layouts.find(item => item.bundle === localBundles[0])!.id);
   }
-  function nextLesson() { stop(); setLessonIndex(index => Math.min(beginnerLessons.length - 1, index + 1)); }
+  function nextLesson() { stop(); setLessonIndex(index => Math.min(lessons.length - 1, index + 1)); }
   function saveProgressFile() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(progress, null, 2)], { type: "application/json" }));
     const link = document.createElement("a"); link.href = url; link.download = "hexboard-learning-progress.json"; link.click();
@@ -455,24 +486,76 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
     } catch (error) { setProgressMessage(error instanceof Error ? error.message : "Could not restore progress."); }
   }
 
+  function courseBundleSnapshot(source = bundle): TuningBundle {
+    const available = layouts.filter(item => item.bundle.objectIdHex === source.objectIdHex).map(item => item.layout);
+    return { ...source, layouts: [...new Map([selection.layout, ...available].filter(layout => source.layouts.some(item => item.objectIdHex === layout.objectIdHex) || available.includes(layout)).map(layout => [layout.objectIdHex, layout])).values()], activeLayoutIdHex: selection.layout.objectIdHex };
+  }
+  function chooseCourse(id: string) { setCourseId(id); setLessonIndex(0); setCourseMessage(""); }
+  function persistCourse(next: UserCourse) {
+    if (new TextEncoder().encode(JSON.stringify(next)).length > maxCourseBytes) throw new Error("Course files must be smaller than 2 MB. Split this course into smaller courses.");
+    const updated = [...userCourses.filter(course => course.id !== next.id), next];
+    if (updated.length > 50) throw new Error("This browser can hold up to 50 courses.");
+    localStorage.setItem(courseLibraryKey, JSON.stringify(updated));
+    setUserCourses(updated); chooseCourse(next.id); setEditingCourse(undefined);
+  }
+  async function importCourse(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
+    try {
+      if (file.size > maxCourseBytes) throw new Error("Course files must be smaller than 2 MB.");
+      let next = readCourseFile(await file.text());
+      const existing = userCourses.find(course => course.id === next.id);
+      if (existing && JSON.stringify(existing) !== JSON.stringify(next)) next = { ...next, id: crypto.randomUUID() };
+      persistCourse(next); setCourseMessage("Course imported.");
+    } catch (error) { setCourseMessage(error instanceof Error ? error.message : "Could not import course."); }
+  }
+  function exportCourse() {
+    const doc: UserCourse = selectedCourse ?? { format: courseFormat, id: "hexboard-beginner", revision: 1, title: "HexBoard beginner course", author: "HexBoard", bundle: { ...starterLayouts()[0].bundle, layouts: starterLayouts().map(item => item.layout) }, lessons: [...beginnerLessons] };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a"); link.href = url; link.download = `${doc.title.replace(/[^a-z0-9_-]+/gi, "-")}.hexcourse.json`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function openCourseEditor(copy: boolean) {
+    const snapshot = customCourse ? { ...customCourse.bundle, layouts: courseLayouts.map(item => item.layout), activeLayoutIdHex: selection.layout.objectIdHex } : courseBundleSnapshot();
+    const seed = [...keys].filter(key => key.note !== null).sort((a, b) => Math.abs(a.note! - 60) - Math.abs(b.note! - 60))[0]?.note ?? 60;
+    setEditingCourse(copy ? {
+      format: courseFormat, id: crypto.randomUUID(), revision: 1, title: `${selectedCourse?.title ?? "Beginner course"} copy`, author: "", bundle: snapshot, layoutId: selectedCourse?.layoutId,
+      lessons: structuredClone([...lessons])
+    } : { format: courseFormat, id: crypto.randomUUID(), revision: 1, title: "My course", author: "", bundle: snapshot,
+      lessons: [{ id: crypto.randomUUID(), title: "First phrase", section: "My lessons", instruction: "Play the phrase, then try it without hints.", targets: [[seed]] }] });
+  }
+  if (editingCourse) return <CourseEditor initial={editingCourse} bundles={localBundles.map(item => ({ ...item, layouts: layouts.filter(layout => layout.bundle.objectIdHex === item.objectIdHex).map(layout => layout.layout) }))} transport={transport} connected={connected}
+    onSave={persistCourse} onClose={() => setEditingCourse(undefined)} />;
+
   return <section className="learnPage">
     <header className="learnIntro">
       <h2>Learn</h2>
-      <nav className="learnTabs" aria-label="Learning sections">{(["practice", "course", "progress"] as const).map(item => <button key={item} type="button" aria-current={page === item ? "page" : undefined} disabled={(engaged && stage !== "complete") || libraryBusy} onClick={() => navigate(item)}>{item === "course" ? "Beginner course" : item === "practice" ? "Scale practice" : "Progress"}</button>)}</nav>
+      <nav className="learnTabs" aria-label="Learning sections">{(["practice", "course", "progress"] as const).map(item => <button key={item} type="button" aria-current={page === item ? "page" : undefined} disabled={(engaged && stage !== "complete") || libraryBusy} onClick={() => navigate(item)}>{item === "course" ? "Courses" : item === "practice" ? "Scale practice" : "Progress"}</button>)}</nav>
     </header>
     {page === "progress" ? <div className="learnCard">
+      <label className="learnField">Course<select value={courseId} onChange={event => chooseCourse(event.target.value)}><option value="builtin">Beginner course</option>{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
       <div className="learnPracticeHeader"><h3>Your course progress</h3><button type="button" onClick={saveProgressFile}>Export progress</button></div>
       <p className="learnMuted">Saved in this browser, per layout. Independent = no mistakes, no hints.</p>
-      <div className="learnProgressList">{beginnerLessons.map((item, index) => {
-        const entries = Object.values(progress[item.id] ?? {});
+      <div className="learnProgressList">{lessons.map((item, index) => {
+        const entries = Object.values(progress[courseProgressId(selectedCourse, item.id)] ?? {});
         return <button type="button" key={item.id} onClick={() => { setLessonIndex(index); navigate("course"); }}><span>{index + 1}. {item.title}</span><span>{entries.some(entry => entry.independent) ? "★ Independent" : entries.length ? "✓ Completed" : "Start"}{entries.length > 0 && ` · ${entries.length} layout${entries.length === 1 ? "" : "s"}`}</span></button>;
       })}</div>
       <details><summary>Restore progress</summary><input aria-label="Import course progress" type="file" accept=".json" onChange={event => void restoreProgress(event)} /></details>
       {progressMessage && <p role="status">{progressMessage}</p>}
     </div> : <div className="learnWorkspace">
       <aside className="learnCard learnGuide">
-        {course && <><label className="learnField">Lesson<select value={lessonIndex} disabled={engaged} onChange={event => setLessonIndex(Number(event.target.value))}>{beginnerLessons.map((item, index) => <option key={item.id} value={index}>{index + 1}. {item.title}</option>)}</select></label>
-          <p className="learnLessonInstruction">{lesson.instruction}</p></>}
+        {course && <><label className="learnField">Course<select value={courseId} disabled={engaged || libraryBusy} onChange={event => chooseCourse(event.target.value)}><option value="builtin">Beginner course</option>{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
+          <label className="learnField">Lesson<select value={lessonIndex} disabled={engaged} onChange={event => setLessonIndex(Number(event.target.value))}>{lessons.map((item, index) => <option key={item.id} value={index}>{index + 1}. {item.title}</option>)}</select></label>
+          <p className="learnLessonInstruction">{lesson.instruction}</p>
+          {lesson.timing && <span className="learnMuted">{lesson.timing.bpm} BPM · four-click count-in</span>}
+          <details className="learnSettings"><summary>Manage courses</summary><div className="learnActions">
+            <button type="button" disabled={engaged || libraryBusy || !selection} onClick={() => openCourseEditor(false)}>Create course</button>
+            <button type="button" disabled={engaged || libraryBusy} onClick={() => openCourseEditor(true)}>Make a copy</button>
+            {selectedCourse && <button type="button" disabled={engaged || libraryBusy} onClick={() => setEditingCourse({ ...structuredClone(selectedCourse), bundle: { ...selectedCourse.bundle, layouts: courseLayouts.map(item => item.layout), activeLayoutIdHex: selection.layout.objectIdHex }, revision: selectedCourse.revision + 1 })}>Edit course</button>}
+            <button type="button" disabled={engaged} onClick={exportCourse}>Export course</button></div>
+            <label className="learnField">Import shared course<input aria-label="Import shared course" type="file" accept=".json" disabled={engaged || libraryBusy} onChange={event => void importCourse(event)} /></label>
+          </details>{courseMessage && <p role="status" className="learnMuted">{courseMessage}</p>}</>}
+        {customCourse ? <><span className="learnMuted">Tuning · {customCourse.bundle.tuning.name}</span>
+          <label className="learnField">Layout<select value={selection.layout.objectIdHex} disabled={engaged || !!customCourse.layoutId} onChange={event => setLayoutId(event.target.value)}>{courseLayouts.map(item => item.layout).filter(layout => !customCourse.layoutId || layout.objectIdHex === customCourse.layoutId).map(layout => <option key={layout.objectIdHex} value={layout.objectIdHex}>{layout.name}</option>)}</select></label></> : <>
         <label className="learnField">Tuning<select value={tuningChoice} disabled={engaged || libraryBusy} onChange={event => void chooseTuning(event.target.value)}>
           <optgroup label="Starter / imported">{localBundles.map(item => <option key={item.objectIdHex} value={item.objectIdHex}>{item.tuning.name}</option>)}</optgroup>
           <optgroup label="On HexBoard">{tuningNames.map(item => <option key={item.handle} value={`device:${item.handle}`}>{item.name}{item.folderPath !== "/" ? ` · ${item.folderPath}` : ""}</option>)}</optgroup>
@@ -481,6 +564,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
           {fromDevice ? <><option value="">Choose a layout</option>{layoutNames.map(item => <option key={item.handle} value={item.handle}>{item.name}</option>)}</>
             : layouts.filter(item => item.bundle.objectIdHex === tuningChoice).map(item => <option key={item.id} value={item.id}>{item.layout.name}</option>)}
         </select></label>
+        </>}
         {!course && <><label className="learnField">Scale<select value={scaleChoice} disabled={engaged || libraryBusy} onChange={event => { if (fromDevice) void chooseDeviceScale(event.target.value); else setScaleChoice(event.target.value); }}>
           {fromDevice ? <><option value="">Choose a scale</option>{scaleNames.map(item => <option key={item.handle} value={item.handle}>{item.name}</option>)}</>
             : bundle.scales.map(item => <option key={item.objectIdHex} value={item.objectIdHex}>{item.name}</option>)}
@@ -502,10 +586,11 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
           <label className="learnField">Import tuning bundle<input aria-label="Import lesson tuning bundle" type="file" accept=".json" disabled={engaged || libraryBusy} onChange={event => void importLayout(event)} /></label>
           <p className="learnMuted">Sound plays in your browser. Hold the board encoder for 5 seconds to exit. Leaving this tab pauses practice.</p>
           <p className="learnMuted">Register shifts by tuning periods. Brightness stays within the board’s saved limit.</p>
+          <p className="learnMuted">Fingering cues: L = left, R = right. Finger 1 is the thumb; 5 is the little finger. Hand and finger choices are guidance.</p>
           <p className="learnMuted">Metronome: four count-in clicks, then one note per click. Grades include timing, missed notes, and extra attempts. Use wired audio for accurate timing.</p>
         </details>
         {libraryMessage && <p role="status" className="learnMuted">{libraryMessage}</p>}
-        {course && !isLessonTuning(bundle) && <p role="alert" className="learnWarning">Choose standard 12-EDO for the beginner course. Other tunings work in Scale practice.</p>}
+        {course && !customCourse && !isLessonTuning(bundle) && <p role="alert" className="learnWarning">Choose standard 12-EDO for the beginner course. Other tunings work in Scale practice.</p>}
         {(!fromDevice || deviceLayoutChoice) && missing.length > 0 && <p className="learnWarning" role="alert">Missing {missing.join(", ")}. Try another layout or register.</p>}
       </aside>
       <div className="learnCard learnPractice">
@@ -514,13 +599,14 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
           <button type="button" disabled={!readyToPlay} onClick={() => void begin(false)}>Try on screen</button>
         </> : <>
           <button type="button" onClick={() => stop()}>Stop</button>
-          <button type="button" disabled={(beatMode && !course) || stage === "starting" || stage === "demo" || run.current.held.size > 0} onClick={demonstrate}>Hear example</button>
+          <button type="button" disabled={stage === "starting" || stage === "demo" || run.current.held.size > 0} onClick={demonstrate}>Hear example</button>
         </>}
         <label className="checkField"><input type="checkbox" checked={hints} disabled={stage === "demo"} onChange={event => { setHints(event.target.checked); if (event.target.checked && engaged) usedHints.current = true; }} />Hints</label></div>
         <div className="learnPracticeHeader"><h3>{stage === "complete" ? "Finished" : stage === "demo" ? `Listen: ${targetLabel}` : countingIn ? "Four clicks, then play" : stage === "practice" ? (hints ? `Next: ${targetLabel || "finished"}` : "Play from memory") : stage === "starting" ? "Starting…" : course ? lesson.title : selectedScale?.name ?? "Choose a scale"}</h3><span>{engaged ? run.current.step : 0}/{notes.length}</span></div>
-        {(stage === "ready" || stage === "demo" || hints) && <ol className="learnScaleSteps" aria-label="Exercise notes">{targets.map((chord, index) => <li key={index} className={progressClass(index)} aria-current={index === run.current.step && stage === "practice" ? "step" : undefined}><span>{chord.map(labelNote).join(" + ")}</span></li>)}</ol>}
+        {(stage === "ready" || stage === "demo" || hints) && <ol className="learnScaleSteps" aria-label="Exercise notes">{targets.map((chord, index) => <li key={index} className={progressClass(index)} aria-current={index === run.current.step && stage === "practice" ? "step" : undefined}><span>{chord.map(labelNote).join(" + ") || "Rest"}{course && lesson.timing && ` · ${lesson.timing.beats[index]}b`}</span></li>)}</ol>}
+        {hints && stage === "practice" && cues.some(cue => cue.hand || cue.finger || (cue.button !== undefined && cue.acceptDuplicates === false)) && <div className="learnFingering" aria-label="Hand and finger cues">{cues.map(cue => <span key={cue.note}>{labelNote(cue.note)} {cueLabel(cue)}{cue.button !== undefined && cue.acceptDuplicates === false ? ` · key ${cue.button} required` : ""}</span>)}</div>}
         <div className="learnRunStats">
-          {stage === "practice" && run.current instanceof BeatScaleRun && <div className="learnBeatClock"><span aria-hidden="true" className={(now - run.current.startAt + 4 * run.current.periodMs) % run.current.periodMs < 120 ? "pulse" : ""}>●</span>{countingIn ? `Count-in ${Math.max(1, Math.min(4, 5 - Math.ceil((run.current.startAt - now) / run.current.periodMs)))}/4` : `${bpm} BPM`}</div>}
+          {stage === "practice" && run.current instanceof BeatScaleRun && <div className="learnBeatClock"><span aria-hidden="true" className={(now - run.current.startAt + 4 * run.current.periodMs) % run.current.periodMs < 120 ? "pulse" : ""}>●</span>{countingIn ? `Count-in ${Math.max(1, Math.min(4, 5 - Math.ceil((run.current.startAt - now) / run.current.periodMs)))}/4` : `${activeBpm} BPM`}</div>}
           {elapsed !== undefined && <span>{(elapsed / 1000).toFixed(2)} s</span>}
           {lastRun && <span role="status">Last: {lastRun.elapsedMs === undefined ? "incomplete" : `${(lastRun.elapsedMs / 1000).toFixed(2)} s`}{lastRun.beat ? ` · ${lastRun.beat.score}/100 · ${lastRun.beat.grade} · ${lastRun.beat.missed} missed · ${lastRun.beat.extras} extra` : ` · ${lastRun.mistakes} mistakes`}</span>}
         </div>
@@ -529,19 +615,20 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
             {keys.filter(({ key }) => key.role !== "command").map(({ key, note }) => {
               const playable = !onBoard && note !== null && (stage === "practice" || (stage === "complete" && run.current.held.has(key.index)));
               const color = lessonScreenColor(ledColors[key.index]);
+              const fingering = hints && stage === "practice" ? cues.find(cue => cue.note === note && (cue.button === undefined || cue.button === key.index)) : undefined;
               return <g key={key.index} transform={`translate(${32 + key.coordCol * 25} ${35 + key.row * 42})`} className={`learnKey ${lights[key.index]}`}
                 role={playable ? "button" : undefined} tabIndex={playable ? 0 : undefined} aria-label={note === null ? `Key ${key.index}, unavailable` : `${labelNote(note)}, key ${key.index}`}
                 onClick={() => { if (playable) tap(key.index); }} onKeyDown={(event) => { if (playable && !event.repeat && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); tap(key.index); } }}>
                 <polygon style={note === null ? undefined : { fill: color.fill }} points="0,-25 22,-12.5 22,12.5 0,25 -22,12.5 -22,-12.5" />
-                <text style={note === null ? undefined : { fill: color.text }} transform={`rotate(${-angle})`} textAnchor="middle" dy="4">{note === null ? "·" : labelNote(note)}</text>
+                <text style={note === null ? undefined : { fill: color.text }} transform={`rotate(${-angle})`} textAnchor="middle" dy="4">{note === null ? "·" : fingering && cueLabel(fingering) ? `${labelNote(note)} ${cueLabel(fingering)}` : labelNote(note)}</text>
               </g>;
             })}
           </g>
         </svg></div>}
-        <div className="learnLegend">{stage === "ready" ? "Bright keys: exercise notes" : "Bright: target · dashed: held"}{course && lesson.targets.some(target => target.length > 1) && !onBoard && stage === "practice" && " · Click a key to hold or release"}</div>
+        <div className="learnLegend">{stage === "ready" ? "Bright keys: exercise notes" : "Bright: target · dashed: held"}{cues.some(cue => cue.button !== undefined) && " · Dim matches: alternate keys"}{course && lesson.targets.some(target => target.length > 1) && !onBoard && stage === "practice" && " · Click a key to hold or release"}</div>
         {(message || stage === "practice" || stage === "demo") && <div className="learnFeedback" role="status" aria-live="polite">{message || (stage === "practice" ? hints ? run.current.feedback : "Follow the exercise from memory." : "Listen and watch.")}</div>}
         {progressMessage && course && <p role="status" className="learnMuted">{progressMessage}</p>}
-        {stage === "complete" && <div className="learnCompletion"><div className="learnActions"><button type="button" onClick={() => void repeat(false)}>Try without hints</button><button type="button" onClick={() => void repeat(true)}>Repeat</button>{course && lessonIndex < beginnerLessons.length - 1 && <button className="primary" type="button" onClick={nextLesson}>Next lesson</button>}</div></div>}
+        {stage === "complete" && <div className="learnCompletion"><div className="learnActions"><button type="button" onClick={() => void repeat(false)}>Try without hints</button><button type="button" onClick={() => void repeat(true)}>Repeat</button>{course && lessonIndex < lessons.length - 1 && <button className="primary" type="button" onClick={nextLesson}>Next lesson</button>}</div></div>}
       </div>
     </div>}
   </section>;
