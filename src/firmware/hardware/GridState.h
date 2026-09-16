@@ -13,8 +13,29 @@ constexpr byte BTN_STATE_HELD = 3;
 class buttonDef {
 public:
   byte btnState = BTN_STATE_OFF;  // binary 00 = off, 01 = just pressed, 10 = just released, 11 = held
-  void RAM_FUNC(interpBtnPress)(bool isPress) {
-    btnState = (((btnState << 1) + isPress) & 3);
+  uint32_t releaseCandidateAt = 0;
+  bool releasePending = false;
+  // A down edge is immediate. Only an up edge must remain stable, so a
+  // contact bounce cannot emit a spurious note-off/retrigger pair.
+  void RAM_FUNC(interpBtnPress)(bool isPress, uint32_t now) {
+    constexpr uint32_t RELEASE_DEBOUNCE_MICROS = 3000;
+    if (isPress) {
+      releasePending = false;
+      btnState = (btnState == BTN_STATE_OFF || btnState == BTN_STATE_RELEASED)
+          ? BTN_STATE_NEWPRESS : BTN_STATE_HELD;
+    } else if (btnState == BTN_STATE_OFF || btnState == BTN_STATE_RELEASED) {
+      releasePending = false;
+      btnState = BTN_STATE_OFF;
+    } else if (!releasePending) {
+      releaseCandidateAt = now;
+      releasePending = true;
+      btnState = BTN_STATE_HELD;
+    } else if (static_cast<uint32_t>(now - releaseCandidateAt) >= RELEASE_DEBOUNCE_MICROS) {
+      releasePending = false;
+      btnState = BTN_STATE_RELEASED;
+    } else {
+      btnState = BTN_STATE_HELD;
+    }
   }
   int8_t coordRow = 0;       // hex coordinates
   int8_t coordCol = 0;       // hex coordinates

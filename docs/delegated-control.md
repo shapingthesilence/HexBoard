@@ -33,7 +33,7 @@ When `delegatedControlState.active` is `false`, the firmware behaves normally.
 
 When `delegatedControlState.active` is `true`:
 
-- `readHexes()` sends raw button press/release events instead of command buttons, MIDI notes, or synth notes.
+- `readHexes()` sends physical button press/release events instead of command buttons, normal MIDI notes, or synth notes. Presses are immediate; releases require 3 ms of continuously unpressed matrix readings to reject switch bounce. This also applies outside delegated mode.
 - `lightUpLEDs()` displays `delegatedControlState.ledHsv[]` directly instead of computed palette, wheel, scale, or animation colors, except while the local Advanced-menu `LED Test` selector is actively previewing a solid diagnostic color.
 - `arpeggiate()` returns early, so the mono/arpeggiator held-note sequencer is not advanced while a host owns the surface.
 - `updateWheels()` returns early.

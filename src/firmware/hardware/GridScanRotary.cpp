@@ -84,7 +84,7 @@ void RAM_FUNC(readHexes)() {
     for (byte c = 0; c < COLCOUNT; ++c) {     // Now iterate through each of the column pins
       byte i = base + c;                      // index of this button
       bool didYouPressHex = ((stable & columnMasks[c]) == 0); // check if this column pin is LOW
-      h[i].interpBtnPress(didYouPressHex);    // interpret the button press as new press, held, released, or inactive
+      h[i].interpBtnPress(didYouPressHex, static_cast<uint32_t>(runTime));
       if (h[i].btnState == BTN_STATE_NEWPRESS) {
         h[i].timePressed = runTime;  // log the time
       }

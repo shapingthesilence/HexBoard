@@ -50,6 +50,9 @@ std::array<UsbMidiPacket, USB_MIDI_RELIABLE_PACKET_QUEUE_CAPACITY> usbMidiReliab
 uint8_t usbMidiReliablePacketQueueHead = 0;
 uint8_t usbMidiReliablePacketQueueCount = 0;
 uint64_t usbMidiPacketBackoffUntil = 0;
+// On saturation the host has stopped draining. Discard the stale playback
+// backlog, then silence every channel before accepting fresh USB notes.
+uint8_t usbMidiRecoveryChannel = 0;
 bool presetSyncTransferActive = false;
 bool presetSyncTransferScreenVisible = false;
 bool presetSyncTransferScreenWokeDisplayFromSleep = false;
@@ -92,6 +95,7 @@ void clearUsbMidiReliablePacketQueue() {
   usbMidiReliablePacketQueueHead = 0;
   usbMidiReliablePacketQueueCount = 0;
   usbMidiPacketBackoffUntil = 0;
+  usbMidiRecoveryChannel = 0;
 }
 
 bool tryWriteUsbMidiPacket(const uint8_t packet[4]) {
@@ -126,7 +130,12 @@ bool tryWriteUsbMidiPacket(const uint8_t packet[4]) {
 
 bool enqueueUsbMidiReliablePacket(const uint8_t packet[4]) {
   if (usbMidiReliablePacketQueueCount >= USB_MIDI_RELIABLE_PACKET_QUEUE_CAPACITY) {
-    return false;
+    usbMidiReliablePacketQueueHead = 0;
+    usbMidiReliablePacketQueueCount = 0;
+    usbMidiRecoveryChannel = 1;
+    // The lifecycle packet is accounted for locally; recovery silences notes
+    // already delivered to the host, rather than wedging the key state.
+    return true;
   }
 
   size_t index = (usbMidiReliablePacketQueueHead + usbMidiReliablePacketQueueCount)
@@ -138,10 +147,22 @@ bool enqueueUsbMidiReliablePacket(const uint8_t packet[4]) {
 
 void serviceUsbMidiOutput() {
   if (!MidiUSB.connected()) {
-    if (usbMidiReliablePacketQueueCount != 0 || usbMidiPacketBackoffUntil != 0) {
+    if (usbMidiReliablePacketQueueCount != 0 || usbMidiPacketBackoffUntil != 0
+        || usbMidiRecoveryChannel != 0) {
       clearUsbMidiReliablePacketQueue();
     }
     return;
+  }
+
+  while (usbMidiRecoveryChannel != 0) {
+    const uint8_t channel = usbMidiRecoveryChannel;
+    const uint8_t allNotesOff[4] = {
+      0x0B, static_cast<uint8_t>(0xB0 | (channel - 1)), 123, 0
+    };
+    if (!MidiUSB.writePacket(allNotesOff)) {
+      return;
+    }
+    usbMidiRecoveryChannel = channel == MIDI_CHANNEL_MAX ? 0 : channel + 1;
   }
 
   uint8_t serviced = 0;
@@ -170,6 +191,9 @@ bool writeUsbMidiPacket(const uint8_t packet[4], bool reliable) {
   // Preserve packet order: a best-effort packet must not overtake a queued
   // MPE lifecycle packet on the same USB endpoint.
   serviceUsbMidiOutput();
+  if (usbMidiRecoveryChannel != 0) {
+    return reliable;  // Drop stale playback while the host cannot drain.
+  }
   if (usbMidiReliablePacketQueueCount != 0) {
     return reliable ? enqueueUsbMidiReliablePacket(packet) : false;
   }
@@ -188,13 +212,12 @@ HexBoardMidiOut UMIDI(MidiOutputTransport::Usb);
 HexBoardMidiOut SMIDI(MidiOutputTransport::Serial);
 
 bool sendNoteOffToConfiguredMidiOutputs(byte note, byte velocity, byte channel) {
-  if ((midiD & MIDID_USB) && !UMIDI.sendNoteOff(note, velocity, channel)) {
-    return false;
-  }
+  bool usbAccepted = !(midiD & MIDID_USB) || !MidiUSB.connected()
+      || UMIDI.sendNoteOff(note, velocity, channel);
   if (midiD & MIDID_SER) {
     SMIDI.sendNoteOff(note, velocity, channel);
   }
-  return true;
+  return usbAccepted;
 }
 
 // What program change number we last sent (General MIDI/Roland MT-32)

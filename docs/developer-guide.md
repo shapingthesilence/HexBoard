@@ -132,6 +132,14 @@ synth-private.
 - slots `141..159` are hidden synth-preview/action slots
 - physical center is button `65`
 
+Matrix scanning reports down edges immediately and confirms up edges after
+3 ms of continuously unpressed readings. The pending release is reconsidered
+on every scan; a brief bounce cannot strand a button or produce a second
+note-on. USB MIDI lifecycle packets use a bounded queue while a connected host
+is not polling. If that queue saturates, stale playback is dropped, local
+releases continue, and an all-notes-off sweep on all 16 channels precedes new
+USB output when the host starts draining again. Serial MIDI remains independent.
+
 `presetDef current` owns active tuning, layout, scale, key, and transpose.
 Pitch code should use it rather than duplicate tuning or layout math.
 
