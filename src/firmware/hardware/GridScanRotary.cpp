@@ -73,7 +73,7 @@ constexpr uint64_t COMMAND_WHEEL_UPDATE_INTERVAL_MICROS = 10000ULL;
 void RAM_FUNC(readHexes)() {
 
   // Optimized button reading using SIO registers - much faster!
-  for (byte r = 0; r < ROWCOUNT; r++) {       // Iterate through each row via the multiplexer.
+  for (byte r = 0; r < VISIBLE_ROW_COUNT; r++) { // Normal operation scans only the 140 physical buttons.
     sio_hw->gpio_clr = multiplexerMask;       // Set all multiplexer pins to LOW.
     sio_hw->gpio_set = rowSelectMask[r];      // Set the current row's select pins HIGH.
     busy_wait_us_32(12);                      // Allow the row selection to settle without blocking interrupts.
@@ -107,12 +107,12 @@ void RAM_FUNC(readHexes)() {
     }
   }
 
-  for (byte i = 0; i < BTN_COUNT; i++) {  // For all buttons in the deck
+  for (byte i = 0; i < LED_COUNT; i++) {  // Dispatch only physical button edges.
     if ((i == assignCmd[0] && encoderCommandConsumed[0])
         || (i == assignCmd[1] && encoderCommandConsumed[1])) continue;
     // Release state is authoritative: recover a normal note if its one-shot
     // release edge was consumed while another input mode owned this button.
-    if (i < LED_COUNT && h[i].btnState == BTN_STATE_OFF
+    if (h[i].btnState == BTN_STATE_OFF
         && (h[i].MIDIch || h[i].synthCh)) {
       tryMIDInoteOff(i);
       trySynthNoteOff(i);

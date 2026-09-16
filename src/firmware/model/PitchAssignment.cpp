@@ -89,7 +89,8 @@ void assignPitches() {
           h[i].frequency = 0.0;
         } else {
           h[i].note = ((N >= 127) ? 127 : round(N));
-          h[i].bend = (ldexp(N - h[i].note, 13) / MPEpitchBendSemis);
+          // Cache the same rounded bend formerly recalculated on every press.
+          h[i].bend = pitchBendForMidiPitch(N, h[i].note);
           h[i].frequency = targetFrequency;
         }
       }

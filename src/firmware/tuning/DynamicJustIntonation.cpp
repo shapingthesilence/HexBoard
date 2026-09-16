@@ -640,11 +640,15 @@ void prepareActiveMidiPitch(byte x) {
   if (MPEpitchBendsNeeded == 1) {
     return;
   }
+  // assignPitches() already chose the nearest note and residual bend for the
+  // static tuning. Recalculate them on a press only when live JI can move the
+  // pitch away from those cached values.
+  if (!useDynamicJustIntonation && !useJustIntonationBPM) {
+    return;
+  }
 
   float finalMidiPitch = h[x].midiPitch;
-  if (useDynamicJustIntonation || useJustIntonationBPM) {
-    finalMidiPitch += h[x].jiRetuneCents / 100.0f;
-  }
+  finalMidiPitch += h[x].jiRetuneCents / 100.0f;
   h[x].activeMidiNote = nearestMidiNoteForPitch(finalMidiPitch);
   h[x].activePitchBend = pitchBendForMidiPitch(finalMidiPitch, h[x].activeMidiNote);
 }

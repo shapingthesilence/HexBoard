@@ -20,10 +20,13 @@ constexpr int32_t MIDI_NOTES_PER_CHANNEL = 128;
 constexpr byte LED_COUNT = 140;
 constexpr byte COLCOUNT = 10;
 constexpr byte ROWCOUNT = 16;
+constexpr byte VISIBLE_ROW_COUNT = LED_COUNT / COLCOUNT;
 constexpr byte BTN_COUNT = COLCOUNT * ROWCOUNT;
 constexpr byte FIRST_FLAG_BUTTON_INDEX = LED_COUNT;
 constexpr byte CMDCOUNT = 7;
 constexpr byte HEXBOARD_CENTER_BUTTON = 65;
+static_assert(LED_COUNT % COLCOUNT == 0, "Visible buttons must fill complete scan rows");
+static_assert(VISIBLE_ROW_COUNT < ROWCOUNT, "The logical matrix must retain boot-only flag rows");
 
 // Matrix scan GPIO assignments.
 constexpr byte MPLEX_1_PIN = 4;

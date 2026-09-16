@@ -26,5 +26,6 @@ class PressedKeySet {
 extern PressedKeySet pressedKeyIDs;
 
 void syncDynamicJIRatioCandidates();
+int16_t pitchBendForMidiPitch(float midiPitch, byte midiNote);
 int16_t justIntonationRetune(byte x);
 void prepareActiveMidiPitch(byte x);
