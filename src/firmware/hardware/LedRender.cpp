@@ -16,6 +16,7 @@
     the hex buttons.
   */
 #include "LedTransport.h"
+#include "LedTiming.h"
 #include "LedColorMath.h"
 int32_t rainbowDegreeTime = 65'536;  // microseconds to go through 1/360 of rainbow
 constexpr byte BOOT_LED_CHECK_FIRST_BOOT_WHITE_VALUE = 120;
@@ -184,7 +185,7 @@ public:
   LedColor getPixelColor(byte i) const { return pixels[i]; }
   static LedColor Color(uint16_t r, uint16_t g, uint16_t b) { return {r,g,b}; }
   void clear() { for (auto& pixel : pixels) pixel = 0; }
-  void show() { submitLedFrame(pixels, ledDitherBits, ledCurrentLimitMilliamps); }
+  void show() { submitLedFrame(pixels, ledDitherBits, ledCurrentLimitMilliamps, ledFramePeriodMicros); }
 };
 LedFrame strip;
 } // namespace
@@ -897,7 +898,10 @@ void clearLEDsAndWait() {
   // Maintenance-only barrier before reboot. Allow queued banks to drain and
   // the black frame to latch; ordinary musical all-notes-off stays nonblocking.
   strip.clear();
-  for (unsigned i = 0; i < 60; ++i) {
+  // Four complete cycles at the slowest selectable period cover an existing
+  // pending frame, publication of black, and physical latch/FIFO drain.
+  constexpr unsigned waitMilliseconds = (16 * LED_FRAME_PERIOD_MAX_US + 999) / 1000;
+  for (unsigned i = 0; i < waitMilliseconds; ++i) {
     strip.show();
     delay(1);
   }

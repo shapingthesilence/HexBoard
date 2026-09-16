@@ -1,5 +1,6 @@
 #pragma once
 #include "LedColor.h"
+#include "LedTiming.h"
 #include <stddef.h>
 #include <string.h>
 
@@ -10,7 +11,7 @@ inline uint32_t encodeLedBank(uint32_t* words, const LedColor* frame, size_t cou
   const size_t phaseWords = 1 + count * 3 / 4;
   memset(words, 0, 4 * phaseWords * sizeof(uint32_t));
   uint32_t sums[4] = {};
-  for (unsigned phase = 0; phase < 4; ++phase) words[phase * phaseWords] = count * 24 - 1;
+  for (unsigned phase = 0; phase < 4; ++phase) words[phase * phaseWords] = ledFrameHeader(count, LED_FRAME_PERIOD_MIN_US);
   for (size_t pixel = 0; pixel < count; ++pixel) {
     LedColor color = scaleLedColor16(frame[pixel], scale);
     uint16_t channels[] = {quantizeLedChannel(color.g, phases),
@@ -50,4 +51,13 @@ inline void encodeLimitedLedBank(uint32_t* words, const LedColor* frame, size_t 
     else high = mid - 1;
   }
   encodeLedBank(words, frame, count, phases, low);
+}
+
+// Timing lives in the same immutable bank as its pixels. A timing-only edit
+// changes the header, so the transport's duplicate-bank check cannot drop it.
+inline void setLedBankFramePeriod(uint32_t* words, size_t count, int periodMicros) {
+  const size_t phaseWords = 1 + count * 3 / 4;
+  for (unsigned phase = 0; phase < 4; ++phase) {
+    words[phase * phaseWords] = ledFrameHeader(count, periodMicros);
+  }
 }

@@ -412,22 +412,23 @@ The gamma response remains 2.6, using a 257-entry 16-bit table with interpolatio
 Sequencer step brightness is applied to perceptual RGB before gamma.
 
 `lightUpLEDs()` composes at most once per 4.3 ms. `LedTransport` compares the
-requested frame, dithering depth, and current limit with its last accepted
+requested frame, dithering depth, current limit, and frame period with its last accepted
 submission and converts only changes. After quantization and current limiting,
 it compares the complete ordered phase stream with the last published bank.
 Identical output updates the input cache without queuing a bank swap; unchanged
 pixels retain their phase sequence when other pixels change, unless the shared
 current limiter changes their output. DMA continues replaying the existing bank.
 It packs 140 GRB pixels into 105 words
-plus a bit-count header per physical phase. Every DMA bank contains four phases:
+plus a header per physical phase: the high 20 bits hold the reset-loop count
+minus one, and the low 12 bits hold the transmitted bit count minus one. Every DMA bank contains four phases:
 identical frames for 8 bits, A/B/A/B for 9, or A/B/C/D for 10. Black and full
 scale remain exact. Whole-pixel phase rotation distributes modulation without
 splitting equal RGB channels across phases.
 
-Three SRAM banks occupy 5,088 bytes. One PIO state machine (10 instructions),
+Three SRAM banks occupy 5,088 bytes. One PIO state machine (11 instructions),
 two dynamically claimed DMA channels, and one hardware spinlock own replay.
 PIO sends nominal 800 kbit/s with at least 128 microseconds of latch-low time;
-a physical frame takes about 4.33 ms. Two-phase modulation repeats near 116 Hz,
+at the default period a physical frame takes about 4.33 ms. Two-phase modulation repeats near 116 Hz,
 four-phase modulation near 58 Hz. The DMA control channel retriggers the data
 channel from an aligned SRAM replay pointer. No frame conversion occurs in its
 IRQ, and replay continues while flash operations mask interrupts.
@@ -449,14 +450,24 @@ needed. Limits below idle consumption send black; software cannot remove the
 LEDs' idle draw. Normal, boot, delegated, test, and sequencer output all use this
 path. Firmware-update entry waits for black to latch before rebooting.
 
-`Advanced` -> `LED Dither` temporarily selects 8, 9, or 10 bits and resets to 9
-on boot. It is not a persisted setting or a diagnostic build variant. There is
-no automatic 10-bit threshold: low-light flicker must first be evaluated on
-hardware. `Faint` (24) and `Extra Dim` (40) extend the existing brightness menu
+`Advanced` -> `LED Dither` temporarily selects 8, 9, or 10 bits and resets to 10
+on boot. It is not a persisted setting or a diagnostic build variant. The default is 10 bits; there is no automatic brightness-dependent mode switch. `Faint` (24) and `Extra Dim` (40) extend the existing brightness menu
 below `Dimmer` (70) without changing settings layout or byte meaning.
 
+`Advanced` -> `LED Frame us` is a session-only integer spinner from 4328 to
+5000 in 4us increments; it resets to 4328 on boot. The 800 kbit/s wire rate
+stays fixed. PIO extracts the reset count into ISR and the bit count into Y,
+transmits pixels, then copies ISR to X for the latch-low loop. Each loop
+iteration consumes 32 clocks at 8 MHz (4us). For 140 LEDs, pixel transmission
+takes 4200us and framing adds 0.5us; the menu displays the integer part of the
+nominal period (4328.5–5000.5us). The low interval is always at least 128us.
+Timing is encoded into all four headers before bank publication, so a change
+cannot alter an active cycle or be discarded by unchanged-color suppression.
+Bootloader entry allows 80ms for black to latch at the slowest setting.
+
+
 Host checks live in `tests/led_color_test.cpp` and cover the gamma curve,
-quantization, GRB packing, phase averages, current bounds, and bank handoff. Run them with
+quantization, GRB packing, phase averages, current bounds, bank handoff, and the complete frame-period range. Run them with
 `c++ -std=c++17 -O2 tests/led_color_test.cpp -o /tmp/hexboard-led-test` followed by
 `/tmp/hexboard-led-test`. On macOS installations without default C++ header
 search paths, add `-isystem "$(xcrun --show-sdk-path)/usr/include/c++/v1"`.

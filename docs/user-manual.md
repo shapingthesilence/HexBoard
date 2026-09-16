@@ -581,6 +581,7 @@ Select `Advanced` for these maintenance and system rows:
 - `Serial Debug`
 - `LED Test`
 - `LED Dither`
+- `LED Frame us`
 
 `Invert Encoder` reverses the normal encoder direction for your hardware.
 `Button Encoder` enables command-button rotation (off by default). Hold the
@@ -607,13 +608,21 @@ through `Red`, `Green`, `Blue`, or `White` to light every LED immediately.
 Leaving the selector resets it to `Off` and restores the normal LED display.
 
 `LED Dither` selects `8 bit`, `9 bit`, or `10 bit` for the current session.
-`9 bit` is the startup default. Higher settings alternate neighboring LED
+`10 bit` is the startup default. Higher settings alternate neighboring LED
 levels to show intermediate brightness. `10 bit` provides finer steps but can
 show more flicker, especially at very low brightness or while moving your eyes.
 It is not saved in profiles. For comparison, choose `Faint` or `Extra Dim` in
 `Lights & Colors`, then switch `LED Dither` while viewing the normal palette.
 `LED Test` uses direct RGB brightness, so its full-board colors are brighter
 than gamma-corrected palette colors at the same brightness setting.
+
+`LED Frame us` adjusts the time between LED frames from `4328` to `5000`
+microseconds in steps of `4`. Turning the encoder previews the timing live.
+It starts at `4328` after reboot and is not saved in profiles. Larger values
+slow the refresh rate. To compare flicker, keep the palette, brightness, and
+`LED Dither` setting fixed while changing only `LED Frame us`. A good value
+may differ between boards and individual LEDs.
+
 
 
 ### External Delegated Control

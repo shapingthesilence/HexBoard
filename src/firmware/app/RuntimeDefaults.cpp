@@ -1,6 +1,7 @@
 #include "../FirmwareModule.h"
 #include "PlatformCommon.h"
 #include "RuntimeDefaults.h"
+#include "../hardware/LedTiming.h"
 #include "../storage/PersistentDataModels.h"
 #include "../synth/SynthDefaults.h"
 #include "../tuning/Tuning.h"
@@ -129,7 +130,8 @@ bool bootAnimationEnabled = true;
 byte animationType = ANIMATE_BUTTON;
 
 byte ledTestMode = LED_TEST_OFF;
-byte ledDitherBits = 9;
+byte ledDitherBits = LED_DEFAULT_DITHER_BITS;
+int ledFramePeriodMicros = LED_FRAME_PERIOD_MIN_US;
 
 byte globalBrightness = BRIGHT_DIM;
 

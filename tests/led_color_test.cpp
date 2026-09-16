@@ -101,6 +101,32 @@ int main() {
     encodeLimitedLedBank(words, frame, count, phases, 140);
     assert(memcmp(words, reference, sizeof(words)) == 0);
   }
+  // Sweep the complete UI range: only headers change, all phases get the same
+  // delay, and every 4us edit changes the transmitted bank (including black).
+  static_assert(LED_DEFAULT_DITHER_BITS == 10, "Startup dithering default");
+  assert(normalizeLedFramePeriod(-1) == 4328);
+  assert(normalizeLedFramePeriod(999999) == 5000);
+  assert(normalizeLedFramePeriod(4329) == 4328);
+  assert(normalizeLedFramePeriod(4331) == 4332);
+  for (unsigned black = 0; black < 2; ++black) {
+    for (auto& pixel : frame) pixel = black ? LedColor(0) : LedColor(1028, 514, 0);
+    encodeLimitedLedBank(reference, frame, count, 4, 0);
+    for (int period = 4328; period <= 5000; period += 4) {
+      memcpy(words, reference, sizeof(words));
+      setLedBankFramePeriod(words, count, period);
+      if (period != 4328) assert(memcmp(words, reference, sizeof(words)) != 0);
+      for (unsigned phase = 0; phase < 4; ++phase) {
+        uint32_t header = words[phase * phaseWords];
+        unsigned bitCount = (header & LED_FRAME_BIT_COUNT_MASK) + 1;
+        unsigned resetIterations = (header >> LED_FRAME_BIT_COUNT_BITS) + 1;
+        assert(bitCount == 3360);
+        assert(resetIterations * 32 >= 1024); // >=128us at 8MHz
+        assert(bitCount * 10 + resetIterations * 32 + 4 == unsigned(period * 8 + 4));
+        assert(memcmp(words + phase * phaseWords + 1, reference + phase * phaseWords + 1,
+                      (phaseWords - 1) * sizeof(uint32_t)) == 0);
+      }
+    }
+  }
   uint32_t seed = 123;
   for (unsigned trial = 0; trial < 32; ++trial) {
     for (auto& pixel : frame) {
@@ -123,7 +149,8 @@ int main() {
       for (unsigned limit : {1u, 140u, 141u, 160u, 500u, 1500u, 5000u}) {
         encodeLimitedLedBank(words, frame, count, phases, limit);
         for (unsigned phase = 0; phase < 4; ++phase) {
-          assert(words[phase * phaseWords] == count * 24 - 1);
+          assert((words[phase * phaseWords] & LED_FRAME_BIT_COUNT_MASK) == count * 24 - 1);
+          assert((words[phase * phaseWords] >> LED_FRAME_BIT_COUNT_BITS) == 31);
           unsigned sum = 0;
           for (unsigned i = 0; i < count * 3; ++i) sum += byteAt(phase, i);
           if (limit <= count) assert(sum == 0);
@@ -132,5 +159,5 @@ int main() {
       }
     }
   }
-  puts("LED gamma, quantization, GRB packing, phase averages, current bounds and bank handoff passed");
+  puts("LED gamma, quantization, GRB packing, phase averages, current bounds, bank handoff and frame-period sweep passed");
 }

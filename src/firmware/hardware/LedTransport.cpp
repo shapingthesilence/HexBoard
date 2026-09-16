@@ -13,7 +13,9 @@
 #include <cstring>
 
 namespace {
-// 140 RGB pixels pack exactly into 105 words. Each phase begins with a bit count.
+// 140 RGB pixels pack into 105 words. Each phase starts with a timing/bit-count header.
+static_assert(LED_COUNT == 140, "Frame-period menu assumes 4200us of pixel data");
+static_assert(LED_COUNT * 24 - 1 <= LED_FRAME_BIT_COUNT_MASK, "Frame count must fit the PIO header");
 static_assert(LED_COUNT * 24 % 32 == 0, "LED stream must end on a word boundary");
 constexpr unsigned kPayloadWords = LED_COUNT * 24 / 32;
 constexpr unsigned kPhaseWords = 1 + kPayloadWords;
@@ -31,6 +33,7 @@ unsigned ledSm;
 LedColor lastFrame[LED_COUNT];
 uint8_t lastBits = 0;
 uint16_t lastLimit = 0;
+int lastFramePeriodMicros = LED_FRAME_PERIOD_MIN_US;
 // Last published bank (initially the boot black bank). Until another bank is
 // published it remains protected as pending, replay, or current; it cannot be
 // returned by available(). Single-producer ownership also covers this index.
@@ -76,18 +79,19 @@ bool setupLedTransport() {
   // autopulled header without discarding it at a 32-bit payload boundary.
   const uint16_t instructions[] = {
     static_cast<uint16_t>(pio_encode_pull(true, true) | pio_encode_sideset(1, 0)), // 0
-    static_cast<uint16_t>(pio_encode_out(pio_y, 32) | pio_encode_sideset(1, 0)), // 1 header
-    static_cast<uint16_t>(pio_encode_out(pio_x, 1) | pio_encode_sideset(1, 0) | pio_encode_delay(2)), // 2
-    static_cast<uint16_t>(pio_encode_jmp_not_x(5) | pio_encode_sideset(1, 1) | pio_encode_delay(1)), // 3
-    static_cast<uint16_t>(pio_encode_jmp(6) | pio_encode_sideset(1, 1) | pio_encode_delay(3)), // 4
-    static_cast<uint16_t>(pio_encode_nop() | pio_encode_sideset(1, 0) | pio_encode_delay(3)), // 5
-    static_cast<uint16_t>(pio_encode_jmp_y_dec(2) | pio_encode_sideset(1, 0)), // 6
-    static_cast<uint16_t>(pio_encode_set(pio_x, 31) | pio_encode_sideset(1, 0)), // 7
-    // Side-set leaves four delay bits: 32 iterations * 32 cycles via two instructions.
-    static_cast<uint16_t>(pio_encode_nop() | pio_encode_sideset(1, 0) | pio_encode_delay(15)), // 8
-    static_cast<uint16_t>(pio_encode_jmp_x_dec(8) | pio_encode_sideset(1, 0) | pio_encode_delay(15)), // 9
+    static_cast<uint16_t>(pio_encode_out(pio_isr, 20) | pio_encode_sideset(1, 0)), // 1 reset count
+    static_cast<uint16_t>(pio_encode_out(pio_y, 12) | pio_encode_sideset(1, 0)), // 2 bit count
+    static_cast<uint16_t>(pio_encode_out(pio_x, 1) | pio_encode_sideset(1, 0) | pio_encode_delay(2)), // 3
+    static_cast<uint16_t>(pio_encode_jmp_not_x(6) | pio_encode_sideset(1, 1) | pio_encode_delay(1)), // 4
+    static_cast<uint16_t>(pio_encode_jmp(7) | pio_encode_sideset(1, 1) | pio_encode_delay(3)), // 5
+    static_cast<uint16_t>(pio_encode_nop() | pio_encode_sideset(1, 0) | pio_encode_delay(3)), // 6
+    static_cast<uint16_t>(pio_encode_jmp_y_dec(3) | pio_encode_sideset(1, 0)), // 7
+    static_cast<uint16_t>(pio_encode_mov(pio_x, pio_isr) | pio_encode_sideset(1, 0)), // 8
+    // Each loop iteration holds low for 32 clocks = 4us at 8 MHz.
+    static_cast<uint16_t>(pio_encode_nop() | pio_encode_sideset(1, 0) | pio_encode_delay(15)), // 9
+    static_cast<uint16_t>(pio_encode_jmp_x_dec(9) | pio_encode_sideset(1, 0) | pio_encode_delay(15)), // 10
   };
-  const pio_program program = {instructions, 10, -1};
+  const pio_program program = {instructions, 11, -1};
   int sm = -1;
   for (PIO candidate : {pio0, pio1}) {
     if (!pio_can_add_program(candidate, &program)) continue;
@@ -114,7 +118,7 @@ bool setupLedTransport() {
   bankLock = spin_lock_init(lockNumber);
   unsigned offset = pio_add_program(ledPio, &program);
   auto config = pio_get_default_sm_config();
-  sm_config_set_wrap(&config, offset, offset + 9);
+  sm_config_set_wrap(&config, offset, offset + 10);
   sm_config_set_sideset(&config, 1, false, false);
   sm_config_set_sideset_pins(&config, LED_PIN);
   sm_config_set_out_shift(&config, false, true, 32);
@@ -123,7 +127,7 @@ bool setupLedTransport() {
   pio_gpio_init(ledPio, LED_PIN);
   pio_sm_set_consecutive_pindirs(ledPio, ledSm, LED_PIN, 1, true);
   pio_sm_init(ledPio, ledSm, offset, &config);
-  for (unsigned bank = 0; bank < kBanks; ++bank) encodeLedBank(banks[bank], lastFrame, LED_COUNT, 2, 65535);
+  for (unsigned bank = 0; bank < kBanks; ++bank) encodeLedBank(banks[bank], lastFrame, LED_COUNT, 1u << (LED_DEFAULT_DITHER_BITS - 8), 65535);
   replayAddress = reinterpret_cast<uintptr_t>(banks[0]);
   auto dataConfig = dma_channel_get_default_config(dataChannel);
   channel_config_set_transfer_data_size(&dataConfig, DMA_SIZE_32);
@@ -147,10 +151,11 @@ bool setupLedTransport() {
   return true;
 }
 
-bool submitLedFrame(const LedColor* frame, uint8_t bits, uint16_t currentLimitMilliamps) {
+bool submitLedFrame(const LedColor* frame, uint8_t bits, uint16_t currentLimitMilliamps, int framePeriodMicros) {
   if (!ready) return false;
-  if (bits < 8 || bits > 10) bits = 9;
-  if (bits == lastBits && currentLimitMilliamps == lastLimit &&
+  if (bits < 8 || bits > 10) bits = LED_DEFAULT_DITHER_BITS;
+  framePeriodMicros = normalizeLedFramePeriod(framePeriodMicros);
+  if (bits == lastBits && currentLimitMilliamps == lastLimit && framePeriodMicros == lastFramePeriodMicros &&
       memcmp(lastFrame, frame, sizeof(lastFrame)) == 0) return true;
   int bank = -1;
   uint32_t irqState = spin_lock_blocking(bankLock);
@@ -159,9 +164,11 @@ bool submitLedFrame(const LedColor* frame, uint8_t bits, uint16_t currentLimitMi
   if (bank < 0) return false;
   uint8_t phases = 1u << (bits - 8);
   encodeLimitedLedBank(banks[bank], frame, LED_COUNT, phases, currentLimitMilliamps);
+  setLedBankFramePeriod(banks[bank], LED_COUNT, framePeriodMicros);
   memcpy(lastFrame, frame, sizeof(lastFrame));
   lastBits = bits;
   lastLimit = currentLimitMilliamps;
+  lastFramePeriodMicros = framePeriodMicros;
   // RGB16 changes can disappear during quantization/current limiting. Compare
   // the complete ordered phase stream, not just average RGB, before publishing.
   // Keep the input cache above even for a no-op, so repeats skip conversion too.

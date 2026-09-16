@@ -6,7 +6,7 @@ For connection and editing workflows, use the
 [HexBoard Sync user guide](../docs/web-app-guide.md).
 
 The key-map preview shows palette colors. Device brightness, current limiting,
-and temporal LED dithering are evaluated on the board; the browser does not
+and temporal LED dithering/frame-period adjustments are evaluated on the board; the browser does not
 simulate those effects. Palette and protocol color encodings are unchanged by
 the firmware's RGB16 renderer. See [Lights & Colors](../docs/user-manual.md#lights--colors)
 and [LED internals](../docs/developer-guide.md#leds).

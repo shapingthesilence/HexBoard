@@ -4,6 +4,7 @@
 #include "../app/RuntimeDefaults.h"
 #include "../hardware/GridState.h"
 #include "../hardware/LedRender.h"
+#include "../hardware/LedTiming.h"
 #include "../midi/MidiInput.h"
 #include "../midi/MidiRouting.h"
 #include "../midi/MidiTransport.h"
@@ -978,6 +979,14 @@ GEMSelect selectLedDither(sizeof(optionByteLedDither) / sizeof(SelectOptionByte)
 GEMItem menuItemLedDither("LED Dither", ledDitherBits, selectLedDither);
 void previewLedDither(GEMPreviewCallbackData previewData) {
   ledDitherBits = previewData.previewValByte;
+  lightUpLEDs();
+}
+
+GEMSpinner spinnerLedFramePeriod(
+  GEMSpinnerBoundariesInt{LED_FRAME_PERIOD_STEP_US, LED_FRAME_PERIOD_MIN_US, LED_FRAME_PERIOD_MAX_US});
+GEMItem menuItemLedFramePeriod("LED Frame us", ledFramePeriodMicros, spinnerLedFramePeriod);
+void previewLedFramePeriod(GEMPreviewCallbackData previewData) {
+  ledFramePeriodMicros = normalizeLedFramePeriod(previewData.previewValInt);
   lightUpLEDs();
 }
 
@@ -3292,6 +3301,7 @@ void setupAdvancedMenuPage() {
   menuPageAdvanced.addMenuItem(menuGotoSerialDebug);
   addPreviewMenuItem(menuPageAdvanced, menuItemLedTest, previewLedTest);
   addPreviewMenuItem(menuPageAdvanced, menuItemLedDither, previewLedDither);
+  addPreviewMenuItem(menuPageAdvanced, menuItemLedFramePeriod, previewLedFramePeriod);
 }
 
 void setupMainSynthPresetLoadMenuItem() {

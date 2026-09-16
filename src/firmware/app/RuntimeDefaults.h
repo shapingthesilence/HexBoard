@@ -160,7 +160,8 @@ extern byte colorMode;
 extern bool bootAnimationEnabled;
 extern byte animationType;
 extern byte ledTestMode;
-extern byte ledDitherBits;  // Temporary comparison control; defaults to 9 at boot.
+extern byte ledDitherBits;  // Temporary comparison control; defaults to 10 at boot.
+extern int ledFramePeriodMicros;  // Session-only LED timing adjustment in microseconds.
 extern byte globalBrightness;
 extern byte ledCurrentLimitMode;
 extern uint16_t ledCurrentLimitMilliamps;
