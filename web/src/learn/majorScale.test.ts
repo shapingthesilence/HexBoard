@@ -61,7 +61,7 @@ describe("major scale across layouts", () => {
     expect(run.elapsedMs).toBe(1400);
   });
   it("shows all equivalent target keys and hides targets when hints are off", () => {
-    const keys = resolveLessonKeys(starterLayouts().find(({ layout }) => layout.name === "Janko")!);
+    const keys = resolveLessonKeys(starterLayouts().find(({ layout }) => layout.name === "Harmonic Table")!);
     const matches = keys.filter((key) => key.note === 60);
     expect(matches.length).toBeGreaterThan(1);
     for (const key of matches) {

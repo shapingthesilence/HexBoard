@@ -27,6 +27,23 @@ describe("scale practice patterns and timing", () => {
 });
 
 describe("fixed beat grading", () => {
+  it("shows the next note immediately and keeps it highlighted until its beat", () => {
+    const run = new BeatScaleRun(majorScale, 10000, 60);
+    run.tick(10000);
+    run.press(0, 60, 10000);
+    expect(run.step).toBe(1);
+    run.tick(10025);
+    expect(run.step).toBe(1);
+    run.press(1, 62, 11000);
+    expect(run.step).toBe(2);
+    run.tick(11025);
+    expect(run.step).toBe(2);
+    run.tick(13500); // Silence still skips missed beat windows.
+    expect(run.step).toBe(4);
+    run.press(2, 65, 14000); // Wrong note does not advance the cue.
+    expect(run.step).toBe(4);
+    expect(run.result()).toMatchObject({ hits: 2, extras: 1 });
+  });
   it("grades perfect, early and late runs using received timestamps", () => {
     for (const bpm of [40, 80, 180]) for (const offset of [-30, 0, 30]) {
       const run = new BeatScaleRun(majorScale, 10000, bpm);

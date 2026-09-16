@@ -3,9 +3,15 @@
 ## Learning Your First Scale
 
 Open **Learn** to practice scales. It starts with the bundled **12 EDO (Normal)**
-tuning and major scale. Wicki-Hayden, Harmonic Table, and Janko are available
+tuning and major scale. Wicki-Hayden, Harmonic Table, and Gerhard are available
 without downloading anything. Choose **Start on HexBoard**, or **Try on screen**
 without a board. Release all hardware keys before starting.
+
+Use **Scale practice**, **Beginner course**, and **Progress** to navigate.
+Start/Stop and Hints sit above the key map. Choose a scale to preview its exact
+exercise pitches immediately, including every duplicate key in the selected
+register. Other notes stay dimly colored. **Colors & brightness** and
+**Library & help** expand when needed.
 
 ### Loading from HexBoard
 
@@ -14,7 +20,7 @@ to read its definition, palette, and layout/scale names. Choose a layout to read
 that layout and its key assignments; choose a scale to read its degrees. Learn
 never downloads the full library or a complete tuning bundle from the device.
 Previously read items are cached for this connection, including across visits
-to Learn. **Refresh tuning names** clears that cache and returns to 12-EDO; use
+to Learn. **Library & help → Refresh tuning names** clears that cache and returns to 12-EDO; use
 it after changing the device library. Disconnected or failed reads are reported
 and can be retried. Selections load before practice begins.
 
@@ -23,7 +29,7 @@ firmware can still use bundled/imported tunings with supported learning
 sessions; the app explains when an update is needed. Learn reads stored
 content and does not change device presets, scales, or settings.
 
-Sound comes from the browser during the lesson. **Hear & watch the scale**
+Sound comes from the browser during the lesson. **Hear example**
 demonstrates the pattern. Play notes in order; you can hold one while pressing the next.
 **Color mode** can change during practice: Rainbow, Custom, Alt, Fifths, Piano,
 Alt Piano, Filament, or Diatonic. Colors use the selected tuning and root.
@@ -35,33 +41,34 @@ Function keys are hidden. **Board brightness** scales the lesson's LED values
 within saved brightness/current limits without changing saved settings or
 reducing web-map brightness.
 
-Choose a **Scale pattern**: ascending, descending, up and down, down and up,
+Choose a **Pattern**: ascending, descending, up and down, down and up,
 or **Skip one scale tone** (thirds in a seven-tone scale). Round trips play the
 turning note once. Runs cover one period of the chosen scale.
 
-- **At your own pace · timed runs** waits for correct answers and counts extra
+- **Free timing** waits for correct answers and counts extra
   attempts. Timing starts with the first correct attack and stops at the last
   correct attack, excluding the final held note. The final correct attack completes the run. The last run's time and extra attempts remain visible.
-- **Play to a beat · graded runs** offers 40–180 BPM and four high count-in
-  clicks before every run. Play one note per click; targets advance even if
-  you miss. Each run shows a score out of 100, a grade, notes hit, misses,
-  extra attempts, and average distance from the beat in milliseconds. A
+- **Metronome** offers 40–180 BPM and four high count-in
+  clicks before every run. A correct press immediately highlights the next
+  note; play it on its assigned click. If you miss, the cue advances when that
+  beat's window closes. Each run shows a score out of 100, a grade, misses,
+  and extra attempts. A
   complete pattern also shows its first-to-last attack time. The score rewards
   correct notes close to their assigned beat and penalizes misses and extras.
   Use speakers or wired headphones for consistent timing; device/browser
   latency still affects the result.
 
-**Repeat runs automatically** starts another free run on your next first note,
+**Repeat runs** starts another free run on your next first note,
 or another beat run after the next count-in. Turn it off before starting for
 single runs with repeat buttons. Stop to change the pattern, mode, tempo, or
 layout. Hints and board brightness remain adjustable during practice.
 Demonstrations are available in at-your-own-pace mode. Results last only for
-this visit; no mastery or practice history is saved.
+this visit. Course progress is saved separately, as described below.
 
-Under **Import a tuning bundle**, open JSON exported from the editor. EDO,
+Under **Library & help → Import tuning bundle**, open JSON exported from the editor. EDO,
 equal-step, and Scala cents-table tunings are supported, including non-octave
 periods. Audio plays the actual fractional pitches without rounding to MIDI
-semitones. Choose a **Root degree** and **Register (periods)**. For microtonal
+semitones. Choose a **Root** and **Register**. For microtonal
 labels, `[0]` means the register around the tuning's degree zero, `[-1]` the
 period below it, and `[1]` the period above; the stored reference sets frequency.
 This register number need not be a Western octave number.
@@ -77,13 +84,36 @@ Imported bundles last for this visit to Learn.
 The lesson uses its selected layout; saved device settings are not replaced.
 The web map rotates with the layout, and current firmware temporarily rotates
 the board's OLED to match. The saved OLED orientation returns on exit.
-Normal instrument playing and controls return after **Stop lesson**. Switching
+Normal instrument playing and controls return after **Stop**. Switching
 views or hiding the browser tab ends the session. Sessions have no heartbeat
 or automatic timeout. If the browser crashes or disconnects before exit is
 delivered, hold the encoder for about five seconds. Release the encoder and
 all keys, then start another lesson; restarting the board is not part of the
 normal recovery workflow. Update the app and firmware together for version-2
 sessions.
+
+### Beginner Course and Progress
+
+The **Beginner course** has 15 short 12-EDO lessons: notes and octaves, intervals,
+major and minor scales, an arpeggio, major/minor triads, and a I–IV–V–I progression.
+Choose any lesson from the selector, or use **Next lesson** after finishing.
+Each lesson explains the musical idea, why it is useful, and what to play.
+**Hear example** demonstrates its notes or chords.
+The course requires standard 12-EDO; other tunings remain available in Scale practice.
+All three starter layouts support every lesson. Equivalent-pitch keys count.
+
+Single-note lessons allow overlapping notes. Chord lessons require all listed
+pitches held together, with unrelated notes released. Keep shared notes held
+when changing chords. On screen, click a key to hold it and click again to
+release it. On HexBoard, press and release normally. The progression uses root-position triads: C–E–G, F–A–C, G–B–D, then C–E–G.
+
+**Try without hints** hides the target cue and exercise strip. The key labels
+and tuning colors remain visible. **Progress** saves completed attempts, best
+mistake count, and independent completion for each lesson and layout in this
+browser. An **Independent** star means a complete run with zero mistakes and no
+hints or demonstration during that run; it is not a claim of lasting mastery.
+**Export progress** creates a backup; **Restore progress** merges a backup
+without removing newer achievements. No account or device writes are required.
 
 ## Connecting and Editing
 

@@ -26,7 +26,7 @@ export function lessonLayouts(bundle: TuningBundle): LessonLayout[] {
 
 export function starterLayouts(): LessonLayout[] {
   return lessonLayouts(parseTuningBundleFile(factoryTuning))
-    .filter(({ layout }) => ["Wicki-Hayden", "Harmonic Table", "Janko"].includes(layout.name));
+    .filter(({ layout }) => ["Wicki-Hayden", "Harmonic Table", "Gerhard"].includes(layout.name));
 }
 
 export function resolveLessonKeys({ bundle, layout }: LessonLayout): LessonKey[] {

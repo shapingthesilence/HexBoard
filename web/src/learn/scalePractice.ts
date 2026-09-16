@@ -51,7 +51,7 @@ export class BeatScaleRun {
   }
   tick(now: number) {
     this.now = Math.max(this.now, now);
-    this.step = Math.min(this.notes.length, Math.max(0, Math.floor((now - this.startAt) / this.periodMs + 0.5)));
+    this.step = Math.min(this.notes.length, Math.max(this.step, Math.floor((this.now - this.startAt) / this.periodMs + 0.5)));
   }
   press(index: number, note: number, receivedAt = performance.now()) {
     if (this.held.has(index)) return false;
@@ -65,6 +65,8 @@ export class BeatScaleRun {
     } else {
       const error = receivedAt - (this.startAt + slot * this.periodMs);
       this.errors[slot] = error;
+      // Preview the next answer immediately, without shifting its beat window.
+      this.step = Math.max(this.step, slot + 1);
       this.firstHit ??= receivedAt;
       this.lastHit = receivedAt;
       this.feedback = Math.abs(error) < 15 ? "On the beat." : `${Math.round(Math.abs(error))} ms ${error < 0 ? "early" : "late"}.`;

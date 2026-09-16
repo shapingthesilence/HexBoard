@@ -3,7 +3,7 @@
 ## Status and scope
 
 Milestone 1 is implemented as a prototype: scale practice defaulting to C major,
-Wicki-Hayden, Harmonic Table, and Janko layouts, compatible tuning-bundle import, browser sound,
+Wicki-Hayden, Harmonic Table, and Gerhard layouts, compatible tuning-bundle import, browser sound,
 demonstration, on-screen and physical-key practice, LED hints, and repetition
 without hints, adjustable board brightness, repeated scale patterns, run timing,
 graded beat practice, selectable color modes, and lazy device library loading.
@@ -12,7 +12,12 @@ Firmware uses acknowledged sessions with manual
 encoder recovery and no heartbeat.
 Real hardware acceptance remains required before a validated device release.
 
-Milestones 2–5 remain proposals; scale rhythm practice and static microtonal
+Milestone 2 is implemented for browser/device acceptance: 15 authored 12-EDO
+lessons, simultaneous triads, a I–IV–V–I progression, and local progress with
+export/import. Automated coverage checks every lesson on all three starter
+layouts; beginner usability and physical hardware acceptance remain pending.
+
+Milestones 3–5 remain proposals; scale rhythm practice and static microtonal
 scale practice have been brought into the prototype. Current operation belongs
 in the [web guide](web-app-guide.md#learning-your-first-scale); the implemented
 wire contract belongs in [delegated control](delegated-control.md).
@@ -25,8 +30,8 @@ targets; the app translates those targets into the selected layout. Musical
 understanding carries across layouts; physical fluency is tracked separately
 for each layout.
 
-The planned sections are Course, Practice, Songs, and Progress. The prototype
-opens directly into its single lesson instead of exposing unfinished sections.
+The implemented sections are Scale practice, Beginner course, and Progress.
+Songs remains a later milestone.
 A typical lesson takes about five minutes:
 
 1. Explain one musical idea when it becomes useful.
@@ -98,8 +103,11 @@ Local progress with export/import precedes any account system.
 The prototype checks new note attacks in order, allows overlapping notes,
 accepts every key producing the exact requested pitch, and counts extra attempts.
 It now supports ascending, descending, round-trip, and thirds patterns, repeated
-run timing, and fixed-tempo beat grades. It does not persist mastery or infer
-learning from a single run.
+run timing, and fixed-tempo beat grades. Beat cues advance immediately on a
+correct press while grading retains fixed beat windows. Course chord targets
+require simultaneous pitch sets, allowing shared tones between chords. Local
+progress records completion per layout and independent runs (zero mistakes,
+no hints or demonstration). It does not infer lasting mastery from one run.
 
 ## MIDI song trainer (proposed)
 
@@ -114,6 +122,7 @@ labels and fingerings are editable suggestions. Follow the
 
 ## Technical ownership
 
+- `web/src/learn/beginnerCourse.ts`: authored targets, chord evaluation, and local progress schema.
 - `web/src/learn/deviceLibrary.ts`: lazy names/definitions and connection cache.
 - `web/src/catalogs/deviceGeometry.ts`: shared device object decoder.
 - `web/src/learn/tuningPractice.ts`: reference-relative pitches, scale degrees, and labels.
@@ -166,7 +175,9 @@ Automated coverage includes baseline layouts, transformed ranges, duplicate
 pitches, overrides, unsupported actions, missing notes, overlapping attacks,
 releases, hints, acknowledgement gating, foreign tokens, missing firmware
 support, manual exit/re-entry status, LED batches, pattern timing, beat windows,
-missed notes, extra attempts, and metronome scheduling/cleanup.
+missed notes, immediate beat cues, extra attempts, metronome scheduling/cleanup,
+every course lesson on each starter layout, simultaneous chords, common tones,
+and progress validation.
 Run web tests/build, factory generator, firmware `make`, and `git diff --check`.
 
 Hardware acceptance must check all three layouts with real key/LED identities,
