@@ -21,6 +21,7 @@ import { beginnerLessons, CourseRun, courseProgressKey, parseCourseProgress, rec
 
 import { courseStorage, type CourseDraft } from "../learn/courseStorage.ts";
 import { LearnInputGate } from "../learn/learnInputGate.ts";
+import { upcomingTimingSteps } from "../learn/timingCues.ts";
 import { TimingCue } from "../learn/TimingCue.tsx";
 
 type Stage = "ready" | "starting" | "practice" | "demo" | "complete" | "waiting" | "free";
@@ -479,6 +480,8 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
   const lights = keys.map((key) => courseKeyLight(key, lightCues, keyLight(key, key.note !== null && ((stage === "ready" || stage === "waiting") ? previewNotes : targetNotes).includes(key.note) ? key.note : undefined, run.current.held, stage === "ready" || stage === "waiting" || stage === "demo" || (hints && stage === "practice"), course && hints && stage === "practice")));
   const showHands=course && hints && (stage==="ready" || stage==="practice" || stage==="demo") && lesson.fingerings?.some(f=>f.layoutId===selection.layout.objectIdHex&&f.steps.some(step=>step.some(cue=>cue.hand&&cue.finger)));
   const fingerColor=(note:number)=>{const key=keys.find(key=>key.note===note);return lessonScreenColor(lessonLedColor(note,"target",{bundle:{...bundle,activeLayoutIdHex:selection.layout.objectIdHex},steps:key?.steps??0,root,mode:colorMode,index:key?.key.index??0,contrast}));};
+  const timingRun=hints&&stage==="practice"&&run.current instanceof BeatScaleRun?run.current:undefined;
+  const timingSteps=timingRun?upcomingTimingSteps(timingRun.offsets,timingRun.startAt,timingRun.periodMs,now,timingRun.step):[];
   const targetLabel = targetNotes.map(labelNote).join(" + ") || (run.current.step < targets.length ? "Rest" : "");
   const lightStates = lights.join();
   const ledColors = useMemo(() => keys.map(({ note, steps }, index) => lessonLedColor(note, lights[index], {
@@ -669,9 +672,13 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
                 role={playable ? "button" : undefined} tabIndex={playable ? 0 : undefined} aria-label={note === null ? `Key ${key.index}, unavailable` : `${labelNote(note)}, key ${key.index}`}
                 onClick={() => { if (playable) tap(key.index); }} onKeyDown={(event) => { if (playable && !event.repeat && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); tap(key.index); } }}>
                 <polygon style={note === null ? undefined : { fill: color.fill }} points="0,-25 22,-12.5 22,12.5 0,25 -22,12.5 -22,-12.5" />
-                {hints && stage === "practice" && run.current instanceof BeatScaleRun && note!==null && targetNotes.includes(note) && (lights[key.index]==="target" || lights[key.index]==="held") && <TimingCue dueAt={run.current.startAt+run.current.offsets[run.current.step]*run.current.periodMs} periodMs={run.current.periodMs}/>}
+
                 <text style={note === null ? undefined : { fill: color.text }} transform={`rotate(${-angle})`} textAnchor="middle" dy="4">{note === null ? "·" : fingering && cueLabel(fingering) ? `${labelNote(note)} ${cueLabel(fingering)}` : labelNote(note)}</text>
               </g>;
+            })}
+            {timingRun&&timingSteps.flatMap(({step,dueAt})=>{
+              const upcomingCues=course?lessonCues(lesson,selection.layout.objectIdHex,step):[];
+              return keys.filter(({key,note})=>key.role!=="command"&&note!==null&&targets[step]?.includes(note)&&courseKeyLight({key,note},upcomingCues,"target")==="target").map(({key})=><g key={`${step}:${key.index}`} pointerEvents="none" transform={`translate(${32+key.coordCol*25} ${35+key.row*42})`}><TimingCue dueAt={dueAt} periodMs={timingRun.periodMs}/></g>);
             })}
           </g>
         </svg></div>{showHands&&<aside className="learnRecommendedHands" aria-label="Recommended fingers"><h3>Recommended fingers</h3><FingerHands cues={cues} color={fingerColor}/></aside>}</div>}

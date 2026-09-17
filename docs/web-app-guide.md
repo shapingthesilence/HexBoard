@@ -227,7 +227,8 @@ keys. **Stop preview** stops it immediately. Playback includes chords, rests,
 microtonal pitches, and holds that overlap later notes. Free-timing lessons use
 even quarter notes at 80 BPM for preview. Holds affect playback only; release
 duration is not graded. The player uses approaching hexagonal outlines on the
-key map to show when to play.
+key map to show when to play. Each outline starts one quarter note before its
+target time; upcoming outlines can overlap for faster notes and chords.
 
 Timed lessons have an authored **Goal tempo** and learner-selected **Practice
 tempo** (20–300 BPM). Slower runs receive normal timing scores, but completion

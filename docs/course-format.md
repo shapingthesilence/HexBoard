@@ -129,8 +129,10 @@ earlier overlapping gate before retriggering its pitch. Preview audio and timers
 stop on explicit stop, tab hiding, page exit, or editor unmount.
 Lesson duplication creates a new lesson ID; reordering preserves IDs and cues.
 
-Performance uses the rotated HexBoard map. Target outlines converge at the
-scheduled onset, with chord cues sharing a timestamp. `TimingCue.tsx` animates
+Performance uses the rotated HexBoard map. Target outlines appear at most one quarter note before their scheduled onset
+and converge at that onset, with chord cues sharing a timestamp. Every upcoming
+onset in that window can show a cue concurrently, including repeated pitches.
+Each step uses its own preferred-button assignments. `TimingCue.tsx` animates
 SVG attributes with requestAnimationFrame and honors reduced-motion preference.
 LED messages remain state-driven, batched, and deduplicated; no animation frames
 are streamed to the board.
