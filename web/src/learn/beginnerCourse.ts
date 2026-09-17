@@ -8,7 +8,8 @@ export interface CourseLesson {
   section: string;
   instruction: string;
   targets: readonly (readonly number[])[];
-  timing?: { bpm: number; beats: number[] };
+  timeSignature?: { numerator: number; denominator: number };
+  timing?: { goalBpm: number; beats: number[]; holdBeats?: number[][] };
   fingerings?: { layoutId: string; steps: KeyCue[][] }[];
 }
 const melody = (notes: readonly number[]) => notes.map(note => [note]);
@@ -76,7 +77,7 @@ export class CourseRun extends MajorScaleRun {
   }
 }
 
-export interface LessonProgress { attempts: number; bestMistakes: number; independent: boolean; lastPlayed: string }
+export interface LessonProgress { attempts: number; bestMistakes: number; independent: boolean; lastPlayed: string; bestPassingScore?: number; highestPassedBpm?: number }
 export type CourseProgress = Record<string, Record<string, LessonProgress>>;
 export const courseProgressKey = "hexboard.learn.course.v1";
 export function parseCourseProgress(raw: string | null): CourseProgress {
@@ -85,7 +86,7 @@ export function parseCourseProgress(raw: string | null): CourseProgress {
     const result: CourseProgress = {};
     if (!data || typeof data !== "object" || Array.isArray(data)) return result;
     for (const lessonId of Object.keys(data)) {
-      if (!beginnerLessons.some(lesson => lesson.id === lessonId) && !/^user:[a-zA-Z0-9_-]{1,80}:[1-9][0-9]*:[a-zA-Z0-9_-]{1,80}$/.test(lessonId)) continue;
+      if (!beginnerLessons.some(lesson => lesson.id === lessonId) && !/^user:[a-zA-Z0-9_-]{1,80}:[a-f0-9]{16}:[a-zA-Z0-9_-]{1,80}$/.test(lessonId)) continue;
       const entries = data[lessonId];
       if (!entries || typeof entries !== "object" || Array.isArray(entries)) continue;
       const layouts: Record<string, LessonProgress> = {};
@@ -93,20 +94,22 @@ export function parseCourseProgress(raw: string | null): CourseProgress {
         if (["__proto__", "constructor", "prototype"].includes(layout)) continue;
         const p = value as LessonProgress | null;
         if (!p || typeof p !== "object" || !Number.isSafeInteger(p.attempts) || p.attempts < 1 || !Number.isSafeInteger(p.bestMistakes) || p.bestMistakes < 0 || typeof p.independent !== "boolean" || typeof p.lastPlayed !== "string" || !Number.isFinite(Date.parse(p.lastPlayed))) continue;
-        Object.defineProperty(layouts, layout, { value: { attempts: p.attempts, bestMistakes: p.bestMistakes, independent: p.independent, lastPlayed: p.lastPlayed }, enumerable: true, configurable: true, writable: true });
+        Object.defineProperty(layouts, layout, { value: { attempts: p.attempts, bestMistakes: p.bestMistakes, independent: p.independent, lastPlayed: p.lastPlayed, bestPassingScore: Number.isFinite(p.bestPassingScore) ? Math.max(0, Math.min(100, p.bestPassingScore!)) : undefined, highestPassedBpm: Number.isFinite(p.highestPassedBpm) ? Math.max(20, Math.min(300, p.highestPassedBpm!)) : undefined }, enumerable: true, configurable: true, writable: true });
       }
       if (Object.keys(layouts).length) result[lessonId] = layouts;
     }
     return result;
   } catch { return {}; }
 }
-export function recordCourseRun(progress: CourseProgress, lesson: string, layout: string, mistakes: number, hints: boolean, date = new Date().toISOString()): CourseProgress {
+export function recordCourseRun(progress: CourseProgress, lesson: string, layout: string, mistakes: number, hints: boolean, date = new Date().toISOString(), passing?: { score: number; bpm: number }): CourseProgress {
   const previous = progress[lesson]?.[layout];
   return { ...progress, [lesson]: { ...progress[lesson], [layout]: {
     attempts: (previous?.attempts ?? 0) + 1,
     bestMistakes: Math.min(previous?.bestMistakes ?? Infinity, mistakes),
     independent: previous?.independent === true || (!hints && mistakes === 0),
-    lastPlayed: date
+    lastPlayed: date,
+    bestPassingScore: passing ? Math.max(previous?.bestPassingScore ?? 0, passing.score) : previous?.bestPassingScore,
+    highestPassedBpm: passing ? Math.max(previous?.highestPassedBpm ?? 0, passing.bpm) : previous?.highestPassedBpm
   } } };
 }
 
@@ -121,7 +124,9 @@ export function mergeCourseProgress(current: CourseProgress, restored: CoursePro
         attempts: Math.max(old.attempts, entry.attempts),
         bestMistakes: Math.min(old.bestMistakes, entry.bestMistakes),
         independent: old.independent || entry.independent,
-        lastPlayed: old.lastPlayed > entry.lastPlayed ? old.lastPlayed : entry.lastPlayed
+        lastPlayed: old.lastPlayed > entry.lastPlayed ? old.lastPlayed : entry.lastPlayed,
+        bestPassingScore: old.bestPassingScore === undefined && entry.bestPassingScore === undefined ? undefined : Math.max(old.bestPassingScore ?? 0, entry.bestPassingScore ?? 0),
+        highestPassedBpm: old.highestPassedBpm === undefined && entry.highestPassedBpm === undefined ? undefined : Math.max(old.highestPassedBpm ?? 0, entry.highestPassedBpm ?? 0)
       } : entry;
     }
   }

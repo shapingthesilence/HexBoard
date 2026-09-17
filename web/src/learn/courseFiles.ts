@@ -1,9 +1,9 @@
-import { parseTuningBundleFile, TuningBundleFileFormat, type TuningBundle } from "../catalogs/layoutsCatalog.ts";
+import { parseTuningBundleFile, TuningBundleFileFormat, type TuningBundle, type TuningBundleLayout } from "../catalogs/layoutsCatalog.ts";
 import { resolveLessonKeys, type LessonKey, type KeyLight } from "./majorScale.ts";
 import type { CourseLesson, KeyCue } from "./beginnerCourse.ts";
 
-export const courseFormat = "hexboard.course.v1";
-export const courseLibraryKey = "hexboard.learn.courses.v1";
+export const courseFormat = "hexboard.course.v2";
+export const courseLibraryKey = "hexboard.learn.courses.v2";
 export const maxCourseBytes = 2_000_000;
 export interface UserCourse {
   format: typeof courseFormat;
@@ -43,14 +43,25 @@ export function parseCourse(value: unknown): UserCourse {
       if (!Array.isArray(rawNotes) || rawNotes.length > 10 || rawNotes.some(note => typeof note !== "number" || !Number.isFinite(note) || note < 0 || note > 127) || new Set(rawNotes).size !== rawNotes.length) throw new Error("Each step needs 1–10 distinct pitches between 0 and 127.");
       return rawNotes as number[];
     });
+    let timeSignature: CourseLesson["timeSignature"];
+    if (lesson.timeSignature !== undefined) {
+      const meter = object(lesson.timeSignature);
+      if (!Number.isInteger(meter.numerator) || Number(meter.numerator) < 1 || Number(meter.numerator) > 16 || ![2,4,8,16].includes(Number(meter.denominator)) || typeof meter.denominator !== "number") throw new Error("Time signature needs 1–16 beats per bar and a denominator of 2, 4, 8, or 16.");
+      timeSignature = { numerator: Number(meter.numerator), denominator: meter.denominator };
+    }
     let timing: CourseLesson["timing"];
     if (lesson.timing !== undefined) {
       const t = object(lesson.timing);
-      if (typeof t.bpm !== "number" || !Number.isInteger(t.bpm) || t.bpm < 40 || t.bpm > 180 || !Array.isArray(t.beats) || t.beats.length !== targets.length || t.beats.some(beats => typeof beats !== "number" || !Number.isFinite(beats) || !Number.isInteger(beats * 4) || beats < 0.25 || beats > 8)) throw new Error("Timing needs 40–180 BPM and ¼–8 beats per step.");
-      timing = { bpm: t.bpm, beats: t.beats as number[] };
+      if (typeof t.goalBpm !== "number" || !Number.isInteger(t.goalBpm) || t.goalBpm < 20 || t.goalBpm > 300 || !Array.isArray(t.beats) || t.beats.length !== targets.length || t.beats.some(beats => typeof beats !== "number" || !Number.isFinite(beats) || !Number.isInteger(beats * 4) || beats < 0.25 || beats > 8)) throw new Error("Timing needs 20–300 BPM. Step spacing must be 0.25 to 8 quarter-note beats, in increments of 0.25.");
+      let holdBeats: number[][] | undefined;
+      if (t.holdBeats !== undefined) {
+        if (!Array.isArray(t.holdBeats) || t.holdBeats.length !== targets.length || t.holdBeats.some((row, index) => !Array.isArray(row) || row.length !== targets[index].length || row.some(value => typeof value !== "number" || value < 0.25 || value > 32 || !Number.isInteger(value * 4)))) throw new Error("Each note length must be 0.25 to 32 quarter-note beats, in increments of 0.25.");
+        holdBeats = t.holdBeats as number[][];
+      }
+      timing = { goalBpm: t.goalBpm, beats: t.beats as number[], holdBeats };
     }
     if (!targets.some(notes => notes.length)) throw new Error("A lesson needs at least one played note.");
-    if (!timing && targets.some(notes => !notes.length)) throw new Error("Rests need a timed lesson.");
+    if (!timing && targets.some(notes => !notes.length)) throw new Error("Fill or remove blank steps before saving a free-timing lesson.");
     const fingerings: NonNullable<CourseLesson["fingerings"]> = [];
     if (lesson.fingerings !== undefined) {
       if (!Array.isArray(lesson.fingerings) || lesson.fingerings.length > bundle.layouts.length) throw new Error("Invalid layout fingerings.");
@@ -83,7 +94,7 @@ export function parseCourse(value: unknown): UserCourse {
       const keys = resolveLessonKeys({ id: layout.objectIdHex, label: layout.name, layout, bundle });
       return targets.flat().every(note => keys.some(key => key.note === note));
     })) throw new Error("This lesson has pitches missing from its layouts. Choose available notes or a wider layout.");
-    return { id: id(lesson.id), title: text(lesson.title, "Lesson title", 100), section: text(lesson.section ?? "My lessons", "Section", 80), instruction: text(lesson.instruction, "Lesson explanation", 2000), targets, timing, fingerings };
+    return { id: id(lesson.id), title: text(lesson.title, "Lesson title", 100), section: text(lesson.section ?? "My lessons", "Section", 80), instruction: text(lesson.instruction, "Lesson explanation", 2000), targets, timing, timeSignature, fingerings };
   });
   if (new Set(lessons.map(lesson => lesson.id)).size !== lessons.length) throw new Error("Lesson IDs must be unique.");
   return { format: courseFormat, id: id(input.id), revision: Number(input.revision), title: text(input.title, "Course title", 100), author: text(input.author ?? "", "Author", 100, true), bundle, layoutId, lessons };
@@ -100,7 +111,8 @@ export function readCourseLibrary(raw: string | null): UserCourse[] {
   } catch { return []; }
 }
 export function courseProgressId(course: UserCourse | undefined, lessonId: string) {
-  return course ? `user:${course.id}:${course.revision}:${lessonId}` : lessonId;
+  const lesson = course?.lessons.find(item => item.id === lessonId);
+  return course && lesson ? `user:${course.id}:${assessmentFingerprint(course, lesson)}:${lessonId}` : lessonId;
 }
 export function lessonCues(lesson: CourseLesson, layoutId: string, step: number): readonly KeyCue[] {
   return lesson.fingerings?.find(item => item.layoutId === layoutId)?.steps[step] ?? [];
@@ -137,8 +149,29 @@ export function parsePhrase(source: string): { targets: number[][]; beats: numbe
     });
     if (notes.length > 10 || new Set(notes).size !== notes.length) throw new Error("Use up to ten distinct notes in a chord.");
     const duration = Number(match[2] ?? 1);
-    if (!Number.isInteger(duration * 4) || duration < 0.25 || duration > 8) throw new Error("Beat lengths must be 0.25–8, in quarter-beat increments.");
+    if (!Number.isInteger(duration * 4) || duration < 0.25 || duration > 8) throw new Error("Lengths must be 0.25 to 8 quarter notes, in increments of one sixteenth note.");
     targets.push(notes); beats.push(duration);
   }
   return { targets, beats };
+}
+
+// Only graded content participates: prose, ordering, fingering advice and
+// playback-only holds can change without erasing an achievement.
+export function assessmentFingerprint(course: UserCourse, lesson: CourseLesson): string {
+  const strict = (lesson.fingerings ?? []).map(item => ({ layoutId: item.layoutId, steps: item.steps.map(cues => cues.filter(cue => cue.button !== undefined && cue.acceptDuplicates === false).map(cue => ({note:cue.note,button:cue.button})).sort((a,b)=>a.note-b.note)) })).filter(item => item.steps.some(cues=>cues.length)).sort((a,b)=>a.layoutId.localeCompare(b.layoutId));
+  const value = JSON.stringify({ targets: lesson.targets.map(notes=>[...notes].sort((a,b)=>a-b)), timing: lesson.timing ? {goalBpm:lesson.timing.goalBpm,beats:lesson.timing.beats} : undefined, strict, requiredLayout:course.layoutId });
+  return contentHash(value);
+}
+function contentHash(value:string) {
+  let a = 0x811c9dc5, b = 0x9e3779b9;
+  for (let i=0;i<value.length;i++) { a = Math.imul(a ^ value.charCodeAt(i),16777619); b = Math.imul(b ^ value.charCodeAt(i),2246822519); }
+  return [a,b].map(n=>(n>>>0).toString(16).padStart(8,"0")).join("");
+}
+export function canPassTimedLesson(lesson: CourseLesson, practiceBpm: number, score: number, missed: number) {
+  return !!lesson.timing && practiceBpm >= lesson.timing.goalBpm && score >= 75 && missed === 0;
+}
+
+export function courseLayoutProgressId(bundle:TuningBundle,layout:TuningBundleLayout):string {
+  const pitches=resolveLessonKeys({id:layout.objectIdHex,label:layout.name,bundle,layout}).map(key=>key.note);
+  return `${bundle.objectIdHex}:${layout.objectIdHex}:${contentHash(JSON.stringify(pitches))}`;
 }

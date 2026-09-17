@@ -5,7 +5,7 @@
 Milestone 1 is implemented as a prototype: scale practice defaulting to C major,
 Wicki-Hayden, Harmonic Table, and Gerhard layouts, compatible tuning-bundle import, browser sound,
 demonstration, on-screen and physical-key practice, LED hints, and repetition
-without hints, adjustable board brightness, repeated scale patterns, run timing,
+without hints, adjustable background contrast, repeated scale patterns, run timing,
 graded beat practice, selectable color modes, and lazy device library loading.
 EDO, equal-step, and cents-table tunings can use the same practice engine.
 Firmware uses acknowledged sessions with manual
@@ -17,7 +17,11 @@ lessons, simultaneous triads, a I–IV–V–I progression, and local progress w
 export/import. Automated coverage checks every lesson on all three starter
 layouts; beginner usability and physical hardware acceptance remain pending.
 
-User-authored courses are also implemented: self-contained course files,
+User-authored courses are also implemented with a canonical timed piano roll,
+independent playback holds, goal/practice tempo, recoverable IndexedDB drafts,
+explicit tuning/layout embedding, direct note editing, time signatures, preview
+playback, board/hand assignment panels, per-lesson assessment fingerprints, and a
+Learn-scoped device session: self-contained course files,
 optional required layouts, hand/finger cues, preferred physical keys, timed
 melodies/chords/rests, and direct HexBoard phrase recording. Short song segments
 can be recorded or entered as phrases. See the [course contract](course-format.md).
@@ -157,7 +161,7 @@ newer session. Matching repeated entry is idempotent; another owner or held
 keys produces a busy response. Core 0 owns MIDI input and all session
 transitions in both modes.
 
-The browser ends sessions on Stop, view change, hidden tab, page exit,
+The browser ends sessions on Stop, leaving Learn, hidden tab, page exit,
 disconnect, or failed writes. Startup requires an ACK within 2.5 seconds.
 There is no heartbeat or firmware expiry. If browser cleanup is not delivered,
 hold the encoder for five seconds to restore instrument control, then restart
@@ -189,5 +193,5 @@ Run web tests/build, factory generator, firmware `make`, and `git diff --check`.
 Hardware acceptance must check all three layouts with real key/LED identities,
 browser audio latency, held-key releases, encoder force-exit, lost USB, abrupt
 browser termination followed by encoder hold, re-entry, version mismatch,
-brightness adjustment, audible beat timing, and normal playing after exit. Automated
+contrast adjustment, audible beat timing, and normal playing after exit. Automated
 transports cannot establish USB, cross-core, or audio timing.

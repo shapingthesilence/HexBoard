@@ -32,12 +32,12 @@ describe("portable courses", () => {
   });
   it("round-trips its tuning, layouts, fingering and timing without a device library", () => {
     const course = fixture(); course.layoutId = harmonic.layout.objectIdHex;
-    course.lessons = [{ ...fingered(true), timing:{bpm:90,beats:[0.5]} }];
+    course.lessons = [{ ...fingered(true), timing:{goalBpm:90,beats:[0.5]} }];
     const loaded = readCourseFile(JSON.stringify(course));
     expect(loaded.layoutId).toBe(course.layoutId);
     expect(loaded.bundle.tuning).toEqual(course.bundle.tuning);
     expect(loaded.bundle.layouts).toEqual(course.bundle.layouts);
-    expect(loaded.lessons[0].timing).toEqual({bpm:90,beats:[0.5]});
+    expect(loaded.lessons[0].timing).toEqual({goalBpm:90,beats:[0.5]});
     const keys = resolveLessonKeys({ id:"course",label:"course",bundle:loaded.bundle,layout:loaded.bundle.layouts.find(layout => layout.objectIdHex === loaded.layoutId)! });
     expect(keys[duplicates[0].key.index].note).toBe(60);
   });
@@ -47,17 +47,17 @@ describe("portable courses", () => {
     expect(() => parseCourse(course)).toThrow(/Preferred key/);
     expect(() => parseCourse({...fixture(),layoutId:"unknown"})).toThrow(/required layout/);
     expect(() => parseCourse({...fixture(),lessons:[]})).toThrow(/1–100/);
-    const invalid = {...fingered(true),timing:{bpm:0,beats:[1]}};
+    const invalid = {...fingered(true),timing:{goalBpm:0,beats:[1]}};
     expect(() => parseCourse({...fixture(),lessons:[invalid]})).toThrow(/Timing/);
     expect(() => parseCourse({...fixture(),lessons:[{...fingered(true),targets:[[]]}]})).toThrow(/played note/);
     expect(readCourseLibrary(JSON.stringify([fixture(), {format:"bad"}]))).toHaveLength(1);
   });
-  it("does not conflate a revised or different course's progress", () => {
+  it("preserves progress across course revisions but separates course identities", () => {
     const course = fixture();
     const key = courseProgressId(course, "home");
     const progress = recordCourseRun({},key,"layout",0,false);
     expect(parseCourseProgress(JSON.stringify(progress))).toEqual(progress);
-    expect(courseProgressId({...course,revision:2},"home")).not.toBe(key);
+    expect(courseProgressId({...course,revision:2},"home")).toBe(key);
     expect(courseProgressId({...course,id:"another"},"home")).not.toBe(key);
   });
   it("supports small-song phrase entry with sharps, flats, chords, rests and subdivisions", () => {

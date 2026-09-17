@@ -96,9 +96,13 @@ and `TRANSFER_END` so firmware can pace object transfers.
 
 ## Learning and Course Authoring
 
-User courses have a separate browser library and self-contained JSON export.
+User courses and recoverable drafts use separate IndexedDB stores and self-contained v2 JSON export.
 The editor is under Manage courses, with live HexBoard phrase recording,
-per-layout key/hand/finger cues, and timed melody/chord/rest steps. The
+per-layout key/hand/finger cues, a tuning/layout selection dialog, and a canonical
+piano roll with direct note creation, independent holds, time signatures, and
+preview playback. Board and hand panels share the selected roll note. Lessons
+retain goal/practice tempo. Lesson changes retain the
+delegated session and gate physical held keys until release. The
 [course format reference](../docs/course-format.md) owns the schema, matching,
 scoring, storage, and recording contracts. No device library writes are needed.
 

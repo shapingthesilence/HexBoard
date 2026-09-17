@@ -62,11 +62,11 @@ describe("tuning-aware scale practice", () => {
     const bundle = edo();
     const context = {bundle, steps:3, root:0, mode:ColorMode.Rainbow, index:1};
     expect(lessonLedColor(61, "rest", context).hue).toBe(Math.round(3/19*127));
-    expect(lessonLedColor(61, "target", context).value).toBeGreaterThan(lessonLedColor(61, "rest", context).value*2);
+    expect(lessonLedColor(61, "target", context).value).toBeGreaterThan(lessonLedColor(61, "rest", context).value);
     bundle.activeLayoutIdHex = bundle.layouts[0].objectIdHex;
     bundle.layouts[0].buttonOverrides = [{buttonIndex:1, role:"note", hueTenthDegrees:900, saturation:128, value:128}];
     const color = lessonLedColor(61, "rest", {...context, mode:ColorMode.Custom});
-    expect(color).toEqual({hue:32,saturation:64,value:21});
+    expect(color).toEqual({hue:32,saturation:64,value:76});
     for (const mode of Object.values(ColorMode)) {
       const color = lessonLedColor(61, "target", {...context, mode});
       expect(Object.values(color).every(value => value >= 0 && value <= 127)).toBe(true);

@@ -8,7 +8,7 @@ export interface LessonLedColor { hue: number; saturation: number; value: number
 // Pitch class owns hue, lesson state only changes brightness. These 7-bit
 // values go directly to delegated LEDs; hardware applies its normal hue/gamma
 // calibration and current limit. The screen shows nominal rainbow hues.
-export function lessonLedColor(note: number | null, state: KeyLight, context?: { bundle: TuningBundle; steps: number; root: number; mode: ColorModeValue; index: number }): LessonLedColor {
+export function lessonLedColor(note: number | null, state: KeyLight, context?: { bundle: TuningBundle; steps: number; root: number; mode: ColorModeValue; index: number; contrast?: number }): LessonLedColor {
   if (note === null || state === "off") return { hue: 0, saturation: 0, value: 0 };
   const { color } = resolveTuningBundleButtonColor({
     degreeColors: context?.bundle.palette.degreeColors ?? [], cycleLength: context?.bundle.tuning.cycleLength ?? 12, stepsFromC: context?.steps ?? note - 60,
@@ -18,7 +18,7 @@ export function lessonLedColor(note: number | null, state: KeyLight, context?: {
   return {
     hue: Math.round(color.hueTenthDegrees * 127 / 3600),
     saturation: Math.round(color.saturation * 127 / 255),
-    value: state === "target" ? 127 : state === "held" ? 110 : state === "alternate" ? 65 : Math.round(42 * color.value / 255)
+    value: state === "target" ? 127 : state === "held" ? 116 : state === "alternate" ? 104 : Math.round(127 * (1 - Math.max(25, Math.min(85, context?.contrast ?? 40)) / 100))
   };
 }
 

@@ -10,7 +10,7 @@ without a board. Release all hardware keys before starting.
 Use **Scale practice**, **Courses**, and **Progress** to navigate.
 Start/Stop and Hints sit above the key map. Choose a scale to preview its exact
 exercise pitches immediately, including every duplicate key in the selected
-register. Other notes stay dimly colored. **Colors & brightness** and
+register. Other notes stay dimly colored. **Colors & contrast** and
 **Library & help** expand when needed.
 
 ### Loading from HexBoard
@@ -35,11 +35,11 @@ demonstrates the pattern. Play notes in order; you can hold one while pressing t
 Alt Piano, Filament, or Diatonic. Colors use the selected tuning and root.
 Custom uses its stored degree palette and selected layout's per-key colors.
 The next pitch becomes much brighter with a solid outline; any matching key
-counts. Held keys brighten and have a dashed outline on screen. Piano or custom
-colors may intentionally be black at rest; target/held states brighten them.
-Function keys are hidden. **Board brightness** scales the lesson's LED values
-within saved brightness/current limits without changing saved settings or
-reducing web-map brightness.
+counts. Held keys brighten and have a dashed outline on screen. Function keys are hidden. Absolute brightness comes from the HexBoard’s saved
+hardware setting. **Contrast** changes the brightness of background keys
+relative to targets; lower contrast keeps more of the pitch colors visible.
+Targets use full Learn brightness before the board’s normal processing.
+Contrast is saved as your browser preference, separate from courses.
 
 Choose a **Pattern**: ascending, descending, up and down, down and up,
 or **Skip one scale tone** (thirds in a seven-tone scale). Round trips play the
@@ -61,7 +61,7 @@ turning note once. Runs cover one period of the chosen scale.
 **Repeat runs** starts another free run on your next first note,
 or another beat run after the next count-in. Turn it off before starting for
 single runs with repeat buttons. Stop to change the pattern, mode, tempo, or
-layout. Hints and board brightness remain adjustable during practice.
+layout. Hints and contrast remain adjustable during practice.
 Demonstrations are available in at-your-own-pace mode. Results last only for
 this visit. Course progress is saved separately, as described below.
 
@@ -84,8 +84,9 @@ Imported bundles last for this visit to Learn.
 The lesson uses its selected layout; saved device settings are not replaced.
 The web map rotates with the layout, and current firmware temporarily rotates
 the board's OLED to match. The saved OLED orientation returns on exit.
-Normal instrument playing and controls return after **Stop**. Switching
-views or hiding the browser tab ends the session. Sessions have no heartbeat
+Normal instrument playing and controls return after **Stop**. Leaving Learn or hiding the browser tab ends the session. Moving between
+lessons or Learn sections keeps the connection active. Lesson changes stop
+old audio and wait for all held keys to be released before the next run. Sessions have no heartbeat
 or automatic timeout. If the browser crashes or disconnects before exit is
 delivered, hold the encoder for about five seconds. Release the encoder and
 all keys, then start another lesson; restarting the board is not part of the
@@ -123,29 +124,32 @@ Open **Courses → Manage courses** for **Create course**, **Make a copy**,
 controls stay outside the normal lesson view. Courses are saved in this browser;
 export a backup or share the `.hexcourse.json` file with another player.
 
-Pick the tuning and optionally require a layout. To use a device tuning, load
-its tuning and the desired layouts in Learn before opening the course editor.
-Imported tuning bundles work too. The exported course includes its tuning,
-palette, and layouts, including custom key assignments. Recipients can play
-immediately, even if that content is absent from their HexBoard. Installing it
-on the board is unnecessary for Learn and importing never replaces board data.
-An unrestricted course lets the learner choose a compatible included or loaded
-layout; a required layout keeps the authored fingering geometry fixed.
+In the editor, open **Course & lesson settings → Tuning, layouts & scales…**.
+The selection window overlays the editor. Choose **Browser library** or
+**Connected HexBoard library**, select a tuning, check the supported layouts
+and relevant scales, and optionally require one layout. Click **Use selected
+items** to copy those definitions into the course. Only selected device
+items are downloaded. Other layouts loaded elsewhere in Learn are not added.
+The exported course includes those tuning, palette, scale, and layout
+definitions, including custom key assignments. Recipients can play immediately
+even if the definitions are absent from their HexBoard. Importing never
+replaces device data.
 
-**Record phrase** turns your HexBoard into the authoring input. Release all
+**Record from HexBoard** turns your HexBoard into the authoring input. Release all
 keys before starting. Choose **Melody** to capture every note press (overlap is
 fine), or **Chords** to group notes until you release the whole chord. Choose
 **Metronome** timing and a tempo first to hear clicks and capture beat lengths.
-Timing rounds to quarter-beat increments from ¼ to 8 beats. **Finish recording**
+Recording snaps to sixteenth notes (four equal divisions of a quarter note).
+Step spacing ranges from one sixteenth note to eight quarter notes. **Stop recording**
 replaces the current lesson's steps with the captured phrase. The actual keys
 become preferred keys, with duplicates initially accepted. Add pauses as rest
 steps and adjust beat lengths afterward. Encoder hold, hiding the tab, or a
 lost connection stops recording and keeps captured notes in the open draft.
-Use **Save course** to retain that draft.
+Edits autosave into a recovery draft. **Save course** updates the saved course.
 
 For small songs or segments, add one lesson per manageable phrase. Each step
-can contain a note, a chord, or a timed rest. The visual map and note pickers
-edit those steps. In standard 12-EDO, **Quick phrase entry** can replace them
+can contain a note, a chord, or a timed rest. New lessons and added steps start blank. In standard 12-EDO,
+the text box in **Phrase tools** can replace them
 in one action. For example:
 
 ```text
@@ -154,21 +158,55 @@ C4 D4:0.5 E4:0.5 G4:2 -:1 [C4 E4 G4]:2
 
 This plays C, two shorter notes, G for two beats, a one-beat rest, and a C major
 chord. A missing length means one beat. **Hear example** in the player auditions
-the phrase at its authored timing.
+the phrase at your selected practice tempo, including its note holds.
 
-Choose a **Fingering layout** to assign left/right hand, finger 1–5 (thumb to
-little finger), and an optional preferred button for each note. The preferred
-button lights brightly; duplicates are dimmer. Leave **Accept duplicates** on
-for a suggestion, or turn it off to require that button. Hand and finger cues
-are guidance, not something the board can detect. Assignments for one layout
-do not constrain another layout.
+The editor centers on three actions:
 
-Timed lessons include a four-click count-in and a timing grade. Complete every
-step with a score of at least 75 to record completion; hints-off, mistake-free
-runs can also earn Independent. Note lengths set when the next step begins;
-release duration is not graded. Editing a saved course starts progress for a
-new revision. Exported courses contain lessons and instrument definitions;
-learner progress is backed up separately in **Progress**.
+1. **Place a note** in the piano roll with a double-click or Command/Ctrl-click.
+   Drag to change pitch or position; drag the right edge to change length.
+   Select a note and press Backspace or Delete to remove it. Deletion leaves
+   silence and keeps later notes in place. Simultaneous notes form a chord.
+2. **Choose a key** on the board directly below the roll. Only matching pitches
+   can be assigned. The preferred key is brighter than its duplicates. Leave
+   **Accept matching keys too** checked for guidance, or clear it to require
+   the selected physical key. Switch layout tabs to author each layout's cues.
+3. **Choose a finger** by clicking either hand. Numbers run from 1 (thumb) to
+   5 (little finger). This is advice; the board cannot detect the player's finger.
+
+The roll adds room as the phrase grows or you scroll toward its end. Choose
+quarter-, eighth-, or sixteenth-note snapping. You do not need to add steps
+before placing notes. Blank timed steps are rests; blank free-timing steps
+must be filled or removed before saving. Each saved lesson needs a played note.
+
+Set a lesson's **Time signature** under **Course & lesson settings**. It defaults
+to 4/4 and controls the roll's bar guides; for example, 6/8 contains six eighth
+notes per bar. Tempo always counts quarter notes per minute, and practice keeps
+its four-quarter-note count-in and quarter-note clicks.
+
+**Play lesson** auditions the phrase with a moving playhead and sounding board
+keys. **Stop preview** stops it immediately. Playback includes chords, rests,
+microtonal pitches, and holds that overlap later notes. Free-timing lessons use
+even quarter notes at 80 BPM for preview. Holds affect playback only; release
+duration is not graded. The player uses approaching hexagonal outlines on the
+key map to show when to play.
+
+Timed lessons have an authored **Goal tempo** and learner-selected **Practice
+tempo** (20–300 BPM). Slower runs receive normal timing scores, but completion
+requires reaching the goal tempo, satisfying every step, and scoring at least
+75. Hints-off, mistake-free passing runs can also earn Independent. Progress
+retains best passing score and highest passed tempo. Only changes to a lesson’s
+graded exercise invalidate its results; changing prose, playback holds, or
+other lessons preserves them.
+
+Course and draft storage uses IndexedDB in this browser. **Manage courses**
+offers recovery drafts, deletion, and shared-file import/export. The editor
+has Undo/Redo, lesson duplication/reordering, step reordering, and note-order
+controls. **Close** warns about unsaved edits and offers to keep the draft,
+discard it, or keep editing. Export a draft backup before clearing browser data.
+A saved course and its recovery draft are separate; importing an update keeps
+existing drafts. For a matching course ID, choose **Update existing**, **Keep
+both**, or **Cancel import**. Updates preserve compatible lesson progress.
+Exported course files omit learner progress; back it up in **Progress**.
 
 ## Connecting and Editing
 

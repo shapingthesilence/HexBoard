@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MidiMessageListener, MidiTransport } from "../midi/types.ts";
 import { decodeDelegatedKey, DelegatedSession } from "./delegatedSession.ts";
+import { LearnInputGate } from "./learnInputGate.ts";
 import { lessonLedColor } from "./lessonColors.ts";
 
 class Transport implements MidiTransport {
@@ -16,6 +17,18 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("acknowledged learning sessions", () => {
+  it("retains one session across lesson changes and gates all previously held keys", async () => {
+    const transport=new Transport(),gate=new LearnInputGate(),accepted=vi.fn();
+    const session=new DelegatedSession(transport,(index,pressed)=>{if(gate.event(index,pressed))accepted(index,pressed);},vi.fn());
+    const ready=session.start();transport.ack();await ready;
+    transport.emit([0x90,64,127]);gate.resetRun();accepted.mockClear();
+    transport.emit([0x90,65,127]);transport.emit([0x80,64,0]);
+    expect(accepted).not.toHaveBeenCalled();
+    transport.emit([0x80,65,0]);expect(gate.held.size).toBe(0);
+    transport.emit([0x90,66,127]);expect(accepted).toHaveBeenCalledExactlyOnceWith(66,true);
+    expect(transport.sent.map(bytes=>bytes[2])).toEqual([7]);
+    session.stop();expect(transport.sent.map(bytes=>bytes[2])).toEqual([7,10]);
+  });
   it("ignores notes and foreign acknowledgements until entry succeeds", async () => {
     const transport = new Transport(), onKey = vi.fn(), stopped = vi.fn();
     const session = new DelegatedSession(transport, onKey, stopped);

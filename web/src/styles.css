@@ -2677,3 +2677,42 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
   .courseEditorFields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .courseEditorWorkspace { grid-template-columns: 1fr; }
 }
+
+.pianoRoll { margin-bottom: 1rem; min-width: 0; }
+.pianoRollScroll { overflow: auto; max-height: 390px; border: 1px solid var(--border); border-radius: 8px; }
+.pianoRollScroll svg { display: block; max-width: none; touch-action: none; user-select: none; }
+.pianoRollScroll text { fill: currentColor; font-size: 11px; }
+.pianoRollScroll [role="button"] { cursor: grab; }
+.courseEditorWorkspace > * { min-width: 0; }
+.learnTimingRing { fill: none; stroke: currentColor; stroke-width: 3px; pointer-events: none; }
+.learnDraftList { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0; }
+.pianoRollRuler { position: sticky; top: 0; height: 26px; z-index: 2; background: var(--surface); font-size: 11px; line-height: 26px; }
+
+.courseAuthorToolbar { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+.courseAuthorToolbar .learnField { flex: 1; min-width: 180px; max-width: 360px; }
+.courseAuthorToolbar > span { align-self: center; }
+.courseAuthorSettings { margin-bottom: 16px; }
+.courseAssignmentPanels { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin: 16px 0; }
+.courseAssignmentPanel { min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
+.courseAssignmentPanel h3 { margin: 0; font-size: 1rem; }
+.courseAssignmentPanel .courseEditorBoard { height: 300px; }
+.courseAssignmentPanel .checkField input { width: auto; }
+.courseLayoutTabs { margin-top: 10px; }
+.courseLayoutTabs [aria-pressed=true] { background: var(--surface-accent); border-color: var(--brand); }
+.courseHands { display: block; width: 100%; height: 280px; }
+.handPalm, .handFinger rect { fill: var(--surface-muted); stroke: var(--border); stroke-width: 2; }
+.handFinger { cursor: pointer; }
+.handFinger[aria-disabled=true] { opacity: .45; cursor: default; }
+.handFinger:hover:not([aria-disabled=true]) rect, .handFinger:focus rect { stroke: var(--brand); }
+.handFinger.selected rect { fill: var(--brand); stroke: var(--brand); }
+.handFinger text, .handCaption { fill: var(--text); font-size: 14px; font-weight: 600; pointer-events: none; }
+.handFinger.selected text { fill: white; }
+.courseMeter { display: flex; gap: 8px; align-items: center; }
+.courseMeter input, .courseMeter select { width: 75px; }
+.courseLibraryDialog { width: min(680px, calc(100vw - 40px)); max-height: 85vh; overflow: auto; border: 1px solid var(--border); border-radius: 16px; padding: 24px; color: var(--text); background: var(--surface); box-shadow: 0 20px 70px #0004; }
+.courseLibraryDialog::backdrop { background: #12201dcc; }
+.courseLibraryChoices { display: grid; gap: 14px; }
+.courseLibraryChoices fieldset { border: 1px solid var(--border); border-radius: 8px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; max-height: 220px; overflow: auto; }
+.courseLibraryChoices input[type=checkbox] { width: auto; }
+.pianoRollScroll { height: 280px; max-height: 280px; }
+@media (max-width: 720px) { .courseAssignmentPanels { grid-template-columns: 1fr; } .courseLibraryChoices fieldset { grid-template-columns: 1fr; } }
