@@ -14,7 +14,7 @@ describe("learning rainbow", () => {
       expect(rest.saturation).toBe(127);
       expect(rest.value).toBe(64);
       expect(target.value).toBe(127);
-      expect(lessonLedColor(note,"alternate").value).toBeGreaterThan(rest.value);
+      expect(lessonLedColor(note,"alternate")).toEqual(rest);
       expect(lessonLedColor(note,"alternate").value).toBeLessThan(held.value);
       expect(target.value).toBeGreaterThan(rest.value);
       expect(held.value).toBeGreaterThan(rest.value);

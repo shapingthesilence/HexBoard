@@ -30,14 +30,14 @@
 .learnScaleSteps .current { border-color: var(--brand); box-shadow: inset 0 -2px var(--brand); }
 .learnBoardWrap { display: flex; justify-content: center; background: var(--surface-muted); border-radius: var(--radius-md); margin: 8px 0; }
 .learnBoard { width: 100%; height: clamp(280px, calc(100dvh - 340px), 520px); padding: 6px; }
-.learnKey polygon { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.2; }
+.learnKey polygon:not(.learnTimingRing) { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1.2; }
 .learnKey text { font-size: 10px; font-weight: 600; fill: var(--text); pointer-events: none; }
 .learnKey[role=button] { cursor: pointer; }
-.learnKey[role=button]:hover polygon, .learnKey:focus-visible polygon { stroke: var(--text); stroke-width: 3; }
+.learnKey[role=button]:hover polygon:not(.learnTimingRing), .learnKey:focus-visible polygon:not(.learnTimingRing) { stroke: var(--text); stroke-width: 3; }
 .learnKey:focus-visible { outline: none; }
-.learnKey.target polygon { stroke: var(--text); stroke-width: 3; }
-.learnKey.held polygon { stroke: var(--text); stroke-width: 3; stroke-dasharray: 4 2; }
-.learnKey.off polygon { fill: var(--surface-muted); stroke: var(--border); }
+.learnKey.target polygon:not(.learnTimingRing) { stroke: var(--text); stroke-width: 3; }
+.learnKey.held polygon:not(.learnTimingRing) { stroke: var(--text); stroke-width: 3; stroke-dasharray: 4 2; }
+.learnKey.off polygon:not(.learnTimingRing) { fill: var(--surface-muted); stroke: var(--border); }
 .learnLegend { font-size: .75rem; color: var(--text-soft); }
 .learnFeedback { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; font-size: .85rem; }
 .learnCompletion { background: var(--surface-accent); border-radius: var(--radius-md); padding: 10px; margin-top: 8px; }
@@ -2672,7 +2672,7 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .courseEditorBoard { height: 340px; }
 .learnFingering { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0; font-size: .85rem; }
 .learnFingering span { border-radius: 6px; padding: 4px 8px; background: var(--surface-accent); }
-.learnKey.alternate polygon { stroke-width: 1; }
+.learnKey.alternate polygon:not(.learnTimingRing) { stroke-width: 1; }
 @media (max-width: 800px) {
   .courseEditorFields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .courseEditorWorkspace { grid-template-columns: 1fr; }

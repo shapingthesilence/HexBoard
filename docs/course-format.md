@@ -150,7 +150,7 @@ recording action and preserves captured work in a recovery draft.
 
 Absolute LED brightness uses the stored hardware setting and normal firmware
 brightness/current/gamma processing. Targets send full 7-bit value 127; held
-keys use 116, alternate duplicates 104, and background keys use
+keys use 116; non-recommended duplicates and ordinary background keys both use
 `127 * (1 - contrast/100)`. Contrast is a browser learner preference, 25–85%,
 default 50% (rounded background value 64). Hue and saturation still follow pitch colors.
 Contrast and practice tempo never enter course files.
@@ -175,3 +175,16 @@ released. Timed capture quantizes onset spacing to quarter beats, clamped to
 and insert explicit rests afterward. Stopping flushes a pending final chord.
 Recording ends on Stop recording, encoder exit, disconnect, hidden tab, page exit,
 cancel, or unmount. Saving is disabled while recording.
+
+## Built-in course button recommendations
+
+`compactCourseKeys.ts` selects one physical button per pitch for each starter
+layout, minimizing the overall span and then pairwise travel using a bounded
+multi-start refinement. The beginner pitch set also seeds the intermediate
+course, keeping the chosen buttons stable between lessons and courses. These
+are layout-specific `fingerings` with `acceptDuplicates: true`, so recommendations
+do not impose new grading restrictions or invalidate existing beginner progress.
+The intermediate course uses the portable v2 format and normal assessment
+fingerprints for progress. Its first eight lessons have recommendations; the
+explicit duplicate-button lesson and following phrase omit them. Exports carry
+the computed button assignments and layout definitions like any authored course.

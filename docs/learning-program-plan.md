@@ -17,6 +17,10 @@ lessons, simultaneous triads, a I–IV–V–I progression, and local progress w
 export/import. Automated coverage checks every lesson on all three starter
 layouts; beginner usability and physical hardware acceptance remain pending.
 
+The built-in intermediate rhythm course adds nine timed lessons and an explicit
+duplicate-button lesson. Compact physical-button recommendations remain in both
+courses until that lesson; matching duplicates are still accepted.
+
 User-authored courses are also implemented with a canonical timed piano roll,
 independent playback holds, goal/practice tempo, recoverable IndexedDB drafts,
 explicit tuning/layout embedding, direct note editing, time signatures, preview

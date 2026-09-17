@@ -131,6 +131,27 @@ current target; a finger assigned to exactly one pitch takes that note's color.
 A finger shared by multiple pitches uses a neutral highlight. Held notes from
 an earlier chord dim when the target advances, while common tones remain lit.
 
+### Built-in course paths
+
+**Beginner course** has 15 untimed lessons. **Intermediate course · Rhythm**
+adds nine timed lessons and an untimed introduction to duplicate buttons:
+steady pulse, changing notes, eighth notes, mixed lengths, rests, 3/4, offbeats,
+chord changes, duplicate buttons, and a short original phrase. Timed goals range
+from 60 to 80 quarter notes per minute; lower practice tempos remain available.
+
+Both courses recommend a compact set of physical buttons on Wicki-Hayden,
+Harmonic Table, and Gerhard. Each pitch keeps the same recommended button across
+both courses, including shared chord tones. With hints on, the recommended
+button lights as the target and non-recommended duplicates retain ordinary background color and brightness; allowed
+duplicates still count when played.
+Recommendations continue until **One pitch, several buttons** explicitly teaches
+alternatives. That lesson and **Choose your own route** light matching buttons
+equally so you can explore your own positioning. Hints-off practice hides these
+recommendations as usual.
+
+Both built-in courses support **Make a copy** and **Export course**. Use a copy
+to edit their teaching content or button choices.
+
 ### Creating and Sharing Courses
 
 Open **Courses → Manage courses** for **Create course**, **Make a copy**,
@@ -182,7 +203,7 @@ The editor centers on three actions:
    Select a note and press Backspace or Delete to remove it. Deletion leaves
    silence and keeps later notes in place. Simultaneous notes form a chord.
 2. **Choose a key** on the board directly below the roll. Only matching pitches
-   can be assigned. The preferred key is brighter than its duplicates. Leave
+   can be assigned. The preferred key lights as the target; non-recommended duplicates retain ordinary background color and brightness. Leave
    **Accept matching keys too** checked for guidance, or clear it to require
    the selected physical key. Switch layout tabs to author each layout's cues.
 3. **Choose a finger** by clicking either hand. Numbers run from 1 (thumb) to

@@ -14,6 +14,7 @@ import { scaleSteps, tuningPitch, tuningStepLabel } from "../learn/tuningPractic
 import { PracticeMetronome } from "../learn/practiceMetronome.ts";
 
 import { FingerHands } from "../learn/FingerHands.tsx";
+import { intermediateCourse } from "../learn/intermediateCourse.ts";
 import { CourseEditor } from "../learn/CourseEditor.tsx";
 import { courseFormat, canPassTimedLesson, parseCourse, courseProgressId, courseLayoutProgressId, courseKeyLight, cueAccepts, cueLabel, lessonCues, maxCourseBytes, readCourseFile, type UserCourse } from "../learn/courseFiles.ts";
 import { beginnerLessons, CourseRun, courseProgressKey, parseCourseProgress, recordCourseRun, mergeCourseProgress, type CourseProgress } from "../learn/beginnerCourse.ts";
@@ -34,7 +35,8 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
   useEffect(()=>{let active=true;void Promise.all([courseStorage.courses(),courseStorage.drafts()]).then(([courses,drafts])=>{if(!active)return;setUserCourses(courses.flatMap(course=>{try{return [parseCourse(course)];}catch{return [];}}));setDrafts(drafts);setStorageReady(true);},()=>{if(active)setCourseMessage("Course storage is unavailable. Check browser storage permissions.");});return()=>{active=false;};},[]);
   async function refreshDrafts(){try{setDrafts(await courseStorage.drafts());}catch{setCourseMessage("Could not read recovery drafts.");}}
   const [courseId, setCourseId] = useState("builtin");
-  const selectedCourse = userCourses.find(course => course.id === courseId);
+  const selectedCourse = courseId === "builtin-intermediate" ? intermediateCourse : userCourses.find(course => course.id === courseId);
+  const editableCourse = courseId !== "builtin-intermediate" && selectedCourse;
   const lessons = selectedCourse?.lessons ?? beginnerLessons;
   const [editingCourse, setEditingCourse] = useState<UserCourse>();
   const [courseMessage, setCourseMessage] = useState("");
@@ -473,7 +475,8 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
 
   const targetNotes = stage === "demo" ? demoNote ?? [] : targets[run.current.step] ?? [];
   const cues = course ? lessonCues(lesson, selection.layout.objectIdHex, stage === "demo" ? demoStep : stage === "ready" ? 0 : run.current.step) : [];
-  const lights = keys.map((key) => courseKeyLight(key, cues, keyLight(key, key.note !== null && ((stage === "ready" || stage === "waiting") ? previewNotes : targetNotes).includes(key.note) ? key.note : undefined, run.current.held, stage === "ready" || stage === "waiting" || stage === "demo" || (hints && stage === "practice"), course && hints && stage === "practice")));
+  const lightCues=course&&(stage==="ready"||stage==="waiting") ? lesson.fingerings?.find(item=>item.layoutId===selection.layout.objectIdHex)?.steps.flat()??[] : cues;
+  const lights = keys.map((key) => courseKeyLight(key, lightCues, keyLight(key, key.note !== null && ((stage === "ready" || stage === "waiting") ? previewNotes : targetNotes).includes(key.note) ? key.note : undefined, run.current.held, stage === "ready" || stage === "waiting" || stage === "demo" || (hints && stage === "practice"), course && hints && stage === "practice")));
   const showHands=course && hints && (stage==="ready" || stage==="practice" || stage==="demo") && lesson.fingerings?.some(f=>f.layoutId===selection.layout.objectIdHex&&f.steps.some(step=>step.some(cue=>cue.hand&&cue.finger)));
   const fingerColor=(note:number)=>{const key=keys.find(key=>key.note===note);return lessonScreenColor(lessonLedColor(note,"target",{bundle:{...bundle,activeLayoutIdHex:selection.layout.objectIdHex},steps:key?.steps??0,root,mode:colorMode,index:key?.key.index??0,contrast}));};
   const targetLabel = targetNotes.map(labelNote).join(" + ") || (run.current.step < targets.length ? "Rest" : "");
@@ -528,7 +531,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
   function courseBundleSnapshot(): TuningBundle {
     const starter=starterLayouts()[0], scale=starter.bundle.scales[0];return {...structuredClone(starter.bundle),layouts:[structuredClone(starter.layout)],scales:[structuredClone(scale)],activeScaleIdHex:scale.objectIdHex,activeLayoutIdHex:starter.layout.objectIdHex};
   }
-  function chooseCourse(id: string) { clearRun();setStage("ready");setCourseId(id); setLessonIndex(0); setCourseMessage(""); }
+  function chooseCourse(id: string) { setDeletePending(false);clearRun();setStage("ready");setCourseId(id); setLessonIndex(0); setCourseMessage(""); }
   async function persistCourse(next: UserCourse, clearDraft=false) {
     if(clearDraft)next={...next,revision:Math.max(next.revision,(userCourses.find(item=>item.id===next.id)?.revision??0)+1)};
     if (new TextEncoder().encode(JSON.stringify(next)).length > maxCourseBytes) throw new Error("Course files must be smaller than 2 MB. Split this course into smaller courses.");
@@ -573,7 +576,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
       <nav className="learnTabs" aria-label="Learning sections">{(["practice", "course", "progress"] as const).map(item => <button key={item} type="button" aria-current={page === item ? "page" : undefined} disabled={stage === "starting" || libraryBusy} onClick={() => navigate(item)}>{item === "course" ? "Courses" : item === "practice" ? "Scale practice" : "Progress"}</button>)}</nav>
     </header>
     {page === "progress" ? <div className="learnCard">
-      <label className="learnField">Course<select value={courseId} onChange={event => chooseCourse(event.target.value)}><option value="builtin">Beginner course</option>{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
+      <label className="learnField">Course<select value={courseId} onChange={event => chooseCourse(event.target.value)}><option value="builtin">Beginner course</option><option value="builtin-intermediate">Intermediate course · Rhythm</option>{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
       <div className="learnPracticeHeader"><h3>Your course progress</h3><button type="button" onClick={saveProgressFile}>Export progress</button></div>
       <p className="learnMuted">Saved in this browser, per layout. Independent = no mistakes, no hints.</p>
       <div className="learnProgressList">{lessons.map((item, index) => {
@@ -585,17 +588,17 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
       {progressMessage && <p role="status">{progressMessage}</p>}
     </div> : <div className="learnWorkspace">
       <aside className="learnCard learnGuide">
-        {course && <><label className="learnField">Course<select value={courseId} disabled={stage === "starting" || libraryBusy} onChange={event => chooseCourse(event.target.value)}><option value="builtin">Beginner course</option>{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
+        {course && <><label className="learnField">Course<select value={courseId} disabled={stage === "starting" || libraryBusy} onChange={event => chooseCourse(event.target.value)}><option value="builtin">Beginner course</option><option value="builtin-intermediate">Intermediate course · Rhythm</option>{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
           <label className="learnField">Lesson<select value={lessonIndex} disabled={stage === "starting"} onChange={event => changeLesson(Number(event.target.value))}>{lessons.map((item, index) => <option key={item.id} value={index}>{index + 1}. {item.title}</option>)}</select></label>
           <p className="learnLessonInstruction">{lesson.instruction}</p>
           {lesson.timing && <><span className="learnMuted">{lesson.timeSignature?.numerator??4}/{lesson.timeSignature?.denominator??4} · Goal: {lesson.timing.goalBpm} BPM</span><label className="learnField">Practice tempo<input aria-label="Practice tempo" type="number" min={20} max={300} value={practiceBpm} disabled={engaged&&stage!=="complete"} onChange={event=>setPracticeBpm(Math.max(20,Math.min(300,Math.round(Number(event.target.value)))))}/></label></>}
           <details className="learnSettings"><summary>Manage courses</summary>{session.current&&<p className="learnMuted">Stop the learning session to edit or record a course.</p>}<div className="learnActions">
             <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(false)}>Create course</button>
             <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(true)}>Make a copy</button>
-            {selectedCourse && <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => setEditingCourse({ ...structuredClone(selectedCourse), revision: selectedCourse.revision + 1 })}>Edit course</button>}
+            {editableCourse && <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => setEditingCourse({ ...structuredClone(selectedCourse), revision: selectedCourse.revision + 1 })}>Edit course</button>}
             <button type="button" disabled={engaged} onClick={exportCourse}>Export course</button></div>
             <label className="learnField">Import shared course<input aria-label="Import shared course" type="file" accept=".json" disabled={engaged || libraryBusy || !storageReady} onChange={event => void importCourse(event)} /></label>
-            {selectedCourse&&<button type="button" disabled={engaged} onClick={()=>setDeletePending(true)}>Delete course</button>}
+            {editableCourse&&<button type="button" disabled={engaged} onClick={()=>setDeletePending(true)}>Delete course</button>}
             {deletePending&&selectedCourse&&<div role="alert"><p>Delete “{selectedCourse.title}”? Export it first if you need a copy. Recovery drafts remain available.</p><button onClick={()=>void courseStorage.remove(selectedCourse.id).then(()=>{setUserCourses(items=>items.filter(item=>item.id!==selectedCourse.id));chooseCourse("builtin");setDeletePending(false);},()=>setCourseMessage("Could not delete course."))}>Confirm delete</button><button onClick={()=>setDeletePending(false)}>Cancel</button></div>}
             {!!drafts.length&&<div className="learnDraftList" aria-label="Recoverable drafts">{drafts.map(item=><button key={item.id} disabled={engaged||!!session.current} onClick={()=>setEditingCourse(item.course)}>Resume draft: {item.course.title}</button>)}</div>}
             {pendingImport&&<div role="alert"><p>“{pendingImport.title}” revision {pendingImport.revision} matches local revision {userCourses.find(item=>item.id===pendingImport.id)?.revision}. Compatible lesson progress will be preserved.</p><button onClick={()=>void persistCourse(pendingImport).then(()=>{setPendingImport(undefined);setCourseMessage("Course updated.");},error=>setCourseMessage(String(error)))}>Update existing</button><button onClick={()=>void persistCourse({...pendingImport,id:crypto.randomUUID()}).then(()=>{setPendingImport(undefined);setCourseMessage("Separate copy imported.");},error=>setCourseMessage(String(error)))}>Keep both</button><button onClick={()=>setPendingImport(undefined)}>Cancel import</button></div>}
@@ -672,7 +675,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
             })}
           </g>
         </svg></div>{showHands&&<aside className="learnRecommendedHands" aria-label="Recommended fingers"><h3>Recommended fingers</h3><FingerHands cues={cues} color={fingerColor}/></aside>}</div>}
-        <div className="learnLegend">{stage === "free" ? "Play freely · no scoring" : stage === "ready" ? "Bright keys: exercise notes" : "Bright: current target · dashed: held target"}{cues.some(cue => cue.button !== undefined) && " · Dim matches: alternate keys"}{course && lesson.targets.some(target => target.length > 1) && !onBoard && stage === "practice" && " · Click a key to hold or release"}</div>
+        <div className="learnLegend">{stage === "free" ? "Play freely · no scoring" : stage === "ready" ? "Bright keys: exercise notes" : "Bright: current target · dashed: held target"}{cues.some(cue => cue.button !== undefined) && " · Background duplicates still count when allowed"}{course && lesson.targets.some(target => target.length > 1) && !onBoard && stage === "practice" && " · Click a key to hold or release"}</div>
         {(message || stage === "practice" || stage === "demo") && <div className="learnFeedback" role="status" aria-live="polite">{message || (stage === "practice" ? hints ? run.current.feedback : "Follow the exercise from memory." : "Listen and watch.")}</div>}
         {progressMessage && course && <p role="status" className="learnMuted">{progressMessage}</p>}
         {stage === "complete" && <div className="learnCompletion"><div className="learnActions"><button type="button" onClick={() => void repeat(false)}>Try without hints</button><button type="button" onClick={() => void repeat(true)}>Repeat</button>{course && lessonIndex < lessons.length - 1 && <button className="primary" type="button" onClick={nextLesson}>Next lesson</button>}</div></div>}

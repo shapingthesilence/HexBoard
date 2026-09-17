@@ -1,3 +1,4 @@
+import { compactCourseKeys } from "./compactCourseKeys.ts";
 import { cueAccepts, lessonCues } from "./courseFiles.ts";
 import { MajorScaleRun, majorScale, noteName } from "./majorScale.ts";
 
@@ -13,8 +14,8 @@ export interface CourseLesson {
   fingerings?: { layoutId: string; steps: KeyCue[][] }[];
 }
 const melody = (notes: readonly number[]) => notes.map(note => [note]);
-export const beginnerLessons: readonly CourseLesson[] = [
-  { id: "home", title: "Find home", section: "Notes", instruction: "A melody often feels settled when it returns to its home note, called the tonic. Here, C is home. Play C, then G, then C again, and listen for that feeling of return.", targets: melody([60, 67, 60]) },
+export const beginnerLessons: readonly CourseLesson[] = compactCourseKeys([
+  { id: "home", title: "Find home", section: "Notes", instruction: "A melody often feels settled when it returns to its home note, called the tonic. Here, C is home. The brightest buttons suggest one compact route; matching buttons at background brightness still count. Play C, then G, then C again, and listen for that feeling of return.", targets: melody([60, 67, 60]) },
   { id: "octaves", title: "Octaves", section: "Notes", instruction: "An octave is the distance between a note and its next higher or lower version. Recognizing octaves helps you move a melody into a comfortable range without changing its identity. Alternate low C and high C; notice their matching colors in Rainbow mode.", targets: melody([60, 72, 60, 72]) },
   { id: "half-steps", title: "Half steps", section: "Intervals", instruction: "An interval is the distance between two pitches. A half step is the smallest interval in 12-EDO, the tuning used in this course. Play C and C♯: learning this small movement helps you hear and find the building blocks of scales and chords.", targets: melody([60, 61, 60, 61, 60]) },
   { id: "whole-steps", title: "Whole steps", section: "Intervals", instruction: "A whole step spans two half steps. Major and minor scales combine these larger steps with half steps, so recognizing both helps you build scales from any starting note. Play C–D–E and back, listening to the equal distances.", targets: melody([60, 62, 64, 62, 60]) },
@@ -29,7 +30,7 @@ export const beginnerLessons: readonly CourseLesson[] = [
   { id: "minor-triad", title: "Minor triad", section: "Chords", instruction: "A minor triad keeps the root and fifth of a major triad but lowers its third by a half step. This small change creates a different chord quality you can use in songs. Hold C, E♭, and G together, with other notes released.", targets: [[60, 63, 67]] },
   { id: "contrast", title: "Major to minor", section: "Chords", instruction: "Smooth chord changes often keep shared notes in place and move only what changes. Switch C major to C minor and back by moving E to E♭ while keeping C and G held. This builds efficient movement and trains your ear to hear chord quality.", targets: [[60, 64, 67], [60, 63, 67], [60, 64, 67]] },
   { id: "progression", title: "I–IV–V–I", section: "Progressions", instruction: "A chord progression is a sequence of chords that supports a song. Roman numerals name the scale degrees where the chords begin: in C major, I is C, IV is F, and V is G. Play C, F, G, then C major; listen to the final return home.", targets: [[60, 64, 67], [65, 69, 72], [67, 71, 74], [60, 64, 67]] },
-];
+]);
 
 // Single notes allow legato. Chords require all target pitches together, with
 // no unrelated pitches held. Common tones may carry into the following chord.
