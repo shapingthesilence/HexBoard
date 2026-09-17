@@ -24,6 +24,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
 }) {
   const [recording, setRecording] = useState(false);
   const [recordMode, setRecordMode] = useState<"melody" | "chords">("melody");
+  const [recordSnap,setRecordSnap]=useState(0.5);
   const [recordedCount, setRecordedCount] = useState(0);
   const capture = useRef<PhraseRecorder | null>(null);
   const device = useRef<DelegatedSession | null>(null);
@@ -184,7 +185,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
     stopPreview();
     if (lesson.timing && (!Number.isInteger(lesson.timing.goalBpm) || lesson.timing.goalBpm < 20 || lesson.timing.goalBpm > 300)) { setError("Choose a tempo from 20 to 300 BPM before recording."); return; }
     disposeCapture(); const version = captureGeneration.current;
-    const recorder = new PhraseRecorder(recordMode, lesson.timing?.goalBpm);
+    const recorder = new PhraseRecorder(recordMode, lesson.timing?.goalBpm, recordSnap);
     capture.current = recorder; setRecording(true); setRecordedCount(0); setError("");
     try {
       const audio = new SynthPreviewController(); synth.current = audio;
@@ -231,10 +232,11 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
           <label className="learnField">Timing<select value={lesson.timing?"beat":"free"} onChange={event=>{updateLesson({...lesson,timing:event.target.value==="beat"?{goalBpm:80,beats:lesson.targets.map(()=>1)}:undefined});setVoice(undefined);}}><option value="beat">Metronome</option><option value="free">Free timing</option></select></label>
           {lesson.timing&&<label className="learnField">Goal tempo · quarter notes/min<input type="number" min={20} max={300} value={lesson.timing.goalBpm} onChange={event=>updateLesson({...lesson,timing:{...lesson.timing!,goalBpm:Math.max(20,Math.min(300,Math.round(Number(event.target.value))))}})}/></label>}
           <label className="learnField">Time signature<span className="courseMeter"><input aria-label="Beats per measure" type="number" min={1} max={16} value={lesson.timeSignature?.numerator??4} onChange={event=>updateLesson({...lesson,timeSignature:{numerator:Math.max(1,Math.min(16,Math.round(Number(event.target.value)))),denominator:lesson.timeSignature?.denominator??4}})}/><span>/</span><select aria-label="Time signature denominator" value={lesson.timeSignature?.denominator??4} onChange={event=>updateLesson({...lesson,timeSignature:{numerator:lesson.timeSignature?.numerator??4,denominator:Number(event.target.value)}})}>{[2,4,8,16].map(value=><option key={value} value={value}>{value}</option>)}</select></span></label>
+          <label className="learnField">Recording snap<select value={lesson.timing?recordSnap:1} disabled={!lesson.timing} onChange={event=>setRecordSnap(Number(event.target.value))}><option value={1}>Quarter note</option><option value={0.5}>Eighth note</option><option value={0.25}>Sixteenth note</option></select></label>
           <label className="learnField">Recording<select value={recordMode} onChange={event=>setRecordMode(event.target.value as "melody"|"chords")}><option value="melody">Melody · each press</option><option value="chords">Chords · release to finish</option></select></label>
         </div>
         <label className="learnField">Lesson explanation<textarea rows={2} maxLength={2000} value={lesson.instruction} onChange={event=>updateLesson({...lesson,instruction:event.target.value})}/></label>
-        <p className="learnMuted">Recording replaces this phrase. Timing snaps to sixteenth notes: four equal divisions of a quarter note. Step spacing can be up to eight quarter notes; note holds can be longer.</p>
+        <p className="learnMuted">Recording replaces this phrase. Choose recording snap to round the performance to quarter, eighth, or sixteenth notes. Step spacing can be up to eight quarter notes; note holds can be longer.</p>
         <div className="learnActions">
           <button type="button" disabled={draft.lessons.length>=100} onClick={()=>{setDraft({...draft,lessons:[...draft.lessons,{id:crypto.randomUUID(),title:"New lesson",section:"My lessons",instruction:"Play the phrase, then try it without hints.",targets:[[]],timing:{goalBpm:80,beats:[1]},timeSignature:{numerator:4,denominator:4}}]});setLessonIndex(draft.lessons.length);setStep(0);setVoice(undefined);}}>Add lesson</button>
           <button type="button" disabled={draft.lessons.length>=100} onClick={()=>{const copy={...structuredClone(lesson),id:crypto.randomUUID(),title:`${lesson.title} copy`};const lessons=[...draft.lessons];lessons.splice(lessonIndex+1,0,copy);setDraft({...draft,lessons});setLessonIndex(lessonIndex+1);setStep(0);setVoice(undefined);}}>Duplicate lesson</button>
@@ -242,10 +244,10 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
           <button type="button" disabled={draft.lessons.length===1} onClick={()=>{setDraft({...draft,lessons:draft.lessons.filter((_,index)=>index!==lessonIndex)});setLessonIndex(Math.max(0,lessonIndex-1));setStep(0);setVoice(undefined);}}>Remove lesson</button>
         </div>
       </details>
-      {lesson.timing?<PianoRoll key={lesson.id} lesson={lesson} pitches={pitches} disabled={busy} selection={voice===undefined?undefined:{step,voice}} playhead={playhead}
+      {<PianoRoll key={lesson.id} lesson={lesson} pitches={pitches} disabled={busy} selection={voice===undefined?undefined:{step,voice}} playhead={playhead}
         color={pitch=>lessonScreenColor(lessonLedColor(pitch,"target",{bundle:{...draft.bundle,activeLayoutIdHex:layout.objectIdHex},steps:keys.find(key=>key.note===pitch)?.steps??0,root:0,mode:0,index:keys.find(key=>key.note===pitch)?.key.index??0})).fill}
         onSelect={selected=>selectNote(selected.step,selected.voice)} onChange={(next,selected)=>{updateLesson(next);setStep(selected?.step??Math.min(step,next.targets.length-1));setVoice(selected?.voice);}}/>
-        :<div><h3>1. Choose a step</h3><div className="learnScaleSteps">{lesson.targets.map((notes,index)=><button type="button" key={index} aria-pressed={step===index} onClick={()=>{setStep(index);setVoice(notes.length?0:undefined);}}>{index+1}. {notes.map(label).join(" + ")||"Blank"}</button>)}<button type="button" disabled={lesson.targets.length>=256} onClick={addStep}>Add blank step</button></div>{selected.length>1&&<div className="learnActions">{selected.map((note,index)=><button type="button" key={note} aria-pressed={voice===index} onClick={()=>setVoice(index)}>{label(note)}</button>)}</div>}</div>}
+      }
       <div className="courseAssignmentPanels">
         <section className="courseAssignmentPanel" aria-label="Preferred key panel"><div className="learnPracticeHeader"><h3>2. Choose a key</h3><span>{selectedPitch===undefined?"Select a note above":label(selectedPitch)}</span></div>
           {!draft.layoutId&&draft.bundle.layouts.length>1&&<div className="learnActions courseLayoutTabs">{draft.bundle.layouts.map(item=><button type="button" key={item.objectIdHex} aria-pressed={layout.objectIdHex===item.objectIdHex} onClick={()=>setLayoutId(item.objectIdHex)}>{item.name}</button>)}</div>}
@@ -263,7 +265,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
           {selectedCue?.button!==undefined&&<div className="learnActions"><span>Key {selectedCue.button}</span><label className="checkField"><input type="checkbox" checked={selectedCue.acceptDuplicates!==false} onChange={event=>updateCue(selectedPitch!,{acceptDuplicates:event.target.checked})}/>Accept matching keys too</label><button type="button" onClick={()=>updateCue(selectedPitch!,{button:undefined,acceptDuplicates:true})}>Clear key</button></div>}
         </section>
         <section className="courseAssignmentPanel" aria-label="Recommended finger panel"><div className="learnPracticeHeader"><h3>3. Choose a finger</h3><span>{selectedCue&&cueLabel(selectedCue)?cueLabel(selectedCue):"Optional"}</span></div>
-          <FingerHands cue={selectedCue} disabled={busy||selectedPitch===undefined} onChoose={(hand,finger)=>{if(selectedPitch!==undefined)updateCue(selectedPitch,{hand,finger});}}/>
+          <FingerHands cues={selectedCue?cues.filter(cue=>cue.hand===selectedCue.hand&&cue.finger===selectedCue.finger):[]} color={note=>lessonScreenColor(lessonLedColor(note,"target",{bundle:{...draft.bundle,activeLayoutIdHex:layout.objectIdHex},steps:keys.find(key=>key.note===note)?.steps??0,root:0,mode:0,index:keys.find(key=>key.note===note)?.key.index??0}))} disabled={busy||selectedPitch===undefined} onChoose={(hand,finger)=>{if(selectedPitch!==undefined)updateCue(selectedPitch,{hand,finger});}}/>
           <p className="learnMuted">Click a finger on either hand. 1 is the thumb; 5 is the little finger.</p>
           {selectedCue&&(selectedCue.hand||selectedCue.finger)&&<button type="button" onClick={()=>updateCue(selectedPitch!,{hand:undefined,finger:undefined})}>Clear finger</button>}
         </section>

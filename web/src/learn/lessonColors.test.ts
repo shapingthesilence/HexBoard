@@ -12,7 +12,7 @@ describe("learning rainbow", () => {
       expect(target.hue).toBe(rest.hue);
       expect(held.hue).toBe(rest.hue);
       expect(rest.saturation).toBe(127);
-      expect(rest.value).toBeGreaterThanOrEqual(75);
+      expect(rest.value).toBe(64);
       expect(target.value).toBe(127);
       expect(lessonLedColor(note,"alternate").value).toBeGreaterThan(rest.value);
       expect(lessonLedColor(note,"alternate").value).toBeLessThan(held.value);
@@ -23,7 +23,7 @@ describe("learning rainbow", () => {
   });
   it("shows C as red, dims its normal state and turns unavailable keys off", () => {
     expect(lessonScreenColor(lessonLedColor(60, "target")).fill).toBe("rgb(255 0 0)");
-    expect(lessonScreenColor(lessonLedColor(60, "rest")).fill).toBe("rgb(153 0 0)");
+    expect(lessonScreenColor(lessonLedColor(60, "rest")).fill).toBe("rgb(129 0 0)");
     expect(lessonLedColor(null, "rest").value).toBe(0);
     expect(lessonLedColor(60, "off").value).toBe(0);
   });

@@ -117,6 +117,9 @@ retaining rests and per-note cues, and splitting long empty gaps. No second
 piano-roll data model is persisted. Double-click or Command/Ctrl-click adds a
 note; Backspace/Delete removes the selected voice without shifting later music.
 The roll extends automatically and snaps to quarter, eighth, or sixteenth notes.
+The default snap is an eighth note. Free-timing editing uses the same roll,
+with fixed quarter-note columns and holds, compacting empty gaps when notes
+are edited; it does not introduce timing data into untimed lessons.
 Fractional pitches remain exact. Selection identifies a step and voice, shared
 by the roll, preferred-key board, and clickable hand panels. Library selection
 uses a modal overlay. New lessons and added steps start empty; drafts may be
@@ -137,14 +140,19 @@ voices, timers, and the metronome, clears evaluation state, and repaints the
 next lesson without entering/exiting the device session. `LearnInputGate`
 retains physical held keys across this reset and blocks input until all have
 been released. Stop, leaving Learn, device disconnect, page lifecycle cleanup,
-or an unrecoverable error closes the session. Recording has an explicit Stop
+or an unrecoverable error closes the session. Ungraded synth play uses the same
+audio/session owner; ready, free-play, and completed states accept notes without
+advancing evaluation or changing progress. Changing lessons resets hints.
+During hinted course practice, held pitches outside the current target use
+background light instead of held light. `FingerHands.tsx` renders authoring and
+player cues; a finger with one distinct assigned pitch uses that pitch color. Recording has an explicit Stop
 recording action and preserves captured work in a recovery draft.
 
 Absolute LED brightness uses the stored hardware setting and normal firmware
 brightness/current/gamma processing. Targets send full 7-bit value 127; held
 keys use 116, alternate duplicates 104, and background keys use
 `127 * (1 - contrast/100)`. Contrast is a browser learner preference, 25–85%,
-default 40% (background value 76). Hue and saturation still follow pitch colors.
+default 50% (rounded background value 64). Hue and saturation still follow pitch colors.
 Contrast and practice tempo never enter course files.
 
 ## Authoring ownership
@@ -154,7 +162,7 @@ Contrast and practice tempo never enter course files.
 - `web/src/learn/CourseEditor.tsx`: authoring UI, browser audio and delegated
   recording-session lifecycle.
 - `web/src/learn/phraseRecorder.ts`: raw-key capture, grouping, onset timing,
-  quarter-beat quantization, per-note holds, and physical-key preferences.
+  selectable quarter/eighth/sixteenth quantization (default eighth), per-note holds, and physical-key preferences.
 - `web/src/learn/beginnerCourse.ts`: bundled lessons and free chord evaluation.
 - `web/src/learn/scalePractice.ts`: scheduled pitch/chord/rest evaluation.
 

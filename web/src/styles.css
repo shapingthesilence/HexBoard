@@ -2716,3 +2716,9 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .courseLibraryChoices input[type=checkbox] { width: auto; }
 .pianoRollScroll { height: 280px; max-height: 280px; }
 @media (max-width: 720px) { .courseAssignmentPanels { grid-template-columns: 1fr; } .courseLibraryChoices fieldset { grid-template-columns: 1fr; } }
+
+.learnBoardAndHands { display:grid;grid-template-columns:minmax(0,1.6fr) minmax(220px,1fr);align-items:center;gap:16px; }
+.learnRecommendedHands { min-width:0;text-align:center; }
+.learnRecommendedHands .courseHands { width:100%;height:auto; }
+.learnRecommendedHands .handFinger { cursor:default; }
+@media(max-width:900px) { .learnBoardAndHands { grid-template-columns:1fr; } .learnRecommendedHands .courseHands { max-width:340px; } }

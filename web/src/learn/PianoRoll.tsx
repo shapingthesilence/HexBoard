@@ -9,7 +9,8 @@ export function PianoRoll({ lesson, pitches, color, selection, disabled = false,
   onChange: (lesson: CourseLesson, selection?: NoteSelection) => void;
   onSelect: (selection: NoteSelection) => void;
 }) {
-  const [snap, setSnap] = useState(0.25), [error, setError] = useState("");
+  const [timedSnap, setSnap] = useState(0.5), [error, setError] = useState("");
+  const snap = lesson.timing ? timedSnap : 1;
   const [extraBars, setExtraBars] = useState(2);
   const [ghost, setGhost] = useState<RollNote>();
   const scroll = useRef<HTMLDivElement>(null);
@@ -18,7 +19,7 @@ export function PianoRoll({ lesson, pitches, color, selection, disabled = false,
   const current = notes.find(note => note.step === selection?.step && note.voice === selection.voice);
   const rows = [...new Map([...pitches, ...notes.filter(note => !pitches.some(([pitch]) => pitch === note.pitch)).map(note => [note.pitch, `Pitch ${note.pitch}`] as [number,string])]).entries()].sort((a,b) => b[0]-a[0]);
   const barLength = measureLength(lesson);
-  const contentEnd = Math.max(lesson.timing!.beats.reduce((a, b) => a + b, 0), ...notes.map(note => note.onset + note.hold));
+  const contentEnd = Math.max(lesson.timing?.beats.reduce((a, b) => a + b, 0) ?? lesson.targets.length, ...notes.map(note => note.onset + note.hold));
   const total = Math.min(2048, Math.max(barLength * 4, (Math.ceil(contentEnd / barLength) + extraBars) * barLength));
   const px = 64, rowHeight = 24, left = 76;
   useEffect(() => {
@@ -52,10 +53,10 @@ export function PianoRoll({ lesson, pitches, color, selection, disabled = false,
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
   }
   return <section className="pianoRoll" aria-label="Lesson piano roll">
-    <div className="learnPracticeHeader"><h3>1. Place a note</h3><label>Snap <select aria-label="Piano roll snap" value={snap} disabled={disabled} onChange={event => setSnap(Number(event.target.value))}>
+    <div className="learnPracticeHeader"><h3>1. Place a note</h3><label>Snap <select aria-label="Piano roll snap" value={snap} disabled={disabled || !lesson.timing} onChange={event => setSnap(Number(event.target.value))}>
       <option value={1}>Quarter note</option><option value={0.5}>Eighth note</option><option value={0.25}>Sixteenth note</option>
     </select></label></div>
-    <p className="learnMuted">Double-click or ⌘/Ctrl-click to add. Drag to move; drag the right edge to resize. Delete removes the selected note.</p>
+    <p className="learnMuted">Double-click or ⌘/Ctrl-click to add. Drag to move{lesson.timing?"; drag the right edge to resize":" · quarter-note steps"}. Delete removes the selected note.</p>
     <div ref={scroll} className="pianoRollScroll" onScroll={event => { const element = event.currentTarget; if (element.scrollWidth > element.clientWidth && element.scrollLeft + element.clientWidth >= element.scrollWidth - 50 && total < 2048) setExtraBars(value => value + 2); }}>
       <div className="pianoRollRuler" style={{ width: left + total * px + 24 }}><span>Bar</span>{Array.from({ length: Math.ceil(total / barLength) }, (_, bar) => <span key={bar} style={{ position: "absolute", left: left + bar * barLength * px + 3 }}>{bar + 1}</span>)}</div>
       <svg width={left + total * px + 24} height={rows.length * rowHeight} aria-label="Notes by pitch and measure" onDoubleClick={insert} onClick={event => { if (event.metaKey || event.ctrlKey) insert(event); }}
@@ -85,10 +86,10 @@ export function PianoRoll({ lesson, pitches, color, selection, disabled = false,
             onPointerDown={event => {
               if (disabled) return; event.preventDefault(); event.currentTarget.focus(); onSelect({ step: note.step, voice: note.voice });
               const svg = event.currentTarget.ownerSVGElement!; svg.setPointerCapture(event.pointerId);
-              drag.current = { note, x: event.clientX, y: event.clientY, resize: (event.target as Element).getAttribute("data-resize") === "true", row, scale: svg.getBoundingClientRect().width / svg.width.baseVal.value, ghost: note }; setGhost(note);
+              drag.current = { note, x: event.clientX, y: event.clientY, resize: !!lesson.timing && (event.target as Element).getAttribute("data-resize") === "true", row, scale: svg.getBoundingClientRect().width / svg.width.baseVal.value, ghost: note }; setGhost(note);
             }}>
             <rect x={left + shown.onset * px + 1} y={row * rowHeight + 3} width={Math.max(8, shown.hold * px - 2)} height={rowHeight - 6} rx={3} fill={color(shown.pitch)} stroke={current?.step === note.step && current.voice === note.voice ? "var(--text)" : "#333"} strokeWidth={current?.step === note.step && current.voice === note.voice ? 3 : 1} />
-            <rect data-resize="true" x={left + (shown.onset + shown.hold) * px - 7} y={row * rowHeight + 3} width={6} height={rowHeight - 6} fill="#fff" opacity={0.65} style={{ cursor: "ew-resize" }} />
+            {lesson.timing && <rect data-resize="true" x={left + (shown.onset + shown.hold) * px - 7} y={row * rowHeight + 3} width={6} height={rowHeight - 6} fill="#fff" opacity={0.65} style={{ cursor: "ew-resize" }} />}
           </g>;
         })}
         {playhead !== undefined && <line x1={left + playhead * px} x2={left + playhead * px} y1={0} y2={rows.length * rowHeight} stroke="var(--brand)" strokeWidth={3} pointerEvents="none" />}

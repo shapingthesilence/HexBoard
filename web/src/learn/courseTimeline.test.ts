@@ -97,3 +97,17 @@ describe("direct piano roll authoring",()=>{
     for(const meter of [{numerator:0,denominator:4},{numerator:3,denominator:3},{numerator:2.5,denominator:8}])expect(()=>parseCourse({...course,lessons:[{...phrase,timeSignature:meter}]})).toThrow(/signature/);
   });
 });
+
+describe("free timing roll",()=>{
+  it("uses quarter-note columns, preserves chord cues, and removes silent gaps",()=>{
+    const free={...phrase,timing:undefined,targets:[[60,64],[62]],fingerings:[{layoutId:course.bundle.layouts[0].objectIdHex,steps:[[{note:60,hand:"left" as const,finger:1}],[]]}]};
+    const moved=editRollNote(free,0,0,{onset:3.5,hold:4});
+    expect(moved.timing).toBeUndefined();
+    expect(moved.targets).toEqual([[64],[62],[60]]);
+    expect(lessonRollNotes(moved).map(note=>[note.onset,note.hold])).toEqual([[0,1],[1,1],[2,1]]);
+    expect(moved.fingerings?.[0].steps[2][0].finger).toBe(1);
+    const added=addRollNote({...free,targets:[[]],fingerings:[]},65,8,0.5);
+    expect(added.targets).toEqual([[65]]);
+    expect(removeRollNote(added,0,0).targets).toEqual([[]]);
+  });
+});

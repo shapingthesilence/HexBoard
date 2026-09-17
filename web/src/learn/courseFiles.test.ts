@@ -152,3 +152,18 @@ describe("HexBoard phrase capture", () => {
     expect(recorder.beats[0]).toBe(1.5);
   });
 });
+
+describe("recording snap",()=>{
+  it("defaults to eighth notes and supports quarter and sixteenth note recording",()=>{
+    for(const [snap,expected] of [[1,1],[0.5,0.5],[0.25,0.25]]){
+      const recorder=new PhraseRecorder("melody",60,snap);
+      recorder.press(1,60,0);recorder.release(1,320);recorder.press(2,62,320);
+      expect(recorder.beats[0]).toBe(expected);
+      expect(recorder.holdBeats[0][0]).toBe(expected);
+    }
+    expect(new PhraseRecorder("melody",80).snap).toBe(0.5);
+    const free=new PhraseRecorder("melody",undefined,0.25);
+    free.press(1,60,0);free.press(2,62,320);
+    expect(free.beats).toEqual([1,1]);
+  });
+});

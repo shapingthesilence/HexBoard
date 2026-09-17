@@ -38,6 +38,7 @@ The next pitch becomes much brighter with a solid outline; any matching key
 counts. Held keys brighten and have a dashed outline on screen. Function keys are hidden. Absolute brightness comes from the HexBoard’s saved
 hardware setting. **Contrast** changes the brightness of background keys
 relative to targets; lower contrast keeps more of the pitch colors visible.
+The default is 50%; saved contrast preferences are retained.
 Targets use full Learn brightness before the board’s normal processing.
 Contrast is saved as your browser preference, separate from courses.
 
@@ -109,6 +110,7 @@ pitches held together, with unrelated notes released. Keep shared notes held
 when changing chords. On screen, click a key to hold it and click again to
 release it. On HexBoard, press and release normally. The progression uses root-position triads: C–E–G, F–A–C, G–B–D, then C–E–G.
 
+Moving to another lesson turns hints on again.
 **Try without hints** hides the target cue and exercise strip. The key labels
 and tuning colors remain visible. **Progress** saves completed attempts, best
 mistake count, and independent completion for each lesson and layout in this
@@ -116,6 +118,18 @@ browser. An **Independent** star means a complete run with zero mistakes and no
 hints or demonstration during that run; it is not a claim of lasting mastery.
 **Export progress** creates a backup; **Restore progress** merges a backup
 without removing newer achievements. No account or device writes are required.
+
+**Play synth** lets you explore the selected tuning/layout without starting a
+lesson or recording a score. It uses a connected HexBoard when available;
+otherwise, click the screen keys. You can also keep playing after a lesson ends.
+Use **Stop** to end synth play. Changing lessons still requires releasing held
+physical keys before the new lesson starts.
+
+When hints are on and the author supplied finger assignments, the same two-hand
+visualization used in the editor appears beside the board. It follows the
+current target; a finger assigned to exactly one pitch takes that note's color.
+A finger shared by multiple pitches uses a neutral highlight. Held notes from
+an earlier chord dim when the target advances, while common tones remain lit.
 
 ### Creating and Sharing Courses
 
@@ -139,7 +153,8 @@ replaces device data.
 keys before starting. Choose **Melody** to capture every note press (overlap is
 fine), or **Chords** to group notes until you release the whole chord. Choose
 **Metronome** timing and a tempo first to hear clicks and capture beat lengths.
-Recording snaps to sixteenth notes (four equal divisions of a quarter note).
+**Recording snap** defaults to eighth notes; choose quarter or sixteenth notes
+in the lesson settings to match the phrase.
 Step spacing ranges from one sixteenth note to eight quarter notes. **Stop recording**
 replaces the current lesson's steps with the captured phrase. The actual keys
 become preferred keys, with duplicates initially accepted. Add pauses as rest
@@ -174,7 +189,10 @@ The editor centers on three actions:
    5 (little finger). This is advice; the board cannot detect the player's finger.
 
 The roll adds room as the phrase grows or you scroll toward its end. Choose
-quarter-, eighth-, or sixteenth-note snapping. You do not need to add steps
+quarter-, eighth-, or sixteenth-note snapping (eighth notes by default).
+Free-timing lessons use the same roll with quarter-note steps; moving or deleting
+notes closes silent gaps, and note lengths stay at one quarter note.
+You do not need to add steps
 before placing notes. Blank timed steps are rests; blank free-timing steps
 must be filled or removed before saving. Each saved lesson needs a played note.
 

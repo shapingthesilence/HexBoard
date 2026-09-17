@@ -11,8 +11,8 @@ export class PhraseRecorder {
   private lastAt?: number;
   private pending = new Map<number, number>();
   private pendingAt?: number;
-  constructor(readonly mode: "melody" | "chords", readonly bpm?: number) {}
-  private length(ms: number, maximum = 8) { return this.bpm ? Math.max(0.25, Math.min(maximum, Math.round(ms * this.bpm / 15000) / 4)) : 1; }
+  constructor(readonly mode: "melody" | "chords", readonly bpm?: number, readonly snap = 0.5) {}
+  private length(ms: number, maximum = 8) { return this.bpm ? Math.max(this.snap, Math.min(maximum, Math.round(ms * this.bpm / 60000 / this.snap) * this.snap)) : 1; }
   private add(entries: [number, number][], at: number) {
     if (this.targets.length >= 256) return;
     if (this.lastAt !== undefined) this.beats[this.beats.length - 1] = this.length(at - this.lastAt);

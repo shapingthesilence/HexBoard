@@ -84,3 +84,12 @@ describe("major scale across layouts", () => {
     expect(next.held.has(60)).toBe(true);
   });
 });
+
+it("dims held notes from the previous chord while preserving current common tones",()=>{
+  const keys=resolveLessonKeys(starterLayouts()[0]);
+  const c=keys.find(key=>key.note===60)!;
+  const held=new Map([[c.key.index,60]]);
+  expect(keyLight(c,undefined,held,true,true)).toBe("rest");
+  expect(keyLight(c,60,held,true,true)).toBe("held");
+  expect(keyLight(c,undefined,held,false)).toBe("held");
+});

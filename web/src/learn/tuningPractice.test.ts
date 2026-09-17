@@ -66,7 +66,7 @@ describe("tuning-aware scale practice", () => {
     bundle.activeLayoutIdHex = bundle.layouts[0].objectIdHex;
     bundle.layouts[0].buttonOverrides = [{buttonIndex:1, role:"note", hueTenthDegrees:900, saturation:128, value:128}];
     const color = lessonLedColor(61, "rest", {...context, mode:ColorMode.Custom});
-    expect(color).toEqual({hue:32,saturation:64,value:76});
+    expect(color).toEqual({hue:32,saturation:64,value:64});
     for (const mode of Object.values(ColorMode)) {
       const color = lessonLedColor(61, "target", {...context, mode});
       expect(Object.values(color).every(value => value >= 0 && value <= 127)).toBe(true);

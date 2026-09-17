@@ -82,8 +82,8 @@ export class MajorScaleRun {
 }
 
 export type KeyLight = "off" | "rest" | "target" | "held" | "alternate";
-export function keyLight(key: LessonKey, target: number | undefined, held: ReadonlyMap<number, number>, hints: boolean): KeyLight {
+export function keyLight(key: LessonKey, target: number | undefined, held: ReadonlyMap<number, number>, hints: boolean, dimPastHeld = false): KeyLight {
   if (key.note === null) return "off";
-  if (held.has(key.key.index)) return "held";
+  if (held.has(key.key.index) && !(dimPastHeld && key.note !== target)) return "held";
   return hints && key.note === target ? "target" : "rest";
 }

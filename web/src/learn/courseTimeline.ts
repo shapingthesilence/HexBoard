@@ -15,7 +15,12 @@ export function measureLength(lesson: CourseLesson) {
 // Edits rebuild the canonical steps, carrying each source note's fingering.
 // Added notes have no source step; deleted notes leave silence, not shifted music.
 function rebuild(lesson: CourseLesson, notes: RollNote[], extraRests: number[] = []): CourseLesson {
-  if (!lesson.timing) throw new Error("Choose metronome timing to edit the piano roll.");
+  if (!lesson.timing) {
+    const timed = rebuild({...lesson,timing:{goalBpm:80,beats:lesson.targets.map(()=>1)}}, notes.map(note=>({...note,onset:Math.round(note.onset),hold:1})), extraRests.map(Math.round));
+    const included = timed.targets.flatMap((notes,index)=>notes.length?[index]:[]);
+    if (!included.length) included.push(0);
+    return {...timed,timing:undefined,targets:included.map(index=>timed.targets[index]),fingerings:timed.fingerings?.map(fingering=>({...fingering,steps:included.map(index=>fingering.steps[index])}))};
+  }
   const onsets = lessonOnsets(lesson);
   if (notes.some(note => !Number.isInteger(note.onset * 4) || note.onset < 0 || note.onset > 2047.75 || !Number.isInteger(note.hold * 4) || note.hold < 0.25 || note.hold > 32 || !Number.isFinite(note.pitch) || note.pitch < 0 || note.pitch > 127)) throw new Error("Place notes on the grid, with lengths from one sixteenth note to eight whole notes.");
   const positions = new Set([0, ...notes.map(note => note.onset), ...onsets.filter((_, i) => !lesson.targets[i].length), ...extraRests]);
