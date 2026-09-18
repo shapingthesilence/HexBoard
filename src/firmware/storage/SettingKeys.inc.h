@@ -91,3 +91,6 @@ HEXBOARD_SETTING(SequencerSendTransport, sequencer::kSendTransportDefault)
 HEXBOARD_SETTING(PiezoVolumeCap, HEADPHONE_VOLUME_CAP_FULL)
 HEXBOARD_SETTING(CurrentKeyStepsFromAHigh, 255)  // high byte of signed -9
 HEXBOARD_SETTING(CommandEncoder, 0)
+HEXBOARD_SETTING(ColorDithering, 0)
+HEXBOARD_SETTING(LedFramePeriodLow, 232)  // 4328us, little-endian low byte
+HEXBOARD_SETTING(LedFramePeriodHigh, 16)

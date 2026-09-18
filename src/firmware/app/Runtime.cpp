@@ -94,6 +94,7 @@ void hexboardSetup() {
   globalBrightness = settingValue(SettingKey::GlobalBrightness);
   ledCurrentLimitMode = settingValue(SettingKey::LedCurrentLimitMode);
   syncLedCurrentLimit();
+  syncLedSettingsToRuntime();
   setupLEDs();
   bootLedAnimationReady.store(true, std::memory_order_release);
   load_synth_presets();

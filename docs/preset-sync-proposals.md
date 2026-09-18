@@ -29,8 +29,9 @@ Recommended TLVs:
 | `0x27` | `ScaleRef` | Optional object reference |
 
 `SettingValues` may use current `SettingKey` ordinals only when
-`SettingsSchemaVersion` exactly matches the firmware's current schema. Boot
-accepts only that version and the exact current payload size; preset-sync hosts
+`SettingsSchemaVersion` exactly matches the firmware's current schema. Persisted
+settings use the versioned migrations described in the
+[developer guide](developer-guide.md#settings-and-persistence); preset-sync hosts
 must use the advertised schema. Keep user tunings/layouts/mappings in separate
 objects and store references here.
 

@@ -4,6 +4,7 @@
 #include "../app/RuntimeDefaults.h"
 #include "../hardware/GridState.h"
 #include "../hardware/LedRender.h"
+#include "../hardware/LedTiming.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../menu/PlayedNotesOverlay.h"
 #include "../model/ScalePalettePreset.h"
@@ -12,6 +13,7 @@
 #include "../synth/SynthDefaults.h"
 #include "../synth/SynthAudio.h"
 #include "Settings.h"
+#include "SettingsMigration.h"
 #include "PresetSync.h"
 #include "StorageHealth.h"
 #include "SynthPresetStorage.h"
@@ -93,6 +95,18 @@ void setupFileSystem() {
 // --------------------------------------------------------
 // Persistent Settings Functions: Save, Load, Restore
 // --------------------------------------------------------
+void syncLedSettingsToRuntime() {
+  colorDithering = settingValue(SettingKey::ColorDithering) == 1;
+  ledFramePeriodMicros = decodeLedFramePeriod(settingValue(SettingKey::LedFramePeriodLow),
+                                             settingValue(SettingKey::LedFramePeriodHigh));
+}
+
+void storeLedFramePeriodInSettings(int periodMicros) {
+  uint16_t normalized = normalizeLedFramePeriod(periodMicros);
+  settings[static_cast<uint8_t>(SettingKey::LedFramePeriodLow)] = normalized & 0xff;
+  settings[static_cast<uint8_t>(SettingKey::LedFramePeriodHigh)] = normalized >> 8;
+}
+
 void applyFactoryDefaultsToSettings() {
   defaultProfileIndex = DEFAULT_PROFILE_INDEX;  // profile 1 is the canonical boot target
   for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
@@ -124,13 +138,6 @@ bool load_settings() {
     applyFactoryDefaultsToSettings();
     return false;
   }
-  if (f.size() != sizeof(SettingsHeader) + SETTINGS_DATA_SIZE) {
-    reportStorageHealthIssue("/settings.dat", "wrong size");
-    sendToLog("/settings.dat: wrong file size; using factory defaults.");
-    f.close();
-    applyFactoryDefaultsToSettings();
-    return false;
-  }
   SettingsHeader header = {};
   if (f.readBytes((char*)&header, sizeof(SettingsHeader)) != sizeof(SettingsHeader)) {
     reportStorageHealthIssue("/settings.dat", "short header");
@@ -146,7 +153,8 @@ bool load_settings() {
     applyFactoryDefaultsToSettings();
     return false;
   }
-  if (header.version != CURRENT_SETTINGS_VERSION) {
+  const size_t sourceWidth = persistedSettingsWidth(header.version);
+  if (sourceWidth == 0 || header.version > CURRENT_SETTINGS_VERSION) {
     reportStorageHealthIssue("/settings.dat", "version mismatch");
     sendToLog("/settings.dat: version " + std::to_string(header.version)
               + " does not match " + std::to_string(CURRENT_SETTINGS_VERSION)
@@ -155,11 +163,20 @@ bool load_settings() {
     applyFactoryDefaultsToSettings();
     return false;
   }
+  const size_t sourceSettingsSize = sourceWidth * PROFILE_COUNT;
+  if (f.size() != sizeof(SettingsHeader) + sourceSettingsSize
+                  + SETTINGS_GEOMETRY_DATA_SIZE + SETTINGS_SYNTH_REFERENCE_DATA_SIZE) {
+    reportStorageHealthIssue("/settings.dat", "wrong size");
+    sendToLog("/settings.dat: wrong file size; using factory defaults.");
+    f.close();
+    applyFactoryDefaultsToSettings();
+    return false;
+  }
   // Profile 1 is the canonical boot target.
   defaultProfileIndex = DEFAULT_PROFILE_INDEX;
   uint8_t persistedProfileSettings[SETTINGS_PROFILE_VALUES_DATA_SIZE] = {};
   size_t settingsBytesRead =
-    f.read(persistedProfileSettings, sizeof(persistedProfileSettings));
+    f.read(persistedProfileSettings, sourceSettingsSize);
   size_t geometryBytesRead =
     f.read(reinterpret_cast<uint8_t*>(geometryProfileReferences),
            SETTINGS_GEOMETRY_DATA_SIZE);
@@ -167,7 +184,7 @@ bool load_settings() {
     f.read(reinterpret_cast<uint8_t*>(synthProfileReferences),
            SETTINGS_SYNTH_REFERENCE_DATA_SIZE);
   f.close();
-  if (settingsBytesRead != SETTINGS_PROFILE_VALUES_DATA_SIZE
+  if (settingsBytesRead != sourceSettingsSize
       || geometryBytesRead != SETTINGS_GEOMETRY_DATA_SIZE
       || synthReferenceBytesRead != SETTINGS_SYNTH_REFERENCE_DATA_SIZE) {
     reportStorageHealthIssue("/settings.dat", "short payload");
@@ -178,7 +195,7 @@ bool load_settings() {
   uint32_t computed = crc32Begin();
   computed = crc32Update(computed,
                          persistedProfileSettings,
-                         sizeof(persistedProfileSettings));
+                         sourceSettingsSize);
   computed = crc32Update(computed,
                          reinterpret_cast<uint8_t*>(geometryProfileReferences),
                          SETTINGS_GEOMETRY_DATA_SIZE);
@@ -195,10 +212,20 @@ bool load_settings() {
   for (uint8_t profile = 0; profile < PROFILE_COUNT; ++profile) {
     memcpy(settingsProfiles[profile], factoryDefaults, NUM_SETTINGS);
   }
-  unpackPersistedProfileSettings(persistedProfileSettings);
+  // Expand only after the original payload passes its CRC check.
+  uint8_t expandedSettings[SETTINGS_PROFILE_VALUES_DATA_SIZE];
+  packPersistedProfileSettings(expandedSettings);
+  expandPersistedSettings(expandedSettings, PROFILE_PERSISTED_SETTING_COUNT,
+                          persistedProfileSettings, sourceWidth, PROFILE_COUNT);
+  unpackPersistedProfileSettings(expandedSettings);
   activeProfileIndex = defaultProfileIndex;
   settings = settingsProfiles[activeProfileIndex];
   settingsDirty = false;
+  if (header.version != CURRENT_SETTINGS_VERSION) {
+    markSettingsDirty(); // Persist through the normal save path, never during boot.
+    sendToLog("/settings.dat: migrated version " + std::to_string(header.version)
+              + " to " + std::to_string(CURRENT_SETTINGS_VERSION) + " in memory.");
+  }
   sendToLog("Settings loaded successfully.");
   return true;
 }

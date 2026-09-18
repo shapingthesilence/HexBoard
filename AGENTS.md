@@ -26,7 +26,9 @@ Applies repository-wide. Code is authoritative; correct stale docs when relevant
 
 - Change setting keys only through `SettingKeys.inc.h`; update runtime sync,
   menu wiring, factory config, and validation. Bump `CURRENT_SETTINGS_VERSION`
-  when persisted layout or byte meaning changes.
+  when persisted layout or byte meaning changes. Preserve settings from version 32
+  onward with explicit, tested migrations; append new keys where possible and
+  initialize new fields from factory defaults.
 - `factory-library/` is source: web-compatible preset JSON, tuning bundles, and
   `.hexwav` wavetables. Source subdirectories become device folders.
   `config.json` owns factory settings and selections; keep it aligned with
@@ -37,7 +39,8 @@ Applies repository-wide. Code is authoritative; correct stale docs when relevant
   firmware-only `*_Update.uf2`. Assemble LittleFS on the host and validate all
   256-byte pages in every touched factory-image sector.
 - Boot mounts LittleFS once without auto-format. Never format, provision,
-  migrate, repair, or rewrite compatible records during boot.
+  repair, or rewrite records during boot. Validate and migrate supported older
+  settings in memory, then persist through the normal settings save path.
 - Storage failures must reach normal operation with hardware-aware defaults,
   an empty editable catalog when unavailable, 12 EDO, and Basic Shapes. Mount
   failure disables saving. Report exact failing paths and validation stages.

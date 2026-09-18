@@ -20,3 +20,6 @@ extern bool settingsDirty;
 extern bool fileSystemExists;
 extern bool autoSave;
 extern const uint8_t factoryDefaults[NUM_SETTINGS];
+
+void syncLedSettingsToRuntime();
+void storeLedFramePeriodInSettings(int periodMicros);

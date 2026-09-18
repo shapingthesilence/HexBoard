@@ -974,20 +974,37 @@ void previewLedTest(GEMPreviewCallbackData previewData) {
   lightUpLEDs();
 }
 
-SelectOptionByte optionByteLedDither[] = {{"8 bit", 8}, {"9 bit", 9}, {"10 bit", 10}};
-GEMSelect selectLedDither(sizeof(optionByteLedDither) / sizeof(SelectOptionByte), optionByteLedDither);
-GEMItem menuItemLedDither("LED Dither", ledDitherBits, selectLedDither);
-void previewLedDither(GEMPreviewCallbackData previewData) {
-  ledDitherBits = previewData.previewValByte;
-  lightUpLEDs();
-}
+void updateLedDitherMenuVisibility();
+PersistentCallbackInfo callbackInfoColorDithering = {
+  static_cast<uint8_t>(SettingKey::ColorDithering),
+  reinterpret_cast<void*>(&colorDithering),
+  nullptr,
+  updateLedDitherMenuVisibility
+};
+GEMItem menuItemColorDithering("Color Dither", colorDithering, universalSaveCallback,
+                             reinterpret_cast<void*>(&callbackInfoColorDithering));
 
-GEMSpinner spinnerLedFramePeriod(
+void saveLedFramePeriod(GEMCallbackData /*callbackData*/) {
+  ledFramePeriodMicros = normalizeLedFramePeriod(ledFramePeriodMicros);
+  storeLedFramePeriodInSettings(ledFramePeriodMicros);
+  markSettingsDirty();
+}
+GEMSpinner spinnerLedFrameCoarse(
+  GEMSpinnerBoundariesInt{LED_FRAME_PERIOD_COARSE_STEP_US, LED_FRAME_PERIOD_MIN_US, LED_FRAME_PERIOD_MAX_US});
+GEMSpinner spinnerLedFrameFine(
   GEMSpinnerBoundariesInt{LED_FRAME_PERIOD_STEP_US, LED_FRAME_PERIOD_MIN_US, LED_FRAME_PERIOD_MAX_US});
-GEMItem menuItemLedFramePeriod("LED Frame us", ledFramePeriodMicros, spinnerLedFramePeriod);
+GEMItem menuItemLedFrameCoarse("Frame Coarse us", ledFramePeriodMicros, spinnerLedFrameCoarse, saveLedFramePeriod);
+GEMItem menuItemLedFrameFine("Frame Fine us", ledFramePeriodMicros, spinnerLedFrameFine, saveLedFramePeriod);
 void previewLedFramePeriod(GEMPreviewCallbackData previewData) {
   ledFramePeriodMicros = normalizeLedFramePeriod(previewData.previewValInt);
   lightUpLEDs();
+}
+void updateLedDitherMenuVisibility() {
+  byte index = menuPageAdvanced.getCurrentMenuItemIndex();
+  menuItemLedFrameCoarse.hide(!colorDithering);
+  menuItemLedFrameFine.hide(!colorDithering);
+  byte count = menuPageAdvanced.getItemsCount();
+  if (count > 0) menuPageAdvanced.setCurrentMenuItemIndex(std::min(index, static_cast<byte>(count - 1)));
 }
 
 SelectOptionByte optionByteWheelType[] = { { "Springy", 0 }, { "Sticky", 1 } };
@@ -2589,6 +2606,8 @@ void syncSettingsToRuntime(bool redrawMenu) {
   ledRestBrightness = settingValue(SettingKey::RestLedBrightness);
   ledDimBrightness = settingValue(SettingKey::DimLedBrightness);
   globalBrightness = settingValue(SettingKey::GlobalBrightness);
+  syncLedSettingsToRuntime();
+  updateLedDitherMenuVisibility();
   ledCurrentLimitMode = settingValue(SettingKey::LedCurrentLimitMode);
   syncLedCurrentLimit();
   animationType = settingValue(SettingKey::AnimationType);
@@ -3300,8 +3319,10 @@ void setupAdvancedMenuPage() {
   menuPageAdvanced.addMenuItem(menuItemUSBBootloader);
   menuPageAdvanced.addMenuItem(menuGotoSerialDebug);
   addPreviewMenuItem(menuPageAdvanced, menuItemLedTest, previewLedTest);
-  addPreviewMenuItem(menuPageAdvanced, menuItemLedDither, previewLedDither);
-  addPreviewMenuItem(menuPageAdvanced, menuItemLedFramePeriod, previewLedFramePeriod);
+  menuPageAdvanced.addMenuItem(menuItemColorDithering);
+  addPreviewMenuItem(menuPageAdvanced, menuItemLedFrameCoarse, previewLedFramePeriod);
+  addPreviewMenuItem(menuPageAdvanced, menuItemLedFrameFine, previewLedFramePeriod);
+  updateLedDitherMenuVisibility();
 }
 
 void setupMainSynthPresetLoadMenuItem() {

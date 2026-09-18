@@ -103,15 +103,17 @@ int main() {
   }
   // Sweep the complete UI range: only headers change, all phases get the same
   // delay, and every 4us edit changes the transmitted bank (including black).
-  static_assert(LED_DEFAULT_DITHER_BITS == 10, "Startup dithering default");
+  static_assert(LED_DEFAULT_DITHER_BITS == 8, "Startup dithering default");
+  static_assert(ledDitherDepth(false) == 8 && ledDitherDepth(true) == 10, "Dither toggle");
   assert(normalizeLedFramePeriod(-1) == 4328);
-  assert(normalizeLedFramePeriod(999999) == 5000);
+  assert(normalizeLedFramePeriod(999999) == 6000);
   assert(normalizeLedFramePeriod(4329) == 4328);
   assert(normalizeLedFramePeriod(4331) == 4332);
   for (unsigned black = 0; black < 2; ++black) {
     for (auto& pixel : frame) pixel = black ? LedColor(0) : LedColor(1028, 514, 0);
     encodeLimitedLedBank(reference, frame, count, 4, 0);
-    for (int period = 4328; period <= 5000; period += 4) {
+    for (int period = 4328; period <= 6000; period += 4) {
+      assert(decodeLedFramePeriod(period & 255, period >> 8) == period);
       memcpy(words, reference, sizeof(words));
       setLedBankFramePeriod(words, count, period);
       if (period != 4328) assert(memcmp(words, reference, sizeof(words)) != 0);

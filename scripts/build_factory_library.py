@@ -809,6 +809,11 @@ def build_settings(config_path: Path, output: Path, config: dict,
         raise fail(config_path, "settings", "RotaryInvert factory value must be 0 (relative to hardware default)")
     if settings["CommandEncoder"] not in (0, 1):
         raise fail(config_path, "settings", "CommandEncoder must be 0 or 1")
+    if settings["ColorDithering"] not in (0, 1):
+        raise fail(config_path, "settings", "ColorDithering must be 0 or 1")
+    led_period = settings["LedFramePeriodLow"] | (settings["LedFramePeriodHigh"] << 8)
+    if not 4328 <= led_period <= 6000 or (led_period - 4328) % 4:
+        raise fail(config_path, "settings", "LED frame period must be 4328..6000us in 4us steps")
     persisted_setting_keys = tuple(key for key in SETTING_KEYS if key not in SYNTH_PRESET_KEYS)
     profiles = [bytearray(settings[key] for key in persisted_setting_keys) for _ in range(PROFILE_COUNT)]
     profile_data = b"".join(profiles)

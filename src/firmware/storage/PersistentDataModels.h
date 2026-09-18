@@ -2,6 +2,7 @@
 
 #include "../FirmwareModule.h"
 #include "../tuning/Tuning.h"
+#include "SettingsMigration.h"
 
 struct SettingsHeader {
   char magic[3];           // e.g., "STG"
@@ -10,7 +11,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 32;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 33;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -291,12 +292,15 @@ constexpr size_t SETTINGS_DATA_SIZE =
   + SETTINGS_GEOMETRY_DATA_SIZE
   + SETTINGS_SYNTH_REFERENCE_DATA_SIZE;
 
+static_assert(persistedSettingsWidth(CURRENT_SETTINGS_VERSION) == PROFILE_PERSISTED_SETTING_COUNT,
+              "Add the new settings schema to SettingsMigration.h");
+
 // The host-side factory-library compiler writes these records byte-for-byte.
 // Fail the firmware build if the RP2040 ABI ever changes their disk layout.
 static_assert(sizeof(SettingsHeader) == 12, "SettingsHeader disk layout changed");
-static_assert(SETTINGS_PROFILE_VALUES_DATA_SIZE == 513,
+static_assert(SETTINGS_PROFILE_VALUES_DATA_SIZE == 540,
               "Persisted settings payload changed; update the factory-library builder");
-static_assert(SETTINGS_DATA_SIZE == 1107,
+static_assert(SETTINGS_DATA_SIZE == 1134,
               "Settings payload changed; update the factory-library builder");
 static_assert(sizeof(SynthPresetFileHeaderBase) == 8, "SynthPresetFileHeaderBase disk layout changed");
 static_assert(sizeof(SynthPresetSlot) == 212, "SynthPresetSlot disk layout changed");

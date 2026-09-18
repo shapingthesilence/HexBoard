@@ -2,10 +2,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-constexpr uint8_t LED_DEFAULT_DITHER_BITS = 10;
+constexpr uint8_t LED_DEFAULT_DITHER_BITS = 8;
 constexpr int LED_FRAME_PERIOD_MIN_US = 4328;
-constexpr int LED_FRAME_PERIOD_MAX_US = 5000;
+constexpr int LED_FRAME_PERIOD_MAX_US = 6000;
 constexpr int LED_FRAME_PERIOD_STEP_US = 4;
+constexpr int LED_FRAME_PERIOD_COARSE_STEP_US = 100;
+constexpr uint8_t ledDitherDepth(bool enabled) { return enabled ? 10 : LED_DEFAULT_DITHER_BITS; }
 constexpr unsigned LED_FRAME_BIT_COUNT_BITS = 12;
 constexpr uint32_t LED_FRAME_BIT_COUNT_MASK = (1u << LED_FRAME_BIT_COUNT_BITS) - 1;
 
@@ -23,4 +25,8 @@ inline int normalizeLedFramePeriod(int periodMicros) {
 inline uint32_t ledFrameHeader(size_t count, int periodMicros) {
   unsigned resetIterations = (normalizeLedFramePeriod(periodMicros) - 4200) / 4;
   return ((resetIterations - 1) << LED_FRAME_BIT_COUNT_BITS) | (count * 24 - 1);
+}
+
+inline int decodeLedFramePeriod(uint8_t low, uint8_t high) {
+  return normalizeLedFramePeriod(static_cast<unsigned>(low) | (static_cast<unsigned>(high) << 8));
 }

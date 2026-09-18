@@ -580,8 +580,8 @@ Select `Advanced` for these maintenance and system rows:
 - `Update Firmware`
 - `Serial Debug`
 - `LED Test`
-- `LED Dither`
-- `LED Frame us`
+- `Color Dither`
+- `Frame Coarse us` and `Frame Fine us` (when dithering is on)
 
 `Invert Encoder` reverses the normal encoder direction for your hardware.
 `Button Encoder` enables command-button rotation (off by default). Hold the
@@ -607,23 +607,20 @@ it. The page initially shows `Enabled`; turning it on reveals `General Log`,
 through `Red`, `Green`, `Blue`, or `White` to light every LED immediately.
 Leaving the selector resets it to `Off` and restores the normal LED display.
 
-`LED Dither` selects `8 bit`, `9 bit`, or `10 bit` for the current session.
-`10 bit` is the startup default. Higher settings alternate neighboring LED
-levels to show intermediate brightness. `10 bit` provides finer steps but can
-show more flicker, especially at very low brightness or while moving your eyes.
-It is not saved in profiles. For comparison, choose `Faint` or `Extra Dim` in
-`Lights & Colors`, then switch `LED Dither` while viewing the normal palette.
+`Color Dither` is a saved profile toggle, off by default. Off uses 8-bit
+output; on uses 10-bit temporal dithering to show intermediate brightness.
+Dithering can show flicker at very low brightness. Compare it using `Faint`
+or `Extra Dim` in `Lights & Colors` while viewing the normal palette.
 `LED Test` uses direct RGB brightness, so its full-board colors are brighter
 than gamma-corrected palette colors at the same brightness setting.
 
-`LED Frame us` adjusts the time between LED frames from `4328` to `5000`
-microseconds in steps of `4`. Turning the encoder previews the timing live.
-It starts at `4328` after reboot and is not saved in profiles. Larger values
-slow the refresh rate. To compare flicker, keep the palette, brightness, and
-`LED Dither` setting fixed while changing only `LED Frame us`. A good value
-may differ between boards and individual LEDs.
-
-
+With dithering on, `Frame Coarse us` and `Frame Fine us` adjust the same saved
+frame period, from `4328` to `6000` microseconds. Coarse adjustments use `100`
+microseconds and fine adjustments use `4`. Turning the encoder previews the
+change live; confirm to save it using the normal profile/auto-save behavior.
+The default is `4328`. Turning dithering off hides the timing controls but
+retains their value. Larger values slow refresh. Keep palette and brightness
+fixed when comparing flicker; the best timing may differ between boards or LEDs.
 
 ### External Delegated Control
 
@@ -724,9 +721,10 @@ Important factory defaults include:
 Use `HexBoard_Factory.uf2` for a factory installation. It erases all saved
 settings, presets, wavetables, tunings, layouts, and sequences, then installs a
 complete factory library. Use `HexBoard_Update.uf2` to update firmware without
-changing your library. Settings from an incompatible beta may return to their
-defaults, while compatible presets, wavetables, tunings, and sequences remain
-available.
+changing your library. Settings from version 32 onward are preserved through supported migrations;
+new options receive their defaults. Older unsupported or damaged settings may
+return to defaults. Compatible presets, wavetables, tunings, and sequences
+remain available.
 
 If stored content cannot be read after an update, HexBoard continues with safe
 defaults and reports the affected item under `Settings` -> `Advanced` ->

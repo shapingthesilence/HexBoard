@@ -185,7 +185,7 @@ public:
   LedColor getPixelColor(byte i) const { return pixels[i]; }
   static LedColor Color(uint16_t r, uint16_t g, uint16_t b) { return {r,g,b}; }
   void clear() { for (auto& pixel : pixels) pixel = 0; }
-  void show() { submitLedFrame(pixels, ledDitherBits, ledCurrentLimitMilliamps, ledFramePeriodMicros); }
+  void show() { submitLedFrame(pixels, ledDitherDepth(colorDithering), ledCurrentLimitMilliamps, ledFramePeriodMicros); }
 };
 LedFrame strip;
 } // namespace

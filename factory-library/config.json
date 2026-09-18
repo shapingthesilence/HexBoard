@@ -1,5 +1,5 @@
 {
-  "settingsVersion": 32,
+  "settingsVersion": 33,
   "selectedPreset": "Pads/Lo-Fi Synth Strings",
   "selectedWavetable": "/Classic",
   "selectedGeometry": "12 EDO (Normal)",
@@ -118,6 +118,9 @@
     "SequencerSendClock": 0,
     "SequencerSendTransport": 0,
     "PiezoVolumeCap": 127,
-    "CurrentKeyStepsFromAHigh": 0
+    "CurrentKeyStepsFromAHigh": 0,
+    "ColorDithering": 0,
+    "LedFramePeriodLow": 232,
+    "LedFramePeriodHigh": 16
   }
 }

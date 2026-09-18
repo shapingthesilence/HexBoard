@@ -239,9 +239,18 @@ non-synth setting bytes, stable tuning/layout/scale references, compact synth
 preset-or-draft references, and payload CRC32. Synth values and wavetable
 references come from the referenced named preset or hidden profile draft.
 
-`CURRENT_SETTINGS_VERSION` is 30. Firmware accepts only that version and exact
-payload size. Invalid or missing settings use hardware-aware RAM defaults and
-are written only by normal save behavior.
+`CURRENT_SETTINGS_VERSION` is 33. `SettingsMigration.h` defines frozen profile
+widths for supported versions: 57 non-synth bytes for version 32 and 60 for 33.
+The loader checks the exact size and original CRC before expanding each profile
+with current factory defaults. Geometry and synth references retain their layout.
+Migration happens in RAM, marks settings dirty, and is persisted by normal
+saving (including auto-save when enabled), never by a boot-time rewrite.
+Unsupported versions, invalid or missing settings use hardware-aware RAM defaults.
+`tests/settings_migration_test.cpp` checks all nine profiles and defaulted fields;
+`python3 tests/test_led_settings_factory.py` checks factory encoding and validation.
+Future schema changes must retain explicit, tested conversions from supported
+versions; reordered keys or changed byte meanings require a conversion, not
+just a new width entry.
 
 The selected key offset is a signed 16-bit value stored in the
 `CurrentKeyStepsFromA` low byte and `CurrentKeyStepsFromAHigh` high byte. For
@@ -458,20 +467,24 @@ needed. Limits below idle consumption send black; software cannot remove the
 LEDs' idle draw. Normal, boot, delegated, test, and sequencer output all use this
 path. Firmware-update entry waits for black to latch before rebooting.
 
-`Advanced` -> `LED Dither` temporarily selects 8, 9, or 10 bits and resets to 10
-on boot. It is not a persisted setting or a diagnostic build variant. The default is 10 bits; there is no automatic brightness-dependent mode switch. `Faint` (24) and `Extra Dim` (40) extend the existing brightness menu
-below `Dimmer` (70) without changing settings layout or byte meaning.
+`Advanced` -> `Color Dither` stores `ColorDithering` per profile (default 0).
+Off uses 8-bit output; on uses 10 bits. `Faint` (24) and `Extra Dim` (40) extend
+the brightness menu below `Dimmer` (70).
 
-`Advanced` -> `LED Frame us` is a session-only integer spinner from 4328 to
-5000 in 4us increments; it resets to 4328 on boot. The 800 kbit/s wire rate
+The conditional `Frame Coarse us` and `Frame Fine us` controls edit one period
+in 100us and 4us steps, respectively, over 4328–6000us. The default is 4328us.
+`LedFramePeriodLow` and `LedFramePeriodHigh` store the period as a little-endian
+16-bit integer. Runtime loading clamps and rounds it to the supported range;
+profile changes and boot synchronize both LED settings. Turning dithering off
+retains the saved timing. The 800 kbit/s wire rate
 stays fixed. PIO extracts the reset count into ISR and the bit count into Y,
 transmits pixels, then copies ISR to X for the latch-low loop. Each loop
 iteration consumes 32 clocks at 8 MHz (4us). For 140 LEDs, pixel transmission
 takes 4200us and framing adds 0.5us; the menu displays the integer part of the
-nominal period (4328.5–5000.5us). The low interval is always at least 128us.
+nominal period (4328.5–6000.5us). The low interval is always at least 128us.
 Timing is encoded into all four headers before bank publication, so a change
 cannot alter an active cycle or be discarded by unchanged-color suppression.
-Bootloader entry allows 80ms for black to latch at the slowest setting.
+Bootloader entry allows 96ms for black to latch at the slowest setting.
 
 
 Host checks live in `tests/led_color_test.cpp` and cover the gamma curve,
