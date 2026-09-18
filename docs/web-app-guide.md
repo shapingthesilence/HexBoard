@@ -137,7 +137,13 @@ an earlier chord dim when the target advances, while common tones remain lit.
 adds nine timed lessons and an untimed introduction to duplicate buttons:
 steady pulse, changing notes, eighth notes, mixed lengths, rests, 3/4, offbeats,
 chord changes, duplicate buttons, and a short original phrase. Timed goals range
-from 60 to 80 quarter notes per minute; lower practice tempos remain available.
+from 60 to 80 quarter notes per minute. The **Practice tempo** slider offers
+20–300 BPM; its bottom **Step** position turns off the metronome and waits for
+the correct notes before revealing the next step. Chords require all target
+notes held together, with unrelated notes released. Silent rest steps are
+skipped in Step mode. **Hear example** still plays at the lesson's goal tempo.
+Step mode is for rehearsal, not timed completion: play at or above the goal BPM
+and meet the timing score to record a timed lesson as complete.
 
 Both courses recommend a compact set of physical buttons on Wicki-Hayden,
 Harmonic Table, and Gerhard. Each pitch keeps the same recommended button across

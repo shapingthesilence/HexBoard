@@ -54,6 +54,20 @@ describe("beginner course", () => {
     expect(run.complete).toBe(true);
     expect(run.held.size).toBe(8);
   });
+  it("advances timed step practice only on correct notes and skips unplayable rests", () => {
+    const run = new CourseRun({ id: "step", title: "Step", section: "Test", instruction: "", targets: [[], [60, 64], [], [67], []], timing: { goalBpm: 80, beats: [1, 1, 1, 1, 1] } });
+    expect(run.step).toBe(1);
+    run.press(0, 60, 10);
+    run.release(0, 20);
+    run.press(1, 64, 30);
+    expect(run.step).toBe(1);
+    run.press(0, 60, 40);
+    expect(run.step).toBe(3);
+    expect(run.complete).toBe(false);
+    run.press(2, 67, 50);
+    expect(run.complete).toBe(true);
+    expect(run.elapsedMs).toBe(40);
+  });
 });
 
 describe("local course progress", () => {

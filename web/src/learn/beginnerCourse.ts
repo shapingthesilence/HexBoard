@@ -39,9 +39,13 @@ export class CourseRun extends MajorScaleRun {
   private lastEventAt = 0;
   constructor(readonly lesson: CourseLesson, readonly layoutId = "", label: (note: number) => string = noteName) {
     super(lesson.targets.map(target => target[0]), label);
+    this.skipRests();
     this.feedback = "Play the highlighted notes.";
   }
   get target() { return this.lesson.targets[this.step] ?? []; }
+  private skipRests() {
+    while (this.step < this.lesson.targets.length && this.lesson.targets[this.step].length === 0) this.step++;
+  }
   override press(index: number, note: number, receivedAt = performance.now()) {
     if (this.complete || this.held.has(index)) return false;
     this.held.set(index, note);
@@ -70,6 +74,7 @@ export class CourseRun extends MajorScaleRun {
       return;
     }
     this.step++;
+    this.skipRests();
     this.attacked = false;
     if (this.complete) {
       this.finishedAt = receivedAt;

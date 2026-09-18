@@ -25,6 +25,7 @@ import { upcomingTimingSteps } from "../learn/timingCues.ts";
 import { TimingCue } from "../learn/TimingCue.tsx";
 
 type Stage = "ready" | "starting" | "practice" | "demo" | "complete" | "waiting" | "free";
+const stepTempo = 19; // One slider position below the supported 20–300 BPM range.
 
 export function Learn({ transport, connected, deviceHello }: { transport: MidiTransport; connected: boolean; deviceHello?: HelloResponsePayload | null }) {
   const [page, setPage] = useState<"practice" | "course" | "progress">("practice");
@@ -96,6 +97,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
   const activeBeatMode = course ? !!lesson.timing : beatMode;
   const [practiceBpm,setPracticeBpm]=useState(80);
   useEffect(()=>{setHints(true);setPracticeBpm(lesson.timing?.goalBpm??80);},[lesson.id,courseId]);
+  const stepPractice = course && !!lesson.timing && practiceBpm === stepTempo;
   const activeBpm = course ? practiceBpm : bpm;
   const [continuous, setContinuous] = useState(true);
   const [contrast,setContrast]=useState(()=>{try{const saved=Number(localStorage.getItem("hexboard.learn.contrast")??50);return Number.isFinite(saved)?Math.max(25,Math.min(85,saved)):50;}catch{return 50;}});
@@ -321,7 +323,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
     metronome.current?.stop();
     metronome.current = null;
     run.current = course ? new CourseRun(lesson, selection.layout.objectIdHex, labelNote) : new MajorScaleRun(notes, labelNote);
-    if (activeBeatMode) {
+    if (activeBeatMode && !stepPractice) {
       const clock = new PracticeMetronome();
       metronome.current = clock;
       const startAt = await clock.start(activeBpm, course && lesson.timing ? lesson.timing.beats.reduce((sum, beats) => sum + beats, 0) : notes.length);
@@ -339,13 +341,14 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
     finalized.current = finished;
     const beat = finished instanceof BeatScaleRun ? finished.result() : undefined;
     setLastRun((last) => ({ number: (last?.number ?? 0) + 1, elapsedMs: finished.elapsedMs, mistakes: finished.mistakes, beat }));
-    if (course && (finished instanceof CourseRun || (beat && canPassTimedLesson(lesson,activeBpm,beat.score,beat.missed)))) {
+    if (course && ((finished instanceof CourseRun && !lesson.timing) || (beat && canPassTimedLesson(lesson,activeBpm,beat.score,beat.missed)))) {
       const nextProgress = recordCourseRun(progress, courseProgressId(selectedCourse, lesson.id), selectedCourse ? courseLayoutProgressId(bundle,selection.layout) : `${bundle.objectIdHex}:${selection.layout.objectIdHex}`, finished.mistakes, usedHints.current, undefined, beat ? {score:beat.score,bpm:activeBpm} : undefined);
       setProgress(nextProgress);
       try { localStorage.setItem(courseProgressKey, JSON.stringify(nextProgress)); setProgressMessage(""); }
       catch { setProgressMessage("Progress could not be saved in this browser."); }
     }
-    if(course && beat && lesson.timing && activeBpm < lesson.timing.goalBpm)setMessage(`Practice scored. Reach ${lesson.timing.goalBpm} BPM to complete this lesson.`);
+    if(course && lesson.timing && (stepPractice || (beat && activeBpm < lesson.timing.goalBpm)))
+      setMessage(stepPractice ? `Step practice complete. Play at ${lesson.timing.goalBpm} BPM to complete this lesson.` : `Practice scored. Reach ${lesson.timing.goalBpm} BPM to complete this lesson.`);
     if (continuous && !course) {
       const next = finished instanceof BeatScaleRun
         ? new BeatScaleRun(notes, finished.startAt + (notes.length + 4) * finished.periodMs, bpm, labelNote)
@@ -437,7 +440,8 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
     setDemoStep(0);
     setStage("demo");
     setMessage("");
-    const durations = targets.map((_, index) => course && lesson.timing ? lesson.timing.beats[index] * 60000 / activeBpm : 650);
+    const demoBpm = stepPractice ? lesson.timing!.goalBpm : activeBpm;
+    const durations = targets.map((_, index) => course && lesson.timing ? lesson.timing.beats[index] * 60000 / demoBpm : 650);
     const demoVoices=new Map<number,number>();
     let offset = 0;
     targets.forEach((chord, index) => {
@@ -447,7 +451,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
         setDemoNote(chord);
         chord.forEach(note => { demoVoices.set(note,index); void audio.current?.noteOn(note).catch(() => stop("Browser audio stopped. Start again when ready.")); });
       }, at));
-      chord.forEach((note,voice)=>{const hold=course&&lesson.timing?(lesson.timing.holdBeats?.[index]?.[voice]??lesson.timing.beats[index])*60000/activeBpm:durations[index]*0.8;timers.current.push(setTimeout(()=>{if(demoVoices.get(note)===index)audio.current?.noteOff(note);},at+hold));});
+      chord.forEach((note,voice)=>{const hold=course&&lesson.timing?(lesson.timing.holdBeats?.[index]?.[voice]??lesson.timing.beats[index])*60000/demoBpm:durations[index]*0.8;timers.current.push(setTimeout(()=>{if(demoVoices.get(note)===index)audio.current?.noteOff(note);},at+hold));});
     });
     const demoGeneration = generation.current;
     const demoRunGeneration = runGeneration.current;
@@ -455,7 +459,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
       setDemoNote(undefined);
       setStage("starting");
       void prepareRun(hints).then(() => { if (generation.current === demoGeneration && runGeneration.current === demoRunGeneration) { usedHints.current = true; setStage("practice"); setMessage(""); } }).catch(() => { if (generation.current === demoGeneration && runGeneration.current === demoRunGeneration) stop("Could not restart practice."); });
-    }, Math.max(offset,...targets.flatMap((chord,index)=>chord.map((_,voice)=>durations.slice(0,index).reduce((a,b)=>a+b,0)+(course&&lesson.timing?(lesson.timing.holdBeats?.[index]?.[voice]??lesson.timing.beats[index])*60000/activeBpm:durations[index]))))));
+    }, Math.max(offset,...targets.flatMap((chord,index)=>chord.map((_,voice)=>durations.slice(0,index).reduce((a,b)=>a+b,0)+(course&&lesson.timing?(lesson.timing.holdBeats?.[index]?.[voice]??lesson.timing.beats[index])*60000/demoBpm:durations[index]))))));
   }
 
   async function importLayout(event: ChangeEvent<HTMLInputElement>) {
@@ -483,6 +487,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
   const timingRun=hints&&stage==="practice"&&run.current instanceof BeatScaleRun?run.current:undefined;
   const timingSteps=timingRun?upcomingTimingSteps(timingRun.offsets,timingRun.startAt,timingRun.periodMs,now,timingRun.step):[];
   const targetLabel = targetNotes.map(labelNote).join(" + ") || (run.current.step < targets.length ? "Rest" : "");
+  const revealedStep = stage === "ready" || stage === "waiting" ? targets.findIndex(target => target.length > 0) : run.current.step;
   const lightStates = lights.join();
   const ledColors = useMemo(() => keys.map(({ note, steps }, index) => lessonLedColor(note, lights[index], {
     bundle: { ...bundle, layouts: [selection.layout], activeLayoutIdHex: selection.layout.objectIdHex },
@@ -594,7 +599,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
         {course && <><label className="learnField">Course<select value={courseId} disabled={stage === "starting" || libraryBusy} onChange={event => chooseCourse(event.target.value)}><option value="builtin">Beginner course</option><option value="builtin-intermediate">Intermediate course · Rhythm</option>{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
           <label className="learnField">Lesson<select value={lessonIndex} disabled={stage === "starting"} onChange={event => changeLesson(Number(event.target.value))}>{lessons.map((item, index) => <option key={item.id} value={index}>{index + 1}. {item.title}</option>)}</select></label>
           <p className="learnLessonInstruction">{lesson.instruction}</p>
-          {lesson.timing && <><span className="learnMuted">{lesson.timeSignature?.numerator??4}/{lesson.timeSignature?.denominator??4} · Goal: {lesson.timing.goalBpm} BPM</span><label className="learnField">Practice tempo<input aria-label="Practice tempo" type="number" min={20} max={300} value={practiceBpm} disabled={engaged&&stage!=="complete"} onChange={event=>setPracticeBpm(Math.max(20,Math.min(300,Math.round(Number(event.target.value)))))}/></label></>}
+          {lesson.timing && <><span className="learnMuted">{lesson.timeSignature?.numerator??4}/{lesson.timeSignature?.denominator??4} · Goal: {lesson.timing.goalBpm} BPM</span><label className="learnField">Practice tempo · {stepPractice ? "Step" : `${practiceBpm} BPM`}<input aria-label="Practice tempo" type="range" min={stepTempo} max={300} step={1} value={practiceBpm} disabled={engaged&&stage!=="complete"} onChange={event=>setPracticeBpm(Number(event.target.value))}/></label>{stepPractice && <span className="learnMuted">No metronome. Play the highlighted notes to reveal the next step; rests are skipped.</span>}</>}
           <details className="learnSettings"><summary>Manage courses</summary>{session.current&&<p className="learnMuted">Stop the learning session to edit or record a course.</p>}<div className="learnActions">
             <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(false)}>Create course</button>
             <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(true)}>Make a copy</button>
@@ -655,7 +660,7 @@ export function Learn({ transport, connected, deviceHello }: { transport: MidiTr
         </>}
         <label className="checkField"><input type="checkbox" checked={hints} disabled={stage === "demo"} onChange={event => { setHints(event.target.checked); if (event.target.checked && engaged) usedHints.current = true; }} />Hints</label></div>
         <div className="learnPracticeHeader"><h3>{stage === "free" ? "Play freely" : stage === "waiting" ? "Release all keys" : stage === "complete" ? "Finished" : stage === "demo" ? `Listen: ${targetLabel}` : countingIn ? "Four clicks, then play" : stage === "practice" ? (hints ? `Next: ${targetLabel || "finished"}` : "Play from memory") : stage === "starting" ? "Starting…" : course ? lesson.title : selectedScale?.name ?? "Choose a scale"}</h3><span>{engaged ? run.current.step : 0}/{notes.length}</span></div>
-        {stage !== "free" && (stage === "ready" || stage === "waiting" || stage === "demo" || hints) && <ol className="learnScaleSteps" aria-label="Exercise notes">{targets.map((chord, index) => <li key={index} className={progressClass(index)} aria-current={index === run.current.step && stage === "practice" ? "step" : undefined}><span>{chord.map(labelNote).join(" + ") || "Rest"}{course && lesson.timing && ` · ${lesson.timing.beats[index]}b`}</span></li>)}</ol>}
+        {stage !== "free" && (stage === "ready" || stage === "waiting" || stage === "demo" || hints) && <ol className="learnScaleSteps" aria-label="Exercise notes">{targets.map((chord, index) => (!stepPractice || (chord.length > 0 && (stage === "demo" || stage === "complete" || index <= revealedStep))) && <li key={index} className={progressClass(index)} aria-current={index === run.current.step && stage === "practice" ? "step" : undefined}><span>{chord.map(labelNote).join(" + ") || "Rest"}{course && lesson.timing && !stepPractice && ` · ${lesson.timing.beats[index]}b`}</span></li>)}</ol>}
         {hints && stage === "practice" && cues.some(cue => cue.hand || cue.finger || (cue.button !== undefined && cue.acceptDuplicates === false)) && <div className="learnFingering" aria-label="Hand and finger cues">{cues.map(cue => <span key={cue.note}>{labelNote(cue.note)} {cueLabel(cue)}{cue.button !== undefined && cue.acceptDuplicates === false ? ` · key ${cue.button} required` : ""}</span>)}</div>}
         <div className="learnRunStats">
           {stage === "practice" && run.current instanceof BeatScaleRun && <div className="learnBeatClock"><span aria-hidden="true" className={(now - run.current.startAt + 4 * run.current.periodMs) % run.current.periodMs < 120 ? "pulse" : ""}>●</span>{countingIn ? `Count-in ${Math.max(1, Math.min(4, 5 - Math.ceil((run.current.startAt - now) / run.current.periodMs)))}/4` : `${activeBpm} BPM`}</div>}

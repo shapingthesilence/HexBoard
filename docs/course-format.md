@@ -55,7 +55,11 @@ recovery draft. Only this v2 format is supported.
 
 ## Timing and key evaluation
 
-Free lessons wait for correct notes. Single-note targets allow overlap. Chords
+Free lessons and the bottom **Step** position of a timed lesson's practice-tempo
+slider wait for correct notes without metronome clicks. Step mode skips silent
+rests and reveals subsequent steps only after the current target is satisfied;
+it does not count as timed completion. The example plays at the goal BPM in
+this mode. Single-note targets allow overlap. Chords
 require their target pitches held together with unrelated pitches released;
 common tones may remain held between chords. When a cue disallows duplicates,
 the specified physical key is required. Hand/finger labels are instructional
