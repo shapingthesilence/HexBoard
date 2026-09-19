@@ -96,7 +96,7 @@ and `TRANSFER_END` so firmware can pace object transfers.
 
 ## Learning and Course Authoring
 
-User courses and recoverable drafts use separate IndexedDB stores and self-contained v2 JSON export.
+User courses and recoverable drafts use separate IndexedDB stores and self-contained v3 JSON export (v2 imports remain supported).
 The editor is under Manage courses, with live HexBoard phrase recording,
 per-layout key/hand/finger cues, a tuning/layout selection dialog, and a canonical
 piano roll with direct note creation, independent holds, time signatures, and
@@ -206,3 +206,5 @@ mip selection, and voice transitions differ from firmware. It does not model
 the piezo, analog output, hardware tuning layout, or control scheduling.
 Worklet tests render samples without an audio device and check pitch, modulation,
 envelopes, table loading, and note lifecycle.
+
+Course authoring helpers: `beatGrid.ts` owns straight/triplet divisions, `courseStructure.ts` owns outline moves, compatibility and embedded layout transposition, and `CourseMarkdown.tsx` renders safe course prose. Completion policies and content pages are defined in the [course format](../docs/course-format.md).

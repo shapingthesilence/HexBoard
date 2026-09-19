@@ -28,7 +28,7 @@ playback, board/hand assignment panels, per-lesson assessment fingerprints, and 
 Learn-scoped device session: self-contained course files,
 optional required layouts, hand/finger cues, preferred physical keys, timed
 melodies/chords/rests, and direct HexBoard phrase recording. Short song segments
-can be recorded or entered as phrases. See the [course contract](course-format.md).
+can be recorded or entered as phrases. Authoring also includes triplet grids, group movement and copy/paste, Markdown pages and introductions, a draggable section outline, learner preview, layout transposition, compatibility reports, and compact completion policies. See the [course contract](course-format.md).
 
 Milestones 3–5 remain proposals beyond these pieces; scale rhythm practice,
 static microtonal practice, and authored song segments have been brought forward. Current operation belongs

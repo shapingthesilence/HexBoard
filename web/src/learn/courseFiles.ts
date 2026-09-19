@@ -1,8 +1,9 @@
+import { onBeatGrid,beatTick } from "./beatGrid.ts";
 import { parseTuningBundleFile, TuningBundleFileFormat, type TuningBundle, type TuningBundleLayout } from "../catalogs/layoutsCatalog.ts";
 import { resolveLessonKeys, type LessonKey, type KeyLight } from "./majorScale.ts";
 import type { CourseLesson, KeyCue } from "./beginnerCourse.ts";
 
-export const courseFormat = "hexboard.course.v2";
+export const courseFormat = "hexboard.course.v3";
 export const courseLibraryKey = "hexboard.learn.courses.v2";
 export const maxCourseBytes = 2_000_000;
 export interface UserCourse {
@@ -11,6 +12,7 @@ export interface UserCourse {
   revision: number;
   title: string;
   author: string;
+  description?: string;
   bundle: TuningBundle;
   layoutId?: string;
   lessons: CourseLesson[];
@@ -30,7 +32,7 @@ function id(value: unknown): string {
 }
 export function parseCourse(value: unknown): UserCourse {
   const input = object(value);
-  if (input.format !== courseFormat) throw new Error("Unsupported course file. Choose a HexBoard course JSON.");
+  if (input.format !== courseFormat && input.format !== "hexboard.course.v2") throw new Error("Unsupported course file. Choose a HexBoard course JSON.");
   const bundle = parseTuningBundleFile({ format: TuningBundleFileFormat, tuningBundle: input.bundle });
   const layoutId = input.layoutId === undefined ? undefined : text(input.layoutId, "Layout ID", 32);
   if (layoutId && !bundle.layouts.some(layout => layout.objectIdHex === layoutId)) throw new Error("The required layout is missing from this course.");
@@ -38,11 +40,16 @@ export function parseCourse(value: unknown): UserCourse {
   if (!Array.isArray(input.lessons) || !input.lessons.length || input.lessons.length > 100) throw new Error("A course needs 1–100 lessons.");
   const lessons = input.lessons.map((raw): CourseLesson => {
     const lesson = object(raw);
+    if(lesson.kind!==undefined&&lesson.kind!=="practice"&&lesson.kind!=="content")throw new Error("Unknown lesson type.");
+    if(lesson.kind==="content")return {kind:"content",id:id(lesson.id),title:text(lesson.title,"Page title",100),section:text(lesson.section??"My lessons","Section",80),instruction:"",targets:[],markdown:text(lesson.markdown??"","Page content",50000,true)};
+    if(lesson.repetitions!==undefined&&(!Number.isInteger(lesson.repetitions)||Number(lesson.repetitions)<1||Number(lesson.repetitions)>100))throw new Error("Repetitions must be 1–100.");
     if (!Array.isArray(lesson.targets) || !lesson.targets.length || lesson.targets.length > 256) throw new Error("Each lesson needs 1–256 steps.");
     const targets = lesson.targets.map(rawNotes => {
       if (!Array.isArray(rawNotes) || rawNotes.length > 10 || rawNotes.some(note => typeof note !== "number" || !Number.isFinite(note) || note < 0 || note > 127) || new Set(rawNotes).size !== rawNotes.length) throw new Error("Each step needs 1–10 distinct pitches between 0 and 127.");
       return rawNotes as number[];
     });
+    let assessment:CourseLesson["assessment"];
+    if(lesson.assessment!==undefined){const a=object(lesson.assessment);for(const key of ["graded","requireButtons","trackIndependence"])if(a[key]!==undefined&&typeof a[key]!=="boolean")throw new Error("Invalid lesson completion setting.");if(a.passingScore!==undefined&&(!Number.isInteger(a.passingScore)||Number(a.passingScore)<0||Number(a.passingScore)>100))throw new Error("Passing score must be 0–100.");assessment={graded:a.graded as boolean|undefined,passingScore:a.passingScore as number|undefined,requireButtons:a.requireButtons as boolean|undefined,trackIndependence:a.trackIndependence as boolean|undefined};}
     let timeSignature: CourseLesson["timeSignature"];
     if (lesson.timeSignature !== undefined) {
       const meter = object(lesson.timeSignature);
@@ -52,10 +59,10 @@ export function parseCourse(value: unknown): UserCourse {
     let timing: CourseLesson["timing"];
     if (lesson.timing !== undefined) {
       const t = object(lesson.timing);
-      if (typeof t.goalBpm !== "number" || !Number.isInteger(t.goalBpm) || t.goalBpm < 20 || t.goalBpm > 300 || !Array.isArray(t.beats) || t.beats.length !== targets.length || t.beats.some(beats => typeof beats !== "number" || !Number.isFinite(beats) || !Number.isInteger(beats * 4) || beats < 0.25 || beats > 8)) throw new Error("Timing needs 20–300 BPM. Step spacing must be 0.25 to 8 quarter-note beats, in increments of 0.25.");
+      if (typeof t.goalBpm !== "number" || !Number.isInteger(t.goalBpm) || t.goalBpm < 20 || t.goalBpm > 300 || !Array.isArray(t.beats) || t.beats.length !== targets.length || t.beats.some(beats => typeof beats !== "number" || !Number.isFinite(beats) || !onBeatGrid(beats) || beats < beatTick-1e-8 || beats > 8)) throw new Error("Timing needs 20–300 BPM. Step spacing must be positive, at most 8 quarter notes, on the straight/triplet grid.");
       let holdBeats: number[][] | undefined;
       if (t.holdBeats !== undefined) {
-        if (!Array.isArray(t.holdBeats) || t.holdBeats.length !== targets.length || t.holdBeats.some((row, index) => !Array.isArray(row) || row.length !== targets[index].length || row.some(value => typeof value !== "number" || value < 0.25 || value > 32 || !Number.isInteger(value * 4)))) throw new Error("Each note length must be 0.25 to 32 quarter-note beats, in increments of 0.25.");
+        if (!Array.isArray(t.holdBeats) || t.holdBeats.length !== targets.length || t.holdBeats.some((row, index) => !Array.isArray(row) || row.length !== targets[index].length || row.some(value => typeof value !== "number" || value < beatTick-1e-8 || value > 32 || !onBeatGrid(value)))) throw new Error("Each note length must be positive, at most 32 quarter notes, on the straight/triplet grid.");
         holdBeats = t.holdBeats as number[][];
       }
       timing = { goalBpm: t.goalBpm, beats: t.beats as number[], holdBeats };
@@ -77,7 +84,7 @@ export function parseCourse(value: unknown): UserCourse {
             const cue = object(rawCue);
             if (typeof cue.note !== "number" || !targets[step].includes(cue.note) || seen.has(cue.note)) throw new Error("Fingering pitch is not in this step.");
             seen.add(cue.note);
-            if (cue.button !== undefined && (!Number.isInteger(cue.button) || keys[Number(cue.button)]?.note !== cue.note)) throw new Error("Preferred key must play the assigned pitch on its layout.");
+            if (cue.button !== undefined && (!Number.isInteger(cue.button) || !keys[Number(cue.button)])) throw new Error("Preferred key must play the assigned pitch on its layout.");
             if (cue.hand !== undefined && cue.hand !== "left" && cue.hand !== "right") throw new Error("Hand must be left or right.");
             if (cue.finger !== undefined && (!Number.isInteger(cue.finger) || Number(cue.finger) < 1 || Number(cue.finger) > 5)) throw new Error("Finger must be 1–5 (thumb to little finger).");
             if (cue.acceptDuplicates !== undefined && typeof cue.acceptDuplicates !== "boolean") throw new Error("Invalid duplicate-key rule.");
@@ -87,17 +94,10 @@ export function parseCourse(value: unknown): UserCourse {
         fingerings.push({ layoutId: layout.objectIdHex, steps });
       }
     }
-    // A layout-specific course must be fully playable on that layout. An open
-    // course can ship several layouts; at least one must cover the whole lesson.
-    const candidates = bundle.layouts.filter(layout => !layoutId || layout.objectIdHex === layoutId);
-    if (!candidates.some(layout => {
-      const keys = resolveLessonKeys({ id: layout.objectIdHex, label: layout.name, layout, bundle });
-      return targets.flat().every(note => keys.some(key => key.note === note));
-    })) throw new Error("This lesson has pitches missing from its layouts. Choose available notes or a wider layout.");
-    return { id: id(lesson.id), title: text(lesson.title, "Lesson title", 100), section: text(lesson.section ?? "My lessons", "Section", 80), instruction: text(lesson.instruction, "Lesson explanation", 2000), targets, timing, timeSignature, fingerings };
+    return { id: id(lesson.id), title: text(lesson.title, "Lesson title", 100), section: text(lesson.section ?? "My lessons", "Section", 80), instruction: text(lesson.instruction, "Lesson explanation", 2000), targets, timing, timeSignature, fingerings, ...(assessment?{assessment}:{}), ...(lesson.repetitions===undefined?{}:{repetitions:Number(lesson.repetitions)}) };
   });
   if (new Set(lessons.map(lesson => lesson.id)).size !== lessons.length) throw new Error("Lesson IDs must be unique.");
-  return { format: courseFormat, id: id(input.id), revision: Number(input.revision), title: text(input.title, "Course title", 100), author: text(input.author ?? "", "Author", 100, true), bundle, layoutId, lessons };
+  return { format: courseFormat, id: id(input.id), revision: Number(input.revision), title: text(input.title, "Course title", 100), author: text(input.author ?? "", "Author", 100, true), bundle, layoutId, lessons, ...(input.description===undefined?{}:{description:text(input.description,"Course introduction",50000,true)}) };
 }
 export function readCourseFile(raw: string): UserCourse {
   if (new TextEncoder().encode(raw).length > maxCourseBytes) throw new Error("Course files must be smaller than 2 MB.");
@@ -115,7 +115,8 @@ export function courseProgressId(course: UserCourse | undefined, lessonId: strin
   return course && lesson ? `user:${course.id}:${assessmentFingerprint(course, lesson)}:${lessonId}` : lessonId;
 }
 export function lessonCues(lesson: CourseLesson, layoutId: string, step: number): readonly KeyCue[] {
-  return lesson.fingerings?.find(item => item.layoutId === layoutId)?.steps[step] ?? [];
+  const cues=lesson.fingerings?.find(item => item.layoutId === layoutId)?.steps[step] ?? [];
+  return lesson.assessment?.requireButtons?cues.map(cue=>({...cue,acceptDuplicates:cue.button===undefined?cue.acceptDuplicates:false})):cues;
 }
 export function cueAccepts(cues: readonly KeyCue[], index: number, note: number) {
   const cue = cues.find(cue => cue.note === note);
@@ -158,8 +159,8 @@ export function parsePhrase(source: string): { targets: number[][]; beats: numbe
 // Only graded content participates: prose, ordering, fingering advice and
 // playback-only holds can change without erasing an achievement.
 export function assessmentFingerprint(course: UserCourse, lesson: CourseLesson): string {
-  const strict = (lesson.fingerings ?? []).map(item => ({ layoutId: item.layoutId, steps: item.steps.map(cues => cues.filter(cue => cue.button !== undefined && cue.acceptDuplicates === false).map(cue => ({note:cue.note,button:cue.button})).sort((a,b)=>a.note-b.note)) })).filter(item => item.steps.some(cues=>cues.length)).sort((a,b)=>a.layoutId.localeCompare(b.layoutId));
-  const value = JSON.stringify({ targets: lesson.targets.map(notes=>[...notes].sort((a,b)=>a-b)), timing: lesson.timing ? {goalBpm:lesson.timing.goalBpm,beats:lesson.timing.beats} : undefined, strict, requiredLayout:course.layoutId });
+  const strict = (lesson.fingerings ?? []).map(item => ({ layoutId: item.layoutId, steps: item.steps.map(cues => cues.filter(cue => cue.button !== undefined && (cue.acceptDuplicates === false || lesson.assessment?.requireButtons === true)).map(cue => ({note:cue.note,button:cue.button})).sort((a,b)=>a.note-b.note)) })).filter(item => item.steps.some(cues=>cues.length)).sort((a,b)=>a.layoutId.localeCompare(b.layoutId));
+  const value = JSON.stringify({ targets: lesson.targets.map(notes=>[...notes].sort((a,b)=>a-b)), timing: lesson.timing ? {goalBpm:lesson.timing.goalBpm,beats:lesson.timing.beats} : undefined, strict, requiredLayout:course.layoutId, ...(lesson.assessment?{assessment:lesson.assessment}:{}), ...(lesson.repetitions!==undefined?{repetitions:lesson.repetitions}:{}) });
   return contentHash(value);
 }
 function contentHash(value:string) {
@@ -168,7 +169,7 @@ function contentHash(value:string) {
   return [a,b].map(n=>(n>>>0).toString(16).padStart(8,"0")).join("");
 }
 export function canPassTimedLesson(lesson: CourseLesson, practiceBpm: number, score: number, missed: number) {
-  return !!lesson.timing && practiceBpm >= lesson.timing.goalBpm && score >= 75 && missed === 0;
+  return !!lesson.timing && practiceBpm >= lesson.timing.goalBpm && score >= (lesson.assessment?.passingScore??75) && missed === 0;
 }
 
 export function courseLayoutProgressId(bundle:TuningBundle,layout:TuningBundleLayout):string {

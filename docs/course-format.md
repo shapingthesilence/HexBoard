@@ -5,9 +5,9 @@ This reference describes the implemented browser format and evaluation rules.
 
 ## Portable format
 
-A `.hexcourse.json` file has `format: "hexboard.course.v2"`, `id`, positive
+A `.hexcourse.json` file has `format: "hexboard.course.v3"`, `id`, positive
 integer `revision`, `title`, optional-empty `author`, `bundle`, optional
-`layoutId`, and `lessons`. The embedded `bundle` uses the existing normalized
+`layoutId`, optional Markdown `description` (up to 50,000 characters), and `lessons`. The embedded `bundle` uses the existing normalized
 [TuningBundle](../web/src/catalogs/layoutsCatalog.ts) shape: tuning definition,
 reference frequency, palette, layouts (including explicit button overrides),
 scales, and active layout/scale IDs. It is a snapshot, independent of the
@@ -20,7 +20,7 @@ elsewhere in Learn never adds it to a course. Device reads remain lazy: names
 first, then only the selected definitions.
 Fingering rules apply only to the layout ID for which they were authored.
 
-Each lesson contains:
+Practice lessons (`kind` omitted or `"practice"`) contain:
 
 | Field | Meaning |
 | --- | --- |
@@ -28,30 +28,31 @@ Each lesson contains:
 | `targets` | Ordered pitch arrays: one pitch for a melody, several for a chord, empty for a timed rest |
 | `timing` (optional) | Integer `goalBpm` (20–300), `beats` onset spacing per step, optional per-note `holdBeats` |
 | `timeSignature` (optional) | `{numerator, denominator}`; numerator 1–16, denominator 2, 4, 8, or 16; defaults to 4/4 |
+| `repetitions` (optional) | 1–100 consecutive passing, mistake-free runs; omitted means one passing run |
+| `assessment` (optional) | `graded` (default true), `passingScore` (0–100, default 75), `requireButtons` (default false), `trackIndependence` (default true) |
 | `fingerings` (optional) | Per-layout `{layoutId, steps}` entries, with one cue array per target |
+
+Content pages use `kind: "content"`, identity/title/section, and `markdown` (up to 50,000 characters). They normalize to empty targets and have no grading or completion requirement. Course descriptions and pages render headings, paragraphs, lists, blockquotes, fenced code, emphasis, inline code, and safe web/mail links. Raw HTML is escaped.
 
 Pitches are MIDI-equivalent numbers in 0–127, including fractional values for
 microtonal pitches. They specify exact pitches, not octave-independent classes.
 All timing values use quarter-note units, regardless of time signature. Step
-spacing is 0.25–8 quarter notes in sixteenth-note increments. Meter controls
+spacing is 1/12–8 quarter notes on a 1/12-quarter-note grid (supporting straight and triplet subdivisions). Meter controls
 bar grouping in the roll and does not change grading, tempo units, or count-in. Untimed lessons cannot
 contain rests. `holdBeats`, when present, has one array per step and one
-0.25–32 beat value per pitch (an empty array for a rest). Omitted holds default
+1/12–32 beat value per pitch (an empty array for a rest). Omitted holds default
 to the step spacing. Holds may overlap later onsets and affect demonstration
 playback only; they are not graded. Each cue has a target `note`, optional physical `button` index,
 optional `hand` (`left`/`right`), optional `finger` (1–5), and optional
-`acceptDuplicates` (defaults true). A button must resolve to that note in its
-embedded layout; command/disabled/chord-action keys cannot be assigned.
+`acceptDuplicates` (defaults true). A button index must exist in its embedded layout. Pitch mismatches are compatibility warnings; the editor only offers matching playable keys for new assignments.
 
 Import limits: 2 MB per file, 100 lessons per course, 256 targets per lesson,
-10 distinct notes per chord, and 50 courses in the browser library. Validation
-requires each lesson to fit its required layout, or at least one included layout
-when unrestricted. The player rechecks range for the chosen layout.
+10 distinct notes per chord, and 50 courses in the browser library. Compatibility reporting lists missing pitches and stale button assignments for every lesson/layout pair without blocking saving. The player checks the chosen layout before starting.
 Invalid files report an error; invalid stored course entries are skipped without
 removing valid entries. Importing an existing course ID presents Update existing, Keep both, and Cancel.
 Update retains the course and lesson IDs; Keep both generates a new course ID.
 The dialog shows incoming and local revisions. Importing never removes a
-recovery draft. Only this v2 format is supported.
+recovery draft. Both v2 and v3 imports are supported; exports use v3.
 
 ## Timing and key evaluation
 
@@ -78,11 +79,13 @@ attack within their window. Timing uses the largest absolute error among their
 new attacks and any final release needed to remove an unrelated note. Quiet
 rests receive credit when their interval ends. The grade rewards timing and
 penalizes misses/extras. A timed course run records completion only when every
-step is satisfied, the score is at least 75, and learner-selected `practiceBpm`
+step is satisfied, the score reaches `assessment.passingScore` (75 by default), and learner-selected `practiceBpm`
 is at least the authored `goalBpm`. Practice accepts 20–300 BPM and slower runs
 receive normal scoring without completion. Practice tempo is player state, not
 course content. Independent completion also
 requires zero extra attempts and no hints/demonstration during the run.
+
+Exploratory lessons (`graded: false`) show no run grade and write no completion progress. `requireButtons` makes every specified button mandatory; unspecified pitches still accept matching keys. `trackIndependence: false` records ordinary completion only. When `repetitions` is present, passing runs must also have no mistakes, misses, or extras. Streaks reset on a failed run, stopping/restarting, changing lesson/layout, or changing hints. They last only for the active practice session.
 
 ## Identity, progress, and storage
 
@@ -90,7 +93,7 @@ Course and lesson IDs remain stable during editing. Course `revision` increases
 when a saved course is edited, but it does not define assessment compatibility.
 Progress uses course ID, lesson ID, and a deterministic assessment fingerprint
 of target pitch sets, onset spacing, goal tempo, strict physical-key rules, and
-required-layout constraint. Titles, explanations, lesson order, hand/finger
+required-layout constraint, assessment settings, and repetition requirement. Titles, explanations, lesson order, hand/finger
 advice, time signatures, accepted duplicate preferences, and playback-only holds
 are excluded.
 Changing one lesson cannot invalidate another lesson's progress.
@@ -120,18 +123,19 @@ Edits immediately rebuild the canonical steps, grouping simultaneous notes,
 retaining rests and per-note cues, and splitting long empty gaps. No second
 piano-roll data model is persisted. Double-click or Command/Ctrl-click adds a
 note; Backspace/Delete removes the selected voice without shifting later music.
-The roll extends automatically and snaps to quarter, eighth, or sixteenth notes.
+Drag empty space to select a group, then drag a selected note to move the group. Single-note onset snapping is absolute. Copy/paste uses an app-local clipboard, retaining each layout’s separate button/hand/finger cues; paste follows the cursor until clicked, and Escape cancels. Pitch edits clear stale preferred buttons on moved notes.
+The roll extends automatically and snaps to quarter, eighth, or sixteenth notes, including triplets.
 The default snap is an eighth note. Free-timing editing uses the same roll,
 with fixed quarter-note columns and holds, compacting empty gaps when notes
 are edited; it does not introduce timing data into untimed lessons.
 Fractional pitches remain exact. Selection identifies a step and voice, shared
 by the roll, preferred-key board, and clickable hand panels. Library selection
 uses a modal overlay. New lessons and added steps start empty; drafts may be
-incomplete, but saved courses require valid, nonempty musical content.
+incomplete, but saved practice lessons require valid, nonempty musical content. Content pages can be text-only.
 `lessonPreview.ts` derives preview gates from the same canonical data, ending an
 earlier overlapping gate before retriggering its pitch. Preview audio and timers
 stop on explicit stop, tab hiding, page exit, or editor unmount.
-Lesson duplication creates a new lesson ID; reordering preserves IDs and cues.
+Lesson duplication creates a new lesson ID; reordering preserves IDs and cues. The collapsible outline groups lessons by section name and supports dragging lessons between sections or moving a section with all its lessons. The Section combo accepts existing or new names. Learner preview runs the draft through Learn without persisting progress. Layout transposition shifts the embedded mapping by whole tuning steps, leaving lesson pitches and cues unchanged for compatibility review.
 
 Performance uses the rotated HexBoard map. Target outlines appear at most one quarter note before their scheduled onset
 and converge at that onset, with chord cues sharing a timestamp. Every upcoming
@@ -168,7 +172,7 @@ Contrast and practice tempo never enter course files.
 - `web/src/learn/CourseEditor.tsx`: authoring UI, browser audio and delegated
   recording-session lifecycle.
 - `web/src/learn/phraseRecorder.ts`: raw-key capture, grouping, onset timing,
-  selectable quarter/eighth/sixteenth quantization (default eighth), per-note holds, and physical-key preferences.
+  selectable straight/triplet quarter/eighth/sixteenth quantization (default eighth), per-note holds, and physical-key preferences.
 - `web/src/learn/beginnerCourse.ts`: bundled lessons and free chord evaluation.
 - `web/src/learn/scalePractice.ts`: scheduled pitch/chord/rest evaluation.
 
@@ -176,8 +180,8 @@ Recording captures raw key IDs through the same acknowledged version-2 session
 as practice. The browser interprets them through the author's chosen embedded
 layout, plays sound, and paints held-key LEDs. Melody mode captures every fresh
 attack without a release barrier. Chord mode groups attacks until all keys are
-released. Timed capture quantizes onset spacing to quarter beats, clamped to
-0.25–8 beats; the last release sets the final duration. Authors can edit durations
+released. Timed capture quantizes onset spacing to the selected division, clamped to
+the selected minimum through 8 beats; the last release sets the final duration. Authors can edit durations
 and insert explicit rests afterward. Stopping flushes a pending final chord.
 Recording ends on Stop recording, encoder exit, disconnect, hidden tab, page exit,
 cancel, or unmount. Saving is disabled while recording.
@@ -190,7 +194,7 @@ multi-start refinement. The beginner pitch set also seeds the intermediate
 course, keeping the chosen buttons stable between lessons and courses. These
 are layout-specific `fingerings` with `acceptDuplicates: true`, so recommendations
 do not impose new grading restrictions or invalidate existing beginner progress.
-The intermediate course uses the portable v2 format and normal assessment
+The intermediate course uses the portable v3 format and normal assessment
 fingerprints for progress. Its first eight lessons have recommendations; the
 explicit duplicate-button lesson and following phrase omit them. Exports carry
 the computed button assignments and layout definitions like any authored course.

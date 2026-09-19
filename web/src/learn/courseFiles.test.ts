@@ -44,7 +44,7 @@ describe("portable courses", () => {
   it("rejects incompatible keys, unknown layouts, empty content and invalid timing", () => {
     const course = fixture(); course.lessons = [fingered(true)];
     course.lessons[0].fingerings![0].steps[0][0].button = 0;
-    expect(() => parseCourse(course)).toThrow(/Preferred key/);
+    expect(parseCourse(course).lessons[0].fingerings![0].steps[0][0].button).toBe(0);
     expect(() => parseCourse({...fixture(),layoutId:"unknown"})).toThrow(/required layout/);
     expect(() => parseCourse({...fixture(),lessons:[]})).toThrow(/1–100/);
     const invalid = {...fingered(true),timing:{goalBpm:0,beats:[1]}};

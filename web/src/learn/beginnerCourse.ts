@@ -4,6 +4,10 @@ import { MajorScaleRun, majorScale, noteName } from "./majorScale.ts";
 
 export interface KeyCue { note: number; button?: number; hand?: "left" | "right"; finger?: number; acceptDuplicates?: boolean }
 export interface CourseLesson {
+  kind?: "practice" | "content";
+  markdown?: string;
+  repetitions?: number;
+  assessment?: {graded?:boolean;passingScore?:number;requireButtons?:boolean;trackIndependence?:boolean};
   id: string;
   title: string;
   section: string;
@@ -38,7 +42,9 @@ export class CourseRun extends MajorScaleRun {
   private attacked = false;
   private lastEventAt = 0;
   constructor(readonly lesson: CourseLesson, readonly layoutId = "", label: (note: number) => string = noteName) {
-    super(lesson.targets.map(target => target[0]), label);
+    // Blank timed steps are rests. Use a numeric sentinel so formatting cannot
+    // receive undefined; skipRests advances past rests before interaction.
+    super(lesson.targets.map(target => target[0] ?? -1), label);
     this.skipRests();
     this.feedback = "Play the highlighted notes.";
   }

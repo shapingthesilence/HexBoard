@@ -165,24 +165,25 @@ Open **Courses → Manage courses** for **Create course**, **Make a copy**,
 controls stay outside the normal lesson view. Courses are saved in this browser;
 export a backup or share the `.hexcourse.json` file with another player.
 
-In the editor, open **Course & lesson settings → Tuning, layouts & scales…**.
+In the editor, open **Course Settings → Tuning & layouts…**.
 The selection window overlays the editor. Choose **Browser library** or
-**Connected HexBoard library**, select a tuning, check the supported layouts
-and relevant scales, and optionally require one layout. Click **Use selected
-items** to copy those definitions into the course. Only selected device
-items are downloaded. Other layouts loaded elsewhere in Learn are not added.
+**Connected HexBoard library**, select a tuning, check the supported layouts,
+and optionally require one layout. Click **Use selected layouts** to copy those
+definitions into the course. Lessons use their authored notes rather than a
+selected scale; one internal scale definition remains in the exported bundle
+only for tuning-file compatibility. Other layouts loaded elsewhere in Learn are not added.
 The exported course includes those tuning, palette, scale, and layout
 definitions, including custom key assignments. Recipients can play immediately
 even if the definitions are absent from their HexBoard. Importing never
 replaces device data.
 
-**Record from HexBoard** turns your HexBoard into the authoring input. Release all
-keys before starting. Choose **Melody** to capture every note press (overlap is
+**Record** above the piano roll turns your HexBoard into the authoring input. Release all
+keys before starting. In **Lesson Settings**, choose **Melody** to capture every note press (overlap is
 fine), or **Chords** to group notes until you release the whole chord. Choose
 **Metronome** timing and a tempo first to hear clicks and capture beat lengths.
-**Recording snap** defaults to eighth notes; choose quarter or sixteenth notes
-in the lesson settings to match the phrase.
-Step spacing ranges from one sixteenth note to eight quarter notes. **Stop recording**
+**Snap** defaults to eighth notes; choose quarter, sixteenth, or triplet notes
+in the shared toolbar above the piano roll to match the phrase.
+Step spacing supports straight and triplet divisions, up to eight quarter notes. **Stop recording**
 replaces the current lesson's steps with the captured phrase. The actual keys
 become preferred keys, with duplicates initially accepted. Add pauses as rest
 steps and adjust beat lengths afterward. Encoder hold, hiding the tab, or a
@@ -216,20 +217,21 @@ The editor centers on three actions:
    5 (little finger). This is advice; the board cannot detect the player's finger.
 
 The roll adds room as the phrase grows or you scroll toward its end. Choose
-quarter-, eighth-, or sixteenth-note snapping (eighth notes by default).
+quarter-, eighth-, or sixteenth-note snapping, including triplets (straight eighth notes by default). Drag empty space to select several notes and drag a selected note to move the group. Command/Ctrl+C copies the selection; Command/Ctrl+V attaches a copy to the cursor until you click to place it. Escape cancels. Each layout’s button, hand, and finger recommendations are copied too.
 Free-timing lessons use the same roll with quarter-note steps; moving or deleting
 notes closes silent gaps, and note lengths stay at one quarter note.
 You do not need to add steps
 before placing notes. Blank timed steps are rests; blank free-timing steps
-must be filled or removed before saving. Each saved lesson needs a played note.
+must be filled or removed before saving. Each saved practice lesson needs a played note.
 
-Set a lesson's **Time signature** under **Course & lesson settings**. It defaults
+Set a lesson's meter in the compact toolbar above the piano roll. It defaults
 to 4/4 and controls the roll's bar guides; for example, 6/8 contains six eighth
 notes per bar. Tempo always counts quarter notes per minute, and practice keeps
 its four-quarter-note count-in and quarter-note clicks.
 
-**Play lesson** auditions the phrase with a moving playhead and sounding board
-keys. **Stop preview** stops it immediately. Playback includes chords, rests,
+**Play** above the piano roll auditions the phrase with a moving playhead and sounding board
+keys. **Stop** stops it immediately. The same compact toolbar owns BPM, meter,
+and the snap grid used by both recording and piano-roll edits. Playback includes chords, rests,
 microtonal pitches, and holds that overlap later notes. Free-timing lessons use
 even quarter notes at 80 BPM for preview. Holds affect playback only; release
 duration is not graded. The player uses approaching hexagonal outlines on the
@@ -239,10 +241,16 @@ target time; upcoming outlines can overlap for faster notes and chords.
 Timed lessons have an authored **Goal tempo** and learner-selected **Practice
 tempo** (20–300 BPM). Slower runs receive normal timing scores, but completion
 requires reaching the goal tempo, satisfying every step, and scoring at least
-75. Hints-off, mistake-free passing runs can also earn Independent. Progress
+the authored passing score (75 by default). Hints-off, mistake-free passing runs can also earn Independent. Progress
 retains best passing score and highest passed tempo. Only changes to a lesson’s
 graded exercise invalidate its results; changing prose, playback holds, or
 other lessons preserves them.
+
+The always-visible **Course outline** can drag lessons between sections or move a whole section. **+ Add lesson** inserts directly below the active lesson, inherits its section, and opens **Lesson Settings**. Use each lesson’s **…** menu to duplicate or delete it. Rename the active lesson in the title field above the piano roll. In **Lesson Settings**, **Section** accepts an existing section or a new name, and **Markdown page** creates introductions or explanations with no grade or completion requirement. **Course introduction** in **Course Settings** accepts Markdown too. Supported formatting includes headings, lists, quotes, code, emphasis, and web links.
+
+**Lesson Settings** also contains the optional grading controls: exploratory practice has no grade; timed lessons can require a passing score such as 90; **Require specified buttons** enforces authored physical keys. Turn off **Track independence** when completing once is sufficient. **Require clean repetitions** adds a consecutive-run requirement. A failed run, stopping, changing lessons/layouts, or changing hints resets that streak. Numeric settings may be cleared while typing; leaving a blank or out-of-range field restores its prior value.
+
+**Preview as learner** tests the current draft—even when its active lesson has no notes yet—and returns to the editor without saving learner progress. **Layout compatibility** in **Course Settings** reports missing notes and button assignments that need updating without blocking a save. Transpose the selected embedded layout by a whole number of tuning steps there; lesson pitches stay fixed, so review its warnings afterward.
 
 Course and draft storage uses IndexedDB in this browser. **Manage courses**
 offers recovery drafts, deletion, and shared-file import/export. The editor
