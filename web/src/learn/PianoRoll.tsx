@@ -8,10 +8,11 @@ import {snapBeat,roundBeat,beatTick} from "./beatGrid.ts";
 let copiedNotes:RollNote[]=[];
 let copiedBundle:TuningBundle|undefined;
 export interface NoteSelection { step: number; voice: number }
-export function PianoRoll({ lesson, pitches, bundle, color, selection, disabled = false, playhead, snap: timedSnap, onChange, onSelect }: {
+export function PianoRoll({ lesson, pitches, bundle, color, selection, disabled = false, playhead, snap: timedSnap, onChange, onSelect, onAudition }: {
   lesson: CourseLesson; bundle:TuningBundle; pitches: [number, string][]; color: (pitch: number) => string;
   selection?: NoteSelection; disabled?: boolean; playhead?: number; snap: number;
   onChange: (lesson: CourseLesson, selection?: NoteSelection) => void;
+  onAudition:(pitch:number)=>void;
   onSelect: (selection: NoteSelection) => void;
 }) {
   const [error, setError] = useState("");
@@ -71,7 +72,7 @@ export function PianoRoll({ lesson, pitches, bundle, color, selection, disabled 
     const note = lessonRollNotes(next).find(note => note.pitch === pitch && note.onset === onset);
     setSelectedKeys(note?[keyOf(note)]:[]);
     onChange(next, note ? { step: note.step, voice: note.voice } : undefined);
-    setError("");
+    setError("");onAudition(pitch);
   }
   function insert(event: MouseEvent<SVGSVGElement>) {
     if (disabled || pasting || (event.target as Element).closest('[data-roll-note]')) return;
@@ -91,7 +92,7 @@ export function PianoRoll({ lesson, pitches, bundle, color, selection, disabled 
       <div className="pianoRollRuler" style={{ width: left + total * px + 24 }}><span>Bar</span>{Array.from({ length: Math.ceil(total / barLength) }, (_, bar) => <span key={bar} style={{ position: "absolute", left: left + bar * barLength * px + 3 }}>{bar + 1}</span>)}</div>
       <svg width={left + total * px + 24} height={rows.length * rowHeight} aria-label="Notes by pitch and measure" onDoubleClick={insert} onClick={event=>{
         if(disabled)return;
-        if(pasting){try{const placed=positionPaste(cursor.current.onset,cursor.current.row);if(!placed.length)throw new Error("Copied notes are outside this tuning’s piano roll.");const next=pasteRollNotes(lesson,placed);const chosen=lessonRollNotes(next).filter(note=>placed.some(p=>p.pitch===note.pitch&&Math.abs(p.onset-note.onset)<1e-7));onChange(next,chosen[0]);setSelectedKeys(chosen.map(keyOf));setPasting(false);setGhosts([]);setError("");}catch(error){setError(String(error));}return;}
+        if(pasting){try{const placed=positionPaste(cursor.current.onset,cursor.current.row);if(!placed.length)throw new Error("Copied notes are outside this tuning’s piano roll.");const next=pasteRollNotes(lesson,placed);const chosen=lessonRollNotes(next).filter(note=>placed.some(p=>p.pitch===note.pitch&&Math.abs(p.onset-note.onset)<1e-7));onChange(next,chosen[0]);if(placed[0])onAudition(placed[0].pitch);setSelectedKeys(chosen.map(keyOf));setPasting(false);setGhosts([]);setError("");}catch(error){setError(String(error));}return;}
         if(event.metaKey||event.ctrlKey)insert(event);
       }}
       onPointerDown={event=>{if(disabled||pasting||event.metaKey||event.ctrlKey||(event.target as Element).closest('[data-roll-note]'))return;const p=point(event);if(p.x<left)return;boxRef.current={x:p.x,y:p.y,endX:p.x,endY:p.y};setBox(boxRef.current);event.currentTarget.setPointerCapture(event.pointerId);}}
@@ -106,7 +107,8 @@ export function PianoRoll({ lesson, pitches, bundle, color, selection, disabled 
         const requested=Math.round((event.clientY-d.y)/d.scale/rowHeight);
         const sourceRows=d.group.map(note=>rows.findIndex(([pitch])=>pitch===note.pitch));
         const rowDelta=Math.max(-Math.min(...sourceRows),Math.min(rows.length-1-Math.max(...sourceRows),requested));
-        d.moved=d.group.map(note=>({...note,...(d.resize?{hold:Math.max(beatTick,Math.min(32,snapBeat(note.hold+raw,snap)))}:{onset:roundBeat(note.onset+delta),pitch:rows[rows.findIndex(([pitch])=>pitch===note.pitch)+rowDelta][0]})}));setGhosts(d.moved);
+        const previousPitch=d.moved.find(note=>keyOf(note)===keyOf(d.note))?.pitch;
+        d.moved=d.group.map(note=>({...note,...(d.resize?{hold:Math.max(beatTick,Math.min(32,snapBeat(note.hold+raw,snap)))}:{onset:roundBeat(note.onset+delta),pitch:rows[rows.findIndex(([pitch])=>pitch===note.pitch)+rowDelta][0]})}));setGhosts(d.moved);const pitch=d.moved.find(note=>keyOf(note)===keyOf(d.note))?.pitch;if(pitch!==undefined&&pitch!==previousPitch)onAudition(pitch);
       }}
       onPointerUp={event=>{
         if(boxRef.current){const b=boxRef.current;const chosen=notes.filter(note=>{const x=left+note.onset*px,y=rows.findIndex(([pitch])=>pitch===note.pitch)*rowHeight;return x+note.hold*px>=Math.min(b.x,b.endX)&&x<=Math.max(b.x,b.endX)&&y+rowHeight>=Math.min(b.y,b.endY)&&y<=Math.max(b.y,b.endY);});setSelectedKeys(chosen.map(keyOf));if(chosen[0])onSelect(chosen[0]);boxRef.current=undefined;setBox(undefined);event.currentTarget.releasePointerCapture(event.pointerId);return;}
@@ -125,9 +127,9 @@ export function PianoRoll({ lesson, pitches, bundle, color, selection, disabled 
           const shown = !pasting ? ghosts.find(ghost=>keyOf(ghost)===keyOf(note))??note : note;
           const row = rows.findIndex(([pitch]) => pitch === shown.pitch); if (row < 0) return null;
           return <g data-roll-note key={`${note.step}:${note.voice}`} role="button" tabIndex={disabled ? -1 : 0} aria-pressed={selectedKeys.includes(keyOf(note))} aria-label={`Note ${note.step + 1}.${note.voice + 1}: ${rows[row][1]}, onset ${note.onset}, hold ${note.hold}`}
-            onKeyDown={event => { if (!disabled && ["Enter", " "].includes(event.key)) { event.preventDefault(); onSelect({ step: note.step, voice: note.voice }); } }}
+            onKeyDown={event => { if (!disabled && ["Enter", " "].includes(event.key)) { event.preventDefault(); onSelect({ step: note.step, voice: note.voice });onAudition(note.pitch); } }}
             onPointerDown={event => {
-              if (disabled||pasting) return; event.stopPropagation(); event.preventDefault(); event.currentTarget.focus(); onSelect({ step: note.step, voice: note.voice });
+              if (disabled||pasting) return; event.stopPropagation(); event.preventDefault(); event.currentTarget.focus(); onSelect({ step: note.step, voice: note.voice });onAudition(note.pitch);
               const svg = event.currentTarget.ownerSVGElement!; svg.setPointerCapture(event.pointerId);
               const group=selectedKeys.includes(keyOf(note))&&selected.length?selected:[note];setSelectedKeys(group.map(keyOf));
               drag.current = { group,moved:group,note, x: event.clientX, y: event.clientY, resize: !!lesson.timing && (event.target as Element).getAttribute("data-resize") === "true", row, scale: svg.getBoundingClientRect().width / svg.width.baseVal.value, ghost: note }; setGhosts(group);

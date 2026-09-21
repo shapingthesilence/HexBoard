@@ -1,3 +1,4 @@
+import {NoteAudition} from "./noteAudition.ts";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { MidiTransport } from "../midi/types.ts";
 import { DelegatedSession } from "./delegatedSession.ts";
@@ -84,11 +85,17 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
   const [previewing,setPreviewing]=useState(false);
   const [playhead,setPlayhead]=useState<number>();
   const [sounding,setSounding]=useState<number[]>([]);
+  const audition=useRef<NoteAudition|null>(null);
+  function auditionNote(pitch:number){
+    if(busy)return;
+    if(!audition.current)audition.current=new NoteAudition(()=>{const audio=new SynthPreviewController();audio.setPatch({wavetableName:"Basic Shapes",wavetableFolderPath:"/Built In",wavetableSamples:createBasicShapesSamples(),values:{EnvelopeAttackIndex:1,EnvelopeSustainLevel:100,EnvelopeReleaseIndex:5}});return audio;});
+    void audition.current.play(pitch).catch(()=>setError("Could not preview this note. Try clicking it again."));
+  }
   const previewAudio=useRef<SynthPreviewController|null>(null);
   const previewTimers=useRef<ReturnType<typeof setTimeout>[]>([]);
   const previewClock=useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const previewGeneration=useRef(0);
-  function stopPreview(){previewGeneration.current++;previewTimers.current.forEach(clearTimeout);previewTimers.current=[];clearInterval(previewClock.current);const audio=previewAudio.current;previewAudio.current=null;void audio?.close().catch(()=>{});setPreviewing(false);setPlayhead(undefined);setSounding([]);}
+  function stopPreview(){audition.current?.stop();previewGeneration.current++;previewTimers.current.forEach(clearTimeout);previewTimers.current=[];clearInterval(previewClock.current);const audio=previewAudio.current;previewAudio.current=null;void audio?.close().catch(()=>{});setPreviewing(false);setPlayhead(undefined);setSounding([]);}
   async function playPreview(){
     stopPreview();const generation=previewGeneration.current;setPreviewing(true);setError("");
     const audio=new SynthPreviewController();previewAudio.current=audio;
@@ -257,7 +264,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
   const transpositionControls=<div className="courseEditorFields"><label className="learnField">Transpose layout<select value={transposeLayout.objectIdHex} onChange={event=>setTransposeLayoutId(event.target.value)}>{draft.bundle.layouts.map(item=><option key={item.objectIdHex} value={item.objectIdHex}>{item.name}</option>)}</select></label><label className="learnField">Offset from original · tuning steps<DeferredNumberInput key={transposeLayout.objectIdHex} value={draft.layoutTranspositions?.[transposeLayout.objectIdHex]??0} min={-127} max={127} label="Layout transposition" onCommit={amount=>setDraft(transposeCourseLayout(draft,transposeLayout.objectIdHex,amount-(draft.layoutTranspositions?.[transposeLayout.objectIdHex]??0)))}/></label></div>;
   return <section className="learnCard courseEditor" aria-label="Course editor">
     <header className="learnPracticeHeader"><h2>Course editor</h2><div className="learnActions">
-      <button type="button" disabled={busy} onClick={()=>setSettingsOverlay("lesson")}>Lesson Settings</button><button type="button" disabled={busy} onClick={()=>setSettingsOverlay("course")}>Course Settings{warnings.length>0?" ⚠":""}</button><button type="button" disabled={busy} onClick={()=>setLearnerPreview(true)}>Preview as learner</button>
+      <button type="button" disabled={busy} onClick={()=>setSettingsOverlay("lesson")}>Lesson Settings</button><button type="button" disabled={busy} onClick={()=>setSettingsOverlay("course")}>Course Settings{warnings.length>0?" ⚠":""}</button><button type="button" disabled={busy} onClick={()=>{stopPreview();setLearnerPreview(true);}}>Preview as learner</button>
       <button type="button" disabled={busy||!undoStack.current.length} onClick={undo}>Undo</button><button type="button" disabled={busy||!redoStack.current.length} onClick={redo}>Redo</button>
       <button type="button" disabled={busy} onClick={()=>{if(dirty)setCloseWarning(true);else void closeEditor();}}>Close</button><button type="button" className="primary" disabled={busy||saving} onClick={()=>void save()}>Save course</button>
     </div></header>
@@ -286,20 +293,22 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
     </section></div>}
     <div className="courseAuthorWorkspace"><CourseOutline lessons={draft.lessons} selected={lesson.id} disabled={busy} onAdd={addLesson} onDuplicate={duplicateLesson} onDelete={deleteLesson} onSelect={id=>{setLessonIndex(draft.lessons.findIndex(item=>item.id===id));setStep(0);setVoice(undefined);setPhrase("");}} onChange={lessons=>{const id=lesson.id;setDraft({...draft,lessons});setLessonIndex(lessons.findIndex(item=>item.id===id));}}/><div>
     <label className="learnField courseLessonTitle">Lesson title<input value={lesson.title} maxLength={100} onChange={event=>updateLesson({...lesson,title:event.target.value})}/></label>
-    <fieldset disabled={busy} className="courseEditorBody">
+    <div className="courseEditorBody">
       {lesson.kind==="content"?<><label className="learnField">Page Markdown<textarea rows={16} value={lesson.markdown??""} maxLength={50000} onChange={event=>updateLesson({...lesson,markdown:event.target.value})}/></label><CourseMarkdown source={lesson.markdown??""}/></>:<>
       <div className="coursePianoToolbar" aria-label="Lesson playback and recording controls">
         {previewing?<button type="button" onClick={stopPreview}>■ Stop</button>:<button type="button" disabled={recording||!lesson.targets.some(notes=>notes.length)} onClick={()=>void playPreview()}>▶ Play</button>}
         {recording?<button type="button" onClick={finishRecording}>■ Stop recording · {recordedCount}</button>:<button type="button" disabled={!connected||previewing} onClick={()=>void startRecording()}>● Record</button>}
+        <fieldset disabled={busy} className="courseTransportSettings">
         {lesson.timing&&<label>BPM <DeferredNumberInput value={lesson.timing.goalBpm} min={20} max={300} label="Goal tempo" onCommit={value=>updateLesson({...lesson,timing:{...lesson.timing!,goalBpm:value}})}/></label>}
         <label>Meter <span className="courseMeter"><DeferredNumberInput value={lesson.timeSignature?.numerator??4} min={1} max={16} label="Beats per measure" onCommit={value=>updateLesson({...lesson,timeSignature:{numerator:value,denominator:lesson.timeSignature?.denominator??4}})}/><span>/</span><select aria-label="Time signature denominator" value={lesson.timeSignature?.denominator??4} onChange={event=>updateLesson({...lesson,timeSignature:{numerator:lesson.timeSignature?.numerator??4,denominator:Number(event.target.value)}})}>{[2,4,8,16].map(value=><option key={value} value={value}>{value}</option>)}</select></span></label>
         <label>Snap <select aria-label="Note snap" value={lesson.timing?recordSnap:1} disabled={!lesson.timing} onChange={event=>setRecordSnap(Number(event.target.value))}>{snapOptions.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+        </fieldset>
       </div>
-      {<PianoRoll key={lesson.id} lesson={lesson} pitches={pitches} bundle={draft.bundle} disabled={busy} selection={voice===undefined?undefined:{step,voice}} playhead={playhead} snap={recordSnap}
+      {<PianoRoll key={lesson.id} lesson={lesson} pitches={pitches} bundle={draft.bundle} disabled={busy} selection={voice===undefined?undefined:{step,voice}} playhead={playhead} snap={recordSnap} onAudition={auditionNote}
         color={pitch=>lessonScreenColor(lessonLedColor(pitch,"target",{bundle:{...draft.bundle,activeLayoutIdHex:layout.objectIdHex},steps:keys.find(key=>key.note===pitch)?.steps??0,root:0,mode:0,index:keys.find(key=>key.note===pitch)?.key.index??0})).fill}
         onSelect={selected=>selectNote(selected.step,selected.voice)} onChange={(next,selected)=>{updateLesson(next);setStep(selected?.step??Math.min(step,next.targets.length-1));setVoice(selected?.voice);}}/>
       }
-      <div className="courseAssignmentPanels">
+      <fieldset disabled={busy} className="courseEditorBody"><div className="courseAssignmentPanels">
         <section className="courseAssignmentPanel" aria-label="Preferred key panel"><div className="learnPracticeHeader"><h3>2. Choose a key</h3><span>{selectedPitch===undefined?"Select a note above":label(selectedPitch)}</span></div>
           {draft.bundle.layouts.length>1&&<div className="learnActions courseLayoutTabs">{draft.bundle.layouts.map(item=><button type="button" key={item.objectIdHex} aria-pressed={layout.objectIdHex===item.objectIdHex} onClick={()=>setLayoutId(item.objectIdHex)}>{item.name}</button>)}</div>}
           <svg className="learnBoard courseEditorBoard" viewBox={`0 0 ${width} ${height}`} aria-label="Course fingering map"><g transform={`translate(${width/2} ${height/2}) rotate(${angle}) translate(-275 -310)`}>{keys.filter(({key})=>key.role!=="command").map(({key,note,steps})=>{
@@ -324,9 +333,9 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
       <details className="learnSettings"><summary>Phrase tools</summary>
         {isLessonTuning(draft.bundle)&&<><p className="learnMuted">Type C4 D4:0.5 E4:2. Chords: [C4 E4 G4]. Rest: -:1. A length of 1 is a quarter note; 0.5 is an eighth note. Replacing the phrase clears fingerings.</p><textarea aria-label="Quick phrase" rows={2} value={phrase} onChange={event=>setPhrase(event.target.value)}/><button type="button" onClick={replacePhrase}>Replace phrase</button></>}
         <div className="learnActions"><button type="button" disabled={lesson.targets.length>=256} onClick={addStep}>Add blank step</button><button type="button" disabled={lesson.targets.length===1} onClick={()=>{removeStep();setVoice(undefined);}}>Remove selected step</button><button type="button" disabled={step===0} onClick={()=>moveStep(-1)}>Earlier step</button><button type="button" disabled={step===lesson.targets.length-1} onClick={()=>moveStep(1)}>Later step</button><button type="button" onClick={exportDraft}>Export draft backup</button></div>
-      </details>
+      </details></fieldset>
       </>}
-    </fieldset>
+    </div>
     {error&&<p className="learnWarning" role="alert">{error}</p>}</div></div>
   </section>;
 }

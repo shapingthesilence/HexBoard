@@ -229,6 +229,8 @@ to 4/4 and controls the roll's bar guides; for example, 6/8 contains six eighth
 notes per bar. Tempo always counts quarter notes per minute, and practice keeps
 its four-quarter-note count-in and quarter-note clicks.
 
+Clicking or creating a piano-roll note plays a short preview. Dragging to a different pitch previews that pitch; horizontal dragging does not repeatedly retrigger it.
+
 **Play** above the piano roll auditions the phrase with a moving playhead and sounding board
 keys. **Stop** stops it immediately. The same compact toolbar owns BPM, meter,
 and the snap grid used by both recording and piano-roll edits. Playback includes chords, rests,

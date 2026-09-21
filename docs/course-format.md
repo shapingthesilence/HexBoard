@@ -201,3 +201,5 @@ explicit duplicate-button lesson and following phrase omit them. Exports carry
 the computed button assignments and layout definitions like any authored course.
 
 Tuning replacement checks existing pitches against the new tuning’s pitch lattice, independent of layout range. Incompatible replacements remain staged until the author confirms clearing twice. Revert leaves the course untouched; confirmation clears practice targets/timing holds/fingerings while retaining content pages and teaching text.
+
+`noteAudition.ts` owns short, monophonic piano-roll previews. It reuses one synth while editing, cancels superseded startup requests, and closes with editor playback/lifecycle cleanup. Playback and recording Stop controls sit outside disabled editing fieldsets.

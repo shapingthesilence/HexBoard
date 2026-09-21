@@ -2751,3 +2751,5 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .courseCompatibility summary { font-weight: 700; }
 .courseStartButton { background: #287a41; color: white; margin-top: 24px; }
 .courseStartButton:hover { background: #206335; }
+
+.courseTransportSettings { display: contents; }
