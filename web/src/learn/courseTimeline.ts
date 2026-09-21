@@ -44,7 +44,7 @@ export function rebuild(lesson: CourseLesson, notes: RollNote[], extraRests: num
     const cue = note.cues?.[fingering.layoutId] ?? fingering.steps[note.step]?.find(cue => cue.note === original);
     if (!cue) return [];
     const next: KeyCue = { ...cue, note: note.pitch };
-    if (original !== undefined && original !== note.pitch) { delete next.button; delete next.acceptDuplicates; }
+    if (!note.cues?.[fingering.layoutId] && original !== undefined && original !== note.pitch) { delete next.button; delete next.acceptDuplicates; }
     return [next];
   })) }));
   return { ...lesson, targets: groups.map(group => group.map(note => note.pitch)), fingerings, timing: { ...lesson.timing, beats: sorted.map((at, i) => roundBeat((sorted[i + 1] ?? end) - at)), holdBeats: groups.map(group => group.map(note => note.hold)) } };

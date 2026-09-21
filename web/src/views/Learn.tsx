@@ -47,6 +47,9 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
   const [lessonIndex, setLessonIndex] = useState(previewIndex);
   const lesson = lessons[lessonIndex] ?? lessons[0];
   const course = page === "course";
+  const [introductionSeen,setIntroductionSeen]=useState<string>();
+  const showIntroduction=course&&!!selectedCourse?.description&&introductionSeen!==selectedCourse.id&&!previewCourse;
+  const requiredLayout=course?(lesson.layoutId??selectedCourse?.layoutId):undefined;
   const [progress, setProgress] = useState<CourseProgress>(() => {
     try { return parseCourseProgress(localStorage.getItem(courseProgressKey)); } catch { return {}; }
   });
@@ -59,7 +62,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
     return lessonLayouts(customCourse.bundle);
   }, [customCourse, layouts]);
   const selection = customCourse
-    ? courseLayouts.find(item => item.layout.objectIdHex === (customCourse.layoutId ?? layoutId)) ?? courseLayouts.find(item => item.layout.objectIdHex === customCourse.bundle.activeLayoutIdHex) ?? courseLayouts[0]
+    ? courseLayouts.find(item => item.layout.objectIdHex === (requiredLayout ?? layoutId)) ?? courseLayouts.find(item => item.layout.objectIdHex === customCourse.bundle.activeLayoutIdHex) ?? courseLayouts[0]
     : layouts.find((layout) => layout.id === layoutId) ?? layouts[0];
   const keys = useMemo(() => resolveLessonKeys(selection), [selection]);
   const [tuningChoice, setTuningChoice] = useState(layouts[0].bundle.objectIdHex);
@@ -94,7 +97,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
   const previewNotes = course ? [...new Set(lesson.targets.flat())] : baseNotes;
   const missing = unavailableScaleNotes(keys, previewNotes, labelNote);
   const compatible = !selectedCourse||!compatibilityReport(selectedCourse).some(row=>row.lessonId===lesson.id&&row.layoutId===selection.layout.objectIdHex&&row.issues.length);
-  const readyToPlay = lesson.kind!=="content"&&compatible&&!libraryBusy && previewNotes.length > 0 && missing.length === 0 && (!fromDevice || !!deviceLayoutChoice) && (!course || !!customCourse || isLessonTuning(bundle));
+  const readyToPlay = !showIntroduction&&lesson.kind!=="content"&&compatible&&!libraryBusy && previewNotes.length > 0 && missing.length === 0 && (!fromDevice || !!deviceLayoutChoice) && (!course || !!customCourse || isLessonTuning(bundle));
   const [beatMode, setBeatMode] = useState(false);
   const [bpm, setBpm] = useState(80);
   const activeBeatMode = course ? !!lesson.timing : beatMode;
@@ -443,7 +446,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
     } catch { if (generation.current === currentGeneration && currentRun===runGeneration.current) stop("Could not start practice audio. Try again."); }
   }
 
-  useEffect(()=>{if(pendingStart&&physicalCount===0&&stage==="waiting"){setPendingStart(false);session.current?.setDisplayRotation(selection.layout.deviceRotationSteps);void repeat(hints);}},[pendingStart,physicalCount,lesson.id,stage]);
+  useEffect(()=>{if(pendingStart&&physicalCount===0&&stage==="waiting"&&readyToPlay){setPendingStart(false);session.current?.setDisplayRotation(selection.layout.deviceRotationSteps);void repeat(hints);}},[pendingStart,physicalCount,lesson.id,stage,selection.layout.objectIdHex,readyToPlay]);
 
   function demonstrate() {
     usedHints.current = true;
@@ -532,7 +535,12 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
     setMessage("");
     if (next === "course" && !selectedCourse && !isLessonTuning(bundle)) chooseLocalTuning(localBundles[0], layouts.find(item => item.bundle === localBundles[0])!.id);
   }
-  function changeLesson(index:number){setHints(true);clearRun();setPracticeBpm(lessons[index].timing?.goalBpm??80);setLessonIndex(index);setMessage("");if(session.current){setStage("waiting");setPendingStart(true);}else setStage("ready");}
+  function changeLesson(index:number){if(selectedCourse)setIntroductionSeen(selectedCourse.id);setHints(true);clearRun();setPracticeBpm(lessons[index].timing?.goalBpm??80);setLessonIndex(index);setMessage("");if(session.current){setStage("waiting");setPendingStart(true);}else setStage("ready");}
+  function changeLayout(id:string){
+    const restart=stage==="practice"||stage==="demo"||stage==="waiting";
+    clearRun();setLayoutId(id);setMessage("");streak.current=0;streakHints.current=false;setStreakCount(0);
+    if(restart){setStage("waiting");setPendingStart(true);}else setStage("ready");
+  }
   function nextLesson() { changeLesson(Math.min(lessons.length-1,lessonIndex+1)); }
   function saveProgressFile() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(progress, null, 2)], { type: "application/json" }));
@@ -553,7 +561,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
   function courseBundleSnapshot(): TuningBundle {
     const starter=starterLayouts()[0], scale=starter.bundle.scales[0];return {...structuredClone(starter.bundle),layouts:[structuredClone(starter.layout)],scales:[structuredClone(scale)],activeScaleIdHex:scale.objectIdHex,activeLayoutIdHex:starter.layout.objectIdHex};
   }
-  function chooseCourse(id: string) { setDeletePending(false);clearRun();setStage("ready");setCourseId(id); setLessonIndex(0); setCourseMessage(""); }
+  function chooseCourse(id: string) { setIntroductionSeen(undefined); setDeletePending(false);clearRun();setStage("ready");setCourseId(id); setLessonIndex(0); setCourseMessage(""); }
   async function persistCourse(next: UserCourse, clearDraft=false) {
     if(clearDraft)next={...next,revision:Math.max(next.revision,(userCourses.find(item=>item.id===next.id)?.revision??0)+1)};
     if (new TextEncoder().encode(JSON.stringify(next)).length > maxCourseBytes) throw new Error("Course files must be smaller than 2 MB. Split this course into smaller courses.");
@@ -614,8 +622,8 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
       <aside className="learnCard learnGuide">
         {course && <><label className="learnField">Course<select value={previewCourse?"preview":courseId} disabled={!!previewCourse || stage === "starting" || libraryBusy} onChange={event => chooseCourse(event.target.value)}>{previewCourse&&<option value="preview">{previewCourse.title}</option>}<option value="builtin">Beginner course</option><option value="builtin-intermediate">Intermediate course · Rhythm</option>{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
           <label className="learnField">Lesson<select value={lessonIndex} disabled={stage === "starting"} onChange={event => changeLesson(Number(event.target.value))}>{lessons.map((item, index) => <option key={item.id} value={index}>{index + 1}. {item.title}</option>)}</select></label>
-          {selectedCourse?.description&&<details><summary>Course introduction</summary><CourseMarkdown source={selectedCourse.description}/></details>}
-          <p className="learnLessonInstruction">{lesson.instruction}</p>
+
+          {!showIntroduction&&<p className="learnLessonInstruction">{lesson.instruction}</p>}
           {lesson.timing && <><span className="learnMuted">{lesson.timeSignature?.numerator??4}/{lesson.timeSignature?.denominator??4} · Goal: {lesson.timing.goalBpm} BPM</span><label className="learnField">Practice tempo · {stepPractice ? "Step" : `${practiceBpm} BPM`}<input aria-label="Practice tempo" type="range" min={stepTempo} max={300} step={1} value={practiceBpm} disabled={engaged&&stage!=="complete"} onChange={event=>setPracticeBpm(Number(event.target.value))}/></label>{stepPractice && <span className="learnMuted">No metronome. Play the highlighted notes to reveal the next step; rests are skipped.</span>}</>}
           <details hidden={!!previewCourse} className="learnSettings"><summary>Manage courses</summary>{session.current&&<p className="learnMuted">Stop the learning session to edit or record a course.</p>}<div className="learnActions">
             <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(false)}>Create course</button>
@@ -629,12 +637,12 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
             {pendingImport&&<div role="alert"><p>“{pendingImport.title}” revision {pendingImport.revision} matches local revision {userCourses.find(item=>item.id===pendingImport.id)?.revision}. Compatible lesson progress will be preserved.</p><button onClick={()=>void persistCourse(pendingImport).then(()=>{setPendingImport(undefined);setCourseMessage("Course updated.");},error=>setCourseMessage(String(error)))}>Update existing</button><button onClick={()=>void persistCourse({...pendingImport,id:crypto.randomUUID()}).then(()=>{setPendingImport(undefined);setCourseMessage("Separate copy imported.");},error=>setCourseMessage(String(error)))}>Keep both</button><button onClick={()=>setPendingImport(undefined)}>Cancel import</button></div>}
           </details>{courseMessage && <p role="status" className="learnMuted">{courseMessage}</p>}</>}
         {customCourse ? <><span className="learnMuted">Tuning · {customCourse.bundle.tuning.name}</span>
-          <label className="learnField">Layout<select value={selection.layout.objectIdHex} disabled={engaged || !!customCourse.layoutId} onChange={event => setLayoutId(event.target.value)}>{courseLayouts.map(item => item.layout).filter(layout => !customCourse.layoutId || layout.objectIdHex === customCourse.layoutId).map(layout => <option key={layout.objectIdHex} value={layout.objectIdHex}>{layout.name}</option>)}</select></label></> : <>
+          <label className="learnField">Layout<select value={selection.layout.objectIdHex} disabled={stage==="starting" || !!requiredLayout} onChange={event => changeLayout(event.target.value)}>{courseLayouts.map(item => item.layout).filter(layout => !requiredLayout || layout.objectIdHex === requiredLayout).map(layout => <option key={layout.objectIdHex} value={layout.objectIdHex}>{layout.name}</option>)}</select></label></> : <>
         <label className="learnField">Tuning<select value={tuningChoice} disabled={engaged || libraryBusy} onChange={event => void chooseTuning(event.target.value)}>
           <optgroup label="Starter / imported">{localBundles.map(item => <option key={item.objectIdHex} value={item.objectIdHex}>{item.tuning.name}</option>)}</optgroup>
           <optgroup label="On HexBoard">{tuningNames.map(item => <option key={item.handle} value={`device:${item.handle}`}>{item.name}{item.folderPath !== "/" ? ` · ${item.folderPath}` : ""}</option>)}</optgroup>
         </select></label>
-        <label className="learnField">Layout<select value={fromDevice ? deviceLayoutChoice : selection.id} disabled={engaged || libraryBusy} onChange={event => { if (fromDevice) void chooseDeviceLayout(event.target.value); else setLayoutId(event.target.value); }}>
+        <label className="learnField">Layout<select value={fromDevice ? deviceLayoutChoice : selection.id} disabled={(engaged&&!course) || stage==="starting" || libraryBusy} onChange={event => { if (fromDevice) void chooseDeviceLayout(event.target.value); else changeLayout(event.target.value); }}>
           {fromDevice ? <><option value="">Choose a layout</option>{layoutNames.map(item => <option key={item.handle} value={item.handle}>{item.name}</option>)}</>
             : layouts.filter(item => item.bundle.objectIdHex === tuningChoice).map(item => <option key={item.id} value={item.id}>{item.layout.name}</option>)}
         </select></label>
@@ -667,7 +675,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
         {course && !customCourse && !isLessonTuning(bundle) && <p role="alert" className="learnWarning">Choose standard 12-EDO for the beginner course. Other tunings work in Scale practice.</p>}
         {(!fromDevice || deviceLayoutChoice) && missing.length > 0 && <p className="learnWarning" role="alert">Missing {missing.join(", ")}. Try another layout or register.</p>}
       </aside>
-      {course&&lesson.kind==="content"?<article className="learnCard"><h2>{lesson.title}</h2><CourseMarkdown source={lesson.markdown??""}/>{lessonIndex<lessons.length-1&&<button type="button" onClick={nextLesson}>Continue</button>}</article>:<div className="learnCard learnPractice">
+      {showIntroduction?<article className="learnCard"><h2>{selectedCourse!.title}</h2><CourseMarkdown source={selectedCourse!.description!}/><button type="button" className="courseStartButton" onClick={()=>{setIntroductionSeen(selectedCourse!.id);changeLesson(0);}}>Start Course</button></article>:course&&lesson.kind==="content"?<article className="learnCard"><h2>{lesson.title}</h2><CourseMarkdown source={lesson.markdown??""}/>{lessonIndex<lessons.length-1&&<button type="button" onClick={nextLesson}>Continue</button>}</article>:<div className="learnCard learnPractice">
         {!compatible&&<p role="alert">This layout needs changes: {selectedCourse&&compatibilityReport(selectedCourse).filter(row=>row.lessonId===lesson.id&&row.layoutId===selection.layout.objectIdHex).flatMap(row=>row.issues).join("; ")}</p>}
         <div className="learnActions learnTransport">{!engaged ? <>
           <button className="primary" type="button" disabled={!connected || !readyToPlay} onClick={() => void begin(true)}>{session.current?"Start lesson":"Start on HexBoard"}</button>

@@ -165,7 +165,7 @@ Open **Courses → Manage courses** for **Create course**, **Make a copy**,
 controls stay outside the normal lesson view. Courses are saved in this browser;
 export a backup or share the `.hexcourse.json` file with another player.
 
-In the editor, open **Course Settings → Tuning & layouts…**.
+In the editor, open **Course Settings**. Tuning and layout choices are on that same page.
 The selection window overlays the editor. Choose **Browser library** or
 **Connected HexBoard library**, select a tuning, check the supported layouts,
 and optionally require one layout. Click **Use selected layouts** to copy those
@@ -217,7 +217,7 @@ The editor centers on three actions:
    5 (little finger). This is advice; the board cannot detect the player's finger.
 
 The roll adds room as the phrase grows or you scroll toward its end. Choose
-quarter-, eighth-, or sixteenth-note snapping, including triplets (straight eighth notes by default). Drag empty space to select several notes and drag a selected note to move the group. Command/Ctrl+C copies the selection; Command/Ctrl+V attaches a copy to the cursor until you click to place it. Escape cancels. Each layout’s button, hand, and finger recommendations are copied too.
+quarter-, eighth-, or sixteenth-note snapping, including triplets (straight eighth notes by default). Drag empty space to select several notes and drag a selected note to move the group. Command/Ctrl+C copies the selection; Command/Ctrl+V attaches a copy to the cursor until you click to place it. Escape cancels. Each layout’s button, hand, and finger recommendations are copied too. Transposing a pasted group moves its recommended buttons by one shared board displacement per layout, preserving the shape. Buttons that cannot fit are cleared; hand/finger advice remains. Switching layout tabs keeps the same pitches visible in the piano roll, clamping only at its range limits.
 Free-timing lessons use the same roll with quarter-note steps; moving or deleting
 notes closes silent gaps, and note lengths stay at one quarter note.
 You do not need to add steps
@@ -246,11 +246,15 @@ retains best passing score and highest passed tempo. Only changes to a lesson’
 graded exercise invalidate its results; changing prose, playback holds, or
 other lessons preserves them.
 
-The always-visible **Course outline** can drag lessons between sections or move a whole section. **+ Add lesson** inserts directly below the active lesson, inherits its section, and opens **Lesson Settings**. Use each lesson’s **…** menu to duplicate or delete it. Rename the active lesson in the title field above the piano roll. In **Lesson Settings**, **Section** accepts an existing section or a new name, and **Markdown page** creates introductions or explanations with no grade or completion requirement. **Course introduction** in **Course Settings** accepts Markdown too. Supported formatting includes headings, lists, quotes, code, emphasis, and web links.
+The always-visible **Course outline** can drag lessons between sections or move a whole section. **+ Add lesson** inserts directly below the active lesson, inherits its section, and opens **Lesson Settings**. Use each lesson’s **…** menu to duplicate or delete it. Rename the active lesson in the title field above the piano roll. In **Lesson Settings**, **Section** accepts an existing section or a new name, and **Markdown page** creates introductions or explanations with no grade or completion requirement. **Course introduction** in **Course Settings** accepts Markdown too and appears first when a learner selects the course, with a green **Start Course** button. Markdown pages have no separate lesson explanation. Supported formatting includes headings, lists, quotes, code, emphasis, and web links.
 
-**Lesson Settings** also contains the optional grading controls: exploratory practice has no grade; timed lessons can require a passing score such as 90; **Require specified buttons** enforces authored physical keys. Turn off **Track independence** when completing once is sufficient. **Require clean repetitions** adds a consecutive-run requirement. A failed run, stopping, changing lessons/layouts, or changing hints resets that streak. Numeric settings may be cleared while typing; leaving a blank or out-of-range field restores its prior value.
+**Lesson layout** in Lesson Settings can require one of the course’s included layouts. Otherwise the learner can switch between allowed layouts during practice; switching restarts the run, waits for held hardware keys to be released, and uses the new layout’s cues. Include only one layout in Course Settings to limit the entire course to it.
 
-**Preview as learner** tests the current draft—even when its active lesson has no notes yet—and returns to the editor without saving learner progress. **Layout compatibility** in **Course Settings** reports missing notes and button assignments that need updating without blocking a save. Transpose the selected embedded layout by a whole number of tuning steps there; lesson pitches stay fixed, so review its warnings afterward.
+Applying a tuning that cannot represent existing lesson pitches shows **Incompatible Tuning: Clear Notes/Buttons/Fingers?**. **Revert** is focused by default and preserves the course. **Clear** asks for confirmation again before clearing practice notes and their button/finger assignments. Titles and Markdown pages remain, and Undo can restore the draft.
+
+**Lesson Settings** also contains the optional grading controls: exploratory practice has no grade; timed lessons can require a passing score such as 90; physical-key requirements are set beside each recommended key using **Accept matching keys too**. Turn off **Track independence** when completing once is sufficient. **Require clean repetitions** adds a consecutive-run requirement. A failed run, stopping, changing lessons/layouts, or changing hints resets that streak. Numeric settings may be cleared while typing; leaving a blank or out-of-range field restores its prior value.
+
+**Preview as learner** tests the current draft—even when its active lesson has no notes yet—and returns to the editor without saving learner progress. **Layout compatibility** in **Course Settings** appears only when something needs attention. Its highlighted summary and a warning on the Course Settings button flag missing notes or button assignments without blocking saving. Choose a layout in **Transpose layout** and set its offset in tuning steps. The saved number is the offset from its original course mapping; set it to zero to restore that mapping. Lesson pitches stay fixed.
 
 Course and draft storage uses IndexedDB in this browser. **Manage courses**
 offers recovery drafts, deletion, and shared-file import/export. The editor

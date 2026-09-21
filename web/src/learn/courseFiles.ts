@@ -13,6 +13,7 @@ export interface UserCourse {
   title: string;
   author: string;
   description?: string;
+  layoutTranspositions?: Record<string,number>;
   bundle: TuningBundle;
   layoutId?: string;
   lessons: CourseLesson[];
@@ -38,9 +39,12 @@ export function parseCourse(value: unknown): UserCourse {
   if (layoutId && !bundle.layouts.some(layout => layout.objectIdHex === layoutId)) throw new Error("The required layout is missing from this course.");
   if (!Number.isSafeInteger(input.revision) || Number(input.revision) < 1) throw new Error("Invalid course revision.");
   if (!Array.isArray(input.lessons) || !input.lessons.length || input.lessons.length > 100) throw new Error("A course needs 1–100 lessons.");
+  const layoutTranspositions:Record<string,number>={};
+  if(input.layoutTranspositions!==undefined)for(const [key,value] of Object.entries(object(input.layoutTranspositions))){if(!bundle.layouts.some(layout=>layout.objectIdHex===key)||!Number.isInteger(value)||Math.abs(Number(value))>127)throw new Error("Invalid layout transposition.");layoutTranspositions[key]=Number(value);}
   const lessons = input.lessons.map((raw): CourseLesson => {
     const lesson = object(raw);
     if(lesson.kind!==undefined&&lesson.kind!=="practice"&&lesson.kind!=="content")throw new Error("Unknown lesson type.");
+    if(lesson.layoutId!==undefined&&!bundle.layouts.some(layout=>layout.objectIdHex===lesson.layoutId))throw new Error("The lesson layout is missing from this course.");
     if(lesson.kind==="content")return {kind:"content",id:id(lesson.id),title:text(lesson.title,"Page title",100),section:text(lesson.section??"My lessons","Section",80),instruction:"",targets:[],markdown:text(lesson.markdown??"","Page content",50000,true)};
     if(lesson.repetitions!==undefined&&(!Number.isInteger(lesson.repetitions)||Number(lesson.repetitions)<1||Number(lesson.repetitions)>100))throw new Error("Repetitions must be 1–100.");
     if (!Array.isArray(lesson.targets) || !lesson.targets.length || lesson.targets.length > 256) throw new Error("Each lesson needs 1–256 steps.");
@@ -94,10 +98,12 @@ export function parseCourse(value: unknown): UserCourse {
         fingerings.push({ layoutId: layout.objectIdHex, steps });
       }
     }
-    return { id: id(lesson.id), title: text(lesson.title, "Lesson title", 100), section: text(lesson.section ?? "My lessons", "Section", 80), instruction: text(lesson.instruction, "Lesson explanation", 2000), targets, timing, timeSignature, fingerings, ...(assessment?{assessment}:{}), ...(lesson.repetitions===undefined?{}:{repetitions:Number(lesson.repetitions)}) };
+    if(assessment?.requireButtons){for(const fingering of fingerings)for(const cues of fingering.steps)for(const cue of cues)if(cue.button!==undefined)cue.acceptDuplicates=false;}
+    if(assessment)delete assessment.requireButtons;
+    return { ...(lesson.layoutId?{layoutId:String(lesson.layoutId)}:{}), id: id(lesson.id), title: text(lesson.title, "Lesson title", 100), section: text(lesson.section ?? "My lessons", "Section", 80), instruction: text(lesson.instruction, "Lesson explanation", 2000), targets, timing, timeSignature, fingerings, ...(assessment?{assessment}:{}), ...(lesson.repetitions===undefined?{}:{repetitions:Number(lesson.repetitions)}) };
   });
   if (new Set(lessons.map(lesson => lesson.id)).size !== lessons.length) throw new Error("Lesson IDs must be unique.");
-  return { format: courseFormat, id: id(input.id), revision: Number(input.revision), title: text(input.title, "Course title", 100), author: text(input.author ?? "", "Author", 100, true), bundle, layoutId, lessons, ...(input.description===undefined?{}:{description:text(input.description,"Course introduction",50000,true)}) };
+  return { format: courseFormat, id: id(input.id), revision: Number(input.revision), title: text(input.title, "Course title", 100), author: text(input.author ?? "", "Author", 100, true), bundle, layoutId, lessons, ...(Object.keys(layoutTranspositions).length?{layoutTranspositions}:{}), ...(input.description===undefined?{}:{description:text(input.description,"Course introduction",50000,true)}) };
 }
 export function readCourseFile(raw: string): UserCourse {
   if (new TextEncoder().encode(raw).length > maxCourseBytes) throw new Error("Course files must be smaller than 2 MB.");
@@ -160,7 +166,7 @@ export function parsePhrase(source: string): { targets: number[][]; beats: numbe
 // playback-only holds can change without erasing an achievement.
 export function assessmentFingerprint(course: UserCourse, lesson: CourseLesson): string {
   const strict = (lesson.fingerings ?? []).map(item => ({ layoutId: item.layoutId, steps: item.steps.map(cues => cues.filter(cue => cue.button !== undefined && (cue.acceptDuplicates === false || lesson.assessment?.requireButtons === true)).map(cue => ({note:cue.note,button:cue.button})).sort((a,b)=>a.note-b.note)) })).filter(item => item.steps.some(cues=>cues.length)).sort((a,b)=>a.layoutId.localeCompare(b.layoutId));
-  const value = JSON.stringify({ targets: lesson.targets.map(notes=>[...notes].sort((a,b)=>a-b)), timing: lesson.timing ? {goalBpm:lesson.timing.goalBpm,beats:lesson.timing.beats} : undefined, strict, requiredLayout:course.layoutId, ...(lesson.assessment?{assessment:lesson.assessment}:{}), ...(lesson.repetitions!==undefined?{repetitions:lesson.repetitions}:{}) });
+  const value = JSON.stringify({ targets: lesson.targets.map(notes=>[...notes].sort((a,b)=>a-b)), timing: lesson.timing ? {goalBpm:lesson.timing.goalBpm,beats:lesson.timing.beats} : undefined, strict, requiredLayout:lesson.layoutId??course.layoutId, ...(lesson.assessment?{assessment:lesson.assessment}:{}), ...(lesson.repetitions!==undefined?{repetitions:lesson.repetitions}:{}) });
   return contentHash(value);
 }
 function contentHash(value:string) {

@@ -57,6 +57,8 @@ int main() {
     unsigned previous[4] = {};
     for (unsigned input = 0; input <= 65535; ++input) {
       unsigned q = quantizeLedChannel(input, phases);
+      unsigned rounded = (input * (255u * phases) + 32767u) / 65535u;
+      unsigned expectedQuantized = phases == 4 && rounded == 1 ? 2 : rounded;
       unsigned total = 0;
       for (unsigned phase = 0; phase < phases; ++phase) {
         unsigned value = ledChannelPhase(q, phases, phase);
@@ -67,9 +69,15 @@ int main() {
         if (input == 65535) assert(value == 255);
       }
       assert(total == q);
-      double expected = input * (255.0 * phases) / 65535.0;
-      assert(std::abs(total - expected) <= 0.500001);
+      assert(q == expectedQuantized);
     }
+  }
+  assert(quantizeLedChannel(32, 4) == 0);
+  assert(quantizeLedChannel(33, 4) == 2);
+  assert(quantizeLedChannel(96, 4) == 2);
+  assert(quantizeLedChannel(97, 4) == 2);
+  for (unsigned phase = 0; phase < 4; ++phase) {
+    assert(ledChannelPhase(2, 4, phase) == (phase % 2 == 0 ? 1 : 0));
   }
   constexpr unsigned count = 140;
   constexpr unsigned phaseWords = 106;

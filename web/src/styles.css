@@ -2744,3 +2744,10 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .courseMarkdown pre { overflow:auto;background:var(--surface-muted);padding:12px; }
 .courseMarkdown blockquote { border-left:3px solid var(--brand);padding-left:12px;margin-left:0; }
 @media(max-width:800px) { .courseAuthorWorkspace {grid-template-columns:1fr;} .courseOutline {border-right:0;border-bottom:1px solid var(--border);padding:0 0 12px;} }
+
+.courseEditorFields .checkField { align-self: center; display: flex; }
+.courseEditorFields .checkField input { width: auto; height: auto; min-height: 0; flex: 0 0 auto; }
+.courseCompatibility { border: 2px solid #bc7b24; border-radius: 8px; padding: 12px; }
+.courseCompatibility summary { font-weight: 700; }
+.courseStartButton { background: #287a41; color: white; margin-top: 24px; }
+.courseStartButton:hover { background: #206335; }

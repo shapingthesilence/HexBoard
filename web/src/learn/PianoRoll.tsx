@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import type {TuningBundle} from "../catalogs/layoutsCatalog.ts";
+import {translateCopiedFingerings} from "./courseFingering.ts";
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 import type { CourseLesson } from "./beginnerCourse.ts";
 import { addRollNote, rebuild, copyRollNotes, pasteRollNotes, lessonRollNotes, measureLength, type RollNote } from "./courseTimeline.ts";
 
 import {snapBeat,roundBeat,beatTick} from "./beatGrid.ts";
 let copiedNotes:RollNote[]=[];
+let copiedBundle:TuningBundle|undefined;
 export interface NoteSelection { step: number; voice: number }
-export function PianoRoll({ lesson, pitches, color, selection, disabled = false, playhead, snap: timedSnap, onChange, onSelect }: {
-  lesson: CourseLesson; pitches: [number, string][]; color: (pitch: number) => string;
+export function PianoRoll({ lesson, pitches, bundle, color, selection, disabled = false, playhead, snap: timedSnap, onChange, onSelect }: {
+  lesson: CourseLesson; bundle:TuningBundle; pitches: [number, string][]; color: (pitch: number) => string;
   selection?: NoteSelection; disabled?: boolean; playhead?: number; snap: number;
   onChange: (lesson: CourseLesson, selection?: NoteSelection) => void;
   onSelect: (selection: NoteSelection) => void;
@@ -35,6 +38,12 @@ export function PianoRoll({ lesson, pitches, color, selection, disabled = false,
     const center = rows.findIndex(([pitch]) => pitch === (notes[0]?.pitch ?? pitches.find(([pitch]) => pitch >= 60)?.[0]));
     if (scroll.current) scroll.current.scrollTop = Math.max(0, center * rowHeight - 110);
   }, [lesson.id]);
+  const viewport=useRef<{pitch:number;offset:number}|undefined>(undefined);
+  const rowSignature=rows.map(([pitch])=>pitch).join(",");
+  useLayoutEffect(()=>{
+    const element=scroll.current,anchor=viewport.current;if(!element)return;
+    if(anchor){let index=rows.findIndex(([pitch])=>pitch===anchor.pitch);if(index<0)index=rows.reduce((best,[pitch],i)=>Math.abs(pitch-anchor.pitch)<Math.abs(rows[best][0]-anchor.pitch)?i:best,0);element.scrollTop=index*rowHeight+anchor.offset;}
+  },[rowSignature]);
   useEffect(()=>{if(selection&&!selectedKeys.includes(keyOf(selection)))setSelectedKeys([keyOf(selection)]);},[selection?.step,selection?.voice]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
@@ -42,7 +51,7 @@ export function PianoRoll({ lesson, pitches, color, selection, disabled = false,
       if (disabled || target.closest("input,textarea,select,[contenteditable=true],dialog")) return;
       const chosen=selected.length?selected:current?[current]:[];
       if(event.key==="Escape"){setPasting(false);setGhosts([]);return;}
-      if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="c"&&chosen.length){event.preventDefault();copiedNotes=copyRollNotes(lesson,chosen);return;}
+      if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="c"&&chosen.length){event.preventDefault();copiedNotes=copyRollNotes(lesson,chosen);copiedBundle=structuredClone(bundle);return;}
       if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==="v"&&copiedNotes.length){event.preventDefault();setPasting(true);setGhosts(positionPaste(cursor.current.onset,cursor.current.row));return;}
       if(!["Backspace","Delete"].includes(event.key)||!chosen.length)return;
       event.preventDefault();onChange(rebuild(lesson,notes.filter(note=>!chosen.some(selected=>keyOf(selected)===keyOf(note))),chosen.map(note=>note.onset)));setSelectedKeys([]);
@@ -51,8 +60,11 @@ export function PianoRoll({ lesson, pitches, color, selection, disabled = false,
   },[lesson,selection,selectedKeys,disabled,pasting]);
   function positionPaste(onset:number,row:number){
     const first=Math.min(...copiedNotes.map(note=>note.onset));
-    const top=Math.min(...copiedNotes.map(note=>rows.findIndex(([pitch])=>pitch===note.pitch)).filter(index=>index>=0));
-    return copiedNotes.map(note=>{const source=rows.findIndex(([pitch])=>pitch===note.pitch);return {...note,onset:roundBeat(onset+note.onset-first),pitch:rows[Math.max(0,Math.min(rows.length-1,row+source-(Number.isFinite(top)?top:0)))][0]};});
+    const sourceRows=copiedNotes.map(note=>rows.findIndex(([pitch])=>pitch===note.pitch));
+    if(sourceRows.some(index=>index<0))return [];
+    const delta=Math.max(-Math.min(...sourceRows),Math.min(rows.length-1-Math.max(...sourceRows),row-Math.min(...sourceRows)));
+    const placed=copiedNotes.map((note,i)=>({...note,onset:roundBeat(onset+note.onset-first),pitch:rows[sourceRows[i]+delta][0]}));
+    return copiedBundle?translateCopiedFingerings(copiedNotes,placed,copiedBundle,bundle):placed;
   }
   function point(event:{clientX:number;clientY:number;currentTarget:SVGSVGElement}){const bounds=event.currentTarget.getBoundingClientRect(),scale=bounds.width/event.currentTarget.width.baseVal.value;return {x:(event.clientX-bounds.left)/scale,y:(event.clientY-bounds.top)/scale};}
   function commit(next: CourseLesson, pitch: number, onset: number) {
@@ -75,11 +87,11 @@ export function PianoRoll({ lesson, pitches, color, selection, disabled = false,
   return <section className="pianoRoll" aria-label="Lesson piano roll">
     <div className="learnPracticeHeader"><h3>1. Place a note</h3></div>
     <p className="learnMuted">Double-click or ⌘/Ctrl-click to add. Drag to move{lesson.timing?"; drag the right edge to resize":" · quarter-note steps"}. Drag empty space to select notes. ⌘/Ctrl+C copies; ⌘/Ctrl+V follows the cursor until clicked. Escape cancels.</p>
-    <div ref={scroll} className="pianoRollScroll" onScroll={event => { const element = event.currentTarget; if (element.scrollWidth > element.clientWidth && element.scrollLeft + element.clientWidth >= element.scrollWidth - 50 && total < 2048) setExtraBars(value => value + 2); }}>
+    <div ref={scroll} className="pianoRollScroll" onScroll={event => { const element = event.currentTarget; const index=Math.min(rows.length-1,Math.max(0,Math.floor(element.scrollTop/rowHeight)));viewport.current={pitch:rows[index][0],offset:element.scrollTop-index*rowHeight}; if (element.scrollWidth > element.clientWidth && element.scrollLeft + element.clientWidth >= element.scrollWidth - 50 && total < 2048) setExtraBars(value => value + 2); }}>
       <div className="pianoRollRuler" style={{ width: left + total * px + 24 }}><span>Bar</span>{Array.from({ length: Math.ceil(total / barLength) }, (_, bar) => <span key={bar} style={{ position: "absolute", left: left + bar * barLength * px + 3 }}>{bar + 1}</span>)}</div>
       <svg width={left + total * px + 24} height={rows.length * rowHeight} aria-label="Notes by pitch and measure" onDoubleClick={insert} onClick={event=>{
         if(disabled)return;
-        if(pasting){try{const placed=positionPaste(cursor.current.onset,cursor.current.row);const next=pasteRollNotes(lesson,placed);const chosen=lessonRollNotes(next).filter(note=>placed.some(p=>p.pitch===note.pitch&&Math.abs(p.onset-note.onset)<1e-7));onChange(next,chosen[0]);setSelectedKeys(chosen.map(keyOf));setPasting(false);setGhosts([]);setError("");}catch(error){setError(String(error));}return;}
+        if(pasting){try{const placed=positionPaste(cursor.current.onset,cursor.current.row);if(!placed.length)throw new Error("Copied notes are outside this tuning’s piano roll.");const next=pasteRollNotes(lesson,placed);const chosen=lessonRollNotes(next).filter(note=>placed.some(p=>p.pitch===note.pitch&&Math.abs(p.onset-note.onset)<1e-7));onChange(next,chosen[0]);setSelectedKeys(chosen.map(keyOf));setPasting(false);setGhosts([]);setError("");}catch(error){setError(String(error));}return;}
         if(event.metaKey||event.ctrlKey)insert(event);
       }}
       onPointerDown={event=>{if(disabled||pasting||event.metaKey||event.ctrlKey||(event.target as Element).closest('[data-roll-note]'))return;const p=point(event);if(p.x<left)return;boxRef.current={x:p.x,y:p.y,endX:p.x,endY:p.y};setBox(boxRef.current);event.currentTarget.setPointerCapture(event.pointerId);}}
@@ -100,7 +112,8 @@ export function PianoRoll({ lesson, pitches, color, selection, disabled = false,
         if(boxRef.current){const b=boxRef.current;const chosen=notes.filter(note=>{const x=left+note.onset*px,y=rows.findIndex(([pitch])=>pitch===note.pitch)*rowHeight;return x+note.hold*px>=Math.min(b.x,b.endX)&&x<=Math.max(b.x,b.endX)&&y+rowHeight>=Math.min(b.y,b.endY)&&y<=Math.max(b.y,b.endY);});setSelectedKeys(chosen.map(keyOf));if(chosen[0])onSelect(chosen[0]);boxRef.current=undefined;setBox(undefined);event.currentTarget.releasePointerCapture(event.pointerId);return;}
         const d=drag.current;if(!d)return;drag.current=null;event.currentTarget.releasePointerCapture(event.pointerId);
         if(d.moved.some((note,i)=>note.onset!==d.group[i].onset||note.pitch!==d.group[i].pitch||note.hold!==d.group[i].hold))try{
-          const next=rebuild(lesson,notes.map(note=>d.moved.find(moved=>keyOf(moved)===keyOf(note))??note));
+          const moved=translateCopiedFingerings(copyRollNotes(lesson,d.group),d.moved.map((note,i)=>({...note,cues:copyRollNotes(lesson,[d.group[i]])[0].cues})),bundle,bundle);
+          const next=rebuild(lesson,notes.map(note=>moved.find(moved=>keyOf(moved)===keyOf(note))??note));
           const chosen=lessonRollNotes(next).filter(note=>d.moved.some(moved=>moved.pitch===note.pitch&&Math.abs(moved.onset-note.onset)<1e-7));setSelectedKeys(chosen.map(keyOf));onChange(next,chosen[0]);setError("");
         }catch(error){setError(String(error));}setGhosts([]);
       }} onPointerCancel={()=>{drag.current=null;boxRef.current=undefined;setBox(undefined);setGhosts([]);}}>

@@ -13,7 +13,7 @@ reference frequency, palette, layouts (including explicit button overrides),
 scales, and active layout/scale IDs. It is a snapshot, independent of the
 recipient's device library. Courses do not perform device storage writes.
 
-`layoutId` requires an included layout. Without it, the player offers included
+Legacy course-level `layoutId` requires an included layout and remains readable. New course editing uses the included layout set directly. Without a lesson-level requirement, the player offers included
 layouts only. The author explicitly selects tuning, layouts, and relevant scales
 from the browser library or the connected HexBoard library. Loading a layout
 elsewhere in Learn never adds it to a course. Device reads remain lazy: names
@@ -28,8 +28,9 @@ Practice lessons (`kind` omitted or `"practice"`) contain:
 | `targets` | Ordered pitch arrays: one pitch for a melody, several for a chord, empty for a timed rest |
 | `timing` (optional) | Integer `goalBpm` (20–300), `beats` onset spacing per step, optional per-note `holdBeats` |
 | `timeSignature` (optional) | `{numerator, denominator}`; numerator 1–16, denominator 2, 4, 8, or 16; defaults to 4/4 |
+| `layoutId` (optional) | Requires an included layout for this practice lesson; participates in its assessment fingerprint |
 | `repetitions` (optional) | 1–100 consecutive passing, mistake-free runs; omitted means one passing run |
-| `assessment` (optional) | `graded` (default true), `passingScore` (0–100, default 75), `requireButtons` (default false), `trackIndependence` (default true) |
+| `assessment` (optional) | `graded` (default true), `passingScore` (0–100, default 75), `trackIndependence` (default true) |
 | `fingerings` (optional) | Per-layout `{layoutId, steps}` entries, with one cue array per target |
 
 Content pages use `kind: "content"`, identity/title/section, and `markdown` (up to 50,000 characters). They normalize to empty targets and have no grading or completion requirement. Course descriptions and pages render headings, paragraphs, lists, blockquotes, fenced code, emphasis, inline code, and safe web/mail links. Raw HTML is escaped.
@@ -85,7 +86,7 @@ receive normal scoring without completion. Practice tempo is player state, not
 course content. Independent completion also
 requires zero extra attempts and no hints/demonstration during the run.
 
-Exploratory lessons (`graded: false`) show no run grade and write no completion progress. `requireButtons` makes every specified button mandatory; unspecified pitches still accept matching keys. `trackIndependence: false` records ordinary completion only. When `repetitions` is present, passing runs must also have no mistakes, misses, or extras. Streaks reset on a failed run, stopping/restarting, changing lesson/layout, or changing hints. They last only for the active practice session.
+Exploratory lessons (`graded: false`) show no run grade and write no completion progress. Legacy `assessment.requireButtons` is normalized on import to per-cue `acceptDuplicates: false` for specified buttons, then removed. The author edits strictness beside each assigned button. `trackIndependence: false` records ordinary completion only. When `repetitions` is present, passing runs must also have no mistakes, misses, or extras. Streaks reset on a failed run, stopping/restarting, changing lesson/layout, or changing hints. They last only for the active practice session.
 
 ## Identity, progress, and storage
 
@@ -123,7 +124,7 @@ Edits immediately rebuild the canonical steps, grouping simultaneous notes,
 retaining rests and per-note cues, and splitting long empty gaps. No second
 piano-roll data model is persisted. Double-click or Command/Ctrl-click adds a
 note; Backspace/Delete removes the selected voice without shifting later music.
-Drag empty space to select a group, then drag a selected note to move the group. Single-note onset snapping is absolute. Copy/paste uses an app-local clipboard, retaining each layout’s separate button/hand/finger cues; paste follows the cursor until clicked, and Escape cancels. Pitch edits clear stale preferred buttons on moved notes.
+Drag empty space to select a group, then drag a selected note to move the group. Single-note onset snapping is absolute. Copy/paste uses an app-local clipboard, retaining each layout’s separate button/hand/finger cues; paste follows the cursor until clicked, and Escape cancels. Transposed paste selects one board-coordinate displacement per layout, maximizing retained valid buttons and then minimizing travel. Unmappable buttons are cleared while finger/hand advice remains. Pitch edits clear stale preferred buttons on moved notes.
 The roll extends automatically and snaps to quarter, eighth, or sixteenth notes, including triplets.
 The default snap is an eighth note. Free-timing editing uses the same roll,
 with fixed quarter-note columns and holds, compacting empty gaps when notes
@@ -135,7 +136,7 @@ incomplete, but saved practice lessons require valid, nonempty musical content. 
 `lessonPreview.ts` derives preview gates from the same canonical data, ending an
 earlier overlapping gate before retriggering its pitch. Preview audio and timers
 stop on explicit stop, tab hiding, page exit, or editor unmount.
-Lesson duplication creates a new lesson ID; reordering preserves IDs and cues. The collapsible outline groups lessons by section name and supports dragging lessons between sections or moving a section with all its lessons. The Section combo accepts existing or new names. Learner preview runs the draft through Learn without persisting progress. Layout transposition shifts the embedded mapping by whole tuning steps, leaving lesson pitches and cues unchanged for compatibility review.
+Lesson duplication creates a new lesson ID; reordering preserves IDs and cues. The collapsible outline groups lessons by section name and supports dragging lessons between sections or moving a section with all its lessons. The Section combo accepts existing or new names. Learner preview runs the draft through Learn without persisting progress. Layout transposition shifts the embedded mapping by whole tuning steps, leaving lesson pitches and cues unchanged for compatibility review. Course `layoutTranspositions` stores an optional map of included layout IDs to integer offsets (−127 through 127), so the control remains absolute across reopening and export/import. Existing files without offsets use their embedded mapping as zero. Compatibility reporting excludes layouts a lesson does not allow.
 
 Performance uses the rotated HexBoard map. Target outlines appear at most one quarter note before their scheduled onset
 and converge at that onset, with chord cues sharing a timestamp. Every upcoming
@@ -152,7 +153,7 @@ retains physical held keys across this reset and blocks input until all have
 been released. Stop, leaving Learn, device disconnect, page lifecycle cleanup,
 or an unrecoverable error closes the session. Ungraded synth play uses the same
 audio/session owner; ready, free-play, and completed states accept notes without
-advancing evaluation or changing progress. Changing lessons resets hints.
+advancing evaluation or changing progress. Changing lessons resets hints. Switching an allowed layout restarts the run, resets its streak, updates display rotation, and retains the physical-key release barrier. A lesson layout requirement overrides a legacy course-level requirement. Course introductions render before practice and do not count toward completion.
 During hinted course practice, held pitches outside the current target use
 background light instead of held light. `FingerHands.tsx` renders authoring and
 player cues; a finger with one distinct assigned pitch uses that pitch color. Recording has an explicit Stop
@@ -198,3 +199,5 @@ The intermediate course uses the portable v3 format and normal assessment
 fingerprints for progress. Its first eight lessons have recommendations; the
 explicit duplicate-button lesson and following phrase omit them. Exports carry
 the computed button assignments and layout definitions like any authored course.
+
+Tuning replacement checks existing pitches against the new tuning’s pitch lattice, independent of layout range. Incompatible replacements remain staged until the author confirms clearing twice. Revert leaves the course untouched; confirmation clears practice targets/timing holds/fingerings while retaining content pages and teaching text.

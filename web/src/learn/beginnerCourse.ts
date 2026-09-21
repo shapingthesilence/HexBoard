@@ -6,6 +6,7 @@ export interface KeyCue { note: number; button?: number; hand?: "left" | "right"
 export interface CourseLesson {
   kind?: "practice" | "content";
   markdown?: string;
+  layoutId?: string;
   repetitions?: number;
   assessment?: {graded?:boolean;passingScore?:number;requireButtons?:boolean;trackIndependence?:boolean};
   id: string;
