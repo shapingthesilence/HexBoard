@@ -16,6 +16,8 @@ export function PianoRoll({ lesson, pitches, bundle, color, selection, disabled 
   onSelect: (selection: NoteSelection) => void;
 }) {
   const [error, setError] = useState("");
+  const [px, setPx] = useState(64);
+  const [rowHeight, setRowHeight] = useState(24);
   const snap = lesson.timing ? timedSnap : 1;
   const [extraBars, setExtraBars] = useState(2);
   const [ghosts,setGhosts]=useState<RollNote[]>([]);
@@ -34,17 +36,19 @@ export function PianoRoll({ lesson, pitches, bundle, color, selection, disabled 
   const barLength = measureLength(lesson);
   const contentEnd = Math.max(lesson.timing?.beats.reduce((a, b) => a + b, 0) ?? lesson.targets.length, ...notes.map(note => note.onset + note.hold));
   const total = Math.min(2048, Math.max(barLength * 4, (Math.ceil(contentEnd / barLength) + extraBars) * barLength));
-  const px = 64, rowHeight = 24, left = 76;
+  const left = 76;
   useEffect(() => {
     const center = rows.findIndex(([pitch]) => pitch === (notes[0]?.pitch ?? pitches.find(([pitch]) => pitch >= 60)?.[0]));
     if (scroll.current) scroll.current.scrollTop = Math.max(0, center * rowHeight - 110);
   }, [lesson.id]);
-  const viewport=useRef<{pitch:number;offset:number}|undefined>(undefined);
+  const viewport=useRef<{pitch:number;offsetRatio:number}|undefined>(undefined);
+  const horizontalBeat=useRef<number|undefined>(undefined);
   const rowSignature=rows.map(([pitch])=>pitch).join(",");
   useLayoutEffect(()=>{
     const element=scroll.current,anchor=viewport.current;if(!element)return;
-    if(anchor){let index=rows.findIndex(([pitch])=>pitch===anchor.pitch);if(index<0)index=rows.reduce((best,[pitch],i)=>Math.abs(pitch-anchor.pitch)<Math.abs(rows[best][0]-anchor.pitch)?i:best,0);element.scrollTop=index*rowHeight+anchor.offset;}
-  },[rowSignature]);
+    if(anchor){let index=rows.findIndex(([pitch])=>pitch===anchor.pitch);if(index<0)index=rows.reduce((best,[pitch],i)=>Math.abs(pitch-anchor.pitch)<Math.abs(rows[best][0]-anchor.pitch)?i:best,0);element.scrollTop=(index+anchor.offsetRatio)*rowHeight;}
+  },[rowSignature,rowHeight]);
+  useLayoutEffect(()=>{if(scroll.current&&horizontalBeat.current!==undefined)scroll.current.scrollLeft=horizontalBeat.current*px;},[px]);
   useEffect(()=>{if(selection&&!selectedKeys.includes(keyOf(selection)))setSelectedKeys([keyOf(selection)]);},[selection?.step,selection?.voice]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
@@ -86,9 +90,12 @@ export function PianoRoll({ lesson, pitches, bundle, color, selection, disabled 
     catch (error) { setError(error instanceof Error ? error.message : String(error)); }
   }
   return <section className="pianoRoll" aria-label="Lesson piano roll">
-    <div className="learnPracticeHeader"><h3>1. Place a note</h3></div>
+    <div className="learnPracticeHeader pianoRollHeader"><h3>1. Place a note</h3><div className="pianoRollScale" aria-label="Piano roll scale">
+      <label>X <input aria-label="Piano roll horizontal scale" type="range" min="32" max="128" step="8" value={px} onChange={event=>{horizontalBeat.current=(scroll.current?.scrollLeft??0)/px;setPx(Number(event.target.value));}}/></label>
+      <label>Y <input aria-label="Piano roll vertical scale" type="range" min="18" max="42" step="2" value={rowHeight} onChange={event=>{const element=scroll.current;if(element&&rows.length){const index=Math.min(rows.length-1,Math.floor(element.scrollTop/rowHeight));viewport.current={pitch:rows[index][0],offsetRatio:element.scrollTop/rowHeight-index};}setRowHeight(Number(event.target.value));}}/></label>
+    </div></div>
     <p className="learnMuted">Double-click or ⌘/Ctrl-click to add. Drag to move{lesson.timing?"; drag the right edge to resize":" · quarter-note steps"}. Drag empty space to select notes. ⌘/Ctrl+C copies; ⌘/Ctrl+V follows the cursor until clicked. Escape cancels.</p>
-    <div ref={scroll} className="pianoRollScroll" onScroll={event => { const element = event.currentTarget; const index=Math.min(rows.length-1,Math.max(0,Math.floor(element.scrollTop/rowHeight)));viewport.current={pitch:rows[index][0],offset:element.scrollTop-index*rowHeight}; if (element.scrollWidth > element.clientWidth && element.scrollLeft + element.clientWidth >= element.scrollWidth - 50 && total < 2048) setExtraBars(value => value + 2); }}>
+    <div ref={scroll} className="pianoRollScroll" onScroll={event => { const element = event.currentTarget; const index=Math.min(rows.length-1,Math.max(0,Math.floor(element.scrollTop/rowHeight)));if(rows[index])viewport.current={pitch:rows[index][0],offsetRatio:element.scrollTop/rowHeight-index}; if (element.scrollWidth > element.clientWidth && element.scrollLeft + element.clientWidth >= element.scrollWidth - 50 && total < 2048) setExtraBars(value => value + 2); }}>
       <div className="pianoRollRuler" style={{ width: left + total * px + 24 }}><span>Bar</span>{Array.from({ length: Math.ceil(total / barLength) }, (_, bar) => <span key={bar} style={{ position: "absolute", left: left + bar * barLength * px + 3 }}>{bar + 1}</span>)}</div>
       <svg width={left + total * px + 24} height={rows.length * rowHeight} aria-label="Notes by pitch and measure" onDoubleClick={insert} onClick={event=>{
         if(disabled)return;
@@ -120,7 +127,7 @@ export function PianoRoll({ lesson, pitches, bundle, color, selection, disabled 
         }catch(error){setError(String(error));}setGhosts([]);
       }} onPointerCancel={()=>{drag.current=null;boxRef.current=undefined;setBox(undefined);setGhosts([]);}}>
 
-        {rows.map(([pitch, label], row) => <g key={pitch}><rect x={left} y={row * rowHeight} width={total * px} height={rowHeight} fill={row % 2 ? "var(--surface)" : "var(--surface-muted)"} /><text x={left - 8} y={row * rowHeight + 17} textAnchor="end">{label}</text></g>)}
+        {rows.map(([pitch, label], row) => <g key={pitch}><rect x={left} y={row * rowHeight} width={total * px} height={rowHeight} fill={row % 2 ? "var(--surface)" : "var(--surface-muted)"} /><text x={left - 8} y={row * rowHeight + rowHeight / 2 + 4} textAnchor="end">{label}</text></g>)}
         {Array.from({ length: Math.floor(total / snap) + 1 }, (_, i) => { const at = i * snap; return <line key={i} x1={left + at * px} x2={left + at * px} y1={0} y2={rows.length * rowHeight} stroke="currentColor" opacity={Number.isInteger(at) ? 0.16 : 0.07} pointerEvents="none" />; })}
         {Array.from({length:Math.ceil(total/barLength)},(_,bar)=><line key={`bar-${bar}`} x1={left+bar*barLength*px} x2={left+bar*barLength*px} y1={0} y2={rows.length*rowHeight} stroke="currentColor" opacity={0.4} pointerEvents="none"/>)}
         {notes.map(note => {
@@ -139,7 +146,7 @@ export function PianoRoll({ lesson, pitches, bundle, color, selection, disabled 
           </g>;
         })}
         {box&&<rect pointerEvents="none" x={Math.min(box.x,box.endX)} y={Math.min(box.y,box.endY)} width={Math.abs(box.endX-box.x)} height={Math.abs(box.endY-box.y)} fill="var(--brand)" fillOpacity={0.15} stroke="var(--brand)"/>}
-        {pasting&&ghosts.map((note,i)=><rect key={i} pointerEvents="none" x={left+note.onset*px} y={rows.findIndex(([pitch])=>pitch===note.pitch)*rowHeight+3} width={note.hold*px} height={18} fill={color(note.pitch)} opacity={0.65} stroke="var(--text)" strokeDasharray="4 2"/>)}
+        {pasting&&ghosts.map((note,i)=><rect key={i} pointerEvents="none" x={left+note.onset*px} y={rows.findIndex(([pitch])=>pitch===note.pitch)*rowHeight+3} width={note.hold*px} height={rowHeight-6} fill={color(note.pitch)} opacity={0.65} stroke="var(--text)" strokeDasharray="4 2"/>)}
         {playhead !== undefined && <line x1={left + playhead * px} x2={left + playhead * px} y1={0} y2={rows.length * rowHeight} stroke="var(--brand)" strokeWidth={3} pointerEvents="none" />}
       </svg>
     </div>

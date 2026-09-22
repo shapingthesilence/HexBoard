@@ -439,9 +439,7 @@ It packs 140 GRB pixels into 105 words
 plus a header per physical phase: the high 20 bits hold the reset-loop count
 minus one, and the low 12 bits hold the transmitted bit count minus one. Every DMA bank contains four phases:
 identical frames for 8 bits, A/B/A/B for 9, or A/B/C/D for 10. Black and full
-scale remain exact. In 10-bit mode, the lowest quarter-code is promoted to a
-half-code, producing an alternating 1/0 sequence instead of one on frame followed
-by three off frames. Whole-pixel phase rotation distributes modulation without
+scale remain exact. Whole-pixel phase rotation distributes modulation without
 splitting equal RGB channels across phases.
 
 Three SRAM banks occupy 5,088 bytes. One PIO state machine (11 instructions),

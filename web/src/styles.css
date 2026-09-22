@@ -15,7 +15,9 @@
 .learnSettings { border-top: 1px solid var(--border); padding-top: 8px; font-size: .85rem; }
 .learnSettings summary { cursor: pointer; }
 .learnSettings .learnField, .learnSettings p, .learnSettings button { margin-top: 10px; }
-.learnLessonInstruction { font-size: .85rem; color: var(--text-soft); }
+.learnLessonInstruction { margin: 0 0 14px; padding: 12px 14px; border-left: 4px solid var(--brand); border-radius: var(--radius-sm); background: var(--surface-accent); }
+.learnLessonInstruction h3 { margin: 0 0 4px; font-size: .9rem; }
+.learnLessonInstruction p { margin: 0; line-height: 1.5; font-size: .9rem; }
 .learnMuted { color: var(--text-soft); font-size: .8rem; }
 .learnWarning { color: var(--warning); background: var(--warning-soft); padding: 8px; border-radius: var(--radius-sm); font-size: .85rem; }
 .learnActions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
@@ -2679,6 +2681,10 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 }
 
 .pianoRoll { margin-bottom: 1rem; min-width: 0; }
+.pianoRollHeader { flex-wrap: wrap; }
+.pianoRollScale { display: flex; align-items: center; gap: 12px; }
+.pianoRollScale label { display: flex; align-items: center; gap: 5px; font-size: .75rem; font-weight: 700; }
+.pianoRollScale input[type=range] { width: 82px; min-height: 24px; margin: 0; }
 .pianoRollScroll { overflow: auto; max-height: 390px; border: 1px solid var(--border); border-radius: 8px; }
 .pianoRollScroll svg { display: block; max-width: none; touch-action: none; user-select: none; }
 .pianoRollScroll text { fill: currentColor; font-size: 11px; }

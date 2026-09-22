@@ -43,6 +43,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
   const editableCourse = courseId !== "builtin-intermediate" && selectedCourse;
   const lessons = selectedCourse?.lessons ?? beginnerLessons;
   const [editingCourse, setEditingCourse] = useState<UserCourse>();
+  const [pendingEdit, setPendingEdit] = useState<{ saved: UserCourse; draft: CourseDraft }>();
   const [courseMessage, setCourseMessage] = useState("");
   const [lessonIndex, setLessonIndex] = useState(previewIndex);
   const lesson = lessons[lessonIndex] ?? lessons[0];
@@ -63,6 +64,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
   }, [customCourse, layouts]);
   const selection = customCourse
     ? courseLayouts.find(item => item.layout.objectIdHex === (requiredLayout ?? layoutId)) ?? courseLayouts.find(item => item.layout.objectIdHex === customCourse.bundle.activeLayoutIdHex) ?? courseLayouts[0]
+    : course ? layouts.find(item => item.id === layoutId && isLessonTuning(item.bundle)) ?? layouts.find(item => isLessonTuning(item.bundle)) ?? layouts[0]
     : layouts.find((layout) => layout.id === layoutId) ?? layouts[0];
   const keys = useMemo(() => resolveLessonKeys(selection), [selection]);
   const [tuningChoice, setTuningChoice] = useState(layouts[0].bundle.objectIdHex);
@@ -80,7 +82,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
   const [libraryMessage, setLibraryMessage] = useState("");
   const libraryGeneration = useRef(0);
   const library = useRef(lessonDeviceLibrary(transport));
-  const fromDevice = !customCourse && tuningChoice.startsWith("device:");
+  const fromDevice = !course && !customCourse && tuningChoice.startsWith("device:");
   const bundle = customCourse?.bundle ?? (fromDevice && deviceTuning ? deviceTuning : selection.bundle);
   const selectedScale = fromDevice ? loadedScale : bundle.scales.find(scale => scale.objectIdHex === scaleChoice) ?? bundle.scales[0];
   const baseSteps = useMemo(() => selectedScale ? scaleSteps(bundle, selectedScale, root, register) : [], [bundle, selectedScale, root, register]);
@@ -597,11 +599,34 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
     } : { format: courseFormat, id: crypto.randomUUID(), revision: 1, title: "My course", author: "", bundle: snapshot,
       lessons: [{ id: crypto.randomUUID(), title: "First phrase", section: "My lessons", instruction: "Play the phrase, then try it without hints.", targets: [[]], timing: {goalBpm:80,beats:[1]}, timeSignature: {numerator:4,denominator:4} }] });
   }
+  async function editSavedCourse(saved: UserCourse) {
+    try {
+      const currentDrafts = await courseStorage.drafts();
+      setDrafts(currentDrafts);
+      const draft = currentDrafts.find(item => item.id === saved.id);
+      if (draft) setPendingEdit({ saved, draft });
+      else setEditingCourse({ ...structuredClone(saved), revision: saved.revision + 1 });
+    } catch { setCourseMessage("Could not check recovery drafts. Try opening the course again."); }
+  }
+  async function discardDraftAndEditSaved() {
+    if (!pendingEdit) return;
+    try {
+      await courseStorage.removeDraft(pendingEdit.saved.id);
+      setDrafts(items => items.filter(item => item.id !== pendingEdit.saved.id));
+      setEditingCourse({ ...structuredClone(pendingEdit.saved), revision: pendingEdit.saved.revision + 1 });
+      setPendingEdit(undefined);
+    } catch { setCourseMessage("Could not discard the recovery draft. It remains available."); }
+  }
   if (editingCourse) return <CourseEditor initial={editingCourse} bundles={localBundles.map(item => ({ ...item, layouts: layouts.filter(layout => layout.bundle.objectIdHex === item.objectIdHex).map(layout => layout.layout) }))} transport={transport} connected={connected}
     renderPreview={(course,index,close)=><Learn transport={transport} connected={connected} deviceHello={deviceHello} previewCourse={course} previewIndex={index} onExitPreview={close}/>}
     onSave={next=>persistCourse(next,true)} onClose={() => {setEditingCourse(undefined);void refreshDrafts();}} />;
 
   return <section className="learnPage">
+    {pendingEdit && <div className="modalOverlay"><section className="modalPanel" role="dialog" aria-modal="true" aria-labelledby="course-draft-title" onKeyDown={event=>{if(event.key==="Escape")setPendingEdit(undefined);}}>
+      <h3 id="course-draft-title">Resume your draft?</h3>
+      <p>“{pendingEdit.saved.title}” has edits saved in this browser from {new Date(pendingEdit.draft.updatedAt).toLocaleString()}.</p>
+      <div className="learnActions"><button autoFocus className="primary" type="button" onClick={() => { setEditingCourse(pendingEdit.draft.course); setPendingEdit(undefined); }}>Resume draft</button><button type="button" onClick={() => void discardDraftAndEditSaved()}>Discard draft and edit saved course</button><button type="button" onClick={() => setPendingEdit(undefined)}>Cancel</button></div>
+    </section></div>}
     <header className="learnIntro">
       <h2>{previewCourse?"Learner preview":"Learn"}</h2>{previewCourse&&<button type="button" onClick={()=>{dispose();onExitPreview?.();}}>Back to editor</button>}{page === "progress" && session.current && <button type="button" onClick={()=>stop()}>Stop HexBoard session</button>}
       <nav className="learnTabs" aria-label="Learning sections">{(["practice", "course", "progress"] as const).map(item => <button key={item} type="button" aria-current={page === item ? "page" : undefined} disabled={stage === "starting" || libraryBusy} onClick={() => navigate(item)}>{item === "course" ? "Courses" : item === "practice" ? "Scale practice" : "Progress"}</button>)}</nav>
@@ -623,28 +648,17 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
         {course && <><label className="learnField">Course<select value={previewCourse?"preview":courseId} disabled={!!previewCourse || stage === "starting" || libraryBusy} onChange={event => chooseCourse(event.target.value)}>{previewCourse&&<option value="preview">{previewCourse.title}</option>}<option value="builtin">Beginner course</option><option value="builtin-intermediate">Intermediate course · Rhythm</option>{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
           <label className="learnField">Lesson<select value={lessonIndex} disabled={stage === "starting"} onChange={event => changeLesson(Number(event.target.value))}>{lessons.map((item, index) => <option key={item.id} value={index}>{index + 1}. {item.title}</option>)}</select></label>
 
-          {!showIntroduction&&<p className="learnLessonInstruction">{lesson.instruction}</p>}
           {lesson.timing && <><span className="learnMuted">{lesson.timeSignature?.numerator??4}/{lesson.timeSignature?.denominator??4} · Goal: {lesson.timing.goalBpm} BPM</span><label className="learnField">Practice tempo · {stepPractice ? "Step" : `${practiceBpm} BPM`}<input aria-label="Practice tempo" type="range" min={stepTempo} max={300} step={1} value={practiceBpm} disabled={engaged&&stage!=="complete"} onChange={event=>setPracticeBpm(Number(event.target.value))}/></label>{stepPractice && <span className="learnMuted">No metronome. Play the highlighted notes to reveal the next step; rests are skipped.</span>}</>}
-          <details hidden={!!previewCourse} className="learnSettings"><summary>Manage courses</summary>{session.current&&<p className="learnMuted">Stop the learning session to edit or record a course.</p>}<div className="learnActions">
-            <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(false)}>Create course</button>
-            <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(true)}>Make a copy</button>
-            {editableCourse && <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => setEditingCourse({ ...structuredClone(selectedCourse), revision: selectedCourse.revision + 1 })}>Edit course</button>}
-            <button type="button" disabled={engaged} onClick={exportCourse}>Export course</button></div>
-            <label className="learnField">Import shared course<input aria-label="Import shared course" type="file" accept=".json" disabled={engaged || libraryBusy || !storageReady} onChange={event => void importCourse(event)} /></label>
-            {editableCourse&&<button type="button" disabled={engaged} onClick={()=>setDeletePending(true)}>Delete course</button>}
-            {deletePending&&selectedCourse&&<div role="alert"><p>Delete “{selectedCourse.title}”? Export it first if you need a copy. Recovery drafts remain available.</p><button onClick={()=>void courseStorage.remove(selectedCourse.id).then(()=>{setUserCourses(items=>items.filter(item=>item.id!==selectedCourse.id));chooseCourse("builtin");setDeletePending(false);},()=>setCourseMessage("Could not delete course."))}>Confirm delete</button><button onClick={()=>setDeletePending(false)}>Cancel</button></div>}
-            {!!drafts.length&&<div className="learnDraftList" aria-label="Recoverable drafts">{drafts.map(item=><button key={item.id} disabled={engaged||!!session.current} onClick={()=>setEditingCourse(item.course)}>Resume draft: {item.course.title}</button>)}</div>}
-            {pendingImport&&<div role="alert"><p>“{pendingImport.title}” revision {pendingImport.revision} matches local revision {userCourses.find(item=>item.id===pendingImport.id)?.revision}. Compatible lesson progress will be preserved.</p><button onClick={()=>void persistCourse(pendingImport).then(()=>{setPendingImport(undefined);setCourseMessage("Course updated.");},error=>setCourseMessage(String(error)))}>Update existing</button><button onClick={()=>void persistCourse({...pendingImport,id:crypto.randomUUID()}).then(()=>{setPendingImport(undefined);setCourseMessage("Separate copy imported.");},error=>setCourseMessage(String(error)))}>Keep both</button><button onClick={()=>setPendingImport(undefined)}>Cancel import</button></div>}
-          </details>{courseMessage && <p role="status" className="learnMuted">{courseMessage}</p>}</>}
+          {courseMessage && <p role="status" className="learnMuted">{courseMessage}</p>}</>}
         {customCourse ? <><span className="learnMuted">Tuning · {customCourse.bundle.tuning.name}</span>
           <label className="learnField">Layout<select value={selection.layout.objectIdHex} disabled={stage==="starting" || !!requiredLayout} onChange={event => changeLayout(event.target.value)}>{courseLayouts.map(item => item.layout).filter(layout => !requiredLayout || layout.objectIdHex === requiredLayout).map(layout => <option key={layout.objectIdHex} value={layout.objectIdHex}>{layout.name}</option>)}</select></label></> : <>
-        <label className="learnField">Tuning<select value={tuningChoice} disabled={engaged || libraryBusy} onChange={event => void chooseTuning(event.target.value)}>
+        {!course && <label className="learnField">Tuning<select value={tuningChoice} disabled={engaged || libraryBusy} onChange={event => void chooseTuning(event.target.value)}>
           <optgroup label="Starter / imported">{localBundles.map(item => <option key={item.objectIdHex} value={item.objectIdHex}>{item.tuning.name}</option>)}</optgroup>
           <optgroup label="On HexBoard">{tuningNames.map(item => <option key={item.handle} value={`device:${item.handle}`}>{item.name}{item.folderPath !== "/" ? ` · ${item.folderPath}` : ""}</option>)}</optgroup>
-        </select></label>
+        </select></label>}
         <label className="learnField">Layout<select value={fromDevice ? deviceLayoutChoice : selection.id} disabled={(engaged&&!course) || stage==="starting" || libraryBusy} onChange={event => { if (fromDevice) void chooseDeviceLayout(event.target.value); else changeLayout(event.target.value); }}>
           {fromDevice ? <><option value="">Choose a layout</option>{layoutNames.map(item => <option key={item.handle} value={item.handle}>{item.name}</option>)}</>
-            : layouts.filter(item => item.bundle.objectIdHex === tuningChoice).map(item => <option key={item.id} value={item.id}>{item.layout.name}</option>)}
+            : layouts.filter(item => course ? isLessonTuning(item.bundle) : item.bundle.objectIdHex === tuningChoice).map(item => <option key={item.id} value={item.id}>{item.layout.name}</option>)}
         </select></label>
         </>}
         {!course && <><label className="learnField">Scale<select value={scaleChoice} disabled={engaged || libraryBusy} onChange={event => { if (fromDevice) void chooseDeviceScale(event.target.value); else setScaleChoice(event.target.value); }}>
@@ -671,11 +685,22 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
           <p className="learnMuted">Fingering cues: L = left, R = right. Finger 1 is the thumb; 5 is the little finger. Hand and finger choices are guidance.</p>
           <p className="learnMuted">Metronome: four count-in clicks, then one note per click. Grades include timing, missed notes, and extra attempts. Use wired audio for accurate timing.</p>
         </details>
+        {course && !previewCourse && <details className="learnSettings"><summary>Manage courses</summary>{session.current&&<p className="learnMuted">Stop the learning session to edit or record a course.</p>}<div className="learnActions">
+          <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(false)}>Create course</button>
+          <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(true)}>Make a copy</button>
+          {editableCourse && <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => void editSavedCourse(selectedCourse)}>Edit course</button>}
+          <button type="button" disabled={engaged} onClick={exportCourse}>Export course</button></div>
+          <label className="learnField">Import shared course<input aria-label="Import shared course" type="file" accept=".json" disabled={engaged || libraryBusy || !storageReady} onChange={event => void importCourse(event)} /></label>
+          {editableCourse&&<button type="button" disabled={engaged} onClick={()=>setDeletePending(true)}>Delete course</button>}
+          {deletePending&&selectedCourse&&<div role="alert"><p>Delete “{selectedCourse.title}”? Export it first if you need a copy. Recovery drafts remain available.</p><button onClick={()=>void courseStorage.remove(selectedCourse.id).then(()=>{setUserCourses(items=>items.filter(item=>item.id!==selectedCourse.id));chooseCourse("builtin");setDeletePending(false);},()=>setCourseMessage("Could not delete course."))}>Confirm delete</button><button onClick={()=>setDeletePending(false)}>Cancel</button></div>}
+          {drafts.some(item=>!userCourses.some(saved=>saved.id===item.id))&&<div className="learnDraftList" aria-label="Unsaved courses">{drafts.filter(item=>!userCourses.some(saved=>saved.id===item.id)).map(item=><button key={item.id} disabled={engaged||!!session.current} onClick={()=>setEditingCourse(item.course)}>Resume unsaved course: {item.course.title}</button>)}</div>}
+          {pendingImport&&<div role="alert"><p>“{pendingImport.title}” revision {pendingImport.revision} matches local revision {userCourses.find(item=>item.id===pendingImport.id)?.revision}. Compatible lesson progress will be preserved.</p><button onClick={()=>void persistCourse(pendingImport).then(()=>{setPendingImport(undefined);setCourseMessage("Course updated.");},error=>setCourseMessage(String(error)))}>Update existing</button><button onClick={()=>void persistCourse({...pendingImport,id:crypto.randomUUID()}).then(()=>{setPendingImport(undefined);setCourseMessage("Separate copy imported.");},error=>setCourseMessage(String(error)))}>Keep both</button><button onClick={()=>setPendingImport(undefined)}>Cancel import</button></div>}
+        </details>}
         {libraryMessage && <p role="status" className="learnMuted">{libraryMessage}</p>}
-        {course && !customCourse && !isLessonTuning(bundle) && <p role="alert" className="learnWarning">Choose standard 12-EDO for the beginner course. Other tunings work in Scale practice.</p>}
         {(!fromDevice || deviceLayoutChoice) && missing.length > 0 && <p className="learnWarning" role="alert">Missing {missing.join(", ")}. Try another layout or register.</p>}
       </aside>
       {showIntroduction?<article className="learnCard"><h2>{selectedCourse!.title}</h2><CourseMarkdown source={selectedCourse!.description!}/><button type="button" className="courseStartButton" onClick={()=>{setIntroductionSeen(selectedCourse!.id);changeLesson(0);}}>Start Course</button></article>:course&&lesson.kind==="content"?<article className="learnCard"><h2>{lesson.title}</h2><CourseMarkdown source={lesson.markdown??""}/>{lessonIndex<lessons.length-1&&<button type="button" onClick={nextLesson}>Continue</button>}</article>:<div className="learnCard learnPractice">
+        {course && lesson.instruction.trim() && <section className="learnLessonInstruction" aria-label="Lesson notes"><h3>Lesson notes</h3><p>{lesson.instruction}</p></section>}
         {!compatible&&<p role="alert">This layout needs changes: {selectedCourse&&compatibilityReport(selectedCourse).filter(row=>row.lessonId===lesson.id&&row.layoutId===selection.layout.objectIdHex).flatMap(row=>row.issues).join("; ")}</p>}
         <div className="learnActions learnTransport">{!engaged ? <>
           <button className="primary" type="button" disabled={!connected || !readyToPlay} onClick={() => void begin(true)}>{session.current?"Start lesson":"Start on HexBoard"}</button>

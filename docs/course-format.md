@@ -112,7 +112,9 @@ and `drafts` object stores. Each edited draft is saved asynchronously in order.
 The editor distinguishes draft status from saved course status and offers
 recovery, export backup, Undo/Redo (20 edits), and a close warning. Saving the
 course validates the file before replacing the saved record and removing its
-draft. Failed writes remain visible. Drafts are not a cross-device backup.
+draft. Opening a saved course for editing reads drafts again and prompts when
+one shares its ID; the course menu lists only drafts without a saved course.
+Failed writes remain visible. Drafts are not a cross-device backup.
 Small learner preferences and progress remain in localStorage; progress has a
 separate export/import workflow. Course deletion retains recovery drafts.
 
@@ -125,7 +127,7 @@ retaining rests and per-note cues, and splitting long empty gaps. No second
 piano-roll data model is persisted. Double-click or Command/Ctrl-click adds a
 note; Backspace/Delete removes the selected voice without shifting later music.
 Drag empty space to select a group, then drag a selected note to move the group. Single-note onset snapping is absolute. Copy/paste uses an app-local clipboard, retaining each layout’s separate button/hand/finger cues; paste follows the cursor until clicked, and Escape cancels. Transposed paste selects one board-coordinate displacement per layout, maximizing retained valid buttons and then minimizing travel. Unmappable buttons are cleared while finger/hand advice remains. Pitch edits clear stale preferred buttons on moved notes.
-The roll extends automatically and snaps to quarter, eighth, or sixteenth notes, including triplets.
+The roll extends automatically and snaps to quarter, eighth, or sixteenth notes, including triplets. Independent X and Y controls adjust beat width and pitch-row height without changing saved note timing or pitch.
 The default snap is an eighth note. Free-timing editing uses the same roll,
 with fixed quarter-note columns and holds, compacting empty gaps when notes
 are edited; it does not introduce timing data into untimed lessons.
@@ -136,7 +138,7 @@ incomplete, but saved practice lessons require valid, nonempty musical content. 
 `lessonPreview.ts` derives preview gates from the same canonical data, ending an
 earlier overlapping gate before retriggering its pitch. Preview audio and timers
 stop on explicit stop, tab hiding, page exit, or editor unmount.
-Lesson duplication creates a new lesson ID; reordering preserves IDs and cues. The collapsible outline groups lessons by section name and supports dragging lessons between sections or moving a section with all its lessons. The Section combo accepts existing or new names. Learner preview runs the draft through Learn without persisting progress. Layout transposition shifts the embedded mapping by whole tuning steps, leaving lesson pitches and cues unchanged for compatibility review. Course `layoutTranspositions` stores an optional map of included layout IDs to integer offsets (−127 through 127), so the control remains absolute across reopening and export/import. Existing files without offsets use their embedded mapping as zero. Compatibility reporting excludes layouts a lesson does not allow.
+Lesson duplication creates a new lesson ID; reordering preserves IDs and cues. The always-visible outline groups lessons by section name and supports dragging lessons between sections or moving a section with all its lessons. The Section combo accepts existing or new names. Learner preview runs the draft through Learn without persisting progress. Layout transposition shifts the embedded mapping by whole tuning steps, leaving lesson pitches and cues unchanged for compatibility review. Course `layoutTranspositions` stores an optional map of included layout IDs to integer offsets (−127 through 127), so the control remains absolute across reopening and export/import. Existing files without offsets use their embedded mapping as zero. Compatibility reporting excludes layouts a lesson does not allow.
 
 Performance uses the rotated HexBoard map. Target outlines appear at most one quarter note before their scheduled onset
 and converge at that onset, with chord cues sharing a timestamp. Every upcoming

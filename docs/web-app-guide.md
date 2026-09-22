@@ -157,10 +157,11 @@ recommendations as usual.
 
 Both built-in courses support **Make a copy** and **Export course**. Use a copy
 to edit their teaching content or button choices.
+Course lessons show their explanation in a highlighted note above the play controls. The course fixes its tuning; the beginner course uses standard 12-EDO, while Scale practice has its own tuning selector.
 
 ### Creating and Sharing Courses
 
-Open **Courses → Manage courses** for **Create course**, **Make a copy**,
+Open **Courses → Manage courses**, below **Library & help**, for **Create course**, **Make a copy**,
 **Edit course**, **Export course**, and **Import shared course**. Authoring
 controls stay outside the normal lesson view. Courses are saved in this browser;
 export a backup or share the `.hexcourse.json` file with another player.
@@ -216,7 +217,7 @@ The editor centers on three actions:
 3. **Choose a finger** by clicking either hand. Numbers run from 1 (thumb) to
    5 (little finger). This is advice; the board cannot detect the player's finger.
 
-The roll adds room as the phrase grows or you scroll toward its end. Choose
+The roll adds room as the phrase grows or you scroll toward its end. The compact X and Y sliders above it adjust beat spacing and pitch-row height independently. Choose
 quarter-, eighth-, or sixteenth-note snapping, including triplets (straight eighth notes by default). Drag empty space to select several notes and drag a selected note to move the group. Command/Ctrl+C copies the selection; Command/Ctrl+V attaches a copy to the cursor until you click to place it. Escape cancels. Each layout’s button, hand, and finger recommendations are copied too. Transposing a pasted group moves its recommended buttons by one shared board displacement per layout, preserving the shape. Buttons that cannot fit are cleared; hand/finger advice remains. Switching layout tabs keeps the same pitches visible in the piano roll, clamping only at its range limits.
 Free-timing lessons use the same roll with quarter-note steps; moving or deleting
 notes closes silent gaps, and note lengths stay at one quarter note.
@@ -259,7 +260,7 @@ Applying a tuning that cannot represent existing lesson pitches shows **Incompat
 **Preview as learner** tests the current draft—even when its active lesson has no notes yet—and returns to the editor without saving learner progress. **Layout compatibility** in **Course Settings** appears only when something needs attention. Its highlighted summary and a warning on the Course Settings button flag missing notes or button assignments without blocking saving. Choose a layout in **Transpose layout** and set its offset in tuning steps. The saved number is the offset from its original course mapping; set it to zero to restore that mapping. Lesson pitches stay fixed.
 
 Course and draft storage uses IndexedDB in this browser. **Manage courses**
-offers recovery drafts, deletion, and shared-file import/export. The editor
+lists courses with only an unsaved draft, along with deletion and shared-file import/export. Opening a saved course for editing prompts you to resume its recovery draft or discard it and edit the saved version. The editor
 has Undo/Redo, lesson duplication/reordering, step reordering, and note-order
 controls. **Close** warns about unsaved edits and offers to keep the draft,
 discard it, or keep editing. Export a draft backup before clearing browser data.
