@@ -211,9 +211,9 @@ The editor centers on three actions:
    Select a note and press Backspace or Delete to remove it. Deletion leaves
    silence and keeps later notes in place. Simultaneous notes form a chord.
 2. **Choose a key** on the board directly below the roll. Only matching pitches
-   can be assigned. The preferred key lights as the target; non-recommended duplicates retain ordinary background color and brightness. Leave
-   **Accept matching keys too** checked for guidance, or clear it to require
-   the selected physical key. Switch layout tabs to author each layout's cues.
+   can be assigned. The preferred key lights as the target; non-recommended duplicates retain ordinary background color and brightness. Keys are guidance by default. Enable
+   **Require recommended keys throughout this lesson** in **Lesson Settings**
+   to make all assigned keys mandatory. Switch layout tabs to author each layout's cues.
 3. **Choose a finger** by clicking either hand. Numbers run from 1 (thumb) to
    5 (little finger). This is advice; the board cannot detect the player's finger.
 
@@ -236,10 +236,30 @@ Clicking or creating a piano-roll note plays a short preview. Dragging to a diff
 keys. **Stop** stops it immediately. The same compact toolbar owns BPM, meter,
 and the snap grid used by both recording and piano-roll edits. Playback includes chords, rests,
 microtonal pitches, and holds that overlap later notes. Free-timing lessons use
-even quarter notes at 80 BPM for preview. Holds affect playback only; release
-duration is not graded. The player uses approaching hexagonal outlines on the
+even quarter notes at 80 BPM for preview. Holds affect playback by default. Enable **Grade note releases and durations**
+in **Lesson Settings** to assess articulation too, then choose a forgiving
+release tolerance in beats (default 0.25). Early, late, or missing releases
+prevent completion. On-screen duration practice uses one click to hold and
+another to release. Step practice remains untimed. The player uses approaching hexagonal outlines on the
 key map to show when to play. Each outline starts one quarter note before its
 target time; upcoming outlines can overlap for faster notes and chords.
+
+To allow flexible answers, select a step and use **Accepted answers** below the
+roll. Choose **Any listed voicing** for a set such as `[C4 E4 G4] [E4 G4 C5]`,
+or **Pitch classes in a range** for any inversion or any C within a chosen range.
+The roll still supplies the demonstration. A changed pitch group clears its
+answer rule; check it again after editing or recording a replacement phrase.
+When grading duration, note lengths follow the authored alternative voice order
+(or pitch-class order). Shared chord tones must be rearticulated; write a single
+long note for a sustained voice.
+
+For creative activities, select **Free play / exploration** in **Lesson Settings**.
+Set the duration, pitch range, optional scale classes, and optional highlighted
+chord tones. Enable **Repeating accompaniment** for a chord loop or a single
+sustained drone. Learners can play their own ideas until the timer ends, with no
+target sequence or grade. Outside notes remain audible with gentle feedback.
+Stopping or leaving the activity also stops its accompaniment. **Guided practice ·
+no grade** is still available for unscored practice of a fixed phrase.
 
 Timed lessons have an authored **Goal tempo** and learner-selected **Practice
 tempo** (20–300 BPM). Slower runs receive normal timing scores, but completion
@@ -255,7 +275,7 @@ The always-visible **Course outline** can drag lessons between sections or move 
 
 Applying a tuning that cannot represent existing lesson pitches shows **Incompatible Tuning: Clear Notes/Buttons/Fingers?**. **Revert** is focused by default and preserves the course. **Clear** asks for confirmation again before clearing practice notes and their button/finger assignments. Titles and Markdown pages remain, and Undo can restore the draft.
 
-**Lesson Settings** also contains the optional grading controls: exploratory practice has no grade; timed lessons can require a passing score such as 90; physical-key requirements are set beside each recommended key using **Accept matching keys too**. Turn off **Track independence** when completing once is sufficient. **Require clean repetitions** adds a consecutive-run requirement. A failed run, stopping, changing lessons/layouts, or changing hints resets that streak. Numeric settings may be cleared while typing; leaving a blank or out-of-range field restores its prior value.
+**Lesson Settings** also contains the optional grading controls: guided practice can run without a grade; timed lessons can require a passing score such as 90. **Require recommended keys throughout this lesson** applies the physical-key requirement to all assigned notes. Turn off **Track independence** when completing once is sufficient. **Require clean repetitions** adds a consecutive-run requirement. A failed run, stopping, changing lessons/layouts, or changing hints resets that streak. Tempo and repetition fields may be cleared while typing; leaving a blank or out-of-range field restores their prior values.
 
 **Preview as learner** tests the current draft—even when its active lesson has no notes yet—and returns to the editor without saving learner progress. **Layout compatibility** in **Course Settings** appears only when something needs attention. Its highlighted summary and a warning on the Course Settings button flag missing notes or button assignments without blocking saving. Choose a layout in **Transpose layout** and set its offset in tuning steps. The saved number is the offset from its original course mapping; set it to zero to restore that mapping. Lesson pitches stay fixed.
 

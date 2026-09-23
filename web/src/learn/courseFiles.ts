@@ -1,9 +1,10 @@
+import { parseAnswer, parseExploration } from "./lessonAnswers.ts";
 import { onBeatGrid,beatTick } from "./beatGrid.ts";
 import { parseTuningBundleFile, TuningBundleFileFormat, type TuningBundle, type TuningBundleLayout } from "../catalogs/layoutsCatalog.ts";
 import { resolveLessonKeys, type LessonKey, type KeyLight } from "./majorScale.ts";
 import type { CourseLesson, KeyCue } from "./beginnerCourse.ts";
 
-export const courseFormat = "hexboard.course.v3";
+export const courseFormat = "hexboard.course.v4";
 export const courseLibraryKey = "hexboard.learn.courses.v2";
 export const maxCourseBytes = 2_000_000;
 export interface UserCourse {
@@ -33,7 +34,7 @@ function id(value: unknown): string {
 }
 export function parseCourse(value: unknown): UserCourse {
   const input = object(value);
-  if (input.format !== courseFormat && input.format !== "hexboard.course.v2") throw new Error("Unsupported course file. Choose a HexBoard course JSON.");
+  if (input.format !== courseFormat && input.format !== "hexboard.course.v3" && input.format !== "hexboard.course.v2") throw new Error("Unsupported course file. Choose a HexBoard course JSON.");
   const bundle = parseTuningBundleFile({ format: TuningBundleFileFormat, tuningBundle: input.bundle });
   const layoutId = input.layoutId === undefined ? undefined : text(input.layoutId, "Layout ID", 32);
   if (layoutId && !bundle.layouts.some(layout => layout.objectIdHex === layoutId)) throw new Error("The required layout is missing from this course.");
@@ -43,15 +44,21 @@ export function parseCourse(value: unknown): UserCourse {
   if(input.layoutTranspositions!==undefined)for(const [key,value] of Object.entries(object(input.layoutTranspositions))){if(!bundle.layouts.some(layout=>layout.objectIdHex===key)||!Number.isInteger(value)||Math.abs(Number(value))>127)throw new Error("Invalid layout transposition.");layoutTranspositions[key]=Number(value);}
   const lessons = input.lessons.map((raw): CourseLesson => {
     const lesson = object(raw);
-    if(lesson.kind!==undefined&&lesson.kind!=="practice"&&lesson.kind!=="content")throw new Error("Unknown lesson type.");
+    if(lesson.kind!==undefined&&lesson.kind!=="practice"&&lesson.kind!=="content"&&lesson.kind!=="exploration")throw new Error("Unknown lesson type.");
     if(lesson.layoutId!==undefined&&!bundle.layouts.some(layout=>layout.objectIdHex===lesson.layoutId))throw new Error("The lesson layout is missing from this course.");
     if(lesson.kind==="content")return {kind:"content",id:id(lesson.id),title:text(lesson.title,"Page title",100),section:text(lesson.section??"My lessons","Section",80),instruction:"",targets:[],markdown:text(lesson.markdown??"","Page content",50000,true)};
+    if(lesson.kind==="exploration")return {kind:"exploration",id:id(lesson.id),title:text(lesson.title,"Lesson title",100),section:text(lesson.section??"My lessons","Section",80),instruction:text(lesson.instruction,"Lesson explanation",2000),targets:[],exploration:parseExploration(lesson.exploration),assessment:{graded:false},...(lesson.layoutId?{layoutId:String(lesson.layoutId)}:{})};
     if(lesson.repetitions!==undefined&&(!Number.isInteger(lesson.repetitions)||Number(lesson.repetitions)<1||Number(lesson.repetitions)>100))throw new Error("Repetitions must be 1–100.");
     if (!Array.isArray(lesson.targets) || !lesson.targets.length || lesson.targets.length > 256) throw new Error("Each lesson needs 1–256 steps.");
     const targets = lesson.targets.map(rawNotes => {
       if (!Array.isArray(rawNotes) || rawNotes.length > 10 || rawNotes.some(note => typeof note !== "number" || !Number.isFinite(note) || note < 0 || note > 127) || new Set(rawNotes).size !== rawNotes.length) throw new Error("Each step needs 1–10 distinct pitches between 0 and 127.");
       return rawNotes as number[];
     });
+    let answers:CourseLesson["answers"];
+    if(lesson.answers!==undefined){
+      if(!Array.isArray(lesson.answers)||lesson.answers.length!==targets.length)throw new Error("Answer rules must match the lesson steps.");
+      answers=lesson.answers.map((value,index)=>parseAnswer(value,targets[index].length));
+    }
     let assessment:CourseLesson["assessment"];
     if(lesson.assessment!==undefined){const a=object(lesson.assessment);for(const key of ["graded","requireButtons","trackIndependence"])if(a[key]!==undefined&&typeof a[key]!=="boolean")throw new Error("Invalid lesson completion setting.");if(a.passingScore!==undefined&&(!Number.isInteger(a.passingScore)||Number(a.passingScore)<0||Number(a.passingScore)>100))throw new Error("Passing score must be 0–100.");assessment={graded:a.graded as boolean|undefined,passingScore:a.passingScore as number|undefined,requireButtons:a.requireButtons as boolean|undefined,trackIndependence:a.trackIndependence as boolean|undefined};}
     let timeSignature: CourseLesson["timeSignature"];
@@ -69,7 +76,9 @@ export function parseCourse(value: unknown): UserCourse {
         if (!Array.isArray(t.holdBeats) || t.holdBeats.length !== targets.length || t.holdBeats.some((row, index) => !Array.isArray(row) || row.length !== targets[index].length || row.some(value => typeof value !== "number" || value < beatTick-1e-8 || value > 32 || !onBeatGrid(value)))) throw new Error("Each note length must be positive, at most 32 quarter notes, on the straight/triplet grid.");
         holdBeats = t.holdBeats as number[][];
       }
-      timing = { goalBpm: t.goalBpm, beats: t.beats as number[], holdBeats };
+      if(t.gradeDuration!==undefined&&typeof t.gradeDuration!=="boolean")throw new Error("Invalid duration grading setting.");
+      if(t.releaseWindowBeats!==undefined&&(typeof t.releaseWindowBeats!=="number"||!Number.isFinite(t.releaseWindowBeats)||t.releaseWindowBeats<0.05||t.releaseWindowBeats>1))throw new Error("Release tolerance must be 0.05–1 quarter notes.");
+      timing = { goalBpm: t.goalBpm, beats: t.beats as number[], holdBeats, ...(t.gradeDuration===undefined?{}:{gradeDuration:t.gradeDuration as boolean}), ...(t.releaseWindowBeats===undefined?{}:{releaseWindowBeats:t.releaseWindowBeats as number}) };
     }
     if (!targets.some(notes => notes.length)) throw new Error("A lesson needs at least one played note.");
     if (!timing && targets.some(notes => !notes.length)) throw new Error("Fill or remove blank steps before saving a free-timing lesson.");
@@ -98,9 +107,9 @@ export function parseCourse(value: unknown): UserCourse {
         fingerings.push({ layoutId: layout.objectIdHex, steps });
       }
     }
-    if(assessment?.requireButtons){for(const fingering of fingerings)for(const cues of fingering.steps)for(const cue of cues)if(cue.button!==undefined)cue.acceptDuplicates=false;}
-    if(assessment)delete assessment.requireButtons;
-    return { ...(lesson.layoutId?{layoutId:String(lesson.layoutId)}:{}), id: id(lesson.id), title: text(lesson.title, "Lesson title", 100), section: text(lesson.section ?? "My lessons", "Section", 80), instruction: text(lesson.instruction, "Lesson explanation", 2000), targets, timing, timeSignature, fingerings, ...(assessment?{assessment}:{}), ...(lesson.repetitions===undefined?{}:{repetitions:Number(lesson.repetitions)}) };
+    // Older per-cue requirements become one lesson policy. Explicit lesson policy wins.
+    if(assessment?.requireButtons===undefined&&fingerings.some(f=>f.steps.some(cues=>cues.some(c=>c.acceptDuplicates===false))))assessment={...assessment,requireButtons:true};
+    return { ...(lesson.layoutId?{layoutId:String(lesson.layoutId)}:{}), id: id(lesson.id), title: text(lesson.title, "Lesson title", 100), section: text(lesson.section ?? "My lessons", "Section", 80), instruction: text(lesson.instruction, "Lesson explanation", 2000), targets, ...(answers?{answers}:{}), timing, timeSignature, fingerings, ...(assessment?{assessment}:{}), ...(lesson.repetitions===undefined?{}:{repetitions:Number(lesson.repetitions)}) };
   });
   if (new Set(lessons.map(lesson => lesson.id)).size !== lessons.length) throw new Error("Lesson IDs must be unique.");
   return { format: courseFormat, id: id(input.id), revision: Number(input.revision), title: text(input.title, "Course title", 100), author: text(input.author ?? "", "Author", 100, true), bundle, layoutId, lessons, ...(Object.keys(layoutTranspositions).length?{layoutTranspositions}:{}), ...(input.description===undefined?{}:{description:text(input.description,"Course introduction",50000,true)}) };
@@ -122,7 +131,7 @@ export function courseProgressId(course: UserCourse | undefined, lessonId: strin
 }
 export function lessonCues(lesson: CourseLesson, layoutId: string, step: number): readonly KeyCue[] {
   const cues=lesson.fingerings?.find(item => item.layoutId === layoutId)?.steps[step] ?? [];
-  return lesson.assessment?.requireButtons?cues.map(cue=>({...cue,acceptDuplicates:cue.button===undefined?cue.acceptDuplicates:false})):cues;
+  return lesson.assessment?.requireButtons===undefined?cues:cues.map(cue=>({...cue,acceptDuplicates:!lesson.assessment?.requireButtons}));
 }
 export function cueAccepts(cues: readonly KeyCue[], index: number, note: number) {
   const cue = cues.find(cue => cue.note === note);
@@ -148,6 +157,11 @@ export function parsePhrase(source: string): { targets: number[][]; beats: numbe
     const body = match[1];
     const names = body === "-" ? [] : body.startsWith("[") ? body.slice(1, -1).trim().split(/\s+/) : [body];
     const notes = names.map(name => {
+      if(/^@(?:\d+(?:\.\d+)?|\.\d+)$/.test(name)) {
+        const pitch=Number(name.slice(1));
+        if(pitch>127)throw new Error(`Note ${name} is out of range.`);
+        return pitch;
+      }
       const n = name.match(/^([A-Ga-g])([#♯b♭]?)(-?\d+)$/);
       if (!n) throw new Error(`Unknown note ${name}. Include its octave, for example C4.`);
       const pitch = (Number(n[3]) + 1) * 12 + ({ C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[n[1].toUpperCase()]!) + (/[#♯]/.test(n[2]) ? 1 : /[b♭]/.test(n[2]) ? -1 : 0);
@@ -165,8 +179,8 @@ export function parsePhrase(source: string): { targets: number[][]; beats: numbe
 // Only graded content participates: prose, ordering, fingering advice and
 // playback-only holds can change without erasing an achievement.
 export function assessmentFingerprint(course: UserCourse, lesson: CourseLesson): string {
-  const strict = (lesson.fingerings ?? []).map(item => ({ layoutId: item.layoutId, steps: item.steps.map(cues => cues.filter(cue => cue.button !== undefined && (cue.acceptDuplicates === false || lesson.assessment?.requireButtons === true)).map(cue => ({note:cue.note,button:cue.button})).sort((a,b)=>a.note-b.note)) })).filter(item => item.steps.some(cues=>cues.length)).sort((a,b)=>a.layoutId.localeCompare(b.layoutId));
-  const value = JSON.stringify({ targets: lesson.targets.map(notes=>[...notes].sort((a,b)=>a-b)), timing: lesson.timing ? {goalBpm:lesson.timing.goalBpm,beats:lesson.timing.beats} : undefined, strict, requiredLayout:lesson.layoutId??course.layoutId, ...(lesson.assessment?{assessment:lesson.assessment}:{}), ...(lesson.repetitions!==undefined?{repetitions:lesson.repetitions}:{}) });
+  const strict = (lesson.fingerings ?? []).map(item => ({ layoutId: item.layoutId, steps: item.steps.map(cues => cues.filter(cue => cue.button !== undefined && (lesson.assessment?.requireButtons ?? cue.acceptDuplicates === false)).map(cue => ({note:cue.note,button:cue.button})).sort((a,b)=>a.note-b.note)) })).filter(item => item.steps.some(cues=>cues.length)).sort((a,b)=>a.layoutId.localeCompare(b.layoutId));
+  const value = JSON.stringify({ targets: lesson.targets.map(notes=>[...notes].sort((a,b)=>a-b)), ...(lesson.answers?{answers:lesson.answers}:{}), timing: lesson.timing ? {goalBpm:lesson.timing.goalBpm,beats:lesson.timing.beats,...(lesson.timing.gradeDuration?{gradeDuration:true,holdBeats:lesson.timing.holdBeats,releaseWindowBeats:lesson.timing.releaseWindowBeats??0.25}:{})} : undefined, strict, requiredLayout:lesson.layoutId??course.layoutId, ...(lesson.assessment?{assessment:lesson.assessment}:{}), ...(lesson.repetitions!==undefined?{repetitions:lesson.repetitions}:{}) });
   return contentHash(value);
 }
 function contentHash(value:string) {

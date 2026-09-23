@@ -8,10 +8,10 @@ import {translateCopiedFingerings} from "./courseFingering.ts";
 const layouts=starterLayouts();
 const course:UserCourse={format:courseFormat,id:"test",revision:1,title:"Test",author:"",bundle:{...layouts[0].bundle,layouts:layouts.map(item=>item.layout)},lessons:[structuredClone(beginnerLessons[0])]};
 describe("course layout workflow",()=>{
- it("converts legacy required-button controls into editable per-note rules",()=>{
+ it("preserves lesson-level required-button controls",()=>{
   const result=parseCourse({...course,lessons:[{...course.lessons[0],assessment:{requireButtons:true}}]});
-  expect(result.lessons[0].assessment?.requireButtons).toBeUndefined();
-  expect(result.lessons[0].fingerings!.every(f=>f.steps.every(cues=>cues.every(cue=>cue.acceptDuplicates===false)))).toBe(true);
+  expect(result.lessons[0].assessment?.requireButtons).toBe(true);
+  expect(result.lessons[0].fingerings!.every(f=>f.steps.every(cues=>cues.every(cue=>cue.acceptDuplicates!==false)))).toBe(true);
  });
  it("persists transposition offsets through export/import and reverses the mapping",()=>{
   const id=layouts[0].layout.objectIdHex;

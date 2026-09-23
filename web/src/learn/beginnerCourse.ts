@@ -1,10 +1,13 @@
+import { answerLabel, answerAllows, matchAnswer, type StepAnswer, type Exploration } from "./lessonAnswers.ts";
 import { compactCourseKeys } from "./compactCourseKeys.ts";
 import { cueAccepts, lessonCues } from "./courseFiles.ts";
 import { MajorScaleRun, majorScale, noteName } from "./majorScale.ts";
 
 export interface KeyCue { note: number; button?: number; hand?: "left" | "right"; finger?: number; acceptDuplicates?: boolean }
 export interface CourseLesson {
-  kind?: "practice" | "content";
+  kind?: "practice" | "content" | "exploration";
+  answers?: (StepAnswer | null)[];
+  exploration?: Exploration;
   markdown?: string;
   layoutId?: string;
   repetitions?: number;
@@ -15,7 +18,7 @@ export interface CourseLesson {
   instruction: string;
   targets: readonly (readonly number[])[];
   timeSignature?: { numerator: number; denominator: number };
-  timing?: { goalBpm: number; beats: number[]; holdBeats?: number[][] };
+  timing?: { goalBpm: number; beats: number[]; holdBeats?: number[][]; gradeDuration?: boolean; releaseWindowBeats?: number };
   fingerings?: { layoutId: string; steps: KeyCue[][] }[];
 }
 const melody = (notes: readonly number[]) => notes.map(note => [note]);
@@ -57,9 +60,9 @@ export class CourseRun extends MajorScaleRun {
     if (this.complete || this.held.has(index)) return false;
     this.held.set(index, note);
     this.lastEventAt = receivedAt;
-    if (!this.target.includes(note) || !cueAccepts(lessonCues(this.lesson, this.layoutId, this.step), index, note)) {
+    if (!answerAllows(this.target, this.lesson.answers?.[this.step], note) || !cueAccepts(lessonCues(this.lesson, this.layoutId, this.step), index, note)) {
       this.mistakes++;
-      this.feedback = `Try ${this.target.map(this.label).join(" + ")}.`;
+      this.feedback = `Try ${answerLabel(this.target,this.lesson.answers?.[this.step],this.label)}.`;
     } else {
       this.startedAt ??= receivedAt;
       this.attacked = true;
@@ -75,9 +78,9 @@ export class CourseRun extends MajorScaleRun {
   private evaluate(receivedAt: number) {
     if (!this.attacked) return;
     const held = [...this.held.values()];
-    if (!this.target.every(note => [...this.held].some(([index, pitch]) => pitch === note && cueAccepts(lessonCues(this.lesson, this.layoutId, this.step), index, note)))) return;
-    if (this.target.length > 1 && held.some(note => !this.target.includes(note))) {
-      this.feedback = "Release the other notes.";
+    if (!matchAnswer(this.target, this.lesson.answers?.[this.step], this.held,
+      (index,note)=>cueAccepts(lessonCues(this.lesson,this.layoutId,this.step),index,note))) {
+      if (held.length) this.feedback = "Release the other notes.";
       return;
     }
     this.step++;
@@ -86,7 +89,7 @@ export class CourseRun extends MajorScaleRun {
     if (this.complete) {
       this.finishedAt = receivedAt;
       this.feedback = "Lesson complete.";
-    } else this.feedback = `Next: ${this.target.map(this.label).join(" + ")}.`;
+    } else this.feedback = `Next: ${answerLabel(this.target,this.lesson.answers?.[this.step],this.label)}.`;
   }
 }
 

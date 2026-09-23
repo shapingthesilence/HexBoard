@@ -5,7 +5,7 @@ This reference describes the implemented browser format and evaluation rules.
 
 ## Portable format
 
-A `.hexcourse.json` file has `format: "hexboard.course.v3"`, `id`, positive
+A `.hexcourse.json` file has `format: "hexboard.course.v4"`, `id`, positive
 integer `revision`, `title`, optional-empty `author`, `bundle`, optional
 `layoutId`, optional Markdown `description` (up to 50,000 characters), and `lessons`. The embedded `bundle` uses the existing normalized
 [TuningBundle](../web/src/catalogs/layoutsCatalog.ts) shape: tuning definition,
@@ -30,20 +30,20 @@ Practice lessons (`kind` omitted or `"practice"`) contain:
 | `timeSignature` (optional) | `{numerator, denominator}`; numerator 1–16, denominator 2, 4, 8, or 16; defaults to 4/4 |
 | `layoutId` (optional) | Requires an included layout for this practice lesson; participates in its assessment fingerprint |
 | `repetitions` (optional) | 1–100 consecutive passing, mistake-free runs; omitted means one passing run |
-| `assessment` (optional) | `graded` (default true), `passingScore` (0–100, default 75), `trackIndependence` (default true) |
+| `assessment` (optional) | `requireButtons` (default false), `graded` (default true), `passingScore` (0–100, default 75), `trackIndependence` (default true) |
 | `fingerings` (optional) | Per-layout `{layoutId, steps}` entries, with one cue array per target |
 
 Content pages use `kind: "content"`, identity/title/section, and `markdown` (up to 50,000 characters). They normalize to empty targets and have no grading or completion requirement. Course descriptions and pages render headings, paragraphs, lists, blockquotes, fenced code, emphasis, inline code, and safe web/mail links. Raw HTML is escaped.
 
 Pitches are MIDI-equivalent numbers in 0–127, including fractional values for
-microtonal pitches. They specify exact pitches, not octave-independent classes.
+microtonal pitches. Targets specify exact demonstration pitches; optional answer rules can accept octave-independent classes.
 All timing values use quarter-note units, regardless of time signature. Step
 spacing is 1/12–8 quarter notes on a 1/12-quarter-note grid (supporting straight and triplet subdivisions). Meter controls
 bar grouping in the roll and does not change grading, tempo units, or count-in. Untimed lessons cannot
 contain rests. `holdBeats`, when present, has one array per step and one
 1/12–32 beat value per pitch (an empty array for a rest). Omitted holds default
-to the step spacing. Holds may overlap later onsets and affect demonstration
-playback only; they are not graded. Each cue has a target `note`, optional physical `button` index,
+to the step spacing. Holds may overlap later onsets. They affect demonstration playback and, when
+`timing.gradeDuration` is true, release grading. Each cue has a target `note`, optional physical `button` index,
 optional `hand` (`left`/`right`), optional `finger` (1–5), and optional
 `acceptDuplicates` (defaults true). A button index must exist in its embedded layout. Pitch mismatches are compatibility warnings; the editor only offers matching playable keys for new assignments.
 
@@ -53,7 +53,7 @@ Invalid files report an error; invalid stored course entries are skipped without
 removing valid entries. Importing an existing course ID presents Update existing, Keep both, and Cancel.
 Update retains the course and lesson IDs; Keep both generates a new course ID.
 The dialog shows incoming and local revisions. Importing never removes a
-recovery draft. Both v2 and v3 imports are supported; exports use v3.
+recovery draft. v2, v3, and v4 imports are supported; exports use v4. Older apps reject v4 rather than silently ignoring its grading rules.
 
 ## Timing and key evaluation
 
@@ -61,10 +61,10 @@ Free lessons and the bottom **Step** position of a timed lesson's practice-tempo
 slider wait for correct notes without metronome clicks. Step mode skips silent
 rests and reveals subsequent steps only after the current target is satisfied;
 it does not count as timed completion. The example plays at the goal BPM in
-this mode. Single-note targets allow overlap. Chords
+this mode. Text phrase inputs also accept exact numeric pitches such as `@60.5`. Single-note targets allow overlap. Chords
 require their target pitches held together with unrelated pitches released;
-common tones may remain held between chords. When a cue disallows duplicates,
-the specified physical key is required. Hand/finger labels are instructional
+common tones may remain held between chords. When `assessment.requireButtons`
+is true, recommended physical keys are required for pitches that have assignments. Hand/finger labels are instructional
 only: the hardware cannot identify which hand or finger pressed a key.
 
 Timed lessons share the metronome's audio/performance clock mapping. Four clicks
@@ -73,7 +73,7 @@ Onset windows extend at most half a beat on either side, narrowed at neighboring
 subdivision boundaries. A hit advances the visual cue immediately without
 moving later scheduled targets. Silence advances missed targets. Attacks during
 rests or between valid onset windows count as extra attempts; previously held
-notes can ring through a rest. Note-off duration is not graded.
+notes can ring through a rest in the default onset-only mode.
 
 Timed chords require simultaneous target membership and at least one fresh
 attack within their window. Timing uses the largest absolute error among their
@@ -86,14 +86,78 @@ receive normal scoring without completion. Practice tempo is player state, not
 course content. Independent completion also
 requires zero extra attempts and no hints/demonstration during the run.
 
-Exploratory lessons (`graded: false`) show no run grade and write no completion progress. Legacy `assessment.requireButtons` is normalized on import to per-cue `acceptDuplicates: false` for specified buttons, then removed. The author edits strictness beside each assigned button. `trackIndependence: false` records ordinary completion only. When `repetitions` is present, passing runs must also have no mistakes, misses, or extras. Streaks reset on a failed run, stopping/restarting, changing lesson/layout, or changing hints. They last only for the active practice session.
+Ungraded practice (`graded: false`) still follows its target sequence, shows no run grade, and writes no completion progress. `assessment.requireButtons` is a lesson-wide policy authored in Lesson Settings. An explicit false overrides old per-cue strictness. Files with strict `acceptDuplicates: false` cues and no lesson policy import with `requireButtons: true`, applying the requirement to all assigned keys in that lesson. Hand/finger advice remains optional. `trackIndependence: false` records ordinary completion only. When `repetitions` is present, passing runs must also have no mistakes, misses, or extras. Streaks reset on a failed run, stopping/restarting, changing lesson/layout, or changing hints. They last only for the active practice session.
+
+## Alternative answers and release grading
+
+`answers`, when present, contains one rule per target step; `null` keeps exact
+pitch matching. Rests must use `null`. A rule replaces the accepted pitches;
+`targets` remain the demonstration and piano-roll content. Two rule forms exist:
+
+- `{ "voicings": [[60,64,67], [64,67,72]] }` accepts either complete listed
+  voicing. List 1–64 voicings with the same voice count as the target; pitches
+  from different voicings cannot be combined into an unlisted answer.
+- `{ "pitchClasses": [0,4,7], "min": 48, "max": 84, "period": 12 }` accepts
+  one distinct pitch per class, anywhere in the inclusive range, including
+  inversions. `[0]` accepts any C in that range. Classes are distinct values
+  from zero up to (excluding) the period, default 12 semitones; custom periods
+  support fractional pitches. Every class must occur in the range.
+
+Both graders use these rules. Chords reject unrelated pitches and extra octave
+doublings; physical duplicates of the same pitch do not add voices. Single-note
+answers continue to allow legato. Compatibility requires one complete playable
+answer on a layout. Hints display available answer pitches. Assigned button
+requirements apply to their exact pitches; alternative pitches without assignments
+remain unrestricted. Reordering steps carries answer rules. Roll edits preserve
+rules when the entire pitch group survives together; changing or splitting a
+pitch group clears its rule. Phrase replacement and recording clear old rules.
+
+`timing.gradeDuration` defaults false. When true, each accepted voice must have a
+fresh onset and a release at its scheduled onset plus `holdBeats` (or step spacing
+if omitted). For alternatives, hold index follows the listed voicing order or
+pitch-class order, not sorted sounding pitches. `releaseWindowBeats` defaults
+0.25 and accepts 0.05–1 quarter notes on either side. Each early, late, or missing
+release counts once, lowers the score, and prevents completion. The run continues
+through the final written hold and release window, including trailing rests.
+Shared chord tones must be rearticulated in this mode; use a single long note for
+a sustained voice. Step practice does not grade releases. On-screen duration
+practice uses click-to-hold/click-to-release, as chord practice does.
+
+## Exploration activities
+
+`kind: "exploration"` has identity/title/section/instruction, optional `layoutId`,
+and an `exploration` object. Import normalizes targets to `[]` and grading to
+false. It has no fixed sequence, score, or completion achievement:
+
+```json
+{
+  "durationSeconds": 60,
+  "min": 48, "max": 84,
+  "pitchClasses": [0,2,4,5,7,9,11],
+  "highlighted": [60,64,67],
+  "accompaniment": {"bpm": 80, "chords": [[48,55], [53,60]], "beats": [4,4]}
+}
+```
+
+Duration is 1–3600 seconds. Range uses MIDI-equivalent pitches. Optional classes
+use the same default 12-semitone period as answer rules; omit them to allow all
+pitches in range. Optional highlighted pitches must belong to the allowed set.
+The board distinguishes chord tones from the other suggested scale notes. Notes
+outside the set remain audible with gentle feedback and no penalty.
+
+Accompaniment supports 1–64 chords, including empty rest chords, with matching
+0.125–32 beat lengths and 20–300 BPM. A one-chord loop sustains a drone. Playback
+uses a separate synth voice source so student releases cannot cut off the drone.
+An absolute clock selects the current chord, skipping elapsed changes after a
+late frame. Ending, stopping, changing lessons, hiding the tab, or disconnecting
+stops accompaniment. Exploration finishes after its duration even without input.
 
 ## Identity, progress, and storage
 
 Course and lesson IDs remain stable during editing. Course `revision` increases
 when a saved course is edited, but it does not define assessment compatibility.
 Progress uses course ID, lesson ID, and a deterministic assessment fingerprint
-of target pitch sets, onset spacing, goal tempo, strict physical-key rules, and
+of target pitch sets, alternative answer rules, onset spacing, goal tempo, assessed holds and release tolerance, strict physical-key rules, and
 required-layout constraint, assessment settings, and repetition requirement. Titles, explanations, lesson order, hand/finger
 advice, time signatures, accepted duplicate preferences, and playback-only holds
 are excluded.

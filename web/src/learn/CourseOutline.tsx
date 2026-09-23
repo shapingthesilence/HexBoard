@@ -29,7 +29,7 @@ export function CourseOutline({ lessons, selected, disabled, onSelect, onChange,
         <button className="courseOutlineLesson" type="button" disabled={disabled} draggable={!disabled} aria-current={selected === lesson.id ? "page" : undefined}
           onDragStart={event => { event.stopPropagation(); event.dataTransfer.setData("text/plain", lesson.id); setDrag({ lesson: lesson.id }); }} onDragEnd={() => setDrag(undefined)}
           onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); event.stopPropagation(); drop({ section, lesson: lesson.id }); }} onClick={() => onSelect(lesson.id)}>
-          <span aria-label={lesson.kind === "content" ? "Content page" : "Practice lesson"}>{lesson.kind === "content" ? "▤" : "♫"}</span> {lesson.title}
+          <span aria-label={lesson.kind === "content" ? "Content page" : lesson.kind === "exploration" ? "Exploration" : "Practice lesson"}>{lesson.kind === "content" ? "▤" : "♫"}</span> {lesson.title}
         </button>
         <button className="courseOutlineMore" type="button" aria-label={`Actions for ${lesson.title}`} aria-expanded={menu === lesson.id} disabled={disabled} onClick={() => setMenu(menu === lesson.id ? undefined : lesson.id)}>…</button>
         {menu === lesson.id && <div className="courseOutlineMenu" role="menu"><button type="button" role="menuitem" disabled={lessons.length >= 100} onClick={() => { setMenu(undefined); onDuplicate(lesson.id); }}>Duplicate</button><button type="button" role="menuitem" disabled={lessons.length === 1} onClick={() => { setMenu(undefined); onDelete(lesson.id); }}>Delete</button></div>}

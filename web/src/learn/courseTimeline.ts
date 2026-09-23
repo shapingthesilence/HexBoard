@@ -20,7 +20,7 @@ export function rebuild(lesson: CourseLesson, notes: RollNote[], extraRests: num
     const timed = rebuild({...lesson,timing:{goalBpm:80,beats:lesson.targets.map(()=>1)}}, notes.map(note=>({...note,onset:Math.round(note.onset),hold:1})), extraRests.map(Math.round));
     const included = timed.targets.flatMap((notes,index)=>notes.length?[index]:[]);
     if (!included.length) included.push(0);
-    return {...timed,timing:undefined,targets:included.map(index=>timed.targets[index]),fingerings:timed.fingerings?.map(fingering=>({...fingering,steps:included.map(index=>fingering.steps[index])}))};
+    return {...timed,timing:undefined,targets:included.map(index=>timed.targets[index]),answers:timed.answers?.filter((_,index)=>included.includes(index)),fingerings:timed.fingerings?.map(fingering=>({...fingering,steps:included.map(index=>fingering.steps[index])}))};
   }
   if(notes.some(note=>!onBeatGrid(note.onset)||!onBeatGrid(note.hold)))throw new Error("Place notes on the timing grid.");
   notes=notes.map(note=>({...note,onset:roundBeat(note.onset),hold:roundBeat(note.hold)}));
@@ -47,7 +47,12 @@ export function rebuild(lesson: CourseLesson, notes: RollNote[], extraRests: num
     if (!note.cues?.[fingering.layoutId] && original !== undefined && original !== note.pitch) { delete next.button; delete next.acceptDuplicates; }
     return [next];
   })) }));
-  return { ...lesson, targets: groups.map(group => group.map(note => note.pitch)), fingerings, timing: { ...lesson.timing, beats: sorted.map((at, i) => roundBeat((sorted[i + 1] ?? end) - at)), holdBeats: groups.map(group => group.map(note => note.hold)) } };
+  // Keep a step rule only when its full pitch group survives together.
+  const answers=lesson.answers?groups.map(group=>{
+    const source=group[0]?.step;
+    return source!==undefined&&source>=0&&group.every(note=>note.step===source)&&group.length===lesson.targets[source].length&&group.every(note=>lesson.targets[source][note.voice]===note.pitch)?lesson.answers![source]??null:null;
+  }):undefined;
+  return { ...lesson, ...(answers?{answers}:{}), targets: groups.map(group => group.map(note => note.pitch)), fingerings, timing: { ...lesson.timing, beats: sorted.map((at, i) => roundBeat((sorted[i + 1] ?? end) - at)), holdBeats: groups.map(group => group.map(note => note.hold)) } };
 }
 export function editRollNote(lesson: CourseLesson, step: number, voice: number, change: Partial<Pick<RollNote, "onset" | "hold" | "pitch">>): CourseLesson {
   return rebuild(lesson, lessonRollNotes(lesson).map(note => note.step === step && note.voice === voice ? { ...note, ...change } : note));
@@ -60,7 +65,7 @@ export function removeRollNote(lesson: CourseLesson, step: number, voice: number
 }
 export function reorderSteps(lesson: CourseLesson, from: number, to: number): CourseLesson {
   const order = lesson.targets.map((_, i) => i); const [item] = order.splice(from, 1); order.splice(to, 0, item);
-  return { ...lesson, targets: order.map(i => lesson.targets[i]), timing: lesson.timing ? { ...lesson.timing, beats: order.map(i => lesson.timing!.beats[i]), holdBeats: lesson.timing.holdBeats ? order.map(i => lesson.timing!.holdBeats![i]) : undefined } : undefined, fingerings: lesson.fingerings?.map(item => ({ ...item, steps: order.map(i => item.steps[i]) })) };
+  return { ...lesson, targets: order.map(i => lesson.targets[i]), answers:lesson.answers?.map((_,i)=>lesson.answers![order[i]]), timing: lesson.timing ? { ...lesson.timing, beats: order.map(i => lesson.timing!.beats[i]), holdBeats: lesson.timing.holdBeats ? order.map(i => lesson.timing!.holdBeats![i]) : undefined } : undefined, fingerings: lesson.fingerings?.map(item => ({ ...item, steps: order.map(i => item.steps[i]) })) };
 }
 
 export function copyRollNotes(lesson:CourseLesson,selected:RollNote[]):RollNote[]{return selected.map(note=>({...note,cues:Object.fromEntries((lesson.fingerings??[]).flatMap(f=>{const cue=f.steps[note.step]?.find(c=>c.note===note.pitch);return cue?[[f.layoutId,{...cue}]]:[];}))}));}

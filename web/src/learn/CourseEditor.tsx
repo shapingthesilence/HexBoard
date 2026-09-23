@@ -1,3 +1,4 @@
+import { AnswerEditor, ExplorationEditor, defaultExploration } from "./ActivityEditor.tsx";
 import {NoteAudition} from "./noteAudition.ts";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { MidiTransport } from "../midi/types.ts";
@@ -168,7 +169,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
     setDraft({ ...draft, lessons }); setLessonIndex(activeIndex); setStep(0); setVoice(undefined);
   }
   function updateTargets(targets: readonly (readonly number[])[], beats: number[] = targets.map(() => 1)) {
-    updateLesson({ ...lesson, targets, timing: lesson.timing ? { ...lesson.timing, beats, holdBeats: targets.map((notes,index)=>notes.map(note=>lesson.timing?.holdBeats?.[index]?.[lesson.targets[index]?.indexOf(note)] ?? beats[index])) } : undefined,
+    updateLesson({ ...lesson, targets, answers:lesson.answers?targets.map((notes,i)=>JSON.stringify(notes)===JSON.stringify(lesson.targets[i])?lesson.answers![i]??null:null):undefined, timing: lesson.timing ? { ...lesson.timing, beats, holdBeats: targets.map((notes,index)=>notes.map(note=>lesson.timing?.holdBeats?.[index]?.[lesson.targets[index]?.indexOf(note)] ?? beats[index])) } : undefined,
       fingerings: lesson.fingerings?.map(fingering => ({ ...fingering, steps: targets.map((notes, index) => (fingering.steps[index] ?? []).filter(cue => notes.includes(cue.note))) })) });
   }
   function updateCue(note: number, changes: Partial<KeyCue>) {
@@ -185,7 +186,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
     setStep(lesson.targets.length);setVoice(undefined);
   }
   function removeStep() {
-    updateLesson({ ...lesson, targets: lesson.targets.filter((_, index) => index !== step), timing: lesson.timing ? { ...lesson.timing, beats: lesson.timing.beats.filter((_, index) => index !== step), holdBeats: lesson.timing.holdBeats?.filter((_,index)=>index!==step) } : undefined,
+    updateLesson({ ...lesson, targets: lesson.targets.filter((_, index) => index !== step), answers:lesson.answers?.filter((_,index)=>index!==step), timing: lesson.timing ? { ...lesson.timing, beats: lesson.timing.beats.filter((_, index) => index !== step), holdBeats: lesson.timing.holdBeats?.filter((_,index)=>index!==step) } : undefined,
       fingerings: lesson.fingerings?.map(item => ({ ...item, steps: item.steps.filter((_, index) => index !== step) })) });
     setStep(Math.max(0, step - 1));
   }
@@ -193,7 +194,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
     try {
       const parsed = parsePhrase(phrase);
       if (parsed.targets.flat().some(note => !pitches.some(([pitch]) => pitch === note))) throw new Error("This phrase includes notes outside the selected layout. Choose another layout or octave.");
-      updateLesson({ ...lesson, targets: parsed.targets, fingerings: [], timing: lesson.timing || parsed.targets.some(notes => !notes.length) || parsed.beats.some(beats => beats !== 1) ? { goalBpm: lesson.timing?.goalBpm ?? 80, beats: parsed.beats } : undefined });
+      updateLesson({ ...lesson, targets: parsed.targets, answers:undefined, fingerings: [], timing: lesson.timing || parsed.targets.some(notes => !notes.length) || parsed.beats.some(beats => beats !== 1) ? { ...lesson.timing, holdBeats:undefined, goalBpm: lesson.timing?.goalBpm ?? 80, beats: parsed.beats } : undefined });
       setStep(0);
     } catch (error) { setError(error instanceof Error ? error.message : "Could not read phrase."); }
   }
@@ -212,7 +213,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
     const phrase = capture.current;
     phrase?.flush(performance.now());
     if (phrase?.targets.length) {
-      const recordedLesson={ ...lesson, targets: phrase.targets, timing: lesson.timing ? { ...lesson.timing, beats: phrase.beats, holdBeats: phrase.holdBeats } : undefined,
+      const recordedLesson={ ...lesson, targets: phrase.targets, answers:undefined, timing: lesson.timing ? { ...lesson.timing, beats: phrase.beats, holdBeats: phrase.holdBeats } : undefined,
         fingerings: [{ layoutId: layout.objectIdHex, steps: phrase.cues }] };
       const recordedCourse={...draft,lessons:draft.lessons.map((item,index)=>index===lessonIndex?recordedLesson:item)};
       setDraft(recordedCourse);setError("");
@@ -282,10 +283,12 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
     </section></div>}
     {settingsOverlay==="lesson"&&<div className="modalOverlay" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)setSettingsOverlay(undefined);}}><section className="modalPanel lessonSettingsDialog" role="dialog" aria-modal="true" aria-labelledby="lesson-settings-title"><header className="learnPracticeHeader"><h3 id="lesson-settings-title">Lesson Settings</h3><button type="button" onClick={()=>setSettingsOverlay(undefined)}>Close</button></header>
       <div className="courseEditorFields"><label className="learnField">Section<input autoFocus list="course-sections" value={lesson.section} maxLength={80} onChange={event=>updateLesson({...lesson,section:event.target.value})}/><datalist id="course-sections">{[...new Set(draft.lessons.map(item=>item.section))].map(section=><option key={section} value={section}/>)}</datalist></label>
-      <label className="learnField">Lesson type<select value={lesson.kind??"practice"} onChange={event=>updateLesson({...lesson,kind:event.target.value as "practice"|"content",...(event.target.value==="practice"&&!lesson.targets.length?{targets:[[]],timing:{goalBpm:80,beats:[1]}}:{})})}><option value="practice">Practice lesson</option><option value="content">Markdown page</option></select></label>
-      {lesson.kind!=="content"&&<><label className="learnField">Timing<select value={lesson.timing?"beat":"free"} onChange={event=>{updateLesson({...lesson,timing:event.target.value==="beat"?{goalBpm:80,beats:lesson.targets.map(()=>1)}:undefined});setVoice(undefined);}}><option value="beat">Metronome</option><option value="free">Free timing</option></select></label><label className="learnField">Recording<select value={recordMode} onChange={event=>setRecordMode(event.target.value as "melody"|"chords")}><option value="melody">Melody · each press</option><option value="chords">Chords · release to finish</option></select></label></>}
+      <label className="learnField">Lesson type<select value={lesson.kind??"practice"} onChange={event=>updateLesson({...lesson,kind:event.target.value as CourseLesson["kind"],...(event.target.value==="exploration"?{exploration:lesson.exploration??defaultExploration,assessment:{graded:false}}:{}),...(event.target.value==="practice"&&!lesson.targets.length?{targets:[[]],timing:{goalBpm:80,beats:[1]}}:{})})}><option value="practice">Practice lesson</option><option value="content">Markdown page</option><option value="exploration">Free play / exploration</option></select></label>
+      {lesson.kind!=="content"&&lesson.kind!=="exploration"&&<><label className="learnField">Timing<select value={lesson.timing?"beat":"free"} onChange={event=>{updateLesson({...lesson,timing:event.target.value==="beat"?{goalBpm:80,beats:lesson.targets.map(()=>1)}:undefined});setVoice(undefined);}}><option value="beat">Metronome</option><option value="free">Free timing</option></select></label><label className="learnField">Recording<select value={recordMode} onChange={event=>setRecordMode(event.target.value as "melody"|"chords")}><option value="melody">Melody · each press</option><option value="chords">Chords · release to finish</option></select></label></>}
       </div>
-      {lesson.kind!=="content"&&<div className="courseEditorFields"><label className="learnField">Grading<select value={lesson.assessment?.graded===false?"explore":"graded"} onChange={event=>updateLesson({...lesson,assessment:{...lesson.assessment,graded:event.target.value==="graded"}})}><option value="graded">Graded practice</option><option value="explore">Exploratory · no grade</option></select></label>
+      {lesson.kind!=="content"&&lesson.kind!=="exploration"&&<div className="courseEditorFields"><label className="learnField">Grading<select value={lesson.assessment?.graded===false?"explore":"graded"} onChange={event=>updateLesson({...lesson,assessment:{...lesson.assessment,graded:event.target.value==="graded"}})}><option value="graded">Graded practice</option><option value="explore">Guided practice · no grade</option></select></label>
+      <label className="checkField"><input type="checkbox" checked={lesson.assessment?.requireButtons??lesson.fingerings?.some(f=>f.steps.some(cues=>cues.some(cue=>cue.acceptDuplicates===false)))??false} onChange={event=>updateLesson({...lesson,assessment:{...lesson.assessment,requireButtons:event.target.checked}})}/>Require recommended keys throughout this lesson</label>
+      {lesson.timing&&<><label className="checkField"><input type="checkbox" checked={lesson.timing.gradeDuration??false} onChange={event=>updateLesson({...lesson,timing:{...lesson.timing!,gradeDuration:event.target.checked}})}/>Grade note releases and durations</label>{lesson.timing.gradeDuration&&<label className="learnField">Release tolerance · beats<input type="number" min={0.05} max={1} step={0.05} value={lesson.timing.releaseWindowBeats??0.25} onChange={event=>updateLesson({...lesson,timing:{...lesson.timing!,releaseWindowBeats:Number(event.target.value)}})}/></label>}</>}
       {lesson.assessment?.graded!==false&&<>{lesson.timing&&<label className="learnField">Passing rhythm score<DeferredNumberInput value={lesson.assessment?.passingScore??75} min={0} max={100} onCommit={value=>updateLesson({...lesson,assessment:{...lesson.assessment,passingScore:value}})}/></label>}<label className="checkField"><input type="checkbox" checked={lesson.repetitions!==undefined} onChange={event=>updateLesson({...lesson,repetitions:event.target.checked?1:undefined})}/> Require clean repetitions</label>{lesson.repetitions!==undefined&&<label className="learnField">Clean runs in a row<DeferredNumberInput value={lesson.repetitions} min={1} max={100} onCommit={value=>updateLesson({...lesson,repetitions:value})}/></label>}<label className="checkField"><input type="checkbox" checked={lesson.assessment?.trackIndependence!==false} onChange={event=>updateLesson({...lesson,assessment:{...lesson.assessment,trackIndependence:event.target.checked}})}/> Track independence</label></>}
       </div>}
       {lesson.kind!=="content"&&<><label className="learnField">Lesson layout<select value={lesson.layoutId??""} onChange={event=>updateLesson({...lesson,layoutId:event.target.value||undefined})}><option value="">Learner can choose</option>{draft.bundle.layouts.map(item=><option key={item.objectIdHex} value={item.objectIdHex}>{item.name}</option>)}</select></label><label className="learnField">Lesson explanation<textarea rows={4} maxLength={2000} value={lesson.instruction} onChange={event=>updateLesson({...lesson,instruction:event.target.value})}/></label></>}
@@ -294,7 +297,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
     <div className="courseAuthorWorkspace"><CourseOutline lessons={draft.lessons} selected={lesson.id} disabled={busy} onAdd={addLesson} onDuplicate={duplicateLesson} onDelete={deleteLesson} onSelect={id=>{setLessonIndex(draft.lessons.findIndex(item=>item.id===id));setStep(0);setVoice(undefined);setPhrase("");}} onChange={lessons=>{const id=lesson.id;setDraft({...draft,lessons});setLessonIndex(lessons.findIndex(item=>item.id===id));}}/><div>
     <label className="learnField courseLessonTitle">Lesson title<input value={lesson.title} maxLength={100} onChange={event=>updateLesson({...lesson,title:event.target.value})}/></label>
     <div className="courseEditorBody">
-      {lesson.kind==="content"?<><label className="learnField">Page Markdown<textarea rows={16} value={lesson.markdown??""} maxLength={50000} onChange={event=>updateLesson({...lesson,markdown:event.target.value})}/></label><CourseMarkdown source={lesson.markdown??""}/></>:<>
+      {lesson.kind==="content"?<><label className="learnField">Page Markdown<textarea rows={16} value={lesson.markdown??""} maxLength={50000} onChange={event=>updateLesson({...lesson,markdown:event.target.value})}/></label><CourseMarkdown source={lesson.markdown??""}/></>:lesson.kind==="exploration"?<ExplorationEditor value={lesson.exploration??defaultExploration} onChange={exploration=>updateLesson({...lesson,exploration})}/>:<>
       <div className="coursePianoToolbar" aria-label="Lesson playback and recording controls">
         {previewing?<button type="button" onClick={stopPreview}>■ Stop</button>:<button type="button" disabled={recording||!lesson.targets.some(notes=>notes.length)} onClick={()=>void playPreview()}>▶ Play</button>}
         {recording?<button type="button" onClick={finishRecording}>■ Stop recording · {recordedCount}</button>:<button type="button" disabled={!connected||previewing} onClick={()=>void startRecording()}>● Record</button>}
@@ -308,6 +311,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
         color={pitch=>lessonScreenColor(lessonLedColor(pitch,"target",{bundle:{...draft.bundle,activeLayoutIdHex:layout.objectIdHex},steps:keys.find(key=>key.note===pitch)?.steps??0,root:0,mode:0,index:keys.find(key=>key.note===pitch)?.key.index??0})).fill}
         onSelect={selected=>selectNote(selected.step,selected.voice)} onChange={(next,selected)=>{updateLesson(next);setStep(selected?.step??Math.min(step,next.targets.length-1));setVoice(selected?.voice);}}/>
       }
+      <AnswerEditor key={`${lesson.id}:${step}`} lesson={lesson} step={step} onChange={updateLesson}/>
       <fieldset disabled={busy} className="courseEditorBody"><div className="courseAssignmentPanels">
         <section className="courseAssignmentPanel" aria-label="Preferred key panel"><div className="learnPracticeHeader"><h3>2. Choose a key</h3><span>{selectedPitch===undefined?"Select a note above":label(selectedPitch)}</span></div>
           {draft.bundle.layouts.length>1&&<div className="learnActions courseLayoutTabs">{draft.bundle.layouts.map(item=><button type="button" key={item.objectIdHex} aria-pressed={layout.objectIdHex===item.objectIdHex} onClick={()=>setLayoutId(item.objectIdHex)}>{item.name}</button>)}</div>}
@@ -322,7 +326,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
               <text transform={`rotate(${-angle})`} textAnchor="middle" dy="4" style={{fill:color.text}}>{note===null?"·":preferred&&selectedCue&&cueLabel(selectedCue)?cueLabel(selectedCue):label(note)}</text>
             </g>;
           })}</g></svg>
-          {selectedCue?.button!==undefined&&<div className="learnActions"><span>Key {selectedCue.button}</span><label className="checkField"><input type="checkbox" checked={selectedCue.acceptDuplicates!==false} onChange={event=>updateCue(selectedPitch!,{acceptDuplicates:event.target.checked})}/>Accept matching keys too</label><button type="button" onClick={()=>updateCue(selectedPitch!,{button:undefined,acceptDuplicates:true})}>Clear key</button></div>}
+          {selectedCue?.button!==undefined&&<div className="learnActions"><span>Key {selectedCue.button}</span><button type="button" onClick={()=>updateCue(selectedPitch!,{button:undefined,acceptDuplicates:true})}>Clear key</button></div>}
         </section>
         <section className="courseAssignmentPanel" aria-label="Recommended finger panel"><div className="learnPracticeHeader"><h3>3. Choose a finger</h3><span>{selectedCue&&cueLabel(selectedCue)?cueLabel(selectedCue):"Optional"}</span></div>
           <FingerHands cues={selectedCue?cues.filter(cue=>cue.hand===selectedCue.hand&&cue.finger===selectedCue.finger):[]} color={note=>lessonScreenColor(lessonLedColor(note,"target",{bundle:{...draft.bundle,activeLayoutIdHex:layout.objectIdHex},steps:keys.find(key=>key.note===note)?.steps??0,root:0,mode:0,index:keys.find(key=>key.note===note)?.key.index??0}))} disabled={busy||selectedPitch===undefined} onChoose={(hand,finger)=>{if(selectedPitch!==undefined)updateCue(selectedPitch,{hand,finger});}}/>
@@ -331,7 +335,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
         </section>
       </div>
       <details className="learnSettings"><summary>Phrase tools</summary>
-        {isLessonTuning(draft.bundle)&&<><p className="learnMuted">Type C4 D4:0.5 E4:2. Chords: [C4 E4 G4]. Rest: -:1. A length of 1 is a quarter note; 0.5 is an eighth note. Replacing the phrase clears fingerings.</p><textarea aria-label="Quick phrase" rows={2} value={phrase} onChange={event=>setPhrase(event.target.value)}/><button type="button" onClick={replacePhrase}>Replace phrase</button></>}
+        {isLessonTuning(draft.bundle)&&<><p className="learnMuted">Type C4 D4:0.5 E4:2. Chords: [C4 E4 G4]. Rest: -:1. A length of 1 is a quarter note; 0.5 is an eighth note. Replacing the phrase clears fingerings and alternative answers.</p><textarea aria-label="Quick phrase" rows={2} value={phrase} onChange={event=>setPhrase(event.target.value)}/><button type="button" onClick={replacePhrase}>Replace phrase</button></>}
         <div className="learnActions"><button type="button" disabled={lesson.targets.length>=256} onClick={addStep}>Add blank step</button><button type="button" disabled={lesson.targets.length===1} onClick={()=>{removeStep();setVoice(undefined);}}>Remove selected step</button><button type="button" disabled={step===0} onClick={()=>moveStep(-1)}>Earlier step</button><button type="button" disabled={step===lesson.targets.length-1} onClick={()=>moveStep(1)}>Later step</button><button type="button" onClick={exportDraft}>Export draft backup</button></div>
       </details></fieldset>
       </>}
