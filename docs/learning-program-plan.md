@@ -12,14 +12,11 @@ Firmware uses acknowledged sessions with manual
 encoder recovery and no heartbeat.
 Real hardware acceptance remains required before a validated device release.
 
-Milestone 2 is implemented for browser/device acceptance: 15 authored 12-EDO
-lessons, simultaneous triads, a I–IV–V–I progression, and local progress with
-export/import. Automated coverage checks every lesson on all three starter
-layouts; beginner usability and physical hardware acceptance remain pending.
-
-The built-in intermediate rhythm course adds nine timed lessons and an explicit
-duplicate-button lesson. Compact physical-button recommendations remain in both
-courses until that lesson; matching duplicates are still accepted.
+The current curriculum buildout includes First Steps, Isomorphic Movement, and
+Rhythm Fundamentals: 44 practice exercises and four short reading pages across
+three layouts. The [curriculum plan](curriculum.md) owns the current inventory,
+full twelve-course pathway, authoring rules, manual-derived route guidance, and
+learner acceptance criteria. The remaining nine courses are planned.
 
 User-authored courses are also implemented with a canonical timed piano roll,
 independent playback holds, goal/practice tempo, recoverable IndexedDB drafts,
@@ -55,14 +52,11 @@ A typical lesson takes about five minutes:
 
 ## Curriculum
 
-| Stage | Concepts | Practice |
-| --- | --- | --- |
-| Meet your HexBoard | Layout directions, duplicate pitches, octaves, controls | Find a note, find another occurrence, match a pitch |
-| Intervals | Semitones, whole tones, thirds, fifths, octaves | Find an interval, hear and repeat, move a pattern |
-| Scales | Major, minor pentatonic, natural minor, scale degrees | Ascending/descending scales, missing degrees, melodic patterns |
-| Chords | Major/minor triads, inversions, arpeggios | Build a chord, change quality, find another voicing |
-| Progressions | I–IV–V–I, I–V–vi–IV, later ii–V–I | Change on the beat, retain common tones, choose nearby voicings |
-| Application | Rhythm, phrasing, accompaniment, improvisation | Echo phrases, short songs, play over a progression |
+Build the core path in this order: First Steps → Isomorphic Movement → Rhythm →
+Major Scale Fluency → Fingering/Technique → Chords/Arpeggios → Progressions/Voice
+Leading → Putting It Together. Follow with Melody/Phrasing, Minor/Improvisation,
+Two-Hand Playing, and Isomorphic Transposition. Keep microtonality as a later
+branch. See the [curriculum plan](curriculum.md) for sequences and current scope.
 
 ## Layout independence
 
@@ -136,7 +130,8 @@ labels and fingerings are editable suggestions. Follow the
 ## Technical ownership
 
 - `web/src/learn/courseFiles.ts`, `CourseEditor.tsx`, `phraseRecorder.ts`: portable course authoring and recording; see the course contract.
-- `web/src/learn/beginnerCourse.ts`: authored targets, chord evaluation, and local progress schema.
+- `web/src/learn/curriculumCourses.ts`, `curriculumKeys.ts`: built-in teaching sequence and manual-derived physical routes.
+- `web/src/learn/beginnerCourse.ts`: chord evaluation and local progress schema.
 - `web/src/learn/deviceLibrary.ts`: lazy names/definitions and connection cache.
 - `web/src/catalogs/deviceGeometry.ts`: shared device object decoder.
 - `web/src/learn/tuningPractice.ts`: reference-relative pitches, scale degrees, and labels.
@@ -178,7 +173,7 @@ layout or flash writes are introduced.
 | Milestone | Scope | Acceptance |
 | --- | --- | --- |
 | 1: working prototype | One guided scale, repeated patterns, beat grading, browser audio, LEDs, session ownership | Complete the same lesson on all three default layouts; prove encoder exit and re-entry on hardware |
-| 2: beginner release | About 12–15 lessons, triads, one progression, local progress | Beginner completes a short musical exercise with hints removed |
+| 2: foundation content | First three courses implemented; remaining core courses planned in the curriculum reference | Beginner completes original mini pieces without hints; physical routes reviewed on hardware |
 | 3: practice expansion | Normal instrument mode, broader rhythm exercises, inversions, review | Feedback remains useful across layouts and tempos |
 | 4: song trainer | Curated pieces, MIDI import, part selection, passage looping | Supported imports yield playable, correctly timed exercises |
 | 5: tuning-specific teaching | Authored explanations and exercises for other tunings | Build on the implemented tuning-aware scale practice |
@@ -192,7 +187,7 @@ support, manual exit/re-entry status, LED batches, pattern timing, beat windows,
 missed notes, immediate beat cues, extra attempts, metronome scheduling/cleanup,
 every course lesson on each starter layout, simultaneous chords, common tones,
 and progress validation.
-Run web tests/build, factory generator, firmware `make`, and `git diff --check`.
+Run web tests/build, factory generator, and `git diff --check`; run firmware `make` when firmware changes.
 
 Hardware acceptance must check all three layouts with real key/LED identities,
 browser audio latency, held-key releases, encoder force-exit, lost USB, abrupt

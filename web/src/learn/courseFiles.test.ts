@@ -1,5 +1,6 @@
+import {lessonFixtures as beginnerLessons} from "./lessonFixtures.test-support.ts";
 import { describe, expect, it } from "vitest";
-import { beginnerLessons, CourseRun, parseCourseProgress, recordCourseRun } from "./beginnerCourse.ts";
+import { CourseRun, parseCourseProgress, recordCourseRun } from "./beginnerCourse.ts";
 import { courseFormat, parseCourse, readCourseFile, readCourseLibrary, parsePhrase, lessonCues, cueAccepts, courseKeyLight, courseProgressId, type UserCourse } from "./courseFiles.ts";
 import { starterLayouts, resolveLessonKeys } from "./majorScale.ts";
 import { BeatScaleRun } from "./scalePractice.ts";

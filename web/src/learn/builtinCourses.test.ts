@@ -1,66 +1,97 @@
 import {describe,it,expect} from "vitest";
-import {beginnerLessons} from "./beginnerCourse.ts";
-import {intermediateCourse,intermediateLessons} from "./intermediateCourse.ts";
-import {courseFormat,parseCourse,lessonCues,cueAccepts,courseProgressId} from "./courseFiles.ts";
-import {parseCourseProgress,recordCourseRun} from "./beginnerCourse.ts";
+import {builtinCourses,firstStepsCourse,movementCourse,rhythmCourse} from "./curriculumCourses.ts";
+import {parseCourse,readCourseFile,lessonCues,cueAccepts,courseProgressId} from "./courseFiles.ts";
+import {CourseRun,parseCourseProgress,recordCourseRun} from "./beginnerCourse.ts";
 import {resolveLessonKeys,starterLayouts} from "./majorScale.ts";
+import {compatibilityReport} from "./courseStructure.ts";
 import {BeatScaleRun} from "./scalePractice.ts";
 const layouts=starterLayouts();
-describe("built-in teaching courses",()=>{
-  it("exports both courses as valid self-contained course files",()=>{
-    expect(parseCourse(intermediateCourse).lessons).toHaveLength(10);
-    expect(parseCourse({format:courseFormat,id:"hexboard-beginner",revision:1,title:"Beginner",author:"HexBoard",bundle:intermediateCourse.bundle,lessons:beginnerLessons}).lessons).toHaveLength(15);
-  });
-  for(const layout of layouts)it(`uses compact stable physical recommendations on ${layout.layout.name}`,()=>{
-    const keys=resolveLessonKeys(layout),assigned=new Map<number,number>();
-    for(const lesson of [...beginnerLessons,...intermediateLessons.slice(0,8)]){
-      lesson.targets.forEach((notes,step)=>{
-        const cues=lessonCues(lesson,layout.layout.objectIdHex,step);
-        expect(cues).toHaveLength(notes.length);
-        for(const cue of cues){
-          expect(keys[cue.button!].note).toBe(cue.note);
-          expect(cue.acceptDuplicates).toBe(true);
-          if(assigned.has(cue.note))expect(cue.button).toBe(assigned.get(cue.note));
-          assigned.set(cue.note,cue.button!);
-          for(const duplicate of keys.filter(key=>key.note===cue.note))expect(cueAccepts(cues,duplicate.key.index,cue.note)).toBe(true);
-        }
-      });
+describe("foundation curriculum",()=>{
+  it("ships ordered self-contained courses with unique identities",()=>{
+    expect(builtinCourses.map(course=>course.lessons.length)).toEqual([12,15,21]);
+    expect(new Set(builtinCourses.map(course=>course.id)).size).toBe(builtinCourses.length);
+    for(const course of builtinCourses){
+      const loaded=readCourseFile(JSON.stringify(course));
+      expect(loaded).toEqual(parseCourse(course));
+      expect(new Set(loaded.lessons.map(lesson=>lesson.id)).size).toBe(loaded.lessons.length);
+      expect(compatibilityReport(loaded).flatMap(row=>row.issues)).toEqual([]);
+      expect(loaded.lessons.at(-1)?.repetitions).toBe(2);
     }
-    const distance=(a:number,b:number)=>Math.hypot((keys[a].key.coordCol-keys[b].key.coordCol)*25,(keys[a].key.row-keys[b].key.row)*42);
-    const diameter=(buttons:number[])=>Math.max(...buttons.flatMap(a=>buttons.map(b=>distance(a,b))));
-    const preferred=[...assigned.values()];
-    const firstMatches=[...assigned.keys()].map(pitch=>keys.find(key=>key.note===pitch)!.key.index);
-    expect(diameter(preferred)).toBeLessThanOrEqual(diameter(firstMatches));
-    // Under seven physical key spacings, across all course pitches together.
-    expect(diameter(preferred)).toBeLessThan(350);
   });
-  it("withdraws preferred-button cues only at the explicit duplicate lesson",()=>{
-    expect(intermediateLessons[8].id).toBe("duplicate-buttons");
-    for(const layout of layouts)for(const pitch of intermediateLessons[8].targets.flat())expect(resolveLessonKeys(layout).filter(key=>key.note===pitch).length,`${layout.layout.name}: ${pitch}`).toBeGreaterThan(1);
-    expect(intermediateLessons.slice(8).every(lesson=>!lesson.fingerings)).toBe(true);
-    expect(intermediateLessons.slice(0,8).every(lesson=>lesson.fingerings?.length===3)).toBe(true);
-  });
-  it("scores every timed lesson at its authored goal on all supported layouts",()=>{
-    for(const layout of layouts)for(const lesson of intermediateLessons){
+  for(const layout of layouts)it(`completes all practice on ${layout.layout.name}`,()=>{
+    const keys=resolveLessonKeys(layout);
+    for(const course of builtinCourses)for(const lesson of parseCourse(course).lessons){
+      if(lesson.kind==="content")continue;
+      const run=new CourseRun(lesson,layout.layout.objectIdHex);
+      for(let step=0;step<lesson.targets.length;step++){
+        const target=lesson.targets[step];
+        if(!target.length)continue;
+        for(const [index] of run.held)run.release(index);
+        for(const note of target){
+          const cues=lessonCues(lesson,layout.layout.objectIdHex,step);
+          const cue=cues.find(cue=>cue.note===note);
+          const button=cue?.button??keys.find(key=>key.note===note)!.key.index;
+          expect(keys[button].note,lesson.id).toBe(note);
+          for(const duplicate of keys.filter(key=>key.note===note))expect(cueAccepts(cues,duplicate.key.index,note)).toBe(true);
+          run.press(button,note,step*1000);
+        }
+      }
+      expect(run.complete,`${course.title}: ${lesson.id}`).toBe(true);
+      expect(run.mistakes,lesson.id).toBe(0);
       if(!lesson.timing)continue;
-      const keys=resolveLessonKeys(layout),period=60000/lesson.timing.goalBpm;
-      const run=new BeatScaleRun(lesson.targets.map(target=>target[0]??-1),10000,lesson.timing.goalBpm,undefined,{targets:lesson.targets,beats:lesson.timing.beats,accepts:(step,index,note)=>cueAccepts(lessonCues(lesson,layout.layout.objectIdHex,step),index,note)});
+      const period=60000/lesson.timing.goalBpm;
+      const beat=new BeatScaleRun(lesson.targets.map(target=>target[0]??-1),10000,lesson.timing.goalBpm,undefined,{targets:lesson.targets,beats:lesson.timing.beats,accepts:(step,index,note)=>cueAccepts(lessonCues(lesson,layout.layout.objectIdHex,step),index,note)});
       let offset=0;
       lesson.targets.forEach((target,step)=>{
         const at=10000+offset*period;
-        for(const [index] of run.held)run.release(index,at);
-        for(const note of target){const cue=lessonCues(lesson,layout.layout.objectIdHex,step).find(cue=>cue.note===note);run.press(cue?.button??keys.find(key=>key.note===note)!.key.index,note,at);}
+        for(const [index] of beat.held)beat.release(index,at);
+        for(const note of target){
+          const cue=lessonCues(lesson,layout.layout.objectIdHex,step).find(cue=>cue.note===note);
+          beat.press(cue?.button??keys.find(key=>key.note===note)!.key.index,note,at);
+        }
         offset+=lesson.timing!.beats[step];
-        run.tick(10000+offset*period-1);
+        beat.tick(10000+offset*period-1);
       });
-      run.tick(10000+offset*period+1);
-      expect(run.complete,lesson.title).toBe(true);
-      expect(run.result().score,lesson.title).toBe(100);
+      beat.tick(10000+offset*period+1);
+      expect(beat.complete,lesson.id).toBe(true);
+      expect(beat.result().score,lesson.id).toBe(100);
     }
   });
-  it("retains intermediate progress through export and reload",()=>{
-    const key=courseProgressId(intermediateCourse,intermediateLessons[0].id);
-    const progress=recordCourseRun({},key,"layout",0,true,undefined,{score:100,bpm:60});
-    expect(parseCourseProgress(JSON.stringify(progress))).toEqual(progress);
+  it("introduces duplicates before timing and leaves route choice open",()=>{
+    const lessons=firstStepsCourse.lessons,duplicate=lessons.findIndex(l=>l.id==="same-pitch");
+    expect(duplicate).toBeLessThan(lessons.findIndex(l=>l.timing));
+    expect(lessons[duplicate].fingerings).toBeUndefined();
+    for(const layout of layouts)for(const pitch of lessons[duplicate].targets.flat())expect(resolveLessonKeys(layout).filter(key=>key.note===pitch).length).toBeGreaterThan(1);
+    expect(movementCourse.lessons.find(l=>l.id==="choose-route")!.fingerings).toBeUndefined();
+  });
+  it("translates entire physical shapes, including duplicate-position phrases",()=>{
+    for(const layout of layouts){
+      const keys=resolveLessonKeys(layout);
+      for(const [id,size,groups] of [["interval-locations",3,2],["move-fifth",3,2],["duplicate-route",5,2],["transpose-motif",5,3],["shape-checkpoint",5,2]] as const){
+        const lesson=movementCourse.lessons.find(l=>l.id===id)!;
+        const points=lesson.fingerings!.find(f=>f.layoutId===layout.layout.objectIdHex)!.steps.map(step=>keys[step[0].button!].key);
+        const shape=(start:number)=>points.slice(start,start+size).map(key=>[key.coordCol-points[start].coordCol,key.row-points[start].row]);
+        for(let group=1;group<groups;group++){
+          expect(shape(group*size),`${layout.layout.name}: ${id}`).toEqual(shape(0));
+          expect(points[group*size].index).not.toBe(points[0].index);
+        }
+      }
+    }
+  });
+  it("uses quarter-note units and rehearsed checkpoints",()=>{
+    const lessons=rhythmCourse.lessons;
+    expect(lessons.find(l=>l.id==="triplets")!.timing!.beats).toEqual(Array(12).fill(1/3));
+    const compound=lessons.find(l=>l.id==="six-eight")!;
+    expect(compound.timeSignature).toEqual({numerator:6,denominator:8});
+    expect(compound.timing!.beats.reduce((a,b)=>a+b,0)).toBe(6);
+    const rehearsal=lessons.find(l=>l.id==="etude-rehearsal")!,checkpoint=lessons.at(-1)!;
+    expect(checkpoint.targets).toEqual(rehearsal.targets);
+    expect(checkpoint.timing!.beats).toEqual(rehearsal.timing!.beats);
+    expect(checkpoint.timing!.beats.reduce((a,b)=>a+b,0)).toBeCloseTo(16);
+    for(const course of builtinCourses){
+      const lesson=course.lessons.at(-1)!,key=courseProgressId(course,lesson.id);
+      const progress=recordCourseRun({},key,"layout",0,false);
+      expect(parseCourseProgress(JSON.stringify(progress))).toEqual(progress);
+    }
   });
 });

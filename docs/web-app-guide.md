@@ -94,21 +94,39 @@ all keys, then start another lesson; restarting the board is not part of the
 normal recovery workflow. Update the app and firmware together for version-2
 sessions.
 
-### Beginner Course and Progress
+### Courses and Progress
 
-Under **Courses**, the **Beginner course** has 15 short 12-EDO lessons: notes and octaves, intervals,
-major and minor scales, an arpeggio, major/minor triads, and a I–IV–V–I progression.
-Choose any lesson from the selector, or use **Next lesson** after finishing.
-Each lesson explains the musical idea, why it is useful, and what to play.
-**Hear example** demonstrates its notes or chords.
-The bundled course requires standard 12-EDO. User-authored courses and Scale
-practice can use other tunings.
-All three starter layouts support every lesson. Equivalent-pitch keys count.
+Under **Courses**, start with **1 · First Steps on HexBoard**. The three included
+courses build from a first note to shape translation and rhythmic mini pieces;
+see [Built-in course paths](#built-in-course-paths) below. Choose a lesson from
+the selector, or use **Next lesson** after finishing. Reading pages use
+**Continue**. Course introductions appear before the first lesson.
+Each practice lesson explains what to listen for and what to play.
+Start a practice session and use **Hear example** to hear its notes or chords.
+When HexBoard is connected, **Start Course on HexBoard** opens a board session
+from the introduction, including when the first lesson is a reading page. A
+reading page opened directly has **Start on HexBoard**. In a course session,
+four of the seven side buttons are used, with an unused button between actions:
+
+| Button | Action |
+| --- | --- |
+| 1, blue | Next lesson after finishing, or Continue on a reading page |
+| 3, cyan | Hear example |
+| 5, yellow | Toggle hints; lit when hints are on, dark when off |
+| 7, orange | Repeat the completed lesson |
+
+Unavailable actions go dark. Next / Continue lights only when its matching web
+button is available. The compact side-button guide in Learn follows the physical
+stagger and shows the unused buttons as blank spaces. Moving between lessons keeps the session open and starts practice
+after all held playable keys are released. Reading pages keep the session open.
+The built-in courses use standard 12-EDO and include all three starter layouts.
+User-authored courses and Scale practice can use other tunings.
+Equivalent-pitch buttons count unless an authored route exercise requires keys.
 
 Single-note lessons allow overlapping notes. Chord lessons require all listed
 pitches held together, with unrelated notes released. Keep shared notes held
 when changing chords. On screen, click a key to hold it and click again to
-release it. On HexBoard, press and release normally. The progression uses root-position triads: C–E–G, F–A–C, G–B–D, then C–E–G.
+release it. On HexBoard, press and release normally.
 
 Moving to another lesson turns hints on again.
 **Try without hints** hides the target cue and exercise strip. The key labels
@@ -133,31 +151,43 @@ an earlier chord dim when the target advances, while common tones remain lit.
 
 ### Built-in course paths
 
-**Beginner course** has 15 untimed lessons. **Intermediate course · Rhythm**
-adds nine timed lessons and an untimed introduction to duplicate buttons:
-steady pulse, changing notes, eighth notes, mixed lengths, rests, 3/4, offbeats,
-chord changes, duplicate buttons, and a short original phrase. Timed goals range
-from 60 to 80 quarter notes per minute. The **Practice tempo** slider offers
-20–300 BPM; its bottom **Step** position turns off the metronome and waits for
-the correct notes before revealing the next step. Chords require all target
-notes held together, with unrelated notes released. Silent rest steps are
-skipped in Step mode. **Hear example** still plays at the lesson's goal tempo.
-Step mode is for rehearsal, not timed completion: play at or above the goal BPM
-and meet the timing score to record a timed lesson as complete.
+The included pathway has three courses:
 
-Both courses recommend a compact set of physical buttons on Wicki-Hayden,
-Harmonic Table, and Gerhard. Each pitch keeps the same recommended button across
-both courses, including shared chord tones. With hints on, the recommended
-button lights as the target and non-recommended duplicates retain ordinary background color and brightness; allowed
-duplicates still count when played.
-Recommendations continue until **One pitch, several buttons** explicitly teaches
-alternatives. That lesson and **Choose your own route** light matching buttons
-equally so you can explore your own positioning. Hints-off practice hides these
-recommendations as usual.
+| Course | What you play |
+| --- | --- |
+| **1 · First Steps on HexBoard** | 11 exercises and a welcome page: first notes, octaves, duplicate pitches, a five-note tune, and the original mini piece Homecoming |
+| **2 · Moving Around an Isomorphic Keyboard** | 14 untimed exercises and an introduction: intervals, duplicate positions, and the same motif translated to different roots |
+| **3 · Rhythm Fundamentals** | 19 exercises and two pages: pulse, quarters/eighths, rests, 3/4, syncopation, simultaneous notes, triplets, 6/8, and Pulse and Play |
 
-Both built-in courses support **Make a copy** and **Export course**. Use a copy
-to edit their teaching content or button choices.
-Course lessons show their explanation in a highlighted note above the play controls. The course fixes its tuning; the beginner course uses standard 12-EDO, while Scale practice has its own tuning selector.
+Start with one layout and keep it while learning a phrase. The courses suggest
+compact routes for Wicki-Hayden, Harmonic Table, and Gerhard. Matching duplicates
+still count. Duplicate-discovery and route-choice exercises light matching
+buttons equally. A translated pattern can recommend a different duplicate;
+one pitch does not have one permanently assigned button across the curriculum.
+
+First Steps introduces duplicates before intervals or timing. C♯, E♭, and F
+have duplicates on all three starter layouts; some pitches, including C4 on
+Wicki-Hayden, occur only once. An octave is a different pitch, not an exact
+substitute in these exercises.
+
+Timed goals are 50–60 quarter notes per minute. **Practice tempo** offers
+20–300 BPM; its bottom **Step** position waits for correct notes without a
+metronome and skips rests. **Hear example** uses the goal BPM in Step mode.
+Slower practice receives feedback, but timed completion requires reaching the
+authored goal and passing score. These courses assess attacks, not releases;
+follow written rests and long notes by listening as well as watching the score.
+In 6/8, group eighth notes into two larger pulses; the click still counts quarter
+notes and the count-in remains four clicks.
+
+Final checkpoints request two consecutive clean runs. Rehearse with hints,
+then turn off **Hints** before starting or use **Try without hints** after a
+run. Independent completion is tracked separately; guidance does not prevent
+ordinary completion. Key labels and colors remain when hints are off.
+
+All built-in courses support **Make a copy** and **Export course**. Use a copy
+to change teaching content or button choices. Built-ins cannot be edited or
+deleted directly. More courses are planned; the [curriculum inventory](curriculum.md)
+distinguishes included material from future authoring work.
 
 ### Creating and Sharing Courses
 

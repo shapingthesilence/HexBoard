@@ -1,6 +1,7 @@
+import {lessonFixtures as beginnerLessons} from "./lessonFixtures.test-support.ts";
 import {describe,it,expect} from "vitest";
 import {starterLayouts,resolveLessonKeys} from "./majorScale.ts";
-import {beginnerLessons} from "./beginnerCourse.ts";
+
 import {courseFormat,parseCourse,assessmentFingerprint,type UserCourse} from "./courseFiles.ts";
 import {transposeCourseLayout,incompatibleCourseTuning,replaceCourseBundle,compatibilityReport} from "./courseStructure.ts";
 import {copyRollNotes,lessonRollNotes,pasteRollNotes} from "./courseTimeline.ts";

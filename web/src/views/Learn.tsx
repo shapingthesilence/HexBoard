@@ -16,17 +16,19 @@ import { scaleSteps, tuningPitch, tuningStepLabel } from "../learn/tuningPractic
 import { PracticeMetronome } from "../learn/practiceMetronome.ts";
 
 import { FingerHands } from "../learn/FingerHands.tsx";
-import { intermediateCourse } from "../learn/intermediateCourse.ts";
+import { builtinCourses, defaultCourse } from "../learn/curriculumCourses.ts";
 import {CourseMarkdown} from "../learn/CourseMarkdown.tsx";
 import {compatibilityReport} from "../learn/courseStructure.ts";
 import { CourseEditor } from "../learn/CourseEditor.tsx";
 import { courseFormat, canPassTimedLesson, parseCourse, courseProgressId, courseLayoutProgressId, courseKeyLight, cueAccepts, cueLabel, lessonCues, maxCourseBytes, readCourseFile, type UserCourse } from "../learn/courseFiles.ts";
-import { beginnerLessons, CourseRun, courseProgressKey, parseCourseProgress, recordCourseRun, mergeCourseProgress, type CourseProgress } from "../learn/beginnerCourse.ts";
+import { CourseRun, courseProgressKey, parseCourseProgress, recordCourseRun, mergeCourseProgress, type CourseProgress } from "../learn/beginnerCourse.ts";
 
 import { courseStorage, type CourseDraft } from "../learn/courseStorage.ts";
 import { LearnInputGate } from "../learn/learnInputGate.ts";
 import { upcomingTimingSteps } from "../learn/timingCues.ts";
 import { TimingCue } from "../learn/TimingCue.tsx";
+import { courseControl, courseControlLight } from "../learn/courseControls.ts";
+import { HEXBOARD_COMMAND_INDICES, isHexBoardCommandIndex } from "../catalogs/hexBoardGeometry.ts";
 
 type Stage = "ready" | "starting" | "practice" | "demo" | "complete" | "waiting" | "free";
 const stepTempo = 19; // One slider position below the supported 20–300 BPM range.
@@ -40,10 +42,11 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
   const [deletePending,setDeletePending]=useState(false);
   useEffect(()=>{let active=true;void Promise.all([courseStorage.courses(),courseStorage.drafts()]).then(([courses,drafts])=>{if(!active)return;setUserCourses(courses.flatMap(course=>{try{return [parseCourse(course)];}catch{return [];}}));setDrafts(drafts);setStorageReady(true);},()=>{if(active)setCourseMessage("Course storage is unavailable. Check browser storage permissions.");});return()=>{active=false;};},[]);
   async function refreshDrafts(){try{setDrafts(await courseStorage.drafts());}catch{setCourseMessage("Could not read recovery drafts.");}}
-  const [courseId, setCourseId] = useState("builtin");
-  const selectedCourse = previewCourse ?? (courseId === "builtin-intermediate" ? intermediateCourse : userCourses.find(course => course.id === courseId));
-  const editableCourse = courseId !== "builtin-intermediate" && selectedCourse;
-  const lessons = selectedCourse?.lessons ?? beginnerLessons;
+  const [courseId, setCourseId] = useState<string>(`builtin:${defaultCourse.id}`);
+  const builtinCourse = builtinCourses.find(course => `builtin:${course.id}` === courseId);
+  const selectedCourse = previewCourse ?? builtinCourse ?? userCourses.find(course => course.id === courseId) ?? defaultCourse;
+  const editableCourse = !previewCourse && !builtinCourse && userCourses.some(course => course.id === courseId);
+  const lessons = selectedCourse.lessons;
   const [editingCourse, setEditingCourse] = useState<UserCourse>();
   const [pendingEdit, setPendingEdit] = useState<{ saved: UserCourse; draft: CourseDraft }>();
   const [courseMessage, setCourseMessage] = useState("");
@@ -51,6 +54,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
   const lesson = lessons[lessonIndex] ?? lessons[0];
   const course = page === "course";
   const [introductionSeen,setIntroductionSeen]=useState<string>();
+  const [startCourseOnBoard,setStartCourseOnBoard]=useState(false);
   const showIntroduction=course&&!!selectedCourse?.description&&introductionSeen!==selectedCourse.id&&!previewCourse;
   const requiredLayout=course?(lesson.layoutId??selectedCourse?.layoutId):undefined;
   const [progress, setProgress] = useState<CourseProgress>(() => {
@@ -102,8 +106,8 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
   const availablePitches = keys.flatMap(key=>key.note===null?[]:[key.note]);
   const previewNotes = exploring ? availablePitches.filter(note=>inPitchSet(note,lesson.exploration!)) : course ? [...new Set(lesson.targets.flatMap((_,step)=>answerNotes(lesson,step,availablePitches)))] : baseNotes;
   const missing = course ? [] : unavailableScaleNotes(keys, previewNotes, labelNote);
-  const compatible = !selectedCourse||!compatibilityReport(selectedCourse).some(row=>row.lessonId===lesson.id&&row.layoutId===selection.layout.objectIdHex&&row.issues.length);
-  const readyToPlay = !showIntroduction&&lesson.kind!=="content"&&compatible&&!libraryBusy && previewNotes.length > 0 && missing.length === 0 && (!fromDevice || !!deviceLayoutChoice) && (!course || !!customCourse || isLessonTuning(bundle));
+  const compatible = !course||!compatibilityReport(selectedCourse).some(row=>row.lessonId===lesson.id&&row.layoutId===selection.layout.objectIdHex&&row.issues.length);
+  const readyToPlay = !showIntroduction&&(!course||lesson.kind!=="content")&&compatible&&!libraryBusy && previewNotes.length > 0 && missing.length === 0 && (!fromDevice || !!deviceLayoutChoice) && (!course || !!customCourse || isLessonTuning(bundle));
   const [beatMode, setBeatMode] = useState(false);
   const [bpm, setBpm] = useState(80);
   const activeBeatMode = course ? !!lesson.timing : beatMode;
@@ -141,6 +145,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
   const [pendingStart,setPendingStart]=useState(false);
   const [physicalCount,setPhysicalCount]=useState(0);
   const handleKeyRef = useRef<(index: number, pressed: boolean, receivedAt?: number) => void>(() => {});
+  const handleControlRef = useRef<(index: number) => void>(() => {});
   const engaged = stage !== "ready" && stage !== "free";
   useEffect(() => { setLastRun(undefined); }, [pattern, layoutId, scaleChoice, root, register, beatMode, bpm, page, lessonIndex, courseId]);
 
@@ -301,7 +306,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
 
   async function begin(useBoard: boolean, free = false) {
     streak.current=0;streakHints.current=false;setStreakCount(0);
-    if(useBoard && session.current && audio.current){if(free){clearRun();setStage("free");setMessage("");}else await repeat(hints);return;}
+    if(useBoard && session.current && audio.current){if(course&&lesson.kind==="content"){clearRun();setStage("ready");setMessage("");}else if(free){clearRun();setStage("free");setMessage("");}else await repeat(hints);return;}
     dispose();
     const currentGeneration = generation.current;
     const controller = new SynthPreviewController();
@@ -318,13 +323,14 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
       if (generation.current !== currentGeneration) return;
       if (useBoard) {
         const nextSession = new DelegatedSession(transport,
-          (index, pressed, receivedAt) => { const accepted=inputGate.current.event(index,pressed);setPhysicalCount(physicalKeys.current.size);if(accepted)handleKeyRef.current(index, pressed, receivedAt); },
+          (index, pressed, receivedAt) => { if(isHexBoardCommandIndex(index)){if(pressed)handleControlRef.current(index);return;} const accepted=inputGate.current.event(index,pressed);setPhysicalCount(physicalKeys.current.size);if(accepted)handleKeyRef.current(index, pressed, receivedAt); },
           (reason) => { if (generation.current === currentGeneration) stop(reason); });
         session.current = nextSession;
         await nextSession.start();
         nextSession.setDisplayRotation(selection.layout.deviceRotationSteps);
       }
       if (generation.current !== currentGeneration) return;
+      if(course && lesson.kind==="content"){setStage("ready");setMessage("");return;}
       if(free){setStage("free");setMessage("");return;}
       await prepareRun();
       if (generation.current !== currentGeneration) return;
@@ -335,6 +341,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
       if (generation.current === currentGeneration) stop(error instanceof Error ? error.message : "Could not start the lesson.");
     }
   }
+  useEffect(()=>{if(startCourseOnBoard && !showIntroduction && lessonIndex===0){setStartCourseOnBoard(false);if(lesson.kind==="content"||readyToPlay)void begin(true);else setMessage("Choose a compatible layout before starting on HexBoard.");}},[startCourseOnBoard,showIntroduction,lessonIndex]);
 
   async function prepareRun(showHints = hints) {
     usedHints.current = showHints;
@@ -430,7 +437,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
   }, [stage, continuous, notes, activeBpm, hints, progress]);
 
   function handleKey(index: number, pressed: boolean, receivedAt = performance.now()) {
-    if(lesson.kind==="content")return;
+    if(course&&lesson.kind==="content")return;
     if (stage === "demo" || stage === "starting" || stage === "waiting") return;
     const note = keys[index]?.note;
     if (note === null || note === undefined) return;
@@ -455,6 +462,27 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
     redraw((value) => value + 1);
   }
   handleKeyRef.current = handleKey;
+
+  function controlEnabled(index:number) {
+    if(!course || showIntroduction || !session.current || stage==="starting")return false;
+    switch(index){
+      case 0:return lessonIndex<lessons.length-1 && (lesson.kind==="content" || stage==="complete");
+      case 40:return lesson.kind!=="content" && !exploring && (stage==="practice" || stage==="complete") && physicalCount===0 && run.current.held.size===0;
+      case 80:return lesson.kind!=="content" && stage!=="demo";
+      case 120:return lesson.kind!=="content" && stage==="complete";
+      default:return false;
+    }
+  }
+  function handleControl(index:number) {
+    if(!controlEnabled(index))return;
+    switch(index){
+      case 0:nextLesson();break;
+      case 40:demonstrate();break;
+      case 80:setHints(value=>{if(!value && engaged)usedHints.current=true;return !value;});break;
+      case 120:void repeat(true);break;
+    }
+  }
+  handleControlRef.current=handleControl;
 
   function tap(index: number) {
     if (exploring || (course && (lesson.timing?.gradeDuration || lesson.targets.some(target => target.length > 1)))) {
@@ -544,10 +572,10 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
   const targetLabel = course && stage!=="demo" && run.current.step<targets.length ? answerLabel(lesson.targets[run.current.step],lesson.answers?.[run.current.step],labelNote) : targetNotes.map(labelNote).join(" + ") || (run.current.step < targets.length ? "Rest" : "");
   const revealedStep = stage === "ready" || stage === "waiting" ? targets.findIndex(target => target.length > 0) : run.current.step;
   const lightStates = lights.join();
-  const ledColors = useMemo(() => keys.map(({ note, steps }, index) => lessonLedColor(note, lights[index], {
+  const ledColors = useMemo(() => keys.map(({ note, steps }, index) => course && isHexBoardCommandIndex(index) ? courseControlLight(index, controlEnabled(index), hints) : lessonLedColor(course && lesson.kind==="content" ? null : note, lights[index], {
     bundle: { ...bundle, layouts: [selection.layout], activeLayoutIdHex: selection.layout.objectIdHex },
     steps: steps ?? 0, root, mode: colorMode, index, contrast
-  })), [keys, lightStates, bundle, selection.layout, root, colorMode, contrast]);
+  })), [keys, lightStates, bundle, selection.layout, root, colorMode, contrast, course, lesson.kind, lessonIndex, stage, physicalCount, onBoard, showIntroduction, hints]);
   const boardColors = ledColors;
   const lightSignature = JSON.stringify(boardColors);
   useEffect(() => { session.current?.setLights(boardColors); }, [lightSignature, stage]);
@@ -571,9 +599,8 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
     setPage(next);
     if (next === "course") setRoot(0);
     setMessage("");
-    if (next === "course" && !selectedCourse && !isLessonTuning(bundle)) chooseLocalTuning(localBundles[0], layouts.find(item => item.bundle === localBundles[0])!.id);
   }
-  function changeLesson(index:number){if(selectedCourse)setIntroductionSeen(selectedCourse.id);setHints(true);clearRun();setPracticeBpm(lessons[index].timing?.goalBpm??80);setLessonIndex(index);setMessage("");if(session.current){setStage("waiting");setPendingStart(true);}else setStage("ready");}
+  function changeLesson(index:number){if(selectedCourse)setIntroductionSeen(selectedCourse.id);setHints(true);clearRun();setPracticeBpm(lessons[index].timing?.goalBpm??80);setLessonIndex(index);setMessage("");if(session.current&&lessons[index].kind!=="content"){setStage("waiting");setPendingStart(true);}else setStage("ready");}
   function changeLayout(id:string){
     const restart=stage==="practice"||stage==="demo"||stage==="waiting";
     clearRun();setLayoutId(id);setMessage("");streak.current=0;streakHints.current=false;setStreakCount(0);
@@ -621,7 +648,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
     } catch (error) { setCourseMessage(error instanceof Error ? error.message : "Could not import course."); }
   }
   function exportCourse() {
-    const doc: UserCourse = selectedCourse ?? { format: courseFormat, id: "hexboard-beginner", revision: 1, title: "HexBoard beginner course", author: "HexBoard", bundle: { ...starterLayouts()[0].bundle, layouts: starterLayouts().map(item => item.layout) }, lessons: [...beginnerLessons] };
+    const doc: UserCourse = selectedCourse;
     const url = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }));
     const link = document.createElement("a"); link.href = url; link.download = `${doc.title.replace(/[^a-z0-9_-]+/gi, "-")}.hexcourse.json`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -630,7 +657,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
     const snapshot = copy ? structuredClone(selectedCourse?.bundle ?? {...starterLayouts()[0].bundle,layouts:starterLayouts().map(item=>item.layout)}) : courseBundleSnapshot();
 
     setEditingCourse(copy ? {
-      format: courseFormat, id: crypto.randomUUID(), revision: 1, title: `${selectedCourse?.title ?? "Beginner course"} copy`, author: "", bundle: snapshot, layoutId: selectedCourse?.layoutId,
+      format: courseFormat, id: crypto.randomUUID(), revision: 1, title: `${selectedCourse.title} copy`, author: "", bundle: snapshot, layoutId: selectedCourse?.layoutId,
       description:selectedCourse?.description, lessons: structuredClone([...lessons])
     } : { format: courseFormat, id: crypto.randomUUID(), revision: 1, title: "My course", author: "", bundle: snapshot,
       lessons: [{ id: crypto.randomUUID(), title: "First phrase", section: "My lessons", instruction: "Play the phrase, then try it without hints.", targets: [[]], timing: {goalBpm:80,beats:[1]}, timeSignature: {numerator:4,denominator:4} }] });
@@ -668,7 +695,7 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
       <nav className="learnTabs" aria-label="Learning sections">{(["practice", "course", "progress"] as const).map(item => <button key={item} type="button" aria-current={page === item ? "page" : undefined} disabled={stage === "starting" || libraryBusy} onClick={() => navigate(item)}>{item === "course" ? "Courses" : item === "practice" ? "Scale practice" : "Progress"}</button>)}</nav>
     </header>
     {page === "progress" ? <div className="learnCard">
-      <label className="learnField">Course<select value={previewCourse?"preview":courseId} disabled={!!previewCourse} onChange={event => chooseCourse(event.target.value)}>{previewCourse&&<option value="preview">{previewCourse.title}</option>}<option value="builtin">Beginner course</option><option value="builtin-intermediate">Intermediate course · Rhythm</option>{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
+      <label className="learnField">Course<select value={previewCourse?"preview":courseId} disabled={!!previewCourse} onChange={event => chooseCourse(event.target.value)}>{previewCourse&&<option value="preview">{previewCourse.title}</option>}{builtinCourses.map(course => <option key={`builtin:${course.id}`} value={`builtin:${course.id}`}>{course.title}</option>)}{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
       <div className="learnPracticeHeader"><h3>Your course progress</h3><button type="button" onClick={saveProgressFile}>Export progress</button></div>
       <p className="learnMuted">Saved in this browser, per layout. Independent = no mistakes, no hints.</p>
       <div className="learnProgressList">{lessons.map((item, index) => {
@@ -681,8 +708,9 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
       {progressMessage && <p role="status">{progressMessage}</p>}
     </div> : <div className="learnWorkspace">
       <aside className="learnCard learnGuide">
-        {course && <><label className="learnField">Course<select value={previewCourse?"preview":courseId} disabled={!!previewCourse || stage === "starting" || libraryBusy} onChange={event => chooseCourse(event.target.value)}>{previewCourse&&<option value="preview">{previewCourse.title}</option>}<option value="builtin">Beginner course</option><option value="builtin-intermediate">Intermediate course · Rhythm</option>{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
+        {course && <><label className="learnField">Course<select value={previewCourse?"preview":courseId} disabled={!!previewCourse || stage === "starting" || libraryBusy} onChange={event => chooseCourse(event.target.value)}>{previewCourse&&<option value="preview">{previewCourse.title}</option>}{builtinCourses.map(course => <option key={`builtin:${course.id}`} value={`builtin:${course.id}`}>{course.title}</option>)}{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
           <label className="learnField">Lesson<select value={lessonIndex} disabled={stage === "starting"} onChange={event => changeLesson(Number(event.target.value))}>{lessons.map((item, index) => <option key={item.id} value={index}>{index + 1}. {item.title}</option>)}</select></label>
+          <div className="courseControls" aria-label="HexBoard side buttons"><strong>Side buttons</strong><span className="learnMuted">Top to bottom · dark means off or unavailable</span><div className="courseControlBank">{HEXBOARD_COMMAND_INDICES.map((index,position)=>{const control=courseControl(index),enabled=controlEnabled(index),lit=courseControlLight(index,enabled,hints);return <div key={index} className={`courseControlRow ${position%2===0?"offset":""} ${enabled?"available":""}`}><span className="courseControlHex" style={{background:control&&lit.value?lessonScreenColor(lit).fill:"#24312b"}} aria-hidden="true"/>{control&&(index!==0||enabled)&&<span>{index===80?`Hints ${hints?"on":"off"}`:control.short}</span>}</div>;})}</div></div>
 
           {!exploring && lesson.timing && <><span className="learnMuted">{lesson.timeSignature?.numerator??4}/{lesson.timeSignature?.denominator??4} · Goal: {lesson.timing.goalBpm} BPM</span><label className="learnField">Practice tempo · {stepPractice ? "Step" : `${practiceBpm} BPM`}<input aria-label="Practice tempo" type="range" min={stepTempo} max={300} step={1} value={practiceBpm} disabled={engaged&&stage!=="complete"} onChange={event=>setPracticeBpm(Number(event.target.value))}/></label>{stepPractice && <span className="learnMuted">No metronome. Play the highlighted notes to reveal the next step; rests are skipped.</span>}</>}
           {courseMessage && <p role="status" className="learnMuted">{courseMessage}</p>}</>}
@@ -728,14 +756,14 @@ export function Learn({ transport, connected, deviceHello,previewCourse,previewI
           <button type="button" disabled={engaged} onClick={exportCourse}>Export course</button></div>
           <label className="learnField">Import shared course<input aria-label="Import shared course" type="file" accept=".json" disabled={engaged || libraryBusy || !storageReady} onChange={event => void importCourse(event)} /></label>
           {editableCourse&&<button type="button" disabled={engaged} onClick={()=>setDeletePending(true)}>Delete course</button>}
-          {deletePending&&selectedCourse&&<div role="alert"><p>Delete “{selectedCourse.title}”? Export it first if you need a copy. Recovery drafts remain available.</p><button onClick={()=>void courseStorage.remove(selectedCourse.id).then(()=>{setUserCourses(items=>items.filter(item=>item.id!==selectedCourse.id));chooseCourse("builtin");setDeletePending(false);},()=>setCourseMessage("Could not delete course."))}>Confirm delete</button><button onClick={()=>setDeletePending(false)}>Cancel</button></div>}
+          {deletePending&&selectedCourse&&<div role="alert"><p>Delete “{selectedCourse.title}”? Export it first if you need a copy. Recovery drafts remain available.</p><button onClick={()=>void courseStorage.remove(selectedCourse.id).then(()=>{setUserCourses(items=>items.filter(item=>item.id!==selectedCourse.id));chooseCourse(`builtin:${defaultCourse.id}`);setDeletePending(false);},()=>setCourseMessage("Could not delete course."))}>Confirm delete</button><button onClick={()=>setDeletePending(false)}>Cancel</button></div>}
           {drafts.some(item=>!userCourses.some(saved=>saved.id===item.id))&&<div className="learnDraftList" aria-label="Unsaved courses">{drafts.filter(item=>!userCourses.some(saved=>saved.id===item.id)).map(item=><button key={item.id} disabled={engaged||!!session.current} onClick={()=>setEditingCourse(item.course)}>Resume unsaved course: {item.course.title}</button>)}</div>}
           {pendingImport&&<div role="alert"><p>“{pendingImport.title}” revision {pendingImport.revision} matches local revision {userCourses.find(item=>item.id===pendingImport.id)?.revision}. Compatible lesson progress will be preserved.</p><button onClick={()=>void persistCourse(pendingImport).then(()=>{setPendingImport(undefined);setCourseMessage("Course updated.");},error=>setCourseMessage(String(error)))}>Update existing</button><button onClick={()=>void persistCourse({...pendingImport,id:crypto.randomUUID()}).then(()=>{setPendingImport(undefined);setCourseMessage("Separate copy imported.");},error=>setCourseMessage(String(error)))}>Keep both</button><button onClick={()=>setPendingImport(undefined)}>Cancel import</button></div>}
         </details>}
         {libraryMessage && <p role="status" className="learnMuted">{libraryMessage}</p>}
         {(!fromDevice || deviceLayoutChoice) && missing.length > 0 && <p className="learnWarning" role="alert">Missing {missing.join(", ")}. Try another layout or register.</p>}
       </aside>
-      {showIntroduction?<article className="learnCard"><h2>{selectedCourse!.title}</h2><CourseMarkdown source={selectedCourse!.description!}/><button type="button" className="courseStartButton" onClick={()=>{setIntroductionSeen(selectedCourse!.id);changeLesson(0);}}>Start Course</button></article>:course&&lesson.kind==="content"?<article className="learnCard"><h2>{lesson.title}</h2><CourseMarkdown source={lesson.markdown??""}/>{lessonIndex<lessons.length-1&&<button type="button" onClick={nextLesson}>Continue</button>}</article>:<div className="learnCard learnPractice">
+      {showIntroduction?<article className="learnCard"><h2>{selectedCourse!.title}</h2><CourseMarkdown source={selectedCourse!.description!}/><button type="button" className="courseStartButton" onClick={()=>{setIntroductionSeen(selectedCourse!.id);changeLesson(0);if(connected)setStartCourseOnBoard(true);}}>Start Course{connected?" on HexBoard":""}</button></article>:course&&lesson.kind==="content"?<article className="learnCard"><h2>{lesson.title}</h2><CourseMarkdown source={lesson.markdown??""}/><div className="learnActions">{connected&&!session.current&&<button type="button" onClick={()=>void begin(true)}>Start on HexBoard</button>}{lessonIndex<lessons.length-1&&<button type="button" onClick={nextLesson}>Continue</button>}</div></article>:<div className="learnCard learnPractice">
         {exploring && <p>Play any ideas in the highlighted scale and range. Outside notes are audible but unscored.{lesson.exploration!.highlighted?.length ? ` Chord tones: ${lesson.exploration!.highlighted!.map(labelNote).join(", ")}.` : ""}</p>}
         {course && lesson.instruction.trim() && <section className="learnLessonInstruction" aria-label="Lesson notes"><h3>Lesson notes</h3><p>{lesson.instruction}</p></section>}
         {!compatible&&<p role="alert">This layout needs changes: {selectedCourse&&compatibilityReport(selectedCourse).filter(row=>row.lessonId===lesson.id&&row.layoutId===selection.layout.objectIdHex).flatMap(row=>row.issues).join("; ")}</p>}

@@ -9,6 +9,13 @@
 .learnGuide { display: flex; flex-direction: column; gap: 10px; }
 .learnGuide p { margin: 0; line-height: 1.45; }
 .learnGuide input[type=file] { width: 100%; font-size: .8rem; }
+.courseControls { border-top: 1px solid var(--border); padding-top: 9px; font-size: .8rem; }
+.courseControls > strong { display: block; font-size: .85rem; }
+.courseControlBank { display: grid; gap: 3px; margin-top: 7px; }
+.courseControlRow { display: flex; align-items: center; gap: 8px; min-height: 25px; opacity: .48; }
+.courseControlRow.available { opacity: 1; }
+.courseControlRow.offset { margin-left: 12px; }
+.courseControlHex { flex: 0 0 19px; height: 21px; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
 .learnField { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; font-weight: 650; min-width: 0; }
 .learnField select, .learnField input[type=number] { width: 100%; min-width: 0; font-size: .85rem; padding: 7px 9px; }
 .learnFieldPair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

@@ -216,7 +216,13 @@ Delegated control belongs to the Learn session. Changing lessons stops browser
 voices, timers, and the metronome, clears evaluation state, and repaints the
 next lesson without entering/exiting the device session. `LearnInputGate`
 retains physical held keys across this reset and blocks input until all have
-been released. Stop, leaving Learn, device disconnect, page lifecycle cleanup,
+been released. A course session uses alternate command keys (indices 0, 40,
+80, 120 from top to bottom) for next/Continue, example, hints, and repeat.
+The other three command keys remain unassigned to leave physical spacing.
+Next/Continue lights only when the corresponding web action is available;
+the hints light is on only while hints are active. All command presses bypass
+the playable-key gate. Content pages
+can start and retain the same session. Stop, leaving Learn, device disconnect, page lifecycle cleanup,
 or an unrecoverable error closes the session. Ungraded synth play uses the same
 audio/session owner; ready, free-play, and completed states accept notes without
 advancing evaluation or changing progress. Changing lessons resets hints. Switching an allowed layout restarts the run, resets its streak, updates display rotation, and retains the physical-key release barrier. A lesson layout requirement overrides a legacy course-level requirement. Course introductions render before practice and do not count toward completion.
@@ -240,7 +246,9 @@ Contrast and practice tempo never enter course files.
   recording-session lifecycle.
 - `web/src/learn/phraseRecorder.ts`: raw-key capture, grouping, onset timing,
   selectable straight/triplet quarter/eighth/sixteenth quantization (default eighth), per-note holds, and physical-key preferences.
-- `web/src/learn/beginnerCourse.ts`: bundled lessons and free chord evaluation.
+- `web/src/learn/curriculumCourses.ts`: bundled course inventory and teaching content.
+- `web/src/learn/curriculumKeys.ts`: validated per-layout physical route templates.
+- `web/src/learn/beginnerCourse.ts`: free chord evaluation and progress storage.
 - `web/src/learn/scalePractice.ts`: scheduled pitch/chord/rest evaluation.
 
 Recording captures raw key IDs through the same acknowledged version-2 session
@@ -255,16 +263,26 @@ cancel, or unmount. Saving is disabled while recording.
 
 ## Built-in course button recommendations
 
-`compactCourseKeys.ts` selects one physical button per pitch for each starter
-layout, minimizing the overall span and then pairwise travel using a bounded
-multi-start refinement. The beginner pitch set also seeds the intermediate
-course, keeping the chosen buttons stable between lessons and courses. These
-are layout-specific `fingerings` with `acceptDuplicates: true`, so recommendations
-do not impose new grading restrictions or invalidate existing beginner progress.
-The intermediate course uses the portable v3 format and normal assessment
-fingerprints for progress. Its first eight lessons have recommendations; the
-explicit duplicate-button lesson and following phrase omit them. Exports carry
-the computed button assignments and layout definitions like any authored course.
+`curriculumKeys.ts` defines axial offsets for compact scale and interval routes
+adapted from the three author-supplied layout manuals. It resolves complete
+patterns against each starter layout's actual pitches and physical geometry,
+chooses central placements, and throws if a required shape cannot fit. Blocks
+can translate a pattern to another root or use a second duplicate position.
+Harmonic Table's isolated whole step uses a different route from its scale.
+The PDF source and curriculum authoring guidance are described in the
+[curriculum reference](curriculum.md#physical-routes-and-reference-manuals).
+
+Assignments export as normal per-layout `fingerings`. Duplicates are accepted;
+route-choice exercises omit assignments. Translation tests verify identical
+relative physical coordinates at each new root/position. Recommendations are
+not universal fingering advice and await ergonomic review on hardware.
+
+`curriculumCourses.ts` exports the ordered built-in registry and default course.
+All included courses use v4 and normal course/layout assessment fingerprints.
+The selector uses a `builtin:` prefix only for UI selection, so importing an
+exported built-in as a user course cannot shadow the built-in or hide the copy.
+Built-ins support Make a copy and Export, while saved user courses support Edit
+and Delete. Content pages do not block the separate Scale practice mode.
 
 Tuning replacement checks existing pitches against the new tuning’s pitch lattice, independent of layout range. Incompatible replacements remain staged until the author confirms clearing twice. Revert leaves the course untouched; confirmation clears practice targets/timing holds/fingerings while retaining content pages and teaching text.
 

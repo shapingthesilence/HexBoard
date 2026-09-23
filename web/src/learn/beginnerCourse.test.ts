@@ -1,5 +1,6 @@
+import {lessonFixtures as beginnerLessons} from "./lessonFixtures.test-support.ts";
 import { describe, expect, it } from "vitest";
-import { beginnerLessons, CourseRun, parseCourseProgress, recordCourseRun, mergeCourseProgress } from "./beginnerCourse.ts";
+import { CourseRun, parseCourseProgress, recordCourseRun, mergeCourseProgress } from "./beginnerCourse.ts";
 import { resolveLessonKeys, starterLayouts, unavailableScaleNotes } from "./majorScale.ts";
 
 describe("beginner course", () => {

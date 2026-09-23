@@ -23,6 +23,7 @@ Describe screen details only when needed to find a control or understand its use
 | [Developer guide](developer-guide.md) | Firmware architecture, ownership, runtime, settings/storage, risks, and edit recipes |
 | [Delegated control](delegated-control.md) | Host takeover protocol and runtime gates |
 | [Preset sync](preset-sync-sysex.md) | Implemented transfer protocol, capabilities, and object schemas |
+| [Curriculum](curriculum.md) | Current course inventory, planned pathway, teaching standards, and content acceptance |
 | [Course files](course-format.md) | Portable user courses, fingering rules, timing, and authoring ownership |
 | [Web development](../web/README.md) | App source ownership, development, deployment, and integration constraints |
 | [Factory library](../factory-library/README.md) | Authoring factory content and generating images |
@@ -37,7 +38,8 @@ schema reference, without a migration narrative.
 ## Proposed Designs
 
 [Learning program](learning-program-plan.md) records the staged learning plan,
-the implemented beginner course and practice scope, and proposed later milestones.
+the implemented learning runtime and practice scope, and proposed later product milestones.
+The [curriculum](curriculum.md) separates included courses from planned content.
 
 [Architecture proposals](architecture-proposals.md) describe unimplemented
 refactors for review. [Preset-sync extensions](preset-sync-proposals.md) contain

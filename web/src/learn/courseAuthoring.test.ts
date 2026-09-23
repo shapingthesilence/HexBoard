@@ -1,9 +1,10 @@
+import {lessonFixtures as beginnerLessons} from "./lessonFixtures.test-support.ts";
 import {describe,it,expect} from "vitest";
 import {createElement} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
 import {CourseMarkdown} from "./CourseMarkdown.tsx";
 import {courseFormat,parseCourse,assessmentFingerprint,canPassTimedLesson,lessonCues,cueAccepts,type UserCourse} from "./courseFiles.ts";
-import {beginnerLessons,CourseRun} from "./beginnerCourse.ts";
+import {CourseRun} from "./beginnerCourse.ts";
 import {starterLayouts} from "./majorScale.ts";
 import {copyRollNotes,pasteRollNotes,lessonRollNotes,addRollNote,editRollNote} from "./courseTimeline.ts";
 import {compatibilityReport,transposeCourseLayout,reorderCourse} from "./courseStructure.ts";

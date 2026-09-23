@@ -96,7 +96,7 @@ and `TRANSFER_END` so firmware can pace object transfers.
 
 ## Learning and Course Authoring
 
-User courses and recoverable drafts use separate IndexedDB stores and self-contained v3 JSON export (v2 imports remain supported).
+User courses and recoverable drafts use separate IndexedDB stores and self-contained v4 JSON export (v2/v3 imports remain supported).
 The editor is under Manage courses, with live HexBoard phrase recording,
 per-layout key/hand/finger cues, a tuning/layout selection dialog, and a canonical
 piano roll with direct note creation, independent holds, time signatures, and
@@ -208,3 +208,17 @@ Worklet tests render samples without an audio device and check pitch, modulation
 envelopes, table loading, and note lifecycle.
 
 Course authoring helpers: `beatGrid.ts` owns straight/triplet divisions, `courseStructure.ts` owns outline moves, compatibility and embedded layout transposition, and `CourseMarkdown.tsx` renders safe course prose. Completion policies and content pages are defined in the [course format](../docs/course-format.md).
+
+## Built-in curriculum
+
+`src/learn/curriculumCourses.ts` owns the ordered built-in registry: First Steps,
+Isomorphic Movement, and Rhythm Fundamentals. Courses use the same portable v4
+format as user content. `curriculumKeys.ts` resolves manual-derived compact
+scale/interval templates to physical buttons on each embedded starter layout,
+including translated roots and duplicate positions. Built-in selector values
+are namespaced separately from imported course IDs.
+
+The [curriculum reference](../docs/curriculum.md) owns the current inventory,
+planned courses, authoring guidance, manual interpretation, and acceptance.
+`builtinCourses.test.ts` checks portable round-trips, every exercise on all
+three layouts, timed runs, duplicates, and translated physical geometry.
