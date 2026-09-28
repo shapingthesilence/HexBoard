@@ -217,10 +217,12 @@ voices, timers, and the metronome, clears evaluation state, and repaints the
 next lesson without entering/exiting the device session. `LearnInputGate`
 retains physical held keys across this reset and blocks input until all have
 been released. A course session uses alternate command keys (indices 0, 40,
-80, 120 from top to bottom) for next/Continue, example, hints, and repeat.
+80, 120 from top to bottom) for next/Continue, example, repeat without hints,
+and repeat with hints.
 The other three command keys remain unassigned to leave physical spacing.
-Next/Continue lights only when the corresponding web action is available;
-the hints light is on only while hints are active. All command presses bypass
+Next/Continue lights only when the corresponding web action is available.
+The two repeat buttons restart the run with their indicated hint setting;
+after Step or slower timed practice they start at the goal tempo. All command presses bypass
 the playable-key gate. Content pages
 can start and retain the same session. Stop, leaving Learn, device disconnect, page lifecycle cleanup,
 or an unrecoverable error closes the session. Ungraded synth play uses the same
@@ -287,3 +289,32 @@ and Delete. Content pages do not block the separate Scale practice mode.
 Tuning replacement checks existing pitches against the new tuning’s pitch lattice, independent of layout range. Incompatible replacements remain staged until the author confirms clearing twice. Revert leaves the course untouched; confirmation clears practice targets/timing holds/fingerings while retaining content pages and teaching text.
 
 `noteAudition.ts` owns short, monophonic piano-roll previews. It reuses one synth while editing, cancels superseded startup requests, and closes with editor playback/lifecycle cleanup. Playback and recording Stop controls sit outside disabled editing fieldsets.
+
+## Learner guidance and celebrations
+
+`courseJourney.ts` derives assessed exercise totals and the next unfinished
+exercise from the normal course/layout fingerprints. `CourseJourney.tsx` renders
+a section map with text labels as well as status symbols. Content pages and
+ungraded/exploration activities are excluded from completion totals. No additional
+progress schema or prerequisites are stored. Lesson navigation remains unlocked.
+`courseMelodies.ts` owns the built-in public-domain excerpts; provenance and
+adaptations belong in [Course repertoire](course-repertoire.md).
+
+Hear example can initialize browser audio and a connected board session before
+practice. On the board, an example before or during a run resumes practice
+automatically; timed lessons use their normal four-click count-in. An example
+after a completed run restores that completed state, including its Next action,
+without changing the recorded result or clean-run streak.
+Changing lessons still uses the physical release barrier. Read-only pages and
+the independent Scale practice mode remain separate from graded course runs.
+
+`achievementFeedback.ts` detects a first completion or an independence upgrade
+only after the existing grader records a qualifying achievement. Existing
+achievements, slower rehearsal, missing repetitions, and ungraded play do not
+trigger rewards. A separate Web Audio voice plays a bounded three/four-note sine
+chime without altering instrument notes. Stop, run reset, navigation, hidden-tab
+cleanup, and unmount cancel it; session disposal closes its audio context.
+Audio failure leaves visual feedback intact. `AchievementFeedback.tsx` provides
+an announced static badge with a short CSS animation that respects reduced motion.
+The `hexboard.learn.rewardSound` browser preference controls rewards only and is
+not exported in course files or written to the device.

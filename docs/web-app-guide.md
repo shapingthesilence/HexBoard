@@ -4,13 +4,14 @@
 
 Open **Learn** to practice scales. It starts with the bundled **12 EDO (Normal)**
 tuning and major scale. Wicki-Hayden, Harmonic Table, and Gerhard are available
-without downloading anything. Choose **Start on HexBoard**, or **Try on screen**
-without a board. Release all hardware keys before starting.
+without downloading anything. Choose **Start on HexBoard** and release all
+hardware keys before starting. When disconnected, an on-screen test is available
+under **Test without a HexBoard**.
 
 Use **Scale practice**, **Courses**, and **Progress** to navigate.
 Start/Stop and Hints sit above the key map. Choose a scale to preview its exact
 exercise pitches immediately, including every duplicate key in the selected
-register. Other notes stay dimly colored. **Colors & contrast** and
+register. Other notes stay dimly colored. **Display & sound** and
 **Library & help** expand when needed.
 
 ### Loading from HexBoard
@@ -99,10 +100,13 @@ sessions.
 Under **Courses**, start with **1 · First Steps on HexBoard**. The three included
 courses build from a first note to shape translation and rhythmic mini pieces;
 see [Built-in course paths](#built-in-course-paths) below. Choose a lesson from
-the selector, or use **Next lesson** after finishing. Reading pages use
+the always-visible **Your course path**, or use **Next lesson** after finishing. Reading pages use
 **Continue**. Course introductions appear before the first lesson.
 Each practice lesson explains what to listen for and what to play.
-Start a practice session and use **Hear example** to hear its notes or chords.
+**Hear example** is available before starting a run. On HexBoard, practice
+resumes after the example (with a four-click count-in for timed lessons). If
+you listen after finishing a lesson, the completed result remains on screen
+and **Next lesson** stays available.
 When HexBoard is connected, **Start Course on HexBoard** opens a board session
 from the introduction, including when the first lesson is a reading page. A
 reading page opened directly has **Start on HexBoard**. In a course session,
@@ -112,12 +116,13 @@ four of the seven side buttons are used, with an unused button between actions:
 | --- | --- |
 | 1, blue | Next lesson after finishing, or Continue on a reading page |
 | 3, cyan | Hear example |
-| 5, yellow | Toggle hints; lit when hints are on, dark when off |
-| 7, orange | Repeat the completed lesson |
+| 5, yellow | Start or repeat without hints |
+| 7, orange | Start or repeat with hints |
 
 Unavailable actions go dark. Next / Continue lights only when its matching web
 button is available. The compact side-button guide in Learn follows the physical
-stagger and shows the unused buttons as blank spaces. Moving between lessons keeps the session open and starts practice
+stagger and shows the unused buttons as blank spaces. A repeat after Step or
+slower timed practice moves to the lesson's goal tempo. Moving between lessons keeps the session open and starts practice
 after all held playable keys are released. Reading pages keep the session open.
 The built-in courses use standard 12-EDO and include all three starter layouts.
 User-authored courses and Scale practice can use other tunings.
@@ -129,7 +134,7 @@ when changing chords. On screen, click a key to hold it and click again to
 release it. On HexBoard, press and release normally.
 
 Moving to another lesson turns hints on again.
-**Try without hints** hides the target cue and exercise strip. The key labels
+**Repeat without hints** restarts the exercise with the target cue and exercise strip hidden. The key labels
 and tuning colors remain visible. **Progress** saves completed attempts, best
 mistake count, and independent completion for each lesson and layout in this
 browser. An **Independent** star means a complete run with zero mistakes and no
@@ -155,9 +160,9 @@ The included pathway has three courses:
 
 | Course | What you play |
 | --- | --- |
-| **1 · First Steps on HexBoard** | 11 exercises and a welcome page: first notes, octaves, duplicate pitches, a five-note tune, and the original mini piece Homecoming |
-| **2 · Moving Around an Isomorphic Keyboard** | 14 untimed exercises and an introduction: intervals, duplicate positions, and the same motif translated to different roots |
-| **3 · Rhythm Fundamentals** | 19 exercises and two pages: pulse, quarters/eighths, rests, 3/4, syncopation, simultaneous notes, triplets, 6/8, and Pulse and Play |
+| **1 · First Steps on HexBoard** | 11 exercises and a welcome page: first notes, octaves, duplicate pitches, a five-note tune, and a phrase of Ode to Joy |
+| **2 · Moving Around an Isomorphic Keyboard** | 15 untimed exercises, an introduction, and free exploration: intervals, duplicate positions, and Twinkle translated to another key |
+| **3 · Rhythm Fundamentals** | 20 exercises and two pages: pulse, quarters/eighths, rests, 3/4, syncopation, simultaneous notes, triplets, 6/8, and familiar Twinkle / Ode to Joy phrases |
 
 Start with one layout and keep it while learning a phrase. The courses suggest
 compact routes for Wicki-Hayden, Harmonic Table, and Gerhard. Matching duplicates
@@ -179,10 +184,30 @@ follow written rests and long notes by listening as well as watching the score.
 In 6/8, group eighth notes into two larger pulses; the click still counts quarter
 notes and the count-in remains four clicks.
 
-Final checkpoints request two consecutive clean runs. Rehearse with hints,
-then turn off **Hints** before starting or use **Try without hints** after a
+First Steps asks for one final passing performance; the other two final
+checkpoints request two consecutive clean runs. Rehearse with hints,
+then use **Repeat without hints** on the board or in Learn after a
 run. Independent completion is tracked separately; guidance does not prevent
 ordinary completion. Key labels and colors remain when hints are off.
+
+**Your course path** stays open and shows completion for the selected layout. Its outline
+groups the course into sections and distinguishes reading, exploration, completed
+practice, and Independent stars. Reading and unscored exploration do not count
+against the exercise total. Use **Previous lesson** and **Next lesson** freely;
+you can revisit a passage without finishing the current one. A course introduction
+offers **Continue** at the first unfinished exercise when that layout has progress.
+
+A newly completed lesson receives a brief checkmark celebration and soft chime.
+Earning independence adds a star and a different chime. Repeating an already
+earned achievement does not replay the reward. Slow rehearsals, unfinished clean-run
+requirements, and exploration do not produce a completion award. Under **Display
+& sound**, turn off **Achievement sounds** to keep only the visual feedback.
+Reduced-motion preferences disable the celebration animation. Rewards use browser
+audio and stop when you stop, change lessons, leave Learn, or hide the tab.
+
+Course instructions refer to the physical HexBoard. When disconnected,
+**Test without a HexBoard → Try on screen** is available for testing lesson
+behavior with clickable keys. It is secondary to the normal learning workflow.
 
 All built-in courses support **Make a copy** and **Export course**. Use a copy
 to change teaching content or button choices. Built-ins cannot be edited or

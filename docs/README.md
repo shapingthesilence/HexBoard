@@ -23,6 +23,7 @@ Describe screen details only when needed to find a control or understand its use
 | [Developer guide](developer-guide.md) | Firmware architecture, ownership, runtime, settings/storage, risks, and edit recipes |
 | [Delegated control](delegated-control.md) | Host takeover protocol and runtime gates |
 | [Preset sync](preset-sync-sysex.md) | Implemented transfer protocol, capabilities, and object schemas |
+| [Course repertoire](course-repertoire.md) | Melody sources, rights references, and teaching adaptations |
 | [Curriculum](curriculum.md) | Current course inventory, planned pathway, teaching standards, and content acceptance |
 | [Course files](course-format.md) | Portable user courses, fingering rules, timing, and authoring ownership |
 | [Web development](../web/README.md) | App source ownership, development, deployment, and integration constraints |

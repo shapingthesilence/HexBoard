@@ -13,7 +13,7 @@ describe("course side controls", () => {
       expect(courseControlLight(control.index,true)).toEqual(control.color);
       expect(courseControlLight(control.index,false).value).toBe(0);
     }
-    expect(courseControlLight(80,true,false).value).toBe(0);
+    expect(courseControl(80)?.label).toBe("Repeat without hints");
     for(const index of [20,60,100])expect(courseControl(index)).toBeUndefined();
     expect(courseControl(65)).toBeUndefined();
   });

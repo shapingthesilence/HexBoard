@@ -7,40 +7,44 @@ source ownership belong in the [course reference](course-format.md).
 ## Current buildout
 
 The built-in selector offers the first three courses below, in order, with
-First Steps as the default. They contain 48 entries: 44 practice exercises and
-four short reading pages. They use standard 12-EDO on Wicki-Hayden, Harmonic
+First Steps as the default. They contain 51 entries: 46 practice exercises, four short reading pages, and one
+unscored exploration. They use standard 12-EDO on Wicki-Hayden, Harmonic
 Table, and Gerhard. Every practice exercise fits all three embedded layouts.
 These are authored courses ready for learner and hardware review, not a claim
 of validated ergonomics or teaching effectiveness.
 
 | Course | Included now | Outcome |
 | --- | --- | --- |
-| 1. First Steps on HexBoard | 1 page, 11 exercises; timed goals 50 BPM | Play a short original tune, distinguish octaves from duplicates, repeat without hints |
-| 2. Moving Around an Isomorphic Keyboard | 1 page, 14 untimed exercises | Recognize intervals and translate a complete phrase to another position or root |
-| 3. Rhythm Fundamentals | 2 pages, 19 exercises; timed goals 50–60 BPM | Keep a quarter-note pulse through eighths, rests, syncopation, triplets, and a short piece |
+| 1. First Steps on HexBoard | 1 page, 11 exercises; timed goals 50 BPM | Play a phrase of Ode to Joy, distinguish octaves from duplicates, repeat without hints |
+| 2. Moving Around an Isomorphic Keyboard | 1 page, 15 untimed exercises and 1 exploration | Recognize intervals and translate a complete phrase to another position or root |
+| 3. Rhythm Fundamentals | 2 pages, 20 exercises; timed goals 50–60 BPM | Keep a quarter-note pulse through eighths, rests, syncopation, triplets, and a short piece |
 
 First Steps proceeds through a first C, C–G–C, higher/lower, octaves, exact-pitch
-duplicates, a short trail, a five-note melody, memory practice, a first timed
-melody, and rehearsal/performance of **Homecoming**. It avoids semitone counting
-and chord construction. Allow roughly 20–30 minutes for an initial visit;
-revisit the independence checkpoints over later sessions.
+duplicates, a short trail, an eight-note melody opening, memory practice, a first timed
+melody, and rehearsal/performance of **Ode to Joy**, with an even rhythm. It avoids semitone counting
+and chord construction. Suggest a relaxed 5–10 minute visit;
+return to familiar phrases over later sessions. Course duration is not a deadline.
 
 Movement separates half steps, whole steps, major/minor thirds, fifths, and
 octaves. A question-and-answer phrase follows the first interval drills.
 Learners then repeat a major third in two positions, move a fifth from C to D,
 play a three-note whole-step motif, compare duplicate routes, transpose the
-motif from C to D and F, choose a route, and repeat without hints.
+motif from C to D and F, choose a route, translate the opening of **Twinkle,
+Twinkle, Little Star**, explore a chosen shape without a score, and repeat
+Twinkle without hints.
 Duplicate-position phrases begin on C♯ because the entire repeated shape fits
 twice on every starter layout; C4 alone has only one Wicki-Hayden button.
 
 Rhythm progresses from one repeated pitch to pitch movement, quarters,
 eighths, a small tune, mixed lengths, rests, repeated attacks, 3/4, offbeats,
 and syncopation. An untimed C–G pair prepares simultaneous attacks without
-requiring prior triad theory. A familiar phrase then leads into triplets,
-subdivision mixtures, 6/8, and rehearsal/performance of **Pulse and Play**.
-The four-bar final piece reuses the learned rhythm vocabulary.
+requiring prior triad theory. The two phrases of **Twinkle** provide a musical application and a later recall
+exercise. Triplets, subdivision mixtures, and 6/8 lead to **Ode to Joy** with its
+dotted ending restored. The final checkpoint applies familiar rhythmic skills;
+it does not cram every subdivision into one artificial tune.
 
-All three final checkpoints request two consecutive clean runs. Independence
+First Steps ends with one passing performance. The Movement and Rhythm final
+checkpoints request two consecutive clean runs. Independence
 remains a separate achievement: a learner can complete with hints, then return
 without them. The player does not force hints off because of lesson prose.
 Hand/finger choices are not assessed in these courses. Exact physical-button
@@ -56,14 +60,14 @@ curriculum outline; learners take Course 12 after Course 7 in the initial path.
 
 | Course | Prerequisite | Planned sequence and practical outcome |
 | --- | --- | --- |
-| 4. Major Scale and Scale-Degree Fluency | 1–3 | Explain a scale; ascend, descend, return; name degrees 1–7; find 3 and 5; root–3–5, 12321, 1324, thirds, three/four-note groups; add familiar rhythm; move to another root; end with a mini melody. Use Scale practice for ongoing drills. |
+| 4. Major Scale and Scale-Degree Fluency | 1–3 | Explain a scale; ascend, descend, return; name degrees 1–7; find 3 and 5; root–3–5, 12321, 1324, thirds, three/four-note groups; add familiar rhythm; move to another root; end with a familiar melody excerpt. Use Scale practice for ongoing drills. |
 | 5. Fingering and Physical Technique | 1–4 | Relaxed hand position and finger numbers; five-note patterns; crossing/repositioning; small movements; duplicates; fixed three/five-note routes; scale fingering and alternatives; compact/stretched comparisons; repeated clean runs; remove fingering hints. Recommendations are layout-specific advice, not universal rules. |
 | 6. Chords and Arpeggios | 1–5 | Explain a chord; major arpeggio and triad; minor triad and quality contrast; translate both shapes; root position and first/second inversions; recognize the same harmony; major/minor broken patterns; alternate chord/arpeggio; finish with rehearsed timed changes. |
 | 7. Chord Progressions and Voice Leading | 1–6 | Roman numerals; I–V and I–IV; I–IV–V–I; whole-note, two-beat, then one-beat changes; common tones and nearby inversions; I–V–vi–IV, vi–IV–I–V, ii–V–I; broken/rhythmic accompaniment; performance with inversions. |
-| 12. Putting It Together | 1–7 for the initial edition | Musical projects: melody, progression, minor/pentatonic introduction and application, 3/4, syncopation, a simple prepared melody/accompaniment texture, transposed etude, chosen fingering, target tempo, reduced hints, a longer original piece, and free performance. Explicitly teach any material not yet introduced in 1–7; advanced two-hand/improvisation projects wait for the expansion. |
+| 12. Putting It Together | 1–7 for the initial edition | Musical projects: melody, progression, minor/pentatonic introduction and application, 3/4, syncopation, a simple prepared melody/accompaniment texture, transposed etude, chosen fingering, target tempo, reduced hints, a longer familiar piece, and free performance. Explicitly teach any material not yet introduced in 1–7; advanced two-hand/improvisation projects wait for the expansion. |
 | 8. Melody and Phrasing | 1–7 | Phrase direction, repeated notes, steps/skips, motifs and transposed motifs, question/answer, endings, rhythmic variations, eight-bar melody, duplicate choices, suggested fingering, reduced cues, performance tempo. |
 | 9. Minor, Pentatonic, and Improvisation | 1–7 | Major/minor contrast, natural minor and its patterns/triads, minor pentatonic across positions, two/three-note improvisation, call/response, one board area, transposed licks, chord-tone targets, four/eight-bar creation. |
-| 10. Two-Hand Playing | 1–8 | Hand territories and alternation; shared melody; left root/fifth/triad plus right melody; sustained/repeated/broken accompaniment; independent rhythms; I–IV–V with melody; eight-bar etude, reduced hints, performance. |
+| 10. Two-Hand Playing | 1–8 | Hand territories and alternation; shared melody; left root/fifth/triad plus right melody; sustained/repeated/broken accompaniment; independent rhythms; I–IV–V with melody; eight-bar repertoire excerpt or etude, reduced hints, performance. |
 | 11. Isomorphic Transposition and Pattern Vocabulary | 1–10 | Move intervals, triads, fragments, arpeggios, motifs, melodies, and progressions; start at several roots/positions; navigate edges with duplicates; play one phrase in three keys; finish without target hints. A true no-label challenge requires a separate UI capability. |
 
 After the shared foundation, offer layout-specific mastery branches. A separate
@@ -103,8 +107,44 @@ pitch classes, range, chord tones, duration, and optional accompaniment. Neither
 activity records a scored completion. Do not describe free creativity as if the
 fixed-phrase grader can judge it.
 
-Built-in pieces should be original short etudes. Separate licensed or
-public-domain repertoire from the core teaching sequence.
+Use recognizable public-domain melodies for musical payoffs whenever the range
+and skill fit. Keep short purpose-built drills for focused problems, then return
+to a melody. Prefer authentic phrase boundaries; label simplified rhythm and
+restore it later. Record sources and adaptations in the [repertoire reference](course-repertoire.md).
+Write instructions for playing the physical HexBoard. On-screen input is an
+engineering preview, not part of the teaching narrative.
+
+### Retention, agency, and enjoyment
+
+Plan short sessions with one reachable musical aim. Begin with recall of a
+familiar phrase before replaying the example. Introduce one small new chunk,
+join it to the larger phrase, then end with a tune the learner enjoys. Offer
+another visit tomorrow or later in the week; there is no daily streak, penalty,
+or mandatory schedule. A specific spacing interval is guidance, not a proven
+universal prescription for this instrument.
+
+Demonstrate, let the learner hum or tap, then play. Provide a worked example
+before asking for independent recall. Use enough repeated practice to establish
+a route, then alternate familiar skills in later musical contexts. Do not
+shuffle several new demands together before the learner has a foothold.
+
+Ask one concrete listening question: did the phrase arrive home, were repeated
+notes separate, or did the pulse continue through a long note? After a difficult
+run, suggest one change to practice slowly. Scores support that feedback; they
+do not define musical worth. Permit revisiting or moving ahead without locking
+lessons. Include brief unscored choices of ending, route, or pattern.
+
+The [IES practice guide on organizing learning](https://ies.ed.gov/ncee/wwc/practiceguide/1)
+supports spacing, retrieval, and alternating examples with practice. Applying
+those general learning principles to short HexBoard music sessions is a course
+design inference, not evidence that this particular curriculum has been tested.
+Observe actual beginners and adjust chunk size, reach, pace, and repertoire.
+
+Celebrate a first completed lesson and a newly earned Independent star with a
+brief visual reward and an optional soft chime. Keep celebrations brief, avoid
+rewarding repeated clicks or unfinished checkpoints, and respect reduced-motion
+preferences. Let learners mute reward sounds without muting their instrument.
+A single clean run is an achievement today; later recall is the retention check.
 
 ## Physical routes and reference manuals
 

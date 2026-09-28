@@ -13,7 +13,7 @@ encoder recovery and no heartbeat.
 Real hardware acceptance remains required before a validated device release.
 
 The current curriculum buildout includes First Steps, Isomorphic Movement, and
-Rhythm Fundamentals: 44 practice exercises and four short reading pages across
+Rhythm Fundamentals: 46 practice exercises, four short reading pages, and one unscored exploration across
 three layouts. The [curriculum plan](curriculum.md) owns the current inventory,
 full twelve-course pathway, authoring rules, manual-derived route guidance, and
 learner acceptance criteria. The remaining nine courses are planned.
@@ -173,7 +173,7 @@ layout or flash writes are introduced.
 | Milestone | Scope | Acceptance |
 | --- | --- | --- |
 | 1: working prototype | One guided scale, repeated patterns, beat grading, browser audio, LEDs, session ownership | Complete the same lesson on all three default layouts; prove encoder exit and re-entry on hardware |
-| 2: foundation content | First three courses implemented; remaining core courses planned in the curriculum reference | Beginner completes original mini pieces without hints; physical routes reviewed on hardware |
+| 2: foundation content | First three courses implemented; remaining core courses planned in the curriculum reference | Beginner completes familiar melody excerpts without hints; physical routes reviewed on hardware |
 | 3: practice expansion | Normal instrument mode, broader rhythm exercises, inversions, review | Feedback remains useful across layouts and tempos |
 | 4: song trainer | Curated pieces, MIDI import, part selection, passage looping | Supported imports yield playable, correctly timed exercises |
 | 5: tuning-specific teaching | Authored explanations and exercises for other tunings | Build on the implemented tuning-aware scale practice |

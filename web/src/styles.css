@@ -56,6 +56,8 @@
 @media (max-width: 700px) {
   .learnIntro { align-items: flex-start; flex-direction: column; }
   .learnWorkspace { grid-template-columns: 1fr; }
+  .learnCourseWorkspace > .learnGuide { order: 2; }
+  .learnCourseWorkspace > article, .learnCourseWorkspace > .learnPractice { order: 1; }
   .learnGuide { display: grid; grid-template-columns: 1fr 1fr; }
   .learnGuide > .learnSettings, .learnGuide > p { grid-column: 1 / -1; }
   .learnCard { padding: 12px; }
@@ -2766,3 +2768,42 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .courseStartButton:hover { background: #206335; }
 
 .courseTransportSettings { display: contents; }
+
+/* Course guidance stays readable while the board remains the playing surface. */
+.learnJourney { border-block: 1px solid var(--border); padding: 12px 0; }
+.learnJourneySummary { display: grid; gap: 6px; }
+.learnJourneySummary > span { font-size: .78rem; color: var(--text-soft); line-height: 1.5; }
+.learnJourney progress { width: 100%; height: 7px; accent-color: var(--brand); }
+.learnJourney nav { margin-top: 10px; }
+.learnJourneySection h3 { font-size: .75rem; color: var(--text-soft); margin: 12px 0 6px; }
+.learnJourneySection ol { list-style: none; padding: 0; margin: 0; }
+.learnJourneySection button { width: 100%; display: flex; gap: 8px; align-items: baseline; text-align: left; border: 1px solid transparent; background: transparent; padding: 7px 6px; font-size: .8rem; }
+.learnJourneySection button > span:first-child { width: 20px; flex-shrink: 0; color: var(--brand); }
+.learnJourneySection button[aria-current=step] { border-color: var(--brand); background: var(--surface-accent); }
+.learnJourneySection small { display: block; color: var(--text-soft); font-size: .7rem; margin-top: 3px; }
+.learnLessonHeading { display: flex; gap: 12px; justify-content: space-between; align-items: start; margin-bottom: 14px; }
+.learnLessonHeading h2 { margin: 4px 0 0; font-size: 1.3rem; line-height: 1.3; }
+.learnEyebrow { color: var(--text-soft); font-size: .78rem; }
+.learnLessonMode { padding: 5px 8px; background: var(--surface-muted); border-radius: var(--radius-sm); font-size: .8rem; white-space: nowrap; }
+.learnCompletion p { margin: 0 0 10px; line-height: 1.5; }
+@media (max-width: 700px) {
+  .learnGuide > .learnJourney { grid-column: 1 / -1; }
+  .learnLessonHeading { flex-direction: column; gap: 8px; }
+}
+
+.learnAchievement { display: flex; align-items: center; gap: 16px; padding: 16px; margin: 0 0 16px; border: 1px solid var(--brand); border-radius: var(--radius-md); background: var(--surface-accent); animation: achievement-enter .45s ease-out; }
+.learnAchievement strong { font-size: 1.1rem; }
+.learnAchievement p { margin: 4px 0 0; font-size: .85rem; line-height: 1.5; }
+.learnAchievementBadge { position: relative; display: grid; place-items: center; flex: 0 0 52px; height: 52px; border-radius: 50%; background: var(--brand); color: white; font-size: 1.8rem; animation: achievement-pop .6s ease-out; }
+.learnAchievement.independent .learnAchievementBadge { background: #8b6418; }
+.learnAchievementBadge i { position: absolute; font-size: .9rem; font-style: normal; color: var(--brand); opacity: 0; animation: achievement-notes .9s ease-out; }
+.learnAchievementBadge i:nth-child(1) { --dx: -30px; --dy: -28px; }
+.learnAchievementBadge i:nth-child(2) { --dx: 30px; --dy: -30px; }
+.learnAchievementBadge i:nth-child(3) { --dx: -32px; --dy: 26px; }
+.learnAchievementBadge i:nth-child(4) { --dx: 33px; --dy: 24px; }
+@keyframes achievement-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes achievement-pop { 0% { transform: scale(.8); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
+@keyframes achievement-notes { 0% { opacity: 0; transform: translate(0,0); } 35% { opacity: 1; } 100% { opacity: 0; transform: translate(var(--dx),var(--dy)); } }
+@media (prefers-reduced-motion: reduce) {
+  .learnAchievement, .learnAchievementBadge, .learnAchievementBadge i { animation: none; }
+}

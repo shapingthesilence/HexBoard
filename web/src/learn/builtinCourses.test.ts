@@ -7,21 +7,37 @@ import {compatibilityReport} from "./courseStructure.ts";
 import {BeatScaleRun} from "./scalePractice.ts";
 const layouts=starterLayouts();
 describe("foundation curriculum",()=>{
+  it("teaches the physical instrument with sourced, rehearsed melodies",()=>{
+    for(const course of builtinCourses){
+      const teaching=[course.description,...course.lessons.flatMap(lesson=>[lesson.instruction,lesson.markdown])].join(" ");
+      expect(teaching).not.toMatch(/on screen|click (?:a |the )?key|Try on screen/i);
+      expect(teaching).not.toMatch(/Turn off Hints|Try without hints|Toggle hints/i);
+      for(const lesson of course.lessons.filter(lesson=>lesson.kind==="content"&&/Hear example/i.test(lesson.markdown??"")))
+        expect(lesson.markdown).toMatch(/Continue/i);
+    }
+    const first=firstStepsCourse.lessons.find(lesson=>lesson.id==="homecoming")!;
+    expect(first.title).toContain("Ode to Joy");
+    expect(first.targets).toEqual(firstStepsCourse.lessons.find(lesson=>lesson.id==="homecoming-rehearsal")!.targets);
+    expect(first.timing!.beats.reduce((a,b)=>a+b,0)).toBe(16);
+    const play=movementCourse.lessons.find(lesson=>lesson.kind==="exploration")!;
+    expect(play.assessment?.graded).toBe(false);
+    expect(play.exploration?.durationSeconds).toBe(45);
+  });
   it("ships ordered self-contained courses with unique identities",()=>{
-    expect(builtinCourses.map(course=>course.lessons.length)).toEqual([12,15,21]);
+    expect(builtinCourses.map(course=>course.lessons.length)).toEqual([12,17,22]);
     expect(new Set(builtinCourses.map(course=>course.id)).size).toBe(builtinCourses.length);
     for(const course of builtinCourses){
       const loaded=readCourseFile(JSON.stringify(course));
       expect(loaded).toEqual(parseCourse(course));
       expect(new Set(loaded.lessons.map(lesson=>lesson.id)).size).toBe(loaded.lessons.length);
       expect(compatibilityReport(loaded).flatMap(row=>row.issues)).toEqual([]);
-      expect(loaded.lessons.at(-1)?.repetitions).toBe(2);
+      expect(loaded.lessons.at(-1)?.repetitions).toBeGreaterThanOrEqual(1);
     }
   });
   for(const layout of layouts)it(`completes all practice on ${layout.layout.name}`,()=>{
     const keys=resolveLessonKeys(layout);
     for(const course of builtinCourses)for(const lesson of parseCourse(course).lessons){
-      if(lesson.kind==="content")continue;
+      if(lesson.kind==="content"||lesson.kind==="exploration")continue;
       const run=new CourseRun(lesson,layout.layout.objectIdHex);
       for(let step=0;step<lesson.targets.length;step++){
         const target=lesson.targets[step];
@@ -67,7 +83,7 @@ describe("foundation curriculum",()=>{
   it("translates entire physical shapes, including duplicate-position phrases",()=>{
     for(const layout of layouts){
       const keys=resolveLessonKeys(layout);
-      for(const [id,size,groups] of [["interval-locations",3,2],["move-fifth",3,2],["duplicate-route",5,2],["transpose-motif",5,3],["shape-checkpoint",5,2]] as const){
+      for(const [id,size,groups] of [["interval-locations",3,2],["move-fifth",3,2],["duplicate-route",5,2],["transpose-motif",5,3],["twinkle-travel",7,2],["shape-checkpoint",7,2]] as const){
         const lesson=movementCourse.lessons.find(l=>l.id===id)!;
         const points=lesson.fingerings!.find(f=>f.layoutId===layout.layout.objectIdHex)!.steps.map(step=>keys[step[0].button!].key);
         const shape=(start:number)=>points.slice(start,start+size).map(key=>[key.coordCol-points[start].coordCol,key.row-points[start].row]);

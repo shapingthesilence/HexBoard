@@ -222,3 +222,10 @@ The [curriculum reference](../docs/curriculum.md) owns the current inventory,
 planned courses, authoring guidance, manual interpretation, and acceptance.
 `builtinCourses.test.ts` checks portable round-trips, every exercise on all
 three layouts, timed runs, duplicates, and translated physical geometry.
+
+The learner sidebar uses `CourseJourney.tsx` / `courseJourney.ts` for section
+navigation and layout-specific exercise progress. Demonstrations return to ready
+before assessment. `AchievementFeedback.tsx` / `achievementFeedback.ts` render
+first-completion and independence rewards with optional, separately owned audio;
+all reward voices stop with the Learn lifecycle. Built-in melody excerpts and
+adaptations are documented in [Course repertoire](../docs/course-repertoire.md).
