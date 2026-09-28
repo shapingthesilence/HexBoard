@@ -190,12 +190,14 @@ then use **Repeat without hints** on the board or in Learn after a
 run. Independent completion is tracked separately; guidance does not prevent
 ordinary completion. Key labels and colors remain when hints are off.
 
-**Your course path** stays open and shows completion for the selected layout. Its outline
-groups the course into sections and distinguishes reading, exploration, completed
-practice, and Independent stars. Reading and unscored exploration do not count
-against the exercise total. Use **Previous lesson** and **Next lesson** freely;
-you can revisit a passage without finishing the current one. A course introduction
-offers **Continue** at the first unfinished exercise when that layout has progress.
+**Your course path** stays open in its own box. Scroll inside the box
+to find a lesson without pushing the controls below it down the page. The selected
+lesson stays in view as you advance. The outline shows completion for the selected
+layout, groups lessons into sections, and distinguishes reading, exploration,
+completed practice, and Independent stars. Reading and unscored exploration do
+not count against the exercise total. Choose any lesson in the path to revisit it;
+**Next lesson** advances after a run. A course introduction offers **Continue** at
+the first unfinished exercise when that layout has progress.
 
 A newly completed lesson receives a brief checkmark celebration and soft chime.
 Earning independence adds a star and a different chime. Repeating an already
