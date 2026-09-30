@@ -97,8 +97,8 @@ sessions.
 
 ### Courses and Progress
 
-Under **Courses**, start with **1 · First Steps on HexBoard**. The three included
-courses build from a first note to shape translation and rhythmic mini pieces;
+Under **Courses**, start with **1 · First Steps on HexBoard**. The four included
+courses build from a first note to shape translation, rhythmic phrases, and major-scale fluency;
 see [Built-in course paths](#built-in-course-paths) below. Choose a lesson from
 the always-visible **Your course path**, or use **Next lesson** after finishing. Reading pages use
 **Continue**. Course introductions appear before the first lesson.
@@ -156,13 +156,20 @@ an earlier chord dim when the target advances, while common tones remain lit.
 
 ### Built-in course paths
 
-The included pathway has three courses:
+The included pathway has four courses:
 
 | Course | What you play |
 | --- | --- |
-| **1 · First Steps on HexBoard** | 11 exercises and a welcome page: first notes, octaves, duplicate pitches, a five-note tune, and a phrase of Ode to Joy |
-| **2 · Moving Around an Isomorphic Keyboard** | 15 untimed exercises, an introduction, and free exploration: intervals, duplicate positions, and Twinkle translated to another key |
-| **3 · Rhythm Fundamentals** | 20 exercises and two pages: pulse, quarters/eighths, rests, 3/4, syncopation, simultaneous notes, triplets, 6/8, and familiar Twinkle / Ode to Joy phrases |
+| **1 · First Steps on HexBoard** | 12 exercises and a welcome page: first notes, Au clair de la lune, octaves, duplicate pitches, and a phrase of Ode to Joy |
+| **2 · Moving Around an Isomorphic Keyboard** | 17 untimed exercises, an introduction, and free exploration: intervals, duplicate positions, and familiar Au clair / Twinkle phrases moved to another key |
+| **3 · Rhythm Fundamentals** | 24 exercises and three pages: pulse, quarters/eighths, rests, 3/4, syncopation, simultaneous notes, prepared triplets/6/8, and familiar melody phrases |
+| **4 · Major Scale and Scale-Degree Fluency** | 24 exercises, three pages, and free exploration: scale groups, degrees 1–7, musical patterns, Joy to the World's descending scale, and Twinkle in D major |
+
+Aim for one section in a short visit, then finish with a tune you enjoy.
+Recall a familiar phrase before listening at the start of your next visit.
+Course 4 introduces degree numbers as positions in the scale; they are different
+from finger numbers. It builds C major before moving the same relationships to
+D major, and teaches the new route without a clock before its final performance.
 
 Start with one layout and keep it while learning a phrase. The courses suggest
 compact routes for Wicki-Hayden, Harmonic Table, and Gerhard. Matching duplicates
@@ -184,7 +191,7 @@ follow written rests and long notes by listening as well as watching the score.
 In 6/8, group eighth notes into two larger pulses; the click still counts quarter
 notes and the count-in remains four clicks.
 
-First Steps asks for one final passing performance; the other two final
+First Steps asks for one final passing performance; the other three final
 checkpoints request two consecutive clean runs. Rehearse with hints,
 then use **Repeat without hints** on the board or in Learn after a
 run. Independent completion is tracked separately; guidance does not prevent

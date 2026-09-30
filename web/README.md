@@ -212,7 +212,8 @@ Course authoring helpers: `beatGrid.ts` owns straight/triplet divisions, `course
 ## Built-in curriculum
 
 `src/learn/curriculumCourses.ts` owns the ordered built-in registry: First Steps,
-Isomorphic Movement, and Rhythm Fundamentals. Courses use the same portable v4
+Isomorphic Movement, Rhythm Fundamentals, and Major Scale and Scale-Degree
+Fluency. Courses use the same portable v4
 format as user content. `curriculumKeys.ts` resolves manual-derived compact
 scale/interval templates to physical buttons on each embedded starter layout,
 including translated roots and duplicate positions. Built-in selector values
@@ -221,7 +222,9 @@ are namespaced separately from imported course IDs.
 The [curriculum reference](../docs/curriculum.md) owns the current inventory,
 planned courses, authoring guidance, manual interpretation, and acceptance.
 `builtinCourses.test.ts` checks portable round-trips, every exercise on all
-three layouts, timed runs, duplicates, and translated physical geometry.
+three layouts, timed runs, duplicates, translated physical geometry, and
+rehearsal/performance pairs. Major-scale groups use scale degrees; variable
+half-step sizes distinguish diatonic windows from literal shape translations.
 
 The learner sidebar uses `CourseJourney.tsx` / `courseJourney.ts` for section
 navigation and layout-specific exercise progress. Demonstrations return to ready

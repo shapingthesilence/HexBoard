@@ -6,44 +6,67 @@ source ownership belong in the [course reference](course-format.md).
 
 ## Current buildout
 
-The built-in selector offers the first three courses below, in order, with
-First Steps as the default. They contain 51 entries: 46 practice exercises, four short reading pages, and one
-unscored exploration. They use standard 12-EDO on Wicki-Hayden, Harmonic
+The built-in selector offers the first four courses below, in order, with
+First Steps as the default. They contain 87 entries: 77 practice exercises,
+eight short reading pages, and two unscored explorations.
+They use standard 12-EDO on Wicki-Hayden, Harmonic
 Table, and Gerhard. Every practice exercise fits all three embedded layouts.
 These are authored courses ready for learner and hardware review, not a claim
 of validated ergonomics or teaching effectiveness.
 
 | Course | Included now | Outcome |
 | --- | --- | --- |
-| 1. First Steps on HexBoard | 1 page, 11 exercises; timed goals 50 BPM | Play a phrase of Ode to Joy, distinguish octaves from duplicates, repeat without hints |
-| 2. Moving Around an Isomorphic Keyboard | 1 page, 15 untimed exercises and 1 exploration | Recognize intervals and translate a complete phrase to another position or root |
-| 3. Rhythm Fundamentals | 2 pages, 20 exercises; timed goals 50–60 BPM | Keep a quarter-note pulse through eighths, rests, syncopation, triplets, and a short piece |
+| 1. First Steps on HexBoard | 1 page, 12 exercises; timed goals 50 BPM | Play Au clair de la lune and a phrase of Ode to Joy, distinguish octaves from duplicates, repeat without hints |
+| 2. Moving Around an Isomorphic Keyboard | 1 page, 17 untimed exercises and 1 exploration | Recognize intervals and translate familiar melody shapes to another position or root |
+| 3. Rhythm Fundamentals | 3 pages, 24 exercises; timed goals 50–60 BPM | Keep a quarter-note pulse through eighths, rests, syncopation, triplets, and short musical phrases |
+| 4. Major Scale and Scale-Degree Fluency | 3 pages, 24 exercises and 1 exploration; timed goals 50–60 BPM | Build the major scale, use degree landmarks and patterns, and play a familiar tune in D major |
 
-First Steps proceeds through a first C, C–G–C, higher/lower, octaves, exact-pitch
-duplicates, a short trail, an eight-note melody opening, memory practice, a first timed
-melody, and rehearsal/performance of **Ode to Joy**, with an even rhythm. It avoids semitone counting
+First Steps proceeds through a first C, C–G–C, higher/lower, and the three-note
+opening of **Au clair de la lune** before introducing octaves and exact-pitch
+duplicates. A short trail leads to **Ode to Joy**, memory practice, a first timed
+melody, and rehearsal/performance with an even rhythm. It avoids semitone counting
 and chord construction. Suggest a relaxed 5–10 minute visit;
 return to familiar phrases over later sessions. Course duration is not a deadline.
 
 Movement separates half steps, whole steps, major/minor thirds, fifths, and
-octaves. A question-and-answer phrase follows the first interval drills.
+octaves. The familiar six-note opening of **Au clair de la lune** moves from C
+to D after the whole-step exercise, providing an early use of the shape idea.
+A question-and-answer phrase compares major and minor thirds.
 Learners then repeat a major third in two positions, move a fifth from C to D,
 play a three-note whole-step motif, compare duplicate routes, transpose the
 motif from C to D and F, choose a route, translate the opening of **Twinkle,
 Twinkle, Little Star**, explore a chosen shape without a score, and repeat
-Twinkle without hints.
+Twinkle without hints. Its opening is rehearsed in C before adding the move to D.
 Duplicate-position phrases begin on C♯ because the entire repeated shape fits
 twice on every starter layout; C4 alone has only one Wicki-Hayden button.
 
 Rhythm progresses from one repeated pitch to pitch movement, quarters,
 eighths, a small tune, mixed lengths, rests, repeated attacks, 3/4, offbeats,
 and syncopation. An untimed C–G pair prepares simultaneous attacks without
-requiring prior triad theory. The two phrases of **Twinkle** provide a musical application and a later recall
-exercise. Triplets, subdivision mixtures, and 6/8 lead to **Ode to Joy** with its
-dotted ending restored. The final checkpoint applies familiar rhythmic skills;
+requiring prior triad theory. The two phrases of **Twinkle** provide a musical
+application and a later recall exercise; **Au clair de la lune** offers another
+payoff after long notes and rests. A short two-to-three subdivision change
+prepares the longer mixture. A separate page distinguishes quarter-beat triplets
+from groups of eighths in 6/8. The 6/8 dance has an untimed melody rehearsal and
+a timed single-pitch spacing exercise before combining pitches and rhythm.
+**Ode to Joy** returns with its dotted ending restored.
+The final checkpoint applies familiar rhythmic skills;
 it does not cram every subdivision into one artificial tune.
 
-First Steps ends with one passing performance. The Movement and Rhythm final
+Major Scale starts by recalling **Au clair de la lune**. Lower and upper scale
+groups lead to an ascent, **Joy to the World**'s untimed descending opening,
+and an ascent/return. A short page separates degree numbers from finger numbers.
+Degrees 1, 3, and 5 become listening landmarks before familiar **Ode** and **Au
+clair** phrases are described by numbers. Half-step pairs, 1–2–3–2–1, and
+1–3–2–4–1 support degree fluency. Scale thirds and three/four-note windows
+are taught as degree patterns: their half-step sizes vary, so they are not all
+literal translations of one interval shape. **Twinkle** puts familiar landmarks
+in time. A new page introduces D major and its F♯/C♯; an untimed scale, degree
+walk, and Twinkle rehearsal prepare free exploration and a 50/60 BPM performance.
+The whole C/D scale and melody routes preserve physical geometry. Use Scale
+practice for ongoing drills after this course.
+
+First Steps ends with one passing performance. The Movement, Rhythm, and Major Scale final
 checkpoints request two consecutive clean runs. Independence
 remains a separate achievement: a learner can complete with hints, then return
 without them. The player does not force hints off because of lesson prose.
@@ -52,15 +75,14 @@ requirements are reserved for the later technique course.
 
 ## Pathway and next authoring work
 
-The initial release target is Courses 1–7 plus Putting It Together (Course 12),
-roughly 80–100 short playable exercises in total. Treat that as a sizing guide,
-not a reason to remove needed reinforcement. Courses 4–12 below are **planned,
+The initial release target is Courses 1–7 plus Putting It Together (Course 12).
+Use short sections as session-sized units; do not cap the total exercise count
+at the expense of needed reinforcement. Courses 5–12 below are **planned,
 not yet included in the selector**. The numbered identities retain the full
 curriculum outline; learners take Course 12 after Course 7 in the initial path.
 
 | Course | Prerequisite | Planned sequence and practical outcome |
 | --- | --- | --- |
-| 4. Major Scale and Scale-Degree Fluency | 1–3 | Explain a scale; ascend, descend, return; name degrees 1–7; find 3 and 5; root–3–5, 12321, 1324, thirds, three/four-note groups; add familiar rhythm; move to another root; end with a familiar melody excerpt. Use Scale practice for ongoing drills. |
 | 5. Fingering and Physical Technique | 1–4 | Relaxed hand position and finger numbers; five-note patterns; crossing/repositioning; small movements; duplicates; fixed three/five-note routes; scale fingering and alternatives; compact/stretched comparisons; repeated clean runs; remove fingering hints. Recommendations are layout-specific advice, not universal rules. |
 | 6. Chords and Arpeggios | 1–5 | Explain a chord; major arpeggio and triad; minor triad and quality contrast; translate both shapes; root position and first/second inversions; recognize the same harmony; major/minor broken patterns; alternate chord/arpeggio; finish with rehearsed timed changes. |
 | 7. Chord Progressions and Voice Leading | 1–6 | Roman numerals; I–V and I–IV; I–IV–V–I; whole-note, two-beat, then one-beat changes; common tones and nearby inversions; I–V–vi–IV, vi–IV–I–V, ii–V–I; broken/rhythmic accompaniment; performance with inversions. |

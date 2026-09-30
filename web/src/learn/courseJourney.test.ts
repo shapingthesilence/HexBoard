@@ -11,7 +11,7 @@ describe("learner guidance",()=>{
   it("counts assessed exercises only and isolates layout achievements",()=>{
     const course=movementCourse,layout=courseLayoutProgressId(course.bundle,course.bundle.layouts[0]);
     const initial=courseJourney(course,layout,{});
-    expect(initial.total).toBe(15);
+    expect(initial.total).toBe(17);
     expect(initial.next).toBe(1);
     const progress=recordCourseRun({},courseProgressId(course,course.lessons[1].id),layout,0,false);
     const played=courseJourney(course,layout,progress);
