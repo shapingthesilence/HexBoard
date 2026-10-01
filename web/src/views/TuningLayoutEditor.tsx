@@ -91,7 +91,7 @@ const defaultScalaReferenceMidiNote = 60;
 const defaultGeometryFolders = [rootFolderPath];
 
 type LayoutGuideFocus = "center" | "across" | "upRight";
-type GeometryWorkspaceTab = "library" | "tuning" | "layout" | "scale";
+type GeometryWorkspaceTab = "tuning" | "layout" | "scale";
 type GeometryLibrarySpace = "computer" | "hexboard";
 type BundleItemOrderKind = "layout" | "scale";
 
@@ -212,13 +212,12 @@ const geometryWorkspaceTabs: Array<{
   label: string;
   description: string;
 }> = [
-  { key: "library", label: "Library", description: "Choose a tuning" },
   { key: "tuning", label: "Tuning", description: "Define the pitches" },
   { key: "layout", label: "Layout", description: "Map the key grid" },
   { key: "scale", label: "Scale & color", description: "Shape the palette" }
 ];
 
-const geometryWorkspaceCopy: Record<Exclude<GeometryWorkspaceTab, "library">, { eyebrow: string; title: string }> = {
+const geometryWorkspaceCopy: Record<GeometryWorkspaceTab, { eyebrow: string; title: string }> = {
   tuning: {
     eyebrow: "",
     title: "Tuning"
@@ -1075,7 +1074,25 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     computer: null,
     hexboard: null
   });
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<GeometryWorkspaceTab>("library");
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<GeometryWorkspaceTab>("tuning");
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const libraryDialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!libraryOpen) return;
+    const dialog = libraryDialogRef.current;
+    if (!dialog) return;
+    const previousFocus = document.activeElement;
+    dialog.showModal();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      dialog.close();
+      document.body.style.overflow = previousOverflow;
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+        previousFocus.focus({ preventScroll: true });
+      }
+    };
+  }, [libraryOpen]);
   const [selectedButton, setSelectedButton] = useState(65);
   const [selectedButtons, setSelectedButtons] = useState<number[]>([65]);
   const [selectedOffGridCoordinates, setSelectedOffGridCoordinates] = useState<TuningBundleGridOverride[]>([]);
@@ -1343,6 +1360,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     setActiveBundleId(next.objectIdHex);
     selectOnlyButton(next.layouts[0]?.centerButton ?? 65);
     setActiveWorkspaceTab("tuning");
+    setLibraryOpen(false);
     setStatus("Created new tuning");
   }
 
@@ -1423,7 +1441,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       bundle.layouts.find((layout) => layout.objectIdHex === bundle.activeLayoutIdHex)?.centerButton ?? bundle.layouts[0]?.centerButton ?? 65,
       65
     ));
-    setActiveWorkspaceTab("tuning");
+    setLibraryOpen(false);
     setStatus(`Opened ${bundle.tuning.name}`);
   }
 
@@ -2329,7 +2347,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           ?? 65,
         65
       ));
-      setActiveWorkspaceTab("tuning");
+      setLibraryOpen(false);
       setStatus(`Imported ${imported.length} tuning bundle${imported.length === 1 ? "" : "s"}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to import tuning bundle");
@@ -2802,7 +2820,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     try {
       const { bundle } = await readHexBoardGeometryBundle(entry);
       openDeviceBundleInEditor(bundle, `Opened ${bundle.tuning.name} from HexBoard`);
-      setActiveWorkspaceTab("tuning");
+      setLibraryOpen(false);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to open HexBoard tuning bundle");
     } finally {
@@ -3028,19 +3046,43 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
 
   return (
     <section
-      className={`geometryStudio layoutEditorWorkspace ${activeWorkspaceTab === "library" ? "libraryMode" : "editorMode"}`}
+      className="geometryStudio layoutEditorWorkspace editorMode"
       onPointerDownCapture={(event) => commitIncludedDegreesIfLeaving(event.target)}
     >
+      <nav className="workflowTabs sectionTabs tuningSectionTabs" aria-label="Tuning editing workflow">
+        <button className="workflowTab libraryTab" type="button" aria-haspopup="dialog" onClick={() => setLibraryOpen(true)}>Library</button>
+        {geometryWorkspaceTabs.map((tab) => (
+          <button
+            aria-current={activeWorkspaceTab === tab.key ? "step" : undefined}
+            aria-label={tab.label}
+            className={`workflowTab${activeWorkspaceTab === tab.key ? " active" : ""}`}
+            key={tab.key}
+            onClick={() => setActiveWorkspaceTab(tab.key)}
+            type="button"
+          >
+            <strong>{tab.label}</strong>
+          </button>
+        ))}
+      </nav>
+
       <header className="geometryStudioHeader">
         <div className="geometryTitleBlock">
-          <span className="eyebrow">Tuning studio</span>
           <h3>{activeBundle.tuning.name}</h3>
+        <div className="geometryStatus" role="status">
+          <span className="geometryStatusText">{drafts.error || `${hasDraft ? "Draft kept in browser" : "Saved in browser"} · ${connected ? deviceSaved ? "Saved on HexBoard" : "Changes not saved to HexBoard" : "Offline"}`}</span>
+          {status !== "Ready" ? <span className="muted">{status}</span> : null}
+          {transferProgress ? (
+            <span className="geometryTransferProgress">
+              <progress
+                aria-label={`${transferProgress.direction === "upload" ? "Uploading" : "Downloading"} tuning bundle`}
+                max={transferProgress.totalBytes}
+                value={transferProgress.transferredBytes}
+              />
+              <span>{Math.floor((transferProgress.transferredBytes * 100) / Math.max(1, transferProgress.totalBytes))}%</span>
+            </span>
+          ) : null}
         </div>
-        {activeWorkspaceTab === "library" ? (
-          <div className="geometryHeaderActions">
-            <button className="primary" type="button" onClick={() => setActiveWorkspaceTab("tuning")}>Edit tuning</button>
-          </div>
-        ) : (
+        </div>
           <div className="geometryHeaderActions">
             {connected ? <>
             <label className="checkField liveSendControl">
@@ -3064,151 +3106,12 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               <button disabled={!hasDraft} type="button" onClick={discardTuningDraft}>Discard draft</button>
             </div></details>
           </div>
-        )}
-        <div className="geometryStatus" role="status">
-          <span aria-hidden="true" />
-          <span className="geometryStatusText">{drafts.error || (activeWorkspaceTab === "library" ? (status === "Ready" ? "Choose a tuning to start" : status) : `${hasDraft ? "Draft kept in browser" : "Saved in browser"} · ${connected ? deviceSaved ? "Saved on HexBoard" : "Changes not saved to HexBoard" : "Offline"}`)}</span>
-          {activeWorkspaceTab !== "library" && status !== "Ready" ? <span className="muted">{status}</span> : null}
-          {transferProgress ? (
-            <span className="geometryTransferProgress">
-              <progress
-                aria-label={`${transferProgress.direction === "upload" ? "Uploading" : "Downloading"} tuning bundle`}
-                max={transferProgress.totalBytes}
-                value={transferProgress.transferredBytes}
-              />
-              <span>{Math.floor((transferProgress.transferredBytes * 100) / Math.max(1, transferProgress.totalBytes))}%</span>
-            </span>
-          ) : null}
-        </div>
       </header>
 
-      <nav className="workflowTabs" aria-label="Tuning editing workflow">
-        {geometryWorkspaceTabs.map((tab, index) => (
-          <button
-            aria-current={activeWorkspaceTab === tab.key ? "step" : undefined}
-            aria-label={tab.label}
-            className={`workflowTab${activeWorkspaceTab === tab.key ? " active" : ""}${tab.key === "library" ? " libraryTab" : ""}`}
-            key={tab.key}
-            onClick={() => setActiveWorkspaceTab(tab.key)}
-            type="button"
-          >
-            {tab.key !== "library" && <span className="workflowStepNumber" aria-hidden="true">{index}</span>}
-            <strong>{tab.label}</strong>
-          </button>
-        ))}
-      </nav>
-
       <aside className="panel stack layoutEditorSidebar">
-        <input ref={bundleInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" multiple onChange={(event) => void importBundleFile(event)} />
         <input ref={scalaInputRef} className="hiddenFileInput" type="file" accept=".scl,text/plain" onChange={(event) => void importScalaFile(event)} />
 
-        {geometryOrganizationRequest ? (
-          <OrganizeLibraryItemDialog
-            itemLabel="tuning bundle"
-            libraryLabel={geometryOrganizationRequest.space === "computer" ? "Browser Library" : "HexBoard Library"}
-            name={geometryOrganizationRequest.space === "computer"
-              ? geometryOrganizationRequest.bundle.tuning.name
-              : geometryOrganizationRequest.entry.name}
-            folderPath={geometryOrganizationRequest.space === "computer"
-              ? geometryOrganizationRequest.bundle.folderPath
-              : geometryOrganizationRequest.entry.folderPath}
-            folders={geometryOrganizationRequest.space === "computer" ? computerFolders : hexboardFolders}
-            maxNameLength={GeometryMenuTextMaxLength}
-            maxFolderLength={GeometryMenuTextMaxLength}
-            normalizeName={(value) => clampGeometryMenuText(value, "User Tuning")}
-            normalizeFolderPath={normalizeDisplayFolderPath}
-            folderLabel={folderLabel}
-            findConflict={(name, folderPath) => geometryOrganizationConflictSummary(
-              geometryOrganizationRequest,
-              name,
-              folderPath
-            )}
-            onCancel={() => setGeometryOrganizationRequest(null)}
-            onSave={(name, folderPath) => organizeGeometryInPlace(geometryOrganizationRequest, name, folderPath)}
-          />
-        ) : null}
-
-        {activeWorkspaceTab === "library" ? (
-          <>
-            <div className="libraryToolbar">
-              <div>
-                <h2>Tuning library</h2>
-              </div>
-              <div className="row">
-                <button className="primary" type="button" onClick={addNewBundle}>New tuning</button>
-                <button type="button" onClick={() => bundleInputRef.current?.click()}>Import Files</button>
-                <button disabled={!connected || syncBusy} type="button" onClick={() => void refreshHexBoardGeometryLibrary()}>Refresh HexBoard</button>
-              </div>
-            </div>
-            <div className="libraryUtilityBar">
-              <FolderControls
-                folderLabel={folderLabel}
-                folders={customFolders.filter((folder) => folder !== rootFolderPath)}
-                itemCount={(folder) => bundles.filter((bundle) => normalizeDisplayFolderPath(bundle.folderPath) === folder).length}
-                itemLabel="tuning"
-                maxLength={GeometryMenuTextMaxLength}
-                newFolder={newFolder}
-                onCreate={addFolder}
-                onDelete={deleteFolder}
-                onNewFolderChange={(value) => setNewFolder(value.slice(0, GeometryMenuTextMaxLength))}
-              />
-
-              <span className="muted">{bundles.length} on this computer</span>
-            </div>
-
-            <div className="librarySpaces geometryLibrarySpaces">
-              <GeometryLibrarySpacePanel
-                title="Browser Library"
-                subtitle="Saved in this browser"
-                space="computer"
-                bundles={bundles}
-                folders={computerFolders}
-                selectedFolder={folderFilters.computer}
-                selectedIds={selectedGeometryIds.computer}
-                bulkBusy={syncBusy}
-                connected={connected}
-                draftIds={Object.keys(drafts.entries).filter(id => !sameContent(drafts.entries[id].value, drafts.entries[id].base))}
-                activeBundleId={activeBundle.objectIdHex}
-                onFolderSelect={selectFolderFilter}
-                onOpen={openBundle}
-                onOrganize={(bundle) => setGeometryOrganizationRequest({ space: "computer", bundle })}
-                onSelectionChange={setGeometrySelected}
-                onSelectVisible={selectVisibleGeometry}
-                onClearSelection={clearGeometrySelection}
-                onBulkTransfer={(space) => void transferSelectedGeometry(space)}
-                onBulkExport={(space) => void exportSelectedGeometry(space)}
-                onUpload={(bundle) => void saveBundleToHexBoard(bundle)}
-                onExport={downloadBundleFile}
-                onErase={deleteBundle}
-                onReorder={reorderComputerLibrary}
-              />
-              <HexBoardGeometryLibraryPanel
-                connected={connected}
-                entries={hexboardBundles}
-                rescueActive={hexboardRescueActive}
-                folders={hexboardFolders}
-                selectedFolder={folderFilters.hexboard}
-                selectedIds={selectedGeometryIds.hexboard}
-                onFolderSelect={selectFolderFilter}
-                onOpen={(entry) => void openHexBoardGeometryBundle(entry)}
-                onOrganize={(entry) => setGeometryOrganizationRequest({ space: "hexboard", entry })}
-                onSelectionChange={setGeometrySelected}
-                onSelectVisible={selectVisibleGeometry}
-                onClearSelection={clearGeometrySelection}
-                onBulkTransfer={(space) => void transferSelectedGeometry(space)}
-                onBulkExport={(space) => void exportSelectedGeometry(space)}
-                onDownload={(entry) => void downloadHexBoardGeometryBundle(entry)}
-                onExport={(entry) => void exportHexBoardGeometryBundle(entry)}
-                onErase={(entry) => void eraseHexBoardGeometryBundle(entry)}
-                onReorder={reorderHexBoardLibrary}
-                reorderDisabled={syncBusy}
-              />
-            </div>
-          </>
-        ) : null}
-
-        {activeWorkspaceTab !== "library" ? (
-          <>
+        <>
             <h3 className="visuallyHidden">{geometryWorkspaceCopy[activeWorkspaceTab].title} settings</h3>
             <details className="compactDisclosure editorIdentity"><summary>Name &amp; folder</summary>
             <div className="bundleIdentityFields">
@@ -3226,8 +3129,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               </label>
             </div>
             </details>
-          </>
-        ) : null}
+        </>
 
         {activeWorkspaceTab === "tuning" ? (
           <section className="editorSection">
@@ -3404,8 +3306,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
 
       </aside>
 
-      {activeWorkspaceTab !== "library" ? (
-        <div className="layoutEditorMainColumn">
+      <div className="layoutEditorMainColumn">
         <section className="panel stack boardPanel">
           <div className="boardPanelHeading">
             <div>
@@ -3884,16 +3785,121 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           <pre className="dataPreview">{encodedPreview}</pre>
         </details>
       </div>
-      ) : null}
 
-      {activeWorkspaceTab === "library" ? <details className="panel protocolDebugPanel">
-        <summary>
-          <span>Developer details</span>
-        </summary>
-        <button disabled={!connected || syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>Verify tuning</button>
-        <p className="muted">Values are saved at firmware-native 32-bit precision.</p>
-        <pre className="dataPreview">{encodedPreview}</pre>
-      </details> : null}
+      {libraryOpen && <dialog
+        ref={libraryDialogRef}
+        className="tuningLibraryDialog"
+        aria-labelledby="tuningLibraryTitle"
+        onCancel={() => setLibraryOpen(false)}
+        onClick={(event) => { if (event.target === event.currentTarget) setLibraryOpen(false); }}
+      >
+        <div className="stack tuningLibraryContent">
+        <input ref={bundleInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" multiple onChange={(event) => void importBundleFile(event)} />
+
+            <div className="libraryToolbar">
+              <div>
+                <h2 id="tuningLibraryTitle">Tuning library</h2>
+              </div>
+              <div className="row">
+                <button type="button" onClick={() => setLibraryOpen(false)}>Close library</button>
+                <button className="primary" type="button" onClick={addNewBundle}>New tuning</button>
+                <button type="button" onClick={() => bundleInputRef.current?.click()}>Import Files</button>
+                <button disabled={!connected || syncBusy} type="button" onClick={() => void refreshHexBoardGeometryLibrary()}>Refresh HexBoard</button>
+              </div>
+            </div>
+            <div className="libraryUtilityBar">
+              <FolderControls
+                folderLabel={folderLabel}
+                folders={customFolders.filter((folder) => folder !== rootFolderPath)}
+                itemCount={(folder) => bundles.filter((bundle) => normalizeDisplayFolderPath(bundle.folderPath) === folder).length}
+                itemLabel="tuning"
+                maxLength={GeometryMenuTextMaxLength}
+                newFolder={newFolder}
+                onCreate={addFolder}
+                onDelete={deleteFolder}
+                onNewFolderChange={(value) => setNewFolder(value.slice(0, GeometryMenuTextMaxLength))}
+              />
+
+              <span className="muted">{bundles.length} on this computer</span>
+            </div>
+
+            <div className="librarySpaces geometryLibrarySpaces">
+              <GeometryLibrarySpacePanel
+                title="Browser Library"
+                subtitle="Saved in this browser"
+                space="computer"
+                bundles={bundles}
+                folders={computerFolders}
+                selectedFolder={folderFilters.computer}
+                selectedIds={selectedGeometryIds.computer}
+                bulkBusy={syncBusy}
+                connected={connected}
+                draftIds={Object.keys(drafts.entries).filter(id => !sameContent(drafts.entries[id].value, drafts.entries[id].base))}
+                activeBundleId={activeBundle.objectIdHex}
+                onFolderSelect={selectFolderFilter}
+                onOpen={openBundle}
+                onOrganize={(bundle) => setGeometryOrganizationRequest({ space: "computer", bundle })}
+                onSelectionChange={setGeometrySelected}
+                onSelectVisible={selectVisibleGeometry}
+                onClearSelection={clearGeometrySelection}
+                onBulkTransfer={(space) => void transferSelectedGeometry(space)}
+                onBulkExport={(space) => void exportSelectedGeometry(space)}
+                onUpload={(bundle) => void saveBundleToHexBoard(bundle)}
+                onExport={downloadBundleFile}
+                onErase={deleteBundle}
+                onReorder={reorderComputerLibrary}
+              />
+              <HexBoardGeometryLibraryPanel
+                connected={connected}
+                entries={hexboardBundles}
+                rescueActive={hexboardRescueActive}
+                folders={hexboardFolders}
+                selectedFolder={folderFilters.hexboard}
+                selectedIds={selectedGeometryIds.hexboard}
+                onFolderSelect={selectFolderFilter}
+                onOpen={(entry) => void openHexBoardGeometryBundle(entry)}
+                onOrganize={(entry) => setGeometryOrganizationRequest({ space: "hexboard", entry })}
+                onSelectionChange={setGeometrySelected}
+                onSelectVisible={selectVisibleGeometry}
+                onClearSelection={clearGeometrySelection}
+                onBulkTransfer={(space) => void transferSelectedGeometry(space)}
+                onBulkExport={(space) => void exportSelectedGeometry(space)}
+                onDownload={(entry) => void downloadHexBoardGeometryBundle(entry)}
+                onExport={(entry) => void exportHexBoardGeometryBundle(entry)}
+                onErase={(entry) => void eraseHexBoardGeometryBundle(entry)}
+                onReorder={reorderHexBoardLibrary}
+                reorderDisabled={syncBusy}
+              />
+            </div>
+        {geometryOrganizationRequest ? (
+          <OrganizeLibraryItemDialog
+            itemLabel="tuning bundle"
+            libraryLabel={geometryOrganizationRequest.space === "computer" ? "Browser Library" : "HexBoard Library"}
+            name={geometryOrganizationRequest.space === "computer"
+              ? geometryOrganizationRequest.bundle.tuning.name
+              : geometryOrganizationRequest.entry.name}
+            folderPath={geometryOrganizationRequest.space === "computer"
+              ? geometryOrganizationRequest.bundle.folderPath
+              : geometryOrganizationRequest.entry.folderPath}
+            folders={geometryOrganizationRequest.space === "computer" ? computerFolders : hexboardFolders}
+            maxNameLength={GeometryMenuTextMaxLength}
+            maxFolderLength={GeometryMenuTextMaxLength}
+            normalizeName={(value) => clampGeometryMenuText(value, "User Tuning")}
+            normalizeFolderPath={normalizeDisplayFolderPath}
+            folderLabel={folderLabel}
+            findConflict={(name, folderPath) => geometryOrganizationConflictSummary(
+              geometryOrganizationRequest,
+              name,
+              folderPath
+            )}
+            onCancel={() => setGeometryOrganizationRequest(null)}
+            onSave={(name, folderPath) => organizeGeometryInPlace(geometryOrganizationRequest, name, folderPath)}
+          />
+        ) : null}
+
+          <p className="muted" role="status">{status === "Ready" ? "Choose a tuning to edit" : status}</p>
+        </div>
+      </dialog>}
 
       {bundleItemOrderDialog ? (
         <div className="modalOverlay" role="presentation" onMouseDown={() => setBundleItemOrderDialog(null)}>

@@ -775,9 +775,9 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
       <p>“{pendingEdit.saved.title}” has edits saved in this browser from {new Date(pendingEdit.draft.updatedAt).toLocaleString()}.</p>
       <div className="learnActions"><button autoFocus className="primary" type="button" onClick={() => { setEditingCourse(pendingEdit.draft.course); setPendingEdit(undefined); }}>Resume draft</button><button type="button" onClick={() => void discardDraftAndEditSaved()}>Discard draft and edit saved course</button><button type="button" onClick={() => setPendingEdit(undefined)}>Cancel</button></div>
     </section></div>}
-    <header className="learnIntro workspaceHeading">
-      <h2>{previewCourse?"Learner preview":"Learn"}</h2>{previewCourse&&<button type="button" onClick={()=>{dispose();onExitPreview?.();}}>Back to editor</button>}{page === "progress" && session.current && <button type="button" onClick={()=>stop()}>Stop HexBoard session</button>}
+    <header className="learnIntro">
       <nav className="learnTabs sectionTabs" aria-label="Learning sections">{(["practice", "course", "progress"] as const).map(item => <button key={item} type="button" aria-current={page === item ? "page" : undefined} disabled={stage === "starting" || libraryBusy} onClick={() => navigate(item)}>{item === "course" ? "Courses" : item === "practice" ? "Scale practice" : "Progress"}</button>)}</nav>
+      {previewCourse && <><h2>Learner preview</h2><button type="button" onClick={()=>{dispose();onExitPreview?.();}}>Back to editor</button></>}{page === "progress" && session.current && <button type="button" onClick={()=>stop()}>Stop HexBoard session</button>}
     </header>
     {page === "progress" ? <div className="learnCard learnProgressCard">
       <label className="learnField">Course<select value={previewCourse?"preview":courseId} disabled={!!previewCourse} onChange={event => chooseCourse(event.target.value)}>{previewCourse&&<option value="preview">{previewCourse.title}</option>}{builtinCourses.map(course => <option key={`builtin:${course.id}`} value={`builtin:${course.id}`}>{course.title}</option>)}{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>

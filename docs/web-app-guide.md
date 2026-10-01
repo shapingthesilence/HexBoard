@@ -418,7 +418,7 @@ and save browser drafts and import or export files. If several compatible boards
 available, choose one from the device selector.
 
 Editing uses normal page scrolling: libraries, sidebars, and controls move with
-the page, while save actions stay available as you edit. On laptop windows at
+the page. Synth save actions stay available as you edit. On laptop windows at
 least 1000 pixels wide and 600 pixels tall, Learn keeps its key map and playback
 controls in the workspace. Progress scrolls the lesson list while keeping course
 selection and backup controls available. Smaller windows allow page scrolling;
@@ -429,13 +429,15 @@ narrow windows stack the panels.
 In the tuning/layout editor, you can create EDO tunings, equal-step tunings,
 Scala `.scl` imports, vector layouts, scales, custom scale-degree colors, and
 per-button pitch, color, direct-MIDI, or chord overrides. Choose a tuning in
-`Library`, then follow the numbered steps: `Tuning`, `Layout`, and `Scale & color`.
-You can return to any step freely.
+`Library` to open the tuning library over the editor. Choose a bundle to close
+the library and edit it, or use **Close library** or Escape to return to the
+current bundle. Switch freely between `Tuning`, `Layout`, and `Scale & color`.
 Open **Name & folder** to rename or move the tuning. The board shows your changes
 as you edit. The whole board fits the available window height. The button editor
 appears below the preview and opens without shrinking it; scroll the page to edit
 a key. Sync and save
-actions remain at the top of the tuning studio. Valid, in-range numeric edits
+actions sit next to the bundle name and its save/connection status, below the
+section buttons, and scroll with the page. Valid, in-range numeric edits
 update the preview as you type. Empty, incomplete, or out-of-range drafts remain
 editable without changing the preview, then restore or clamp when you leave the
 field. Names and descriptions likewise apply their

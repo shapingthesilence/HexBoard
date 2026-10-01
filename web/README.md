@@ -227,9 +227,11 @@ Course authoring helpers: `beatGrid.ts` owns straight/triplet divisions, `course
 
 Shared workspace spacing, panels, and section navigation live in
 `src/styles.css`. Editing views and course authoring use normal page scrolling;
-editor save summaries remain sticky. Synth preset and wavetable selection stays
+the synth save summary remains sticky. Synth preset and wavetable selection stays
 inside the library panel, and sound metadata, modulation envelopes, and LFO
-controls are always expanded. Tuning bundle navigation presents numbered steps.
+controls are always expanded. The tuning library uses a native modal dialog
+with Escape dismissal and focus restoration; the current editing section remains
+selected behind it. The compact tuning bundle header scrolls with the page.
 
 From 1000 × 600 CSS pixels, Learn fills the viewport. Course instruments use the
 remaining height after the measured lesson panel and feedback; optional finger
