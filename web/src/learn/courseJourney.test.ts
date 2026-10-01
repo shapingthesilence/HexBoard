@@ -28,12 +28,13 @@ describe("learner guidance",()=>{
   });
   it("distinguishes rehearsal, missed timing, clean streaks, and exploration",()=>{
     const checkpoint=rhythmCourse.lessons.at(-1)!;
+    const goal=checkpoint.timing!.goalBpm;
     const clean={mistakes:0,beat:{score:100,missed:0,extras:0}};
-    expect(completionGuidance(checkpoint,clean,50,0,false)).toContain("60 BPM");
-    expect(completionGuidance(checkpoint,clean,60,0,true)).toContain("rehearsed");
-    expect(completionGuidance(checkpoint,{mistakes:1,beat:{score:60,missed:1,extras:0}},60,0,false)).toContain("Slow down");
-    expect(completionGuidance(checkpoint,clean,60,1,false)).toContain("1 of 2");
-    expect(completionGuidance(checkpoint,clean,60,2,false)).toContain("played it through");
+    expect(completionGuidance(checkpoint,clean,goal-10,0,false)).toContain(`${goal} BPM`);
+    expect(completionGuidance(checkpoint,clean,goal,0,true)).toContain("rehearsed");
+    expect(completionGuidance(checkpoint,{mistakes:1,beat:{score:60,missed:1,extras:0}},goal,0,false)).toContain("Slow down");
+    expect(completionGuidance(checkpoint,clean,goal,1,false)).toContain("1 of 2");
+    expect(completionGuidance(checkpoint,clean,goal,2,false)).toContain("played it through");
     expect(completionGuidance(movementCourse.lessons.find(lesson=>lesson.kind==="exploration")!,undefined,60,0,false)).toContain("one idea");
   });
   it("displays triplets and mixed lengths without floating point noise",()=>{

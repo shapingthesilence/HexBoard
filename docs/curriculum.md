@@ -16,10 +16,10 @@ of validated ergonomics or teaching effectiveness.
 
 | Course | Included now | Outcome |
 | --- | --- | --- |
-| 1. First Steps on HexBoard | 1 page, 12 exercises; timed goals 50 BPM | Play Au clair de la lune and a phrase of Ode to Joy, distinguish octaves from duplicates, repeat without hints |
+| 1. First Steps on HexBoard | 1 page, 12 exercises; timed goals 60 BPM | Play Au clair de la lune and a phrase of Ode to Joy, distinguish octaves from duplicates, repeat without hints |
 | 2. Moving Around an Isomorphic Keyboard | 1 page, 17 untimed exercises and 1 exploration | Recognize intervals and translate familiar melody shapes to another position or root |
-| 3. Rhythm Fundamentals | 3 pages, 24 exercises; timed goals 50–60 BPM | Keep a quarter-note pulse through eighths, rests, syncopation, triplets, and short musical phrases |
-| 4. Major Scale and Scale-Degree Fluency | 3 pages, 24 exercises and 1 exploration; timed goals 50–60 BPM | Build the major scale, use degree landmarks and patterns, and play a familiar tune in D major |
+| 3. Rhythm Fundamentals | 3 pages, 24 exercises; timed goals 60–70 BPM | Keep a quarter-note pulse through eighths, rests, syncopation, triplets, and short musical phrases |
+| 4. Major Scale and Scale-Degree Fluency | 3 pages, 24 exercises and 1 exploration; timed goals 60–70 BPM | Build the major scale, use degree landmarks and patterns, and play a familiar tune in D major |
 
 First Steps proceeds through a first C, C–G–C, higher/lower, and the three-note
 opening of **Au clair de la lune** before introducing octaves and exact-pitch
@@ -62,7 +62,7 @@ clair** phrases are described by numbers. Half-step pairs, 1–2–3–2–1, an
 are taught as degree patterns: their half-step sizes vary, so they are not all
 literal translations of one interval shape. **Twinkle** puts familiar landmarks
 in time. A new page introduces D major and its F♯/C♯; an untimed scale, degree
-walk, and Twinkle rehearsal prepare free exploration and a 50/60 BPM performance.
+walk, and Twinkle rehearsal prepare free exploration and a 60/70 BPM performance.
 The whole C/D scale and melody routes preserve physical geometry. Use Scale
 practice for ongoing drills after this course.
 

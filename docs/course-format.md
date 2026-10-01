@@ -204,7 +204,7 @@ earlier overlapping gate before retriggering its pitch. Preview audio and timers
 stop on explicit stop, tab hiding, page exit, or editor unmount.
 Lesson duplication creates a new lesson ID; reordering preserves IDs and cues. The always-visible outline groups lessons by section name and supports dragging lessons between sections or moving a section with all its lessons. The Section combo accepts existing or new names. Learner preview runs the draft through Learn without persisting progress. Layout transposition shifts the embedded mapping by whole tuning steps, leaving lesson pitches and cues unchanged for compatibility review. Course `layoutTranspositions` stores an optional map of included layout IDs to integer offsets (−127 through 127), so the control remains absolute across reopening and export/import. Existing files without offsets use their embedded mapping as zero. Compatibility reporting excludes layouts a lesson does not allow.
 
-Performance uses the rotated HexBoard map. Target outlines appear at most one quarter note before their scheduled onset
+Performance uses the rotated HexBoard map. Target outlines appear two quarter notes before their scheduled onset
 and converge at that onset, with chord cues sharing a timestamp. Every upcoming
 onset in that window can show a cue concurrently, including repeated pitches.
 Each step uses its own preferred-button assignments. `TimingCue.tsx` animates
@@ -221,13 +221,19 @@ been released. A course session uses alternate command keys (indices 0, 40,
 and repeat with hints.
 The other three command keys remain unassigned to leave physical spacing.
 Next/Continue lights only when the corresponding web action is available.
-The two repeat buttons restart the run with their indicated hint setting;
+The same action handler serves physical presses and clickable side-bank buttons.
+Screen commands can initialise audio and the board session; physical commands
+require an active delegated session. First-start hint choices reach the run
+preparation directly, so starting without hints can earn independence.
+Timed lesson entry leaves the session ready without scheduling metronome audio,
+including when continuing a course at a timed exercise. The two repeat buttons
+start the ready lesson or restart the run with their indicated hint setting;
 after Step or slower timed practice they start at the goal tempo. All command presses bypass
 the playable-key gate. Content pages
 can start and retain the same session. Stop, leaving Learn, device disconnect, page lifecycle cleanup,
 or an unrecoverable error closes the session. Ungraded synth play uses the same
 audio/session owner; ready, free-play, and completed states accept notes without
-advancing evaluation or changing progress. Changing lessons resets hints. Switching an allowed layout restarts the run, resets its streak, updates display rotation, and retains the physical-key release barrier. A lesson layout requirement overrides a legacy course-level requirement. Course introductions render before practice and do not count toward completion.
+advancing evaluation or changing progress. Changing lessons resets hints. Switching an allowed layout resets its streak, updates display rotation, and retains the physical-key release barrier. Timed course lessons return to ready; active untimed runs restart. A lesson layout requirement overrides a legacy course-level requirement. Course introductions render before practice and do not count toward completion.
 During hinted course practice, held pitches outside the current target use
 background light instead of held light. `FingerHands.tsx` renders authoring and
 player cues; a finger with one distinct assigned pitch uses that pitch color. Recording has an explicit Stop
@@ -301,8 +307,9 @@ progress schema or prerequisites are stored. Lesson navigation remains unlocked.
 adaptations belong in [Course repertoire](course-repertoire.md).
 
 Hear example can initialize browser audio and a connected board session before
-practice. On the board, an example before or during a run resumes practice
-automatically; timed lessons use their normal four-click count-in. An example
+practice. On the board, an example before or during an untimed run resumes practice
+automatically. Timed course examples return to ready and wait for a start command
+before scheduling their four-click count-in. An example
 after a completed run restores that completed state, including its Next action,
 without changing the recorded result or clean-run streak.
 Changing lessons still uses the physical release barrier. Read-only pages and
@@ -315,6 +322,14 @@ trigger rewards. A separate Web Audio voice plays a bounded three/four-note sine
 chime without altering instrument notes. Stop, run reset, navigation, hidden-tab
 cleanup, and unmount cancel it; session disposal closes its audio context.
 Audio failure leaves visual feedback intact. `AchievementFeedback.tsx` provides
-an announced static badge with a short CSS animation that respects reduced motion.
+an announced overlay badge with a short CSS animation that respects reduced motion.
+Learn clears it after 5.5 seconds; it does not intercept input or change layout.
+`LessonPanel.tsx` measures built-in practice titles and instructions at the
+available width and reserves their maximum height across lessons. It includes
+the selected imported course, with a 420px cap and scrolling for unusually long
+copy. Hidden measurement content is excluded from accessibility and page scroll
+size. Timed start guidance occupies the reserved practice status row. The
+practice workspace bounds and scrolls lesson text independently of the preview. Its status and note-strip rows reserve their height even without hints;
+run scores, fingering details, and completion actions sit below the board.
 The `hexboard.learn.rewardSound` browser preference controls rewards only and is
 not exported in course files or written to the device.

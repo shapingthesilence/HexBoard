@@ -1,5 +1,31 @@
 # HexBoard Sync User Guide
 
+## Returning to Your Place
+
+The app remembers your last main tab, Learn section, course, and lesson in this
+browser. Opening the base website address restores that location. Returning to
+Learn from another main tab also restores your last Learn location.
+
+Main modes and Learn sections have short bookmarkable URLs: `#/layouts`,
+`#/synth`, `#/learn/practice`, `#/learn/courses`, and `#/learn/progress`.
+A Courses link restores your last course and lesson in this browser. `#/learn`
+opens your last Learn section; the base website address opens your last-used
+mode. Browser Back and Forward move between modes and Learn sections. Individual
+courses and lessons are saved locally rather than included in the URL.
+
+Switching tabs or putting the laptop to sleep pauses lesson playback. Your page
+and lesson remain selected, including after a browser reload. Start playback
+again when ready, and reconnect HexBoard if needed. In-progress attempts and
+active device sessions are not resumed automatically. Dialogs and temporary
+practice controls are not included in the URL.
+
+If the board disconnects during a lesson, a connection panel appears above the
+keyboard with **Reconnect HexBoard**. Plug the board back in and use that button;
+connection errors and any device selection appear in the same panel. Your course,
+lesson, and course layout stay selected. Once connected, use **Start · hints**
+or **Start · no hints** to restart the attempt. You can also connect from this
+panel when opening a lesson without a board.
+
 ## Learning Your First Scale
 
 Open **Learn** to practice scales. It starts with the bundled **12 EDO (Normal)**
@@ -86,7 +112,8 @@ Imported bundles last for this visit to Learn.
 The lesson uses its selected layout; saved device settings are not replaced.
 The web map rotates with the layout, and current firmware temporarily rotates
 the board's OLED to match. The saved OLED orientation returns on exit.
-Normal instrument playing and controls return after **Stop**. Leaving Learn or hiding the browser tab ends the session. Moving between
+Normal instrument playing and controls return after **Stop** in Scale practice,
+or after leaving Learn or hiding the browser tab. Moving between
 lessons or Learn sections keeps the connection active. Lesson changes stop
 old audio and wait for all held keys to be released before the next run. Sessions have no heartbeat
 or automatic timeout. If the browser crashes or disconnects before exit is
@@ -103,8 +130,10 @@ see [Built-in course paths](#built-in-course-paths) below. Choose a lesson from
 the always-visible **Your course path**, or use **Next lesson** after finishing. Reading pages use
 **Continue**. Course introductions appear before the first lesson.
 Each practice lesson explains what to listen for and what to play.
-**Hear example** is available before starting a run. On HexBoard, practice
-resumes after the example (with a four-click count-in for timed lessons). If
+**Hear example** is available before starting a run. Untimed board practice
+resumes after the example. Timed lessons wait so you can read the instructions
+and listen at your own pace. Press orange **Start · hints** or yellow
+**Start · no hints** when ready; the metronome then begins a four-click count-in. If
 you listen after finishing a lesson, the completed result remains on screen
 and **Next lesson** stays available.
 When HexBoard is connected, **Start Course on HexBoard** opens a board session
@@ -121,9 +150,14 @@ four of the seven side buttons are used, with an unused button between actions:
 
 Unavailable actions go dark. Next / Continue lights only when its matching web
 button is available. The compact side-button guide in Learn follows the physical
-stagger and shows the unused buttons as blank spaces. A repeat after Step or
-slower timed practice moves to the lesson's goal tempo. Moving between lessons keeps the session open and starts practice
-after all held playable keys are released. Reading pages keep the session open.
+stagger and shows the unused buttons as blank spaces. Its labeled buttons are
+clickable and keyboard accessible: use them to hear examples, start/repeat with
+or without hints, and advance. Starting from an exercise also opens the HexBoard
+session when needed. Courses use these controls instead of a separate transport
+bar and hints checkbox. A repeat after Step or
+slower timed practice moves to the lesson's goal tempo. Moving between lessons
+keeps the session open. Untimed practice starts after all held playable keys are
+released; timed lessons wait for a Start press. Reading pages keep the session open.
 The built-in courses use standard 12-EDO and include all three starter layouts.
 User-authored courses and Scale practice can use other tunings.
 Equivalent-pitch buttons count unless an authored route exercise requires keys.
@@ -142,14 +176,14 @@ hints or demonstration during that run; it is not a claim of lasting mastery.
 **Export progress** creates a backup; **Restore progress** merges a backup
 without removing newer achievements. No account or device writes are required.
 
-**Play synth** lets you explore the selected tuning/layout without starting a
+**Play synth** in Scale practice lets you explore the selected tuning/layout without starting a
 lesson or recording a score. It uses a connected HexBoard when available;
 otherwise, click the screen keys. You can also keep playing after a lesson ends.
 Use **Stop** to end synth play. Changing lessons still requires releasing held
 physical keys before the new lesson starts.
 
 When hints are on and the author supplied finger assignments, the same two-hand
-visualization used in the editor appears beside the board. It follows the
+visualization used in the editor appears below the course board. It follows the
 current target; a finger assigned to exactly one pitch takes that note's color.
 A finger shared by multiple pitches uses a neutral highlight. Held notes from
 an earlier chord dim when the target advances, while common tones remain lit.
@@ -182,7 +216,7 @@ have duplicates on all three starter layouts; some pitches, including C4 on
 Wicki-Hayden, occur only once. An octave is a different pitch, not an exact
 substitute in these exercises.
 
-Timed goals are 50–60 quarter notes per minute. **Practice tempo** offers
+Timed goals are 60–70 quarter notes per minute. **Practice tempo** offers
 20–300 BPM; its bottom **Step** position waits for correct notes without a
 metronome and skips rests. **Hear example** uses the goal BPM in Step mode.
 Slower practice receives feedback, but timed completion requires reaching the
@@ -190,6 +224,8 @@ authored goal and passing score. These courses assess attacks, not releases;
 follow written rests and long notes by listening as well as watching the score.
 In 6/8, group eighth notes into two larger pulses; the click still counts quarter
 notes and the count-in remains four clicks.
+With hints on, the on-screen hexagon outlines begin shrinking two quarter-note
+beats before each note and reach its key when the note is due.
 
 First Steps asks for one final passing performance; the other three final
 checkpoints request two consecutive clean runs. Rehearse with hints,
@@ -206,9 +242,26 @@ not count against the exercise total. Choose any lesson in the path to revisit i
 **Next lesson** advances after a run. A course introduction offers **Continue** at
 the first unfinished exercise when that layout has progress.
 
-A newly completed lesson receives a brief checkmark celebration and soft chime.
-Earning independence adds a star and a different chime. Repeating an already
-earned achievement does not replay the reward. Slow rehearsals, unfinished clean-run
+On laptop windows at least 1000 pixels wide and 600 pixels tall, course
+exercises fit the available screen height. Start, example, and lesson navigation
+stay visible, with the course list scrolling inside its own box. **Lesson
+settings** groups layout, practice tempo, display, sound, and course management;
+its summary shows the selected layout. Open it when you need to change a setting.
+
+Lesson instructions stay above the key preview in a compact reading panel sized
+to the longest built-in lesson at the available width. Its height stays the same
+between lessons. Longer imported text can scroll inside the panel; the timed
+start reminder stays visible above the board. Recommended fingers sit beside
+the keyboard on laptops. Run scores and required-key details appear below it;
+repeat and next-lesson actions remain visible after completion. Narrower or
+shorter windows use the stacked layout and may need page scrolling.
+
+A newly completed lesson receives a brief checkmark overlay and soft chime.
+Earning independence adds a star and a different chime. The overlay clears after
+about five seconds without requiring a click. Results and repeat/next actions
+remain below the preview, and the course path keeps earned checkmarks and stars.
+Repeating an already earned achievement does not replay the reward. Slow
+rehearsals, unfinished clean-run
 requirements, and exploration do not produce a completion award. Under **Display
 & sound**, turn off **Achievement sounds** to keep only the visual feedback.
 Reduced-motion preferences disable the celebration animation. Rewards use browser
@@ -305,7 +358,7 @@ in **Lesson Settings** to assess articulation too, then choose a forgiving
 release tolerance in beats (default 0.25). Early, late, or missing releases
 prevent completion. On-screen duration practice uses one click to hold and
 another to release. Step practice remains untimed. The player uses approaching hexagonal outlines on the
-key map to show when to play. Each outline starts one quarter note before its
+key map to show when to play. Each outline starts two quarter-note beats before its
 target time; upcoming outlines can overlap for faster notes and chords.
 
 To allow flexible answers, select a step and use **Accepted answers** below the

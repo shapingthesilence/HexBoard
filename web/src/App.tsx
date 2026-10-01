@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { DeviceConnect } from "./views/DeviceConnect.tsx";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { DeviceConnect, useDeviceConnection } from "./views/DeviceConnect.tsx";
 import { SynthPresetLibrary } from "./views/SynthPresetLibrary.tsx";
 import { TuningLayoutEditor } from "./views/TuningLayoutEditor.tsx";
 import { Learn } from "./views/Learn.tsx";
@@ -7,7 +7,7 @@ import { MockMidiTransport } from "./midi/mockTransport.ts";
 import type { MidiTransport } from "./midi/types.ts";
 import type { HelloResponsePayload } from "./protocol/index.ts";
 
-type ViewKey = "synth" | "layouts" | "learn";
+import { initialLocation, saveLocation, storedLocation, type AppLocation, type ViewKey } from "./navigation.ts";
 type ThemeMode = "light" | "dark";
 
 const views: Array<{ key: ViewKey; label: string }> = [
@@ -28,35 +28,60 @@ function loadStoredTheme(): ThemeMode {
   if (typeof window === "undefined") {
     return "light";
   }
-  const stored = window.localStorage.getItem(themeStorageKey);
-  if (stored === "light" || stored === "dark") {
-    return stored;
-  }
+  try {
+    const stored = window.localStorage.getItem(themeStorageKey);
+    if (stored === "light" || stored === "dark") return stored;
+  } catch { /* Use the system theme when browser storage is unavailable. */ }
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 export function App() {
-  const [activeView, setActiveView] = useState<ViewKey>("layouts");
+  const [location, setLocation] = useState<AppLocation>(initialLocation);
+  const activeView = location.view;
+  const navigate = useCallback((next: AppLocation, replace = false) => {
+    saveLocation(next, replace);
+    setLocation(next);
+  }, []);
+  useEffect(() => {
+    saveLocation(location, true);
+    const restore = () => {
+      const next = initialLocation();
+      saveLocation(next, true);
+      setLocation(next);
+    };
+    window.addEventListener("popstate", restore);
+    window.addEventListener("hashchange", restore);
+    return () => {
+      window.removeEventListener("popstate", restore);
+      window.removeEventListener("hashchange", restore);
+    };
+  }, []);
   const [transport, setTransport] = useState<MidiTransport>(() => new MockMidiTransport());
   const [deviceHello, setDeviceHello] = useState<HelloResponsePayload | null>(null);
   const [connectionLabel, setConnectionLabel] = useState("Not connected");
   const [theme, setTheme] = useState<ThemeMode>(() => loadStoredTheme());
+  const connection = useDeviceConnection({
+    onTransportChange: setTransport,
+    onHelloChange: setDeviceHello,
+    connectionLabel,
+    onConnectionLabelChange: setConnectionLabel
+  });
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem(themeStorageKey, theme);
+    try { window.localStorage.setItem(themeStorageKey, theme); } catch { /* Optional preference. */ }
   }, [theme]);
 
   const content = useMemo(() => {
     switch (activeView) {
       case "learn":
-        return <Learn transport={transport} deviceHello={deviceHello} connected={deviceHello !== null && !(transport instanceof MockMidiTransport)} />;
+        return <Learn connectionControl={<DeviceConnect connection={connection} placement="lesson" />} navigation={location.view === "learn" ? location : undefined} onNavigate={navigate} transport={transport} deviceHello={deviceHello} connected={deviceHello !== null && !(transport instanceof MockMidiTransport)} />;
       case "layouts":
         return <TuningLayoutEditor transport={transport} deviceHello={deviceHello} />;
       case "synth":
         return <SynthPresetLibrary transport={transport} />;
     }
-  }, [activeView, deviceHello, transport]);
+  }, [location, deviceHello, transport, navigate, connection]);
   return (
     <div className="appShell">
       <header className="topBar">
@@ -72,7 +97,7 @@ export function App() {
             <button
               key={view.key}
               className={view.key === activeView ? "active" : ""}
-              onClick={() => setActiveView(view.key)}
+              onClick={() => navigate(storedLocation(view.key) ?? (view.key === "learn" ? { view: "learn", page: "practice" } : { view: view.key }))}
               type="button"
             >
               {view.label}
@@ -90,12 +115,7 @@ export function App() {
           >
             <span aria-hidden="true" className="themeToggleIcon">{theme === "dark" ? "☾" : "☀"}</span>
           </button>
-          <DeviceConnect
-            onTransportChange={setTransport}
-            onHelloChange={setDeviceHello}
-            connectionLabel={connectionLabel}
-            onConnectionLabelChange={setConnectionLabel}
-          />
+          <DeviceConnect connection={connection} showStatus={activeView !== "learn" || connection.connected} />
         </div>
       </header>
       <main>

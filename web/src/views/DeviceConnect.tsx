@@ -1,5 +1,5 @@
 import { MockMidiTransport } from "../midi/mockTransport.ts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type {
   MidiTransport,
@@ -21,7 +21,7 @@ interface DeviceConnectProps {
   onConnectionLabelChange: (label: string) => void;
 }
 
-interface DiscoveredHexBoard {
+export interface DiscoveredHexBoard {
   key: string;
   label: string;
   output: WebMidiOutput;
@@ -76,7 +76,51 @@ function isCompatibleHello(hello: HelloResponsePayload): boolean {
     && hello.synthPresetSchemaVersion >= 3;
 }
 
-export function DeviceConnect({
+async function probeDevice(output: WebMidiOutput, input: WebMidiInput): Promise<DiscoveredHexBoard | null> {
+  try {
+    await output.open?.();
+    await input.open?.();
+    const transport = new WebMidiTransport(output, input);
+    const hello = await new PresetSyncClient(transport).requestHello(128, helloProbeTimeoutMs);
+    if (!isCompatibleHello(hello)) {
+      return null;
+    }
+    return {
+      key: deviceKey(output, input),
+      label: portName(output),
+      output,
+      input,
+      hello
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function discoverHexBoards(midiAccess: WebMidiAccess): Promise<DiscoveredHexBoard[]> {
+  const outputs = sortHexBoardFirst(Array.from(midiAccess.outputs.values()).filter(port => port.state !== "disconnected"));
+  const inputs = sortHexBoardFirst(Array.from(midiAccess.inputs.values()).filter(port => port.state !== "disconnected"));
+  const discovered: DiscoveredHexBoard[] = [];
+  const seen = new Set<string>();
+
+  for (const output of outputs) {
+    for (const input of matchingInputs(output, inputs)) {
+      const key = deviceKey(output, input);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      const device = await probeDevice(output, input);
+      if (device) {
+        discovered.push(device);
+      }
+    }
+  }
+
+  return discovered;
+}
+
+export function useDeviceConnection({
   onTransportChange,
   onHelloChange,
   connectionLabel,
@@ -87,6 +131,8 @@ export function DeviceConnect({
   const [selectedDeviceKey, setSelectedDeviceKey] = useState("");
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [hasConnected, setHasConnected] = useState(false);
+  const connecting = useRef(false);
 
   useEffect(() => {
     if (!access) return;
@@ -108,50 +154,6 @@ export function DeviceConnect({
     return () => { if (access.onstatechange === handleStateChange) access.onstatechange = previous; };
   }, [access, devices, selectedDeviceKey, connectionLabel, onTransportChange, onHelloChange, onConnectionLabelChange]);
 
-  async function probeDevice(output: WebMidiOutput, input: WebMidiInput): Promise<DiscoveredHexBoard | null> {
-    await output.open?.();
-    await input.open?.();
-    const transport = new WebMidiTransport(output, input);
-    try {
-      const hello = await new PresetSyncClient(transport).requestHello(128, helloProbeTimeoutMs);
-      if (!isCompatibleHello(hello)) {
-        return null;
-      }
-      return {
-        key: deviceKey(output, input),
-        label: portName(output),
-        output,
-        input,
-        hello
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  async function discoverHexBoards(midiAccess: WebMidiAccess): Promise<DiscoveredHexBoard[]> {
-    const outputs = sortHexBoardFirst(Array.from(midiAccess.outputs.values()));
-    const inputs = sortHexBoardFirst(Array.from(midiAccess.inputs.values()));
-    const discovered: DiscoveredHexBoard[] = [];
-    const seen = new Set<string>();
-
-    for (const output of outputs) {
-      for (const input of matchingInputs(output, inputs)) {
-        const key = deviceKey(output, input);
-        if (seen.has(key)) {
-          continue;
-        }
-        seen.add(key);
-        const device = await probeDevice(output, input);
-        if (device) {
-          discovered.push(device);
-        }
-      }
-    }
-
-    return discovered;
-  }
-
   async function connectDevice(device: DiscoveredHexBoard) {
     await device.output.open?.();
     await device.input.open?.();
@@ -160,15 +162,18 @@ export function DeviceConnect({
     onHelloChange(device.hello);
     onConnectionLabelChange(`HexBoard: ${device.label}`);
     setSelectedDeviceKey(device.key);
+    setHasConnected(true);
     setStatus("Connected");
   }
 
   async function connectHexBoard() {
+    if (connecting.current) return;
     if (!isWebMidiSupported()) {
       setStatus("Use Chrome or Edge to connect HexBoard");
       return;
     }
 
+    connecting.current = true;
     setBusy(true);
     try {
       const selectedDevice = devices.find((device) => device.key === selectedDeviceKey);
@@ -198,25 +203,43 @@ export function DeviceConnect({
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "HexBoard connection failed");
     } finally {
+      connecting.current = false;
       setBusy(false);
     }
   }
 
+  return {
+    connectionLabel, status, busy, hasConnected, devices, selectedDeviceKey,
+    selectDevice: setSelectedDeviceKey,
+    connect: connectHexBoard,
+    connected: connectionLabel.startsWith("HexBoard:")
+  };
+}
+
+export type DeviceConnection = ReturnType<typeof useDeviceConnection>;
+
+export function DeviceConnect({ connection, placement = "header", showStatus = true }: {
+  connection: DeviceConnection;
+  placement?: "header" | "lesson";
+  showStatus?: boolean;
+}) {
+  const { connectionLabel, status, busy, hasConnected, devices, selectedDeviceKey, selectDevice, connect, connected } = connection;
   const multipleDevices = devices.length > 1;
-  const buttonLabel = multipleDevices && selectedDeviceKey ? "Connect Selected" : "Connect HexBoard";
-  const connectedToHexBoard = connectionLabel.startsWith("HexBoard:");
+  const buttonLabel = multipleDevices && selectedDeviceKey ? "Connect Selected" : hasConnected && !connected ? "Reconnect HexBoard" : "Connect HexBoard";
+  const lesson = placement === "lesson";
 
   return (
-    <div className="deviceMenu" data-connected={connectedToHexBoard} aria-label="Device connection">
+    <div className={lesson ? "learnConnection" : "deviceMenu"} data-connected={connected} aria-label={lesson ? "Lesson connection" : "Device connection"}>
       <div className="deviceStatus">
-        <strong>{connectionLabel}</strong>
-        {status ? <span role="status">{status}</span> : null}
+        <strong>{lesson ? hasConnected ? "HexBoard disconnected" : "Connect your HexBoard" : connectionLabel}</strong>
+        {lesson && <span>{hasConnected ? "Your lesson is paused. Reconnect, then start again." : "Connect to play this lesson on your board."}</span>}
+        {showStatus && status ? <span role="status">{status}</span> : null}
       </div>
       {multipleDevices ? (
         <select
           aria-label="HexBoard device"
           value={selectedDeviceKey}
-          onChange={(event) => setSelectedDeviceKey(event.target.value)}
+          onChange={(event) => selectDevice(event.target.value)}
         >
           {devices.map((device) => (
             <option key={device.key} value={device.key}>
@@ -225,7 +248,7 @@ export function DeviceConnect({
           ))}
         </select>
       ) : null}
-      <button className="primary" type="button" onClick={connectHexBoard} disabled={busy}>
+      <button className="primary" type="button" onClick={connect} disabled={busy}>
         {busy ? "Connecting..." : buttonLabel}
       </button>
     </div>

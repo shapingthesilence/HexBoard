@@ -77,11 +77,27 @@ The app opens both selected ports and keeps device actions unavailable offline.
 Device preset reads ACK `READ_BEGIN`, each `DATA_CHUNK`,
 and `TRANSFER_END` so firmware can pace object transfers.
 
+## Navigation
+
+`src/navigation.ts` owns hash routes for the main modes and Learn sections:
+`#/layouts`, `#/synth`, `#/learn/practice`, `#/learn/courses`, and
+`#/learn/progress`. Learn's section, stable course ID, and stable lesson ID are
+saved as JSON in localStorage, separately from the URL. Course and lesson
+changes update that saved location without adding browser history. Explicit
+section links take priority over the saved section while retaining the saved
+course and lesson; `#/learn` restores the last Learn section and the base address
+restores the last-used mode. Back/Forward switches modes or sections and stops
+active lesson work. Imported course validation waits for IndexedDB hydration.
+Storage failures leave mode and section navigation available.
+
+Hash routing keeps mode and section links working under both GitHub Pages base paths
+without a 404 fallback. Dialogs and course-editor previews do not change the URL.
+
 ## Source Ownership
 
 | Path under `src/` | Responsibility |
 | --- | --- |
-| `App.tsx`, `views/DeviceConnect.tsx` | Top-level views and device connection UI |
+| `App.tsx`, `views/DeviceConnect.tsx` | Top-level views, shared device connection state, and header/lesson connection controls |
 | `views/TuningLayoutEditor.tsx` | Tuning, layout, scale/color editing and tuning libraries |
 | `views/SynthPresetLibrary.tsx` | Synth editor, preset libraries, and wavetable libraries |
 | `editor/drafts.ts` | Browser draft values, discard baselines, and persistence |
@@ -208,6 +224,12 @@ Worklet tests render samples without an audio device and check pitch, modulation
 envelopes, table loading, and note lifecycle.
 
 Course authoring helpers: `beatGrid.ts` owns straight/triplet divisions, `courseStructure.ts` owns outline moves, compatibility and embedded layout transposition, and `CourseMarkdown.tsx` renders safe course prose. Completion policies and content pages are defined in the [course format](../docs/course-format.md).
+
+Laptop course exercises use a viewport-height workspace from 1000 × 600 CSS
+pixels. The instrument fills the remaining height after the measured lesson
+panel and feedback; optional finger guidance uses a neighboring column. The
+course outline and expanded Lesson settings scroll independently, preserving
+access to primary controls. Smaller windows retain the stacked layout.
 
 ## Built-in curriculum
 
