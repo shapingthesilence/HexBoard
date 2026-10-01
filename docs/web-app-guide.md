@@ -417,13 +417,24 @@ select `Connect HexBoard` in the top bar. While not connected, you can edit
 and save browser drafts and import or export files. If several compatible boards are
 available, choose one from the device selector.
 
+Editing uses normal page scrolling: libraries, sidebars, and controls move with
+the page, while save actions stay available as you edit. On laptop windows at
+least 1000 pixels wide and 600 pixels tall, Learn keeps its key map and playback
+controls in the workspace. Progress scrolls the lesson list while keeping course
+selection and backup controls available. Smaller windows allow page scrolling;
+narrow windows stack the panels.
+
 ## Tunings, Layouts, And Colors
 
 In the tuning/layout editor, you can create EDO tunings, equal-step tunings,
 Scala `.scl` imports, vector layouts, scales, custom scale-degree colors, and
 per-button pitch, color, direct-MIDI, or chord overrides. Choose a tuning in
-`Library`, then switch freely between `Tuning`, `Layout`, and `Scale & color`.
-The board shows your changes as you edit. Sync and save
+`Library`, then follow the numbered steps: `Tuning`, `Layout`, and `Scale & color`.
+You can return to any step freely.
+Open **Name & folder** to rename or move the tuning. The board shows your changes
+as you edit. The whole board fits the available window height. The button editor
+appears below the preview and opens without shrinking it; scroll the page to edit
+a key. Sync and save
 actions remain at the top of the tuning studio. Valid, in-range numeric edits
 update the preview as you type. Empty, incomplete, or out-of-range drafts remain
 editable without changing the preview, then restore or clamp when you leave the
@@ -523,15 +534,19 @@ deleted.
 In the synth editor, you can manage synth presets and user wavetables. Presets
 can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,
 exported/imported as JSON, edited, erased, and organized into folders.
-`New sound` starts a preset. Opening a preset restores its draft, if one exists.
+Use **Presets** and **Wavetables** inside the **Synth Library** panel to switch
+between the two libraries. `New sound` starts a preset. Opening a preset restores its draft, if
+one exists. **Sound details** groups the name, folder, and favorite controls.
 The sound’s more-actions menu contains export, `Load current HexBoard sound`,
 and `Discard draft`; `Other drafts` resumes unfinished sounds. Connecting does
 not replace your open sound. Previewing or saving to HexBoard requires a connection.
 
+Voice and volume envelope controls appear side by side on wider laptops, as do
+the two modulation envelopes. Narrower windows stack these sections.
 The wavetable graph follows the selected frame. The volume envelope graph
 shows the shape of the sound, with compressed time spacing to keep short stages
-visible. Sliders show times, rates, and percentages. Expand the modulation
-envelopes or LFO to edit their controls; their summaries show the target and amount.
+visible. Sliders show times, rates, and percentages. Sound details, both modulation
+envelopes, and LFO controls stay visible; scroll the page to reach them.
 Wavetables can be imported from Serum/Vital `.wav` files or HexBoard
 `.hexwav` files, uploaded, downloaded, exported, renamed, moved, and selected
 for the open preset. Short HexBoard wavetable files are expanded to fit the

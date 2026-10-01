@@ -2740,17 +2740,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   return (
     <section className="workspace synthEditor">
       <aside className="panel stack synthLibraryPanel">
-        <div className="row between">
-          <h2>Synth Library</h2>
-          <div className="row">
-            <button className={libraryKind === "presets" ? "active" : ""} type="button" onClick={() => setLibraryKind("presets")}>
-              Presets
-            </button>
-            <button className={libraryKind === "wavetables" ? "active" : ""} type="button" onClick={() => setLibraryKind("wavetables")}>
-              Wavetables
-            </button>
-          </div>
-        </div>
+        <h2>Synth Library</h2>
+        <nav className="sectionTabs" aria-label="Synth library sections">
+          <button aria-current={libraryKind === "presets" ? "page" : undefined} type="button" onClick={() => setLibraryKind("presets")}>Presets</button>
+          <button aria-current={libraryKind === "wavetables" ? "page" : undefined} type="button" onClick={() => setLibraryKind("wavetables")}>Wavetables</button>
+        </nav>
         <input ref={fileInputRef} className="hiddenFileInput" type="file" accept="application/json,.json" multiple onChange={(event) => void importPresetFile(event)} />
         <input ref={wavetableFileInputRef} className="hiddenFileInput" type="file" accept="audio/wav,audio/wave,.wav,.hexwav" onChange={(event) => void importWavetableFile(event)} />
 
@@ -2839,7 +2833,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
         {libraryKind === "presets" ? (
           <>
-            <div className="row">
+            <div className="row libraryPrimaryActions">
               <button className="primary" type="button" onClick={newPreset}>New sound</button>
               <button disabled={!connected} type="button" onClick={() => void refreshHexBoardLibrary()}>
                 Refresh HexBoard
@@ -2923,7 +2917,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           </>
         ) : (
           <>
-            <div className="row">
+            <div className="row libraryPrimaryActions">
               <button disabled={!connected} type="button" onClick={() => void refreshHexBoardWavetables()}>
                 Refresh HexBoard
               </button>
@@ -3124,10 +3118,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       </aside>
 
       <div className="panel stack synthMainPanel">
+        <header className="editorSummary">
         <div className="row between editorActionBar">
           <div>
-            <h2>{preset.name}</h2>
-            <span className="muted">{hasDraft ? "Draft" : "Sound"}</span>
+            <h3>{preset.name}</h3>
           </div>
           <div className="row">
             {connected ? <>
@@ -3158,6 +3152,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           <span>{connected ? deviceSaved ? "Saved on HexBoard" : "Changes not saved to HexBoard" : "Offline"}</span>
         </div>
         {syncStatus !== "Ready" ? <div className="operationStatus" role="status">{syncStatus}</div> : null}
+        </header>
+        <div className="editorBody">
         {Object.entries(drafts.entries).some(([key, entry]) => key !== draftKey && !sameContent(entry.value, entry.base)) ?
           <details className="compactDisclosure"><summary>Other drafts</summary><div className="row">{Object.entries(drafts.entries).filter(([key, entry]) => key !== draftKey && !sameContent(entry.value, entry.base)).map(([key, entry]) => <button type="button" key={key} onClick={() => openPreset(key.startsWith("hexboard:") ? "hexboard" : "computer", entry.value)}>{entry.value.name}</button>)}</div></details> : null}
 
@@ -3238,6 +3234,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           ) : null}
         </section>
 
+        <section className="editorSection"><h3>Sound details</h3>
         <div className="fieldGrid">
           <label className="field">
             <span>Name</span>
@@ -3268,6 +3265,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           </label>
         </div>
 
+        </section>
+        <div className="synthVoiceSections">
         <section className="editorSection">
           <h3>Voice</h3>
           <WaveformPreview samples={previewPatch.wavetableSamples} frame={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition) - 1} name={preset.wavetableName} />
@@ -3336,6 +3335,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           </div>
         </section>
 
+        </div>
+        <div className="synthModulationSections">
         <FxEnvelopeEditor
           title="Modulation envelope 1"
           targetValue={preset.values.EffectEnvelopeTarget}
@@ -3372,15 +3373,17 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           onReleaseChange={(value) => updateValue("EffectEnvelope2ReleaseIndex", value)}
         />
 
-        <details className="editorSection modulationSection">
-          <summary><strong>LFO</strong><span>{modTargetOptions.find(option => option.value === preset.values.SynthLfoTarget)?.label} · {fxAmountByteToPercent(preset.values.SynthLfoAmount)}% · {lfoSpeedLabel(preset.values.SynthLfoSpeed)}</span></summary>
+        </div>
+
+        <section className="editorSection modulationSection">
+          <h3>LFO</h3>
           <div className="editorGrid">
             <SelectField label="Target" value={preset.values.SynthLfoTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthLfoTarget", value)} />
             <RangeField label="Amount" value={fxAmountByteToPercent(preset.values.SynthLfoAmount)} min={-100} max={100} onChange={(value) => updateValue("SynthLfoAmount", fxAmountPercentToByte(value))} suffix="%" />
             <SelectField label="Wave" value={preset.values.SynthLfoWave} options={lfoWaveOptions} onChange={(value) => updateValue("SynthLfoWave", value)} />
             <RangeField label="Speed" value={preset.values.SynthLfoSpeed} min={0} max={19} onChange={(value) => updateValue("SynthLfoSpeed", value)} suffix={` (${lfoSpeedLabel(preset.values.SynthLfoSpeed)})`} />
           </div>
-        </details>
+        </section>
 
         <details className="compactDisclosure"><summary>Developer details</summary><pre className="dataPreview">
 {`Frames on last send: ${lastFrameCount}
@@ -3389,6 +3392,7 @@ CRC: ${crc32(draftPreset.body).toString(16).toUpperCase()}
 
 ${formatHex(draftPreset.body)}`}
         </pre></details>
+        </div>
       </div>
     </section>
   );
@@ -3819,8 +3823,8 @@ function FxEnvelopeEditor({
   const amountPercent = fxAmountByteToPercent(amountValue);
 
   return (
-    <details className="editorSection modulationSection">
-      <summary><strong>{title}</strong><span>{modTargetOptions.find(option => option.value === targetValue)?.label} · {amountPercent}%</span></summary>
+    <section className="editorSection modulationSection">
+      <h3>{title}</h3>
       <EnvelopePreview attack={attackValue} hold={holdValue} decay={decayValue} sustain={sustainValue} release={releaseValue} />
       <div className="editorGrid">
         <SelectField label="Target" value={targetValue} options={modTargetOptions} onChange={onTargetChange} />
@@ -3831,7 +3835,7 @@ function FxEnvelopeEditor({
         <RangeField label="Sustain" value={sustainValue} min={0} max={127} onChange={onSustainChange} suffix="/127" />
         <RangeField label="Release" value={releaseValue} min={0} max={19} onChange={onReleaseChange} suffix={` (${envelopeTimeLabel(releaseValue)})`} />
       </div>
-    </details>
+    </section>
   );
 }
 

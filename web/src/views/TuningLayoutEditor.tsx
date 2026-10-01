@@ -1098,6 +1098,29 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     computer: [],
     hexboard: []
   });
+  const boardPreviewRef = useRef<HTMLDivElement>(null);
+  const [boardPreviewSize, setBoardPreviewSize] = useState({ width: 580, height: 650 });
+  const [boardPreviewHeight, setBoardPreviewHeight] = useState(360);
+  useEffect(() => {
+    const viewport = boardPreviewRef.current;
+    if (!viewport) return;
+    const measure = () => {
+      const top = viewport.getBoundingClientRect().top + window.scrollY;
+      setBoardPreviewHeight(Math.max(160, window.innerHeight - top - 16));
+      setBoardPreviewSize({ width: viewport.clientWidth, height: viewport.clientHeight });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    if (viewport.parentElement) observer.observe(viewport.parentElement);
+    const workspace = viewport.closest(".geometryStudio");
+    if (workspace) observer.observe(workspace);
+    window.addEventListener("resize", measure);
+    measure();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [activeWorkspaceTab]);
   const bundleInputRef = useRef<HTMLInputElement>(null);
   const scalaInputRef = useRef<HTMLInputElement>(null);
   const keyLabelsInputRef = useRef<HTMLTextAreaElement>(null);
@@ -1122,6 +1145,12 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const activeLayout = activeBundle.layouts.find((layout) => layout.objectIdHex === activeBundle.activeLayoutIdHex) ??
     activeBundle.layouts[0] ??
     createDefaultLayout(tuningCycleLength(activeBundle.tuning));
+  const rotatedPreview = activeLayout.deviceRotationSteps % 2 !== 0;
+  const previewWidth = rotatedPreview ? 650 : 580;
+  const previewHeight = rotatedPreview ? 580 : 650;
+  const boardPreviewScale = Math.min(1,
+    Math.max(1, boardPreviewSize.width - 16) / previewWidth,
+    Math.max(1, boardPreviewSize.height - 16) / previewHeight);
   const activeScale = activeBundle.scales.find((scale) => scale.objectIdHex === activeBundle.activeScaleIdHex) ??
     activeBundle.scales[0] ??
     createAllNotesScale(tuningCycleLength(activeBundle.tuning));
@@ -3005,7 +3034,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       <header className="geometryStudioHeader">
         <div className="geometryTitleBlock">
           <span className="eyebrow">Tuning studio</span>
-          <h2>{activeBundle.tuning.name}</h2>
+          <h3>{activeBundle.tuning.name}</h3>
         </div>
         {activeWorkspaceTab === "library" ? (
           <div className="geometryHeaderActions">
@@ -3054,18 +3083,17 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       </header>
 
       <nav className="workflowTabs" aria-label="Tuning editing workflow">
-        {geometryWorkspaceTabs.map((tab) => (
+        {geometryWorkspaceTabs.map((tab, index) => (
           <button
-            aria-current={activeWorkspaceTab === tab.key ? "page" : undefined}
+            aria-current={activeWorkspaceTab === tab.key ? "step" : undefined}
+            aria-label={tab.label}
             className={`workflowTab${activeWorkspaceTab === tab.key ? " active" : ""}${tab.key === "library" ? " libraryTab" : ""}`}
             key={tab.key}
             onClick={() => setActiveWorkspaceTab(tab.key)}
             type="button"
           >
-            <span>
-              <strong>{tab.label}</strong>
-
-            </span>
+            {tab.key !== "library" && <span className="workflowStepNumber" aria-hidden="true">{index}</span>}
+            <strong>{tab.label}</strong>
           </button>
         ))}
       </nav>
@@ -3181,10 +3209,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
 
         {activeWorkspaceTab !== "library" ? (
           <>
-            <div className="inspectorHeading">
-              <span className="eyebrow">{geometryWorkspaceCopy[activeWorkspaceTab].eyebrow}</span>
-              <h2>{geometryWorkspaceCopy[activeWorkspaceTab].title}</h2>
-            </div>
+            <h3 className="visuallyHidden">{geometryWorkspaceCopy[activeWorkspaceTab].title} settings</h3>
+            <details className="compactDisclosure editorIdentity"><summary>Name &amp; folder</summary>
             <div className="bundleIdentityFields">
               <label className="field">
                 <span>Name</span>
@@ -3199,6 +3225,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                 </select>
               </label>
             </div>
+            </details>
           </>
         ) : null}
 
@@ -3383,8 +3410,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           <div className="boardPanelHeading">
             <div>
               <span className="eyebrow">Live preview</span>
-              <h2>HexBoard key map</h2>
-              <small className="muted">Palette preview. Compare low-brightness colors on your HexBoard using Brightness and Color Dither.</small>
+              <h3>HexBoard key map</h3>
             </div>
             <div className="previewContext">
               <span>{activeLayout.name}</span>
@@ -3526,7 +3552,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               </button>
             ) : null}
           </div>
-          <div className="hexBoardScroll">
+          <div className="hexBoardScroll" ref={boardPreviewRef} style={{ height: boardPreviewHeight }} aria-label="Key map preview">
+            <div className="hexBoardFrame" style={{ width: previewWidth * boardPreviewScale, height: previewHeight * boardPreviewScale }}>
             <div
               className={[
                 "hexBoardSurface",
@@ -3539,7 +3566,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
               onPointerLeave={endPaintStroke}
               onPointerMove={continuePaintStroke}
               onPointerUp={endPaintStroke}
-              style={{ transform: `rotate(${activeLayout.deviceRotationSteps * 90}deg)` }}
+              style={{ transform: `translate(-50%, -50%) scale(${boardPreviewScale}) rotate(${activeLayout.deviceRotationSteps * 90}deg)` }}
             >
               {guideHalos.map((halo) => (
                 <div
@@ -3599,6 +3626,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
                   </span>
                 </button>
               ))}
+            </div>
             </div>
           </div>
         </section>
@@ -3850,7 +3878,6 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         <details className="panel protocolDebugPanel editorProtocolDebugPanel">
           <summary>
             <span>Developer details</span>
-            <small>Encoded object preview</small>
           </summary>
           <button disabled={!connected || syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>Verify tuning</button>
           <p className="muted">Values are saved at firmware-native 32-bit precision.</p>
@@ -3862,7 +3889,6 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       {activeWorkspaceTab === "library" ? <details className="panel protocolDebugPanel">
         <summary>
           <span>Developer details</span>
-          <small>Encoded object preview</small>
         </summary>
         <button disabled={!connected || syncBusy} type="button" onClick={() => void verifyActiveBundleOnHexBoard()}>Verify tuning</button>
         <p className="muted">Values are saved at firmware-native 32-bit precision.</p>

@@ -97,6 +97,7 @@ export function App() {
             <button
               key={view.key}
               className={view.key === activeView ? "active" : ""}
+              aria-current={view.key === activeView ? "page" : undefined}
               onClick={() => navigate(storedLocation(view.key) ?? (view.key === "learn" ? { view: "learn", page: "practice" } : { view: view.key }))}
               type="button"
             >
@@ -115,7 +116,7 @@ export function App() {
           >
             <span aria-hidden="true" className="themeToggleIcon">{theme === "dark" ? "☾" : "☀"}</span>
           </button>
-          <DeviceConnect connection={connection} showStatus={activeView !== "learn" || connection.connected} />
+          <DeviceConnect connection={connection} />
         </div>
       </header>
       <main>

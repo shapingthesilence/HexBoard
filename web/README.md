@@ -225,11 +225,22 @@ envelopes, table loading, and note lifecycle.
 
 Course authoring helpers: `beatGrid.ts` owns straight/triplet divisions, `courseStructure.ts` owns outline moves, compatibility and embedded layout transposition, and `CourseMarkdown.tsx` renders safe course prose. Completion policies and content pages are defined in the [course format](../docs/course-format.md).
 
-Laptop course exercises use a viewport-height workspace from 1000 × 600 CSS
-pixels. The instrument fills the remaining height after the measured lesson
-panel and feedback; optional finger guidance uses a neighboring column. The
-course outline and expanded Lesson settings scroll independently, preserving
-access to primary controls. Smaller windows retain the stacked layout.
+Shared workspace spacing, panels, and section navigation live in
+`src/styles.css`. Editing views and course authoring use normal page scrolling;
+editor save summaries remain sticky. Synth preset and wavetable selection stays
+inside the library panel, and sound metadata, modulation envelopes, and LFO
+controls are always expanded. Tuning bundle navigation presents numbered steps.
+
+From 1000 × 600 CSS pixels, Learn fills the viewport. Course instruments use the
+remaining height after the measured lesson panel and feedback; optional finger
+guidance uses a neighboring column. The course outline and expanded Lesson
+settings scroll independently. Smaller windows allow page scrolling; narrow
+windows stack panels.
+
+The tuning editor fits the whole board to the available window height and width,
+accounting for device rotation. Its preview measures its document position and
+container dimensions when the workspace or window changes. The button inspector
+flows below the preview without changing its height or adding a scroll area.
 
 ## Built-in curriculum
 
