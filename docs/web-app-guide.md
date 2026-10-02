@@ -555,7 +555,7 @@ and `Discard draft`; `Other drafts` resumes unfinished sounds. Connecting does
 not replace your open sound. Previewing or saving to HexBoard requires a connection.
 
 Playback spans the editor above the oscillator and volume envelope, which sit
-side by side on wider laptops.
+side by side on wider laptops. Find `Vibrato speed` in the oscillator section.
 Mod wheel and LFO controls form the next row, followed by the two modulation
 envelopes. Narrower windows stack these groups. All sound controls remain
 visible on one scrollable page.

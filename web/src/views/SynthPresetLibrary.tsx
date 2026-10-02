@@ -3367,6 +3367,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             </label>
             <RangeField label="Wavetable position" value={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition)} min={1} max={SYNTH_WAVETABLE_FRAME_COUNT} onChange={(value) => updateValue("SynthWavetablePosition", wavetableFrameToPositionByte(value))} suffix={`/${SYNTH_WAVETABLE_FRAME_COUNT}`} />
             <RangeField label="Drive" value={preset.values.SynthDrive} min={0} max={3} onChange={(value) => updateValue("SynthDrive", value)} suffix={` (${driveLabel(preset.values.SynthDrive)})`} />
+            <RangeField label="Vibrato speed" value={preset.values.SynthVibratoSpeed} min={0} max={synthVibratoSpeedNoise} onChange={(value) => updateValue("SynthVibratoSpeed", value)} suffix={` (${vibratoSpeedLabel(preset.values.SynthVibratoSpeed)})`} />
           </div>
         </section>
 
@@ -3389,7 +3390,6 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           <div className="editorGrid">
             <SelectField label="Mod wheel target" value={preset.values.SynthModTarget} options={wheelTargetOptions} onChange={(value) => updateValue("SynthModTarget", value)} />
             <RangeField label="Mod wheel amount" value={preset.values.SynthModAmount} min={0} max={127} onChange={(value) => updateValue("SynthModAmount", value)} suffix="/127" />
-            <RangeField label="Vibrato speed" value={preset.values.SynthVibratoSpeed} min={0} max={synthVibratoSpeedNoise} onChange={(value) => updateValue("SynthVibratoSpeed", value)} suffix={` (${vibratoSpeedLabel(preset.values.SynthVibratoSpeed)})`} />
           </div>
         </section>
         <section className="editorSection modulationSection">
