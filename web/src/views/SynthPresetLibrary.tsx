@@ -1208,6 +1208,9 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [customFolders, setCustomFolders] = useState(() => loadStoredFolders(synthPresetFoldersStorageKey));
   const [customWavetableFolders, setCustomWavetableFolders] = useState(() => loadStoredFolders(synthWavetableFoldersStorageKey));
   const [newFolder, setNewFolder] = useState("");
+  const [creatingPresetFolder, setCreatingPresetFolder] = useState(false);
+  const [presetFolderName, setPresetFolderName] = useState("");
+  const presetFolderSelectRef = useRef<HTMLSelectElement>(null);
   const [newWavetableFolder, setNewWavetableFolder] = useState("");
   const [wavetableImportName, setWavetableImportName] = useState("");
   const [wavetableImportFolder, setWavetableImportFolder] = useState(defaultUserWavetableFolder);
@@ -1650,15 +1653,29 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
     }, 1400);
   }
 
-  function addFolder() {
-    const folder = normalizeDisplayFolderPath(newFolder);
-    if (folder === rootFolderPath && !newFolder.trim()) {
+  function createPresetFolder(name: string): string | null {
+    const folder = normalizeDisplayFolderPath(name);
+    if (!folder || folder === rootFolderPath) {
       setSyncStatus("Enter a folder name first");
+      return null;
+    }
+    setCustomFolders((current) => Array.from(new Set([...current, folder])).sort(compareFolderPaths));
+    setSyncStatus(`Folder ${folderLabel(folder)} ready in Browser Library`);
+    return folder;
+  }
+
+  function addFolder() {
+    if (createPresetFolder(newFolder) !== null) setNewFolder("");
+  }
+
+  function selectPresetFolder(value: string) {
+    if (value === "new") {
+      setPresetFolderName("");
+      setCreatingPresetFolder(true);
       return;
     }
-    setCustomFolders((current) => Array.from(new Set([...current, folder])).sort());
-    setNewFolder("");
-    setSyncStatus(`Created ${folderLabel(folder)} in Browser Library`);
+    setCreatingPresetFolder(false);
+    updatePresetMetadata((current) => ({ ...current, folderPath: value.slice("folder:".length) }));
   }
 
   function addWavetableFolder() {
@@ -3137,9 +3154,23 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
       <div className="panel stack synthMainPanel">
         <header className="editorSummary">
-        <div className="row between editorActionBar">
-          <div>
-            <h3>{preset.name}</h3>
+        <div className="row between editorActionBar synthSaveBar">
+          <div className="synthIdentityFields">
+            <label className="field">
+              <span>Name</span>
+              <input value={preset.name} onChange={(event) => updatePresetName(event.target.value)} />
+            </label>
+            <label className="field">
+              <span>Folder</span>
+              <select ref={presetFolderSelectRef} value={`folder:${preset.folderPath}`} onChange={(event) => selectPresetFolder(event.target.value)}>
+                {allFolders.map((folder) => <option key={folder} value={`folder:${folder}`}>{folderLabel(folder)}</option>)}
+                <option value="new">New folder…</option>
+              </select>
+            </label>
+            <label className="checkField synthFavoriteField">
+              <input type="checkbox" checked={preset.favorite} onChange={(event) => updatePresetMetadata((current) => ({ ...current, favorite: event.target.checked }))} />
+              <span>Favorite</span>
+            </label>
           </div>
           <div className="row">
             {connected ? <>
@@ -3164,6 +3195,30 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             </div></details>
           </div>
         </div>
+
+        {creatingPresetFolder ? (
+          <form className="row synthFolderCreation" onSubmit={(event) => {
+            event.preventDefault();
+            const folder = createPresetFolder(presetFolderName);
+            if (folder === null) return;
+            updatePresetMetadata((current) => ({ ...current, folderPath: folder }));
+            setCreatingPresetFolder(false);
+            presetFolderSelectRef.current?.focus();
+          }}>
+            <label className="field">
+              <span>New folder name</span>
+              <input autoFocus value={presetFolderName} placeholder="e.g. Pads/Warm" onChange={(event) => setPresetFolderName(event.target.value)} onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setCreatingPresetFolder(false);
+                  presetFolderSelectRef.current?.focus();
+                }
+              }} />
+            </label>
+            <button type="submit">Create folder</button>
+            <button type="button" onClick={() => { setCreatingPresetFolder(false); presetFolderSelectRef.current?.focus(); }}>Cancel</button>
+          </form>
+        ) : null}
 
         <div className="saveStatus" role="status">
           <span>{drafts.error || libraryStorageError || (browserSaved ? "Saved in browser" : "Draft kept in browser")}</span>
@@ -3254,44 +3309,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           ) : null}
         </section>
 
-        <section className="editorSection"><h3>Sound details</h3>
-        <div className="fieldGrid">
-          <label className="field">
-            <span>Name</span>
-            <input value={preset.name} onChange={(event) => updatePresetName(event.target.value)} />
-          </label>
-          <label className="field">
-            <span>Folder</span>
-            <select
-              value={preset.folderPath}
-              onChange={(event) => updatePresetMetadata((current) => ({ ...current, folderPath: event.target.value }))}
-            >
-              {allFolders.map((folder) => (
-                <option key={folder} value={folder}>
-                  {folderLabel(folder)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            <span>Favorite</span>
-            <select
-              value={preset.favorite ? "yes" : "no"}
-              onChange={(event) => updatePresetMetadata((current) => ({ ...current, favorite: event.target.value === "yes" }))}
-            >
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
-            </select>
-          </label>
-        </div>
-
-        </section>
-        <div className="synthVoiceSections">
-        <section className="editorSection">
-          <h3>Voice</h3>
-          <WaveformPreview samples={previewPatch.wavetableSamples} frame={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition) - 1} name={preset.wavetableName} />
+        <section className="editorSection synthPlaybackSection">
+          <h3>Playback</h3>
           <div className="editorGrid">
-            <SelectField label="Synth Mode" value={preset.values.PlaybackMode} options={playbackOptions} onChange={(value) => updateValue("PlaybackMode", value)} />
+            <SelectField label="Synth mode" value={preset.values.PlaybackMode} options={playbackOptions} onChange={(value) => updateValue("PlaybackMode", value)} />
             {arpModeSelected ? (
               <>
                 <SelectField label="Arpeggiator rate" value={preset.values.ArpeggiatorDivision} options={arpDivisionOptions} onChange={(value) => updateValue("ArpeggiatorDivision", value)} />
@@ -3303,6 +3324,14 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             {monoModeSelected ? (
               <RangeField label="Portamento" value={preset.values.SynthPortamentoTimeIndex} min={0} max={19} onChange={(value) => updateValue("SynthPortamentoTimeIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.SynthPortamentoTimeIndex)})`} />
             ) : null}
+          </div>
+        </section>
+
+        <div className="synthVoiceSections">
+        <section className="editorSection">
+          <h3>Oscillator</h3>
+          <WaveformPreview samples={previewPatch.wavetableSamples} frame={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition) - 1} name={preset.wavetableName} />
+          <div className="editorGrid">
             <label className="field">
               <span>Wavetable</span>
               <select
@@ -3338,9 +3367,6 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             </label>
             <RangeField label="Wavetable position" value={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition)} min={1} max={SYNTH_WAVETABLE_FRAME_COUNT} onChange={(value) => updateValue("SynthWavetablePosition", wavetableFrameToPositionByte(value))} suffix={`/${SYNTH_WAVETABLE_FRAME_COUNT}`} />
             <RangeField label="Drive" value={preset.values.SynthDrive} min={0} max={3} onChange={(value) => updateValue("SynthDrive", value)} suffix={` (${driveLabel(preset.values.SynthDrive)})`} />
-            <SelectField label="Mod wheel target" value={preset.values.SynthModTarget} options={wheelTargetOptions} onChange={(value) => updateValue("SynthModTarget", value)} />
-            <RangeField label="Mod wheel amount" value={preset.values.SynthModAmount} min={0} max={127} onChange={(value) => updateValue("SynthModAmount", value)} suffix="/127" />
-            <RangeField label="Vibrato speed" value={preset.values.SynthVibratoSpeed} min={0} max={synthVibratoSpeedNoise} onChange={(value) => updateValue("SynthVibratoSpeed", value)} suffix={` (${vibratoSpeedLabel(preset.values.SynthVibratoSpeed)})`} />
           </div>
         </section>
 
@@ -3358,6 +3384,27 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
         </div>
         <div className="synthModulationSections">
+        <section className="editorSection modulationSection">
+          <h3>Mod wheel</h3>
+          <div className="editorGrid">
+            <SelectField label="Mod wheel target" value={preset.values.SynthModTarget} options={wheelTargetOptions} onChange={(value) => updateValue("SynthModTarget", value)} />
+            <RangeField label="Mod wheel amount" value={preset.values.SynthModAmount} min={0} max={127} onChange={(value) => updateValue("SynthModAmount", value)} suffix="/127" />
+            <RangeField label="Vibrato speed" value={preset.values.SynthVibratoSpeed} min={0} max={synthVibratoSpeedNoise} onChange={(value) => updateValue("SynthVibratoSpeed", value)} suffix={` (${vibratoSpeedLabel(preset.values.SynthVibratoSpeed)})`} />
+          </div>
+        </section>
+        <section className="editorSection modulationSection">
+          <h3>LFO</h3>
+          <div className="editorGrid">
+            <SelectField label="Target" value={preset.values.SynthLfoTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthLfoTarget", value)} />
+            <RangeField label="Amount" value={fxAmountByteToPercent(preset.values.SynthLfoAmount)} min={-100} max={100} onChange={(value) => updateValue("SynthLfoAmount", fxAmountPercentToByte(value))} suffix="%" />
+            <SelectField label="Wave" value={preset.values.SynthLfoWave} options={lfoWaveOptions} onChange={(value) => updateValue("SynthLfoWave", value)} />
+            <RangeField label="Speed" value={preset.values.SynthLfoSpeed} min={0} max={19} onChange={(value) => updateValue("SynthLfoSpeed", value)} suffix={` (${lfoSpeedLabel(preset.values.SynthLfoSpeed)})`} />
+          </div>
+        </section>
+
+        </div>
+        <div className="synthModulationSections">
+
         <FxEnvelopeEditor
           title="Modulation envelope 1"
           targetValue={preset.values.EffectEnvelopeTarget}
@@ -3395,16 +3442,6 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         />
 
         </div>
-
-        <section className="editorSection modulationSection">
-          <h3>LFO</h3>
-          <div className="editorGrid">
-            <SelectField label="Target" value={preset.values.SynthLfoTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthLfoTarget", value)} />
-            <RangeField label="Amount" value={fxAmountByteToPercent(preset.values.SynthLfoAmount)} min={-100} max={100} onChange={(value) => updateValue("SynthLfoAmount", fxAmountPercentToByte(value))} suffix="%" />
-            <SelectField label="Wave" value={preset.values.SynthLfoWave} options={lfoWaveOptions} onChange={(value) => updateValue("SynthLfoWave", value)} />
-            <RangeField label="Speed" value={preset.values.SynthLfoSpeed} min={0} max={19} onChange={(value) => updateValue("SynthLfoSpeed", value)} suffix={` (${lfoSpeedLabel(preset.values.SynthLfoSpeed)})`} />
-          </div>
-        </section>
 
         <details className="compactDisclosure"><summary>Developer details</summary><pre className="dataPreview">
 {`Frames on last send: ${lastFrameCount}
@@ -3801,12 +3838,15 @@ function EnvelopeTimeField({ value, onChange, ...props }: RangeFieldProps) {
 }
 
 function RangeField({ label, value, min, max, suffix = "", onChange }: RangeFieldProps) {
+  const displayValue = suffix.startsWith(" (") ? suffix.slice(2, -1)
+    : suffix === "/127" ? `${Math.round(value / 127 * 100)}%` : `${value}${suffix}`;
   return (
     <label className="field rangeField">
-      <span>
-        {label} · {suffix.startsWith(" (") ? suffix.slice(2, -1) : suffix === "/127" ? `${Math.round(value / 127 * 100)}%` : `${value}${suffix}`}
+      <span className="synthRangeHeading">
+        <span>{label}</span>
+        <span className="synthRangeValue" aria-hidden="true">{displayValue}</span>
       </span>
-      <input aria-valuetext={suffix.startsWith(" (") ? suffix.slice(2, -1) : suffix === "/127" ? `${Math.round(value / 127 * 100)}%` : `${value}${suffix}`} min={min} max={max} type="range" value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <input aria-label={label} aria-valuetext={displayValue} min={min} max={max} type="range" value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </label>
   );
 }

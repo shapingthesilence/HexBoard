@@ -546,17 +546,24 @@ can be saved on the computer, uploaded to HexBoard, downloaded from HexBoard,
 exported/imported as JSON, edited, erased, and organized into folders.
 Use **Presets** and **Wavetables** inside the **Synth Library** panel to switch
 between the two libraries. `New sound` starts a preset. Opening a preset restores its draft, if
-one exists. **Sound details** groups the name, folder, and favorite controls.
+one exists. Name, folder, and favorite controls share the top bar with
+**Save to Browser** and **Save to HexBoard**. Choose **New folder…** from the
+top Folder menu to create a browser folder and select it for the current draft.
+Use `/` in the name for subfolders; saving the sound remains a separate action.
 The sound’s more-actions menu contains export, `Load current HexBoard sound`,
 and `Discard draft`; `Other drafts` resumes unfinished sounds. Connecting does
 not replace your open sound. Previewing or saving to HexBoard requires a connection.
 
-Voice and volume envelope controls appear side by side on wider laptops, as do
-the two modulation envelopes. Narrower windows stack these sections.
+Playback spans the editor above the oscillator and volume envelope, which sit
+side by side on wider laptops.
+Mod wheel and LFO controls form the next row, followed by the two modulation
+envelopes. Narrower windows stack these groups. All sound controls remain
+visible on one scrollable page.
 The wavetable graph follows the selected frame. The volume envelope graph
 shows the shape of the sound, with compressed time spacing to keep short stages
-visible. Sliders show times, rates, and percentages. Sound details, both modulation
-envelopes, and LFO controls stay visible; scroll the page to reach them.
+visible. Slider values appear beside their labels with times, rates, and
+percentages. Scroll the page to reach the lower groups; save actions stay at the
+top of the editor while scrolling.
 Choose `Off` as a modulation target to bypass it while keeping its settings.
 After Poly warp, the Mod wheel target menu offers the five volume-envelope
 parameters. Wheel depth raises the saved value toward 4 seconds (times) or

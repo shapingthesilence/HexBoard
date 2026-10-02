@@ -2920,12 +2920,32 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .editorSummary { position: sticky; top: 8px; z-index: 4; display: grid; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--border); background: var(--surface); }
 .editorActionBar { align-items: center; }
 .editorActionBar h3 { margin: 0; font-size: 1.15rem; overflow-wrap: anywhere; }
+.synthSaveBar { align-items: end; flex-wrap: wrap; }
+.synthIdentityFields { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 8px 12px; align-items: end; flex: 1 1 420px; min-width: 0; }
+.synthFavoriteField { min-height: 36px; }
+.synthFolderCreation { align-items: end; flex-wrap: wrap; }
+.synthFolderCreation > .field { flex: 1 1 200px; max-width: 420px; }
+@media (max-width: 440px) {
+  .synthIdentityFields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .synthFavoriteField { grid-column: 1 / -1; min-height: 28px; }
+}
 .editorBody { display: grid; gap: 10px; min-width: 0; align-content: start; }
 .editorBody:focus-visible, .hexBoardScroll:focus-visible { outline-offset: -3px; }
 .libraryPrimaryActions { gap: 6px; }
 .libraryPrimaryActions button { font-size: .8rem; padding-inline: 8px; }
 .synthLibraryPanel > h3 { font-size: 1rem; }
 .synthVoiceSections, .synthModulationSections { display: grid; gap: 12px; min-width: 0; align-items: start; }
+.synthMainPanel .editorSection { gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.synthMainPanel .editorSection > h3 { margin: 0; padding: 0 0 8px; font-size: .95rem; line-height: 1.3; }
+.synthMainPanel .editorGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; }
+.synthMainPanel .synthPlaybackSection .editorGrid { grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); }
+.synthMainPanel .field > span { color: var(--text); }
+.synthRangeHeading { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.synthRangeValue { flex-shrink: 0; color: var(--brand); font-size: .8rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.synthMainPanel .rangeField input { margin: 0; min-height: 28px; accent-color: var(--brand); }
+@media (max-width: 440px) {
+  .synthMainPanel .editorGrid { grid-template-columns: minmax(0, 1fr); }
+}
 .soundVisual svg { height: 72px; }
 .auditionPanel { gap: 8px; padding: 10px; }
 .auditionPanel .muted { font-size: .8rem; }
@@ -2977,7 +2997,7 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .courseAuthorWorkspace { gap: 12px; }
 .courseLibraryDialog { padding: 16px; border-radius: var(--radius-lg); }
 @media (min-width: 1200px) {
-  .synthVoiceSections { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+  .synthVoiceSections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .synthModulationSections { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .synthModulationSections .editorGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .synthVoiceSections .editorGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
