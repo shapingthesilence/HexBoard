@@ -1,3 +1,7 @@
+// Keep the processor in the build asset graph: its message contract must match
+// this controller even when a browser has cached audio from an earlier release.
+import synthPreviewWorkletUrl from "./synth-preview-worklet.js?url";
+
 export type SynthPreviewValues = Record<string, number>;
 
 export interface SynthPreviewPatch {
@@ -122,7 +126,7 @@ export class SynthPreviewController {
       const resumed = context.resume();
       await Promise.all([
         resumed,
-        context.audioWorklet.addModule(`${import.meta.env.BASE_URL}synth-preview-worklet.js`)
+        context.audioWorklet.addModule(synthPreviewWorkletUrl)
       ]);
       if (generation !== this.generation) return;
       const node = new AudioWorkletNode(context, "hexboard-synth-preview", {

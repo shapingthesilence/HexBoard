@@ -211,7 +211,10 @@ for proposed editor and operation-service boundaries.
 ### Browser synth audition
 
 The preset editor's Test keyboard starts collapsed. `audio/synthPreview.ts`
-loads `public/synth-preview-worklet.js` on the first note or MIDI-enable gesture.
+loads `audio/synth-preview-worklet.js` on the first note or MIDI-enable gesture.
+The worklet is imported as a Vite URL asset, so production builds emit a
+content-hashed filename under the configured base path. Keep it in the build
+asset graph so the app and its audio-message handling update together.
 `components/SynthMidiPreview.tsx` owns controller selection, ordinary Web MIDI
 access (without SysEx), audio unlocking, and subscriptions. Connected HexBoard
 input uses the existing transport subscription; other inputs use event listeners

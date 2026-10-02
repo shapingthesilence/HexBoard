@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import source from "../../public/synth-preview-worklet.js?raw";
+import source from "./synth-preview-worklet.js?raw";
 import { createBasicShapesSamples, createFactorySynthWavetables } from "../catalogs/factoryWavetables.ts";
 
 // Run the shipped worklet itself with an AudioWorklet host stub.
