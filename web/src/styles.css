@@ -3027,3 +3027,17 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
   .learnConnection { flex-wrap: wrap; }
   .learnConnection .deviceStatus { flex-basis: 100%; }
 }
+
+/* Course tempo shares the existing status row above the instrument. */
+.learnCourseTempo { flex: 0 0 220px; min-width: 0; margin-left: auto; gap: 0; font-size: .8rem; }
+.learnTempoCaption { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; white-space: nowrap; }
+.learnTempoGoal { color: var(--text-soft); font-weight: 500; }
+.learnTempoTrack { position: relative; display: block; height: 20px; }
+.learnCourseTempo input[type="range"]:focus-visible { outline-offset: -2px; }
+.learnTempoMarks { position: absolute; inset: 0 8px; pointer-events: none; }
+.learnTempoGoalMark { position: absolute; top: 4px; height: 12px; width: 2px; background: var(--accent); transform: translateX(-50%); }
+.learnCourseTempo input[type="range"] { width: 100%; min-width: 0; min-height: 20px; height: 20px; margin: 0; padding: 0; }
+@media (max-width: 700px) {
+  .learnPracticeHeader:has(.learnCourseTempo) { flex-wrap: wrap; }
+  .learnCourseTempo { margin-left: 0; }
+}

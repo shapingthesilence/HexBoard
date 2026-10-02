@@ -245,8 +245,12 @@ the first unfinished exercise when that layout has progress.
 On laptop windows at least 1000 pixels wide and 600 pixels tall, course
 exercises fit the available screen height. Start, example, and lesson navigation
 stay visible, with the course list scrolling inside its own box. **Lesson
-settings** groups layout, practice tempo, display, sound, and course management;
-its summary shows the selected layout. Open it when you need to change a setting.
+settings** groups layout, display, sound, and course management; its summary
+shows the selected layout. Open it when you need to change a setting.
+**Practice tempo** stays visible above the key map, beside the lesson status.
+The slider shows the goal BPM beside its current value and marks the target on
+the track. It is locked during a run; adjust it before starting or after
+finishing.
 
 Lesson instructions stay above the key preview in a compact reading panel sized
 to the longest built-in lesson at the available width. Its height stays the same
