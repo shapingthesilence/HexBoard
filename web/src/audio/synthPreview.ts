@@ -10,6 +10,8 @@ export interface SynthPreviewPatch {
 interface PendingNote {
   note: number;
   velocity: number;
+  id: number | string;
+  pitchOffset: number;
 }
 
 export class SynthPreviewController {
@@ -50,11 +52,11 @@ export class SynthPreviewController {
     this.node?.port.postMessage({ type: "setMod", value: this.modValue });
   }
 
-  async noteOn(note: number, velocity = 0.9): Promise<void> {
+  async noteOn(note: number, velocity = 0.9, id: number | string = note, pitchOffset = 0): Promise<void> {
     if (!this.patch?.wavetableSamples) {
       throw new Error("Download this wavetable from HexBoard to hear it in the browser");
     }
-    this.pendingNotes.push({ note, velocity });
+    this.pendingNotes.push({ note, velocity, id, pitchOffset });
     try {
       await this.ensureStarted();
       this.flushPendingNotes();
@@ -64,9 +66,14 @@ export class SynthPreviewController {
     }
   }
 
-  noteOff(note: number): void {
-    this.pendingNotes = this.pendingNotes.filter((pending) => pending.note !== note);
-    this.node?.port.postMessage({ type: "noteOff", note });
+  noteOff(id: number | string, immediate = false): void {
+    this.pendingNotes = this.pendingNotes.filter((pending) => pending.id !== id);
+    this.node?.port.postMessage({ type: "noteOff", note: id, immediate });
+  }
+
+  setPitch(id: number | string, pitchOffset: number): void {
+    for (const pending of this.pendingNotes) if (pending.id === id) pending.pitchOffset = pitchOffset;
+    this.node?.port.postMessage({ type: "setPitch", id, pitchOffset });
   }
 
   allNotesOff(): void {
@@ -158,7 +165,9 @@ export class SynthPreviewController {
       this.node.port.postMessage({
         type: "noteOn",
         note: pending.note,
-        velocity: pending.velocity
+        velocity: pending.velocity,
+        id: pending.id,
+        pitchOffset: pending.pitchOffset
       });
     }
     this.pendingNotes = [];

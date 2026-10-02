@@ -1,6 +1,16 @@
-import { expect, it, vi } from "vitest";
-import { WebMidiTransport } from "./webMidi.ts";
+import { afterEach, expect, it, vi } from "vitest";
+import { requestControllerMidiAccess, requestPresetSyncMidiAccess, WebMidiTransport } from "./webMidi.ts";
 import type { WebMidiInput, WebMidiOutput } from "./types.ts";
+
+afterEach(() => vi.unstubAllGlobals());
+
+it("requests ordinary MIDI access for controllers and keeps SysEx access for sync", async () => {
+  const requestMIDIAccess = vi.fn(async () => ({ inputs: new Map(), outputs: new Map() }));
+  vi.stubGlobal("navigator", { requestMIDIAccess });
+  await requestControllerMidiAccess();
+  await requestPresetSyncMidiAccess();
+  expect(requestMIDIAccess.mock.calls).toEqual([[{ sysex: false }], [{ sysex: true }]]);
+});
 
 it("preserves MIDI receive timestamps even when dispatch is delayed", () => {
   const input: WebMidiInput = { id: "in", type: "input", onmidimessage: null };

@@ -247,9 +247,11 @@ class Voice {
     );
   }
 
-  trigger(note, velocity, patch, retrigger) {
+  trigger(note, velocity, patch, retrigger, id = note, pitchOffset = 0) {
     this.configure(patch);
     this.note = note;
+    this.id = id;
+    this.pitchOffset = pitchOffset;
     this.targetFrequency = midiToFrequency(note);
     const glide = ENVELOPE_TIMES_SECONDS[patch.values.SynthPortamentoTimeIndex] ?? 0;
     this.glideRemaining = this.active && glide > 0 ? Math.round(glide * sampleRate) : 0;
@@ -343,7 +345,7 @@ class Voice {
     wavetablePosition = clamp(wavetablePosition, -127, 127);
 
     const pitchSemitones = (pitch / 127) * 24;
-    const frequency = this.frequency * 2 ** (pitchSemitones / 12)
+    const frequency = this.frequency * 2 ** ((pitchSemitones + this.pitchOffset) / 12)
       * (1 + vibrato * 127 * processor.vibratoSample() / 262144);
     this.phase = wrapPhase(this.phase + frequency / sampleRate);
     const phase = warpPhase(this.phase, foldWarp, dutyWarp, polyWarp);
@@ -366,6 +368,7 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     this.voices = Array.from({ length: MAX_VOICES }, () => new Voice());
     this.heldNotes = [];
     this.heldOrder = [];
+    this.noteData = new Map();
     this.arpCursor = 0;
     this.arpSamplesUntilNext = 0;
     this.lfoPhase = 0;
@@ -390,10 +393,13 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
           this.setPatch(message.patch);
           break;
         case "noteOn":
-          this.noteOn(message.note, message.velocity ?? 0.9);
+          this.noteOn(message.note, message.velocity ?? 0.9, message.id ?? message.note, message.pitchOffset ?? 0);
           break;
         case "noteOff":
-          this.noteOff(message.note);
+          this.noteOff(message.note, message.immediate);
+          break;
+        case "setPitch":
+          this.setPitch(message.id, message.pitchOffset);
           break;
         case "allNotesOff":
           this.allNotesOff();
@@ -467,61 +473,68 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     this.voices.forEach((voice) => voice.configure(this.patch));
   }
 
-  noteOn(note, velocity) {
+  noteOn(note, velocity, id = note, pitchOffset = 0) {
     const mode = this.patch.values.PlaybackMode;
-    if (mode === 0) {
-      return;
-    }
-    if (this.heldNotes.includes(note)) return;
-    if (!this.heldNotes.includes(note)) {
-      this.heldNotes.push(note);
-      this.heldOrder.push(note);
-    }
+    if (mode === 0 || this.heldNotes.includes(id)) return;
+    this.noteData.set(id, { note, velocity, pitchOffset });
+    this.heldNotes.push(id);
+    this.heldOrder.push(id);
     if (mode === MODE_ARPEGGIO) {
-      if (!this.voices[0].active) {
-        this.triggerArpNote(note);
-      }
+      if (!this.voices[0].active) this.triggerArpNote(id);
       return;
     }
     if (mode === MODE_MONO_RETRIGGER || mode === MODE_MONO_LEGATO) {
-      this.voices[0].trigger(note, velocity, this.patch, mode === MODE_MONO_RETRIGGER || !this.voices[0].active);
+      this.voices[0].trigger(note, velocity, this.patch,
+        mode === MODE_MONO_RETRIGGER || !this.voices[0].active, id, pitchOffset);
       return;
     }
-
-    let voice = this.voices.find((candidate) => !candidate.active);
+    let voice = this.voices.find(candidate => !candidate.active);
     if (!voice) {
       voice = this.voices.reduce((oldest, candidate) => candidate.age < oldest.age ? candidate : oldest, this.voices[0]);
     }
-    voice.trigger(note, velocity, this.patch, true);
+    voice.trigger(note, velocity, this.patch, true, id, pitchOffset);
     voice.age = ++this.voiceAge;
   }
 
-  noteOff(note) {
-    this.heldNotes = this.heldNotes.filter((held) => held !== note);
-    this.heldOrder = this.heldOrder.filter((held) => held !== note);
+  setPitch(id, pitchOffset) {
+    if (!Number.isFinite(pitchOffset)) return;
+    const data = this.noteData.get(id);
+    if (data) data.pitchOffset = pitchOffset;
+    for (const voice of this.voices) {
+      if (voice.active && voice.id === id) voice.pitchOffset = pitchOffset;
+    }
+  }
+
+  noteOff(id, immediate = false) {
+    if (immediate) {
+      this.voices.filter(voice => voice.id === id).forEach(voice => { voice.active = false; });
+    }
+    this.heldNotes = this.heldNotes.filter(held => held !== id);
+    this.heldOrder = this.heldOrder.filter(held => held !== id);
+    this.noteData.delete(id);
     const mode = this.patch.values.PlaybackMode;
     if (mode === MODE_ARPEGGIO) {
-      if (this.heldNotes.length === 0) {
-        this.voices[0].release();
-      }
+      if (this.heldNotes.length === 0) this.voices[0].release();
       return;
     }
     if (mode === MODE_MONO_RETRIGGER || mode === MODE_MONO_LEGATO) {
-      if (this.voices[0].note !== note) return;
+      if (this.voices[0].id !== id) return;
       if (this.heldNotes.length > 0) {
-        const nextNote = this.heldNotes[this.heldNotes.length - 1];
-        this.voices[0].trigger(nextNote, 0.9, this.patch, mode === MODE_MONO_RETRIGGER);
+        const nextId = this.heldNotes[this.heldNotes.length - 1];
+        const data = this.noteData.get(nextId);
+        this.voices[0].trigger(data.note, data.velocity, this.patch, mode === MODE_MONO_RETRIGGER, nextId, data.pitchOffset);
       } else {
         this.voices[0].release();
       }
       return;
     }
-    this.voices.filter((voice) => voice.note === note).forEach((voice) => voice.release());
+    this.voices.filter(voice => voice.id === id).forEach(voice => voice.release());
   }
 
   allNotesOff() {
     this.heldNotes = [];
     this.heldOrder = [];
+    this.noteData = new Map();
     this.arpCursor = 0;
     this.voices.forEach((voice) => { voice.active = false; voice.env.stage = "idle"; voice.env.level = 0; });
   }
@@ -639,7 +652,10 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       const ordered = [...this.heldOrder];
       return direction === 3 ? ordered.reverse() : ordered;
     }
-    const sorted = [...this.heldNotes].sort((a, b) => a - b);
+    const sorted = [...this.heldNotes].sort((a, b) => {
+      const left = this.noteData.get(a), right = this.noteData.get(b);
+      return (left.note + left.pitchOffset) - (right.note + right.pitchOffset);
+    });
     if (direction === 1) {
       return sorted.reverse();
     }
@@ -663,7 +679,8 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     }
     const note = notes.length === 0 ? fallbackNote : notes[this.arpCursor % notes.length];
     this.arpCursor = (this.arpCursor + 1) % Math.max(1, notes.length);
-    this.voices[0].trigger(note, 0.9, this.patch, true);
+    const data = this.noteData.get(note);
+    this.voices[0].trigger(data.note, data.velocity, this.patch, true, note, data.pitchOffset);
     this.arpSamplesUntilNext = this.nextArpIntervalSamples();
   }
 

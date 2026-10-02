@@ -190,7 +190,8 @@ heartbeat or timeout after entry; abandoned browsers require encoder hold.
   copy/export uses saved records; editor export uses its draft. Track device-save
   fingerprints only after acknowledged writes or device reads in that connection.
 - Connecting refreshes libraries without replacing the open synth draft. Offline
-  edits never imply a device save; preview/write controls require a real connection.
+  edits never imply a device save; device preview/write controls require a real
+  connection. Browser audio audition works with locally available wavetable data.
 - Import compatibility is implemented in `catalogs/`: tuning bundle v2, tuning
   library v1, synth preset/library files, and wavetable files; tuning bundle v1
   and layout bundle v5 remain importable. Keep compatibility conversion at import.
@@ -210,7 +211,25 @@ for proposed editor and operation-service boundaries.
 ### Browser synth audition
 
 The preset editor's Test keyboard starts collapsed. `audio/synthPreview.ts`
-loads `public/synth-preview-worklet.js` on the first note. The worklet follows
+loads `public/synth-preview-worklet.js` on the first note or MIDI-enable gesture.
+`components/SynthMidiPreview.tsx` owns controller selection, ordinary Web MIDI
+access (without SysEx), audio unlocking, and subscriptions. Connected HexBoard
+input uses the existing transport subscription; other inputs use event listeners
+that coexist with preset sync. Hotplug updates the input list. Teardown cancels
+pending startup and releases held, sustained, and releasing MIDI voices without
+closing MIDI ports shared with preset sync. Focus loss/hidden pages clear notes
+and gate incoming messages until focus returns.
+
+`audio/midiSynthPreview.ts` owns channel/note identities, velocity, per-channel
+bend and RPN 0 bend sensitivity, CC1 modulation, CC64 sustain, and channel-mode
+CC120/121/123 handling. Default bend range is ±2 semitones for ordinary controllers
+and ±48 for HexBoard; the UI can override it, then received RPN messages override
+it per channel. Identifiers remain distinct from numeric typing/lesson pitches.
+The worklet retains each held note's velocity and bend through mono fallback and
+arpeggio ordering. Poly/channel pressure, CC74, and MPE master-zone expression
+are not modeled.
+
+The worklet follows
 firmware's 16-frame wavetable format, AHDSR timing, signed modulation targets,
 phase warps, linear portamento, drive curve, and envelope-weighted polyphonic
 attenuation. Actual sample bytes (including available mip levels) come from the
@@ -219,7 +238,8 @@ factory generator. Unavailable wavetable data cannot be auditioned.
 
 This is a sound approximation: browser sample rate, floating point processing,
 mip selection, and voice transitions differ from firmware. It does not model
-the piezo, analog output, hardware tuning layout, or control scheduling.
+the piezo, analog output, or control scheduling. Typing/onscreen notes use 12 EDO;
+hardware MIDI retains the controller's note and per-channel pitch bend.
 Worklet tests render samples without an audio device and check pitch, modulation,
 envelopes, table loading, and note lifecycle.
 

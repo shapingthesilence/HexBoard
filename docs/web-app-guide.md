@@ -574,13 +574,39 @@ Expand **Test keyboard** in the preset editor to hear the current patch through
 your browser. It starts hidden. Hold the onscreen keys or their labeled typing
 keys; use Octave, Mod, Preview Vol, or Chord to test the sound. Stop, hiding the
 keyboard, and leaving the browser window stop playback. Editing text does not
-trigger notes. Notes use 12 EDO independently of the device's tuning layout.
+trigger notes. Typing and onscreen notes use 12 EDO independently of the device's
+tuning layout.
+
+To play the browser preview from hardware, choose **Connected HexBoard** under
+**MIDI input**, then click **Enable MIDI preview**. HexBoard must send notes over
+USB MIDI; its current tuning and layout determine the notes. To use another MIDI
+controller, click **Find MIDI controllers**, allow browser MIDI access, select
+its input, and enable preview. This also works without connecting a HexBoard.
+The current editor draft sounds through your computer, including edits you have
+not sent or saved to the board. The board may still play its own internal sound;
+turn that off on the board if you want to hear only the browser preview.
+
+Velocity, sustain pedal (CC64), modulation wheel (CC1), and per-channel pitch
+bend are supported. Match **Pitch bend ± semitones** to your controller: ordinary
+MIDI defaults to 2, while HexBoard's factory MPE Bend is 48. If you change MPE
+Bend on the board, match it here too. Received MIDI bend-range messages (RPN 0)
+set each channel's range automatically. See [MPE setup](mpe-microtonal-setup.md)
+for HexBoard's output choices. The Octave control affects typing and onscreen
+notes only.
+
+Stop clears sounding notes while leaving MIDI preview enabled for the next
+attack. Hiding the test keyboard or leaving the Synth tab disables MIDI preview.
+Changing inputs or disconnecting the selected input also stops MIDI notes;
+enable preview again after reconnecting. Losing browser focus or hiding the
+page clears notes and ignores MIDI until you return. Hardware preview needs a
+browser with Web MIDI support, such as Chrome or Edge, on HTTPS or localhost.
 
 The preview uses the selected wavetable and synth settings to approximate the
 instrument's sound, including envelopes, modulation, drive, and playback mode.
 Your speakers and HexBoard's piezo will sound different. No connection is needed
 for Basic Shapes or wavetables available on the computer; download device-only
-wavetables before auditioning them. The keyboard does not send notes to HexBoard.
+wavetables before auditioning them. Browser audition does not send notes or
+write presets to HexBoard.
 
 ## Transfer Feedback
 

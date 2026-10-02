@@ -26,6 +26,8 @@ export interface WebMidiInput {
   type: "input";
   state?: string;
   onmidimessage: ((event: WebMidiMessageEvent) => void) | null;
+  addEventListener?: (type: "midimessage", listener: (event: WebMidiMessageEvent) => void) => void;
+  removeEventListener?: (type: "midimessage", listener: (event: WebMidiMessageEvent) => void) => void;
   open?: () => Promise<WebMidiInput>;
 }
 
@@ -44,6 +46,8 @@ export interface WebMidiPortMap<T> {
 }
 
 export interface WebMidiAccess {
+  addEventListener?: (type: "statechange", listener: () => void) => void;
+  removeEventListener?: (type: "statechange", listener: () => void) => void;
   onstatechange?: ((event: unknown) => void) | null;
   inputs: WebMidiPortMap<WebMidiInput>;
   outputs: WebMidiPortMap<WebMidiOutput>;

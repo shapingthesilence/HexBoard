@@ -30,6 +30,7 @@ import {
 } from "../catalogs/index.ts";
 import { createBasicShapesSamples } from "../catalogs/factoryWavetables.ts";
 import { SynthPreviewController, type SynthPreviewPatch } from "../audio/synthPreview.ts";
+import { SynthMidiPreview } from "../components/SynthMidiPreview.tsx";
 import { MockMidiTransport } from "../midi/mockTransport.ts";
 import { PresetSyncClient } from "../midi/presetSyncClient.ts";
 import type { MidiTransport } from "../midi/types.ts";
@@ -1213,6 +1214,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [previewStatus, setPreviewStatus] = useState("Ready");
   const [previewVolume, setPreviewVolume] = useState(0.35);
   const [previewMod, setPreviewMod] = useState(0);
+  const [previewResetToken, setPreviewResetToken] = useState(0);
   const [heldPreviewNotes, setHeldPreviewNotes] = useState<number[]>([]);
   const [lastFrameCount, setLastFrameCount] = useState(0);
   const [draggedPreset, setDraggedPreset] = useState<DraggedPreset | null>(null);
@@ -1597,6 +1599,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   function stopAllPreviewNotes(status = "Stopped") {
+    setPreviewResetToken(current => current + 1);
     previewStopGeneration.current++;
     if (previewChordTimerRef.current !== null) {
       window.clearTimeout(previewChordTimerRef.current);
@@ -3176,7 +3179,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
           {auditionOpen ? (
             <>
-              <p className="muted">Browser sound preview · use the keys below or your typing keyboard. Notes use 12 EDO.</p>
+              <p className="muted">Browser sound preview · use a MIDI controller, the keys below, or your typing keyboard. Typing and onscreen notes use 12 EDO.</p>
+              <SynthMidiPreview transport={transport} connected={connected} controller={previewController} resetToken={previewResetToken} onStatus={setPreviewStatus} onMod={setPreviewMod} />
               <div className="auditionKeyRows">
                 {auditionKeyRows.map((row, rowIndex) => (
                   <div className="auditionKeys" key={`audition-row-${rowIndex}`}>

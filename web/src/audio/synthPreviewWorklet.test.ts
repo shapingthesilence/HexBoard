@@ -30,6 +30,49 @@ function crossings(samples: Float32Array) {
 }
 
 describe("firmware synth audition", () => {
+  it("renders a bent MIDI note and retunes it without restarting its envelope", () => {
+    const synth = engine();
+    synth.noteOn(69, 1, "midi:1:69", 12);
+    expect(crossings(render(synth, 48000))).toBeCloseTo(880, -1);
+    synth.setPitch("midi:1:69", 0);
+    expect(crossings(render(synth, 48000))).toBeCloseTo(440, -1);
+    expect(synth.voices[0].env.stage).toBe("sustain");
+  });
+
+  it("releases channel unisons independently from each other and onscreen notes", () => {
+    const synth = engine({ PlaybackMode: 3 });
+    synth.noteOn(60, 1);
+    synth.noteOn(60, 0.5, "midi:1:60", 0.5);
+    synth.noteOn(60, 1, "midi:2:60", -0.5);
+    synth.noteOff("midi:1:60");
+    expect(synth.voices[0].env.stage).toBe("sustain");
+    expect(synth.voices[1].env.stage).toBe("release");
+    expect(synth.voices[2].env.stage).toBe("sustain");
+    synth.noteOff("midi:2:60", true);
+    expect(synth.voices[2].active).toBe(false);
+  });
+
+  it("restores the previous mono note's velocity and bend when the newest is released", () => {
+    const synth = engine({ PlaybackMode: 4 });
+    synth.noteOn(60, 0.25, "midi:1:60", 0.5);
+    synth.noteOn(67, 1, "midi:2:67", -0.5);
+    synth.setPitch("midi:1:60", 1);
+    synth.noteOff("midi:2:67");
+    expect(synth.voices[0].id).toBe("midi:1:60");
+    expect(synth.voices[0].pitchOffset).toBe(1);
+    expect(synth.voices[0].velocity).toBe(0.25);
+  });
+
+  it("sorts MIDI arpeggios by bent pitch and retains velocity", () => {
+    const synth = engine({ PlaybackMode: 2 });
+    synth.noteOn(60, 0.25, "midi:1:60", 12);
+    synth.noteOn(67, 0.5, "midi:2:67", 0);
+    expect(synth.orderedArpNotes()).toEqual(["midi:2:67", "midi:1:60"]);
+    synth.arpCursor = 0;
+    synth.triggerArpNote();
+    expect(synth.voices[0].note).toBe(67);
+    expect(synth.voices[0].velocity).toBe(0.5);
+  });
   it.each([44100, 48000])("renders A4 at 440 Hz at %i Hz", rate => {
     const synth = engine({}, rate);
     synth.noteOn(69, 1);

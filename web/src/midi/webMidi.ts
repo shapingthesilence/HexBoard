@@ -17,11 +17,19 @@ export function isWebMidiSupported(): boolean {
 }
 
 export async function requestPresetSyncMidiAccess(): Promise<WebMidiAccess> {
+  return requestMidiAccess(true);
+}
+
+export async function requestControllerMidiAccess(): Promise<WebMidiAccess> {
+  return requestMidiAccess(false);
+}
+
+async function requestMidiAccess(sysex: boolean): Promise<WebMidiAccess> {
   const requestMIDIAccess = (navigator as unknown as NavigatorWithMidi).requestMIDIAccess;
   if (!requestMIDIAccess) {
     throw new Error("Web MIDI is not available in this browser");
   }
-  return requestMIDIAccess.call(navigator, { sysex: true });
+  return requestMIDIAccess.call(navigator, { sysex });
 }
 
 export function listMidiPorts(access: WebMidiAccess): MidiPortSummary[] {

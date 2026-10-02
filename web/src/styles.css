@@ -1013,6 +1013,24 @@ textarea {
   margin: 0;
 }
 
+.synthMidiPreview {
+  display: grid;
+  gap: 8px;
+}
+
+.synthMidiPreview > .row {
+  align-items: flex-end;
+}
+
+.synthMidiPreview .field:first-child {
+  flex: 1 1 200px;
+  max-width: 320px;
+}
+
+.synthMidiPreview .field:last-child {
+  width: 150px;
+}
+
 .auditionPanel.collapsed {
   padding: 8px 12px;
 }

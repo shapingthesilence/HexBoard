@@ -31,6 +31,18 @@ function host() {
 }
 afterEach(() => vi.unstubAllGlobals());
 describe("browser audio lifecycle", () => {
+  it("retunes queued MIDI voices and releases only the selected channel while loading", async () => {
+    const { controller, messages, module } = host();
+    const starts = [controller.noteOn(60, 1, "midi:0:60", 0.25), controller.noteOn(60, 0.5, "midi:1:60")];
+    controller.setPitch("midi:1:60", 0.75);
+    controller.noteOff("midi:0:60");
+    module.resolve();
+    await Promise.all(starts);
+    expect(messages.filter(message => message.type === "noteOn")).toEqual([
+      { type: "noteOn", note: 60, velocity: 0.5, id: "midi:1:60", pitchOffset: 0.75 }
+    ]);
+    await controller.close();
+  });
   it("cancels a note released while the worklet is loading", async () => {
     const { controller, messages, module, contexts } = host();
     const start = controller.noteOn(60);
