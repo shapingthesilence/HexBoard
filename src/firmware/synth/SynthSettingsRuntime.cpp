@@ -38,6 +38,7 @@ void syncSynthSettingsToRuntime() {
   if (arpeggiatorDivision == 0) {
     arpeggiatorDivision = 1;
   }
+  arpeggiatorNoteLength = constrain(settingValue(SettingKey::ArpeggiatorNoteLength), 1, 100);
   arpeggiatorDirection = settingValue(SettingKey::ArpeggiatorDirection);
   updateArpeggiatorDirection();
   synthBPM = settingValue(SettingKey::SynthBPM);

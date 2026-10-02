@@ -388,17 +388,24 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
       switch (pendingCommand) {
         case EnvelopeCommand::StartAttack: {
           clearSynthStealFade(i);
-          snapAmpEnvelopeRenderCache = envelopeParams.attackTicks == 0;
           startSynthVoiceAttackInRender(i, env, forceVoiceRenderCacheRefresh);
+          snapAmpEnvelopeRenderCache = voiceVolumeEnvelopeParams[i].attackTicks == 0;
           break;
         }
         case EnvelopeCommand::StartRelease: {
+          const VolumeEnvelopeSettings releaseSettings = pendingVolumeEnvelopeSettings();
           clearSynthStealFade(i);
           resetSynthVoiceRenderCachePreservingAmpEnvelope(i);
           forceVoiceRenderCacheRefresh = true;
           releaseRetries[i] = 0;
           releaseRetryCountdown[i] = 0;
-          if (envelopeParams.releaseTicks == 0 || env.level == 0) {
+          if (releaseSettings.params.releaseTicks == 0 && env.level != 0
+              && (playbackMode == SYNTH_MONO_RETRIGGER || isArpPlaybackMode(playbackMode))) {
+            pendingSynthStealOwners[i] = NO_SYNTH_OWNER;
+            synthStealFadeSamplesRemaining[i] = SYNTH_STEAL_FADE_SAMPLES;
+            break;
+          }
+          if (releaseSettings.params.releaseTicks == 0 || env.level == 0) {
             env.level = 0;
             env.stage = EnvelopeStage::Idle;
             synth[i].increment = 0;
@@ -413,7 +420,10 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
             if (isrProfilingEnabled) {
               isrCycleReleaseStartCount++;
             }
-            env.releaseIncrement = releaseIncrementForLevel(env.level);
+            env.releaseIncrement = releaseSettings.modulatedRelease
+                ? static_cast<uint16_t>(std::min<uint32_t>(65535u, std::max<uint32_t>(1u,
+                    (static_cast<uint64_t>(env.level) * releaseSettings.releaseReciprocalQ32 + (1ULL << 31)) >> 32)))
+                : releaseIncrementForLevel(env.level);
           }
           for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
             EnvelopeState& effectEnv = effectEnvelopeStates[envelopeIndex][i];
@@ -467,18 +477,19 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
 
     EnvelopeStage ampStageBeforeControlUpdate = env.stage;
     if (synthControlTick) {
-      updateAmpEnvelopeState(env, SYNTH_CONTROL_RATE_SAMPLES);
+      updateAmpEnvelopeState(env, voiceVolumeEnvelopeParams[i], SYNTH_CONTROL_RATE_SAMPLES);
       if (ampStageBeforeControlUpdate == EnvelopeStage::Release && env.stage == EnvelopeStage::Idle) {
         synth[i].increment = 0;
         synth[i].targetIncrement = 0;
         synth[i].counter = 0;
         clearSynthPortamento(i);
         resetSynthVoiceRenderCache(i);
-        publishVoiceFreed(i);
+        if (!synthStealFadeInProgress(i)) publishVoiceFreed(i);
       }
     }
 
     if (env.stage == EnvelopeStage::Idle || env.level == 0 || !synth[i].targetIncrement) {
+      if (synthStealFadeInProgress(i)) finishSynthStealFade(i, env, forceVoiceRenderCacheRefresh);
       continue;
     }
 

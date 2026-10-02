@@ -1,4 +1,5 @@
 #include "SynthAudioInternal.h"
+#include "VolumeEnvelopeModulation.h"
 
 void RAM_FUNC(resetEnvelopeState)(EnvelopeState& env) {
   env.level = 0;
@@ -84,7 +85,7 @@ void updateEnvelopeReleaseIncrementTable(EnvelopeParams& params, std::array<uint
     if (increment > std::numeric_limits<uint16_t>::max()) {
       increment = std::numeric_limits<uint16_t>::max();
     }
-    releaseTable[bucket] = static_cast<uint16_t>(increment);
+    releaseTable[bucket] = increment;
   }
 }
 
@@ -97,7 +98,7 @@ void updateEnvelopeParamsFromValues(EnvelopeParams& params,
                                     std::array<uint16_t, ENVELOPE_RELEASE_INCREMENT_BUCKETS>& releaseTable) {
   auto clampIndex = [](uint8_t& index) {
     if (index >= envelopeTimeMicrosOptions.size()) {
-      index = static_cast<uint8_t>(envelopeTimeMicrosOptions.size() - 1);
+      index = 19;
     }
   };
 
@@ -140,6 +141,7 @@ void updateEnvelopeParamsFromSettings() {
                                  envelopeSustainLevel,
                                  envelopeReleaseIndex,
                                  envelopeReleaseIncrementByLevel);
+  refreshVolumeEnvelopeModulation(true);
 }
 
 std::array<bool, SYNTH_FX_ENVELOPE_COUNT> synthEffectEnvelopeActive = { false, false };
@@ -178,7 +180,7 @@ void RAM_FUNC(updateEnvelopeHoldStage)(const EnvelopeParams& params, EnvelopeSta
   }
 }
 
-void RAM_FUNC(updateAmpEnvelopeState)(EnvelopeState& env, uint8_t elapsedTicks) {
+void RAM_FUNC(updateAmpEnvelopeState)(EnvelopeState& env, const EnvelopeParams& params, uint8_t elapsedTicks) {
   if (elapsedTicks == 0) {
     return;
   }
@@ -186,10 +188,10 @@ void RAM_FUNC(updateAmpEnvelopeState)(EnvelopeState& env, uint8_t elapsedTicks) 
   uint32_t tickScale = elapsedTicks;
   switch (env.stage) {
     case EnvelopeStage::Attack: {
-      uint32_t increment = envelopeParams.attackIncrement * tickScale;
+      uint32_t increment = params.attackIncrement * tickScale;
       uint32_t nextLevel = env.level + increment;
       if (env.level >= envelopeMaxLevel || nextLevel >= envelopeMaxLevel) {
-        advanceEnvelopeFromAttackPeak(envelopeParams, env);
+        advanceEnvelopeFromAttackPeak(params, env);
       } else {
         env.level = nextLevel;
       }
@@ -201,38 +203,38 @@ void RAM_FUNC(updateAmpEnvelopeState)(EnvelopeState& env, uint8_t elapsedTicks) 
         env.holdTicksRemaining -= tickScale;
       } else {
         env.holdTicksRemaining = 0;
-        if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
+        if (params.decayTicks == 0 || params.sustainLevel >= envelopeMaxLevel) {
           env.stage = EnvelopeStage::Sustain;
-          env.level = envelopeParams.sustainLevel;
+          env.level = params.sustainLevel;
         } else {
           env.stage = EnvelopeStage::Decay;
         }
       }
       break;
     case EnvelopeStage::Decay:
-      if (envelopeParams.decayTicks == 0 || envelopeParams.sustainLevel >= envelopeMaxLevel) {
+      if (params.decayTicks == 0 || params.sustainLevel >= envelopeMaxLevel) {
         env.stage = EnvelopeStage::Sustain;
-        env.level = envelopeParams.sustainLevel;
-      } else if (env.level > envelopeParams.sustainLevel) {
-        uint32_t decrement = envelopeParams.decayIncrement * tickScale;
+        env.level = params.sustainLevel;
+      } else if (env.level > params.sustainLevel) {
+        uint32_t decrement = params.decayIncrement * tickScale;
         uint32_t nextLevel = (env.level > decrement) ? (env.level - decrement) : 0;
-        if (nextLevel <= envelopeParams.sustainLevel) {
-          env.level = envelopeParams.sustainLevel;
+        if (nextLevel <= params.sustainLevel) {
+          env.level = params.sustainLevel;
           env.stage = EnvelopeStage::Sustain;
         } else {
           env.level = nextLevel;
         }
       } else {
-        env.level = envelopeParams.sustainLevel;
+        env.level = params.sustainLevel;
         env.stage = EnvelopeStage::Sustain;
       }
       break;
     case EnvelopeStage::Sustain:
-      env.level = envelopeParams.sustainLevel;
+      env.level = params.sustainLevel;
       break;
     case EnvelopeStage::Release: {
       uint32_t releaseDecrement = static_cast<uint32_t>(env.releaseIncrement) * tickScale;
-      if (envelopeParams.releaseTicks == 0 || env.releaseIncrement == 0 || env.level <= releaseDecrement) {
+      if (env.releaseIncrement == 0 || env.level <= releaseDecrement) {
         resetEnvelopeState(env);
       } else {
         env.level -= releaseDecrement;
@@ -269,4 +271,38 @@ void updateEffectEnvelopeParamsFromSettings() {
   for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
     updateEffectEnvelopeParamsFromSettings(envelopeIndex);
   }
+}
+
+std::array<EnvelopeParams, POLYPHONY_LIMIT> voiceVolumeEnvelopeParams;
+namespace {
+std::array<VolumeEnvelopeSettings, 2> pendingVolumeEnvelopes;
+std::atomic<uint8_t> publishedVolumeEnvelope = 0;
+uint64_t lastVolumeEnvelopePoll = 0;
+uint8_t previousEnvelopeWheelTarget = 255;
+uint8_t previousEnvelopeWheelAmount = 255;
+}
+
+const VolumeEnvelopeSettings& RAM_FUNC(pendingVolumeEnvelopeSettings)() {
+  return pendingVolumeEnvelopes[publishedVolumeEnvelope.load(std::memory_order_acquire)];
+}
+
+// Core 0 only: slow performance controls do not belong in the audio ISR.
+void refreshVolumeEnvelopeModulation(bool force) {
+  if (!force && runTime - lastVolumeEnvelopePoll < 50000) return;
+  lastVolumeEnvelopePoll = runTime;
+  const uint8_t amount = synthModTarget >= SYNTH_MOD_TARGET_AMP_ATTACK
+      && synthModTarget <= SYNTH_WHEEL_TARGET_MAX
+      ? scaleSynthModAmount(static_cast<uint8_t>(constrain(modWheel.curValue, 0, 127))) : 0;
+  if (!force && previousEnvelopeWheelTarget == synthModTarget && previousEnvelopeWheelAmount == amount) return;
+  previousEnvelopeWheelTarget = synthModTarget;
+  previousEnvelopeWheelAmount = amount;
+  const uint8_t next = publishedVolumeEnvelope.load(std::memory_order_relaxed) ^ 1u;
+  VolumeEnvelopeSettings& settings = pendingVolumeEnvelopes[next];
+  settings.params = envelopeParams;
+  constexpr uint32_t maximumTicks = (4000000ULL * AUDIO_SAMPLE_RATE_HZ + 999999ULL) / 1000000ULL;
+  applyVolumeEnvelopeModulation(settings.params, synthModTarget, amount, maximumTicks, envelopeMaxLevel);
+  settings.modulatedRelease = synthModTarget == SYNTH_MOD_TARGET_AMP_RELEASE && amount != 0;
+  settings.releaseReciprocalQ32 = settings.params.releaseTicks == 0 ? 0
+      : static_cast<uint32_t>((1ULL << 32) / settings.params.releaseTicks);
+  publishedVolumeEnvelope.store(next, std::memory_order_release);
 }

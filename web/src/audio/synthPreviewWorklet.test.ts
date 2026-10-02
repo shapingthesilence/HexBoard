@@ -70,6 +70,7 @@ describe("firmware synth audition", () => {
     expect(synth.orderedArpNotes()).toEqual(["midi:2:67", "midi:1:60"]);
     synth.arpCursor = 0;
     synth.triggerArpNote();
+    render(synth, 97); // finish the 2 ms handoff
     expect(synth.voices[0].note).toBe(67);
     expect(synth.voices[0].velocity).toBe(0.5);
   });
@@ -143,6 +144,7 @@ describe("firmware synth audition", () => {
   it("steals the oldest poly voice and silences all voices on stop or mode change", () => {
     const synth = engine({ PlaybackMode: 3 });
     for (let note = 60; note <= 68; note++) synth.noteOn(note, 1);
+    render(synth, 97);
     expect(synth.voices.some((voice: any) => voice.note === 60)).toBe(false);
     expect(synth.voices.filter((voice: any) => voice.active)).toHaveLength(8);
     synth.allNotesOff();
@@ -161,4 +163,153 @@ it("plays fractional pitches without quantizing microtonal intervals", () => {
   expect(rms(render(processor, 1024))).toBeGreaterThan(0);
   processor.noteOff(pitch);
   expect(processor.heldNotes).toHaveLength(0);
+});
+
+
+describe("arp gates and smooth retriggers", () => {
+  it.each([2, 6])("releases at the selected percentage in mode %i", mode => {
+    const synth = engine({ PlaybackMode: mode, SynthBPM: 120, ArpeggiatorDivision: 4, ArpeggiatorNoteLength: 25 });
+    synth.noteOn(60, 1);
+    render(synth, 5999);
+    expect(synth.voices[0].env.stage).toBe("sustain");
+    render(synth, 1);
+    expect(synth.voices[0].env.stage).toBe("release");
+    render(synth, 18000);
+    expect(synth.arpVoice).not.toBeNull();
+  });
+
+  it("overlaps poly arp releases without playing the full held chord", () => {
+    const synth = engine({ PlaybackMode: 6, SynthBPM: 120, ArpeggiatorDivision: 16,
+      ArpeggiatorNoteLength: 100, EnvelopeReleaseIndex: 12 });
+    synth.noteOn(60, 1);
+    synth.noteOn(64, 0.5);
+    expect(synth.voices.filter((v: any) => v.active)).toHaveLength(1);
+    render(synth, 6001);
+    expect(synth.voices[0].env.stage).toBe("release");
+    expect(synth.voices[1].note).toBe(64);
+    expect(synth.voices[1].env.stage).toBe("sustain");
+    expect(synth.voices[1].velocity).toBe(0.5);
+    synth.noteOff(60);
+    synth.noteOff(64);
+    render(synth, 24001);
+    expect(synth.voices.every((v: any) => !v.active)).toBe(true);
+  });
+
+  it("fades the old oscillator before restarting a mono note", () => {
+    const table = new Uint8Array(16 * 512).fill(255);
+    const synth = engine({}, 48000, table);
+    synth.noteOn(60, 1);
+    render(synth, 100);
+    synth.noteOn(64, 1);
+    const fade = render(synth, 96);
+    expect(fade[0]).toBeGreaterThan(0.9);
+    expect(fade[95]).toBeLessThan(0.02);
+    for (let i = 1; i < fade.length; i++) expect(fade[i]).toBeLessThan(fade[i - 1]);
+    render(synth, 1);
+    expect(synth.voices[0].note).toBe(64);
+  });
+
+  it("cancels pending notes on release and panic", () => {
+    const synth = engine();
+    synth.noteOn(60, 1);
+    synth.noteOn(64, 1);
+    synth.noteOff(64);
+    render(synth, 100);
+    expect(synth.voices[0].note).toBe(60);
+    synth.noteOn(67, 1);
+    synth.allNotesOff();
+    expect(rms(render(synth, 500))).toBe(0);
+    expect(synth.voices.every((v: any) => !v.pendingTrigger)).toBe(true);
+  });
+
+  it("Off targets leave the sound unchanged even at full modulation depth", () => {
+    const plain = engine();
+    const off = engine({ SynthModTarget: 6, SynthModAmount: 127, SynthLfoTarget: 6, SynthLfoAmount: 254,
+      EffectEnvelopeTarget: 6, EffectEnvelopeAmount: 254, EffectEnvelopeSustainLevel: 127,
+      EffectEnvelope2Target: 6, EffectEnvelope2Amount: 254, EffectEnvelope2SustainLevel: 127 });
+    off.modValue = 127;
+    plain.noteOn(60, 1); off.noteOn(60, 1);
+    expect(render(off, 1000)).toEqual(render(plain, 1000));
+  });
+});
+
+
+describe("latched volume envelope wheel targets and short timing", () => {
+  it.each([[7, "attack"], [8, "hold"], [9, "decay"], [10, "sustain"], [11, "release"]])(
+    "captures target %i for new envelopes without changing existing %s", (target, parameter) => {
+      const synth = engine({ PlaybackMode: 3, SynthModTarget: Number(target), SynthModAmount: 127,
+        EnvelopeAttackIndex: 1, EnvelopeHoldIndex: 1, EnvelopeDecayIndex: 1,
+        EnvelopeSustainLevel: 32, EnvelopeReleaseIndex: 1 });
+      synth.modValue = 127;
+      synth.noteOn(60, 1);
+      const expected = parameter === "sustain" ? 1 : 4;
+      expect(synth.voices[0].env.params[parameter]).toBe(expected);
+      synth.modValue = 0;
+      render(synth, 2400);
+      render(synth, 1);
+      expect(synth.voices[0].env.params[parameter]).toBe(expected);
+      synth.noteOn(64, 1);
+      expect(synth.voices[1].env.params[parameter]).toBe(parameter === "sustain" ? 32 / 127 : 0.005);
+      expect(synth.patch.values.EnvelopeAttackIndex).toBe(1);
+    });
+
+  it("scales depth at attack and leaves held sustain alone", () => {
+    const synth = engine({ PlaybackMode: 3, SynthModTarget: 10, SynthModAmount: 64, EnvelopeSustainLevel: 32 });
+    synth.noteOn(60, 1);
+    synth.modValue = 127;
+    render(synth, 2400);
+    render(synth, 1);
+    expect(synth.voices[0].env.level).toBeCloseTo(32 / 127);
+    synth.noteOn(64, 1);
+    expect(synth.voices[1].env.level).toBeCloseTo(32 / 127 + (1 - 32 / 127) * 64 / 127);
+  });
+
+  it("captures wheel release duration at note-off and keeps that duration afterward", () => {
+    const synth = engine({ SynthModTarget: 11 });
+    synth.noteOn(60, 1);
+    synth.modValue = 127;
+    render(synth, 2400);
+    render(synth, 1);
+    synth.noteOff(60);
+    synth.modValue = 0;
+    render(synth, 2400);
+    render(synth, 45600);
+    expect(synth.voices[0].env.level).toBeCloseTo(0.75, 3);
+    expect(synth.voices[0].env.params.release).toBe(4);
+  });
+
+  it("polls the envelope wheel no faster than 20 Hz", () => {
+    const synth = engine({ PlaybackMode: 3, SynthModTarget: 10, EnvelopeSustainLevel: 32 });
+    synth.noteOn(60, 1);
+    synth.modValue = 127;
+    render(synth, 128);
+    synth.noteOn(64, 1);
+    expect(synth.voices[1].env.params.sustain).toBe(32 / 127);
+    render(synth, 2400);
+    synth.noteOn(67, 1);
+    expect(synth.voices[2].env.params.sustain).toBe(1);
+  });
+
+  it("retains original time indices and appends approximately 3 ms", () => {
+    const synth = engine({ EnvelopeAttackIndex: 20, EnvelopeHoldIndex: 20,
+      EnvelopeDecayIndex: 20, EnvelopeReleaseIndex: 20, EnvelopeSustainLevel: 64,
+      EffectEnvelopeAttackIndex: 20, EffectEnvelopeHoldIndex: 20,
+      EffectEnvelopeDecayIndex: 20, EffectEnvelopeReleaseIndex: 20 });
+    synth.noteOn(60, 1);
+    const voice = synth.voices[0];
+    for (const param of ["attack", "hold", "decay", "release"]) {
+      expect(voice.env.params[param]).toBe(0.003);
+      expect(voice.fxEnvs[0].params[param]).toBe(0.003);
+    }
+    render(synth, 72);
+    expect(voice.env.level).toBeCloseTo(0.5);
+    render(synth, 450);
+    synth.noteOff(60);
+    render(synth, 145);
+    expect(voice.active).toBe(false);
+    const legacy = engine({ EnvelopeAttackIndex: 1, EnvelopeReleaseIndex: 19 });
+    legacy.noteOn(60, 1);
+    expect(legacy.voices[0].env.params.attack).toBe(0.005);
+    expect(legacy.voices[0].env.params.release).toBe(4);
+  });
 });

@@ -120,7 +120,7 @@ SYNTH_PRESET_KEYS = (
     "EffectEnvelope2DecayIndex", "EffectEnvelope2SustainLevel",
     "EffectEnvelope2ReleaseIndex", "SynthPortamentoTimeIndex",
     "ArpeggiatorDirection", "SynthWavetablePosition", "SynthLfoTarget",
-    "SynthLfoAmount", "SynthLfoWave", "SynthLfoSpeed",
+    "SynthLfoAmount", "SynthLfoWave", "SynthLfoSpeed", "ArpeggiatorNoteLength",
 )
 
 
@@ -697,6 +697,18 @@ def build_wavetables(root: Path, output: Path) -> tuple[list[bytes], set[tuple[s
     return records, references
 
 
+def validate_synth_values(values: dict, path: Path) -> None:
+    if values["PlaybackMode"] not in (0, 1, 2, 3, 4, 6):
+        raise fail(path, "synth values", "PlaybackMode must be 0..4 or 6 (poly arp)")
+    if not 1 <= values["ArpeggiatorNoteLength"] <= 100:
+        raise fail(path, "synth values", "ArpeggiatorNoteLength must be 1..100 percent")
+    if not 0 <= values["SynthModTarget"] <= 11:
+        raise fail(path, "synth values", "SynthModTarget must be 0..11")
+    for key in ("EffectEnvelopeTarget", "EffectEnvelope2Target", "SynthLfoTarget"):
+        if not 0 <= values[key] <= 6:
+            raise fail(path, "synth values", f"{key} must be 0..6 (6 is Off)")
+
+
 def parse_preset(path: Path, root: Path,
                  wavetable_references: set[tuple[str, str]]) -> tuple[
                      bytes, str, bytes, dict[str, int], tuple[str, str]
@@ -733,6 +745,7 @@ def parse_preset(path: Path, root: Path,
             detail.append(f"unknown {', '.join(unknown)}")
         raise fail(path, "preset", "; ".join(detail))
     values = {key: checked_byte(values_source[key], path, key) for key in SYNTH_PRESET_KEYS}
+    validate_synth_values(values, path)
     if values["Waveform"] != 27:
         raise fail(path, "preset", "Waveform must be 27 for explicit wavetable presets")
     object_id = parse_object_id(
@@ -749,8 +762,8 @@ def parse_preset(path: Path, root: Path,
         + encoded_text(wavetable_folder, path, "wavetable folder", 48)
         + bytes(values[key] for key in SYNTH_PRESET_KEYS)
     )
-    if len(slot) != 212:
-        raise fail(path, "presets", f"internal slot size is {len(slot)}; expected 212")
+    if len(slot) != 213:
+        raise fail(path, "presets", f"internal slot size is {len(slot)}; expected 213")
     selected_key = f"{folder}/{name}" if folder != "/" else name
     return slot, selected_key, object_id, values, (wavetable_folder, wavetable_name)
 
@@ -805,6 +818,7 @@ def build_settings(config_path: Path, output: Path, config: dict,
             detail.append(f"unknown {', '.join(unknown)}")
         raise fail(config_path, "settings", "; ".join(detail))
     settings = {key: checked_byte(settings_source[key], config_path, key) for key in SETTING_KEYS}
+    validate_synth_values(settings, config_path)
     if settings["RotaryInvert"] != 0:
         raise fail(config_path, "settings", "RotaryInvert factory value must be 0 (relative to hardware default)")
     if settings["CommandEncoder"] not in (0, 1):

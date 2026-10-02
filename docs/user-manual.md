@@ -226,7 +226,8 @@ precedence and keeps its assigned resting color.
 
 ### Transpose
 
-`Transpose` shifts sounded pitch without changing the visual layout.
+`Transpose` shifts sounded pitch and palette-derived key colors while keeping
+the physical layout in place. Explicit per-key custom color overrides stay fixed.
 
 ### Editor
 
@@ -268,11 +269,10 @@ This page controls the onboard synth.
 
 Options include:
 
-- `Synth Mode`: `Off`, `MonoRtg`, `MonoLeg`, `Arp'gio`, `Poly`
+- `Synth Mode`: `Off`, `MonoRtg`, `MonoLeg`, `MonoArp`, `PolyArp`, `Poly`
 - `Volume`
 - `Buzzer` on hardware `V1.2`
-- `Arp Speed` when `Arp'gio` is selected
-- `Arp Dir` when `Arp'gio` is selected
+- `Arp Speed`, `Arp Dir`, and `Arp Length %` in either arp mode
 - `Porta` when a mono mode is selected
 - `WT:...` current-wavetable load menu
 - `WT Pos`
@@ -314,7 +314,8 @@ HexBoard's tuning directly; MPE settings are for external MIDI receivers.
 - `Off`: no onboard synth sound
 - `MonoRtg`: one note at a time, restarting the amp envelope when the active note changes
 - `MonoLeg`: one note at a time, sliding to newly held notes without restarting the amp envelope while another note is still held
-- `Arp'gio`: cycles through held notes rhythmically
+- `MonoArp`: cycles through held notes rhythmically
+- `PolyArp`: cycles one note per step, allowing release tails to overlap
 - `Poly`: plays chords, up to `8` notes at a time - a bit quieter due to headroom needed
 
 In `Poly`, playing more than `8` overlapping notes causes HexBoard to reuse an
@@ -325,7 +326,10 @@ existing voice while favoring the lowest held note.
 still glide. With `MonoLeg`, held note changes keep the envelope running and
 use the selected glide time.
 
-`Arp Speed` and `Arp Dir` appear for `Arp'gio`. The arpeggiator sorts by the
+`Arp Speed`, `Arp Dir`, and `Arp Length %` appear in both arp modes.
+Length sets when each note is released, as 1–100% of the step duration;
+100% holds until the next step. Release-envelope tails may continue afterward.
+Mono retriggers and arp voice replacements have a brief fade to reduce clicks. The arpeggiator sorts by the
 actual assigned note/frequency for `Up`, `Down`, `UpDown`, and `DownUp`; it can
 also follow `Played`, `RevPlay`, or `Random` order. `Played` means the order in
 which held notes were pressed, not the physical button numbers.
@@ -373,7 +377,8 @@ wavetable.
 
 `Amp Env` opens the amp-envelope page. `Attack`, `Hold`, `Decay`, `Sustain`,
 and `Release` shape the loudness of each note. Envelope time choices run from
-`0 ms` to `4 s`.
+`0 ms` to `4 s`, including `3 ms` between `0 ms` and `5 ms` for
+Attack, Hold, Decay, and Release in all three envelopes.
 
 - `Attack`: how quickly the sound fades in after pressing a note
 - `Hold`: how long the envelope stays at full level before decaying
@@ -384,14 +389,16 @@ and `Release` shape the loudness of each note. Envelope time choices run from
 `FX Env 1` and `FX Env 2` open separate modulation-envelope pages. Each page has
 `Target`, `Amount`, `Attack`, `Hold`, `Decay`, `Sustain`, and `Release`.
 
-`LFO` opens the synth LFO page. `Target` uses the same targets as `Wheel FX`;
+`Off` disconnects a modulation target without changing its envelope or amount.
+
+`LFO` opens the synth LFO page. `Target` uses the oscillator targets shared with the wheel and FX envelopes;
 `Amount` is bipolar from `-100%` through `Off` to `+100%`, with fine `1%`
 steps around `Off`; `Wave` selects `Sine`, `Triangl`, `Saw`, `Square`, `Noise`,
 or `Smooth`; and `Speed` ranges from `0.05 Hz` to `20 Hz`, with extra slow
 choices below `1 Hz` for gradual wavetable or phase-warp movement. `Noise` is
 stepped random modulation; `Smooth` glides between random levels.
 
-`Target` chooses `Vibrato`, `Pitch`, `WT Pos`, `FoldWrp`, `DutyWrp`, or
+`Target` chooses `Off`, `Vibrato`, `Pitch`, `WT Pos`, `FoldWrp`, `DutyWrp`, or
 `PolyWrp`. The wheel, both FX envelopes, and the LFO can choose the same target;
 their amounts add together and clamp at the maximum effect depth instead of
 replacing each other.
@@ -413,6 +420,14 @@ default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 - `FoldWrp`: applies the original folded phase-warp color movement across the onboard waveforms
 - `DutyWrp`: shifts the two halves of the oscillator cycle in opposite directions for a sharper duty-style phase warp
 - `PolyWrp`: applies a smoother polynomial phase warp that bends most strongly inside each half-cycle
+- `Amp Atk`, `Amp Hold`, `Amp Dec`, `Amp Sus`, `Amp Rel`: modulate the corresponding volume-envelope parameter. These wheel-only targets appear after `PolyWrp`.
+
+For volume-envelope targets, the wheel raises the saved value toward `4 s`
+for times or `100%` for Sustain, scaled by `Wheel Amt`. Returning the wheel to
+zero restores the saved value. The wheel is sampled at 20 Hz. Each new attack captures its Attack, Hold, Decay,
+and Sustain settings; each new release captures its Release setting. Existing
+envelopes keep the settings they started with.
+The saved preset values do not change.
 
 External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed` sets
 the onboard vibrato LFO speed from `1 Hz` to `12 Hz` for wheel or envelope
@@ -481,7 +496,7 @@ Use these as starting points, then adjust by ear.
 | Smooth pad | `Poly` | `Basic Shapes` at frame `1` or `Classic` at frame `1` | `200 ms` to `1 s` | `0 ms` | `500 ms` to `1 s` | `75%` or `100%` | `500 ms` to `2 s` | Slow fade-in and long release |
 | Lead | `MonoRtg` or `MonoLeg` | `Basic Shapes` around frame `11` to `16` | `0 ms` or `10 ms` | `0 ms` to `50 ms` | `50 ms` to `200 ms` | `75%` or `100%` | `50 ms` to `200 ms` | Use `Porta` for glide or keep it at `0 ms` for immediate melodies |
 | Chime or bell | `Poly` | `GlassyBells` or `RoundThe808` | `0 ms` or `5 ms` | `0 ms` | `500 ms` to `1 s` | `0%` | `500 ms` to `2 s` | Rings out after the initial hit |
-| Arpeggio | `Arp'gio` | `Basic Shapes` around frame `11` or `HarshDigitalBois` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed`, `Arp Dir`, and `Tempo` for rhythm |
+| Arpeggio | `MonoArp` | `Basic Shapes` around frame `11` or `HarshDigitalBois` | `0 ms` or `5 ms` | `0 ms` | `50 ms` to `200 ms` | `0%` to `25%` | `20 ms` to `100 ms` | Use `Arp Speed`, `Arp Dir`, and `Tempo` for rhythm |
 
 For a sharper sound, use `Basic Shapes` at a higher `WT Pos` frame or one of
 the `HarshDigitalBois` or `RustyBlade` frames, and keep `Attack` short. For a

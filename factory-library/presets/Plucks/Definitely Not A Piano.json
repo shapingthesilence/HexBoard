@@ -38,6 +38,7 @@
       "EffectEnvelope2SustainLevel": 0,
       "EffectEnvelope2ReleaseIndex": 11,
       "SynthPortamentoTimeIndex": 0,
+      "ArpeggiatorNoteLength": 100,
       "ArpeggiatorDirection": 0,
       "SynthWavetablePosition": 127,
       "SynthLfoTarget": 5,

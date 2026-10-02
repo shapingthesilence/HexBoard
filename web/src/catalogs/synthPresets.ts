@@ -52,7 +52,8 @@ export const SynthSettingKey = {
   SynthLfoTarget: 75,
   SynthLfoAmount: 76,
   SynthLfoWave: 77,
-  SynthLfoSpeed: 78
+  SynthLfoSpeed: 78,
+  ArpeggiatorNoteLength: 94
 } as const;
 
 export type SynthSettingName = keyof typeof SynthSettingKey;
@@ -91,7 +92,7 @@ export function createSynthPresetObject(input: SynthPresetInput): EncodedCatalog
       folderPath: input.folderPath,
       tags: input.tags
     }),
-    tlvU8(SynthPresetTlv.SynthPresetSchemaVersion, 7),
+    tlvU8(SynthPresetTlv.SynthPresetSchemaVersion, 9),
     tlv(SynthPresetTlv.SynthValues, encodeSynthValues(input.values))
   ];
 

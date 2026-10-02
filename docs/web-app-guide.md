@@ -457,7 +457,11 @@ the labeled notes without renaming or rotating them. `Default key` appears
 separately under `Scale defaults` and chooses the scale key selected when the
 tuning is first loaded. The app does not infer note names or reference positions
 from the tuning size.
-The board tools are `Select`, `Paint`, and `Pick color`. Painting selects
+The compact board mode selector highlights one active mode: `Select` edits
+keys, `Paint` applies a color by clicking or dragging, and `Pick color` copies
+a key’s color and returns to Paint. Hover a mode for a short explanation.
+Undo and Redo sit beside Save to Browser and apply to layout transforms and
+paint strokes. Painting selects
 `Custom` color mode and can target individual keys or scale-degree colors.
 Painting a scale degree clears matching per-key color overrides in the active
 layout. Turn on `Key numbers` when you need hardware key numbers.
@@ -553,6 +557,14 @@ The wavetable graph follows the selected frame. The volume envelope graph
 shows the shape of the sound, with compressed time spacing to keep short stages
 visible. Sliders show times, rates, and percentages. Sound details, both modulation
 envelopes, and LFO controls stay visible; scroll the page to reach them.
+Choose `Off` as a modulation target to bypass it while keeping its settings.
+After Poly warp, the Mod wheel target menu offers the five volume-envelope
+parameters. Wheel depth raises the saved value toward 4 seconds (times) or
+100% (Sustain), scaled by Mod wheel amount. All envelope time sliders include
+3 ms between 0 and 5 ms; previously saved times retain their meaning.
+Both arp modes expose `Note length` (1–100% of a step). `Poly arpeggiator`
+plays one note per step with overlapping release tails; the regular arpeggiator
+uses a single voice with a brief fade between notes.
 Wavetables can be imported from Serum/Vital `.wav` files or HexBoard
 `.hexwav` files, uploaded, downloaded, exported, renamed, moved, and selected
 for the open preset. Short HexBoard wavetable files are expanded to fit the
@@ -571,7 +583,8 @@ names are unique across folders, and `Basic Shapes` is reserved for the
 built-in fallback.
 
 Expand **Test keyboard** in the preset editor to hear the current patch through
-your browser. It starts hidden. Hold the onscreen keys or their labeled typing
+your browser. It starts hidden and opens a compact piano layout with raised
+black keys and typing-key labels. Hold the onscreen keys or their labeled typing
 keys; use Octave, Mod, Preview Vol, or Chord to test the sound. Stop, hiding the
 keyboard, and leaving the browser window stop playback. Editing text does not
 trigger notes. Typing and onscreen notes use 12 EDO independently of the device's

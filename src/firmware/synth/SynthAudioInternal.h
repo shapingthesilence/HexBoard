@@ -339,6 +339,13 @@ void RAM_FUNC(smoothUint16Toward)(uint16_t& current, uint16_t target, uint8_t sh
 void RAM_FUNC(smoothUint16Toward)(uint16_t& current, uint16_t target, uint8_t shift, uint8_t elapsedTicks);
 uint32_t RAM_FUNC(ticksFromMicros)(uint32_t micros);
 uint32_t RAM_FUNC(envelopeAudioLevel)(uint32_t level);
+struct VolumeEnvelopeSettings {
+  EnvelopeParams params;
+  uint32_t releaseReciprocalQ32 = 0;
+  bool modulatedRelease = false;
+};
+extern std::array<EnvelopeParams, POLYPHONY_LIMIT> voiceVolumeEnvelopeParams;
+const VolumeEnvelopeSettings& RAM_FUNC(pendingVolumeEnvelopeSettings)();
 uint16_t RAM_FUNC(releaseIncrementForLevel)(uint32_t level);
 uint16_t RAM_FUNC(effectReleaseIncrementForLevel)(uint8_t envelopeIndex, uint32_t level);
 void RAM_FUNC(resetEnvelopeState)(EnvelopeState& env);
@@ -349,7 +356,7 @@ bool RAM_FUNC(consumeVoiceFreed)(uint8_t channel);
 void RAM_FUNC(clearPendingVoiceFreed)(uint8_t channel);
 void RAM_FUNC(advanceEnvelopeFromAttackPeak)(const EnvelopeParams& params, EnvelopeState& env);
 void RAM_FUNC(updateEnvelopeHoldStage)(const EnvelopeParams& params, EnvelopeState& env);
-void RAM_FUNC(updateAmpEnvelopeState)(EnvelopeState& env, uint8_t elapsedTicks);
+void RAM_FUNC(updateAmpEnvelopeState)(EnvelopeState& env, const EnvelopeParams& params, uint8_t elapsedTicks);
 void RAM_FUNC(resetCachedEffectEnvelopeModValue)(uint8_t envelopeIndex, uint8_t voiceIndex);
 void RAM_FUNC(startEffectEnvelopeAttack)(uint8_t envelopeIndex, EnvelopeState& env);
 void RAM_FUNC(startEffectEnvelopeRelease)(uint8_t envelopeIndex, EnvelopeState& env);

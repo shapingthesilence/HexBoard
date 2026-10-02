@@ -25,6 +25,8 @@ std::array<uint8_t, POLYPHONY_LIMIT> releaseRetryCountdown = {};
 
 byte arpeggiatingNow = UNUSED_NOTE;
 uint64_t arpeggiateTime = 0;
+static bool arpGateOpen = false;
+static bool monoHandoffPortamento = false;
 uint64_t arpeggiateLength = 62500;
 std::array<byte, BTN_COUNT> arpeggiatorHeldNotes = {};
 uint8_t arpeggiatorHeldNoteCount = 0;
@@ -117,10 +119,12 @@ void RAM_FUNC(startSynthVoiceAttackInRender)(uint8_t channelIndex,
                                              bool& forceVoiceRenderCacheRefresh) {
   resetSynthVoiceRenderCache(channelIndex);
   forceVoiceRenderCacheRefresh = true;
+  voiceVolumeEnvelopeParams[channelIndex] = pendingVolumeEnvelopeSettings().params;
+  const EnvelopeParams& params = voiceVolumeEnvelopeParams[channelIndex];
   env.releaseIncrement = 0;
   env.holdTicksRemaining = 0;
-  if (envelopeParams.attackTicks == 0) {
-    advanceEnvelopeFromAttackPeak(envelopeParams, env);
+  if (params.attackTicks == 0) {
+    advanceEnvelopeFromAttackPeak(params, env);
   } else {
     env.stage = EnvelopeStage::Attack;
     env.level = 0;
@@ -165,7 +169,8 @@ void RAM_FUNC(finishSynthStealFade)(uint8_t channelIndex,
   }
   synthChannelOwners[channelIndex].store(owner, std::memory_order_relaxed);
   synthVoiceReleaseTimes[channelIndex] = 0;
-  setSynthFreq(h[owner].frequency, static_cast<byte>(channelIndex + 1), true);
+  const bool glide = channelIndex == 0 && isMonoPlaybackMode(playbackMode) && monoHandoffPortamento;
+  setSynthFreq(h[owner].frequency, static_cast<byte>(channelIndex + 1), !glide, glide);
   startSynthVoiceAttackInRender(channelIndex, env, forceVoiceRenderCacheRefresh);
 }
 
@@ -333,7 +338,7 @@ void RAM_FUNC(setArpeggiatorCursorAfter)(byte note) {
   buildArpeggiatorSequence();
   for (uint16_t i = 0; i < arpeggiatorSequenceLength; ++i) {
     if (arpeggiatorSequence[i] == note) {
-      arpeggiatorSequenceCursor = static_cast<uint16_t>((i + 1) % arpeggiatorSequenceLength);
+      arpeggiatorSequenceCursor = static_cast<uint16_t>(i + 1);
       return;
     }
   }
@@ -357,7 +362,7 @@ byte RAM_FUNC(findNextArpeggiatedNote)() {
     return UNUSED_NOTE;
   }
   byte nextNote = arpeggiatorSequence[arpeggiatorSequenceCursor];
-  arpeggiatorSequenceCursor = static_cast<uint16_t>((arpeggiatorSequenceCursor + 1) % arpeggiatorSequenceLength);
+  arpeggiatorSequenceCursor = static_cast<uint16_t>(arpeggiatorSequenceCursor + 1);
   return nextNote;
 }
 
@@ -365,7 +370,8 @@ void RAM_FUNC(replaceMonoSynthWith)(byte x, bool retriggerEnvelope = true, bool 
   if (arpeggiatingNow == x && !forceRetrigger) {
     return;
   }
-  bool hadActiveNote = arpeggiatingNow != UNUSED_NOTE && channelInUse[0].load(std::memory_order_relaxed);
+  const bool voiceInUse = channelInUse[0].load(std::memory_order_relaxed);
+  const bool hadActiveNote = arpeggiatingNow != UNUSED_NOTE && voiceInUse;
   if (arpeggiatingNow != UNUSED_NOTE && arpeggiatingNow < BTN_COUNT) {
     h[arpeggiatingNow].synthCh = 0;
   }
@@ -373,6 +379,16 @@ void RAM_FUNC(replaceMonoSynthWith)(byte x, bool retriggerEnvelope = true, bool 
   if (arpeggiatingNow != UNUSED_NOTE) {
     h[arpeggiatingNow].synthCh = 1;
     synthChannelOwners[0].store(static_cast<int16_t>(arpeggiatingNow), std::memory_order_relaxed);
+    if (retriggerEnvelope && voiceInUse) {
+      monoHandoffPortamento = allowPortamento && synthPortamentoTicks > 0;
+      pendingSynthStealOwners[0] = static_cast<int16_t>(x);
+      voiceGenerations[0].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
+      releaseRetries[0] = 0;
+      releaseRetryCountdown[0] = 0;
+      clearPendingVoiceFreed(0);
+      publishEnvelopeCommand(0, EnvelopeCommand::StartStealFade);
+      return;
+    }
     if (retriggerEnvelope || !hadActiveNote) {
       voiceGenerations[0].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
       beginEnvelopeAttack(0);
@@ -409,6 +425,7 @@ void RAM_FUNC(resetSynthFreqs)() {
     h[i].synthCh = 0;
   }
   arpeggiatingNow = UNUSED_NOTE;
+  arpGateOpen = false;
   clearArpeggiatorHeldNotes();
   resetSynthPreviewSlots();
   if (isPolyPlaybackMode(playbackMode)) {
@@ -450,7 +467,7 @@ bool RAM_FUNC(startSynthPreviewNote)(int16_t pitchSteps,
   h[slot].jiFrequencyMultiplier = 1.0f;
 
   trySynthNoteOn(static_cast<byte>(slot));
-  if (h[slot].synthCh == 0) {
+  if (h[slot].synthCh == 0 && !(isArpPlaybackMode(playbackMode) && arpeggiatorHeldIndex(static_cast<byte>(slot)) >= 0)) {
     clearSynthPreviewSlot(slot);
     return false;
   }
@@ -675,72 +692,105 @@ bool RAM_FUNC(stealOldestSynthVoice)(byte newNote, byte& channelOut, int16_t& pr
   return true;
 }
 
-void RAM_FUNC(trySynthNoteOn)(byte x) {
-  if (playbackMode == SYNTH_OFF) {
-    return;
-  }
-  if (isPolyPlaybackMode(playbackMode)) {
-    processEnvelopeReleases();
-    if (synthChQueue.empty()) {
-      byte stolenChannel = 0;
-      int16_t previousOwner = NO_SYNTH_OWNER;
-      if (!stealOldestSynthVoice(x, stolenChannel, previousOwner)) {
-        sendToLog("synth channels all firing, so did not add one");
-        return;
-      }
-      uint8_t stolenIndex = stolenChannel - 1;
-      if (previousOwner >= 0 && previousOwner < BTN_COUNT) {
-        if (h[previousOwner].synthCh == stolenChannel) {
-          h[previousOwner].synthCh = 0;
-        }
-      }
-      h[x].synthCh = stolenChannel;
-      synthChannelOwners[stolenIndex].store(static_cast<int16_t>(x), std::memory_order_relaxed);
-      voiceGenerations[stolenIndex].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
-      synthVoiceStartTimes[stolenIndex] = h[x].timePressed ? h[x].timePressed : runTime;
-      synthVoiceReleaseTimes[stolenIndex] = 0;
-      pendingSynthStealOwners[stolenIndex] = static_cast<int16_t>(x);
-      synthStealFadeSamplesRemaining[stolenIndex] = 0;
-      channelInUse[stolenIndex].store(true, std::memory_order_relaxed);
-      releaseRetries[stolenIndex] = 0;
-      releaseRetryCountdown[stolenIndex] = 0;
-      clearPendingVoiceFreed(stolenIndex);
-      publishEnvelopeCommand(stolenIndex, EnvelopeCommand::StartStealFade);
-      sendToLog("stole synth channel " + std::to_string(stolenChannel));
+void RAM_FUNC(startPolySynthNote)(byte x) {
+  processEnvelopeReleases();
+  if (synthChQueue.empty()) {
+    byte stolenChannel = 0;
+    int16_t previousOwner = NO_SYNTH_OWNER;
+    if (!stealOldestSynthVoice(x, stolenChannel, previousOwner)) {
+      sendToLog("synth channels all firing, so did not add one");
       return;
     }
-    byte channel = synthChQueue.front();
-    synthChQueue.pop();
-    h[x].synthCh = channel;
-    synthChannelOwners[channel - 1].store(static_cast<int16_t>(x), std::memory_order_relaxed);
-    voiceGenerations[channel - 1].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
-    synthVoiceStartTimes[channel - 1] = h[x].timePressed ? h[x].timePressed : runTime;
-    synthVoiceReleaseTimes[channel - 1] = 0;
-    clearSynthStealFade(channel - 1);
-    beginEnvelopeAttack(channel - 1);
-    setSynthFreq(h[x].frequency, channel, true);
-    sendToLog("popped " + std::to_string(channel) + " off the synth queue");
+    uint8_t stolenIndex = stolenChannel - 1;
+    if (previousOwner >= 0 && previousOwner < BTN_COUNT) {
+      if (h[previousOwner].synthCh == stolenChannel) {
+        h[previousOwner].synthCh = 0;
+      }
+    }
+    h[x].synthCh = stolenChannel;
+    synthChannelOwners[stolenIndex].store(static_cast<int16_t>(x), std::memory_order_relaxed);
+    voiceGenerations[stolenIndex].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
+    synthVoiceStartTimes[stolenIndex] = h[x].timePressed ? h[x].timePressed : runTime;
+    synthVoiceReleaseTimes[stolenIndex] = 0;
+    pendingSynthStealOwners[stolenIndex] = static_cast<int16_t>(x);
+    synthStealFadeSamplesRemaining[stolenIndex] = 0;
+    channelInUse[stolenIndex].store(true, std::memory_order_relaxed);
+    releaseRetries[stolenIndex] = 0;
+    releaseRetryCountdown[stolenIndex] = 0;
+    clearPendingVoiceFreed(stolenIndex);
+    publishEnvelopeCommand(stolenIndex, EnvelopeCommand::StartStealFade);
+    sendToLog("stole synth channel " + std::to_string(stolenChannel));
+    return;
+  }
+  byte channel = synthChQueue.front();
+  synthChQueue.pop();
+  h[x].synthCh = channel;
+  synthChannelOwners[channel - 1].store(static_cast<int16_t>(x), std::memory_order_relaxed);
+  voiceGenerations[channel - 1].store(nextVoiceGeneration.fetch_add(1, std::memory_order_relaxed), std::memory_order_relaxed);
+  synthVoiceStartTimes[channel - 1] = h[x].timePressed ? h[x].timePressed : runTime;
+  synthVoiceReleaseTimes[channel - 1] = 0;
+  clearSynthStealFade(channel - 1);
+  beginEnvelopeAttack(channel - 1);
+  setSynthFreq(h[x].frequency, channel, true);
+  sendToLog("popped " + std::to_string(channel) + " off the synth queue");
+}
+
+void RAM_FUNC(closeArpeggiatorGate)() {
+  if (!arpGateOpen) return;
+  arpGateOpen = false;
+  if (playbackMode == SYNTH_POLY_ARPEGGIO) {
+    if (arpeggiatingNow < BTN_COUNT && h[arpeggiatingNow].synthCh) {
+      beginEnvelopeRelease(h[arpeggiatingNow].synthCh - 1);
+      h[arpeggiatingNow].synthCh = 0;
+    }
+    arpeggiatingNow = UNUSED_NOTE;
+  } else {
+    replaceMonoSynthWith(UNUSED_NOTE);
+  }
+}
+
+void RAM_FUNC(startArpeggiatorStep)(byte x) {
+  closeArpeggiatorGate();
+  arpeggiateTime = runTime;
+  if (x == UNUSED_NOTE) return;
+  if (playbackMode == SYNTH_POLY_ARPEGGIO) {
+    startPolySynthNote(x);
+    arpeggiatingNow = x;
+  } else {
+    replaceMonoSynthWith(x, true, false, true);
+  }
+  arpGateOpen = true;
+}
+
+void RAM_FUNC(trySynthNoteOn)(byte x) {
+  if (playbackMode == SYNTH_OFF) return;
+  if (isArpPlaybackMode(playbackMode)) {
+    if (!h[x].MIDIch) return;
+    const bool first = arpeggiatorHeldNoteCount == 0;
+    registerArpeggiatorNoteOn(x);
+    if (first) {
+      startArpeggiatorStep(x);
+      setArpeggiatorCursorAfter(x);
+    }
+  } else if (isPolyPlaybackMode(playbackMode)) {
+    startPolySynthNote(x);
   } else if (h[x].MIDIch) {
     registerArpeggiatorNoteOn(x);
-    if (playbackMode == SYNTH_ARPEGGIO) {
-      replaceMonoSynthWith(x, true, false, true);
-      setArpeggiatorCursorAfter(x);
-    } else if (playbackMode == SYNTH_MONO_LEGATO) {
-      replaceMonoSynthWith(x, false, true);
-    } else {
-      replaceMonoSynthWith(x, true, true);
-    }
+    replaceMonoSynthWith(x, playbackMode != SYNTH_MONO_LEGATO, true);
   }
 }
 
 void RAM_FUNC(trySynthNoteOff)(byte x) {
+  if (isArpPlaybackMode(playbackMode)) {
+    registerArpeggiatorNoteOff(x);
+    if (arpeggiatingNow == x || arpeggiatorHeldNoteCount == 0) closeArpeggiatorGate();
+    return;
+  }
   if (playbackMode && !isPolyPlaybackMode(playbackMode)) {
     registerArpeggiatorNoteOff(x);
     if (arpeggiatingNow == x) {
-      byte nextNote = (playbackMode == SYNTH_ARPEGGIO) ? findNextArpeggiatedNote() : findNewestHeldNote();
-      if (playbackMode == SYNTH_ARPEGGIO) {
-        replaceMonoSynthWith(nextNote, true, false, true);
-      } else if (playbackMode == SYNTH_MONO_LEGATO) {
+      byte nextNote = findNewestHeldNote();
+      if (playbackMode == SYNTH_MONO_LEGATO) {
         replaceMonoSynthWith(nextNote, false, true);
       } else {
         replaceMonoSynthWith(nextNote, true, true);
@@ -807,10 +857,12 @@ void RAM_FUNC(arpeggiate)() {
   if (delegatedControlState.active) {
     return;
   }
-  if (playbackMode == SYNTH_ARPEGGIO) {
-    if (runTime - arpeggiateTime > arpeggiateLength) {
-      arpeggiateTime = runTime;
-      replaceMonoSynthWith(findNextArpeggiatedNote(), true, false, true);
+  if (isArpPlaybackMode(playbackMode)) {
+    const uint64_t elapsed = runTime - arpeggiateTime;
+    const uint64_t gateLength = (arpeggiateLength * arpeggiatorNoteLength) / 100;
+    if (arpGateOpen && elapsed >= gateLength) closeArpeggiatorGate();
+    if (arpeggiatorHeldNoteCount && elapsed >= arpeggiateLength) {
+      startArpeggiatorStep(findNextArpeggiatedNote());
     }
   }
 }

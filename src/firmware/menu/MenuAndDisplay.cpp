@@ -1037,7 +1037,8 @@ SelectOptionByte optionBytePlayback[] = {
   { "Off", SYNTH_OFF },
   { "MonoRtg", SYNTH_MONO_RETRIGGER },
   { "MonoLeg", SYNTH_MONO_LEGATO },
-  { "Arp'gio", SYNTH_ARPEGGIO },
+  { "MonoArp", SYNTH_ARPEGGIO },
+  { "PolyArp", SYNTH_POLY_ARPEGGIO },
   { "Poly", SYNTH_POLY }
 };
 GEMSelect selectPlayback(sizeof(optionBytePlayback) / sizeof(SelectOptionByte), optionBytePlayback);
@@ -1423,6 +1424,7 @@ void previewTranspose(GEMPreviewCallbackData previewData) {
   transposeSteps = previewData.previewValInt;
   current.transpose = transposeSteps;
   assignPitches();
+  setLEDcolorCodes();
   updateSynthWithNewFreqs();
 }
 
@@ -1837,6 +1839,7 @@ void previewSynthDrive(GEMPreviewCallbackData previewData) {
 }
 
 SelectOptionByte optionByteSynthModTarget[] = {
+  { "Off", SYNTH_MOD_TARGET_OFF },
   { "Vibrato", SYNTH_MOD_TARGET_VIBRATO },
   { "Pitch", SYNTH_MOD_TARGET_PITCH },
   { "WT Pos", SYNTH_MOD_TARGET_WAVETABLE_POSITION },
@@ -1845,13 +1848,28 @@ SelectOptionByte optionByteSynthModTarget[] = {
   { "PolyWrp", SYNTH_MOD_TARGET_POLY_WARP }
 };
 GEMSelect selectSynthModTarget(sizeof(optionByteSynthModTarget) / sizeof(SelectOptionByte), optionByteSynthModTarget);
+SelectOptionByte optionByteSynthWheelTarget[] = {
+  { "Off", SYNTH_MOD_TARGET_OFF },
+  { "Vibrato", SYNTH_MOD_TARGET_VIBRATO },
+  { "Pitch", SYNTH_MOD_TARGET_PITCH },
+  { "WT Pos", SYNTH_MOD_TARGET_WAVETABLE_POSITION },
+  { "FoldWrp", SYNTH_MOD_TARGET_FOLD_WARP },
+  { "DutyWrp", SYNTH_MOD_TARGET_DUTY_WARP },
+  { "PolyWrp", SYNTH_MOD_TARGET_POLY_WARP },
+  { "Amp Atk", SYNTH_MOD_TARGET_AMP_ATTACK },
+  { "Amp Hold", SYNTH_MOD_TARGET_AMP_HOLD },
+  { "Amp Dec", SYNTH_MOD_TARGET_AMP_DECAY },
+  { "Amp Sus", SYNTH_MOD_TARGET_AMP_SUSTAIN },
+  { "Amp Rel", SYNTH_MOD_TARGET_AMP_RELEASE }
+};
+GEMSelect selectSynthWheelTarget(sizeof(optionByteSynthWheelTarget) / sizeof(SelectOptionByte), optionByteSynthWheelTarget);
 PersistentCallbackInfo callbackInfoSynthModTarget = {
   static_cast<uint8_t>(SettingKey::SynthModTarget),
   reinterpret_cast<void*>(&synthModTarget),
   nullptr,
   updateSynthModulationParams
 };
-GEMItem menuItemSynthModTarget("Wheel FX", synthModTarget, selectSynthModTarget, universalSaveCallback,
+GEMItem menuItemSynthModTarget("Wheel FX", synthModTarget, selectSynthWheelTarget, universalSaveCallback,
                                reinterpret_cast<void*>(&callbackInfoSynthModTarget));
 void previewSynthModTarget(GEMPreviewCallbackData previewData) {
   synthModTarget = previewData.previewValByte;
@@ -2075,6 +2093,17 @@ void previewArpSpeed(GEMPreviewCallbackData previewData) {
   updateArpeggiatorTiming();
 }
 
+GEMSpinner spinnerArpNoteLength(GEMSpinnerBoundariesByte{1, 1, 100});
+PersistentCallbackInfo callbackInfoArpNoteLength = {
+  static_cast<uint8_t>(SettingKey::ArpeggiatorNoteLength),
+  reinterpret_cast<void*>(&arpeggiatorNoteLength), nullptr, nullptr
+};
+GEMItem menuItemArpNoteLength("Arp Length %", arpeggiatorNoteLength, spinnerArpNoteLength,
+  universalSaveCallback, reinterpret_cast<void*>(&callbackInfoArpNoteLength));
+void previewArpNoteLength(GEMPreviewCallbackData previewData) {
+  arpeggiatorNoteLength = previewData.previewValByte;
+}
+
 SelectOptionByte optionByteArpDirection[] = {
   { "Up", ARP_DIRECTION_UP },
   { "Down", ARP_DIRECTION_DOWN },
@@ -2100,6 +2129,7 @@ void previewArpDirection(GEMPreviewCallbackData previewData) {
 
 SelectOptionByte optionByteEnvelopeTimes[] = {
   { "0 ms", 0 },
+  { "3 ms", 20 },
   { "5 ms", 1 },
   { "10 ms", 2 },
   { "15 ms", 3 },
@@ -2133,7 +2163,14 @@ GEMSelect selectEnvelopeAttack(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOp
 GEMSelect selectEnvelopeHold(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
 GEMSelect selectEnvelopeDecay(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
 GEMSelect selectEnvelopeRelease(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
-GEMSelect selectPortamentoTime(sizeof(optionByteEnvelopeTimes) / sizeof(SelectOptionByte), optionByteEnvelopeTimes);
+SelectOptionByte optionBytePortamentoTimes[20];
+struct InitializePortamentoTimes {
+  InitializePortamentoTimes() {
+    optionBytePortamentoTimes[0] = optionByteEnvelopeTimes[0];
+    for (uint8_t i = 1; i < 20; ++i) optionBytePortamentoTimes[i] = optionByteEnvelopeTimes[i + 1];
+  }
+} initializePortamentoTimes;
+GEMSelect selectPortamentoTime(20, optionBytePortamentoTimes);
 GEMSelect selectEnvelopeSustain(sizeof(optionByteSustain) / sizeof(SelectOptionByte), optionByteSustain);
 
 PersistentCallbackInfo callbackInfoPortamentoTime = {
@@ -2473,7 +2510,8 @@ void previewPBSpeed(GEMPreviewCallbackData previewData) {
 
 void updateSynthMenuVisibility() {
   menuItemPortamentoTime.hide(!isMonoPlaybackMode(playbackMode));
-  bool arpSelected = playbackMode == SYNTH_ARPEGGIO;
+  bool arpSelected = isArpPlaybackMode(playbackMode);
+  menuItemArpNoteLength.hide(!arpSelected);
   menuItemArpSpeed.hide(!arpSelected);
   menuItemArpDirection.hide(!arpSelected);
 }
@@ -3096,6 +3134,7 @@ void changeTranspose() {  // when you change the transpose via the menu
   // 2) Apply it:
   current.transpose = transposeSteps;
   assignPitches();
+  setLEDcolorCodes();
   updateSynthWithNewFreqs();
 }
 
@@ -3179,6 +3218,7 @@ void setupSynthMenuPage() {
   // menuItemAudioD added here for hardware V1.2
   addPreviewMenuItem(menuPageSynth, menuItemArpSpeed, previewArpSpeed);
   addPreviewMenuItem(menuPageSynth, menuItemArpDirection, previewArpDirection);
+  addPreviewMenuItem(menuPageSynth, menuItemArpNoteLength, previewArpNoteLength);
   addPreviewMenuItem(menuPageSynth, menuItemPortamentoTime, previewPortamentoTime);
   updateCurrentSynthWavetableMenuLabel();
   menuPageSynth.addMenuItem(menuGotoSynthWavetableLoad);

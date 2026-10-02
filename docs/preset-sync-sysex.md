@@ -378,7 +378,7 @@ delete user object, factory geometry listing, synth wavetable objects, live
 synth parameter and wavetable selection, cents-table runtime tuning, and atomic
 geometry bundles),
 max raw object bytes `262144`, settings schema `29`, synth
-preset schema `7`, `9` profiles, `128` synth preset entries, `64` slots for
+preset schema `9`, `9` profiles, `128` synth preset entries, `64` slots for
 each advertised user geometry count, hardware version `2`:
 
 Hosts should decode these fields rather than compare a fixed response frame;
@@ -1127,19 +1127,26 @@ SynthLfoTarget
 SynthLfoAmount
 SynthLfoWave
 SynthLfoSpeed
+ArpeggiatorNoteLength
 ```
 
 These are sound-focused settings only. A synth preset should not imply the
 current profile slot, tuning, layout, MIDI channel, LED animation, or delegated
 control state.
 
-Schema `7` includes wavetable position and name plus compatibility-folder fields, mono
+Schema `9` includes wavetable position and name plus compatibility-folder fields, mono
 portamento, arpeggiator direction, LFO controls, and the `DutyWrp` and `PolyWrp`
-modulation targets. Target value `0` is `FoldWrp`.
+modulation targets. Target value `0` is `FoldWrp`; `6` is `Off`.
+Wheel-only target values `7..11` select volume-envelope Attack, Hold, Decay,
+Sustain, and Release respectively. FX envelopes and LFO retain target values
+`0..6`. Envelope time index `20` means `3 ms`; indices `0..19` retain their
+existing times. The UI orders index `20` between indices `0` and `1`.
+`PlaybackMode` value `6` is Poly Arpeggio; retired value `5` still normalizes to
+Poly. `ArpeggiatorNoteLength` (setting key `94`) is a percentage in `1..100`,
+defaulting to `100` when absent in older preset objects.
 
 `SynthLfoWave` values are `0` `Sine`, `1` `Triangle`, `2` `Saw`, `3` `Square`,
-`4` `Noise`, and `5` `Smooth noise`. The noise waves reuse the existing schema
-`7` value byte; no synth preset schema bump is required for the expanded enum.
+`4` `Noise`, and `5` `Smooth noise`. The noise waves use the same value byte as the other LFO shapes.
 `SynthVibratoSpeed` values `0..11` remain `1 Hz` through `12 Hz` sine vibrato;
 value `12` selects `Noise`, a smooth-noise vibrato source running at the same
 `12 Hz` phase rate, without changing the synth value list.

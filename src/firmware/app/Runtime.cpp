@@ -133,6 +133,7 @@ void hexboardLoop() {        // run on first core
   bool presetSyncOwnsUi = servicePresetSyncTransfer();
   bool missingWavetableNoticeOwnsUi =
     !presetSyncOwnsUi && serviceMissingWavetableNotice();
+  refreshVolumeEnvelopeModulation();
   processEnvelopeReleases();
   retryPendingReleases();
   if (!presetSyncOwnsUi && !missingWavetableNoticeOwnsUi) {

@@ -38,7 +38,7 @@ uint8_t RAM_FUNC(smoothedSynthModValue)(uint8_t elapsedTicks = 1) {
 }
 
 void updateSynthModulationParams() {
-  if (synthModTarget > SYNTH_MOD_TARGET_MAX) {
+  if (synthModTarget > SYNTH_WHEEL_TARGET_MAX) {
     synthModTarget = SYNTH_MOD_TARGET_FOLD_WARP;
   }
   if (synthModAmount > SYNTH_MOD_AMOUNT_FULL) {

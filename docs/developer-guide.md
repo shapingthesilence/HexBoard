@@ -239,14 +239,18 @@ non-synth setting bytes, stable tuning/layout/scale references, compact synth
 preset-or-draft references, and payload CRC32. Synth values and wavetable
 references come from the referenced named preset or hidden profile draft.
 
-`CURRENT_SETTINGS_VERSION` is 33. `SettingsMigration.h` defines frozen profile
-widths for supported versions: 57 non-synth bytes for version 32 and 60 for 33.
+`CURRENT_SETTINGS_VERSION` is 34. `SettingsMigration.h` defines frozen profile
+widths for supported versions: 57 non-synth bytes for version 32 and 60 for versions 33 and 34.
 The loader checks the exact size and original CRC before expanding each profile
 with current factory defaults. Geometry and synth references retain their layout.
 Migration happens in RAM, marks settings dirty, and is persisted by normal
 saving (including auto-save when enabled), never by a boot-time rewrite.
 Unsupported versions, invalid or missing settings use hardware-aware RAM defaults.
-`tests/settings_migration_test.cpp` checks all nine profiles and defaulted fields;
+`SynthPresetSlot` records use file version 12 and 213-byte payloads. Version 11
+records and profile drafts load in memory with their unchanged 212-byte prefix
+and the new arp note length initialized from factory defaults. No boot rewrite
+is needed. `tests/settings_migration_test.cpp` checks both preset versions,
+all nine profiles, and defaulted fields;
 `python3 tests/test_led_settings_factory.py` checks factory encoding and validation.
 Future schema changes must retain explicit, tested conversions from supported
 versions; reordered keys or changed byte meanings require a conversion, not
@@ -393,7 +397,11 @@ Protocol details live in `docs/delegated-control.md` and
 ## Synth
 
 The synth is independent of external MIDI. Playback modes are Off, Mono
-Retrigger, Mono Legato, Arpeggio, and Poly.
+Retrigger, Mono Legato, Arpeggio, Poly Arpeggio, and Poly.
+Arp gates last 1–100% of each step. Poly Arpeggio uses the bounded eight-voice
+allocator so released notes can overlap. Mono retriggers and mono arp
+handoffs reuse the 64-sample voice-steal fade before resetting pitch/envelopes.
+Silent envelopes complete pending handoffs without publishing a stale freed event.
 
 Core 1 renders two 64-sample DMA buffers. A PWM timer slice paces output at about
 40.7 kHz for the 250 MHz target. Hardware V1.2 selects jack or piezo; V1.1 uses
@@ -401,7 +409,14 @@ piezo.
 
 Active wavetables use a `16 × 512` base table and fixed mip levels. Modulation
 and envelopes update on a 32-sample control quantum. Per-sample rendering uses
-cached ramps and RAM-resident drive lookup tables.
+cached ramps and RAM-resident drive lookup tables. Wheel-only volume-envelope
+targets are computed on core 0 at most every 50 ms, only when the wheel target,
+scaled amount, or base settings change. Core 1 captures AHDS parameters at
+attack and a release increment at note-off; running envelopes retain their
+captured values. Release increments and lookup tables retain 16-bit storage.
+The added 3 ms option approximates the shortest full-level release supported by
+that increment range (128 samples, about 3.15 ms at the 250 MHz target).
+Timing remains quantized to the existing control quantum.
 
 User-facing amplitude controls use a blend of 25% linear and 75% square law
 while their stored and MIDI-facing values remain linear. The factored

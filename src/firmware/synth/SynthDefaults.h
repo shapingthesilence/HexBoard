@@ -33,6 +33,11 @@ constexpr byte SYNTH_MONO_RETRIGGER = 1;
 constexpr byte SYNTH_ARPEGGIO = 2;
 constexpr byte SYNTH_POLY = 3;
 constexpr byte SYNTH_MONO_LEGATO = 4;
+constexpr byte SYNTH_POLY_ARPEGGIO = 6;  // 5 remains the retired poly mode.
+
+inline bool RAM_FUNC(isArpPlaybackMode)(byte mode) {
+  return mode == SYNTH_ARPEGGIO || mode == SYNTH_POLY_ARPEGGIO;
+}
 
 // Audio polyphony is deliberately lower than the MIDI/MPE channel count:
 // higher values reduce PWM resolution and make the ISR harder to keep bounded.
@@ -43,7 +48,7 @@ inline bool RAM_FUNC(isMonoPlaybackMode)(byte mode) {
 }
 
 inline bool RAM_FUNC(isPolyPlaybackMode)(byte mode) {
-  return mode == SYNTH_POLY;
+  return mode == SYNTH_POLY || mode == SYNTH_POLY_ARPEGGIO;
 }
 
 inline bool RAM_FUNC(isValidPlaybackMode)(byte mode) {
@@ -51,7 +56,7 @@ inline bool RAM_FUNC(isValidPlaybackMode)(byte mode) {
 }
 
 inline uint8_t RAM_FUNC(synthPlaybackVoiceLimit)(byte mode) {
-  if (mode == SYNTH_POLY) {
+  if (isPolyPlaybackMode(mode)) {
     return POLYPHONY_LIMIT;
   }
   if (mode == SYNTH_OFF) {
@@ -136,7 +141,14 @@ constexpr byte SYNTH_MOD_TARGET_PITCH = 2;
 constexpr byte SYNTH_MOD_TARGET_WAVETABLE_POSITION = 3;
 constexpr byte SYNTH_MOD_TARGET_DUTY_WARP = 4;
 constexpr byte SYNTH_MOD_TARGET_POLY_WARP = 5;
-constexpr byte SYNTH_MOD_TARGET_MAX = SYNTH_MOD_TARGET_POLY_WARP;
+constexpr byte SYNTH_MOD_TARGET_OFF = 6;
+constexpr byte SYNTH_MOD_TARGET_MAX = SYNTH_MOD_TARGET_OFF;
+constexpr byte SYNTH_MOD_TARGET_AMP_ATTACK = 7;
+constexpr byte SYNTH_MOD_TARGET_AMP_HOLD = 8;
+constexpr byte SYNTH_MOD_TARGET_AMP_DECAY = 9;
+constexpr byte SYNTH_MOD_TARGET_AMP_SUSTAIN = 10;
+constexpr byte SYNTH_MOD_TARGET_AMP_RELEASE = 11;
+constexpr byte SYNTH_WHEEL_TARGET_MAX = SYNTH_MOD_TARGET_AMP_RELEASE;
 constexpr uint8_t SYNTH_MOD_AMOUNT_FULL = 127;
 
 constexpr uint8_t SYNTH_FX_AMOUNT_OFF = 127;

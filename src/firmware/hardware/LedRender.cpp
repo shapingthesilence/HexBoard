@@ -466,7 +466,7 @@ void setLEDcolorCodes() {
     if (!(h[i].isCmd)) {
       LedHsv setColor = { HUE_NONE, SAT_BW, VALUE_BLACK };
       bool userGeometryColorApplied = false;
-      const int colorStepsFromOrigin = h[i].stepsFromC + keyCenteredColorOffset;
+      const int colorStepsFromOrigin = h[i].stepsFromC + current.transpose + keyCenteredColorOffset;
       uint16_t paletteIndex = positiveMod(colorStepsFromOrigin, cycleLength);
       if (userGeometryRuntime.active && userGeometryRuntime.paletteActive && colorMode == CUSTOM_COLOR_MODE) {
         setColor = userGeometryDegreeColor(paletteIndex, cycleLength);

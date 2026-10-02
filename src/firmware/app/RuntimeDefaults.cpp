@@ -43,6 +43,7 @@ byte arpeggiatorDivision = 32;  // denominator of whole-note duration (1/32 by d
 byte synthBPM = 120;
 
 byte arpeggiatorDirection = ARP_DIRECTION_UP;
+byte arpeggiatorNoteLength = 100;
 
 const MetronomeSignature metronomeSignatures[METRONOME_SIGNATURE_COUNT] = {
   { 4, 4 },

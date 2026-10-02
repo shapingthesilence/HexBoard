@@ -1040,6 +1040,9 @@ void applySynthSettingRuntimeOnly(SettingKey key, uint8_t value) {
       synthPortamentoTimeIndex = value;
       updateSynthPortamentoSettings();
       break;
+    case SettingKey::ArpeggiatorNoteLength:
+      arpeggiatorNoteLength = constrain(value, 1, 100);
+      break;
     case SettingKey::ArpeggiatorDirection:
       arpeggiatorDirection = value;
       updateArpeggiatorDirection();

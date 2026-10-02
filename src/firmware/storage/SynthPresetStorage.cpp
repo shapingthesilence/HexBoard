@@ -274,7 +274,8 @@ void normalizeSynthPresetValues(SynthPresetSlot& preset) {
   for (size_t i = 0; i < synthPresetKeys.size(); ++i) {
     if (synthPresetKeys[i] == SettingKey::PlaybackMode) {
       preset.values[i] = normalizeSynthPlaybackMode(preset.values[i]);
-      return;
+    } else if (synthPresetKeys[i] == SettingKey::ArpeggiatorNoteLength) {
+      preset.values[i] = constrain(preset.values[i], 1, 100);
     }
   }
 }
@@ -289,6 +290,7 @@ uint8_t currentSynthPresetValue(SettingKey key) {
     case SettingKey::SynthVibratoSpeed: return synthVibratoSpeed;
     case SettingKey::ArpeggiatorDivision: return arpeggiatorDivision;
     case SettingKey::ArpeggiatorDirection: return arpeggiatorDirection;
+    case SettingKey::ArpeggiatorNoteLength: return arpeggiatorNoteLength;
     case SettingKey::SynthBPM: return synthBPM;
     case SettingKey::SynthPortamentoTimeIndex: return synthPortamentoTimeIndex;
     case SettingKey::SynthWavetablePosition: return synthWavetablePosition;
@@ -493,6 +495,21 @@ bool synthPresetHeaderBaseValid(const SynthPresetFileHeaderBase& header) {
          && header.version == SYNTH_PRESET_FILE_VERSION;
 }
 
+bool readSynthPresetPayload(File& file, SynthPresetSlot& preset) {
+  SynthPresetFileHeaderBase header = {};
+  if (file.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) != sizeof(header)
+      || strncmp(header.magic, "HSP", 3) != 0) return false;
+  const size_t width = persistedSynthPresetWidth(header.version);
+  if (width == 0 || width > sizeof(preset)) return false;
+  if (file.size() != sizeof(header) + width
+      || file.read(reinterpret_cast<uint8_t*>(&preset), width) != width
+      || !preset.valid
+      || header.crc32 != crc32(reinterpret_cast<const uint8_t*>(&preset), width)) return false;
+  return expandPersistedSynthPreset(reinterpret_cast<uint8_t*>(&preset), sizeof(preset),
+      reinterpret_cast<const uint8_t*>(&preset), width,
+      factoryDefaults[static_cast<uint8_t>(SettingKey::ArpeggiatorNoteLength)]);
+}
+
 bool pathHasSynthPresetExtension(const char* path) {
   if (!path) {
     return false;
@@ -508,16 +525,9 @@ bool readSynthPresetFile(const char* path, SynthPresetSlot& preset) {
   if (!f) {
     return false;
   }
-  SynthPresetFileHeaderBase header = {};
-  bool readOk = f.size() == sizeof(header) + sizeof(preset)
-                && f.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)
-                && f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) == sizeof(preset);
+  bool readOk = readSynthPresetPayload(f, preset);
   f.close();
-  if (!readOk || !synthPresetHeaderBaseValid(header) || !preset.valid
-      || objectIdIsEmpty(preset.objectId, sizeof(preset.objectId))
-      || header.crc32 != crc32(reinterpret_cast<const uint8_t*>(&preset), sizeof(preset))) {
-    return false;
-  }
+  if (!readOk || objectIdIsEmpty(preset.objectId, sizeof(preset.objectId))) return false;
   return true;
 }
 
@@ -565,15 +575,9 @@ bool readSynthProfileDraft(uint8_t profileIndex, SynthPresetSlot& preset) {
   if (!f) {
     return false;
   }
-  SynthPresetFileHeaderBase header = {};
-  bool ok = f.size() == sizeof(header) + sizeof(preset)
-            && f.read(reinterpret_cast<uint8_t*>(&header), sizeof(header)) == sizeof(header)
-            && f.read(reinterpret_cast<uint8_t*>(&preset), sizeof(preset)) == sizeof(preset);
+  bool ok = readSynthPresetPayload(f, preset);
   f.close();
-  return ok
-         && synthPresetHeaderBaseValid(header)
-         && preset.valid
-         && header.crc32 == crc32(reinterpret_cast<const uint8_t*>(&preset), sizeof(preset));
+  return ok;
 }
 
 bool writeSynthProfileDraftAtomic(uint8_t profileIndex, const SynthPresetSlot& preset) {

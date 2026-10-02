@@ -94,6 +94,7 @@ const synthValueKeys = [
   "EffectEnvelope2ReleaseIndex",
   "SynthPortamentoTimeIndex",
   "ArpeggiatorDirection",
+  "ArpeggiatorNoteLength",
   "SynthWavetablePosition",
   "SynthLfoTarget",
   "SynthLfoAmount",
@@ -203,6 +204,7 @@ const defaultPreset: EditableSynthPreset = {
     EffectEnvelope2ReleaseIndex: 0,
     SynthPortamentoTimeIndex: 0,
     ArpeggiatorDirection: 0,
+    ArpeggiatorNoteLength: 100,
     SynthWavetablePosition: 0,
     SynthLfoTarget: 0,
     SynthLfoAmount: 127,
@@ -256,6 +258,7 @@ const playbackOptions = [
   { label: "Mono · retrigger", value: 1 },
   { label: "Mono · legato", value: 4 },
   { label: "Arpeggiator", value: 2 },
+  { label: "Poly arpeggiator", value: 6 },
   { label: "Polyphonic", value: 3 }
 ];
 
@@ -289,12 +292,22 @@ const driveOptions = [
 ];
 
 const modTargetOptions = [
+  { label: "Off", value: 6 },
   { label: "Vibrato", value: 1 },
   { label: "Pitch", value: 2 },
   { label: "Wavetable position", value: 3 },
   { label: "Wave folding", value: 0 },
   { label: "Pulse width", value: 4 },
   { label: "Poly warp", value: 5 }
+];
+
+const wheelTargetOptions = [
+  ...modTargetOptions,
+  { label: "Volume envelope · Attack", value: 7 },
+  { label: "Volume envelope · Hold", value: 8 },
+  { label: "Volume envelope · Decay", value: 9 },
+  { label: "Volume envelope · Sustain", value: 10 },
+  { label: "Volume envelope · Release", value: 11 }
 ];
 
 const lfoWaveOptions = [
@@ -349,41 +362,43 @@ const envelopeTimeOptions = [
   "2 s",
   "2.5 s",
   "3 s",
-  "4 s"
+  "4 s",
+  "3 ms"
 ].map((label, value) => ({ label, value }));
 
 const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]> = {
-  PlaybackMode: [0, 4],
+  PlaybackMode: [0, 6],
   Waveform: [0, 28],
   SynthDrive: [0, 3],
-  SynthModTarget: [0, 5],
+  SynthModTarget: [0, 11],
   SynthModAmount: [0, 127],
   SynthVibratoSpeed: [0, synthVibratoSpeedNoise],
   ArpeggiatorDivision: [1, 32],
   SynthBPM: [1, 255],
-  EnvelopeAttackIndex: [0, 19],
-  EnvelopeHoldIndex: [0, 19],
-  EnvelopeDecayIndex: [0, 19],
+  EnvelopeAttackIndex: [0, 20],
+  EnvelopeHoldIndex: [0, 20],
+  EnvelopeDecayIndex: [0, 20],
   EnvelopeSustainLevel: [0, 127],
-  EnvelopeReleaseIndex: [0, 19],
-  EffectEnvelopeTarget: [0, 5],
+  EnvelopeReleaseIndex: [0, 20],
+  EffectEnvelopeTarget: [0, 6],
   EffectEnvelopeAmount: [0, 254],
-  EffectEnvelopeAttackIndex: [0, 19],
-  EffectEnvelopeHoldIndex: [0, 19],
-  EffectEnvelopeDecayIndex: [0, 19],
+  EffectEnvelopeAttackIndex: [0, 20],
+  EffectEnvelopeHoldIndex: [0, 20],
+  EffectEnvelopeDecayIndex: [0, 20],
   EffectEnvelopeSustainLevel: [0, 127],
-  EffectEnvelopeReleaseIndex: [0, 19],
-  EffectEnvelope2Target: [0, 5],
+  EffectEnvelopeReleaseIndex: [0, 20],
+  EffectEnvelope2Target: [0, 6],
   EffectEnvelope2Amount: [0, 254],
-  EffectEnvelope2AttackIndex: [0, 19],
-  EffectEnvelope2HoldIndex: [0, 19],
-  EffectEnvelope2DecayIndex: [0, 19],
+  EffectEnvelope2AttackIndex: [0, 20],
+  EffectEnvelope2HoldIndex: [0, 20],
+  EffectEnvelope2DecayIndex: [0, 20],
   EffectEnvelope2SustainLevel: [0, 127],
-  EffectEnvelope2ReleaseIndex: [0, 19],
+  EffectEnvelope2ReleaseIndex: [0, 20],
   SynthPortamentoTimeIndex: [0, 19],
   ArpeggiatorDirection: [0, 6],
+  ArpeggiatorNoteLength: [1, 100],
   SynthWavetablePosition: [0, 127],
-  SynthLfoTarget: [0, 5],
+  SynthLfoTarget: [0, 6],
   SynthLfoAmount: [0, 254],
   SynthLfoWave: [0, 5],
   SynthLfoSpeed: [0, 19]
@@ -1371,7 +1386,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }), [preset.values, preset.wavetableFolderPath, preset.wavetableName]);
   const draftPreset = useMemo(() => encodeEditablePreset(preset), [preset]);
   const monoModeSelected = preset.values.PlaybackMode === 1 || preset.values.PlaybackMode === 4;
-  const arpModeSelected = preset.values.PlaybackMode === 2;
+  const arpModeSelected = preset.values.PlaybackMode === 2 || preset.values.PlaybackMode === 6;
   const wavetableImportOptions = useMemo<Required<SerumWavetableCrunchOptions>>(() => ({
     frameReduction: wavetableFrameReduction,
     normalization: wavetableNormalization,
@@ -3188,7 +3203,8 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                       const note = auditionNoteFromKey(mapping.key, previewOctave) ?? 60;
                       return (
                         <button
-                          className={heldPreviewNotes.includes(note) ? "auditionKey active" : "auditionKey"}
+                          className={`auditionKey ${[1, 3, 6, 8, 10].includes(mapping.offset) ? "blackKey" : "whiteKey"}${heldPreviewNotes.includes(note) ? " active" : ""}`}
+                          style={{ gridColumn: `${[1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 15][mapping.offset]} / span 2` }}
                           key={mapping.key}
                           type="button"
                           onPointerDown={(event) => {
@@ -3280,6 +3296,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
               <>
                 <SelectField label="Arpeggiator rate" value={preset.values.ArpeggiatorDivision} options={arpDivisionOptions} onChange={(value) => updateValue("ArpeggiatorDivision", value)} />
                 <SelectField label="Arpeggiator direction" value={preset.values.ArpeggiatorDirection} options={arpDirectionOptions} onChange={(value) => updateValue("ArpeggiatorDirection", value)} />
+                <RangeField label="Note length" value={preset.values.ArpeggiatorNoteLength} min={1} max={100} onChange={(value) => updateValue("ArpeggiatorNoteLength", value)} suffix="%" />
                 <RangeField label="Tempo" value={preset.values.SynthBPM} min={1} max={255} onChange={(value) => updateValue("SynthBPM", value)} suffix=" BPM" />
               </>
             ) : null}
@@ -3321,7 +3338,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
             </label>
             <RangeField label="Wavetable position" value={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition)} min={1} max={SYNTH_WAVETABLE_FRAME_COUNT} onChange={(value) => updateValue("SynthWavetablePosition", wavetableFrameToPositionByte(value))} suffix={`/${SYNTH_WAVETABLE_FRAME_COUNT}`} />
             <RangeField label="Drive" value={preset.values.SynthDrive} min={0} max={3} onChange={(value) => updateValue("SynthDrive", value)} suffix={` (${driveLabel(preset.values.SynthDrive)})`} />
-            <SelectField label="Mod wheel target" value={preset.values.SynthModTarget} options={modTargetOptions} onChange={(value) => updateValue("SynthModTarget", value)} />
+            <SelectField label="Mod wheel target" value={preset.values.SynthModTarget} options={wheelTargetOptions} onChange={(value) => updateValue("SynthModTarget", value)} />
             <RangeField label="Mod wheel amount" value={preset.values.SynthModAmount} min={0} max={127} onChange={(value) => updateValue("SynthModAmount", value)} suffix="/127" />
             <RangeField label="Vibrato speed" value={preset.values.SynthVibratoSpeed} min={0} max={synthVibratoSpeedNoise} onChange={(value) => updateValue("SynthVibratoSpeed", value)} suffix={` (${vibratoSpeedLabel(preset.values.SynthVibratoSpeed)})`} />
           </div>
@@ -3331,11 +3348,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           <h3>Volume envelope</h3>
           <EnvelopePreview attack={preset.values.EnvelopeAttackIndex} hold={preset.values.EnvelopeHoldIndex} decay={preset.values.EnvelopeDecayIndex} sustain={preset.values.EnvelopeSustainLevel} release={preset.values.EnvelopeReleaseIndex} />
           <div className="editorGrid">
-            <RangeField label="Attack" value={preset.values.EnvelopeAttackIndex} min={0} max={19} onChange={(value) => updateValue("EnvelopeAttackIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.EnvelopeAttackIndex)})`} />
-            <RangeField label="Hold" value={preset.values.EnvelopeHoldIndex} min={0} max={19} onChange={(value) => updateValue("EnvelopeHoldIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.EnvelopeHoldIndex)})`} />
-            <RangeField label="Decay" value={preset.values.EnvelopeDecayIndex} min={0} max={19} onChange={(value) => updateValue("EnvelopeDecayIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.EnvelopeDecayIndex)})`} />
+            <EnvelopeTimeField label="Attack" value={preset.values.EnvelopeAttackIndex} min={0} max={19} onChange={(value) => updateValue("EnvelopeAttackIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.EnvelopeAttackIndex)})`} />
+            <EnvelopeTimeField label="Hold" value={preset.values.EnvelopeHoldIndex} min={0} max={19} onChange={(value) => updateValue("EnvelopeHoldIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.EnvelopeHoldIndex)})`} />
+            <EnvelopeTimeField label="Decay" value={preset.values.EnvelopeDecayIndex} min={0} max={19} onChange={(value) => updateValue("EnvelopeDecayIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.EnvelopeDecayIndex)})`} />
             <RangeField label="Sustain" value={preset.values.EnvelopeSustainLevel} min={0} max={127} onChange={(value) => updateValue("EnvelopeSustainLevel", value)} suffix="/127" />
-            <RangeField label="Release" value={preset.values.EnvelopeReleaseIndex} min={0} max={19} onChange={(value) => updateValue("EnvelopeReleaseIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.EnvelopeReleaseIndex)})`} />
+            <EnvelopeTimeField label="Release" value={preset.values.EnvelopeReleaseIndex} min={0} max={19} onChange={(value) => updateValue("EnvelopeReleaseIndex", value)} suffix={` (${envelopeTimeLabel(preset.values.EnvelopeReleaseIndex)})`} />
           </div>
         </section>
 
@@ -3778,6 +3795,11 @@ interface RangeFieldProps {
   onChange: (value: number) => void;
 }
 
+function EnvelopeTimeField({ value, onChange, ...props }: RangeFieldProps) {
+  const position = value === 20 ? 1 : value === 0 ? 0 : value + 1;
+  return <RangeField {...props} value={position} max={20} onChange={next => onChange(next === 1 ? 20 : next === 0 ? 0 : next - 1)} />;
+}
+
 function RangeField({ label, value, min, max, suffix = "", onChange }: RangeFieldProps) {
   return (
     <label className="field rangeField">
@@ -3833,11 +3855,11 @@ function FxEnvelopeEditor({
       <div className="editorGrid">
         <SelectField label="Target" value={targetValue} options={modTargetOptions} onChange={onTargetChange} />
         <RangeField label="Amount" value={amountPercent} min={-100} max={100} onChange={(value) => onAmountChange(fxAmountPercentToByte(value))} suffix="%" />
-        <RangeField label="Attack" value={attackValue} min={0} max={19} onChange={onAttackChange} suffix={` (${envelopeTimeLabel(attackValue)})`} />
-        <RangeField label="Hold" value={holdValue} min={0} max={19} onChange={onHoldChange} suffix={` (${envelopeTimeLabel(holdValue)})`} />
-        <RangeField label="Decay" value={decayValue} min={0} max={19} onChange={onDecayChange} suffix={` (${envelopeTimeLabel(decayValue)})`} />
+        <EnvelopeTimeField label="Attack" value={attackValue} min={0} max={19} onChange={onAttackChange} suffix={` (${envelopeTimeLabel(attackValue)})`} />
+        <EnvelopeTimeField label="Hold" value={holdValue} min={0} max={19} onChange={onHoldChange} suffix={` (${envelopeTimeLabel(holdValue)})`} />
+        <EnvelopeTimeField label="Decay" value={decayValue} min={0} max={19} onChange={onDecayChange} suffix={` (${envelopeTimeLabel(decayValue)})`} />
         <RangeField label="Sustain" value={sustainValue} min={0} max={127} onChange={onSustainChange} suffix="/127" />
-        <RangeField label="Release" value={releaseValue} min={0} max={19} onChange={onReleaseChange} suffix={` (${envelopeTimeLabel(releaseValue)})`} />
+        <EnvelopeTimeField label="Release" value={releaseValue} min={0} max={19} onChange={onReleaseChange} suffix={` (${envelopeTimeLabel(releaseValue)})`} />
       </div>
     </section>
   );

@@ -11,7 +11,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 33;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 34;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -25,8 +25,8 @@ enum class SettingKey : uint8_t {
 constexpr uint8_t NUM_SETTINGS = static_cast<uint8_t>(SettingKey::NumSettings);
 
 constexpr uint8_t SYNTH_PRESET_MAX_COUNT = 128;
-constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 11;
-constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 7;
+constexpr uint8_t SYNTH_PRESET_FILE_VERSION = 12;
+constexpr uint8_t SYNTH_PRESET_SCHEMA_VERSION = 9;
 constexpr uint8_t SYNTH_WAVETABLE_FILE_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_SCHEMA_VERSION = 1;
 constexpr uint8_t SYNTH_WAVETABLE_MAX_COUNT = 32;
@@ -70,7 +70,7 @@ constexpr const char* SYNTH_WAVETABLE_ROOT_FOLDER = "/";
 constexpr const char* SYNTH_WAVETABLE_BUILTIN_FOLDER = "/Built In";
 constexpr const char* SYNTH_WAVETABLE_BASIC_NAME = "Basic Shapes";
 
-constexpr std::array<SettingKey, 34> synthPresetKeys = {
+constexpr std::array<SettingKey, 35> synthPresetKeys = {
   SettingKey::PlaybackMode,
   SettingKey::Waveform,
   SettingKey::SynthDrive,
@@ -104,7 +104,8 @@ constexpr std::array<SettingKey, 34> synthPresetKeys = {
   SettingKey::SynthLfoTarget,
   SettingKey::SynthLfoAmount,
   SettingKey::SynthLfoWave,
-  SettingKey::SynthLfoSpeed
+  SettingKey::SynthLfoSpeed,
+  SettingKey::ArpeggiatorNoteLength
 };
 constexpr size_t SYNTH_PRESET_VALUE_COUNT = synthPresetKeys.size();
 constexpr size_t PROFILE_PERSISTED_SETTING_COUNT = NUM_SETTINGS - SYNTH_PRESET_VALUE_COUNT;
@@ -303,7 +304,7 @@ static_assert(SETTINGS_PROFILE_VALUES_DATA_SIZE == 540,
 static_assert(SETTINGS_DATA_SIZE == 1134,
               "Settings payload changed; update the factory-library builder");
 static_assert(sizeof(SynthPresetFileHeaderBase) == 8, "SynthPresetFileHeaderBase disk layout changed");
-static_assert(sizeof(SynthPresetSlot) == 212, "SynthPresetSlot disk layout changed");
+static_assert(sizeof(SynthPresetSlot) == 213, "SynthPresetSlot disk layout changed");
 static_assert(sizeof(SynthWavetableFileHeader) == 12, "SynthWavetableFileHeader disk layout changed");
 static_assert(sizeof(SynthWavetableSlot) == 145, "SynthWavetableSlot disk layout changed");
 

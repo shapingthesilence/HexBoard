@@ -1,5 +1,5 @@
 {
-  "settingsVersion": 33,
+  "settingsVersion": 34,
   "selectedPreset": "Pads/Lo-Fi Synth Strings",
   "selectedWavetable": "/Classic",
   "selectedGeometry": "12 EDO (Normal)",
@@ -102,6 +102,7 @@
     "HeadphoneVolumeCap": 127,
     "DeviceRotation": 0,
     "SynthPortamentoTimeIndex": 0,
+    "ArpeggiatorNoteLength": 100,
     "ArpeggiatorDirection": 0,
     "SynthWavetablePosition": 0,
     "SynthLfoTarget": 0,

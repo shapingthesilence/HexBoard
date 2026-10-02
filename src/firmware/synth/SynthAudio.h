@@ -11,6 +11,7 @@ struct SynthPreviewNoteHandle {
 };
 
 void updateEnvelopeParamsFromSettings();
+void refreshVolumeEnvelopeModulation(bool force = false);
 void syncSynthSettingsToRuntime();
 void updateEffectEnvelopeParamsFromSettings();
 void updateEffectEnvelopeParamsFromSettings(uint8_t envelopeIndex);

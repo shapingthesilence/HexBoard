@@ -94,3 +94,4 @@ HEXBOARD_SETTING(CommandEncoder, 0)
 HEXBOARD_SETTING(ColorDithering, 0)
 HEXBOARD_SETTING(LedFramePeriodLow, 232)  // 4328us, little-endian low byte
 HEXBOARD_SETTING(LedFramePeriodHigh, 16)
+HEXBOARD_SETTING(ArpeggiatorNoteLength, 100)

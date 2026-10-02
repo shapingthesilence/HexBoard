@@ -23,10 +23,10 @@ struct tuningDef {
 };
 
 constexpr uint8_t SYNTH_FX_ENVELOPE_COUNT = 2;
-constexpr std::array<uint32_t, 20> envelopeTimeMicrosOptions = {
+constexpr std::array<uint32_t, 21> envelopeTimeMicrosOptions = {
   0, 5000, 10000, 15000, 20000, 30000, 50000, 75000, 100000, 150000,
   200000, 300000, 500000, 750000, 1000000, 1500000, 2000000, 2500000,
-  3000000, 4000000
+  3000000, 4000000, 3000  // appended: persisted indices 0..19 keep their timing
 };
 constexpr uint8_t ENVELOPE_LEVEL_SCALE_SHIFT = 7;
 constexpr uint32_t envelopeAudioMaxLevel = 65535;

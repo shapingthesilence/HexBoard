@@ -3099,6 +3099,26 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             </label>
             <button disabled={!connected || syncBusy || !runtimeSendSupported} type="button" onClick={() => void sendActiveBundlePreview("Sent")}>Preview on HexBoard</button>
             </> : null}
+            <div className="layoutToolbarGroup" aria-label="History">
+              <button
+                aria-label="Undo edit"
+                disabled={!canUndoLayoutEdit}
+                title={canUndoLayoutEdit ? `Undo ${undoLayoutHistoryRef.current.at(-1)?.label}` : "Nothing to undo"}
+                type="button"
+                onClick={undoLayoutEdit}
+              >
+                <LayoutToolbarIcon kind="undo" />
+              </button>
+              <button
+                aria-label="Redo edit"
+                disabled={!canRedoLayoutEdit}
+                title={canRedoLayoutEdit ? `Redo ${redoLayoutHistoryRef.current.at(-1)?.label}` : "Nothing to redo"}
+                type="button"
+                onClick={redoLayoutEdit}
+              >
+                <LayoutToolbarIcon kind="redo" />
+              </button>
+            </div>
             <button disabled={!hasDraft} type="button" onClick={saveBrowserTuning}>Save to Browser</button>
             <button className="primary" disabled={!connected || syncBusy} type="button" onClick={() => void saveActiveBundleToHexBoard()}>Save to HexBoard</button>
             <details className="presetOverflowMenu"><summary aria-label="Tuning actions">•••</summary><div className="presetOverflowActions">
@@ -3319,10 +3339,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
             </div>
           </div>
           <div className="brushToolbar">
-            <div className="paintToolGroup" role="group" aria-label="Board tools">
-              <button type="button" aria-pressed={!paintbrushMode} onClick={() => { endPaintStroke(); setPaintbrushMode(false); }}>Select</button>
-              <button type="button" aria-pressed={paintbrushMode && paintTool === "brush"} onClick={() => { endPaintStroke(); if (!customColorModeActive) updateDefaultColorMode(ColorMode.Custom); setPaintbrushMode(true); setPaintTool("brush"); }}>Paint</button>
-              <button type="button" aria-pressed={paintbrushMode && paintTool === "eyedropper"} onClick={() => { endPaintStroke(); if (!customColorModeActive) updateDefaultColorMode(ColorMode.Custom); setPaintbrushMode(true); setPaintTool("eyedropper"); }}>Pick color</button>
+            <div className="paintToolGroup boardModeSelector" role="group" aria-label="Board interaction mode">
+              <button type="button" title="Select keys to edit their notes or settings" aria-pressed={!paintbrushMode} onClick={() => { endPaintStroke(); setPaintbrushMode(false); }}>Select</button>
+              <button type="button" title="Click or drag to apply the chosen color" aria-pressed={paintbrushMode && paintTool === "brush"} onClick={() => { endPaintStroke(); if (!customColorModeActive) updateDefaultColorMode(ColorMode.Custom); setPaintbrushMode(true); setPaintTool("brush"); }}>Paint</button>
+              <button type="button" title="Copy a key’s color, then return to Paint" aria-pressed={paintbrushMode && paintTool === "eyedropper"} onClick={() => { endPaintStroke(); if (!customColorModeActive) updateDefaultColorMode(ColorMode.Custom); setPaintbrushMode(true); setPaintTool("eyedropper"); }}>Pick color</button>
             </div>
             <label className="toolbarSelectField">
               <span>Color mode</span>
@@ -3375,27 +3395,6 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
           </div>
           <div className="layoutTransformToolbar" role="toolbar" aria-label="Layout editing">
             <label className="toolbarSelectField"><span>Transform</span><select aria-label="Transform scope" value={transformScope} onChange={event => setTransformScope(event.target.value as "layout" | "keys")}><option value="layout">Whole layout</option><option value="keys">Selected keys</option></select></label>
-            <div className="layoutToolbarGroup" aria-label="History">
-              <button
-                aria-label="Undo edit"
-                disabled={!canUndoLayoutEdit}
-                title={canUndoLayoutEdit ? `Undo ${undoLayoutHistoryRef.current.at(-1)?.label}` : "Nothing to undo"}
-                type="button"
-                onClick={undoLayoutEdit}
-              >
-                <LayoutToolbarIcon kind="undo" />
-              </button>
-              <button
-                aria-label="Redo edit"
-                disabled={!canRedoLayoutEdit}
-                title={canRedoLayoutEdit ? `Redo ${redoLayoutHistoryRef.current.at(-1)?.label}` : "Nothing to redo"}
-                type="button"
-                onClick={redoLayoutEdit}
-              >
-                <LayoutToolbarIcon kind="redo" />
-              </button>
-            </div>
-            <span aria-hidden="true" className="layoutToolbarDivider" />
             <div className="layoutToolbarGroup" aria-label="Transpose">
               <button aria-label="Transpose down one step" disabled={!canTransformSelection} title="Transpose down one tuning step" type="button" onClick={() => transposeFromLayoutToolbar(-1)}>
                 <span aria-hidden="true" className="layoutToolbarTextIcon">−1</span>

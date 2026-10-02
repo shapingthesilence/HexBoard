@@ -1,6 +1,6 @@
 const ENVELOPE_TIMES_SECONDS = [
   0, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05, 0.075, 0.1, 0.15,
-  0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4
+  0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 0.003
 ];
 
 const LFO_SPEEDS_HZ = [
@@ -14,6 +14,7 @@ const DEVICE_SAMPLE_RATE = 200000000 / 1024 / 6;
 const ATTENUATION = [64, 24, 17, 14, 12, 11, 10, 9, 8];
 const SAMPLE_COUNT = 512;
 const MAX_VOICES = 8;
+const VOLUME_ENVELOPE_PARAMETERS = ["attack", "hold", "decay", "sustain", "release"];
 const TARGET_FOLD_WARP = 0;
 const TARGET_VIBRATO = 1;
 const TARGET_PITCH = 2;
@@ -24,6 +25,8 @@ const MODE_MONO_RETRIGGER = 1;
 const MODE_ARPEGGIO = 2;
 const MODE_POLY = 3;
 const MODE_MONO_LEGATO = 4;
+const MODE_POLY_ARPEGGIO = 6;
+const isArpMode = mode => mode === MODE_ARPEGGIO || mode === MODE_POLY_ARPEGGIO;
 const LFO_NOISE_SEGMENTS = 16;
 const VIBRATO_SPEED_NOISE = 12;
 
@@ -209,11 +212,16 @@ class Voice {
     this.velocity = 1;
     this.active = false;
     this.age = 0;
+    this.wheelValue = 0;
+    this.pendingTrigger = null;
+    this.fadeRemaining = 0;
+    this.fadeLength = Math.max(1, Math.round(sampleRate * 0.002));
     this.env = new Envelope();
     this.fxEnvs = [new Envelope(), new Envelope()];
   }
 
-  configure(patch) {
+  configure(patch, preserveAmp = this.active) {
+    const previousAmpParams = this.env.params;
     const values = patch.values;
     this.fxSettings = ["EffectEnvelope", "EffectEnvelope2"].map(prefix => ({
       target: values[`${prefix}Target`],
@@ -229,6 +237,11 @@ class Voice {
       values.EnvelopeReleaseIndex,
       sampleRate
     );
+    this.baseAmpParams = { ...this.env.params };
+    this.wheelTarget = values.SynthModTarget;
+    this.wheelAmount = values.SynthModAmount;
+    if (preserveAmp) this.env.params = previousAmpParams;
+    else this.updateVolumeEnvelope(this.wheelValue);
     this.fxEnvs[0].configure(
       values.EffectEnvelopeAttackIndex,
       values.EffectEnvelopeHoldIndex,
@@ -247,13 +260,30 @@ class Voice {
     );
   }
 
-  trigger(note, velocity, patch, retrigger, id = note, pitchOffset = 0) {
-    this.configure(patch);
+  updateVolumeEnvelope(wheelValue) {
+    this.wheelValue = wheelValue;
+    if (!this.baseAmpParams) return;
+    const amount = clamp(wheelValue / 127, 0, 1) * clamp(this.wheelAmount / 127, 0, 1);
+    for (let index = 0; index < VOLUME_ENVELOPE_PARAMETERS.length; index++) {
+      const parameter = VOLUME_ENVELOPE_PARAMETERS[index];
+      const base = this.baseAmpParams[parameter];
+      this.env.params[parameter] = this.wheelTarget === 7 + index
+        ? blend(base, parameter === "sustain" ? 1 : 4, amount) : base;
+    }
+  }
+
+  trigger(note, velocity, patch, retrigger, id = note, pitchOffset = 0, handoff = false) {
+    if (this.active && retrigger && !handoff) {
+      if (!this.pendingTrigger) this.fadeRemaining = this.fadeLength;
+      this.pendingTrigger = [note, velocity, patch, retrigger, id, pitchOffset, true];
+      return;
+    }
+    this.configure(patch, this.active && !retrigger);
     this.note = note;
     this.id = id;
     this.pitchOffset = pitchOffset;
     this.targetFrequency = midiToFrequency(note);
-    const glide = ENVELOPE_TIMES_SECONDS[patch.values.SynthPortamentoTimeIndex] ?? 0;
+    const glide = isArpMode(patch.values.PlaybackMode) ? 0 : ENVELOPE_TIMES_SECONDS[patch.values.SynthPortamentoTimeIndex] ?? 0;
     this.glideRemaining = this.active && glide > 0 ? Math.round(glide * sampleRate) : 0;
     this.glideStep = this.glideRemaining ? (this.targetFrequency - this.frequency) / this.glideRemaining : 0;
     if (!this.glideRemaining) this.frequency = this.targetFrequency;
@@ -268,11 +298,24 @@ class Voice {
   }
 
   release() {
+    this.pendingTrigger = null;
+    this.fadeRemaining = 0;
+    const amount = clamp(this.wheelValue / 127, 0, 1) * clamp(this.wheelAmount / 127, 0, 1);
+    this.env.params.release = this.wheelTarget === 11
+      ? blend(this.baseAmpParams.release, 4, amount) : this.baseAmpParams.release;
+    // Preserve release tails, but ramp even a zero-release patch to silence.
+    if (this.env.params.release === 0) this.env.params.release = 0.002;
     this.env.release();
     this.fxEnvs.forEach((env) => env.release());
   }
 
   render(processor) {
+    if (this.pendingTrigger && this.fadeRemaining === 0) {
+      const pending = this.pendingTrigger;
+      this.pendingTrigger = null;
+      this.trigger(...pending);
+    }
+    const fadeGain = this.fadeRemaining > 0 ? this.fadeRemaining-- / this.fadeLength : 1;
     if (!this.active) {
       return { sample: 0, envelope: 0 };
     }
@@ -282,6 +325,10 @@ class Voice {
     const envLevel = this.env.next();
     const fxLevels = this.fxEnvs.map((env) => env.next());
     if (this.env.stage === "idle") {
+      if (this.pendingTrigger) {
+        this.fadeRemaining = 0;
+        return { sample: 0, envelope: 0 };
+      }
       this.active = false;
       this.note = -1;
       this.frequency = 0;
@@ -353,7 +400,7 @@ class Voice {
     const position = clamp(values.SynthWavetablePosition + wavetablePosition, 0, 127);
     const sample = processor.readWavetable(phase, position, frequency);
     return {
-      sample: sample * envLevel * this.velocity,
+      sample: sample * envLevel * this.velocity * fadeGain,
       envelope: envLevel
     };
   }
@@ -365,12 +412,15 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     this.patch = this.defaultPatch();
     this.volume = 0.35;
     this.modValue = 0;
+    this.envelopeWheelSamplesUntilRefresh = 0;
     this.voices = Array.from({ length: MAX_VOICES }, () => new Voice());
     this.heldNotes = [];
     this.heldOrder = [];
     this.noteData = new Map();
     this.arpCursor = 0;
     this.arpSamplesUntilNext = 0;
+    this.arpGateRemaining = 0;
+    this.arpVoice = null;
     this.lfoPhase = 0;
     this.lfoNoiseState = 0x6D2B79F5;
     this.lfoNoiseSegment = -1;
@@ -448,6 +498,7 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
         EffectEnvelope2ReleaseIndex: 0,
         SynthPortamentoTimeIndex: 0,
         ArpeggiatorDirection: 0,
+        ArpeggiatorNoteLength: 100,
         SynthWavetablePosition: 0,
         SynthLfoTarget: TARGET_FOLD_WARP,
         SynthLfoAmount: 127,
@@ -475,12 +526,13 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
 
   noteOn(note, velocity, id = note, pitchOffset = 0) {
     const mode = this.patch.values.PlaybackMode;
+    this.refreshEnvelopeWheel();
     if (mode === 0 || this.heldNotes.includes(id)) return;
     this.noteData.set(id, { note, velocity, pitchOffset });
     this.heldNotes.push(id);
     this.heldOrder.push(id);
-    if (mode === MODE_ARPEGGIO) {
-      if (!this.voices[0].active) this.triggerArpNote(id);
+    if (isArpMode(mode)) {
+      if (this.heldNotes.length === 1) this.triggerArpNote(id);
       return;
     }
     if (mode === MODE_MONO_RETRIGGER || mode === MODE_MONO_LEGATO) {
@@ -502,23 +554,25 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     if (data) data.pitchOffset = pitchOffset;
     for (const voice of this.voices) {
       if (voice.active && voice.id === id) voice.pitchOffset = pitchOffset;
+      if (voice.pendingTrigger?.[4] === id) voice.pendingTrigger[5] = pitchOffset;
     }
   }
 
   noteOff(id, immediate = false) {
+    this.refreshEnvelopeWheel();
     if (immediate) {
-      this.voices.filter(voice => voice.id === id).forEach(voice => { voice.active = false; });
+      this.voices.filter(voice => voice.id === id || voice.pendingTrigger?.[4] === id).forEach(voice => { voice.active = false; voice.pendingTrigger = null; voice.fadeRemaining = 0; });
     }
     this.heldNotes = this.heldNotes.filter(held => held !== id);
     this.heldOrder = this.heldOrder.filter(held => held !== id);
     this.noteData.delete(id);
     const mode = this.patch.values.PlaybackMode;
-    if (mode === MODE_ARPEGGIO) {
-      if (this.heldNotes.length === 0) this.voices[0].release();
+    if (isArpMode(mode)) {
+      if (this.heldNotes.length === 0 || this.arpVoice?.id === id || this.arpVoice?.pendingTrigger?.[4] === id) this.closeArpGate();
       return;
     }
     if (mode === MODE_MONO_RETRIGGER || mode === MODE_MONO_LEGATO) {
-      if (this.voices[0].id !== id) return;
+      if ((this.voices[0].pendingTrigger?.[4] ?? this.voices[0].id) !== id) return;
       if (this.heldNotes.length > 0) {
         const nextId = this.heldNotes[this.heldNotes.length - 1];
         const data = this.noteData.get(nextId);
@@ -536,7 +590,10 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     this.heldOrder = [];
     this.noteData = new Map();
     this.arpCursor = 0;
-    this.voices.forEach((voice) => { voice.active = false; voice.env.stage = "idle"; voice.env.level = 0; });
+    this.arpVoice = null;
+    this.arpGateRemaining = 0;
+    this.arpSamplesUntilNext = 0;
+    this.voices.forEach((voice) => { voice.active = false; voice.pendingTrigger = null; voice.fadeRemaining = 0; voice.env.stage = "idle"; voice.env.level = 0; });
   }
 
   lfoSample() {
@@ -678,16 +735,32 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
       return;
     }
     const note = notes.length === 0 ? fallbackNote : notes[this.arpCursor % notes.length];
-    this.arpCursor = (this.arpCursor + 1) % Math.max(1, notes.length);
+    this.arpCursor = (this.arpCursor % Math.max(1, notes.length)) + 1;
     const data = this.noteData.get(note);
-    this.voices[0].trigger(data.note, data.velocity, this.patch, true, note, data.pitchOffset);
+    this.closeArpGate();
+    let voice = this.voices[0];
+    if (this.patch.values.PlaybackMode === MODE_POLY_ARPEGGIO) {
+      voice = this.voices.find(candidate => !candidate.active)
+        ?? this.voices.reduce((oldest, candidate) => candidate.age < oldest.age ? candidate : oldest, this.voices[0]);
+    }
+    voice.trigger(data.note, data.velocity, this.patch, true, note, data.pitchOffset);
+    voice.age = ++this.voiceAge;
+    this.arpVoice = voice;
     this.arpSamplesUntilNext = this.nextArpIntervalSamples();
+    this.arpGateRemaining = Math.max(1, Math.round(this.arpSamplesUntilNext * clamp(this.patch.values.ArpeggiatorNoteLength, 1, 100) / 100));
+  }
+
+  closeArpGate() {
+    this.arpVoice?.release();
+    this.arpVoice = null;
+    this.arpGateRemaining = 0;
   }
 
   stepArp() {
-    if (this.patch.values.PlaybackMode !== MODE_ARPEGGIO || this.heldNotes.length === 0) {
+    if (!isArpMode(this.patch.values.PlaybackMode) || this.heldNotes.length === 0) {
       return;
     }
+    if (this.arpGateRemaining > 0 && --this.arpGateRemaining === 0) this.closeArpGate();
     this.arpSamplesUntilNext -= 1;
     if (this.arpSamplesUntilNext <= 0) {
       this.triggerArpNote();
@@ -701,9 +774,17 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
     return (3 * x - x * x * x) / 2;
   }
 
+  refreshEnvelopeWheel() {
+    if (this.envelopeWheelSamplesUntilRefresh > 0) return;
+    for (const voice of this.voices) voice.wheelValue = this.modValue;
+    this.envelopeWheelSamplesUntilRefresh = Math.round(sampleRate * 0.05);
+  }
+
   process(_inputs, outputs) {
+    this.refreshEnvelopeWheel();
     const output = outputs[0];
     const left = output[0];
+    this.envelopeWheelSamplesUntilRefresh -= left.length;
     const right = output[1] ?? output[0];
 
     for (let index = 0; index < left.length; index += 1) {
@@ -717,7 +798,7 @@ class SynthPreviewProcessor extends AudioWorkletProcessor {
         envelopeSum += rendered.envelope;
       }
 
-      if (this.patch.values.PlaybackMode === MODE_POLY) {
+      if (this.patch.values.PlaybackMode === MODE_POLY || this.patch.values.PlaybackMode === MODE_POLY_ARPEGGIO) {
         const count = clamp(envelopeSum, 0, MAX_VOICES);
         const whole = Math.floor(count);
         mix *= blend(ATTENUATION[whole], ATTENUATION[Math.min(8, whole + 1)], count - whole) / 64;
