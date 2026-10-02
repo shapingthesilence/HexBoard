@@ -150,6 +150,7 @@ constexpr byte SYNTH_MOD_TARGET_AMP_SUSTAIN = 10;
 constexpr byte SYNTH_MOD_TARGET_AMP_RELEASE = 11;
 constexpr byte SYNTH_WHEEL_TARGET_MAX = SYNTH_MOD_TARGET_AMP_RELEASE;
 constexpr uint8_t SYNTH_MOD_AMOUNT_FULL = 127;
+constexpr uint8_t SYNTH_MOD_AMOUNT_MAX = 254;
 
 constexpr uint8_t SYNTH_FX_AMOUNT_OFF = 127;
 constexpr uint8_t SYNTH_FX_AMOUNT_FULL = 254;

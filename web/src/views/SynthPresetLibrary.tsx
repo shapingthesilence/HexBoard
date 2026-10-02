@@ -371,7 +371,7 @@ const synthValueBounds: Record<EditableSynthValueKey, readonly [number, number]>
   Waveform: [0, 28],
   SynthDrive: [0, 3],
   SynthModTarget: [0, 11],
-  SynthModAmount: [0, 127],
+  SynthModAmount: [0, 254],
   SynthVibratoSpeed: [0, synthVibratoSpeedNoise],
   ArpeggiatorDivision: [1, 32],
   SynthBPM: [1, 255],
@@ -451,6 +451,16 @@ function vibratoSpeedLabel(value: number): string {
 
 function lfoSpeedLabel(value: number): string {
   return lfoSpeedOptions.find((option) => option.value === clampNumber(value, 0, lfoSpeedOptions.length - 1))?.label ?? "1 Hz";
+}
+
+export function wheelAmountByteToPercent(value: number): number {
+  const depth = value <= 127 ? value : 127 - value;
+  return Math.round(depth * 100 / 127);
+}
+
+export function wheelAmountPercentToByte(value: number): number {
+  const depth = Math.round(clampNumber(value, -100, 100) * 127 / 100);
+  return depth < 0 ? 127 - depth : depth;
 }
 
 function fxAmountByteToPercent(value: number): number {
@@ -3389,7 +3399,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           <h3>Mod wheel</h3>
           <div className="editorGrid">
             <SelectField label="Mod wheel target" value={preset.values.SynthModTarget} options={wheelTargetOptions} onChange={(value) => updateValue("SynthModTarget", value)} />
-            <RangeField label="Mod wheel amount" value={preset.values.SynthModAmount} min={0} max={127} onChange={(value) => updateValue("SynthModAmount", value)} suffix="/127" />
+            <RangeField label="Mod wheel amount" value={wheelAmountByteToPercent(preset.values.SynthModAmount)} min={-100} max={100} onChange={(value) => updateValue("SynthModAmount", wheelAmountPercentToByte(value))} suffix="%" />
           </div>
         </section>
         <section className="editorSection modulationSection">

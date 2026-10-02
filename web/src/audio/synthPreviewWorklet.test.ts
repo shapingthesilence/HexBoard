@@ -313,3 +313,28 @@ describe("latched volume envelope wheel targets and short timing", () => {
     expect(legacy.voices[0].env.params.release).toBe(4);
   });
 });
+
+describe("negative wheel depth", () => {
+  it.each([[7, "attack"], [8, "hold"], [9, "decay"], [10, "sustain"], [11, "release"]])(
+    "lowers volume envelope target %i toward zero", (target, parameter) => {
+      const synth = engine({ SynthModTarget: Number(target), SynthModAmount: 254,
+        EnvelopeAttackIndex: 1, EnvelopeHoldIndex: 1, EnvelopeDecayIndex: 1,
+        EnvelopeSustainLevel: 64, EnvelopeReleaseIndex: 1 });
+      synth.modValue = 127;
+      synth.noteOn(60, 1);
+      expect(synth.voices[0].env.params[parameter]).toBe(0);
+      if (parameter === "release") {
+        synth.noteOff(60);
+        expect(synth.voices[0].env.params.release).toBe(0.002);
+      }
+    });
+  it("bends pitch downward and leaves saved depth intact", () => {
+    const plain = engine();
+    const synth = engine({ SynthModTarget: 2, SynthModAmount: 254 });
+    plain.noteOn(60, 1); synth.noteOn(60, 1);
+    synth.modValue = 127;
+    render(plain, 100); render(synth, 100);
+    expect(synth.voices[0].phase).toBeCloseTo(plain.voices[0].phase / 4, 6);
+    expect(synth.patch.values.SynthModAmount).toBe(254);
+  });
+});

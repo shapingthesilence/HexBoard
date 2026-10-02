@@ -698,6 +698,8 @@ def build_wavetables(root: Path, output: Path) -> tuple[list[bytes], set[tuple[s
 
 
 def validate_synth_values(values: dict, path: Path) -> None:
+    if not 0 <= values["SynthModAmount"] <= 254:
+        raise fail(path, "synth values", "SynthModAmount must be 0..254")
     if values["PlaybackMode"] not in (0, 1, 2, 3, 4, 6):
         raise fail(path, "synth values", "PlaybackMode must be 0..4 or 6 (poly arp)")
     if not 1 <= values["ArpeggiatorNoteLength"] <= 100:

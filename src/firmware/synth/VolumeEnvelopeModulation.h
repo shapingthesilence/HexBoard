@@ -6,9 +6,10 @@
 // Target values 7..11 are the wheel-only AHDSR destinations.
 template <typename Params>
 inline void RAM_FUNC(applyVolumeEnvelopeModulation)(Params& params, uint8_t target,
-    uint8_t amount, uint32_t maxTicks, uint32_t maxLevel) {
+    int16_t amount, uint32_t maxTicks, uint32_t maxLevel) {
   if (amount == 0 || target < 7 || target > 11) return;
   auto raise = [amount](uint32_t base, uint32_t maximum) {
+    if (amount < 0) return base - (base * static_cast<uint32_t>(-amount) + 63u) / 127u;
     return base + ((maximum - base) * amount + 63u) / 127u;
   };
   switch (target) {

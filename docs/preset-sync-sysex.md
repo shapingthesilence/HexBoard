@@ -1145,6 +1145,13 @@ existing times. The UI orders index `20` between indices `0` and `1`.
 Poly. `ArpeggiatorNoteLength` (setting key `94`) is a percentage in `1..100`,
 defaulting to `100` when absent in older preset objects.
 
+`SynthModAmount` preserves legacy bytes `0..127` for zero through full positive
+depth. Bytes `128..254` encode negative depths `-1..-127` (signed depth is
+`127 - byte`); `255` is invalid. The editor displays depths as −100% through
++100%. Positive wheel depth raises volume-envelope parameters toward 4 seconds
+or full sustain; negative depth lowers them toward zero. FX envelope and LFO
+amounts keep their centered encoding (127 is zero).
+
 `SynthLfoWave` values are `0` `Sine`, `1` `Triangle`, `2` `Saw`, `3` `Square`,
 `4` `Noise`, and `5` `Smooth noise`. The noise waves use the same value byte as the other LFO shapes.
 `SynthVibratoSpeed` values `0..11` remain `1 Hz` through `12 Hz` sine vibrato;

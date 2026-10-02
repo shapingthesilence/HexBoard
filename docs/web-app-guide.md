@@ -567,7 +567,9 @@ top of the editor while scrolling.
 Choose `Off` as a modulation target to bypass it while keeping its settings.
 After Poly warp, the Mod wheel target menu offers the five volume-envelope
 parameters. Wheel depth raises the saved value toward 4 seconds (times) or
-100% (Sustain), scaled by Mod wheel amount. All envelope time sliders include
+100% (Sustain) with positive Mod wheel amount. The amount slider ranges from
+−100% to +100%; negative amounts reverse oscillator modulation and lower
+volume-envelope values toward zero. All envelope time sliders include
 3 ms between 0 and 5 ms; previously saved times retain their meaning.
 Both arp modes expose `Note length` (1–100% of a step). `Poly arpeggiator`
 plays one note per step with overlapping release tails; the regular arpeggiator

@@ -239,8 +239,10 @@ non-synth setting bytes, stable tuning/layout/scale references, compact synth
 preset-or-draft references, and payload CRC32. Synth values and wavetable
 references come from the referenced named preset or hidden profile draft.
 
-`CURRENT_SETTINGS_VERSION` is 34. `SettingsMigration.h` defines frozen profile
-widths for supported versions: 57 non-synth bytes for version 32 and 60 for versions 33 and 34.
+`CURRENT_SETTINGS_VERSION` is 35. `SettingsMigration.h` defines frozen profile
+widths for supported versions: 57 non-synth bytes for version 32 and 60 for versions 33 through 35.
+Wheel depths retain their legacy positive bytes; negative depths use previously
+unused bytes, so supported older settings and preset values remain unchanged.
 The loader checks the exact size and original CRC before expanding each profile
 with current factory defaults. Geometry and synth references retain their layout.
 Migration happens in RAM, marks settings dirty, and is persisted by normal

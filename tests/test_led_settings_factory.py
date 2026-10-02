@@ -34,7 +34,7 @@ class LedSettingsFactoryTest(unittest.TestCase):
                                       LedFramePeriodHigh=period >> 8)
             data = self.build(config)
             magic, version, profile, crc = struct.unpack('<3sBB3xI', data[:12])
-            self.assertEqual((magic, version, profile), (b'STG', 34, 0))
+            self.assertEqual((magic, version, profile), (b'STG', 35, 0))
             self.assertEqual(zlib.crc32(data[12:]), crc)
             self.assertEqual(len(data), 12 + 1134)
             for profile in range(9):
@@ -49,11 +49,11 @@ class LedSettingsFactoryTest(unittest.TestCase):
     def test_synth_arp_and_off_target_validation(self):
         config = copy.deepcopy(self.config)
         config['settings'].update(PlaybackMode=6, ArpeggiatorNoteLength=50, SynthModTarget=11,
-                                  SynthLfoTarget=6, EffectEnvelopeTarget=6,
+                                  SynthModAmount=254, SynthLfoTarget=6, EffectEnvelopeTarget=6,
                                   EffectEnvelope2Target=6)
         self.build(config)
         for key, value in [('ArpeggiatorNoteLength', 0), ('ArpeggiatorNoteLength', 101),
-                           ('PlaybackMode', 5), ('SynthModTarget', 12), ('SynthLfoTarget', 7)]:
+                           ('PlaybackMode', 5), ('SynthModTarget', 12), ('SynthModAmount', 255), ('SynthLfoTarget', 7)]:
             invalid = copy.deepcopy(config)
             invalid['settings'][key] = value
             with self.assertRaises(factory.LibraryError):

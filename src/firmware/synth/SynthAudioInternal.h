@@ -381,7 +381,7 @@ uint16_t SYNTH_HOT_OPTIMIZE RAM_FUNC(readActiveWavetableInterpolatedFrameSample)
 void RAM_FUNC(clearSynthPortamento)(uint8_t channelIndex);
 
 uint8_t RAM_FUNC(smoothedSynthModValue)(uint8_t elapsedTicks);
-uint8_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue);
+int16_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue);
 uint8_t RAM_FUNC(scaleSynthFxModDepth)(uint8_t depth, uint8_t value);
 int16_t RAM_FUNC(synthEffectAmountDepth)(uint8_t amountSetting);
 int16_t RAM_FUNC(clampSynthModAccumulator)(int16_t value);

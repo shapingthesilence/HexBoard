@@ -1,3 +1,8 @@
+// Legacy positive wheel depths retain their byte values; 128..254 are negative.
+function wheelAmountDepth(value) {
+  return value <= 127 ? value : value <= 254 ? 127 - value : 0;
+}
+
 const ENVELOPE_TIMES_SECONDS = [
   0, 0.005, 0.01, 0.015, 0.02, 0.03, 0.05, 0.075, 0.1, 0.15,
   0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 0.003
@@ -263,12 +268,12 @@ class Voice {
   updateVolumeEnvelope(wheelValue) {
     this.wheelValue = wheelValue;
     if (!this.baseAmpParams) return;
-    const amount = clamp(wheelValue / 127, 0, 1) * clamp(this.wheelAmount / 127, 0, 1);
+    const amount = clamp(wheelValue / 127, 0, 1) * wheelAmountDepth(this.wheelAmount) / 127;
     for (let index = 0; index < VOLUME_ENVELOPE_PARAMETERS.length; index++) {
       const parameter = VOLUME_ENVELOPE_PARAMETERS[index];
       const base = this.baseAmpParams[parameter];
       this.env.params[parameter] = this.wheelTarget === 7 + index
-        ? blend(base, parameter === "sustain" ? 1 : 4, amount) : base;
+        ? blend(base, amount < 0 ? 0 : parameter === "sustain" ? 1 : 4, Math.abs(amount)) : base;
     }
   }
 
@@ -300,9 +305,9 @@ class Voice {
   release() {
     this.pendingTrigger = null;
     this.fadeRemaining = 0;
-    const amount = clamp(this.wheelValue / 127, 0, 1) * clamp(this.wheelAmount / 127, 0, 1);
+    const amount = clamp(this.wheelValue / 127, 0, 1) * wheelAmountDepth(this.wheelAmount) / 127;
     this.env.params.release = this.wheelTarget === 11
-      ? blend(this.baseAmpParams.release, 4, amount) : this.baseAmpParams.release;
+      ? blend(this.baseAmpParams.release, amount < 0 ? 0 : 4, Math.abs(amount)) : this.baseAmpParams.release;
     // Preserve release tails, but ramp even a zero-release patch to silence.
     if (this.env.params.release === 0) this.env.params.release = 0.002;
     this.env.release();
@@ -376,7 +381,7 @@ class Voice {
       }
     };
 
-    addTarget(values.SynthModTarget, processor.modValue * (values.SynthModAmount / 127));
+    addTarget(values.SynthModTarget, processor.modValue * (wheelAmountDepth(values.SynthModAmount) / 127));
     addTarget(values.SynthLfoTarget, processor.lfoSample() * (values.SynthLfoAmount - 127));
     for (let i = 0; i < 2; i++) {
       const { target, depth, enabled } = this.fxSettings[i];

@@ -279,7 +279,7 @@ std::array<VolumeEnvelopeSettings, 2> pendingVolumeEnvelopes;
 std::atomic<uint8_t> publishedVolumeEnvelope = 0;
 uint64_t lastVolumeEnvelopePoll = 0;
 uint8_t previousEnvelopeWheelTarget = 255;
-uint8_t previousEnvelopeWheelAmount = 255;
+int16_t previousEnvelopeWheelAmount = 255;
 }
 
 const VolumeEnvelopeSettings& RAM_FUNC(pendingVolumeEnvelopeSettings)() {
@@ -290,7 +290,7 @@ const VolumeEnvelopeSettings& RAM_FUNC(pendingVolumeEnvelopeSettings)() {
 void refreshVolumeEnvelopeModulation(bool force) {
   if (!force && runTime - lastVolumeEnvelopePoll < 50000) return;
   lastVolumeEnvelopePoll = runTime;
-  const uint8_t amount = synthModTarget >= SYNTH_MOD_TARGET_AMP_ATTACK
+  const int16_t amount = synthModTarget >= SYNTH_MOD_TARGET_AMP_ATTACK
       && synthModTarget <= SYNTH_WHEEL_TARGET_MAX
       ? scaleSynthModAmount(static_cast<uint8_t>(constrain(modWheel.curValue, 0, 127))) : 0;
   if (!force && previousEnvelopeWheelTarget == synthModTarget && previousEnvelopeWheelAmount == amount) return;

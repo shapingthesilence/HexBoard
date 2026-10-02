@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { deterministicObjectId, objectIdToHex } from "../catalogs/index.ts";
-import { filterLibraryPresets, mergePresetBatch, presetsFromUnknown } from "./SynthPresetLibrary.tsx";
+import { wheelAmountByteToPercent, wheelAmountPercentToByte, filterLibraryPresets, mergePresetBatch, presetsFromUnknown } from "./SynthPresetLibrary.tsx";
 
 function presetRecord(id: string, name: string, folderPath: string) {
   return {
@@ -59,5 +59,18 @@ describe("synth preset library filtering", () => {
       "Soft Voice"
     ]);
     expect(filterLibraryPresets(presets, "Pads", "lead")).toEqual([]);
+  });
+});
+
+describe("signed wheel amount", () => {
+  it("round trips every slider percentage and preserves legacy positive depths", () => {
+    for (let percent = -100; percent <= 100; ++percent) {
+      expect(wheelAmountByteToPercent(wheelAmountPercentToByte(percent))).toBe(percent);
+    }
+    expect(wheelAmountByteToPercent(127)).toBe(100);
+    expect(wheelAmountByteToPercent(0)).toBe(0);
+    expect(wheelAmountByteToPercent(254)).toBe(-100);
+    const [preset] = presetsFromUnknown({ ...presetRecord("negative", "Negative", ""), values: { SynthModAmount: 254 } });
+    expect(preset.values.SynthModAmount).toBe(254);
   });
 });

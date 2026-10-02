@@ -415,7 +415,7 @@ default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 `Wheel FX` chooses how the mod wheel affects the onboard synth:
 
 - `Vibrato`: adds pitch vibrato to the active synth voices
-- `Pitch`: bends pitch up with the wheel or positive FX amounts, and down with negative FX amounts. Full-depth pitch modulation spans about `+/-24` semitones.
+- `Pitch`: bends pitch up with positive wheel or FX amounts, and down with negative amounts. Full-depth pitch modulation spans about `+/-24` semitones.
 - `WT Pos`: scans the selected wavetable forward or backward from the base `WT Pos`
 - `FoldWrp`: applies the original folded phase-warp color movement across the onboard waveforms
 - `DutyWrp`: shifts the two halves of the oscillator cycle in opposite directions for a sharper duty-style phase warp
@@ -423,7 +423,8 @@ default sustain is `0%`, so the FX envelopes do nothing until you shape them.
 - `Amp Atk`, `Amp Hold`, `Amp Dec`, `Amp Sus`, `Amp Rel`: modulate the corresponding volume-envelope parameter. These wheel-only targets appear after `PolyWrp`.
 
 For volume-envelope targets, the wheel raises the saved value toward `4 s`
-for times or `100%` for Sustain, scaled by `Wheel Amt`. Returning the wheel to
+for times or `100%` for Sustain with positive `Wheel Amt`. Negative amounts lower
+the saved value toward zero. Returning the wheel to
 zero restores the saved value. The wheel is sampled at 20 Hz. Each new attack captures its Attack, Hold, Decay,
 and Sustain settings; each new release captures its Release setting. Existing
 envelopes keep the settings they started with.
@@ -432,7 +433,8 @@ The saved preset values do not change.
 External MIDI still receives normal mod-wheel `CC 1` messages. `Vib Speed` sets
 the onboard vibrato LFO speed from `1 Hz` to `12 Hz` for wheel or envelope
 vibrato. The `Noise` speed after `12 Hz` uses smooth random vibrato at the same
-12 Hz rate. `Wheel Amt` scales how strongly the mod wheel affects its target.
+12 Hz rate. `Wheel Amt` ranges from `-100%` to `+100%`; negative amounts reverse
+the modulation direction, and `Off` disables it.
 
 `Tempo` is shared by the arpeggiator and metronome. `Metronome` has four modes:
 

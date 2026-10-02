@@ -7,8 +7,10 @@ int main() {
   static_assert(persistedSettingsWidth(33) == 60);
   static_assert(persistedSettingsWidth(31) == 0);
   static_assert(persistedSettingsWidth(34) == 60);
-  static_assert(persistedSettingsWidth(35) == 0);
-  for (size_t sourceWidth : {size_t(57), size_t(60)}) {
+  static_assert(persistedSettingsWidth(35) == 60);
+  static_assert(persistedSettingsWidth(36) == 0);
+  for (uint8_t version : {32, 33, 34, 35}) {
+    const size_t sourceWidth = persistedSettingsWidth(version);
     std::array<uint8_t, 9 * 60> source{};
     std::array<uint8_t, 9 * 60 + 2> destination{};
     destination.front() = 0xa5;

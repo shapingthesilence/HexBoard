@@ -1,4 +1,5 @@
 #include "SynthAudioInternal.h"
+#include "ModWheelAmount.h"
 
 uint8_t synthFxModScaleByDepth[128][128] = {};
 uint32_t synthPitchModPositiveQ16ByQ4[SYNTH_PITCH_MOD_RATIO_Q4_COUNT] = {};
@@ -41,8 +42,8 @@ void updateSynthModulationParams() {
   if (synthModTarget > SYNTH_WHEEL_TARGET_MAX) {
     synthModTarget = SYNTH_MOD_TARGET_FOLD_WARP;
   }
-  if (synthModAmount > SYNTH_MOD_AMOUNT_FULL) {
-    synthModAmount = SYNTH_MOD_AMOUNT_FULL;
+  if (synthModAmount > SYNTH_MOD_AMOUNT_MAX) {
+    synthModAmount = 0;
   }
   for (uint8_t envelopeIndex = 0; envelopeIndex < SYNTH_FX_ENVELOPE_COUNT; ++envelopeIndex) {
     if (effectEnvelopeTarget[envelopeIndex] > SYNTH_MOD_TARGET_MAX) {
@@ -81,11 +82,8 @@ void updateSynthPortamentoSettings() {
   synthPortamentoTicks = ticksFromMicros(envelopeTimeMicrosOptions[synthPortamentoTimeIndex]);
 }
 
-uint8_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue) {
-  if (synthModAmount >= SYNTH_MOD_AMOUNT_FULL) {
-    return modValue;
-  }
-  return static_cast<uint8_t>((static_cast<uint16_t>(modValue) * static_cast<uint16_t>(synthModAmount) + 64u) >> 7);
+int16_t RAM_FUNC(scaleSynthModAmount)(uint8_t modValue) {
+  return scaleSynthWheelDepth(modValue, synthModAmount);
 }
 
 uint8_t RAM_FUNC(scaleSynthFxModDepth)(uint8_t depth, uint8_t value) {
@@ -934,7 +932,7 @@ bool RAM_FUNC(synthControlTickDue)() {
 
 void RAM_FUNC(refreshSynthBaseModulationCache)(uint8_t elapsedTicks) {
   synthBaseModulationCache = {};
-  const uint8_t synthModValue = scaleSynthModAmount(smoothedSynthModValue(elapsedTicks));
+  const int16_t synthModValue = scaleSynthModAmount(smoothedSynthModValue(elapsedTicks));
   if (synthModTarget == SYNTH_MOD_TARGET_PITCH) {
     int16_t pitchAmountQ4 = static_cast<int16_t>(synthModValue * SYNTH_PITCH_MOD_Q4_SCALE);
     addSynthPitchTargetAmountQ4(pitchAmountQ4, synthBaseModulationCache.pitch);
