@@ -29,7 +29,9 @@ folder and name.
 `web/scripts/generate-factory-wavetables.mjs` regenerates the supplied
 `wavetables/` files from the project WAV and anchor sources. Basic
 Shapes is intentionally excluded from LittleFS because it is the immutable
-rescue wavetable compiled into firmware.
+rescue wavetable compiled into firmware. Separately authored `.hexwav` records
+are preserved during regeneration. The generator bundles every factory wavetable
+record, including source subdirectories, into the web app for offline preview.
 
 ## Tuning Bundles
 

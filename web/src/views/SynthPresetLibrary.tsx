@@ -1064,19 +1064,19 @@ function saveComputerPresets(presets: EditableSynthPreset[]) {
   window.localStorage.setItem(computerLibraryStorageKey, JSON.stringify(presets.map(exportPreset)));
 }
 
-function loadComputerWavetables(): EditableSynthWavetable[] {
+export function loadComputerWavetables(): EditableSynthWavetable[] {
   if (typeof window === "undefined") {
     return factoryComputerWavetables();
   }
 
   try {
-    const factorySeeded = window.localStorage.getItem(computerWavetableFactorySeedStorageKey) === "1";
+    const factorySeeded = window.localStorage.getItem(computerWavetableFactorySeedStorageKey) === "2";
     const stored = window.localStorage.getItem(computerWavetableStorageKey);
     const parsed = stored ? JSON.parse(stored) : null;
     if (Array.isArray(parsed)) {
       const wavetables = parsed.map(wavetableFromUnknown);
       if (!factorySeeded) {
-        window.localStorage.setItem(computerWavetableFactorySeedStorageKey, "1");
+        window.localStorage.setItem(computerWavetableFactorySeedStorageKey, "2");
         return mergeMissingFactoryWavetables(wavetables);
       }
       return uniqueWavetablesByName(wavetables);
@@ -1085,7 +1085,7 @@ function loadComputerWavetables(): EditableSynthWavetable[] {
     window.localStorage.removeItem(computerWavetableStorageKey);
   }
 
-  window.localStorage.setItem(computerWavetableFactorySeedStorageKey, "1");
+  window.localStorage.setItem(computerWavetableFactorySeedStorageKey, "2");
   return factoryComputerWavetables();
 }
 
@@ -1779,6 +1779,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   }
 
   async function selectPresetWavetable(value: string) {
+    if (value === "import-wavetable") {
+      setWavetableImportDialogOpen(true);
+      return;
+    }
     const wavetable = wavetableReferenceFromOptionValue(value);
     if (!connected || !autoSend) { applyPresetWavetable(wavetable); return; }
     const referenceKey = wavetableSaveKey(wavetable);
@@ -3010,147 +3014,6 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
               onNewFolderChange={setNewWavetableFolder}
             />
 
-            {wavetableImportDialogOpen ? (
-              <div className="modalOverlay" role="presentation" onMouseDown={closeWavetableImportDialog}>
-                <div className="modalPanel stack" role="dialog" aria-modal="true" aria-labelledby="wavetableImportTitle" onMouseDown={(event) => event.stopPropagation()}>
-                  <div className="row between">
-                    <h3 id="wavetableImportTitle">Import Wavetable</h3>
-                    <button type="button" onClick={closeWavetableImportDialog}>
-                      Close
-                    </button>
-                  </div>
-                  <div className="stack">
-                    <button className="primary" type="button" onClick={() => wavetableFileInputRef.current?.click()}>
-                      Choose File
-                    </button>
-                    <span className="muted">Files ending in .hexwav are parsed as HexBoard wavetables automatically.</span>
-                  </div>
-                  <div className="fieldGrid compact oneColumn">
-                    <label className="field">
-                      <span>File Type</span>
-                      <select
-                        value={wavetableImportFormat}
-                        onChange={(event) => {
-                          setWavetableImportFormat(event.target.value as WavetableImportFormat);
-                          setWavetableImportSource(null);
-                          setWavetablePreviewFrame(0);
-                          setWavetablePreviewMipLevel(0);
-                        }}
-                      >
-                        <option value="serum-vital">Serum/Vital wavetable</option>
-                        <option value="hexboard">HexBoard wavetable</option>
-                      </select>
-                    </label>
-                    <label className="field">
-                      <span>WT Name</span>
-                      <input
-                        placeholder="Use file name"
-                        value={wavetableImportName}
-                        onChange={(event) => setWavetableImportName(event.target.value)}
-                      />
-                    </label>
-                    <label className="field">
-                      <span>WT Folder</span>
-                      <select value={wavetableImportFolder} onChange={(event) => setWavetableImportFolder(event.target.value)}>
-                        {allWavetableFolders
-                          .filter((folder) => folder !== builtInWavetableFolder)
-                          .map((folder) => (
-                            <option key={folder} value={folder}>
-                              {folderLabel(folder)}
-                            </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="field">
-                      <span>Frame mapping</span>
-                      <select
-                        disabled={wavetableImportControlsDisabled}
-                        value={wavetableFrameReduction}
-                        onChange={(event) => setWavetableFrameReduction(event.target.value as WavetableFrameReduction)}
-                      >
-                        <option value="nearest">Nearest source frame</option>
-                        <option value="interpolated">Interpolate source frames</option>
-                      </select>
-                    </label>
-                    <label className="field">
-                      <span>Normalization</span>
-                      <select
-                        disabled={wavetableImportControlsDisabled}
-                        value={wavetableNormalization}
-                        onChange={(event) => setWavetableNormalization(event.target.value as WavetableNormalization)}
-                      >
-                        <option value="per-frame">Per-frame</option>
-                        <option value="whole-table">Whole-table</option>
-                      </select>
-                    </label>
-                    <div className="row">
-                      <label className="checkField">
-                        <input
-                          checked={wavetableSmooth}
-                          disabled={wavetableImportControlsDisabled}
-                          type="checkbox"
-                          onChange={(event) => setWavetableSmooth(event.target.checked)}
-                        />
-                        <span>Smooth</span>
-                      </label>
-                      <label className="checkField">
-                        <input
-                          checked={wavetableDither}
-                          disabled={wavetableImportControlsDisabled}
-                          type="checkbox"
-                          onChange={(event) => setWavetableDither(event.target.checked)}
-                        />
-                        <span>Dither</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div className="wavetablePreviewPanel stack">
-                    {renderedWavetableImport ? (
-                      renderedWavetableImport.error ? (
-                        <div className="status warn">{renderedWavetableImport.error}</div>
-                      ) : (
-                        <>
-                          <div className="row between">
-                            <span className="muted">{renderedWavetableImport.source.fileName}</span>
-                            <span className="muted">CRC {(renderedWavetableImport.sampleCrc ?? 0).toString(16).toUpperCase().padStart(8, "0")}</span>
-                          </div>
-                          <svg className="wavetablePreviewGraph" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`Wavetable frame ${wavetablePreviewFrame + 1}`}>
-                            <line x1="0" x2="100" y1="50" y2="50" />
-                            <path d={wavetablePreviewPath} />
-                          </svg>
-                          <label className="field rangeField">
-                            <span>Frame {wavetablePreviewFrame + 1} / {SYNTH_WAVETABLE_FRAME_COUNT}</span>
-                            <input
-                              max={SYNTH_WAVETABLE_FRAME_COUNT - 1}
-                              min={0}
-                              type="range"
-                              value={wavetablePreviewFrame}
-                              onChange={(event) => setWavetablePreviewFrame(Number(event.target.value))}
-                            />
-                          </label>
-                          <label className="field rangeField">
-                            <span>Mip {Math.min(wavetablePreviewMipLevel, renderedWavetableMipLevelCount - 1) + 1} / {renderedWavetableMipLevelCount} ({renderedWavetableMipSampleCount} samples, {renderedWavetableMipHarmonicLimit} harmonics)</span>
-                            <input
-                              disabled={renderedWavetableMipLevelCount <= 1}
-                              max={Math.max(0, renderedWavetableMipLevelCount - 1)}
-                              min={0}
-                              type="range"
-                              value={Math.min(wavetablePreviewMipLevel, renderedWavetableMipLevelCount - 1)}
-                              onChange={(event) => setWavetablePreviewMipLevel(Number(event.target.value))}
-                            />
-                          </label>
-                        </>
-                      )
-                    ) : (
-                      <div className="status">No wavetable file selected</div>
-                    )}
-                  </div>
-                  <button className="primary" disabled={!renderedWavetableImport?.samples} type="button" onClick={() => void importRenderedWavetablePreview()}>
-                    Import
-                  </button>
-                </div>
-              </div>
-            ) : null}
 
             <div className="librarySpaces">
               <WavetableLibraryPanel
@@ -3189,6 +3052,148 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           </>
         )}
       </aside>
+
+      {wavetableImportDialogOpen ? (
+        <div className="modalOverlay" role="presentation" onMouseDown={closeWavetableImportDialog}>
+          <div className="modalPanel stack" role="dialog" aria-modal="true" aria-labelledby="wavetableImportTitle" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="row between">
+              <h3 id="wavetableImportTitle">Import Wavetable</h3>
+              <button type="button" onClick={closeWavetableImportDialog}>
+                Close
+              </button>
+            </div>
+            <div className="stack">
+              <button className="primary" type="button" onClick={() => wavetableFileInputRef.current?.click()}>
+                Choose File
+              </button>
+              <span className="muted">Files ending in .hexwav are parsed as HexBoard wavetables automatically.</span>
+            </div>
+            <div className="fieldGrid compact oneColumn">
+              <label className="field">
+                <span>File Type</span>
+                <select
+                  value={wavetableImportFormat}
+                  onChange={(event) => {
+                    setWavetableImportFormat(event.target.value as WavetableImportFormat);
+                    setWavetableImportSource(null);
+                    setWavetablePreviewFrame(0);
+                    setWavetablePreviewMipLevel(0);
+                  }}
+                >
+                  <option value="serum-vital">Serum/Vital wavetable</option>
+                  <option value="hexboard">HexBoard wavetable</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>WT Name</span>
+                <input
+                  placeholder="Use file name"
+                  value={wavetableImportName}
+                  onChange={(event) => setWavetableImportName(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>WT Folder</span>
+                <select value={wavetableImportFolder} onChange={(event) => setWavetableImportFolder(event.target.value)}>
+                  {allWavetableFolders
+                    .filter((folder) => folder !== builtInWavetableFolder)
+                    .map((folder) => (
+                      <option key={folder} value={folder}>
+                        {folderLabel(folder)}
+                      </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Frame mapping</span>
+                <select
+                  disabled={wavetableImportControlsDisabled}
+                  value={wavetableFrameReduction}
+                  onChange={(event) => setWavetableFrameReduction(event.target.value as WavetableFrameReduction)}
+                >
+                  <option value="nearest">Nearest source frame</option>
+                  <option value="interpolated">Interpolate source frames</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Normalization</span>
+                <select
+                  disabled={wavetableImportControlsDisabled}
+                  value={wavetableNormalization}
+                  onChange={(event) => setWavetableNormalization(event.target.value as WavetableNormalization)}
+                >
+                  <option value="per-frame">Per-frame</option>
+                  <option value="whole-table">Whole-table</option>
+                </select>
+              </label>
+              <div className="row">
+                <label className="checkField">
+                  <input
+                    checked={wavetableSmooth}
+                    disabled={wavetableImportControlsDisabled}
+                    type="checkbox"
+                    onChange={(event) => setWavetableSmooth(event.target.checked)}
+                  />
+                  <span>Smooth</span>
+                </label>
+                <label className="checkField">
+                  <input
+                    checked={wavetableDither}
+                    disabled={wavetableImportControlsDisabled}
+                    type="checkbox"
+                    onChange={(event) => setWavetableDither(event.target.checked)}
+                  />
+                  <span>Dither</span>
+                </label>
+              </div>
+            </div>
+            <div className="wavetablePreviewPanel stack">
+              {renderedWavetableImport ? (
+                renderedWavetableImport.error ? (
+                  <div className="status warn">{renderedWavetableImport.error}</div>
+                ) : (
+                  <>
+                    <div className="row between">
+                      <span className="muted">{renderedWavetableImport.source.fileName}</span>
+                      <span className="muted">CRC {(renderedWavetableImport.sampleCrc ?? 0).toString(16).toUpperCase().padStart(8, "0")}</span>
+                    </div>
+                    <svg className="wavetablePreviewGraph" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label={`Wavetable frame ${wavetablePreviewFrame + 1}`}>
+                      <line x1="0" x2="100" y1="50" y2="50" />
+                      <path d={wavetablePreviewPath} />
+                    </svg>
+                    <label className="field rangeField">
+                      <span>Frame {wavetablePreviewFrame + 1} / {SYNTH_WAVETABLE_FRAME_COUNT}</span>
+                      <input
+                        max={SYNTH_WAVETABLE_FRAME_COUNT - 1}
+                        min={0}
+                        type="range"
+                        value={wavetablePreviewFrame}
+                        onChange={(event) => setWavetablePreviewFrame(Number(event.target.value))}
+                      />
+                    </label>
+                    <label className="field rangeField">
+                      <span>Mip {Math.min(wavetablePreviewMipLevel, renderedWavetableMipLevelCount - 1) + 1} / {renderedWavetableMipLevelCount} ({renderedWavetableMipSampleCount} samples, {renderedWavetableMipHarmonicLimit} harmonics)</span>
+                      <input
+                        disabled={renderedWavetableMipLevelCount <= 1}
+                        max={Math.max(0, renderedWavetableMipLevelCount - 1)}
+                        min={0}
+                        type="range"
+                        value={Math.min(wavetablePreviewMipLevel, renderedWavetableMipLevelCount - 1)}
+                        onChange={(event) => setWavetablePreviewMipLevel(Number(event.target.value))}
+                      />
+                    </label>
+                  </>
+                )
+              ) : (
+                <div className="status">No wavetable file selected</div>
+              )}
+            </div>
+            <button className="primary" disabled={!renderedWavetableImport?.samples} type="button" onClick={() => void importRenderedWavetablePreview()}>
+              Import
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="panel stack synthMainPanel">
         <header className="editorSummary">
@@ -3379,6 +3384,7 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                 value={wavetableOptionValue(preset.wavetableFolderPath, preset.wavetableName)}
                 onChange={(event) => void selectPresetWavetable(event.target.value)}
               >
+                <option value="import-wavetable">Import Wavetable...</option>
                 <optgroup label={connected ? "On HexBoard" : "Built-in"}>
                   {wavetableOptions.device.map((option) => (
                     <option key={option.value} value={option.value}>

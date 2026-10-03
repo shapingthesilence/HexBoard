@@ -1,8 +1,9 @@
-import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   crunchSerumWavetable,
+  parseHexBoardWavetable,
   renderInterpolatedAnchorWavetable,
   SYNTH_WAVETABLE_MIP_SAMPLE_BYTES,
   SYNTH_WAVETABLE_SAMPLE_COUNT
@@ -262,11 +263,11 @@ function renderWebFactoryData(renderedWavetables, basicShapes) {
   output += `  folderPath: string;\n`;
   output += `  samples: Uint8Array;\n`;
   output += `}\n\n`;
-  output += `const factoryWavetableFolder = "/";\n\n`;
+
   output += `const factoryWavetableDefinitions = [\n`;
   for (const wavetable of renderedWavetables) {
     const base64 = Buffer.from(wavetable.samples).toString("base64");
-    output += `  { name: ${JSON.stringify(wavetable.name)}, samplesBase64: ${JSON.stringify(base64)} },\n`;
+    output += `  { name: ${JSON.stringify(wavetable.name)}, folderPath: ${JSON.stringify(wavetable.folderPath)}, samplesBase64: ${JSON.stringify(base64)} },\n`;
   }
   output += `] as const;\n\n`;
   output += `function decodeBase64Bytes(encoded: string): Uint8Array {\n`;
@@ -280,9 +281,9 @@ function renderWebFactoryData(renderedWavetables, basicShapes) {
   output += `export function createBasicShapesSamples(): Uint8Array {\n  return decodeBase64Bytes(${JSON.stringify(Buffer.from(basicShapes.samples).toString("base64"))});\n}\n\n`;
   output += `export function createFactorySynthWavetables(): FactorySynthWavetable[] {\n`;
   output += `  return factoryWavetableDefinitions.map((definition) => ({\n`;
-  output += `    objectIdHex: objectIdToHex(deterministicObjectId(\`factory-wavetable:\${factoryWavetableFolder}:\${definition.name}\`)),\n`;
+  output += `    objectIdHex: objectIdToHex(deterministicObjectId(\`factory-wavetable:\${definition.folderPath}:\${definition.name}\`)),\n`;
   output += `    name: definition.name,\n`;
-  output += `    folderPath: factoryWavetableFolder,\n`;
+  output += `    folderPath: definition.folderPath,\n`;
   output += `    samples: decodeBase64Bytes(definition.samplesBase64)\n`;
   output += `  }));\n`;
   output += `}\n`;
@@ -298,17 +299,30 @@ for (const definition of wavetableSources) {
 // Basic Shapes is the immutable rescue wavetable. Everything else ships in
 // LittleFS so it can be renamed, edited, or erased like user-created content.
 await writeFile(firmwareOutputPath, renderFirmwareData(renderedWavetables.slice(0, 1)), "utf8");
-await writeFile(webOutputPath, renderWebFactoryData(renderedWavetables.slice(1), renderedWavetables[0]), "utf8");
 await mkdir(libraryOutputPath, { recursive: true });
-for (const entry of await readdir(libraryOutputPath, { withFileTypes: true })) {
-  if (entry.isFile() && entry.name.toLowerCase().endsWith(".hexwav")) {
-    await unlink(resolve(libraryOutputPath, entry.name));
-  }
-}
 for (const wavetable of renderedWavetables.slice(1)) {
   await writeFile(resolve(libraryOutputPath, `${wavetable.name}.hexwav`), encodeHexWav(wavetable.samples));
 }
 
 console.log(`Generated ${firmwareOutputPath} (Basic Shapes rescue wavetable)`);
-console.log(`Generated ${webOutputPath} (${renderedWavetables.length - 1} editable factory wavetables)`);
-console.log(`Generated ${libraryOutputPath} (${renderedWavetables.length - 1} editable factory wavetables)`);
+// Authored .hexwav catalog records are source too; preserve and bundle them.
+async function readFactoryCatalog(directory, folderPath = "/") {
+  const records = [];
+  const entries = await readdir(directory, { withFileTypes: true });
+  entries.sort((left, right) => left.name.localeCompare(right.name));
+  for (const entry of entries) {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) {
+      records.push(...await readFactoryCatalog(path, `${folderPath === "/" ? "" : folderPath}/${entry.name}`));
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".hexwav")) {
+      records.push({ name: entry.name.slice(0, -7), folderPath,
+        samples: parseHexBoardWavetable(await readFile(path)) });
+    }
+  }
+  return records;
+}
+const factoryCatalog = await readFactoryCatalog(libraryOutputPath);
+await writeFile(webOutputPath, renderWebFactoryData(factoryCatalog, renderedWavetables[0]), "utf8");
+
+console.log(`Generated ${webOutputPath} (${factoryCatalog.length} editable factory wavetables)`);
+console.log(`Generated ${libraryOutputPath} (${factoryCatalog.length} editable factory wavetables)`);

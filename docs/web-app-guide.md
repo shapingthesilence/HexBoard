@@ -577,7 +577,8 @@ volume-envelope values toward zero. All envelope time sliders include
 Both arp modes expose `Note length` (1–100% of a step). `Poly arpeggiator`
 plays one note per step with overlapping release tails; the regular arpeggiator
 uses a single voice with a brief fade between notes.
-Wavetables can be imported from Serum/Vital `.wav` files or HexBoard
+Choose **Import Wavetable...** in the oscillator’s Wavetable dropdown to open
+the import menu. Wavetables can be imported from Serum/Vital `.wav` files or HexBoard
 `.hexwav` files, uploaded, downloaded, exported, renamed, moved, and selected
 for the open preset. Short HexBoard wavetable files are expanded to fit the
 instrument automatically.
@@ -587,6 +588,9 @@ The `Folders` menu creates and deletes empty computer folders; folders persist
 between browser sessions. The built-in `Basic Shapes` fallback appears in
 `Root` like the other root-level wavetables. New wavetable imports start in
 `Root` unless another folder is selected.
+All seven editable factory device wavetables, including NotPiano, are bundled
+for browser preview alongside Basic Shapes. Existing browser libraries gain
+missing defaults on upgrade while keeping same-name user entries.
 
 `HexBoard Wavetables` is refreshed from the connected device; if a preset
 references a computer-only wavetable, previewing or saving that preset to HexBoard requires

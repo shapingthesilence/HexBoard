@@ -396,12 +396,7 @@ Example scale
 
     const factory = createFactorySynthWavetables();
     expect(factory.map((wavetable) => wavetable.name)).toEqual([
-      "Classic",
-      "Vowels",
-      "HarshDigitalBois",
-      "RustyBlade",
-      "RoundThe808",
-      "GlassyBells"
+      "Classic", "GlassyBells", "HarshDigitalBois", "NotPiano", "RoundThe808", "RustyBlade", "Vowels"
     ]);
     expect(factory.every((wavetable) => wavetable.folderPath === "/")).toBe(true);
     expect(factory.every((wavetable) => wavetable.samples.length === SYNTH_WAVETABLE_MIP_SAMPLE_BYTES)).toBe(true);

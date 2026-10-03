@@ -241,7 +241,10 @@ firmware's 16-frame wavetable format, AHDSR timing, signed modulation targets,
 phase warps, linear portamento, drive curve, and envelope-weighted polyphonic
 attenuation. Actual sample bytes (including available mip levels) come from the
 selected library record; generated Basic Shapes samples share the firmware's
-factory generator. Unavailable wavetable data cannot be auditioned.
+factory generator. The browser bundle includes every editable `.hexwav` record
+in `factory-library/wavetables/`, including authored tables and subfolders.
+Library upgrades add missing defaults once without replacing same-name user
+entries. Unavailable user wavetable data cannot be auditioned.
 
 This is a sound approximation: browser sample rate, floating point processing,
 mip selection, and voice transitions differ from firmware. It does not model
