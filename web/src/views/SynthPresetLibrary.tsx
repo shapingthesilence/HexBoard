@@ -1237,10 +1237,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
   const [editorHydrated, setEditorHydrated] = useState(() => transport instanceof MockMidiTransport);
   const [libraryStorageError, setLibraryStorageError] = useState("");
   const [syncStatus, setSyncStatus] = useState("Ready");
+  const [copyingPreviewWavetable, setCopyingPreviewWavetable] = useState(false);
   const [auditionOpen, setAuditionOpen] = useState(false);
   const [previewOctave, setPreviewOctave] = useState(4);
   const [previewStatus, setPreviewStatus] = useState("Ready");
-  const [previewVolume, setPreviewVolume] = useState(0.35);
+  const [previewVolume, setPreviewVolume] = useState(0.8);
   const [previewMod, setPreviewMod] = useState(0);
   const [previewResetToken, setPreviewResetToken] = useState(0);
   const [heldPreviewNotes, setHeldPreviewNotes] = useState<number[]>([]);
@@ -1386,6 +1387,10 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       wavetable.samples && wavetableSaveKey(wavetable) === selectedKey
     );
   }, [computerWavetables, hexboardWavetables, preset.wavetableFolderPath, preset.wavetableName]);
+  const requiredHexBoardWavetable = connected ? hexboardWavetables.find((wavetable) =>
+    wavetable.deviceHandle !== undefined && wavetableSaveKey(wavetable) ===
+      wavetableSaveKey(normalizeWavetableReference(preset.wavetableFolderPath, preset.wavetableName))
+  ) : undefined;
   const previewPatch = useMemo<SynthPreviewPatch>(() => ({
     wavetableName: preset.wavetableName,
     wavetableFolderPath: preset.wavetableFolderPath,
@@ -1503,20 +1508,26 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       stopPreviewNote(note);
     }
 
-    const releaseOnBlur = () => stopAllPreviewNotes();
-    const releaseWhenHidden = () => { if (document.hidden) stopAllPreviewNotes(); };
-    window.addEventListener("blur", releaseOnBlur);
-    document.addEventListener("visibilitychange", releaseWhenHidden);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     return () => {
-      window.removeEventListener("blur", releaseOnBlur);
-      document.removeEventListener("visibilitychange", releaseWhenHidden);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       pressedPreviewKeys.current.clear();
     };
   }, [auditionOpen, previewOctave]);
+
+  // MIDI preview remains active when the test keyboard is collapsed.
+  useEffect(() => {
+    const releaseOnBlur = () => stopAllPreviewNotes();
+    const releaseWhenHidden = () => { if (document.hidden) stopAllPreviewNotes(); };
+    window.addEventListener("blur", releaseOnBlur);
+    document.addEventListener("visibilitychange", releaseWhenHidden);
+    return () => {
+      window.removeEventListener("blur", releaseOnBlur);
+      document.removeEventListener("visibilitychange", releaseWhenHidden);
+    };
+  }, []);
 
   useEffect(() => () => {
     if (previewChordTimerRef.current !== null) {
@@ -1641,7 +1652,14 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
 
   function setAuditionExpanded(open: boolean) {
     if (!open) {
-      stopAllPreviewNotes("Hidden");
+      // Release only typing/onscreen/chord notes; keep the MIDI router running.
+      previewStopGeneration.current++;
+      if (previewChordTimerRef.current !== null) {
+        window.clearTimeout(previewChordTimerRef.current);
+        previewChordTimerRef.current = null;
+      }
+      pressedPreviewKeys.current.clear();
+      heldPreviewNotes.forEach(stopPreviewNote);
     }
     setAuditionOpen(open);
   }
@@ -2248,6 +2266,16 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
       saveWavetableToComputer(loaded, "Copied");
     } catch (error) {
       setSyncStatus(error instanceof Error ? error.message : "Failed to copy HexBoard wavetable to Browser Library");
+    }
+  }
+
+  async function copyPreviewWavetableFromHexBoard() {
+    if (!requiredHexBoardWavetable || copyingPreviewWavetable) return;
+    setCopyingPreviewWavetable(true);
+    try {
+      await downloadWavetableFromHexBoard(requiredHexBoardWavetable);
+    } finally {
+      setCopyingPreviewWavetable(false);
     }
   }
 
@@ -3241,26 +3269,15 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
           <details className="compactDisclosure"><summary>Other drafts</summary><div className="row">{Object.entries(drafts.entries).filter(([key, entry]) => key !== draftKey && !sameContent(entry.value, entry.base)).map(([key, entry]) => <button type="button" key={key} onClick={() => openPreset(key.startsWith("hexboard:") ? "hexboard" : "computer", entry.value)}>{entry.value.name}</button>)}</div></details> : null}
 
         <section className={auditionOpen ? "auditionPanel" : "auditionPanel collapsed"}>
-          <div className="row between">
-            <div>
-              <h3>Test keyboard</h3>
-              <span className="muted">{auditionOpen ? previewStatus : "Hidden"}</span>
-            </div>
-            <button
-              aria-expanded={auditionOpen}
-              aria-label={auditionOpen ? "Hide audition" : "Show audition"}
-              className="iconButton auditionToggle"
-              type="button"
-              onClick={() => setAuditionExpanded(!auditionOpen)}
-            >
-              {auditionOpen ? "-" : "+"}
-            </button>
-          </div>
-
+          <SynthMidiPreview transport={transport} connected={connected} controller={previewController}
+            resetToken={previewResetToken} onStatus={setPreviewStatus} onMod={setPreviewMod}
+            expanded={auditionOpen} onToggle={() => setAuditionExpanded(!auditionOpen)}
+            onStop={() => stopAllPreviewNotes()}>
           {auditionOpen ? (
             <>
+              <h4>Test keyboard</h4>
+              <p className="muted" role="status">{previewStatus}</p>
               <p className="muted">Browser sound preview · use a MIDI controller, the keys below, or your typing keyboard. Typing and onscreen notes use 12 EDO.</p>
-              <SynthMidiPreview transport={transport} connected={connected} controller={previewController} resetToken={previewResetToken} onStatus={setPreviewStatus} onMod={setPreviewMod} />
               <div className="auditionKeyRows">
                 {auditionKeyRows.map((row, rowIndex) => (
                   <div className="auditionKeys" key={`audition-row-${rowIndex}`}>
@@ -3310,13 +3327,11 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
                   <button type="button" onClick={() => void playPreviewChord()}>
                     Chord
                   </button>
-                  <button type="button" onClick={() => stopAllPreviewNotes()}>
-                    Stop
-                  </button>
                 </div>
               </div>
             </>
           ) : null}
+          </SynthMidiPreview>
         </section>
 
         <section className="editorSection synthPlaybackSection">
@@ -3340,7 +3355,13 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         <div className="synthVoiceSections">
         <section className="editorSection">
           <h3>Oscillator</h3>
-          <WaveformPreview samples={previewPatch.wavetableSamples} frame={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition) - 1} name={preset.wavetableName} />
+          <WaveformPreview
+            samples={previewPatch.wavetableSamples}
+            frame={wavetablePositionByteToFrame(preset.values.SynthWavetablePosition) - 1}
+            name={preset.wavetableName}
+            onCopyFromHexBoard={requiredHexBoardWavetable ? () => void copyPreviewWavetableFromHexBoard() : undefined}
+            copying={copyingPreviewWavetable}
+          />
           <div className="editorGrid">
             <label className="field">
               <span>Wavetable</span>
@@ -3915,14 +3936,25 @@ function FxEnvelopeEditor({
   );
 }
 
-function WaveformPreview({ samples, frame, name }: { samples?: Uint8Array; frame: number; name: string }) {
+function WaveformPreview({ samples, frame, name, onCopyFromHexBoard, copying }: {
+  samples?: Uint8Array;
+  frame: number;
+  name: string;
+  onCopyFromHexBoard?: () => void;
+  copying?: boolean;
+}) {
   samples = samples ? synthWavetableBaseSamples(samples) : undefined;
   const points = samples ? Array.from({ length: 256 }, (_, index) => {
     const sample = samples[Math.min(samples.length - 1, frame * (samples.length / SYNTH_WAVETABLE_FRAME_COUNT) + Math.round(index * ((samples.length / SYNTH_WAVETABLE_FRAME_COUNT) - 1) / 255))];
     return `${index * 400 / 255},${44 - (sample - 128) / 128 * 36}`;
   }).join(" ") : "";
   return <figure className="soundVisual"><figcaption>{name} · frame {frame + 1}</figcaption>{samples ?
-    <svg viewBox="0 0 400 88" role="img" aria-label={`${name}, wavetable frame ${frame + 1}`}><path className="graphAxis" d="M0 44H400" /><polyline points={points} /></svg> : <p className="muted">Waveform preview unavailable</p>}</figure>;
+    <svg viewBox="0 0 400 88" role="img" aria-label={`${name}, wavetable frame ${frame + 1}`}><path className="graphAxis" d="M0 44H400" /><polyline points={points} /></svg> : <div className="row">
+      <p className="muted">Waveform preview unavailable</p>
+      {onCopyFromHexBoard ? <button type="button" disabled={copying} onClick={onCopyFromHexBoard}>
+        {copying ? "Copying…" : "Copy wavetable from HexBoard"}
+      </button> : null}
+    </div>}</figure>;
 }
 function EnvelopePreview({ attack, hold, decay, sustain, release }: { attack: number; hold: number; decay: number; sustain: number; release: number }) {
   // Time segments use a compressed scale so short stages remain legible beside long ones.

@@ -210,7 +210,11 @@ for proposed editor and operation-service boundaries.
 
 ### Browser synth audition
 
-The preset editor's Test keyboard starts collapsed. `audio/synthPreview.ts`
+The preset editor's Synth preview panel starts collapsed. Enable/Disable, Stop,
+and the expansion toggle stay visible. Controller settings remain mounted but
+hidden when collapsed; collapsing releases only local keyboard/chord notes and
+keeps MIDI subscriptions active. A connected HexBoard is the default input, so
+preview can be enabled without expanding the panel. Preview volume defaults to 80%. `audio/synthPreview.ts`
 loads `audio/synth-preview-worklet.js` on the first note or MIDI-enable gesture.
 The worklet is imported as a Vite URL asset, so production builds emit a
 content-hashed filename under the configured base path. Keep it in the build

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MidiSynthPreview } from "../audio/midiSynthPreview.ts";
 import type { SynthPreviewController } from "../audio/synthPreview.ts";
 import type { MidiTransport, WebMidiAccess, WebMidiInput } from "../midi/types.ts";
@@ -12,9 +12,13 @@ interface Props {
   resetToken: number;
   onStatus: (status: string) => void;
   onMod: (value: number) => void;
+  expanded: boolean;
+  onToggle: () => void;
+  onStop: () => void;
+  children: ReactNode;
 }
 
-export function SynthMidiPreview({ transport, connected, controller, resetToken, onStatus, onMod }: Props) {
+export function SynthMidiPreview({ transport, connected, controller, resetToken, onStatus, onMod, expanded, onToggle, onStop, children }: Props) {
   const [access, setAccess] = useState<WebMidiAccess | null>(null);
   const [inputs, setInputs] = useState<WebMidiInput[]>([]);
   const [source, setSource] = useState(connected ? "hexboard" : "none");
@@ -34,6 +38,10 @@ export function SynthMidiPreview({ transport, connected, controller, resetToken,
     generation.current++;
     setEnabled(false);
     setBusy(false);
+    if (connected && source === "none") {
+      setSource("hexboard");
+      setRange(48);
+    }
   }, [transport, connected]);
 
   useEffect(() => {
@@ -143,29 +151,44 @@ export function SynthMidiPreview({ transport, connected, controller, resetToken,
     }
   }
 
-  return <div className="synthMidiPreview">
-    <div className="row">
-      <label className="field"><span>MIDI input</span>
-        <select value={source} onChange={event => chooseSource(event.target.value)}>
-          <option value="none">Typing / onscreen only</option>
-          <option value="hexboard" disabled={!connected}>Connected HexBoard</option>
-          {inputs.map(input => <option key={input.id} value={`input:${input.id}`}>{input.name ?? input.id}</option>)}
-          {source.startsWith("input:") && !selectedInput && <option value={source}>Controller disconnected</option>}
-        </select>
-      </label>
-      <button type="button" disabled={busy} onClick={() => void findInputs()}>Find MIDI controllers</button>
-      <button type="button" disabled={busy || !available} onClick={() => {
-        if (enabled) { router.current?.stop(); setEnabled(false); }
-        else void enable();
-      }}>{enabled ? "Disable MIDI preview" : "Enable MIDI preview"}</button>
-      <label className="field"><span>Pitch bend ± semitones</span>
-        <input type="number" min={0} max={127} step={1} value={range} onChange={event => {
-          const value = Number(event.target.value);
-          if (Number.isFinite(value)) setRange(Math.max(0, Math.min(127, Math.round(value))));
-        }} />
-      </label>
+  return <>
+    <div className="row between">
+      <div>
+        <h3>Synth preview</h3>
+        <span className="muted" role="status">{status || (enabled && available ? "Enabled" : "Off")}</span>
+      </div>
+      <div className="row">
+        <button type="button" disabled={busy || !available} onClick={() => {
+          if (enabled) { router.current?.stop(); setEnabled(false); }
+          else void enable();
+        }}>{enabled ? "Disable synth preview" : "Enable synth preview"}</button>
+        <button type="button" onClick={onStop}>Stop</button>
+        <button type="button" className="iconButton auditionToggle" aria-expanded={expanded}
+          aria-label={expanded ? "Hide synth preview" : "Show synth preview"} onClick={onToggle}>
+          {expanded ? "-" : "+"}
+        </button>
+      </div>
     </div>
-    <p className="muted" role="status">{status || (enabled && available ? "MIDI preview enabled" : "MIDI preview off")}</p>
-    <p className="muted">Play the current draft through your browser. Match pitch bend to your controller (HexBoard MPE defaults to 48; ordinary MIDI to 2). MIDI bend-range messages override this per channel.</p>
-  </div>;
+    <div className="synthMidiPreview" hidden={!expanded}>
+      <div className="row">
+        <label className="field"><span>MIDI input</span>
+          <select value={source} onChange={event => chooseSource(event.target.value)}>
+            <option value="none">Typing / onscreen only</option>
+            <option value="hexboard" disabled={!connected}>Connected HexBoard</option>
+            {inputs.map(input => <option key={input.id} value={`input:${input.id}`}>{input.name ?? input.id}</option>)}
+            {source.startsWith("input:") && !selectedInput && <option value={source}>Controller disconnected</option>}
+          </select>
+        </label>
+        <button type="button" disabled={busy} onClick={() => void findInputs()}>Find MIDI controllers</button>
+        <label className="field"><span>Pitch bend ± semitones</span>
+          <input type="number" min={0} max={127} step={1} value={range} onChange={event => {
+            const value = Number(event.target.value);
+            if (Number.isFinite(value)) setRange(Math.max(0, Math.min(127, Math.round(value))));
+          }} />
+        </label>
+      </div>
+      <p className="muted">Play the current draft through your browser. Match pitch bend to your controller (HexBoard MPE defaults to 48; ordinary MIDI to 2). MIDI bend-range messages override this per channel.</p>
+      {children}
+    </div>
+  </>;
 }

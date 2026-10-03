@@ -559,7 +559,10 @@ side by side on wider laptops. Find `Vibrato speed` in the oscillator section.
 Mod wheel and LFO controls form the next row, followed by the two modulation
 envelopes. Narrower windows stack these groups. All sound controls remain
 visible on one scrollable page.
-The wavetable graph follows the selected frame. The volume envelope graph
+The wavetable graph follows the selected frame. If the preview is unavailable
+and the required wavetable is on the connected HexBoard, choose **Copy wavetable
+from HexBoard** beside the message to add it to Browser Wavetables and restore
+the preview. The volume envelope graph
 shows the shape of the sound, with compressed time spacing to keep short stages
 visible. Slider values appear beside their labels with times, rates, and
 percentages. Scroll the page to reach the lower groups; save actions stay at the
@@ -591,19 +594,20 @@ uploading the same-name wavetable or selecting an alternate first. Wavetable
 names are unique across folders, and `Basic Shapes` is reserved for the
 built-in fallback.
 
-Expand **Test keyboard** in the preset editor to hear the current patch through
+Expand **Synth preview** in the preset editor to hear the current patch through
 your browser. It starts hidden and opens a compact piano layout with raised
 black keys and typing-key labels. Hold the onscreen keys or their labeled typing
-keys; use Octave, Mod, Preview Vol, or Chord to test the sound. Stop, hiding the
-keyboard, and leaving the browser window stop playback. Editing text does not
+keys; use Octave, Mod, or Chord to test the sound. **Preview Vol** defaults to 80%.
+Collapsing the panel releases keyboard notes while keeping hardware preview
+enabled. Stop and leaving the browser window stop playback. Editing text does not
 trigger notes. Typing and onscreen notes use 12 EDO independently of the device's
 tuning layout.
 
-To play the browser preview from hardware, choose **Connected HexBoard** under
-**MIDI input**, then click **Enable MIDI preview**. HexBoard must send notes over
-USB MIDI; its current tuning and layout determine the notes. To use another MIDI
-controller, click **Find MIDI controllers**, allow browser MIDI access, select
-its input, and enable preview. This also works without connecting a HexBoard.
+With a connected HexBoard, click **Enable synth preview** beside the plus button
+to play through the browser without expanding the panel. **Connected HexBoard**
+is selected automatically. HexBoard must send notes over USB MIDI; its current tuning and layout determine the notes. To use another MIDI
+controller, expand **Synth preview**, click **Find MIDI controllers**, allow
+browser MIDI access, select its input, and enable preview. This also works without connecting a HexBoard.
 The current editor draft sounds through your computer, including edits you have
 not sent or saved to the board. The board may still play its own internal sound;
 turn that off on the board if you want to hear only the browser preview.
@@ -616,8 +620,11 @@ set each channel's range automatically. See [MPE setup](mpe-microtonal-setup.md)
 for HexBoard's output choices. The Octave control affects typing and onscreen
 notes only.
 
-Stop clears sounding notes while leaving MIDI preview enabled for the next
-attack. Hiding the test keyboard or leaving the Synth tab disables MIDI preview.
+Stop clears sounding notes while leaving synth preview enabled for the next
+attack. Enable/Disable and Stop remain visible beside the plus button when Synth
+preview is collapsed; the keyboard, volume, and MIDI settings are hidden. MIDI
+controllers keep playing the current draft. Leaving the Synth tab
+disables preview.
 Changing inputs or disconnecting the selected input also stops MIDI notes;
 enable preview again after reconnecting. Losing browser focus or hiding the
 page clears notes and ignores MIDI until you return. Hardware preview needs a

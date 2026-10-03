@@ -1018,6 +1018,10 @@ textarea {
   gap: 8px;
 }
 
+.synthMidiPreview[hidden] {
+  display: none;
+}
+
 .synthMidiPreview > .row {
   align-items: flex-end;
 }
