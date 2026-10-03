@@ -3259,14 +3259,24 @@ export function SynthPresetLibrary({ transport }: SynthPresetLibraryProps) {
         ) : null}
 
         <div className="saveStatus" role="status">
-          <span>{drafts.error || libraryStorageError || (browserSaved ? "Saved in browser" : "Draft kept in browser")}</span>
+          <div className="browserSaveStatus">
+            <span>{drafts.error || libraryStorageError || (browserSaved ? "Saved in browser" : "Draft kept in browser")}</span>
+            {Object.entries(drafts.entries).some(([key, entry]) => key !== draftKey && !sameContent(entry.value, entry.base)) ? (
+              <details className="compactDisclosure otherDraftsDisclosure">
+                <summary>Other drafts</summary>
+                <div className="row">
+                  {Object.entries(drafts.entries).filter(([key, entry]) => key !== draftKey && !sameContent(entry.value, entry.base)).map(([key, entry]) => (
+                    <button type="button" key={key} onClick={() => openPreset(key.startsWith("hexboard:") ? "hexboard" : "computer", entry.value)}>{entry.value.name}</button>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+          </div>
           <span>{connected ? deviceSaved ? "Saved on HexBoard" : "Changes not saved to HexBoard" : "Offline"}</span>
         </div>
         {syncStatus !== "Ready" ? <div className="operationStatus" role="status">{syncStatus}</div> : null}
         </header>
         <div className="editorBody">
-        {Object.entries(drafts.entries).some(([key, entry]) => key !== draftKey && !sameContent(entry.value, entry.base)) ?
-          <details className="compactDisclosure"><summary>Other drafts</summary><div className="row">{Object.entries(drafts.entries).filter(([key, entry]) => key !== draftKey && !sameContent(entry.value, entry.base)).map(([key, entry]) => <button type="button" key={key} onClick={() => openPreset(key.startsWith("hexboard:") ? "hexboard" : "computer", entry.value)}>{entry.value.name}</button>)}</div></details> : null}
 
         <section className={auditionOpen ? "auditionPanel" : "auditionPanel collapsed"}>
           <SynthMidiPreview transport={transport} connected={connected} controller={previewController}

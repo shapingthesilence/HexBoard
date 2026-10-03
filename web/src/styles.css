@@ -2633,8 +2633,12 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .editorActionBar h2 { font-size: 1.15rem; }
 .editorActionBar button { font-size: .82rem; }
 .editorActionBar > .row { gap: 6px; }
-.saveStatus { display: flex; gap: 6px 14px; flex-wrap: wrap; color: var(--text-soft); font-size: .8rem; }
-.saveStatus span + span::before { content: "·"; margin-right: 14px; }
+.saveStatus { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; color: var(--text-soft); font-size: .8rem; }
+.saveStatus > span::before { content: "·"; margin-right: 14px; }
+.browserSaveStatus { display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap; min-width: 0; }
+.otherDraftsDisclosure > summary { padding: 0; font-size: inherit; }
+.otherDraftsDisclosure > .row { margin-top: 8px; }
+
 .operationStatus { color: var(--text-soft); font-size: .8rem; overflow-wrap: anywhere; }
 .soundVisual { margin: 0; min-width: 0; border-radius: 8px; padding: 8px 12px; background: var(--surface-muted); }
 .soundVisual figcaption { font-size: .75rem; color: var(--text-soft); }
