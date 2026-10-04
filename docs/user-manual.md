@@ -227,7 +227,9 @@ precedence and keeps its assigned resting color.
 ### Transpose
 
 `Transpose` shifts sounded pitch and palette-derived key colors while keeping
-the physical layout in place. Explicit per-key custom color overrides stay fixed.
+the physical layout in place. Scale highlighting and `Scale Lock` follow each
+button's transposed note in the selected key and scale. Explicit per-key custom
+color overrides stay fixed.
 
 ### Editor
 

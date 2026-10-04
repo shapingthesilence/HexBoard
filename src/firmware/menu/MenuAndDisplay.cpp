@@ -1424,7 +1424,7 @@ void previewTranspose(GEMPreviewCallbackData previewData) {
   transposeSteps = previewData.previewValInt;
   current.transpose = transposeSteps;
   assignPitches();
-  setLEDcolorCodes();
+  applyScale();
   updateSynthWithNewFreqs();
 }
 
@@ -3135,9 +3135,8 @@ void changeKey() {  // when you change the key via the menu
     This procedure was declared already and is being defined now.
     It's run when the transposition is changed via the menu.
     It sets the current transposition to the selected value.
-    The effect of transposition is to change the sounded
-    notes but not the layout or display.
-    The procedure to re-assign pitches is therefore called.
+    Transposition changes sounded notes, scale membership, and
+    palette-derived colors while keeping the physical layout in place.
     The menu doesn't change because the transpose is a spinner select.
   */
 void changeTranspose() {  // when you change the transpose via the menu
@@ -3147,7 +3146,7 @@ void changeTranspose() {  // when you change the transpose via the menu
   // 2) Apply it:
   current.transpose = transposeSteps;
   assignPitches();
-  setLEDcolorCodes();
+  applyScale();
   updateSynthWithNewFreqs();
 }
 

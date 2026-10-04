@@ -334,10 +334,10 @@ bool currentRuntimeMatchesSynthPresetValues(const SynthPresetSlot& preset) {
       return false;
     }
   }
-  return strncmp(currentSynthWavetableName, preset.wavetableName, sizeof(preset.wavetableName)) == 0
-         && strncmp(currentSynthWavetableFolderPath,
-                    preset.wavetableFolderPath,
-                    sizeof(preset.wavetableFolderPath)) == 0;
+  // Wavetable names are globally unique; folders are organization metadata.
+  // Loading resolves that metadata (for example, Built In to /Built In)
+  // without changing the selected source or modifying the patch.
+  return strncmp(currentSynthWavetableName, preset.wavetableName, sizeof(preset.wavetableName)) == 0;
 }
 
 bool currentRuntimeMatchesBlankSynthPreset() {
@@ -352,8 +352,7 @@ bool currentRuntimeMatchesBlankSynthPreset() {
       return false;
     }
   }
-  return strcmp(currentSynthWavetableName, SYNTH_WAVETABLE_BASIC_NAME) == 0
-         && strcmp(currentSynthWavetableFolderPath, SYNTH_WAVETABLE_BUILTIN_FOLDER) == 0;
+  return strcmp(currentSynthWavetableName, SYNTH_WAVETABLE_BASIC_NAME) == 0;
 }
 
 const char* currentSynthPresetDisplayName() {

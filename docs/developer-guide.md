@@ -217,7 +217,8 @@ effective direction = detected hardware default XOR saved user reversal
 Mapping order:
 
 1. `applyLayout()` computes button steps from vectors, mirrors, and rotation.
-2. `applyScale()` marks scale membership.
+2. `applyScale()` marks scale membership using transposed pitches relative to
+   the selected key.
 3. `assignPitches()` computes MIDI, bend, channel, synth frequency, and reverse
    MIDI-note lookup.
 
@@ -225,8 +226,8 @@ Mapping order:
 
 | Function | Use |
 | --- | --- |
-| `applyScale()` | key, scale, lock, or membership changes |
-| `assignPitches()` | transpose or pitch math without position changes |
+| `applyScale()` | key, scale, lock, transpose, or membership changes |
+| `assignPitches()` | transpose or pitch math without position changes; also run `applyScale()` for transpose |
 | `updateLayoutAndRotate()` | vectors, musical rotation, or mirrors |
 | `applyDeviceDisplayRotation()` | OLED/device orientation only |
 | `refreshMidiRouting()` | MPE, channel, or tuning-dependent routing |
