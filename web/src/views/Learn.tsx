@@ -6,6 +6,7 @@ import type { MidiTransport } from "../midi/types.ts";
 import { SynthPreviewController } from "../audio/synthPreview.ts";
 import { createBasicShapesSamples } from "../catalogs/factoryWavetables.ts";
 import { parseTuningBundleFile, ColorMode, type ColorModeValue, type TuningBundle, type TuningBundleScale } from "../catalogs/layoutsCatalog.ts";
+import { boardForHello } from "../midi/boardContext.ts";
 import { DelegatedSession } from "../learn/delegatedSession.ts";
 import { lessonLedColor, lessonScreenColor } from "../learn/lessonColors.ts";
 import { keyLight, isLessonTuning, lessonLayouts, MajorScaleRun, noteName, resolveLessonKeys, starterLayouts, unavailableScaleNotes, type LessonLayout } from "../learn/majorScale.ts";
@@ -377,7 +378,7 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
       if (useBoard) {
         const nextSession = new DelegatedSession(transport,
           (index, pressed, receivedAt) => { if(isHexBoardCommandIndex(index)){if(pressed)handleControlRef.current(index);return;} const accepted=inputGate.current.event(index,pressed);setPhysicalCount(physicalKeys.current.size);if(accepted)handleKeyRef.current(index, pressed, receivedAt); },
-          (reason) => { if (generation.current === currentGeneration) stop(reason); });
+          (reason) => { if (generation.current === currentGeneration) stop(reason); }, boardForHello(deviceHello).recovery);
         session.current = nextSession;
         await nextSession.start();
         nextSession.setDisplayRotation(selection.layout.deviceRotationSteps);
@@ -837,12 +838,12 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
         <details className="learnSettings"><summary>Library &amp; help</summary>
           <button type="button" disabled={!connected || engaged || libraryBusy} onClick={() => void refreshDeviceNames(true)}>Refresh tuning names</button>
           <label className="learnField">Import tuning bundle<input aria-label="Import lesson tuning bundle" type="file" accept=".json" disabled={engaged || libraryBusy} onChange={event => void importLayout(event)} /></label>
-          <p className="learnMuted">Sound plays in your browser. Hold the board encoder for 5 seconds to exit. Leaving this tab pauses practice.</p>
+          <p className="learnMuted">Sound plays in your browser. {boardForHello(deviceHello).id === "advanced" && "Use on-screen lesson controls; joystick navigation is planned. "}{boardForHello(deviceHello).recovery} Leaving this tab pauses practice.</p>
           <p className="learnMuted">Register shifts by tuning periods. Absolute brightness uses the board’s saved hardware setting. Contrast dims background keys.</p>
           <p className="learnMuted">Fingering cues: L = left, R = right. Finger 1 is the thumb; 5 is the little finger. Hand and finger choices are guidance.</p>
           <p className="learnMuted">Metronome: four count-in clicks, then follow the written rhythm. Grades include timing, missed notes, and extra attempts. Use wired audio for accurate timing.</p>
         </details>
-        {course && !previewCourse && <details className="learnSettings"><summary>Manage courses</summary>{session.current&&<p className="learnMuted">Leave Learn or hold the board encoder for five seconds to end the session before editing or recording a course.</p>}<div className="learnActions">
+        {course && !previewCourse && <details className="learnSettings"><summary>Manage courses</summary>{session.current&&<p className="learnMuted">Leave Learn to end the session before editing or recording a course. {boardForHello(deviceHello).recovery}</p>}<div className="learnActions">
           <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(false)}>Create course</button>
           <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(true)}>Make a copy</button>
           {editableCourse && <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => void editSavedCourse(selectedCourse)}>Edit course</button>}

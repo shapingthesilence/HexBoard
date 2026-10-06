@@ -80,8 +80,10 @@ and `TRANSFER_END` so firmware can pace object transfers.
 ## Navigation
 
 `src/navigation.ts` owns hash routes for the main modes and Learn sections:
-`#/layouts`, `#/synth`, `#/learn/practice`, `#/learn/courses`, and
-`#/learn/progress`. Learn's section, stable course ID, and stable lesson ID are
+`#/layouts`, `#/synth`, `#/learn/practice`, `#/learn/courses`,
+`#/learn/progress`, and connected-only `#/calibration`. The Calibration tab and
+workspace require an actual Advanced Hello identity; offline/original-board
+connections fall back to layouts for that route. Learn's section, stable course ID, and stable lesson ID are
 saved as JSON in localStorage, separately from the URL. Course and lesson
 changes update that saved location without adding browser history. Explicit
 section links take priority over the saved section while retaining the saved
@@ -108,6 +110,7 @@ without a 404 fallback. Dialogs and course-editor previews do not change the URL
 | `components/` | Shared library actions, folders, and organization dialogs |
 | `audio/` | Browser synth audition worklet and audio lifecycle |
 | `views/Learn.tsx`, `learn/` | Tuning-aware scale practice, lazy device library, beat grading, delegated sessions, and LED hints |
+| `advanced/calibration/` | Connected-only Hall, velocity, pressure and diagnostic workflow; scoped SysEx client, validated records and charts |
 | `catalogs/layoutKey.ts` | Shared generated/manual layout pitch resolution |
 
 ## Learning and Course Authoring
@@ -297,3 +300,20 @@ before assessment. `AchievementFeedback.tsx` / `achievementFeedback.ts` render
 first-completion and independence rewards with optional, separately owned audio;
 all reward voices stop with the Learn lifecycle. Built-in melody excerpts and
 adaptations are documented in [Course repertoire](../docs/course-repertoire.md).
+
+
+## Shared board contexts
+
+`midi/boardContext.ts` owns connected identity, logical-key translation, recovery
+and synth context. Learn and tuning/layout/library content remain shared. The
+Advanced adapter uses atomic RAM preview and a lazy-loaded React calibration
+workspace. Calibration uses the existing MIDI transport and capability bit 18, with
+a five-second session owner, bounded replies and pull-paced capture pages. `RamSettingsSync` debounces edits for 400 ms, validates the complete batch, sends
+only changed groups and records each acknowledgment. Held keys retry after release;
+capture/guided/profile work pauses updates. Explicit Save is separate. It
+imports no firmware sources or Web Serial APIs. Explicit Hall/response saves use
+existing board storage; durable tuning bundles, joystick forwarding and synthesis
+remain unavailable. Until hardware release, Advanced UI is hidden offline and
+manual Advanced target selection is unavailable. Original synth drafts retain their
+context. The app builds/tests independently of either firmware checkout;
+keep these boundaries when moving it to a standalone repository later.

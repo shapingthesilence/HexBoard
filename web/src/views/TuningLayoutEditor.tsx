@@ -1179,7 +1179,8 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   const geometryBundleFilesSupported = Boolean(
     deviceHello?.capabilityFlags && (deviceHello.capabilityFlags & CapabilityFlag.GeometryBundleFiles)
   );
-  const runtimeSendSupported = activeBundle.tuning.kind !== "scala" || centsTableRuntimeSupported;
+  const runtimeSendSupported = Boolean(deviceHello && (deviceHello.capabilityFlags & CapabilityFlag.UserTuning)
+    && (activeBundle.tuning.kind !== "scala" || centsTableRuntimeSupported));
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
 
   useEffect(() => {
@@ -2985,11 +2986,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     lastAutoSentGeometryKeyRef.current = liveSendKey;
     setSyncBusy(true);
     try {
-      for (let index = 0; index < activeApplyObjects.length; index += 1) {
-        const object = activeApplyObjects[index];
-        setStatus(`${prefix} ${object.name} (${index + 1}/${activeApplyObjects.length})`);
-        await client.sendGeometryObjectPreviewConfirmed(object);
-      }
+      setStatus(`${prefix} ${activeBundle.tuning.name}…`);
+      await client.sendGeometryPreviewConfirmed(activeApplyObjects,
+        Boolean(deviceHello && (deviceHello.capabilityFlags & CapabilityFlag.AtomicGeometryPreview)));
       setStatus("Previewing on HexBoard · not saved");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to send tuning preview");

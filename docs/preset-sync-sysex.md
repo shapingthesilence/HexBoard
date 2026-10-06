@@ -1,5 +1,34 @@
 # HexBoard Preset Sync SysEx Reference
 
+## Advanced additive runtime extension
+
+Advanced main identifies hardware version `0x20` and advertises capability bit 17
+(AtomicGeometryPreview). Its first port supports tuning/layout/scale/palette/map
+and cents runtime, with zero storage slots, no synth schema and no wavetable or
+HGB-file capability. Unsupported writes must remain disabled in the app.
+Existing HexBoard retains per-object preview; use the extension only when its
+capability is present.
+
+Messages `0x2c` PreviewBegin, `0x2d` PreviewCommit and `0x2e` PreviewAbort have empty
+payloads and normal ACK/NACK. Begin copies live state to staging; existing HBS1
+schema 2 object writes with runtime flag 1 modify staging. Commit requires types
+3/4/5/10 (tuning/layout/palette/scale), plus optional type 6 explicit map; cycles
+and references must match. Publish only after the complete map resolves. Failure,
+CRC mismatch, abort or timeout preserves live state. Capacity is 16 KiB/object,
+64 raw chunk bytes (74 packed), 256-byte frames, 15-second abandoned transfer
+expiry. These runtime operations never save flash.
+
+`0x30` CalibrationRequest takes one byte (0 status, 1 start, 2 finish).
+`0x31` CalibrationResponse is five bytes: stage:u7, validKeys:u14, totalKeys:u14.
+Stages are 0 unavailable, 1 untouched-rest capture, 2 key sweep, 3 calibrated.
+Commands require no held key or active delegated/preview owner. New web calibration changes are RAM only; partial coverage is reported and only calibrated keys generate input. It does not imply flash qualification.
+
+Portable content retains logical IDs 0–139; Advanced explicitly excludes fixed
+command IDs 0/20/40/60/80/100/120 and maps remaining IDs to Hall 0–132. This is a
+board adapter boundary, not a different bundle format. Storage/export support and
+secondary synthesis are deferred to later Advanced stages.
+
+
 This reference describes the implemented protocol for synth presets, named wavetables,
 atomic geometry bundles, and live EDO/equal-step/cents-list geometry
 preview. Factory libraries are ordinary editable catalog records.

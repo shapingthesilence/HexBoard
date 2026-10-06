@@ -3,14 +3,14 @@ import { discoverHexBoards } from "./DeviceConnect.tsx";
 import { decodePresetSyncFrame, encodeDefaultPresetSyncFrame, MessageType } from "../protocol/index.ts";
 import type { WebMidiAccess, WebMidiInput, WebMidiOutput } from "../midi/types.ts";
 
-function board(id: string, schema = 7) {
+function board(id: string, schema = 7, advanced = false) {
   const input: WebMidiInput = { id: `${id}-in`, name: id, type: "input", state: "connected", onmidimessage: null };
   const output: WebMidiOutput = {
     id: `${id}-out`, name: id, type: "output", state: "connected",
     send: vi.fn(data => {
       const frame = decodePresetSyncFrame(data);
       if (frame.message === MessageType.HelloRequest) input.onmidimessage?.({ data: Uint8Array.from(encodeDefaultPresetSyncFrame(MessageType.HelloResponse, frame.transactionId,
-        [1,0,1,0,0,0,0x3e,0x7e,0,4,8,0,19,schema,9,1,0,64,64,64,64,2])) });
+        [1,0,1,0,...(advanced ? [0,8,0x40,0x7c] : [0,0,0x3e,0x7e]),0,4,8,0,19,schema,9,1,0,64,64,64,64,advanced ? 0x20 : 2])) });
     })
   };
   return { input, output };
@@ -20,6 +20,9 @@ function access(...boards: ReturnType<typeof board>[]): WebMidiAccess {
 }
 
 describe("HexBoard reconnection discovery", () => {
+  it("discovers Advanced with truthful preview capabilities and no synth schema", async () => {
+    expect((await discoverHexBoards(access(board("HexBoard Advanced", 0, true)))).map(device => device.label)).toEqual(["HexBoard Advanced"]);
+  });
   it("skips stale disconnected ports and discovers newly plugged-in endpoints", async () => {
     const old = board("HexBoard old"), next = board("HexBoard replacement");
     old.input.state = old.output.state = "disconnected";

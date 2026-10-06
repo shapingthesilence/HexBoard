@@ -1,5 +1,45 @@
 # HexBoard Sync User Guide
 
+## HexBoard Advanced main-USB workflow
+
+Advanced features appear only while an Advanced main board is connected. Choose
+**Connect HexBoard** and grant browser MIDI/SysEx access. Main USB is sufficient;
+display/audio USB and a separate serial connection are unnecessary.
+
+Open **Calibration → Hall setup**. Release every key, start, wait for the press
+instruction, sweep keys firmly, then release and finish. Check coverage before
+**Save Hall calibration**; all 133 keys need calibration for full-board use.
+Only calibrated keys play or generate lesson input. Saved measurements load at
+restart; starting a sweep replaces current RAM measurements.
+
+Continue to **Velocity**, choose a model, adjust its controls, and play while
+comparing live velocities. Valid edits automatically apply to RAM after about
+400 ms without another change. Held keys defer updates until release; the status
+shows pending and acknowledged settings. Threshold Strike supports guided soft-to-hard strikes
+and independently editable attack/release curves. **Pressure** sets comfortable
+travel endpoints and a response curve, also applied automatically. **Save applied
+settings** writes one of eight response profiles after pending edits are acknowledged.
+Hall saves are separate. Release keys before saving; explicit saves briefly pause
+scanning. Invalid edits keep the last valid RAM settings until corrected.
+
+**Diagnostics** captures raw travel/neighbors, supports shared zoom/pan and JSON
+export, reads scanner timing, and compares LED loads to an off baseline/recovery.
+A capture timeout is labeled rest-only. Monitoring and automatic edits write no flash.
+Closing Calibration releases its tools; a lost connection expires after five
+seconds. Use **Reconnect Calibration** after an error. Leave this tab before
+starting Learn or previewing a layout.
+
+The shared tuning/layout editor sends active content as one validated RAM preview.
+Save/export bundles in the browser; Advanced device-library saving is unavailable.
+Held notes release their original assignment after edits. Learn shares lessons
+and logical IDs; on-screen navigation is available until joystick forwarding.
+Original HexBoard command navigation remains unchanged; command slots are fixed.
+
+Stop in Learn. For an abandoned Advanced lesson, use Web stop in Main Bring-up,
+Serial `web stop`, or restart. Connected identity selects synth controls; Advanced
+synthesis remains pending. Offline users see the original HexBoard editor. The
+unreleased Advanced target cannot be manually selected offline.
+
 ## Returning to Your Place
 
 The app remembers your last main tab, Learn section, course, and lesson in this

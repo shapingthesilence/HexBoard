@@ -42,7 +42,14 @@ export const MessageType = {
   TransferAbort: 0x28,
   DeleteRequest: 0x29,
   SynthParamSet: 0x2a,
-  SynthWavetableSelect: 0x2b
+  SynthWavetableSelect: 0x2b,
+  PreviewBegin: 0x2c,
+  PreviewCommit: 0x2d,
+  PreviewAbort: 0x2e,
+  CalibrationRequest: 0x30,
+  CalibrationResponse: 0x31,
+  CalibrationLabRequest: 0x32,
+  CalibrationLabResponse: 0x33
 } as const;
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];
@@ -123,7 +130,9 @@ export const CapabilityFlag = {
   CentsTableRuntimeTuning: 1 << 13,
   GeometryBundleFiles: 1 << 14,
   LiveSynthWavetableSelect: 1 << 15,
-  ScopedGeometryList: 1 << 16
+  ScopedGeometryList: 1 << 16,
+  AtomicGeometryPreview: 1 << 17,
+  AdvancedCalibrationLab: 1 << 18
 } as const;
 
 export type CapabilityFlagValue = (typeof CapabilityFlag)[keyof typeof CapabilityFlag];

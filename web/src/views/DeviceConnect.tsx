@@ -12,6 +12,7 @@ import {
   isWebMidiSupported,
   requestPresetSyncMidiAccess
 } from "../midi/webMidi.ts";
+import { boardForHello, canPreviewGeometry } from "../midi/boardContext.ts";
 import { CapabilityFlag, PROTOCOL_MAJOR, type HelloResponsePayload } from "../protocol/index.ts";
 
 interface DeviceConnectProps {
@@ -72,8 +73,9 @@ function matchingInputs(output: WebMidiOutput, inputs: WebMidiInput[]): WebMidiI
 
 function isCompatibleHello(hello: HelloResponsePayload): boolean {
   return hello.negotiatedMajor === PROTOCOL_MAJOR
-    && (hello.capabilityFlags & CapabilityFlag.SynthPreset) !== 0
-    && hello.synthPresetSchemaVersion >= 3;
+    && ((boardForHello(hello).id === "advanced" && canPreviewGeometry(hello)
+      && (hello.capabilityFlags & CapabilityFlag.AtomicGeometryPreview) !== 0)
+      || ((hello.capabilityFlags & CapabilityFlag.SynthPreset) !== 0 && hello.synthPresetSchemaVersion >= 3));
 }
 
 async function probeDevice(output: WebMidiOutput, input: WebMidiInput): Promise<DiscoveredHexBoard | null> {

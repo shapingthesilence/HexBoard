@@ -30,7 +30,8 @@ export class DelegatedSession {
 
   constructor(private readonly transport: MidiTransport,
     private readonly onKey: (index: number, pressed: boolean, receivedAt: number) => void,
-    private readonly onStopped: (reason: string) => void) {}
+    private readonly onStopped: (reason: string) => void,
+    private readonly recovery = "Hold the encoder for five seconds to exit an abandoned lesson.") {}
 
   start(): Promise<void> {
     if (this.phase !== "idle") return Promise.reject(new Error("Start a new lesson session."));
@@ -38,14 +39,14 @@ export class DelegatedSession {
     const ready = new Promise<void>((resolve, reject) => { this.resolveStart = resolve; this.rejectStart = reject; });
     this.unsubscribe = this.transport.subscribe((bytes, receivedAt) => this.receive(bytes, receivedAt));
     this.timer = setTimeout(() => this.stop(
-      "HexBoard did not confirm the learning session. Install the current firmware, release all keys, then try again. If the board is still in learning mode, hold the encoder for five seconds."
+      `HexBoard did not confirm the learning session. Install the current firmware, release all keys, then try again. ${this.recovery}`
     ), ackTimeoutMs);
     void this.transport.send(frame(enter, version, ...tokenBytes(this.token), ...Array.from("HexBoard Learn", (c) => c.charCodeAt(0))))
       .catch(() => this.stop("Could not start the HexBoard learning session."));
     return ready;
   }
 
-  stop(reason = "Lesson stopped. Hold the encoder for five seconds if the board is still in learning mode.") {
+  stop(reason = `Lesson stopped. ${this.recovery}`) {
     if (this.phase === "closed") return;
     this.phase = "closed";
     clearTimeout(this.timer);
@@ -81,7 +82,9 @@ export class DelegatedSession {
         this.resolveStart = undefined;
         this.rejectStart = undefined;
       } else if (bytes[8] === 2) {
-        this.stop("Release all keys and close other apps controlling HexBoard, then try again. Hold the encoder for five seconds to exit an abandoned lesson.");
+        this.stop(`Release all keys and close other apps controlling HexBoard, then try again. ${this.recovery}`);
+      } else if (bytes[8] === 3) {
+        this.stop("Calibrate the Advanced Hall keys in Main Bring-up before starting a board lesson. Browser-only practice is available now.");
       } else if (bytes[8] === 0) {
         this.stop("HexBoard ended the learning session. Start again when ready.");
       }

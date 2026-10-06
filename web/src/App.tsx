@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { DeviceConnect, useDeviceConnection } from "./views/DeviceConnect.tsx";
-import { SynthPresetLibrary } from "./views/SynthPresetLibrary.tsx";
+const CalibrationWorkspace = lazy(() => import("./advanced/calibration/CalibrationWorkspace.tsx").then(module => ({ default: module.CalibrationWorkspace })));
+import { hasAdvancedDevice } from "./midi/boardContext.ts";
+import { SynthContext } from "./views/SynthContext.tsx";
 import { TuningLayoutEditor } from "./views/TuningLayoutEditor.tsx";
 import { Learn } from "./views/Learn.tsx";
 import { MockMidiTransport } from "./midi/mockTransport.ts";
@@ -67,6 +69,11 @@ export function App() {
     onConnectionLabelChange: setConnectionLabel
   });
 
+  const advancedConnected = hasAdvancedDevice(deviceHello) && !(transport instanceof MockMidiTransport);
+  useEffect(() => {
+    if (activeView === "calibration" && !advancedConnected) navigate({ view: "layouts" }, true);
+  }, [activeView, advancedConnected, navigate]);
+
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try { window.localStorage.setItem(themeStorageKey, theme); } catch { /* Optional preference. */ }
@@ -78,10 +85,12 @@ export function App() {
         return <Learn connectionControl={<DeviceConnect connection={connection} placement="lesson" />} navigation={location.view === "learn" ? location : undefined} onNavigate={navigate} transport={transport} deviceHello={deviceHello} connected={deviceHello !== null && !(transport instanceof MockMidiTransport)} />;
       case "layouts":
         return <TuningLayoutEditor transport={transport} deviceHello={deviceHello} />;
+      case "calibration":
+        return advancedConnected && deviceHello ? <Suspense fallback={<p role="status">Opening calibration…</p>}><CalibrationWorkspace key={transport.label} transport={transport} hello={deviceHello} /></Suspense> : null;
       case "synth":
-        return <SynthPresetLibrary transport={transport} />;
+        return <SynthContext transport={transport} hello={deviceHello} />;
     }
-  }, [location, deviceHello, transport, navigate, connection]);
+  }, [location, deviceHello, transport, navigate, connection, advancedConnected]);
   return (
     <div className="appShell">
       <header className="topBar">
@@ -93,7 +102,7 @@ export function App() {
           </div>
         </div>
         <nav className="tabs" aria-label="Main views">
-          {views.map((view) => (
+          {[...views, ...(advancedConnected ? [{ key: "calibration" as const, label: "Calibration" }] : [])].map((view) => (
             <button
               key={view.key}
               className={view.key === activeView ? "active" : ""}

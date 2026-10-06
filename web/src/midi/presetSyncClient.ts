@@ -87,6 +87,12 @@ export class PresetSyncClient {
     this.transport = transport;
   }
 
+  async calibration(command: 0 | 1 | 2 = 0): Promise<{ state: number; validKeys: number; totalKeys: number }> {
+    const frame = await this.requestFrame(MessageType.CalibrationRequest, [command], candidate => candidate.message === MessageType.CalibrationResponse);
+    if (frame.payload.length !== 5) throw new Error("Invalid Hall calibration response");
+    return { state: frame.payload[0], validKeys: (frame.payload[1] << 7) | frame.payload[2], totalKeys: (frame.payload[3] << 7) | frame.payload[4] };
+  }
+
   async sendHello(hostMaxPackedChunk = 128): Promise<number[]> {
     return this.send(MessageType.HelloRequest, encodeHelloRequestPayload(hostMaxPackedChunk));
   }
@@ -455,6 +461,21 @@ export class PresetSyncClient {
       schemaMinor: 0,
       writeFlags: WriteFlag.SaveToFlash
     });
+  }
+
+  async sendGeometryPreviewConfirmed(objects: EncodedCatalogObject[], atomic = false): Promise<void> {
+    if (!atomic) {
+      for (const object of objects) await this.sendGeometryObjectPreviewConfirmed(object);
+      return;
+    }
+    await this.sendAndWaitForAck(MessageType.PreviewBegin, []);
+    try {
+      for (const object of objects) await this.sendGeometryObjectPreviewConfirmed(object);
+      await this.sendAndWaitForAck(MessageType.PreviewCommit, []);
+    } catch (error) {
+      await this.sendAndWaitForAck(MessageType.PreviewAbort, []).catch(() => {});
+      throw error;
+    }
   }
 
   async sendGeometryObjectPreviewConfirmed(object: EncodedCatalogObject, handle = NEW_OBJECT_HANDLE): Promise<number[][]> {

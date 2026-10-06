@@ -1,11 +1,11 @@
-export type ViewKey = "synth" | "layouts" | "learn";
+export type ViewKey = "synth" | "layouts" | "learn" | "calibration";
 export interface LearnLocation {
   view: "learn";
   page: "practice" | "course" | "progress";
   courseId?: string;
   lessonId?: string;
 }
-export type AppLocation = LearnLocation | { view: "synth" | "layouts" };
+export type AppLocation = LearnLocation | { view: "synth" | "layouts" | "calibration" };
 const storageKey = "hexboard-sync-location";
 
 // Hash paths work on GitHub Pages without a server fallback.
@@ -18,6 +18,7 @@ export function parseLocation(hash: string): AppLocation | undefined {
   if (hash === "#/learn/courses") return { view: "learn", page: "course" };
   if (hash === "#/learn/progress") return { view: "learn", page: "progress" };
   if (hash === "#/synth") return { view: "synth" };
+  if (hash === "#/calibration") return { view: "calibration" };
   if (hash === "#/layouts") return { view: "layouts" };
   return undefined;
 }
@@ -25,7 +26,7 @@ export function storedLocation(view?: ViewKey): AppLocation | undefined {
   try {
     const value = JSON.parse(window.localStorage.getItem(view ? `${storageKey}.${view}` : storageKey) ?? "null");
     if (!value || (view && value.view !== view)) return undefined;
-    if (value.view === "layouts" || value.view === "synth") return { view: value.view };
+    if (value.view === "layouts" || value.view === "synth" || value.view === "calibration") return { view: value.view };
     if (value.view !== "learn" || !["practice", "course", "progress"].includes(value.page)) return undefined;
     if ((value.courseId !== undefined && (typeof value.courseId !== "string" || !value.courseId)) ||
         (value.lessonId !== undefined && (typeof value.lessonId !== "string" || !value.lessonId))) return undefined;

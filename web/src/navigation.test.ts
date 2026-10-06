@@ -21,6 +21,7 @@ describe("navigation", () => {
   it("uses short mode and Learn-section URLs without course or lesson IDs", () => {
     expect(parseLocation(locationPath({ view: "layouts" }))).toEqual({ view: "layouts" });
     expect(parseLocation(locationPath({ view: "synth" }))).toEqual({ view: "synth" });
+    expect(parseLocation(locationPath({ view: "calibration" }))).toEqual({ view: "calibration" });
     for (const page of ["practice", "course", "progress"] as const) {
       expect(locationPath({ view: "learn", page, courseId: "builtin:first-steps", lessonId: "a/b #é" })).toBe(`#/learn/${page === "course" ? "courses" : page}`);
     }

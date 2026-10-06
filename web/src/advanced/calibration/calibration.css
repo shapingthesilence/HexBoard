@@ -1,0 +1,57 @@
+.calibrationPage { padding: 12px 0 32px; display: grid; gap: 14px; }
+.calHeading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+.calHeading h2, .calHeading h3 { margin: 0; }
+.calHeading p { margin: 6px 0 0; color: var(--text-soft); }
+.calSummary { display: grid; gap: 5px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-muted); font-size: .9rem; }
+.calSummary span { color: var(--text-soft); font-size: .8rem; }
+.calStatus { padding: 12px 14px; border-left: 3px solid var(--brand); border-radius: var(--radius-sm); background: var(--surface-accent); line-height: 1.5; }
+.calStatus[data-error=true] { border-color: #b64a41; background: var(--surface-muted); }
+.calCard { min-width: 0; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); }
+.calCard h3 { margin: 0 0 10px; font-size: 1.08rem; }
+.calCard > p { line-height: 1.55; }
+.calHint { color: var(--text-soft); font-size: .85rem; line-height: 1.5; margin: 6px 0; }
+.calFields { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 12px; margin: 14px 0; }
+.calField { display: grid; gap: 6px; min-width: 0; font-size: .84rem; color: var(--text-soft); }
+.calField input, .calField select { width: 100%; min-height: 36px; margin: 0; color: var(--text); box-sizing: border-box; }
+.calActions { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin: 12px 0; }
+.calActions > .calField { max-width: 170px; }
+.calActions button { min-height: 36px; margin: 0; }
+.calReadings { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; margin: 18px 0; }
+.calReadings strong { font-size: 2.1rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.calReadings small { display: block; margin-top: 6px; color: var(--text-soft); font-size: .75rem; font-weight: 400; }
+.calReadings > span { color: var(--text-soft); font-size: .9rem; }
+.calColumns { display: grid; grid-template-columns: minmax(260px, .9fr) minmax(320px, 1.1fr); gap: 14px; align-items: start; }
+.calInstructions { padding-left: 22px; line-height: 1.9; }
+.calHall { max-width: 850px; }
+.calDetails { padding-top: 12px; border-top: 1px solid var(--border); margin-top: 16px; }
+.calDetails summary, details.calCard > summary { cursor: pointer; font-weight: 600; }
+.calKeySelector { border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+.calKeyGrid { display: grid; grid-template-columns: repeat(20, minmax(12px, 1fr)); gap: 3px 0; max-width: 510px; margin: 15px auto; }
+.calKeyGrid button { grid-column-end: span 2 !important; min-width: 0; min-height: 22px; margin: 0 1px; padding: 4px 0; font-size: .64rem; border-radius: 8px; }
+.calKeyGrid button[aria-pressed=true] { background: var(--brand); color: white; }
+.calHistory { height: 90px; display: flex; align-items: end; gap: 5px; padding-top: 20px; border-bottom: 1px solid var(--border); }
+.calHistory > div { position: relative; min-height: 2px; flex: 1; max-width: 38px; background: var(--brand); border-radius: 3px 3px 0 0; }
+.calHistory > div[data-kind=off] { background: var(--text-soft); }
+.calHistory span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: .65rem; }
+.calPlot { display: block; width: 100%; min-width: 0; max-height: 310px; color: var(--text-soft); overflow: visible; margin: 15px 0; }
+.calPlot text { fill: currentColor; font-size: 11px; }
+.calGrid { stroke: var(--border); stroke-width: 1; }
+.calCurve circle[role=button], .calCurve circle[role=slider] { cursor: grab; }
+.calCurve circle:focus-visible { outline: none; stroke: var(--text); stroke-width: 4; }
+.calPoints { display: grid; gap: 8px; margin: 14px 0; }
+.calPoints > div { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; }
+.calPoints button { margin: 0; min-height: 36px; }
+.calEmpty { padding: 36px; text-align: center; color: var(--text-soft); background: var(--surface-muted); border-radius: var(--radius-sm); }
+.calibrationPage meter { width: 100%; height: 18px; accent-color: var(--brand); }
+.calStats { display: flex; flex-wrap: wrap; gap: 22px; }
+.calStats dt { font-size: .8rem; color: var(--text-soft); }
+.calStats dd { margin: 5px 0 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+.calTableWrap { overflow-x: auto; }
+.calTableWrap table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+.calTableWrap th, .calTableWrap td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border); }
+.calProfile { border-top: 3px solid var(--brand); }
+.calModalBackdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: #0007; padding: 20px; }
+.calModal { padding: 22px; width: min(460px, 100%); border: 1px solid var(--border); border-radius: var(--radius-lg); color: var(--text); background: var(--surface); box-shadow: 0 16px 60px #0004; }
+.calModal h3 { margin-top: 0; }
+@media (max-width: 900px) { .calColumns { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 540px) { .calCard { padding: 12px; } .calFields { grid-template-columns: 1fr 1fr; } .calPoints > div { grid-template-columns: 1fr 1fr; } .calPoints button { grid-column: 1 / -1; } .calHistory { gap: 2px; } }

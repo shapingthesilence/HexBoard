@@ -1,5 +1,21 @@
 # Delegated Control Developer Reference
 
+## Advanced shared Learn adapter
+
+Advanced uses acknowledged v2 token ownership with the existing raw logical key
+encoding and host LED command. Status 3 means **calibration required**; at least one calibrated Hall key is needed before entering. Only calibrated keys generate lesson input; full-board qualification still requires all 133. It has no physical command
+slots, so translated IDs skip the seven fixed command slots. Learn navigation
+uses on-screen controls until joystick forwarding is implemented. Legacy
+note-map override and physical navigation forwarding are not implemented by this
+first Advanced port; current HexBoard behavior described below remains unchanged.
+
+Advanced exit restores prior LED ownership/power/brightness and releases raw held
+keys. Stop normally in Learn; abandoned sessions can be ended with Main Bring-up
+Web stop, Serial `web stop`, or restart. Its recovery text must not instruct a
+user to operate an absent encoder. Previews and lessons have mutually exclusive
+host ownership, and disconnected USB clears stale transfer/session state.
+
+
 Delegated control lets an external host treat the HexBoard as a raw button-and-LED surface. In this mode, the firmware sends button press/release events as MIDI note messages and accepts SysEx LED color updates from the host.
 
 The mode is intentionally external-only:
