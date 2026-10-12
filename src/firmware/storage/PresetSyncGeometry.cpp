@@ -554,7 +554,7 @@ bool geometryBundleFileInfoForTuningHandle(uint16_t tuningHandle,
   return true;
 }
 
-bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlot& object, std::string& error) {
+bool parseGeometryObjectBody(std::vector<uint8_t> body, GeometryObjectSlot& object, std::string& error) {
   if (body.size() < 8 || body[0] != 'H' || body[1] != 'B' || body[2] != 'S' || body[3] != '1') {
     error = "bad object magic";
     return false;
@@ -775,7 +775,7 @@ bool geometryObjectForMetadata(const GeometryObjectIndexEntry& entry, GeometryOb
   }
   GeometryObjectSlot parsed;
   std::string parseError;
-  if (!parseGeometryObjectBody(body, parsed, parseError)
+  if (!parseGeometryObjectBody(std::move(body), parsed, parseError)
       || parsed.objectType != entry.objectType
       || parsed.schemaMajor != entry.schemaMajor
       || parsed.schemaMinor != entry.schemaMinor

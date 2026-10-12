@@ -50,5 +50,6 @@ void loadDeviceRotationFromCurrentLayout();
 void updateLayoutAndRotate();
 void syncSettingsToRuntime(bool redrawMenu = true);
 void updateSynthMenuVisibility();
+void updateSerialDebugMenuVisibility();
 void updateEditorMenuVisibility();
 void installHardwareSpecificMenuItems();

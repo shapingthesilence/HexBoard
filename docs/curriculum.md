@@ -135,6 +135,10 @@ to a melody. Prefer authentic phrase boundaries; label simplified rhythm and
 restore it later. Record sources and adaptations in the [repertoire reference](course-repertoire.md).
 Write instructions for playing the physical HexBoard. On-screen input is an
 engineering preview, not part of the teaching narrative.
+Refer to navigation by action names, such as Continue, Hear example, and Repeat
+without hints. Course prose must not name navigation buttons by color, number,
+or location, or assume a side-button bank. Device-specific control mappings
+belong in operation guides so the same material can serve HexBoard Advanced.
 
 ### Retention, agency, and enjoyment
 

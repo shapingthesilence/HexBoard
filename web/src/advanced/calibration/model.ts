@@ -5,7 +5,7 @@ export interface Strike {
 }
 export interface PressureSample {
   key: number; frame: number; time: number; raw: number; travel: number;
-  pressure: number; valid: boolean; mode: number; start: number; fullEnd: number; damperEnd: number;
+  pressure: number; valid: boolean; mode: number; start: number; fullEnd: number; damperEnd: number; firmTravel?: number;
 }
 export interface CapturePoint { frame: number; t: number; raw: number; time: number; mm: number; delta: number }
 export interface Capture {
@@ -22,7 +22,7 @@ export interface LabConfig {
 export const defaultConfig = (): LabConfig => ({
   capabilities: [], thresholds: [7864, 45875, 3277],
   engine: [0, 3, 64, 0, 492, 8028, 328, 16384, 1638, 49151, 3277, 30000],
-  minimum: 1, maximum: 127, pressure: [1, 55705, 65535, 65535],
+  minimum: 1, maximum: 127, pressure: [2, 55705, 65535, 65535],
   pressureCurve: [16384, 32768, 49151],
   curves: { on: [], off: [] }, customCurves: { on: false, off: false }
 });
@@ -105,6 +105,8 @@ export function engineCommand(config: LabConfig) {
   if (args.some(n => !Number.isInteger(n) || n < 0) || !(release < start && start < end) ||
       config.minimum < 1 || config.maximum > 127 || config.minimum > config.maximum ||
       config.engine[5] <= config.engine[4] || config.engine[7] <= config.engine[6] || config.engine[9] <= config.engine[8])
-    throw Error("Check threshold order, velocity limits, and soft/hard measurements.");
+    throw Error(!(release < start && start < end)
+      ? "Release must be below Arm/Start, and Arm/Start must be below Trigger/End. For Fixed Velocity try Release 0.04 mm, Re-arm 0.06 mm, Trigger 0.10 mm."
+      : "Use whole-number velocity limits from 1 to 127, minimum no greater than maximum, and Hard measurements greater than Soft.");
   return `velocity engine ${args.join(" ")}`;
 }

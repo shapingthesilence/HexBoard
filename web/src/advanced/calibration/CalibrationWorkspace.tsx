@@ -4,7 +4,7 @@ import type { HelloResponsePayload } from "../../protocol/index.ts";
 import { CapabilityFlag } from "../../protocol/index.ts";
 import { advancedNoteSurface } from "../../midi/boardContext.ts";
 import { CalibrationClient, record } from "./client.ts";
-import { RamSettingsSync, type RamSyncStatus } from "./ramSync.ts";
+import { RamSettingsSync, ramUpdates, type RamSyncStatus } from "./ramSync.ts";
 import { defaultConfig, fields, movePoint, movePressurePoint, respacePoints, type Capture, type LabConfig, type PressureSample, type Strike } from "./model.ts";
 import { CaptureParser, mm, to16, rawAt, windowTime } from "./protocol.mjs";
 import { parseVelocity } from "./live-velocity.mjs";
@@ -13,13 +13,16 @@ import { clampRange, phaseRange, scaleRange } from "./strike-view.mjs";
 import { engineMeasurement } from "./engines.mjs";
 import { chartColors, CurveChart, PressureCurveChart, Plot } from "./Charts.tsx";
 import { NumberField, VelocityControls } from "./VelocityControls.tsx";
+import { HallPeakMap, parseHallPeaks, parseHallRests } from "./HallPeakMap.tsx";
+import { CapStudyPanel } from "./CapStudyPanel.tsx";
 import "./calibration.css";
 
-type Step = "hall" | "velocity" | "pressure" | "diagnostics";
+type Step = "hall" | "velocity" | "pressure" | "diagnostics" | "caps";
 const steps: Array<{ id: Step; label: string; description: string }> = [
   { id: "hall", label: "1. Hall setup", description: "Capture each key’s rest position and firm endpoint." },
   { id: "velocity", label: "2. Velocity", description: "Play, choose a response, and tune soft-to-hard strikes." },
   { id: "pressure", label: "3. Pressure", description: "Set the travel range and response for held notes." },
+  { id: "caps", label: "Cap study", description: "Collect raw Hall readings at fixture-controlled distances, cap by cap." },
   { id: "diagnostics", label: "Diagnostics", description: "Inspect captured travel, neighboring sensors, LEDs, and scan timing." }
 ];
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -28,14 +31,18 @@ function download(name: string, value: unknown) {
   const link = document.createElement("a"); link.href = url; link.download = name; link.click(); URL.revokeObjectURL(url);
 }
 export function CalibrationWorkspace({ transport, hello }: { transport: MidiTransport; hello: HelloResponsePayload }) {
+  const [capStudyActive, setCapStudyActive] = useState(false);
   const [sessionEpoch, setSessionEpoch] = useState(0);
   const client = useMemo(() => new CalibrationClient(transport), [transport, sessionEpoch]);
   const [step, setStep] = useState<Step>("hall"), [ready, setReady] = useState(false), [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("Reading calibration from your board…"), [error, setError] = useState(false);
   const [config, setConfig] = useState<LabConfig>(defaultConfig), [applied, setApplied] = useState<LabConfig>(defaultConfig);
+  const [hallRests, setHallRests] = useState<number[]>([]);
+  const [hallPeaks, setHallPeaks] = useState<number[]>([]);
   const [hall, setHall] = useState<Record<string, string>>({}), [velocityStatus, setVelocityStatus] = useState<Record<string, string>>({});
   const [key, setKey] = useState(61), [showKeys, setShowKeys] = useState(false), [profile, setProfile] = useState(1);
   const [strikes, setStrikes] = useState<Strike[]>([]), [paused, setPaused] = useState(false), [filter, setFilter] = useState("all");
+  const [rawPressure, setRawPressure] = useState<Record<string, string>>({});
   const [pressure, setPressure] = useState<PressureSample | null>(null), [pressureHistory, setPressureHistory] = useState<Array<{ x: number; y: number }>>([]);
   const [curveKind, setCurveKind] = useState<"on" | "off">("on"), [windowMs, setWindowMs] = useState(150), [pointSource, setPointSource] = useState("live");
   const [guided, setGuided] = useState(false), [guidedPoints, setGuidedPoints] = useState(4), [guidedSamples, setGuidedSamples] = useState(3);
@@ -44,10 +51,10 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
   const [ledResults, setLedResults] = useState<Array<Record<string, string>>>([]), [ledRunning, setLedRunning] = useState(false), [ledMax, setLedMax] = useState(4), [ledDuration, setLedDuration] = useState(2000), [ledSuite, setLedSuite] = useState("brightness");
   const [confirm, setConfirm] = useState<{ title: string; text: string; action: () => Promise<void> } | null>(null);
   const [ramStatus, setRamStatus] = useState<RamSyncStatus>("synced"), [ramDetail, setRamDetail] = useState("");
-  const operation = useRef(false), alive = useRef(false), captureAbort = useRef(false), ledAbort = useRef(false), selected = useRef({ key, paused, filter, step, guided });
-  selected.current = { key, paused, filter, step, guided };
+  const operation = useRef(false), alive = useRef(false), captureAbort = useRef(false), ledAbort = useRef(false), selected = useRef({ key, paused, filter, step, guided, rawDamper: false, hallPeaks: false });
+  selected.current = { key, paused, filter, step, guided, rawDamper: config.capabilities.includes("raw_damper"), hallPeaks: config.capabilities.includes("cal_peaks") };
   const supported = Boolean(hello.capabilityFlags & CapabilityFlag.AdvancedCalibrationLab);
-  const hallActive = ["rest", "running"].includes(hall.status), locked = busy || capturing || ledRunning || hallActive || guided;
+  const hallActive = ["rest", "running"].includes(hall.status), locked = busy || capturing || ledRunning || hallActive || guided || capStudyActive;
   const dirty = JSON.stringify(config) !== JSON.stringify(applied);
   const ramSync = useMemo(() => new RamSettingsSync(async action => {
     while ((operation.current || client.busy) && alive.current) await delay(10);
@@ -98,12 +105,19 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
           if (disposed || !alive.current) return;
           const incoming = lines.map(parseVelocity).filter((s): s is Strike => Boolean(s));
           if (!current.paused && incoming.length) setStrikes(previous => [...previous, ...incoming.filter(s => current.filter === "all" || s.key === current.key)].slice(-32));
-          const sample = lines.map(parsePressure).find(Boolean);
+          setRawPressure(record(lines, "pressure_raw,"));
+          const sample = lines.map(line => parsePressure(line, current.rawDamper)).find(Boolean);
           if (sample) { setPressure(sample); if (sample.valid) setPressureHistory(previous => [...previous, { x: performance.now() / 1000, y: sample.pressure / 65535 * 100 }].slice(-64)); }
           const dropped = record(lines, "lab,").dropped; if (dropped) setMonitorDropped(Number(dropped));
           if (performance.now() - lastStatus > 700) {
             lastStatus = performance.now();
-            if (current.step === "hall") setHall(record(await client.command("cal status"), "cal,status="));
+            if (current.step === "hall") {
+              setHall(record(await client.command("cal status"), "cal,status="));
+              if (current.hallPeaks) {
+                const progress = await client.command("cal progress");
+                setHallPeaks(parseHallPeaks(progress)); setHallRests(parseHallRests(progress));
+              }
+            }
             if (current.guided) {
               const next = record(await client.command("velocity status"), "velocity,status,"); setVelocityStatus(next);
               if (next.manual_status === "done" || next.manual_status === "complete" || next.manual_status === "idle") {
@@ -135,8 +149,30 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
   useEffect(() => { ramSync.setPaused(!ready || locked); }, [ramSync, ready, locked]);
   useEffect(() => { setPressure(null); setPressureHistory([]); if (filter === "selected") setStrikes([]); }, [key, filter]);
   useEffect(() => { if (config.engine[0] > 0) setCurveKind("off"); }, [config.engine[0]]);
+  const rawDamper = config.capabilities.includes("raw_damper");
+  const measuredFirm = Number(rawPressure.key) === key ? Number(rawPressure.firm) : 0;
+  const damperDraftEnd = Math.round(measuredFirm * config.pressure[3] / 65535);
+  const damperDraftStart = Math.round(rawAt(mm(config.pressure[1]), { key: 0, baseline: 0, polarity: 1, valid: true, rest: 0, points: [] }));
+  const rawDelta = freshPressure && Number(rawPressure.key) === key ? (freshPressure.raw - Number(rawPressure.baseline)) * Number(rawPressure.polarity) : 0;
+  const damperReady = measuredFirm > 0 && damperDraftEnd - damperDraftStart >= 32;
+  const draftPressure = rawDamper && config.pressure[0] === 2
+    ? damperReady ? Math.max(0, Math.min(100, (rawDelta-damperDraftStart)/(damperDraftEnd-damperDraftStart)*100)) : 0
+    : freshPressure ? pressurePercent(freshPressure.travel, ...config.pressure as [number, number, number, number], freshPressure.firmTravel) : 0;
+  const validationError = useMemo(() => {
+    try { ramUpdates(config, applied); return ""; }
+    catch (cause) { return cause instanceof Error ? cause.message : "Check your settings."; }
+  }, [config, applied]);
+  async function applyDraft() {
+    let acknowledged = applied;
+    for (const edit of ramUpdates(config, applied)) {
+      await client.command(edit.command);
+      acknowledged = edit.acknowledge(acknowledged);
+      setApplied(acknowledged);
+    }
+    ramSync.reset(config);
+  }
   const canEdit = ready && !locked;
-  const hasTimingCurve = config.engine[0] !== 3;
+  const hasTimingCurve = config.engine[0] !== 3 && config.engine[0] !== 4;
   const run = (action: () => Promise<void>) => () => void perform(action);
   const requestConfirm = (title: string, text: string, action: () => Promise<void>) => setConfirm({ title, text, action });
   const changeCurve = (kind: "on" | "off", next: typeof points) => setConfig({ ...config,
@@ -196,20 +232,23 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
       setBusy(true); void client.close().finally(() => { setBusy(false); setSessionEpoch(n => n + 1); });
     }}>Reconnect Calibration</button>}
     <p className="calHint" role="status">{ramDetail || (dirty ? "Edits apply to RAM automatically after a short pause. Response edits stay in RAM; Save keeps them after restart." : "Response edits apply to RAM automatically. Save to a profile to keep them after restart.")}</p>
+    {validationError && <p className="calStatus" role="alert" data-error={true}>{validationError}</p>}
     <nav className="sectionTabs" aria-label="Calibration steps">{steps.map(item => <button type="button" key={item.id} aria-current={step === item.id ? "step" : undefined}
-      disabled={hallActive || guided || capturing || ledRunning || busy} onClick={() => setStep(item.id)}>{item.label}</button>)}</nav>
-    <p className="calHint">{steps.find(item => item.id === step)!.description} Changes apply to all keys; the selected key is for measurements.</p>
-    {step !== "hall" && <section className="calKeySelector"><div className="calActions"><NumberField label="Monitor key" value={key} min={0} max={132} disabled={locked}
+      disabled={hallActive || guided || capturing || ledRunning || busy || capStudyActive} onClick={() => setStep(item.id)}>{item.label}</button>)}</nav>
+    <p className="calHint">{steps.find(item => item.id === step)!.description} {step === "caps" ? "Measurements do not change calibration." : "Changes apply to all keys; the selected key is for measurements."}</p>
+    {step !== "hall" && step !== "caps" && <section className="calKeySelector"><div className="calActions"><NumberField label="Monitor key" value={key} min={0} max={132} disabled={locked}
       onChange={value => { if (Number.isInteger(value) && value >= 0 && value < 133) setKey(value); }} /><button type="button" aria-expanded={showKeys} onClick={() => setShowKeys(!showKeys)}>Choose on board</button>
       {freshPressure && <span>{mm(freshPressure.travel).toFixed(2)} mm · {(freshPressure.pressure / 65535 * 100).toFixed(1)}% pressure</span>}</div>
       {showKeys && <div className="calKeyGrid" aria-label="Choose a Hall key">{advancedNoteSurface.map(k => <button type="button" key={k.hallKey} disabled={locked} aria-pressed={key === k.hallKey}
         style={{ gridRow: k.row + 1, gridColumn: k.coordCol + 2 }} onClick={() => setKey(k.hallKey)}>{k.hallKey}</button>)}</div>}</section>}
+    <div hidden={step !== "caps"}><CapStudyPanel sample={pressure} available={ready && !busy && !capturing && !ledRunning && !hallActive && !guided} onTarget={setKey} onActive={setCapStudyActive} boardLabel={transport.label} /></div>
     {step === "hall" && <section className="calCard calHall"><h3>Rest position & firm press</h3>
       <p>Release every key before starting. Keep them untouched while rest readings are captured. Then press each key firmly and release it. Finish after sweeping the whole board.</p>
       <ol className="calInstructions"><li>Start with all keys released.</li><li>{hall.status === "rest" ? "Capturing rest readings. Keep keys untouched…" : "Wait for rest capture to finish."}</li>
         <li>{hall.status === "running" ? "Capture is running. Press every key firmly, then release all keys." : "Sweep all 133 keys with a firm press."}</li><li>Finish, check coverage, then save Hall calibration.</li></ol>
+      {config.capabilities.includes("cal_peaks") && <HallPeakMap peaks={hallPeaks} rests={hallRests} phase={hall.status} disabled={busy || !ready} onView={view => void perform(async () => { await client.command(`cal lights ${view}`); })} />}
       <div className="calReadings"><strong>{hall.valid ?? "—"}<small>of 133 keys ready</small></strong><span>{hall.status === "rest" ? "Rest capture" : hall.status === "running" ? "Press capture running" : hall.valid === "133" ? "Full board ready" : Number(hall.valid) > 0 ? "Partial coverage · only calibrated keys play" : "Calibration needed"}</span></div>
-      <div className="calActions"><button type="button" className="primary" disabled={!ready || locked} onClick={run(async () => { await client.command("cal start"); setHall(record(await client.command("cal status"), "cal,status=")); notify("Keep keys released until rest capture finishes."); })}>Start Hall calibration</button>
+      <div className="calActions"><button type="button" className="primary" disabled={!ready || locked} onClick={run(async () => { await client.command("cal start"); setHallPeaks([]); setHallRests([]); setHall(record(await client.command("cal status"), "cal,status=")); notify("Keep keys released until rest capture finishes."); })}>Start Hall calibration</button>
         <button type="button" className="primary" disabled={!ready || busy || hall.status !== "running"} onClick={run(async () => { await client.command("cal finish"); setHall(record(await client.command("cal status"), "cal,status=")); notify("Capture finished. Check ready-key coverage before saving."); })}>Finish calibration</button>
         <button type="button" disabled={!canEdit} onClick={run(refresh)}>Refresh</button></div>
       <p className="calHint">Calibration stays in memory until you choose Save. Starting a new sweep replaces the current rest/press measurements; saved calibration can be restored.</p>
@@ -229,7 +268,7 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
       </section>
       <div className="calColumns"><VelocityControls config={config} change={setConfig} disabled={!canEdit} supportsEngines={config.capabilities.includes("engines")} />
       <section className="calCard"><h3>{config.engine[0] === 0 ? "Attack & release curves" : "Release curve"}</h3>
-        {!hasTimingCurve ? <p>Peak Gesture uses peak depth and a fixed note duration. Its response is adjusted in the model controls.</p> : <><div className="sectionTabs"><button type="button" disabled={config.engine[0] !== 0} aria-current={curveKind === "on" ? "step" : undefined} onClick={() => setCurveKind("on")}>Attack</button><button type="button" aria-current={curveKind === "off" ? "step" : undefined} onClick={() => setCurveKind("off")}>Release</button></div>
+        {!hasTimingCurve ? <p>{config.engine[0] === 4 ? "Fixed Velocity uses the same configured velocity for attack and release. Pressure remains continuous while the key is held." : "Peak Gesture uses peak depth and a fixed note duration. Its response is adjusted in the model controls."}</p> : <><div className="sectionTabs"><button type="button" disabled={config.engine[0] !== 0} aria-current={curveKind === "on" ? "step" : undefined} onClick={() => setCurveKind("on")}>Attack</button><button type="button" aria-current={curveKind === "off" ? "step" : undefined} onClick={() => setCurveKind("off")}>Release</button></div>
         <p className="calHint">{config.engine[0] === 0 ? "Attack uses Start → End timing. " : "Attack is shaped in the model controls. "}Release uses End → Release; editing its curve enables release velocity. Shorter times give higher velocities. Gold shows the board’s last strike; the ring predicts the draft.</p>
         <div className="calFields"><NumberField label="Graph time window" value={windowMs} min={5} max={240} step={5} unit="ms" onChange={value => { if (value >= 5 && value <= 240) setWindowMs(value); }} />
           <label className="calField"><span>Curve points</span><select value={points.length || 4} disabled={locked} onChange={e => changeCurve(curveKind, respacePoints(points, Number(e.target.value)))}>{[4, 5, 6, 7, 8].map(n => <option key={n}>{n}</option>)}</select></label></div>
@@ -252,19 +291,22 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
         <p className="calHint">Wait for pending edits before starting. Guided calibration updates the board’s attack curve in memory; it does not save automatically.</p>
       </section>
     </>}
-    {step === "pressure" && <section className="calCard"><h3>Held-note pressure</h3><p>Pressure is based on travel, not a force measurement. Press and hold the selected key while choosing comfortable start and end depths.</p>
+    {step === "pressure" && config.engine[0] === 3 && <section className="calCard"><h3>Pressure</h3><p>Peak Gesture produces timed notes and has no held-note pressure.</p></section>}
+    {step === "pressure" && config.engine[0] !== 3 && <section className="calCard"><h3>Held-note pressure</h3><p>Full-travel pressure follows linearized distance from rest to each key’s calibrated maximum press. Selecting an engine defaults to Damper for Threshold Strike and Full Travel for the other held-note engines. Damper pressure uses raw Hall movement and each key’s captured firm endpoint, preserving expression past the travel ceiling. Output is relative movement, not measured force.</p>
       <div className="calReadings"><strong>{freshPressure ? `${(freshPressure.pressure / 65535 * 100).toFixed(1)}%` : "—"}<small>board pressure</small></strong><strong>{freshPressure ? mm(freshPressure.travel).toFixed(2) : "—"}<small>travel in mm</small></strong></div>
       <meter min={0} max={100} value={freshPressure ? freshPressure.pressure / 65535 * 100 : 0} aria-label="Selected key pressure" />
       <Plot series={[{ label: "Pressure", points: pressureHistory.map(p => ({ ...p, x: p.x - pressureHistory[0].x })) }]} xLabel="Recent time (seconds)" yLabel="Pressure (%)" yRange={[0, 100]} />
       <div className="calFields"><label className="calField"><span>Pressure range</span><select value={config.pressure[0]} disabled={!canEdit} onChange={e => setConfig({ ...config, pressure: config.pressure.map((p, i) => i === 0 ? Number(e.target.value) : p) })}><option value="0">Off</option><option value="1">Total key travel</option><option value="2">Damper zone</option></select></label>
         {config.pressure[0] === 2 && <NumberField label="Damper start" value={Number(mm(config.pressure[1]).toFixed(3))} min={0} max={3.99} step={.01} unit="mm" disabled={!canEdit} onChange={n => setConfig({ ...config, pressure: config.pressure.map((p, i) => i === 1 ? to16(n) : p) })} />}
-        {config.pressure[0] > 0 && <NumberField label="100% pressure depth" value={Number(mm(config.pressure[config.pressure[0] === 2 ? 3 : 2]).toFixed(3))} min={.01} max={4} step={.01} unit="mm" disabled={!canEdit} onChange={n => setConfig({ ...config, pressure: config.pressure.map((p, i) => i === (config.pressure[0] === 2 ? 3 : 2) ? to16(n) : p) })} />}</div>
+        {rawDamper && config.pressure[0] === 2 && <NumberField label="Firm endpoint scale" value={Number((config.pressure[3] / 65535 * 100).toFixed(1))} min={1} max={100} step={1} unit="%" disabled={!canEdit} onChange={n => setConfig({ ...config, pressure: config.pressure.map((p, i) => i === 3 ? Math.round(n / 100 * 65535) : p) })} />}
+        {config.pressure[0] > 0 && !(rawDamper && config.pressure[0] === 2) && <NumberField label={config.pressure[0] === 1 ? "Earlier saturation depth cap" : "100% pressure depth"} value={Number(mm(config.pressure[config.pressure[0] === 2 ? 3 : 2]).toFixed(3))} min={.01} max={4} step={.01} unit="mm" disabled={!canEdit} onChange={n => setConfig({ ...config, pressure: config.pressure.map((p, i) => i === (config.pressure[0] === 2 ? 3 : 2) ? to16(n) : p) })} />}</div>
       <div className="calActions"><button type="button" disabled={!canEdit || !freshPressure || config.pressure[0] !== 2} onClick={() => setConfig({ ...config, pressure: config.pressure.map((p, i) => i === 1 ? Math.min(65534, freshPressure!.travel) : p) })}>Use current depth as start</button>
-        <button type="button" disabled={!canEdit || !freshPressure || !config.pressure[0]} onClick={() => setConfig({ ...config, pressure: config.pressure.map((p, i) => i === (config.pressure[0] === 2 ? 3 : 2) ? Math.max(1, freshPressure!.travel) : p) })}>Use current depth as end</button></div>
-      <p className="calHint">At the current depth, the draft range gives {freshPressure ? pressurePercent(freshPressure.travel, ...config.pressure as [number, number, number, number]).toFixed(1) : "—"}% before the response curve. Pressure clamps at 100% beyond the end depth.</p>
+        <button type="button" disabled={!canEdit || !freshPressure || !config.pressure[0] || (rawDamper && config.pressure[0] === 2)} onClick={() => setConfig({ ...config, pressure: config.pressure.map((p, i) => i === (config.pressure[0] === 2 ? 3 : 2) ? Math.max(1, freshPressure!.travel) : p) })}>Use current depth as end</button></div>
+      <p className="calHint">At the current depth, the draft range gives {freshPressure ? draftPressure.toFixed(1) : "—"}% before the response curve. Full travel reaches 100% at the key’s calibrated maximum or the earlier depth cap. Missing maximum calibration gives zero full-travel pressure.</p>
       <h3>Pressure response</h3><p className="calHint">Drag the three intermediate points or enter their output below. Endpoints stay at 0% and 100%.</p>
+      {rawDamper && config.pressure[0] === 2 && <p className="calHint" role="status">{damperReady ? `Key ${key}: raw damper range ${damperDraftStart}–${damperDraftEnd} ADC counts above rest. 100% scale uses this key’s measured firm press.` : "This key has no usable raw damper span. Run Hall setup with a firm sweep, then save Hall calibration; or reduce the damper start."} Start depth is a shared nominal travel reference. Firm endpoint scale changes saturation without changing note travel.</p>}
       <PressureCurveChart points={config.pressureCurve} disabled={!canEdit} onChange={next => setConfig({ ...config, pressureCurve: next })} />
-      <div className="calFields">{config.pressureCurve.map((p, i) => <NumberField key={i} label={`${(i + 1) * 25}% travel → output`} value={Number((p / 65535 * 100).toFixed(1))} min={0} max={100} step={.1} unit="%" disabled={!canEdit} onChange={n => setConfig({ ...config, pressureCurve: movePressurePoint(config.pressureCurve, i, n / 100 * 65535) })} />)}</div>
+      <div className="calFields">{config.pressureCurve.map((p, i) => <NumberField key={i} label={`${(i + 1) * 25}% range → output`} value={Number((p / 65535 * 100).toFixed(1))} min={0} max={100} step={.1} unit="%" disabled={!canEdit} onChange={n => setConfig({ ...config, pressureCurve: movePressurePoint(config.pressureCurve, i, n / 100 * 65535) })} />)}</div>
       <div className="calActions"><button type="button" disabled={!canEdit} onClick={() => setConfig({ ...config, pressureCurve: [16384, 32768, 49151] })}>Reset to linear</button></div>
     </section>}
     {step === "diagnostics" && <>
@@ -294,9 +336,10 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
         <p className="calHint">Tests end with LED power off. Firmware expires unattended LED power after ten seconds. Hall statistics reveal interference; they do not measure supply voltage.</p>
       </details>
     </>}
-    {step !== "hall" && <section className="calCard calProfile"><div><h3>Save your response</h3><p className="calHint">Profiles store applied velocity models, thresholds, attack/release curves, and pressure settings. Hall measurements are saved separately.</p>{dirty && <p className="calHint">Wait for pending edits before saving. Save stores the board’s acknowledged settings.</p>}</div>
+    {step !== "hall" && <section className="calCard calProfile"><div><h3>Save your response</h3><p className="calHint">Profiles store applied velocity models, thresholds, attack/release curves, and pressure settings. Hall measurements are saved separately.</p>{dirty && <p className="calHint">Save applies valid pending edits first, then stores the acknowledged settings. Release held keys before applying or saving.</p>}</div>
       <div className="calActions"><label className="calField"><span>Board profile</span><select value={profile} disabled={locked} onChange={e => setProfile(Number(e.target.value))}>{[1, 2, 3, 4, 5, 6, 7, 8].map(n => <option key={n}>{n}</option>)}</select></label>
-        <button type="button" className="primary" disabled={!canEdit || dirty} onClick={() => requestConfirm(`Save applied settings to profile ${profile}?`, "This writes the board’s current response settings. Release keys; saving briefly pauses scanning.", async () => { await client.command(`velocity save ${profile}`); notify(`Applied settings saved to profile ${profile}.`); })}>Save applied settings</button>
+        <button type="button" className="primary" disabled={!canEdit || Boolean(validationError)} title={validationError || "Apply your draft and save it to this board profile"} onClick={() => requestConfirm(`Save settings to profile ${profile}?`, "This writes the board’s current response settings. Release keys; saving briefly pauses scanning.", async () => { await applyDraft(); await client.command(`velocity save ${profile}`); notify(`Applied settings saved to profile ${profile}.`); })}>Save settings</button>
+        <button type="button" disabled={!canEdit || !dirty || Boolean(validationError)} title={validationError || "Apply to RAM without saving to flash"} onClick={run(async () => { await applyDraft(); notify("Preview applied. Play to try it; Save settings keeps it after restart."); })}>Preview now</button>
         <button type="button" disabled={!canEdit} onClick={() => requestConfirm(`Load profile ${profile}?`, "This replaces current board settings and any unapplied edits.", async () => { await client.command(`velocity load ${profile}`); await refresh(); notify(`Profile ${profile} loaded.`); })}>Load profile</button>
         <button type="button" disabled={!canEdit} onClick={run(refresh)}>Discard edits & refresh</button>
         <button type="button" disabled={!ready} onClick={() => download("hexboard-response-settings.json", applied)}>Export applied settings</button></div>

@@ -4,6 +4,10 @@
 #include "../app/PlatformCommon.h"
 #include <MIDIUSB.h>
 
+// Core 0 access serialized with Arduino-Pico's background USB task.
+uint32_t pendingUsbMidiBytes();
+int readUsbMidiByte();
+
 constexpr float CONCERT_A_HZ = 440.0f;
 constexpr float CONCERT_A_MIDI_NOTE = 69.0f;
 constexpr byte DEFAULT_PITCH_BEND_RANGE_SEMITONES = 2;

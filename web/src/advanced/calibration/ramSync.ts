@@ -23,8 +23,8 @@ export function ramUpdates(draft: LabConfig, applied: LabConfig): RamUpdate[] {
   if (!equal(draft.pressure, applied.pressure)) {
     const [mode, start, fullEnd, damperEnd] = draft.pressure;
     if (!draft.capabilities.includes("pressure_ends") || mode < 0 || mode > 2 ||
-        ![mode, start, fullEnd, damperEnd].every(Number.isInteger) || start < 0 || fullEnd < 1 || damperEnd <= start ||
-        Math.max(start, fullEnd, damperEnd) > 65535) throw Error("Pressure end must exceed its start and stay within key travel.");
+        ![mode, start, fullEnd, damperEnd].every(Number.isInteger) || start < 0 || fullEnd < 1 || (draft.capabilities.includes("raw_damper") ? damperEnd < 1 : damperEnd <= start) ||
+        Math.max(start, fullEnd, damperEnd) > 65535) throw Error("Check pressure range and endpoint scale.");
     updates.push({ command: `velocity pressure_config ${["off", "full", "damper"][mode]} ${start} ${fullEnd} ${damperEnd}`,
       acknowledge: previous => ({ ...previous, pressure: draft.pressure }) });
   }

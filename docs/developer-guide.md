@@ -100,6 +100,24 @@ includes audio render/refill, scan and rotary decoding, MIDI sends, voice
 allocation, compact LED work, and renderer lookup tables. OLED/GEM drawing
 remains in flash because I2C and library calls dominate it.
 
+## Transfer Memory
+
+The audio renderer and its hot tables stay in RAM. Large wavetable and HGB
+transfers stream through files; do not materialize their complete bodies in heap
+buffers. Geometry object bodies are bounded to 16 KiB. Catalog decoding and
+preset reads transfer ownership of those vectors instead of copying them;
+geometry commit consumes the staged body after CRC validation. Packing lives in
+`storage/PresetSyncPacking.*` so host tests exercise the production codec without
+Arduino dependencies. Packed lengths and seven-bit bytes are validated before
+decoded output allocation.
+
+Arduino's static-RAM summary is not runtime free heap or stack headroom. Both
+cores use small stacks, and heap fragmentation can prevent a large allocation
+while total free bytes still look sufficient. Measure with the existing
+`Advanced → Serial Debug` Min Heap and Audio Stats controls under the actual
+workload. Preserve RAM hot tables unless measurements establish that a change
+maintains audio timing and quality.
+
 ## Source Map
 
 - `app/`: lifecycle, platform helpers, defaults, and diagnostics
@@ -190,7 +208,9 @@ Startup coordinates both cores:
 5. Core 0 opens the menu and releases normal runtime.
 
 The LED readiness/completion waits have no timeout; the audio transport wait is
-bounded to three seconds. The startup barriers are owned by `app/Runtime.cpp`.
+bounded to three seconds. The startup barriers are owned by `app/Runtime.cpp`. The splash publishes black
+before its completion barrier; Core 1 fades from black using one target-frame
+snapshot, keeping full-frame buffers off its small stack where possible.
 
 If audio readiness times out, Core 0 continues with onboard synth playback
 disabled instead of hanging boot. Do not use loaded settings before
@@ -202,6 +222,13 @@ wheels, MIDI input, LED work, rotary/menu input, overlays, and auto-save.
 Display events retain pending state; Core 0 services the asynchronous OLED
 transport between drawing passes. See [Menu and display](#menu-and-display)
 for ownership, presentation cadence, and navigation gating.
+
+USB MIDI stream and packet access belongs to `midi/MidiTransport.cpp`. It uses
+the same outer `USB.mutex` as Arduino-Pico CDC so the background USB task cannot
+reenter TinyUSB endpoint locking. Input and packet output try ownership once;
+SysEx output services `tud_task()` under ownership only when its bounded FIFO
+retry needs to drain. Never hold that ownership while dispatching input to
+firmware handlers.
 
 Core 1 stays limited to audio DMA service and the RAM-resident allocation-free
 rotary decoder.
@@ -417,7 +444,7 @@ targets are computed on core 0 at most every 50 ms, only when the wheel target,
 scaled amount, or base settings change. Core 1 captures AHDS parameters at
 attack and a release increment at note-off; running envelopes retain their
 captured values. Release increments and lookup tables retain 16-bit storage.
-The added 3 ms option approximates the shortest full-level release supported by
+The 3 ms option approximates the shortest full-level release supported by
 that increment range (128 samples, about 3.15 ms at the 250 MHz target).
 Timing remains quantized to the existing control quantum.
 
@@ -559,6 +586,32 @@ label, scale, and key selection use those explicit degrees without deriving an
 A/C offset from cycle length. Version 1 bundle import and tuning objects without
 `ReferenceDegree` use the former mapping only as a compatibility conversion.
 
+## Build Dependencies
+
+The Earle Philhower Arduino-Pico core owns the USB/MIDI, LittleFS, Wire, and SDK
+implementations used by this firmware. The verified build uses Arduino-Pico
+6.2.0, GEM 1.8.1, U8g2 2.36.19, and Adafruit GFX 1.12.6. Configure the official
+Pico package index in
+Arduino CLI so subsequent updates include it:
+
+```sh
+arduino-cli config add board_manager.additional_urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+arduino-cli core update-index
+arduino-cli core install rp2040:rp2040@6.2.0
+```
+
+GEM 1.8.1 omits the return from its reference-returning `GEMSelect::setOptions()`;
+GCC 16 rejects that source. Before building with that library version, apply the
+narrow correction to the installed library:
+
+```sh
+python3 scripts/fix_gem_return.py /path/to/Arduino/libraries/GEM
+```
+
+The script adds `return *this`, is safe to repeat, and refuses unfamiliar source.
+Reapply after reinstalling GEM 1.8.1. A corrected upstream version needs no patch.
+Do not suppress return-type errors to work around undefined behavior.
+
 ## Verification
 
 Always run:
@@ -569,6 +622,48 @@ git diff --check
 
 Run `make` for firmware changes and the factory generator plus relevant web
 tests/build for factory or companion-app changes.
+
+Run portable firmware checks, including 100,000 randomized packing cases, with
+address and undefined-behavior sanitizers:
+
+```sh
+python3 scripts/test_host.py
+```
+
+For a connected-board soak, install `mido`, `python-rtmidi`, and `pyserial` in a
+virtual environment, then run:
+
+```sh
+python scripts/test_device_stability.py --serial /dev/cu.usbmodem101 --seconds 600
+```
+
+The runner verifies catalog reads by CRC, dry-runs object writes including 16 KiB
+geometry bodies, rejects malformed chunks, tests oversized SysEx recovery, and
+cycles delegated LED sessions. It neither saves content nor installs firmware.
+Use the MIDI port name shown by the system if it differs from the default.
+With `--serial`, the runner enables Min Heap and Audio Stats through CDC, then
+restores the original diagnostic flags on exit. Without CDC logs, the JSON
+report proves protocol responsiveness only.
+The default report is `build/stability/device.json`. A passing finite soak does
+not establish all physical-input, stack, audio, or power conditions.
+
+For repeated boot checks, run `python scripts/test_device_reboots.py --count 5`.
+It uses CDC's software BOOTSEL reset and `picotool reboot`, verifies the current
+preset after each boot, and leaves the board in normal operation. It never
+loads an image or erases flash.
+
+CDC also accepts `HBDBG?` to query diagnostic flags and `HBDBG <flags>` to set
+them. The response is `HBDBG flags: <flags>`. Bits are 0 Enabled, 1 General Log,
+2 Min Heap, and 3 Audio Stats; use `HBDBG 13` for heap/audio measurement without
+general logging. Commands are bounded to eight bytes before newline, processed
+at at most 64 incoming bytes per Core 0 loop, and change RAM-only controls. USB
+Backup retains exclusive CDC ownership while active. Serial Debug can still be
+changed locally; the menu reflects host changes.
+
+Before flashing, save and verify full flash with `picotool save -a -v backup.bin`
+in BOOTSEL mode. A sequence-only USB Backup is not a complete filesystem backup.
+Use the Update image to preserve storage; the Factory image erases it. Confirm
+storage preservation separately after the run.
 
 Manually cover affected categories:
 

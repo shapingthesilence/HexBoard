@@ -661,7 +661,9 @@ explicitly documented in the user-facing workflow.
 ```
 
 `raw-length` is the number of unpacked bytes in this chunk. `packed-data` is the
-8-to-7 encoded representation of those raw bytes.
+8-to-7 encoded representation of those raw bytes. Its length must equal
+`raw-length + ceil(raw-length / 7)`; truncated or trailing packed bytes are
+rejected with `BadLength` before allocating decoded chunk storage.
 
 Example chunk containing only raw bytes `48 42 53 31` (`"HBS1"`), transfer `5`,
 chunk `0`, offset `0`, checksum `0x0E`:
@@ -1390,3 +1392,12 @@ present the rescue tuning as an editable catalog item.
    and a HexBoard-owned MIDI byte parser for SysEx receive.
 9. Current firmware paces device-to-host object reads by waiting for host ACKs
    after `READ_BEGIN`, after each `DATA_CHUNK`, and after `TRANSFER_END`.
+
+## Advanced Physical Strings
+
+Advanced main capability bit 19 exposes the narrow physical-model RAM editor
+through messages `0x34`/`0x35`. This does not advertise generic HBS1 synth objects
+or device preset storage. The shared app owns its browser preset schema in
+`web/src/advanced/synth/schema.ts` and uses the normal MidiTransport. The wire
+contract and audio handoff are owned by
+[Advanced web-control protocol](../../HexBoard_Advanced/docs/web-control-protocol.md#physical-synth-editor-over-sysex).

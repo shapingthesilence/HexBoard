@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { DeviceConnect, useDeviceConnection } from "./views/DeviceConnect.tsx";
 const CalibrationWorkspace = lazy(() => import("./advanced/calibration/CalibrationWorkspace.tsx").then(module => ({ default: module.CalibrationWorkspace })));
+const MenuPrototype = lazy(() => import("./advanced/menu/MenuPrototype.tsx").then(module => ({ default: module.MenuPrototype })));
 import { hasAdvancedDevice } from "./midi/boardContext.ts";
 import { SynthContext } from "./views/SynthContext.tsx";
 import { TuningLayoutEditor } from "./views/TuningLayoutEditor.tsx";
@@ -9,6 +10,7 @@ import { MockMidiTransport } from "./midi/mockTransport.ts";
 import type { MidiTransport } from "./midi/types.ts";
 import type { HelloResponsePayload } from "./protocol/index.ts";
 
+import { visibleLocation } from "./advancedVisibility.ts";
 import { initialLocation, saveLocation, storedLocation, type AppLocation, type ViewKey } from "./navigation.ts";
 type ThemeMode = "light" | "dark";
 
@@ -39,7 +41,6 @@ function loadStoredTheme(): ThemeMode {
 
 export function App() {
   const [location, setLocation] = useState<AppLocation>(initialLocation);
-  const activeView = location.view;
   const navigate = useCallback((next: AppLocation, replace = false) => {
     saveLocation(next, replace);
     setLocation(next);
@@ -70,9 +71,10 @@ export function App() {
   });
 
   const advancedConnected = hasAdvancedDevice(deviceHello) && !(transport instanceof MockMidiTransport);
+  const activeView = visibleLocation(location, advancedConnected).view;
   useEffect(() => {
-    if (activeView === "calibration" && !advancedConnected) navigate({ view: "layouts" }, true);
-  }, [activeView, advancedConnected, navigate]);
+    if (visibleLocation(location, advancedConnected) !== location) navigate({ view: "layouts" }, true);
+  }, [location, advancedConnected, navigate]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -87,6 +89,8 @@ export function App() {
         return <TuningLayoutEditor transport={transport} deviceHello={deviceHello} />;
       case "calibration":
         return advancedConnected && deviceHello ? <Suspense fallback={<p role="status">Opening calibration…</p>}><CalibrationWorkspace key={transport.label} transport={transport} hello={deviceHello} /></Suspense> : null;
+      case "menu":
+        return advancedConnected ? <Suspense fallback={<p role="status">Opening menu…</p>}><MenuPrototype transport={transport} connected={advancedConnected} /></Suspense> : null;
       case "synth":
         return <SynthContext transport={transport} hello={deviceHello} />;
     }
@@ -102,7 +106,7 @@ export function App() {
           </div>
         </div>
         <nav className="tabs" aria-label="Main views">
-          {[...views, ...(advancedConnected ? [{ key: "calibration" as const, label: "Calibration" }] : [])].map((view) => (
+          {[...views, ...(advancedConnected ? [{ key: "calibration" as const, label: "Calibration" }, { key: "menu" as const, label: "Device Menu" }] : [])].map((view) => (
             <button
               key={view.key}
               className={view.key === activeView ? "active" : ""}

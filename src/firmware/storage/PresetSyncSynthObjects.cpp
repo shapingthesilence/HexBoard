@@ -545,24 +545,6 @@ bool parseSynthWavetableObjectFile(const char* bodyPath,
   return true;
 }
 
-bool readSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, std::vector<uint8_t>& samples) {
-  char samplePath[SYNTH_WAVETABLE_SAMPLE_PATH_LENGTH] = {};
-  if (!resolveSynthWavetableSampleFilePath(wavetable, samplePath, sizeof(samplePath))) {
-    return false;
-  }
-  size_t sampleLength = synthWavetableSampleFileLength(samplePath);
-  if (!isSupportedSynthWavetableSampleLength(sampleLength)) {
-    sendToLog("Unsupported wavetable sample file length for " + std::string(wavetable.name));
-    return false;
-  }
-  samples.assign(sampleLength, 0);
-  if (!readSynthWavetableSampleFileRange(samplePath, 0, samples.data(), samples.size())) {
-    sendToLog("Incomplete wavetable sample file for " + std::string(wavetable.name));
-    return false;
-  }
-  return true;
-}
-
 std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable, size_t sampleLength) {
   std::vector<uint8_t> body;
   body.reserve(256);
@@ -588,22 +570,6 @@ std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& w
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_SAMPLE_COUNT, sampleCountBytes, sizeof(sampleCountBytes));
   uint8_t mipLevels = sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES ? SYNTH_WAVETABLE_MIP_LEVEL_COUNT : 1;
   presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_MIP_LEVELS, &mipLevels, 1);
-  return body;
-}
-
-std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable) {
-  return buildSynthWavetableObjectPrefix(wavetable, SYNTH_WAVETABLE_SAMPLE_BYTES);
-}
-
-std::vector<uint8_t> buildSynthWavetableObjectBody(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength) {
-  std::vector<uint8_t> body = buildSynthWavetableObjectPrefix(wavetable, sampleLength);
-  body.reserve(PRESET_SYNC_MAX_SYNTH_WAVETABLE_BYTES);
-  size_t offset = 0;
-  while (offset < sampleLength) {
-    size_t chunkLength = std::min(PRESET_SYNC_WAVETABLE_SAMPLE_TLV_CHUNK_BYTES, sampleLength - offset);
-    presetSyncAppendTlv(body, PRESET_SYNC_TLV_WAVETABLE_SAMPLES, samples + offset, chunkLength);
-    offset += chunkLength;
-  }
   return body;
 }
 

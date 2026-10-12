@@ -2,6 +2,7 @@
 
 #include "../FirmwareModule.h"
 #include "PersistentDataModels.h"
+#include "PresetSyncPacking.h"
 #include "../synth/SynthDefaults.h"
 
 constexpr uint8_t PRESET_SYNC_FAMILY = 0x10;
@@ -241,8 +242,6 @@ void presetSyncCancelWriteTransfer();
 void presetSyncCloseReadFile();
 void presetSyncCloseWriteTempFile();
 uint8_t presetSyncChunkChecksum(const uint8_t* data, size_t length);
-void presetSyncPack8To7(const uint8_t* raw, size_t rawLength, std::vector<uint8_t>& packed);
-bool presetSyncUnpack8To7(const uint8_t* packed, size_t packedLength, size_t rawLength, std::vector<uint8_t>& raw);
 void presetSyncAppendTlv(std::vector<uint8_t>& body, uint8_t tag, const uint8_t* value, uint16_t length);
 void presetSyncAppendTextTlv(std::vector<uint8_t>& body, uint8_t tag, const char* text, size_t maxLength);
 void copyPresetSyncText(char* destination, size_t destinationLength, const uint8_t* source, size_t sourceLength);
@@ -287,7 +286,8 @@ bool deleteGeometryObjectFromCatalog(uint16_t handle);
 size_t geometryBundleCount();
 bool isPresetSyncGeometryObjectType(uint8_t objectType);
 bool isPresetSyncSupportedObjectType(uint8_t objectType);
-bool parseGeometryObjectBody(const std::vector<uint8_t>& body, GeometryObjectSlot& object, std::string& error);
+// Takes ownership of the body; callers with disposable staging buffers move them.
+bool parseGeometryObjectBody(std::vector<uint8_t> body, GeometryObjectSlot& object, std::string& error);
 bool geometryObjectForHandle(uint16_t handle, GeometryObjectSlot& object);
 void clearUserGeometryRuntimeSelection();
 bool applyGeometryObjectToRuntime(const GeometryObjectSlot& object);
@@ -307,10 +307,7 @@ bool parseSynthWavetableObjectFile(const char* bodyPath,
                                    ParsedSynthWavetableObject& wavetable,
                                    const char* sampleOutputPath,
                                    std::string& error);
-bool readSynthWavetableSampleFile(const SynthWavetableSlot& wavetable, std::vector<uint8_t>& samples);
-std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable);
 std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& wavetable, size_t sampleLength);
-std::vector<uint8_t> buildSynthWavetableObjectBody(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength);
 void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength);
 bool applyParsedSynthWavetableFileToRuntime(const SynthWavetableSlot& wavetable, const char* samplePath, size_t sampleLength);
 bool saveParsedSynthWavetable(const ParsedSynthWavetableObject& wavetable);

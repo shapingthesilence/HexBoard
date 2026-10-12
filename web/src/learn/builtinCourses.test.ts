@@ -12,6 +12,7 @@ describe("foundation curriculum",()=>{
       const teaching=[course.description,...course.lessons.flatMap(lesson=>[lesson.instruction,lesson.markdown])].join(" ");
       expect(teaching).not.toMatch(/on screen|click (?:a |the )?key|Try on screen/i);
       expect(teaching).not.toMatch(/Turn off Hints|Try without hints|Toggle hints/i);
+      expect(teaching).not.toMatch(/side[- ]buttons?|\b(?:blue|cyan|yellow|orange)\b|\b(?:top|bottom|numbered) navigation buttons?\b/i);
       for(const lesson of course.lessons.filter(lesson=>lesson.kind==="content"&&/Hear example/i.test(lesson.markdown??"")))
         expect(lesson.markdown).toMatch(/Continue/i);
     }

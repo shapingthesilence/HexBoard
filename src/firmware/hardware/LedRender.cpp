@@ -383,17 +383,18 @@ void writeNormalLedFrameToStrip() {
 }
 
 void fadeToNormalLedFrame() {
-  LedColor startFrame[LED_COUNT];
+  // The splash publishes black before the Core 0 readiness handoff. Keep only
+  // the target snapshot: two full RGB16 frames nearly fill Core 1's 2 KiB stack.
   LedColor targetFrame[LED_COUNT];
 
-  captureBootLedFrame(startFrame);
+  strip.clear();
   writeNormalLedFrameToStrip();
   captureBootLedFrame(targetFrame);
 
   for (byte frame = 1; frame <= BOOT_LED_CHECK_NORMAL_FADE_FRAMES; ++frame) {
     uint16_t amount255 = (static_cast<uint16_t>(frame) * 255u) / BOOT_LED_CHECK_NORMAL_FADE_FRAMES;
     for (byte i = 0; i < LED_COUNT; ++i) {
-      strip.setPixelColor(i, blendLedColor16(startFrame[i], targetFrame[i], amount255));
+      strip.setPixelColor(i, blendLedColor16(LedColor{}, targetFrame[i], amount255));
     }
     strip.show();
     delay(BOOT_LED_CHECK_NORMAL_FADE_MS);

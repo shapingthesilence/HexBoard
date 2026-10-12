@@ -621,6 +621,8 @@ found during startup.
 disabled during normal use unless a troubleshooting guide asks you to enable
 it. The page initially shows `Enabled`; turning it on reveals `General Log`,
 `Min Heap`, and `Audio Stats`. These choices reset when HexBoard restarts.
+Support tools can enable diagnostics temporarily and restore the previous choices
+when finished. Diagnostic choices do not change saved presets or library content.
 
 `LED Test` is temporary and is not saved in profiles. Enter it and scroll
 through `Red`, `Green`, `Blue`, or `White` to light every LED immediately.

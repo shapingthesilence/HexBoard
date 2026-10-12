@@ -111,6 +111,7 @@ without a 404 fallback. Dialogs and course-editor previews do not change the URL
 | `audio/` | Browser synth audition worklet and audio lifecycle |
 | `views/Learn.tsx`, `learn/` | Tuning-aware scale practice, lazy device library, beat grading, delegated sessions, and LED hints |
 | `advanced/calibration/` | Connected-only Hall, velocity, pressure and diagnostic workflow; scoped SysEx client, validated records and charts |
+| `advanced/synth/` | Advanced physical string editor, browser drafts/presets, validated schema and typed RAM preview client |
 | `catalogs/layoutKey.ts` | Shared generated/manual layout pitch resolution |
 
 ## Learning and Course Authoring

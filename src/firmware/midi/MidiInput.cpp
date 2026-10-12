@@ -21,7 +21,7 @@ bool g_midiMonitorLateLatched = false;
 bool g_midiMonitorDropLatched = false;
 
 void sampleMidiInputMonitorStats() {
-  uint32_t usbPending = static_cast<uint32_t>(MidiUSB.available());
+  uint32_t usbPending = pendingUsbMidiBytes();
   uint32_t serialPending = static_cast<uint32_t>(Serial1.available());
   uint32_t totalPending = usbPending + serialPending;
 
@@ -189,8 +189,8 @@ bool processIncomingUsbMidi(bool delegatedMode) {
   bool processed = false;
   uint16_t drainedBytes = 0;
   while (delegatedControlState.active.load(std::memory_order_acquire) == delegatedMode
-         && MidiUSB.available() > 0 && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
-    int value = MidiUSB.read();
+         && drainedBytes < MIDI_INPUT_DRAIN_BYTE_LIMIT) {
+    int value = readUsbMidiByte();
     if (value < 0) {
       break;
     }

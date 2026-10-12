@@ -82,8 +82,9 @@ The default `make` target builds the current `250 MHz` firmware as two files:
 - `build/HexBoard_Factory.uf2` contains firmware and a complete factory
   LittleFS image. Installing it erases the existing filesystem.
 - `build/HexBoard_Update.uf2` contains firmware only and preserves the
-  LittleFS filesystem. Settings whose schema differs from the running firmware
-  use defaults; current-format libraries remain available.
+  LittleFS filesystem. Supported settings from version 32 onward are migrated;
+  new options receive defaults. See [Updating firmware](docs/user-manual.md#updating-firmware)
+  for compatibility and recovery.
 
 The `Makefile` and firmware headers under `src/firmware/` are the most reliable
 build references for this repository.
@@ -97,6 +98,9 @@ You need:
 - `U8g2`
 - `Adafruit GFX Library`
 - `GEM`
+
+See [Build dependencies](docs/developer-guide.md#build-dependencies) for the Pico
+package index and the GEM 1.8.1 correction required by GCC 16.
 
 The simplest local build is:
 

@@ -573,7 +573,7 @@ void presetSyncSendNextReadChunk() {
   ++presetSyncReadTransfer.nextChunkIndex;
 }
 
-void presetSyncSendRawObject(uint16_t transactionId, uint8_t objectType, uint16_t handle, uint8_t schemaMajor, uint8_t schemaMinor, const std::vector<uint8_t>& raw) {
+void presetSyncSendRawObject(uint16_t transactionId, uint8_t objectType, uint16_t handle, uint8_t schemaMajor, uint8_t schemaMinor, std::vector<uint8_t> raw) {
   presetSyncCloseReadFile();
   presetSyncReadTransfer = PresetSyncReadTransfer{};
   presetSyncReadTransfer.active = true;
@@ -585,7 +585,7 @@ void presetSyncSendRawObject(uint16_t transactionId, uint8_t objectType, uint16_
   presetSyncReadTransfer.schemaMinor = schemaMinor;
   presetSyncReadTransfer.rawByteLength = raw.size();
   presetSyncReadTransfer.objectCrc32 = crc32(raw.data(), raw.size());
-  presetSyncReadTransfer.rawData = raw;
+  presetSyncReadTransfer.rawData = std::move(raw);
   presetSyncSendReadBegin();
 }
 
@@ -667,7 +667,7 @@ void presetSyncSendStreamedSynthWavetableObject(uint16_t transactionId,
            "%s",
            samplePath);
   presetSyncReadTransfer.streamSampleLength = sampleLength;
-  presetSyncReadTransfer.rawData = objectPrefix;
+  presetSyncReadTransfer.rawData = std::move(objectPrefix);
   presetSyncSendReadBegin();
 }
 
@@ -704,7 +704,7 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
                             handle,
                             object.schemaMajor,
                             object.schemaMinor,
-                            object.body);
+                            std::move(object.body));
     return;
   }
   if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE) {
@@ -1066,7 +1066,7 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     requestUserGeometryMenuRebuild();
   } else if (isPresetSyncGeometryObjectType(presetSyncWriteTransfer.objectType)) {
     GeometryObjectSlot parsedObject;
-    if (!parseGeometryObjectBody(presetSyncWriteTransfer.rawData, parsedObject, parseError)
+    if (!parseGeometryObjectBody(std::move(presetSyncWriteTransfer.rawData), parsedObject, parseError)
         || parsedObject.objectType != presetSyncWriteTransfer.objectType) {
       sendToLog("Preset sync rejected geometry object: " + parseError);
       presetSyncCancelWriteTransfer();

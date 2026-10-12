@@ -36,9 +36,58 @@ and logical IDs; on-screen navigation is available until joystick forwarding.
 Original HexBoard command navigation remains unchanged; command slots are fixed.
 
 Stop in Learn. For an abandoned Advanced lesson, use Web stop in Main Bring-up,
-Serial `web stop`, or restart. Connected identity selects synth controls; Advanced
-synthesis remains pending. Offline users see the original HexBoard editor. The
-unreleased Advanced target cannot be manually selected offline.
+Serial `web stop`, or restart. Connected identity selects synth controls. Advanced now has a Physical Strings
+editor: leave Calibration, open Synth Editor and choose **Start synth** in the
+playback panel at the top. The panel shows stopped, starting or running status.
+If synth communication was interrupted, use **Retry synth connection**.
+Drag **Strike**, **Pickup L** and **Pickup R** directly on the string; arrows also
+adjust focused handles. **Stereo width** moves from mono to separate pickups.
+Adjust hardness and ring/release time. The square Resonator and Striker material pads shape stiffness/loss and hardness/resonance.
+Drag parameter knobs vertically; hold Shift for fine adjustment or use arrow keys.
+The sticky toolbar keeps modulation sources visible while scrolling. Select a source,
+then drag a parameter knob up for positive depth or down for negative depth.
+Choose **Edit values** to return to base parameter editing. Each knob shows source-colored rings: amber for strike, teal for pressure,
+and violet for release. Rings start at the base knob position and extend clockwise for
+positive depth or counterclockwise for negative depth, stopping at the parameter limits. A white dot on the ring shows the current combined modulated value.
+Separate concentric rings keep multiple routes visible. The central pointer always
+shows the base value, even while editing modulation. Signed amounts appear below
+the knob; hover over the value for its current expression result. Choose **Delete modulation**, then click a modulated knob:
+a single route is removed immediately; multiple routes open a small menu where
+one more click removes the chosen source. Live strike/pressure/release meters and pickup
+markers show the latest played key's mapped controls. Pressure defaults follow the velocity engine and can be tuned
+in Calibration; the momentary bend spans ±2 semitones.
+
+The **Velocity engine** selector in Excitation is saved with the physical preset.
+Numeric fields retain partial and decimal entries while you type. Press Enter or leave the field to commit; arrow keys adjust by a step and Escape cancels.
+
+Choose Threshold Strike, Expressive Strike, Distance Window, Peak Gesture, or
+Fixed Velocity independently of Strike/Bow excitation. Pressure Bow defaults to
+Fixed Velocity so key pressure controls the sustained bow without a speed-dependent
+attack. Other factory presets use Threshold Strike. Load/Preview/Start restores
+the chosen detector and its pressure default: Damper for Threshold Strike, Full Travel for Expressive Strike, Distance Window and Fixed Velocity, and Off for Peak Gesture. Full Travel reaches 100% at each key’s calibrated firm-press distance. Changing it live requires released keys and may briefly
+extend a scan while detector state resets. Normal playback retains the scanner
+timing limits. The choice also
+controls USB MIDI because the scanner's detector is shared. Thresholds, response
+curves, fixed velocity, and other detector tuning remain your Velocity Lab settings.
+Version-9 JSON includes this choice; older presets migrate to Threshold Strike.
+Update Advanced main firmware to use the new selector; audio firmware is unchanged.
+
+Load **Pressure Sweep** for the moving-pickup default, or try **Glass Pressure** and
+**Wood Touch**, or **Pressure Bounce**. In Pressure Bounce, deeper travel lowers
+clearance onto the string. Contact buttons select Bounce, Rattle, Mute or Marbles. Contact feel knobs stay
+visible beside the clearance controls; Marbles shows its drop controls instead.
+
+**Output level** starts at 0 dB on both headphones and speaker,
+before the volume rocker. An always-on stereo limiter controls peaks before
+sample conversion. Existing drafts are preserved, so loading Pressure
+Sweep is necessary to replace an old draft's mapping.
+
+**Save on computer** stores presets in this browser; Export/Import uses version-9
+JSON and migrates older physical presets. Drafts survive navigation
+and reconnect. **Preview draft** applies the complete draft to RAM;
+**Start synth** applies it and starts synthesis. Device preset saving is
+pending. Offline users can select Advanced, edit presets and inspect a pressure
+preview. Bow, body and accelerometer strikes remain later stages.
 
 ## Returning to Your Place
 
@@ -690,3 +739,90 @@ transfer screen or mute the audio.
 
 For onboard controls and recovery, see the [user manual](user-manual.md).
 For app development, see the [web README](../web/README.md).
+
+Advanced Marbles mode repeats irregular spatial strikes into the existing
+string. Drag Drop center above the string, adjust Drop spread, and move Impact
+hardness from rubber to steel. Contact strength sets hit energy; Marbles sets
+average rate. Hits persist through bounded release tails. Mechanical modes
+retain their clearance/mass/gravity controls. v4 presets migrate mode identity
+and enabled marble streams automatically.
+
+Advanced physical revision 6 adds a shared **Striker material** pad (hardness ×
+resonance), separate from string stiffness/loss. Rubber, Wood, Plastic, Glass
+and Steel affect the initial note strike and later impacts together.
+**Timing randomness** makes arrivals regular at zero and introduces bounded,
+correlated variation as it rises. Neutral **Strike · …** presets keep the string
+unchanged for material comparisons. Micro-noise, a second striker mode and Size
+remain later stages. Older JSON presets migrate to the shared striker mapping.
+
+## Fixed-distance Hall cap study (Advanced)
+
+Open **Calibration → Cap study**, select the Hall keys on the board diagram,
+and choose **Start cap study**. The count follows your selection; keys are measured
+in selection order. Default caps run from 0 to 4 mm in 0.2 mm steps. Distances
+can be edited before starting and must increase from 0.
+
+Work through every selected key with the current cap before changing caps:
+
+1. Fit the indicated cap and choose **Start this cap**.
+2. For 0 mm, choose **Cap in place** for each key. A resting signal cannot prove
+   that the fixture has been placed, so this step requires your confirmation.
+3. For later caps, release the indicated key, then press it firmly against the
+   cap. Two fresh readings near its measured rest are required before a press
+   is accepted. The next key is selected automatically when sampling completes.
+4. Keep holding steadily. By default, the app waits for one second with at most
+   six ADC counts of peak-to-peak variation, then collects three blocks of five
+   fresh readings and averages them. Movement restarts collection. Stability and
+   averaging settings can be adjusted before the study.
+5. When all keys at that distance are done, change caps and start the next pass.
+
+**Pause study** keeps finished measurements and discards only the incomplete hold.
+Resume confirms the current cap and repeats the unfinished key. A connection error
+pauses automatically; reconnect Calibration, then resume. **Redo last completed
+key** removes and repeats only that measurement. **End study and keep results**
+allows exporting an incomplete study.
+
+Export **CSV** for curve fitting; it matches the original wide raw-ADC format,
+with distance rows and one column per key. Only rows complete for all selected
+keys are exported. Export **JSON** for every completed measurement, including
+partial cap rows, individual ADC samples, frame/timestamp provenance, block means,
+peak-to-peak variation, standard deviation and sampling settings.
+
+Use released neighbors and verify contact with the physical cap. Steadiness
+cannot establish the achieved distance. Readings are live MIDI snapshots, not
+consecutive scanner frames, and raw measurements do not require existing Hall
+calibration. No device calibration, LUT or flash is changed. Results remain while
+switching Calibration sections; export before leaving Calibration, reloading the
+page or starting another study.
+
+## Per-key raw damper expression (Advanced)
+
+Updated Advanced main firmware keeps note and velocity travel on the global LUT,
+but Damper zone pressure uses raw ADC movement up to each key's captured firm
+endpoint. Run Hall setup with untouched rest followed by a firm sweep and save
+Hall calibration after the update. Legacy Hall data lacks raw endpoints; missing
+or insufficient spans produce a readiness warning and zero damper output.
+
+In Pressure, choose Damper zone, set its shared nominal start, and adjust
+**Firm endpoint scale**. At 100%, saturation is each key's captured firm press;
+a smaller scale reaches full output earlier. The raw range shown is above rest.
+The response curve adjusts feel after normalization. Full Travel is normalized to each key’s captured maximum pressed distance; its depth cap can make pressure saturate earlier. Missing maximum calibration gives zero full-travel output. Older response profiles reset damper saturation
+to 100% during migration, while retaining their supported settings and curves.
+Save explicitly to retain edits; no endpoint learning or flash writes occur
+during play. Pressure is relative movement, not measured force.
+
+## Advanced device-menu prototype
+
+**Device Menu** is visible only while a real HexBoard Advanced is connected.
+Disconnected or original-board connections hide all unreleased Advanced tools;
+bookmarked menu/calibration routes return to Tunings & Layouts.
+
+**Device Menu** opens a six-sector hexagonal menu with a 128×128 screen preview.
+Use the on-screen joystick, arrow keys, or Advanced's physical joystick via main
+USB. Hold Space or the stick button for 500 ms to enter/exit. Browse with up/down,
+apply with right and cancel/back with left. The top bar shows Preview; ● marks
+the applied item. Settings → Joystick provides dead zone, center/travel calibration
+and axis reversal, with explicit browser-local save. Main and audio firmware must
+both support forwarding. Example lists, browser sound and soft keys simulate the
+interaction; they do not change device content or LEDs. OLED rendering remains
+pending.

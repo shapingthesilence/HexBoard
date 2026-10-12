@@ -10,6 +10,7 @@
   */
 #include <USB.h>         // Arduino-Pico USB descriptor controls
 #include <MIDIUSB.h>     // Arduino-Pico Pico SDK USB MIDI wrapper
+#include <tusb.h>
 /*
     These values support correct MIDI output.
     Note frequencies are converted to MIDI note
@@ -64,7 +65,40 @@ uint8_t presetSyncTransferLastMessage = 0;
 MidiInputParser usbMidiInput;
 MidiInputParser serialMidiInput;
 
+namespace {
+// Arduino-Pico services TinyUSB in a background IRQ. Its MIDI wrapper does not
+// take USB.mutex, so an IRQ can reenter TinyUSB's blocking endpoint mutex.
+// Keep access on Core 0, try once, and let the next loop retry if USB owns it.
+class UsbMidiAccess {
+ public:
+  UsbMidiAccess() : acquired_(mutex_try_enter(&USB.mutex, nullptr)) {}
+  ~UsbMidiAccess() { if (acquired_) mutex_exit(&USB.mutex); }
+  explicit operator bool() const { return acquired_; }
+  UsbMidiAccess(const UsbMidiAccess&) = delete;
+  UsbMidiAccess& operator=(const UsbMidiAccess&) = delete;
+ private:
+  bool acquired_;
+};
+
+bool writeUsbMidiTransportPacket(const uint8_t packet[4]) {
+  UsbMidiAccess access;
+  return access && MidiUSB.writePacket(packet);
+}
+}  // namespace
+
+uint32_t pendingUsbMidiBytes() {
+  UsbMidiAccess access;
+  return access ? static_cast<uint32_t>(MidiUSB.available()) : 0;
+}
+
+int readUsbMidiByte() {
+  UsbMidiAccess access;
+  return access ? static_cast<int>(MidiUSB.read()) : -1;
+}
+
 size_t writeUsbMidiStream(const uint8_t* data, size_t length) {
+  UsbMidiAccess access;
+  if (!access) return 0;
   if (length == 0 || !MidiUSB.connected()) {
     return 0;
   }
@@ -85,6 +119,9 @@ size_t writeUsbMidiStream(const uint8_t* data, size_t length) {
     if (readClock() >= deadline) {
       break;
     }
+    // The background task skips this IRQ while we hold USB.mutex. Service it
+    // here under the same ownership when the transmit FIFO needs to drain.
+    tud_task();
     delayMicroseconds(100);
   }
 
@@ -114,7 +151,7 @@ bool tryWriteUsbMidiPacket(const uint8_t packet[4]) {
   // update from paying that cost until the host resumes polling.
   uint64_t deadline = now + USB_MIDI_PACKET_WRITE_TIMEOUT_MICROS;
   while (MidiUSB.connected()) {
-    if (MidiUSB.writePacket(packet)) {
+    if (writeUsbMidiTransportPacket(packet)) {
       usbMidiPacketBackoffUntil = 0;
       return true;
     }
@@ -159,7 +196,7 @@ void serviceUsbMidiOutput() {
     const uint8_t allNotesOff[4] = {
       0x0B, static_cast<uint8_t>(0xB0 | (channel - 1)), 123, 0
     };
-    if (!MidiUSB.writePacket(allNotesOff)) {
+    if (!writeUsbMidiTransportPacket(allNotesOff)) {
       return;
     }
     usbMidiRecoveryChannel = channel == MIDI_CHANNEL_MAX ? 0 : channel + 1;
@@ -172,7 +209,7 @@ void serviceUsbMidiOutput() {
     // Probe once without waiting or lifting the ordinary 100 ms backoff.
     // This lets a pending note-off leave as soon as the host polls again while
     // a closed host still costs only one constant-time FIFO check per loop.
-    if (!MidiUSB.writePacket(packet.bytes)) {
+    if (!writeUsbMidiTransportPacket(packet.bytes)) {
       return;
     }
     usbMidiReliablePacketQueueHead = static_cast<uint8_t>(

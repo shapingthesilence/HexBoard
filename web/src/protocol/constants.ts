@@ -49,7 +49,9 @@ export const MessageType = {
   CalibrationRequest: 0x30,
   CalibrationResponse: 0x31,
   CalibrationLabRequest: 0x32,
-  CalibrationLabResponse: 0x33
+  CalibrationLabResponse: 0x33,
+  PhysicalSynthRequest: 0x34,
+  PhysicalSynthResponse: 0x35
 } as const;
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];
@@ -132,7 +134,8 @@ export const CapabilityFlag = {
   LiveSynthWavetableSelect: 1 << 15,
   ScopedGeometryList: 1 << 16,
   AtomicGeometryPreview: 1 << 17,
-  AdvancedCalibrationLab: 1 << 18
+  AdvancedCalibrationLab: 1 << 18,
+  AdvancedPhysicalSynth: 1 << 19
 } as const;
 
 export type CapabilityFlagValue = (typeof CapabilityFlag)[keyof typeof CapabilityFlag];

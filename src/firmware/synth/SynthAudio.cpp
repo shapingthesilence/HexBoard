@@ -349,16 +349,8 @@ AudioOutputLevels RAM_FUNC(renderAudioOutputLevels)(byte destination) {
   }
   int16_t synthVibratoSample = 0;
   bool synthVibratoSampleReady = false;
-  // ============================================================
-  // Smooth poly loudness normalization
-  // Old behavior: scale by integer "voices" count.
-  // Problem: when a voice fades out and becomes inactive, voices--
-  // causes a sudden gain jump (audible).
-  //
-  // New behavior: compute an "effective voice count" from the sum of
-  // envelope levels. As a voice releases, its envelope contribution
-  // smoothly approaches 0, so the normalization changes smoothly too.
-  // ============================================================
+  // Normalize by summed envelope levels so releasing voices change gain
+  // smoothly instead of producing a jump when the active voice count drops.
   uint32_t envSum = 0;   // sum of audible envelope levels across active voices (0..8*65535)
   byte voices = 0;
   uint8_t profileFlags = 0;

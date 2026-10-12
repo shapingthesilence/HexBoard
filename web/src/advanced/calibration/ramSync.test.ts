@@ -14,6 +14,20 @@ function harness(send = vi.fn(async (_command: string) => {})) {
   return { sync, initial, send, acknowledged, statuses };
 }
 describe("automatic calibration RAM updates", () => {
+  it("previews and acknowledges model settings for all five velocity engines", () => {
+    const initial=configuration();
+    for(let kind=0;kind<5;kind++) {
+      const draft={...initial,engine:initial.engine.map((v,i)=>i===0?kind:i===2?91:v),thresholds:[983,1638,655]};
+      const edits=ramUpdates(draft,initial);
+      expect(edits[0].command).toMatch(/^velocity engine /);
+      const acknowledged=edits.reduce((previous,edit)=>edit.acknowledge(previous),initial);
+      expect(acknowledged.engine).toEqual(draft.engine);
+      expect(acknowledged.thresholds).toEqual(draft.thresholds);
+      expect(ramUpdates(draft,acknowledged)).toEqual([]);
+      expect(()=>ramUpdates({...draft,thresholds:[1638,983,655]},initial)).toThrow(/Release must be below/);
+    }
+  });
+
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
   it("coalesces edits after inactivity and never sends a flash or scanner command", async () => {
@@ -86,5 +100,14 @@ describe("automatic calibration RAM updates", () => {
     const changed = { ...initial, customCurves: { ...initial.customCurves, off: true } };
     const updates = ramUpdates(changed, initial);
     expect(updates).toHaveLength(1); expect(updates[0].command).toMatch(/^velocity curve_xy off /);
+  });
+});
+
+// Raw damper endpoint scale is independent of nominal start depth.
+describe("raw damper scale", () => {
+  it("accepts a scale below the nominal start fraction, leaving per-key span validation to firmware", () => {
+    const applied = defaultConfig(); applied.capabilities = ["pressure_ends", "raw_damper"];
+    const draft = { ...applied, pressure: [2, 55705, 65535, 50000] };
+    expect(ramUpdates(draft, applied)[0].command).toBe("velocity pressure_config damper 55705 65535 50000");
   });
 });

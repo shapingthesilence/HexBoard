@@ -55,3 +55,14 @@
 .calModal h3 { margin-top: 0; }
 @media (max-width: 900px) { .calColumns { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 540px) { .calCard { padding: 12px; } .calFields { grid-template-columns: 1fr 1fr; } .calPoints > div { grid-template-columns: 1fr 1fr; } .calPoints button { grid-column: 1 / -1; } .calHistory { gap: 2px; } }
+
+.capKeyProgress { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; }
+.capKeyProgress li { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 12px; font-size: .85rem; }
+.capKeyProgress li[data-current=true] { border-color: var(--brand); background: var(--surface-accent); }
+
+.hallPeakLegend { display: flex; align-items: center; gap: 10px; font-size: .8rem; margin: 12px 0; }
+.hallPeakRamp { flex: 1; height: 14px; border-radius: 5px; background: linear-gradient(to right, hsl(240 80% 38%), hsl(180 80% 38%), hsl(120 80% 38%), hsl(60 80% 38%), hsl(0 80% 38%)); }
+.hallPeakMap { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 3px 0; max-width: 880px; margin: 16px auto; }
+.hallPeakMap > div { grid-column-end: span 2 !important; margin: 0 2px; padding: 6px 2px; min-width: 0; text-align: center; border-radius: 8px; border: 1px solid var(--border); font-size: .7rem; }
+.hallPeakMap strong { display: block; font-variant-numeric: tabular-nums; font-size: .82rem; }
+@media (max-width: 540px) { .hallPeakMap > div { margin: 0 1px; padding: 4px 0; font-size: .55rem; } .hallPeakMap strong { font-size: .6rem; } }
