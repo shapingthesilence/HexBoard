@@ -29,10 +29,11 @@ export const physicalParameters = [
   { id: 27, name: "Saturation character", describe: (v: number) => ["Warm", "Edge", "Fold"][Math.round(v / 65535 * 2)], behavior: "" },
   { id: 28, name: "Strike shape", describe: (v: number) => ["Normal", "Felt", "Double", "Scrape"][Math.round(v / 65535 * 3)], behavior: "", strike: true },
   { id: 29, name: "Preparation", describe: (v: number) => `${Math.round(v / 65535 * 100)}%`, behavior: "More bridge buzz" },
-  { id: 30, name: "Drive behavior", describe: (v: number) => v>32767?"Gentle":"Original", behavior: "" },
+  { id: 30, name: "Reserved", describe: (_v: number) => "", behavior: "" },
+  { id: 31, name: "Contact starts", describe:(v:number)=>v>32767?"Note off":"Note on", behavior:"" },
 ] as const;
 export const negativePhysicalBehaviors = ["Shorter ring", "Less damping", "Softer attack", "Shorter release", "Pluck toward nut", "Pickup toward nut", "Softer string", "", "", "Less space above string", "Lighter object", "Slower return", "Softer collisions", "More bounce", "Pickup toward nut", "Toward mono", "Weaker impacts", "Fewer marbles", "Drops toward nut", "Narrower drop region", "More regular timing", "", "Less bow pressure", "Slower bow", "Softer marble impacts", "Less marble ringing", "Cleaner bridge"];
-export const physicalSources = ["Strike velocity", "Key pressure", "Release velocity", "X tilt", "Y tilt"] as const;
+export const physicalSources = ["Strike velocity", "Key pressure", "Release velocity", "X tilt", "Y tilt", "Envelope", "LFO"] as const;
 export const velocityEngines = [
   { id: 0, name: "Threshold Strike", hint: "Threshold timing · dynamic strikes" },
   { id: 1, name: "Expressive Strike", hint: "Peak press speed · expressive attacks" },
@@ -61,9 +62,22 @@ export function effectDescription(id:number,index:number,value:number) {
   if(id===5 && index===0)return `${Math.round(10+170*v)} ms`;
   return `${Math.round(v*(id===5&&index===1?75:100))}%`;
 }
-export interface PhysicalPreset { format: "hexboard.physical.v17"; tiltRoutes: number[]; effects: FxRack; name: string; parameters: number[]; routes: number[]; velocityEngine: PhysicalVelocityEngine }
+export const modulationRouteLimit=6;
+export function modulationRouteCount(routes:number[],source:number){return routes.filter((v,i)=>i%2===source&&v!==0).length;}
+export function canAssignModulation(routes:number[],id:number,source:number){return routes[id*2+source]!==0||modulationRouteCount(routes,source)<modulationRouteLimit;}
+export interface ModulationSources { settings:number[]; routes:number[] }
+export const defaultModulation = ():ModulationSources => ({settings:[14000,30000,42000,34000,0,0,32768,0,30000,0,65535,0,0,0,0,0],routes:Array(64).fill(0)});
+export function modulationSeconds(v:number){return v===0?0:.001*Math.exp(9.903488*v/65535);}
+export function modulationRate(v:number){return .05*Math.exp(5.991465*v/65535);}
+export function validateModulation(value:unknown):ModulationSources {
+  const m=value as ModulationSources;
+  if(!m||!Array.isArray(m.settings)||m.settings.length!==16||m.settings.some(v=>!Number.isInteger(v)||v<0||v>65535)||[7,10,14].some(i=>m.settings[i]!==0&&m.settings[i]!==65535)||m.settings[9]%13107!==0||!Array.isArray(m.routes)||m.routes.length!==64||m.routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||[8,21,27,28,30,31].some(id=>m.routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid envelope / LFO modulation.");
+  for(let source=0;source<2;++source)if(modulationRouteCount(m.routes,source)>modulationRouteLimit)throw Error(`${source===0?"Envelope":"LFO"} allows ${modulationRouteLimit} routes. Remove an assignment before adding another.`);
+  return {settings:[...m.settings],routes:[...m.routes]};
+}
+export interface PhysicalPreset { format: "hexboard.physical.v19"; modulation:ModulationSources; tiltRoutes: number[]; effects: FxRack; name: string; parameters: number[]; routes: number[]; velocityEngine: PhysicalVelocityEngine }
 export const initialPreset: PhysicalPreset = {
-  format: "hexboard.physical.v17", tiltRoutes: Array(62).fill(0), effects: defaultFx(), name: "Pressure Sweep", velocityEngine: 0,
+  format: "hexboard.physical.v19", modulation:defaultModulation(), tiltRoutes: Array(64).fill(0), effects: defaultFx(), name: "Pressure Sweep", velocityEngine: 0,
   parameters: [56000, 9000, 36000, 30000, 24000, 12000, 14000, 43690, 0, 65535, 30000, 18000, 10000, 18000, 50000, 32768, 32768, 0, 32768, 22000, 16000],
   routes: [0, 0, 0, 0, 0, 0, 14000, 0, 0, 0, 0, -26000, 0, 0, 0, 0, 42000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -50000, 0, ...Array(12).fill(0), 0, -20000, 0, 0, 0, 0, ...Array(15).fill(0)]
 };
@@ -90,8 +104,8 @@ factoryPhysicalPresets.push({...initialPreset,name:"Pressure Bow",velocityEngine
   parameters:initialPreset.parameters.map((v,i)=>({1:4000,2:20000,3:63000,5:16000,6:8000,8:0,12:0,14:47000,15:40000,21:65535,22:7000,23:30000} as Record<number,number>)[i]??v),
   routes:initialPreset.routes.map((v,i)=>i===11||i===16||i===43?0:i===67?50000:i===69?8000:v)});
 for(const preset of factoryPhysicalPresets) {
-  preset.parameters.push(preset.parameters[2],preset.parameters[12],0,0,0,0,0);
-  preset.routes.push(...Array(21).fill(0));
+  preset.parameters.push(preset.parameters[2],preset.parameters[12],0,0,0,0,0,0);
+  preset.routes.push(...Array(24).fill(0));
 }
 const alienPiano=physicalPresetFromUnknown({...initialPreset,name:"Otherworldly Piano",parameters:initialPreset.parameters.map((v,i)=>({2:16000,3:63000,6:38000,12:18000,28:21845,29:18000} as Record<number,number>)[i]??v),routes:initialPreset.routes.map((v,i)=>i===88?12000:v)});
 factoryPhysicalPresets.push(alienPiano);
@@ -157,16 +171,24 @@ export function physicalPresetFromUnknown(value: unknown): PhysicalPreset {
   if(p.format==="hexboard.physical.v16" && valid(p.parameters,30,0,65535) && valid(p.routes,90,-65536,65536) && valid(p.tiltRoutes,60,-65536,65536)) {
     return physicalPresetFromUnknown({...p,format:"hexboard.physical.v17",parameters:[...p.parameters,0],routes:[...p.routes,0,0,0],tiltRoutes:[...p.tiltRoutes,0,0]});
   }
-  const discrete=[7,8,21,27,28,30];
-  if (!valid(p.tiltRoutes,62,-65536,65536) || discrete.some(id=>(p.tiltRoutes as number[]).slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid tilt modulation routes.");
-  if (p.format !== "hexboard.physical.v17" || !valid(p.parameters,31,0,65535) || !valid(p.routes,93,-65536,65536) || discrete.some(id=>(p.routes as number[]).slice(id*3,id*3+3).some(Boolean)) || !velocityEngines.some(e => e.id === p.velocityEngine))
+  if(p.format==="hexboard.physical.v17")return physicalPresetFromUnknown({...p,format:"hexboard.physical.v18",modulation:{settings:defaultModulation().settings,routes:Array(62).fill(0)}});
+  if(p.format==="hexboard.physical.v18" && valid(p.parameters,31,0,65535)&&valid(p.routes,93,-65536,65536)&&valid(p.tiltRoutes,62,-65536,65536)){
+    const m=p.modulation as ModulationSources;
+    if(!m||!Array.isArray(m.routes)||m.routes.length!==62)throw Error("Invalid envelope / LFO modulation.");
+    return physicalPresetFromUnknown({...p,format:"hexboard.physical.v19",parameters:[...p.parameters,0],routes:[...p.routes,0,0,0],tiltRoutes:[...p.tiltRoutes,0,0],modulation:{...m,routes:[...m.routes,0,0]}});
+  }
+  const discrete=[7,8,21,27,28,30,31];
+  if (!valid(p.tiltRoutes,64,-65536,65536) || discrete.some(id=>(p.tiltRoutes as number[]).slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid tilt modulation routes.");
+  if (p.format !== "hexboard.physical.v19" || !valid(p.parameters,32,0,65535) || !valid(p.routes,96,-65536,65536) || discrete.some(id=>(p.routes as number[]).slice(id*3,id*3+3).some(Boolean)) || !velocityEngines.some(e => e.id === p.velocityEngine))
     throw Error("This file is not a supported physical string preset.");
-  return {format:"hexboard.physical.v17",tiltRoutes:[...(p.tiltRoutes as number[])],effects:validateFx(p.effects),name:p.name.trim(),parameters:[...p.parameters],routes:[...p.routes],velocityEngine:p.velocityEngine as PhysicalVelocityEngine};
+  return {format:"hexboard.physical.v19",modulation:validateModulation(p.modulation),tiltRoutes:[...(p.tiltRoutes as number[])],effects:validateFx(p.effects),name:p.name.trim(),parameters:p.parameters.map((v,i)=>i===30?0:v),routes:[...p.routes],velocityEngine:p.velocityEngine as PhysicalVelocityEngine};
 }
 
 export function effectiveParameters(p: PhysicalPreset, sources: number[]): number[] {
-  return p.parameters.map((base, id) => Math.max(0, Math.min(1, base / 65535 +
-    sources.reduce((sum, source, i) => sum + source * (i<3?p.routes[id*3+i]:p.tiltRoutes[id*2+i-3]) / 65536, 0))));
+  return p.parameters.map((base,id)=>{
+    if(id===7)return Math.max(0,Math.min(1,base/65535*Math.max(0,Math.min(2,1+p.modulation.routes[14]*((sources[5]??0)-1)/65536+p.modulation.routes[15]*(sources[6]??0)/65536))));
+    return Math.max(0,Math.min(1,base/65535+sources.reduce((sum,source,i)=>sum+source*(i<3?p.routes[id*3+i]:i<5?p.tiltRoutes[id*2+i-3]:p.modulation.routes[id*2+i-5])/65536,0)));
+  });
 }
 export function encodeLogPitchHz(hz: number): number[] {
   if (!Number.isFinite(hz) || hz < 2 ** -16 || hz > 2 ** 16) throw Error("Pitch is outside the transport range.");

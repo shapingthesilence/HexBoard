@@ -747,13 +747,31 @@ average rate. Hits persist through bounded release tails. Mechanical modes
 retain their clearance/mass/gravity controls. v4 presets migrate mode identity
 and enabled marble streams automatically.
 
-Advanced physical revision 6 adds a shared **Striker material** pad (hardness ×
-resonance), separate from string stiffness/loss. Rubber, Wood, Plastic, Glass
-and Steel affect the initial note strike and later impacts together.
+The Advanced **Striker material** pad controls hardness × resonance for the
+initial strike, independently of string stiffness/loss. Bow replaces that pad
+with force × speed. Marble material has its own pad in Contact.
 **Timing randomness** makes arrivals regular at zero and introduces bounded,
 correlated variation as it rises. Neutral **Strike · …** presets keep the string
-unchanged for material comparisons. Micro-noise, a second striker mode and Size
-remain later stages. Older JSON presets migrate to the shared striker mapping.
+unchanged for material comparisons.
+
+Click **Envelope** or **LFO** in the Advanced synth toolbar to open its source
+editor. Shape the envelope with draggable handles or ADSR knobs; Pluck, Swell
+and Gate provide quick starting points. LFO offers six shapes, free-running or
+note-restarted timing, phase and fade/smoothing controls. Extra controls stay in
+compact expandable sections. Choose **Assign to controls**, then drag a
+parameter knob to set modulation depth. Releasing it returns to normal editing.
+Both sources can shape voice level before the voices are mixed. Source settings
+and assignments save with the sound. Their meters show a labeled last-key
+preview; the instrument generates modulation independently for every note.
+Envelope and LFO each support six destinations. At the limit, existing routes
+remain editable; hovering a new destination explains that you need to remove
+a route before adding another.
+
+In Contact, **Contact starts → Note off** leaves held notes clean, then starts
+Mute, Bounce, Rattle or Marbles when you release the key. Note on keeps the
+existing held-note and tail behavior. Increase Release to give release-triggered
+contact more time to sound. Marbles makes its first hit immediately on release,
+then uses the configured rate and timing randomness.
 
 ## Fixed-distance Hall cap study (Advanced)
 
@@ -826,3 +844,11 @@ and axis reversal, with explicit browser-local save. Main and audio firmware mus
 both support forwarding. Example lists, browser sound and soft keys simulate the
 interaction; they do not change device content or LEDs. OLED rendering remains
 pending.
+
+The Advanced String panel animates an approximation of the last reported key:
+strike decay, bow motion, material/drive and contacts affect the drawing.
+**Motion preview** identifies it as a visual model. The triangle replays a
+visual gesture without playing audio; pause disables motion. Animation also
+pauses off-screen and respects reduced-motion preferences. Pickup and strike
+handles remain draggable. Gentle drive is retired; existing Gentle patches
+load with Original drive and keep their other settings.

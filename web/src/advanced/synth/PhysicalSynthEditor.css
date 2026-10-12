@@ -174,3 +174,38 @@
 
 .physical-editor .response-panel .knob-bank {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px;}
 .physical-editor .response-panel .physical-control {width:100%;}
+
+/* Source editors share the instrument's dark blue surfaces and knob vocabulary. */
+.physical-editor { position:relative; }
+.mod-source-editor { position:absolute; z-index:40; top:calc(100% + 6px); left:0; width:min(460px,100%); box-sizing:border-box; padding:12px; border:1px solid var(--border-strong); border-radius:12px; background:var(--surface-raised); color:var(--text); box-shadow:0 12px 35px #071219a8; outline:none; }
+.mod-source-editor header,.mod-source-editor footer { display:flex; align-items:center; gap:10px; }
+.mod-source-editor header { justify-content:space-between; }
+.mod-source-editor header button { padding:0 8px; font-size:22px; }
+.mod-source-editor footer { margin-top:10px; }
+.mod-source-editor small { display:block; color:var(--text-soft); font-size:.75rem; line-height:1.4; }
+.mod-source-editor button { padding:5px 10px; min-height:30px; }
+.mod-source-graph { display:block; width:100%; height:104px; margin:6px 0; background:var(--surface-muted); border-radius:7px; touch-action:none; }
+.mod-graph-grid { stroke:#344957; stroke-width:.6; fill:none; }
+.mod-graph-wave { stroke:#9edacd; stroke-width:2; fill:none; }
+.mod-graph-handle { stroke:#14212b; stroke-width:2; fill:#f3cf6e; cursor:grab; }
+.mod-source-knobs { display:flex; justify-content:space-around; gap:6px; }
+.mod-source-control { display:grid; justify-items:center; gap:2px; font-size:.78rem; }
+.mod-source-control .physical-knob { width:52px; height:52px; margin:4px 0; }
+.mod-source-control .knob-face { width:38px; height:38px; }
+.mod-source-control output { color:var(--text); }
+.mod-source-editor details { margin:8px 0; border-top:1px solid #344957; padding-top:6px; }
+.mod-source-editor summary { font-size:.8rem; cursor:pointer; margin-bottom:5px; }
+.mod-switch { display:flex; gap:6px; align-items:center; font-size:.8rem; margin-top:8px; }
+.mod-source-editor .source-tabs { margin:6px 0; }
+.mod-source-editor .mod-shapes { display:flex; flex-wrap:wrap; }
+.mod-source-help { font-size:.85rem; line-height:1.5; margin:12px 0; }
+.mod-source-help a { display:block; margin-top:8px; color:#9edacd; }
+
+.physical-editor .source-route-count { margin-left:5px; font-size:10px; color:var(--text-soft); }
+.physical-editor .physical-control[data-route-full] .physical-knob { cursor:not-allowed; opacity:.5; }
+.physical-editor .mod-limit-tooltip { position:fixed; z-index:100; max-width:200px; padding:7px 9px; pointer-events:none; color:var(--text); background:var(--surface-raised); border:1px solid var(--border-strong); border-radius:6px; font-size:11px; box-shadow:0 4px 12px #0004; }
+
+.physical-editor .string-animation { pointer-events:none; }
+.physical-editor .string-motion-actions { display:flex; gap:3px; align-items:center; }
+.physical-editor .string-motion-actions button { min-height:18px; padding:0; width:20px; font-size:11px; line-height:16px; }
+.physical-editor .pickup-readout { gap:5px; flex-wrap:wrap; align-items:center; }

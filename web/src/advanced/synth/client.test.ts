@@ -3,35 +3,41 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { encodeDefaultPresetSyncFrame, decodePresetSyncFrame, encodeU21 } from "../../protocol/index.ts";
 import type { MidiMessageListener, MidiTransport } from "../../midi/types.ts";
-import { PhysicalSynthClient, decodePhysicalState, decodePhysicalExpression, decodeMotion } from "./client.ts";
-import { initialPreset, factoryPhysicalPresets, physicalPresetFromUnknown, encodeLogPitchHz, effectiveParameters, releaseSeconds, defaultFx, validateFx } from "./schema.ts";
+import { PhysicalSynthClient, decodePhysicalState, decodePhysicalExpression, decodeMotion, decodeModulation } from "./client.ts";
+import { initialPreset, factoryPhysicalPresets, physicalPresetFromUnknown, encodeLogPitchHz, effectiveParameters, releaseSeconds, defaultModulation, validateModulation, defaultFx, validateFx } from "./schema.ts";
 import { PhysicalSynthEditor } from "./PhysicalSynthEditor.tsx";
 
-function payload() { return [13, 1, 2, ...encodeU21(131072), ...initialPreset.parameters.flatMap(encodeU21), ...initialPreset.routes.flatMap(v => encodeU21(v + 65536)), initialPreset.velocityEngine]; }
+function payload() { return [14, 1, 2, ...encodeU21(131072), ...initialPreset.parameters.flatMap(encodeU21), ...initialPreset.routes.flatMap(v => encodeU21(v + 65536)), initialPreset.velocityEngine]; }
 class Transport implements MidiTransport {
   label = "Advanced test";
   listeners = new Set<MidiMessageListener>();
   sent: number[][] = [];
   respond = true;
+  modulation=defaultModulation();
   async send(bytes: ArrayLike<number>) {
     this.sent.push(Array.from(bytes));
     const frame = decodePresetSyncFrame(bytes);
+    const modulation=frame.payload[1]>=16;
+    if(frame.payload[1]===17)this.modulation=decodeModulation([14,...frame.payload.slice(2)]);
+    if(frame.payload[1]===18)this.modulation.settings[frame.payload[2]]=decodeModulation([14,...this.modulation.settings.map((v,i)=>i===frame.payload[2]?frame.payload.slice(3).reduce((a,b)=>a*128+b,0):v).flatMap(encodeU21),...this.modulation.routes.flatMap(v=>encodeU21(v+65536))]).settings[frame.payload[2]];
+    if(frame.payload[1]===19)this.modulation.routes[frame.payload[2]*2+frame.payload[3]]=frame.payload.slice(4).reduce((a,b)=>a*128+b,0)-65536;
+    const modResponse=[14,...this.modulation.settings.flatMap(encodeU21),...this.modulation.routes.flatMap(v=>encodeU21(v+65536))];
     const motion=frame.payload[1]>=12;
     const fx=frame.payload[1]>=10;
-    const motionResponse=[13,1,1,...encodeU21(32767),...encodeU21(32767),...(frame.payload[1]===13?frame.payload.slice(2):Array(62).fill(65536).flatMap(encodeU21))];
-    const response=frame.payload[1]===11?[13,...frame.payload.slice(2)]:[13,0,0,0,0,0,...defaultFx().values.flat().flatMap(encodeU21)];
-    if (this.respond) for (const listener of this.listeners) listener(Uint8Array.from(encodeDefaultPresetSyncFrame(motion?0x38:fx?0x37:0x35, frame.transactionId, motion?motionResponse:fx?response:payload())));
+    const motionResponse=[14,1,1,...encodeU21(32767),...encodeU21(32767),...(frame.payload[1]===13?frame.payload.slice(2):Array(64).fill(65536).flatMap(encodeU21))];
+    const response=frame.payload[1]===11?[14,...frame.payload.slice(2)]:[14,0,0,0,0,0,...defaultFx().values.flat().flatMap(encodeU21)];
+    if (this.respond) for (const listener of this.listeners) listener(Uint8Array.from(encodeDefaultPresetSyncFrame(modulation?0x39:motion?0x38:fx?0x37:0x35, frame.transactionId, modulation?modResponse:motion?motionResponse:fx?response:payload())));
   }
   subscribe(listener: MidiMessageListener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 }
 const legacyPreset=()=>({...initialPreset,parameters:initialPreset.parameters.slice(0,24),routes:initialPreset.routes.slice(0,72),tiltRoutes:initialPreset.tiltRoutes.slice(0,48)});
 describe("Advanced physical editor", () => {
   it("migrates tilt routes to zero and decodes signed flat/tilted motion",()=>{
-    const old=physicalPresetFromUnknown({...legacyPreset(),format:"hexboard.physical.v11",tiltRoutes:undefined});expect(old.tiltRoutes).toEqual(Array(62).fill(0));
-    const packet=[13,1,1,...encodeU21(49151),...encodeU21(16384),...Array(62).fill(65536).flatMap(encodeU21)];
+    const old=physicalPresetFromUnknown({...legacyPreset(),format:"hexboard.physical.v11",tiltRoutes:undefined});expect(old.tiltRoutes).toEqual(Array(64).fill(0));
+    const packet=[14,1,1,...encodeU21(49151),...encodeU21(16384),...Array(64).fill(65536).flatMap(encodeU21)];
     expect(decodeMotion(packet).tiltX).toBeCloseTo(.5,3);expect(decodeMotion(packet).tiltY).toBeCloseTo(-.5,3);
-    expect(()=>decodeMotion([13,1,1,...encodeU21(65535),...packet.slice(6)])).toThrow();
-    const routes=Array(62).fill(0);routes[14]=1;expect(()=>physicalPresetFromUnknown({...initialPreset,tiltRoutes:routes})).toThrow();
+    expect(()=>decodeMotion([14,1,1,...encodeU21(65535),...packet.slice(6)])).toThrow();
+    const routes=Array(64).fill(0);routes[14]=1;expect(()=>physicalPresetFromUnknown({...initialPreset,tiltRoutes:routes})).toThrow();
   });
 
   it("round-trips ordered singleton effects and rejects duplicate instances",async()=>{
@@ -42,7 +48,7 @@ describe("Advanced physical editor", () => {
     const migrated=physicalPresetFromUnknown({...legacyPreset(),format:"hexboard.physical.v10",effects:{...fx,order:[5,4,1,2]}});
     expect(migrated.effects).toEqual(fx);
     expect(migrated.parameters).toEqual(initialPreset.parameters);
-    expect(migrated.format).toBe("hexboard.physical.v17");
+    expect(migrated.format).toBe("hexboard.physical.v19");
     expect(()=>validateFx({...fx,values:[[65536,0,0,0]]})).toThrow();
     const old=physicalPresetFromUnknown({...legacyPreset(),format:"hexboard.physical.v9",effects:undefined});
     expect(old.effects.order).toEqual([]);
@@ -54,7 +60,7 @@ describe("Advanced physical editor", () => {
   it("keeps marble material independent and migrates the shared material",()=>{
     const old=legacyPreset();old.parameters[2]=52000;old.parameters[12]=49000;
     const migrated=physicalPresetFromUnknown({...old,format:"hexboard.physical.v12"});
-    expect(migrated.parameters.slice(24)).toEqual([52000,49000,0,0,0,0,0]);
+    expect(migrated.parameters.slice(24)).toEqual([52000,49000,0,0,0,0,0,0]);
     const changed={...migrated,parameters:migrated.parameters.map((v,i)=>i===24?3300:i===25?0:v)};
     expect(physicalPresetFromUnknown(changed).parameters.slice(0,24)).toEqual(migrated.parameters.slice(0,24));
   });
@@ -64,7 +70,7 @@ describe("Advanced physical editor", () => {
     expect(migrated.parameters.slice(0,26)).toEqual(previous.parameters);
     expect(migrated.routes.slice(0,78)).toEqual(previous.routes);
     expect(migrated.tiltRoutes.slice(0,52)).toEqual(previous.tiltRoutes);
-    expect(migrated.parameters[26]).toBe(0);expect(migrated.routes.slice(78)).toEqual(Array(15).fill(0));expect(migrated.tiltRoutes.slice(52)).toEqual(Array(10).fill(0));
+    expect(migrated.parameters[26]).toBe(0);expect(migrated.routes.slice(78)).toEqual(Array(18).fill(0));expect(migrated.tiltRoutes.slice(52)).toEqual(Array(12).fill(0));
     const driven={...migrated,parameters:migrated.parameters.map((v,i)=>i===26?18000:v),routes:migrated.routes.map((v,i)=>i===79?30000:v)};
     expect(effectiveParameters(driven,[0,1,0])[26]).toBeGreaterThan(effectiveParameters(driven,[0,0,0])[26]);
     expect(renderToStaticMarkup(createElement(PhysicalSynthEditor))).toContain('aria-label="Drive"');
@@ -81,15 +87,15 @@ describe("Advanced physical editor", () => {
     const t = new Transport(), c = new PhysicalSynthClient(t);
     await Promise.all([c.retuneHz(61, 0, 261.123456), c.bend(-2), c.apply(initialPreset)]);
     const frames = t.sent.map(decodePresetSyncFrame);
-    expect(frames.map(f => f.payload[1])).toEqual([6, 5, 7, 13, 11, 0]);
+    expect(frames.map(f => f.payload[1])).toEqual([6, 5, 7, 13, 17, 0, 11, 0]);
     expect(frames[0].payload.slice(5)).toHaveLength(5);
-    expect(frames[1].payload).toEqual([13, 5, 0, 0, 0]);
-    expect(frames[2].payload).toHaveLength(375);
+    expect(frames[1].payload).toEqual([14, 5, 0, 0, 0]);
+    expect(frames[2].payload).toHaveLength(387);
     expect(t.listeners.size).toBe(0); c.close();
   });
   it("preserves older presets and maps pressure to pickup without changing output gain", () => {
     const old = physicalPresetFromUnknown({ format: "hexboard.physical.v1", name: "Old String", parameters: [45000, 26000, 36000, 30000], routes: Array(12).fill(0) });
-    expect(old.parameters).toHaveLength(31); expect(old.routes).toHaveLength(93);
+    expect(old.parameters).toHaveLength(32); expect(old.routes).toHaveLength(96);
     expect(old.parameters[7]).toBe(21845);
     const light = effectiveParameters(initialPreset, [0.8, 0, 0]), deep = effectiveParameters(initialPreset, [0.8, 1, 0]);
     expect(deep[5]).toBeGreaterThan(light[5]); expect(deep[7]).toBe(light[7]);
@@ -100,7 +106,7 @@ describe("Advanced physical editor", () => {
     const old = physicalPresetFromUnknown({ format: "hexboard.physical.v2", name: "Old material", parameters: initialPreset.parameters.slice(0,8), routes: initialPreset.routes.slice(0,24) });
     expect(old.parameters[8]).toBe(0); expect(old.parameters[14]).toBe(old.parameters[5]); expect(old.parameters[15]).toBe(0);
     const v3 = physicalPresetFromUnknown({format:"hexboard.physical.v3",name:"Older contact",parameters:initialPreset.parameters.slice(0,16),routes:initialPreset.routes.slice(0,48)});
-    expect(v3.parameters.slice(16)).toEqual([32768,0,32768,22000,16000,0,12000,30000,initialPreset.parameters[2],10000,0,0,0,0,0]); expect(v3.routes.slice(48)).toEqual(Array(45).fill(0));
+    expect(v3.parameters.slice(16)).toEqual([32768,0,32768,22000,16000,0,12000,30000,initialPreset.parameters[2],10000,0,0,0,0,0,0]); expect(v3.routes.slice(48)).toEqual(Array(48).fill(0));
     const marbles = factoryPhysicalPresets.find(p => p.name === "Falling Marbles")!;
     expect(marbles.parameters[16]).toBeGreaterThan(32768); expect(marbles.parameters[17]).toBeGreaterThan(0);
     const bounce = factoryPhysicalPresets.find(p => p.name === "Pressure Bounce")!;
@@ -150,9 +156,9 @@ describe("Advanced physical editor", () => {
     const transport=new Transport(),client=new PhysicalSynthClient(transport);
     await client.velocityEngine(4); await client.apply({...initialPreset,velocityEngine:4});
     const frames=transport.sent.map(decodePresetSyncFrame);
-    expect(frames[0].payload).toEqual([13,9,4]);
+    expect(frames[0].payload).toEqual([14,9,4]);
     expect(frames[1].payload.at(-1)).toBe(4);
-    expect(frames[1].payload).toHaveLength(375);
+    expect(frames[1].payload).toHaveLength(387);
     client.close();
   });
   it("encodes arbitrary frequencies with less than a millihertz of pairwise beat error", () => {
@@ -161,8 +167,14 @@ describe("Advanced physical editor", () => {
       expect(Math.abs((decode(hz + 0.1) - decode(hz)) - 0.1)).toBeLessThan(0.001);
     }
     expect(() => encodeLogPitchHz(NaN)).toThrow(); expect(() => encodeLogPitchHz(0)).toThrow();
-    expect(decodePhysicalExpression([13, 0, 61, 1, 100, ...encodeU21(32768), 0]).pressure).toBe(32768);
-    expect(() => decodePhysicalExpression([13, 0, 61, 1, 100, ...encodeU21(65536), 0])).toThrow();
+    expect(decodePhysicalExpression([14, 0, 61, 1, 100, ...encodeU21(32768), 0]).pressure).toBe(32768);
+    expect(() => decodePhysicalExpression([14, 0, 61, 1, 100, ...encodeU21(65536), 0])).toThrow();
+  });
+  it("loads, edits and reconnects non-default envelope/LFO controls and signed routes",async()=>{
+    const transport=new Transport(),client=new PhysicalSynthClient(transport);const modulation=defaultModulation();modulation.settings[0]=55000;modulation.settings[9]=52428;modulation.routes[14]=65536;modulation.routes[11]=-24000;
+    expect((await client.apply({...initialPreset,modulation})).preset.modulation).toEqual(modulation);
+    expect((await client.read()).preset.modulation).toEqual(modulation);
+    await client.modSetting(8,44000);await client.modRoute(5,1,-32000);const changed=await client.read();expect(changed.preset.modulation.settings[8]).toBe(44000);expect(changed.preset.modulation.routes[11]).toBe(-32000);client.close();
   });
   it("cancels pending operations and detaches listeners on disconnect", async () => {
     const t = new Transport(); t.respond = false;
@@ -218,6 +230,19 @@ describe("Advanced physical editor", () => {
 
 it("migrates existing patches with preparation bypassed and normal strike shape",()=>{
  const old={...initialPreset,format:"hexboard.physical.v15",parameters:initialPreset.parameters.slice(0,28),routes:initialPreset.routes.slice(0,84),tiltRoutes:initialPreset.tiltRoutes.slice(0,56)};
- const next=physicalPresetFromUnknown(old);expect(next.parameters.slice(0,28)).toEqual(old.parameters);expect(next.parameters.slice(28)).toEqual([0,0,0]);
+ const next=physicalPresetFromUnknown(old);expect(next.parameters.slice(0,28)).toEqual(old.parameters);expect(next.parameters.slice(28)).toEqual([0,0,0,0]);
  const invalid={...next,routes:[...next.routes]};invalid.routes[84]=1;expect(()=>physicalPresetFromUnknown(invalid)).toThrow();
+});
+
+it("migrates contact timing to note on and preserves release contact",()=>{
+ const old={...initialPreset,format:"hexboard.physical.v18",parameters:initialPreset.parameters.slice(0,31),routes:initialPreset.routes.slice(0,93),tiltRoutes:initialPreset.tiltRoutes.slice(0,62),modulation:{...initialPreset.modulation,routes:initialPreset.modulation.routes.slice(0,62)}};
+ const next=physicalPresetFromUnknown(old);expect(next.parameters[31]).toBe(0);
+ next.parameters[31]=65535;expect(physicalPresetFromUnknown(JSON.parse(JSON.stringify(next)))).toEqual(next);
+ const invalid={...next,modulation:{...next.modulation,routes:[...next.modulation.routes]}};invalid.modulation.routes[62]=1;expect(()=>physicalPresetFromUnknown(invalid)).toThrow();
+});
+
+it("retires Gentle drive while preserving the rest of an imported sound",()=>{
+ const old={...initialPreset,parameters:[...initialPreset.parameters]};old.parameters[30]=65535;
+ const loaded=physicalPresetFromUnknown(old);expect(loaded.parameters[30]).toBe(0);expect(loaded.parameters.slice(0,30)).toEqual(old.parameters.slice(0,30));
+ const html=renderToStaticMarkup(createElement(PhysicalSynthEditor));expect(html).not.toContain("Drive behavior");expect(html).not.toContain("Gentle");
 });
