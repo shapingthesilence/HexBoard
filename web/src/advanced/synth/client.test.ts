@@ -254,7 +254,7 @@ describe("Advanced physical editor", () => {
     expect(html).toContain('Delete modulation');
     expect(html).toContain('role="radiogroup" aria-label="Excitation mode"');
     expect((html.match(/name="physical-exciter-mode"/g)??[])).toHaveLength(3);
-    expect(html).not.toContain('type="range"');
+    expect(html.match(/type="range"/g)).toHaveLength(2); // Compact, non-modulatable Body EQ controls.
     expect(html).not.toContain('<details');
     expect(html).toContain('aria-label="Velocity engine"'); expect(html).toContain("Fixed Velocity");
     expect(html).toContain("Stereo width"); expect(html).toContain("Bounce");

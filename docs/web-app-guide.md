@@ -48,15 +48,16 @@ Resonance; Bow replaces these axes with Speed and Force and starts without a
 pluck. Marble material has its own pad in Contact. The Resonator pad controls
 string Stiffness and Loss. Higher stiffness gives more stretched partials.
 
-Striker, String Material and Body pads sit above the shared string workspace.
-Active contact, response, expression and effect controls stay visible below it.
-Grab **Strike/Bow**, **Pickup L**, **Pickup R**, the pin or marble drop center
-to open its settings below the drawing while dragging. Arrow keys adjust
-focused handles; Enter opens settings for keyboard editing. The labeled
-object buttons offer the same access. Escape or Close dismisses the settings.
-The detail area edits the base position (5–95% along the string) and signed source amounts;
-the adjacent readout shows the physical position. Hollow pickup markers show
-base positions, and colored lanes show the selected object’s modulation ranges. **Stereo width** moves from mono to separate
+On desktop, Exciter and Resonator sit beside the string, with Contact below
+both pads and String response below the string. Body EQ stays in the FX rack;
+its Intensity and Focus use compact sliders. The pads are centered, with the
+Exciter and Resonator knobs below them. Active controls stay visible. On smaller
+monitors, the two pads lead into full-width String workspace, String response
+and Contact rows; the pads stack on narrow phones.
+Drag **Strike/Bow**, **Pickup L**, **Pickup R**, the pin or marble drop center
+along the string; arrow keys adjust focused handles. Motion preview replay
+and pause controls sit above the string. Hollow pickup markers show base
+positions. **Stereo width** moves from mono to separate
 pickups. **Pin pressure** engages a preparation above zero: drag horizontally for position and
 vertically for pressure, or use its knobs. Strong pressure can buzz and mute
 the string. **Irregularity** adds correlated pitch wandering; zero is stable.
@@ -76,12 +77,19 @@ across velocity, pressure, release, tilt, Envelope and LFO. At either limit, rem
 add another. Importing an older six-route patch reports removed assignments.
 Source rings show depth and direction; a white dot shows the combined value.
 **Delete modulation** removes a single route directly or offers a source
-choice when several routes exist. X/Y tilt is bidirectional around neutral.
+choice when several routes exist. Escape returns to **Edit values** from
+assignment or deletion mode. X/Y tilt is bidirectional around neutral.
+
+**Undo / Redo** restores sound edits, including preset loads, modulation, Body EQ,
+effects and samples. Each drag is one step, with up to 64 steps in this session.
+Use Ctrl/⌘ Z to undo and Ctrl/⌘ Shift Z (or Ctrl Y) to redo while focused in
+the sound editor. Text fields keep their native undo behavior. Restored settings
+apply to connected hardware in RAM.
 
 Contact offers Bounce, Rattle, Mute and Marbles. **Note on / Note off** controls
 when it starts; longer Release time gives release gestures more time. Marbles
 has Rate (up to 60/s), Timing randomness, Drop center/spread and Strength. Its
-material controls are independent of the main exciter. String animations
+material row sits below the other Contact controls and is independent of the main exciter. String animations
 approximate the latest reported key; replay is visual only.
 
 The **Performance** row places Velocity, Arp, Hold, BPM and Tap above the
@@ -916,7 +924,7 @@ load with Original drive and keep their other settings.
 
 ## Advanced Juno, DX7 and preset voice tests
 
-Choose Physical Strings, Juno or DX7 in Synth. Each uses direct modulation targeting, with a different color. Physical Strings keeps its active FX rack below the string workspace; Juno and DX7 use a side rack. Native envelopes remain with sound controls; native Envelope and LFO sources can also target other controls from toolbar source editors. Juno offers Chorus, Distortion and Volume Steps; DX7 also offers Reverb. DX7 imports single voices and 32-voice SysEx banks.
+Choose Physical Strings, Juno or DX7 in Synth. Each uses direct modulation targeting, with a different color. All three engines use a side FX rack on desktop. Native envelopes remain with sound controls; native Envelope and LFO sources can also target other controls from toolbar source editors. Juno offers Chorus, Distortion and Volume Steps; DX7 also offers Reverb. DX7 imports single voices and 32-voice SysEx banks.
 
 Use **Test voice limit** after finishing a patch and its effects. Playback is muted while the device finds the largest passing count within the 99% render budget, including two release-tail slots. The result saves with the preset. Any edit returns to eight voices until you test again. Physical Strings currently stops at eight because of its allocation ceiling. **Cancel voice test** stops the measurement.
 
