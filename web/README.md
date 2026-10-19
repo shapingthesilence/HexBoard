@@ -111,7 +111,7 @@ without a 404 fallback. Dialogs and course-editor previews do not change the URL
 | `audio/` | Browser synth audition worklet and audio lifecycle |
 | `views/Learn.tsx`, `learn/` | Tuning-aware scale practice, lazy device library, beat grading, delegated sessions, and LED hints |
 | `advanced/calibration/` | Connected-only Hall, velocity, pressure and diagnostic workflow; scoped SysEx client, validated records and charts |
-| `advanced/synth/` | Advanced physical string editor, browser drafts/presets, validated schema and typed RAM preview client |
+| `advanced/synth/` | Advanced synth editors, factory banks, direct modulation, browser presets and typed RAM client |
 | `catalogs/layoutKey.ts` | Shared generated/manual layout pitch resolution |
 
 ## Learning and Course Authoring
@@ -313,8 +313,38 @@ a five-second session owner, bounded replies and pull-paced capture pages. `RamS
 only changed groups and records each acknowledgment. Held keys retry after release;
 capture/guided/profile work pauses updates. Explicit Save is separate. It
 imports no firmware sources or Web Serial APIs. Explicit Hall/response saves use
-existing board storage; durable tuning bundles, joystick forwarding and synthesis
-remain unavailable. Until hardware release, Advanced UI is hidden offline and
+existing board storage. Connected Advanced also provides a Physical Strings
+editor with independent exciter/contact materials, per-note envelope/LFO
+sources, four generated routes per source, a localized preparation pin,
+irregular tension/bow texture, a shared formant Body EQ and an ordered singleton
+FX rack with five distortion characters and programmable Volume Steps. A short
+mono sample import/trim editor includes baked fade-in/out editing, a waveform
+envelope and actual-engine preview. Physical JSON v22
+and synth wire v17 are paired with current Advanced firmware. Durable tuning
+bundles and device synth-preset storage remain unavailable. Until hardware release, Advanced UI is hidden offline and
 manual Advanced target selection is unavailable. Original synth drafts retain their
 context. The app builds/tests independently of either firmware checkout;
 keep these boundaries when moving it to a standalone repository later.
+
+## Advanced synth editors
+
+The Synth context on Advanced offers Physical Strings, amber Juno and teal DX7,
+with shared direct modulation targeting and the right-side effects rack. Updated Advanced firmware advertises capability bit 20. Classic
+presets use `hexboard.advanced.v2`; DX7 Import accepts checksum-validated single
+voices and 32-voice SysEx banks. Imported voices remain dry until you choose
+Add Advanced expression. Explicit Load/Preview/Start saves the numeric startup
+sound; ordinary drags update RAM. There is no macro system or compatibility loader for macro presets.
+
+For offline authoring and visual QA, `npm run dev` also serves
+`/advanced-preview.html`. It has all three editors without a device connection.
+
+Envelope and LFO source editors open from the modulation toolbar. Only effects occupy the side rack. Juno/DX7 reuse their native LFO and voice envelopes for assignments; voice
+envelopes stay beside the sound controls. Juno currently offers Distortion, Volume
+Steps and Chorus; DX7 also offers Reverb, based on the measured full-stack budget.
+Physical Body EQ appears inside its FX rack before the ordered effects.
+
+**Test voice limit** measures the current patch, modulation and FX rack on the audio processor against a 99% render budget. The highest passing held-note count and two tail slots are saved with the computer preset, JSON export and numeric startup patch. Any edit invalidates the result and returns to eight held voices until retested. Qualification revision 2 requires a fresh measurement after the macro removal. Physical Strings currently has an eight-voice allocation ceiling; Juno and DX7 can test higher counts. Testing mutes playback and can be cancelled.
+
+Engine-switch progress uses measured main-USB load-to-playable timings: about 3.2 seconds into Juno, 3.4 into DX7 and 3.5 into Physical Strings at eight voices. Larger qualified presets extend the preparation estimate. The bar finishes only after the device reports DAC and patch readiness. See the Advanced firmware repository’s `docs/juno-dx7.md` and `docs/juno-dx7-load-times.json` for measured scope.
+
+The factory picker includes 128 AMY Juno voices and all 1,024 bundled DX7 default voices (128 built-ins plus 896 additional voices), grouped by bank and searchable by name or number. Data and source hashes are in `src/advanced/synth/amy-factory/`. Juno conversions show notes for unsupported ranges and adapted HPF/chorus behavior; DX7 native fields are retained without added FX or expression. The direct-only engine schema is revision 2, with 220 words and seven sources × four routes. Macro fields and migration code are removed.

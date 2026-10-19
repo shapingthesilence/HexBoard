@@ -1,3 +1,5 @@
+import {SynthProgress} from './SynthProgress.tsx';
+import type {SynthProgress as Progress} from './progress.ts';
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -7,37 +9,72 @@ import { PhysicalSynthClient, decodePhysicalState, decodePhysicalExpression, dec
 import { initialPreset, factoryPhysicalPresets, physicalPresetFromUnknown, encodeLogPitchHz, effectiveParameters, releaseSeconds, defaultModulation, validateModulation, defaultFx, validateFx } from "./schema.ts";
 import { PhysicalSynthEditor } from "./PhysicalSynthEditor.tsx";
 
-function payload() { return [14, 1, 2, ...encodeU21(131072), ...initialPreset.parameters.flatMap(encodeU21), ...initialPreset.routes.flatMap(v => encodeU21(v + 65536)), initialPreset.velocityEngine]; }
+function payload() { return [17, 1, 2, ...encodeU21(131072), ...initialPreset.parameters.flatMap(encodeU21), ...initialPreset.routes.flatMap(v => encodeU21(v + 65536)), initialPreset.velocityEngine]; }
 class Transport implements MidiTransport {
   label = "Advanced test";
   listeners = new Set<MidiMessageListener>();
   sent: number[][] = [];
-  respond = true;
+  respond = true;state = 1;samplePriority=0;sampleLoop:number[]|undefined;
   modulation=defaultModulation();
   async send(bytes: ArrayLike<number>) {
     this.sent.push(Array.from(bytes));
     const frame = decodePresetSyncFrame(bytes);
+    if(frame.payload[1]===1)this.state=1;if(frame.payload[1]===2)this.state=0;
+    if(frame.payload[1]===28){queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x35,frame.transactionId,[17,this.state,...payload().slice(2)])))));return;}
+    if(frame.payload[1]>=46&&frame.payload[1]<=51){queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x35,frame.transactionId,[17,this.state,...payload().slice(2)])))));return;}
     const modulation=frame.payload[1]>=16;
-    if(frame.payload[1]===17)this.modulation=decodeModulation([14,...frame.payload.slice(2)]);
-    if(frame.payload[1]===18)this.modulation.settings[frame.payload[2]]=decodeModulation([14,...this.modulation.settings.map((v,i)=>i===frame.payload[2]?frame.payload.slice(3).reduce((a,b)=>a*128+b,0):v).flatMap(encodeU21),...this.modulation.routes.flatMap(v=>encodeU21(v+65536))]).settings[frame.payload[2]];
+    if(frame.payload[1]===17)this.modulation=decodeModulation([17,...frame.payload.slice(2)]);
+    if(frame.payload[1]===18)this.modulation.settings[frame.payload[2]]=decodeModulation([17,...this.modulation.settings.map((v,i)=>i===frame.payload[2]?frame.payload.slice(3).reduce((a,b)=>a*128+b,0):v).flatMap(encodeU21),...this.modulation.routes.flatMap(v=>encodeU21(v+65536))]).settings[frame.payload[2]];
     if(frame.payload[1]===19)this.modulation.routes[frame.payload[2]*2+frame.payload[3]]=frame.payload.slice(4).reduce((a,b)=>a*128+b,0)-65536;
-    const modResponse=[14,...this.modulation.settings.flatMap(encodeU21),...this.modulation.routes.flatMap(v=>encodeU21(v+65536))];
+    const modResponse=[17,...this.modulation.settings.flatMap(encodeU21),...this.modulation.routes.flatMap(v=>encodeU21(v+65536))];
     const motion=frame.payload[1]>=12;
     const fx=frame.payload[1]>=10;
-    const motionResponse=[14,1,1,...encodeU21(32767),...encodeU21(32767),...(frame.payload[1]===13?frame.payload.slice(2):Array(64).fill(65536).flatMap(encodeU21))];
-    const response=frame.payload[1]===11?[14,...frame.payload.slice(2)]:[14,0,0,0,0,0,...defaultFx().values.flat().flatMap(encodeU21)];
-    if (this.respond) for (const listener of this.listeners) listener(Uint8Array.from(encodeDefaultPresetSyncFrame(modulation?0x39:motion?0x38:fx?0x37:0x35, frame.transactionId, modulation?modResponse:motion?motionResponse:fx?response:payload())));
+    const motionResponse=[17,1,1,...encodeU21(32767),...encodeU21(32767),...(frame.payload[1]===13?frame.payload.slice(2):Array(66).fill(65536).flatMap(encodeU21))];
+    if(frame.payload[1]===24)this.samplePriority=frame.payload[9]??0;
+    if(frame.payload[1]===27)this.sampleLoop=frame.payload.slice(2);
+    if(frame.payload[1]>=20){const sample=[17,0,...encodeU21(32768),...encodeU21(this.sampleLoop?1600:0),0,0,0,0,0,0,...encodeU21(65535),this.samplePriority,...(this.sampleLoop??[])];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x3b,frame.transactionId,sample)))));return;}
+    const response=frame.payload[1]===11?[17,...frame.payload.slice(2)]:[17,0,0,0,0,0,...defaultFx().values.flat().flatMap(encodeU21),...defaultFx().steps.flatMap(encodeU21)];
+    if (this.respond) for (const listener of this.listeners) listener(Uint8Array.from(encodeDefaultPresetSyncFrame(modulation?0x39:motion?0x38:fx?0x37:0x35, frame.transactionId, modulation?modResponse:motion?motionResponse:fx?response:[17,this.state,...payload().slice(2)])));
   }
   subscribe(listener: MidiMessageListener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 }
 const legacyPreset=()=>({...initialPreset,parameters:initialPreset.parameters.slice(0,24),routes:initialPreset.routes.slice(0,72),tiltRoutes:initialPreset.tiltRoutes.slice(0,48)});
 describe("Advanced physical editor", () => {
+  it("stops before selecting the SD piano and decodes sampler acknowledgements",async()=>{
+    const t=new Transport(),c=new PhysicalSynthClient(t);try{
+      await c.samplerSource('piano');await c.samplerParameter(4,18000);await c.samplerSource('patch');
+      const frames=t.sent.map(decodePresetSyncFrame);expect(frames.findIndex(f=>f.payload[1]===2)).toBeLessThan(frames.findIndex(f=>f.payload[1]===51));
+      expect(frames.filter(f=>f.payload[1]===51).map(f=>f.payload[2])).toEqual([1,0]);expect(frames.some(f=>f.payload[1]===46)).toBe(true);
+    }finally{c.close();}
+  });
+  it("persists sample priority without changing stored drive and pin controls",async()=>{
+    const t=new Transport(),c=new PhysicalSynthClient(t);t.state=0;
+    try{await c.setSample({enabled:false,gain:32768,direct:65535,priority:1,name:"",frames:[]});const state=await c.read();expect(state.preset.sample.priority).toBe(1);expect(state.preset.parameters[26]).toBe(initialPreset.parameters[26]);expect(state.preset.parameters[29]).toBe(initialPreset.parameters[29]);expect(t.sent.map(decodePresetSyncFrame).find(f=>f.payload[1]===24)?.payload[9]).toBe(1);expect(()=>physicalPresetFromUnknown({...initialPreset,sample:{...initialPreset.sample,priority:2}})).toThrow();}finally{c.close();}
+  });
+
+  it("waits for codec startup on the first sample preview, then previews immediately",async()=>{
+    vi.useFakeTimers({toFake:["setTimeout","clearTimeout"]});const t=new Transport(),c=new PhysicalSynthClient(t);
+    try{
+      await c.setSample({enabled:true,gain:32768,direct:65535,name:'Test',frames:[0,12000,-12000,0]});
+      const first=c.previewSample();await vi.advanceTimersByTimeAsync(0);await vi.advanceTimersByTimeAsync(1999);
+      expect(t.sent.map(decodePresetSyncFrame).filter(f=>f.payload[1]===25)).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);await first;
+      expect(t.sent.map(decodePresetSyncFrame).filter(f=>f.payload[1]===25)).toHaveLength(1);
+      await c.previewSample();
+      expect(t.sent.map(decodePresetSyncFrame).filter(f=>f.payload[1]===25)).toHaveLength(2);
+      await c.start();const restarted=c.previewSample();await vi.advanceTimersByTimeAsync(0);await vi.advanceTimersByTimeAsync(1999);
+      expect(t.sent.map(decodePresetSyncFrame).filter(f=>f.payload[1]===25)).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1);await restarted;
+      expect(t.sent.map(decodePresetSyncFrame).filter(f=>f.payload[1]===25)).toHaveLength(3);
+    }finally{c.close();vi.useRealTimers();}
+  });
+
   it("migrates tilt routes to zero and decodes signed flat/tilted motion",()=>{
-    const old=physicalPresetFromUnknown({...legacyPreset(),format:"hexboard.physical.v11",tiltRoutes:undefined});expect(old.tiltRoutes).toEqual(Array(64).fill(0));
-    const packet=[14,1,1,...encodeU21(49151),...encodeU21(16384),...Array(64).fill(65536).flatMap(encodeU21)];
+    const old=physicalPresetFromUnknown({...legacyPreset(),format:"hexboard.physical.v11",tiltRoutes:undefined});expect(old.tiltRoutes).toEqual(Array(66).fill(0));
+    const packet=[17,1,1,...encodeU21(49151),...encodeU21(16384),...Array(66).fill(65536).flatMap(encodeU21)];
     expect(decodeMotion(packet).tiltX).toBeCloseTo(.5,3);expect(decodeMotion(packet).tiltY).toBeCloseTo(-.5,3);
-    expect(()=>decodeMotion([14,1,1,...encodeU21(65535),...packet.slice(6)])).toThrow();
-    const routes=Array(64).fill(0);routes[14]=1;expect(()=>physicalPresetFromUnknown({...initialPreset,tiltRoutes:routes})).toThrow();
+    expect(()=>decodeMotion([17,1,1,...encodeU21(65535),...packet.slice(6)])).toThrow();
+    const routes=Array(66).fill(0);routes[14]=1;expect(()=>physicalPresetFromUnknown({...initialPreset,tiltRoutes:routes})).toThrow();
   });
 
   it("round-trips ordered singleton effects and rejects duplicate instances",async()=>{
@@ -46,9 +83,9 @@ describe("Advanced physical editor", () => {
     expect(()=>validateFx({...fx,order:[1,1]})).toThrow();
     expect(()=>validateFx({...fx,order:[5]})).toThrow();
     const migrated=physicalPresetFromUnknown({...legacyPreset(),format:"hexboard.physical.v10",effects:{...fx,order:[5,4,1,2]}});
-    expect(migrated.effects).toEqual(fx);
+    expect(migrated.effects.order).toEqual(fx.order);expect(migrated.effects.values[0]).toEqual(fx.values[0]);expect(migrated.effects.steps).toHaveLength(16);
     expect(migrated.parameters).toEqual(initialPreset.parameters);
-    expect(migrated.format).toBe("hexboard.physical.v19");
+    expect(migrated.format).toBe("hexboard.physical.v22");
     expect(()=>validateFx({...fx,values:[[65536,0,0,0]]})).toThrow();
     const old=physicalPresetFromUnknown({...legacyPreset(),format:"hexboard.physical.v9",effects:undefined});
     expect(old.effects.order).toEqual([]);
@@ -60,7 +97,7 @@ describe("Advanced physical editor", () => {
   it("keeps marble material independent and migrates the shared material",()=>{
     const old=legacyPreset();old.parameters[2]=52000;old.parameters[12]=49000;
     const migrated=physicalPresetFromUnknown({...old,format:"hexboard.physical.v12"});
-    expect(migrated.parameters.slice(24)).toEqual([52000,49000,0,0,0,0,0,0]);
+    expect(migrated.parameters.slice(24)).toEqual([52000,49000,0,0,0,0,48000,0,65535]);
     const changed={...migrated,parameters:migrated.parameters.map((v,i)=>i===24?3300:i===25?0:v)};
     expect(physicalPresetFromUnknown(changed).parameters.slice(0,24)).toEqual(migrated.parameters.slice(0,24));
   });
@@ -70,7 +107,7 @@ describe("Advanced physical editor", () => {
     expect(migrated.parameters.slice(0,26)).toEqual(previous.parameters);
     expect(migrated.routes.slice(0,78)).toEqual(previous.routes);
     expect(migrated.tiltRoutes.slice(0,52)).toEqual(previous.tiltRoutes);
-    expect(migrated.parameters[26]).toBe(0);expect(migrated.routes.slice(78)).toEqual(Array(18).fill(0));expect(migrated.tiltRoutes.slice(52)).toEqual(Array(12).fill(0));
+    expect(migrated.parameters[26]).toBe(0);expect(migrated.routes.slice(78)).toEqual(Array(21).fill(0));expect(migrated.tiltRoutes.slice(52)).toEqual(Array(14).fill(0));
     const driven={...migrated,parameters:migrated.parameters.map((v,i)=>i===26?18000:v),routes:migrated.routes.map((v,i)=>i===79?30000:v)};
     expect(effectiveParameters(driven,[0,1,0])[26]).toBeGreaterThan(effectiveParameters(driven,[0,0,0])[26]);
     expect(renderToStaticMarkup(createElement(PhysicalSynthEditor))).toContain('aria-label="Drive"');
@@ -87,15 +124,15 @@ describe("Advanced physical editor", () => {
     const t = new Transport(), c = new PhysicalSynthClient(t);
     await Promise.all([c.retuneHz(61, 0, 261.123456), c.bend(-2), c.apply(initialPreset)]);
     const frames = t.sent.map(decodePresetSyncFrame);
-    expect(frames.map(f => f.payload[1])).toEqual([6, 5, 7, 13, 17, 0, 11, 0]);
+    expect(frames.map(f => f.payload[1])).toEqual([6, 5, 7, 13, 17, 0, 11, 0, 24, 0]);
     expect(frames[0].payload.slice(5)).toHaveLength(5);
-    expect(frames[1].payload).toEqual([14, 5, 0, 0, 0]);
-    expect(frames[2].payload).toHaveLength(387);
+    expect(frames[1].payload).toEqual([17, 5, 0, 0, 0]);
+    expect(frames[2].payload).toHaveLength(399);
     expect(t.listeners.size).toBe(0); c.close();
   });
   it("preserves older presets and maps pressure to pickup without changing output gain", () => {
     const old = physicalPresetFromUnknown({ format: "hexboard.physical.v1", name: "Old String", parameters: [45000, 26000, 36000, 30000], routes: Array(12).fill(0) });
-    expect(old.parameters).toHaveLength(32); expect(old.routes).toHaveLength(96);
+    expect(old.parameters).toHaveLength(33); expect(old.routes).toHaveLength(99);
     expect(old.parameters[7]).toBe(21845);
     const light = effectiveParameters(initialPreset, [0.8, 0, 0]), deep = effectiveParameters(initialPreset, [0.8, 1, 0]);
     expect(deep[5]).toBeGreaterThan(light[5]); expect(deep[7]).toBe(light[7]);
@@ -106,7 +143,7 @@ describe("Advanced physical editor", () => {
     const old = physicalPresetFromUnknown({ format: "hexboard.physical.v2", name: "Old material", parameters: initialPreset.parameters.slice(0,8), routes: initialPreset.routes.slice(0,24) });
     expect(old.parameters[8]).toBe(0); expect(old.parameters[14]).toBe(old.parameters[5]); expect(old.parameters[15]).toBe(0);
     const v3 = physicalPresetFromUnknown({format:"hexboard.physical.v3",name:"Older contact",parameters:initialPreset.parameters.slice(0,16),routes:initialPreset.routes.slice(0,48)});
-    expect(v3.parameters.slice(16)).toEqual([32768,0,32768,22000,16000,0,12000,30000,initialPreset.parameters[2],10000,0,0,0,0,0,0]); expect(v3.routes.slice(48)).toEqual(Array(48).fill(0));
+    expect(v3.parameters.slice(16)).toEqual([32768,0,32768,22000,16000,0,12000,30000,initialPreset.parameters[2],10000,0,0,0,0,48000,0,65535]); expect(v3.routes.slice(48)).toEqual(Array(51).fill(0));
     const marbles = factoryPhysicalPresets.find(p => p.name === "Falling Marbles")!;
     expect(marbles.parameters[16]).toBeGreaterThan(32768); expect(marbles.parameters[17]).toBeGreaterThan(0);
     const bounce = factoryPhysicalPresets.find(p => p.name === "Pressure Bounce")!;
@@ -156,9 +193,9 @@ describe("Advanced physical editor", () => {
     const transport=new Transport(),client=new PhysicalSynthClient(transport);
     await client.velocityEngine(4); await client.apply({...initialPreset,velocityEngine:4});
     const frames=transport.sent.map(decodePresetSyncFrame);
-    expect(frames[0].payload).toEqual([14,9,4]);
+    expect(frames[0].payload).toEqual([17,9,4]);
     expect(frames[1].payload.at(-1)).toBe(4);
-    expect(frames[1].payload).toHaveLength(387);
+    expect(frames[1].payload).toHaveLength(399);
     client.close();
   });
   it("encodes arbitrary frequencies with less than a millihertz of pairwise beat error", () => {
@@ -167,8 +204,8 @@ describe("Advanced physical editor", () => {
       expect(Math.abs((decode(hz + 0.1) - decode(hz)) - 0.1)).toBeLessThan(0.001);
     }
     expect(() => encodeLogPitchHz(NaN)).toThrow(); expect(() => encodeLogPitchHz(0)).toThrow();
-    expect(decodePhysicalExpression([14, 0, 61, 1, 100, ...encodeU21(32768), 0]).pressure).toBe(32768);
-    expect(() => decodePhysicalExpression([14, 0, 61, 1, 100, ...encodeU21(65536), 0])).toThrow();
+    expect(decodePhysicalExpression([17, 0, 61, 1, 100, ...encodeU21(32768), 0]).pressure).toBe(32768);
+    expect(() => decodePhysicalExpression([17, 0, 61, 1, 100, ...encodeU21(65536), 0])).toThrow();
   });
   it("loads, edits and reconnects non-default envelope/LFO controls and signed routes",async()=>{
     const transport=new Transport(),client=new PhysicalSynthClient(transport);const modulation=defaultModulation();modulation.settings[0]=55000;modulation.settings[9]=52428;modulation.routes[14]=65536;modulation.routes[11]=-24000;
@@ -216,12 +253,12 @@ describe("Advanced physical editor", () => {
     expect(html).toContain('aria-label="Modulation tools"');
     expect(html).toContain('Delete modulation');
     expect(html).toContain('role="radiogroup" aria-label="Excitation mode"');
-    expect((html.match(/name="physical-exciter-mode"/g)??[])).toHaveLength(2);
+    expect((html.match(/name="physical-exciter-mode"/g)??[])).toHaveLength(3);
     expect(html).not.toContain('type="range"');
     expect(html).not.toContain('<details');
     expect(html).toContain('aria-label="Velocity engine"'); expect(html).toContain("Fixed Velocity");
     expect(html).toContain("Stereo width"); expect(html).toContain("Bounce");
-    expect(html).toContain("Pressure preview"); expect(html).not.toContain('type="number"');
+    expect(html).toContain("Pressure preview"); expect(html.match(/type="number"/g)).toHaveLength(1); expect(html).toContain('aria-label="Performance BPM"');
     expect(html).toContain("Save on computer");
     expect(html).toContain("Start synth"); expect(html).toContain("Connect Advanced to play");
     expect(html).toContain("Use Connect HexBoard above");
@@ -230,8 +267,8 @@ describe("Advanced physical editor", () => {
 
 it("migrates existing patches with preparation bypassed and normal strike shape",()=>{
  const old={...initialPreset,format:"hexboard.physical.v15",parameters:initialPreset.parameters.slice(0,28),routes:initialPreset.routes.slice(0,84),tiltRoutes:initialPreset.tiltRoutes.slice(0,56)};
- const next=physicalPresetFromUnknown(old);expect(next.parameters.slice(0,28)).toEqual(old.parameters);expect(next.parameters.slice(28)).toEqual([0,0,0,0]);
- const invalid={...next,routes:[...next.routes]};invalid.routes[84]=1;expect(()=>physicalPresetFromUnknown(invalid)).toThrow();
+ const next=physicalPresetFromUnknown(old);expect(next.parameters.slice(0,28)).toEqual(old.parameters);expect(next.parameters.slice(28)).toEqual([0,0,48000,0,65535]);
+ const invalid={...next,routes:[...next.routes]};invalid.routes[93]=1;expect(()=>physicalPresetFromUnknown(invalid)).toThrow();
 });
 
 it("migrates contact timing to note on and preserves release contact",()=>{
@@ -242,7 +279,65 @@ it("migrates contact timing to note on and preserves release contact",()=>{
 });
 
 it("retires Gentle drive while preserving the rest of an imported sound",()=>{
- const old={...initialPreset,parameters:[...initialPreset.parameters]};old.parameters[30]=65535;
- const loaded=physicalPresetFromUnknown(old);expect(loaded.parameters[30]).toBe(0);expect(loaded.parameters.slice(0,30)).toEqual(old.parameters.slice(0,30));
+ const old={...initialPreset,format:"hexboard.physical.v19",parameters:initialPreset.parameters.slice(0,32),routes:initialPreset.routes.slice(0,96),tiltRoutes:initialPreset.tiltRoutes.slice(0,64),modulation:{...initialPreset.modulation,routes:initialPreset.modulation.routes.slice(0,64)}};old.parameters[30]=65535;
+ const loaded=physicalPresetFromUnknown(old);expect(loaded.parameters[30]).toBe(48000);expect(loaded.parameters.slice(0,30)).toEqual(old.parameters.slice(0,30));
  const html=renderToStaticMarkup(createElement(PhysicalSynthEditor));expect(html).not.toContain("Drive behavior");expect(html).not.toContain("Gentle");
+});
+
+ it("migrates six-route patches explicitly and keeps gain then strongest routes",()=>{
+ const modulation=defaultModulation();for(const id of [0,1,3,5,6,7])modulation.routes[id*2]=id===7?1:id*1000+100;
+ const p=physicalPresetFromUnknown({...initialPreset,format:"hexboard.physical.v19",parameters:initialPreset.parameters.slice(0,32),routes:initialPreset.routes.slice(0,96),tiltRoutes:initialPreset.tiltRoutes.slice(0,64),modulation:{...modulation,routes:modulation.routes.slice(0,64)}});
+ expect(p.modulation.routes.filter(Boolean)).toHaveLength(4);expect(p.modulation.routes[14]).toBe(1);expect(p.modulation.routes[0]).toBe(0);expect(p.modulation.routes[2]).toBe(0);expect(p.migrationNotes?.join()).toContain("2 assignments removed");
+ expect(modulation.routes.filter(Boolean)).toHaveLength(6);
+ const saved=physicalPresetFromUnknown(JSON.parse(JSON.stringify(p)));expect(saved).toEqual(p);
+ });
+ it("round trips Body controls, pin position and irregularity without enabling delay",()=>{
+ const p=physicalPresetFromUnknown({...initialPreset,effects:{...defaultFx(),values:defaultFx().values.map((row,i)=>i===4?[40000,12000,63000,24000]:row)},parameters:initialPreset.parameters.map((v,i)=>i===28?48000:i===29?50000:i===30?8000:v)});
+ expect(physicalPresetFromUnknown(JSON.parse(JSON.stringify(p)))).toEqual(p);expect(p.effects.order).toEqual([]);
+ const m=defaultModulation();m.routes[56]=1000;m.routes[60]=2000;expect(validateModulation(m)).toEqual(m);
+ const html=renderToStaticMarkup(createElement(PhysicalSynthEditor));for(const name of ["Body size and material","Body Intensity","Irregularity","Pin position"])expect(html).toContain(name);expect(html).not.toContain('aria-label="Strike shape"');
+ });
+
+it("migrates the previous direct sample mix and accepts live pressure/LFO routes",()=>{
+ const old={...initialPreset,format:"hexboard.physical.v21",parameters:initialPreset.parameters.slice(0,32),routes:initialPreset.routes.slice(0,96),tiltRoutes:initialPreset.tiltRoutes.slice(0,64),modulation:{...defaultModulation(),routes:Array(64).fill(0)},sample:{...initialPreset.sample,direct:17000}};
+ const next=physicalPresetFromUnknown(old);expect(next.parameters[32]).toBe(17000);expect(next.routes.slice(96)).toEqual([0,0,0]);
+ next.routes[97]=22000;next.modulation.routes[65]=16000;const p=physicalPresetFromUnknown(next);expect(effectiveParameters(p,[0,1,0,0,0,0,1])[32]).toBeCloseTo(17000/65535+38000/65536);
+});
+
+it('applies loop geometry while stopped and resumes after configuration',async()=>{
+ const t=new Transport(),c=new PhysicalSynthClient(t);
+ try{await c.setSample({enabled:true,gain:32768,direct:65535,name:'Loop',frames:Array(1600).fill(10000),loop:{mode:1,start:100,end:1400,crossfade:160}});const commands=t.sent.map(decodePresetSyncFrame).map(f=>f.payload);const loop=commands.findIndex(p=>p[1]===27);expect(commands[loop]).toEqual([17,27,1,...encodeU21(100),...encodeU21(1400),...encodeU21(160)]);expect(commands.slice(0,loop).some(p=>p[1]===2)).toBe(true);expect(commands.slice(loop+1).some(p=>p[1]===1)).toBe(true);expect(t.state).toBe(1);}finally{c.close();}
+});
+
+it('fades performance-gated controls and disables the associated Drive characters',()=>{
+ for(const priority of [0,1] as const)for(const fullRack of [false,true]){
+  const patch={...initialPreset,sample:{...initialPreset.sample,enabled:true,priority,frames:[0,12000,-12000,0]},effects:{...defaultFx(),order:fullRack?[1,2,3]:[1,2]}};
+  vi.stubGlobal('window',{localStorage:{getItem:(key:string)=>key.endsWith('draft.v1')?JSON.stringify(patch):'[]'}});
+  try{const html=renderToStaticMarkup(createElement(PhysicalSynthEditor));
+   for(const name of ['Drive','Pin pressure','Pin position']){const group=html.match(new RegExp('<div class="physical-control"([^>]*)><strong>'+name+'</strong>'));expect(group).not.toBeNull();const gated=fullRack&&(name==='Drive'?priority===1:priority===0);expect(group![1].includes('data-unavailable="true"')).toBe(gated);if(gated)expect(group![1]).toContain('data-modulatable="false"');}
+   const characters=html.match(/<div class="source-tabs drive-characters"([^>]*)>([\s\S]*?)<\/div>/)!;expect(characters[1].includes('data-unavailable="true"')).toBe(fullRack&&priority===1);if(fullRack&&priority===1)expect(characters[2].match(/disabled=""/g)).toHaveLength(3);
+  }finally{vi.unstubAllGlobals();}
+ }
+});
+
+it('reports acknowledged sample frames and clears progress after completion',async()=>{
+ const t=new Transport(),events:(Progress|undefined)[]=[],c=new PhysicalSynthClient(t,p=>events.push(p));
+ try{await c.setSample({enabled:true,gain:32768,direct:65535,name:'Progress',frames:Array(1024).fill(1000)});const sent=events.filter((p):p is Progress=>p?.label==='Sending sample…');expect(sent[0]).toMatchObject({completed:0,total:1024});expect(sent.at(-1)).toMatchObject({completed:1024,total:1024});expect(sent.map(p=>p.completed)).toEqual([...sent.map(p=>p.completed)].sort((a,b)=>a!-b!));expect(events.some(p=>p?.label==='Preparing synth…'&&p.completed===undefined)).toBe(true);expect(events.at(-1)).toBeUndefined();}finally{c.close();}
+});
+it('clears sample progress when the connection is closed mid-operation',async()=>{
+ vi.useFakeTimers();const t=new Transport();t.respond=false;const events:(Progress|undefined)[]=[],c=new PhysicalSynthClient(t,p=>events.push(p));
+ try{const pending=c.setSample({enabled:true,gain:32768,direct:65535,name:'Cancel',frames:[0,1000,-1000,0]});const rejected=expect(pending).rejects.toThrow('disconnected');await vi.advanceTimersByTimeAsync(0);c.close();await rejected;expect(events.at(-1)).toBeUndefined();expect(t.listeners.size).toBe(0);}finally{c.close();vi.useRealTimers();}
+});
+it('renders measured transfer progress and honest indeterminate preparation',()=>{
+ const measured=renderToStaticMarkup(createElement(SynthProgress,{progress:{label:'Sending sample…',completed:512,total:1024}}));expect(measured).toContain('50%');expect(measured).toContain('value="512"');expect(measured).toContain('max="1024"');
+ const waiting=renderToStaticMarkup(createElement(SynthProgress,{progress:{label:'Starting synth…'}}));expect(waiting).toContain('<progress');expect(waiting).not.toContain('value=');expect(waiting).not.toContain('%');
+});
+
+it('stores explicit loads while stopped, after the complete patch, then resumes',async()=>{
+ const t=new Transport(),c=new PhysicalSynthClient(t),events:(Progress|undefined)[]=[];
+ const observed=new PhysicalSynthClient(t,p=>events.push(p));
+ try{await observed.load(initialPreset);const ops=t.sent.map(decodePresetSyncFrame).map(f=>f.payload[1]);const save=ops.indexOf(28);expect(save).toBeGreaterThan(ops.indexOf(24));expect(ops.slice(0,save)).toContain(2);expect(ops.slice(save+1)).toContain(1);expect(t.state).toBe(1);expect(events.some(p=>p?.label==='Saving startup patch…')).toBe(true);}finally{c.close();observed.close();}
+});
+it('does not save ordinary RAM apply or live parameter changes',async()=>{
+ const t=new Transport(),c=new PhysicalSynthClient(t);try{await c.apply(initialPreset);await c.parameter(0,30000);expect(t.sent.map(decodePresetSyncFrame).some(f=>f.payload[1]===28)).toBe(false);}finally{c.close();}
 });

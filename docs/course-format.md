@@ -231,7 +231,13 @@ start the ready lesson or restart the run with their indicated hint setting;
 after Step or slower timed practice they start at the goal tempo. All command presses bypass
 the playable-key gate. Content pages
 can start and retain the same session. Stop, leaving Learn, device disconnect, page lifecycle cleanup,
-or an unrecoverable error closes the session. Ungraded synth play uses the same
+opening the course editor (create, copy, edit, or recover a draft), or an
+unrecoverable error closes the session. Authoring actions remain available during
+a lesson; entry clears playback and evaluation state and releases delegated
+control before the editor can start recording or a learner preview. Saved
+completion progress is retained. The Learn header exposes Stop lesson while
+audio or a delegated session exists, including ready and completed states.
+Ungraded synth play uses the same
 audio/session owner; ready, free-play, and completed states accept notes without
 advancing evaluation or changing progress. Changing lessons resets hints. Switching an allowed layout resets its streak, updates display rotation, and retains the physical-key release barrier. Timed course lessons return to ready; active untimed runs restart. A lesson layout requirement overrides a legacy course-level requirement. Course introductions render before practice and do not count toward completion.
 During hinted course practice, held pitches outside the current target use

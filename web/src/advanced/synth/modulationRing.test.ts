@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {knobRingPoint,modulationRing,modulationRings} from './modulationRing.ts';
+import {knobRingPoint,modulationRing,modulationRings,knobRingViewBox} from './modulationRing.ts';
 describe('modulation anchored to the base knob',()=>{
  it('starts both directions at the current pointer',()=>{
   const base=.25, positive=modulationRing(16384,28,base),negative=modulationRing(-16384,28,base);
@@ -45,4 +45,10 @@ it('applies signed X and Y tilt above and below neutral, with reversible depth',
   source[3+axis]=-1;
   expect(effectiveParameters(p,source)[1]).toBeCloseTo(32768/65535-sign*.25);
  }
+});
+
+it('contains every source ring, arrowhead and live dot within the knob viewport',()=>{
+ const [x,y,w,h]=knobRingViewBox.split(' ').map(Number);
+ const inside=(px:number,py:number,padding:number)=>{expect(px-padding).toBeGreaterThanOrEqual(x);expect(px+padding).toBeLessThanOrEqual(x+w);expect(py-padding).toBeGreaterThanOrEqual(y);expect(py+padding).toBeLessThanOrEqual(y+h);};
+ for(let source=0;source<7;++source)for(let step=0;step<=100;++step){const point=knobRingPoint(step/100,26+source*2);inside(point.x,point.y,Math.sqrt(8)+.75);const dot=knobRingPoint(step/100,34);inside(dot.x,dot.y,3.1);}
 });

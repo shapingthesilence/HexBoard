@@ -331,6 +331,7 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
   function stop(reason = "") {
     streak.current=0;streakHints.current=false;setStreakCount(0);
     dispose();
+    setStartCourseOnBoard(undefined);
     setOnBoard(false);
     setStage("ready");
     setDemoNote(undefined);
@@ -734,22 +735,29 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
     const link = document.createElement("a"); link.href = url; link.download = `${doc.title.replace(/[^a-z0-9_-]+/gi, "-")}.hexcourse.json`; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  function enterCourseEditor(next: UserCourse) {
+    stop();
+    setEditingCourse(next);
+  }
   function openCourseEditor(copy: boolean) {
     const snapshot = copy ? structuredClone(selectedCourse?.bundle ?? {...starterLayouts()[0].bundle,layouts:starterLayouts().map(item=>item.layout)}) : courseBundleSnapshot();
 
-    setEditingCourse(copy ? {
+    enterCourseEditor(copy ? {
       format: courseFormat, id: crypto.randomUUID(), revision: 1, title: `${selectedCourse.title} copy`, author: "", bundle: snapshot, layoutId: selectedCourse?.layoutId,
       description:selectedCourse?.description, lessons: structuredClone([...lessons])
     } : { format: courseFormat, id: crypto.randomUUID(), revision: 1, title: "My course", author: "", bundle: snapshot,
       lessons: [{ id: crypto.randomUUID(), title: "First phrase", section: "My lessons", instruction: "Play the phrase, then try it without hints.", targets: [[]], timing: {goalBpm:80,beats:[1]}, timeSignature: {numerator:4,denominator:4} }] });
   }
   async function editSavedCourse(saved: UserCourse) {
+    stop();
+    const request = generation.current;
     try {
       const currentDrafts = await courseStorage.drafts();
+      if (generation.current !== request) return;
       setDrafts(currentDrafts);
       const draft = currentDrafts.find(item => item.id === saved.id);
       if (draft) setPendingEdit({ saved, draft });
-      else setEditingCourse({ ...structuredClone(saved), revision: saved.revision + 1 });
+      else enterCourseEditor({ ...structuredClone(saved), revision: saved.revision + 1 });
     } catch { setCourseMessage("Could not check recovery drafts. Try opening the course again."); }
   }
   async function discardDraftAndEditSaved() {
@@ -757,7 +765,7 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
     try {
       await courseStorage.removeDraft(pendingEdit.saved.id);
       setDrafts(items => items.filter(item => item.id !== pendingEdit.saved.id));
-      setEditingCourse({ ...structuredClone(pendingEdit.saved), revision: pendingEdit.saved.revision + 1 });
+      enterCourseEditor({ ...structuredClone(pendingEdit.saved), revision: pendingEdit.saved.revision + 1 });
       setPendingEdit(undefined);
     } catch { setCourseMessage("Could not discard the recovery draft. It remains available."); }
   }
@@ -774,11 +782,11 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
     {pendingEdit && <div className="modalOverlay"><section className="modalPanel" role="dialog" aria-modal="true" aria-labelledby="course-draft-title" onKeyDown={event=>{if(event.key==="Escape")setPendingEdit(undefined);}}>
       <h3 id="course-draft-title">Resume your draft?</h3>
       <p>“{pendingEdit.saved.title}” has edits saved in this browser from {new Date(pendingEdit.draft.updatedAt).toLocaleString()}.</p>
-      <div className="learnActions"><button autoFocus className="primary" type="button" onClick={() => { setEditingCourse(pendingEdit.draft.course); setPendingEdit(undefined); }}>Resume draft</button><button type="button" onClick={() => void discardDraftAndEditSaved()}>Discard draft and edit saved course</button><button type="button" onClick={() => setPendingEdit(undefined)}>Cancel</button></div>
+      <div className="learnActions"><button autoFocus className="primary" type="button" onClick={() => { enterCourseEditor(pendingEdit.draft.course); setPendingEdit(undefined); }}>Resume draft</button><button type="button" onClick={() => void discardDraftAndEditSaved()}>Discard draft and edit saved course</button><button type="button" onClick={() => setPendingEdit(undefined)}>Cancel</button></div>
     </section></div>}
     <header className="learnIntro">
       <nav className="learnTabs sectionTabs" aria-label="Learning sections">{(["practice", "course", "progress"] as const).map(item => <button key={item} type="button" aria-current={page === item ? "page" : undefined} disabled={stage === "starting" || libraryBusy} onClick={() => navigate(item)}>{item === "course" ? "Courses" : item === "practice" ? "Scale practice" : "Progress"}</button>)}</nav>
-      {previewCourse && <><h2>Learner preview</h2><button type="button" onClick={()=>{dispose();onExitPreview?.();}}>Back to editor</button></>}{page === "progress" && session.current && <button type="button" onClick={()=>stop()}>Stop HexBoard session</button>}
+      {previewCourse && <><h2>Learner preview</h2><button type="button" onClick={()=>{dispose();onExitPreview?.();}}>Back to editor</button></>}{(session.current || audio.current || engaged) && <button type="button" onClick={()=>stop()}>Stop lesson</button>}
     </header>
     {page === "progress" ? <div className="learnCard learnProgressCard">
       <label className="learnField">Course<select value={previewCourse?"preview":courseId} disabled={!!previewCourse} onChange={event => chooseCourse(event.target.value)}>{previewCourse&&<option value="preview">{previewCourse.title}</option>}{builtinCourses.map(course => <option key={`builtin:${course.id}`} value={`builtin:${course.id}`}>{course.title}</option>)}{userCourses.map(course => <option key={course.id} value={course.id}>{course.title}</option>)}</select></label>
@@ -843,15 +851,15 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
           <p className="learnMuted">Fingering cues: L = left, R = right. Finger 1 is the thumb; 5 is the little finger. Hand and finger choices are guidance.</p>
           <p className="learnMuted">Metronome: four count-in clicks, then follow the written rhythm. Grades include timing, missed notes, and extra attempts. Use wired audio for accurate timing.</p>
         </details>
-        {course && !previewCourse && <details className="learnSettings"><summary>Manage courses</summary>{session.current&&<p className="learnMuted">Leave Learn to end the session before editing or recording a course. {boardForHello(deviceHello).recovery}</p>}<div className="learnActions">
-          <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(false)}>Create course</button>
-          <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => openCourseEditor(true)}>Make a copy</button>
-          {editableCourse && <button type="button" disabled={engaged || !!session.current || libraryBusy || !storageReady} onClick={() => void editSavedCourse(selectedCourse)}>Edit course</button>}
+        {course && !previewCourse && <details className="learnSettings"><summary>Manage courses</summary><p className="learnMuted">Opening the course editor stops the current lesson and releases HexBoard for recording. Saved progress is kept.</p><div className="learnActions">
+          <button type="button" disabled={libraryBusy || !storageReady} onClick={() => openCourseEditor(false)}>Create course</button>
+          <button type="button" disabled={libraryBusy || !storageReady} onClick={() => openCourseEditor(true)}>Make a copy</button>
+          {editableCourse && <button type="button" disabled={libraryBusy || !storageReady} onClick={() => void editSavedCourse(selectedCourse)}>Edit course</button>}
           <button type="button" disabled={engaged} onClick={exportCourse}>Export course</button></div>
           <label className="learnField">Import shared course<input aria-label="Import shared course" type="file" accept=".json" disabled={engaged || libraryBusy || !storageReady} onChange={event => void importCourse(event)} /></label>
           {editableCourse&&<button type="button" disabled={engaged} onClick={()=>setDeletePending(true)}>Delete course</button>}
           {deletePending&&selectedCourse&&<div role="alert"><p>Delete “{selectedCourse.title}”? Export it first if you need a copy. Recovery drafts remain available.</p><button onClick={()=>void courseStorage.remove(selectedCourse.id).then(()=>{setUserCourses(items=>items.filter(item=>item.id!==selectedCourse.id));chooseCourse(`builtin:${defaultCourse.id}`);setDeletePending(false);},()=>setCourseMessage("Could not delete course."))}>Confirm delete</button><button onClick={()=>setDeletePending(false)}>Cancel</button></div>}
-          {drafts.some(item=>!userCourses.some(saved=>saved.id===item.id))&&<div className="learnDraftList" aria-label="Unsaved courses">{drafts.filter(item=>!userCourses.some(saved=>saved.id===item.id)).map(item=><button key={item.id} disabled={engaged||!!session.current} onClick={()=>setEditingCourse(item.course)}>Resume unsaved course: {item.course.title}</button>)}</div>}
+          {drafts.some(item=>!userCourses.some(saved=>saved.id===item.id))&&<div className="learnDraftList" aria-label="Unsaved courses">{drafts.filter(item=>!userCourses.some(saved=>saved.id===item.id)).map(item=><button key={item.id} disabled={libraryBusy || !storageReady} onClick={()=>enterCourseEditor(item.course)}>Resume unsaved course: {item.course.title}</button>)}</div>}
           {pendingImport&&<div role="alert"><p>“{pendingImport.title}” revision {pendingImport.revision} matches local revision {userCourses.find(item=>item.id===pendingImport.id)?.revision}. Compatible lesson progress will be preserved.</p><button onClick={()=>void persistCourse(pendingImport).then(()=>{setPendingImport(undefined);setCourseMessage("Course updated.");},error=>setCourseMessage(String(error)))}>Update existing</button><button onClick={()=>void persistCourse({...pendingImport,id:crypto.randomUUID()}).then(()=>{setPendingImport(undefined);setCourseMessage("Separate copy imported.");},error=>setCourseMessage(String(error)))}>Keep both</button><button onClick={()=>setPendingImport(undefined)}>Cancel import</button></div>}
         </details>}
         {!connected && <details className="learnSettings"><summary>Test without a HexBoard</summary><p className="learnMuted">Preview lesson behavior with clickable keys. Courses are written for playing the physical instrument.</p><button type="button" disabled={!readyToPlay || engaged || !!session.current} onClick={()=>void begin(false)}>Try on screen</button></details>}

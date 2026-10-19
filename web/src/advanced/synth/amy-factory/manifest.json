@@ -1,0 +1,17 @@
+{
+  "version": "1.2.196",
+  "commit": "8f76212f6c69c4112281ec743171ec296cc430c8",
+  "source": "https://github.com/shorepine/amy/tree/8f76212f6c69c4112281ec743171ec296cc430c8",
+  "counts": {
+    "juno": 128,
+    "dx7_builtin": 128,
+    "dx7_total": 1024
+  },
+  "source_sha256": {
+    "amy/juno.py": "e0c29d3597a698da9f8a406e9ccf443072389b694265dcc0e2d3909f5bde4ea2",
+    "amy/default-dx7-patches.bin": "6f631cd7ff70bd9f6c164f8dcce56c054b5064d1843430969491fb92dc94d714",
+    "src/patches.h": "3fd7f06598690f21ef6b7305afbe8dece55c85c50a5587c13d1cdedd0ff3aad1",
+    "LICENSE": "24f69d88f2f1870d6be248ffc116500cc023de604b8523716daa6293fccacace"
+  },
+  "bank_sha256": "3d89d4b7b47aff8f1c5be5c15bb03f6bc430752108a7d9a824edc65aa66dd1bc"
+}

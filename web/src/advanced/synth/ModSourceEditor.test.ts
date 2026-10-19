@@ -11,17 +11,17 @@ describe('Editable envelope and LFO sources',()=>{
     expect(migrated.modulation).toEqual(defaultModulation());
     for(const id of [7,9,10,14]){const m=defaultModulation();m.settings[id]=1;expect(()=>validateModulation(m)).toThrow();}
     const m=defaultModulation();m.routes[16]=1;expect(()=>validateModulation(m)).toThrow();m.routes[16]=0;m.routes[14]=65536;expect(validateModulation(m)).toEqual(m);
-    const packet=[14,...m.settings.flatMap(encodeU21),...m.routes.flatMap(v=>encodeU21(v+65536))];expect(decodeModulation(packet)).toEqual(m);expect(()=>decodeModulation(packet.slice(1))).toThrow();
+    const packet=[17,...m.settings.flatMap(encodeU21),...m.routes.flatMap(v=>encodeU21(v+65536))];expect(decodeModulation(packet)).toEqual(m);expect(()=>decodeModulation(packet.slice(1))).toThrow();
   });
   it('persists both routes independently and evaluates envelope/LFO destination previews',()=>{
     const modulation=defaultModulation();modulation.routes[10]=32000;modulation.routes[11]=-16000;
     const p=physicalPresetFromUnknown({...initialPreset,modulation});expect(p.modulation).toEqual(modulation);
     expect(effectiveParameters(p,[0,0,0,0,0,1,-1])[5]).toBeCloseTo(initialPreset.parameters[5]/65535+48000/65536);
   });
-  it('caps generated sources at six destinations while allowing edits, removals and reuse',()=>{
-    const m=defaultModulation();for(const id of [0,1,3,5,6,7])m.routes[id*2]=1000;
+  it('caps generated sources at four destinations while allowing edits, removals and reuse',()=>{
+    const m=defaultModulation();for(const id of [0,1,5,7])m.routes[id*2]=1000;
     expect(modulationRouteCount(m.routes,0)).toBe(modulationRouteLimit);expect(canAssignModulation(m.routes,7,0)).toBe(true);expect(canAssignModulation(m.routes,14,0)).toBe(false);expect(canAssignModulation(m.routes,14,1)).toBe(true);
-    expect(validateModulation(m)).toEqual(m);m.routes[28]=1000;expect(()=>validateModulation(m)).toThrow('Envelope allows 6 routes');m.routes[10]=0;expect(validateModulation(m)).toEqual(m);
+    expect(validateModulation(m)).toEqual(m);m.routes[28]=1000;expect(()=>validateModulation(m)).toThrow('Envelope allows 4 routes');m.routes[10]=0;expect(validateModulation(m)).toEqual(m);
   });
   it('offers compact graphical source editors with accessible controls and advanced sections',()=>{
     const props={settings:defaultModulation().settings,onChange:()=>{},onClose:()=>{},onAssign:()=>{},disabled:false,renderControl:(_id:number,label:string)=>createElement('span',{},label)};

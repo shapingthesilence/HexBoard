@@ -135,7 +135,10 @@ export const CapabilityFlag = {
   ScopedGeometryList: 1 << 16,
   AtomicGeometryPreview: 1 << 17,
   AdvancedCalibrationLab: 1 << 18,
-  AdvancedPhysicalSynth: 1 << 19
+  AdvancedPhysicalSynth: 1 << 19,
+  AdvancedSynthEngines: 1 << 20,
+  AdvancedSampler: 1 << 22,
+  AdvancedPerformance: 1 << 21
 } as const;
 
 export type CapabilityFlagValue = (typeof CapabilityFlag)[keyof typeof CapabilityFlag];

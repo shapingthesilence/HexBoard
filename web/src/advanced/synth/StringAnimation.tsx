@@ -11,7 +11,7 @@ export function StringAnimation({values,signature,live,playing,replay,enabled}:{
     const node=root.current!;const wave=node.querySelector<SVGPathElement>('[data-motion="wave"]')!;
     const pickup=Array.from(node.querySelectorAll<SVGCircleElement>('[data-motion="pickup"]'));
     const balls=Array.from(node.querySelectorAll<SVGCircleElement>('[data-motion="ball"]'));
-    const bow=node.querySelector<SVGGElement>('[data-motion="bow"]')!,mute=node.querySelector<SVGPathElement>('[data-motion="mute"]')!,pin=node.querySelector<SVGPathElement>('[data-motion="pin"]')!;
+    const bow=node.querySelector<SVGGElement>('[data-motion="bow"]')!,mute=node.querySelector<SVGPathElement>('[data-motion="mute"]')!;
     const preference=window.matchMedia('(prefers-reduced-motion: reduce)');
     let raf:number|undefined,last=0,visible=true,disposed=false;
     const paint=(now:number)=>{
@@ -20,7 +20,7 @@ export function StringAnimation({values,signature,live,playing,replay,enabled}:{
       pickup.forEach((c,i)=>{c.setAttribute('cx',String(30+540*(.05+.9*v[i?14:5])));c.setAttribute('cy',String(f.pickups[i]));c.style.opacity=f.amplitude>.1?'.85':'0';});
       balls.forEach((c,i)=>{const b=f.balls[i];c.style.opacity=b?String(b.opacity):'0';if(b){c.setAttribute('cx',String(b.x));c.setAttribute('cy',String(b.y));c.setAttribute('r',String(b.r));}});
       bow.setAttribute('transform',`translate(${30+540*(.05+.9*v[4])+f.bow} 82)`);bow.style.opacity=v[21]>.5&&f.amplitude>.1?'.8':'0';
-      mute.style.opacity=f.contact&&Math.round(v[8]*4)===3?String(v[16]):'0';pin.style.opacity=v[21]<=.5?String(v[29]):'0';
+      mute.style.opacity=f.contact&&Math.round(v[8]*4)===3?String(v[16]):'0';
       return f.active;
     };
     const tick=(now:number)=>{
@@ -29,7 +29,7 @@ export function StringAnimation({values,signature,live,playing,replay,enabled}:{
       const active=paint(now);if(active&&state.current.enabled&&!preference.matches)raf=requestAnimationFrame(tick);
     };
     const cancel=()=>{if(raf!==undefined)cancelAnimationFrame(raf);raf=undefined;};
-    const schedule=()=>{if(disposed||document.hidden||!visible)return;if(!state.current.enabled||preference.matches){cancel();wave.setAttribute('d','M30 82H570');[...pickup,...balls,bow,mute].forEach(e=>e.style.opacity='0');pin.style.opacity=inputs.current.values[21]<=.5?String(inputs.current.values[29]):'0';}else if(raf===undefined)raf=requestAnimationFrame(tick);};
+    const schedule=()=>{if(disposed||document.hidden||!visible)return;if(!state.current.enabled||preference.matches){cancel();wave.setAttribute('d','M30 82H570');[...pickup,...balls,bow,mute].forEach(e=>e.style.opacity='0');}else if(raf===undefined)raf=requestAnimationFrame(tick);};
     wake.current=schedule;demo.current=()=>{if(!inputs.current.playing||!inputs.current.held){engine.replay(performance.now()/1000,inputs.current.values);schedule();}};
     const visibility=()=>{if(document.hidden)cancel();else schedule();};
     const motion=()=>{cancel();schedule();};
@@ -49,6 +49,5 @@ export function StringAnimation({values,signature,live,playing,replay,enabled}:{
     {Array.from({length:6},(_,i)=><circle data-motion="ball" key={i} r="4" fill="#b9d6f0" stroke="var(--surface)" strokeWidth="1" opacity="0"/>)}
     <g data-motion="bow" opacity="0"><path d="M-22 -10L22 10M-19 -13L25 7" fill="none" stroke="#efb86b" strokeWidth="3"/></g>
     <path data-motion="mute" d="M540 69H560V80H540Z" fill="#b29aff" opacity="0"/>
-    <path data-motion="pin" d="M546 57V80M538 57H554" fill="none" stroke="#efb86b" strokeWidth="3" opacity="0"/>
   </g>;
 }

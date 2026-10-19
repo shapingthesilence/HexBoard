@@ -12,7 +12,7 @@ it('starts strikes, sustains bow from force without a phantom pluck and changes 
 it('shows note-off marbles only after release, with bounded drops and anchored endpoints',()=>{
  const v=values();v[8]=1;v[17]=1;v[16]=1;v[31]=1;v[3]=1;
  const s=new StringMotion();for(let i=0;i<60;i++){const f=s.frame(1+i/30,input(v));expect(f.balls).toHaveLength(0);expect(f.contact).toBe(false);}
- let seen=0;for(let i=0;i<200;i++){const f=s.frame(3+i/30,input(v,false));seen+=f.balls.length;expect(f.balls.length).toBeLessThanOrEqual(6);expect(f.path).toMatch(/^M30.0,82.0/);expect(f.path).toMatch(/L570.0,82.0$/);for(const b of f.balls){expect(b.x).toBeGreaterThanOrEqual(57);expect(b.x).toBeLessThanOrEqual(543);expect(b.y).toBeLessThanOrEqual(77);}}
+ let seen=0;for(let i=0;i<200;i++){const f=s.frame(3+i/30,input(v,false));seen+=f.balls.length;expect(f.balls.length).toBeLessThanOrEqual(6);expect(f.path).toMatch(/^M30.0,82.0/);expect(f.path).toMatch(/L570.0,82.0$/);for(const b of f.balls){expect(b.x).toBeGreaterThanOrEqual(57);expect(b.x).toBeLessThanOrEqual(543);expect(b.y).toBeLessThanOrEqual(108);}}
  expect(seen).toBeGreaterThan(0);
 });
 it('allows an idle visual replay and ends its gesture without altering device input',()=>{
@@ -25,5 +25,11 @@ it('is bounded through every contact/drive combination and renders a non-interac
   const v=values();v[8]=mode/4;v[26]=1;v[27]=drive/2;v[16]=1;v[17]=1;v[29]=1;v[3]=1;
   const s=new StringMotion();for(let i=0;i<300;i++){const f=s.frame(1+i/30,input(v,i<120));expect(f.amplitude).toBeLessThanOrEqual(24);expect(f.path).not.toMatch(/NaN|Infinity/);expect(f.balls.length).toBeLessThanOrEqual(6);}
  }
- const html=renderToStaticMarkup(createElement(StringAnimation,{values:values(),signature:'test',playing:false,replay:0,enabled:true}));expect(html).toContain('aria-hidden="true"');expect(html).toContain('data-motion="wave"');expect(html).toContain('data-motion="pin"');
+ const html=renderToStaticMarkup(createElement(StringAnimation,{values:values(),signature:'test',playing:false,replay:0,enabled:true}));expect(html).toContain('aria-hidden="true"');expect(html).toContain('data-motion="wave"');expect(html).not.toContain('data-motion="pin"');
+});
+
+it('keeps high-rate marbles long enough to touch the moving string',()=>{
+ const v=values();v[8]=v[17]=v[16]=v[11]=v[24]=1;
+ const motion=new StringMotion();let hits=0;for(let i=0;i<180;i++){const f=motion.frame(1+i/30,input(v));for(const b of f.balls)if(b.touching){hits++;const points=[...f.path.matchAll(/[ML]([\d.]+),(-?[\d.]+)/g)].map(m=>[Number(m[1]),Number(m[2])]);const x=(b.x-30)/540*64,at=Math.max(0,Math.min(63,Math.floor(x)));const surface=points[at][1]+(points[at+1][1]-points[at][1])*(x-at);expect(Math.abs(b.y+b.r-surface)).toBeLessThan(1);}}
+ expect(hits).toBeGreaterThan(15);
 });

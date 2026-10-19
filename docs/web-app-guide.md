@@ -36,58 +36,115 @@ and logical IDs; on-screen navigation is available until joystick forwarding.
 Original HexBoard command navigation remains unchanged; command slots are fixed.
 
 Stop in Learn. For an abandoned Advanced lesson, use Web stop in Main Bring-up,
-Serial `web stop`, or restart. Connected identity selects synth controls. Advanced now has a Physical Strings
-editor: leave Calibration, open Synth Editor and choose **Start synth** in the
-playback panel at the top. The panel shows stopped, starting or running status.
-If synth communication was interrupted, use **Retry synth connection**.
-Drag **Strike**, **Pickup L** and **Pickup R** directly on the string; arrows also
-adjust focused handles. **Stereo width** moves from mono to separate pickups.
-Adjust hardness and ring/release time. The square Resonator and Striker material pads shape stiffness/loss and hardness/resonance.
-Drag parameter knobs vertically; hold Shift for fine adjustment or use arrow keys.
-The sticky toolbar keeps modulation sources visible while scrolling. Select a source,
-then drag a parameter knob up for positive depth or down for negative depth.
-Choose **Edit values** to return to base parameter editing. Each knob shows source-colored rings: amber for strike, teal for pressure,
-and violet for release. Rings start at the base knob position and extend clockwise for
-positive depth or counterclockwise for negative depth, stopping at the parameter limits. A white dot on the ring shows the current combined modulated value.
-Separate concentric rings keep multiple routes visible. The central pointer always
-shows the base value, even while editing modulation. Signed amounts appear below
-the knob; hover over the value for its current expression result. Choose **Delete modulation**, then click a modulated knob:
-a single route is removed immediately; multiple routes open a small menu where
-one more click removes the chosen source. Live strike/pressure/release meters and pickup
-markers show the latest played key's mapped controls. Pressure defaults follow the velocity engine and can be tuned
-in Calibration; the momentary bend spans ±2 semitones.
+Serial `web stop`, or restart. Connected identity selects synth controls.
 
-The **Velocity engine** selector in Excitation is saved with the physical preset.
-Numeric fields retain partial and decimal entries while you type. Press Enter or leave the field to commit; arrow keys adjust by a step and Escape cancels.
+The Advanced **Physical Strings** editor appears only while an Advanced main
+board is connected. Leave Calibration, open Synth Editor and choose **Start
+synth**. Playback shows stopped, starting or running status. **Retry synth
+connection** recovers interrupted synth communication.
 
-Choose Threshold Strike, Expressive Strike, Distance Window, Peak Gesture, or
-Fixed Velocity independently of Strike/Bow excitation. Pressure Bow defaults to
-Fixed Velocity so key pressure controls the sustained bow without a speed-dependent
-attack. Other factory presets use Threshold Strike. Load/Preview/Start restores
-the chosen detector and its pressure default: Damper for Threshold Strike, Full Travel for Expressive Strike, Distance Window and Fixed Velocity, and Off for Peak Gesture. Full Travel reaches 100% at each key’s calibrated firm-press distance. Changing it live requires released keys and may briefly
-extend a scan while detector state resets. Normal playback retains the scanner
-timing limits. The choice also
-controls USB MIDI because the scanner's detector is shared. Thresholds, response
-curves, fixed velocity, and other detector tuning remain your Velocity Lab settings.
-Version-9 JSON includes this choice; older presets migrate to Threshold Strike.
-Update Advanced main firmware to use the new selector; audio firmware is unchanged.
+Choose **Strike** or **Bow** above the exciter pad. Strike uses Hardness and
+Resonance; Bow replaces these axes with Speed and Force and starts without a
+pluck. Marble material has its own pad in Contact. The Resonator pad controls
+string Stiffness and Loss. Higher stiffness gives more stretched partials.
 
-Load **Pressure Sweep** for the moving-pickup default, or try **Glass Pressure** and
-**Wood Touch**, or **Pressure Bounce**. In Pressure Bounce, deeper travel lowers
-clearance onto the string. Contact buttons select Bounce, Rattle, Mute or Marbles. Contact feel knobs stay
-visible beside the clearance controls; Marbles shows its drop controls instead.
+Striker, String Material and Body pads sit above the shared string workspace.
+Active contact, response, expression and effect controls stay visible below it.
+Grab **Strike/Bow**, **Pickup L**, **Pickup R**, the pin or marble drop center
+to open its settings below the drawing while dragging. Arrow keys adjust
+focused handles; Enter opens settings for keyboard editing. The labeled
+object buttons offer the same access. Escape or Close dismisses the settings.
+The detail area edits the base position (5–95% along the string) and signed source amounts;
+the adjacent readout shows the physical position. Hollow pickup markers show
+base positions, and colored lanes show the selected object’s modulation ranges. **Stereo width** moves from mono to separate
+pickups. **Pin pressure** engages a preparation above zero: drag horizontally for position and
+vertically for pressure, or use its knobs. Strong pressure can buzz and mute
+the string. **Irregularity** adds correlated pitch wandering; zero is stable.
+Pin is available with Strike/Sample. With Bow, Irregularity becomes contact
+texture. **Body EQ** shapes formants before the effects; its pad changes Size
+and Wood–Metal Color, Intensity blends the EQ, and Focus sharpens its bands. Try Wooden Cabinet, Glass Chamber,
+Pinned Piano and Drifting Wire.
 
-**Output level** starts at 0 dB on both headphones and speaker,
-before the volume rocker. An always-on stereo limiter controls peaks before
-sample conversion. Existing drafts are preserved, so loading Pressure
-Sweep is necessary to replace an old draft's mapping.
+Drag knobs vertically; hold Shift for fine adjustment. The sticky toolbar
+keeps sources visible. Click **Envelope** or **LFO** to open its graphical
+editor; **Assign to controls** selects that source. Available destinations glow
+faintly in the selected source’s color; unavailable or full-route targets do
+not glow. The glow clears in **Edit values**. Drag a destination knob
+for signed modulation depth, then release to return to **Edit values**. Each
+generated source permits four destinations, and each target permits four sources
+across velocity, pressure, release, tilt, Envelope and LFO. At either limit, remove a route to
+add another. Importing an older six-route patch reports removed assignments.
+Source rings show depth and direction; a white dot shows the combined value.
+**Delete modulation** removes a single route directly or offers a source
+choice when several routes exist. X/Y tilt is bidirectional around neutral.
 
-**Save on computer** stores presets in this browser; Export/Import uses version-9
-JSON and migrates older physical presets. Drafts survive navigation
-and reconnect. **Preview draft** applies the complete draft to RAM;
-**Start synth** applies it and starts synthesis. Device preset saving is
-pending. Offline users can select Advanced, edit presets and inspect a pressure
-preview. Bow, body and accelerometer strikes remain later stages.
+Contact offers Bounce, Rattle, Mute and Marbles. **Note on / Note off** controls
+when it starts; longer Release time gives release gestures more time. Marbles
+has Rate (up to 60/s), Timing randomness, Drop center/spread and Strength. Its
+material controls are independent of the main exciter. String animations
+approximate the latest reported key; replay is visual only.
+
+The **Performance** row places Velocity, Arp, Hold, BPM and Tap above the
+modulation tools. Threshold Strike is the fresh-session default. Sound loads
+preserve your playing response unless you enable **Follow preset velocity** in
+Arp → Behavior; Pressure Bow's saved choice is Fixed Velocity. Changing detector
+still requires released keys and uses its remembered thresholds. Calibration
+keeps its separate explicit save workflow; full-travel pressure reaches 100%
+at each calibrated firm endpoint.
+
+Click **Arp** to enable it, and the adjacent direction/rate control to edit it.
+**Play** chooses direction, division, range, gate and swing. **Pattern** edits
+up to 32 steps with rests, ties, accents, chance, repeats and Euclidean rhythm
+fills. **Behavior** selects source-key or fixed expression, MIDI/synth routing,
+internal or USB MIDI clock, tempo sync and preset velocity behavior. Hold keeps
+the released chord; Clear held notes forgets it. The next chord replaces a held
+chord after all previous keys have been released. Settings apply immediately;
+Escape/Done closes the popup. Arrow keys move between tabs and steps.
+
+Arp and tempo belong to the instrument and survive engine switches. Playback
+runs on Advanced without the browser. **Save to instrument** explicitly stores
+performance settings and velocity selection while synthesis is stopped; Export
+and Import transfer them independently of sound presets. Extremely fast chord
+patterns/repeats are bounded by the instrument's note budget. These controls
+are not a promise that every patch has passed a maximum-rate hardware test.
+
+**Output level** defaults to 0 dB, with a linked output limiter controlling
+peaks. The volume rocker changes the DAC's analog level for headphones and
+speaker. The FX rack's **＋** adds Distortion, Reverb, Volume Steps or Chorus,
+with one instance each. Distortion has Warm, Clip, Fold, Diode and Crush
+characters. Volume Steps keeps Tempo/Depth in the rack; **Edit sequence** opens
+six patterns, 1–16 paintable levels, timing division and edge softness. It runs
+at its own tempo, with no MIDI clock synchronization yet. Drag cards to reorder; changes apply after a one-second
+cooldown with a brief fade when needed. Delay remains unavailable.
+
+The material pads show recognizable corner materials and separately positioned
+axis names. Body EQ's Size/Color pad moves shared formants; Intensity controls
+shaping and Focus narrows the peaks/dips. This is a stronger spectral body
+character, not a second string or convolution engine. Pin pressure zero turns
+the pin off. Bow's Irregularity control becomes **Bow texture**, varying contact
+speed; its pin stays unavailable. Clearance travel concentrates on contact.
+Animated marbles show representative collisions at high rates, not every hit.
+
+**Sample** in the Exciter selector opens an audio import/trim editor. Import a
+recording, select up to four seconds, set Fade in / Fade out with the sliders
+or millisecond fields, optionally normalize, and set Excitation strength. The dashed waveform envelope shows the fades. They are baked
+into the sample when applied; preview edits use the original selection while
+the editor stays open, so repeated previews do not stack fades. **Preview in string** sends it through the device
+engine. Import requires released keys and briefly stops/restarts the synth;
+preview uses a 220 Hz note with normal release. Samples are mono at 16 kHz,
+embedded in the preset, and held in device RAM. The live **Direct sample** slider
+on the Exciter panel accepts modulation and adds the
+material-filtered recording alongside the string. Zero gives string-only
+output; full adds the direct component without removing the string. Body EQ,
+effects and output protection still follow both components. Device flash storage, multisampling and sample streaming
+are not implemented.
+
+**Save on computer** stores presets in this browser. Export/Import uses JSON
+v22 and migrates earlier physical presets. Drafts survive navigation and
+reconnection. **Preview draft** applies it to RAM; **Start synth** applies and
+starts it. Durable Advanced device preset saving and Z-impact excitation
+remain pending. Refresh after a firmware/editor update if the protocol is
+reported unsupported.
 
 ## Returning to Your Place
 
@@ -371,9 +428,13 @@ distinguishes included material from future authoring work.
 
 ### Creating and Sharing Courses
 
+Use **Stop lesson** at the top of Learn to end a lesson and return HexBoard to normal playing without unplugging it. Saved progress is kept.
+
 Open **Courses → Manage courses**, below **Library & help**, for **Create course**, **Make a copy**,
 **Edit course**, **Export course**, and **Import shared course**. Authoring
-controls stay outside the normal lesson view. Courses are saved in this browser;
+controls are available while a course is active. Creating, copying, editing, or
+resuming a draft stops the lesson and releases HexBoard before opening the
+editor, so you can record phrases immediately. Courses are saved in this browser;
 export a backup or share the `.hexcourse.json` file with another player.
 
 In the editor, open **Course Settings**. Tuning and layout choices are on that same page.
@@ -852,3 +913,52 @@ visual gesture without playing audio; pause disables motion. Animation also
 pauses off-screen and respects reduced-motion preferences. Pickup and strike
 handles remain draggable. Gentle drive is retired; existing Gentle patches
 load with Original drive and keep their other settings.
+
+## Advanced Juno, DX7 and preset voice tests
+
+Choose Physical Strings, Juno or DX7 in Synth. Each uses direct modulation targeting, with a different color. Physical Strings keeps its active FX rack below the string workspace; Juno and DX7 use a side rack. Native envelopes remain with sound controls; native Envelope and LFO sources can also target other controls from toolbar source editors. Juno offers Chorus, Distortion and Volume Steps; DX7 also offers Reverb. DX7 imports single voices and 32-voice SysEx banks.
+
+Use **Test voice limit** after finishing a patch and its effects. Playback is muted while the device finds the largest passing count within the 99% render budget, including two release-tail slots. The result saves with the preset. Any edit returns to eight voices until you test again. Physical Strings currently stops at eight because of its allocation ceiling. **Cancel voice test** stops the measurement.
+
+Switching engines shows measured loading progress and waits for actual device readiness before completing. Typical eight-voice switches take about 3.2 seconds into Juno, 3.4 into DX7 and 3.5 into Physical Strings.
+
+The Advanced preset picker includes all 128 AMY Juno factory voices and all 1,024 voices from AMY’s DX7 default data. Use **Find preset** to search names or numbers; bank groups keep factory and additional voices separate. Juno conversion notes identify settings that differ from stock AMY. Envelope and LFO editors open from their toolbar buttons; the side rack contains effects only. Macros and compatibility with macro presets have been removed.
+
+
+### Advanced sampler experiment
+
+A device advertising Sampler support adds **Sampler** to the Advanced engine
+selector. Add mono/stereo PCM16/24/32 or float WAV files, including ordinary
+PCM/float WAVE_FORMAT_EXTENSIBLE files. Instrument fills pitch ranges from
+editable roots. Kit maps recordings to playing keys. Slices divides the selected
+recording into 2–64 equal one-shot segments; Undo recovers the original.
+
+In Kit/Slices, click a key in the HexBoard preview to choose its sample and
+color, assign the selected recording, clear it or audition it. Drag a recording
+onto a key to remap it directly. Map recordings in order provides a starting
+assignment. The preview follows the Advanced board's 133 playing keys and
+excludes command positions. Kit/Slices use the assigned recording's root pitch
+rather than the tuning layout's notes/chords. Undo restores sample/key edits.
+
+Quick shape exposes Attack, Release, Tone and Expression. Export sound writes
+a prepared HBS2 package. Save sound to SD stops playback, transfers and validates
+the package, then Start synth loads it. The current resident engine accepts up
+to 5.5 MiB of prepared PCM. The compact mono piano now passes the hardware
+16-held-note target with four release tails, continuous microtonal retunes and
+±2-semitone bends. Its short reader accepts subtle spectral artifacts to keep
+the playback cost practical; this does not qualify every bank or an effects rack.
+
+For the directly copied CC0 piano, choose **Sound on SD → KW upright · compact**
+and **Start synth**, keeping keys released while it loads. The loader finds the
+original KW 2022-02-21 WAVs inside the copied folder, checks 14 recordings and
+loads seven mono roots per velocity layer with the authored bass loops. It uses
+5.38 MiB and takes about 19 seconds on the tested card. Existing originals are
+enough; no additional upload or hand-edited activation file is required.
+Choose **Saved sampler patch** to return to the authored HBS2 sound. Source
+selection is held in RAM; saving a new sound also selects the saved patch.
+
+The full stereo bank, long-sample streaming, generic SFZ import and library
+browsing remain planned. Compact piano notes cover A0–C8 and continuous ±2 bends;
+very large held upward retunes beyond the captured root's octave are unsupported.
+The Advanced repository's `docs/sampler.md` gives the current workflow and
+`docs/sampler-qualification-2026-10-16.md` records the tested scope and limits.

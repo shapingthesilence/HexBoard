@@ -4,7 +4,7 @@ import { boardForHello, canEditConnectedSynth, hasAdvancedDevice } from "../midi
 import { MockMidiTransport } from "../midi/mockTransport.ts";
 import type { MidiTransport } from "../midi/types.ts";
 import { initialPreset } from "../advanced/synth/schema.ts";
-import { PhysicalSynthEditor } from "../advanced/synth/PhysicalSynthEditor.tsx";
+import { AdvancedSynthEditor } from "../advanced/synth/AdvancedSynthEditor.tsx";
 import { CapabilityFlag } from "../protocol/index.ts";
 import type { HelloResponsePayload } from "../protocol/index.ts";
 
@@ -20,6 +20,6 @@ export function SynthContext({ transport, hello }: { transport: MidiTransport; h
       {physical && !connectedPhysical && <p>Connect updated Advanced firmware to audition this physical instrument.</p>}
       {hello && board.synth && !canEditConnectedSynth(hello) && <p>This firmware does not support synth preset writes.</p>}
     </div>
-    {physical ? <PhysicalSynthEditor key={`${transport.label}:${initialPreset.format}`} transport={connectedPhysical ? transport : undefined} /> : board.synth && <SynthPresetLibrary key={board.synth} transport={canEditConnectedSynth(hello) ? transport : offlineTransport} />}
+    {physical ? <AdvancedSynthEditor sampler={Boolean(hello && (hello.capabilityFlags & CapabilityFlag.AdvancedSampler))} engines={Boolean(hello && (hello.capabilityFlags & CapabilityFlag.AdvancedSynthEngines))} key={`${transport.label}:${initialPreset.format}`} transport={connectedPhysical ? transport : undefined} /> : board.synth && <SynthPresetLibrary key={board.synth} transport={canEditConnectedSynth(hello) ? transport : offlineTransport} />}
   </>;
 }

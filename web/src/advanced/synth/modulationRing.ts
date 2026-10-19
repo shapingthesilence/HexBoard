@@ -1,3 +1,5 @@
+// Includes the outer LFO ring, arrowhead stroke and live-position dot.
+export const knobRingViewBox="-6 -6 84 84";
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
 /** The knob's 270-degree scale, from lower left through noon to lower right. */
 export function knobRingPoint(value: number, radius: number) {
