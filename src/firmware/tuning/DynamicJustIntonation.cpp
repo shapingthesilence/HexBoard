@@ -5,6 +5,9 @@
 #include "../midi/MidiRouting.h"
 #include "../model/ScalePalettePreset.h"
 #include "Tuning.h"
+#include <array>
+#include <cmath>
+#include <utility>
 
 //  Dynamic just intonation code start
 
@@ -19,8 +22,6 @@
 
 // By knowing the pressed keys it is possible to pick better ratios, ideally having 262/327.5/393 (4/5/6) in this example
 
-// TODO: make BPM sync work with dynamic just intonation to make pure just intonation achieveable.
-// Without it - this implementation provides you with n-EDO-sized independent JI rings, unconnected to eachother;
 // TODO: replace floating point math with integer math;
 // TODO: generate the table of ratios with a constexpr function rather than holding a huge block of hardcoded values in the code;
 // TODO: Any future ratio-cache optimization must preserve full interval precision, not just single-note pitch error.
@@ -43,478 +44,182 @@ inline uint8_t largestPrimeFactor(byte value) {
   return largest;
 }
 
-// This is a list of ratios sorted from the simplest ones to the most complex ones. The code searches for a first match that's good enough within 1/4 of an EDO step, literally bruteforcing through the list. As a result - the simplest ratio is chosen before more comples ones, prioritising consonant ratios first. In case not a single good ratio is found - the best one found so far is chosen instead
-
-// byte pair was chosen to preserve space. The ratio is "unpacked" later
-static const std::pair<byte, byte> ratios[] = {
+// Distinct 2:1-equivalence classes from the simple-to-complex ratio table.
+// Normalization is a search representation, independent of the tuning's period.
+static constexpr std::pair<byte, byte> ratios[] = {
   { 1, 1 },
-  { 1, 2 },
-  { 2, 1 },
-  { 3, 1 },
-  { 1, 3 },
-  { 1, 4 },
-  { 2, 3 },
-  { 1, 4 },
-  { 4, 1 },
   { 3, 2 },
-  { 1, 5 },
-  { 5, 1 },
-  { 5, 2 },
-  { 1, 6 },
-  { 3, 4 },
-  { 5, 2 },
   { 4, 3 },
-  { 6, 1 },
-  { 2, 5 },
-  { 5, 3 },
-  { 1, 7 },
-  { 7, 1 },
-  { 3, 5 },
-  { 2, 7 },
-  { 8, 1 },
-  { 5, 4 },
-  { 1, 8 },
-  { 4, 5 },
-  { 7, 2 },
-  { 9, 1 },
-  { 7, 3 },
-  { 1, 9 },
-  { 3, 7 },
-  { 1, 9 },
-  { 1, 10 },
-  { 10, 1 },
-  { 7, 4 },
-  { 3, 8 },
-  { 8, 3 },
-  { 6, 5 },
-  { 1, 10 },
-  { 8, 3 },
-  { 4, 7 },
-  { 2, 9 },
-  { 9, 2 },
-  { 5, 6 },
-  { 11, 1 },
-  { 7, 5 },
-  { 1, 11 },
-  { 5, 7 },
-  { 5, 8 },
-  { 3, 10 },
-  { 4, 9 },
-  { 3, 10 },
-  { 2, 11 },
-  { 11, 2 },
-  { 12, 1 },
-  { 1, 12 },
-  { 9, 4 },
-  { 5, 8 },
-  { 1, 12 },
   { 8, 5 },
-  { 10, 3 },
-  { 6, 7 },
-  { 7, 6 },
-  { 12, 1 },
-  { 9, 5 },
-  { 1, 13 },
-  { 3, 11 },
-  { 11, 3 },
-  { 9, 5 },
-  { 5, 9 },
-  { 13, 1 },
-  { 14, 1 },
-  { 13, 2 },
-  { 11, 4 },
-  { 1, 14 },
-  { 2, 13 },
+  { 5, 4 },
+  { 5, 3 },
   { 8, 7 },
-  { 7, 8 },
-  { 4, 11 },
-  { 9, 7 },
-  { 11, 5 },
-  { 7, 9 },
-  { 5, 11 },
-  { 13, 3 },
-  { 3, 13 },
-  { 15, 1 },
-  { 1, 15 },
-  { 4, 13 },
-  { 2, 15 },
-  { 10, 7 },
-  { 2, 15 },
-  { 11, 6 },
-  { 8, 9 },
-  { 16, 1 },
-  { 12, 5 },
-  { 3, 14 },
-  { 7, 10 },
-  { 5, 12 },
-  { 14, 3 },
+  { 7, 4 },
+  { 6, 5 },
   { 9, 8 },
-  { 15, 2 },
-  { 13, 4 },
-  { 1, 16 },
-  { 6, 11 },
-  { 17, 1 },
-  { 1, 17 },
-  { 5, 13 },
-  { 13, 5 },
-  { 4, 15 },
-  { 17, 2 },
-  { 9, 10 },
-  { 2, 17 },
-  { 9, 10 },
-  { 12, 7 },
-  { 10, 9 },
-  { 11, 8 },
-  { 16, 3 },
-  { 3, 16 },
-  { 13, 6 },
-  { 14, 5 },
-  { 15, 4 },
-  { 18, 1 },
-  { 8, 11 },
-  { 1, 18 },
-  { 4, 15 },
-  { 5, 14 },
-  { 6, 13 },
-  { 7, 12 },
-  { 19, 1 },
-  { 11, 9 },
-  { 17, 3 },
-  { 3, 17 },
-  { 9, 11 },
-  { 1, 19 },
-  { 5, 16 },
-  { 20, 1 },
-  { 8, 13 },
-  { 10, 11 },
-  { 20, 1 },
-  { 19, 2 },
-  { 1, 20 },
-  { 11, 10 },
-  { 2, 19 },
-  { 13, 8 },
-  { 17, 4 },
-  { 4, 17 },
-  { 16, 5 },
-  { 1, 20 },
-  { 13, 9 },
-  { 21, 1 },
-  { 7, 15 },
-  { 9, 13 },
-  { 19, 3 },
-  { 17, 5 },
-  { 3, 19 },
-  { 5, 17 },
-  { 15, 7 },
-  { 1, 21 },
-  { 13, 10 },
-  { 3, 20 },
-  { 12, 11 },
-  { 21, 2 },
-  { 18, 5 },
-  { 6, 17 },
-  { 15, 8 },
-  { 3, 20 },
-  { 20, 3 },
-  { 19, 4 },
-  { 5, 18 },
-  { 14, 9 },
-  { 9, 14 },
-  { 8, 15 },
-  { 2, 21 },
-  { 1, 22 },
-  { 17, 6 },
-  { 22, 1 },
-  { 10, 13 },
-  { 11, 12 },
-  { 4, 19 },
-  { 5, 19 },
-  { 1, 23 },
-  { 19, 5 },
-  { 23, 1 },
-  { 18, 7 },
-  { 8, 17 },
-  { 21, 4 },
-  { 22, 3 },
-  { 3, 22 },
-  { 7, 18 },
-  { 6, 19 },
-  { 12, 13 },
-  { 19, 6 },
-  { 2, 23 },
-  { 9, 16 },
-  { 17, 8 },
-  { 24, 1 },
-  { 13, 12 },
-  { 1, 24 },
-  { 23, 2 },
-  { 4, 21 },
+  { 7, 6 },
   { 16, 9 },
-  { 9, 17 },
-  { 1, 25 },
-  { 5, 21 },
-  { 25, 1 },
+  { 12, 7 },
+  { 11, 8 },
+  { 7, 5 },
+  { 16, 11 },
+  { 10, 7 },
+  { 9, 5 },
+  { 16, 13 },
+  { 12, 11 },
+  { 11, 6 },
+  { 10, 9 },
+  { 13, 8 },
+  { 9, 7 },
+  { 11, 10 },
+  { 14, 9 },
+  { 20, 11 },
+  { 13, 12 },
+  { 24, 13 },
+  { 15, 8 },
+  { 16, 15 },
+  { 17, 16 },
+  { 32, 17 },
+  { 20, 13 },
+  { 13, 10 },
+  { 19, 16 },
+  { 11, 9 },
+  { 17, 12 },
+  { 24, 17 },
+  { 18, 11 },
+  { 32, 19 },
+  { 13, 9 },
+  { 21, 16 },
+  { 28, 15 },
+  { 18, 13 },
+  { 19, 12 },
+  { 17, 10 },
+  { 24, 19 },
+  { 20, 17 },
+  { 15, 14 },
+  { 32, 21 },
+  { 20, 19 },
+  { 32, 23 },
+  { 19, 10 },
+  { 23, 16 },
+  { 18, 17 },
+  { 32, 25 },
+  { 40, 21 },
+  { 25, 16 },
   { 15, 11 },
   { 17, 9 },
-  { 3, 23 },
-  { 23, 3 },
-  { 11, 15 },
-  { 21, 5 },
-  { 17, 10 },
-  { 10, 17 },
-  { 19, 8 },
-  { 5, 22 },
-  { 20, 7 },
-  { 22, 5 },
-  { 23, 4 },
-  { 7, 20 },
-  { 1, 26 },
-  { 8, 19 },
-  { 25, 2 },
-  { 26, 1 },
-  { 2, 25 },
-  { 4, 23 },
-  { 5, 23 },
-  { 9, 19 },
-  { 1, 27 },
-  { 13, 15 },
-  { 3, 25 },
-  { 15, 13 },
-  { 23, 5 },
-  { 19, 9 },
-  { 27, 1 },
-  { 25, 3 },
-  { 25, 4 },
-  { 14, 15 },
-  { 27, 2 },
-  { 9, 20 },
-  { 2, 27 },
-  { 26, 3 },
-  { 20, 9 },
-  { 17, 12 },
-  { 1, 28 },
-  { 24, 5 },
-  { 10, 19 },
-  { 12, 17 },
-  { 23, 6 },
-  { 21, 8 },
-  { 11, 18 },
-  { 19, 10 },
-  { 5, 24 },
-  { 4, 25 },
-  { 5, 24 },
-  { 3, 26 },
-  { 18, 11 },
-  { 28, 1 },
-  { 8, 21 },
-  { 6, 23 },
-  { 15, 14 },
-  { 1, 29 },
-  { 29, 1 },
-  { 23, 8 },
-  { 24, 7 },
-  { 7, 24 },
-  { 6, 25 },
-  { 10, 21 },
-  { 30, 1 },
-  { 5, 26 },
-  { 25, 6 },
-  { 11, 20 },
-  { 30, 1 },
-  { 1, 30 },
-  { 16, 15 },
-  { 8, 23 },
-  { 4, 27 },
-  { 2, 29 },
-  { 26, 5 },
-  { 9, 22 },
-  { 29, 2 },
-  { 27, 4 },
-  { 28, 3 },
-  { 15, 16 },
-  { 20, 11 },
-  { 18, 13 },
-  { 22, 9 },
-  { 21, 10 },
-  { 13, 18 },
-  { 12, 19 },
-  { 19, 12 },
-  { 3, 28 },
-  { 17, 15 },
-  { 15, 17 },
-  { 29, 3 },
-  { 31, 1 },
-  { 27, 5 },
-  { 3, 29 },
-  { 9, 23 },
-  { 23, 9 },
-  { 1, 31 },
-  { 5, 27 },
-  { 13, 20 },
-  { 2, 31 },
-  { 28, 5 },
-  { 1, 32 },
-  { 29, 4 },
-  { 25, 8 },
-  { 20, 13 },
-  { 4, 29 },
-  { 8, 25 },
-  { 23, 10 },
-  { 10, 23 },
-  { 5, 28 },
-  { 31, 2 },
-  { 32, 1 },
-  { 33, 1 },
-  { 3, 31 },
-  { 1, 33 },
-  { 5, 29 },
-  { 15, 19 },
-  { 9, 25 },
-  { 31, 3 },
-  { 19, 15 },
-  { 25, 9 },
-  { 29, 5 },
-  { 33, 2 },
-  { 6, 29 },
-  { 17, 18 },
-  { 34, 1 },
-  { 2, 33 },
-  { 32, 3 },
-  { 26, 9 },
-  { 31, 4 },
-  { 27, 8 },
-  { 1, 34 },
-  { 4, 31 },
-  { 18, 17 },
-  { 29, 6 },
-  { 8, 27 },
-  { 12, 23 },
-  { 11, 24 },
-  { 3, 32 },
-  { 9, 26 },
+  { 24, 23 },
   { 23, 12 },
-  { 24, 11 },
-  { 5, 31 },
-  { 31, 5 },
-  { 35, 1 },
-  { 1, 35 },
-  { 1, 36 },
-  { 30, 7 },
-  { 24, 13 },
-  { 18, 19 },
-  { 36, 1 },
-  { 6, 31 },
-  { 28, 9 },
-  { 34, 3 },
-  { 36, 1 },
-  { 15, 22 },
-  { 7, 30 },
-  { 8, 29 },
-  { 1, 36 },
-  { 17, 20 },
-  { 29, 8 },
-  { 4, 33 },
-  { 12, 25 },
-  { 10, 27 },
-  { 32, 5 },
-  { 20, 17 },
-  { 3, 34 },
-  { 25, 12 },
-  { 5, 32 },
-  { 2, 35 },
-  { 33, 4 },
   { 22, 15 },
-  { 9, 28 },
-  { 13, 24 },
-  { 27, 10 },
-  { 35, 2 },
-  { 19, 18 },
-  { 31, 6 },
-  { 9, 29 },
-  { 35, 3 },
-  { 29, 9 },
-  { 5, 33 },
-  { 23, 15 },
-  { 33, 5 },
-  { 15, 23 },
-  { 37, 1 },
-  { 3, 35 },
-  { 1, 37 },
-  { 10, 29 },
-  { 31, 8 },
-  { 5, 34 },
-  { 4, 35 },
-  { 1, 38 },
-  { 35, 4 },
-  { 29, 10 },
-  { 34, 5 },
-  { 37, 2 },
-  { 2, 37 },
-  { 19, 20 },
-  { 8, 31 },
-  { 20, 19 },
-  { 38, 1 },
-  { 31, 9 },
-  { 39, 1 },
-  { 37, 3 },
-  { 3, 37 },
-  { 9, 31 },
-  { 1, 39 },
-  { 38, 3 },
-  { 11, 30 },
-  { 9, 32 },
-  { 26, 15 },
-  { 31, 10 },
-  { 29, 12 },
-  { 32, 9 },
-  { 20, 21 },
-  { 2, 39 },
-  { 35, 6 },
-  { 33, 8 },
-  { 5, 36 },
-  { 37, 4 },
   { 21, 20 },
-  { 15, 26 },
-  { 40, 1 },
-  { 8, 33 },
-  { 10, 31 },
-  { 30, 11 },
-  { 12, 29 },
+  { 40, 23 },
+  { 36, 19 },
+  { 32, 27 },
+  { 26, 15 },
+  { 48, 25 },
+  { 15, 13 },
+  { 23, 20 },
+  { 19, 18 },
+  { 27, 16 },
+  { 25, 24 },
+  { 32, 29 },
+  { 29, 16 },
+  { 17, 15 },
+  { 30, 17 },
+  { 29, 24 },
+  { 31, 16 },
+  { 27, 20 },
+  { 48, 29 },
+  { 36, 23 },
   { 23, 18 },
-  { 17, 24 },
-  { 36, 5 },
-  { 40, 1 },
-  { 1, 40 },
-  { 4, 37 },
-  { 24, 17 },
-  { 39, 2 },
-  { 6, 35 },
-  { 18, 23 },
-  { 3, 38 },
-  { 41, 1 },
-  { 37, 5 },
-  { 5, 37 },
-  { 1, 41 },
-  { 33, 10 },
-  { 3, 40 },
-  { 4, 39 },
-  { 1, 42 },
-  { 37, 6 },
-  { 13, 30 },
-  { 12, 31 },
-  { 42, 1 },
-  { 10, 33 },
-  { 7, 36 },
-  { 36, 7 },
-  { 9, 34 },
-  { 41, 2 },
-  { 35, 8 },
-  { 40, 3 },
-  { 8, 35 },
-  { 5, 38 },
-  { 2, 41 },
-  { 39, 4 },
-  { 38, 5 }
+  { 32, 31 },
+  { 40, 27 },
+  { 33, 32 },
+  { 48, 31 },
+  { 64, 33 },
+  { 40, 29 },
+  { 30, 19 },
+  { 36, 25 },
+  { 31, 24 },
+  { 19, 15 },
+  { 25, 18 },
+  { 29, 20 },
+  { 40, 31 },
+  { 31, 20 },
+  { 35, 32 },
+  { 64, 35 },
+  { 36, 29 },
+  { 35, 24 },
+  { 29, 18 },
+  { 40, 33 },
+  { 23, 15 },
+  { 33, 20 },
+  { 30, 23 },
+  { 37, 32 },
+  { 48, 35 },
+  { 64, 37 },
+  { 31, 18 },
+  { 39, 32 },
+  { 37, 24 },
+  { 48, 37 },
+  { 36, 31 },
+  { 64, 39 },
+  { 41, 32 },
+  { 37, 20 },
+  { 40, 37 },
+  { 64, 41 },
+};
+
+// Extend the sparse low-prime tables without adding primes: normalized 3^k,
+// |k| = 4..26. The seven simpler classes (k = -3..3) are already above.
+// These are used only for nearest-ratio fallback, after the simple candidates.
+static constexpr float fallbackRatioCents[] = {
+  407.82000346f,  // k = 4
+  792.17999654f,  // k = -4
+  1109.77500433f,  // k = 5
+  90.22499567f,  // k = -5
+  611.73000519f,  // k = 6
+  588.26999481f,  // k = -6
+  113.68500606f,  // k = 7
+  1086.31499394f,  // k = -7
+  815.64000692f,  // k = 8
+  384.35999308f,  // k = -8
+  317.59500779f,  // k = 9
+  882.40499221f,  // k = -9
+  1019.55000865f,  // k = 10
+  180.44999135f,  // k = -10
+  521.50500952f,  // k = 11
+  678.49499048f,  // k = -11
+  23.46001038f,  // k = 12
+  1176.53998962f,  // k = -12
+  725.41501125f,  // k = 13
+  474.58498875f,  // k = -13
+  227.37001212f,  // k = 14
+  972.62998788f,  // k = -14
+  929.32501298f,  // k = 15
+  270.67498702f,  // k = -15
+  431.28001385f,  // k = 16
+  768.71998615f,  // k = -16
+  1133.23501471f,  // k = 17
+  66.76498529f,  // k = -17
+  635.19001558f,  // k = 18
+  564.80998442f,  // k = -18
+  137.14501644f,  // k = 19
+  1062.85498356f,  // k = -19
+  839.10001731f,  // k = 20
+  360.89998269f,  // k = -20
+  341.05501817f,  // k = 21
+  858.94498183f,  // k = -21
+  1043.01001904f,  // k = 22
+  156.98998096f,  // k = -22
+  544.96501990f,  // k = 23
+  655.03498010f,  // k = -23
+  46.92002077f,  // k = 24
+  1153.07997923f,  // k = -24
+  748.87502163f,  // k = 25
+  451.12497837f,  // k = -25
+  250.83002250f,  // k = 26
+  949.16997750f,  // k = -26
 };
 
 bool PressedKeySet::add(byte key) {
@@ -566,10 +271,6 @@ void PressedKeySet::clear() {
   tail = INVALID_INDEX;
 }
 
-bool PressedKeySet::contains(byte key) const {
-  return key < BTN_COUNT && active[key];
-}
-
 uint8_t PressedKeySet::size() const {
   return count;
 }
@@ -587,8 +288,12 @@ PressedKeySet pressedKeyIDs;
 
 namespace {
 constexpr size_t DYNAMIC_JI_RATIO_COUNT = sizeof(ratios) / sizeof(ratios[0]);
-std::array<uint16_t, DYNAMIC_JI_RATIO_COUNT> activeDynamicJIRatioIndices = {};
+constexpr size_t DYNAMIC_JI_FALLBACK_COUNT = sizeof(fallbackRatioCents) / sizeof(fallbackRatioCents[0]);
+// Cache full-precision interval cents in RAM at settings sync, rather than
+// evaluating a logarithm for each candidate on every press.
+std::array<float, DYNAMIC_JI_RATIO_COUNT + DYNAMIC_JI_FALLBACK_COUNT> activeDynamicJIRatioCents = {};
 uint16_t activeDynamicJIRatioCount = 0;
+uint16_t simpleDynamicJIRatioCount = 0;
 
 inline bool ratioIsInSelectedJITable(const std::pair<byte, byte>& ratio) {
   return largestPrimeFactor(ratio.first) <= dynamicJIRatioTable
@@ -600,11 +305,16 @@ void syncDynamicJIRatioCandidates() {
   activeDynamicJIRatioCount = 0;
   for (uint16_t i = 0; i < DYNAMIC_JI_RATIO_COUNT; ++i) {
     if (ratioIsInSelectedJITable(ratios[i])) {
-      activeDynamicJIRatioIndices[activeDynamicJIRatioCount++] = i;
+      activeDynamicJIRatioCents[activeDynamicJIRatioCount++] = ratioToCents(
+        static_cast<float>(ratios[i].first) / static_cast<float>(ratios[i].second));
     }
   }
   if (activeDynamicJIRatioCount == 0) {
-    activeDynamicJIRatioIndices[activeDynamicJIRatioCount++] = 0;
+    activeDynamicJIRatioCents[activeDynamicJIRatioCount++] = 0.0f;
+  }
+  simpleDynamicJIRatioCount = activeDynamicJIRatioCount;
+  for (float cents : fallbackRatioCents) {
+    activeDynamicJIRatioCents[activeDynamicJIRatioCount++] = cents;
   }
 }
 
@@ -661,47 +371,56 @@ int16_t justIntonationRetune(byte x) {
     return 0;
   }
   float pitchAdjustmentCents = 0.0f;
-  float basePitchOffset = 0;
-  if (useJustIntonationBPM) {
-    int16_t stepsFromReference = static_cast<int16_t>(currentPitchStepsFromReference(h[x].stepsFromC));
-    float buttonCentsToReference = -stepsToCentsFromReference(stepsFromReference);
-    float referenceHz = currentTuningReferenceHz();
-    // It was planned to use integer math but floating point arithmetics works fast enough so far
-    float rounding = ((float)justIntonationBPM / 60.0 * justIntonationBPM_Multiplier);
-    pitchAdjustmentCents = buttonCentsToReference - ratioToCents(round(referenceHz / rounding) / round(h[x].frequency / rounding));
-
-    if (pressedKeyIDs.size() > 1 && useDynamicJustIntonation) {
-      int16_t baseStepsFromReference = static_cast<int16_t>(currentPitchStepsFromReference(h[pressedKeyIDs[0]].stepsFromC));
-      float baseCentsToReference = -stepsToCentsFromReference(baseStepsFromReference);
-      basePitchOffset = baseCentsToReference - ratioToCents(round(referenceHz / rounding) / round(h[pressedKeyIDs[0]].frequency / rounding));
-    }
-  }
+  bool matchedDynamicRatio = false;
   if (useDynamicJustIntonation && pressedKeyIDs.size() > 1) {
-    //bool ratioFound = false;  // I might need this one later
-    bool preferSmallRatios = true;  // if false - the closest found ratio will be chosen from the ratio table
-
-    // detune within a 1/4 of a step, avoid wild detuning but cover the entire pitch range
-    float errorThreshold = currentTuningNominalStepSizeCents() / 4.0f;
-    float deviation = INFINITY;
-    float EDOCents = ratioToCents(h[pressedKeyIDs[0]].frequency / h[x].frequency);
+    const byte anchor = pressedKeyIDs[0];
+    const float errorThreshold = currentTuningNominalStepSizeCents() / 4.0f;
+    const float intervalCents = ratioToCents(h[anchor].frequency / h[x].frequency);
 
     if (activeDynamicJIRatioCount == 0) {
       syncDynamicJIRatioCandidates();
     }
-    for (uint16_t i = 0; i < activeDynamicJIRatioCount; i++) {
-      const auto& ratio = ratios[activeDynamicJIRatioIndices[i]];
-      float ratioCents = ratioToCents(static_cast<float>(ratio.first) / static_cast<float>(ratio.second));
-
-      if (std::abs(deviation) > std::abs(ratioCents - EDOCents)) {
-        deviation = (EDOCents - ratioCents);
-        if (preferSmallRatios && std::abs(deviation) < errorThreshold) {
-          break;
+    if (std::isfinite(intervalCents)) {
+      // A power-of-two lift preserves rational ratios for every tuning,
+      // including tritaves and arbitrary cents-table repeat periods.
+      const float foldedCents = intervalCents - 1200.0f * std::floor(intervalCents / 1200.0f);
+      const bool allowUnison = intervalCents == 0.0f || std::abs(intervalCents) >= 600.0f;
+      float bestDeviation = 0.0f;
+      float bestError = INFINITY;
+      for (uint16_t i = 0; i < activeDynamicJIRatioCount; ++i) {
+        const float ratioCents = activeDynamicJIRatioCents[i];
+        // Distinct pitches close to the anchor must not fall back to 1:1.
+        if (!allowUnison && ratioCents == 0.0f) continue;
+        float deviation = foldedCents - ratioCents;
+        if (deviation > 600.0f) deviation -= 1200.0f;
+        else if (deviation < -600.0f) deviation += 1200.0f;
+        const float error = std::abs(deviation);
+        if (error < bestError) {
+          bestDeviation = deviation;
+          bestError = error;
         }
+        // Preserve the simple-ratio preference. If none is close enough,
+        // finish the bounded scan and use the nearest ratio from either tier.
+        if (i < simpleDynamicJIRatioCount && error < errorThreshold) break;
       }
+      pitchAdjustmentCents = bestDeviation + h[anchor].jiRetuneCents;
+      matchedDynamicRatio = true;
     }
-    //if(ratioFound)
-    {
-      pitchAdjustmentCents = deviation + basePitchOffset;
+  }
+  // A matched interval already inherits the anchor's BPM correction. Only
+  // quantize independently for the first note or an invalid source interval.
+  if (useJustIntonationBPM && !matchedDynamicRatio) {
+    const float rounding = static_cast<float>(justIntonationBPM / 60.0 * justIntonationBPM_Multiplier);
+    if (rounding > 0.0f) {
+      const double roundedReference = round(currentTuningReferenceHz() / rounding);
+      const double roundedNote = round(h[x].frequency / rounding);
+      // Valid settings can round low notes (or the reference) to zero.
+      if (roundedReference > 0.0 && roundedNote > 0.0
+          && std::isfinite(roundedReference) && std::isfinite(roundedNote)) {
+        const int16_t stepsFromReference = static_cast<int16_t>(currentPitchStepsFromReference(h[x].stepsFromC));
+        pitchAdjustmentCents = -stepsToCentsFromReference(stepsFromReference)
+                             - ratioToCents(roundedReference / roundedNote);
+      }
     }
   }
   int16_t pitchAdjustment = centsToRelativePitchBend(pitchAdjustmentCents);

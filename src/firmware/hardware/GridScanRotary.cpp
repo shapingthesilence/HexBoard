@@ -16,6 +16,7 @@
 #include "../menu/PlayedNotesOverlay.h"
 #include "../menu/VirtualListMenu.h"
 #include "../synth/SynthAudio.h"
+#include "../tuning/DynamicJustIntonation.h"
 
 // @interface
 /*
@@ -113,7 +114,7 @@ void RAM_FUNC(readHexes)() {
     // Release state is authoritative: recover a normal note if its one-shot
     // release edge was consumed while another input mode owned this button.
     if (h[i].btnState == BTN_STATE_OFF
-        && (h[i].MIDIch || h[i].synthCh)) {
+        && (h[i].MIDIch || h[i].synthCh || pressedKeyIDs.contains(i))) {
       tryMIDInoteOff(i);
       trySynthNoteOff(i);
     }

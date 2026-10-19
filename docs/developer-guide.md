@@ -398,11 +398,14 @@ updates into catch-up jumps.
 Output supports single-channel MIDI, extended channel folding, MPE pitch bend,
 optional MPE extras, serial MIDI, incoming-note LEDs, and program changes.
 
-Ordinary live USB packets retry for 2 ms, then use a 100 ms backoff when the
-host stops polling, keeping the main loop responsive with a closed laptop.
-MPE per-note bends and note lifecycle packets enter a bounded FIFO when that
-backoff is active and drain in order, so a full TX FIFO cannot strand or
-retune a receiving voice. SysEx streaming uses the longer transfer timeout.
+Live USB packets attempt the endpoint and its mutex once without waiting.
+MPE per-note bends and note lifecycle packets enter a bounded FIFO when the
+endpoint is busy and drain in order, with at most 16 queued packets per service
+call. Best-effort controls may be dropped under congestion. A closed host
+therefore cannot stall scanning or onboard note-on while waiting for USB space.
+Queue saturation discards the stale backlog and sends All Notes Off on every
+channel before accepting fresh USB notes. SysEx streaming uses the longer
+transfer timeout.
 Queue-managed MPE notes shorter than 12 ms defer their zero-velocity Note Off
 until the 12 ms boundary, keeping the member channel reserved in the meantime.
 This avoids same-buffer taps that some receivers acknowledge but do not release.
@@ -417,6 +420,23 @@ immediately; `MPE Low Priority` explicitly selects the lowest available
 channel. Dynamic JI keeps synth and external MIDI retuning separate: synth uses
 the frequency multiplier; external MPE chooses the nearest note and sends
 residual bend. Note-off uses `activeMidiNote`.
+Physical held-note tracking and JI preparation precede MIDI channel allocation,
+so channel exhaustion does not bypass synth tuning. A physical release removes
+the JI anchor even when external note-off must retry; sent note/channel state
+remains available for that retry. Matched ratios inherit the anchor's stored
+cents correction. Candidate ratios are represented by 121 distinct classes in
+`[1, 2)`, with full-precision cents cached in RAM at settings sync. The actual
+anchor/note frequency ratio is reduced by powers of two for a circular interval
+search; the deviation restores the register distance without assuming that the
+tuning repeats at 2:1. This also handles tritaves and arbitrary cents-table
+periods, with non-rational intervals approximated by JI.
+The first simple candidate within a quarter nominal step wins. Otherwise, use
+the nearest candidate, including 46 fallback classes derived from `3^k` for
+`|k| = 4..26`. All fallback classes stay within the selectable prime limits.
+The bounded search rejects an anchor unison for distinct nearby pitches and
+uses one interval logarithm per note, with no per-candidate transcendental math.
+BPM sync anchors the first note; subsequent dynamic notes inherit that offset.
+BPM quantization rejects zero or non-finite rounded frequencies.
 Routing changes first release active external notes with their sent note and
 channel, then rebuild the channel pool, so changing tuning or MPE settings
 while a key is held cannot orphan the old receiver-side note.
@@ -473,7 +493,9 @@ brightness; persisted palettes and the global-brightness byte are unchanged.
 The gamma response remains 2.6, using a 257-entry 16-bit table with interpolation.
 Sequencer step brightness is applied to perceptual RGB before gamma.
 
-`lightUpLEDs()` composes at most once per 4.3 ms. `LedTransport` compares the
+`lightUpLEDs()` computes keyboard animations and composes at most once per
+4.3 ms; animation work is skipped between frames, during LED tests, and while
+incoming MIDI defers LED refresh. `LedTransport` compares the
 requested frame, dithering depth, current limit, and frame period with its last accepted
 submission and converts only changes. After quantization and current limiting,
 it compares the complete ordered phase stream with the last published bank.
@@ -629,6 +651,12 @@ address and undefined-behavior sanitizers:
 ```sh
 python3 scripts/test_host.py
 ```
+
+The JI checks compile the production retuning and MIDI-dispatch translation
+units against host hardware/transport stubs. Run just those checks with
+`python3 tests/test_dynamic_ji.py`; `--benchmark` measures host note-preparation
+cost without sanitizers and reports ratio-conversion counts. Host timings do
+not measure RP2040 scan latency or audio rendering.
 
 For a connected-board soak, install `mido`, `python-rtmidi`, and `pyserial` in a
 virtual environment, then run:

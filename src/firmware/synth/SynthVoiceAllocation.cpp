@@ -765,7 +765,7 @@ void RAM_FUNC(startArpeggiatorStep)(byte x) {
 void RAM_FUNC(trySynthNoteOn)(byte x) {
   if (playbackMode == SYNTH_OFF) return;
   if (isArpPlaybackMode(playbackMode)) {
-    if (!h[x].MIDIch) return;
+    if (!h[x].MIDIch && !pressedKeyIDs.contains(x)) return;
     const bool first = arpeggiatorHeldNoteCount == 0;
     registerArpeggiatorNoteOn(x);
     if (first) {
@@ -774,7 +774,7 @@ void RAM_FUNC(trySynthNoteOn)(byte x) {
     }
   } else if (isPolyPlaybackMode(playbackMode)) {
     startPolySynthNote(x);
-  } else if (h[x].MIDIch) {
+  } else if (h[x].MIDIch || pressedKeyIDs.contains(x)) {
     registerArpeggiatorNoteOn(x);
     replaceMonoSynthWith(x, playbackMode != SYNTH_MONO_LEGATO, true);
   }

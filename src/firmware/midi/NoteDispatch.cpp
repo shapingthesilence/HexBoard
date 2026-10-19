@@ -259,6 +259,11 @@ void RAM_FUNC(tryMIDInoteOn)(byte x) {
     return;
   }
   if (!(h[x].MIDIch)) {
+    // Physical-note tuning is also needed by the synth when MIDI has no free
+    // channel. Preparing it once keeps allocation retries from changing pitch.
+    if (pressedKeyIDs.add(x)) {
+      justIntonationRetune(x);
+    }
     if (MPEpitchBendsNeeded == 1) {
       if (standardMidiMicrotonalActive) {
         h[x].MIDIch = h[x].mappedMidiChannel ? h[x].mappedMidiChannel : defaultMidiChannel;
@@ -283,8 +288,6 @@ void RAM_FUNC(tryMIDInoteOn)(byte x) {
     }
 
     if (h[x].MIDIch) {
-      pressedKeyIDs.add(x);  // Dynamic JI pressed key tracking
-      justIntonationRetune(x);
       prepareActiveMidiPitch(x);
       int16_t pitchBendValue = 0;
       // First, send the pitch bend (if applicable)
@@ -316,6 +319,9 @@ void RAM_FUNC(tryMIDInoteOn)(byte x) {
 void RAM_FUNC(tryMIDInoteOff)(byte x) {
   // this gets called on any non-command hex
   // that is not scale-locked.
+  // An up edge ends its role as a JI anchor even if external note-off must
+  // retry, or this note never obtained a MIDI channel.
+  pressedKeyIDs.remove(x);
   if (h[x].MIDIch) {  // but just in case, check
     byte noteOff = (h[x].activeMidiNote < 128) ? h[x].activeMidiNote : h[x].note;
     byte channel = h[x].MIDIch;
@@ -326,10 +332,6 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
           : !sendNoteOffToConfiguredMidiOutputs(noteOff, 0, channel)) {
       return;
     }
-    pressedKeyIDs.remove(x);  // Dynamic JI pressed key tracking
-    h[x].jiRetune = 0;
-    h[x].jiRetuneCents = 0.0f;
-    h[x].jiFrequencyMultiplier = 1.0f;
     h[x].activeMidiNote = UNUSED_NOTE;
     h[x].activePitchBend = 0;
     sendToLog(
@@ -348,4 +350,7 @@ void RAM_FUNC(tryMIDInoteOff)(byte x) {
       schedulePlayedNotesOverlayUpdate(false);
     }
   }
+  h[x].jiRetune = 0;
+  h[x].jiRetuneCents = 0.0f;
+  h[x].jiFrequencyMultiplier = 1.0f;
 }

@@ -4,7 +4,6 @@
 #include "RuntimeDefaults.h"
 #include "../hardware/GridScanRotary.h"
 #include "../hardware/GridState.h"
-#include "../hardware/LedAnimations.h"
 #include "../hardware/LedRender.h"
 #include "../menu/CommandWheelOverlay.h"
 #include "../menu/GeometryMenu.h"
@@ -154,7 +153,6 @@ void hexboardLoop() {        // run on first core
   if (servicePresetSyncTransfer()) {
     return;
   }
-  animateLEDs();     // deal with animations
   if (!shouldDeferMidiInLedRefresh()) {
     lightUpLEDs();   // refresh LEDs
   }

@@ -1,6 +1,7 @@
 #include "../FirmwareModule.h"
 #include "HardwareConfig.h"
 #include "LedRender.h"
+#include "LedAnimations.h"
 #include "../app/DiagnosticsTiming.h"
 #include "../app/PlatformCommon.h"
 #include "../app/RuntimeDefaults.h"
@@ -940,6 +941,7 @@ void RAM_FUNC(lightUpLEDs)() {
       strip.setPixelColor(i, delegatedLedColor(i));
     }
   } else {
+    animateLEDs();
     for (byte i = 0; i < LED_COUNT; i++) {
       if (!(h[i].isCmd)) {
         strip.setPixelColor(i, applyNotePixelColor(i));

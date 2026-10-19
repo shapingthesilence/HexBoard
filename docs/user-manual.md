@@ -251,11 +251,26 @@ Options include:
 
 `JI Table` selects the maximum prime limit used by Dynamic JI ratio matching:
 `3Limit`, `5Limit`, `7Limit`, and higher options through `41Limit`. Lower-limit
-tables use simpler ratios; higher-limit tables preserve the broader
-candidate set.
+tables restrict the prime factors; higher-limit tables offer more interval
+choices.
+
+Dynamic JI tunes each new note against the oldest held note, preserving that
+note's existing adjustment when the original anchor is released. Matching uses
+actual frequency ratios across registers, including in non-octave tunings such
+as Bohlen-Pierce. Powers of two extend the ratio search without changing the
+tuning's layout or treating its repeat period as 1200 cents. An arbitrary
+non-rational period is approximated by JI like other intervals.
+
+Simple ratios within a quarter of a nominal tuning step are preferred. If none
+is close enough, Dynamic JI chooses the nearest ratio using a denser Pythagorean
+fallback that stays within every selectable prime limit. Notes therefore remain
+in a JI relationship to the anchor instead of falling back to static tuning.
+Fallback corrections can exceed a quarter step, especially in very fine tunings.
 
 `Beat BPM` and `BPM Mult.` control the BPM-synced retuning grid and are hidden
-when `JI BPM Sync` is off.
+when `JI BPM Sync` is off. With both JI modes enabled, subsequent notes inherit
+the held anchor's BPM correction. If a BPM grid is too coarse to represent a
+note or the tuning reference above zero, that note skips BPM correction.
 
 `Layout Rot` rotates the musical axes in 60-degree steps. `Flip L/R` mirrors
 the layout around the middle key, physical button `65`. `Flip U/D` mirrors the

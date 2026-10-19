@@ -8,7 +8,7 @@ class PressedKeySet {
   bool add(byte key);
   bool remove(byte key);
   void clear();
-  bool contains(byte key) const;
+  bool contains(byte key) const { return key < BTN_COUNT && active[key]; }
   uint8_t size() const;
   byte operator[](uint8_t ordinal) const;
 

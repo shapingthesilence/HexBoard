@@ -35,8 +35,6 @@ byte MPEpitchBendSemis = 48;
 byte midiD = MIDID_USB | MIDID_SER;
 constexpr uint32_t SERIAL_MIDI_BAUD = 31250;
 constexpr uint64_t USB_MIDI_WRITE_TIMEOUT_MICROS = 50000ULL;
-constexpr uint64_t USB_MIDI_PACKET_WRITE_TIMEOUT_MICROS = 2000ULL;
-constexpr uint64_t USB_MIDI_PACKET_STALL_BACKOFF_MICROS = 100000ULL;
 constexpr size_t USB_MIDI_RELIABLE_PACKET_QUEUE_CAPACITY = 128;
 constexpr uint8_t USB_MIDI_RELIABLE_PACKET_SERVICE_LIMIT = 16;
 
@@ -50,7 +48,6 @@ struct UsbMidiPacket {
 std::array<UsbMidiPacket, USB_MIDI_RELIABLE_PACKET_QUEUE_CAPACITY> usbMidiReliablePacketQueue = {};
 uint8_t usbMidiReliablePacketQueueHead = 0;
 uint8_t usbMidiReliablePacketQueueCount = 0;
-uint64_t usbMidiPacketBackoffUntil = 0;
 // On saturation the host has stopped draining. Discard the stale playback
 // backlog, then silence every channel before accepting fresh USB notes.
 uint8_t usbMidiRecoveryChannel = 0;
@@ -131,38 +128,7 @@ size_t writeUsbMidiStream(const uint8_t* data, size_t length) {
 void clearUsbMidiReliablePacketQueue() {
   usbMidiReliablePacketQueueHead = 0;
   usbMidiReliablePacketQueueCount = 0;
-  usbMidiPacketBackoffUntil = 0;
   usbMidiRecoveryChannel = 0;
-}
-
-bool tryWriteUsbMidiPacket(const uint8_t packet[4]) {
-  if (!MidiUSB.connected()) {
-    clearUsbMidiReliablePacketQueue();
-    return false;
-  }
-
-  uint64_t now = readClock();
-  if (now < usbMidiPacketBackoffUntil) {
-    return false;
-  }
-
-  // A closed host can leave the TinyUSB TX FIFO full. The short retry keeps
-  // this path responsive, and the backoff prevents every subsequent control
-  // update from paying that cost until the host resumes polling.
-  uint64_t deadline = now + USB_MIDI_PACKET_WRITE_TIMEOUT_MICROS;
-  while (MidiUSB.connected()) {
-    if (writeUsbMidiTransportPacket(packet)) {
-      usbMidiPacketBackoffUntil = 0;
-      return true;
-    }
-    if (readClock() >= deadline) {
-      break;
-    }
-    delayMicroseconds(100);
-  }
-
-  usbMidiPacketBackoffUntil = readClock() + USB_MIDI_PACKET_STALL_BACKOFF_MICROS;
-  return false;
 }
 
 bool enqueueUsbMidiReliablePacket(const uint8_t packet[4]) {
@@ -184,8 +150,7 @@ bool enqueueUsbMidiReliablePacket(const uint8_t packet[4]) {
 
 void serviceUsbMidiOutput() {
   if (!MidiUSB.connected()) {
-    if (usbMidiReliablePacketQueueCount != 0 || usbMidiPacketBackoffUntil != 0
-        || usbMidiRecoveryChannel != 0) {
+    if (usbMidiReliablePacketQueueCount != 0 || usbMidiRecoveryChannel != 0) {
       clearUsbMidiReliablePacketQueue();
     }
     return;
@@ -206,9 +171,9 @@ void serviceUsbMidiOutput() {
   while (usbMidiReliablePacketQueueCount != 0
          && serviced < USB_MIDI_RELIABLE_PACKET_SERVICE_LIMIT) {
     UsbMidiPacket& packet = usbMidiReliablePacketQueue[usbMidiReliablePacketQueueHead];
-    // Probe once without waiting or lifting the ordinary 100 ms backoff.
+    // Probe once without waiting for the USB endpoint or its mutex.
     // This lets a pending note-off leave as soon as the host polls again while
-    // a closed host still costs only one constant-time FIFO check per loop.
+    // a closed host still costs only one constant-time probe per service call.
     if (!writeUsbMidiTransportPacket(packet.bytes)) {
       return;
     }
@@ -235,7 +200,9 @@ bool writeUsbMidiPacket(const uint8_t packet[4], bool reliable) {
     return reliable ? enqueueUsbMidiReliablePacket(packet) : false;
   }
 
-  if (tryWriteUsbMidiPacket(packet)) {
+  // Live output never waits for endpoint space. Reliable packets retry from
+  // the bounded queue; best-effort controls may be dropped under congestion.
+  if (writeUsbMidiTransportPacket(packet)) {
     return true;
   }
   if (!MidiUSB.connected()) {
