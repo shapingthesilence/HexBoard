@@ -59,6 +59,11 @@ bool RAM_FUNC(startSynthPreviewNote)(int16_t pitchSteps, float frequency, byte d
 void RAM_FUNC(stopSynthPreviewNote)(SynthPreviewNoteHandle& handle);
 void panicStopOutput();
 void setupSynthOutputs();
+// Core 0, explicit CDC performance test; no work unless started by the host.
+bool synthPerformanceTestActive();
+void startSynthPerformanceTest();
+void stopSynthPerformanceTest();
+void serviceSynthPerformanceTest();
 bool RAM_FUNC(metronomeBrightnessSelected)();
 bool RAM_FUNC(metronomeSideButtonsSelected)();
 bool RAM_FUNC(metronomeVisualFlashActive)();

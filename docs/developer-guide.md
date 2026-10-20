@@ -688,6 +688,43 @@ at at most 64 incoming bytes per Core 0 loop, and change RAM-only controls. USB
 Backup retains exclusive CDC ownership while active. Serial Debug can still be
 changed locally; the menu reflects host changes.
 
+### Automated synth DSP workload
+
+Run `python3 scripts/test_synth_performance.py --serial /dev/cu.usbmodem101`
+with `pyserial` installed and firmware supporting `HBAUD`. This is an audible,
+68-second hardware test using the loaded wavetable and selected output. Select
+Poly, keep volume nonzero, release all keys and tails, and close other serial
+and MIDI clients. Repeat with the jack and piezo destinations and representative
+wavetables; one run does not qualify every patch or output.
+
+The RAM-only CDC commands `HBAUD 1` and `HBAUD 0` start and cancel the suite.
+They fit the existing eight-byte line limit. Core 0 schedules bounded preview
+note events through the real eight-voice allocator; Core 1 renders normally.
+The first six four-second phases measure idle, one note, eight notes,
+simultaneous release, retriggering, and twelve logical notes competing for eight
+voices, using the current patch. Eleven further phases temporarily configure
+drive, continuous wheel sweeps, all six LFO waveforms, both effect envelopes,
+positive/negative modulation, sine/noise vibrato, pitch, wavetable position,
+all three phase warps, and the five wheel amplitude-envelope targets. These
+phases repeat eight-note attacks/releases, rather than leaving modulators at
+steady values. Multiframe wavetables are required for full coverage.
+
+The test owns profiling windows, suppresses periodic debug reports, and pauses
+auto-save until it restores the original runtime controls. It does not change
+settings bytes, selection references, or mark settings dirty. Completion,
+`HBAUD 0`, or detected physical/transfer/mode interference releases test notes
+and restores controls. The finite device schedule completes even if the host
+disconnects. Do not edit patches, save profiles, or enter USB Backup during a run.
+
+The JSON report defaults to `build/performance/automated.json`. Missing phases,
+insufficient samples, allocation failures, incomplete voice/release coverage,
+DMA underruns, or render deadline overruns fail the run. Use
+`--max-cpu-percent 90` to require at least 10% peak render margin. The reported
+`voices_at_peak` describes the slowest measured block, not a separate maximum
+voice counter. The render timer covers block generation; it does not measure
+end-to-end input latency, output spectrum, analog quality, or every other
+Core 1 task. No firmware timing limit is relaxed by this tool.
+
 Before flashing, save and verify full flash with `picotool save -a -v backup.bin`
 in BOOTSEL mode. A sequence-only USB Backup is not a complete filesystem backup.
 Use the Update image to preserve storage; the Factory image erases it. Confirm

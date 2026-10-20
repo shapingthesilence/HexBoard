@@ -4,6 +4,7 @@
 #include "SerialDebugCommand.h"
 #include "../menu/MenuAndDisplay.h"
 #include "../sequencer/SequencerUsbBackup.h"
+#include "../synth/SynthAudio.h"
 
 // @diagnostics
 /*
@@ -79,7 +80,16 @@ void serviceSerialDebugCommands() {
   for (unsigned int count = 0; count < 64 && Serial.available() > 0; ++count) {
     const int command = serialDebugCommandParser.consume(static_cast<uint8_t>(Serial.read()));
     if (command == SerialDebugCommandParser::NoCommand) continue;
+    if (command == SerialDebugCommandParser::AudioTestStart) {
+      startSynthPerformanceTest();
+      continue;
+    }
+    if (command == SerialDebugCommandParser::AudioTestStop) {
+      stopSynthPerformanceTest();
+      continue;
+    }
     if (command >= 0) {
+      if (synthPerformanceTestActive()) stopSynthPerformanceTest();
       serialDebugEnabled = command & 1;
       serialDebugGeneralMessages = command & 2;
       serialDebugHeapMessages = command & 4;
@@ -101,6 +111,9 @@ void serviceSerialDebugCommands() {
 
 void serviceSerialDebugMessages() {
   serviceSerialDebugCommands();
+  serviceSynthPerformanceTest();
+  // The test owns the profiling window until its phase result is captured.
+  if (synthPerformanceTestActive()) return;
   if (!serialDebugEnabled) {
     return;
   }
