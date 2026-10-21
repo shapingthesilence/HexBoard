@@ -32,7 +32,8 @@ starting Learn or previewing a layout.
 The shared tuning/layout editor sends active content as one validated RAM preview.
 Save/export bundles in the browser; Advanced device-library saving is unavailable.
 Held notes release their original assignment after edits. Learn shares lessons
-and logical IDs; on-screen navigation is available until joystick forwarding.
+and logical IDs; lesson navigation uses the on-screen controls. The physical
+joystick navigates the on-device OLED menu.
 Original HexBoard command navigation remains unchanged; command slots are fixed.
 
 Stop in Learn. For an abandoned Advanced lesson, use Web stop in Main Bring-up,
@@ -898,21 +899,7 @@ to 100% during migration, while retaining their supported settings and curves.
 Save explicitly to retain edits; no endpoint learning or flash writes occur
 during play. Pressure is relative movement, not measured force.
 
-## Advanced device-menu prototype
-
-**Device Menu** is visible only while a real HexBoard Advanced is connected.
-Disconnected or original-board connections hide all unreleased Advanced tools;
-bookmarked menu/calibration routes return to Tunings & Layouts.
-
-**Device Menu** opens a six-sector hexagonal menu with a 128×128 screen preview.
-Use the on-screen joystick, arrow keys, or Advanced's physical joystick via main
-USB. Hold Space or the stick button for 500 ms to enter/exit. Browse with up/down,
-apply with right and cancel/back with left. The top bar shows Preview; ● marks
-the applied item. Settings → Joystick provides dead zone, center/travel calibration
-and axis reversal, with explicit browser-local save. Main and audio firmware must
-both support forwarding. Example lists, browser sound and soft keys simulate the
-interaction; they do not change device content or LEDs. OLED rendering remains
-pending.
+## Advanced String motion preview
 
 The Advanced String panel animates an approximation of the last reported key:
 strike decay, bow motion, material/drive and contacts affect the drawing.

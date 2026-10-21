@@ -62,7 +62,10 @@
 
 .hallPeakLegend { display: flex; align-items: center; gap: 10px; font-size: .8rem; margin: 12px 0; }
 .hallPeakRamp { flex: 1; height: 14px; border-radius: 5px; background: linear-gradient(to right, hsl(240 80% 38%), hsl(180 80% 38%), hsl(120 80% 38%), hsl(60 80% 38%), hsl(0 80% 38%)); }
-.hallPeakMap { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 3px 0; max-width: 880px; margin: 16px auto; }
-.hallPeakMap > div { grid-column-end: span 2 !important; margin: 0 2px; padding: 6px 2px; min-width: 0; text-align: center; border-radius: 8px; border: 1px solid var(--border); font-size: .7rem; }
-.hallPeakMap strong { display: block; font-variant-numeric: tabular-nums; font-size: .82rem; }
-@media (max-width: 540px) { .hallPeakMap > div { margin: 0 1px; padding: 4px 0; font-size: .55rem; } .hallPeakMap strong { font-size: .6rem; } }
+.hallPeakMap { display: block; width: min(100%, 620px); height: auto; margin: 16px auto; overflow: visible; }
+.hallPeakMap g { outline: none; }
+.hallPeakMap polygon { stroke: var(--border); stroke-width: 1; }
+.hallPeakMap text { text-anchor: middle; font-size: 10px; pointer-events: none; user-select: none; }
+.hallPeakMap .hallPeakValue { font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.hallPeakMap g[data-editable=true] { cursor: ns-resize; touch-action: none; }
+.hallPeakMap g:focus-visible polygon, .hallPeakMap g[data-dragging=true] polygon { stroke: var(--text); stroke-width: 3; }

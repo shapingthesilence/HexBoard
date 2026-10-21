@@ -28,7 +28,7 @@ describe("navigation", () => {
     expect(parseLocation("#/learn")).toEqual({ view: "learn", page: "practice" });
   });
   it("rejects detailed, malformed and unknown links", () => {
-    for (const path of ["#/unknown", "#/learn/nope", "#/learn/course/id/lesson/note", "#/learn/%ZZ", "#/synth/extra"])
+    for (const path of ["#/menu", "#/unknown", "#/learn/nope", "#/learn/course/id/lesson/note", "#/learn/%ZZ", "#/synth/extra"])
       expect(parseLocation(path)).toBeUndefined();
   });
   it("restores the last location after tab discard/reload and a fresh base-address visit", () => {
@@ -76,7 +76,7 @@ describe("navigation", () => {
   });
   it("ignores corrupt saved locations", () => {
     const { entries } = browser();
-    for (const value of ["bad JSON", "null", '{"view":"unknown"}', '{"view":"learn","page":"nope"}', '{"view":"learn","page":"course","lessonId":4}']) {
+    for (const value of ['{"view":"menu"}', "bad JSON", "null", '{"view":"unknown"}', '{"view":"learn","page":"nope"}', '{"view":"learn","page":"course","lessonId":4}']) {
       entries.set("hexboard-sync-location", value);
       expect(initialLocation()).toEqual({ view: "layouts" });
     }

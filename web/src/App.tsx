@@ -1,7 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { DeviceConnect, useDeviceConnection } from "./views/DeviceConnect.tsx";
 const CalibrationWorkspace = lazy(() => import("./advanced/calibration/CalibrationWorkspace.tsx").then(module => ({ default: module.CalibrationWorkspace })));
-const MenuPrototype = lazy(() => import("./advanced/menu/MenuPrototype.tsx").then(module => ({ default: module.MenuPrototype })));
 import { hasAdvancedDevice } from "./midi/boardContext.ts";
 import { SynthContext } from "./views/SynthContext.tsx";
 import { TuningLayoutEditor } from "./views/TuningLayoutEditor.tsx";
@@ -89,8 +88,6 @@ export function App() {
         return <TuningLayoutEditor transport={transport} deviceHello={deviceHello} />;
       case "calibration":
         return advancedConnected && deviceHello ? <Suspense fallback={<p role="status">Opening calibration…</p>}><CalibrationWorkspace key={transport.label} transport={transport} hello={deviceHello} /></Suspense> : null;
-      case "menu":
-        return advancedConnected ? <Suspense fallback={<p role="status">Opening menu…</p>}><MenuPrototype transport={transport} connected={advancedConnected} /></Suspense> : null;
       case "synth":
         return <SynthContext transport={transport} hello={deviceHello} />;
     }
@@ -106,7 +103,7 @@ export function App() {
           </div>
         </div>
         <nav className="tabs" aria-label="Main views">
-          {[...views, ...(advancedConnected ? [{ key: "calibration" as const, label: "Calibration" }, { key: "menu" as const, label: "Device Menu" }] : [])].map((view) => (
+          {[...views, ...(advancedConnected ? [{ key: "calibration" as const, label: "Calibration" }] : [])].map((view) => (
             <button
               key={view.key}
               className={view.key === activeView ? "active" : ""}

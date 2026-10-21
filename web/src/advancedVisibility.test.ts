@@ -3,7 +3,7 @@ import { visibleLocation } from './advancedVisibility.ts';
 import type { AppLocation } from './navigation.ts';
 describe('unreleased Advanced navigation',()=>{
   it('blocks direct and restored Advanced routes without an Advanced connection',()=>{
-    for(const view of ['menu','calibration'] as const){
+    for(const view of ['calibration'] as const){
       const location: AppLocation={view};
       expect(visibleLocation(location,false)).toEqual({view:'layouts'});
       expect(visibleLocation(location,true)).toBe(location);

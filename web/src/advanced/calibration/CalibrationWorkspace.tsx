@@ -13,7 +13,7 @@ import { clampRange, phaseRange, scaleRange } from "./strike-view.mjs";
 import { engineMeasurement } from "./engines.mjs";
 import { chartColors, CurveChart, PressureCurveChart, Plot } from "./Charts.tsx";
 import { NumberField, VelocityControls } from "./VelocityControls.tsx";
-import { HallPeakMap, parseHallPeaks, parseHallRests } from "./HallPeakMap.tsx";
+import { HallPeakMap, parseHallPeaks, parseHallRests, parseHallRaw, parseHallLimits } from "./HallPeakMap.tsx";
 import { CapStudyPanel } from "./CapStudyPanel.tsx";
 import "./calibration.css";
 
@@ -37,6 +37,8 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
   const [step, setStep] = useState<Step>("hall"), [ready, setReady] = useState(false), [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("Reading calibration from your board…"), [error, setError] = useState(false);
   const [config, setConfig] = useState<LabConfig>(defaultConfig), [applied, setApplied] = useState<LabConfig>(defaultConfig);
+  const [hallLimits, setHallLimits] = useState<number[]>([]), [hallMinimum, setHallMinimum] = useState(1);
+  const [hallRaw, setHallRaw] = useState<number[]>([]);
   const [hallRests, setHallRests] = useState<number[]>([]);
   const [hallPeaks, setHallPeaks] = useState<number[]>([]);
   const [hall, setHall] = useState<Record<string, string>>({}), [velocityStatus, setVelocityStatus] = useState<Record<string, string>>({});
@@ -51,8 +53,8 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
   const [ledResults, setLedResults] = useState<Array<Record<string, string>>>([]), [ledRunning, setLedRunning] = useState(false), [ledMax, setLedMax] = useState(4), [ledDuration, setLedDuration] = useState(2000), [ledSuite, setLedSuite] = useState("brightness");
   const [confirm, setConfirm] = useState<{ title: string; text: string; action: () => Promise<void> } | null>(null);
   const [ramStatus, setRamStatus] = useState<RamSyncStatus>("synced"), [ramDetail, setRamDetail] = useState("");
-  const operation = useRef(false), alive = useRef(false), captureAbort = useRef(false), ledAbort = useRef(false), selected = useRef({ key, paused, filter, step, guided, rawDamper: false, hallPeaks: false });
-  selected.current = { key, paused, filter, step, guided, rawDamper: config.capabilities.includes("raw_damper"), hallPeaks: config.capabilities.includes("cal_peaks") };
+  const operation = useRef(false), alive = useRef(false), captureAbort = useRef(false), ledAbort = useRef(false), selected = useRef({ key, paused, filter, step, guided, rawDamper: false, hallPeaks: false, hallLive: false });
+  selected.current = { key, paused, filter, step, guided, rawDamper: config.capabilities.includes("raw_damper"), hallPeaks: config.capabilities.includes("cal_peaks"), hallLive: config.capabilities.includes("cal_live") };
   const supported = Boolean(hello.capabilityFlags & CapabilityFlag.AdvancedCalibrationLab);
   const hallActive = ["rest", "running"].includes(hall.status), locked = busy || capturing || ledRunning || hallActive || guided || capStudyActive;
   const dirty = JSON.stringify(config) !== JSON.stringify(applied);
@@ -89,7 +91,7 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
   }
   useEffect(() => {
     alive.current = true; captureAbort.current = ledAbort.current = false; setReady(false);
-    let polling = false, lastStatus = 0, disposed = false;
+    let polling = false, lastStatus = 0, lastMap = 0, disposed = false;
     if (!supported) { setMessage("This board firmware needs the Sync calibration update. Update main firmware, then reconnect HexBoard."); return () => { alive.current = false; }; }
     const initialize = async () => {
       try { await client.open(); if (disposed) return; await refresh(); if (!disposed && alive.current) { setReady(true); notify("Ready. Set up Hall keys first, then tune velocity and pressure."); } }
@@ -109,6 +111,10 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
           const sample = lines.map(line => parsePressure(line, current.rawDamper)).find(Boolean);
           if (sample) { setPressure(sample); if (sample.valid) setPressureHistory(previous => [...previous, { x: performance.now() / 1000, y: sample.pressure / 65535 * 100 }].slice(-64)); }
           const dropped = record(lines, "lab,").dropped; if (dropped) setMonitorDropped(Number(dropped));
+          if (current.step === "hall" && current.hallLive && performance.now() - lastMap > 200) {
+            lastMap = performance.now();
+            setHallRaw(parseHallRaw(await client.command("cal live")));
+          }
           if (performance.now() - lastStatus > 700) {
             lastStatus = performance.now();
             if (current.step === "hall") {
@@ -116,6 +122,7 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
               if (current.hallPeaks) {
                 const progress = await client.command("cal progress");
                 setHallPeaks(parseHallPeaks(progress)); setHallRests(parseHallRests(progress));
+                setHallLimits(parseHallLimits(progress)); setHallMinimum(Number(record(progress, "cal,peak_edit,").min) || 1);
               }
             }
             if (current.guided) {
@@ -246,7 +253,14 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
       <p>Release every key before starting. Keep them untouched while rest readings are captured. Then press each key firmly and release it. Finish after sweeping the whole board.</p>
       <ol className="calInstructions"><li>Start with all keys released.</li><li>{hall.status === "rest" ? "Capturing rest readings. Keep keys untouched…" : "Wait for rest capture to finish."}</li>
         <li>{hall.status === "running" ? "Capture is running. Press every key firmly, then release all keys." : "Sweep all 133 keys with a firm press."}</li><li>Finish, check coverage, then save Hall calibration.</li></ol>
-      {config.capabilities.includes("cal_peaks") && <HallPeakMap peaks={hallPeaks} rests={hallRests} phase={hall.status} disabled={busy || !ready} onView={view => void perform(async () => { await client.command(`cal lights ${view}`); })} />}
+      {config.capabilities.includes("cal_peaks") && <HallPeakMap limits={hallLimits} minimum={hallMinimum} onPeakEdit={config.capabilities.includes("cal_peak_edit") ? async (key, delta) => {
+        await perform(async () => {
+          await client.command(`cal peak ${key} ${delta}`);
+          const progress = await client.command("cal progress"); setHallPeaks(parseHallPeaks(progress));
+          setHall(record(await client.command("cal status"), "cal,status="));
+          notify(`Key ${key} peak applied in RAM. Save Hall calibration to keep it.`);
+        });
+      } : undefined} raw={hallRaw} liveSupported={config.capabilities.includes("cal_live")} peaks={hallPeaks} rests={hallRests} phase={hall.status} disabled={busy || !ready} onView={view => void perform(async () => { await client.command(`cal lights ${view}`); })} />}
       <div className="calReadings"><strong>{hall.valid ?? "—"}<small>of 133 keys ready</small></strong><span>{hall.status === "rest" ? "Rest capture" : hall.status === "running" ? "Press capture running" : hall.valid === "133" ? "Full board ready" : Number(hall.valid) > 0 ? "Partial coverage · only calibrated keys play" : "Calibration needed"}</span></div>
       <div className="calActions"><button type="button" className="primary" disabled={!ready || locked} onClick={run(async () => { await client.command("cal start"); setHallPeaks([]); setHallRests([]); setHall(record(await client.command("cal status"), "cal,status=")); notify("Keep keys released until rest capture finishes."); })}>Start Hall calibration</button>
         <button type="button" className="primary" disabled={!ready || busy || hall.status !== "running"} onClick={run(async () => { await client.command("cal finish"); setHall(record(await client.command("cal status"), "cal,status=")); notify("Capture finished. Check ready-key coverage before saving."); })}>Finish calibration</button>
