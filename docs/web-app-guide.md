@@ -77,10 +77,12 @@ keeps sources visible. Click **Envelope** or **LFO** to open its graphical
 editor; **Assign to controls** selects that source. Available destinations glow
 faintly in the selected source’s color; unavailable or full-route targets do
 not glow. The glow clears in **Edit values**. Drag a destination knob
-for signed modulation depth, then release to return to **Edit values**. Each
-generated source permits four destinations, and each target permits four sources
-across velocity, pressure, release, tilt, Envelope and LFO. At either limit, remove a route to
-add another. Importing an older six-route patch reports removed assignments.
+for signed modulation depth, then release to return to **Edit values**. Physical
+Strings shares modulation capacity across velocity, pressure, release, tilt,
+Envelope and LFO; each target permits four sources. The capacity meter shows
+current usage and the cost of a proposed assignment. At capacity, remove an
+assignment before adding another. Capacity units describe patch complexity,
+not measured CPU usage.
 Source rings show depth and direction; a white dot shows the combined value.
 **Delete modulation** removes a single route directly or offers a source
 choice when several routes exist. Escape returns to **Edit values** from
@@ -154,7 +156,7 @@ effects and output protection still follow both components. Device flash storage
 are not implemented.
 
 **Save on computer** stores presets in this browser. Export/Import uses JSON
-v22 and migrates earlier physical presets. Drafts survive navigation and
+v22; earlier development formats are unsupported. Drafts survive navigation and
 reconnection. **Preview draft** applies it to RAM; **Start synth** applies and
 starts it. Durable Advanced device preset saving and Z-impact excitation
 remain pending. Refresh after a firmware/editor update if the protocol is
@@ -819,8 +821,7 @@ Advanced Marbles mode repeats irregular spatial strikes into the existing
 string. Drag Drop center above the string, adjust Drop spread, and move Impact
 hardness from rubber to steel. Contact strength sets hit energy; Marbles sets
 average rate. Hits persist through bounded release tails. Mechanical modes
-retain their clearance/mass/gravity controls. v4 presets migrate mode identity
-and enabled marble streams automatically.
+retain their clearance/mass/gravity controls.
 
 The Advanced **Striker material** pad controls hardness × resonance for the
 initial strike, independently of string stiffness/loss. Bow replaces that pad
@@ -838,9 +839,9 @@ parameter knob to set modulation depth. Releasing it returns to normal editing.
 Both sources can shape voice level before the voices are mixed. Source settings
 and assignments save with the sound. Their meters show a labeled last-key
 preview; the instrument generates modulation independently for every note.
-Envelope and LFO each support six destinations. At the limit, existing routes
-remain editable; hovering a new destination explains that you need to remove
-a route before adding another.
+Envelope and LFO share Physical Strings’ modulation capacity with other sources.
+At capacity, existing routes remain editable; remove an assignment to make room
+for another destination.
 
 In Contact, **Contact starts → Note off** leaves held notes clean, then starts
 Mute, Bounce, Rattle or Marbles when you release the key. Note on keeps the
@@ -911,8 +912,7 @@ strike decay, bow motion, material/drive and contacts affect the drawing.
 **Motion preview** identifies it as a visual model. The triangle replays a
 visual gesture without playing audio; pause disables motion. Animation also
 pauses off-screen and respects reduced-motion preferences. Pickup and strike
-handles remain draggable. Gentle drive is retired; existing Gentle patches
-load with Original drive and keep their other settings.
+handles remain draggable.
 
 ## Advanced Juno, DX7 and preset voice tests
 

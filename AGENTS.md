@@ -29,6 +29,8 @@ Applies repository-wide. Code is authoritative; correct stale docs when relevant
   when persisted layout or byte meaning changes. Preserve settings from version 32
   onward with explicit, tested migrations; append new keys where possible and
   initialize new fields from factory defaults.
+- Advanced browser synth presets are unreleased: support current formats without
+  maintaining migrations unless compatibility is explicitly requested.
 - `factory-library/` is source: web-compatible preset JSON, tuning bundles, and
   `.hexwav` wavetables. Source subdirectories become device folders.
   `config.json` owns factory settings and selections; keep it aligned with
@@ -50,7 +52,7 @@ Applies repository-wide. Code is authoritative; correct stale docs when relevant
 - Check relevance for behavior, settings, protocol, menu, build, hardware, and
   architecture changes. Restoring an already documented contract needs no edit;
   UI layout matters only when interaction, information, workflow, or a durable
-  constraint changes. If no docs change is needed, explain why in the final report.
+  constraint changes.
 - Follow the audience and ownership map in [docs/README.md](docs/README.md).
   User guides cover operation, choices, and recovery; developer references cover
   implementation, runtime, schemas, and verification. Link instead of duplicating.
@@ -63,6 +65,7 @@ Applies repository-wide. Code is authoritative; correct stale docs when relevant
 
 - Run `git diff --check` and report verification results.
 - Firmware changes: run `make`; escalate and retry blocked Arduino cache access.
-- Factory content or web code/assets: run the factory generator and relevant
-  web tests/build. Documentation-only changes need no firmware or web build;
+- Web code/assets: run relevant web tests and the web build. Run the factory
+  generator when factory content, encoding, validation, or factory-derived
+  browser assets change. Documentation-only changes need no firmware or web build;
   check affected links and validate technical claims against source.

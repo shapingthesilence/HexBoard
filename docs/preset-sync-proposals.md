@@ -19,7 +19,7 @@ Recommended TLVs:
 
 | Tag | Name | Value |
 | --- | --- | --- |
-| `0x20` | `SettingsSchemaVersion` | `u8`, current firmware is `29` |
+| `0x20` | `SettingsSchemaVersion` | `u8`, negotiated settings schema |
 | `0x21` | `SettingValues` | Repeated `<setting-key-u8> <value-u8>` records |
 | `0x22` | `TuningRef` | Object reference |
 | `0x23` | `LayoutRef` | Object reference |

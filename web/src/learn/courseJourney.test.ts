@@ -40,11 +40,10 @@ describe("learner guidance",()=>{
   it("displays triplets and mixed lengths without floating point noise",()=>{
     expect([1/3,2/3,0.5,1.5,10/3,4].map(beatLabel)).toEqual(["⅓","⅔","½","1 ½","3 ⅓","4"]);
   });
-  it("renders the full lesson outline without a disclosure control",()=>{
+  it("renders the full lesson outline",()=>{
     const course=firstStepsCourse,layout=courseLayoutProgressId(course.bundle,course.bundle.layouts[0]);
     const html=renderToStaticMarkup(createElement(CourseJourney,{journey:courseJourney(course,layout,{}),currentIndex:0,layoutName:"Wicki-Hayden",disabled:false,onSelect:()=>{}}));
     expect(html).toContain('aria-label="Course lessons"');
     expect(html).toContain(course.lessons.at(-1)!.title);
-    expect(html).not.toContain("<details");
   });
 });

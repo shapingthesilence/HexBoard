@@ -644,8 +644,9 @@ Always run:
 git diff --check
 ```
 
-Run `make` for firmware changes and the factory generator plus relevant web
-tests/build for factory or companion-app changes.
+Run `make` for firmware changes and relevant web tests/build for companion-app
+changes. Run the factory generator when factory content, encoding, validation,
+or factory-derived browser assets change.
 
 Run portable firmware checks, including 100,000 randomized packing cases, with
 address and undefined-behavior sanitizers:

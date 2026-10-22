@@ -1,4 +1,4 @@
-import {modulationUsage,modulationConnections} from "./modulationBudget.ts";
+import {modulationUsage} from "./modulationBudget.ts";
 import {targetDepths, targetSourceLimit} from "./targetModulation.ts";
 import {validVoiceBudget,type VoiceBudgetProfile} from "./voiceBudget.ts";
 export function releaseSeconds(value:number) { const v=value/65535; return v<=.8 ? .03+.7125*v : .6*Math.exp(14.978661*(v-.8)); }
@@ -54,9 +54,9 @@ export const effectTypes = [
   {id:3,name:"Volume Steps",controls:["Tempo","Depth"]},
   {id:4,name:"Chorus",controls:["Mix","Rate","Depth"]}
 ];
-export function validateFx(value: unknown, legacy=false): FxRack {
+export function validateFx(value: unknown): FxRack {
   const f=value as FxRack;
-  if(!f || !Array.isArray(f.order) || f.order.length>5 || new Set(f.order).size!==f.order.length || f.order.some(id=>!Number.isInteger(id)||id<1||id>(legacy?5:4)) || !Array.isArray(f.values) || f.values.length!==5 || f.values.some(row=>!Array.isArray(row)||row.length!==4||row.some(v=>!Number.isInteger(v)||v<0||v>65535)))throw Error("Invalid effect rack.");
+  if(!f || !Array.isArray(f.order) || f.order.length>5 || new Set(f.order).size!==f.order.length || f.order.some(id=>!Number.isInteger(id)||id<1||id>4) || !Array.isArray(f.values) || f.values.length!==5 || f.values.some(row=>!Array.isArray(row)||row.length!==4||row.some(v=>!Number.isInteger(v)||v<0||v>65535)))throw Error("Invalid effect rack.");
   const steps=f.steps??defaultFx().steps;if(!Array.isArray(steps)||steps.length!==16||steps.some(v=>!Number.isInteger(v)||v<0||v>65535))throw Error("Invalid volume steps.");
   return {order:[...f.order],values:f.values.map(row=>[...row]),steps:[...steps]};
 }
@@ -68,19 +68,16 @@ export function effectDescription(id:number,index:number,value:number) {
   if(id===5 && index===0)return `${Math.round(10+170*v)} ms`;
   return `${Math.round(v*(id===5&&index===1?75:100))}%`;
 }
-// Legacy import limit only; live assignments use the shared budget.
-export const modulationRouteLimit=4;
 export function modulationRouteCount(routes:number[],source:number){return routes.filter((v,i)=>i%2===source&&v!==0).length;}
 export function canAssignModulation(routes:number[],id:number,source:number){const copy=[...routes];copy[id*2+source]=copy[id*2+source]||1;return modulationUsage({routes:Array(99).fill(0),tiltRoutes:Array(66).fill(0),modulation:{routes:copy}}).fits;}
 export interface ModulationSources { settings:number[]; routes:number[] }
 export const defaultModulation = ():ModulationSources => ({settings:[14000,30000,42000,34000,0,0,32768,0,30000,0,65535,0,0,0,0,0],routes:Array(66).fill(0)});
 export function modulationSeconds(v:number){return v===0?0:.001*Math.exp(9.903488*v/65535);}
 export function modulationRate(v:number){return .05*Math.exp(5.991465*v/65535);}
-export function validateModulation(value:unknown,limit=modulationConnections,legacy=false):ModulationSources {
+export function validateModulation(value:unknown):ModulationSources {
   const m=value as ModulationSources;
-  if(!m||!Array.isArray(m.settings)||m.settings.length!==16||m.settings.some(v=>!Number.isInteger(v)||v<0||v>65535)||[7,10,14].some(i=>m.settings[i]!==0&&m.settings[i]!==65535)||m.settings[9]%13107!==0||!Array.isArray(m.routes)||m.routes.length!==(legacy?64:66)||m.routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||[8,21,27,31].some(id=>m.routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid envelope / LFO modulation.");
-  if(legacy)for(let source=0;source<2;++source)if(modulationRouteCount(m.routes,source)>limit)throw Error("Invalid legacy modulation routes.");
-  if(!legacy&&!modulationUsage({routes:Array(99).fill(0),tiltRoutes:Array(66).fill(0),modulation:m}).fits)throw Error("Modulation capacity full. Remove a destination before adding another.");
+  if(!m||!Array.isArray(m.settings)||m.settings.length!==16||m.settings.some(v=>!Number.isInteger(v)||v<0||v>65535)||[7,10,14].some(i=>m.settings[i]!==0&&m.settings[i]!==65535)||m.settings[9]%13107!==0||!Array.isArray(m.routes)||m.routes.length!==66||m.routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||[8,21,27,31].some(id=>m.routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid envelope / LFO modulation.");
+  if(!modulationUsage({routes:Array(99).fill(0),tiltRoutes:Array(66).fill(0),modulation:m}).fits)throw Error("Modulation capacity full. Remove a destination before adding another.");
   return {settings:[...m.settings],routes:[...m.routes]};
 }
 export interface SampleLoop {mode:0|1|2;start:number;end:number;crossfade:number}
@@ -95,7 +92,7 @@ export function validateSample(value:unknown):SampleExciter{
  if(![0,1,2].includes(loop.mode)||![loop.start,loop.end,loop.crossfade].every(Number.isInteger)||loop.start<0||loop.end>s.frames.length||loop.crossfade<0||loop.crossfade>3200||loop.crossfade===1||(loop.mode===0?(loop.start!==0||loop.end!==0||loop.crossfade!==0):(loop.end-loop.start<160||loop.crossfade*2>loop.end-loop.start)))throw Error("Use a loop of at least 10 ms, with a crossfade up to half its length (maximum 200 ms).");
  return {...s,direct,priority,loop:{...loop},name:s.name.slice(0,80),frames:[...s.frames]};
 }
-export interface PhysicalPreset { voiceBudget?:VoiceBudgetProfile;  format: "hexboard.physical.v22"; migrationNotes?:string[]; modulation:ModulationSources; tiltRoutes: number[]; effects: FxRack; sample:SampleExciter; name: string; parameters: number[]; routes: number[]; velocityEngine: PhysicalVelocityEngine }
+export interface PhysicalPreset { voiceBudget?:VoiceBudgetProfile;  format: "hexboard.physical.v22"; modulation:ModulationSources; tiltRoutes: number[]; effects: FxRack; sample:SampleExciter; name: string; parameters: number[]; routes: number[]; velocityEngine: PhysicalVelocityEngine }
 export const initialPreset: PhysicalPreset = {
   format: "hexboard.physical.v22", modulation:defaultModulation(), tiltRoutes: Array(66).fill(0), effects: defaultFx(), sample:defaultSample(), name: "Pressure Sweep", velocityEngine: 0,
   parameters: [56000, 9000, 36000, 30000, 24000, 12000, 14000, 43690, 0, 65535, 30000, 18000, 10000, 18000, 50000, 32768, 32768, 0, 32768, 22000, 16000],
@@ -146,95 +143,14 @@ export function physicalPresetFromUnknown(value: unknown): PhysicalPreset {
   const valid = (v: unknown, count: number, low: number, high: number): v is number[] =>
     Array.isArray(v) && v.length === count && v.every(n => Number.isInteger(n) && n >= low && n <= high);
   if (typeof p.name !== "string" || !p.name.trim() || p.name.length > 80) throw Error("Give the preset a name.");
-  if (p.format === "hexboard.physical.v1" && valid(p.parameters, 4, 0, 65535) && valid(p.routes, 12, -65536, 65536)) {
-    const parameters = [...p.parameters, 32768, 32768, 0, 43690];
-    parameters[0] = Math.min(65535, Math.round(parameters[0] + 2.5 / 4.38202663 * parameters[1]));
-    return physicalPresetFromUnknown({ ...p, format: "hexboard.physical.v2", parameters, routes: [...p.routes, ...Array(12).fill(0)] });
-  }
-  if (p.format === "hexboard.physical.v2" && valid(p.parameters, 8, 0, 65535) && valid(p.routes, 24, -65536, 65536) && p.routes.slice(21).every(v => v === 0)) {
-    return physicalPresetFromUnknown({ format: "hexboard.physical.v3", name: p.name.trim(), parameters: [...p.parameters, 0, 65535, 30000, 18000, 36000, 18000, p.parameters[5], 0], routes: [...p.routes, ...Array(24).fill(0)] });
-  }
-  if (p.format === "hexboard.physical.v3" && valid(p.parameters, 16, 0, 65535) && valid(p.routes, 48, -65536, 65536) && p.routes.slice(21,27).every(v => v === 0))
-    return physicalPresetFromUnknown({ format: "hexboard.physical.v4", name: p.name.trim(), parameters: [...p.parameters, 32768, 0], routes: [...p.routes, ...Array(6).fill(0)] });
-  if (p.format === "hexboard.physical.v4" && valid(p.parameters,18,0,65535) && valid(p.routes,54,-65536,65536) && p.routes.slice(21,27).every(v=>v===0)) {
-    const parameters=[...p.parameters,32768,22000];
-    const mode=Math.round(parameters[8]/21845);
-    parameters[8]=Math.round((mode===1 && (parameters[17]>0 || p.routes.slice(51,54).some(v=>v!==0)) ? 4 : mode)*65535/4);
-    return physicalPresetFromUnknown({format:"hexboard.physical.v5",name:p.name.trim(),parameters,routes:[...p.routes,...Array(6).fill(0)]});
-  }
-  if (p.format === "hexboard.physical.v5" && valid(p.parameters,20,0,65535) && valid(p.routes,60,-65536,65536) && p.routes.slice(21,27).every(v=>v===0)) {
-    const parameters=[...p.parameters,16000], routes=[...p.routes,0,0,0];
-    if(parameters[8]!==0) { parameters[2]=parameters[12]; for(let i=0;i<3;i++)routes[6+i]=routes[36+i]; }
-    parameters[12]=10000; routes.splice(36,3,0,0,0);
-    return physicalPresetFromUnknown({format:"hexboard.physical.v6",name:p.name,parameters,routes});
-  }
-  if(p.format==="hexboard.physical.v6" && valid(p.parameters,21,0,65535) && valid(p.routes,63,-65536,65536) && p.routes.slice(21,27).every(v=>v===0)) {
-    return physicalPresetFromUnknown({format:"hexboard.physical.v7",name:p.name,
-      parameters:p.parameters.map((v,i)=>i===3?Math.round(v*.8):v).concat([0,12000,30000]),
-      routes:p.routes.map((v,i)=>i>=9&&i<12?Math.round(v*.8):v).concat(Array(9).fill(0))});
-  }
-  if(p.format==="hexboard.physical.v7" && valid(p.parameters,24,0,65535) && valid(p.routes,72,-65536,65536))
-    return physicalPresetFromUnknown({...p,format:"hexboard.physical.v8",parameters:p.parameters.map((v,i)=>i===7?Math.min(v,21845):v)});
-  if (p.format === "hexboard.physical.v8" && valid(p.parameters,24,0,65535) && valid(p.routes,72,-65536,65536))
-    return physicalPresetFromUnknown({...p,format:"hexboard.physical.v9",velocityEngine:0});
-  if(p.format === "hexboard.physical.v9")return physicalPresetFromUnknown({...p,format:"hexboard.physical.v11",effects:defaultFx()});
-  if(p.format === "hexboard.physical.v10"){const effects=validateFx(p.effects,true);return physicalPresetFromUnknown({...p,format:"hexboard.physical.v11",effects:{...effects,order:effects.order.filter(id=>id!==5)}});}
-  if(p.format === "hexboard.physical.v11")return physicalPresetFromUnknown({...p,format:"hexboard.physical.v12",tiltRoutes:Array(48).fill(0)});
-  if(p.format === "hexboard.physical.v12" && valid(p.parameters,24,0,65535) && valid(p.routes,72,-65536,65536) && valid(p.tiltRoutes,48,-65536,65536)) {
-    return physicalPresetFromUnknown({...p,format:"hexboard.physical.v13",parameters:[...p.parameters,p.parameters[2],p.parameters[12]],routes:[...p.routes,...p.routes.slice(6,9),...p.routes.slice(36,39)],tiltRoutes:[...p.tiltRoutes,...p.tiltRoutes.slice(4,6),...p.tiltRoutes.slice(24,26)]});
-  }
-  if(p.format === "hexboard.physical.v13" && valid(p.parameters,26,0,65535) && valid(p.routes,78,-65536,65536) && valid(p.tiltRoutes,52,-65536,65536)) {
-    return physicalPresetFromUnknown({...p,format:"hexboard.physical.v14",parameters:[...p.parameters,0],routes:[...p.routes,0,0,0],tiltRoutes:[...p.tiltRoutes,0,0]});
-  }
-  if(p.format === "hexboard.physical.v14" && valid(p.parameters,27,0,65535) && valid(p.routes,81,-65536,65536) && valid(p.tiltRoutes,54,-65536,65536)) {
-    return physicalPresetFromUnknown({...p,format:"hexboard.physical.v15",parameters:[...p.parameters,0],routes:[...p.routes,0,0,0],tiltRoutes:[...p.tiltRoutes,0,0]});
-  }
-  if(p.format==="hexboard.physical.v15" && valid(p.parameters,28,0,65535) && valid(p.routes,84,-65536,65536) && valid(p.tiltRoutes,56,-65536,65536)) {
-    if(p.routes.slice(81,84).some(Boolean)||p.tiltRoutes.slice(54,56).some(Boolean))throw Error("Invalid discrete modulation routes.");
-    return physicalPresetFromUnknown({...p,format:"hexboard.physical.v16",parameters:[...p.parameters,0,0],routes:[...p.routes,0,0,0,0,0,0],tiltRoutes:[...p.tiltRoutes,0,0,0,0]});
-  }
-  if(p.format==="hexboard.physical.v16" && valid(p.parameters,30,0,65535) && valid(p.routes,90,-65536,65536) && valid(p.tiltRoutes,60,-65536,65536)) {
-    return physicalPresetFromUnknown({...p,format:"hexboard.physical.v17",parameters:[...p.parameters,0],routes:[...p.routes,0,0,0],tiltRoutes:[...p.tiltRoutes,0,0]});
-  }
-  if(p.format==="hexboard.physical.v17")return physicalPresetFromUnknown({...p,format:"hexboard.physical.v18",modulation:{settings:defaultModulation().settings,routes:Array(62).fill(0)}});
-  if(p.format==="hexboard.physical.v18" && valid(p.parameters,31,0,65535)&&valid(p.routes,93,-65536,65536)&&valid(p.tiltRoutes,62,-65536,65536)){
-    const m=p.modulation as ModulationSources;
-    if(!m||!Array.isArray(m.routes)||m.routes.length!==62)throw Error("Invalid envelope / LFO modulation.");
-    return physicalPresetFromUnknown({...p,format:"hexboard.physical.v19",parameters:[...p.parameters,0],routes:[...p.routes,0,0,0],tiltRoutes:[...p.tiltRoutes,0,0],modulation:{...m,routes:[...m.routes,0,0]}});
-  }
-  if(p.format==="hexboard.physical.v19" && valid(p.parameters,32,0,65535) && valid(p.routes,96,-65536,65536) && valid(p.tiltRoutes,64,-65536,65536)){
-    const modulation=validateModulation(p.modulation,6,true),notes:string[]=[];
-    if(p.routes.slice(84,87).some(Boolean)||p.tiltRoutes.slice(56,58).some(Boolean)||modulation.routes.slice(56,58).some(Boolean))throw Error("Invalid legacy strike-shape routes.");
-    if(p.routes.slice(90,93).some(Boolean)||p.tiltRoutes.slice(60,62).some(Boolean)||modulation.routes.slice(60,62).some(Boolean))throw Error("Invalid retired parameter routes.");
-    for(let source=0;source<2;++source){
-      const destinations=Array.from({length:32},(_,id)=>id).filter(id=>modulation.routes[id*2+source]!==0);
-      destinations.sort((a,b)=>a===7?-1:b===7?1:Math.abs(modulation.routes[b*2+source])-Math.abs(modulation.routes[a*2+source])||a-b);
-      const removed=destinations.slice(modulationRouteLimit);
-      for(const id of removed)modulation.routes[id*2+source]=0;
-      if(removed.length)notes.push(`${source===0?"Envelope":"LFO"}: ${removed.length} assignment${removed.length===1?"":"s"} removed (four destinations per source).`);
-    }
-    const effects=validateFx(p.effects);effects.values[4]=defaultFx().values[4];
-    return physicalPresetFromUnknown({...p,format:"hexboard.physical.v20",parameters:p.parameters.map((v,i)=>i===30?48000:i===28?0:i===2&&Math.round((p.parameters as number[])[28]*3/65535)===1?Math.round(v*.45):v),effects,modulation,migrationNotes:notes});
-  }
-  if(p.format==="hexboard.physical.v20"){
-    const effects=validateFx(p.effects);const oldRate=.1+11.9*effects.values[2][0]/65535;
-    let division=0;while(oldRate*16*60/(1<<division)>240&&division<7)division++;
-    const tempo=Math.max(40,Math.min(240,oldRate*16*60/(1<<division)));
-    effects.values[2]=[Math.round((tempo-40)/200*65535),effects.values[2][1],6000,division*16+15];
-    effects.steps=Array.from({length:16},(_,i)=>Math.round((1-Math.abs(2*i/16-1))*65535));
-    return physicalPresetFromUnknown({...p,format:"hexboard.physical.v21",sample:defaultSample(),effects});
-  }
-  if(p.format==="hexboard.physical.v21"){
-    if(!valid(p.parameters,32,0,65535)||!valid(p.routes,96,-65536,65536)||!valid(p.tiltRoutes,64,-65536,65536))throw Error("Invalid previous physical preset.");
-    const m=validateModulation(p.modulation,4,true),sample=validateSample(p.sample);
-    return physicalPresetFromUnknown({...p,format:"hexboard.physical.v22",parameters:[...p.parameters,sample.direct],routes:[...p.routes,0,0,0],tiltRoutes:[...p.tiltRoutes,0,0],modulation:{...m,routes:[...m.routes,0,0]}});
-  }
+  if (p.format !== "hexboard.physical.v22")
+    throw Error("This file is not a supported physical string preset. Use JSON v22.");
   const discrete=[7,8,21,27,31];
   if (!valid(p.tiltRoutes,66,-65536,65536) || discrete.some(id=>(p.tiltRoutes as number[]).slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid tilt modulation routes.");
-  if (p.format !== "hexboard.physical.v22" || !valid(p.parameters,33,0,65535) || !valid(p.routes,99,-65536,65536) || discrete.some(id=>(p.routes as number[]).slice(id*3,id*3+3).some(Boolean)) || !velocityEngines.some(e => e.id === p.velocityEngine))
+  if (!valid(p.parameters,33,0,65535) || !valid(p.routes,99,-65536,65536) || discrete.some(id=>(p.routes as number[]).slice(id*3,id*3+3).some(Boolean)) || !velocityEngines.some(e => e.id === p.velocityEngine))
     throw Error("This file is not a supported physical string preset.");
   if(!Array.isArray((p.effects as FxRack)?.steps)||((p.effects as FxRack).values[2][3]>127||(p.effects as FxRack).values[0][2]>4))throw Error("Invalid volume step configuration.");
-  const result:PhysicalPreset={format:"hexboard.physical.v22",sample:validateSample({...validateSample(p.sample),direct:p.parameters[32]}),migrationNotes:Array.isArray(p.migrationNotes)?p.migrationNotes.filter((v):v is string=>typeof v==="string").slice(0,2):undefined,modulation:validateModulation(p.modulation),tiltRoutes:[...(p.tiltRoutes as number[])],effects:validateFx(p.effects),name:p.name.trim(),parameters:[...p.parameters],routes:[...p.routes],velocityEngine:p.velocityEngine as PhysicalVelocityEngine};
+  const result:PhysicalPreset={format:"hexboard.physical.v22",sample:validateSample({...validateSample(p.sample),direct:p.parameters[32]}),modulation:validateModulation(p.modulation),tiltRoutes:[...(p.tiltRoutes as number[])],effects:validateFx(p.effects),name:p.name.trim(),parameters:[...p.parameters],routes:[...p.routes],velocityEngine:p.velocityEngine as PhysicalVelocityEngine};
   if(result.parameters.some((_,id)=>targetDepths(result,id).filter(Boolean).length>targetSourceLimit))throw Error("Each target allows four modulation sources. Remove an assignment before adding another.");
   if(!modulationUsage(result).fits)throw Error("Modulation capacity full. Remove a destination before adding another.");
   const voiceBudget=validVoiceBudget(result,p.voiceBudget);return voiceBudget?{...result,voiceBudget}:result;

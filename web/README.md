@@ -202,9 +202,10 @@ heartbeat or timeout after entry; abandoned browsers require encoder hold.
 
 ## Verification
 
-Run `npm test` and `npm run build` for app code changes. Factory-content changes
-also use the [factory generator](../factory-library/README.md). Tests are
-colocated with protocol, catalog, MIDI, draft, and view helpers.
+Run `npm test` and `npm run build` for app code changes. Run the
+[factory generator](../factory-library/README.md) when factory content, encoding,
+validation, or factory-derived browser assets change. Tests are colocated with
+protocol, catalog, MIDI, draft, and view helpers.
 
 For changes to device operations, exercise list/read/write/apply/delete/abort,
 ACK/NACK failures, disconnects, dependency checks, and draft preservation on real
@@ -259,24 +260,9 @@ envelopes, table loading, and note lifecycle.
 
 Course authoring helpers: `beatGrid.ts` owns straight/triplet divisions, `courseStructure.ts` owns outline moves, compatibility and embedded layout transposition, and `CourseMarkdown.tsx` renders safe course prose. Completion policies and content pages are defined in the [course format](../docs/course-format.md).
 
-Shared workspace spacing, panels, and section navigation live in
-`src/styles.css`. Editing views and course authoring use normal page scrolling;
-the synth save summary remains sticky. Synth preset and wavetable selection stays
-inside the library panel, and sound metadata, modulation envelopes, and LFO
-controls are always expanded. The tuning library uses a native modal dialog
-with Escape dismissal and focus restoration; the current editing section remains
-selected behind it. The compact tuning bundle header scrolls with the page.
-
-From 1000 × 600 CSS pixels, Learn fills the viewport. Course instruments use the
-remaining height after the measured lesson panel and feedback; optional finger
-guidance uses a neighboring column. The course outline and expanded Lesson
-settings scroll independently. Smaller windows allow page scrolling; narrow
-windows stack panels.
-
-The tuning editor fits the whole board to the available window height and width,
-accounting for device rotation. Its preview measures its document position and
-container dimensions when the workspace or window changes. The button inspector
-flows below the preview without changing its height or adding a scroll area.
+Shared styling lives in `src/styles.css`. Library dialogs must support Escape
+dismissal and restore focus. Board previews must account for device rotation
+and remain usable in small windows; source owns panel placement and scrolling.
 
 ## Built-in curriculum
 
@@ -315,12 +301,13 @@ capture/guided/profile work pauses updates. Explicit Save is separate. It
 imports no firmware sources or Web Serial APIs. Explicit Hall/response saves use
 existing board storage. Connected Advanced also provides a Physical Strings
 editor with independent exciter/contact materials, per-note envelope/LFO
-sources, four generated routes per source, a localized preparation pin,
+sources using a shared modulation capacity, a localized preparation pin,
 irregular tension/bow texture, a shared formant Body EQ and an ordered singleton
 FX rack with five distortion characters and programmable Volume Steps. A short
 mono sample import/trim editor includes baked fade-in/out editing, a waveform
 envelope and actual-engine preview. Physical JSON v22
-and synth wire v17 are paired with current Advanced firmware. Durable tuning
+and synth wire v17 are paired with current Advanced firmware. Physical preset
+imports accept only v22; earlier development formats are unsupported. Durable tuning
 bundles and device synth-preset storage remain unavailable. Until hardware release, Advanced UI is hidden offline and
 manual Advanced target selection is unavailable. Original synth drafts retain their
 context. The app builds/tests independently of either firmware checkout;
@@ -328,20 +315,19 @@ keep these boundaries when moving it to a standalone repository later.
 
 ## Advanced synth editors
 
-The Synth context on Advanced offers Physical Strings, amber Juno and teal DX7,
-with shared direct modulation targeting and the right-side effects rack. Updated Advanced firmware advertises capability bit 20. Classic
+The Advanced Synth context offers Physical Strings, Juno, DX7, and a
+capability-gated Sampler, with shared modulation and effects where supported. Updated Advanced firmware advertises capability bit 20. Classic
 presets use `hexboard.advanced.v2`; DX7 Import accepts checksum-validated single
 voices and 32-voice SysEx banks. Imported voices remain dry until you choose
 Add Advanced expression. Explicit Load/Preview/Start saves the numeric startup
 sound; ordinary drags update RAM. There is no macro system or compatibility loader for macro presets.
 
 For offline authoring and visual QA, `npm run dev` also serves
-`/advanced-preview.html`. It has all three editors without a device connection.
+`/advanced-preview.html`. Engine previews work without a device connection;
+connected engine availability follows advertised capabilities.
 
-Envelope and LFO source editors open from the modulation toolbar. Only effects occupy the side rack. Juno/DX7 reuse their native LFO and voice envelopes for assignments; voice
-envelopes stay beside the sound controls. Juno currently offers Distortion, Volume
+Juno/DX7 reuse their native LFO and voice envelopes for assignments. Juno currently offers Distortion, Volume
 Steps and Chorus; DX7 also offers Reverb, based on the measured full-stack budget.
-Physical Body EQ appears inside its FX rack before the ordered effects.
 
 **Test voice limit** measures the current patch, modulation and FX rack on the audio processor against a 99% render budget. The highest passing held-note count and two tail slots are saved with the computer preset, JSON export and numeric startup patch. Any edit invalidates the result and returns to eight held voices until retested. Qualification revision 2 requires a fresh measurement after the macro removal. Physical Strings currently has an eight-voice allocation ceiling; Juno and DX7 can test higher counts. Testing mutes playback and can be cancelled.
 

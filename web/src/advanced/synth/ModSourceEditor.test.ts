@@ -6,9 +6,7 @@ import {modulationRouteCount,canAssignModulation,defaultModulation,validateModul
 import {decodeModulation} from './client.ts';
 import {encodeU21} from '../../protocol/index.ts';
 describe('Editable envelope and LFO sources',()=>{
-  it('migrates old presets with inactive routes and validates discrete source settings',()=>{
-    const migrated=physicalPresetFromUnknown({...initialPreset,format:'hexboard.physical.v17',parameters:initialPreset.parameters.slice(0,31),routes:initialPreset.routes.slice(0,93),tiltRoutes:initialPreset.tiltRoutes.slice(0,62),modulation:undefined});
-    expect(migrated.modulation).toEqual(defaultModulation());
+  it('validates discrete source settings and signed wire routes',()=>{
     for(const id of [7,9,10,14]){const m=defaultModulation();m.settings[id]=1;expect(()=>validateModulation(m)).toThrow();}
     const m=defaultModulation();m.routes[16]=1;expect(()=>validateModulation(m)).toThrow();m.routes[16]=0;m.routes[14]=65536;expect(validateModulation(m)).toEqual(m);
     const packet=[17,...m.settings.flatMap(encodeU21),...m.routes.flatMap(v=>encodeU21(v+65536))];expect(decodeModulation(packet)).toEqual(m);expect(()=>decodeModulation(packet.slice(1))).toThrow();

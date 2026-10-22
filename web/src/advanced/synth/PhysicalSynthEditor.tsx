@@ -312,7 +312,6 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
       </div>
     </div>
 
-    {preset.migrationNotes?.length? <p className="panel-note" role="status">{preset.migrationNotes.join(" ")}</p>:null}
     <div className="physical-workspace"><div className="instrument-workspace">
     <div className="physical-grid compact-shaping"><fieldset className={`material-panel exciter-panel${preset.sample.enabled&&!bowMode?" sample-exciter":""}`} disabled={busy}><legend>Exciter</legend>
 

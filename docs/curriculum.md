@@ -207,8 +207,7 @@ Before including a course, verify portable export/import, complete pitch/button
 compatibility on each offered layout, whole-shape translation where taught,
 rests and onset grids, goal-tempo grading, independence, and selective repetition
 policies. Review instructions against the actual controls and what the evaluator
-can establish. Run the web tests/build, factory generator, and diff checks per
-[AGENTS.md](../AGENTS.md). Firmware builds apply when firmware changes.
+can establish. Follow [AGENTS.md](../AGENTS.md) for relevant automated checks.
 
 Play the complete routes on real hardware and run beginner sessions before
 claiming release acceptance. Check reach, comfortable repositioning, physical

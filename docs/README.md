@@ -38,8 +38,8 @@ schema reference, without a migration narrative.
 
 ## Proposed Designs
 
-[Learning program](learning-program-plan.md) records the staged learning plan,
-the implemented learning runtime and practice scope, and proposed later product milestones.
+[Learning program](learning-program-plan.md) records product direction and
+proposed learning milestones.
 The [curriculum](curriculum.md) separates included courses from planned content.
 
 [Architecture proposals](architecture-proposals.md) describe unimplemented
