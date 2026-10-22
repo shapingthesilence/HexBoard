@@ -350,7 +350,9 @@ Persistent menu items combine:
 - page insertion;
 - optional preview and post-change hooks.
 
-Catalogs use `VirtualListMenu`, not a GEM tree per stored object. The shared
+Catalogs use `VirtualListMenu`, not a GEM tree per stored object. Key and the
+Scale Lock checkbox are provider rows in the virtual Scales list; toggling the
+checkbox updates the runtime boolean and persisted setting without allocating menu items. The shared
 128×128 layout has an 18-pixel header, divider at y=15, and rows beginning at
 y=18. Stored non-root folder paths omit a leading slash.
 

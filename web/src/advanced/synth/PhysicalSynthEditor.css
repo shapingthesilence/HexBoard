@@ -380,3 +380,11 @@
 
 .physical-editor .sound-history { display:flex;gap:3px;padding-right:6px;border-right:1px solid var(--border-strong); }
 .physical-editor .contact-material { border-bottom:0;border-top:1px solid var(--edge);margin:10px 0 0;padding:12px 0 0; }
+
+.physical-editor .modulation-budget{flex:0 0 100%;display:flex;align-items:center;gap:9px;font-size:10px;line-height:18px;min-width:0;border-top:1px solid var(--border);padding-top:3px;color:var(--text-soft)}
+.modulation-budget-track{position:relative;flex:1;height:5px;overflow:hidden;border-radius:4px;background:#3e8b7d;min-width:45px}
+.modulation-budget-track i{position:absolute;top:0;height:100%;transition:width 100ms ease,right 100ms ease}
+.modulation-budget .budget-used{right:0;background:#344552}.modulation-budget .budget-preview{background:#f2b85f}.modulation-budget .budget-source{background:#9bb9df}
+.modulation-budget[data-over] .budget-preview{background:#f17d77}.modulation-budget[data-over] output{color:#f17d77}
+.physical-editor .modulation-budget output{font-variant-numeric:tabular-nums;min-width:138px;text-align:right;white-space:nowrap}
+@media(prefers-reduced-motion:reduce){.modulation-budget-track i{transition:none}}

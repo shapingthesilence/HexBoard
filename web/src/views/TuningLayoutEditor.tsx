@@ -1,3 +1,4 @@
+import { withAdvancedContentMaintenance } from "../advanced/contentMaintenance.ts";
 import { decodeDeviceGeometryBundle, objectReferenceIdHex } from "../catalogs/deviceGeometry.ts";
 import { sameContent, useEditorDrafts } from "../editor/drafts.ts";
 import { resolveLayoutKey } from "../catalogs/layoutKey.ts";
@@ -534,10 +535,9 @@ function isAllNotesScale(scale: Pick<TuningBundleScale, "name">): boolean {
 export function withProtectedAllNotesScale(bundle: TuningBundle, cycleLength = tuningCycleLength(bundle.tuning)): TuningBundle {
   const protectedScale = createAllNotesScale(cycleLength);
   const previousAllNotesIndex = bundle.scales.findIndex(isAllNotesScale);
-  const previousAllNotes = bundle.scales.find(isAllNotesScale);
-  const activeWasAllNotes = previousAllNotes?.objectIdHex === bundle.activeScaleIdHex;
+  const activeWasAllNotes = bundle.scales.some((scale) => (isAllNotesScale(scale) || scale.name.trim().toLowerCase() === "none") && scale.objectIdHex === bundle.activeScaleIdHex);
   const userScales = bundle.scales
-    .filter((scale) => !isAllNotesScale(scale))
+    .filter((scale) => !isAllNotesScale(scale) && scale.name.trim().toLowerCase() !== "none")
     .map((scale) => ({
       ...scale,
       includedDegrees: normalizeScaleDegrees(scale.includedDegrees, cycleLength)
@@ -1183,6 +1183,10 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     && (activeBundle.tuning.kind !== "scala" || centsTableRuntimeSupported));
   const client = useMemo(() => new PresetSyncClient(transport), [transport]);
 
+  function geometryMaintenance<T>(operation: () => Promise<T>): Promise<T> {
+    return withAdvancedContentMaintenance(transport, deviceHello?.hardwareVersion === 0x20, operation);
+  }
+
   useEffect(() => {
     if (connected) void refreshHexBoardGeometryLibrary();
     else { setHexboardBundles([]); setHexboardRescueActive(false); }
@@ -1391,7 +1395,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
         entries.map((entry) => objectIdFromHex(entry.objectIdHex))
       );
       setStatus("Saving HexBoard tuning order");
-      await client.sendGeometryOrderSaveConfirmed(orderFile);
+      await geometryMaintenance(() => client.sendGeometryOrderSaveConfirmed(orderFile));
       await refreshHexBoardGeometryLibrary("Saved HexBoard tuning order");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to save HexBoard tuning order");
@@ -1576,9 +1580,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       });
       const encoded = encodeTuningBundle(bundleForDeviceEncoding(organized));
       setStatus(`Saving ${normalizedName} in ${folderLabel(normalizedFolderPath)}`);
-      await client.sendGeometryBundleSaveConfirmed(encoded.bundleFile, setTransferProgress);
+      await geometryMaintenance(() => client.sendGeometryBundleSaveConfirmed(encoded.bundleFile, setTransferProgress));
       if (conflict) {
-        await client.deleteGeometryObject(ObjectType.UserTuning, conflict.deviceHandle);
+        await geometryMaintenance(() => client.deleteGeometryObject(ObjectType.UserTuning, conflict.deviceHandle));
       }
       await refreshHexBoardGeometryLibrary(
         `${conflict ? "Replaced existing tuning and updated" : "Updated"} ${normalizedName} in HexBoard Library`
@@ -2867,7 +2871,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       )) {
         return;
       }
-      await client.deleteGeometryObject(ObjectType.UserTuning, entry.deviceHandle);
+      await geometryMaintenance(() => client.deleteGeometryObject(ObjectType.UserTuning, entry.deviceHandle));
       await refreshHexBoardGeometryLibrary(`Deleted ${entry.name} from HexBoard`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Failed to delete HexBoard tuning bundle");
@@ -2942,16 +2946,14 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     setTransferProgress(null);
     try {
       setStatus(`Saving ${sanitizedBundle.tuning.name}`);
-      await client.sendGeometryBundleSaveConfirmed(encoded.bundleFile, setTransferProgress);
+      await geometryMaintenance(() => client.sendGeometryBundleSaveConfirmed(encoded.bundleFile, setTransferProgress));
       if (conflict && currentEntry) {
-        await client.deleteGeometryObject(ObjectType.UserTuning, conflict.deviceHandle);
+        await geometryMaintenance(() => client.deleteGeometryObject(ObjectType.UserTuning, conflict.deviceHandle));
       }
       if (applySupported) {
-        for (let index = 0; index < applyObjects.length; index += 1) {
-          const object = applyObjects[index];
-          setStatus(`Applying ${object.name} (${index + 1}/${applyObjects.length})`);
-          await client.sendGeometryObjectPreviewConfirmed(object);
-        }
+        setStatus(`Applying ${sanitizedBundle.tuning.name}`);
+        await client.sendGeometryPreviewConfirmed(applyObjects,
+          Boolean(deviceHello && (deviceHello.capabilityFlags & CapabilityFlag.AtomicGeometryPreview)));
         if (sanitizedBundle.objectIdHex === activeBundle.objectIdHex) {
           lastAutoSentGeometryKeyRef.current = liveSendKey;
         }

@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {ModSourceEditor,envelopePoints,lfoWave} from './ModSourceEditor.tsx';
-import {modulationRouteLimit,modulationRouteCount,canAssignModulation,defaultModulation,validateModulation,physicalPresetFromUnknown,initialPreset,effectiveParameters} from './schema.ts';
+import {modulationRouteCount,canAssignModulation,defaultModulation,validateModulation,physicalPresetFromUnknown,initialPreset,effectiveParameters} from './schema.ts';
 import {decodeModulation} from './client.ts';
 import {encodeU21} from '../../protocol/index.ts';
 describe('Editable envelope and LFO sources',()=>{
@@ -18,10 +18,9 @@ describe('Editable envelope and LFO sources',()=>{
     const p=physicalPresetFromUnknown({...initialPreset,modulation});expect(p.modulation).toEqual(modulation);
     expect(effectiveParameters(p,[0,0,0,0,0,1,-1])[5]).toBeCloseTo(initialPreset.parameters[5]/65535+48000/65536);
   });
-  it('caps generated sources at four destinations while allowing edits, removals and reuse',()=>{
-    const m=defaultModulation();for(const id of [0,1,5,7])m.routes[id*2]=1000;
-    expect(modulationRouteCount(m.routes,0)).toBe(modulationRouteLimit);expect(canAssignModulation(m.routes,7,0)).toBe(true);expect(canAssignModulation(m.routes,14,0)).toBe(false);expect(canAssignModulation(m.routes,14,1)).toBe(true);
-    expect(validateModulation(m)).toEqual(m);m.routes[28]=1000;expect(()=>validateModulation(m)).toThrow('Envelope allows 4 routes');m.routes[10]=0;expect(validateModulation(m)).toEqual(m);
+  it('shares generated capacity instead of imposing four routes per source',()=>{
+    const m=defaultModulation();for(const id of [0,1,5,7,14])m.routes[id*2]=1000;
+    expect(modulationRouteCount(m.routes,0)).toBe(5);expect(canAssignModulation(m.routes,16,0)).toBe(true);expect(validateModulation(m)).toEqual(m);
   });
   it('offers compact graphical source editors with accessible controls and advanced sections',()=>{
     const props={settings:defaultModulation().settings,onChange:()=>{},onClose:()=>{},onAssign:()=>{},disabled:false,renderControl:(_id:number,label:string)=>createElement('span',{},label)};

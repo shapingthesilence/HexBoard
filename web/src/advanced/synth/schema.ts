@@ -1,3 +1,4 @@
+import {modulationUsage,modulationConnections} from "./modulationBudget.ts";
 import {targetDepths, targetSourceLimit} from "./targetModulation.ts";
 import {validVoiceBudget,type VoiceBudgetProfile} from "./voiceBudget.ts";
 export function releaseSeconds(value:number) { const v=value/65535; return v<=.8 ? .03+.7125*v : .6*Math.exp(14.978661*(v-.8)); }
@@ -67,17 +68,19 @@ export function effectDescription(id:number,index:number,value:number) {
   if(id===5 && index===0)return `${Math.round(10+170*v)} ms`;
   return `${Math.round(v*(id===5&&index===1?75:100))}%`;
 }
+// Legacy import limit only; live assignments use the shared budget.
 export const modulationRouteLimit=4;
 export function modulationRouteCount(routes:number[],source:number){return routes.filter((v,i)=>i%2===source&&v!==0).length;}
-export function canAssignModulation(routes:number[],id:number,source:number){return routes[id*2+source]!==0||modulationRouteCount(routes,source)<modulationRouteLimit;}
+export function canAssignModulation(routes:number[],id:number,source:number){const copy=[...routes];copy[id*2+source]=copy[id*2+source]||1;return modulationUsage({routes:Array(99).fill(0),tiltRoutes:Array(66).fill(0),modulation:{routes:copy}}).fits;}
 export interface ModulationSources { settings:number[]; routes:number[] }
 export const defaultModulation = ():ModulationSources => ({settings:[14000,30000,42000,34000,0,0,32768,0,30000,0,65535,0,0,0,0,0],routes:Array(66).fill(0)});
 export function modulationSeconds(v:number){return v===0?0:.001*Math.exp(9.903488*v/65535);}
 export function modulationRate(v:number){return .05*Math.exp(5.991465*v/65535);}
-export function validateModulation(value:unknown,limit=modulationRouteLimit,legacy=false):ModulationSources {
+export function validateModulation(value:unknown,limit=modulationConnections,legacy=false):ModulationSources {
   const m=value as ModulationSources;
   if(!m||!Array.isArray(m.settings)||m.settings.length!==16||m.settings.some(v=>!Number.isInteger(v)||v<0||v>65535)||[7,10,14].some(i=>m.settings[i]!==0&&m.settings[i]!==65535)||m.settings[9]%13107!==0||!Array.isArray(m.routes)||m.routes.length!==(legacy?64:66)||m.routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||[8,21,27,31].some(id=>m.routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid envelope / LFO modulation.");
-  for(let source=0;source<2;++source)if(modulationRouteCount(m.routes,source)>limit)throw Error(`${source===0?"Envelope":"LFO"} allows ${limit} routes. Remove an assignment before adding another.`);
+  if(legacy)for(let source=0;source<2;++source)if(modulationRouteCount(m.routes,source)>limit)throw Error("Invalid legacy modulation routes.");
+  if(!legacy&&!modulationUsage({routes:Array(99).fill(0),tiltRoutes:Array(66).fill(0),modulation:m}).fits)throw Error("Modulation capacity full. Remove a destination before adding another.");
   return {settings:[...m.settings],routes:[...m.routes]};
 }
 export interface SampleLoop {mode:0|1|2;start:number;end:number;crossfade:number}
@@ -233,6 +236,7 @@ export function physicalPresetFromUnknown(value: unknown): PhysicalPreset {
   if(!Array.isArray((p.effects as FxRack)?.steps)||((p.effects as FxRack).values[2][3]>127||(p.effects as FxRack).values[0][2]>4))throw Error("Invalid volume step configuration.");
   const result:PhysicalPreset={format:"hexboard.physical.v22",sample:validateSample({...validateSample(p.sample),direct:p.parameters[32]}),migrationNotes:Array.isArray(p.migrationNotes)?p.migrationNotes.filter((v):v is string=>typeof v==="string").slice(0,2):undefined,modulation:validateModulation(p.modulation),tiltRoutes:[...(p.tiltRoutes as number[])],effects:validateFx(p.effects),name:p.name.trim(),parameters:[...p.parameters],routes:[...p.routes],velocityEngine:p.velocityEngine as PhysicalVelocityEngine};
   if(result.parameters.some((_,id)=>targetDepths(result,id).filter(Boolean).length>targetSourceLimit))throw Error("Each target allows four modulation sources. Remove an assignment before adding another.");
+  if(!modulationUsage(result).fits)throw Error("Modulation capacity full. Remove a destination before adding another.");
   const voiceBudget=validVoiceBudget(result,p.voiceBudget);return voiceBudget?{...result,voiceBudget}:result;
 }
 

@@ -6,6 +6,8 @@
 #include "SynthPresetMenu.h"
 #include "VirtualListMenu.h"
 #include "../app/DiagnosticsTiming.h"
+#include "../app/RuntimeDefaults.h"
+#include "../model/ScalePalettePreset.h"
 #include "../hardware/GridState.h"
 #include "../model/PitchAssignment.h"
 #include "../storage/BuiltinGeometry.h"
@@ -391,6 +393,12 @@ bool userGeometryFolderAlreadyListed(const char* childFolderPath) {
   return false;
 }
 
+bool showScaleEntry(const SelectedGeometryMenuEntry& entry){
+ if(strcmp(entry.name,"None"))return true;
+ for(uint8_t i=0;i<selectedGeometryMenuCacheCount;++i)if(selectedGeometryMenuCache[i].objectType==PRESET_SYNC_OBJECT_TYPE_USER_SCALE&&!strcmp(selectedGeometryMenuCache[i].name,"All Notes"))return false;
+ return true; // A legacy bundle with only None is shown as All Notes.
+}
+
 void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
   userGeometryVirtualKind = kind;
   userGeometryVirtualCount = 0;
@@ -401,7 +409,8 @@ void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
     for (size_t i = 0; i < builtinGeometryObjectCount(); ++i) {
       BuiltinGeometryMetadata metadata;
       if (builtinGeometryMetadataByOrdinal(i, metadata)
-          && includeBuiltinGeometryMetadataInMenu(kind, metadata)) {
+          && includeBuiltinGeometryMetadataInMenu(kind, metadata)
+          && (kind!=UserGeometryMenuKind::Scale||strcmp(metadata.name,"None"))) {
         appendUserGeometryHandle(metadata.handle);
       }
     }
@@ -434,14 +443,15 @@ void rebuildUserGeometryVirtualList(UserGeometryMenuKind kind) {
                          ? PRESET_SYNC_OBJECT_TYPE_USER_LAYOUT
                          : PRESET_SYNC_OBJECT_TYPE_USER_SCALE;
   for (uint8_t index = 0; index < selectedGeometryMenuCacheCount; ++index) {
-    if (selectedGeometryMenuCache[index].objectType == wantedType) {
+    if (selectedGeometryMenuCache[index].objectType == wantedType
+        && (kind!=UserGeometryMenuKind::Scale||showScaleEntry(selectedGeometryMenuCache[index]))) {
       appendUserGeometryHandle(selectedGeometryMenuCache[index].handle);
     }
   }
 }
 
 uint16_t userGeometryVirtualCountProvider(void*) {
-  return userGeometryVirtualCount;
+  return userGeometryVirtualCount+(userGeometryVirtualKind==UserGeometryMenuKind::Scale?2:0);
 }
 
 bool userGeometryVirtualLabelProvider(void*, uint16_t index, char* output, size_t outputLength) {
@@ -449,6 +459,9 @@ bool userGeometryVirtualLabelProvider(void*, uint16_t index, char* output, size_
     return false;
   }
   output[0] = '\0';
+  if(userGeometryVirtualKind==UserGeometryMenuKind::Scale){
+    if(index<2){snprintf(output,outputLength,"%s",index==0?"Key":"Scale Lock");return true;}index-=2;
+  }
   if (index >= userGeometryVirtualCount) {
     return false;
   }
@@ -480,11 +493,12 @@ bool userGeometryVirtualLabelProvider(void*, uint16_t index, char* output, size_
   }
   const SelectedGeometryMenuEntry* cached = selectedGeometryMenuEntryForHandle(handle);
   if (!cached) return false;
-  snprintf(output, outputLength, "%s", cached->name);
+  snprintf(output, outputLength, "%s", userGeometryVirtualKind==UserGeometryMenuKind::Scale&&!strcmp(cached->name,"None")?"All Notes":cached->name);
   return true;
 }
 
 VirtualListMenuRowType userGeometryVirtualRowType(void*, uint16_t index) {
+  if(userGeometryVirtualKind==UserGeometryMenuKind::Scale){if(index==0)return VirtualListMenuRowType::Value;if(index==1)return VirtualListMenuRowType::Checkbox;index-=2;}
   if (index >= userGeometryVirtualCount) {
     return VirtualListMenuRowType::Button;
   }
@@ -494,6 +508,7 @@ VirtualListMenuRowType userGeometryVirtualRowType(void*, uint16_t index) {
 }
 
 bool userGeometryVirtualIsCurrent(void*, uint16_t index) {
+  if(userGeometryVirtualKind==UserGeometryMenuKind::Scale){if(index<2)return false;index-=2;}
   if (index >= userGeometryVirtualCount
       || userGeometryVirtualRows[index].kind != UserGeometryMenuRowKind::Item) {
     return false;
@@ -505,6 +520,7 @@ bool userGeometryVirtualInitialSelection(void*, uint16_t* index) {
   if (!index) {
     return false;
   }
+  if(userGeometryVirtualKind==UserGeometryMenuKind::Scale){*index=0;return true;}
   return findCurrentUserGeometryRow(*index);
 }
 
@@ -545,6 +561,17 @@ void loadUserGeometryHandle(UserGeometryMenuKind kind, uint16_t handle) {
 }
 
 void userGeometryVirtualSelect(void*, uint16_t index) {
+  if (userGeometryVirtualKind == UserGeometryMenuKind::Scale) {
+    if (index == 1) {
+      scaleLock = !scaleLock;
+      settings[static_cast<uint8_t>(SettingKey::ScaleLock)] = scaleLock;
+      markSettingsDirty();
+      redrawVirtualListMenu();
+      return;
+    }
+    if (index == 0) return;
+    index -= 2;
+  }
   if (index >= userGeometryVirtualCount) {
     redrawVirtualListMenu();
     return;
@@ -579,6 +606,30 @@ void userGeometryVirtualClose(void*) {
   menuHome();
 }
 
+bool scaleControlIsChecked(void*, uint16_t index) {
+  return userGeometryVirtualKind == UserGeometryMenuKind::Scale && index == 1 && scaleLock;
+}
+
+bool scaleControlValue(void*, uint16_t index, char* output, size_t outputLength) {
+  if (userGeometryVirtualKind != UserGeometryMenuKind::Scale || index != 0) return false;
+  formatTuningDegreeLabel(current.tuning(),
+                         static_cast<uint16_t>(userGeometryRuntime.active
+                           ? current.keyStepsFromA
+                           : current.keyStepsFromA - current.tuning().spanCtoA()),
+                         output, outputLength);
+  return true;
+}
+
+void adjustScaleControl(void*, uint16_t index, int delta) {
+  if (userGeometryVirtualKind != UserGeometryMenuKind::Scale || index != 0) return;
+  if (!current.tuning().cycleLength) return;
+  current.keyStepsFromA += delta;
+  showOnlyValidKeyChoices();
+  storeCurrentKeyStepsInSettings(current.keyStepsFromA);
+  applyScale();
+  markSettingsDirty();
+}
+
 void openUserGeometryMenu(UserGeometryMenuKind kind) {
   snprintf(userGeometryMenuCurrentFolder,
            sizeof(userGeometryMenuCurrentFolder),
@@ -596,6 +647,7 @@ void openUserGeometryMenu(UserGeometryMenuKind kind) {
   provider.back = userGeometryVirtualBack;
   provider.close = userGeometryVirtualClose;
   provider.emptyLabel = emptyUserGeometryLabel(kind);
+  if(kind==UserGeometryMenuKind::Scale){provider.isChecked=scaleControlIsChecked;provider.getValue=scaleControlValue;provider.adjust=adjustScaleControl;}
   openVirtualListMenu(provider);
 }
 

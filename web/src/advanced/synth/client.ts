@@ -1,3 +1,4 @@
+import {modulationUsage} from "./modulationBudget.ts";
 import {performanceWords,performanceFromWords,type PerformanceConfig,type PerformanceState} from './performanceSchema.ts';
 import {prepareEstimate,engineNames} from "./loadTiming.ts";
 import {attachVoiceBudget,validVoiceBudget,type VoiceBudgetProfile,type VoiceBudgetState} from "./voiceBudget.ts";
@@ -181,6 +182,18 @@ export class PhysicalSynthClient {
   async apply(preset: PhysicalPreset) {
     const p = physicalPresetFromUnknown(preset);
     if(this.advanced)await this.applyAdvanced(initialAdvanced(2));
+    // A valid replacement must not be rejected by the temporary union of old
+    // and new routes. Clear only when a staged prefix would exceed capacity.
+    const current=await this.request(0);
+    this.motion=await this.request<MotionState>(12);this.modulation=await this.request<ModulationSources>(16);
+    const keyboard={...current.preset,routes:p.routes,tiltRoutes:this.motion.tiltRoutes,modulation:this.modulation};
+    const tilted={...keyboard,tiltRoutes:p.tiltRoutes};
+    if(!modulationUsage(keyboard).fits||!modulationUsage(tilted).fits){
+      const retry=async(run:()=>Promise<unknown>)=>{for(let attempt=0;;++attempt){try{return await run();}catch(error){if(attempt>=24||!(error instanceof Error)||error.message!=="The board rejected this synth operation.")throw error;await new Promise(r=>setTimeout(r,30));}}};
+      await retry(()=>this.setModulation({...p.modulation,routes:Array(66).fill(0)}));
+      await retry(()=>this.request<MotionState>(13,Array(66).fill(65536).flatMap(encodeU21)));
+      await retry(()=>this.request(7,[...p.parameters.flatMap(encodeU21),...Array(99).fill(65536).flatMap(encodeU21),p.velocityEngine]));
+    }
     await this.request(7, [...p.parameters.flatMap(encodeU21), ...p.routes.flatMap(v => encodeU21(v + 65536)), p.velocityEngine]);
     for(let attempt=0;;++attempt){try{this.motion=await this.request<MotionState>(13,p.tiltRoutes.flatMap(v=>encodeU21(v+65536)));break;}catch(error){if(attempt>=20 || !(error instanceof Error) || error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
     for(let attempt=0;;++attempt){try{await this.setModulation(p.modulation);break;}catch(error){if(attempt>=20||!(error instanceof Error)||error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
@@ -209,7 +222,7 @@ export class PhysicalSynthClient {
           const frame = decodePresetSyncFrame(bytes);
           if (frame.transactionId !== transaction) return;
           if (frame.message === 7) {
-            finish(Error(operation===41?"Update Advanced main firmware to use the global arpeggiator.":frame.payload[1] === 3 ? operation>=16?"Update Advanced firmware for envelope and LFO modulation.":"Update Advanced main firmware for preset velocity engines." : frame.payload[1] === 9 ? "This source has four routes. Remove one before adding another." : frame.payload[1] === 8 ? "Stop Learn or Calibration and release keys before changing the velocity engine or loading a sound." : operation===21?"Release the keys and stop the synth before importing a sample.":operation===25?"Release the keys before sample preview.":operation===42?"Release the keys before switching Arp on/off or changing its output. If playback is being tested, wait for it to finish.":operation===44?"Stop the synth, clear held arp notes, and release the keys before saving performance settings.":"The board rejected this synth operation."));
+            finish(Error(operation===41?"Update Advanced main firmware to use the global arpeggiator.":frame.payload[1] === 3 ? operation>=16?"Update Advanced firmware for envelope and LFO modulation.":"Update Advanced main firmware for preset velocity engines." : frame.payload[1] === 9 ? "Modulation capacity full. Remove another destination before adding this one." : frame.payload[1] === 8 ? "Stop Learn or Calibration and release keys before changing the velocity engine or loading a sound." : operation===21?"Release the keys and stop the synth before importing a sample.":operation===25?"Release the keys before sample preview.":operation===42?"Release the keys before switching Arp on/off or changing its output. If playback is being tested, wait for it to finish.":operation===44?"Stop the synth, clear held arp notes, and release the keys before saving performance settings.":"The board rejected this synth operation."));
           } else if(operation>=46&&operation<=51&&frame.message===0x35){
             finish(undefined,decodePhysicalState(frame.payload) as T);
           } else if(operation>=41&&operation<=44&&frame.message===0x3f){

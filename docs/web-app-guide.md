@@ -30,7 +30,12 @@ seconds. Use **Reconnect Calibration** after an error. Leave this tab before
 starting Learn or previewing a layout.
 
 The shared tuning/layout editor sends active content as one validated RAM preview.
-Save/export bundles in the browser; Advanced device-library saving is unavailable.
+**Save to HexBoard** also saves complete HGB tuning bundles on Advanced. The
+connected library supports download/export, folders/order and deletion. Explicit
+library writes pause and resume Advanced synth playback; release held keys first.
+Normal preview remains in RAM. On the OLED, choose Tuning, Layout or Scale, then
+right to apply. **Settings → Save content setup** explicitly remembers those
+selections for reboot; preview/selection alone never writes flash.
 Held notes release their original assignment after edits. Learn shares lessons
 and logical IDs; lesson navigation uses the on-screen controls. The physical
 joystick navigates the on-device OLED menu.

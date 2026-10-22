@@ -51,9 +51,8 @@ If `Scale Lock` is off, every note button can play. If `Scale Lock` is on, only 
 The `DisplayNotes` option in `Settings` controls the OLED played-note overlay.
 Set it to `Off`, `Label`, `Number`, or `MIDI`. `Label` shows the active tuning's note
 labels with octave numbers, including custom labels.
-Custom note labels are limited to `7` characters. The main-menu `Key` selector
-uses those labels for tunings through 255 divisions; larger tunings use numeric
-root steps so every division remains selectable.
+Custom note labels are limited to `7` characters. The Scales menu’s `Key` selector
+uses the tuning’s degree labels, with numeric root steps when no label is available.
 `Number` shows scale step and octave values such as `7.4`. `MIDI` shows the
 current MIDI note number, such as `60` for middle C in standard tuning.
 
@@ -122,9 +121,7 @@ The main menu includes:
 
 - `Tuning:<current>`
 - `Layout:<current>`
-- `Key`
 - `Scale:<current>`
-- `Scale Lock`
 - `Synth:<current preset>`
 - `Lights & Colors`
 - `Transpose`
@@ -183,13 +180,16 @@ Layout rotation, flip, and display rotation controls live under `Editor`.
 
 ### Scale
 
-Use this page to choose the active scale. Factory and saved scales linked to the
+This menu begins with `Key`, then `Scale Lock`, followed by the scale choices.
+Select `Key` to edit it with the encoder; back finishes editing.
+Select `Scale Lock` to toggle its checkbox.
+`Key` moves the scale root without retuning notes. `All Notes` includes every
+degree; the legacy `None` alias is omitted. Factory and saved scales linked to the
 active tuning appear in a list. The active scale shows a diamond in the left action-icon slot
 when it appears in the list.
 
 Choosing a scale updates scale membership while keeping the current user tuning,
-layout, color map, and button map active. `Key` and `Scale Lock` are on the main
-menu.
+layout, color map, and button map active.
 
 When `Scale Lock` is enabled, out-of-scale notes stop responding to presses.
 

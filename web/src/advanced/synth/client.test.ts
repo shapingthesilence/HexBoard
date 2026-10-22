@@ -124,10 +124,10 @@ describe("Advanced physical editor", () => {
     const t = new Transport(), c = new PhysicalSynthClient(t);
     await Promise.all([c.retuneHz(61, 0, 261.123456), c.bend(-2), c.apply(initialPreset)]);
     const frames = t.sent.map(decodePresetSyncFrame);
-    expect(frames.map(f => f.payload[1])).toEqual([6, 5, 7, 13, 17, 0, 11, 0, 24, 0]);
+    expect(frames.map(f => f.payload[1])).toEqual([6, 5, 0, 12, 16, 7, 13, 17, 0, 11, 0, 24, 0]);
     expect(frames[0].payload.slice(5)).toHaveLength(5);
     expect(frames[1].payload).toEqual([17, 5, 0, 0, 0]);
-    expect(frames[2].payload).toHaveLength(399);
+    expect(frames.find(f=>f.payload[1]===7)!.payload).toHaveLength(399);
     expect(t.listeners.size).toBe(0); c.close();
   });
   it("preserves older presets and maps pressure to pickup without changing output gain", () => {
@@ -194,8 +194,8 @@ describe("Advanced physical editor", () => {
     await client.velocityEngine(4); await client.apply({...initialPreset,velocityEngine:4});
     const frames=transport.sent.map(decodePresetSyncFrame);
     expect(frames[0].payload).toEqual([17,9,4]);
-    expect(frames[1].payload.at(-1)).toBe(4);
-    expect(frames[1].payload).toHaveLength(399);
+    expect(frames.find(f=>f.payload[1]===7)!.payload.at(-1)).toBe(4);
+    expect(frames.find(f=>f.payload[1]===7)!.payload).toHaveLength(399);
     client.close();
   });
   it("encodes arbitrary frequencies with less than a millihertz of pairwise beat error", () => {
@@ -340,4 +340,10 @@ it('stores explicit loads while stopped, after the complete patch, then resumes'
 });
 it('does not save ordinary RAM apply or live parameter changes',async()=>{
  const t=new Transport(),c=new PhysicalSynthClient(t);try{await c.apply(initialPreset);await c.parameter(0,30000);expect(t.sent.map(decodePresetSyncFrame).some(f=>f.payload[1]===28)).toBe(false);}finally{c.close();}
+});
+
+it('clears an old full graph before a valid replacement even in a fresh client',async()=>{
+ const t=new Transport();for(const id of [0,1,3,6,5,14,15,26,22,23])t.modulation.routes[id*2]=1000;
+ const p=physicalPresetFromUnknown(initialPreset);for(const id of [2,10,11,12,13,24,25])p.routes[id*3+1]=1000;
+ const c=new PhysicalSynthClient(t);try{await c.apply(p);const ops=t.sent.map(decodePresetSyncFrame).map(f=>f.payload[1]);expect(ops.indexOf(17)).toBeLessThan(ops.indexOf(7));expect(ops.filter(op=>op===7)).toHaveLength(2);}finally{c.close();}
 });

@@ -34,6 +34,7 @@ static const unsigned char currentDiamondBits[] U8X8_PROGMEM = {
 
 VirtualListMenuProvider activeProvider;
 bool active = false;
+bool editing = false;
 uint16_t currentItemIndex = VIRTUAL_LIST_BACK_INDEX;
 
 uint16_t providerItemCount() {
@@ -176,6 +177,8 @@ void drawRows() {
                           VIRTUAL_LIST_SPRITE_HEIGHT,
                           arrowRightBits);
             break;
+          case VirtualListMenuRowType::Checkbox:
+          case VirtualListMenuRowType::Value:
           case VirtualListMenuRowType::Label:
             u8g2.setCursor(5, yText);
             break;
@@ -190,7 +193,23 @@ void drawRows() {
             break;
         }
       }
-      printMenuString(label, menuItemFullLength());
+      const bool checkboxRow = rowType(itemIndex) == VirtualListMenuRowType::Checkbox;
+      const bool valueRow = checkboxRow || rowType(itemIndex) == VirtualListMenuRowType::Value;
+      printMenuString(label, valueRow ? (VIRTUAL_LIST_VALUES_LEFT_OFFSET-6)/VIRTUAL_LIST_FONT_WIDTH : menuItemFullLength());
+      if (checkboxRow) {
+        u8g2.drawFrame(VIRTUAL_LIST_VALUES_LEFT_OFFSET, yDraw, 7, 7);
+        if (activeProvider.isChecked
+            && activeProvider.isChecked(activeProvider.context, itemIndex - 1)) {
+          u8g2.drawLine(VIRTUAL_LIST_VALUES_LEFT_OFFSET + 1, yDraw + 3,
+                        VIRTUAL_LIST_VALUES_LEFT_OFFSET + 3, yDraw + 5);
+          u8g2.drawLine(VIRTUAL_LIST_VALUES_LEFT_OFFSET + 3, yDraw + 5,
+                        VIRTUAL_LIST_VALUES_LEFT_OFFSET + 5, yDraw + 1);
+        }
+      } else if(valueRow&&activeProvider.getValue){
+        char value[16]={};activeProvider.getValue(activeProvider.context,itemIndex-1,value,sizeof(value));
+        u8g2.setCursor(VIRTUAL_LIST_VALUES_LEFT_OFFSET,yText);
+        printMenuString(value,(u8g2.getDisplayWidth()-VIRTUAL_LIST_VALUES_LEFT_OFFSET-4)/VIRTUAL_LIST_FONT_WIDTH);
+      }
     }
 
     y = static_cast<uint8_t>(y + VIRTUAL_LIST_ITEM_HEIGHT);
@@ -202,7 +221,8 @@ void drawPointer() {
   uint8_t pointerRow = static_cast<uint8_t>(currentItemIndex % perScreen);
   uint8_t pointerY = static_cast<uint8_t>(pointerRow * VIRTUAL_LIST_ITEM_HEIGHT + VIRTUAL_LIST_SCREEN_TOP_OFFSET);
   u8g2.setDrawColor(2);
-  u8g2.drawBox(0, pointerY - 1, u8g2.getDisplayWidth() - 2, VIRTUAL_LIST_ITEM_HEIGHT + 1);
+  const uint8_t x=editing?VIRTUAL_LIST_VALUES_LEFT_OFFSET-2:0;
+  u8g2.drawBox(x, pointerY - 1, u8g2.getDisplayWidth() - 2-x, VIRTUAL_LIST_ITEM_HEIGHT + 1);
   u8g2.setDrawColor(1);
 }
 
@@ -244,6 +264,7 @@ void selectCurrentItem() {
     return;
   }
   uint16_t providerIndex = static_cast<uint16_t>(currentItemIndex - 1);
+  if(rowType(currentItemIndex)==VirtualListMenuRowType::Value&&activeProvider.adjust){editing=true;redrawVirtualListMenu();return;}
   if (providerIndex < itemCount && activeProvider.select) {
     activeProvider.select(activeProvider.context, providerIndex);
   }
@@ -254,6 +275,7 @@ void selectCurrentItem() {
 void openVirtualListMenu(const VirtualListMenuProvider& provider) {
   activeProvider = provider;
   active = true;
+  editing = false;
   currentItemIndex = initialSelectionIndex();
   redrawVirtualListMenu();
 }
@@ -267,6 +289,11 @@ bool handleVirtualListMenuKey(byte keyCode) {
     return false;
   }
 
+  if(editing){
+    if(keyCode==GEM_KEY_UP||keyCode==GEM_KEY_DOWN){activeProvider.adjust(activeProvider.context,currentItemIndex-1,keyCode==GEM_KEY_UP?1:-1);}
+    else if(keyCode==GEM_KEY_LEFT||keyCode==GEM_KEY_CANCEL||keyCode==GEM_KEY_OK){editing=false;}
+    redrawVirtualListMenu();return true;
+  }
   uint16_t totalItems = virtualItemCount();
   if (totalItems == 0) {
     return true;
@@ -322,7 +349,7 @@ void resetVirtualListMenuSelection() {
   if (!active) {
     return;
   }
-  currentItemIndex = initialSelectionIndex();
+  editing=false;currentItemIndex = initialSelectionIndex();
   redrawVirtualListMenu();
 }
 
@@ -331,7 +358,7 @@ void closeVirtualListMenu() {
     return;
   }
   VirtualListMenuProvider provider = activeProvider;
-  active = false;
+  active = false;editing=false;
   currentItemIndex = VIRTUAL_LIST_BACK_INDEX;
   activeProvider = {};
   if (provider.close) {
@@ -340,7 +367,7 @@ void closeVirtualListMenu() {
 }
 
 void deactivateVirtualListMenu() {
-  active = false;
+  active = false;editing=false;
   currentItemIndex = VIRTUAL_LIST_BACK_INDEX;
   activeProvider = {};
 }

@@ -786,15 +786,6 @@ GEMItem menuItemMPEpitchBend("MPE Bend", MPEpitchBendSemis, selectMPEpitchBend, 
 
 SelectOptionByte optionByteYesOrNo[] = { { "No", 0 }, { "Yes", 1 } };
 GEMSelect selectYesOrNo(sizeof(optionByteYesOrNo) / sizeof(SelectOptionByte), optionByteYesOrNo);
-PersistentCallbackInfo callbackInfoScaleLock = {
-  static_cast<uint8_t>(SettingKey::ScaleLock),
-  reinterpret_cast<void*>(&scaleLock),
-  nullptr,
-  nullptr
-};
-GEMItem menuItemScaleLock("Scale Lock", scaleLock, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoScaleLock));
-GEMItem menuItemMainScaleLock("Scale Lock", scaleLock, universalSaveCallback, reinterpret_cast<void*>(&callbackInfoScaleLock));
-
 PersistentCallbackInfo callbackInfoShiftColor = {
   static_cast<uint8_t>(SettingKey::PaletteCenterOnKey),
   reinterpret_cast<void*>(&paletteBeginsAtKeyCenter),
@@ -3154,8 +3145,7 @@ void previewKey(GEMPreviewCallbackData previewData);
 void createKeyMenuItems() {
   menuItemMainKey.setPreviewCallback(previewKey);
   menuItemMainKeyNumeric.setPreviewCallback(previewKey);
-  menuPageMain.addMenuItem(menuItemMainKey);
-  menuPageMain.addMenuItem(menuItemMainKeyNumeric);
+
   showOnlyValidKeyChoices();
 }
 void previewKey(GEMPreviewCallbackData previewData) {
@@ -3196,7 +3186,6 @@ void setupLayoutMenuPage() {
 
 void setupScalesMenuPage() {
   menuPageMain.addMenuItem(menuGotoScales);
-  menuPageMain.addMenuItem(menuItemMainScaleLock);
 }
 
 void setupColorsMenuPage() {
