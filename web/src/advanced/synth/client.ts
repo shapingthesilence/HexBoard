@@ -1,3 +1,5 @@
+import {defaultMono,validateMono,type MonoConfig} from './mono.ts';
+import {dspUsage} from "./dspBudget.ts";
 import {modulationUsage} from "./modulationBudget.ts";
 import {performanceWords,performanceFromWords,type PerformanceConfig,type PerformanceState} from './performanceSchema.ts';
 import {prepareEstimate,engineNames} from "./loadTiming.ts";
@@ -20,6 +22,7 @@ export function decodePhysicalState(payload: number[]): PhysicalState {
   return { state: (["stopped", "playing", "loading"] as const)[payload[1]], instrument: payload[2], bend,
     preset: physicalPresetFromUnknown({ format: "hexboard.physical.v22",sample:defaultSample(),modulation:defaultModulation(),effects:defaultFx(),tiltRoutes:Array(66).fill(0), name: "Device RAM", parameters, routes, velocityEngine: payload[402] }) };
 }
+export interface ControllerState {play:boolean;pedal:number;invert:boolean;minimum:number;maximum:number;tip:number;ring:number;valid:boolean;sustain:boolean;armed:boolean;expression:number;modulation:number}
 export interface MotionState {detected:boolean;valid:boolean;tiltX:number;tiltY:number;tiltRoutes:number[]}
 export function decodeMotion(p:number[]):MotionState {if(p.length!==207||p[0]!==17||p[1]>1||p[2]>1)throw Error("Unsupported motion response. Update Advanced firmware.");const x=decodeU21(p.slice(3,6)),y=decodeU21(p.slice(6,9)),routes=Array.from({length:66},(_,i)=>decodeU21(p.slice(9+i*3,12+i*3))-65536);if(x>65534||y>65534||routes.some(v=>v<-65536||v>65536)||[7,8,21,27,31].some(id=>routes.slice(id*2,id*2+2).some(Boolean)))throw Error("Invalid motion state.");return {detected:!!p[1],valid:!!p[2],tiltX:(x-32767)/32767,tiltY:(y-32767)/32767,tiltRoutes:routes};}
 export interface PhysicalExpression { tiltX?:number;tiltY?:number;motionValid?:boolean;motionDetected?:boolean; key: number | null; held: boolean; velocity: number; pressure: number; release: number }
@@ -52,12 +55,17 @@ export class PhysicalSynthClient {
   // DAC driver startup takes 1.6 s; a short preview must begin afterward.
   private previewNeedsStartup=true;
   private modulation = defaultModulation();
+  private mono=defaultMono();
+  private controllerRoutes:number[]=Array(66).fill(0);
   private motion:MotionState={detected:false,valid:false,tiltX:0,tiltY:0,tiltRoutes:Array(66).fill(0)};
   private abort?: () => void;
   constructor(private transport: MidiTransport,private onProgress?:(progress?:SynthProgress)=>void,private advanced=false) {}
   close() { this.closed = true; this.abort?.(); }
+  controls(){return this.request<ControllerState>(52); }
+  monoSettings(config?:MonoConfig){return this.request<MonoConfig>(56,config?[config.flags,...encodeU21(config.glideMs)]:[]);}
+  async controllerRoute(id:number,source:number,value:number){await this.request<number[]>(54,[id,source,...encodeU21(value+65536)]);return this.request(0);}
   async read() {
-    const state=await this.request(0);this.fx=await this.request<FxRack>(10);this.motion=await this.request<MotionState>(12);this.modulation=await this.request<ModulationSources>(16);
+    const state=await this.request(0);if(this.advanced){this.controllerRoutes=await this.request<number[]>(55);this.mono=await this.monoSettings();}this.fx=await this.request<FxRack>(10);this.motion=await this.request<MotionState>(12);this.modulation=await this.request<ModulationSources>(16);
     const meta=await this.request<SampleMeta>(20);
     if(!meta.busy&&(meta.crc!==this.sampleCrc||meta.length!==this.sample.frames.length)){
       const frames:number[]=[];
@@ -68,7 +76,7 @@ export class PhysicalSynthClient {
     }
     this.sample={...this.sample,enabled:meta.enabled&&this.sample.frames.length>0,gain:meta.gain,direct:meta.direct,priority:meta.priority,loop:meta.loop};
     const advancedState=this.advanced?await this.readAdvanced():undefined;
-    const preset={...state.preset,sample:this.sample,modulation:this.modulation,effects:this.fx,tiltRoutes:this.motion.tiltRoutes};return {...state,state:state.state!=="stopped"&&meta.busy&&meta.enabled?"loading":state.state,preset:advancedState?.budget.qualified&&advancedState.budget.phase===3?attachVoiceBudget(preset,advancedState.budget):preset};
+    const preset={...state.preset,mono:this.mono,controllerRoutes:this.controllerRoutes,sample:this.sample,modulation:this.modulation,effects:this.fx,tiltRoutes:this.motion.tiltRoutes};return {...state,state:state.state!=="stopped"&&meta.busy&&meta.enabled?"loading":state.state,preset:advancedState?.budget.qualified&&advancedState.budget.phase===3?attachVoiceBudget(preset,advancedState.budget):preset};
   }
   async setSample(value:SampleExciter){
     const sample=validateSample(value),crc=sampleChecksum(sample.frames);
@@ -140,11 +148,11 @@ export class PhysicalSynthClient {
       if(preset.format==='hexboard.advanced.v2'){await this.applyAdvanced(preset.patch);await this.effects(preset.effects);await this.presetVelocity(preset.velocityEngine);}else await this.apply({...preset,voiceBudget:undefined});
       let result=await this.request<VoiceBudgetState>(36);const deadline=Date.now()+240000;
       while(result.phase===1||result.phase===2){
-        this.onProgress?.({label:`Testing ${result.candidate} voices + 2 tails…`});await new Promise(r=>setTimeout(r,500));
+        this.onProgress?.({label:result.candidate===1?'Testing mono DSP budget…':`Testing ${result.candidate} voices + 2 tails…`});await new Promise(r=>setTimeout(r,500));
         try{result=await this.voiceBudget();}catch(error){if(Date.now()>=deadline)throw error;continue;}
         if(Date.now()>=deadline)throw Error('Voice test timed out. Reconnect to retry.');
       }
-      if(result.phase===5)throw Error('Voice test cancelled. Using eight voices until tested.');
+      if(result.phase===5)throw Error('Voice test cancelled. The patch remains unqualified.');
       const value=attachVoiceBudget(preset,result);if(persist)await this.request(28);return value;
     }catch(error){try{await this.cancelVoiceTest();}catch{/* Disconnect leaves a bounded, muted device test. */}throw error;}
     finally{this.onProgress?.();}
@@ -181,24 +189,24 @@ export class PhysicalSynthClient {
   async stopAndWait(){await this.stop();for(let i=0;i<100;i++){if((await this.request(0)).state==="stopped")return;await new Promise(r=>setTimeout(r,30));}throw Error("Synth did not stop for patch storage.");}
   async apply(preset: PhysicalPreset) {
     const p = physicalPresetFromUnknown(preset);
-    if(this.advanced)await this.applyAdvanced(initialAdvanced(2));
-    // A valid replacement must not be rejected by the temporary union of old
-    // and new routes. Clear only when a staged prefix would exceed capacity.
-    const current=await this.request(0);
-    this.motion=await this.request<MotionState>(12);this.modulation=await this.request<ModulationSources>(16);
-    const keyboard={...current.preset,routes:p.routes,tiltRoutes:this.motion.tiltRoutes,modulation:this.modulation};
-    const tilted={...keyboard,tiltRoutes:p.tiltRoutes};
-    if(!modulationUsage(keyboard).fits||!modulationUsage(tilted).fits){
-      const retry=async(run:()=>Promise<unknown>)=>{for(let attempt=0;;++attempt){try{return await run();}catch(error){if(attempt>=24||!(error instanceof Error)||error.message!=="The board rejected this synth operation.")throw error;await new Promise(r=>setTimeout(r,30));}}};
-      await retry(()=>this.setModulation({...p.modulation,routes:Array(66).fill(0)}));
-      await retry(()=>this.request<MotionState>(13,Array(66).fill(65536).flatMap(encodeU21)));
-      await retry(()=>this.request(7,[...p.parameters.flatMap(encodeU21),...Array(99).fill(65536).flatMap(encodeU21),p.velocityEngine]));
-    }
+    if(!dspUsage(p).fits)throw Error("DSP budget full. Reduce the effects, Drive, Pin or modulation before loading this patch.");
+    if(this.advanced){await this.applyAdvanced(initialAdvanced(2));await this.monoSettings(validateMono(p.mono));}
+    const retry=async(run:()=>Promise<unknown>)=>{for(let attempt=0;;++attempt){try{return await run();}catch(error){if(attempt>=24||!(error instanceof Error)||error.message!=="The board rejected this synth operation.")throw error;await new Promise(r=>setTimeout(r,30));}}};
+    // Clear cost before allocating a replacement. This runs during an explicit
+    // patch load, never on a normal note or expression update.
+    if(this.advanced)await retry(()=>this.request(53,Array(66).fill(65536).flatMap(encodeU21)));
+    await this.request<SampleMeta>(24,[0,...encodeU21(p.sample.gain),...encodeU21(p.sample.direct),p.sample.priority??0]);
+    this.sample={...this.sample,enabled:false};
+    const neutralFx={...p.effects,order:[],values:p.effects.values.map((row,i)=>i===4?row.map((v,j)=>j===0?0:v):row)};
+    await retry(()=>this.effects(neutralFx));
+    await retry(()=>this.setModulation({...p.modulation,routes:Array(66).fill(0)}));
+    await retry(()=>this.request<MotionState>(13,Array(66).fill(65536).flatMap(encodeU21)));
+    await retry(()=>this.request(7,[...p.parameters.flatMap(encodeU21),...Array(99).fill(65536).flatMap(encodeU21),p.velocityEngine]));
     await this.request(7, [...p.parameters.flatMap(encodeU21), ...p.routes.flatMap(v => encodeU21(v + 65536)), p.velocityEngine]);
     for(let attempt=0;;++attempt){try{this.motion=await this.request<MotionState>(13,p.tiltRoutes.flatMap(v=>encodeU21(v+65536)));break;}catch(error){if(attempt>=20 || !(error instanceof Error) || error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
     for(let attempt=0;;++attempt){try{await this.setModulation(p.modulation);break;}catch(error){if(attempt>=20||!(error instanceof Error)||error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
     // The model batch may still be draining through SPI. Retry rack backpressure.
-    for(let attempt=0;;++attempt){try{await this.effects(p.effects);const result=await this.setSample(p.sample);if(this.advanced)await this.restoreVoiceBudget(p);return result;}catch(error){if(attempt>=12 || !(error instanceof Error) || error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
+    for(let attempt=0;;++attempt){try{await this.effects(p.effects);if(this.advanced)await retry(()=>this.request(53,(p.controllerRoutes??Array(66).fill(0)).flatMap(v=>encodeU21(v+65536))));const result=await this.setSample(p.sample);if(this.advanced)await this.restoreVoiceBudget(p);return result;}catch(error){if(attempt>=12 || !(error instanceof Error) || error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
   }
   protected request<T = PhysicalState>(operation: number, data: number[] = []): Promise<T> {
     const run = this.tail.catch(() => undefined).then(() => this.rpc<T>(operation, data));
@@ -222,7 +230,11 @@ export class PhysicalSynthClient {
           const frame = decodePresetSyncFrame(bytes);
           if (frame.transactionId !== transaction) return;
           if (frame.message === 7) {
-            finish(Error(operation===41?"Update Advanced main firmware to use the global arpeggiator.":frame.payload[1] === 3 ? operation>=16?"Update Advanced firmware for envelope and LFO modulation.":"Update Advanced main firmware for preset velocity engines." : frame.payload[1] === 9 ? "Modulation capacity full. Remove another destination before adding this one." : frame.payload[1] === 8 ? "Stop Learn or Calibration and release keys before changing the velocity engine or loading a sound." : operation===21?"Release the keys and stop the synth before importing a sample.":operation===25?"Release the keys before sample preview.":operation===42?"Release the keys before switching Arp on/off or changing its output. If playback is being tested, wait for it to finish.":operation===44?"Stop the synth, clear held arp notes, and release the keys before saving performance settings.":"The board rejected this synth operation."));
+            finish(Error(operation===41?"Update Advanced main firmware to use the global arpeggiator.":frame.payload[1] === 3 ? operation>=16?"Update Advanced firmware for envelope and LFO modulation.":"Update Advanced main firmware for preset velocity engines." : frame.payload[1] === 9 ? "DSP budget full. Reduce another effect, feature or modulation first." : frame.payload[1] === 8 ? "Stop Learn or Calibration and release keys before changing the velocity engine or loading a sound." : operation===21?"Release the keys and stop the synth before importing a sample.":operation===25?"Release the keys before sample preview.":operation===42?"Release the keys before switching Arp on/off or changing its output. If playback is being tested, wait for it to finish.":operation===44?"Stop the synth, clear held arp notes, and release the keys before saving performance settings.":"The board rejected this synth operation."));
+          } else if(operation===52&&frame.message===0x40){
+            const p=frame.payload;if(p.length!==25||p[0]!==17||p[1]>1||p[2]>2||p[3]>1||p[16]>1||p[17]>1||p[18]>1)throw Error('Invalid controller state.');const numbers=Array.from({length:4},(_,i)=>decodeU21(p.slice(4+i*3,7+i*3)));if(numbers.some(v=>v>4095))throw Error('Invalid pedal ADC state.');const expression=decodeU21(p.slice(19,22)),modulation=decodeU21(p.slice(22,25));if(expression>65535||modulation>65534)throw Error('Invalid controller values.');finish(undefined,{play:!!p[1],pedal:p[2],invert:!!p[3],minimum:numbers[0],maximum:numbers[1],tip:numbers[2],ring:numbers[3],valid:!!p[16],sustain:!!p[17],armed:!!p[18],expression:expression/65535,modulation:(modulation-32767)/32767} as T);
+          } else if(operation>=53&&operation<=55&&frame.message===0x41){
+            const p=frame.payload;if(p.length!==199||p[0]!==17)throw Error('Invalid controller routes.');const values=Array.from({length:66},(_,i)=>decodeU21(p.slice(1+i*3,4+i*3))-65536);if(values.some((v,i)=>v< -65536||v>65536||[8,21,27,31].includes(Math.floor(i/2))&&v!==0))throw Error('Invalid controller routes.');this.controllerRoutes=values;finish(undefined,values as T);
           } else if(operation>=46&&operation<=51&&frame.message===0x35){
             finish(undefined,decodePhysicalState(frame.payload) as T);
           } else if(operation>=41&&operation<=44&&frame.message===0x3f){
@@ -230,14 +242,15 @@ export class PhysicalSynthClient {
             const config=performanceFromWords(Array.from({length:56},(_,i)=>decodeU21(p.slice(14+i*3,17+i*3))));
             finish(undefined,{config,step:p[2],notes:p[3],running:!!p[4],limited:!!p[5],external:!!p[6],bpm10:decodeU14(p.slice(7,9)),skipped:decodeU21(p.slice(9,12)),full:decodeU14(p.slice(12,14))} as T);
           } else if(operation>=36&&operation<=40&&frame.message===0x3e){
-            const p=frame.payload,signature=p.slice(8,13).reduce((a,b)=>a*128+b,0),peakUs=decodeU21(p.slice(13,16));if(p.length!==17||p[0]!==17||p[1]>5||p[2]<8||p[2]>18||p[3]<8||p[3]>18||p[4]<8||p[4]>18||p[5]<2||p[5]>5||p[6]>1||signature>0xffffffff||p[16]!==2)throw Error('Invalid voice-budget response.');finish(undefined,{phase:p[1],voices:p[2],candidate:p[3],ceiling:p[4],engine:p[5],qualified:!!p[6],reason:p[7],signature,peakUs,revision:p[16]} as T);
+            const p=frame.payload,signature=p.slice(8,13).reduce((a,b)=>a*128+b,0),peakUs=decodeU21(p.slice(13,16));if(p.length!==17||p[0]!==17||p[1]>5||p[2]<1||p[2]>18||p[3]<1||p[3]>18||p[4]<1||p[4]>18||p[5]<2||p[5]>5||p[6]>1||signature>0xffffffff||p[16]!==3)throw Error('Invalid voice-budget response.');finish(undefined,{phase:p[1],voices:p[2],candidate:p[3],ceiling:p[4],engine:p[5],qualified:!!p[6],reason:p[7],signature,peakUs,revision:p[16]} as T);
           } else if(operation>=30&&operation<=35&&frame.message===0x3d){
             const p=frame.payload;if(p.length<9||p[0]!==17||p[8]!==2||p[1]<2||p[1]>5||p[2]>1||p[3]>1||p[7]>64||p.length!==9+p[7]*3||(operation===33&&(decodeU21(p.slice(4,7))!==decodeU21(data.slice(0,3))||p[7]!==data[3])))throw Error("Invalid Advanced engine response.");
             finish(undefined,{engine:p[1],state:p[2],busy:!!p[3],words:Array.from({length:p[7]},(_,i)=>decodeU21(p.slice(9+i*3,12+i*3)))} as T);
           } else if(operation>=20&&operation<=27&&frame.message===(operation===26?0x3c:0x3b)){
             if(operation===26){const p=frame.payload;if(p[0]!==17||p.length!==2+3*p[1]||p[1]>64)throw Error("Invalid sample chunk.");const values=Array.from({length:p[1]},(_,i)=>decodeU21(p.slice(2+3*i,5+3*i))-32768);if(values.some(v=>v<-32768||v>32767))throw Error("Invalid sample PCM.");finish(undefined,values as T);}
             else finish(undefined,decodeSample(frame.payload) as T);
-          } else if (frame.message === (operation === 8 ? 0x36 : (operation===28||operation===45) ? 0x35 : operation>=16 ? 0x39 : operation>=12 ? 0x38 : operation>=10 ? 0x37 : 0x35)) { if(operation>=16&&operation!==28&&operation!==45){this.modulation=decodeModulation(frame.payload);finish(undefined,this.modulation as T);}else if(operation>=12&&operation!==28&&operation!==45){this.motion=decodeMotion(frame.payload);finish(undefined,this.motion as T);}else if(operation>=10&&operation!==28&&operation!==45){this.fx=decodeFx(frame.payload);finish(undefined,this.fx as T);}else if(operation===8)finish(undefined,decodePhysicalExpression(frame.payload) as T);else {const state=decodePhysicalState(frame.payload);finish(undefined,{...state,preset:{...state.preset,sample:this.sample,modulation:this.modulation,effects:this.fx,tiltRoutes:this.motion.tiltRoutes}} as T);} }
+          } else if(frame.message===0x42&&operation===56){const p=frame.payload;if(p.length!==5||p[0]!==17)throw Error('Invalid mono response.');this.mono=validateMono({flags:p[1],glideMs:decodeU21(p.slice(2,5))});finish(undefined,this.mono as T);
+          } else if (frame.message === (operation === 8 ? 0x36 : (operation===28||operation===45) ? 0x35 : operation>=16 ? 0x39 : operation>=12 ? 0x38 : operation>=10 ? 0x37 : 0x35)) { if(operation>=16&&operation!==28&&operation!==45){this.modulation=decodeModulation(frame.payload);finish(undefined,this.modulation as T);}else if(operation>=12&&operation!==28&&operation!==45){this.motion=decodeMotion(frame.payload);finish(undefined,this.motion as T);}else if(operation>=10&&operation!==28&&operation!==45){this.fx=decodeFx(frame.payload);finish(undefined,this.fx as T);}else if(operation===8)finish(undefined,decodePhysicalExpression(frame.payload) as T);else {const state=decodePhysicalState(frame.payload);finish(undefined,{...state,preset:{...state.preset,mono:this.mono,controllerRoutes:this.controllerRoutes,sample:this.sample,modulation:this.modulation,effects:this.fx,tiltRoutes:this.motion.tiltRoutes}} as T);} }
         } catch (error) { finish(error instanceof Error ? error : Error("Invalid synth response.")); }
       });
       void this.transport.send(encodeDefaultPresetSyncFrame(0x34, transaction, [17, operation, ...data]))

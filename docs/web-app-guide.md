@@ -49,6 +49,20 @@ board is connected. Leave Calibration, open Synth Editor and choose **Start
 synth**. Playback shows stopped, starting or running status. **Retry synth
 connection** recovers interrupted synth communication.
 
+The compact **Poly / Mono / Legato** selector sits beside Arp. Its chevron opens
+note priority, glide time/timing, and legato velocity options. Mono retriggers the
+attack; Legato preserves the vibrating string and envelopes while keys overlap.
+Releasing the selected key returns to another held key. These modes affect the
+onboard Physical Strings engine; outgoing MIDI stays polyphonic. Mono has its
+own one-string DSP allowance. Reduce processing before returning to Poly if its
+eight-voice budget would be exceeded.
+
+Joystick pitch bend/modulation automatically yields to navigation while the
+device menu is open. Configure pedals on the device under **Settings → Pedal
+setup**, including type, polarity, low/high learning, and **Save pedal**. These
+are device settings rather than Web App controls; Expression remains an
+assignable modulation source.
+
 Choose **Strike** or **Bow** above the exciter pad. Strike uses Hardness and
 Resonance; Bow replaces these axes with Speed and Force and starts without a
 pluck. Marble material has its own pad in Contact. The Resonator pad controls
@@ -78,11 +92,12 @@ editor; **Assign to controls** selects that source. Available destinations glow
 faintly in the selected source’s color; unavailable or full-route targets do
 not glow. The glow clears in **Edit values**. Drag a destination knob
 for signed modulation depth, then release to return to **Edit values**. Physical
-Strings shares modulation capacity across velocity, pressure, release, tilt,
-Envelope and LFO; each target permits four sources. The capacity meter shows
-current usage and the cost of a proposed assignment. At capacity, remove an
-assignment before adding another. Capacity units describe patch complexity,
-not measured CPU usage.
+Strings shares a DSP budget across velocity, pressure, release, tilt, Envelope,
+LFO, Joystick Mod, Expression, sample loops and sound/FX processing. Each target
+permits four sources, with 32 connections total. The small budget bar previews
+proposed additions. Reduce processing or remove an assignment when it is full.
+Its estimate describes render work; Test DSP budget measures the complete patch
+on the board while muted.
 Source rings show depth and direction; a white dot shows the combined value.
 **Delete modulation** removes a single route directly or offers a source
 choice when several routes exist. Escape returns to **Edit values** from
@@ -839,8 +854,8 @@ parameter knob to set modulation depth. Releasing it returns to normal editing.
 Both sources can shape voice level before the voices are mixed. Source settings
 and assignments save with the sound. Their meters show a labeled last-key
 preview; the instrument generates modulation independently for every note.
-Envelope and LFO share Physical Strings’ modulation capacity with other sources.
-At capacity, existing routes remain editable; remove an assignment to make room
+Envelope and LFO share Physical Strings’ DSP budget with the other sources and
+sound processing. At capacity, existing routes remain editable; remove an assignment to make room
 for another destination.
 
 In Contact, **Contact starts → Note off** leaves held notes clean, then starts

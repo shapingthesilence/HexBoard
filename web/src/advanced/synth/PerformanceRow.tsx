@@ -1,11 +1,11 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
 import type {MidiTransport} from '../../midi/types.ts';
 import {PhysicalSynthClient} from './client.ts';
 import {velocityEngines,type PhysicalVelocityEngine} from './schema.ts';
 import {ArpeggiatorEditor} from './ArpeggiatorEditor.tsx';
 import {S,arpModes,arpRates,publishPerformance,publishPerformanceState,usePerformance,type PerformanceConfig,type PerformanceState} from './performanceSchema.ts';
 import './PerformanceRow.css';
-export function PerformanceRow({transport,disabled=false,physical=true}:{transport?:MidiTransport;disabled?:boolean;physical?:boolean}){
+export function PerformanceRow({transport,disabled=false,physical=true,voiceControls}:{voiceControls?:ReactNode;transport?:MidiTransport;disabled?:boolean;physical?:boolean}){
  const config=usePerformance(),v=config.values;
  const [open,setOpen]=useState(false),[velocity,setVelocity]=useState<PhysicalVelocityEngine>(0),[state,setState]=useState<PerformanceState>(),[error,setError]=useState(''),[ready,setReady]=useState(!transport),[pending,setPending]=useState(false),[saved,setSaved]=useState(false);
  const client=useRef<PhysicalSynthClient|undefined>(undefined),latest=useRef(config),queued=useRef<PerformanceConfig|undefined>(undefined),sending=useRef(false),mounted=useRef(true),epoch=useRef(0),taps=useRef<number[]>([]);
@@ -31,6 +31,7 @@ export function PerformanceRow({transport,disabled=false,physical=true}:{transpo
    <label className="performance-velocity"><span>Velocity</span><select aria-label="Velocity engine" value={velocity} disabled={blocked||pending} onChange={e=>{const kind=Number(e.target.value) as PhysicalVelocityEngine;if(client.current)void client.current.velocityEngine(kind).then(()=>setVelocity(kind)).catch(fail);else setVelocity(kind);}}>{velocityEngines.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
    <div className={`arp-access${v[S.enabled]?' enabled':''}`}><button type="button" className="arp-power" aria-label="Enable arpeggiator" aria-pressed={!!v[S.enabled]} disabled={blocked||pending} onClick={()=>set(S.enabled,1-v[S.enabled])}><span className="arp-led"/>Arp</button><button type="button" className="arp-open" aria-haspopup="dialog" aria-expanded={open} disabled={disabled} onClick={()=>setOpen(true)}><span>{arpModes[v[S.mode]]}</span><small>{arpRates[v[S.division]]}{v[S.timing]===1?' · dotted':v[S.timing]===2?' · triplet':''}</small><span aria-hidden="true">⌄</span></button></div>
    <button className="arp-hold" type="button" aria-pressed={!!v[S.latch]} disabled={blocked} onClick={()=>set(S.latch,1-v[S.latch])} title="Keep the chord playing after you release the keys">Hold</button>
+   {voiceControls}
    <div className="performance-clock"><span className={`clock-pulse${state?.running?' active':''}`} aria-hidden="true"/><label><span>BPM</span><input aria-label="Performance BPM" type="number" min="40" max="240" step=".1" disabled={blocked||!!v[S.clock]} value={tempoText} onFocus={()=>tempoEditing.current=true} onChange={e=>setTempoText(e.target.value)} onBlur={()=>{tempoEditing.current=false;const bpm=Number(tempoText);if(Number.isFinite(bpm)&&tempoText.trim()){const value=Math.max(400,Math.min(2400,Math.round(bpm*10)));setTempoText(String(value/10));if(value!==v[S.bpm10])set(S.bpm10,value);}else setTempoText(String(v[S.bpm10]/10));}} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}}/></label><button type="button" disabled={blocked||!!v[S.clock]} onClick={tap}>Tap</button>{!!v[S.clock]&&<small>{state?.external?'USB clock':'Waiting for clock'}</small>}</div>
    <span className="arp-live" aria-live="off">{pending?'Updating…':state?.notes?`${state.notes} notes${state.running?' · playing':''}`:v[S.enabled]?'Play a chord':'Ready'}</span>
   </div>

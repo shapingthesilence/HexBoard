@@ -69,3 +69,15 @@
 .hallPeakMap .hallPeakValue { font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .hallPeakMap g[data-editable=true] { cursor: ns-resize; touch-action: none; }
 .hallPeakMap g:focus-visible polygon, .hallPeakMap g[data-dragging=true] polygon { stroke: var(--text); stroke-width: 3; }
+
+.colorCalibration .colorReference { min-height: 180px; border-radius: 12px; border: 12px solid #777; margin: 20px 0 12px; }
+.colorCalibration .colorTargets { display: flex; flex-wrap: wrap; gap: 8px; }
+.colorTargets button { display: flex; align-items: center; gap: 6px; }
+.colorTargets button[aria-pressed="true"] { outline: 2px solid var(--accent, #67ddd0); outline-offset: 2px; }
+.colorTargets span { display: inline-block; width: 20px; height: 20px; border: 1px solid #888; border-radius: 50%; }
+.colorCalibration fieldset { border: 1px solid #7775; border-radius: 10px; padding: 16px; margin: 20px 0; min-width: 0; }
+.colorCalibration .colorSlider { display: grid; grid-template-columns: minmax(65px, 100px) minmax(80px, 1fr) 60px; align-items: center; gap: 12px; margin: 12px 0; }
+.colorSlider input { width: 100%; min-width: 0; }
+.colorSlider output { text-align: right; font-variant-numeric: tabular-nums; }
+.colorCalibration details { margin: 18px 0; }
+.colorCalibration summary { cursor: pointer; }

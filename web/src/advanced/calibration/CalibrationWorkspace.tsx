@@ -14,14 +14,16 @@ import { engineMeasurement } from "./engines.mjs";
 import { chartColors, CurveChart, PressureCurveChart, Plot } from "./Charts.tsx";
 import { NumberField, VelocityControls } from "./VelocityControls.tsx";
 import { HallPeakMap, parseHallPeaks, parseHallRests, parseHallRaw, parseHallLimits } from "./HallPeakMap.tsx";
+import { ColorCalibration } from "./ColorCalibration.tsx";
 import { CapStudyPanel } from "./CapStudyPanel.tsx";
 import "./calibration.css";
 
-type Step = "hall" | "velocity" | "pressure" | "diagnostics" | "caps";
+type Step = "hall" | "velocity" | "pressure" | "diagnostics" | "caps" | "color";
 const steps: Array<{ id: Step; label: string; description: string }> = [
   { id: "hall", label: "1. Hall setup", description: "Capture each key’s rest position and firm endpoint." },
   { id: "velocity", label: "2. Velocity", description: "Play, choose a response, and tune soft-to-hard strikes." },
   { id: "pressure", label: "3. Pressure", description: "Set the travel range and response for held notes." },
+  { id: "color", label: "LED color", description: "Match keycap colors to a screen reference with live feedback." },
   { id: "caps", label: "Cap study", description: "Collect raw Hall readings at fixture-controlled distances, cap by cap." },
   { id: "diagnostics", label: "Diagnostics", description: "Inspect captured travel, neighboring sensors, LEDs, and scan timing." }
 ];
@@ -79,6 +81,12 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
     setWindowMs(Math.min(240, Math.max(5, Math.ceil(Math.max(...next.curves.on.map(p => p.us), ...next.curves.off.map(p => p.us)) / 25000) * 25)));
     setHall(record(await client.command("cal status"), "cal,status="));
     setVelocityStatus(record(await client.command("velocity status"), "velocity,status,"));
+  }
+  async function colorCommand(command: string): Promise<string[]> {
+    while ((operation.current || client.busy) && alive.current) await delay(10);
+    if (!alive.current) throw Error("Calibration closed.");
+    operation.current = true;
+    try { return await client.command(command); } finally { operation.current = false; }
   }
   async function perform(action: () => Promise<void>) {
     setBusy(true);
@@ -242,12 +250,13 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
     {validationError && <p className="calStatus" role="alert" data-error={true}>{validationError}</p>}
     <nav className="sectionTabs" aria-label="Calibration steps">{steps.map(item => <button type="button" key={item.id} aria-current={step === item.id ? "step" : undefined}
       disabled={hallActive || guided || capturing || ledRunning || busy || capStudyActive} onClick={() => setStep(item.id)}>{item.label}</button>)}</nav>
-    <p className="calHint">{steps.find(item => item.id === step)!.description} {step === "caps" ? "Measurements do not change calibration." : "Changes apply to all keys; the selected key is for measurements."}</p>
-    {step !== "hall" && step !== "caps" && <section className="calKeySelector"><div className="calActions"><NumberField label="Monitor key" value={key} min={0} max={132} disabled={locked}
+    <p className="calHint">{steps.find(item => item.id === step)!.description} {step === "caps" ? "Measurements do not change calibration." : step === "color" ? "Color correction belongs to this board and preserves your layouts." : "Changes apply to all keys; the selected key is for measurements."}</p>
+    {step !== "hall" && step !== "caps" && step !== "color" && <section className="calKeySelector"><div className="calActions"><NumberField label="Monitor key" value={key} min={0} max={132} disabled={locked}
       onChange={value => { if (Number.isInteger(value) && value >= 0 && value < 133) setKey(value); }} /><button type="button" aria-expanded={showKeys} onClick={() => setShowKeys(!showKeys)}>Choose on board</button>
       {freshPressure && <span>{mm(freshPressure.travel).toFixed(2)} mm · {(freshPressure.pressure / 65535 * 100).toFixed(1)}% pressure</span>}</div>
       {showKeys && <div className="calKeyGrid" aria-label="Choose a Hall key">{advancedNoteSurface.map(k => <button type="button" key={k.hallKey} disabled={locked} aria-pressed={key === k.hallKey}
         style={{ gridRow: k.row + 1, gridColumn: k.coordCol + 2 }} onClick={() => setKey(k.hallKey)}>{k.hallKey}</button>)}</div>}</section>}
+    {step === "color" && ready && <ColorCalibration execute={colorCommand} available={ready && !locked} />}
     <div hidden={step !== "caps"}><CapStudyPanel sample={pressure} available={ready && !busy && !capturing && !ledRunning && !hallActive && !guided} onTarget={setKey} onActive={setCapStudyActive} boardLabel={transport.label} /></div>
     {step === "hall" && <section className="calCard calHall"><h3>Rest position & firm press</h3>
       <p>Release every key before starting. Keep them untouched while rest readings are captured. Then press each key firmly and release it. Finish after sweeping the whole board.</p>

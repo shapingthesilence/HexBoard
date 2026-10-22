@@ -7,7 +7,7 @@ describe('four modulation sources per target',()=>{
     const p=physicalPresetFromUnknown(initialPreset);
     p.routes.fill(0);p.tiltRoutes.fill(0);p.modulation.routes.fill(0);
     p.routes[3]=100;p.routes[4]=-200;p.tiltRoutes[2]=300;p.modulation.routes[2]=-400;
-    expect(targetDepths(p,1)).toEqual([100,-200,0,300,0,-400,0]);
+    expect(targetDepths(p,1)).toEqual([100,-200,0,300,0,-400,0,0,0]);
     expect(canAssignTarget(p,1,6)).toBe(false);
     expect(canAssignTarget(p,1,5)).toBe(true);
     expect(canAssignTarget(p,2,6)).toBe(true);

@@ -1,11 +1,15 @@
+import {MonoControls} from './MonoControls.tsx';
+import {type MonoConfig} from './mono.ts';
 import {ModulationBudget} from "./ModulationBudget.tsx";
-import {modulationUsage,budgetAllows,sourceContribution} from "./modulationBudget.ts";
+import {dspUsage,dspAllows,dspRouteAllows,dspSourceContribution,dspCapacity,routePatch,parameterPatch} from "./dspBudget.ts";
 import {useEditHistory} from "./useEditHistory.ts";
 import {samePhysicalSound} from "./physicalHistory.ts";
 import {canAssignTarget} from "./targetModulation.ts";
 import {usePerformance,usePerformanceTempo,S as PerformanceSetting} from './performanceSchema.ts';
+import {ControllerControls} from "./ControllerControls.tsx";
+import {routeDepth} from "./modulationBudget.ts";
 import {PerformanceRow} from './PerformanceRow.tsx';
-import {presetFingerprint} from "./voiceBudget.ts";
+import {validVoiceBudget,presetFingerprint} from "./voiceBudget.ts";
 import {VoiceBudgetEditor} from "./VoiceBudgetEditor.tsx";
 import {SynthProgress} from './SynthProgress.tsx';
 import type {SynthProgress as Progress} from './progress.ts';
@@ -47,11 +51,13 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
   const [device, setDevice] = useState<PhysicalState>(), [ready, setReady] = useState(false), [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("Build your sound here. Connect Advanced to hear the physical model."), [failed, setFailed] = useState(false);
   const [bend, setBend] = useState(0), [source, setSource] = useState(1);
+  const [fxPreview,setFxPreview]=useState<FxRack>();
   const [budgetTarget,setBudgetTarget]=useState<number>();
   const [budgetFocus,setBudgetFocus]=useState<number>();
   const [budgetSource,setBudgetSource]=useState<number>();
   const [blockedTip,setBlockedTip]=useState<{x:number;y:number}>();
   const [sourceEditor,setSourceEditor]=useState<number>();
+  const [controller,setController]=useState<import("./client.ts").ControllerState>();
   const pinDrag=useRef<{y:number;pressure:number}|undefined>(undefined);
   const [motionReplay,setMotionReplay]=useState(0),[motionEnabled,setMotionEnabled]=useState(true);
   const [tool, setTool] = useState<"value" | "modulate" | "delete">("value");
@@ -142,18 +148,27 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
     window.addEventListener("keyup",finish);window.addEventListener("blur",finish);
     return()=>{window.removeEventListener("pointerup",finish);window.removeEventListener("pointercancel",finish);window.removeEventListener("keyup",finish);window.removeEventListener("blur",finish);};
   },[endEdit]);
+  const admit=(next:PhysicalPreset)=>{if(dspAllows(preset,next))return true;setMessage("DSP budget full · reduce an effect, Drive, Pin or modulation first.");setFailed(true);return false;};
+  const setMono=(mono:MonoConfig)=>{
+    const next={...preset,mono};if(!admit(next))return;
+    if((mono.flags&3)!==((preset.mono?.flags??0)&3)){void apply(next);return;}
+    retainedDraft.current=true;setPreset(p=>({...p,mono}));queue('mono',()=>client!.monoSettings(mono).then(()=>client!.status()));
+  };
   const setEffects=(effects:FxRack)=>{
+    if(!admit({...preset,effects}))return;
     retainedDraft.current=true;setPreset(p=>({...p,effects}));
     clearTimeout(fxTimer.current);edits.current.delete("fx");
     setFxWaiting(Boolean(client&&ready));
     fxTimer.current=setTimeout(()=>{setFxWaiting(false);queue("fx",()=>client!.effects(effects));},1000);
   };
   const setRackControls=(effects:FxRack)=>{
+    if(!admit({...preset,effects}))return;
     retainedDraft.current=true;setPreset(p=>({...p,effects}));
     if(fxWaiting)setEffects(effects);else queue("fx",()=>client!.effects(effects));
   };
   const applySample=async(sample:SampleExciter,preview=false)=>{
     sample={...sample,direct:preset.parameters[32]};
+    if(!admit({...parameterPatch(preset,21,0),sample}))throw Error("DSP budget full. Reduce the rack or string processing before loading this sample.");
     retainedDraft.current=true;edits.current.delete("p21");setOperationLabel("Loading sample…");setFailed(false);setLoading(true);
     setPreset(p=>({...p,sample:{...sample,direct:p.parameters[32]},parameters:p.parameters.map((v,i)=>i===21?0:v)}));
     try{if(client&&ready){if(preview){await client.parameter(21,0);await client.setSample(sample);await client.previewSample();}else{edits.current.clear();clearTimeout(fxTimer.current);setFxWaiting(false);await client.load({...preset,sample,parameters:preset.parameters.map((v,i)=>i===21?0:v)});}setDevice(await client.read());setFailed(false);}else if(preview)throw Error("Connect Advanced to preview through the string.");}
@@ -161,26 +176,29 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
   };
   const chooseExciter=(mode:number)=>{
     if(mode===2&&!preset.sample.frames.length){setSampleEditor(true);return;}
+    const candidate={...parameterPatch(preset,21,mode===1?65535:0),sample:{...preset.sample,enabled:mode===2}};if(!admit(candidate))return;
     retainedDraft.current=true;const sample={...preset.sample,enabled:mode===2};setPreset(p=>({...p,sample,parameters:p.parameters.map((v,i)=>i===21?(mode===1?65535:0):v)}));
     queue("p21",()=>client!.parameter(21,mode===1?65535:0));
     queue("sample",()=>client!.setSample(sample));
   };
   const setBody=(index:number,value:number)=>{
     const values=preset.effects.values.map(row=>[...row]);values[4][index]=Math.round(value);
-    const effects={...preset.effects,values};retainedDraft.current=true;setPreset(p=>({...p,effects}));
+    const effects={...preset.effects,values};if(!admit({...preset,effects}))return;retainedDraft.current=true;setPreset(p=>({...p,effects}));
     // Share the rack transaction, keeping a pending order change and its cooldown.
     if(fxWaiting)setEffects(effects);else queue("fx",()=>client!.effects(effects));
   };
   const setParameter = (id: number, value: number) => {
+    if(!admit(parameterPatch(preset,id,value)))return;
     retainedDraft.current = true;
     setPreset(p => ({ ...p, sample:id===32?{...p.sample,direct:value}:p.sample, parameters: p.parameters.map((v, i) => i === id ? value : v) }));
     queue(`p${id}`, () => client!.parameter(id, value));
   };
   const setRoute = (id: number, which: number, value: number) => {
     if(value!==0 && !canAssignTarget(preset,id,which))return;
-    if(value!==0&&!budgetAllows(preset,id,which,value))return;
+    if(value!==0&&!dspRouteAllows(preset,id,which,value))return;
     retainedDraft.current = true;
-    if(which>=5){setPreset(p=>({...p,modulation:{...p.modulation,routes:p.modulation.routes.map((v,i)=>i===id*2+which-5?value:v)}}));queue(`m${id}:${which}`,()=>client!.modRoute(id,which-5,value));}
+    if(which>=7){setPreset(p=>({...p,controllerRoutes:(p.controllerRoutes??Array(66).fill(0)).map((v,i)=>i===id*2+which-7?value:v)}));queue(`c${id}:${which}`,()=>client!.controllerRoute(id,which-7,value));}
+    else if(which>=5){setPreset(p=>({...p,modulation:{...p.modulation,routes:p.modulation.routes.map((v,i)=>i===id*2+which-5?value:v)}}));queue(`m${id}:${which}`,()=>client!.modRoute(id,which-5,value));}
     else if(which>=3){setPreset(p=>({...p,tiltRoutes:p.tiltRoutes.map((v,i)=>i===id*2+which-3?value:v)}));queue(`t${id}:${which}`,()=>client!.tiltRoute(id,which-3,value));}
     else {setPreset(p => ({ ...p, routes: p.routes.map((v, i) => i === id * 3 + which ? value : v) }));queue(`r${id}:${which}`, () => client!.route(id, which, value));}
   };
@@ -194,7 +212,7 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
   const busy = loading || (!failed&&device?.state === "loading") || Boolean(progress);
   const sources = client && ready ? [live?.velocity ?? 0, live?.pressure ?? 0, live?.release ?? 0].map((v, i) => v / (i === 1 ? 65535 : 127)) : [0.8, previewPressure / 65535, 0];
   const generatedPreview=useSourcePreview(preset.modulation.settings,live);
-  sources.push(live?.tiltX??0,live?.tiltY??0,...generatedPreview);
+  sources.push(live?.tiltX??0,live?.tiltY??0,...generatedPreview,controller?.modulation??0,controller?.expression??1);
   const effective = effectiveParameters(preset, sources);
   const pickup = 0.05 + 0.9 * effective[5], rightPickup = 0.05 + 0.9 * effective[14];
   const bowMode=preset.parameters[21]>32767;
@@ -235,19 +253,20 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
     setParameter(24,Math.round(Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width))*65535));
     setParameter(25,Math.round((1-Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height)))*65535));
   };
-  const budget=modulationUsage(preset);
+  const budget=dspUsage(preset);
+  const tested=validVoiceBudget(preset,preset.voiceBudget);
   const previewTarget=budgetTarget??budgetFocus;
-  const budgetProjection=tool==="modulate"&&budgetSource===undefined&&previewTarget!==undefined?modulationUsage(preset,{id:previewTarget,source,value:1}):undefined;
-  const performanceGated=(id:number)=>preset.sample.enabled&&preset.effects.order.length>=3&&((id===29||id===30)?(preset.sample.priority??0)===0:id===26&&(preset.sample.priority??0)===1);
+  const budgetProjection=fxPreview?dspUsage({...preset,effects:fxPreview}):budgetSource===undefined&&previewTarget!==undefined?dspUsage(tool==="modulate"?routePatch(preset,previewTarget,source,1):parameterPatch(preset,previewTarget,preset.parameters[previewTarget]||65535)):undefined;
+  const performanceGated=(id:number)=>[26,28,29].includes(id)&&preset.parameters[id]===0&&!Array.from({length:9},(_,source)=>routeDepth(preset,id,source)).some(Boolean)&&!dspAllows(preset,parameterPatch(preset,id,65535));
   const driveUnavailable=performanceGated(26);
   const control = (id: number) => {
     const original = physicalParameters[id],p=bowMode&&id===28?{...original,name:"Bow texture"}:original, sampleGate=performanceGated(id), unavailable = sampleGate || ([29,30].includes(id) && bowMode) || (id===32&&(bowMode||!preset.sample.enabled)), modulatable = !unavailable && ![8,21,27,31].includes(id) && (id!==7 || source>=5);
-    const routes = physicalSources.map((label, i) => ({ label:String(label), i, bipolar:i===3||i===4||(i===6&&!preset.modulation.settings[14]), depth: i<3?preset.routes[id*3+i]:i<5?preset.tiltRoutes[id*2+i-3]:preset.modulation.routes[id*2+i-5] })).filter(r => r.depth !== 0);
+    const routes = physicalSources.map((label, i) => ({ label:String(label), i, bipolar:i===3||i===4||i===7||(i===6&&!preset.modulation.settings[14]), depth:routeDepth(preset,id,i) })).filter(r => r.depth !== 0);
     const targetFull=!canAssignTarget(preset,id,source);
-    const routeFull=tool==="modulate"&&modulatable&&(targetFull||!budgetAllows(preset,id,source));
+    const routeFull=tool==="modulate"&&modulatable&&(targetFull||!dspRouteAllows(preset,id,source));
     const modulating = tool === "modulate" && modulatable;
-    const value = modulating ? (source<3?preset.routes[id*3+source]:source<5?preset.tiltRoutes[id*2+source-3]:preset.modulation.routes[id*2+source-5]) : preset.parameters[id];
-    return <div className="physical-control" key={id} data-unavailable={unavailable||undefined} data-modulatable={modulatable} data-route-full={routeFull||undefined} title={routeFull?(targetFull?"4 sources on this target · remove one to add another":"Modulation capacity full · remove another destination"):unavailable?sampleGate?"Full rack: change Sample priority to use this control":"Available with Strike":undefined} onPointerEnter={()=>{if(modulatable){setBudgetTarget(id);setBudgetSource(undefined);}}} onFocusCapture={()=>{if(modulatable){setBudgetFocus(id);setBudgetSource(undefined);}}} onBlurCapture={()=>setBudgetFocus(undefined)} onPointerMove={e=>{if(routeFull)setBlockedTip({x:e.clientX+16,y:e.clientY+18});}} onPointerLeave={()=>{setBlockedTip(undefined);setBudgetTarget(undefined);}}>
+    const value = modulating ? routeDepth(preset,id,source) : preset.parameters[id];
+    return <div className="physical-control" key={id} data-unavailable={unavailable||undefined} data-modulatable={modulatable} data-route-full={routeFull||undefined} title={routeFull?(targetFull?"4 sources on this target · remove one to add another":"DSP budget full · reduce another feature"):unavailable?sampleGate?"DSP budget full · reduce another feature":"Available with Strike":undefined} onPointerEnter={()=>{if(modulatable){setBudgetTarget(id);setBudgetSource(undefined);}}} onFocusCapture={()=>{if(modulatable){setBudgetFocus(id);setBudgetSource(undefined);}}} onBlurCapture={()=>setBudgetFocus(undefined)} onPointerMove={e=>{if(routeFull)setBlockedTip({x:e.clientX+16,y:e.clientY+18});}} onPointerLeave={()=>{setBlockedTip(undefined);setBudgetTarget(undefined);}}>
       <strong>{p.name}</strong>
       <div className="knob-wrap" onClick={() => { if (tool !== "delete" || busy) return; if (routes.length === 1) setRoute(id, routes[0].i, 0); else if (routes.length > 1) setDeleteTarget(deleteTarget === id ? undefined : id); }}>
         {id===32?<input key={modulating?`route-${source}`:"value"} className="sample-direct-slider" type="range" aria-label={modulating?`${physicalSources[source]} to ${p.name}`:p.name} min={modulating?-65536:0} max={modulating?65536:65535} step="1" value={value} disabled={busy||unavailable||routeFull||tool==="delete"} onChange={e=>modulating?setRoute(id,source,Number(e.target.value)):setParameter(id,Number(e.target.value))} onPointerUp={()=>{if(modulating)setTool("value");}} onKeyUp={()=>{if(modulating)setTool("value");}}/>:<Knob key={modulating?`route-${source}`:"value"} label={modulating ? `${physicalSources[source]} to ${id===7?"Voice level":p.name}` : p.name} value={value} min={modulating ? -65536 : 0} max={modulating ? 65536 : 65535} disabled={busy || unavailable || routeFull || tool === "delete"} baseValue={preset.parameters[id]} effectiveValue={effective[id]} routes={routes}
@@ -280,20 +299,21 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
       if(!e.metaKey&&!e.ctrlKey&&!e.altKey)beginEdit();
     }}>
 
-    <PerformanceRow transport={transport} disabled={busy}/>
+    <PerformanceRow transport={transport} disabled={busy} voiceControls={advanced?<MonoControls polyAvailable={dspAllows(preset,{...preset,mono:{...(preset.mono??{glideMs:0}),flags:(preset.mono?.flags??0)&~3}})} value={preset.mono} disabled={busy} onChange={setMono}/>:undefined}/><ControllerControls transport={transport} disabled={busy} onState={setController}/>
+
     <div className="modulation-toolbar" role="toolbar" aria-label="Modulation tools">
       <div className="sound-history" role="group" aria-label="Sound edit history"><button type="button" disabled={!canUndo||busy||sampleEditor} title="Undo sound edit · Ctrl/⌘ Z" onClick={()=>restoreHistory("undo")}>Undo</button><button type="button" disabled={!canRedo||busy||sampleEditor} title="Redo sound edit · Ctrl/⌘ Shift Z" onClick={()=>restoreHistory("redo")}>Redo</button></div>
       <button aria-pressed={tool === "value"} onClick={() => { setTool("value"); setDeleteTarget(undefined); setSourceEditor(undefined); }}>Edit values</button>
-      {physicalSources.map((label,i) => <button key={label} onPointerEnter={()=>{setBudgetTarget(undefined);setBudgetSource(i);}} onPointerLeave={()=>setBudgetSource(undefined)} onFocus={()=>{setBudgetSource(i);setBudgetFocus(undefined);}} onBlur={()=>setBudgetSource(undefined)} style={{ borderColor: sourceColors[i] }} aria-pressed={tool === "modulate" && source === i} onClick={() => { setSource(i); setTool("modulate"); setDeleteTarget(undefined); setSourceEditor(v=>v===i?undefined:i); }}><span className="source-dot" style={{ background: sourceColors[i] }} />{label}{i>=5&&<span className="source-route-count">{modulationRouteCount(preset.modulation.routes,i-5)}</span>}</button>)}
+      {physicalSources.map((label,i) => <button key={label} onPointerEnter={()=>{setBudgetTarget(undefined);setBudgetSource(i);}} onPointerLeave={()=>setBudgetSource(undefined)} onFocus={()=>{setBudgetSource(i);setBudgetFocus(undefined);}} onBlur={()=>setBudgetSource(undefined)} style={{ borderColor: sourceColors[i] }} aria-pressed={tool === "modulate" && source === i} onClick={() => { setSource(i); setTool("modulate"); setDeleteTarget(undefined); setSourceEditor(v=>i<7?(v===i?undefined:i):undefined); }}><span className="source-dot" style={{ background: sourceColors[i] }} />{label}{i>=5&&i<7&&<span className="source-route-count">{modulationRouteCount(preset.modulation.routes,i-5)}</span>}</button>)}
       <button aria-pressed={tool === "delete"} onClick={() => { setTool("delete"); setDeleteTarget(undefined); setSourceEditor(undefined); }}>Delete modulation</button>
       <small>{tool === "modulate" ? source >= 3 && source<5 ? `${physicalSources[source]} ±45° → drag a knob · Neutral uses the base value; negative depth reverses direction` : `${physicalSources[source]} → drag a knob · Release to return to Edit values` : tool === "delete" ? "Click a modulated knob; choose a source if it has several" : "Drag knobs up / down · Shift for fine adjustment"}</small>
-    <ModulationBudget used={budget.units} connections={budget.connections} projected={budgetProjection?.units} blocked={budgetProjection&&!budgetProjection.fits?(!budgetProjection.targetsValid?"Target has 4 sources":budgetProjection.connections>32?"Connection limit reached":undefined):undefined} contribution={budgetSource!==undefined?sourceContribution(preset,budgetSource):undefined}/>
-    {sourceEditor!==undefined && <ModSourceEditor source={sourceEditor} settings={preset.modulation.settings} onChange={setModSetting} onClose={()=>setSourceEditor(undefined)} onAssign={()=>{setTool("modulate");setSourceEditor(undefined);}} disabled={busy} renderControl={(id,label)=> <div className="mod-source-control"><span>{label}</span><Knob label={label} value={preset.modulation.settings[id]} disabled={busy||(id===8&&!!performance.values[PerformanceSetting.lfoSync])} onChange={v=>setModSetting(id,Math.round(v))}/><output>{id===2?`${Math.round(preset.modulation.settings[id]/65535*100)}%`:id===8?performance.values[PerformanceSetting.lfoSync]?`${Math.min(50,performanceTempo/600*(1<<performance.values[PerformanceSetting.lfoDivision])).toFixed(2)} Hz · synced`:`${modulationRate(preset.modulation.settings[id]).toFixed(2)} Hz`:id===11?`${Math.round(preset.modulation.settings[id]/65535*360)}°`:id===15?`${Math.round(preset.modulation.settings[id]/65535*500)} ms`:id===6?preset.modulation.settings[id]<24000?"Fast rise":preset.modulation.settings[id]>41000?"Slow rise":"Linear":modulationSeconds(preset.modulation.settings[id])<1?`${Math.round(modulationSeconds(preset.modulation.settings[id])*1000)} ms`:`${modulationSeconds(preset.modulation.settings[id]).toFixed(1)} s`}</output></div>} />}
+    <ModulationBudget mono={!!((preset.mono?.flags??0)&3)} label="DSP budget" capacity={dspCapacity} testedUs={tested?.peakUs} used={budget.units} connections={budget.connections} projected={budgetProjection?.units} blocked={budgetProjection&&!budgetProjection.fits?(!budgetProjection.targetsValid?"Target has 4 sources":budgetProjection.connections>32?"Connection limit reached":undefined):undefined} contribution={budgetSource!==undefined?dspSourceContribution(preset,budgetSource):undefined}/>
+    {sourceEditor!==undefined && sourceEditor<7 && <ModSourceEditor source={sourceEditor} settings={preset.modulation.settings} onChange={setModSetting} onClose={()=>setSourceEditor(undefined)} onAssign={()=>{setTool("modulate");setSourceEditor(undefined);}} disabled={busy} renderControl={(id,label)=> <div className="mod-source-control"><span>{label}</span><Knob label={label} value={preset.modulation.settings[id]} disabled={busy||(id===8&&!!performance.values[PerformanceSetting.lfoSync])} onChange={v=>setModSetting(id,Math.round(v))}/><output>{id===2?`${Math.round(preset.modulation.settings[id]/65535*100)}%`:id===8?performance.values[PerformanceSetting.lfoSync]?`${Math.min(50,performanceTempo/600*(1<<performance.values[PerformanceSetting.lfoDivision])).toFixed(2)} Hz · synced`:`${modulationRate(preset.modulation.settings[id]).toFixed(2)} Hz`:id===11?`${Math.round(preset.modulation.settings[id]/65535*360)}°`:id===15?`${Math.round(preset.modulation.settings[id]/65535*500)} ms`:id===6?preset.modulation.settings[id]<24000?"Fast rise":preset.modulation.settings[id]>41000?"Slow rise":"Linear":modulationSeconds(preset.modulation.settings[id])<1?`${Math.round(modulationSeconds(preset.modulation.settings[id])*1000)} ms`:`${modulationSeconds(preset.modulation.settings[id]).toFixed(1)} s`}</output></div>} />}
     </div>
 
 
-    {blockedTip && tool==="modulate"&&<div className="mod-limit-tooltip" role="tooltip" style={{left:Math.min(blockedTip.x,window.innerWidth-220),top:blockedTip.y}}>Limit reached · remove an assignment to add another</div>}
-    <header className="instrument-title"><h2>Physical Strings</h2><span>8 voices · stereo</span>{activity?<SynthProgress progress={activity}/>:<p role="status" className={failed ? "error" : ""}>{message}</p>}</header>
+    {blockedTip && tool==="modulate"&&<div className="mod-limit-tooltip" role="tooltip" style={{left:Math.min(blockedTip.x,window.innerWidth-220),top:blockedTip.y}}>DSP budget full · reduce another feature</div>}
+    <header className="instrument-title"><h2>Physical Strings</h2><span>Stereo</span>{activity?<SynthProgress progress={activity}/>:<p role="status" className={failed ? "error" : ""}>{message}</p>}</header>
     <fieldset className="preset-strip" disabled={busy}><legend>Presets</legend><div className="preset-controls">
       <label>Preset <select value={selection} onChange={e => setSelection(Number(e.target.value))}>{presets.map((p, i) => <option value={i} key={`${i}:${p.name}`}>{p.name}</option>)}</select></label><button onClick={() => void apply(presets[selection])}>Load preset</button>
       <label>Name <input maxLength={80} value={name} onChange={e => setName(e.target.value)} /></label>
@@ -329,7 +349,7 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
         </div>{(!preset.sample.enabled||bowMode)&&<div className="physical-grid mini-controls">{(showBowPad?[23,22]:[2,12]).map(control)}</div>}</div>
 
 
-      <div className="sample-panel-controls">{preset.sample.enabled&&!bowMode&&<>{control(32)}<label className="sample-priority">Full rack priority<select aria-label="Sample performance priority" value={preset.sample.priority??0} onChange={e=>{const sample={...preset.sample,priority:Number(e.target.value) as 0|1};retainedDraft.current=true;setPreset(p=>({...p,sample}));queue("sample",()=>client!.setSample(sample));}}><option value={0}>Drive</option><option value={1}>Pin</option></select></label></>}</div><div className="sample-access"><button type="button" disabled={busy} onClick={()=>setSampleEditor(true)}>{preset.sample.frames.length?"Edit sample…":"Import sample…"}</button><span>{preset.sample.frames.length?`${preset.sample.name} · ${Math.round(preset.sample.frames.length/16)} ms`: "Recorded impacts & textures"}</span></div>      <p className="panel-note">{bowMode?"Bow starts from rest. Pressure controls force; speed moves from creaking drag through singing to scrape.":preset.sample.enabled?"Sample energy follows key velocity. Direct blends the recording with the string.":"Strike energy follows key velocity. Shape impacts in the Exciter pad."}</p>
+      <div className="sample-panel-controls">{preset.sample.enabled&&!bowMode&&<>{control(32)}</>}</div><div className="sample-access"><button type="button" disabled={busy} onClick={()=>setSampleEditor(true)}>{preset.sample.frames.length?"Edit sample…":"Import sample…"}</button><span>{preset.sample.frames.length?`${preset.sample.name} · ${Math.round(preset.sample.frames.length/16)} ms`: "Recorded impacts & textures"}</span></div>      <p className="panel-note">{bowMode?"Bow starts from rest. Pressure controls force; speed moves from creaking drag through singing to scrape.":preset.sample.enabled?"Sample energy follows key velocity. Direct blends the recording with the string.":"Strike energy follows key velocity. Shape impacts in the Exciter pad."}</p>
 </fieldset>
       <fieldset className="material-panel resonator-panel" disabled={busy}><legend>Resonator</legend>
         <div className="material-body"><div className="material-surface"><div className="material-context" aria-hidden="true"/>
@@ -386,7 +406,7 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
     <fieldset className="expression-panel" disabled={busy}><legend>Expression</legend>
       <p className="panel-note">Tilt X ± {((live?.tiltX??0)*45).toFixed(1)}° · Y {((live?.tiltY??0)*45).toFixed(1)}° · {live?.motionValid?"Live":live?.motionDetected?"Waiting for valid gravity":"Connect for tilt"} {client&&ready&&<button disabled={busy||!live?.motionValid} onClick={()=>void operation(async()=>{await client.zeroMotion();return client.read();})}>Set tilt neutral</button>}</p>
       <p className="panel-note">{client && ready ? live?.key === null || live?.key === undefined ? "Play a calibrated key to see its pressure." : `Latest played key: ${live.key} · ${live.held ? "held" : "released"}` : "Preview pressure offline; connect to see live key expression."}</p>
-      {physicalSources.map((label, i) => <div className="source-meter" key={label}><span>{sourceShortNames[i]}{i>=5?" · preview":""}</span><meter aria-label={`${label}${i>=5?" preview":""} meter`} min={i<3||i===5||(i===6&&preset.modulation.settings[14])?0:-1} max={1} value={sources[i]} /><output>{i<3||i>=5?`${Math.round(sources[i]*100)}%`:`${Math.round(sources[i]*45)}°`}</output></div>)}
+      {physicalSources.map((label, i) => <div className="source-meter" key={label}><span>{sourceShortNames[i]}{i>=5&&i<7?" · preview":""}</span><meter aria-label={`${label}${i>=5?" preview":""} meter`} min={i<3||i===5||(i===6&&preset.modulation.settings[14])||i===8?0:-1} max={1} value={sources[i]} /><output>{i<3||i>=5?`${Math.round(sources[i]*100)}%`:`${Math.round(sources[i]*45)}°`}</output></div>)}
       {!client && <label className="physical-control">Pressure preview<Knob label="Pressure preview" value={previewPressure} onChange={setPreviewPressure} /></label>}
     </fieldset>
     <fieldset className="output-panel" disabled={busy}><legend>Output</legend>{control(7)}<small>Peak safety · analog rocker volume</small>
@@ -395,7 +415,7 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
     </div>
     </div><div className="engine-side"><FxRackEditor before={bodyPanel} rack={preset.effects} busy={busy} waiting={fxWaiting} onChange={(rack,reorder)=>reorder?setEffects(rack):setRackControls(rack)}/></div></div>
     {sampleEditor&&<SampleEditor progress={progress} sample={preset.sample} onApply={sample=>applySample(sample)} onPreview={sample=>applySample(sample,true)} onClose={()=>setSampleEditor(false)}/>}
-    {advanced&&<VoiceBudgetEditor preset={namedPreset} busy={busy} testing={busy&&/voic/.test(progress?.label??operationLabel)} connected={!!client&&ready} onCancel={()=>void client?.cancelVoiceTest().catch(fail)} onInvalidate={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));if(client&&ready)void client.resetVoiceBudget().catch(fail);}} onTest={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));edits.current.clear();clearTimeout(fxTimer.current);void operation(async()=>{const value=await client!.testVoiceLimit({...preset,name});replacePreset(value);const next=[...saved.filter(p=>p.name!==value.name),value];window.localStorage.setItem(storageKey,JSON.stringify(next));setSaved(next);setSelection(factoryPhysicalPresets.length+next.length-1);return client!.status();},"Testing voice limit…");}}/>}
+    {advanced&&<VoiceBudgetEditor dsp preset={namedPreset} busy={busy} testing={busy&&/voic/.test(progress?.label??operationLabel)} connected={!!client&&ready} onCancel={()=>void client?.cancelVoiceTest().catch(fail)} onInvalidate={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));if(client&&ready)void client.resetVoiceBudget().catch(fail);}} onTest={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));edits.current.clear();clearTimeout(fxTimer.current);void operation(async()=>{const value=await client!.testVoiceLimit({...preset,name});replacePreset(value);const next=[...saved.filter(p=>p.name!==value.name),value];window.localStorage.setItem(storageKey,JSON.stringify(next));setSaved(next);setSelection(factoryPhysicalPresets.length+next.length-1);return client!.status();},"Testing voice limit…");}}/>}
     <p className="editor-footnote">Pressure range: Calibration · Presets saved on this computer · Rings: clockwise + / counterclockwise −</p>
   </section>;
 }

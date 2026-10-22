@@ -12,6 +12,6 @@ export default defineConfig(({ mode }) => ({
   plugins: [react()],
   test: {
     environment: "node",
-    include: ["src/**/*.test.{ts,js}"]
+    include: ["src/**/*.test.{ts,tsx,js}"]
   }
 }));

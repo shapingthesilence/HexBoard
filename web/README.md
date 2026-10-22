@@ -329,7 +329,26 @@ connected engine availability follows advertised capabilities.
 Juno/DX7 reuse their native LFO and voice envelopes for assignments. Juno currently offers Distortion, Volume
 Steps and Chorus; DX7 also offers Reverb, based on the measured full-stack budget.
 
-**Test voice limit** measures the current patch, modulation and FX rack on the audio processor against a 99% render budget. The highest passing held-note count and two tail slots are saved with the computer preset, JSON export and numeric startup patch. Any edit invalidates the result and returns to eight held voices until retested. Qualification revision 2 requires a fresh measurement after the macro removal. Physical Strings currently has an eight-voice allocation ceiling; Juno and DX7 can test higher counts. Testing mutes playback and can be cancelled.
+Physical Strings provides Poly (eight held plus two tails), Mono Retrigger and
+Legato (one reused object). A compact selector shares the arpeggiator row;
+priority, glide and velocity behavior open in a pop-up. Captured absolute pitches
+and pressure survive held-note fallback; outgoing MIDI remains polyphonic.
+Optional `mono:{flags,glideMs}` belongs to v22 physical presets. The shared DSP
+estimate accounts for the selected voice mode, sources, sample loops, feedback
+features, Body and rack; over-budget additions are blocked. A return to Poly is
+unavailable until the draft fits its eight-voice allowance.
+
+**Test DSP budget** measures three registers for Physical Strings. **Test voice
+limit** qualifies higher Juno/DX7 counts. Both mute output and use a 99% render
+deadline ceiling. Measured profiles save with presets and startup recall;
+revision 3 invalidates older qualifications, and sound edits invalidate the
+measurement. Poly/mono allocations stay eight/one; unqualified classic patches
+return to eight. The estimate is not measured whole-processor CPU utilization.
+
+Joystick menu/play ownership is automatic. Pedal type, reversal and learned
+endpoints are device-menu settings with explicit save; Web operation 52 reads
+input state only. Joystick Mod and Expression routes remain editable Web sources.
+
 
 Engine-switch progress uses measured main-USB load-to-playable timings: about 3.2 seconds into Juno, 3.4 into DX7 and 3.5 into Physical Strings at eight voices. Larger qualified presets extend the preparation estimate. The bar finishes only after the device reports DAC and patch readiness. See the Advanced firmware repository’s `docs/juno-dx7.md` and `docs/juno-dx7-load-times.json` for measured scope.
 

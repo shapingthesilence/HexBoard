@@ -2,7 +2,7 @@ import {useState,type ReactNode} from 'react';
 import {effectTypes,effectDescription,type FxRack} from './schema.ts';
 import {Knob} from './SynthControls.tsx';
 import {VolumeStepEditor} from './VolumeStepEditor.tsx';
-export function FxRackEditor({rack,busy=false,waiting=false,onChange,before,available=[1,2,3,4]}:{rack:FxRack;busy?:boolean;waiting?:boolean;onChange:(rack:FxRack,reorder?:boolean)=>void;before?:ReactNode;available?:number[]}){
+export function FxRackEditor({rack,busy=false,waiting=false,onChange,before,available=[1,2,3,4],canApply=()=>true,onPreview}:{rack:FxRack;busy?:boolean;waiting?:boolean;onChange:(rack:FxRack,reorder?:boolean)=>void;before?:ReactNode;available?:number[];canApply?:(rack:FxRack)=>boolean;onPreview?:(rack?:FxRack)=>void}){
  const choices=effectTypes.filter(f=>available.includes(f.id));
  const [addingFx,setAddingFx]=useState(false),[dragFx,setDragFx]=useState<number>(),[stepEditor,setStepEditor]=useState(false);
  const setEffects=(rack:FxRack)=>onChange(rack,true),setRackControls=(rack:FxRack)=>onChange(rack);
@@ -11,7 +11,7 @@ export function FxRackEditor({rack,busy=false,waiting=false,onChange,before,avai
       <header><h3>FX rack</h3><button aria-label="Add effect" disabled={busy||rack.order.length>=choices.length} onClick={()=>setAddingFx(!addingFx)}>＋</button></header>
       <small>{waiting?"Applying after adjustments settle…":"Signal flows from top to bottom"}</small>
       {before}
-      {addingFx && <div className="fx-add-menu">{choices.filter(f=>!rack.order.includes(f.id)).map(f=><button key={f.id} onClick={()=>{setEffects({...rack,order:[...rack.order,f.id]});setAddingFx(false);}}>{f.name}</button>)}</div>}
+      {addingFx && <div className="fx-add-menu">{choices.filter(f=>!rack.order.includes(f.id)).map(f=><button key={f.id} disabled={!canApply({...rack,order:[...rack.order,f.id]})} title={!canApply({...rack,order:[...rack.order,f.id]})?"DSP budget full · remove another feature first":undefined} onPointerEnter={()=>onPreview?.({...rack,order:[...rack.order,f.id]})} onPointerLeave={()=>onPreview?.()} onFocus={()=>onPreview?.({...rack,order:[...rack.order,f.id]})} onBlur={()=>onPreview?.()} onClick={()=>{setEffects({...rack,order:[...rack.order,f.id]});setAddingFx(false);}}>{f.name}</button>)}</div>}
       {!rack.order.length && <p className="panel-note">Add an effect to shape your sound.</p>}
       {rack.order.map((id,index)=>{const f=effectTypes[id-1];return <section className={`fx-card ${dragFx===id?"dragging":""}`} key={id} data-effect={id} onDragOver={e=>{if(dragFx!==undefined)e.preventDefault();}} onDrop={e=>{e.preventDefault();if(dragFx!==undefined&&dragFx!==id)moveEffect(dragFx,id);setDragFx(undefined);}}>
         <header onPointerDown={e=>{if(busy || (e.target as HTMLElement).closest("button"))return;setDragFx(id);e.currentTarget.setPointerCapture(e.pointerId);}} onPointerUp={e=>{if(!e.currentTarget.hasPointerCapture(e.pointerId))return;e.currentTarget.releasePointerCapture(e.pointerId);const target=document.elementFromPoint(e.clientX,e.clientY)?.closest("[data-effect]");const before=Number(target?.getAttribute("data-effect"));if(before&&before!==id){const rect=target!.getBoundingClientRect();moveEffect(id,before,e.clientY>rect.top+rect.height/2);}setDragFx(undefined);}} onPointerCancel={()=>setDragFx(undefined)} onDragStart={e=>{setDragFx(id);e.dataTransfer.setData("text/plain",String(id));e.dataTransfer.effectAllowed="move";}} onDragEnd={()=>setDragFx(undefined)}><span className="fx-grip" aria-hidden="true">⠿</span><strong>{f.name}</strong>

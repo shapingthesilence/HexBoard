@@ -24,9 +24,9 @@ export function presetFingerprint(preset: unknown) { let h = 2166136261; for (co
 } return (h >>> 0).toString(16).padStart(8, '0'); }
 export function validVoiceBudget(preset: unknown, profile: unknown): VoiceBudgetProfile | undefined { const p = profile as VoiceBudgetProfile, engine = (preset as {
     engine?: number;
-})?.engine, ceiling = engine === 4 ? 18 : engine === 5 ? 13 : 8; if (!p || !Number.isInteger(p.voices) || p.voices < 8 || p.voices > ceiling || !Number.isInteger(p.signature) || p.signature < 0 || p.signature > 0xffffffff || !Number.isInteger(p.peakUs) || p.peakUs < 1 || p.peakUs > 2873 || p.revision !== 2 || p.fingerprint !== presetFingerprint(preset))
+})?.engine, mono=!!(((preset as {mono?:{flags:number}})?.mono?.flags??0)&3), ceiling = engine === 4 ? 18 : engine === 5 ? 13 : mono?1:8; if (!p || !Number.isInteger(p.voices) || p.voices < (mono?1:8) || p.voices > ceiling || !Number.isInteger(p.signature) || p.signature < 0 || p.signature > 0xffffffff || !Number.isInteger(p.peakUs) || p.peakUs < 1 || p.peakUs > 2873 || p.revision !== 3 || p.fingerprint !== presetFingerprint(preset))
     return; return { ...p }; }
 export function attachVoiceBudget<T>(preset: T, result: VoiceBudgetState): T & {
     voiceBudget: VoiceBudgetProfile;
 } { if (!result.qualified || result.phase !== 3)
-    throw Error('This patch did not pass the eight-voice baseline. Reduce the patch or FX load and test again.'); return { ...preset, voiceBudget: { voices: result.voices, signature: result.signature, peakUs: result.peakUs, revision: result.revision, fingerprint: presetFingerprint(preset) } }; }
+    throw Error('This patch did not pass its DSP baseline. Reduce the patch or FX load and test again.'); return { ...preset, voiceBudget: { voices: result.voices, signature: result.signature, peakUs: result.peakUs, revision: result.revision, fingerprint: presetFingerprint(preset) } }; }
