@@ -331,7 +331,8 @@ export function encodeObjectListRequestPayload(
   pageIndex: number,
   pageSize: number,
   folderFilter = "",
-  scope?: { tuningHandle: number; layoutHandle?: number }
+  scope?: { tuningHandle: number; layoutHandle?: number },
+  wide = false
 ): number[] {
   assertSevenBitByte(objectType, "objectType");
   assertSevenBitByte(pageSize, "pageSize");
@@ -341,8 +342,8 @@ export function encodeObjectListRequestPayload(
   }
   assertSevenBitBytes(folderBytes, "folderFilter");
   return [objectType, ...encodeU14(pageIndex), pageSize, folderBytes.length, ...folderBytes,
-    ...(scope ? encodeU14(scope.tuningHandle) : []),
-    ...(scope?.layoutHandle !== undefined ? encodeU14(scope.layoutHandle) : [])];
+    ...(scope ? (wide?encodeU21:encodeU14)(scope.tuningHandle) : []),
+    ...(scope?.layoutHandle !== undefined ? (wide?encodeU21:encodeU14)(scope.layoutHandle) : [])];
 }
 
 export function encodeWriteBeginPayload(payload: WriteBeginPayload): number[] {
@@ -380,7 +381,8 @@ export function decodeWriteBeginPayload(payload: ArrayLike<number>): WriteBeginP
   };
 }
 
-export function decodeReadBeginPayload(payload: ArrayLike<number>): ReadBeginPayload {
+export function decodeReadBeginPayload(payload: ArrayLike<number>,wide=false): ReadBeginPayload {
+  if(wide){if(payload.length!==20)throw Error('Advanced READ_BEGIN must be 20 bytes');const handle=decodeU21(payload,1);if(handle>65535)throw Error('Invalid Advanced content handle');return {...decodeReadBeginPayload([payload[0],0,0,...Array.from(payload).slice(4)]),handle};}
   const decoded = decodeWriteBeginPayload(payload);
   return {
     ...decoded,
@@ -394,7 +396,7 @@ function decodeAscii(bytes: ArrayLike<number>, offset: number, length: number): 
   return new TextDecoder().decode(new Uint8Array(value));
 }
 
-export function decodeObjectListResponsePayload(payload: ArrayLike<number>): ObjectListResponsePayload {
+export function decodeObjectListResponsePayload(payload: ArrayLike<number>,wide=false): ObjectListResponsePayload {
   if (payload.length < 6) {
     throw new Error("OBJECT_LIST_RESP payload is too short");
   }
@@ -406,12 +408,13 @@ export function decodeObjectListResponsePayload(payload: ArrayLike<number>): Obj
   let cursor = 6;
 
   for (let recordIndex = 0; recordIndex < recordCount; recordIndex += 1) {
-    if (cursor + 7 > payload.length) {
+    if (cursor + (wide?8:7) > payload.length) {
       throw new Error("truncated OBJECT_LIST_RESP record");
     }
     const recordObjectType = payload[cursor++];
-    const handle = decodeU14(payload, cursor);
-    cursor += 2;
+    const handle = (wide?decodeU21:decodeU14)(payload, cursor);
+    if(wide&&handle>65535)throw Error('Invalid Advanced content handle');
+    cursor += wide?3:2;
     const flags = payload[cursor++];
     const schemaMajor = payload[cursor++];
     const schemaMinor = payload[cursor++];

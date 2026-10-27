@@ -47,27 +47,34 @@ export const velocityEngines = [
   { id: 4, name: "Fixed Velocity", hint: "Constant attack and release · continuous pressure" }
 ] as const;
 export type PhysicalVelocityEngine = typeof velocityEngines[number]["id"];
-export interface FxRack { order: number[]; values: number[][]; steps:number[] }
-export const defaultFx = (): FxRack => ({order:[],steps:Array.from({length:16},(_,i)=>i%2?0:65535),values:[[20000,16000,0,0],[24000,45000,30000,0],[26214,35000,6000,47],[18000,22000,18000,0],[0,32768,32768,18000]]});
+export const fxSourceIds=[3,4,6,7,8];
+export const fxTargetIds=[0,1,4,5,6,8,9,10,12,13,14,20,21,22];
+export const fxRow=(id:number)=>id===5?5:id-1;
+export interface FxRack { order: number[]; values: number[][]; steps:number[]; routes?:number[] }
+export const defaultFx = (): FxRack => ({order:[],routes:Array(70).fill(0),steps:Array.from({length:16},(_,i)=>i%2?0:65535),values:[[20000,16000,0,0],[24000,45000,30000,0],[26214,35000,6000,47],[18000,22000,18000,0],[0,32768,32768,18000],[65535,0,65535,0]]});
 export const effectTypes = [
   {id:1,name:"Distortion",controls:["Drive","Mix"]},
   {id:2,name:"Reverb",controls:["Mix","Size","Damping"]},
-  {id:3,name:"Volume Steps",controls:["Tempo","Depth"]},
-  {id:4,name:"Chorus",controls:["Mix","Rate","Depth"]}
+  {id:3,name:"Volume Steps",controls:["Tempo","Depth","Smoothing"]},
+  {id:4,name:"Chorus",controls:["Mix","Rate","Depth"]},
+  {id:5,name:"Filter",controls:["Cutoff","Resonance","Mix"]}
 ];
 export function validateFx(value: unknown): FxRack {
   const f=value as FxRack;
-  if(!f || !Array.isArray(f.order) || f.order.length>5 || new Set(f.order).size!==f.order.length || f.order.some(id=>!Number.isInteger(id)||id<1||id>4) || !Array.isArray(f.values) || f.values.length!==5 || f.values.some(row=>!Array.isArray(row)||row.length!==4||row.some(v=>!Number.isInteger(v)||v<0||v>65535)))throw Error("Invalid effect rack.");
+  if(!f || !Array.isArray(f.order) || f.order.length>5 || new Set(f.order).size!==f.order.length || f.order.some(id=>!Number.isInteger(id)||id<1||id>5) || !Array.isArray(f.values) || ![5,6].includes(f.values.length) || f.values.some(row=>!Array.isArray(row)||row.length!==4||row.some(v=>!Number.isInteger(v)||v<0||v>65535)))throw Error("Invalid effect rack.");
   const steps=f.steps??defaultFx().steps;if(!Array.isArray(steps)||steps.length!==16||steps.some(v=>!Number.isInteger(v)||v<0||v>65535))throw Error("Invalid volume steps.");
-  return {order:[...f.order],values:f.values.map(row=>[...row]),steps:[...steps]};
+  const values=f.values.map(row=>[...row]);if(values.length===5)values.push([65535,0,65535,0]);
+  if(values[5][3]>2)throw Error("Invalid filter mode.");
+  const routes=f.routes??Array(70).fill(0);if(!Array.isArray(routes)||routes.length!==70||routes.some(v=>!Number.isInteger(v)||v<-65536||v>65536)||fxTargetIds.some((_,t)=>routes.slice(t*5,t*5+5).filter(Boolean).length>4))throw Error("Invalid global FX modulation.");
+  return {order:[...f.order],values,steps:[...steps],routes:[...routes]};
 }
 export function effectDescription(id:number,index:number,value:number) {
   const v=value/65535;
   if(id===1 && index===0)return `${(1+15*v).toFixed(1)}×`;
   if(id===3&&index===0)return `${Math.round(40+200*v)} BPM`;
   if(id===4 && index===1)return `${(.1+2.9*v).toFixed(2)} Hz`;
-  if(id===5 && index===0)return `${Math.round(10+170*v)} ms`;
-  return `${Math.round(v*(id===5&&index===1?75:100))}%`;
+  if(id===5 && index===0){const hz=20*2**(9.813781*v);return hz>=1000?`${(hz/1000).toFixed(1)} kHz`:`${Math.round(hz)} Hz`;}
+  return `${Math.round(v*100)}%`;
 }
 export function modulationRouteCount(routes:number[],source:number){return routes.filter((v,i)=>i%2===source&&v!==0).length;}
 export function canAssignModulation(routes:number[],id:number,source:number){const copy=[...routes];copy[id*2+source]=copy[id*2+source]||1;return modulationUsage({routes:Array(99).fill(0),tiltRoutes:Array(66).fill(0),modulation:{routes:copy}}).fits;}
@@ -154,7 +161,7 @@ export function physicalPresetFromUnknown(value: unknown): PhysicalPreset {
   if(p.controllerRoutes!==undefined&&(!valid(p.controllerRoutes,66,-65536,65536)||[8,21,27,31].some(id=>(p.controllerRoutes as number[]).slice(id*2,id*2+2).some(Boolean))))throw Error("Invalid controller modulation routes.");
   const result:PhysicalPreset={mono:validateMono(p.mono),controllerRoutes:[...((p.controllerRoutes as number[]|undefined)??Array(66).fill(0))],format:"hexboard.physical.v22",sample:validateSample({...validateSample(p.sample),direct:p.parameters[32]}),modulation:validateModulation(p.modulation),tiltRoutes:[...(p.tiltRoutes as number[])],effects:validateFx(p.effects),name:p.name.trim(),parameters:[...p.parameters],routes:[...p.routes],velocityEngine:p.velocityEngine as PhysicalVelocityEngine};
   if(result.parameters.some((_,id)=>targetDepths(result,id).filter(Boolean).length>targetSourceLimit))throw Error("Each target allows four modulation sources. Remove an assignment before adding another.");
-  if(!modulationUsage(result).fits)throw Error("Modulation capacity full. Remove a destination before adding another.");
+  if(!modulationUsage(result).fits||modulationUsage(result).connections+(result.effects.routes??[]).filter(Boolean).length>32)throw Error("Modulation capacity full. Remove a destination before adding another.");
   const voiceBudget=validVoiceBudget(result,p.voiceBudget);return voiceBudget?{...result,voiceBudget}:result;
 }
 

@@ -1,6 +1,18 @@
 # HexBoard Preset Sync SysEx Reference
 
-## Advanced additive runtime extension
+## Advanced saved-content extension
+
+Advanced capability bit 23 adds 256 tuning-bundle slots and 16-bit geometry
+handles. Its `0x50`/`0x51` list exchange supports four records per batch;
+`0x52`/`0x53` read and `0x54` delete use three seven-bit bytes per handle.
+The app negotiates this extension; original HexBoard keeps its existing
+64-bundle messages. Portable HGB/HBS1 files and the 32-layout/32-scale limits
+are unchanged. Advanced order files use HGO version 2 with a 16-bit count;
+original HexBoard uses version 1. Internal Advanced name-index files are
+not portable content. See the Advanced repository’s
+`docs/web-control-protocol.md` for the full current wire contract.
+
+## Advanced additive runtime extension (initial bring-up history)
 
 Advanced main identifies hardware version `0x20` and advertises capability bit 17
 (AtomicGeometryPreview). Its first port supports tuning/layout/scale/palette/map

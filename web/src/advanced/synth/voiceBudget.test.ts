@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {attachVoiceBudget,validVoiceBudget,presetFingerprint,type VoiceBudgetState} from './voiceBudget.ts';
 import {initialClassic,classicFromUnknown} from './classicSchema.ts';
 import {initialPreset,physicalPresetFromUnknown} from './schema.ts';
-const result:VoiceBudgetState={phase:3,voices:10,candidate:11,ceiling:13,engine:5,qualified:true,reason:1,signature:0xfedcba98,peakUs:2700,revision:3};
+const result:VoiceBudgetState={phase:3,voices:10,candidate:11,ceiling:13,engine:5,qualified:true,reason:1,signature:0xfedcba98,peakUs:2700,revision:4};
 describe('preset voice budget',()=>{
  it('saves a qualification with the preset and preserves it through JSON',()=>{const p=attachVoiceBudget(initialClassic(5),result);const restored=classicFromUnknown(JSON.parse(JSON.stringify(p)));expect(restored.voiceBudget).toEqual(p.voiceBudget);expect(validVoiceBudget(p,p.voiceBudget)?.voices).toBe(10);});
  it('invalidates after every kind of authoring edit',()=>{const p=attachVoiceBudget(initialClassic(5),result);for(const change of [(v:typeof p)=>v.name+=' edit',(v:typeof p)=>v.patch.parameters[1]++,(v:typeof p)=>v.patch.settings[0]++,(v:typeof p)=>v.patch.routes[4]={destination:147,depth:12000},(v:typeof p)=>v.effects.order=[4],(v:typeof p)=>v.effects.values[0][0]++,(v:typeof p)=>v.velocityEngine=1]){const edited=structuredClone(p);change(edited);expect(validVoiceBudget(edited,edited.voiceBudget)).toBeUndefined();expect(classicFromUnknown(edited).voiceBudget).toBeUndefined();}});

@@ -1,4 +1,5 @@
 import {
+  CapabilityFlag,
   ErrorCode,
   HEXBOARD_MANUFACTURER_ID,
   MessageType,
@@ -25,6 +26,7 @@ import {
   encodeObjectListRequestPayload,
   encodeReadRequestPayload,
   encodeU14,
+  encodeU21,
   encodeTransferAbortPayload,
   encodeTransferEndPayload,
   encodeWriteBeginPayload,
@@ -83,8 +85,9 @@ export class PresetSyncClient {
   private transferId = 1;
   private readonly transport: MidiTransport;
 
-  constructor(transport: MidiTransport) {
-    this.transport = transport;
+  private wideGeometry=false;
+  constructor(transport: MidiTransport,capabilities=0) {
+    this.transport = transport;this.wideGeometry=!!(capabilities&CapabilityFlag.AdvancedContentLibrary);
   }
 
   async calibration(command: 0 | 1 | 2 = 0): Promise<{ state: number; validKeys: number; totalKeys: number }> {
@@ -104,7 +107,7 @@ export class PresetSyncClient {
       (candidate) => candidate.message === MessageType.HelloResponse,
       timeoutMs
     );
-    return decodeHelloResponsePayload(frame.payload);
+    const hello=decodeHelloResponsePayload(frame.payload);this.wideGeometry=!!(hello.capabilityFlags&CapabilityFlag.AdvancedContentLibrary);return hello;
   }
 
   async sendReadRequest(objectType: number, handle: number, readFlags = 0): Promise<number[]> {
@@ -119,26 +122,27 @@ export class PresetSyncClient {
     return this.listObjects(ObjectType.SynthWavetable, pageSize);
   }
 
-  async listGeometryObjects(objectType: number, pageSize = 1, scope?: { tuningHandle: number; layoutHandle?: number }): Promise<ObjectListRecord[]> {
+  async listGeometryObjects(objectType: number, pageSize = 1, scope?: { tuningHandle: number; layoutHandle?: number },onPage?:(rows:ObjectListRecord[])=>void): Promise<ObjectListRecord[]> {
     if (!this.isGeometryObjectType(objectType)) {
       throw new Error("Unsupported geometry object type");
     }
-    return this.listObjects(objectType, pageSize, scope);
+    return this.listObjects(objectType, pageSize, scope,onPage);
   }
 
-  private async listObjects(objectType: number, pageSize = 1, scope?: { tuningHandle: number; layoutHandle?: number }): Promise<ObjectListRecord[]> {
+  private async listObjects(objectType: number, pageSize = 1, scope?: { tuningHandle: number; layoutHandle?: number },onPage?:(rows:ObjectListRecord[])=>void): Promise<ObjectListRecord[]> {
+    const wide=this.wideGeometry&&this.isGeometryObjectType(objectType);
     const records: ObjectListRecord[] = [];
     let pageIndex = 0;
     let pageCount = 1;
 
     do {
       const frame = await this.requestFrame(
-        MessageType.ObjectListRequest,
-        encodeObjectListRequestPayload(objectType, pageIndex, pageSize, "", scope),
-        (candidate) => candidate.message === MessageType.ObjectListResponse
+        wide?MessageType.AdvancedObjectListRequest:MessageType.ObjectListRequest,
+        encodeObjectListRequestPayload(objectType, pageIndex, wide?Math.min(4,pageSize):pageSize, "", scope,wide),
+        (candidate) => candidate.message === (wide?MessageType.AdvancedObjectListResponse:MessageType.ObjectListResponse)
       );
-      const page = decodeObjectListResponsePayload(frame.payload);
-      records.push(...page.records);
+      const page = decodeObjectListResponsePayload(frame.payload,wide);
+      records.push(...page.records);onPage?.(records.slice());
       pageCount = page.pageCount;
       pageIndex += 1;
     } while (pageIndex < pageCount);
@@ -185,14 +189,15 @@ export class PresetSyncClient {
   }
 
   private async deleteObject(objectType: number, handle: number): Promise<void> {
+    const wide=this.wideGeometry&&this.isGeometryObjectType(objectType),message=wide?MessageType.AdvancedDeleteRequest:MessageType.DeleteRequest;
     await this.requestFrame(
-      MessageType.DeleteRequest,
-      encodeDeleteRequestPayload(objectType, handle),
+      message,
+      wide?[objectType,...encodeU21(handle),0]:encodeDeleteRequestPayload(objectType, handle),
       (candidate) => {
         if (candidate.message !== MessageType.Ack) {
           return false;
         }
-        return decodeAckPayload(candidate.payload).message === MessageType.DeleteRequest;
+        return decodeAckPayload(candidate.payload).message === message;
       }
     );
   }
@@ -627,7 +632,7 @@ export class PresetSyncClient {
     timeoutMs = READ_OBJECT_INACTIVITY_TIMEOUT_MS,
     onProgress?: TransferProgressCallback
   ): Promise<Uint8Array> {
-    const transaction = this.nextTransaction();
+    const transaction = this.nextTransaction(),wide=this.wideGeometry&&(this.isGeometryObjectType(objectType)||objectType===ObjectType.GeometryBundle);
 
     return new Promise((resolve, reject) => {
       let expectedTransferId: number | null = null;
@@ -709,8 +714,8 @@ export class PresetSyncClient {
             fail(describeNack(frame));
             return;
           }
-          if (frame.message === MessageType.ReadBegin) {
-            const begin = decodeReadBeginPayload(frame.payload);
+          if (frame.message === (wide?MessageType.AdvancedReadBegin:MessageType.ReadBegin)) {
+            const begin = decodeReadBeginPayload(frame.payload,wide);
             if (begin.objectType !== objectType || begin.handle !== handle) {
               throw new Error("Unexpected object in HexBoard read response");
             }
@@ -721,7 +726,7 @@ export class PresetSyncClient {
             expectedChunkIndex = 0;
             output = new Uint8Array(expectedLength);
             onProgress?.({ direction: "download", objectType, transferredBytes: 0, totalBytes: expectedLength });
-            void this.transport.send(encodeAckFrame(transaction, MessageType.ReadBegin)).catch(fail);
+            void this.transport.send(encodeAckFrame(transaction, wide?MessageType.AdvancedReadBegin:MessageType.ReadBegin)).catch(fail);
             return;
           }
           if (frame.message === MessageType.DataChunk) {
@@ -766,9 +771,9 @@ export class PresetSyncClient {
       });
 
       const frame = encodeDefaultPresetSyncFrame(
-        MessageType.ReadRequest,
+        wide?MessageType.AdvancedReadRequest:MessageType.ReadRequest,
         transaction,
-        encodeReadRequestPayload(objectType, handle)
+        wide?[objectType,...encodeU21(handle),0]:encodeReadRequestPayload(objectType, handle)
       );
       void this.transport.send(frame).catch(fail);
     });

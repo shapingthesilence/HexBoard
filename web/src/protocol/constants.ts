@@ -51,7 +51,12 @@ export const MessageType = {
   CalibrationLabRequest: 0x32,
   CalibrationLabResponse: 0x33,
   PhysicalSynthRequest: 0x34,
-  PhysicalSynthResponse: 0x35
+  PhysicalSynthResponse: 0x35,
+  AdvancedObjectListRequest: 0x50,
+  AdvancedObjectListResponse: 0x51,
+  AdvancedReadRequest: 0x52,
+  AdvancedReadBegin: 0x53,
+  AdvancedDeleteRequest: 0x54
 } as const;
 
 export type MessageTypeValue = (typeof MessageType)[keyof typeof MessageType];
@@ -138,7 +143,8 @@ export const CapabilityFlag = {
   AdvancedPhysicalSynth: 1 << 19,
   AdvancedSynthEngines: 1 << 20,
   AdvancedSampler: 1 << 22,
-  AdvancedPerformance: 1 << 21
+  AdvancedPerformance: 1 << 21,
+  AdvancedContentLibrary: 1 << 23
 } as const;
 
 export type CapabilityFlagValue = (typeof CapabilityFlag)[keyof typeof CapabilityFlag];

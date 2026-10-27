@@ -173,6 +173,10 @@ heartbeat or timeout after entry; abandoned browsers require encoder hold.
 - Firmware implements synth presets, wavetables, geometry preview, complete
   geometry bundle storage and geometry ordering. Negotiate capabilities;
   reserved profile/snapshot/backup object types are not implemented.
+- Advanced advertises capability bit 23 for 256 tuning bundles, progressive
+  four-record listings and 16-bit handles. Original HexBoard retains its 64-bundle
+  protocol. Both use the same HGB files and 32 layouts/scales per tuning;
+  Advanced uses its own compact on-device name index.
 - Individual geometry objects are runtime previews. Persist a complete `HGB`
   bundle, then apply its active records. Opening or exporting a device tuning
   reads the complete stored bundle once. Rescue geometry is not an editable
@@ -303,7 +307,10 @@ existing board storage. Connected Advanced also provides a Physical Strings
 editor with independent exciter/contact materials, per-note envelope/LFO
 sources using a shared modulation capacity, a localized preparation pin,
 irregular tension/bow texture, a shared formant Body EQ and an ordered singleton
-FX rack with five distortion characters and programmable Volume Steps. A short
+FX rack with five distortion characters, programmable Volume Steps and a stereo
+low/band/high-pass Filter. Global tilt, joystick and expression sources route
+to continuous rack knobs; Physical Strings also provides shared free-running
+LFO routing. The shared DSP budget includes these connections. A short
 mono sample import/trim editor includes baked fade-in/out editing, a waveform
 envelope and actual-engine preview. Physical JSON v22
 and synth wire v17 are paired with current Advanced firmware. Physical preset
@@ -322,12 +329,22 @@ voices and 32-voice SysEx banks. Imported voices remain dry until you choose
 Add Advanced expression. Explicit Load/Preview/Start saves the numeric startup
 sound; ordinary drags update RAM. There is no macro system or compatibility loader for macro presets.
 
+The **Presets** pop-up manages an IndexedDB computer library, factory banks, and
+a 3,072-entry device catalog per medium, grouped by engine and folder (32 sounds per folder). Device storage defaults to audio
+SD with main-flash fallback. Presets embed active excitation PCM and discard unused
+imports; switching sounds resets old sample undo references. Device auditioning
+stays in the dialog and defers USB editor readback until closing. Names appear from top to bottom in small batches while a folder loads; rows keep their saved order. Slot loads
+remember a compact startup reference instead of duplicating PCM into flash. The
+resident sampler's kit/package storage is still separate. The Advanced repository
+contains the native format, load-safety contract and measured load times in
+`docs/synth-presets.md`.
+
 For offline authoring and visual QA, `npm run dev` also serves
 `/advanced-preview.html`. Engine previews work without a device connection;
 connected engine availability follows advertised capabilities.
 
 Juno/DX7 reuse their native LFO and voice envelopes for assignments. Juno currently offers Distortion, Volume
-Steps and Chorus; DX7 also offers Reverb, based on the measured full-stack budget.
+Steps, Chorus and Filter; DX7 also offers Reverb, based on the measured full-stack budget.
 
 Physical Strings provides Poly (eight held plus two tails), Mono Retrigger and
 Legato (one reused object). A compact selector shares the arpeggiator row;
@@ -341,7 +358,7 @@ unavailable until the draft fits its eight-voice allowance.
 **Test DSP budget** measures three registers for Physical Strings. **Test voice
 limit** qualifies higher Juno/DX7 counts. Both mute output and use a 99% render
 deadline ceiling. Measured profiles save with presets and startup recall;
-revision 3 invalidates older qualifications, and sound edits invalidate the
+revision 4 invalidates older qualifications, and sound edits invalidate the
 measurement. Poly/mono allocations stay eight/one; unqualified classic patches
 return to eight. The estimate is not measured whole-processor CPU utilization.
 

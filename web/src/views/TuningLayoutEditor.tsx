@@ -1181,7 +1181,9 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
   );
   const runtimeSendSupported = Boolean(deviceHello && (deviceHello.capabilityFlags & CapabilityFlag.UserTuning)
     && (activeBundle.tuning.kind !== "scala" || centsTableRuntimeSupported));
-  const client = useMemo(() => new PresetSyncClient(transport), [transport]);
+  const client = useMemo(() => new PresetSyncClient(transport,deviceHello?.capabilityFlags), [transport,deviceHello?.capabilityFlags]);
+  const geometryListGeneration=useRef(0);
+  useEffect(()=>()=>{++geometryListGeneration.current;},[client]);
 
   function geometryMaintenance<T>(operation: () => Promise<T>): Promise<T> {
     return withAdvancedContentMaintenance(transport, deviceHello?.hardwareVersion === 0x20, operation);
@@ -1392,7 +1394,7 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
     setSyncBusy(true);
     try {
       const orderFile = encodeGeometryCatalogOrder(
-        entries.map((entry) => objectIdFromHex(entry.objectIdHex))
+        entries.map((entry) => objectIdFromHex(entry.objectIdHex)),!!(deviceHello?.capabilityFlags&&deviceHello.capabilityFlags&CapabilityFlag.AdvancedContentLibrary)
       );
       setStatus("Saving HexBoard tuning order");
       await geometryMaintenance(() => client.sendGeometryOrderSaveConfirmed(orderFile));
@@ -2885,18 +2887,21 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       setStatus("Connect HexBoard before refreshing the tuning library.");
       return;
     }
-    setSyncBusy(true);
+    const generation=++geometryListGeneration.current;setSyncBusy(true);
     try {
       setStatus("Requesting HexBoard Tuning Library...");
-      const records = await client.listGeometryObjects(ObjectType.UserTuning, 8);
+      const records = await client.listGeometryObjects(ObjectType.UserTuning, 8,undefined,rows=>{
+        if(generation!==geometryListGeneration.current)return;const {entries,rescueActive}=partitionHexBoardGeometryRecords(rows);setHexboardBundles(entries);setHexboardRescueActive(rescueActive);
+      });
+      if(generation!==geometryListGeneration.current)return;
       const { entries, rescueActive } = partitionHexBoardGeometryRecords(records);
       setHexboardBundles(entries);
       setHexboardRescueActive(rescueActive);
       setStatus(successStatus);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Failed to refresh HexBoard Tuning Library");
+      if(generation!==geometryListGeneration.current)return;setStatus(error instanceof Error ? error.message : "Failed to refresh HexBoard Tuning Library");
     } finally {
-      setSyncBusy(false);
+      if(generation===geometryListGeneration.current)setSyncBusy(false);
     }
   }
 

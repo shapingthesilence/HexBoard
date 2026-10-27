@@ -679,8 +679,11 @@ The status distinguishes browser drafts, saved browser items, and device saves.
 `Save to HexBoard` saves the complete tuning, then applies its active
 layout, scale, colors, and key assignments so the preview and device
 menu agree. The saved tuning appears in the on-device `Tuning`, `Layout`, and
-`Scales` browsers. HexBoard stores up to 64 complete tunings; each includes its
-palette and linked layouts and scales. Tuning division and scale-cycle lengths
+`Scales` browsers. Original HexBoard stores up to 64 complete tunings; Advanced
+stores up to 256. Device names appear progressively as each batch arrives.
+Both models use the same exported tuning files, including palettes and linked
+layouts and scales. On Advanced, root items appear directly alongside named
+folders in the device menu, without an extra `/` directory step. Tuning division and scale-cycle lengths
 may be from 1 through 1024. Each tuning may contain up to 32 layouts and 32
 scales.
 
@@ -931,13 +934,26 @@ handles remain draggable.
 
 ## Advanced Juno, DX7 and preset voice tests
 
-Choose Physical Strings, Juno or DX7 in Synth. Each uses direct modulation targeting, with a different color. All three engines use a side FX rack on desktop. Native envelopes remain with sound controls; native Envelope and LFO sources can also target other controls from toolbar source editors. Juno offers Chorus, Distortion and Volume Steps; DX7 also offers Reverb. DX7 imports single voices and 32-voice SysEx banks.
+Choose Physical Strings, Juno or DX7 in Synth. Each uses direct modulation targeting, with a different color. All three engines use a side FX rack on desktop. Native envelopes remain with sound controls; native Envelope and LFO sources can also target other controls from toolbar source editors. Juno offers Chorus, Distortion, Volume Steps and Filter; DX7 also offers Reverb. DX7 imports single voices and 32-voice SysEx banks.
 
 Use **Test voice limit** after finishing a patch and its effects. Playback is muted while the device finds the largest passing count within the 99% render budget, including two release-tail slots. The result saves with the preset. Any edit returns to eight voices until you test again. Physical Strings currently stops at eight because of its allocation ceiling. **Cancel voice test** stops the measurement.
 
 Switching engines shows measured loading progress and waits for actual device readiness before completing. Typical eight-voice switches take about 3.2 seconds into Juno, 3.4 into DX7 and 3.5 into Physical Strings.
 
-The Advanced preset picker includes all 128 AMY Juno factory voices and all 1,024 voices from AMY’s DX7 default data. Use **Find preset** to search names or numbers; bank groups keep factory and additional voices separate. Juno conversion notes identify settings that differ from stock AMY. Envelope and LFO editors open from their toolbar buttons; the side rack contains effects only. Macros and compatibility with macro presets have been removed.
+**Presets** opens a compact pop-up library with Computer, HexBoard and Factory tabs.
+Search sounds, organize folders and favorites, rename/move entries, and import or
+export JSON. Factory banks include the AMY Juno and DX7 voices; DX7 SysEx banks can
+also be imported here. Save current as new preserves a separate sound; Update
+selected sound explicitly replaces its settings. Active sample excitation is
+stored with the preset, while dormant imports are discarded on a sound switch.
+
+HexBoard groups sounds by engine and folder: 32 folders of up to 32 presets for each of Physical Strings, Juno and DX7 (3,072 presets per medium, subject to free storage bytes). SD is preferred
+when available, with internal flash fallback; the storage selector can choose
+either library. Load leaves the pop-up open for auditioning. The last audition is
+read into the editor when closing, so browsing does not repeatedly download PCM. Names appear from top to bottom in small batches while a folder loads; rows keep their saved order.
+Resident multi-zone sampler kits retain their separate prepared-kit workflow.
+Envelope/LFO editors still open from their toolbar buttons and FX stay in the
+side rack.
 
 
 ### Advanced sampler experiment
@@ -964,11 +980,17 @@ to 5.5 MiB of prepared PCM. The compact mono piano now passes the hardware
 the playback cost practical; this does not qualify every bank or an effects rack.
 
 For the directly copied CC0 piano, choose **Sound on SD → KW upright · compact**
-and **Start synth**, keeping keys released while it loads. The loader finds the
-original KW 2022-02-21 WAVs inside the copied folder, checks 14 recordings and
-loads seven mono roots per velocity layer with the authored bass loops. It uses
-5.38 MiB and takes about 19 seconds on the tested card. Existing originals are
-enough; no additional upload or hand-edited activation file is required.
+and **Start synth**. Loading progress shows how many recordings are ready and
+allows four-note audition while the rest load. Pressing a key prioritizes its
+recording; release cancels a waiting note. Fully loaded sounds enable 16 notes.
+Stopping and starting the same sound reuses its loaded recordings for a quick
+restart. Changing source or powering off requires loading again.
+
+The piano finds the original KW 2022-02-21 WAVs inside the copied folder and
+loads seven mono roots per velocity layer with the authored bass loops, using
+5.38 MiB. A verified prepared PCM cache on the card speeds future cold loads;
+the original recordings remain available as a fallback. No new USB sample upload
+or hand-edited activation file is required.
 Choose **Saved sampler patch** to return to the authored HBS2 sound. Source
 selection is held in RAM; saving a new sound also selects the saved patch.
 
@@ -976,4 +998,26 @@ The full stereo bank, long-sample streaming, generic SFZ import and library
 browsing remain planned. Compact piano notes cover A0–C8 and continuous ±2 bends;
 very large held upward retunes beyond the captured root's octave are unsupported.
 The Advanced repository's `docs/sampler.md` gives the current workflow and
-`docs/sampler-qualification-2026-10-16.md` records the tested scope and limits.
+`docs/sampler-loading-qualification-2026-10-26.md` records current loading tests;
+`docs/sampler-streaming.md` describes the larger streaming instrument design.
+
+### Filter and global FX modulation
+
+Use **+** in the FX rack to add **Filter**, then select Low-pass, Band-pass or
+High-pass. Cutoff, Resonance and Mix use the same knobs as the other cards; drag
+its header to change where it sits in the signal chain. Mode sits beside Mix;
+the small graph above the controls follows cutoff, resonance, mix and global
+modulation. The limiter remains last.
+
+In Physical Strings, select X/Y tilt, Joystick Mod, Expression or LFO in the
+source toolbar and drag an FX knob to set signed modulation depth. Release
+returns to Edit values; Delete modulation removes an assignment. Available FX
+knobs glow while a global source is selected. FX use a shared LFO clock even
+when individual notes restart their own LFO. Per-note sources cannot control the
+shared rack. Classic editors offer a small FX source selector for tilt, joystick
+and expression. Discrete selectors and step patterns cannot be modulated.
+
+FX assignments share the Physical Strings DSP/connection budget, save with the
+patch and return their capacity when the card is removed. Expression pedal input
+uses slower noise filtering appropriate to foot control; configure type and
+travel under the device's **Settings → Pedal setup**.

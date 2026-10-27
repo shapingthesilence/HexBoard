@@ -1,3 +1,4 @@
+import {synthErrorMessage} from "./requestError.ts";
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import type {MidiTransport} from '../../midi/types.ts';
 import {PhysicalSynthClient} from './client.ts';
@@ -12,7 +13,7 @@ export function PerformanceRow({transport,disabled=false,physical=true,voiceCont
  const blocked=disabled||!!transport&&!ready;
  const [tempoText,setTempoText]=useState(String(v[S.bpm10]/10)),tempoEditing=useRef(false),busyRef=useRef(disabled);busyRef.current=disabled;
  useEffect(()=>{if(!tempoEditing.current)setTempoText(String((v[S.clock]?state?.bpm10??v[S.bpm10]:v[S.bpm10])/10));},[v[S.bpm10],v[S.clock],state?.bpm10]);
- const fail=(e:unknown)=>{if(mounted.current)setError(e instanceof Error?e.message:String(e));};
+ const fail=(e:unknown)=>{const message=synthErrorMessage(e);if(mounted.current&&message!==undefined)setError(message);};
  useEffect(()=>{let disposed=false,polling=false;++epoch.current;mounted.current=true;setReady(!transport);setError('');const c=transport?new PhysicalSynthClient(transport):undefined;client.current=c;
   if(c)void c.performance().then(r=>{if(!disposed){latest.current=r.config;publishPerformanceState(r);setState(r);setReady(true);}}).catch(e=>{if(!disposed)fail(e);});
   const poll=setInterval(()=>{if(!c||disposed||polling||sending.current||busyRef.current)return;polling=true;void Promise.all([c.performance(),c.status()]).then(([r,s])=>{if(!disposed){setState(r);setVelocity(s.preset.velocityEngine);if(!queued.current&&!sending.current){latest.current=r.config;publishPerformanceState(r);}setReady(true);}}).catch(e=>{if(!disposed)fail(e);}).finally(()=>polling=false);},250);

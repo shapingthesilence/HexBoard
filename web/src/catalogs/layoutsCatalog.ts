@@ -521,10 +521,11 @@ export function decodeGeometryBundleFile(file: Uint8Array): DecodedGeometryBundl
   return { catalogOrder, objects };
 }
 
-export function encodeGeometryCatalogOrder(objectIds: Uint8Array[]): Uint8Array {
-  if (objectIds.length > GeometryBundleMaxCount
+export function encodeGeometryCatalogOrder(objectIds: Uint8Array[],advanced=false): Uint8Array {
+  const maximum=advanced?256:GeometryBundleMaxCount;
+  if (objectIds.length > maximum
       || objectIds.some((objectId) => objectId.length !== 16)) {
-    throw new RangeError(`geometry order must contain at most ${GeometryBundleMaxCount} 16-byte object ids`);
+    throw new RangeError(`geometry order must contain at most ${maximum} 16-byte object ids`);
   }
   const seen = new Set(objectIds.map(objectIdToHex));
   if (seen.size !== objectIds.length) {
@@ -532,7 +533,7 @@ export function encodeGeometryCatalogOrder(objectIds: Uint8Array[]): Uint8Array 
   }
   const body = concatBytes(objectIds);
   return concatBytes([
-    bytesFromNumbers(["H".charCodeAt(0), "G".charCodeAt(0), "O".charCodeAt(0), 1, objectIds.length, 0, 0, 0]),
+    bytesFromNumbers(["H".charCodeAt(0), "G".charCodeAt(0), "O".charCodeAt(0), advanced?2:1, objectIds.length&255, objectIds.length>>8, 0, 0]),
     u32LE(crc32(body)),
     body
   ]);

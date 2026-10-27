@@ -388,3 +388,12 @@
 .modulation-budget[data-over] .budget-preview{background:#f17d77}.modulation-budget[data-over] output{color:#f17d77}
 .physical-editor .modulation-budget output{font-variant-numeric:tabular-nums;min-width:138px;text-align:right;white-space:nowrap}
 @media(prefers-reduced-motion:reduce){.modulation-budget-track i{transition:none}}
+
+.fx-filter-response{display:block;width:100%;height:68px;margin:4px 0 6px;overflow:hidden;background:var(--surface-muted);border:1px solid var(--border-strong,#435561);border-radius:7px}
+.fx-filter-response .filter-grid{fill:none;stroke:currentColor;opacity:.1;stroke-width:.7}
+.fx-filter-response .filter-cutoff-line{stroke:var(--brand,#9cd8c9);opacity:.25;stroke-dasharray:2 3}
+.fx-filter-response .filter-response-line{fill:none;stroke:var(--brand,#9cd8c9);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.fx-filter-response text{font-size:8px;fill:currentColor;opacity:.6}
+.fx-filter-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
+.fx-filter-mode{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:0;min-width:0;align-self:stretch;padding:0;font-size:11px;font-weight:400}
+.fx-filter-mode select{width:100%;min-width:0;max-width:130px;margin-top:23px;font:inherit;font-weight:400;padding:7px 3px}

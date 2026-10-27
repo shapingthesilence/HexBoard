@@ -24,7 +24,7 @@ export function presetFingerprint(preset: unknown) { let h = 2166136261; for (co
 } return (h >>> 0).toString(16).padStart(8, '0'); }
 export function validVoiceBudget(preset: unknown, profile: unknown): VoiceBudgetProfile | undefined { const p = profile as VoiceBudgetProfile, engine = (preset as {
     engine?: number;
-})?.engine, mono=!!(((preset as {mono?:{flags:number}})?.mono?.flags??0)&3), ceiling = engine === 4 ? 18 : engine === 5 ? 13 : mono?1:8; if (!p || !Number.isInteger(p.voices) || p.voices < (mono?1:8) || p.voices > ceiling || !Number.isInteger(p.signature) || p.signature < 0 || p.signature > 0xffffffff || !Number.isInteger(p.peakUs) || p.peakUs < 1 || p.peakUs > 2873 || p.revision !== 3 || p.fingerprint !== presetFingerprint(preset))
+})?.engine, mono=!!(((preset as {mono?:{flags:number}})?.mono?.flags??0)&3), ceiling = engine === 4 ? 18 : engine === 5 ? 13 : mono?1:8; if (!p || !Number.isInteger(p.voices) || p.voices < (mono?1:8) || p.voices > ceiling || !Number.isInteger(p.signature) || p.signature < 0 || p.signature > 0xffffffff || !Number.isInteger(p.peakUs) || p.peakUs < 1 || p.peakUs > 2873 || p.revision !== 4 || p.fingerprint !== presetFingerprint(preset))
     return; return { ...p }; }
 export function attachVoiceBudget<T>(preset: T, result: VoiceBudgetState): T & {
     voiceBudget: VoiceBudgetProfile;

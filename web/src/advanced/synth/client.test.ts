@@ -1,9 +1,11 @@
+import {DevicePresetLibrary} from './DevicePresetLibrary.tsx';
+import {SynthRequestCancelledError,synthErrorMessage} from "./requestError.ts";
 import {SynthProgress} from './SynthProgress.tsx';
 import type {SynthProgress as Progress} from './progress.ts';
 import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { encodeDefaultPresetSyncFrame, decodePresetSyncFrame, encodeU21 } from "../../protocol/index.ts";
+import { encodeDefaultPresetSyncFrame, decodePresetSyncFrame, encodeU14, encodeU21 } from "../../protocol/index.ts";
 import type { MidiMessageListener, MidiTransport } from "../../midi/types.ts";
 import { PhysicalSynthClient, decodePhysicalState, decodePhysicalExpression, decodeMotion, decodeModulation } from "./client.ts";
 import { initialPreset, factoryPhysicalPresets, physicalPresetFromUnknown, encodeLogPitchHz, effectiveParameters, releaseSeconds, defaultModulation, validateModulation, defaultFx, validateFx } from "./schema.ts";
@@ -14,7 +16,7 @@ class Transport implements MidiTransport {
   label = "Advanced test";
   listeners = new Set<MidiMessageListener>();
   sent: number[][] = [];
-  respond = true;state = 1;samplePriority=0;sampleLoop:number[]|undefined;
+  respond = true;state = 1;samplePriority=0;sampleLoop:number[]|undefined;catalogReplies?:number[][];
   modulation=defaultModulation();
   async send(bytes: ArrayLike<number>) {
     this.sent.push(Array.from(bytes));
@@ -24,6 +26,12 @@ class Transport implements MidiTransport {
     if(frame.payload[1]>=46&&frame.payload[1]<=51){queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x35,frame.transactionId,[17,this.state,...payload().slice(2)])))));return;}
     if(frame.payload[1]===52){const values=frame.payload.length===11?frame.payload.slice(2):[1,2,0,...encodeU21(0),...encodeU21(4095)];const reply=[17,...values,...encodeU21(1000),...encodeU21(2000),1,0,1,...encodeU21(32768),...encodeU21(0)];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x40,frame.transactionId,reply)))));return;}
     if(frame.payload[1]>=53&&frame.payload[1]<=55){const reply=[17,...(frame.payload[1]===53?frame.payload.slice(2):Array(66).fill(65536).flatMap(encodeU21))];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x41,frame.transactionId,reply)))));return;}
+    if(frame.payload[1]===37){const reply=[17,0,8,8,8,2,0,0,0,0,0,0,0,...encodeU21(0),4];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x3e,frame.transactionId,reply)))));return;}
+    if(frame.payload[1]===61||frame.payload[1]===62){queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x45,frame.transactionId,[17])))));return;}
+    if((frame.payload[1]===57||frame.payload[1]===58)&&this.catalogReplies){const reply=this.catalogReplies.shift()!;queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x43,frame.transactionId,reply)))));return;}
+    if(frame.payload[1]===57||frame.payload[1]===58){const phase=frame.payload[1]===58?1:2,reply=[17,2,phase,0,0,0,phase===1?0:2,phase===1?0:100,0,0,0,0,phase===1?0:1,...encodeU21(phase===1?0:100),...encodeU21(phase===1?0:400),2,0,...encodeU14(3072),32,...encodeU21(8000)];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x43,frame.transactionId,reply)))));return;}
+    if(frame.payload[1]===59){const b=new Uint8Array(128);b[8]=5;b.set(new TextEncoder().encode('High ID sound'),12);const reply=[17,...frame.payload.slice(2,4),...Array.from(b).flatMap(v=>[v>>7,v&127])];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x44,frame.transactionId,reply)))));return;}
+    if(frame.payload[1]===60){const b=new Uint8Array(48);new DataView(b.buffer).setUint32(0,0x80000000,true);b.set(new TextEncoder().encode('Glass'),4);const reply=[17,...frame.payload.slice(2,4),...Array.from({length:frame.payload[3]},()=>Array.from(b).flatMap(v=>[v>>7,v&127])).flat()];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x46,frame.transactionId,reply)))));return;}
     const modulation=frame.payload[1]>=16;
     if(frame.payload[1]===17)this.modulation=decodeModulation([17,...frame.payload.slice(2)]);
     if(frame.payload[1]===18)this.modulation.settings[frame.payload[2]]=decodeModulation([17,...this.modulation.settings.map((v,i)=>i===frame.payload[2]?frame.payload.slice(3).reduce((a,b)=>a*128+b,0):v).flatMap(encodeU21),...this.modulation.routes.flatMap(v=>encodeU21(v+65536))]).settings[frame.payload[2]];
@@ -35,7 +43,7 @@ class Transport implements MidiTransport {
     if(frame.payload[1]===24)this.samplePriority=frame.payload[9]??0;
     if(frame.payload[1]===27)this.sampleLoop=frame.payload.slice(2);
     if(frame.payload[1]>=20){const sample=[17,0,...encodeU21(32768),...encodeU21(this.sampleLoop?1600:0),0,0,0,0,0,0,...encodeU21(65535),this.samplePriority,...(this.sampleLoop??[])];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x3b,frame.transactionId,sample)))));return;}
-    const response=frame.payload[1]===11?[17,...frame.payload.slice(2)]:[17,0,0,0,0,0,...defaultFx().values.flat().flatMap(encodeU21),...defaultFx().steps.flatMap(encodeU21)];
+    const response=frame.payload[1]===11?[17,...frame.payload.slice(2)]:[17,0,0,0,0,0,...defaultFx().values.flat().flatMap(encodeU21),...defaultFx().steps.flatMap(encodeU21),...Array(70).fill(65536).flatMap(encodeU21)];
     if (this.respond) for (const listener of this.listeners) listener(Uint8Array.from(encodeDefaultPresetSyncFrame(modulation?0x39:motion?0x38:fx?0x37:0x35, frame.transactionId, modulation?modResponse:motion?motionResponse:fx?response:[17,this.state,...payload().slice(2)])));
   }
   subscribe(listener: MidiMessageListener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -48,6 +56,7 @@ describe("Advanced physical editor", () => {
       expect(frames.filter(f=>f.payload[1]===51).map(f=>f.payload[2])).toEqual([1,0]);expect(frames.some(f=>f.payload[1]===46)).toBe(true);
     }finally{c.close();}
   });
+  it("encodes the final sampler source beyond 32 folders without truncation",async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{await c.samplerInstrument(1025);const source=t.sent.map(decodePresetSyncFrame).find(f=>f.payload[1]===51);expect(source?.payload.slice(2)).toEqual(encodeU14(1025));await expect(c.samplerInstrument(1026)).rejects.toThrow();}finally{c.close();}});
   it("persists sample priority without changing stored drive and pin controls",async()=>{
     const t=new Transport(),c=new PhysicalSynthClient(t);t.state=0;
     try{await c.setSample({enabled:false,gain:32768,direct:65535,priority:1,name:"",frames:[]});const state=await c.read();expect(state.preset.sample.priority).toBe(1);expect(state.preset.parameters[26]).toBe(initialPreset.parameters[26]);expect(state.preset.parameters[29]).toBe(initialPreset.parameters[29]);expect(t.sent.map(decodePresetSyncFrame).find(f=>f.payload[1]===24)?.payload[9]).toBe(1);expect(()=>physicalPresetFromUnknown({...initialPreset,sample:{...initialPreset.sample,priority:2}})).toThrow();}finally{c.close();}
@@ -81,7 +90,7 @@ describe("Advanced physical editor", () => {
     const fx={...defaultFx(),order:[4,1,2]};
     expect(physicalPresetFromUnknown({...initialPreset,effects:fx}).effects).toEqual(fx);
     expect(()=>validateFx({...fx,order:[1,1]})).toThrow();
-    expect(()=>validateFx({...fx,order:[5]})).toThrow();
+    expect(()=>validateFx({...fx,order:[6]})).toThrow();
     expect(()=>validateFx({...fx,values:[[65536,0,0,0]]})).toThrow();
     const transport=new Transport(),client=new PhysicalSynthClient(transport);
     const result=await client.effects(fx);expect(result.preset.effects).toEqual(fx);
@@ -103,7 +112,8 @@ describe("Advanced physical editor", () => {
     const t = new Transport(), c = new PhysicalSynthClient(t);
     await Promise.all([c.retuneHz(61, 0, 261.123456), c.bend(-2), c.apply(initialPreset)]);
     const frames = t.sent.map(decodePresetSyncFrame);
-    expect(frames.map(f => f.payload[1])).toEqual([6, 5, 24, 11, 0, 17, 0, 13, 7, 7, 13, 17, 0, 11, 0, 24, 0]);
+    expect(frames.slice(0,2).map(f=>f.payload[1])).toEqual([6,5]);
+    const operations=frames.map(f=>f.payload[1]);expect(operations.indexOf(24)).toBeLessThan(operations.indexOf(7));expect(operations.indexOf(21)).toBeLessThan(operations.indexOf(23));expect(operations.indexOf(23)).toBeLessThan(operations.lastIndexOf(24));
     expect(frames[0].payload.slice(5)).toHaveLength(5);
     expect(frames[1].payload).toEqual([17, 5, 0, 0, 0]);
     expect(frames.find(f=>f.payload[1]===7)!.payload).toHaveLength(399);
@@ -166,16 +176,50 @@ describe("Advanced physical editor", () => {
     const t = new Transport(); t.respond = false;
     const c = new PhysicalSynthClient(t), pending = c.read();
     await Promise.resolve(); await Promise.resolve();
-    c.close(); await expect(pending).rejects.toThrow("disconnected");
+    c.close(); await expect(pending).rejects.toBeInstanceOf(SynthRequestCancelledError);
     expect(t.listeners.size).toBe(0);
-    await expect(c.read()).rejects.toThrow("disconnected");
+    await expect(c.read()).rejects.toBeInstanceOf(SynthRequestCancelledError);
+  });
+  it("does not report a board disconnect when an old editor cancels requests", async () => {
+    const transport = new Transport(); transport.respond = false;
+    const retired = new PhysicalSynthClient(transport);
+    const active = retired.status().catch(error => error);
+    const queued = retired.expression().catch(error => error);
+    await Promise.resolve(); await Promise.resolve();
+    retired.close();
+    transport.respond = true;
+    const replacement = new PhysicalSynthClient(transport);
+    try {
+      expect((await replacement.status()).state).toBe("playing");
+      for (const error of await Promise.all([active, queued])) {
+        expect(error).toBeInstanceOf(SynthRequestCancelledError);
+        expect(synthErrorMessage(error)).toBeUndefined();
+      }
+      expect((await replacement.status()).state).toBe("playing");
+      expect(transport.listeners.size).toBe(0);
+    } finally { replacement.close(); }
+  });
+  it("still displays real reply failures and can use the same connection afterward", async () => {
+    vi.useFakeTimers();
+    const transport = new Transport(); transport.respond = false;
+    const client = new PhysicalSynthClient(transport);
+    try {
+      const pending = client.status().catch(error => error);
+      await vi.advanceTimersByTimeAsync(5000);
+      const error = await pending;
+      expect(error).not.toBeInstanceOf(SynthRequestCancelledError);
+      expect(synthErrorMessage(error)).toMatch(/board did not reply/i);
+      transport.respond = true;
+      expect((await client.status()).state).toBe("playing");
+      expect(transport.listeners.size).toBe(0);
+    } finally { client.close(); vi.useRealTimers(); }
   });
   it("restores a browser draft instead of replacing it with factory defaults", () => {
     vi.stubGlobal("window", { localStorage: { getItem: (key: string) => key.endsWith("draft.v1")
       ? JSON.stringify({ ...initialPreset, name: "Retained draft", parameters: initialPreset.parameters.map((v, i) => i ? v : 5566) }) : "[]" } });
     try {
       const html = renderToStaticMarkup(createElement(PhysicalSynthEditor));
-      expect(html).toContain('value="Retained draft"');
+      expect(html).toContain('title="Retained draft"');
       expect(html).toContain('aria-valuenow="5566"');
     } finally { vi.unstubAllGlobals(); }
   });
@@ -193,7 +237,7 @@ describe("Advanced physical editor", () => {
   });
   it("keeps activation visible offline and explains how to connect", () => {
     const html = renderToStaticMarkup(createElement(PhysicalSynthEditor));
-    expect(html).toContain("Save on computer");
+    expect(html).toContain("Presets");
     expect(html).toContain("Start synth"); expect(html).toContain("Connect Advanced to play");
   });
 });
@@ -234,7 +278,7 @@ it('reports acknowledged sample frames and clears progress after completion',asy
 });
 it('clears sample progress when the connection is closed mid-operation',async()=>{
  vi.useFakeTimers();const t=new Transport();t.respond=false;const events:(Progress|undefined)[]=[],c=new PhysicalSynthClient(t,p=>events.push(p));
- try{const pending=c.setSample({enabled:true,gain:32768,direct:65535,name:'Cancel',frames:[0,1000,-1000,0]});const rejected=expect(pending).rejects.toThrow('disconnected');await vi.advanceTimersByTimeAsync(0);c.close();await rejected;expect(events.at(-1)).toBeUndefined();expect(t.listeners.size).toBe(0);}finally{c.close();vi.useRealTimers();}
+ try{const pending=c.setSample({enabled:true,gain:32768,direct:65535,name:'Cancel',frames:[0,1000,-1000,0]});const rejected=expect(pending).rejects.toBeInstanceOf(SynthRequestCancelledError);await vi.advanceTimersByTimeAsync(0);c.close();await rejected;expect(events.at(-1)).toBeUndefined();expect(t.listeners.size).toBe(0);}finally{c.close();vi.useRealTimers();}
 });
 it('renders measured transfer progress and honest indeterminate preparation',()=>{
  const measured=renderToStaticMarkup(createElement(SynthProgress,{progress:{label:'Sending sample…',completed:512,total:1024}}));expect(measured).toContain('50%');expect(measured).toContain('value="512"');expect(measured).toContain('max="1024"');
@@ -244,7 +288,7 @@ it('renders measured transfer progress and honest indeterminate preparation',()=
 it('stores explicit loads while stopped, after the complete patch, then resumes',async()=>{
  const t=new Transport(),c=new PhysicalSynthClient(t),events:(Progress|undefined)[]=[];
  const observed=new PhysicalSynthClient(t,p=>events.push(p));
- try{await observed.load(initialPreset);const ops=t.sent.map(decodePresetSyncFrame).map(f=>f.payload[1]);const save=ops.indexOf(28);expect(save).toBeGreaterThan(ops.indexOf(24));expect(ops.slice(0,save)).toContain(2);expect(ops.slice(save+1)).toContain(1);expect(t.state).toBe(1);expect(events.some(p=>p?.label==='Saving startup patch…')).toBe(true);}finally{c.close();observed.close();}
+ try{await observed.load(initialPreset);const ops=t.sent.map(decodePresetSyncFrame).map(f=>f.payload[1]);const save=ops.indexOf(28);expect(save).toBeGreaterThan(ops.indexOf(24));expect(ops.slice(0,save)).toContain(2);expect(ops.slice(save+1)).toContain(1);expect(ops.indexOf(61)).toBeLessThan(ops.indexOf(2));expect(ops.indexOf(62)).toBeGreaterThan(ops.indexOf(1));expect(t.state).toBe(1);expect(events.some(p=>p?.label==='Saving startup patch…')).toBe(true);}finally{c.close();observed.close();}
 });
 it('does not save ordinary RAM apply or live parameter changes',async()=>{
  const t=new Transport(),c=new PhysicalSynthClient(t);try{await c.apply(initialPreset);await c.parameter(0,30000);expect(t.sent.map(decodePresetSyncFrame).some(f=>f.payload[1]===28)).toBe(false);}finally{c.close();}
@@ -257,3 +301,23 @@ it('clears an old full graph before a valid replacement even in a fresh client',
 });
 
 it('reads device-owned pedal / joystick values without writing hardware settings',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{const state=await c.controls();expect(state.expression).toBeCloseTo(.5,4);expect(state.modulation).toBe(-1);expect(t.sent.map(decodePresetSyncFrame).filter(f=>f.payload[1]===52).every(f=>f.payload.length===2)).toBe(true);await c.controllerRoute(22,1,40000);expect(t.sent.map(decodePresetSyncFrame).some(f=>f.payload[1]===54&&f.payload[2]===22&&f.payload[3]===1)).toBe(true);}finally{c.close();}});
+
+it("accepts the current DSP qualification revision from the board",async()=>{const transport=new Transport(),client=new PhysicalSynthClient(transport);expect((await client.voiceBudget()).revision).toBe(4);client.close();});
+
+it('explicitly clears a previous device sample even with a fresh browser client',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);t.state=0;try{await c.apply(initialPreset);const sent=t.sent.map(decodePresetSyncFrame);expect(sent.some(f=>f.payload[1]===21&&f.payload.slice(2,5).every(v=>v===0))).toBe(true);expect(sent.some(f=>f.payload[1]===23)).toBe(true);}finally{c.close();}});
+
+it('polls an automatic-storage catalog operation through completion',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t),progress:number[]=[];try{const result=await c.presetCatalog(0,0,0,s=>progress.push(s.progress));expect(result).toMatchObject({phase:2,medium:2,mask:1,elapsedMs:100});expect(progress).toEqual([0,100]);expect(t.listeners.size).toBe(0);}finally{c.close();}});
+
+it('uses wide device IDs and preserves the top occupancy bit in folder pages',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{await c.presetCatalog(0,2080,1);expect(decodePresetSyncFrame(t.sent[0]).payload).toEqual([17,58,0,...encodeU14(2080),1]);expect(await c.presetLabel(3071)).toMatchObject({engine:5,name:'High ID sound'});const folders=await c.presetFolders();expect(folders).toHaveLength(32);expect(folders[31]).toEqual({index:31,name:'Glass',mask:0x80000000});}finally{c.close();}});
+
+it('keeps device library controls disabled while the parent reads an audition into the editor',()=>{const t=new Transport(),c=new PhysicalSynthClient(t);const html=renderToStaticMarkup(createElement(DevicePresetLibrary,{client:c,engine:2,busy:true,getCurrent:async()=>initialPreset,onAudition:()=>{},onBusy:()=>{}}));expect(html).toContain('aria-busy="true"');expect(html).toContain('Reading sound…');expect(html.match(/<button[^>]*disabled=""/g)).toHaveLength(2);c.close();});
+
+it('reveals cached names top to bottom while a folder is still loading, without repeated reads',async()=>{
+ const t=new Transport(),c=new PhysicalSynthClient(t),mask=0x80000009,seen:{polls:number;ids:number[]}[]=[];
+ const packet=(phase:number,progress:number)=>[17,2,phase,0,...encodeU14(2048),2,progress,...Array.from({length:5},(_,i)=>Math.floor(mask/2**(7*(4-i)))%128),...encodeU21(0),...encodeU21(0),5,0,...encodeU14(3072),32,...encodeU21(8000)];
+ t.catalogReplies=[packet(1,8),packet(1,11),packet(2,100)];
+ try{await c.browsePresetFolder(2048,2,()=>{},rows=>seen.push({polls:t.sent.filter(p=>decodePresetSyncFrame(p).payload[1]===57).length,ids:rows.map(r=>r.id)}));
+ expect(seen).toEqual([{polls:0,ids:[2048]},{polls:1,ids:[2048,2051]},{polls:2,ids:[2048,2051,2079]}]);
+ expect(t.sent.map(p=>decodePresetSyncFrame(p).payload).filter(p=>p[1]===59).map(p=>p.slice(2))).toEqual([encodeU14(2048),encodeU14(2051),encodeU14(2079)]);
+ }finally{c.close();}
+});

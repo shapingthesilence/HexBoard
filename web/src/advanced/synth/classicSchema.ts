@@ -13,13 +13,14 @@ export interface ClassicPreset {
     effects: FxRack;
     velocityEngine: 0 | 1 | 2 | 3 | 4;
 }
-export const classicEffects = (engine: number) => engine === 4 ? [1, 3, 4] : [1, 2, 3, 4];
+export const classicEffects = (engine: number) => engine === 4 ? [1, 3, 4, 5] : [1, 2, 3, 4, 5];
 export function initialClassic(engine: 4 | 5): ClassicPreset { return { format: 'hexboard.advanced.v2', engine, name: engine === 4 ? 'Juno Init' : 'DX7 Init', patch: initialAdvanced(engine), effects: defaultFx(), velocityEngine: 4 }; }
 export function classicFromUnknown(value: unknown): ClassicPreset {
     const p = value as ClassicPreset;
     if (!p || p.format !== 'hexboard.advanced.v2' || ![4, 5].includes(p.engine) || typeof p.name !== 'string' || !p.name.trim() || p.name.length > 80 || !Number.isInteger(p.velocityEngine) || p.velocityEngine < 0 || p.velocityEngine > 4)
         throw Error('Invalid Advanced preset.');
     const effects = validateFx(p.effects);
+    if(effects.routes?.some((v,i)=>i%5===2&&v))throw Error('Classic FX accept tilt, joystick and expression; shared LFO routing is available in Physical Strings.');
     if (effects.order.some(id => !classicEffects(p.engine).includes(id)))
         throw Error('Reverb is unavailable on Juno within its current performance budget.');
     const patch = validateAdvanced(p.patch);

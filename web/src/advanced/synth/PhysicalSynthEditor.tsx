@@ -1,3 +1,6 @@
+import {PresetLibrary} from './PresetLibrary.tsx';
+import {storedPreset} from './presetLibrary.ts';
+import {synthErrorMessage} from "./requestError.ts";
 import {MonoControls} from './MonoControls.tsx';
 import {type MonoConfig} from './mono.ts';
 import {ModulationBudget} from "./ModulationBudget.tsx";
@@ -20,31 +23,26 @@ import { useSourcePreview } from "./sourcePreview.ts";
 import { StringAnimation } from "./StringAnimation.tsx";
 import { SampleEditor } from "./SampleEditor.tsx";
 import { ModSourceEditor } from "./ModSourceEditor.tsx";
-import { modulationRouteCount, modulationSeconds, modulationRate, type FxRack, type SampleExciter, factoryPhysicalPresets, initialPreset, physicalParameters, physicalSources, physicalPresetFromUnknown, effectiveParameters, type PhysicalPreset } from "./schema.ts";
+import { modulationRouteCount, modulationSeconds, modulationRate, type FxRack, type SampleExciter,  initialPreset, physicalParameters, physicalSources, physicalPresetFromUnknown, effectiveParameters, type PhysicalPreset } from "./schema.ts";
 import "./PhysicalSynthEditor.css";
 import {targetingEscape} from "./modulationTargeting.ts";
 import {Knob,sourceColors,sourceShortNames,modulationCursor} from "./SynthControls.tsx";
 import {FxRackEditor} from "./FxRackEditor.tsx";
 
-const storageKey = "hexboard.physical.library.v1", draftKey = "hexboard.physical.draft.v1";
+const draftKey = "hexboard.physical.draft.v1";
 function readDraft(): PhysicalPreset | undefined {
   try { const raw = window.localStorage.getItem(draftKey); return raw ? physicalPresetFromUnknown(JSON.parse(raw)) : undefined; } catch { return undefined; }
-}
-function library(): PhysicalPreset[] {
-  try { const saved: unknown = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]"); return Array.isArray(saved) ? saved.map(physicalPresetFromUnknown) : []; } catch { return []; }
 }
 function PadLabels({corners,x,y}:{corners:[string,string,string,string];x:string;y:string}){
  return <><span className="pad-corner top-left">{corners[0]}</span><span className="pad-corner top-right">{corners[1]}</span><span className="pad-corner bottom-left">{corners[2]}</span><span className="pad-corner bottom-right">{corners[3]}</span><span className="pad-axis-x">{x}</span><span className="pad-axis-y">{y}</span></>;
 }
-export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: MidiTransport;advanced?:boolean }) {
+export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoaded }: { transport?: MidiTransport;advanced?:boolean;onDeviceEngineLoaded?:(engine:2|4|5)=>void }) {
   const performance=usePerformance(),performanceTempo=usePerformanceTempo();
   const [client, setClient] = useState<PhysicalSynthClient>();
   const [connectionAttempt, setConnectionAttempt] = useState(0);
-  const [draft] = useState(readDraft), retainedDraft = useRef(Boolean(draft));
-  const {value:preset,set:setPreset,reset:resetPreset,replace:replacePreset,undo,redo,canUndo,canRedo,begin:beginEdit,end:endEdit} = useEditHistory<PhysicalPreset>(() => draft ?? physicalPresetFromUnknown(initialPreset),samePhysicalSound);
-  const [saved, setSaved] = useState(library), [selection, setSelection] = useState(0);
+  const retainedDraft = useRef(false);
+  const {value:preset,set:setPreset,reset:resetPreset,replace:replacePreset,undo,redo,canUndo,canRedo,begin:beginEdit,end:endEdit} = useEditHistory<PhysicalPreset>(() => {const draft=readDraft();retainedDraft.current=!!draft;return draft??physicalPresetFromUnknown(initialPreset);},samePhysicalSound);
   const name=preset.name;
-  const setName=(name:string)=>{retainedDraft.current=true;setPreset(p=>({...p,name}));};
   const namedPreset=useMemo(()=>({...preset,name}),[preset,name]);
   const [progress,setProgress]=useState<Progress>(),[operationLabel,setOperationLabel]=useState("Updating synth…");
   const progressRef=useRef<Progress|undefined>(undefined);
@@ -72,8 +70,10 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
     if(tool==="value"||sampleEditor)return;
     return targetingEscape(document,()=>{setTool("value");setDeleteTarget(undefined);setSourceEditor(undefined);setBlockedTip(undefined);});
   },[tool,sampleEditor]);
-  const presets = [...factoryPhysicalPresets, ...saved];
-  const fail = (error: unknown) => { if (alive.current) { setFailed(true); setMessage(error instanceof Error ? error.message : "Could not update the instrument."); } };
+  const fail = (error: unknown) => {
+    const message = synthErrorMessage(error);
+    if (alive.current && message !== undefined) { setFailed(true); setMessage(message); }
+  };
   useEffect(() => { try { window.localStorage.setItem(draftKey, JSON.stringify({ ...preset, name: name.trim() || "Untitled" })); } catch { /* Save reports storage errors. */ } }, [preset, name]);
   useEffect(() => {
     let disposed = false, polling = false;
@@ -126,7 +126,8 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
   };
   const apply = async (value: PhysicalPreset) => {
     retainedDraft.current = true; edits.current.clear(); clearTimeout(fxTimer.current);setFxWaiting(false); setDeleteTarget(undefined);
-    setPreset(physicalPresetFromUnknown(value));
+    while(flushing.current&&alive.current)await new Promise(r=>setTimeout(r,10));
+    resetPreset(storedPreset(value) as PhysicalPreset);
     if (client && ready) await operation(() => client.load(value));
   };
   const restoreHistory=(direction:"undo"|"redo")=>{
@@ -314,13 +315,7 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
 
     {blockedTip && tool==="modulate"&&<div className="mod-limit-tooltip" role="tooltip" style={{left:Math.min(blockedTip.x,window.innerWidth-220),top:blockedTip.y}}>DSP budget full · reduce another feature</div>}
     <header className="instrument-title"><h2>Physical Strings</h2><span>Stereo</span>{activity?<SynthProgress progress={activity}/>:<p role="status" className={failed ? "error" : ""}>{message}</p>}</header>
-    <fieldset className="preset-strip" disabled={busy}><legend>Presets</legend><div className="preset-controls">
-      <label>Preset <select value={selection} onChange={e => setSelection(Number(e.target.value))}>{presets.map((p, i) => <option value={i} key={`${i}:${p.name}`}>{p.name}</option>)}</select></label><button onClick={() => void apply(presets[selection])}>Load preset</button>
-      <label>Name <input maxLength={80} value={name} onChange={e => setName(e.target.value)} /></label>
-      <button onClick={() => { try { const p = physicalPresetFromUnknown({ ...preset, name }); const next = [...saved.filter(v => v.name !== p.name), p]; window.localStorage.setItem(storageKey, JSON.stringify(next)); setSaved(next); setSelection(factoryPhysicalPresets.length + next.length - 1); setMessage("Preset saved on this computer."); setFailed(false); } catch (error) { fail(error); } }}>Save on computer</button>
-      <button onClick={() => { try { const p = physicalPresetFromUnknown({ ...preset, name }); const url = URL.createObjectURL(new Blob([JSON.stringify(p, null, 2)], { type: "application/json" })); const a = document.createElement("a"); a.href = url; a.download = `${p.name.replace(/[^a-z0-9_-]/gi, "_")}.physical.json`; a.click(); URL.revokeObjectURL(url); } catch (error) { fail(error); } }}>Export preset</button>
-      <label>Import preset <input type="file" accept=".json,application/json" onChange={e => { const file = e.target.files?.[0]; if (!file) return; void file.text().then(text => apply(physicalPresetFromUnknown(JSON.parse(text)))).catch(fail); e.target.value = ""; }} /></label>
-    </div></fieldset>
+    <PresetLibrary preset={namedPreset} client={ready?client:undefined} disabled={busy} onBusy={v=>{if(v){edits.current.clear();clearTimeout(fxTimer.current);setFxWaiting(false);}setLoading(v);}} onLoad={async p=>{if(p.format==='hexboard.advanced.v2')throw Error('Select the matching engine.');await apply(p);}} onDeviceLoad={async(engine,name)=>{edits.current.clear();clearTimeout(fxTimer.current);retainedDraft.current=true;const value=await client!.readSound(name);if(engine!==2&&engine!==3){localStorage.setItem(`hexboard.advanced.${engine}.draft`,JSON.stringify(value));onDeviceEngineLoaded?.(engine as 4|5);return;}if(value.format==='hexboard.advanced.v2')return;setDevice(await client!.status());resetPreset(value);}}/>
     <div className="synth-activation" aria-label="Instrument playback">
       <div><strong>{!transport ? "Connect Advanced to play" : !ready ? "Synth connection unavailable" : device?.state === "loading" ? "Starting synth…" : device?.state === "playing" ? "Synth running" : "Synth stopped"}</strong>
         <small>{!transport ? "Use Connect HexBoard above, then start the synth here." : !ready ? "Waiting for the synth controls. Retry if the connection was interrupted." : device?.state === "playing" ? "Play the keys. Preview draft applies your current sound." : "Start loads your current draft and enables the instrument’s audio."}</small></div>
@@ -413,9 +408,9 @@ export function PhysicalSynthEditor({ transport,advanced=false }: { transport?: 
         {client && <label className="physical-control">Global bend: {bend.toFixed(2)} semitones<Knob label="Global pitch bend" min={-2} max={2} value={bend} disabled={!ready || busy || device?.state !== "playing"} onChange={changeBend} onRelease={() => changeBend(0)} /><button onClick={() => changeBend(0)} disabled={!ready || device?.state !== "playing"}>Center bend</button></label>}
       </fieldset>
     </div>
-    </div><div className="engine-side"><FxRackEditor before={bodyPanel} rack={preset.effects} busy={busy} waiting={fxWaiting} onChange={(rack,reorder)=>reorder?setEffects(rack):setRackControls(rack)}/></div></div>
+    </div><div className="engine-side"><FxRackEditor before={bodyPanel} rack={preset.effects} canApply={rack=>dspAllows(preset,{...preset,effects:rack})} onPreview={rack=>{setFxPreview(rack);setBudgetSource(undefined);}} targeting={{tool,source,values:sources,finish:()=>setTool("value"),focus:()=>setSourceEditor(undefined)}} busy={busy} waiting={fxWaiting} onChange={(rack,reorder)=>reorder?setEffects(rack):setRackControls(rack)}/></div></div>
     {sampleEditor&&<SampleEditor progress={progress} sample={preset.sample} onApply={sample=>applySample(sample)} onPreview={sample=>applySample(sample,true)} onClose={()=>setSampleEditor(false)}/>}
-    {advanced&&<VoiceBudgetEditor dsp preset={namedPreset} busy={busy} testing={busy&&/voic/.test(progress?.label??operationLabel)} connected={!!client&&ready} onCancel={()=>void client?.cancelVoiceTest().catch(fail)} onInvalidate={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));if(client&&ready)void client.resetVoiceBudget().catch(fail);}} onTest={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));edits.current.clear();clearTimeout(fxTimer.current);void operation(async()=>{const value=await client!.testVoiceLimit({...preset,name});replacePreset(value);const next=[...saved.filter(p=>p.name!==value.name),value];window.localStorage.setItem(storageKey,JSON.stringify(next));setSaved(next);setSelection(factoryPhysicalPresets.length+next.length-1);return client!.status();},"Testing voice limit…");}}/>}
-    <p className="editor-footnote">Pressure range: Calibration · Presets saved on this computer · Rings: clockwise + / counterclockwise −</p>
+    {advanced&&<VoiceBudgetEditor dsp preset={namedPreset} busy={busy} testing={busy&&/voic/.test(progress?.label??operationLabel)} connected={!!client&&ready} onCancel={()=>void client?.cancelVoiceTest().catch(fail)} onInvalidate={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));if(client&&ready)void client.resetVoiceBudget().catch(fail);}} onTest={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));edits.current.clear();clearTimeout(fxTimer.current);void operation(async()=>{const value=await client!.testVoiceLimit({...preset,name});replacePreset(value);return client!.status();},"Testing voice limit…");}}/>}
+    <p className="editor-footnote">Pressure range: Calibration · Presets: computer / HexBoard · Rings: clockwise + / counterclockwise −</p>
   </section>;
 }

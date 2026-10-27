@@ -1,10 +1,12 @@
+import {PresetLibrary} from './PresetLibrary.tsx';
+import {synthErrorMessage} from "./requestError.ts";
 import {PerformanceRow} from './PerformanceRow.tsx';
 import { attachVoiceBudget } from "./voiceBudget.ts";
 import { VoiceBudgetEditor } from "./VoiceBudgetEditor.tsx";
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { MidiTransport } from '../../midi/types.ts';
 import { PhysicalSynthClient, type PhysicalExpression } from './client.ts';
-import { classicFromUnknown, initialClassic, factoryClassicPresets, parameterName, addExpression, classicEffects, type ClassicPreset } from './classicSchema.ts';
+import { classicFromUnknown, initialClassic, parameterName, addExpression, classicEffects, type ClassicPreset } from './classicSchema.ts';
 import { assignAdvanced, continuousParameter, effectiveAdvanced, parameterMaximum } from './advancedSchema.ts';
 import { Knob, sourceColors, sourceShortNames, modulationCursor } from './SynthControls.tsx';
 import { FxRackEditor } from './FxRackEditor.tsx';
@@ -13,7 +15,6 @@ import { SynthProgress } from './SynthProgress.tsx';
 import type { SynthProgress as Progress } from './progress.ts';
 import { physicalSources, type FxRack } from './schema.ts';
 import { useSourcePreview } from './sourcePreview.ts';
-import { importDx7 } from './dx7Import.ts';
 import { AlgorithmDiagram } from './AlgorithmDiagram.tsx';
 import { targetingEscape } from './modulationTargeting.ts';
 import './PhysicalSynthEditor.css';
@@ -29,27 +30,21 @@ function draft(engine: 4 | 5) {
         return initialClassic(engine);
     }
 }
-function library(engine: 4 | 5): ClassicPreset[] {
-    try {
-        return JSON.parse(localStorage.getItem(key(engine) + '.library') ?? '[]').map(classicFromUnknown);
-    }
-    catch {
-        return [];
-    }
-}
-export function ClassicSynthEditor({ engine, transport }: {
+export function ClassicSynthEditor({ engine, transport,onDeviceEngineLoaded }: {
+    onDeviceEngineLoaded?:(engine:2|4|5)=>void;
     engine: 4 | 5;
     transport?: MidiTransport;
 }) {
-    const [preset, setPreset] = useState(() => draft(engine)), [saved, setSaved] = useState(() => library(engine)), [selection, setSelection] = useState(0), [imports, setImports] = useState<ClassicPreset[]>([]), [presetSearch, setPresetSearch] = useState('');
+    const [preset, setPreset] = useState(() => draft(engine));
     const [client, setClient] = useState<PhysicalSynthClient>(), [ready, setReady] = useState(false), [state, setState] = useState(0), [loading, setLoading] = useState(false), [progress, setProgress] = useState<Progress>(), [retry, setRetry] = useState(0);
     const [message, setMessage] = useState('Connect Advanced to hear this engine.'), [failed, setFailed] = useState(false), [live, setLive] = useState<PhysicalExpression>(), [pressure, setPressure] = useState(0), [bend, setBend] = useState(0);
     const [tool, setTool] = useState<'value' | 'modulate' | 'delete'>('value'), [source, setSource] = useState(1), [sourceEditor, setSourceEditor] = useState<number>(), [operator, setOperator] = useState(5), [waiting, setWaiting] = useState(false);
     const edits = useRef(new Map<string, () => Promise<unknown>>()), flushing = useRef(false), fxTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined), alive = useRef(true), busyRef = useRef(false), retained = useRef(false);
     const fail = (e: unknown) => {
-        if (alive.current) {
+        const message = synthErrorMessage(e);
+        if (alive.current && message !== undefined) {
             setFailed(true);
-            setMessage(e instanceof Error ? e.message : String(e));
+            setMessage(message);
         }
     };
     useEffect(() => {
@@ -170,6 +165,8 @@ export function ClassicSynthEditor({ engine, transport }: {
         }
     };
     const apply = async (value: ClassicPreset) => {
+        edits.current.clear();clearTimeout(fxTimer.current);
+        while(flushing.current&&alive.current)await new Promise(r=>setTimeout(r,10));
         const p = classicFromUnknown(value);
         retained.current = true;
         setPreset(p);
@@ -229,7 +226,7 @@ export function ClassicSynthEditor({ engine, transport }: {
     }
     const generated = useSourcePreview(preview, live);
     sources.push(live?.tiltX ?? 0, live?.tiltY ?? 0, ...generated);
-    const effective = effectiveAdvanced(preset.patch, sources), presets = useMemo(() => [...factoryClassicPresets.filter(p => p.engine === engine), ...saved, ...imports], [engine, saved, imports]);
+    const effective = effectiveAdvanced(preset.patch, sources);
     const control = (id: number) => {
         const max = parameterMaximum(engine, id), base = preset.patch.parameters[id], label = parameterName(engine, id), continuous = continuousParameter(engine, id), r = preset.patch.routes.slice(source * 4, source * 4 + 4).find(r => r.destination === id), modulating = tool === 'modulate' && continuous;
         const routes = preset.patch.routes.flatMap((r, i) => r.destination === id ? [{ label: sourceLabels[Math.floor(i / 4)], i: Math.floor(i / 4), depth: r.depth }] : []);
@@ -253,7 +250,6 @@ export function ClassicSynthEditor({ engine, transport }: {
                 }}/> : options ? <select aria-label={label} value={base} disabled={busy || tool !== 'value'} onChange={e => edit(id, +e.target.value)}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select> : <input aria-label={label} type="number" min={0} max={max} step={1} value={base} disabled={busy || tool !== 'value'} onChange={e => edit(id, Math.max(0, Math.min(max, Math.round(+e.target.value))))}/>}
    <output>{modulating ? `${Math.round((r?.depth ?? 0) / 65536 * 100)}%` : engine === 4 ? id === 6 ? `${Math.round(65 * 2 ** (8 * base / 65535))} Hz` : id === 20 ? `${(.05 * 2 ** (8.65 * base / 65535)).toFixed(2)} Hz` : id === 25 ? `${Math.round(base * 48 / 65535) - 24} st` : `${Math.round(base / max * 100)}%` : id === 134 ? `${base + 1}` : base}</output><div className="knob-routes">{routes.map(r => <button key={r.i} title="Remove assignment" disabled={busy} style={{ color: sourceColors[r.i] }} onClick={e => { e.stopPropagation(); const at = preset.patch.routes.findIndex((v, i) => v.destination === id && Math.floor(i / 4) === r.i); const next = structuredClone(preset.patch); next.routes[at] = { destination: 65535, depth: 0 }; setPreset(p => ({ ...p, patch: next })); queue(`r${at}`, () => client!.routeAdvanced(at, 65535, 0)); }}>{sourceShortNames[r.i]} {Math.round(r.depth / 65536 * 100)}%</button>)}</div></div>;
     };
-    const presetOptions = useMemo(() => ([...new Set(presets.map(p => p.factoryBank ?? 'Advanced / saved / imported'))].map(group => <optgroup key={group} label={group}>{presets.map((p, i) => (p.factoryBank ?? 'Advanced / saved / imported') === group && (!presetSearch || i === selection || p.name.toLowerCase().includes(presetSearch.toLowerCase())) ? <option key={i} value={i}>{p.name}</option> : null)}</optgroup>)), [presets, presetSearch, selection]);
     const group = (name: string, ids: number[]) => <fieldset disabled={busy}><legend>{name}</legend><div className="knob-bank">{ids.map(control)}</div></fieldset>;
     return <section className={`card physical-editor classic-editor ${engine === 4 ? 'juno-editor' : 'dx7-editor'}`} style={{ '--modulation-cursor': modulationCursor(source), '--modulation-color': sourceColors[source] } as CSSProperties} data-modulating={tool === 'modulate' || undefined} aria-label={engine === 4 ? 'Juno editor' : 'DX7 editor'}>
  <PerformanceRow transport={transport} disabled={busy} physical={false}/>
@@ -262,45 +258,7 @@ export function ClassicSynthEditor({ engine, transport }: {
  {sourceEditor === 5 && <div className="native-source"><label>Envelope source<select aria-label="Envelope source" disabled={busy} value={engine === 4 ? (preset.patch.settings[5] >= 32768 ? 65535 : 0) : Math.round(preset.patch.settings[5] / 13107) * 13107} onChange={e => edit(153, +e.target.value)}>{engine === 4 ? <><option value={0}>Amplitude envelope</option><option value={65535}>Filter envelope</option></> : Array.from({ length: 6 }, (_, i) => <option value={i * 13107} key={i}>OP{i + 1} envelope</option>)}</select></label><p className="panel-note">Uses the voice envelope shown in the sound controls. Each note has its own envelope.</p><button disabled={busy} onClick={() => { setTool('modulate'); setSourceEditor(undefined); }}>Assign to controls</button></div>}
  {sourceEditor === 6 && <div className="native-source"><p className="panel-note">The engine's LFO also drives every LFO assignment.</p>{group('LFO', engine === 4 ? [20, 21, 22] : [137, 138, 139, 140, 141, 142, 143])}{engine === 4 && <><label>Waveform<select aria-label="LFO waveform" disabled={busy} value={preset.patch.settings[9]} onChange={e => edit(157, +e.target.value)}>{['Sine', 'Triangle', 'Rise', 'Fall', 'Square', 'Random'].map((n, i) => <option key={n} value={i * 13107}>{n}</option>)}</select></label><label><input type="checkbox" checked={!!preset.patch.settings[10]} disabled={busy} onChange={e => edit(158, e.target.checked ? 65535 : 0)}/>Restart each note</label></>}<button disabled={busy} onClick={() => { setTool('modulate'); setSourceEditor(undefined); }}>Assign to controls</button></div>}
  </div>}</div>
- <div className="physical-heading"><div><p className="eyebrow">HexBoard Advanced</p><h2>{engine === 4 ? 'Juno' : 'DX7'}</h2><p>{engine === 4 ? 'Analog color, shaped by touch.' : 'Six operators, played with expression.'}</p></div><div className="physical-presets"><label>Find preset<input type="search" aria-label="Find preset" value={presetSearch} placeholder="Name or number…" onChange={e => setPresetSearch(e.target.value)}/></label><label>Preset<select value={selection} disabled={busy} onChange={e => setSelection(+e.target.value)}>{presetOptions}</select></label><button disabled={busy} onClick={() => void apply(presets[selection])}>Load preset</button><label>Preset name<input value={preset.name} maxLength={80} disabled={busy} onChange={e => setPreset(p => ({ ...p, name: e.target.value }))}/></label><button disabled={busy} onClick={() => {
-            try {
-                const p = classicFromUnknown(preset), next = [...saved.filter(v => v.name !== p.name), p];
-                localStorage.setItem(key(engine) + '.library', JSON.stringify(next));
-                setSaved(next);
-                setMessage('Preset saved on this computer.');
-            }
-            catch (e) {
-                fail(e);
-            }
-        }}>Save preset</button><button disabled={busy} onClick={() => {
-            try {
-                const blob = new Blob([JSON.stringify(classicFromUnknown(preset), null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a');
-                a.href = url;
-                a.download = `${preset.name}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-            }
-            catch (e) {
-                fail(e);
-            }
-        }}>Export JSON</button><label className="file-button">Import JSON<input type="file" accept=".json" disabled={busy} onChange={e => {
-            const file = e.target.files?.[0];
-            if (file)
-                void file.text().then(t => {
-                    const p = classicFromUnknown(JSON.parse(t));
-                    if (p.engine !== engine)
-                        throw Error('Select the matching engine before importing this preset.');
-                    return apply(p);
-                }).catch(fail);
-            e.target.value = '';
-        }}/></label>
- {engine === 5 && <><label className="file-button">Import DX7 SysEx<input type="file" accept=".syx" disabled={busy} onChange={e => {
-                const file = e.target.files?.[0];
-                if (file)
-                    void file.arrayBuffer().then(b => { const voices = importDx7(new Uint8Array(b)); setImports(voices); setSelection(factoryClassicPresets.filter(p => p.engine === engine).length + saved.length); setMessage(`${voices.length} voices imported. Choose one and Load preset.`); }).catch(fail);
-                e.target.value = '';
-            }}/></label><button disabled={busy} onClick={() => void apply(addExpression(preset))}>Add Advanced expression</button></>}
- </div></div>
+ <div className="physical-heading"><div><p className="eyebrow">HexBoard Advanced</p><h2>{engine === 4 ? 'Juno' : 'DX7'}</h2><p>{engine === 4 ? 'Analog color, shaped by touch.' : 'Six operators, played with expression.'}</p></div><PresetLibrary preset={preset} client={ready?client:undefined} disabled={busy} onBusy={v=>{if(v){edits.current.clear();clearTimeout(fxTimer.current);}busyRef.current=v;setLoading(v);}} onLoad={async p=>{if(p.format!=='hexboard.advanced.v2'||p.engine!==engine)throw Error('Select the matching engine.');await apply(p);}} onDeviceLoad={async(next,name)=>{edits.current.clear();clearTimeout(fxTimer.current);retained.current=true;const value=await client!.readSound(name);if(next!==engine){localStorage.setItem(next<4?'hexboard.physical.draft.v1':`hexboard.advanced.${next}.draft`,JSON.stringify(value));onDeviceEngineLoaded?.((next===3?2:next) as 2|4|5);return;}if(value.format!=='hexboard.advanced.v2')return;setPreset(value);setState((await client!.status()).state==='playing'?1:0);}}/>{engine===5&&<button disabled={busy} onClick={()=>void apply(addExpression(preset))}>Add Advanced expression</button>}</div>
  {preset.conversionNotes?.length ? <details className="preset-conversion"><summary>AMY conversion notes</summary>{preset.conversionNotes.map(note => <p key={note}>{note}</p>)}</details> : null}
  <p className={`synth-message${failed ? ' error' : ''}`} role="status">{message}</p>{(progress || loading) && <SynthProgress progress={progress ?? { label: "Updating synth…" }}/>}
  <div className="synth-playbar"><div><strong>{state ? 'Synth playing' : 'Synth stopped'}</strong><small>{!transport ? 'Connect Advanced to audition presets.' : 'Load or Preview draft saves this as your startup sound.'}</small></div><div className="button-row"><button className="synth-start" disabled={!ready || busy || state === 1} onClick={() => void operation(async () => { await client!.loadClassic(preset); await client!.start(engine); setState(1); })}>Start synth</button><button disabled={!ready || busy || !state} onClick={() => void operation(async () => { await client!.stop(); setState(0); })}>Stop synth</button><button disabled={!ready || busy} onClick={() => void apply(preset)}>Preview draft</button>{failed && transport && <button onClick={() => setRetry(v => v + 1)}>Retry connection</button>}</div></div>
@@ -308,9 +266,9 @@ export function ClassicSynthEditor({ engine, transport }: {
             setPreset(p => ({ ...p, voiceBudget: undefined }));
             if (client && ready)
                 void client.resetVoiceBudget().catch(fail);
-        }} onTest={() => { setPreset(p => ({ ...p, voiceBudget: undefined })); void operation(async () => { const value = await client!.testVoiceLimit(preset); setPreset(value); const next = [...saved.filter(p => p.name !== value.name), value]; localStorage.setItem(key(engine) + '.library', JSON.stringify(next)); setSaved(next); setSelection(factoryClassicPresets.filter(p => p.engine === engine).length + next.length - 1); setState(0); setMessage(`${value.voiceBudget.voices} voices tested and saved with this preset.`); }); }}/>
+        }} onTest={() => { setPreset(p => ({ ...p, voiceBudget: undefined })); void operation(async () => { const value = await client!.testVoiceLimit(preset); setPreset(value); setState(0); setMessage(`${value.voiceBudget.voices} voices tested. Save this sound in Presets to keep the result.`); }); }}/>
  <div className="physical-workspace"><div className="instrument-workspace">
  {engine === 4 ? <>{group('Oscillator', [0, 1, 2, 3, 4, 5, 24, 25])}{group('Filter', [6, 8, 9, 10, 11, 27])}{group('Amplitude envelope', [12, 13, 14, 15, 26])}{group('Filter envelope', [16, 17, 18, 19])}{group('Voice', [23])}</> : <><fieldset><legend>Algorithm {preset.patch.parameters[134] + 1}</legend><AlgorithmDiagram algorithm={preset.patch.parameters[134] + 1} selected={operator} onSelect={setOperator}/><div className="knob-bank">{[134, 135, 136].map(control)}</div></fieldset><fieldset disabled={busy}><legend>Operators</legend><div className="source-tabs">{[0, 1, 2, 3, 4, 5].map(i => <button key={i} aria-pressed={operator === i} onClick={() => setOperator(i)}>OP{6 - i}</button>)}</div><div className="knob-bank">{Array.from({ length: 21 }, (_, i) => control(operator * 21 + i))}</div></fieldset>{group('Pitch envelope', Array.from({ length: 8 }, (_, i) => 126 + i))}{group('Voice', [144, 146, 147])}</>}
  {group('Output', [engine === 4 ? 7 : 145])}<fieldset disabled={busy}><legend>Expression</legend>{sourceLabels.map((label, i) => <div className="source-meter" key={label}><span>{label}{i >= 5 ? ' · preview' : ''}</span><meter min={i === 3 || i === 4 || i === 6 ? -1 : 0} max={1} value={sources[i]}/><output>{Math.round(sources[i] * 100)}%</output></div>)}{!client && <label className="physical-control">Pressure preview<Knob label="Pressure preview" value={pressure} onChange={v => setPressure(Math.round(v))}/></label>}{client && <><button disabled={!live?.motionValid} onClick={() => void client.zeroMotion().catch(fail)}>Set tilt neutral</button><label className="physical-control">Global pitch bend<Knob label="Global pitch bend" min={-2} max={2} value={bend} onChange={v => { setBend(v); queue('bend', () => client.bend(v)); }} onRelease={() => { setBend(0); queue('bend', () => client.bend(0)); }}/></label></>}</fieldset></div><div className="engine-side"><FxRackEditor available={classicEffects(engine)} rack={preset.effects} busy={busy} waiting={waiting} onChange={setEffects}/></div></div>
- <p className="editor-footnote">Pressure range: Calibration · Presets saved on this computer · Rings: clockwise + / counterclockwise −</p></section>;
+ <p className="editor-footnote">Pressure range: Calibration · Presets: computer / HexBoard · Rings: clockwise + / counterclockwise −</p></section>;
 }

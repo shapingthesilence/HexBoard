@@ -1,0 +1,10 @@
+import {describe,it,expect} from 'vitest';
+import {initialPreset,defaultSampleLoop} from './schema.ts';
+import {initialClassic} from './classicSchema.ts';
+import {storedPreset,libraryEntry,libraryFolder,presetEngine} from './presetLibrary.ts';
+describe('Advanced sound library',()=>{
+ it('embeds active excitation PCM and loop settings without changing the source',()=>{const p=structuredClone(initialPreset);p.parameters[21]=0;p.sample={...p.sample,enabled:true,name:'Rain',frames:Array(400).fill(123),loop:{mode:1,start:40,end:360,crossfade:40}};const result=storedPreset(p);expect(result).toEqual(p);expect(result).not.toBe(p);});
+ it('discards inactive and bow-bypassed PCM on storage or a full sound switch',()=>{for(const bow of [false,true]){const p=structuredClone(initialPreset);p.parameters[21]=bow?65535:0;p.sample={...p.sample,enabled:bow,name:'Unused',frames:Array(400).fill(123),loop:{mode:1,start:0,end:400,crossfade:20}};const result=storedPreset(p);if(result.format==='hexboard.advanced.v2')throw Error('Wrong type');expect(result.sample.enabled).toBe(false);expect(result.sample.frames).toEqual([]);expect(result.sample.name).toBe('');expect(result.sample.loop).toEqual(defaultSampleLoop());expect(p.sample.frames).toHaveLength(400);}});
+ it('keeps a sample saved in a different preset independent of replacement',()=>{const p=structuredClone(initialPreset);p.sample={...p.sample,enabled:true,frames:[0,123,-123,0]};const saved=storedPreset(p);storedPreset(initialPreset);if(saved.format==='hexboard.advanced.v2')throw Error('Wrong type');expect(saved.sample.frames).toEqual([0,123,-123,0]);});
+ it('keeps names and folders separate from stable identity',()=>{const entry=libraryEntry({id:'stable-id',preset:initialClassic(4),folder:' / Pianos // Glass / ',favorite:true,updated:4});expect(entry.id).toBe('stable-id');expect(entry.folder).toBe('Pianos/Glass');expect(entry.favorite).toBe(true);expect(presetEngine(entry.preset)).toBe(4);expect(libraryFolder('  / / ')).toBe('');expect(()=>libraryEntry({...entry,id:''})).toThrow();});
+});

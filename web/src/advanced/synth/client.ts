@@ -1,3 +1,5 @@
+import {storedPreset} from './presetLibrary.ts';
+import {SynthRequestCancelledError} from "./requestError.ts";
 import {defaultMono,validateMono,type MonoConfig} from './mono.ts';
 import {dspUsage} from "./dspBudget.ts";
 import {modulationUsage} from "./modulationBudget.ts";
@@ -5,12 +7,29 @@ import {performanceWords,performanceFromWords,type PerformanceConfig,type Perfor
 import {prepareEstimate,engineNames} from "./loadTiming.ts";
 import {attachVoiceBudget,validVoiceBudget,type VoiceBudgetProfile,type VoiceBudgetState} from "./voiceBudget.ts";
 import {advancedWords,advancedFromWords,validateAdvanced,initialAdvanced,advancedWordCount,type AdvancedPatch,type AdvancedEngine} from './advancedSchema.ts';
-import {classicFromUnknown,type ClassicPreset} from './classicSchema.ts';
+import {classicFromUnknown,initialClassic,type ClassicPreset} from './classicSchema.ts';
 import type {SynthProgress} from './progress.ts';
 import type { MidiTransport } from "../../midi/types.ts";
 import { decodePresetSyncFrame, encodeDefaultPresetSyncFrame, encodeU14, encodeU21, decodeU14, decodeU21 } from "../../protocol/index.ts";
 import { physicalPresetFromUnknown, defaultSample, defaultSampleLoop, validateSample, type SampleLoop, type SampleExciter, defaultModulation, validateModulation, type ModulationSources, defaultFx, validateFx, type FxRack, type PhysicalPreset, type PhysicalVelocityEngine, encodeLogPitchHz } from "./schema.ts";
 
+export interface PresetCatalogState {phase:number;action:number;slot:number;medium:0|1|2;progress:number;mask:number;elapsedMs:number;maxSliceUs:number;engine:number;folder:number;capacity:number;folderCapacity:number;heapMin:number}
+export interface DevicePresetFolder {index:number;name:string;mask:number}
+export interface DevicePresetLabel {engine:number;favorite:boolean;name:string;folder:string}
+export interface SamplerInstrument {id:number;name:string;bytes:number}
+export function decodeSamplerLibrary(p:number[],first:number):SamplerInstrument[]{
+ if(first<0||first>1052||first%4||p.length!==292||p[0]!==17||decodeU14(p.slice(1,3))!==first||p[3]!==4)throw Error('Invalid sampler library page.');
+ const raw=Uint8Array.from({length:144},(_,i)=>{if(p[4+i*2]>1||p[5+i*2]>127)throw Error('Invalid sampler directory byte.');return p[4+i*2]*128+p[5+i*2];});const v=new DataView(raw.buffer),entries:SamplerInstrument[]=[];
+ for(let i=0;i<4;i++){const bytes=v.getUint32(i*36+32,true),nameBytes=raw.slice(i*36,i*36+32),end=nameBytes.indexOf(0),text=nameBytes.slice(0,end<0?32:end);if(end>=0&&nameBytes.slice(end).some(Boolean)||text.some(c=>c<32||c>126)||bytes&&(!text.length||bytes%512||bytes<512||bytes>0x40000000)||!bytes&&text.length)throw Error('Invalid sampler instrument entry.');if(bytes)entries.push({id:first>=1024?first-1024+i:first+i+2,name:new TextDecoder().decode(text),bytes});}
+ return entries;
+}
+export interface SamplerLoadingState {phase:0|1|2|3;voices:number;ready:number;total:number;loadedBytes:number;totalBytes:number;streaming?:boolean}
+export function decodeSamplerLoading(p:number[]):SamplerLoadingState {
+  if((p.length!==17&&p.length!==18)||p[0]!==17||p[1]>3||(p.length===18&&p[17]!==1))throw Error('Invalid sampler loading response.');
+  const state={phase:p[1] as 0|1|2|3,voices:p[2],ready:decodeU14(p.slice(3,5)),total:decodeU14(p.slice(5,7)),loadedBytes:p.slice(7,12).reduce((a,b)=>a*128+b,0),totalBytes:p.slice(12,17).reduce((a,b)=>a*128+b,0)};
+  if(state.total>128||state.ready>state.total||state.loadedBytes>state.totalBytes||state.totalBytes>0x40000000||state.voices>16||state.phase===0&&(state.voices||state.ready||state.total||state.loadedBytes||state.totalBytes)||(state.phase===1||state.phase===3)&&(!state.total||!state.totalBytes||state.voices!==4)||state.phase===2&&(!state.total||state.ready!==state.total||state.loadedBytes!==state.totalBytes||state.voices!==16))throw Error('Invalid sampler loading progress.');
+  return p.length===18?{...state,streaming:true}:state;
+}
 export interface PhysicalState { state: "stopped" | "playing" | "loading"; instrument: number; bend: number; preset: PhysicalPreset }
 export function decodePhysicalState(payload: number[]): PhysicalState {
   if (payload.length !== 403 || payload[0] !== 17 || payload[1] > 2 || payload[2] > 6)
@@ -33,10 +52,10 @@ export function decodePhysicalExpression(p: number[]): PhysicalExpression {
   return { key: key === 16383 ? null : key, held: Boolean(p[3]), velocity: p[4], pressure, release: p[8] };
 }
 export function decodeFx(payload:number[]): FxRack {
-  if(payload.length!==114||payload[0]!==17)throw Error("Unsupported FX response. Update Advanced firmware.");
+  if(payload.length!==336||payload[0]!==17)throw Error("Unsupported FX response. Update Advanced firmware.");
   const padded=payload.slice(1,6), end=padded.indexOf(0);
   if(end>=0 && padded.slice(end).some(id=>id!==0))throw Error("Invalid effect order.");
-  return validateFx({steps:Array.from({length:16},(_,i)=>decodeU21(payload.slice(66+i*3,69+i*3))),order:padded.filter(Boolean),values:Array.from({length:5},(_,i)=>Array.from({length:4},(_,j)=>decodeU21(payload.slice(6+(i*4+j)*3,9+(i*4+j)*3))))});
+  return validateFx({steps:Array.from({length:16},(_,i)=>decodeU21(payload.slice(78+i*3,81+i*3))),order:padded.filter(Boolean),routes:Array.from({length:70},(_,i)=>decodeU21(payload.slice(126+i*3,129+i*3))-65536),values:Array.from({length:6},(_,i)=>Array.from({length:4},(_,j)=>decodeU21(payload.slice(6+(i*4+j)*3,9+(i*4+j)*3))))});
 }
 export function decodeModulation(payload:number[]):ModulationSources {
   if(payload.length!==247||payload[0]!==17)throw Error("Update Advanced firmware for envelope and LFO sources.");
@@ -61,6 +80,37 @@ export class PhysicalSynthClient {
   private abort?: () => void;
   constructor(private transport: MidiTransport,private onProgress?:(progress?:SynthProgress)=>void,private advanced=false) {}
   close() { this.closed = true; this.abort?.(); }
+  async readSound(name:string){const state=await this.status();if(state.instrument===4||state.instrument===5){const r=await this.readAdvanced(),p={...initialClassic(state.instrument),name,patch:r.patch,effects:r.effects,velocityEngine:state.preset.velocityEngine};return r.budget.qualified?attachVoiceBudget(p,r.budget):p;}return {...(await this.read()).preset,name};}
+  async presetLabel(slot:number):Promise<DevicePresetLabel>{return this.request(59,encodeU14(slot));}
+  async presetFolders():Promise<DevicePresetFolder[]>{const rows:DevicePresetFolder[]=[];for(let at=0;at<32;at+=4)rows.push(...await this.request<DevicePresetFolder[]>(60,[at,4]));return rows;}
+  async presetCatalog(action:number,slot=0,medium=0,progress?:(state:PresetCatalogState)=>unknown,label?:number[]):Promise<PresetCatalogState>{
+    try{let state=await this.request<PresetCatalogState>(58,[action,...encodeU14(slot),medium,...(label??[])]),started=Date.now();
+    while(state.phase===1){await progress?.(state);this.onProgress?.({label:action===2?'Loading preset…':(action===1||action===4)?'Saving preset…':'Reading preset library…',completed:state.progress,total:100});await new Promise(r=>setTimeout(r,25));state=await this.request<PresetCatalogState>(57);if(Date.now()-started>60000)throw Error('Preset operation timed out. Reconnect to inspect the device.');}
+    await progress?.(state);this.onProgress?.();if(state.phase!==2)throw Error('Preset operation failed. Check storage space or the SD card; complete saved data remains recoverable.');return state;}finally{this.onProgress?.();}
+  }
+  async browsePresetFolder(slot:number,medium:number,progress:(state:PresetCatalogState)=>void,names:(rows:{id:number;label:DevicePresetLabel}[])=>void,force=false){
+    let next=0;const rows:{id:number;label:DevicePresetLabel}[]=[],base=Math.floor(slot/32)*32;
+    return this.presetCatalog(force?5:0,slot,medium,async state=>{
+      progress(state);if(state.phase!==1&&state.phase!==2)return;
+      // Browse progress is floor(readyRows * 90 / 32); 95 is engine resume.
+      // These labels are already in the main's cache: no extra storage reads.
+      const ready=state.phase===2||state.progress>=95?32:Math.ceil(state.progress*32/90);
+      let pending=0;for(;next<ready;++next)if((state.mask>>>next)&1){
+        rows.push({id:base+next,label:await this.presetLabel(base+next)});
+        if(++pending===3){names(rows.slice());pending=0;}
+      }
+      if(pending)names(rows.slice());
+    });
+  }
+  async saveDevicePreset(preset:import('./presetLibrary.ts').SoundPreset,slot:number,label:Omit<DevicePresetLabel,'engine'>,medium=0,progress?:(state:PresetCatalogState)=>void,create=false){
+    const p=storedPreset(preset),before=await this.status();await this.stopAndWait();
+    try{
+      if(p.format==='hexboard.advanced.v2')await this.loadClassic(p,false);else await this.load(p,false);
+      const bytes=new Uint8Array(128);bytes[8]=p.format==='hexboard.advanced.v2'?p.engine:2;bytes[9]=+label.favorite;
+      const write=(text:string,offset:number,capacity:number)=>{const encoded=new TextEncoder().encode(text);if(encoded.length>=capacity)throw Error(`Device preset name or folder is too long (${capacity-1} UTF-8 bytes maximum).`);bytes.set(encoded,offset);};write(label.name,12,76);write(label.folder,88,40);
+      return await this.presetCatalog(create?4:1,slot,medium,progress,Array.from(bytes).flatMap(v=>[v>>7,v&127]));
+    }finally{if(before.state!=='stopped')await this.start(p.format==='hexboard.advanced.v2'?p.engine:2);}
+  }
   controls(){return this.request<ControllerState>(52); }
   monoSettings(config?:MonoConfig){return this.request<MonoConfig>(56,config?[config.flags,...encodeU21(config.glideMs)]:[]);}
   async controllerRoute(id:number,source:number,value:number){await this.request<number[]>(54,[id,source,...encodeU21(value+65536)]);return this.request(0);}
@@ -78,13 +128,13 @@ export class PhysicalSynthClient {
     const advancedState=this.advanced?await this.readAdvanced():undefined;
     const preset={...state.preset,mono:this.mono,controllerRoutes:this.controllerRoutes,sample:this.sample,modulation:this.modulation,effects:this.fx,tiltRoutes:this.motion.tiltRoutes};return {...state,state:state.state!=="stopped"&&meta.busy&&meta.enabled?"loading":state.state,preset:advancedState?.budget.qualified&&advancedState.budget.phase===3?attachVoiceBudget(preset,advancedState.budget):preset};
   }
-  async setSample(value:SampleExciter){
+  async setSample(value:SampleExciter,force=false){
     const sample=validateSample(value),crc=sampleChecksum(sample.frames);
     this.onProgress?.({label:"Updating sample mode…"});
     try{
     const policyChanged=sample.enabled!==this.sample.enabled||JSON.stringify(sample.loop)!==JSON.stringify(this.sample.loop??defaultSampleLoop());
     let resume=false;if(policyChanged){const state=await this.request(0);resume=state.state!=="stopped";if(resume){await this.stop();for(let i=0;i<80;i++){if((await this.request(0)).state==="stopped")break;await new Promise(r=>setTimeout(r,30));}}}
-    if(crc!==this.sampleCrc||sample.frames.length!==this.sample.frames.length){
+    if(force||crc!==this.sampleCrc||sample.frames.length!==this.sample.frames.length){
       const state=await this.request(0),wasPlaying=state.state!=="stopped";
       if(wasPlaying){await this.stop();for(let i=0;i<80;i++){if((await this.request(0)).state==="stopped")break;await new Promise(r=>setTimeout(r,30));}}
       await this.request<SampleMeta>(21,[...encodeU21(sample.frames.length),...u32(crc)]);
@@ -103,7 +153,7 @@ export class PhysicalSynthClient {
   private async configureSampleLoop(loop:SampleLoop){return this.request<SampleMeta>(27,[loop.mode,...encodeU21(loop.start),...encodeU21(loop.end),...encodeU21(loop.crossfade)]);}
   private async waitSample(){this.onProgress?.({label:"Preparing synth…"});for(let i=0;i<300;i++){if(!(await this.request<SampleMeta>(20)).busy)return;await new Promise(r=>setTimeout(r,20));}throw Error("Sample transfer did not finish.");}
   async previewSample(){if(!this.sample.frames.length)throw Error("Import a sample first.");this.onProgress?.({label:"Preparing preview…"});try{await this.request<SampleMeta>(24,[1,...encodeU21(this.sample.gain),...encodeU21(this.sample.direct),this.sample.priority??0]);this.sample.enabled=true;const state=await this.request(0);if(state.state==="stopped")await this.start();await this.waitSample();if(this.previewNeedsStartup){this.onProgress?.({label:"Preparing audio…"});await new Promise(resolve=>setTimeout(resolve,2000));this.previewNeedsStartup=false;}await this.request<SampleMeta>(25);return await this.request(0);}finally{this.onProgress?.();}}
-  async effects(fx:FxRack) { const f=validateFx(fx);await this.request<FxRack>(11,[...f.order,...Array(5-f.order.length).fill(0),...f.values.flat().flatMap(encodeU21),...f.steps.flatMap(encodeU21)]);return this.request(0); }
+  async effects(fx:FxRack) { const f=validateFx(fx);await this.request<FxRack>(11,[...f.order,...Array(5-f.order.length).fill(0),...f.values.flat().flatMap(encodeU21),...f.steps.flatMap(encodeU21),...f.routes!.flatMap(v=>encodeU21(v+65536))]);return this.request(0); }
   async expression() {const e=await this.request<PhysicalExpression>(8);this.motion=await this.request<MotionState>(12);return {...e,tiltX:this.motion.tiltX,tiltY:this.motion.tiltY,motionValid:this.motion.valid,motionDetected:this.motion.detected};}
   async zeroMotion(){this.motion=await this.request<MotionState>(15);return this.motion;}
   async tiltRoute(id:number,axis:number,depth:number){this.motion=await this.request<MotionState>(14,[id,axis,...encodeU21(depth+65536)]);return this.request(0);}
@@ -111,7 +161,10 @@ export class PhysicalSynthClient {
   async modRoute(id:number,source:number,depth:number){this.modulation=await this.request<ModulationSources>(19,[id,source,...encodeU21(depth+65536)]);return this.request(0);}
   async setModulation(value:ModulationSources){const m=validateModulation(value);this.modulation=await this.request<ModulationSources>(17,[...m.settings.flatMap(encodeU21),...m.routes.flatMap(v=>encodeU21(v+65536))]);return this.request(0);}
   status(){return this.request(0);}
-  async samplerSource(source:'patch'|'piano'){await this.stopAndWait();return this.request(51,[source==='piano'?1:0]);}
+  samplerLoading(){return this.request<SamplerLoadingState>(63);}
+  async samplerSource(source:'patch'|'piano'){return this.samplerInstrument(source==='piano'?1:0);}
+  async samplerInstrument(id:number){if(!Number.isInteger(id)||id<0||id>1025)throw Error('Invalid sampler instrument.');await this.stopAndWait();return this.request(51,id<128?[id]:encodeU14(id));}
+  async samplerLibrary(refresh=false,folder=0):Promise<SamplerInstrument[]>{if(!Number.isInteger(folder)||folder<0||folder>32)throw Error("Invalid sampler folder.");if(refresh)await this.stopAndWait();const entries:SamplerInstrument[]=[];for(let first=folder*32;first<folder*32+32;first+=4)entries.push(...await this.request<SamplerInstrument[]>(64,[...encodeU14(first),refresh?1:0]));return entries;}
   samplerParameter(id:number,value:number){return this.request(46,[id,...encodeU21(value)]);}
   async uploadSampler(bytes:Uint8Array,progress?:(received:number,total:number)=>void){
     if(bytes.length<512||bytes.length%512)throw Error('Invalid prepared sampler file.');
@@ -132,10 +185,9 @@ export class PhysicalSynthClient {
   private async retryAdvanced(operation:number,data:number[]){for(let attempt=0;;attempt++){try{return await this.request(operation,data);}catch(error){if(attempt>=30||!(error instanceof Error)||error.message!=="The board rejected this synth operation.")throw error;await new Promise(r=>setTimeout(r,30));}}}
   editAdvanced(index:number,value:number){return this.retryAdvanced(34,[...encodeU21(index),...encodeU21(value)]);}
   routeAdvanced(index:number,destination:number,depth:number){return this.retryAdvanced(35,[...encodeU21(index),...encodeU21(destination),...encodeU21(depth+65536)]);}
-  async loadClassic(value:ClassicPreset,persist=true){const p=classicFromUnknown(value),before=await this.status(),resume=before.state!=="stopped";if(resume)await this.stopAndWait();
+  async loadClassic(value:ClassicPreset,persist=true){const p=classicFromUnknown(value),before=await this.status(),resume=before.state!=="stopped";await this.request(61);if(resume)await this.stopAndWait();
     this.onProgress?.({label:"Loading engine…"});
-    try{await this.applyAdvanced(p.patch);await this.effects(p.effects);await this.presetVelocity(p.velocityEngine);await this.restoreVoiceBudget(p);if(persist)await this.request(28);}finally{this.onProgress?.();}
-    if(resume)await this.start(p.engine);return this.readAdvanced();
+    try{await this.setSample(defaultSample(),true);await this.applyAdvanced(p.patch);await this.effects(p.effects);await this.presetVelocity(p.velocityEngine);await this.restoreVoiceBudget(p);if(persist)await this.request(28);if(resume)await this.start(p.engine);return await this.readAdvanced();}finally{this.onProgress?.();await this.request(62);}
   }
   async voiceBudget(){const s=await this.request<VoiceBudgetState>(37);this.voiceLimit=s.qualified?s.voices:8;return s;}
   resetVoiceBudget(){this.voiceLimit=8;return this.request<VoiceBudgetState>(40);}
@@ -178,12 +230,12 @@ export class PhysicalSynthClient {
   // Explicit editor loads persist once; benchmark callers keep RAM-only apply.
   async load(preset:PhysicalPreset,persist=true) {
     const before=await this.request(0),resume=before.state!=="stopped";
-    if(resume)await this.stopAndWait();
+    await this.request(61);if(resume)await this.stopAndWait();
     try {
-      await this.apply(preset);
+      await this.apply(storedPreset(preset) as PhysicalPreset);
       this.onProgress?.({label:"Saving startup patch…"});
       if(persist)await this.request(28);
-    } finally {this.onProgress?.();if(resume)await this.start();}
+    } finally {this.onProgress?.();try{if(resume)await this.start();}finally{await this.request(62);}}
     return this.read();
   }
   async stopAndWait(){await this.stop();for(let i=0;i<100;i++){if((await this.request(0)).state==="stopped")return;await new Promise(r=>setTimeout(r,30));}throw Error("Synth did not stop for patch storage.");}
@@ -197,7 +249,7 @@ export class PhysicalSynthClient {
     if(this.advanced)await retry(()=>this.request(53,Array(66).fill(65536).flatMap(encodeU21)));
     await this.request<SampleMeta>(24,[0,...encodeU21(p.sample.gain),...encodeU21(p.sample.direct),p.sample.priority??0]);
     this.sample={...this.sample,enabled:false};
-    const neutralFx={...p.effects,order:[],values:p.effects.values.map((row,i)=>i===4?row.map((v,j)=>j===0?0:v):row)};
+    const neutralFx={...p.effects,order:[],routes:Array(70).fill(0),values:p.effects.values.map((row,i)=>i===4?row.map((v,j)=>j===0?0:v):row)};
     await retry(()=>this.effects(neutralFx));
     await retry(()=>this.setModulation({...p.modulation,routes:Array(66).fill(0)}));
     await retry(()=>this.request<MotionState>(13,Array(66).fill(65536).flatMap(encodeU21)));
@@ -206,14 +258,14 @@ export class PhysicalSynthClient {
     for(let attempt=0;;++attempt){try{this.motion=await this.request<MotionState>(13,p.tiltRoutes.flatMap(v=>encodeU21(v+65536)));break;}catch(error){if(attempt>=20 || !(error instanceof Error) || error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
     for(let attempt=0;;++attempt){try{await this.setModulation(p.modulation);break;}catch(error){if(attempt>=20||!(error instanceof Error)||error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
     // The model batch may still be draining through SPI. Retry rack backpressure.
-    for(let attempt=0;;++attempt){try{await this.effects(p.effects);if(this.advanced)await retry(()=>this.request(53,(p.controllerRoutes??Array(66).fill(0)).flatMap(v=>encodeU21(v+65536))));const result=await this.setSample(p.sample);if(this.advanced)await this.restoreVoiceBudget(p);return result;}catch(error){if(attempt>=12 || !(error instanceof Error) || error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
+    for(let attempt=0;;++attempt){try{await this.effects(p.effects);if(this.advanced)await retry(()=>this.request(53,(p.controllerRoutes??Array(66).fill(0)).flatMap(v=>encodeU21(v+65536))));const result=await this.setSample(p.sample,!p.sample.frames.length);if(this.advanced)await this.restoreVoiceBudget(p);return result;}catch(error){if(attempt>=12 || !(error instanceof Error) || error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
   }
   protected request<T = PhysicalState>(operation: number, data: number[] = []): Promise<T> {
     const run = this.tail.catch(() => undefined).then(() => this.rpc<T>(operation, data));
     this.tail = run; return run;
   }
   private rpc<T>(operation: number, data: number[]): Promise<T> {
-    if (this.closed) return Promise.reject(Error("Physical synth disconnected."));
+    if (this.closed) return Promise.reject(new SynthRequestCancelledError());
     const transaction = nextTransaction++ % 16383 + 1;
     return new Promise((resolve, reject) => {
       let unsubscribe = () => {}; let done = false;
@@ -223,7 +275,7 @@ export class PhysicalSynthClient {
         if (error) reject(error); else resolve(state!);
       };
       const timer = setTimeout(() => finish(Error("The board did not reply. Reconnect to retry.")), operation===49?60000:5000);
-      this.abort = () => finish(Error("Physical synth disconnected."));
+      this.abort = () => finish(new SynthRequestCancelledError());
       unsubscribe = this.transport.subscribe(bytes => {
         if (bytes[0] !== 0xf0 || bytes[1] !== 0x7d || bytes[2] !== 0x10) return;
         try {
@@ -231,10 +283,21 @@ export class PhysicalSynthClient {
           if (frame.transactionId !== transaction) return;
           if (frame.message === 7) {
             finish(Error(operation===41?"Update Advanced main firmware to use the global arpeggiator.":frame.payload[1] === 3 ? operation>=16?"Update Advanced firmware for envelope and LFO modulation.":"Update Advanced main firmware for preset velocity engines." : frame.payload[1] === 9 ? "DSP budget full. Reduce another effect, feature or modulation first." : frame.payload[1] === 8 ? "Stop Learn or Calibration and release keys before changing the velocity engine or loading a sound." : operation===21?"Release the keys and stop the synth before importing a sample.":operation===25?"Release the keys before sample preview.":operation===42?"Release the keys before switching Arp on/off or changing its output. If playback is being tested, wait for it to finish.":operation===44?"Stop the synth, clear held arp notes, and release the keys before saving performance settings.":"The board rejected this synth operation."));
+          } else if((operation===57||operation===58)&&frame.message===0x43){
+            const p=frame.payload;if(p.length!==27||p[0]!==17||p[1]!==2||p[2]>3||p[3]>5||decodeU14(p.slice(4,6))>=3072||p[6]>2||p[7]>100||![2,4,5].includes(p[19])||p[20]>=32||decodeU14(p.slice(21,23))!==3072||p[23]!==32)throw Error('Update Advanced firmware for the folder preset library.');const mask=p.slice(8,13).reduce((a,b)=>a*128+b,0);if(mask>0xffffffff)throw Error('Invalid preset folder mask.');finish(undefined,{phase:p[2],action:p[3],slot:decodeU14(p.slice(4,6)),medium:p[6],progress:p[7],mask,elapsedMs:decodeU21(p.slice(13,16)),maxSliceUs:decodeU21(p.slice(16,19)),engine:p[19],folder:p[20],capacity:3072,folderCapacity:32,heapMin:decodeU21(p.slice(24,27))} as T);
+          } else if(operation===59&&frame.message===0x44){
+            const p=frame.payload;if(p.length!==259||p[0]!==17||p[1]!==data[0]||p[2]!==data[1])throw Error('Invalid preset label.');const bytes=Uint8Array.from({length:128},(_,i)=>{if(p[3+i*2]>1)throw Error('Invalid preset label byte.');return (p[3+i*2]<<7)|p[4+i*2];});const text=(offset:number,n:number)=>{const b=bytes.slice(offset,offset+n),end=b.indexOf(0);return new TextDecoder('utf-8',{fatal:true}).decode(b.slice(0,end<0?n:end));};if(![2,3,4,5].includes(bytes[8])||bytes[9]>1)throw Error('Invalid preset engine.');finish(undefined,{engine:bytes[8],favorite:!!bytes[9],name:text(12,76),folder:text(88,40)} as T);
+          } else if(operation===60&&frame.message===0x46){
+            const p=frame.payload;if(p[0]!==17||p[1]!==data[0]||p[2]!==data[1]||p.length!==3+p[2]*96)throw Error('Invalid preset folders.');const folders=Array.from({length:p[2]},(_,row)=>{const b=Uint8Array.from({length:48},(_,i)=>{const at=3+row*96+i*2;if(p[at]>1)throw Error('Invalid folder byte.');return p[at]*128+p[at+1];}),mask=new DataView(b.buffer).getUint32(0,true),name=b.slice(4,44),end=name.indexOf(0);if(end<0)throw Error('Invalid folder name.');return {index:p[1]+row,mask,name:new TextDecoder('utf-8',{fatal:true}).decode(name.slice(0,end))};});finish(undefined,folders as T);
+          } else if((operation===61||operation===62)&&frame.message===0x45){if(frame.payload.length!==1||frame.payload[0]!==17)throw Error('Invalid preset transition response.');finish(undefined,undefined as T);
           } else if(operation===52&&frame.message===0x40){
             const p=frame.payload;if(p.length!==25||p[0]!==17||p[1]>1||p[2]>2||p[3]>1||p[16]>1||p[17]>1||p[18]>1)throw Error('Invalid controller state.');const numbers=Array.from({length:4},(_,i)=>decodeU21(p.slice(4+i*3,7+i*3)));if(numbers.some(v=>v>4095))throw Error('Invalid pedal ADC state.');const expression=decodeU21(p.slice(19,22)),modulation=decodeU21(p.slice(22,25));if(expression>65535||modulation>65534)throw Error('Invalid controller values.');finish(undefined,{play:!!p[1],pedal:p[2],invert:!!p[3],minimum:numbers[0],maximum:numbers[1],tip:numbers[2],ring:numbers[3],valid:!!p[16],sustain:!!p[17],armed:!!p[18],expression:expression/65535,modulation:(modulation-32767)/32767} as T);
           } else if(operation>=53&&operation<=55&&frame.message===0x41){
             const p=frame.payload;if(p.length!==199||p[0]!==17)throw Error('Invalid controller routes.');const values=Array.from({length:66},(_,i)=>decodeU21(p.slice(1+i*3,4+i*3))-65536);if(values.some((v,i)=>v< -65536||v>65536||[8,21,27,31].includes(Math.floor(i/2))&&v!==0))throw Error('Invalid controller routes.');this.controllerRoutes=values;finish(undefined,values as T);
+          } else if(operation===64&&frame.message===0x48){
+            finish(undefined,decodeSamplerLibrary(frame.payload,decodeU14(data.slice(0,2))) as T);
+          } else if(operation===63&&frame.message===0x47){
+            finish(undefined,decodeSamplerLoading(frame.payload) as T);
           } else if(operation>=46&&operation<=51&&frame.message===0x35){
             finish(undefined,decodePhysicalState(frame.payload) as T);
           } else if(operation>=41&&operation<=44&&frame.message===0x3f){
@@ -242,7 +305,7 @@ export class PhysicalSynthClient {
             const config=performanceFromWords(Array.from({length:56},(_,i)=>decodeU21(p.slice(14+i*3,17+i*3))));
             finish(undefined,{config,step:p[2],notes:p[3],running:!!p[4],limited:!!p[5],external:!!p[6],bpm10:decodeU14(p.slice(7,9)),skipped:decodeU21(p.slice(9,12)),full:decodeU14(p.slice(12,14))} as T);
           } else if(operation>=36&&operation<=40&&frame.message===0x3e){
-            const p=frame.payload,signature=p.slice(8,13).reduce((a,b)=>a*128+b,0),peakUs=decodeU21(p.slice(13,16));if(p.length!==17||p[0]!==17||p[1]>5||p[2]<1||p[2]>18||p[3]<1||p[3]>18||p[4]<1||p[4]>18||p[5]<2||p[5]>5||p[6]>1||signature>0xffffffff||p[16]!==3)throw Error('Invalid voice-budget response.');finish(undefined,{phase:p[1],voices:p[2],candidate:p[3],ceiling:p[4],engine:p[5],qualified:!!p[6],reason:p[7],signature,peakUs,revision:p[16]} as T);
+            const p=frame.payload,signature=p.slice(8,13).reduce((a,b)=>a*128+b,0),peakUs=decodeU21(p.slice(13,16));if(p.length!==17||p[0]!==17||p[1]>5||p[2]<1||p[2]>18||p[3]<1||p[3]>18||p[4]<1||p[4]>18||p[5]<2||p[5]>5||p[6]>1||signature>0xffffffff||p[16]!==4)throw Error('Invalid voice-budget response.');finish(undefined,{phase:p[1],voices:p[2],candidate:p[3],ceiling:p[4],engine:p[5],qualified:!!p[6],reason:p[7],signature,peakUs,revision:p[16]} as T);
           } else if(operation>=30&&operation<=35&&frame.message===0x3d){
             const p=frame.payload;if(p.length<9||p[0]!==17||p[8]!==2||p[1]<2||p[1]>5||p[2]>1||p[3]>1||p[7]>64||p.length!==9+p[7]*3||(operation===33&&(decodeU21(p.slice(4,7))!==decodeU21(data.slice(0,3))||p[7]!==data[3])))throw Error("Invalid Advanced engine response.");
             finish(undefined,{engine:p[1],state:p[2],busy:!!p[3],words:Array.from({length:p[7]},(_,i)=>decodeU21(p.slice(9+i*3,12+i*3)))} as T);
