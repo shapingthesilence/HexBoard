@@ -111,7 +111,7 @@ without a 404 fallback. Dialogs and course-editor previews do not change the URL
 | `audio/` | Browser synth audition worklet and audio lifecycle |
 | `views/Learn.tsx`, `learn/` | Tuning-aware scale practice, lazy device library, beat grading, delegated sessions, and LED hints |
 | `advanced/calibration/` | Connected-only Hall, velocity, pressure and diagnostic workflow; scoped SysEx client, validated records and charts |
-| `advanced/synth/` | Advanced synth editors, factory banks, direct modulation, browser presets and typed RAM client |
+| `advanced/synth/` | Shared sampler import/editing tools and Classic compact target; Advanced engine editors, factory banks and typed clients |
 | `catalogs/layoutKey.ts` | Shared generated/manual layout pitch resolution |
 
 ## Learning and Course Authoring
@@ -370,3 +370,12 @@ input state only. Joystick Mod and Expression routes remain editable Web sources
 Engine-switch progress uses measured main-USB load-to-playable timings: about 3.2 seconds into Juno, 3.4 into DX7 and 3.5 into Physical Strings at eight voices. Larger qualified presets extend the preparation estimate. The bar finishes only after the device reports DAC and patch readiness. See the Advanced firmware repository’s `docs/juno-dx7.md` and `docs/juno-dx7-load-times.json` for measured scope.
 
 The factory picker includes 128 AMY Juno voices and all 1,024 bundled DX7 default voices (128 built-ins plus 896 additional voices), grouped by bank and searchable by name or number. Data and source hashes are in `src/advanced/synth/amy-factory/`. Juno conversions show notes for unsupported ranges and adapted HPF/chorus behavior; DX7 native fields are retained without added FX or expression. The direct-only engine schema is revision 2, with 220 words and seven sources × four routes. Macro fields and migration code are removed.
+
+Classic sampler authoring reuses `advanced/synth/SamplerEditor.tsx` with
+`target="classic"`. `sampler/compact.mjs` is the bounded native-rate export
+backend; `classicClient.ts` adapts the standard ACK-paced preset-sync transport.
+Advanced preparation and its device client remain independent target backends.
+Use `sampler-preview.html?target=classic` with the development server for offline
+workflow checks. See [Classic sampler](../docs/compact-sampler.md) for runtime
+limits and [preset sync](../docs/preset-sync-sysex.md#classic-compact-sampler) for
+the negotiated capability and format.

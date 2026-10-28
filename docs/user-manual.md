@@ -385,6 +385,12 @@ can still add to or subtract from this base position, so setting `WT Pos` above
 frame `1` lets a negative envelope or LFO amount move backward through the
 wavetable.
 
+**Sampler / Engine** selects imported mono instruments or the wavetable engine.
+Use HexBoard Sync's Synth → Sampler editor to convert and install your own
+SoundFonts or recordings. Engine changes briefly mute audio; held keys need a
+fresh press afterward. Sampler envelopes are stored with the instrument. See
+[Classic sampler](compact-sampler.md) for importing, limits and saving selection.
+
 `Drive` adds soft saturation after the voices are mixed:
 
 - `Off`: clean output, and the factory default

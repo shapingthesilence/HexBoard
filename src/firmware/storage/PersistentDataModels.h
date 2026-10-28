@@ -11,7 +11,7 @@ struct SettingsHeader {
   uint32_t crc32;          // CRC32 of all profile data bytes
 };
 
-constexpr uint8_t CURRENT_SETTINGS_VERSION = 35;
+constexpr uint8_t CURRENT_SETTINGS_VERSION = 36;
 constexpr uint8_t PROFILE_COUNT = 9;
 constexpr uint8_t DEFAULT_PROFILE_INDEX = 0;
 
@@ -299,9 +299,9 @@ static_assert(persistedSettingsWidth(CURRENT_SETTINGS_VERSION) == PROFILE_PERSIS
 // The host-side factory-library compiler writes these records byte-for-byte.
 // Fail the firmware build if the RP2040 ABI ever changes their disk layout.
 static_assert(sizeof(SettingsHeader) == 12, "SettingsHeader disk layout changed");
-static_assert(SETTINGS_PROFILE_VALUES_DATA_SIZE == 540,
+static_assert(SETTINGS_PROFILE_VALUES_DATA_SIZE == 549,
               "Persisted settings payload changed; update the factory-library builder");
-static_assert(SETTINGS_DATA_SIZE == 1134,
+static_assert(SETTINGS_DATA_SIZE == 1143,
               "Settings payload changed; update the factory-library builder");
 static_assert(sizeof(SynthPresetFileHeaderBase) == 8, "SynthPresetFileHeaderBase disk layout changed");
 static_assert(sizeof(SynthPresetSlot) == 213, "SynthPresetSlot disk layout changed");

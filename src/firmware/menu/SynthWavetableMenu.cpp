@@ -248,6 +248,7 @@ void selectSynthWavetableByVirtualIndex(uint16_t index) {
   }
 
   if (selected) {
+    if (compactSamplerActive() && !selectCompactSampler(255)) return;
     currWave = WAVEFORM_BASIC_WAVETABLE;
     settings[static_cast<uint8_t>(SettingKey::Waveform)] = WAVEFORM_BASIC_WAVETABLE;
     loadSelectedSynthWavetable();

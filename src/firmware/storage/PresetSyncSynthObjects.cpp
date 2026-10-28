@@ -574,6 +574,7 @@ std::vector<uint8_t> buildSynthWavetableObjectPrefix(const SynthWavetableSlot& w
 }
 
 void applyParsedSynthWavetableToRuntime(const SynthWavetableSlot& wavetable, const uint8_t* samples, size_t sampleLength) {
+  if (compactSamplerActive() && !selectCompactSampler(255)) return;
   synthWaveTableLoadInProgress = true;
   loadActiveSynthWavetableSamples(samples, sampleLength);
   setActiveSynthWaveFrameCount(SYNTH_WAVETABLE_FRAME_COUNT);
@@ -595,13 +596,13 @@ bool loadActiveSynthWavetableSamplesFromFile(const char* samplePath, size_t samp
   if (!f) {
     return false;
   }
-  size_t bytesRead = f.read(&activeSynthWaveTable[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
+  size_t bytesRead = f.read(&synthSampleWorkspace.wavetable.base[0][0], SYNTH_WAVETABLE_SAMPLE_BYTES);
   if (bytesRead != SYNTH_WAVETABLE_SAMPLE_BYTES) {
     f.close();
     return false;
   }
   if (sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
-    size_t extraBytesRead = f.read(activeSynthWavetableMipExtraSamples, SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES);
+    size_t extraBytesRead = f.read(synthSampleWorkspace.wavetable.mips, SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES);
     if (extraBytesRead != SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES) {
       f.close();
       return false;
@@ -615,6 +616,7 @@ bool loadActiveSynthWavetableSamplesFromFile(const char* samplePath, size_t samp
 }
 
 bool applyParsedSynthWavetableFileToRuntime(const SynthWavetableSlot& wavetable, const char* samplePath, size_t sampleLength) {
+  if (compactSamplerActive() && !selectCompactSampler(255)) return false;
   synthWaveTableLoadInProgress = true;
   bool loaded = loadActiveSynthWavetableSamplesFromFile(samplePath, sampleLength);
   if (!loaded) {
@@ -828,6 +830,8 @@ size_t presetSyncMaxRawObjectBytesForType(uint8_t objectType) {
     case PRESET_SYNC_OBJECT_TYPE_EXPLICIT_BUTTON_MAP:
     case PRESET_SYNC_OBJECT_TYPE_USER_SCALE:
       return GEOMETRY_OBJECT_MAX_RAW_BYTES;
+    case PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER:
+      return 51264;
     case PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET:
       return PRESET_SYNC_MAX_SYNTH_PRESET_BYTES;
     case PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE:

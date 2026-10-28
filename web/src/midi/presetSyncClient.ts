@@ -90,6 +90,15 @@ export class PresetSyncClient {
     this.transport = transport;this.wideGeometry=!!(capabilities&CapabilityFlag.AdvancedContentLibrary);
   }
 
+  async compactSampler(operation: number, slot?: number): Promise<number[]> {
+    const frame = await this.requestFrame(MessageType.CompactSamplerRequest,
+      slot === undefined ? [operation] : [operation, slot],
+      candidate => candidate.message === MessageType.CompactSamplerResponse, 10000);
+    if (frame.payload[0] !== operation) throw Error("Invalid sampler response");
+    return frame.payload;
+  }
+  async readCompactSampler(slot: number) { return this.readObject(ObjectType.CompactSampler, slot); }
+
   async calibration(command: 0 | 1 | 2 = 0): Promise<{ state: number; validKeys: number; totalKeys: number }> {
     const frame = await this.requestFrame(MessageType.CalibrationRequest, [command], candidate => candidate.message === MessageType.CalibrationResponse);
     if (frame.payload.length !== 5) throw new Error("Invalid Hall calibration response");
@@ -292,6 +301,7 @@ export class PresetSyncClient {
     const frames: number[][] = [];
     input.onProgress?.({ direction: "upload", objectType: input.objectType, transferredBytes: 0, totalBytes: input.body.length });
 
+    try {
     frames.push(await this.sendAndWaitForAck(
       MessageType.WriteBegin,
       encodeWriteBeginPayload({
@@ -346,6 +356,11 @@ export class PresetSyncClient {
     ));
 
     return frames;
+    } catch (error) {
+      try { await this.sendAndWaitForAck(MessageType.TransferAbort, encodeTransferAbortPayload({transferId, reasonCode: 1})); }
+      catch { /* The board may already have rejected and cleaned up this write. */ }
+      throw error;
+    }
   }
 
   async sendSynthPresetPreview(preset: EncodedCatalogObject): Promise<number[][]> {

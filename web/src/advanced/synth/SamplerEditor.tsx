@@ -1,3 +1,6 @@
+import { readCompactPatch } from "./sampler/compact.mjs";
+import { ClassicSamplerLibrary } from "./sampler/ClassicSamplerLibrary.tsx";
+import { ClassicSamplerClient } from "./sampler/classicClient.ts";
 import {
   useEffect,
   useMemo,
@@ -77,7 +80,11 @@ const bytes = (n: number) =>
   n >= 1048576
     ? `${(n / 1048576).toFixed(1)} MiB`
     : `${Math.round(n / 1024)} KiB`;
-export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
+export function SamplerEditor({ transport, target = "advanced" }: { transport?: MidiTransport; target?: "advanced" | "classic" }) {
+  const classic = target === "classic";
+  const compactClient = useMemo(() => classic && transport ? new ClassicSamplerClient(transport) : undefined, [classic, transport]);
+  const [libraryRevision, setLibraryRevision] = useState(0);
+  const filename = (name: string) => samplerFilename(name).replace(/\.hbs$/, classic ? ".hbc" : ".hbs");
   const [patch, setPatch] = useState<Patch>(empty),
     [template, setTemplate] = useState("instrument"),
     [selected, setSelected] = useState(0),
@@ -107,7 +114,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
     }>(),
     [chooserSearch, setChooserSearch] = useState(""),
     [auditionChoice, setAuditionChoice] = useState(0),
-    [adaptation, setAdaptation] = useState<"faithful" | "compact">("faithful"),
+    [adaptation, setAdaptation] = useState<"faithful" | "compact">(classic ? "compact" : "faithful"),
     [sourceNote, setSourceNote] = useState(60),
     [exportFolder, setExportFolder] = useState("My instruments"),
     [deviceSpace, setDeviceSpace] = useState(0),
@@ -134,15 +141,15 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
   preview.current ??= new PatchPreview();
   source.current ??= new SourceAudition();
   useEffect(() => {
-    preview.current!.setPatch(patch);
-  }, [patch]);
+    preview.current!.setPatch(classic && prepared?.auditionPatch ? prepared.auditionPatch : patch);
+  }, [patch, classic, prepared]);
   useEffect(() => {
     preview.current!.expression(pressure, bend);
   }, [pressure, bend]);
   useEffect(() => {
-    client.current = transport ? new PhysicalSynthClient(transport) : undefined;
+    client.current = transport && !classic ? new PhysicalSynthClient(transport) : undefined;
     return () => client.current?.close();
-  }, [transport]);
+  }, [transport, classic]);
   useEffect(
     () => () => {
       preview.current?.close();
@@ -198,7 +205,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
     setSelected(0);
     setZoneIndex(0);
     setTemplate(
-      p.zones?.some((z) => z.key !== undefined && z.key !== 65535)
+      !classic && p.zones?.some((z) => z.key !== undefined && z.key !== 65535)
         ? "kit"
         : "instrument",
     );
@@ -296,7 +303,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
       false,
     );
   };
-  const run = <T,>(request: unknown) =>
+  const run = <T,>(request: Record<string, unknown>) =>
     new Promise<T>((resolve, reject) => {
       const w = new Worker(
         new URL("./sampler/prepare.worker.ts", import.meta.url),
@@ -317,7 +324,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
         worker.current = undefined;
         reject(Error(e.message));
       };
-      w.postMessage(request);
+      w.postMessage({ ...request, target });
     });
   async function importFiles(files: FileList | File[] | null) {
     if (!files?.length) return;
@@ -365,6 +372,8 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
         setChooserSearch("");
         return;
       }
+      const hbc = all.find((f) => /\.hbc$/i.test(f.name));
+      if (hbc) { restore({ ...readCompactPatch(new Uint8Array(await hbc.arrayBuffer())), report: ["Opened Classic mono instrument."] }); return; }
       const hbs = all.find((f) => /\.hbs$/i.test(f.name));
       if (hbs) {
         restore({
@@ -437,15 +446,25 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
       setBusy("");
     }
   }
-  async function exportPatch(usb = false) {
+  async function exportPatch(usb = false, prepareOnly = false) {
     if (!patch.assets.length) return;
     setBusy("Preparing pitch protection…");
     setError("");
     try {
       const result =
-        prepared ?? (await run<Prepared>({ operation: "prepare", patch }));
+        prepared ?? (await run<Prepared>({ operation: "prepare", patch, target }));
       setPrepared(result);
       setReport((r) => [...new Set([...r, ...result.warnings])]);
+      if (prepareOnly) return;
+      if (classic) {
+        if (usb) {
+          if (!compactClient) throw Error("Connect HexBoard first.");
+          const slot = await compactClient.upload(result.bytes, (n,total)=>setBusy(`Copying instrument · ${Math.round(n/total*100)}%`));
+          await compactClient.select(slot);
+          setLibraryRevision(n=>n+1);
+        } else download(result.bytes, filename(patch.name ?? "Instrument"));
+        return;
+      }
       if (usb) {
         if (result.bytes.length > 8 * 1048576)
           throw Error(
@@ -685,7 +704,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
         <button onClick={() => preview.current!.clear()}>All notes off</button>
       </div>
       <div className="sampler-tabs" role="group" aria-label="Mapping mode">
-        {["instrument", "kit", "slices"].map((mode) => (
+        {(classic ? ["instrument"] : ["instrument", "kit", "slices"]).map((mode) => (
           <button
             key={mode}
             aria-pressed={template === mode}
@@ -704,7 +723,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
         ))}
         <span>
           {patch.assets.length} recordings · {zones.length} regions · continuous
-          pitch · pitch copies prepared on export
+          pitch · {classic ? "native-rate mono preparation" : "pitch copies prepared on export"}
         </span>
       </div>
       <div className="sampler-studio">
@@ -1188,7 +1207,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
                     1.99,
                     0.01,
                   )}
-                  {number(
+                  {!classic && number(
                     "Pan",
                     zone.pan ?? 0,
                     (v) => changeZone({ pan: v }),
@@ -1203,14 +1222,14 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
                     0,
                     200,
                   )}
-                  {number(
+                  {!classic && number(
                     "Round robin",
                     zone.roundRobin ?? 0,
                     (v) => changeZone({ roundRobin: v }),
                     0,
                     15,
                   )}
-                  {number(
+                  {!classic && number(
                     "Choke group",
                     zone.choke ?? 0,
                     (v) => changeZone({ choke: v }),
@@ -1219,7 +1238,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
                   )}
                 </div>
                 <details>
-                  <summary>Envelope & tone</summary>
+                  <summary>{classic ? "Envelope" : "Envelope & tone"}</summary>
                   <div className="sampler-fields">
                     {(
                       [
@@ -1231,7 +1250,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
                         "hold",
                         "cutoff",
                       ] as const
-                    ).map((key) =>
+                    ).filter(key => !classic || key !== "cutoff").map((key) =>
                       number(
                         key,
                         zone[key] ??
@@ -1249,7 +1268,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
                         key === "sustain" ? 0.01 : 1,
                       ),
                     )}
-                    <label>
+                    {!classic && <label>
                       Velocity curve
                       <select
                         value={zone.velocityCurve ?? 0}
@@ -1262,7 +1281,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
                         <option value={2}>Constant / pressure</option>
                         <option value={103}>SFZ 100%</option>
                       </select>
-                    </label>
+                    </label>}
                   </div>
                 </details>
                 <button
@@ -1277,7 +1296,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
               <p className="panel-note">Select a region on the map.</p>
             )}
           </fieldset>
-          <fieldset>
+          {!classic && <fieldset>
             <legend>Patch response</legend>
             <label>
               Velocity engine
@@ -1310,7 +1329,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
               Saved with the patch. HexBoard’s global Follow preset setting
               controls velocity-engine recall.
             </p>
-          </fieldset>
+          </fieldset>}
         </aside>
       </div>
       <div className="sampler-shaping">
@@ -1321,7 +1340,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
               ["attack", "Attack", 0, 2000, "ms"],
               ["decay", "Decay", 0, 5000, "ms"],
               ["sustain", "Sustain", 0, 1, ""],
-              ["release", "Slow lift", 5, 5000, "ms"],
+              ["release", classic ? "Release" : "Slow lift", 5, 5000, "ms"],
             ],
           },
           {
@@ -1342,7 +1361,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
               ["pedalRelease", "Pedal up", 5, 1000, "ms"],
             ],
           },
-        ].map((group) => (
+        ].filter(group => !classic || group.title === "Amplitude").map((group) => (
           <fieldset key={group.title}>
             <legend>{group.title}</legend>
             {group.title === "Touch & tone" && (
@@ -1389,8 +1408,8 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
         <div className="sampler-fields">
           {number("Octave", octave, setOctave, 0, 6)}
           {number("Strike velocity", velocity, setVelocity, 1, 127)}
-          {number("Release velocity", lift, setLift, 0, 127)}
-          <label>
+          {!classic && number("Release velocity", lift, setLift, 0, 127)}
+          {!classic && <label>
             Pressure
             <input
               aria-label="Audition pressure"
@@ -1401,7 +1420,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
               value={pressure}
               onChange={(e) => setPressure(+e.target.value)}
             />
-          </label>
+          </label>}
           <label>
             Pitch bend ±2
             <input
@@ -1415,7 +1434,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
               onDoubleClick={() => setBend(0)}
             />
           </label>
-          <button
+          {!classic && <button
             onPointerDown={(e) => {
               e.currentTarget.setPointerCapture(e.pointerId);
               preview.current!.pedal(true);
@@ -1425,7 +1444,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
             onLostPointerCapture={() => preview.current!.pedal(false)}
           >
             Hold sustain
-          </button>
+          </button>}
         </div>
         <div className="sampler-keyboard">
           {Array.from({ length: 25 }, (_, i) => octave * 12 + 12 + i).map(
@@ -1457,16 +1476,14 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
           )}
         </div>
         <p className="panel-note">
-          Hold a note while shaping tone and pressure. New notes use edited
-          mappings, loops and envelopes. Browser effects and interpolation
-          differ slightly from the device.
+          {classic ? "Prepare Classic audition to hear the converted mono recordings and envelopes. Browser interpolation and output protection differ from the board." : "Hold a note while shaping tone and pressure. New notes use edited mappings, loops and envelopes. Browser effects and interpolation differ slightly from the device."}
         </p>
       </fieldset>
       <div className="sampler-bottom">
         <fieldset>
           <legend>Export instrument</legend>
           <div className="sampler-fields">
-            <label>
+            {!classic && <><label>
               Pitch quality
               <select
                 value={patch.pitchQuality ?? "balanced"}
@@ -1509,12 +1526,14 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
                 onChange={(e) => setExportFolder(e.target.value)}
               />
             </label>
+            </>}
+            {classic && <button disabled={!patch.assets.length || !!busy} onClick={() => void exportPatch(false, true)}>Prepare Classic audition</button>}
             <button
               className="primary"
               disabled={!patch.assets.length || !!busy}
               onClick={() => void exportPatch()}
             >
-              Export {samplerFilename(patch.name ?? "Instrument")}
+              Export {filename(patch.name ?? "Instrument")}
             </button>
             <button
               disabled={!transport || !patch.assets.length || !!busy}
@@ -1524,14 +1543,15 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
             </button>
           </div>
           <p className="panel-note">
-            {prepared ? `${bytes(prepared.bytes.length)} prepared. ` : ""}For
+            {classic ? `${prepared ? `${bytes(prepared.bytes.length)} file · ${bytes(prepared.residentBytes)} sample RAM. ` : ""}Prepare to audition the mono conversion. Reductions and omitted behavior appear in the conversion report. Import SoundFonts, WAV, or Advanced HBS; export Classic HBC.` : <>{prepared ? `${bytes(prepared.bytes.length)} prepared. ` : ""}For
             larger instruments, copy the HBS file into a named folder under
             sampler/instruments on your SD card. USB uses the folder above;
             existing names are protected. Use another named folder when one
-            reaches 32 instruments.
+            reaches 32 instruments.</>}
           </p>
         </fieldset>
-        <fieldset>
+        {classic && <ClassicSamplerLibrary transport={transport} revision={libraryRevision} download={download}/>}
+        {!classic && <fieldset>
           <legend>HexBoard library</legend>
           <div className="sampler-fields">
             <button
@@ -1637,7 +1657,7 @@ export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
             sounds; the HexBoard control auditions the selected SD instrument.
           </p>
           {playing && <p role="status">{samplerLoadingLabel(loading)}</p>}
-        </fieldset>
+        </fieldset>}
       </div>
       {report.length > 0 && (
         <details className="sampler-report" open>

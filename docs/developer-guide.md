@@ -267,8 +267,10 @@ non-synth setting bytes, stable tuning/layout/scale references, compact synth
 preset-or-draft references, and payload CRC32. Synth values and wavetable
 references come from the referenced named preset or hidden profile draft.
 
-`CURRENT_SETTINGS_VERSION` is 35. `SettingsMigration.h` defines frozen profile
-widths for supported versions: 57 non-synth bytes for version 32 and 60 for versions 33 through 35.
+`CURRENT_SETTINGS_VERSION` is 36. `SettingsMigration.h` defines frozen profile
+widths for supported versions: 57 non-synth bytes for version 32, 60 for versions
+33 through 35, and 61 for version 36. `SamplerSlot` is the appended byte; older
+profiles initialize it to the wavetable default (255).
 Wheel depths retain their legacy positive bytes; negative depths use previously
 unused bytes, so supported older settings and preset values remain unchanged.
 The loader checks the exact size and original CRC before expanding each profile
@@ -459,7 +461,10 @@ Core 1 renders two 64-sample DMA buffers. A PWM timer slice paces output at abou
 40.7 kHz for the 250 MHz target. Hardware V1.2 selects jack or piezo; V1.1 uses
 piezo.
 
-Active wavetables use a `16 × 512` base table and fixed mip levels. Modulation
+Active wavetables use a `16 × 512` base table and fixed mip levels. Their samples
+and sampler PCM share an exclusive 48 KiB sample workspace. Engine selection is
+dispatched at the DMA buffer boundary; the sampler's preparation, rendering and
+limits are described in [Classic sampler](compact-sampler.md). Wavetable modulation
 and envelopes update on a 32-sample control quantum. Per-sample rendering uses
 cached ramps and RAM-resident drive lookup tables. Wheel-only volume-envelope
 targets are computed on core 0 at most every 50 ms, only when the wheel target,

@@ -5,6 +5,9 @@
 #include "PresetSyncPacking.h"
 #include "../synth/SynthDefaults.h"
 
+constexpr uint8_t PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER = 0x0E;
+constexpr uint32_t PRESET_SYNC_CAP_COMPACT_SAMPLER = 1u << 24;
+
 constexpr uint8_t PRESET_SYNC_FAMILY = 0x10;
 constexpr uint8_t PRESET_SYNC_MAJOR = 1;
 constexpr uint8_t PRESET_SYNC_MINOR = 0;
@@ -319,3 +322,5 @@ void applySynthPresetRuntimeOnly(const SynthPresetSlot& preset);
 void presetSyncHandleSynthParamSet(uint16_t transactionId, const uint8_t* payload, size_t payloadLength);
 void presetSyncHandleSynthWavetableSelect(uint16_t transactionId, const uint8_t* payload, size_t payloadLength);
 bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len);
+
+void presetSyncAppendAscii(std::vector<uint8_t>& output, const char* text, size_t maxLength);

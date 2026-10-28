@@ -34,9 +34,9 @@ class LedSettingsFactoryTest(unittest.TestCase):
                                       LedFramePeriodHigh=period >> 8)
             data = self.build(config)
             magic, version, profile, crc = struct.unpack('<3sBB3xI', data[:12])
-            self.assertEqual((magic, version, profile), (b'STG', 35, 0))
+            self.assertEqual((magic, version, profile), (b'STG', 36, 0))
             self.assertEqual(zlib.crc32(data[12:]), crc)
-            self.assertEqual(len(data), 12 + 1134)
+            self.assertEqual(len(data), 12 + 1143)
             for profile in range(9):
                 start = 12 + profile * len(keys)
                 self.assertEqual(data[start + keys.index('ColorDithering')], enabled)

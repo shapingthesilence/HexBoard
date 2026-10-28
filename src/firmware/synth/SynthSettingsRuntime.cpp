@@ -19,6 +19,7 @@ void syncSynthSettingsToRuntime() {
     settings[static_cast<uint8_t>(SettingKey::SynthWavetablePosition)] =
       synthWavetablePosition;
   }
+  syncCompactSamplerSelection();
   loadSelectedSynthWavetable();
   updateCurrentSynthWavetableMenuLabel();
 

@@ -21,6 +21,7 @@ Describe screen details only when needed to find a control or understand its use
 | --- | --- |
 | [Repository README](../README.md) | Overview, repository layout, build setup, and flashing entry point |
 | [Developer guide](developer-guide.md) | Firmware architecture, ownership, runtime, settings/storage, risks, and edit recipes |
+| [Classic sampler](compact-sampler.md) | Sample conversion, capacity, engine ownership, and verification |
 | [Delegated control](delegated-control.md) | Host takeover protocol and runtime gates |
 | [Preset sync](preset-sync-sysex.md) | Implemented transfer protocol, capabilities, and object schemas |
 | [Course repertoire](course-repertoire.md) | Melody sources, rights references, and teaching adaptations |
@@ -45,9 +46,5 @@ The [curriculum](curriculum.md) separates included courses from planned content.
 [Architecture proposals](architecture-proposals.md) describe unimplemented
 refactors for review. [Preset-sync extensions](preset-sync-proposals.md) contain
 unimplemented protocol designs. Neither is a supported product contract.
-
-[Compact sampler](compact-sampler-plan.md) assesses an RP2040 sample instrument
-engine, reuse from Advanced, browser conversion, and memory/timing gates. It is
-a proposal, not supported sampler behavior.
 
 Repository contribution and verification rules live in [AGENTS.md](../AGENTS.md).

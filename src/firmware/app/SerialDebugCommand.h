@@ -11,6 +11,7 @@ class SerialDebugCommandParser {
   static constexpr int Query = -1;
   static constexpr int AudioTestStart = -3;
   static constexpr int AudioTestStop = -4;
+  static constexpr int AudioTestPiezo = -5;
 
   int consume(uint8_t byte) {
     if (byte == '\r') return NoCommand;
@@ -23,6 +24,7 @@ class SerialDebugCommandParser {
     if (!overflow_) {
       if (length_ == 6 && memcmp(line_, "HBDBG?", 6) == 0) command = Query;
       else if (length_ == 7 && memcmp(line_, "HBAUD 1", 7) == 0) command = AudioTestStart;
+      else if (length_ == 7 && memcmp(line_, "HBAUD 2", 7) == 0) command = AudioTestPiezo;
       else if (length_ == 7 && memcmp(line_, "HBAUD 0", 7) == 0) command = AudioTestStop;
       else if ((length_ == 7 || length_ == 8) && memcmp(line_, "HBDBG ", 6) == 0) {
         const uint8_t first = line_[6];

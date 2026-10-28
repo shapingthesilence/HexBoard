@@ -27,6 +27,8 @@ export const DelegatedEncoderEvent = {
 export type DelegatedEncoderEventValue = (typeof DelegatedEncoderEvent)[keyof typeof DelegatedEncoderEvent];
 
 export const MessageType = {
+  CompactSamplerRequest: 0x36,
+  CompactSamplerResponse: 0x37,
   HelloRequest: 0x01,
   HelloResponse: 0x02,
   Ack: 0x06,
@@ -84,6 +86,7 @@ export const ErrorCode = {
 } as const;
 
 export const ObjectType = {
+  CompactSampler: 0x0e,
   DeviceProfile: 0x01,
   ActiveSnapshot: 0x02,
   UserTuning: 0x03,
@@ -121,6 +124,7 @@ export const ObjectListFlag = {
 export type ObjectListFlagValue = (typeof ObjectListFlag)[keyof typeof ObjectListFlag];
 
 export const CapabilityFlag = {
+  CompactSampler: 1 << 24,
   Profile: 1 << 0,
   SynthPreset: 1 << 1,
   UserTuning: 1 << 2,

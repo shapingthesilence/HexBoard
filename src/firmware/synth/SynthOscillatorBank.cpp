@@ -1,7 +1,6 @@
 #include "SynthAudioInternal.h"
 
-byte activeSynthWaveTable[SYNTH_WAVETABLE_FRAME_COUNT][SYNTH_WAVE_SAMPLE_COUNT] = {};
-byte activeSynthWavetableMipExtraSamples[SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES] = {};
+SynthSampleWorkspace synthSampleWorkspace = {};
 byte synthVibratoSine[SYNTH_WAVE_SAMPLE_COUNT] = {};
 volatile bool synthWaveTableLoadInProgress = false;
 byte loadedSynthWaveform = 255;
@@ -40,9 +39,9 @@ size_t RAM_FUNC(synthWavetableMipExtraLevelOffset)(uint8_t level) {
 
 byte* RAM_FUNC(activeSynthWavetableMipFrame)(uint8_t level, uint8_t frameIndex) {
   if (level == 0) {
-    return activeSynthWaveTable[frameIndex];
+    return synthSampleWorkspace.wavetable.base[frameIndex];
   }
-  return activeSynthWavetableMipExtraSamples
+  return synthSampleWorkspace.wavetable.mips
     + synthWavetableMipExtraLevelOffset(level)
     + (static_cast<size_t>(frameIndex) * SYNTH_WAVETABLE_MIP_SAMPLES_PER_FRAME);
 }
@@ -88,9 +87,9 @@ void loadActiveSynthWavetableSamples(const uint8_t* samples, size_t sampleLength
   if (samples == nullptr || !isSupportedSynthWavetableSampleLength(sampleLength)) {
     return;
   }
-  memcpy(&activeSynthWaveTable[0][0], samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
+  memcpy(&synthSampleWorkspace.wavetable.base[0][0], samples, SYNTH_WAVETABLE_SAMPLE_BYTES);
   if (sampleLength == SYNTH_WAVETABLE_MIP_SAMPLE_BYTES) {
-    memcpy(activeSynthWavetableMipExtraSamples,
+    memcpy(synthSampleWorkspace.wavetable.mips,
            samples + SYNTH_WAVETABLE_SAMPLE_BYTES,
            SYNTH_WAVETABLE_MIP_EXTRA_SAMPLE_BYTES);
     setActiveSynthWavetableMipLevelCount(SYNTH_WAVETABLE_MIP_LEVEL_COUNT);
@@ -238,7 +237,7 @@ void generateBasicSynthWavetable() {
   for (uint8_t frameIndex = 0; frameIndex < SYNTH_WAVETABLE_FRAME_COUNT; ++frameIndex) {
     if (frameIndex == SYNTH_WAVETABLE_LAST_FRAME) {
       for (uint16_t sampleIndex = 0; sampleIndex < SYNTH_WAVE_SAMPLE_COUNT; ++sampleIndex) {
-        activeSynthWaveTable[frameIndex][sampleIndex] = readBasicWavetableAnchorSample(anchorCount - 1, sampleIndex);
+        synthSampleWorkspace.wavetable.base[frameIndex][sampleIndex] = readBasicWavetableAnchorSample(anchorCount - 1, sampleIndex);
       }
       continue;
     }
@@ -252,7 +251,7 @@ void generateBasicSynthWavetable() {
       uint8_t sampleA = readBasicWavetableAnchorSample(anchorA, sampleIndex);
       uint8_t sampleB = readBasicWavetableAnchorSample(anchorB, sampleIndex);
       int16_t delta = static_cast<int16_t>(sampleB) - static_cast<int16_t>(sampleA);
-      activeSynthWaveTable[frameIndex][sampleIndex] =
+      synthSampleWorkspace.wavetable.base[frameIndex][sampleIndex] =
         static_cast<uint8_t>(static_cast<int16_t>(sampleA) + ((delta * static_cast<int16_t>(frameFrac)) >> 8));
     }
   }
@@ -314,6 +313,7 @@ void initializeSynthWaveTables() {
 }
 
 void loadSelectedSynthWavetable() {
+  if (compactSamplerActive()) return;
   if (!currentSynthWavetableReferenceValid) {
     selectSynthWavetableForWaveform(currWave, false);
   }
@@ -374,7 +374,7 @@ uint16_t RAM_FUNC(wavetableFramePositionFromAmount)(int16_t positionAmount) {
 }
 
 uint16_t RAM_FUNC(readLoadedWaveFrameSample)(uint16_t phase) {
-  return static_cast<uint16_t>(activeSynthWaveTable[0][synthWaveSampleIndexFromPhase16(phase)] << 8);
+  return static_cast<uint16_t>(synthSampleWorkspace.wavetable.base[0][synthWaveSampleIndexFromPhase16(phase)] << 8);
 }
 
 
@@ -451,6 +451,10 @@ void RAM_FUNC(setSynthFreq)(float frequency, byte channel, bool resetPhase, bool
     }
   }
   float f = tunedFrequency * pitchBendFactor;
+  if (compactSamplerActive()) {
+    prepareCompactSamplerFrequency(c, tunedFrequency, f, resetPhase);
+    return;
+  }
   uint32_t newIncrement = oscillatorIncrementFromFrequency(f);
   if (newIncrement == 0) {
     synth[c].increment = 0;

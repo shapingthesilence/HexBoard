@@ -7,6 +7,7 @@ void setupFileSystem();
 void applyFactoryDefaultsToSettings();
 bool load_settings();
 void save_settings();
+bool saveCurrentSettingsForStartup();
 void restore_default_settings();
 void markSettingsDirty();
 void checkAndAutoSave();

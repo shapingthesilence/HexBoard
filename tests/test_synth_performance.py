@@ -19,6 +19,13 @@ class PerformanceReportTest(unittest.TestCase):
     def check(self, **kwargs):
         return perf.assess(self.metadata, self.phases, kwargs.get('completed', True), kwargs.get('limit', 100))
 
+    def test_sampler_expression_requires_actual_retunes(self):
+        self.metadata.update(sampler='1', sampler_expression='1', frames='1')
+        self.assertTrue(any('retunes' in error for error in self.check()))
+        for phase in self.phases:
+            phase['retunes'] = '2300'
+        self.assertFalse(self.check())
+
     def test_complete_measurements_pass(self):
         self.assertEqual(self.check(), [])
         self.assertEqual(perf.fields('HBAUDIO phase=eight blocks=2500'), {'phase': 'eight', 'blocks': '2500'})

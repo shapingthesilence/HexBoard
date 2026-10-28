@@ -1079,7 +1079,7 @@ void RAM_FUNC(refreshSynthVoiceRenderCache)(uint8_t voiceIndex,
     cache.wavetableContext =
       wavetableReadContextFromFramePosition(framePosition, activeWaveFrameCount, selectedMipLevel);
   } else if (!activeWavetableHasFrames) {
-    cache.wavetableContext = { activeSynthWaveTable[0], nullptr, 0 };
+    cache.wavetableContext = { synthSampleWorkspace.wavetable.base[0], nullptr, 0 };
     cache.wavetableMipLevel = 0;
   }
   synthVoiceRenderCacheValid[voiceIndex] = true;

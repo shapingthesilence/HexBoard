@@ -81,6 +81,7 @@ export interface Progress {
   level: number;
 }
 export interface Prepared {
+  auditionPatch?: Patch;
   bytes: Uint8Array;
   assets: { name?: string; frames: number; levels: number; channels: number }[];
   sourceBytes: number;

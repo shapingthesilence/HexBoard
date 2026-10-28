@@ -8,31 +8,25 @@ int main() {
   static_assert(persistedSettingsWidth(31) == 0);
   static_assert(persistedSettingsWidth(34) == 60);
   static_assert(persistedSettingsWidth(35) == 60);
-  static_assert(persistedSettingsWidth(36) == 0);
-  for (uint8_t version : {32, 33, 34, 35}) {
-    const size_t sourceWidth = persistedSettingsWidth(version);
-    std::array<uint8_t, 9 * 60> source{};
-    std::array<uint8_t, 9 * 60 + 2> destination{};
-    destination.front() = 0xa5;
-    destination.back() = 0x5a;
-    for (size_t profile = 0; profile < 9; ++profile) {
-      for (size_t key = 0; key < sourceWidth; ++key)
-        source[profile * sourceWidth + key] = (profile * 31 + key) & 255;
-      destination[1 + profile * 60 + 57] = 0; // dithering off
-      destination[1 + profile * 60 + 58] = 232; // 4328us
-      destination[1 + profile * 60 + 59] = 16;
+  static_assert(persistedSettingsWidth(36) == 61);
+  static_assert(persistedSettingsWidth(37) == 0);
+  for (uint8_t version : {32,33,34,35,36}) {
+    const size_t width = persistedSettingsWidth(version);
+    std::array<uint8_t, 9 * 61> source{};
+    std::array<uint8_t, 9 * 61 + 2> destination{};
+    destination.front()=0xa5; destination.back()=0x5a;
+    for(size_t profile=0;profile<9;++profile) {
+      for(size_t key=0;key<width;++key) source[profile*width+key]=(profile*31+key)&255;
+      destination[1+profile*61+57]=0; destination[1+profile*61+58]=232;
+      destination[1+profile*61+59]=16; destination[1+profile*61+60]=255;
     }
-    expandPersistedSettings(destination.data() + 1, 60, source.data(), sourceWidth, 9);
-    for (size_t profile = 0; profile < 9; ++profile) {
-      for (size_t key = 0; key < sourceWidth; ++key)
-        assert(destination[1 + profile * 60 + key] == source[profile * sourceWidth + key]);
-      if (sourceWidth == 57) {
-        assert(destination[1 + profile * 60 + 57] == 0);
-        assert(destination[1 + profile * 60 + 58] == 232);
-        assert(destination[1 + profile * 60 + 59] == 16);
-      }
+    expandPersistedSettings(destination.data()+1,61,source.data(),width,9);
+    for(size_t profile=0;profile<9;++profile) {
+      for(size_t key=0;key<width;++key) assert(destination[1+profile*61+key]==source[profile*width+key]);
+      if(width<61) assert(destination[1+profile*61+60]==255);
+      if(width==57) {assert(destination[1+profile*61+57]==0);assert(destination[1+profile*61+58]==232);assert(destination[1+profile*61+59]==16);}
     }
-    assert(destination.front() == 0xa5 && destination.back() == 0x5a);
+    assert(destination.front()==0xa5 && destination.back()==0x5a);
   }
   static_assert(persistedSynthPresetWidth(11) == 212);
   static_assert(persistedSynthPresetWidth(12) == 213);

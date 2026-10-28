@@ -1021,3 +1021,16 @@ FX assignments share the Physical Strings DSP/connection budget, save with the
 patch and return their capacity when the card is removed. Expression pedal input
 uses slower noise filtering appropriate to foot control; configure type and
 travel under the device's **Settings → Pedal setup**.
+
+## Classic Sampler
+
+With updated Classic firmware connected, Synth offers Wavetable and Sampler
+editors. Sampler shares Advanced's import, waveform, loop and region tools with
+controls limited to Classic playback. Choose a SoundFont preset, keep the original
+samples for compact instruments, then use **Prepare Classic audition**. Review
+size and sound changes before copying to the board. The Classic library selects,
+exports and deletes installed instruments. **Save startup settings** saves current
+settings to profile 1 and respects the existing AutoSave preference.
+
+See [Classic sampler](compact-sampler.md) for supported sources, eight-voice and
+48 KiB limits, loop behavior, conversion and device controls.

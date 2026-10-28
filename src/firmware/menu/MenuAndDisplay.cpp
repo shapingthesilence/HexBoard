@@ -26,6 +26,7 @@
 #include "PlayedNotesOverlay.h"
 #include "SynthPresetMenu.h"
 #include "SynthWavetableMenu.h"
+#include "CompactSamplerMenu.h"
 #include "VirtualListMenu.h"
 
 // @menu
@@ -564,6 +565,7 @@ GEMPage menuPageEditor("Editor", menuPageMain);
 GEMItem menuGotoEditor("Editor", menuPageEditor);
 GEMPage menuPageSynth("Synth", menuPageEditor);
 GEMItem menuGotoSynth("Synth", menuPageSynth);
+GEMItem menuGotoCompactSampler("Sampler / Engine", openCompactSamplerMenu);
 GEMPage menuPageSynthWavetableLoad("Wavetables", menuPageSynth);
 GEMItem menuGotoSynthWavetableLoad(currentSynthWavetableMenuLabel, menuPageSynthWavetableLoad);
 GEMPage menuPageSynthAmpEnv("Amp Env", menuPageSynth);
@@ -3222,6 +3224,7 @@ void setupSynthMenuPage() {
   addPreviewMenuItem(menuPageSynth, menuItemArpNoteLength, previewArpNoteLength);
   addPreviewMenuItem(menuPageSynth, menuItemPortamentoTime, previewPortamentoTime);
   updateCurrentSynthWavetableMenuLabel();
+  menuPageSynth.addMenuItem(menuGotoCompactSampler);
   menuPageSynth.addMenuItem(menuGotoSynthWavetableLoad);
   addPreviewMenuItem(menuPageSynth, menuItemSynthWavetablePosition, previewSynthWavetablePosition);
   addPreviewMenuItem(menuPageSynth, menuItemSynthDrive, previewSynthDrive);

@@ -30,9 +30,11 @@ byte savedControls[sizeof(controls) / sizeof(controls[0])] = {};
 SynthPreviewNoteHandle notes[12];
 bool active = false, savedAutoSave = false, savedProfiling = false;
 int savedWheel = 0, savedWheelTarget = 0;
+byte savedDestination = AUDIO_NONE;
 uint8_t phase = 0, event = 0;
 uint64_t phaseStarted = 0, nextEvent = 0;
-uint32_t noteFailures = 0;
+uint32_t noteFailures = 0, retuneCount = 0, mainLoopPeak = 0;
+uint64_t nextRetune = 0;
 uint8_t wheelMin = 127, wheelMax = 0;
 
 bool keysDown() {
@@ -75,7 +77,7 @@ void refreshControls() {
 }
 
 void configurePhase() {
-  event = 0;
+  event = 0; retuneCount = mainLoopPeak = 0; nextRetune = 0;
   wheelMin = 127; wheelMax = 0;
   nextEvent = runTime + 100000;
   if (phase == 3) {
@@ -139,6 +141,7 @@ void finish(const char* result) {
   modWheel.curValue = savedWheel;
   modWheel.targetValue = savedWheelTarget;
   refreshControls();
+  audioD = savedDestination;
   autoSave = savedAutoSave;
   active = false;
   resetSerialDebugAudioStats();
@@ -150,21 +153,21 @@ void reportPhase() {
   readAndResetISRProfile();
   char line[320];
   snprintf(line, sizeof(line),
-    "HBAUDIO phase=%s blocks=%lu avg_us=%lu max_us=%lu budget_us=%lu underruns=%lu overruns=%lu voices_at_peak=%u release_starts=%lu note_failures=%lu wheel_span=%u fx_active=%u lfo_wave=%u",
+    "HBAUDIO phase=%s blocks=%lu avg_us=%lu max_us=%lu budget_us=%lu underruns=%lu overruns=%lu voices_at_peak=%u release_starts=%lu note_failures=%lu wheel_span=%u fx_active=%u lfo_wave=%u retunes=%lu main_us=%lu",
     phases[phase], static_cast<unsigned long>(isrProfileCount),
     static_cast<unsigned long>(isrProfileAvgUs), static_cast<unsigned long>(isrProfileMaxUs),
     static_cast<unsigned long>(isrProfileAvailableUs), static_cast<unsigned long>(isrProfileDmaUnderrunCount),
     static_cast<unsigned long>(isrProfileOverrunCount), isrProfileMaxVoices,
     static_cast<unsigned long>(isrProfileReleaseStartCount), static_cast<unsigned long>(noteFailures),
     wheelMax >= wheelMin ? wheelMax - wheelMin : 0,
-    (synthEffectEnvelopeActive[0] ? 1 : 0) | (synthEffectEnvelopeActive[1] ? 2 : 0), synthLfoWave);
+    (synthEffectEnvelopeActive[0] ? 1 : 0) | (synthEffectEnvelopeActive[1] ? 2 : 0), synthLfoWave, static_cast<unsigned long>(retuneCount), static_cast<unsigned long>(mainLoopPeak));
   Serial.println(line);
 }
 } // namespace
 
 bool synthPerformanceTestActive() { return active; }
 
-void startSynthPerformanceTest() {
+void startSynthPerformanceTest(bool piezo) {
   if (active) { Serial.println("HBAUDIO error=already_running"); return; }
   if (unavailable() || velWheel.curValue == 0) {
     Serial.println("HBAUDIO error=requires_idle_poly_runtime_and_nonzero_volume"); return;
@@ -174,12 +177,16 @@ void startSynthPerformanceTest() {
     if (h[i].synthCh) { Serial.println("HBAUDIO error=voices_busy"); return; }
   }
   for (size_t i = 0; i < sizeof(savedControls); ++i) savedControls[i] = *controls[i];
+  savedDestination = audioD;
+  if (piezo) audioD = AUDIO_PIEZO;
   savedAutoSave = autoSave; autoSave = false;
   savedProfiling = isrProfilingEnabled;
   savedWheel = modWheel.curValue; savedWheelTarget = modWheel.targetValue;
   noteFailures = 0; phase = 0; active = true;
   Serial.print("HBAUDIO version=1 phases=17 phase_ms=4000 frames=");
   Serial.print(activeSynthWaveFrameCount);
+  Serial.print(" sampler="); Serial.print(compactSamplerActive() ? 1 : 0);
+  Serial.print(" sampler_expression="); Serial.print(compactSamplerActive() ? 1 : 0);
   Serial.print(" destination="); Serial.print(audioD);
   Serial.print(" clock_hz="); Serial.println(HEXBOARD_SYSTEM_CLOCK_HZ);
   configurePhase();
@@ -190,6 +197,7 @@ void stopSynthPerformanceTest() { if (active) finish("cancelled"); }
 void serviceSynthPerformanceTest() {
   if (!active) return;
   if (unavailable() || !isrProfilingEnabled) { finish("interrupted"); return; }
+  mainLoopPeak = std::max<uint32_t>(mainLoopPeak, std::min<uint64_t>(UINT32_MAX, lapTime));
   if (runTime - phaseStarted >= phaseMicros) {
     reportPhase();
     if (++phase == phaseCount) { finish("complete"); return; }
@@ -204,6 +212,18 @@ void serviceSynthPerformanceTest() {
     modWheel.targetValue = modWheel.curValue;
     if (modWheel.curValue < wheelMin) wheelMin = modWheel.curValue;
     if (modWheel.curValue > wheelMax) wheelMax = modWheel.curValue;
+  }
+  if (phase >= 6 && compactSamplerActive() && runTime >= nextRetune) {
+    nextRetune = runTime + 10000; // 100 Hz expression, outside the audio core.
+    const float bend = 2.0f * (modWheel.curValue / 63.5f - 1.0f);
+    for (unsigned i = 0; i < 12; ++i) {
+      if (!notes[i].active || notes[i].slot < 0) continue;
+      const auto& key = h[notes[i].slot];
+      if (!key.synthCh) continue;
+      const float cents = (i & 1) ? .18f : -.18f;
+      setSynthFreq(key.frequency * powf(2.f, (bend + cents) / 12.f), key.synthCh);
+      ++retuneCount;
+    }
   }
   if (runTime < nextEvent) return;
   nextEvent = runTime + 100000; // at most one bounded event per main-loop visit

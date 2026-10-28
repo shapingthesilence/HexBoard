@@ -23,6 +23,8 @@ std::array<uint8_t, POLYPHONY_LIMIT> envelopeCommandConsumedSeq = {};
 // voice has fully finished and can return to the free list. A sequence byte is
 // enough because "voice finished" is an idempotent event.
 volatile uint8_t voiceFreedPublishedSeq[POLYPHONY_LIMIT] = {};
+std::atomic<uint32_t> voiceFreedGeneration[POLYPHONY_LIMIT];
+uint32_t synthRenderGenerations[POLYPHONY_LIMIT] = {};
 std::array<uint8_t, POLYPHONY_LIMIT> voiceFreedConsumedSeq = {};
 // Publish the newest command for one voice. The command byte is written first,
 // then a memory barrier makes sure core 1 cannot observe the new sequence
@@ -48,7 +50,8 @@ EnvelopeCommand RAM_FUNC(consumeEnvelopeCommand)(uint8_t channel) {
 
 // Core 1 uses this when a release truly reaches zero. Core 0 later consumes
 // the event and pushes the voice back into the available-channel queue.
-void RAM_FUNC(publishVoiceFreed)(uint8_t channel) {
+void RAM_FUNC(publishVoiceFreed)(uint8_t channel, uint32_t generation) {
+  voiceFreedGeneration[channel].store(generation ? generation : synthRenderGenerations[channel], std::memory_order_relaxed);
   __dmb();
   voiceFreedPublishedSeq[channel] = static_cast<uint8_t>(voiceFreedPublishedSeq[channel] + 1);
 }
@@ -60,8 +63,9 @@ bool RAM_FUNC(consumeVoiceFreed)(uint8_t channel) {
     return false;
   }
   __dmb();
+  const uint32_t generation = voiceFreedGeneration[channel].load(std::memory_order_relaxed);
   voiceFreedConsumedSeq[channel] = publishedSeq;
-  return true;
+  return generation != 0 && generation == voiceGenerations[channel].load(std::memory_order_relaxed);
 }
 
 // When core 0 immediately reuses a voice, any older pending "voice finished"

@@ -28,7 +28,8 @@ def assess(metadata, phases, completed, max_cpu_percent):
         errors.append('Firmware did not complete the suite')
     if metadata.get('version') != '1' or metadata.get('phases') != str(len(PHASES)):
         errors.append('Missing or unsupported suite metadata')
-    if int(metadata.get('frames', '0')) < 2:
+    sampler = metadata.get('sampler') == '1'
+    if not sampler and int(metadata.get('frames', '0')) < 2:
         errors.append('Multiframe wavetable required for full wavetable modulation coverage')
     if [p.get('phase') for p in phases] != list(PHASES):
         errors.append('Missing, duplicate, or out-of-order phases')
@@ -56,10 +57,12 @@ def assess(metadata, phases, completed, max_cpu_percent):
                 errors.append(f'{name}: eight rendered voices not demonstrated at peak')
         if name.startswith('mod_') and not numbers['release_starts']:
             errors.append(f'{name}: release transitions not demonstrated')
-        if name.startswith(('mod_', 'amp_')):
+        if sampler and metadata.get('sampler_expression') == '1' and name.startswith(('mod_', 'amp_')) and int(phase.get('retunes', '0')) < 1000:
+            errors.append(f'{name}: sampler continuous retunes not demonstrated')
+        if not sampler and name.startswith(('mod_', 'amp_')):
             if int(phase.get('wheel_span', '0')) < 120 or phase.get('fx_active') != '3':
                 errors.append(f'{name}: wheel sweep or both effect envelopes not demonstrated')
-        if name.startswith('mod_'):
+        if not sampler and name.startswith('mod_'):
             if phase.get('lfo_wave') != str(PHASES.index(name) - 6):
                 errors.append(f'{name}: expected LFO waveform not exercised')
     return errors
@@ -69,6 +72,7 @@ def main():
     import serial
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--serial', default='/dev/cu.usbmodem101')
+    parser.add_argument('--piezo', action='store_true', help='Temporarily exercise piezo output; restores routing after the suite')
     parser.add_argument('--max-cpu-percent', type=float, default=100,
                         help='Fail at this peak load; use 90 to require 10%% render headroom')
     parser.add_argument('--output', type=Path, default=Path('build/performance/automated.json'))
@@ -83,7 +87,7 @@ def main():
         connection.write(b'HBAUD 0\n')
         time.sleep(.2)
         connection.reset_input_buffer()
-        connection.write(b'HBAUD 1\n')
+        connection.write(b'HBAUD 2\n' if args.piezo else b'HBAUD 1\n')
         deadline = time.monotonic() + 85
         completed = False
         started = time.monotonic()

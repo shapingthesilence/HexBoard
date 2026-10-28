@@ -322,6 +322,12 @@ void markSettingsDirty() {
 }
 
 bool autoSave = settingEnabled(SettingKey::AutoSave);
+bool saveCurrentSettingsForStartup() {
+  copyCurrentSettingsToProfile(DEFAULT_PROFILE_INDEX);
+  flashSafeSave();
+  if (lastSettingsSaveSucceeded) settingsDirty = false;
+  return lastSettingsSaveSucceeded;
+}
 // Call this in your main loop to autosave if changes have stabilized.
 void checkAndAutoSave() {
   if (!autoSave || !settingsDirty) {
@@ -331,13 +337,7 @@ void checkAndAutoSave() {
     return;
   }
   // Auto-save always snapshots the current settings into profile 1 before writing to disk.
-  copyCurrentSettingsToProfile(DEFAULT_PROFILE_INDEX);
-  flashSafeSave();
-  if (lastSettingsSaveSucceeded) {
-    settingsDirty = false;
-  } else {
-    lastSettingsChangeTime = millis();
-  }
+  if (!saveCurrentSettingsForStartup()) lastSettingsChangeTime = millis();
 }
 
 void copyCurrentSettingsToProfile(uint8_t profileIndex) {

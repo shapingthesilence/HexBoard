@@ -198,7 +198,7 @@ struct SynthVoiceRenderCache {
   uint8_t phaseWarpActive = 0;
   uint8_t slewsActive = 0;
   uint8_t wavetableMipLevel = 0;
-  SynthWavetableReadContext wavetableContext = { activeSynthWaveTable[0], nullptr, 0 };
+  SynthWavetableReadContext wavetableContext = { synthSampleWorkspace.wavetable.base[0], nullptr, 0 };
 };
 
 struct SynthWavetableMipSelection {
@@ -215,6 +215,12 @@ extern volatile byte headphoneVolumeGain;
 extern volatile byte piezoVolumeGain;
 
 extern byte synthVibratoSine[SYNTH_WAVE_SAMPLE_COUNT];
+extern std::atomic<bool> synthWorkspacePauseRequested;
+extern std::atomic<bool> synthWorkspacePauseAcknowledged;
+extern std::array<byte, SYNTH_PREVIEW_SLOT_COUNT> synthPreviewVelocityForSlot;
+extern uint32_t synthRenderGenerations[POLYPHONY_LIMIT];
+void prepareCompactSamplerFrequency(uint8_t channel, float nativeHz, float bentHz, bool start);
+int32_t renderCompactSamplerMix(uint32_t& envSum, uint8_t& voices, uint8_t& flags);
 extern volatile uint8_t activeSynthWaveFrameCount;
 extern uint16_t synthWavetableFramePositionByAmount[128];
 extern uint8_t synthFxModScaleByDepth[128][128];
@@ -351,7 +357,7 @@ uint16_t RAM_FUNC(effectReleaseIncrementForLevel)(uint8_t envelopeIndex, uint32_
 void RAM_FUNC(resetEnvelopeState)(EnvelopeState& env);
 void RAM_FUNC(publishEnvelopeCommand)(uint8_t channel, EnvelopeCommand command);
 EnvelopeCommand RAM_FUNC(consumeEnvelopeCommand)(uint8_t channel);
-void RAM_FUNC(publishVoiceFreed)(uint8_t channel);
+void RAM_FUNC(publishVoiceFreed)(uint8_t channel, uint32_t generation = 0);
 bool RAM_FUNC(consumeVoiceFreed)(uint8_t channel);
 void RAM_FUNC(clearPendingVoiceFreed)(uint8_t channel);
 void RAM_FUNC(advanceEnvelopeFromAttackPeak)(const EnvelopeParams& params, EnvelopeState& env);
@@ -422,3 +428,5 @@ uint16_t RAM_FUNC(synthStealFadeGainQ8)(uint8_t channelIndex);
 void RAM_FUNC(startSynthVoiceAttackInRender)(uint8_t channelIndex, EnvelopeState& env, bool& forceVoiceRenderCacheRefresh);
 void RAM_FUNC(resetSynthVoiceAfterAbandonedSteal)(uint8_t channelIndex);
 void RAM_FUNC(finishSynthStealFade)(uint8_t channelIndex, EnvelopeState& env, bool& forceVoiceRenderCacheRefresh);
+
+AudioOutputLevels renderCompactSamplerOutputLevels(byte destination);

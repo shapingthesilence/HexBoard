@@ -80,8 +80,8 @@ void serviceSerialDebugCommands() {
   for (unsigned int count = 0; count < 64 && Serial.available() > 0; ++count) {
     const int command = serialDebugCommandParser.consume(static_cast<uint8_t>(Serial.read()));
     if (command == SerialDebugCommandParser::NoCommand) continue;
-    if (command == SerialDebugCommandParser::AudioTestStart) {
-      startSynthPerformanceTest();
+    if (command == SerialDebugCommandParser::AudioTestStart || command == SerialDebugCommandParser::AudioTestPiezo) {
+      startSynthPerformanceTest(command == SerialDebugCommandParser::AudioTestPiezo);
       continue;
     }
     if (command == SerialDebugCommandParser::AudioTestStop) {

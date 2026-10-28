@@ -28,4 +28,5 @@ int main() {
   parser.consume('H');
   parser.reset();
   assert(command(parser, "HBDBG 0") == 0);
+  { SerialDebugCommandParser piezo; int result = 0; for (char ch : std::string("HBAUD 2\n")) result = piezo.consume(ch); assert(result == SerialDebugCommandParser::AudioTestPiezo); }
 }

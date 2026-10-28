@@ -13,6 +13,7 @@
 #include "Settings.h"
 #include "SynthPresetStorage.h"
 #include "SynthWavetableStorage.h"
+#include "../synth/CompactSamplerCodec.h"
 
 static File presetSyncWriteRawTempFile;
 static File presetSyncReadRawFile;
@@ -48,7 +49,8 @@ void presetSyncHandleHello(uint16_t transactionId, const uint8_t* payload, size_
                       | PRESET_SYNC_CAP_CENTS_TABLE_RUNTIME_TUNING
                       | PRESET_SYNC_CAP_SCOPED_GEOMETRY_LIST
                       | PRESET_SYNC_CAP_GEOMETRY_BUNDLE_FILES
-                      | PRESET_SYNC_CAP_LIVE_SYNTH_WAVETABLE_SELECT);
+                      | PRESET_SYNC_CAP_LIVE_SYNTH_WAVETABLE_SELECT
+                      | PRESET_SYNC_CAP_COMPACT_SAMPLER);
   presetSyncAppendU28(response, PRESET_SYNC_MAX_RAW_OBJECT_BYTES);
   response.push_back(CURRENT_SETTINGS_VERSION);
   response.push_back(SYNTH_PRESET_SCHEMA_VERSION);
@@ -682,11 +684,31 @@ void presetSyncHandleReadRequest(uint16_t transactionId, const uint8_t* payload,
   }
   uint8_t objectType = payload[0];
   if (!isPresetSyncSupportedObjectType(objectType)
+      && objectType != PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER
       && objectType != PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
     presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_OBJECT_TYPE);
     return;
   }
   uint16_t handle = presetSyncDecodeU14(payload + 1);
+  if (objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER) {
+    char path[32]; compactSamplerPath(handle, path, sizeof(path));
+    File f = handle < CompactSampler::kSlots ? LittleFS.open(path, "r") : File();
+    if (!f) { presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING); return; }
+    if (f.size() < CompactSampler::kHeader || f.size() > CompactSampler::kFileBytes) {
+      presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_BAD_LENGTH); return;
+    }
+    uint8_t buffer[128]; uint32_t crc = 0xFFFFFFFFu;
+    while (f.available()) { const size_t n = f.read(buffer, sizeof(buffer)); if (!n) break; crc = presetSyncCrc32Update(crc, buffer, n); }
+    const uint32_t bytes = f.size();
+    if (f.position() != bytes) { presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_VALIDATION_FAILED); return; }
+    f.seek(0); presetSyncCloseReadFile(); presetSyncReadRawFile = f;
+    presetSyncReadTransfer = PresetSyncReadTransfer{};
+    presetSyncReadTransfer.active = presetSyncReadTransfer.streamRawFile = true;
+    presetSyncReadTransfer.objectType = objectType; presetSyncReadTransfer.handle = handle;
+    presetSyncReadTransfer.transactionId = transactionId; presetSyncReadTransfer.transferId = presetSyncAllocateTransferId();
+    presetSyncReadTransfer.schemaMajor = 1; presetSyncReadTransfer.rawByteLength = bytes;
+    presetSyncReadTransfer.objectCrc32 = presetSyncCrc32Finish(crc); presetSyncSendReadBegin(); return;
+  }
   if (objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
     if (!presetSyncSendGeometryBundleFile(transactionId, handle)) {
       presetSyncSendNack(transactionId, PRESET_SYNC_MSG_READ_REQ, PRESET_SYNC_ERROR_OBJECT_MISSING);
@@ -808,6 +830,10 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
 
   uint16_t handle = presetSyncDecodeU14(payload + 1);
   uint8_t writeFlags = payload[18];
+  if (objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER
+      && (handle >= CompactSampler::kSlots || writeFlags != PRESET_SYNC_WRITE_SAVE_TO_FLASH || !fileSystemExists)) {
+    presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_BEGIN, PRESET_SYNC_ERROR_VALIDATION_FAILED); return;
+  }
   if ((objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE
        || objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_ORDER)
       && (handle != PRESET_SYNC_NEW_OBJECT_HANDLE
@@ -843,6 +869,7 @@ void presetSyncHandleWriteBegin(uint16_t transactionId, const uint8_t* payload, 
     presetSyncWriteTransfer.flashSafeMuteActive = true;
   }
   if (objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_WAVETABLE
+      || objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER
       || objectType == PRESET_SYNC_OBJECT_TYPE_GEOMETRY_BUNDLE) {
     if (!presetSyncCreateWriteTempFile(presetSyncWriteTransfer)) {
       presetSyncCancelWriteTransfer();
@@ -956,6 +983,14 @@ void presetSyncHandleWriteCommit(uint16_t transactionId, const uint8_t* payload,
     return;
   }
 
+  if (presetSyncWriteTransfer.objectType == PRESET_SYNC_OBJECT_TYPE_COMPACT_SAMPLER) {
+    const bool ok = presetSyncWriteTransfer.streamRawToFile
+      && installCompactSampler(presetSyncWriteTransfer.streamRawPath, presetSyncWriteTransfer.handle);
+    presetSyncCancelWriteTransfer();
+    if (ok) presetSyncSendAck(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT);
+    else presetSyncSendNack(transactionId, PRESET_SYNC_MSG_WRITE_COMMIT, PRESET_SYNC_ERROR_VALIDATION_FAILED);
+    return;
+  }
   std::string parseError;
   if (presetSyncWriteTransfer.objectType == PRESET_SYNC_OBJECT_TYPE_SYNTH_PRESET) {
     SynthPresetSlot parsedPreset;
@@ -1209,6 +1244,9 @@ bool processPresetSyncSysEx(const uint8_t* data, const unsigned int len) {
   }
 
   switch (message) {
+    case 0x36:
+      handleCompactSamplerRequest(transactionId, payload, payloadLength);
+      break;
     case PRESET_SYNC_MSG_HELLO_REQ:
       presetSyncHandleHello(transactionId, payload, payloadLength);
       break;

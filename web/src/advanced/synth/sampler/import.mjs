@@ -313,8 +313,13 @@ export async function bakeSoundFont(
     maxBufferSize: 128,
   });
   await synth.ready;
-  await synth.soundBankManager.addSoundBank(bank, "import");
-  synth.midiChannels[0].preset = bank.presets[id];
+  // The processor owns and destroys its banks. Keep the source chooser and
+  // subsequent conversions independent of that lifetime.
+  const renderBank = SoundBankLoader.fromArrayBuffer(bank.writeSF2());
+  await renderBank.ready;
+  const selected = renderBank.presets[id];
+  await synth.soundBankManager.addSoundBank(renderBank, "import");
+  synth.midiChannels[0].preset = selected;
   const assets = [],
     zones = [];
   try {

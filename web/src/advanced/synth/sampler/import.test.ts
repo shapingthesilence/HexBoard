@@ -137,6 +137,8 @@ describe("Sampler source conversion", () => {
     const p = await bakeSoundFont(b, 0, () => {}, { layers: 1, seconds: 0.1 });
     expect(p.report.join(" ")).toContain("layers");
     expect(p.assets.length).toBeGreaterThan(0);
+    expect(b.presets).toHaveLength(1);
+    expect(directSoundFont(b, 0).patch.assets.length).toBeGreaterThan(0);
     expect(
       p.assets.some((a) => a.channels[0].some((x) => Math.abs(x) > 0.0001)),
     ).toBe(true);

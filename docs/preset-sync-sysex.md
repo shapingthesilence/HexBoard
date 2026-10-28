@@ -42,6 +42,7 @@ secondary synthesis are deferred to later Advanced stages.
 
 
 This reference describes the implemented protocol for synth presets, named wavetables,
+Classic compact sampler instruments,
 atomic geometry bundles, and live EDO/equal-step/cents-list geometry
 preview. Factory libraries are ordinary editable catalog records.
 
@@ -1413,3 +1414,79 @@ or device preset storage. The shared app owns its browser preset schema in
 `web/src/advanced/synth/schema.ts` and uses the normal MidiTransport. The wire
 contract and audio handoff are owned by
 [Advanced web-control protocol](../../HexBoard_Advanced/docs/web-control-protocol.md#physical-synth-editor-over-sysex).
+
+## Classic Compact Sampler
+
+Negotiate capability bit 24 (`CompactSampler`). This is independent of Advanced
+sampler capability bit 22 and its physical-synth transport. Limits and runtime
+ownership are described in [Classic sampler](compact-sampler.md).
+
+Messages `0x36` / `0x37` carry a request and matching response. Every response
+starts with the requested operation. Numbers use the existing seven-bit wire
+encoding. `ascii` is one u7 byte count followed by at most 31 ASCII bytes.
+
+| Operation | Request payload | Response payload |
+| --- | --- | --- |
+| Status | `0` | `0, active:u7, assets:u7, zones:u7, pcmBytes:u21, freeHeap:u28, name:ascii` |
+| Slot info | `1, slot:u7` | `1, slot:u7, exists:u7, fileBytes:u21, name:ascii` |
+| Select | `2, slot:u7` | `2, slot:u7` |
+| Delete | `3, slot:u7` | `3, slot:u7` |
+| Save startup settings | `4` | `4` |
+
+Slots are 0–31. Selection/status value 127 denotes the wavetable engine. Empty
+slot info reports `exists=0`, zero bytes and an empty name. Status reports limits,
+not the current patch's counts. Invalid requests use normal NACKs. Operations
+are busy during read/write transfers or the explicit audio benchmark. Save startup
+settings uses the ordinary settings writer and profile 1; it does not change
+AutoSave. Selection otherwise follows the normal settings-save policy.
+
+Object type `0x0e` transfers raw HBC files through the existing WRITE_BEGIN /
+DATA_CHUNK / TRANSFER_END / WRITE_COMMIT exchange, schema 1.0. The handle is the
+actual destination slot, flags must be exactly SaveToFlash (2), and the file limit
+is 51,264 bytes. It supports ACK-paced writes and streamed READ_REQ for export.
+There is no apply-only or overwrite operation. Generic object-list messages do
+not enumerate these slots; use slot info. Install validates the staged file before
+renaming into an unused slot. Failure, abort and the existing transfer timeout
+leave installed instruments intact and restore the muted audio transport.
+
+### HBC1 File Layout
+
+All integers are little-endian; floats are IEEE binary32. PCM is mono signed
+PCM16 with no padding between recordings. The PCM pool is at most 49,152 bytes.
+Header, asset and region records have sizes 64, 32 and 48 bytes respectively.
+The maximum counts are 16 assets and 32 regions. Metadata occupies exactly
+`64 + assetCount*32 + regionCount*48` bytes, immediately followed by PCM.
+
+Header offsets:
+
+| Offset | Field |
+| ---: | --- |
+| 0 | ASCII `HBC1` |
+| 4 | version:u16 = 1 |
+| 6 | headerBytes:u16 = 64 |
+| 8 | totalFileBytes:u32 |
+| 12 | totalPcmFrames:u32 |
+| 16 | CRC32 of PCM bytes |
+| 20 | CRC32 of all metadata with this field zeroed |
+| 24 | assetCount:u16 |
+| 26 | regionCount:u16 |
+| 28 | reserved:u32 = 0 |
+| 32 | NUL-terminated ASCII name, 32 bytes |
+
+Asset offsets: frame offset:u32 at 0, frame count:u32 at 4, loop start/end:u32
+at 8/12, source rate:f32 at 16, root frequency:f32 at 20, mode:u8 at 24, then
+seven zero bytes. Assets cover the PCM pool contiguously in order, each with at
+least two frames. Rates are 100–384,000 Hz and roots 1–50,000 Hz. Modes: 0 natural
+end, 1 loop while envelope lives, 2 one-shot ignoring note-off, 3 sustain loop
+followed by the recorded tail on release. Loop end is exclusive; modes 0/2 have
+zero loop bounds. Playback increments are bounded separately from source rates.
+
+Region offsets: asset index:u16 at 0, velocity low/high:u8 at 2/3, frequency
+low/high:f32 at 4/8 (low inclusive, high exclusive), gain:u16 Q15 at 12,
+key tracking:u16 Q8 at 14, attack/decay:u16 milliseconds at 16/18, sustain:u16
+Q16 at 20, release/delay/hold:u16 milliseconds at 22/24/26, then 20 zero bytes.
+Velocity bounds are inclusive in 1–127. Gain is below 2, tracking is 0–2;
+attack/delay are at most 10 seconds, decay/release/hold at most 20 seconds.
+Regions must not overlap in both pitch and velocity. Delay and envelope parameters
+are captured at note-on; release is at least 4 ms at runtime. Unsupported bounds,
+nonfinite frequencies, reserved bytes, counts and CRCs are rejected before activation.
