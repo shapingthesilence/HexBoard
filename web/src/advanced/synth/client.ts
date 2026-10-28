@@ -176,6 +176,18 @@ export class PhysicalSynthClient {
       await this.request(49);
     }catch(error){try{await this.request(50);}catch{/* Explicit retry starts a new temporary-file transaction. */}throw error;}
   }
+  async samplerSettings(header?:Uint8Array):Promise<Uint8Array>{
+    if(header&&header.length!==128)throw Error('Sampler settings require a complete header.');await this.stopAndWait();return this.request<Uint8Array>(69,header?[1,...Array.from(header).flatMap(b=>[b>>7,b&127])]:[0]);
+  }
+  async uploadSamplerNamed(bytes:Uint8Array,folder:string,filename:string,progress?:(received:number,total:number)=>void){
+    const text=(s:string)=>{if(!s.length||s.length>64||/[^\x20-\x7e]|[\\/:*?"<>|]/.test(s)||s.startsWith('.')||/[. ]$/.test(s))throw Error('Use a plain folder and filename.');return Array.from(s,c=>c.charCodeAt(0));};
+    const f=text(folder),n=text(filename);if(!/\.hbs$/i.test(filename)||bytes.length<512||bytes.length%512)throw Error('Invalid prepared sampler file.');
+    await this.stopAndWait();const {crc32}=await import('./sampler/prepare.mjs');
+    try{const initial=await this.request<number>(65,[0,f.length,n.length,...f,...n,...u32(bytes.length),...u32(crc32(bytes))]);if(initial!==0)throw Error('Invalid sampler initial offset.');
+    for(let offset=0;offset<bytes.length;offset+=176){const chunk=bytes.subarray(offset,offset+176);const end=await this.request<number>(66,[...u32(offset),...encodeU14(chunk.length),...Array.from(chunk).flatMap(b=>[b>>7,b&127])]);if(end!==offset+chunk.length)throw Error('Sampler transfer offset mismatch.');progress?.(end,bytes.length);}
+    const received=await this.request<number>(67);if(received!==bytes.length)throw Error('Sampler transfer commit mismatch.');
+    }catch(error){try{await this.request(50);}catch{/* A fresh transaction retries the temporary file. */}throw error;}
+  }
   async readAdvanced(){
     let engine:AdvancedEngine=2,state=0,busy=false;const words:number[]=[];
     for(let offset=0;offset<advancedWordCount;offset+=64){const reply=await this.request<{engine:AdvancedEngine;state:number;busy:boolean;words:number[]}>(33,[...encodeU21(offset),Math.min(64,advancedWordCount-offset)]);engine=reply.engine;state=reply.state;busy=reply.busy;words.push(...reply.words);}
@@ -274,7 +286,7 @@ export class PhysicalSynthClient {
         done = true; clearTimeout(timer); unsubscribe(); this.abort = undefined;
         if (error) reject(error); else resolve(state!);
       };
-      const timer = setTimeout(() => finish(Error("The board did not reply. Reconnect to retry.")), operation===49?60000:5000);
+      const timer = setTimeout(() => finish(Error("The board did not reply. Reconnect to retry.")), operation===49||operation===67?90000:5000);
       this.abort = () => finish(new SynthRequestCancelledError());
       unsubscribe = this.transport.subscribe(bytes => {
         if (bytes[0] !== 0xf0 || bytes[1] !== 0x7d || bytes[2] !== 0x10) return;
@@ -294,6 +306,10 @@ export class PhysicalSynthClient {
             const p=frame.payload;if(p.length!==25||p[0]!==17||p[1]>1||p[2]>2||p[3]>1||p[16]>1||p[17]>1||p[18]>1)throw Error('Invalid controller state.');const numbers=Array.from({length:4},(_,i)=>decodeU21(p.slice(4+i*3,7+i*3)));if(numbers.some(v=>v>4095))throw Error('Invalid pedal ADC state.');const expression=decodeU21(p.slice(19,22)),modulation=decodeU21(p.slice(22,25));if(expression>65535||modulation>65534)throw Error('Invalid controller values.');finish(undefined,{play:!!p[1],pedal:p[2],invert:!!p[3],minimum:numbers[0],maximum:numbers[1],tip:numbers[2],ring:numbers[3],valid:!!p[16],sustain:!!p[17],armed:!!p[18],expression:expression/65535,modulation:(modulation-32767)/32767} as T);
           } else if(operation>=53&&operation<=55&&frame.message===0x41){
             const p=frame.payload;if(p.length!==199||p[0]!==17)throw Error('Invalid controller routes.');const values=Array.from({length:66},(_,i)=>decodeU21(p.slice(1+i*3,4+i*3))-65536);if(values.some((v,i)=>v< -65536||v>65536||[8,21,27,31].includes(Math.floor(i/2))&&v!==0))throw Error('Invalid controller routes.');this.controllerRoutes=values;finish(undefined,values as T);
+          } else if(operation===69&&frame.message===0x4a){
+            const p=frame.payload;if(p.length!==257||p[0]!==17)throw Error('Invalid sampler settings reply.');const bytes=Uint8Array.from({length:128},(_,i)=>{if(p[1+i*2]>1)throw Error('Invalid sampler settings byte.');return p[1+i*2]*128+p[2+i*2];});finish(undefined,bytes as T);
+          } else if(operation>=65&&operation<=68&&frame.message===0x49){
+            const p=frame.payload;if(p.length!==6||p[0]!==17||p[1]>15)throw Error('Invalid sampler transfer acknowledgement.');finish(undefined,p.slice(1).reduce((n,b)=>n*128+b,0) as T);
           } else if(operation===64&&frame.message===0x48){
             finish(undefined,decodeSamplerLibrary(frame.payload,decodeU14(data.slice(0,2))) as T);
           } else if(operation===63&&frame.message===0x47){

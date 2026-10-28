@@ -46,4 +46,8 @@ The [curriculum](curriculum.md) separates included courses from planned content.
 refactors for review. [Preset-sync extensions](preset-sync-proposals.md) contain
 unimplemented protocol designs. Neither is a supported product contract.
 
+[Compact sampler](compact-sampler-plan.md) assesses an RP2040 sample instrument
+engine, reuse from Advanced, browser conversion, and memory/timing gates. It is
+a proposal, not supported sampler behavior.
+
 Repository contribution and verification rules live in [AGENTS.md](../AGENTS.md).

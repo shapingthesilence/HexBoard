@@ -3,9 +3,9 @@ import { defaultConfig, type LabConfig } from "./model.ts";
 import { RAM_EDIT_DELAY_MS, RamSettingsSync, ramUpdates } from "./ramSync.ts";
 
 function configuration(): LabConfig {
-  return { ...defaultConfig(), capabilities: ["curve_xy", "pressure_ends", "pressure_curve", "engines"],
-    curves: { on: [40000, 27000, 14000, 1800].map((us, i) => ({ us, velocity: 1 + 42 * i })),
-      off: [40000, 27000, 14000, 1800].map((us, i) => ({ us, velocity: 1 + 42 * i })) } };
+  return { ...defaultConfig(), capabilities: ["curve_speed", "pressure_ends", "pressure_curve", "engines"],
+    curves: { on: [10000, 50000, 200000, 1000000].map((speed, i) => ({ speed, velocity: 1 + 42 * i })),
+      off: [10000, 50000, 200000, 1000000].map((speed, i) => ({ speed, velocity: 1 + 42 * i })) } };
 }
 function harness(send = vi.fn(async (_command: string) => {})) {
   const acknowledged: LabConfig[] = [], statuses: string[] = [];
@@ -94,12 +94,12 @@ describe("automatic calibration RAM updates", () => {
     h.sync.update({ ...h.initial, pressureCurve: [60000, 32768, 49151] });
     expect(h.sync.pendingUpdates()).toEqual([]);
   });
-  it("enables an edited timing curve without changing a disabled curve merely on connect", () => {
+  it("enables an edited speed curve without changing a disabled curve merely on connect", () => {
     const initial = configuration();
     expect(ramUpdates(initial, initial)).toEqual([]);
     const changed = { ...initial, customCurves: { ...initial.customCurves, off: true } };
     const updates = ramUpdates(changed, initial);
-    expect(updates).toHaveLength(1); expect(updates[0].command).toMatch(/^velocity curve_xy off /);
+    expect(updates).toHaveLength(1); expect(updates[0].command).toMatch(/^velocity curve_speed_xy off /);
   });
 });
 

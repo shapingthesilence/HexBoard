@@ -1,68 +1,1829 @@
-import {useEffect,useRef,useState} from 'react';
-import type {MidiTransport} from '../../midi/types.ts';
-import {PhysicalSynthClient,type SamplerLoadingState,type SamplerInstrument} from './client.ts';
-import {samplerLoadingLabel} from './sampler/loading.ts';
-import {waveformPath} from './sampleEditing.ts';
-import type {Patch,Recording,Prepared,Settings,Zone} from './sampler/prepare.mjs';
-import './SamplerEditor.css';
-import {SamplerKeyPreview} from './SamplerKeyPreview.tsx';
-import {assignSequentially,mappedZones,removeRecording,sliceRecording,type KeyMap} from './sampler/mapping.ts';
-type Sample=Recording&{confidence?:number};
-function zonesFor(assets:Sample[],template:string,map:KeyMap):Zone[]{
- if(template!=='instrument')return mappedZones(map,assets.length);
- const sorted=assets.map((a,i)=>({root:a.rootMidi,index:i})).sort((a,b)=>a.root-b.root);
- return sorted.map((a,i)=>({asset:a.index,lowMidi:i?(sorted[i-1].root+a.root)/2:0,highMidi:i+1<sorted.length?(a.root+sorted[i+1].root)/2-.0001:127}));
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
+import type { BasicSoundBank } from "spessasynth_core";
+import type { MidiTransport } from "../../midi/types.ts";
+import {
+  PhysicalSynthClient,
+  type SamplerLoadingState,
+  type SamplerInstrument,
+} from "./client.ts";
+import { samplerLoadingLabel } from "./sampler/loading.ts";
+import { waveformPath } from "./sampleEditing.ts";
+import type {
+  Patch,
+  Recording,
+  Prepared,
+  Settings,
+  Zone,
+} from "./sampler/prepare.mjs";
+import { crc32 } from "./sampler/prepare.mjs";
+import { defaults, defaultPerformance } from "./sampler/encode.mjs";
+import {
+  openSoundFont,
+  convertSoundFont,
+  importSFZ,
+  normalizePath,
+  noteName,
+  type PresetChoice,
+  type ImportedPatch,
+} from "./sampler/import.mjs";
+import { readBank } from "./sampler/bank.mjs";
+import { PatchPreview } from "./sampler/preview.ts";
+import { SourceAudition } from "./sampler/sourceAudition.ts";
+import { ArpeggiatorEditor } from "./ArpeggiatorEditor.tsx";
+import { Knob } from "./SynthControls.tsx";
+import { SamplerKeyPreview } from "./SamplerKeyPreview.tsx";
+import {
+  assignSequentially,
+  mappedZones,
+  sliceRecording,
+  type KeyMap,
+} from "./sampler/mapping.ts";
+import "./PhysicalSynthEditor.css";
+import "./SamplerEditor.css";
+const empty = (): Patch => ({
+  name: "New instrument",
+  assets: [],
+  zones: [],
+  settings: { ...defaults },
+  velocityEngine: 0,
+  performance: defaultPerformance(),
+});
+function automatic(assets: Recording[]): Zone[] {
+  const sorted = assets
+    .map((a, asset) => ({ asset, root: a.rootMidi }))
+    .sort((a, b) => a.root - b.root);
+  return sorted.map((a, i) => ({
+    asset: a.asset,
+    lowMidi: i ? (sorted[i - 1].root + a.root) / 2 : -0.5,
+    highMidi: i + 1 < sorted.length ? (a.root + sorted[i + 1].root) / 2 : 127.5,
+  }));
 }
-export function samplerFilename(name:string){const base=name.trim().replace(/[^\x20-\x7e]|[\\/:*?"<>|]/g,'_').replace(/^\.+/,'').slice(0,60).replace(/[. ]+$/,'');return `${base||'Instrument'}.hbs`;}
-export function SamplerEditor({transport}:{transport?:MidiTransport}){
- const [assets,setAssets]=useState<Sample[]>([]),[name,setName]=useState('New instrument'),[template,setTemplate]=useState('instrument'),[selected,setSelected]=useState(0),[busy,setBusy]=useState(''),[error,setError]=useState(''),[prepared,setPrepared]=useState<Prepared>(),[playing,setPlaying]=useState(false),[note,setNote]=useState(60),[settings,setSettings]=useState<Settings>({attack:5,release:300,cutoff:18000,pressure:.5,space:0}),[history,setHistory]=useState<{assets:Sample[];map:KeyMap}[]>([]),[map,setMap]=useState<KeyMap>({}),[selectedKey,setSelectedKey]=useState(0),[sliceCount,setSliceCount]=useState(16);
- const [sdSource,setSdSource]=useState(0);
- const [instruments,setInstruments]=useState<SamplerInstrument[]>([]);
- const [folders,setFolders]=useState<SamplerInstrument[]>([]),[folder,setFolder]=useState(0);
- const [loading,setLoading]=useState<SamplerLoadingState>();
- const worker=useRef<Worker|undefined>(undefined),audio=useRef<AudioContext|undefined>(undefined),client=useRef<PhysicalSynthClient|undefined>(undefined);
- useEffect(()=>{client.current=transport?new PhysicalSynthClient(transport):undefined;return()=>{client.current?.close();worker.current?.terminate();void audio.current?.close();};},[transport]);
- useEffect(()=>{let disposed=false;setInstruments([]);setFolders([]);void client.current?.samplerLibrary(false,32).then(async value=>{if(disposed)return;setFolders(value);const first=value[0]?.id??0;setFolder(first);try{const items=await client.current?.samplerLibrary(false,first);if(!disposed&&items)setInstruments(items);}catch{/* Explicit refresh reads an uncached folder while stopped. */}}).catch(()=>{});return()=>{disposed=true;};},[transport]);
- async function refreshInstruments(){if(!client.current)return;setBusy('Reading SD instruments…');setError('');try{setPlaying(false);const choices=await client.current.samplerLibrary(true,32);setFolders(choices);const target=choices.some(item=>item.id===folder)?folder:choices[0]?.id??0;setFolder(target);setInstruments(await client.current.samplerLibrary(true,target));}catch(e){setError(String(e));}finally{setBusy('');}}
- useEffect(()=>{
-  if(!playing){setLoading(undefined);return;}
-  let disposed=false,inFlight=false;
-  const read=async()=>{if(inFlight||!client.current)return;inFlight=true;try{const progress=await client.current.samplerLoading();if(!disposed)setLoading(progress);}catch(e){if(!disposed)setError(String(e));}finally{inFlight=false;}};
-  void read();const timer=setInterval(()=>void read(),400);return()=>{disposed=true;clearInterval(timer);};
- },[playing,transport]);
- const run=<T,>(request:unknown):Promise<T>=>new Promise((resolve,reject)=>{worker.current?.terminate();const w=new Worker(new URL('./sampler/prepare.worker.ts',import.meta.url),{type:'module'});worker.current=w;w.onmessage=e=>{if(e.data.progress){setBusy(e.data.progress.label);return;}w.terminate();worker.current=undefined;if(e.data.error)reject(Error(e.data.error));else resolve(e.data.result as T);};w.onerror=e=>{w.terminate();worker.current=undefined;reject(Error(e.message));};w.postMessage(request);});
- const change=(next:Sample[],nextMap=map)=>{setHistory(h=>[...h.slice(-15),{assets,map}]);setAssets(next);setMap(nextMap);setPrepared(undefined);};
- const editMap=(next:KeyMap)=>change(assets,next);
- function makeSlices(){if(!assets[selected])return;try{const slices=sliceRecording(assets[selected],sliceCount);change(slices,assignSequentially(slices.length));setSelected(0);setSelectedKey(0);}catch(e){setError(String(e));}}
- async function importFiles(files:FileList|null){if(!files?.length)return;setBusy('Reading recordings…');setError('');try{const input=await Promise.all(Array.from(files).map(async file=>({name:file.name,bytes:await file.arrayBuffer()})));const added=await run<Sample[]>({operation:'import',files:input});const all=[...assets,...added];const nextMap={...map};for(let i=0;i<added.length;i++){const key=Array.from({length:133},(_,k)=>k).find(k=>!nextMap[k]);if(key!==undefined)nextMap[key]={asset:assets.length+i,color:['#bb668e','#658eda','#dfad57','#63b899'][i%4]};}change(all,nextMap);setSelected(assets.length);}catch(e){setError(String(e));}finally{setBusy('');}}
- function patch():Patch{return {name,assets,zones:zonesFor(assets,template,map),settings};}
- async function prepare(){setBusy('Preparing recordings…');const result=await run<Prepared>({operation:'prepare',patch:patch()});setPrepared(result);return result;}
- async function save(send:boolean){setError('');try{const result=prepared??await prepare();if(send){if(result.residentBytes>5.5*1048576)throw Error(`This sound needs ${(result.residentBytes/1048576).toFixed(2)} MiB. Trim recordings to fit the current 5.5 MiB sample budget.`);if(!client.current)throw Error('Connect Advanced first.');setBusy('Sending samples to SD card…');await client.current.stopAndWait();setPlaying(false);setSdSource(0);await client.current.uploadSampler(result.bytes,(done,total)=>setBusy(`Sending samples to SD · ${Math.round(done/total*100)}%`));}else{const blob=new Blob([result.bytes.slice().buffer],{type:'application/octet-stream'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=samplerFilename(name);link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}}catch(e){setError(String(e));}finally{setBusy('');}}
- async function preview(midi=note,index=selected){const a=assets[index];if(!a)return;setBusy('Preparing audition…');setError('');try{const channels=await run<Float32Array[]>({operation:'preview',asset:a,midi});audio.current??=new AudioContext();await audio.current.resume();const ctx=audio.current,buffer=ctx.createBuffer(channels.length,channels[0].length,44100);channels.forEach((c,i)=>buffer.copyToChannel(new Float32Array(c),i));const source=ctx.createBufferSource(),gain=ctx.createGain();source.buffer=buffer;gain.gain.value=.2;source.connect(gain).connect(ctx.destination);source.start();}catch(e){setError(String(e));}finally{setBusy('');}}
- async function openFolder(value:number){if(!client.current)return;setFolder(value);setInstruments([]);if(sdSource>=2)setSdSource(0);setBusy("Reading folder…");setError("");try{setPlaying(false);setInstruments(await client.current.samplerLibrary(true,value));}catch(e){setError(String(e));}finally{setBusy("");}}
- async function chooseInstrument(value:number){
-  setSdSource(value);if(value===1)setSettings({attack:3,release:600,cutoff:18000,pressure:.15,space:0});
-  if(!playing||!client.current)return;
-  setBusy('Loading instrument…');setLoading(undefined);setError('');
-  try{await client.current.samplerInstrument(value);await client.current.start(6);setPlaying(true);}
-  catch(e){setPlaying(false);setError(String(e));}finally{setBusy('');}
- }
- async function toggle(){setError('');try{if(!client.current)return;setBusy(playing?'Stopping…':'Loading sampler from SD…');if(playing)await client.current.stopAndWait();else {await client.current.samplerInstrument(sdSource);await client.current.start(6);}setPlaying(!playing);}catch(e){setError(String(e));}finally{setBusy('');}}
- const sample=assets[selected],assignment=map[selectedKey];
- return <section className="sampler-editor" aria-label="Sampler editor" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();if(!busy)void importFiles(e.dataTransfer.files);}}>
- <header><div><p className="sampler-eyebrow">ADVANCED · SAMPLER</p><h2>Turn a recording into an instrument.</h2><p>Drop a WAV, shape the sound, and play. Pitch protection is prepared automatically.</p></div><button disabled={!transport||!!busy} onClick={()=>void toggle()}>{playing?'Stop synth':'Start synth'}</button></header>
- {playing&&<p role="status" aria-live="polite">{samplerLoadingLabel(loading)}</p>}
- <div className="sampler-actions"><label>SD folder<select value={folder} disabled={!!busy} onChange={e=>void openFolder(Number(e.target.value))}>{!folders.length&&<option value={0}>Refresh to read folders</option>}{folders.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Sound on SD<select value={sdSource} disabled={!!busy} onChange={e=>void chooseInstrument(Number(e.target.value))}><option value={0}>Saved sampler patch</option><option value={1}>KW upright · compact</option>{instruments.map(instrument=><option key={instrument.id} value={instrument.id}>{instrument.name}</option>)}</select></label><button disabled={!transport||!!busy} onClick={()=>void refreshInstruments()}>Refresh SD instruments</button>{sdSource===1&&<p className="sampler-hint">Uses the piano on your card: seven mono roots per layer, two velocity layers, 5.38 MiB. Play while loading with four notes; all 16 become available when loading finishes. Microtonal pitch and ±2-semitone bends remain continuous.</p>}</div>
- <div className="sampler-actions"><label>Patch name<input value={name} maxLength={32} onChange={e=>{setName(e.target.value);setPrepared(undefined);}}/></label><label>Start with<select value={template} disabled={!!busy} onChange={e=>{setTemplate(e.target.value);setPrepared(undefined);}}><option value="instrument">Instrument</option><option value="kit">Kit</option><option value="slices">Slices</option></select></label><label className="sampler-import">Add recordings<input type="file" accept=".wav,audio/wav" multiple disabled={!!busy} onChange={e=>void importFiles(e.target.files)}/></label><button disabled={!history.length||!!busy} onClick={()=>{setAssets(history.at(-1)!.assets);setMap(history.at(-1)!.map);setHistory(h=>h.slice(0,-1));setPrepared(undefined);setSelected(0);}}>Undo</button></div>
- <div className="sampler-workspace"><aside aria-label="Recordings">{assets.map((a,i)=><button key={i} draggable={!busy} onDragStart={e=>{e.dataTransfer.setData("application/x-hexboard-sampler-recording",String(i));setSelected(i);}} aria-pressed={i===selected} onClick={()=>setSelected(i)}><strong>{a.name}</strong><span>{a.channels[0].length/a.rate<.1?`${Math.round(a.channels[0].length/a.rate*1000)} ms`:`${(a.channels[0].length/a.rate).toFixed(1)} s`} · {a.channels.length===2?'Stereo':'Mono'}</span></button>)}{!assets.length&&<p>Add one recording for a playable instrument, or a folder of sounds for a kit.</p>}</aside><div>
- {sample?<><svg className="sampler-wave" viewBox="0 0 560 100" role="img" aria-label={`Waveform of ${sample.name}`}><path d={waveformPath(sample.channels[0])}/></svg><div className="sampler-actions"><label>Root note<input disabled={!!busy} type="number" min={0} max={127} step={.01} value={sample.rootMidi} onChange={e=>change(assets.map((a,i)=>i===selected?{...a,rootMidi:+e.target.value}:a))}/></label><label>Playback<select disabled={!!busy} value={sample.mode} onChange={e=>change(assets.map((a,i)=>i===selected?{...a,mode:+e.target.value as 0|1|2}:a))}><option value={0}>Hold to play</option><option value={1}>Loop while held</option><option value={2}>One shot</option></select></label><button disabled={!!busy} onClick={()=>void preview()}>Audition</button><label>Audition note<input type="number" min={0} max={127} value={note} onChange={e=>setNote(+e.target.value)}/></label><button disabled={!!busy} onClick={()=>{change(assets.filter((_,i)=>i!==selected),removeRecording(map,selected));setSelected(0);}}>Remove</button></div><p className="sampler-hint">Root suggestions are a starting point. Adjust by ear; pitch protection follows playback speed automatically.</p></>:<div className="sampler-empty">A small sound can become something big.</div>}
- <div className="sampler-keys" aria-label="Audition notes">{Array.from({length:24},(_,i)=>48+i).map(midi=><button key={midi} disabled={!sample||!!busy} onClick={()=>{setNote(midi);void preview(midi);}}>{['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'][midi%12]}{Math.floor(midi/12)-1}</button>)}</div>
- </div></div>
- {template!=='instrument'&&<section className="sampler-mapping" aria-label={`${template==='slices'?'Slice':'Kit'} key mapping`}><div><h3>{template==='slices'?'Make slices, then make them yours.':'Put each sound under your fingers.'}</h3><p>Drag a recording to a key, or click a key to edit its sound and color. Numbers match the recording list.</p>
- {template==='slices'&&<div className="sampler-actions"><label>Equal slices<input type="number" min={2} max={64} value={sliceCount} disabled={!!busy} onChange={e=>setSliceCount(+e.target.value)}/></label><button disabled={!sample||!!busy} onClick={makeSlices}>Slice selected recording</button><p className="sampler-hint">Creates one-shot slices from the selected recording. Undo restores the original.</p></div>}
- <fieldset disabled={!!busy}><legend>Key {selectedKey+1}</legend><label>Sample<select value={assignment?.asset??''} onChange={e=>{const next={...map};if(e.target.value==='')delete next[selectedKey];else next[selectedKey]={asset:+e.target.value,color:assignment?.color??'#658eda'};editMap(next);}}><option value="">Unassigned</option>{assets.map((a,i)=><option key={i} value={i}>{i+1}. {a.name}</option>)}</select></label><label>Key color<input type="color" value={assignment?.color??'#658eda'} disabled={!assignment} onInput={e=>assignment&&editMap({...map,[selectedKey]:{...assignment,color:e.currentTarget.value}})}/></label><div className="sampler-actions"><button disabled={!sample} onClick={()=>editMap({...map,[selectedKey]:{asset:selected,color:assignment?.color??'#658eda'}})}>Assign selected recording</button><button disabled={!assignment} onClick={()=>{const next={...map};delete next[selectedKey];editMap(next);}}>Clear key</button><button disabled={!assignment} onClick={()=>{setSelected(assignment.asset);void preview(assets[assignment.asset].rootMidi,assignment.asset);}}>Audition key</button></div></fieldset><button disabled={!assets.length||!!busy} onClick={()=>editMap(assignSequentially(assets.length))}>Map recordings in order</button><p className="sampler-hint">Assignments belong to this sound. Tuning and layout stay independent.</p></div><SamplerKeyPreview map={map} names={assets.map(a=>a.name??'Recording')} selected={selectedKey} disabled={!!busy} onAssign={(key,asset)=>{setSelectedKey(key);editMap({...map,[key]:{asset,color:map[key]?.color??'#658eda'}});}} onSelect={key=>{setSelectedKey(key);if(map[key])setSelected(map[key].asset);}}/></section>}
- <fieldset disabled={!!busy}><legend>Quick shape</legend><div className="sampler-controls">{([{key:'attack',label:'Attack',min:1,max:2000,unit:'ms'},{key:'release',label:'Release',min:5,max:5000,unit:'ms'},{key:'cutoff',label:'Tone',min:100,max:19000,unit:'Hz'},{key:'pressure',label:'Expression',min:0,max:1,step:.01,unit:''}] as const).map(control=><label key={control.key}>{control.label}<input type="range" min={control.min} max={control.max} step={'step'in control?control.step:1} value={settings[control.key]} onChange={e=>{const value=+e.target.value;setSettings(s=>({...s,[control.key]:value}));setPrepared(undefined);if(playing&&client.current){const id={attack:0,release:3,cutoff:4,pressure:6}[control.key];void client.current.samplerParameter(id,control.key==='pressure'?Math.round(value*65535):value).catch(e=>setError(String(e)));}}}/><output>{settings[control.key]} {control.unit}</output></label>)}</div></fieldset>
- <footer><p>{prepared?`${(prepared.bytes.length/1048576).toFixed(2)} MiB prepared · ${prepared.assets.length} recordings · automatic pitch protection`:'Prepared copies preserve your recordings and handle playback over the note range.'}</p><div className="sampler-actions"><button disabled={!assets.length||!!busy} onClick={()=>void save(false)}>Export sound</button><button disabled={!assets.length||!transport||!!busy} onClick={()=>void save(true)}>Save sound to SD</button></div><p className="sampler-hint">Save while stopped, then start the sampler. This first resident engine loads up to 5.5 MiB of prepared PCM. Long-sample streaming and advanced modulation are in development.</p></footer>
- {busy&&<p role="status">{busy}</p>}{error&&<p role="alert">{error}</p>}
- </section>;
+export function samplerFilename(name: string) {
+  const base = name
+    .trim()
+    .replace(/[^\x20-\x7e]|[\\/:*?"<>|]/g, "_")
+    .replace(/^\.+/, "")
+    .slice(0, 60)
+    .replace(/[. ]+$/, "");
+  return `${base || "Instrument"}.hbs`;
+}
+const bytes = (n: number) =>
+  n >= 1048576
+    ? `${(n / 1048576).toFixed(1)} MiB`
+    : `${Math.round(n / 1024)} KiB`;
+export function SamplerEditor({ transport }: { transport?: MidiTransport }) {
+  const [patch, setPatch] = useState<Patch>(empty),
+    [template, setTemplate] = useState("instrument"),
+    [selected, setSelected] = useState(0),
+    [zoneIndex, setZoneIndex] = useState(0),
+    [selectedKey, setSelectedKey] = useState(0),
+    [slices, setSlices] = useState(16),
+    [history, setHistory] = useState<Patch[]>([]),
+    [redo, setRedo] = useState<Patch[]>([]),
+    [busy, setBusy] = useState(""),
+    [error, setError] = useState(""),
+    [prepared, setPrepared] = useState<Prepared>(),
+    [report, setReport] = useState<string[]>([]),
+    [velocity, setVelocity] = useState(100),
+    [lift, setLift] = useState(64),
+    [pressure, setPressure] = useState(1),
+    [bend, setBend] = useState(0),
+    [octave, setOctave] = useState(4),
+    [arpOpen, setArpOpen] = useState(false),
+    [library, setLibrary] = useState<ImportedPatch[]>([]),
+    [search, setSearch] = useState("");
+  const [bank, setBank] = useState<{
+      source?: BasicSoundBank;
+      presets: PresetChoice[];
+      selected: number[];
+      sfz?: Map<string, File>;
+      paths?: string[];
+    }>(),
+    [chooserSearch, setChooserSearch] = useState(""),
+    [auditionChoice, setAuditionChoice] = useState(0),
+    [adaptation, setAdaptation] = useState<"faithful" | "compact">("faithful"),
+    [sourceNote, setSourceNote] = useState(60),
+    [exportFolder, setExportFolder] = useState("My instruments"),
+    [deviceSpace, setDeviceSpace] = useState(0),
+    [deviceSettings, setDeviceSettings] = useState(false),
+    [loadedSource, setLoadedSource] = useState(-1);
+  const [folders, setFolders] = useState<SamplerInstrument[]>([]),
+    [instruments, setInstruments] = useState<SamplerInstrument[]>([]),
+    [folder, setFolder] = useState(0),
+    [sdSource, setSdSource] = useState(0),
+    [playing, setPlaying] = useState(false),
+    [loading, setLoading] = useState<SamplerLoadingState>();
+  const gesture = useRef(false);
+  const effectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+      undefined,
+    ),
+    lastSpace = useRef(0.18),
+    lastDeviceSpace = useRef(0.18);
+  const patchRef = useRef(patch);
+  patchRef.current = patch;
+  const client = useRef<PhysicalSynthClient | undefined>(undefined),
+    preview = useRef<PatchPreview | undefined>(undefined),
+    source = useRef<SourceAudition | undefined>(undefined),
+    worker = useRef<Worker | undefined>(undefined);
+  preview.current ??= new PatchPreview();
+  source.current ??= new SourceAudition();
+  useEffect(() => {
+    preview.current!.setPatch(patch);
+  }, [patch]);
+  useEffect(() => {
+    preview.current!.expression(pressure, bend);
+  }, [pressure, bend]);
+  useEffect(() => {
+    client.current = transport ? new PhysicalSynthClient(transport) : undefined;
+    return () => client.current?.close();
+  }, [transport]);
+  useEffect(
+    () => () => {
+      preview.current?.close();
+      source.current?.close();
+      worker.current?.terminate();
+      if (effectTimer.current) clearTimeout(effectTimer.current);
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!playing) return;
+    let alive = true,
+      inFlight = false;
+    const read = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const p = await client.current?.samplerLoading();
+        if (alive) setLoading(p);
+      } catch (e) {
+        if (alive) setError(String(e));
+      } finally {
+        inFlight = false;
+      }
+    };
+    void read();
+    const t = setInterval(() => void read(), 400);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [playing]);
+  const edit = (next: Patch, remember = true) => {
+    if (remember) {
+      setHistory((h) => [...h.slice(-39), patchRef.current]);
+      setRedo([]);
+    }
+    setPatch({ ...next, preparedSource: undefined });
+    setPrepared(undefined);
+  };
+  const undo = () => {
+    if (!history.length) return;
+    preview.current!.clear();
+    setRedo((r) => [...r, patch]);
+    setPatch(history.at(-1)!);
+    setHistory((h) => h.slice(0, -1));
+    setPrepared(undefined);
+  };
+  const restore = (p: ImportedPatch) => {
+    preview.current!.clear();
+    edit(p);
+    setReport(p.report ?? []);
+    setSelected(0);
+    setZoneIndex(0);
+    setTemplate(
+      p.zones?.some((z) => z.key !== undefined && z.key !== 65535)
+        ? "kit"
+        : "instrument",
+    );
+  };
+  const zones = patch.zones ?? [],
+    sample = patch.assets[selected],
+    zone =
+      zones[zoneIndex]?.asset === selected
+        ? zones[zoneIndex]
+        : zones.find((z) => z.asset === selected),
+    map = useMemo<KeyMap>(
+      () =>
+        Object.fromEntries(
+          zones
+            .filter((z) => z.key !== undefined && z.key !== 65535)
+            .map((z) => [
+              z.key!,
+              { asset: z.asset, color: z.color ?? "#658eda" },
+            ]),
+        ),
+      [zones],
+    );
+  const wave = useMemo(
+    () => (sample ? waveformPath(sample.channels[0]) : ""),
+    [sample?.channels[0]],
+  );
+  const changeSample = (change: Partial<Recording>) => {
+    if (!sample) return;
+    edit({
+      ...patch,
+      assets: patch.assets.map((a, i) =>
+        i === selected ? { ...a, ...change } : a,
+      ),
+    });
+  };
+  const changeZone = (change: Partial<Zone>) => {
+    const index = zone ? zones.indexOf(zone) : -1;
+    if (index >= 0)
+      edit({
+        ...patch,
+        zones: zones.map((z, i) => (i === index ? { ...z, ...change } : z)),
+      });
+  };
+  const waveEdit = (i: number, value: number) => {
+    if (!sample) return;
+    const n = Math.round(value),
+      start = sample.start ?? 0,
+      end = sample.end ?? sample.channels[0].length,
+      ls = sample.loopStart ?? start,
+      le = sample.loopEnd ?? end;
+    let change: Partial<Recording> = {};
+    if (i === 0) {
+      const v = Math.max(0, Math.min(end - 4, n));
+      change = { start: v, loopStart: Math.max(ls, v) };
+    } else if (i === 1) {
+      const v = Math.max(start + 4, Math.min(sample.channels[0].length, n));
+      change = { end: v, loopEnd: Math.min(le, v) };
+    } else if (i === 2)
+      change = { loopStart: Math.max(start, Math.min(le - 1, n)) };
+    else change = { loopEnd: Math.max(ls + 1, Math.min(end, n)) };
+    edit(
+      {
+        ...patch,
+        assets: patch.assets.map((a, j) =>
+          j === selected ? { ...a, ...change } : a,
+        ),
+      },
+      false,
+    );
+  };
+  const editMap = (next: KeyMap) =>
+    edit({ ...patch, zones: mappedZones(next, patch.assets.length) });
+  const global = (key: keyof Settings, value: number) => {
+    if (!gesture.current) {
+      setHistory((h) => [...h.slice(-39), patchRef.current]);
+      setRedo([]);
+      gesture.current = true;
+    }
+    let nextZones = zones;
+    const override = (
+      {
+        attack: "attack",
+        decay: "decay",
+        sustain: "sustain",
+        release: "release",
+      } as Partial<Record<keyof Settings, keyof Zone>>
+    )[key];
+    if (override) nextZones = zones.map((z) => ({ ...z, [override]: value }));
+    edit(
+      {
+        ...patch,
+        zones: nextZones,
+        settings: { ...patch.settings, [key]: value },
+      },
+      false,
+    );
+  };
+  const run = <T,>(request: unknown) =>
+    new Promise<T>((resolve, reject) => {
+      const w = new Worker(
+        new URL("./sampler/prepare.worker.ts", import.meta.url),
+        { type: "module" },
+      );
+      worker.current = w;
+      w.onmessage = (e) => {
+        if (e.data.progress) {
+          setBusy(e.data.progress.label);
+          return;
+        }
+        w.terminate();
+        worker.current = undefined;
+        e.data.error ? reject(Error(e.data.error)) : resolve(e.data.result);
+      };
+      w.onerror = (e) => {
+        w.terminate();
+        worker.current = undefined;
+        reject(Error(e.message));
+      };
+      w.postMessage(request);
+    });
+  async function importFiles(files: FileList | File[] | null) {
+    if (!files?.length) return;
+    setError("");
+    setBusy("Reading instrument…");
+    try {
+      const all = Array.from(files),
+        soundfont = all.find((f) => /\.sf[23]$/i.test(f.name)),
+        sfzs = all.filter((f) => /\.sfz$/i.test(f.name));
+      if (soundfont) {
+        const data = await soundfont.arrayBuffer(),
+          opened = await openSoundFont(data);
+        await source.current!.load(data);
+        setBank({ source: opened.bank, presets: opened.presets, selected: [] });
+        setAuditionChoice(0);
+        setChooserSearch("");
+        return;
+      }
+      if (sfzs.length) {
+        const paths = new Map<string, File>();
+        for (const f of all) {
+          const path = normalizePath(
+            f.webkitRelativePath || f.name,
+          ).toLowerCase();
+          if (paths.has(path))
+            throw Error(`Ambiguous imported filename: ${path}`);
+          paths.set(path, f);
+        }
+        const names = sfzs.map((f) =>
+          normalizePath(f.webkitRelativePath || f.name),
+        );
+        setBank({
+          source: undefined,
+          presets: names.map((path, id) => ({
+            id,
+            name: path.split("/").at(-1)!,
+            bank: 0,
+            program: id,
+            drums: false,
+          })),
+          selected: [],
+          sfz: paths,
+          paths: names,
+        });
+        setChooserSearch("");
+        return;
+      }
+      const hbs = all.find((f) => /\.hbs$/i.test(f.name));
+      if (hbs) {
+        restore({
+          ...readBank(new Uint8Array(await hbs.arrayBuffer())),
+          report: [
+            "Opened prepared audio. Editing and exporting prepares a new device instrument.",
+          ],
+        });
+        return;
+      }
+      const wavs = all.filter((f) => /\.wav$/i.test(f.name));
+      if (!wavs.length)
+        throw Error("Choose SF2, SF3, an SFZ folder, HBS, or WAV recordings.");
+      const recordings = await run<Recording[]>({
+          operation: "import",
+          files: await Promise.all(
+            wavs.map(async (f) => ({
+              name: f.name,
+              bytes: await f.arrayBuffer(),
+            })),
+          ),
+        }),
+        assets = [...patch.assets, ...recordings];
+      edit({
+        ...patch,
+        assets,
+        zones:
+          template === "instrument"
+            ? automatic(assets)
+            : mappedZones(assignSequentially(assets.length), assets.length),
+      });
+      setSelected(patch.assets.length);
+      setReport([]);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy("");
+    }
+  }
+  async function importChosen() {
+    if (!bank?.selected.length) return;
+    setBusy("Converting selected presets…");
+    setError("");
+    try {
+      const converted: ImportedPatch[] = [];
+      for (const id of bank.selected) {
+        setBusy(`Importing ${bank.presets[id].name}…`);
+        converted.push(
+          bank.sfz
+            ? await importSFZ(bank.paths![id], bank.sfz, (p) =>
+                setBusy(p.label),
+              )
+            : await convertSoundFont(
+                bank.source!,
+                id,
+                (p) => setBusy(p.label),
+                {
+                  adaptation,
+                },
+              ),
+        );
+      }
+      setLibrary((l) => [...l, ...converted]);
+      restore(converted[0]);
+      source.current!.off();
+      setBank(undefined);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy("");
+    }
+  }
+  async function exportPatch(usb = false) {
+    if (!patch.assets.length) return;
+    setBusy("Preparing pitch protection…");
+    setError("");
+    try {
+      const result =
+        prepared ?? (await run<Prepared>({ operation: "prepare", patch }));
+      setPrepared(result);
+      setReport((r) => [...new Set([...r, ...result.warnings])]);
+      if (usb) {
+        if (result.bytes.length > 8 * 1048576)
+          throw Error(
+            "Export this instrument and copy it to sampler/instruments on the SD card. USB is intended for files under 8 MiB.",
+          );
+        if (!client.current) throw Error("Connect HexBoard first.");
+        const targetName = samplerFilename(patch.name ?? "Instrument");
+        const folderList = await client.current.samplerLibrary(true, 32),
+          existingFolder = folderList.find((f) => f.name === exportFolder);
+        const entries = existingFolder
+          ? await client.current.samplerLibrary(true, existingFolder.id)
+          : [];
+        if (!existingFolder && folderList.length >= 32)
+          throw Error(
+            "The card already has 32 instrument folders. Choose an existing USB folder or copy directly to SD.",
+          );
+        if (entries.some((item) => item.name === targetName.slice(0, -4)))
+          throw Error(
+            "An instrument with this name already exists in that folder. Choose a new name.",
+          );
+        if (entries.length >= 32)
+          throw Error(
+            "This folder already shows 32 instruments. Choose a new USB folder so the instrument stays visible in the menu.",
+          );
+        await client.current.uploadSamplerNamed(
+          result.bytes,
+          exportFolder,
+          targetName,
+          (n, total) =>
+            setBusy(`Copying to SD · ${Math.round((n / total) * 100)}%`),
+        );
+        setPlaying(false);
+        const refreshed = await client.current.samplerLibrary(true, 32);
+        setFolders(refreshed);
+        const target = refreshed.find((f) => f.name === exportFolder);
+        if (target) {
+          const list = await client.current.samplerLibrary(true, target.id);
+          setFolder(target.id);
+          setInstruments(list);
+          const item = list.find((i) => i.name === targetName.slice(0, -4));
+          if (item) setSdSource(item.id);
+        }
+      } else
+        download(result.bytes, samplerFilename(patch.name ?? "Instrument"));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy("");
+    }
+  }
+  function download(data: Uint8Array, name: string) {
+    const url = URL.createObjectURL(new Blob([data.slice().buffer]));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  async function refresh() {
+    setBusy("Reading SD library…");
+    try {
+      const f = await client.current!.samplerLibrary(true, 32);
+      setFolders(f);
+      const id = f.some((x) => x.id === folder) ? folder : (f[0]?.id ?? 0);
+      setFolder(id);
+      setInstruments(await client.current!.samplerLibrary(true, id));
+      setPlaying(false);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy("");
+    }
+  }
+  async function devicePlay(value = sdSource) {
+    if (effectTimer.current) clearTimeout(effectTimer.current);
+    setPlaying(false);
+    setBusy("Loading instrument…");
+    setError("");
+    try {
+      await client.current!.samplerInstrument(value);
+      if (value !== 1) {
+        const header = await client.current!.samplerSettings();
+        const savedSpace =
+          new DataView(header.buffer, header.byteOffset).getUint16(62, true) /
+          65535;
+        setDeviceSpace(savedSpace);
+        lastDeviceSpace.current = savedSpace > 0 ? savedSpace : 0.18;
+        setDeviceSettings(true);
+      } else {
+        setDeviceSpace(0);
+        setDeviceSettings(false);
+      }
+      await client.current!.start(6);
+      setLoadedSource(value);
+      setPlaying(true);
+    } catch (e) {
+      setError(String(e));
+      setPlaying(false);
+    } finally {
+      setBusy("");
+    }
+  }
+  const changeDeviceSpace = (amount: number) => {
+    setDeviceSpace(amount);
+    if (amount > 0) lastDeviceSpace.current = amount;
+    if (effectTimer.current) clearTimeout(effectTimer.current);
+    if (playing && client.current)
+      effectTimer.current = setTimeout(() => {
+        void client.current
+          ?.samplerParameter(12, Math.round(amount * 65535))
+          .catch((e) => setError(String(e)));
+      }, 30);
+  };
+  async function saveDeviceSpace() {
+    if (!client.current || !deviceSettings || loadedSource !== sdSource) return;
+    setBusy("Saving instrument reverb…");
+    setError("");
+    const resume = playing;
+    try {
+      if (effectTimer.current) clearTimeout(effectTimer.current);
+      const header = await client.current.samplerSettings();
+      setPlaying(false);
+      const v = new DataView(
+        header.buffer,
+        header.byteOffset,
+        header.byteLength,
+      );
+      v.setUint16(62, Math.round(deviceSpace * 65535), true);
+      v.setUint32(36, 0, true);
+      v.setUint32(36, crc32(header), true);
+      await client.current.samplerSettings(header);
+      if (resume) {
+        await client.current.start(6);
+        setPlaying(true);
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy("");
+    }
+  }
+  const on = (key: string, note: number, physical?: number) => {
+      void preview
+        .current!.on(key, note, velocity, physical)
+        .catch((e) => setError(String(e)));
+    },
+    off = (key: string) => preview.current!.off(key, lift);
+  const number = (
+    label: string,
+    value: number,
+    onChange: (v: number) => void,
+    min: number,
+    max: number,
+    step = 1,
+  ) => (
+    <label key={label}>
+      {label}
+      <input
+        aria-label={label}
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={Number.isFinite(value) ? Math.round(value * 1000) / 1000 : 0}
+        onChange={(e) => {
+          if (e.target.value !== "")
+            onChange(Math.max(min, Math.min(max, +e.target.value)));
+        }}
+      />
+    </label>
+  );
+  const selectedAssignment = map[selectedKey],
+    settings = { ...defaults, ...patch.settings };
+  return (
+    <section
+      className="physical-editor card sampler-editor"
+      aria-label="Sampler editor"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (!busy && e.dataTransfer.files.length)
+          void importFiles(e.dataTransfer.files);
+      }}
+    >
+      <div className="instrument-title">
+        <h2>Sampler</h2>
+        <span>Recordings into instruments</span>
+        <p>{busy || "Audition here. Copy when it feels right."}</p>
+      </div>
+      <div className="sampler-toolbar">
+        <input
+          aria-label="Instrument name"
+          value={patch.name ?? ""}
+          maxLength={32}
+          onChange={(e) => edit({ ...patch, name: e.target.value }, false)}
+        />
+        <label className="sampler-file primary">
+          Import SoundFont / samples
+          <input
+            type="file"
+            multiple
+            accept=".sf2,.sf3,.sfz,.wav,.hbs"
+            disabled={!!busy}
+            onChange={(e) => {
+              void importFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <label className="sampler-file">
+          Import SFZ folder
+          <input
+            type="file"
+            multiple
+            {...{ webkitdirectory: "" }}
+            disabled={!!busy}
+            onChange={(e) => {
+              void importFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <button disabled={!history.length || !!busy} onClick={undo}>
+          Undo
+        </button>
+        <button
+          disabled={!redo.length || !!busy}
+          onClick={() => {
+            setHistory((h) => [...h, patch]);
+            setPatch(redo.at(-1)!);
+            setRedo((r) => r.slice(0, -1));
+            setPrepared(undefined);
+          }}
+        >
+          Redo
+        </button>
+        <button onClick={() => preview.current!.clear()}>All notes off</button>
+      </div>
+      <div className="sampler-tabs" role="group" aria-label="Mapping mode">
+        {["instrument", "kit", "slices"].map((mode) => (
+          <button
+            key={mode}
+            aria-pressed={template === mode}
+            onClick={() => {
+              setTemplate(mode);
+              if (mode !== "instrument" && !Object.keys(map).length)
+                editMap(assignSequentially(patch.assets.length));
+            }}
+          >
+            {mode === "instrument"
+              ? "Instrument"
+              : mode === "kit"
+                ? "Kit"
+                : "Slices"}
+          </button>
+        ))}
+        <span>
+          {patch.assets.length} recordings · {zones.length} regions · continuous
+          pitch · pitch copies prepared on export
+        </span>
+      </div>
+      <div className="sampler-studio">
+        <aside className="sampler-browser">
+          <h3>Recordings</h3>
+          <input
+            aria-label="Find recording"
+            placeholder="Find a recording…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <div className="sampler-recordings">
+            {patch.assets.map(
+              (a, i) =>
+                a.name?.toLowerCase().includes(search.toLowerCase()) && (
+                  <button
+                    key={i}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(
+                        "application/x-hexboard-sampler-recording",
+                        String(i),
+                      );
+                      setSelected(i);
+                    }}
+                    aria-pressed={i === selected}
+                    onClick={() => {
+                      setSelected(i);
+                      setZoneIndex(zones.findIndex((z) => z.asset === i));
+                    }}
+                  >
+                    <i
+                      style={{ background: `hsl(${(i * 47) % 360} 45% 64%)` }}
+                    />
+                    <span>
+                      <strong>{a.name}</strong>
+                      <small>
+                        {((a.end ?? a.channels[0].length) - (a.start ?? 0)) /
+                          a.rate <
+                        1
+                          ? "Short sample"
+                          : `${(((a.end ?? a.channels[0].length) - (a.start ?? 0)) / a.rate).toFixed(1)} s`}{" "}
+                        · {noteName(a.rootMidi)}
+                      </small>
+                    </span>
+                  </button>
+                ),
+            )}
+          </div>
+          {!patch.assets.length && (
+            <p className="panel-note">
+              Drop a SoundFont, an SFZ sample folder, or a recording here.
+            </p>
+          )}
+          {library.length > 0 && (
+            <>
+              <h3>Imported instruments</h3>
+              {library.map((p, i) => (
+                <button key={i} onClick={() => restore(p)}>
+                  {p.name}
+                </button>
+              ))}
+            </>
+          )}
+        </aside>
+        <main className="sampler-canvas">
+          <fieldset className="sampler-wave-panel">
+            <legend>Sample</legend>
+            {sample ? (
+              <>
+                <div className="sampler-wave-heading">
+                  <strong>{sample.name}</strong>
+                  <small>
+                    {sample.channels.length === 2 ? "Stereo" : "Mono"} ·{" "}
+                    {(sample.rate / 1000).toFixed(1)} kHz ·{" "}
+                    {sample.channels[0].length.toLocaleString()} frames
+                  </small>
+                </div>
+                <svg
+                  className="sampler-wave"
+                  viewBox="0 0 560 110"
+                  role="group"
+                  aria-label={`Waveform of ${sample.name}`}
+                >
+                  <path d={wave} />
+                  {[
+                    sample.start ?? 0,
+                    sample.end ?? sample.channels[0].length,
+                    sample.loopStart ?? 0,
+                    sample.loopEnd ?? sample.channels[0].length,
+                  ].map((n, i) => (
+                    <g
+                      key={i}
+                      role="slider"
+                      tabIndex={0}
+                      aria-label={`${["Trim start", "Trim end", "Loop start", "Loop end"][i]} handle`}
+                      aria-valuenow={n}
+                      aria-valuemin={0}
+                      aria-valuemax={sample.channels[0].length}
+                      className="sampler-wave-handle"
+                      onPointerDown={(e) => {
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                        setHistory((h) => [...h.slice(-39), patch]);
+                        setRedo([]);
+                      }}
+                      onPointerMove={(e) => {
+                        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                          const rect =
+                            e.currentTarget.ownerSVGElement!.getBoundingClientRect();
+                          waveEdit(
+                            i,
+                            ((e.clientX - rect.left) / rect.width) *
+                              sample.channels[0].length,
+                          );
+                        }
+                      }}
+                      onPointerUp={(e) => {
+                        if (e.currentTarget.hasPointerCapture(e.pointerId))
+                          e.currentTarget.releasePointerCapture(e.pointerId);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                          e.preventDefault();
+                          setHistory((h) => [...h.slice(-39), patch]);
+                          waveEdit(
+                            i,
+                            n +
+                              (e.key === "ArrowLeft" ? -1 : 1) *
+                                (e.shiftKey ? 100 : 1),
+                          );
+                        }
+                      }}
+                    >
+                      <line
+                        x1={(n / sample.channels[0].length) * 560}
+                        x2={(n / sample.channels[0].length) * 560}
+                        y1="0"
+                        y2="110"
+                        className={i < 2 ? "trim" : "loop"}
+                      />
+                      <rect
+                        x={(n / sample.channels[0].length) * 560 - 5}
+                        y={i < 2 ? 0 : 90}
+                        width="10"
+                        height="20"
+                        rx="2"
+                        className={i < 2 ? "trim-grip" : "loop-grip"}
+                      />
+                    </g>
+                  ))}
+                </svg>
+                <div className="sampler-fields">
+                  {number(
+                    "Root MIDI",
+                    sample.rootMidi,
+                    (v) => changeSample({ rootMidi: v }),
+                    0,
+                    127,
+                    0.01,
+                  )}
+                  <label>
+                    Playback
+                    <select
+                      value={sample.mode ?? 0}
+                      onChange={(e) =>
+                        changeSample({ mode: +e.target.value as 0 | 1 | 2 | 3 })
+                      }
+                    >
+                      <option value={0}>Hold / natural end</option>
+                      <option value={1}>Loop + envelope release</option>
+                      <option value={3}>Loop until release → tail</option>
+                      <option value={2}>One shot</option>
+                    </select>
+                  </label>
+                  {number(
+                    "Trim start",
+                    sample.start ?? 0,
+                    (v) => changeSample({ start: Math.round(v) }),
+                    0,
+                    (sample.end ?? sample.channels[0].length) - 4,
+                  )}
+                  {number(
+                    "Trim end",
+                    sample.end ?? sample.channels[0].length,
+                    (v) => changeSample({ end: Math.round(v) }),
+                    (sample.start ?? 0) + 4,
+                    sample.channels[0].length,
+                  )}
+                  {[1, 3].includes(sample.mode ?? 0) && (
+                    <>
+                      {number(
+                        "Loop start",
+                        sample.loopStart ?? sample.start ?? 0,
+                        (v) => changeSample({ loopStart: Math.round(v) }),
+                        sample.start ?? 0,
+                        (sample.loopEnd ??
+                          sample.end ??
+                          sample.channels[0].length) - 1,
+                      )}
+                      {number(
+                        "Loop end",
+                        sample.loopEnd ??
+                          sample.end ??
+                          sample.channels[0].length,
+                        (v) => changeSample({ loopEnd: Math.round(v) }),
+                        (sample.loopStart ?? sample.start ?? 0) + 1,
+                        sample.end ?? sample.channels[0].length,
+                      )}
+                      {number(
+                        "Crossfade ms",
+                        sample.crossfade ?? 0,
+                        (v) => changeSample({ crossfade: v }),
+                        0,
+                        2000,
+                      )}
+                    </>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="sampler-empty">
+                <span>▁▃▆▃▂▇▅▂</span>
+                <h3>A small sound can become something big.</h3>
+                <p>Import an SF2 / SF3 bank and choose a preset to begin.</p>
+              </div>
+            )}
+          </fieldset>
+          {template === "instrument" ? (
+            <fieldset>
+              <legend>Key & velocity map</legend>
+              <div
+                className="sampler-zone-map"
+                role="group"
+                aria-label="Sample key and velocity regions"
+              >
+                {zones.map((z, i) => (
+                  <button
+                    key={i}
+                    aria-label={`${patch.assets[z.asset]?.name}, notes ${noteName(z.lowMidi ?? 0)} to ${noteName((z.highMidi ?? 128) - 1)}, velocity ${z.velocityLow ?? 1} to ${z.velocityHigh ?? 127}`}
+                    aria-pressed={i === zoneIndex}
+                    style={
+                      {
+                        left: `${(((z.lowMidi ?? -0.5) + 0.5) / 128) * 100}%`,
+                        width: `${(((z.highMidi ?? 127.5) - (z.lowMidi ?? -0.5)) / 128) * 100}%`,
+                        bottom: `${(((z.velocityLow ?? 1) - 1) / 127) * 100}%`,
+                        height: `${(((z.velocityHigh ?? 127) - (z.velocityLow ?? 1) + 1) / 127) * 100}%`,
+                        "--zone-color": `hsl(${(z.asset * 47) % 360} 45% 64%)`,
+                      } as CSSProperties
+                    }
+                    onClick={() => {
+                      setSelected(z.asset);
+                      setZoneIndex(i);
+                    }}
+                  >
+                    {patch.assets[z.asset]?.name}
+                  </button>
+                ))}
+              </div>
+              <div className="sampler-map-axis">
+                <small>C−1</small>
+                <small>C2</small>
+                <small>C4</small>
+                <small>C6</small>
+                <small>G9</small>
+              </div>
+              <div className="sampler-fields">
+                {zone && (
+                  <>
+                    {number(
+                      "Low MIDI",
+                      zone.lowMidi ?? -0.5,
+                      (v) => changeZone({ lowMidi: v }),
+                      -0.5,
+                      (zone.highMidi ?? 127.5) - 0.01,
+                      0.01,
+                    )}
+                    {number(
+                      "High MIDI (exclusive)",
+                      zone.highMidi ?? 127.5,
+                      (v) => changeZone({ highMidi: v }),
+                      (zone.lowMidi ?? -0.5) + 0.01,
+                      127.5,
+                      0.01,
+                    )}
+                    {number(
+                      "Low velocity",
+                      zone.velocityLow ?? 1,
+                      (v) => changeZone({ velocityLow: v }),
+                      1,
+                      zone.velocityHigh ?? 127,
+                    )}
+                    {number(
+                      "High velocity",
+                      zone.velocityHigh ?? 127,
+                      (v) => changeZone({ velocityHigh: v }),
+                      zone.velocityLow ?? 1,
+                      127,
+                    )}
+                  </>
+                )}
+                <button
+                  disabled={!sample}
+                  onClick={() =>
+                    edit({ ...patch, zones: automatic(patch.assets) })
+                  }
+                >
+                  Map by root notes
+                </button>
+                <button
+                  disabled={
+                    !zone ||
+                    (zone.velocityHigh ?? 127) <= (zone.velocityLow ?? 1)
+                  }
+                  onClick={() => {
+                    if (!zone) return;
+                    const mid = Math.floor(
+                      ((zone.velocityLow ?? 1) + (zone.velocityHigh ?? 127)) /
+                        2,
+                    );
+                    edit({
+                      ...patch,
+                      zones: [
+                        ...zones.map((z) =>
+                          z === zone ? { ...z, velocityHigh: mid } : z,
+                        ),
+                        { ...zone, velocityLow: mid + 1 },
+                      ],
+                    });
+                    setZoneIndex(zones.length);
+                  }}
+                >
+                  Split velocity layer
+                </button>
+              </div>
+            </fieldset>
+          ) : (
+            <fieldset className="sampler-mapping">
+              <legend>
+                {template === "kit" ? "Key assignments" : "Slice assignments"}
+              </legend>
+              <div>
+                <p className="panel-note">
+                  Drag recordings onto HexBoard keys. Select a key to assign its
+                  sound and color.
+                </p>
+                {template === "slices" && (
+                  <div className="sampler-fields">
+                    {number("Slices", slices, setSlices, 2, 64)}
+                    <button
+                      disabled={!sample}
+                      onClick={() => {
+                        try {
+                          const assets = sliceRecording(sample, slices);
+                          edit({
+                            ...patch,
+                            assets,
+                            zones: mappedZones(
+                              assignSequentially(assets.length),
+                              assets.length,
+                            ),
+                          });
+                          setSelected(0);
+                        } catch (e) {
+                          setError(String(e));
+                        }
+                      }}
+                    >
+                      Slice recording
+                    </button>
+                  </div>
+                )}
+                <label>
+                  Key {selectedKey + 1}
+                  <select
+                    value={selectedAssignment?.asset ?? ""}
+                    onChange={(e) => {
+                      const next = { ...map };
+                      if (e.target.value === "") delete next[selectedKey];
+                      else
+                        next[selectedKey] = {
+                          asset: +e.target.value,
+                          color: next[selectedKey]?.color ?? "#658eda",
+                        };
+                      editMap(next);
+                    }}
+                  >
+                    <option value="">Unassigned</option>
+                    {patch.assets.map((a, i) => (
+                      <option value={i} key={i}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Key color
+                  <input
+                    type="color"
+                    disabled={!selectedAssignment}
+                    value={selectedAssignment?.color ?? "#658eda"}
+                    onChange={(e) =>
+                      editMap({
+                        ...map,
+                        [selectedKey]: {
+                          ...selectedAssignment,
+                          color: e.target.value,
+                        },
+                      })
+                    }
+                  />
+                </label>
+                <button
+                  disabled={!sample}
+                  onClick={() =>
+                    editMap({
+                      ...map,
+                      [selectedKey]: {
+                        asset: selected,
+                        color: selectedAssignment?.color ?? "#658eda",
+                      },
+                    })
+                  }
+                >
+                  Assign selected recording
+                </button>
+                <button
+                  disabled={!selectedAssignment}
+                  onPointerDown={(e) => {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    on(
+                      "mapped",
+                      patch.assets[selectedAssignment?.asset]?.rootMidi ?? 60,
+                      selectedKey,
+                    );
+                  }}
+                  onPointerUp={() => off("mapped")}
+                  onPointerCancel={() => off("mapped")}
+                  onLostPointerCapture={() => off("mapped")}
+                >
+                  Hold to audition key
+                </button>
+                <button
+                  onClick={() =>
+                    editMap(assignSequentially(patch.assets.length))
+                  }
+                >
+                  Map in order
+                </button>
+              </div>
+              <SamplerKeyPreview
+                map={map}
+                names={patch.assets.map((a) => a.name ?? "Recording")}
+                selected={selectedKey}
+                onSelect={(key) => {
+                  setSelectedKey(key);
+                  if (map[key]) setSelected(map[key].asset);
+                }}
+                onAssign={(key, asset) => {
+                  setSelectedKey(key);
+                  editMap({
+                    ...map,
+                    [key]: { asset, color: map[key]?.color ?? "#658eda" },
+                  });
+                }}
+              />
+            </fieldset>
+          )}
+        </main>
+        <aside className="sampler-inspector">
+          <fieldset>
+            <legend>Region</legend>
+            {zone ? (
+              <>
+                <strong>{sample?.name}</strong>
+                <div className="sampler-fields">
+                  {number(
+                    "Level",
+                    zone.gain ?? 1,
+                    (v) => changeZone({ gain: v }),
+                    0,
+                    1.99,
+                    0.01,
+                  )}
+                  {number(
+                    "Pan",
+                    zone.pan ?? 0,
+                    (v) => changeZone({ pan: v }),
+                    -1,
+                    1,
+                    0.01,
+                  )}
+                  {number(
+                    "Key tracking %",
+                    (zone.keyTrack ?? 1) * 100,
+                    (v) => changeZone({ keyTrack: v / 100 }),
+                    0,
+                    200,
+                  )}
+                  {number(
+                    "Round robin",
+                    zone.roundRobin ?? 0,
+                    (v) => changeZone({ roundRobin: v }),
+                    0,
+                    15,
+                  )}
+                  {number(
+                    "Choke group",
+                    zone.choke ?? 0,
+                    (v) => changeZone({ choke: v }),
+                    0,
+                    16,
+                  )}
+                </div>
+                <details>
+                  <summary>Envelope & tone</summary>
+                  <div className="sampler-fields">
+                    {(
+                      [
+                        "attack",
+                        "decay",
+                        "sustain",
+                        "release",
+                        "delay",
+                        "hold",
+                        "cutoff",
+                      ] as const
+                    ).map((key) =>
+                      number(
+                        key,
+                        zone[key] ??
+                          (key in settings
+                            ? settings[key as keyof Settings]
+                            : 0) ??
+                          0,
+                        (v) => changeZone({ [key]: v }),
+                        key === "cutoff" ? 40 : 0,
+                        key === "sustain"
+                          ? 1
+                          : key === "attack" || key === "delay"
+                            ? 10000
+                            : 20000,
+                        key === "sustain" ? 0.01 : 1,
+                      ),
+                    )}
+                    <label>
+                      Velocity curve
+                      <select
+                        value={zone.velocityCurve ?? 0}
+                        onChange={(e) =>
+                          changeZone({ velocityCurve: +e.target.value })
+                        }
+                      >
+                        <option value={0}>Linear</option>
+                        <option value={1}>Squared</option>
+                        <option value={2}>Constant / pressure</option>
+                        <option value={103}>SFZ 100%</option>
+                      </select>
+                    </label>
+                  </div>
+                </details>
+                <button
+                  onClick={() =>
+                    edit({ ...patch, zones: zones.filter((z) => z !== zone) })
+                  }
+                >
+                  Remove region
+                </button>
+              </>
+            ) : (
+              <p className="panel-note">Select a region on the map.</p>
+            )}
+          </fieldset>
+          <fieldset>
+            <legend>Patch response</legend>
+            <label>
+              Velocity engine
+              <select
+                value={patch.velocityEngine ?? 0}
+                onChange={(e) =>
+                  edit({ ...patch, velocityEngine: +e.target.value })
+                }
+              >
+                {[
+                  "Threshold Strike",
+                  "Expressive",
+                  "Distance",
+                  "Gesture",
+                  "Fixed",
+                ].map((label, i) => (
+                  <option value={i} key={label}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              aria-pressed={!!patch.performance?.values[0]}
+              onClick={() => setArpOpen(true)}
+            >
+              Arpeggiator · {patch.performance?.values[0] ? "On" : "Off"}
+            </button>
+            <p className="panel-note">
+              Saved with the patch. HexBoard’s global Follow preset setting
+              controls velocity-engine recall.
+            </p>
+          </fieldset>
+        </aside>
+      </div>
+      <div className="sampler-shaping">
+        {[
+          {
+            title: "Amplitude",
+            controls: [
+              ["attack", "Attack", 0, 2000, "ms"],
+              ["decay", "Decay", 0, 5000, "ms"],
+              ["sustain", "Sustain", 0, 1, ""],
+              ["release", "Slow lift", 5, 5000, "ms"],
+            ],
+          },
+          {
+            title: "Touch & tone",
+            controls: [
+              ["cutoff", "Tone", 40, 20000, "Hz"],
+              ["pressure", "Pressure → tone", 0, 1, ""],
+              ["pressureGain", "Pressure → level", 0, 1, ""],
+              ["space", "Reverb", 0, 1, ""],
+            ],
+          },
+          {
+            title: "Key release",
+            controls: [
+              ["fastRelease", "Fast lift", 5, 1000, "ms"],
+              ["releaseResponse", "Lift response", 0, 1, ""],
+              ["releaseCurve", "Lift curve", 0.25, 4, ""],
+              ["pedalRelease", "Pedal up", 5, 1000, "ms"],
+            ],
+          },
+        ].map((group) => (
+          <fieldset key={group.title}>
+            <legend>{group.title}</legend>
+            {group.title === "Touch & tone" && (
+              <button
+                type="button"
+                aria-pressed={settings.space > 0}
+                onClick={() => {
+                  if (settings.space > 0) lastSpace.current = settings.space;
+                  global("space", settings.space > 0 ? 0 : lastSpace.current);
+                  gesture.current = false;
+                }}
+              >
+                Room reverb · {settings.space > 0 ? "On" : "Off"}
+              </button>
+            )}
+            <div className="knob-bank">
+              {group.controls.map(([k, label, min, max, unit]) => (
+                <label className="sampler-knob" key={k}>
+                  <span>{label}</span>
+                  <Knob
+                    label={String(label)}
+                    min={Number(min)}
+                    max={Number(max)}
+                    value={settings[k as keyof Settings]}
+                    onChange={(v) => global(k as keyof Settings, v)}
+                    onRelease={() => {
+                      gesture.current = false;
+                    }}
+                  />
+                  <output>
+                    {settings[k as keyof Settings].toFixed(
+                      Number(max) <= 4 ? 2 : 0,
+                    )}{" "}
+                    {unit}
+                  </output>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        ))}
+      </div>
+      <fieldset className="sampler-audition">
+        <legend>Browser audition · edited instrument</legend>
+        <div className="sampler-fields">
+          {number("Octave", octave, setOctave, 0, 6)}
+          {number("Strike velocity", velocity, setVelocity, 1, 127)}
+          {number("Release velocity", lift, setLift, 0, 127)}
+          <label>
+            Pressure
+            <input
+              aria-label="Audition pressure"
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={pressure}
+              onChange={(e) => setPressure(+e.target.value)}
+            />
+          </label>
+          <label>
+            Pitch bend ±2
+            <input
+              aria-label="Pitch bend"
+              type="range"
+              min={-2}
+              max={2}
+              step={0.01}
+              value={bend}
+              onChange={(e) => setBend(+e.target.value)}
+              onDoubleClick={() => setBend(0)}
+            />
+          </label>
+          <button
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture(e.pointerId);
+              preview.current!.pedal(true);
+            }}
+            onPointerUp={() => preview.current!.pedal(false)}
+            onPointerCancel={() => preview.current!.pedal(false)}
+            onLostPointerCapture={() => preview.current!.pedal(false)}
+          >
+            Hold sustain
+          </button>
+        </div>
+        <div className="sampler-keyboard">
+          {Array.from({ length: 25 }, (_, i) => octave * 12 + 12 + i).map(
+            (note) => (
+              <button
+                className={[1, 3, 6, 8, 10].includes(note % 12) ? "black" : ""}
+                disabled={!patch.assets.length || template !== "instrument"}
+                key={note}
+                onPointerDown={(e) => {
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  on(`key-${note}`, note);
+                }}
+                onPointerUp={() => off(`key-${note}`)}
+                onPointerCancel={() => off(`key-${note}`)}
+                onLostPointerCapture={() => off(`key-${note}`)}
+                onKeyDown={(e) => {
+                  if ((e.key === " " || e.key === "Enter") && !e.repeat) {
+                    e.preventDefault();
+                    on(`key-${note}`, note);
+                  }
+                }}
+                onKeyUp={(e) => {
+                  if (e.key === " " || e.key === "Enter") off(`key-${note}`);
+                }}
+              >
+                {noteName(note)}
+              </button>
+            ),
+          )}
+        </div>
+        <p className="panel-note">
+          Hold a note while shaping tone and pressure. New notes use edited
+          mappings, loops and envelopes. Browser effects and interpolation
+          differ slightly from the device.
+        </p>
+      </fieldset>
+      <div className="sampler-bottom">
+        <fieldset>
+          <legend>Export instrument</legend>
+          <div className="sampler-fields">
+            <label>
+              Pitch quality
+              <select
+                value={patch.pitchQuality ?? "balanced"}
+                onChange={(e) =>
+                  edit({
+                    ...patch,
+                    pitchQuality: e.target.value as Patch["pitchQuality"],
+                  })
+                }
+              >
+                <option value="balanced">
+                  Balanced · gentle bend aliasing
+                </option>
+                <option value="clean">Clean · protect ±2 bend</option>
+                <option value="character">Character · allow aliasing</option>
+              </select>
+            </label>
+            <label>
+              Storage
+              <select
+                value={patch.storage ?? "auto"}
+                onChange={(e) =>
+                  edit({
+                    ...patch,
+                    storage: e.target.value as Patch["storage"],
+                  })
+                }
+              >
+                <option value="auto">Automatic</option>
+                <option value="resident">Resident · stereo</option>
+                <option value="streaming">SD · long recordings</option>
+              </select>
+            </label>
+            <label>
+              USB folder
+              <input
+                aria-label="USB folder"
+                value={exportFolder}
+                maxLength={32}
+                onChange={(e) => setExportFolder(e.target.value)}
+              />
+            </label>
+            <button
+              className="primary"
+              disabled={!patch.assets.length || !!busy}
+              onClick={() => void exportPatch()}
+            >
+              Export {samplerFilename(patch.name ?? "Instrument")}
+            </button>
+            <button
+              disabled={!transport || !patch.assets.length || !!busy}
+              onClick={() => void exportPatch(true)}
+            >
+              Copy small patch over USB
+            </button>
+          </div>
+          <p className="panel-note">
+            {prepared ? `${bytes(prepared.bytes.length)} prepared. ` : ""}For
+            larger instruments, copy the HBS file into a named folder under
+            sampler/instruments on your SD card. USB uses the folder above;
+            existing names are protected. Use another named folder when one
+            reaches 32 instruments.
+          </p>
+        </fieldset>
+        <fieldset>
+          <legend>HexBoard library</legend>
+          <div className="sampler-fields">
+            <button
+              disabled={!transport || !!busy}
+              onClick={() => void refresh()}
+            >
+              Refresh library
+            </button>
+            <select
+              aria-label="SD folder"
+              disabled={!transport || !!busy}
+              value={folder}
+              onChange={(e) => {
+                const id = +e.target.value;
+                setFolder(id);
+                setBusy("Reading folder…");
+                void client.current
+                  ?.samplerLibrary(true, id)
+                  .then(setInstruments)
+                  .catch((e) => setError(String(e)))
+                  .finally(() => {
+                    setBusy("");
+                    setPlaying(false);
+                  });
+              }}
+            >
+              {!folders.length && <option value={0}>Choose a folder</option>}
+              {folders.map((f) => (
+                <option value={f.id} key={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="SD instrument"
+              disabled={!transport || !!busy}
+              value={sdSource}
+              onChange={(e) => {
+                const id = +e.target.value;
+                setSdSource(id);
+                if (playing) void devicePlay(id);
+              }}
+            >
+              <option value={0}>Saved sampler patch</option>
+              <option value={1}>KW upright · compact</option>
+              {instruments.map((f) => (
+                <option value={f.id} key={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <button
+              disabled={!transport || !!busy}
+              onClick={() => {
+                if (effectTimer.current) clearTimeout(effectTimer.current);
+                if (playing)
+                  void client
+                    .current!.stopAndWait()
+                    .then(() => setPlaying(false));
+                else void devicePlay();
+              }}
+            >
+              {playing ? "Stop HexBoard" : "Play on HexBoard"}
+            </button>
+          </div>
+          <div className="sampler-fields sampler-device-reverb">
+            <button
+              disabled={!playing || !!busy}
+              aria-pressed={deviceSpace > 0}
+              onClick={() =>
+                changeDeviceSpace(deviceSpace > 0 ? 0 : lastDeviceSpace.current)
+              }
+            >
+              HexBoard room reverb · {deviceSpace > 0 ? "On" : "Off"}
+            </button>
+            <label>
+              Amount
+              <input
+                aria-label="HexBoard reverb amount"
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={deviceSpace}
+                disabled={!playing || !!busy}
+                onChange={(e) => changeDeviceSpace(+e.target.value)}
+              />
+            </label>
+            <button
+              disabled={
+                !deviceSettings ||
+                loadedSource !== sdSource ||
+                !!busy ||
+                !transport
+              }
+              onClick={() => void saveDeviceSpace()}
+            >
+              Save effect to instrument
+            </button>
+          </div>
+          <p className="panel-note">
+            A warm stereo room. Patch Reverb above is included in exported
+            sounds; the HexBoard control auditions the selected SD instrument.
+          </p>
+          {playing && <p role="status">{samplerLoadingLabel(loading)}</p>}
+        </fieldset>
+      </div>
+      {report.length > 0 && (
+        <details className="sampler-report" open>
+          <summary>
+            Import / conversion report · {report.length}{" "}
+            {report.length === 1 ? "change" : "changes"}
+          </summary>
+          <ul>
+            {report.map((line, i) => (
+              <li key={i}>{line}</li>
+            ))}
+          </ul>
+          <button
+            onClick={() =>
+              download(
+                new TextEncoder().encode(
+                  JSON.stringify(
+                    {
+                      instrument: patch.name,
+                      source: patch.provenance,
+                      changes: report,
+                    },
+                    null,
+                    2,
+                  ),
+                ),
+                `${patch.name} - conversion report.json`,
+              )
+            }
+          >
+            Download report
+          </button>
+        </details>
+      )}
+      {busy && (
+        <p role="status" aria-live="polite">
+          {busy}
+        </p>
+      )}
+      {error && (
+        <p className="sampler-error" role="alert">
+          {error}
+        </p>
+      )}
+      {bank && (
+        <div className="sampler-modal-backdrop">
+          <div
+            className="sampler-preset-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Choose presets to import"
+          >
+            <header>
+              <div>
+                <h2>Choose your instruments</h2>
+                <p>
+                  Audition the original, then import only the presets you want.
+                </p>
+              </div>
+              <button
+                disabled={!!busy}
+                onClick={() => {
+                  source.current!.off();
+                  setBank(undefined);
+                }}
+              >
+                Close
+              </button>
+            </header>
+            <input
+              autoFocus
+              aria-label="Find preset"
+              placeholder="Search presets…"
+              value={chooserSearch}
+              onChange={(e) => setChooserSearch(e.target.value)}
+            />
+            {number("Source audition MIDI", sourceNote, setSourceNote, 0, 127)}
+            <label>
+              Complex preset adaptation
+              <select
+                value={adaptation}
+                onChange={(e) =>
+                  setAdaptation(e.target.value as "faithful" | "compact")
+                }
+              >
+                <option value="faithful">
+                  Capture source motion · closer match
+                </option>
+                <option value="compact">
+                  Keep source samples · compact, simpler modulation
+                </option>
+              </select>
+            </label>
+            <div className="sampler-preset-list">
+              {bank.presets
+                .filter((p) =>
+                  p.name.toLowerCase().includes(chooserSearch.toLowerCase()),
+                )
+                .map((p) => (
+                  <div
+                    key={p.id}
+                    className={p.id === auditionChoice ? "selected" : ""}
+                  >
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={bank.selected.includes(p.id)}
+                        disabled={!!busy}
+                        onChange={(e) => {
+                          setBank({
+                            ...bank,
+                            selected: e.target.checked
+                              ? [...bank.selected, p.id]
+                              : bank.selected.filter((id) => id !== p.id),
+                          });
+                          setAuditionChoice(p.id);
+                        }}
+                      />
+                      <span>
+                        <strong>{p.name}</strong>
+                        <small>
+                          {bank.sfz
+                            ? "SFZ instrument"
+                            : `Bank ${p.bank} · program ${p.program}${p.drums ? " · drums" : ""}`}
+                        </small>
+                      </span>
+                    </label>
+                    {!bank.sfz && (
+                      <button
+                        disabled={!!busy}
+                        onPointerDown={(e) => {
+                          e.currentTarget.setPointerCapture(e.pointerId);
+                          setAuditionChoice(p.id);
+                          void source
+                            .current!.on(p, sourceNote, velocity)
+                            .catch((e) => setError(String(e)));
+                        }}
+                        onPointerUp={() => source.current!.off()}
+                        onPointerCancel={() => source.current!.off()}
+                        onLostPointerCapture={() => source.current!.off()}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.repeat)
+                            void source.current!.on(p, sourceNote, velocity);
+                        }}
+                        onKeyUp={() => source.current!.off()}
+                      >
+                        Hold to hear original
+                      </button>
+                    )}
+                  </div>
+                ))}
+            </div>
+            <p className="panel-note">
+              Layered or modulated presets are adapted with a change report.
+              Source audition preserves the original SoundFont. You can compare
+              the imported result before exporting.
+            </p>
+            <footer>
+              <span>{bank.selected.length} selected</span>
+              <button
+                disabled={!bank.selected.length || !!busy}
+                onClick={() => void importChosen()}
+              >
+                Import selected presets
+              </button>
+            </footer>
+            {busy && <p role="status">{busy}</p>}
+            {error && <p role="alert">{error}</p>}
+          </div>
+        </div>
+      )}
+      {arpOpen && (
+        <ArpeggiatorEditor
+          config={patch.performance ?? defaultPerformance()}
+          disabled={!!busy}
+          physical={false}
+          browserAudition
+          connected={false}
+          saved={false}
+          error=""
+          onChange={(performance) => edit({ ...patch, performance }, false)}
+          onClose={() => setArpOpen(false)}
+          onClear={() => preview.current!.clear()}
+          onSave={() => setArpOpen(false)}
+        />
+      )}
+    </section>
+  );
 }

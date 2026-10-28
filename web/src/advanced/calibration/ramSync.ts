@@ -15,9 +15,9 @@ export function ramUpdates(draft: LabConfig, applied: LabConfig): RamUpdate[] {
   }) });
   for (const kind of ["on", "off"] as const) {
     if (equal(draft.curves[kind], applied.curves[kind]) && draft.customCurves[kind] === applied.customCurves[kind]) continue;
-    if (!draft.capabilities.includes("curve_xy") || !validPoints(draft.curves[kind]))
-      throw Error("Use 4–8 curve points with descending times, increasing velocities, and at least 0.1 ms between times.");
-    updates.push({ command: `velocity curve_xy ${kind} ${draft.curves[kind].length} ${draft.curves[kind].flatMap(p => [p.us, p.velocity]).join(" ")}`,
+    if (!draft.capabilities.includes("curve_speed") || !validPoints(draft.curves[kind]))
+      throw Error("Use 4–8 curve points with increasing speeds and velocities, and at least 0.1 mm/s between speeds.");
+    updates.push({ command: `velocity curve_speed_xy ${kind} ${draft.curves[kind].length} ${draft.curves[kind].flatMap(p => [p.speed, p.velocity]).join(" ")}`,
       acknowledge: previous => ({ ...previous, curves: { ...previous.curves, [kind]: draft.curves[kind] }, customCurves: { ...previous.customCurves, [kind]: true } }) });
   }
   if (!equal(draft.pressure, applied.pressure)) {

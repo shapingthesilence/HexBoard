@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { CalibrationClient } from "./client.ts";
 import { decodePresetSyncFrame, encodeDefaultPresetSyncFrame, encodeU14 } from "../../protocol/index.ts";
 import type { MidiMessageListener, MidiTransport } from "../../midi/types.ts";
-import { defaultConfig, parseConfig, respacePoints, validPoints } from "./model.ts";
+import { defaultConfig, parseConfig, respacePoints, validPoints, curveVelocity, movePoint } from "./model.ts";
+import { parseVelocity } from "./live-velocity.mjs";
 import { CaptureParser } from "./protocol.mjs";
 
 class Board implements MidiTransport {
@@ -66,9 +67,9 @@ describe("Calibration SysEx client", () => {
 });
 const configLines = () => {
   const c = defaultConfig();
-  return ["tr,c,7864,45874,3277", "tr,p,1800,40000,2,0,1,127,4", "tr,cap,curve_xy,engines,pressure_watch,pressure_ends,pressure_curve",
+  return ["tr,c,7864,45874,3277", "tr,p,1288889,58000,2,0,1,127,4", "tr,cap,curve_speed,engines,pressure_watch,pressure_ends,pressure_curve",
     `tr,engine,${c.engine.join(",")}`, `tr,pressure,${c.pressure.join(",")}`, `tr,pressure_curve,${c.pressureCurve.join(",")}`,
-    ...["on", "off"].flatMap(kind => [`tr,curve,${kind},4`, ...[40000, 27000, 14000, 1800].map((us, i) => `tr,xy,${kind},${i},${us},${1 + i * 42}`)]), "tr,config_end"];
+    ...["on", "off"].flatMap(kind => [`tr,curve,${kind},4`, ...[10000, 50000, 200000, 1000000].map((us, i) => `tr,xy,${kind},${i},${us},${1 + i * 42}`)]), "tr,config_end"];
 };
 describe("Calibration records and curves", () => {
   it("preserves complete model, thresholds, both curves and pressure endpoints", () => {
@@ -85,5 +86,23 @@ describe("Calibration records and curves", () => {
     expect(capture.gaps).toBe(0); expect(capture.channels[0].points[1].time).toBe(.893);
     parser.feed("tr,b,1,2,1,0,0"); parser.feed("tr,t,1,2,0"); parser.feed("tr,k,0,61,2000,1,1");
     expect(() => parser.feed("tr,s,1,0,2,2000,2100")).toThrow("Missing or reordered");
+  });
+});
+
+describe("speed response", () => {
+  it("maps speed monotonically, clamps edits and rejects time-only firmware", () => {
+    const points = [10000, 50000, 100000, 200000].map((speed, i) => ({ speed, velocity: 1+42*i }));
+    expect(curveVelocity(points, 75000)).toBe(64);
+    expect(curveVelocity(points, 0)).toBe(1);
+    expect(curveVelocity(points, 4000000)).toBe(127);
+    expect(movePoint(points, 1, 300000, 127)[1]).toEqual({ speed: 99900, velocity: 85 });
+    expect(() => parseConfig(configLines().map(line => line.replace("curve_speed", "curve_xy")))).toThrow("Update the board firmware");
+  });
+  it("retains captured speed independently of later threshold edits and accepts zero-time saturated strikes", () => {
+    const strike = parseVelocity("velocity,61,127,0,100,100,60000,42,1,4294967295")!;
+    expect(strike.speed).toBe(4294967295); expect(strike.us).toBe(0);
+    const config = parseConfig(configLines()); config.thresholds=[1000, 2000, 500];
+    expect(strike.speed).toBe(4294967295);
+    expect(parseVelocity("velocity_off,61,42,100,60,20000,100,20100,0,120000")!.speed).toBe(120000);
   });
 });

@@ -42,28 +42,28 @@ export function Plot({ series, xLabel, yLabel, range, yRange, lines = [], onRang
       onPointerCancel={() => { drag.current = null; setSelection(null); }} />}
   </svg>;
 }
-export function CurveChart({ points, onChange, windowMs, last, disabled }: {
-  points: CurvePoint[]; onChange: (points: CurvePoint[]) => void; windowMs: number; last: Strike | null; disabled?: boolean;
+export function CurveChart({ points, onChange, windowSpeed, last, disabled }: {
+  points: CurvePoint[]; onChange: (points: CurvePoint[]) => void; windowSpeed: number; last: Strike | null; disabled?: boolean;
 }) {
   const drag = useRef<number | null>(null);
-  const x = (us: number) => 50 + Math.min(us, windowMs * 1000) / (windowMs * 1000) * 580;
+  const x = (us: number) => 50 + Math.min(us, windowSpeed * 1000) / (windowSpeed * 1000) * 580;
   const y = (value: number) => 210 - value / 127 * 185;
   return <svg className="calPlot calCurve" viewBox="0 0 660 250" role="group" aria-label="Velocity response curve" style={{ touchAction: "none" }}
     onPointerMove={e => { if (drag.current === null || disabled) return; const box = e.currentTarget.getBoundingClientRect();
-      onChange(movePoint(points, drag.current, ((e.clientX - box.left) / box.width * 660 - 50) / 580 * windowMs * 1000,
+      onChange(movePoint(points, drag.current, ((e.clientX - box.left) / box.width * 660 - 50) / 580 * windowSpeed * 1000,
         (210 - (e.clientY - box.top) / box.height * 250) / 185 * 127)); }}
     onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
     {[0, 1, 2, 3, 4].map(i => <g key={i}><line className="calGrid" x1="50" x2="630" y1={y(i * 127 / 4)} y2={y(i * 127 / 4)} />
-      <text x="42" y={y(i * 127 / 4) + 4} textAnchor="end">{Math.round(i * 127 / 4)}</text><text x={50 + i * 145} y="232" textAnchor="middle">{i * windowMs / 4}</text></g>)}
-    <text x="50" y="14">Velocity</text><text x="630" y="249" textAnchor="end">Crossing time (ms)</text>
-    <path d={points.map((p, i) => `${i ? "L" : "M"}${x(p.us)},${y(p.velocity)}`).join(" ")} fill="none" stroke="var(--brand)" strokeWidth="2" />
-    {last?.us && <g><line x1={x(last.us)} x2={x(last.us)} y1="25" y2="210" stroke={chartColors[1]} strokeDasharray="4 4" />
-      <circle cx={x(last.us)} cy={y(last.velocity)} r="5" fill={chartColors[1]} /><circle cx={x(last.us)} cy={y(curveVelocity(points, last.us))} r="8" fill="none" stroke={chartColors[1]} strokeWidth="2" /></g>}
-    {points.map((p, i) => <circle key={i} cx={x(p.us)} cy={y(p.velocity)} r="7" fill="var(--surface)" stroke="var(--brand)" strokeWidth="2"
-      tabIndex={disabled ? -1 : 0} role="button" aria-label={`Point ${i + 1}: velocity ${p.velocity} at ${(p.us / 1000).toFixed(2)} milliseconds`}
+      <text x="42" y={y(i * 127 / 4) + 4} textAnchor="end">{Math.round(i * 127 / 4)}</text><text x={50 + i * 145} y="232" textAnchor="middle">{i * windowSpeed / 4}</text></g>)}
+    <text x="50" y="14">Velocity</text><text x="630" y="249" textAnchor="end">Average speed (mm/s)</text>
+    <path d={points.map((p, i) => `${i ? "L" : "M"}${x(p.speed)},${y(p.velocity)}`).join(" ")} fill="none" stroke="var(--brand)" strokeWidth="2" />
+    {last?.speed && <g><line x1={x(last.speed)} x2={x(last.speed)} y1="25" y2="210" stroke={chartColors[1]} strokeDasharray="4 4" />
+      <circle cx={x(last.speed)} cy={y(last.velocity)} r="5" fill={chartColors[1]} /><circle cx={x(last.speed)} cy={y(curveVelocity(points, last.speed))} r="8" fill="none" stroke={chartColors[1]} strokeWidth="2" /></g>}
+    {points.map((p, i) => <circle key={i} cx={x(p.speed)} cy={y(p.velocity)} r="7" fill="var(--surface)" stroke="var(--brand)" strokeWidth="2"
+      tabIndex={disabled ? -1 : 0} role="button" aria-label={`Point ${i + 1}: velocity ${p.velocity} at ${(p.speed / 1000).toFixed(2)} mm/s`}
       onPointerDown={e => { if (disabled || e.button !== 0) return; e.preventDefault(); drag.current = i; e.currentTarget.ownerSVGElement!.setPointerCapture(e.pointerId); }}
       onKeyDown={e => { if (disabled || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return; e.preventDefault();
-        onChange(movePoint(points, i, p.us + (e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0) * (e.shiftKey ? 10000 : 1000),
+        onChange(movePoint(points, i, p.speed + (e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0) * (e.shiftKey ? 10000 : 1000),
           p.velocity + (e.key === "ArrowUp" ? 1 : e.key === "ArrowDown" ? -1 : 0))); }} />)}
   </svg>;
 }

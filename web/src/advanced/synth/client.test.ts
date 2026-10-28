@@ -16,12 +16,14 @@ class Transport implements MidiTransport {
   label = "Advanced test";
   listeners = new Set<MidiMessageListener>();
   sent: number[][] = [];
-  respond = true;state = 1;samplePriority=0;sampleLoop:number[]|undefined;catalogReplies?:number[][];
+  samplerBytes=0;samplerReceived=0;badSamplerOffset=false;respond = true;state = 1;samplePriority=0;sampleLoop:number[]|undefined;catalogReplies?:number[][];
   modulation=defaultModulation();
   async send(bytes: ArrayLike<number>) {
     this.sent.push(Array.from(bytes));
     const frame = decodePresetSyncFrame(bytes);
     if(frame.payload[1]===1)this.state=1;if(frame.payload[1]===2)this.state=0;
+    if(frame.payload[1]===69){const bytes=frame.payload[2]?frame.payload.slice(3):Array(256).fill(0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x4a,frame.transactionId,[17,...bytes])))));return;}
+    if(frame.payload[1]>=65&&frame.payload[1]<=67){const op=frame.payload[1],n=(p:number[])=>p.reduce((x,y)=>x*128+y,0),encoded=(x:number)=>Array.from({length:5},(_,i)=>Math.floor(x/128**(4-i))%128);if(op===65){const at=5+frame.payload[3]+frame.payload[4];this.samplerBytes=n(frame.payload.slice(at,at+5));this.samplerReceived=0;}if(op===66)this.samplerReceived=n(frame.payload.slice(2,7))+n(frame.payload.slice(7,9));const received=op===67?this.samplerBytes:this.samplerReceived+(this.badSamplerOffset?1:0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x49,frame.transactionId,[17,...encoded(received)])))));return;}
     if(frame.payload[1]===28){queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x35,frame.transactionId,[17,this.state,...payload().slice(2)])))));return;}
     if(frame.payload[1]>=46&&frame.payload[1]<=51){queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x35,frame.transactionId,[17,this.state,...payload().slice(2)])))));return;}
     if(frame.payload[1]===52){const values=frame.payload.length===11?frame.payload.slice(2):[1,2,0,...encodeU21(0),...encodeU21(4095)];const reply=[17,...values,...encodeU21(1000),...encodeU21(2000),1,0,1,...encodeU21(32768),...encodeU21(0)];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x40,frame.transactionId,reply)))));return;}
@@ -49,6 +51,8 @@ class Transport implements MidiTransport {
   subscribe(listener: MidiMessageListener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 }
 describe("Advanced physical editor", () => {
+  it('reads and writes a settings header while stopping only the music lease',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{const header=await c.samplerSettings();expect(header).toHaveLength(128);header[62]=135;const readback=await c.samplerSettings(header);expect(readback[62]).toBe(135);expect(t.sent.map(decodePresetSyncFrame).filter(f=>f.payload[1]===69).map(f=>f.payload[2])).toEqual([0,1]);expect(t.sent.map(decodePresetSyncFrame).some(f=>f.payload[1]===2)).toBe(true);}finally{c.close();}});
+  it('copies named sampler instruments with verified offsets and safe human filenames',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{await c.uploadSamplerNamed(new Uint8Array(512),'My instruments','Warm piano.hbs');const frames=t.sent.map(decodePresetSyncFrame);const begin=frames.find(f=>f.payload[1]===65)!.payload;expect(begin.slice(5,5+14)).toEqual(Array.from('My instruments',x=>x.charCodeAt(0)));expect(frames.filter(f=>f.payload[1]===66)).toHaveLength(3);expect(frames.at(-1)!.payload[1]).toBe(67);await expect(c.uploadSamplerNamed(new Uint8Array(512),'../bad','Test.hbs')).rejects.toThrow(/plain/);t.badSamplerOffset=true;await expect(c.uploadSamplerNamed(new Uint8Array(512),'My instruments','Other.hbs')).rejects.toThrow(/offset/);}finally{c.close();}});
   it("stops before selecting the SD piano and decodes sampler acknowledgements",async()=>{
     const t=new Transport(),c=new PhysicalSynthClient(t);try{
       await c.samplerSource('piano');await c.samplerParameter(4,18000);await c.samplerSource('patch');

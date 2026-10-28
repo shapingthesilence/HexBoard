@@ -1,7 +1,8 @@
-export interface CurvePoint { us: number; velocity: number }
+// Speeds are integer micrometers/second (1000 = 1 mm/s).
+export interface CurvePoint { speed: number; velocity: number }
 export interface Strike {
   key: number; velocity: number; travel: number; frame: number; kind: "on" | "off";
-  us: number | null; engine?: number; measurement?: number; flags?: number;
+  us: number | null; speed: number | null; engine?: number; measurement?: number; flags?: number;
 }
 export interface PressureSample {
   key: number; frame: number; time: number; raw: number; travel: number;
@@ -33,33 +34,33 @@ export function fields(line: string): Record<string, string> {
 }
 export function validPoints(points: CurvePoint[]) {
   return points.length >= 4 && points.length <= 8 && points.every((p, i) =>
-    Boolean(p) && Number.isInteger(p.us) && p.us >= 500 && p.us <= 240000 &&
+    Boolean(p) && Number.isInteger(p.speed) && p.speed >= 1 && p.speed <= 4000000 &&
     Number.isInteger(p.velocity) && p.velocity >= 1 && p.velocity <= 127 &&
-    (!i || (Boolean(points[i - 1]) && p.us + 100 <= points[i - 1].us && p.velocity >= points[i - 1].velocity)));
+    (!i || (Boolean(points[i-1]) && p.speed >= points[i-1].speed+100 && p.velocity >= points[i-1].velocity)));
 }
-export function curveVelocity(points: CurvePoint[], us: number): number {
+export function curveVelocity(points: CurvePoint[], speed: number): number {
   if (!points.length) return 0;
-  if (us >= points[0].us) return points[0].velocity;
-  for (let i = 1; i < points.length; i++) if (us >= points[i].us)
-    return Math.round(points[i - 1].velocity + (points[i - 1].us - us) *
-      (points[i].velocity - points[i - 1].velocity) / (points[i - 1].us - points[i].us));
+  if (speed <= points[0].speed) return points[0].velocity;
+  for (let i=1; i<points.length; i++) if (speed <= points[i].speed)
+    return Math.round(points[i-1].velocity + (speed-points[i-1].speed) *
+      (points[i].velocity-points[i-1].velocity)/(points[i].speed-points[i-1].speed));
   return points.at(-1)!.velocity;
 }
-export function movePoint(points: CurvePoint[], index: number, us: number, velocity: number) {
+export function movePoint(points: CurvePoint[], index: number, speed: number, velocity: number) {
   return points.map((p, i) => i !== index ? p : ({
-    us: Math.max(index === points.length - 1 ? 500 : points[index + 1].us + 100,
-      Math.min(index ? points[index - 1].us - 100 : 240000, Math.round(us))),
-    velocity: Math.max(index ? points[index - 1].velocity : 1,
-      Math.min(index === points.length - 1 ? 127 : points[index + 1].velocity, Math.round(velocity)))
+    speed: Math.max(index ? points[index-1].speed+100 : 1,
+      Math.min(index === points.length-1 ? 4000000 : points[index+1].speed-100, Math.round(speed))),
+    velocity: Math.max(index ? points[index-1].velocity : 1,
+      Math.min(index === points.length-1 ? 127 : points[index+1].velocity, Math.round(velocity)))
   }));
 }
 export function respacePoints(points: CurvePoint[], count: number) {
   if (!points.length) return [];
-  const slow = Math.max(points[0].us, 500 + (count - 1) * 100);
-  const fast = Math.min(points.at(-1)!.us, slow - (count - 1) * 100);
+  const soft = Math.min(points[0].speed, 4000000-(count-1)*100);
+  const hard = Math.max(points.at(-1)!.speed, soft+(count-1)*100);
   return Array.from({ length: count }, (_, i) => {
-    const us = Math.round(slow - (slow - fast) * i / (count - 1));
-    return { us, velocity: curveVelocity(points, us) };
+    const speed = Math.round(soft+(hard-soft)*i/(count-1));
+    return { speed, velocity: curveVelocity(points, speed) };
   });
 }
 export function movePressurePoint(curve: number[], i: number, value: number) {
@@ -70,7 +71,7 @@ export function movePressurePoint(curve: number[], i: number, value: number) {
 export function parseConfig(lines: string[]): LabConfig {
   const result = defaultConfig();
   let threshold = false, settings = false, completed = false;
-  const legacy: number[] = [];
+  const manual: number[] = [];
   for (const line of lines) {
     const p = line.split(","), n = p.slice(2).map(Number);
     if (p[0] !== "tr") continue;
@@ -81,9 +82,9 @@ export function parseConfig(lines: string[]): LabConfig {
       case "engine": result.engine = n; break;
       case "pressure": result.pressure = n; break;
       case "pressure_curve": result.pressureCurve = n; break;
-      case "v": legacy[n[0]] = n[1]; break;
+      case "v": manual[n[0]] = n[1]; break;
       case "curve": if (p[2] === "on" || p[2] === "off") { result.curves[p[2]] = []; result.customCurves[p[2]] = Number(p[3]) > 0; } break;
-      case "xy": if (p[2] === "on" || p[2] === "off") result.curves[p[2]][Number(p[3])] = { us: Number(p[4]), velocity: Number(p[5]) }; break;
+      case "xy": if (p[2] === "on" || p[2] === "off") result.curves[p[2]][Number(p[3])] = { speed: Number(p[4]), velocity: Number(p[5]) }; break;
       case "config_end": completed = true; break;
     }
   }
@@ -91,9 +92,11 @@ export function parseConfig(lines: string[]): LabConfig {
       result.engine.length !== 12 || result.pressure.length !== 4 || result.pressureCurve.length !== 3 ||
       [...result.thresholds, ...result.engine, ...result.pressure, ...result.pressureCurve, result.minimum, result.maximum].some(n => !Number.isInteger(n) || n < 0))
     throw Error("The board returned incomplete calibration settings. Refresh or reconnect.");
+  if (!result.capabilities.includes("curve_speed"))
+    throw Error("Update the board firmware to use speed-based velocity curves.");
   for (const kind of ["on", "off"] as const) {
-    if (!result.curves[kind].length) result.curves[kind] = legacy.map((us, i) => ({ us,
-      velocity: Math.round(result.minimum + (result.maximum - result.minimum) * i / (legacy.length - 1)) }));
+    if (!result.curves[kind].length) result.curves[kind] = manual.map((speed, i) => ({ speed,
+      velocity: Math.round(result.minimum + (result.maximum - result.minimum) * i / (manual.length - 1)) }));
     if (!validPoints(result.curves[kind]) || Object.keys(result.curves[kind]).length !== result.curves[kind].length)
       throw Error("The board returned an invalid velocity curve.");
   }

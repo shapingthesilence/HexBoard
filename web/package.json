@@ -13,12 +13,14 @@
   },
   "dependencies": {
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "spessasynth_core": "4.4.1",
+    "spessasynth_lib": "4.4.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.5.0",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.5",
+    "@vitejs/plugin-react": "^4.5.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vitest": "^3.1.4"

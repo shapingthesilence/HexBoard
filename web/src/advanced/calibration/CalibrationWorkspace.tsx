@@ -48,7 +48,7 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
   const [strikes, setStrikes] = useState<Strike[]>([]), [paused, setPaused] = useState(false), [filter, setFilter] = useState("all");
   const [rawPressure, setRawPressure] = useState<Record<string, string>>({});
   const [pressure, setPressure] = useState<PressureSample | null>(null), [pressureHistory, setPressureHistory] = useState<Array<{ x: number; y: number }>>([]);
-  const [curveKind, setCurveKind] = useState<"on" | "off">("on"), [windowMs, setWindowMs] = useState(150), [pointSource, setPointSource] = useState("live");
+  const [curveKind, setCurveKind] = useState<"on" | "off">("on"), [windowSpeed, setWindowSpeed] = useState(1500), [pointSource, setPointSource] = useState("live");
   const [guided, setGuided] = useState(false), [guidedPoints, setGuidedPoints] = useState(4), [guidedSamples, setGuidedSamples] = useState(3);
   const [capture, setCapture] = useState<Capture | null>(null), [capturing, setCapturing] = useState(false), [range, setRange] = useState<number[] | null>(null), [raw, setRaw] = useState(false);
   const [hiddenNeighbors, setHiddenNeighbors] = useState<number[]>([]), [scan, setScan] = useState<Record<string, string>>({}), [monitorDropped, setMonitorDropped] = useState(0);
@@ -72,13 +72,14 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
   const channel = capture?.count ? capture.channels[0] : null;
   const captureBounds = channel ? [channel.points[0].time, channel.points.at(-1)!.time] : null;
   const crossing = channel && capture?.result === 0 && !capture.gaps ? windowTime(channel.points, mm(config.thresholds[0]), mm(config.thresholds[1])) : null;
-  const measurement = pointSource === "capture" ? (curveKind === "on" ? crossing?.us : null) : latest?.us;
+  const measurement = pointSource === "capture" ? (curveKind === "on" && crossing?.us ?
+    Math.floor(mm(config.thresholds[1]-config.thresholds[0])*1000000000/crossing.us) : null) : latest?.speed;
   const freshPressure = pressure?.key === key && pressure.valid ? pressure : null;
   const notify = (text: string, failed = false) => { if (alive.current) { setMessage(text); setError(failed); } };
   async function refresh() {
     const next = await client.config(); if (!alive.current) return;
     ramSync.reset(next); setConfig(next); setApplied(next);
-    setWindowMs(Math.min(240, Math.max(5, Math.ceil(Math.max(...next.curves.on.map(p => p.us), ...next.curves.off.map(p => p.us)) / 25000) * 25)));
+    setWindowSpeed(Math.min(4000, Math.max(50, Math.ceil(Math.max(...next.curves.on.map(p => p.speed), ...next.curves.off.map(p => p.speed)) / 50000) * 50)));
     setHall(record(await client.command("cal status"), "cal,status="));
     setVelocityStatus(record(await client.command("velocity status"), "velocity,status,"));
   }
@@ -187,7 +188,7 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
     ramSync.reset(config);
   }
   const canEdit = ready && !locked;
-  const hasTimingCurve = config.engine[0] !== 3 && config.engine[0] !== 4;
+  const hasSpeedCurve = config.engine[0] !== 3 && config.engine[0] !== 4;
   const run = (action: () => Promise<void>) => () => void perform(action);
   const requestConfirm = (title: string, text: string, action: () => Promise<void>) => setConfirm({ title, text, action });
   const changeCurve = (kind: "on" | "off", next: typeof points) => setConfig({ ...config,
@@ -291,19 +292,19 @@ export function CalibrationWorkspace({ transport, hello }: { transport: MidiTran
       </section>
       <div className="calColumns"><VelocityControls config={config} change={setConfig} disabled={!canEdit} supportsEngines={config.capabilities.includes("engines")} />
       <section className="calCard"><h3>{config.engine[0] === 0 ? "Attack & release curves" : "Release curve"}</h3>
-        {!hasTimingCurve ? <p>{config.engine[0] === 4 ? "Fixed Velocity uses the same configured velocity for attack and release. Pressure remains continuous while the key is held." : "Peak Gesture uses peak depth and a fixed note duration. Its response is adjusted in the model controls."}</p> : <><div className="sectionTabs"><button type="button" disabled={config.engine[0] !== 0} aria-current={curveKind === "on" ? "step" : undefined} onClick={() => setCurveKind("on")}>Attack</button><button type="button" aria-current={curveKind === "off" ? "step" : undefined} onClick={() => setCurveKind("off")}>Release</button></div>
-        <p className="calHint">{config.engine[0] === 0 ? "Attack uses Start → End timing. " : "Attack is shaped in the model controls. "}Release uses End → Release; editing its curve enables release velocity. Shorter times give higher velocities. Gold shows the board’s last strike; the ring predicts the draft.</p>
-        <div className="calFields"><NumberField label="Graph time window" value={windowMs} min={5} max={240} step={5} unit="ms" onChange={value => { if (value >= 5 && value <= 240) setWindowMs(value); }} />
+        {!hasSpeedCurve ? <p>{config.engine[0] === 4 ? "Fixed Velocity uses the same configured velocity for attack and release. Pressure remains continuous while the key is held." : "Peak Gesture uses peak depth and a fixed note duration. Its response is adjusted in the model controls."}</p> : <><div className="sectionTabs"><button type="button" disabled={config.engine[0] !== 0} aria-current={curveKind === "on" ? "step" : undefined} onClick={() => setCurveKind("on")}>Attack</button><button type="button" aria-current={curveKind === "off" ? "step" : undefined} onClick={() => setCurveKind("off")}>Release</button></div>
+        <p className="calHint">{config.engine[0] === 0 ? "Attack uses average speed from Start → End. " : "Attack is shaped in the model controls. "}Release uses End → Release; editing its curve enables release velocity. Higher speeds give higher velocities. Threshold edits keep the speed curve fixed, but moving the interval can still change the measured gesture. Gold shows the board’s last strike; the ring predicts the draft.</p>
+        <div className="calFields"><NumberField label="Graph speed range" value={windowSpeed} min={50} max={4000} step={50} unit="mm/s" onChange={value => { if (value >= 50 && value <= 4000) setWindowSpeed(value); }} />
           <label className="calField"><span>Curve points</span><select value={points.length || 4} disabled={locked} onChange={e => changeCurve(curveKind, respacePoints(points, Number(e.target.value)))}>{[4, 5, 6, 7, 8].map(n => <option key={n}>{n}</option>)}</select></label></div>
-        <CurveChart points={points} onChange={next => changeCurve(curveKind, next)} windowMs={windowMs} last={latest} disabled={!canEdit} />
-        <label className="calField"><span>Assign time from</span><select value={pointSource} onChange={e => setPointSource(e.target.value)}><option value="live">Latest live strike</option><option value="capture">Captured attack preview</option></select></label>
-        <p className="calHint">{measurement ? `${(measurement / 1000).toFixed(3)} ms available. Choose Use time at the intended velocity.` : "Play or capture a strike to assign a measured time."}</p>
-        <details className="calDetails"><summary>Edit points & assign measured times</summary><div className="calPoints">{points.map((p, i) => <div key={i}><NumberField label={`Point ${i + 1} velocity`} value={p.velocity} min={1} max={127} disabled={!canEdit} onChange={value => changeCurve(curveKind, movePoint(points, i, p.us, value))} />
-          <NumberField label="Crossing time" value={p.us / 1000} unit="ms" min={.5} max={240} step={.1} disabled={!canEdit} onChange={value => changeCurve(curveKind, movePoint(points, i, value * 1000, p.velocity))} />
-          <button type="button" disabled={!canEdit || !measurement} onClick={() => changeCurve(curveKind, movePoint(points, i, measurement!, p.velocity))}>Use time</button></div>)}</div></details>
+        <CurveChart points={points} onChange={next => changeCurve(curveKind, next)} windowSpeed={windowSpeed} last={latest} disabled={!canEdit} />
+        <label className="calField"><span>Assign speed from</span><select value={pointSource} onChange={e => setPointSource(e.target.value)}><option value="live">Latest live strike</option><option value="capture">Captured attack preview</option></select></label>
+        <p className="calHint">{measurement ? `${(measurement / 1000).toFixed(3)} mm/s available. Choose Use speed at the intended velocity.` : "Play or capture a strike to assign a measured speed."}</p>
+        <details className="calDetails"><summary>Edit points & assign measured speeds</summary><div className="calPoints">{points.map((p, i) => <div key={i}><NumberField label={`Point ${i + 1} velocity`} value={p.velocity} min={1} max={127} disabled={!canEdit} onChange={value => changeCurve(curveKind, movePoint(points, i, p.speed, value))} />
+          <NumberField label="Average speed" value={p.speed / 1000} unit="mm/s" min={.001} max={4000} step={.1} disabled={!canEdit} onChange={value => changeCurve(curveKind, movePoint(points, i, value * 1000, p.velocity))} />
+          <button type="button" disabled={!canEdit || !measurement} onClick={() => changeCurve(curveKind, movePoint(points, i, measurement!, p.velocity))}>Use speed</button></div>)}</div></details>
         <div className="calActions"><button type="button" disabled={!canEdit} onClick={() => { changeCurve("off", config.curves.on.map(p => ({ ...p }))); setCurveKind("off"); }}>Copy attack to release</button></div></>}
       </section></div>
-      <section className="calCard"><h3>Guided soft-to-hard calibration</h3><p>For Threshold Strike, play several strikes at each requested strength. The board averages their crossing times into an attack curve.</p>
+      <section className="calCard"><h3>Guided soft-to-hard calibration</h3><p>For Threshold Strike, play several strikes at each requested strength. The board averages their speeds into an attack curve.</p>
         <div className="calFields"><NumberField label="Strength levels" value={guidedPoints} min={4} max={8} disabled={locked} onChange={setGuidedPoints} /><NumberField label="Strikes per level" value={guidedSamples} min={1} max={8} disabled={locked} onChange={setGuidedSamples} /></div>
         {guided && <p className="calStatus">Level {velocityStatus.manual_point}/{guidedPoints} · target velocity {velocityStatus.manual_target_vel} · {velocityStatus.manual_left} strikes remaining. Start softly and increase strength at each level.</p>}
         <div className="calActions"><button type="button" disabled={!canEdit || config.engine[0] !== 0 || dirty} onClick={run(async () => {
