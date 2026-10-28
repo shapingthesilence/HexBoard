@@ -2,6 +2,21 @@ import type { Patch, Recording, Zone, Settings } from "./prepare.mjs";
 import { defaults, trimRecording, crossfadeRecording } from "./encode.mjs";
 import { reverbImpulse } from "./reverb.mjs";
 import { S } from "../performanceSchema.ts";
+// Reuse fitted audio while editing envelopes/gain. Sample edits and changes to
+// the recording map must finish a new conversion before converted audition.
+export function editedCompactAudition(patch: Patch, source: Patch, converted: Patch): Patch | undefined {
+  if (!patch.zones || !source.zones || !converted.zones || patch.assets !== source.assets
+      || patch.zones.length !== source.zones.length || patch.zones.length !== converted.zones.length
+      || patch.zones.some((zone, i) => zone.asset !== source.zones![i].asset || zone.fixed || zone.key !== undefined || zone.choke || zone.roundRobin)) return;
+  return { ...converted, zones: converted.zones?.map((zone, i) => {
+    const edited = patch.zones![i];
+    return { ...zone, ...edited, asset: zone.asset, cutoff: 20000, pan: 0,
+      attack: edited.attack ?? patch.settings?.attack ?? defaults.attack,
+      decay: edited.decay ?? patch.settings?.decay ?? defaults.decay,
+      sustain: edited.sustain ?? patch.settings?.sustain ?? defaults.sustain,
+      release: Math.max(4, edited.release ?? patch.settings?.release ?? defaults.release) };
+  }) };
+}
 export function releaseSeconds(
   settings: Settings,
   zone: Zone,

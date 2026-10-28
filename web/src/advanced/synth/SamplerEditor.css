@@ -311,6 +311,26 @@
   gap: 8px;
   margin-top: 8px;
 }
+.sampler-editor .sampler-workflow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px;
+  margin: 12px 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+.sampler-editor .sampler-workflow p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.sampler-editor .sampler-bottom:has(> fieldset:only-child) {
+  grid-template-columns: 1fr;
+}
 .sampler-editor .sampler-report {
   background: var(--surface-muted);
   padding: 10px;
@@ -523,4 +543,47 @@
 .sampler-editor .sampler-wave-handle:focus-visible {
   outline: none;
   filter: brightness(1.6);
+}
+
+.sampler-editor .sampler-envelope-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.sampler-editor .sampler-envelope-heading select {
+  max-width: 100%;
+  min-width: 0;
+  flex: 1 1 180px;
+}
+.sampler-editor .sampler-envelope-heading label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.sampler-editor .sampler-envelope-heading input { min-height: 0; }
+.sampler-editor .sampler-envelope svg {
+  width: 100%;
+  height: 54px;
+  display: block;
+  margin: 6px 0;
+}
+.sampler-editor .sampler-envelope path {
+  fill: none;
+  stroke: var(--sample-accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.sampler-editor .sampler-envelope-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.sampler-editor .sampler-envelope-control label input[type="range"] { width: 100%; }
+.sampler-editor .sampler-envelope-value { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+.sampler-editor .sampler-envelope-value input { width: 100%; min-width: 0; box-sizing: border-box; }
+.sampler-editor .sampler-envelope-value span { font-size: 10px; color: var(--muted); }
+@media(max-width:650px) {
+  .sampler-editor .sampler-envelope-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

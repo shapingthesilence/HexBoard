@@ -1,26 +1,9 @@
-import { crc32, resample } from "./prepare.mjs";
+import { crc32 } from "./prepare.mjs";
+import { monoRecording, fitCompactRecordings } from "./compactAudio.mjs";
 import { trimRecording, crossfadeRecording, defaults, defaultPerformance } from "./encode.mjs";
 
 export const compactLimits = Object.freeze({ pcmBytes: 49152, assets: 16, zones: 32, slots: 32, voices: 8 });
 const hz = (midi) => 440 * 2 ** ((midi - 69) / 12);
-function shrink(a) {
-  const periodic = a.mode === 1 || a.mode === 3;
-  let factor = .5, loop;
-  if (periodic) {
-    const length = a.loopEnd - a.loopStart, frames = Math.max(2, Math.round(length / 2));
-    if (frames >= length) throw Error("This short loop cannot be reduced further.");
-    factor = frames / length;
-    loop = resample(a.channels.map(c => c.subarray(a.loopStart, a.loopEnd)), 44100 / factor, true);
-  }
-  const channels = resample(a.channels, 44100 / factor, false), start = periodic ? Math.round(a.loopStart * factor) : 0;
-  const end = periodic ? start + loop[0].length : 0;
-  const out = channels.map((c, i) => {
-    const data = new Float32Array(Math.max(2, c.length, end)); data.set(c);
-    if (loop) data.set(loop[i], start);
-    return data;
-  });
-  return { ...a, channels: out, start: 0, end: out[0].length, rate: a.rate * factor, loopStart: start, loopEnd: end };
-}
 export function readCompactPatch(bytes) {
   if (!(bytes instanceof Uint8Array) || bytes.length < 64) throw Error("Incomplete Classic instrument.");
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), assets = [], zones = [];
@@ -48,19 +31,10 @@ export async function prepareCompactPatch(patch, progress = () => {}) {
   let assets = used.map(i => {
     const a = crossfadeRecording(trimRecording(patch.assets[i]));
     if (!Number.isFinite(a.rootMidi) || a.rootMidi < -24 || a.rootMidi > 150) throw Error("Invalid root pitch.");
-    if (a.channels.length === 2) warnings.push("Stereo recordings were downmixed to mono.");
-    const mono = Float32Array.from(a.channels[0], (x, n) => a.channels.length === 2 ? (x + a.channels[1][n]) / 2 : x);
-    if (a.normalize) { let peak = 0; for (const x of mono) peak = Math.max(peak, Math.abs(x)); if (peak) for (let n = 0; n < mono.length; ++n) mono[n] *= .95 / peak; }
-    return { ...a, channels: [mono], start: 0, end: mono.length, crossfade: 0 };
+    return monoRecording(a, warnings);
   });
   const sourceBytes = assets.reduce((n, a) => n + a.channels[0].length * 2, 0);
-  // Reduction is explicit in the report and in the converted audition patch.
-  let reductions = 0;
-  while (assets.reduce((n, a) => n + a.channels[0].length * 2, 0) > compactLimits.pcmBytes) {
-    if (++reductions > 5) throw Error("This instrument cannot fit Classic sample RAM. Trim recordings or use fewer regions.");
-    assets = assets.map(a => shrink(a));
-  }
-  if (reductions) warnings.push(`Reduced source rates in ${reductions} pass${reductions === 1 ? "" : "es"} to fit 48 KiB sample RAM; audition the converted instrument.`);
+  assets = fitCompactRecordings(assets, compactLimits.pcmBytes / 2, warnings, progress);
   warnings.push("Classic uses mono linear interpolation and eight shared voice slots. Tone filters, pressure, room reverb and patch response/arp recall are omitted; board tuning, bends and arpeggiator remain available.");
   const zones = patch.zones.map(z => {
     if (z.key !== undefined || z.fixed || z.roundRobin || z.choke) throw Error("Classic currently supports pitched instruments. Remove fixed-key, round-robin and choke mappings.");

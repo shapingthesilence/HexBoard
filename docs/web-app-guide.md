@@ -964,6 +964,10 @@ PCM/float WAVE_FORMAT_EXTENSIBLE files. Instrument fills pitch ranges from
 editable roots. Kit maps recordings to playing keys. Slices divides the selected
 recording into 2–64 equal one-shot segments; Undo recovers the original.
 
+The shared **Region ADSR** panel provides direct sliders and exact time/percent
+entry. Choose a region there, use **Edit all regions** for linked changes, or
+**Copy ADSR to all** to copy the selected envelope in one action.
+
 In Kit/Slices, click a key in the HexBoard preview to choose its sample and
 color, assign the selected recording, clear it or audition it. Drag a recording
 onto a key to remap it directly. Map recordings in order provides a starting
@@ -1026,9 +1030,11 @@ travel under the device's **Settings → Pedal setup**.
 
 With updated Classic firmware connected, Synth offers Wavetable and Sampler
 editors. Sampler shares Advanced's import, waveform, loop and region tools with
-controls limited to Classic playback. Choose a SoundFont preset, keep the original
-samples for compact instruments, then use **Prepare Classic audition**. Review
-size and sound changes before copying to the board. The Classic library selects,
+controls limited to Classic playback. Import and edits automatically prepare the
+Classic conversion. Compare original and converted recordings, then use **Send to
+HexBoard**. Region ADSR stays visible with sliders, exact time/percent fields and
+selected/all-region editing. Review size and sound changes before copying to the
+board. Choosing a Classic library instrument plays it immediately. The library
 exports and deletes installed instruments. **Save startup settings** saves current
 settings to profile 1 and respects the existing AutoSave preference.
 

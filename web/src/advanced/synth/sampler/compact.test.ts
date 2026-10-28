@@ -22,6 +22,34 @@ describe("Classic sampler",()=>{
   const p=patch(30001),r=await prepareCompactPatch(p),a=r.auditionPatch!.assets[0];
   expect(r.residentBytes).toBeLessThanOrEqual(compactLimits.pcmBytes);expect(r.warnings.join(" ")).toContain("Reduced source rates");
   expect(a.rate/(a.loopEnd!-a.loopStart!)).toBeCloseTo(22050/(30001-5-3),8);
+  expect(r.residentBytes).toBeGreaterThan(48000); // Use the budget instead of throwing half of it away.
+  expect(a.rate).toBeGreaterThan(22050*.8);
+ });
+ it("protects high notes instead of exporting an almost silent reduction",async()=>{
+  const p=patch(200000);p.assets[0]={channels:[Float32Array.from({length:200000},(_,i)=>.4*Math.sin(2*Math.PI*1760*i/44100))],rate:44100,rootMidi:93,mode:0};
+  await expect(prepareCompactPatch(p)).rejects.toThrow(/sample RAM at the protected rates.*48 KiB/);
+ });
+ it("budgets rates independently and retains the pitch of odd loops",async()=>{
+  const p=patch(30001);p.assets.push({channels:[Float32Array.from({length:4001},(_,i)=>.4*Math.sin(2*Math.PI*2093*i/44100))],rate:44100,rootMidi:96,mode:0});
+  p.zones=[{asset:0,lowMidi:0,highMidi:80},{asset:1,lowMidi:80,highMidi:128}];
+  const r=await prepareCompactPatch(p),[low,high]=r.auditionPatch!.assets;
+  expect(high.rate).toBeGreaterThanOrEqual(2093*6);
+  expect(high.rate/44100).toBeGreaterThan(low.rate/22050);
+  expect(r.residentBytes).toBeLessThanOrEqual(compactLimits.pcmBytes);
+  const energy=(data:Float32Array)=>data.reduce((v,x)=>v+x*x,0)/data.length;
+  expect(energy(high.channels[0])/energy(p.assets[1].channels[0])).toBeGreaterThan(.95);
+ });
+ it("removes inaccessible continuous-loop data but retains release tails",async()=>{
+  const p=patch(30001);Object.assign(p.assets[0],{mode:1,loopStart:10,loopEnd:1000});
+  const r=await prepareCompactPatch(p),a=r.auditionPatch!.assets[0];expect(a.channels[0].length).toBe(1000);expect(a.rate).toBe(22050);
+  p.assets[0].mode=3;const tail=(await prepareCompactPatch(p)).auditionPatch!.assets[0];
+  expect((tail.channels[0].length-tail.loopEnd!)/tail.rate).toBeCloseTo((30001-1000)/22050,3);
+ });
+ it("preserves level through mono phase cancellation and normalizes after filtering",async()=>{
+  const p=patch(),left=p.assets[0].channels[0];p.assets[0].channels=[left,left.map(x=>-x)];
+  const r=await prepareCompactPatch(p);expect(r.warnings.join(" ")).toContain("cancel");expect(Math.max(...r.auditionPatch!.assets[0].channels[0])).toBeGreaterThan(.29);
+  const q=patch(30001);q.assets[0].normalize=true;const a=(await prepareCompactPatch(q)).auditionPatch!.assets[0];
+  expect(a.channels[0].reduce((v,x)=>Math.max(v,Math.abs(x)),0)).toBeCloseTo(.95,6);expect(a.normalize).toBe(false);
  });
  it("rejects overlapping maps, unsupported mappings, bad bounds and nonfinite source data",async()=>{
   const p=patch();p.zones!.push({...p.zones![0]});await expect(prepareCompactPatch(p)).rejects.toThrow(/overlapping/);
@@ -30,7 +58,9 @@ describe("Classic sampler",()=>{
  });
  it("uses the shared editor with only Classic-supported workflows",()=>{
   const html=renderToStaticMarkup(createElement(SamplerEditor,{target:"classic"}));
-  for(const s of ["Import SoundFont","Classic library","48 KiB","Prepare Classic audition"])expect(html).toContain(s);
+  for(const s of ["Import SoundFont","Classic library","48 KiB","conversion updates automatically","Send to HexBoard","Original recordings","Sample key and velocity regions"])expect(html).toContain(s);
   for(const s of ["KW upright","Patch response","Fast lift","Room reverb","SD · long recordings"])expect(html).not.toContain(s);
+  expect(html).not.toContain('class="sampler-editing"');expect(html).not.toContain("Prepare instrument");
+  expect(html).toContain('accept=".sf2,.sf3,.sfz,.wav,.hbs,.hbc"');
  });
 });
