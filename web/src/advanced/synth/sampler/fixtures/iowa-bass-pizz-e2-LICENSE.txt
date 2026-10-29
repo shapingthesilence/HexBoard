@@ -1,0 +1,8 @@
+Regression fixture: Bass.pizz.E2-PB.wav from the user's Virtual Playing Orchestra 3 Iowa sample folder, preserved without changes.
+Original recording collection: University of Iowa Electronic Music Studios, http://theremin.music.uiowa.edu/index.html
+
+The included Virtual Playing Orchestra libs/Iowa/license.txt states:
+"these recordings have been freely available on this website and may be downloaded
+and used for any projects, without restrictions."
+
+Used here to test pitch recognition of a real plucked E2 double-bass recording, including its attack and decay. The test does not infer its answer from its filename or quantize the measured pitch to E2.

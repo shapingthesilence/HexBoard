@@ -389,4 +389,8 @@ rounding are rejected. WAV import retains native data until target preparation.
 The tests verify odd/short periods, release-tail joins and serialized tuning for
 both HBC and HBS pitch variants. See [loop operation](../docs/web-app-guide.md#sampler-loop-editing).
 
-WAV imports show pitch confidence or an explicit uncertain C4 placeholder. Accepting a pitch suggestion updates an untouched automatic map; manually edited regions remain unchanged. Compact-loop suggestions can be auditioned and selected in a dialog before applying them to unlooped recordings; existing loops are preserved. Pitch and loop analysis results open in a dialog. Conversion reports identify recordings with uncertain or out-of-range loop measurements.
+WAV imports label detected pitch or show an explicit uncertain C4 placeholder; measurement details expose detector confidence. Accepting a pitch suggestion updates an untouched automatic map; manually edited regions remain unchanged. Compact-loop suggestions can be auditioned and selected in a dialog before applying them to unlooped recordings; existing loops are preserved. Pitch and loop analysis results open in a dialog. Conversion reports identify recordings with uncertain or out-of-range loop measurements.
+
+Sampler authoring uses a single Recording/Mapping workspace and a fixed audition dock. `sampler/authoring.ts` owns tiny-periodic search and reversible PCM edits; `SamplerMidiInput.ts` preserves channel/note identity for browser audition. See [the workflow guide](../docs/sampler-tuning.md).
+
+Source pitch recognition uses short-frame normalized correlation with conservative precision refinement; rendered-loop verification retains its strict precision path. The Iowa pizzicato E2 regression fixture includes its source/license record. Native-rate filtering/downsampling is exposed only for Classic export.

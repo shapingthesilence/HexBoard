@@ -48,11 +48,14 @@ export function releaseSeconds(
 }
 interface Voice {
   source: AudioBufferSourceNode;
+  readerGain: GainNode;
+  pan: StereoPannerNode;
   gain: GainNode;
   filter: BiquadFilterNode;
   pressure: GainNode;
   zone: Zone;
   asset: Recording;
+  assetIndex: number;
   start: number;
   peak: number;
   release?: number;
@@ -92,7 +95,7 @@ export class PatchPreview {
     if (!this.ctx) {
       this.ctx = new AudioContext();
       this.output = this.ctx.createGain();
-      this.output.gain.value = 0.6;
+      this.output.gain.value = this.volume;
       this.limiter = this.ctx.createDynamicsCompressor();
       this.limiter.threshold.value = -2;
       this.limiter.knee.value = 0;
@@ -129,25 +132,46 @@ export class PatchPreview {
     }
     this.roomGain?.gain.setTargetAtTime(amount, this.ctx.currentTime, 0.012);
   }
+  private readerTimer?: ReturnType<typeof setTimeout>;
+  private expressionByKey = new Map<string,{pressure:number;bend:number}>();
+  private volume=.6;
+  setVolume(value:number){this.volume=Math.max(0,Math.min(1,value));if(this.output&&this.ctx)this.output.gain.setTargetAtTime(this.volume,this.ctx.currentTime,.01);}
+  noteExpression(key:string,pressure:number,bend:number){this.expressionByKey.set(key,{pressure,bend});for(const v of this.voices.filter(v=>v.key===key)){v.source.playbackRate.setTargetAtTime(v.rate*2**((this.bend+bend)/12),this.ctx!.currentTime,.005);v.pressure.gain.setTargetAtTime(this.pressureLevel(pressure),this.ctx!.currentTime,.01);v.filter.frequency.setTargetAtTime(this.cutoff(v.zone,pressure),this.ctx!.currentTime,.01);}}
+  stopNote(key:string){this.held.delete(key);for(const v of this.voices.filter(v=>v.key===key))this.stopVoice(v,.01);this.expressionByKey.delete(key);}
   setPatch(patch: Patch) {
     this.patch = patch;
+    if(this.readerTimer)clearTimeout(this.readerTimer);
+    if(this.voices.some(v=>patch.assets[v.assetIndex]!==v.asset))this.readerTimer=setTimeout(()=>{
+      this.readerTimer=undefined;
+      for(const v of [...this.voices]){
+        if(v.release!==undefined||(!this.held.has(v.key)&&!v.pedal))continue;
+        const a=patch.assets[v.assetIndex];
+        if(!a||a===v.asset||![1,3].includes(a.mode??0))continue;
+        const ctx=this.ctx!,now=ctx.currentTime,source=ctx.createBufferSource(),readerGain=ctx.createGain(),old=v.source,oldGain=v.readerGain,fade=crossfadeFrames(a),start=a.start??0;
+        source.buffer=this.buffer(a);source.loop=true;source.loopStart=((a.loopStart??start)-start+fade)/source.buffer.sampleRate;source.loopEnd=((a.loopEnd??a.end??a.channels[0].length)-start+fade)/source.buffer.sampleRate;
+        const held=this.held.get(v.key);const rate=(a.rate/source.buffer.sampleRate)*2**(((v.zone.fixed?0:(held?.note??a.rootMidi)-a.rootMidi)*(v.zone.keyTrack??1))/12);
+        source.playbackRate.value=rate*2**((this.bend+(this.expressionByKey.get(v.key)?.bend??0))/12);source.connect(readerGain).connect(v.filter);readerGain.gain.setValueAtTime(0,now);readerGain.gain.linearRampToValueAtTime(1,now+.02);oldGain.gain.cancelScheduledValues(now);oldGain.gain.setValueAtTime(oldGain.gain.value,now);oldGain.gain.linearRampToValueAtTime(0,now+.02);
+        v.source=source;v.readerGain=readerGain;v.asset=a;v.rate=rate;source.onended=()=>{source.disconnect();readerGain.disconnect();if(v.source===source){this.voices=this.voices.filter(x=>x!==v);v.filter.disconnect();v.gain.disconnect();v.pressure.disconnect();v.pan.disconnect();}};
+        source.start(now,source.loopStart);try{old.stop(now+.025);}catch{}
+      }
+    },80);
     this.setRoom(patch.settings?.space ?? 0);
     for (const v of this.voices) {
       v.filter.frequency.setTargetAtTime(
-        this.cutoff(v.zone),
+        this.cutoff(v.zone,this.expressionByKey.get(v.key)?.pressure),
         this.ctx!.currentTime,
         0.01,
       );
       v.filter.Q.value = patch.settings?.resonance ?? 0.7;
       v.pressure.gain.setTargetAtTime(
-        this.pressureLevel(),
+        this.pressureLevel(this.expressionByKey.get(v.key)?.pressure),
         this.ctx!.currentTime,
         0.01,
       );
     }
     if (!patch.performance?.values[S.enabled] && this.timer) this.clear();
   }
-  private cutoff(z: Zone) {
+  private cutoff(z: Zone, pressure=this.pressure) {
     const p = this.patch.settings;
     return (
       Math.min(p?.cutoff ?? defaults.cutoff, z.cutoff ?? 20000) *
@@ -155,29 +179,29 @@ export class PatchPreview {
         0.75 *
           (1 -
             (p?.pressure ?? defaults.pressure) +
-            this.pressure * (p?.pressure ?? defaults.pressure)))
+            pressure * (p?.pressure ?? defaults.pressure)))
     );
   }
-  private pressureLevel() {
+  private pressureLevel(pressure=this.pressure) {
     const depth = this.patch.settings?.pressureGain ?? 0;
-    return 1 - depth + this.pressure * depth;
+    return 1 - depth + pressure * depth;
   }
   expression(pressure = this.pressure, bend = this.bend) {
     this.pressure = pressure;
     this.bend = bend;
     for (const v of this.voices) {
       v.source.playbackRate.setTargetAtTime(
-        v.rate * 2 ** (bend / 12),
+        v.rate * 2 ** ((bend+(this.expressionByKey.get(v.key)?.bend??0)) / 12),
         this.ctx!.currentTime,
         0.005,
       );
       v.pressure.gain.setTargetAtTime(
-        this.pressureLevel(),
+        this.pressureLevel(this.expressionByKey.get(v.key)?.pressure),
         this.ctx!.currentTime,
         0.01,
       );
       v.filter.frequency.setTargetAtTime(
-        this.cutoff(v.zone),
+        this.cutoff(v.zone,this.expressionByKey.get(v.key)?.pressure),
         this.ctx!.currentTime,
         0.01,
       );
@@ -255,14 +279,16 @@ export class PatchPreview {
       filter = ctx.createBiquadFilter(),
       gain = ctx.createGain(),
       pressure = ctx.createGain(),
+      readerGain = ctx.createGain(),
       pan = ctx.createStereoPanner();
     source.buffer = this.buffer(a);
     filter.type = "lowpass";
-    filter.frequency.value = this.cutoff(choice);
+    filter.frequency.value = this.cutoff(choice,this.expressionByKey.get(key)?.pressure);
     filter.Q.value = p.resonance ?? 0.7;
     pan.pan.value = choice.pan ?? 0;
-    pressure.gain.value = this.pressureLevel();
+    pressure.gain.value = this.pressureLevel(this.expressionByKey.get(key)?.pressure);
     source
+      .connect(readerGain)
       .connect(filter)
       .connect(gain)
       .connect(pressure)
@@ -291,7 +317,7 @@ export class PatchPreview {
       hold = (choice.hold ?? 0) / 1000,
       decay = (choice.decay ?? p.decay ?? 150) / 1000,
       sustain = choice.sustain ?? p.sustain ?? 1;
-    source.playbackRate.value = rate;
+    source.playbackRate.value = rate*2**((this.expressionByKey.get(key)?.bend??0)/12);
     if (a.mode === 1 || a.mode === 3) {
       source.loop = true;
       source.loopStart =
@@ -313,11 +339,14 @@ export class PatchPreview {
     );
     const voice: Voice = {
       source,
+      readerGain,
+      pan,
       gain,
       filter,
       pressure,
       zone: choice,
       asset: a,
+      assetIndex: choice.asset,
       start: now,
       peak,
       key,
@@ -326,8 +355,9 @@ export class PatchPreview {
     };
     this.voices.push(voice);
     source.onended = () => {
+      source.disconnect();readerGain.disconnect();
+      if(voice.source!==source)return;
       this.voices = this.voices.filter((v) => v !== voice);
-      source.disconnect();
       filter.disconnect();
       gain.disconnect();
       pressure.disconnect();
@@ -368,7 +398,7 @@ export class PatchPreview {
       /* Already ended. */
     }
   }
-  off(key: string, velocity = 64) {
+  off(key: string, velocity = 64, pedalRelease = false) {
     this.held.delete(key);
     for (const v of this.voices.filter(
       (v) => v.key === key && v.asset.mode !== 2,
@@ -380,7 +410,7 @@ export class PatchPreview {
       if (v.asset.mode === 3) v.source.loop = false;
       this.stopVoice(
         v,
-        releaseSeconds(this.patch.settings ?? {}, v.zone, velocity),
+        releaseSeconds(this.patch.settings ?? {}, v.zone, velocity, pedalRelease),
       );
     }
     if (!this.held.size && !this.patch.performance?.values[S.latch])
@@ -491,6 +521,8 @@ export class PatchPreview {
       this.stopVoice(v, 0.03);
   }
   clear() {
+    if(this.readerTimer)clearTimeout(this.readerTimer);
+    this.expressionByKey.clear();
     this.held.clear();
     this.latched.clear();
     this.stopArp();

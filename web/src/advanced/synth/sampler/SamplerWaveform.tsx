@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Recording } from "./prepare.mjs";
+import {drawPCM,type Selection,type ChannelChoice} from "./authoring.ts";
 import { crossfadeFrames } from "./encode.mjs";
 import { recordingBounds, moveBoundary, snapLoop, matchLoop, loopPitchChange, loopSeam, waveformDetail, type Boundary } from "./loopEditing.ts";
 
@@ -26,10 +27,15 @@ function FrameField({ label, value, onFocus, onCommit }: { label: string; value:
     }}/></label>;
 }
 
-export function SamplerWaveform({ recording: a, onChange }: { recording: Recording; onChange: (change: Partial<Recording>, remember: boolean) => void }) {
+export function SamplerWaveform({ recording: a, onChange, selection, onSelection, tool="select", channel="linked", loopToolsVisible=false }: { recording: Recording; onChange: (change: Partial<Recording>, remember: boolean) => void; selection?:Selection; onSelection?:(s:Selection)=>void; tool?:"select"|"pencil"|"loop"; channel?:ChannelChoice; loopToolsVisible?:boolean }) {
+  const paint=useRef<{frame:number;value:number;changed:boolean}|undefined>(undefined);
+  const selectionAnchor=useRef<number|undefined>(undefined);
+  const loopGesture=useRef(false);
+  const views=useRef(new Map<string,[number,number]>());
+
   const length = a.channels[0].length, b = recordingBounds(a), looping = a.mode === 1 || a.mode === 3;
   const [view, setView] = useState<[number, number]>([0, length]);
-  const [locked, setLocked] = useState(true), [snap, setSnap] = useState(false), [active, setActive] = useState<Boundary>("loopStart");
+  const [locked, setLocked] = useState(looping && b.loopEnd-b.loopStart < b.end-b.start), [snap, setSnap] = useState(false), [active, setActive] = useState<Boundary>("loopStart");
   const [gainChoice, setGainChoice] = useState("auto"), [message, setMessage] = useState("");
   const original = useRef({ data: a.channels[0], frames: looping ? b.loopEnd - b.loopStart : 0 });
   const current = useRef(a); current.current = a;
@@ -37,9 +43,11 @@ export function SamplerWaveform({ recording: a, onChange }: { recording: Recordi
   useEffect(() => {
     if (original.current.data !== a.channels[0] || (looping && original.current.frames < 1)) {
       original.current = { data: a.channels[0], frames: looping ? b.loopEnd - b.loopStart : 0 };
-      setView([0, length]); setMessage("");
+      setMessage("");
     }
   }, [a.channels[0], length, looping]);
+  useEffect(()=>{setView(views.current.get(a.name??"")??[0,length]);},[a.name,length]);
+  useEffect(()=>{views.current.set(a.name??"",view);},[view]);
   const start = Math.max(0, Math.min(view[0], length - 1)), end = Math.min(length, Math.max(start + 1, view[1])), span = end - start;
   const height = a.channels.length * 110;
   const display = useMemo(() => {
@@ -58,19 +66,20 @@ export function SamplerWaveform({ recording: a, onChange }: { recording: Recordi
     const source = current.current;
     const update = moveBoundary(source, boundary, frame, looping && locked, looping && useSnap, Math.max(2, Math.min(128, Math.ceil(span / 70))));
     const previous = recordingBounds(source);
-    if (Object.entries(update).some(([key, value]) => previous[key as Boundary] !== value)) { setMessage(""); onChange(update, remember); }
+    if (Object.entries(update).some(([key, value]) => previous[key as Boundary] !== value)) { setMessage(""); onChange({...update,...(boundary.startsWith("loop")&&!looping?{mode:1 as const}:{})}, remember); }
     return update[boundary]!;
   };
-  const tool = (update: Partial<Recording>) => {
+  const applyTool = (update: Partial<Recording>) => {
     const changed = Object.entries(update).some(([key, value]) => b[key as Boundary] !== value);
     if (changed) { onChange(update, true); setMessage(locked ? "Loop moved; length and repetition pitch preserved." : "Loop boundaries changed. Check the pitch readout and audition."); }
     else setMessage(seam.jump < .0001 && seam.slope < .0001 ? "Loop seam already matches at this length." : "No better matching boundaries nearby at this length. Try a crossfade, or unlock length to resize.");
   };
   const seam = loopSeam(a), cents = loopPitchChange(a, original.current.frames || b.loopEnd - b.loopStart), fade = crossfadeFrames(a);
   const markerNames: Record<Boundary, string> = { start: "Trim start", end: "Trim end", loopStart: "Loop start", loopEnd: "Loop end" };
-  const markers: Boundary[] = looping ? ["start", "end", "loopStart", "loopEnd"] : ["start", "end"];
+  const markers: Boundary[] = (looping || loopToolsVisible) ? ["start", "end", "loopStart", "loopEnd"] : ["start", "end"];
   return <div className="sampler-wave-editor">
     <div className="sampler-fields sampler-wave-tools">
+      {loopToolsVisible&&<label title="Off: resize either boundary. On: move both markers together."><input type="checkbox" checked={locked} disabled={!looping} onChange={event=>setLocked(event.target.checked)}/>Lock loop length / pitch</label>}
       <button onClick={() => show(0, length)}>Full sample</button>
       <button disabled={!looping} onClick={() => { const size = Math.max(16, (b.loopEnd - b.loopStart) * 1.3); focus((b.loopStart + b.loopEnd) / 2, size); }}>Zoom to loop</button>
       <button disabled={!looping} onClick={() => { setActive("loopStart"); focus(b.loopStart, 64); }}>View loop start</button>
@@ -79,13 +88,15 @@ export function SamplerWaveform({ recording: a, onChange }: { recording: Recordi
       <button aria-label="Zoom out waveform" onClick={() => focus((start + end) / 2, span * 2)}>−</button>
       <button aria-label="Pan waveform earlier" disabled={start === 0} onClick={() => show(start - span / 2, end - span / 2)}>←</button>
       <button aria-label="Pan waveform later" disabled={end === length} onClick={() => show(start + span / 2, end + span / 2)}>→</button>
-      <label>Display gain<select aria-label="Waveform display gain" value={gainChoice} onChange={event => setGainChoice(event.target.value)}>
-        <option value="auto">Auto</option>{[1, 2, 4, 8, 16].map(n => <option key={n} value={n}>×{n}</option>)}
-      </select></label>
+
     </div>
-    <svg className="sampler-wave sampler-wave-detail" viewBox={`0 0 560 ${height}`} role="group" aria-label={`Waveform of ${a.name}`}>
+    <svg className="sampler-wave sampler-wave-detail" viewBox={`0 0 560 ${height}`} role="group" aria-label={`Waveform of ${a.name}`}
+      onPointerDown={event=>{if((event.target as Element).closest('.sampler-wave-handle'))return;const rect=event.currentTarget.getBoundingClientRect(),frame=Math.max(b.start,Math.min(b.end-1,Math.round(start+(event.clientX-rect.left)/rect.width*span)));event.currentTarget.setPointerCapture(event.pointerId);if(tool==='pencil'){if(span>96){setMessage('Zoom to 96 frames or fewer to draw individual points.');return;}const y=(event.clientY-rect.top)/rect.height*height,value=Math.max(-1,Math.min(1,(55-y%110)/(110*.43*display.gain)));paint.current={frame,value,changed:true};onChange(drawPCM(current.current,frame,frame,value,value,channel),true);}else{selectionAnchor.current=frame;loopGesture.current=false;if(tool!=="loop")onSelection?.([frame,frame+1]);}}}
+      onPointerMove={event=>{if(!event.currentTarget.hasPointerCapture(event.pointerId))return;const rect=event.currentTarget.getBoundingClientRect(),frame=Math.max(b.start,Math.min(b.end-1,Math.round(start+(event.clientX-rect.left)/rect.width*span)));if(tool==='pencil'&&paint.current){const y=(event.clientY-rect.top)/rect.height*height,value=Math.max(-1,Math.min(1,(55-y%110)/(110*.43*display.gain)));onChange(drawPCM(current.current,paint.current.frame,frame,paint.current.value,value,channel),false);paint.current={frame,value,changed:true};}else if(selectionAnchor.current!==undefined){const lo=Math.min(selectionAnchor.current,frame),hi=Math.max(selectionAnchor.current,frame)+1;if(tool==="loop"){if(hi-lo>=4){setLocked(false);onChange({mode:1,loopStart:lo,loopEnd:hi},!loopGesture.current);loopGesture.current=true;}}else onSelection?.([lo,hi]);}}}
+      onPointerUp={()=>{paint.current=undefined;selectionAnchor.current=undefined;}} onPointerCancel={()=>{paint.current=undefined;selectionAnchor.current=undefined;}}>
       <defs><clipPath id={clip}><rect width="560" height={height}/></clipPath></defs>
       <g clipPath={`url(#${clip})`}>
+        {selection&&<rect className="sampler-edit-selection" x={(selection[0]-start)*560/span} y="0" width={(selection[1]-selection[0])*560/span} height={height}/>}
         {looping && <rect className="sampler-loop-area" x={(b.loopStart - start) * 560 / span} y="0" width={(b.loopEnd - b.loopStart) * 560 / span} height={height}/>}
         {a.channels.map((channel, i) => <g key={i} transform={`translate(0 ${i * 110})`}>
           <line className="sampler-zero-line" x1="0" x2="560" y1="55" y2="55"/>
@@ -125,12 +136,16 @@ export function SamplerWaveform({ recording: a, onChange }: { recording: Recordi
       onKeyDown={event => { if (["ArrowLeft", "ArrowRight"].includes(event.key)) { event.preventDefault(); show(start + (event.key === "ArrowLeft" ? -1 : 1) * span / 4, end + (event.key === "ArrowLeft" ? -1 : 1) * span / 4); } }}>
       <path d={overview}/><rect x={start / length * 560} y="0" width={Math.max(2, span / length * 560)} height="30"/>
     </svg>
-    <p className="sampler-wave-readout">View {start.toLocaleString()}–{end.toLocaleString()} frames · {(span / a.rate * 1000).toFixed(3)} ms · end markers are exclusive</p>
+    <details className="sampler-wave-precision"><summary>Exact trim &amp; waveform display</summary>
+      <label>Display gain<select aria-label="Waveform display gain" value={gainChoice} onChange={event => setGainChoice(event.target.value)}>
+        <option value="auto">Auto</option>{[1, 2, 4, 8, 16].map(n => <option key={n} value={n}>×{n}</option>)}
+      </select></label>    <p className="sampler-wave-readout">View {start.toLocaleString()}–{end.toLocaleString()} frames · {(span / a.rate * 1000).toFixed(3)} ms · end markers are exclusive</p>
     <div className="sampler-fields">
       {(["start", "end"] as Boundary[]).map(boundary => <FrameField key={boundary} label={markerNames[boundary]} value={b[boundary]} onFocus={() => setActive(boundary)} onCommit={n => change(boundary, n, true, false)}/>)}
     </div>
+    </details>
     <details className="sampler-loop-details"><summary>Loop details &amp; fine adjustments</summary>
-    {looping ? <><div className="sampler-fields">
+    {(looping||loopToolsVisible) ? <><div className="sampler-fields">
       {(["loopStart", "loopEnd"] as Boundary[]).map(boundary => <FrameField key={boundary} label={markerNames[boundary]} value={b[boundary]} onFocus={() => setActive(boundary)} onCommit={n => change(boundary, n, true, false)}/>)}
       <FrameField label="Crossfade frames" value={fade} onCommit={n => {
         const frames = crossfadeFrames({ ...a, crossfade: Math.max(0, n) * 1000 / a.rate });
@@ -138,10 +153,10 @@ export function SamplerWaveform({ recording: a, onChange }: { recording: Recordi
       }}/>
     </div>
       <div className="sampler-fields sampler-loop-tools">
-        <label><input type="checkbox" checked={locked} onChange={event => setLocked(event.target.checked)}/>Lock loop length / pitch</label>
+        {!loopToolsVisible&&<label><input type="checkbox" checked={locked} onChange={event => setLocked(event.target.checked)}/>Lock loop length / pitch</label>}
         <label><input type="checkbox" checked={snap} onChange={event => setSnap(event.target.checked)}/>Snap drag to zero</label>
-        <button onClick={() => tool(snapLoop(a, locked))}>Snap to zero</button>
-        <button onClick={() => tool(matchLoop(a, locked, active === "loopEnd" ? "loopEnd" : "loopStart"))}>Match seam</button>
+        <button onClick={() => applyTool(snapLoop(a, locked))}>Snap to zero</button>
+        <button onClick={() => applyTool(matchLoop(a, locked, active === "loopEnd" ? "loopEnd" : "loopStart"))}>Match seam</button>
         <button aria-label={locked ? "Nudge loop earlier one frame" : "Nudge active loop boundary earlier one frame"} onClick={() => change(active === "loopEnd" ? "loopEnd" : "loopStart", b[active === "loopEnd" ? "loopEnd" : "loopStart"] - 1, true, false)}>−1 frame</button>
         <button aria-label={locked ? "Nudge loop later one frame" : "Nudge active loop boundary later one frame"} onClick={() => change(active === "loopEnd" ? "loopEnd" : "loopStart", b[active === "loopEnd" ? "loopEnd" : "loopStart"] + 1, true, false)}>+1 frame</button>
       </div>

@@ -11,6 +11,14 @@ import { readBank } from "./bank.mjs";
 const sine = (length: number, period: number) => Float32Array.from({ length }, (_, i) => .6 * Math.sin(2 * Math.PI * (i - 3) / period));
 const recording = (): Recording => ({ name: "Short loop", channels: [sine(512, 16)], rate: 32000, rootMidi: 69, mode: 1, loopStart: 20, loopEnd: 36 });
 describe("Shared precise loop editing", () => {
+  it("exposes draggable loop handles before enabling looping and leaves full-length loops unlocked",()=>{
+    const a={...recording(),mode:0 as const,loopStart:undefined,loopEnd:undefined};
+    const html=renderToStaticMarkup(createElement(SamplerWaveform,{recording:a,onChange:()=>{},loopToolsVisible:true}));
+    expect(html).toContain('aria-label="Loop start handle"');expect(html).toContain('aria-label="Loop end handle"');expect(html).not.toContain('checked=""');
+    expect(moveBoundary(a,"loopStart",100,false)).toEqual({loopStart:100});
+    const whole={...a,mode:1 as const,loopStart:0,loopEnd:a.channels[0].length};
+    expect(renderToStaticMarkup(createElement(SamplerWaveform,{recording:whole,onChange:()=>{},loopToolsVisible:true}))).not.toContain('checked=""');
+  });
   it("locks exact loop length during nudges, snapping and trim changes", () => {
     const a = recording();
     for (const change of [moveBoundary(a, "loopStart", 21, true), moveBoundary(a, "loopEnd", 35, true), snapLoop(a, true), matchLoop(a, true, "loopEnd"), moveBoundary(a, "start", 510, true), moveBoundary(a, "end", 10, true)]) {

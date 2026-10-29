@@ -14,7 +14,7 @@ export function analysisChannel(a: Recording, start: number, end: number) {
   for(const c of a.channels){let sum=0; const step=Math.max(1,Math.floor((end-start)/4096)); for(let i=start;i<end;i+=step)sum+=c[i]*c[i]; if(sum>energy){best=c;energy=sum;}}
   return best; // Never sum anti-phase stereo into silence.
 }
-function estimate(source: Float32Array, rate: number, begin: number, end: number): {hz:number;confidence:number}|null {
+function estimatePrecise(source: Float32Array, rate: number, begin: number, end: number): {hz:number;confidence:number}|null {
   const stride=Math.max(1,Math.floor(rate/12000)), sr=rate/stride, count=Math.min(6144,Math.floor((end-begin)/stride));
   if(count<512)return null;
   const data=new Float64Array(count); let mean=0, power=0;
@@ -42,11 +42,71 @@ function estimate(source: Float32Array, rate: number, begin: number, end: number
   const hz=sr/period, confidence=Math.max(0,Math.min(1,Math.min(1-difference[lag],value)));
   return hz>=30&&hz<=2500&&confidence>=.8?{hz,confidence}:null;
 }
-export function analyzePitch(a: Recording, start=a.start??0, end=a.end??a.channels[0].length, maxPoints=32):PitchAnalysis {
+function estimate(source: Float32Array, rate: number, begin: number, end: number): {hz:number;confidence:number}|null {
+  const stride=Math.max(1,Math.floor(rate/12000)), sr=rate/stride, count=Math.min(6144,Math.floor((end-begin)/stride));
+  if(count<512)return null;
+  const data=new Float64Array(count); let mean=0, power=0, rawPower=0;
+  // Bandlimit before decimation: ultrasonic content must not alias into a
+  // plausible low fundamental. Analysis never changes source PCM.
+  let kernel=decimators.get(stride);
+  if(!kernel){const radius=stride===1?0:24*stride;kernel=new Float64Array(radius*2+1);let norm=0;for(let k=-radius;k<=radius;k++){const cutoff=.45/stride,x=2*cutoff*k;const sinc=x===0?1:Math.sin(Math.PI*x)/(Math.PI*x);const w=radius?.42+.5*Math.cos(Math.PI*k/radius)+.08*Math.cos(2*Math.PI*k/radius):1;kernel[k+radius]=sinc*w;norm+=kernel[k+radius];}for(let i=0;i<kernel.length;i++)kernel[i]/=norm;decimators.set(stride,kernel);}
+  const radius=(kernel.length-1)/2;
+  for(let n=0;n<count;n++){let v=0;for(let k=0;k<kernel.length;k++)v+=source[Math.max(0,Math.min(source.length-1,begin+n*stride+k-radius))]*kernel[k]; data[n]=v;mean+=v;rawPower+=source[Math.min(source.length-1,begin+n*stride)]**2;}
+  mean/=count;for(let n=0;n<count;n++){data[n]-=mean;power+=data[n]*data[n];}if(power/count<1e-9||(stride>1&&power<rawPower*1e-4))return null;
+  // Normalized autocorrelation compares waveform shape independently of the
+  // changing amplitude of a pluck. Keep multiple local period candidates so a
+  // strong harmonic does not automatically win over the complete waveform.
+  const max=Math.min(Math.floor(sr/30),Math.floor(count/3)), curve=new Float64Array(max+2), prefix=new Float64Array(count+1);
+  for(let i=0;i<count;i++)prefix[i+1]=prefix[i]+data[i]*data[i];
+  const correlation=(shift:number)=>{const n=count-shift;if(n<32)return 0;let xy=0;for(let i=0;i<n;i++)xy+=data[i]*data[i+shift];return xy/Math.sqrt(prefix[n]*(prefix[count]-prefix[shift])+1e-30);};
+  for(let lag=1;lag<=max+1;lag++)curve[lag]=correlation(lag);
+  const interpolate=(left:number,center:number,right:number)=>{const den=left-2*center+right;return den<0?Math.max(-.5,Math.min(.5,.5*(left-right)/den)):0;};
+  const strength=(lag:number)=>curve[lag]-.25*(curve[lag-1]-curve[lag+1])*interpolate(curve[lag-1],curve[lag],curve[lag+1]);
+  const candidates:number[]=[];let best=0;
+  for(let lag=2;lag<max;lag++)if(curve[lag]>curve[lag-1]&&curve[lag]>=curve[lag+1]){candidates.push(lag);best=Math.max(best,strength(lag));}
+  if(best<.8)return null;
+  // Compare interpolated peak heights. Comparing only integer-lag samples
+  // unfairly penalizes high pitches whose period falls between samples.
+  const lag=candidates.find(lag=>strength(lag)>=Math.max(.8,best*.97));if(!lag)return null;
+  let period=lag+interpolate(curve[lag-1],curve[lag],curve[lag+1]);
+  // Long-baseline refinement improves cents precision on steady waveforms.
+  // A decaying/evolving source must retain its short-period estimate when the
+  // long comparison is less coherent; do not reject that voiced frame.
+  const cycles=Math.max(1,Math.min(24,Math.floor(count/(period*3)))),target=period*cycles,center=Math.round(target);
+  let refined=center,value=-2;for(let n=center-2;n<=center+2;n++)if(n>1&&n<count-32){const c=correlation(n);if(c>value){value=c;refined=n;}}
+  if(value>=Math.max(.9,strength(lag)-.005))period=(refined+interpolate(correlation(refined-1),correlation(refined),correlation(refined+1)))/cycles;
+  let hz=sr/period;const confidence=Math.max(0,Math.min(1,strength(lag)));
+  if(hz<30||hz>2500)return null;
+  // Use the conservative long-baseline estimate for cents refinement only when
+  // it is very clear and agrees with the robust fundamental candidate. Its
+  // failure must not discard a convincing plucked/decaying voiced frame.
+  const precise=estimatePrecise(source,rate,begin,end);
+  if(precise&&precise.confidence>=.95&&Math.abs(centsBetween(precise.hz,hz))<25)hz=precise.hz;
+  return {hz,confidence};
+}
+/** Advisory source window after the initial attack, before the quiet tail.
+ * Does not change PCM or replace an explicit user selection. */
+export function sourcePitchWindow(a:Recording):[number,number] {
+ const start=a.start??0,end=a.end??a.channels[0].length,length=end-start;
+ if(length<a.rate*.12)return [start,end];
+ const step=Math.max(1,Math.ceil(a.rate*.01),Math.ceil(length/4096)),count=Math.ceil(length/step),power=new Float64Array(count);
+ let peak=0;
+ for(let i=0;i<count;i++){let sum=0,n=0;for(const c of a.channels)for(let k=0;k<32;k++){const frame=start+i*step+Math.floor(k*step/32);if(frame<end){sum+=c[frame]**2;n++;}}power[i]=sum/Math.max(1,n);peak=Math.max(peak,power[i]);}
+ if(peak<1e-9)return [start,end];
+ let onset=0;while(onset<count-1&&power[onset]<peak*.001)onset++;
+ const attackLimit=Math.min(count,onset+Math.max(1,Math.ceil(a.rate*.2/step)));let attack=onset;
+ for(let i=onset;i<attackLimit;i++)if(power[i]>power[attack])attack=i;
+ let tail=count;while(tail>attack+1&&power[tail-1]<peak*.001)tail--;
+ let attackEnd=attack;for(let i=attack+1;i<attackLimit;i++)if(power[i]<power[attack]*.5){attackEnd=i;break;}
+ const begin=Math.min(end-1,start+attackEnd*step+Math.round(a.rate*.03));
+ const finish=Math.min(end,start+tail*step,begin+Math.round(a.rate*.75));
+ return finish-begin>=a.rate*.08?[begin,finish]:[start+onset*step,Math.min(end,start+tail*step)];
+}
+export function analyzePitch(a: Recording, start=a.start??0, end=a.end??a.channels[0].length, maxPoints=32, precise=false):PitchAnalysis {
   if(!Number.isFinite(a.rate)||a.rate<100||!a.channels.length||a.channels.some(c=>c.length!==a.channels[0].length))throw Error('Invalid recording.');
   start=Math.max(0,Math.floor(start));end=Math.min(a.channels[0].length,Math.floor(end));if(end<=start)throw Error('Select a nonempty analysis region.');
-  const source=analysisChannel(a,start,end), size=Math.min(end-start,Math.floor(a.rate*.45)), frames=Math.max(1,Math.min(maxPoints,Math.ceil((end-start)/(a.rate*.12)))), points:PitchPoint[]=[];
-  for(let i=0;i<frames;i++){const from=Math.round(start+(end-start-size)*(frames===1?0:i/(frames-1))), p=estimate(source,a.rate,from,from+size);points.push({seconds:(from+size/2)/a.rate,hz:p?.hz??null,confidence:p?.confidence??0});}
+  const source=analysisChannel(a,start,end), size=Math.min(end-start,Math.floor(a.rate*(precise?.45:.16))), frames=Math.max(1,Math.min(maxPoints,Math.ceil((end-start)/(a.rate*.06)))), points:PitchPoint[]=[];
+  for(let i=0;i<frames;i++){const from=Math.round(start+(end-start-size)*(frames===1?0:i/(frames-1))), p=(precise?estimatePrecise:estimate)(source,a.rate,from,from+size);points.push({seconds:(from+size/2)/a.rate,hz:p?.hz??null,confidence:p?.confidence??0});}
   const reliable=points.filter(p=>p.hz!==null), hz=reliable.length?2**median(reliable.map(p=>Math.log2(p.hz!))):null, deviations=hz?reliable.map(p=>centsBetween(p.hz!,hz)):[],spread=deviations.length?Math.max(...deviations)-Math.min(...deviations):0, coverage=reliable.length/points.length;
   const warnings:string[]=[];if(coverage<.7)warnings.push('Uncertain pitch: noise, attacks, short recordings or multiple simultaneous pitches may prevent a reliable anchor.');if(spread>8)warnings.push('Pitch varies through this selection. Vibrato, drift or ensemble beating may be intentional.');
   return {hz,confidence:median(reliable.map(p=>p.confidence))*coverage,spread,coverage,points,warnings};
@@ -58,7 +118,7 @@ export function verifyLoop(a:Recording):PitchAnalysis {
   // Bound verification memory even for minute-long source selections.
   const count=Math.min(size,Math.ceil(rendered.rate*2));
   const channels=rendered.channels.map(c=>Float32Array.from({length:count},(_,i)=>c[start+i%length]));
-  return analyzePitch({...rendered,channels,start:0,end:count},0,count,8);
+  return analyzePitch({...rendered,channels,start:0,end:count},0,count,8,true);
 }
 export function suggestLoops(a:Recording,start:number,end:number,analysis=analyzePitch(a,start,end)):LoopCandidate[]{
   if(!analysis.hz||analysis.confidence<.7||analysis.spread>25||end-start<a.rate*.12)return [];

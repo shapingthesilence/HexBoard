@@ -1028,6 +1028,8 @@ travel under the device's **Settings → Pedal setup**.
 
 ## Sampler Loop Editing
 
+Use the Sampler workspace tabs: **Recording** for trim, playback, pitch, PCM editing and loop design; **Mapping** for regions, envelopes and response. A fixed audition dock stays visible. Analysis and repair tools open overlays rather than expanding the workspace. See [tiny-loop editing and audition](sampler-tuning.md#tiny-periodic-loops-and-pcm-edits).
+
 Classic and Advanced share the same waveform and loop tools. WAV imports keep
 their native sample rate and frame positions until export. **Zoom to loop** fits
 the loop; **View loop start/end** shows a boundary at sample-level scale. Use
@@ -1035,7 +1037,7 @@ the loop; **View loop start/end** shows a boundary at sample-level scale. Use
 separate traces and zero lines. Individual samples appear when zoomed in.
 **Display gain** only magnifies the drawing; it does not change sound volume.
 
-**Lock loop length / pitch** starts enabled. Moving either loop marker, nudging,
+In Recording view, drag a gold marker to create or resize a loop directly, or choose **Drag to create loop** and drag across the waveform. The visible **Lock loop length / pitch** control starts off for a new/full-length loop, allowing independent boundary edits. Enable it to move the whole loop. Moving either loop marker while locked, nudging,
 snapping or constraining the trim moves both loop boundaries together, retaining
 the exact frame count. Use **−1 / +1 frame**, type frame positions, or focus a
 handle and use Left/Right; Shift moves 16 frames. Typed positions commit on Enter
@@ -1074,7 +1076,7 @@ With updated Classic firmware connected, Synth offers Wavetable and Sampler
 editors. Sampler shares Advanced's import, waveform, loop and region tools with
 controls limited to Classic playback. Import and edits automatically prepare the
 Classic conversion. Compare original and converted recordings, then use **Send to
-HexBoard**. Region ADSR stays visible with sliders, exact time/percent fields and
+HexBoard**. Region ADSR is in Mapping with sliders, exact time/percent fields and
 selected/all-region editing. Review size and sound changes before copying to the
 board. Choosing a Classic library instrument plays it immediately. The library
 exports and deletes installed instruments. **Save startup settings** saves current
@@ -1085,6 +1087,6 @@ See [Classic sampler](compact-sampler.md) for supported sources, eight-voice and
 
 ## Sample Tuning And Automatic Loops
 
-Classic and Advanced share **Analyze & tune** in the Sampler editor. See
+Classic and Advanced share **Analyze source / compare** in the Sampler workspace. See
 [Sample tuning and loop suggestions](sampler-tuning.md) for reference-tone
 audition, fractional roots, confidence, and converted-loop verification.

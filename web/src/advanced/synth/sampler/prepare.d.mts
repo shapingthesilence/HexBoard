@@ -6,6 +6,7 @@ export interface Recording {
   rootMidi: number;
   pitchSource?: "metadata" | "analysis" | "fallback" | "manual";
   pitchConfidence?: number;
+  pitchVariation?: number;
   pitchSuggestion?: number;
   mode?: 0 | 1 | 2 | 3;
   normalize?: boolean;

@@ -1,7 +1,9 @@
+import { SamplerWorkspace } from "./sampler/SamplerWorkspace.tsx";
+import { SamplerAudition } from "./sampler/SamplerAudition.tsx";
+import { WorkspaceDialog } from "./sampler/WorkspaceDialog.tsx";
 import { TuningAudition } from "./sampler/TuningAudition.ts";
 import { hzForMidi } from "./sampler/analysis.ts";
 import type { LoopCandidate } from "./sampler/analysis.ts";
-import { SampleAnalysis } from "./sampler/SampleAnalysis.tsx";
 import { useTuningTargets } from "../../editor/tuningTargets.ts";
 import { readCompactPatch, compactLimits } from "./sampler/compact.mjs";
 import { ClassicSamplerLibrary } from "./sampler/ClassicSamplerLibrary.tsx";
@@ -22,7 +24,6 @@ import {
   type SamplerInstrument,
 } from "./client.ts";
 import { samplerLoadingLabel } from "./sampler/loading.ts";
-import { SamplerWaveform } from "./sampler/SamplerWaveform.tsx";
 import type {
   Patch,
   Recording,
@@ -42,7 +43,7 @@ import {
   type ImportedPatch,
 } from "./sampler/import.mjs";
 import { readBank } from "./sampler/bank.mjs";
-import { PatchPreview, editedCompactAudition } from "./sampler/preview.ts";
+import { PatchPreview } from "./sampler/preview.ts";
 import { RegionEnvelope, changeRegionEnvelope } from "./sampler/RegionEnvelope.tsx";
 import { SourceAudition } from "./sampler/sourceAudition.ts";
 import { ArpeggiatorEditor } from "./ArpeggiatorEditor.tsx";
@@ -78,6 +79,14 @@ function automatic(assets: Recording[]): Zone[] {
     lowMidi: i ? (sorted[i - 1].root + a.root) / 2 : -0.5,
     highMidi: i + 1 < sorted.length ? (a.root + sorted[i + 1].root) / 2 : 127.5,
   }));
+}
+function followsRootMap(assets:Recording[], zones:Zone[]) {
+  const expected=automatic(assets);
+  return zones.length===expected.length && zones.every((z,i)=>z.asset===expected[i].asset&&z.lowMidi===expected[i].lowMidi&&z.highMidi===expected[i].highMidi&&Object.keys(z).every(k=>["asset","lowMidi","highMidi"].includes(k)));
+}
+export function appendSamplerRecordings(patch:Patch,recordings:Recording[]):Patch {
+  const assets=[...patch.assets,...recordings];
+  return {...patch,assets,zones:followsRootMap(patch.assets,patch.zones??[])?automatic(assets):(patch.zones??[])};
 }
 export function samplerFilename(name: string) {
   const base = name
@@ -122,6 +131,9 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
     [arpOpen, setArpOpen] = useState(false),
     [library, setLibrary] = useState<ImportedPatch[]>([]),
     [search, setSearch] = useState("");
+  const [actionsOpen,setActionsOpen]=useState(false);
+  const [workspaceView,setWorkspaceView]=useState("recording");
+  const [exportOpen,setExportOpen]=useState(false);
   const [loopAuditionError, setLoopAuditionError] = useState("");
   const [loopSelection, setLoopSelection] = useState<boolean[]>([]);
   const loopAudition = useRef<TuningAudition | undefined>(undefined);
@@ -163,11 +175,6 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
     worker = useRef<Worker | undefined>(undefined);
   preview.current ??= new PatchPreview();
   source.current ??= new SourceAudition();
-  const convertedAudition = classic && fittedAudio.current
-    ? editedCompactAudition(patch, fittedAudio.current.source, fittedAudio.current.converted) : undefined;
-  useEffect(() => {
-    preview.current!.setPatch(classic && auditionVersion === "converted" ? prepared?.auditionPatch ?? convertedAudition ?? patch : patch);
-  }, [patch, classic, prepared, auditionVersion, convertedAudition]);
   useEffect(() => {
     if (!classic || !patch.assets.length) { setPreparationMessage(""); setPreparationError(""); return; }
     if (!patch.zones?.length || patch.zones.length > compactLimits.zones || new Set(patch.zones.map(z => z.asset)).size > compactLimits.assets) {
@@ -195,9 +202,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
     }, 250);
     return () => { alive = false; clearTimeout(timer); preparationWorker?.terminate(); };
   }, [classic, patch, preparationRevision]);
-  useEffect(() => {
-    preview.current!.expression(pressure, bend);
-  }, [pressure, bend]);
+
   useEffect(() => {
     client.current = transport && !classic ? new PhysicalSynthClient(transport) : undefined;
     return () => client.current?.close();
@@ -236,7 +241,6 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
     };
   }, [playing]);
   const edit = (next: Patch, remember = true) => {
-    if (classic && next.assets !== patchRef.current.assets) preview.current!.clear();
     if (remember) {
       setHistory((h) => [...h.slice(-39), patchRef.current]);
       setRedo([]);
@@ -284,13 +288,12 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
         ),
       [zones],
     );
-  const changeSample = (change: Partial<Recording>) => {
+  const changeSample = (change: Partial<Recording>, remember = true) => {
     if (!sample) return;
     const assets = patch.assets.map((a, i) => i === selected ? { ...a, ...change, ...(change.rootMidi !== undefined ? {pitchSource: "manual" as const} : {}) } : a);
-    const oldAuto = automatic(patch.assets);
-    const followsRoots = template === "instrument" && zones.length === oldAuto.length && zones.every((z, i) => z.asset === oldAuto[i].asset && z.lowMidi === oldAuto[i].lowMidi && z.highMidi === oldAuto[i].highMidi && Object.keys(z).every(k => ["asset", "lowMidi", "highMidi"].includes(k)));
+    const followsRoots = template === "instrument" && followsRootMap(patch.assets,zones);
     const nextZones = change.rootMidi !== undefined && followsRoots ? automatic(assets) : zones;
-    edit({ ...patch, assets, zones: nextZones });
+    edit({ ...patch, assets, zones: nextZones }, remember);
     if (nextZones !== zones) setZoneIndex(nextZones.findIndex(z => z.asset === selected));
   };
   const changeZone = (change: Partial<Zone>) => {
@@ -422,16 +425,10 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
           ),
         }),
         assets = [...patch.assets, ...recordings];
-      edit({
-        ...patch,
-        assets,
-        zones:
-          template === "instrument"
-            ? automatic(assets)
-            : mappedZones(assignSequentially(assets.length), assets.length),
-      });
+      const nextZones = template === "instrument" ? appendSamplerRecordings(patch,recordings).zones??[] : mappedZones(assignSequentially(assets.length),assets.length);
+      edit({...patch,assets,zones:nextZones});
       setSelected(patch.assets.length);
-      setZoneIndex(automatic(assets).findIndex(z => z.asset === patch.assets.length));
+      setZoneIndex(nextZones.findIndex(z => z.asset === patch.assets.length));
       setLoopSuggestions(undefined);
       setReport([]);
     } catch (e) {
@@ -707,8 +704,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
           </button>
         ))}
         <span>
-          {patch.assets.length} recordings · {zones.length} regions · continuous
-          pitch · {classic ? "native-rate mono preparation" : "pitch copies prepared on export"}
+          {patch.assets.length} recordings · {zones.length} regions
         </span>
       </div>
       <div className="sampler-studio">
@@ -752,7 +748,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                         1
                           ? "Short sample"
                           : `${(((a.end ?? a.channels[0].length) - (a.start ?? 0)) / a.rate).toFixed(1)} s`}{" "}
-                        · {noteName(a.rootMidi)} {a.pitchSource === "fallback" ? "· pitch uncertain" : a.pitchSource === "analysis" ? `· estimated ${Math.round((a.pitchConfidence ?? 0)*100)}%` : a.pitchSource === "metadata" ? "· WAV metadata" : ""}
+                        · {noteName(a.rootMidi)} {!zones.some(z=>z.asset===i)&&"· unmapped "} {a.pitchSource === "fallback" ? "· pitch uncertain" : a.pitchSource === "analysis" ? "· detected" : a.pitchSource === "metadata" ? "· WAV metadata" : ""}
                       </small>
                     </span>
                   </button>
@@ -784,61 +780,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             </>
           )}
         </aside>
-        <main className="sampler-canvas">
-          <fieldset className="sampler-wave-panel">
-            <legend>Sample</legend>
-            {sample ? (
-              <>
-                <div className="sampler-wave-heading">
-                  <strong>{sample.name}</strong>
-                  <small>
-                    {sample.channels.length === 2 ? "Stereo" : "Mono"} ·{" "}
-                    {(sample.rate / 1000).toFixed(1)} kHz ·{" "}
-                    {sample.channels[0].length.toLocaleString()} frames
-                  </small>
-                </div>
-                <SamplerWaveform key={selected} recording={sample} onChange={(change, remember) => {
-                  const current = patchRef.current;
-                  edit({ ...current, assets: current.assets.map((a, i) => i === selected ? { ...a, ...change } : a) }, remember);
-                }}/>
-                <div className="sampler-pitch-status">{sample.pitchSource === "fallback" ? <>Pitch uncertain: C4 is a placeholder. {sample.pitchSuggestion !== undefined && <button onClick={() => changeSample({rootMidi: sample.pitchSuggestion})}>Use suggested {noteName(sample.pitchSuggestion)} ({Math.round((sample.pitchConfidence ?? 0)*100)}% confidence)</button>} Analyze to check it.</> : sample.pitchSource === "analysis" ? <>Pitch estimated · {Math.round((sample.pitchConfidence ?? 0)*100)}% confidence</> : sample.pitchSource === "metadata" ? <>Pitch from WAV metadata</> : <>Pitch anchor · {noteName(sample.rootMidi)}</>}</div>
-                <div className="sampler-fields">
-                  {number(
-                    "Root MIDI",
-                    sample.rootMidi,
-                    (v) => changeSample({ rootMidi: v }),
-                    classic ? -24 : -36,
-                    classic ? 150 : 155.623,
-                    0.001,
-                  )}
-                  <label>
-                    Playback
-                    <select
-                      value={sample.mode ?? 0}
-                      onChange={event => {
-                        const mode = +event.target.value as 0 | 1 | 2 | 3;
-                        const start = sample.start ?? 0, end = sample.end ?? sample.channels[0].length;
-                        const valid = (sample.loopStart ?? start) >= start && (sample.loopEnd ?? end) <= end && (sample.loopEnd ?? end) > (sample.loopStart ?? start);
-                        changeSample({ mode, ...([1, 3].includes(mode) && !valid ? { loopStart: start, loopEnd: end } : {}) });
-                      }}
-                    >
-                      <option value={0}>Hold / natural end</option>
-                      <option value={1}>Loop + envelope release</option>
-                      <option value={3}>Loop until release → tail</option>
-                      <option value={2}>One shot</option>
-                    </select>
-                  </label>
-                </div>
-              </>
-            ) : (
-              <div className="sampler-empty">
-                <span>▁▃▆▃▂▇▅▂</span>
-                <h3>A small sound can become something big.</h3>
-                <p>Add WAV recordings or import an SF2 / SF3 bank to begin.</p>
-              </div>
-            )}
-          </fieldset>
-          {sample && <SampleAnalysis key={selected} recording={sample} onChange={changeSample} targets={tuningTargets} stopSignal={tuningStop}/>}
+        <main className="sampler-canvas"><SamplerWorkspace target={target} view={workspaceView} onViewChange={setWorkspaceView} recording={sample} onChange={changeSample} targets={tuningTargets} preparedBytes={prepared?.bytes.length} stopSignal={tuningStop} level={zone?.gain??1} onLevel={gain=>changeZone({gain})} mapping={<>
           <RegionEnvelope zones={zones} index={zone ? zones.indexOf(zone) : -1} names={patch.assets.map(a => a.name ?? "Recording")} settings={settings}
             onSelect={index => { setZoneIndex(index); setSelected(zones[index].asset); }}
             onChange={(change, all, remember) => {
@@ -1086,7 +1028,6 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
               />
             </fieldset>
           )}
-        </main>
         <aside className="sampler-inspector">
           <fieldset>
             <legend>Region</legend>
@@ -1217,9 +1158,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
               controls velocity-engine recall.
             </p>
           </fieldset>}
-        </aside>
-      </div>
-      <div className="sampler-shaping">
+        </aside>      <div className="sampler-shaping">
         {[
           {
             title: "Touch & tone",
@@ -1280,91 +1219,11 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             </div>
           </fieldset>
         ))}
+      </div></>}/></main>
       </div>
+
   </>);
-  const auditionControls = (
-      <fieldset className="sampler-audition">
-        <legend>{classic ? "Compare & audition" : "Browser audition · edited instrument"}</legend>
-        {classic && <div className="sampler-tabs" role="group" aria-label="Audition version">
-          {(["source", "converted"] as const).map(version => <button key={version} aria-pressed={auditionVersion === version} disabled={version === "converted" && !prepared && !convertedAudition} onClick={() => { preview.current!.clear(); setAuditionVersion(version); }}>
-            {version === "source" ? "Original recordings" : "Converted for HexBoard"}
-          </button>)}
-        </div>}
-        <div className="sampler-fields">
-          {number("Octave", octave, setOctave, 0, 6)}
-          {number("Strike velocity", velocity, setVelocity, 1, 127)}
-          {!classic && number("Release velocity", lift, setLift, 0, 127)}
-          {!classic && <label>
-            Pressure
-            <input
-              aria-label="Audition pressure"
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={pressure}
-              onChange={(e) => setPressure(+e.target.value)}
-            />
-          </label>}
-          <label>
-            Pitch bend ±2
-            <input
-              aria-label="Pitch bend"
-              type="range"
-              min={-2}
-              max={2}
-              step={0.01}
-              value={bend}
-              onChange={(e) => setBend(+e.target.value)}
-              onDoubleClick={() => setBend(0)}
-            />
-          </label>
-          {!classic && <button
-            onPointerDown={(e) => {
-              e.currentTarget.setPointerCapture(e.pointerId);
-              preview.current!.pedal(true);
-            }}
-            onPointerUp={() => preview.current!.pedal(false)}
-            onPointerCancel={() => preview.current!.pedal(false)}
-            onLostPointerCapture={() => preview.current!.pedal(false)}
-          >
-            Hold sustain
-          </button>}
-        </div>
-        <div className="sampler-keyboard">
-          {Array.from({ length: 25 }, (_, i) => octave * 12 + 12 + i).map(
-            (note) => (
-              <button
-                className={[1, 3, 6, 8, 10].includes(note % 12) ? "black" : ""}
-                disabled={!patch.assets.length || template !== "instrument" || (classic && auditionVersion === "converted" && !prepared && !convertedAudition)}
-                key={note}
-                onPointerDown={(e) => {
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  on(`key-${note}`, note);
-                }}
-                onPointerUp={() => off(`key-${note}`)}
-                onPointerCancel={() => off(`key-${note}`)}
-                onLostPointerCapture={() => off(`key-${note}`)}
-                onKeyDown={(e) => {
-                  if ((e.key === " " || e.key === "Enter") && !e.repeat) {
-                    e.preventDefault();
-                    on(`key-${note}`, note);
-                  }
-                }}
-                onKeyUp={(e) => {
-                  if (e.key === " " || e.key === "Enter") off(`key-${note}`);
-                }}
-              >
-                {noteName(note)}
-              </button>
-            ),
-          )}
-        </div>
-        <p className="panel-note">
-          {classic ? (prepared ? "Compare the original recordings with the prepared instrument. Browser interpolation and output protection differ from the board." : "Conversion updates automatically. Envelope edits can be auditioned immediately; sample edits finish preparing in the background.") : "Hold a note while shaping tone and pressure. New notes use edited mappings, loops and envelopes. Browser effects and interpolation differ slightly from the device."}
-        </p>
-      </fieldset>
-  );
+  const auditionControls = <SamplerAudition preview={preview.current!} patch={patch} selected={selected} transport={transport} prepared={prepared} classic={classic}/>;
   return (
     <section
       className="physical-editor card sampler-editor"
@@ -1397,23 +1256,12 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             disabled={!!busy}
             onChange={(e) => {
               void importFiles(e.target.files);
+              setActionsOpen(false);
               e.target.value = "";
             }}
           />
         </label>
-        <label className="sampler-file">
-          Import SFZ folder
-          <input
-            type="file"
-            multiple
-            {...{ webkitdirectory: "" }}
-            disabled={!!busy}
-            onChange={(e) => {
-              void importFiles(e.target.files);
-              e.target.value = "";
-            }}
-          />
-        </label>
+
         <button disabled={!history.length || !!busy} onClick={undo}>
           Undo
         </button>
@@ -1429,8 +1277,23 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
         >
           Redo
         </button>
-        <button onClick={() => { preview.current!.clear(); setTuningStop(n => n + 1); }}>All notes off</button>
+        <button onClick={()=>setActionsOpen(true)}>More…</button>
+        <button onClick={()=>setExportOpen(true)}>Save / export…</button>
       </div>
+      {actionsOpen&&<WorkspaceDialog title="Sampler actions" onClose={()=>setActionsOpen(false)}>        <label className="sampler-file">
+          Import SFZ folder
+          <input
+            type="file"
+            multiple
+            {...{ webkitdirectory: "" }}
+            disabled={!!busy}
+            onChange={(e) => {
+              void importFiles(e.target.files);
+              setActionsOpen(false);
+              e.target.value = "";
+            }}
+          />
+        </label>        <button onClick={() => { preview.current!.clear(); setTuningStop(n => n + 1); }}>All notes off</button></WorkspaceDialog>}
       {classic && <section className="sampler-workflow" aria-label="Prepare and send instrument">
         <div>
           <strong>{prepared ? "Ready for HexBoard" : preparationMessage || "Import an instrument"}</strong>
@@ -1445,10 +1308,9 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
         </div>
       </section>}
       {(error || preparationError) && <p className="sampler-error" role="alert">{error || preparationError}</p>}
-      {classic && auditionControls}
       {editingControls}
-      {!classic && auditionControls}
-      <div className="sampler-bottom">
+      {auditionControls}
+      {exportOpen&&<WorkspaceDialog title="Save, export and HexBoard library" onClose={()=>setExportOpen(false)}><div className="sampler-bottom">
         {!classic && <fieldset>
           <legend>Export instrument</legend>
           <div className="sampler-fields">
@@ -1628,14 +1490,14 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
         </fieldset>}
       </div>
       {report.length > 0 && (
-        <details className="sampler-report" open={!classic}>
+        <details className="sampler-report" open>
           <summary>
             Import / conversion report · {report.length}{" "}
             {report.length === 1 ? "change" : "changes"}
           </summary>
           <ul>
             {report.map((line, i) => (
-              <li key={i}>{line}</li>
+              <li key={i}>{line}{patch.assets.map((a,index)=>a.name&&line.includes(a.name)&&<button key={index} onClick={()=>{setSelected(index);setZoneIndex(zones.findIndex(z=>z.asset===index));setWorkspaceView("recording");setExportOpen(false);}}>Review {a.name}</button>)}</li>
             ))}
           </ul>
           <button
@@ -1660,11 +1522,8 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
           </button>
         </details>
       )}
-      {busy && (
-        <p role="status" aria-live="polite">
-          {busy}
-        </p>
-      )}
+      </WorkspaceDialog>}
+
       {bank && (
         <div className="sampler-modal-backdrop">
           <div

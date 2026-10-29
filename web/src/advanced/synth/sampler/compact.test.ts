@@ -58,7 +58,7 @@ describe("Classic sampler",()=>{
  });
  it("uses the shared editor with only Classic-supported workflows",()=>{
   const html=renderToStaticMarkup(createElement(SamplerEditor,{target:"classic"}));
-  for(const s of ["Import SoundFont","Classic library","48 KiB","conversion updates automatically","Send to HexBoard","Original recordings","Sample key and velocity regions"])expect(html).toContain(s);
+  for(const s of ["Add recordings or instrument","Save / export","48 KiB","conversion updates automatically","Send to HexBoard","Persistent browser audition","Sample key and velocity regions"])expect(html).toContain(s);
   for(const s of ["KW upright","Patch response","Fast lift","Room reverb","SD · long recordings"])expect(html).not.toContain(s);
   expect(html).not.toContain('class="sampler-editing"');expect(html).not.toContain("Prepare instrument");
   expect(html).toContain('accept=".sf2,.sf3,.sfz,.wav,.hbs,.hbc"');

@@ -624,3 +624,46 @@
 
 .sampler-loop-review-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; border-bottom: 1px solid #60748055; padding: .4rem 0; }
 .sampler-loop-review-row label { flex: 1; }
+
+/* Stable authoring workspace; transient results live in top-layer dialogs. */
+.sampler-editor { padding-bottom: 178px; }
+.sampler-editor .sampler-studio { grid-template-columns: minmax(175px, 230px) minmax(0, 1fr); align-items: start; }
+.sampler-editor .sampler-browser { max-height: 72vh; overflow-y: auto; }
+.sampler-editor .sampler-canvas { min-width: 0; }
+.sampler-workspace { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.sampler-workspace-tabs { display:flex; gap:6px; padding:8px; background:var(--surface-muted); }
+.sampler-workspace-tabs [aria-pressed=true] { background:var(--accent,#79cdb8); color:#102522; }
+.sampler-workspace-body { height:clamp(480px,65vh,820px); overflow:auto; padding:12px; scrollbar-gutter:stable; }
+.sampler-workspace-heading { display:flex; justify-content:space-between; gap:12px; min-height:30px; }
+.sampler-workspace-status { height:3.5em; padding:8px 12px; overflow:auto; font-size:12px; border-top:1px solid var(--border); }
+.sampler-loop-summary { font-size:12px; min-height:3em; font-variant-numeric:tabular-nums; }
+.sampler-editor [hidden] { display:none!important; }
+.sampler-workspace .sampler-inspector { display:grid; grid-template-columns:1fr 1fr; }
+.sampler-edit-selection { fill:#62c6e330; pointer-events:none; }
+.sampler-workspace-dialog { width:min(64rem,94vw); max-height:85vh; overflow:auto; box-sizing:border-box; border:1px solid var(--border,#597581); border-radius:12px; padding:18px; color:var(--text,#eef5f5); background:var(--surface,#202d37); }
+.sampler-workspace-dialog::backdrop { background:#0009; }
+.sampler-workspace-dialog>header { position:sticky; top:-18px; padding:8px 0; display:flex; align-items:center; justify-content:space-between; background:inherit; z-index:1; }
+.sampler-workspace-dialog .sampler-fields { display:flex; gap:10px; flex-wrap:wrap; }
+.sampler-workspace-dialog input[type=number] { width:9rem; }
+.sampler-workspace-dialog button { margin:4px; }
+.sampler-workspace-dialog .sampler-bottom { display:block; }
+.sampler-audition-dock { position:fixed; bottom:0; left:0; right:0; z-index:80; padding:8px 14px; background:var(--surface,#202d37); border-top:1px solid var(--border,#597581); box-shadow:0 -5px 16px #0004; height:154px; box-sizing:border-box; }
+.sampler-audition-toolbar { display:flex; align-items:center; gap:8px; height:66px; overflow:auto; }
+.sampler-audition-toolbar label { display:flex; flex-direction:column; font-size:11px; min-width:85px; }
+.sampler-audition-toolbar input[type=range] { width:90px; }
+.sampler-audition-toolbar button { white-space:nowrap; }
+.sampler-audition-toolbar [role=status] { font-size:11px; min-width:140px; }
+.sampler-dock-keyboard { display:flex; height:64px; gap:2px; }
+.sampler-dock-keyboard button { flex:1; min-width:25px; padding:2px; font-size:10px; color:#15242c; background:#d8e7e8; }
+.sampler-dock-keyboard button.black { background:#293e4d; color:#ecf2f4; height:46px; }
+@media(max-width:750px) { .sampler-editor .sampler-studio { grid-template-columns:1fr; } .sampler-editor .sampler-browser { max-height:130px; } .sampler-workspace .sampler-inspector { grid-template-columns:1fr; } .sampler-dock-keyboard { overflow-x:auto; } }
+
+.sampler-workspace-body { height:clamp(240px,calc(100dvh - 450px),820px); }
+.sampler-editor .instrument-title p { max-width:28rem; height:1.5em; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.sampler-wave-tools label:has(input[type=checkbox]) { display:flex; align-items:center; gap:6px; font-size:12px; }
+.sampler-wave-tools input[type=checkbox] { width:16px; height:16px; min-height:0; margin:0; }
+.sampler-wave-precision { margin-top:8px; }
+.sampler-workspace-dialog details { margin:8px 0; }
+
+.sampler-workspace-dialog input[type=checkbox] { width:16px; height:16px; min-height:0; margin:0 6px; }
+.sampler-workspace-dialog label:has(input[type=checkbox]) { display:inline-flex; align-items:center; gap:4px; }
