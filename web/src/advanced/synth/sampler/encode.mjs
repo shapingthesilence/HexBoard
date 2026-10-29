@@ -238,13 +238,17 @@ function convertRate(src, factor) {
     });
   return { ...src, channels, loopStart: ls, loopEnd: le };
 }
+export function crossfadeFrames(src) {
+  if (src.mode !== 1 && src.mode !== 3) return 0;
+  const start = src.loopStart ?? src.start ?? 0, end = src.loopEnd ?? src.end ?? src.channels[0].length;
+  const maximum = Math.floor((end - start) / 4);
+  if (maximum < 2) return 0;
+  const requested = Math.round(((src.crossfade ?? 0) * src.rate) / 1000);
+  return requested > 0 ? Math.min(maximum, Math.max(2, requested)) : 0;
+}
 export function crossfadeRecording(src) {
-  const { loopStart: ls, loopEnd: le } = src,
-    fade = clamp(
-      Math.round(((src.crossfade ?? 0) * src.rate) / 1000),
-      0,
-      src.mode === 1 || src.mode === 3 ? Math.floor((le - ls) / 4) : 0,
-    );
+  const ls = src.loopStart ?? src.start ?? 0, le = src.loopEnd ?? src.end ?? src.channels[0].length,
+    fade = crossfadeFrames(src);
   if (!fade) return src;
   return {
     ...src,
@@ -252,15 +256,25 @@ export function crossfadeRecording(src) {
       const out = new Float32Array(c.length + fade);
       out.set(c.subarray(0, le));
       for (let i = 0; i < fade; i++) {
-        const t = (i + 1) / fade;
+        const t = i / (fade - 1);
         out[le + i] =
-          (le + i < c.length ? c[le + i] : c[ls + i]) * (1 - t) + c[ls + i] * t;
+          c[Math.min(c.length - 1, le + i)] * (1 - t) + c[ls + i] * t;
       }
       out.set(c.subarray(le), le + fade);
+      // Preserve the release-tail join as well as the sustain wrap. The
+      // original tail duration is retained; only its first few frames blend.
+      if (src.mode === 3) {
+        const count = Math.min(fade, c.length - le);
+        for (let i = 0; i < count; ++i) {
+          const t = count > 1 ? i / (count - 1) : 1;
+          out[le + fade + i] = c[ls + (fade + i) % (le - ls)] * (1 - t) + c[le + i] * t;
+        }
+      }
       return out;
     }),
     loopStart: ls + fade,
     loopEnd: le + fade,
+    crossfade: 0,
   };
 }
 function baseRecording(src) {
@@ -268,14 +282,23 @@ function baseRecording(src) {
   finite(t.rootMidi, "root pitch");
   if (pitch(t.rootMidi) < 0 || pitch(t.rootMidi) > 16 * 2 ** 24)
     throw Error("Root pitch exceeds the device range.");
-  let converted = { ...t, channels: resample(t.channels, t.rate, false), rate };
-  if (t.mode === 1 || t.mode === 3) {
+  const looped = t.mode === 1 || t.mode === 3;
+  const frames = looped ? Math.max(1, Math.round((t.loopEnd - t.loopStart) * rate / t.rate)) : 0;
+  const factor = looped ? frames / (t.loopEnd - t.loopStart) : rate / t.rate;
+  // Resample the attack and tail on the same time scale as the exact integer
+  // loop. Root calibration then preserves their pitch and duration as well.
+  let converted = { ...t, channels: resample(t.channels, rate / factor, false), rate,
+    crossfade: t.crossfade * t.rate * factor / rate };
+  if (looped) {
     const loop = resample(
       t.channels.map((c) => c.subarray(t.loopStart, t.loopEnd)),
-      t.rate,
+      rate / factor,
       true,
     );
-    converted.loopStart = Math.round((t.loopStart * rate) / t.rate);
+    // HBS playback uses 44.1 kHz. Correct the root per tracking slope below
+    // so rounding a short loop to whole frames cannot detune it.
+    converted.loopPitchShift = 12 * Math.log2(rate * (t.loopEnd - t.loopStart) / (frames * t.rate));
+    converted.loopStart = Math.round(t.loopStart * factor);
     converted.loopEnd = converted.loopStart + loop[0].length;
     if (converted.loopEnd > converted.channels[0].length)
       converted.channels = converted.channels.map((c) => {
@@ -287,6 +310,7 @@ function baseRecording(src) {
   }
   if (converted.channels[0].length > rate * 1800)
     throw Error("Recordings longer than 30 minutes are unsupported.");
+  if (converted.channels[0].length < 4) converted.channels = converted.channels.map(c => { const out = new Float32Array(4); out.set(c); return out; });
   return crossfadeRecording(converted);
 }
 
@@ -335,7 +359,7 @@ export async function preparePatch(input, onProgress = () => {}) {
   const quality = input.pitchQuality ?? "balanced";
   if (!["balanced", "clean", "character"].includes(quality))
     throw Error("Invalid pitch quality.");
-  const source = input.assets.map(baseRecording);
+  let source = input.assets.map(baseRecording);
   let zones = (
     input.zones ??
     source.map((_, asset) => ({ asset, lowMidi: -0.5, highMidi: 127.5 }))
@@ -376,6 +400,34 @@ export async function preparePatch(input, onProgress = () => {}) {
           "Regions overlap without round robin. Split the key/velocity ranges or import a layered source preset to render its layers.",
         );
     }
+  // Root compensation must use the same tracking slope as the device. A
+  // recording shared by different slopes needs a separate calibrated root.
+  const corrected = [], assignment = new Map();
+  let maximumCorrection = 0;
+  for (let original = 0; original < source.length; ++original) {
+    const a = source[original], shift = a.loopPitchShift ?? 0;
+    const mapped = zones.filter(z => z.asset === original), groups = new Map();
+    for (const z of mapped) {
+      const track = z.fixed ? 0 : Math.round((z.keyTrack ?? 1) * 100) / 100;
+      if (!Number.isFinite(track) || track < 0 || track > 2) throw Error("Invalid key tracking.");
+      if (z.keyTrack !== undefined) z.keyTrack = track;
+      const key = Math.abs(shift) > 1e-12 ? track : 1;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(z);
+    }
+    if (!groups.size) groups.set(1, []);
+    for (const [track, members] of groups) {
+      const rootMidi = a.rootMidi + (track ? shift / track : 0);
+      if (!Number.isFinite(rootMidi) || pitch(rootMidi) < 0 || pitch(rootMidi) > 16 * 2 ** 24) throw Error("Loop pitch correction exceeds the supported root range. Use normal key tracking or a longer loop.");
+      const id = corrected.length; corrected.push({ ...a, rootMidi });
+      members.forEach(z => assignment.set(z, id));
+      if (!track && Math.abs(shift) * 100 > .01) throw Error(`Fixed-pitch loop ${a.name} would detune by ${Math.abs(shift * 100).toFixed(3)} cents when converted to 44.1 kHz. Use pitched key tracking or a longer loop; export stopped to preserve pitch.`);
+      else maximumCorrection = Math.max(maximumCorrection, Math.abs(shift * 100));
+    }
+  }
+  if (corrected.length > 128) throw Error("Loop pitch calibration needs more than 128 recordings. Use fewer tracking slopes.");
+  source = corrected; zones = zones.map(z => ({ ...z, asset: assignment.get(z) }));
+  if (maximumCorrection > .01) warnings.push(`Calibrated short-loop rounding by up to ${maximumCorrection.toFixed(3)} cents; loop repetition pitch is preserved.`);
   const estimate = source.reduce(
       (n, a) => n + a.channels[0].length * a.channels.length * 4,
       0,

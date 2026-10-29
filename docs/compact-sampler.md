@@ -29,6 +29,8 @@ then press Enter or leave the field. **Edit all regions** changes each region at
 once; **Copy ADSR to all** copies all four values from the selected region. A
 slider drag is one Undo step. Delay, hold and Advanced tone controls remain in the
 region inspector. The conversion report lists adaptations and playable-range changes.
+The shared [loop-editing guide](web-app-guide.md#sampler-loop-editing) covers
+sample-level zoom, zero-crossing tools, length locking, crossfades and tuning.
 
 On the board, **Editor → Synth → Sampler / Engine** selects an installed instrument
 or returns to the wavetable engine. Changes briefly mute playback and clear
@@ -151,3 +153,7 @@ address/undefined-behavior sanitizers. Qualification applies to the actual teste
 build, patch and output. Timing tests do not replace physical playing and listening.
 Browser conversion tests also cover high-note rejection, independent rate budgets,
 level retention, stereo cancellation and normalization after filtering.
+
+The shared [tuning and loop analysis tools](sampler-tuning.md) include precise
+anchors, reference audition and converted-loop checks. Planned native expression
+and effects are described separately in the [sampler roadmap](sampler-roadmap.md).

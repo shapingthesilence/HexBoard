@@ -4,6 +4,9 @@ export interface Recording {
   channels: Float32Array[];
   rate: number;
   rootMidi: number;
+  pitchSource?: "metadata" | "analysis" | "fallback" | "manual";
+  pitchConfidence?: number;
+  pitchSuggestion?: number;
   mode?: 0 | 1 | 2 | 3;
   normalize?: boolean;
   start?: number;

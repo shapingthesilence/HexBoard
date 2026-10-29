@@ -1,5 +1,5 @@
 import type { Patch, Recording, Zone, Settings } from "./prepare.mjs";
-import { defaults, trimRecording, crossfadeRecording } from "./encode.mjs";
+import { defaults, trimRecording, crossfadeRecording, crossfadeFrames } from "./encode.mjs";
 import { reverbImpulse } from "./reverb.mjs";
 import { S } from "../performanceSchema.ts";
 // Reuse fitted audio while editing envelopes/gain. Sample edits and changes to
@@ -269,16 +269,7 @@ export class PatchPreview {
       .connect(pan)
       .connect(this.bus!);
     const start = a.start ?? 0,
-      fade = [1, 3].includes(a.mode ?? 0)
-        ? Math.min(
-            Math.round(((a.crossfade ?? 0) * a.rate) / 1000),
-            Math.floor(
-              ((a.loopEnd ?? a.end ?? a.channels[0].length) -
-                (a.loopStart ?? start)) /
-                4,
-            ),
-          )
-        : 0,
+      fade = crossfadeFrames(a),
       rate =
         (a.rate / source.buffer.sampleRate) *
         2 **

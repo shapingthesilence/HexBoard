@@ -379,3 +379,14 @@ Use `sampler-preview.html?target=classic` with the development server for offlin
 workflow checks. See [Classic sampler](../docs/compact-sampler.md) for runtime
 limits and [preset sync](../docs/preset-sync-sysex.md#classic-compact-sampler) for
 the negotiated capability and format.
+
+`sampler/SamplerWaveform.tsx` and `loopEditing.ts` own the shared zoom, frame
+controls, stereo seam measurements and length-preserving snap/match operations.
+Display gain affects drawing only. `encode.mjs` bakes constant-period crossfades
+and calibrates Advanced roots for integer loop-rate rounding, splitting recordings
+by tracking slope when required. Fixed/zero-tracking loops with uncorrectable
+rounding are rejected. WAV import retains native data until target preparation.
+The tests verify odd/short periods, release-tail joins and serialized tuning for
+both HBC and HBS pitch variants. See [loop operation](../docs/web-app-guide.md#sampler-loop-editing).
+
+WAV imports show pitch confidence or an explicit uncertain C4 placeholder. Accepting a pitch suggestion updates an untouched automatic map; manually edited regions remain unchanged. Compact-loop suggestions can be auditioned and selected in a dialog before applying them to unlooped recordings; existing loops are preserved. Pitch and loop analysis results open in a dialog. Conversion reports identify recordings with uncertain or out-of-range loop measurements.

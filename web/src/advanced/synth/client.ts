@@ -164,7 +164,7 @@ export class PhysicalSynthClient {
   samplerLoading(){return this.request<SamplerLoadingState>(63);}
   async samplerSource(source:'patch'|'piano'){return this.samplerInstrument(source==='piano'?1:0);}
   async samplerInstrument(id:number){if(!Number.isInteger(id)||id<0||id>1025)throw Error('Invalid sampler instrument.');await this.stopAndWait();return this.request(51,id<128?[id]:encodeU14(id));}
-  async samplerLibrary(refresh=false,folder=0):Promise<SamplerInstrument[]>{if(!Number.isInteger(folder)||folder<0||folder>32)throw Error("Invalid sampler folder.");if(refresh)await this.stopAndWait();const entries:SamplerInstrument[]=[];for(let first=folder*32;first<folder*32+32;first+=4)entries.push(...await this.request<SamplerInstrument[]>(64,[...encodeU14(first),refresh?1:0]));return entries;}
+  async samplerLibrary(refresh=false,folder=0):Promise<SamplerInstrument[]>{if(!Number.isInteger(folder)||folder<0||folder>32)throw Error("Invalid sampler folder.");const entries:SamplerInstrument[]=[];for(let first=folder*32;first<folder*32+32;first+=4)entries.push(...await this.request<SamplerInstrument[]>(64,[...encodeU14(first),refresh?1:0]));return entries;}
   samplerParameter(id:number,value:number){return this.request(46,[id,...encodeU21(value)]);}
   async uploadSampler(bytes:Uint8Array,progress?:(received:number,total:number)=>void){
     if(bytes.length<512||bytes.length%512)throw Error('Invalid prepared sampler file.');

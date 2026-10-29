@@ -21,3 +21,4 @@ export function trimRecording(
 };
 
 export function crossfadeRecording<T extends Recording>(src: T): T;
+export function crossfadeFrames(src: Recording): number;

@@ -21,6 +21,8 @@ Describe screen details only when needed to find a control or understand its use
 | --- | --- |
 | [Repository README](../README.md) | Overview, repository layout, build setup, and flashing entry point |
 | [Developer guide](developer-guide.md) | Firmware architecture, ownership, runtime, settings/storage, risks, and edit recipes |
+| [Sample tuning](sampler-tuning.md) | Shared tuning analysis, reference audition and loop suggestions |
+| [Sampler roadmap](sampler-roadmap.md) | Proposed future modulation/effects; explicitly unimplemented |
 | [Classic sampler](compact-sampler.md) | Sample conversion, capacity, engine ownership, and verification |
 | [Delegated control](delegated-control.md) | Host takeover protocol and runtime gates |
 | [Preset sync](preset-sync-sysex.md) | Implemented transfer protocol, capabilities, and object schemas |

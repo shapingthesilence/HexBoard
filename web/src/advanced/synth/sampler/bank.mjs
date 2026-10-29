@@ -1,6 +1,6 @@
 import { crc32 } from "./prepare.mjs";
 import { decodePerformance, defaults, defaultPerformance } from "./encode.mjs";
-export function readBank(bytes) {
+export function readBank(bytes, options = {}) {
   const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength),
     u16 = (p) => v.getUint16(p, true),
     u32 = (p) => v.getUint32(p, true),
@@ -59,20 +59,17 @@ export function readBank(bytes) {
         u32(r + 8)
     )
       throw Error("Invalid recording bounds or checksum.");
-    return {
-      name: `Recording ${i + 1}`,
-      channels: Array.from({ length: channels }, (_, c) =>
-        Float32Array.from(
-          { length: frames },
-          (_, n) => v.getInt16(offset + (n * channels + c) * 2, true) / 32768,
-        ),
-      ),
-      rate: 44100,
-      rootMidi: midi(v.getInt32(p + 4, true)),
-      mode,
-      loopStart: u32(p + 8),
-      loopEnd: u32(p + 12),
-    };
+    const loopStart=u32(p+8), loopEnd=u32(p+12), looping=mode===1||mode===3;
+    if(looping&&(loopStart>=loopEnd||loopEnd>frames))throw Error("Invalid recording loop bounds.");
+    const first=options.loopWindows&&looping?loopStart:0, last=options.loopWindows&&looping?loopEnd:frames;
+    const decodeChannels=()=>Array.from({length:channels},(_,c)=>Float32Array.from({length:last-first},(_,n)=>v.getInt16(offset+((first+n)*channels+c)*2,true)/32768));
+    const recording={name:`Recording ${i+1}`,channels:[],rate:44100,rootMidi:midi(v.getInt32(p+4,true)),mode,
+      loopStart:options.loopWindows&&looping?0:loopStart,loopEnd:options.loopWindows&&looping?last-first:loopEnd};
+    // Verification keeps metadata but decodes only one sustain window at a time.
+    // Normal authoring retains eager, stable channel-array identity for React.
+    if(options.loopWindows)Object.defineProperty(recording,"channels",{enumerable:true,get:decodeChannels});
+    else recording.channels=decodeChannels();
+    return recording;
   });
   const zones = Array.from({ length: z }, (_, i) => {
     const p = 128 + a * 48 + l * 16 + i * 48,

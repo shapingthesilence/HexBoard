@@ -1,3 +1,5 @@
+import { publishTuningTargets } from "../editor/tuningTargets.ts";
+import { tuningPitch } from "../learn/tuningPractice.ts";
 import { withAdvancedContentMaintenance } from "../advanced/contentMaintenance.ts";
 import { decodeDeviceGeometryBundle, objectReferenceIdHex } from "../catalogs/deviceGeometry.ts";
 import { sameContent, useEditorDrafts } from "../editor/drafts.ts";
@@ -2429,6 +2431,13 @@ export function TuningLayoutEditor({ transport, deviceHello = null }: TuningLayo
       };
     });
   }, [activeBundle, activeLayout, activeScale]);
+
+  useEffect(() => {
+    publishTuningTargets(previewKeys.filter(p => p.role === "note" && !p.override?.action).map(p => ({
+      name: `${activeBundle.tuning.name} · key ${p.key.index + 1}`,
+      hz: 440 * 2 ** ((tuningPitch(activeBundle.tuning, p.stepsFromC + activeBundle.tuning.defaultKeyDegree) - 69) / 12),
+    })));
+  }, [previewKeys, activeBundle.tuning]);
 
   const selectedButtonSet = useMemo(() => new Set(selectedButtons), [selectedButtons]);
   const selectedTransformCount = selectedButtons.length + selectedOffGridCoordinates.length;

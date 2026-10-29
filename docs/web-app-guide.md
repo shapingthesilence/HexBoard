@@ -1026,6 +1026,48 @@ patch and return their capacity when the card is removed. Expression pedal input
 uses slower noise filtering appropriate to foot control; configure type and
 travel under the device's **Settings → Pedal setup**.
 
+## Sampler Loop Editing
+
+Classic and Advanced share the same waveform and loop tools. WAV imports keep
+their native sample rate and frame positions until export. **Zoom to loop** fits
+the loop; **View loop start/end** shows a boundary at sample-level scale. Use
+**+ / −**, the pan arrows or the overview strip to navigate. Stereo channels have
+separate traces and zero lines. Individual samples appear when zoomed in.
+**Display gain** only magnifies the drawing; it does not change sound volume.
+
+**Lock loop length / pitch** starts enabled. Moving either loop marker, nudging,
+snapping or constraining the trim moves both loop boundaries together, retaining
+the exact frame count. Use **−1 / +1 frame**, type frame positions, or focus a
+handle and use Left/Right; Shift moves 16 frames. Typed positions commit on Enter
+or leaving the field; Escape cancels. End markers are exclusive.
+
+**Snap to zero** searches nearby crossings with matching direction. With length
+locked, it requires a matching pair at that length. **Match seam** compares both
+channels' local waveform shapes and avoids replacing the loop with nearby silence.
+Neither tool guarantees a click-free result for every recording: zero values
+with opposing slopes or different stereo phases can still make an audible seam.
+Use the raw seam/slope readouts and audition the result.
+
+**Crossfade frames** blends across the seam without shortening the loop's
+repetition period. The fade is limited to a quarter of the loop and needs at
+least two frames; very short loops should use matched boundaries. Crossfades
+are baked into exported PCM for both models, including loops at the recording's
+end and loop-until-release tails.
+
+Unlock length when you deliberately want to resize a loop. The readout shows
+duration, repetition frequency and the cents change from the loop's original
+length. Repetition frequency is not necessarily the note's fundamental: a loop
+can contain several waveform cycles. Root MIDI accepts 0.001-semitone steps
+(0.1 cent); correct source root tuning remains necessary.
+
+Classic retains the native rate or a rate matched to the reduced integer loop
+length. Advanced calibrates each pitched recording's root to compensate for
+whole-frame rounding at 44.1 kHz, including pitch variants and different key
+tracking slopes. Fixed/zero-tracking loops that cannot retain pitch are rejected
+with a specific error rather than exported detuned. These preparations preserve
+source tuning through conversion; device clock and playback resolution still
+set the final hardware accuracy.
+
 ## Classic Sampler
 
 With updated Classic firmware connected, Synth offers Wavetable and Sampler
@@ -1040,3 +1082,9 @@ settings to profile 1 and respects the existing AutoSave preference.
 
 See [Classic sampler](compact-sampler.md) for supported sources, eight-voice and
 48 KiB limits, loop behavior, conversion and device controls.
+
+## Sample Tuning And Automatic Loops
+
+Classic and Advanced share **Analyze & tune** in the Sampler editor. See
+[Sample tuning and loop suggestions](sampler-tuning.md) for reference-tone
+audition, fractional roots, confidence, and converted-loop verification.
