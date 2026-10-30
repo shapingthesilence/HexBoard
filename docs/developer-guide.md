@@ -751,3 +751,23 @@ Manually cover affected categories:
 - sequencer playback, files, and USB Backup when enabled
 
 Docs-only changes require `git diff --check`, not a firmware compile.
+
+
+## Sampler ownership and selective verification
+
+Sync's `web/src/advanced/synth/sampler/prepare.mjs` and encoder own pure sampler
+preparation for the browser and Advanced command-line tools. Advanced resolves
+this checkout with `WEB_SOURCE`; do not maintain another editable copy. Keep one
+shared authoring model/editor, explicit Classic/Advanced conversion and transport,
+and separate native engines for their different memory and timing budgets.
+Language-specific validators remain at trust boundaries; browser-produced files
+must pass native codec tests. HBC1 and HBS2-v3 are current unreleased formats;
+regenerate obsolete sampler data instead of adding runtime migration chains.
+Released original-HexBoard settings migrations from version 32 remain supported.
+
+Iterate with affected Vitest files and native host contract checks, then build
+the changed target. Focus on preparation quality/pitch, malformed format/CRC,
+workspace replacement acknowledgements, captured generations/releases, exhausted
+voice capacity, interrupted installation, and safe storage failure. At integration
+boundaries use `python3 scripts/test_host.py`, the full web suite/build, and `make`.
+Keep timing, physical playing and listening qualification separate from host tests.

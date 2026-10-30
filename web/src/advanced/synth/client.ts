@@ -25,10 +25,10 @@ export function decodeSamplerLibrary(p:number[],first:number):SamplerInstrument[
 }
 export interface SamplerLoadingState {phase:0|1|2|3;voices:number;ready:number;total:number;loadedBytes:number;totalBytes:number;streaming?:boolean}
 export function decodeSamplerLoading(p:number[]):SamplerLoadingState {
-  if((p.length!==17&&p.length!==18)||p[0]!==17||p[1]>3||(p.length===18&&p[17]!==1))throw Error('Invalid sampler loading response.');
+  if(p.length!==18||p[0]!==17||p[1]>3||p[17]>1)throw Error('Invalid sampler loading response.');
   const state={phase:p[1] as 0|1|2|3,voices:p[2],ready:decodeU14(p.slice(3,5)),total:decodeU14(p.slice(5,7)),loadedBytes:p.slice(7,12).reduce((a,b)=>a*128+b,0),totalBytes:p.slice(12,17).reduce((a,b)=>a*128+b,0)};
   if(state.total>128||state.ready>state.total||state.loadedBytes>state.totalBytes||state.totalBytes>0x40000000||state.voices>16||state.phase===0&&(state.voices||state.ready||state.total||state.loadedBytes||state.totalBytes)||(state.phase===1||state.phase===3)&&(!state.total||!state.totalBytes||state.voices!==4)||state.phase===2&&(!state.total||state.ready!==state.total||state.loadedBytes!==state.totalBytes||state.voices!==16))throw Error('Invalid sampler loading progress.');
-  return p.length===18?{...state,streaming:true}:state;
+  return {...state,streaming:!!p[17]};
 }
 export interface PhysicalState { state: "stopped" | "playing" | "loading"; instrument: number; bend: number; preset: PhysicalPreset }
 export function decodePhysicalState(payload: number[]): PhysicalState {
@@ -62,8 +62,8 @@ export function decodeModulation(payload:number[]):ModulationSources {
   return validateModulation({settings:Array.from({length:16},(_,i)=>decodeU21(payload.slice(1+i*3,4+i*3))),routes:Array.from({length:66},(_,i)=>decodeU21(payload.slice(49+i*3,52+i*3))-65536)});
 }
 export function sampleChecksum(frames:number[]){let crc=0xffffffff;for(const v of frames)for(const byte of [v&255,(v>>8)&255]){crc^=byte;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0;}
-interface SampleMeta{loop:SampleLoop;priority:0|1;enabled:boolean;gain:number;direct:number;length:number;busy:boolean;crc:number}
-function decodeSample(p:number[]):SampleMeta {if((p.length!==17&&p.length!==18&&p.length!==28)||p[0]!==17||p[1]>1||p[8]>1)throw Error("Invalid sample response.");const gain=decodeU21(p.slice(2,5)),length=decodeU21(p.slice(5,8)),crc=p.slice(9,14).reduce((a,b)=>a*128+b,0);if(gain>65535||length>64000||crc>0xffffffff)throw Error("Invalid sample response.");const direct=decodeU21(p.slice(14,17));if(direct>65535)throw Error("Invalid sample attack mix.");const priority=p[17]??0;if(priority!==0&&priority!==1)throw Error("Invalid sample performance priority.");const loop=p.length===28?{mode:p[18] as 0|1|2,start:decodeU21(p.slice(19,22)),end:decodeU21(p.slice(22,25)),crossfade:decodeU21(p.slice(25,28))}:defaultSampleLoop();if(loop.mode>2||loop.end>length||loop.crossfade>3200||loop.crossfade===1||(loop.mode===0?(loop.start!==0||loop.end!==0||loop.crossfade!==0):(loop.end-loop.start<160||loop.crossfade*2>loop.end-loop.start)))throw Error("Invalid sample loop response.");return {loop,enabled:!!p[1],gain,direct,priority,length,busy:!!p[8],crc};}
+interface SampleMeta{loop:SampleLoop;enabled:boolean;gain:number;direct:number;length:number;busy:boolean;crc:number}
+function decodeSample(p:number[]):SampleMeta {if(p.length!==27||p[0]!==17||p[1]>1||p[8]>1)throw Error("Invalid sample response.");const gain=decodeU21(p.slice(2,5)),length=decodeU21(p.slice(5,8)),crc=p.slice(9,14).reduce((a,b)=>a*128+b,0);if(gain>65535||length>64000||crc>0xffffffff)throw Error("Invalid sample response.");const direct=decodeU21(p.slice(14,17));if(direct>65535)throw Error("Invalid sample attack mix.");const loop={mode:p[17] as 0|1|2,start:decodeU21(p.slice(18,21)),end:decodeU21(p.slice(21,24)),crossfade:decodeU21(p.slice(24,27))};if(loop.mode>2||loop.end>length||loop.crossfade>3200||loop.crossfade===1||(loop.mode===0?(loop.start!==0||loop.end!==0||loop.crossfade!==0):(loop.end-loop.start<160||loop.crossfade*2>loop.end-loop.start)))throw Error("Invalid sample loop response.");return {loop,enabled:!!p[1],gain,direct,length,busy:!!p[8],crc};}
 const u32=(v:number)=>Array.from({length:5},(_,i)=>Math.floor(v/2**(7*(4-i)))%128);
 let nextTransaction = 1000;
 export class PhysicalSynthClient {
@@ -124,7 +124,7 @@ export class PhysicalSynthClient {
       if(sampleChecksum(frames)!==meta.crc&&meta.length)throw Error("Sample readback checksum mismatch.");
       this.sample={...defaultSample(),name:meta.length?"Imported sample":"",frames};this.sampleCrc=meta.crc;
     }
-    this.sample={...this.sample,enabled:meta.enabled&&this.sample.frames.length>0,gain:meta.gain,direct:meta.direct,priority:meta.priority,loop:meta.loop};
+    this.sample={...this.sample,enabled:meta.enabled&&this.sample.frames.length>0,gain:meta.gain,direct:meta.direct,loop:meta.loop};
     const advancedState=this.advanced?await this.readAdvanced():undefined;
     const preset={...state.preset,mono:this.mono,controllerRoutes:this.controllerRoutes,sample:this.sample,modulation:this.modulation,effects:this.fx,tiltRoutes:this.motion.tiltRoutes};return {...state,state:state.state!=="stopped"&&meta.busy&&meta.enabled?"loading":state.state,preset:advancedState?.budget.qualified&&advancedState.budget.phase===3?attachVoiceBudget(preset,advancedState.budget):preset};
   }
@@ -143,16 +143,16 @@ export class PhysicalSynthClient {
       this.onProgress?.({label:"Applying sample…"});
       await this.request<SampleMeta>(23);this.sampleCrc=crc;this.sample=sample;
       if(sample.loop?.mode)await this.configureSampleLoop(sample.loop);
-      await this.request<SampleMeta>(24,[+sample.enabled,...encodeU21(sample.gain),...encodeU21(sample.direct),sample.priority??0]);
+      await this.request<SampleMeta>(24,[+sample.enabled,...encodeU21(sample.gain),...encodeU21(sample.direct)]);
       if(wasPlaying){await this.start();await this.waitSample();}
-    }else{if(policyChanged)await this.configureSampleLoop(sample.loop!);await this.request<SampleMeta>(24,[+sample.enabled,...encodeU21(sample.gain),...encodeU21(sample.direct),sample.priority??0]);this.sample=sample;}
+    }else{if(policyChanged)await this.configureSampleLoop(sample.loop!);await this.request<SampleMeta>(24,[+sample.enabled,...encodeU21(sample.gain),...encodeU21(sample.direct)]);this.sample=sample;}
     if(resume){await this.start();await this.waitSample();}
     return await this.request(0);
     }finally{this.onProgress?.();}
   }
   private async configureSampleLoop(loop:SampleLoop){return this.request<SampleMeta>(27,[loop.mode,...encodeU21(loop.start),...encodeU21(loop.end),...encodeU21(loop.crossfade)]);}
   private async waitSample(){this.onProgress?.({label:"Preparing synth…"});for(let i=0;i<300;i++){if(!(await this.request<SampleMeta>(20)).busy)return;await new Promise(r=>setTimeout(r,20));}throw Error("Sample transfer did not finish.");}
-  async previewSample(){if(!this.sample.frames.length)throw Error("Import a sample first.");this.onProgress?.({label:"Preparing preview…"});try{await this.request<SampleMeta>(24,[1,...encodeU21(this.sample.gain),...encodeU21(this.sample.direct),this.sample.priority??0]);this.sample.enabled=true;const state=await this.request(0);if(state.state==="stopped")await this.start();await this.waitSample();if(this.previewNeedsStartup){this.onProgress?.({label:"Preparing audio…"});await new Promise(resolve=>setTimeout(resolve,2000));this.previewNeedsStartup=false;}await this.request<SampleMeta>(25);return await this.request(0);}finally{this.onProgress?.();}}
+  async previewSample(){if(!this.sample.frames.length)throw Error("Import a sample first.");this.onProgress?.({label:"Preparing preview…"});try{await this.request<SampleMeta>(24,[1,...encodeU21(this.sample.gain),...encodeU21(this.sample.direct)]);this.sample.enabled=true;const state=await this.request(0);if(state.state==="stopped")await this.start();await this.waitSample();if(this.previewNeedsStartup){this.onProgress?.({label:"Preparing audio…"});await new Promise(resolve=>setTimeout(resolve,2000));this.previewNeedsStartup=false;}await this.request<SampleMeta>(25);return await this.request(0);}finally{this.onProgress?.();}}
   async effects(fx:FxRack) { const f=validateFx(fx);await this.request<FxRack>(11,[...f.order,...Array(5-f.order.length).fill(0),...f.values.flat().flatMap(encodeU21),...f.steps.flatMap(encodeU21),...f.routes!.flatMap(v=>encodeU21(v+65536))]);return this.request(0); }
   async expression() {const e=await this.request<PhysicalExpression>(8);this.motion=await this.request<MotionState>(12);return {...e,tiltX:this.motion.tiltX,tiltY:this.motion.tiltY,motionValid:this.motion.valid,motionDetected:this.motion.detected};}
   async zeroMotion(){this.motion=await this.request<MotionState>(15);return this.motion;}
@@ -163,7 +163,7 @@ export class PhysicalSynthClient {
   status(){return this.request(0);}
   samplerLoading(){return this.request<SamplerLoadingState>(63);}
   async samplerSource(source:'patch'|'piano'){return this.samplerInstrument(source==='piano'?1:0);}
-  async samplerInstrument(id:number){if(!Number.isInteger(id)||id<0||id>1025)throw Error('Invalid sampler instrument.');await this.stopAndWait();return this.request(51,id<128?[id]:encodeU14(id));}
+  async samplerInstrument(id:number){if(!Number.isInteger(id)||id<0||id>1025)throw Error('Invalid sampler instrument.');await this.stopAndWait();return this.request(51,encodeU14(id));}
   async samplerLibrary(refresh=false,folder=0):Promise<SamplerInstrument[]>{if(!Number.isInteger(folder)||folder<0||folder>32)throw Error("Invalid sampler folder.");const entries:SamplerInstrument[]=[];for(let first=folder*32;first<folder*32+32;first+=4)entries.push(...await this.request<SamplerInstrument[]>(64,[...encodeU14(first),refresh?1:0]));return entries;}
   samplerParameter(id:number,value:number){return this.request(46,[id,...encodeU21(value)]);}
   async uploadSampler(bytes:Uint8Array,progress?:(received:number,total:number)=>void){
@@ -259,7 +259,7 @@ export class PhysicalSynthClient {
     // Clear cost before allocating a replacement. This runs during an explicit
     // patch load, never on a normal note or expression update.
     if(this.advanced)await retry(()=>this.request(53,Array(66).fill(65536).flatMap(encodeU21)));
-    await this.request<SampleMeta>(24,[0,...encodeU21(p.sample.gain),...encodeU21(p.sample.direct),p.sample.priority??0]);
+    await this.request<SampleMeta>(24,[0,...encodeU21(p.sample.gain),...encodeU21(p.sample.direct)]);
     this.sample={...this.sample,enabled:false};
     const neutralFx={...p.effects,order:[],routes:Array(70).fill(0),values:p.effects.values.map((row,i)=>i===4?row.map((v,j)=>j===0?0:v):row)};
     await retry(()=>this.effects(neutralFx));

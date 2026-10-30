@@ -11,7 +11,10 @@ Applies repository-wide. Code is authoritative; correct stale docs when relevant
   its `.cpp`. Use `synth/SynthAudio.h` across subsystems and keep
   `SynthAudioInternal.h` synth-private.
 - Prefer coherent subsystem ownership over stacked narrow fixes unless a
-  temporary workaround is requested.
+  temporary workaround is requested. Keep one implementation per responsibility;
+  add abstractions only for demonstrated duplication or ownership. Shared pure
+  sampler preparation lives in Sync and is consumed by Advanced via `WEB_SOURCE`.
+  Native readers/engines retain hardware-specific ownership and budgets.
 - Keep latency-sensitive ISR, audio, scan, rotary, MIDI, and control work bounded
   and allocation-free. Use `RAM_FUNC` where measurement justifies it; keep hot
   helpers and tables in RAM.
@@ -29,7 +32,7 @@ Applies repository-wide. Code is authoritative; correct stale docs when relevant
   when persisted layout or byte meaning changes. Preserve settings from version 32
   onward with explicit, tested migrations; append new keys where possible and
   initialize new fields from factory defaults.
-- Advanced browser synth presets are unreleased: support current formats without
+- Advanced and Classic sampler formats and Advanced browser synth presets are unreleased: support current formats without
   maintaining migrations unless compatibility is explicitly requested.
 - `factory-library/` is source: web-compatible preset JSON, tuning bundles, and
   `.hexwav` wavetables. Source subdirectories become device folders.
@@ -64,6 +67,11 @@ Applies repository-wide. Code is authoritative; correct stale docs when relevant
 ## Verification
 
 - Run `git diff --check` and report verification results.
+- During iteration, select affected contract/failure-mode tests instead of adding
+  tests for every helper. Preserve numerical, format, captured-release, storage,
+  concurrency and real-time contracts; avoid incidental implementation assertions.
+  Use full host/web checks at integration boundaries. Documentation-only changes
+  need technical/link validation rather than unrelated tests.
 - Firmware changes: run `make`; escalate and retry blocked Arduino cache access.
 - Web code/assets: run relevant web tests and the web build. Run the factory
   generator when factory content, encoding, validation, or factory-derived

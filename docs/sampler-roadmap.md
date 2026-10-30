@@ -67,3 +67,17 @@ converted current banks, rather than accumulating unreleased compatibility reade
 Classic settings compatibility continues to follow that repository's supported
 settings migration policy. Validate browser behavior and export on both profiles;
 then measure native audio, storage, scanner timing and physical playing separately.
+
+
+## Remaining instrument and standalone work
+
+- Reverse/ping-pong playback and arbitrary starts need explicit residency rules.
+  Stereo streaming must qualify the Advanced 16-held/four-tail floor with a named
+  card/rate/bend envelope; do not silently reduce voices to enable a feature.
+- Transient slicing and editable slice boundaries extend current equal slices.
+  Keep tuning/layout independent of physical Kit/Slices key assignments.
+- Standalone sampler authoring should reuse the existing joystick/OLED ownership:
+  saved sounds and quick edits, explicit saves, and captured soft-key/audition
+  release behavior. Full authoring remains in Sync; no second editor framework.
+- Longer unattended/card-fragmentation/combined-load runs and physical listening
+  remain required before general capacity, quality or power claims.

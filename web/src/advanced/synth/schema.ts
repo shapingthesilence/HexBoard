@@ -90,15 +90,14 @@ export function validateModulation(value:unknown):ModulationSources {
 }
 export interface SampleLoop {mode:0|1|2;start:number;end:number;crossfade:number}
 export const defaultSampleLoop=():SampleLoop=>({mode:0,start:0,end:0,crossfade:0});
-export interface SampleExciter {loop?:SampleLoop;enabled:boolean;gain:number;direct:number;priority?:0|1;name:string;frames:number[]}
-export const defaultSample=():SampleExciter=>({enabled:false,gain:32768,direct:65535,priority:0,loop:defaultSampleLoop(),name:"",frames:[]});
+export interface SampleExciter {loop?:SampleLoop;enabled:boolean;gain:number;direct:number;name:string;frames:number[]}
+export const defaultSample=():SampleExciter=>({enabled:false,gain:32768,direct:65535,loop:defaultSampleLoop(),name:"",frames:[]});
 export function validateSample(value:unknown):SampleExciter{
  const s=value as SampleExciter;if(!s||typeof s.enabled!=="boolean"||!Number.isInteger(s.gain)||s.gain<0||s.gain>65535||typeof s.name!=="string"||!Array.isArray(s.frames)||s.frames.length>64000||s.frames.some(v=>!Number.isInteger(v)||v<-32768||v>32767)||s.enabled&&!s.frames.length)throw Error("Invalid sample exciter.");
  const direct=s.direct??65535;if(!Number.isInteger(direct)||direct<0||direct>65535)throw Error("Invalid sample attack mix.");
- const priority=s.priority??0;if(priority!==0&&priority!==1)throw Error("Invalid sample performance priority.");
  const loop=s.loop??defaultSampleLoop();
  if(![0,1,2].includes(loop.mode)||![loop.start,loop.end,loop.crossfade].every(Number.isInteger)||loop.start<0||loop.end>s.frames.length||loop.crossfade<0||loop.crossfade>3200||loop.crossfade===1||(loop.mode===0?(loop.start!==0||loop.end!==0||loop.crossfade!==0):(loop.end-loop.start<160||loop.crossfade*2>loop.end-loop.start)))throw Error("Use a loop of at least 10 ms, with a crossfade up to half its length (maximum 200 ms).");
- return {...s,direct,priority,loop:{...loop},name:s.name.slice(0,80),frames:[...s.frames]};
+ return {enabled:s.enabled,gain:s.gain,direct,loop:{...loop},name:s.name.slice(0,80),frames:[...s.frames]};
 }
 export interface PhysicalPreset { mono?:MonoConfig; voiceBudget?:VoiceBudgetProfile; controllerRoutes?:number[]; format: "hexboard.physical.v22"; modulation:ModulationSources; tiltRoutes: number[]; effects: FxRack; sample:SampleExciter; name: string; parameters: number[]; routes: number[]; velocityEngine: PhysicalVelocityEngine }
 export const initialPreset: PhysicalPreset = {

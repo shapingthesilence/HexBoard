@@ -13,7 +13,7 @@ int main() {
   assert(command(parser, "HBDBG?") == SerialDebugCommandParser::Query);
   assert(command(parser, "HBAUD 1") == SerialDebugCommandParser::AudioTestStart);
   assert(command(parser, "HBAUD 0\r") == SerialDebugCommandParser::AudioTestStop);
-  assert(command(parser, "HBAUD 2") == SerialDebugCommandParser::NoCommand);
+  assert(command(parser, "HBAUD 2") == SerialDebugCommandParser::AudioTestPiezo);
   for (int flags = 0; flags <= 15; ++flags)
     assert(command(parser, "HBDBG " + std::to_string(flags)) == flags);
   for (const char* invalid : {"HBDBG", "HBDBG -1", "HBDBG 16", "HBDBG 99", "HBDBG 1x", "HBDBG 0 0", "HELLO"})
@@ -28,5 +28,4 @@ int main() {
   parser.consume('H');
   parser.reset();
   assert(command(parser, "HBDBG 0") == 0);
-  { SerialDebugCommandParser piezo; int result = 0; for (char ch : std::string("HBAUD 2\n")) result = piezo.consume(ch); assert(result == SerialDebugCommandParser::AudioTestPiezo); }
 }
