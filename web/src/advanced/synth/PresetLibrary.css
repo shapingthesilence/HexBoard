@@ -1,5 +1,71 @@
-.preset-launcher{display:flex;align-items:center;gap:.65rem;min-width:0;margin:.4rem 0 .8rem}.preset-launcher>span{color:var(--text-soft,#a7b8c3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:32rem}.preset-launcher>button{font-weight:650}
-.advanced-preset-library{--library-bg:var(--surface-raised,#202e38);background:var(--library-bg);color:var(--text,#e0e8ef);border:1px solid var(--physical-border,#435864);border-radius:16px;width:min(820px,calc(100vw - 2rem));max-height:min(90vh,950px);padding:1.1rem 1.2rem;box-shadow:0 20px 90px #0008;overflow:auto}.advanced-preset-library::backdrop{background:#07111aba;backdrop-filter:blur(3px)}.advanced-preset-library header{display:flex;align-items:center;justify-content:space-between;gap:1rem}.advanced-preset-library header h2{margin:.1rem 0 .8rem}.advanced-preset-library header .eyebrow{margin:0}.advanced-preset-library nav{display:flex;gap:.35rem;border-bottom:1px solid #879eae40;padding-bottom:.7rem}.advanced-preset-library button[aria-pressed=true]{background:#9cd8c9;color:#17332d;border-color:#9cd8c9}.preset-library-tools{display:flex;gap:.45rem;padding:.7rem 0;flex-wrap:wrap}.preset-library-tools input{flex:1;min-width:10rem}.preset-library-list{height:clamp(180px,37vh,430px);overflow:auto;border:1px solid #879eae40;border-radius:9px;overscroll-behavior:contain}.preset-library-row{display:flex;gap:.35rem;align-items:center;padding:.28rem .45rem;border-bottom:1px solid #879eae20}.preset-library-row.selected{background:#80c9bc22;box-shadow:inset 3px 0 #9cd8c9}.preset-library-row>button:first-child{flex:1;display:flex;text-align:left;gap:.65rem;background:none;border-color:transparent;min-width:0}.preset-library-row>button:first-child span{overflow:hidden;text-overflow:ellipsis}.preset-library-row small{display:block;color:var(--text-soft,#a7b8c3);font-size:.76rem;line-height:1.5}.preset-empty{padding:1.5rem;color:var(--text-soft,#a7b8c3)}.preset-library-save{display:flex;align-items:end;flex-wrap:wrap;gap:.5rem;padding:.8rem 0;border-bottom:1px solid #879eae40}.preset-library-save label{display:grid;gap:.25rem;flex:1;min-width:130px;font-size:.8rem}.preset-library-save input{width:100%;box-sizing:border-box}.advanced-preset-library footer{display:flex;justify-content:space-between;gap:.6rem;align-items:center;flex-wrap:wrap;padding-top:.7rem}.advanced-preset-library footer small{color:var(--text-soft,#a7b8c3)}.advanced-preset-library .file-button{display:inline-flex;align-items:center;border:1px solid #879eae60;border-radius:7px;padding:.5rem .7rem;cursor:pointer}.advanced-preset-library .file-button input{display:none}.advanced-preset-library .danger{color:#f4a9a9}.preset-library-progress{display:flex;align-items:center;gap:.6rem;font-size:.8rem;padding-top:.6rem}.preset-library-progress progress{flex:1;accent-color:#9cd8c9}.advanced-preset-library input,.advanced-preset-library select{background:var(--surface-muted,#172630);color:inherit;border:1px solid #879eae60;border-radius:7px;padding:.45rem .6rem}.advanced-preset-library button{padding:.43rem .65rem;border-radius:7px}.advanced-preset-library :focus-visible{outline:2px solid #a2e0d1;outline-offset:2px}
-@media(max-width:560px){.advanced-preset-library{padding:.8rem}.preset-library-tools select{max-width:100%}.preset-library-row{gap:.15rem}.preset-library-save>button{flex:1}.advanced-preset-library footer small{width:100%}}
+/* Sound identity bar: matches the classic synth's Name / Folder / Save header. */
+.sound-identity{display:grid;gap:.35rem;margin:.4rem 0 .8rem;min-width:0}
+.sound-identity-bar{display:flex;flex-wrap:wrap;align-items:end;gap:.6rem;min-width:0}
+.sound-identity-bar .field{display:grid;gap:.2rem;flex:1 1 11rem;min-width:0;font-size:.78rem}
+.sound-identity-bar .field input{width:100%;box-sizing:border-box}
+.sound-library-button{font-weight:650}
+.sound-identity-actions{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;margin-left:auto}
+.sound-identity .sound-identity-where{font-size:11px;white-space:nowrap;color:var(--text-soft)}
+.sound-identity>p{margin:0;font-size:.8rem}
+.sound-identity .error{color:var(--danger,#f4a9a9)}
 
-.device-preset-tools>select{flex:1;min-width:130px}.device-preset-tools>input{flex-basis:100%}
+/* Library dialog: shares the tuning library's dialog and column styles, with a third Factory column. */
+.tuningLibraryDialog.soundLibraryDialog{width:min(1320px,calc(100vw - 32px))}
+.soundLibraryDialog .libraryToolbar h2{margin:0}
+.soundLibraryDialog .libraryUtilityBar p{margin:0}
+.soundLibraryDialog .libraryUtilityBar .error{color:var(--danger,#f4a9a9)}
+.geometryLibrarySpaces.soundLibrarySpaces{grid-template-columns:repeat(3,minmax(0,1fr))}
+.soundLibrarySpaces .librarySpace{min-width:0}
+.geometryLibrarySpaces.soundLibrarySpaces .presetListItem{display:flex;align-items:center;gap:6px}
+.soundLibrarySpaces .presetNameButton{flex:1;min-width:0}
+.soundLibrarySpaces .presetNameButton:disabled{opacity:1;cursor:progress}
+.soundLibraryControls{display:flex;gap:6px}
+.soundLibraryControls input{flex:1;min-width:0}
+.soundFavorite{background:none;border-color:transparent;padding:.2rem .35rem}
+.soundFavorite[aria-pressed=true]{color:var(--warning,#e8c76a)}
+.soundLibraryDialog .hiddenFileInput,.sound-identity .hiddenFileInput{display:none}
+@media (max-width:1100px){
+ .geometryLibrarySpaces.soundLibrarySpaces{grid-template-columns:1fr}
+ .soundLibrarySpaces>.librarySpace+.librarySpace{border-left:0;border-top:1px solid var(--border);padding:18px 8px 8px}
+}
+
+/* Physical Strings look: instrument palette, 8px panels, small uppercase section labels, compact controls. */
+.tuningLibraryDialog.soundLibraryDialog{background:var(--surface);border-color:var(--border);border-radius:12px;padding:14px;font-size:12px;box-shadow:0 20px 80px #0009}
+.soundLibraryDialog::backdrop{background:#07111ab8;backdrop-filter:blur(3px)}
+.soundLibraryDialog .libraryToolbar{border-bottom:0;padding-bottom:4px}
+.soundLibraryDialog .libraryToolbar .eyebrow{display:block;font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--brand)}
+.soundLibraryDialog .libraryToolbar h2{font-size:18px;letter-spacing:-.02em}
+.soundLibraryDialog .libraryUtilityBar{font-size:11px}
+.soundLibraryDialog button,.soundLibraryDialog input,.soundLibraryDialog select,.soundLibraryDialog summary{font-size:11px;color:var(--text);background:var(--surface-muted);border:1px solid var(--border-strong);border-radius:5px;padding:5px 8px;min-height:28px;font-weight:500}
+.soundLibraryDialog button:hover:not(:disabled){background:var(--surface-accent)}
+.soundLibraryDialog button:disabled{opacity:.4}
+.soundLibraryDialog :focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.geometryLibrarySpaces.soundLibrarySpaces{gap:10px}
+.geometryLibrarySpaces.soundLibrarySpaces>.librarySpace,.geometryLibrarySpaces.soundLibrarySpaces>.librarySpace+.librarySpace{background:var(--surface-raised);border:1px solid var(--border);border-radius:8px;padding:10px;gap:8px}
+.soundLibrarySpaces .librarySpaceHeader h3{font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--text-soft);margin:0}
+.soundLibrarySpaces .librarySpaceHeader .muted{font-size:10px}
+.soundLibrarySpaces .countBadge{background:var(--surface-muted);color:var(--text-soft);font-size:10px}
+.soundLibrarySpaces .folderTarget{min-height:24px;padding:3px 8px;border-radius:999px;background:transparent;border-color:var(--border);font-size:10.5px;gap:6px}
+.soundLibrarySpaces .folderTarget.active,.soundLibrarySpaces .folderTarget[aria-pressed=true]{background:var(--surface-accent);border-color:var(--brand);color:var(--text)}
+.soundLibrarySpaces .list{gap:3px}
+.geometryLibrarySpaces.soundLibrarySpaces .presetListItem{background:var(--surface);border:1px solid transparent;border-radius:6px;padding:4px 6px;min-height:0}
+.geometryLibrarySpaces.soundLibrarySpaces .presetListItem:hover{border-color:var(--border)}
+.geometryLibrarySpaces.soundLibrarySpaces .presetListItem.activeListItem{border-color:var(--brand);box-shadow:inset 3px 0 var(--brand);background:color-mix(in srgb,var(--brand) 10%,var(--surface))}
+.soundLibrarySpaces .presetNameButton,.soundLibrarySpaces .presetNameButton:hover:not(:disabled){display:grid;gap:1px;background:none;border:0;padding:2px 0;min-height:0;text-align:left;font-size:12px}
+.soundLibrarySpaces .presetNameButton span{font-size:10px;color:var(--text-soft)}
+.soundLibraryDialog .presetOverflowMenu summary{background:none;border-color:transparent;min-height:24px;padding:2px 6px}
+.soundLibraryDialog .presetOverflowActions{background:var(--surface-raised);border:1px solid var(--border-strong);border-radius:6px}
+.soundLibraryDialog .presetOverflowActions button{background:none;border:0;text-align:left}
+.soundLibraryDialog .presetOverflowActions .warning{color:var(--danger,#f4a9a9)}
+.soundLibraryDialog .libraryBulkActions{font-size:11px;padding:0}
+.soundLibraryDialog .libraryItemSelection input{min-height:0;padding:0}
+.soundLibraryDialog .emptyListItem{background:var(--surface);color:var(--text-soft);font-size:11px;padding:18px 10px}
+.soundLibraryDialog .soundFavorite{background:none;border-color:transparent;min-height:24px;padding:2px 6px}
+.soundLibrarySpaces .list{display:grid;align-content:start}
+.geometryLibrarySpaces.soundLibrarySpaces .presetListItem{flex-shrink:0}
+.soundLibrarySpaces .folderTarget.systemFolderTarget{font-style:normal;color:var(--text);font-weight:600}
+.soundLibrarySpaces .list{grid-auto-rows:max-content}
+:root .soundLibraryDialog .soundLibrarySpaces .folderTarget{font-style:normal;color:var(--text-soft);background:transparent;border:1px solid var(--border);box-shadow:none}
+:root .soundLibraryDialog .soundLibrarySpaces .folderTarget.active{color:var(--text);background:var(--surface-accent);border-color:var(--brand);font-weight:600}
+:root .soundLibraryDialog .soundLibrarySpaces .folderTarget span:first-child{color:inherit;font-style:normal;font-size:inherit;letter-spacing:0}
+.soundLibraryDialog .checkField{font-size:11px;font-weight:500}

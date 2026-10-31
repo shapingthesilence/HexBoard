@@ -21,4 +21,27 @@ async function transaction<T>(store:'presets',mode:IDBTransactionMode,run:(s:IDB
 export const putLibraryPreset=(entry:LibraryPreset)=>transaction('presets','readwrite',s=>s.put(libraryEntry(entry)));
 export const removeLibraryPreset=(id:string)=>transaction('presets','readwrite',s=>s.delete(id));
 export async function readLibrary():Promise<LibraryPreset[]>{return (await transaction('presets','readonly',s=>s.getAll())).map(libraryEntry);}
-export function downloadPreset(value:unknown){const p=storedPreset(value),url=URL.createObjectURL(new Blob([JSON.stringify(p)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=`${p.name.replace(/[^a-z0-9_-]/gi,'_')}.hexboard.json`;a.click();URL.revokeObjectURL(url);}
+function download(data:unknown,name:string){const url=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=`${name.replace(/[^a-z0-9_-]/gi,'_')}.hexboard.json`;a.click();URL.revokeObjectURL(url);}
+export function downloadPreset(value:unknown){const p=storedPreset(value);download(p,p.name);}
+export function downloadPresets(values:unknown[],name:string){download(values.map(storedPreset),name);}
+// Import accepts a single exported sound or an exported selection (array).
+export function importedPresets(data:unknown):SoundPreset[]{return (Array.isArray(data)?data:[data]).map(storedPreset);}
+// Pick an action, then fold the ••• menu away.
+export const closeMenu=(e:{currentTarget:Element})=>e.currentTarget.closest('details')?.removeAttribute('open');
+export const folderName=(folder:string)=>folder||'Unfiled';
+export const presetName=(value:string)=>value.trim().slice(0,60)||'Untitled';
+// Favorites is a filter, not a folder; it cannot collide with a normalized path.
+export const favoritesFilter='\u0000favorites';
+export function filterEntries(rows:LibraryPreset[],folder:string|null,query:string){
+ const q=query.trim().toLowerCase();
+ return rows.filter(r=>(folder===null||(folder===favoritesFilter?r.favorite:r.folder===folder))&&(!q||`${r.preset.name} ${r.folder}`.toLowerCase().includes(q)))
+  .sort((a,b)=>a.folder.localeCompare(b.folder)||a.preset.name.localeCompare(b.preset.name,undefined,{numeric:true}));
+}
+export function folderCounts(rows:LibraryPreset[]){const counts=new Map<string,number>();for(const r of rows)counts.set(r.folder,(counts.get(r.folder)??0)+1);return [...counts].sort(([a],[b])=>a.localeCompare(b));}
+export function sameName(rows:LibraryPreset[],engine:number,name:string,folder:string,except?:string){return rows.find(r=>r.id!==except&&presetEngine(r.preset)===engine&&r.folder===folder&&r.preset.name===name);}
+/** Saving updates the linked browser sound in place. An unlinked save, or a
+ * rename that lands on another sound, names the entry it would overwrite. */
+export function browserSaveTarget(rows:LibraryPreset[],engine:number,linked:string|undefined,name:string,folder:string){
+ const own=linked?rows.find(r=>r.id===linked&&presetEngine(r.preset)===engine):undefined,conflict=sameName(rows,engine,name,folder,own?.id);
+ return own?{id:own.id,favorite:own.favorite,remove:conflict?.id,conflict}:{id:conflict?.id,favorite:conflict?.favorite??false,conflict};
+}

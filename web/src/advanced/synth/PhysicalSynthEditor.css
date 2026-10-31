@@ -121,8 +121,9 @@
 .physical-workspace .spatial-panel{display:block;}
 .physical-workspace .spatial-panel .mini-controls{grid-column:auto;grid-row:auto;}
 
-/* Preserve the original blue instrument palette in dark mode. */
-:root[data-theme="dark"] .physical-editor {
+/* Preserve the original blue instrument palette in dark mode, including the preset library dialog. */
+:root[data-theme="dark"] .physical-editor,
+:root[data-theme="dark"] .soundLibraryDialog {
   --surface: #172129; --surface-raised: #202b34; --surface-muted: #2a3741;
   --surface-accent: #3b4d59; --text: #e4eaf0; --text-soft: #9cabb6;
   --border: #3a4853; --border-strong: #637582; --brand: #5cdac6;

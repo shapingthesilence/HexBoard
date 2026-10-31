@@ -1,4 +1,4 @@
-import {DevicePresetLibrary} from './DevicePresetLibrary.tsx';
+import {DevicePresetLibrary,deviceFolderProblem} from './DevicePresetLibrary.tsx';
 import {SynthRequestCancelledError,synthErrorMessage} from "./requestError.ts";
 import {SynthProgress} from './SynthProgress.tsx';
 import type {SynthProgress as Progress} from './progress.ts';
@@ -236,7 +236,7 @@ describe("Advanced physical editor", () => {
       ? JSON.stringify({ ...initialPreset, name: "Retained draft", parameters: initialPreset.parameters.map((v, i) => i ? v : 5566) }) : "[]" } });
     try {
       const html = renderToStaticMarkup(createElement(PhysicalSynthEditor));
-      expect(html).toContain('title="Retained draft"');
+      expect(html).toContain('value="Retained draft"');
       expect(html).toContain('aria-valuenow="5566"');
     } finally { vi.unstubAllGlobals(); }
   });
@@ -254,7 +254,7 @@ describe("Advanced physical editor", () => {
   });
   it("keeps activation visible offline and explains how to connect", () => {
     const html = renderToStaticMarkup(createElement(PhysicalSynthEditor));
-    expect(html).toContain("Presets");
+    expect(html).toContain(">Library<");
     expect(html).toContain("Start synth"); expect(html).toContain("Connect Advanced to play");
   });
 });
@@ -327,7 +327,8 @@ it('polls an automatic-storage catalog operation through completion',async()=>{c
 
 it('uses wide device IDs and preserves the top occupancy bit in folder pages',async()=>{const t=new Transport(),c=new PhysicalSynthClient(t);try{await c.presetCatalog(0,2080,1);expect(decodePresetSyncFrame(t.sent[0]).payload).toEqual([17,58,0,...encodeU14(2080),1]);expect(await c.presetLabel(3071)).toMatchObject({engine:5,name:'High ID sound'});const folders=await c.presetFolders();expect(folders).toHaveLength(32);expect(folders[31]).toEqual({index:31,name:'Glass',mask:0x80000000});}finally{c.close();}});
 
-it('keeps device library controls disabled while the parent reads an audition into the editor',()=>{const t=new Transport(),c=new PhysicalSynthClient(t);const html=renderToStaticMarkup(createElement(DevicePresetLibrary,{client:c,engine:2,busy:true,getCurrent:async()=>initialPreset,onAudition:()=>{},onBusy:()=>{}}));expect(html).toContain('aria-busy="true"');expect(html).toContain('Reading sound…');expect(html.match(/<button[^>]*disabled=""/g)).toHaveLength(2);c.close();});
+it('keeps device library controls disabled while the parent is busy',()=>{const t=new Transport(),c=new PhysicalSynthClient(t);const html=renderToStaticMarkup(createElement(DevicePresetLibrary,{client:c,library:{catalog:undefined,favorites:[],reading:'',refresh:async()=>{},refreshFavorites:async()=>{}},medium:0,onMedium:()=>{},busy:true,run:()=>{},onLoad:async()=>{},onLoadFavorite:async()=>{},onCopy:async()=>{},onReplace:async()=>{},onDelete:async()=>{},onOrganize:()=>{},onFavorite:async()=>{},onUnfavorite:async()=>{}}));expect(html).toContain('aria-busy="true"');expect(html).toMatch(/<select[^>]*disabled=""/);c.close();});
+it('explains HexBoard saves beyond 32 folders or 32 presets per folder',()=>{const folders=Array.from({length:32},(_,i)=>({index:i,name:`F${i}`,mask:i===3?0xffffffff:1}));expect(deviceFolderProblem(folders,'F3')).toMatch(/32 presets/);expect(deviceFolderProblem(folders,'F4')).toBeUndefined();expect(deviceFolderProblem(folders,'New')).toMatch(/32 folders/);expect(deviceFolderProblem(folders.map(f=>f.index===31?{...f,mask:0}:f),'New')).toBeUndefined();});
 
 it('reveals cached names top to bottom while a folder is still loading, without repeated reads',async()=>{
  const t=new Transport(),c=new PhysicalSynthClient(t),mask=0x80000009,seen:{polls:number;ids:number[]}[]=[];

@@ -1,4 +1,5 @@
-import {storedPreset} from './presetLibrary.ts';
+import {storedPreset,type SoundPreset} from './presetLibrary.ts';
+import {samePhysicalSound} from './physicalHistory.ts';
 import {SynthRequestCancelledError} from "./requestError.ts";
 import {defaultMono,validateMono,type MonoConfig} from './mono.ts';
 import {dspUsage} from "./dspBudget.ts";
@@ -13,9 +14,19 @@ import type { MidiTransport } from "../../midi/types.ts";
 import { decodePresetSyncFrame, encodeDefaultPresetSyncFrame, encodeU14, encodeU21, decodeU14, decodeU21 } from "../../protocol/index.ts";
 import { physicalPresetFromUnknown, defaultSample, defaultSampleLoop, validateSample, type SampleLoop, type SampleExciter, defaultModulation, validateModulation, type ModulationSources, defaultFx, validateFx, type FxRack, type PhysicalPreset, type PhysicalVelocityEngine, encodeLogPitchHz } from "./schema.ts";
 
-export interface PresetCatalogState {phase:number;action:number;slot:number;medium:0|1|2;progress:number;mask:number;elapsedMs:number;maxSliceUs:number;engine:number;folder:number;capacity:number;folderCapacity:number;heapMin:number}
+export interface PresetCatalogState {phase:number;action:number;error?:number;awaiting?:boolean;slot:number;medium:0|1|2;progress:number;mask:number;elapsedMs:number;maxSliceUs:number;engine:number;folder:number;capacity:number;folderCapacity:number;heapMin:number}
 export interface DevicePresetFolder {index:number;name:string;mask:number}
 export interface DevicePresetLabel {engine:number;favorite:boolean;name:string;folder:string}
+/** Shared HexBoard favorites: at most 32 across every engine and storage medium. */
+export interface DeviceFavorite {slot:number;medium:1|2;engine:number;name:string}
+export const deviceFavoriteLimit=32;
+const presetErrors:Record<number,string>={2:'That HexBoard folder already holds 32 presets. Choose another folder.',3:'The HexBoard already has 32 folders for this engine. Choose an existing folder with space.',4:'The HexBoard already has 32 favorites. Remove one before adding another.'};
+// 128-byte catalog label: engine/favorite bytes, then UTF-8 name and folder.
+function presetLabelBytes(engine:number,label:Omit<DevicePresetLabel,'engine'>){
+ const bytes=new Uint8Array(128);bytes[8]=engine;bytes[9]=+label.favorite;
+ const write=(text:string,offset:number,capacity:number)=>{const encoded=new TextEncoder().encode(text);if(encoded.length>=capacity)throw Error(`Device preset name or folder is too long (${capacity-1} UTF-8 bytes maximum).`);bytes.set(encoded,offset);};write(label.name,12,76);write(label.folder,88,40);
+ return Array.from(bytes).flatMap(v=>[v>>7,v&127]);
+}
 export interface SamplerInstrument {id:number;name:string;bytes:number}
 export function decodeSamplerLibrary(p:number[],first:number):SamplerInstrument[]{
  if(first<0||first>1052||first%4||p.length!==292||p[0]!==17||decodeU14(p.slice(1,3))!==first||p[3]!==4)throw Error('Invalid sampler library page.');
@@ -85,9 +96,12 @@ export class PhysicalSynthClient {
   async presetFolders():Promise<DevicePresetFolder[]>{const rows:DevicePresetFolder[]=[];for(let at=0;at<32;at+=4)rows.push(...await this.request<DevicePresetFolder[]>(60,[at,4]));return rows;}
   async presetCatalog(action:number,slot=0,medium=0,progress?:(state:PresetCatalogState)=>unknown,label?:number[]):Promise<PresetCatalogState>{
     try{let state=await this.request<PresetCatalogState>(58,[action,...encodeU14(slot),medium,...(label??[])]),started=Date.now();
-    while(state.phase===1){await progress?.(state);this.onProgress?.({label:action===2?'Loading preset…':(action===1||action===4)?'Saving preset…':'Reading preset library…',completed:state.progress,total:100});await new Promise(r=>setTimeout(r,25));state=await this.request<PresetCatalogState>(57);if(Date.now()-started>60000)throw Error('Preset operation timed out. Reconnect to inspect the device.');}
-    await progress?.(state);this.onProgress?.();if(state.phase!==2)throw Error('Preset operation failed. Check storage space or the SD card; complete saved data remains recoverable.');return state;}finally{this.onProgress?.();}
+    while(state.phase===1){await progress?.(state);this.onProgress?.({label:action===2?'Loading preset…':(action===1||action===4)?'Saving preset…':action===6?'Updating preset…':'Reading preset library…',completed:state.progress,total:100});await new Promise(r=>setTimeout(r,25));state=await this.request<PresetCatalogState>(57);if(Date.now()-started>60000)throw Error('Preset operation timed out. Reconnect to inspect the device.');}
+    await progress?.(state);this.onProgress?.();if(state.phase!==2)throw Error(presetErrors[state.error??0]??'Preset operation failed. Check storage space or the SD card; complete saved data remains recoverable.');return state;}finally{this.onProgress?.();}
   }
+  /** Rename, move to another folder, or (un)favorite a stored sound without loading it. */
+  relabelDevicePreset(slot:number,label:Omit<DevicePresetLabel,'engine'>,medium:number,progress?:(state:PresetCatalogState)=>void){return this.presetCatalog(6,slot,medium,progress,presetLabelBytes(2,label));}
+  async presetFavorites():Promise<DeviceFavorite[]>{const rows:DeviceFavorite[]=[];let count=1;for(let at=0;at<count&&at<deviceFavoriteLimit;at+=2){const page=await this.request<{count:number;rows:DeviceFavorite[]}>(70,[at,2]);count=page.count;rows.push(...page.rows);}return rows.slice(0,count);}
   async browsePresetFolder(slot:number,medium:number,progress:(state:PresetCatalogState)=>void,names:(rows:{id:number;label:DevicePresetLabel}[])=>void,force=false){
     let next=0;const rows:{id:number;label:DevicePresetLabel}[]=[],base=Math.floor(slot/32)*32;
     return this.presetCatalog(force?5:0,slot,medium,async state=>{
@@ -102,14 +116,42 @@ export class PhysicalSynthClient {
       if(pending)names(rows.slice());
     });
   }
-  async saveDevicePreset(preset:import('./presetLibrary.ts').SoundPreset,slot:number,label:Omit<DevicePresetLabel,'engine'>,medium=0,progress?:(state:PresetCatalogState)=>void,create=false){
-    const p=storedPreset(preset),before=await this.status();await this.stopAndWait();
+  /** Save a sound to the HexBoard without loading it. The playing sound is saved
+   * directly; any other sound goes through a staged save that restores the live sound. */
+  async saveDevicePreset(preset:SoundPreset,slot:number,label:Omit<DevicePresetLabel,'engine'>,medium=0,progress?:(state:PresetCatalogState)=>void,create=false){
+    const p=storedPreset(preset),engine=p.format==='hexboard.advanced.v2'?p.engine:2;
+    if(await this.devicePlays(p))return this.presetCatalog(create?4:1,slot,medium,progress,presetLabelBytes(engine,label));
+    return this.storeDevicePreset(p,slot,label,medium,progress,create);
+  }
+  /** True when the device's current sound already equals this one. */
+  async devicePlays(preset:SoundPreset){
+    const p=storedPreset(preset),state=await this.status();
+    if(p.format==='hexboard.advanced.v2'){if(state.instrument!==p.engine)return false;const r=await this.readAdvanced();return JSON.stringify(r.patch)===JSON.stringify(p.patch)&&JSON.stringify(r.effects)===JSON.stringify(p.effects);}
+    if(state.instrument!==2&&state.instrument!==3)return false;const live=storedPreset((await this.read()).preset);return live.format!=='hexboard.advanced.v2'&&samePhysicalSound(live,p);
+  }
+  /** Staged save: the device holds its live sound, takes this sound's settings while
+   * stopped (never its sample), writes the sample streamed from here, then restores. */
+  async storeDevicePreset(preset:SoundPreset,slot:number,label:Omit<DevicePresetLabel,'engine'>,medium=0,progress?:(state:PresetCatalogState)=>void,create=false){
+    const p=storedPreset(preset),engine=p.format==='hexboard.advanced.v2'?p.engine:2,before=await this.status(),resume=before.state!=='stopped';
+    if(resume)await this.stopAndWait();
+    await this.request(71,[1]);
     try{
-      if(p.format==='hexboard.advanced.v2')await this.loadClassic(p,false);else await this.load(p,false);
-      const bytes=new Uint8Array(128);bytes[8]=p.format==='hexboard.advanced.v2'?p.engine:2;bytes[9]=+label.favorite;
-      const write=(text:string,offset:number,capacity:number)=>{const encoded=new TextEncoder().encode(text);if(encoded.length>=capacity)throw Error(`Device preset name or folder is too long (${capacity-1} UTF-8 bytes maximum).`);bytes.set(encoded,offset);};write(label.name,12,76);write(label.folder,88,40);
-      return await this.presetCatalog(create?4:1,slot,medium,progress,Array.from(bytes).flatMap(v=>[v>>7,v&127]));
-    }finally{if(before.state!=='stopped')await this.start(p.format==='hexboard.advanced.v2'?p.engine:2);}
+      this.onProgress?.({label:'Preparing preset…'});
+      if(p.format==='hexboard.advanced.v2'){await this.applyAdvanced(p.patch);await this.effects(p.effects);await this.presetVelocity(p.velocityEngine);await this.restoreVoiceBudget(p);}
+      else await this.apply(p,false);
+      const sample=p.format==='hexboard.advanced.v2'?undefined:p.sample,frames=sample?.enabled?sample.frames:[],loop=sample?.loop??defaultSampleLoop();
+      const meta=[+(frames.length>0),...encodeU21(frames.length),...u32(sampleChecksum(frames)),...encodeU21(sample?.gain??32768),...encodeU21(sample?.direct??65535),loop.mode,...encodeU21(loop.start),...encodeU21(loop.end),...encodeU21(loop.crossfade)];
+      let state=await this.request<PresetCatalogState>(58,[create?7:8,...encodeU14(slot),medium,...presetLabelBytes(engine,label),...meta]);const started=Date.now();
+      const poll=async()=>{await progress?.(state);this.onProgress?.({label:'Saving preset…',completed:state.progress,total:100});await new Promise(r=>setTimeout(r,25));state=await this.request<PresetCatalogState>(57);if(Date.now()-started>120000)throw Error('Preset operation timed out. Reconnect to inspect the device.');};
+      while(state.phase===1&&!state.awaiting)await poll();
+      if(state.phase===1&&state.awaiting){
+        for(let at=0;at<frames.length;at+=64){const chunk=frames.slice(at,at+64);await this.request(72,[...encodeU21(at),chunk.length,...chunk.flatMap(v=>encodeU21(v+32768))]);if(at%1024===0)this.onProgress?.({label:'Saving sample…',completed:at,total:frames.length});}
+        state=await this.request<PresetCatalogState>(57);
+      }
+      while(state.phase===1)await poll();
+      await progress?.(state);if(state.phase!==2)throw Error(presetErrors[state.error??0]??'Preset operation failed. Check storage space or the SD card; complete saved data remains recoverable.');
+      return state;
+    }finally{this.onProgress?.();try{await this.request(71,[0]);}finally{if(resume)await this.start(before.instrument);}}
   }
   controls(){return this.request<ControllerState>(52); }
   monoSettings(config?:MonoConfig){return this.request<MonoConfig>(56,config?[config.flags,...encodeU21(config.glideMs)]:[]);}
@@ -251,7 +293,7 @@ export class PhysicalSynthClient {
     return this.read();
   }
   async stopAndWait(){await this.stop();for(let i=0;i<100;i++){if((await this.request(0)).state==="stopped")return;await new Promise(r=>setTimeout(r,30));}throw Error("Synth did not stop for patch storage.");}
-  async apply(preset: PhysicalPreset) {
+  async apply(preset: PhysicalPreset,withSample=true) {
     const p = physicalPresetFromUnknown(preset);
     if(!dspUsage(p).fits)throw Error("DSP budget full. Reduce the effects, Drive, Pin or modulation before loading this patch.");
     if(this.advanced){await this.applyAdvanced(initialAdvanced(2));await this.monoSettings(validateMono(p.mono));}
@@ -259,8 +301,8 @@ export class PhysicalSynthClient {
     // Clear cost before allocating a replacement. This runs during an explicit
     // patch load, never on a normal note or expression update.
     if(this.advanced)await retry(()=>this.request(53,Array(66).fill(65536).flatMap(encodeU21)));
-    await this.request<SampleMeta>(24,[0,...encodeU21(p.sample.gain),...encodeU21(p.sample.direct)]);
-    this.sample={...this.sample,enabled:false};
+    // A staged save never touches the device's sample: the live sound keeps it.
+    if(withSample){await this.request<SampleMeta>(24,[0,...encodeU21(p.sample.gain),...encodeU21(p.sample.direct)]);this.sample={...this.sample,enabled:false};}
     const neutralFx={...p.effects,order:[],routes:Array(70).fill(0),values:p.effects.values.map((row,i)=>i===4?row.map((v,j)=>j===0?0:v):row)};
     await retry(()=>this.effects(neutralFx));
     await retry(()=>this.setModulation({...p.modulation,routes:Array(66).fill(0)}));
@@ -270,7 +312,7 @@ export class PhysicalSynthClient {
     for(let attempt=0;;++attempt){try{this.motion=await this.request<MotionState>(13,p.tiltRoutes.flatMap(v=>encodeU21(v+65536)));break;}catch(error){if(attempt>=20 || !(error instanceof Error) || error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
     for(let attempt=0;;++attempt){try{await this.setModulation(p.modulation);break;}catch(error){if(attempt>=20||!(error instanceof Error)||error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
     // The model batch may still be draining through SPI. Retry rack backpressure.
-    for(let attempt=0;;++attempt){try{await this.effects(p.effects);if(this.advanced)await retry(()=>this.request(53,(p.controllerRoutes??Array(66).fill(0)).flatMap(v=>encodeU21(v+65536))));const result=await this.setSample(p.sample,!p.sample.frames.length);if(this.advanced)await this.restoreVoiceBudget(p);return result;}catch(error){if(attempt>=12 || !(error instanceof Error) || error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
+    for(let attempt=0;;++attempt){try{await this.effects(p.effects);if(this.advanced)await retry(()=>this.request(53,(p.controllerRoutes??Array(66).fill(0)).flatMap(v=>encodeU21(v+65536))));const result=withSample?await this.setSample(p.sample,!p.sample.frames.length):await this.request(0);if(this.advanced)await this.restoreVoiceBudget(p);return result;}catch(error){if(attempt>=12 || !(error instanceof Error) || error.message!=="The board rejected this synth operation.")throw error;await new Promise(resolve=>setTimeout(resolve,30));}}
   }
   protected request<T = PhysicalState>(operation: number, data: number[] = []): Promise<T> {
     const run = this.tail.catch(() => undefined).then(() => this.rpc<T>(operation, data));
@@ -296,9 +338,15 @@ export class PhysicalSynthClient {
           if (frame.message === 7) {
             finish(Error(operation===41?"Update Advanced main firmware to use the global arpeggiator.":frame.payload[1] === 3 ? operation>=16?"Update Advanced firmware for envelope and LFO modulation.":"Update Advanced main firmware for preset velocity engines." : frame.payload[1] === 9 ? "DSP budget full. Reduce another effect, feature or modulation first." : frame.payload[1] === 8 ? "Stop Learn or Calibration and release keys before changing the velocity engine or loading a sound." : operation===21?"Release the keys and stop the synth before importing a sample.":operation===25?"Release the keys before sample preview.":operation===42?"Release the keys before switching Arp on/off or changing its output. If playback is being tested, wait for it to finish.":operation===44?"Stop the synth, clear held arp notes, and release the keys before saving performance settings.":"The board rejected this synth operation."));
           } else if((operation===57||operation===58)&&frame.message===0x43){
-            const p=frame.payload;if(p.length!==27||p[0]!==17||p[1]!==2||p[2]>3||p[3]>5||decodeU14(p.slice(4,6))>=3072||p[6]>2||p[7]>100||![2,4,5].includes(p[19])||p[20]>=32||decodeU14(p.slice(21,23))!==3072||p[23]!==32)throw Error('Update Advanced firmware for the folder preset library.');const mask=p.slice(8,13).reduce((a,b)=>a*128+b,0);if(mask>0xffffffff)throw Error('Invalid preset folder mask.');finish(undefined,{phase:p[2],action:p[3],slot:decodeU14(p.slice(4,6)),medium:p[6],progress:p[7],mask,elapsedMs:decodeU21(p.slice(13,16)),maxSliceUs:decodeU21(p.slice(16,19)),engine:p[19],folder:p[20],capacity:3072,folderCapacity:32,heapMin:decodeU21(p.slice(24,27))} as T);
+            const p=frame.payload;if(p.length<27||p.length>29||p[0]!==17||p[1]!==2||p[2]>3||p[3]>8||decodeU14(p.slice(4,6))>=3072||p[6]>2||p[7]>100||![2,4,5].includes(p[19])||p[20]>=32||decodeU14(p.slice(21,23))!==3072||p[23]!==32)throw Error('Update Advanced firmware for the folder preset library.');const mask=p.slice(8,13).reduce((a,b)=>a*128+b,0);if(mask>0xffffffff)throw Error('Invalid preset folder mask.');finish(undefined,{phase:p[2],action:p[3],slot:decodeU14(p.slice(4,6)),medium:p[6],progress:p[7],mask,elapsedMs:decodeU21(p.slice(13,16)),maxSliceUs:decodeU21(p.slice(16,19)),engine:p[19],folder:p[20],capacity:3072,folderCapacity:32,heapMin:decodeU21(p.slice(24,27)),error:p.length>27?p[27]:0,awaiting:p[28]===1} as T);
           } else if(operation===59&&frame.message===0x44){
             const p=frame.payload;if(p.length!==259||p[0]!==17||p[1]!==data[0]||p[2]!==data[1])throw Error('Invalid preset label.');const bytes=Uint8Array.from({length:128},(_,i)=>{if(p[3+i*2]>1)throw Error('Invalid preset label byte.');return (p[3+i*2]<<7)|p[4+i*2];});const text=(offset:number,n:number)=>{const b=bytes.slice(offset,offset+n),end=b.indexOf(0);return new TextDecoder('utf-8',{fatal:true}).decode(b.slice(0,end<0?n:end));};if(![2,3,4,5].includes(bytes[8])||bytes[9]>1)throw Error('Invalid preset engine.');finish(undefined,{engine:bytes[8],favorite:!!bytes[9],name:text(12,76),folder:text(88,40)} as T);
+          } else if(operation===71&&frame.message===0x4c){
+            const p=frame.payload;if(p.length!==2||p[0]!==17||p[1]>1)throw Error('Update Advanced firmware to save without loading.');finish(undefined,{staged:p[1]===1} as T);
+          } else if(operation===70&&frame.message===0x4b){
+            const p=frame.payload,n=(p.length-3)/156;if(p[0]!==17||p[1]>deviceFavoriteLimit||p[2]!==data[0]||!Number.isInteger(n)||n!==data[1])throw Error('Update Advanced firmware for shared favorites.');
+            const rows=Array.from({length:Math.max(0,Math.min(n,p[1]-p[2]))},(_,i)=>{const at=3+i*156,b=Uint8Array.from({length:76},(_,c)=>{if(p[at+4+c*2]>1)throw Error('Invalid favorite name.');return (p[at+4+c*2]<<7)|p[at+5+c*2];}),end=b.indexOf(0);if(p[at+2]<1||p[at+2]>2)throw Error('Invalid favorite storage.');return {slot:decodeU14(p.slice(at,at+2)),medium:p[at+2] as 1|2,engine:p[at+3],name:new TextDecoder('utf-8',{fatal:true}).decode(b.slice(0,end<0?76:end))};});
+            finish(undefined,{count:p[1],rows} as T);
           } else if(operation===60&&frame.message===0x46){
             const p=frame.payload;if(p[0]!==17||p[1]!==data[0]||p[2]!==data[1]||p.length!==3+p[2]*96)throw Error('Invalid preset folders.');const folders=Array.from({length:p[2]},(_,row)=>{const b=Uint8Array.from({length:48},(_,i)=>{const at=3+row*96+i*2;if(p[at]>1)throw Error('Invalid folder byte.');return p[at]*128+p[at+1];}),mask=new DataView(b.buffer).getUint32(0,true),name=b.slice(4,44),end=name.indexOf(0);if(end<0)throw Error('Invalid folder name.');return {index:p[1]+row,mask,name:new TextDecoder('utf-8',{fatal:true}).decode(name.slice(0,end))};});finish(undefined,folders as T);
           } else if((operation===61||operation===62)&&frame.message===0x45){if(frame.payload.length!==1||frame.payload[0]!==17)throw Error('Invalid preset transition response.');finish(undefined,undefined as T);
@@ -329,7 +377,7 @@ export class PhysicalSynthClient {
             if(operation===26){const p=frame.payload;if(p[0]!==17||p.length!==2+3*p[1]||p[1]>64)throw Error("Invalid sample chunk.");const values=Array.from({length:p[1]},(_,i)=>decodeU21(p.slice(2+3*i,5+3*i))-32768);if(values.some(v=>v<-32768||v>32767))throw Error("Invalid sample PCM.");finish(undefined,values as T);}
             else finish(undefined,decodeSample(frame.payload) as T);
           } else if(frame.message===0x42&&operation===56){const p=frame.payload;if(p.length!==5||p[0]!==17)throw Error('Invalid mono response.');this.mono=validateMono({flags:p[1],glideMs:decodeU21(p.slice(2,5))});finish(undefined,this.mono as T);
-          } else if (frame.message === (operation === 8 ? 0x36 : (operation===28||operation===45) ? 0x35 : operation>=16 ? 0x39 : operation>=12 ? 0x38 : operation>=10 ? 0x37 : 0x35)) { if(operation>=16&&operation!==28&&operation!==45){this.modulation=decodeModulation(frame.payload);finish(undefined,this.modulation as T);}else if(operation>=12&&operation!==28&&operation!==45){this.motion=decodeMotion(frame.payload);finish(undefined,this.motion as T);}else if(operation>=10&&operation!==28&&operation!==45){this.fx=decodeFx(frame.payload);finish(undefined,this.fx as T);}else if(operation===8)finish(undefined,decodePhysicalExpression(frame.payload) as T);else {const state=decodePhysicalState(frame.payload);finish(undefined,{...state,preset:{...state.preset,mono:this.mono,controllerRoutes:this.controllerRoutes,sample:this.sample,modulation:this.modulation,effects:this.fx,tiltRoutes:this.motion.tiltRoutes}} as T);} }
+          } else if (frame.message === (operation === 8 ? 0x36 : (operation===28||operation===45||operation===72) ? 0x35 : operation>=16 ? 0x39 : operation>=12 ? 0x38 : operation>=10 ? 0x37 : 0x35)) { if(operation>=16&&operation!==28&&operation!==45&&operation!==72){this.modulation=decodeModulation(frame.payload);finish(undefined,this.modulation as T);}else if(operation>=12&&operation!==28&&operation!==45&&operation!==72){this.motion=decodeMotion(frame.payload);finish(undefined,this.motion as T);}else if(operation>=10&&operation!==28&&operation!==45&&operation!==72){this.fx=decodeFx(frame.payload);finish(undefined,this.fx as T);}else if(operation===8)finish(undefined,decodePhysicalExpression(frame.payload) as T);else {const state=decodePhysicalState(frame.payload);finish(undefined,{...state,preset:{...state.preset,mono:this.mono,controllerRoutes:this.controllerRoutes,sample:this.sample,modulation:this.modulation,effects:this.fx,tiltRoutes:this.motion.tiltRoutes}} as T);} }
         } catch (error) { finish(error instanceof Error ? error : Error("Invalid synth response.")); }
       });
       void this.transport.send(encodeDefaultPresetSyncFrame(0x34, transaction, [17, operation, ...data]))
