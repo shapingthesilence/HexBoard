@@ -1028,7 +1028,7 @@ travel under the device's **Settings → Pedal setup**.
 
 ## Sampler Loop Editing
 
-Use the Sampler workspaces: **Sample** for trim, pitch, PCM editing and loops; **Map** for regions or physical key assignments; **Sound** for envelopes, tone and response. A fixed audition dock stays visible. Tuning and loop suggestions stay inline; PCM repair and instrument setup use focused dialogs. **Instrument setup** chooses sustain design, Advanced voices/tails, source channels and room enable. **Resources** distinguishes estimates from hardware measurement. See [tiny-loop editing and audition](sampler-tuning.md#tiny-periodic-loops-and-pcm-edits).
+Use the Sampler workspaces: **Sample** for trim, pitch, PCM editing and loops; **Map** for regions or physical key assignments; **Sound** for envelopes, tone and response. A fixed audition dock stays visible. Tuning and loop suggestions stay inline; PCM repair and instrument setup use focused dialogs. **Setup** chooses sustain design, Advanced voices/tails, source channels and room enable, and its button summarizes the current choices. See [tiny-loop editing and audition](sampler-tuning.md#tiny-periodic-loops-and-pcm-edits).
 
 Classic and Advanced share the same waveform and loop tools. WAV imports keep
 their native sample rate and frame positions until export. **Zoom to loop** fits

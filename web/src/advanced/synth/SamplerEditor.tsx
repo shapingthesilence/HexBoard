@@ -134,7 +134,6 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
     [arpOpen, setArpOpen] = useState(false),
     [library, setLibrary] = useState<ImportedPatch[]>([]),
     [search, setSearch] = useState("");
-  const [actionsOpen,setActionsOpen]=useState(false);
   const [workspaceView,setWorkspaceView]=useState("sample");
   const [setupOpen,setSetupOpen]=useState(false);
   const [soundPage,setSoundPage]=useState("voice");
@@ -673,6 +672,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
     min: number,
     max: number,
     step = 1,
+    hint?: string,
   ) => (
     <label key={label}>
       {label}
@@ -688,6 +688,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             onChange(Math.max(min, Math.min(max, +e.target.value)));
         }}
       />
+      {hint && <small>{hint}</small>}
     </label>
   );
   const selectedAssignment = map[selectedKey],
@@ -695,14 +696,14 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
   const editingControls = (<>
       <div className="sampler-studio" inert={!!busy}>
         <aside className="sampler-browser">
-          <h3>Recordings</h3>
-          <input
+          <h3>Recordings{patch.assets.length > 0 && <small> · {patch.assets.length}</small>}</h3>
+          {patch.assets.length > 8 && <input
             aria-label="Find recording"
             placeholder="Find a recording…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-          />
-          {patch.assets.some(a => a.pitchSource === "fallback") && <p role="status" className="sampler-error">Some pitches are uncertain and use C4 temporarily. Review them before export.</p>}
+          />}
+          {patch.assets.some(a => a.pitchSource === "fallback") && <p role="status" className="sampler-error">Some pitches couldn’t be detected. Check the marked recordings.</p>}
           <div className="sampler-recordings">
             {patch.assets.map(
               (a, i) =>
@@ -734,7 +735,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                         1
                           ? "Short sample"
                           : `${(((a.end ?? a.channels[0].length) - (a.start ?? 0)) / a.rate).toFixed(1)} s`}{" "}
-                        · {noteName(a.rootMidi)} {!zones.some(z=>z.asset===i)&&"· unmapped "} {a.pitchSource === "fallback" ? "· pitch uncertain" : a.pitchSource === "analysis" ? "· detected" : a.pitchSource === "metadata" ? "· WAV metadata" : ""}
+                        · {noteName(a.rootMidi)}{!zones.some(z=>z.asset===i)&&" · unmapped"}{a.pitchSource === "fallback" && <em> · check pitch</em>}
                       </small>
                     </span>
                   </button>
@@ -743,14 +744,14 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
           </div>
           {!patch.assets.length && (
             <p className="panel-note">
-              Drop a SoundFont, an SFZ sample folder, or a recording here.
+              No recordings yet.
             </p>
           )}
           {patch.assets.length > 0 && <div className="sampler-loop-batch">
-            <button disabled={!!busy} onClick={() => void suggestCompactLoops()}>Suggest compact loops for unlooped recordings</button>
-            {loopSuggestions && <LoopReviewDialog onClose={() => { loopAudition.current?.stop(); setLoopSuggestions(undefined); }}><h3 id="samplerLoopReviewTitle">Compact loop suggestions</h3><p>{loopSuggestions.filter(Boolean).length} suggestions · existing loops kept. Review recordings before applying.</p>
-              {loopSuggestions.map((c, i) => c && <div className="sampler-loop-review-row" key={i}><label><input type="checkbox" checked={!!loopSelection[i]} onChange={event => setLoopSelection(current => current.map((v, n) => n === i ? event.target.checked : v))}/>{patch.assets[i].name}: {((c.end-c.start)/patch.assets[i].rate*1000).toFixed(1)} ms · {c.analysis.hz ? `${c.changeCents?.toFixed(2)} cents change` : "pitch uncertain"}</label>
-                <button onClick={() => { const a = patch.assets[i]; loopAudition.current ??= new TuningAudition(); setLoopAuditionError(""); void loopAudition.current.play({...a, mode: 1, loopStart: c.start, loopEnd: c.end, crossfade: c.crossfade}, hzForMidi(a.rootMidi), "sample", true).catch(e => setLoopAuditionError(String(e))); }}>Hear {patch.assets[i].name} loop</button></div>)}
+            <button disabled={!!busy} title="Find short sustain loops for every recording that doesn’t loop yet" onClick={() => void suggestCompactLoops()}>Suggest loops for all…</button>
+            {loopSuggestions && <LoopReviewDialog onClose={() => { loopAudition.current?.stop(); setLoopSuggestions(undefined); }}><h3 id="samplerLoopReviewTitle">Loop suggestions</h3><p>{loopSuggestions.filter(Boolean).length} found. Recordings that already loop are left alone. Listen, then apply the ones you like.</p>
+              {loopSuggestions.map((c, i) => c && <div className="sampler-loop-review-row" key={i}><label><input type="checkbox" checked={!!loopSelection[i]} onChange={event => setLoopSelection(current => current.map((v, n) => n === i ? event.target.checked : v))}/>{patch.assets[i].name}: {((c.end-c.start)/patch.assets[i].rate*1000).toFixed(1)} ms · {c.analysis.hz ? `${c.changeCents?.toFixed(1)} cents pitch change` : "pitch uncertain"}</label>
+                <button aria-label={`Hear ${patch.assets[i].name} loop`} onClick={() => { const a = patch.assets[i]; loopAudition.current ??= new TuningAudition(); setLoopAuditionError(""); void loopAudition.current.play({...a, mode: 1, loopStart: c.start, loopEnd: c.end, crossfade: c.crossfade}, hzForMidi(a.rootMidi), "sample", true).catch(e => setLoopAuditionError(String(e))); }}>Listen</button></div>)}
               {loopAuditionError && <p role="alert">{loopAuditionError}</p>}
               <button disabled={!loopSelection.some(Boolean)} onClick={applyCompactLoops}>Apply selected loops</button>
               <button onClick={() => { loopAudition.current?.stop(); setLoopSuggestions(undefined); }}>Cancel</button></LoopReviewDialog>}
@@ -767,8 +768,9 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
           )}
         </aside>
         <main className="sampler-canvas"><SamplerWorkspace target={target} view={workspaceView} onViewChange={setWorkspaceView} recording={sample} onChange={changeSample} targets={tuningTargets} preparedBytes={prepared?.bytes.length} stopSignal={tuningStop} design={sustainDesign} cycles={loopCycles} onDesign={setSustainDesign} onCycles={setLoopCycles} level={zone?.gain??1} onLevel={gain=>changeZone({gain})} mapping={<>
-      <div className="sampler-tabs" role="group" aria-label="Mapping mode">
-        {(!classic ? ["instrument", "kit", "slices"] : []).map((mode) => (
+      {!classic && <>
+      <div className="sampler-tabs sampler-map-modes" role="group" aria-label="Mapping mode">
+        {["instrument", "kit", "slices"].map((mode) => (
           <button
             key={mode}
             aria-pressed={template === mode}
@@ -778,17 +780,20 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
               else if (mode !== "instrument" && !Object.keys(map).length) editMap(assignSequentially(patch.assets.length));
             }}
           >
-            {mode === "instrument"
-              ? "Instrument"
-              : mode === "kit"
-                ? "Kit"
-                : "Slices"}
+            {mode === "instrument" ? "Instrument" : mode === "kit" ? "Kit" : "Slices"}
           </button>
         ))}
         <span>
           {patch.assets.length} recordings · {zones.length} regions
         </span>
       </div>
+      <p className="panel-note sampler-mode-hint">
+        {template === "instrument"
+          ? "Each recording plays a range of notes, repitched from its original pitch."
+          : template === "kit"
+            ? "Each HexBoard key plays its own recording. Good for drums and effects."
+            : "Cut one recording into equal slices and lay them across the keys."}
+      </p></>}
 
           {template === "instrument" ? (
             <fieldset>
@@ -828,74 +833,76 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                 <small>C6</small>
                 <small>G9</small>
               </div>
-              {zones.some(z => (z.highMidi ?? 127.5) <= (z.lowMidi ?? -0.5)) && <p className="sampler-error" role="status">A region has no pitch range. Review roots and map before export.</p>}
-              <div className="sampler-fields">
-                {zone && (
-                  <>
+              <p className="panel-note">Notes run left to right; louder velocities sit higher. Select a region to edit it.</p>
+              {zones.some(z => (z.highMidi ?? 127.5) <= (z.lowMidi ?? -0.5)) && <p className="sampler-error" role="status">A region has no notes. Check its range or use Map by original pitch.</p>}
+              {zone ? (
+                <div className="sampler-region-editor">
+                  <strong>{patch.assets[zone.asset]?.name}</strong>
+                  <div className="sampler-fields">
                     {number(
-                      "Low MIDI",
+                      "Range start (MIDI)",
                       zone.lowMidi ?? -0.5,
                       (v) => changeZone({ lowMidi: v }),
                       -0.5,
                       (zone.highMidi ?? 127.5) - 0.01,
                       0.01,
+                      `from ${noteName(Math.max(0, Math.ceil(zone.lowMidi ?? -0.5)))}`,
                     )}
                     {number(
-                      "High MIDI (exclusive)",
+                      "Range end (MIDI)",
                       zone.highMidi ?? 127.5,
                       (v) => changeZone({ highMidi: v }),
                       (zone.lowMidi ?? -0.5) + 0.01,
                       127.5,
                       0.01,
+                      `up to ${noteName(Math.min(127, Math.ceil(zone.highMidi ?? 127.5) - 1))}`,
                     )}
                     {number(
-                      "Low velocity",
+                      "Lowest velocity",
                       zone.velocityLow ?? 1,
                       (v) => changeZone({ velocityLow: v }),
                       1,
                       zone.velocityHigh ?? 127,
                     )}
                     {number(
-                      "High velocity",
+                      "Highest velocity",
                       zone.velocityHigh ?? 127,
                       (v) => changeZone({ velocityHigh: v }),
                       zone.velocityLow ?? 1,
                       127,
                     )}
-                  </>
-                )}
+                  </div>
+                  <div className="sampler-fields">
+                    <button
+                      disabled={(zone.velocityHigh ?? 127) <= (zone.velocityLow ?? 1)}
+                      title="Split this region into soft and loud halves"
+                      onClick={() => {
+                        const mid = Math.floor(((zone.velocityLow ?? 1) + (zone.velocityHigh ?? 127)) / 2);
+                        edit({
+                          ...patch,
+                          zones: [
+                            ...zones.map((z) => z === zone ? { ...z, velocityHigh: mid } : z),
+                            { ...zone, velocityLow: mid + 1 },
+                          ],
+                        });
+                        setZoneIndex(zones.length);
+                      }}
+                    >
+                      Split velocity layer
+                    </button>
+                    <button onClick={() => edit({ ...patch, zones: zones.filter((z) => z !== zone) })}>
+                      Remove region
+                    </button>
+                  </div>
+                </div>
+              ) : <p className="panel-note">Select a region on the map.</p>}
+              <div className="sampler-fields sampler-map-actions">
                 <button
                   disabled={!sample}
-                  onClick={() =>
-                    { const next = automatic(patch.assets); edit({ ...patch, zones: next }); setZoneIndex(next.findIndex(z => z.asset === selected)); }
-                  }
+                  title="Rebuild the map so each recording covers the notes nearest its original pitch"
+                  onClick={() => { const next = automatic(patch.assets); edit({ ...patch, zones: next }); setZoneIndex(next.findIndex(z => z.asset === selected)); }}
                 >
-                  Map by root notes
-                </button>
-                <button
-                  disabled={
-                    !zone ||
-                    (zone.velocityHigh ?? 127) <= (zone.velocityLow ?? 1)
-                  }
-                  onClick={() => {
-                    if (!zone) return;
-                    const mid = Math.floor(
-                      ((zone.velocityLow ?? 1) + (zone.velocityHigh ?? 127)) /
-                        2,
-                    );
-                    edit({
-                      ...patch,
-                      zones: [
-                        ...zones.map((z) =>
-                          z === zone ? { ...z, velocityHigh: mid } : z,
-                        ),
-                        { ...zone, velocityLow: mid + 1 },
-                      ],
-                    });
-                    setZoneIndex(zones.length);
-                  }}
-                >
-                  Split velocity layer
+                  Map by original pitch
                 </button>
               </div>
             </fieldset>
@@ -906,8 +913,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
               </legend>
               <div>
                 <p className="panel-note">
-                  Drag recordings onto HexBoard keys. Select a key to assign its
-                  sound and color.
+                  Drag recordings from the list onto keys, or select a key and choose its sound.
                 </p>
                 {template === "slices" && (
                   <div className="sampler-fields">
@@ -920,10 +926,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                           edit({
                             ...patch,
                             assets,
-                            zones: mappedZones(
-                              assignSequentially(assets.length),
-                              assets.length,
-                            ),
+                            zones: mappedZones(assignSequentially(assets.length), assets.length),
                           });
                           setSelected(0);setSelectedKey(0);setZoneIndex(0);
                         } catch (e) {
@@ -931,91 +934,73 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                         }
                       }}
                     >
-                      Slice recording
+                      Slice selected recording
                     </button>
                   </div>
                 )}
-                <label>
-                  Sound for key {selectedKey + 1}
-                  <select
-                    aria-label="Sound for selected key"
-                    value={selectedAssignment?.asset ?? ""}
-                    onChange={(e) => {
-                      const next = { ...map };
-                      if (e.target.value === "") delete next[selectedKey];
-                      else {
-                        next[selectedKey] = {
-                          asset: +e.target.value,
-                          color: next[selectedKey]?.color ?? "#658eda",
-                        };
-                        setSelected(+e.target.value);
+                <div className="sampler-fields">
+                  <label>
+                    Sound for key {selectedKey + 1}
+                    <select
+                      aria-label="Sound for selected key"
+                      value={selectedAssignment?.asset ?? ""}
+                      onChange={(e) => {
+                        const next = { ...map };
+                        if (e.target.value === "") delete next[selectedKey];
+                        else {
+                          next[selectedKey] = {
+                            asset: +e.target.value,
+                            color: next[selectedKey]?.color ?? "#658eda",
+                          };
+                          setSelected(+e.target.value);
+                        }
+                        editMap(next);
+                      }}
+                    >
+                      <option value="">Unassigned</option>
+                      {patch.assets.map((a, i) => (
+                        <option value={i} key={i}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Color
+                    <input
+                      type="color"
+                      aria-label="Key color"
+                      disabled={!selectedAssignment}
+                      value={selectedAssignment?.color ?? "#658eda"}
+                      onChange={(e) =>
+                        editMap({
+                          ...map,
+                          [selectedKey]: { ...selectedAssignment, color: e.target.value },
+                        })
                       }
-                      editMap(next);
-                    }}
-                  >
-                    <option value="">Unassigned</option>
-                    {patch.assets.map((a, i) => (
-                      <option value={i} key={i}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Key color
-                  <input
-                    type="color"
-                    aria-label="Key color"
+                    />
+                  </label>
+                </div>
+                <div className="sampler-fields">
+                  <button
                     disabled={!selectedAssignment}
-                    value={selectedAssignment?.color ?? "#658eda"}
-                    onChange={(e) =>
-                      editMap({
-                        ...map,
-                        [selectedKey]: {
-                          ...selectedAssignment,
-                          color: e.target.value,
-                        },
-                      })
-                    }
-                  />
-                </label>
-                <button
-                  disabled={!sample}
-                  onClick={() =>
-                    editMap({
-                      ...map,
-                      [selectedKey]: {
-                        asset: selected,
-                        color: selectedAssignment?.color ?? "#658eda",
-                      },
-                    })
-                  }
-                >
-                  Assign selected recording
-                </button>
-                <button
-                  disabled={!selectedAssignment}
-                  onPointerDown={(e) => {
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                    on(
-                      "mapped",
-                      patch.assets[selectedAssignment?.asset]?.rootMidi ?? 60,
-                      selectedKey,
-                    );
-                  }}
-                  onPointerUp={() => off("mapped")}
-                  onPointerCancel={() => off("mapped")}
-                  onLostPointerCapture={() => off("mapped")}
-                >
-                  Hold to audition key
-                </button>
-                <button
-                  onClick={() =>
-                    editMap(assignSequentially(patch.assets.length))
-                  }
-                >
-                  Map in order
-                </button>
+                    onPointerDown={(e) => {
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      on("mapped", patch.assets[selectedAssignment?.asset]?.rootMidi ?? 60, selectedKey);
+                    }}
+                    onPointerUp={() => off("mapped")}
+                    onPointerCancel={() => off("mapped")}
+                    onLostPointerCapture={() => off("mapped")}
+                  >
+                    Hold to hear key
+                  </button>
+                  <button
+                    title="Assign every recording to consecutive keys"
+                    onClick={() => editMap(assignSequentially(patch.assets.length))}
+                  >
+                    Map in order
+                  </button>
+                </div>
               </div>
               <SamplerKeyPreview
                 map={map}
@@ -1036,90 +1021,26 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             </fieldset>
           )}
 </>} sound={<>
-          <nav className="sampler-tabs sampler-sound-pages" aria-label="Sound sections">{[['voice','Voice settings'],['motion','Motion'],['room','Room']].map(([id,label])=><button key={id} aria-pressed={soundPage===id} onClick={()=>setSoundPage(id)}>{label}</button>)}</nav>
-          {soundPage==='voice'&&<><RegionEnvelope zones={zones} index={zone ? zones.indexOf(zone) : -1} names={patch.assets.map(a => a.name ?? "Recording")} settings={settings}
+          <nav className="sampler-tabs sampler-sound-pages" aria-label="Sound sections">{([['voice','Envelope'],...(!classic?[['response','Touch & release']]:[]),['motion','Motion'],['room','Room']] as [string,string][]).map(([id,label])=><button key={id} aria-pressed={soundPage===id} onClick={()=>setSoundPage(id)}>{label}</button>)}</nav>
+          <div className="sampler-sound-page" hidden={soundPage!=='voice'}>
+            <RegionEnvelope zones={zones} index={zone ? zones.indexOf(zone) : -1} names={patch.assets.map(a => a.name ?? "Recording")} settings={settings}
             onSelect={index => { setZoneIndex(index); setSelected(zones[index].asset);if(zones[index].key!==undefined&&zones[index].key!==65535)setSelectedKey(zones[index].key!); }}
             onChange={(change, all, remember) => {
               const current = patchRef.current;
               edit({ ...current, zones: changeRegionEnvelope(current.zones ?? [], zone ? zones.indexOf(zone) : -1, change, all) }, remember);
             }}/>
-        <aside className="sampler-inspector">
-          <fieldset>
-            <legend>Region</legend>
-            {zone ? (
-              <>
-                <strong>{sample?.name}</strong>
-                <div className="sampler-fields">
-                  {number(
-                    "Level",
-                    zone.gain ?? 1,
-                    (v) => changeZone({ gain: v }),
-                    0,
-                    1.99,
-                    0.01,
-                  )}
-                  {!classic && number(
-                    "Pan",
-                    zone.pan ?? 0,
-                    (v) => changeZone({ pan: v }),
-                    -1,
-                    1,
-                    0.01,
-                  )}
-                  {number(
-                    "Key tracking %",
-                    (zone.keyTrack ?? 1) * 100,
-                    (v) => changeZone({ keyTrack: v / 100 }),
-                    0,
-                    200,
-                  )}
-                  {!classic && number(
-                    "Round robin",
-                    zone.roundRobin ?? 0,
-                    (v) => changeZone({ roundRobin: v }),
-                    0,
-                    15,
-                  )}
-                  {!classic && number(
-                    "Choke group",
-                    zone.choke ?? 0,
-                    (v) => changeZone({ choke: v }),
-                    0,
-                    16,
-                  )}
-                </div>
-                <details>
-                  <summary>Timing & tone</summary>{classic&&<p className="panel-note">Tone affects original audition; Classic export omits filters.</p>}
+            <fieldset className="sampler-region-card">
+              <legend>Region{zone && sample ? ` · ${sample.name}` : ""}</legend>
+              {zone ? (
+                <>
                   <div className="sampler-fields">
-                    {(
-                      [
-                        "delay",
-                        "hold",
-                        "cutoff",
-                      ] as const
-                    ).map((key) =>
-                      number(
-                        key,
-                        zone[key] ??
-                          (key in settings
-                            ? settings[key as keyof Settings]
-                            : 0) ??
-                          0,
-                        (v) => changeZone({ [key]: v }),
-                        key === "cutoff" ? 40 : 0,
-                        key === "delay" ? 10000 : 20000,
-                        1,
-                      ),
-                    )}
-                    {number("Resonance",zone.resonance??settings.resonance,v=>changeZone({resonance:v}),.5,4,.01)}
+                    {!classic && number("Pan", zone.pan ?? 0, (v) => changeZone({ pan: v }), -1, 1, 0.01, "−1 left · +1 right")}
+                    {number("Key tracking %", (zone.keyTrack ?? 1) * 100, (v) => changeZone({ keyTrack: v / 100 }), 0, 200, 1, "100 = normal pitch")}
+                    {!classic && number("Round robin", zone.roundRobin ?? 0, (v) => changeZone({ roundRobin: v }), 0, 15, 1, "0 = off")}
+                    {!classic && number("Choke group", zone.choke ?? 0, (v) => changeZone({ choke: v }), 0, 16, 1, "0 = off")}
                     {!classic && <label>
                       Velocity curve
-                      <select
-                        value={zone.velocityCurve ?? 0}
-                        onChange={(e) =>
-                          changeZone({ velocityCurve: +e.target.value })
-                        }
-                      >
+                      <select value={zone.velocityCurve ?? 0} onChange={(e) => changeZone({ velocityCurve: +e.target.value })}>
                         <option value={0}>Linear</option>
                         <option value={1}>Squared</option>
                         <option value={2}>Constant / pressure</option>
@@ -1127,108 +1048,96 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                       </select>
                     </label>}
                   </div>
-                </details>
-                <button
-                  onClick={() =>
-                    edit({ ...patch, zones: zones.filter((z) => z !== zone) })
-                  }
-                >
-                  Remove region
-                </button>
-              </>
-            ) : (
-              <p className="panel-note">Select a region on the map.</p>
-            )}
-          </fieldset>
-          {!classic && <fieldset>
-            <legend>Patch response</legend>
-            <label>
-              Velocity engine
-              <select
-                value={patch.velocityEngine ?? 0}
-                onChange={(e) =>
-                  edit({ ...patch, velocityEngine: +e.target.value })
-                }
-              >
-                {[
-                  "Threshold Strike",
-                  "Expressive",
-                  "Distance",
-                  "Gesture",
-                  "Fixed",
-                ].map((label, i) => (
-                  <option value={i} key={label}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              aria-pressed={!!patch.performance?.values[0]}
-              onClick={() => setArpOpen(true)}
-            >
-              Arpeggiator · {patch.performance?.values[0] ? "On" : "Off"}
-            </button>
-            <p className="panel-note">
-              Saved with the patch. HexBoard’s global Follow preset setting
-              controls velocity-engine recall.
-            </p>
-          </fieldset>}
-        </aside>      <div className="sampler-shaping">
-
-
-        {[
-          {
-            title: "Touch & tone",
-            controls: [
-              ["cutoff", "Tone", 40, 20000, "Hz"],
-              ["pressure", "Pressure → tone", 0, 1, ""],
-              ["pressureGain", "Pressure → level", 0, 1, ""],
-            ],
-          },
-          {
-            title: "Key release",
-            controls: [
-              ["fastRelease", "Fast lift", 5, 1000, "ms"],
-              ["releaseResponse", "Lift response", 0, 1, ""],
-              ["releaseCurve", "Lift curve", 0.25, 4, ""],
-              ["pedalRelease", "Pedal up", 5, 1000, "ms"],
-            ],
-          },
-        ].filter(() => !classic).map((group) => (
-          <fieldset key={group.title}>
-            <legend>{group.title}</legend>
-            <div className="knob-bank">
-              {group.controls.map(([k, label, min, max, unit]) => (
-                <label className="sampler-knob" key={k}>
-                  <span>{label}</span>
-                  <Knob
-                    label={String(label)}
-                    min={Number(min)}
-                    max={Number(max)}
-                    value={settings[k as keyof Settings]}
-                    onChange={(v) => global(k as keyof Settings, v)}
-                    onRelease={() => {
-                      gesture.current = false;
-                    }}
-                  />
-                  <output>
-                    {settings[k as keyof Settings].toFixed(
-                      Number(max) <= 4 ? 2 : 0,
-                    )}{" "}
-                    {unit}
-                  </output>
-                </label>
+                  <details>
+                    <summary>Delay, hold & filter</summary>{classic&&<p className="panel-note">Heard in the browser only; Classic export omits filters.</p>}
+                    <div className="sampler-fields">
+                      {([["delay","Delay (ms)"],["hold","Hold (ms)"],["cutoff","Filter cutoff (Hz)"]] as const).map(([key,label]) =>
+                        number(
+                          label,
+                          zone[key] ?? (key in settings ? settings[key as keyof Settings] : 0) ?? 0,
+                          (v) => changeZone({ [key]: v }),
+                          key === "cutoff" ? 40 : 0,
+                          key === "delay" ? 10000 : 20000,
+                          1,
+                        ),
+                      )}
+                      {number("Resonance",zone.resonance??settings.resonance,v=>changeZone({resonance:v}),.5,4,.01)}
+                    </div>
+                  </details>
+                </>
+              ) : (
+                <p className="panel-note">Select a region in Map.</p>
+              )}
+            </fieldset>
+          </div>
+          {!classic && <div className="sampler-sound-page" hidden={soundPage!=='response'}>
+            <div className="sampler-shaping">
+              {[
+                {
+                  title: "Touch & tone",
+                  controls: [
+                    ["cutoff", "Tone", 40, 20000, "Hz"],
+                    ["pressure", "Pressure → tone", 0, 1, ""],
+                    ["pressureGain", "Pressure → level", 0, 1, ""],
+                  ],
+                },
+                {
+                  title: "Key release",
+                  controls: [
+                    ["fastRelease", "Fast lift", 5, 1000, "ms"],
+                    ["releaseResponse", "Lift response", 0, 1, ""],
+                    ["releaseCurve", "Lift curve", 0.25, 4, ""],
+                    ["pedalRelease", "Pedal up", 5, 1000, "ms"],
+                  ],
+                },
+              ].map((group) => (
+                <fieldset key={group.title}>
+                  <legend>{group.title}</legend>
+                  <div className="knob-bank">
+                    {group.controls.map(([k, label, min, max, unit]) => (
+                      <label className="sampler-knob" key={k}>
+                        <span>{label}</span>
+                        <Knob
+                          label={String(label)}
+                          min={Number(min)}
+                          max={Number(max)}
+                          value={settings[k as keyof Settings]}
+                          onChange={(v) => global(k as keyof Settings, v)}
+                          onRelease={() => {
+                            gesture.current = false;
+                          }}
+                        />
+                        <output>
+                          {settings[k as keyof Settings].toFixed(Number(max) <= 4 ? 2 : 0)} {unit}
+                        </output>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
               ))}
+              <fieldset>
+                <legend>Patch response</legend>
+                <div className="sampler-fields">
+                  <label>
+                    Velocity engine
+                    <select value={patch.velocityEngine ?? 0} onChange={(e) => edit({ ...patch, velocityEngine: +e.target.value })}>
+                      {["Threshold Strike", "Expressive", "Distance", "Gesture", "Fixed"].map((label, i) => (
+                        <option value={i} key={label}>{label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button aria-pressed={!!patch.performance?.values[0]} onClick={() => setArpOpen(true)}>
+                    Arpeggiator · {patch.performance?.values[0] ? "On" : "Off"}
+                  </button>
+                </div>
+                <p className="panel-note">Saved with the instrument. Recalled when HexBoard’s Follow preset setting is on.</p>
+              </fieldset>
             </div>
-          </fieldset>
-        ))}
-      </div></>}
-      {soundPage==='motion'&&<div className="sampler-sound-focus">{zone?<MotionEditor classic={classic} value={{...patch.motion,...zone?.motion}} onEnd={()=>{gesture.current=false;}} onChange={change=>{if(!zone)return;const m=motionSettings({...patch.motion,...zone.motion,...change});edit({...patch,zones:zones.map(z=>z===zone?{...z,motion:m}:z)},!gesture.current);gesture.current=true;}} onApplyAll={()=>{const m=motionSettings({...patch.motion,...zone?.motion});edit({...patch,motion:m,zones:zones.map(z=>({...z,motion:m}))});}}/>:<p className="panel-note">Choose a recording and mapped region to edit motion. Instrument setup offers starting points before import.</p>}
-</div>}
-      {soundPage==='room'&&<div className="sampler-sound-focus">        <fieldset><legend>Room</legend><button aria-pressed={settings.space>0} onClick={()=>{if(settings.space>0)lastSpace.current=settings.space;global('space',settings.space>0?0:lastSpace.current);gesture.current=false;}}>Room · {settings.space>0?'On':'Off'}</button>
-        <p className="panel-note">{classic?'Browser audition only; Classic export omits reverb.':'One shared effect, after the voices. Decay changes do not allocate delay memory.'}</p>
-        <div className="knob-bank">{([['space','Amount',0,1,''],['roomDecay','Decay',200,8000,'ms'],['roomTone','Tone',0,1,''],['roomWidth','Width',0,1,'']] as const).map(([k,label,min,max,unit])=><label className="sampler-knob" key={k}><span>{label}</span><Knob label={'Room '+label} min={min} max={max} value={settings[k]} onChange={v=>global(k,v)} onRelease={()=>{gesture.current=false;}}/><output>{settings[k].toFixed(max>1?0:2)} {unit}</output></label>)}</div></fieldset></div>}
+          </div>}
+          <div className="sampler-sound-focus" hidden={soundPage!=='motion'}>{zone?<MotionEditor classic={classic} value={{...patch.motion,...zone?.motion}} onEnd={()=>{gesture.current=false;}} onChange={change=>{if(!zone)return;const m=motionSettings({...patch.motion,...zone.motion,...change});edit({...patch,zones:zones.map(z=>z===zone?{...z,motion:m}:z)},!gesture.current);gesture.current=true;}} onApplyAll={()=>{const m=motionSettings({...patch.motion,...zone?.motion});edit({...patch,motion:m,zones:zones.map(z=>({...z,motion:m}))});}}/>:<p className="panel-note">Select a recording with a mapped region to edit its motion.</p>}</div>
+          <div className="sampler-sound-focus" hidden={soundPage!=='room'}><fieldset><legend>Room</legend><button aria-pressed={settings.space>0} onClick={()=>{if(settings.space>0)lastSpace.current=settings.space;global('space',settings.space>0?0:lastSpace.current);gesture.current=false;}}>Room · {settings.space>0?'On':'Off'}</button>
+            <p className="panel-note">{classic?'Heard in the browser only; Classic export omits reverb.':'One shared reverb for the whole instrument.'}</p>
+            <div className="knob-bank">{([['space','Amount',0,1,''],['roomDecay','Decay',200,8000,'ms'],['roomTone','Tone',0,1,''],['roomWidth','Width',0,1,'']] as const).map(([k,label,min,max,unit])=><label className="sampler-knob" key={k}><span>{label}</span><Knob label={'Room '+label} min={min} max={max} value={settings[k]} onChange={v=>global(k,v)} onRelease={()=>{gesture.current=false;}}/><output>{settings[k].toFixed(max>1?0:2)} {unit}</output></label>)}</div></fieldset></div>
       </>}/></main>
       </div>
 
@@ -1249,8 +1158,8 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
     >
       <div className="instrument-title">
         <h2>Sampler</h2>
-        <span>{classic ? "One instrument · eight voices" : "Recordings into instruments"}</span>
-        <p>{busy || "Audition here. Copy when it feels right."}</p>
+        {classic && <span>One instrument · eight voices</span>}
+        {busy && <p role="status">{busy}</p>}
       </div>
       <div className="sampler-toolbar">
         <input
@@ -1260,7 +1169,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
           maxLength={32}
           onChange={(e) => edit({ ...patch, name: e.target.value }, false)}
         />
-        <label className="sampler-file primary">
+        <label className="sampler-file primary" title="WAV recordings, SF2/SF3 SoundFonts, SFZ or saved instruments">
           Add recordings or instrument
           <input
             aria-label="Add recordings or instrument"
@@ -1270,45 +1179,45 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             disabled={!!busy}
             onChange={(e) => {
               void importFiles(e.target.files);
-              setActionsOpen(false);
               e.target.value = "";
             }}
           />
         </label>
-
-        <button disabled={!history.length || !!busy} onClick={undo}>
-          Undo
-        </button>
-        <button
-          disabled={!redo.length || !!busy}
-          onClick={() => {
-            preview.current!.clear();
-            setHistory((h) => [...h, patch]);
-            const restored=redo.at(-1)!;setPatch(restored);setTemplate(restored.zones?.some(z=>z.key!==undefined&&z.key!==65535)?(template==="slices"?"slices":"kit"):"instrument");
-            setRedo((r) => r.slice(0, -1));
-            setPrepared(undefined);
-          }}
-        >
-          Redo
-        </button>
-        <button onClick={panic}>All notes off</button>
-        <button disabled={!!busy} onClick={()=>setActionsOpen(true)}>Import folder…</button>
-        <button disabled={!!busy} onClick={()=>setExportOpen(true)}>Save / export…</button>
-      </div>
-      {actionsOpen&&<WorkspaceDialog title="Sampler actions" onClose={()=>setActionsOpen(false)}>        <label className="sampler-file">
-          Import SFZ folder
+        <label className="sampler-file" title="Choose a folder containing an SFZ file and its samples">
+          SFZ folder…
           <input
+            aria-label="Import SFZ folder"
             type="file"
             multiple
             {...{ webkitdirectory: "" }}
             disabled={!!busy}
             onChange={(e) => {
               void importFiles(e.target.files);
-              setActionsOpen(false);
               e.target.value = "";
             }}
           />
-        </label></WorkspaceDialog>}
+        </label>
+        <span className="sampler-toolbar-group" role="group" aria-label="Edit history">
+          <button disabled={!history.length || !!busy} title="Undo" onClick={undo}>
+            Undo
+          </button>
+          <button
+            disabled={!redo.length || !!busy}
+            title="Redo"
+            onClick={() => {
+              preview.current!.clear();
+              setHistory((h) => [...h, patch]);
+              const restored=redo.at(-1)!;setPatch(restored);setTemplate(restored.zones?.some(z=>z.key!==undefined&&z.key!==65535)?(template==="slices"?"slices":"kit"):"instrument");
+              setRedo((r) => r.slice(0, -1));
+              setPrepared(undefined);
+            }}
+          >
+            Redo
+          </button>
+        </span>
+        <InstrumentResources patch={patch} classic={classic} disabled={!!busy} onSetup={()=>setSetupOpen(true)}/>
+        <button className="sampler-toolbar-end" disabled={!!busy} onClick={()=>setExportOpen(true)}>Save / export…</button>
+      </div>
       {classic && <section className="sampler-workflow" aria-label="Prepare and send instrument">
         <div>
           <strong>{prepared ? "Ready for HexBoard" : preparationMessage || "Import an instrument"}</strong>
@@ -1323,7 +1232,6 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
         </div>
       </section>}
       {(error || preparationError) && <p className="sampler-error" role="alert">{error || preparationError}</p>}
-      <InstrumentResources patch={patch} classic={classic} disabled={!!busy} onSetup={()=>setSetupOpen(true)}/>
       {setupOpen&&<InstrumentSetup patch={patch} classic={classic} design={sustainDesign} cycles={loopCycles} mode={template} onClose={()=>setSetupOpen(false)} onApply={(next,design,cycles,mode)=>{preview.current!.clear();const zones=mode!==template?(mode==="instrument"?automatic(next.assets):mappedZones(assignSequentially(next.assets.length),next.assets.length)):next.zones;edit({...next,zones});setTemplate(mode);setSustainDesign(design);setLoopCycles(cycles);if(mode!==template)setWorkspaceView(mode==="instrument"?"sample":"mapping");}}/>}
       {editingControls}
       {auditionControls}
@@ -1387,16 +1295,15 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
               disabled={!transport || !patch.assets.length || !!busy}
               onClick={() => void exportPatch(true)}
             >
-              Copy small patch over USB
+              Send to HexBoard SD over USB
             </button>
           </div>
-          {!transport&&<p className="panel-note">Connect your HexBoard in Sync to copy a small instrument over USB.</p>}
+          {!transport&&<p className="panel-note">Connect your HexBoard in Sync to send over USB.</p>}
           <p className="panel-note">
-            {prepared ? `${bytes(prepared.bytes.length)} prepared. ` : ""}For
-            larger instruments, copy the HBS file into a named folder under
-            sampler/instruments on your SD card. USB uses the folder above;
-            existing names are protected. Use another named folder when one
-            reaches 32 instruments.
+            {prepared ? `${bytes(prepared.bytes.length)} prepared. ` : ""}USB
+            works for instruments under 8 MiB. For larger ones, copy the HBS
+            file into a folder under sampler/instruments on the SD card. Each
+            folder holds up to 32 instruments.
           </p>
         </fieldset>}
         {classic && <ClassicSamplerLibrary transport={transport} revision={libraryRevision} download={download} locked={!!busy}/>}
@@ -1502,8 +1409,8 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             </button>
           </div>
           <p className="panel-note">
-            A warm stereo room. Patch Reverb above is included in exported
-            sounds; the HexBoard control auditions the selected SD instrument.
+            Try reverb on the instrument playing from the SD card, then save it
+            to that instrument.
           </p>
           {playing && <p role="status">{samplerLoadingLabel(loading)}</p>}
         </fieldset>}
@@ -1511,12 +1418,11 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
       {report.length > 0 && (
         <details className="sampler-report" open>
           <summary>
-            Import / conversion report · {report.length}{" "}
-            {report.length === 1 ? "change" : "changes"}
+            Conversion notes · {report.length}
           </summary>
           <ul>
             {report.map((line, i) => (
-              <li key={i}>{line}{patch.assets.map((a,index)=>a.name&&line.includes(a.name)&&<button key={index} onClick={()=>{setSelected(index);setZoneIndex(zones.findIndex(z=>z.asset===index));setWorkspaceView("sample");setExportOpen(false);}}>Review {a.name}</button>)}</li>
+              <li key={i}>{line}{patch.assets.map((a,index)=>a.name&&line.includes(a.name)&&<button key={index} aria-label={`Review ${a.name}`} onClick={()=>{setSelected(index);setZoneIndex(zones.findIndex(z=>z.asset===index));setWorkspaceView("sample");setExportOpen(false);}}>Review</button>)}</li>
             ))}
           </ul>
           <button

@@ -22,12 +22,11 @@ export function InstrumentSetup({patch,classic,design,cycles,mode,onApply,onClos
  <label>Recording channels<select aria-label="Recording channels" value={mono?'mono':'source'} onChange={e=>setMono(e.target.value==='mono')}><option value="source">Keep source channels</option><option value="mono">Mix to mono</option></select><small>{classic?'Classic export fits recordings to mono sample RAM.':'Stereo is preserved in RAM and on SD. It needs twice the sample bandwidth; choose fewer voices if the device test needs more headroom.'}</small></label>
  {!classic&&<label>Room<select aria-label="Setup room" value={room?'on':'off'} onChange={e=>setRoom(e.target.value==='on')}><option value="off">Off · dry</option><option value="on">On · gentle room</option></select><small>One shared effect for the whole instrument.</small></label>}
  </div>
- <footer className="sampler-setup-footer"><span>{voices} held + {tails} tails{!classic&&room?' · Room':''}. Device performance needs measurement.</span><button className="primary" onClick={apply}>Use these settings</button></footer>
+ <footer className="sampler-setup-footer"><span>{classic?'8 voices':`${voices} held voices + ${tails} release tails`}{!classic&&room?' · Room':''}</span><button className="primary" onClick={apply}>Use these settings</button></footer>
  </WorkspaceDialog>;
 }
 export function InstrumentResources({patch,classic,onSetup,disabled=false}:{patch:Patch;classic:boolean;onSetup:()=>void;disabled?:boolean}) {
- const [open,setOpen]=useState(false),r=resourceSummary(patch,classic);
- return <div className="sampler-resource-strip"><button disabled={disabled} onClick={onSetup}>Instrument setup</button><span>{r.voices} voices · {!r.stereo||classic?'Mono': 'Stereo'}{r.room?' · Room':''}{(motionActive(motionSettings(patch.motion))||patch.zones?.some(z=>motionActive(motionSettings(z.motion))))?' · Motion':''}</span><button aria-expanded={open} onClick={()=>setOpen(!open)}>Resources{open?' −':' +'}</button>
- {open&&<div className="sampler-resource-details"><p><strong>Audio:</strong> up to {r.readers} readers including tails. {r.room?'Shared room enabled.':'Room bypassed.'} No device timing measurement for this patch.</p><p><strong>Memory:</strong> {(r.pcm/1048576).toFixed(2)} MiB of source PCM16 before conversion. {classic?'Export fits the 48 KiB sample budget.':'Preparation determines pitch copies, pinned starts and cache fit.'}</p><p><strong>SD:</strong> {r.sd?'Expected SD profile · forward reads · source channels retained.':'Expected resident profile · no streaming reads during playback.'} Final export reports the actual profile.</p></div>}
- </div>;
+ const r=resourceSummary(patch,classic),motion=motionActive(motionSettings(patch.motion))||patch.zones?.some(z=>motionActive(motionSettings(z.motion)));
+ const summary=[`${r.voices} voices`,!r.stereo||classic?'Mono':'Stereo',r.room&&'Room',motion&&'Motion'].filter(Boolean).join(' · ');
+ return <button className="sampler-setup-button" disabled={disabled} onClick={onSetup} aria-label={`Instrument setup: ${summary}`}>Setup<small>{summary}</small></button>;
 }

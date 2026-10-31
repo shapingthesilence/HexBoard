@@ -47,7 +47,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
   const [progress,setProgress]=useState<Progress>(),[operationLabel,setOperationLabel]=useState("Updating synth…");
   const progressRef=useRef<Progress|undefined>(undefined);
   const [device, setDevice] = useState<PhysicalState>(), [ready, setReady] = useState(false), [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("Build your sound here. Connect Advanced to hear the physical model."), [failed, setFailed] = useState(false);
+  const [message, setMessage] = useState(""), [failed, setFailed] = useState(false);
   const [bend, setBend] = useState(0), [source, setSource] = useState(1);
   const [fxPreview,setFxPreview]=useState<FxRack>();
   const [budgetTarget,setBudgetTarget]=useState<number>();
@@ -220,7 +220,6 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
   const showBowPad=bowMode;
   const marbleMode = Math.round(preset.parameters[8]*4/65535)===4;
   const dropCenter=.05+.9*effective[18], dropRadius=.45*effective[19];
-  const pluck = 0.05 + 0.9 * preset.parameters[4] / 65535;
   const position = (id: number) => 30 + (0.05 + 0.9 * preset.parameters[id] / 65535) * 540;
   const dragPosition = (event: React.PointerEvent<SVGGElement>, id: number) => {
     if (busy) return;
@@ -344,7 +343,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
         </div>{(!preset.sample.enabled||bowMode)&&<div className="physical-grid mini-controls">{(showBowPad?[23,22]:[2,12]).map(control)}</div>}</div>
 
 
-      <div className="sample-panel-controls">{preset.sample.enabled&&!bowMode&&<>{control(32)}</>}</div><div className="sample-access"><button type="button" disabled={busy} onClick={()=>setSampleEditor(true)}>{preset.sample.frames.length?"Edit sample…":"Import sample…"}</button><span>{preset.sample.frames.length?`${preset.sample.name} · ${Math.round(preset.sample.frames.length/16)} ms`: "Recorded impacts & textures"}</span></div>      <p className="panel-note">{bowMode?"Bow starts from rest. Pressure controls force; speed moves from creaking drag through singing to scrape.":preset.sample.enabled?"Sample energy follows key velocity. Direct blends the recording with the string.":"Strike energy follows key velocity. Shape impacts in the Exciter pad."}</p>
+      <div className="sample-panel-controls">{preset.sample.enabled&&!bowMode&&<>{control(32)}</>}</div><div className="sample-access"><button type="button" disabled={busy} onClick={()=>setSampleEditor(true)}>{preset.sample.frames.length?"Edit sample…":"Import sample…"}</button><span>{preset.sample.frames.length?`${preset.sample.name} · ${Math.round(preset.sample.frames.length/16)} ms`: "Recorded impacts & textures"}</span></div>      {(bowMode||preset.sample.enabled)&&<p className="panel-note">{bowMode?"Pressure controls force; speed moves from creaking drag through singing to scrape.":"Direct blends the recording with the string."}</p>}
 </fieldset>
       <fieldset className="material-panel resonator-panel" disabled={busy}><legend>Resonator</legend>
         <div className="material-body"><div className="material-surface"><div className="material-context" aria-hidden="true"/>
@@ -377,18 +376,17 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
         onKeyDown={e=>{if(!busy&&["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)){e.preventDefault();const id=e.key==="ArrowLeft"||e.key==="ArrowRight"?30:29;setParameter(id,Math.max(0,Math.min(65535,preset.parameters[id]+(e.key==="ArrowRight"||e.key==="ArrowDown"?1:-1)*(e.shiftKey?6554:1311))));}}}>
         <title>Drag along the string; pull down to tighten contact</title><path d={`M${57+486*effective[30]},${38+18*effective[29]} v26`} stroke="#f0b56b" strokeWidth="5"/><circle cx={57+486*effective[30]} cy={38+18*effective[29]} r="9" fill="#f0b56b"/><circle cx={57+486*effective[30]} cy={38+18*effective[29]} r="18" fill="transparent"/>
       </g>}</svg>
-      <div className="pickup-readout"><span>{bowMode?"Bow":"Strike"} {Math.round(pluck*100)}%</span><span>L {Math.round(pickup*100)}% · R {Math.round(rightPickup*100)}%</span></div>
       <div className="physical-grid mini-controls">{[4,5,14,15].map(control)}</div>
       <div className="pin-controls">{[29,30].map(control)}</div>
     </fieldset>
 
-    <fieldset className="response-panel" disabled={busy}><legend>String response</legend><div className="knob-bank">{control(0)}{control(3)}{control(26)}{control(28)}</div><div className="source-tabs drive-characters" role="group" aria-label="Saturation character" aria-disabled={driveUnavailable} data-unavailable={driveUnavailable||undefined} >{["Warm","Edge","Fold"].map((name,i)=><button type="button" key={name} disabled={busy||driveUnavailable} aria-pressed={Math.round(preset.parameters[27]*2/65535)===i} onClick={()=>setParameter(27,Math.round(i*65535/2))}>{name}</button>)}</div><p className="panel-note">Drive acts inside the string · release sampled on key lift</p></fieldset>
+    <fieldset className="response-panel" disabled={busy}><legend>String response</legend><div className="knob-bank">{control(0)}{control(3)}{control(26)}{control(28)}</div><div className="source-tabs drive-characters" role="group" aria-label="Saturation character" aria-disabled={driveUnavailable} data-unavailable={driveUnavailable||undefined} >{["Warm","Edge","Fold"].map((name,i)=><button type="button" key={name} disabled={busy||driveUnavailable} aria-pressed={Math.round(preset.parameters[27]*2/65535)===i} onClick={()=>setParameter(27,Math.round(i*65535/2))}>{name}</button>)}</div></fieldset>
 
     <fieldset className="contact-panel" disabled={busy}><legend>Contact</legend>
       <div className="source-tabs" aria-label="Contact mode">{["Off", "Bounce", "Rattle", "Mute", "Marbles"].map((mode, index) => <button key={mode} aria-pressed={Math.round(preset.parameters[8]*4/65535) === index} onClick={() => setParameter(8,Math.round(index*65535/4))}>{mode}</button>)}</div>
 
       <div className="source-tabs" role="group" aria-label="Contact starts"><button type="button" aria-pressed={preset.parameters[31]<=32767} onClick={()=>setParameter(31,0)}>Note on</button><button type="button" aria-pressed={preset.parameters[31]>32767} onClick={()=>setParameter(31,65535)}>Note off</button></div>
-      <p className="panel-note">{preset.parameters[31]>32767?"Contact begins on release · increase Release time for longer gestures":"Contact begins with the note and continues into its release"}</p>
+      {preset.parameters[31]>32767&&<p className="panel-note">Contact begins on key release · raise Release time for longer gestures</p>}
       <div className="knob-bank">{(marbleMode ? [16,17,18,19,20] : [16,9,10,11,13]).map(control)}</div>
       {marbleMode && <div className="contact-material"><div className="material-surface"><div className="material-pad" role="slider" tabIndex={busy?-1:0} aria-label="Marble material" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(preset.parameters[24]/65535*100)} aria-valuetext={`${Math.round(preset.parameters[24]/65535*100)} percent hardness, ${Math.round(preset.parameters[25]/65535*100)} percent resonance`}
         onPointerDown={e=>{if(!busy){e.currentTarget.setPointerCapture(e.pointerId);marbleMaterialMove(e);}}} onPointerMove={e=>{if(!busy&&e.currentTarget.hasPointerCapture(e.pointerId))marbleMaterialMove(e);}} onPointerUp={e=>{if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);}}
@@ -399,18 +397,17 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
     </div>
     <div className="monitor-grid">
     <fieldset className="expression-panel" disabled={busy}><legend>Expression</legend>
-      <p className="panel-note">Tilt X ± {((live?.tiltX??0)*45).toFixed(1)}° · Y {((live?.tiltY??0)*45).toFixed(1)}° · {live?.motionValid?"Live":live?.motionDetected?"Waiting for valid gravity":"Connect for tilt"} {client&&ready&&<button disabled={busy||!live?.motionValid} onClick={()=>void operation(async()=>{await client.zeroMotion();return client.read();})}>Set tilt neutral</button>}</p>
-      <p className="panel-note">{client && ready ? live?.key === null || live?.key === undefined ? "Play a calibrated key to see its pressure." : `Latest played key: ${live.key} · ${live.held ? "held" : "released"}` : "Preview pressure offline; connect to see live key expression."}</p>
+      {client&&ready&&<p className="panel-note">Tilt X ± {((live?.tiltX??0)*45).toFixed(1)}° · Y {((live?.tiltY??0)*45).toFixed(1)}° · {live?.motionValid?"Live":live?.motionDetected?"Waiting for valid gravity":"Connect for tilt"} {client&&ready&&<button disabled={busy||!live?.motionValid} onClick={()=>void operation(async()=>{await client.zeroMotion();return client.read();})}>Set tilt neutral</button>}</p>}
+      <p className="panel-note">{client && ready ? live?.key === null || live?.key === undefined ? "Play a key to see its pressure." : `Key ${live.key} · ${live.held ? "held" : "released"}` : "Connect to see live key expression."}</p>
       {physicalSources.map((label, i) => <div className="source-meter" key={label}><span>{sourceShortNames[i]}{i>=5&&i<7?" · preview":""}</span><meter aria-label={`${label}${i>=5?" preview":""} meter`} min={i<3||i===5||(i===6&&preset.modulation.settings[14])||i===8?0:-1} max={1} value={sources[i]} /><output>{i<3||i>=5?`${Math.round(sources[i]*100)}%`:`${Math.round(sources[i]*45)}°`}</output></div>)}
       {!client && <label className="physical-control">Pressure preview<Knob label="Pressure preview" value={previewPressure} onChange={setPreviewPressure} /></label>}
     </fieldset>
-    <fieldset className="output-panel" disabled={busy}><legend>Output</legend>{control(7)}<small>Peak safety · analog rocker volume</small>
+    <fieldset className="output-panel" disabled={busy}><legend>Output</legend>{control(7)}
         {client && <label className="physical-control">Global bend: {bend.toFixed(2)} semitones<Knob label="Global pitch bend" min={-2} max={2} value={bend} disabled={!ready || busy || device?.state !== "playing"} onChange={changeBend} onRelease={() => changeBend(0)} /><button onClick={() => changeBend(0)} disabled={!ready || device?.state !== "playing"}>Center bend</button></label>}
       </fieldset>
     </div>
     </div><div className="engine-side"><FxRackEditor before={bodyPanel} rack={preset.effects} canApply={rack=>dspAllows(preset,{...preset,effects:rack})} onPreview={rack=>{setFxPreview(rack);setBudgetSource(undefined);}} targeting={{tool,source,values:sources,finish:()=>setTool("value"),focus:()=>setSourceEditor(undefined)}} busy={busy} waiting={fxWaiting} onChange={(rack,reorder)=>reorder?setEffects(rack):setRackControls(rack)}/></div></div>
     {sampleEditor&&<SampleEditor progress={progress} sample={preset.sample} onApply={sample=>applySample(sample)} onPreview={sample=>applySample(sample,true)} onClose={()=>setSampleEditor(false)}/>}
     {advanced&&<VoiceBudgetEditor dsp preset={namedPreset} busy={busy} testing={busy&&/voic/.test(progress?.label??operationLabel)} connected={!!client&&ready} onCancel={()=>void client?.cancelVoiceTest().catch(fail)} onInvalidate={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));if(client&&ready)void client.resetVoiceBudget().catch(fail);}} onTest={()=>{replacePreset(p=>({...p,voiceBudget:undefined}));edits.current.clear();clearTimeout(fxTimer.current);void operation(async()=>{const value=await client!.testVoiceLimit({...preset,name});replacePreset(value);return client!.status();},"Testing voice limit…");}}/>}
-    <p className="editor-footnote">Pressure range: Calibration · Presets: computer / HexBoard · Rings: clockwise + / counterclockwise −</p>
-  </section>;
+      </section>;
 }

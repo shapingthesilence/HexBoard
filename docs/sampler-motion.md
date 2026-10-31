@@ -1,15 +1,18 @@
 # Sampler Motion And Room
 
-Use **Instrument setup** early or whenever the instrument needs a different
+Use **Setup** in the toolbar early or whenever the instrument needs a different
 performance profile. Held voices and release slots are explicit choices on
 Advanced. Source stereo is preserved in RAM and on SD, or choose Mix to mono.
 Keep authored motion preserves imported settings. Gentle delayed vibrato and
 Pressure vibrato are optional starting points that replace motion for every
 region when applied; Undo restores the previous patch.
 
-**Sound** has three named sections. **Voice settings** contains region envelope,
-level, timing, response and tone. **Motion** contains selected-region expression;
-**Room** contains the shared effect. The audition dock stays available.
+**Sound** has focused pages. **Envelope** contains the region envelope, pan,
+key tracking, round robin, choke group, velocity curve, delay, hold and filter.
+**Touch & release** (Advanced) contains pressure tone and level, key and pedal
+release and patch response. **Motion** contains selected-region expression;
+**Room** contains the shared effect. Region level is on **Sample**. The audition
+dock stays available.
 
 ## Motion
 
@@ -67,8 +70,8 @@ substitute for live pressure expression.
 
 The combined stereo/motion/long-room workload exceeds the deadline at 16 held + 4 tails. Setup offers an explicit 8 held + 2 tail starting profile; export warns when a larger stereo profile needs qualification. The voice count is never silently reduced. Mono retains its standard 16+4 profile.
 
-Resources shows source size, channel count and configured readers. It does not
-infer a CPU percentage from browser speed. Stereo, moving filters and long room
+The Setup button summarizes voices, channels, room and motion. The editor does
+not infer a CPU percentage from browser speed. Stereo, moving filters and long room
 tails require named hardware workloads and a suitable voice profile. The editor
 never silently lowers the saved number of voices.
 
