@@ -27,6 +27,7 @@ import {
   type SamplerInstrument,
 } from "./client.ts";
 import { samplerLoadingLabel } from "./sampler/loading.ts";
+import { samplerDrafts, draftWorthSaving } from "./sampler/draftStorage.ts";
 import type {
   Patch,
   Recording,
@@ -52,10 +53,14 @@ import { SourceAudition } from "./sampler/sourceAudition.ts";
 import { ArpeggiatorEditor } from "./ArpeggiatorEditor.tsx";
 import { Knob } from "./SynthControls.tsx";
 import { SamplerKeyPreview } from "./SamplerKeyPreview.tsx";
+import { SliceStrip } from "./sampler/SliceStrip.tsx";
 import {
   assignSequentially,
   mappedZones,
-  sliceRecording,
+  sliceAt,
+  findHits,
+  equalSlicePoints,
+  assignToFreeKeys,
   type KeyMap,
 } from "./sampler/mapping.ts";
 import "./PhysicalSynthEditor.css";
@@ -90,6 +95,11 @@ function followsRootMap(assets:Recording[], zones:Zone[]) {
 export function appendSamplerRecordings(patch:Patch,recordings:Recording[]):Patch {
   const assets=[...patch.assets,...recordings];
   return {...patch,assets,zones:followsRootMap(patch.assets,patch.zones??[])?automatic(assets):(patch.zones??[])};
+}
+/** Remove one recording, keeping the remaining map (or rebuilding an automatic one). */
+export function removeSamplerRecording(patch:Patch,index:number):Patch {
+  const assets=patch.assets.filter((_,i)=>i!==index),zones=patch.zones??[];
+  return {...patch,assets,zones:followsRootMap(patch.assets,zones)?automatic(assets):zones.filter(z=>z.asset!==index).map(z=>z.asset>index?{...z,asset:z.asset-1}:z)};
 }
 export function samplerFilename(name: string) {
   const base = name
@@ -137,6 +147,12 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
   const [workspaceView,setWorkspaceView]=useState("sample");
   const [setupOpen,setSetupOpen]=useState(false);
   const [soundPage,setSoundPage]=useState("voice");
+  const [sliceMode,setSliceMode]=useState<"hits"|"equal">("hits");
+  const [sliceSensitivity,setSliceSensitivity]=useState(.5);
+  const [draftNotice,setDraftNotice]=useState("");
+  const [draftError,setDraftError]=useState("");
+  const draftReady=useRef(false);
+  const draftId=classic?"classic":"advanced";
   const [sustainDesign,setSustainDesign]=useState<SustainDesign>("natural");
   const [loopCycles,setLoopCycles]=useState(4);
   const [exportOpen,setExportOpen]=useState(false);
@@ -210,6 +226,27 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
   }, [classic, patch, preparationRevision]);
 
   useEffect(() => {
+    let alive = true;
+    draftReady.current = false;
+    if (typeof indexedDB === "undefined") { draftReady.current = true; return; }
+    samplerDrafts.load(draftId).then(draft => {
+      if (!alive || !draft || !draftWorthSaving(draft.patch) || patchRef.current.assets.length) return;
+      setPatch(draft.patch); setTemplate(draft.template); setSelected(0); setZoneIndex(0);
+      setDraftNotice(`Restored your unsaved instrument from ${new Date(draft.savedAt).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"})}.`);
+    }).catch(e => { if (alive) setDraftError(`Couldn’t restore the autosaved instrument: ${e instanceof Error ? e.message : e}`); })
+      .finally(() => { draftReady.current = true; });
+    return () => { alive = false; };
+  }, [draftId]);
+  useEffect(() => {
+    if (!draftReady.current || typeof indexedDB === "undefined") return;
+    const timer = setTimeout(() => {
+      (draftWorthSaving(patch) ? samplerDrafts.save(draftId, patch, template) : samplerDrafts.remove(draftId))
+        .then(() => setDraftError(""))
+        .catch(e => setDraftError(e instanceof DOMException && e.name === "QuotaExceededError" ? "This instrument is too large to autosave in the browser. Export it to keep it." : `Autosave failed: ${e instanceof Error ? e.message : e}`));
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [patch, template, draftId]);
+  useEffect(() => {
     client.current = transport && !classic ? new PhysicalSynthClient(transport) : undefined;
     return () => client.current?.close();
   }, [transport, classic]);
@@ -253,6 +290,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
     }
     loopAudition.current?.stop();
     setLoopSuggestions(undefined);
+    setDraftNotice("");
     setPatch({ ...next, preparedSource: undefined });
     setPrepared(undefined);
   };
@@ -276,6 +314,18 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
         : "instrument",
     );
   };
+  const newInstrument = () => {
+    preview.current!.clear();
+    edit(empty());
+    setTemplate("instrument"); setSelected(0); setZoneIndex(0); setSelectedKey(0);
+    setReport([]); setWorkspaceView("sample"); setError("");
+  };
+  const removeRecording = (index: number) => {
+    preview.current!.clear();
+    const next = removeSamplerRecording(patch, index), at = Math.max(0, Math.min(index, next.assets.length - 1));
+    edit(next); setSelected(at); setZoneIndex((next.zones ?? []).findIndex(z => z.asset === at));
+  };
+  const pitchMatters = template === "instrument";
   const zones = patch.zones ?? [],
     sample = patch.assets[selected],
     zone = template!=="instrument"
@@ -691,6 +741,21 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
       {hint && <small>{hint}</small>}
     </label>
   );
+  const slicePlan = useMemo(() => {
+    if (template !== "slices" || !sample) return { points: [] as number[], error: "" };
+    try { return { points: sliceMode === "hits" ? findHits(sample, 64, sliceSensitivity) : equalSlicePoints(sample, slices), error: "" }; }
+    catch (e) { return { points: [] as number[], error: e instanceof Error ? e.message : String(e) }; }
+  }, [template, sample, sliceMode, sliceSensitivity, slices]);
+  const addSlices = () => {
+    if (!sample) return;
+    try {
+      const pieces = sliceAt(sample, slicePlan.points), first = patch.assets.length, assets = [...patch.assets, ...pieces];
+      const nextMap = assignToFreeKeys(map, first, pieces.length);
+      edit({ ...patch, assets, zones: mappedZones(nextMap, assets.length, zones) });
+      const firstKey = Object.entries(nextMap).find(([, a]) => a.asset === first)?.[0];
+      setSelected(first); if (firstKey !== undefined) setSelectedKey(+firstKey);
+    } catch (e) { setError(String(e)); }
+  };
   const selectedAssignment = map[selectedKey],
     settings = { ...defaults, ...patch.settings };
   const editingControls = (<>
@@ -703,7 +768,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />}
-          {patch.assets.some(a => a.pitchSource === "fallback") && <p role="status" className="sampler-error">Some pitches couldn’t be detected. Check the marked recordings.</p>}
+          {pitchMatters && patch.assets.some(a => a.pitchSource === "fallback") && <p role="status" className="sampler-error">Some pitches couldn’t be detected. Check the marked recordings.</p>}
           <div className="sampler-recordings">
             {patch.assets.map(
               (a, i) =>
@@ -735,7 +800,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                         1
                           ? "Short sample"
                           : `${(((a.end ?? a.channels[0].length) - (a.start ?? 0)) / a.rate).toFixed(1)} s`}{" "}
-                        · {noteName(a.rootMidi)}{!zones.some(z=>z.asset===i)&&" · unmapped"}{a.pitchSource === "fallback" && <em> · check pitch</em>}
+                        · {noteName(a.rootMidi)}{!zones.some(z=>z.asset===i)&&" · unmapped"}{pitchMatters && a.pitchSource === "fallback" && <em> · check pitch</em>}
                       </small>
                     </span>
                   </button>
@@ -767,7 +832,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             </>
           )}
         </aside>
-        <main className="sampler-canvas"><SamplerWorkspace target={target} view={workspaceView} onViewChange={setWorkspaceView} recording={sample} onChange={changeSample} targets={tuningTargets} preparedBytes={prepared?.bytes.length} stopSignal={tuningStop} design={sustainDesign} cycles={loopCycles} onDesign={setSustainDesign} onCycles={setLoopCycles} level={zone?.gain??1} onLevel={gain=>changeZone({gain})} mapping={<>
+        <main className="sampler-canvas"><SamplerWorkspace target={target} view={workspaceView} onViewChange={setWorkspaceView} recording={sample} onChange={changeSample} targets={tuningTargets} preparedBytes={prepared?.bytes.length} stopSignal={tuningStop} design={sustainDesign} cycles={loopCycles} onDesign={setSustainDesign} onCycles={setLoopCycles} level={zone?.gain??1} onLevel={gain=>changeZone({gain})} onRemove={sample?()=>removeRecording(selected):undefined} pitchMatters={pitchMatters} mapping={<>
       {!classic && <>
       <div className="sampler-tabs sampler-map-modes" role="group" aria-label="Mapping mode">
         {["instrument", "kit", "slices"].map((mode) => (
@@ -792,7 +857,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
           ? "Each recording plays a range of notes, repitched from its original pitch."
           : template === "kit"
             ? "Each HexBoard key plays its own recording. Good for drums and effects."
-            : "Cut one recording into equal slices and lay them across the keys."}
+            : "Cut a recording at its hits, or into equal parts, and lay the slices across the keys."}
       </p></>}
 
           {template === "instrument" ? (
@@ -916,25 +981,22 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                   Drag recordings from the list onto keys, or select a key and choose its sound.
                 </p>
                 {template === "slices" && (
-                  <div className="sampler-fields">
-                    {number("Slices", slices, setSlices, 2, 64)}
-                    <button
-                      disabled={!sample}
-                      onClick={() => {
-                        try {
-                          const assets = sliceRecording(sample, slices);
-                          edit({
-                            ...patch,
-                            assets,
-                            zones: mappedZones(assignSequentially(assets.length), assets.length),
-                          });
-                          setSelected(0);setSelectedKey(0);setZoneIndex(0);
-                        } catch (e) {
-                          setError(String(e));
-                        }
-                      }}
-                    >
-                      Slice selected recording
+                  <div className="sampler-slicer">
+                    <div className="sampler-fields">
+                      <div className="sampler-segmented" role="group" aria-label="Slice by">
+                        <button aria-pressed={sliceMode === "hits"} onClick={() => setSliceMode("hits")}>At hits</button>
+                        <button aria-pressed={sliceMode === "equal"} onClick={() => setSliceMode("equal")}>Equal parts</button>
+                      </div>
+                      {sliceMode === "equal"
+                        ? number("Slices", slices, setSlices, 2, 64)
+                        : <label>Sensitivity<input aria-label="Hit sensitivity" type="range" min={0} max={1} step={0.05} value={sliceSensitivity} onChange={(e) => setSliceSensitivity(+e.target.value)} /></label>}
+                    </div>
+                    {sample && <SliceStrip recording={sample} points={slicePlan.points} />}
+                    <p className="panel-note">
+                      {!sample ? "Select a recording to slice." : slicePlan.error || (slicePlan.points.length < 2 ? "No separate hits found. Raise the sensitivity or use equal parts." : `${slicePlan.points.length} slices from ${sample.name}. They’re added as new recordings on free keys; the original stays.`)}
+                    </p>
+                    <button className="primary" disabled={!sample || slicePlan.points.length < 2} onClick={addSlices}>
+                      Add {slicePlan.points.length >= 2 ? slicePlan.points.length : ""} slices
                     </button>
                   </div>
                 )}
@@ -1010,6 +1072,8 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                   setSelectedKey(key);
                   if (map[key]) setSelected(map[key].asset);
                 }}
+                onPress={(key) => on(`hex:${key}`, patch.assets[map[key]?.asset]?.rootMidi ?? 60, key)}
+                onRelease={(key) => off(`hex:${key}`)}
                 onAssign={(key, asset) => {
                   setSelectedKey(key);setSelected(asset);
                   editMap({
@@ -1159,7 +1223,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
       <div className="instrument-title">
         <h2>Sampler</h2>
         {classic && <span>One instrument · eight voices</span>}
-        {busy && <p role="status">{busy}</p>}
+        {(busy || draftError || draftNotice) && <p role="status" className={!busy && draftError ? "error" : ""}>{busy || draftError || draftNotice}</p>}
       </div>
       <div className="sampler-toolbar">
         <input
@@ -1169,6 +1233,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
           maxLength={32}
           onChange={(e) => edit({ ...patch, name: e.target.value }, false)}
         />
+        <button disabled={!!busy || (!patch.assets.length && patch.name === "New instrument")} title="Start an empty instrument (Undo brings this one back)" onClick={newInstrument}>New</button>
         <label className="sampler-file primary" title="WAV recordings, SF2/SF3 SoundFonts, SFZ or saved instruments">
           Add recordings or instrument
           <input
@@ -1283,7 +1348,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                 onChange={(e) => setExportFolder(e.target.value)}
               />
             </label>
-            {patch.assets.some(a => a.pitchSource === "fallback") && <p className="sampler-error" role="status">Review uncertain pitches before exporting.</p>}
+            {pitchMatters && patch.assets.some(a => a.pitchSource === "fallback") && <p className="sampler-error" role="status">Review uncertain pitches before exporting.</p>}
             <button
               className="primary"
               disabled={!patch.assets.length || !!busy}

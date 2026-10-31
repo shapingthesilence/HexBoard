@@ -789,3 +789,28 @@
  .sampler-editor .sampler-toolbar-end { margin-left:0; }
 }
 .sampler-editor .sampler-file.primary { color:var(--text); font-weight:600; }
+
+/* Phase 1: rename, note-based pitch, slicing, kit pads, draft status. */
+.sampler-editor .instrument-title p.error { color:var(--danger); }
+.sampler-editor .sampler-name-input { font-size:13px; font-weight:650; min-width:0; width:min(260px,100%); background:transparent; border-color:transparent; padding:3px 5px; margin-left:-6px; }
+.sampler-editor .sampler-name-input:hover,.sampler-editor .sampler-name-input:focus { border-color:var(--border-strong); background:var(--surface-muted); }
+.sampler-pitch-field { display:flex; flex-direction:column; gap:4px; font-size:11px; }
+.sampler-pitch-field > div { display:flex; align-items:center; gap:4px; }
+.sampler-editor .sampler-pitch-field input[type=number] { width:58px; }
+.sampler-pitch-field small { color:var(--text-soft,#b4c6ce); }
+.sampler-editor .sampler-hint { color:var(--text-soft,#b4c6ce); font-size:12px; }
+.sampler-editor .sampler-hint button,.sampler-editor .sampler-sample-header .sampler-error button { margin-left:6px; }
+.sampler-slicer { display:grid; gap:8px; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--surface-muted); }
+.sampler-slice-strip { width:100%; height:64px; display:block; background:var(--panel,#1b242b); border-radius:4px; }
+.sampler-slice-strip path { stroke:var(--sample-accent); stroke-width:1; fill:none; vector-effect:non-scaling-stroke; }
+.sampler-slice-strip line { stroke:#dfb767; stroke-width:1.5; vector-effect:non-scaling-stroke; }
+.sampler-slice-strip text { fill:#dfb767; font-size:10px; }
+.sampler-slicer > button.primary { justify-self:start; }
+.sampler-dock-pads { overflow-x:auto; }
+.sampler-editor .sampler-dock-pads button { flex:0 0 76px; height:100%; display:grid; align-content:center; gap:2px; text-align:left; padding:3px 6px; background:color-mix(in srgb,var(--pad-color) 35%,#1b242b); color:#eef5f5; border:1px solid var(--pad-color); border-radius:6px; touch-action:none; user-select:none; }
+.sampler-dock-pads button:active { filter:brightness(1.4); }
+.sampler-dock-pads b { font-size:11px; }
+.sampler-dock-pads span { font-size:9px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.sampler-sample-header .sampler-workspace-heading { flex-wrap:wrap; row-gap:6px; }
+.sampler-sample-header .sampler-workspace-heading > div { flex:1 1 200px; min-width:0; flex-direction:column; align-items:flex-start; gap:2px; }
+.sampler-sample-header .sampler-name-input { width:100%; }

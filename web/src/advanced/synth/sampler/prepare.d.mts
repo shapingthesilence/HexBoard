@@ -5,7 +5,9 @@ export interface Recording {
   channels: Float32Array[];
   rate: number;
   rootMidi: number;
-  pitchSource?: "metadata" | "analysis" | "fallback" | "manual";
+  pitchSource?: "metadata" | "analysis" | "name" | "fallback" | "manual";
+  /** Note written in the source file name (C4 = 60), kept as a cross-check. */
+  namedMidi?: number;
   pitchConfidence?: number;
   pitchVariation?: number;
   pitchSuggestion?: number;

@@ -961,15 +961,30 @@ side rack.
 A device advertising Sampler support adds **Sampler** to the Advanced engine
 selector. Add mono/stereo PCM16/24/32 or float WAV files, including ordinary
 PCM/float WAVE_FORMAT_EXTENSIBLE files. Instrument fills pitch ranges from
-editable roots. Kit maps recordings to playing keys. Slices divides the selected
-recording into 2–64 equal one-shot segments; Undo recovers the original.
+editable roots. Kit maps recordings to playing keys. Slices cuts the selected
+recording at detected hits (adjust **Sensitivity**) or into 2–64 equal parts,
+previewing the cut points. The slices are added as new one-shot recordings on
+free keys; the original and the rest of the kit stay.
+
+WAV import uses embedded root metadata first, then pitch detection, then a note
+written in the file name (for example `glock_G4`, C4 = 60). When detection and
+the file name disagree, the Sample view offers the file-name note; libraries
+number octaves differently, so check by ear. Set **Original pitch** as a note,
+octave and cents. Pitch warnings apply only to Instrument mapping.
+
+The instrument autosaves in this browser and returns after a reload, separately
+for Advanced and Classic. **New** starts an empty instrument (Undo brings the
+previous one back). Rename or **Remove** the selected recording in the Sample
+view. Undo history is not kept across reloads; export to keep an instrument.
 
 The shared **Region ADSR** panel provides direct sliders and exact time/percent
 entry. Choose a region there, use **Edit all regions** for linked changes, or
 **Copy ADSR to all** to copy the selected envelope in one action.
 
 In Kit/Slices, click a key in the HexBoard preview to choose its sample and
-color, assign the selected recording, clear it or audition it. Drag a recording
+color, assign the selected recording, clear it or audition it. Pressing an
+assigned preview key plays it, and the audition dock shows one pad per assigned
+key; computer keys A W S E… play the pads in order. Drag a recording
 onto a key to remap it directly. Map recordings in order provides a starting
 assignment. The preview follows the Advanced board's 133 playing keys and
 excludes command positions. Kit/Slices use the assigned recording's root pitch
@@ -1028,7 +1043,7 @@ travel under the device's **Settings → Pedal setup**.
 
 ## Sampler Loop Editing
 
-Use the Sampler workspaces: **Sample** for trim, pitch, PCM editing and loops; **Map** for regions or physical key assignments; **Sound** for envelopes, tone and response. A fixed audition dock stays visible. Tuning and loop suggestions stay inline; PCM repair and instrument setup use focused dialogs. **Setup** chooses sustain design, Advanced voices/tails, source channels and room enable, and its button summarizes the current choices. See [tiny-loop editing and audition](sampler-tuning.md#tiny-periodic-loops-and-pcm-edits).
+Use the Sampler workspaces: **Sample** for trim, pitch, PCM editing and loops; **Map** for regions or physical key assignments; **Sound** for envelopes, tone and response. A fixed audition dock stays visible; in Kit/Slices it shows the assigned pads. Tuning and loop suggestions stay inline; PCM repair and instrument setup use focused dialogs. **Setup** chooses sustain design, Advanced voices/tails, source channels and room enable, and its button summarizes the current choices. See [tiny-loop editing and audition](sampler-tuning.md#tiny-periodic-loops-and-pcm-edits).
 
 Classic and Advanced share the same waveform and loop tools. WAV imports keep
 their native sample rate and frame positions until export. **Zoom to loop** fits

@@ -1,14 +1,14 @@
 import {useState,useRef,useEffect,type ReactNode} from 'react';
 import type {Recording} from './prepare.mjs';
 import {SamplerWaveform} from './SamplerWaveform.tsx';
-import {SampleAnalysis,AnalysisNumber,type TuningTarget} from './SampleAnalysis.tsx';
+import {SampleAnalysis,type TuningTarget} from './SampleAnalysis.tsx';
 import {WorkspaceDialog} from './WorkspaceDialog.tsx';
 import {hzForMidi,midiForHz,sourcePitchWindow} from './analysis.ts';
 import {noteName} from './import.mjs';
 import {tinyLoop,reduceSampleRate,editPCM,joinEnds,retainedPCM,pcmBytes,type Selection,type ChannelChoice} from './authoring.ts';
 import {loopSeam,recordingBounds} from './loopEditing.ts';
 import {TuningAudition} from './TuningAudition.ts';
-export function SamplerWorkspace({recording:a,onChange,mapping,sound,targets,preparedBytes,stopSignal=0,level=1,onLevel,target="advanced",view:activeView,onViewChange:setView,design:style,cycles,onDesign:setStyle,onCycles:setCycles}:{recording?:Recording;onChange:(change:Partial<Recording>,remember?:boolean)=>void;mapping:ReactNode;sound:ReactNode;targets:TuningTarget[];preparedBytes?:number;stopSignal?:number;level?:number;onLevel?:(n:number)=>void;target?:"classic"|"advanced";view:string;onViewChange:(view:string)=>void;design:"natural"|"tiny";cycles:number;onDesign:(design:"natural"|"tiny")=>void;onCycles:(cycles:number)=>void}){
+export function SamplerWorkspace({recording:a,onChange,mapping,sound,targets,preparedBytes,stopSignal=0,level=1,onLevel,target="advanced",view:activeView,onViewChange:setView,design:style,cycles,onDesign:setStyle,onCycles:setCycles,onRemove,pitchMatters=true}:{onRemove?:()=>void;pitchMatters?:boolean;recording?:Recording;onChange:(change:Partial<Recording>,remember?:boolean)=>void;mapping:ReactNode;sound:ReactNode;targets:TuningTarget[];preparedBytes?:number;stopSignal?:number;level?:number;onLevel?:(n:number)=>void;target?:"classic"|"advanced";view:string;onViewChange:(view:string)=>void;design:"natural"|"tiny";cycles:number;onDesign:(design:"natural"|"tiny")=>void;onCycles:(cycles:number)=>void}){
  const view=activeView;
  const [inspector,setInspector]=useState<'loop'|'tune'>('loop');
  const [suggestedLoop,setSuggestedLoop]=useState<[number,number]>();
@@ -31,13 +31,14 @@ export function SamplerWorkspace({recording:a,onChange,mapping,sound,targets,pre
  <div className="sampler-sample-view" hidden={view!=='sample'}>
  {!a?<div className="sampler-empty"><span className="sampler-empty-wave">▁▂▅▇▅▂▁</span><h3>Start with a sound.</h3><p>Drop WAV recordings, a SoundFont (SF2/SF3) or an SFZ folder here, or use <strong>Add recordings or instrument</strong> above.</p></div>:<>
  <div className="sampler-sample-layout"><div className="sampler-sample-header">
- <div className="sampler-workspace-heading"><div><strong>{a.name}</strong><small>{a.channels.length===2?'Stereo':'Mono'} · {(a.rate/1000).toFixed(1)} kHz · {((b!.end-b!.start)/a.rate).toFixed(2)} s</small></div><span className="sampler-heading-actions"><button onClick={()=>setOverlay('edit')}>Edit audio…</button><button onClick={()=>setOverlay('details')}>Details</button></span></div>
+ <div className="sampler-workspace-heading"><div><input className="sampler-name-input" aria-label="Recording name" value={a.name??''} maxLength={64} onChange={e=>onChange({name:e.target.value,...(a.id?{}:{id:a.name??'Recording'})},false)}/><small>{a.channels.length===2?'Stereo':'Mono'} · {(a.rate/1000).toFixed(1)} kHz · {((b!.end-b!.start)/a.rate).toFixed(2)} s</small></div><span className="sampler-heading-actions"><button onClick={()=>setOverlay('edit')}>Edit audio…</button><button onClick={()=>setOverlay('details')}>Details</button>{onRemove&&<button title="Remove this recording from the instrument (Undo restores it)" onClick={onRemove}>Remove</button>}</span></div>
  <div className="sampler-sample-controls">
  <label>Playback<select aria-label="Playback" value={a.mode??0} onChange={e=>{const mode=+e.target.value as Recording['mode'];onChange({mode,...([1,3].includes(mode??0)?{loopStart:b!.loopStart,loopEnd:b!.loopEnd}:{})});}}><option value={0}>Natural ending</option><option value={1}>Loop through release</option><option value={3}>Loop → recorded tail</option><option value={2}>One shot</option></select></label>
- <div className="sampler-root-field"><AnalysisNumber label="Original pitch (Hz)" value={hzForMidi(a.rootMidi)} step={.001} change={hz=>{if(hz>0&&hz<=22000)onChange({rootMidi:midiForHz(hz)});}}/><small>{noteName(a.rootMidi)}</small></div>
+ <PitchField midi={a.rootMidi} onChange={rootMidi=>onChange({rootMidi})}/>
  <label>Level · {Math.round(level*100)}%<input aria-label="Recording region level" type="range" min={0} max={1.99} step={.01} value={level} onChange={e=>onLevel?.(+e.target.value)}/></label>
  </div>
- {a.pitchSource==='fallback'&&<p className="sampler-error">Pitch couldn’t be detected. Use Tune &amp; analyze or type the frequency.</p>}
+ {pitchMatters&&a.pitchSource==='fallback'&&<p className="sampler-error">Pitch couldn’t be detected. Choose the note above, or use Tune &amp; analyze.</p>}
+ {pitchMatters&&a.namedMidi!==undefined&&a.pitchSource!=='manual'&&a.pitchSource!=='name'&&Math.round(a.rootMidi)!==a.namedMidi&&<p className={(Math.round(a.rootMidi)-a.namedMidi)%12===0?'sampler-hint':'sampler-error'}>File name says {noteName(a.namedMidi)}; the sound was detected as {noteName(a.rootMidi)}.{(Math.round(a.rootMidi)-a.namedMidi)%12===0?' Some libraries number octaves differently.':''} <button onClick={()=>onChange({rootMidi:a.namedMidi!})}>Use {noteName(a.namedMidi)}</button></p>}
 
 </div><div className="sampler-detail-pane">
  <div className="sampler-inspector-tabs" role="group" aria-label="Sample tools"><button aria-pressed={inspector==='loop'} onClick={()=>setInspector('loop')}>Loop</button><button aria-pressed={inspector==='tune'} onClick={openAnalysis}>Tune &amp; analyze</button>{[1,3].includes(a.mode??0)&&<span>{((b!.loopEnd-b!.loopStart)/a.rate*1000).toFixed(1)} ms loop</span>}</div>
@@ -68,4 +69,16 @@ export function SamplerWorkspace({recording:a,onChange,mapping,sound,targets,pre
  {message&&<p role="status">{message}</p>}
  </WorkspaceDialog>}
  </section>;
+}
+
+const pitchClasses=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+/** Original pitch as note, octave and cents (C4 = 60). Exact Hz stays in Tune & analyze. */
+function PitchField({midi,onChange}:{midi:number;onChange:(midi:number)=>void}){
+ const note=Math.round(midi),cents=Math.round((midi-note)*1000)/10,pc=((note%12)+12)%12,octave=Math.floor(note/12)-1;
+ const set=(n:number,c:number)=>{if(n>=0&&n<=127)onChange(n+c/100);};
+ return <div className="sampler-pitch-field" role="group" aria-label="Original pitch"><span>Original pitch</span><div>
+ <select aria-label="Original note" value={pc} onChange={e=>set((octave+1)*12+ +e.target.value,cents)}>{pitchClasses.map((n,i)=><option key={n} value={i} disabled={(octave+1)*12+i>127}>{n}</option>)}</select>
+ <select aria-label="Original octave" value={octave} onChange={e=>set((+e.target.value+1)*12+pc,cents)}>{Array.from({length:11},(_,i)=>i-1).map(o=><option key={o} value={o} disabled={(o+1)*12+pc>127}>{o}</option>)}</select>
+ <input aria-label="Fine tune (cents)" type="number" min={-50} max={50} step={1} value={cents} onChange={e=>{if(e.target.value!=='')set(note,Math.max(-50,Math.min(50,+e.target.value)));}}/><small>cents</small>
+ </div><small>{hzForMidi(midi).toFixed(2)} Hz</small></div>;
 }

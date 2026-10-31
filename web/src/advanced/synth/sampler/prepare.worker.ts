@@ -1,4 +1,5 @@
 import { analyzePitch, midiForHz, suggestLoops, sourcePitchWindow } from "./analysis.ts";
+import { noteFromName } from "./naming.ts";
 import { readBank } from "./bank.mjs";
 import { readCompactPatch } from "./compact.mjs";
 import { verifyPreparedTuning } from "./verifyTuning.ts";
@@ -30,15 +31,19 @@ self.onmessage = async (event: MessageEvent) => {
             source = {channels,rate:outputRate,rootMidi:60},
             window = sourcePitchWindow(source),
             analysis = analyzePitch(source,window[0],window[1],4),
-            root = analysis.hz && analysis.confidence >= .85 && analysis.spread <= 25 ? { midi: midiForHz(analysis.hz), confidence: analysis.confidence } : undefined;
+            root = analysis.hz && analysis.confidence >= .85 && analysis.spread <= 25 ? { midi: midiForHz(analysis.hz), confidence: analysis.confidence } : undefined,
+            name = file.name.replace(/\.wav$/i, ""),
+            named = noteFromName(name);
           return {
-            name: file.name.replace(/\.wav$/i, ""),
+            id: crypto.randomUUID(),
+            name,
+            namedMidi: named,
             channels,
             rate: outputRate,
             rootMidi:
               decoded.rootMidi ??
-              (root ? root.midi : 60),
-            pitchSource: decoded.rootMidi !== undefined ? "metadata" : root ? "analysis" : "fallback",
+              (root ? root.midi : named ?? 60),
+            pitchSource: decoded.rootMidi !== undefined ? "metadata" : root ? "analysis" : named !== undefined ? "name" : "fallback",
             pitchConfidence: analysis.confidence,
             pitchVariation: analysis.spread,
             pitchSuggestion: analysis.hz && analysis.confidence >= .7 && analysis.spread <= 25 ? midiForHz(analysis.hz) : undefined,

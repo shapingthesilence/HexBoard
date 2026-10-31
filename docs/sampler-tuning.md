@@ -47,7 +47,7 @@ high. Analyzing a recording never silently applies another correction.
 
 ## Set Original Pitch Or Retune The Recording
 
-**Original pitch (Hz)** edits the selected recording directly. In **Tune & analyze**, **Precise original pitch and reference** provides **Root frequency (Hz)** and **Fine tune anchor (cents)**, which edit that same root;
+**Original pitch** (note, octave and cents, with the frequency shown below) edits the selected recording directly. In **Tune & analyze**, **Precise original pitch and reference** provides **Root frequency (Hz)** and **Fine tune anchor (cents)**, which edit that same root;
 Fine cents are relative to the opening anchor, so Undo and root edits remain
 consistent. Type a value and press Enter or leave the field to apply it; Escape
 cancels. Arrow keys apply one step immediately (Shift multiplies the step by ten).
