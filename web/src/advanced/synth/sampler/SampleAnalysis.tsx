@@ -4,7 +4,7 @@ import {useEffect,useRef,useState,useMemo} from 'react';
 import type {Recording} from './prepare.mjs';
 import {hzForMidi,midiForHz,centsBetween,retuneRecording,analysisChannel,type PitchAnalysis,type LoopCandidate} from './analysis.ts';
 import {TuningAudition} from './TuningAudition.ts';
-function AnalysisNumber({label,value,change,step}:{label:string;value:number;change:(n:number)=>void;step:number}) {
+export function AnalysisNumber({label,value,change,step}:{label:string;value:number;change:(n:number)=>void;step:number}) {
  const [draft,setDraft]=useState(String(Number(value.toFixed(6)))),dirty=useRef(false);
  useEffect(()=>{if(!dirty.current)setDraft(String(Number(value.toFixed(6))));},[value]);
  const commit=()=>{if(dirty.current&&draft.trim()&&Number.isFinite(Number(draft)))change(Number(draft));dirty.current=false;setDraft(String(Number(value.toFixed(6))));};
@@ -12,7 +12,7 @@ function AnalysisNumber({label,value,change,step}:{label:string;value:number;cha
  onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();commit();event.currentTarget.blur();}else if(event.key==='Escape'){dirty.current=false;setDraft(String(Number(value.toFixed(6))));event.currentTarget.blur();}else if(event.key==='ArrowUp'||event.key==='ArrowDown'){event.preventDefault();const base=dirty.current&&draft.trim()&&Number.isFinite(Number(draft))?Number(draft):value;const next=base+(event.key==='ArrowUp'?1:-1)*step*(event.shiftKey?10:1);dirty.current=false;change(next);setDraft(String(Number(next.toFixed(6))));}}}/></label>;
 }
 export interface TuningTarget {name:string;hz:number}
-export function SampleAnalysis({recording:a,onChange,targets=[],stopSignal=0,sharedSelection,onSelection,inlineResults=false}:{recording:Recording;onChange:(change:Partial<Recording>)=>void;targets?:TuningTarget[];stopSignal?:number;sharedSelection?:[number,number];onSelection?:(s:[number,number])=>void;inlineResults?:boolean}){
+export function SampleAnalysis({recording:a,onChange,targets=[],stopSignal=0,sharedSelection,onSelection,inlineResults=false,onSuggestion}:{recording:Recording;onChange:(change:Partial<Recording>)=>void;targets?:TuningTarget[];stopSignal?:number;sharedSelection?:[number,number];onSelection?:(s:[number,number])=>void;inlineResults?:boolean;onSuggestion?:(loop:[number,number]|undefined)=>void}){
  const bounds={start:a.start??0,end:a.end??a.channels[0].length};
  const [localSelection,setLocalSelection]=useState<[number,number]>([bounds.start+Math.floor((bounds.end-bounds.start)*.15),Math.min(bounds.end,bounds.start+Math.floor((bounds.end-bounds.start)*.15)+Math.floor(a.rate*5))]);
  const selection=sharedSelection??localSelection;
@@ -21,6 +21,9 @@ export function SampleAnalysis({recording:a,onChange,targets=[],stopSignal=0,sha
  const resultsDialog=useRef<HTMLDialogElement>(null);
  useEffect(()=>{if(resultsOpen&&!inlineResults)resultsDialog.current?.showModal();},[resultsOpen,inlineResults]);
  const [analysis,setAnalysis]=useState<PitchAnalysis>(),[loops,setLoops]=useState<LoopCandidate[]>([]),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[target,setTarget]=useState(hzForMidi(a.rootMidi)),[originalVersion,setOriginalVersion]=useState(false),[loopOnly,setLoopOnly]=useState(false);
+ const [candidateIndex,setCandidateIndex]=useState(0);
+ const candidate=loops[candidateIndex]??loops[0];
+ useEffect(()=>{onSuggestion?.(candidate?[candidate.start,candidate.end]:undefined);},[candidate,onSuggestion]);
  const lastOperation=useRef<'analyze'|'verify'>('analyze');
  const worker=useRef<Worker|undefined>(undefined), original=useRef(a), audition=useRef<TuningAudition|undefined>(undefined), current=useRef(a);current.current=a;
  useEffect(()=>{audition.current=new TuningAudition();return()=>{worker.current?.terminate();audition.current?.close();};},[]);
@@ -34,7 +37,7 @@ export function SampleAnalysis({recording:a,onChange,targets=[],stopSignal=0,sha
  const run=(operation:'analyze'|'verify')=>{
   lastOperation.current=operation;worker.current?.terminate();setMessage('');if(!valid){setMessage('Select a nonempty region inside the trimmed sample.');return;}
   const instance=new Worker(new URL('./analysis.worker.ts',import.meta.url),{type:'module'});worker.current=instance;setBusy(true);const source=a;
-  instance.onmessage=event=>{if(worker.current!==instance)return;instance.terminate();worker.current=undefined;setBusy(false);if(current.current.channels!==source.channels||current.current.rate!==source.rate)return;if(operation==='verify'&&(current.current.loopStart!==source.loopStart||current.current.loopEnd!==source.loopEnd||current.current.crossfade!==source.crossfade))return;if(event.data.error){setMessage(event.data.error);return;}if(operation==='analyze'){event.data.analysis.points.forEach((p:{seconds:number})=>p.seconds+=origin/a.rate);event.data.loops.forEach((l:LoopCandidate)=>{l.start+=origin;l.end+=origin;});}setAnalysis(event.data.analysis);setLoops(event.data.loops);setResultsOpen(true);setMessage(operation==='verify'?'Measured the rendered crossfade and repeating loop.':'Analysis is advisory. Existing imported tuning has not changed.');};
+  instance.onmessage=event=>{if(worker.current!==instance)return;instance.terminate();worker.current=undefined;setBusy(false);if(current.current.channels!==source.channels||current.current.rate!==source.rate)return;if(operation==='verify'&&(current.current.loopStart!==source.loopStart||current.current.loopEnd!==source.loopEnd||current.current.crossfade!==source.crossfade))return;if(event.data.error){setMessage(event.data.error);return;}if(operation==='analyze'){event.data.analysis.points.forEach((p:{seconds:number})=>p.seconds+=origin/a.rate);event.data.loops.forEach((l:LoopCandidate)=>{l.start+=origin;l.end+=origin;});}setCandidateIndex(0);setAnalysis(event.data.analysis);setLoops(event.data.loops);setResultsOpen(true);setMessage(operation==='verify'?'Measured the rendered crossfade and repeating loop.':'Analysis is advisory. Existing imported tuning has not changed.');};
   instance.onerror=event=>{if(worker.current!==instance)return;instance.terminate();worker.current=undefined;setBusy(false);setMessage(event.message||'Analysis failed.');};
   const origin=operation==='analyze'?selection[0]:(a.loopStart??bounds.start), finish=operation==='analyze'?selection[1]:(a.loopEnd??bounds.end);
   const channels=a.channels.map(c=>c.slice(origin,Math.min(bounds.end,finish+Math.ceil(a.rate*.02))));
@@ -51,17 +54,20 @@ export function SampleAnalysis({recording:a,onChange,targets=[],stopSignal=0,sha
  const results=(<>
   <h3 id="analysisResultTitle">Pitch and loop results</h3>
   {analysis&&<><p role="status">{analysis.hz?`Detected ${noteName(midiForHz(analysis.hz))} · ${analysis.spread>8?'pitch varies through the recording':'steady pitch'}`:'No reliable musical pitch found. Set the original note manually.'}</p>
-  <details><summary>Measurement details</summary><p role="status">{analysis.hz?`${analysis.hz.toFixed(4)} Hz · ${(analysis.confidence*100).toFixed(0)}% confidence · ${analysis.spread.toFixed(2)} cents variation · ${deviation!>=0?'+':''}${deviation?.toFixed(2)} cents from current anchor`:'No reliable single pitch detected.'}</p>
+  <details open={inlineResults}><summary>Measurement details</summary><p role="status">{analysis.hz?`${analysis.hz.toFixed(4)} Hz · ${(analysis.confidence*100).toFixed(0)}% confidence · ${analysis.spread.toFixed(2)} cents variation · ${deviation!>=0?'+':''}${deviation?.toFixed(2)} cents from current anchor`:'No reliable single pitch detected.'}</p>
   <svg className="sampler-pitch-trace" viewBox="0 0 560 100" role="img" aria-label="Pitch trace, cents relative to the measured median"><line x1="0" y1="50" x2="560" y2="50"/><path d={pointPath}/><text x="4" y="14">+40 cents</text><text x="4" y="96">−40 cents · gaps indicate uncertain pitch</text></svg>
 </details>
   {analysis.warnings.map(w=><p className="panel-note" key={w}>{w}</p>)}
   <button disabled={!analysis.hz||analysis.confidence<.7} onClick={()=>{onChange({rootMidi:midiForHz(analysis.hz!)});}}>Set original pitch from measurement</button>
   <details><summary>Retune audio…</summary><p>This changes playback speed and duration to match the reference pitch. Setting the original pitch above only tells the sampler how the recording is tuned.</p>  <button disabled={!analysis.hz||analysis.confidence<.7||analysis.spread>8} onClick={()=>{try{onChange(retuneRecording(a,analysis.hz!,target));}catch(error){setMessage(String(error));return;}setAnalysis(undefined);setLoops([]);setMessage('Tuning correction will be rendered by export. Original PCM is preserved; compare Original and Edited or Undo.');}}>Retune recording to target on export</button></details></>}
-  {loops.map(candidate=><article className="sampler-loop-candidate" key={candidate.style}><strong>{candidate.style} loop</strong><p>{((candidate.end-candidate.start)/a.rate*1000).toFixed(0)} ms · {candidate.analysis.hz&&candidate.analysis.confidence>=.7?(Math.abs(candidate.changeCents??0)>2?'Check tuning after applying':'Pitch stays close to source'):'Check pitch by ear'}</p>
-   <button onClick={()=>{void audition.current?.play({...a,mode:a.mode===3?3:1,loopStart:candidate.start,loopEnd:candidate.end,crossfade:candidate.crossfade},target,'sample',true).catch(e=>setMessage(String(e)));}}>Hear {candidate.style.toLowerCase()} loop</button>
-   <button onClick={()=>onChange({mode:a.mode===3?3:1,loopStart:candidate.start,loopEnd:candidate.end,crossfade:candidate.crossfade})}>Use {candidate.style.toLowerCase()} loop</button>
-   <details><summary>Loop tuning details</summary><p>Seam score {candidate.seam.toFixed(4)} · {candidate.crossfade.toFixed(1)} ms crossfade · {candidate.analysis.hz?`${candidate.analysis.hz.toFixed(4)} Hz / ${candidate.changeCents!.toFixed(2)} cents from source`:'pitch uncertain'}</p><button disabled={!candidate.analysis.hz||candidate.analysis.confidence<.7} onClick={()=>onChange({mode:a.mode===3?3:1,loopStart:candidate.start,loopEnd:candidate.end,crossfade:candidate.crossfade,rootMidi:midiForHz(candidate.analysis.hz!)})}>Use {candidate.style.toLowerCase()} loop &amp; measured anchor</button></details>
-  </article>)}
+  {!!loops.length&&candidate&&<article className="sampler-loop-candidate">
+   <label>Loop suggestion<select aria-label="Loop suggestion" value={candidateIndex} onChange={e=>{audition.current?.stop();setCandidateIndex(+e.target.value);}}>{loops.map((c,i)=><option key={c.style} value={i}>{c.style} · {((c.end-c.start)/a.rate*1000).toFixed(0)} ms</option>)}</select></label>
+   <p>{candidate.analysis.hz&&candidate.analysis.confidence>=.7?(Math.abs(candidate.changeCents??0)>2?'Check tuning after applying':'Pitch stays close to source'):'Pitch uncertain · compare by ear'} · {candidate.crossfade.toFixed(1)} ms crossfade · seam {candidate.seam.toFixed(4)}</p>
+   <div className="sampler-fields"><button onClick={()=>{void audition.current?.play({...a,mode:a.mode===3?3:1,loopStart:candidate.start,loopEnd:candidate.end,crossfade:candidate.crossfade},target,'sample',true).catch(e=>setMessage(String(e)));}}>Hear suggestion</button>
+   <button className="primary" onClick={()=>onChange({mode:a.mode===3?3:1,loopStart:candidate.start,loopEnd:candidate.end,crossfade:candidate.crossfade})}>Use suggested loop</button>
+   <button disabled={!candidate.analysis.hz||candidate.analysis.confidence<.7} onClick={()=>onChange({mode:a.mode===3?3:1,loopStart:candidate.start,loopEnd:candidate.end,crossfade:candidate.crossfade,rootMidi:midiForHz(candidate.analysis.hz!)})}>Use loop &amp; measured anchor</button></div>
+   <p className="panel-note">{candidate.analysis.hz?`${candidate.analysis.hz.toFixed(4)} Hz · ${candidate.changeCents?.toFixed(2)} cents from source`:'No reliable single pitch for this loop.'}</p>
+  </article>}
   {analysis&&lastOperation.current==='analyze'&&!loops.length&&<p className="panel-note">No automatic loop candidates for this result. Try a longer, more stable selection, or use the manual loop editor.</p>}
   {message&&<p role="status">{message}</p>}
  </>);
@@ -82,9 +88,9 @@ export function SampleAnalysis({recording:a,onChange,targets=[],stopSignal=0,sha
     </g>)}
   </svg>}
   <p className="panel-note">Analyze a stable part after the attack. Use the result only when you want to change the original-pitch anchor.</p>
-  <button disabled={!analysis} onClick={()=>setResultsOpen(true)}>View analysis results</button>
+  {!inlineResults&&<button disabled={!analysis} onClick={()=>setResultsOpen(true)}>View analysis results</button>}
   {!analysis&&message&&<p role="status">{message}</p>}
-  <details><summary>Precise original pitch and reference</summary>  <div className="sampler-fields">{number('Root frequency (Hz)',root,n=>{if(n>0&&n<=22000){onChange({rootMidi:midiForHz(n)});}},.0001)}
+  <details open={inlineResults}><summary>Precise original pitch and reference</summary>  <div className="sampler-fields">{number('Root frequency (Hz)',root,n=>{if(n>0&&n<=22000){onChange({rootMidi:midiForHz(n)});}},.0001)}
   {number('Fine tune anchor (cents)',fine,n=>{if(Math.abs(n)<=1200){onChange({rootMidi:original.current.rootMidi+n/100});}},.1)}
   <button onClick={()=>{onChange({rootMidi:a.rootMidi-12});}}>Anchor − octave</button><button onClick={()=>{onChange({rootMidi:a.rootMidi+12});}}>Anchor + octave</button>
   {number('Target frequency (Hz)',target,n=>{if(n>0&&n<=22000)setTarget(n);},.0001)}

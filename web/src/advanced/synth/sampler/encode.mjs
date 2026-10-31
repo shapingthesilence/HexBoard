@@ -1,3 +1,4 @@
+import {playbackLimits} from './playback.mjs';
 import { crc32, resample, downsample, rate } from "./prepare.mjs";
 const align = (n, q = 512) => Math.ceil(n / q) * q;
 const pitch = (n) => Math.round((Math.log2(440) + (n - 69) / 12) * 2 ** 24);
@@ -350,6 +351,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 export async function preparePatch(input, onProgress = () => {}) {
   if (!input?.assets?.length || input.assets.length > 128)
     throw Error("Use 1–128 recordings per instrument.");
+  const playback = playbackLimits(input);
   const settings = settingsFor(input.settings),
     perf = performanceRecord(
       input.velocityEngine ?? 0,
@@ -670,6 +672,8 @@ export async function preparePatch(input, onProgress = () => {}) {
     settings.pedalRelease,
     settings.pressureGain * 65535,
   ].forEach((n, i) => u16(96 + i * 2, Math.round(n)));
+  bytes[106] = 16 - playback.voices;
+  bytes[107] = 4 - playback.tails;
   let pcmAt = metadata,
     levelIndex = 0,
     pageIndex = 0;

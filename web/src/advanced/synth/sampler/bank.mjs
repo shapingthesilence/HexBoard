@@ -18,6 +18,7 @@ export function readBank(bytes, options = {}) {
   header.fill(0, 36, 40);
   if (crc32(header) !== u32(36))
     throw Error("Instrument header checksum failed.");
+  if(bytes[106]>=16||bytes[107]>4||bytes.subarray(108,128).some(x=>x))throw Error("Invalid instrument voice reservations.");
   const a = u16(12),
     l = u16(14),
     z = u16(16),
@@ -114,6 +115,7 @@ export function readBank(bytes, options = {}) {
       .replace(/\0.*$/s, ""),
     assets,
     zones,
+    playback:{voices:16-bytes[106],tails:4-bytes[107]},
     settings: {
       ...defaults,
       attack: u16(48),

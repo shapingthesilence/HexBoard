@@ -1,12 +1,39 @@
 # Sample Tuning And Loop Suggestions
 
-The **Recording** and **Mapping** workspace is shared by Classic and Advanced in Sync's Sampler. Analysis opens from **Analyze source / compare**.
+Sync's Sampler has three linked workspaces on Classic and Advanced: **Sample**
+for trim, pitch and loops, **Map** for pitch/velocity regions or HexBoard key
+assignments, and **Sound** for envelopes, tone, expression and room. Selection,
+waveform zoom and audition stay available when changing workspace.
+
+**Instrument setup** is an optional, single sheet available before importing or
+at any later time. Starting points suggest natural/compact sustain design or
+Kit/Slices mapping. Sustain design does not replace authored loops automatically.
+Choose 2, 4 or 8 cycles for compact design. Advanced's held voices (1–16) and
+extra release slots (0–4) are saved in HBS and enforced by browser audition and
+current audio firmware; defaults remain 16+4. Classic retains its eight-voice
+profile. Reducing voices stops old audition voices when applied. It reduces
+reader/filter work, not the preallocated renderer's SRAM footprint.
+
+The channel choice keeps source channels or explicitly mixes stereo to mono;
+Undo retains the previous PCM. Current Advanced SD preparation still downmixes
+to mono and reports this. Resident sounds can preserve stereo. Setup exposes the
+existing room enable, not future vibrato or configurable room controls.
+
+**Resources** reports the configured reader count, source PCM16 size and expected
+resident/SD profile. It does not invent CPU percentages or certify device timing.
+Preparation determines actual converted bytes, pitch copies and cache admission.
+Expanded modulation, stereo streaming and measured feature admission remain in
+the [roadmap](sampler-roadmap.md).
+
+On desktop, the waveform stays beside one Loop / Tune inspector. Narrow screens stack these controls and keep the audition dock available.
+
+Analysis opens inline from **Sample → Tune & analyze**.
 It runs in the browser before copying an instrument to either board. It does not
 require a firmware update or additional per-voice DSP.
 
 ## Measure A Recording
 
-Select a recording, then drag a stable sustain region in the main waveform. The analysis dialog uses that same selection; enter start/end seconds there to refine it. Selections can be up to 30 seconds. Without an explicit selection, import, batch suggestions and source analysis use an energy-envelope window after the estimated initial attack and before the quiet tail, capped at 750 ms. This is a heuristic rather than guaranteed transient separation; the main waveform selection always takes precedence for manual analysis.
+Select a recording, then drag a stable sustain region in the main waveform. The analysis panel uses that same selection; enter start/end seconds there to refine it. Selections can be up to 30 seconds. Without an explicit selection, import, batch suggestions and source analysis use an energy-envelope window after the estimated initial attack and before the quiet tail, capped at 750 ms. This is a heuristic rather than guaranteed transient separation; the main waveform selection always takes precedence for manual analysis.
 
 Choose **Analyze pitch & suggest loops**. The result shows the detected note and whether its pitch varies. Open **Measurement details** for frequency, confidence, variation, offset from the current root and a pitch trace. The trace shows cents relative to the selection's median; gaps indicate uncertain estimates. Confidence measures periodicity and coverage, not a guarantee of accuracy.
 Analysis currently covers 30–2500 Hz. Silence, noise, short clips, ensembles and
@@ -18,7 +45,7 @@ high. Analyzing a recording never silently applies another correction.
 
 ## Set Original Pitch Or Retune The Recording
 
-The **Original pitch** popover provides note/cents entry and precise Hz/MIDI entry. In the analysis dialog, expand **Precise original pitch and reference** for **Root frequency (Hz)** and **Fine tune anchor (cents)**, which edit that same root;
+**Original pitch (Hz)** edits the selected recording directly. In **Tune & analyze**, **Precise original pitch and reference** provides **Root frequency (Hz)** and **Fine tune anchor (cents)**, which edit that same root;
 Fine cents are relative to the opening anchor, so Undo and root edits remain
 consistent. Type a value and press Enter or leave the field to apply it; Escape
 cancels. Arrow keys apply one step immediately (Shift multiplies the step by ten).
@@ -55,9 +82,9 @@ Natural favors a longer sustain, Compact a shorter one, and Smooth includes a
 small crossfade. Suggestions compare boundary shape/slope across both channels
 and avoid near-silent candidates. They do not guarantee a seamless musical loop.
 
-Each candidate shows its duration and a concise pitch comparison. Open **Loop tuning details** for seam score, crossfade, measured repeating-loop pitch and estimated change from the source. Hear candidates before applying them.
-**Use loop** changes boundaries while preserving an existing loop-until-release
-mode. **Use loop and measured anchor** also applies the loop's measured root.
+Choose **Loop suggestion** to compare Natural, Compact and Smooth in one review area. The blue outline on the main waveform previews the suggestion; gold handles represent the saved loop. Each candidate shows its duration, seam score, crossfade and estimated pitch difference. **Hear suggestion** auditions it without applying.
+**Use suggested loop** changes boundaries while preserving an existing loop-until-release
+mode. **Use loop & measured anchor** also applies the loop's measured root.
 Uncertain pitch is never used automatically. Existing manual loop tools remain
 available, including exact length locking and seam matching.
 
@@ -79,19 +106,19 @@ existing formats. These tools do not add streaming or native effects to Classic.
 
 ## Tiny Periodic Loops And PCM Edits
 
-In **Recording**, choose **Tiny periodic** and an assumed 1, 2, 4 or 8 cycles, then **Find tiny loop**. The search uses the recording's original-pitch anchor and the main waveform selection; it does not require the tiny loop to pass pitch detection. Metadata, a source measurement or manual original pitch can supply the anchor. The cycle-based Hz readout is a calculation from rate, length and assumed cycles, not a measured fundamental. **Set pitch from assumed cycles** explicitly applies that assumption.
+In **Sample → Loop**, choose **Compact · 2–8 cycles**, choose 2, 4 or 8 cycles, then **Find compact loop**. It keeps the attack through the loop and trims the unused ending. PCM stays intact; Undo restores the previous trim. The search uses the recording's original-pitch anchor and the main waveform selection; it does not require the tiny loop to pass pitch detection. Metadata, a source measurement or manual original pitch can supply the anchor. The cycle-based Hz readout is a calculation from rate, length and assumed cycles, not a measured fundamental. **Tune from cycle count** explicitly applies that assumption.
 
-Use **Optimize** to compare **Keep attack + loop** with **Loop only**, audition the candidate, then apply it. Both remove trailing tail data and switch to envelope-release looping. Retained PCM is an estimate; prepared size after export is authoritative. No sample-rate-reduction memory claim is made for Advanced's fixed-rate export.
+Use **Keep attack / loop only** to compare **Keep attack + loop** with **Loop only**, audition the candidate, then apply it. Both remove trailing tail data and switch to envelope-release looping. Retained PCM is an estimate; prepared size after export is authoritative. No sample-rate-reduction memory claim is made for Advanced's fixed-rate export.
 
-At 96 visible frames or fewer, choose the **Pencil** tool to draw points. **Edit audio** offers linked channels (default) or a selected stereo channel, DC removal, normalization, smoothing and amplitude scaling of the selected region. **Join ends** previews either a locked-length boundary adjustment or PCM smoothing. Apply only after comparison. Original PCM remains reachable through Undo; a drawing gesture is one undo step. These are waveform edits, not duration-preserving pitch correction.
+At 96 visible frames or fewer, choose the **Pencil** tool to draw points. **Edit audio** offers linked channels (default) or a selected stereo channel, DC removal, normalization, smoothing and amplitude scaling of the selected region. **Repair seam** previews either a locked-length boundary adjustment or PCM smoothing. Apply only after comparison. Original PCM remains reachable through Undo; a drawing gesture is one undo step. These are waveform edits, not duration-preserving pitch correction.
 
 ## Persistent Browser Audition
 
-The bottom audition dock remains available in both workspace views. Enable **Browser audition**, then play its keyboard or computer keys A W S E…; text fields and dialogs do not trigger typing notes. Choose **Instrument** for the full map or **Selected recording** to bypass mapping. Octave, velocity, volume, sustain and Panic are in the dock; expression controls open separately.
+The bottom audition dock remains available in all three workspaces. Enable **Browser audition**, then play its keyboard or computer keys A W S E…; text fields and dialogs do not trigger typing notes. Choose **Instrument** for the full map or **Selected recording** to bypass mapping. Octave, velocity, volume, sustain and Panic are in the desktop dock; **Audition settings** opens pressure and bend controls. On narrow screens, play target, velocity, volume and sustain move into that same named sheet so Panic and octave controls stay accessible.
 
 With a connected HexBoard transport, enabling browser audition also listens to its MIDI input. Notes, note-off velocity, sustain, channel bend/RPN range, channel pressure and poly pressure feed browser playback without MIDI echo. Disconnect and Panic release voices. Held loop readers crossfade to edited PCM/loop boundaries after rapid edits settle. Browser audition and conversion checks do not establish physical device timing or listening qualification.
 
-Use **Save / export** for preparation, output settings, the board library and conversion reports. Named warnings offer **Review** to return to the affected recording's Recording view. **More** contains folder import and all-notes-off actions.
+Use **Save / export** for preparation, output settings, the board library and conversion reports. Named warnings offer **Review** to return to the affected recording's Sample view. **Import folder** opens SFZ folder import. **All notes off** and dock **Panic** stop instrument, source and tuning auditions. Export also provides instrument naming, so naming does not require leaving the save dialog.
 
 ## Pitch Recognition And Musical Readouts
 
@@ -99,7 +126,7 @@ Source recognition uses shorter overlapping frames, normalized autocorrelation a
 
 Imports accept high-clarity source estimates with up to 25 cents of measured variation, rather than requiring an unrealistically constant plucked note. The fractional median is preserved, without snapping the recording to the filename or an equal-tempered note. File tuning metadata still wins. Wider drift or ambiguity remains advisory rather than automatically changing the anchor.
 
-The main view shows the original musical note, playback mode, level, editing controls and loop duration. Tiny-periodic mode also shows assumed cycles and retained size because they affect memory and waveform design. Sample rate, raw frame counts, Hz, seam scores and periodicity statistics are in **Details**, **Exact trim & waveform display**, or analysis measurement details. The analysis result defaults to the detected note and whether it varies. Precise measurements remain available for tuning, seam work and troubleshooting; they are not presented as guaranteed musical correctness.
+The main view shows the original musical note, playback mode, level, editing controls and loop duration. Compact mode shows assumed cycles and loop duration because they affect waveform design. Sample rate, raw frame counts, Hz, seam scores and periodicity statistics are in **Recording information**, **Exact trim & waveform display**, or analysis measurement details. The analysis result defaults to the detected note and whether it varies. Precise measurements remain available for tuning, seam work and troubleshooting; they are not presented as guaranteed musical correctness.
 
 In Classic's **Optimize** dialog, sample-rate reduction offers conservative filtering before downsampling. A Blackman-windowed sinc filter removes high harmonics with a transition band below the new Nyquist frequency. Preview original and reduced audio before applying. For loops, the exact new native rate follows the rounded loop length to preserve repetition pitch. Classic stores this reduced PCM and native rate directly, saving sample RAM. Advanced's current fixed-rate export does not offer this control, because simple downsampling followed by upsampling would not provide that storage saving.
 

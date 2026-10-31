@@ -1,7 +1,7 @@
 # Sampler Roadmap — Unimplemented Features
 
 This is a proposal for later passes, not a description of shipped controls.
-The shared tuning/loop workflow is implemented; see [Sample tuning](sampler-tuning.md).
+The shared Sample/Map/Sound editor, setup sheet, tuning/loop workflow and Advanced voice/tail reservations are implemented; see [Sample tuning](sampler-tuning.md).
 
 ## Shared Authoring, Qualified Device Profiles
 
@@ -29,8 +29,11 @@ identical polyphony, storage, streaming or effects.
 - Combine bend, vibrato and pitch-envelope bounds when preparing sample copies
   and pinned starts. Preserve continuous microtonal pitch and captured roots.
 
-Advanced's standard profile must keep 16 held voices plus four tails under
-qualified workloads. Classic should gain native features only where measured
+Advanced's default profile keeps 16 held voices plus four tails under
+qualified workloads. Patches can now explicitly choose 1–16 held voices and 0–4
+extra release slots. A future measured admission model must account for that
+choice, per-voice features, shared effects, memory and SD demand separately;
+current source-size/read-count summaries are not DSP qualification. Classic should gain native features only where measured
 budgets permit; otherwise use shared browser audition and explicit offline
 adaptations. Never silently substitute a baked loop for live pressure expression.
 

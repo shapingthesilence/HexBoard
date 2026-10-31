@@ -74,7 +74,7 @@ export function RegionEnvelope({ zones, index, names, settings, onSelect, onChan
   return <fieldset className="sampler-envelope"><legend>Region ADSR</legend>
     <div className="sampler-envelope-heading">
       <select aria-label="Envelope region" value={index} onChange={event => onSelect(+event.target.value)}>
-        {zones.map((z, i) => <option key={i} value={i}>{i + 1}. {names[z.asset] ?? "Recording"} · velocity {z.velocityLow ?? 1}–{z.velocityHigh ?? 127}</option>)}
+        {zones.map((z, i) => <option key={i} value={i}>{z.key!==undefined&&z.key!==65535?`Key ${z.key+1}`:i + 1}. {names[z.asset] ?? "Recording"} · velocity {z.velocityLow ?? 1}–{z.velocityHigh ?? 127}</option>)}
       </select>
       <label><input type="checkbox" checked={all} onChange={event => setAll(event.target.checked)}/>Edit all regions</label>
       <button disabled={zones.length < 2} onClick={() => onChange(values, true, true)}>Copy ADSR to all</button>

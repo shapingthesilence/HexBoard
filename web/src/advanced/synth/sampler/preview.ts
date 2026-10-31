@@ -1,3 +1,4 @@
+import {playbackLimits} from './playback.mjs';
 import type { Patch, Recording, Zone, Settings } from "./prepare.mjs";
 import { defaults, trimRecording, crossfadeRecording, crossfadeFrames } from "./encode.mjs";
 import { reverbImpulse } from "./reverb.mjs";
@@ -61,6 +62,7 @@ interface Voice {
   release?: number;
   key: string;
   pedal: boolean;
+  held: boolean;
   rate: number;
 }
 export class PatchPreview {
@@ -139,6 +141,8 @@ export class PatchPreview {
   noteExpression(key:string,pressure:number,bend:number){this.expressionByKey.set(key,{pressure,bend});for(const v of this.voices.filter(v=>v.key===key)){v.source.playbackRate.setTargetAtTime(v.rate*2**((this.bend+bend)/12),this.ctx!.currentTime,.005);v.pressure.gain.setTargetAtTime(this.pressureLevel(pressure),this.ctx!.currentTime,.01);v.filter.frequency.setTargetAtTime(this.cutoff(v.zone,pressure),this.ctx!.currentTime,.01);}}
   stopNote(key:string){this.held.delete(key);for(const v of this.voices.filter(v=>v.key===key))this.stopVoice(v,.01);this.expressionByKey.delete(key);}
   setPatch(patch: Patch) {
+    const before=playbackLimits(this.patch),after=playbackLimits(patch);
+    if(before.voices!==after.voices||before.tails!==after.tails)this.clear();
     this.patch = patch;
     if(this.readerTimer)clearTimeout(this.readerTimer);
     if(this.voices.some(v=>patch.assets[v.assetIndex]!==v.asset))this.readerTimer=setTimeout(()=>{
@@ -274,7 +278,14 @@ export class PatchPreview {
     if (choice.choke)
       for (const v of this.voices.filter((v) => v.zone.choke === choice.choke))
         this.stopVoice(v, 0.008);
-    if (this.voices.length >= 20) this.stopVoice(this.voices[0], 0.005);
+    const limits=playbackLimits(this.patch);
+    if(this.voices.filter(v=>v.held).length>=limits.voices)return;
+    if(this.voices.length>=limits.voices+limits.tails){
+      const old=this.voices.find(v=>!v.held);if(!old)return;
+      // Release-slot replacement is bounded; disconnect the replaced graph.
+      try{old.source.stop();}catch{}old.source.disconnect();old.readerGain.disconnect();old.filter.disconnect();old.gain.disconnect();old.pressure.disconnect();old.pan.disconnect();
+      this.voices=this.voices.filter(v=>v!==old);
+    }
     const source = ctx.createBufferSource(),
       filter = ctx.createBiquadFilter(),
       gain = ctx.createGain(),
@@ -351,6 +362,7 @@ export class PatchPreview {
       peak,
       key,
       pedal: false,
+      held: true,
       rate: rate / 2 ** (this.bend / 12),
     };
     this.voices.push(voice);
@@ -367,6 +379,7 @@ export class PatchPreview {
   }
   private stopVoice(v: Voice, seconds: number) {
     if (v.release !== undefined) return;
+    v.held = false;
     v.release = this.ctx!.currentTime;
     const p = this.patch.settings ?? {},
       elapsed = v.release - v.start,
@@ -400,9 +413,9 @@ export class PatchPreview {
   }
   off(key: string, velocity = 64, pedalRelease = false) {
     this.held.delete(key);
-    for (const v of this.voices.filter(
-      (v) => v.key === key && v.asset.mode !== 2,
-    )) {
+    for (const v of this.voices.filter(v=>v.key===key)) {
+      v.held=false;
+      if(v.asset.mode===2)continue;
       if (this.sustain) {
         v.pedal = true;
         continue;

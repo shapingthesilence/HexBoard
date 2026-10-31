@@ -27,7 +27,7 @@ function FrameField({ label, value, onFocus, onCommit }: { label: string; value:
     }}/></label>;
 }
 
-export function SamplerWaveform({ recording: a, onChange, selection, onSelection, tool="select", channel="linked", loopToolsVisible=false }: { recording: Recording; onChange: (change: Partial<Recording>, remember: boolean) => void; selection?:Selection; onSelection?:(s:Selection)=>void; tool?:"select"|"pencil"|"loop"; channel?:ChannelChoice; loopToolsVisible?:boolean }) {
+export function SamplerWaveform({ recording: a, onChange, selection, onSelection, tool="select", channel="linked", loopToolsVisible=false, suggestedLoop }: { recording: Recording; onChange: (change: Partial<Recording>, remember: boolean) => void; selection?:Selection; onSelection?:(s:Selection)=>void; tool?:"select"|"pencil"|"loop"; channel?:ChannelChoice; loopToolsVisible?:boolean; suggestedLoop?:[number,number] }) {
   const paint=useRef<{frame:number;value:number;changed:boolean}|undefined>(undefined);
   const selectionAnchor=useRef<number|undefined>(undefined);
   const loopGesture=useRef(false);
@@ -97,6 +97,7 @@ export function SamplerWaveform({ recording: a, onChange, selection, onSelection
       <defs><clipPath id={clip}><rect width="560" height={height}/></clipPath></defs>
       <g clipPath={`url(#${clip})`}>
         {selection&&<rect className="sampler-edit-selection" x={(selection[0]-start)*560/span} y="0" width={(selection[1]-selection[0])*560/span} height={height}/>}
+        {suggestedLoop&&<rect className="sampler-suggested-loop" x={(suggestedLoop[0]-start)*560/span} y="0" width={(suggestedLoop[1]-suggestedLoop[0])*560/span} height={height}/>}
         {looping && <rect className="sampler-loop-area" x={(b.loopStart - start) * 560 / span} y="0" width={(b.loopEnd - b.loopStart) * 560 / span} height={height}/>}
         {a.channels.map((channel, i) => <g key={i} transform={`translate(0 ${i * 110})`}>
           <line className="sampler-zero-line" x1="0" x2="560" y1="55" y2="55"/>

@@ -67,6 +67,7 @@ export interface Performance {
   }[];
 }
 export interface Patch {
+  playback?: { voices: number; tails: number };
   name?: string;
   assets: Recording[];
   zones?: Zone[];
