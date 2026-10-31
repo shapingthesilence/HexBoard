@@ -755,3 +755,7 @@
  .sampler-sample-layout { display:flex; flex-direction:column; gap:12px; }
  .sampler-detail-pane,.sampler-wave-pane { overflow:visible; border:0; padding:0; }
 }
+
+.sampler-sound-pages{position:sticky;top:0;z-index:2;background:var(--panel-bg,#1b242b);padding:.5rem 0;margin-bottom:.5rem}.sampler-sound-focus{max-width:780px}.sampler-sound-focus .knob-bank{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem}.sampler-sound-focus fieldset{margin:0}.sampler-sound-focus .sampler-knob{min-width:0}@media(max-width:600px){.sampler-sound-focus .knob-bank{grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem}}
+
+.sampler-motion-choices{display:flex;gap:.75rem;flex-wrap:wrap}.sampler-motion-choices>label{flex:1;min-width:180px}.sampler-sound-focus .sampler-knob output{display:block;text-align:center}

@@ -1,3 +1,4 @@
+import {recordingAuditionPatch} from "./preview.ts";
 import {useEffect,useRef,useState} from 'react';
 import type {Patch,Prepared} from './prepare.mjs';
 import type {MidiTransport} from '../../../midi/types.ts';
@@ -5,13 +6,13 @@ import {PatchPreview} from './preview.ts';
 import {SamplerMidiInput} from './SamplerMidiInput.ts';
 import {WorkspaceDialog} from './WorkspaceDialog.tsx';
 import {noteName} from './import.mjs';
-export function SamplerAudition({preview,patch,selected,transport,prepared,classic=false,onPanic}:{preview:PatchPreview;patch:Patch;selected:number;transport?:MidiTransport;prepared?:Prepared;classic?:boolean;onPanic?:()=>void}){
+export function SamplerAudition({preview,patch,selected,zoneIndex=-1,transport,prepared,classic=false,onPanic}:{preview:PatchPreview;patch:Patch;selected:number;zoneIndex?:number;transport?:MidiTransport;prepared?:Prepared;classic?:boolean;onPanic?:()=>void}){
  const [enabled,setEnabled]=useState(false),[target,setTarget]=useState('instrument'),[octave,setOctave]=useState(4),[velocity,setVelocity]=useState(100),[level,setLevel]=useState(.7),[advanced,setAdvanced]=useState(false),[status,setStatus]=useState('Browser audition off'),[pressure,setPressure]=useState(1),[bend,setBend]=useState(0),[converted,setConverted]=useState(classic);
  const enabledRef=useRef(enabled);enabledRef.current=enabled;
  const velocityRef=useRef(velocity);velocityRef.current=velocity;
  const octaveRef=useRef(octave);octaveRef.current=octave;
  const panic=()=>{preview.clear();onPanic?.();setStatus(enabled?'Ready':'Browser audition off');};
- useEffect(()=>{const a=patch.assets[selected];const full=classic&&converted?(prepared?.auditionPatch??patch):patch;const auditionPatch=target==='recording'&&a?{...patch,assets:[a],zones:[{asset:0,lowMidi:-.5,highMidi:127.5}],performance:undefined}:full;preview.setPatch(classic?{...auditionPatch,playback:{voices:8,tails:0}}:auditionPatch);},[preview,patch,selected,target,prepared,classic,converted]);
+ useEffect(()=>{const full=classic&&converted?(prepared?.auditionPatch??patch):patch;const index=zoneIndex>=0?zoneIndex:patch.zones?.findIndex(z=>z.asset===selected)??-1;const auditionPatch=target==='recording'?recordingAuditionPatch(full,selected,index):full;preview.setPatch(classic?{...auditionPatch,playback:{voices:8,tails:0}}:auditionPatch);},[preview,patch,selected,zoneIndex,target,prepared,classic,converted]);
  useEffect(()=>{preview.expression(pressure,bend);},[preview,pressure,bend]);
  useEffect(()=>{preview.setVolume(level);},[preview,level,status]);
  useEffect(()=>{if(!enabled){preview.clear();return;}if(!transport){setStatus('Keyboard ready · connect HexBoard for MIDI');return;}

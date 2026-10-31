@@ -1,3 +1,5 @@
+import {MotionEditor} from "./sampler/MotionEditor.tsx";
+import {motionSettings} from "./sampler/motion.mjs";
 import {InstrumentSetup,InstrumentResources,type SustainDesign} from './sampler/InstrumentSetup.tsx';
 import { SamplerWorkspace } from "./sampler/SamplerWorkspace.tsx";
 import { SamplerAudition } from "./sampler/SamplerAudition.tsx";
@@ -135,6 +137,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
   const [actionsOpen,setActionsOpen]=useState(false);
   const [workspaceView,setWorkspaceView]=useState("sample");
   const [setupOpen,setSetupOpen]=useState(false);
+  const [soundPage,setSoundPage]=useState("voice");
   const [sustainDesign,setSustainDesign]=useState<SustainDesign>("natural");
   const [loopCycles,setLoopCycles]=useState(4);
   const [exportOpen,setExportOpen]=useState(false);
@@ -1033,7 +1036,8 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             </fieldset>
           )}
 </>} sound={<>
-          <RegionEnvelope zones={zones} index={zone ? zones.indexOf(zone) : -1} names={patch.assets.map(a => a.name ?? "Recording")} settings={settings}
+          <nav className="sampler-tabs sampler-sound-pages" aria-label="Sound sections">{[['voice','Voice settings'],['motion','Motion'],['room','Room']].map(([id,label])=><button key={id} aria-pressed={soundPage===id} onClick={()=>setSoundPage(id)}>{label}</button>)}</nav>
+          {soundPage==='voice'&&<><RegionEnvelope zones={zones} index={zone ? zones.indexOf(zone) : -1} names={patch.assets.map(a => a.name ?? "Recording")} settings={settings}
             onSelect={index => { setZoneIndex(index); setSelected(zones[index].asset);if(zones[index].key!==undefined&&zones[index].key!==65535)setSelectedKey(zones[index].key!); }}
             onChange={(change, all, remember) => {
               const current = patchRef.current;
@@ -1085,7 +1089,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                   )}
                 </div>
                 <details>
-                  <summary>{classic ? "Delay & hold" : "Timing & tone"}</summary>
+                  <summary>Timing & tone</summary>{classic&&<p className="panel-note">Tone affects original audition; Classic export omits filters.</p>}
                   <div className="sampler-fields">
                     {(
                       [
@@ -1093,7 +1097,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                         "hold",
                         "cutoff",
                       ] as const
-                    ).filter(key => !classic || key !== "cutoff").map((key) =>
+                    ).map((key) =>
                       number(
                         key,
                         zone[key] ??
@@ -1107,6 +1111,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
                         1,
                       ),
                     )}
+                    {number("Resonance",zone.resonance??settings.resonance,v=>changeZone({resonance:v}),.5,4,.01)}
                     {!classic && <label>
                       Velocity curve
                       <select
@@ -1170,6 +1175,8 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             </p>
           </fieldset>}
         </aside>      <div className="sampler-shaping">
+
+
         {[
           {
             title: "Touch & tone",
@@ -1177,7 +1184,6 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
               ["cutoff", "Tone", 40, 20000, "Hz"],
               ["pressure", "Pressure → tone", 0, 1, ""],
               ["pressureGain", "Pressure → level", 0, 1, ""],
-              ["space", "Reverb", 0, 1, ""],
             ],
           },
           {
@@ -1192,19 +1198,6 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
         ].filter(() => !classic).map((group) => (
           <fieldset key={group.title}>
             <legend>{group.title}</legend>
-            {group.title === "Touch & tone" && (
-              <button
-                type="button"
-                aria-pressed={settings.space > 0}
-                onClick={() => {
-                  if (settings.space > 0) lastSpace.current = settings.space;
-                  global("space", settings.space > 0 ? 0 : lastSpace.current);
-                  gesture.current = false;
-                }}
-              >
-                Room reverb · {settings.space > 0 ? "On" : "Off"}
-              </button>
-            )}
             <div className="knob-bank">
               {group.controls.map(([k, label, min, max, unit]) => (
                 <label className="sampler-knob" key={k}>
@@ -1230,12 +1223,18 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             </div>
           </fieldset>
         ))}
-      </div></>}/></main>
+      </div></>}
+      {soundPage==='motion'&&<div className="sampler-sound-focus">{zone?<MotionEditor classic={classic} value={{...patch.motion,...zone?.motion}} onEnd={()=>{gesture.current=false;}} onChange={change=>{if(!zone)return;const m=motionSettings({...patch.motion,...zone.motion,...change});edit({...patch,zones:zones.map(z=>z===zone?{...z,motion:m}:z)},!gesture.current);gesture.current=true;}} onApplyAll={()=>{const m=motionSettings({...patch.motion,...zone?.motion});edit({...patch,motion:m,zones:zones.map(z=>({...z,motion:m}))});}}/>:<p className="panel-note">Choose a recording and mapped region to edit motion. Instrument setup offers starting points before import.</p>}
+</div>}
+      {soundPage==='room'&&<div className="sampler-sound-focus">        <fieldset><legend>Room</legend><button aria-pressed={settings.space>0} onClick={()=>{if(settings.space>0)lastSpace.current=settings.space;global('space',settings.space>0?0:lastSpace.current);gesture.current=false;}}>Room · {settings.space>0?'On':'Off'}</button>
+        <p className="panel-note">{classic?'Browser audition only; Classic export omits reverb.':'One shared effect, after the voices. Decay changes do not allocate delay memory.'}</p>
+        <div className="knob-bank">{([['space','Amount',0,1,''],['roomDecay','Decay',200,8000,'ms'],['roomTone','Tone',0,1,''],['roomWidth','Width',0,1,'']] as const).map(([k,label,min,max,unit])=><label className="sampler-knob" key={k}><span>{label}</span><Knob label={'Room '+label} min={min} max={max} value={settings[k]} onChange={v=>global(k,v)} onRelease={()=>{gesture.current=false;}}/><output>{settings[k].toFixed(max>1?0:2)} {unit}</output></label>)}</div></fieldset></div>}
+      </>}/></main>
       </div>
 
   </>);
   const panic=()=>{preview.current!.clear();source.current!.off();loopAudition.current?.stop();setTuningStop(n=>n+1);};
-  const auditionControls = <SamplerAudition preview={preview.current!} patch={patch} selected={selected} transport={transport} prepared={prepared} classic={classic} onPanic={panic}/>;
+  const auditionControls = <SamplerAudition preview={preview.current!} patch={patch} selected={selected} zoneIndex={zone?zones.indexOf(zone):-1} transport={transport} prepared={prepared} classic={classic} onPanic={panic}/>;
   return (
     <section
       className="physical-editor card sampler-editor"

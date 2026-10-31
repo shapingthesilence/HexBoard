@@ -1,3 +1,4 @@
+import {motionSettings,motionActive,evaluateMotion,motionEnvelope,keyTime} from "./motion.mjs";
 import {playbackLimits} from './playback.mjs';
 import type { Patch, Recording, Zone, Settings } from "./prepare.mjs";
 import { defaults, trimRecording, crossfadeRecording, crossfadeFrames } from "./encode.mjs";
@@ -11,12 +12,18 @@ export function editedCompactAudition(patch: Patch, source: Patch, converted: Pa
       || patch.zones.some((zone, i) => zone.asset !== source.zones![i].asset || zone.fixed || zone.key !== undefined || zone.choke || zone.roundRobin)) return;
   return { ...converted, zones: converted.zones?.map((zone, i) => {
     const edited = patch.zones![i];
-    return { ...zone, ...edited, asset: zone.asset, cutoff: 20000, pan: 0,
+    return { ...zone, ...edited, motion:undefined,resonance:undefined,fixedVelocity:undefined,fixedNote:undefined,asset: zone.asset, cutoff: 20000, pan: 0,
       attack: edited.attack ?? patch.settings?.attack ?? defaults.attack,
       decay: edited.decay ?? patch.settings?.decay ?? defaults.decay,
       sustain: edited.sustain ?? patch.settings?.sustain ?? defaults.sustain,
       release: Math.max(4, edited.release ?? patch.settings?.release ?? defaults.release) };
   }) };
+}
+// Bypass mapping while retaining the selected region's sound controls. Converted
+// audition supplies its own fitted assets/settings, never original-only effects.
+export function recordingAuditionPatch(patch:Patch,selected:number,zoneIndex=-1):Patch{
+ const region=patch.zones?.[zoneIndex]??patch.zones?.find(z=>z.asset===selected),asset=patch.assets[region?.asset??selected];
+ return asset?{...patch,assets:[asset],zones:[{...region,asset:0,lowMidi:-.5,highMidi:127.5,key:undefined,velocityLow:1,velocityHigh:127,choke:0,roundRobin:0}],performance:undefined}:patch;
 }
 export function releaseSeconds(
   settings: Settings,
@@ -64,6 +71,7 @@ interface Voice {
   pedal: boolean;
   held: boolean;
   rate: number;
+  note:number;strikeVelocity:number;zoneIndex:number;
 }
 export class PatchPreview {
   ctx?: AudioContext;
@@ -72,6 +80,11 @@ export class PatchPreview {
   private room?: ConvolverNode;
   private roomGain?: GainNode;
   private roomBuffer?: AudioBuffer;
+  private roomKey="";
+  private roomWorker?:Worker;
+  private roomRequest=0;
+  private roomTimer?:ReturnType<typeof setTimeout>;
+  private motionTimer?:ReturnType<typeof setTimeout>;
   private limiter?: DynamicsCompressorNode;
   private cache = new WeakMap<Recording, AudioBuffer>();
   private voices: Voice[] = [];
@@ -111,28 +124,26 @@ export class PatchPreview {
     this.setRoom(this.patch.settings?.space ?? 0);
     await this.ctx.resume();
   }
-  private setRoom(amount: number) {
-    if (!this.ctx || !this.bus || !this.limiter) return;
-    if (amount > 0 && !this.room) {
-      if (!this.roomBuffer) {
-        const impulse = reverbImpulse(this.ctx.sampleRate);
-        this.roomBuffer = this.ctx.createBuffer(
-          2,
-          impulse[0].length,
-          this.ctx.sampleRate,
-        );
-        impulse.forEach((c, i) =>
-          this.roomBuffer!.copyToChannel(new Float32Array(c), i),
-        );
-      }
-      this.room = this.ctx.createConvolver();
-      this.room.normalize = false;
-      this.room.buffer = this.roomBuffer;
-      this.roomGain = this.ctx.createGain();
-      this.roomGain.gain.value = 0;
-      this.bus.connect(this.room).connect(this.roomGain).connect(this.limiter);
-    }
-    this.roomGain?.gain.setTargetAtTime(amount, this.ctx.currentTime, 0.012);
+  private installRoom(impulse:Float32Array[]){
+    if(!this.ctx||!this.bus||!this.limiter)return;
+    const buffer=this.ctx.createBuffer(2,impulse[0].length,this.ctx.sampleRate);impulse.forEach((c,i)=>buffer.copyToChannel(new Float32Array(c),i));this.roomBuffer=buffer;
+    const previous=this.room,oldGain=this.roomGain,room=this.ctx.createConvolver(),gain=this.ctx.createGain(),now=this.ctx.currentTime;
+    room.normalize=false;room.buffer=buffer;gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(this.patch.settings?.space??0,now+.025);
+    this.bus.connect(room).connect(gain).connect(this.limiter);this.room=room;this.roomGain=gain;
+    if(previous&&oldGain){oldGain.gain.cancelScheduledValues(now);oldGain.gain.setTargetAtTime(0,now,.006);setTimeout(()=>{this.bus?.disconnect(previous);previous.disconnect();oldGain.disconnect();},60);}
+  }
+  private setRoom(amount:number){
+    if(!this.ctx||!this.bus||!this.limiter)return;
+    this.roomGain?.gain.setTargetAtTime(amount,this.ctx.currentTime,.012);
+    const settings=this.patch.settings??{},key=JSON.stringify([settings.roomDecay??1600,settings.roomTone??.34090909,settings.roomWidth??1]);
+    if(amount<=0||key===this.roomKey)return;this.roomKey=key;const id=++this.roomRequest;
+    if(this.roomTimer)clearTimeout(this.roomTimer);
+    this.roomTimer=setTimeout(()=>{
+      this.roomTimer=undefined;if(!this.ctx)return;
+      if(typeof Worker==='undefined'){this.installRoom(reverbImpulse(this.ctx.sampleRate,Math.max(4,(settings.roomDecay??1600)/1000*1.5),settings));return;}
+      if(!this.roomWorker){this.roomWorker=new Worker(new URL('./reverb.worker.ts',import.meta.url),{type:'module'});this.roomWorker.onmessage=event=>{if(event.data.id===this.roomRequest&&this.ctx)this.installRoom(event.data.channels);};}
+      this.roomWorker.postMessage({id,rate:this.ctx.sampleRate,settings});
+    },80);
   }
   private readerTimer?: ReturnType<typeof setTimeout>;
   private expressionByKey = new Map<string,{pressure:number;bend:number}>();
@@ -161,18 +172,20 @@ export class PatchPreview {
     },80);
     this.setRoom(patch.settings?.space ?? 0);
     for (const v of this.voices) {
+      if(patch.zones?.[v.zoneIndex]?.asset===v.assetIndex)v.zone=patch.zones[v.zoneIndex];
       v.filter.frequency.setTargetAtTime(
         this.cutoff(v.zone,this.expressionByKey.get(v.key)?.pressure),
         this.ctx!.currentTime,
         0.01,
       );
-      v.filter.Q.value = patch.settings?.resonance ?? 0.7;
+      v.filter.Q.value = v.zone.resonance??patch.settings?.resonance ?? 0.7;
       v.pressure.gain.setTargetAtTime(
         this.pressureLevel(this.expressionByKey.get(v.key)?.pressure),
         this.ctx!.currentTime,
         0.01,
       );
     }
+    this.updateMotion();
     if (!patch.performance?.values[S.enabled] && this.timer) this.clear();
   }
   private cutoff(z: Zone, pressure=this.pressure) {
@@ -295,7 +308,7 @@ export class PatchPreview {
     source.buffer = this.buffer(a);
     filter.type = "lowpass";
     filter.frequency.value = this.cutoff(choice,this.expressionByKey.get(key)?.pressure);
-    filter.Q.value = p.resonance ?? 0.7;
+    filter.Q.value = choice.resonance??p.resonance ?? 0.7;
     pan.pan.value = choice.pan ?? 0;
     pressure.gain.value = this.pressureLevel(this.expressionByKey.get(key)?.pressure);
     source
@@ -305,6 +318,7 @@ export class PatchPreview {
       .connect(pressure)
       .connect(pan)
       .connect(this.bus!);
+    const m=motionSettings({...this.patch.motion,...choice.motion});
     const start = a.start ?? 0,
       fade = crossfadeFrames(a),
       rate =
@@ -318,15 +332,15 @@ export class PatchPreview {
         curve === 2
           ? 1
           : curve === 1
-            ? (velocity / 127) ** 2
+            ? ((choice.fixedVelocity??velocity) / 127) ** 2
             : curve >= 3
-              ? (velocity / 127) ** ((curve - 3) * 0.02)
-              : velocity / 127,
+              ? ((choice.fixedVelocity??velocity) / 127) ** ((curve - 3) * 0.02)
+              : (choice.fixedVelocity??velocity) / 127,
       peak = vel * (choice.gain ?? 1) * 0.5,
       delay = (choice.delay ?? 0) / 1000,
       attack = (choice.attack ?? p.attack ?? 5) / 1000,
-      hold = (choice.hold ?? 0) / 1000,
-      decay = (choice.decay ?? p.decay ?? 150) / 1000,
+      hold = keyTime(choice.hold ?? 0,m.volHoldKey,choice.fixedNote??note) / 1000,
+      decay = keyTime(choice.decay ?? p.decay ?? 150,m.volDecayKey,choice.fixedNote??note) / 1000,
       sustain = choice.sustain ?? p.sustain ?? 1;
     source.playbackRate.value = rate*2**((this.expressionByKey.get(key)?.bend??0)/12);
     if (a.mode === 1 || a.mode === 3) {
@@ -360,6 +374,7 @@ export class PatchPreview {
       assetIndex: choice.asset,
       start: now,
       peak,
+      note:choice.fixedNote??note,strikeVelocity:(choice.fixedVelocity??velocity)/127,zoneIndex:this.patch.zones?.indexOf(choice)??-1,
       key,
       pedal: false,
       held: true,
@@ -375,7 +390,17 @@ export class PatchPreview {
       pressure.disconnect();
       pan.disconnect();
     };
-    source.start();
+    source.start();this.updateMotion();
+  }
+  private updateMotion(){
+    if(this.motionTimer){clearTimeout(this.motionTimer);this.motionTimer=undefined;}
+    if(!this.ctx)return;const now=this.ctx.currentTime;let active=false;
+    for(const v of this.voices){const m=motionSettings({...this.patch.motion,...v.zone.motion});if(motionActive(m))active=true;const time=now-v.start,pressure=this.expressionByKey.get(v.key)?.pressure??this.pressure,released=v.release===undefined?-1:v.release-v.start,value=evaluateMotion(m,time,v.note,pressure,v.strikeVelocity,released,released<0?0:motionEnvelope(m,released,v.note));
+      v.source.playbackRate.setTargetAtTime(v.rate*2**((this.bend+(this.expressionByKey.get(v.key)?.bend??0)+value.pitch/100)/12),now,.004);
+      v.filter.frequency.setTargetAtTime(Math.max(40,Math.min(19000,this.cutoff(v.zone,pressure)*2**(value.filter/1200))),now,.004);
+      v.pressure.gain.setTargetAtTime(this.pressureLevel(pressure)*value.gain,now,.004);
+    }
+    if(active)this.motionTimer=setTimeout(()=>this.updateMotion(),8);
   }
   private stopVoice(v: Voice, seconds: number) {
     if (v.release !== undefined) return;
@@ -534,6 +559,8 @@ export class PatchPreview {
       this.stopVoice(v, 0.03);
   }
   clear() {
+    this.roomKey="";++this.roomRequest;if(this.roomTimer){clearTimeout(this.roomTimer);this.roomTimer=undefined;}
+    if(this.motionTimer){clearTimeout(this.motionTimer);this.motionTimer=undefined;}
     if(this.readerTimer)clearTimeout(this.readerTimer);
     this.expressionByKey.clear();
     this.held.clear();
@@ -550,6 +577,8 @@ export class PatchPreview {
     }
   }
   close() {
+    this.roomWorker?.terminate();this.roomWorker=undefined;++this.roomRequest;
+    if(this.roomTimer){clearTimeout(this.roomTimer);this.roomTimer=undefined;}
     this.clear();
     void this.ctx?.close();
   }

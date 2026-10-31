@@ -15,14 +15,17 @@ profile. Reducing voices stops old audition voices when applied. It reduces
 reader/filter work, not the preallocated renderer's SRAM footprint.
 
 The channel choice keeps source channels or explicitly mixes stereo to mono;
-Undo retains the previous PCM. Current Advanced SD preparation still downmixes
-to mono and reports this. Resident sounds can preserve stereo. Setup exposes the
-existing room enable, not future vibrato or configurable room controls.
+Undo retains the previous PCM. Advanced preserves stereo in both resident and
+SD profiles. Stereo doubles sample bytes and channel processing; configured
+voices and device qualification determine the useful performance profile.
+Setup also offers optional gentle/pressure vibrato starting points; Keep authored
+motion preserves imported regions. Sound has explicit **Voice settings**, **Motion**
+and **Room** sections. See [motion and room](sampler-motion.md).
 
 **Resources** reports the configured reader count, source PCM16 size and expected
 resident/SD profile. It does not invent CPU percentages or certify device timing.
 Preparation determines actual converted bytes, pitch copies and cache admission.
-Expanded modulation, stereo streaming and measured feature admission remain in
+Measured feature admission, custom controller routes and further effects remain in
 the [roadmap](sampler-roadmap.md).
 
 On desktop, the waveform stays beside one Loop / Tune inspector. Narrow screens stack these controls and keep the audition dock available.

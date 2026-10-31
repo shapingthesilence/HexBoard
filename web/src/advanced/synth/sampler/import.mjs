@@ -1,3 +1,4 @@
+import {motionSettings} from "./motion.mjs";
 import {
   BasicSoundBank,
   BasicSample,
@@ -180,25 +181,14 @@ export function directSoundFont(bank, id) {
       velocityCurve: 1,
       choke: clamp(g(z, "exclusiveClass"), 0, 16),
     };
-    if (zone.gain >= 2 || track < 0 || track > 2 || fixedVel >= 0)
+    if(fixedKey>=0)zone.fixedNote=clamp(Math.round(fixedKey),0,127);
+    if(fixedVel>=0)zone.fixedVelocity=clamp(Math.round(fixedVel),1,127);
+    const q=10**(g(z,"initialFilterQ")/200);zone.resonance=clamp(q,.5,4);if(q>4)report.add("Filter resonance above Q=4 is limited to the device range.");
+    try{zone.motion=motionSettings({shape:1,delay:tc(g(z,"delayModEnv",-12000),20000),attack:tc(g(z,"attackModEnv",-12000),20000),hold:tc(g(z,"holdModEnv",-12000),20000),decay:tc(g(z,"decayModEnv",-12000),20000)*clamp(g(z,"sustainModEnv")/1000,0,1),sustain:clamp(1-g(z,"sustainModEnv")/1000,0,1),release:tc(g(z,"releaseModEnv",-12000),20000),pitch:g(z,"modEnvToPitch"),filter:g(z,"modEnvToFilterFc"),vibratoRate:8.176*2**(g(z,"freqVibLFO")/1200),vibratoDepth:Math.abs(g(z,"vibLfoToPitch")),vibratoDelay:tc(g(z,"delayVibLFO",-12000),20000),lfoRate:8.176*2**(g(z,"freqModLFO")/1200),lfoDelay:tc(g(z,"delayModLFO",-12000),20000),lfoPitch:g(z,"modLfoToPitch"),lfoFilter:g(z,"modLfoToFilterFc"),lfoVolume:g(z,"modLfoToVolume")/10,volHoldKey:g(z,"keyNumToVolEnvHold"),volDecayKey:g(z,"keyNumToVolEnvDecay"),modHoldKey:g(z,"keyNumToModEnvHold"),modDecayKey:g(z,"keyNumToModEnvDecay")});}catch{complex=true;report.add("Source motion exceeds the bounded live modulation range and requires adaptation.");}
+    if (zone.gain >= 2 || track < 0 || track > 2)
       complex = bakeRequired = true;
-    const motion = [
-      "modLfoToPitch",
-      "vibLfoToPitch",
-      "modEnvToPitch",
-      "modLfoToFilterFc",
-      "modEnvToFilterFc",
-      "modLfoToVolume",
-      "initialFilterQ",
-      "keyNumToVolEnvHold",
-      "keyNumToVolEnvDecay",
-    ];
-    if (motion.some((k) => g(z, k) !== 0) || z.modulators.length) {
-      complex = true;
-      report.add(
-        "Source modulation requires adaptation; live MIDI-controller modulation is replaced by the patch response controls.",
-      );
-    }
+    if(g(z,"modEnvToPitch")||g(z,"modEnvToFilterFc"))report.add("Source modulation envelope curves and times are fitted to the bounded linear DAHDSR model.");
+    if(z.modulators.length){complex=true;report.add("Custom SoundFont MIDI modulators require adaptation; supported envelope and LFO generators remain live.");}
     if (g(z, "chorusEffectsSend") || g(z, "reverbEffectsSend"))
       report.add(
         "Source chorus/reverb sends are omitted. Add effects on the instrument.",
@@ -231,6 +221,7 @@ export function directSoundFont(bank, id) {
           "cutoff",
           "keyTrack",
         ].every((k) => a[k] === b[k]) &&
+        JSON.stringify(a.motion)===JSON.stringify(b.motion)&&a.resonance===b.resonance&&a.fixedVelocity===b.fixedVelocity&&a.fixedNote===b.fixedNote&&
         Math.abs(a.pan) === 1 &&
         b.pan === -a.pan,
     );
@@ -404,7 +395,7 @@ export async function bakeSoundFont(
     report: [
       ...direct.report,
       `Adapted by rendering up to ${seconds} seconds per recording, ${layers} velocity layers and ${spacing}-semitone spacing. Sustained recordings use a crossfaded final two-second loop; long evolving tails and continuous modulation are approximated.`,
-      "Stereo source layers are preserved for browser audition; SD export may downmix to mono.",
+      "Stereo source layers are preserved for browser audition and Advanced SD export.",
     ],
   };
 }
@@ -426,7 +417,7 @@ export async function convertSoundFont(
       ...result.report,
       ...(result.complex
         ? [
-            "Compact adaptation keeps the original recordings and loops. Unsupported LFO/envelope motion, filter resonance and custom MIDI modulation are omitted.",
+            "Compact adaptation keeps the original recordings and loops. Supported LFO/envelope generators and bounded resonance remain live. Unsupported custom MIDI modulation is omitted.",
           ]
         : []),
     ],
@@ -579,8 +570,13 @@ export function mappedSoundFont(patch) {
       zone.keyRange.max = Math.min(127, Math.ceil(z.highMidi ?? 127.5) - 1);
       zone.velRange.min = z.velocityLow ?? 1;
       zone.velRange.max = z.velocityHigh ?? 127;
-      const settings = patch.settings ?? defaults;
+      const settings = {...defaults,...patch.settings},m=motionSettings({...patch.motion,...z.motion});
       const generators = {
+        initialFilterQ:Math.round(200*Math.log10(z.resonance??settings.resonance)),
+        vibLfoToPitch:m.vibratoDepth,freqVibLFO:Math.round(1200*Math.log2(Math.max(.01,m.vibratoRate)/8.176)),delayVibLFO:time(m.vibratoDelay),
+        modLfoToPitch:m.lfoPitch,modLfoToFilterFc:m.lfoFilter,modLfoToVolume:Math.round(m.lfoVolume*10),freqModLFO:Math.round(1200*Math.log2(Math.max(.01,m.lfoRate)/8.176)),delayModLFO:time(m.lfoDelay),
+        delayModEnv:time(m.delay),attackModEnv:time(m.attack),holdModEnv:time(m.hold),decayModEnv:time(m.decay),sustainModEnv:Math.round((1-m.sustain)*1000),releaseModEnv:time(m.release),modEnvToPitch:m.pitch,modEnvToFilterFc:m.filter,
+        keyNumToVolEnvHold:m.volHoldKey,keyNumToVolEnvDecay:m.volDecayKey,keyNumToModEnvHold:m.modHoldKey,keyNumToModEnvDecay:m.modDecayKey,
         sampleModes: a.mode === 1 || a.mode === 3 ? a.mode : 0,
         initialAttenuation: Math.round(
           -200 * Math.log10(Math.max(1e-9, z.gain ?? 1)),
@@ -606,7 +602,7 @@ export function mappedSoundFont(patch) {
       };
       for (const [key, value] of Object.entries(generators))
         zone.setGenerator(G[key], value);
-      if (z.velocityCurve === 2) zone.setGenerator(G.velocity, 127);
+      if(z.fixedVelocity)zone.setGenerator(G.velocity,z.fixedVelocity);else if (z.velocityCurve === 2) zone.setGenerator(G.velocity, 127);
     }
   }
   bank.addSamples(...samples);
@@ -623,7 +619,7 @@ export async function importSFZ(path, files, progress = () => {}) {
     lookup = new Map(),
     parent = path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : "";
   const supported = new Set(
-    "sample default_path lokey hikey key pitch_keycenter lovel hivel volume pan tune transpose offset end loop_mode loop_start loop_end ampeg_delay ampeg_attack ampeg_hold ampeg_decay ampeg_sustain ampeg_release amp_veltrack cutoff pitch_keytrack seq_length seq_position group off_by trigger label_key group_label label_cc7 fil_type width".split(
+    "sample default_path lokey hikey key pitch_keycenter lovel hivel volume pan tune transpose offset end loop_mode loop_start loop_end ampeg_delay ampeg_attack ampeg_hold ampeg_decay ampeg_sustain ampeg_release amp_veltrack cutoff pitch_keytrack seq_length seq_position group off_by trigger label_key group_label label_cc7 fil_type width resonance pitchlfo_freq pitchlfo_depth pitchlfo_delay pitchlfo_fade amplfo_freq amplfo_depth amplfo_delay amplfo_fade fileg_delay fileg_attack fileg_hold fileg_decay fileg_sustain fileg_release fileg_depth".split(
       " ",
     ),
   );
@@ -701,6 +697,8 @@ export async function importSFZ(path, files, progress = () => {}) {
       delay: n("ampeg_delay", 0) * 1000,
       hold: n("ampeg_hold", 0) * 1000,
       cutoff: Math.min(20000, n("cutoff", 20000)),
+      resonance:clamp(Math.SQRT1_2*10**(n("resonance",0)/20),.5,4),
+      motion:motionSettings({vibratoRate:n("pitchlfo_freq",5),vibratoDepth:Math.abs(n("pitchlfo_depth",0)),vibratoDelay:1000*n("pitchlfo_delay",0),vibratoFade:1000*n("pitchlfo_fade",0),lfoRate:n("amplfo_freq",5),lfoVolume:n("amplfo_depth",0),lfoDelay:1000*n("amplfo_delay",0),lfoFade:1000*n("amplfo_fade",0),delay:1000*n("fileg_delay",0),attack:1000*n("fileg_attack",.005),hold:1000*n("fileg_hold",0),decay:1000*n("fileg_decay",.15),sustain:n("fileg_sustain",100)/100,release:1000*n("fileg_release",.3),filter:n("fileg_depth",0)}),
       keyTrack: n("pitch_keytrack", 100) / 100,
       velocityCurve:
         n("amp_veltrack", 100) === 0

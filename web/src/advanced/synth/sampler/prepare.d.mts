@@ -1,3 +1,4 @@
+import type {Motion} from "./motion.mjs";
 export interface Recording {
   id?: string;
   name?: string;
@@ -18,6 +19,10 @@ export interface Recording {
   source?: string;
 }
 export interface Zone {
+  motion?:Partial<Motion>;
+  resonance?:number;
+  fixedVelocity?:number;
+  fixedNote?:number;
   asset: number;
   lowMidi?: number;
   highMidi?: number;
@@ -50,6 +55,9 @@ export interface Settings {
   pressure?: number;
   pressureGain?: number;
   space?: number;
+  roomDecay?:number;
+  roomTone?:number;
+  roomWidth?:number;
   fastRelease?: number;
   releaseResponse?: number;
   releaseCurve?: number;
@@ -67,6 +75,7 @@ export interface Performance {
   }[];
 }
 export interface Patch {
+  motion?:Partial<Motion>;
   playback?: { voices: number; tails: number };
   name?: string;
   assets: Recording[];

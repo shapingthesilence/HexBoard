@@ -26,6 +26,8 @@ export async function prepareCompactPatch(patch, progress = () => {}) {
   if (!patch?.assets?.length) throw Error("Add a recording first.");
   const warnings = [], settings = { ...defaults, ...patch.settings };
   if (!patch.zones?.length || patch.zones.length > compactLimits.zones) throw Error("Classic requires 1–32 mapped regions.");
+  if(patch.motion||patch.zones.some(z=>z.motion))warnings.push("Classic export omits live vibrato, modulation envelope and LFO routes. Original browser audition preserves them; converted audition previews the adaptation.");
+  if(patch.zones.some(z=>z.fixedVelocity!==undefined||z.fixedNote!==undefined))warnings.push("Classic export omits SoundFont fixed velocity/key envelope semantics; these remain in original audition.");
   const used = [...new Set(patch.zones.map(z => z.asset))];
   if (used.length > compactLimits.assets) throw Error("Classic supports at most 16 recordings per instrument.");
   let assets = used.map(i => {
@@ -38,7 +40,7 @@ export async function prepareCompactPatch(patch, progress = () => {}) {
   warnings.push("Classic uses mono linear interpolation and eight shared voice slots. Tone filters, pressure, room reverb and patch response/arp recall are omitted; board tuning, bends and arpeggiator remain available.");
   const zones = patch.zones.map(z => {
     if (z.key !== undefined || z.fixed || z.roundRobin || z.choke) throw Error("Classic currently supports pitched instruments. Remove fixed-key, round-robin and choke mappings.");
-    const r = { ...z, asset: used.indexOf(z.asset), lowMidi: z.lowMidi ?? -.5, highMidi: z.highMidi ?? 127.5,
+    const r = { ...z, motion:undefined,resonance:undefined, fixedVelocity:undefined,fixedNote:undefined,asset: used.indexOf(z.asset), lowMidi: z.lowMidi ?? -.5, highMidi: z.highMidi ?? 127.5,
       velocityLow: z.velocityLow ?? 1, velocityHigh: z.velocityHigh ?? 127,
       gain: z.gain ?? 1, keyTrack: z.keyTrack ?? 1, attack: z.attack ?? settings.attack,
       decay: z.decay ?? settings.decay, sustain: z.sustain ?? settings.sustain,
@@ -85,6 +87,6 @@ export async function prepareCompactPatch(patch, progress = () => {}) {
     for (const [offset, value] of [[16,z.attack],[18,z.decay],[20,z.sustain*65535],[22,z.release],[24,z.delay],[26,z.hold]]) v.setUint16(at + offset, Math.round(value), true);
   });
   v.setUint32(16, crc32(bytes.subarray(metadata)), true); v.setUint32(20, crc32(bytes.subarray(0, metadata)), true);
-  const auditionPatch = { ...patch, assets, zones, settings: { ...settings, cutoff: 20000, resonance: .5, pressure: 0, pressureGain: 0, space: 0, releaseResponse: 0 }, performance: defaultPerformance() };
+  const auditionPatch = { ...patch, motion:undefined,assets, zones, settings: { ...settings, cutoff: 20000, resonance: .5, pressure: 0, pressureGain: 0, space: 0, releaseResponse: 0 }, performance: defaultPerformance() };
   return { bytes, assets: assets.map(a => ({name:a.name,frames:a.channels[0].length,levels:1,channels:1})), sourceBytes, residentBytes: pcmBytes, streaming: false, warnings: [...new Set(warnings)], auditionPatch };
 }

@@ -1,3 +1,4 @@
+import {motionSettings,encodeMotion,pitchBound} from "./motion.mjs";
 import {playbackLimits} from './playback.mjs';
 import { crc32, resample, downsample, rate } from "./prepare.mjs";
 const align = (n, q = 512) => Math.ceil(n / q) * q;
@@ -119,6 +120,7 @@ export const defaults = {
   pressure: 0.15,
   pressureGain: 0,
   space: 0,
+  roomDecay:1600,roomTone:.34090909,roomWidth:1,
   fastRelease: 110,
   releaseResponse: 0.9,
   releaseCurve: 1.5,
@@ -128,6 +130,7 @@ function settingsFor(input) {
   const s = { ...defaults, ...input };
   for (const [k, v] of Object.entries(s)) finite(v, k);
   if (
+    s.roomDecay<200||s.roomDecay>8000||s.roomTone<0||s.roomTone>1||s.roomWidth<0||s.roomWidth>1||
     s.attack < 0 ||
     s.attack > 10000 ||
     s.decay < 0 ||
@@ -352,6 +355,7 @@ export async function preparePatch(input, onProgress = () => {}) {
   if (!input?.assets?.length || input.assets.length > 128)
     throw Error("Use 1–128 recordings per instrument.");
   const playback = playbackLimits(input);
+  const globalMotion=motionSettings(input.motion),hasMotion=!!input.motion||input.zones?.some(z=>z.motion);
   const settings = settingsFor(input.settings),
     perf = performanceRecord(
       input.velocityEngine ?? 0,
@@ -369,6 +373,8 @@ export async function preparePatch(input, onProgress = () => {}) {
   if (!zones.length || zones.length > 256)
     throw Error("Use 1–256 zones per instrument.");
   for (const z of zones) {
+    if(hasMotion)z.motion=motionSettings({...globalMotion,...z.motion});
+    if((z.fixed||z.keyTrack===0)&&pitchBound(z.motion??globalMotion)>970)throw Error("Fixed-pitch regions support up to 970 cents of motion. Reduce pitch motion or use pitched tracking.");
     if (!Number.isInteger(z.asset) || !source[z.asset])
       throw Error("A zone has no recording.");
     const lo = z.lowMidi ?? -0.5,
@@ -451,10 +457,6 @@ export async function preparePatch(input, onProgress = () => {}) {
       "Character mode allows audible aliasing during upward stretching. Pitch copies still keep the reader within its safe rate.",
     );
   if (streaming) {
-    if (source.some((a) => a.channels.length > 1))
-      warnings.push(
-        "Stereo recordings are downmixed to mono for the SD instrument.",
-      );
     for (let original = 0; original < source.length; original++) {
       const a = source[original],
         originalZones = zones.filter((z) => z.asset === original);
@@ -473,7 +475,7 @@ export async function preparePatch(input, onProgress = () => {}) {
           variantZones = [];
         for (const z of originalZones) {
           const track = z.fixed ? 0 : (z.keyTrack ?? 1),
-            max = track ? a.rootMidi + (9.7 + shift) / track : Infinity;
+            max = track ? a.rootMidi + (9.7 + shift-pitchBound(z.motion??globalMotion)/100) / track : Infinity;
           const start = covered.get(z),
             end = Math.min(z.highMidi, max);
           if (start < end) {
@@ -484,10 +486,6 @@ export async function preparePatch(input, onProgress = () => {}) {
         if (!variantZones.length && level === 0) continue;
         if (variantZones.length) {
           const variant = level ? convertRate(a, factor) : a;
-          let mono = new Float32Array(variant.channels[0].length);
-          for (const c of variant.channels)
-            for (let i = 0; i < mono.length; i++)
-              mono[i] += c[i] / variant.channels.length;
           const track =
             variantZones.find((z) => !z.fixed && (z.keyTrack ?? 1) > 0)
               ?.keyTrack ?? 1;
@@ -499,24 +497,20 @@ export async function preparePatch(input, onProgress = () => {}) {
             maxRate = Math.max(
               ...variantZones.map((z) =>
                 z.fixed
-                  ? 1
+                  ? 2**(pitchBound(z.motion??globalMotion)/1200)
                   : 2 **
                     (((z.highMidi - root) * (z.keyTrack ?? 1) +
-                      (quality === "clean" ? 2.25 : 0)) /
+                      (quality === "clean" ? 2.25 : 0)+pitchBound(z.motion??globalMotion)/100) /
                       12),
               ),
             ),
             cutoff =
               quality === "character" ? 0.46 : 0.46 / Math.max(1, maxRate);
-          const filtered = lowpass(mono, cutoff);
-          if (looped) {
-            const loop = lowpass(
-              mono.subarray(variant.loopStart, variant.loopEnd),
-              cutoff,
-              true,
-            );
-            filtered.set(loop, variant.loopStart);
-          }
+          const filtered = variant.channels.map(channel=>{
+            const result=lowpass(channel,cutoff);
+            if(looped)result.set(lowpass(channel.subarray(variant.loopStart,variant.loopEnd),cutoff,true),variant.loopStart);
+            return result;
+          });
           const id = assets.length;
           if (id >= 128)
             throw Error(
@@ -526,7 +520,7 @@ export async function preparePatch(input, onProgress = () => {}) {
             ...variant,
             name: a.name,
             rootMidi: root,
-            channels: [filtered],
+            channels: filtered,
             levels: [filtered],
             firstLevel: id,
           });
@@ -567,6 +561,7 @@ export async function preparePatch(input, onProgress = () => {}) {
       nextLevel += levels.length;
     }
   }
+  if(assets.some(a=>a.channels.length===2)&&(playback.voices>8||playback.tails>2))warnings.push("Stereo instruments with motion and reverb should start at 8 held voices + 2 tails. Larger stereo profiles need device qualification; the selected voice count is preserved.");
   if (zones.length > 256)
     throw Error(
       "Pitch protection requires more than 256 zones. Narrow the map or reduce layers.",
@@ -574,7 +569,7 @@ export async function preparePatch(input, onProgress = () => {}) {
   let peak = 0;
   for (const a of assets)
     for (const data of a.levels)
-      for (const c of streaming ? [data] : data)
+      for (const c of data)
         for (const x of c) peak = Math.max(peak, Math.abs(x));
   const headroom = Math.min(1, 0.98 / (peak || 1));
   let count = 0;
@@ -582,11 +577,11 @@ export async function preparePatch(input, onProgress = () => {}) {
     let localPeak = 0;
     if (a.normalize)
       for (const level of a.levels)
-        for (const c of streaming ? [level] : level)
+        for (const c of level)
           for (const x of c) localPeak = Math.max(localPeak, Math.abs(x));
     const gain = a.normalize ? 0.95 / (localPeak || 1) : headroom;
     const levels = a.levels.map((raw, li) => {
-      const cs = streaming ? [raw] : raw,
+      const cs = raw,
         frames = cs[0].length,
         pcm = new Int16Array(frames * cs.length);
       let seed = ((ai + 1) * 0x12345 + li + 1) >>> 0;
@@ -627,7 +622,7 @@ export async function preparePatch(input, onProgress = () => {}) {
   if (pages > 65535)
     throw Error("This instrument exceeds the 256 MiB SD bank limit.");
   const base = 128 + encoded.length * 48 + count * 16 + zones.length * 48,
-    metadata = align(base + pages * 4 + 184, quantum),
+    metadata = align(base + pages * 4 + 184+(hasMotion?(zones.length+1)*64:0), quantum),
     total =
       metadata +
       encoded.reduce(
@@ -646,7 +641,7 @@ export async function preparePatch(input, onProgress = () => {}) {
   u16(12, encoded.length);
   u16(14, count);
   u16(16, zones.length);
-  u16(18, 2 | +streaming);
+  u16(18, 2 | +streaming | (hasMotion?4:0));
   u32(20, total);
   u32(24, metadata);
   u32(40, pages);
@@ -674,6 +669,7 @@ export async function preparePatch(input, onProgress = () => {}) {
   ].forEach((n, i) => u16(96 + i * 2, Math.round(n)));
   bytes[106] = 16 - playback.voices;
   bytes[107] = 4 - playback.tails;
+  u16(108,Math.round(settings.roomDecay));u16(110,1+Math.round(settings.roomTone*65534));u16(112,1+Math.round(settings.roomWidth*65534));
   let pcmAt = metadata,
     levelIndex = 0,
     pageIndex = 0;
@@ -797,8 +793,14 @@ export async function preparePatch(input, onProgress = () => {}) {
     u16(at + 36, Math.round(z.delay ?? 0));
     u16(at + 38, Math.round(z.hold ?? 0));
     u16(at + 40, Math.round(track * 100));
+    if(z.resonance!==undefined){if(!Number.isFinite(z.resonance)||z.resonance<.5||z.resonance>4)throw Error("Invalid region resonance");u16(at+42,1+Math.round((z.resonance-.5)/3.5*65534));}
+    if(z.fixedVelocity!==undefined){if(!Number.isInteger(z.fixedVelocity)||z.fixedVelocity<1||z.fixedVelocity>127)throw Error("Invalid fixed velocity");bytes[at+44]=z.fixedVelocity;}
+    if(z.fixedNote!==undefined){if(!Number.isInteger(z.fixedNote)||z.fixedNote<0||z.fixedNote>127)throw Error("Invalid fixed note");bytes[at+45]=z.fixedNote+1;}
+
   });
   bytes.set(perf, base + pages * 4);
+  if(hasMotion){let at=base+pages*4+184;bytes.set(encodeMotion(globalMotion),at);for(const z of zones){at+=64;bytes.set(encodeMotion(z.motion),at);}}
+
   u32(28, crc32(bytes.subarray(128, metadata)));
   u32(32, crc32(bytes.subarray(metadata)));
   u32(36, crc32(bytes.subarray(0, 128)));

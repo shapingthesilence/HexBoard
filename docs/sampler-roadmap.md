@@ -1,7 +1,7 @@
 # Sampler Roadmap — Unimplemented Features
 
 This is a proposal for later passes, not a description of shipped controls.
-The shared Sample/Map/Sound editor, setup sheet, tuning/loop workflow and Advanced voice/tail reservations are implemented; see [Sample tuning](sampler-tuning.md).
+The shared Sample/Map/Sound editor, setup sheet, tuning/loop workflow and Advanced voice/tail reservations, stereo SD, envelope/LFO motion and configurable room are implemented; see [Sample tuning](sampler-tuning.md).
 
 ## Shared Authoring, Qualified Device Profiles
 
@@ -12,22 +12,21 @@ clear adaptation report. Do not hide shared authoring behind an Advanced flag.
 Native DSP must fit each board's measured budget; no claim that the devices have
 identical polyphony, storage, streaming or effects.
 
-## Next Pass: Motion And Import Fidelity
+## Remaining Motion And Import Fidelity
 
-- Separate modulation DAHDSR from the existing volume envelope. Route it to
-  vibrato depth, pitch and brightness.
-- Separate vibrato LFO and general modulation LFO, with rate/depth/delay/fade and
-  note-relative phase. Start with triangle/sine. Add pressure, velocity, key,
-  joystick, pedal and MIDI controller sources where supported.
-- Compile common SF2 default/custom modulators with correct inheritance,
-  overrides, units and source curves into bounded native control paths. Keep
-  omitted or baked routes explicit in the import report.
-- Add per-zone filter resonance and velocity/key scaling of envelope times;
-  preserve fixed-key/fixed-velocity semantics without unnecessary audio baking.
-- Qualify moving filter coefficient cost, reader-band transitions and streaming
-  demand. Control-rate evaluation is a proposed optimization, not proof of cost.
-- Combine bend, vibrato and pitch-envelope bounds when preparing sample copies
-  and pinned starts. Preserve continuous microtonal pitch and captured roots.
+The separate DAHDSR envelope, delayed/faded vibrato and general LFO, sine/triangle
+shapes, pressure/velocity depth, key-scaled hold/decay and per-region resonance are
+implemented. Supported SoundFont generator inheritance compiles into native
+region records. See [motion and room](sampler-motion.md).
+
+- Compile default/custom SF2 MIDI modulators with inheritance, overrides, units
+  and source curves. Current generator support does not implement arbitrary
+  controller modulation. Keep omitted or baked routes explicit in import reports.
+- Additional joystick, pedal and MIDI-controller sources, velocity/key-scaled
+  attack/release and independent LFO shapes/phases need explicit scope and budgets.
+- Qualify more moving-filter, sample-band transition and stereo card workloads.
+  Pitch-copy preparation now includes authored envelope/LFO/vibrato bounds; a
+  measured automatic feature-admission model remains separate work.
 
 Advanced's default profile keeps 16 held voices plus four tails under
 qualified workloads. Patches can now explicitly choose 1–16 held voices and 0–4
@@ -37,20 +36,20 @@ current source-size/read-count summaries are not DSP qualification. Classic shou
 budgets permit; otherwise use shared browser audition and explicit offline
 adaptations. Never silently substitute a baked loop for live pressure expression.
 
-## Configurable Reverb
+## Further Reverb Controls
 
-Expose Amount, Decay, Tone/damping and Width using the existing Advanced network.
-Then assess low cut, predelay and per-zone sends. Predelay consumes additional
-buffer memory; per-zone sends require mixing work. Variable delay lengths/room
-size need click-free transitions and separate memory/CPU qualification. Keep
-browser/device behavior comparable, preserve bypass, and leave the limiter ceiling
-unchanged. Classic can share authoring/offline adaptation; native support depends
-on its capability and measured budget.
+Amount, Decay, Tone and Width use the existing Advanced network. Browser audition
+builds matching room responses off the UI thread and crossfades shape changes.
+Low cut, predelay and per-zone sends remain candidates. Predelay consumes buffer
+memory; per-zone sends require mixing work. Variable room-size/delay lengths need
+click-free transitions and separate memory/CPU qualification. Keep bypass and the
+limiter ceiling unchanged. Classic shares authoring/original audition and reports
+omitted native effects in its export adaptation.
 
 ## Later, Separately Qualified
 
 - Shared bus chorus; live velocity/pressure layer crossfades; release-trigger
-  recordings; stereo streaming. These add readers, delay memory or I/O and must
+  recordings. These add readers, delay memory or I/O and must
   not silently compromise the standard voice budget.
 - Offline pitch-drift correction with a visible edit curve and preservation of
   intentional vibrato. Duration-preserving pitch/time processing is separate
@@ -75,8 +74,9 @@ then measure native audio, storage, scanner timing and physical playing separate
 ## Remaining instrument and standalone work
 
 - Reverse/ping-pong playback and arbitrary starts need explicit residency rules.
-  Stereo streaming must qualify the Advanced 16-held/four-tail floor with a named
-  card/rate/bend envelope; do not silently reduce voices to enable a feature.
+  Stereo streaming is implemented; extend its named card/rate/bend/modulation
+  qualification before general capacity claims. Never silently reduce the saved
+  voice count to enable a feature.
 - Transient slicing and editable slice boundaries extend current equal slices.
   Keep tuning/layout independent of physical Kit/Slices key assignments.
 - Standalone sampler authoring should reuse the existing joystick/OLED ownership:

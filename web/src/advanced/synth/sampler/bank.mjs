@@ -1,3 +1,4 @@
+import {decodeMotion} from "./motion.mjs";
 import { crc32 } from "./prepare.mjs";
 import { decodePerformance, defaults, defaultPerformance } from "./encode.mjs";
 export function readBank(bytes, options = {}) {
@@ -18,7 +19,7 @@ export function readBank(bytes, options = {}) {
   header.fill(0, 36, 40);
   if (crc32(header) !== u32(36))
     throw Error("Instrument header checksum failed.");
-  if(bytes[106]>=16||bytes[107]>4||bytes.subarray(108,128).some(x=>x))throw Error("Invalid instrument voice reservations.");
+  if(bytes[106]>=16||bytes[107]>4||bytes.subarray(114,128).some(x=>x))throw Error("Invalid instrument voice reservations.");
   const a = u16(12),
     l = u16(14),
     z = u16(16),
@@ -33,8 +34,8 @@ export function readBank(bytes, options = {}) {
     l > 1536 ||
     !z ||
     z > 256 ||
-    flags & ~3 ||
-    end + (flags & 2 ? 184 : 0) > meta ||
+    flags & ~7 ||
+    end + (flags & 2 ? 184 : 0)+(flags&4?(z+1)*64:0) > meta ||
     meta > bytes.length ||
     crc32(bytes.subarray(128, meta)) !== u32(28) ||
     crc32(bytes.subarray(meta)) !== u32(32)
@@ -76,6 +77,7 @@ export function readBank(bytes, options = {}) {
     const p = 128 + a * 48 + l * 16 + i * 48,
       key = u16(p + 10);
     if (u16(p + 8) >= a) throw Error("Invalid region recording.");
+    if(bytes[p+44]>127||bytes[p+45]>128||bytes[p+46]||bytes[p+47])throw Error("Invalid fixed region controls.");
     return {
       asset: u16(p + 8),
       lowMidi: midi(v.getInt32(p, true)),
@@ -103,13 +105,20 @@ export function readBank(bytes, options = {}) {
       delay: u16(p + 36),
       hold: u16(p + 38),
       keyTrack: u16(p + 40) / 100,
+      resonance:u16(p+42)? .5+(u16(p+42)-1)/65534*3.5:undefined,
+      fixedVelocity:bytes[p+44]||undefined,
+      fixedNote:bytes[p+45]?bytes[p+45]-1:undefined,
     };
   });
   const performance =
     flags & 2
       ? decodePerformance(bytes.subarray(end, end + 184))
       : { velocityEngine: 0, performance: defaultPerformance() };
+  let motion;
+  if(flags&4){let at=end+(flags&2?184:0);motion=decodeMotion(bytes.subarray(at,at+64));for(const zone of zones){at+=64;zone.motion=decodeMotion(bytes.subarray(at,at+64));}}
+  const roomDecay=u16(108)||1600;if(roomDecay<200||roomDecay>8000)throw Error("Invalid reverb decay");
   return {
+    motion,
     name: new TextDecoder()
       .decode(bytes.subarray(64, 96))
       .replace(/\0.*$/s, ""),
@@ -126,6 +135,7 @@ export function readBank(bytes, options = {}) {
       resonance: 0.5 + (u16(58) / 65535) * 3.5,
       pressure: u16(60) / 65535,
       space: u16(62) / 65535,
+      roomDecay,roomTone:u16(110)?(u16(110)-1)/65534:defaults.roomTone,roomWidth:u16(112)?(u16(112)-1)/65534:1,
       fastRelease: u16(96),
       releaseResponse: u16(98) / 65535,
       releaseCurve: 0.25 + (u16(100) / 65535) * 3.75,

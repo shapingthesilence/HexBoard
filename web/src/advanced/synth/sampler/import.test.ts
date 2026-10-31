@@ -79,6 +79,8 @@ function wave() {
   return b;
 }
 describe("Sampler source conversion", () => {
+  it('preserves inherited SF2 motion generators, Q and fixed velocity',()=>{const bank=fixture(),zone=bank.instruments[0].globalZone;zone.setGenerator(G.vibLfoToPitch,40);zone.setGenerator(G.modEnvToFilterFc,2400);zone.setGenerator(G.attackModEnv,-1200);zone.setGenerator(G.initialFilterQ,60);zone.setGenerator(G.velocity,90);const result=directSoundFont(bank,0),z=result.patch.zones![0];expect(z.motion?.vibratoDepth).toBe(40);expect(z.motion?.shape).toBe(1);expect(z.motion?.filter).toBe(2400);expect(z.motion?.attack).toBe(500);expect(z.resonance).toBeCloseTo(10**.3);expect(z.fixedVelocity).toBe(90);expect(result.bakeRequired).toBe(false);});
+
   it("builds a finite stereo room tail and softer default lift response", () => {
     const impulse = reverbImpulse();
     let first = 0,
