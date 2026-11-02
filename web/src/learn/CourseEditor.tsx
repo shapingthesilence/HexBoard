@@ -254,7 +254,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
       device.current = session; await session.start();
       if (captureGeneration.current !== version) return;
       session.setDisplayRotation(layout.deviceRotationSteps);
-      if (lesson.timing) { const clock = new PracticeMetronome(); click.current = clock; await clock.start(lesson.timing.goalBpm, 2048); if (captureGeneration.current !== version) return; }
+      if (lesson.timing) { const clock = new PracticeMetronome(); click.current = clock; await clock.start(lesson.timing.goalBpm, 2048, lesson.timeSignature); if (captureGeneration.current !== version) return; }
       session.setLights(keys.map(key => lessonLedColor(key.note, "rest", {bundle:draft.bundle,steps:key.steps ?? 0,root:0,mode:0,index:key.key.index})));
     } catch (error) { if (captureGeneration.current === version) { finishRef.current(); setError(error instanceof Error ? error.message : "Could not start recording."); } }
   }

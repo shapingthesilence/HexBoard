@@ -1,5 +1,6 @@
 import { answerAllows, matchAnswer, type StepAnswer } from "./lessonAnswers.ts";
 import { majorScale, noteName } from "./majorScale.ts";
+import { clickPlan, countInLabel, type ClickPlan, type Meter } from "./meterClicks.ts";
 
 export const scalePatterns = {
   ascending: "Ascending", descending: "Descending", upDown: "Up and down",
@@ -35,6 +36,7 @@ export interface BeatTargets {
   gradeDuration?: boolean;
   releaseWindowBeats?: number;
   accepts?: (step: number, index: number, note: number) => boolean;
+  meter?: Meter;
 }
 
 // Each attack belongs to one fixed beat window. An octave-correct note a
@@ -49,15 +51,17 @@ export class BeatScaleRun {
   private now: number;
   readonly offsets: number[];
   readonly totalBeats: number;
+  readonly clicks: ClickPlan;
   private attacks = new Map<number, { slot: number; at: number }>();
   private releases = new Map<number, number>();
   private releaseMisses = 0;
   private firstHit?: number;
   private lastHit?: number;
   constructor(readonly notes: readonly number[], readonly startAt: number, bpm: number, readonly label: (note: number) => string = noteName, readonly exercise?: BeatTargets) {
-    if (exercise) this.feedback = "Listen to four count-in clicks, then follow the phrase.";
+    this.clicks = clickPlan(exercise?.meter);
+    if (exercise) this.feedback = `${countInLabel(this.clicks)}, then follow the phrase.`;
     this.periodMs = 60000 / bpm;
-    this.now = startAt - 4 * this.periodMs;
+    this.now = startAt - this.clicks.countInBeats * this.periodMs;
     this.errors = Array(notes.length).fill(undefined);
     let offset = 0;
     this.offsets = notes.map((_, index) => { const at = offset; offset += exercise?.beats[index] ?? 1; return at; });

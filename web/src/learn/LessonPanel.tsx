@@ -1,9 +1,10 @@
 import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { builtinCourses } from "./curriculumCourses.ts";
 import type { UserCourse } from "./courseFiles.ts";
+import { clickPlan, countInLabel, type Meter } from "./meterClicks.ts";
 
-export function LessonStartGuidance({ step = false }: { step?: boolean }) {
-  return <section className="learnLessonStart" role="status"><h3>Start when ready</h3><p><strong>Orange: hints · Yellow: no hints.</strong>{!step && " Four count-in clicks, then play."}</p></section>;
+export function LessonStartGuidance({ step = false, meter }: { step?: boolean; meter?: Meter }) {
+  return <section className="learnLessonStart" role="status"><h3>Start when ready</h3><p><strong>Orange: hints · Yellow: no hints.</strong>{!step && ` ${countInLabel(clickPlan(meter))}, then play.`}</p></section>;
 }
 
 // Measure real typography at the current panel width, reserving one shared

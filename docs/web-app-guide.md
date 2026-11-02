@@ -323,7 +323,7 @@ Each practice lesson explains what to listen for and what to play.
 **Hear example** is available before starting a run. Untimed board practice
 resumes after the example. Timed lessons wait so you can read the instructions
 and listen at your own pace. Press orange **Start · hints** or yellow
-**Start · no hints** when ready; the metronome then begins a four-click count-in. If
+**Start · no hints** when ready; the metronome then counts in one bar. If
 you listen after finishing a lesson, the completed result remains on screen
 and **Next lesson** stays available.
 When HexBoard is connected, **Start Course on HexBoard** opens a board session
@@ -384,9 +384,9 @@ The included pathway has four courses:
 
 | Course | What you play |
 | --- | --- |
-| **1 · First Steps on HexBoard** | 12 exercises and a welcome page: first notes, Au clair de la lune, octaves, duplicate pitches, and a phrase of Ode to Joy |
+| **1 · First Steps on HexBoard** | 12 exercises and two short pages: first notes, Au clair de la lune, octaves, duplicate pitches, playing with a click, and a phrase of Ode to Joy |
 | **2 · Moving Around an Isomorphic Keyboard** | 17 untimed exercises, an introduction, and free exploration: intervals, duplicate positions, and familiar Au clair / Twinkle phrases moved to another key |
-| **3 · Rhythm Fundamentals** | 24 exercises and three pages: pulse, quarters/eighths, rests, 3/4, syncopation, simultaneous notes, prepared triplets/6/8, and familiar melody phrases |
+| **3 · Rhythm Fundamentals** | 26 exercises and three pages: pulse, quarters/eighths, rests, syncopation, 3/4 with a pickup (Amazing Grace), simultaneous notes, triplets, 6/8 (Row, Row, Row Your Boat), and familiar melody phrases |
 | **4 · Major Scale and Scale-Degree Fluency** | 24 exercises, three pages, and free exploration: scale groups, degrees 1–7, musical patterns, Joy to the World's descending scale, and Twinkle in D major |
 
 Aim for one section in a short visit, then finish with a tune you enjoy.
@@ -412,8 +412,10 @@ metronome and skips rests. **Hear example** uses the goal BPM in Step mode.
 Slower practice receives feedback, but timed completion requires reaching the
 authored goal and passing score. These courses assess attacks, not releases;
 follow written rests and long notes by listening as well as watching the score.
-In 6/8, group eighth notes into two larger pulses; the click still counts quarter
-notes and the count-in remains four clicks.
+The count-in is one bar of the lesson's meter: four clicks in 4/4, three in
+3/4. The first beat of each bar clicks louder. In 6/8 the click ticks every
+eighth note, six per bar, with ONE loudest and FOUR slightly louder; BPM still
+counts quarter notes.
 With hints on, the on-screen hexagon outlines begin shrinking two quarter-note
 beats before each note and reach its key when the note is due.
 
@@ -542,8 +544,9 @@ must be filled or removed before saving. Each saved practice lesson needs a play
 
 Set a lesson's meter in the compact toolbar above the piano roll. It defaults
 to 4/4 and controls the roll's bar guides; for example, 6/8 contains six eighth
-notes per bar. Tempo always counts quarter notes per minute, and practice keeps
-its four-quarter-note count-in and quarter-note clicks.
+notes per bar. Tempo always counts quarter notes per minute. The meter also sets the practice
+click: a one-bar count-in, a louder first beat in each bar, and eighth-note
+clicks in compound meters such as 6/8.
 
 Clicking or creating a piano-roll note plays a short preview. Dragging to a different pitch previews that pitch; horizontal dragging does not repeatedly retrigger it.
 

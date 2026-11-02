@@ -7,8 +7,8 @@ source ownership belong in the [course reference](course-format.md).
 ## Current buildout
 
 The built-in selector offers the first four courses below, in order, with
-First Steps as the default. They contain 87 entries: 77 practice exercises,
-eight short reading pages, and two unscored explorations.
+First Steps as the default. They contain 90 entries: 79 practice exercises,
+nine short reading pages, and two unscored explorations.
 They use standard 12-EDO on Wicki-Hayden, Harmonic
 Table, and Gerhard. Every practice exercise fits all three embedded layouts.
 These are authored courses ready for learner and hardware review, not a claim
@@ -16,15 +16,17 @@ of validated ergonomics or teaching effectiveness.
 
 | Course | Included now | Outcome |
 | --- | --- | --- |
-| 1. First Steps on HexBoard | 1 page, 12 exercises; timed goals 60 BPM | Play Au clair de la lune and a phrase of Ode to Joy, distinguish octaves from duplicates, repeat without hints |
+| 1. First Steps on HexBoard | 2 pages, 12 exercises; timed goals 60 BPM | Play Au clair de la lune and a phrase of Ode to Joy, distinguish octaves from duplicates, repeat without hints |
 | 2. Moving Around an Isomorphic Keyboard | 1 page, 17 untimed exercises and 1 exploration | Recognize intervals and translate familiar melody shapes to another position or root |
-| 3. Rhythm Fundamentals | 3 pages, 24 exercises; timed goals 60–70 BPM | Keep a quarter-note pulse through eighths, rests, syncopation, triplets, and short musical phrases |
+| 3. Rhythm Fundamentals | 3 pages, 26 exercises; timed goals 60–70 BPM | Keep a quarter-note pulse through eighths, rests, syncopation, triplets, and short musical phrases |
 | 4. Major Scale and Scale-Degree Fluency | 3 pages, 24 exercises and 1 exploration; timed goals 60–70 BPM | Build the major scale, use degree landmarks and patterns, and play a familiar tune in D major |
 
 First Steps proceeds through a first C, C–G–C, higher/lower, and the three-note
 opening of **Au clair de la lune** before introducing octaves and exact-pitch
-duplicates. A short trail leads to **Ode to Joy**, memory practice, a first timed
-melody, and rehearsal/performance with an even rhythm. It avoids semitone counting
+duplicates; the duplicate exercise names sharps and flats as in-between pitches
+without counting semitones. A short trail leads to **Ode to Joy**, memory
+practice, a short page on the click, count-in, Step, and Practice tempo, a first
+timed melody, and rehearsal/performance with an even rhythm. It avoids semitone counting
 and chord construction. Suggest a relaxed 5–10 minute visit;
 return to familiar phrases over later sessions. Course duration is not a deadline.
 
@@ -41,14 +43,17 @@ Duplicate-position phrases begin on C♯ because the entire repeated shape fits
 twice on every starter layout; C4 alone has only one Wicki-Hayden button.
 
 Rhythm progresses from one repeated pitch to pitch movement, quarters,
-eighths, a small tune, mixed lengths, rests, repeated attacks, 3/4, offbeats,
-and syncopation. An untimed C–G pair prepares simultaneous attacks without
-requiring prior triad theory. The two phrases of **Twinkle** provide a musical
-application and a later recall exercise; **Au clair de la lune** offers another
-payoff after long notes and rests. A short two-to-three subdivision change
-prepares the longer mixture. A separate page distinguishes quarter-beat triplets
-from groups of eighths in 6/8. The 6/8 dance has an untimed melody rehearsal and
-a timed single-pitch spacing exercise before combining pitches and rhythm.
+eighths, a small tune, mixed lengths, rests, repeated attacks, offbeats, and
+syncopation. **Au clair de la lune** closes that section as a payoff after long
+notes and rests. A 3/4 section follows: a one-pitch-pattern bar drill, then
+**Amazing Grace** rehearsed without a clock and played in time, introducing a
+pickup written as a two-beat leading rest. An untimed C–G pair prepares
+simultaneous attacks without requiring prior triad theory. The two phrases of
+**Twinkle** provide a musical application and a later recall exercise. A short
+two-to-three subdivision change prepares the longer mixture. A separate page
+distinguishes quarter-beat triplets from groups of eighths in 6/8. **Row, Row,
+Row Your Boat** is rehearsed without a clock; its run of twelve even eighths is
+practiced on one pitch before the whole tune is played in 6/8.
 **Ode to Joy** returns with its dotted ending restored.
 The final checkpoint applies familiar rhythmic skills;
 it does not cram every subdivision into one artificial tune.

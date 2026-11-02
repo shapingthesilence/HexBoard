@@ -25,7 +25,7 @@ describe("foundation curriculum",()=>{
     expect(play.exploration?.durationSeconds).toBe(45);
   });
   it("ships ordered self-contained courses with unique identities",()=>{
-    expect(builtinCourses.map(course=>course.lessons.length)).toEqual([13,19,27,28]);
+    expect(builtinCourses.map(course=>course.lessons.length)).toEqual([14,19,29,28]);
     expect(new Set(builtinCourses.map(course=>course.id)).size).toBe(builtinCourses.length);
     for(const course of builtinCourses){
       const loaded=readCourseFile(JSON.stringify(course));
@@ -128,12 +128,28 @@ describe("foundation curriculum",()=>{
   it("prepares larger jumps with familiar music and isolated rhythm changes",()=>{
     const first=firstStepsCourse.lessons;
     expect(first.findIndex(l=>l.id==="first-moon-tune")).toBeLessThan(first.findIndex(l=>l.id==="octaves"));
+    // Step, Practice tempo, and BPM are explained before the first timed exercise.
+    const click=first.findIndex(l=>l.id==="click");
+    expect(first[click].kind).toBe("content");
+    expect(first[click].markdown).toMatch(/Step/);
+    expect(first[click].markdown).toMatch(/Practice tempo/);
+    expect(click).toBeLessThan(first.findIndex(l=>l.timing));
     const movement=movementCourse.lessons;
     expect(movement.find(l=>l.id==="twinkle-home")!.targets).toEqual(movement.find(l=>l.id==="twinkle-travel")!.targets.slice(0,7));
-    const rhythm=rhythmCourse.lessons,rehearsal=rhythm.find(l=>l.id==="six-eight-rehearsal")!,dance=rhythm.find(l=>l.id==="six-eight")!;
+    const rhythm=rhythmCourse.lessons,rehearsal=rhythm.find(l=>l.id==="row-rehearsal")!,dance=rhythm.find(l=>l.id==="row-dance")!;
     expect(rehearsal.targets).toEqual(dance.targets);
     expect(rehearsal.timing).toBeUndefined();
-    expect(rhythm.find(l=>l.id==="six-eight-spacing")!.timing!.beats).toEqual(dance.timing!.beats);
+    // The one-pitch spacing drill is the tune's run of even eighths.
+    const spacing=rhythm.find(l=>l.id==="six-eight-spacing")!;
+    const runStart=dance.timing!.beats.findIndex((_,i,beats)=>beats.slice(i,i+12).length===12&&beats.slice(i,i+12).every(beat=>beat===0.5));
+    expect(spacing.timing!.beats).toEqual(dance.timing!.beats.slice(runStart,runStart+12));
+    expect(spacing.timing!.beats).toEqual(Array(12).fill(0.5));
+    // The pickup is rehearsed without a clock, then written after a two-beat rest.
+    const grace=rhythm.find(l=>l.id==="grace-rehearsal")!,pickup=rhythm.find(l=>l.id==="grace-pulse")!;
+    expect(grace.timing).toBeUndefined();
+    expect(pickup.targets).toEqual([[],...grace.targets]);
+    expect(pickup.timing!.beats[0]).toBe(2);
+    expect(rhythm.findIndex(l=>l.id==="grace-rehearsal")).toBeLessThan(rhythm.findIndex(l=>l.id==="grace-pulse"));
     const switcher=rhythm.find(l=>l.id==="switch-subdivision")!;
     expect(switcher.targets.flat().every(note=>note===60)).toBe(true);
     expect(switcher.timing!.beats.reduce((a,b)=>a+b,0)).toBeCloseTo(4);
@@ -141,9 +157,12 @@ describe("foundation curriculum",()=>{
   it("uses quarter-note units and rehearsed checkpoints",()=>{
     const lessons=rhythmCourse.lessons;
     expect(lessons.find(l=>l.id==="triplets")!.timing!.beats).toEqual(Array(12).fill(1/3));
-    const compound=lessons.find(l=>l.id==="six-eight")!;
-    expect(compound.timeSignature).toEqual({numerator:6,denominator:8});
-    expect(compound.timing!.beats.reduce((a,b)=>a+b,0)).toBe(6);
+    // Meter lessons fill whole bars, so the click's downbeats line up with the tune.
+    for(const [id,meter,bars] of [["three-four",{numerator:3,denominator:4},4],["grace-pulse",{numerator:3,denominator:4},8],["six-eight-spacing",{numerator:6,denominator:8},2],["row-dance",{numerator:6,denominator:8},8]] as const){
+      const lesson=lessons.find(l=>l.id===id)!;
+      expect(lesson.timeSignature,id).toEqual(meter);
+      expect(lesson.timing!.beats.reduce((a,b)=>a+b,0),id).toBeCloseTo(bars*meter.numerator*4/meter.denominator);
+    }
     const rehearsal=lessons.find(l=>l.id==="etude-rehearsal")!,checkpoint=lessons.at(-1)!;
     expect(checkpoint.targets).toEqual(rehearsal.targets);
     expect(checkpoint.timing!.beats).toEqual(rehearsal.timing!.beats);

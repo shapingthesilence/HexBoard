@@ -39,7 +39,7 @@ Pitches are MIDI-equivalent numbers in 0–127, including fractional values for
 microtonal pitches. Targets specify exact demonstration pitches; optional answer rules can accept octave-independent classes.
 All timing values use quarter-note units, regardless of time signature. Step
 spacing is 1/12–8 quarter notes on a 1/12-quarter-note grid (supporting straight and triplet subdivisions). Meter controls
-bar grouping in the roll and does not change grading, tempo units, or count-in. Untimed lessons cannot
+bar grouping in the roll and the practice click; it does not change grading or tempo units. Untimed lessons cannot
 contain rests. `holdBeats`, when present, has one array per step and one
 1/12–32 beat value per pitch (an empty array for a rest). Omitted holds default
 to the step spacing. Holds may overlap later onsets. They affect demonstration playback and, when
@@ -67,8 +67,13 @@ common tones may remain held between chords. When `assessment.requireButtons`
 is true, recommended physical keys are required for pitches that have assignments. Hand/finger labels are instructional
 only: the hardware cannot identify which hand or finger pressed a key.
 
-Timed lessons share the metronome's audio/performance clock mapping. Four clicks
-count in; each target starts at the cumulative sum of prior beat durations.
+Timed lessons share the metronome's audio/performance clock mapping. The count-in
+is whole bars of the lesson's meter, repeated until it lasts at least three
+quarter notes (one bar of 4/4, 3/4, or 6/8; two bars of 2/4), so step 0 falls on
+a downbeat. Write a pickup as a leading rest. Simple meters click every quarter
+note; compound meters (6/8, 9/8, 12/8) click every eighth note. The first click
+of each bar is stressed, and in compound meters each dotted-quarter group start
+is lightly stressed. Each target starts at the cumulative sum of prior beat durations.
 Onset windows extend at most half a beat on either side, narrowed at neighboring
 subdivision boundaries. A hit advances the visual cue immediately without
 moving later scheduled targets. Silence advances missed targets. Attacks during
@@ -315,7 +320,7 @@ adaptations belong in [Course repertoire](course-repertoire.md).
 Hear example can initialize browser audio and a connected board session before
 practice. On the board, an example before or during an untimed run resumes practice
 automatically. Timed course examples return to ready and wait for a start command
-before scheduling their four-click count-in. An example
+before scheduling their count-in. An example
 after a completed run restores that completed state, including its Next action,
 without changing the recorded result or clean-run streak.
 Changing lessons still uses the physical release barrier. Read-only pages and
