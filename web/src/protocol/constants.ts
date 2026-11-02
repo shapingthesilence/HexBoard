@@ -148,7 +148,9 @@ export const CapabilityFlag = {
   AdvancedSynthEngines: 1 << 20,
   AdvancedSampler: 1 << 22,
   AdvancedPerformance: 1 << 21,
-  AdvancedContentLibrary: 1 << 23
+  AdvancedContentLibrary: 1 << 23,
+  /** Wavetable patch on the generic engine transport (engine 7, layout schema 1). */
+  AdvancedWavetable: 1 << 25
 } as const;
 
 export type CapabilityFlagValue = (typeof CapabilityFlag)[keyof typeof CapabilityFlag];

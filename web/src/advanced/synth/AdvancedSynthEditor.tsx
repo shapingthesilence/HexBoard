@@ -8,23 +8,24 @@ import type { MidiTransport } from '../../midi/types.ts';
 import { PhysicalSynthEditor } from './PhysicalSynthEditor.tsx';
 import { ClassicSynthEditor } from './ClassicSynthEditor.tsx';
 import { PhysicalSynthClient } from './client.ts';
+import { WavetableSynthEditor, wavetableDraft } from './WavetableSynthEditor.tsx';
 import './ClassicSynthEditor.css';
 export function AdvancedSynthEditor({ transport, engines = false, sampler = false }: {
     transport?: MidiTransport;
     engines?: boolean;
     sampler?: boolean;
 }) {
-    const [engine, setEngine] = useState<2 | 4 | 5 | 6>(2), [changing, setChanging] = useState(false), [error, setError] = useState(''), [progress, setProgress] = useState<Progress>();
+    const [engine, setEngine] = useState<2 | 4 | 5 | 6 | 7>(2), [changing, setChanging] = useState(false), [error, setError] = useState(''), [progress, setProgress] = useState<Progress>();
     useEffect(() => { if (!transport || !engines)
         return; let disposed = false; const c = new PhysicalSynthClient(transport); void c.status().then(s => { if (!disposed)
-        setEngine(s.instrument === 6 && sampler ? 6 : s.instrument === 4 ? 4 : s.instrument === 5 ? 5 : 2); }).catch(e => { if (!disposed)
+        setEngine(s.instrument === 7 ? 7 : s.instrument === 6 && sampler ? 6 : s.instrument === 4 ? 4 : s.instrument === 5 ? 5 : 2); }).catch(e => { if (!disposed)
         setError(String(e)); }).finally(() => c.close()); return () => { disposed = true; c.close(); }; }, [transport, engines, sampler]);
-    const choose = async (next: 2 | 4 | 5 | 6) => {
+    const choose = async (next: 2 | 4 | 5 | 6 | 7) => {
         if (next === engine)
             return;
         setChanging(true);
         setError('');
-        const targetPreset = next===6?undefined:editorDraft(next), startedAt = Date.now(), expectedMs = switchEstimate(engine, next, targetPreset?.voiceBudget?.voices ?? 8);
+        const targetPreset = next===6||next===7?undefined:editorDraft(next), startedAt = Date.now(), expectedMs = switchEstimate(engine, next, targetPreset?.voiceBudget?.voices ?? 8);
         const report = (p?: Progress) => { if (p)
             setProgress({ label: p.label, startedAt, expectedMs }); };
         const c = transport ? new PhysicalSynthClient(transport, report, true) : undefined;
@@ -41,7 +42,9 @@ export function AdvancedSynthEditor({ transport, engines = false, sampler = fals
                         throw Error('Synth did not stop.');
                 }
                 const preset = targetPreset;
-                if (preset && preset.format === 'hexboard.advanced.v2')
+                if (next === 7)
+                    await c.applyWavetable(wavetableDraft());
+                else if (preset && preset.format === 'hexboard.advanced.v2')
                     await c.loadClassic(preset);
                 else if(preset)
                     await c.load(preset);
@@ -59,5 +62,5 @@ export function AdvancedSynthEditor({ transport, engines = false, sampler = fals
             setChanging(false);
         }
     };
-    return <><nav className="engine-selector" aria-label="Synth engine">{([[2, 'Physical Strings'], [4, 'Juno'], [5, 'DX7'], [6, 'Sampler']] as const).map(([id, name]) => <button key={id} aria-pressed={engine === id} disabled={changing || (id !== 2 && !engines && !!transport) || (id===6 && !!transport && !sampler)} onClick={() => void choose(id)}>{name}</button>)}</nav>{progress && <SynthProgress progress={progress}/>} {error && <p role="alert">{error}</p>}{engine===6?<SamplerEditor transport={changing?undefined:transport}/>:engine === 2 ? <PhysicalSynthEditor onDeviceEngineLoaded={setEngine} advanced={engines} key={`physical:${transport?.label}`} transport={changing ? undefined : transport}/> : <ClassicSynthEditor onDeviceEngineLoaded={setEngine} key={`${engine}:${transport?.label}`} engine={engine} transport={changing ? undefined : transport}/>}</>;
+    return <><nav className="engine-selector" aria-label="Synth engine">{([[2, 'Physical Strings'], [7, 'Wavetable'], [4, 'Juno'], [5, 'DX7'], [6, 'Sampler']] as const).map(([id, name]) => <button key={id} aria-pressed={engine === id} disabled={changing || (id !== 2 && !engines && !!transport) || (id===6 && !!transport && !sampler)} onClick={() => void choose(id)}>{name}</button>)}</nav>{progress && <SynthProgress progress={progress}/>} {error && <p role="alert">{error}</p>}{engine===7?<WavetableSynthEditor key={`wavetable:${transport?.label}`} transport={changing?undefined:transport}/>:engine===6?<SamplerEditor transport={changing?undefined:transport}/>:engine === 2 ? <PhysicalSynthEditor onDeviceEngineLoaded={setEngine} advanced={engines} key={`physical:${transport?.label}`} transport={changing ? undefined : transport}/> : <ClassicSynthEditor onDeviceEngineLoaded={setEngine} key={`${engine}:${transport?.label}`} engine={engine} transport={changing ? undefined : transport}/>}</>;
 }

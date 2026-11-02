@@ -9,6 +9,7 @@ import {prepareEstimate,engineNames} from "./loadTiming.ts";
 import {attachVoiceBudget,validVoiceBudget,type VoiceBudgetProfile,type VoiceBudgetState} from "./voiceBudget.ts";
 import {advancedWords,advancedFromWords,validateAdvanced,initialAdvanced,advancedWordCount,type AdvancedPatch,type AdvancedEngine} from './advancedSchema.ts';
 import {classicFromUnknown,initialClassic,type ClassicPreset} from './classicSchema.ts';
+import {wavetableEngine,wavetableSchema,wavetableWords,wavetableFromWords,validWavetable,wordCount as wavetableWordCount,type WavetablePatch} from './wavetableSchema.ts';
 import type {SynthProgress} from './progress.ts';
 import type { MidiTransport } from "../../midi/types.ts";
 import { decodePresetSyncFrame, encodeDefaultPresetSyncFrame, encodeU14, encodeU21, decodeU14, decodeU21 } from "../../protocol/index.ts";
@@ -43,7 +44,7 @@ export function decodeSamplerLoading(p:number[]):SamplerLoadingState {
 }
 export interface PhysicalState { state: "stopped" | "playing" | "loading"; instrument: number; bend: number; preset: PhysicalPreset }
 export function decodePhysicalState(payload: number[]): PhysicalState {
-  if (payload.length !== 403 || payload[0] !== 17 || payload[1] > 2 || payload[2] > 6)
+  if (payload.length !== 403 || payload[0] !== 17 || payload[1] > 2 || payload[2] > 7)
     throw Error("Unsupported physical synth response. Update Advanced main firmware for preset velocity engines.");
   const bend = (decodeU21(payload.slice(3, 6)) - 131072) / 65536;
   if (bend < -2 || bend > 2) throw Error("Invalid pitch bend state.");
@@ -235,6 +236,21 @@ export class PhysicalSynthClient {
     for(let offset=0;offset<advancedWordCount;offset+=64){const reply=await this.request<{engine:AdvancedEngine;state:number;busy:boolean;words:number[]}>(33,[...encodeU21(offset),Math.min(64,advancedWordCount-offset)]);engine=reply.engine;state=reply.state;busy=reply.busy;words.push(...reply.words);}
     const patch=advancedFromWords(engine,words),effects=await this.request<FxRack>(10),budget=await this.voiceBudget();return {patch,effects,state,busy,budget};
   }
+  /** Main's held wavetable patch (kept in RAM across engine switches). */
+  async readWavetable(){
+    const words:number[]=[];let state=0,busy=false;
+    for(let offset=0;offset<wavetableWordCount;offset+=64){const reply=await this.request<{engine:number;state:number;busy:boolean;words:number[]}>(33,[...encodeU21(offset),Math.min(64,wavetableWordCount-offset),wavetableEngine]);if(reply.engine!==wavetableEngine)throw Error('Update Advanced firmware for the wavetable editor.');state=reply.state;busy=reply.busy;words.push(...reply.words);}
+    return {patch:wavetableFromWords(words),state,busy};
+  }
+  /** Staged whole-patch load; the board keeps its previous patch if any word is refused. */
+  async applyWavetable(patch:WavetablePatch){
+    if(!validWavetable(patch))throw Error('Invalid wavetable patch.');const words=wavetableWords(patch);
+    await this.retryAdvanced(30,[wavetableEngine]);
+    for(let at=0;at<words.length;at+=64)await this.request(31,[...encodeU21(at),Math.min(64,words.length-at),...words.slice(at,at+64).flatMap(encodeU21)]);
+    await this.request(32);
+  }
+  editWavetable(index:number,value:number){return this.retryAdvanced(34,[...encodeU21(index),...encodeU21(value),wavetableEngine]);}
+  routeWavetable(index:number,source:number,destination:number,depth:number){return this.retryAdvanced(35,[...encodeU21(index),...encodeU21(source*256+destination),...encodeU21(depth+65536),wavetableEngine]);}
   async applyAdvanced(value:AdvancedPatch){const p=validateAdvanced(value),words=advancedWords(p);await this.request(30,[p.engine]);for(let at=0;at<words.length;at+=64)await this.request(31,[...encodeU21(at),Math.min(64,words.length-at),...words.slice(at,at+64).flatMap(encodeU21)]);await this.request(32);}
   private async retryAdvanced(operation:number,data:number[]){for(let attempt=0;;attempt++){try{return await this.request(operation,data);}catch(error){if(attempt>=30||!(error instanceof Error)||error.message!=="The board rejected this synth operation.")throw error;await new Promise(r=>setTimeout(r,30));}}}
   editAdvanced(index:number,value:number){return this.retryAdvanced(34,[...encodeU21(index),...encodeU21(value)]);}
@@ -371,7 +387,7 @@ export class PhysicalSynthClient {
           } else if(operation>=36&&operation<=40&&frame.message===0x3e){
             const p=frame.payload,signature=p.slice(8,13).reduce((a,b)=>a*128+b,0),peakUs=decodeU21(p.slice(13,16));if(p.length!==17||p[0]!==17||p[1]>5||p[2]<1||p[2]>18||p[3]<1||p[3]>18||p[4]<1||p[4]>18||p[5]<2||p[5]>5||p[6]>1||signature>0xffffffff||p[16]!==4)throw Error('Invalid voice-budget response.');finish(undefined,{phase:p[1],voices:p[2],candidate:p[3],ceiling:p[4],engine:p[5],qualified:!!p[6],reason:p[7],signature,peakUs,revision:p[16]} as T);
           } else if(operation>=30&&operation<=35&&frame.message===0x3d){
-            const p=frame.payload;if(p.length<9||p[0]!==17||p[8]!==2||p[1]<2||p[1]>5||p[2]>1||p[3]>1||p[7]>64||p.length!==9+p[7]*3||(operation===33&&(decodeU21(p.slice(4,7))!==decodeU21(data.slice(0,3))||p[7]!==data[3])))throw Error("Invalid Advanced engine response.");
+            const p=frame.payload;if(p.length<9||p[0]!==17||!(p[1]>=2&&p[1]<=5&&p[8]===2||p[1]===wavetableEngine&&p[8]===wavetableSchema)||p[2]>1||p[3]>1||p[7]>64||p.length!==9+p[7]*3||(operation===33&&(decodeU21(p.slice(4,7))!==decodeU21(data.slice(0,3))||p[7]!==data[3])))throw Error("Invalid Advanced engine response.");
             finish(undefined,{engine:p[1],state:p[2],busy:!!p[3],words:Array.from({length:p[7]},(_,i)=>decodeU21(p.slice(9+i*3,12+i*3)))} as T);
           } else if(operation>=20&&operation<=27&&frame.message===(operation===26?0x3c:0x3b)){
             if(operation===26){const p=frame.payload;if(p[0]!==17||p.length!==2+3*p[1]||p[1]>64)throw Error("Invalid sample chunk.");const values=Array.from({length:p[1]},(_,i)=>decodeU21(p.slice(2+3*i,5+3*i))-32768);if(values.some(v=>v<-32768||v>32767))throw Error("Invalid sample PCM.");finish(undefined,values as T);}

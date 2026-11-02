@@ -1,0 +1,109 @@
+/* Wavetable shares the Physical Strings surface (.physical-editor) and recolors
+   its brand tokens violet. Stages follow the signal path left to right. */
+.wavetable-editor {
+  --brand: #6b45c9; --brand-strong: #5532a8; --brand-soft: #ece6fb; --surface-accent: #efe9fc;
+  --wt-trace: #8a3ff0; --wt-trace-2: #d0459c; --wt-frame: #8f86a8; --wt-spread: #b79cff; --wt-scope: #f6f3fc;
+}
+:root[data-theme="dark"] .wavetable-editor {
+  --brand: #a68bff; --brand-strong: #c0aaff; --brand-soft: #2a2148; --surface-accent: #2b2346;
+  --wt-trace: #c08bff; --wt-trace-2: #ff7fc8; --wt-frame: #6d6587; --wt-spread: #9b7cff; --wt-scope: #17131f;
+}
+:root[data-theme="dark"] .wavetable-editor button[aria-pressed=true] { background: #e4dbff; color: #1c1530; border-color: #e4dbff; }
+.wavetable-editor .instrument-title h2 { background: linear-gradient(90deg, var(--wt-trace), var(--wt-trace-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Library row */
+.wavetable-editor .wt-library { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 1px 4px; }
+.wavetable-editor .wt-library input[aria-label="Sound name"] { flex: 1 1 160px; min-width: 0; }
+.wavetable-editor .wt-import { display: inline-flex; align-items: center; min-height: 28px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: 5px; background: var(--surface-muted); cursor: pointer; font-size: 11px; }
+.wavetable-editor .wt-import input { display: none; }
+
+/* Signal flow rail */
+.wavetable-editor .wt-flow { position: relative; margin: 4px 0 10px; padding: 8px 8px 22px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-raised); }
+.wavetable-editor .wt-flow ol { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 14px; margin: 0; padding: 0; list-style: none; }
+.wavetable-editor .wt-flow li { position: relative; }
+.wavetable-editor .wt-flow li + li::before { content: ""; position: absolute; left: -14px; top: 50%; width: 14px; height: 2px; background: var(--border-strong); }
+.wavetable-editor .wt-flow li + li::after { content: ""; position: absolute; left: -5px; top: calc(50% - 3px); border: 4px solid transparent; border-left-color: var(--border-strong); }
+.wavetable-editor .wt-flow[data-playing] li[data-active] + li[data-active]::before { background: linear-gradient(90deg, transparent, var(--wt-trace), transparent); background-size: 200% 100%; animation: wt-flow 900ms linear infinite; }
+.wavetable-editor .wt-flow button { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 5px 2px; min-height: 40px; justify-content: center; opacity: .55; }
+.wavetable-editor .wt-flow li[data-active] button { opacity: 1; border-color: var(--brand); background: var(--surface-accent); }
+.wavetable-editor .wt-flow-name { font-size: 11px; font-weight: 600; }
+.wavetable-editor .wt-flow-cost { font-size: 9px; color: var(--text-soft); font-variant-numeric: tabular-nums; }
+.wavetable-editor .wt-flow-sub { position: absolute; left: calc(37.5% + 4px); right: 8px; bottom: 5px; height: 12px; border: 1px dashed var(--border-strong); border-top: 0; border-radius: 0 0 8px 8px; opacity: .45; }
+.wavetable-editor .wt-flow-sub[data-active] { opacity: 1; border-color: var(--wt-trace-2); }
+.wavetable-editor .wt-flow-sub span { position: absolute; left: 50%; bottom: -6px; transform: translateX(-50%); padding: 0 6px; background: var(--surface-raised); font-size: 9px; color: var(--text-soft); white-space: nowrap; }
+@keyframes wt-flow { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* Workspace */
+.wavetable-editor .wt-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 10px; align-items: start; }
+.wavetable-editor .wt-stages { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.wavetable-editor .wt-stage { grid-column: span 2; display: flex; flex-direction: column; gap: 6px; transition: box-shadow 200ms ease, border-color 200ms ease, opacity 200ms ease; }
+.wavetable-editor .wt-stage-oscillator { grid-column: span 4; }
+.wavetable-editor .wt-stage-layers { grid-column: span 2; }
+.wavetable-editor .wt-stage:not([data-active]) > :not(legend):not(.wt-choice):not(.wt-stage-note) { opacity: .62; }
+.wavetable-editor .wt-stage[data-focused] { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.wavetable-editor .wt-stage legend { display: flex; align-items: center; gap: 6px; }
+.wavetable-editor .wt-cost { padding: 0 5px; border-radius: 8px; background: var(--surface-accent); color: var(--text-soft); font-weight: 600; letter-spacing: 0; text-transform: none; }
+.wavetable-editor .wt-stage-note { margin: 0; }
+.wavetable-editor .wt-choice { display: flex; gap: 3px; margin: 0; }
+.wavetable-editor .wt-choice button { flex: 1; min-width: 0; padding: 3px 4px; min-height: 24px; }
+.wavetable-editor .wt-layer { display: flex; flex-direction: column; gap: 4px; }
+.wavetable-editor .wt-sub { padding-top: 6px; border-top: 1px dashed var(--border); }
+.wavetable-editor .wt-sub small { text-align: center; }
+
+/* Pictures */
+.wavetable-editor svg.wt-terrain, .wavetable-editor svg.wt-warp-scope, .wavetable-editor svg.wt-unison, .wavetable-editor svg.wt-partials, .wavetable-editor svg.wt-filter, .wavetable-editor svg.wt-envelope { display: block; width: 100%; height: auto; border-radius: 8px; background: var(--wt-scope); touch-action: none; }
+.wavetable-editor svg[role="slider"] { cursor: grab; }
+.wavetable-editor svg[role="slider"]:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.wavetable-editor .wt-frame-fill { fill: var(--wt-scope); stroke: none; opacity: .92; }
+.wavetable-editor .wt-frame-line { fill: none; stroke: var(--wt-frame); stroke-width: 1; opacity: .7; }
+.wavetable-editor .wt-frame.in-spread .wt-frame-line { stroke: var(--wt-spread); opacity: 1; }
+.wavetable-editor .wt-current { fill: none; stroke: var(--wt-trace); stroke-width: 2.4; stroke-linejoin: round; }
+.wavetable-editor .wt-rail { stroke: var(--border-strong); stroke-width: 2; stroke-linecap: round; }
+.wavetable-editor .wt-base-dot { fill: var(--brand); stroke: var(--wt-scope); stroke-width: 2; }
+.wavetable-editor .wt-copy-dot { fill: var(--wt-trace-2); }
+.wavetable-editor .wt-axis { fill: var(--text-soft); font-size: 10px; }
+.wavetable-editor .wt-scope-bg { fill: var(--surface-raised); stroke: var(--border); }
+.wavetable-editor .wt-scope-grid { fill: none; stroke: var(--border); stroke-dasharray: 3 3; }
+.wavetable-editor .wt-warp-map { fill: none; stroke: var(--wt-trace-2); stroke-width: 1.8; }
+.wavetable-editor .wt-scope-wave { fill: none; stroke: var(--wt-trace); stroke-width: 2; }
+.wavetable-editor .wt-unison-stem { stroke: var(--border-strong); stroke-width: 1; opacity: .6; }
+.wavetable-editor .wt-unison-dot { fill: var(--wt-trace); opacity: .9; animation: wt-beat 1s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+@keyframes wt-beat { from { opacity: .45; transform: scale(.85); } to { opacity: 1; transform: scale(1.1); } }
+.wavetable-editor .wt-partial { stroke: var(--wt-trace-2); stroke-width: 3; stroke-linecap: round; }
+.wavetable-editor .wt-filter-fill { fill: var(--wt-trace); opacity: .14; }
+.wavetable-editor .wt-filter-base { fill: none; stroke: var(--wt-frame); stroke-dasharray: 4 3; }
+.wavetable-editor .wt-filter-line { fill: none; stroke: var(--wt-trace); stroke-width: 2; }
+.wavetable-editor .wt-filter-handle, .wavetable-editor .wt-env-handle { fill: var(--brand); stroke: var(--wt-scope); stroke-width: 2; cursor: grab; }
+.wavetable-editor .wt-env-fill { fill: var(--wt-trace); opacity: .14; }
+.wavetable-editor .wt-env-line { fill: none; stroke: var(--wt-trace); stroke-width: 2; }
+.wavetable-editor .wt-env-live { stroke: var(--wt-trace-2); stroke-dasharray: 2 3; }
+
+/* Side column */
+.wavetable-editor .wt-side { display: grid; gap: 8px; position: sticky; top: 56px; }
+.wavetable-editor .wt-sources { display: grid; gap: 5px; }
+.wavetable-editor .wt-source-card { display: grid; gap: 3px; text-align: left; border-left: 3px solid var(--source-color); }
+.wavetable-editor .wt-source-name { font-weight: 600; }
+.wavetable-editor .wt-source-meter { display: block; height: 4px; border-radius: 2px; background: var(--surface); overflow: hidden; }
+.wavetable-editor .wt-source-meter i { display: block; height: 100%; background: var(--source-color); }
+.wavetable-editor .wt-expression { display: grid; gap: 3px; }
+.wavetable-editor .wt-expression .source-meter { grid-template-columns: 62px 1fr 34px; }
+.wavetable-editor .wt-meter-label { border-left: 3px solid; padding-left: 4px; color: var(--text-soft); }
+.wavetable-editor .wt-budget-note { margin: 0; }
+
+@media (max-width: 1100px) {
+  .wavetable-editor .wt-workspace { grid-template-columns: minmax(0, 1fr); }
+  .wavetable-editor .wt-side { position: static; grid-template-columns: 1fr 1fr; }
+  .wavetable-editor .wt-stages { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .wavetable-editor .wt-stage-oscillator { grid-column: span 4; }
+}
+@media (max-width: 720px) {
+  .wavetable-editor .wt-flow ol { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 8px; }
+  .wavetable-editor .wt-flow li:nth-child(5)::before, .wavetable-editor .wt-flow li:nth-child(5)::after { display: none; }
+  .wavetable-editor .wt-flow-sub { display: none; }
+  .wavetable-editor .wt-stages { grid-template-columns: minmax(0, 1fr); }
+  .wavetable-editor .wt-stage, .wavetable-editor .wt-stage-oscillator { grid-column: auto; }
+  .wavetable-editor .wt-side { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wavetable-editor .wt-unison-dot, .wavetable-editor .wt-flow[data-playing] li + li::before { animation: none; }
+}
