@@ -396,3 +396,37 @@
 .fx-filter-controls{grid-template-columns:repeat(2,minmax(0,1fr))}
 .fx-filter-mode{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:0;min-width:0;align-self:stretch;padding:0;font-size:11px;font-weight:400}
 .fx-filter-mode select{width:100%;min-width:0;max-width:130px;margin-top:23px;font:inherit;font-weight:400;padding:7px 3px}
+
+/* Source buttons: the main face arms the source; a caret opens Envelope/LFO settings. */
+.physical-editor .mod-source-split { display:inline-flex; align-items:stretch; border-radius:5px; }
+.physical-editor .mod-source-split > button { border-color:inherit; }
+.physical-editor .mod-source-split[data-editor] > button:first-child { border-top-right-radius:0; border-bottom-right-radius:0; }
+.physical-editor .mod-source-split .mod-source-caret { display:grid; place-items:center; width:22px; padding:0; margin-left:-1px; border-top-left-radius:0; border-bottom-left-radius:0; color:var(--text-soft); }
+.physical-editor .mod-source-split .mod-source-caret svg { width:9px; height:6px; transition:transform .12s; }
+.physical-editor .mod-source-split .mod-source-caret[aria-expanded=true] { background:var(--surface-accent); color:var(--text); }
+.physical-editor .mod-source-split .mod-source-caret[aria-expanded=true] svg { transform:rotate(180deg); }
+.physical-editor .mod-source-split > button:first-child, .physical-editor .wt-source-card { touch-action:none; }
+.physical-editor .source-lock { width:8px; height:10px; margin-left:4px; vertical-align:-1px; color:var(--text); }
+
+/* Route chips under a knob: drag for depth, click for options. */
+.physical-editor .knob-routes .route-chip { min-height:0; padding:0 3px; font-size:9px; line-height:14px; color:inherit; background:transparent; border:1px solid transparent; border-radius:4px; cursor:ns-resize; touch-action:none; }
+.physical-editor .knob-routes .route-chip:hover:not(:disabled) { background:transparent; border-color:currentColor; }
+.physical-editor .physical-knob[data-ring-hover] { cursor:grab; }
+.route-menu { position:fixed; z-index:120; display:grid; gap:7px; width:190px; box-sizing:border-box; padding:9px; color:var(--text); background:var(--surface-raised); border:1px solid var(--border-strong); border-left-width:3px; border-radius:8px; box-shadow:0 8px 24px #0008; font-size:11px; }
+.route-menu label { display:flex; align-items:center; gap:6px; }
+.route-menu input { width:58px; }
+.route-menu div { display:flex; gap:6px; }
+.route-menu button { flex:1; }
+.route-menu button.danger { color:var(--danger); }
+
+/* Source drag and hover: show where a source goes and where it can land. */
+.physical-editor .mod-drag-ghost { position:fixed; z-index:200; pointer-events:none; display:flex; align-items:center; padding:3px 8px; font-size:11px; color:var(--text); background:var(--surface-raised); border:1px solid; border-radius:5px; box-shadow:0 4px 12px #0007; }
+.physical-editor .mod-drag-ghost[data-blocked] { opacity:.55; text-decoration:line-through; }
+.physical-editor[data-source-dragging], .physical-editor[data-source-dragging] * { cursor:grabbing !important; }
+.physical-editor .physical-control[data-mod-target] { transition:opacity 120ms ease; }
+.physical-editor[data-source-dragging] .physical-control[data-drop="blocked"] { opacity:.3; }
+.physical-editor[data-source-dragging] .physical-control[data-drop="ok"] .knob-face { box-shadow:0 0 0 1px var(--highlight-color); }
+.physical-editor[data-source-dragging] .physical-control[data-drop="ok"][data-drop-hover] .knob-face { box-shadow:0 0 0 2px var(--highlight-color), 0 0 14px var(--highlight-color); }
+.physical-editor[data-source-preview] .physical-control[data-source-route="no"] { opacity:.4; }
+.physical-editor .physical-control[data-source-route="yes"] .knob-face { box-shadow:0 0 0 2px var(--highlight-color), 0 0 10px var(--highlight-color); }
+@media (prefers-reduced-motion: reduce) { .physical-editor .physical-control[data-mod-target] { transition:none; } }

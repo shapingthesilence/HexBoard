@@ -22,11 +22,12 @@ import { PhysicalSynthClient, type PhysicalState, type PhysicalExpression } from
 import { useSourcePreview } from "./sourcePreview.ts";
 import { StringAnimation } from "./StringAnimation.tsx";
 import { SampleEditor } from "./SampleEditor.tsx";
-import { ModSourceEditor } from "./ModSourceEditor.tsx";
+import { ModSourceEditor, modSourceHelp } from "./ModSourceEditor.tsx";
 import { modulationRouteCount, modulationSeconds, modulationRate, type FxRack, type SampleExciter,  initialPreset, physicalParameters, physicalSources, physicalPresetFromUnknown, effectiveParameters, type PhysicalPreset } from "./schema.ts";
 import "./PhysicalSynthEditor.css";
 import {targetingEscape} from "./modulationTargeting.ts";
-import {Knob,sourceColors,sourceShortNames,modulationCursor} from "./SynthControls.tsx";
+import {RouteChip,RouteMenu,dropDepth,useSourceDrag} from "./modulationGestures.tsx";
+import {Knob,ModSourceButton,sourceColors,sourceShortNames,modulationCursor} from "./SynthControls.tsx";
 import {FxRackEditor} from "./FxRackEditor.tsx";
 
 const draftKey = "hexboard.physical.draft.v1";
@@ -58,8 +59,8 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
   const [controller,setController]=useState<import("./client.ts").ControllerState>();
   const pinDrag=useRef<{y:number;pressure:number}|undefined>(undefined);
   const [motionReplay,setMotionReplay]=useState(0),[motionEnabled,setMotionEnabled]=useState(true);
-  const [tool, setTool] = useState<"value" | "modulate" | "delete">("value");
-  const [deleteTarget, setDeleteTarget] = useState<number>();
+  const [tool, setTool] = useState<"value" | "modulate">("value"), [locked, setLocked] = useState(false);
+  const [routeMenu, setRouteMenu] = useState<{target:number;source:number;x:number;y:number}>();
   const [live, setLive] = useState<PhysicalExpression>(), [previewPressure, setPreviewPressure] = useState(0);
   const edits = useRef(new Map<string, () => Promise<PhysicalState>>()), flushing = useRef(false), alive = useRef(true);
   const [sampleEditor,setSampleEditor]=useState(false);
@@ -68,7 +69,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
   useEffect(()=>{clearTimeout(fxTimer.current);setFxWaiting(false);return ()=>clearTimeout(fxTimer.current);},[client]);
   useEffect(()=>{
     if(tool==="value"||sampleEditor)return;
-    return targetingEscape(document,()=>{setTool("value");setDeleteTarget(undefined);setSourceEditor(undefined);setBlockedTip(undefined);});
+    return targetingEscape(document,()=>{setTool("value");setLocked(false);setSourceEditor(undefined);setBlockedTip(undefined);});
   },[tool,sampleEditor]);
   const fail = (error: unknown) => {
     const message = synthErrorMessage(error);
@@ -125,7 +126,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
     catch (error) { fail(error); } finally { if (alive.current) setLoading(false); }
   };
   const apply = async (value: PhysicalPreset) => {
-    retainedDraft.current = true; edits.current.clear(); clearTimeout(fxTimer.current);setFxWaiting(false); setDeleteTarget(undefined);
+    retainedDraft.current = true; edits.current.clear(); clearTimeout(fxTimer.current);setFxWaiting(false); setRouteMenu(undefined);
     while(flushing.current&&alive.current)await new Promise(r=>setTimeout(r,10));
     resetPreset(storedPreset(value) as PhysicalPreset);
     if (client && ready) await operation(() => client.load(value));
@@ -134,7 +135,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
     if(busy||sampleEditor)return;
     const next=direction==="undo"?undo():redo();if(!next)return;
     retainedDraft.current=true;edits.current.clear();clearTimeout(fxTimer.current);setFxWaiting(false);
-    setTool("value");setDeleteTarget(undefined);setSourceEditor(undefined);setBlockedTip(undefined);
+    setTool("value");setLocked(false);setRouteMenu(undefined);setSourceEditor(undefined);setBlockedTip(undefined);
     if(client&&ready)void operation(async()=>{
       // Let an already-issued edit finish before restoring the entire RAM draft.
       while(flushing.current&&alive.current)await new Promise(resolve=>setTimeout(resolve,20));
@@ -259,23 +260,34 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
   const budgetProjection=fxPreview?dspUsage({...preset,effects:fxPreview}):budgetSource===undefined&&previewTarget!==undefined?dspUsage(tool==="modulate"?routePatch(preset,previewTarget,source,1):parameterPatch(preset,previewTarget,preset.parameters[previewTarget]||65535)):undefined;
   const performanceGated=(id:number)=>[26,28,29].includes(id)&&preset.parameters[id]===0&&!Array.from({length:9},(_,source)=>routeDepth(preset,id,source)).some(Boolean)&&!dspAllows(preset,parameterPatch(preset,id,65535));
   const driveUnavailable=performanceGated(26);
+  /** Whether a source can reach a knob, and why not when it cannot. */
+  const targetState=(id:number,src:number)=>{
+    const sampleGate=performanceGated(id), unavailable = sampleGate || ([29,30].includes(id) && bowMode) || (id===32&&(bowMode||!preset.sample.enabled));
+    const modulatable = !unavailable && ![8,21,27,31].includes(id) && (id!==7 || src>=5);
+    const targetFull=!canAssignTarget(preset,id,src), full=modulatable&&(targetFull||!dspRouteAllows(preset,id,src));
+    return {sampleGate,unavailable,modulatable,targetFull,full};
+  };
+  const dropRoute=(id:number,src:number)=>{const t=targetState(id,src);if(!t.modulatable||t.full)return;if(!routeDepth(preset,id,src))setRoute(id,src,dropDepth);};
+  const {drag,bind:dragBind,dragged}=useSourceDrag(dropRoute);
+  const highlight=drag?.source??budgetSource;
   const control = (id: number) => {
-    const original = physicalParameters[id],p=bowMode&&id===28?{...original,name:"Bow texture"}:original, sampleGate=performanceGated(id), unavailable = sampleGate || ([29,30].includes(id) && bowMode) || (id===32&&(bowMode||!preset.sample.enabled)), modulatable = !unavailable && ![8,21,27,31].includes(id) && (id!==7 || source>=5);
+    const original = physicalParameters[id],p=bowMode&&id===28?{...original,name:"Bow texture"}:original;
+    const {sampleGate,unavailable,modulatable,targetFull,full}=targetState(id,source);
     const routes = physicalSources.map((label, i) => ({ label:String(label), i, bipolar:i===3||i===4||i===7||(i===6&&!preset.modulation.settings[14]), depth:routeDepth(preset,id,i) })).filter(r => r.depth !== 0);
-    const targetFull=!canAssignTarget(preset,id,source);
-    const routeFull=tool==="modulate"&&modulatable&&(targetFull||!dspRouteAllows(preset,id,source));
+    const routeFull=tool==="modulate"&&full;
     const modulating = tool === "modulate" && modulatable;
     const value = modulating ? routeDepth(preset,id,source) : preset.parameters[id];
-    return <div className="physical-control" key={id} data-unavailable={unavailable||undefined} data-modulatable={modulatable} data-route-full={routeFull||undefined} title={routeFull?(targetFull?"4 sources on this target · remove one to add another":"DSP budget full · reduce another feature"):unavailable?sampleGate?"DSP budget full · reduce another feature":"Available with Strike":undefined} onPointerEnter={()=>{if(modulatable){setBudgetTarget(id);setBudgetSource(undefined);}}} onFocusCapture={()=>{if(modulatable){setBudgetFocus(id);setBudgetSource(undefined);}}} onBlurCapture={()=>setBudgetFocus(undefined)} onPointerMove={e=>{if(routeFull)setBlockedTip({x:e.clientX+16,y:e.clientY+18});}} onPointerLeave={()=>{setBlockedTip(undefined);setBudgetTarget(undefined);}}>
+    const dropState=drag?(()=>{const t=targetState(id,drag.source);return t.modulatable&&!t.full?"ok":"blocked";})():undefined;
+    const alternate=tool==="value"&&modulatable&&!full?{value:routeDepth(preset,id,source),onChange:(d:number)=>setRoute(id,source,d)}:undefined;
+    const menu=(i:number,x:number,y:number)=>setRouteMenu({target:id,source:i,x,y});
+    return <div className="physical-control" key={id} data-mod-target={id} data-drop={dropState} data-drop-hover={drag?.target===id||undefined} data-source-route={highlight===undefined?undefined:routes.some(r=>r.i===highlight)?"yes":"no"} data-unavailable={unavailable||undefined} data-modulatable={modulatable} data-route-full={routeFull||undefined} title={routeFull?(targetFull?"4 sources on this target · remove one to add another":"DSP budget full · reduce another feature"):unavailable?sampleGate?"DSP budget full · reduce another feature":"Available with Strike":undefined} onPointerEnter={()=>{if(modulatable){setBudgetTarget(id);setBudgetSource(undefined);}}} onFocusCapture={()=>{if(modulatable){setBudgetFocus(id);setBudgetSource(undefined);}}} onBlurCapture={()=>setBudgetFocus(undefined)} onPointerMove={e=>{if(routeFull)setBlockedTip({x:e.clientX+16,y:e.clientY+18});}} onPointerLeave={()=>{setBlockedTip(undefined);setBudgetTarget(undefined);}}>
       <strong>{p.name}</strong>
-      <div className="knob-wrap" onClick={() => { if (tool !== "delete" || busy) return; if (routes.length === 1) setRoute(id, routes[0].i, 0); else if (routes.length > 1) setDeleteTarget(deleteTarget === id ? undefined : id); }}>
-        {id===32?<input key={modulating?`route-${source}`:"value"} className="sample-direct-slider" type="range" aria-label={modulating?`${physicalSources[source]} to ${p.name}`:p.name} min={modulating?-65536:0} max={modulating?65536:65535} step="1" value={value} disabled={busy||unavailable||routeFull||tool==="delete"} onChange={e=>modulating?setRoute(id,source,Number(e.target.value)):setParameter(id,Number(e.target.value))} onPointerUp={()=>{if(modulating)setTool("value");}} onKeyUp={()=>{if(modulating)setTool("value");}}/>:<Knob key={modulating?`route-${source}`:"value"} label={modulating ? `${physicalSources[source]} to ${id===7?"Voice level":p.name}` : p.name} value={value} min={modulating ? -65536 : 0} max={modulating ? 65536 : 65535} disabled={busy || unavailable || routeFull || tool === "delete"} baseValue={preset.parameters[id]} effectiveValue={effective[id]} routes={routes}
-          onChange={v => modulating ? setRoute(id, source, Math.round(v)) : setParameter(id, Math.round(v))} onRelease={() => { if (modulating) setTool("value"); }} />}
-        {tool === "delete" && routes.length > 0 && <button className="delete-knob" aria-label={`Delete modulation from ${p.name}`}>×</button>}
+      <div className="knob-wrap">
+        {id===32?<input key={modulating?`route-${source}`:"value"} className="sample-direct-slider" type="range" aria-label={modulating?`${physicalSources[source]} to ${p.name}`:p.name} min={modulating?-65536:0} max={modulating?65536:65535} step="1" value={value} disabled={busy||unavailable||routeFull} onChange={e=>modulating?setRoute(id,source,Number(e.target.value)):setParameter(id,Number(e.target.value))} onPointerUp={()=>{if(modulating&&!locked)setTool("value");}} onKeyUp={()=>{if(modulating&&!locked)setTool("value");}}/>:<Knob key={modulating?`route-${source}`:"value"} label={modulating ? `${physicalSources[source]} to ${id===7?"Voice level":p.name}` : p.name} value={value} min={modulating ? -65536 : 0} max={modulating ? 65536 : 65535} disabled={busy || unavailable || routeFull} baseValue={preset.parameters[id]} effectiveValue={effective[id]} routes={routes} onRouteDepth={(i,d)=>setRoute(id,i,d)} onRouteMenu={menu} alternate={alternate}
+          onChange={v => modulating ? setRoute(id, source, Math.round(v)) : setParameter(id, Math.round(v))} onRelease={() => { if (modulating&&!locked) setTool("value"); }} />}
       </div>
       <output title={`${"strike" in p ? "Next strike" : "Live"}: ${p.describe(Math.round(effective[id]*65535))}`}>{modulating ? `${Math.round(value/65536*100)}%` : p.describe(value)}</output>
-      <div className="knob-routes">{routes.map(r => <span key={r.i} style={{ color: sourceColors[r.i] }} title={`${r.label}: ${Math.round(r.depth/65536*100)}%`}>{sourceShortNames[r.i]} {r.depth > 0 ? "+" : ""}{Math.round(r.depth/65536*100)}%</span>)}</div>
-      {deleteTarget === id && tool === "delete" && <div className="mod-delete-menu" role="menu" aria-label={`Delete ${p.name} modulation`}>{routes.map(r => <button role="menuitem" key={r.i} onClick={() => { setRoute(id,r.i,0); setDeleteTarget(undefined); }}>Delete {r.label}</button>)}</div>}
+      <div className="knob-routes">{routes.map(r => <RouteChip key={r.i} short={sourceShortNames[r.i]} label={`${r.label} → ${p.name}`} color={sourceColors[r.i]} depth={r.depth} disabled={busy} onDepth={d=>setRoute(id,r.i,d)} onMenu={(x,y)=>menu(r.i,x,y)}/>)}</div>
 
     </div>;
   };
@@ -288,7 +300,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
         <PadLabels corners={["Bell","Plate","Wood","Cabinet"]} x="Size" y="Color"/><span className="material-dot" style={{left:`${preset.effects.values[4][1]/65535*100}%`,top:`${100-preset.effects.values[4][2]/65535*100}%`}}/></div></div>
       <div className="body-levels">{["Intensity","Focus"].map((label,i)=>{const id=i?3:0;return <label key={label}><span>{label}</span><input type="range" aria-label={`Body ${label}`} min="0" max="65535" step="1" value={preset.effects.values[4][id]} disabled={busy} onChange={e=>setBody(id,Number(e.target.value))}/><output>{Math.round(preset.effects.values[4][id]/65535*100)}%</output></label>;})}</div>
     </div></fieldset>;
-  return <section className="card physical-editor" data-modulating={tool === "modulate" || undefined} style={{ "--modulation-cursor": modulationCursor(source), "--modulation-color": sourceColors[source] } as CSSProperties} aria-label="Physical string editor"
+  return <section className="card physical-editor" data-modulating={tool === "modulate" || undefined} data-source-dragging={drag?true:undefined} data-source-preview={drag===undefined&&budgetSource!==undefined||undefined} style={{ "--modulation-cursor": modulationCursor(source), "--modulation-color": sourceColors[source], "--highlight-color": sourceColors[highlight??source] } as CSSProperties} aria-label="Physical string editor"
     onPointerDownCapture={()=>beginEdit()} onClickCapture={()=>beginEdit()} onClick={()=>endEdit()}
     onKeyDownCapture={e=>{
       const target=e.target as HTMLElement;
@@ -303,15 +315,20 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
 
     <div className="modulation-toolbar" role="toolbar" aria-label="Modulation tools">
       <div className="sound-history" role="group" aria-label="Sound edit history"><button type="button" disabled={!canUndo||busy||sampleEditor} title="Undo sound edit · Ctrl/⌘ Z" onClick={()=>restoreHistory("undo")}>Undo</button><button type="button" disabled={!canRedo||busy||sampleEditor} title="Redo sound edit · Ctrl/⌘ Shift Z" onClick={()=>restoreHistory("redo")}>Redo</button></div>
-      <button aria-pressed={tool === "value"} onClick={() => { setTool("value"); setDeleteTarget(undefined); setSourceEditor(undefined); }}>Edit values</button>
-      {physicalSources.map((label,i) => <button key={label} onPointerEnter={()=>{setBudgetTarget(undefined);setBudgetSource(i);}} onPointerLeave={()=>setBudgetSource(undefined)} onFocus={()=>{setBudgetSource(i);setBudgetFocus(undefined);}} onBlur={()=>setBudgetSource(undefined)} style={{ borderColor: sourceColors[i] }} aria-pressed={tool === "modulate" && source === i} onClick={() => { setSource(i); setTool("modulate"); setDeleteTarget(undefined); setSourceEditor(v=>i<7?(v===i?undefined:i):undefined); }}><span className="source-dot" style={{ background: sourceColors[i] }} />{label}{i>=5&&i<7&&<span className="source-route-count">{modulationRouteCount(preset.modulation.routes,i-5)}</span>}</button>)}
-      <button aria-pressed={tool === "delete"} onClick={() => { setTool("delete"); setDeleteTarget(undefined); setSourceEditor(undefined); }}>Delete modulation</button>
-      <small>{tool === "modulate" ? source >= 3 && source<5 ? `${physicalSources[source]} ±45° → drag a knob · Neutral uses the base value; negative depth reverses direction` : `${physicalSources[source]} → drag a knob · Release to return to Edit values` : tool === "delete" ? "Click a modulated knob; choose a source if it has several" : "Drag knobs up / down · Shift for fine adjustment"}</small>
+      <button aria-pressed={tool === "value"} onClick={() => { setTool("value"); setLocked(false); setSourceEditor(undefined); }}>Edit values</button>
+      {physicalSources.map((label,i) => <ModSourceButton key={label} label={label} color={sourceColors[i]} pressed={tool === "modulate" && source === i} locked={locked && tool === "modulate" && source === i}
+        title={i<5?modSourceHelp(i):undefined} count={i>=5&&i<7?modulationRouteCount(preset.modulation.routes,i-5):undefined} editorOpen={sourceEditor===i}
+        events={{...dragBind(i),onPointerEnter:()=>{setBudgetTarget(undefined);setBudgetSource(i);},onPointerLeave:()=>setBudgetSource(undefined),onFocus:()=>{setBudgetSource(i);setBudgetFocus(undefined);},onBlur:()=>setBudgetSource(undefined)}}
+        onSelect={lock => { if(dragged())return; if(!lock&&locked&&tool==="modulate"&&source===i){setTool("value");setLocked(false);return;} setSource(i); setLocked(lock||(locked&&tool==="modulate")); setTool("modulate"); setSourceEditor(v=>v===i?v:undefined); }}
+        onEditor={i>=5&&i<7?() => { setSourceEditor(v=>v===i?undefined:i); }:undefined}/>)}
+      <small>{tool === "modulate" ? `${physicalSources[source]}${locked?" locked":""} → drag knobs${source >= 3 && source<5 ? " · neutral uses the base value; negative depth reverses":""} · ${locked?"click it again or Esc to finish":"double-click to lock"}` : `Drag knobs · drag a source onto a knob · ⌥/Alt-drag adds ${sourceShortNames[source]} · drag a route ring or chip for depth`}</small>
     <ModulationBudget mono={!!((preset.mono?.flags??0)&3)} label="DSP budget" capacity={dspCapacity} testedUs={tested?.peakUs} used={budget.units} connections={budget.connections} projected={budgetProjection?.units} blocked={budgetProjection&&!budgetProjection.fits?(!budgetProjection.targetsValid?"Target has 4 sources":budgetProjection.connections>32?"Connection limit reached":undefined):undefined} contribution={budgetSource!==undefined?dspSourceContribution(preset,budgetSource):undefined}/>
-    {sourceEditor!==undefined && sourceEditor<7 && <ModSourceEditor source={sourceEditor} settings={preset.modulation.settings} onChange={setModSetting} onClose={()=>setSourceEditor(undefined)} onAssign={()=>{setTool("modulate");setSourceEditor(undefined);}} disabled={busy} renderControl={(id,label)=> <div className="mod-source-control"><span>{label}</span><Knob label={label} value={preset.modulation.settings[id]} disabled={busy||(id===8&&!!performance.values[PerformanceSetting.lfoSync])} onChange={v=>setModSetting(id,Math.round(v))}/><output>{id===2?`${Math.round(preset.modulation.settings[id]/65535*100)}%`:id===8?performance.values[PerformanceSetting.lfoSync]?`${Math.min(50,performanceTempo/600*(1<<performance.values[PerformanceSetting.lfoDivision])).toFixed(2)} Hz · synced`:`${modulationRate(preset.modulation.settings[id]).toFixed(2)} Hz`:id===11?`${Math.round(preset.modulation.settings[id]/65535*360)}°`:id===15?`${Math.round(preset.modulation.settings[id]/65535*500)} ms`:id===6?preset.modulation.settings[id]<24000?"Fast rise":preset.modulation.settings[id]>41000?"Slow rise":"Linear":modulationSeconds(preset.modulation.settings[id])<1?`${Math.round(modulationSeconds(preset.modulation.settings[id])*1000)} ms`:`${modulationSeconds(preset.modulation.settings[id]).toFixed(1)} s`}</output></div>} />}
+    {sourceEditor!==undefined && sourceEditor<7 && <ModSourceEditor source={sourceEditor} settings={preset.modulation.settings} onChange={setModSetting} onClose={()=>setSourceEditor(undefined)} onAssign={()=>{setSource(sourceEditor);setTool("modulate");setSourceEditor(undefined);}} disabled={busy} renderControl={(id,label)=> <div className="mod-source-control"><span>{label}</span><Knob label={label} value={preset.modulation.settings[id]} disabled={busy||(id===8&&!!performance.values[PerformanceSetting.lfoSync])} onChange={v=>setModSetting(id,Math.round(v))}/><output>{id===2?`${Math.round(preset.modulation.settings[id]/65535*100)}%`:id===8?performance.values[PerformanceSetting.lfoSync]?`${Math.min(50,performanceTempo/600*(1<<performance.values[PerformanceSetting.lfoDivision])).toFixed(2)} Hz · synced`:`${modulationRate(preset.modulation.settings[id]).toFixed(2)} Hz`:id===11?`${Math.round(preset.modulation.settings[id]/65535*360)}°`:id===15?`${Math.round(preset.modulation.settings[id]/65535*500)} ms`:id===6?preset.modulation.settings[id]<24000?"Fast rise":preset.modulation.settings[id]>41000?"Slow rise":"Linear":modulationSeconds(preset.modulation.settings[id])<1?`${Math.round(modulationSeconds(preset.modulation.settings[id])*1000)} ms`:`${modulationSeconds(preset.modulation.settings[id]).toFixed(1)} s`}</output></div>} />}
     </div>
 
 
+    {drag&&<div className="mod-drag-ghost" data-blocked={drag.target!==undefined&&(()=>{const t=targetState(drag.target,drag.source);return !t.modulatable||t.full;})()||undefined} style={{left:drag.x+14,top:drag.y+14,borderColor:sourceColors[drag.source]}}><span className="source-dot" style={{background:sourceColors[drag.source]}}/>{sourceShortNames[drag.source]}</div>}
+    {routeMenu&&routeDepth(preset,routeMenu.target,routeMenu.source)!==0&&<RouteMenu title={`${physicalSources[routeMenu.source]} → ${physicalParameters[routeMenu.target].name}`} color={sourceColors[routeMenu.source]} depth={routeDepth(preset,routeMenu.target,routeMenu.source)} x={routeMenu.x} y={routeMenu.y} onDepth={d=>setRoute(routeMenu.target,routeMenu.source,d)} onClose={()=>setRouteMenu(undefined)}/>}
     {blockedTip && tool==="modulate"&&<div className="mod-limit-tooltip" role="tooltip" style={{left:Math.min(blockedTip.x,window.innerWidth-220),top:blockedTip.y}}>DSP budget full · reduce another feature</div>}
     <header className="instrument-title"><h2>Physical Strings</h2><span>Stereo</span>{activity?<SynthProgress progress={activity}/>:<p role="status" className={failed ? "error" : ""}>{message}</p>}</header>
     <PresetLibrary preset={namedPreset} client={ready?client:undefined} disabled={busy} onRename={value=>replacePreset(p=>({...p,name:value}))} onBusy={v=>{if(v){edits.current.clear();clearTimeout(fxTimer.current);setFxWaiting(false);}setLoading(v);}} onLoad={async p=>{if(p.format==='hexboard.advanced.v2')throw Error('Select the matching engine.');await apply(p);}} onDeviceLoad={async(engine,name)=>{edits.current.clear();clearTimeout(fxTimer.current);retainedDraft.current=true;const value=await client!.readSound(name);if(engine!==2&&engine!==3){localStorage.setItem(`hexboard.advanced.${engine}.draft`,JSON.stringify(value));onDeviceEngineLoaded?.(engine as 4|5);return;}if(value.format==='hexboard.advanced.v2')return;setDevice(await client!.status());resetPreset(value);}}/>

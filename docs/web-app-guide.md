@@ -87,21 +87,34 @@ and Wood–Metal Color, Intensity blends the EQ, and Focus sharpens its bands. T
 Pinned Piano and Drifting Wire.
 
 Drag knobs vertically; hold Shift for fine adjustment. The sticky toolbar
-keeps sources visible. Click **Envelope** or **LFO** to open its graphical
-editor; **Assign to controls** selects that source. Available destinations glow
-faintly in the selected source’s color; unavailable or full-route targets do
-not glow. The glow clears in **Edit values**. Drag a destination knob
-for signed modulation depth, then release to return to **Edit values**. Physical
-Strings shares a DSP budget across velocity, pressure, release, tilt, Envelope,
-LFO, Joystick Mod, Expression, sample loops and sound/FX processing. Each target
-permits four sources, with 32 connections total. The small budget bar previews
-proposed additions. Reduce processing or remove an assignment when it is full.
-Its estimate describes render work; Test DSP budget measures the complete patch
-on the board while muted.
+keeps sources visible in Physical Strings and Wavetable. Click a source to arm
+it: available destinations glow faintly in its color, and unavailable or
+full-route targets do not glow. Drag a destination knob for signed modulation
+depth, then release to return to **Edit values**. Double-click (or Shift-click)
+a source to lock it so you can assign several knobs in a row; click it again or
+press Escape to finish. Other ways to add a route:
+
+- Drag a source button onto a knob. The route starts at +25%; targets that
+  cannot take the source fade while you drag.
+- Option/Alt-drag a knob to set the depth of the most recently selected source
+  without leaving **Edit values**.
+
+The arrow beside **Envelope** and **LFO** opens that source's graphical editor
+without arming it; **Assign to controls** arms it. Hovering a source highlights
+the knobs it already modulates and fades the rest.
+
 Source rings show depth and direction; a white dot shows the combined value.
-**Delete modulation** removes a single route directly or offers a source
-choice when several routes exist. Escape returns to **Edit values** from
-assignment or deletion mode. X/Y tilt is bidirectional around neutral.
+Drag a ring, or the source chip under the knob, to change that route's depth.
+Click a chip (or right-click/long-press a ring) for exact depth, **Invert** and
+**Remove**. With a chip focused, arrow keys adjust depth and Delete removes it.
+X/Y tilt is bidirectional around neutral.
+
+Physical Strings shares a DSP budget across velocity, pressure, release, tilt,
+Envelope, LFO, Joystick Mod, Expression, sample loops and sound/FX processing.
+Each target permits four sources, with 32 connections total. The small budget
+bar previews proposed additions. Reduce processing or remove an assignment when
+it is full. Its estimate describes render work; Test DSP budget measures the
+complete patch on the board while muted.
 
 **Undo / Redo** restores sound edits, including preset loads, modulation, Body EQ,
 effects and samples. Each drag is one step, with up to 64 steps in this session.
@@ -848,8 +861,8 @@ with force × speed. Marble material has its own pad in Contact.
 correlated variation as it rises. Neutral **Strike · …** presets keep the string
 unchanged for material comparisons.
 
-Click **Envelope** or **LFO** in the Advanced synth toolbar to open its source
-editor. Shape the envelope with draggable handles or ADSR knobs; Pluck, Swell
+Click the arrow beside **Envelope** or **LFO** in the Advanced synth toolbar to
+open its source editor. Shape the envelope with draggable handles or ADSR knobs; Pluck, Swell
 and Gate provide quick starting points. LFO offers six shapes, free-running or
 note-restarted timing, phase and fade/smoothing controls. Extra controls stay in
 compact expandable sections. Choose **Assign to controls**, then drag a

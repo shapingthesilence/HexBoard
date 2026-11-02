@@ -1,6 +1,8 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { modulationSeconds, modulationRate, physicalSources } from "./schema.ts";
 
+/** Plain-language behavior of the touch and tilt sources, shown as a source-button tooltip. */
+export const modSourceHelp=(source:number)=>source===0?"Note-on velocity follows your selected velocity engine. Positive modulation adds more as you strike harder.":source===1?"Continuous key pressure follows the velocity engine’s pressure mode. Route it to a continuous sound control.":source===2?"Note-off velocity acts on release. Useful for damping and release time.":"Signed tilt around your captured neutral position. Tilting either way moves the destination in that direction; negative depth reverses it.";
 const shapes=["Sine","Triangle","Rise","Fall","Square","Random"];
 export const timeValue=(seconds:number)=>seconds<=.001?0:Math.round(Math.max(0,Math.min(1,Math.log(seconds/.001)/9.903488))*65535);
 export function envelopePoints(s:number[]) {
@@ -45,7 +47,7 @@ export function ModSourceEditor({source,title=physicalSources[source],settings:s
         <details><summary>Fade & smoothing</summary><div className="mod-source-knobs">{renderControl(12,"Delay")}{renderControl(13,"Fade in")}{renderControl(15,"Smoothing")}</div><label className="mod-switch"><input type="checkbox" checked={!!s[14]} disabled={disabled} onChange={e=>onChange(14,e.target.checked?65535:0)}/>Positive only</label></details>
         <small>{modulationRate(s[8]).toFixed(2)} Hz · {s[14]?"0 to +1":"−1 to +1"} · generated on the board at block rate.</small>
       </>}
-    </>:<p className="mod-source-help">{source===0?"Note-on velocity follows your selected velocity engine. Positive modulation adds more as you strike harder.":source===1?"Continuous key pressure follows the velocity engine’s pressure mode. Route it to a continuous sound control.":source===2?"Note-off velocity acts on release. Useful for damping and release time.":"Signed tilt around your captured neutral position. Tilting either way moves the destination in that direction; negative depth reverses it."}{source<3&&<a href="#/calibration">Edit keyboard response →</a>}</p>}
+    </>:<p className="mod-source-help">{modSourceHelp(source)}{source<3&&<a href="#/calibration">Edit keyboard response →</a>}</p>}
     <footer><button type="button" className="primary" onClick={onAssign}>Assign to controls</button><small>Drag a destination knob to set depth</small></footer>
   </div>;
 }

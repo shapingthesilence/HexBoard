@@ -7,11 +7,12 @@ import {useSourcePreview} from './sourcePreview.ts';
 import {PerformanceRow} from './PerformanceRow.tsx';
 import {ControllerControls} from './ControllerControls.tsx';
 import {ModulationBudget} from './ModulationBudget.tsx';
-import {ModSourceEditor} from './ModSourceEditor.tsx';
+import {ModSourceEditor, modSourceHelp} from './ModSourceEditor.tsx';
 import {SynthProgress} from './SynthProgress.tsx';
 import type {SynthProgress as Progress} from './progress.ts';
-import {Knob, modulationCursor} from './SynthControls.tsx';
+import {Knob, ModSourceButton, modulationCursor} from './SynthControls.tsx';
 import {targetingEscape} from './modulationTargeting.ts';
+import {RouteChip, RouteMenu, dropDepth, useSourceDrag} from './modulationGestures.tsx';
 import {modulationRate, modulationSeconds} from './schema.ts';
 import {
   P, S, effectiveWavetable, ensembleNames, factoryWavetablePresets, filterNames, modulatable, option, optionValue, parameterCount,
@@ -54,8 +55,8 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
   const [device, setDevice] = useState<PhysicalState>(), [ready, setReady] = useState(false), [loading, setLoading] = useState(false), [attempt, setAttempt] = useState(0);
   const [message, setMessage] = useState(''), [failed, setFailed] = useState(false), [progress, setProgress] = useState<Progress>(), [operationLabel, setOperationLabel] = useState('Updating synth…');
   const [live, setLive] = useState<PhysicalExpression>(), [controller, setController] = useState<ControllerState>(), [previewPressure, setPreviewPressure] = useState(0);
-  const [tool, setTool] = useState<'value' | 'modulate' | 'delete'>('value'), [source, setSource] = useState<number>(S.Pressure);
-  const [deleteTarget, setDeleteTarget] = useState<number>(), [sourceEditor, setSourceEditor] = useState<number>(), [budgetSource, setBudgetSource] = useState<number>(), [hoverTarget, setHoverTarget] = useState<number>();
+  const [tool, setTool] = useState<'value' | 'modulate'>('value'), [locked, setLocked] = useState(false), [source, setSource] = useState<number>(S.Pressure);
+  const [routeMenu, setRouteMenu] = useState<{target: number; source: number; x: number; y: number}>(), [sourceEditor, setSourceEditor] = useState<number>(), [budgetSource, setBudgetSource] = useState<number>(), [hoverTarget, setHoverTarget] = useState<number>();
   const [library, setLibrary] = useState(readLibrary), [focused, setFocused] = useState<string>();
   const edits = useRef(new Map<string, () => Promise<unknown>>()), flushing = useRef(false), alive = useRef(true), progressRef = useRef<Progress | undefined>(undefined), retainedDraft = useRef(stored(draftKey) !== null);
   const deviceRef = useRef<PhysicalState | undefined>(undefined); deviceRef.current = device;
@@ -88,7 +89,7 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
     }, 100);
     return () => { disposed = true; alive.current = false; clearInterval(poll); clearInterval(expression); clearInterval(flush); edits.current.clear(); c.close(); };
   }, [transport, attempt]);
-  useEffect(() => { if (tool === 'value') return; return targetingEscape(document, () => { setTool('value'); setDeleteTarget(undefined); setSourceEditor(undefined); }); }, [tool]);
+  useEffect(() => { if (tool === 'value') return; return targetingEscape(document, () => { setTool('value'); setLocked(false); setSourceEditor(undefined); }); }, [tool]);
   useEffect(() => {
     const finish = () => endEdit();
     for (const e of ['pointerup', 'pointercancel', 'keyup', 'blur']) window.addEventListener(e, finish);
@@ -109,8 +110,8 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
     await client.applyWavetable(next);
     return start && (await client.status()).state !== 'playing' ? client.start(wavetableEngine) : client.status();
   }, start ? 'Starting wavetable…' : 'Loading sound…') : Promise.resolve();
-  const apply = (next: WavetablePreset) => { retainedDraft.current = true; resetPreset(next); setTool('value'); if (onDevice) void loadOnDevice(next, false); };
-  const restore = (direction: 'undo' | 'redo') => { const next = direction === 'undo' ? undo() : redo(); if (next && onDevice) void loadOnDevice(next, false); };
+  const apply = (next: WavetablePreset) => { retainedDraft.current = true; resetPreset(next); setTool('value'); setLocked(false); setRouteMenu(undefined); if (onDevice) void loadOnDevice(next, false); };
+  const restore = (direction: 'undo' | 'redo') => { setRouteMenu(undefined); const next = direction === 'undo' ? undo() : redo(); if (next && onDevice) void loadOnDevice(next, false); };
 
   const setParameter = (id: number, value: number) => {
     retainedDraft.current = true; setPreset(x => ({...x, parameters: x.parameters.map((v, i) => i === id ? value : v)}));
@@ -142,24 +143,30 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
   const playing = onDevice && device?.state === 'playing';
   const pct = (us: number) => Math.round(us / wavetableCapacityUs * 100);
 
+  /** A source reaches a knob when the parameter accepts it and a route slot is free or already held. */
+  const canDrop = (id: number, src: number) => modulatable(id, src) && (routeDepth(preset, id, src) !== 0 || routesUsed(preset) < wavetableRouteLimit);
+  const {drag, bind: dragBind, dragged} = useSourceDrag((id, src) => { if (canDrop(id, src) && !routeDepth(preset, id, src)) setRoute(id, src, dropDepth); });
+  const highlight = drag?.source ?? budgetSource;
   const control = (id: number, label = wavetableParameters[id].name, describe = wavetableParameters[id].describe): ReactNode => {
     const canRoute = modulatable(id, source), modulating = tool === 'modulate' && canRoute;
+    const menu = (i: number, x: number, y: number) => setRouteMenu({target: id, source: i, x, y});
     const routes = preset.routes.filter(r => r.destination === id && r.source < sourceCount && r.depth).map(r => ({label: wavetableSources[r.source], i: r.source, depth: r.depth, color: wavetableSourceColors[r.source], bipolar: bipolarSource(r.source, preset)}));
     const full = modulating && !routeDepth(preset, id, source) && routesUsed(preset) >= wavetableRouteLimit;
     const value = modulating ? routeDepth(preset, id, source) : p[id];
     const why = tool === 'modulate' && !canRoute ? id === P.EnsembleWidth ? 'Ensemble width is shared by all voices · use tilt, joystick or expression' : 'Not modulatable' : full ? `All ${wavetableRouteLimit} routes in use` : undefined;
-    return <div className="physical-control" key={id} data-modulatable={canRoute} data-route-full={full || undefined} title={why}
+    const alternate = tool === 'value' && canDrop(id, source) ? {value: routeDepth(preset, id, source), onChange: (d: number) => { setRoute(id, source, d); }} : undefined;
+    return <div className="physical-control" key={id} data-mod-target={id} data-drop={drag ? canDrop(id, drag.source) ? 'ok' : 'blocked' : undefined} data-drop-hover={drag?.target === id || undefined}
+      data-source-route={highlight === undefined ? undefined : routes.some(r => r.i === highlight) ? 'yes' : 'no'} data-modulatable={canRoute} data-route-full={full || undefined} title={why}
       onPointerEnter={() => setHoverTarget(id)} onPointerLeave={() => setHoverTarget(undefined)}>
       <strong>{label}</strong>
-      <div className="knob-wrap" onClick={() => { if (tool !== 'delete' || busy) return; if (routes.length === 1) setRoute(id, routes[0].i, 0); else if (routes.length > 1) setDeleteTarget(deleteTarget === id ? undefined : id); }}>
+      <div className="knob-wrap">
         <Knob key={modulating ? `route-${source}` : 'value'} label={modulating ? `${wavetableSources[source]} to ${label}` : label} value={value} min={modulating ? -65536 : 0} max={modulating ? 65536 : 65535}
-          disabled={busy || full || tool === 'delete' || (tool === 'modulate' && !canRoute)} baseValue={p[id]} effectiveValue={effective[id]} routes={routes}
-          onChange={v => modulating ? setRoute(id, source, Math.round(v)) : setParameter(id, Math.round(v))} onRelease={() => { if (modulating) setTool('value'); }}/>
-        {tool === 'delete' && routes.length > 0 && <button className="delete-knob" aria-label={`Delete modulation from ${label}`}>×</button>}
+          disabled={busy || full || (tool === 'modulate' && !canRoute)} baseValue={p[id]} effectiveValue={effective[id]} routes={routes}
+          onRouteDepth={(i, d) => { setRoute(id, i, d); }} onRouteMenu={menu} alternate={alternate}
+          onChange={v => modulating ? setRoute(id, source, Math.round(v)) : setParameter(id, Math.round(v))} onRelease={() => { if (modulating && !locked) setTool('value'); }}/>
       </div>
       <output title={`Live: ${describe(Math.round(effective[id] * 65535))}`}>{modulating ? `${Math.round(value / 65536 * 100)}%` : describe(value)}</output>
-      <div className="knob-routes">{routes.map(r => <span key={r.i} style={{color: r.color}}>{wavetableSourceShort[r.i]} {r.depth > 0 ? '+' : ''}{Math.round(r.depth / 65536 * 100)}%</span>)}</div>
-      {deleteTarget === id && tool === 'delete' && <div className="mod-delete-menu" role="menu">{routes.map(r => <button role="menuitem" key={r.i} onClick={() => { setRoute(id, r.i, 0); setDeleteTarget(undefined); }}>Delete {r.label}</button>)}</div>}
+      <div className="knob-routes">{routes.map(r => <RouteChip key={r.i} short={wavetableSourceShort[r.i]} label={`${r.label} → ${label}`} color={r.color} depth={r.depth} disabled={busy} onDepth={d => { setRoute(id, r.i, d); }} onMenu={(x, y) => menu(r.i, x, y)}/>)}</div>
     </div>;
   };
   const choice = (id: number, names: readonly string[], label: string, values?: number[]) => <div className="source-tabs wt-choice" role="radiogroup" aria-label={label}>
@@ -178,11 +185,12 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
     active: s.id === 'warp' ? warpMode > 0 : s.id === 'unison' ? copies > 1 : s.id === 'layers' ? p[P.Noise] > 0 || p[P.Transient] > 0 : s.id === 'resonator' ? resonator > 0 : s.id === 'filter' ? !filterBypassed : s.id === 'output' ? true : true}));
   const select = (id: string) => { setFocused(id); document.getElementById(`wt-stage-${id}`)?.scrollIntoView({behavior: 'smooth', block: 'nearest'}); window.setTimeout(() => setFocused(f => f === id ? undefined : f), 1200); };
   const editorBank = sourceEditor === undefined ? 0 : sourceEditor === S.Env1 || sourceEditor === S.Lfo1 ? 0 : 1;
-  const hint = tool === 'modulate' ? `${wavetableSources[source]} → drag a knob · Release to return to Edit values` : tool === 'delete' ? 'Click a modulated knob; choose a source if it has several' : 'Drag knobs up / down · Shift for fine · drag the pictures too';
+  const hint = tool === 'modulate' ? `${wavetableSources[source]}${locked ? ' locked' : ''} → drag knobs · ${locked ? 'click it again or Esc to finish' : 'double-click to lock'}` : `Drag knobs or pictures · drag a source onto a knob · ⌥/Alt-drag adds ${wavetableSourceShort[source]} · drag a route ring or chip for depth`;
   const userNames = new Set(library.map(x => x.name));
 
   return <section className="card physical-editor wavetable-editor" aria-label="Wavetable synth editor" data-modulating={tool === 'modulate' || undefined}
-    style={{'--modulation-cursor': modulationCursor(0, wavetableSourceColors[source], wavetableSourceShort[source]), '--modulation-color': wavetableSourceColors[source]} as CSSProperties}
+    data-source-dragging={drag ? true : undefined} data-source-preview={(drag === undefined && budgetSource !== undefined) || undefined}
+    style={{'--modulation-cursor': modulationCursor(0, wavetableSourceColors[source], wavetableSourceShort[source]), '--modulation-color': wavetableSourceColors[source], '--highlight-color': wavetableSourceColors[highlight ?? source]} as CSSProperties}
     onPointerDownCapture={() => beginEdit()} onClick={() => endEdit()}
     onKeyDownCapture={e => {
       const text = (e.target as HTMLElement).closest('input:not([type="range"]),textarea,select,[contenteditable="true"]');
@@ -193,17 +201,16 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
 
     <div className="modulation-toolbar" role="toolbar" aria-label="Modulation tools">
       <div className="sound-history" role="group" aria-label="Sound edit history"><button type="button" disabled={!canUndo || busy} title="Undo · Ctrl/⌘ Z" onClick={() => restore('undo')}>Undo</button><button type="button" disabled={!canRedo || busy} title="Redo · Ctrl/⌘ Shift Z" onClick={() => restore('redo')}>Redo</button></div>
-      <button aria-pressed={tool === 'value'} onClick={() => { setTool('value'); setDeleteTarget(undefined); setSourceEditor(undefined); }}>Edit values</button>
-      {wavetableSources.map((label, i) => <button key={label} style={{borderColor: wavetableSourceColors[i]}} aria-pressed={tool === 'modulate' && source === i}
-        onPointerEnter={() => setBudgetSource(i)} onPointerLeave={() => setBudgetSource(undefined)}
-        onClick={() => { setSource(i); setTool('modulate'); setDeleteTarget(undefined); setSourceEditor(v => i >= S.Env1 && i <= S.Lfo2 ? (v === i ? undefined : i) : undefined); }}>
-        <span className="source-dot" style={{background: wavetableSourceColors[i]}}/>{wavetableSourceShort[i]}</button>)}
-      <button aria-pressed={tool === 'delete'} onClick={() => { setTool('delete'); setDeleteTarget(undefined); setSourceEditor(undefined); }}>Delete modulation</button>
+      <button aria-pressed={tool === 'value'} onClick={() => { setTool('value'); setLocked(false); setSourceEditor(undefined); }}>Edit values</button>
+      {wavetableSources.map((label, i) => <ModSourceButton key={label} label={wavetableSourceShort[i]} color={wavetableSourceColors[i]} pressed={tool === 'modulate' && source === i} locked={locked && tool === 'modulate' && source === i}
+        title={i < S.Env1 ? modSourceHelp(i) : label} editorOpen={sourceEditor === i} events={{...dragBind(i), onPointerEnter: () => setBudgetSource(i), onPointerLeave: () => setBudgetSource(undefined), onFocus: () => setBudgetSource(i), onBlur: () => setBudgetSource(undefined)}}
+        onSelect={lock => { if (dragged()) return; if (!lock && locked && tool === 'modulate' && source === i) { setTool('value'); setLocked(false); return; } setSource(i); setLocked(lock || (locked && tool === 'modulate')); setTool('modulate'); setSourceEditor(v => v === i ? v : undefined); }}
+        onEditor={i >= S.Env1 && i <= S.Lfo2 ? () => { setSourceEditor(v => v === i ? undefined : i); } : undefined}/>)}
       <small>{hint}</small>
       <ModulationBudget label="DSP budget" capacity={wavetableCapacityUs} used={cost.us} connections={routesUsed(preset)} connectionLimit={wavetableRouteLimit} projected={hoverCost}
         contribution={budgetSource !== undefined ? wavetableSourceCost(preset, budgetSource) : undefined} blocked={!cost.fits ? 'Over budget · may drop audio' : undefined}/>
       {sourceEditor !== undefined && <ModSourceEditor source={sourceEditor === S.Env1 || sourceEditor === S.Env2 ? 5 : 6} title={wavetableSources[sourceEditor]} settings={preset.mod[editorBank]}
-        onChange={(id, v) => setModSetting(editorBank, id, v)} onClose={() => setSourceEditor(undefined)} onAssign={() => { setTool('modulate'); setSourceEditor(undefined); }} disabled={busy}
+        onChange={(id, v) => setModSetting(editorBank, id, v)} onClose={() => setSourceEditor(undefined)} onAssign={() => { setSource(sourceEditor); setTool('modulate'); setSourceEditor(undefined); }} disabled={busy}
         renderControl={(id, label) => <div className="mod-source-control"><span>{label}</span><Knob label={label} value={preset.mod[editorBank][id]} disabled={busy} onChange={v => setModSetting(editorBank, id, Math.round(v))}/><output>{modText(id, preset.mod[editorBank][id])}</output></div>}/>}
     </div>
 
@@ -276,7 +283,8 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
       <aside className="wt-side">
         <fieldset className="wt-sources"><legend>Motion sources</legend>
           {[S.Env1, S.Lfo1, S.Env2, S.Lfo2].map(i => { const bank = i <= S.Lfo1 ? 0 : 1, lfo = i === S.Lfo1 || i === S.Lfo2, count = preset.routes.filter(r => r.source === i && r.depth).length;
-            return <button type="button" key={i} className="wt-source-card" style={{'--source-color': wavetableSourceColors[i]} as CSSProperties} aria-pressed={sourceEditor === i} onClick={() => { setSource(i); setTool('modulate'); setSourceEditor(v => v === i ? undefined : i); }}>
+            return <button type="button" key={i} className="wt-source-card" style={{'--source-color': wavetableSourceColors[i]} as CSSProperties} aria-pressed={sourceEditor === i}
+              {...dragBind(i)} onPointerEnter={() => setBudgetSource(i)} onPointerLeave={() => setBudgetSource(undefined)} onClick={() => { if (dragged()) return; setSource(i); setTool('modulate'); setSourceEditor(v => v === i ? undefined : i); }}>
               <span className="wt-source-name">{wavetableSources[i]}</span><span className="wt-source-meter"><i style={{width: `${Math.abs(sources[i]) * 100}%`, marginLeft: lfo && sources[i] < 0 && !preset.mod[bank][14] ? `${50 + sources[i] * 50}%` : undefined}}/></span>
               <small>{lfo ? `${modulationRate(preset.mod[bank][8]).toFixed(2)} Hz` : `${modText(0, preset.mod[bank][0])} · ${modText(1, preset.mod[bank][1])}`} · {count} route{count === 1 ? '' : 's'}</small>
             </button>; })}
@@ -289,5 +297,8 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
         <p className="panel-note wt-budget-note">DSP estimate {cost.us} µs of {wavetableCapacityUs} µs per block, fitted to measured 8-voice workloads. Advisory: going over may drop audio, nothing is switched off for you.</p>
       </aside>
     </div>
+    {drag && <div className="mod-drag-ghost" data-blocked={(drag.target !== undefined && !canDrop(drag.target, drag.source)) || undefined} style={{left: drag.x + 14, top: drag.y + 14, borderColor: wavetableSourceColors[drag.source]}}><span className="source-dot" style={{background: wavetableSourceColors[drag.source]}}/>{wavetableSourceShort[drag.source]}</div>}
+    {routeMenu && routeDepth(preset, routeMenu.target, routeMenu.source) !== 0 && <RouteMenu title={`${wavetableSources[routeMenu.source]} → ${wavetableParameters[routeMenu.target].name}`} color={wavetableSourceColors[routeMenu.source]}
+      depth={routeDepth(preset, routeMenu.target, routeMenu.source)} x={routeMenu.x} y={routeMenu.y} onDepth={d => { setRoute(routeMenu.target, routeMenu.source, d); }} onClose={() => setRouteMenu(undefined)}/>}
   </section>;
 }
