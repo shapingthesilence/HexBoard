@@ -13,12 +13,13 @@ function shapeHarmonic(anchor: number, h: number) {
   if (anchor === 2) return 2 / Math.PI * (h & 1 ? 1 : -1) / h;
   return h & 1 ? 4 / (Math.PI * h) : 0;
 }
-/** Harmonic amplitudes at a fractional frame (0..15), with Brightness as a taper. */
+/** Harmonic amplitudes at a fractional frame (0..15), with Brightness as a harmonic count. */
 export function frameSpectrum(frame: number, brightness = 1) {
   const x = 3 * Math.max(0, Math.min(15, frame)) / (frames - 1), a = Math.min(2, Math.floor(x)), t = x - a;
-  const top = 2 + 46 * brightness * brightness;
+  // Firmware Brightness: 2^(8b) harmonics, half-octave taper, fundamental kept.
+  const top = 2 ** (8 * brightness), start = Math.max(1, top / 2);
   return Array.from({length: harmonics}, (_, i) => {
-    const h = i + 1, cut = h <= top / 2 ? 1 : h >= top ? 0 : .5 + .5 * Math.cos(Math.PI * Math.log2(h / (top / 2)));
+    const h = i + 1, cut = h > top ? 0 : h <= start ? 1 : .5 + .5 * Math.cos(Math.PI * Math.log2(h / (top / 2)));
     return (shapeHarmonic(a, h) + t * (shapeHarmonic(a + 1, h) - shapeHarmonic(a, h))) * cut;
   });
 }

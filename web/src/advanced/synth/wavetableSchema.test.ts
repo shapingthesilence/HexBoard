@@ -66,6 +66,7 @@ describe('wavetable previews', () => {
     expect(frameSpectrum(15)[2]).toBeCloseTo(4 / (3 * Math.PI));
     expect(warp(.25, 4, 1)[0]).toBeCloseTo(2);
     expect(warp(.5, 1, 0)[0]).toBe(.5);
+    expect(frameSpectrum(15, 0).slice(0, 3)).toEqual([4 / Math.PI, 0, 0]); // Darkest: full-level fundamental only.
   });
   it('renders offline in signal-flow order and in the engine selector', () => {
     const html = renderToStaticMarkup(createElement(WavetableSynthEditor, {}));

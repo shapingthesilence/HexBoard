@@ -125,7 +125,7 @@ export const wavetableParameters: ParameterInfo[] = [
   {name: 'Warp', describe: v => warpNames[option(P.WarpMode, v)]},
   {name: 'Warp amount', describe: pct},
   {name: 'Alias guard', describe: pct},
-  {name: 'Brightness', describe: pct},
+  {name: 'Brightness', describe: v => { const n = Math.round(2 ** (8 * v / 65535)); return n <= 1 ? 'Sine' : `${n} harmonics`; }},
   {name: 'Noise', describe: pct},
   {name: 'Transient', describe: pct},
   {name: 'Transient shape', describe: v => transientNames[option(P.TransientShape, v)]},
