@@ -76,8 +76,8 @@ export function TableTerrain({frame, live, spread, copies, warpMode, warpAmount,
     onPointerMove={e => { if (!disabled && e.currentTarget.hasPointerCapture(e.pointerId)) set(e); }}
     onKeyDown={e => { if (!disabled) keyStep(e, Math.round(frame * 65535), onFrame); }}
     paint={(ctx, c) => {
-      paths.current ??= stack.map((wave, i) => {
-        const f = frames - 1 - i, x = 36 + f * 12, y = 196 - f * 10.5;
+      paths.current ??= stack.map((_, i) => {
+        const f = frames - 1 - i, wave = stack[f], x = 36 + f * 12, y = 196 - f * 10.5;
         const line = wavePath(wave, x, y, 380, 26, scale), fill = new Path2D(line);
         fill.lineTo(x + 380, y + 30); fill.lineTo(x, y + 30); fill.closePath();
         return {line, fill};
