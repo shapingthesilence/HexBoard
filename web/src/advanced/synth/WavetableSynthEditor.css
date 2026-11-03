@@ -65,11 +65,6 @@
 
 /* Side column */
 .wavetable-editor .wt-side { display: grid; gap: 8px; position: sticky; top: 56px; }
-.wavetable-editor .wt-sources { display: grid; gap: 5px; }
-.wavetable-editor .wt-source-card { display: grid; gap: 3px; text-align: left; border-left: 3px solid var(--source-color); }
-.wavetable-editor .wt-source-name { font-weight: 600; }
-.wavetable-editor .wt-source-meter { display: block; height: 4px; border-radius: 2px; background: var(--surface); overflow: hidden; }
-.wavetable-editor .wt-source-meter i { display: block; height: 100%; background: var(--source-color); }
 .wavetable-editor .wt-expression { display: grid; gap: 3px; }
 .wavetable-editor .wt-expression .source-meter { grid-template-columns: 62px 1fr 34px; }
 .wavetable-editor .wt-meter-label { border-left: 3px solid; padding-left: 4px; color: var(--text-soft); }

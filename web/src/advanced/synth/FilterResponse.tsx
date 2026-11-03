@@ -10,8 +10,8 @@ export function filterResponse(cutoff:number,resonance:number,mix:number,mode:nu
  const real=mode===0?a/d:mode===1?b*b/d:-w*w*a/d,imag=mode===0?-b/d:mode===1?b*a/d:w*w*b/d;
  return Math.hypot(1-mix+mix*real,mix*imag);
 }
-export function FilterResponse({rack,sources=[]}:{rack:FxRack;sources?:number[]}){
- const value=(i:number,sources:number[])=>Math.max(0,Math.min(1,rack.values[5][i]/65535+fxSourceIds.reduce((sum,s)=>sum+fxRouteDepth(rack,20+i,s)*(sources[s]??0)/65536,0)));
+export function FilterResponse({rack,sources=[],previewSource}:{rack:FxRack;sources?:number[];previewSource?:(source:number)=>number}){
+ const value=(i:number,sources:number[])=>Math.max(0,Math.min(1,rack.values[5][i]/65535+fxSourceIds.reduce((sum,s)=>sum+fxRouteDepth(rack,20+i,s)*(sources[previewSource?.(s)??s]??0)/65536,0)));
  return <PreviewSelect fallback={value(0,sources)} select={s=>value(0,s)}>{cutoff => <PreviewSelect fallback={value(1,sources)} select={s=>value(1,s)}>{resonance => <PreviewSelect fallback={value(2,sources)} select={s=>value(2,s)}>{mix => <FilterCurve cutoff={cutoff} resonance={resonance} mix={mix} mode={rack.values[5][3]}/>}</PreviewSelect>}</PreviewSelect>}</PreviewSelect>;
 }
 function FilterCurve({cutoff,resonance,mix,mode}:{cutoff:number;resonance:number;mix:number;mode:number}){

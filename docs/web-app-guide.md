@@ -949,7 +949,7 @@ handles remain draggable.
 
 ## Advanced Juno, DX7 and preset voice tests
 
-Choose Physical Strings, Juno or DX7 in Synth. Each uses direct modulation targeting, with a different color. All three engines use a side FX rack on desktop. Native envelopes remain with sound controls; native Envelope and LFO sources can also target other controls from toolbar source editors. Juno offers Chorus, Distortion, Volume Steps and Filter; DX7 also offers Reverb. DX7 imports single voices and 32-voice SysEx banks.
+Choose Physical Strings, Juno, DX7 or Wavetable in Synth. Each uses direct modulation targeting, with a different color. All four engines use a side FX rack on desktop. Native envelopes remain with sound controls; native Envelope and LFO sources can also target other controls from toolbar source editors. Juno offers Chorus, Distortion, Volume Steps and Filter; DX7 also offers Reverb. DX7 imports single voices and 32-voice SysEx banks.
 
 Use **Test voice limit** after finishing a patch and its effects. Playback is muted while the device finds the largest passing count within the 99% render budget, including two release-tail slots. The result saves with the preset. Any edit returns to eight voices until you test again. Physical Strings currently stops at eight because of its allocation ceiling. **Cancel voice test** stops the measurement.
 
@@ -1043,7 +1043,17 @@ its header to change where it sits in the signal chain. Mode sits beside Mix;
 the small graph above the controls follows cutoff, resonance, mix and global
 modulation. The limiter remains last.
 
-In Physical Strings, select X/Y tilt, Joystick Mod, Expression or LFO in the
+Physical Strings and Wavetable share the FX rack: Distortion, Reverb, Volume
+Steps, Chorus and Filter. Wavetable places it after the ensemble; the clean sub
+joins afterward and stays dry. Rack settings save with the wavetable preset.
+Sampler Room uses the same stereo-reverb network, with Decay in milliseconds,
+Tone and Width controls. Browser audition follows the same delay network.
+
+Click a selected modulation source again to deselect it in every engine.
+Shift-click locks assignment until another click or Escape; source settings
+remain available through their separate caret buttons.
+
+In Physical Strings or Wavetable, select X/Y tilt, Joystick Mod, Expression or LFO 1 in the
 source toolbar and drag an FX knob to set signed modulation depth. Release
 returns to Edit values; Delete modulation removes an assignment. Available FX
 knobs glow while a global source is selected. FX use a shared LFO clock even

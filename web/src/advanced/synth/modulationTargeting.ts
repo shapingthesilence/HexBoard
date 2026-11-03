@@ -4,3 +4,6 @@ export function targetingEscape(target:EventTarget,cancel:()=>void){
  target.addEventListener('keydown',key);
  return ()=>target.removeEventListener('keydown',key);
 }
+
+/** A repeated ordinary click exits targeting; explicit locking keeps it selected. */
+export const sourceClickTool = (active: boolean, lock = false): 'value' | 'modulate' => active && !lock ? 'value' : 'modulate';
