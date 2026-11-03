@@ -22,6 +22,7 @@ import {
 import {filterOpen, wavetableCapacityUs, wavetableCost, wavetableSourceCost, wavetableRouteLimit, type WavetableStage} from './wavetableBudget.ts';
 import {EnvelopeGraph, FilterCurve, ResonatorPartials, SignalFlow, TableTerrain, UnisonField, WarpScope} from './WavetableVisuals.tsx';
 import './PhysicalSynthEditor.css';
+import './SynthIdentity.css';
 import './WavetableSynthEditor.css';
 
 const draftKey = 'hexboard.wavetable.draft.v1', libraryKey = 'hexboard.wavetable.presets.v1';

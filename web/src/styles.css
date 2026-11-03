@@ -77,25 +77,33 @@ button.courseControlRow:disabled { cursor: default; }
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
-  --page: #f1f5f1;
+  /* Cool slate neutrals shared with the synth instrument surfaces. */
+  --page: #eef2f5;
   --surface: #ffffff;
-  --surface-raised: #fbfcfa;
-  --surface-muted: #edf3ee;
-  --surface-accent: #e1f2eb;
-  --text: #1b2721;
-  --text-soft: #5e6e65;
-  --border: #d7e0da;
-  --border-strong: #aab8b0;
-  --brand: #15745d;
-  --brand-strong: #0f5f4b;
-  --brand-soft: #dff1e9;
+  --surface-raised: #f9fbfc;
+  --surface-muted: #eaeff3;
+  --surface-accent: #dff0ee;
+  --text: #17222b;
+  --text-soft: #586874;
+  --border: #d4dce2;
+  --border-strong: #a3b1bb;
+  --brand: #127566;
+  --brand-strong: #0d5c50;
+  --brand-soft: #dcf0ec;
+  /* Engine identities: each pair is the gradient the engine's pictures and titles use. */
+  --strings-1: #0a8fb0;
+  --strings-2: #3a63e0;
+  --wavetable-1: #8a3ff0;
+  --wavetable-2: #d0459c;
+  --sampler-1: #e0602e;
+  --sampler-2: #d99a1e;
   --accent: #e3a43b;
   --danger: #a84235;
   --danger-soft: #fff0ed;
   --warning: #895f12;
   --warning-soft: #fff5dc;
-  --shadow-sm: 0 1px 2px rgba(28, 48, 38, 0.05), 0 5px 16px rgba(28, 48, 38, 0.04);
-  --shadow-md: 0 14px 42px rgba(28, 48, 38, 0.09);
+  --shadow-sm: 0 1px 2px rgba(22, 36, 48, 0.05), 0 5px 16px rgba(22, 36, 48, 0.04);
+  --shadow-md: 0 14px 42px rgba(22, 36, 48, 0.09);
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 12px;
@@ -109,18 +117,24 @@ button.courseControlRow:disabled { cursor: default; }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0d1511;
-  --surface: #141e19;
-  --surface-raised: #18231d;
-  --surface-muted: #101914;
-  --surface-accent: #12372c;
-  --text: #eef7f1;
-  --text-soft: #a5b6ad;
-  --border: #2b3931;
-  --border-strong: #52635a;
-  --brand: #45b99a;
-  --brand-strong: #69cfb3;
-  --brand-soft: #153d32;
+  --page: #0e151b;
+  --surface: #151f27;
+  --surface-raised: #1a252e;
+  --surface-muted: #111a21;
+  --surface-accent: #1c3b3f;
+  --text: #e6ecf1;
+  --text-soft: #9cabb6;
+  --border: #2d3a44;
+  --border-strong: #56687a;
+  --brand: #4cc2a8;
+  --brand-strong: #74d6bf;
+  --brand-soft: #173a3a;
+  --strings-1: #4fd3ec;
+  --strings-2: #6f97ff;
+  --wavetable-1: #c08bff;
+  --wavetable-2: #ff7fc8;
+  --sampler-1: #ff8a5b;
+  --sampler-2: #ffc15e;
   --accent: #f0b64d;
   --danger: #ff9b8c;
   --danger-soft: #44231f;
@@ -141,8 +155,8 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background:
-    radial-gradient(circle at 8% -10%, rgba(66, 174, 143, 0.13), transparent 32rem),
-    radial-gradient(circle at 96% 0%, rgba(227, 164, 59, 0.09), transparent 25rem),
+    radial-gradient(circle at 8% -10%, color-mix(in srgb, var(--strings-1) 12%, transparent), transparent 32rem),
+    radial-gradient(circle at 96% 0%, color-mix(in srgb, var(--wavetable-1) 9%, transparent), transparent 25rem),
     var(--page);
   color: inherit;
 }
@@ -275,7 +289,8 @@ textarea {
   aspect-ratio: 0.8660254;
   flex: 0 0 auto;
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
-  background: linear-gradient(145deg, var(--brand-strong), var(--brand) 58%, var(--accent));
+  /* The mark carries all three engine colors: strings, wavetable, sampler. */
+  background: linear-gradient(145deg, var(--strings-1), var(--wavetable-1) 55%, var(--sampler-1));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
 }
 
@@ -580,8 +595,8 @@ textarea {
   max-height: 280px;
   margin: 0;
   border-radius: 10px;
-  background: #18201d;
-  color: #e8eee9;
+  background: #172129;
+  color: #e6ecf1;
   padding: 12px;
   font-size: 0.82rem;
   line-height: 1.45;
@@ -591,7 +606,7 @@ textarea {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 1px solid #86928c;
+  border: 1px solid #86939c;
   flex: 0 0 auto;
 }
 
@@ -934,9 +949,9 @@ textarea {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   padding: 4px;
-  border: 1px solid #dbe1dd;
+  border: 1px solid #d6dde3;
   border-radius: 8px;
-  background: #f6f8f5;
+  background: #f5f8fa;
 }
 
 .sidebarTabs button {
@@ -1076,7 +1091,7 @@ textarea {
 }
 .auditionKey.whiteKey {
   grid-row: 1 / 3;
-  background: #fafaf7;
+  background: #f9fafb;
   color: #202731;
   margin: 0 1px;
 }
@@ -1281,13 +1296,13 @@ textarea {
   display: block;
   width: 100%;
   height: 150px;
-  border: 1px solid #c8d1cc;
+  border: 1px solid #c9d2d9;
   border-radius: 6px;
-  background: #17201c;
+  background: #151f27;
 }
 
 .wavetablePreviewGraph line {
-  stroke: rgba(232, 238, 233, 0.22);
+  stroke: rgba(230, 236, 241, 0.22);
   stroke-width: 0.8;
 }
 
@@ -2284,12 +2299,12 @@ textarea {
 :root[data-theme="dark"] button.active {
   background: var(--brand);
   border-color: var(--brand);
-  color: #07110e;
+  color: #071016;
 }
 
 :root[data-theme="dark"] .themeToggle[aria-pressed="true"] {
-  background: #26322d;
-  border-color: #7a8b83;
+  background: #263440;
+  border-color: #6f808c;
 }
 
 :root[data-theme="dark"] .topBar {
@@ -2341,8 +2356,8 @@ textarea {
 
 :root[data-theme="dark"] .dataPreview,
 :root[data-theme="dark"] .wavetablePreviewGraph {
-  background: #080d0b;
-  color: #e8eee9;
+  background: #080d11;
+  color: #e6ecf1;
 }
 
 :root[data-theme="dark"] .modalOverlay {
@@ -2356,11 +2371,11 @@ textarea {
 }
 
 :root[data-theme="dark"] .hexBoardScroll {
-  border-color: #2d3933;
+  border-color: #2d3a44;
   background:
-    linear-gradient(90deg, rgba(232, 238, 233, 0.07) 1px, transparent 1px),
-    linear-gradient(rgba(232, 238, 233, 0.07) 1px, transparent 1px),
-    #101613;
+    linear-gradient(90deg, rgba(230, 236, 241, 0.07) 1px, transparent 1px),
+    linear-gradient(rgba(230, 236, 241, 0.07) 1px, transparent 1px),
+    #10181e;
   background-size: 32px 32px;
 }
 
@@ -2379,7 +2394,7 @@ textarea {
 }
 
 :root[data-theme="dark"] .swatch {
-  border-color: #6a7b73;
+  border-color: #64757f;
 }
 
 @media (max-width: 1180px) {
@@ -2777,7 +2792,7 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .courseMeter { display: flex; gap: 8px; align-items: center; }
 .courseMeter input, .courseMeter select { width: 75px; }
 .courseLibraryDialog { width: min(680px, calc(100vw - 40px)); max-height: 85vh; overflow: auto; border: 1px solid var(--border); border-radius: 16px; padding: 24px; color: var(--text); background: var(--surface); box-shadow: 0 20px 70px #0004; }
-.courseLibraryDialog::backdrop { background: #12201dcc; }
+.courseLibraryDialog::backdrop { background: #0d161ccc; }
 .courseLibraryChoices { display: grid; gap: 14px; }
 .courseLibraryChoices fieldset { border: 1px solid var(--border); border-radius: 8px; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; max-height: 220px; overflow: auto; }
 .courseLibraryChoices input[type=checkbox] { width: auto; }
@@ -2907,8 +2922,8 @@ button:focus-visible, summary:focus-visible, input:focus-visible, select:focus-v
 .sectionTabs button, .sectionTabs .workflowTab { min-height: 36px; padding: 6px 12px; margin: 0; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: .9rem; }
 :root .sectionTabs button:is([aria-current=page], [aria-current=step]) { background: var(--brand-soft); border-color: var(--brand); color: var(--text); }
 .sectionTabs button:hover:not(:disabled) { border-color: var(--brand); background: var(--surface-accent); }
-:root[data-theme="dark"] .sectionTabs button { background: #26352d; border-color: #7a8b83; color: var(--text); }
-:root[data-theme="dark"] .sectionTabs button:is([aria-current=page], [aria-current=step]) { background: var(--brand); border-color: var(--brand-strong); color: #07110e; }
+:root[data-theme="dark"] .sectionTabs button { background: #263440; border-color: #6f808c; color: var(--text); }
+:root[data-theme="dark"] .sectionTabs button:is([aria-current=page], [aria-current=step]) { background: var(--brand); border-color: var(--brand-strong); color: #071016; }
 :root[data-theme="dark"] .sectionTabs button:hover:not(:disabled) { background: var(--brand-soft); border-color: var(--brand-strong); }
 :root[data-theme="dark"] .sectionTabs button:is([aria-current=page], [aria-current=step]):hover { background: var(--brand-strong); }
 

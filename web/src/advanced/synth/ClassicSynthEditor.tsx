@@ -18,6 +18,7 @@ import { useSourcePreview } from './sourcePreview.ts';
 import { AlgorithmDiagram } from './AlgorithmDiagram.tsx';
 import { targetingEscape } from './modulationTargeting.ts';
 import './PhysicalSynthEditor.css';
+import './SynthIdentity.css';
 import './ClassicSynthEditor.css';
 const sourceLabels = physicalSources.slice(0,7);
 const key = (engine: number) => `hexboard.advanced.${engine}`;

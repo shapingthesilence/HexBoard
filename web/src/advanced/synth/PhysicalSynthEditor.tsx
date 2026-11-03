@@ -16,7 +16,7 @@ import {validVoiceBudget,presetFingerprint} from "./voiceBudget.ts";
 import {VoiceBudgetEditor} from "./VoiceBudgetEditor.tsx";
 import {SynthProgress} from './SynthProgress.tsx';
 import type {SynthProgress as Progress} from './progress.ts';
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { MidiTransport } from "../../midi/types.ts";
 import { PhysicalSynthClient, type PhysicalState, type PhysicalExpression } from "./client.ts";
 import { useSourcePreview } from "./sourcePreview.ts";
@@ -25,6 +25,7 @@ import { SampleEditor } from "./SampleEditor.tsx";
 import { ModSourceEditor, modSourceHelp } from "./ModSourceEditor.tsx";
 import { modulationRouteCount, modulationSeconds, modulationRate, type FxRack, type SampleExciter,  initialPreset, physicalParameters, physicalSources, physicalPresetFromUnknown, effectiveParameters, type PhysicalPreset } from "./schema.ts";
 import "./PhysicalSynthEditor.css";
+import "./SynthIdentity.css";
 import {targetingEscape} from "./modulationTargeting.ts";
 import {RouteChip,RouteMenu,dropDepth,useSourceDrag} from "./modulationGestures.tsx";
 import {Knob,ModSourceButton,sourceColors,sourceShortNames,modulationCursor} from "./SynthControls.tsx";
@@ -217,6 +218,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
   sources.push(live?.tiltX??0,live?.tiltY??0,...generatedPreview,controller?.modulation??0,controller?.expression??1);
   const effective = effectiveParameters(preset, sources);
   const pickup = 0.05 + 0.9 * effective[5], rightPickup = 0.05 + 0.9 * effective[14];
+  const stringGradient = `string-gradient-${useId().replace(/:/g, "")}`;
   const bowMode=preset.parameters[21]>32767;
   const showBowPad=bowMode;
   const marbleMode = Math.round(preset.parameters[8]*4/65535)===4;
@@ -236,7 +238,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
     onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
     onKeyDown={event => { if (!busy && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const step = event.shiftKey ? 6554 : 1311; setParameter(id, event.key === "Home" ? 0 : event.key === "End" ? 65535 : Math.max(0, Math.min(65535, preset.parameters[id] + (event.key === "ArrowRight" ? step : -step)))); } }}>
     <rect x={position(id)-20} y={y-20} width={40} height={40} rx={12} fill="transparent" />
-    <circle cx={position(id)} cy={y} r={id === 4 ? 8 : 7} fill={color} stroke="#16271f" strokeWidth={2} />
+    <circle cx={position(id)} cy={y} r={id === 4 ? 8 : 7} fill={color} stroke="var(--synth-scope)" strokeWidth={2} />
     <text x={position(id)} y={y + (id === 4 || id === 18 ? -15 : 25)} textAnchor="middle" fill="currentColor" fontSize={12}>{label}</text>
   </g>;
   const materialMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -300,7 +302,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
         <PadLabels corners={["Bell","Plate","Wood","Cabinet"]} x="Size" y="Color"/><span className="material-dot" style={{left:`${preset.effects.values[4][1]/65535*100}%`,top:`${100-preset.effects.values[4][2]/65535*100}%`}}/></div></div>
       <div className="body-levels">{["Intensity","Focus"].map((label,i)=>{const id=i?3:0;return <label key={label}><span>{label}</span><input type="range" aria-label={`Body ${label}`} min="0" max="65535" step="1" value={preset.effects.values[4][id]} disabled={busy} onChange={e=>setBody(id,Number(e.target.value))}/><output>{Math.round(preset.effects.values[4][id]/65535*100)}%</output></label>;})}</div>
     </div></fieldset>;
-  return <section className="card physical-editor" data-modulating={tool === "modulate" || undefined} data-source-dragging={drag?true:undefined} data-source-preview={drag===undefined&&budgetSource!==undefined||undefined} style={{ "--modulation-cursor": modulationCursor(source), "--modulation-color": sourceColors[source], "--highlight-color": sourceColors[highlight??source] } as CSSProperties} aria-label="Physical string editor"
+  return <section className="card physical-editor strings-editor" data-modulating={tool === "modulate" || undefined} data-source-dragging={drag?true:undefined} data-source-preview={drag===undefined&&budgetSource!==undefined||undefined} style={{ "--modulation-cursor": modulationCursor(source), "--modulation-color": sourceColors[source], "--highlight-color": sourceColors[highlight??source] } as CSSProperties} aria-label="Physical string editor"
     onPointerDownCapture={()=>beginEdit()} onClickCapture={()=>beginEdit()} onClick={()=>endEdit()}
     onKeyDownCapture={e=>{
       const target=e.target as HTMLElement;
@@ -379,12 +381,14 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
       <fieldset className="spatial-panel" disabled={busy}><legend>String workspace</legend><div className="string-workspace-heading"><span>Drag the strike and pickups</span><span className="string-motion-actions"><span title="Approximation of the last reported key, not an audio waveform">Motion preview</span><button type="button" disabled={!motionEnabled} aria-label="Replay string motion preview" title="Replay motion · visual only" onClick={()=>setMotionReplay(v=>v+1)}>▷</button><button type="button" aria-label={motionEnabled?"Pause string animation":"Enable string animation"} aria-pressed={motionEnabled} title={motionEnabled?"Pause animation":"Enable animation"} onClick={()=>setMotionEnabled(v=>!v)}>{motionEnabled?"Ⅱ":"↻"}</button></span></div>
       <svg className="string-view" viewBox={marbleMode ? "0 -32 600 177" : "0 0 600 145"} role="group" aria-label="String positions">
 
+        <defs><linearGradient id={stringGradient} gradientUnits="userSpaceOnUse" x1="30" x2="570" y1="0" y2="0"><stop offset="0" stopColor="var(--synth-1)"/><stop offset="1" stopColor="var(--synth-2)"/></linearGradient></defs>
+        <line className="string-glow" x1="30" x2="570" y1="82" y2="82" stroke={`url(#${stringGradient})`} />
+        <line className="string-rest" x1="30" x2="570" y1="82" y2="82" stroke={`url(#${stringGradient})`} />
         <StringAnimation values={effective} signature={preset.parameters.join(",")+preset.routes.join(",")+preset.modulation.routes.join(",")} live={live} playing={device?.state==="playing"} replay={motionReplay} enabled={motionEnabled}/>
-        {[5,14].map(id=><circle key={id} cx={position(id)} cy="82" r="5" fill="none" stroke="currentColor" opacity=".45"/>)}
-        <line x1="30" x2="570" y1="82" y2="82" stroke="currentColor" opacity=".2" />
-        <line x1={30 + pickup * 540} x2={30 + pickup * 540} y1="64" y2="104" stroke="#73c6ae" strokeDasharray="3 3" opacity=".7" />
-        <line x1={30 + rightPickup * 540} x2={30 + rightPickup * 540} y1="70" y2="115" stroke="#a4a2e6" strokeDasharray="3 3" opacity=".7" />
-        {marbleMode && <><line x1={30+540*Math.max(.05,dropCenter-dropRadius)} x2={30+540*Math.min(.95,dropCenter+dropRadius)} y1="0" y2="0" stroke="#b9d6f0" strokeWidth="8" opacity=".4" />{handle(18,"Drop center",0,"#b9d6f0")}</>}{handle(4, bowMode?"Bow":"Strike", 40, "#d7ac68")}{handle(5, "Pickup L", 75, "#73c6ae")}{handle(14, "Pickup R", 106, "#a4a2e6")}
+        {[5,14].map(id=><circle key={id} cx={position(id)} cy="82" r="6" fill="var(--synth-scope)" stroke={id === 5 ? "var(--synth-1)" : "var(--synth-2)"} strokeWidth="2" />)}
+        <line x1={30 + pickup * 540} x2={30 + pickup * 540} y1="64" y2="104" stroke="var(--synth-1)" strokeWidth="2" strokeDasharray="4 3" opacity=".8" />
+        <line x1={30 + rightPickup * 540} x2={30 + rightPickup * 540} y1="70" y2="115" stroke="var(--synth-2)" strokeWidth="2" strokeDasharray="4 3" opacity=".8" />
+        {marbleMode && <><line x1={30+540*Math.max(.05,dropCenter-dropRadius)} x2={30+540*Math.min(.95,dropCenter+dropRadius)} y1="0" y2="0" stroke="#b9d6f0" strokeWidth="8" opacity=".4" />{handle(18,"Drop center",0,"#b9d6f0")}</>}{handle(4, bowMode?"Bow":"Strike", 40, "#d7ac68")}{handle(5, "Pickup L", 75, "var(--synth-1)")}{handle(14, "Pickup R", 106, "var(--synth-2)")}
         <text x="30" y="99" fill="currentColor" fontSize="11">Nut</text><text x="570" y="99" textAnchor="end" fill="currentColor" fontSize="11">Bridge</text>
       {!bowMode&&preset.parameters[29]>0&&<g className="preparation-pin" role="slider" tabIndex={busy?-1:0} aria-label="Preparation pin position and pressure" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(preset.parameters[30]/65535*100)} aria-valuetext={`${Math.round(preset.parameters[30]/65535*100)} percent position, ${Math.round(preset.parameters[29]/65535*100)} percent pressure`}
         onPointerDown={e=>{if(!busy){e.preventDefault();pinDrag.current={y:e.clientY,pressure:preset.parameters[29]};e.currentTarget.setPointerCapture(e.pointerId);}}}

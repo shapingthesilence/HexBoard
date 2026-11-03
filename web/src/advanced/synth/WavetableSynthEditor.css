@@ -1,15 +1,7 @@
-/* Wavetable shares the Physical Strings surface (.physical-editor) and recolors
-   its brand tokens violet. Stages follow the signal path left to right. */
-.wavetable-editor {
-  --brand: #6b45c9; --brand-strong: #5532a8; --brand-soft: #ece6fb; --surface-accent: #efe9fc;
-  --wt-trace: #8a3ff0; --wt-trace-2: #d0459c; --wt-frame: #8f86a8; --wt-spread: #b79cff; --wt-scope: #f6f3fc;
-}
-:root[data-theme="dark"] .wavetable-editor {
-  --brand: #a68bff; --brand-strong: #c0aaff; --brand-soft: #2a2148; --surface-accent: #2b2346;
-  --wt-trace: #c08bff; --wt-trace-2: #ff7fc8; --wt-frame: #6d6587; --wt-spread: #9b7cff; --wt-scope: #17131f;
-}
-:root[data-theme="dark"] .wavetable-editor button[aria-pressed=true] { background: #e4dbff; color: #1c1530; border-color: #e4dbff; }
-.wavetable-editor .instrument-title h2 { background: linear-gradient(90deg, var(--wt-trace), var(--wt-trace-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* Wavetable shares the Physical Strings surface (.physical-editor); its violet
+   identity comes from SynthIdentity.css. Stages follow the signal path left to right. */
+.wavetable-editor { --wt-trace: var(--synth-1); --wt-trace-2: var(--synth-2); --wt-frame: #8f86a8; --wt-spread: #b79cff; --wt-scope: var(--synth-scope); }
+:root[data-theme="dark"] .wavetable-editor { --wt-frame: #6d6587; --wt-spread: #9b7cff; }
 
 /* Library row */
 .wavetable-editor .wt-library { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 1px 4px; }

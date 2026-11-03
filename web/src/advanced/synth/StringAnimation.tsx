@@ -16,7 +16,7 @@ export function StringAnimation({values,signature,live,playing,replay,enabled}:{
     let raf:number|undefined,last=0,visible=true,disposed=false;
     const paint=(now:number)=>{
       const v=inputs.current.values,f=engine.frame(now/1000,inputs.current);
-      wave.setAttribute('d',f.path);wave.style.strokeWidth=String(1.7+v[26]);wave.style.stroke=`color-mix(in srgb, var(--brand) ${100-70*v[26]}%, ${['#efb86b','#ef9479','#b29aff'][Math.round(v[27]*2)]})`;
+      wave.setAttribute('d',f.path);wave.style.strokeWidth=String(3+1.5*v[26]);wave.style.stroke=`color-mix(in srgb, var(--synth-1) ${100-70*v[26]}%, ${['#efb86b','#ef9479','#b29aff'][Math.round(v[27]*2)]})`;
       pickup.forEach((c,i)=>{c.setAttribute('cx',String(30+540*(.05+.9*v[i?14:5])));c.setAttribute('cy',String(f.pickups[i]));c.style.opacity=f.amplitude>.1?'.85':'0';});
       balls.forEach((c,i)=>{const b=f.balls[i];c.style.opacity=b?String(b.opacity):'0';if(b){c.setAttribute('cx',String(b.x));c.setAttribute('cy',String(b.y));c.setAttribute('r',String(b.r));}});
       bow.setAttribute('transform',`translate(${30+540*(.05+.9*v[4])+f.bow} 82)`);bow.style.opacity=v[21]>.5&&f.amplitude>.1?'.8':'0';
@@ -44,8 +44,8 @@ export function StringAnimation({values,signature,live,playing,replay,enabled}:{
     if(old.replay!==replay||old.signature!==signature&&(!playing||!live?.held))demo.current();else wake.current();
   },[signature,replay,playing,enabled,effective,live?.held,live?.key,live?.velocity]);
   return <g ref={root} className="string-animation" aria-hidden="true">
-    <path data-motion="wave" d="M30 82H570" fill="none" stroke="currentColor" strokeWidth="2"/>
-    <circle data-motion="pickup" r="4" fill="#73c6ae" opacity="0"/><circle data-motion="pickup" r="4" fill="#a4a2e6" opacity="0"/>
+    <path data-motion="wave" d="M30 82H570" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+    <circle data-motion="pickup" r="5" fill="var(--synth-1)" opacity="0"/><circle data-motion="pickup" r="5" fill="var(--synth-2)" opacity="0"/>
     {Array.from({length:6},(_,i)=><circle data-motion="ball" key={i} r="4" fill="#b9d6f0" stroke="var(--surface)" strokeWidth="1" opacity="0"/>)}
     <g data-motion="bow" opacity="0"><path d="M-22 -10L22 10M-19 -13L25 7" fill="none" stroke="#efb86b" strokeWidth="3"/></g>
     <path data-motion="mute" d="M540 69H560V80H540Z" fill="#b29aff" opacity="0"/>

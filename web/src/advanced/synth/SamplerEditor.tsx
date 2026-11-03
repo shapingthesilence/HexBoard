@@ -64,6 +64,7 @@ import {
   type KeyMap,
 } from "./sampler/mapping.ts";
 import "./PhysicalSynthEditor.css";
+import "./SynthIdentity.css";
 import "./SamplerEditor.css";
 function LoopReviewDialog({children, onClose}: {children: ReactNode; onClose: () => void}) {
   const ref = useRef<HTMLDialogElement>(null);

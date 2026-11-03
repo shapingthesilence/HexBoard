@@ -1,0 +1,50 @@
+/* Engine identities. Every Advanced editor shares the .physical-editor surface;
+   an engine class picks its colors from the app-wide engine pairs in styles.css.
+   --synth-1/--synth-2 draw titles, traces and highlights, --synth-scope backs
+   pictures, and --synth-on fills pressed buttons in dark mode. */
+.physical-editor {
+  --synth-1: var(--brand); --synth-2: var(--brand-strong); --synth-scope: var(--surface-muted);
+  --synth-on: var(--surface-accent); --synth-on-text: var(--text);
+}
+.physical-editor.strings-editor {
+  --synth-1: var(--strings-1); --synth-2: var(--strings-2);
+  --brand: #0b6f8c; --brand-strong: #08566d; --brand-soft: #dcf0f6; --surface-accent: #e2f1f7; --synth-scope: #f1f8fb;
+  --synth-on: #c4e7f2; --synth-on-text: #0b2b38;
+}
+.physical-editor.wavetable-editor {
+  --synth-1: var(--wavetable-1); --synth-2: var(--wavetable-2);
+  --brand: #6b45c9; --brand-strong: #5532a8; --brand-soft: #ece6fb; --surface-accent: #efe9fc; --synth-scope: #f6f3fc;
+  --synth-on: #ddd0fb; --synth-on-text: #24164a;
+}
+.physical-editor.sampler-editor {
+  --synth-1: var(--sampler-1); --synth-2: var(--sampler-2);
+  --brand: #b4501c; --brand-strong: #8f3d12; --brand-soft: #fbe9de; --surface-accent: #fcede3; --synth-scope: #fdf6f1;
+  --synth-on: #fbd8c3; --synth-on-text: #3a1a08;
+}
+:root[data-theme="dark"] .physical-editor.strings-editor {
+  --brand: #5cc9e6; --brand-strong: #8adcf0; --brand-soft: #16384a; --surface-accent: #284653; --synth-scope: #101b23;
+  --synth-on: #cdeef7; --synth-on-text: #0f1f29;
+}
+:root[data-theme="dark"] .physical-editor.wavetable-editor {
+  --brand: #a68bff; --brand-strong: #c0aaff; --brand-soft: #2a2148; --surface-accent: #2b2346; --synth-scope: #17131f;
+  --synth-on: #e4dbff; --synth-on-text: #1c1530;
+}
+:root[data-theme="dark"] .physical-editor.sampler-editor {
+  --brand: #ff9a66; --brand-strong: #ffb98e; --brand-soft: #43271b; --surface-accent: #4a3128; --synth-scope: #1b1513;
+  --synth-on: #ffe1cc; --synth-on-text: #2a160c;
+}
+
+/* A thin engine-colored edge and a gradient title name the instrument at a glance. */
+.physical-editor.card { background-image: linear-gradient(90deg, var(--synth-1), var(--synth-2)); background-size: 100% 3px; background-repeat: no-repeat; }
+.physical-editor .instrument-title h2 { background: linear-gradient(90deg, var(--synth-1), var(--synth-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+:root[data-theme="dark"] .physical-editor button[aria-pressed=true] { background: var(--synth-on); color: var(--synth-on-text); border-color: var(--synth-on); }
+
+/* Engine selector: each engine keeps its color before and after it is chosen. */
+.engine-selector button { position: relative; display: inline-flex; align-items: center; gap: 7px; }
+.engine-selector button::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: linear-gradient(135deg, var(--engine-a), var(--engine-b)); }
+.engine-selector button[aria-pressed=true] { border-color: var(--engine-a); background: color-mix(in srgb, var(--engine-a) 14%, var(--surface)); box-shadow: inset 0 -2px 0 var(--engine-a); }
+.engine-selector [data-engine=strings] { --engine-a: var(--strings-1); --engine-b: var(--strings-2); }
+.engine-selector [data-engine=wavetable] { --engine-a: var(--wavetable-1); --engine-b: var(--wavetable-2); }
+.engine-selector [data-engine=sampler] { --engine-a: var(--sampler-1); --engine-b: var(--sampler-2); }
+.engine-selector [data-engine=juno] { --engine-a: #d9922e; --engine-b: #e6b04f; }
+.engine-selector [data-engine=dx7] { --engine-a: #20a08c; --engine-b: #59d4c2; }
