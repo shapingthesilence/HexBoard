@@ -1,11 +1,30 @@
-import {describe,it,expect} from 'vitest';
+import {describe,it,expect,vi} from 'vitest';
 import {createElement} from 'react';import{renderToStaticMarkup}from'react-dom/server';
-import {defaultPerformance,validatePerformance,performanceWords,performanceFromWords,euclidean,S} from './performanceSchema.ts';
+import {defaultPerformance,validatePerformance,performanceWords,performanceFromWords,euclidean,S,publishPerformance,publishPerformanceState,subscribePerformance,usePerformance,usePerformanceTempo,type PerformanceConfig} from './performanceSchema.ts';
 import{PerformanceRow}from'./PerformanceRow.tsx';import{ArpeggiatorEditor}from'./ArpeggiatorEditor.tsx';
 import{PhysicalSynthClient}from'./client.ts';
 import{decodePresetSyncFrame,encodeDefaultPresetSyncFrame,encodeU21,encodeU14}from'../../protocol/index.ts';
 import type{MidiTransport,MidiMessageListener}from'../../midi/types.ts';
 describe('global performance',()=>{
+ it('keeps unchanged device polls out of storage and editor subscriptions while publishing clock changes',async()=>{
+  vi.useFakeTimers();const write=vi.fn();vi.stubGlobal('localStorage',{getItem:()=>null,setItem:write});publishPerformance(defaultPerformance());await vi.advanceTimersByTimeAsync(400);write.mockClear();
+  const notify=vi.fn(),unsubscribe=subscribePerformance(notify);
+  let current:PerformanceConfig|undefined,tempo=0;
+  function Read(){current=usePerformance();tempo=usePerformanceTempo();return null;}
+  const read=()=>renderToStaticMarkup(createElement(Read));read();const original=current;
+  const config=defaultPerformance(),state={config,step:0,notes:0,running:false,limited:false,external:false,bpm10:1200,skipped:0,full:0};
+  try{
+   for(let i=0;i<1000;++i)publishPerformanceState({...state,step:i%32});
+   read();expect(current).toBe(original);expect(notify).not.toHaveBeenCalled();expect(write).not.toHaveBeenCalled();
+   config.values[S.clock]=1;publishPerformanceState({...state,bpm10:1310});read();await vi.advanceTimersByTimeAsync(400);
+   expect(tempo).toBe(1310);expect(write).toHaveBeenCalledTimes(1);expect(notify).toHaveBeenCalledTimes(1);const external=current;
+   publishPerformanceState({...state,bpm10:1320});read();
+   expect(current).toBe(external);expect(tempo).toBe(1320);expect(write).toHaveBeenCalledTimes(1);expect(notify).toHaveBeenCalledTimes(2);
+   config.steps[5].probability=42;publishPerformanceState({...state,bpm10:1320});read();await vi.advanceTimersByTimeAsync(400);
+   expect(current?.steps[5].probability).toBe(42);expect(write).toHaveBeenCalledTimes(2);
+   const bad=structuredClone(config);bad.values[S.bpm10]=1;expect(()=>publishPerformance(bad)).toThrow();read();expect(current?.values[S.bpm10]).toBe(1200);
+  }finally{publishPerformance(defaultPerformance());unsubscribe();await vi.advanceTimersByTimeAsync(400);vi.unstubAllGlobals();vi.useRealTimers();}
+ });
  it('starts disabled at 120 BPM and preserves global playing response',()=>{const p=defaultPerformance();expect(p.values[S.enabled]).toBe(0);expect(p.values[S.bpm10]).toBe(1200);expect(p.values[S.followPreset]).toBe(0);expect(p.values[S.volumeSync]).toBe(1);expect(p.steps).toHaveLength(32);});
  it('round trips every step and rejects unknown bits or out-of-range settings',()=>{const p=defaultPerformance();p.steps[3]={on:true,tie:false,velocity:127,probability:42,ratchets:4};p.steps[5]={on:true,tie:true,velocity:80,probability:100,ratchets:1};expect(performanceFromWords(performanceWords(p))).toEqual(p);const words=performanceWords(p);words[24]|=1<<20;expect(()=>performanceFromWords(words)).toThrow();for(const [i,value]of[[S.bpm10,399],[S.bpm10,2401],[S.length,33],[S.gate,0],[S.range,5]]){const copy=structuredClone(p);copy.values[i]=value;expect(()=>validatePerformance(copy)).toThrow();}p.steps[0].tie=true;p.steps[0].ratchets=2;expect(()=>validatePerformance(p)).toThrow();});
  it('generates an exact number of evenly spaced hits and rotates them',()=>{const p=defaultPerformance();expect(euclidean(p.steps,16,5,0).slice(0,16).filter(s=>s.on)).toHaveLength(5);const rotated=euclidean(p.steps,16,5,1);expect(rotated[1].on).toBe(true);expect(euclidean(p.steps,16,0,0).slice(0,16).every(s=>!s.on)).toBe(true);expect(euclidean(p.steps,16,16,0).slice(0,16).every(s=>s.on)).toBe(true);});

@@ -504,7 +504,8 @@ replaces the current lesson's steps with the captured phrase. The actual keys
 become preferred keys, with duplicates initially accepted. Add pauses as rest
 steps and adjust beat lengths afterward. Encoder hold, hiding the tab, or a
 lost connection stops recording and keeps captured notes in the open draft.
-Edits autosave into a recovery draft. **Save course** updates the saved course.
+Edits autosave into a recovery draft after a brief pause and when you leave the
+editor. **Save course** updates the saved course.
 
 For small songs or segments, add one lesson per manageable phrase. Each step
 can contain a note, a chord, or a timed rest. New lessons and added steps start blank. In standard 12-EDO,
@@ -678,8 +679,9 @@ orientation. Overrides moved beyond the visible board are retained and can
 return with later transforms or undo. Undo/redo also covers painting, with one
 continuous brush stroke treated as one action.
 
-Both editors keep drafts in this browser when you switch items or reload the
-page. `Save to Browser` updates the saved library item; `Discard draft` returns
+Both editors autosave drafts after a brief pause and when you leave the editor,
+keeping them in this browser when you switch items or reload the page.
+`Save to Browser` updates the saved library item; `Discard draft` returns
 to the saved or originally opened version. Library copies and exports use the
 saved item. The editor’s export action includes its current draft. Browser
 storage is local to this browser; export files for a portable backup.

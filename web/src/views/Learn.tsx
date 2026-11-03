@@ -1,4 +1,6 @@
 import type { LearnLocation } from "../navigation.ts";
+import {useAutosave} from '../editor/useAutosave.ts';
+import {writeStoredText} from '../editor/autosave.ts';
 import { answerLabel, answerNotes, inPitchSet } from "../learn/lessonAnswers.ts";
 import { ExplorationRun, accompanimentAt } from "../learn/exploration.ts";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
@@ -136,7 +138,7 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
   const goalTempoOnRepeat = course && !!lesson.timing && repeatTempo(activeBpm,lesson.timing.goalBpm,stepTempo)!==activeBpm;
   const [continuous, setContinuous] = useState(true);
   const [contrast,setContrast]=useState(()=>{try{const saved=Number(localStorage.getItem("hexboard.learn.contrast")??50);return Number.isFinite(saved)?Math.max(25,Math.min(85,saved)):50;}catch{return 50;}});
-  useEffect(()=>{try{localStorage.setItem("hexboard.learn.contrast",String(contrast));}catch{}},[contrast]);
+  useAutosave(()=>{try{writeStoredText(localStorage,"hexboard.learn.contrast",String(contrast));}catch{}},[contrast]);
   const [achievement,setAchievement]=useState<Achievement>();
   useEffect(()=>{
     if(!achievement)return;
@@ -145,7 +147,7 @@ export function Learn({ transport, connected, deviceHello,connectionControl,navi
   },[achievement]);
   const [rewardSound,setRewardSound]=useState(()=>{try{return localStorage.getItem("hexboard.learn.rewardSound")!=="off";}catch{return true;}});
   const achievementSound=useRef<AchievementSound|undefined>(undefined);
-  useEffect(()=>{try{localStorage.setItem("hexboard.learn.rewardSound",rewardSound?"on":"off");}catch{/* Optional preference. */}if(!rewardSound)achievementSound.current?.stop();},[rewardSound]);
+  useEffect(()=>{try{writeStoredText(localStorage,"hexboard.learn.rewardSound",rewardSound?"on":"off");}catch{/* Optional preference. */}if(!rewardSound)achievementSound.current?.stop();},[rewardSound]);
   const [lastRun, setLastRun] = useState<{ number: number; elapsedMs?: number; mistakes: number; beat?: BeatResult }>();
   const [now, setNow] = useState(0);
   const metronome = useRef<PracticeMetronome | null>(null);

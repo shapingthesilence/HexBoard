@@ -16,7 +16,7 @@ export function PerformanceRow({transport,disabled=false,physical=true,voiceCont
  const fail=(e:unknown)=>{const message=synthErrorMessage(e);if(mounted.current&&message!==undefined)setError(message);};
  useEffect(()=>{let disposed=false,polling=false;++epoch.current;mounted.current=true;setReady(!transport);setError('');const c=transport?new PhysicalSynthClient(transport):undefined;client.current=c;
   if(c)void c.performance().then(r=>{if(!disposed){latest.current=r.config;publishPerformanceState(r);setState(r);setReady(true);}}).catch(e=>{if(!disposed)fail(e);});
-  const poll=setInterval(()=>{if(!c||disposed||polling||sending.current||busyRef.current)return;polling=true;void Promise.all([c.performance(),c.status()]).then(([r,s])=>{if(!disposed){setState(r);setVelocity(s.preset.velocityEngine);if(!queued.current&&!sending.current){latest.current=r.config;publishPerformanceState(r);}setReady(true);}}).catch(e=>{if(!disposed)fail(e);}).finally(()=>polling=false);},250);
+  const poll=setInterval(()=>{if(!c||disposed||polling||document.hidden||sending.current||busyRef.current)return;polling=true;void Promise.all([c.performance(),c.status()]).then(([r,s])=>{if(!disposed){setState(r);setVelocity(s.preset.velocityEngine);if(!queued.current&&!sending.current){latest.current=r.config;publishPerformanceState(r);}setReady(true);}}).catch(e=>{if(!disposed)fail(e);}).finally(()=>polling=false);},250);
   return()=>{disposed=true;mounted.current=false;clearInterval(poll);c?.close();client.current=undefined;queued.current=undefined;sending.current=false;};
  },[transport]);
  const change=(next:PerformanceConfig)=>{latest.current=next;publishPerformance(next);setSaved(false);setError('');if(!client.current)return;queued.current=next;

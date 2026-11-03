@@ -1,3 +1,4 @@
+import {writeStoredText} from './editor/autosave.ts';
 export type ViewKey = "synth" | "layouts" | "learn" | "calibration";
 export interface LearnLocation {
   view: "learn";
@@ -52,7 +53,7 @@ export function saveLocation(location: AppLocation, replace = false): void {
   if (window.location.hash !== path) window.history[replace ? "replaceState" : "pushState"](null, "", path);
   try {
     const saved = JSON.stringify(location);
-    window.localStorage.setItem(storageKey, saved);
-    window.localStorage.setItem(`${storageKey}.${location.view}`, saved);
+    writeStoredText(window.localStorage, storageKey, saved);
+    writeStoredText(window.localStorage, `${storageKey}.${location.view}`, saved);
   } catch { /* URLs still work when storage is unavailable. */ }
 }

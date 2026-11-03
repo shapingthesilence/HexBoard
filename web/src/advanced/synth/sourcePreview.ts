@@ -1,4 +1,3 @@
-import {useEffect,useRef,useState} from 'react';
 import {modulationRate,modulationSeconds} from './schema.ts';
 import {lfoWave} from './ModSourceEditor.tsx';
 import type {PhysicalExpression} from './client.ts';
@@ -12,22 +11,31 @@ export function envelopePreview(settings:number[],age:number){
   if(t<attack)return shape(t/attack);t-=attack;if(t<held)return 1;t-=held;
   return t<decay?1+(s/65535-1)*shape(t/decay):s/65535;
 }
-export function useSourcePreview(settings:number[],live?:PhysicalExpression){
-  const inputs=useRef({settings,live});inputs.current={settings,live};
-  const state=useRef({started:performance.now(),off:0,releaseFrom:0,held:false,key:null as number|null,env:0,lfo:0,origin:performance.now()});
-  const [values,setValues]=useState([0,0]);
-  useEffect(()=>{const timer=setInterval(()=>{
-    const {settings:s,live:e}=inputs.current;const st=state.current,now=performance.now();const held=!!e?.held;
-    if(held&&(!st.held||e!.key!==st.key)){st.started=now;st.off=0;}
-    if(!held&&st.held){st.off=now;st.releaseFrom=st.env;}
-    st.held=held;st.key=e?.key??null;
-    const age=(now-st.started)/1000;
-    st.env=held?envelopePreview(s,age):st.off?st.releaseFrom*Math.max(0,1-(now-st.off)/1000/Math.max(.001,modulationSeconds(s[3]))):0;
-    const phase=((s[10]?now-st.started:now-st.origin)/1000)*modulationRate(s[8])+s[11]/65535;
-    const wave=lfoWave(Math.round(s[9]/13107),phase);const delay=modulationSeconds(s[12]),fade=modulationSeconds(s[13]);
-    const amount=age<delay?0:fade>0?Math.min(1,(age-delay)/fade):1;
-    const target=(s[14]?(wave+1)/2:wave)*amount;const smoothing=.5*s[15]/65535;
-    st.lfo+=(target-st.lfo)*(.05/(.05+smoothing));setValues([st.env,st.lfo]);
-  },50);return()=>clearInterval(timer);},[]);
-  return values;
+
+/** Fixed-size visual state. Smoothing keeps its 50 ms response at any frame rate. */
+export class SourcePreview {
+  readonly values: [number, number] = [0, 0];
+  private started: number;
+  private off = 0;
+  private releaseFrom = 0;
+  private held = false;
+  private key: number | null = null;
+  private last: number;
+  constructor(private origin: number) { this.started = this.last = origin; }
+  advance(s: number[], e: PhysicalExpression | undefined, now: number) {
+    const held = !!e?.held;
+    if (held && (!this.held || e!.key !== this.key)) { this.started = now; this.off = 0; }
+    if (!held && this.held) { this.off = now; this.releaseFrom = this.values[0]; }
+    this.held = held; this.key = e?.key ?? null;
+    const age = (now - this.started) / 1000;
+    this.values[0] = held ? envelopePreview(s, age) : this.off ? this.releaseFrom * Math.max(0, 1 - (now - this.off) / 1000 / Math.max(.001, modulationSeconds(s[3]))) : 0;
+    const phase = (now - (s[10] ? this.started : this.origin)) / 1000 * modulationRate(s[8]) + s[11] / 65535;
+    const wave = lfoWave(Math.round(s[9] / 13107), phase), delay = modulationSeconds(s[12]), fade = modulationSeconds(s[13]);
+    const amount = age < delay ? 0 : fade > 0 ? Math.min(1, (age - delay) / fade) : 1;
+    const target = (s[14] ? (wave + 1) / 2 : wave) * amount, smoothing = .5 * s[15] / 65535;
+    const elapsed = Math.max(0, now - this.last) / 1000;
+    this.values[1] += (target - this.values[1]) * (smoothing ? 1 - (smoothing / (.05 + smoothing)) ** (elapsed / .05) : 1);
+    this.last = now;
+    return this.values;
+  }
 }

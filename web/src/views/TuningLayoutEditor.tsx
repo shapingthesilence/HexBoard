@@ -1,3 +1,4 @@
+import {writeStoredText} from "../editor/autosave.ts";
 import { publishTuningTargets } from "../editor/tuningTargets.ts";
 import { tuningPitch } from "../learn/tuningPractice.ts";
 import { withAdvancedContentMaintenance } from "../advanced/contentMaintenance.ts";
@@ -385,7 +386,7 @@ function loadStoredBundles(): TuningBundle[] {
     const parsed = JSON.parse(raw) as unknown;
     const migrated = orderedComputerBundles(parseTuningBundleLibrary(parsed));
     if (!current && legacy) {
-      window.localStorage.setItem(tuningBundleStorageKey, JSON.stringify(migrated));
+      writeStoredText(window.localStorage, tuningBundleStorageKey, JSON.stringify(migrated));
     }
     return migrated;
   } catch {
@@ -395,7 +396,7 @@ function loadStoredBundles(): TuningBundle[] {
 
 function persistBundles(bundles: TuningBundle[]) {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(tuningBundleStorageKey, JSON.stringify(orderedComputerBundles(bundles)));
+    writeStoredText(window.localStorage, tuningBundleStorageKey, JSON.stringify(orderedComputerBundles(bundles)));
   }
 }
 
@@ -419,7 +420,7 @@ function loadStoredGeometryFolders(): string[] {
 
 function persistGeometryFolders(folders: string[]) {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(geometryFoldersStorageKey, JSON.stringify(folders.filter((folder) => folder !== rootFolderPath)));
+    writeStoredText(window.localStorage, geometryFoldersStorageKey, JSON.stringify(folders.filter((folder) => folder !== rootFolderPath)));
   }
 }
 

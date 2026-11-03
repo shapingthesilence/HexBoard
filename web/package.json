@@ -12,8 +12,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "spessasynth_core": "4.4.1",
     "spessasynth_lib": "4.4.0"
   },

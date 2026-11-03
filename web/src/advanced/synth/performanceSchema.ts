@@ -1,4 +1,5 @@
 import {useSyncExternalStore} from 'react';
+import {Autosave,writeStoredText} from '../../editor/autosave.ts';
 export const S={enabled:0,mode:1,division:2,timing:3,range:4,gate:5,swing:6,latch:7,restart:8,quantize:9,velocityMode:10,velocity:11,pressureMode:12,pressure:13,destination:14,clock:15,followPreset:16,bpm10:17,periodMode:18,length:19,volumeSync:20,lfoSync:21,lfoDivision:22} as const;
 export interface ArpStep {on:boolean;tie:boolean;velocity:number;probability:number;ratchets:number}
 export interface PerformanceConfig {format:'hexboard.performance.v1';values:number[];steps:ArpStep[]}
@@ -22,8 +23,25 @@ const storage='hexboard.performance.v1';
 let snapshot=defaultPerformance();try{const raw=localStorage.getItem(storage);if(raw)snapshot=validatePerformance(JSON.parse(raw));}catch{/* Fresh session uses Threshold Strike. */}
 let actualTempo10=snapshot.values[S.bpm10];
 const listeners=new Set<()=>void>();
-export function publishPerformance(p:PerformanceConfig){snapshot=validatePerformance(p);if(!snapshot.values[S.clock])actualTempo10=snapshot.values[S.bpm10];try{localStorage.setItem(storage,JSON.stringify(snapshot));}catch{/* Explicit export remains available. */}listeners.forEach(f=>f());}
-export function usePerformance(){return useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn);},()=>snapshot,()=>snapshot);}
+const writes=new Autosave();
+const flush=()=>{void writes.flush().catch(()=>{});};
+const hidden=()=>{if(document.hidden)flush();};
+export function subscribePerformance(fn:()=>void){
+ if(!listeners.size&&typeof window!=='undefined'){window.addEventListener('pagehide',flush);document.addEventListener('visibilitychange',hidden);}
+ listeners.add(fn);
+ return()=>{listeners.delete(fn);if(!listeners.size){flush();if(typeof window!=='undefined'){window.removeEventListener('pagehide',flush);document.removeEventListener('visibilitychange',hidden);}}};
+}
+function updatePerformance(p:PerformanceConfig, tempo=actualTempo10){
+ const next=validatePerformance(p);
+ const changed=next.values.some((v,i)=>v!==snapshot.values[i])||next.steps.some((s,i)=>{const old=snapshot.steps[i];return s.on!==old.on||s.tie!==old.tie||s.velocity!==old.velocity||s.probability!==old.probability||s.ratchets!==old.ratchets;});
+ if(!next.values[S.clock])tempo=next.values[S.bpm10];
+ if(!changed&&tempo===actualTempo10)return;
+ actualTempo10=tempo;
+ if(changed){snapshot=next;writes.schedule(()=>{try{writeStoredText(localStorage,storage,JSON.stringify(snapshot));}catch{/* Explicit export remains available. */}});}
+ listeners.forEach(f=>f());
+}
+export function publishPerformance(p:PerformanceConfig){updatePerformance(p);}
+export function usePerformance(){return useSyncExternalStore(subscribePerformance,()=>snapshot,()=>snapshot);}
 
-export function publishPerformanceState(state:PerformanceState){actualTempo10=state.bpm10;publishPerformance(state.config);}
-export function usePerformanceTempo(){return useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn);},()=>actualTempo10,()=>actualTempo10);}
+export function publishPerformanceState(state:PerformanceState){updatePerformance(state.config,state.bpm10);}
+export function usePerformanceTempo(){return useSyncExternalStore(subscribePerformance,()=>actualTempo10,()=>actualTempo10);}

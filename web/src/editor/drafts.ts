@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import {useAutosave} from './useAutosave.ts';
+import {writeStoredText} from './autosave.ts';
 
 export interface EditorDraft<T> { value: T; base: T }
 export interface DraftState<T> { active: string; entries: Record<string, EditorDraft<T>> }
@@ -25,9 +27,9 @@ export function useEditorDrafts<T>(storageKey: string, validate: (value: unknown
     catch { return { active: "", entries: {} }; }
   });
   const [error, setError] = useState("");
-  useEffect(() => {
+  useAutosave(() => {
     try {
-      window.localStorage.setItem(storageKey, JSON.stringify(state));
+      writeStoredText(window.localStorage, storageKey, JSON.stringify(state));
       setError("");
     } catch { setError("Draft could not be saved in this browser. Export a file to keep your work."); }
   }, [state, storageKey]);
@@ -40,6 +42,7 @@ export function useEditorDrafts<T>(storageKey: string, validate: (value: unknown
   }
   function forget(key: string) {
     setState(current => {
+      if (!(key in current.entries) && current.active !== key) return current;
       const entries = { ...current.entries };
       delete entries[key];
       return { active: current.active === key ? "" : current.active, entries };

@@ -1,4 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
+import {useAutosave} from '../../editor/useAutosave.ts';
+import {writeStoredText} from '../../editor/autosave.ts';
 import {createPortal} from 'react-dom';
 import {DevicePresetLibrary,useDeviceLibrary,deviceEngineBase,type DeviceMedium,type DeviceRow} from './DevicePresetLibrary.tsx';
 import {deviceFavoriteLimit,type PhysicalSynthClient,type DeviceFavorite} from './client.ts';
@@ -14,7 +16,7 @@ interface Link {browser?:string;device?:{slot:number;folder:string;medium:1|2}}
 interface Identity {link:Link;folder:string}
 const identityKey=(engine:number)=>`hexboard.advanced.library.${engine}`;
 function readIdentity(engine:number):Identity{try{const v=JSON.parse(localStorage.getItem(identityKey(engine))??'null');if(v&&typeof v.folder==='string'&&typeof v.link==='object')return v;}catch{/* Private windows may refuse storage. */}return {link:{},folder:''};}
-function writeIdentity(engine:number,value:Identity){try{localStorage.setItem(identityKey(engine),JSON.stringify(value));}catch{/* The current page still holds the identity. */}}
+function writeIdentity(engine:number,value:Identity){try{writeStoredText(localStorage,identityKey(engine),JSON.stringify(value));}catch{/* The current page still holds the identity. */}}
 const engineName=(engine:number)=>engine===2?'Physical Strings':engine===4?'Juno':'DX7';
 const folderOf=(slot:number)=>Math.floor(slot/32)%32;
 const browserFavoriteLimit=32; // Shared across engines, like HexBoard favorites.
@@ -36,7 +38,8 @@ export function PresetLibrary({preset,client,disabled,onLoad,onDeviceLoad,onBusy
  const pendingDevice=useRef<{engine:number;name:string}|undefined>(undefined);
  const dialog=useRef<HTMLDialogElement>(null),launcher=useRef<HTMLButtonElement>(null),files=useRef<HTMLInputElement>(null);
  const {link,folder}=identity;
- const updateIdentity=(next:Partial<Identity>)=>setIdentity(v=>{const value={...v,...next};writeIdentity(engine,value);return value;});
+ const updateIdentity=(next:Partial<Identity>)=>setIdentity(v=>({...v,...next}));
+ useAutosave(()=>writeIdentity(engine,identity),[engine,identity]);
  useEffect(()=>{void readLibrary().then(setEntries).catch(e=>setError(String(e)));},[]);
  useEffect(()=>{if(!open)return;const d=dialog.current;d?.showModal();void readLibrary().then(setEntries).catch(e=>setError(String(e)));return()=>{d?.close();launcher.current?.focus();};},[open]);
  const operation=async(fn:()=>Promise<void>)=>{setWorking(true);onBusy?.(true);setError('');setNotice('');try{await fn();}catch(e){setError(e instanceof Error?e.message:String(e));}finally{onBusy?.(false);setWorking(false);}};

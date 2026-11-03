@@ -105,7 +105,7 @@ export function Knob({ label, value, min = 0, max = 65535, disabled, onChange, o
         <path d="M -2 -2 L 1 0 L -2 2" fill="none" stroke="currentColor" strokeWidth="1.5" transform={`translate(${arc.x} ${arc.y}) rotate(${arc.angle + (depth < 0 ? 180 : 0)})`}/>
       </g>;
         }))}
-      {routes.length > 0 && <circle className="modulation-position" cx={liveDot.x} cy={liveDot.y} r="2.6" fill="#f4fbff" stroke="#15232e" strokeWidth="1" data-value={effectiveValue ?? base}/>}
+      {routes.length > 0 && <circle className="modulation-position" cx={Math.round(liveDot.x * 10) / 10} cy={Math.round(liveDot.y * 10) / 10} r="2.6" fill="#f4fbff" stroke="#15232e" strokeWidth="1"/>}
     </svg>
     <span className="knob-face"><span className="knob-pointer" style={{ transform: `rotate(${-135 + 270 * (baseValue === undefined ? (value - min) / (max - min) : baseValue / 65535)}deg)` }}/></span>
   </div>;

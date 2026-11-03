@@ -126,7 +126,7 @@ export class PatchPreview {
   }
   private installRoom(impulse:Float32Array[]){
     if(!this.ctx||!this.bus||!this.limiter)return;
-    const buffer=this.ctx.createBuffer(2,impulse[0].length,this.ctx.sampleRate);impulse.forEach((c,i)=>buffer.copyToChannel(new Float32Array(c),i));this.roomBuffer=buffer;
+    const buffer=this.ctx.createBuffer(2,impulse[0].length,this.ctx.sampleRate);impulse.forEach((c,i)=>buffer.getChannelData(i).set(c));this.roomBuffer=buffer;
     const previous=this.room,oldGain=this.roomGain,room=this.ctx.createConvolver(),gain=this.ctx.createGain(),now=this.ctx.currentTime;
     room.normalize=false;room.buffer=buffer;gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(this.patch.settings?.space??0,now+.025);
     this.bus.connect(room).connect(gain).connect(this.limiter);this.room=room;this.roomGain=gain;
@@ -234,7 +234,7 @@ export class PatchPreview {
       a.channels[0].length,
       sampleRate,
     );
-    a.channels.forEach((c, i) => buffer!.copyToChannel(new Float32Array(c), i));
+    a.channels.forEach((c, i) => buffer!.getChannelData(i).set(c));
     this.cache.set(asset, buffer);
     return buffer;
   }

@@ -1,4 +1,7 @@
 import {fxRouteDepth} from './fxRouting.ts';import {fxSourceIds,type FxRack} from './schema.ts';
+import {useMemo} from 'react';
+import {PreviewSelect} from './SynthVisualPreview.tsx';
+import {CanvasPlot} from './CanvasPlot.tsx';
 // UI-only frequency response of the same two-pole TPT design as the audio
 // filter. Includes complex dry/wet summation; never feeds DSP or the transport.
 export function filterResponse(cutoff:number,resonance:number,mix:number,mode:number,hz:number){
@@ -8,13 +11,19 @@ export function filterResponse(cutoff:number,resonance:number,mix:number,mode:nu
  return Math.hypot(1-mix+mix*real,mix*imag);
 }
 export function FilterResponse({rack,sources=[]}:{rack:FxRack;sources?:number[]}){
- const values=rack.values[5].map((v,i)=>i===3?v:Math.max(0,Math.min(1,v/65535+fxSourceIds.reduce((sum,s)=>sum+fxRouteDepth(rack,20+i,s)*(sources[s]??0)/65536,0))));
- const [cutoff,resonance,mix,mode]=values,dbY=(amplitude:number)=>8+(18-Math.max(-42,Math.min(18,20*Math.log10(Math.max(1e-5,amplitude)))))/60*48;
- const path=Array.from({length:81},(_,i)=>{const x=8+i*224/80,hz=20*1000**(i/80);return `${i?'L':'M'}${x.toFixed(2)},${dbY(filterResponse(cutoff,resonance,mix,mode,hz)).toFixed(2)}`;}).join(' ');
+ const value=(i:number,sources:number[])=>Math.max(0,Math.min(1,rack.values[5][i]/65535+fxSourceIds.reduce((sum,s)=>sum+fxRouteDepth(rack,20+i,s)*(sources[s]??0)/65536,0)));
+ return <PreviewSelect fallback={value(0,sources)} select={s=>value(0,s)}>{cutoff => <PreviewSelect fallback={value(1,sources)} select={s=>value(1,s)}>{resonance => <PreviewSelect fallback={value(2,sources)} select={s=>value(2,s)}>{mix => <FilterCurve cutoff={cutoff} resonance={resonance} mix={mix} mode={rack.values[5][3]}/>}</PreviewSelect>}</PreviewSelect>}</PreviewSelect>;
+}
+function FilterCurve({cutoff,resonance,mix,mode}:{cutoff:number;resonance:number;mix:number;mode:number}){
+ const dbY=(amplitude:number)=>8+(18-Math.max(-42,Math.min(18,20*Math.log10(Math.max(1e-5,amplitude)))))/60*48;
+ const values=useMemo(()=>Array.from({length:81},(_,i)=>Math.round(dbY(filterResponse(cutoff,resonance,mix,mode,20*1000**(i/80)))*100)/100),[cutoff,resonance,mix,mode]);
  const cutoffX=8+Math.log(2**(9.813781*cutoff))/Math.log(1000)*224;
- return <svg className="fx-filter-response" viewBox="0 0 240 68" role="img" aria-label={`${['Low-pass','Band-pass','High-pass'][mode]} filter response preview`}>
-  <path className="filter-grid" d="M8 22.4H232 M8 46.4H232 M60 8V56 M135 8V56 M210 8V56"/>
-  <path className="filter-cutoff-line" d={`M${cutoffX} 8V56`}/><path className="filter-response-line" d={path}/>
-  <text x="8" y="66">20 Hz</text><text x="232" y="66" textAnchor="end">20 kHz</text>
- </svg>;
+ return <CanvasPlot className="fx-filter-response" width={240} height={68} role="img" aria-label={`${['Low-pass','Band-pass','High-pass'][mode]} filter response preview`} paint={(ctx,c)=>{
+   ctx.strokeStyle=c.foreground;ctx.globalAlpha=.1;ctx.lineWidth=.7;ctx.beginPath();
+   ctx.moveTo(8,22.4);ctx.lineTo(232,22.4);ctx.moveTo(8,46.4);ctx.lineTo(232,46.4);
+   for(const x of [60,135,210]){ctx.moveTo(x,8);ctx.lineTo(x,56);}ctx.stroke();
+   ctx.strokeStyle=c.brand;ctx.globalAlpha=.25;ctx.lineWidth=1;ctx.setLineDash([2,3]);ctx.beginPath();ctx.moveTo(cutoffX,8);ctx.lineTo(cutoffX,56);ctx.stroke();ctx.setLineDash([]);
+   ctx.globalAlpha=1;ctx.lineWidth=2;ctx.lineCap=ctx.lineJoin='round';ctx.beginPath();values.forEach((y,i)=>{const x=Math.round((8+i*224/80)*100)/100;if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);});ctx.stroke();
+   ctx.fillStyle=c.foreground;ctx.globalAlpha=.6;ctx.font=`8px ${c.font}`;ctx.fillText('20 Hz',8,66);ctx.textAlign='right';ctx.fillText('20 kHz',232,66);
+ }}/>;
 }

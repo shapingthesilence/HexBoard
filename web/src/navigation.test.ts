@@ -10,7 +10,7 @@ function browser(hash = "", blocked = false) {
     history: { pushState: write, replaceState: write },
     localStorage: {
       getItem: (key: string) => { if (blocked) throw Error("blocked"); return entries.get(key) ?? null; },
-      setItem: (key: string, value: string) => { if (blocked) throw Error("blocked"); entries.set(key, value); }
+      setItem: vi.fn((key: string, value: string) => { if (blocked) throw Error("blocked"); entries.set(key, value); })
     }
   });
   return { location, write, entries };
@@ -89,5 +89,11 @@ describe("navigation", () => {
     saveLocation({ view: "synth" });
     expect(write).toHaveBeenCalledTimes(1);
     expect(initialLocation()).toEqual({ view: "synth" });
+  });
+  it("does not rewrite storage when navigation state is unchanged", () => {
+    browser();saveLocation({view:'synth'});
+    const write=vi.mocked(window.localStorage.setItem);expect(write).toHaveBeenCalledTimes(2);
+    for(let i=0;i<1000;++i)saveLocation({view:'synth'});
+    expect(write).toHaveBeenCalledTimes(2);
   });
 });

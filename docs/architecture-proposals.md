@@ -124,9 +124,9 @@ ACK/NACK outcome, and restored audio/UI ownership on hardware.
 
 **Evidence:** [TuningLayoutEditor.tsx](../web/src/views/TuningLayoutEditor.tsx) and
 [SynthPresetLibrary.tsx](../web/src/views/SynthPresetLibrary.tsx) each combine editing, library operations,
-connection effects, and transfer UI. `editor/drafts.ts` is already shared, but
-persists the complete draft state with `JSON.stringify()` and synchronous
-`localStorage.setItem()` whenever that state changes.
+connection effects, and transfer UI. Draft state and coalesced persistence already
+have shared owners under `editor/`; their current storage and lifecycle rules
+are documented in the [web development guide](../web/README.md).
 
 **Proposal:** Keep musical editing/transforms in testable state reducers,
 extract library and device-operation services, and leave views responsible for
@@ -134,16 +134,12 @@ presentation. Give each operation a connection/session identity so stale async
 completions cannot update a new connection or newly opened draft. Reuse
 `presetSyncClient.ts` for wire progression instead of adding another transport.
 
-Profile draft serialization during dragging and large tuning edits. If it is
-material, coalesce writes by dirty draft with explicit flush points for switching
-items, export, and page lifecycle. Preserve discard baselines and visible save
-failures; specify any durability tradeoff before delaying persistence.
-
 **Benefit:** Device ACK/commit, dependency checks, and replacement workflows
 have a reusable owner. Smaller state boundaries make additional object editors
-easier to add. Reduced serialization is a possible browser responsiveness gain.
+easier to add.
 **Cost:** Splitting JSX alone does not reduce runtime work. Debounced persistence
-can lose the most recent edits if the browser terminates before a flush.
+already has lifecycle flush points; extracting state must preserve those points,
+discard baselines, and visible save failures.
 
 **First slice:** Extract one complete tuning save operation, including dependency
 validation, ACK handling, refresh, and active-record application. Remove the

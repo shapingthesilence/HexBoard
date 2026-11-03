@@ -72,6 +72,8 @@ describe('wavetable previews', () => {
     const html = renderToStaticMarkup(createElement(WavetableSynthEditor, {}));
     const order = ['Oscillator', 'Warp', 'Unison', 'Layers', 'Resonator', 'Filter', 'Amp', 'Output'].map(s => html.indexOf(`wt-stage-${s.toLowerCase()}`));
     expect(order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1]))).toBe(true);
+    // Continuous meter/readout updates must not become screen-reader announcements.
+    expect(html).toContain('<output aria-live="off"');
     expect(renderToStaticMarkup(createElement(AdvancedSynthEditor, {engines: true}))).toContain('Wavetable');
     expect(wavetablePreset('x', initialWavetable()).format).toBe('hexboard.wavetable.v1');
   });
