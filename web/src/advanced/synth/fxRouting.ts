@@ -11,3 +11,6 @@ export function fxRoutePatch(rack:FxRack,id:number,source:number,value:number):F
 }
 
 export function removeFx(rack:FxRack,id:number):FxRack{const row=id===5?5:id-1;return {...rack,order:rack.order.filter(v=>v!==id),routes:(rack.routes??Array(70).fill(0)).map((v,i)=>Math.floor(fxTargetIds[Math.floor(i/5)]/4)===row?0:v)};}
+
+/** Moves one effect to a slot among the other effects (0 = first). */
+export function moveFx(order:number[],id:number,slot:number):number[]{const rest=order.filter(v=>v!==id);rest.splice(Math.max(0,Math.min(slot,rest.length)),0,id);return rest;}

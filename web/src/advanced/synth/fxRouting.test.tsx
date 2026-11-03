@@ -1,9 +1,10 @@
 import {describe,it,expect} from 'vitest';import {renderToStaticMarkup} from 'react-dom/server';
 import {defaultFx,validateFx,fxRow,initialPreset,physicalPresetFromUnknown} from './schema.ts';
-import {removeFx,fxRoutePatch,fxRouteDepth,fxRoutingUsage} from './fxRouting.ts';import {dspUsage,dspSourceContribution,routePatch} from './dspBudget.ts';
+import {removeFx,moveFx,fxRoutePatch,fxRouteDepth,fxRoutingUsage} from './fxRouting.ts';import {dspUsage,dspSourceContribution,routePatch} from './dspBudget.ts';
 import {initialClassic,classicFromUnknown} from './classicSchema.ts';
 import {FxRackEditor} from './FxRackEditor.tsx';import {decodeFx} from './client.ts';import {encodeU21} from '../../protocol/index.ts';
 describe('FX filter and global routing',()=>{
+ it('moves one effect to a slot among the others, clamped to the chain',()=>{const order=[1,2,3,4];expect(moveFx(order,1,2)).toEqual([2,3,1,4]);expect(moveFx(order,4,0)).toEqual([4,1,2,3]);expect(moveFx(order,2,1)).toEqual(order);expect(moveFx(order,3,9)).toEqual([1,2,4,3]);expect(moveFx(order,3,-1)).toEqual([3,1,2,4]);});
  it('upgrades five-row sounds with a bypass-neutral filter and no routes',()=>{const f=defaultFx();expect(validateFx({...f,values:f.values.slice(0,5),routes:undefined})).toEqual(f);expect(fxRow(5)).toBe(5);expect(()=>validateFx({...f,values:f.values.map((r,i)=>i===5?[...r.slice(0,3),3]:r)})).toThrow();});
  it('keeps signed source depths independent and bounds targets',()=>{let f=fxRoutePatch(defaultFx(),20,8,-32000);f=fxRoutePatch(f,20,3,20000);expect(fxRouteDepth(f,20,8)).toBe(-32000);expect(fxRoutingUsage(f).connections).toBe(2);for(const s of [4,6,7])f=fxRoutePatch(f,20,s,1);expect(()=>validateFx(f)).toThrow();expect(fxRoutePatch(f,23,8,1)).toBe(f);expect(fxRoutePatch(f,20,1,1)).toBe(f);});
  it('charges shared routes once, includes them in the 32-connection budget and source hover',()=>{let p=physicalPresetFromUnknown(initialPreset);p.routes.fill(0);p.effects={...p.effects,order:[5]};const base=dspUsage(p);p={...p,effects:fxRoutePatch(p.effects,20,8,1234)};expect(dspUsage(p).units-base.units).toBe(3);expect(dspSourceContribution(p,8)).toBe(3);for(let i=0;i<32;++i)p=routePatch(p,i,1,1);expect(dspUsage(p).connections).toBe(33);expect(dspUsage(p).fits).toBe(false);});

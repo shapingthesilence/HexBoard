@@ -154,11 +154,14 @@ are not a promise that every patch has passed a maximum-rate hardware test.
 
 **Output level** defaults to 0 dB, with a linked output limiter controlling
 peaks. The volume rocker changes the DAC's analog level for headphones and
-speaker. The FX rack's **＋** adds Distortion, Reverb, Volume Steps or Chorus,
-with one instance each. Distortion has Warm, Clip, Fold, Diode and Crush
+speaker. The FX rack's **＋ Add** adds Distortion, Reverb, Volume Steps, Chorus
+or Filter, with one instance each. Effects run in numbered order from In down
+to the output limiter. Distortion has Warm, Clip, Fold, Diode and Crush
 characters. Volume Steps keeps Tempo/Depth in the rack; **Edit sequence** opens
 six patterns, 1–16 paintable levels, timing division and edge softness. It runs
-at its own tempo, with no MIDI clock synchronization yet. Drag cards to reorder; changes apply after a one-second
+at its own tempo, with no MIDI clock synchronization yet. To reorder, drag an
+effect by its title bar: a line shows where it will land, and Escape cancels.
+The ↑ and ↓ buttons move it one place. Changes apply after a one-second
 cooldown with a brief fade when needed. Delay remains unavailable.
 
 The material pads show recognizable corner materials and separately positioned
