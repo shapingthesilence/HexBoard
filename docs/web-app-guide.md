@@ -82,7 +82,14 @@ pickups. **Pin pressure** engages a preparation above zero: drag horizontally fo
 vertically for pressure, or use its knobs. Strong pressure can buzz and mute
 the string. **Irregularity** adds correlated pitch wandering; zero is stable.
 Pin is available with Strike/Sample. With Bow, Irregularity becomes contact
-texture. **Body EQ** shapes formants before the effects; its pad changes Size
+texture. The **String response** picture shows **Drive**: on the left, how
+the bridge saturation bends the signal against a clean diagonal; on the right, a
+struck note ringing out over Ring time and Release, driven in color with the
+clean note behind it. Warm rounds peaks, Edge clips them flat and Fold wraps
+them back down. The saturation runs inside the string loop and is capped at the
+dashed ceiling, so loud notes are shaped hardest and the quiet tail rings clean;
+the top quarter of Drive lowers the ceiling. Level compensation is not drawn.
+**Body EQ** shapes formants before the effects; its pad changes Size
 and Wood–Metal Color, Intensity blends the EQ, and Focus sharpens its bands. Try Wooden Cabinet, Glass Chamber,
 Pinned Piano and Drifting Wire.
 

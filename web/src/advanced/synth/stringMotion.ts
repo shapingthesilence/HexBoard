@@ -1,5 +1,7 @@
 // A bounded visual analogy of one reported key; no audio samples or transport.
 import {releaseSeconds} from './schema.ts';
+import {driveCharacter,stringDrive} from './stringDrive.ts';
+const loopLevel=1.2;
 export interface MotionInput {values:number[];held:boolean;key:number|null;velocity:number;playing:boolean}
 interface Ball {x:number;y:number;speed:number;energy:number;age:number;bounce:number;touching:boolean}
 export interface MotionFrame {path:string;amplitude:number;balls:{x:number;y:number;r:number;opacity:number;touching:boolean}[];pickups:number[];bow:number;contact:boolean;active:boolean}
@@ -51,9 +53,8 @@ export class StringMotion {
       for(let n=1;n<=5;++n){const weight=n===1?1:(.08+.65*hardness)/n;wave+=weight*Math.sin(Math.PI*n*x)*Math.cos(time*n*(1+.09*v[6]*n*n))*Math.sin(Math.PI*n*position);}
       if(!bowed)wave+=.2*v[12]*Math.sin(Math.PI*7*x)*Math.cos(time*12)*Math.exp(-this.age*4);
       if(mode===4)wave+=.2*v[25]*Math.sin(Math.PI*9*x)*Math.cos(time*13)*Math.exp(-(this.age-this.lastImpact)*8);
-      wave/=1.7;const drive=v[26]*v[26],shape=Math.round(v[27]*2);
-      const shaped=shape===1?clamp(wave,-.3,.3)*2:shape===2?Math.sin(wave*7)*.8:Math.tanh(wave*3)*.8;
-      wave+=drive*(shaped-wave);
+      // The engine's bridge saturation; the drawing's peak maps to a loud loop level.
+      wave=stringDrive(wave/1.7*loopLevel,v[26],driveCharacter(v[27]))/loopLevel;
       if(!bowed&&v[29]>0){const pin=.05+.9*v[30];wave+=(.4*v[29])*Math.sin(Math.PI*13*x)*Math.cos(time*8)*Math.exp(-8*Math.abs(x-pin));wave*=1-.35*v[29];}
       return clamp(wave,-1,1)*amplitude;
     };

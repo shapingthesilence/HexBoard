@@ -342,6 +342,12 @@ colors and glow; unison and flow decorations use that same clock without seeking
 native animation timelines. Drawing inputs are cached until they change, and
 unmounted plots release their backing surfaces.
 
+`stringDrive.ts` mirrors the Advanced Physical Strings bridge saturation
+(`saturateWave` and its per-block thresholds in HexBoard_Advanced
+`physical_model.cpp`); update both together. The String response plot and the
+motion preview share it. The plot subscribes only to Ring time, Release, Drive,
+character and Irregularity, redraws only when those change, and has no clock.
+
 Keep React and React DOM on matching versions, at least 19.3.1. Development
 performance tracks must release emitted timing records rather than accumulating
 them for the lifetime of an animated editor tab.

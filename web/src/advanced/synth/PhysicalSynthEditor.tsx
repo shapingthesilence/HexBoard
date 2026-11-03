@@ -25,6 +25,7 @@ import {PhysicalPreview} from "./enginePreview.ts";
 import {PreviewContext, PreviewValues, PreviewSource, PreviewExpression} from "./SynthVisualPreview.tsx";
 import {startVisibleAnimation} from "../../animation.ts";
 import { StringAnimation } from "./StringAnimation.tsx";
+import { StringResponseView, driveGlyphs } from "./StringResponseView.tsx";
 import { SampleEditor } from "./SampleEditor.tsx";
 import { ModSourceEditor, modSourceHelp } from "./ModSourceEditor.tsx";
 import { modulationRouteCount, modulationSeconds, modulationRate, type FxRack, type SampleExciter,  initialPreset, physicalParameters, physicalSources, physicalPresetFromUnknown, type PhysicalPreset } from "./schema.ts";
@@ -405,7 +406,7 @@ export function PhysicalSynthEditor({ transport,advanced=false,onDeviceEngineLoa
       <div className="pin-controls">{[29,30].map(control)}</div>
     </fieldset>
 
-    <fieldset className="response-panel" disabled={busy}><legend>String response</legend><div className="knob-bank">{control(0)}{control(3)}{control(26)}{control(28)}</div><div className="source-tabs drive-characters" role="group" aria-label="Saturation character" aria-disabled={driveUnavailable} data-unavailable={driveUnavailable||undefined} >{["Warm","Edge","Fold"].map((name,i)=><button type="button" key={name} disabled={busy||driveUnavailable} aria-pressed={Math.round(preset.parameters[27]*2/65535)===i} onClick={()=>setParameter(27,Math.round(i*65535/2))}>{name}</button>)}</div></fieldset>
+    <fieldset className="response-panel" disabled={busy}><legend>String response</legend><StringResponseView disabled={driveUnavailable}/><div className="knob-bank">{control(0)}{control(3)}{control(26)}{control(28)}</div><div className="source-tabs drive-characters" role="group" aria-label="Saturation character" aria-disabled={driveUnavailable} data-unavailable={driveUnavailable||undefined} >{["Warm","Edge","Fold"].map((name,i)=><button type="button" key={name} disabled={busy||driveUnavailable} aria-pressed={Math.round(preset.parameters[27]*2/65535)===i} onClick={()=>setParameter(27,Math.round(i*65535/2))}><svg className="drive-glyph" viewBox="0 0 24 14" aria-hidden="true"><path d={driveGlyphs[i]}/></svg>{name}</button>)}</div></fieldset>
 
     <fieldset className="contact-panel" disabled={busy}><legend>Contact</legend>
       <div className="source-tabs" aria-label="Contact mode">{["Off", "Bounce", "Rattle", "Mute", "Marbles"].map((mode, index) => <button key={mode} aria-pressed={Math.round(preset.parameters[8]*4/65535) === index} onClick={() => setParameter(8,Math.round(index*65535/4))}>{mode}</button>)}</div>

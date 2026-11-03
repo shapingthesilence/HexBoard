@@ -379,6 +379,9 @@
 .physical-editor .spatial-panel>.mini-controls .physical-control { width:100%; }
 .physical-editor .pin-controls { gap:8px; }
 .physical-editor .response-panel .knob-bank { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.physical-editor .string-response-plot { display:block;width:100%;height:auto;max-height:150px;margin:0 0 6px;border-radius:7px;background:var(--synth-scope); }
+.physical-editor .drive-characters button { display:inline-flex;align-items:center;justify-content:center;gap:6px; }
+.physical-editor .drive-glyph { width:22px;height:13px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round; }
 .physical-editor .body-panel { margin:0;padding:10px 8px 8px; }
 .physical-editor .body-layout { display:block; }
 .physical-editor .body-pad { min-height:0;aspect-ratio:1; }

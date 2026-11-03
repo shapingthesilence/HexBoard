@@ -21,7 +21,8 @@ export function CanvasPlot({width, height, paint, style, ...props}: Props) {
     let colors: PlotColors, visible = true;
     const theme = () => {
       const css = getComputedStyle(canvas), value = (key: string, fallback: string) => css.getPropertyValue(key).trim() || fallback;
-      colors = {trace: value('--wt-trace', '#8a3ff0'), accent: value('--wt-trace-2', '#d0459c'), frame: value('--wt-frame', '#8f86a8'), spread: value('--wt-spread', '#b79cff'), scope: value('--wt-scope', '#f6f3fc'), border: value('--border', '#ccc'), edge: value('--border-strong', '#999'), raised: value('--surface-raised', '#fff'), brand: value('--brand', '#6b45c9'), text: value('--text-soft', '#666'), foreground: css.color, font: css.fontFamily};
+      // Engine identity colors (SynthIdentity.css); Wavetable's --wt-* tokens alias these.
+      colors = {trace: value('--synth-1', '#8a3ff0'), accent: value('--synth-2', '#d0459c'), frame: value('--wt-frame', '#8f86a8'), spread: value('--wt-spread', '#b79cff'), scope: value('--synth-scope', '#f6f3fc'), border: value('--border', '#ccc'), edge: value('--border-strong', '#999'), raised: value('--surface-raised', '#fff'), brand: value('--brand', '#6b45c9'), text: value('--text-soft', '#666'), foreground: css.color, font: css.fontFamily};
     };
     const render = () => {
       if (!visible || document.hidden) return;
