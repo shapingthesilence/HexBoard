@@ -10,7 +10,7 @@ import {P, S, option, routeCount, sourceCount, type WavetablePatch} from './wave
 // Advanced src/synth/wavetable_budget.h enforces the same estimate on the
 // board; both test suites pin the same fixture values.
 export const wavetableCapacityUs = 2873;
-const fixedUs = 410, usPerCycle = 2.56 * 1.036;
+const fixedUs = 420, usPerCycle = 2.56 * 1.036;
 export type WavetableStage = 'oscillator' | 'warp' | 'unison' | 'layers' | 'resonator' | 'filter' | 'amp' | 'output';
 export interface WavetableCost {us: number; stages: Record<WavetableStage, number>; fits: boolean}
 const routed = (p: WavetablePatch, id: number) => p.routes.some(r => r.source < sourceCount && r.destination === id && r.depth !== 0);
@@ -25,8 +25,8 @@ export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): Wavetable
   const blend = p.parameters[P.Brightness] < 65470 || routed(p, P.Brightness);
   const resonator = option(P.Resonator, p.parameters[P.Resonator]);
   const cycles = {
-    oscillator: 20 + (blend ? 70 : 40),
-    unison: (copies - 1) * (blend ? 70 : 40),
+    oscillator: 20 + (blend ? 72 : 42),
+    unison: (copies - 1) * (blend ? 72 : 42),
     warp: warp === 0 ? 0 : copies * (warp === 4 ? 17 : 12),
     layers: (active(p, P.Noise) ? 8 : 0) + (active(p, P.Transient) ? 24 : 0) + (active(p, P.Sub) ? 10 : 0),
     resonator: resonator === 0 ? 0 : resonator === 1 ? 66 : 56,

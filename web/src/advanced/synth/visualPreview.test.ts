@@ -51,7 +51,7 @@ describe('wavetable live preview contracts', () => {
     }
     preview.advance(3600000);
     expect(callbacks).toBe(200); expect(preview.parameters).toBe(parameters); expect(preview.sources).toBe(sources);
-    expect(parameters).toHaveLength(30); expect(sources).toHaveLength(11);
+    expect(parameters).toHaveLength(initialWavetable().parameters.length); expect(sources).toHaveLength(11);
   });
   it('does not extend a frame when a render installs another subscription', () => {
     const preview = new WavetablePreview(wavetablePreset('Live', initialWavetable()), 0);

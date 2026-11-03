@@ -16,11 +16,13 @@ class Transport implements MidiTransport {
   label = "Advanced test";
   listeners = new Set<MidiMessageListener>();
   sent: number[][] = [];
-  samplerBytes=0;samplerReceived=0;badSamplerOffset=false;respond = true;state = 1;sampleLoop:number[]|undefined;sampleReplyLength?:number;catalogReplies?:number[][];
+  tableCandidate=false;samplerBytes=0;samplerReceived=0;badSamplerOffset=false;respond = true;state = 1;sampleLoop:number[]|undefined;sampleReplyLength?:number;catalogReplies?:number[][];
   modulation=defaultModulation();
   async send(bytes: ArrayLike<number>) {
     this.sent.push(Array.from(bytes));
     const frame = decodePresetSyncFrame(bytes);
+    if(frame.payload[1]===76||frame.payload[1]===77){if(frame.payload[1]===76)this.tableCandidate=false;else if(this.tableCandidate)throw Error('An incomplete table is still staged');const reply=frame.payload[1]===77?[17,...frame.payload.slice(2)]:[17,0,0,0,0,0];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x4d,frame.transactionId,reply)))));return;}
+
     if(frame.payload[1]===1)this.state=1;if(frame.payload[1]===2)this.state=0;
     if(frame.payload[1]===64){const reply=[17,...frame.payload.slice(2,4),4,...Array(288).fill(0)];queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x48,frame.transactionId,reply)))));return;}
     if(frame.payload[1]===69){const bytes=frame.payload[2]?frame.payload.slice(3):Array(256).fill(0);queueMicrotask(()=>this.listeners.forEach(l=>l(Uint8Array.from(encodeDefaultPresetSyncFrame(0x4a,frame.transactionId,[17,...bytes])))));return;}
@@ -340,3 +342,5 @@ it('reveals cached names top to bottom while a folder is still loading, without 
  expect(t.sent.map(p=>decodePresetSyncFrame(p).payload).filter(p=>p[1]===59).map(p=>p.slice(2))).toEqual([encodeU14(2048),encodeU14(2051),encodeU14(2079)]);
  }finally{c.close();}
 });
+
+it('recovers an abandoned table upload when returning to Basic Shapes',async()=>{const transport=new Transport();transport.tableCandidate=true;const client=new PhysicalSynthClient(transport,undefined,true);try{await client.selectWavetableTable(0);expect(transport.tableCandidate).toBe(false);expect(transport.sent.map(x=>decodePresetSyncFrame(x).payload[1]).slice(-2)).toEqual([76,77]);}finally{client.close();}});

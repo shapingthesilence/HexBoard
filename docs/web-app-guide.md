@@ -1054,7 +1054,7 @@ the small graph above the controls follows cutoff, resonance, mix and global
 modulation. The limiter remains last.
 
 Physical Strings and Wavetable share the FX rack: Distortion, Reverb, Volume
-Steps, Chorus and Filter. Wavetable places it after the ensemble; the clean sub
+Steps, Chorus, Filter and Ensemble. Wavetable places it after the voice mix; the clean sub
 joins afterward and stays dry. Rack settings save with the wavetable preset.
 Sampler Room uses the same stereo-reverb network, with Decay in milliseconds,
 Tone and Width controls. Browser audition follows the same delay network.
@@ -1140,3 +1140,26 @@ See [Classic sampler](compact-sampler.md) for supported sources, eight-voice and
 Classic and Advanced share **Sample → Tune & analyze** in the Sampler workspace. See
 [Sample tuning and loop suggestions](sampler-tuning.md) for reference-tone
 audition, fractional roots, confidence, and converted-loop verification.
+
+### Advanced wavetable tables
+
+Use the menu in the top corner of the large wavetable viewer to select a default
+or **Import WAV…**. Serum/Vital WAV table exports are supported, with automatic
+cycle-size metadata detection. Scrub the visual source/prepared comparison,
+choose blending, nearest-frame reduction or spectral morphing, then **Use table**.
+More options contains frame size/range, stereo channel, normalization, DC removal,
+phase alignment and smoothing. Edit import settings creates a copy.
+
+HexBoard Classic defaults use the retained original WAV masters, including Vowels
+and NotPiano, plus individual source cycles. Basic Shapes remains built in.
+Imported tables keep 16 playable frames, smooth pitch protection and Brightness.
+The table viewer follows the actual prepared audio. Unison Edge blend weights the
+outer copies; Start phase offers Random, Reset and Evenly spread. Near table ends,
+the fan moves inward while keeping its width and spacing.
+
+Sources and choices stay in this browser. Export a sound or table to move it to
+another browser. Connecting and starting a sound uploads its table when needed;
+this pauses audio. The board retains the last complete table across engine
+switches, but needs a reupload after power-off. Device table catalogs and startup
+persistence are not yet implemented. See Advanced's `docs/wavetable-import.md`
+for fidelity, prepared format and maintenance transport ownership.

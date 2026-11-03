@@ -252,6 +252,16 @@ export class PhysicalSynthClient {
     for(let at=0;at<words.length;at+=64)await this.request(31,[...encodeU21(at),Math.min(64,words.length-at),...words.slice(at,at+64).flatMap(encodeU21)]);
     await this.request(32);
   }
+  async selectWavetableTable(crc:number,bytes?:Uint8Array,progress?:(done:number,total:number)=>void){
+    await this.stopAndWait();
+    // Recover a candidate left by a disconnected editor before selecting even
+    // the built-in bank. The last complete asset remains available.
+    await this.request(76);
+    try {const selected=await this.request<number>(77,u32(crc));if(selected===crc)return;}catch(error){if(!bytes||!crc)throw error;}
+    if(!bytes)throw Error('This table is not in the browser library. Import its WAV or a sound containing it.');
+    const {crc32,validateAsset}=await import('./wavetable/prepare.mjs');if(validateAsset(bytes)!==crc)throw Error('The table does not match this sound.');
+    try {await this.request(73,[...u32(bytes.length),...u32(crc32(bytes))]);for(let at=0;at<bytes.length;at+=176){const chunk=bytes.subarray(at,at+176);const end=await this.request<number>(74,[...u32(at),...encodeU14(chunk.length),...Array.from(chunk).flatMap(b=>[b>>7,b&127])]);if(end!==at+chunk.length)throw Error('Table transfer offset mismatch.');progress?.(end,bytes.length);}if(await this.request<number>(75)!==crc)throw Error('The board received a different table.');}catch(error){try{await this.request(76);}catch{}throw error;}
+  }
   editWavetable(index:number,value:number){return this.retryAdvanced(34,[...encodeU21(index),...encodeU21(value),wavetableEngine]);}
   routeWavetable(index:number,source:number,destination:number,depth:number){return this.retryAdvanced(35,[...encodeU21(index),...encodeU21(source*256+destination),...encodeU21(depth+65536),wavetableEngine]);}
   async applyAdvanced(value:AdvancedPatch){const p=validateAdvanced(value),words=advancedWords(p);await this.request(30,[p.engine]);for(let at=0;at<words.length;at+=64)await this.request(31,[...encodeU21(at),Math.min(64,words.length-at),...words.slice(at,at+64).flatMap(encodeU21)]);await this.request(32);}
@@ -360,6 +370,8 @@ export class PhysicalSynthClient {
             const p=frame.payload;if(p.length<27||p.length>29||p[0]!==17||p[1]!==2||p[2]>3||p[3]>8||decodeU14(p.slice(4,6))>=3072||p[6]>2||p[7]>100||![2,4,5].includes(p[19])||p[20]>=32||decodeU14(p.slice(21,23))!==3072||p[23]!==32)throw Error('Update Advanced firmware for the folder preset library.');const mask=p.slice(8,13).reduce((a,b)=>a*128+b,0);if(mask>0xffffffff)throw Error('Invalid preset folder mask.');finish(undefined,{phase:p[2],action:p[3],slot:decodeU14(p.slice(4,6)),medium:p[6],progress:p[7],mask,elapsedMs:decodeU21(p.slice(13,16)),maxSliceUs:decodeU21(p.slice(16,19)),engine:p[19],folder:p[20],capacity:3072,folderCapacity:32,heapMin:decodeU21(p.slice(24,27)),error:p.length>27?p[27]:0,awaiting:p[28]===1} as T);
           } else if(operation===59&&frame.message===0x44){
             const p=frame.payload;if(p.length!==259||p[0]!==17||p[1]!==data[0]||p[2]!==data[1])throw Error('Invalid preset label.');const bytes=Uint8Array.from({length:128},(_,i)=>{if(p[3+i*2]>1)throw Error('Invalid preset label byte.');return (p[3+i*2]<<7)|p[4+i*2];});const text=(offset:number,n:number)=>{const b=bytes.slice(offset,offset+n),end=b.indexOf(0);return new TextDecoder('utf-8',{fatal:true}).decode(b.slice(0,end<0?n:end));};if(![2,3,4,5].includes(bytes[8])||bytes[9]>1)throw Error('Invalid preset engine.');finish(undefined,{engine:bytes[8],favorite:!!bytes[9],name:text(12,76),folder:text(88,40)} as T);
+          } else if(operation>=73&&operation<=77&&frame.message===0x4d){
+            const p=frame.payload;if(p.length!==6||p[0]!==17||p[1]>15)throw Error('Invalid table transfer acknowledgement.');finish(undefined,p.slice(1).reduce((n,b)=>n*128+b,0) as T);
           } else if(operation===71&&frame.message===0x4c){
             const p=frame.payload;if(p.length!==2||p[0]!==17||p[1]>1)throw Error('Update Advanced firmware to save without loading.');finish(undefined,{staged:p[1]===1} as T);
           } else if(operation===70&&frame.message===0x4b){

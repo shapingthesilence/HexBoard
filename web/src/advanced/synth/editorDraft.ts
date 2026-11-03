@@ -1,7 +1,7 @@
 import {initialClassic,classicFromUnknown} from './classicSchema.ts';
 import {initialPreset,physicalPresetFromUnknown} from './schema.ts';
 import {factoryWavetablePresets, wavetableFromUnknown, type WavetablePreset} from './wavetableSchema.ts';
-export const wavetableDraftKey = 'hexboard.wavetable.draft.v1';
+export const wavetableDraftKey = 'hexboard.wavetable.draft.v3';
 export function wavetableDraft(): WavetablePreset {
   try { const raw = localStorage.getItem(wavetableDraftKey); if (raw) return wavetableFromUnknown(JSON.parse(raw)); } catch { /* Use the first factory sound. */ }
   return factoryWavetablePresets[0];

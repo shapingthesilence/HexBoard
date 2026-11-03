@@ -3,16 +3,16 @@ import {fxRoutePatch} from './fxRouting.ts';
 // Wavetable patch: mirrors Advanced src/synth/wavetable_patch.h. Normalized U16
 // parameters, two envelope/LFO banks in the Physical Strings layout and sparse
 // source -> parameter routes, carried on the generic engine transport.
-export const wavetableEngine = 7, wavetableSchema = 2;  // 2: ensemble moved to the FX rack
+export const wavetableEngine = 7, wavetableSchema = 3;  // 3: table identity and unison controls
 export const P = {
   Frame: 0, FrameSpread: 1, Unison: 2, Detune: 3, Width: 4, WarpMode: 5, WarpAmount: 6, WarpBias: 7, Brightness: 8,
   Noise: 9, Transient: 10, TransientShape: 11, Sub: 12, SubOctave: 13, SubShape: 14,
   Cutoff: 15, Resonance: 16, FilterMode: 17, KeyTrack: 18, FilterEnvelope: 19,
   AmpAttack: 20, AmpDecay: 21, AmpSustain: 22, AmpRelease: 23,
   Resonator: 24, ResonatorMix: 25, ResonatorTune: 26, ResonatorDecay: 27,
-  Level: 28, Classic: 29
+  Level: 28, Classic: 29, EdgeBlend: 30, PhaseMode: 31, TableLow: 32, TableHigh: 33
 } as const;
-export const parameterCount = 30, modSettingCount = 16, routeCount = 16;
+export const parameterCount = 34, modSettingCount = 16, routeCount = 16;
 export const editCount = parameterCount + 2 * modSettingCount, wordCount = editCount + 2 * routeCount;
 export const S = {Velocity: 0, Pressure: 1, Release: 2, TiltX: 3, TiltY: 4, Env1: 5, Lfo1: 6, Env2: 7, Lfo2: 8, Joystick: 9, Pedal: 10} as const;
 export const sourceCount = 11;
@@ -25,20 +25,20 @@ export const resonatorNames = ['Off', 'Comb', 'Bell', 'Marimba'] as const;
 export const filterNames = ['Low-pass', 'Band-pass', 'High-pass'] as const;
 export const transientNames = ['Pick', 'Mallet', 'Breath'] as const;
 export const shapeNames = ['Sine', 'Triangle', 'Saw', 'Square'] as const;
-const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 3, [P.SubOctave]: 2, [P.SubShape]: 2, [P.FilterMode]: 3, [P.Resonator]: 4, [P.Classic]: 2};
+const optionCounts: Record<number, number> = {[P.Unison]: 7, [P.WarpMode]: 5, [P.TransientShape]: 3, [P.SubOctave]: 2, [P.SubShape]: 2, [P.FilterMode]: 3, [P.Resonator]: 4, [P.Classic]: 2,[P.PhaseMode]:3};
 export const options = (id: number) => optionCounts[id] ?? 0;
 export const discrete = (id: number) => options(id) !== 0;
 export function option(id: number, value: number) { const n = options(id); return n < 2 ? 0 : Math.floor((value * (n - 1) + 32767) / 65535); }
 export function optionValue(id: number, choice: number) { const n = options(id); return n < 2 ? 0 : Math.floor(choice * 65535 / (n - 1)); }
-export const modulatable = (id: number, _source?: number) => id >= 0 && id < parameterCount && !discrete(id) && id !== P.Classic;
+export const modulatable = (id: number, _source?: number) => id >= 0 && id < P.TableLow && !discrete(id) && id !== P.Classic;
 export const validModSetting = (id: number, v: number) => Number.isInteger(v) && v >= 0 && v <= 65535 && ((id !== 7 && id !== 10 && id !== 14) || v === 0 || v === 65535) && (id !== 9 || v % 13107 === 0);
 /** Bipolar: signed sources move the target both ways around its base value. */
 export const bipolarSource = (source: number, p?: WavetablePatch) => source === S.TiltX || source === S.TiltY || source === S.Joystick || ((source === S.Lfo1 || source === S.Lfo2) && !p?.mod[source === S.Lfo1 ? 0 : 1][14]);
 
 export interface WavetableRoute {source: number; destination: number; depth: number}
 export interface WavetablePatch {parameters: number[]; mod: [number[], number[]]; routes: WavetableRoute[]}
-export const wavetableFormat = 'hexboard.wavetable.v2';
-export interface WavetablePreset extends WavetablePatch {format: typeof wavetableFormat; name: string; effects: FxRack}
+export const wavetableFormat = 'hexboard.wavetable.v3';
+export interface WavetablePreset extends WavetablePatch {format: typeof wavetableFormat; name: string; effects: FxRack; table?: {id:string;name:string}}
 /** New wavetable sounds start with the two-voice Ensemble in the shared FX rack. */
 export const wavetableDefaultFx = (): FxRack => ({...defaultFx(), order: [6]});
 const unused = (): WavetableRoute => ({source: sourceCount, destination: 0, depth: 0});
@@ -61,20 +61,22 @@ export function initialWavetable(): WavetablePatch {
       65535, 6000, 0, 0, 32768,
       10650, 37740, 52428, 37740,
       0, 26000, 0, 40000,
-      46000, 0],
+      46000, 0, 65535, 0, 0, 0],
     mod: [[...defaultMod], [...defaultMod]], routes
   };
 }
+function validTableRef(value:unknown):{id:string;name:string}|undefined {if(value===undefined)return undefined;const v=value as {id?:unknown;name?:unknown};if(!v||typeof v.id!=='string'||!v.id||v.id.length>100||typeof v.name!=='string'||!v.name||v.name.length>80)throw Error('Invalid table reference.');return {id:v.id,name:v.name};}
+export const tableCrc=(p:WavetablePatch)=>(p.parameters[P.TableLow]|p.parameters[P.TableHigh]<<16)>>>0;
 export function wavetableFromUnknown(value: unknown): WavetablePreset {
   const p = value as Partial<WavetablePreset> | undefined;
   if (!p || typeof p !== 'object' || p.format !== wavetableFormat) throw Error(`This file is not a current wavetable preset. Use ${wavetableFormat}.`);
   if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 80) throw Error('Give the preset a name.');
   const patch = {parameters: [...(p.parameters ?? [])], mod: [[...(p.mod?.[0] ?? [])], [...(p.mod?.[1] ?? [])]] as [number[], number[]], routes: (p.routes ?? []).map(r => ({...r}))};
   if (!validWavetable(patch)) throw Error('This wavetable preset has invalid settings or routes.');
-  return {format: wavetableFormat, name: p.name.trim(), effects:validateFx(p.effects ?? wavetableDefaultFx()), ...patch};
+  return {format: wavetableFormat, name: p.name.trim(), table:validTableRef(p.table), effects:validateFx(p.effects ?? wavetableDefaultFx()), ...patch};
 }
-export const wavetablePreset = (name: string, patch: WavetablePatch): WavetablePreset => ({format: wavetableFormat, name, effects:validateFx('effects' in patch ? patch.effects : wavetableDefaultFx()), parameters: [...patch.parameters], mod: [[...patch.mod[0]], [...patch.mod[1]]], routes: patch.routes.map(r => ({...r}))});
-export const sameWavetable = (a: WavetablePreset, b: WavetablePreset) => a.name === b.name && JSON.stringify([a.parameters, a.mod, a.routes,a.effects]) === JSON.stringify([b.parameters, b.mod, b.routes,b.effects]);
+export const wavetablePreset = (name: string, patch: WavetablePatch): WavetablePreset => ({format: wavetableFormat, name, table:validTableRef('table' in patch ? patch.table : undefined), effects:validateFx('effects' in patch ? patch.effects : wavetableDefaultFx()), parameters: [...patch.parameters], mod: [[...patch.mod[0]], [...patch.mod[1]]], routes: patch.routes.map(r => ({...r}))});
+export const sameWavetable = (a: WavetablePreset, b: WavetablePreset) => a.name === b.name && JSON.stringify([a.parameters, a.mod, a.routes,a.effects,a.table]) === JSON.stringify([b.parameters, b.mod, b.routes,b.effects,b.table]);
 
 // Word layout: parameters, Mod 1, Mod 2, then per route source << 8 | destination
 // and depth + 65536.
@@ -127,7 +129,7 @@ export const wavetableParameters: ParameterInfo[] = [
   {name: 'Warp', describe: v => warpNames[option(P.WarpMode, v)]},
   {name: 'Warp amount', describe: pct},
   {name: 'Alias guard', describe: pct},
-  {name: 'Brightness', describe: v => { const n = Math.round(2 ** (8 * v / 65535)); return n <= 1 ? 'Sine' : `${n} harmonics`; }},
+  {name: 'Brightness', describe: v => { const n = Math.round(2 ** (8 * v / 65535)); return n <= 1 ? 'Fundamental' : `${n} harmonics`; }},
   {name: 'Noise', describe: pct},
   {name: 'Transient', describe: pct},
   {name: 'Transient shape', describe: v => transientNames[option(P.TransientShape, v)]},
@@ -148,13 +150,17 @@ export const wavetableParameters: ParameterInfo[] = [
   {name: 'Tune', describe: v => `×${(2 ** (3 * v / 65535)).toFixed(2)}`},
   {name: 'Ring', describe: v => `${(.2 * 2 ** (4 * v / 65535)).toFixed(2)} s`},
   {name: 'Level', describe: v => { const g = (v / 65535) ** 2; return g <= 0 ? '−∞ dB' : `${(20 * Math.log10(g)).toFixed(1)} dB`; }},
-  {name: 'Classic stepping', describe: v => v ? 'On' : 'Off'}
+  {name: 'Classic stepping', describe: v => v ? 'On' : 'Off'},
+  {name: 'Edge blend', describe: pct},
+  {name: 'Start phase', describe: v => ['Random','Reset','Evenly spread'][option(P.PhaseMode,v)]},
+  {name: 'Table identity', describe: v => String(v)},
+  {name: 'Table identity', describe: v => String(v)}
 ];
 export function warpAmountDescription(mode: number, v: number) { return mode === 4 ? `×${(1 + 7 * v / 65535).toFixed(2)} sync` : pct(v); }
 
 // Factory sounds: each stays valid and within the measured combined workload.
 const preset = (name: string, values: Record<number, number>, routes: WavetableRoute[] = [], mod?: [Record<number, number>?, Record<number, number>?], effects: FxRack = wavetableDefaultFx()): WavetablePreset => {
-  const p: WavetablePatch & {effects: FxRack} = {...initialWavetable(), effects};
+  const p: WavetablePatch & {effects: FxRack; table?: {id:string;name:string}} = {...initialWavetable(), effects};
   for (const [id, v] of Object.entries(values)) p.parameters[Number(id)] = v;
   p.routes = Array.from({length: routeCount}, (_, i) => routes[i] ? {...routes[i]} : unused());
   mod?.forEach((m, bank) => { if (m) for (const [id, v] of Object.entries(m)) p.mod[bank][Number(id)] = v; });

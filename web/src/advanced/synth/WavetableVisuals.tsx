@@ -4,6 +4,7 @@ import {filterResponse} from './FilterResponse.tsx';
 import {envelopePoints} from './ModSourceEditor.tsx';
 import {timeValue} from './ModSourceEditor.tsx';
 import {modulationSeconds} from './schema.ts';
+import {levelBits} from './wavetable/prepare.mjs';
 import {cutoffHz} from './wavetableSchema.ts';
 import {usePreviewAnimation} from './SynthVisualPreview.tsx';
 import {CanvasPlot, plotDot, strokeWave, wavePath} from './CanvasPlot.tsx';
@@ -46,6 +47,14 @@ export function waveform(spectrum: number[], mode = 0, amount = 0, n = 160) {
   });
   return out;
 }
+/** The viewer reads the same prepared cycles the device plays. */
+function assetWave(table:Uint8Array,frame:number,brightness=1,mode=0,amount=0,n=160){
+ const view=new DataView(table.buffer,table.byteOffset,table.byteLength),level=16*(1-Math.max(0,Math.min(1,brightness))),lo=Math.floor(level),hi=Math.min(16,lo+1),blend=level-lo;
+ const a=Math.max(0,Math.min(15,Math.floor(frame))),b=Math.min(15,a+1),m=Math.max(0,Math.min(1,frame-a));
+ function tap(l:number,f:number,p:number){let offset=32;for(let i=0;i<l;i++)offset+=16*((1<<levelBits[i])+1)*2;const size=1<<levelBits[l],x=(p-Math.floor(p))*size,i=Math.floor(x),t=x-i;offset+=f*(size+1)*2;const v=view.getInt16(offset+i*2,true);return (v+t*(view.getInt16(offset+(i+1)*2,true)-v))/32768;}
+ return Array.from({length:n},(_,i)=>{const [p,w]=warp(i/n,mode,amount),x=tap(lo,a,p)*(1-m)+tap(lo,b,p)*m,y=tap(hi,a,p)*(1-m)+tap(hi,b,p)*m;return (x+(y-x)*blend)*w;});
+}
+export function fanCenter(frame:number,spread:number,copies:number){return copies===1?frame:Math.max(spread,Math.min(15-spread,frame));}
 const peakOf = (all: number[][]) => {
   let peak = 1e-6;
   for (const wave of all) for (const value of wave) peak = Math.max(peak, Math.abs(value));
@@ -63,12 +72,12 @@ const keyStep = (e: KeyboardEvent, value: number, set: (v: number) => void, up =
 };
 
 /** Sixteen frames as a receding stack; reuse one pixel surface for moving traces. */
-export function TableTerrain({frame, live, spread, copies, warpMode, warpAmount, brightness, disabled, onFrame}: {frame: number; live: number; spread: number; copies: number; warpMode: number; warpAmount: number; brightness: number; disabled?: boolean; onFrame: (value: number) => void}) {
-  const stack = useMemo(() => Array.from({length: frames}, (_, f) => waveform(frameSpectrum(f), 0, 0, 96)), []);
+export function TableTerrain({frame, live, spread, copies, warpMode, warpAmount, brightness, table, disabled, onFrame}: {table?:Uint8Array;frame: number; live: number; spread: number; copies: number; warpMode: number; warpAmount: number; brightness: number; disabled?: boolean; onFrame: (value: number) => void}) {
+  const stack = useMemo(() => Array.from({length: frames}, (_, f) => table?assetWave(table,f,1,0,0,96):waveform(frameSpectrum(f), 0, 0, 96)), [table]);
   const scale = useMemo(() => peakOf(stack), [stack]);
-  const paths = useRef<{line: Path2D; fill: Path2D}[] | undefined>(undefined);
+  const paths = useRef<{stack:number[][];items:{line:Path2D;fill:Path2D}[]} | undefined>(undefined);
   const position = live * 15, spreadFrames = spread * 4;
-  const current = useMemo(() => waveform(frameSpectrum(position, brightness), warpMode, warpAmount, 192), [position, brightness, warpMode, warpAmount]);
+  const current = useMemo(() => table?assetWave(table,position,brightness,warpMode,warpAmount,192):waveform(frameSpectrum(position, brightness), warpMode, warpAmount, 192), [table,position, brightness, warpMode, warpAmount]);
   const currentScale = Math.max(scale, peakOf([current]));
   const set = (e: PointerEvent<HTMLCanvasElement>) => { const r = e.currentTarget.getBoundingClientRect(), y = (e.clientY - r.top) / r.height * 240; onFrame(Math.round(Math.max(0, Math.min(1, (196 - y) / 10.5 / 15)) * 65535)); };
   return <CanvasPlot className="wt-terrain" width={600} height={240} role="slider" tabIndex={disabled ? -1 : 0} aria-label="Wavetable frame · drag up and down" aria-valuemin={1} aria-valuemax={16} aria-valuenow={Math.round(frame * 15) + 1} aria-disabled={disabled}
@@ -76,22 +85,22 @@ export function TableTerrain({frame, live, spread, copies, warpMode, warpAmount,
     onPointerMove={e => { if (!disabled && e.currentTarget.hasPointerCapture(e.pointerId)) set(e); }}
     onKeyDown={e => { if (!disabled) keyStep(e, Math.round(frame * 65535), onFrame); }}
     paint={(ctx, c) => {
-      paths.current ??= stack.map((_, i) => {
+      if(paths.current?.stack!==stack)paths.current={stack,items:stack.map((_, i) => {
         const f = frames - 1 - i, wave = stack[f], x = 36 + f * 12, y = 196 - f * 10.5;
         const line = wavePath(wave, x, y, 380, 26, scale), fill = new Path2D(line);
         fill.lineTo(x + 380, y + 30); fill.lineTo(x, y + 30); fill.closePath();
         return {line, fill};
-      });
+      })};
       for (let i = 0; i < stack.length; ++i) {
-        const f = frames - 1 - i, near = Math.abs(f - position) <= spreadFrames + .5;
-        ctx.fillStyle = c.scope; ctx.globalAlpha = .92; ctx.fill(paths.current[i].fill);
-        ctx.strokeStyle = near ? c.spread : c.frame; ctx.lineWidth = 1; ctx.globalAlpha = near ? 1 : .7; ctx.stroke(paths.current[i].line);
+        const f = frames - 1 - i, near = Math.abs(f - fanCenter(position,spreadFrames,copies)) <= spreadFrames + .5;
+        ctx.fillStyle = c.scope; ctx.globalAlpha = .92; ctx.fill(paths.current.items[i].fill);
+        ctx.strokeStyle = near ? c.spread : c.frame; ctx.lineWidth = 1; ctx.globalAlpha = near ? 1 : .7; ctx.stroke(paths.current.items[i].line);
       }
       ctx.globalAlpha = 1; ctx.strokeStyle = c.edge; ctx.lineWidth = 2; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(18, 196); ctx.lineTo(198, 38.5); ctx.stroke();
       ctx.fillStyle = c.accent;
       for (let i = 0; i < copies; ++i) {
-        const f = Math.max(0, Math.min(15, position + (copies === 1 ? 0 : 2 * i / (copies - 1) - 1) * spreadFrames));
+        const f = fanCenter(position,spreadFrames,copies) + (copies === 1 ? 0 : 2 * i / (copies - 1) - 1) * spreadFrames;
         plotDot(ctx, 18 + f * 12, 196 - f * 10.5, 3);
       }
       ctx.fillStyle = c.brand; plotDot(ctx, 18 + frame * 15 * 12, 196 - frame * 15 * 10.5, 6);
@@ -104,10 +113,10 @@ export function TableTerrain({frame, live, spread, copies, warpMode, warpAmount,
 }
 
 /** Phase map (input → played phase) beside the single cycle it produces. */
-export function WarpScope({mode, amount, frame, brightness}: {mode: number; amount: number; frame: number; brightness: number}) {
+export function WarpScope({mode, amount, frame, brightness,table}: {table?:Uint8Array;mode: number; amount: number; frame: number; brightness: number}) {
   const map = useMemo(() => Array.from({length: 97}, (_, i) => warp(i / 96, mode, amount)[0]), [mode, amount]);
   const top = Math.max(1, ...map);
-  const wave = useMemo(() => waveform(frameSpectrum(frame * 15, brightness), mode, amount, 160), [frame, brightness, mode, amount]);
+  const wave = useMemo(() => table?assetWave(table,frame*15,brightness,mode,amount,160):waveform(frameSpectrum(frame * 15, brightness), mode, amount, 160), [table,frame, brightness, mode, amount]);
   const scale = peakOf([wave]);
   return <CanvasPlot className="wt-warp-scope" width={300} height={110} role="img" aria-label="Phase warp preview" paint={(ctx, c) => {
     ctx.fillStyle = c.raised; ctx.strokeStyle = c.border; ctx.beginPath(); ctx.roundRect(4, 6, 96, 96, 6); ctx.fill(); ctx.stroke();
@@ -124,7 +133,7 @@ export function WarpScope({mode, amount, frame, brightness}: {mode: number; amou
 }
 
 /** Copies placed by stereo position and detune; faster shimmer means faster beating. */
-export function UnisonField({copies, detune, width, spread}: {copies: number; detune: number; width: number; spread: number}) {
+export function UnisonField({copies, detune, width, spread,blend=1}: {blend?:number;copies: number; detune: number; width: number; spread: number}) {
   const root = useRef<SVGSVGElement>(null);
   const dots = useRef<SVGCircleElement[]>([]);
   useLayoutEffect(() => { dots.current = Array.from(root.current!.querySelectorAll('.wt-unison-dot')); }, [copies]);
@@ -132,7 +141,7 @@ export function UnisonField({copies, detune, width, spread}: {copies: number; de
     for (const dot of dots.current) {
       const duration = Number(dot.dataset.period), time = duration ? (elapsed % (2 * duration)) / duration : 0;
       const ease = animationEase(time <= 1 ? time : 2 - time);
-      const opacity = reduced || !duration ? '.9' : (.45 + .55 * ease).toFixed(3);
+      const weight=Number(dot.dataset.weight??1);const opacity=((reduced||!duration ? .9 : .45+.55*ease)*(.15+.85*weight)).toFixed(3);
       const transform = reduced || !duration ? 'none' : `scale(${(.85 + .25 * ease).toFixed(4)})`;
       if (dot.style.opacity !== opacity) dot.style.opacity = opacity;
       if (dot.style.transform !== transform) dot.style.transform = transform;
@@ -147,7 +156,7 @@ export function UnisonField({copies, detune, width, spread}: {copies: number; de
       const beat = Math.abs(220 * (2 ** (pos * cents / 1200) - 1));
       return <g key={c}>
         <line className="wt-unison-stem" x1={130} y1={55} x2={x} y2={y}/>
-        <circle className="wt-unison-dot" cx={x} cy={y} r={5 + 3 * (1 - Math.abs(pos)) + 2 * spread} data-period={beat > .05 ? Number(Math.min(4, 1 / beat).toFixed(2)) * 1000 : 0}/>
+        <circle className="wt-unison-dot" cx={x} cy={y} r={5 + 3 * (1 - Math.abs(pos)) + 2 * spread} data-weight={copies===2?1:1-(1-blend)*Math.abs(pos)} data-period={beat > .05 ? Number(Math.min(4, 1 / beat).toFixed(2)) * 1000 : 0}/>
       </g>;
     })}
   </svg>;

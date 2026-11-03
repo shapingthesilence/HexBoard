@@ -102,5 +102,5 @@ it('pins the estimate the board enforces (Advanced wavetable_budget_test.cpp)',(
  const with_=(values:[number,number][])=>{const p=initialWavetable();for(const [id,v] of values)p.parameters[id]=v;return p;};
  const dense=with_([[P.Unison,optionValue(P.Unison,4)],[P.Brightness,34000],[P.WarpMode,optionValue(P.WarpMode,1)],[P.WarpAmount,24000],[P.Noise,12000],[P.Transient,12000],[P.Sub,24000],[P.Cutoff,45000],[P.Resonance,20000]]);
  const worst=with_([[P.Unison,optionValue(P.Unison,6)],[P.Brightness,40000],[P.WarpMode,optionValue(P.WarpMode,4)],[P.Noise,1],[P.Transient,1],[P.Sub,1],[P.Resonator,optionValue(P.Resonator,1)],[P.Resonance,1]]);
- expect([wavetableCost({...initialWavetable(),effects:defaultFx()}).us,wavetableCost({...initialWavetable(),effects:wavetableDefaultFx()}).us,wavetableCost({...initialWavetable(),effects:full()}).us,wavetableCost({...dense,effects:full()}).us,wavetableCost({...worst,effects:full()}).us]).toEqual([866,952,1687,2568,3186]);
+ expect([wavetableCost({...initialWavetable(),effects:defaultFx()}).us,wavetableCost({...initialWavetable(),effects:wavetableDefaultFx()}).us,wavetableCost({...initialWavetable(),effects:full()}).us,wavetableCost({...dense,effects:full()}).us,wavetableCost({...worst,effects:full()}).us]).toEqual([892,978,1713,2604,3233]);
 });
