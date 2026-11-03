@@ -1,4 +1,4 @@
-import {modulationSeconds} from './schema.ts';
+import {defaultFx,validateFx,type FxRack,modulationSeconds} from './schema.ts';
 // Wavetable patch: mirrors Advanced src/synth/wavetable_patch.h. Normalized U16
 // parameters, two envelope/LFO banks in the Physical Strings layout and sparse
 // source -> parameter routes, carried on the generic engine transport.
@@ -38,7 +38,7 @@ export const bipolarSource = (source: number, p?: WavetablePatch) => source === 
 
 export interface WavetableRoute {source: number; destination: number; depth: number}
 export interface WavetablePatch {parameters: number[]; mod: [number[], number[]]; routes: WavetableRoute[]}
-export interface WavetablePreset extends WavetablePatch {format: 'hexboard.wavetable.v1'; name: string}
+export interface WavetablePreset extends WavetablePatch {format: 'hexboard.wavetable.v1'; name: string; effects: FxRack}
 const unused = (): WavetableRoute => ({source: sourceCount, destination: 0, depth: 0});
 
 export function validWavetable(p: WavetablePatch): boolean {
@@ -69,10 +69,10 @@ export function wavetableFromUnknown(value: unknown): WavetablePreset {
   if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 80) throw Error('Give the preset a name.');
   const patch = {parameters: [...(p.parameters ?? [])], mod: [[...(p.mod?.[0] ?? [])], [...(p.mod?.[1] ?? [])]] as [number[], number[]], routes: (p.routes ?? []).map(r => ({...r}))};
   if (!validWavetable(patch)) throw Error('This wavetable preset has invalid settings or routes.');
-  return {format: 'hexboard.wavetable.v1', name: p.name.trim(), ...patch};
+  return {format: 'hexboard.wavetable.v1', name: p.name.trim(), effects:validateFx(p.effects ?? defaultFx()), ...patch};
 }
-export const wavetablePreset = (name: string, patch: WavetablePatch): WavetablePreset => ({format: 'hexboard.wavetable.v1', name, parameters: [...patch.parameters], mod: [[...patch.mod[0]], [...patch.mod[1]]], routes: patch.routes.map(r => ({...r}))});
-export const sameWavetable = (a: WavetablePreset, b: WavetablePreset) => a.name === b.name && JSON.stringify([a.parameters, a.mod, a.routes]) === JSON.stringify([b.parameters, b.mod, b.routes]);
+export const wavetablePreset = (name: string, patch: WavetablePatch): WavetablePreset => ({format: 'hexboard.wavetable.v1', name, effects:validateFx('effects' in patch ? patch.effects : defaultFx()), parameters: [...patch.parameters], mod: [[...patch.mod[0]], [...patch.mod[1]]], routes: patch.routes.map(r => ({...r}))});
+export const sameWavetable = (a: WavetablePreset, b: WavetablePreset) => a.name === b.name && JSON.stringify([a.parameters, a.mod, a.routes,a.effects]) === JSON.stringify([b.parameters, b.mod, b.routes,b.effects]);
 
 // Word layout: parameters, Mod 1, Mod 2, then per route source << 8 | destination
 // and depth + 65536.

@@ -46,7 +46,7 @@ describe('wavetable patch', () => {
 describe('wavetable DSP estimate', () => {
   it('reproduces the measured default and combined workloads', () => {
     expect(wavetableCost(initialWavetable()).us).toBeGreaterThan(850);
-    expect(wavetableCost(initialWavetable()).us).toBeLessThan(910);
+    expect(wavetableCost(initialWavetable()).us).toBeLessThan(950);
     const combined = initialWavetable(); const set = (id: number, v: number) => { combined.parameters[id] = v; };
     set(P.Unison, optionValue(P.Unison, 6)); set(P.FrameSpread, 65535); set(P.WarpMode, optionValue(P.WarpMode, 4)); set(P.Brightness, 40000);
     set(P.Noise, 20000); set(P.Transient, 20000); set(P.Sub, 20000); set(P.Resonator, optionValue(P.Resonator, 2)); set(P.Ensemble, optionValue(P.Ensemble, 2));
@@ -72,7 +72,17 @@ describe('wavetable previews', () => {
     const html = renderToStaticMarkup(createElement(WavetableSynthEditor, {}));
     const order = ['Oscillator', 'Warp', 'Unison', 'Layers', 'Resonator', 'Filter', 'Amp', 'Output'].map(s => html.indexOf(`wt-stage-${s.toLowerCase()}`));
     expect(order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1]))).toBe(true);
+    // Continuous meter/readout updates must not become screen-reader announcements.
+    expect(html).toContain('<output aria-live="off"');
+    expect(html).toContain('FX rack');expect(html).not.toContain('Motion sources');
     expect(renderToStaticMarkup(createElement(AdvancedSynthEditor, {engines: true}))).toContain('Wavetable');
     expect(wavetablePreset('x', initialWavetable()).format).toBe('hexboard.wavetable.v1');
   });
+});
+
+it('retains the shared effects rack through wavetable preset export and reload',()=>{
+ const p=wavetablePreset('Rack',initialWavetable());p.effects.order=[1,2,3,4,5];p.effects.values[0][0]=45678;
+ const roundtrip=wavetableFromUnknown(JSON.parse(JSON.stringify(p)));
+ expect(roundtrip.effects).toEqual(p.effects);
+ expect(wavetableCost(roundtrip).us).toBeGreaterThan(wavetableCost(initialWavetable()).us+700);
 });

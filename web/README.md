@@ -103,12 +103,14 @@ without a 404 fallback. Dialogs and course-editor previews do not change the URL
 | `views/TuningLayoutEditor.tsx` | Tuning, layout, scale/color editing and tuning libraries |
 | `views/SynthPresetLibrary.tsx` | Synth editor, preset libraries, and wavetable libraries |
 | `editor/drafts.ts` | Browser draft values, discard baselines, and persistence |
+| `editor/autosave.ts`, `editor/useAutosave.ts` | Coalesced draft writes, lifecycle flushing, and unchanged-value suppression |
 | `catalogs/` | Musical models, import/export, object IDs, validation, and device encoding |
 | `midi/presetSyncClient.ts`, `midi/webMidi.ts` | Request/transfer lifecycle and real MIDI ports |
 | `midi/mockTransport.ts` | Internal offline transport and protocol test support |
 | `protocol/` | Constants, SysEx framing, TLV, CRC32, and 8-to-7 packing |
 | `components/` | Shared library actions, folders, and organization dialogs |
 | `audio/` | Browser synth audition worklet and audio lifecycle |
+| `animation.ts` | Visible animation scheduling, capped at 60 updates per second, with hidden/offscreen suspension |
 | `views/Learn.tsx`, `learn/` | Tuning-aware scale practice, lazy device library, beat grading, delegated sessions, and LED hints |
 | `advanced/calibration/` | Connected-only Hall, velocity, pressure and diagnostic workflow; scoped SysEx client, validated records and charts |
 | `advanced/synth/` | Shared sampler import/editing tools and Classic compact target; Advanced engine editors, factory banks and typed clients |
@@ -323,11 +325,42 @@ keep these boundaries when moving it to a standalone repository later.
 ## Advanced synth editors
 
 The Advanced Synth context offers Physical Strings, Juno, DX7, and a
-capability-gated Sampler, with shared modulation and effects where supported. Updated Advanced firmware advertises capability bit 20. Classic
+Wavetable engine and capability-gated Sampler, with shared modulation and effects where supported. Updated Advanced firmware advertises capability bit 20. Classic
 presets use `hexboard.advanced.v2`; DX7 Import accepts checksum-validated single
 voices and 32-voice SysEx banks. Imported voices remain dry until you choose
 Add Advanced expression. Explicit Load/Preview/Start saves the numeric startup
 sound; ordinary drags update RAM. There is no macro system or compatibility loader for macro presets.
+
+Workspaces and individual synth editors load on demand. The synth views use
+`visualPreview.ts` and `SynthVisualPreview.tsx` for bounded live snapshots and
+subscriptions to the displayed values, separate from editable presets and undo
+history. Each engine's continuous preview has one visible animation clock capped
+at 60 updates per second; Physical Strings samples its motion at 30 Hz on that clock.
+Moving waveform and filter plots reuse canvas surfaces, with backing pixels capped
+at 2× display density and 2048×1024 per plot. They retain the waveform geometry,
+colors and glow; unison and flow decorations use that same clock without seeking
+native animation timelines. Drawing inputs are cached until they change, and
+unmounted plots release their backing surfaces.
+
+Keep React and React DOM on matching versions, at least 19.3.1. Development
+performance tracks must release emitted timing records rather than accumulating
+them for the lifetime of an animated editor tab.
+
+Hidden pages and offscreen animation surfaces suspend visual work. Device
+telemetry does not queue overlapping polls. Live expression/meter updates are
+isolated from the editor shell; sampler loading telemetry belongs to its status
+component. Identical performance polls preserve the shared config snapshot and
+skip storage writes and editor notifications; external-clock tempo changes still
+publish. Continuous meter/readout outputs disable live-region announcements;
+operation status and errors keep their announcements. Audio rendering, sampler motion and MIDI retain their own timing and
+are independent of the visual cap.
+
+Browser autosaves coalesce edits after 400 ms of quiet (800 ms for sampler audio),
+with at most one write in flight and one latest pending edit per writer. Pending
+work flushes when the editor unmounts or the page becomes hidden. Local-storage
+writes compare with the stored value; navigation, preferences and libraries skip
+identical writes. Explicit saves, imports and earned lesson progress persist
+immediately. Animation and unchanged telemetry never schedule draft saves.
 
 The **Presets** pop-up manages an IndexedDB computer library, factory banks, and
 a 3,072-entry device catalog per medium, grouped by engine and folder (32 sounds per folder). Device storage defaults to audio

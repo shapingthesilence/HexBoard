@@ -1,4 +1,5 @@
 import { AnswerEditor, ExplorationEditor, defaultExploration } from "./ActivityEditor.tsx";
+import {useAutosave} from '../editor/useAutosave.ts';
 import {NoteAudition} from "./noteAudition.ts";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { MidiTransport } from "../midi/types.ts";
@@ -65,17 +66,21 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
 
   const [saving,setSaving]=useState(false),[closeWarning,setCloseWarning]=useState(false),[draftStatus,setDraftStatus]=useState("Editor draft · no new edits");
   const dirty=JSON.stringify(draft)!==JSON.stringify(initial);
-  const writes=useRef<Promise<unknown>>(Promise.resolve());
-  useEffect(()=>{
-    if(!dirty&&!hasEdits.current)return;
+  const savedDraft=useRef<UserCourse|undefined>(undefined);
+  async function saveDraft(value:UserCourse){
+    if(savedDraft.current===value)return;
     setDraftStatus("Saving draft…");
-    writes.current=writes.current.catch(()=>{}).then(()=>courseStorage.saveDraft(draft));
-    void writes.current.then(()=>setDraftStatus("Draft autosaved · course not yet saved"),()=>setDraftStatus("Draft could not be saved. Export it before closing."));
-  },[draft,dirty]);
+    await courseStorage.saveDraft(value);savedDraft.current=value;
+    setDraftStatus("Draft autosaved · course not yet saved");
+  }
+  const writes=useAutosave(()=>{
+    if(!dirty&&!hasEdits.current)return;
+    return saveDraft(draft);
+  },[draft,dirty],()=>setDraftStatus("Draft could not be saved. Export it before closing."));
   useEffect(()=>{const warn=(event:BeforeUnloadEvent)=>{if(dirty){event.preventDefault();event.returnValue="";}};window.addEventListener("beforeunload",warn);return()=>window.removeEventListener("beforeunload",warn);},[dirty]);
   async function closeEditor(discard=false){
     disposeCapture();
-    try { await (discard?writes.current.catch(()=>{}):writes.current); if(discard)await courseStorage.removeDraft(draft.id); onClose(); }
+    try { if(discard)writes.cancel();await (discard?writes.flush().catch(()=>{}):writes.flush()); if(discard)await courseStorage.removeDraft(draft.id); onClose(); }
     catch { setError("Draft could not be saved. Save or export it before closing."); }
   }
   function exportDraft(){const url=URL.createObjectURL(new Blob([JSON.stringify(draft,null,2)],{type:"application/json"}));const link=document.createElement("a");link.href=url;link.download="hexboard-course-draft.json";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
@@ -200,7 +205,7 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
   }
   async function save() {
     setSaving(true);
-    try { await writes.current.catch(()=>{}); await onSave(parseCourse(draft)); }
+    try { await writes.flush().catch(()=>{}); await onSave(parseCourse(draft)); }
     catch (error) { setError(error instanceof Error ? error.message : "Could not save course."); } finally { setSaving(false); }
   }
   function disposeCapture() {
@@ -217,8 +222,8 @@ export function CourseEditor({ initial, bundles, transport, connected, onSave, o
         fingerings: [{ layoutId: layout.objectIdHex, steps: phrase.cues }] };
       const recordedCourse={...draft,lessons:draft.lessons.map((item,index)=>index===lessonIndex?recordedLesson:item)};
       setDraft(recordedCourse);setError("");
-      writes.current=writes.current.catch(()=>{}).then(()=>courseStorage.saveDraft(recordedCourse));
-      void writes.current.catch(()=>setDraftStatus("Recording draft could not be saved. Export it before closing."));
+      writes.schedule(()=>saveDraft(recordedCourse));
+      void writes.flush().catch(()=>setDraftStatus("Recording draft could not be saved. Export it before closing."));
       setStep(0);
     }
     capture.current = null;

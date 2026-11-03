@@ -2,7 +2,8 @@ import {useState} from 'react';
 import {Knob,sourceColors,sourceShortNames} from './SynthControls.tsx';
 import {effectDescription,effectTypes,physicalSources,fxRow,fxSourceIds,fxTargetIds,type FxRack} from './schema.ts';
 import {fxRouteDepth,fxRoutePatch} from './fxRouting.ts';
-export interface FxTargeting {tool:'value'|'modulate'|'delete';source:number;values:number[];finish:()=>void;focus?:()=>void}
+import {PreviewSelect} from './SynthVisualPreview.tsx';
+export interface FxTargeting {tool:'value'|'modulate'|'delete';source:number;values:number[];finish:()=>void;focus?:()=>void;previewSource?:(source:number)=>number}
 export function FxModControl({rack,id,param,label,busy,onChange,targeting,canApply,onPreview}:{rack:FxRack;id:number;param:number;label:string;busy:boolean;onChange:(rack:FxRack)=>void;targeting?:FxTargeting;canApply:(rack:FxRack)=>boolean;onPreview?:(rack?:FxRack)=>void}){
  const [deleting,setDeleting]=useState(false),row=fxRow(id),destination=row*4+param;
  const fullLabel=`${effectTypes[id-1].name} ${label}`;
@@ -16,10 +17,10 @@ export function FxModControl({rack,id,param,label,busy,onChange,targeting,canApp
  let effective=base/65535;for(const route of routes)effective+=route.depth/65536*(targeting?.values[route.i]??0);effective=Math.max(0,Math.min(1,effective));
  return <div className="physical-control" data-modulatable={modulatable||undefined} data-route-full={blocked||undefined} data-unavailable={assigning&&!modulatable||undefined} title={hint} onPointerEnter={preview} onFocusCapture={preview} onPointerLeave={()=>onPreview?.()} onBlurCapture={()=>onPreview?.()}>
   <strong>{label}</strong><div className="knob-wrap" onClick={()=>{if(targeting?.tool==='delete')setDeleting(!deleting);}}>
-  <Knob key={assigning?`route-${source}`:'value'} label={assigning&&modulatable?`${physicalSources[source]} to ${fullLabel}`:fullLabel} value={assigning&&modulatable?depth:base} min={assigning&&modulatable?-65536:0} max={assigning&&modulatable?65536:65535} baseValue={base} effectiveValue={effective} routes={routes} disabled={busy||blocked||targeting?.tool==='delete'} onChange={value=>{
+  <PreviewSelect fallback={effective} select={sources => Math.max(0, Math.min(1, base/65535 + routes.reduce((sum, r) => sum + r.depth/65536 * (sources[targeting?.previewSource?.(r.i)??r.i] ?? 0), 0)))}>{value => <Knob key={assigning?`route-${source}`:'value'} label={assigning&&modulatable?`${physicalSources[source]} to ${fullLabel}`:fullLabel} value={assigning&&modulatable?depth:base} min={assigning&&modulatable?-65536:0} max={assigning&&modulatable?65536:65535} baseValue={base} effectiveValue={value} routes={routes} disabled={busy||blocked||targeting?.tool==='delete'} onChange={value=>{
    if(assigning){const next=fxRoutePatch(rack,destination,source,Math.round(value));if(canApply(next))onChange(next);}
    else{const values=rack.values.map(row=>[...row]);values[row][param]=Math.round(value);onChange({...rack,values});}
-  }} onRelease={()=>{if(assigning){targeting?.finish();onPreview?.();}}}/>
+  }} onRelease={()=>{if(assigning){targeting?.finish();onPreview?.();}}}/>}</PreviewSelect>
   {targeting?.tool==='delete'&&routes.length>0&&<button className="delete-knob" aria-label={`Delete modulation from ${label}`}>×</button>}</div>
   <output>{assigning&&modulatable?`${Math.round(depth/65536*100)}%`:effectDescription(id,param,base)}</output>
   <div className="knob-routes">{routes.map(r=><span key={r.i} style={{color:sourceColors[r.i]}} title={`${r.label}: ${Math.round(r.depth/65536*100)}%`}>{sourceShortNames[r.i]} {r.depth>0?'+':''}{Math.round(r.depth/65536*100)}%</span>)}</div>

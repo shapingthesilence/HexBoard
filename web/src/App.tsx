@@ -1,16 +1,17 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import {writeStoredText} from './editor/autosave.ts';
 import { DeviceConnect, useDeviceConnection } from "./views/DeviceConnect.tsx";
-const CalibrationWorkspace = lazy(() => import("./advanced/calibration/CalibrationWorkspace.tsx").then(module => ({ default: module.CalibrationWorkspace })));
 import { hasAdvancedDevice } from "./midi/boardContext.ts";
-import { SynthContext } from "./views/SynthContext.tsx";
-import { TuningLayoutEditor } from "./views/TuningLayoutEditor.tsx";
-import { Learn } from "./views/Learn.tsx";
 import { MockMidiTransport } from "./midi/mockTransport.ts";
 import type { MidiTransport } from "./midi/types.ts";
 import type { HelloResponsePayload } from "./protocol/index.ts";
 
 import { visibleLocation } from "./advancedVisibility.ts";
 import { initialLocation, saveLocation, storedLocation, type AppLocation, type ViewKey } from "./navigation.ts";
+const CalibrationWorkspace = lazy(() => import("./advanced/calibration/CalibrationWorkspace.tsx").then(module => ({ default: module.CalibrationWorkspace })));
+const SynthContext = lazy(() => import("./views/SynthContext.tsx").then(module => ({ default: module.SynthContext })));
+const TuningLayoutEditor = lazy(() => import("./views/TuningLayoutEditor.tsx").then(module => ({ default: module.TuningLayoutEditor })));
+const Learn = lazy(() => import("./views/Learn.tsx").then(module => ({ default: module.Learn })));
 type ThemeMode = "light" | "dark";
 
 const views: Array<{ key: ViewKey; label: string }> = [
@@ -77,7 +78,7 @@ export function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    try { window.localStorage.setItem(themeStorageKey, theme); } catch { /* Optional preference. */ }
+    try { writeStoredText(window.localStorage, themeStorageKey, theme); } catch { /* Optional preference. */ }
   }, [theme]);
 
   const content = useMemo(() => {
@@ -87,7 +88,7 @@ export function App() {
       case "layouts":
         return <TuningLayoutEditor transport={transport} deviceHello={deviceHello} />;
       case "calibration":
-        return advancedConnected && deviceHello ? <Suspense fallback={<p role="status">Opening calibration…</p>}><CalibrationWorkspace key={transport.label} transport={transport} hello={deviceHello} /></Suspense> : null;
+        return advancedConnected && deviceHello ? <CalibrationWorkspace key={transport.label} transport={transport} hello={deviceHello} /> : null;
       case "synth":
         return <SynthContext transport={transport} hello={deviceHello} />;
     }
@@ -130,7 +131,7 @@ export function App() {
         </div>
       </header>
       <main>
-        {content}
+        <Suspense fallback={<p role="status">Opening workspace…</p>}>{content}</Suspense>
       </main>
     </div>
   );

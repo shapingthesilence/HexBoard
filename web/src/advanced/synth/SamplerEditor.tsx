@@ -1,4 +1,5 @@
 import {MotionEditor} from "./sampler/MotionEditor.tsx";
+import {useAutosave} from '../../editor/useAutosave.ts';
 import {motionSettings} from "./sampler/motion.mjs";
 import {InstrumentSetup,InstrumentResources,type SustainDesign} from './sampler/InstrumentSetup.tsx';
 import { SamplerWorkspace } from "./sampler/SamplerWorkspace.tsx";
@@ -23,10 +24,9 @@ import type { BasicSoundBank } from "spessasynth_core";
 import type { MidiTransport } from "../../midi/types.ts";
 import {
   PhysicalSynthClient,
-  type SamplerLoadingState,
   type SamplerInstrument,
 } from "./client.ts";
-import { samplerLoadingLabel } from "./sampler/loading.ts";
+import {SamplerLoadingStatus} from "./sampler/SamplerLoadingStatus.tsx";
 import { samplerDrafts, draftWorthSaving } from "./sampler/draftStorage.ts";
 import type {
   Patch,
@@ -152,7 +152,8 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
   const [sliceSensitivity,setSliceSensitivity]=useState(.5);
   const [draftNotice,setDraftNotice]=useState("");
   const [draftError,setDraftError]=useState("");
-  const draftReady=useRef(false);
+  const [draftReady,setDraftReady]=useState(false);
+  const savedDraft=useRef<{patch:Patch;template:string;id:string}|undefined>(undefined);
   const draftId=classic?"classic":"advanced";
   const [sustainDesign,setSustainDesign]=useState<SustainDesign>("natural");
   const [loopCycles,setLoopCycles]=useState(4);
@@ -180,8 +181,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
     [instruments, setInstruments] = useState<SamplerInstrument[]>([]),
     [folder, setFolder] = useState(0),
     [sdSource, setSdSource] = useState(0),
-    [playing, setPlaying] = useState(false),
-    [loading, setLoading] = useState<SamplerLoadingState>();
+    [playing, setPlaying] = useState(false);
   const tuningTargets = useTuningTargets();
   const [tuningStop, setTuningStop] = useState(0);
   const gesture = useRef(false);
@@ -228,25 +228,24 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
 
   useEffect(() => {
     let alive = true;
-    draftReady.current = false;
-    if (typeof indexedDB === "undefined") { draftReady.current = true; return; }
+    setDraftReady(false);
+    if (typeof indexedDB === "undefined") { setDraftReady(true); return; }
     samplerDrafts.load(draftId).then(draft => {
       if (!alive || !draft || !draftWorthSaving(draft.patch) || patchRef.current.assets.length) return;
+      savedDraft.current={patch:draft.patch,template:draft.template,id:draftId};
       setPatch(draft.patch); setTemplate(draft.template); setSelected(0); setZoneIndex(0);
       setDraftNotice(`Restored your unsaved instrument from ${new Date(draft.savedAt).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"})}.`);
     }).catch(e => { if (alive) setDraftError(`Couldn’t restore the autosaved instrument: ${e instanceof Error ? e.message : e}`); })
-      .finally(() => { draftReady.current = true; });
+      .finally(() => { if(alive)setDraftReady(true); });
     return () => { alive = false; };
   }, [draftId]);
-  useEffect(() => {
-    if (!draftReady.current || typeof indexedDB === "undefined") return;
-    const timer = setTimeout(() => {
-      (draftWorthSaving(patch) ? samplerDrafts.save(draftId, patch, template) : samplerDrafts.remove(draftId))
-        .then(() => setDraftError(""))
-        .catch(e => setDraftError(e instanceof DOMException && e.name === "QuotaExceededError" ? "This instrument is too large to autosave in the browser. Export it to keep it." : `Autosave failed: ${e instanceof Error ? e.message : e}`));
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [patch, template, draftId]);
+  useAutosave(async () => {
+    if (!draftReady || typeof indexedDB === "undefined" || patchRef.current!==patch) return;
+    const old=savedDraft.current;
+    if(old?.id===draftId&&old.patch===patch&&old.template===template)return;
+    await (draftWorthSaving(patch) ? samplerDrafts.save(draftId, patch, template) : samplerDrafts.remove(draftId));
+    savedDraft.current={patch,template,id:draftId};setDraftError("");
+  }, [patch, template, draftId, draftReady], e => setDraftError(e instanceof DOMException && e.name === "QuotaExceededError" ? "This instrument is too large to autosave in the browser. Export it to keep it." : `Autosave failed: ${e instanceof Error ? e.message : e}`), 800);
   useEffect(() => {
     client.current = transport && !classic ? new PhysicalSynthClient(transport) : undefined;
     return () => client.current?.close();
@@ -261,29 +260,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
     },
     [],
   );
-  useEffect(() => {
-    if (!playing) return;
-    let alive = true,
-      inFlight = false;
-    const read = async () => {
-      if (inFlight) return;
-      inFlight = true;
-      try {
-        const p = await client.current?.samplerLoading();
-        if (alive) setLoading(p);
-      } catch (e) {
-        if (alive) setError(String(e));
-      } finally {
-        inFlight = false;
-      }
-    };
-    void read();
-    const t = setInterval(() => void read(), 400);
-    return () => {
-      alive = false;
-      clearInterval(t);
-    };
-  }, [playing]);
+
   const edit = (next: Patch, remember = true) => {
     if (remember) {
       setHistory((h) => [...h.slice(-39), patchRef.current]);
@@ -1478,7 +1455,7 @@ export function SamplerEditor({ transport, target = "advanced" }: { transport?: 
             Try reverb on the instrument playing from the SD card, then save it
             to that instrument.
           </p>
-          {playing && <p role="status">{samplerLoadingLabel(loading)}</p>}
+          <SamplerLoadingStatus client={client} playing={playing}/>
         </fieldset>}
       </div>
       {report.length > 0 && (

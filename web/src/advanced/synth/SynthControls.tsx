@@ -2,7 +2,7 @@ import { useRef, type HTMLAttributes, type ReactNode } from "react";
 import { modulationRings, knobRingPoint, knobRingViewBox } from "./modulationRing.ts";
 export const sourceColors = ["#efb86b", "#5cdac6", "#b29aff", "#70b8ff", "#ef8eb8", "#f3cf6e", "#91aaff", "#f39cce", "#a7dc82"];
 export const sourceShortNames = ["Strike", "Pressure", "Release", "X tilt", "Y tilt", "Env", "LFO", "Joystick", "Expression"];
-/** Selects a modulation source. Double/Shift-click locks it; dragging it onto a knob adds a route;
+/** Selects a modulation source. Shift-click locks it; dragging it onto a knob adds a route;
  * sources with settings get a separate caret that opens their editor. */
 export function ModSourceButton({ label, color, pressed, locked, count, editorOpen, onSelect, onEditor, title, events }: {
     label: ReactNode; color: string; pressed: boolean; locked?: boolean; count?: ReactNode; editorOpen?: boolean;
@@ -10,7 +10,7 @@ export function ModSourceButton({ label, color, pressed, locked, count, editorOp
 }) {
     const name = typeof label === "string" ? label : "source";
     return <span className="mod-source-split" data-editor={onEditor ? true : undefined} data-locked={locked || undefined} style={{ borderColor: color }}>
-      <button type="button" aria-pressed={pressed} title={title} onClick={e => onSelect(e.shiftKey)} onDoubleClick={() => onSelect(true)} {...events}><span className="source-dot" style={{ background: color }}/>{label}{locked && <svg className="source-lock" viewBox="0 0 10 12" aria-label="locked"><rect x="1" y="5" width="8" height="6.5" rx="1.2" fill="currentColor"/><path d="M3 5V3.5a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" strokeWidth="1.4"/></svg>}{count !== undefined && <span className="source-route-count">{count}</span>}</button>
+      <button type="button" aria-pressed={pressed} title={title} onClick={e => onSelect(e.shiftKey)} {...events}><span className="source-dot" style={{ background: color }}/>{label}{locked && <svg className="source-lock" viewBox="0 0 10 12" aria-label="locked"><rect x="1" y="5" width="8" height="6.5" rx="1.2" fill="currentColor"/><path d="M3 5V3.5a2 2 0 0 1 4 0V5" fill="none" stroke="currentColor" strokeWidth="1.4"/></svg>}{count !== undefined && <span className="source-route-count">{count}</span>}</button>
       {onEditor && <button type="button" className="mod-source-caret" aria-label={`${name} settings`} title={`${name} settings`} aria-haspopup="dialog" aria-expanded={!!editorOpen} onClick={onEditor}><svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg></button>}
     </span>;
 }
@@ -105,7 +105,7 @@ export function Knob({ label, value, min = 0, max = 65535, disabled, onChange, o
         <path d="M -2 -2 L 1 0 L -2 2" fill="none" stroke="currentColor" strokeWidth="1.5" transform={`translate(${arc.x} ${arc.y}) rotate(${arc.angle + (depth < 0 ? 180 : 0)})`}/>
       </g>;
         }))}
-      {routes.length > 0 && <circle className="modulation-position" cx={liveDot.x} cy={liveDot.y} r="2.6" fill="#f4fbff" stroke="#15232e" strokeWidth="1" data-value={effectiveValue ?? base}/>}
+      {routes.length > 0 && <circle className="modulation-position" cx={Math.round(liveDot.x * 10) / 10} cy={Math.round(liveDot.y * 10) / 10} r="2.6" fill="#f4fbff" stroke="#15232e" strokeWidth="1"/>}
     </svg>
     <span className="knob-face"><span className="knob-pointer" style={{ transform: `rotate(${-135 + 270 * (baseValue === undefined ? (value - min) / (max - min) : baseValue / 65535)}deg)` }}/></span>
   </div>;

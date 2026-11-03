@@ -1,3 +1,4 @@
+import {writeStoredText} from "../editor/autosave.ts";
 import { sameContent, useEditorDrafts } from "../editor/drafts.ts";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import {
@@ -1061,7 +1062,7 @@ function saveComputerPresets(presets: EditableSynthPreset[]) {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(computerLibraryStorageKey, JSON.stringify(presets.map(exportPreset)));
+  writeStoredText(window.localStorage, computerLibraryStorageKey, JSON.stringify(presets.map(exportPreset)));
 }
 
 export function loadComputerWavetables(): EditableSynthWavetable[] {
@@ -1076,7 +1077,7 @@ export function loadComputerWavetables(): EditableSynthWavetable[] {
     if (Array.isArray(parsed)) {
       const wavetables = parsed.map(wavetableFromUnknown);
       if (!factorySeeded) {
-        window.localStorage.setItem(computerWavetableFactorySeedStorageKey, "2");
+        writeStoredText(window.localStorage, computerWavetableFactorySeedStorageKey, "2");
         return mergeMissingFactoryWavetables(wavetables);
       }
       return uniqueWavetablesByName(wavetables);
@@ -1085,7 +1086,7 @@ export function loadComputerWavetables(): EditableSynthWavetable[] {
     window.localStorage.removeItem(computerWavetableStorageKey);
   }
 
-  window.localStorage.setItem(computerWavetableFactorySeedStorageKey, "2");
+  writeStoredText(window.localStorage, computerWavetableFactorySeedStorageKey, "2");
   return factoryComputerWavetables();
 }
 
@@ -1093,7 +1094,7 @@ function saveComputerWavetables(wavetables: EditableSynthWavetable[]) {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(computerWavetableStorageKey, JSON.stringify(wavetables.map(exportWavetable)));
+  writeStoredText(window.localStorage, computerWavetableStorageKey, JSON.stringify(wavetables.map(exportWavetable)));
 }
 
 function loadStoredFolders(storageKey: string): string[] {
@@ -1116,7 +1117,7 @@ function loadStoredFolders(storageKey: string): string[] {
 
 function saveStoredFolders(storageKey: string, folders: string[]) {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(storageKey, JSON.stringify(folders.filter((folder) => folder !== rootFolderPath && folder !== builtInWavetableFolder)));
+    writeStoredText(window.localStorage, storageKey, JSON.stringify(folders.filter((folder) => folder !== rootFolderPath && folder !== builtInWavetableFolder)));
   }
 }
 

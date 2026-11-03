@@ -1,7 +1,10 @@
-import {useEffect,useRef,useMemo} from 'react';
+import {useContext,useEffect,useRef,useMemo} from 'react';
+import {PreviewContext} from './SynthVisualPreview.tsx';
+import {startVisibleAnimation} from '../../animation.ts';
 import type {PhysicalExpression} from './client.ts';
 import {StringMotion,type MotionInput} from './stringMotion.ts';
 export function StringAnimation({values,signature,live,playing,replay,enabled}:{values:number[];signature:string;live?:PhysicalExpression;playing:boolean;replay:number;enabled:boolean}){
+  const preview=useContext(PreviewContext);
   const root=useRef<SVGGElement>(null),engine=useMemo(()=>new StringMotion(),[]);
   const inputs=useRef<MotionInput>({values,held:false,key:null,velocity:.8,playing});
   inputs.current={values,held:!!live?.held,key:live?.key??null,velocity:(live?.velocity??100)/127,playing};
@@ -13,7 +16,7 @@ export function StringAnimation({values,signature,live,playing,replay,enabled}:{
     const balls=Array.from(node.querySelectorAll<SVGCircleElement>('[data-motion="ball"]'));
     const bow=node.querySelector<SVGGElement>('[data-motion="bow"]')!,mute=node.querySelector<SVGPathElement>('[data-motion="mute"]')!;
     const preference=window.matchMedia('(prefers-reduced-motion: reduce)');
-    let raf:number|undefined,last=0,visible=true,disposed=false;
+    let last=-Infinity,visible=true,active=true,dirty=true;
     const paint=(now:number)=>{
       const v=inputs.current.values,f=engine.frame(now/1000,inputs.current);
       wave.setAttribute('d',f.path);wave.style.strokeWidth=String(3+1.5*v[26]);wave.style.stroke=`color-mix(in srgb, var(--synth-1) ${100-70*v[26]}%, ${['#efb86b','#ef9479','#b29aff'][Math.round(v[27]*2)]})`;
@@ -23,20 +26,20 @@ export function StringAnimation({values,signature,live,playing,replay,enabled}:{
       mute.style.opacity=f.contact&&Math.round(v[8]*4)===3?String(v[16]):'0';
       return f.active;
     };
+    const schedule=()=>{active=true;dirty=true;};
     const tick=(now:number)=>{
-      raf=undefined;if(disposed||document.hidden||!visible)return;
-      if(now-last<1000/30){raf=requestAnimationFrame(tick);return;}last=now;
-      const active=paint(now);if(active&&state.current.enabled&&!preference.matches)raf=requestAnimationFrame(tick);
+      if(!visible||now-last<1000/30-.001)return;last=now;
+      if(!state.current.enabled||preference.matches){
+        if(dirty){wave.setAttribute('d','M30 82H570');[...pickup,...balls,bow,mute].forEach(e=>e.style.opacity='0');dirty=false;}
+      }else if(active)active=paint(now);
     };
-    const cancel=()=>{if(raf!==undefined)cancelAnimationFrame(raf);raf=undefined;};
-    const schedule=()=>{if(disposed||document.hidden||!visible)return;if(!state.current.enabled||preference.matches){cancel();wave.setAttribute('d','M30 82H570');[...pickup,...balls,bow,mute].forEach(e=>e.style.opacity='0');}else if(raf===undefined)raf=requestAnimationFrame(tick);};
     wake.current=schedule;demo.current=()=>{if(!inputs.current.playing||!inputs.current.held){engine.replay(performance.now()/1000,inputs.current.values);schedule();}};
-    const visibility=()=>{if(document.hidden)cancel();else schedule();};
-    const motion=()=>{cancel();schedule();};
-    document.addEventListener('visibilitychange',visibility);preference.addEventListener('change',motion);
-    const observer=typeof IntersectionObserver==='undefined'?undefined:new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;if(visible)schedule();else cancel();});observer?.observe(node.ownerSVGElement!);schedule();
-    return()=>{disposed=true;cancel();observer?.disconnect();document.removeEventListener('visibilitychange',visibility);preference.removeEventListener('change',motion);wake.current=()=>{};demo.current=()=>{};};
-  },[]);
+    preference.addEventListener('change',schedule);
+    const observer=preview&&typeof IntersectionObserver!=='undefined'?new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;if(visible)schedule();}):undefined;
+    observer?.observe(node.ownerSVGElement!);
+    const stop=preview?preview.subscribeFrame(tick):startVisibleAnimation(node.ownerSVGElement!,tick);
+    return()=>{stop();observer?.disconnect();preference.removeEventListener('change',schedule);wake.current=()=>{};demo.current=()=>{};};
+  },[preview]);
   const effective=values.join(',');
   useEffect(()=>{
     const old=state.current;if(old.playing&&!playing)engine.reset();
