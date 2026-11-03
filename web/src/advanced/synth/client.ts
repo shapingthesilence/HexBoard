@@ -254,10 +254,12 @@ export class PhysicalSynthClient {
   }
   async selectWavetableTable(crc:number,bytes?:Uint8Array,progress?:(done:number,total:number)=>void){
     await this.stopAndWait();
-    // Recover a candidate left by a disconnected editor before selecting even
-    // the built-in bank. The last complete asset remains available.
+    const select=async()=>{const selected=await this.request<number>(77,u32(crc));if(selected!==crc)throw Error('The board selected a different table.');};
+    // Select quiesces audio even if an abandoned candidate prevents selection.
+    // Abort only afterward: main's stopped state can retain an idle renderer.
+    try{await select();return;}catch{}
     await this.request(76);
-    try {const selected=await this.request<number>(77,u32(crc));if(selected===crc)return;}catch(error){if(!bytes||!crc)throw error;}
+    try{await select();return;}catch{}
     if(!bytes)throw Error('This table is not in the browser library. Import its WAV or a sound containing it.');
     const {crc32,validateAsset}=await import('./wavetable/prepare.mjs');if(validateAsset(bytes)!==crc)throw Error('The table does not match this sound.');
     try {await this.request(73,[...u32(bytes.length),...u32(crc32(bytes))]);for(let at=0;at<bytes.length;at+=176){const chunk=bytes.subarray(at,at+176);const end=await this.request<number>(74,[...u32(at),...encodeU14(chunk.length),...Array.from(chunk).flatMap(b=>[b>>7,b&127])]);if(end!==at+chunk.length)throw Error('Table transfer offset mismatch.');progress?.(end,bytes.length);}if(await this.request<number>(75)!==crc)throw Error('The board received a different table.');}catch(error){try{await this.request(76);}catch{}throw error;}
