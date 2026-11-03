@@ -3,6 +3,8 @@ import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {P, S, effectiveWavetable, factoryWavetablePresets, initialWavetable, option, optionValue, routeKey, routesUsed, sourceCount, validWavetable, wavetableFromUnknown, wavetableFromWords, wavetablePreset, wavetableWords, withRoute, wordCount, editCount, wavetableFormat, wavetableDefaultFx} from './wavetableSchema.ts';
 import {wavetableCapacityUs, wavetableCost, filterOpen} from './wavetableBudget.ts';
+import {defaultFx} from './schema.ts';
+import {fxRoutePatch} from './fxRouting.ts';
 import {frameSpectrum, warp} from './WavetableVisuals.tsx';
 import {AdvancedSynthEditor} from './AdvancedSynthEditor.tsx';
 import {WavetableSynthEditor} from './WavetableSynthEditor.tsx';
@@ -93,4 +95,12 @@ it('starts wavetable sounds with the rack ensemble and refuses superseded files'
  const pad=factoryWavetablePresets.find(f=>f.name==='Glass Pad')!;expect(pad.effects.values[6][2]).toBe(1);expect(pad.effects.routes![15*5]).toBe(20000);
  expect(factoryWavetablePresets.find(f=>f.name==='Sync Bass')!.effects.order).toEqual([]);
  expect(()=>wavetableFromUnknown({...JSON.parse(JSON.stringify(p)),format:'hexboard.wavetable.v1'})).toThrow();
+});
+
+it('pins the estimate the board enforces (Advanced wavetable_budget_test.cpp)',()=>{
+ const full=()=>{let e=defaultFx();e.order=[1,2,3,4,5,6];e.values[6][2]=1;for(const [id,source,depth] of [[0,3,3000],[20,6,12000],[13,7,10000],[4,8,5000],[25,3,9000]])e=fxRoutePatch(e,id,source,depth);return e;};
+ const with_=(values:[number,number][])=>{const p=initialWavetable();for(const [id,v] of values)p.parameters[id]=v;return p;};
+ const dense=with_([[P.Unison,optionValue(P.Unison,4)],[P.Brightness,34000],[P.WarpMode,optionValue(P.WarpMode,1)],[P.WarpAmount,24000],[P.Noise,12000],[P.Transient,12000],[P.Sub,24000],[P.Cutoff,45000],[P.Resonance,20000]]);
+ const worst=with_([[P.Unison,optionValue(P.Unison,6)],[P.Brightness,40000],[P.WarpMode,optionValue(P.WarpMode,4)],[P.Noise,1],[P.Transient,1],[P.Sub,1],[P.Resonator,optionValue(P.Resonator,1)],[P.Resonance,1]]);
+ expect([wavetableCost({...initialWavetable(),effects:defaultFx()}).us,wavetableCost({...initialWavetable(),effects:wavetableDefaultFx()}).us,wavetableCost({...initialWavetable(),effects:full()}).us,wavetableCost({...dense,effects:full()}).us,wavetableCost({...worst,effects:full()}).us]).toEqual([866,952,1687,2568,3186]);
 });

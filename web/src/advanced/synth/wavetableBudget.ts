@@ -2,11 +2,13 @@ import {effectDspCost} from './dspBudget.ts';
 import {fxRoutingUsage} from './fxRouting.ts';
 import type {FxRack} from './schema.ts';
 import {P, S, option, routeCount, sourceCount, type WavetablePatch} from './wavetableSchema.ts';
-// Advisory DSP estimate for eight held voices plus two tails, fitted to the
+// DSP estimate for eight held voices plus two tails, fitted to the
 // measured hardware workloads (Advanced docs/dsp-budget-qualification.md):
 // default patch 912 µs with the shared-rack adapter; earlier combined bell
 // patch 2,477 µs. Rack effects and global routes use the shared cost model. Costs are cycles per
 // voice-sample from the kernel benchmarks; five voices render per core.
+// Advanced src/synth/wavetable_budget.h enforces the same estimate on the
+// board; both test suites pin the same fixture values.
 export const wavetableCapacityUs = 2873;
 const fixedUs = 410, usPerCycle = 2.56 * 1.036;
 export type WavetableStage = 'oscillator' | 'warp' | 'unison' | 'layers' | 'resonator' | 'filter' | 'amp' | 'output';

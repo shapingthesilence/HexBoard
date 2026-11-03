@@ -114,6 +114,9 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
   const loadOnDevice = (next: WavetablePreset, start: boolean) => client && ready ? operation(async () => {
     await settle(); const state = await client.status();
     if (state.instrument !== wavetableEngine && state.state !== 'stopped') await client.stopAndWait();
+    // The board admits a patch against the rack it holds; clear the previous
+    // sound's rack first so the new patch and rack are each checked once.
+    await client.effects({...next.effects, order: [], routes: next.effects.routes?.map(() => 0)});
     await client.applyWavetable(next);
     await client.effects(next.effects);
     return start && (await client.status()).state !== 'playing' ? client.start(wavetableEngine) : client.status();
@@ -287,7 +290,7 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
         </>)}
       </div>
       <aside className="wt-side">
-        <FxRackEditor rack={preset.effects} busy={busy} onChange={setEffects}
+        <FxRackEditor rack={preset.effects} busy={busy} onChange={setEffects} canApply={rack => { const next = wavetableCost({...preset, effects: rack}); return next.fits || next.us <= cost.us; }}
           targeting={{tool,source:source===S.Joystick?7:source===S.Pedal?8:source===S.Env2||source===S.Lfo2?-1:source,values:[],
             previewSource:i=>i===7?S.Joystick:i===8?S.Pedal:i,
             finish:()=>{if(!locked)setTool('value');},focus:()=>setSourceEditor(undefined)}}/>
