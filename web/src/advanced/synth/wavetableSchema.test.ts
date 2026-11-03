@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {P, S, effectiveWavetable, factoryWavetablePresets, initialWavetable, option, optionValue, routeKey, routesUsed, sourceCount, validWavetable, wavetableFromUnknown, wavetableFromWords, wavetablePreset, wavetableWords, withRoute, wordCount} from './wavetableSchema.ts';
+import {P, S, effectiveWavetable, factoryWavetablePresets, initialWavetable, option, optionValue, routeKey, routesUsed, sourceCount, validWavetable, wavetableFromUnknown, wavetableFromWords, wavetablePreset, wavetableWords, withRoute, wordCount, editCount, wavetableFormat, wavetableDefaultFx} from './wavetableSchema.ts';
 import {wavetableCapacityUs, wavetableCost, filterOpen} from './wavetableBudget.ts';
 import {frameSpectrum, warp} from './WavetableVisuals.tsx';
 import {AdvancedSynthEditor} from './AdvancedSynthEditor.tsx';
@@ -9,20 +9,20 @@ import {WavetableSynthEditor} from './WavetableSynthEditor.tsx';
 
 describe('wavetable patch', () => {
   it('round-trips the firmware word layout', () => {
-    const patch = initialWavetable(); patch.routes[3] = {source: S.TiltX, destination: P.EnsembleWidth, depth: -20000};
+    const patch = initialWavetable(); patch.routes[3] = {source: S.TiltX, destination: P.Width, depth: -20000};
     const words = wavetableWords(patch);
     expect(words).toHaveLength(wordCount);
-    expect(words[64]).toBe(routeKey(S.Pressure, P.Frame));
-    expect(words[64 + 2 * 15]).toBe(routeKey(sourceCount, 0));
+    expect(words[editCount]).toBe(routeKey(S.Pressure, P.Frame));
+    expect(words[editCount + 2 * 15]).toBe(routeKey(sourceCount, 0));
     expect(wavetableFromWords(words)).toEqual(patch);
   });
   it('matches firmware option rounding and route rules', () => {
-    for (const id of [P.Unison, P.WarpMode, P.Resonator, P.Ensemble]) for (let c = 0; c < 4; ++c) expect(option(id, optionValue(id, c))).toBe(c);
-    const bad = initialWavetable(); bad.routes[2] = {source: S.Velocity, destination: P.EnsembleWidth, depth: 1};
+    for (const id of [P.Unison, P.WarpMode, P.Resonator]) for (let c = 0; c < 4; ++c) expect(option(id, optionValue(id, c))).toBe(c);
+    const bad = initialWavetable(); bad.routes[2] = {source: S.Velocity, destination: P.SubOctave, depth: 1};
     expect(validWavetable(bad)).toBe(false);
     bad.routes[2] = {source: S.Pressure, destination: P.WarpMode, depth: 1};
     expect(validWavetable(bad)).toBe(false);
-    expect(() => wavetableFromUnknown({format: 'hexboard.wavetable.v1', name: 'x', ...bad})).toThrow();
+    expect(() => wavetableFromUnknown({format: wavetableFormat, name: 'x', ...bad})).toThrow();
   });
   it('allocates, edits and clears sparse routes within sixteen', () => {
     let patch = initialWavetable();
@@ -49,8 +49,8 @@ describe('wavetable DSP estimate', () => {
     expect(wavetableCost(initialWavetable()).us).toBeLessThan(950);
     const combined = initialWavetable(); const set = (id: number, v: number) => { combined.parameters[id] = v; };
     set(P.Unison, optionValue(P.Unison, 6)); set(P.FrameSpread, 65535); set(P.WarpMode, optionValue(P.WarpMode, 4)); set(P.Brightness, 40000);
-    set(P.Noise, 20000); set(P.Transient, 20000); set(P.Sub, 20000); set(P.Resonator, optionValue(P.Resonator, 2)); set(P.Ensemble, optionValue(P.Ensemble, 2));
-    const us = wavetableCost(combined).us;
+    set(P.Noise, 20000); set(P.Transient, 20000); set(P.Sub, 20000); set(P.Resonator, optionValue(P.Resonator, 2));
+    const us = wavetableCost({...combined, effects: wavetableDefaultFx()}).us;
     expect(us).toBeGreaterThan(2400); expect(us).toBeLessThan(2560); expect(us).toBeLessThan(wavetableCapacityUs);
   });
   it('treats a fully open, unmoving low-pass as bypassed', () => {
@@ -76,7 +76,7 @@ describe('wavetable previews', () => {
     expect(html).toContain('<output aria-live="off"');
     expect(html).toContain('FX rack');expect(html).not.toContain('Motion sources');
     expect(renderToStaticMarkup(createElement(AdvancedSynthEditor, {engines: true}))).toContain('Wavetable');
-    expect(wavetablePreset('x', initialWavetable()).format).toBe('hexboard.wavetable.v1');
+    expect(wavetablePreset('x', initialWavetable()).format).toBe(wavetableFormat);
   });
 });
 
@@ -85,4 +85,12 @@ it('retains the shared effects rack through wavetable preset export and reload',
  const roundtrip=wavetableFromUnknown(JSON.parse(JSON.stringify(p)));
  expect(roundtrip.effects).toEqual(p.effects);
  expect(wavetableCost(roundtrip).us).toBeGreaterThan(wavetableCost(initialWavetable()).us+700);
+});
+
+it('starts wavetable sounds with the rack ensemble and refuses superseded files',()=>{
+ const p=wavetablePreset('Default',initialWavetable());
+ expect(p.effects.order).toEqual([6]);expect(p.effects.values[6]).toEqual([32768,52000,0,32768]);
+ const pad=factoryWavetablePresets.find(f=>f.name==='Glass Pad')!;expect(pad.effects.values[6][2]).toBe(1);expect(pad.effects.routes![15*5]).toBe(20000);
+ expect(factoryWavetablePresets.find(f=>f.name==='Sync Bass')!.effects.order).toEqual([]);
+ expect(()=>wavetableFromUnknown({...JSON.parse(JSON.stringify(p)),format:'hexboard.wavetable.v1'})).toThrow();
 });

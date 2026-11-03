@@ -21,7 +21,7 @@ import {targetingEscape, sourceClickTool} from './modulationTargeting.ts';
 import {RouteChip, RouteMenu, dropDepth, useSourceDrag} from './modulationGestures.tsx';
 import {type FxRack,modulationRate, modulationSeconds} from './schema.ts';
 import {
-  P, S, ensembleNames, factoryWavetablePresets, filterNames, modulatable, option, optionValue, parameterCount,
+  P, S, factoryWavetablePresets, filterNames, modulatable, option, optionValue, parameterCount,
   resonatorNames, routeDepth, routesUsed, sameWavetable, sourceCount, transientNames, warpAmountDescription, warpNames, wavetableEngine,
   wavetableFromUnknown, wavetableParameters, wavetablePreset, wavetableSourceColors, wavetableSourceShort, wavetableSources, withRoute, bipolarSource, type WavetablePreset
 } from './wavetableSchema.ts';
@@ -160,7 +160,7 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
     const routes = preset.routes.filter(r => r.destination === id && r.source < sourceCount && r.depth).map(r => ({label: wavetableSources[r.source], i: r.source, depth: r.depth, color: wavetableSourceColors[r.source], bipolar: bipolarSource(r.source, preset)}));
     const full = modulating && !routeDepth(preset, id, source) && routesUsed(preset) >= wavetableRouteLimit;
     const value = modulating ? routeDepth(preset, id, source) : p[id];
-    const why = tool === 'modulate' && !canRoute ? id === P.EnsembleWidth ? 'Ensemble width is shared by all voices · use tilt, joystick or expression' : 'Not modulatable' : full ? `All ${wavetableRouteLimit} routes in use` : undefined;
+    const why = tool === 'modulate' && !canRoute ? 'Not modulatable' : full ? `All ${wavetableRouteLimit} routes in use` : undefined;
     const alternate = tool === 'value' && canDrop(id, source) ? {value: routeDepth(preset, id, source), onChange: (d: number) => { setRoute(id, source, d); }} : undefined;
     return <div className="physical-control" key={id} data-mod-target={id} data-drop={drag ? canDrop(id, drag.source) ? 'ok' : 'blocked' : undefined} data-drop-hover={drag?.target === id || undefined}
       data-source-route={highlight === undefined ? undefined : routes.some(r => r.i === highlight) ? 'yes' : 'no'} data-modulatable={canRoute} data-route-full={full || undefined} title={why}
@@ -186,7 +186,7 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
       {children}
     </fieldset>;
 
-  const copies = option(P.Unison, p[P.Unison]) + 1, warpMode = option(P.WarpMode, p[P.WarpMode]), resonator = option(P.Resonator, p[P.Resonator]), ensemble = option(P.Ensemble, p[P.Ensemble]);
+  const copies = option(P.Unison, p[P.Unison]) + 1, warpMode = option(P.WarpMode, p[P.WarpMode]), resonator = option(P.Resonator, p[P.Resonator]);
   const filterBypassed = filterOpen(preset);
   const flow = stageOrder.map(s => ({...s, cost: pct(cost.stages[s.id]),
     active: s.id === 'warp' ? warpMode > 0 : s.id === 'unison' ? copies > 1 : s.id === 'layers' ? p[P.Noise] > 0 || p[P.Transient] > 0 : s.id === 'resonator' ? resonator > 0 : s.id === 'filter' ? !filterBypassed : s.id === 'output' ? true : true}));
@@ -282,9 +282,8 @@ export function WavetableSynthEditor({transport}: {transport?: MidiTransport}) {
           <div className="knob-bank">{control(P.AmpAttack)}{control(P.AmpDecay)}{control(P.AmpSustain)}{control(P.AmpRelease)}</div>
         </>)}
         {stage('output', 'Output', true, <>
-          {choice(P.Ensemble, ensembleNames, 'Ensemble')}
-          <div className="knob-bank">{control(P.EnsembleWidth, 'Width')}{control(P.Level)}</div>
-          <small>{ensemble ? `${ensemble === 1 ? 'Two' : 'Four'} modulated delay taps thicken every voice for one fixed cost.` : 'Ensemble off.'} Sub joins after the ensemble.</small>
+          <div className="knob-bank">{control(P.Level)}</div>
+          <small>The FX rack, including Ensemble, follows the voice mix; the clean sub joins after it.</small>
         </>)}
       </div>
       <aside className="wt-side">

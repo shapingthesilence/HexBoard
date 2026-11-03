@@ -21,7 +21,7 @@ export function filterOpen(p: WavetablePatch) {
 export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): WavetableCost {
   const copies = option(P.Unison, p.parameters[P.Unison]) + 1, warp = option(P.WarpMode, p.parameters[P.WarpMode]);
   const blend = p.parameters[P.Brightness] < 65470 || routed(p, P.Brightness);
-  const resonator = option(P.Resonator, p.parameters[P.Resonator]), ensemble = option(P.Ensemble, p.parameters[P.Ensemble]);
+  const resonator = option(P.Resonator, p.parameters[P.Resonator]);
   const cycles = {
     oscillator: 20 + (blend ? 70 : 40),
     unison: (copies - 1) * (blend ? 70 : 40),
@@ -33,7 +33,7 @@ export function wavetableCost(p: WavetablePatch & {effects?: FxRack}): Wavetable
   const stages: Record<WavetableStage, number> = {
     oscillator: Math.round(cycles.oscillator * usPerCycle + fixedUs), warp: Math.round(cycles.warp * usPerCycle), unison: Math.round(cycles.unison * usPerCycle),
     layers: Math.round(cycles.layers * usPerCycle), resonator: Math.round(cycles.resonator * usPerCycle), filter: Math.round(cycles.filter * usPerCycle),
-    amp: 0, output: (ensemble === 0 ? 0 : ensemble === 1 ? 50 : 86) + (p.effects ? p.effects.order.reduce((sum,id)=>sum+effectDspCost(id),fxRoutingUsage(p.effects).cost) : 0)
+    amp: 0, output: (p.effects ? p.effects.order.reduce((sum,id)=>sum+effectDspCost(id),fxRoutingUsage(p.effects).cost) : 0)
   };
   const us = Object.values(stages).reduce((a, b) => a + b, 0);
   return {us, stages, fits: us <= wavetableCapacityUs};

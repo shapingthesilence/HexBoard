@@ -224,6 +224,6 @@ export function SignalFlow({stages, subActive, playing, onSelect}: {stages: Flow
     <ol>{stages.map(s => <li key={s.id} data-active={s.active || undefined}>
       <button type="button" onClick={() => onSelect(s.id)} title={s.note}><span className="wt-flow-name">{s.label}</span>{s.cost > 0 && <span className="wt-flow-cost">{s.cost}%</span>}</button>
     </li>)}</ol>
-    <div className="wt-flow-sub" data-active={subActive || undefined} title="Clean sub: skips the resonator, filter and ensemble"><span>Sub · clean bypass</span></div>
+    <div className="wt-flow-sub" data-active={subActive || undefined} title="Clean sub: skips the resonator, filter and FX rack"><span>Sub · clean bypass</span></div>
   </nav>;
 }
